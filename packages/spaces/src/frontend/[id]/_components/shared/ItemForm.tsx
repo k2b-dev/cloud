@@ -16,7 +16,7 @@ import {
   TextInput,
   useLocale,
 } from "@k2b/ui";
-import { createMemo, createSignal, For, Show } from "solid-js";
+import { createMemo, createSignal, For, onMount, Show } from "solid-js";
 import type { SpaceItemAssignee } from "@/contracts";
 import { isDateOnlyDeadline } from "@/presentation/deadline";
 import {
@@ -42,6 +42,7 @@ import {
 } from "@/presentation/recurrence";
 import { spaceCommandMessages } from "../../../../commands";
 import { useSpaceMessages } from "../../messages";
+import { templateIcon } from "./create-menu";
 import {
   allDayEnd,
   allDayStart,
@@ -106,10 +107,13 @@ export default function ItemForm(props: ItemFormProps) {
    * An edit sends the assignees only when the person changed them, so a title edit never replaces a list that changed
    * meanwhile, such as by someone claiming the task.
    */
+  const initialTitle = props.item?.title;
+  const initialAssigneeIds = props.item?.assignees?.map((assignee) => assignee.id) ?? [];
+  let createAttempt: { input: string; key: string } | undefined;
   const assigneeChange = () => {
     const ids = assignees().map((assignee) => assignee.id);
     if (!isEditMode()) return ids.length > 0 ? ids : undefined;
-    const before = props.item?.assignees?.map((assignee) => assignee.id) ?? [];
+    const before = initialAssigneeIds;
     return ids.length === before.length && ids.every((id) => before.includes(id)) ? undefined : ids;
   };
   const [selectedTags, setSelectedTags] = createSignal<string[]>(props.item?.tags?.map((t) => t.id) ?? props.defaults?.tagIds ?? []);
@@ -155,7 +159,13 @@ export default function ItemForm(props: ItemFormProps) {
   const fillText = (date: string | null) => {
     const template = selectedTemplate();
     if (!template) return;
-    const eventDay = template.kind === "event" && startsAt() ? datePart(startsAt(), props.dateConfig) : null;
+    // An event fills in its day; a task its due day, such as one a calendar selection gave it.
+    const eventDay =
+      template.kind === "event" && startsAt()
+        ? datePart(startsAt(), props.dateConfig)
+        : template.kind === "task" && deadline()
+          ? datePart(deadline(), props.dateConfig)
+          : null;
     const text = templateText(template, { date: date ?? eventDay ?? localNow(new Date(), timeZone()).date, locale: locale() });
     setTitle(text.title);
     setDescription(text.description);
@@ -166,9 +176,10 @@ export default function ItemForm(props: ItemFormProps) {
     if (!ownInput()) fillText(date);
   };
 
-  const chooseTemplate = async (id: string) => {
+  const chooseTemplate = async (id: string, opening = false) => {
     if (id === templateId()) return;
     if (
+      !opening &&
       ownInput() &&
       !(await prompts.confirm(t.replaceInputQuestion, { title: t.replaceInputTitle, confirmText: t.replaceInput, icon: "ti ti-template" }))
     )
@@ -192,25 +203,39 @@ export default function ItemForm(props: ItemFormProps) {
       setDateChoice(null);
       return;
     }
-    // An event opened from a calendar slot keeps the slot; the proposals stay one tap away.
-    const keepSlot = template.kind === "event" && Boolean(props.defaults?.startsAt);
+    // An item opened from a calendar selection keeps its time; the proposals stay one tap away.
+    const keepSlot = template.kind === "event" ? Boolean(props.defaults?.startsAt) : Boolean(props.defaults?.deadline);
     const date = keepSlot
       ? null
       : (proposals()[0] ??
         (template.kind === "event" && !startsAt() ? defaultTemplateDate(template, { now: new Date(), timeZone: timeZone() }) : null));
     const draft = draftFromTemplate(templateDraftSource(template), { date, timeZone: timeZone(), locale: locale() });
     fillText(date);
+    // A title the opener carried, such as one typed in the calendar's quick create, stays.
+    if (opening && props.defaults?.title) setTitle(props.defaults.title);
     setPriority(draft.priority ?? "");
-    setSelectedTags(draft.tagIds);
+    // Tags the opener gave, such as a calendar filter's, stay beside the template's, so the item shows where it was made.
+    setSelectedTags(opening ? [...new Set([...(props.defaults?.tagIds ?? []), ...draft.tagIds])] : draft.tagIds);
     setAssignees(template.assignees);
     setAssignCreator(draft.assignCreator);
     setChecklist(draft.checklist);
     setEstimatedDurationMinutes(draft.estimatedDurationMinutes ?? null);
     setLocation(draft.location ?? "");
     setUrl(draft.url ?? "");
-    if (template.kind === "task" || date) applySchedule(date);
+    if ((template.kind === "task" && !keepSlot) || date) applySchedule(date);
     setDateChoice(keepSlot ? null : (proposals()[0] ?? (template.kind === "task" ? NO_DATE : null)));
   };
+
+  // A "+" that chose a template opens the dialog with it chosen; the chips still switch.
+  onMount(() => {
+    const id = props.defaults?.templateId;
+    if (id && kindTemplates().some((template) => template.id === id)) void chooseTemplate(id, true);
+  });
+  /** The column a "+" of a column gave the new task, said quietly, since the short form shows no status. */
+  const plusColumn = () =>
+    !isEditMode() && quickCreate() && props.defaults?.columnId
+      ? props.columns.find((column) => column.id === props.defaults?.columnId)
+      : undefined;
 
   const chooseDate = (choice: string) => {
     setDateChoice(choice);
@@ -245,7 +270,7 @@ export default function ItemForm(props: ItemFormProps) {
 
   const templateOptions = (): { value: string; label: string; icon?: string }[] => [
     { value: BLANK_TEMPLATE, label: t.blankTemplate },
-    ...kindTemplates().map((template) => ({ value: template.id, label: template.name, icon: "ti ti-template" })),
+    ...kindTemplates().map((template) => ({ value: template.id, label: template.name, icon: templateIcon(template) })),
   ];
   const dateOptions = () => [
     ...proposals().map((date) => ({ value: date, label: formatTemplateDate(date, locale()) })),
@@ -425,10 +450,28 @@ export default function ItemForm(props: ItemFormProps) {
       estimatedDurationMinutes: !isEvent() ? (estimatedDurationMinutes() ?? (isEditMode() ? null : undefined)) : undefined,
       priority: (priority() || (isEditMode() ? null : undefined)) as Priority | null | undefined,
       assigneeIds: assigneeChange(),
+      ...(isEditMode()
+        ? {
+            expectedTitle: initialTitle,
+            ...(assigneeChange() !== undefined
+              ? {
+                  addAssigneeIds: assignees()
+                    .map((assignee) => assignee.id)
+                    .filter((id) => !initialAssigneeIds.includes(id)),
+                  removeAssigneeIds: initialAssigneeIds.filter((id) => !assignees().some((assignee) => assignee.id === id)),
+                }
+              : {}),
+          }
+        : {}),
       tagIds: isEditMode() || selectedTags().length > 0 ? selectedTags() : undefined,
       ...(!isEditMode() && !isEvent() && checklist().length ? { checklist: checklist() } : {}),
       ...(!isEditMode() && assignCreator() ? { assignCreator: true } : {}),
     };
+    if (!isEditMode()) {
+      const input = JSON.stringify(data);
+      if (createAttempt?.input !== input) createAttempt = { input, key: crypto.randomUUID() };
+      data.requestKey = createAttempt.key;
+    }
     // A save that runs from the dialog keeps it open until the server answers; a refusal stays here with the input.
     setSubmitting(true);
     try {
@@ -830,6 +873,15 @@ export default function ItemForm(props: ItemFormProps) {
                 <p class="spaces-template-summary text-xs text-dimmed" data-testid="template-summary">
                   <span>{t.fromTemplate}</span> <span class="text-secondary">{templateSummary().join(" · ")}</span>
                 </p>
+              </Show>
+
+              <Show when={plusColumn()}>
+                {(column) => (
+                  <p class="flex items-center gap-1.5 text-xs text-dimmed" data-testid="plus-column">
+                    <i class="ti ti-layout-kanban" aria-hidden="true" />
+                    {t.landsInColumn({ column: column().name })}
+                  </p>
+                )}
               </Show>
 
               <Show when={isEvent()}>

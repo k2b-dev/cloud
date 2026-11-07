@@ -10,6 +10,8 @@ updated: 2026-10-20
 
 # Action approvals
 
+See [Who may do what](/en/docs/identity/access-model) for the access model.
+
 When Cloud asks a person to approve an Action, it records the question as one
 approval request owned by the platform. The Assistant chat, `cld`, and code in
 Assistant Studio ask through the same record, so one decision answers the
@@ -61,7 +63,7 @@ A person can decide the same request in these places:
   Its navigation row sits above **Studio** while a request waits.
   The row appears or disappears only on navigation. It stays while the view
   is open. If its count reaches zero before navigation, it shows a muted `0`.
-- [Cloud Login](/en/docs/operations/cloud-login), on a paired phone.
+- [Cloud Login](/en/docs/operations/cloud-login), on a paired device.
   It shows the request, then asks for an explicit approve or reject choice.
 - **My account → Approvals** at `/me/approvals`, for all apps.
   Use `/me/approvals?app=mail` to filter by app.
@@ -135,8 +137,12 @@ application is unavailable.
 
 ## Pending approvals notification
 
-Core sends **Pending approvals** when a request waits from a turn that did
-not start in a signed-in browser session, such as `cld` or an editor bridge.
+Core sends **Pending approvals** when a request waits and no signed-in
+browser tab shows its chat. While a tab streams the chat, the request appears
+there and Core sends nothing. When the last such tab closes while the turn
+keeps running, Core checks the chat's waiting requests again, as for a new
+request. Turns from `cld`, an editor bridge, or a routine have no such tab.
+A notice names the newest request that no tab shows.
 A person gets at most one notice every 15 minutes. One notice covers all
 their waiting requests. A request that arrives within 15 minutes of the last
 notice is included in a later notice, which Core sends once the 15 minutes
@@ -159,12 +165,16 @@ addresses, so it stays off lock screens and paired devices. Browser delivery
 is recommended. Users can change delivery in their
 notification settings.
 
-Cloud also wakes paired Cloud Login phones for open requests asked outside
-Cloud's pages. Only devices that have read the Action inbox receive these
+Cloud also wakes paired Cloud Login devices for open requests that no
+signed-in browser tab shows, by the same rule: when the request is asked
+without such a tab, or when the last tab of its chat closes. Each request wakes
+the devices once, also when several tabs close on different Core replicas.
+Deciding in the reopened chat or in Cloud Login settles the request once; the
+other place then finds it decided. Only devices that have read the Action inbox receive these
 pushes, at most once per device in 30 seconds. A truncated `sends` question
-stays in the browser and sends no phone push; it still counts in the inbox's
+stays in the browser and sends no device push; it still counts in the inbox's
 `moreActions`. See [Device text mapping](/en/docs/operations/app-approval#approve-an-action).
-A push is a hint; the phone reads the signed request before the person
+A push is a hint; the device reads the signed request before the person
 decides.
 
 ## Use an approval once, for what was shown

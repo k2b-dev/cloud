@@ -61,7 +61,7 @@ beforeAll(async () => {
       return new Response(
         `<!doctype html><html lang="de" class="light"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">` +
           `<style>${css} html,body,#root{height:100%;margin:0} .harness-chat{height:100%}</style></head>` +
-          `<body class="k2b-ui bg-surface"><div id="root"></div><script src="/bundle.js"></script></body></html>`,
+          `<body class="k2b-ui bg-surface"><div id="root"></div><script type="module" src="/bundle.js"></script></body></html>`,
         { headers: { "content-type": "text/html; charset=utf-8" } },
       );
     },

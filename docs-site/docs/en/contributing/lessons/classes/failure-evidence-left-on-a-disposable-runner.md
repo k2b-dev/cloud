@@ -1,0 +1,1 @@
+| Failure evidence left on a disposable runner | A certification phase redirects output to local reports, then the job ends without preserving the only detailed failure evidence. | Test: `scripts/nightly-grids-reports.test.ts` checks the report directory, failure upload, and unconditional cleanup in Nightly. |

@@ -37,7 +37,7 @@ export const inventoryApi = api.create<InventoryApi>({
 The client infers route parameters and request payloads. Check `response.ok`
 before reading success data.
 
-On a page of the [mobile app](/en/docs/frontend/mobile-app-pages), the client
+On a page of the [Cloud app](/en/docs/frontend/mobile-app-pages), the client
 also keeps the app session alive. When a request answers `401`, the client
 renews the app session through Core and, once the phone has a valid session,
 sends the request once more. A `401` means that the server did not apply the
@@ -48,6 +48,10 @@ anything, as described in
 The repeat therefore applies a change at most once. When the phone is no
 longer paired, the app opens its pairing view instead. On the web, a `401` is
 returned as it is.
+
+On Cloud app pages, pending writes also hold automatic version-update reloads,
+including a session renewal and retry. GET reads do not. See
+[Pick up updates](/en/docs/frontend/mobile-app-pages#pick-up-updates).
 
 Do not use raw `fetch()` for an application JSON API when its typed route is
 available.

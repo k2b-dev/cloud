@@ -18,6 +18,7 @@ import {
 import { createMemo, createSignal, Index, onCleanup, Show } from "solid-js";
 import { apiClient } from "../../api/client";
 import type { MailSearchExpression, SavedConversationViewScope } from "../../contracts";
+import { mailFolderNames } from "../../folder-names";
 import { mailFolderPaths } from "../../folder-tree";
 import { type MailSearchState, type MailSearchStateError, serializeMailSearchState } from "../../search-state";
 import type { SavedConversationView } from "../../service/saved-views";
@@ -68,6 +69,7 @@ function MailSearchConditionEditor(props: {
   onRemove: (path: MailSearchNodePath) => void;
 }) {
   const messages = useMessages();
+  const locale = useLocale();
   const state = createMemo(() => unwrapMailSearchNot(props.expression));
   const node = () => state().expression;
   const group = () => {
@@ -98,17 +100,30 @@ function MailSearchConditionEditor(props: {
     const users = await response.json();
     return [
       { id: UNASSIGNED_VALUE, label: messages().unassigned, icon: "ti ti-user-off" },
-      ...users.map((user) => ({ id: user.id, label: user.displayName, description: user.description, icon: "ti ti-user" })),
+      ...users.map((user) => ({
+        id: user.id,
+        label: user.displayName,
+        description: user.description,
+        icon: user.serviceAccountKind === "agent" ? "ti ti-robot" : user.type === "service_account" ? "ti ti-key" : "ti ti-user",
+      })),
     ];
   };
-  const fetchFolders = async (_query: string, signal: AbortSignal) => {
+  // Standard folders show their localized names; the server's path stays visible and searchable beside them.
+  const fetchFolders = async (query: string, signal: AbortSignal) => {
     const response = await apiClient.mailboxes[":mailboxId"].folders.$get({ param: { mailboxId: props.mailboxId } }, { init: { signal } });
     if (!response.ok) throw new Error(await readApiError(response, messages().couldNotLoadMailboxFolders));
     const folders = await response.json();
-    const paths = mailFolderPaths(folders);
+    const paths = mailFolderPaths(folders, mailFolderNames(locale()));
+    const serverPaths = mailFolderPaths(folders);
+    const needle = query.trim().toLocaleLowerCase();
     return folders
       .filter((folder) => folder.selectable)
-      .map((folder) => ({ id: folder.id, label: paths.get(folder.id) ?? folder.name, description: folder.role, icon: "ti ti-folder" }));
+      .map((folder) => {
+        const label = paths.get(folder.id) ?? folder.name;
+        const serverPath = serverPaths.get(folder.id) ?? folder.name;
+        return { id: folder.id, label, description: serverPath === label ? folder.role : serverPath, icon: "ti ti-folder" };
+      })
+      .filter((option) => !needle || `${option.label} ${option.description}`.toLocaleLowerCase().includes(needle));
   };
   const fetchLocalTags = async (query: string, signal: AbortSignal) => {
     const response = await apiClient.mailboxes[":mailboxId"]["local-tags"].$get(

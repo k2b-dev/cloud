@@ -9,7 +9,7 @@ import type { MessageDetail } from "../../service/messages";
 import { readApiError } from "./api-response";
 import { mailDraftHref } from "./mail-compose-route";
 import { mailConversationUiMessages } from "./mail-conversation-ui-messages";
-import { messageDeliveryControlLabel, undoSendSecondsRemaining } from "./mail-message-presentation";
+import { mailSendFailureReason, messageDeliveryControlLabel, undoSendSecondsRemaining } from "./mail-message-presentation";
 import { buildMailListHref } from "./mail-navigation";
 
 type MessageDelivery = NonNullable<MessageDetail["delivery"]>;
@@ -27,6 +27,7 @@ const deliveryExplanation = (delivery: MessageDelivery, locale: string): string 
     return t.unknownExplanation;
   }
   if (waitsForSignIn(delivery)) return t.waitingForSignInExplanation;
+  if (delivery.state === "scheduled" && delivery.lastErrorCode === "SMTP_TRANSIENT_REJECTION") return t.transientRejectionExplanation;
   if (delivery.state === "scheduled" && delivery.lastErrorCode) {
     return t.retryExplanation({ attempt: delivery.attempt, total: delivery.maxAttempts });
   }
@@ -34,17 +35,7 @@ const deliveryExplanation = (delivery: MessageDelivery, locale: string): string 
     return t.sentCopyExplanation;
   }
   if (["failed", "reconciled_unsent"].includes(delivery.state)) {
-    const code = delivery.lastErrorCode ?? "";
-    const reason = ["SMTP_NO_RECIPIENTS_ACCEPTED", "EENVELOPE"].includes(code)
-      ? t.recipientsRejected
-      : code.includes("AUTH") || code.includes("CREDENTIAL")
-        ? t.authenticationFailed
-        : code.includes("SIZE") || code === "SMTP_DSN_UNSUPPORTED"
-          ? t.unsupportedDelivery
-          : code.includes("ACCESS") || code.includes("IDENTITY")
-            ? t.sendingAccessChanged
-            : t.notDelivered;
-    return `${reason} ${t.remainsDraft}`;
+    return `${mailSendFailureReason(delivery.lastErrorCode, locale)} ${t.remainsDraft}`;
   }
   return t.deliveryNeedsAttention;
 };
@@ -91,7 +82,9 @@ export default function MailMessageDeliveryControl(props: {
         : props.delivery.state === "scheduled" && props.delivery.lastErrorCode
           ? waitsForSignIn(props.delivery)
             ? t().waitingForSignIn
-            : t().retryControl({ attempt: props.delivery.attempt, total: props.delivery.maxAttempts })
+            : props.delivery.lastErrorCode === "SMTP_TRANSIENT_REJECTION"
+              ? t().tryingAgain
+              : t().retryControl({ attempt: props.delivery.attempt, total: props.delivery.maxAttempts })
           : props.delivery.state === "scheduled"
             ? t().scheduled
             : props.delivery.lastErrorCode === "SMTP_PARTIAL_ACCEPTANCE"

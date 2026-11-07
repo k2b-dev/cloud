@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { lazySync } from "@k2b/cloud";
+import { lazySync, sql } from "@k2b/cloud";
 import { type LogEntry, logger, get as settingsGet, settingsService } from "@k2b/cloud/services";
 import { isNetworkTargetBlocked, NetworkTargetBlockedError } from "@k2b/cloud/services/network-security";
 import { parsePgJsonRecord } from "@k2b/cloud/services/postgres";
@@ -7,8 +7,7 @@ import { decryptValue, encryptValue } from "@k2b/cloud/services/settings/crypto"
 import { parseNetworkAllowlistEnv } from "@k2b/cloud/shared";
 import { err, fail, ok, type Result } from "@k2b/stdlib";
 import type { Worker } from "@k2b/sync";
-import { sql } from "bun";
-import { appEnv } from "../env";
+import { app } from "../config";
 import { exportNotebookZip, type NotebookExport } from "./export";
 import { notebookServiceMessages } from "./messages";
 import { presignSnapshotObject, uploadSnapshotObjects } from "./snapshot-http";
@@ -157,11 +156,14 @@ const decryptString = async (encrypted: string): Promise<string> => {
 const S3_PROVIDER_HINT =
   "Provider returned no detailed error message. Check that the endpoint includes the storage location, the region matches it, the bucket exists, and the access key can write objects.";
 
+// Plain text for logs and error messages, never markup. Script and style bodies are noise in a
+// provider page; end tags may carry spaces or attributes. One tag pass can join two halves into a
+// new tag, so every `<` left after it goes too.
 const stripHtml = (value: string): string =>
   value
-    .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, " ")
-    .replace(/<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>/gi, " ")
-    .replace(/<[^>]+>/g, " ")
+    .replace(/<(script|style)\b[\s\S]*?(?:<\/\1\b[^>]*>|$)/gi, " ")
+    .replace(/<[^<>]*>/g, " ")
+    .replace(/</g, " ")
     .replace(/\s+/g, " ")
     .trim();
 
@@ -292,8 +294,8 @@ const validateResolvedSnapshotConfig = (config: ResolvedSnapshotUpdate): Result<
   return validateSnapshotEndpoint(config.endpoint, config.region);
 };
 
-export const snapshotAllowlist = () =>
-  parseNetworkAllowlistEnv("NOTEBOOKS_SNAPSHOT_ALLOWED_TARGETS", appEnv.NOTEBOOKS_SNAPSHOT_ALLOWED_TARGETS);
+export const snapshotAllowlist = async () =>
+  parseNetworkAllowlistEnv("notebooks.snapshot_allowed_targets", await app.settings.get("notebooks.snapshot_allowed_targets"));
 
 export const snapshotTargetBlocked = () => ({
   code: "NOTEBOOK_SNAPSHOT_TARGET_BLOCKED",
@@ -313,7 +315,7 @@ export const checkSnapshotTarget = async (
   } catch {
     return fail(err.badInput("S3 endpoint and region must form a valid storage address."));
   }
-  return (await isNetworkTargetBlocked(target.hostname, snapshotAllowlist(), {
+  return (await isNetworkTargetBlocked(target.hostname, await snapshotAllowlist(), {
     ...options,
     port: Number(target.port || (target.protocol === "https:" ? 443 : 80)),
   }))
@@ -420,13 +422,26 @@ export const updateConfig = async (params: {
   return ok(await getConfig({ notebookId: params.notebookId }));
 };
 
-export const updateCron = async (cron: string, options?: { replaceUnreadable?: boolean }): Promise<Result<{ cron: string }>> => {
+export const updateCron = async (
+  cron: string,
+  options?: { replaceUnreadable?: boolean; actorId?: string },
+): Promise<Result<{ cron: string }>> => {
   const normalized = cron.trim();
   if (!normalized) return fail(err.badInput("Snapshot cron must not be empty."));
   const saved = await settingsService.entry.update({
     key: SNAPSHOT_CRON_KEY,
     value: normalized,
     replaceUnreadable: options?.replaceUnreadable,
+    ...(options?.actorId
+      ? {
+          audit: {
+            action: "settings.update",
+            outcome: "allowed" as const,
+            actor: { userId: options.actorId },
+            target: { type: "setting", id: SNAPSHOT_CRON_KEY },
+          },
+        }
+      : {}),
   });
   if (!saved.ok) return fail(saved.error);
   await snapshotRuntime.reschedule(normalized);
@@ -536,7 +551,7 @@ export const createNotebookBackupManifest = (params: {
 
 export const defaultS3Uploader: NotebookBackupUploader = async (config, objects) => {
   try {
-    return await uploadSnapshotObjects(config, objects, { allowlist: snapshotAllowlist() });
+    return await uploadSnapshotObjects(config, objects, { allowlist: await snapshotAllowlist() });
   } catch (error) {
     if (error instanceof NetworkTargetBlockedError) throw error;
     throw new Error(

@@ -10,7 +10,7 @@
   },
   "scripts": {
     "typecheck": "tsc --checkers 2 -p tsconfig.json --noEmit --pretty false",
-    "test": "bun test"
+    "test": "bun test --isolate"
   },
   "dependencies": {
     "@scalar/hono-api-reference": "0.12.6",

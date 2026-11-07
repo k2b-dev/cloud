@@ -27,20 +27,23 @@ import { createComponent, render } from "solid-js/web";
 import { DatePicker, DateRangePicker } from ${JSON.stringify(resolve(ui, "dist/browser/index.js"))};
 
 const berlin = { timeZone: "Europe/Berlin", locale: "en" };
+// The calendar is shared by every picker; the plain trigger opens it the same way on every viewport.
+const plain = "plain";
 const [sentConfig, setSentConfig] = createSignal({ timeZone: "America/New_York", locale: "en" });
 window.setSentDateConfig = setSentConfig;
 render(
   () => [
-    createComponent(DatePicker, { label: "Due", value: null, dateConfig: berlin }),
-    createComponent(DatePicker, { label: "Picked", value: "2026-10-09", dateConfig: berlin }),
+    createComponent(DatePicker, { label: "Due", value: null, dateConfig: berlin, appearance: plain }),
+    createComponent(DatePicker, { label: "Picked", value: "2026-10-09", dateConfig: berlin, appearance: plain }),
     createComponent(DatePicker, {
       label: "Sent",
       value: null,
+      appearance: plain,
       get dateConfig() {
         return sentConfig();
       },
     }),
-    createComponent(DateRangePicker, { label: "Window", value: { start: "2026-09-14", end: "2026-09-18" }, dateConfig: berlin }),
+    createComponent(DateRangePicker, { label: "Window", value: { start: "2026-09-14", end: "2026-09-18" }, dateConfig: berlin, appearance: plain }),
   ],
   document.getElementById("app"),
 );

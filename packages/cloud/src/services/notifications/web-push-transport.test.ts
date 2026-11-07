@@ -1,6 +1,6 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, spyOn, test } from "bun:test";
 import { EventEmitter } from "node:events";
-import type { ClientRequest, IncomingMessage } from "node:http";
+import type { ClientRequest, IncomingMessage, ServerResponse } from "node:http";
 import type { RequestOptions } from "node:https";
 import type { RequestDetails } from "web-push";
 import { networkTransportFixture } from "../../../../../scripts/fixtures/network-transport";
@@ -144,32 +144,80 @@ for (const mode of ["deadline", "caller"] as const)
 
 for (const mode of ["deadline", "caller"] as const)
   test(`Web Push ${mode} closes a slowly streaming provider response`, async () => {
+    const provider = Promise.withResolvers<ServerResponse>();
+    const firstChunk = Promise.withResolvers<void>();
+    const secondChunk = Promise.withResolvers<void>();
+    let chunks = 0;
     const fixture = await networkTransportFixture((_req, res) => {
+      provider.resolve(res);
       res.writeHead(201);
       res.write("x");
-      const timer = setInterval(() => res.write("x"), 5);
-      res.once("close", () => clearInterval(timer));
     });
     const caller = new AbortController();
+    const timeout = mode === "deadline" ? 80 : 15_000;
+    const nativeClearTimeout = globalThis.clearTimeout;
+    // Control only the transport's first deadline. Global fake timers also
+    // freeze Bun's HTTP progress and the test runner's own failure deadline.
+    const scheduled = spyOn(globalThis, "setTimeout");
+    const cleared = spyOn(globalThis, "clearTimeout");
     try {
       const pending = sendPinnedWebPush(
         subscription,
         "payload",
-        { timeout: mode === "deadline" ? 80 : 15_000 },
+        { timeout },
         {
           signal: caller.signal,
           resolve: async () => [{ address: "1.1.1.1", family: 4 }],
           generateRequestDetails: requestDetails,
-          request: fixture.request,
+          request: (options, callback) =>
+            fixture.request(options, (response) => {
+              response.on("data", () => {
+                if (++chunks === 1) firstChunk.resolve();
+                else secondChunk.resolve();
+              });
+              callback(response);
+            }),
         },
       );
-      await fixture.firstResponse;
+      const outcome = pending.then(
+        () => undefined,
+        (error: unknown) => error,
+      );
+      const scheduledDeadline = scheduled.mock.results[0];
+      const deadlineCall = scheduled.mock.calls[0];
+      if (scheduledDeadline?.type !== "return" || !deadlineCall) throw new Error("Missing transport deadline");
+      const deadline = scheduledDeadline.value;
+      const [expire, delay] = deadlineCall;
+      expect(delay).toBe(timeout);
+      // Cancel before yielding to I/O, then invoke the original callback below.
+      // Bypass the spy so later transport cancellation remains observable.
+      nativeClearTimeout(deadline);
+      const readChunk = (chunk: Promise<void>) =>
+        Promise.race([
+          chunk,
+          outcome.then((error) => {
+            throw error ?? new Error("Transport finished before the response chunk");
+          }),
+        ]);
+      await readChunk(firstChunk.promise);
+      (await provider.promise).write("y");
+      await readChunk(secondChunk.promise);
+      // Both real chunks must leave the original total deadline armed.
+      expect(deadline).toBeDefined();
+      expect(cleared.mock.calls.some(([timer]) => timer === deadline)).toBe(false);
       if (mode === "caller") caller.abort(new Error("cancelled"));
-      await expect(pending).rejects.toThrow(mode === "deadline" ? "timed out" : "cancelled");
+      else expire();
       expect(fixture.requests[0]!.destroyed).toBe(true);
+      const error = await outcome;
+      expect(error).toBeInstanceOf(Error);
+      if (!(error instanceof Error)) throw new Error("Transport unexpectedly succeeded");
+      expect(error.message).toContain(mode === "deadline" ? "timed out" : "cancelled");
       await fixture.disconnected();
       expect(fixture.responses[0]!.destroyed).toBe(true);
     } finally {
+      caller.abort();
+      scheduled.mockRestore();
+      cleared.mockRestore();
       await fixture.close();
     }
   });

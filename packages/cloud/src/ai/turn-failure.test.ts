@@ -1,13 +1,14 @@
 import { expect, test } from "bun:test";
-import { memoryStore, nessi, type Provider } from "@k2b/nessi";
-import { openAICompatible } from "@k2b/nessi/ai";
+import { defineTool, memoryStore, nessi, type Provider } from "@k2b/nessi";
+import { complete, openAICompatible } from "@k2b/nessi/ai";
+import { z } from "zod";
 import { aiTurnErrorCanContinue, aiTurnErrorText } from "./chat/turn-error";
 import { AiBackgroundAdmissionError, AiBackgroundCostError } from "./inference-calls";
-import { completeThroughStream } from "./provider";
 import { AiQuotaError } from "./quotas";
 import {
   AiTurnFailure,
   type AiTurnFailureReason,
+  aiIssueDiagnostic,
   aiTurnErrorFromProviderIssue,
   aiTurnReasonFromThrown,
   rememberProviderErrors,
@@ -23,9 +24,9 @@ test("a thrown error names the reason a person can act on, not its text", () => 
     error: { code: "quota_exhausted" },
   });
   // Settings that deny the model or offer no usable one point to another model or the administrator, never to Continue.
-  const denied = Object.assign(new Error("denied"), { aiError: { code: "model_access_denied", message: "denied" } });
+  const denied = Object.assign(new Error("denied"), { aiError: { code: "model_policy_mismatch", message: "denied" } });
   expect(aiTurnReasonFromThrown(denied)).toEqual({ error: { code: "not_allowed" } });
-  const missing = Object.assign(new Error("No API key."), { aiError: { code: "missing_provider_credential", message: "No API key." } });
+  const missing = Object.assign(new Error("No model."), { aiError: { code: "ai_no_model", message: "No model." } });
   expect(aiTurnReasonFromThrown(missing)).toEqual({ error: { code: "not_allowed" } });
   // A background budget stop keeps Cloud's own explanation for task runs, as a blocked mandate does.
   const stopped = new AiBackgroundCostError();
@@ -51,9 +52,6 @@ const throwing = (error: unknown): Provider => ({
   family: "openai-compatible",
   model: "fixture",
   capabilities: { streaming: true, tools: true, images: false, thinking: false, usage: true },
-  complete: async () => {
-    throw error;
-  },
   async *stream() {
     throw error;
   },
@@ -70,13 +68,13 @@ test("an error a model call throws is remembered by its reason and still ends th
     if (reason) reasons.push(reason);
   };
   const quota = rememberProviderErrors(throwing(new AiQuotaError("quota_exhausted", "Chat usage limit reached.")), remember);
-  await expect(quota.complete({ messages: [] })).rejects.toThrow("Chat usage limit reached.");
+  await expect(complete(quota, { messages: [] })).rejects.toThrow("Chat usage limit reached.");
   const reset = rememberProviderErrors(throwing(new Error("socket hang up")), remember);
   await expect(drain(reset.stream({ messages: [] }))).rejects.toThrow("socket hang up");
   // A stop is not a failure.
   const stopped = new AbortController();
   stopped.abort();
-  await expect(reset.complete({ messages: [], signal: stopped.signal })).rejects.toThrow();
+  await expect(complete(reset, { messages: [], signal: stopped.signal })).rejects.toThrow();
   expect(reasons).toEqual([{ error: { code: "quota_exhausted" } }, { error: { code: "model_unavailable" } }]);
 });
 
@@ -101,21 +99,17 @@ test.each(["first_byte", "idle"] as const)(
     try {
       const reasons: (AiTurnFailureReason | null)[] = [];
       const provider = rememberProviderErrors(
-        completeThroughStream(
-          openAICompatible({
-            name: "stalled",
-            model: "mock",
-            baseURL: `http://localhost:${server.port}/v1`,
-            timeouts: { firstByteMs: 200, idleMs: 200 },
-          }),
-        ),
+        openAICompatible({
+          name: "stalled",
+          model: "mock",
+          baseURL: `http://localhost:${server.port}/v1`,
+          timeouts: { firstByteMs: 200, idleMs: 200 },
+        }),
         (reason) => reasons.push(reason),
       );
       const startedAt = Date.now();
-      // nessi reports an idle stall after streamed text as an unexpected end of the stream, not as a timeout.
-      await expect(provider.complete({ messages: [] })).rejects.toThrow(
-        stall === "first_byte" ? /first byte timeout/i : /ended unexpectedly/i,
-      );
+      // Both stalls surface as nessi timeouts (an idle stall after streamed text too, since nessi 0.19.0).
+      await expect(complete(provider, { messages: [] })).rejects.toThrow(stall === "first_byte" ? /first byte timeout/i : /idle timeout/i);
       expect(Date.now() - startedAt).toBeLessThan(3_000);
       expect(reasons).toEqual([null, { error: { code: "model_unavailable" } }]);
     } finally {
@@ -154,19 +148,17 @@ test("a slow model that keeps making progress through Cloud's provider completes
   try {
     const reasons: (AiTurnFailureReason | null)[] = [];
     const provider = rememberProviderErrors(
-      completeThroughStream(
-        openAICompatible({
-          name: "progressing",
-          model: "mock",
-          baseURL: `http://localhost:${server.port}/v1`,
-          // Chunks arrive every 100 ms, well inside each timeout; the whole answer takes longer than both together.
-          timeouts: { firstByteMs: 400, idleMs: 400 },
-        }),
-      ),
+      openAICompatible({
+        name: "progressing",
+        model: "mock",
+        baseURL: `http://localhost:${server.port}/v1`,
+        // Chunks arrive every 100 ms, well inside each timeout; the whole answer takes longer than both together.
+        timeouts: { firstByteMs: 400, idleMs: 400 },
+      }),
       (reason) => reasons.push(reason),
     );
     const startedAt = Date.now();
-    const result = await provider.complete({ messages: [] });
+    const result = await complete(provider, { messages: [] });
     expect(result.message.content).toEqual([{ type: "text", text: chunks.join("") }]);
     expect(result.finishReason).toBe("stop");
     expect(result.usage).toMatchObject({ input: 3, output: 10 });
@@ -218,12 +210,11 @@ test("a provider-stopped answer keeps its reason through nessi's loop-only issue
     async *stream() {
       yield { type: "usage" as const, finishReason: "error" as const, usage: { input: 8, output: 2, total: 10 } };
     },
-    complete: async () => ({ message: { role: "assistant" as const, content: [] }, finishReason: "error" as const }),
   };
   const reasons: (AiTurnFailureReason | null)[] = [];
   const wrapped = rememberProviderErrors(provider, (reason) => reasons.push(reason));
   await drain(wrapped.stream({ messages: [] }));
-  await wrapped.complete({ messages: [] });
+  await complete(wrapped, { messages: [] });
   expect(reasons).toEqual([null, { error: { code: "provider_stopped" } }, null, { error: { code: "provider_stopped" } }]);
 });
 
@@ -272,3 +263,42 @@ test("an unanswered failed step explains the failure in EN and DE and offers Con
     "Ein Schritt ist fehlgeschlagen, und das Modell hat danach nicht geantwortet. Die bisherigen Ergebnisse bleiben erhalten. Mit einer neuen Nachricht geht es weiter.",
   );
 });
+
+for (const kind of ["invalid-arguments", "unknown-tool"] as const)
+  test(`loop diagnostics exclude ${kind} content`, async () => {
+    const marker = "FICTIONAL_LOOP_DIAGNOSTIC_CANARY";
+    const provider: Provider = {
+      name: "fixture",
+      family: "openai-compatible",
+      model: "fixture",
+      capabilities: { streaming: true, tools: true, images: false, thinking: false, usage: false },
+      async *stream() {
+        yield {
+          type: "block_end",
+          blockId: "call",
+          index: 0,
+          block: { type: "tool_call", id: "call", name: kind === "unknown-tool" ? marker : "count", args: { count: marker } },
+        };
+        yield { type: "usage", usage: { input: 1, output: 1, total: 2 }, finishReason: "tool_use" };
+      },
+    };
+    const tools = [
+      defineTool({ name: "count", description: "Count fictional entries", inputSchema: z.object({ count: z.number() }) }).server(
+        async ({ count }) => count,
+      ),
+    ];
+    const issues = [];
+    for await (const event of nessi({
+      provider,
+      tools,
+      systemPrompt: "Fictional test",
+      input: "Count",
+      store: memoryStore(),
+      maxTurns: 1,
+    })) {
+      if (event.type === "issue") issues.push(event.issue);
+    }
+    expect(issues.some((issue) => issue.message.includes(marker))).toBe(true);
+    expect(JSON.stringify(issues.map(aiIssueDiagnostic))).not.toContain(marker);
+    expect(issues.map(aiIssueDiagnostic)).toContainEqual({ code: "tool_execution_error", message: "AI tool execution failed." });
+  });

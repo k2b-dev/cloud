@@ -41,6 +41,8 @@ const MAILBOX_ID = "Box001";
 const now = "2026-10-03T10:00:00.000Z";
 
 const data: MailboxPageData = {
+  viewPreference: { large: "auto", phone: "compact" },
+  doneTodayCounts: { doneToday: 0, doneByAutomation: 0 },
   receivingAddress: null,
   mailbox: {
     id: MAILBOX_ID,
@@ -68,6 +70,9 @@ const data: MailboxPageData = {
   draftsMode: false,
   draftsPage: null,
   draftsError: null,
+  eventsMode: false,
+  eventsPage: null,
+  eventsError: null,
   activeView: "needs_action",
   savedViewId: null,
   savedViews: [],
@@ -82,11 +87,14 @@ const data: MailboxPageData = {
   listCursor: null,
   nextListCursor: null,
   listError: null,
+  hiddenDone: null,
+  assignedGroups: null,
   listTitle: "Needs action",
   conversationRowState: null,
   detailMessages: [],
   conversationSummary: null,
   conversationDrafts: [],
+  automationTrace: [],
   detailError: null,
   collaborationState: null,
   localTags: [],
@@ -222,6 +230,7 @@ describe("Mail workspace hint for folders whose mail stays inside them", () => {
           currentUserId: "user-1",
           currentUserEmail: "reader@example.test",
           contactDirectory: DEFAULT_MAIL_CONTACT_DIRECTORY,
+          cloudUrl: "https://cloud.example",
           dateConfig: { timeZone: "Europe/Berlin", locale: "en" },
           initialPreferences: readMailWorkspacePreferences(""),
           initialUserPreferences: readMailUserPreferencesFromCookieHeader(cookie, MAILBOX_ID),

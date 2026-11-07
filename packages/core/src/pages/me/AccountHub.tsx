@@ -91,9 +91,7 @@ export default function AccountHub(props: {
               href={section.href}
               aria-current={active ? "page" : undefined}
               class={`flex min-h-9 shrink-0 items-center gap-2 rounded-[var(--ui-radius-control)] px-3 text-xs font-medium no-underline transition-colors ${
-                active
-                  ? "bg-[var(--ui-app-selected-nav)] text-[var(--ui-app-accent-text)]"
-                  : "text-secondary hover:bg-[var(--ui-hover)] hover:text-primary"
+                active ? "" : "text-secondary hover:bg-[var(--ui-hover)] hover:text-primary"
               }`}
             >
               <i class={section.icon} aria-hidden="true" />
@@ -161,10 +159,7 @@ export function AccountSubnav(props: { active: string; items: { id: string; href
   const locale = useLocale();
   const t = () => accountMessages.resolve([locale()]).t;
   return (
-    <nav
-      class="account-tabs flex max-w-full flex-wrap gap-1 rounded-[var(--ui-radius-surface)] bg-[var(--ui-surface-subtle)] p-1"
-      aria-label={t().sectionViews}
-    >
+    <nav class="account-tabs account-tabs--segment flex max-w-full flex-wrap" aria-label={t().sectionViews}>
       {props.items.map((item) => {
         const active = item.id === props.active;
         return (
@@ -172,7 +167,7 @@ export function AccountSubnav(props: { active: string; items: { id: string; href
             href={item.href}
             aria-current={active ? "page" : undefined}
             class={`flex min-h-9 shrink-0 items-center gap-2 rounded-[var(--ui-radius-control)] px-3 text-xs font-medium no-underline transition-colors ${
-              active ? "bg-[var(--ui-surface)] text-primary shadow-[var(--ui-shadow-surface)]" : "text-secondary hover:text-primary"
+              active ? "" : "text-secondary hover:text-primary"
             }`}
           >
             <i class={item.icon} />

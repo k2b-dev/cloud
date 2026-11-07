@@ -8,7 +8,7 @@
  * proxy as the client. Hops to the left of that address came from the client
  * itself and are dropped, so a client never chooses its own address.
  */
-import { BlockList, isIP } from "node:net";
+import { type BlockList, isIP } from "node:net";
 
 export type ClientAddress = {
   /** The resolved client, also forwarded as `X-Real-IP`. */
@@ -17,34 +17,7 @@ export type ClientAddress = {
   forwardedFor: string;
 };
 
-/** Loopback and private networks; covers a reverse proxy on a Docker or host-local network. */
-export const DEFAULT_TRUSTED_PROXIES = ["127.0.0.0/8", "::1/128", "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "fc00::/7"];
-
-type Range = { address: string; prefix: number; family: "ipv4" | "ipv6" };
-
-/** Parses `address` or `address/prefix`; `null` when malformed. */
-const parseRange = (entry: string): Range | null => {
-  const [address = "", prefix, ...rest] = entry.split("/");
-  if (rest.length > 0 || address.includes("%")) return null;
-  const version = isIP(address);
-  if (version === 0) return null;
-  const max = version === 4 ? 32 : 128;
-  if (prefix !== undefined && !/^\d{1,3}$/.test(prefix)) return null;
-  const bits = prefix === undefined ? max : Number(prefix);
-  if (bits > max) return null;
-  return { address, prefix: bits, family: version === 4 ? "ipv4" : "ipv6" };
-};
-
-/** Builds the trusted-proxy set; throws on a malformed entry so a typo never trusts the wrong peers. */
-export const trustedProxySet = (entries: readonly string[]): BlockList => {
-  const set = new BlockList();
-  for (const entry of entries) {
-    const range = parseRange(entry);
-    if (!range) throw new Error(`GATEWAY_TRUSTED_PROXIES entry "${entry}" is not an IP address or CIDR range`);
-    set.addSubnet(range.address, range.prefix, range.family);
-  }
-  return set;
-};
+export { DEFAULT_TRUSTED_PROXIES, trustedProxySet } from "@k2b/cloud/services/settings/validation";
 
 const IPV4_MAPPED = /^::ffff:([0-9a-f]{1,4}):([0-9a-f]{1,4})$/;
 

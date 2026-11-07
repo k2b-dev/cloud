@@ -27,24 +27,21 @@ const renderView = (overrides: Partial<Parameters<typeof MailRelatedConversation
     }),
   );
 
-describe("Related mail detail section", () => {
-  test("renders a compact accessible empty state", () => {
-    const html = renderView();
-    expect(html).toContain("Related mail");
-    expect(html).toContain("No related mail");
-    expect(html).toContain('data-state="empty"');
-    expect(html).toContain('data-align="center"');
+describe("Related mail rows in the Linked section", () => {
+  test("an empty result adds no row, so the section's other links and count speak for it", () => {
+    expect(renderView()).toBe("");
   });
 
-  test("renders loading and retryable error states", () => {
+  test("loading and a failed load each stay on one quiet line, the failure with a retry", () => {
     const loading = renderView({ loading: true });
     expect(loading).toContain("Finding related mail...");
-    expect(loading).toContain('data-align="center"');
-    const error = renderView({ error: "Mailbox unavailable" });
-    expect(error).toContain("Related mail unavailable");
-    expect(error).toContain("Mailbox unavailable");
-    expect(error).toContain('data-align="center"');
-    expect(error).toContain('class="k2b-button__label">Retry</span>');
+    expect(loading).toContain('data-variant="inline"');
+    const error = renderView({ error: "Mailbox unavailable", unavailableText: "Related mail can't load right now." });
+    expect(error).toContain("Related mail can't load right now.");
+    expect(error).toContain('data-state="error"');
+    expect(error).toContain('data-align="left"');
+    expect(error).toContain("Try again");
+    expect(renderView({ error: "Mailbox unavailable" })).toContain("Mailbox unavailable");
   });
 
   test("links results and explains why each conversation is related", () => {

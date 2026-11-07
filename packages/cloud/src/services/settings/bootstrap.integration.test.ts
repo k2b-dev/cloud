@@ -1,22 +1,25 @@
 import { afterAll, beforeAll, expect, spyOn, test } from "bun:test";
-import { redis, sql } from "bun";
 import { suiteFor } from "../../../../../scripts/fixtures/test-infra";
-import { env } from "../../config/env";
+import { redis, sql } from "../../runtime/clients";
+import { connections } from "../../runtime/connections";
+import { stubConnections } from "../../runtime/connections.test-fixture";
+import { MISSING_SETTING } from "../cache-fill";
+import { requestCacheRedis } from "../request-cache-redis";
 import { encryptValue } from "./crypto";
 import { registerSettings, SETTINGS } from "./defaults";
+import { readEnvSettingsStatus } from "./env-status";
 import * as settings from "./index";
 
 /**
  * Uses an in-process probe key, like `transaction.integration.test.ts`.
- * `gotenberg.url` and `app.url` use the same `envBootstrap` / `envFallback`
- * pair. `loadCache()` bootstraps every env-backed setting, so the suite unsets
+ * `gotenberg.url` and `app.url` both use `envBootstrap`. `loadCache()` bootstraps every env-backed setting, so the suite unsets
  * their variables while it runs and first checks that only the probe would
  * bootstrap; otherwise the test runner's `GOTENBERG_URL` would become a stored
  * `gotenberg.url` row in the shared test database.
  */
 const suite = suiteFor("database", "valkey");
 const key = `test.bootstrap_probe_${crypto.randomUUID().replaceAll("-", "")}`;
-const variables = ["APP_URL", "GOTENBERG_URL"];
+const variables = SETTINGS.flatMap((def) => (def.envVariable ? [def.envVariable] : []));
 let environment: string | undefined = "http://renderer.bootstrap.test:3000";
 registerSettings([
   {
@@ -26,7 +29,10 @@ registerSettings([
     label: "Bootstrap probe",
     description: "Test only.",
     group: "test",
-    envBootstrap: () => environment,
+    envBootstrap: () => {
+      if (environment === "throw") throw new Error("private parser input");
+      return environment;
+    },
     envFallback: () => environment,
   },
 ]);
@@ -60,10 +66,102 @@ suite("environment-backed settings", () => {
     environment = "http://renderer.changed.test:3000";
     await settings.loadCache();
     expect(await settings.get<string>(key)).toBe("http://renderer.admin.test:3000");
+    expect((await readEnvSettingsStatus()).find((entry) => entry.key === key)?.conflict).toBe("differs");
+  });
+
+  test("invalid env bootstrap is ignored with a warning and no stored row", async () => {
+    await settings.remove(key);
+    environment = "not a url";
+    const warn = spyOn(console, "warn");
+    try {
+      for (const invalid of ["not a url", "throw"]) {
+        environment = invalid;
+        await settings.loadCache();
+        expect((await settings.read(key)).stored).toBe("none");
+        expect((await readEnvSettingsStatus()).find((entry) => entry.key === key)?.invalidEnvValue).toBe(true);
+        expect(warn.mock.calls.some((call) => String(call[0]).includes(`ignoring invalid bootstrap value for "${key}"`))).toBe(true);
+      }
+      expect(JSON.stringify(warn.mock.calls)).not.toContain("private parser input");
+    } finally {
+      warn.mockRestore();
+      environment = "http://renderer.environment.test:3000";
+    }
+  });
+
+  test("an explicitly supplied empty migrated list bootstraps once", async () => {
+    const listKey = `${key}_list`;
+    let listValue: string[] | undefined = [];
+    registerSettings([
+      {
+        key: listKey,
+        kind: "string_list",
+        default: ["rsql"],
+        group: "test",
+        description: "Test list bootstrap",
+        envVariable: "TEST_BOOTSTRAP_LIST",
+        envBootstrap: () => listValue,
+      },
+    ]);
+    try {
+      await settings.loadCache();
+      expect(await settings.read(listKey)).toEqual({ stored: "readable", value: [] });
+      await settings.set(listKey, ["saved"]);
+      await settings.loadCache();
+      expect(await settings.get<string[]>(listKey)).toEqual(["saved"]);
+    } finally {
+      listValue = undefined;
+      await settings.remove(listKey);
+    }
+  });
+
+  test.each([
+    ["bootstrap", "retry"],
+    ["bootstrap", "restart"],
+    ["normalize", "retry"],
+    ["normalize", "restart"],
+  ] as const)("startup invalidates committed %s changes after a failed cache command and %s", async (source, recovery) => {
+    const retryKey = `${key}_cache_${source}_${recovery}`;
+    const cacheKey = `settings:${retryKey}`;
+    const marker = "settings-cache:format";
+    const previousMarker = await redis.get(marker);
+    let value: number | undefined = source === "bootstrap" ? 42 : undefined;
+    registerSettings([
+      { key: retryKey, kind: "number", default: 0, group: "test", description: "Cache recovery probe", envBootstrap: () => value },
+    ]);
+    const client = await requestCacheRedis();
+    const del = client.del.bind(client);
+    let failed = false;
+    const invalidate = spyOn(client, "del").mockImplementation(async (...keys: string[]) => {
+      if (!failed && keys.includes(cacheKey)) {
+        failed = true;
+        const error = new Error("Connection closed");
+        throw recovery === "retry" ? Object.assign(error, { code: "ERR_REDIS_CONNECTION_CLOSED" }) : error;
+      }
+      return del(...keys);
+    });
+    try {
+      // Another application already completed this format's sweep.
+      await redis.set(marker, "encrypted-v2");
+      if (source === "normalize") {
+        await sql`INSERT INTO settings.entries (key, value) VALUES (${retryKey}, ${await encryptValue("42")})`;
+      }
+      await redis.set(cacheKey, source === "normalize" ? JSON.stringify("42") : MISSING_SETTING);
+      if (recovery === "restart") await expect(settings.loadCache()).rejects.toThrow("Connection closed");
+      await settings.loadCache();
+      expect(failed).toBe(true);
+      expect(await settings.read(retryKey)).toMatchObject({ stored: "readable", value: 42 });
+      expect(await settings.get<number>(retryKey)).toBe(42);
+    } finally {
+      invalidate.mockRestore();
+      value = undefined;
+      await settings.remove(retryKey);
+      if (previousMarker === null) await redis.del(marker);
+      else await redis.set(marker, previousMarker);
+    }
   });
 
   test("startup never overwrites a stored row that this APP_SECRET cannot decrypt", async () => {
-    const original = Object.getOwnPropertyDescriptor(env, "APP_SECRET")!;
+    const original = connections();
     const adminValue = "http://renderer.saved-under-a.test:3000";
     const ciphertext = await encryptValue(adminValue);
     await sql`
@@ -74,7 +172,7 @@ suite("environment-backed settings", () => {
     await redis.del(`settings:${key}`);
     environment = "http://renderer.environment-of-b.test:3000";
     const warn = spyOn(console, "warn");
-    Object.defineProperty(env, "APP_SECRET", { value: "a-different-secret-b", configurable: true });
+    const secretStub = stubConnections({ ...original, appSecret: { current: "a-different-secret-b" } });
     try {
       await settings.loadCache();
       const [row] = await sql<{ value: string; updated_at: Date }[]>`SELECT value, updated_at FROM settings.entries WHERE key = ${key}`;
@@ -92,7 +190,7 @@ suite("environment-backed settings", () => {
       }
     } finally {
       warn.mockRestore();
-      Object.defineProperty(env, "APP_SECRET", original);
+      secretStub.mockRestore();
       await redis.del(`settings:${key}`);
     }
     // The application with the original key still reads the saved value.

@@ -135,7 +135,6 @@ export const describeResponseEnd = (entry: Pick<AiStoredMessage, "loopDoneReason
     aborted: t.infoEndStopped,
     error: t.infoEndFailed,
     max_turns: t.infoEndStepLimit,
-    no_credits: t.infoEndUsageLimit,
     context_overflow: t.infoEndContextFull,
   };
   const message: Record<string, string | null> = {
@@ -259,7 +258,7 @@ export const textAttachmentSummariesFromMessage = (message: Message) => {
 export type AiLatestUsageSnapshot = {
   request: Usage;
   loop: Usage;
-  modelProfileId: string | null;
+  modelId: string | null;
 };
 
 export const latestUsageSnapshot = (messages: AiStoredMessage[]): AiLatestUsageSnapshot | null => {
@@ -287,7 +286,7 @@ export const latestUsageSnapshot = (messages: AiStoredMessage[]): AiLatestUsageS
                   { input: 0, output: 0, total: 0 },
                 )
             : request),
-        modelProfileId: entry?.modelProfileId ?? null,
+        modelId: entry?.modelId ?? null,
       };
     }
     // A provider without usage must not inherit a previous request's numbers.
@@ -327,6 +326,7 @@ export const displayToolName = (name: string, locale: string) => {
 
 const BUILT_IN_TOOL_ICONS = new Map<string, string>([
   ["card", "ti ti-layout-cards"],
+  ["map", "ti ti-map-search"],
   ["cloud_card", "ti ti-layout-cards"],
   ["chart", "ti ti-chart-bar"],
   ["survey", "ti ti-forms"],

@@ -5,6 +5,7 @@ import type { PublicField as Field, PublicGridRecord as GridRecord } from "../..
 import type { AggregationSpec, ColumnSpec, GroupBySpec, RecordQuery, TableAuditPolicy } from "../../../contracts";
 import type { PublicDocumentTemplateSummary } from "../documents/public-document-types";
 import RecordDetailPanel from "../records/RecordDetailPanel";
+import type { RecordAccess } from "../records/record-access";
 import GroupDetailPanel from "../table/GroupDetailPanel";
 import type { GroupBucket } from "../table/GroupedTable";
 import type {
@@ -14,7 +15,6 @@ import type {
 import { recordsViewMessages } from "./messages";
 
 type Props = {
-  cloudUrl: string;
   baseId: string;
   tableId: string;
   tableName: string;
@@ -46,6 +46,9 @@ type Props = {
   onOpenRecord: (recordId: string) => void;
   onCloseGroup: () => void;
   onOpenGroupedRecord: (record: GridRecord) => void;
+  /** Who has access to the base, read-only. */
+  access?: RecordAccess;
+  currentUserId?: string;
 };
 
 export default function RecordsDetailSurface(props: Props) {
@@ -80,7 +83,6 @@ export default function RecordsDetailSurface(props: Props) {
         >
           <Show when={props.record()} fallback={<Placeholder state="loading" variant="panel" title={t().loadingRecord} class="m-3" />}>
             <RecordDetailPanel
-              cloudUrl={props.cloudUrl}
               baseId={props.baseId}
               tableId={props.tableId}
               tableName={props.tableName}
@@ -101,6 +103,8 @@ export default function RecordsDetailSurface(props: Props) {
               recordActionLaunchers={props.recordActionLaunchers}
               onOpenRecord={props.onOpenRecord}
               dateConfig={props.dateConfig}
+              access={props.access}
+              currentUserId={props.currentUserId}
             />
           </Show>
         </Show>

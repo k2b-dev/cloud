@@ -32,3 +32,22 @@ test("server catalog readers hide declared apps without usable authority and pre
     for (const spy of spies) spy.mockRestore();
   }
 });
+
+test("single-app person catalog hides app-only queries while preserving localized reader presentation", async () => {
+  const reader = recentTestApp.manifest.queries[0]!;
+  const app = { ...recentTestRegistryApp, access: undefined };
+  const spies = [
+    spyOn(registry, "getApp").mockResolvedValue(app),
+    spyOn(registry, "getCapability").mockResolvedValue({
+      ...recentTestApp,
+      manifest: { ...recentTestApp.manifest, queries: [reader, { ...reader, localId: "item.readable", appOnly: true }] },
+      presentation: { baseLocale: "en", translations: { de: { queries: { [reader.localId]: { title: "Ressource lesen" } } } } },
+    }),
+  ];
+  try {
+    const result = await getCapabilityCatalogApp(app.id, "de");
+    expect(result).toMatchObject({ ok: true, data: { manifest: { queries: [{ localId: reader.localId, title: "Ressource lesen" }] } } });
+  } finally {
+    for (const spy of spies) spy.mockRestore();
+  }
+});

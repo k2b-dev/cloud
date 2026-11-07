@@ -60,7 +60,7 @@ const fixture = async (scenario: string) => {
       name: "ipa-backfill-sql-fixture",
       setup(build) {
         build.onLoad({ filter: /ipa-backfill[.]ts$/ }, async ({ path }) => ({
-          contents: (await Bun.file(path).text()).replace('import { sql } from "bun";', 'const sql = globalThis.ipaBackfillSql;'),
+          contents: (await Bun.file(path).text()).replace('import { sql } from "../../runtime/clients";', 'const sql = globalThis.ipaBackfillSql;'),
           loader: "ts",
         }));
       },

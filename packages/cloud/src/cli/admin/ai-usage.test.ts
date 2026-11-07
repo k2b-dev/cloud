@@ -60,7 +60,7 @@ describe("AI usage CLI", () => {
     );
     const q = new URL(paths[0]!, "http://test").searchParams;
     expect(q.get("userId")).toBe("11111111-1111-4111-8111-111111111111");
-    expect(q.get("modelProfileId")).toBe("fast");
+    expect(q.get("modelId")).toBe("fast");
     expect(q.get("providerModel")).toBe("provider/fast");
     expect(q.get("page")).toBe("2");
     expect(q.get("sort")).toBe("negativeRate");

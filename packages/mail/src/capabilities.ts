@@ -803,6 +803,17 @@ const searchMailboxes = async <T extends { id: string }, R>(
   return mailboxList.map((mailbox, index) => ({ mailbox, page: pages[index] ?? search.searchExceededLimit() }));
 };
 
+/** Bounds the mailboxes one search reaches, as `listMailboxes` does. */
+const MAILBOX_LIST_LIMIT = 200;
+const LISTED_ADDRESSES = 3;
+
+/** "Anna Berger, ben@example.com +2": names where known, and how many more there are. */
+const addressList = (addresses: ReadonlyArray<{ name: string | null; address: string }>, t: ReturnType<typeof mailCapabilityMessages>) => {
+  const listed = addresses.slice(0, LISTED_ADDRESSES).map((address) => address.name?.trim() || address.address);
+  const more = addresses.length - listed.length;
+  return truncateText(more > 0 ? `${listed.join(", ")} ${t.moreAddresses({ count: more })}` : listed.join(", "), 1000).text;
+};
+
 const runSearch = async (
   input: UniversalSearchInput,
   capabilityContext: CapabilityExecutionContext,
@@ -811,7 +822,8 @@ const runSearch = async (
   if (!input.scope && !input.query.trim()) return ok({ data: [] });
   const context = requestContext(capabilityContext);
   const mailboxResult = await (async () => {
-    if (!input.scope) return mailboxes.listMailboxes(context, 20);
+    // Every mailbox the person may read, most recently active first; the search deadline bounds the work.
+    if (!input.scope) return mailboxes.listMailboxes(context, MAILBOX_LIST_LIMIT);
     if (input.scope.type !== "mail.mailbox") return fail(err.badInput("Unsupported mail search context"));
     const scope = await resolveMailboxScope(input.scope.id);
     if (!scope.ok) return scope;
@@ -826,9 +838,12 @@ const runSearch = async (
       mailboxId: mailbox.id,
       request: {
         expression: { type: "text", field: "any", query: input.query, match: "words" },
-        sort: "relevance",
-        limit: Math.min(input.limit, 10),
+        // Every matching mail, newest first: best match ranks only a mailbox's newest matches, and a person picking
+        // a mail tells similar ones apart by sender and date. One row per mail keeps pages in date order.
+        sort: "newest",
+        limit: input.limit,
       },
+      groupByConversation: false,
       timeoutMs,
     }),
   );
@@ -839,14 +854,15 @@ const runSearch = async (
       searchLog.warn("Mail search skipped a mailbox", { mailboxId: mailbox.id, code: page.error.code, reason: page.error.message });
   }
   const resultItems = pages
-    .flatMap(({ mailbox, page }) => page.items.map((message, mailboxRank) => ({ mailbox, message, mailboxRank })))
-    .sort((left, right) => left.mailboxRank - right.mailboxRank || right.message.internalDate.localeCompare(left.message.internalDate))
+    .flatMap(({ mailbox, page }) => page.items.map((message) => ({ mailbox, message })))
+    .sort((left, right) => right.message.internalDate.localeCompare(left.message.internalDate))
     .slice(0, input.limit);
+  const severalMailboxes = new Set(resultItems.map(({ mailbox }) => mailbox.id)).size > 1;
   // No result while a mailbox was skipped is not an answer: the skipped mailbox may hold the match,
   // and universal search shows only a failure, not a result's summary.
   const firstSkipped = skipped[0]?.page;
   if (resultItems.length === 0 && firstSkipped && !firstSkipped.ok) return firstSkipped;
-  const [mailboxIds, messageIds, conversationIds, attachmentIds] = await Promise.all([
+  const [mailboxIds, messageIds, attachmentIds] = await Promise.all([
     publicResources.publicIds(
       "mailboxes",
       resultItems.map(({ mailbox }) => mailbox.id),
@@ -854,10 +870,6 @@ const runSearch = async (
     publicResources.publicIds(
       "messages",
       resultItems.flatMap(({ message }) => [message.id, ...(message.attachmentMatch ? [message.attachmentMatch.messageId] : [])]),
-    ),
-    publicResources.publicIds(
-      "conversations",
-      resultItems.map(({ message }) => message.conversationId),
     ),
     publicResources.publicIds(
       "attachments",
@@ -868,28 +880,31 @@ const runSearch = async (
     const mailboxId = requirePublicId(mailboxIds, mailbox.id);
     const messageId = requirePublicId(messageIds, message.id);
     const attachmentMatch = message.attachmentMatch;
+    const sender = addressList(message.from, t);
+    const recipients = addressList(message.to, t);
     return {
       ref: { type: "mail.message", id: messageId },
       title: message.subject || t.noSubject,
-      preview: truncateText(
-        attachmentMatch?.snippet ?? message.snippet ?? message.from.map((address) => address.name || address.address).join(", "),
-        320,
-      ).text,
+      ...(sender || severalMailboxes
+        ? { context: truncateText([sender, severalMailboxes ? mailbox.name : ""].filter(Boolean).join(" · "), 200).text }
+        : {}),
+      preview: truncateText(attachmentMatch?.snippet ?? message.snippet ?? sender, 320).text,
       icon: "ti ti-mail",
       priority: 8,
       metadata: [
+        ...(sender ? [{ label: t.sender, value: sender }] : []),
+        ...(recipients ? [{ label: t.recipients, value: recipients }] : []),
+        { label: t.date, value: message.internalDate, format: "date-time" as const },
+        ...(message.folderPath ? [{ label: t.folder, value: truncateText(message.folderPath, 1000).text }] : []),
         { label: t.mailbox, value: mailbox.name },
-        { label: t.date, value: message.internalDate },
+        ...(message.attachmentCount > 0 ? [{ label: t.attachments, value: String(message.attachmentCount) }] : []),
         ...(attachmentMatch ? [{ label: t.matchedAttachment, value: attachmentMatch.filename?.trim() || t.untitledAttachment }] : []),
       ],
       links: [
+        // Each row is one mail, so it opens that mail, not its conversation's latest one.
         {
           rel: "open",
-          href: attachmentMatch
-            ? messageHref(mailboxId, requirePublicId(messageIds, attachmentMatch.messageId))
-            : message.conversationId
-              ? conversationHref(mailboxId, requirePublicId(conversationIds, message.conversationId))
-              : messageHref(mailboxId, messageId),
+          href: messageHref(mailboxId, attachmentMatch ? requirePublicId(messageIds, attachmentMatch.messageId) : messageId),
         },
         ...(attachmentMatch
           ? [
@@ -1168,7 +1183,7 @@ const queryDefinitions = {
   "conversation.list": {
     title: "List conversations",
     description:
-      "Browse compact conversation previews in one known mailbox, optionally by folder, work view, or unread state. Without folderId, every view except mine, send_problems, and kept leaves out conversations kept inside folder_only or hidden folders; pass folderId to list them. The result has enough state to choose a conversation or perform provider mark/move Actions; use conversation.read for collaboration details.",
+      "Browse compact conversation previews in one known mailbox, optionally by folder, work view, or unread state. Like the Mail lists, a list without view or workStatus shows open work only: it leaves out done and snoozed conversations, except in filing folders (Archive, Sent, Trash, Junk, All Mail); pass workStatus done, view done, or includeDone to list them. Without folderId, every view except mine, send_problems, and kept leaves out conversations kept inside folder_only or hidden folders; pass folderId to list them. The result has enough state to choose a conversation or perform provider mark/move Actions; use conversation.read for collaboration details.",
     input: c.ConversationListInputSchema,
     data: c.ConversationListDataSchema,
     openWorld: true,
@@ -1184,6 +1199,7 @@ const queryDefinitions = {
         status: input.workStatus,
         view: input.view,
         unread: input.unread,
+        includeDone: input.includeDone,
         cursor: input.cursor,
         limit: input.limit,
       });
@@ -2050,7 +2066,11 @@ const queryDefinitions = {
       });
       if (!serviceResult.ok) return serviceResult;
       const items = await activityPublic.projectActivityItems(serviceResult.data.items);
-      const result = mapPage(ok({ ...serviceResult.data, items }), (item) => item);
+      // The audit timeline keeps its contract; the feed's subject and assignee names belong to the Mail UI.
+      const result = mapPage(
+        ok({ ...serviceResult.data, items }),
+        ({ conversationSubject: _subject, assignees: _assignees, ...item }) => item,
+      );
       if (!result.ok) return result;
       const refs = input.conversationId
         ? [{ type: "mail.conversation" as const, id: input.conversationId }]
@@ -2127,9 +2147,9 @@ const queryDefinitions = {
     },
   },
   "delivery.list": {
-    title: "List scheduled deliveries",
+    title: "List waiting deliveries",
     description:
-      "List deliveries still in an undo window or scheduled for later in one known mailbox. Get mailboxId from mailbox.list; use returned mail.delivery refs with delivery.read or delivery.cancel.",
+      "List deliveries waiting in line after Undo and dispatch grace, or scheduled for later, in one known mailbox. Get mailboxId from mailbox.list; use returned mail.delivery refs with delivery.read or delivery.cancel.",
     input: c.DeliveryListInputSchema,
     data: c.DeliveryListDataSchema,
     openWorld: false,
@@ -2325,6 +2345,24 @@ const requireConversationForReview = async (
   });
 };
 
+const requireKeepReleaseForReview = async (mailboxId: string, conversationId: string, context: CapabilityExecutionContext) => {
+  if (!(await conversationKeeps.canLiftConversationKeeps(requestContext(context))))
+    return fail(err.forbidden(conversationKeeps.LIFT_KEEP_FORBIDDEN));
+  const scope = await resolveConversationScope(mailboxId, conversationId);
+  if (!scope.ok) return scope;
+  const row = await conversationKeeps.getConversationKeepReleaseSubject(
+    requestContext(context),
+    scope.data.mailbox.id,
+    scope.data.conversationId,
+  );
+  if (!row.ok) return row;
+  return ok({
+    subject: reviewSubject(row.data.subject, context),
+    mailboxInternalId: scope.data.mailbox.id,
+    conversationInternalId: scope.data.conversationId,
+  });
+};
+
 const requireCommentForReview = async (
   input: { mailboxId: string; conversationId: string; commentId: string; expectedRevision: number },
   context: CapabilityExecutionContext,
@@ -2353,8 +2391,13 @@ const requireCommentForReview = async (
 const draftSlot = (id: string | undefined, subject: string, locale?: string) =>
   reviewObject(subject || mailCapabilityMessages(locale).noSubject, id ? draftRef(id) : undefined);
 const conversationSlot = (id: string, subject: string) => reviewObject(subject, conversationRef(id));
-const assignmentPeople = (ids: string[], known: { id: string; displayName: string }[]) =>
-  reviewPeople(ids.map((userId) => ({ userId, name: reviewLine(known.find((p) => p.id === userId)?.displayName ?? userId) })));
+const assignmentPeople = (ids: string[], known: { id: string; displayName: string; type?: "user" | "service_account" }[]) =>
+  reviewPeople(
+    ids.map((id) => {
+      const principal = known.find((p) => p.id === id);
+      return { ...(principal?.type === "service_account" ? {} : { userId: id }), name: reviewLine(principal?.displayName ?? id) };
+    }),
+  );
 const tagSlot = (id: string | undefined, name: string) =>
   reviewObject(tagLabel(name), id ? { type: "mail.tag", id } : undefined, "ti ti-tag");
 const fileSlot = (name: string) => reviewObject(name, undefined, "ti ti-paperclip");
@@ -2380,7 +2423,11 @@ const draftAudienceOptions = async (
 const assignmentOptions = (change: reviewReaders.AssignmentReviewChange, locale?: string): MailReviewOptions => {
   const copy = mailReviewCopy(locale);
   return {
-    ...(change.addedTotal ? { ask: "involves_people" as const } : change.removedTotal ? { ask: "changes_access" as const } : {}),
+    ...(change.addedTotal
+      ? { ask: "involves_people" as const }
+      : change.removedTotal || change.grantedTotal
+        ? { ask: "changes_access" as const }
+        : {}),
     consequences: [
       ...(change.addedTotal
         ? [
@@ -2394,6 +2441,9 @@ const assignmentOptions = (change: reviewReaders.AssignmentReviewChange, locale?
               },
             },
           ]
+        : []),
+      ...(change.grantedTotal
+        ? [{ text: copy.grantedAccess, slots: { people: { ...reviewPeople(change.granted), total: change.grantedTotal } } }]
         : []),
       ...(change.removedTotal
         ? [
@@ -3712,43 +3762,50 @@ const actionDefinitions = {
   },
   "conversation.keep.release": {
     title: "Stop keeping conversation",
-    description: "Allow deletion again and hide Cloud copies already deleted on the mail server. Requires mailbox admin access.",
-    input: c.ConversationKeepInputSchema,
+    description: "Allow deletion again and hide Cloud copies already deleted on the mail server. Requires a Cloud administrator.",
+    input: c.ConversationKeepReleaseInputSchema,
     data: c.ConversationKeepReleaseDataSchema,
     destructive: true,
     openWorld: false,
     idempotency: "required",
     policy: { ask: "cannot_undo" },
-    review: async (input: z.output<typeof c.ConversationKeepInputSchema>, context: CapabilityExecutionContext) => {
-      const conversation = await requireConversationForReview(input.mailboxId, input.conversationId, context, "admin");
+    review: async (input: z.output<typeof c.ConversationKeepReleaseInputSchema>, context: CapabilityExecutionContext) => {
+      const conversation = await requireKeepReleaseForReview(input.mailboxId, input.conversationId, context);
       if (!conversation.ok) return conversation;
       return ok(
         mailActionReviews["conversation.keep.release"](
           context.locale,
           { conversation: conversationSlot(input.conversationId, conversation.data.subject) },
-          { consequences: [{ text: mailReviewCopy(context.locale).releaseKeep }], links: [openLink(conversation.data.href)] },
+          { consequences: [{ text: mailReviewCopy(context.locale).releaseKeep }] },
         ),
       );
     },
-    run: async (input: z.output<typeof c.ConversationKeepInputSchema>, context: CapabilityExecutionContext) => {
+    run: async (input: z.output<typeof c.ConversationKeepReleaseInputSchema>, context: CapabilityExecutionContext) => {
       const key = requireIdempotencyKey(context, "conversation.keep.release");
       if (!key.ok) return key;
-      const conversation = await requireConversationForReview(input.mailboxId, input.conversationId, context, "admin");
-      if (!conversation.ok) return conversation;
+      const scope = await resolveConversationScope(input.mailboxId, input.conversationId);
+      if (!scope.ok) return scope;
       const result = await conversationKeeps.releaseConversationKeep({
         context: requestContext(context),
-        mailboxId: conversation.data.mailboxInternalId,
-        conversationId: conversation.data.conversationInternalId,
+        mailboxId: scope.data.mailbox.id,
+        conversationId: scope.data.conversationId,
+        reason: input.reason,
       });
+      if (!result.ok) return result;
+      const conversation = await conversationKeeps.getConversationKeepReleaseSubject(
+        requestContext(context),
+        scope.data.mailbox.id,
+        scope.data.conversationId,
+      );
+      if (!conversation.ok) return conversation;
       return mapResult(
         result,
         (value) => ({ ...value, conversationId: input.conversationId }),
         () => ({
           receipt: mailReceipt("conversation.keep.release", context.locale, {
-            conversation: conversationSlot(input.conversationId, conversation.data.subject),
+            conversation: conversationSlot(input.conversationId, reviewSubject(conversation.data.subject, context)),
           }),
-          summary: mailCapabilityMessages(context.locale).releasedKeep({ subject: conversation.data.subject }),
-          ...conversationMetadata(input.mailboxId, input.conversationId, conversation.data.subject),
+          summary: mailCapabilityMessages(context.locale).releasedKeep({ subject: reviewSubject(conversation.data.subject, context) }),
         }),
       );
     },
@@ -4431,7 +4488,13 @@ export const mailCapabilities = localizeCapabilityErrors(
       },
     },
     types: {
-      mailbox: { title: "Mailbox", description: "A mailbox the actor may access.", icon: "ti ti-inbox", reader: "mailbox.read" },
+      mailbox: {
+        title: "Mailbox",
+        description: "A mailbox the actor may access.",
+        icon: "ti ti-inbox",
+        reader: "mailbox.read",
+        pages: ["/app/mail/:id"],
+      },
       "sender-identity": { title: "Sender identity", description: "A From identity configured for a mailbox.", icon: "ti ti-user-send" },
       folder: { title: "Mail folder", description: "A selectable provider mail folder.", icon: "ti ti-folder" },
       conversation: {
@@ -4439,15 +4502,28 @@ export const mailCapabilities = localizeCapabilityErrors(
         description: "A grouped mail conversation with collaboration state.",
         icon: "ti ti-mail",
         reader: "conversation.read",
+        pages: ["/app/mail/:mailbox?conversation=:id"],
       },
-      message: { title: "Mail message", description: "One message in an accessible mailbox.", icon: "ti ti-mail", reader: "message.read" },
+      message: {
+        title: "Mail message",
+        description: "One message in an accessible mailbox.",
+        icon: "ti ti-mail",
+        reader: "message.read",
+        pages: ["/app/mail/:mailbox?message=:id"],
+      },
       attachment: {
         title: "Mail attachment",
         description: "Bounded metadata for a message attachment.",
         icon: "ti ti-paperclip",
         reader: "attachment.read",
       },
-      draft: { title: "Mail draft", description: "An editable outgoing message.", icon: "ti ti-mail-pencil", reader: "draft.read" },
+      draft: {
+        title: "Mail draft",
+        description: "An editable outgoing message.",
+        icon: "ti ti-mail-pencil",
+        reader: "draft.read",
+        pages: ["/app/mail/:mailbox/compose/:id", "/app/mail/:mailbox/drafts/:id"],
+      },
       tag: { title: "Mail tag", description: "A Cloud-local collaboration tag.", icon: "ti ti-tag" },
       comment: { title: "Mail comment", description: "An internal conversation comment.", icon: "ti ti-message", reader: "comment.read" },
       reminder: {

@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { appIds, devServiceName, imageName } from "../workspace";
 import { listFiles } from "./files";
@@ -18,9 +18,19 @@ const compareSets = (file: string, subject: string, expected: string[], actual: 
 export const rule: Rule = {
   name: "app-set",
   description: "compose.dev.yml services, compose.prod.yml images, and workflows agree with scripts/workspace.ts",
-  run: async ({ workspaceRoot }) => {
+  run: async ({ workspaceRoot, fix }) => {
     const apps = appIds(workspaceRoot);
     const findings: Finding[] = [];
+    const reservationFile = join(workspaceRoot, "packages/cloud/src/_internal/built-in-app-ids.json");
+    const reservations = `${JSON.stringify(apps.toSorted(), null, 2)}\n`;
+    let stored = "";
+    try {
+      stored = readFileSync(reservationFile, "utf8");
+    } catch {}
+    if (stored !== reservations) {
+      if (fix) writeFileSync(reservationFile, reservations);
+      else findings.push({ file: reservationFile, message: "built-in app ID reservations differ from workspace; run app-set --fix" });
+    }
 
     const devFile = join(workspaceRoot, "compose.dev.yml");
     const devServices = [...readFileSync(devFile, "utf8").matchAll(/^ {2}(gateway|app-[a-z0-9-]+):/gm)].map((match) => match[1]!);

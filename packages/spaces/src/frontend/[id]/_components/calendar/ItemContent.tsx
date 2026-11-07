@@ -17,6 +17,8 @@ export function CalendarItemContent(props: {
   task: boolean;
   flag: { label: string } | null;
   extra: string[];
+  /** A lock before the title, for an entry that only says the time is taken. */
+  busy?: boolean;
 }) {
   // The day and week views size a band's title and time themselves; the item adds its flag and further colors.
   if (props.context.timeline) return <TimelineContent {...props} />;
@@ -41,13 +43,19 @@ export function CalendarItemContent(props: {
             aria-hidden="true"
           />
         </Show>
+        <Show when={props.busy}>
+          <i class="ti ti-lock shrink-0 text-[0.75rem] leading-none opacity-70" aria-hidden="true" />
+        </Show>
         <Show when={props.context.leadingTime}>
           {/* The month view's start time, before the title as in the default event. */}
           <span class="shrink-0 text-[0.6875rem] font-medium tabular-nums opacity-70 in-[.k2b-calendar-day-list]:text-[0.8125rem] max-md:in-[.k2b-calendar-month]:hidden">
             {props.context.leadingTime}
           </span>
         </Show>
-        <span class="min-w-0 truncate text-[0.6875rem] font-medium in-[.k2b-calendar-day-list]:text-[0.8125rem] [[data-bar=true]_&]:font-semibold [[data-selected=true]_&]:font-semibold">
+        <span
+          class="min-w-0 truncate text-[0.6875rem] font-medium in-[.k2b-calendar-day-list]:text-[0.8125rem] [[data-bar=true]_&]:font-semibold [[data-selected=true]_&]:font-semibold"
+          data-calendar-title=""
+        >
           {props.event.title}
         </span>
         <Show when={props.flag}>
@@ -90,6 +98,7 @@ function TimelineContent(props: {
   context: CalendarEventRenderContext;
   flag: { label: string } | null;
   extra: string[];
+  busy?: boolean;
 }) {
   const band = () => props.context.fill && !props.context.allDay;
   return (
@@ -98,6 +107,9 @@ function TimelineContent(props: {
         <span class="k2b-calendar-event__time">{props.context.leadingTime}</span>
       </Show>
       <span class="k2b-calendar-event__title" data-spaces-calendar-item="">
+        <Show when={props.busy}>
+          <i class="ti ti-lock mr-0.5 opacity-70" aria-hidden="true" />
+        </Show>
         {props.event.title}
       </span>
       <Show when={band()}>

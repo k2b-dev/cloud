@@ -1,9 +1,8 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
-import { sql } from "bun";
+import { sql } from "@k2b/cloud";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import type { ConversationView, FolderDisplay } from "../contracts";
 import { newShortId } from "../lib/short-id";
-import { migrate } from "../migrate";
 import { grantMailboxAccess } from "./access";
 import type { MailRequestContext } from "./auth";
 import { writeConversationAssignees } from "./collaboration";
@@ -173,12 +172,14 @@ suite("mail folder display", () => {
     return ids.map((id) => byId.get(id) ?? id).sort();
   };
 
+  // Folder display decides membership here; open-work-lists covers how lists leave out done and snoozed conversations.
   const listed = async (mailbox: Fixture, view: ConversationView | null, folder?: string) => {
     const result = await listConversations({
       context: owner,
       mailboxId: mailbox.mailboxId,
       view,
       folderId: folder ? mailbox.folders[folder]! : null,
+      includeDone: true,
       limit: 100,
     });
     if (!result.ok) throw new Error(result.error.message);
@@ -195,7 +196,6 @@ suite("mail folder display", () => {
   };
 
   beforeAll(async () => {
-    await migrate();
     const ownerUser = await createUser("owner");
     ownerId = ownerUser.id;
     owner = ownerUser.context;
@@ -414,7 +414,7 @@ suite("mail folder display", () => {
     expect(await listed(imap, "mine")).toEqual(["shared assigned"]);
     expect(await listed(imap, "send_problems")).toEqual(["shared failed send"]);
 
-    // Inside the folder everything stays, and so do its unread counts.
+    // Inside the folder every conversation stays, done and snoozed ones included once includeDone asks for them.
     expect(await listed(imap, null, "shared")).toEqual(
       [
         "shared and inbox",
@@ -431,7 +431,8 @@ suite("mail folder display", () => {
     expect(await listed(imap, null, "private")).toEqual(["private"]);
     const folders = await listFolders(owner, imap.mailboxId);
     if (!folders.ok) throw new Error(folders.error.message);
-    expect(folders.data.find((folder) => folder.id === imap.folders.shared)?.unread).toBe(8);
+    // Its unread count leaves out "shared done" and "shared snoozed", as the folder's list without includeDone does.
+    expect(folders.data.find((folder) => folder.id === imap.folders.shared)?.unread).toBe(6);
 
     // Trash does not count either, and Gmail adds every message to All Mail and Important and one's own reply to Sent.
     expect(await listed(imap, "recently_active")).not.toContain("shared and trash");

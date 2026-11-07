@@ -1,5 +1,7 @@
-import type { CompactFn, Message, StoreEntry, Usage } from "@k2b/nessi";
+import type { CompactFn, Message, Provider, StoreEntry, Usage } from "@k2b/nessi";
 import { truncateMiddle } from "@k2b/nessi";
+import { complete } from "@k2b/nessi/ai";
+import type { AiProviderType } from "../shared/ai-models";
 import { taskReasoningEffort } from "./provider";
 import { aiConversations } from "./store";
 import { safelyRecordStructuredRun } from "./structured-runs";
@@ -120,7 +122,14 @@ const buildCompactionPrompt = (additionalInstructions: string, source: string) =
 export const createCloudCompactFn = (input: {
   conversationId: string;
   turnId?: string;
-  modelProfileId: string;
+  modelId: string;
+  /** The model's provider type; it decides the reasoning effort of the summary call. */
+  providerType: AiProviderType;
+  /**
+   * The provider that writes the summary. A chat turn passes one accounted as compaction; without it the loop's
+   * provider writes it, as for a manual compaction whose loop provider already is.
+   */
+  provider?: Provider;
   additionalInstructions: string;
   maxOutputTokens?: number;
   signal: AbortSignal;
@@ -157,19 +166,18 @@ export const createCloudCompactFn = (input: {
         task: "chat-compaction",
         attribution: { conversationId: input.conversationId, turnId: input.turnId },
         appId: "core",
-        modelProfileId: input.modelProfileId,
+        modelId: input.modelId,
         providerModel: ctx.provider.model,
       };
       let usage: Usage | undefined;
-      const result = await ctx.provider
-        .complete({
-          systemPrompt: prompt.systemPrompt,
-          messages: [{ role: "user", content: [{ type: "text", text: prompt.userText }] }],
-          tools: [],
-          maxOutputTokens: input.maxOutputTokens,
-          signal: input.signal,
-          reasoningEffort: taskReasoningEffort(ctx.provider),
-        })
+      const result = await complete(input.provider ?? ctx.provider, {
+        systemPrompt: prompt.systemPrompt,
+        messages: [{ role: "user", content: [{ type: "text", text: prompt.userText }] }],
+        tools: [],
+        maxOutputTokens: input.maxOutputTokens,
+        signal: input.signal,
+        reasoningEffort: taskReasoningEffort(input.providerType),
+      })
         .then((result) => {
           usage = result.usage;
           if (result.finishReason === "error" || result.finishReason === "interrupted" || result.finishReason === "aborted") {
@@ -203,7 +211,7 @@ export const createCloudCompactFn = (input: {
         conversationId: input.conversationId,
         turnId: input.turnId,
         checkpointSeq: checkpoint.seq,
-        modelProfileId: input.modelProfileId,
+        modelId: input.modelId,
         summary: {
           role: "assistant",
           content: [{ type: "text", text: `Conversation summary:\n${summaryText}` }],

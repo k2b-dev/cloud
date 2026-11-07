@@ -6,16 +6,21 @@ export type { ChooseFilesOptions } from "./FileChooser";
 export { SAVE_FILES_ICON, type SavedFile, type SaveFileSource, type SaveFilesOptions } from "./save-files";
 
 const pageLocale = () => (typeof document === "undefined" ? "en" : document.documentElement.lang || "en");
-const providers = createProviderList(async () => (await import("./file-providers")).loadFileProviders({ locale: pageLocale() }));
+const providers = createProviderList(async (signal) =>
+  (await import("./file-providers")).loadFileProviders({ locale: pageLocale() }, signal),
+);
 const saving = createFileSaving(providers);
 
 /**
  * Lets the user choose files from this device or from any Cloud application that offers files.
  *
- * Call it from the click or key handler of your attach action. Without providers it opens the device's file
- * dialog directly; otherwise it opens the source chooser, "This device" first. Files from a provider are read
- * through its stream, at most two at a time, and never above `min(maxBytes, provider limit)`. Hand the result
- * to your existing upload path: it resolves the chosen `File`s, or `[]` when the user cancels.
+ * Call it from the click or key handler of your attach action. The first action discovers providers in the chooser,
+ * with loading and retry in its sources. Once an empty list is known, it opens the device's file
+ * dialog directly; otherwise it opens a compact file dialog on "This device", with every provider beside it. Files
+ * from a provider are read through its stream, at most three at a time, never above `maxBytes` or the provider's
+ * limit; `maxFiles` and `maxTotalBytes` bound one choice. Their names are cleaned, and their type follows
+ * `verifiedMediaType`. Hand the result to your existing upload path: it resolves the chosen `File`s, or `[]` when the
+ * user cancels.
  */
 export const chooseFiles = createFileChoosing(providers);
 
@@ -37,9 +42,3 @@ export const saveFilesLabel = saving.label;
 
 /** An icon button that calls `saveFiles(files())`, labelled with `saveFilesLabel`. Takes the props of `IconButton`. */
 export const SaveFilesButton = saving.SaveFilesButton;
-
-// Discovery starts while the page is idle, so the first click already knows whether providers exist.
-if (typeof window !== "undefined") {
-  const idle = window.requestIdleCallback ?? ((callback: () => void) => window.setTimeout(callback, 1_000));
-  idle(() => providers.prefetch());
-}

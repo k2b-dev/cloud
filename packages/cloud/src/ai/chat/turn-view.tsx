@@ -23,6 +23,7 @@ import { CompactionBlockView, CompactToolRow, SurveyToolView, TextEditorToolView
 import { CapabilityTablePreview } from "./capability-table";
 import { CloudChartBlock } from "./chart-block";
 import { PresentToolBlock } from "./file-tools";
+import { AiMapToolBlock } from "./map-widget";
 import { useAiChatActions } from "./message-actions";
 import { aiToolIcon, displayToolName, isCardToolName, isChartToolName, isRecord, isSurveyToolName } from "./message-utils";
 import { aiChatMessages } from "./messages";
@@ -438,6 +439,9 @@ function AiTurnResultView(props: { result: Accessor<AiTurnResult | undefined>; r
     <Show when={block()}>
       {(current) => (
         <Switch>
+          <Match when={current().name === "map"}>
+            <AiMapToolBlock block={current()} />
+          </Match>
           <Match when={current().name === "present"}>
             <PresentToolBlock block={current()} />
           </Match>
@@ -653,7 +657,18 @@ export function AiTurnView(props: { segment: Accessor<AiTurnSegment>; disclosure
   const chatActions = useAiChatActions();
   const layout = () => props.segment().layout;
   const results = createMemo(() => new Map(layout().results.map((result) => [result.id, result])));
-  const resultIds = createMemo(() => [...results().keys()]);
+  const isMapFollowup = (id: string) => {
+    const block = results().get(id)?.block;
+    return (
+      block?.name === "map" &&
+      typeof block.result === "object" &&
+      block.result !== null &&
+      "anchor" in block.result &&
+      block.result.anchor === false
+    );
+  };
+  const resultIds = createMemo(() => [...results().keys()].filter((id) => !isMapFollowup(id)));
+  const mapFollowupIds = createMemo(() => [...results().keys()].filter(isMapFollowup));
   const actions = createMemo(() => new Map(layout().actions.map((action) => [action.id, action])));
   const actionIds = createMemo(() => [...actions().keys()]);
   const live = () => isLive(props.segment().phase);
@@ -709,6 +724,7 @@ export function AiTurnView(props: { segment: Accessor<AiTurnSegment>; disclosure
             earlier={() => props.segment().earlier}
           />
         </Show>
+        <For each={mapFollowupIds()}>{(id) => <AiTurnResultView result={() => results().get(id)} receipt={() => false} />}</For>
         <Show when={props.segment().scheduledTask?.stop ? undefined : props.segment().scheduledTask?.reason}>
           {(reason) => (
             <Chat.Activity

@@ -4,7 +4,9 @@ import { NoticeCard, Paper } from "@k2b/ui";
 import type { JSX } from "solid-js";
 import { ssr } from "../config";
 import type { PublicShare } from "../contracts";
+import type { ShareAccessContext } from "../data/share-access";
 import { FilesError, filesService } from "../service";
+import { shareAccessContext } from "../service/share-access-context";
 import { shareAccessCookie } from "../share-access-cookie";
 import { browserMessages } from "./browser-messages";
 import PublicInbox from "./PublicInbox.island";
@@ -12,9 +14,14 @@ import PublicShareList from "./PublicShare.island";
 import PublicShareUnlock from "./PublicShareUnlock.island";
 import { sharePasswordMessages } from "./share-password-messages";
 
-const load = async (token: string, kind: "download" | "inbox", access?: string): Promise<PublicShare | null | "locked"> => {
+const load = async (
+  token: string,
+  kind: "download" | "inbox",
+  access?: string,
+  context?: ShareAccessContext,
+): Promise<PublicShare | null | "locked"> => {
   try {
-    return await filesService.publicShare(token, kind, {}, access);
+    return await filesService.publicShare(token, kind, {}, access, context);
   } catch (error) {
     if (error instanceof FilesError && error.code === "share_password_required") return "locked";
     if (error instanceof FilesError && error.status === 404) return null;
@@ -61,7 +68,7 @@ const publicPage = (kind: "download" | "inbox") =>
     const token = c.req.param("token") ?? "";
     c.header("Cache-Control", "no-store");
     c.header("Referrer-Policy", "no-referrer");
-    const share = await load(token, kind, shareAccessCookie(c));
+    const share = await load(token, kind, shareAccessCookie(c), shareAccessContext(c));
     const locale = getLocale(c);
     const t = sharePasswordMessages.resolve([locale]).t;
     if (!share) c.status(404);

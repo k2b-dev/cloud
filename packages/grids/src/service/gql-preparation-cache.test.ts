@@ -1,9 +1,12 @@
 import { describe, expect, mock, spyOn, test } from "bun:test";
+import { useUnitClients } from "../../../../scripts/fixtures/unit-clients";
 import * as canonical from "../query-dsl/canonical";
 import { bindDslQueryContext } from "../query-dsl/parameters";
 import * as resolver from "../query-dsl/resolver";
 import { amountFieldId, ctx, orders, parseOk } from "../query-dsl/resolver-fixtures";
 import { createGqlPreparationCache, withPreparationCacheDeadline } from "./gql-preparation-cache";
+
+useUnitClients();
 
 const secret = "gql-preparation-cache-test-only";
 const source = "from table Orders\nselect Amount\nwhere Amount > 1";

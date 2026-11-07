@@ -13,6 +13,7 @@ process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 
 const {
   readSettingsError,
+  SaveStatus,
   sameSettingValue,
   SettingsCollection,
   SettingsField,
@@ -241,6 +242,41 @@ describe("@k2b/ui complete settings surfaces", () => {
     expect(empty).toContain('data-variant="compact"');
   });
 
+  test("lays one setting out as a row of name, field and source with a width by kind", () => {
+    const row = renderToString(() =>
+      createComponent(SettingsField, {
+        id: "setting-retention",
+        label: "Keep logs",
+        description: "Older entries are deleted.",
+        error: "At least 1.",
+        width: "short",
+        source: "Default",
+        children: (control: { describedBy: () => string }) => `<input aria-describedby="${control.describedBy()}">`,
+      }),
+    );
+    expect(row).toContain('id="setting-retention"');
+    expect(row).toContain('data-width="short"');
+    // Name and help, then the field with its message, then the source: one fixed order in every row.
+    expect(row.indexOf("k2b-settings-field__copy")).toBeLessThan(row.indexOf("k2b-settings-field__control"));
+    expect(row.indexOf("k2b-settings-field__error")).toBeGreaterThan(row.indexOf("k2b-settings-field__control"));
+    expect(row.indexOf("k2b-settings-field__error")).toBeLessThan(row.indexOf("k2b-settings-field__source"));
+    expect(row).toContain('<div class="k2b-settings-field__source">Default</div>');
+    // Without a source the row has no empty source cell.
+    const plain = renderToString(() => createComponent(SettingsField, { label: "Name", description: "", error: undefined, children: "x" }));
+    expect(plain).toContain('data-width="long"');
+    expect(plain).not.toContain("k2b-settings-field__source");
+
+    const css = readFileSync(resolve(import.meta.dir, "../styles/layout-parity.css"), "utf8");
+    // The row reads the field's own width, not the viewport, so a dialog and a page decide alike.
+    expect(css).toContain("@container k2b-settings-field (min-width: 40rem)");
+    expect(css).toContain("@container k2b-settings-section (min-width: 53.75rem)");
+    expect(css).toMatch(/\.k2b-settings-field\[data-width="short"\][^{]+\{[^}]*max-width: 10rem/);
+    expect(css).toMatch(/\.k2b-settings-field\[data-width="medium"\][^{]+\{[^}]*max-width: 17\.5rem/);
+    // The section's heading and body sit in one layout box that becomes the group column.
+    const section = renderToString(() => createComponent(SettingsSection, { title: "Name and logo", children: "rows" }));
+    expect(section).toMatch(/<div class="k2b-settings-section__layout"><header class="k2b-settings-section__header">/);
+  });
+
   test("aligns direct group fields with the group heading", () => {
     const css = readFileSync(resolve(import.meta.dir, "../styles/layout-parity.css"), "utf8");
     const directFieldRule = css.match(/\.k2b-ui \.k2b-settings-group__body > \.k2b-settings-field\s*\{([^}]+)\}/)?.[1];
@@ -253,7 +289,7 @@ describe("@k2b/ui complete settings surfaces", () => {
 
     expect(directFieldRule).toContain("padding: 0");
     expect(fieldRule).toContain("min-width: 0");
-    expect(groupHeadingRule).toContain("font-size: 1rem");
+    expect(groupHeadingRule).toContain("font-size: 0.875rem");
     expect(footerRule).toContain("background: var(--k2b-surface)");
     expect(bodyRule).toContain("overflow-x: hidden");
     expect(bodyRule).toContain("overflow-y: auto");
@@ -344,5 +380,38 @@ describe("@k2b/ui complete settings surfaces", () => {
 
     expect(parsed).toEqual({ message: "Validation failed", fields: { endpoint: "Required" } });
     expect(fallback).toEqual({ message: "Could not save", fields: {} });
+  });
+});
+
+describe("SaveStatus", () => {
+  test("names every state in one live region and offers Discard and Save only while something waits", () => {
+    const saved = renderToString(() =>
+      createComponent(SaveStatus, { state: "saved", savedAt: "10:42", onSave: () => {}, onDiscard: () => {} }),
+    );
+    expect(saved).toContain('role="status"');
+    expect(saved).toContain("Saved 10:42");
+    expect(saved).toContain('data-state="saved"');
+    // Saved leaves both buttons in place but disabled, so the head keeps its width.
+    expect(saved).toContain("disabled");
+
+    const draft = renderToString(() => createComponent(SaveStatus, { state: "draft", onSave: () => {}, onDiscard: () => {} }));
+    expect(draft).toContain("Draft");
+    expect(draft).toContain(">Save<");
+
+    const invalid = renderToString(() => createComponent(SaveStatus, { state: "invalid", invalidCount: 2 }));
+    expect(invalid).toContain("Check 2 entries");
+    expect(invalid).not.toContain(">Save<");
+
+    const readOnly = renderToString(() => createComponent(SaveStatus, { state: "readonly", onSave: () => {}, onDiscard: () => {} }));
+    expect(readOnly).toContain("Read only");
+    expect(readOnly).not.toContain(">Save<");
+
+    for (const [state, text] of [
+      ["saving", "Saving"],
+      ["failed", "Not saved"],
+      ["unknown", "Outcome unclear"],
+    ] as const) {
+      expect(renderToString(() => createComponent(SaveStatus, { state }))).toContain(text);
+    }
   });
 });

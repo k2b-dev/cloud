@@ -5,7 +5,7 @@ section: AI
 order: 1030
 description: Create personal conversations, save composer drafts, and stream agent work.
 tags: [ai, chat, streaming]
-updated: 2026-10-21
+updated: 2026-11-04
 ---
 
 # Chat runtime and streaming
@@ -16,7 +16,7 @@ the standard GUI; another application may create a conversation and redirect
 the user there.
 
 Interactive submissions and retries enforce the caller's
-[Assistant model access](/en/docs/ai/models-and-providers#restrict-a-model-in-assistant).
+[Assistant model access](/en/docs/ai/models-and-providers#add-models-and-variants).
 The model list and status return only permitted models. A denied explicit model
 selection returns HTTP 403 before a retry changes the conversation.
 
@@ -129,7 +129,13 @@ deliberate creation. Without `requestId`, each request creates a conversation.
 The structured composer draft contains text, exact stored-file versions, and
 zero or more Cloud resource refs. Save it with `PUT
 /api/ai/conversations/:id/draft` and an `expectedRevision`. Identical autosaves
-are idempotent; stale writes return a conflict. Submit a turn with the returned
+are idempotent; stale writes return a conflict. In the browser controller, a
+failed `saveDraft`, `send`, or `queueMessage` answers `null` or `false`.
+`draftSaveFailure(conversationId)` then says whether its draft save failed:
+`"conflict"` when the saved draft has another revision, which sets no chat
+error so the app shows its own choice; `"failed"` for any other failure, which
+sets the chat error; or `null` when the draft was saved. Only a conflict means
+that the saved draft changed. Submit a turn with the returned
 `draftRevision`. Local clients may also send `client` (kind `cli` or `acp`,
 optional name, workspace `cwd`, OS, shell and local tools mode) and
 `localContext` (AGENTS.md instructions, local Skill catalog and explicitly
@@ -201,8 +207,8 @@ exact public HTTPS source into the conversation, with a readable Markdown copy
 for web pages; it does not browse repositories, authenticate to a website, or
 reach private network targets.
 `calculate` stays loaded because, whenever a turn offers it, the system
-prompt requires it for every amount, sum, or other number the model derives
-itself. A conversation with a fixed tool scope that excludes it, or a model
+prompt requires it for every amount, sum, percentage, or multi-step result the
+model derives itself; simple relative dates such as tomorrow need no call. A conversation with a fixed tool scope that excludes it, or a model
 without tool support, gets neither the tool nor that rule. Surveys, the
 long-form text editor, charts, file writes and presentation, and
 Markdown-to-PDF load on demand. Built-in usage hints remain in the system prompt even while their
@@ -382,6 +388,9 @@ consumers all use `/conversations/:id/stream`. Over HTTP/1.1 each open
 Assistant tab holds one of the browser's six connections to the host; over
 HTTP/2 the streams share one connection. A proxy in front of Cloud must not
 buffer `text/event-stream` responses.
+
+The portable chart helpers come from `@k2b/editor/charts`. Their existing Cloud
+exports remain available; Cloud owns AI validation and size limits.
 
 An open SSE stream re-checks its credential and the conversation every 5
 seconds. A revoked session or API key, an expired account, or a conversation
@@ -766,19 +775,27 @@ finish, without rendering a second copy of the active response.
 
 When a model sends a tool call that Cloud cannot use, for example arguments
 that are not valid JSON, the chat keeps it as a failed tool step. Its error
-result asks the model to re-send the call with its exact tool name and complete,
-valid, properly escaped JSON arguments. The step appears when Cloud saves the
-response, after the other steps of that response, and stays in the same place
-after reload and in history. A provider failure keeps a partial response that
-has content, and its failed step, in history. A response that is never saved,
-for example an attempt that exceeded the context window and that compaction
-retries, or an empty response after a provider failure, shows no such step.
-Cloud never runs a malformed call, also
-when a run stopped before it saved the error result. Cloud allows at most two
-repairs per turn, also across approvals, resumes, and compaction. If the model
-sends another malformed call, the turn fails with reason `failed` and keeps the
-completed steps. Repairs do not count as tool rounds, do not acknowledge user
-steering, and do not reset its loop checks.
+result names the problem and asks the model to re-send the call with its exact
+tool name and complete, valid JSON arguments. The step appears when Cloud saves
+the response, after the other steps of that response, and stays in the same
+place after reload and in history. A provider failure keeps a partial response
+that has content in history, without the unusable call. A response that is
+never saved, for example an attempt that exceeded the context window and that
+compaction retries, shows no such step. Cloud never runs a malformed call, also
+when a run stopped before it saved the error result. A response cut off at the
+model's output limit runs none of its calls; each gets an error result that asks
+for a shorter response.
+
+The model may repair two such responses in a row. If its third response in a
+row still has an unusable call, the turn fails with reason `failed` and keeps
+the completed steps; a resumed turn counts the responses it already stored. A
+response with only usable calls, or a message the person sends while the turn
+runs, starts the count again. Repairs do not count as tool rounds and do not
+acknowledge user steering.
+
+Read-only capability Queries of one response run at the same time, at most four
+at once; every other tool call runs alone, in the order the model sent them.
+Their steps and results keep that order.
 
 Truncated streams and provider failures end with `loop_end` reason `error`.
 A provider that stops an answer itself ends the turn as failed with
@@ -826,11 +843,12 @@ message continues the task; a failed compaction holds the reason only. A
 background run that its mandate or the background AI budget blocked keeps
 Cloud's own explanation there. `AiConversation.runTurnId` is the public ID of
 the latest turn, which `runStatus` and `runError` describe; the messages of that
-turn carry it as `loopId`. The raw cause, such as the provider's message,
-goes only to the error log entry `AI turn failed` under `ai:executor`, beside
-the `code`, and a provider call's message also stays on its
-[usage record](/en/docs/ai/usage-and-feedback#read-the-report). A stop records
-no reason.
+turn carry it as `loopId`. Provider failures and loop issues use fixed Cloud
+diagnostics in the error log entry `AI turn failed` under `ai:executor` and in
+[usage records](/en/docs/ai/usage-and-feedback#read-the-report). Provider
+messages, response bodies, and tool-validation payloads do not enter these
+diagnostics. Detailed tool-validation feedback remains in the authorized
+conversation for model repair. A stop records no reason.
 
 Provider history preserves each complete assistant message, including its
 producing `provider` and reasoning blocks' `signature`, `redacted`, and `details`.

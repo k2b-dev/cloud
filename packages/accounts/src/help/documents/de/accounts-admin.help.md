@@ -8,7 +8,7 @@ order: 110
 
 Die Administrationsseiten sind serverseitig gerenderte Listen. Suche, Filter und Seitennavigation stehen in der URL, und Aktionsschaltflächen führen die Kontovorgänge aus.
 
-Globale Vorgaben und die Nachpflege des Lebenszyklus liegen in der Cloud-Administration unter **Accounts & Anmeldung**. Starte Lebenszyklus-Aufträge über **Betrieb**. Einzelne Datensätze, Anfragen und Verläufe bleiben hier in Konten.
+Globale Vorgaben und die Nachpflege des Lebenszyklus liegen in der Cloud-Administration unter **Anmeldung & Sicherheit**. Starte Lebenszyklus-Aufträge über **Betrieb**. Einzelne Datensätze, Anfragen und Verläufe bleiben hier in der App Zugänge.
 
 Unter **Registrierung & Anfragen** kannst du optionale Hinweise zur Nacharbeit festlegen, die von der Aktion abhängen. Sie erscheinen nach erfolgreichen Änderungen an Personen, Gruppen und Mitgliedschaften. Eine leere Vorlage zeigt nichts an. Ein Hinweis richtet sich an die Person, die die Änderung ausführt. Cloud versendet ihn nicht an die Betroffenen.
 
@@ -35,7 +35,7 @@ Bereinigte Adressen verschwinden aus der Liste. Dein eigenes Konto kannst du nic
 :::reference
 - **Benutzer:** Suche Konten nach UID, Name oder E-Mail-Adresse. Filtere nach Anbieter und Profil. Öffne eine Person, um Profilfelder, Avatar, Rollen, Anbieter, Ablaufdatum und Gruppenmitgliedschaften zu bearbeiten.
 - **Gruppen:** Öffne eine Gruppe, um ihre Angaben, Mitglieder, Verantwortlichen und übergeordneten Gruppen zu prüfen. Verantwortliche können Personen und Gruppen hinzufügen oder entfernen, wo die Seite diese Änderungen anbietet.
-- **Linux-Identitäten:** Ist die Vergabe in der Cloud-Administration unter **Accounts & Anmeldung → Linux-Identitäten** eingeschaltet, erhalten neue lokale Vollkonten und hochgestufte Gäste ihre Linux-Attribute automatisch. Die Administration kann fehlende Attribute älterer Konten ergänzen und Home und Shell überschreiben. FreeIPA-Werte sind schreibgeschützt. Lokale Gruppen können nach der globalen Einrichtung eine GID erhalten. Diese Aktionen schalten weder die Anmeldung am Rechner noch sudo frei.
+- **Linux-Identitäten:** Ist die Vergabe in der Cloud-Administration unter **Anmeldung & Sicherheit → Linux-Identitäten** eingeschaltet, erhalten neue lokale Vollkonten und hochgestufte Gäste ihre Linux-Attribute automatisch. Die Administration kann fehlende Attribute älterer Konten ergänzen und Home und Shell überschreiben. FreeIPA-Werte sind schreibgeschützt. Lokale Gruppen können nach der globalen Einrichtung eine GID erhalten. Diese Aktionen schalten weder die Anmeldung am Rechner noch sudo frei.
 - **Gelöschte Konten:** Prüfe Konten, die durch eine manuelle Aktion, eine Ablaufbereinigung, eine FreeIPA-Rückstufung oder eine Änderung des Synchronisierungsbereichs entfernt wurden. Die Zeilendetails enthalten weiterhin ihre Metadaten.
 - **Erinnerungsverlauf:** Durchsuche die Versuche, Erinnerungen zum Kontoablauf zu senden. Jeder Eintrag zeigt Ablaufdatum, Vorlaufzeit in Tagen, Status, Anzahl der Versuche, letzten Versuch und letzten Fehler.
 :::
@@ -61,14 +61,14 @@ Die Person kann sich dann anmelden und erneut ein Gerät koppeln.
 ## Schlüssel, Geräte, Benachrichtigungen und Anfragen steuern {icon="shield-lock"}
 
 :::reference
-- **Dienstkonten:** Liste aktive oder widerrufene API-Schlüssel auf und filtere nach personen- oder ressourcengebundenen Eigentümern. Widerrufe einen aktiven Schlüssel, wenn sein Zugriff enden muss.
+- **API Keys:** Liste aktive oder widerrufene API Keys auf. Filtere nach **Persönlich**, **Dienstkonto** oder **Agent**. Widerrufe einen aktiven Schlüssel, wenn sein Zugriff enden muss. Ein Agenten-Schlüssel mit **Alt, begrenzt** hat **Ersetzen**: Es erstellt einen neuen API Key, der wie der Agent handelt, und zeigt ihn einmal. Widerrufe den alten Schlüssel, wenn das Programm den neuen nutzt. Automatische App-Schlüssel sind standardmäßig ausgeblendet; wähle **Anzeigen** über der Liste, um sie einzublenden.
 - **Anmeldegeräte:** Die Seite einer Person zeigt die Geräte, die ihre App-Anmeldungen bestätigen, mit Kopplungsdatum und letzter Verwendung. Widerrufe dort ein verlorenes Gerät. Bestehende Sitzungen bleiben angemeldet, und Cloud benachrichtigt die Person.
 - **Benachrichtigungen:** Erstelle Entwürfe für Benachrichtigungen, prüfe die Empfängervorschau und schließe den Batch ab. Prüfe danach die Zustellzähler oder die fehlgeschlagenen Empfänger.
 - **Anfragen:** Erstelle Konten aus offenen Anfragen oder lehne Anfragen ab. Gibst du beim Ablehnen eine Begründung an, sendet Cloud sie per E-Mail. Bestehende Anfragen bleiben verfügbar, wenn neue Anfragen in der Cloud-Administration ausgeschaltet sind.
 :::
 
 :::info Änderungen im Audit-Protokoll nachverfolgen
-Das **Audit-Protokoll** erfasst Konto- und Zugriffsänderungen. Filtere nach Dienstkonto, um die Aktivität von API-Schlüsseln zu untersuchen.
+Das **Audit-Protokoll** erfasst Konto- und Zugriffsänderungen. Filtere nach Agent oder Dienstkonto, um die Aktivität von API Keys zu untersuchen. Automatische App-Einträge sind standardmäßig ausgeblendet; wähle **Anzeigen** über der Liste, um sie innerhalb des gewählten Zeitraums und der Filter einzublenden.
 :::
 
 ## POSIX-Gruppe erstellen {icon="users"}

@@ -106,28 +106,25 @@ describe("Cloud chat composer adapter", () => {
     expect(ordinary?.name).toBe("notes.txt");
   });
 
-  test("maps model profiles without leaking the Cloud profile contract", () => {
+  test("maps people options without introducing provider details", () => {
     expect(
       aiChatModelOptions([
         {
           id: "vision",
           label: "Vision",
-          provider: "openrouter",
-          model: "test/vision",
-          capabilities: ["streaming", "vision"],
-          dataBoundary: "private",
-          contextWindow: 128_000,
-          image: "https://example.test/provider.svg",
+          variantLabel: "Thorough",
+          description: "Complex work",
+          icon: { kind: "emoji", emoji: "🧠" },
+          classes: ["thorough"],
         },
       ]),
     ).toEqual([
       {
         id: "vision",
-        label: "Vision",
-        description: "test/vision",
-        image: "https://example.test/provider.svg",
-        icon: "ti ti-photo-spark",
-        capabilities: ["streaming", "vision"],
+        label: "Vision · Thorough",
+        description: "Complex work",
+        image: undefined,
+        icon: "ti ti-sparkles",
       },
     ]);
   });

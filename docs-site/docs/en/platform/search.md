@@ -5,7 +5,7 @@ section: Platform services
 order: 560
 description: Project focused application Queries into the shared Cloud search.
 tags: [search, capabilities, authorization]
-updated: 2026-10-19
+updated: 2026-10-23
 ---
 
 # Universal search
@@ -201,9 +201,27 @@ navigable search result with an `open` link, but consumers must not present it
 as programmatically readable. Search and read remain separate Queries: search
 finds bounded resource views; the Type's reader loads one known resource.
 
-Use `preview`, `icon`, `priority`, and `metadata` only when they help identify
-the resource. A `preview` semantic link lets Cloud load a separate preview
-surface.
+Use `context`, `preview`, `icon`, `priority`, and `metadata` only when they
+help identify the resource. A `preview` semantic link lets Cloud load a
+separate preview surface. A result row shows `context` below the title, or
+`preview` when there is no `context`; the details show every `metadata` entry
+and the `preview`.
+
+Give a date in `metadata` a `format` instead of formatting it yourself:
+`date` takes `YYYY-MM-DD` or RFC 3339, and `date-time` takes RFC 3339 with an
+offset. Cloud shows the value in the reader's locale and time zone, and the
+first dated entry also appears as a short date at the end of the result's row:
+
+```ts
+metadata: [
+  { label: t.sender, value: "Anna Berger" },
+  { label: t.date, value: message.receivedAt, format: "date-time" },
+],
+```
+
+Return results in the order the app ranks them, for example newest first.
+Cloud keeps that order within one priority and asks for one result more than
+it lists, so return up to `limit` results whenever there are that many.
 
 Tags and aliases help users and agents discover providers. They are not
 permissions. Use stable, lower-case values without `#`, and keep each meaning
@@ -239,7 +257,8 @@ Universal Search is a projection, not the only search operation an app may
 publish. Add other Queries for app-specific list, filter, lookup, or exhaustive
 traversal semantics when they have a stable cross-client use.
 
-Cloud ranks results by app-provided priority and title after merging providers.
+Cloud ranks results by app-provided priority after merging providers; results
+with the same priority keep the order their app returned.
 One provider failure does not fail the complete search: successful providers
 still return partial results with HTTP 200 and `failedApps` identifies unavailable
 sources. A shared registry or invocation
@@ -257,7 +276,7 @@ this order:
 | Line | Fields | Meaning |
 | --- | --- | --- |
 | `start` | `query`, `apps`, `providers`, optional `unsupportedTags` | The app catalog and the IDs of the applications that search |
-| `provider` | `provider`, `status`, `results`, `ms` | One application finished; `status` is `ok`, `empty`, `timeout`, or `error` |
+| `provider` | `provider`, `status`, `results`, optional `more`, `ms` | One application finished; `status` is `ok`, `empty`, `timeout`, or `error`; `more: true` says it found more results than it listed |
 | `done` | `status` (`complete` or `partial`), `count` | Every application has answered |
 
 Each application named in `start` gets exactly one `provider` line, written
@@ -265,7 +284,9 @@ when all of its search Queries have finished, so a slow application never holds
 back the others. Applications keep searching until the shared eight-second
 budget ends; an application still searching then gets a `timeout` line.
 `results` holds at most that application's provider limit, ranked by priority
-and title; a streamed search has no merged top-30 list. An application with
+in the application's own order; a streamed search has no merged top-30 list.
+A search that reaches one application, through `app` or a resource scope,
+accepts `limit` (at most 90) to list more of its results than the first 30. An application with
 several Queries can report `timeout` or `error` together with what its other
 Queries found.
 
@@ -305,12 +326,16 @@ that fails before it names its applications says “Search is currently
 unavailable”, below anything already on screen.
 A search narrowed to one application by its chip or a tag has one
 state at a time: searching, its results, or **Mail: no matches for “invoice”**.
+An application with more results than it listed gets a line below the
+results, **Show more from Mail**, which lists its next 30 results below the
+ones already shown and keeps the selection. After 90 results from one
+application, the line asks for a narrower search instead.
 When every application has answered, screen readers hear “Search complete,
 3 results”, followed by each application that did not answer, such as “Mail
 did not respond in time”.
 
 Desktop search shows a preview beside the
-input and result list. The centered dialog keeps its width, top position, and
+input and result list, with a hint while no result is chosen. The centered dialog keeps its width, top position, and
 height from the first search character until the input is cleared, so arriving
 results never resize it.
 On small screens, **Details** opens the preview and
@@ -483,7 +508,13 @@ results in the browser; the consumer still authorizes the chosen resource.
 Pass `scope: { appId, tag?, label, icon? }` to narrow the search on the server
 to one app and, optionally, one of its search tags. The removable chip shows
 `label` and `icon`; `scope` takes precedence over `initialAppId`.
-Pass `query` to prefill the search text. An app scope starts searching at once,
+Alternatively, pass `scope: { ref, label, icon? }` to search within a resource
+context supported by its provider. A `spaces.space` ref finds that Space's
+tasks and events; a `notebooks.notebook` ref finds that Notebook's notes.
+The resource scope takes precedence over `initialAppId`. Removing its chip
+widens the search; the consuming service still checks container membership.
+An unavailable scope fails instead of searching every resource.
+Pass `query` to prefill the search text. An app or resource scope starts searching at once,
 even with empty text. Server filtering by app and tag happens before the
 per-app result limit, so other resource kinds do not crowd out matching
 results as they can with the browser-only `resourceType` filter.
@@ -805,7 +836,7 @@ restores the global search without reopening the dialog.
 | Entry point | Search context | Results |
 | --- | --- | --- |
 | Assistant project | `assistant.project` with the public project ID | Your chats in the selected project, matched by title and message content |
-| Mail mailbox | `mail.mailbox` with the public mailbox ID | Messages and attachments in that mailbox |
+| Mail mailbox | `mail.mailbox` with the public mailbox ID | Messages and attachments in that mailbox, newest first |
 | Accounts | Accounts app context | Groups; administrators can also find users and service accounts |
 | Capabilities | Capabilities app context | Apps, Queries and Actions in the inspector |
 

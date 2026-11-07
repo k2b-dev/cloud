@@ -10,8 +10,10 @@ import {
   isAiImageMediaType,
 } from "@k2b/cloud/ai/browser";
 import { type CloudCliContext, printStructured } from "@k2b/cloud/cli";
+import { AiModelRequestSchema } from "@k2b/cloud/shared";
 import { z } from "zod";
 import type { CapabilityDecision, CodeApproval } from "../artifacts/runtime/capabilities";
+import { type LocalFileReview, openReviewedFile, reviewedUpload, reviewLocalFile } from "./local-file";
 import { classifyLocalPath } from "./local-paths";
 import { AI_API, jsonRequest, printValue, readApi } from "./shared";
 import { type AssistantClientTools, type AssistantTurnOutput, type AssistantTurnStreamResult, streamAssistantTurn } from "./stream";
@@ -21,13 +23,13 @@ export type ConversationDetail = {
   activeTurn: { turnId: string; status: string } | null;
 };
 
-type TurnSubmission = { turn: { id: string; status: string; modelProfileId: string | null } };
+type TurnSubmission = { turn: { id: string; status: string; modelId: string | null } };
 
 export const conversationPath = (conversationId: string, suffix = ""): string =>
   `/conversations/${encodeURIComponent(conversationId)}${suffix}`;
 
-export const readConversationDetail = (ctx: CloudCliContext, conversationId: string): Promise<ConversationDetail> =>
-  readApi<ConversationDetail>(ctx, conversationPath(conversationId));
+export const readConversationDetail = (ctx: CloudCliContext, conversationId: string, signal?: AbortSignal): Promise<ConversationDetail> =>
+  readApi<ConversationDetail>(ctx, conversationPath(conversationId), signal ? { signal } : undefined);
 
 export const validateLocalAttachments = async (paths: readonly string[]): Promise<void> => {
   if (paths.length > AI_TURN_ATTACHMENT_MAX_ITEMS) {
@@ -75,11 +77,20 @@ export const uploadAttachment = async (
   localPath: string,
   directory?: string,
   signal?: AbortSignal,
+  /** The file the path named when the person attached it; without one, the file it names now. */
+  review?: LocalFileReview,
 ): Promise<Extract<AiTurnContentPart, { type: "attachment" }> & { version: number }> => {
-  const file = Bun.file(localPath);
-  if (!(await file.exists())) throw new Error(`Attachment not found: ${localPath}`);
-  const mediaType = file.type || guessAiMediaType(localPath);
-  return uploadAttachmentFile(ctx, conversationId, new File([file], basename(localPath), { type: mediaType }), directory, signal);
+  const checked = review ?? (await reviewLocalFile(localPath));
+  if (!checked.identity || checked.identity.directory) throw new Error(`Attachment not found: ${localPath}`);
+  const { file, info } = await openReviewedFile(localPath, checked);
+  try {
+    if (!info.isFile()) throw new Error(`Attachment not found: ${localPath}`);
+    const mediaType = Bun.file(localPath).type || guessAiMediaType(localPath);
+    const upload = await reviewedUpload(file, basename(localPath), mediaType, signal);
+    return await uploadAttachmentFile(ctx, conversationId, upload, directory, signal);
+  } finally {
+    await file.close();
+  }
 };
 
 export const uploadAttachmentFile = async (
@@ -104,8 +115,16 @@ export const uploadAttachmentFile = async (
   };
 };
 
-const submitDraftBody = async (ctx: CloudCliContext, conversationId: string, body: unknown, codeHost: boolean): Promise<unknown> => {
-  if (!body || typeof body !== "object") return body;
+/** The turn body for the composer draft, and how to empty that draft again. Reads stop with `signal`. */
+const submitDraftBody = async (
+  ctx: CloudCliContext,
+  conversationId: string,
+  body: unknown,
+  codeHost: boolean,
+  signal?: AbortSignal,
+  known?: ConversationDetail,
+): Promise<{ body: unknown; clear?: () => Promise<unknown> }> => {
+  if (!body || typeof body !== "object") return { body };
   const input = z
     .object({
       message: z.string().optional(),
@@ -122,13 +141,13 @@ const submitDraftBody = async (ctx: CloudCliContext, conversationId: string, bod
           ]),
         )
         .optional(),
-      modelProfileId: z.string().optional(),
+      model: AiModelRequestSchema.optional(),
       clientToolIds: z.array(z.string()).optional(),
       client: AiLocalClientSchema.optional(),
       localContext: AiLocalContextSchema.optional(),
     })
     .parse(body);
-  const detail = await readConversationDetail(ctx, conversationId);
+  const detail = known ?? (await readConversationDetail(ctx, conversationId, signal));
   if (detail.conversation.draft.content.length > 0) {
     throw new Error("This conversation has an unsent composer draft. Send or clear it in Assistant before using the CLI.");
   }
@@ -143,17 +162,22 @@ const submitDraftBody = async (ctx: CloudCliContext, conversationId: string, bod
       return [];
     }),
   ];
+  signal?.throwIfAborted();
   const draft = await readApi<AiConversation["draft"]>(
     ctx,
     conversationPath(conversationId, "/draft"),
     jsonRequest("PUT", { expectedRevision: detail.conversation.draft.revision, content }),
   );
   return {
-    draftRevision: draft.revision,
-    modelProfileId: input.modelProfileId,
-    ...(input.client ? { client: input.client } : {}),
-    ...(input.localContext ? { localContext: input.localContext } : {}),
-    clientToolIds: [...new Set([...(input.clientToolIds ?? []), ...(codeHost ? ["code_open", "code_secret"] : [])])],
+    clear: () =>
+      readApi(ctx, conversationPath(conversationId, "/draft"), jsonRequest("PUT", { expectedRevision: draft.revision, content: [] })),
+    body: {
+      draftRevision: draft.revision,
+      model: input.model,
+      ...(input.client ? { client: input.client } : {}),
+      ...(input.localContext ? { localContext: input.localContext } : {}),
+      clientToolIds: [...new Set([...(input.clientToolIds ?? []), ...(codeHost ? ["code_open", "code_secret"] : [])])],
+    },
   };
 };
 
@@ -173,6 +197,9 @@ export const submitAssistantTurn = async (input: {
   onThinkingDelta?: (delta: string) => void;
   waitingApprovals?: ReadonlySet<string>;
   onSubmitted?: (submitted: TurnSubmission) => void;
+  drain?: Parameters<typeof streamAssistantTurn>[0]["drain"];
+  /** A chat read the caller just made, so the draft check needs no second one. */
+  detail?: ConversationDetail;
 }): Promise<{ submitted: TurnSubmission; result?: AssistantTurnStreamResult }> => {
   const streamResponse = input.watch
     ? await input.ctx.fetch(`${AI_API}${conversationPath(input.conversationId, "/stream")}`, {
@@ -183,9 +210,15 @@ export const submitAssistantTurn = async (input: {
   if (streamResponse && (!streamResponse.ok || !streamResponse.body)) await input.ctx.readJson(streamResponse);
   let submitted: TurnSubmission;
   try {
-    const body = input.path.endsWith("/turns")
-      ? await submitDraftBody(input.ctx, input.conversationId, input.body, input.codeHost ?? input.watch)
-      : input.body;
+    const { body, clear } = input.path.endsWith("/turns")
+      ? await submitDraftBody(input.ctx, input.conversationId, input.body, input.codeHost ?? input.watch, input.signal, input.detail)
+      : { body: input.body };
+    // A stop before the turn starts empties the draft again instead of leaving the message in the composer. Once
+    // sent, the request completes, so a stop can abort the turn it started.
+    if (input.signal?.aborted) {
+      await clear?.().catch(() => undefined);
+      input.signal.throwIfAborted();
+    }
     submitted = await readApi<TurnSubmission>(input.ctx, input.path, jsonRequest("POST", body));
   } catch (error) {
     await streamResponse?.body?.cancel().catch(() => undefined);
@@ -208,6 +241,7 @@ export const submitAssistantTurn = async (input: {
       onToolBlock: input.onToolBlock,
       onThinkingDelta: input.onThinkingDelta,
       waitingApprovals: input.waitingApprovals,
+      drain: input.drain,
     }),
   };
 };

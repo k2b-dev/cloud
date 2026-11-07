@@ -1,7 +1,8 @@
-import { type SQL, sql } from "bun";
+import type { SQL } from "bun";
 import { capabilityRequestHash } from "../capabilities/claims";
 import { parseStoredReviewContent } from "../capabilities/review-storage";
 import { CAPABILITY_MAX_REVIEW_CONTENT_BYTES, type CapabilityActionReviewPresentation } from "../contracts/capabilities";
+import { sql } from "../runtime/clients";
 import type { AiStoredActionReview } from "./action-review";
 
 export type ReviewContentLocation = { conversationId: string; turnId: string; callId: string };
@@ -61,7 +62,7 @@ export const readReviewContent = async (location: ReviewContentLocation, digest:
       AND octet_length((meta->'toolReviews'->${location.callId}->'content')::text) <= ${2 * CAPABILITY_MAX_REVIEW_CONTENT_BYTES + 2}
     ORDER BY seq DESC LIMIT 1`;
   // JSONB adds spaces after punctuation; at most twice the compact JSON budget. The exact limit is checked below.
-  const abort = () => query.cancel();
+  const abort = () => void query.cancel().catch(() => {});
   signal?.addEventListener("abort", abort, { once: true });
   if (signal?.aborted) abort();
   let rows: { content: unknown }[];

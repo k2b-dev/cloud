@@ -1,8 +1,9 @@
 import { beforeAll, expect, test } from "bun:test";
 import { nessi, type Provider } from "@k2b/nessi";
-import { sql } from "bun";
 import { z } from "zod";
 import { databaseSuite, testInfra } from "../../../../scripts/fixtures/test-infra";
+import { sql } from "../runtime/clients";
+import { streamAnswer } from "./answer-stream.test-fixture";
 import { type AiCallContext, beginAiCall, finishAiCall } from "./inference-calls";
 import { migrateCloudAi } from "./migrate";
 import { inferenceProvider } from "./quota-provider";
@@ -23,13 +24,19 @@ const fixture = async () => {
   const [user] = await sql<{ id: string }[]>`INSERT INTO auth.users(uid,provider,profile,display_name)
     VALUES(${prefix},'local','user',${prefix}) RETURNING id`;
   const model: AiModelProfile = {
+    modelId: prefix,
+    providerId: prefix,
+    variantLabel: "Standard",
+    description: "",
+    icon: { kind: "provider" },
+    showInPicker: true,
     id: prefix,
     label: prefix,
     provider: "openai",
     model: "provider/usage",
     enabled: true,
     dataBoundary: "hosted",
-    capabilities: ["streaming"],
+    capabilities: [],
     pricing: { inputPerMillion: 1000, outputPerMillion: 2000 },
   };
   const conversations: string[] = [];
@@ -49,7 +56,7 @@ const fixture = async () => {
     await finishAiCall(value.id, input === undefined || output === undefined ? undefined : { input, output }, "ok");
     return value.id;
   };
-  const report = (options: Parameters<typeof aiUsage.report>[1] = {}) => aiUsage.report("24h", { modelProfileId: prefix, ...options });
+  const report = (options: Parameters<typeof aiUsage.report>[1] = {}) => aiUsage.report("24h", { modelId: prefix, ...options });
   return {
     prefix,
     userId: user!.id,
@@ -78,18 +85,14 @@ suite("AI usage inference accounting", () => {
         family: "openai-compatible",
         model: f.model.model,
         capabilities: { streaming: false, tools: false, images: false, thinking: false, usage: true, structuredOutput: true },
-        async complete() {
+        async *stream() {
           requests++;
           const text = requests === 1 ? "not JSON" : '{"answer":42}';
           const usage = { input: 100 * requests, output: 10 * requests, total: 110 * requests };
-          return { message: { role: "assistant", content: [{ type: "text", text }], usage }, usage, finishReason: "stop" };
-        },
-        async *stream() {
-          throw new Error("Structured repair must use complete()");
+          yield* streamAnswer({ message: { role: "assistant", content: [{ type: "text", text }], usage }, usage, finishReason: "stop" });
         },
       };
       const result = await nessi.structured({
-        agentId: "usage-test",
         input: "Return an answer",
         output: z.object({ answer: z.number() }),
         provider: inferenceProvider(provider, f.model, { kind: "background", task: f.prefix, userId: f.userId }),
@@ -99,7 +102,7 @@ suite("AI usage inference accounting", () => {
       expect(result.structuredMeta.attempts).toBe(2);
       await recordAiStructuredRun({
         task: f.prefix,
-        modelProfileId: f.prefix,
+        modelId: f.prefix,
         status: "ok",
         durationMs: 1,
         usage: result.usage,
@@ -110,7 +113,7 @@ suite("AI usage inference accounting", () => {
       expect(report.overview).toMatchObject({ runs: 2, tokens: 330, costCoverage: 1 });
       expect(report.overview.cost).toBeCloseTo(0.36, 12);
       // Replaying a stored workflow result or diagnostic write does not execute a provider.
-      await recordAiStructuredRun({ task: f.prefix, modelProfileId: f.prefix, status: "ok", durationMs: 1, usage: result.usage });
+      await recordAiStructuredRun({ task: f.prefix, modelId: f.prefix, status: "ok", durationMs: 1, usage: result.usage });
       const rows = await sql<{ id: string }[]>`SELECT id FROM ai.inference_calls WHERE model_profile_id=${f.prefix}`;
       await finishAiCall(rows[0]!.id, { input: 99999, output: 99999 }, "ok");
       report = await f.report();
@@ -128,11 +131,11 @@ suite("AI usage inference accounting", () => {
       const conversation = await f.conversation();
       const turn = await aiConversations.submitChatTurn({
         conversationId: conversation.id,
-        modelProfileId: f.prefix,
+        modelId: f.prefix,
         runConfig: { kind: "chat", input: "Hello", toolSource: { kind: "none" } },
         userMessage: { role: "user", content: [{ type: "text", text: "Hello" }] },
       });
-      const store = aiConversations.createSessionStore({ conversationId: conversation.id, turnId: turn.turn.id, modelProfileId: f.prefix });
+      const store = aiConversations.createSessionStore({ conversationId: conversation.id, turnId: turn.turn.id, modelId: f.prefix });
       await store.append({
         role: "assistant",
         content: [{ type: "text", text: "Response" }],
@@ -319,7 +322,7 @@ suite("AI usage inference accounting", () => {
     try {
       await f.call(100, 20, {}, { ...f.model, pricing: undefined });
       for (const range of ["24h", "7d", "30d", "90d"] as const) {
-        const report = await aiUsage.report(range, { modelProfileId: f.prefix });
+        const report = await aiUsage.report(range, { modelId: f.prefix });
         const step = range === "24h" ? 3_600_000 : 86_400_000;
         expect(report.timeline.length).toBeGreaterThanOrEqual(range === "24h" ? 24 : Number.parseInt(range));
         for (let index = 1; index < report.timeline.length; index++)

@@ -14,7 +14,7 @@ People with **View** access always see **Book**. Book is a reading view with pag
 
 In Book, page links, tag filters, search, and pagination update the content without a full reload. **Back** and **Forward** in the browser return to earlier reading positions. Saved changes refresh the page and the query results automatically. Without JavaScript, navigation still works through normal page loads.
 
-In the Book sidebar, select a page to open it. Use the arrow next to a page to show or hide its sub-pages. When Book loads, it shows the current page with its sub-pages. After that, Book keeps your choices and unfolds only the pages that contain the page you open. On a phone, the navigation menu shows the same folded pages. It keeps them when you close and reopen it, and it opens pages in place.
+In the Book sidebar, select a page to open it. Use the arrow next to a page to show or hide its sub-pages. Around the open page, a level first shows 20 pages; choose **… more pages** at its end or **… earlier pages** at its start to show up to 100 more. When Book loads, it shows the current page with its sub-pages. After that, Book keeps your choices and unfolds only the pages that contain the page you open. On a phone, the navigation menu shows the same folded pages. It keeps them when you close and reopen it, and it opens pages in place.
 
 The sidebar lists the notebook's start page first, with its sub-pages below it. This also applies when the start page is under another page. All other pages follow the notebook order on each level:
 
@@ -67,12 +67,24 @@ The setting covers only deleting and locking whole notes. People and agents with
 
 For these people, **Delete** and **Lock note** in the note menu stay visible but are turned off. They explain that in this notebook, only people with **Manage** access can delete or lock notes. The API, `cld notebooks rm`, and `cld notebooks lock` refuse with the same reason. A locked note keeps its versions readable. You cannot edit it or restore a version in place. You can restore a version as a copy.
 
+## See who has access {icon="lock-access"}
+
+Open the note details, then **More about this note → Access**. The list shows every person, group, and service with access to the notebook and their role. You cannot change anything there. With **Manage** access, **Manage access** opens the settings.
+
+Everyone with access of their own sees this list, also through a group or **Everyone signed in**. People who read a notebook only through its public link do not see the list.
+
+## Give an integration or agent access {icon="key"}
+
+Add its agent under **Sharing → Access**. The entry shows the account name and kind. With **Manage** access and an `admin` token scope, it can manage access through the API. A read-only token cannot change sharing.
+
+To hand management over, give the new account **Manage** access first. Then lower or remove your own entry. An agent can remain as the only manager. You cannot remove the last manager; add another manager before trying again. Resource API keys do not count as managers and stay confined to their own notebook.
+
 ## Find the right settings tab {icon="settings"}
 
 :::reference
 - **Notebook → General:** Name, icon, description, start page, and the Liquid template for the H1 of empty new notes. Check the footer, then save or discard your changes.
 - **Notebook → View & behavior:** People with **Manage** access choose the shared default view. Under **Only for you**, this browser stores your view preferences, and they apply immediately: **Full width** on large screens and the Tab key choice.
-- **Sharing → Access:** Requires **Manage** access. Change who has access, and choose who can delete and lock notes. Changes save immediately.
+- **Sharing → Access:** Requires **Manage** access. Choose **Edit access** to change who has access, then choose **Save** to apply the changes. You also choose who can delete and lock notes; that change saves immediately.
 - **Sharing → API keys:** Requires **Manage** access. API keys for integrations that work only with this notebook. Changes save immediately, and Notebooks shows a new key only once.
 - **Data → Export & snapshots:** Requires **Manage** access. Portable ZIP exports, the S3 snapshot setup, manual uploads, and recent snapshot runs. Save the snapshot setup with the footer.
 - **Lifecycle → Danger zone:** Requires **Manage** access. Actions that destroy data, such as deleting the notebook and its notes.

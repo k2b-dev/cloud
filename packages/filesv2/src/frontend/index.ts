@@ -6,6 +6,7 @@ import { ssr } from "../config";
 import { requestCall } from "../files-call";
 import { FilesError, filesService } from "../service";
 import adminPage from "./admin";
+import executionPage from "./execution-page";
 import filesPage from "./page";
 import { pdfPage } from "./pdf-page";
 import { publicInboxPage, publicSharePage } from "./public-pages";
@@ -22,8 +23,10 @@ export default new Hono<AuthContext>()
     if (c.req.query("view") === "shares") return middleware.noTransform()(c, next);
     return next();
   })
-  .get("/app/filesv2", auth.requireRole("user", ssr.access), ...filesPage)
-  .get("/app/filesv2/ref/:id", auth.requireRole("user", ssr.access), async (c) => {
+  .get("/app/filesv2", auth.requireRole("authenticated", ssr.access), ...filesPage)
+  // Historical writers choose names and context strings beside another actor's authorized record.
+  .get("/app/filesv2/execution/:activityId", auth.requireRole("user", ssr.access), middleware.noTransform(), ...executionPage)
+  .get("/app/filesv2/ref/:id", auth.requireRole("authenticated", ssr.access), async (c) => {
     try {
       // A stable ref opens wherever the file is now; a path ref where it was named.
       const { base, entry } = await filesService.entryById(requestCall(c), c.req.param("id"));
@@ -43,5 +46,5 @@ export default new Hono<AuthContext>()
   .get("/share/filesv2/s/:token", auth.requireRole("*"), ...publicSharePage)
   .get("/share/filesv2/inbox/:token", auth.requireRole("*"), ...publicInboxPage)
   .get("/admin/filesv2", auth.requireRole("admin", ssr.access), ...adminPage)
-  .get("/app/filesv2/*", auth.requireRole("user", ssr.access), (c) => ssr.error(c, 404))
+  .get("/app/filesv2/*", auth.requireRole("authenticated", ssr.access), (c) => ssr.error(c, 404))
   .get("/admin/filesv2/*", auth.requireRole("admin", ssr.access), (c) => ssr.error(c, 404));

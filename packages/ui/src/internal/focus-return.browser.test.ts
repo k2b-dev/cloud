@@ -54,7 +54,7 @@ render(
     createComponent(Select, { label: "Fruit", options, value: "pears" }),
     createComponent(Select, { label: "Snack", options, value: "pears", searchable: true }),
     createComponent(MultiSelectInput, { label: "Basket", options, value: ["pears"] }),
-    createComponent(DatePicker, { label: "Due", value: "2026-09-30" }),
+    createComponent(DatePicker, { label: "Due", value: "2026-09-30", appearance: "plain" }),
     createComponent(ContextMenu, { label: "Note", items: [{ label: "Pin", action: () => {} }], children: "Shopping note" }),
     createComponent(Button, { size: "sm", variant: "secondary", onClick: () => setPhoto(true), children: "View photo" }),
     createComponent(Show, {
@@ -232,6 +232,11 @@ describe("@k2b/ui overlays return focus with the ring they were opened with", ()
         const page = await load(options);
         try {
           await tabTo(page, overlay);
+          // A sidebar preview opens after resting keyboard focus. Cancel that
+          // timer (or its open card) before recording the closed layout.
+          await page.keyboard.press("Escape");
+          await settle(page);
+          expect(await overlayOpen(page)).toBe(false);
           const closed = await boxes(page);
           for (const key of overlay.keys) {
             await page.keyboard.press(key);

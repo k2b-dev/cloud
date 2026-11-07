@@ -1,6 +1,9 @@
 import { describe, expect, test } from "bun:test";
+import { useUnitClients } from "../../../../scripts/fixtures/unit-clients";
 import { compileAggregates } from "./aggregate-compiler";
 import type { Field } from "./types";
+
+useUnitClients();
 
 const mkField = (id: string, type: string): Field => ({
   id,

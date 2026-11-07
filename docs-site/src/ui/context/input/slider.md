@@ -6,7 +6,8 @@
 
 Use it when relative position within a range matters more than entering an exact number.
 
-Use `NumberInput` when exact values are the primary task.
+Use `NumberInput` when exact values are the primary task, and
+[`ChoiceSlider`](/en/ui/input/choice-slider) for a few named stops instead of numbers.
 
 ## Import
 

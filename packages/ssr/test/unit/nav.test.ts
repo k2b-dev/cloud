@@ -10,6 +10,7 @@ import {
   restoreScroll,
   startViewTransition,
 } from "../../src/nav";
+import { VIEW_TRANSITION_UPDATE_BUDGET_MS } from "../../src/nav-history";
 
 const originalWindow = globalThis.window;
 const originalDocument = globalThis.document;
@@ -215,6 +216,96 @@ describe("@k2b/ssr/nav", () => {
     emitPopState("/app?tab=three", { tab: "three" });
 
     expect(navigations).toEqual([{ state: { tab: "two" }, url: "https://example.test/app?tab=two" }]);
+  });
+
+  test("a skipped view transition raises no unhandled rejection", async () => {
+    setupBrowserMocks();
+    const unhandled: unknown[] = [];
+    const record = (reason: unknown) => unhandled.push(reason);
+    process.on("unhandledRejection", record);
+    let called = false;
+    Object.assign(globalThis.document, {
+      startViewTransition: (callback: () => void) => {
+        callback();
+        return { ready: Promise.reject(new DOMException("Transition was skipped", "AbortError")) };
+      },
+    });
+    try {
+      startViewTransition(() => {
+        called = true;
+      });
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(called).toBe(true);
+      expect(unhandled).toEqual([]);
+    } finally {
+      process.off("unhandledRejection", record);
+    }
+  });
+
+  test("a transition that has not reached its update within the budget is skipped, and the update still runs", async () => {
+    setupBrowserMocks({ startViewTransition: true });
+    let skipped = 0;
+    let pending: (() => void) | undefined;
+    Object.assign(globalThis.document, {
+      // Like a browser still capturing the old state: the update runs only once the transition is skipped.
+      startViewTransition: (callback: () => void) => {
+        pending = callback;
+        return {
+          ready: Promise.resolve(),
+          skipTransition: () => {
+            skipped++;
+            pending?.();
+          },
+        };
+      },
+    });
+    let called = false;
+    startViewTransition(() => {
+      called = true;
+    });
+    expect(called).toBe(false);
+    await new Promise((resolve) => setTimeout(resolve, VIEW_TRANSITION_UPDATE_BUDGET_MS + 50));
+    expect({ called, skipped }).toEqual({ called: true, skipped: 1 });
+  });
+
+  test("a transition that reaches its update in time is not skipped", async () => {
+    setupBrowserMocks({ startViewTransition: true });
+    let skipped = 0;
+    Object.assign(globalThis.document, {
+      startViewTransition: (callback: () => void) => {
+        callback();
+        return { ready: Promise.resolve(), skipTransition: () => skipped++ };
+      },
+    });
+    let called = false;
+    startViewTransition(() => {
+      called = true;
+    });
+    await new Promise((resolve) => setTimeout(resolve, VIEW_TRANSITION_UPDATE_BUDGET_MS + 50));
+    expect({ called, skipped }).toEqual({ called: true, skipped: 0 });
+  });
+
+  test("startViewTransition runs the update directly under reduced motion", () => {
+    setupBrowserMocks({ startViewTransition: true });
+    let transitions = 0;
+    Object.assign(globalThis.document, {
+      startViewTransition: (callback: () => void) => {
+        transitions++;
+        callback();
+        return { ready: Promise.resolve() };
+      },
+    });
+    Object.assign(globalThis.window, {
+      matchMedia: (query: string) => ({ matches: query === "(prefers-reduced-motion: reduce)" }),
+    });
+    let called = false;
+
+    startViewTransition(() => {
+      called = true;
+    });
+
+    expect(called).toBe(true);
+    expect(transitions).toBe(0);
   });
 
   test("startViewTransition uses the browser API when available", () => {

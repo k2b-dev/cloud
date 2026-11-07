@@ -80,6 +80,7 @@ describe("shared Spaces sidebar", () => {
         const names = rail.map((control) => control.match(/\btitle="([^"]+)"/)?.[1]);
         expect(names).toEqual([
           locale === "de" ? "Meine Arbeit" : "My work",
+          locale === "de" ? "Kalender" : "Calendar",
           "Ideas",
           "Launch: Launch work",
           locale === "de" ? "Neuer Space" : "New space",

@@ -4,6 +4,7 @@ import { join, resolve, sep } from "node:path";
 import { z } from "zod";
 import { checkPackedRuntime } from "./fixtures/packed-consumer-infrastructure";
 import { packedSiblings, resolvePackedConsumerPins } from "./fixtures/packed-consumer-pins";
+import { packedTypesMatch } from "./fixtures/packed-consumer-surface";
 
 const args = process.argv.slice(2);
 const unknown = args.filter((arg) => arg !== "--help" && arg !== "--release");
@@ -11,14 +12,16 @@ if (unknown.length) throw new Error(`Unknown argument(s): ${unknown.join(", ")}.
 if (args.includes("--help")) {
   console.log(`Usage: bun scripts/check-cloud-packed-consumer.ts [--release] [--help]
 
-Pack @k2b/cloud, @k2b/ui and @k2b/ssr with npm, then install, typecheck,
+Pack @k2b/cloud, @k2b/ui, @k2b/ssr and @k2b/editor with npm, then install, typecheck,
 build an island page and run it against disposable services outside the workspace.
 Build UI first: bun run --cwd packages/ui build. Requires npm and Docker.
 
 Default: use workspace tarballs for siblings, including unreleased changes.
---release: use exact sibling pins from npm when already published; otherwise
-use a tarball only when its workspace version matches the pin. Registry failures
-fail the check; release mode never falls back to workspace copies.
+--release: use published sibling pins from npm after comparing their TypeScript
+surface with same-version workspace tarballs. An already-published Cloud snapshot
+uses current tarballs for changed sources; a new Cloud release requires a version
+bump. Unpublished sibling pins must match the workspace version. Registry failures
+fail the check.
 --help: print this usage and exit.`);
   process.exit(0);
 }
@@ -54,6 +57,7 @@ const consumer = join(temporaryRoot, "consumer");
 const cloudRoot = join(root, "packages/cloud");
 const uiRoot = join(root, "packages/ui");
 const ssrRoot = join(root, "packages/ssr");
+const editorRoot = join(root, "packages/editor");
 const cleanEnv = {
   PATH: process.env.PATH,
   HOME: process.env.HOME,
@@ -77,9 +81,9 @@ const releaseAgePolicy = async (): Promise<string> => {
   return `[install]\n${policy.join("\n")}\n`;
 };
 
-const run = async (label: string, cmd: string[], cwd: string): Promise<string> => {
+const run = async (label: string, cmd: string[], cwd: string, env: Record<string, string | undefined> = cleanEnv): Promise<string> => {
   console.log(label);
-  const child = Bun.spawn(cmd, { cwd, env: cleanEnv, stdout: "pipe", stderr: "pipe" });
+  const child = Bun.spawn(cmd, { cwd, env, stdout: "pipe", stderr: "pipe" });
   const timer = setTimeout(() => child.kill(), 300_000);
   try {
     const [code, stdout, stderr] = await Promise.all([child.exited, new Response(child.stdout).text(), new Response(child.stderr).text()]);
@@ -93,13 +97,15 @@ const run = async (label: string, cmd: string[], cwd: string): Promise<string> =
 try {
   const cloudManifest = z
     .object({
-      dependencies: z.object({ "@k2b/ui": exactVersion, "@k2b/ssr": exactVersion }),
+      version: exactVersion,
+      dependencies: z.object({ "@k2b/ui": exactVersion, "@k2b/ssr": exactVersion, "@k2b/editor": exactVersion }),
       peerDependencies: z.record(z.string(), z.string()),
       devDependencies: z.object({ "@types/bun": z.string(), typescript: z.string() }),
     })
     .parse(await Bun.file(join(cloudRoot, "package.json")).json());
   const uiManifest = versionManifest.parse(await Bun.file(join(uiRoot, "package.json")).json());
   const ssrManifest = versionManifest.parse(await Bun.file(join(ssrRoot, "package.json")).json());
+  const editorManifest = versionManifest.parse(await Bun.file(join(editorRoot, "package.json")).json());
   await mkdir(join(consumer, "src"), { recursive: true });
   // The caller builds UI first. Never silently rebuild a shared local dist tree.
   if (!(await Bun.file(join(uiRoot, "dist/.build-complete")).exists())) {
@@ -119,25 +125,51 @@ try {
   const cloudArchive = await pack("Cloud", cloudRoot);
   const uiArchive = await pack("UI", uiRoot);
   const ssrArchive = await pack("SSR", ssrRoot);
+  const editorArchive = await pack("Editor", editorRoot);
   if ((await stat(join(uiRoot, "dist/.build-complete"))).mtimeMs !== uiBuildTime) {
     throw new Error("UI was rebuilt while packing; rerun after the build finishes");
   }
   const pins = await resolvePackedConsumerPins({
     pins: cloudManifest.dependencies,
-    workspaceVersions: { "@k2b/ui": uiManifest.version, "@k2b/ssr": ssrManifest.version },
-    archives: { "@k2b/ui": uiArchive, "@k2b/ssr": ssrArchive },
+    workspaceVersions: { "@k2b/ui": uiManifest.version, "@k2b/ssr": ssrManifest.version, "@k2b/editor": editorManifest.version },
+    archives: { "@k2b/ui": uiArchive, "@k2b/ssr": ssrArchive, "@k2b/editor": editorArchive },
     mode,
     isPublished,
+    cloudPublished: mode === "release" && (await isPublished("@k2b/cloud", cloudManifest.version)),
+    publishedTypesMatch: async (name, version, archive) => {
+      // Keep npm's same-name archive separate from the workspace candidate.
+      const registryRoot = join(temporaryRoot, "registry", name.replaceAll("/", "-"));
+      await mkdir(registryRoot, { recursive: true });
+      const output = await run(
+        `Pack published ${name}@${version} for type-surface comparison`,
+        [
+          "npm",
+          "pack",
+          `${name}@${version}`,
+          "--ignore-scripts",
+          "--json",
+          "--registry=https://registry.npmjs.org",
+          "--pack-destination",
+          registryRoot,
+        ],
+        temporaryRoot,
+      );
+      const [published] = packOutput.parse(JSON.parse(output));
+      if (!published) throw new Error(`npm pack produced no archive for ${name}@${version}`);
+      return packedTypesMatch(archive, join(registryRoot, published.filename));
+    },
   });
   for (const name of packedSiblings) {
     const pin = pins[name];
     const origin =
       pin.source === "npm"
         ? "npm (already published)"
-        : `packed tarball (${mode === "release" ? "published by this release" : "workspace"})`;
+        : pin.sourceChanged
+          ? "packed tarball (source changed since npm; already-published Cloud snapshot)"
+          : `packed tarball (${mode === "release" ? "published by this release" : "workspace"})`;
     console.log(`${name}@${pin.pin} from ${origin}`);
   }
-  const siblingSpecs = { "@k2b/ui": pins["@k2b/ui"].spec, "@k2b/ssr": pins["@k2b/ssr"].spec };
+  const siblingSpecs = { "@k2b/ui": pins["@k2b/ui"].spec, "@k2b/ssr": pins["@k2b/ssr"].spec, "@k2b/editor": pins["@k2b/editor"].spec };
   await Bun.write(
     join(consumer, "package.json"),
     JSON.stringify(
@@ -268,7 +300,7 @@ export default await app.start({ fetch: router.fetch, port: Number(process.env.P
   );
   for (const name of ["@k2b/cloud", ...packedSiblings]) {
     const installed = await realpath(join(consumer, "node_modules", name));
-    const pin = name === "@k2b/ui" || name === "@k2b/ssr" ? pins[name] : undefined;
+    const pin = name === "@k2b/ui" || name === "@k2b/ssr" || name === "@k2b/editor" ? pins[name] : undefined;
     const isolatedRoot = pin?.source === "npm" ? join(consumer, "node_modules") : temporaryRoot;
     if (!installed.startsWith(`${await realpath(isolatedRoot)}${sep}`)) {
       throw new Error(`${name} resolved outside the isolated consumer: ${installed}`);
@@ -291,6 +323,7 @@ export default await app.start({ fetch: router.fetch, port: Number(process.env.P
     "Load the minimal app through the installed preload",
     [process.execPath, "--preload", "./node_modules/@k2b/cloud/scripts/preload.ts", "./src/config.ts"],
     consumer,
+    { ...cleanEnv, DATABASE_URL: "postgres://127.0.0.1:1/unused_test", REDIS_URL: "redis://127.0.0.1:1" },
   );
   await run("Build with the installed Cloud production script", [process.execPath, "node_modules/@k2b/cloud/scripts/build.ts"], consumer);
   // SSR names island entries with the first 12 hex digits of the relative path's MD5.
@@ -311,9 +344,30 @@ export default await app.start({ fetch: router.fetch, port: Number(process.env.P
     "Load plugin-only config through the installed preload",
     [process.execPath, "--preload", "./node_modules/@k2b/cloud/scripts/preload.ts", "./src/config.ts"],
     consumer,
+    { ...cleanEnv, DATABASE_URL: "postgres://127.0.0.1:1/unused_test", REDIS_URL: "redis://127.0.0.1:1" },
   );
   await run("Build plugin-only config", [process.execPath, "node_modules/@k2b/cloud/scripts/build.ts"], consumer);
   if ((await Bun.file(join(consumer, "dist/server.js")).size) === 0) throw new Error("Plugin-only server bundle is empty");
+  // The public server entries import without a transform, but a build that reaches JSX needs one.
+  await run(
+    "Import the public server entries without a transform",
+    [process.execPath, "-e", 'await import("@k2b/cloud"); await import("@k2b/cloud/start"); await import("@k2b/cloud/server");'],
+    consumer,
+    { ...cleanEnv, DATABASE_URL: "postgres://127.0.0.1:1/unused_test", REDIS_URL: "redis://127.0.0.1:1" },
+  );
+  await Bun.write(join(consumer, "src/config.ts"), `export const plugin = () => ({ name: "no-transform", setup: () => undefined });\n`);
+  await Bun.write(join(consumer, "src/no-transform.tsx"), "export const view = () => <div />;\n");
+  await Bun.write(join(consumer, "src/index.ts"), `export { view } from "./no-transform.tsx";\n`);
+  const untransformed = Bun.spawnSync([process.execPath, "node_modules/@k2b/cloud/scripts/build.ts"], {
+    cwd: consumer,
+    env: cleanEnv,
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+  const buildOutput = `${untransformed.stdout.toString()}${untransformed.stderr.toString()}`;
+  if (untransformed.exitCode === 0 || !/for import "(jsx|jsxs|jsxDEV|Fragment)"/.test(buildOutput)) {
+    throw new Error(`A build without the Solid transform must fail on the missing JSX runtime:\n${buildOutput}`);
+  }
   console.log(
     "Packed checkout installs, typechecks and builds without workspace aliases or extra transitive dependencies. Production runtime registration, HTTP and graceful shutdown pass against disposable services.",
   );

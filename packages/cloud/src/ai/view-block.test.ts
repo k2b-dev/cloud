@@ -919,3 +919,14 @@ describe("explorer views", () => {
     expect(cloudAiViewTable(parsed, "en").rows[1]?.cells).toEqual({ constructor: "", ["__proto__"]: "" });
   });
 });
+
+test("table reference cells retain optional card facts", () => {
+  const ref = { type: "spaces.item", id: "Itm001", title: "Plan", context: "Task in Planning", status: "Open" };
+  const parsed = parseCloudAiView({
+    view: "table",
+    title: "Tasks",
+    columns: [{ id: "item", type: "ref" }],
+    rows: [{ item: ref }],
+  });
+  expect(parsed).toMatchObject({ rows: [{ item: ref }] });
+});

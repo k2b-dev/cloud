@@ -6,8 +6,8 @@ import type {
   AiDraftContentPart,
   AiFileStat,
   AiPendingTurnAction,
+  AiPeopleModels,
   AiProject,
-  AiPublicModelProfile,
   AiSkillSummary,
   AiStoredMessage,
   CloudAiSurveyInput,
@@ -23,6 +23,7 @@ import {
 import { capabilityReviewView } from "@k2b/cloud/capabilities";
 import { arg, type CloudCliContext, command, flag } from "@k2b/cloud/cli";
 import type { AiChatQuotaSnapshot } from "@k2b/cloud/shared";
+import { parseAiModelChoice } from "@k2b/cloud/shared";
 import { httpApprovalNotice } from "../artifacts/code-approval-message";
 import type { CapabilityDecision, CodeApproval } from "../artifacts/runtime/capabilities";
 import { pendingActionQuestion, printPendingActionContent, printReviewContent } from "./action-question";
@@ -30,6 +31,7 @@ import { readApprovalPreferences, revokeApprovalPreference } from "./approvals";
 import { closeCliCodeHost } from "./code-host";
 import { createLineReader, type LineReader } from "./line-reader";
 import { createLocalContextReader, type LocalContext, type LocalSkill, localSkillCatalog, readLocalSkill } from "./local-context";
+import { type LocalFileReview, reviewLocalFile } from "./local-file";
 import { classifyLocalPath, completeLocalPath, extractMessageAttachments, lastMentionToken, resolveLocalPath } from "./local-paths";
 import { createLocalSessionFolder, runLocalTool } from "./local-tools";
 import { jsonRequest, readApi, readProjectsApi } from "./shared";
@@ -63,7 +65,7 @@ type InteractiveOptions = {
 };
 
 type FileList = { files: AiFileStat[]; totalBytes: number };
-type AssistantStatus = { defaultModelId?: string; models?: AiPublicModelProfile[] };
+type AssistantStatus = AiPeopleModels;
 
 export const INTERACTIVE_COMMANDS: ReadonlyArray<{ name: string; usage: string; summary: string }> = [
   { name: "/help", usage: "/help", summary: "Show these commands" },
@@ -105,13 +107,13 @@ const printInteractiveHelp = (ctx: CloudCliContext): void => {
   ctx.print(`${"/<skill>".padEnd(width)}Select a Skill for your next message (/skills lists them)`);
 };
 
-const readInitialModelLabel = async (ctx: CloudCliContext, requestedModelId?: string): Promise<string> => {
+const readInitialModelLabel = async (ctx: CloudCliContext, model?: string): Promise<string> => {
   try {
     const status = await readApi<AssistantStatus>(ctx, "/status");
-    const modelId = requestedModelId ?? status.defaultModelId;
-    return status.models?.find((profile) => profile.id === modelId)?.label ?? modelId ?? "Cloud default";
+    const choice = model ? parseAiModelChoice(model) : status.effectiveDefault;
+    return "class" in choice ? choice.class : (status.options.find((profile) => profile.id === choice.id)?.label ?? choice.id);
   } catch {
-    return requestedModelId ?? "Cloud default";
+    return model ?? "Cloud default";
   }
 };
 
@@ -397,12 +399,17 @@ export const localTurnFields = (input: {
   localTools: "ask" | "off";
   workspace: string;
   client: { kind: "cli" | "acp"; name?: string };
+  /** Offer Bash only where its question always reaches a person. */
+  bash?: boolean;
 }) => {
   const skills = input.localTools === "ask" ? localSkillCatalog(input.context) : [];
   return {
     clientToolIds:
       input.localTools === "ask"
-        ? ["local_bash", ...AI_LOCAL_TOOL_NAMES.filter((name) => name !== "load_local_skill" || skills.length > 0)]
+        ? [
+            ...(input.bash === false ? [] : ["local_bash"]),
+            ...AI_LOCAL_TOOL_NAMES.filter((name) => name !== "load_local_skill" || skills.length > 0),
+          ]
         : [],
     client: { ...input.client, cwd: input.workspace, os: `${osType()} ${osRelease()}`, shell: "/bin/bash", localTools: input.localTools },
     localContext: { instructions: input.context.instructions, skills },
@@ -504,6 +511,7 @@ They go to the model with every message and can steer what it does with your Clo
         : `${context.instructions.length} ${context.instructions.length === 1 ? "file" : "files"}${context.shortened ? ", shortened" : ""}`;
   const clientTools: AssistantClientTools = {
     names: new Set(["local_bash", ...AI_LOCAL_TOOL_NAMES]),
+    receipts: new Map(),
     run: async (call, signal) =>
       runLocalTool(
         call,
@@ -537,6 +545,8 @@ They go to the model with every message and can steer what it does with your Clo
       ask: async (question) => (await readApproval(reader, question)) === "once",
     });
   const preparedAttachments = new Map<string, Awaited<ReturnType<typeof uploadAttachment>>>();
+  // The file each attachment named when it was checked; the upload sends only that file.
+  const attachmentReviews = new Map<string, LocalFileReview>();
   let activeAbort: AbortController | null = null;
   let exitRequested = false;
   const removeInterrupt = reader.onInterrupt((question) => {
@@ -556,7 +566,9 @@ They go to the model with every message and can steer what it does with your Clo
       throw new Error(`Attachment not found: ${terminalSafeText(path)}`);
     }
     if (attachments.some((attached) => realpathSync(resolveLocalPath(attached, workspace)) === target)) return;
-    const access = classifyLocalPath(path, { workspace });
+    const review = await reviewLocalFile(target);
+    const rules = [classifyLocalPath(path, { workspace }), classifyLocalPath(review.target, { workspace })];
+    const access = rules.find((rule) => rule.access === "blocked") ?? rules.find((rule) => rule.access === "ask") ?? rules[0]!;
     if (access.access === "blocked") {
       ctx.error(`Not attached: ${terminalSafeText(path)} is cld's configuration.`);
       return;
@@ -575,6 +587,7 @@ They go to the model with every message and can steer what it does with your Clo
       }
     }
     await validateLocalAttachments([...attachments, target]);
+    attachmentReviews.set(target, review);
     attachments.push(target);
   };
 
@@ -686,7 +699,11 @@ They go to the model with every message and can steer what it does with your Clo
       printResumeHint(ctx, conversation.id, true);
     }
     for (const path of attachments) {
-      if (!preparedAttachments.has(path)) preparedAttachments.set(path, await uploadAttachment(ctx, conversation.id, path));
+      if (!preparedAttachments.has(path))
+        preparedAttachments.set(
+          path,
+          await uploadAttachment(ctx, conversation.id, path, undefined, undefined, attachmentReviews.get(path)),
+        );
     }
     const content = [...attachments.map((path) => preparedAttachments.get(path)!), ...selectedCloud];
     const selectedSkills = [];
@@ -704,7 +721,7 @@ They go to the model with every message and can steer what it does with your Clo
       body: {
         message,
         ...(content.length > 0 ? { content } : {}),
-        ...(model ? { modelProfileId: model } : {}),
+        ...(model ? { model: parseAiModelChoice(model) } : {}),
         ...clientInput,
         localContext: {
           ...clientInput.localContext,
@@ -803,7 +820,7 @@ They go to the model with every message and can steer what it does with your Clo
           printInfo(ctx, model ? `Model: ${model}` : "Model: default");
           break;
         }
-        const models = await readApi<AiPublicModelProfile[]>(ctx, "/models");
+        const models = await readApi<AiPeopleModels>(ctx, "/models").then((payload) => payload.options);
         const selected = await selectNumberedChoice<string | null>({
           output: ctx,
           reader: choiceReader,
@@ -813,7 +830,7 @@ They go to the model with every message and can steer what it does with your Clo
           choices: models.map((profile) => ({
             value: profile.id,
             label: profile.label,
-            description: `${profile.provider} · ${profile.model}`,
+            description: profile.description,
             current: model === profile.id,
           })),
           emptyMessage: "No selectable models are available.",
@@ -868,7 +885,7 @@ They go to the model with every message and can steer what it does with your Clo
             path: conversationPath(conversationId, `/messages/${encodeURIComponent(message.id)}/retry`),
             body: {
               mode,
-              ...(model ? { modelProfileId: model } : {}),
+              ...(model ? { model: parseAiModelChoice(model) } : {}),
               ...clientInput,
               clientToolIds: [...clientInput.clientToolIds, "code_open", "code_secret"],
             },
@@ -977,7 +994,7 @@ They go to the model with every message and can steer what it does with your Clo
           ctx.print("No usage limits apply.");
           break;
         }
-        const models = await readApi<AiPublicModelProfile[]>(ctx, "/models");
+        const models = await readApi<AiPeopleModels>(ctx, "/models").then((payload) => payload.options);
         const label = (id: string) => models.find((model) => model.id === id)?.label ?? id;
         const dates = new Intl.DateTimeFormat(ctx.options.locale, { dateStyle: "medium", timeStyle: "short" });
         for (const balance of quota.balances) {
@@ -1208,10 +1225,14 @@ export const assistantRootCommand = command("", {
     if (positional && piped) throw new Error("Pass the message either as arguments or through stdin.");
     const message = positional || piped;
     if (!message) throw new Error("Missing message.");
+    // Send the files that were checked, even if a path names another file before the upload.
+    const reviews = new Map<string, LocalFileReview>();
+    for (const path of flags.attach) reviews.set(path, await reviewLocalFile(path));
     await validateLocalAttachments(flags.attach);
     const conversation = await resolveConversation(ctx, { conversationId: flags.chat, title: flags.title, projectId: flags.project });
     const content = [];
-    for (const path of flags.attach) content.push(await uploadAttachment(ctx, conversation.id, path));
+    for (const path of flags.attach)
+      content.push(await uploadAttachment(ctx, conversation.id, path, undefined, undefined, reviews.get(path)));
     const { submitted, result } = await submitAssistantTurn({
       ctx,
       conversationId: conversation.id,
@@ -1219,7 +1240,7 @@ export const assistantRootCommand = command("", {
       body: {
         message,
         ...(content.length > 0 ? { content } : {}),
-        ...(flags.model ? { modelProfileId: flags.model } : {}),
+        ...(flags.model ? { model: parseAiModelChoice(flags.model) } : {}),
       },
       watch: !flags.detach,
       approveTools: flags.approve,

@@ -18,9 +18,7 @@ export default function AiProjectsAdminPanel(props: Props) {
   const locale = useLocale();
   const t = () => settingsMessages.resolve([locale()]).t;
   const totalPages = Math.ceil(props.total / props.perPage);
-  const baseUrl = props.search
-    ? `/admin/settings?tab=ai-projects&search=${encodeURIComponent(props.search)}&page=`
-    : "/admin/settings?tab=ai-projects&page=";
+  const baseUrl = props.search ? `/admin/ai?sec=projects&search=${encodeURIComponent(props.search)}&page=` : "/admin/ai?sec=projects&page=";
   const columns: DataTableColumn<AiProjectAdminListItem>[] = [
     { id: "project", header: t().project, value: (project) => project.name },
     { id: "updated", header: t().updated, value: (project) => project.updatedAt, cellClass: "whitespace-nowrap" },
@@ -46,7 +44,7 @@ export default function AiProjectsAdminPanel(props: Props) {
       <div class="flex items-center gap-2">
         <div class="min-w-0 flex-1">
           <SearchBar
-            action="/admin/settings?tab=ai-projects"
+            action="/admin/ai?sec=projects"
             value={props.search}
             placeholder={t().searchProjects}
             ariaLabel={t().searchAiProjects}

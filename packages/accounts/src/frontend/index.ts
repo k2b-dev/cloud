@@ -1,6 +1,8 @@
 import { type AuthContext, auth, middleware } from "@k2b/cloud/server";
 import { Hono } from "hono";
 import { ssr } from "../config";
+import agentDetailPage from "./agents/detail.page";
+import agentsPage from "./agents/page";
 import auditPage from "./audit/page";
 import deletedAccountsPage from "./deleted-accounts/page";
 import duplicateEmailsPage from "./duplicate-emails/page";
@@ -20,6 +22,8 @@ export default new Hono<AuthContext>()
   .use("/", middleware.noTransform())
   .use("/groups/:id", middleware.noTransform())
   .use("/groups/:id/*", middleware.noTransform())
+  .use("/agents", middleware.noTransform())
+  .use("/agents/*", middleware.noTransform())
   .use("/service-accounts", middleware.noTransform())
   .use("/service-accounts/*", middleware.noTransform())
   .use("/users", middleware.noTransform())
@@ -43,6 +47,8 @@ export default new Hono<AuthContext>()
   .get("/requests", auth.requireRole("admin", ssr.access), ...requestsPage)
   .get("/audit", auth.requireRole("admin", ssr.access), ...auditPage)
   .get("/service-accounts", auth.requireRole("admin", ssr.access), ...serviceAccountsPage)
+  .get("/agents", auth.requireRole("admin", ssr.access), ...agentsPage)
+  .get("/agents/:id", auth.requireRole("admin", ssr.access), ...agentDetailPage)
   .get("/notifications", auth.requireRole("admin", ssr.access), ...notificationsPage)
   .get("/notifications/:id", auth.requireRole("admin", ssr.access), ...notificationDetailPage)
   .get("/deleted-accounts", auth.requireRole("admin", ssr.access), ...deletedAccountsPage)

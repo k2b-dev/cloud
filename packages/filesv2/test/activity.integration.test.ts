@@ -1,11 +1,11 @@
-import { afterAll, beforeAll, beforeEach, expect, mock, spyOn, test } from "bun:test";
-import { type ProcessSync, startProcessSync } from "@k2b/cloud";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, mock, spyOn, test } from "bun:test";
+import { type ProcessSync, sql, startProcessSync } from "@k2b/cloud";
 import { type CapabilityExecutionContext, UserSchema } from "@k2b/cloud/contracts";
 import { type RequestActor, resolveDisplayNames } from "@k2b/cloud/server";
 import { accountIdentities } from "@k2b/cloud/services";
 import { Filegate, FilegateError, type WriteOptions } from "@k2b/filegate";
-import { sql } from "bun";
-import { suiteFor } from "../../../scripts/fixtures/test-infra";
+import { endLingeringTestWork, suiteFor } from "../../../scripts/fixtures/test-infra";
+import { migrate as migrateAudit } from "../../core/src/migrate/core/audit";
 import { filesCapabilities } from "../src/capabilities";
 import type { Configuration } from "../src/contracts";
 import { bindings } from "../src/data/bases";
@@ -14,7 +14,15 @@ import { persistedEntryRefId } from "../src/data/references";
 import { type Upload, uploadSessionId, uploads } from "../src/data/uploads";
 import { migrate } from "../src/migrate";
 import { createFilesService, filesService } from "../src/service";
-import { currentActivityId, fileAction, type Intent, purgeActivity, recoverActivity, uploadAction } from "../src/service/activity";
+import {
+  ACTIVITY_PURGE_BATCH,
+  currentActivityId,
+  fileAction,
+  type Intent,
+  purgeActivity,
+  recoverActivity,
+  uploadAction,
+} from "../src/service/activity";
 import { signEditorToken } from "../src/service/collabora";
 import { FilesError } from "../src/service/errors";
 import { connectFilegate, type FilesFilegate } from "../src/service/filegate-facade";
@@ -107,6 +115,8 @@ suite("Files activity with real storage", () => {
     await sql`CREATE TABLE IF NOT EXISTS auth.users(id uuid PRIMARY KEY DEFAULT gen_random_uuid(),uid text,provider text,profile text,admin boolean,account_expires timestamptz)`.simple();
     await sql`CREATE TABLE IF NOT EXISTS auth.access(id uuid PRIMARY KEY DEFAULT gen_random_uuid())`.simple();
     await migrate();
+    await migrateAudit();
+    await sql`ALTER TABLE auth.users ADD COLUMN IF NOT EXISTS display_name text, ADD COLUMN IF NOT EXISTS avatar_hash text`.simple();
     if (testActor.kind !== "user") throw new Error("expected user fixture");
     actor = { ...testActor, user: { ...testActor.user, id: Bun.randomUUIDv7(), uid: "alice" } };
     ipa = {
@@ -168,6 +178,9 @@ suite("Files activity with real storage", () => {
           };
         },
         groups: async () => ({ items: [copyGroup], nextCursor: null }),
+        inventory: async () => {
+          throw new FilesError("forbidden", 403);
+        },
       },
       displayNames: resolveDisplayNames,
       bindings,
@@ -177,7 +190,7 @@ suite("Files activity with real storage", () => {
       publicOrigin: async () => "https://cloud.test",
       userById: async () => null,
       transfer: fetch,
-      connect: connectFilegate,
+      connect: (config, signal) => connectFilegate(config, undefined, signal),
     });
   });
   beforeEach(async () => {
@@ -717,7 +730,7 @@ suite("Files activity with real storage", () => {
       publicOrigin: async () => "https://cloud.test",
       userById: async () => null,
       transfer: fetch,
-      connect: connectFilegate,
+      connect: (config, signal) => connectFilegate(config, undefined, signal),
     };
   }
   function guardedTransport() {
@@ -945,11 +958,41 @@ suite("Files activity with real storage", () => {
     expect((await row(pending)).state).toBe("pending");
     expect((await row(boundary)).state).toBe("done");
   });
-  test("retention deletes at most 10000 rows per call", async () => {
+  test("retention deletes at most one batch per call", async () => {
+    // The bound, not bulk speed: 10,005 rows took over 4.7 s in CI once, unexplained, against 33 ms locally (#2153).
+    expect(ACTIVITY_PURGE_BATCH).toBe(10_000);
     await sql`INSERT INTO filesv2.activity(id,state,action,server_url,root,directory,name,actor_kind,via,started_at)
-      SELECT gen_random_uuid(),'done','folder.create',${config.url},'cloud',true,'expired','system','system',${new Date(now.getTime() - 366 * day)} FROM generate_series(1,10005)`;
-    expect(await purgeActivity({ now, retentionDays: 365 })).toEqual({ purged: 10000 });
-    expect(await purgeActivity({ now, retentionDays: 365 })).toEqual({ purged: 5 });
+      SELECT gen_random_uuid(),'done','folder.create',${config.url},'cloud',true,'expired','system','system',${new Date(now.getTime() - 366 * day)} FROM generate_series(1,105)`;
+    expect(await purgeActivity({ now, retentionDays: 365, batch: 100 })).toEqual({ purged: 100 });
+    expect(await purgeActivity({ now, retentionDays: 365, batch: 100 })).toEqual({ purged: 5 });
+  });
+  test("work an aborted test leaves holding the history table is ended before the next test's cleanup waits on it", async () => {
+    // Like the body of a test that timed out: its transaction keeps the table locked and never finishes (#1797).
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const lingering = sql
+      .begin(async (tx) => {
+        await tx`LOCK TABLE filesv2.activity IN ACCESS EXCLUSIVE MODE`;
+        await held;
+      })
+      .catch((error: unknown) => error);
+    const lockedElsewhere = async () => {
+      const [row] = await sql<{ n: number }[]>`SELECT count(*)::int AS n FROM pg_locks l JOIN pg_class c ON c.oid = l.relation
+        WHERE c.relname = 'activity' AND l.mode = 'AccessExclusiveLock' AND l.granted AND l.pid <> pg_backend_pid()`;
+      return row!.n > 0;
+    };
+    for (const deadline = performance.now() + 2_000; !(await lockedElsewhere()); )
+      if (performance.now() > deadline) throw new Error("The lock was never taken");
+    // The fixture leaves work alone for its first 250 ms, so a short statement of background work is never touched.
+    await Bun.sleep(300);
+    const reports = await endLingeringTestWork();
+    expect(reports.some((report) => report.includes("idle in transaction") && report.includes("LOCK TABLE filesv2.activity"))).toBe(true);
+    expect(await lingering).toBeInstanceOf(Error);
+    release();
+    expect(await lockedElsewhere()).toBe(false);
+    await sql`TRUNCATE filesv2.activity`;
   });
   test("account deletion removes the person link without deleting history", async () => {
     const userId = Bun.randomUUIDv7();
@@ -974,23 +1017,32 @@ suite("Files activity with real storage", () => {
     const [stored] = await sql<{ state: string; path_after: string }[]>`SELECT state,path_after FROM filesv2.activity`;
     expect(stored).toEqual({ state: "done", path_after: path });
   });
-  test.each(["rename", "move", "copy"] as const)("%s cannot change storage when its history insert fails", async (action) => {
+  describe.each(["rename", "move", "copy"] as const)("%s with unavailable history", (action) => {
     const name = `blocked-${action}.txt`;
     const folder = `blocked-${action}-target`;
-    await client.root("cloud").put(`${home}/${name}`, new Blob(["original"]));
-    await client.root("cloud").mkdir(`${home}/${folder}`);
     let sent = 0;
-    const transport: typeof fetch = Object.assign(
-      async (input: Parameters<typeof fetch>[0], init?: Parameters<typeof fetch>[1]) => {
-        if (init?.method === "POST" && String(input).endsWith("/transfers")) sent++;
-        return fetch(input, init);
-      },
-      { preconnect: fetch.preconnect },
-    );
-    const counted = createFilesService({ ...serviceDependencies(), connect: (configuration) => connectFilegate(configuration, transport) });
-    await sql`CREATE OR REPLACE FUNCTION filesv2.reject_activity() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'intent unavailable'; END $$`.simple();
-    await sql`CREATE TRIGGER reject_activity BEFORE INSERT ON filesv2.activity FOR EACH ROW EXECUTE FUNCTION filesv2.reject_activity()`.simple();
-    try {
+    let counted: ReturnType<typeof createFilesService>;
+    beforeEach(async () => {
+      // Keep real fixture preparation outside the assertion's unchanged 5 s budget.
+      await client.root("cloud").put(`${home}/${name}`, new Blob(["original"]));
+      await client.root("cloud").mkdir(`${home}/${folder}`);
+      sent = 0;
+      const transport: typeof fetch = Object.assign(
+        async (input: Parameters<typeof fetch>[0], init?: Parameters<typeof fetch>[1]) => {
+          if (init?.method === "POST" && String(input).endsWith("/transfers")) sent++;
+          return fetch(input, init);
+        },
+        { preconnect: fetch.preconnect },
+      );
+      counted = createFilesService({ ...serviceDependencies(), connect: (configuration) => connectFilegate(configuration, transport) });
+      await sql`CREATE OR REPLACE FUNCTION filesv2.reject_activity() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'intent unavailable'; END $$`.simple();
+      await sql`CREATE TRIGGER reject_activity BEFORE INSERT ON filesv2.activity FOR EACH ROW EXECUTE FUNCTION filesv2.reject_activity()`.simple();
+    });
+    afterEach(async () => {
+      await sql`DROP TRIGGER IF EXISTS reject_activity ON filesv2.activity`.simple();
+      await sql`DROP FUNCTION IF EXISTS filesv2.reject_activity()`.simple();
+    });
+    test("cannot change storage when its history insert fails", async () => {
       if (action === "rename")
         await expect(counted.rename(testCall(actor), { baseId: baseId(), path: name, name: `renamed-${name}` })).rejects.toThrow(
           "intent unavailable",
@@ -1003,10 +1055,7 @@ suite("Files activity with real storage", () => {
       expect(sent).toBe(0);
       expect((await client.root("cloud").stat(`${home}/${name}`)).size).toBe(8);
       expect(await sql`SELECT id FROM filesv2.activity`).toHaveLength(0);
-    } finally {
-      await sql`DROP TRIGGER reject_activity ON filesv2.activity`.simple();
-      await sql`DROP FUNCTION filesv2.reject_activity()`.simple();
-    }
+    });
   });
   test("a move batch retains successful and refused entries under one batch ID", async () => {
     const root = client.root("cloud");
@@ -1428,4 +1477,75 @@ suite("Files activity with real storage", () => {
       }
     },
   );
+  test("history move-back resolves the original stable item and records its new rename", async () => {
+    const original = await service.mkdir(testCall(actor), { baseId: baseId(), path: "history-back-original" });
+    const before = await client.root("cloud").stat(`${home}/history-back-original`);
+    await service.rename(testCall(actor), { baseId: baseId(), path: original.entry.path, name: "history-back-moved" });
+    const [activity] = await sql<{ id: string }[]>`SELECT id FROM filesv2.activity WHERE action='item.rename'`;
+    expect((await service.activityRecovery(testCall(actor), { activityId: activity!.id })).canMoveBack).toBe(true);
+    const restored = await service.moveActivityBack(testCall(actor), { activityId: activity!.id });
+    expect(restored.entry.path).toBe("history-back-original");
+    expect((await client.root("cloud").stat(`${home}/history-back-original`)).id).toBe(before.id);
+    const rows = await sql<{ state: string; item_id: string; item_after_id: string }[]>`SELECT state,item_id,item_after_id
+      FROM filesv2.activity WHERE action='item.rename' ORDER BY started_at,id`;
+    expect(rows).toHaveLength(2);
+    expect(rows[1]).toMatchObject({ state: "done", item_id: before.id, item_after_id: before.id });
+  });
+  test("history move-back at the original location returns without re-locking or writing", async () => {
+    await service.mkdir(testCall(actor), { baseId: baseId(), path: "history-no-op-original" });
+    await service.rename(testCall(actor), { baseId: baseId(), path: "history-no-op-original", name: "history-no-op-moved" });
+    const [activity] = await sql<{ id: string }[]>`SELECT id FROM filesv2.activity WHERE action='item.rename'`;
+    await service.moveActivityBack(testCall(actor), { activityId: activity!.id });
+    const before = await sql`SELECT id,xmin::text FROM filesv2.activity ORDER BY id`;
+    const result = await service.moveActivityBack(testCall(actor), { activityId: activity!.id });
+    expect(result.entry.path).toBe("history-no-op-original");
+    expect(await sql`SELECT id,xmin::text FROM filesv2.activity ORDER BY id`).toEqual(before);
+  });
+  test("history move-back refuses a replacement at the former destination without publishing or recording a move", async () => {
+    await service.mkdir(testCall(actor), { baseId: baseId(), path: "history-replaced-original" });
+    await service.rename(testCall(actor), { baseId: baseId(), path: "history-replaced-original", name: "history-replaced-moved" });
+    const [activity] = await sql<{ id: string }[]>`SELECT id FROM filesv2.activity WHERE action='item.rename'`;
+    await client.root("cloud").remove(`${home}/history-replaced-moved`, true);
+    const replacement = await client.root("cloud").mkdir(`${home}/history-replaced-moved`);
+    await expect(service.moveActivityBack(testCall(actor), { activityId: activity!.id })).rejects.toMatchObject({ code: "source_changed" });
+    expect((await client.root("cloud").stat(`${home}/history-replaced-moved`)).id).toBe(replacement.id);
+    expect((await sql`SELECT id FROM filesv2.activity WHERE action='item.rename'`).length).toBe(1);
+  });
+  test("history restoration preserves a name conflict and records restoration under the chosen new name", async () => {
+    await service.mkdir(testCall(actor), { baseId: baseId(), path: "history-trash-original" });
+    const original = await client.root("cloud").stat(`${home}/history-trash-original`);
+    await service.remove(testCall(actor), { baseId: baseId(), paths: ["history-trash-original"] });
+    const [activity] = await sql<{ id: string }[]>`SELECT id FROM filesv2.activity WHERE action='item.trash'`;
+    expect((await service.activityRecovery(testCall(actor), { activityId: activity!.id })).trash?.canRestore).toBe(true);
+    const replacement = await client.root("cloud").mkdir(`${home}/history-trash-original`);
+    await expect(service.restoreActivity(testCall(actor), { activityId: activity!.id })).rejects.toMatchObject({ code: "path_conflict" });
+    const restored = await service.restoreActivity(testCall(actor), { activityId: activity!.id, name: "history-trash-restored" });
+    expect(restored.entry.path).toBe("history-trash-restored");
+    expect((await client.root("cloud").stat(`${home}/history-trash-restored`)).id).toBe(original.id);
+    expect((await client.root("cloud").stat(`${home}/history-trash-original`)).id).toBe(replacement.id);
+    const activityStates = await sql<{ state: string }[]>`SELECT state FROM filesv2.activity WHERE action='item.restore'`;
+    expect(activityStates.map((row) => row.state)).toEqual(["done"]);
+  });
+  test("history recovery rechecks user eligibility before touching a recorded item", async () => {
+    await service.mkdir(testCall(actor), { baseId: baseId(), path: "history-revoked-original" });
+    await service.rename(testCall(actor), { baseId: baseId(), path: "history-revoked-original", name: "history-revoked-moved" });
+    const [activity] = await sql<{ id: string }[]>`SELECT id FROM filesv2.activity WHERE action='item.rename'`;
+    const guest: RequestActor = { ...actor, user: { ...actor.user, profile: "guest" } };
+    await expect(service.moveActivityBack(testCall(guest), { activityId: activity!.id })).rejects.toMatchObject({ status: 403 });
+    expect((await client.root("cloud").stat(`${home}/history-revoked-moved`)).directory).toBe(true);
+    expect((await sql`SELECT id FROM filesv2.activity WHERE action='item.rename'`).length).toBe(1);
+  });
+  test("manual evidence recheck selects one stale entry despite its backoff and leaves neighboring entries untouched", async () => {
+    const selected = await seed({ path: `${home}/history-recheck-selected` });
+    const neighbor = await seed({ path: `${home}/history-recheck-neighbor` });
+    // Relative to the same database clock used by recovery, independent of the calendar day this suite runs.
+    await sql`UPDATE filesv2.activity SET started_at=now()-interval '1 day',heartbeat_at=now()-interval '2 minutes',next_check_at=now()+interval '6 hours'`;
+    const checked = await service.recheckActivity(testCall(actor), { activityId: selected });
+    expect(checked.state).toBe("unclear");
+    expect((await row(selected)).checks).toBe(1);
+    expect((await row(neighbor)).checks).toBe(0);
+    // A second manual click cannot bypass the fresh claim just acquired by the first.
+    await service.recheckActivity(testCall(actor), { activityId: selected });
+    expect((await row(selected)).checks).toBe(1);
+  });
 });

@@ -1,7 +1,8 @@
 import { type JSX, Show } from "solid-js";
 import type { IntentTone } from "../semantics";
 
-export type ProgressRingTone = Extract<IntentTone, "info" | "warning" | "danger">;
+/** `accent` draws the ring in the app's own colour, for progress that belongs to the app rather than to a state. */
+export type ProgressRingTone = Extract<IntentTone, "info" | "warning" | "danger"> | "accent";
 
 export type ProgressRingProps = {
   value: number;

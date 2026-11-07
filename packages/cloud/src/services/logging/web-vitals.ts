@@ -1,5 +1,5 @@
-import { sql } from "bun";
 import { z } from "zod";
+import { sql } from "../../runtime/clients";
 
 const ranges = {
   "1h": { hours: 1, bucket: 60 },

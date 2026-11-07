@@ -1,6 +1,8 @@
 import { expect, spyOn, test } from "bun:test";
-import { SQL, sql } from "bun";
+import { SQL } from "bun";
+import { useUnitClients } from "../../../../scripts/fixtures/unit-clients";
 import { type AdminMailProfile, MailProfileInputSchema, MailRetentionSchema } from "../contracts/outgoing-mail";
+import { sql } from "../runtime/clients";
 import { audit } from "../services/audit";
 import { OutgoingMailError, outgoingMailStore } from "../services/outgoing-mail/store";
 import { outgoingMailTest } from "../services/outgoing-mail/test-send";
@@ -9,6 +11,8 @@ import { buildProjectedUser } from "../services/session/user";
 import * as settings from "../services/settings";
 import settingsRoutes from "./admin-core-settings";
 import { createAdminOutgoingMailRoutes } from "./admin-outgoing-mail";
+
+useUnitClients();
 
 const input = {
   name: "Alerts",

@@ -1,6 +1,9 @@
 import { describe, expect, test } from "bun:test";
+import { useUnitClients } from "../../../../scripts/fixtures/unit-clients";
 import { validateRecordQueryForFields } from "./query-validation";
 import type { Field } from "./types";
+
+useUnitClients();
 
 const tableId = "00000000-0000-4000-8000-000000000001";
 const textId = "00000000-0000-4000-8000-000000000002";

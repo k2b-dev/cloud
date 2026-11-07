@@ -51,7 +51,7 @@ export const login = async () => {
 export const createClient = async (cookie: string, name: string, isPublic: boolean, serviceAccountId?: string): Promise<Client> => {
   const response = await request("/api/oauth/admin/clients", {
     method: "POST",
-    headers: { cookie, "content-type": "application/json" },
+    headers: { cookie, origin: issuer, "content-type": "application/json" },
     body: JSON.stringify({
       name,
       isPublic,

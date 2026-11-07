@@ -1277,44 +1277,18 @@ export function ImageProcessorView(props: ImageProcessorViewProps = {}) {
       >
         <DetailPanel>
           <DetailPanel.Header
-            icon="ti ti-photo"
+            kind={activeImage() ? <span>{t().imageKind}</span> : undefined}
             title={activeImage()?.name ?? t().imageControls}
             subtitle={activeImageSubtitle()}
             actions={
-              <>
-                <Show when={hasImages()}>
-                  <Tooltip.Anchor content={t().addImages}>
-                    <IconButton
-                      label={t().addImages}
-                      size="sm"
-                      class="h-8 w-8 shrink-0"
-                      onClick={selectFiles}
-                      disabled={loadMutation.loading() || cropActive()}
-                    >
-                      <i class="ti ti-photo-plus" aria-hidden="true" />
-                    </IconButton>
-                  </Tooltip.Anchor>
-                  <Tooltip.Anchor content={t().removeImage}>
-                    <IconButton
-                      label={t().removeImage}
-                      size="sm"
-                      class="h-8 w-8 shrink-0 text-red-600 dark:text-red-400"
-                      onClick={() => removeImage(activeIndex())}
-                      disabled={cropActive() || cropBusy()}
-                    >
-                      <i class="ti ti-trash" aria-hidden="true" />
-                    </IconButton>
-                  </Tooltip.Anchor>
-                </Show>
-                <IconButton
-                  label={t().showImageCanvas}
-                  size="sm"
-                  class="h-8 w-8 shrink-0 @min-[64rem]/k2b-app-area:hidden"
-                  onClick={() => setInspectorOpen(false)}
-                >
-                  <i class="ti ti-x" aria-hidden="true" />
-                </IconButton>
-              </>
+              <IconButton
+                label={t().showImageCanvas}
+                size="sm"
+                class="h-8 w-8 shrink-0 @min-[64rem]/k2b-app-area:hidden"
+                onClick={() => setInspectorOpen(false)}
+              >
+                <i class="ti ti-x" aria-hidden="true" />
+              </IconButton>
             }
             primaryActions={
               <Show
@@ -1334,6 +1308,29 @@ export function ImageProcessorView(props: ImageProcessorViewProps = {}) {
                   onValueChange={changeEditorMode}
                   aria-label={t().editorMode}
                 />
+                <Dropdown.Root
+                  align="end"
+                  label={t().moreImageActions}
+                  items={[
+                    {
+                      label: t().addImages,
+                      icon: "ti ti-photo-plus",
+                      action: () => void selectFiles(),
+                      disabled: loadMutation.loading() || cropActive(),
+                    },
+                    {
+                      label: t().removeImage,
+                      icon: "ti ti-trash",
+                      variant: "danger",
+                      action: () => removeImage(activeIndex()),
+                      disabled: cropActive() || cropBusy(),
+                    },
+                  ]}
+                >
+                  <Dropdown.Trigger iconOnly size="sm" variant="ghost" label={t().moreImageActions}>
+                    <i class="ti ti-dots" aria-hidden="true" />
+                  </Dropdown.Trigger>
+                </Dropdown.Root>
               </Show>
             }
           />
@@ -1386,7 +1383,7 @@ export function ImageProcessorView(props: ImageProcessorViewProps = {}) {
 
               <Show when={editorMode() === "markup"}>
                 <DetailPanel.Group label={t().markupControls}>
-                  <DetailPanel.Section title={t().tool} icon="ti ti-pencil" tone="accent">
+                  <DetailPanel.Section title={t().tool}>
                     <div class="flex flex-col gap-2">
                       <div class="grid grid-cols-7 gap-1">
                         <For
@@ -1452,7 +1449,7 @@ export function ImageProcessorView(props: ImageProcessorViewProps = {}) {
                     </div>
                   </DetailPanel.Section>
                   <Show when={markupTool() === "shape" || isSizedMarkupTool(markupTool())}>
-                    <DetailPanel.Section title={t().style} icon="ti ti-palette" tone="neutral">
+                    <DetailPanel.Section title={t().style}>
                       <MarkupSettings />
                     </DetailPanel.Section>
                   </Show>
@@ -1463,7 +1460,7 @@ export function ImageProcessorView(props: ImageProcessorViewProps = {}) {
                 <>
                   <DetailPanel.Group label={t().geometry}>
                     {/* Crop */}
-                    <DetailPanel.Section title={t().crop} icon="ti ti-crop" tone="accent">
+                    <DetailPanel.Section title={t().crop}>
                       <div class="flex flex-col gap-2">
                         <div class="flex gap-2">
                           <Show
@@ -1519,7 +1516,7 @@ export function ImageProcessorView(props: ImageProcessorViewProps = {}) {
                     </DetailPanel.Section>
 
                     {/* Transform */}
-                    <DetailPanel.Section title={t().transform} icon="ti ti-transform" tone="neutral">
+                    <DetailPanel.Section title={t().transform}>
                       <div class="flex flex-col gap-2">
                         <Slider
                           label={t().rotation}
@@ -1544,8 +1541,6 @@ export function ImageProcessorView(props: ImageProcessorViewProps = {}) {
                     {/* Adjustments */}
                     <DetailPanel.Section
                       title={t().adjustments}
-                      icon="ti ti-adjustments-horizontal"
-                      tone="accent"
                       actions={
                         <Button variant="ghost" size="xs" onClick={resetAdjustments}>
                           {t().reset}
@@ -1640,7 +1635,7 @@ export function ImageProcessorView(props: ImageProcessorViewProps = {}) {
                     </DetailPanel.Section>
 
                     {/* Presets */}
-                    <DetailPanel.Section title={t().presets} icon="ti ti-wand" tone="neutral">
+                    <DetailPanel.Section title={t().presets}>
                       <div class="grid grid-cols-4 gap-1">
                         <For each={Object.keys(PRESETS)}>
                           {(key) => (
@@ -1653,7 +1648,7 @@ export function ImageProcessorView(props: ImageProcessorViewProps = {}) {
                     </DetailPanel.Section>
 
                     {/* Copy / Paste Edits */}
-                    <DetailPanel.Section title={t().edits} icon="ti ti-copy" tone="neutral">
+                    <DetailPanel.Section title={t().edits}>
                       <div class="grid grid-cols-3 gap-1">
                         <Button variant="secondary" size="sm" onClick={copyEdits} title={t().copyAdjustmentsTitle}>
                           <i class="ti ti-copy" /> {t().copy}

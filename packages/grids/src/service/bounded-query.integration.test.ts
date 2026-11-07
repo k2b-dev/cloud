@@ -1,5 +1,5 @@
 import { afterAll, describe, expect } from "bun:test";
-import { sql } from "bun";
+import { sql } from "@k2b/cloud";
 import { testFor } from "../../../../scripts/fixtures/test-infra";
 import { runBoundedQuery, stopBoundedQueryPool } from "./bounded-query";
 
@@ -68,8 +68,10 @@ describe("bounded query", () => {
         process.execPath,
         "-e",
         `
-          import { sql } from "bun";
-          import { runBoundedQuery, stopBoundedQueryPool } from "./bounded-query";
+          import { sql } from "@k2b/cloud";
+          const { initializeTestPlatform } = await import("../../../../scripts/fixtures/platform");
+          await initializeTestPlatform("grids");
+          const { runBoundedQuery, stopBoundedQueryPool } = await import("./bounded-query");
           const timedOut = await Promise.allSettled(
             Array.from({ length: 20 }, () => runBoundedQuery(sql\`SELECT pg_sleep(1)\`, 20)),
           );

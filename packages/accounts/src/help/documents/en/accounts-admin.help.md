@@ -8,7 +8,7 @@ order: 110
 
 The administration pages are server-rendered lists. Search, filters, and pagination are part of the URL, and action buttons run the account operations.
 
-Global policy and the lifecycle backfill controls are in the Cloud administration under **Accounts & sign-in**. Run lifecycle jobs from **Operations**. Single records, requests, and history stay here in Accounts.
+Global policy and the lifecycle backfill controls are in the Cloud administration under **Sign-in & security**. Run lifecycle jobs from **Operations**. Single records, requests, and history stay here in Accounts.
 
 In **Registration & requests**, you can set optional follow-up notices that depend on the action. They appear after successful user, group, and membership changes. An empty template adds nothing. A notice is an instruction for the person who makes the change. Cloud does not send it to users.
 
@@ -35,7 +35,7 @@ Resolved addresses disappear from the list. You cannot delete your own account.
 :::reference
 - **Users:** Search accounts by uid, name, or email. Filter by provider and profile. Open a user to edit profile fields, avatar, roles, provider, expiry, and group membership.
 - **Groups:** Open a group to review its facts, members, managers, and parent groups. Managers can add or remove users and groups where the page offers these changes.
-- **Linux identities:** While assignment is on in the Cloud administration under **Accounts & sign-in → Linux identities**, new local full accounts and promoted guests get Linux attributes automatically. Administrators can assign missing attributes to older accounts and override home and shell. FreeIPA values are read-only. Local groups can get a GID after the global setup. These actions do not enable computer sign-in or sudo.
+- **Linux identities:** While assignment is on in the Cloud administration under **Sign-in & security → Linux identities**, new local full accounts and promoted guests get Linux attributes automatically. Administrators can assign missing attributes to older accounts and override home and shell. FreeIPA values are read-only. Local groups can get a GID after the global setup. These actions do not enable computer sign-in or sudo.
 - **Deleted accounts:** Review accounts that were removed by a manual action, expiry cleanup, FreeIPA demotion, or a change of the sync scope. The row details keep their metadata available.
 - **Reminder history:** Search the attempts to send account expiry reminders. Each entry shows the target expiry, the threshold days, the status, the attempts, the last attempt, and the last error.
 :::
@@ -61,14 +61,14 @@ The person can then sign in and pair a device again.
 ## Control keys, devices, notifications, and requests {icon="shield-lock"}
 
 :::reference
-- **Service accounts:** List active or revoked API keys, and filter by user-bound or resource-bound owner. Revoke an active key when its access must end.
+- **API keys:** List active or revoked API keys. Filter by **Personal**, **Service account**, or **Agent**. Revoke an active key when its access must end. An agent key marked **Legacy, limited** has **Replace**: it creates a new key that acts as the agent and shows it once. Revoke the old key after the program uses the new one. Automatic app keys are hidden by default; choose **Show** above the list to include them.
 - **Sign-in devices:** The page of a user lists the devices that approve their app sign-ins, with pairing date and last use. Revoke a lost device there. Existing sessions stay signed in, and Cloud notifies the user.
 - **Notifications:** Create notification drafts, preview the recipients, and finalize the batch. Then review the delivery counters or the failed recipients.
 - **Requests:** Create accounts from pending requests, or deny requests. If you enter a reason for a denial, Cloud sends it by email. Existing requests stay available when new requests are turned off in the Cloud administration.
 :::
 
 :::info Trace changes in the audit log
-**Audit log** records account and access changes. To investigate API key activity, filter by service account.
+**Audit log** records account and access changes. To investigate API key activity, filter by agent or service account. Automatic app entries are hidden by default; choose **Show** above the list to include them within the selected time range and filters.
 :::
 
 ## Create a POSIX group {icon="users"}

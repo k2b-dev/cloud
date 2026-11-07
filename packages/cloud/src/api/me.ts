@@ -5,7 +5,6 @@
  */
 
 import { err, fail, ok, type Result } from "@k2b/stdlib";
-import { sql } from "bun";
 import { type Context, Hono, type MiddlewareHandler } from "hono";
 import { deleteCookie } from "hono/cookie";
 import { createMiddleware } from "hono/factory";
@@ -42,6 +41,7 @@ import {
   WebAuthnPasskeySchema,
 } from "../contracts";
 import { CapabilityAppIdSchema } from "../contracts/capabilities";
+import { sql } from "../runtime/clients";
 import { type AuthContext, auth, getLocale, getTimeZone, jsonResponse, rateLimit, requiresAuth, respond, v } from "../server";
 import { APP_SESSION_FORBIDDEN } from "../server/middleware/auth";
 import { noTransform } from "../server/middleware/no-transform";
@@ -324,7 +324,8 @@ const app = new Hono<AuthContext>()
     describeRoute({
       tags: ["Me"],
       summary: "List current user notification preferences",
-      description: "List active user-facing notification kinds, app recommendations, required channels, and explicit preferences.",
+      description:
+        "List active user-facing notification kinds, app recommendations, required and excluded channels, and explicit preferences.",
       ...requiresAuth,
       responses: {
         200: jsonResponse(UserNotificationPreferencesResponseSchema, "Notification preferences"),
@@ -343,11 +344,12 @@ const app = new Hono<AuthContext>()
     describeRoute({
       tags: ["Me"],
       summary: "Set current user notification preference",
-      description: "Replace optional channels for one notification kind. Required channels remain enforced by the definition.",
+      description:
+        "Replace optional channels for one notification kind. Required channels remain enforced; excluded channels are rejected.",
       ...requiresAuth,
       responses: {
         200: jsonResponse(UserNotificationPreferenceSchema, "Updated notification preference"),
-        400: jsonResponse(ErrorResponseSchema, "Invalid or unavailable channel"),
+        400: jsonResponse(ErrorResponseSchema, "Invalid, unavailable, or excluded channel"),
         401: jsonResponse(ErrorResponseSchema, "Authentication required"),
         404: jsonResponse(ErrorResponseSchema, "Notification preference not found"),
       },
@@ -818,7 +820,7 @@ const app = new Hono<AuthContext>()
       tags: ["Me"],
       summary: "Sign out every other sign-in",
       description:
-        "End other sign-ins and rotate this browser's cookie while preserving its sign-in time and expiry; signInAgain is true if this browser could not be kept. Cloud Login phones stay paired. API keys, passkeys and mandates stay valid.",
+        "End other sign-ins and rotate this browser's cookie while preserving its sign-in time and expiry; signInAgain is true if this browser could not be kept. Cloud Login devices stay paired. API keys, passkeys and mandates stay valid.",
       ...requiresAuth,
       responses: {
         200: jsonResponse(SignOutOthersResponseSchema, "Other sign-ins ended"),

@@ -2,11 +2,11 @@
 id: accounts-cli
 title: CLI
 icon: ti ti-terminal-2
-description: Agententaugliche Befehle für Konten, Gruppen, Anfragen, Audit-Ereignisse und Dienstkonten nutzen.
+description: Agententaugliche Befehle für Konten, Gruppen, Anfragen, Audit-Ereignisse, Agenten und API Keys nutzen.
 order: 120
 ---
 
-Die Konten-CLI nutzt dieselben APIs wie die App. Agenten können Kontodaten deshalb ohne Browser auflisten, prüfen und ändern. Linux-Identitäten nutzen eine eigene API, die nur die Administration aufrufen kann.
+Die CLI der App Zugänge nutzt dieselben APIs wie die App. Agenten können Kontodaten deshalb ohne Browser auflisten, prüfen und ändern. Linux-Identitäten nutzen eine eigene API, die nur die Administration aufrufen kann.
 
 ## Die richtige Befehlsgruppe finden {icon="code"}
 
@@ -14,8 +14,8 @@ Die Konten-CLI nutzt dieselben APIs wie die App. Agenten können Kontodaten desh
 - **users:** Personen auflisten, prüfen, erstellen, ändern und löschen. Anbieter, Profil und Administrationsstatus ändern. Avatare lesen, setzen und entfernen, IPA-Passwörter zurücksetzen, mit `users login-token` ein **Anmeldetoken** erstellen und mit `users send-login-link` einen Anmeldelink senden. Erlaubt die Installation lokale Konten ohne E-Mail-Adresse, erstellt `users create` ein lokales Vollkonto auch ohne `--email`, und `users update --remove-email` entfernt eine Adresse.
 - **groups:** Gruppen auflisten, prüfen, erstellen, ändern, in POSIX-Gruppen umwandeln und löschen. Mitglieder und Verantwortliche auflisten, hinzufügen und entfernen.
 - **requests:** Kontoanfragen auflisten, prüfen und ablehnen.
-- **audit:** Audit-Ereignisse auflisten, gefiltert nach handelnder Person, Ziel, Aktion, Aktionsgruppe, Dienstkonto, Ergebnis, Anbieter und Zeitraum.
-- **service-accounts:** API-Schlüssel von Dienstkonten auflisten und aktive Zugangsdaten widerrufen.
+- **audit:** Audit-Ereignisse auflisten, gefiltert nach handelnder Person, Ziel, Aktion, Aktionsgruppe, Agent oder Dienstkonto, Ergebnis, Anbieter und Zeitraum.
+- **service-accounts:** API Keys auflisten und aktive Zugangsdaten widerrufen.
 :::
 
 :::info Ausgabeformat wählen
@@ -32,3 +32,11 @@ Nutze für Automatisierung die JSON-Ausgabe. Die Tabellenausgabe dient dem schne
 `cld admin linux` enthält die globale Konfiguration und eine seitenweise Vorschau. Exportiere die Konfiguration mit `config get --json`. Wende eine aktivierte Konfiguration mit `config set --config-file ./linux.json --range-reserved --yes` an. Das Vorbereiten einer Identität schaltet weder die Anmeldung am Rechner noch sudo oder gemeinsamen Speicher frei.
 
 Um eine lokale Gruppe mit GID in einem Schritt zu erstellen, führe `cld accounts groups create team --provider local --posix` aus. Ohne `--posix` bleibt sie eine logische Gruppe. Das Erstellen oder Umwandeln einer lokalen POSIX-Gruppe setzt eingeschaltete lokale Linux-Identitäten voraus. Schlägt einer der beiden Vorgänge fehl, bleibt keine teilweise erstellte Gruppe zurück.
+
+## Maschinenkonto einer lokalen Gruppe hinzufügen {icon="users-group"}
+
+Die Gruppenverwaltung und Administration können aktive Agenten zu lokalen Gruppen hinzufügen. Öffne **Mitglieder**, wähle **Hinzufügen** und suche das Konto über seinen Namen. Aktiviere den Filter **Agenten**, um Maschinenmitglieder zu sehen und direkte Mitgliedschaften zu entfernen. Name und Kontotyp unterscheiden sie von Personen und Gruppen.
+
+Im CLI verwendest du `cld accounts groups members add <gruppe> --service-account <name-oder-id> --yes`. Mit `remove` statt `add` entfernst du die Mitgliedschaft. `list --type service_account --recursive` zeigt auch geerbte Mitgliedschaften. Namen müssen genau und eindeutig passen; verwende bei mehreren Treffern die ID.
+
+Das Konto erbt Ressourcenfreigaben über lokale übergeordnete Gruppen, begrenzt durch die Scopes seines Zugangsschlüssels. Die Mitgliedschaft erstellt keine Linux- oder IPA-Identität und verleiht keine Installationsrolle. Für IPA-Gruppen gelten weiterhin die Verzeichnisregeln. Gruppen zu verwalten erfordert weiterhin ein vollständiges Konto, das die Gruppe verwalten darf oder Zugriff auf die Administration hat.

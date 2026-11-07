@@ -10,6 +10,7 @@ const toolNames = i18n.define({
     en: {
       calculate: "Calculate",
       card: "Card",
+      map: "Places and maps",
       chart: "Chart",
       survey: "Survey",
       text_editor: "Text editor",
@@ -86,6 +87,7 @@ const toolNames = i18n.define({
     de: {
       calculate: "Rechnen",
       card: "Karte",
+      map: "Orte und Karten",
       chart: "Diagramm",
       survey: "Umfrage",
       text_editor: "Texteditor",

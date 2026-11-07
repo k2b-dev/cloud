@@ -1,7 +1,7 @@
 import { expect, spyOn, test } from "bun:test";
 import type { AppRegistryEntry } from "../contracts/registry";
 import * as registry from "./registry";
-import { ensureRuntimeWatcher, registeredCoreRelease, stopRuntimeWatcher } from "./runtime-watcher";
+import { ensureRuntimeWatcher, registeredCoreRelease, registeredPwaBuilds, stopRuntimeWatcher } from "./runtime-watcher";
 
 test("Core's release follows registry refreshes and is cleared on stop", async () => {
   const entry = (id: string, release: string): AppRegistryEntry => ({
@@ -18,8 +18,9 @@ test("Core's release follows registry refreshes and is cleared on stop", async (
   const spies = [
     spyOn(registry, "listApps").mockImplementation(async () => apps),
     spyOn(registry, "listCapabilities").mockResolvedValue([]),
-    spyOn(registry, "watchAppRegistry").mockImplementation(async (options) => {
+    spyOn(registry, "watchRuntimeRegistry").mockImplementation(async (options) => {
       onChange = options.onChange;
+      await onChange();
       await new Promise<void>((resolve) => {
         if (options.signal.aborted) resolve();
         else options.signal.addEventListener("abort", () => resolve(), { once: true });
@@ -28,24 +29,42 @@ test("Core's release follows registry refreshes and is cleared on stop", async (
   ];
   try {
     expect(registeredCoreRelease()).toBeUndefined();
+    expect(registeredPwaBuilds()).toEqual({});
     await ensureRuntimeWatcher();
     expect(registeredCoreRelease()).toBe("sha-core-before");
+    expect(registeredPwaBuilds()).toEqual({ core: ":sha-core-before" });
     expect(onChange).toBeDefined();
+    expect(spies[0]).toHaveBeenCalledTimes(1);
     apps = [entry("core", "sha-core-after")];
     await onChange!();
     expect(registeredCoreRelease()).toBe("sha-core-after");
+    expect(registeredPwaBuilds()).toEqual({ core: ":sha-core-after" });
     apps = [entry("mail", "sha-mail")];
     await onChange!();
     expect(registeredCoreRelease()).toBeUndefined();
+    expect(registeredPwaBuilds()).toEqual({});
     apps = [entry("core", "sha-core-after")];
     await onChange!();
     await stopRuntimeWatcher();
     expect(registeredCoreRelease()).toBeUndefined();
+    expect(registeredPwaBuilds()).toEqual({});
     await ensureRuntimeWatcher();
     expect(registeredCoreRelease()).toBe("sha-core-after");
+    expect(registeredPwaBuilds()).toEqual({ core: ":sha-core-after" });
   } finally {
     await stopRuntimeWatcher();
     for (const spy of spies.toReversed()) spy.mockRestore();
   }
   expect(registeredCoreRelease()).toBeUndefined();
+});
+
+test("initial registry failure rejects initialization and stops its supervised task", async () => {
+  const failure = new Error("NATS unavailable during initial snapshot");
+  const watch = spyOn(registry, "watchRuntimeRegistry").mockRejectedValue(failure);
+  try {
+    await expect(ensureRuntimeWatcher()).rejects.toBe(failure);
+  } finally {
+    await stopRuntimeWatcher();
+    watch.mockRestore();
+  }
 });

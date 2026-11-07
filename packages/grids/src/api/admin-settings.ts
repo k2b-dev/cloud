@@ -1,5 +1,5 @@
 import { ErrorResponseSchema } from "@k2b/cloud/contracts";
-import { type AuthContext, auth, getLocale, jsonResponse, respond } from "@k2b/cloud/server";
+import { type AuthContext, auth, expectUserBackedActor, getLocale, jsonResponse, respond } from "@k2b/cloud/server";
 import { settingsService } from "@k2b/cloud/services";
 import { err, fail, ok } from "@k2b/stdlib";
 import { Hono } from "hono";
@@ -65,7 +65,17 @@ const app = new Hono<AuthContext>()
         return respond(c, fail(err.badInput(`Setting "${key}" is not in the grids namespace`)));
       }
       const { value, replaceUnreadable } = c.req.valid("json");
-      const result = await settingsService.entry.update({ key, value, replaceUnreadable });
+      const result = await settingsService.entry.update({
+        key,
+        value,
+        replaceUnreadable,
+        audit: {
+          action: "settings.update",
+          outcome: "allowed",
+          actor: { userId: expectUserBackedActor(c).id },
+          target: { type: "setting", id: key },
+        },
+      });
       if (!result.ok) return respond(c, result);
       return respond(c, ok({ message: apiMessages(c).settingUpdated }));
     },

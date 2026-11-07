@@ -99,7 +99,8 @@ export const wheelDelta = (axis: WheelAxis, deltaX: number, deltaY: number, shif
 /**
  * The day start nearest to `position` in a strip of equal columns, or with `room` the nearer day edge at either end of
  * the visible room; ties keep the start. A `heading` of 1 or -1 only looks ahead or back, for a scroll that brought
- * something into view and must not slide back over it.
+ * something into view and must not slide back over it. The result is a whole pixel: a drawer can leave a fractional
+ * room, and WebKit drops the fraction of a scroll position, which would leave the strip short of the edge (#1713).
  */
 export const snapToColumn = (position: number, width: number, room?: number, heading = 0): number => {
   if (!(width > 0)) return position;
@@ -107,7 +108,7 @@ export const snapToColumn = (position: number, width: number, room?: number, hea
   const edge = (at: number) =>
     heading > 0 ? Math.ceil((at - 0.5) / width) : heading < 0 ? Math.floor((at + 0.5) / width) : Math.round(at / width);
   const start = edge(position) * width;
-  if (room === undefined) return start;
+  if (room === undefined) return Math.round(start);
   const end = edge(position + room) * width - room;
-  return Math.abs(end - position) < Math.abs(start - position) ? end : start;
+  return Math.round(Math.abs(end - position) < Math.abs(start - position) ? end : start);
 };

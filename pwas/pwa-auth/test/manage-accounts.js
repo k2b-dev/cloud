@@ -103,7 +103,7 @@ async function _run(page) {
       ];
       if (index === 1) pending.push({ ...pending[0], requestId: "44444444-4444-4444-8444-444444444444", comparison: "777777" });
       const dialog = p.getByRole("dialog");
-      await dialog.getByRole("heading", { name: "Test Cloud", exact: true }).waitFor();
+      await dialog.getByRole("heading", { name: "Sign-in to Test Cloud", exact: true }).waitFor();
       const bottom = await dialog.evaluate((el) => innerHeight - el.getBoundingClientRect().bottom);
       if (Math.abs(bottom) > 2) throw new Error("Sheet not at bottom: " + bottom);
       if (index === 0) {
@@ -111,9 +111,9 @@ async function _run(page) {
         await ready();
         await p.waitForTimeout(5500);
         if (await dialog.count()) throw new Error("Dismissed request reopened after polling");
-        await button("Sign in").click();
+        await p.locator(".auth-cloud__open").click();
         await dialog.waitFor();
-      } else await dialog.getByText("1 / 2", { exact: true }).waitFor();
+      } else await dialog.getByText(/ · 1 \/ 2$/).waitFor();
       if (await dialog.getByRole("checkbox").count()) throw new Error("Redundant decision checkbox");
       if ((await dialog.innerText()).includes(issuer)) throw new Error("Redundant issuer");
       const deny = await button("Deny").boundingBox(),

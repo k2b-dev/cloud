@@ -1,19 +1,30 @@
-import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, mock, spyOn, test } from "bun:test";
 import type { Provider, ProviderEvent } from "@k2b/nessi";
+import { complete } from "@k2b/nessi/ai";
 import type { AiCallDetails, AiCallStatus } from "./inference-calls";
 import { createAiProvider } from "./provider";
-import { retryAfterMs } from "./provider-fetch";
+import * as connections from "./provider-connections";
 import { type AiProviderRetry, retryTransientProviderErrors } from "./provider-retry";
 import { inferenceProvider } from "./quota-provider";
 import type { AiModelProfile } from "./types";
 
+// Adapter unit tests own HTTP fakes; provider status persistence belongs to its integration seam.
+beforeEach(() => spyOn(connections, "recordAiProviderStatus").mockResolvedValue(undefined));
+afterEach(() => mock.restore());
+
 const profile: AiModelProfile = {
+  modelId: "retry-model",
+  providerId: "retry-model",
+  variantLabel: "Standard",
+  description: "",
+  icon: { kind: "provider" },
+  showInPicker: true,
   id: "retry-model",
   label: "Retry model",
   provider: "openai-compatible",
   model: "mock",
   enabled: true,
-  capabilities: ["streaming"],
+  capabilities: [],
   dataBoundary: "private",
   pricing: { inputPerMillion: 1, outputPerMillion: 2 },
 };
@@ -35,9 +46,6 @@ const scripted = (...attempts: ProviderEvent[][]) => {
     family: "openai-compatible",
     model: "mock",
     capabilities: { streaming: true, tools: false, images: false, thinking: false, usage: true },
-    complete: async () => {
-      throw new Error("streams only");
-    },
     async *stream() {
       yield* attempts[Math.min(calls++, attempts.length - 1)]!;
     },
@@ -145,16 +153,6 @@ describe("transient provider retries", () => {
   });
 });
 
-test("Retry-After is read in milliseconds, seconds, or as an HTTP date", () => {
-  const now = Date.parse("2026-10-06T10:00:00Z");
-  expect(retryAfterMs(new Headers({ "retry-after-ms": "250", "retry-after": "9" }), now)).toBe(250);
-  expect(retryAfterMs(new Headers({ "retry-after": "2" }), now)).toBe(2_000);
-  expect(retryAfterMs(new Headers({ "retry-after": "Tue, 06 Oct 2026 10:00:03 GMT" }), now)).toBe(3_000);
-  expect(retryAfterMs(new Headers({ "retry-after": "Tue, 06 Oct 2026 09:00:00 GMT" }), now)).toBe(0);
-  expect(retryAfterMs(new Headers({ "retry-after": "soon" }), now)).toBeUndefined();
-  expect(retryAfterMs(new Headers(), now)).toBeUndefined();
-});
-
 describe("retries against an HTTP provider", () => {
   let server: ReturnType<typeof Bun.serve>;
   let responses: (() => Response)[] = [];
@@ -188,13 +186,18 @@ describe("retries against an HTTP provider", () => {
   const accounted = (baseURL = `http://localhost:${server.port}/v1`) => {
     const booked: { usage?: { input: number; output: number; estimated?: boolean }; status: AiCallStatus; details?: AiCallDetails }[] = [];
     const raw = createAiProvider({ ...profile, baseURL }, "test");
-    const quota = inferenceProvider(raw, profile, { kind: "chat", task: "chat" }, undefined, {
-      begin: async () => ({ id: crypto.randomUUID(), maxOutputTokens: 100 }),
-      finish: async (_id, usage, status, details) => {
-        booked.push({ usage, status, details });
+    const quota = inferenceProvider(
+      raw,
+      profile,
+      { kind: "chat", task: "chat" },
+      {
+        begin: async () => ({ id: crypto.randomUUID(), maxOutputTokens: 100 }),
+        finish: async (_id, usage, status, details) => {
+          booked.push({ usage, status, details });
+        },
+        heartbeat: async () => {},
       },
-      heartbeat: async () => {},
-    });
+    );
     return { booked, quota };
   };
 
@@ -237,7 +240,7 @@ describe("retries against an HTTP provider", () => {
       responses = [rejected(status, {}), rejected(status, {})];
       const { booked, quota } = accounted();
       for await (const _ of quota.stream(prompt));
-      await expect(quota.complete(prompt)).rejects.toThrow(String(status));
+      await expect(complete(quota, prompt)).rejects.toThrow("AI provider request failed.");
       const expected = refused ? { input: 0, output: 0 } : { input: expect.any(Number), output: 0, estimated: true };
       expect({ status, usage: booked.map(({ usage }) => usage) }).toEqual({ status, usage: [expected, expected] });
       if (!refused) expect(booked.every(({ usage }) => (usage?.input ?? 0) > 0)).toBe(true);
@@ -252,7 +255,7 @@ describe("retries against an HTTP provider", () => {
     const events = [];
     for await (const event of quota.stream(prompt)) events.push(event);
     expect(events).toContainEqual({ type: "issue", issue: expect.objectContaining({ kind: "provider_error", retryable: true }) });
-    await expect(quota.complete(prompt)).rejects.toThrow("connection failed");
+    await expect(complete(quota, prompt)).rejects.toThrow("AI provider request failed.");
     expect(booked.map(({ usage }) => usage)).toEqual([
       { input: 0, output: 0 },
       { input: 0, output: 0 },

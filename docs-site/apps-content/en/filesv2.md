@@ -60,9 +60,9 @@ empty directory.
 
 ## Browse, select, and preview
 
-The sidebar is a folder tree per storage location; its footer offers **Search**
-(the global Cloud search restricted to files), **Recent**, **Favorites**, and
-**Shares**. After every navigation exactly the current path is
+The sidebar has **Recent**, **Favorites**, **Shares**, and **Activity** above
+the folder trees. Its footer offers **Search**, the global Cloud search
+restricted to files. After every navigation exactly the current path is
 expanded; the tree holds only storage locations and folders. The list is a flat striped list;
 folders open on click (the opened folder's icon becomes a spinner, a leading
 **Parent folder** row names the folder above and goes up; the header shows
@@ -82,8 +82,8 @@ visible; a failed tree request offers a retry. Sorting, filtering, or changing
 the storage location rebuilds the tree with the new context. **Select** next to the entry count switches on
 checkboxes in every view. Thumbnails are requested with bounded concurrency and
 retried, because Filegate rejects parallel renders beyond its capacity.
-Storage, folder, page, single selection, search query, and scope stay in the
-URL. The **Sort and filter** icon button beside search groups **Sort by**,
+Storage, folder, page, single selection, and the search with its filters stay
+in the URL. The **Sort and filter** icon button beside search groups **Sort by**,
 **Order**, and **Type** in one menu. Sort by name, modification date, or size;
 filter all entries, files, or folders. The default is name ascending, with folders
 before files. **Group folders** is on by default; turn it off to sort files
@@ -104,13 +104,41 @@ shows an X for removal. Tapping the selected star removes the favorite too. The 
 others appear without a reload. PDF and office files use file-type icons in lists and grids. Images retain
 direct Filegate thumbnails; PDF contents remain viewable in the details panel.
 
-Search always covers the subtree below the current folder; hits show their
-path relative to it. Filename matching ignores accents and separators and
-accepts query words in any order. Files also answers the universal
-search under the `file` tag through the `filesv2.entry` resource type, and
-each entry's Cloud reference can be copied from the details panel. A bounded or
-failed search is reported explicitly rather than presented as a complete empty
-result; narrow the folder or query when its search budget is exceeded.
+Search always covers the subtree below the current folder and uses Filegate
+7.1 search. By default it matches names and folder names below the folder
+(`in=path`), tolerates typos and loose abbreviations (`match=fuzzy`), and
+ranks the best matches first (`sort=relevance`). Matching ignores case,
+accents and separators and accepts up to eight query words in any order. Each
+hit shows its name and its folder below the searched one, with the matched
+characters marked by `MatchText`; the API returns them as `highlight`, Unicode
+code point ranges into the hit's path below the searched folder. The result
+count shows `total` when it is exact: Filegate collected the whole selection,
+the area is Cloud storage, the search covers all levels, and hits in the base's
+trash are subtracted. A query word that could match the trash folder's own
+name leaves the total unknown, so a count never reveals a hidden trashed entry.
+Otherwise the count says how many hits the page holds. Relevance keeps
+Filegate's best hits (1,000 by default); `truncated: true` then says that the
+pages end before `total`.
+
+**Type**, **Size**, and **Modified** chips filter by extension groups,
+byte ranges, and rolling time windows (24 hours to 12 months, counted from the
+current full hour); with a filter or the **Folders** type, a search needs no
+query. **Sort and filter**
+switches between best match, name, date, and size, and to exact names only
+(`match=exact&in=name`). Query, scope, filters, match mode, and order stay in
+the URL, so reload, back, and shared links show the same search; folder sort
+preferences do not apply to searches. While a search runs, the toolbar keeps its
+size and the results area shows placeholder rows of the list's geometry.
+Filegate gives every search a 10-second budget: an exceeded budget shows **This search takes too long** with
+exact-name search (indexed storage) and the way back to the folder, never a
+partial result. Other failures keep the search field and filters and offer a
+retry. Cloud retries a busy root (`429 search_busy`) twice after one second,
+restarts a first page whose observation changed once, and answers a stale
+continuation with `cursor_invalid`, which returns the browser to the first
+page with a notice. Files also answers the universal search under the `file`
+tag through the `filesv2.entry` resource type with the same defaults, searching
+at most two storage bases at a time and taking each base's best hits in turn.
+Each entry's Cloud reference can be copied from the details panel.
 
 Selections act through one **Actions** menu: direct download for one file, a
 signed Filegate ZIP for several entries or folders, move into a new folder,
@@ -123,10 +151,18 @@ contexts require distinct Filegate roots. Deleting moves entries into the reserv
 `trash` folder with a restorable record; only administrators empty it.
 Renaming, duplicating and moving reuse Filegate transfers.
 
-The details panel shows a preview hero (images enlarge into a dialog),
-facts including the storage area, an action list, and, where the root keeps
-versions, a versions section with comments (stored as version metadata),
-download, restore in place, and restore as a new file. Restoring as a new file
+The details panel shows a compact preview, actions, facts, versions, and history.
+On phones, the preview is hidden and the version count opens the versions list.
+Folder details show the number of loaded items; “at least” means more items
+may remain. If the count cannot load, **Try again** retries it.
+
+Where storage keeps versions, the count includes the current file and retained
+versions. Each saved version offers a comment, download, restore in place, and
+restore as a new file. If refreshing the list fails, the last loaded versions
+remain visible with a retry; their actions stay disabled until the list loads.
+A person's name beside the current modification appears only when the recorded
+change matches the file's current revision. A version comment's author identifies
+the person who wrote the comment, not the content's author. Restoring as a new file
 uses Filegate's historical-copy operation and leaves
 the original file, modification time, identity, and history unchanged. Permanent
 version deletion is available only through the administrator file browser and CLI.
@@ -248,12 +284,36 @@ pass siblings as separate arguments or use shell expansion.
 
 ## History
 
+History is available for local Cloud storage, where Cloud grants govern the
+whole area. FreeIPA and other POSIX areas show a notice instead: their Unix
+permissions cannot be checked for historical activity. File versions remain
+available according to the storage root's existing version settings.
+
+You see activity only in local areas you can currently access. A move or copy
+shows each location only when you can access that area. Losing access also
+hides your earlier actions there. Hidden activity does not change the counts
+or the pages you receive.
+
 Files records folder creation, renames, moves, copies, uploads, document creation,
-template use, and Office saves through the web, mobile app, API and CLI, other
-apps, and agents. Each selected item has its
-own entry; items changed in one batch share a batch ID. Moving a folder
+template use, Office saves, trash and restores, version changes, and permanent
+deletion through the web, Cloud app, API and CLI, other apps, and agents. It also
+records storage creation, adoption, archiving and retirement, link creation and
+revocation, template administration, and administrative reads. Each selected item
+has its own entry; items changed in one batch share a batch ID. Moving a folder
 records one entry for the whole tree. Planning folder creation or finding an
 existing folder creates no entry.
+
+`GET /api/filesv2/activity/:activityId/batch` returns the visible count for an
+event's batch, independently of the current search text or history page.
+The response is `{visibleCount, complete}`. The count includes the selected
+event and counts each visible event once, even when only one side is readable.
+Own recorded snapshots follow the same visibility rules as other history reads.
+When `complete` is false, show the count as “at least”: the reader reached its
+500-event bound. Exactly 500 candidates also produce a lower bound. A complete
+count covers retained, currently visible events; it does not count descendants
+inside a selected folder or events removed by retention. An unknown, inaccessible,
+or unbatched event returns the same 404. This read returns no peer details and
+does not grant access to files.
 
 Transfer entries retain the old and confirmed new paths. Copies also record
 the source and destination storage areas; a copy in the same folder records
@@ -272,7 +332,6 @@ Files marks an operation done only with evidence. A folder that looks right
 could have been created by someone else. A missing source and an existing
 destination do not prove a move completed. A lost transfer response stays
 unclear, with separate observations of the old and intended new locations.
-Later steps extend history to other changes.
 
 History is kept for 365 days by default. Administrators change this under
 **Settings → History → Keep history for**, from 30 to 3,650 days; the CLI and
@@ -280,6 +339,18 @@ API use the `activityRetentionDays` configuration key. Pending entries are
 kept until their outcome is known. See
 [Files history](/en/docs/operations/files-history) for operators.
 
+A trash action records one entry per selected item and keeps the old location.
+Restoring it records a separate entry with the destination. The trash journal and
+history finish together. Files can recover a lost trash response from its unique
+trash location and matching item. An ordinary restore destination is not proof:
+if the response is lost, the restoration stays unresolved and a retry does not
+move or overwrite another file.
+
+Version comments, restores, copies, and deletions each have their own entry.
+Comment updates carry a history reference in the saved version, so maintenance
+can confirm that specific update later. A lost restore, copy, or delete response
+stays uncertain. Permanent deletions and version deletions also write the
+security audit in the same transaction as history completion.
 An upload reservation and its pending history entry are saved together. Retries,
 lease renewal, status checks, commits, aborts, and public inbox maintenance finish
 that same entry from Filegate's retained result. A visitor stays a visitor even
@@ -296,6 +367,76 @@ their stored person or link and an unknown channel.
 Each new document, file created from bytes or a template, and Office save gets its
 own entry. Direct-write responses confirm completion; a lost response remains
 uncertain. Template-created files retain the template reference.
+
+### Find changes in Activity
+
+**Activity** in the sidebar lists visible history across storage, newest
+first by day. Its filters live in the address
+(`/app/filesv2?view=activity&base=…&who=…&what=…&when=…&q=…`), so reload,
+back, and links keep them; an invalid value answers `400` instead of showing
+another filter. From a storage location, Activity opens filtered to it. The
+server renders the first page with the same request the browser uses for
+later pages. An empty page with a next cursor offers older entries and claims
+no absence. A failed load keeps the filters beside **Try again**. **Today** starts
+at midnight in your time zone, including on clock-change days.
+
+A search in Activity matches names and old paths. Its top result shows where
+the item is now, from the movement chain: confirmed by stable identity, or
+marked probable with path evidence only. **Go there** resolves the item again
+through `/api/filesv2/entries/:id` or the entry endpoint, so a stale entry
+never opens a place the person can no longer read. An empty ordinary search
+offers **Search in history** with the same words. An old folder address can
+show **This folder has moved** when visible history records its move or a move
+of an ancestor folder. A location inferred from an ancestor move is marked
+probable and checked at the opened folder’s current address. The old address
+stays open until you choose **Go there**. Leaving the view cancels a pending
+**Go there** lookup, so its response cannot change your later navigation.
+
+Recovery actions of a vanished item come from
+`GET /api/filesv2/activity/:activityId/recovery`, loaded beside the chain:
+**Restore** (`POST …/restore`, with an optional new name after a
+`path_conflict`), **Move back** (`POST …/move-back`, only for a verified stable
+endpoint in the same storage), **Show in trash**, **Open old place**, and
+**Check now** (`POST …/recheck`) for unclear entries. A recorded snapshot never
+grants an action; every request checks rights, identity, and journals again,
+and a `403` or `409` stays visible beside the action.
+
+**Message …** opens Chat's **New chat** form with the recorded person selected,
+after Chat checks their current availability and your guest restrictions. You
+decide whether to start a chat or choose an existing one; opening the form
+creates no chat and sends no message. If Chat cannot open, Files shows an error;
+try the action again when Chat is available. Cancel stays in Chat; browser Back
+returns to the Files view and its history filters.
+
+The details panel lists the four newest entries of the selected item below
+its versions, then older entries and **All in Activity**, filtered to that
+item. A folder includes changes to its descendants, such as uploaded files;
+**All in Activity** keeps that folder scope across reload and Back. A file
+keeps its exact item scope. Rows name version numbers for entries that carry
+a version ID, counted over the versions the list holds; the current content is the next number. An
+overwrite or editor save whose new revision is the file's current revision
+offers **Restore version N** for the newest retained version, through the
+existing version restore. In-place restoration in the details panel requires a current storage revision;
+without one, restore as a new file to preserve newer content. A revision is never treated as a version ID. For public links the person created, the
+panel shows page views, released downloads, the period's page networks when
+exact, networks by use, and access over time with older periods on request,
+for the last 30 days, next to **Revoke link**.
+
+### Read an execution record
+
+**View run** opens **Execution in Files** for that history entry. It shows
+the recorded action, its Files result, who acted and on whose behalf, the
+channel, time, and the before and after paths you may read. **Source context
+and references** holds the available request and invocation references.
+
+This page covers one recorded Files effect. It does not establish the outcome
+of the whole originating run, and the source conversation is not available
+through this record, including when someone else performed the action.
+Files checks your current history access whenever the page loads. Missing or
+inaccessible records disclose no details; a loading failure offers **Try again**.
+Reload opens the same record, and browser Back returns to the preceding Files
+view with its URL filters. Opening the record starts no writes or rechecks.
+
 
 ## Public shares
 
@@ -502,6 +643,8 @@ Each trashed entry gets a unique destination. Entries found directly in `trash`
 remain visible after access checks even without a Cloud record; an unknown
 original location requires an explicit restore path. Restore never overwrites
 an existing destination. Pending or ambiguous moves remain visible for review.
+
+Restoring from the trash checks the recorded item again before starting a new restore. If another item has replaced it, Files leaves the trash untouched and asks you to refresh. A restore cancelled while waiting for the storage lock does not move the item.
 
 Multi-entry moves, copies, and trash actions report results per item. Selecting
 a folder and one of its children processes the folder once. Successful items
@@ -732,6 +875,11 @@ ID.
 cursor; pass that cursor unchanged as `--after` with the same folder and sort
 options. `ls` and `search` accept `--sort name|modified|size`,
 `--order asc|desc`, `--type all|files|directories`, and `--no-group-folders`.
+`search <folder> [query]` also accepts `--sort relevance` (the default with a
+query), `--match fuzzy|exact`, `--in path|name`, `--ext pdf,docx`,
+`--min-size` and `--max-size` in bytes, and `--modified-after` and
+`--modified-before` as RFC 3339 times; a filter makes the query optional.
+JSON output carries `total` and each item's `highlight`.
 `--jsonl` emits one complete item per line for lists. `tree` follows every page
 down to `--depth` levels and stops with an error above 10,000 entries.
 
@@ -921,7 +1069,9 @@ are the same `filesv2.entry` refs as everywhere else; see
 Studio Apps can combine Files entries and stored Grids documents without
 copying their bytes or creating public shares. Discover the installed
 capabilities, list accessible bases with `filesv2.bases.list`, and browse with
-`filesv2.entry.list` or search a known base with `filesv2.entry.search-in-base`.
+`filesv2.entry.list` or search a known base with `filesv2.entry.search-in-base`,
+which accepts the same `match`, `in`, `sort`, `ext`, size, and time options as
+the API and reports `total` when it is known.
 Keep the path and filters unchanged while passing `data.next` as `after` until
 null, including empty filtered pages.
 
@@ -958,3 +1108,26 @@ not a way around the stream budget. `cld filesv2 get <file>` obtains
 a lease and saves the file without printing the private URL; the explicit
 `cld capabilities query filesv2 content.download` command returns the lease.
 See [App capabilities](/en/docs/platform/capabilities) for discovery and consent.
+
+## Understand changes without a Cloud entry
+
+In local Cloud storage, when Files notices that an item differs from its last
+confirmed Cloud change,
+the history shows what it found and when it noticed it. This can happen when
+you open an item, save a document, or when maintenance checks it. The cause,
+person and actual time of the change remain unknown.
+
+Files can recognize a move when storage provides a stable item ID. Otherwise,
+a move outside Cloud appears as a missing item at its last known path. It
+cannot compare an item without retained Cloud history, and same-size changes
+can go unnoticed on storage without revisions. An unfinished Cloud operation
+is resolved before Files records a separate observation.
+
+Administrators can export history as CSV or JSON Lines. Each export is limited
+to one calendar year and 100,000 entries, and is recorded in the security audit.
+For filters, cancellation and privacy considerations, see
+[Files history operations](/en/docs/operations/files-history#export-history-for-administration).
+
+Administrator history exports include local Cloud areas only. POSIX-only events
+are excluded from counts and downloads; cross-area operations include only
+their local side.

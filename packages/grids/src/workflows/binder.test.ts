@@ -1279,3 +1279,18 @@ test("binds ZIP file selections to templates and included documents to earlier d
   ])
     expect((await compileAndBindGridsWorkflowSource(invalid, catalog(), bindQuery)).ok, invalid).toBe(false);
 });
+
+for (const operator of ["greaterThan", "lessThan", "atLeast", "atMost"]) {
+  test(`binds ${operator} as a numeric condition`, async () => {
+    for (const numeric of [true, false]) {
+      // A known text input is rejected by the numeric binder; literals already pass the shared compiler.
+      const source = `inputs:\n  item: { type: record, table: Items }\nsteps:\n  - if: { ${operator}: [${numeric ? "1" : '"${{ inputs.item.recordId }}"'}, 2] }\n    then:\n      - succeed: { message: done }\n`;
+      const result = await bindGridsWorkflow(await compile(source), catalog());
+      expect(result.ok).toBe(numeric);
+      if (!result.ok)
+        expect(result.diagnostics).toContainEqual(
+          expect.objectContaining({ code: "condition.type", path: ["steps", 0, "if", operator, 0] }),
+        );
+    }
+  });
+}

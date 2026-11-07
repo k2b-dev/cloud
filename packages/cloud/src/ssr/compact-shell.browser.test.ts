@@ -148,7 +148,7 @@ describe("signed-in shell", () => {
         try {
           const shape = await geometry(page);
           if (device.width < 768) {
-            // Phones keep the title row above a soft content card and floating navigation.
+            // Phones keep the title row above a soft content card.
             expect(shape.header).not.toBe("none");
             expect(shape.rail?.display).toBe("none");
             expect(shape.bar?.display).toBe("none");
@@ -168,10 +168,20 @@ describe("signed-in shell", () => {
             expect(await page.locator(".cloud-app-canvas").evaluate((element) => getComputedStyle(element).backgroundImage)).toContain(
               "gradient",
             );
-            expect(await page.locator(".cloud-tab-bar .k2b-tab-bar").isVisible()).toBe(true);
+            // No bottom dock: the card reaches the screen's bottom edge, and the title row offers search, help and the
+            // app menu but no panel button.
+            expect(await page.locator(".cloud-tab-bar").count()).toBe(0);
+            expect(await page.locator(".layout-content-main").evaluate((element) => element.getBoundingClientRect().bottom)).toBe(
+              device.height,
+            );
+            const header = page.locator(".layout-header");
+            expect(await header.getByRole("button", { name: "Open help", exact: true }).isVisible()).toBe(true);
+            expect(await header.getByRole("button", { name: "Open apps", exact: true }).isVisible()).toBe(true);
+            expect(await header.locator("[data-cloud-panel-toggle]").count()).toBe(0);
             return;
           }
           expect(shape.header).toBe("none");
+          expect(await page.locator(".cloud-tab-bar").count()).toBe(0);
           expect(shape.rail?.display).toBe("flex");
           expect(shape.rail?.box.left).toBe(tablet(device) ? 8 : 0);
           expect(shape.rail?.box.width).toBe(tablet(device) ? 60 : 56);
@@ -294,23 +304,23 @@ describe("signed-in shell", () => {
     }
   });
 
-  test("neither the controller attaching nor navigating to another page moves any part of the shell", async () => {
-    const keys = ["rail", "shell", "workspace", "bar", "sidebar", "pane", "main", "detail", "avatar"] as const;
-    const same = (device: Device, step: string, actual: Geometry, expected: Geometry) => {
-      for (const key of keys) {
-        const box = actual[key]?.box;
-        const reference = expected[key]?.box;
-        expect({ device: device.name, step, key, present: !!box }).toEqual({ device: device.name, step, key, present: !!reference });
-        if (box && reference) {
-          for (const edge of ["left", "top", "right", "bottom", "width", "height"] as const)
-            expect(Math.abs(box[edge] - reference[edge]), `${device.name} ${step} ${key}.${edge}`).toBeLessThanOrEqual(0.01);
+  for (const device of devices) {
+    test(`${device.name}: neither the controller attaching nor navigating to another page moves any part of the shell`, async () => {
+      const keys = ["rail", "shell", "workspace", "bar", "sidebar", "pane", "main", "detail", "avatar"] as const;
+      const same = (device: Device, step: string, actual: Geometry, expected: Geometry) => {
+        for (const key of keys) {
+          const box = actual[key]?.box;
+          const reference = expected[key]?.box;
+          expect({ device: device.name, step, key, present: !!box }).toEqual({ device: device.name, step, key, present: !!reference });
+          if (box && reference) {
+            for (const edge of ["left", "top", "right", "bottom", "width", "height"] as const)
+              expect(Math.abs(box[edge] - reference[edge]), `${device.name} ${step} ${key}.${edge}`).toBeLessThanOrEqual(0.01);
+          }
         }
-      }
-    };
-    const noOverflow = async (page: Page) => {
-      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
-    };
-    for (const device of devices) {
+      };
+      const noOverflow = async (page: Page) => {
+        expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+      };
       const { context, page } = await open(device, "/app/mail/inbox", { attached: false });
       try {
         const served = await geometry(page, false);
@@ -331,8 +341,8 @@ describe("signed-in shell", () => {
       } finally {
         await context.close();
       }
-    }
-  });
+    });
+  }
 
   for (const device of [ipadPortrait, smallLaptop, ipadLandscape, laptop, desktop]) {
     test(`${device.name}: a page without a workspace follows the card rule`, async () => {
@@ -838,9 +848,13 @@ describe("profile menu in the rail", () => {
             avatarLeft: avatar.left,
             avatarRight: avatar.right,
             railRight: Math.round(document.querySelector(".layout-rail")!.getBoundingClientRect().right),
-            appearanceLabel: panel.querySelector(".menu-item")?.getAttribute("aria-label"),
+            appearanceLabel: panel.querySelector(".menu-item[aria-label]")?.getAttribute("aria-label"),
             radios: panel.querySelectorAll('[role="radio"]').length,
-            items: [...panel.querySelectorAll(".menu-item")].map((item) => item.textContent?.trim()),
+            items: [...panel.querySelectorAll(".menu-item")]
+              .filter((item) => item.checkVisibility())
+              .map((item) => item.querySelector(":scope > span")?.textContent?.trim()),
+            shortcut: panel.querySelector(".menu-item")?.querySelector(".k2b-kbd")?.checkVisibility(),
+            signOutColor: getComputedStyle([...panel.querySelectorAll(".menu-item")].at(-1)!).color,
           };
         });
         expect(menu.visible).toBe("visible");
@@ -854,9 +868,12 @@ describe("profile menu in the rail", () => {
         expect(menu.top).toBeLessThan(menu.avatarTop);
         expect(menu.items).toEqual(
           language === "de"
-            ? ["Hell", "English", "Profileinstellungen", "App", "Abmelden"]
-            : ["Light", "Deutsch", "Profile settings", "App", "Sign out"],
+            ? ["Seitenleiste ausblenden", "Hell", "English", "Profileinstellungen", "App", "Abmelden"]
+            : ["Hide sidebar", "Light", "Deutsch", "Profile settings", "App", "Sign out"],
         );
+        expect(menu.shortcut).toBe(true);
+        // Sign-out takes the danger tone (#b91c1c).
+        expect(menu.signOutColor).toBe("rgb(185, 28, 28)");
         expect(menu.radios).toBe(0);
         expect(menu.appearanceLabel).toBe(
           language === "de" ? "Darstellung: Hell. Wechselt zu Dunkel." : "Appearance: Light. Switches to Dark.",
@@ -880,13 +897,13 @@ describe("profile menu in the rail", () => {
         expect(await page.locator(".layout-profile-preferences [data-position]").getAttribute("data-position")).toBe("right-start");
         // Beside the rail, the avatar's menu cannot open below the window's bottom edge, so it grows upward.
         const avatar = await trigger.evaluate((element) => element.getBoundingClientRect().toJSON() as DOMRect);
-        const menu = dropdownPosition(avatar, { width: 224, height: 220 }, "right-start", { width: device.width, height: device.height });
+        const menu = dropdownPosition(avatar, { width: 272, height: 260 }, "right-start", { width: device.width, height: device.height });
         expect(avatar.width).toBe(44);
         expect(avatar.height).toBe(44);
         expect(avatar.left).toBeGreaterThanOrEqual(0);
         expect(avatar.right).toBeLessThanOrEqual(tablet(device) ? 68 : 56);
         expect(menu.left).toBeGreaterThanOrEqual(avatar.right);
-        expect(menu.top + 220).toBeLessThanOrEqual(device.height - 8);
+        expect(menu.top + 260).toBeLessThanOrEqual(device.height - 8);
         expect(menu.top).toBeLessThan(avatar.top);
       } finally {
         await context.close();
@@ -929,19 +946,24 @@ describe("anonymous pages", () => {
 });
 
 describe("phone header", () => {
-  test("a long title keeps Home in the signed-in bar and in the anonymous header", async () => {
+  test("a long title keeps Home in the anonymous header and the app menu in the signed-in title row", async () => {
     const long = encodeURIComponent("Kundenverwaltung und Abrechnung");
     for (const path of [`/app/mail/inbox?name=${long}`, `/public?title=${long}`]) {
       const { context, page } = await open(phone, path);
       try {
-        const home = await page
-          .locator(path.startsWith("/public") ? '.layout-header a[href="/"]:has(img)' : '.cloud-tab-bar a[href="/"]')
-          .evaluate((link) => link.getBoundingClientRect().toJSON() as DOMRect);
-        if (path.startsWith("/public"))
+        if (path.startsWith("/public")) {
+          const home = await page
+            .locator('.layout-header a[href="/"]:has(img)')
+            .evaluate((link) => link.getBoundingClientRect().toJSON() as DOMRect);
           expect({ width: Math.round(home.width), height: Math.round(home.height) }).toEqual({ width: 32, height: 32 });
-        else {
-          expect(home.height).toBe(50);
-          expect(home.width).toBeGreaterThanOrEqual(44);
+        } else {
+          // Signed in, the app menu leads to Start; the title gives way before it does.
+          const menu = await page
+            .locator(".layout-header")
+            .getByRole("button", { name: "Open apps", exact: true })
+            .evaluate((button) => button.getBoundingClientRect().toJSON() as DOMRect);
+          expect(menu.width).toBeGreaterThanOrEqual(32);
+          expect(menu.right).toBeLessThanOrEqual(phone.width);
           expect(await page.locator('.layout-header a[href="/"]').count()).toBe(0);
         }
       } finally {
@@ -1082,7 +1104,7 @@ describe("soft tablet and phone shell", () => {
     }
 
     for (const device of [phone, ipadSplitView]) {
-      test(`${device.width} ${theme}: the soft card scrolls while the window stays put and rows clear the floating bar`, async () => {
+      test(`${device.width} ${theme}: the soft card reaches the bottom edge, scrolls while the window stays put, and rows clear the home indicator`, async () => {
         // A regular page scrolls `main`, a workspace its Main, a page with a ScrollArea that area.
         for (const [path, scroller, row] of [
           ["/app/mail/inbox?plain=1", "main.layout-content-main", ".plain-row"],
@@ -1097,8 +1119,6 @@ describe("soft tablet and phone shell", () => {
                 const canvas = getComputedStyle(document.querySelector(".cloud-app-canvas")!);
                 const main = document.querySelector<HTMLElement>("main.layout-content-main")!;
                 const style = getComputedStyle(main);
-                const bar = document.querySelector(".cloud-tab-bar .k2b-tab-bar")!;
-                const barStyle = getComputedStyle(bar);
                 return {
                   borders: [header.borderTopWidth, header.borderRightWidth, header.borderBottomWidth, header.borderLeftWidth],
                   headerBackground: header.backgroundColor,
@@ -1115,10 +1135,7 @@ describe("soft tablet and phone shell", () => {
                   overflow: style.overflowY,
                   padding: Number.parseFloat(style.paddingBottom),
                   scrollPadding: Number.parseFloat(style.scrollPaddingBottom),
-                  position: getComputedStyle(document.querySelector(".cloud-tab-bar")!).position,
-                  radius: Number.parseFloat(barStyle.borderRadius),
-                  barHeight: bar.getBoundingClientRect().height,
-                  barBottom: bar.getBoundingClientRect().bottom,
+                  mainBottom: main.getBoundingClientRect().bottom,
                 };
               });
               expect(styles.borders).toEqual(["0px", "0px", "0px", "0px"]);
@@ -1129,13 +1146,12 @@ describe("soft tablet and phone shell", () => {
               expect(styles.canvasOverflow).toBe("hidden");
               expect(styles.radii).toEqual(["28px", "28px", "0px", "0px"]);
               expect(["auto", "scroll"]).toContain(styles.overflow);
-              expect(styles.padding).toBe(bottom + 8 + 62 + 12);
+              expect(styles.padding).toBe(bottom);
               expect(styles.scrollPadding).toBe(styles.padding);
-              expect(await page.locator(".cloud-tab-bar .k2b-tab-bar").isVisible()).toBe(true);
-              expect(styles.position).toBe("fixed");
-              expect(styles.radius).toBeGreaterThan(20);
-              expect(styles.barHeight).toBe(62);
-              expect(styles.barBottom).toBe(device.height - bottom - 8);
+              // No dock: the card ends at the window's bottom edge, and its content above the bottom safe area.
+              expect(await page.locator(".cloud-tab-bar").count()).toBe(0);
+              expect(styles.mainBottom).toBe(device.height);
+              const contentEnd = device.height - bottom;
               const end = await page.evaluate(
                 ([scroller, row]) => {
                   const area = document.querySelector<HTMLElement>(scroller)!;
@@ -1146,7 +1162,6 @@ describe("soft tablet and phone shell", () => {
                     scrolled: area.scrollTop,
                     document: document.scrollingElement!.scrollTop,
                     last: [...document.querySelectorAll(row)].at(-1)!.getBoundingClientRect().bottom,
-                    bar: document.querySelector(".cloud-tab-bar .k2b-tab-bar")!.getBoundingClientRect().top,
                   };
                 },
                 [scroller, row] as const,
@@ -1154,7 +1169,7 @@ describe("soft tablet and phone shell", () => {
               expect({ path, overflowing: end.overflowing }).toEqual({ path, overflowing: true });
               expect(end.scrolled).toBeGreaterThan(0);
               expect(end.document).toBe(0);
-              expect(end.last).toBeLessThanOrEqual(end.bar);
+              expect(end.last).toBeLessThanOrEqual(contentEnd);
               await page.locator(scroller).evaluate((area) => {
                 area.scrollTop = 0;
               });
@@ -1169,12 +1184,10 @@ describe("soft tablet and phone shell", () => {
                 });
               const focused = await page.evaluate(() => ({
                 bottom: document.activeElement!.getBoundingClientRect().bottom,
-                bar: document.querySelector(".cloud-tab-bar .k2b-tab-bar")!.getBoundingClientRect().top,
                 document: document.scrollingElement!.scrollTop,
               }));
-              expect(focused.bottom).toBeLessThanOrEqual(focused.bar);
+              expect(focused.bottom).toBeLessThanOrEqual(contentEnd);
               expect(focused.document).toBe(0);
-              if (device.width === 390 && bottom === 0 && path.includes("overview")) await focusRing(page, ".cloud-tab-bar a");
             } finally {
               await context.close();
             }
@@ -1208,41 +1221,9 @@ describe("soft tablet and phone shell", () => {
     });
   }
 
-  test("bar links follow personal rail order, keep the later current app and allow native navigation", async () => {
-    // Without an open detail: its half sheet rises over the bar, as a sheet does.
-    const { context, page } = await open(phone, "/app/mail/inbox?catalog=1&overview=1");
-    try {
-      const links = await page
-        .locator(".cloud-tab-bar a")
-        .evaluateAll((links) => links.map((link) => ({ href: link.getAttribute("href"), current: link.getAttribute("aria-current") })));
-      expect(links).toEqual([
-        { href: "/", current: null },
-        { href: "/app/amber", current: null },
-        { href: "/app/birch", current: null },
-        { href: "/app/cedar", current: null },
-        { href: "/app/mail", current: "page" },
-      ]);
-      // Records whether anything prevented the link's own navigation, then stops it: the page is set from markup.
-      await page.evaluate(() =>
-        window.addEventListener(
-          "click",
-          (event) => {
-            document.body.dataset.clickPrevented = String(event.defaultPrevented);
-            event.preventDefault();
-          },
-          { once: true },
-        ),
-      );
-      await page.locator('.cloud-tab-bar a[href="/app/amber"]').click();
-      expect(await page.locator("body").getAttribute("data-click-prevented")).toBe("false");
-    } finally {
-      await context.close();
-    }
-  });
-
-  // The header and the rail switch with `md` (48rem); the bar must switch with them, so a larger default font size,
-  // which moves that switch above 768 px, leaves Home reachable. Chromium alone can set the default font size.
-  test.skipIf(browserName === "webkit")("a 20 px default font size keeps Home reachable up to the md switch", async () => {
+  // The header and the rail switch with `md` (48rem), so a larger default font size, which moves that switch above
+  // 768 px, leaves the app menu and help reachable. Chromium alone can set the default font size.
+  test.skipIf(browserName === "webkit")("a 20 px default font size keeps the app menu reachable up to the md switch", async () => {
     const { context, page } = await open({ name: "large font", width: 800, height: 900, touch: false }, "/app/mail/inbox?overview=1");
     try {
       const cdp = await context.newCDPSession(page);
@@ -1251,43 +1232,13 @@ describe("soft tablet and phone shell", () => {
       const shell = await page.evaluate(() => ({
         rail: getComputedStyle(document.querySelector(".layout-rail")!).display,
         header: getComputedStyle(document.querySelector(".layout-header")!).display,
-        home: !!document.querySelector<HTMLElement>('.cloud-tab-bar a[href="/"]')?.checkVisibility(),
-        // The card keeps at least the room from the bar's top edge to the window's end.
-        roomForBar:
-          Number.parseFloat(getComputedStyle(document.querySelector(".layout-content-main")!).paddingBottom) >=
-          innerHeight - document.querySelector(".cloud-tab-bar .k2b-tab-bar")!.getBoundingClientRect().top,
+        menu: !!document.querySelector<HTMLElement>('.layout-header button[aria-label="Open apps"]')?.checkVisibility(),
+        help: !!document.querySelector<HTMLElement>('.layout-header button[aria-label="Open help"]')?.checkVisibility(),
+        dock: document.querySelector(".cloud-tab-bar") !== null,
       }));
-      expect(shell).toEqual({ rail: "none", header: "flex", home: true, roomForBar: true });
+      expect(shell).toEqual({ rail: "none", header: "flex", menu: true, help: true, dock: false });
     } finally {
       await context.close();
-    }
-  });
-
-  test("Start is current only at the root, independently of query parameters", async () => {
-    for (const path of ["/", "/?view=all", "/app/mail/inbox"]) {
-      const { context, page } = await open(phone, path);
-      try {
-        expect(await page.locator('.cloud-tab-bar a[href="/"]').getAttribute("aria-current")).toBe(
-          path.startsWith("/app/") ? null : "page",
-        );
-        expect(await page.locator('.cloud-tab-bar [aria-current="page"]').count()).toBe(1);
-      } finally {
-        await context.close();
-      }
-    }
-  });
-
-  test("the phone's home destination is labelled in the request locale", async () => {
-    for (const [language, label] of [
-      ["en", "Home"],
-      ["de", "Start"],
-    ] as const) {
-      const { context, page } = await open(phone, "/app/mail/inbox", { language });
-      try {
-        expect(await page.locator('.cloud-tab-bar a[href="/"]').textContent()).toBe(label);
-      } finally {
-        await context.close();
-      }
     }
   });
 });

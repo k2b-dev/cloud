@@ -1,14 +1,15 @@
-import { sql } from "bun";
+import type { SQLQuery } from "bun";
 import type { EntityKind, EntityListItem, UserProfile, UserProvider } from "../../contracts/shared";
+import { sql } from "../../runtime/clients";
 import { getFreeIpaConfig } from "../freeipa-config";
 import { escapeLikePattern, toPgTextArray, toPgUuidArray } from "../postgres";
-import type { ServiceAccountKind } from "../service-accounts";
+import type { ServiceAccountKind, ServiceAccountStatus } from "../service-accounts";
 import { buildBaseGroup, personalOwnerJoin } from "./base-group";
 import { buildBaseUser } from "./base-user";
-import { buildManagedGroupScopeCondition, recursiveGroupIdsSubquery } from "./group-sql";
+import { buildManagedGroupScopeCondition, recursiveGroupIdsSubquery, recursiveServiceAccountGroupIdsSubquery } from "./group-sql";
 
 type DbRow = Record<string, unknown>;
-type SqlFragment = any;
+type SqlFragment = SQLQuery;
 
 export type EntityListParams = {
   visibility:
@@ -21,6 +22,9 @@ export type EntityListParams = {
   profile?: UserProfile;
   userIds?: string[];
   groupIds?: string[];
+  serviceAccountIds?: string[];
+  serviceAccountKinds?: ServiceAccountKind[];
+  serviceAccountStatus?: ServiceAccountStatus;
   excludeUserIds?: string[];
   excludeGroupIds?: string[];
   excludeServiceAccountIds?: string[];
@@ -30,11 +34,6 @@ export type EntityListParams = {
   parentGroupId?: string;
   managedByUserId?: string;
   recursive?: boolean;
-  /**
-   * Personal Linux groups are left out of directory browsing and search by
-   * default. Exact `groupIds` lookups and relation filters always return them.
-   */
-  includePersonal?: boolean;
   page?: number;
   perPage?: number;
 };
@@ -427,11 +426,7 @@ export const list = async (
   const groupsAdmin = (await getFreeIpaConfig()).groupsAdmin;
   const groupsAdminLiteral = toPgTextArray(groupsAdmin);
   const spec = buildQuerySpec(params);
-  const includePersonal =
-    params.includePersonal === true ||
-    params.groupIds !== undefined ||
-    Boolean(params.memberOfGroupId || params.managerOfGroupId || params.parentGroupId || params.managedByUserId);
-  const personalCondition = includePersonal ? sql`TRUE` : sql`(kind <> 'group' OR personal_owner_id IS NULL)`;
+  const personalCondition = sql`(kind <> 'group' OR NOT EXISTS (SELECT 1 FROM auth.personal_groups p WHERE p.group_id = entity_rows.id))`;
   const visibilityCondition =
     params.visibility.type === "directory"
       ? sql`TRUE`
@@ -453,12 +448,13 @@ export const list = async (
           )
         )`;
   const kindsCondition = (params.kinds?.length ?? 0) === 0 ? sql`TRUE` : sql`kind = ANY(${toPgTextArray(params.kinds ?? [])}::text[])`;
-  const hasIdFilter = params.userIds !== undefined || params.groupIds !== undefined;
+  const hasIdFilter = params.userIds !== undefined || params.groupIds !== undefined || params.serviceAccountIds !== undefined;
   const includeIdCondition = !hasIdFilter
     ? sql`TRUE`
     : sql`(
         (kind = 'user' AND id = ANY(${toPgUuidArray(params.userIds ?? [])}::uuid[]))
         OR (kind = 'group' AND id = ANY(${toPgUuidArray(params.groupIds ?? [])}::uuid[]))
+        OR (kind = 'service_account' AND id = ANY(${toPgUuidArray(params.serviceAccountIds ?? [])}::uuid[]))
       )`;
   const excludeUserCondition =
     (params.excludeUserIds?.length ?? 0) === 0
@@ -472,6 +468,13 @@ export const list = async (
     (params.excludeServiceAccountIds?.length ?? 0) === 0
       ? sql`TRUE`
       : sql`(kind <> 'service_account' OR id <> ALL(${toPgUuidArray(params.excludeServiceAccountIds ?? [])}::uuid[]))`;
+  const serviceAccountKindsCondition =
+    (params.serviceAccountKinds?.length ?? 0) === 0
+      ? sql`TRUE`
+      : sql`(kind <> 'service_account' OR service_account_kind = ANY(${toPgTextArray(params.serviceAccountKinds ?? [])}::text[]))`;
+  const serviceAccountStatusCondition = params.serviceAccountStatus
+    ? sql`(kind <> 'service_account' OR status = ${params.serviceAccountStatus})`
+    : sql`TRUE`;
   const userMemberOfGroupCondition =
     (params.userMemberOfGroupIds?.length ?? 0) === 0
       ? sql`TRUE`
@@ -482,15 +485,43 @@ export const list = async (
             AND ug.group_id = ANY(${toPgUuidArray(params.userMemberOfGroupIds ?? [])}::uuid[])
         ))`;
 
+  // Machine management is direct only; membership never implies management.
+  const otherRelation = Boolean(params.parentGroupId || params.managedByUserId);
+  const machineRelation = params.memberOfGroupId
+    ? sql`sa.kind IN ('standalone', 'agent') AND EXISTS (
+        SELECT 1 FROM auth.groups target
+        WHERE target.id = ${params.memberOfGroupId}::uuid AND target.provider = 'local'
+          AND ${
+            params.recursive === true
+              ? sql`target.id IN (${recursiveServiceAccountGroupIdsSubquery(sql`sa.id`)})`
+              : sql`EXISTS (SELECT 1 FROM auth.service_account_groups sg
+                  WHERE sg.service_account_id = sa.id AND sg.group_id = target.id)`
+          }
+      )`
+    : params.managerOfGroupId
+      ? sql`sa.kind IN ('standalone', 'agent') AND EXISTS (
+        SELECT 1 FROM auth.group_manager_service_accounts gm JOIN auth.groups g ON g.id = gm.group_id
+        WHERE gm.service_account_id = sa.id AND gm.group_id = ${params.managerOfGroupId}::uuid AND g.provider = 'local'
+      )`
+      : sql`TRUE`;
+  const machineDirect = params.memberOfGroupId
+    ? sql`EXISTS (SELECT 1 FROM auth.service_account_groups sg
+        WHERE sg.service_account_id = sa.id AND sg.group_id = ${params.memberOfGroupId}::uuid)`
+    : params.managerOfGroupId
+      ? sql`TRUE`
+      : sql`NULL::boolean`;
   const where = sql`
     ${visibilityCondition}
     AND ${kindsCondition}
     AND ${includeIdCondition}
-    AND (${params.provider ?? null}::text IS NULL OR provider = ${params.provider ?? null})
+    AND (${params.provider ?? null}::text IS NULL OR provider = ${params.provider ?? null}
+      OR (kind = 'service_account' AND ${params.provider ?? null}::text = 'local'))
     AND (${params.profile ?? null}::text IS NULL OR kind = 'group' OR profile = ${params.profile ?? null})
     AND ${excludeUserCondition}
     AND ${excludeGroupCondition}
     AND ${excludeServiceAccountCondition}
+    AND ${serviceAccountKindsCondition}
+    AND ${serviceAccountStatusCondition}
     AND ${userMemberOfGroupCondition}
     AND ${personalCondition}
     AND (
@@ -601,7 +632,7 @@ export const list = async (
       service_account_rows AS (
         SELECT
           'service_account'::text AS kind,
-          NULL::boolean AS direct,
+          ${machineDirect} AS direct,
           sa.id,
           NULL::text AS provider,
           NULL::text AS profile,
@@ -633,6 +664,7 @@ export const list = async (
           NULL::text AS personal_owner_display_name,
           LOWER(sa.name) AS sort_label
         FROM auth.service_accounts sa
+        WHERE NOT ${otherRelation} AND ${machineRelation}
       ),
       entity_rows AS (
         SELECT * FROM user_rows
@@ -649,9 +681,9 @@ export const list = async (
     OFFSET ${offset}
   `;
 
+  // A page past the end has no rows to carry the window count; the total still counts every match.
   let total = rows.length > 0 ? Number(rows[0]!.total) : 0;
-  if (params.visibility.type === "directory_shares" && !rows.length && page > 1)
-    total = (await list({ ...params, page: 1, perPage: 1 })).total;
+  if (!rows.length && page > 1) total = (await list({ ...params, page: 1, perPage: 1 })).total;
   return {
     items: rows.map((row) => {
       const entity = mapEntityRow(row);

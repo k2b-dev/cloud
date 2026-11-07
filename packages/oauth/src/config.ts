@@ -2,6 +2,8 @@ import { appAccess, defineApp } from "@k2b/cloud";
 
 export const app = defineApp({
   id: "oauth",
+  // These protocols validate their own credentials and never use Cloud session authority.
+  sessionlessRoutes: ["/oauth/register", "/oauth/device_authorization", "/oauth/token", "/oauth/revoke", "/oauth/userinfo"],
   access: appAccess.roles(["admin"], {
     publicRoutes: [
       "/.well-known/openid-configuration",

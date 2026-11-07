@@ -1,15 +1,19 @@
 import {
   AppWorkspace,
   Avatar,
+  AvatarFaces,
   AvatarStack,
   Button,
   Calendar,
   type CalendarEvent,
+  ChangeList,
   Checkbox,
   DataPanel,
   DataTable,
   DateTimePicker,
   DescriptionList,
+  DotStrip,
+  type DotStripTone,
   FileTypeIcon,
   FilterChip,
   FilterToggle,
@@ -570,7 +574,7 @@ const ResourceCardDemo = () => (
   <DemoCard
     id="resource-cards"
     chip={{ kind: "component", name: "ResourceCard", from: "@k2b/ui" }}
-    description="ResourceCard keeps one size while it loads, shows the element, or says that the reader has no access, the element is deleted, or it is not available right now. Outside ok it shows nothing of the element."
+    description="ResourceCard keeps one size while it loads, shows the element, or says that the reader has no access, the element is deleted, or it is not available right now. A coloured icon chip, a context line and a status show what the element is. Outside ok it shows nothing of the element."
     code={`import { ResourceCard } from "@k2b/ui";
 
 <ResourceCard
@@ -597,6 +601,14 @@ const ResourceCardDemo = () => (
           />
         )}
       </For>
+      <ResourceCard
+        title="Hand out laptops"
+        icon="ti ti-circle"
+        color="emerald"
+        context="Task in IT planning · due 30 Oct"
+        status="Open"
+        href="#resource-cards"
+      />
     </div>
   </DemoCard>
 );
@@ -771,17 +783,27 @@ const DetailsDemo = () => {
   );
 };
 
+const dotStripOutcomes: DotStripTone[] = Array.from({ length: 50 }, (_, index) =>
+  index % 3 === 0 ? "accent" : index % 8 === 5 ? "warning" : "muted",
+);
+
 const ProgressDemo = () => (
   <DemoCard
     id="progress"
-    chip={{ kind: "component", name: "ProgressBar", from: "@k2b/ui" }}
-    description="Determinate progress in semantic tones and three compact sizes."
+    chip={[
+      { kind: "component", name: "ProgressBar", from: "@k2b/ui" },
+      { kind: "component", name: "DotStrip", from: "@k2b/ui" },
+    ]}
+    description="Determinate progress in semantic tones and three compact sizes, and a strip of outcome dots that fills from the left."
     code={`<ProgressBar value={72.4} label="Upload progress" tone="success" showValue />
 <ProgressBar value={38} label="Indexing" size="sm" showValue />
 <ProgressBar value={16} label="Storage limit" tone="danger" size="xs" showValue />
 <ProgressRing value={35} label="Usage" />
 <ProgressRing value={92} tone="warning" label="Usage, almost used up" />
-<ProgressRing value={100} tone="danger" label="Usage, used up" />`}
+<ProgressRing value={100} tone="danger" label="Usage, used up" />
+<ProgressRing value={60} tone="accent" label="Today's work done" />
+<DotStrip dots={dotStripOutcomes} length={50} label="Last 50 mails: 17 matched, 6 skipped, 27 not" />
+<DotStrip dots={dotStripOutcomes.slice(0, 23)} length={50} size="lg" label="23 of 50 checked" />`}
   >
     <div class="ui-demo-form-grid">
       <ProgressBar value={72.4} label="Upload progress" tone="success" showValue />
@@ -791,8 +813,68 @@ const ProgressDemo = () => (
         <ProgressRing value={35} label="Usage" />
         <ProgressRing value={92} tone="warning" label="Usage, almost used up" />
         <ProgressRing value={100} tone="danger" label="Usage, used up" />
+        <ProgressRing value={60} tone="accent" label="Today's work done" />
       </div>
+      <DotStrip dots={dotStripOutcomes} length={50} label="Last 50 mails: 17 matched, 6 skipped, 27 not" />
+      <DotStrip dots={dotStripOutcomes.slice(0, 23)} length={50} size="lg" label="23 of 50 checked" />
     </div>
+  </DemoCard>
+);
+
+const ChangeListDemo = () => (
+  <DemoCard
+    id="change-list"
+    chip={[{ kind: "component", name: "ChangeList", from: "@k2b/ui" }]}
+    description="Pending changes under an editor that saves them together: who gains, what changes, who loses."
+    code={`<ChangeList
+  label="What changes"
+  items={[
+    { tone: "add", content: <><b>Tom Becker</b> gets Edit</> },
+    { tone: "change", content: <><b>Lea Schmitt</b>: View → Edit</> },
+    { tone: "remove", content: <><b>Lagerbot</b> loses access</> },
+    { tone: "warning", icon: "ti ti-world", content: <><b>Public with link</b>: on</>, detail: "Anyone with the link sees this." },
+  ]}
+/>`}
+  >
+    <ChangeList
+      label="What changes"
+      items={[
+        {
+          tone: "add",
+          content: (
+            <>
+              <b>Tom Becker</b> gets Edit
+            </>
+          ),
+        },
+        {
+          tone: "change",
+          content: (
+            <>
+              <b>Lea Schmitt</b>: View → Edit
+            </>
+          ),
+        },
+        {
+          tone: "remove",
+          content: (
+            <>
+              <b>Lagerbot</b> loses access
+            </>
+          ),
+        },
+        {
+          tone: "warning",
+          icon: "ti ti-world",
+          content: (
+            <>
+              <b>Public with link</b>: on
+            </>
+          ),
+          detail: "Anyone with the link sees this.",
+        },
+      ]}
+    />
   </DemoCard>
 );
 
@@ -949,7 +1031,7 @@ const calendarDemoEvents = (month: Date): CalendarEvent[] => {
     new Date(Date.UTC(month.getUTCFullYear(), month.getUTCMonth(), day, hour, minute)).toISOString();
 
   return [
-    { id: "kickoff", title: "Month kickoff", start: at(2), end: at(3), allDay: true, color: "emerald" },
+    { id: "kickoff", title: "Month kickoff", start: at(2), end: at(3), allDay: true, color: "emerald", icon: "ti ti-flag" },
     {
       id: "roadmap",
       title: "Roadmap planning",
@@ -957,6 +1039,12 @@ const calendarDemoEvents = (month: Date): CalendarEvent[] => {
       start: at(5, 9),
       end: at(5, 12),
       color: "violet",
+      icon: "ti ti-route",
+      attendees: [{ name: "Jana Berger" }, { name: "Ole Brandt" }, { name: "Mira Lind" }, { name: "Sven Aasen" }],
+      links: [
+        { label: "Roadmap board", href: "#roadmap-board", icon: "ti ti-layout-kanban" },
+        { label: "Video room", href: "#video-room", icon: "ti ti-video" },
+      ],
     },
     { id: "partner", title: "Partner call", start: at(5, 9, 30), end: at(5, 10, 30), color: "red" },
     { id: "review", title: "Design review", start: at(5, 10), end: at(5, 11, 30), color: "cyan" },
@@ -1235,6 +1323,20 @@ const demos: DemoSection = {
           ]}
         />
       </DemoCard>
+      <DemoCard
+        id="avatar-faces"
+        chip={[{ kind: "component", name: "AvatarFaces", from: "@k2b/ui" }]}
+        description="The same faces inside a row that is already a link; a gray face stands outside the team."
+        code={`<AvatarFaces size="md" total={17} people={[{ name: "Sabine Jahn", tone: "neutral" }, { name: "Lea Brandt" }, { name: "Tom Keller" }]} />`}
+      >
+        <span role="img" aria-label="17 participants: Sabine Jahn, Lea Brandt, Tom Keller and 14 more">
+          <AvatarFaces
+            size="md"
+            total={17}
+            people={[{ name: "Sabine Jahn", tone: "neutral" }, { name: "Lea Brandt" }, { name: "Tom Keller" }]}
+          />
+        </span>
+      </DemoCard>
     </DemoGrid>
   ),
   details: () => (
@@ -1245,6 +1347,11 @@ const demos: DemoSection = {
   progress: () => (
     <DemoGrid columns="one">
       <ProgressDemo />
+    </DemoGrid>
+  ),
+  "change-list": () => (
+    <DemoGrid columns="one">
+      <ChangeListDemo />
     </DemoGrid>
   ),
   stats: () => (

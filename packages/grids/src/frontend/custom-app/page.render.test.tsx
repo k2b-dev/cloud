@@ -230,8 +230,8 @@ test("a chart block keeps its subtitle above a fixed-height chart and shows its 
   expect(html).toMatch(
     /<p class="mb-3 text-sm text-secondary">Open tickets by status<\/p><solid-island data-id="[^"]+"[^>]*><div class="flex h-72 flex-col">/,
   );
-  expect(html).toMatch(/<p[^>]*data-chart-y-axis-label[^>]*>Tickets<\/p>/);
-  expect(html).toMatch(/<p[^>]*data-chart-x-axis-label[^>]*>Status<\/p>/);
+  expect(html).toMatch(/class="stdlib-chart-axis-label"[^>]*>Tickets</);
+  expect(html).toMatch(/class="stdlib-chart-axis-label"[^>]*>Status</);
 });
 
 test("signed-in and anonymous chart blocks serialize only display data and preserve their server SVG", async () => {

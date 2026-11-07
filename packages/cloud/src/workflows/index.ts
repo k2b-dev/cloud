@@ -1,4 +1,5 @@
-export { AI_WORKFLOW_ACTIONS } from "./ai-actions";
+export type { WorkflowAiBudget, WorkflowAiScope } from "./ai/policy";
+export { AI_WORKFLOW_ACTIONS, createWorkflowAiActions } from "./ai-actions";
 export {
   buildWorkflowManifestCompletions,
   type WorkflowCompletionContext,

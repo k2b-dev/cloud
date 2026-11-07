@@ -16,9 +16,9 @@ import {
 } from "@k2b/cloud/capabilities/store";
 import { type AuthContext, getDateConfig, getLocale, resolveDisplayNames } from "@k2b/cloud/server";
 import { aiUsageHref, formatDateTime, formatDurationMs, formatNumber, principalLabel } from "@k2b/cloud/shared";
-import { AdminLayout } from "@k2b/cloud/ssr";
 import { ButtonLink, DataTable, type DataTableColumn, NoticeCard, StatCell, StatGrid, StatusBadge } from "@k2b/ui";
 import { ssr } from "../../config";
+import { areaText, ObservabilityArea, ObservabilityPane, readAttention } from "../_components/ObservabilityArea";
 import CapabilitiesFilterBar from "./_components/CapabilitiesFilterBar.island";
 import ExecutionDetail from "./_components/ExecutionDetail";
 import {
@@ -155,14 +155,10 @@ export default ssr<AuthContext>(async (c) => {
     { id: "details", header: t.details, value: () => null, align: "right" },
   ];
 
+  const attention = await readAttention();
   return () => (
-    <AdminLayout c={c} title={t.title}>
-      <div class="app-rows">
-        <div class="min-w-0" style="view-transition-name: admin-capabilities-title">
-          <h1 class="text-base font-semibold text-primary">{t.title}</h1>
-          <p class="mt-1 text-xs text-dimmed">{t.description}</p>
-        </div>
-
+    <ObservabilityArea c={c} locale={locale} section="capabilities" attention={attention}>
+      <ObservabilityPane label={areaText(locale).capabilities} description={t.description}>
         {failure ? <NoticeCard tone="danger" title={t.loadFailed} detail={failure} /> : null}
 
         <div class="flex flex-wrap items-center justify-between gap-2">
@@ -369,7 +365,7 @@ export default ssr<AuthContext>(async (c) => {
             />
           )
         ) : null}
-      </div>
-    </AdminLayout>
+      </ObservabilityPane>
+    </ObservabilityArea>
   );
 });

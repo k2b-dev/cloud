@@ -11,7 +11,7 @@ export const NOTE_PDF_OMISSION_CODES = [
   "invalid_block",
 ] as const;
 export type NotePdfOmissionCode = (typeof NOTE_PDF_OMISSION_CODES)[number];
-export const NOTE_PDF_OMISSION_KINDS = ["image", "diagram", "query", "toc", "data", "chart", "callout", "math", "formula"] as const;
+export const NOTE_PDF_OMISSION_KINDS = ["image", "diagram", "query", "toc", "data", "chart", "map", "callout", "math", "formula"] as const;
 export type NotePdfOmissionKind = (typeof NOTE_PDF_OMISSION_KINDS)[number];
 export type NotePdfOmission = { code: NotePdfOmissionCode; kind: NotePdfOmissionKind; label: string };
 export type NotePdfOmissionReport = { items: NotePdfOmission[]; more: number };

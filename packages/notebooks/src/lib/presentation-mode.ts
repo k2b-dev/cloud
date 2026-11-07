@@ -12,7 +12,9 @@ export const resolvePresentationMode = (params: {
   requestedMode?: unknown;
   locked?: boolean;
 }): PresentationMode => {
-  if (params.permission !== "write" && params.permission !== "admin") return "book";
+  // Readers open Book unless they ask for the read-only editor, where comments show (Read).
+  if (params.permission !== "write" && params.permission !== "admin")
+    return params.permission === "read" && params.requestedMode === "readonly" ? "readonly" : "book";
   const mode = isPresentationMode(params.requestedMode) ? params.requestedMode : params.defaultPresentationMode;
   return mode === "write" && params.locked ? "readonly" : mode;
 };

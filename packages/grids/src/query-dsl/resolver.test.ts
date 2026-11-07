@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { sql } from "bun";
+import { sql } from "@k2b/cloud";
+import { useUnitClients } from "../../../../scripts/fixtures/unit-clients";
 import type { RecordQuery } from "../contracts";
 import type { FormulaSqlExpression } from "../service/formula-sql-compiler";
 import { dslPreviewDiagnosticForCompilerError, resolveDslPreviewLimit } from "./preview";
@@ -35,6 +36,8 @@ import {
   compileDslGroupedQueryPlanToSql,
   compileDslQueryPlanToSql,
 } from "./sql-compiler";
+
+useUnitClients();
 
 describe("resolveDslQueryToRecordQuery", () => {
   test("resolves a table DSL query into the canonical RecordQuery shape", () => {

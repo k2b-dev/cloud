@@ -4,6 +4,9 @@ Every interactive `@k2b/ui` control shows a visible ring when it has keyboard
 focus (`:focus-visible`). The ring appears and disappears without moving or
 resizing anything on the page.
 
+Fields show focus with their own edge instead of a ring: the same 2 px edge
+turns `--k2b-edge-focus`. See [Field edge](/en/ui/surfaces/color#field-edge).
+
 ## Where the ring sits
 
 Outside a clipping container, the ring sits just outside the control, 2 px
@@ -109,6 +112,16 @@ Iterate stable ids or keys and read the current object through an accessor,
 as the Spaces board does, or reconcile the rows into a store keyed by id, as
 the Spaces list does. Check this in a browser test with `keptThrough()` from
 `packages/ui/test/browser.ts`.
+
+The same rule keeps a click. A row that a rebuild replaces between press and
+release loses the click, and nothing happens
+([#2140](https://github.com/k2b-dev/cloud/issues/2140)). Hosts rebuild equal
+items whenever their inputs change, so every interactive list needs a stable
+key: menus, tabs, options, command rows. Inside `@k2b/ui`, render such rows
+with the internal `KeyedFor`. It keeps a row's element for the same object
+and for a new object with the same identity. Test a new list with
+`pressAcrossRebuild()` from `packages/ui/test/browser.ts`: it rebuilds the
+items while the button is down.
 
 When the focused item leaves, move focus to a sensible neighbor, as the
 Spaces task tray does when a task is checked off. Do not leave focus on the

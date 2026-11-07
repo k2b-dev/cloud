@@ -1,7 +1,7 @@
 import { beforeAll, expect } from "bun:test";
+import { sql } from "@k2b/cloud";
 import type { WorkflowBoundPlan, WorkflowJsonValue } from "@k2b/cloud/workflows";
 import { createWorkflowRun } from "@k2b/cloud/workflows/store";
-import { sql } from "bun";
 import { testInfra } from "../../../../scripts/fixtures/test-infra";
 import { objectListRecordInputValues } from "../field-types/object-list";
 import { postgresTest, testShortId, testUuid } from "../integration-test-utils";

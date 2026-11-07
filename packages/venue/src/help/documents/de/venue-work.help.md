@@ -52,7 +52,7 @@ Alle Zeiten gelten in der Zeitzone des Standorts und im 24-Stunden-Format, egal 
   - Der Schalter neben einer Schicht pausiert sie oder setzt sie sofort fort. Eine pausierte Schicht behält ihre Einstellungen und trägt **Pausiert**, aber der Schichtplan plant sie nicht mehr ein, niemand kann sie übernehmen, und sie öffnet den Standort nicht. Löschen entfernt eine Schicht endgültig; vergangene Einträge behalten ihren Namen.
   - Zeiten nehmen eine Uhrzeit im 24-Stunden-Format wie 09:30; aus `9` wird 09:00. Ein Ende um 24:00 bedeutet bis Mitternacht. Felder sagen, was fehlt oder nicht stimmt, und ein Dialog bleibt mit deinen Eingaben offen, bis das Speichern gelingt.
 - **Zugriff:** Administratoren vergeben Zugriff „Lesen“, „Mitarbeit“ oder „Admin“ an Personen, Gruppen, die Öffentlichkeit oder angemeldete Personen.
-- **API-Schlüssel:** Administratoren erstellen ressourcengebundene Schlüssel für Integrationen, die Zugriff auf diesen Standort benötigen.
+- **API Keys:** Administratoren erstellen ressourcengebundene Schlüssel für Integrationen, die Zugriff auf diesen Standort benötigen.
 - **Gefahrenbereich:** **Standort löschen** entfernt den Standort mit Schichten, Einträgen, Feedback und öffentlicher Seite. Vorher musst du den Namen des Standorts eintippen.
 :::
 
@@ -85,9 +85,9 @@ Auf einem iPhone oder iPad kommen Browser-Benachrichtigungen nur an, wenn Cloud 
 | Einstellungen, Zugriff, Zeitplan oder öffentliche Abschnitte ändern | Nein | Nein | Ja |
 | Andere Personen aus einer Schicht entfernen | Nein | Nein | Ja |
 
-Die öffentliche Seite listet anstehende betreute Öffnungen als **Zusätzlich geöffnet** mit ihren Zeiten; interne Schichtnamen zeigt sie nie. Dieselben Regeln gelten für die API, `cld venue`, KI-Werkzeuge und Standort-API-Schlüssel mit der entsprechenden Berechtigung.
+Die öffentliche Seite listet anstehende betreute Öffnungen als **Zusätzlich geöffnet** mit ihren Zeiten; interne Schichtnamen zeigt sie nie. Dieselben Regeln gelten für die API, `cld venue`, KI-Werkzeuge und Standort-API Keys mit der entsprechenden Berechtigung.
 
-Im Arbeitsbereich sehen nur Admins die Liste der öffentlichen Abschnitte. Über die API, `cld venue sections list` und Standort-API-Schlüssel listet Zugriff „Lesen“ nur die Abschnitte, die die öffentliche Seite zeigt, und keine, solange die Seite aus ist; mit „Mitarbeit“ oder „Admin“ erscheinen auch Entwürfe.
+Im Arbeitsbereich sehen nur Admins die Liste der öffentlichen Abschnitte. Über die API, `cld venue sections list` und Standort-API Keys listet Zugriff „Lesen“ nur die Abschnitte, die die öffentliche Seite zeigt, und keine, solange die Seite aus ist; mit „Mitarbeit“ oder „Admin“ erscheinen auch Entwürfe.
 
 :::note Stabile Links
 Standortlinks verwenden die unveränderliche Kurz-ID. Eine Änderung des Kurznamens betrifft die Auffindbarkeit, aber nicht die öffentlichen oder internen URLs.

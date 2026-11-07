@@ -87,9 +87,8 @@ bun packages/assistant/scripts/eval-code-mode.ts --case todo --case contacts
 
 Without `--case`, all 29 cases run, three at a time (`--concurrency`). The
 model is the configured Cloud default model, which needs that installation's
-`DATABASE_URL` and `APP_SECRET`. To evaluate another model, pass one profile in
-the `ai.model_profiles_json` format with `--profile` and its API key in
-`ASSISTANT_EVAL_API_KEY`. Credentials stay in the parent process behind an
+`DATABASE_URL` and `APP_SECRET`. To evaluate another configured class or variant, pass
+`--model thorough` or `--model <variant-id>`. Credentials stay in the parent process behind an
 authenticated loopback proxy. Postgres and rsql run in disposable containers;
 Valkey and Gotenberg come from `CLOUD_TEST_VALKEY_URL` and
 `CLOUD_TEST_GOTENBERG_URL`, and the command stops before it starts when either

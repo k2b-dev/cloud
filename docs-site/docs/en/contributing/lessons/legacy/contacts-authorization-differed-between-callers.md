@@ -1,0 +1,6 @@
+### Contacts authorization differed between callers
+
+- **What happened:** Cloud administrators could read books without grants through the Contacts API, capabilities, and live updates, while the Contacts pages answered 403 ([#1234](https://github.com/k2b-dev/cloud/issues/1234)).
+- **Root cause:** API, capability, and service callers held separate copies of the book permission decision, including administrator bypasses.
+- **Error class:** Authorization copies.
+- **Guard:** Contacts `book-permission-paths.test.ts` rejects transport pre-checks (`requireBookAccess`/`requireBookPermissionInternal` outside `failAfterBookAccess`), `book.authorize`, hand-built user subjects in `api/`, intent `level` on `book.get`/`contact.get` outside `failAfterBookAccess`/`requireBookPermission`/`resolveContactAtLevel`, and credential scope caps outside the service; it restricts authorization and administration to their owners (ACC-02). `service/authorization.integration.test.ts` calls every book-scoped service operation with each identity kind. `book-permission.integration.test.ts` covers grants, exact resource bindings, credential scope limits, and separate administration access through API, capabilities, SSR, and live updates.

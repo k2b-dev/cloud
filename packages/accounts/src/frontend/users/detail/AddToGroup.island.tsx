@@ -1,8 +1,8 @@
 import { EntitySearch } from "@k2b/cloud/account/ui";
-import { refreshCurrentPath } from "@k2b/ssr/nav";
 import { mutation as mutations } from "@k2b/stdlib/solid";
 import { Button, prompts } from "@k2b/ui";
 import { apiClient } from "@/api/client";
+import { usePageSwap } from "@/frontend/lib/page-swap";
 import { showAccountActionNotice } from "../../action-notice";
 import { useAccountsMessages } from "../../messages";
 
@@ -14,6 +14,7 @@ type AddToGroupProps = {
 };
 
 export default function AddToGroup(props: AddToGroupProps) {
+  const { showChanges } = usePageSwap();
   const messages = useAccountsMessages();
   const mutation = mutations.create<void, string>({
     mutation: async (groupId) => {
@@ -28,7 +29,7 @@ export default function AddToGroup(props: AddToGroupProps) {
       }
       await showAccountActionNotice({ action: "group.member.add", id: groupId, relatedId: props.id }, messages());
     },
-    onSuccess: () => refreshCurrentPath(),
+    onSuccess: () => showChanges(),
     onError: (err) => prompts.error(err.message),
   });
 

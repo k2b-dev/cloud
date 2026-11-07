@@ -1,0 +1,1 @@
+| Primary pointer substituted for current input mode | An action stays hidden from touch on a hybrid device, or never hides when a tablet uses a trackpad. | Test: Chat member actions follow touch and trackpad on desktop and tablet, stay visible on phones, and retain geometry and keyboard access. |

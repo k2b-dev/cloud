@@ -4,6 +4,9 @@ export const oauthMessages = i18n.define({
   baseLocale: "en",
   messages: {
     en: {
+      signOut: "Sign out",
+      signOutHint: "Sign out of Cloud in this browser?",
+      cancelSignOut: "Stay signed in",
       client: "Client",
       registration: "Registration",
       description: "Description",
@@ -179,12 +182,15 @@ export const oauthMessages = i18n.define({
       deviceExpiredTitle: "Request no longer valid",
       deviceExpiredBody: "This sign-in request expired or was already answered. Start the sign-in on your device again.",
       deviceSessionRequired: "Approving a device requires a browser sign-in. API keys and access tokens cannot approve devices.",
-      webSessionRequired: "Granting access works only on the web. The mobile app cannot grant access to other applications.",
+      webSessionRequired: "Granting access works only on the web. The Cloud app cannot grant access to other applications.",
       deviceSignInAgain: "Sign in again in the browser, then enter the code again.",
       deviceNoAccess: "Your account is not allowed to use this application.",
       deviceEnterAnother: "Enter another code",
     },
     de: {
+      signOut: "Abmelden",
+      signOutHint: "In diesem Browser von Cloud abmelden?",
+      cancelSignOut: "Angemeldet bleiben",
       client: "Client",
       registration: "Registrierung",
       description: "Beschreibung",
@@ -361,8 +367,8 @@ export const oauthMessages = i18n.define({
       deviceExpiredBody:
         "Diese Anmeldeanfrage ist abgelaufen oder wurde bereits beantwortet. Starte die Anmeldung auf deinem Gerät erneut.",
       deviceSessionRequired:
-        "Zum Bestätigen eines Geräts ist eine Anmeldung im Browser erforderlich. API-Schlüssel und Access-Tokens können keine Geräte bestätigen.",
-      webSessionRequired: "Zugriff freigeben geht nur im Web. Die Mobile App kann anderen Anwendungen keinen Zugriff geben.",
+        "Zum Bestätigen eines Geräts ist eine Anmeldung im Browser erforderlich. API Keys und Access-Tokens können keine Geräte bestätigen.",
+      webSessionRequired: "Zugriff freigeben geht nur im Web. Die Cloud-App kann anderen Anwendungen keinen Zugriff geben.",
       deviceSignInAgain: "Melde dich erneut im Browser an und gib den Code noch einmal ein.",
       deviceNoAccess: "Dein Konto darf diese Anwendung nicht verwenden.",
       deviceEnterAnother: "Anderen Code eingeben",

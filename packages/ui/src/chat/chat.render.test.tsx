@@ -173,6 +173,55 @@ describe("@k2b/ui portable chat family", () => {
     expect(withoutCommands).not.toContain("aria-activedescendant");
   });
 
+  test("an uploading attachment shows a ring and its percentage; a failed one offers its retry in the danger tone", () => {
+    const html = renderToString(() =>
+      createComponent(LocaleProvider, {
+        locale: "de",
+        get children() {
+          return createComponent(Chat.Composer, {
+            value: "",
+            onValueChange: () => undefined,
+            onSubmit: () => undefined,
+            attachments: [
+              {
+                id: "label",
+                name: "Etikett.jpg",
+                kind: "image",
+                progress: 64,
+                action: { id: "never", label: "Never shown", onSelect: () => undefined },
+              },
+              {
+                id: "note",
+                name: "Lieferschein.pdf",
+                kind: "file",
+                action: {
+                  id: "retry",
+                  label: "Erneut hochladen",
+                  icon: "ti ti-alert-circle",
+                  variant: "danger",
+                  onSelect: () => undefined,
+                },
+              },
+              {
+                id: "wait",
+                name: "Foto.jpg",
+                kind: "image",
+                action: { id: "wait", label: "Wartet auf Netz", icon: "ti ti-wifi-off", disabled: true, onSelect: () => undefined },
+              },
+            ],
+            onAttachmentsChange: () => undefined,
+          });
+        },
+      }),
+    );
+    expect(html).toContain('class="k2b-chat-composer__attachment-action k2b-chat-composer__attachment-progress"');
+    expect(html).toContain('aria-label="Etikett.jpg wird hochgeladen"');
+    expect(html).toContain("64\u00a0%");
+    expect(html).not.toContain("Never shown");
+    expect(html).toMatch(/data-tone="danger"[^>]*>.*Erneut hochladen/);
+    expect(html).toMatch(/data-waiting=""[^>]*disabled[^>]*>.*Wartet auf Netz/);
+  });
+
   test("labels the composer and disables submission without a draft or attachments", () => {
     const html = renderToString(() =>
       createComponent(Chat.Composer, {
@@ -665,7 +714,7 @@ describe("@k2b/ui portable chat family", () => {
     expect(barrel).not.toContain('"./ai"');
   });
 
-  test("focuses the composer as one AI-themed surface", () => {
+  test("focuses the composer as one surface with the shared field edge", () => {
     const css = readFileSync(resolve(import.meta.dir, "../styles/index.css"), "utf8");
     const attachmentActionRule = css.match(/\.k2b-ui \.k2b-chat-composer__attachment-action \{([^}]+)\}/)?.[1] ?? "";
     const attachmentIconRule = css.match(
@@ -673,10 +722,10 @@ describe("@k2b/ui portable chat family", () => {
     );
 
     expect(css).toContain("--k2b-ai-accent:");
-    expect(css).toContain(".k2b-ui .k2b-chat-composer:focus-within");
-    expect(css).toContain("border-color: var(--k2b-ai-border);");
+    // The browser contract in styles/control-edge.browser.test.ts measures the edge in every state.
+    expect(css).toContain('.k2b-ui .k2b-chat-composer:not([data-variant="conversation"]):focus-within,');
     expect(css).toContain("border-radius: calc(var(--k2b-radius-surface) + 0.25rem);");
-    expect(css).toContain("box-shadow: var(--k2b-shadow-surface);");
+    expect(css).not.toMatch(/\.k2b-chat-composer[^{]*\{[^}]*var\(--k2b-shadow-surface\)/);
     expect(css).toContain("max-height: 19.3125rem;");
     expect(css).toContain("overflow-x: auto;");
     expect(css).toContain("flex-wrap: nowrap;");

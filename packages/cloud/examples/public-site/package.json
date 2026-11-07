@@ -1,0 +1,21 @@
+{
+  "name": "cloud-public-site-demo",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "NODE_ENV=development APP_ID=public-site APP_DIR=. bun --preload=./node_modules/@k2b/cloud/scripts/preload.ts --watch src/index.ts",
+    "build": "NODE_ENV=production APP_ID=public-site APP_DIR=. bun run node_modules/@k2b/cloud/scripts/build.ts",
+    "start": "cd dist && NODE_ENV=production bun server.js",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@k2b/cloud": "0.48.0",
+    "@k2b/ssr": "0.20.2",
+    "hono": "4.13.9",
+    "solid-js": "1.9.17"
+  },
+  "devDependencies": {
+    "@types/bun": "1.4.2",
+    "typescript": "7.0.2"
+  }
+}

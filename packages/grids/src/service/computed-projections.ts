@@ -1,5 +1,5 @@
+import { sql } from "@k2b/cloud";
 import type { DateContext } from "@k2b/stdlib";
-import { sql } from "bun";
 import type { ComputedColumnSpec } from "../contracts";
 import { decimalStringToCanonical } from "../formula/numeric";
 import { collectFieldRefs, parseFormula } from "../formula/parser";

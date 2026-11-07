@@ -1,4 +1,5 @@
-import { redis } from "bun";
+import { redis } from "../../runtime/clients";
+
 import { logger } from "../logging";
 import { coreSettings } from "../settings/api";
 import type { CurrentWeather, DailyForecast, HourlyForecast, WeatherData, WeatherIcon } from "./types";

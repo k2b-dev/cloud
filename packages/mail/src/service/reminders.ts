@@ -1,5 +1,5 @@
+import { sql } from "@k2b/cloud";
 import { err, fail, ok, type Result } from "@k2b/stdlib";
-import { sql } from "bun";
 import type { CancelConversationReminder, SetConversationReminder } from "../contracts";
 import { withShortIdDb } from "../lib/short-id";
 import { requireMailboxAccess, requireVisibleConversation } from "./access";
@@ -44,7 +44,7 @@ const mapReminder = (row: ReminderRow): ConversationReminder => ({
   updatedAt: toIso(row.updated_at),
 });
 
-const reminderColumns = sql`
+const reminderColumns = () => sql`
   id,
   conversation_id,
   user_id,
@@ -76,7 +76,7 @@ const lockConversationReminder = async (params: {
   `;
   if (!conversation) return fail(err.notFound("Conversation"));
   const [reminder] = await params.db<ReminderRow[]>`
-    SELECT ${reminderColumns}
+    SELECT ${reminderColumns()}
     FROM mail.conversation_reminders
     WHERE conversation_id = ${params.conversationId}::uuid AND user_id = ${params.userId}::uuid
     FOR UPDATE
@@ -113,7 +113,7 @@ export const getConversationReminder = async (params: {
   `;
   if (!conversation) return fail(err.notFound("Conversation"));
   const [row] = await sql<ReminderRow[]>`
-    SELECT ${reminderColumns}
+    SELECT ${reminderColumns()}
     FROM mail.conversation_reminders
     WHERE conversation_id = ${params.conversationId}::uuid AND user_id = ${user.data.id}::uuid
   `;
@@ -160,7 +160,7 @@ export const setConversationReminder = async (params: {
                 sent_at = NULL,
                 canceled_at = NULL
             WHERE id = ${current.id}::uuid
-            RETURNING ${reminderColumns}
+            RETURNING ${reminderColumns()}
           `
         : await withShortIdDb(
             tx,
@@ -174,7 +174,7 @@ export const setConversationReminder = async (params: {
               ${user.data.id}::uuid,
               ${params.input.dueAt}::timestamptz
             )
-            RETURNING ${reminderColumns}
+            RETURNING ${reminderColumns()}
           `,
           );
       if (!row) return fail(err.internal("Reminder write returned no row"));
@@ -234,7 +234,7 @@ export const cancelConversationReminder = async (params: {
         UPDATE mail.conversation_reminders
         SET state = 'canceled', revision = ${revision}, canceled_at = now()
         WHERE id = ${current.id}::uuid
-        RETURNING ${reminderColumns}
+        RETURNING ${reminderColumns()}
       `;
       if (!row) return fail(err.internal("Canceled reminder could not be loaded"));
       await tx`

@@ -1,5 +1,4 @@
 import { err, fail, ok, type Result } from "@k2b/stdlib";
-import { sql } from "bun";
 import { HTTPException } from "hono/http-exception";
 import { z } from "zod";
 import type {
@@ -11,6 +10,7 @@ import type {
 } from "../../contracts/announcements";
 import { AnnouncementDisplayEntrySchema } from "../../contracts/announcements";
 import { hasRole, type User } from "../../contracts/shared";
+import { sql } from "../../runtime/clients";
 import { markdown } from "../../shared/markdown";
 import { claimCacheFill, completeCacheFill } from "../cache-fill";
 import { logger } from "../logging";

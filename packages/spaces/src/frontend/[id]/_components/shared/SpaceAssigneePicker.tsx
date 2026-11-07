@@ -1,8 +1,9 @@
 import { type DateContext, dates } from "@k2b/stdlib";
-import { Avatar, Combobox, type ComboboxOption, IconButton, StatusBadge } from "@k2b/ui";
+import { Avatar, Combobox, type ComboboxOption, IconButton, Select, StatusBadge } from "@k2b/ui";
 import { For, Show } from "solid-js";
 import { apiClient } from "@/api/client";
 import type { SpaceItemAssignee, SpaceItemClaim } from "@/contracts";
+import { assigneeIcon } from "@/presentation/assignees";
 import { useSpaceMessages } from "../../messages";
 import { AssigneeAvatar } from "./AssigneeAvatars";
 import ClaimAvatar from "./claim/ClaimAvatar";
@@ -14,6 +15,7 @@ type SpaceAssigneePickerProps = {
   onChange: (assignees: SpaceItemAssignee[]) => void;
   disabled?: boolean;
   placeholder?: string;
+  /** `rows` is the value of a details panel's property row: one line per person and a plain "+ Person" picker below. */
   variant?: "chips" | "rows";
   /**
    * Rows only: who works on the task. Working is a state of one assignee in the list: their row comes first and carries
@@ -62,19 +64,28 @@ export default function SpaceAssigneePicker(props: SpaceAssigneePickerProps) {
     if (!res.ok) throw new Error(t.loadAssigneesFailed);
     const users = await res.json();
     shown = new Map(
-      users.map((user) => [user.id, { id: user.id, kind: user.kind, displayName: user.displayName, avatarHash: user.avatarHash }]),
+      users.map((user) => [
+        user.id,
+        {
+          id: user.id,
+          kind: user.kind,
+          serviceAccountKind: user.serviceAccountKind,
+          displayName: user.displayName,
+          avatarHash: user.avatarHash,
+        },
+      ]),
     );
     return users.map((user) => ({
       id: user.id,
       label: user.displayName,
       description: user.description,
-      icon: user.kind === "user" ? "ti ti-user" : "ti ti-api",
+      icon: user.kind === "user" ? "ti ti-user" : assigneeIcon(user.serviceAccountKind),
     }));
   };
 
-  const addAssignee = (option: ComboboxOption) => {
-    const assignee = shown.get(option.id);
-    if (!assignee || current().some((entry) => entry.id === option.id)) return;
+  const addAssignee = (id: string) => {
+    const assignee = shown.get(id);
+    if (!assignee || current().some((entry) => entry.id === id)) return;
     props.onChange([...current(), assignee]);
   };
 
@@ -85,12 +96,16 @@ export default function SpaceAssigneePicker(props: SpaceAssigneePickerProps) {
    * claim time gives way first, so a claim that starts or ends changes no row height. Only assignees can be removed.
    */
   const PersonRow = (row: { name: string; assignee?: SpaceItemAssignee; claim: SpaceItemClaim | null }) => (
-    <div class="k2b-progressive-row flex items-center gap-2" data-spaces-assignee-row data-spaces-claim-holder={row.claim ? "" : undefined}>
+    <div
+      class="k2b-progressive-row flex min-h-9 items-center gap-2"
+      data-spaces-assignee-row
+      data-spaces-claim-holder={row.claim ? "" : undefined}
+    >
       <Show when={row.claim} fallback={row.assignee ? <AssigneeAvatar assignee={row.assignee} /> : <Avatar name={row.name} size="xs" />}>
         {(working) => <ClaimAvatar claim={working()} currentUserId={props.currentUserId ?? ""} />}
       </Show>
       <span class="flex min-w-0 flex-1 items-center gap-1.5">
-        <span class="min-w-0 truncate text-sm" title={row.name}>
+        <span class="min-w-0 truncate" title={row.name}>
           {row.name}
         </span>
         <Show when={row.claim}>
@@ -132,8 +147,9 @@ export default function SpaceAssigneePicker(props: SpaceAssigneePickerProps) {
     </div>
   );
 
+  // As a property row's value, every person and the picker is one row-height line, so the term stays beside the first.
   return (
-    <div class="flex flex-col gap-2">
+    <div class={variant() === "rows" ? "flex flex-col" : "flex flex-col gap-2"}>
       <Show when={current().length > 0 || claim()}>
         <Show
           when={variant() === "rows"}
@@ -160,7 +176,7 @@ export default function SpaceAssigneePicker(props: SpaceAssigneePickerProps) {
             </div>
           }
         >
-          <div class="flex flex-col gap-1">
+          <div class="flex flex-col">
             {/* A claim holder outside the assignees (a personal automation key, or a deleted account's claim) still leads. */}
             <Show when={unassignedHolder()}>{(holder) => <PersonRow name={holder().displayName} claim={holder()} />}</Show>
             <For each={ordered()}>
@@ -173,12 +189,30 @@ export default function SpaceAssigneePicker(props: SpaceAssigneePickerProps) {
       </Show>
 
       <Show when={!props.disabled}>
-        <Combobox
-          aria-label={t.addAssignee}
-          placeholder={props.placeholder ?? t.searchPeople}
-          fetchData={fetchAssignableUsers}
-          onSelect={addAssignee}
-        />
+        <Show
+          when={variant() === "rows"}
+          fallback={
+            <Combobox
+              aria-label={t.addAssignee}
+              placeholder={props.placeholder ?? t.searchPeople}
+              fetchData={fetchAssignableUsers}
+              onSelect={(option) => addAssignee(option.id)}
+            />
+          }
+        >
+          <Select
+            aria-label={t.addAssignee}
+            appearance="plain"
+            placeholder={t.addAssigneeShort}
+            placeholderIcon="ti ti-plus"
+            searchPlaceholder={props.placeholder ?? t.searchPeople}
+            value={null}
+            fetchData={fetchAssignableUsers}
+            onValueChange={(id) => {
+              if (id) addAssignee(id);
+            }}
+          />
+        </Show>
       </Show>
     </div>
   );

@@ -1,3 +1,4 @@
+export { AnchoredPopover, type AnchoredPopoverProps } from "./AnchoredPopover";
 export type {
   AppOverviewCardsProps,
   AppOverviewEmptyStateProps,
@@ -12,6 +13,7 @@ export type {
   AppWorkspaceDetailProps,
   AppWorkspaceDetailWidth,
   AppWorkspaceHeadProps,
+  AppWorkspaceLevelSwitcher,
   AppWorkspaceMainPaneProps,
   AppWorkspaceMainProps,
   AppWorkspaceNavTreeItemProps,
@@ -37,6 +39,7 @@ export type {
   AppWorkspaceWidthShare,
 } from "./AppWorkspace";
 export { appWorkspaceDetailElementId, default as AppWorkspace } from "./AppWorkspace";
+export { AppWorkspaceSidebarItemStatus } from "./AppWorkspaceSidebarItemStatus";
 export { watchAppHostWidth } from "./app-host-width";
 export type { AppWorkspaceControllerOptions } from "./app-workspace-controller";
 export { installAppWorkspaceController, parkWorkspaceDetailDrawers } from "./app-workspace-controller";
@@ -83,11 +86,27 @@ export type {
   DetailPanelGroupProps,
   DetailPanelHeaderProps,
   DetailPanelProps,
+  DetailPanelRowProps,
   DetailPanelSectionProps,
   DetailPanelSummaryProps,
   DetailPanelTone,
 } from "./DetailPanel";
 export { default as DetailPanel } from "./DetailPanel";
+export type {
+  DetailAccessEntry,
+  DetailAccessProps,
+  DetailLinkItem,
+  DetailLinksProps,
+  DetailPresencePerson,
+  DetailPresenceProps,
+  DetailPresenceState,
+  DetailPropertiesProps,
+  DetailProperty,
+  DetailTag,
+  DetailTagsProps,
+} from "./DetailSections";
+export { DetailAccess, DetailLinks, DetailPresence, DetailPresenceSlot, DetailProperties, DetailTags } from "./DetailSections";
+export { DETAILS_ICON, DetailsToggle, type DetailsToggleProps } from "./DetailsToggle";
 export type { DiscussionComposerProps, DiscussionItemProps, DiscussionListProps, DiscussionProps } from "./Discussion";
 export { default as Discussion } from "./Discussion";
 export type {
@@ -172,8 +191,11 @@ export { attachResizeSeparator, type ResizeSeparatorOptions } from "./resize-sep
 export type { ScrollAreaProps } from "./ScrollArea";
 export { default as ScrollArea } from "./ScrollArea";
 export type {
+  SaveStatusProps,
+  SaveStatusState,
   SettingsFieldControlProps,
   SettingsFieldProps,
+  SettingsFieldWidth,
   SettingsGroupActionProps,
   SettingsGroupProps,
   SettingsPageProps,
@@ -183,6 +205,7 @@ export type {
 } from "./Settings";
 export {
   readSettingsError,
+  SaveStatus,
   SettingsField,
   SettingsGroup,
   SettingsPage,
@@ -214,6 +237,8 @@ export {
   type AppWorkspaceSwitcherAction,
   type AppWorkspaceSwitcherOption,
 } from "./SidebarSwitcher";
+export { measureScrollFade } from "./scroll-fade";
+export { attachSheetHandle, type SheetHandleOptions } from "./sheet-handle";
 export type { TabBarItem, TabBarProps } from "./TabBar";
 export { default as TabBar } from "./TabBar";
 export type { TableOfContentsItem, TableOfContentsProps } from "./TableOfContents";

@@ -82,6 +82,32 @@ describe("Image Processor crop drag", () => {
     }
   });
 
+  test("the header's more menu still removes the active image", async () => {
+    const dom = createDomTestHarness();
+    const { ImageProcessorView } = await import("./ImageProcessor.island.tsx");
+    const second: ImageEntry = { ...image, id: "image-2", name: "receipt.png" };
+    const dispose = render(() => createComponent(ImageProcessorView, { initialImages: [image, second] }), dom.root);
+    const title = () => dom.root.querySelector(".k2b-detail-panel__header h2")?.textContent;
+    try {
+      while (dom.root.querySelector(".ti-loader-2")) await settle();
+      expect(title()).toBe("invoice.png");
+      expect(dom.root.querySelector('[aria-label="More image actions"]')).not.toBeNull();
+      const remove = Array.from(dom.root.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')).find(
+        (item) => item.textContent?.trim() === "Remove image",
+      );
+      if (!remove) throw new Error("Remove image is missing from the more menu");
+      expect(remove.disabled).toBe(false);
+      remove.click();
+      await waitFor(() => title() === "receipt.png");
+      // Let the preview of the next image finish building while the document still exists.
+      await settle();
+      while (dom.root.querySelector(".ti-loader-2")) await settle();
+    } finally {
+      dispose();
+      dom.cleanup();
+    }
+  });
+
   test("below the desktop width a failed file closes the inspector that would cover the failure notice", async () => {
     const dom = createDomTestHarness();
     Object.defineProperty(dom.window, "matchMedia", {

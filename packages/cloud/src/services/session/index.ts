@@ -1,10 +1,11 @@
-import { type SQL, sql } from "bun";
+import type { SQL } from "bun";
 import type { Context } from "hono";
 import { deleteCookie, getCookie, setCookie } from "hono/cookie";
 import { HTTPException } from "hono/http-exception";
 import { env } from "../../config/env";
 import { PWA_AUTH_PATH, PWA_COOKIES } from "../../contracts/pwa";
 import type { User } from "../../contracts/shared";
+import { sql } from "../../runtime/clients";
 import { getLocale } from "../../server/locale";
 import { describeRequest } from "../../server/request-context";
 import { isAccountCategoryAllowed } from "../account-category-policy";
@@ -30,6 +31,14 @@ import * as settings from "../settings";
 import { loadJwtSession, loadJwtSessionIdentity } from "./user";
 
 const log = logger("auth:session");
+
+/** A browser already signed in must prove that same account before continuing. */
+export class SessionAccountMismatchError extends Error {
+  constructor() {
+    super("Sign in with the account already open in this browser.");
+    this.name = "SessionAccountMismatchError";
+  }
+}
 
 export type SessionKind = "web" | "app";
 
@@ -585,6 +594,12 @@ export const session = {
       appDeviceId?: string;
     },
   ): Promise<string> => {
+    if (c.req.header("X-Cloud-Reauthenticate") === "1") {
+      const currentToken = session.getWebToken(c);
+      const current = currentToken ? await session.authenticateRequest(c, currentToken) : null;
+      if (!current || current.user.id !== userId) throw new SessionAccountMismatchError();
+    }
+
     const expiryHours = await settings.get<number>("user.session.expiry_hours");
     if (!Number.isFinite(expiryHours) || expiryHours < 1) throw new Error("user.session.expiry_hours must be a positive number");
     const ttlSeconds = Math.floor(expiryHours * 60 * 60);
@@ -634,11 +649,20 @@ export const session = {
 
   revoke: revokeToken,
 
-  /** Signs out the web session (or an explicit bearer session). The mobile app's session is unaffected. */
-  delete: async (c: Context): Promise<void> => {
+  /** Signs out the web session (or an explicit bearer). False when an expected account no longer owns the request's credential. */
+  delete: async (c: Context, expectedUserId?: string | null): Promise<boolean> => {
+    // Capture once: another tab may replace the browser cookie while this
+    // request runs, but both the comparison and revocation concern this token.
     const token = getWebOrBearerToken(c);
+    if (token && expectedUserId !== undefined) {
+      const claims = await verifySessionToken(token);
+      if (claims && claims.sub !== expectedUserId) return false;
+    }
     if (token) await revokeToken(token, c.req.header("x-request-id"));
-    deleteCookie(c, "session_token", { path: "/" });
+    // Bound browser logout revokes the captured family without mutating the
+    // shared cookie: its response may arrive after another tab signs in.
+    if (expectedUserId === undefined) deleteCookie(c, "session_token", { path: "/" });
+    return true;
   },
 
   issueInTransaction,

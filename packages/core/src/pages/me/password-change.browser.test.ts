@@ -231,7 +231,7 @@ describe("changing the password in a browser", () => {
 
   test("asks to sign in when a retry finds no browser sign-in here, and retries after coming back", async () => {
     const t = accountMessages.resolve(["en"]).t;
-    // 401: this browser's sign-in ended. 403: the request fell back to a mobile app session.
+    // 401: this browser's sign-in ended. 403: the request fell back to a Cloud app session.
     for (const status of [401, 403]) {
       const api: Api = {
         password: [signOutFailed],

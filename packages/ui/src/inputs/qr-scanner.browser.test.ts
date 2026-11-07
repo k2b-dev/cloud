@@ -37,30 +37,90 @@ const svg = qr.toSvg(CODE);
 const code = { text: CODE, path: /<path d="([^"]+)"/.exec(svg)![1]!, size: Number(/viewBox="-4 -4 (\d+)/.exec(svg)![1]) - 8 };
 
 type Detector = "none" | "empty" | "reject" | "transient" | "broken";
-type Camera = "fake" | "code" | "rear-overconstrained" | "NotReadableError" | "NotAllowedError" | "NotFoundError";
+type Camera = "fake" | "code" | "turning" | "rear-overconstrained" | "NotReadableError" | "NotAllowedError" | "NotFoundError";
+/**
+ * How play() ends: as usual, refused once, as WebKit may refuse it without a gesture, or twice never, as a player that
+ * stalls on the stream and once more after "Try again".
+ */
+type Play = "normal" | "refuse" | "hang";
 type Calls = { results: string[]; errors: string[]; stops: number };
-type Probe = { scanner: Calls; detects: number; requests: MediaTrackConstraints[]; codeVisible: boolean };
+type Probe = {
+  scanner: Calls;
+  detects: number;
+  requests: MediaTrackConstraints[];
+  codeVisible: boolean;
+  turned: boolean;
+  /** Media events of the preview and play() calls, for the report of a scan that never ends (#2187). */
+  media: string[];
+};
 
 /**
  * Stands in for the parts a phone decides: the native BarcodeDetector of Chrome for Android, which answers an empty
- * frame with no barcodes, a camera that films the code or refuses with the error a browser gives, and a browser that
- * cannot start the decoder worker.
+ * frame with no barcodes, a camera that films the code, turns with the device, or refuses with the error a browser
+ * gives, a player that refuses or never starts the picture, and a browser that cannot start the decoder worker.
  */
 function stubDevice({
   detector,
   camera,
+  play,
   blockWorker,
   code,
 }: {
   detector: Detector;
   camera: Camera;
+  play: Play;
   blockWorker: boolean;
   code: { text: string; path: string; size: number };
 }) {
   const probe = globalThis as unknown as Probe;
+  probe.media = [];
+  const note = (entry: string) => {
+    if (probe.media.length < 60) probe.media.push(`${Math.round(performance.now())} ${entry}`);
+  };
+  for (const type of ["loadstart", "loadedmetadata", "play", "playing", "pause", "waiting", "stalled", "resize", "emptied", "error"])
+    document.addEventListener(
+      type,
+      ({ target }) => {
+        if (target instanceof HTMLVideoElement)
+          note(`${type} ${target.videoWidth}x${target.videoHeight} paused=${target.paused} ready=${target.readyState}`);
+      },
+      true,
+    );
+  const ownPlay = HTMLMediaElement.prototype.play;
+  HTMLMediaElement.prototype.play = function (this: HTMLMediaElement) {
+    note("play()");
+    return ownPlay.call(this).then(
+      () => note("play() resolved"),
+      (error: unknown) => {
+        note(`play() refused: ${error instanceof Error ? error.name : String(error)}`);
+        throw error;
+      },
+    );
+  };
   probe.detects = 0;
   probe.requests = [];
   probe.codeVisible = false;
+  probe.turned = false;
+  if (play !== "normal") {
+    const original = HTMLMediaElement.prototype.play;
+    let failures = play === "refuse" ? 1 : 2;
+    // Such a player does not start the picture by itself either, which WebKit does for autoplay.
+    let stalling = true;
+    document.addEventListener(
+      "play",
+      ({ target }) => {
+        if (stalling && target instanceof HTMLMediaElement) target.pause();
+      },
+      true,
+    );
+    HTMLMediaElement.prototype.play = function (this: HTMLMediaElement) {
+      if (failures-- <= 0) {
+        stalling = false;
+        return original.call(this);
+      }
+      return play === "refuse" ? Promise.reject(new DOMException("Playback needs a gesture.", "NotAllowedError")) : new Promise(() => {});
+    };
+  }
   if (detector !== "none") {
     Object.defineProperty(globalThis, "BarcodeDetector", {
       configurable: true,
@@ -105,16 +165,23 @@ function stubDevice({
   if (camera === "fake") return;
   const film = async () => {
     const canvas = document.createElement("canvas");
-    canvas.width = canvas.height = 640;
+    // A turning camera films landscape until the device turns, then portrait.
+    canvas.width = 640;
+    canvas.height = camera === "turning" ? 360 : 640;
     const context = canvas.getContext("2d")!;
     const modules = new Path2D(code.path);
     const draw = () => {
+      if (camera === "turning" && probe.turned && canvas.width !== 360) [canvas.width, canvas.height] = [360, 640];
+      const { width, height } = canvas;
       context.setTransform(1, 0, 0, 1, 0, 0);
       context.fillStyle = "#fff";
-      context.fillRect(0, 0, 640, 640);
-      // A code in the middle third with a white quiet zone, as a phone held over a screen sees it.
-      const scale = 320 / code.size;
-      context.setTransform(scale, 0, 0, scale, 160, 160);
+      context.fillRect(0, 0, width, height);
+      // The turning camera films the code only once the test shows it.
+      if (camera === "turning" && !probe.codeVisible) return;
+      // A code in the middle with a white quiet zone, as a phone held over a screen sees it.
+      const side = Math.min(width, height) / 2;
+      const scale = side / code.size;
+      context.setTransform(scale, 0, 0, scale, (width - side) / 2, (height - side) / 2);
       context.fillStyle = "#000";
       context.fill(modules);
     };
@@ -133,7 +200,7 @@ function stubDevice({
       getUserMedia: async ({ video }: MediaStreamConstraints) => {
         const request = typeof video === "object" ? video : {};
         probe.requests.push(request);
-        if (camera === "code") return film();
+        if (camera === "code" || camera === "turning") return film();
         if (camera === "rear-overconstrained") {
           if (request.facingMode) throw new DOMException("No rear camera.", "OverconstrainedError");
           return film();
@@ -161,12 +228,14 @@ async function open(options: {
   detector: Detector;
   camera: Camera;
   context?: BrowserContextOptions;
+  play?: Play;
   blockWorker?: boolean;
 }): Promise<Page> {
   const context = await browser.newContext(options.context ?? phone);
   await context.addInitScript(stubDevice, {
     detector: options.detector,
     camera: options.camera,
+    play: options.play ?? "normal",
     blockWorker: options.blockWorker ?? false,
     code,
   });
@@ -189,16 +258,41 @@ const probe = (page: Page) =>
     return { detects, requests };
   });
 const calls = (page: Page) => page.evaluate(() => (globalThis as unknown as Probe).scanner);
-/** Waits until the scanner reports a code or an error. */
-const settled = (page: Page) =>
-  page.waitForFunction(
-    () => {
-      const { results, errors } = (globalThis as unknown as Probe).scanner;
-      return results.length + errors.length > 0;
-    },
-    undefined,
-    { timeout: 15_000 },
-  );
+/** Waits until the scanner reports a code or an error; without one, the error says what the preview and scanner did. */
+const settled = async (page: Page) => {
+  try {
+    await page.waitForFunction(
+      () => {
+        const { results, errors } = (globalThis as unknown as Probe).scanner;
+        return results.length + errors.length > 0;
+      },
+      undefined,
+      { timeout: 15_000 },
+    );
+  } catch (error) {
+    const state = await Promise.race([
+      page.evaluate(() => {
+        const probe = globalThis as unknown as Probe;
+        const video = document.querySelector("video");
+        return {
+          status: document.querySelector('[role="status"]')?.textContent,
+          retryShown: document.querySelector(".k2b-qr-scanner__retry") !== null,
+          video: video && {
+            paused: video.paused,
+            readyState: video.readyState,
+            size: `${video.videoWidth}x${video.videoHeight}`,
+            stream: video.srcObject instanceof MediaStream ? video.srcObject.active : null,
+          },
+          detects: probe.detects,
+          media: probe.media,
+        };
+      }),
+      Bun.sleep(1_000).then(() => "no answer within 1 s"),
+    ]).catch((reason: unknown) => `unreadable: ${String(reason)}`);
+    if (error instanceof Error) error.message += `\n\nScanner state: ${JSON.stringify(state, null, 1)}`;
+    throw error;
+  }
+};
 const status = (page: Page) => page.locator('[role="status"]').textContent();
 
 describe("@k2b/ui QrScanner in a browser", () => {
@@ -275,6 +369,93 @@ describe("@k2b/ui QrScanner in a browser", () => {
         { facingMode: { exact: "environment" } },
         { width: { min: 1024 } },
       ]);
+    } finally {
+      await page.context().close();
+    }
+  }, 30_000);
+
+  // The engine scans from its play event and places its frame from the picture's size, so a player that never plays
+  // leaves a black preview with a stray frame (#1994). The scanner offers to start the picture again instead.
+  for (const [play, story] of [
+    ["refuse", "the browser refuses to play it"],
+    ["hang", "the player never starts it"],
+  ] as const) {
+    test(`offers to start the camera picture again when ${story}, then reads the code`, async () => {
+      const page = await open({ detector: "none", camera: "code", play });
+      try {
+        const retry = page.getByRole("button", { name: "Try again" });
+        await retry.waitFor({ timeout: 10_000 });
+        expect(await status(page)).toBe("The camera is on, but its picture did not start.");
+        expect(await calls(page)).toEqual({ results: [], errors: [], stops: 0 });
+        await retry.click();
+        if (play === "hang") {
+          // A picture that stalls again after "Try again" offers it again.
+          await retry.waitFor({ state: "hidden" });
+          await retry.waitFor({ timeout: 10_000 });
+          expect(await calls(page)).toEqual({ results: [], errors: [], stops: 0 });
+          await retry.click();
+        }
+        await settled(page);
+        expect(await calls(page)).toEqual({ results: [CODE], errors: [], stops: 0 });
+      } finally {
+        await page.context().close();
+      }
+    }, 30_000);
+  }
+
+  test("keeps the scan frame centred on the picture when the camera turns with the device, then reads the code", async () => {
+    const page = await open({ detector: "none", camera: "turning" });
+    /**
+     * How far the scan frame sits from the centre of the preview, as a share of its size, and its smaller side. The test
+     * page has no stylesheet, so the video stretches the picture over its box rather than covering a square.
+     */
+    const frame = () =>
+      page.evaluate(() => {
+        const video = document.querySelector("video")!.getBoundingClientRect();
+        const overlay = document.querySelector<HTMLElement>(".scan-region-highlight")!.getBoundingClientRect();
+        return {
+          x: (overlay.left + overlay.width / 2 - video.left) / video.width - 0.5,
+          y: (overlay.top + overlay.height / 2 - video.top) / video.height - 0.5,
+          side: Math.min(overlay.width / video.width, overlay.height / video.height),
+        };
+      });
+    const offCentre = ({ x, y, side }: Awaited<ReturnType<typeof frame>>) => Math.abs(x) > 0.005 || Math.abs(y) > 0.005 || side < 1 / 3;
+    /**
+     * The video box takes the new picture's shape a layout after the picture turns; until then the old frame still looks
+     * centred on the old box. Once the box has its shape, qr-scanner places the frame in an animation frame after the
+     * event, so the frame gets a second to settle.
+     */
+    const expectCentred = async (pictureWidth: number) => {
+      await page.waitForFunction((width) => {
+        const video = document.querySelector("video")!;
+        const box = video.getBoundingClientRect();
+        return video.videoWidth === width && Math.abs(box.width / box.height - video.videoWidth / video.videoHeight) < 0.01;
+      }, pictureWidth);
+      let placed = await frame();
+      for (let tries = 0; tries < 20 && offCentre(placed); tries++) {
+        await page.waitForTimeout(50);
+        placed = await frame();
+      }
+      const { x, y, side } = placed;
+      expect(x).toBeCloseTo(0, 2);
+      expect(y).toBeCloseTo(0, 2);
+      // qr-scanner scans the middle two thirds of the picture's smaller side; a frame of no size was placed too early.
+      expect(side).toBeGreaterThan(1 / 3);
+    };
+    try {
+      await page.getByText("Point the camera at a QR code.").waitFor({ timeout: 15_000 });
+      await expectCentred(640);
+      // The device turns: the window turns to landscape and the camera films portrait.
+      await page.evaluate(() => {
+        (globalThis as unknown as Probe).turned = true;
+      });
+      await page.setViewportSize({ width: 844, height: 390 });
+      await expectCentred(360);
+      await page.evaluate(() => {
+        (globalThis as unknown as Probe).codeVisible = true;
+      });
+      await settled(page);
+      expect(await calls(page)).toEqual({ results: [CODE], errors: [], stops: 0 });
     } finally {
       await page.context().close();
     }

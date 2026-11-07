@@ -31,6 +31,11 @@
     "packages/ssr": {
       "component": "npm-ssr",
       "package-name": "@k2b/ssr"
+    },
+    "packages/editor": {
+      "component": "npm-editor",
+      "package-name": "@k2b/editor",
+      "initial-version": "0.1.0"
     }
   },
   "last-release-sha": "f38cd47486eacf64524be6d4c36524967f0916fd",

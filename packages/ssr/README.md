@@ -275,6 +275,12 @@ Navigation behavior:
 - replace navigation preserves existing `history.state` unless `state` is set
 - rejected async `onNavigate` callbacks log the error and fall back to a full
   document navigation
+- under `prefers-reduced-motion: reduce`, enhanced navigation and
+  `startViewTransition()` run the update directly, without a view transition,
+  so capturing the old state never delays the navigation
+- a view transition that has not reached its update 200 ms after it started is
+  skipped (`VIEW_TRANSITION_UPDATE_BUDGET_MS`); the update still runs, only
+  without the animation, so a slow capture never holds back the navigation
 
 Available exports:
 
@@ -325,7 +331,9 @@ function; on the server it does nothing. It listens for clicks on `window`, so
 island handlers run first and a prevented click is never swapped. Modifier
 keys, other buttons, `target`, `download`, `rel="external"`, other origins,
 links outside the scope, and hash links on the same page stay native.
-`swapPage(href, { replace })` starts the same swap from code.
+`swapPage(href, { replace })` starts the same swap from code. After a change,
+`swapPage(currentUrl, { replace: true, scroll: "preserve" })` shows the page
+again where it was: the window and keyed regions keep their scroll position.
 
 In a swap host, the loader imports modules used only outside the column
 first. A module with an instance in the column loads after them, also for its
@@ -343,6 +351,9 @@ Back or Forward, a native link or form submission, an enhanced `Link` click,
 or a call to `navigate()` or `documentNavigate()`. A swap that starts while
 a `Link` handler still loads wins as well: that handler's `push`,
 `replaceWith`, and `fallback` then do nothing.
+
+While a swap is pending, the shell carries `data-nav-pending`, so a host can
+show a progress hint in CSS; the attribute goes once no swap is pending.
 
 Any failure loads the requested URL as a normal document: a status other than
 200, a response that is not HTML, a redirect out of the scope, a missing shell

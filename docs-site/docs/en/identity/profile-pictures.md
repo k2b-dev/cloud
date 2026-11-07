@@ -10,6 +10,8 @@ updated: 2026-10-23
 
 # Profile pictures and built avatars
 
+See [Who may do what](/en/docs/identity/access-model) for the access model.
+
 Every account has one picture that others see. A person shows a photo, a
 built avatar, or initials. A service account, for example an agent, shows a
 photo or a robot; it never shows a bare icon. Applications do not need to know
@@ -35,7 +37,10 @@ Every service account shows a robot drawn from its account ID. The ID is fixed
 when the account is created, so the robot never changes by itself, and existing
 accounts have one from the first start of this version on. For a standalone
 service account or agent, an administrator can change the robot's parts or
-replace it with a photo; deleting the photo shows the robot again. A robot uses its own shape set: head, antenna, eyes, mouth,
+replace it with a photo; deleting the photo shows the robot again. The
+administrator opens the same dialog with a click on the picture at the top of
+the agent's page under **Accounts → Agents**; it offers **Photo** and **Robot**,
+with **Random** for a new robot. A robot uses its own shape set: head, antenna, eyes, mouth,
 body, and colours, without skin tones, hair, beards, or headwear. People stay
 round and service accounts stay square wherever an avatar appears.
 
@@ -66,6 +71,29 @@ The drawings follow fixed rules, each guarded by a test: eyes and mouth reach
 none has a hard side parting; the moustache is always wider than the mouth;
 the random choice never changes the skin tone and never picks religious
 headwear.
+
+## Change the picture: the dialog
+
+A person opens **Change profile picture** with a click on the large picture at
+the top of their account page (`/me`). The dialog shows the three kinds as a
+choice at the top, the active one marked **Active**:
+
+- **Photo**: drop or choose a PNG, JPEG, or WebP, then crop it. A stored photo
+  shows with **Other photo** and **Delete photo**, and says when it is stored but
+  not visible.
+- **Avatar**: the builder. Parts are tabs (face, hair, eyes, brows, mouth,
+  beard, glasses, head, extras, colour); every option shows the person's own
+  face with that change. A preview shows the avatar at 64, 40, 32, 24, and
+  20 px, light and dark, with **Random**, **Undo**, and **Reset**. A person
+  without an avatar starts from a random first draft.
+- **Initials**: built from the display name.
+
+**Save** stores and shows the chosen kind in one step. When saving fails, the
+choice stays and the footer offers **Retry**. Closing with unsaved changes asks
+first. The dialog keeps one size on wide screens and fills the screen on
+phones. Applications can open the same dialog with `openProfilePictureDialog()`
+from `@k2b/cloud/account/ui`, passing the subject (`"person"` or `"agent"`),
+the account name, and `load`, `save`, and `deletePhoto` functions for its routes.
 
 ## Show a picture in an application
 

@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { Readable } from "node:stream";
-import { sql } from "bun";
+import { sql } from "@k2b/cloud";
 import { sha256Text } from "./canonical";
 
 const DEFAULT_CHUNK_SIZE = 1024 * 1024;

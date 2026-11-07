@@ -1,0 +1,1 @@
+| Manager invariant | A resource-bound key counts as a manager, letting the last durable manager leave. | Test: Contacts `access-last-manager.integration.test.ts` refuses removal and demotion next to a book-bound key, and covers agent managers and administrator recovery ([#1233](https://github.com/k2b-dev/cloud/issues/1233)). |

@@ -1,8 +1,9 @@
 import { afterEach, beforeEach, expect, spyOn, test } from "bun:test";
+import { sql } from "@k2b/cloud";
 import { aiChatTasks, aiConversations, createAiShortId } from "@k2b/cloud/ai";
-import { sql } from "bun";
+import * as settingsStore from "@k2b/cloud/services/settings/store";
+import { useTestAppRegistry } from "../../../../scripts/fixtures/app-registry";
 import { databaseSuite, requireInfraUrl, testFor, testInfra } from "../../../../scripts/fixtures/test-infra";
-import { app } from "../config";
 import { agentHost, hostFetch } from "./agent-host";
 import { artifactDatabase } from "./database";
 import { appChecks } from "./html/check-service";
@@ -13,15 +14,17 @@ import { testIdentity } from "./test-identity";
 
 // Uses the production schemas prepared by `bun run test --integration`.
 databaseSuite()("Scheduled Code Mode", () => {
-  let originalTargets: string | undefined;
+  useTestAppRegistry(["core", "assistant"]);
+  let targets: string[];
+  let policy: ReturnType<typeof spyOn<typeof settingsStore, "readKey">>;
+  const readSetting = settingsStore.readKey;
   beforeEach(() => {
-    originalTargets = process.env.ASSISTANT_RSQL_ALLOWED_TARGETS;
-    process.env.ASSISTANT_RSQL_ALLOWED_TARGETS = ["127.0.0.1", ...(testInfra.rsql ? [new URL(testInfra.rsql).hostname] : [])].join(",");
+    targets = ["127.0.0.1", "localhost", ...(testInfra.rsql ? [new URL(testInfra.rsql).hostname] : [])];
+    policy = spyOn(settingsStore, "readKey").mockImplementation((key) =>
+      key === "assistant.rsql_allowed_targets" ? Promise.resolve(targets) : readSetting(key),
+    );
   });
-  afterEach(() => {
-    if (originalTargets === undefined) delete process.env.ASSISTANT_RSQL_ALLOWED_TARGETS;
-    else process.env.ASSISTANT_RSQL_ALLOWED_TARGETS = originalTargets;
-  });
+  afterEach(() => policy.mockRestore());
 
   test("runs with a real task mandate alongside a foreground turn and fails closed after revocation", async () => {
     const previousOrigin = process.env.CLOUD_CORE_INTERNAL_ORIGIN;
@@ -46,7 +49,7 @@ databaseSuite()("Scheduled Code Mode", () => {
       }))!;
       const delivered = await aiChatTasks.deliverOccurrence({
         occurrenceId: occurrence.id,
-        modelProfileId: "test",
+        modelId: "test",
         runConfig: { kind: "chat", input: "Calculate", toolSource: { kind: "none" } },
         userMessage: { role: "user", content: [{ type: "text", text: "Calculate" }] },
         expectedRevision: task.revision,
@@ -148,7 +151,7 @@ databaseSuite()("Scheduled Code Mode", () => {
     }))!;
     const delivered = await aiChatTasks.deliverOccurrence({
       occurrenceId: occurrence.id,
-      modelProfileId: "test",
+      modelId: "test",
       runConfig: { kind: "chat", input: "Check invoices", toolSource: { kind: "none" } },
       userMessage: { role: "user", content: [{ type: "text", text: "Check invoices" }] },
       expectedRevision: task.revision,
@@ -178,7 +181,13 @@ databaseSuite()("Scheduled Code Mode", () => {
       capabilityTransport: async () => {
         throw new Error("Unexpected capability");
       },
-      host: Promise.resolve({ health: async () => {}, execute: async () => null, call: async () => null, close: async () => {} }),
+      host: Promise.resolve({
+        machine: async () => null,
+        health: async () => {},
+        execute: async () => null,
+        call: async () => null,
+        close: async () => {},
+      }),
     };
     try {
       const response = await hostFetch(context, session, "/api/assistant/artifacts/runtime/check/start", {
@@ -232,13 +241,14 @@ databaseSuite()("Scheduled Code Mode", () => {
       await sql`INSERT INTO auth.users(id,uid,provider,profile,display_name) VALUES(${userId}::uuid,${userId},'local','user','Background check test')`;
       const identity = testIdentity(userId);
       const conversation = await aiConversations.createConversation({ ownerUserId: userId, title: "Background check" });
-      const settings = spyOn(app.settings, "get").mockImplementation(
+      const settings = spyOn(settingsStore, "readKey").mockImplementation(
         async (key) =>
           ({
             "assistant.storage_total_mib": 250,
             "assistant.storage_file_mib": 50,
             "assistant.rsql_url": requireInfraUrl("rsql"),
             "assistant.rsql_api_token": "artifact-test-only",
+            "assistant.rsql_allowed_targets": targets,
           })[key],
       );
       let resourceId: string | undefined;
@@ -248,8 +258,10 @@ databaseSuite()("Scheduled Code Mode", () => {
         await artifactDatabase.connect(resourceId, identity);
         const started = await backgroundCheckStart(userId, conversation, { resourceId, operation: "export" });
         scopes.push(...started.scopes);
-        expect(started.response.status).toBe(200);
-        expect(await started.response.json()).toMatchObject({ artifactId: resourceId, scopeId: expect.any(String) });
+        expect({ status: started.response.status, body: await started.response.json() }).toMatchObject({
+          status: 200,
+          body: { artifactId: resourceId, scopeId: expect.any(String) },
+        });
         expect(scopes).toHaveLength(1);
       } finally {
         for (const scope of scopes) await appChecks.discard(scope, identity);

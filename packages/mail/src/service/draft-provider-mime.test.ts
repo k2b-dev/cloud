@@ -7,6 +7,7 @@ import {
   draftProviderFingerprint,
   draftProviderMessageId,
 } from "./draft-provider-mime";
+import { removeMimeTransportLineEnding } from "./draft-provider-projection";
 
 const snapshotId = "00000000-0000-4000-8000-000000000001";
 const draftId = "00000000-0000-4000-8000-000000000002";
@@ -14,7 +15,7 @@ const attachmentId = "00000000-0000-4000-8000-000000000003";
 const blobId = "00000000-0000-4000-8000-000000000004";
 
 describe("draft provider MIME", () => {
-  test("uses Mail's Markdown divider rule in provider draft copies", async () => {
+  test("uses Mail's formatting and literal formula rules in provider draft copies", async () => {
     const content = draftProviderContentSchema.parse({
       revision: 1,
       senderIdentityId: "00000000-0000-4000-8000-000000000005",
@@ -24,7 +25,7 @@ describe("draft provider MIME", () => {
       cc: [],
       bcc: [],
       subject: "Divider",
-      body: "Hello\n---\nWorld",
+      body: "~~Hello~~\n---\nWorld\n\n| Item | Formula |\n| :---: | ---: |\n| A | =1+2 |",
       format: "markdown",
       inReplyTo: null,
       references: [],
@@ -45,7 +46,51 @@ describe("draft provider MIME", () => {
     );
     expect(parsed.html).toContain("<hr");
     expect(parsed.html).not.toContain("<h2");
+    expect(parsed.html).toContain("<del>Hello</del>");
+    expect(parsed.html).toContain('align="center"');
+    expect(parsed.html).toContain('align="right"');
+    expect(parsed.html).toContain("=1+2");
+    expect(parsed.html).not.toMatch(/md-formula|ti-math-function/);
+    expect(removeMimeTransportLineEnding(parsed.text ?? "")).toBe(content.body);
   });
+
+  // A body that ends in a line break, as it does while someone types a new line, must come back from the
+  // provider unchanged. Otherwise the sync imports Cloud's own copy as an outside edit, raises the draft's
+  // revision, and the composer's next save fails with a conflict.
+  test.each(["Hi\n\n\nDas ist ein **test**", "Hi\n", "Hi\n\n", "", "\n", "Grüße äöü €  \n", `${"a".repeat(200)} b\n`])(
+    "returns body %j unchanged through Cloud's own provider copy",
+    async (body) => {
+      const content = draftProviderContentSchema.parse({
+        revision: 2,
+        senderIdentityId: "00000000-0000-4000-8000-000000000005",
+        from: { name: "Info", address: "info@example.com" },
+        replyTo: null,
+        to: [],
+        cc: [],
+        bcc: [],
+        subject: "",
+        body,
+        format: "markdown",
+        inReplyTo: null,
+        references: [],
+        attachments: [],
+      });
+      const parsed = await simpleParser(
+        buildDraftProviderMimeStream({
+          snapshotId,
+          draftId,
+          content,
+          fingerprint: draftProviderFingerprint(content),
+          messageId: draftProviderMessageId(snapshotId),
+          date: new Date("2026-01-02T03:04:05.000Z"),
+          openAttachment: () => {
+            throw new Error("Unexpected attachment");
+          },
+        }),
+      );
+      expect(removeMimeTransportLineEnding(parsed.text ?? "")).toBe(body);
+    },
+  );
 
   test("keeps Markdown quotes and code blocks in the HTML projection (#932)", async () => {
     const content = draftProviderContentSchema.parse({

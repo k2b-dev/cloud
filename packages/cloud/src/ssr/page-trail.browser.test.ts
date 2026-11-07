@@ -5,7 +5,7 @@ import { resolve } from "node:path";
 import { createConfig } from "@k2b/ssr";
 import tailwind from "bun-plugin-tailwind";
 import type { Browser, BrowserContext, Page } from "playwright";
-import { launchBrowser } from "../../../ui/test/browser";
+import { launchBrowser, settled } from "../../../ui/test/browser";
 
 // The way up is real layout and real navigation: which row shows where, what
 // collapses when space runs out, and where a click on "‹ Users" lands after
@@ -20,6 +20,7 @@ setDefaultTimeout(30_000);
 
 const railSnapshot = await import("../services/rail-snapshot");
 const settingsMiddleware = await import("../server/middleware/settings");
+const help = await import("./help");
 const { defaultRailPreferences } = await import("../contracts/rail-preferences");
 const { server, folders } = await import("./page-trail.browser-harness");
 
@@ -33,6 +34,7 @@ beforeAll(async () => {
   spies.push(
     spyOn(railSnapshot, "readRailSnapshot").mockResolvedValue(defaultRailPreferences()),
     spyOn(settingsMiddleware, "preloadLayoutAnnouncements").mockResolvedValue(undefined),
+    spyOn(help, "preloadLayoutHelp").mockResolvedValue(null),
   );
   const build = await Bun.build({ entrypoints: [resolve(import.meta.dir, "../../../../styles.css")], plugins: [tailwind] });
   if (!build.success) throw new AggregateError(build.logs, "Could not compile the global stylesheet.");
@@ -427,6 +429,33 @@ describe("going up returns to the page as this tab left it", () => {
   const scrollOf = (page: Page) =>
     page.evaluate(() => document.querySelector<HTMLElement>('[data-scroll-preserve="accounts-users"]')!.scrollTop);
 
+  test("same-address transient history keeps scroll without another page snapshot", async () => {
+    const { context, page } = await open(phone, "/app/accounts/users?group=sales");
+    try {
+      await page.evaluate(() => {
+        document.querySelector<HTMLElement>('[data-scroll-preserve="accounts-users"]')!.scrollTop = 600;
+      });
+      await settle(page);
+      const scrolled = await scrollOf(page);
+      expect(scrolled).toBeGreaterThan(0);
+      await page.evaluate(async () => {
+        // Like the app menu: a transient entry at this address, removed before navigation.
+        sessionStorage.removeItem("cloud:page-trail");
+        history.pushState({ ...history.state, transientFixture: true }, "");
+        await new Promise<void>((done) => {
+          addEventListener("popstate", () => done(), { once: true });
+          history.back();
+        });
+      });
+      await settle(page);
+      expect(await page.evaluate(() => sessionStorage.getItem("cloud:page-trail"))).toBeNull();
+      expect(await scrollOf(page)).toBe(scrolled);
+      expect(new URL(page.url()).pathname + new URL(page.url()).search).toBe("/app/accounts/users?group=sales");
+    } finally {
+      await context.close();
+    }
+  });
+
   for (const device of [ipadLandscape, laptop]) {
     test(`${device.name}: the back link keeps filters and scroll and marks the row; a new tab gets the plain list`, async () => {
       const { context, page } = await open(device, "/app/accounts/users?group=sales");
@@ -600,19 +629,39 @@ describe("workspace title beside exact-current navigation", () => {
       }
     });
   }
-  test("a deeper page with an active ancestor keeps its desktop back link", async () => {
-    const { context, page } = await open(laptop, "/app/accounts/teams/engineering");
-    try {
-      expect(await page.locator('.k2b-app-workspace__sidebar [aria-current="page"]').count()).toBe(0);
-      const ancestor = page.locator('.k2b-app-workspace__sidebar [aria-current="true"]');
-      expect(await ancestor.getAttribute("href")).toBe("/app/accounts/teams");
-      expect(await ancestor.evaluate((element) => element.classList.contains("is-active"))).toBe(true);
-      const back = page.locator(".k2b-app-workspace__head .k2b-page-title__up");
-      expect(await back.isVisible()).toBe(true);
-      expect(await back.getAttribute("href")).toBe("/app/accounts/teams");
-      expect((await page.locator(".k2b-app-workspace__head").boundingBox())!.height).toBe(46);
-    } finally {
-      await context.close();
-    }
-  });
+  // Beside a visible sidebar, the marked ancestor is the way up; a second "‹ Teams" row above the page only repeats it.
+  for (const device of [laptop, ipadPortrait, phone]) {
+    test(`${device.name}: a deeper page shows a back row only where the sidebar does not show its ancestor`, async () => {
+      const { context, page } = await open(device, "/app/accounts/teams/engineering");
+      try {
+        await settled(page);
+        expect(await page.locator('.k2b-app-workspace__sidebar [aria-current="page"]').count()).toBe(0);
+        const ancestor = page.locator('.k2b-app-workspace__sidebar [aria-current="true"]');
+        expect(await ancestor.getAttribute("href")).toBe("/app/accounts/teams");
+        expect(await ancestor.evaluate((element) => element.classList.contains("is-active"))).toBe(true);
+        const head = page.locator(".k2b-app-workspace__head");
+        if (device.width >= 1024) {
+          expect(await ancestor.isVisible()).toBe(true);
+          const box = await head.boundingBox();
+          expect(box!.width).toBeLessThanOrEqual(1);
+          expect(box!.height).toBeLessThanOrEqual(1);
+          expect(await page.locator(".k2b-page-title__up:visible,.k2b-page-title__back:visible").count()).toBe(0);
+          // The page has no h1 of its own, so the head's heading still names it for assistive technology.
+          expect(await page.getByRole("heading", { level: 1, name: "Engineering", exact: true }).count()).toBe(1);
+        } else {
+          const back = head.locator(device.width < 768 ? ".k2b-page-title__back" : ".k2b-page-title__up");
+          expect(await back.isVisible()).toBe(true);
+          expect(await back.getAttribute("href")).toBe("/app/accounts/teams");
+        }
+        // The server already renders the final geometry: Main does not move once the browser takes over.
+        const main = () => page.locator(".k2b-app-workspace__main").evaluate((element) => element.getBoundingClientRect().toJSON());
+        const initial = await page.evaluate(() => (window as unknown as { initialMainRect: unknown }).initialMainRect);
+        expect(await main()).toEqual(initial);
+        await page.keyboard.press("Alt+ArrowUp");
+        await page.waitForURL(/\/app\/accounts\/teams$/);
+      } finally {
+        await context.close();
+      }
+    });
+  }
 });

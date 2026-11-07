@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { ErrorResponseSchema } from "@k2b/cloud/contracts";
-import { type AuthContext, getDateConfig, getLocale, jsonResponse } from "@k2b/cloud/server";
+import { type AuthContext, auth, getDateConfig, getLocale, jsonResponse } from "@k2b/cloud/server";
 import { ok } from "@k2b/stdlib";
 import { type Context, Hono } from "hono";
 import type { ClientErrorStatusCode, ServerErrorStatusCode } from "hono/utils/http-status";
@@ -438,6 +438,7 @@ const runListQuery = async (
 export const createTableQueryRoutes = (deps: TableQueryRouteDeps = defaultDeps) =>
   new Hono<AuthContext>().post(
     "/:tableId/query",
+    auth.readOnly,
     queryAdmissionMiddleware(),
     describeRoute({
       tags: ["Grids:Table"],

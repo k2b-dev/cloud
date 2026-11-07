@@ -18,10 +18,11 @@ export const discoverableAppEntries = async <T extends { appId: string }>(
   authority: RequestAuthority | null,
   entries: readonly T[],
   registry: () => Promise<AppRegistryEntry[]> = listApps,
+  options: { signal?: AbortSignal } = {},
 ): Promise<T[]> => {
   if (!entries.length) return [];
   const ids = new Set(entries.map((entry) => entry.appId));
   const apps = (await registry()).filter((app) => ids.has(app.id));
-  const usable = await usableAppIds(authority, apps);
+  const usable = await usableAppIds(authority, apps, options);
   return entries.filter((entry) => usable.has(entry.appId));
 };

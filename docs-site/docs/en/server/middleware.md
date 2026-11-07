@@ -191,7 +191,7 @@ gateway sets both on every request and drops the client's own values, so an
 application behind the gateway can rely on them. It also removes `Forwarded`
 and `CF-Connecting-IP`, so no other header names a client. It accepts an
 address named by a reverse proxy only from the proxies in
-`GATEWAY_TRUSTED_PROXIES`; see
+`gateway.trusted_proxies`; see
 [Pass client addresses through the reverse proxy](/en/docs/operations/deployment-requirements#pass-client-addresses-through-the-reverse-proxy).
 
 Both limits and window length are rounded down and kept at a minimum of `1`.

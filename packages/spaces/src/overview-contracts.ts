@@ -16,6 +16,7 @@ export const OverviewWorkSchema = z.object({
       endsAt: z.string().nullable(),
       deadline: DeadlineInputSchema.nullable(),
       deadlineAllDay: DeadlineAllDaySchema,
+      canWrite: z.boolean().describe("The reader may change the item, such as check it off"),
     }),
   ),
   counts: z.object({ mine: z.number(), today: z.number(), upcoming: z.number() }),

@@ -1,4 +1,4 @@
-import { sql } from "bun";
+import { sql } from "@k2b/cloud";
 import { ALERT_MAX_KEYS, type AlertKeyState, type AlertSeverity, type AlertStateName, type AlertThresholds } from "../alert-contracts";
 import { nextAlertState, readAlertValues } from "./alert-state";
 import { recordBaseActivity } from "./base-activity";
@@ -242,11 +242,12 @@ export const evaluateDueAlerts = async (
         if (options.signal?.aborted) break;
         const claim = await claimDueAlert(now());
         if (!claim) break;
-        attempted++;
+        // A claim taken while another worker cancels is released unchecked, so it is no attempt.
         if (options.signal?.aborted) {
           await releaseCancelledAlert(claim);
           break;
         }
+        attempted++;
         let result: Awaited<ReturnType<typeof runAlertSql>>;
         try {
           result = claim.overdue

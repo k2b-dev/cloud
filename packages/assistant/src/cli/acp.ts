@@ -15,13 +15,15 @@ import {
   type ToolCall,
 } from "@agentclientprotocol/sdk";
 import type {
+  AiConversation,
   AiConversationPage,
   AiDraftContentPart,
   AiLocalContext,
   AiPendingTurnAction,
+  AiPeopleModels,
   AiProject,
-  AiPublicModelProfile,
   AiSkillSummary,
+  AiStreamState,
 } from "@k2b/cloud/ai";
 import {
   AI_IMAGE_INPUT_MAX_BYTES,
@@ -35,12 +37,16 @@ import {
   CODE_RUNTIME_TOOL_NAMES,
   guessAiMediaType,
   isAiImageMediaType,
+  parseAiSse,
 } from "@k2b/cloud/ai/browser";
 import { capabilityReviewView } from "@k2b/cloud/capabilities";
 import { type CloudCliContext, command } from "@k2b/cloud/cli";
 import { APPROVAL_ACP_CLIENT, APPROVAL_CLIENT_HEADER } from "@k2b/cloud/contracts/approvals";
 import type { AiChatQuotaSnapshot } from "@k2b/cloud/shared";
+import { parseAiModelChoice } from "@k2b/cloud/shared";
 import { version } from "../../package.json";
+import { historyUpdates } from "./acp-history";
+import { type AcpSessionStore, createAcpSessionStore } from "./acp-sessions";
 import {
   approvalOptions,
   approvalReviewText,
@@ -48,6 +54,7 @@ import {
   localQuestion,
   markdownTable,
   planEntries,
+  RAW_MAX_CHARS,
   requiresCloudApproval,
   surveyForm,
   surveyResult,
@@ -59,13 +66,28 @@ import {
 } from "./acp-updates";
 import { readApprovalPreferences, revokeApprovalPreference } from "./approvals";
 import { localTurnFields, readSelectedLocalSkill } from "./interactive";
+import { deniedLocalBashResult } from "./local-bash";
 import { createLocalContextReader, discoverLocalContext, type LocalContext, type LocalSkill } from "./local-context";
+import { openReviewedFile, reviewedUpload, reviewLocalFile } from "./local-file";
 import { classifyLocalPath, resolveLocalPath } from "./local-paths";
 import { createLocalSessionFolder, type LocalQuestionKind, runLocalTool } from "./local-tools";
 import { AI_API, jsonRequest, readApi, readProjectsApi } from "./shared";
-import { type AssistantTurnStreamResult, createAssistantTurnOutput, streamAssistantTurn } from "./stream";
+import {
+  type AssistantClientTools,
+  type AssistantTurnStreamResult,
+  type ClientCallReceipts,
+  createAssistantTurnOutput,
+  streamAssistantTurn,
+} from "./stream";
 import { terminalSafeText } from "./terminal";
-import { conversationPath, readConversationDetail, resolveConversation, submitAssistantTurn, uploadAttachmentFile } from "./turn";
+import {
+  type ConversationDetail,
+  conversationPath,
+  readConversationDetail,
+  resolveConversation,
+  submitAssistantTurn,
+  uploadAttachmentFile,
+} from "./turn";
 
 const builtins: AvailableCommand[] = [
   { name: "web", description: "Open this chat in Cloud" },
@@ -74,17 +96,35 @@ const builtins: AvailableCommand[] = [
   { name: "project", description: "Choose a Project for this chat", input: { hint: "number from the list" } },
   { name: "skills", description: "List local and Cloud Skills" },
 ];
+const BASH_NEEDS_FORMS = "Local Bash needs an editor with form support. Run commands in the editor's terminal or with cld chat.";
+
 const diagnostic = (text: string) => {
   process.stderr.write(`${terminalSafeText(text)}\n`);
 };
+const errorText = (error: unknown) => (error instanceof Error ? error.message : String(error));
+/** Cloud answers an ordinary request within its 10-second idle timeout; three times that is a dead connection. */
+const REQUEST_DEADLINE_MS = 30_000;
+/** How long requests already sent may finish after the editor disconnects, before they are cut off. */
+const SHUTDOWN_GRACE_MS = 2_000;
+/** Cloud's list filters for chats that are not finished. */
+const OPEN_CHAT_STATUSES = ["running", "needs_attention", "unread"] as const;
+const SIGN_IN = "Sign in first: run `cld login` in a terminal, then start a new thread.";
 class WebChatRequired extends Error {}
+/** The file name an embedded resource arrives with; a relative or odd URI keeps its last segment. */
+const resourceName = (uri: string) => {
+  try {
+    return basename(new URL(uri).pathname) || "resource";
+  } catch {
+    return basename(uri) || "resource";
+  }
+};
 type Session = {
   id: string;
   cwd: string;
   chat?: string;
   model?: string;
   project?: string;
-  models: AiPublicModelProfile[];
+  models: AiPeopleModels["options"][number][];
   localTools: "off" | "ask";
   context?: LocalContext;
   contextReader: () => Promise<LocalContext>;
@@ -92,17 +132,48 @@ type Session = {
   selectedLocal: LocalSkill[];
   selectedCloud: AiDraftContentPart[];
   cloudSkills: AiSkillSummary[];
+  /** Cloud Skills load when the session opens and on `/skills`, not with every message. */
+  cloudSkillsLoaded: boolean;
   active?: AbortController;
   finished?: Promise<void>;
   disconnected: boolean;
   title?: string;
   commands?: string;
-  queue: Promise<void>;
+  /** A turn that ran when the thread opened, left out of the replay until a message follows or shows it. */
+  unseenTurn?: string;
+  /** Updates not yet handed to the editor; `sending` drains them in order. */
+  outbox: SessionUpdate[];
+  sending?: Promise<void>;
   client: AgentContext;
 };
+/** Queued updates above which the turn stream stops reading until the editor caught up. */
+const UPDATE_HIGH_WATER = 64;
+/** The update that says both, when `next` only continues `last`: more text, a newer state of one call, a newer plan. */
+const coalesce = (last: SessionUpdate, next: SessionUpdate): SessionUpdate | undefined => {
+  if (
+    (next.sessionUpdate === "agent_message_chunk" || next.sessionUpdate === "agent_thought_chunk") &&
+    last.sessionUpdate === next.sessionUpdate &&
+    last.content.type === "text" &&
+    next.content.type === "text"
+  )
+    return { ...last, content: { ...last.content, text: last.content.text + next.content.text } };
+  if (
+    next.sessionUpdate === "tool_call_update" &&
+    (last.sessionUpdate === "tool_call" || last.sessionUpdate === "tool_call_update") &&
+    last.toolCallId === next.toolCallId
+  )
+    return { ...last, ...next, sessionUpdate: last.sessionUpdate } as SessionUpdate;
+  if (next.sessionUpdate === "plan" && last.sessionUpdate === "plan") return next;
+  return undefined;
+};
 
-export const createAcpAgent = (host: CloudCliContext) => {
+export const createAcpAgent = (host: CloudCliContext, options: { sessions?: AcpSessionStore } = {}) => {
+  const store = options.sessions ?? createAcpSessionStore(host.options);
   const sessions = new Map<string, Session>();
+  // How often each session was closed, so a resume still waiting cannot bring a closed session back.
+  const closes = new Map<string, number>();
+  // Shared by every session, so a resumed thread never runs a local call that an earlier one ran.
+  const receipts: ClientCallReceipts = new Map();
   let forms = false;
   let clientName: string | undefined;
   const getSession = (id: string) => {
@@ -110,16 +181,71 @@ export const createAcpAgent = (host: CloudCliContext) => {
     if (!s) throw RequestError.resourceNotFound(id);
     return s;
   };
-  const update = (s: Session, value: SessionUpdate): Promise<void> => {
-    s.queue = s.queue.then(() => s.client.notify("session/update", { sessionId: s.id, update: value }));
-    // Keep synchronous CLI output callbacks from leaving unhandled rejections on disconnect.
-    void s.queue.catch(() => undefined);
-    return s.queue;
+  // Ends every request still open once the editor is gone, so nothing keeps the process alive.
+  const lifetime = new AbortController();
+  /**
+   * Every request carries the connection's lifetime and, except event streams and uploads, a deadline. A 401 after
+   * the host's own refresh, or a refresh that fails for another reason than the network, means the sign-in is gone,
+   * wherever it happens.
+   */
+  const api: CloudCliContext = {
+    ...host,
+    fetch: async (path, init) => {
+      const headers = new Headers(init?.headers);
+      headers.set(APPROVAL_CLIENT_HEADER, APPROVAL_ACP_CLIENT);
+      const open = headers.get("accept") === "text/event-stream" || init?.body instanceof FormData;
+      const signals = [
+        lifetime.signal,
+        ...(init?.signal ? [init.signal] : []),
+        ...(open ? [] : [AbortSignal.timeout(REQUEST_DEADLINE_MS)]),
+      ];
+      try {
+        return await host.fetch(path, { ...init, headers, signal: AbortSignal.any(signals) });
+      } catch (error) {
+        // Network failures are TypeErrors and stops are DOMExceptions; the host throws anything else only for its sign-in.
+        if (error instanceof TypeError || error instanceof DOMException || !(error instanceof Error)) throw error;
+        diagnostic(error.message);
+        throw RequestError.authRequired(undefined, SIGN_IN);
+      }
+    },
+    readJson: async <T>(response: Parameters<CloudCliContext["readJson"]>[0]) => {
+      if (response.status === 401) throw RequestError.authRequired(undefined, SIGN_IN);
+      return host.readJson<T>(response);
+    },
   };
+  /** Resolves once every queued update reached the editor. While the editor is slow, queued updates coalesce. */
+  const update = (s: Session, value: SessionUpdate): Promise<void> => {
+    const last = s.outbox.at(-1);
+    const merged = last && coalesce(last, value);
+    if (merged) s.outbox[s.outbox.length - 1] = merged;
+    else s.outbox.push(value);
+    s.sending ??= (async () => {
+      try {
+        for (let next = s.outbox.shift(); next; next = s.outbox.shift())
+          await s.client.notify("session/update", { sessionId: s.id, update: next });
+      } finally {
+        s.sending = undefined;
+      }
+    })();
+    // Keep synchronous CLI output callbacks from leaving unhandled rejections on disconnect.
+    void s.sending.catch(() => undefined);
+    return s.sending;
+  };
+  const flushed = (s: Session) => s.sending ?? Promise.resolve();
   const message = (s: Session, text: string) => update(s, { sessionUpdate: "agent_message_chunk", content: { type: "text", text } });
   const chatLink = (s: Session) => `${host.options.server.replace(/\/$/, "")}/app/assistant?conversation=${s.chat}`;
-  const promptContext = (s: Session): CloudCliContext => ({
-    ...host,
+  /** Inside a prompt every read stops with `signal`; writes check it before they start. */
+  const promptContext = (s: Session, signal?: AbortSignal): CloudCliContext => ({
+    ...api,
+    fetch: (path, init) => {
+      const method = init?.method?.toUpperCase() ?? "GET";
+      return api.fetch(
+        path,
+        signal && (method === "GET" || method === "HEAD")
+          ? { ...init, signal: init?.signal ? AbortSignal.any([init.signal, signal]) : signal }
+          : init,
+      );
+    },
     options: { ...host.options, output: "text" },
     openUrl: undefined,
     write: (text) => message(s, text),
@@ -132,19 +258,17 @@ export const createAcpAgent = (host: CloudCliContext) => {
     error: diagnostic,
     json: (value) => diagnostic(JSON.stringify(value)),
     jsonLine: (value) => diagnostic(JSON.stringify(value)),
-    fetch: (path, init) => {
-      const headers = new Headers(init?.headers);
-      headers.set(APPROVAL_CLIENT_HEADER, APPROVAL_ACP_CLIENT);
-      return host.fetch(path, { ...init, headers });
-    },
   });
+  /** Opening a thread reads the profile again, so a `cld login` after the editor started this process counts. */
   const models = async () => {
-    if (!host.options.token)
-      throw RequestError.authRequired(undefined, "Sign in first: run `cld login` in a terminal, then start a new thread.");
-    const response = await host.fetch(`${AI_API}/models`);
-    if (response.status === 401)
-      throw RequestError.authRequired(undefined, "Sign in first: run `cld login` in a terminal, then start a new thread.");
-    return host.readJson<AiPublicModelProfile[]>(response);
+    try {
+      await host.reloadCredentials?.();
+    } catch (error) {
+      diagnostic(errorText(error));
+      throw RequestError.authRequired(undefined, SIGN_IN);
+    }
+    if (!host.options.token) throw RequestError.authRequired(undefined, SIGN_IN);
+    return readApi<AiPeopleModels>(api, "/models").then((payload) => payload.options);
   };
   const config = (s: Session): SessionConfigOption[] => [
     {
@@ -155,7 +279,7 @@ export const createAcpAgent = (host: CloudCliContext) => {
       currentValue: s.model ?? "default",
       options: [
         { value: "default", name: "Cloud default" },
-        ...s.models.map((m) => ({ value: m.id, name: m.label, description: `${m.provider} · ${m.model}` })),
+        ...s.models.map((m) => ({ value: m.id, name: m.label, description: m.description })),
       ],
     },
   ];
@@ -164,7 +288,7 @@ export const createAcpAgent = (host: CloudCliContext) => {
     throw new DOMException("Prompt cancelled", "AbortError");
   };
   const permission = async (s: Session, call: ToolCall, options: PermissionOption[]) => {
-    await s.queue;
+    await flushed(s);
     s.active?.signal.throwIfAborted();
     const result = await s.client.request(
       "session/request_permission",
@@ -177,7 +301,7 @@ export const createAcpAgent = (host: CloudCliContext) => {
     return optionId;
   };
   const form = async (s: Session, callId: string, text: string, schema: ElicitationSchema): Promise<CreateElicitationResponse> => {
-    await s.queue;
+    await flushed(s);
     s.active?.signal.throwIfAborted();
     return s.client.request(
       "elicitation/create",
@@ -205,6 +329,8 @@ export const createAcpAgent = (host: CloudCliContext) => {
           properties: {
             decision: {
               type: "string",
+              // Zed shows the titled oneOf choices; T3 Code builds its choices only from enum and answers with the value.
+              enum: ["yes", "no"],
               oneOf: [
                 { const: "yes", title: presentation.name },
                 { const: "no", title: presentation.reject },
@@ -231,7 +357,7 @@ export const createAcpAgent = (host: CloudCliContext) => {
         await update(s, { sessionUpdate: "tool_call_update", toolCallId: callId, status: allowed ? "completed" : "failed" });
     }
   };
-  const createSession = async (id: string, cwd: string, client: AgentContext, profiles: AiPublicModelProfile[]) => {
+  const createSession = async (id: string, cwd: string, client: AgentContext, profiles: AiPeopleModels["options"][number][]) => {
     const contextReader = createLocalContextReader({
       ctx: host,
       workspace: cwd,
@@ -243,23 +369,49 @@ export const createAcpAgent = (host: CloudCliContext) => {
         if (count) parts.push(`${count} Skills in .agents/skills`);
         else if (found.hasProjectContext && !parts.length) parts.push("Skills in .agents/skills");
         const toolCallId = crypto.randomUUID();
+        const text = `This folder has instructions for the assistant: ${parts.join(", ")}. They go to the model with every message and can steer what it does with your Cloud data.`;
         const call: ToolCall = {
           toolCallId,
           title: "Load this folder's instructions?",
           kind: "other",
           status: "pending",
-          content: toolContent(
-            `This folder has instructions for the assistant: ${parts.join(", ")}. They go to the model with every message and can steer what it does with your Cloud data.`,
-          ),
+          content: toolContent(text),
         };
         await update(s, { sessionUpdate: "tool_call", ...call });
         let answer: string | undefined;
         try {
-          answer = await permission(s, call, [
-            { optionId: "session", name: "Only this session", kind: "allow_once" },
-            { optionId: "folder", name: "Trust this folder", kind: "allow_always" },
-            { optionId: "reject", name: "Don't load", kind: "reject_once" },
-          ]);
+          // Lasting trust only through a form: an editor can answer permission prompts automatically.
+          if (forms) {
+            const response = await form(s, toolCallId, `${call.title}\n${text}`, {
+              type: "object",
+              required: ["decision"],
+              properties: {
+                decision: {
+                  type: "string",
+                  // Zed shows the titled oneOf choices; T3 Code builds its choices only from enum and answers with the value.
+                  enum: ["session", "folder", "reject"],
+                  oneOf: [
+                    { const: "session", title: "Only this session" },
+                    { const: "folder", title: "Trust this folder" },
+                    { const: "reject", title: "Don't load" },
+                  ],
+                },
+              },
+            });
+            if (s.active?.signal.aborted) return cancelled(s);
+            const decision =
+              response.action === "accept" &&
+              response.content != null &&
+              typeof response.content === "object" &&
+              "decision" in response.content
+                ? response.content.decision
+                : undefined;
+            answer = decision === "session" || decision === "folder" ? decision : undefined;
+          } else
+            answer = await permission(s, call, [
+              { optionId: "session", name: "Only this session", kind: "allow_once" },
+              { optionId: "reject", name: "Don't load", kind: "reject_once" },
+            ]);
           return answer === "session" || answer === "folder" ? answer : undefined;
         } finally {
           if (!s.disconnected)
@@ -282,16 +434,22 @@ export const createAcpAgent = (host: CloudCliContext) => {
       selectedLocal: [],
       selectedCloud: [],
       cloudSkills: [],
+      cloudSkillsLoaded: false,
       disconnected: false,
-      queue: Promise.resolve(),
+      outbox: [],
     };
     sessions.set(id, s);
     return s;
   };
-  const commands = async (s: Session, refresh = false) => {
+  const commands = async (s: Session, refresh = false, signal?: AbortSignal) => {
     if (refresh) s.context = await s.contextReader();
     s.context ??= await discoverLocalContext(s.cwd, undefined, false);
-    s.cloudSkills = (await readApi<{ skills: AiSkillSummary[] }>(promptContext(s), "/skills")).skills.filter((skill) => skill.enabled);
+    if (refresh || !s.cloudSkillsLoaded) {
+      s.cloudSkills = (
+        await readApi<{ skills: AiSkillSummary[] }>(promptContext(s), "/skills", signal ? { signal } : undefined)
+      ).skills.filter((skill) => skill.enabled);
+      s.cloudSkillsLoaded = true;
+    }
     const names = new Set(builtins.map((b) => b.name));
     const skills: AvailableCommand[] = [];
     for (const skill of [...s.context.skills, ...s.cloudSkills]) {
@@ -311,23 +469,35 @@ export const createAcpAgent = (host: CloudCliContext) => {
       await update(s, { sessionUpdate: "available_commands_update", availableCommands });
     }
   };
-  const afterResponse = (s: Session, title?: string, notice?: string) => {
+  /** Work that follows a response instead of delaying it. */
+  const afterResponse = (
+    s: Session,
+    next: { commands?: boolean; title?: string; notice?: string; refreshTitle?: boolean; viewed?: boolean },
+  ) => {
     setImmediate(() => {
       void (async () => {
         if (s.disconnected) return;
-        await commands(s);
-        if (notice !== undefined) await message(s, notice + "\n");
-        if (title !== undefined) {
+        // The person saw the chat in the editor, as when opening it on the web; it no longer waits for them.
+        if (next.viewed && s.chat) await readApi(api, conversationPath(s.chat, "/viewed"), { method: "POST" });
+        if (next.commands) await commands(s);
+        if (next.notice !== undefined) await message(s, next.notice + "\n");
+        const title = next.refreshTitle && s.chat ? (await readConversationDetail(api, s.chat)).conversation.title : next.title;
+        if (title !== undefined && title !== s.title) {
           s.title = title;
           await update(s, { sessionUpdate: "session_info_update", title: terminalSafeText(title) });
         }
       })().catch((e: unknown) => {
-        if (!s.disconnected) diagnostic(e instanceof Error ? e.message : String(e));
+        if (!s.disconnected) diagnostic(errorText(e));
       });
     });
   };
-  const commandReply = async (s: Session, name: string, value: string): Promise<{ handled: boolean; message?: string }> => {
-    const ctx = promptContext(s);
+  const commandReply = async (
+    s: Session,
+    name: string,
+    value: string,
+    signal: AbortSignal,
+  ): Promise<{ handled: boolean; message?: string }> => {
+    const ctx = promptContext(s, signal);
     const reply = async (text: string) => {
       await message(s, terminalSafeText(text) + "\n");
       return { handled: true };
@@ -336,7 +506,7 @@ export const createAcpAgent = (host: CloudCliContext) => {
     if (name === "usage") {
       const quota = await readApi<AiChatQuotaSnapshot>(ctx, "/quotas");
       if (!quota.enabled) return reply("No usage limits apply.");
-      const profiles = await readApi<AiPublicModelProfile[]>(ctx, "/models");
+      const profiles = await readApi<AiPeopleModels>(ctx, "/models").then((payload) => payload.options);
       const label = (id: string) => profiles.find((m) => m.id === id)?.label ?? id;
       const dates = new Intl.DateTimeFormat(ctx.options.locale, { dateStyle: "medium", timeStyle: "short" });
       const lines = quota.balances.map((balance) => {
@@ -388,7 +558,7 @@ export const createAcpAgent = (host: CloudCliContext) => {
       return reply(`Project: ${project?.name ?? "none"}${!s.chat ? " Your first message starts the chat there." : ""}`);
     }
     if (name === "skills") {
-      await commands(s, true);
+      await commands(s, true, signal);
       const local = s.context?.skills ?? [];
       const visible = s.cloudSkills.filter((skill) => !local.some((l) => l.name === skill.name));
       const preview = (text: string) => {
@@ -422,7 +592,7 @@ export const createAcpAgent = (host: CloudCliContext) => {
           : "No Skills found. Local Skills live in .agents/skills or ~/.agents/skills.",
       );
     }
-    await commands(s);
+    await commands(s, false, signal);
     let local = s.context?.skills.find((skill) => skill.name === name);
     const cloud = s.cloudSkills.find((skill) => skill.name === name);
     if (!local && !cloud) return { handled: false };
@@ -449,17 +619,21 @@ export const createAcpAgent = (host: CloudCliContext) => {
     s.finished = new Promise<void>((resolve) => {
       finishPrompt = resolve;
     });
-    const ctx = promptContext(s);
+    const ctx = promptContext(s, abort.signal);
     let turnId: string | undefined;
+    let title: string | undefined;
+    let created = false;
+    let answered = false;
     let output = createAssistantTurnOutput();
     const waitingApprovals = new Set<string>();
     const calls = new Map<string, string>();
     const rows = new Map<string, string>();
     const onToolBlock = (block: ToolBlock) => {
       rows.set(block.callId, block.id);
-      const call = toolCall(block, s.cwd);
       const serialized = JSON.stringify(block);
       if (calls.get(block.id) !== serialized) {
+        // A block that fits the raw bound fits it with each part, so the parts need no serializing of their own.
+        const call = toolCall(block, s.cwd, serialized.length <= RAW_MAX_CHARS);
         void update(s, calls.has(block.id) ? { sessionUpdate: "tool_call_update", ...call } : { sessionUpdate: "tool_call", ...call });
         calls.set(block.id, serialized);
         if (block.name === "todo_write") {
@@ -471,9 +645,12 @@ export const createAcpAgent = (host: CloudCliContext) => {
         for (const callId of waitingApprovals) if (rows.get(callId) === block.id) waitingApprovals.delete(callId);
       if (block.status === "awaiting_client" && CODE_RUNTIME_TOOL_NAMES.some((name) => name === block.name)) throw new WebChatRequired();
     };
-    const clientTools = {
+    const clientTools: AssistantClientTools = {
       names: new Set(["local_bash", ...AI_LOCAL_TOOL_NAMES]),
+      receipts,
       run: async (call: { name: string; args: unknown; callId: string }, signal: AbortSignal) => {
+        // An editor may answer permission prompts automatically. A command could then read cld's login and act as the person.
+        if (call.name === "local_bash" && !forms) return deniedLocalBashResult(BASH_NEEDS_FORMS);
         s.context ??= await s.contextReader();
         return runLocalTool(
           call,
@@ -504,6 +681,7 @@ export const createAcpAgent = (host: CloudCliContext) => {
       onThinkingDelta: (text: string) => {
         void update(s, { sessionUpdate: "agent_thought_chunk", content: { type: "text", text } });
       },
+      drain: () => (s.outbox.length > UPDATE_HIGH_WATER ? s.sending : undefined),
     });
     const waitInCloud = async (action: Extract<AiPendingTurnAction, { type: "approval_request" }>) => {
       if (waitingApprovals.has(action.callId)) return;
@@ -522,6 +700,7 @@ export const createAcpAgent = (host: CloudCliContext) => {
         const actions = await readApi<AiPendingTurnAction[]>(
           ctx,
           conversationPath(s.chat!, `/pending-actions/${encodeURIComponent(turnId!)}`),
+          { signal: abort.signal },
         );
         const action = actions.find((a) => !(a.type === "approval_request" && waitingApprovals.has(a.callId)));
         if (!action) {
@@ -583,6 +762,7 @@ export const createAcpAgent = (host: CloudCliContext) => {
       return result;
     };
     const finish = async (result: AssistantTurnStreamResult) => {
+      if (result.title !== undefined) title = result.title;
       if (result.status === "failed") throw RequestError.internalError(undefined, result.error ?? "Assistant turn failed.");
       if (result.status === "aborted") return cancelled(s);
     };
@@ -601,9 +781,20 @@ export const createAcpAgent = (host: CloudCliContext) => {
             continue;
           }
           const path = fileURLToPath(part.uri);
-          const access = classifyLocalPath(path, { workspace: s.cwd });
+          const given = resolveLocalPath(path, s.cwd);
+          const notFound = () => RequestError.invalidParams(undefined, `Attachment not found: ${terminalSafeText(path)}`);
+          // The checked file is the one that is sent, even if the path names another file after the question.
+          const review = await reviewLocalFile(given);
+          if (!review.identity) throw notFound();
+          const rules = [classifyLocalPath(given, { workspace: s.cwd }), classifyLocalPath(review.target, { workspace: s.cwd })];
+          const access = rules.find((rule) => rule.access === "blocked") ?? rules.find((rule) => rule.access === "ask") ?? rules[0]!;
           if (access.access === "blocked")
             throw RequestError.invalidParams(undefined, `Not attached: ${terminalSafeText(path)} is cld's configuration.`);
+          // A folder is no attachment; its path tells Assistant where to look with the local tools.
+          if (review.identity.directory) {
+            text += `\n${path}`;
+            continue;
+          }
           if (access.access === "ask") {
             const reason =
               access.reason === "home"
@@ -613,20 +804,32 @@ export const createAcpAgent = (host: CloudCliContext) => {
                   : `It is outside ${s.cwd}.`;
             if (!(await ask(s, crypto.randomUUID(), [], `Attach ${path}? ${reason}`, "access", true))) continue;
           }
-          const file = Bun.file(resolveLocalPath(path, s.cwd));
-          if (!(await file.exists())) throw RequestError.invalidParams(undefined, `Attachment not found: ${terminalSafeText(path)}`);
-          files.push(new File([file], basename(path), { type: file.type || guessAiMediaType(path) }));
+          const { file, info } = await openReviewedFile(given, review).catch((error) => {
+            if (error instanceof Error && "code" in error && error.code === "ENOENT") throw notFound();
+            throw RequestError.invalidParams(undefined, terminalSafeText(error instanceof Error ? error.message : String(error)));
+          });
+          try {
+            if (!info.isFile()) throw notFound();
+            const type = Bun.file(given).type || guessAiMediaType(path);
+            // Refuse an oversized image before reading it into memory.
+            if (isAiImageMediaType(type) && info.size > AI_IMAGE_INPUT_MAX_BYTES)
+              throw RequestError.invalidParams(
+                undefined,
+                `Image attachment exceeds the ${AI_IMAGE_INPUT_MAX_BYTES / (1024 * 1024)} MB limit: ${basename(path)}`,
+              );
+            files.push(await reviewedUpload(file, basename(path), type, abort.signal));
+          } finally {
+            await file.close();
+          }
         } else if (part.type === "image") {
           const extension = part.mimeType === "image/jpeg" ? "jpg" : part.mimeType.split("/")[1]?.replaceAll(/[^a-z0-9]/gi, "") || "bin";
           files.push(new File([Buffer.from(part.data, "base64")], `image-${++imageCount}.${extension}`, { type: part.mimeType }));
         } else if (part.type === "resource") {
           const resource = part.resource;
           files.push(
-            new File(
-              ["text" in resource ? resource.text : Buffer.from(resource.blob, "base64")],
-              basename(new URL(resource.uri).pathname) || "resource",
-              { type: resource.mimeType ?? ("text" in resource ? "text/plain" : "application/octet-stream") },
-            ),
+            new File(["text" in resource ? resource.text : Buffer.from(resource.blob, "base64")], resourceName(resource.uri), {
+              type: resource.mimeType ?? ("text" in resource ? "text/plain" : "application/octet-stream"),
+            }),
           );
         }
       }
@@ -649,27 +852,51 @@ export const createAcpAgent = (host: CloudCliContext) => {
         );
       const match = /^\/([^\s]+)(?:\s+([\s\S]*))?$/.exec(text.trim());
       if (match) {
-        const command = await commandReply(s, match[1]!, match[2]?.trim() ?? "");
+        const command = await commandReply(s, match[1]!, match[2]?.trim() ?? "", abort.signal);
+        abort.signal.throwIfAborted();
         if (command.handled && command.message === undefined) return { stopReason: "end_turn" as const };
         if (command.message !== undefined) text = command.message;
       }
+      // One chat read serves the running-turn check, the title, and the draft revision of the new turn.
+      let current: ConversationDetail | undefined;
       if (!s.chat) {
-        s.chat = (await resolveConversation(ctx, { projectId: s.project })).id;
-        await host.setDefault(`assistant.acpSession.${s.id}`, s.chat);
-        await host.setDefault(`assistant.acpChat.${s.chat}`, s.id);
-      }
-      const detail = await readConversationDetail(ctx, s.chat);
-      if (detail.activeTurn) {
-        turnId = detail.activeTurn.turnId;
-        await finish(await attention(await streamAssistantTurn(streamOptions())));
-        turnId = undefined;
-        output = createAssistantTurnOutput();
-        calls.clear();
-        rows.clear();
-        waitingApprovals.clear();
+        abort.signal.throwIfAborted();
+        const conversation = await resolveConversation(ctx, { projectId: s.project });
+        s.chat = conversation.id;
+        created = true;
+        await store.set(s.id, s.chat, s.cwd).catch((error: unknown) => diagnostic(`Could not remember this session: ${errorText(error)}`));
+        // A chat created just now runs no turn and has an empty draft.
+        current = { conversation, activeTurn: null };
+      } else {
+        current = await readConversationDetail(ctx, s.chat, abort.signal);
+        title = current.conversation.title;
+        // The turn that ran when the thread opened finished meanwhile: show what it did before this message.
+        if (s.unseenTurn && current.activeTurn?.turnId !== s.unseenTurn) {
+          const state = await savedState(s.chat, abort.signal);
+          if (state)
+            for (const value of historyUpdates(state, {
+              cwd: s.cwd,
+              server: host.options.server,
+              chatLink: chatLink(s),
+              turn: s.unseenTurn,
+            }))
+              void update(s, value);
+        }
+        s.unseenTurn = undefined;
+        if (current.activeTurn) {
+          turnId = current.activeTurn.turnId;
+          await finish(await attention(await streamAssistantTurn(streamOptions())));
+          turnId = undefined;
+          output = createAssistantTurnOutput();
+          calls.clear();
+          rows.clear();
+          waitingApprovals.clear();
+          // Following the turn may have taken long; the turn reads the draft again.
+          current = undefined;
+        }
       }
       s.context = await s.contextReader();
-      await commands(s);
+      await commands(s, false, abort.signal);
       const selectedSkills: AiLocalContext["selectedSkills"] = [];
       if (s.localTools === "ask")
         for (const selected of s.selectedLocal) {
@@ -691,16 +918,18 @@ export const createAcpAgent = (host: CloudCliContext) => {
         localTools: s.localTools,
         workspace: s.cwd,
         client: { kind: "acp", ...(clientName ? { name: clientName } : {}) },
+        bash: forms,
       });
       const submission = await submitAssistantTurn({
         ...streamOptions(),
         path: conversationPath(s.chat, "/turns"),
         watch: true,
         codeHost: false,
+        detail: current,
         body: {
           message: text,
           content: [...attachments, ...s.selectedCloud],
-          ...(s.model ? { modelProfileId: s.model } : {}),
+          ...(s.model ? { model: parseAiModelChoice(s.model) } : {}),
           ...fields,
           localContext: { ...fields.localContext, selectedSkills },
         },
@@ -712,11 +941,15 @@ export const createAcpAgent = (host: CloudCliContext) => {
       });
       if (!submission.result) throw RequestError.internalError(undefined, "Missing turn stream result.");
       await finish(await attention(submission.result));
+      answered = true;
       return { stopReason: "end_turn" as const };
     } catch (error) {
       if (abort.signal.aborted) {
+        // Stop always answers as cancelled; an unreachable Cloud only means the turn may still run there.
         if (!s.disconnected && turnId && s.chat)
-          await readApi(ctx, conversationPath(s.chat, `/turns/${encodeURIComponent(turnId)}/abort`), { method: "POST" });
+          await readApi(ctx, conversationPath(s.chat, `/turns/${encodeURIComponent(turnId)}/abort`), { method: "POST" }).catch(
+            (abortError: unknown) => diagnostic(`Could not stop the turn in Cloud: ${errorText(abortError)}`),
+          );
         return { stopReason: "cancelled" as const };
       }
       if (error instanceof WebChatRequired) {
@@ -724,20 +957,22 @@ export const createAcpAgent = (host: CloudCliContext) => {
         return { stopReason: "end_turn" as const };
       }
       if (error instanceof RequestError) throw error;
-      throw RequestError.internalError(undefined, error instanceof Error ? error.message : String(error));
+      throw RequestError.internalError(undefined, errorText(error));
     } finally {
+      // The title and the last updates are best-effort: they never change how the turn ended.
       try {
-        if (s.chat && !s.disconnected) {
-          const detail = await readConversationDetail(ctx, s.chat);
-          if (detail.conversation.title !== s.title) {
-            s.title = detail.conversation.title;
-            await update(s, { sessionUpdate: "session_info_update", title: terminalSafeText(s.title) });
-          }
+        if (title !== undefined && title !== s.title && !s.disconnected) {
+          s.title = title;
+          await update(s, { sessionUpdate: "session_info_update", title: terminalSafeText(title) });
         }
-        await s.queue;
+        await flushed(s);
+      } catch (error) {
+        if (!s.disconnected) diagnostic(errorText(error));
       } finally {
         s.active = undefined;
         finishPrompt();
+        // Cloud names a new chat after its first message, which the stream's earlier state does not know yet.
+        if (answered && !abort.signal.aborted) afterResponse(s, { refreshTitle: created, viewed: true });
       }
     }
   };
@@ -748,19 +983,83 @@ export const createAcpAgent = (host: CloudCliContext) => {
         s.disconnected = true;
         s.active?.abort();
       }
-      await Promise.all(
-        [...sessions.values()].map(async (s) => {
-          await s.finished;
-          await s.folder.close();
-        }),
-      );
+      const finished = Promise.all([...sessions.values()].map((s) => s.finished));
+      // A request already sent, such as a turn's start, may finish briefly; then every open request ends.
+      const grace = async () => {
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        await Promise.race([finished, new Promise<void>((resolve) => (timer = setTimeout(resolve, SHUTDOWN_GRACE_MS)))]);
+        clearTimeout(timer);
+      };
+      await grace();
+      lifetime.abort();
+      // Output the editor no longer reads cannot hold the cleanup either.
+      await grace();
+      await Promise.all([...sessions.values()].map((s) => s.folder.close()));
     })());
+  const runningNotice = (s: Session) =>
+    `A turn in this chat is still running. Send a message to follow it here, or open it in Cloud: ${chatLink(s)}`;
+  /** The chat a session uses; a chat ID works as a session ID, also for a chat no editor opened before. */
+  const chatOf = async (sessionId: string, cwd: string) => {
+    const chat = await store.chat(sessionId);
+    if (chat) return chat;
+    // Sessions from before the store kept their chat in the profile; move them over once.
+    const legacyKey = `assistant.acpSession.${sessionId}`;
+    const legacy = await host.getDefault(legacyKey);
+    if (!legacy) return sessionId;
+    await store.set(sessionId, legacy, cwd);
+    await host.setDefault(legacyKey, undefined);
+    await host.setDefault(`assistant.acpChat.${legacy}`, undefined);
+    return legacy;
+  };
+  /** The stream's first saved state of a chat, then the stream closes; undefined when the chat is gone. */
+  const savedState = async (chat: string, signal?: AbortSignal): Promise<AiStreamState | undefined> => {
+    const connection = new AbortController();
+    const response = await api.fetch(`${AI_API}${conversationPath(chat, "/stream")}`, {
+      headers: { Accept: "text/event-stream" },
+      signal: AbortSignal.any([connection.signal, AbortSignal.timeout(REQUEST_DEADLINE_MS), ...(signal ? [signal] : [])]),
+    });
+    if (response.status === 404) return undefined;
+    if (!response.ok || !response.body) await api.readJson(response);
+    const events = parseAiSse(response, connection.signal);
+    try {
+      for await (const event of events) if (event.type === "state") return event;
+      throw RequestError.internalError(undefined, "The chat sent no saved state.");
+    } finally {
+      connection.abort();
+      await events.return(undefined);
+    }
+  };
+  /** Opens a session on a chat for resume and load, unless a close arrived while it waited. */
+  const install = async (
+    id: string,
+    cwd: string,
+    client: AgentContext,
+    profiles: AiPeopleModels["options"][number][],
+    closed: number,
+    conversation: AiConversation,
+  ) => {
+    const existing = sessions.get(id);
+    if (existing?.active) throw RequestError.invalidRequest(undefined, "This session already has a running prompt.");
+    if (existing) await existing.folder.close();
+    const s = await createSession(id, cwd, client, profiles);
+    // A close that arrived while this request waited wins; the session does not come back.
+    if ((closes.get(id) ?? 0) !== closed) {
+      sessions.delete(s.id);
+      await s.folder.close();
+      throw RequestError.invalidRequest(undefined, "This session was closed.");
+    }
+    s.chat = conversation.id;
+    // The thread now works in this folder; a session opened by its chat ID becomes known too.
+    await store.set(id, s.chat, s.cwd).catch((error: unknown) => diagnostic(`Could not remember this session: ${errorText(error)}`));
+    s.project = conversation.projectId ?? undefined;
+    return s;
+  };
   const app = agent()
     .onConnect(({ signal }) => {
       signal.addEventListener(
         "abort",
         () => {
-          void close().catch((error: unknown) => diagnostic(error instanceof Error ? error.message : String(error)));
+          void close().catch((error: unknown) => diagnostic(errorText(error)));
         },
         { once: true },
       );
@@ -772,9 +1071,9 @@ export const createAcpAgent = (host: CloudCliContext) => {
         protocolVersion: 1,
         agentInfo: { name: "cld", title: "Cloud Assistant", version },
         agentCapabilities: {
-          loadSession: false,
+          loadSession: true,
           promptCapabilities: { image: true, audio: false, embeddedContext: true },
-          sessionCapabilities: { list: {}, resume: {} },
+          sessionCapabilities: { list: {}, resume: {}, close: {} },
         },
         authMethods: [],
       };
@@ -783,7 +1082,7 @@ export const createAcpAgent = (host: CloudCliContext) => {
       const profiles = await models();
       if (params.mcpServers.length) diagnostic("cld acp ignores MCP servers from the editor; Assistant uses Cloud's own tools.");
       const s = await createSession(crypto.randomUUID(), params.cwd, client, profiles);
-      afterResponse(s);
+      afterResponse(s, { commands: true });
       return { sessionId: s.id, configOptions: config(s) };
     })
     .onRequest("session/set_config_option", ({ params }) => {
@@ -801,47 +1100,96 @@ export const createAcpAgent = (host: CloudCliContext) => {
       const page = params.cursor == null ? 1 : Number(params.cursor);
       if (params.cursor != null && (!/^[1-9]\d*$/.test(params.cursor) || !Number.isSafeInteger(page)))
         throw RequestError.invalidParams(undefined, "Unknown session list cursor.");
-      const conversations = await readApi<AiConversationPage>(host, `/conversations/page?page=${page}&perPage=50`);
-      return {
-        sessions: await Promise.all(
-          conversations.items.map(async (chat) => ({
-            sessionId: (await host.getDefault(`assistant.acpChat.${chat.id}`)) ?? chat.id,
-            cwd: params.cwd ?? process.cwd(),
-            title: terminalSafeText(chat.title),
-            updatedAt: chat.updatedAt,
-          })),
+      // Only open chats: a turn runs, an approval or question waits, or an answer waits for the person. Each list page
+      // reads one Cloud page per state; a page can come back empty while the cursor goes on.
+      const pages = await Promise.all(
+        OPEN_CHAT_STATUSES.map((status) =>
+          readApi<AiConversationPage>(api, `/conversations/page?status=${status}&page=${page}&perPage=50`),
         ),
-        ...(conversations.hasNext ? { nextCursor: String(page + 1) } : {}),
+      );
+      const open = new Map(pages.flatMap((result) => result.items.map((chat) => [chat.id, chat] as const)));
+      const known = await store.lookup([...open.keys()]);
+      return {
+        // Only chats an editor used in this folder, or in any folder when the editor names none; others open by ID.
+        sessions: [...open.values()]
+          .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
+          .flatMap((chat) => {
+            const entry = (known.get(chat.id) ?? []).find((e) => (params.cwd ? e.cwd === params.cwd : e.cwd));
+            return entry?.cwd
+              ? [{ sessionId: entry.session, cwd: entry.cwd, title: terminalSafeText(chat.title), updatedAt: chat.updatedAt }]
+              : [];
+          }),
+        ...(pages.some((result) => result.hasNext) ? { nextCursor: String(page + 1) } : {}),
       };
     })
     .onRequest("session/resume", async ({ params, client }) => {
+      const closed = closes.get(params.sessionId) ?? 0;
       const profiles = await models();
-      const chat = (await host.getDefault(`assistant.acpSession.${params.sessionId}`)) ?? params.sessionId;
-      const response = await host.fetch(`${AI_API}${conversationPath(chat)}`);
-      if (response.status === 404) throw RequestError.resourceNotFound(params.sessionId);
-      const detail = await host.readJson<Awaited<ReturnType<typeof readConversationDetail>>>(response);
-      const existing = sessions.get(params.sessionId);
-      if (existing?.active) throw RequestError.invalidRequest(undefined, "This session already has a running prompt.");
-      if (existing) await existing.folder.close();
-      const s = await createSession(params.sessionId, params.cwd, client, profiles);
-      s.chat = detail.conversation.id;
-      s.project = detail.conversation.projectId ?? undefined;
-      afterResponse(
-        s,
-        detail.conversation.title,
-        detail.activeTurn
-          ? `A turn in this chat is still running. Send a message to follow it here, or open it in Cloud: ${chatLink(s)}`
-          : undefined,
-      );
+      const chat = await chatOf(params.sessionId, params.cwd);
+      const response = await api.fetch(`${AI_API}${conversationPath(chat)}`);
+      if (response.status === 404) {
+        await store.forget(params.sessionId);
+        throw RequestError.resourceNotFound(params.sessionId);
+      }
+      const detail = await api.readJson<Awaited<ReturnType<typeof readConversationDetail>>>(response);
+      const s = await install(params.sessionId, params.cwd, client, profiles, closed, detail.conversation);
+      afterResponse(s, {
+        commands: true,
+        title: detail.conversation.title,
+        notice: detail.activeTurn ? runningNotice(s) : undefined,
+      });
+      return { configOptions: config(s) };
+    })
+    .onRequest("session/load", async ({ params, client }) => {
+      const closed = closes.get(params.sessionId) ?? 0;
+      const profiles = await models();
+      const chat = await chatOf(params.sessionId, params.cwd);
+      // One request: the stream's saved state carries the recent messages and the running turn.
+      const state = await savedState(chat);
+      if (!state) {
+        await store.forget(params.sessionId);
+        throw RequestError.resourceNotFound(params.sessionId);
+      }
+      const s = await install(params.sessionId, params.cwd, client, profiles, closed, state.conversation);
+      s.title = state.conversation.title;
+      for (const value of historyUpdates(state, { cwd: s.cwd, server: host.options.server, chatLink: chatLink(s) })) void update(s, value);
+      void update(s, { sessionUpdate: "session_info_update", title: terminalSafeText(state.conversation.title) });
+      if (state.activeTurn) {
+        void message(s, `${runningNotice(s)}\n`);
+        // Its steps stay out of the replay; the next message shows them, then the chat counts as seen.
+        s.unseenTurn = state.activeTurn.turnId;
+      }
+      await flushed(s);
+      afterResponse(s, { commands: true, viewed: !state.activeTurn });
       return { configOptions: config(s) };
     })
     .onRequest("session/prompt", ({ params }) => prompt(getSession(params.sessionId), params.prompt))
+    .onRequest("session/close", async ({ params }) => {
+      closes.set(params.sessionId, (closes.get(params.sessionId) ?? 0) + 1);
+      const s = sessions.get(params.sessionId);
+      if (!s) return {};
+      // Like closing the editor: the prompt ends here, a Cloud turn keeps running in the chat.
+      s.disconnected = true;
+      s.active?.abort();
+      await s.finished;
+      sessions.delete(s.id);
+      await s.folder.close();
+      return {};
+    })
     .onNotification("session/cancel", ({ params }) => {
-      getSession(params.sessionId).active?.abort();
+      sessions.get(params.sessionId)?.active?.abort();
     });
   return { app, close };
 };
 
+// An editor that stops cld still gets every connection's temporary session folders removed before it exits.
+const openConnections = new Set<() => Promise<void>>();
+let stopping = false;
+const stopConnections = (signal: NodeJS.Signals) => {
+  if (stopping) return;
+  stopping = true;
+  void Promise.allSettled([...openConnections].map((close) => close())).finally(() => process.exit(128 + (signal === "SIGTERM" ? 15 : 1)));
+};
 export const runAcpConnection = async (
   ctx: CloudCliContext,
   input: ReadableStream<Uint8Array>,
@@ -849,8 +1197,15 @@ export const runAcpConnection = async (
 ): Promise<void> => {
   const bridge = createAcpAgent(ctx);
   const connection = bridge.app.connect(ndJsonStream(output, input));
-  await connection.closed;
-  await bridge.close();
+  if (!openConnections.size) for (const signal of ["SIGTERM", "SIGHUP"] as const) process.on(signal, stopConnections);
+  openConnections.add(bridge.close);
+  try {
+    await connection.closed;
+    await bridge.close();
+  } finally {
+    openConnections.delete(bridge.close);
+    if (!openConnections.size) for (const signal of ["SIGTERM", "SIGHUP"] as const) process.off(signal, stopConnections);
+  }
 };
 export const assistantAcpCommand = command("acp", {
   summary: "Run Assistant as an ACP agent for editors such as T3 Code and Zed",

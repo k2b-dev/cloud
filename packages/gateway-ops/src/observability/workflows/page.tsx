@@ -9,7 +9,6 @@
 
 import { type AuthContext, getDateConfig, getLocale } from "@k2b/cloud/server";
 import { formatDateTime, formatDurationMs, formatNumber } from "@k2b/cloud/shared";
-import { AdminLayout } from "@k2b/cloud/ssr";
 import {
   getWorkflow,
   getWorkflowRun,
@@ -26,6 +25,7 @@ import type { JSX } from "solid-js";
 import { ssr } from "../../config";
 import ObservabilityChart from "../../frontend/ObservabilityChart.island";
 import { gatewayOpsMessages } from "../../messages";
+import { areaText, ObservabilityArea, ObservabilityPane, readAttention } from "../_components/ObservabilityArea";
 import { WorkflowEffectsView, WorkflowEventsView, WorkflowFamiliesView, WorkflowRunsView } from "./_components/WorkflowQueues";
 import WorkflowRunDetailView from "./_components/WorkflowRunDetail";
 import WorkflowsFilterBar from "./_components/WorkflowsFilterBar.island";
@@ -309,25 +309,20 @@ export default ssr<AuthContext>(async (c) => {
   const allWorkflowsHref = workflowsFilter.build(state, { workflow: "", run: "", parent: "", page: 1 });
   const title = selectedWorkflow?.name ?? detail?.workflowName ?? t.workflows;
 
+  const attention = await readAttention();
   return () => (
-    <AdminLayout c={c} title={t.workflows}>
-      <div class="app-rows">
-        <div class="min-w-0" style="view-transition-name: admin-workflows-title">
-          <div class="flex items-center gap-2">
-            {state.workflow || state.parent ? (
-              <IconButtonLink href={allWorkflowsHref} label={t.backToWorkflows} size="sm">
-                <i class="ti ti-arrow-left" />
-              </IconButtonLink>
-            ) : null}
-            <div class="min-w-0">
-              <h1 class="truncate text-base font-semibold text-primary">{title}</h1>
-              <p class="mt-1 text-xs text-dimmed">
-                {selectedWorkflow ? t.workflowRunsDescription({ window: state.window }) : t.workflowsDescription}
-              </p>
-            </div>
-          </div>
-        </div>
-
+    <ObservabilityArea c={c} locale={locale} section="workflows" attention={attention}>
+      <ObservabilityPane
+        label={state.workflow || state.parent ? title : areaText(locale).workflows}
+        description={selectedWorkflow ? t.workflowRunsDescription({ window: state.window }) : t.workflowsDescription}
+        lead={
+          state.workflow || state.parent ? (
+            <IconButtonLink href={allWorkflowsHref} label={t.backToWorkflows} size="sm">
+              <i class="ti ti-arrow-left" />
+            </IconButtonLink>
+          ) : undefined
+        }
+      >
         <WorkflowStats totals={totals} window={state.window} />
         <div class="flex flex-wrap items-center justify-between gap-2">
           <RangePicker label={null} ariaLabel={t.workflowView} options={viewOptions} value={state.view} />
@@ -441,7 +436,7 @@ export default ssr<AuthContext>(async (c) => {
             hasNextPage={hasNextPage}
           />
         )}
-      </div>
-    </AdminLayout>
+      </ObservabilityPane>
+    </ObservabilityArea>
   );
 });

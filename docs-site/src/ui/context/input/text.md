@@ -21,8 +21,14 @@ Pass `value` directly or as a Solid accessor. `onValueChange` receives every
 edit. `onValueCommit` receives the committed string, normally when the field
 loses focus.
 
+`onKeyDown` reaches native inputs and plain textareas before the built-in Enter
+submission. Call `event.preventDefault()` to handle Enter yourself without also
+calling `onSubmit`. Escape and arrow keys remain available to the caller.
+
 `clearable` adds a clear button to a single-line field. Without `onClear`,
-clearing emits an empty string through both value callbacks.
+clearing emits an empty string through both value callbacks. Clearing returns
+keyboard focus to the field before notifying the caller; an `onClear` handler
+can then navigate or move focus if its action requires it.
 
 ## Input modes
 
@@ -30,9 +36,9 @@ clearing emits an empty string through both value callbacks.
 - `multiline` renders a plain textarea. Its initial value, including leading newlines, is readable before hydration.
 - `markdown` renders the shared `MarkdownEditor` and implies multiline input.
 - `password` adds a show or hide control.
-- `variant="ai"` changes the field treatment and default icon. It does not add AI behavior.
-- Without `icon`, the field shows a text-cursor icon that turns into a pencil while focused. A custom `icon` stays while focused unless `activeIcon` sets a different one.
-- `icon={false}` omits the leading icon while retaining the standard field size.
+- `variant="ai"` tints the field and leads it with the AI icon. It does not add AI behavior.
+- Without `icon`, the field has no leading icon: its edge already shows where to type, and the text starts where a select's value starts. Pass an icon only when it adds meaning, such as `ti ti-search`. It stays while focused unless `activeIcon` sets a different one.
+- `icon={false}` also omits the AI icon.
 - `monospace`, `prefix`, and `suffix` adapt the field to code-like values and short units.
 
 Enter calls `onSubmit` in single-line fields and in plain multiline mode, where Shift+Enter inserts a newline. In markdown mode, <kbd>Ctrl</kbd>/<kbd>Cmd</kbd> + <kbd>Enter</kbd> calls `onSubmit`; bare Enter stays available for writing.

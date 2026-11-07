@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import tailwind from "bun-plugin-tailwind";
 import type { Browser, Page, Route } from "playwright";
-import { launchBrowser } from "../../../../ui/test/browser";
+import { launchBrowser, settled } from "../../../../ui/test/browser";
 import { appApprovalMessages } from "./messages";
 
 // Revoking a device and pairing a further one wait for approval on a paired device. Both dialogs keep one size
@@ -90,7 +90,7 @@ const measure = (page: Page) =>
   });
 
 type Api = (route: Route, path: string) => Promise<void> | void;
-const open = async (view: (typeof views)[number], dark: boolean, mode: string, answer: Api) => {
+const open = async (view: (typeof views)[number], dark: boolean, mode: string, answer: Api, clock?: Date) => {
   const context = await browser.newContext({
     viewport: { width: view.width, height: view.height },
     deviceScaleFactor: 2,
@@ -99,6 +99,7 @@ const open = async (view: (typeof views)[number], dark: boolean, mode: string, a
     colorScheme: dark ? "dark" : "light",
   });
   const page = await context.newPage();
+  if (clock) await page.clock.install({ time: clock });
   await page.route(`${origin}/**`, async (route) => {
     const { pathname } = new URL(route.request().url());
     if (pathname === "/me/security")
@@ -154,6 +155,10 @@ describe("approval on a paired device in a browser", () => {
           await page.getByRole("button", { name: t.revoke }).click();
           const dialog = page.locator("dialog[open].app-revoke-dialog");
           await dialog.getByText(t.endSessions).waitFor();
+          await page.touchscreen.tap(2, 2);
+          await page.keyboard.press("Escape");
+          expect(await dialog.count()).toBe(1);
+          await settled(page);
           steps.ask = await measure(page);
           await shot("ask");
           const footer = dialog.locator(".k2b-panel-dialog__footer");
@@ -204,6 +209,9 @@ describe("approval on a paired device in a browser", () => {
           await dialog.getByText("482913").waitFor({ timeout: 12_000 });
           const code = await measure(page);
           if (shots) await page.screenshot({ path: join(shots, `pair-code-${view.name}-${theme}.png`) });
+          await page.touchscreen.tap(2, 2);
+          await page.keyboard.press("Escape");
+          expect(await dialog.count()).toBe(1);
           await dialog.getByRole("button", { name: t.confirm }).click();
           await dialog.getByText(t.approvalTitle).waitFor();
           const waiting = await measure(page);
@@ -215,4 +223,27 @@ describe("approval on a paired device in a browser", () => {
         }
       }, 60_000);
     }
+});
+
+test("identity confirmation keeps normal login method selection", async () => {
+  const { page, close } = await open(
+    views[0],
+    false,
+    "pair",
+    (route) => route.fulfill({ status: 403, json: { code: "REAUTHENTICATE" } }),
+    new Date("2026-10-23T12:00:00Z"),
+  );
+  try {
+    await page.locator("dialog[open]").waitFor();
+    await page.clock.fastForward(5000);
+    await page.getByRole("button", { name: t.reauthenticate, exact: true }).click();
+    await page.waitForURL("**/auth/login?**");
+    const url = new URL(page.url());
+    expect(url.searchParams.has("credential")).toBe(false);
+    const target = new URL(url.searchParams.get("redirectTo")!, origin);
+    expect(target.searchParams.get("reauthenticate")).toBe("1");
+    expect(target.searchParams.get("pairDevice")).toBe("00000000-0000-4000-8000-000000000042");
+  } finally {
+    await close();
+  }
 });

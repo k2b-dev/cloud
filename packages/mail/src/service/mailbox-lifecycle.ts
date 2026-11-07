@@ -1,5 +1,6 @@
-import { sql } from "bun";
+import { sql } from "@k2b/cloud";
 import { cancelPendingAutomaticRepliesInTransaction } from "./automatic-reply";
+import { discardConversationSummaries } from "./conversation-summary-lifecycle";
 
 type SqlClient = typeof sql;
 
@@ -70,9 +71,18 @@ export const pauseDeletedMailboxExecution = async (mailboxId: string, db: SqlCli
       WHERE submission.mailbox_id = ${mailboxId}::uuid AND submission.state = 'needs_attention' AND submission.sent_copy_pending
     ), reset_drafts AS (
       UPDATE mail.drafts draft
-      SET state = 'draft', updated_at = now()
+      SET state = 'draft', updated_at = now(),
+        doc_generation = doc_generation + CASE WHEN edit_mode = 'shared' THEN 1 ELSE 0 END,
+        doc_frozen_cursor = NULL, doc_frozen_state = NULL, doc_frozen_generation = NULL, doc_frozen_revision = NULL,
+        revision = revision + CASE WHEN edit_mode = 'shared' THEN 1 ELSE 0 END
       WHERE draft.id IN (SELECT draft_id FROM changed WHERE state = 'cancelled')
         AND draft.state IN ('scheduled', 'sending')
+      RETURNING draft.id, draft.edit_mode, draft.doc_generation, draft.revision, draft.doc_state, draft.doc_cursor
+    ), generation_bases AS (
+      INSERT INTO mail.draft_document_revisions (draft_id, generation, revision, state, cursor)
+      SELECT id, doc_generation, revision, doc_state, doc_cursor FROM reset_drafts
+      WHERE edit_mode = 'shared' AND doc_state IS NOT NULL
+      ON CONFLICT DO NOTHING
     )
     SELECT
       COUNT(*) FILTER (WHERE state = 'cancelled')::int AS cancelled,
@@ -137,6 +147,7 @@ export const pauseDeletedMailboxExecution = async (mailboxId: string, db: SqlCli
     FROM changed
   `;
   await cancelPendingAutomaticRepliesInTransaction({ db, mailboxId, code, message });
+  await discardConversationSummaries(db, { mailboxId });
 
   return {
     resources,

@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
-import { sql } from "bun";
 import { databaseSuite } from "../../../../../scripts/fixtures/test-infra";
+import { sql } from "../../runtime/clients";
 import { toPgTextArray } from "../postgres";
 import { APPROVAL_MAX_WAIT_MS, type ApprovalRequestInput, approvals, migrateApprovals, pruneApprovalRequests } from ".";
 

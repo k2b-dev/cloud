@@ -3,11 +3,13 @@ import type { Sync } from "@k2b/sync";
 import { Hono } from "hono";
 import { describeRoute } from "hono-openapi";
 import { z } from "zod";
-import { env } from "../config/env";
+import { stubConnections } from "../runtime/connections.test-fixture";
 import { jsonResponse } from "../server/middleware/openapi";
 import { v } from "../server/middleware/validator";
+import * as linksRuntime from "../services/links/runtime";
 import * as notificationCatalog from "../services/notifications/catalog";
 import * as settingsService from "../services/settings";
+import * as applicationPackage from "./application-package";
 import { defineApp } from "./define-app";
 import * as heartbeat from "./heartbeat";
 import { clearProcessApplicationId } from "./process-identity";
@@ -17,16 +19,26 @@ import * as watcher from "./runtime-watcher";
 type Operation = { responses?: Record<string, { description?: string; content?: Record<string, { schema?: unknown }> }> };
 
 test("the published OpenAPI spec describes the validation error body Cloud sends", async () => {
-  const originalSecret = Object.getOwnPropertyDescriptor(env, "APP_SECRET")!;
-  Object.defineProperty(env, "APP_SECRET", { value: "openapi-test-only", configurable: true });
+  const secretStub = stubConnections({ appSecret: { current: "openapi-test-only" } });
   const signals = ["SIGTERM", "SIGINT"] as const;
   const previousListeners = signals.map((signal) => new Set(process.listeners(signal)));
   // Only the methods used by startup are implemented; heartbeat transport is stubbed.
   const sync = { ephemeral: () => ({}), ready: async () => {} } as unknown as Sync;
   const spies = [
+    spyOn(linksRuntime, "startLinksRuntime").mockResolvedValue(async () => {}),
+    spyOn(applicationPackage, "registerApplicationPackage").mockResolvedValue(undefined),
     spyOn(processSync, "startProcessSync").mockImplementation(async () => {
       processSync.bindProcessSync(sync);
       return { sync, stop: async () => processSync.unbindProcessSync() };
+    }),
+    spyOn(heartbeat, "createRegistryMembership").mockReturnValue({
+      instanceId: "0123456789abcdef",
+      register: async () => {},
+      leave: async () => {},
+      join: async () => {},
+      publish: async () => {},
+      adopt: async () => {},
+      renew: async () => {},
     }),
     spyOn(heartbeat, "createHeartbeat").mockImplementation(() => ({ start: async () => {}, stop: async () => {} })),
     spyOn(watcher, "ensureRuntimeWatcher").mockResolvedValue(undefined),
@@ -87,6 +99,6 @@ test("the published OpenAPI spec describes the validation error body Cloud sends
     processSync.unbindProcessSync();
     clearProcessApplicationId();
     for (const spy of spies.toReversed()) spy.mockRestore();
-    Object.defineProperty(env, "APP_SECRET", originalSecret);
+    secretStub.mockRestore();
   }
 });

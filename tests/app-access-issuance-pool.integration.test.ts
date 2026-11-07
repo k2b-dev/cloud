@@ -1,6 +1,6 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, setSystemTime, spyOn, test } from "bun:test";
 import { ok } from "@k2b/stdlib";
-import { SQL, sql } from "bun";
+import { SQL } from "bun";
 import { createLocalJWKSet } from "jose";
 import { z } from "zod";
 import { bindProcessApplicationId, clearProcessApplicationId } from "../packages/cloud/src/_internal/process-identity";
@@ -12,6 +12,7 @@ import { compileCapabilityManifest } from "../packages/cloud/src/capabilities/te
 import { appAccess } from "../packages/cloud/src/contracts/app-access";
 import { defineCapabilities } from "../packages/cloud/src/contracts/capabilities";
 import type { AppRegistryEntry } from "../packages/cloud/src/contracts/registry";
+import { sql } from "../packages/cloud/src/runtime/clients";
 import type { RequestAuthority } from "../packages/cloud/src/server/middleware/auth";
 import { canUseApp, usableAppIds } from "../packages/cloud/src/services/app-access";
 import * as identity from "../packages/cloud/src/services/identity";

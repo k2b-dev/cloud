@@ -13,11 +13,15 @@ const sample = (name: string, help: string, value: number, labels?: Record<strin
 /** No per-note labels or replica summation. Incomplete inventory never produces fleet totals. */
 export const natsMetricSamples = (cluster: NatsDiagnostics["cluster"], inventory: NatsInventorySummary): Sample[] => {
   const samples = [
-    sample(
-      "cloud_nats_cluster_configured",
-      "Whether a dedicated system diagnostic connection is configured.",
-      cluster.status === "not_configured" ? 0 : 1,
-    ),
+    ...(cluster.settingsUnavailable
+      ? []
+      : [
+          sample(
+            "cloud_nats_cluster_configured",
+            "Whether a dedicated system diagnostic connection is configured.",
+            cluster.status === "not_configured" ? 0 : 1,
+          ),
+        ]),
     sample(
       "cloud_nats_cluster_up",
       "Whether the configured cluster snapshot is complete.",

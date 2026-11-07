@@ -1,4 +1,5 @@
 // Cloud-specific server services
+export { recursiveServiceAccountGroupIdsSubquery } from "../../services/accounts/group-sql";
 
 export type {
   AccessDb,
@@ -25,6 +26,7 @@ export {
   getEffectiveGroups,
   getEffectivePermission,
   getEffectivePermissions,
+  getMemberPermission,
   hasPermission,
   listUsersWithAccess,
   PERMISSION_LEVELS,

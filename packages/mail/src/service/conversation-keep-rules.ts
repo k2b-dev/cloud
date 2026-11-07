@@ -1,6 +1,6 @@
+import { sql } from "@k2b/cloud";
 import { toPgUuidArray } from "@k2b/cloud/services";
 import { fail, ok, type Result } from "@k2b/stdlib";
-import { sql } from "bun";
 
 /**
  * The rules that keep a kept conversation's mail: SQL conditions, the refusal of deleting commands, and the

@@ -5,7 +5,7 @@ section: Work
 order: 130
 description: Shared boards for tasks, events, comments, views, and calendar planning.
 tags: [spaces, tasks, calendar]
-updated: 2026-10-19
+updated: 2026-11-05
 ---
 
 # Spaces
@@ -66,16 +66,24 @@ to the same item are grouped to keep the feed useful.
 Use one Space for work that shares a team and access boundary. Create another
 when the audience or lifecycle is different.
 
-## Check off tasks in the mobile app
+## Check off tasks in the Cloud app
 
-> **Preview:** the mobile app is not released yet.
+> **Preview:** the Cloud app is not released yet.
 
 When the installation runs the
-[mobile app](/en/docs/frontend/mobile-app-pages), Spaces appears on its Start
+[Cloud app](/en/docs/frontend/mobile-app-pages), Spaces appears on its Start
 page and, when there is room, in its tab bar for people with the `user` role. Guests do not see it.
+Start says how many tasks are for you and how many are for today, and the
+sidebar of a wide screen shows the number of tasks for you beside Spaces.
 The page at `/pwa/spaces` shows the start page's **For me**, **Today**, and
 **Upcoming** lists with their counts, across every Space you can read.
 Tasks you claim also count as yours in **For me**.
+The list updates when you return to the app or the network comes back, so
+new assignments and changes by other people appear without reopening it.
+
+After opening a task from the list, header Back and browser Back return to
+that list entry; Forward reopens the task. A task opened directly by its link
+returns to the list by replacing its entry, so Back does not reopen the task.
 
 - Each row shows the title, the Space with its color, and the deadline or, for
   an event, its time or **All day**. An overdue deadline is red.
@@ -87,44 +95,156 @@ Tasks you claim also count as yours in **For me**.
   until the page is ready.
 - Events have no circle. Complete them in Spaces on the web.
 - A task you claimed yourself with **I'm on it** is completed with your claim,
-  as on the web. A task someone else claimed stays open; the app names who is
-  working on it, and you can take it over on the web.
+  as on the web. For a task someone else claimed, the app names who is working
+  on it and asks once whether to take it over and complete it.
 - A task with unfinished blockers stays open, and the app says why. So does a
   task in a Space you can only read, and a task that was deleted in the
   meantime disappears from the list. These notices offer no **Retry**, because
   trying again would not change the answer.
-- If a change cannot be saved, for example while the phone is offline, the
-  task goes back to how it is saved, and a notice offers **Retry**.
+- If a change cannot be saved, the task goes back to how it is saved, and a
+  notice offers **Retry**.
+- While the phone is offline, the circles are off and a line at the bottom
+  says that adding and changing work again with a connection. Everything you
+  already see stays readable.
+- Without write access to a Space, its tasks have no active circle.
+- The magnifier in the head searches the open tasks of every Space you can
+  read. A line under the field says how many tasks match.
 - The selected list is part of the address, so a reload keeps it.
 - Each list shows a bounded number of items, the same as the start page on the
   web: up to 100 for **For me**, 5 for **Today**, and 30 for **Upcoming**. When
   the count is higher, a line under the list says how many more are in Spaces
   on the web.
 
+### Switch to a Space
+
+The title **My tasks** opens a list of your Spaces. On a phone it opens as a
+sheet from the bottom, on a tablet as a menu below the title. Pinned Spaces
+come first, in the order you pinned them on the web. Each Space says how many
+tasks are open, or **Read only** when you cannot change its tasks. From eight
+entries the list has a search field. Without any Space, the page says how to
+get one and links to Spaces on the web.
+
+A Space opens at `/pwa/spaces/<space>` as one list per status, such as
+**Inbox** or **In progress**, in the order of the board on the web. Board,
+table, and calendar stay on the web; **…** in the head opens the Space there
+or copies its link.
+
+- Each status shows its dot, its name, and how many tasks it has. A done
+  status starts folded; tap its name to show its tasks. Tap any status name to
+  fold or unfold it.
+- A status shows its first 30 tasks, as a board column on the web does.
+  **Load more** adds the next ones in place.
+- Each row shows the title and what applies: **Blocked** for a task with
+  unfinished blockers, the deadline (red when overdue), the checklist
+  progress, the tags, and the people assigned.
+- **Assigned to me** and **Tag** narrow the list. A status without a match
+  steps aside, and **Reset** clears both. When nothing matches, the page says
+  so and offers **Reset filters**.
+- The magnifier searches the open tasks of the Space and says how many match.
+- The filters and the search are part of the address, so a reload and Back
+  keep them.
+- Tap the circle to mark a task done, with **Undo** as in **My tasks**. In a
+  done status, the circle opens the task again.
+- The list updates as other people change the Space, and when you return to
+  the app. Rows keep their place while it updates.
+- In a Space you can only read, a line under the title says so, and the
+  circles are off.
+- If the Space cannot be loaded, the page offers **Try again** and keeps your
+  filters. Offline, it says that the Space loads again with a connection.
+- When you lose access, or an old link names a Space you cannot read, the page
+  says that it cannot open the Space and leads back to **My tasks**. It names
+  the Space only when the app already knew it.
+
+### Add a task
+
+**New task** sits at the bottom, under your thumb. In a Space it opens the
+same menu as every **+** in Spaces: **Blank task**, the Space's task
+templates, and **Create template …**, which opens the Space on the web. In
+**My tasks** it opens the field at once.
+
+- The field stands above the keyboard. **×** closes it; what you typed stays
+  on the device as a draft.
+- Below the field you see what the task gets: its status, which starts at the
+  first status that does not complete tasks, **Due**, and **Assigned**. From
+  **My tasks**, a Space chip names where the task goes, the last Space you
+  used on this device, and **Me** assigns it to you. When you change the Space,
+  the status starts at that Space's first open status.
+- A template shows its name above the field and fills what it proposes, such as
+  the due date and the checklist.
+- Enter adds the task and keeps the field open for the next one.
+- The new task appears at once at the end of its status, with a spinner. If no
+  answer comes, the row says **Not confirmed**, and **↻** sends the same
+  request again; the server never adds the task twice. If the server refuses,
+  the row says why.
+- If a filter hides the new task, its row stays until you leave the list, and
+  a notice offers **Open**.
+- Offline, adding is off and says why; your text stays. In a Space without an
+  open status, **New task** is off and says why. In a Space you can only read,
+  and without any Space you can change, there is no **New task**.
+
 ### Open a task
 
 Tap a row to open its task. The task has its own address,
 `/pwa/spaces/<space>/<task>`, so a reload, Back, and rotating the device show
-the same task. Only people who can read the task's Space can open it; for
+the same task. Opened from a Space, the address adds `list=space` and the
+Space's filters, so the Space's list stays beside the task. A shared link
+without them returns to **My tasks**. Only people who can read the task's Space can open it; for
 anyone else the address does not exist.
 
 - On a phone and on an iPad upright, the task replaces the list, with
-  **Back to Spaces** in its head. From 64 rem (1024 px), for example on an
+  **Back to My tasks** or **Back to** the Space in its head. From 64 rem (1024 px), for example on an
   iPad across or a monitor, the list stays beside the task, the open task's
   row is marked, and **No task selected** holds the place until you choose one.
 - The task shows its Space in the head, whether it is done, the deadline or
   for an event the time and place, the people assigned or attending, the
   description, and the checklist with how many items are done.
 - The title, Space, and date show at once from the row; the rest follows.
+- An open task updates as other people change it. Your comment draft and a
+  checklist change that is still saving stay in place. If you lose read
+  access, the task becomes unavailable and offers a way back to the list.
+  If live updates stop, a notice offers **Reload**. A failed refresh keeps the
+  last loaded task visible and offers **Try again**.
 - Tap the circle to mark the task done or open it again, and tap a checklist
   item to check it off. Each change shows at once with a spinner at its place
   while it saves. When it cannot be saved, it goes back, its row offers
   **Retry**, and a line above the checklist says how many changes are not
   saved.
+- **Status**, **Due**, and **Assigned** each open their own picker; on a
+  tablet as a menu at the row. The new value shows at once with a spinner at
+  the end of the row while it saves. When it cannot be saved, the old value
+  comes back, the row offers **↻**, and a notice says what stays.
+- **Status** moves the task without dragging: it lands at the top of the new
+  status, and **Undo** in the notice puts it back where it was. A status that
+  completes tasks says so; while unfinished tasks block the task, it stays
+  closed and says why.
+- In **Assigned**, each person you check or uncheck is added or removed alone,
+  so a change someone else makes at the same time stays. **Assign to me** only
+  adds you. A change from elsewhere while the list is open is said in it.
+- Tap the title, or **…** → **Change title**, to change it. Enter or **Save**
+  stores it. If someone changed the title meanwhile, your text stays, the new
+  title shows under the field, and **Use the new title** takes it.
+- Completing a task that someone else claimed asks once whether to take it
+  over, as on the web.
+- Offline, the task stays readable, says why, and the pickers, the circle, and
+  the checklist are off.
 - Without write access to the Space, the task says so, and the circle and the
   checklist are off.
+- **Comment** sends a comment to the task. What you type stays on the device
+  until it is sent, also when the app is closed in between. When it cannot be
+  sent, the text stays and **Retry** safely repeats the send, including after
+  restarting the app. A late answer cannot clear a newer draft. If device
+  storage is full or blocked, the app keeps the text on screen and asks you
+  to free space before sending. Without write access to
+  the Space, there is no comment field.
 - **Open in Spaces** opens the task in Spaces on the web, to edit everything
   else.
+
+The comment API, `POST /api/spaces/:id/items/:itemId/comments`, accepts an
+optional `requestId` UUID alongside `content`. Reuse it for retries of the same
+comment. While that comment exists unchanged, a retry returns it without
+another comment or activity entry; a different author, item, occurrence, or
+content with the same request ID returns 409. The response keeps its usual
+short comment ID.
 
 ## Understand the Spaces model
 
@@ -295,7 +415,9 @@ and completion or reopening actions in the palette.
 ## Templates
 
 A Space keeps templates for new tasks and for new events, at most 100 of each,
-with names unique per kind. A template stores a title and a description that
+with names unique per kind. An optional icon appears next to its name in the
+**+** menu; without one, it uses the task or event default. Templates have no
+column. A template stores a title and a description that
 may contain `{{date}}`, `{{weekday}}`, and `{{week}}`, a priority, tags,
 assignees or **Assign to me** for whoever creates the item, a task checklist
 and estimate, and an event's location, link, all-day flag, and duration. A due
@@ -311,7 +433,19 @@ Its date rule decides which dates the new item dialog proposes:
 
 Proposals are local calendar dates in the person's time zone, so week, month,
 and daylight-saving changes never move a proposed day. A weekday rule offers
-today all day for a task without a time, or only while the template's time still lies ahead when it has one. An offset always counts from today. When someone presses **+**, a Space with templates of that kind
+today all day for a task without a time, or only while the template's time still lies ahead when it has one. An offset always counts from today. Every **+** (the head, the phone button,
+a column's **+ Task**, an empty list, the calendar toolbar, and a calendar
+day's menu) opens one menu: the blank item first, then the templates with
+their icon and what they propose, then **Create template…**. From eight
+templates on, the menu has a search field, and a query no template matches
+becomes the blank item's title. The head's **+** stays a link to the
+`spaces.task.compose` or `spaces.event.compose` command, which also takes a
+`templateId`, so a reload, a new tab, or a page before hydration opens the
+form directly. N creates a blank item without the menu. The calendar's quick
+create offers **Template**; the selected time wins and the template fills the
+rest. **Save as template** in an item's **…** menu fills the template form
+from the item and only suggests placeholders for a week or date in its title.
+In the dialog, a Space with templates of that kind
 shows a **Template** chip row (a searchable list with more than six), and
 choosing one fills the form and shows the proposals as date chips with the
 first selected, next to **Other date…** and, for tasks, **No date**.
@@ -322,8 +456,8 @@ before a template replaces typed input. The chip rows stay on one line and
 scroll sideways on phones; hovering, focusing, or switching chips moves
 nothing.
 
-Space admins create, change, and delete templates in the Space settings under
-**Templates**; people with write access use them, and read access lists them.
+People with write access create, change, delete, and use templates in the Space
+settings under **Templates**. Read access can list and read them.
 Created items keep no link to their template. A default assignee who loses
 access to the Space drops out of the template everywhere it is read until the
 access returns. The REST API offers
@@ -369,6 +503,10 @@ cld spaces reactions remove "Product":"Fix mobile dialog" "👍🏽"
 
 `cld spaces templates ls <space>` and `templates show <space>:<template>`
 list templates with their rule and next proposals in the local time zone.
+JSON output includes `icon` (nullable). With write access, create one with
+`cld spaces templates add "Product" --kind task --name "Weekly report"
+--title "Report {{week}}" --icon "ti ti-report" --weekdays we,th --time 16:00`.
+Use `templates add --help` for checklist, tags, estimates, and event defaults.
 `cld spaces add "Product" --template "Weekly report" [--date YYYY-MM-DD |
 --no-date]` creates an item from a template; other `add` flags override it. A
 given `--deadline` or `--starts-at` picks the day instead, and `--starts-at`
@@ -407,6 +545,14 @@ to confirm a Space already selected from an authorized list.
 Space lists may shorten descriptions to fit a full page; when
 `descriptionTruncated` is true, `space.read` returns the full description.
 
+`space.activity` reads item changes for one `space` short ID, optionally one
+`item`. Rows contain an actor, icon, localized sentence, last occurrence time,
+resource ref, and bucket count. Comments and deleted items are omitted. Pass
+`timeZone` for date presentation; follow `page.nextCursor` with `cursor`.
+`before` and `after` are exclusive ISO datetime bounds; `limit` defaults to 50
+and accepts 1–100. See [Chat system conversations](/en/docs/operations/chat-system-chats#read-item-events)
+for the shared event contract.
+
 `template.list` and `template.read` return a Space's templates with their
 rule and next proposed dates in the given `timeZone`, or in the application
 timezone without one. `task.create` and `event.create` take `templateId`,
@@ -416,7 +562,10 @@ included, and `date` picks the day, by default the first proposal. An explicit
 summary too. For "use the
 weekly report template for next Wednesday" an agent lists the templates, picks
 the matching proposal, and creates the item. `template.create`,
-`template.update`, and `template.delete` need Space admin access.
+`template.update`, and `template.delete` need Space write access. Template
+inputs accept an optional `icon`: a Tabler class such as `ti ti-report`, at most
+80 characters. Results include `icon` as a nullable field. Set it to `null` to
+restore the kind's default.
 
 `task.focus` finds open tasks across accessible Spaces without looping over
 each Space. It supports assignment, deadline, priority, blocker, and inactivity
@@ -471,6 +620,24 @@ of the response, measured as JSON-encoded UTF-8, and rolls back the
 preparation. Reduce the event content or attendees and try again. A retry of a
 stored preparation that is too large needs a new idempotency key.
 
+## Share a Space with an integration or agent
+
+Grant a standalone service account or agent access under **Sharing → Access**.
+The entry shows its account name and kind. With **Manage** (`admin`) access
+and an `admin` credential scope, either kind can list, grant, change, and
+revoke access through `/api/spaces/:id/access`. A `read` or `write` scope
+cannot manage access, even when the account has **Manage** access.
+Revoking its grant removes the access that its existing tokens received from
+that grant. Resource API keys remain confined to their own Space.
+
+To hand management over, grant the new manager first, then lower or remove
+the old manager's entry. Standalone service accounts and agents can be the
+remaining manager. A change that removes the last manager returns
+`LAST_MANAGER` (HTTP 409); grant another manager before retrying.
+[Resource authorization](/en/docs/identity/authorization#keep-at-least-one-manager)
+defines which entries count. Creating resource API keys still requires a
+user-backed identity.
+
 ## Implementation tasks and agent handoffs
 
 Spaces supports flat implementation tasks with blockers, shared progress notes,
@@ -483,6 +650,11 @@ Assignees can be people or active service accounts, including agents. People
 need direct or group access to the Space; service accounts need their own
 direct access. A Space API key can be assigned only within its own Space, and
 personal automation keys cannot be assignees. Assignment never grants access.
+The picker, item and template assignees, and active claim holders keep the
+account's kind: agents show a robot icon, standalone service accounts a key,
+and Space API keys a box. Capability reviews resolve selected assignees by
+ID within this Space, including accounts beyond the first directory page.
+Unavailable selections show “Unavailable assignee” instead of an account ID.
 
 Claiming as a person or an agent also assigns you; the claim is the working
 state of one assignee. This applies to every account that may claim, also
@@ -594,3 +766,17 @@ Files keeps originals. HEIC, AVIF, TIFF, SVG, video, GIF, BMP, and unknown
 formats remain unchanged and can retain metadata. Previously uploaded images
 are not rewritten. See [Image upload privacy](/en/docs/platform/image-upload-privacy)
 for the supported formats and limits.
+
+## Integrate resource discussions
+
+The `space` and `item` capability readers return a standard localized
+`view` with the current title and caller permission. The `item` view also
+identifies its owning space and gives a one-line context. Existing reader
+fields remain available.
+
+The [discussions role](/en/docs/platform/resource-types-and-discussions)
+declares `item` inside `space`, lists authorized containers through
+`space.containers`, and reads activity through `space.activity`.
+Activity accepts `container` alongside the published `space` alias; when
+both are supplied they must identify the same space. The existing list
+and activity results remain compatible.

@@ -2,34 +2,23 @@ import { normalizeRedirectTo } from "../shared";
 import { platformMessages } from "./platform-messages";
 import type { RuntimeContext } from "./runtime";
 
-export type AdminLink = { href: string; icon: string; label: string };
-export type AdminGroup = { label: string; links: AdminLink[] };
+/** `match` lists further paths the link stands for, such as the pages of an area. */
+export type AdminLink = { href: string; icon: string; label: string; match?: string[] };
+/** A group without `label` stands at the top without a heading, such as the overview. */
+export type AdminGroup = { label?: string; links: AdminLink[] };
 
 const normalizeAdminHref = (href: string | undefined): string | undefined => {
   const normalized = normalizeRedirectTo(href);
   return normalized === "/admin" || normalized?.startsWith("/admin/") ? normalized : undefined;
 };
 
+/**
+ * The admin bar: the overview, then what an operator sets up once, then what they run every day, then one entry per
+ * app with settings of its own. Only the links are grouped here; no page and no address moves.
+ */
 export const buildAdminGroups = (apps: readonly RuntimeContext["apps"][number][], locale = "en"): AdminGroup[] => {
   const t = platformMessages.resolve([locale]).t;
-  const settingsLinks: AdminLink[] = [
-    { href: "/admin/settings?tab=general", icon: "ti-app-window", label: t.general },
-    { href: "/admin/outgoing-mail", icon: "ti-mail", label: t.outgoingMail },
-    { href: "/admin/settings?tab=pdf-rendering", icon: "ti-file-type-pdf", label: t.pdfRendering },
-    { href: "/admin/places-and-maps", icon: "ti-map-2", label: t.placesAndMaps },
-    { href: "/admin/settings?tab=email-templates", icon: "ti-template", label: t.emailTemplates },
-    { href: "/admin/settings?tab=security", icon: "ti-shield-lock", label: t.security },
-    { href: "/admin/settings?tab=legal", icon: "ti-file-text", label: t.legal },
-  ];
-  const aiLinks: AdminLink[] = [
-    { href: "/admin/settings?tab=ai-general", icon: "ti-adjustments", label: t.general },
-    { href: "/admin/settings?tab=ai-providers", icon: "ti-sparkles", label: t.providers },
-    { href: "/admin/settings?tab=ai-quotas", icon: "ti-gauge", label: t.aiQuotas },
-    { href: "/admin/settings?tab=ai-usage", icon: "ti-chart-histogram", label: t.aiUsage },
-    { href: "/admin/settings?tab=ai-skills", icon: "ti-wand", label: t.skills },
-    { href: "/admin/settings?tab=ai-projects", icon: "ti-folders", label: t.projects },
-    { href: "/admin/settings?tab=ai-jobs", icon: "ti-activity", label: t.backgroundJobs },
-  ];
+  // Areas show as one entry each. The AI area belongs to Core; Observability exists when an app contributes it.
   const contributedApps = apps
     .map((app) => ({
       app,
@@ -38,17 +27,14 @@ export const buildAdminGroups = (apps: readonly RuntimeContext["apps"][number][]
           section: group.section,
           label: group.label,
           links: group.links.flatMap((link) => {
-            const href = normalizeAdminHref(link.href);
+            // People is the page of the app that manages accounts and groups, which lives in that app.
+            const href = group.section === "people" ? normalizeRedirectTo(link.href) : normalizeAdminHref(link.href);
             return href ? [{ href, icon: link.icon.replace(/^ti\s+/, ""), label: link.label }] : [];
           }),
         }))
         .filter((group) => group.links.length > 0),
     }))
     .sort((a, b) => a.app.name.localeCompare(b.app.name));
-
-  aiLinks.push(
-    ...contributedApps.flatMap(({ groups }) => groups.filter((group) => group.section === "ai").flatMap((group) => group.links)),
-  );
 
   const appsWithGroups = new Set(contributedApps.filter(({ groups }) => groups.length > 0).map(({ app }) => app.id));
   const appLinks = apps
@@ -59,32 +45,46 @@ export const buildAdminGroups = (apps: readonly RuntimeContext["apps"][number][]
     })
     .sort((a, b) => a.label.localeCompare(b.label));
 
+  const contributed = (section: "observability" | "people") =>
+    contributedApps.flatMap(({ groups }) => groups.filter((group) => group.section === section).flatMap((group) => group.links));
+  const observabilityPaths = contributed("observability").map((link) => link.href);
+
   return [
+    { links: [{ href: "/admin", icon: "ti-dashboard", label: t.overview }] },
     {
-      label: t.general,
+      label: t.adminSetup,
       links: [
-        { href: "/admin", icon: "ti-dashboard", label: t.overview },
-        { href: "/admin/apps", icon: "ti-apps", label: t.apps },
-        { href: "/admin/app-credentials", icon: "ti-key", label: t.appCredentials },
-        { href: "/admin/rail", icon: "ti-layout-sidebar", label: t.rail },
+        { href: "/admin/base", icon: "ti-adjustments", label: t.baseSettings },
+        { href: "/admin/settings?tab=storage", icon: "ti-database", label: t.storage },
+        { href: "/admin/signin", icon: "ti-shield-lock", label: t.signinSecurity },
+        { href: "/admin/outgoing-mail", icon: "ti-mail", label: t.outgoingMail },
+        { href: "/admin/settings?tab=email-templates", icon: "ti-template", label: t.emailTemplates },
         { href: "/admin/announcements", icon: "ti-speakerphone", label: t.announcements },
+        { href: "/admin/ai", icon: "ti-sparkles", label: t.ai },
+      ],
+    },
+    {
+      label: t.adminOperations,
+      links: [
+        { href: "/admin/apps", icon: "ti-apps", label: t.apps },
+        { href: "/admin/rail", icon: "ti-layout-sidebar", label: t.rail },
+        ...(observabilityPaths.length > 0
+          ? [
+              {
+                // Gateway Ops owns the area's start; without it, the entry opens the first contributed page.
+                href: observabilityPaths.includes("/admin/observability") ? "/admin/observability" : observabilityPaths[0]!,
+                icon: "ti-heart-rate-monitor",
+                label: t.observability,
+                match: observabilityPaths,
+              },
+            ]
+          : []),
+        ...contributed("people"),
       ],
     },
     ...contributedApps.flatMap(({ groups }) =>
-      groups.filter((group) => group.section !== "ai").map(({ label, links }) => ({ label, links })),
+      groups.filter((group) => group.section === undefined).map(({ label, links }) => ({ label, links })),
     ),
-    {
-      label: t.userManagement,
-      links: [
-        { href: "/admin/settings?tab=user", icon: "ti-login", label: t.accountSignIn },
-        { href: "/admin/settings?tab=registration", icon: "ti-user-plus", label: t.accountRegistration },
-        { href: "/admin/settings?tab=linux", icon: "ti-terminal-2", label: t.linuxAccess },
-        { href: "/admin/settings?tab=account-operations", icon: "ti-tool", label: t.accountOperations },
-        { href: "/admin/settings?tab=freeipa", icon: "ti-building-fortress", label: "FreeIPA" },
-      ],
-    },
-    { label: t.ai, links: aiLinks },
-    { label: t.settings, links: settingsLinks },
-    ...(appLinks.length > 0 ? [{ label: t.appAdmin, links: appLinks }] : []),
+    ...(appLinks.length > 0 ? [{ label: t.appSettings, links: appLinks }] : []),
   ];
 };

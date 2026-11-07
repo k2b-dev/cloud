@@ -47,7 +47,15 @@ test("uses matching reader ref, current presentation and exact request authority
         data: { title: "Wrong data title" },
         refs: [
           { type: "demo.item", id: "other", title: "Wrong ref" },
-          { type: "demo.item", id: "one", title: "Reader title", preview: " First line\nSecond", icon: "ti ti-user" },
+          {
+            type: "demo.item",
+            id: "one",
+            title: "Reader title",
+            context: "Aufgabe in Planung",
+            status: "Offen",
+            preview: " First line\nSecond",
+            icon: "ti ti-user",
+          },
         ],
       });
     },
@@ -57,6 +65,8 @@ test("uses matching reader ref, current presentation and exact request authority
       ref: { type: "demo.item", id: "one" },
       count: 3,
       title: "Reader title",
+      context: "Aufgabe in Planung",
+      status: "Offen",
       icon: "ti ti-user",
       kind: "Eintrag",
       appName: "Beispiel",
@@ -92,7 +102,7 @@ test("denial, throw, invalid answer and hung reader fail independently under one
   expect(signals.every((signal) => signal.aborted)).toBe(true);
 });
 
-test("lists skills once by accessSubject and never calls readers for disabled, invisible, unsupported or scoped Studio refs", async () => {
+test("lists skills once with credential context and never calls readers for disabled, invisible, unsupported or scoped Studio refs", async () => {
   let calls = 0;
   const resources = await run({
     store: {
@@ -108,7 +118,7 @@ test("lists skills once by accessSubject and never calls readers for disabled, i
     skills: {
       list: async (subject, options) => {
         calls++;
-        expect(subject).toBe(recentTestAuthority.accessSubject);
+        expect(subject).toBe(recentTestAuthority);
         // Only the sent Skills, never a page of the whole catalog.
         expect(options).toEqual({ shortIds: ["enabled", "disabled", "invisible"], authority: recentTestAuthority });
         return [recentTestSkill("enabled"), recentTestSkill("disabled", false)];

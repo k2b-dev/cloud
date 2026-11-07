@@ -395,3 +395,31 @@ test("explains that switch cases require a non-empty entry list", async () => {
       );
   }
 });
+
+for (const operator of ["greaterThan", "lessThan", "atLeast", "atMost"]) {
+  test(`compiles ${operator} with exactly two numeric operands or references`, async () => {
+    const source = (operands: string) =>
+      `steps:\n  - if: { ${operator}: ${operands} }\n    then:\n      - setVariable: { name: result, value: true }\n`;
+    for (const operands of ['["${{ inputs.number }}", 3]', "[1, 1]"]) {
+      const ir = await compileOk(source(operands));
+      expect(ir.steps[0]).toMatchObject({ kind: "if", condition: { operator } });
+    }
+    for (const operands of ["[1]", "[1, 2, 3]"]) {
+      const result = await compileWorkflow(source(operands), workflows);
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.diagnostics[0]?.code).toBe("condition.operands");
+    }
+    for (const literal of ['"3"', "true", "null", "[]", "{}", '"${{ now() }}"']) {
+      const result = await compileWorkflow(source(`[1, ${literal}]`), workflows);
+      expect(result.ok).toBe(false);
+      if (!result.ok)
+        expect(result.diagnostics).toContainEqual(
+          expect.objectContaining({
+            code: "condition.type",
+            path: ["steps", 0, "if", operator, 1],
+            location: expect.objectContaining({ line: 2 }),
+          }),
+        );
+    }
+  });
+}

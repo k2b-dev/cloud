@@ -7,15 +7,13 @@ afterEach(() => {
   else process.env.GOTENBERG_URL = previous;
 });
 
-test("GOTENBERG_URL bootstraps and backs the gotenberg.url setting", () => {
+test("GOTENBERG_URL only bootstraps the gotenberg.url setting", () => {
   const setting = CORE_SETTINGS["gotenberg.url"];
   process.env.GOTENBERG_URL = "http://gotenberg:3000";
   expect(setting.envBootstrap()).toBe("http://gotenberg:3000");
-  expect(setting.envFallback()).toBe("http://gotenberg:3000");
 
   delete process.env.GOTENBERG_URL;
   expect(setting.envBootstrap()).toBeUndefined();
-  expect(setting.envFallback()).toBeUndefined();
 });
 
 test("outgoing mail SMTP settings are no longer registered", () => {

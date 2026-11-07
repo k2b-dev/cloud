@@ -14,7 +14,7 @@ Personen mit Zugriff **Ansehen** sehen immer **Buch**. Buch ist eine Leseansicht
 
 In der Buchansicht aktualisieren Seitenlinks, Tagfilter, Suche und Seitennavigation den Inhalt ohne vollständiges Neuladen. **Zurück** und **Vorwärts** im Browser führen zu früheren Lesestellen. Gespeicherte Änderungen aktualisieren die Seite und die Abfrageergebnisse automatisch. Ohne JavaScript funktioniert die Navigation über normale Seitenaufrufe.
 
-Wähle in der Seitenleiste der Buchansicht eine Seite aus, um sie zu öffnen. Mit dem Pfeil neben einer Seite blendest du ihre Unterseiten ein oder aus. Beim Laden zeigt die Buchansicht die aktuelle Seite mit ihren Unterseiten. Danach behält sie deine Auswahl und klappt nur die Seiten auf, in denen die geöffnete Seite liegt. Auf dem Smartphone zeigt das Navigationsmenü dieselben zugeklappten Seiten. Es behält sie beim Schließen und erneuten Öffnen und öffnet Seiten, ohne das Buch neu zu laden.
+Wähle in der Seitenleiste der Buchansicht eine Seite aus, um sie zu öffnen. Mit dem Pfeil neben einer Seite blendest du ihre Unterseiten ein oder aus. Um die offene Seite zeigt eine Ebene zuerst 20 Seiten; wähle an ihrem Ende **… weitere Seiten** oder an ihrem Anfang **… vorherige Seiten**, um bis zu 100 weitere zu zeigen. Beim Laden zeigt die Buchansicht die aktuelle Seite mit ihren Unterseiten. Danach behält sie deine Auswahl und klappt nur die Seiten auf, in denen die geöffnete Seite liegt. Auf dem Smartphone zeigt das Navigationsmenü dieselben zugeklappten Seiten. Es behält sie beim Schließen und erneuten Öffnen und öffnet Seiten, ohne das Buch neu zu laden.
 
 Die Seitenleiste zeigt die Startseite des Notizbuchs zuerst, mit ihren Unterseiten darunter. Das gilt auch, wenn die Startseite unter einer anderen Seite liegt. Alle weiteren Seiten folgen auf jeder Ebene der Reihenfolge des Notizbuchs:
 
@@ -67,13 +67,25 @@ Die Einstellung betrifft nur das Löschen und Sperren ganzer Notizen. Personen u
 
 Für diese Personen bleiben **Löschen** und **Notiz sperren** im Notizmenü sichtbar, sind aber ausgeschaltet. Sie erklären, dass in diesem Notizbuch nur Personen mit Zugriff **Verwalten** Notizen löschen oder sperren können. Die API, `cld notebooks rm` und `cld notebooks lock` lehnen mit demselben Grund ab. Eine gesperrte Notiz behält ihre Versionen lesbar. Du kannst sie nicht bearbeiten oder eine Version an ihrer Stelle wiederherstellen. Du kannst eine Version aber als Kopie wiederherstellen.
 
+## Sehen, wer Zugriff hat {icon="lock-access"}
+
+Öffne die Notizdetails und dann **Mehr zu dieser Notiz → Zugriff**. Die Liste zeigt alle Personen, Gruppen und Dienste mit Zugriff auf das Notizbuch und ihre Rolle. Du kannst dort nichts ändern. Mit Zugriff **Verwalten** öffnet **Zugriff verwalten** die Einstellungen.
+
+Alle mit eigenem Zugriff sehen diese Liste, auch über eine Gruppe oder **Alle Angemeldeten**. Wer ein Notizbuch nur über den öffentlichen Link liest, sieht die Liste nicht.
+
+## Einer Integration oder einem Agenten Zugriff geben {icon="key"}
+
+Füge den Agenten unter **Freigabe → Zugriff** hinzu. Der Eintrag zeigt Name und Kontoart. Mit Zugriff **Verwalten** und dem Token-Scope `admin` kann das Konto Freigaben über die API verwalten. Ein Token mit dem Scope `read` kann keine Freigaben ändern.
+
+Gib dem neuen Konto zuerst Zugriff **Verwalten**, bevor du deinen eigenen Zugriff herabsetzt oder entfernst. Ein Agent kann als einziges verwaltendes Konto verbleiben. Den letzten verwaltenden Eintrag kannst du nicht entfernen; füge vorher einen weiteren hinzu. Ressourcenbezogene API Keys zählen dafür nicht und bleiben auf ihr Notizbuch beschränkt.
+
 ## Den richtigen Bereich der Einstellungen finden {icon="settings"}
 
 :::reference
 - **Notizbuch → Allgemein:** Name, Symbol, Beschreibung, Startseite und die Liquid-Vorlage für die H1 neuer leerer Notizen. Prüfe die Fußleiste und speichere oder verwirf dann deine Änderungen.
 - **Notizbuch → Ansicht und Verhalten:** Personen mit Zugriff **Verwalten** wählen die gemeinsame Standardansicht. Unter **Nur für dich** speichert dieser Browser deine persönlichen Einstellungen, und sie gelten sofort: **Volle Breite** auf großen Bildschirmen und die Wahl für die Tab-Taste.
-- **Freigabe → Zugriff:** Braucht Zugriff **Verwalten**. Ändere, wer Zugriff hat, und lege fest, wer Notizen löschen und sperren darf. Änderungen werden sofort gespeichert.
-- **Freigabe → API-Schlüssel:** Braucht Zugriff **Verwalten**. API-Schlüssel für Integrationen, die nur mit diesem Notizbuch arbeiten. Änderungen werden sofort gespeichert, und Notebooks zeigt einen neuen Schlüssel nur einmal.
+- **Freigabe → Zugriff:** Braucht Zugriff **Verwalten**. Wähle **Zugriff bearbeiten**, um zu ändern, wer Zugriff hat, und dann **Speichern**, um die Änderungen zu übernehmen. Du legst dort auch fest, wer Notizen löschen und sperren darf; diese Änderung wird sofort gespeichert.
+- **Freigabe → API Keys:** Braucht Zugriff **Verwalten**. API Keys für Integrationen, die nur mit diesem Notizbuch arbeiten. Änderungen werden sofort gespeichert, und Notebooks zeigt einen neuen Schlüssel nur einmal.
 - **Daten → Export und Snapshots:** Braucht Zugriff **Verwalten**. Übertragbare ZIP-Exporte, die Einrichtung von S3-Snapshots, manuelle Uploads und die letzten Snapshot-Läufe. Speichere die Snapshot-Einrichtung über die Fußleiste.
 - **Verwaltung → Endgültig löschen:** Braucht Zugriff **Verwalten**. Aktionen, die Daten zerstören, etwa das Löschen des Notizbuchs und seiner Notizen.
 :::

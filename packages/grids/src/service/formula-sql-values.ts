@@ -1,4 +1,4 @@
-import { sql } from "bun";
+import { sql } from "@k2b/cloud";
 import type { FormulaSelect } from "../formula/select-binding";
 import type { Literal } from "../formula/types";
 
