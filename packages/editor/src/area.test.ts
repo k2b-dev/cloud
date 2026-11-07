@@ -62,6 +62,7 @@ test("absolute zeros and numeric categories keep the same tooltip text as the re
 test("Notebook line legends keep their existing names without area cursor values", () => {
   const line = chartKinds().parse({
     kind: "line",
+    title: "Requests",
     legend: true,
     series: [
       {

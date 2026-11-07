@@ -30,5 +30,7 @@ test("the actual model-facing tool validates area semantics and nested groups", 
   expect(CloudAiChartInputSchema.safeParse({ ...spec, series: [{ label: "Gap", data: [1, null] }] }).success).toBe(true);
   for (const series of [[{ label: "Bad", data: [1, -1] }], [{ label: "Bad", data: [1] }]])
     expect(CloudAiChartInputSchema.safeParse({ ...spec, series }).success).toBe(false);
-  expect(CloudAiChartInputSchema.safeParse({ charts: [spec, { ...spec, normalize: false }], layout: "grid" }).success).toBe(true);
+  expect(
+    CloudAiChartInputSchema.safeParse({ title: "Sales comparison", charts: [spec, { ...spec, normalize: false }], layout: "grid" }).success,
+  ).toBe(true);
 });
