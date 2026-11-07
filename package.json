@@ -1,7 +1,7 @@
 {
   "name": "@k2b/cloud-workspace",
   "private": true,
-  "version": "0.67.0",
+  "version": "0.68.0",
   "type": "module",
   "packageManager": "bun@1.4.4",
   "workspaces": {
@@ -34,6 +34,7 @@
       "packages/proxy-auth",
       "packages/quotes",
       "packages/spaces",
+      "packages/speedtest",
       "packages/ssr",
       "packages/tools",
       "packages/ui",

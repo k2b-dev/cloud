@@ -200,6 +200,7 @@ describe("The Assistant in the Cloud app", () => {
     expect(document.querySelector(".k2b-mobile-shell")?.hasAttribute("data-k2b-screen")).toBe(true);
     expect(readSpy.mock.calls[0]?.[0]).toEqual({ shortId: "Chat01", ownerUserId: person.id });
     expect(viewedSpy.mock.calls[0]?.[0]).toEqual({ conversationId: own.id, ownerUserId: person.id });
+    expect(spies[5]).toHaveBeenLastCalledWith(expect.objectContaining({ id: own.id }), person.id);
     expect(islandProps(document).initialDetail?.conversation.title).toBe("Velvet care");
   });
 
