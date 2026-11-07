@@ -1,4 +1,3 @@
-import type { MapViewport } from "@k2b/stdlib";
 import type { JSX } from "solid-js";
 import {
   createEffect,
@@ -15,11 +14,12 @@ import {
 } from "solid-js";
 import { isServer } from "solid-js/web";
 import { IconButton } from "../actions/Button";
-import { chartKinds, chartRenderers } from "../charts/core/registry";
+import type { MapViewport } from "../charts/core";
+import { chartKinds } from "../charts/core/registry";
+import { type ChartDrawingOptions, chartRenderHeight, preservesAspectRatio, renderChartSvg } from "../charts/core/render";
 import { suppressTextSelection } from "../internal/text-selection";
 import { useLocale } from "../intl/locale";
 import { useUiMessages } from "../intl/messages";
-import { type BarChartOptions, barChartLayout, renderBarChartSvg } from "./chart-bar";
 import type { ChartCursor } from "./chart-cursor";
 import { createChartInspection } from "./chart-inspection";
 import {
@@ -29,24 +29,20 @@ import {
   type ChartTooltipFormatter,
   closeChartInspectionOnOutside,
 } from "./chart-inspection-core";
-import { lineGapsSvg } from "./chart-line-gaps";
 import { DEFAULT_MAP_VIEWPORT, normalizeMapViewport, panMapViewport, zoomMapViewport } from "./chart-map-viewport";
 import { useChartMessages } from "./chart-messages";
 import {
   panStateTimelineViewport,
-  renderStateTimelineSvg,
-  type StateTimelineChartOptions,
   type StateTimelineDomain,
   stateTimelineDomain,
   stateTimelineHeight,
   zoomStateTimelineViewport,
 } from "./chart-state-timeline";
-import { responsiveChartSvg, responsiveMapSvg, selectedChartSvg } from "./chart-svg";
-import { type ChartTimeAxis, timeAxisSvg } from "./chart-time-axis";
+import { selectedChartSvg } from "./chart-svg";
 import { useViewportMessages } from "./viewport-messages";
 
 /**
- * Chart — minimal Solid wrapper around `stdlib.charts`.
+ * Chart — Solid interaction and sizing around the portable UI chart core.
  *
  * **Live-update story.** `charts.<kind>(opts)` returns an SVG string;
  * Solid's `innerHTML` is reactive, so any time a prop (signal, store
@@ -64,15 +60,15 @@ import { useViewportMessages } from "./viewport-messages";
  * from the row count and legend via `stateTimelineHeight()`.
  *
  * **Why so thin.** The props are a discriminated union over each
- * stdlib chart function — `kind: "line"` brings in exactly the params
+ * registered core chart renderer — `kind: "line"` brings in exactly the params
  * `charts.line` expects, `kind: "bar"` brings in `charts.bar`'s, etc.
- * Options stay aligned with stdlib without renaming. Every chart provides
+ * Options stay aligned with the core renderer without renaming. Every chart provides
  * renderer-owned inspection, tooltips and optional selection by default.
  * `interactive` adds bounded pan / zoom and reset controls to maps and state timelines.
- * If stdlib gains a new option, it's automatically available at every
+ * When a core renderer gains an option, it is automatically available at every
  * callsite.
  *
- * **Theming.** stdlib charts use `currentColor` for axes / ticks /
+ * **Theming.** The core renderers use `currentColor` for axes / ticks /
  * tick labels — set the wrapping element's `color` and everything
  * inherits. Series colors come from `--stdlib-chart-c1..c8` CSS
  * custom properties; override on the parent for per-chart palettes.
@@ -90,7 +86,7 @@ import { useViewportMessages } from "./viewport-messages";
  * ```
  */
 
-/** All chart kinds shipped by `stdlib.charts`. */
+/** All registered chart kinds. */
 export type { ChartKind } from "./chart-inspection-core";
 
 export type ChartLabels = Partial<{
@@ -114,8 +110,7 @@ export type ChartLabels = Partial<{
  * get full type safety.
  */
 export type ChartProps = {
-  [K in ChartKind]: {
-    kind: K;
+  [K in ChartKind]: Extract<ChartDrawingOptions, { kind: K }> & {
     class?: string;
     style?: JSX.CSSProperties | string;
     labels?: ChartLabels;
@@ -132,132 +127,14 @@ export type ChartProps = {
     tooltip?: ChartTooltipFormatter;
     /** Optional shared X cursor for line charts. */
     cursor?: ChartCursor;
-  } & (K extends "map"
-    ? {
-        /** Target when zooming in from the world view. Defaults to Europe (50, 10). */
-        zoomFocus?: Pick<MapViewport, "latitude" | "longitude">;
-      }
-    : {}) &
-    (K extends "line"
-      ? {
-          /** Largest connected X distance; positive, finite, without area/errorBand fills. */ maxGap?: number;
-          /** Wrap the legend above the plot inside the caller's total chart height. Requires legend=true. */
-          legendPlacement?: "top-start";
-          /**
-           * X values are instants (Unix ms): ticks land on round times in this zone, such as full hours or days,
-           * instead of decimal steps. `xAxis.format` still labels them; `xAxis.ticks` sets roughly how many.
-           */
-          timeAxis?: ChartTimeAxis;
-        }
-      : {}) &
-    (K extends "stateTimeline"
-      ? StateTimelineChartOptions
-      : K extends "bar"
-        ? BarChartOptions
-        : Omit<Parameters<(typeof chartRenderers)[K]>[0], "width" | "height" | "inspect">);
-}[ChartKind];
-
-/** Pure renderer options: component layout, events and inspection are configured elsewhere. */
-export type ChartRenderOptions = {
-  [K in ChartKind]: Omit<
-    Extract<ChartProps, { kind: K }>,
-    "class" | "style" | "labels" | "interactive" | "onSelect" | "selected" | "tooltip" | "cursor" | "legendPlacement"
-  >;
-}[ChartKind];
-
-/** Keep the fixed 28-unit bar-gauge rows inside the shared SSR/browser coordinate space. */
-export const chartRenderHeight = (props: ChartRenderOptions): number => {
-  if (props.kind === "stateTimeline") return stateTimelineHeight(props.rows.length, props.legend !== false);
-  if (props.kind === "bar") return barChartLayout(props).height;
-  if (props.kind === "barGauge") return Math.max(280, (props.title || props.subtitle ? 42 : 16) + props.data.length * 28 + 14);
-  return 280;
-};
-
-/**
- * Internal — strips wrapper-only keys from props and forwards the
- * rest (plus logical size) to `charts[kind]`. The `any` is the
- * price for dispatching one function call across 14 different option
- * types; an explicit per-kind switch would type it but balloon the
- * component for no runtime benefit.
- */
-export const renderChartSvg = (
-  props: ChartProps,
-  width: number,
-  height: number,
-  mapViewport?: MapViewport,
-  timelineViewport?: StateTimelineDomain,
-): string => {
-  const {
-    kind,
-    class: _class,
-    style: _style,
-    labels: _labels,
-    interactive: _interactive,
-    onSelect: _onSelect,
-    selected: _selected,
-    tooltip: _tooltip,
-    cursor: _cursor,
-    zoomFocus: _zoomFocus,
-    legendPlacement: _legendPlacement,
-    timeAxis: _timeAxis,
-    ...opts
-  } = props as ChartProps & {
-    legendPlacement?: "top-start";
-    timeAxis?: ChartTimeAxis;
-    interactive?: boolean;
-    zoomFocus?: Pick<MapViewport, "latitude" | "longitude">;
   };
-  if (kind === "stateTimeline") {
-    return responsiveChartSvg(
-      renderStateTimelineSvg({
-        ...(opts as StateTimelineChartOptions),
-        width,
-        height,
-        viewport: timelineViewport,
-        interactive: true,
-      }),
-    );
-  }
-  if (kind === "bar") return responsiveChartSvg(renderBarChartSvg({ ...(opts as BarChartOptions), width, height, inspect: true }));
-  // A time axis needs an explicit X domain: it maps its round ticks onto the axis the renderer drew over it.
-  const timeAxis = props.kind === "line" ? props.timeAxis : undefined;
-  const timeDomain = timeAxis && props.kind === "line" ? lineTimeDomain(props) : undefined;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  let svg = (chartRenderers[kind] as (o: unknown) => string)({
-    ...(opts as any),
-    ...(timeDomain && props.kind === "line" ? { xAxis: { ...props.xAxis, domain: timeDomain, format: () => "" } } : {}),
-    ...(props.kind === "line" && props.legend && props.legendPlacement === "top-start" ? { legend: false } : {}),
-    ...(kind === "map" ? { viewport: DEFAULT_MAP_VIEWPORT } : {}),
-    width,
-    height,
-    inspect: true,
-  });
-  if (props.kind === "line" && props.maxGap !== undefined) {
-    if (props.area || props.errorBand) throw new Error("Chart maxGap does not support area or errorBand fills");
-    svg = lineGapsSvg(svg, props.maxGap, props);
-  }
-  if (timeAxis && timeDomain && props.kind === "line")
-    svg = timeAxisSvg(svg, timeDomain, timeAxis, (props.xAxis?.ticks ?? 3) + 2, props.xAxis?.format);
-  if (props.kind === "map") return responsiveMapSvg(svg, width, height, normalizeMapViewport(mapViewport ?? props.viewport));
-  return preservesAspectRatio(kind) ? svg : responsiveChartSvg(svg);
-};
+}[ChartKind];
+export { type ChartRenderOptions, chartRenderHeight, renderChartSvg } from "../charts/core/render";
 
-/** The given X domain, or the span of the plotted instants. */
-const lineTimeDomain = (props: Extract<ChartProps, { kind: "line" }>): [number, number] | undefined => {
-  if (props.xAxis?.domain) return props.xAxis.domain;
-  const xs = props.series.flatMap((series) => series.data.map((point) => point.x)).filter(Number.isFinite);
-  if (!xs.length) return undefined;
-  const lo = Math.min(...xs),
-    hi = Math.max(...xs);
-  return lo < hi ? [lo, hi] : undefined;
-};
-
-const preservesAspectRatio = (kind: ChartKind) => kind === "map" || kind === "pie" || kind === "donut" || kind === "gauge";
-
-/** Empty-data short-circuit. Kept per-kind because stdlib's payload
+/** Empty-data short-circuit. Kept per-kind because each renderer's payload
  *  key differs (series vs data vs groups). We're conservative: only
  *  block on truly empty inputs; partially-filled series get rendered
- *  as-is and stdlib handles the gaps. */
+ *  as-is and the core handles the gaps. */
 const isEmpty = (props: ChartProps): boolean => {
   if (props.kind === "line" || props.kind === "scatter") {
     return !props.series?.length || props.series.every((s) => !s.data.length);
@@ -278,7 +155,7 @@ const isEmpty = (props: ChartProps): boolean => {
 };
 
 const ChartRoot = (props: ChartProps): JSX.Element => {
-  const [, drawingProps] = splitProps(props, ["selected", "onSelect", "tooltip", "cursor"]);
+  const [, drawingProps] = splitProps(props, ["class", "style", "labels", "interactive", "selected", "onSelect", "tooltip", "cursor"]);
   const messages = useUiMessages();
   const chartMessages = useChartMessages();
   const viewportMessages = useViewportMessages();

@@ -5,7 +5,7 @@ section: Platform services
 order: 556
 description: Declare versioned application facts and consume service events with retryable handlers.
 tags: [events, capabilities, subscriptions, automation]
-updated: 2026-10-27
+updated: 2026-11-07
 ---
 
 # App events
@@ -43,9 +43,10 @@ application declared that event type and version.
 
 ## Built-in resource events
 
-Spaces and Notebooks publish these version 1 events. Each `data` schema is a
-strict empty object (`{}`); the envelope's `subject` and `place` carry public
-resource IDs accepted by the corresponding Type readers.
+Spaces, Notebooks, and Mail publish these version 1 events. The envelope's
+`subject` and `place` carry public resource IDs accepted by the corresponding
+Type readers. Spaces and Notebooks use a strict empty `data` object (`{}`);
+Mail carries only the receipt reference described below.
 
 | Full event type | Subject Type | Place Type | When it is published |
 | --- | --- | --- | --- |
@@ -55,10 +56,11 @@ resource IDs accepted by the corresponding Type readers.
 | `notebooks.notebook.updated` | `notebooks.notebook` | `notebooks.notebook` | Notebook metadata or settings change. |
 | `notebooks.note.created` | `notebooks.note` | `notebooks.notebook` | A note is created, including welcome notes, path creation, copies, and restored copies. |
 | `notebooks.note.updated` | `notebooks.note` | `notebooks.notebook` | Persisted Markdown, title, the moved note’s parent or order, lock state, or recovery status changes, coalesced as described below. |
+| `mail.message.received` | `mail.message` | `mail.mailbox` | An incoming message reaches its first eligible provider placement. |
 
 The place Types have permission-aware readers: `spaces.space.read` and
-`notebooks.notebook.read`. Subject readers are `spaces.item.read`,
-`notebooks.notebook.read`, and `notebooks.note.read`. Read content through those
+`notebooks.notebook.read`, plus `mail.mailbox.read` for Mail. Subject readers are `spaces.item.read`,
+`notebooks.notebook.read`, `notebooks.note.read`, and `mail.message.read`. Read content through those
 readers; events contain no titles, text, names, email addresses, content counts,
 parent IDs, or previous-place references. Repeating completion or reopening an
 item does not publish `spaces.item.completed`.
@@ -100,6 +102,33 @@ commits. The note sweep owns its transaction and calls `wake()` after commit.
 application subscription to them stays `blocked` with
 `resource_events_unsupported`, and only resource-bound workload subscriptions with a valid mandate
 and current read access receive them (see [Who receives an event](#who-receives-an-event)).
+
+### Mail receipts
+
+`mail.message.received` has strict data `{ receiptId: UUID }`. The receipt ID
+is the stable identity of the first eligible provider placement. Keep it as
+an opaque business key; the envelope's event ID remains the delivery deduplication
+key. Use the public `subject.id` with `mail.message.read` or
+`mail.message.read-content` to read authorized content. The event contains no
+headers, addresses, subject text, body, attachment metadata, or conversation data.
+The body may still be loading when the event arrives; readers report its state.
+
+Mail publishes the event in the same transaction as its receipt decision and
+existing workflow emissions, even when no workflow is enabled. An incremental
+provider import can produce one receipt per message. A Gmail copy first seen
+in All Mail waits for the first copy outside All Mail. Later labels, moves,
+repeat syncs, and retries do not produce another receipt. The receipt keeps
+its original placement identity after a move.
+
+Trash and Junk placements do not publish. If the first copy outside All Mail
+is in Trash or Junk, it consumes the pending receipt without publication;
+restoring the message later does not create a receipt. Messages from configured
+sender identities also do not publish, including their delivered self-copies.
+Initial history imports and reconciliation imports do not publish or arrange
+later catch-up. If such an import consumes a pending receipt, a later move
+does not publish it. Provider drafts remain on Mail's existing draft path.
+Mailbox and message access are still checked through capabilities; the receipt
+grants no read or write rights.
 
 ## Declare events and subscriptions
 
