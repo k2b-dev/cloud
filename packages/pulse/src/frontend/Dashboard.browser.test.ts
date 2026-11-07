@@ -1593,7 +1593,11 @@ for (const [width, dark] of [
       await view.tab.locator('[data-panel="area"] [role="tooltip"]:popover-open').waitFor();
       const budget = view.tab.locator('[data-panel="budget"]');
       await budget.locator(".k2b-budget__anchor").first().focus();
+      // The fixture pauses timers as well as Date; the shared tooltip opens after its normal focus delay.
+      expect(await budget.locator('[role="tooltip"]:popover-open').count()).toBe(0);
+      await view.tab.clock.runFor(250);
       await budget.locator('[role="tooltip"]:popover-open').waitFor();
+      expect(await budget.locator('[role="tooltip"]:popover-open').textContent()).toContain("Office");
       for (const panel of panels) {
         const target = view.tab.locator(`[data-panel="${panel.id}"]`);
         const height = (await target.boundingBox())!.height;
