@@ -130,9 +130,29 @@ function AttachedCommands(props: { textarea: HTMLTextAreaElement; items: Command
     active: () => context() !== null || held() !== undefined,
     onStep: (next) => {
       const previous = depth();
+      if (next === 0) {
+        // Back to the first list: the typed `/query` comes back, and the text has the focus again. The list keeps its
+        // place throughout: the context returns before the held state goes, and the focus is in the text before the
+        // search field leaves, since a browser blurs a focused field that is removed, which would close the list.
+        const at = held();
+        if (at) {
+          const text = `/${at.query}`;
+          setContext({ start: at.start, end: at.start + text.length, text, query: at.query, completion: trigger });
+          setHeld(undefined);
+          moving = true;
+          try {
+            edit(at.start, at.start, text);
+          } finally {
+            moving = false;
+          }
+        }
+        setDepth(0);
+        setSearch("");
+        return;
+      }
       setDepth(next);
       setSearch("");
-      if (next > 0 && previous === 0) {
+      if (previous === 0) {
         // Into a further list: the `/query` leaves the text, and the list stays where it was.
         const current = context();
         if (current) {
@@ -140,20 +160,6 @@ function AttachedCommands(props: { textarea: HTMLTextAreaElement; items: Command
           setContext(null);
           edit(current.start, current.end, "");
         }
-      }
-      if (next === 0) {
-        // Back to the first list: the typed `/query` comes back, and the text has the focus again.
-        const at = held();
-        setHeld(undefined);
-        if (at) {
-          moving = true;
-          try {
-            replace(textarea, at.start, at.start, `/${at.query}`);
-          } finally {
-            moving = false;
-          }
-        }
-        return;
       }
       queueMicrotask(() => {
         moving = true;

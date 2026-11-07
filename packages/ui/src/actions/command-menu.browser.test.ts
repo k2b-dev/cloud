@@ -187,12 +187,39 @@ describe("MarkdownEditor slash commands", () => {
       // Typing filters without moving the list or the editor.
       expect((await box(page, popover))!.x).toBe(opened.x);
       expect(await box(page, ".k2b-markdown-editor")).toEqual(before);
+      // A pointer enters the second list as Enter does: the typed /query leaves the text while the list's own search
+      // field has the focus, so the text stays clean however the person got there.
       await page.getByRole("option", { name: /Assign/ }).click();
       await settled(page);
-      expect(await textarea.inputValue()).toBe("Hello /");
-      expect(await page.locator(".k2b-command-list__step-hint").textContent()).toBe("Search person");
+      const search = page.getByRole("combobox", { name: "Search person" });
+      expect(await textarea.inputValue()).toBe("Hello ");
+      expect(await search.getAttribute("placeholder")).toBe("Search person");
+      expect(await search.evaluate((field) => field === document.activeElement)).toBe(true);
       expect((await box(page, popover))!.width).toBe(opened.width);
+      // The back control returns to the first list, and the /query returns to the text with the focus.
+      await page.getByRole("button", { name: /Assign/ }).click();
+      await settled(page);
+      expect(await textarea.inputValue()).toBe("Hello /as");
       expect(await page.evaluate(() => document.activeElement?.tagName)).toBe("TEXTAREA");
+      expect(await state(page)).toMatchObject({ role: "textarea", listbox: "Commands" });
+      // Escape and Backspace in the empty field go back the same way. A real browser blurs the removed search field,
+      // which a DOM test does not show, so the ways back are checked here.
+      for (const back of ["Escape", "Backspace"]) {
+        await page.getByRole("option", { name: /Assign/ }).click();
+        await settled(page);
+        expect(await textarea.inputValue()).toBe("Hello ");
+        await search.press(back);
+        await settled(page);
+        expect(await textarea.inputValue()).toBe("Hello /as");
+        expect(await textarea.evaluate((field: HTMLTextAreaElement) => [document.activeElement === field, field.selectionStart])).toEqual([
+          true,
+          9,
+        ]);
+        expect(await page.locator(popover).isVisible()).toBe(true);
+      }
+      await page.getByRole("option", { name: /Assign/ }).click();
+      await settled(page);
+      expect(await textarea.inputValue()).toBe("Hello ");
       await page.getByRole("option", { name: "Lea Krüger" }).click();
       await settled(page);
       expect(await chosen(page)).toEqual(["assign:Lea Krüger"]);
