@@ -7,3 +7,5 @@
 - **Error class:** Incomplete syntax coverage in a source guard allowed global component styles.
 
 - **Guard:** `scripts/checks/css.test.ts` covers compact, adjacent, multiline and nested selectors, while permitting scoped selectors and keyframe steps.
+
+Waterfall state styles use normal selector specificity in `base.css`. The existing base-stylesheet guard rejects added `!important` declarations outside the documented platform state rules. Browser geometry and computed-paint reads wait for `settled(page)` after every state-changing action.

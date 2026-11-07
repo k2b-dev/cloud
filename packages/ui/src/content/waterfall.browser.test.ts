@@ -89,10 +89,10 @@ for (const width of [1440, 390])
     const chart = page.locator('.waterfall-panel [data-chart-kind="waterfall"]');
     const expected = ssr;
     expect(
-      await chart.locator("svg").evaluate((svg, expected) => {
+      await chart.locator(".k2b-chart__svg > svg").evaluate((svg, expected) => {
         const host = document.createElement("div");
         host.innerHTML = expected;
-        return svg.outerHTML === host.querySelector("svg")?.outerHTML;
+        return svg.outerHTML === host.querySelector(".k2b-chart__svg > svg")?.outerHTML;
       }, expected),
     ).toBe(true);
     const box = await page.locator(".state-explorer").boundingBox();
@@ -105,8 +105,10 @@ for (const width of [1440, 390])
     expect(await tooltip(page).textContent()).not.toContain("before");
     expect(await tooltip(page).textContent()).not.toContain("Stand davor");
     expect(await tooltip(page).textContent()).toContain("33.260");
+    await settled(page);
     expect(await chart.locator("[data-inspected] .k2b-chart-category-band").evaluate((e) => getComputedStyle(e).fillOpacity)).toBe("0.05");
     await page.getByRole("button", { name: "Select outflow", exact: true }).click();
+    await settled(page);
     expect(await chart.locator("[data-selected] .k2b-chart-category-band").evaluate((e) => getComputedStyle(e).stroke)).toBe("none");
     expect(await chart.locator("[data-selected] .k2b-waterfall-bar").evaluate((e) => getComputedStyle(e).stroke)).not.toBe("none");
     await page.getByRole("button", { name: "Select outflow", exact: true }).click();
@@ -147,6 +149,7 @@ test("phone tap pins, swipe leaves no selection, dark and unscoped SVG retain th
   await chart.dispatchEvent("pointermove", { pointerType: "touch", clientX: bounds.x, clientY: bounds.y + 30 });
   await chart.dispatchEvent("click", { pointerType: "touch", clientX: bounds.x, clientY: bounds.y + 30 });
   expect(await tooltip(page).count()).toBe(0);
+  await settled(page);
   const scoped = await page
     .locator(".waterfall-panel .k2b-waterfall-bar")
     .evaluateAll((nodes) => nodes.slice(0, 3).map((e) => getComputedStyle(e).fill));
@@ -179,6 +182,7 @@ test("measured widths bound many labels and print amounts only on sufficiently w
       host.innerHTML = svg;
       document.body.append(host);
     }, svg);
+    await settled(page);
     const labels = await page.locator("#width-check .stdlib-chart-category-label").evaluateAll((nodes) =>
       nodes.map((node) => {
         const r = node.getBoundingClientRect();
