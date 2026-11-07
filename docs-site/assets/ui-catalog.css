@@ -1735,6 +1735,12 @@
   margin-top: auto;
 }
 
+/* A block in a card: its content clipped to the card's chart height, read from the top. */
+.ui-charts-card__block {
+  height: 100%;
+  overflow: hidden;
+}
+
 .ui-charts-card__open {
   display: inline-flex;
   align-items: center;
@@ -2298,6 +2304,7 @@
 }
 
 .ui-charts-grid__cell {
+  --ui-charts-panel-height: var(--ui-charts-panel);
   min-width: 0;
   grid-column: span 6;
 }
@@ -2337,6 +2344,7 @@
 
 @container ui-charts-dashboard (max-width: 560px) {
   .ui-charts-grid__cell[data-width] {
+    --ui-charts-panel-height: var(--ui-charts-panel-compact);
     grid-column: span 6;
   }
 

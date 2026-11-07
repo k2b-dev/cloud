@@ -5,6 +5,8 @@ export type ShowcasePanel = {
   width: "third" | "half" | "twoThirds" | "full";
   /** Content height in pixels. */
   height: number;
+  /** Content height on a phone, where the panel spans the whole width, when it needs less room there. */
+  compactHeight?: number;
   empty: string;
   /** What the mockup shows here, named in the slot while this build cannot draw it yet. */
   intended: string;
@@ -306,6 +308,7 @@ export const newsletterDashboard: ShowcaseDashboard = {
           intended: "Bar list with shares",
           width: "third",
           height: 220,
+          compactHeight: 200,
           empty: "No opens in this period.",
           spec: {
             kind: "bar",
@@ -449,6 +452,7 @@ export const liquidityDashboard: ShowcaseDashboard = {
           intended: "Bar list with shares",
           width: "third",
           height: 280,
+          compactHeight: 160,
           empty: "Nothing went out in October.",
           spec: {
             kind: "bar",
@@ -514,7 +518,7 @@ export const liquidityDashboard: ShowcaseDashboard = {
         {
           id: "budgets",
           intended: "Budget",
-          width: "half",
+          width: "third",
           height: 300,
           empty: "No budget is set for November.",
           spec: {
@@ -533,7 +537,7 @@ export const liquidityDashboard: ShowcaseDashboard = {
         {
           id: "next-payments",
           intended: "Table",
-          width: "half",
+          width: "twoThirds",
           height: 300,
           empty: "No payments are planned.",
           spec: {

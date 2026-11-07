@@ -56,12 +56,19 @@ export default function ChartDashboard(props: { slug: string }) {
             <div class="ui-charts-grid">
               <For each={section.panels}>
                 {(panel) => (
-                  <div class="ui-charts-grid__cell" data-width={panel.width}>
+                  <div
+                    class="ui-charts-grid__cell"
+                    data-width={panel.width}
+                    style={{
+                      "--ui-charts-panel": `${panel.height}px`,
+                      "--ui-charts-panel-compact": `${panel.compactHeight ?? panel.height}px`,
+                    }}
+                  >
                     <ShowcaseFrame
                       spec={panel.spec}
                       title={panel.id}
                       state={state()}
-                      height={panel.height}
+                      height="var(--ui-charts-panel-height)"
                       empty={panel.empty}
                       intended={panel.intended}
                       onRetry={() => setState("data")}

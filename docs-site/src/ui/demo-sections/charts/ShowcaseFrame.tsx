@@ -34,6 +34,7 @@ const requests: Record<ShowcaseState, ChartFrameRequest> = {
   stale: { status: "error" },
 };
 const withRows = (state: ShowcaseState) => state === "data" || state === "stale";
+const cssLength = (value: number | string) => (typeof value === "number" ? `${value}px` : value);
 
 type JsonObject = { [key: string]: JsonValue };
 const object = (value: JsonValue | undefined): value is JsonObject => typeof value === "object" && value !== null && !Array.isArray(value);
@@ -47,8 +48,8 @@ export type ShowcaseFrameProps = {
   title: string;
   subtitle?: string;
   state: ShowcaseState;
-  /** Content height in pixels. */
-  height: number;
+  /** Content height: pixels, or a CSS length such as a variable the dashboard grid sets per width. */
+  height: number | string;
   view?: "chart" | "table";
   onViewChange?: (view: "chart" | "table") => void;
   onRetry?: () => void;
@@ -63,7 +64,7 @@ export function ShowcaseFrame(props: ShowcaseFrameProps): JSX.Element {
   const drawing = createMemo(() => resolveDrawing(props.spec));
   const title = () => specTitle(props.spec, props.title);
   const subtitle = () => specSubtitle(props.spec, props.subtitle);
-  const height = () => `${props.height}px`;
+  const height = () => cssLength(props.height);
   const columns = () => {
     const current = drawing();
     return current.mode === "snapshot" || current.mode === "live" ? current.columns : [];
@@ -201,6 +202,66 @@ function StatsBlock(props: { spec: JsonObject; state: ShowcaseState; onRetry?: (
   );
 }
 
+/** A block's own @k2b/ui component with the description's props (flow: one amount per entry). */
+function ComponentBlockContent(props: { block: string; spec: JsonObject }): JSX.Element {
+  const values = () => Object.fromEntries(Object.entries(props.spec).filter(([key]) => !["block", "title", "subtitle"].includes(key)));
+  return (
+    <Show when={blockComponent(props.block)}>
+      {(draw) => (
+        <Show when={props.block === "flow"} fallback={<Dynamic component={draw()} {...values()} />}>
+          <div class="ui-charts-frame__flows">
+            <For each={list(props.spec.items).filter(object)}>
+              {(item) => <Dynamic component={draw()} {...Object.fromEntries(Object.entries(item).filter(([key]) => key !== "type"))} />}
+            </For>
+          </div>
+        </Show>
+      )}
+    </Show>
+  );
+}
+
+/**
+ * A block as the overview card shows it: its content without a second frame, the first key figure or the first
+ * rows and columns of a table, so the card stays one surface.
+ */
+export function ShowcaseBlockPreview(props: { block: string; spec: JsonObject }): JSX.Element {
+  const columns = () => list(props.spec.columns).filter(object).slice(0, 3);
+  const rows = (): TableRow[] =>
+    list(props.spec.rows)
+      .filter(object)
+      .slice(0, 4)
+      .map((cells, index) => ({ key: String(index), cells }));
+  return (
+    <Switch fallback={<ComponentBlockContent block={props.block} spec={props.spec} />}>
+      <Match when={props.block === "stats"}>
+        <StatsBlock spec={{ ...props.spec, items: list(props.spec.items).slice(0, 1) }} state="data" />
+      </Match>
+      <Match when={props.block === "table"}>
+        <DataTable<TableRow>
+          ariaLabel={text(props.spec.title) || "Table"}
+          surface="plain"
+          density="compact"
+          rows={rows()}
+          getRowId={(row) => row.key}
+          columns={columns().map((column) => ({
+            id: text(column.id),
+            header: text(column.label),
+            value: (row: TableRow) => {
+              const value = row.cells[text(column.id)];
+              return typeof value === "number"
+                ? formatNumber(value, column.format)
+                : value === null || value === undefined
+                  ? "–"
+                  : text(value);
+            },
+            align: column.type === "number" || column.type === "amount" || column.type === "flow" ? "right" : "left",
+          }))}
+        />
+      </Match>
+    </Switch>
+  );
+}
+
 /** Content heights of the component blocks when the description names none. */
 const blockHeights: Record<string, number> = { balance: 56, flow: 72, budget: 240 };
 
@@ -210,8 +271,8 @@ const blockHeights: Record<string, number> = { balance: 56, flow: 72, budget: 24
  * subtitle line.
  */
 function ComponentBlock(props: Omit<ShowcaseFrameProps, "spec"> & { block: string; spec: JsonObject }): JSX.Element {
-  const height = () => (props.block === "budget" && props.height > 0 ? props.height : (blockHeights[props.block] ?? props.height));
-  const values = () => Object.fromEntries(Object.entries(props.spec).filter(([key]) => !["block", "title", "subtitle"].includes(key)));
+  const height = () =>
+    cssLength(props.block === "budget" && props.height !== 0 ? props.height : (blockHeights[props.block] ?? props.height));
   const failed = () => props.state === "error";
   return (
     <Paper class="ui-charts-frame" data-block={props.block}>
@@ -229,7 +290,7 @@ function ComponentBlock(props: Omit<ShowcaseFrameProps, "spec"> & { block: strin
           </p>
         </div>
       </header>
-      <div class="ui-charts-frame__block" style={{ height: `${height()}px` }} aria-busy={props.state === "loading" ? "true" : undefined}>
+      <div class="ui-charts-frame__block" style={{ height: height() }} aria-busy={props.state === "loading" ? "true" : undefined}>
         <Switch>
           <Match when={props.state === "loading"}>
             <div class="ui-charts-frame__skeleton" aria-hidden="true">
@@ -248,18 +309,8 @@ function ComponentBlock(props: Omit<ShowcaseFrameProps, "spec"> & { block: strin
               </Show>
             </p>
           </Match>
-          <Match when={blockComponent(props.block)}>
-            {(draw) => (
-              <Show when={props.block === "flow"} fallback={<Dynamic component={draw()} {...values()} />}>
-                <div class="ui-charts-frame__flows">
-                  <For each={list(props.spec.items).filter(object)}>
-                    {(item) => (
-                      <Dynamic component={draw()} {...Object.fromEntries(Object.entries(item).filter(([key]) => key !== "type"))} />
-                    )}
-                  </For>
-                </div>
-              </Show>
-            )}
+          <Match when={true}>
+            <ComponentBlockContent block={props.block} spec={props.spec} />
           </Match>
         </Switch>
       </div>
@@ -334,7 +385,7 @@ function TableBlock(props: ShowcaseFrameProps & { spec: JsonObject }): JSX.Eleme
       </header>
       <div
         class="ui-charts-frame__table"
-        style={{ height: `${props.height}px` }}
+        style={{ height: cssLength(props.height) }}
         aria-busy={props.state === "loading" ? "true" : undefined}
       >
         <Show
