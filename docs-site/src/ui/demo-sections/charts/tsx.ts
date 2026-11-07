@@ -85,7 +85,14 @@ export function specToTsx(spec: JsonValue): string {
       const { label, ...rest } = column;
       return { ...rest, header: label ?? "", value: column.id ?? "" };
     });
-    const props = without({ ...spec, columns, ariaLabel: spec.title ?? "Table" }, ["block", "title", "subtitle", "search", "empty", "groupBy"]);
+    const props = without({ ...spec, columns, ariaLabel: spec.title ?? "Table" }, [
+      "block",
+      "title",
+      "subtitle",
+      "search",
+      "empty",
+      "groupBy",
+    ]);
     return ['import { DataTable } from "@k2b/ui";', "", element("DataTable", props, 0)].join("\n");
   }
   if (typeof spec.block === "string") {
@@ -95,9 +102,11 @@ export function specToTsx(spec: JsonValue): string {
   }
   const { kind, ...props } = spec;
   const name = typeof kind === "string" ? member(kind) : undefined;
-  return ['import { Chart } from "@k2b/ui";', "", element(name ? `Chart.${name}` : "Chart", name ? props : { kind: kind ?? null, ...props }, 0)].join(
-    "\n",
-  );
+  return [
+    'import { Chart } from "@k2b/ui";',
+    "",
+    element(name ? `Chart.${name}` : "Chart", name ? props : { kind: kind ?? null, ...props }, 0),
+  ].join("\n");
 }
 
 type JsonObject = { [key: string]: JsonValue };

@@ -94,8 +94,11 @@ test("every showcase page has non-empty TSX and JSON, generated from the same de
     const spec = example.spec as Record<string, unknown>;
     if (Array.isArray(example.spec) || typeof spec.block === "string") continue;
     // A kind with a typed component reads as Chart.Kind (F7); otherwise as the dispatcher with kind.
-    expect(tsx).toMatch(new RegExp(`<Chart\\.${String(spec.kind)[0]!.toUpperCase()}${String(spec.kind).slice(1)}\\n|kind=${JSON.stringify(spec.kind)}`));
-    for (const key of Object.keys(spec).filter((key) => key !== "kind")) expect(tsx, `${example.id}.${key}`).toMatch(new RegExp(`\\n  ${key}(=|\\n)`));
+    expect(tsx).toMatch(
+      new RegExp(`<Chart\\.${String(spec.kind)[0]!.toUpperCase()}${String(spec.kind).slice(1)}\\n|kind=${JSON.stringify(spec.kind)}`),
+    );
+    for (const key of Object.keys(spec).filter((key) => key !== "kind"))
+      expect(tsx, `${example.id}.${key}`).toMatch(new RegExp(`\\n  ${key}(=|\\n)`));
   }
   expect(specToTsx({ kind: "line", title: "A", series: [] })).toContain("<Chart.Line");
   // Blocks read as the components that draw them.
