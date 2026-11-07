@@ -1,7 +1,7 @@
 import { type ChartDatum, type ChartKind, chartDatumRoles } from "../charts/core";
 import { positionTooltipSurface } from "../feedback/tooltip-position";
 import type { ChartCursor, ChartCursorState } from "./chart-cursor";
-import { chartMessages } from "./chart-messages";
+import { chartMessages } from "./chart-message-catalog";
 
 export type { ChartKind } from "../charts/core";
 

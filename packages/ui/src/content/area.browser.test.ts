@@ -175,6 +175,7 @@ for (const width of [1440, 390])
     await page.keyboard.press("Home");
     expect(await page.locator(".snapshot .k2b-chart-legend b").first().textContent()).toBe("35,3 %");
     await page.keyboard.press("Enter");
+    await settled(page);
     expect(
       await snapshot
         .locator("[data-selected] .k2b-area-inspection-point")
@@ -198,12 +199,14 @@ test("area tap pins at a category; dark and unscoped paths remain painted", asyn
   await chart.dispatchEvent("pointermove", { pointerType: "touch", clientX: plot!.x + 40, clientY: plot!.y + 70 });
   await chart.dispatchEvent("click", { pointerType: "touch", clientX: plot!.x + 40, clientY: plot!.y + 70 });
   expect(await tooltip(page).count()).toBe(0);
+  await settled(page);
   const darkPaint = await chart
     .locator(".k2b-area-layer")
     .first()
     .evaluate((e) => ({ fill: getComputedStyle(e).fill, scheme: getComputedStyle(e).colorScheme }));
   expect(darkPaint.scheme).toBe("dark");
   await page.evaluate(() => document.documentElement.classList.remove("dark"));
+  await settled(page);
   const lightFill = await chart
     .locator(".k2b-area-layer")
     .first()

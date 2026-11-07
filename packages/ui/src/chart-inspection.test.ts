@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { existsSync } from "node:fs";
 import { dirname, resolve } from "node:path";
+import { chartMessages } from "./content/chart-message-catalog";
 
 const packageRoot = resolve(import.meta.dir, "..");
 
@@ -26,6 +27,12 @@ async function assertFrameworkFreeGraph(entry: string, extension: ".js" | ".d.ts
 }
 
 describe("framework-free chart inspection entry", () => {
+  test("resolves area labels without the Solid locale hook", () => {
+    expect(chartMessages.resolve(["de"]).t.chartFields({ key: "areaTotal" })).toBe("Zusammen");
+    expect(chartMessages.resolve(["de"]).t.chartFields({ key: "total" })).toBe("Gesamt");
+    expect(chartMessages.resolve(["en"]).t.chartFields({ key: "areaTotal" })).toBe("Total");
+  });
+
   test("bundles for browsers without Solid and exports inspectChart", async () => {
     const result = await Bun.build({
       entrypoints: [resolve(import.meta.dir, "chart-inspection.ts")],
