@@ -1,0 +1,1 @@
+| Hidden locale default | An English fallback replaces an application-owned row label because a default parameter hides a missing locale. | Contacts draft helpers require localized row labels. Test: `ContactUpsertForm.model.test.ts` checks German and English labels through the quick-edit payload path ([#1237](https://github.com/k2b-dev/cloud/issues/1237)). |

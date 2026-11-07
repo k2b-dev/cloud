@@ -22,7 +22,10 @@ export type ToolbarActionProps = {
   label: string;
   /** Icon class, such as "ti ti-archive". */
   icon: string;
-  /** Shortcut hint, tooltip suffix, and aria-keyshortcuts; does not register a shortcut handler. */
+  /**
+   * Shortcut hint below the icon, tooltip suffix, and aria-keyshortcuts; does not register a shortcut handler.
+   * SelectionToolbar's compact actions keep only the tooltip suffix and aria-keyshortcuts.
+   */
   keys?: string;
   /** 1 is most important. Larger numbers move first; ties move later DOM actions first. Omit to keep fixed. */
   priority?: number;
@@ -46,6 +49,8 @@ type ToolbarOrientation = NonNullable<ToolbarProps["orientation"]>;
 
 const defaultToolbarOrientation: () => ToolbarOrientation = () => "horizontal";
 const ToolbarOrientationContext = createContext(defaultToolbarOrientation);
+/** False where actions are icon-sized, such as SelectionToolbar: no room below the icon for a hint. Package-internal. */
+export const ToolbarHintsContext = createContext(true);
 
 // `item` is created once per action: the More menu keys its rows by identity, so a remeasure keeps a focused row.
 type RegisteredAction = { element: HTMLButtonElement; props: ToolbarActionProps; item: DropdownAction };
@@ -92,6 +97,7 @@ const ariaShortcut = (keys: string | undefined, platform: KeyboardPlatform): str
 
 const ToolbarAction = (props: ToolbarActionProps): JSX.Element => {
   const register = useContext(ToolbarActionsContext);
+  const hints = useContext(ToolbarHintsContext);
   const locale = useLocale();
   const [platform, setPlatform] = createSignal<KeyboardPlatform>(isServer || sharedConfig.context ? "other" : keyboardPlatform());
   onMount(() => setPlatform(keyboardPlatform()));
@@ -127,7 +133,7 @@ const ToolbarAction = (props: ToolbarActionProps): JSX.Element => {
       onClick={() => props.onClick?.()}
     >
       <i class={props.icon} aria-hidden="true" />
-      <Show when={props.keys}>{(keys) => <Kbd keys={keys()} class="k2b-kbd-hint k2b-toolbar__hint" />}</Show>
+      <Show when={hints && props.keys}>{(keys) => <Kbd keys={keys()} class="k2b-kbd-hint k2b-toolbar__hint" />}</Show>
     </IconButton>
   );
 };

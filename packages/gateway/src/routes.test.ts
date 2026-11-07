@@ -73,9 +73,9 @@ describe("reserved /pwa prefix", () => {
     ]);
   });
 
-  test("reports a duplicate hidden behind empty segments", () => {
+  test("rejects a foreign app namespace hidden behind empty segments", () => {
     const { routes, warnings } = buildAppRoutesDetailed([app("contacts", ["/app/contacts"]), app("spaces", ["//app/contacts"])]);
     expect(routes.map(({ prefix, appId }) => [prefix, appId])).toEqual([["/app/contacts", "contacts"]]);
-    expect(warnings.map(({ appId, prefix, reason }) => [appId, prefix, reason])).toEqual([["spaces", "/app/contacts", "duplicate_prefix"]]);
+    expect(warnings.map(({ appId, prefix, reason }) => [appId, prefix, reason])).toEqual([["spaces", "/app/contacts", "reserved_prefix"]]);
   });
 });

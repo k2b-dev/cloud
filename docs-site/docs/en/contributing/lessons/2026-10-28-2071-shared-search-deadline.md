@@ -1,0 +1,6 @@
+### Keep access checks inside the caller's deadline
+
+- **What happened:** Universal Search allocated a second timeout after resource-derived app access was added. Three fan-out deadline tests failed. Seven Skill route tests also failed because their exact authority expectations omitted the resolved session proof.
+- **Root cause:** The shared app-access predicate created a timeout even without resource rules, and search did not pass its existing deadline through discovery or invocation access revalidation. The authority helper correctly retained an optional credential proof that older test expectations discarded.
+- **Error class:** Nested authorization work escapes the caller's time budget; exact fixtures drift from resolved identity metadata.
+- **Guard:** `api/search.test.ts` checks one eight-second deadline across resource discovery, real invocation access revalidation and provider I/O. `services/identity/issue-invocation.test.ts` preserves cancellation before and after an access decision without signing, denial metrics or error logs. `services/app-access.test.ts` checks timer-free fixed rules and cached decisions under an expired caller signal. `ai/skills-routes.test.ts` checks the complete session authority on management calls.

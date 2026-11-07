@@ -3,7 +3,7 @@ import { Hono } from "hono";
 import { createLocalJWKSet, exportJWK, generateKeyPair, type JWTVerifyGetKey } from "jose";
 import { dispatchCapabilityStream, sealCapabilityStream } from "../api/capability-streams";
 import { invokeCapability, reviewCapabilityAction, transferCapabilityStream } from "../capabilities/server";
-import { env } from "../config/env";
+import { stubConnections } from "../runtime/connections.test-fixture";
 import type { RequestActor } from "../server";
 import { signInvocationToken, verifyInvocationToken } from "../services/identity/invocation-token";
 import type { PreparedIdentitySigner } from "../services/identity/key-ring";
@@ -12,7 +12,7 @@ import { createCodeCapabilityRoutes } from "./code-capability-routes";
 import { codeCapabilityOperation, codeCapabilityPath, createCodeCapabilityTransport } from "./code-capability-transport";
 import type { AiConversation, AiTurn, AiTurnRunConfig } from "./types";
 
-Object.defineProperty(env, "APP_SECRET", { value: "capability-stream-tests-only", configurable: true });
+stubConnections({ appSecret: { current: "capability-stream-tests-only" } });
 
 const conversationId = "11111111-1111-4111-8111-111111111111";
 const turnId = "22222222-2222-4222-8222-222222222222";

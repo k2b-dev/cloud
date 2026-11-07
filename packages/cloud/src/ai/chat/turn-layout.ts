@@ -70,11 +70,12 @@ const resultTarget = (block: ToolBlock): string | null => {
 };
 
 const isResult = (block: ToolBlock, phase: AiTurnPhase, codePresentations: boolean): boolean => {
+  if (block.name === "map" && block.result && typeof block.result === "object" && "map" in block.result) return true;
   if (isFailedTool(block) || block.status === "rejected" || block.status === "awaiting_approval") return false;
   // A running delivery reserves its place once its arguments arrived: a new version of an earlier result must find the
   // earlier place before it takes one of its own.
   const delivered = block.status === "completed" || (live(phase) && block.status === "running" && block.args !== undefined);
-  if (block.name === "present" || isCardToolName(block.name) || isChartToolName(block.name)) return delivered;
+  if (block.name === "map" || block.name === "present" || isCardToolName(block.name) || isChartToolName(block.name)) return delivered;
   if (block.name === "code_present") return codePresentations && delivered;
   return hasCapabilityTable(block);
 };

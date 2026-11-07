@@ -633,7 +633,9 @@ describe("CustomAppBuilder", () => {
     expect(html).toContain("Welcome");
     expect(html).toContain("Choose a request.");
     expect(html).toContain("k2b-app-workspace__detail");
-    expect(html).toContain("Page settings");
+    expect(html).toContain('class="k2b-detail-panel__kind"><span>Page settings</span>');
+    expect(html).not.toContain("k2b-detail-panel__header-icon");
+    expect(html).not.toContain("k2b-detail-panel__section-icon");
     expect(html).toContain("Add block");
     expect(html).toContain("New page");
     expect(html).toContain("New action");

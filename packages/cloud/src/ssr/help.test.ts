@@ -1,8 +1,11 @@
 import { expect, spyOn, test } from "bun:test";
 import { Hono } from "hono";
+import { useUnitClients } from "../../../../scripts/fixtures/unit-clients";
 import type { AuthContext, RequestAuthority } from "../server";
 import * as helpService from "../services/help";
 import { getLayoutHelp, layoutHelpFailed, preloadLayoutHelp, preloadLayoutHelpArticle } from "./help";
+
+useUnitClients();
 
 test("Help metadata needs a signed-in user, also for an explicit app", async () => {
   const reader = spyOn(helpService, "createHelpReader");

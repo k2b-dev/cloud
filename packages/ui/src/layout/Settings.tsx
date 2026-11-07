@@ -8,6 +8,8 @@ const read = <T,>(value: MaybeAccessor<T>): T => (typeof value === "function" ? 
 
 export type SettingsPageProps = {
   title: JSX.Element;
+  /** False when a surrounding head already shows the title, such as a workspace level; the actions move to the footer. */
+  header?: boolean;
   subtitle?: JSX.Element;
   icon?: string;
   actions?: JSX.Element;
@@ -20,19 +22,25 @@ export type SettingsPageProps = {
 
 export function SettingsPage(props: SettingsPageProps): JSX.Element {
   return (
-    <section class={`k2b-settings-page${props.class ? ` ${props.class}` : ""}`} style={props.style}>
-      <header class="k2b-settings-page__header">
-        <Show when={props.icon}>{(icon) => <i class={icon()} aria-hidden="true" />}</Show>
-        <div class="k2b-settings-page__heading">
-          <h1>{props.title}</h1>
-          <Show when={props.subtitle}>
-            <p>{props.subtitle}</p>
+    <section
+      class={`k2b-settings-page${props.class ? ` ${props.class}` : ""}`}
+      style={props.style}
+      aria-label={props.header === false && typeof props.title === "string" ? props.title : undefined}
+    >
+      <Show when={props.header !== false}>
+        <header class="k2b-settings-page__header">
+          <Show when={props.icon}>{(icon) => <i class={icon()} aria-hidden="true" />}</Show>
+          <div class="k2b-settings-page__heading">
+            <h1>{props.title}</h1>
+            <Show when={props.subtitle}>
+              <p>{props.subtitle}</p>
+            </Show>
+          </div>
+          <Show when={props.actions}>
+            <div class="k2b-settings-page__actions">{props.actions}</div>
           </Show>
-        </div>
-        <Show when={props.actions}>
-          <div class="k2b-settings-page__actions">{props.actions}</div>
-        </Show>
-      </header>
+        </header>
+      </Show>
       <div class="k2b-settings-page__body" data-scroll-preserve={props.scrollPreserveKey}>
         {props.children}
       </div>
@@ -54,25 +62,28 @@ export type SettingsSectionProps = {
 
 /**
  * A full-page settings group: a heading, optional actions and its fields on the
- * page surface without a card. Dialogs keep using PanelDialog.Section.
+ * page surface without a card. From 860 px of its own width the heading takes a
+ * column beside the fields. Dialogs keep using PanelDialog.Section.
  */
 export function SettingsSection(props: SettingsSectionProps): JSX.Element {
   const headingId = `k2b-settings-section-${createUniqueId()}`;
   return (
     <section class={`k2b-settings-section${props.class ? ` ${props.class}` : ""}`} aria-labelledby={headingId}>
-      <header class="k2b-settings-section__header">
-        <Show when={props.icon}>{(icon) => <i class={icon()} aria-hidden="true" />}</Show>
-        <div class="k2b-settings-section__heading">
-          <h2 id={headingId}>{props.title}</h2>
-          <Show when={props.subtitle}>
-            <p>{props.subtitle}</p>
+      <div class="k2b-settings-section__layout">
+        <header class="k2b-settings-section__header">
+          <Show when={props.icon}>{(icon) => <i class={icon()} aria-hidden="true" />}</Show>
+          <div class="k2b-settings-section__heading">
+            <h2 id={headingId}>{props.title}</h2>
+            <Show when={props.subtitle}>
+              <p>{props.subtitle}</p>
+            </Show>
+          </div>
+          <Show when={props.actions}>
+            <div class="k2b-settings-section__actions">{props.actions}</div>
           </Show>
-        </div>
-        <Show when={props.actions}>
-          <div class="k2b-settings-section__actions">{props.actions}</div>
-        </Show>
-      </header>
-      <div class="k2b-settings-section__body">{props.children}</div>
+        </header>
+        <div class="k2b-settings-section__body">{props.children}</div>
+      </div>
     </section>
   );
 }
@@ -150,11 +161,27 @@ export const readSettingsError = async (
   return { message: data?.message ?? fallback, fields: data?.errors ?? {} };
 };
 
+/**
+ * The room a setting's control takes: `short` for a number, `medium` for a choice, `long` for text, and `full` for
+ * an editor, which keeps its name above it and takes the whole row.
+ */
+export type SettingsFieldWidth = "short" | "medium" | "long" | "full";
+
 export type SettingsFieldProps = {
   label: string;
+  /** One sentence of help; longer guidance belongs in the page's guide. */
   description: string;
   error: MaybeAccessor<string | undefined>;
   changed?: MaybeAccessor<boolean>;
+  /**
+   * Where the value comes from, at a fixed place after the control: quiet text such as "Default", or the one way
+   * back to it, such as a Reset button that only a value of its own shows.
+   */
+  source?: JSX.Element;
+  /** The control's width by kind, so a number never stretches like a URL. Defaults to `long`, the full column. */
+  width?: SettingsFieldWidth;
+  /** The row's id, for a link that leads to this one setting. */
+  id?: string;
   children: JSX.Element | ((control: SettingsFieldControlProps) => JSX.Element);
   class?: string;
 };
@@ -173,25 +200,33 @@ export function SettingsField(props: SettingsFieldProps): JSX.Element {
     typeof props.children === "function"
       ? (props.children as (control: SettingsFieldControlProps) => JSX.Element)({ describedBy })
       : props.children;
+  const source = children(() => props.source);
   return (
-    <div class={`k2b-settings-field ${props.class ?? ""}`}>
-      <div class="k2b-settings-field__copy">
-        <div class="k2b-settings-field__heading">
-          <strong>{props.label}</strong>
-          <Show when={props.changed !== undefined && read(props.changed)}>
-            <span>{settingsMessages().unsaved}</span>
+    <div id={props.id} class={`k2b-settings-field ${props.class ?? ""}`} data-width={props.width ?? "long"}>
+      <div class="k2b-settings-field__row">
+        <div class="k2b-settings-field__copy">
+          <div class="k2b-settings-field__heading">
+            <strong>{props.label}</strong>
+            <Show when={props.changed !== undefined && read(props.changed)}>
+              <span>{settingsMessages().unsaved}</span>
+            </Show>
+          </div>
+          <p id={descriptionId}>{props.description}</p>
+        </div>
+        <div class="k2b-settings-field__control">
+          {control()}
+          <Show when={read(props.error)}>
+            {(error) => (
+              <p id={errorId} class="k2b-settings-field__error" role="alert">
+                <i class="ti ti-alert-circle" aria-hidden="true" /> {error()}
+              </p>
+            )}
           </Show>
         </div>
-        <p id={descriptionId}>{props.description}</p>
+        <Show when={source()}>
+          <div class="k2b-settings-field__source">{source()}</div>
+        </Show>
       </div>
-      {control()}
-      <Show when={read(props.error)}>
-        {(error) => (
-          <p id={errorId} class="k2b-settings-field__error" role="alert">
-            <i class="ti ti-alert-circle" aria-hidden="true" /> {error()}
-          </p>
-        )}
-      </Show>
     </div>
   );
 }
@@ -266,5 +301,85 @@ export function SettingsPanelFooter(props: SettingsPanelFooterProps): JSX.Elemen
       </p>
       <SettingsActions {...props} disableWithoutChanges />
     </>
+  );
+}
+
+export type SaveStatusState = "saved" | "draft" | "saving" | "failed" | "invalid" | "unknown" | "readonly";
+
+export type SaveStatusProps = {
+  /** What the person's values are now: saved, a draft with changes, being saved, or a problem that kept them unsaved. */
+  state: MaybeAccessor<SaveStatusState>;
+  /** Formatted time of the last save, shown with `saved`. */
+  savedAt?: MaybeAccessor<string | undefined>;
+  /** Fields to check, shown with `invalid`. Default 1. */
+  invalidCount?: MaybeAccessor<number>;
+  /** With both handlers, Discard and Save follow the status while there is something to save. */
+  onDiscard?: () => void;
+  onSave?: () => void;
+  saveLabel?: string;
+  saveDisabled?: MaybeAccessor<boolean>;
+  class?: string;
+};
+
+const SAVE_STATUS_ICON: Record<SaveStatusState, string> = {
+  saved: "ti ti-check",
+  draft: "ti ti-pencil",
+  saving: "ti ti-loader-2",
+  failed: "ti ti-alert-triangle",
+  invalid: "ti ti-alert-triangle",
+  unknown: "ti ti-help-circle",
+  readonly: "ti ti-lock",
+};
+
+/**
+ * The save status of a settings form at one fixed place, usually the head of its column. It reserves its width, so
+ * a change of state never moves the title or the buttons beside it. Problems with one field stay at that field.
+ */
+export function SaveStatus(props: SaveStatusProps): JSX.Element {
+  const settingsMessages = useSettingsMessages();
+  const state = () => read(props.state);
+  const text = () => {
+    const t = settingsMessages();
+    switch (state()) {
+      case "saved": {
+        const at = props.savedAt === undefined ? undefined : read(props.savedAt);
+        return at ? t.statusSavedAt({ time: at }) : t.statusSaved;
+      }
+      case "draft":
+        return t.statusDraft;
+      case "saving":
+        return t.saving;
+      case "failed":
+        return t.statusFailed;
+      case "invalid":
+        return t.statusInvalid({ count: props.invalidCount === undefined ? 1 : read(props.invalidCount) });
+      case "unknown":
+        return t.statusUnknown;
+      case "readonly":
+        return t.statusReadOnly;
+    }
+  };
+  const hasActions = () => Boolean(props.onSave && props.onDiscard) && state() !== "readonly";
+  const pending = () => state() === "draft" || state() === "failed" || state() === "invalid" || state() === "saving";
+  return (
+    <div class={`k2b-save-status ${props.class ?? ""}`}>
+      <span class="k2b-save-status__slot">
+        <span class="k2b-save-status__state" data-state={state()} role="status" aria-live="polite">
+          <i class={`${SAVE_STATUS_ICON[state()]}${state() === "saving" ? " k2b-spin" : ""}`} aria-hidden="true" />
+          {text()}
+        </span>
+      </span>
+      <Show when={hasActions()}>
+        <SettingsActions
+          changeCount={() => (pending() ? 1 : 0)}
+          loading={() => state() === "saving"}
+          saveDisabled={() => state() === "invalid" || Boolean(props.saveDisabled !== undefined && read(props.saveDisabled))}
+          onDiscard={props.onDiscard!}
+          onSave={props.onSave!}
+          saveLabel={props.saveLabel ?? settingsMessages().save}
+          disableWithoutChanges
+        />
+      </Show>
+    </div>
   );
 }

@@ -61,7 +61,7 @@ gets one bounded refresh attempt; a removed or emergency-revoked known key can
 remain usable only until that local cache expires, at most five minutes.
 
 Every application must be able to reach Core's JWKS before JWT issuance is
-enabled. Set `CLOUD_IDENTITY_JWKS_ORIGIN` to the private Core service origin so
+enabled. Set `CLOUD_CORE_INTERNAL_ORIGIN` to the private Core service origin so
 a cold start or unknown `kid` does not depend on public DNS, ingress, or
 hairpin routing. The token issuer remains the public HTTPS Cloud origin; only
 the public-key transport uses the private address. A warm verifier can tolerate
@@ -138,10 +138,10 @@ of the incident blast radius. Session-family and user-epoch revocation remains
 available when all sessions must be invalidated immediately at the database
 authorization step.
 
-Revoking a session signing key also ends the mobile app's sessions signed with
-it. Paired phones are not signed out: their device keys stay valid, and each
-phone gets a new app session from the replacement signer the next time it
-starts. To sign phones out, remove them or revoke the account's sessions.
+Revoking a session signing key also ends the Cloud app's sessions signed with
+it. Paired devices are not signed out: their device keys stay valid, and each
+device gets a new app session from the replacement signer the next time it
+starts. To sign devices out, remove them or revoke the account's sessions.
 
 Invocation and OAuth issuance confirm the prepared signer against PostgreSQL
 while holding a shared lock on its active key row. A capability or widget call

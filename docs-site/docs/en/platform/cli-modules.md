@@ -5,7 +5,7 @@ section: Platform services
 order: 595
 description: Expose application operations through the shared cld command-line interface.
 tags: [cli, cld, automation, plugins]
-updated: 2026-10-22
+updated: 2026-11-04
 ---
 
 # Application CLI modules
@@ -22,6 +22,20 @@ Asking for help never runs a command. `--help` or `-h` after the command,
 usage of a built-in or module command and change nothing. `help` as the value
 of a flag stays a value: `cld logout --profile help` signs out the profile
 named `help`.
+
+## Administrator operations
+
+A person with the current administrator role can read diagnostics with ordinary
+OAuth `read` scope and configure routine settings with `write`. The default
+`cld login` requests both. Use the same permission-aware services as the UI,
+protect secret input with files or stdin, and require confirmation for changes.
+Every administrator setting needs a CLI command; the monorepo enforces this
+with `admin-cli-settings`. Structured configuration keeps its owning API so
+validation, audit and live hooks run on both paths.
+
+See [CLI administration](/en/docs/operations/cli-administration) for setting
+discovery, named commands and approved short-lived `admin` scope for dangerous
+actions. This does not grant standalone OAuth clients a person's role.
 
 ## Select a locale
 
@@ -379,6 +393,7 @@ cld inventory items list --jsonl
 | `getDefault()` / `setDefault()` | Profile-scoped application defaults |
 | `openUrl?()` | Open an http(s) link in the user's browser; resolves false when the host cannot, so print the link too; absent in hosts without a browser |
 | `profiles?.saveClientCredentials()` | Store an OAuth client ID and secret as a client-credentials profile; absent in hosts without profiles |
+| `reloadCredentials?()` | Read the profile's credentials again, so a long-running command uses a `cld login` that happened after it started; rejects when the profile cannot sign in; absent in hosts without profiles |
 
 `readJson()` accepts native fetch responses and typed Hono client responses.
 It requires `json()`, `text()`, `ok`, `status`, and `statusText`.
@@ -395,6 +410,15 @@ Use this context. Do not read CLI token or profile files from an application
 module.
 
 ## Design commands
+
+The platform's `cld events` module follows these patterns for declared app
+events: `ls`, `subscriptions`, `deliveries`, `status`, and confirmed
+`redeliver`. `record <eventType> --shape-only [--limit 100] [--out <path>]`
+exports synthetic JSONL fixtures. `replay <fixtures> --handler <path[#export]>`
+validates them against the current catalog and calls a local handler; it
+never sends fixture envelopes to a server. See
+[App events](/en/docs/platform/app-events) and
+[Operate app events](/en/docs/operations/app-events).
 
 Every `cld` module uses the same verbs, addresses, and
 flags, so a user or agent who knows one module can guess the basics of the
@@ -618,7 +642,7 @@ The adapter accepts:
 | `list`, `grant`, `update`, `revoke` | Yes | Call the resource's access API |
 | `allowedPermissions` | No | Limit grants; defaults to `read`, `write`, and `admin` |
 | `allowPublic` | No | Add public-principal commands; defaults to `false` |
-| `allowServiceAccounts` | No | Add service-account commands; defaults to `false` |
+| `allowServiceAccounts` | No | Include service-account commands; defaults to `true`. Set `false` only for a documented resource restriction |
 | `scopes` | No | Parts of the resource a grant can cover, the whole resource first; adds `--scope` |
 | `resourceArgLabel` | No | Value label shown for resource arguments |
 | `resourceArgDescription` | No | Help text for resource arguments |

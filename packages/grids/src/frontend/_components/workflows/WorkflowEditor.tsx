@@ -21,6 +21,7 @@ import { WORKFLOW_REVISION_HEADER, type WorkflowAutocompleteResponse } from "../
 import { errorMessage } from "../utils/api-helpers";
 import type { PublicWorkflow } from "../workspace/workspace-public-state-model";
 import { workflowMessages } from "./messages";
+import { WorkflowMachineAuthority } from "./WorkflowMachineAuthority";
 import { buildBackendWorkflowCompletions } from "./workflow-autocomplete";
 import { automaticTriggerSummary, shouldConfirmAutomaticTriggers } from "./workflow-editor-activation";
 import {
@@ -369,7 +370,9 @@ export function WorkflowEditor(props: WorkflowEditorProps) {
     deleteMut.abort();
   });
 
+  const [machineAuthorityBusy, setMachineAuthorityBusy] = createSignal(false);
   const closeIfClean = async () => {
+    if (machineAuthorityBusy()) return;
     if (triggerValidationMut.loading() || confirmingTriggers() || saveMut.loading() || deleteMut.loading()) return;
     if (await confirmDiscardIfDirty(() => workflowEditorDraftDirty(currentDraft(), cleanDraft))) props.onClose();
   };
@@ -383,7 +386,8 @@ export function WorkflowEditor(props: WorkflowEditorProps) {
     !validating() &&
     !confirmingTriggers() &&
     !triggerValidationMut.loading() &&
-    !saveMut.loading();
+    !saveMut.loading() &&
+    !machineAuthorityBusy();
 
   const saveWorkflow = () => {
     if (confirmingTriggers() || triggerValidationMut.loading()) return;
@@ -450,12 +454,21 @@ export function WorkflowEditor(props: WorkflowEditorProps) {
             <DiagnosticsPanel diagnostics={diagnostics()} validating={validating()} />
           </section>
         </div>
+        <Show when={props.workflow}>
+          {(workflow) => <WorkflowMachineAuthority workflowId={workflow().id} onBusy={setMachineAuthorityBusy} />}
+        </Show>
       </PanelDialog.Body>
       <PanelDialog.Footer>
         <div>
           <Show when={props.workflow}>
             {(workflow) => (
-              <Button variant="danger" size="sm" type="button" disabled={deleteMut.loading()} onClick={() => deleteMut.mutate(workflow())}>
+              <Button
+                variant="danger"
+                size="sm"
+                type="button"
+                disabled={deleteMut.loading() || machineAuthorityBusy()}
+                onClick={() => deleteMut.mutate(workflow())}
+              >
                 <i class={deleteMut.loading() ? "ti ti-loader-2 animate-spin" : "ti ti-trash"} /> {t().deleteWorkflow}
               </Button>
             )}
@@ -466,7 +479,9 @@ export function WorkflowEditor(props: WorkflowEditorProps) {
             variant="secondary"
             size="sm"
             type="button"
-            disabled={triggerValidationMut.loading() || confirmingTriggers() || saveMut.loading() || deleteMut.loading()}
+            disabled={
+              machineAuthorityBusy() || triggerValidationMut.loading() || confirmingTriggers() || saveMut.loading() || deleteMut.loading()
+            }
             onClick={() => void closeIfClean()}
           >
             {t().cancel}

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import type { RuntimeAppMeta } from "../contracts/app";
-import { activeAdminHref } from "./admin-active-link";
+import { activeAdminHref, activeAdminLink } from "./admin-active-link";
 import { buildAdminGroups } from "./admin-navigation";
 
 const app = (overrides: Partial<RuntimeAppMeta> = {}): RuntimeAppMeta => ({
@@ -12,15 +12,25 @@ const app = (overrides: Partial<RuntimeAppMeta> = {}): RuntimeAppMeta => ({
   ...overrides,
 });
 
+const SETUP = [
+  { href: "/admin/base", icon: "ti-adjustments", label: "Base settings" },
+  { href: "/admin/settings?tab=storage", icon: "ti-database", label: "Storage" },
+  { href: "/admin/signin", icon: "ti-shield-lock", label: "Sign-in & security" },
+  { href: "/admin/outgoing-mail", icon: "ti-mail", label: "Outgoing mail" },
+  { href: "/admin/settings?tab=email-templates", icon: "ti-template", label: "Email templates" },
+  { href: "/admin/announcements", icon: "ti-speakerphone", label: "Announcements" },
+  { href: "/admin/ai", icon: "ti-sparkles", label: "AI" },
+];
+
 describe("buildAdminGroups", () => {
-  it("makes the places and maps page reachable and active in both locales", () => {
-    const href = "/admin/places-and-maps";
+  it("makes storage settings reachable and preserves their URL selection", () => {
     for (const [locale, label] of [
-      ["en", "Places and maps"],
-      ["de", "Orte und Karten"],
+      ["en", "Storage"],
+      ["de", "Speicher"],
     ] as const) {
       const links = buildAdminGroups([], locale).flatMap((group) => group.links);
-      expect(links).toContainEqual({ href, icon: "ti-map-2", label });
+      const href = "/admin/settings?tab=storage";
+      expect(links).toContainEqual({ href, icon: "ti-database", label });
       expect(
         activeAdminHref(
           href,
@@ -29,20 +39,29 @@ describe("buildAdminGroups", () => {
       ).toBe(href);
     }
   });
-
-  it("links to AI usage in both supported locales", () => {
+  it("makes the Base settings area reachable and active on its sections in both locales", () => {
     for (const [locale, label] of [
-      ["en", "Usage"],
-      ["de", "Nutzung"],
+      ["en", "Base settings"],
+      ["de", "Grundeinstellungen"],
     ] as const) {
-      expect(buildAdminGroups([], locale).flatMap((group) => group.links)).toContainEqual({
-        href: "/admin/settings?tab=ai-usage",
-        icon: "ti-chart-histogram",
-        label,
-      });
+      const links = buildAdminGroups([], locale).flatMap((group) => group.links);
+      expect(links).toContainEqual({ href: "/admin/base", icon: "ti-adjustments", label });
+      for (const path of ["/admin/base", "/admin/base/places", "/admin/base/legal"])
+        expect(activeAdminLink(path, links)?.href).toBe("/admin/base");
+      expect(links.some((link) => link.href.includes("places-and-maps") || link.href.includes("tab=general"))).toBe(false);
     }
   });
-  it("places declared AI tools in the shared AI section without app-specific rules", () => {
+
+  it("links to the one AI area in both supported locales", () => {
+    for (const [locale, label] of [
+      ["en", "AI"],
+      ["de", "KI"],
+    ] as const) {
+      const setup = buildAdminGroups([], locale).find((group) => group.label === (locale === "de" ? "Einrichten" : "Set up"));
+      expect(setup?.links.filter((link) => link.href === "/admin/ai")).toEqual([{ href: "/admin/ai", icon: "ti-sparkles", label }]);
+    }
+  });
+  it("leaves declared AI tools to the AI area instead of the sidebar", () => {
     const groups = buildAdminGroups([
       app({
         adminHref: "/admin/example",
@@ -55,13 +74,9 @@ describe("buildAdminGroups", () => {
         ],
       }),
     ]);
-    expect(groups.find((group) => group.label === "AI")?.links).toContainEqual({
-      href: "/admin/example",
-      icon: "ti-tool",
-      label: "Script tools",
-    });
+    expect(groups.find((group) => group.label === "Set up")?.links).toEqual(SETUP);
     expect(groups.some((group) => group.label === "Example tools")).toBe(false);
-    expect(groups.flatMap((group) => group.links).filter((link) => link.href === "/admin/example")).toHaveLength(1);
+    expect(groups.flatMap((group) => group.links).filter((link) => link.href === "/admin/example")).toHaveLength(0);
   });
 
   it("renders app-declared groups in the existing core group order", () => {
@@ -77,20 +92,65 @@ describe("buildAdminGroups", () => {
       }),
     ]);
 
-    expect(groups.map((group) => group.label)).toEqual(["General", "Operations", "Accounts & sign-in", "AI", "Settings"]);
-    expect(groups[1]?.links).toEqual([{ href: "/admin/example/jobs", icon: "ti-activity", label: "Jobs" }]);
-    expect(groups.find((group) => group.label === "AI")?.links).toContainEqual({
-      href: "/admin/settings?tab=ai-projects",
-      icon: "ti-folders",
-      label: "Projects",
-    });
+    expect(groups.map((group) => group.label)).toEqual([undefined, "Set up", "Operations", "Operations"]);
+    expect(groups[3]?.links).toEqual([{ href: "/admin/example/jobs", icon: "ti-activity", label: "Jobs" }]);
+    expect(groups.find((group) => group.label === "Set up")?.links).toEqual(SETUP);
+  });
+
+  it("shows contributed Observability pages as one area entry that stays active on all of them", () => {
+    const groups = buildAdminGroups([
+      app({
+        id: "gateway-ops",
+        adminHref: "/admin/observability",
+        adminNav: [
+          { section: "observability", label: "Gateway", links: [{ href: "/admin/observability/gateway", icon: "ti-apps", label: "Apps" }] },
+          {
+            section: "observability",
+            label: "Observability",
+            links: [
+              { href: "/admin/observability", icon: "ti-stethoscope", label: "Overview" },
+              { href: "/admin/observability/logs", icon: "ti-list-details", label: "Logs" },
+            ],
+          },
+        ],
+      }),
+    ]);
+    const operations = groups.find((group) => group.label === "Operations")!;
+    expect(operations.links.map((link) => link.href)).toEqual(["/admin/apps", "/admin/rail", "/admin/observability"]);
+    expect(groups.some((group) => group.label === "Gateway" || group.label === "Observability")).toBe(false);
+    expect(groups.some((group) => group.label === "Settings per app")).toBe(false);
+    const links = groups.flatMap((group) => group.links);
+    for (const path of ["/admin/observability", "/admin/observability/logs?level=error", "/admin/observability/gateway"]) {
+      expect(activeAdminLink(path, links)?.href).toBe("/admin/observability");
+    }
+    expect(activeAdminLink("/admin/ai", links)?.href).toBe("/admin/ai");
+    expect(buildAdminGroups([], "de").map((group) => [group.label, group.links.map((link) => link.label)])).toEqual([
+      [undefined, ["Übersicht"]],
+      [
+        "Einrichten",
+        ["Grundeinstellungen", "Speicher", "Anmeldung & Sicherheit", "Ausgehende Mail", "E-Mail-Vorlagen", "Ankündigungen", "KI"],
+      ],
+      ["Betrieb", ["Apps", "App-Leiste"]],
+    ]);
+  });
+
+  it("opens the first contributed Observability page when no app owns the area start", () => {
+    const groups = buildAdminGroups([
+      app({
+        id: "inventory",
+        adminNav: [
+          { section: "observability", label: "Stock", links: [{ href: "/admin/inventory/health", icon: "ti-box", label: "Stock health" }] },
+        ],
+      }),
+    ]);
+    expect(groups.find((group) => group.label === "Operations")?.links.at(-1)?.href).toBe("/admin/inventory/health");
   });
 
   it("keeps adminHref as the single-link fallback", () => {
     const groups = buildAdminGroups([app({ adminHref: "/admin/example" })]);
 
     expect(groups.at(-1)).toEqual({
-      label: "App administration",
+      label: "Settings per app",
       links: [{ href: "/admin/example", icon: "ti-box", label: "Example" }],
     });
   });
@@ -111,21 +171,44 @@ describe("buildAdminGroups", () => {
       }),
     ]);
 
-    expect(groups.map((group) => group.label)).toEqual(["General", "Accounts & sign-in", "AI", "Settings"]);
+    expect(groups.map((group) => group.label)).toEqual([undefined, "Set up", "Operations"]);
   });
-  it("groups global account controls once and preserves existing links", () => {
-    const groups = buildAdminGroups([]);
-    const accounts = groups.find((group) => group.label === "Accounts & sign-in")!;
-    expect(accounts.links.map((link) => link.href)).toEqual(
-      ["user", "registration", "linux", "account-operations", "freeipa"].map((tab) => `/admin/settings?tab=${tab}`),
-    );
-    const all = groups.flatMap((group) => group.links.map((link) => link.href));
-    expect(new Set(all).size).toBe(all.length);
+
+  it("places the People page of the app that manages accounts under Operations, also outside /admin", () => {
+    const groups = buildAdminGroups([
+      app({
+        id: "people-app",
+        adminNav: [{ section: "people", label: "People", links: [{ href: "/app/people", icon: "ti ti-users", label: "People" }] }],
+      }),
+      app({
+        id: "other",
+        name: "Other",
+        adminNav: [{ section: "people", label: "People", links: [{ href: "//example.com/people", icon: "ti-users", label: "External" }] }],
+      }),
+    ]);
+    expect(groups.find((group) => group.label === "Operations")?.links.at(-1)).toEqual({
+      href: "/app/people",
+      icon: "ti-users",
+      label: "People",
+    });
+    // No own group, no external target, and no entry under "Settings per app".
+    expect(groups.flatMap((group) => group.links).filter((link) => link.label === "People" || link.label === "External")).toHaveLength(1);
+    expect(groups.some((group) => group.label === "People" || group.label === "Settings per app")).toBe(false);
     expect(
-      buildAdminGroups([], "de")
-        .find((group) => group.label === "Accounts & Anmeldung")
-        ?.links.map((link) => link.label),
-    ).toEqual(["Anmeldung", "Registrierung & Anfragen", "Linux-Identitäten", "Betrieb", "FreeIPA"]);
+      activeAdminLink(
+        "/app/people",
+        groups.flatMap((group) => group.links),
+      )?.href,
+    ).toBe("/app/people");
+  });
+  it("shows Sign-in & security as one area entry that stays active on its sections", () => {
+    const links = buildAdminGroups([]).flatMap((group) => group.links);
+    for (const path of ["/admin/signin", "/admin/signin/freeipa", "/admin/signin/linux?scope=all"]) {
+      expect(activeAdminLink(path, links)?.href).toBe("/admin/signin");
+    }
+    expect(links.some((link) => /tab=(user|registration|linux|account-operations|freeipa|security)/.test(link.href))).toBe(false);
+    const all = links.map((link) => link.href);
+    expect(new Set(all).size).toBe(all.length);
   });
 });
 

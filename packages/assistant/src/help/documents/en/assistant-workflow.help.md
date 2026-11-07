@@ -30,6 +30,7 @@ The sidebar lists your active chats as plain rows: pinned chats first, then by t
 - **Search:** Use the search button in the sidebar's header to find results, files, and sources in this chat. Escape closes the search.
 - **Delete chat files:** Point at an upload, voice recording, or working file, or reach it with Tab, then select the trash icon at the right; for a result, use its menu. The icon is always visible on touch devices. After you confirm, Assistant removes the file from this chat and closes its open tab. Earlier messages keep their text, but their links to the file no longer open it. Project files are managed on the Project page.
 - **Cloud resources:** Choose **+ → Insert from Cloud** to insert a reference to a supported Cloud resource at the text caret. The reference gives the model the same resource as an attachment, without copying its contents into the chat. A chat opened from Mail or another app can begin with one or more resources already attached. Resource links open their owning app in a new tab; every read and Action still checks your current permission there.
+- **Paste a Cloud link:** Paste a link to something in this Cloud, for example from the address bar or **Copy Cloud ID**. Once Assistant recognizes it, the link becomes a resource attachment with its title. A link you may not open stays text. To keep the link as text, paste with **Ctrl+Shift+V** (**⌘+Shift+V** on a Mac).
 Chats automatically move to **Done** after seven days without use. Sending a message, a run, or reopening a chat counts as use; opening or reading a chat only marks it as read, and background metadata changes do not count either. Running chats and chats waiting for confirmation stay active. **Reopen chat** keeps a chat active until you mark it done again. All active chats appear in the sidebar, followed by **Done** and its **All chats** entry.
 
 - **Finish or continue:** Mark a chat done to move it into **Done**. Stop a running response first. Reopen it or send a new message to continue; files, apps, and pinning remain available.
@@ -99,7 +100,15 @@ Attach a voice memo like any other file and write your own request, for example:
 not start transcription. Assistant can save the transcript as a text file in
 the chat.
 
-Click the microphone next to Send to dictate. The neutral waveform responds to your
+When your administration set up live dictation, the microphone next to Send
+writes the text while you speak. The words appear at the caret; the newest
+words are tinted for a moment. You can type elsewhere at the same time. Stop
+shows **Finishing …** until the last words arrive. × removes only the dictated
+words; text that was there before stays. Cloud stores no audio for live
+dictation. If live dictation is busy, **Record instead** uses the recording
+below; the recording is then kept in the chat.
+
+Without live dictation, click the microphone next to Send to record. The neutral waveform responds to your
 microphone level while recording. Use × to discard or the square Stop button
 to finish and upload the complete recording. A loader
 then stays visible until processing finishes. Hover or focus the control to

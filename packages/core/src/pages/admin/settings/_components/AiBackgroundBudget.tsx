@@ -30,7 +30,7 @@ export default function AiBackgroundBudget(props: {
   }
   onMount(() => void refresh());
   return (
-    <section class="paper flex flex-col gap-4 p-4">
+    <section class="flex flex-col gap-4">
       <TextInput
         label={de() ? "Recheneinheit" : "Accounting unit"}
         value={props.config.unit ?? "EUR"}
@@ -136,7 +136,7 @@ export default function AiBackgroundBudget(props: {
       <Show when={error()}>
         <Placeholder state="error" description={error()} />
       </Show>
-      <ButtonLink variant="text" href="/admin/settings?tab=ai-usage&view=runs&kind=background&range=24h&sort=cost">
+      <ButtonLink variant="text" href="/admin/ai?sec=usage&view=runs&kind=background&range=24h&sort=cost">
         {de() ? "Hintergrundkosten untersuchen" : "Inspect background costs"}
       </ButtonLink>
       <Button size="sm" variant="ghost" onClick={() => void refresh()}>

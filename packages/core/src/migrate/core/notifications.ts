@@ -1,4 +1,4 @@
-import { sql } from "bun";
+import { sql } from "@k2b/cloud";
 
 export const migrate = async (): Promise<void> => {
   await sql`CREATE SCHEMA IF NOT EXISTS notifications`.simple();
@@ -49,6 +49,12 @@ export const migrate = async (): Promise<void> => {
   await sql`
     ALTER TABLE notifications.definitions
     ADD COLUMN IF NOT EXISTS presentation JSONB
+  `.simple();
+
+  await sql`
+    ALTER TABLE notifications.definitions
+    ADD COLUMN IF NOT EXISTS excluded_channels TEXT[] NOT NULL DEFAULT '{}',
+    ADD COLUMN IF NOT EXISTS excluded_reason TEXT DEFAULT NULL
   `.simple();
 
   await sql`

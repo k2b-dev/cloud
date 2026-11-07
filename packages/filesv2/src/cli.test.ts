@@ -155,3 +155,14 @@ test("configuration reset requires --yes and calls the admin DELETE endpoint", a
   expect(methods).toEqual(["DELETE"]);
   expect(requests).toEqual(["http://cloud.test/api/filesv2/admin/configuration"]);
 });
+
+test("configuration writes require confirmation and refuse credentials in arguments", async () => {
+  const { ctx, requests, lines } = inventory("json");
+  ctx.args = ["admin", "configuration", "set"];
+  ctx.flags = { "input-file": "/nonexistent/configuration.json" };
+  await expect(filesCli.run(ctx)).rejects.toThrow("--yes");
+  ctx.flags = { yes: true, input: '{"token":"private-credential"}' };
+  await expect(filesCli.run(ctx)).rejects.toThrow("--input-file or --stdin");
+  expect(requests).toHaveLength(0);
+  expect(lines.join("\n")).not.toContain("private-credential");
+});

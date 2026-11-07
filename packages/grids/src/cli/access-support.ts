@@ -79,9 +79,6 @@ export const assertAccessPrincipal = (resource: AccessResource, principal: Princ
   if (resource.type === "base" && principal.type === "public") {
     throw new Error("Public access is only supported for Grids Apps.");
   }
-  if (resource.type === "app" && principal.type === "service_account") {
-    throw new Error("Grids App access does not support service accounts; grant access to the delegated user instead.");
-  }
 };
 
 export const resolvePrincipalForAccess = (ctx: CloudCliContext, flags: Record<string, unknown>): Promise<Principal> =>

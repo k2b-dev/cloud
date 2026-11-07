@@ -74,6 +74,41 @@ describe("plain mail message links", () => {
   });
 });
 
+const renderPlainBody = (plainText: string) =>
+  renderToString(() =>
+    createComponent(MailMessageBody, {
+      theme: "light",
+      colors: "adapted",
+      mailboxId: "Box001",
+      messageId: "Msg001",
+      format: "plain",
+      html: null,
+      plainText,
+      attachments: [],
+      remoteContent: { imageIds: [], allowedByRule: false, sender: null, domain: null },
+      onSelectionChange: () => {},
+    }),
+  );
+
+describe("plain mail message quoted history", () => {
+  test("puts only the trailing earlier conversation behind the toggle", () => {
+    const html = renderPlainBody("Sounds good.\n\nOn Monday, Alex Example wrote:\n> Lunch on Friday?");
+    const collapsed = /<details[\s\S]*<\/details>/.exec(html)?.[0] ?? "";
+
+    expect(collapsed).toContain("Show quoted text");
+    expect(collapsed).toContain("> Lunch on Friday?");
+    expect(collapsed).not.toContain("Sounds good.");
+    expect(html.indexOf("On Monday, Alex Example wrote:")).toBeLessThan(html.indexOf("<details"));
+  });
+
+  test("shows inline answers and their quotes without a toggle", () => {
+    const html = renderPlainBody("> Can you send the plan?\nYes, attached.\n\n> And the budget?\nNext week.");
+
+    expect(html).not.toContain("<details");
+    expect(html).toContain("> And the budget?");
+  });
+});
+
 describe("HTML mail message locale", () => {
   test("uses the resolved document language and localized quote label", () => {
     const html = renderLocalizedHtmlBody("de-CH");

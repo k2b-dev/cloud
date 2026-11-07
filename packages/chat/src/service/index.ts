@@ -1,9 +1,22 @@
+import { sql } from "@k2b/cloud";
 import { logger } from "@k2b/cloud/services";
-import { sql } from "bun";
 import { z } from "zod";
+import { attachments } from "./attachments";
+import { channels } from "./channels";
 import { conversations } from "./conversations";
+import { forYou } from "./for-you";
+import { itemEvents } from "./item-events";
+import { mentions } from "./mentions";
 import { messages } from "./messages";
+import { notificationPreferences } from "./notification-preferences";
+import { personal } from "./personal";
+import { reactions } from "./reactions";
 import { readState } from "./read-state";
+import { search } from "./search";
+import { shared } from "./shared";
+import { systemChats } from "./system-chats";
+import { SystemReaderCheckSchema, systemNotificationHealth } from "./system-notification-access";
+import { threadFollows } from "./thread-follows";
 import { threads } from "./threads";
 
 const log = logger("chat:api");
@@ -12,6 +25,13 @@ export const ChatHealthSchema = z.object({
   /** `ok` when the database answers and the chat schema exists; the admin page and operators read this first. */
   status: z.enum(["ok", "unavailable"]),
   observedAt: z.string(),
+  systemNotifications: z.object({
+    providers: z.array(SystemReaderCheckSchema),
+    status: z.enum(["unchecked", "ok", "failing", "not_configured"]),
+    reason: z.string().nullable(),
+    resourceType: z.string().nullable(),
+    checkedAt: z.string().nullable(),
+  }),
   database: z.object({
     status: z.enum(["ok", "unavailable"]),
     /** Round trip of the probe query in milliseconds; `null` when the database did not answer. */
@@ -33,14 +53,43 @@ const health = async (): Promise<ChatHealth> => {
     ready = row?.ready === true;
   } catch (error) {
     log.warn("Chat health probe could not reach the database", { error: error instanceof Error ? error.message : String(error) });
-    return { status: "unavailable", observedAt: new Date().toISOString(), database: { status: "unavailable", latencyMs: null } };
+    return {
+      systemNotifications: await systemNotificationHealth(),
+      status: "unavailable",
+      observedAt: new Date().toISOString(),
+      database: { status: "unavailable", latencyMs: null },
+    };
   }
   const latencyMs = Math.round(performance.now() - started);
   const status = ready ? "ok" : "unavailable";
-  return { status, observedAt: new Date().toISOString(), database: { status, latencyMs } };
+  return {
+    systemNotifications: await systemNotificationHealth(),
+    status,
+    observedAt: new Date().toISOString(),
+    database: { status, latencyMs },
+  };
 };
 
-export const chatService = { health, conversations, messages, readState, threads };
+export const chatService = {
+  notificationPreferences,
+  threadFollows,
+  itemEvents,
+  search,
+  health,
+  attachments,
+  forYou,
+  mentions,
+  channels,
+  conversations,
+  messages,
+  reactions,
+  readState,
+  personal,
+  threads,
+  shared,
+  systemChats,
+};
+
 export type ChatService = typeof chatService;
 
 export { loadChatView } from "./snapshot";

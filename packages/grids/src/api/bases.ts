@@ -422,6 +422,7 @@ export const createBasesApi = (deps: { requireAuthenticated?: MiddlewareHandler<
 
     .post(
       "/:baseId/retention-policy/preview",
+      auth.readOnly,
       requirePublicIdParam("baseId", "base", "Base"),
       describeRoute({
         tags: ["Grids:Base"],

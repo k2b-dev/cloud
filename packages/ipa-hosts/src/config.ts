@@ -18,7 +18,7 @@ export const app = defineApp({
       },
     },
   },
-  appearance: { accent: "#0e7490", background: { from: "#06b6d4", to: "#14b8a6", angle: 135 } },
+  appearance: { accent: "#7e22ce", background: { from: "#9333ea", to: "#7e22ce", angle: 135 } },
   basePath: "/admin/ipa-hosts",
   baseUrl: "http://app-ipa-hosts:3000",
   adminHref: "/admin/ipa-hosts",

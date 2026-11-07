@@ -4,6 +4,7 @@ import { adminCommands } from "./cli/admin";
 import { createAlertCommands } from "./cli/alerts";
 import { baseCommands } from "./cli/bases";
 import { resolveBaseFromCommand, resolveSource } from "./cli/context";
+import { createDashboardCommands } from "./cli/dashboards";
 import { baseFlag, JSON_INPUT } from "./cli/flags";
 import { createQueryCommands } from "./cli/queries";
 import { jsonRequest, printJsonOrTable, readApi, readJsonInput } from "./cli/shared";
@@ -33,10 +34,12 @@ const pulseCommands = (locale?: string) =>
         de: "SQL-Alarmregeln auflisten, lesen, speichern und löschen",
       }),
       queries: "List, read, save, and delete SQL queries",
+      dashboards: "List, read, save, publish, and delete SQL dashboards",
     },
     commands: [
       sqlCommand,
       ...createQueryCommands(locale),
+      ...createDashboardCommands(locale),
       ...createAlertCommands(locale),
       ...adminCommands,
       ...baseCommands,

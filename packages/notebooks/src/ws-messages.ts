@@ -20,6 +20,7 @@ const catalog = i18n.define({
       workspaceStreamFailed: "Workspace event stream failed",
       messageNotAllowed: ({ type, phase }: { type: string; phase: string }) => `Message "${type}" is not allowed in phase "${phase}"`,
       replayRequired: "Replay request required before publishing",
+      reopenRequired: "The note's document version could not be confirmed. Copy unsent text before reopening it",
       loginRequired: "Login required",
       invalidBase64: "Invalid base64 payload",
       invalidSyncUpdate: "Invalid Yjs update payload",
@@ -48,6 +49,7 @@ const catalog = i18n.define({
       messageNotAllowed: ({ type, phase }: { type: string; phase: string }) =>
         `Die Nachricht "${type}" ist in der Phase "${phase}" nicht erlaubt`,
       replayRequired: "Vor dem Veröffentlichen ist eine Wiedergabeanfrage erforderlich",
+      reopenRequired: "Die Dokumentversion der Notiz konnte nicht bestätigt werden. Kopiere ungesendeten Text, bevor du sie erneut öffnest",
       loginRequired: "Anmeldung erforderlich",
       invalidBase64: "Die Base64-Daten sind ungültig",
       invalidSyncUpdate: "Die Yjs-Aktualisierung ist ungültig",

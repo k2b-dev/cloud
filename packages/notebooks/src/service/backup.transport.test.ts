@@ -1,7 +1,8 @@
-import { expect, test } from "bun:test";
+import { expect, spyOn, test } from "bun:test";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { NetworkTargetBlockedError } from "@k2b/cloud/services/network-security";
 import { parseNetworkAllowlist } from "@k2b/cloud/shared";
+import { app } from "../config";
 import { defaultS3Uploader, type NotebookBackupConfig, type NotebookBackupObject } from "./backup";
 import { presignSnapshotObject, uploadSnapshotObjects } from "./snapshot-http";
 
@@ -36,8 +37,7 @@ const withServer = async (handler: (req: IncomingMessage, res: ServerResponse) =
 };
 
 test("default uploader refuses internal literal endpoints without sending objects", async () => {
-  const original = process.env.NOTEBOOKS_SNAPSHOT_ALLOWED_TARGETS;
-  delete process.env.NOTEBOOKS_SNAPSHOT_ALLOWED_TARGETS;
+  const get = spyOn(app.settings, "get").mockResolvedValue([]);
   let received = 0;
   try {
     await withServer(
@@ -55,8 +55,7 @@ test("default uploader refuses internal literal endpoints without sending object
       },
     );
   } finally {
-    if (original === undefined) delete process.env.NOTEBOOKS_SNAPSHOT_ALLOWED_TARGETS;
-    else process.env.NOTEBOOKS_SNAPSHOT_ALLOWED_TARGETS = original;
+    get.mockRestore();
   }
 });
 

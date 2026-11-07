@@ -229,6 +229,7 @@ const app = new Hono<AuthContext>()
   // Resend notification
   .post(
     "/:id/resend",
+    auth.requireOAuthScope("write", "admin"),
     describeRoute({
       tags: ["Notifications"],
       summary: "Resend notification",
@@ -310,6 +311,7 @@ const app = new Hono<AuthContext>()
   // Update notification (only pending/error)
   .patch(
     "/:id",
+    auth.requireOAuthScope("write", "admin"),
     describeRoute({
       tags: ["Notifications"],
       summary: "Update notification",

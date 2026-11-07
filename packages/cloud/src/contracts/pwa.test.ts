@@ -5,6 +5,7 @@ import {
   isPwaShellAvailable,
   PWA_LIMITS,
   PwaCompleteResultSchema,
+  PwaDeviceDecisionSchema,
   PwaPairingStatusSchema,
   pairingLink,
   parsePairingLink,
@@ -13,7 +14,7 @@ import {
 const origin = "https://cloud.example.test";
 const secret = "A".repeat(42) + "w";
 
-describe("mobile app contract", () => {
+describe("Cloud app contract", () => {
   test("the shell is available only while the app pwa owns /pwa", () => {
     expect(isPwaShellAvailable([])).toBeFalse();
     expect(isPwaShellAvailable([{ id: "core", routes: ["/", "/pwa/_auth"] }])).toBeFalse();
@@ -57,6 +58,22 @@ describe("mobile app contract", () => {
       `${origin}/pwa/#pair=${secret}${" ".repeat(PWA_LIMITS.bodyBytes)}`,
     ])
       expect(parsePairingLink(text, origin)).toEqual({ ok: false, reason: "invalid" });
+  });
+
+  test("an administrative device decision needs the pairing-bound token and an explicit choice", () => {
+    const confirmationToken = "A".repeat(43);
+    expect(PwaDeviceDecisionSchema.safeParse({ decision: "confirm" }).success).toBeFalse();
+    expect(PwaDeviceDecisionSchema.safeParse({ confirmationToken }).success).toBeFalse();
+    expect(PwaDeviceDecisionSchema.safeParse({ confirmationToken, decision: "reject", skip: true }).success).toBeFalse();
+    expect(PwaDeviceDecisionSchema.parse({ confirmationToken, decision: "confirm" })).toEqual({ confirmationToken, decision: "confirm" });
+    expect(
+      PwaCompleteResultSchema.safeParse({
+        state: "confirmation_required",
+        account: { name: "Ada" },
+        administrator: { name: "Admin" },
+        expiresAt: "2026-10-23T12:10:00.000Z",
+      }).success,
+    ).toBeFalse();
   });
 
   test("status never carries a code and completion distinguishes waiting from paired", () => {

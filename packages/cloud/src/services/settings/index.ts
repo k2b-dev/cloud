@@ -4,21 +4,36 @@
  * Resolution order: DB value -> env fallback -> code default.
  *
  * Custom DB values are encrypted at rest using APP_SECRET. Value reads use
- * Redis cache-aside in `./store.ts` (5-minute TTL); stored-state reads use DB.
+ * Redis cache-aside in `./store.ts` (5-minute TTL); secret cache entries
+ * remain encrypted. Stored-state reads use DB.
  * `loadCache()` runs once at boot to normalize legacy rows and bootstrap
  * env-backed entries into Postgres. Startup never replaces an existing row;
  * env bootstrap only fills missing keys.
  */
-
-import { redis, sql } from "bun";
+import { setTimeout as delay } from "node:timers/promises";
+import { sql } from "../../runtime/clients";
+import { DEPENDENCY_STARTUP_BUDGET_MS } from "../../runtime/startup-budget";
+import { requestCacheRedis } from "../request-cache-redis";
+import { bindSettingValue, replaceSettingValue, unwrapSettingValue } from "./binding";
 import { decryptValue, encryptValue, getAppSecret } from "./crypto";
 import { resolveSettingPresentation, SETTINGS, SETTINGS_MAP, type SettingDef, validateSettingValue } from "./defaults";
-import { deleteKey, readKey, readKeyState, readStates, type SettingRead, writeKey } from "./store";
+import { SECRET_CACHE_FORMAT } from "./secret-cache";
+import {
+  deleteKey,
+  invalidateSettingsCache,
+  lockSettingChanges,
+  readKey,
+  readKeyState,
+  readStates,
+  resetChangedSettings,
+  type SettingRead,
+  writeKey,
+} from "./store";
 
 type SqlClient = typeof sql;
 
 type StoredRow = { key: string; value: string };
-type PendingRow = { value: unknown; originalCiphertext: string };
+type PendingRow = { value: unknown; originalValue: unknown; originalCiphertext: string };
 type NormalizationStats = {
   encryptedLoaded: number;
   normalizedUpdated: number;
@@ -32,7 +47,13 @@ const REDIS_KEY = (key: string) => `settings:${key}`;
 const isEqual = (left: unknown, right: unknown): boolean => JSON.stringify(left) === JSON.stringify(right);
 
 const resolveEnvValue = (def: SettingDef | undefined, mode: "fallback" | "bootstrap"): unknown => {
-  const raw = mode === "fallback" ? def?.envFallback?.() : def?.envBootstrap?.();
+  let raw: unknown;
+  try {
+    raw = mode === "fallback" ? def?.envFallback?.() : def?.envBootstrap?.();
+  } catch {
+    console.warn(`[settings] ignoring invalid ${mode} value for "${def?.key}"`);
+    return undefined;
+  }
   if (!def || raw === undefined) return undefined;
 
   const validated = validateSettingValue(def, raw);
@@ -54,7 +75,7 @@ const shouldBootstrapValue = (def: SettingDef, value: unknown): boolean => {
       return typeof value === "number" && Number.isFinite(value);
     case "string_list":
     case "number_list":
-      return Array.isArray(value) && value.length > 0;
+      return Array.isArray(value) && (value.length > 0 || def.envVariable !== undefined);
     default:
       return typeof value === "string" && value.trim().length > 0;
   }
@@ -79,7 +100,7 @@ const normalizeStoredEntries = async (): Promise<{
   for (const row of rows) {
     try {
       const value = await decryptValue(row.value);
-      pendingRows.set(row.key, { value, originalCiphertext: row.value });
+      pendingRows.set(row.key, { value: unwrapSettingValue(row.key, value), originalValue: value, originalCiphertext: row.value });
       stats.encryptedLoaded += 1;
     } catch {
       // An unreadable value is not a missing value (#1295). Usually this
@@ -113,14 +134,14 @@ const normalizeStoredEntries = async (): Promise<{
     normalized.push({ key, value: validated.value });
 
     if (!isEqual(row.value, validated.value)) {
-      const encryptedValue = await encryptValue(validated.value);
+      const encryptedValue = await encryptValue(replaceSettingValue(key, row.originalValue, validated.value));
       const updated = await sql<{ key: string }[]>`
         UPDATE settings.entries SET value = ${encryptedValue}, updated_at = now()
         WHERE key = ${key} AND value = ${row.originalCiphertext}
         RETURNING key
       `;
       if (updated.length > 0) {
-        await redis.del(REDIS_KEY(key));
+        await (await requestCacheRedis()).del(REDIS_KEY(key));
         stats.normalizedUpdated += 1;
       }
     }
@@ -136,47 +157,129 @@ const bootstrapEnvBackedEntries = async (config: {
 }): Promise<Array<{ key: string; value: unknown }>> => {
   const rowsByKey = new Map(config.rows.map((row) => [row.key, row.value]));
 
-  for (const def of SETTINGS) {
-    // Existing rows block bootstrap even if unreadable, unknown, or invalid.
-    if (config.storedKeys.has(def.key)) continue;
-
-    const envValue = resolveEnvValue(def, "bootstrap");
-    if (!shouldBootstrapValue(def, envValue)) continue;
-
-    const encryptedValue = await encryptValue(envValue);
-    const inserted = await sql<{ key: string }[]>`
-      INSERT INTO settings.entries (key, value, updated_at)
-      VALUES (${def.key}, ${encryptedValue}, now())
-      ON CONFLICT (key) DO NOTHING
-      RETURNING key
-    `;
-    if (inserted.length === 0) continue;
-
-    await redis.del(REDIS_KEY(def.key));
-    rowsByKey.set(def.key, envValue);
-    config.stats.envBootstrapped += 1;
-  }
+  const imported = new Set<string>();
+  await sql.begin(async (tx) => {
+    // Import access before its endpoint regardless of declaration order.
+    const definitions = [...SETTINGS].sort((a, b) => Number(Boolean(a.resetOnChange?.length)) - Number(Boolean(b.resetOnChange?.length)));
+    for (const def of definitions) {
+      // Existing rows block bootstrap even if unreadable, unknown, or invalid.
+      if (config.storedKeys.has(def.key)) continue;
+      let envValue = resolveEnvValue(def, "bootstrap");
+      if (!shouldBootstrapValue(def, envValue)) continue;
+      await lockSettingChanges(tx, def.key);
+      let bindingRefused = false;
+      // Do not import access from an environment that names other endpoints.
+      for (const owner of SETTINGS.filter((owner) => owner.resetOnChange?.includes(def.key))) {
+        const current = await readKeyState(owner.key, tx);
+        const expected = resolveEnvValue(owner, "bootstrap") ?? resolveEnvValue(owner, "fallback") ?? owner.default;
+        if (current.stored !== "none" && (current.stored === "unreadable" || !isEqual(current.value, expected))) {
+          envValue = def.default;
+          bindingRefused = true;
+        }
+      }
+      const prior = def.resetOnChange?.length ? await readKeyState(def.key, tx) : undefined;
+      const encryptedValue = await encryptValue(
+        bindingRefused
+          ? envValue
+          : await bindSettingValue(def.key, envValue, async (owner) => {
+              const current = await readKeyState(owner, tx);
+              const ownerDef = SETTINGS_MAP.get(owner);
+              if (current.stored === "unreadable") throw new Error(`Cannot bind setting to unreadable ${owner}`);
+              return current.stored === "none" ? (resolveEnvValue(ownerDef, "bootstrap") ?? current.value) : current.value;
+            }),
+      );
+      const inserted = await tx<{ key: string }[]>`
+        INSERT INTO settings.entries (key, value, updated_at)
+        VALUES (${def.key}, ${encryptedValue}, now())
+        ON CONFLICT (key) DO NOTHING
+        RETURNING key
+      `;
+      if (inserted.length === 0) continue;
+      // A newly bootstrapped endpoint must not inherit previously stored access.
+      // Values imported together belong to the same environment configuration.
+      await resetChangedSettings(tx, def.key, envValue, imported, prior);
+      imported.add(def.key);
+      rowsByKey.set(def.key, envValue);
+    }
+  });
+  await Promise.all(
+    [...imported].map(async (key) =>
+      (await requestCacheRedis()).del(REDIS_KEY(key), ...(SETTINGS_MAP.get(key)?.resetOnChange ?? []).map(REDIS_KEY)),
+    ),
+  );
+  config.stats.envBootstrapped += imported.size;
 
   return [...rowsByKey.entries()].map(([key, value]) => ({ key, value }));
 };
 
-/**
- * Boot-time normalization + env-bootstrap. Runs once at startup. Does NOT
- * populate any in-process cache — value reads use Redis cache-aside
- * (`store.ts`), and stored-state reads go directly to Postgres.
- */
-export async function loadCache(): Promise<void> {
+const CACHE_FORMAT_KEY = "settings-cache:format";
+const CACHE_FORMAT = `encrypted-${SECRET_CACHE_FORMAT}`;
+const startupRetryable = (error: unknown): boolean => {
+  if (!error || typeof error !== "object" || !("code" in error) || typeof error.code !== "string") return false;
+  return (
+    [
+      "ECONNREFUSED",
+      "ECONNRESET",
+      "ETIMEDOUT",
+      "ENOTFOUND",
+      "EAI_AGAIN",
+      "ERR_REDIS_CONNECTION_CLOSED",
+      "ERR_REDIS_CONNECTION_TIMEOUT",
+    ].includes(error.code) ||
+    (error.code === "ERR_REDIS_SERVER_ERROR" &&
+      "message" in error &&
+      typeof error.message === "string" &&
+      /^-?LOADING\b/.test(error.message))
+  );
+};
+const loadCacheOnce = async (): Promise<void> => {
   getAppSecret();
+  const redis = await requestCacheRedis();
+  // A prior startup attempt may have exhausted the native reconnect budget.
+  if (!redis.connected) await redis.connect();
+  // Mark only a completed sweep; a lost marker safely repeats the cleanup.
+  if ((await redis.get(CACHE_FORMAT_KEY)) !== CACHE_FORMAT) {
+    let cursor = "0";
+    do {
+      const [nextCursor, keys] = await redis.scan(cursor, "MATCH", "settings:*", "COUNT", 1000);
+      cursor = nextCursor;
+      if (keys.length > 0) await redis.del(...keys);
+    } while (cursor !== "0");
+    await redis.set(CACHE_FORMAT_KEY, CACHE_FORMAT);
+  }
   const { rows, storedKeys, stats } = await normalizeStoredEntries();
   const bootstrappedRows = await bootstrapEnvBackedEntries({ rows, storedKeys, stats });
+  // A prior attempt may have committed its DB changes before invalidation failed.
+  // Reconcile readable registered keys again, including across process restarts.
+  await invalidateSettingsCache(bootstrappedRows.map((row) => row.key));
 
   console.log(
     `[settings] loaded ${bootstrappedRows.length} custom setting(s) (${stats.encryptedLoaded} encrypted, ${stats.normalizedUpdated} normalized, ${stats.envBootstrapped} env-bootstrapped, ${stats.undecryptable} undecryptable, ${stats.invalidSkipped} skipped)`,
   );
+};
+
+/** Always attempt startup once; only recovery retries consume the shared allowance. */
+export async function loadCache(signal = AbortSignal.timeout(DEPENDENCY_STARTUP_BUDGET_MS)): Promise<void> {
+  for (;;) {
+    try {
+      await loadCacheOnce();
+      return;
+    } catch (error) {
+      if (!startupRetryable(error)) throw error;
+      const exhausted = () => new Error("Valkey did not recover within the settings startup allowance", { cause: error });
+      if (signal.aborted) throw exhausted();
+      console.warn("[settings] Valkey is not ready; waiting before completing startup");
+      try {
+        await delay(1_000, undefined, { signal });
+      } catch {
+        throw exhausted();
+      }
+    }
+  }
 }
 
 /**
- * Read a setting via the Redis cache-aside layer (always within Redis-TTL
+ * Read a setting via Redis cache-aside (always within Redis-TTL
  * fresh). Resolution: Redis cache → Postgres → env-fallback → code default.
  */
 export async function get<T = unknown>(key: string): Promise<T> {
@@ -185,7 +288,7 @@ export async function get<T = unknown>(key: string): Promise<T> {
 
 /**
  * Write a setting. Pass `db` to run inside a caller's transaction — then the
- * caller owns geo budget pair validation before mutations and must call
+ * caller must call
  * `invalidateSettingsCache` once it commits.
  */
 export async function set(key: string, value: unknown, db?: SqlClient, options?: { replaceUnreadable?: boolean }): Promise<void> {
@@ -209,6 +312,9 @@ export { invalidateSettingsCache, readStates, SettingUnreadableError } from "./s
 export async function getAll(locale?: string): Promise<SettingEntry[]> {
   const allKeys = SETTINGS.map((def) => def.key);
   const values = await readStates(allKeys);
+  const versions = await sql<
+    { key: string; updated_at: Date; updated_by: string | null; name: string | null }[]
+  >`SELECT e.key,e.updated_at,e.updated_by,COALESCE(NULLIF(u.display_name,''),u.uid) AS name FROM settings.entries e LEFT JOIN auth.users u ON u.id=e.updated_by`;
 
   return SETTINGS.map((def) => {
     const presentation = resolveSettingPresentation(def, locale);
@@ -218,6 +324,11 @@ export async function getAll(locale?: string): Promise<SettingEntry[]> {
     const resetValue = envFallback ?? def.default;
 
     return {
+      updatedAt: versions.find((row) => row.key === def.key)?.updated_at.toISOString() ?? null,
+      updatedBy: (() => {
+        const row = versions.find((row) => row.key === def.key);
+        return row?.updated_by ? { id: row.updated_by, name: row.name ?? row.updated_by } : null;
+      })(),
       key: def.key,
       label: presentation.label,
       kind: def.kind,

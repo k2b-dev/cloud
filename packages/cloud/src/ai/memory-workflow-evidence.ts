@@ -1,5 +1,5 @@
-import { sql } from "bun";
 import { type CloudResourceRef, CloudResourceRefSchema } from "../contracts/capabilities";
+import { sql } from "../runtime/clients";
 import { AI_MEMORY_LEARNING_DEFAULT_ENABLED } from "./prefs";
 
 const MAX_RECEIPT_RESOURCES = 20;

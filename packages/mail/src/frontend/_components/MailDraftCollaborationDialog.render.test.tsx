@@ -105,5 +105,17 @@ describe("MailDraftCollaborationDialog", () => {
       { kind: "user", id: serviceLease.holder.id },
     );
     expect(userWithSameId.title).toBe("Mail automation is editing this draft");
+
+    // The service account shows its robot in a square, never a person's initials.
+    const html = renderToString(() =>
+      createComponent(MailDraftCollaborationDialog, {
+        conflict: { lease: serviceLease, reason: "occupied" },
+        currentActor: { kind: "user", id: "20000000-0000-4000-8000-000000000002" },
+        dateConfig,
+        close: () => {},
+      }),
+    );
+    expect(html).toContain(`src="/api/accounts/users/${serviceLease.holder.id}/avatar"`);
+    expect(html).toContain('data-shape="square"');
   });
 });

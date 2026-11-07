@@ -1,9 +1,9 @@
 import { afterAll, beforeAll, beforeEach, expect, spyOn, test } from "bun:test";
+import { sql } from "@k2b/cloud";
 import type { MailStatus } from "@k2b/cloud/contracts";
 import * as logging from "@k2b/cloud/services/logging";
 import { applyOutgoingMailBounce, outgoingMailMessages } from "@k2b/cloud/services/outgoing-mail/messages";
 import { listImapMailProfiles, saveImapMailCheck } from "@k2b/cloud/services/outgoing-mail/store";
-import { sql } from "bun";
 import { databaseSuite, useFreshDatabase } from "../../../../scripts/fixtures/test-infra";
 import { migrate } from "../migrate/core/outgoing-mail";
 import { headers, report, status, structure } from "./fixtures";

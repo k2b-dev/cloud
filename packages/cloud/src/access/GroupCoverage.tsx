@@ -2,16 +2,18 @@ import { query } from "@k2b/stdlib/solid";
 import { Button, InlineGuidance, useLocale } from "@k2b/ui";
 import { createSignal, createUniqueId, For, Show } from "solid-js";
 import { CloudAvatar } from "../account/Avatar";
-import type { BaseUser, EntityListItem, PaginationResponse } from "../contracts/shared";
+import type { EntityListItem, PaginationResponse } from "../contracts/shared";
 import { accessMessages } from "./messages";
+import { serviceAccountKindDisplay } from "./service-account-kind";
 
 /** Members per request. Further pages load only when the viewer asks for them. */
 const PAGE_SIZE = 20;
+type GroupMember = Exclude<EntityListItem, { kind: "group" }>;
 
 type MembersPage =
   /** The directory withholds group members from this viewer (guest accounts). */
   | { visible: false; directoryGroup: boolean }
-  | { visible: true; directoryGroup: boolean; members: BaseUser[]; total: number; page: number; hasNext: boolean };
+  | { visible: true; directoryGroup: boolean; members: GroupMember[]; total: number; page: number; hasNext: boolean };
 
 /** Reads the Accounts directory with the viewer's own visibility: `null` when it is withheld. */
 const listEntities = async (params: Record<string, string>, signal: AbortSignal) => {
@@ -38,7 +40,7 @@ export const createGroupCoverage = (groupId: string) => {
       const page = cursor ?? 1;
       const [list, group] = await Promise.all([
         listEntities(
-          { kinds: "user", member_of_group_id: id, recursive: "true", page: String(page), per_page: String(PAGE_SIZE) },
+          { kinds: "user,service_account", member_of_group_id: id, recursive: "true", page: String(page), per_page: String(PAGE_SIZE) },
           abortSignal,
         ),
         // Only the first page needs the group itself, for the directory hint.
@@ -49,7 +51,7 @@ export const createGroupCoverage = (groupId: string) => {
       return {
         visible: true,
         directoryGroup,
-        members: list.items.flatMap((item) => (item.kind === "user" ? [item.user] : [])),
+        members: list.items.filter((item) => item.kind !== "group"),
         total: list.pagination.total,
         page,
         hasNext: list.pagination.has_next,
@@ -146,7 +148,20 @@ export function GroupCoveragePanel(props: { coverage: GroupCoverage; groupName: 
       <Show when={shown().length > 0}>
         <ul ref={list} tabindex="-1" aria-label={t().groupMembersOf({ name: props.groupName })} class="flex flex-col gap-1 outline-none">
           <For each={shown()}>
-            {(user) => {
+            {(member) => {
+              if (member.kind === "service_account") {
+                const kind = () => serviceAccountKindDisplay(member.serviceAccount.kind, t());
+                return (
+                  <li class="flex min-w-0 items-center gap-2 text-sm">
+                    <span class="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-zinc-200 text-secondary dark:bg-zinc-700">
+                      <i class={`ti ${kind().icon}`} aria-hidden="true" />
+                    </span>
+                    <span class="truncate">{member.serviceAccount.name}</span>
+                    <span class="shrink-0 text-xs text-muted">{kind().label}</span>
+                  </li>
+                );
+              }
+              const user = member.user;
               const name = user.displayName || user.mail || user.uid;
               return (
                 <li class="flex min-w-0 items-center gap-2 text-sm">

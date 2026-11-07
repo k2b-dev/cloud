@@ -19,7 +19,21 @@ export const TOC_UPDATE_EVENT = "notebooks.toc.updated";
 export const TOC_SCROLL_EVENT = "notebooks.editor.scrollToHeading";
 /** Editor → panel: GFM task-list progress after every doc change. */
 export const TASKS_UPDATE_EVENT = "notebooks.tasks.updated";
+/** The note's detail panel (`AppWorkspace.Detail` id), for controls that open it. */
+export const NOTEBOOK_DETAIL_ID = "notebook-detail";
+/** Workspace socket → panel: participants of the opened note, including readers. */
 export const PRESENCE_EVENT = "notebooks.presence.changed";
+/**
+ * Workspace socket → panel: whether the people here are known. `connecting` until the first list arrives, `live`
+ * while it follows, `down` after a connection failed and is waiting to retry.
+ */
+export const PRESENCE_STATUS_EVENT = "notebooks.presence.status";
+export type PresenceStatusEventDetail = { status: "connecting" | "live" | "down" };
+/** Panel → workspace socket: reconnect now instead of waiting for the next retry. */
+export const PRESENCE_RETRY_EVENT = "notebooks.presence.retry";
+/** Panel → sidebar: open the notebook settings on one tab, such as `access`. */
+export const OPEN_NOTEBOOK_SETTINGS_EVENT = "notebooks.settings.open";
+export type OpenNotebookSettingsEventDetail = { tab: string };
 
 /**
  * Dispatched by the panel's "Copy content" / "Download as .md" actions when
@@ -66,7 +80,7 @@ export const NOTE_TITLE_CHANGED_EVENT = "notebooks.note.titleChanged";
 export const SYNC_STATE_EVENT = "notebooks.editor.syncState";
 /** `ended`: the session stopped for good (access or storage); the editor's recovery bar owns what comes next. */
 export type SyncStateEventDetail = { connected: boolean; lastSavedAt: string | null; ended?: boolean };
-/** Panel → editor: request current sync, active heading and presence locations on mount. */
+/** Panel → editor and workspace bridge: request sync, heading, participants and cursor locations on mount. */
 export const SYNC_STATE_REQUEST_EVENT = "notebooks.editor.syncStateRequest";
 export type SyncStateRequestEventDetail = undefined;
 /** Panel → editor: retry a dropped connection; terminal sync-ended states stay stopped. */

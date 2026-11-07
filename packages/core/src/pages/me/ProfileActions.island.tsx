@@ -1,6 +1,7 @@
-import { openAvatarUploadDialog } from "@k2b/cloud/account/ui";
+import { openProfilePictureDialog } from "@k2b/cloud/account/ui";
 import { apiClient } from "@k2b/cloud/clients/core";
 import type { UserProfile, UserProvider } from "@k2b/cloud/contracts";
+import { AvatarStateSchema, SaveAvatarSchema } from "@k2b/cloud/contracts/profile";
 import { dates } from "@k2b/stdlib";
 import { mutation as mutations } from "@k2b/stdlib/solid";
 import { Avatar, Button, IconButton, NoticeCard, prompts, TextInput, useLocale } from "@k2b/ui";
@@ -43,53 +44,25 @@ export default function ProfileActions(props: Props) {
   const canMutateAccount = props.provider !== "ipa" || props.freeIpaEnabled;
   const holders = () => (props.appName ? t().holdersNamed({ appName: props.appName }) : t().holdersAll);
 
-  const saveAvatar = async (dataUrl: string) => {
-    const res = await apiClient.me.avatar.$put({ json: { dataUrl } });
-    if (!res.ok) {
-      throw new Error(t().failedToUpdateAvatar);
-    }
-    window.location.reload();
-  };
-
-  const removeAvatar = async () => {
-    const res = await apiClient.me.avatar.$delete();
-    if (!res.ok) {
-      throw new Error(t().failedToRemoveAvatar);
-    }
-    window.location.reload();
+  const readAvatar = async (response: { ok: boolean; json: () => Promise<unknown> }) => {
+    if (!response.ok) throw new Error(t().avatarSaveFailed);
+    return AvatarStateSchema.parse(await response.json());
   };
 
   const handleChangeAvatar = async () => {
-    await openAvatarUploadDialog({
-      username: props.displayName || props.uid,
-      userId: props.userId,
-      avatarHash: props.avatarHash,
-      title: t().changeAvatar,
-      visibilityText: t().avatarVisibility,
-      saveLabel: t().save,
-      subtitle: t().avatarSubtitle,
-      messages: {
-        processFailed: t().avatarProcessFailed,
-        typeInvalid: t().avatarTypeInvalid,
-        tooLarge: t().avatarTooLarge,
-        empty: t().avatarEmpty,
-        unsupported: t().avatarUnsupported,
-        compressionFailed: t().avatarCompressionFailed,
-        saveFailed: t().avatarSaveFailed,
-        removeFailed: t().avatarRemoveFailed,
-        replaceDrop: t().avatarReplaceDrop,
-        chooseDrop: t().avatarChooseDrop,
-        formats: t().avatarFormats,
-        cropHint: t().avatarCropHint,
-        removing: t().avatarRemoving,
-        remove: t().removeAvatar,
-        removeAria: t().removeAvatar,
-        cancel: t().cancel,
-        saving: t().avatarSaving,
+    const changed = await openProfilePictureDialog({
+      subject: "person",
+      name: props.displayName || props.uid,
+      load: async () => readAvatar(await apiClient.me.avatar.$get()),
+      save: async (change) => readAvatar(await apiClient.me.avatar.$put({ json: SaveAvatarSchema.parse(change) })),
+      deletePhoto: async () => {
+        const deleted = await apiClient.me.avatar.$delete();
+        if (!deleted.ok) throw new Error(t().avatarRemoveFailed);
+        return readAvatar(await apiClient.me.avatar.$get());
       },
-      onSave: saveAvatar,
-      onRemove: props.avatarHash ? removeAvatar : undefined,
     });
+    // The header, rail, and every list read the avatar hash from the page; a reload shows the new picture everywhere.
+    if (changed) window.location.reload();
   };
 
   // ── Edit Profile (name fields) ──
@@ -440,7 +413,7 @@ export default function ProfileActions(props: Props) {
           class="absolute -bottom-0.5 -right-0.5 flex h-6 w-6 items-center justify-center rounded-full bg-[var(--ui-surface)] text-secondary shadow-[var(--ui-shadow-surface)] transition-colors group-hover:text-primary group-focus-visible:text-primary"
           aria-hidden="true"
         >
-          <i class="ti ti-camera text-xs" />
+          <i class="ti ti-pencil text-xs" />
         </span>
       </button>
     );

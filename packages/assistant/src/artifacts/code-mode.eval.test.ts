@@ -16,9 +16,6 @@ const scripted = (answer: () => TextBlock | ToolCallBlock): Provider => ({
   family: "openai-compatible",
   model: "fixture",
   capabilities: { streaming: true, tools: true, images: false, thinking: false, usage: true },
-  async complete() {
-    throw new Error("Unexpected completion");
-  },
   async *stream() {
     const block = answer();
     yield block.type === "text"

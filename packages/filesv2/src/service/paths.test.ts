@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { relativePath, userPath, validateConfiguration } from "./paths";
+import { basePath, relativePath, strictName, userPath, validateConfiguration } from "./paths";
 
 const configuration = {
   activityRetentionDays: 365,
@@ -14,7 +14,7 @@ const configuration = {
     groups: "groups",
     archive: "archive",
   },
-  freeipa: { enabled: false, root: "freeipa", prefix: "", homes: "homes", groups: "groups", archive: "archive" },
+  freeipa: { autoCreate: false, enabled: false, root: "freeipa", prefix: "", homes: "homes", groups: "groups", archive: "archive" },
   collabora: { url: "", internalUrl: "", wopiOrigin: "", documentFormat: "odf" as const },
 };
 describe("Files path boundaries", () => {
@@ -36,4 +36,13 @@ describe("Files path boundaries", () => {
     ).toThrow();
     expect(() => validateConfiguration({ ...configuration, url: "http://token@filegate:4000" })).toThrow();
   });
+});
+
+test("automatic and administrator home provisioning share strict directory naming and area paths", () => {
+  expect(basePath(configuration, { area: "cloud", kind: "users", name: "alice" })).toBe("space/users/alice");
+  expect(basePath(configuration, { area: "freeipa", kind: "users", name: "alice" })).toBe("homes/alice");
+  for (const value of ["", "alice/nested", "../alice", "/alice", ".filegate"]) {
+    expect(() => strictName(value)).toThrow();
+    expect(() => basePath(configuration, { area: "freeipa", kind: "users", name: value })).toThrow();
+  }
 });

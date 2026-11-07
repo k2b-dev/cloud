@@ -9,7 +9,7 @@
 import { readFile } from "node:fs/promises";
 import { Readable } from "node:stream";
 import { parseArgs } from "node:util";
-import { sql } from "bun";
+import { sql } from "@k2b/cloud";
 import { type BrowserContext, chromium, type Locator, type Page } from "playwright";
 import { newShortId } from "../src/lib/short-id";
 import type { ConnectorEnvelope } from "../src/service/connectors";
@@ -972,22 +972,31 @@ const runSmoke = async (fixture: Fixture) => {
     ok("undo action disappears when the server undo deadline expires");
 
     const mailto = "mailto:recipient@example.test?subject=Browser%20mailto&body=Created%20from%20an%20email%20link";
-    await page.goto(`/app/mail/compose?mailbox=${fixture.mailboxId}&mailto=${encodeURIComponent(mailto)}`, {
-      waitUntil: "domcontentloaded",
-    });
-    const continueIntent = page.getByRole("button", { name: "Continue", exact: true });
-    await continueIntent.waitFor();
     const [draftCountBeforeMailto] = await sql<{ count: number }[]>`
       SELECT count(*)::int AS count
       FROM mail.drafts
       WHERE mailbox_id = ${fixture.mailboxUuid}::uuid
     `;
-    await continueIntent.click();
-    await expectUrl(
-      page,
-      (url) => new RegExp(`/app/mail/${fixture.mailboxId}/compose/local/[^/]+$`).test(url.pathname),
-      "mailto opens a local draft seed",
-    );
+    await page.goto(`/app/mail/compose?mailbox=${fixture.mailboxId}&mailto=${encodeURIComponent(mailto)}`, {
+      waitUntil: "domcontentloaded",
+    });
+    // One sending mailbox with one verified sender opens the composer directly; otherwise the page asks first.
+    const continueIntent = page.getByRole("button", { name: "Continue", exact: true });
+    const seedPath = new RegExp(`/app/mail/${fixture.mailboxId}/compose/local/[^/]+$`);
+    const intentStep = await Promise.race([
+      continueIntent.waitFor().then(
+        () => "chooser" as const,
+        () => "direct" as const,
+      ),
+      page
+        .waitForURL((url) => seedPath.test(url.pathname))
+        .then(
+          () => "direct" as const,
+          () => "chooser" as const,
+        ),
+    ]);
+    if (intentStep === "chooser") await continueIntent.click();
+    await expectUrl(page, (url) => seedPath.test(url.pathname), "mailto opens a local draft seed");
     const [draftCountAfterMailto] = await sql<{ count: number }[]>`
       SELECT count(*)::int AS count
       FROM mail.drafts
@@ -1083,6 +1092,8 @@ const cleanup = async (fixture: Fixture | null) => {
 let fixture: Fixture | null = null;
 try {
   assertLocalTarget();
+  const { initializePlatform } = await import("@k2b/cloud/start");
+  await initializePlatform({ appId: "mail", source: "env" });
   fixture = await createFixture();
   await runSmoke(fixture);
 } catch (error) {

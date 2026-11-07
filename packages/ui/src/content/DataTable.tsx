@@ -26,8 +26,6 @@ import Placeholder from "../surfaces/Placeholder";
 import type { CollectionSelection } from "./collection-selection";
 import { useDataTableMessages } from "./data-table-messages";
 
-const WIDE_TABLE_COLUMNS = 8;
-
 export type DataTableColumn<T> = {
   id: string;
   header: JSX.Element | ((ctx: { col: DataTableColumn<T> }) => JSX.Element);
@@ -157,11 +155,17 @@ type DataTablePanelContextValue = {
 
 const DataTablePanelContext = createContext<DataTablePanelContextValue>();
 
-const defaultRender = (value: unknown, locale: string, messages: ReturnType<ReturnType<typeof useUiMessages>>): JSX.Element => {
+const defaultRender = (
+  value: unknown,
+  locale: string,
+  numbers: Intl.NumberFormat,
+  messages: ReturnType<ReturnType<typeof useUiMessages>>,
+): JSX.Element => {
   if (value === null || value === undefined || value === "") return "—";
   if (value instanceof Date) return value.toLocaleString(locale);
   if (typeof value === "boolean") return value ? messages.yes : messages.no;
-  if (typeof value === "number" || typeof value === "bigint") return String(value);
+  // Numbers read in the reader's language: grouping and decimal mark follow the locale, at most three decimals.
+  if (typeof value === "number" || typeof value === "bigint") return numbers.format(Object.is(value, -0) ? 0 : value);
   if (typeof value === "string") return value;
   return JSON.stringify(value);
 };
@@ -443,7 +447,8 @@ function DataTableRoot<T>(props: DataTableProps<T>) {
     );
   };
 
-  const renderValueDefault = (value: unknown) => defaultRender(value, locale(), messages());
+  const numberFormat = createMemo(() => new Intl.NumberFormat(locale()));
+  const renderValueDefault = (value: unknown) => defaultRender(value, locale(), numberFormat(), messages());
   const renderCellDefault = (row: T, col: DataTableColumn<T>) => renderValueDefault(valueOf(row, col));
 
   const onRowKeyDown = (event: KeyboardEvent, row: T) => {
@@ -547,12 +552,7 @@ function DataTableRoot<T>(props: DataTableProps<T>) {
           data-scroll-preserve={props.scrollPreserveKey || undefined}
           onScroll={onScroll}
         >
-          <table
-            ref={tableRef}
-            class={tableClass()}
-            data-fill={props.fillHeight ? "true" : undefined}
-            data-wide={props.columns.length > WIDE_TABLE_COLUMNS ? "true" : undefined}
-          >
+          <table ref={tableRef} class={tableClass()} data-fill={props.fillHeight ? "true" : undefined}>
             <Show when={props.loading}>
               {/* Names the table while it waits; the announcement goes through the shared live region outside the busy region. */}
               <caption class="k2b-sr-only">{dataTableMessages().loadingRows}</caption>

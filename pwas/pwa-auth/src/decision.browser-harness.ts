@@ -175,6 +175,7 @@ window.openDecision = ({ locale, state, answer }) => {
       if (answer === "hang") return new Promise(() => {});
       setInbox({ fixture: { requests: inbox().fixture.requests.filter((item) => item.requestId !== decided.requestId), actions: [], moreActions: 0, changes: [], moreChanges: 0 } });
     },
+    recheck: noop,
     revoke: noop,
     syncPush: noop,
     forget: noop,

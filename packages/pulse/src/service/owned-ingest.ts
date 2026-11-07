@@ -1,6 +1,6 @@
+import { sql } from "@k2b/cloud";
 import type { AccessSubject, RequestActor } from "@k2b/cloud/contracts";
 import { err, fail, ok } from "@k2b/cloud/server";
-import { sql } from "bun";
 import { accessScopeFor, requireBaseAccess } from "./access-control";
 
 export type OwnedIngestIdentity = { actor: RequestActor; accessSubject: AccessSubject; expectedRevision: number };

@@ -84,9 +84,9 @@ export const resolveFieldDisplay = (options: ResolveFieldDisplayOptions): FieldD
       if (!item || typeof item !== "object") return [];
       const id = (item as { id?: unknown }).id;
       const type = (item as { type?: unknown }).type;
-      if (typeof id !== "string" || (type !== "user" && type !== "group")) return [];
+      if (typeof id !== "string" || (type !== "user" && type !== "group" && type !== "service_account")) return [];
       const label = options.relationLabels?.[id];
-      if (!label) return [type === "user" ? t.privateUser : t.privateGroup];
+      if (!label) return [type === "user" ? t.privateUser : type === "group" ? t.privateGroup : t.privateServiceAccount];
       return [type === "group" ? groupDisplayName(label, locale) : label];
     });
     if (labels.length > 0) return { kind: "principal", text: labels.join(", ") };

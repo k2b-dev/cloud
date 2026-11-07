@@ -1,7 +1,7 @@
 import { openCloudResourcePicker } from "@k2b/cloud/browser/resource-picker";
 import { mutation as mutations } from "@k2b/stdlib/solid";
-import { DetailPanel, prompts, StatusBadge, type StatusTone, toast } from "@k2b/ui";
-import { createSignal, For, onMount, Show } from "solid-js";
+import { type DetailLinkItem, DetailLinks, DetailPanel, prompts, StatusBadge, type StatusTone, toast } from "@k2b/ui";
+import { createMemo, createSignal, onMount, Show } from "solid-js";
 import { apiClient } from "@/api/client";
 import type { SpaceItemLink, SpaceItemLinkPreview, SpaceItemResourceReferenceInput } from "@/contracts";
 import { linkHostname, parseGitHubLink } from "@/lib/link-targets";
@@ -13,7 +13,7 @@ import type { SpaceItemDetail } from "../workspace/workspace-types";
 type Props = {
   spaceId: string;
   itemId: string;
-  /** Cloud resource references (without `spaces.item`, which the panel shows as related tasks). */
+  /** Cloud resource references, related tasks (`spaces.item`) first. */
   references: SpaceItemDetail["references"];
   /** External links with the previews known at render time. */
   links: SpaceItemLink[];
@@ -53,7 +53,7 @@ function LinkFavicon(props: { url: string }) {
 }
 
 /**
- * One "Links" list per item: Cloud resource references plus external URLs.
+ * One "Linked" list per item: related tasks and other Cloud resource references, then external URLs.
  * GitHub links render their cached issue or pull request state; the section
  * fills a missing GitHub preview once through the API after mount so SSR never
  * waits on GitHub.
@@ -170,106 +170,98 @@ export default function ItemLinksSection(props: Props) {
     await addLink.mutate({ itemId: props.itemId, link: { url: values.url.trim(), label: values.label?.trim() || null } });
   };
 
-  const menu = (label: string, action: () => void) =>
+  const menu = (label: string, action: () => void, actionLabel: string) =>
     props.canEdit
       ? {
           menuLabel: t.moreActionsFor({ label }),
-          menuItems: [{ label: t.removeLink, icon: "ti ti-unlink", disabled: busy(), action }],
+          // A getter keeps the rows stable while a write is pending; only the menu entry follows `busy`.
+          menuItems: [
+            {
+              label: actionLabel,
+              icon: "ti ti-unlink",
+              get disabled() {
+                return busy();
+              },
+              action,
+            },
+          ],
         }
       : {};
 
   const stateLabel = (state: SpaceItemLinkPreview["state"]) =>
     state === "open" ? t.linkStateOpen : state === "merged" ? t.linkStateMerged : t.linkStateClosed;
 
+  const referenceIcon = (reference: SpaceItemDetail["references"][number]) =>
+    reference.resource?.icon ??
+    (reference.ref.type === "spaces.item" ? "ti ti-checkbox" : reference.ref.type === "mail.conversation" ? "ti ti-mail" : "ti ti-link");
+
+  const referenceItems = createMemo((): DetailLinkItem[] =>
+    props.references.map((reference) => {
+      const href = reference.resource?.links?.find((link) => link.rel === "open")?.href;
+      const shared = {
+        id: `ref:${reference.ref.type}:${reference.ref.id}`,
+        title: reference.label,
+        icon: referenceIcon(reference),
+        ...menu(reference.label, () => unlinkReference.mutate(reference.ref), t.unlink),
+      };
+      // A reference the person can no longer open stays visible, disabled, and says why.
+      if (!href)
+        return {
+          ...shared,
+          disabled: true,
+          description: reference.ref.type === "spaces.item" ? t.taskUnavailable : t.resourceUnavailable,
+        };
+      return {
+        ...shared,
+        href,
+        description: reference.resource?.title !== reference.label ? reference.resource?.title : undefined,
+        trailing: !props.canEdit ? <i class="ti ti-chevron-right" aria-hidden="true" /> : undefined,
+      };
+    }),
+  );
+
+  const linkItems = createMemo((): DetailLinkItem[] =>
+    links().map((link) => {
+      const preview = link.preview;
+      const github = parseGitHubLink(link.url);
+      const external = {
+        id: `url:${link.url}`,
+        href: link.url,
+        target: "_blank",
+        rel: "noreferrer",
+        trailing: !props.canEdit ? <i class="ti ti-external-link" aria-hidden="true" /> : undefined,
+      };
+      if (preview) {
+        const label = `${preview.repo}#${preview.number}`;
+        return {
+          ...external,
+          title: preview.title,
+          leading: <i class={preview.type === "pull" ? "ti ti-git-pull-request" : "ti ti-brand-github"} aria-hidden="true" />,
+          description: (
+            <span class="inline-flex items-center gap-1.5">
+              <span>{label}</span>
+              <StatusBadge variant="dot" tone={previewTone[preview.state]} label={stateLabel(preview.state)} />
+            </span>
+          ),
+          ...menu(label, () => removeLink.mutate(link.url), t.removeLink),
+        };
+      }
+      const title = link.label ?? (github ? `${github.owner}/${github.repo}#${github.number}` : linkHostname(link.url));
+      return {
+        ...external,
+        title,
+        leading: github ? <i class="ti ti-brand-github" aria-hidden="true" /> : <LinkFavicon url={link.url} />,
+        description: link.label ? linkHostname(link.url) : link.url.replace(/^https?:\/\//, ""),
+        ...menu(title, () => removeLink.mutate(link.url), t.removeLink),
+      };
+    }),
+  );
+
   return (
-    <DetailPanel.Section title={t.links} icon="ti ti-link" tone="neutral" count={props.references.length + links().length || undefined}>
-      <div class="flex flex-col gap-1">
-        <For each={props.references}>
-          {(reference) => {
-            const href = () => reference.resource?.links?.find((link) => link.rel === "open")?.href;
-            const icon = () => reference.resource?.icon ?? (reference.ref.type === "mail.conversation" ? "ti ti-mail" : "ti ti-link");
-            const referenceMenu = () =>
-              props.canEdit
-                ? {
-                    menuLabel: t.moreActionsFor({ label: reference.label }),
-                    menuItems: [
-                      { label: t.unlink, icon: "ti ti-unlink", disabled: busy(), action: () => unlinkReference.mutate(reference.ref) },
-                    ],
-                  }
-                : {};
-            return (
-              <Show
-                when={href()}
-                fallback={
-                  <DetailPanel.Action
-                    type="button"
-                    disabled
-                    leading={<i class={icon()} aria-hidden="true" />}
-                    title={reference.label}
-                    description={t.resourceUnavailable}
-                    {...referenceMenu()}
-                  />
-                }
-              >
-                {(openHref) => (
-                  <DetailPanel.Action
-                    href={openHref()}
-                    leading={<i class={icon()} aria-hidden="true" />}
-                    title={reference.label}
-                    description={reference.resource?.title !== reference.label ? reference.resource?.title : undefined}
-                    trailing={!props.canEdit ? <i class="ti ti-chevron-right" aria-hidden="true" /> : undefined}
-                    {...referenceMenu()}
-                  />
-                )}
-              </Show>
-            );
-          }}
-        </For>
-        <For each={links()}>
-          {(link) => {
-            const preview = () => link.preview;
-            const github = () => parseGitHubLink(link.url);
-            const fallbackTitle = () =>
-              link.label ?? (github() ? `${github()!.owner}/${github()!.repo}#${github()!.number}` : linkHostname(link.url));
-            return (
-              <Show
-                when={preview()}
-                fallback={
-                  <DetailPanel.Action
-                    href={link.url}
-                    target="_blank"
-                    rel="noreferrer"
-                    leading={github() ? <i class="ti ti-brand-github" aria-hidden="true" /> : <LinkFavicon url={link.url} />}
-                    title={fallbackTitle()}
-                    description={link.label ? linkHostname(link.url) : link.url.replace(/^https?:\/\//, "")}
-                    trailing={!props.canEdit ? <i class="ti ti-external-link" aria-hidden="true" /> : undefined}
-                    {...menu(fallbackTitle(), () => removeLink.mutate(link.url))}
-                  />
-                }
-              >
-                {(item) => (
-                  <DetailPanel.Action
-                    href={link.url}
-                    target="_blank"
-                    rel="noreferrer"
-                    leading={<i class={item().type === "pull" ? "ti ti-git-pull-request" : "ti ti-brand-github"} aria-hidden="true" />}
-                    title={item().title}
-                    description={
-                      <span class="inline-flex items-center gap-1.5">
-                        <span>
-                          {item().repo}#{item().number}
-                        </span>
-                        <StatusBadge variant="dot" tone={previewTone[item().state]} label={stateLabel(item().state)} />
-                      </span>
-                    }
-                    trailing={!props.canEdit ? <i class="ti ti-external-link" aria-hidden="true" /> : undefined}
-                    {...menu(`${item().repo}#${item().number}`, () => removeLink.mutate(link.url))}
-                  />
-                )}
-              </Show>
-            );
-          }}
-        </For>
+    <DetailLinks
+      incoming={[]}
+      outgoing={[...referenceItems(), ...linkItems()]}
+      footer={
         <Show when={props.canEdit}>
           <DetailPanel.Action
             type="button"
@@ -302,7 +294,7 @@ export default function ItemLinksSection(props: Props) {
             title={t.linkCloudResource}
           />
         </Show>
-      </div>
-    </DetailPanel.Section>
+      }
+    />
   );
 }

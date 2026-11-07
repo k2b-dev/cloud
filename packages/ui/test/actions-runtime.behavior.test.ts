@@ -130,6 +130,43 @@ describe("@k2b/ui action runtime behavior", () => {
     dom.cleanup();
   });
 
+  test("a lazy dropdown renders its entries when it first opens, then focuses the first one", async () => {
+    const dom = createDomTestHarness();
+    installPopoverStub();
+    const { Dropdown } = await import("../src/actions/Dropdown");
+    const dispose = render(
+      () =>
+        createComponent(Dropdown.Root, {
+          lazy: true,
+          items: [
+            { label: "Rename", action: () => {} },
+            { label: "Delete", action: () => {} },
+          ],
+          get children() {
+            return createComponent(Dropdown.Trigger, { label: "Row actions", children: "More" });
+          },
+        }),
+      dom.root,
+    );
+    const menu = () => dom.root.querySelector<HTMLElement>(".k2b-dropdown__menu");
+    expect(menu()?.querySelectorAll("[role='menuitem']")).toHaveLength(0);
+    // The trigger still names its menu, so assistive technology finds what it opens.
+    expect(dom.root.querySelector(".k2b-dropdown__trigger")?.getAttribute("aria-controls")).toBe(menu()?.id);
+
+    dom.root.querySelector<HTMLButtonElement>(".k2b-dropdown__trigger")?.click();
+    await flush();
+    const items = [...(menu()?.querySelectorAll<HTMLElement>("[role='menuitem']") ?? [])];
+    expect(items.map((item) => item.textContent)).toEqual(["Rename", "Delete"]);
+    expect(document.activeElement).toBe(items[0] ?? null);
+
+    // Closed again, the entries stay, so a second opening is as quick as any menu's.
+    items[0]?.click();
+    await flush();
+    expect(menu()?.querySelectorAll("[role='menuitem']")).toHaveLength(2);
+    dispose();
+    dom.cleanup();
+  });
+
   test("runs a link row's action on a plain click and leaves modified clicks to the link", async () => {
     const dom = createDomTestHarness();
     installPopoverStub();
@@ -688,6 +725,82 @@ describe("@k2b/ui action runtime behavior", () => {
     expect(dom.document.activeElement).toBe(segments[0] ?? null);
     menuKeyDown?.(new KeyboardEvent("keydown", { bubbles: true, key: "ArrowUp" }));
     expect(dom.document.activeElement?.textContent).toBe("Mine");
+
+    dispose();
+    dom.cleanup();
+  });
+
+  test("offers Only per row and All or None per section, keeps notes, and shows the chosen colors", async () => {
+    const dom = createDomTestHarness();
+    installPopoverStub();
+    const { FilterChip } = await import("../src/actions/FilterChip");
+    const changes: string[][] = [];
+
+    const dispose = render(() => {
+      const [value, setValue] = createSignal<readonly string[]>(["a:1", "b:1", "sort:asc"]);
+      return createComponent(FilterChip, {
+        label: "Calendars",
+        icon: "ti ti-calendar",
+        only: true,
+        swatches: true,
+        get value() {
+          return value();
+        },
+        onValueChange: (nextValue) => {
+          changes.push(nextValue);
+          setValue(nextValue);
+        },
+        options: [
+          {
+            label: "App A",
+            multiple: true,
+            toggleAll: true,
+            options: [
+              { value: "a:1", label: "Team", color: "#8b5cf6" },
+              { value: "a:2", label: "Board", color: "#3b82f6", trailing: createComponent(() => "busy only", {}) },
+            ],
+          },
+          { label: "App B", multiple: true, toggleAll: true, options: [{ value: "b:1", label: "Holidays", color: "#dc2626" }] },
+          { label: "Sort", options: [{ value: "sort:asc", label: "Ascending" }] },
+        ],
+      });
+    }, dom.root);
+
+    // The trigger shows the colors of the chosen options in the place of its icon.
+    const dots = Array.from(dom.root.querySelectorAll<HTMLElement>(".k2b-filter-chip__swatches > .k2b-filter-chip__dot"));
+    expect(dots.map((dot) => dot.style.getPropertyValue("--k2b-filter-color"))).toEqual(["#8b5cf6", "#dc2626"]);
+    expect(dom.root.querySelector(".k2b-filter-chip > i.ti-calendar")).toBeNull();
+
+    dom.root.querySelector<HTMLElement>(".k2b-filter-chip")?.click();
+    await flush();
+    expect(dom.document.body.textContent).toContain("busy only");
+
+    // Only keeps that option among the multiple sections and the single-select choice.
+    const only = dom.document.querySelector<HTMLButtonElement>('.k2b-dropdown__secondary[aria-label="Only Holidays"]');
+    expect(only?.getAttribute("role")).toBe("menuitem");
+    only?.click();
+    expect(changes.at(-1)).toEqual(["sort:asc", "b:1"]);
+
+    // All chooses the whole section; once all are chosen it offers None.
+    const all = dom.document.querySelector<HTMLButtonElement>('.k2b-dropdown__label-action[aria-label="Choose all of App A"]');
+    expect(all?.textContent).toBe("All");
+    all?.click();
+    expect(changes.at(-1)).toEqual(["sort:asc", "b:1", "a:1", "a:2"]);
+    await flush();
+    const none = dom.document.querySelector<HTMLButtonElement>('.k2b-dropdown__label-action[aria-label="Choose none of App A"]');
+    expect(none?.textContent).toBe("None");
+    none?.click();
+    expect(changes.at(-1)).toEqual(["sort:asc", "b:1"]);
+
+    // Up and Down move from row to row; Right reaches the row's Only, Down from there goes on to the next row.
+    const menu = dom.document.querySelector<HTMLElement>(".k2b-dropdown__menu");
+    const menuKeyDown = (menu as unknown as { $$keydown?: (event: KeyboardEvent) => void })?.$$keydown;
+    const rows = Array.from(dom.document.querySelectorAll<HTMLButtonElement>(".k2b-dropdown__pair > [role='menuitemcheckbox']"));
+    rows[0]?.focus();
+    menuKeyDown?.(new KeyboardEvent("keydown", { bubbles: true, key: "ArrowRight" }));
+    expect(dom.document.activeElement?.getAttribute("aria-label")).toBe("Only Team");
+    menuKeyDown?.(new KeyboardEvent("keydown", { bubbles: true, key: "ArrowDown" }));
+    expect(dom.document.activeElement).toBe(rows[1] ?? null);
 
     dispose();
     dom.cleanup();

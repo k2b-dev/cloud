@@ -23,6 +23,7 @@ import {
   type CalendarDayBadge,
   type CalendarEvent,
   type CalendarEventColor,
+  type CalendarEventLink,
   type CalendarEventRenderContext,
   type CalendarEventTimeChange,
   type CalendarExternalDrag,
@@ -43,14 +44,54 @@ Every `CalendarEvent` has an `id`, `title`, and `start`. `end` and `allDay`
 control placement. `color` accepts the shared semantic palette; `colorHex`
 supports an application-defined calendar color.
 
+An event is a light neutral surface with neutral text and a 1px edge in its
+color; the edge carries the category, never the text or a dot. The calendar
+darkens the edge on the light theme and lightens it on the dark theme as
+needed, so any `colorHex` keeps at least 3:1 against the surface. All-day and
+multi-day bars add a soft fill of their color and a bolder title, so they
+read stronger than a one-day entry. Selection doubles the edge inside and
+tints the surface; nothing changes size.
+
+Four fields cover what most applications drew with `renderEvent` before, the
+same in every application:
+
+- `icon` is a Tabler class such as `"ti ti-truck"`. It leads the title in the
+  color of the edge; a phone's month cell leaves it out.
+- `attendees` (`{ name, src?, status? }`) show as faces where there is room.
+  A week or day band shows up to three and then "+n", and the day list shows
+  one. The compact month shows none. The time always stays whole; faces give
+  way first. Without `src`, a face shows initials. The accessible name adds
+  how many people there are.
+- `links` (`{ label, href, icon? }`) show only in the entry's detail, never
+  inside the entry, which is a link or button itself. Week and day bands and
+  the day list show how many there are with a quiet link icon; the month does
+  not.
+- `data` (`Record<string, string>`) adds host attributes to the entry's
+  element: `{ spaceItemId: "Item01" }` becomes `data-space-item-id="Item01"`.
+  Keys are camelCase letters and digits; the calendar leaves out other keys
+  and keys that start with `calendar`, which belong to it.
+
+`checked` marks a to-do or deadline in every view. `true` strikes the title
+through, also in the month. `false` turns the entry red once its time has
+passed, with a soft red fill and a red edge, and the accessible name says
+"overdue". The day and week views with `dayHours` also draw the check.
+
+Without `onEventActivate`, activating an entry opens the calendar's own
+detail: title, time, place, description, people, links, and "Open" for its
+`href`. It lies beside the entry, rises from the bottom on a phone, and closes
+with Escape or a click outside; the focus then returns to the entry. A click
+with a modifier on an entry with `href` still opens the link, for example in a
+new tab. With `onEventActivate` the host opens the entry, and the calendar
+draws no detail.
+
 Optional event detail includes `meta`, `description`, `location`,
-`calendarName`, attendees, resources, and recurrence metadata. `display:
-"background"` renders a non-interactive time range. `display: "marker"` draws
-a point in time, such as a deadline, as a small colored marker beside its title
-on the plain surface instead of a filled band; hover and selection tint it like
-an event, and a custom `renderEvent` output replaces the default marker.
-`href` or `getEventHref` makes an event a canonical link. Hover tints an
-event that opens or links; it never moves the event or adds a shadow.
+`calendarName`, resources, and recurrence metadata. `display:
+"background"` renders a non-interactive time range as a soft fill without an
+edge. `display: "marker"` draws a point in time, such as a deadline, on the
+plain surface with a dashed edge instead of a solid one; hover and selection
+tint it like an event. `href` or `getEventHref` makes an event a canonical
+link. Hover darkens the surface of an event that opens or links; it never
+moves the event or adds a shadow.
 `accessibleDetail` adds short text to the event's accessible name for state
 that its content shows only visually, such as a priority flag in a custom
 `renderEvent` output.
@@ -98,7 +139,9 @@ follow, the hour gutter stays in view, and the vertical scrollbar stays at the
 frame's edge. An event or day that is selected or focused at the start edge
 stops beside the hour gutter, not under it.
 
-Limit the switcher with `views`. `getDateHref`, `getViewHref`, and
+Limit the switcher with `views`, or leave it out with `viewSwitcher={false}`
+when the page shows the views elsewhere, such as tabs in its head; the view
+commands stay. `getDateHref`, `getViewHref`, and
 `getEventHref` keep navigation functional in the server response.
 `onNavigate` progressively enhances those links after mount.
 
@@ -107,7 +150,8 @@ Limit the switcher with `views`. `getDateHref`, `getViewHref`, and
 `customViews` adds views after the built-in ones, each with a `value` and a
 `label`. While `view` is one of them, the calendar keeps its header and
 `toolbarContent` and shows `children` as the body; `events` are not drawn.
-The header names the day of `date` and pages by one day, as in the day view.
+The header names the day of `date` and pages by one day, as in the day view,
+or by `days` when the view sets it, such as 14 for a two-week list.
 The view's value reaches `getViewHref`, `getDateHref`, `onViewChange`, and
 `onDateChange` like a built-in one, and JSX infers its type from
 `customViews`. The application renders the body from its own data, for
@@ -278,7 +322,9 @@ and the visible hours.
   there, and in the week view the arrow keys reach the chips after the
   waking hours.
 - **The day view** is one scroll through the loaded days with each day's
-  heading on top while the day is in view. Runs of empty days merge into one
+  heading on top while the day is in view. Each day keeps one line for its
+  all-day entries, also while it has none, so an entry that loads later moves
+  nothing; more entries add lines. Runs of empty days merge into one
   row, "Nothing planned", that opens them; today, the day of `date`, and a day
   that Go to finds inside such a run never fold. When loaded days join a run
   at either end, it stays the same row, so its focused "Nothing planned"
@@ -296,22 +342,28 @@ and the visible hours.
   view stays there. The previous and next buttons move to the start of the week before or after,
   and Today returns to this week, on a phone to today within it. Nights open
   for the whole strip when an entry of the shown week lies in one. The all-day
-  row is as high as the weeks in view need, so a week that loads off screen
-  moves nothing. It opens at the start of the week of `date`, or on a phone
+  row is as high as the weeks in view need, at least one line, so a week that
+  loads off screen moves nothing, and neither does an entry that arrives for an
+  empty row. It opens at the start of the week of `date`, or on a phone
   at that day within its week.
 - **Entries.** Timed events are bands as long as they last, side by side when
   they overlap, with their time; the running one fills up with the time that
-  passed and says what is left, such as "27 min left". `display: "marker"`
-  draws a deadline with a time as a dashed line with a pill; pills that
+  passed, draws its edge twice as strong, and says what is left, such as
+  "27 min left". A past entry keeps its edge and mutes its text. `display:
+  "marker"` draws a deadline with a time as a dashed line with a pill, red with
+  a soft red fill once an unchecked one is overdue; pills that
   would cover each other, such as two to-dos due at 17:00, sit side by side,
   the earlier one on the left, and each line stays at its own time. An all-day
   event, a timed event that runs past the start hour of a later date, and a
   date-only marker sit in the all-day row; in the week view a long event is one bar per week with a torn
   edge and, where it has room, "from 20" and "until 27".
-- **Checkboxes.** An event with `checked` shows a checkbox before its title,
-  drawn by the calendar; `onEventCheck(event, checked)` makes it a control,
-  and Space on the entry checks it as well. The check draws itself and the
-  title strikes through until the host's events agree; when `onEventCheck`
+- **Checkboxes.** An event with `checked` shows a small ring in its edge color
+  in the line of its title, outlined while open and filled with a check once
+  done; it never lies on the entry's edge, and checking it moves nothing. On a
+  touch screen it reaches 44 px without taking room. `onEventCheck(event,
+  checked)` makes it a checkbox control, and Space on the entry checks it as
+  well. The check draws itself and the title strikes through until the host's
+  events agree; when `onEventCheck`
   returns a promise that rejects, the box goes back. When the reader checks
   off the last open entry due today, today's heading says "All done for
   today" for about two seconds, in the place of its note, so nothing moves.
@@ -472,6 +524,9 @@ the window's:
   with icon-only chips. Keep `toolbarActions` compact there, for example an
   icon with a visually hidden label.
 
+Chips give up their names only to make room for the view switcher: with
+`viewSwitcher={false}` they keep their names at every width.
+
 ## API reference
 
 ```ts
@@ -480,7 +535,11 @@ type CalendarView = "day" | "week" | "month" | "year" | "mobile-month";
 type CalendarEventColor = "blue" | "emerald" | "amber" | "red" | "violet" | "cyan" | "zinc";
 
 type CalendarAttendee = {
-  name: string; status?: "accepted" | "declined" | "tentative" | "needs-action";
+  name: string; src?: string; status?: "accepted" | "declined" | "tentative" | "needs-action";
+};
+
+type CalendarEventLink = {
+  label: string; href: string; icon?: string;
 };
 
 type CalendarResource = {
@@ -493,7 +552,8 @@ type CalendarRecurrence = {
 
 type CalendarEvent = {
   id: string; title: string; start: Date | string; end?: Date | string; allDay?: boolean;
-  color?: CalendarEventColor; colorHex?: string; href?: string; dataSpaceItemId?: string; meta?: string;
+  color?: CalendarEventColor; colorHex?: string; href?: string; data?: Record<string, string>;
+  icon?: string; links?: CalendarEventLink[]; meta?: string;
   description?: string; display?: "event" | "background" | "marker"; accessibleDetail?: string;
   checked?: boolean; location?: string; calendarName?: string;
   attendees?: CalendarAttendee[]; resources?: CalendarResource[]; recurrence?: CalendarRecurrence;
@@ -509,7 +569,7 @@ type CalendarDayBadge = {
 };
 
 type CalendarCustomView<V extends string = string> = {
-  value: V; label: string;
+  value: V; label: string; days?: number;
 };
 
 ```
@@ -556,7 +616,7 @@ type CalendarEventTimeChange = {
 
 ```ts
 type CalendarProps<V extends string = never> = {
-  date: Date | string; events: CalendarEvent[]; view?: CalendarView | V; views?: CalendarView[];
+  date: Date | string; events: CalendarEvent[]; view?: CalendarView | V; views?: CalendarView[]; viewSwitcher?: boolean;
   customViews?: CalendarCustomView<V>[]; children?: JSX.Element; labels?: CalendarLabels; dateConfig?: DateContext; timeZone?: string; firstDayOfWeek?: 0 | 1;
   withWeekNumbers?: boolean; startHour?: number; endHour?: number;
   dayHours?: readonly [start: number, end: number]; range?: CalendarRange;
@@ -588,6 +648,25 @@ Dates accept `Date` or parseable strings. Prefer date-only strings for calendar 
 
 Defaults: `view="month"`, week starts Monday unless overridden, `visibleStartHour=0`, `visibleEndHour=24`, `startHour=8`, `endHour=18`, and `allDayMaxHeightRem=7`. Visible hours bound the grid; start/endHour mark business hours. Boolean features are opt-in except the single-click activation defaults described above. `onNavigate` uses [LinkNavigateEvent](/en/ui/getting-started#icons-tones-and-navigation); `onNavigateHref` is the separate string callback without a document view transition. `onPrefetch` receives the canonical URL to preload. Callbacks do not persist edits.
 
+## Migrate from `dataSpaceItemId`
+
+`dataSpaceItemId` is gone; `data` replaces it for any host attribute. Move the
+value into `data` under the camelCase name of the attribute you read:
+
+```ts
+// before
+{ id, title, start, dataSpaceItemId: itemId }
+// after: the entry still carries data-space-item-id="…"
+{ id, title, start, data: { spaceItemId: itemId } }
+```
+
+Read it back from `event.data?.spaceItemId` in callbacks. Selectors such as
+`[data-space-item-id]` keep working. Two more changes come with the same
+release: an entry with `checked: false` whose time has passed now turns red in
+every view, and without `onEventActivate` a click on an entry opens the
+calendar's own detail instead of following `href` at once; "Open" in the
+detail and a click with a modifier still follow it.
+
 ## Accessibility
 
 Canonical links remain available before mount. Date cells, navigation,
@@ -596,7 +675,9 @@ supplementary to event title, time, and metadata.
 A timed event's accessible name combines its title and time range in the
 render locale, for example “Review, 09:00 to 10:00” or “Review, 09:00 bis
 10:00”; an all-day event uses its title alone. `accessibleDetail` follows
-after a comma, for example “Review, 09:00 to 10:00, Priority: High”. The name
+after a comma, for example “Review, 09:00 to 10:00, Priority: High”. Before
+it, the name says “done” or “overdue” for `checked`, and how many people and
+links the entry has, for example “Review, 09:00 to 10:00, 3 people, 2 links”. The name
 replaces the event's visible content for screen readers, so custom
 `renderEvent` output that shows state only as an icon or color passes that
 state here.

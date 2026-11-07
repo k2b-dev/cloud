@@ -1,4 +1,4 @@
-export type SyncNatsPath = "/admin/observability/nats" | "/admin/observability/sync";
+export type SyncNatsPath = "/admin/observability/nats" | "/admin/observability/nats/sync";
 
 /** Changing the scope invalidates the selected detail and both pagination cursors. */
 export const syncNatsFilterHref = (path: SyncNatsPath, search: string, updates: Record<string, string | null> = {}) => {

@@ -1,6 +1,6 @@
 import { expect, setDefaultTimeout, test } from "bun:test";
+import { sql } from "@k2b/cloud";
 import { toPgTextArray, toPgUuidArray } from "@k2b/cloud/services";
-import { sql } from "bun";
 import { z } from "zod";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import { testShortId } from "../../../../scripts/fixtures/test-short-id";
@@ -13,6 +13,7 @@ import {
   READ_ALL_BATCH,
   ReadAllOutcomeSchema,
   ReadUpdateSchema,
+  UNREAD_TOTAL_CAP,
 } from "../service/contracts";
 import { appendMessage } from "../service/message-store";
 import { unreadQuery } from "../service/read-state";
@@ -259,6 +260,59 @@ suite("personal read state", () => {
     expect(await mark(viewer, notices.shortId)).toMatchObject({ unread: 0, unreadFromSeq: 1 });
     expect(await all(viewer)).toEqual({ outcome: "done", marked: 1, more: false });
     expect(await all(viewer)).toEqual({ outcome: "done", marked: 0, more: false });
+  });
+
+  test("the unread count covers chats beyond the first page and stops at 100", async () => {
+    const viewer = await f.person(),
+      other = await f.person();
+    const summary = async () => {
+      const response = await f.request(viewer.headers, "/unread-count");
+      expect(response.status).toBe(200);
+      return (await response.json()) as { count: number; text: string };
+    };
+    expect(await summary()).toEqual({ count: 0, text: "No unread messages" });
+    // The only unread message lies in the oldest chat, behind a full first page of read ones.
+    const oldest = await f.fixture(viewer, [{ person: other, permission: "write" }]);
+    await fill(other, oldest.shortId, 3);
+    for (let i = 0; i < CONVERSATION_PAGE_SIZE; i++) {
+      const chat = await f.fixture(viewer, [{ person: other, permission: "write" }]);
+      await fill(other, chat.shortId, 1);
+      await read(viewer, chat.shortId, 1);
+    }
+    const page = ConversationPageSchema.parse(await (await f.request(viewer.headers, "")).json());
+    expect(page.items.some((item) => item.id === oldest.shortId)).toBe(false);
+    expect(await summary()).toEqual({ count: 3, text: "3 unread" });
+    await fill(other, oldest.shortId, UNREAD_TOTAL_CAP + 5);
+    expect(await summary()).toEqual({ count: UNREAD_TOTAL_CAP, text: "99+ unread" });
+  });
+
+  test("manual unread marks without unread messages cannot hide an older unread message from the total", async () => {
+    const viewer = await f.person(),
+      other = await f.person();
+    const oldest = await f.fixture(viewer, [{ person: other, permission: "write" }]);
+    await fill(other, oldest.shortId, 1);
+    await sql`UPDATE chat.conversations SET last_activity_at = '2026-01-01T00:00:00Z' WHERE id = ${oldest.id}::uuid`;
+    const shortIds = Array.from({ length: UNREAD_TOTAL_CAP + 1 }, () => testShortId());
+    const rows = await sql<
+      { id: string; short_id: string }[]
+    >`INSERT INTO chat.conversations (short_id, created_by_type, created_by_id, seq_head, rev, changed_rev, member_count, last_activity_at)
+      SELECT short_id, 'user', ${viewer.id}::uuid, 1, 1, 1, 1, '2026-01-02T00:00:00Z'::timestamptz
+      FROM unnest(${toPgTextArray(shortIds)}::text[]) AS fixture(short_id) RETURNING id, short_id`;
+    for (const row of rows) f.trackChat(row.short_id);
+    const ids = toPgUuidArray(rows.map((row) => row.id));
+    await sql`INSERT INTO auth.access (id, user_id, permission)
+      SELECT id, ${viewer.id}::uuid, 'admin' FROM chat.conversations WHERE id = ANY(${ids}::uuid[])`;
+    await sql`INSERT INTO chat.conversation_access (conversation_id, access_id, role, added_by_type, added_by_id)
+      SELECT id, id, 'member', 'user', ${viewer.id}::uuid FROM chat.conversations WHERE id = ANY(${ids}::uuid[])`;
+    await sql`INSERT INTO chat.participants (conversation_id, principal_type, principal_id, origin, joined_seq, last_read_seq, unread_from_seq)
+      SELECT id, 'user', ${viewer.id}::uuid, 'direct', 0, 1, 1 FROM chat.conversations WHERE id = ANY(${ids}::uuid[])`;
+    // Marking one's own message unread leaves a mark but contributes no unread message to the badge.
+    await sql`INSERT INTO chat.messages (short_id, conversation_id, seq, rev, kind, author_type, author_id, author_name, client_id, body_md)
+      SELECT short_id || '0001', id, 1, 1, 'text', 'user', ${viewer.id}::uuid, 'Viewer', 'own', 'Own message'
+      FROM chat.conversations WHERE id = ANY(${ids}::uuid[])`;
+    const response = await f.request(viewer.headers, "/unread-count");
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ count: 1, text: "1 unread" });
   });
 
   test("a service account without access cannot read or create a participant", async () => {

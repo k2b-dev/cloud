@@ -1,9 +1,8 @@
 import { afterAll, beforeAll, expect, spyOn, test } from "bun:test";
+import { sql } from "@k2b/cloud";
 import type { User } from "@k2b/cloud/contracts";
 import { oauthTokens } from "@k2b/cloud/services";
-import { sql } from "bun";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
-import { migrate } from "../migrate";
 import { grantMailboxAccess } from "../service/access";
 import type { MailRequestContext } from "../service/auth";
 import { createMailbox } from "../service/mailboxes";
@@ -48,7 +47,6 @@ suite("Mail API for recently deleted mailboxes", () => {
   };
 
   beforeAll(async () => {
-    await migrate();
     const userWithToken = async (token: "owner" | "reader") => {
       const [row] = await sql<{ id: string; uid: string }[]>`
         INSERT INTO auth.users (uid, provider, profile, display_name, admin)
@@ -63,7 +61,7 @@ suite("Mail API for recently deleted mailboxes", () => {
     const reader = await userWithToken("reader");
     verifyAccessToken = spyOn(oauthTokens, "verifyAccessToken").mockImplementation(async (token: string) => {
       const user = tokens.get(token);
-      return user ? { kind: "user", payload: {}, user, scopes: [] } : null;
+      return user ? { kind: "user", payload: {}, user, scopes: ["read", "write"] } : null;
     });
     const ownerContext: MailRequestContext = {
       actor: { kind: "user", user: owner },

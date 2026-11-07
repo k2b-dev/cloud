@@ -1,4 +1,4 @@
-import { type SQL, sql } from "bun";
+import type { SQL } from "bun";
 import { HTTPException } from "hono/http-exception";
 import {
   GEO_USAGE_GROUPS,
@@ -12,12 +12,12 @@ import {
   geoKeyProblem,
   validateGeoBudget,
 } from "../../contracts/geo-admin";
+import { sql } from "../../runtime/clients";
 import { audit } from "../audit";
 import { toPgTextArray } from "../postgres";
 import * as settings from "../settings";
 import { decryptValue } from "../settings/crypto";
 import { SETTINGS_MAP, validateSettingValue } from "../settings/defaults";
-import { assertGeoBudgetPair } from "../settings/geo-budget";
 import { GeoProviderError } from "./errors";
 import { GeoapifyAdapter } from "./geoapify";
 import { geoPeriods } from "./ledger";
@@ -31,7 +31,6 @@ const BUDGET_FIELDS: ReadonlyArray<[GeoBudgetField, string]> = [
   ["customRps", "geo.custom_rps"],
   ["customDailyCredits", "geo.custom_daily_credits"],
   ["monthlyCredits", "geo.monthly_budget_credits"],
-  ["personDailyCredits", "geo.person_daily_credits"],
 ];
 const BUDGET_KEYS = [PLAN_KEY, ...BUDGET_FIELDS.map(([, name]) => name)];
 const KEY_ACTION = "core.geo.key_set";
@@ -83,7 +82,7 @@ export const verifyGeoapifyKey =
   };
 
 export const createGeoAdmin = (options: { db?: SQL; verify?: Verify; now?: () => Date } = {}) => {
-  const db = options.db ?? sql;
+  const db = () => options.db ?? sql;
   const verify = options.verify ?? verifyGeoapifyKey();
   const now = options.now ?? (() => new Date());
 
@@ -92,7 +91,7 @@ export const createGeoAdmin = (options: { db?: SQL; verify?: Verify; now?: () =>
    * carries that transaction's exact timestamp, and so does every row that event wrote.
    */
   const changedBy = async (action: string, keys: readonly string[]): Promise<GeoAdminPerson | null> => {
-    const [row] = await db<{ actor_user_id: string; name: string | null }[]>`
+    const [row] = await db()<{ actor_user_id: string; name: string | null }[]>`
       SELECT e.actor_user_id, COALESCE(NULLIF(u.display_name, ''), u.uid) AS name
       FROM audit.events e LEFT JOIN auth.users u ON u.id = e.actor_user_id
       WHERE e.action = ${action} AND e.actor_user_id IS NOT NULL
@@ -111,7 +110,7 @@ export const createGeoAdmin = (options: { db?: SQL; verify?: Verify; now?: () =>
     const [config, states, rows, keyBy, budgetBy] = await Promise.all([
       readGeoConfig(),
       settings.readStates([KEY, ...BUDGET_KEYS]),
-      db<{ key: string; updated_at: Date }[]>`
+      db()<{ key: string; updated_at: Date }[]>`
         SELECT key, updated_at FROM settings.entries WHERE key = ANY(${toPgTextArray([KEY, ...BUDGET_KEYS])}::text[])`,
       changedBy(KEY_ACTION, [KEY]),
       changedBy(BUDGET_ACTION, BUDGET_KEYS),
@@ -129,7 +128,6 @@ export const createGeoAdmin = (options: { db?: SQL; verify?: Verify; now?: () =>
         customRps: config.customRps,
         customDailyCredits: config.customDailyCredits,
         monthlyCredits: config.monthlyCredits,
-        personDailyCredits: config.personDailyCredits,
         unreadable: [["plan", PLAN_KEY] as const, ...BUDGET_FIELDS].flatMap(([field, name]) =>
           states.get(name)?.stored === "unreadable" ? [field] : [],
         ),
@@ -147,15 +145,15 @@ export const createGeoAdmin = (options: { db?: SQL; verify?: Verify; now?: () =>
     const periods = geoPeriods(now(), config.timezone);
     const plan = config.plan === "custom" ? { dailyCredits: config.customDailyCredits } : GEO_PLANS[config.plan];
     const [[month], [today], shares, [overruns]] = await Promise.all([
-      db<
+      db()<
         { used: number }[]
       >`SELECT used::float8 AS used FROM geo.usage WHERE scope = 'cloud' AND subject = '*' AND period = ${periods.cloud.period}`,
-      db<{ used: number; at_limit: number }[]>`
-        SELECT COALESCE(sum(used), 0)::float8 AS used, count(*) FILTER (WHERE used >= ${config.personDailyCredits * 1000})::int AS at_limit
+      db()<{ used: number }[]>`
+        SELECT COALESCE(sum(used), 0)::float8 AS used
         FROM geo.usage WHERE scope = 'person' AND period = ${periods.person.period}`,
-      db<{ function_group: string; used: number }[]>`
+      db()<{ function_group: string; used: number }[]>`
         SELECT function_group, used::float8 AS used FROM geo.shares WHERE scope = 'cloud' AND subject = '*' AND period = ${periods.cloud.period}`,
-      db<{ count: number }[]>`SELECT count(*)::int AS count FROM audit.events
+      db()<{ count: number }[]>`SELECT count(*)::int AS count FROM audit.events
         WHERE action = 'core.geo.route_cost_overrun' AND metadata->>'period' = ${periods.cloud.period}`,
     ]);
     return {
@@ -175,7 +173,6 @@ export const createGeoAdmin = (options: { db?: SQL; verify?: Verify; now?: () =>
         group,
         credits: (shares.find((row) => row.function_group === group)?.used ?? 0) / 1000,
       })),
-      peopleAtLimit: today?.at_limit ?? 0,
       routeCostOverruns: overruns?.count ?? 0,
       timezone: config.timezone,
     };
@@ -193,7 +190,7 @@ export const createGeoAdmin = (options: { db?: SQL; verify?: Verify; now?: () =>
       await verify(apiKey, signal);
       signal?.throwIfAborted();
       const before = (await settings.readStates([KEY])).get(KEY)?.stored ?? "none";
-      await db.begin(async (tx) => {
+      await db().begin(async (tx) => {
         // The person replaces whatever is stored, including a value this installation cannot read.
         await settings.set(KEY, apiKey, tx, { replaceUnreadable: true });
         await audit.record(
@@ -206,7 +203,7 @@ export const createGeoAdmin = (options: { db?: SQL; verify?: Verify; now?: () =>
     },
     async removeKey(actor: Actor): Promise<GeoAdminStatus> {
       requireAdmin(actor);
-      await db.begin(async (tx) => {
+      await db().begin(async (tx) => {
         const [row] = await tx<{ key: string }[]>`DELETE FROM settings.entries WHERE key = ${KEY} RETURNING key`;
         if (row) await audit.record({ action: "core.geo.key_removed", outcome: "allowed", actor: auditActor(actor) }, tx);
       });
@@ -230,9 +227,8 @@ export const createGeoAdmin = (options: { db?: SQL; verify?: Verify; now?: () =>
       // resets their unreadable values to the defaults instead of leaving geo off behind a field nobody sees.
       const inactive = BUDGET_FIELDS.flatMap(([, name]) => (name in updates ? [] : [name]));
       const resets: string[] = [];
-      await db.begin(async (tx) => {
-        // Same lock and final-pair rule as every other writer of these settings.
-        await assertGeoBudgetPair(tx, updates, []);
+      await db().begin(async (tx) => {
+        // Validate each value through the settings registry.
         // Saving the form is the explicit replacement of a value this installation cannot read.
         for (const [name, value] of Object.entries(updates)) await settings.set(name, value, tx, { replaceUnreadable: true });
         // Decided under the row lock: a value another writer repaired meanwhile stays.

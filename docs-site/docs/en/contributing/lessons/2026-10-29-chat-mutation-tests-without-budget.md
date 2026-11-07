@@ -1,0 +1,6 @@
+### Chat message edit tests ran their page setup inside Bun's 5 s default
+
+- **What happened:** In WebKit, `an edit retries the frozen attempt after failure at 1440px` in `packages/chat/src/frontend/ChatMessageMutations.browser.test.ts` (#2059) hit the test timeout of exactly 5 s in merge groups, twice without any error from a step. Locally, under load, another test of the file hit it as well.
+- **Root cause:** Each test opens a context, loads and mounts the chat, then edits or deletes a message. The file gave its tests no budget of their own, so Bun's 5 s default covered all of that. Warm runs took 1.4–2.5 s, and the first test of the file, with the engine's first page, took longer. With a budget, every case passed; the edit retry did not hang. The other Chat browser suites that do the same give each test 20–30 s; each step keeps its own 5 s limit.
+- **Error class:** A browser test that opens its own page runs under the runner's default test timeout, which is meant for one step, not for a page setup and a flow.
+- **Guard:** None as a check: 1,055 browser tests in 157 files have no explicit budget, and most of them reuse a page, so a rule would mostly report noise. The testing guide now asks a test that opens its own context or page to give itself a budget as the Chat suites do.

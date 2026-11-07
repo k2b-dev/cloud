@@ -10,6 +10,7 @@ import { spacesHelp } from "./help";
 import { migrate } from "./migrate";
 import { pwaRoutes } from "./pwa";
 import { spacesService } from "./service";
+import { itemCreateRetention } from "./service/item-create-retention";
 
 const router = new Hono<AuthContext>()
   .use("*", middleware.runtime())
@@ -33,6 +34,8 @@ const result = await app.start({
     setup: async () => {
       await migrate();
     },
+    start: itemCreateRetention.start,
+    stop: itemCreateRetention.stop,
   },
 });
 export default { ...result, websocket };

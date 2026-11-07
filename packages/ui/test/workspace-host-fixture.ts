@@ -44,6 +44,8 @@ export type FixtureOptions = {
     detail?: AppWorkspaceDetailWidth;
   };
   layoutState?: AppWorkspaceLayoutState;
+  /** Fill each level and the navigation pane with a titled group of rows, the first one selected. */
+  rows?: boolean;
 };
 
 /** One tree for the baseline, narrowed hosts, and source SSR/dist hydration. */
@@ -57,6 +59,15 @@ export function workspaceTree(
     (window as Window & { updateWorkspaceContact?: (title: string) => void }).updateWorkspaceContact = setContact;
   const el = (component: string, children: string) => createComponent(Dynamic, { component, children });
   const levels = props.scenario === "levels";
+  const rows = (id: string) =>
+    createComponent(AppWorkspace.SidebarSection, {
+      title: `${id} group`,
+      get children() {
+        return ["one", "two"].map((row, index) =>
+          createComponent(AppWorkspace.SidebarItem, { href: `#${id}-${row}`, active: index === 0, children: `${id} ${row}` }),
+        );
+      },
+    });
   const [filtered, setFiltered] = createSignal(props.head?.filtered !== false);
   const [tags, setTags] = createSignal(props.head?.filtered === false ? [] : ["customer"]);
   const head = () => {
@@ -175,7 +186,12 @@ export function workspaceTree(
                       ];
                     return levels
                       ? ["folders", "messages", "reader"].map((id) =>
-                          createComponent(AppWorkspace.MainPane, { id, label: id, href: "#" + id, children: el("h2", id) }),
+                          createComponent(AppWorkspace.MainPane, {
+                            id,
+                            label: id,
+                            href: "#" + id,
+                            children: props.rows ? rows(id) : el("h2", id),
+                          }),
                         )
                       : [
                           createComponent(AppWorkspace.MainPane, {
@@ -183,7 +199,7 @@ export function workspaceTree(
                             label: "Navigation",
                             surface: "navigation",
                             defaultSize: props.paneSize,
-                            children: "Message groups",
+                            children: props.rows ? rows("navigation") : "Message groups",
                           }),
                           createComponent(Dynamic, { component: "button", children: "Selected message", onClick: () => setOpen(true) }),
                           ...(props.scenario === "selection"

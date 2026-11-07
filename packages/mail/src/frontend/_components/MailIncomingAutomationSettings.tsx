@@ -638,6 +638,7 @@ function AutomationStepsEditor(props: {
         );
         if (!response.ok) throw new Error(await readApiError(response, messages().couldNotSearchSpaces));
         return spacesItemSearchDataSchema.parse(await response.json()).map((item) => ({
+          id: item.ref.id,
           value: { id: item.ref.id, title: item.title },
           label: item.title,
           desc: item.metadata?.find((entry) => entry.label === "Space")?.value,
@@ -671,6 +672,7 @@ function AutomationStepsEditor(props: {
           destinations
             .filter((space) => space.name.toLowerCase().includes(query.toLowerCase()))
             .map((space) => ({
+              id: space.id,
               value: space,
               label: space.name,
               icon: "ti ti-layout-kanban",
@@ -696,7 +698,7 @@ function AutomationStepsEditor(props: {
         Promise.resolve(
           columns
             .filter((entry) => entry.name.toLowerCase().includes(query.toLowerCase()))
-            .map((entry) => ({ value: entry, label: entry.name, icon: "ti ti-columns" })),
+            .map((entry) => ({ id: entry.id, value: entry, label: entry.name, icon: "ti ti-columns" })),
         ),
       {
         title: messages().chooseKanban,

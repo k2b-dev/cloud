@@ -1,6 +1,6 @@
 import { afterAll } from "bun:test";
-import { sql } from "bun";
 import { Hono } from "hono";
+import { sql } from "../../runtime/clients";
 import type { NewBrowserSignInNotifier } from "../known-browsers";
 import { session } from "./index";
 

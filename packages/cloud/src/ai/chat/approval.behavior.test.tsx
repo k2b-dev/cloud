@@ -150,8 +150,8 @@ domTest("an answer that did not arrive says so and asks again with the focus on 
   try {
     view.button("Code ausführen").click();
     await settle();
-    expect(view.line()).toContain("Deine Antwort zu Code ausführen kam nicht an.");
-    expect(view.line()).toContain("Kam sie doch an, siehst du das Ergebnis gleich hier.");
+    expect(view.line()).toContain("Deine Antwort zu Code ausführen ist nicht bestätigt.");
+    expect(view.line()).toContain("Kam sie an, siehst du das Ergebnis gleich hier.");
     view.button("Noch einmal antworten").click();
     await settle();
     expect(view.question()).not.toBeNull();
@@ -174,7 +174,7 @@ domTest("an answer whose response was lost still shows the outcome the server re
   try {
     view.button("Run code").click();
     await settle();
-    expect(view.line()).toContain("Your answer about Run code didn't arrive.");
+    expect(view.line()).toContain("Your answer about Run code is not confirmed.");
     // The server did take the answer: its outcome replaces the lost line.
     view.setBlocks([{ ...runCode, status: "running", approved: true, approval: undefined }]);
     view.setPhase("running");
@@ -383,7 +383,7 @@ domTest("a lost answer to an earlier question never marks the next one", async (
     fail(new Error("response lost"));
     await settle();
     expect(view.question()?.textContent).toContain("Step 1");
-    expect(view.place().textContent).not.toContain("didn't arrive");
+    expect(view.place().textContent).not.toContain("is not confirmed");
   } finally {
     view.cleanup();
   }
@@ -672,6 +672,33 @@ domTest("a long text without a page of its own shows the rest in place and keeps
     // The question itself still waits for its answer.
     expect(view.question()).not.toBeNull();
   } finally {
+    view.cleanup();
+  }
+});
+
+domTest("offline, both answers wait with the reason in place and come back with the connection", async () => {
+  const view = await mountTurn([runCode], { locale: "de" });
+  const online = Object.getOwnPropertyDescriptor(navigator, "onLine");
+  let connected = false;
+  Object.defineProperty(navigator, "onLine", { configurable: true, get: () => connected });
+  try {
+    window.dispatchEvent(new Event("offline"));
+    await settle();
+    expect(view.place().querySelector(".k2b-chat-decision__reason")?.textContent).toBe("Offline. Antworten geht wieder mit Netz.");
+    expect(view.button("Code ausführen").disabled).toBe(true);
+    expect(view.button("Nicht ausführen").disabled).toBe(true);
+    view.button("Nicht ausführen").click();
+    await settle();
+    expect(view.decisions).toEqual([]);
+
+    connected = true;
+    window.dispatchEvent(new Event("online"));
+    await settle();
+    expect(view.place().querySelector(".k2b-chat-decision__reason")?.textContent).not.toContain("Offline");
+    expect(view.button("Nicht ausführen").disabled).toBe(false);
+  } finally {
+    if (online) Object.defineProperty(navigator, "onLine", online);
+    else delete (navigator as { onLine?: boolean }).onLine;
     view.cleanup();
   }
 });

@@ -19,6 +19,7 @@ import {
   Paper,
   RemoveButton,
   SegmentedControl,
+  SelectionToolbar,
   SplitButton,
   SpotlightButton,
   type SpotlightSearchResolver,
@@ -220,6 +221,11 @@ const MenusDemo = () => (
   <Dropdown.Trigger variant="secondary">Wide menu</Dropdown.Trigger>
 </Dropdown.Root>
 
+{/* A search field above many entries */}
+<Dropdown.Root items={templates} label="New task" icons="tile" search={{ label: "Find template" }}>
+  <Dropdown.Trigger variant="secondary">New task</Dropdown.Trigger>
+</Dropdown.Root>
+
 <ContextMenu label="Record actions" items={items}>
   <div>Right click or press Shift+F10</div>
 </ContextMenu>`}
@@ -262,6 +268,31 @@ const MenusDemo = () => (
         ]}
       >
         <Dropdown.Trigger variant="secondary">Wide menu (18rem)</Dropdown.Trigger>
+      </Dropdown.Root>
+      <Dropdown.Root
+        label="New task"
+        icons="tile"
+        phone="sheet"
+        search={{ label: "Find template" }}
+        items={[
+          { label: "Blank task", icon: "ti ti-plus", variant: "accent", action: () => {} },
+          {
+            sectionLabel: "Templates",
+            items: [
+              ["ti ti-report", "Weekly report", "next Fri · checklist 3"],
+              ["ti ti-package", "Goods receipt", "+1 day · checklist 4"],
+              ["ti ti-alert-triangle", "Complaint", "+2 days · high"],
+              ["ti ti-clipboard-list", "Inventory", "Mon"],
+              ["ti ti-route", "Route plan", "Thu"],
+              ["ti ti-receipt", "Check invoice", "+3 days"],
+              ["ti ti-tool", "Forklift service", "+7 days · checklist 6"],
+              ["ti ti-user-plus", "Onboarding", "checklist 12"],
+            ].map(([icon, label, description]) => ({ icon, label, description, action: () => {} })),
+          },
+          { label: "Create template…", icon: "ti ti-template", action: () => {} },
+        ]}
+      >
+        <Dropdown.Trigger variant="secondary">Searchable menu</Dropdown.Trigger>
       </Dropdown.Root>
       <ContextMenu
         label="Record actions"
@@ -686,6 +717,57 @@ const actions = [
   );
 };
 
+const SelectionToolbarDemo = () => {
+  // A new value for every completed selection, so the toolbar moves to it even when it was open already.
+  const [anchor, setAnchor] = createSignal<{ at: number } | undefined>(undefined, { equals: false });
+  const [lastAction, setLastAction] = createSignal("Select words in the text");
+  let text!: HTMLParagraphElement;
+  const selectionRect = () => {
+    const selection = getSelection();
+    if (!anchor() || !selection?.rangeCount || selection.isCollapsed) return null;
+    return text.contains(selection.anchorNode) ? selection.getRangeAt(0).getBoundingClientRect() : null;
+  };
+  return (
+    <DemoCard
+      id="selection-toolbar"
+      chip={{ kind: "component", name: "SelectionToolbar", from: "@k2b/ui" }}
+      description="Actions for selected text float over the selection after the pointer is released, go below it near the top of their area, and keep the selection when pressed."
+      code={`// A new value for every completed selection, so an open toolbar moves to the next one.
+const [open, setOpen] = createSignal(false, { equals: false });
+<p onPointerUp={() => setOpen(!getSelection()?.isCollapsed)}>…</p>
+<SelectionToolbar
+  label="Selection"
+  anchor={() => (open() ? getSelection()?.getRangeAt(0).getBoundingClientRect() : null)}
+  onEscape={() => setOpen(false)}
+>
+  <Toolbar.Action label="Bold" icon="ti ti-bold" keys="mod+b" onClick={bold} />
+  <Toolbar.Action label="Italic" icon="ti ti-italic" keys="mod+i" onClick={italic} />
+  <Toolbar.Separator />
+  <Button size="sm" variant="ghost" onClick={comment}><i class="ti ti-message-plus" /> Comment</Button>
+</SelectionToolbar>`}
+    >
+      <p
+        ref={text}
+        style={{ "max-width": "36rem", "line-height": "1.7" }}
+        onPointerUp={() => queueMicrotask(() => setAnchor(getSelection()?.isCollapsed ? undefined : { at: Date.now() }))}
+      >
+        The association promotes rowing for all age groups, mainly through regular training, taking part in regattas, and looking after the
+        boathouse. Select a few words to see the toolbar.
+      </p>
+      <SelectionToolbar label="Selection" anchor={selectionRect} onEscape={() => setAnchor(undefined)}>
+        <Toolbar.Action label="Bold" icon="ti ti-bold" keys="mod+b" onClick={() => setLastAction("Bold")} />
+        <Toolbar.Action label="Italic" icon="ti ti-italic" keys="mod+i" onClick={() => setLastAction("Italic")} />
+        <Toolbar.Separator />
+        <Button size="sm" variant="ghost" onClick={() => setLastAction("Comment")}>
+          <i class="ti ti-message-plus" aria-hidden="true" />
+          Comment
+        </Button>
+      </SelectionToolbar>
+      <output aria-live="polite">{lastAction()}</output>
+    </DemoCard>
+  );
+};
+
 export const FilterDemo = () => {
   const [onlyMine, setOnlyMine] = createSignal(false);
   const [clearValue, setClearValue] = createSignal<string[]>(["open", "ui"]);
@@ -954,6 +1036,7 @@ const demos: DemoSection = {
     <DemoGrid columns="one">
       <ToolbarDemo />
       <FloatingToolbarDemo />
+      <SelectionToolbarDemo />
     </DemoGrid>
   ),
   spotlight: () => (

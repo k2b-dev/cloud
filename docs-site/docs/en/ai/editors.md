@@ -5,7 +5,7 @@ section: AI
 order: 1035
 description: Run Cloud Assistant in T3 Code or Zed with cld acp.
 tags: [ai, assistant, editors, acp, cli]
-updated: 2026-10-11
+updated: 2026-11-04
 ---
 
 # Assistant in editors
@@ -18,6 +18,9 @@ Chats stay in Cloud, where you can continue them on the web.
 The local folder rules are the same as in the terminal: local tools, AGENTS.md,
 Skills, folder trust, and file access follow
 [Work with a local folder in cld](/en/apps/assistant#work-with-a-local-folder-in-cld).
+An editor with form support asks whether to trust the folder through a form.
+Without form support, the editor can load the folder's instructions only for
+the current session, because it can answer permission prompts automatically.
 
 ## Set up cld
 
@@ -36,6 +39,10 @@ cld plugins install assistant
 
 For an older installation, run `cld plugins update`. Sign in with `cld login`,
 not an API key. Check that the command is available with `cld acp --help`.
+
+When the editor reports that you need to sign in, run `cld login` in a
+terminal and start a new thread. The editor does not need a restart: every new
+or resumed thread reads the profile again.
 If `acp` is reported inactive, use `assistant` and `acp` as the editor's two
 arguments instead.
 
@@ -90,13 +97,16 @@ Actions that cannot be undone or reach other people, such as sending mail,
 deleting, sharing, or inviting, always wait for confirmation in Cloud. The
 editor can only reject them, and shows the link to the web chat. Choosing
 **Confirm in Cloud**, including an automatic choice in Full access, leaves the
-request waiting until you confirm or reject it in Cloud, or on a phone paired
+request waiting until you confirm or reject it in Cloud, or on a device paired
 with [Cloud Login](/en/apps/cloud-login).
 
 Local Bash commands, replacing a file, and writing or moving a file that
 becomes instructions for the assistant ask through a form that reaches a
 person even in Full access when the editor supports forms. Without form
-support, these questions use the editor's permission prompt.
+support, Assistant cannot run local Bash commands in the editor: an editor
+can approve its permission prompts automatically, and a command runs with
+your local access, including your `cld` login. Replacing a file and writing
+instructions then use the editor's permission prompt.
 
 Remembered approvals from an editor last at most for that chat. Use
 `/approvals` to list and revoke them. See [Tools and approvals](/en/docs/ai/tools-and-approvals)
@@ -107,7 +117,8 @@ for Cloud's approval rules.
 | Result | What appears |
 | --- | --- |
 | Replies and thinking | Streamed text |
-| Tool calls | Calls with their current status |
+| Tool calls | Calls with their current status and, once finished, what they returned. A result over 16,000 characters is shortened and says so; the web chat has all of it |
+| New files | A diff of the new file, up to 16,000 characters |
 | Working checklist | The editor's plan |
 | Cards and charts | Text and Markdown tables |
 | Studio apps, secrets, and file previews | A link to the web chat |
@@ -129,17 +140,42 @@ the cld profile.
 
 ## Continue a session
 
-A new editor thread creates its Cloud chat with the first message. The thread
-list can show Cloud chats too. Resuming a chat does not replay its history in
-the editor. If a turn is still running, the editor says so, and Assistant
-follows it again before sending your next message.
+A new editor thread creates its Cloud chat with the first message. `cld`
+remembers which chat and folder each of the newest 1,000 editor threads uses,
+outside the cld profile.
 
-Closing the editor does not stop a Cloud turn. Open the web chat to continue
+The thread list shows only open chats that an editor used in this project
+folder: a turn is running, an approval or question waits, or an answer waits
+for you. Finished chats, chats from other folders, and chats started on the
+web stay out of the list. Showing a reply in the editor counts as reading it,
+as opening the chat on the web does.
+
+Opening a thread shows the chat's recent history: the newest 100 messages,
+including tool calls and their results. An older chat starts with a link to
+its full history in the web chat. If a turn is still running, the editor says
+so, and Assistant follows that turn before sending your next message; a local
+step it already ran does not run again.
+
+Open any other chat by its chat ID, where the editor lets you open a session
+by ID. The ID is the `conversation=` value of the chat's web link, which `/web`
+shows. An editor that resumes instead of opening a session continues the chat
+without its history.
+
+Closing the editor or one of its threads does not stop a Cloud turn. Open the web chat to continue
 or answer a pending request. Use the editor's Stop action to cancel a turn.
+Stop always ends the editor's turn, also without a connection; the turn may
+then keep running in Cloud until you stop it in the web chat. A Stop before
+the message reaches Cloud sends nothing.
+
+A local step such as a file write or a Bash command runs once. When its result
+does not reach Cloud, for example because the connection drops, the next
+message in this chat sends the same result again instead of running the step
+a second time, also after resuming the thread.
 
 ## Limits
 
 Assistant has no plan mode or other modes; a plan toggle in the editor has no
 effect. It ignores MCP servers supplied by the editor and uses Cloud's own
 tools. You cannot steer a turn while it runs. Attach at most 16 files per
-message.
+message. An attached folder is not uploaded: Assistant gets its path and reads
+it with the local tools.

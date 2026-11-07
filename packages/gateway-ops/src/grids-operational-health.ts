@@ -1,4 +1,4 @@
-import { sql } from "bun";
+import { sql } from "@k2b/cloud";
 
 export type OperationalStatus = "ok" | "warn" | "error";
 

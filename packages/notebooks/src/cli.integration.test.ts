@@ -2,8 +2,8 @@ import { afterAll, beforeAll, describe, expect, spyOn, test } from "bun:test";
 import { chmod, mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { sql } from "@k2b/cloud";
 import type { User } from "@k2b/cloud/contracts";
-import { sql } from "bun";
 import { tinyPng } from "../../../scripts/fixtures/image-metadata";
 import { connectTestNats, testFor, testSyncNamespace } from "../../../scripts/fixtures/test-infra";
 import { installFirstPartyModules } from "../../cloud-cli/test/fixtures/first-party";
@@ -104,7 +104,7 @@ if (process.env.NOTEBOOKS_CLI_CHILD !== "1") {
       manages: [],
       managesGroupIds: [],
     };
-    spyOn(oauthTokens, "verifyAccessToken").mockResolvedValue({ kind: "user", payload: {}, user, scopes: [] });
+    spyOn(oauthTokens, "verifyAccessToken").mockResolvedValue({ kind: "user", payload: {}, user, scopes: ["read", "write"] });
     await sync.ready();
     await migrate();
     await sql`INSERT INTO auth.users (id, uid, provider, profile) VALUES (${user.id}::uuid, ${user.uid}, 'local', 'user')`;
@@ -547,7 +547,12 @@ for f in $(find . -name '*.md'); do cld notebooks write ~/docs-mirror/\${f#./} -
         "Ordering:chapter-2",
       ]);
       expect(placed.note.position).toBe(1);
-      expect(await latestCursor({ notebookId: internal.id })).not.toBe(before);
+      // The outbox publishes the hint after the commit; wait for it instead of sampling the cursor at once.
+      const published = AbortSignal.timeout(15_000);
+      while ((await latestCursor({ notebookId: internal.id })) === before) {
+        published.throwIfAborted();
+        await Bun.sleep(20);
+      }
       expect(await readLevel()).toEqual([ten.id, two.id, parent.id]);
       await cldJson(["notebooks", "mv", parent.id, "--first"]);
       expect(await readLevel()).toEqual([parent.id, ten.id, two.id]);

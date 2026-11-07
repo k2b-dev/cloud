@@ -7,11 +7,12 @@ describe("localized audit labels", () => {
     const { t } = accountsMessages.resolve(["de-CH"]);
 
     expect(actionLabel("accounts.user.create", t)).toBe("Benutzer erstellen");
+    expect(actionLabel("accounts.user.reactivate", t)).toBe("FreeIPA-Konto reaktivieren");
     expect(actionOptions(t).map((section) => section.label)).toEqual([
       "Benutzer",
       "Gruppen",
       "Anfragen",
-      "Dienstkonten",
+      "API Keys",
       "Assistant-Freigaben",
     ]);
   });

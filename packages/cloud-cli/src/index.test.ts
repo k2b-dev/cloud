@@ -1,9 +1,9 @@
-import { afterEach, describe, expect, test } from "bun:test";
+import { afterEach, beforeAll, describe, expect, test } from "bun:test";
 import { chmod, mkdir, mkdtemp, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { packInlinePlugin } from "../test/fixtures/build-plugin";
-import { installFirstPartyModules } from "../test/fixtures/first-party";
+import { bundleFirstPartyModule, installFirstPartyModules } from "../test/fixtures/first-party";
 import { LOGIN_PAGE_CSP } from "./login-page";
 
 type MockServerState = {
@@ -42,6 +42,13 @@ const MODULES = [
   "pulse",
   "tools",
 ];
+
+// Build real plugin fixtures before a command's behavior budget starts.
+// Each module has its own normal hook deadline; tests still install isolated stores.
+for (const name of MODULES)
+  beforeAll(async () => {
+    await bundleFirstPartyModule(name);
+  });
 
 const createTempDir = async (): Promise<string> => {
   const dir = await mkdtemp(join(tmpdir(), "cld-cli-test-"));
@@ -1383,7 +1390,9 @@ describe("cloud CLI OAuth session handling", () => {
   });
 
   test.skipIf(process.platform === "win32")("openUrl validates links, checks the host, and silently reports opener results", async () => {
-    const dir = await createTempDir();
+    // This standalone plugin does not use the first-party module inventory.
+    const dir = await mkdtemp(join(tmpdir(), "cld-opener-test-"));
+    tempDirs.push(dir);
     const configPath = join(dir, "config.json");
     const pluginDir = join(dir, "package-browser");
     const binDir = join(dir, "bin");
@@ -1475,6 +1484,45 @@ exit "$BROWSER_EXIT"
     } finally {
       server.stop(true);
     }
+  });
+
+  test("reloadCredentials picks up a login that happened after the command started", async () => {
+    const dir = await createTempDir();
+    const configPath = join(dir, "config.json");
+    const pluginDir = join(dir, "package-relogin");
+    const write = (token: string, server = "https://cloud.test") =>
+      writeFile(configPath, JSON.stringify({ currentProfile: "default", profiles: { default: { server, token } } }));
+    await packInlinePlugin(
+      pluginDir,
+      `import { writeFile } from "node:fs/promises";
+      export default { name: "relogin", summary: "Log in again", run: async (ctx) => {
+        const before = ctx.options.token;
+        const config = (server) =>
+          JSON.stringify({
+            currentProfile: "other",
+            profiles: { default: { server, token: "fresh" }, other: { server: "https://cloud.test", token: "someone-else" } },
+          });
+        await writeFile(process.env.CLD_CONFIG, config("https://cloud.test"));
+        await ctx.reloadCredentials();
+        const after = ctx.options.token;
+        await writeFile(process.env.CLD_CONFIG, config("https://other.test"));
+        const moved = await ctx.reloadCredentials().then(() => "reloaded", (error) => error.message);
+        ctx.json({ before, after, moved, token: ctx.options.token });
+        return 0;
+      } };`,
+    );
+    await write("stale");
+    const install = await runCli(configPath, ["plugins", "install", pluginDir, "--yes"], { XDG_CONFIG_HOME: dir });
+    expect(install.exitCode, install.stderr).toBe(0);
+    await write("stale");
+    const result = await runCli(configPath, ["plugins", "run", "relogin"], { XDG_CONFIG_HOME: dir });
+    expect(result.exitCode, result.stderr).toBe(0);
+    expect(JSON.parse(result.stdout)).toEqual({
+      before: "stale",
+      after: "fresh",
+      moved: 'Profile "default" now uses https://other.test. Start the command again to use it.',
+      token: "fresh",
+    });
   });
 
   test("failed fd0 refresh-token persistence revokes the new token and removes the local OAuth session", async () => {

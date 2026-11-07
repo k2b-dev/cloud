@@ -6,7 +6,7 @@ import tailwind from "bun-plugin-tailwind";
 import type { Browser } from "playwright";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
-import { launchBrowser } from "../../../../../ui/test/browser";
+import { launchBrowser, settled } from "../../../../../ui/test/browser";
 
 const packageCache = resolve(import.meta.dir, "../../../../node_modules/.cache");
 mkdirSync(packageCache, { recursive: true });
@@ -20,6 +20,7 @@ const { plugin } = createConfig({
 Bun.plugin(plugin());
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 const { default: WorkspaceFixture } = await import("./database-table.browser-fixture");
+const fieldNames = (await import("./database-table.fixture-data")).fields.map((field) => field.name);
 const ui = resolve(import.meta.dir, "../../../../../ui/dist");
 const styleEntries = [
   resolve(import.meta.dir, "../../../styles/app.css"),
@@ -46,7 +47,7 @@ beforeAll(async () => {
       return new Response(
         `<!doctype html><html lang="de"><head><meta charset="utf-8"><link rel="stylesheet" href="/ui/plex.css"><style>${css}</style>` +
           '<style>solid-island{display:contents}</style></head><body class="k2b-ui" style="margin:0"><main style="display:flex;flex-direction:column;height:100dvh">' +
-          renderToString(() => createComponent(WorkspaceFixture, {})) +
+          renderToString(() => createComponent(WorkspaceFixture, { path: url.pathname })) +
           "</main><script type=\"module\">document.querySelectorAll('solid-island').forEach(e=>import('/_ssr/'+e.dataset.id+'.js'))</script></body></html>",
         { headers: { "content-type": "text/html; charset=utf-8" } },
       );
@@ -138,6 +139,53 @@ describe("Grids table beside Detail", () => {
         });
         expect(notes.nowrap).toBe(false);
         expect(notes.lines).toBeGreaterThan(1);
+      } finally {
+        await page.close();
+      }
+    }, 30_000);
+  }
+});
+
+describe("Field settings in the card view", () => {
+  for (const [width, height] of [
+    [1366, 900],
+    [390, 844],
+  ] as const) {
+    test(`${width}×${height}: the toolbar's fields menu lists every field, stays in view, and opens one field's settings`, async () => {
+      const page = await browser.newPage({ viewport: { width, height }, reducedMotion: "reduce" });
+      try {
+        await page.goto(`${server.url}app/grids/cards`);
+        const trigger = page.getByRole("button", { name: "Felder" });
+        const menu = page.locator('[role="menu"][aria-label="Felder"]');
+        await page.locator("body[data-fixture-ready]").waitFor();
+        await settled(page);
+        const positions = () =>
+          page.evaluate(() =>
+            [document.querySelector(".k2b-dropdown")!, document.querySelector(".grids-record-card")!].map((node) => {
+              const box = node.getBoundingClientRect();
+              return [box.left, box.top, box.width, box.height];
+            }),
+          );
+        const closed = await positions();
+        await trigger.click();
+        await menu.waitFor();
+        await settled(page);
+        // Opening the menu moves neither the toolbar nor the cards below it.
+        expect(await positions()).toEqual(closed);
+        const items = menu.getByRole("menuitem");
+        expect(await items.evaluateAll((nodes) => nodes.map((node) => node.getAttribute("aria-label")))).toEqual(
+          fieldNames.map((name) => `Feldeinstellungen für ${name}`),
+        );
+        const box = await menu.evaluate((node) => {
+          const rect = node.getBoundingClientRect();
+          return { left: rect.left, right: rect.right, bottom: rect.bottom, width: innerWidth, height: innerHeight };
+        });
+        expect(box.left).toBeGreaterThanOrEqual(0);
+        expect(box.right).toBeLessThanOrEqual(box.width);
+        expect(box.bottom).toBeLessThanOrEqual(box.height);
+        await menu.getByRole("menuitem", { name: "Feldeinstellungen für Status" }).click();
+        await menu.waitFor({ state: "hidden" });
+        expect(await page.evaluate(() => document.body.dataset.fieldSettings)).toBe("status");
       } finally {
         await page.close();
       }

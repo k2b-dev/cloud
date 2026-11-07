@@ -48,14 +48,14 @@ for (const surface of ["storage", "database", "linux", "outgoing", "directory", 
       if (surface === "outgoing") expect(sent).toEqual({ contentDays: 30, replaceUnreadable: ["outgoing_mail.content_retention_days"] });
       if (surface === "logs") expect(sent).toEqual({ retentionDays: 30, replaceUnreadable: true });
       if (surface === "linux") expect(sent.replaceUnreadable).toBe(true);
-      if (surface === "logs") await Promise.all([page.waitForNavigation(), save.click()]);
-      else await save.click();
+      await save.click();
       await page.waitForFunction(() => !document.querySelector('button[aria-busy="true"]'));
       expect(preview.requests).toHaveLength(2);
       expect(preview.requests[1]!.body).toEqual(sent);
       if (surface === "directory") await page.locator("dialog[open]").waitFor({ state: "hidden" });
       else if (surface === "linux") await page.getByText("Stored settings cannot be read", { exact: true }).waitFor({ state: "hidden" });
-      else if (surface !== "logs") await page.waitForFunction(() => document.body.dataset.saved === "true");
+      else if (surface === "logs") await page.waitForFunction(() => document.querySelector('.k2b-save-status__state[data-state="saved"]'));
+      else await page.waitForFunction(() => document.body.dataset.saved === "true");
     } finally {
       await page.close();
     }
@@ -123,7 +123,7 @@ for (const surface of ["storage", "database", "linux", "outgoing", "directory", 
         await page.getByRole("combobox", { name: /^Suggest recipients/ }).click();
         await page.getByRole("option", { name: /Suggest alternate contacts/ }).click();
       }
-      if (surface === "logs") await page.getByRole("spinbutton", { name: "Retention (days)", exact: true }).fill("45");
+      if (surface === "logs") await page.getByRole("spinbutton", { name: "Logs", exact: true }).fill("45");
       const save = page.getByRole("button", { name: surface === "linux" ? "Check and save setup" : "Save", exact: true });
       await save.click();
       const replacement = page.getByRole("checkbox", { name: /^Replace stored value/ });
@@ -143,13 +143,13 @@ for (const surface of ["storage", "database", "linux", "outgoing", "directory", 
         expect(await page.getByRole("spinbutton", { name: "Keep text for (days)", exact: true }).inputValue()).toBe("60");
       if (surface === "directory")
         expect(await page.getByRole("combobox", { name: /^Suggest recipients/ }).textContent()).toContain("Suggest alternate contacts");
-      if (surface === "logs") expect(await page.getByRole("spinbutton", { name: "Retention (days)", exact: true }).inputValue()).toBe("45");
+      if (surface === "logs") expect(await page.getByRole("spinbutton", { name: "Logs", exact: true }).inputValue()).toBe("45");
       await replacement.check();
-      if (surface === "logs") await Promise.all([page.waitForNavigation(), save.click()]);
-      else await save.click();
+      await save.click();
       if (surface === "directory") await page.locator("dialog[open]").waitFor({ state: "hidden" });
       else if (surface === "linux") await replacement.waitFor({ state: "hidden" });
-      else if (surface !== "logs") await page.waitForFunction(() => document.body.dataset.saved === "true");
+      else if (surface === "logs") await page.waitForFunction(() => document.querySelector('.k2b-save-status__state[data-state="saved"]'));
+      else await page.waitForFunction(() => document.body.dataset.saved === "true");
       expect(preview.requests).toHaveLength(2);
       expect(preview.requests[1]!.body.replaceUnreadable).toEqual(
         surface === "linux" || surface === "logs"

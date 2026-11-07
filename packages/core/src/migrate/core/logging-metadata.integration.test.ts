@@ -1,6 +1,6 @@
 import { expect } from "bun:test";
+import { sql } from "@k2b/cloud";
 import { logging } from "@k2b/cloud/services";
-import { sql } from "bun";
 import { testFor } from "../../../../../scripts/fixtures/test-infra";
 import { migrateLogMetadataReader } from "./logging-metadata";
 

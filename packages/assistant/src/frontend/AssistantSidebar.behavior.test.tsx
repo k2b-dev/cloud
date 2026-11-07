@@ -135,7 +135,7 @@ test("footer project popup and mobile group share search and creation; pinned ch
     description: "",
     icon: "ti ti-folders",
     instructions: "",
-    defaultModelProfileId: null,
+    defaultModel: null,
     permission: "read" as const,
     revision: 1,
     createdAt: "",

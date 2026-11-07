@@ -208,7 +208,7 @@ export default function TimelineDisplay(props: Props) {
         <For each={groups()}>
           {(group) => (
             <>
-              <div class="notebook-graph__timeline-group">
+              <div class="notebook-graph__timeline-group k2b-list-group-heading">
                 {timelineGroupLabel(group, {
                   locale: locale(),
                   timeZone: props.timeZone,

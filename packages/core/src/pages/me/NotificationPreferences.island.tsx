@@ -13,7 +13,8 @@ type PreferenceMutation = { type: "set"; channels: string[] } | { type: "reset";
 const PreferenceRow = (props: { preference: UserNotificationPreference; availableChannels: string[] }) => {
   const locale = useLocale();
   const t = () => accountMessages.resolve([locale()]).t;
-  const [selected, setSelected] = createSignal([...props.preference.selectedChannels]);
+  const excluded = new Set(props.preference.excludedChannels);
+  const [selected, setSelected] = createSignal(props.preference.selectedChannels.filter((channel) => !excluded.has(channel)));
   const [customized, setCustomized] = createSignal(props.preference.customized);
   const required = new Set(props.preference.requiredChannels);
   const available = new Set(props.availableChannels);
@@ -57,7 +58,7 @@ const PreferenceRow = (props: { preference: UserNotificationPreference; availabl
     void update.mutate({ type: "set", channels: next });
   };
 
-  const defaults = props.preference.recommendedChannels.filter((channel) => !required.has(channel));
+  const defaults = props.preference.recommendedChannels.filter((channel) => !required.has(channel) && !excluded.has(channel));
 
   return (
     <div class="grid gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(18rem,0.8fr)] lg:items-start">
@@ -101,14 +102,19 @@ const PreferenceRow = (props: { preference: UserNotificationPreference; availabl
         <For each={optionalChannels}>
           {(channel) => {
             const meta = notificationChannelMeta(channel, locale());
-            const availability = () => notificationChannelAvailability(available.has(channel), locale());
+            const availability = () =>
+              notificationChannelAvailability(
+                available.has(channel),
+                locale(),
+                excluded.has(channel) ? props.preference.excludedReason : undefined,
+              );
             return (
               <Checkbox
                 label={meta.label}
                 description={availability().description}
-                value={() => selected().includes(channel)}
+                value={() => !excluded.has(channel) && selected().includes(channel)}
                 onValueChange={(enabled) => toggleChannel(channel, enabled)}
-                disabled={update.loading() || !availability().enabled}
+                disabled={update.loading() || excluded.has(channel) || !availability().enabled}
               />
             );
           }}

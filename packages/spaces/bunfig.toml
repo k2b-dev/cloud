@@ -1,0 +1,2 @@
+[test]
+preload = ["../../scripts/fixtures/test-infra.ts", "./test/app-events-preload.ts"]

@@ -1,8 +1,8 @@
 import { Readable } from "node:stream";
-import { markdown, sanitizeEmailHtml } from "@k2b/cloud/shared";
 import MailComposer from "nodemailer/lib/mail-composer";
 import { z } from "zod";
 import { mailAddressSchema, mailPrioritySchema } from "../contracts";
+import { mailMarkdownHtml } from "./compose-renderer";
 import { MAX_DRAFT_ATTACHMENTS, mimeMessageIdSchema, mimeReferencesSchema } from "./draft-provider-mime";
 
 export const inlineLogoSnapshotSchema = z.object({
@@ -98,7 +98,7 @@ export const buildMimeStream = (params: {
     params.snapshot.format === "plain"
       ? undefined
       : params.snapshot.renderedHtml === undefined
-        ? sanitizeEmailHtml(markdown.renderSync(params.snapshot.body, { links: "plain" }))
+        ? mailMarkdownHtml(params.snapshot.body)
         : (params.snapshot.renderedHtml ?? undefined);
   const headers: Record<string, string> = {};
   if (params.snapshot.automaticReply) {

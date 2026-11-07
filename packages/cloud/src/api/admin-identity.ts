@@ -71,22 +71,31 @@ const ServiceAccountApiKeyInputSchema = z
     scopes: z
       .array(z.string().trim().min(1).max(64))
       .max(20)
-      .default([])
-      .refine((scopes) => !scopes.includes(AI_INFERENCE_SCOPE), "Use access: models to create a models-only key"),
+      .refine((scopes) => !scopes.includes(AI_INFERENCE_SCOPE), "Use access: models to create a models-only key")
+      .optional()
+      .meta({ deprecated: true, description: "New keys act as their account; omit scopes." }),
     expiresAt: z.iso.datetime().nullable().optional(),
   })
   .strict()
   .refine(
-    (input) => input.access !== "models" || input.scopes.length === 0,
+    (input) => input.access !== "models" || !input.scopes?.length,
     "Models-only access cannot be combined with general credential scopes",
-  );
+  )
+  // Omitted scopes mean "as its account"; an empty list could never enter an application.
+  .refine((input) => input.access === "models" || input.scopes === undefined || input.scopes.length > 0, {
+    path: ["scopes"],
+    message: "Omit scopes so the key acts as its account, or name them, such as read",
+  });
 
 type IdentityAdminDependencies = {
   apps: () => Promise<Array<{ id: string; name: string }>>;
   status: typeof getIdentitySigningKeyStatus;
   rewrap: typeof rewrapIdentitySigningKeys;
   revoke: typeof revokeIdentitySigningKey;
-  serviceAccounts: Pick<typeof serviceAccounts, "getOrCreateResourceBound" | "createStandalone" | "listStandalone" | "get" | "setStatus">;
+  serviceAccounts: Pick<
+    typeof serviceAccounts,
+    "getByResource" | "getOrCreateResourceBound" | "createStandalone" | "listStandalone" | "get" | "setStatus"
+  >;
   credentials: Pick<
     typeof serviceAccountCredentials,
     "createResourceApiToken" | "createStandaloneApiToken" | "getOverview" | "listOverview" | "revoke"
@@ -150,6 +159,29 @@ export const createAdminIdentityRoutes = (
             filter: { serviceAccountKind: "resource_bound", resourceType: "cloud.app" },
           }),
         ),
+    )
+    .patch(
+      "/workloads/:appId",
+      describeRoute({ tags: ["App credentials"], summary: "Enable or disable app workload issuance and calls across all instances" }),
+      v("param", WorkloadAppParamsSchema),
+      v("json", ServiceAccountStatusInputSchema),
+      async (c) =>
+        respond(c, async () => {
+          const { appId } = c.req.valid("param");
+          const { status } = c.req.valid("json");
+          const account = await service.serviceAccounts.getByResource({ appId, resourceType: "cloud.app", resourceId: appId });
+          if (!account) return fail(err.notFound("Workload service account"));
+          const updated = await service.serviceAccounts.setStatus({ id: account.id, status });
+          if (!updated.ok) return updated;
+          await service.audit.record({
+            action: status === "disabled" ? "service_account.disable" : "service_account.enable",
+            outcome: "allowed",
+            actor: auditActor(c.get("user")),
+            target: { type: "service_account", id: account.id, label: account.name },
+            metadata: { appId, serviceAccountId: account.id, status },
+          });
+          return ok({ appId, status });
+        }),
     )
     .post(
       "/workloads/:appId/credentials",
@@ -372,6 +404,37 @@ export const createAdminIdentityRoutes = (
             }),
           201,
         ),
+    )
+    .get(
+      "/service-accounts/:id/api-keys",
+      describeRoute({ tags: ["Service accounts"], summary: "List API key metadata of a standalone service account without secrets" }),
+      v("param", ServiceAccountParamsSchema),
+      v("query", WorkloadCredentialListQuerySchema),
+      async (c) =>
+        respond(c, async () => {
+          const account = await service.serviceAccounts.get({ id: c.req.valid("param").id });
+          if (!account || !isStandaloneServiceAccountKind(account.kind)) return fail(err.notFound("Service account"));
+          return ok(
+            await service.credentials.listOverview({
+              pagination: c.req.valid("query"),
+              filter: { serviceAccountId: account.id, serviceAccountKind: account.kind },
+            }),
+          );
+        }),
+    )
+    .delete(
+      "/service-accounts/:id/api-keys/:credentialId",
+      describeRoute({ tags: ["Service accounts"], summary: "Revoke one exact API key of a standalone service account" }),
+      v("param", ServiceAccountParamsSchema.extend({ credentialId: z.uuid() }).strict()),
+      async (c) =>
+        respond(c, async () => {
+          const { id, credentialId } = c.req.valid("param");
+          const credential = await service.credentials.getOverview({ id: credentialId });
+          if (!credential || credential.owner.type !== "standalone" || credential.owner.serviceAccountId !== id)
+            return fail(err.notFound("API key"));
+          const revoked = await service.credentials.revoke({ credentialId, actor: c.get("user") });
+          return revoked.ok ? ok({ revoked: true as const }) : revoked;
+        }),
     )
     .get("/mandates", v("query", MandateListQuerySchema), async (c) => {
       const query = c.req.valid("query");

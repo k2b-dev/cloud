@@ -15,6 +15,10 @@ const privatePaths = [
   "/api/_internal/identity/v1/mandates/id/confirm",
   "/api/_internal/capabilities/v1/queries/read",
   "/_internal",
+  "/_cloud/public",
+  "/_cloud/public/page",
+  "/%5Fcloud/public/page",
+  "/%5fcloud%2fpublic/page",
   "/api/%5Finternal/widgets/v1/current",
   "/api%2f_internal%2fwidgets/v1/current",
   "/api%5c_internal%5cwidgets/v1/current",
@@ -26,9 +30,11 @@ describe("public gateway request boundary", () => {
   test("leaves normal app and public JWKS routes available", () => {
     for (const path of [
       "/api/me",
+      "/_cloud/ready",
+      "/_cloud/app-access",
+      "/app/files/_cloud/access/files",
       "/api/capabilities/v1/queries/read",
       "/api/search",
-      "/_cloud/ready",
       "/.well-known/cloud-session-jwks.json",
       "/app/not_internal",
       "/_internal-example",

@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { sql } from "@k2b/cloud";
 import {
   AI_WEBSITE_APPROVAL_TOOL,
   aiConversations,
@@ -8,7 +9,6 @@ import {
   rememberAiToolApproval,
 } from "@k2b/cloud/ai";
 import { requestPublicHttps, secrets } from "@k2b/cloud/services";
-import { sql } from "bun";
 import { z } from "zod";
 import { LIMITS } from "./contracts";
 import {
@@ -46,8 +46,7 @@ async function context(input: HttpScope, identity: ArtifactIdentity) {
       : await aiConversations.getConversationByShortId({ shortId: scope.conversationId, ownerUserId: actor.id });
     if (!conversation || conversation.archivedAt || (conversation.allowedTools !== null && conversation.allowedTools !== undefined))
       throw new HttpError("HTTP_DENIED");
-    if (conversation.projectId && !(await aiProjects.get(conversation.projectId, identity.accessSubject, "read")))
-      throw new HttpError("HTTP_DENIED");
+    if (conversation.projectId && !(await aiProjects.get(conversation.projectId, identity, "read"))) throw new HttpError("HTTP_DENIED");
     conversationId = conversation.id;
   }
   const resource = scope.resourceId

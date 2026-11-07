@@ -1,12 +1,26 @@
-import { BottomSheet, Button, Checkbox, DetailPanel, IconButton, StatusBadge, useLocale } from "@k2b/ui";
+import {
+  BottomSheet,
+  Button,
+  Checkbox,
+  DescriptionList,
+  DetailPanel,
+  IconButton,
+  type IntentTone,
+  StatusBadge,
+  type StatusTone,
+  useLocale,
+} from "@k2b/ui";
 import { createEffect, createSignal, For, type JSX, on, Show } from "solid-js";
 import type { ShiftAssignment, UpcomingSlot, Venue, VenueDashboard } from "../../../contracts";
 import { venueMessages } from "../../../messages";
 import { formatVenueSpan } from "../../../time-format";
 import { assignmentSelectionId, slotSelectionId } from "../../schedule-url";
-import { ProgressBar, SlotStateLabel, slotState } from "./schedule";
+import { ProgressBar, slotState, slotTarget } from "./schedule";
 import { VenueTimeZoneNote } from "./time-zone-note";
 import { canAdmin, canWrite } from "./utils";
+
+/** A shift state as the header's state badge. */
+const badgeTone: Record<IntentTone, StatusTone> = { neutral: "neutral", info: "info", success: "ok", warning: "warning", danger: "error" };
 
 /** Taking a shift from the detail can add this many following weeks as well. */
 export const FOLLOWING_WEEKS = 4;
@@ -106,12 +120,22 @@ function useShiftDetail(props: ShiftDetailProps) {
   const icon = () => (props.selection.kind === "slot" ? "ti ti-calendar-event" : "ti ti-clock-plus");
   const hasActions = () => permissions().take || permissions().leave !== null;
 
-  /** Take or Leave, with the following-weeks choice next to Take. `size` is the surface's button size. */
+  /** Take, the shift's main action, with the following-weeks choice beside it; or Leave on the viewer's own sign-up. */
   const primaryActions = (size: "sm" | "md") => (
-    <div class="flex w-full flex-wrap items-center justify-between gap-x-3 gap-y-2">
+    <>
       <Show when={permissions().take && props.selection.kind === "slot" ? props.selection.slot : null}>
         {(slot) => (
           <>
+            <Button
+              type="button"
+              size={size}
+              variant={size === "sm" ? "subtle" : "primary"}
+              class={size === "sm" ? "venue-details-main" : undefined}
+              loading={props.pending(slotActionKey(slot()))}
+              onClick={() => props.onTake(slot(), slot().template.date === null && followingWeeks())}
+            >
+              <i class="ti ti-user-plus" aria-hidden="true" /> {t().join}
+            </Button>
             <Show when={slot().template.date === null}>
               <Checkbox
                 label={t().alsoFollowingWeeks({ count: FOLLOWING_WEEKS })}
@@ -119,64 +143,67 @@ function useShiftDetail(props: ShiftDetailProps) {
                 onValueChange={setFollowingWeeks}
               />
             </Show>
-            <Button
-              type="button"
-              size={size}
-              class="ml-auto"
-              loading={props.pending(slotActionKey(slot()))}
-              onClick={() => props.onTake(slot(), slot().template.date === null && followingWeeks())}
-            >
-              <i class="ti ti-user-plus" aria-hidden="true" /> {t().join}
-            </Button>
           </>
         )}
       </Show>
       <Show when={permissions().leave}>
         {(own) => (
-          <>
-            <StatusBadge tone="ok" icon="ti ti-check" label={t().joined} />
-            <Button
-              type="button"
-              variant="secondary"
-              size={size}
-              loading={props.pending(assignmentActionKey(own()))}
-              onClick={() => props.onLeave(own())}
-            >
-              {t().leave}
-            </Button>
-          </>
+          <Button
+            type="button"
+            variant="secondary"
+            size={size}
+            loading={props.pending(assignmentActionKey(own()))}
+            onClick={() => props.onLeave(own())}
+          >
+            {t().leave}
+          </Button>
         )}
       </Show>
-    </div>
+    </>
   );
 
+  /** Properties first, then the people on the shift, then the time zone note. */
   const facts = (size: "sm" | "md") => (
     <>
       <Show
         when={props.selection.kind === "slot" ? props.selection.slot : null}
         fallback={
           // A sign-up outside every shift: free time, or a shift that was paused or moved since.
-          <DetailPanel.Summary title={title()}>
-            <p class="text-sm text-dimmed">
+          <DetailPanel.Section title={t().aboutSignUp}>
+            <p class="text-sm text-secondary">
               {props.selection.kind === "assignment" && props.selection.assignment.templateId
                 ? t().unscheduledShiftDescription
                 : t().freeTimeDescription}
             </p>
-          </DetailPanel.Summary>
+          </DetailPanel.Section>
         }
       >
         {(slot) => (
-          <DetailPanel.Summary title={t().staffing}>
-            <ProgressBar slot={slot()} />
-          </DetailPanel.Summary>
+          <DetailPanel.Section title={t().properties}>
+            <DescriptionList
+              layout="rows"
+              size="sm"
+              items={[
+                {
+                  term: t().staffing,
+                  description: (
+                    <span class="venue-detail-staffing">
+                      <span>{t().staffed({ assigned: slot().assignedCount, target: slotTarget(slot()) })}</span>
+                      <ProgressBar slot={slot()} compact />
+                    </span>
+                  ),
+                },
+              ]}
+            />
+          </DetailPanel.Section>
         )}
       </Show>
-      <DetailPanel.Section title={t().people} icon="ti ti-users" count={shiftPeople(props.selection).length}>
+      <DetailPanel.Section title={t().people} count={shiftPeople(props.selection).length}>
         <Show when={shiftPeople(props.selection).length > 0} fallback={<p class="text-sm text-dimmed">{t().noOneYet}</p>}>
           <ul class="grid gap-1" aria-label={t().people}>
             <For each={shiftPeople(props.selection)}>
               {(person) => (
-                <li class="flex min-h-10 items-center justify-between gap-3 text-sm" data-shift-person={person.id}>
+                <li class="k2b-progressive-row flex min-h-10 items-center justify-between gap-3 text-sm" data-shift-person={person.id}>
                   <span class="min-w-0">
                     <span class="block font-medium text-primary [overflow-wrap:anywhere]">
                       {person.userId === props.userId ? t().personYou({ name: person.userDisplayName }) : person.userDisplayName}
@@ -186,10 +213,12 @@ function useShiftDetail(props: ShiftDetailProps) {
                     </Show>
                   </span>
                   <Show when={permissions().remove(person)}>
+                    {/* A row action: on hover or focus with a mouse, always on touch; its place is reserved, so nothing moves. */}
                     <Button
                       type="button"
-                      variant="secondary"
+                      variant="ghost"
                       size={size}
+                      class="k2b-progressive-action"
                       aria-label={t().removePerson({ name: person.userDisplayName })}
                       loading={props.pending(assignmentActionKey(person))}
                       onClick={() => props.onRemove(person)}
@@ -208,7 +237,19 @@ function useShiftDetail(props: ShiftDetailProps) {
   );
 
   const state = () => (props.selection.kind === "slot" ? slotState(props.selection.slot, t()) : null);
-  return { t, title, span, icon, hasActions, primaryActions, facts, state };
+  /** The kind and its state, for the header's first row: "Shift · 1 missing · You're in". */
+  const kind = () => (
+    <>
+      <span>{props.selection.kind === "slot" ? t().shift : t().signUpKind}</span>
+      <Show when={state()}>
+        {(current) => <StatusBadge tone={badgeTone[current().tone]} icon={current().icon} label={current().label} title={current().hint} />}
+      </Show>
+      <Show when={permissions().leave}>
+        <StatusBadge tone="ok" icon="ti ti-check" label={t().joined} />
+      </Show>
+    </>
+  );
+  return { t, title, span, icon, hasActions, primaryActions, facts, state, kind };
 }
 
 /** The shift detail next to the calendar, from 1024 px on. */
@@ -217,10 +258,9 @@ export function ShiftDetailPanel(props: ShiftDetailProps & { onClose: () => void
   return (
     <DetailPanel>
       <DetailPanel.Header
-        icon={detail.icon()}
+        kind={detail.kind()}
         title={detail.title()}
         subtitle={detail.span()}
-        meta={<Show when={detail.state()}>{(state) => <SlotStateLabel state={state()} class="text-xs" />}</Show>}
         actions={
           <IconButton size="sm" variant="ghost" label={detail.t().closeShiftDetails} onClick={props.onClose}>
             <i class="ti ti-x" aria-hidden="true" />
@@ -250,12 +290,17 @@ export function ShiftDetailSheet(props: ShiftDetailProps & { onDismiss: () => vo
       />
       <BottomSheet.Body>
         <div class="flex flex-col gap-3" data-shift-detail-sheet="">
-          <Show when={detail.state()}>{(state) => <SlotStateLabel state={state()} class="text-sm font-medium" />}</Show>
+          <div class="flex flex-wrap items-center gap-2 text-sm text-secondary">{detail.kind()}</div>
           {detail.facts("md")}
         </div>
       </BottomSheet.Body>
       <Show when={detail.hasActions()}>
-        <BottomSheet.Footer>{detail.primaryActions("md")}</BottomSheet.Footer>
+        <BottomSheet.Footer>
+          {/* The main action at the end, its following-weeks choice before it. */}
+          <div class="flex w-full flex-row-reverse flex-wrap items-center justify-between gap-x-3 gap-y-2">
+            {detail.primaryActions("md")}
+          </div>
+        </BottomSheet.Footer>
       </Show>
     </BottomSheet>
   );

@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
-import { redis, sql } from "bun";
 import { suiteFor } from "../../../../../scripts/fixtures/test-infra";
+import { redis, sql } from "../../runtime/clients";
 import { encryptValue } from "../settings/crypto";
 import { loadJwtSessionIdentity, loadJwtSessionUser } from "./user";
 

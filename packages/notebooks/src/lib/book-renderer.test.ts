@@ -1,14 +1,15 @@
 import { describe, expect, spyOn, test } from "bun:test";
 import { cloudAiChartTable } from "@k2b/cloud/ai/browser";
 import { markdown } from "@k2b/cloud/shared";
+import * as chartBlocks from "@k2b/editor/markdown/lib/chart-blocks";
+import { notebookChartTableHtml, parseNotebookChartBlocks, renderNotebookChartFigure } from "@k2b/editor/markdown/lib/chart-blocks";
 import { renderMarkdownInfoBlock } from "@k2b/ui";
 import katex from "katex";
+import { DOCUMENTED_IMAGE_FORMS } from "../../../editor/src/markdown/lib/markdown-image.fixtures";
 import type { NoteQueryResult } from "../service/note-query";
 import { renderNotebookBook, sanitizeNotebookBookHtml } from "./book-renderer";
 import { bookRendererMessages } from "./book-renderer-messages";
-import * as chartBlocks from "./chart-blocks";
-import { notebookChartTableHtml, parseNotebookChartBlocks, renderNotebookChartFigure } from "./chart-blocks";
-import { DOCUMENTED_IMAGE_FORMS } from "./markdown-image.fixtures";
+import { notebookChartOptions } from "./chart-options";
 
 const render = (markdown: string, locale = "en", queryResults?: ReadonlyMap<number, NoteQueryResult>) =>
   renderNotebookBook({ markdown, notebookId: "ABC123", locale, queryResults });
@@ -49,6 +50,17 @@ describe("documented Book image forms", () => {
         expect(print.omissions).toEqual([]);
         if (markdown.startsWith("#")) expect(print.headings[0]).toMatchObject({ id: "heading-floor-plan", text: fixture.alt });
       }
+      const browserPrint = renderNotebookBook({
+        markdown: fixture.markdown,
+        notebookId: "ABC123",
+        locale: "en",
+        print: true,
+        browserImages: true,
+      });
+      expect(browserPrint.images).toEqual([]);
+      expect(browserPrint.html).not.toContain("NOTEBOOKBOOKSLOT");
+      expect(browserPrint.html).toContain(`src="${src}"`);
+      expect(browserPrint.html).toContain(`alt="${fixture.alt}"`);
       expect(render(fixture.markdown).images).toEqual([]);
     });
   }
@@ -177,6 +189,58 @@ describe("Notebook Book HTML", () => {
       expect(block.html).not.toContain("<img");
       expect(document.html).toContain(block.html);
     }
+  });
+
+  test("a paged query shows one page with page buttons, and its last page keeps the height of a full one", () => {
+    const item = (index: number) => ({
+      id: `N${String(index).padStart(5, "0")}`,
+      href: `/app/notebooks/ABC123/notes/N${String(index).padStart(5, "0")}`,
+      title: `Page ${index}`,
+      values: { $title: `Page ${index}` },
+    });
+    const page = (offset: number, count: number): NoteQueryResult => ({
+      columns: ["$title"],
+      items: Array.from({ length: count }, (_, index) => item(offset + index)),
+      total: 1362,
+      limit: 20,
+      offset,
+      truncated: true,
+      diagnostics: [],
+    });
+    const html = (result: NoteQueryResult, locale = "en") =>
+      render(":::query\nsource: notes\n:::", locale, new Map([[1, result]])).blocks[0]!.html;
+
+    const first = html(page(0, 20));
+    expect(first).toContain('aria-label="Pages of this list"');
+    expect(first).toContain(">1–20 of 1,362</span>");
+    expect(first).toMatch(/<button[^>]*data-query-page="0"[^>]*disabled/);
+    expect(first).toMatch(/<button[^>]*data-query-line="1"[^>]*data-query-page="2"[^>]*aria-label="Next page"/);
+    expect(first).not.toContain("notebook-query-filler");
+
+    const last = html(page(1360, 2), "de");
+    expect(last).toContain(">1.361–1.362 von 1.362</span>");
+    expect(last).toMatch(/<button[^>]*data-query-page="70"[^>]*disabled/);
+    // Two rows and 18 blank ones that screen readers skip.
+    expect(last.match(/<li class="notebook-query-filler" aria-hidden="true">/g)).toHaveLength(18);
+
+    const table = render(
+      ":::query\nsource: notes\ncolumns:\n  - $title\n  - $updated\n:::",
+      "en",
+      new Map([[1, { ...page(1360, 2), columns: ["$title", "$updated"] }]]),
+    ).blocks[0]!.html;
+    expect(table.match(/<tr class="notebook-query-filler" aria-hidden="true"><td colspan="2">/g)).toHaveLength(18);
+  });
+
+  test("a query that fits one page, or one rendered for a PDF, shows no page buttons", () => {
+    const one = render(
+      ":::query\nsource: notes\n:::",
+      "en",
+      new Map([[1, { ...result, total: 1, limit: 20, truncated: false, offset: 0 }]]),
+    ).blocks[0]!.html;
+    expect(one).not.toContain("notebook-query-pager");
+    const pdf = render(":::query\nsource: notes\n:::", "en", new Map([[1, { ...result, total: 300, truncated: true }]])).blocks[0]!.html;
+    expect(pdf).not.toContain("notebook-query-pager");
+    expect(pdf).toContain("Showing");
   });
 
   test("editor previews retain their presentation mode on query note and tag links", () => {
@@ -345,11 +409,22 @@ describe("Notebook Book HTML", () => {
   });
 
   test("tables use the existing formula engine and progress semantics", () => {
+    // Mail's opt-in renderer must not alter Notebook's formula output in the same process.
+    expect(markdown.renderSync("| Value |\n| --- |\n| =2*2 |", { links: "plain", output: "email" })).toContain("=2*2");
     const { html } = render("| Item | Value | Twice |\n| --- | ---: | ---: |\n| A | 2 | =Value*2 |\n| B | 3 | =Value*2 |");
     expect(html).toContain('class="md-table"');
     expect(html).toContain("md-formula-ok");
     expect(html).toContain("</i>4</span>");
     expect(html).toContain("</i>6</span>");
+  });
+
+  test("header-off tables hide only the empty GFM header and preserve all body rows", () => {
+    const { html } = render("|   |   |\n| --- | ---: |\n| Item | Value |\n| Paper | 12 |");
+    expect(html).not.toContain("<thead>");
+    expect(html).not.toContain("<th ");
+    for (const value of ["Item", "Value", "Paper", "12"]) expect(html).toContain(`>${value}</span>`);
+    expect(html).toContain("md-align-right");
+    expect(render("|   | Value |\n| --- | --- |\n| Paper | 12 |").html).toContain("<thead>");
   });
 
   test("formula values and table links remain escaped and use Book URLs", () => {
@@ -776,7 +851,7 @@ test("version source previews still draw charts from their own text", () => {
 });
 
 test("Book and editor preserve chart payloads; print keeps only the drawing and shared data table", () => {
-  const parsed = parseNotebookChartBlocks(chartMarkdown).blocks[0]!.input;
+  const parsed = parseNotebookChartBlocks(chartMarkdown, notebookChartOptions).blocks[0]!.input;
   const figure = renderNotebookChartFigure(parsed, "de")!;
   const book = renderNotebookBook({ markdown: chartMarkdown, notebookId: "book01", locale: "de" });
   expect(book.html).toContain(figure);
@@ -818,7 +893,7 @@ describe("typed PDF omissions", () => {
   test("chart drawing failure reports one omission after a successful parse", () => {
     // Parsing already rejects known drawing failures. Exercise a later renderer failure separately.
     const markdown = ":::chart\ntype: bar\ntitle: Sales\ncolumns: [Month, Revenue]\nrows:\n  - [Jan, 12]\nx: Month\ny: Revenue\n:::";
-    expect(parseNotebookChartBlocks(markdown).blocks).toHaveLength(1);
+    expect(parseNotebookChartBlocks(markdown, notebookChartOptions).blocks).toHaveLength(1);
     const figure = spyOn(chartBlocks, "renderNotebookChartFigure").mockReturnValue(null);
     try {
       const document = render(markdown);

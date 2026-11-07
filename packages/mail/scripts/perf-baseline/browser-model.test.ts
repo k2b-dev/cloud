@@ -60,6 +60,10 @@ test("browser selection defaults to all, accepts focused runs, and rejects inval
   });
   expect(parseArgs(["--loads", "compose"]).loads).toEqual(["compose"]);
   expect(parseArgs(["--loads", "compose,mailbox"]).loads).toEqual(["compose", "mailbox"]);
+  expect(parseArgs(["--interactions", "mailbox-switch,folder-switch,folder-switch-full", "--loads", "none"])).toMatchObject({
+    interactions: ["mailbox-switch", "folder-switch", "folder-switch-full"],
+    loads: [],
+  });
   for (const args of [
     ["--interactions", "unknown"],
     ["--interactions", "folder-switch,folder-switch"],
@@ -75,6 +79,7 @@ test("browser selection defaults to all, accepts focused runs, and rejects inval
   expect(interactions.filter((entry) => "trace" in entry && entry.trace).map((entry) => entry.id)).toEqual([
     "mailbox-switch",
     "folder-switch",
+    "folder-switch-full",
   ]);
 });
 
@@ -117,6 +122,7 @@ test("interaction samples count API requests and bytes and reject incomplete ent
   expect(interactionIds).toEqual([
     "mailbox-switch",
     "folder-switch",
+    "folder-switch-full",
     "conversation-open",
     "conversation-open-large",
     "list-scroll",

@@ -20,7 +20,7 @@ export const app = defineApp({
     background: {
       from: "#6366f1",
       via: "#ffffff",
-      to: "#22d3ee",
+      to: "#8b5cf6",
       angle: 135,
       strength: 12,
     },

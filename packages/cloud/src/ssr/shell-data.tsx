@@ -9,6 +9,8 @@ import type { PanelProvider } from "./app-navigation";
 import type { RailApp } from "./rail-navigation";
 
 export type ShellData = {
+  /** Canonical public Cloud origin; omitted until app.url is configured. */
+  cloudOrigin?: string;
   panel?: { providers: PanelProvider[]; provider?: string; context: PanelPageContext | null; consent?: PanelConsentSnapshot };
   /** The authorized navigation catalog, sorted for the request locale: the rail, the app grid and the phone menu show it. */
   apps: RailApp[];
@@ -18,7 +20,7 @@ export type ShellData = {
   home?: string;
   legalLinks: AppLaunchpadLegalLink[];
   /** Signed-in pages: the person, for the profile menu and the phone menu's profile actions. */
-  profile?: { name: string; avatarSrc?: string; appHref?: string };
+  profile?: { userId?: string; name: string; avatarSrc?: string; appHref?: string };
   theme: CloudThemePreference;
   /** The current app's accent, for the Help dialog and the phone menu, which open outside the app canvas. */
   accent?: string;

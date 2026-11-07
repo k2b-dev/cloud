@@ -1,5 +1,5 @@
-import { sql } from "bun";
 import type { User } from "../../contracts/shared";
+import { sql } from "../../runtime/clients";
 import { err, fail, freeipa, ok, type Result } from "../../server/services";
 import { dates } from "../../shared";
 import { getConfiguredExpiryDays, parseIpaAccountTransitionPolicy } from "../account-model";

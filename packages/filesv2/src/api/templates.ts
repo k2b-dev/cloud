@@ -1,4 +1,4 @@
-import { type AuthContext, middleware, requiresAdmin, requiresAuth, respond, v } from "@k2b/cloud/server";
+import { type AuthContext, auth, middleware, requiresAdmin, requiresAuth, respond, v } from "@k2b/cloud/server";
 import { ok } from "@k2b/stdlib";
 import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
@@ -18,6 +18,7 @@ import {
 
 const id = v("param", z.object({ id: z.string().uuid() }));
 export const templateApi = new Hono<AuthContext>()
+  .use("/admin/*", auth.requireRole("admin"))
   .use(bodyLimit({ maxSize: Math.ceil((TEMPLATE_LIMIT * 4) / 3) + 16_384 }))
   .get("/", middleware.openapi({ summary: "List usable file templates", ...requiresAuth }), v("query", TemplateQuerySchema), async (c) =>
     respond(c, ok(await service.list(requestCall(c), c.req.valid("query")))),

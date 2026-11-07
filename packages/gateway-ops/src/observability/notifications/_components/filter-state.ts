@@ -1,6 +1,6 @@
 import type { NotificationDeliveryStatus } from "@k2b/cloud/contracts";
 
-export const NOTIFICATION_ADMIN_BASE_URL = "/admin/observability/notifications";
+export const NOTIFICATION_ADMIN_BASE_URL = "/admin/observability/deliveries";
 
 export type NotificationAdminView = "deliveries" | "registry" | "legacy";
 export type DeliveryStatusFilter = "all" | NotificationDeliveryStatus;

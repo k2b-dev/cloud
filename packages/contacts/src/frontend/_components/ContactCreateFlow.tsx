@@ -1,3 +1,4 @@
+import type { GeoAvailabilityData } from "@k2b/cloud/contracts/geo";
 import { dialogCore, panelDialogOptions, prompts } from "@k2b/ui";
 import type { Contact } from "../../service";
 import ContactUpsertForm from "./ContactUpsertForm";
@@ -20,6 +21,7 @@ export const openContactCreateFlow = async (options: {
   chooseBook?: boolean;
   initialValues?: ContactUpsertInitialValues;
   locale: string;
+  geoAvailability?: GeoAvailabilityData;
 }): Promise<ContactCreateFlowResult | null> => {
   const { t } = detailMessages.resolve([options.locale]);
   if (options.writableBooks.length === 0) {
@@ -71,6 +73,7 @@ export const openContactCreateFlow = async (options: {
         icon="ti ti-user-plus"
         onCancel={() => close(undefined)}
         onSaved={(created) => close(created)}
+        geoAvailability={options.geoAvailability}
       />
     ),
     panelDialogOptions,

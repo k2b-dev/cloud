@@ -4,6 +4,7 @@ import {
   type AiChatTaskOccurrence,
   type AiConversation,
   type AiInterChatMessage,
+  AiResourceCredentialError,
   type AiSkill,
   AiSkillAppForbiddenError,
   type AiStoredMessage,
@@ -156,7 +157,7 @@ const storedMessage = (seq: number, message: AiStoredMessage["message"], overrid
   kind: "message",
   message,
   loopId: null,
-  modelProfileId: null,
+  modelId: null,
   providerModel: null,
   usage: null,
   stopReason: null,
@@ -195,8 +196,18 @@ describe("Core AI capabilities", () => {
         read: async () => aiCapabilities.queries["ai.skill.read"].run({ id: skill.shortId }, context),
       },
     };
-    expect(Object.keys(cases).sort()).toEqual(Object.keys(aiCapabilities.types).sort());
+    expect(Object.keys(cases).sort()).toEqual(
+      Object.entries(aiCapabilities.types)
+        .filter(([, type]) => "reader" in type)
+        .map(([id]) => id)
+        .sort(),
+    );
     for (const [typeId, type] of Object.entries(aiCapabilities.types)) {
+      if (!("reader" in type)) {
+        expect(typeId).toBe("user");
+        expect(String(aiCapabilities.events["user.created"].subject)).toBe(typeId);
+        continue;
+      }
       const fixture = cases[typeId];
       if (!fixture) throw new Error(`Missing reader fixture for ${typeId}`);
       expect(fixture.reader).toBe(type.reader);
@@ -269,7 +280,7 @@ describe("Core AI capabilities", () => {
     expect(await operation.review({ ...input, expectedAccessRevision: "0".repeat(64) }, context)).toMatchObject({ ok: false });
     expect(update).not.toHaveBeenCalled();
     expect(await operation.run(input, context)).toMatchObject({ ok: true, data: { data: { changed: true } } });
-    expect(update).toHaveBeenCalledWith(skill.id, "AbC234", context.accessSubject, "read", input.expectedAccessRevision, authority);
+    expect(update).toHaveBeenCalledWith(skill.id, "AbC234", context, "read", input.expectedAccessRevision, authority);
     expect(operation.input.safeParse({ ...input, confirmed: true }).success).toBe(false);
     const { accessId: _accessId, ...newGrant } = input;
     expect(operation.input.safeParse({ ...newGrant, principal: { type: "public" } }).success).toBe(false);
@@ -317,7 +328,12 @@ describe("Core AI capabilities", () => {
       "ai.task.run",
       "ai.task.update",
     ];
-    expect(manifest.types.map((type) => `core.${type.localId}`).sort()).toEqual(["core.ai.chat", "core.ai.skill", "core.ai.task"]);
+    expect(manifest.types.map((type) => `core.${type.localId}`).sort()).toEqual([
+      "core.ai.chat",
+      "core.ai.skill",
+      "core.ai.task",
+      "core.user",
+    ]);
     expect(Object.keys(aiCapabilities.queries).sort()).toEqual(queries);
     expect(manifest.queries.map((query) => query.localId).sort()).toEqual(queries);
     expect(
@@ -498,7 +514,7 @@ describe("Core AI capabilities", () => {
       context,
     );
 
-    expect(list).toHaveBeenCalledWith(context.accessSubject, { authority });
+    expect(list).toHaveBeenCalledWith(context, { authority });
     expect(listed).toMatchObject({
       ok: true,
       data: {
@@ -538,7 +554,7 @@ describe("Core AI capabilities", () => {
         scopedContext,
       ),
     ];
-    expect(list).toHaveBeenCalledWith(context.accessSubject, { authority: restricted });
+    expect(list).toHaveBeenCalledWith(scopedContext, { authority: restricted });
     for (const call of get.mock.calls) expect(call[3]).toBe(restricted);
     expect(JSON.stringify(results)).not.toContain(skill.name);
     expect(JSON.stringify(results)).not.toContain(skill.instructions);
@@ -647,7 +663,7 @@ describe("Core AI capabilities", () => {
     }
     expect(setReferences).toHaveBeenCalledWith(
       skill.id,
-      context.accessSubject,
+      context,
       {
         skillId: skill.shortId,
         expectedRevision: 1,
@@ -658,7 +674,7 @@ describe("Core AI capabilities", () => {
       },
       authority,
     );
-    expect(get).toHaveBeenCalledWith(skill.shortId, context.accessSubject, "admin", authority);
+    expect(get).toHaveBeenCalledWith(skill.shortId, idempotentContext, "admin", authority);
   });
 
   test("writes the request id of an irreversible Skill delete into the audit row", async () => {
@@ -964,7 +980,7 @@ describe("Core AI capabilities", () => {
     expect(result).toMatchObject({ ok: true, data: { data: { chat: { id: chat.shortId, archived: true } } } });
   });
 
-  test("the mobile app never creates, changes or resumes a routine's mandate", async () => {
+  test("the Cloud app never creates, changes or resumes a routine's mandate", async () => {
     const create = spyOn(aiChatTasks, "create");
     const update = spyOn(aiChatTasks, "update");
     const setState = spyOn(aiChatTasks, "setState");
@@ -1174,3 +1190,47 @@ test("routine reads include the refused action in the localized approval reason"
     },
   });
 });
+
+for (const kind of ["standalone", "agent"] as const) {
+  test(`${kind} Skill capability reads and writes retain credential context`, async () => {
+    const machine: CapabilityExecutionContext = {
+      ...context,
+      user: null,
+      actor: {
+        kind: "service_account",
+        scopes: ["read"],
+        delegatedUser: null,
+        serviceAccount: {
+          id: "22222222-2222-4222-8222-222222222222",
+          name: "Capability machine",
+          kind,
+          status: "active",
+          delegatedUserId: null,
+          appId: null,
+          resourceType: null,
+          resourceId: null,
+          createdBy: null,
+          createdAt: "1970-01-01T00:00:00.000Z",
+        },
+      },
+      accessSubject: { type: "service_account", serviceAccountId: "22222222-2222-4222-8222-222222222222" },
+    };
+    const machineAuthority: RequestAuthority = {
+      actor: machine.actor,
+      accessSubject: machine.accessSubject,
+      credentialKind: "api_key",
+      scopes: ["read"],
+    };
+    machine.authority = machineAuthority;
+    const list = spyOn(aiSkills, "list").mockResolvedValue([]);
+    const get = spyOn(aiSkills, "getByShortId").mockResolvedValue(skill);
+    await aiCapabilities.queries["ai.skills.list"].run({ query: "", enabled: true, limit: 20 }, machine);
+    await aiCapabilities.queries["ai.skill.read"].run({ id: skill.shortId }, machine);
+    expect(list).toHaveBeenCalledWith(machine, { authority: machineAuthority });
+    expect(get).toHaveBeenCalledWith(skill.shortId, machine, "read", machineAuthority);
+    const create = spyOn(aiSkills, "create").mockRejectedValue(new AiResourceCredentialError());
+    const input = { name: "machine-skill", description: "Rules", instructions: "Read rules" };
+    expect(await aiCapabilities.actions["ai.skill.create"].run(input, machine)).toMatchObject({ ok: false, error: { code: "FORBIDDEN" } });
+    expect(create).toHaveBeenCalledWith({ subject: machine, ...input }, machineAuthority);
+  });
+}

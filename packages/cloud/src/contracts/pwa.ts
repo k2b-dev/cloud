@@ -17,11 +17,14 @@ export const PWA_MANIFEST_PATH = "/pwa/manifest.webmanifest";
  */
 export const PWA_CANVAS_COLORS = { light: "#fafafa", dark: "#090d12" } as const;
 
-/** Cookie names. Only `pwa_session` reaches every application; the others use Core-only paths. */
+/** Cookie names. The session and last address reach parts; device and pairing secrets use Core-only paths. */
 export const PWA_COOKIES = {
   session: "pwa_session",
+  lastAddress: "pwa_last_address",
   device: "pwa_device",
   pairing: "pwa_pairing",
+  /** Set by the launch when the device's pairing has ended; the next page deletes the app's drafts and the marker. */
+  ended: "pwa_ended",
 } as const;
 
 export const PWA_LIMITS = {
@@ -87,7 +90,7 @@ const Code = z.string().regex(/^\d{6}$/);
 
 export const PwaPlatformSchema = z.enum(["ios", "android", "other"]);
 export type PwaPlatform = z.infer<typeof PwaPlatformSchema>;
-export const PwaPairingStateSchema = z.enum(["pending", "claimed", "confirmed", "completed", "cancelled"]);
+export const PwaPairingStateSchema = z.enum(["pending", "claimed", "awaiting_device", "confirmed", "completed", "rejected", "cancelled"]);
 export type PwaPairingState = z.infer<typeof PwaPairingStateSchema>;
 /** States of `/pwa/` the launch bounce leads to when it cannot renew. */
 export const PwaLaunchStateSchema = z.enum(["new", "ended", "blocked", "unavailable"]);
@@ -143,9 +146,27 @@ export const PwaDeviceListSchema = z.object({ items: z.array(PwaDeviceViewSchema
 export const PwaClaimSchema = z.object({ secret: z.string().regex(SECRET_PATTERN), platform: PwaPlatformSchema }).strict();
 const Account = z.object({ name: z.string() }).strict();
 export const PwaClaimResultSchema = z.object({ code: Code, account: Account, expiresAt: DateTime }).strict();
+export const PwaDeviceDecisionSchema = z
+  .object({
+    confirmationToken: z.string().regex(SECRET_PATTERN),
+    decision: z.enum(["confirm", "reject"]),
+  })
+  .strict();
 export const PwaCompleteResultSchema = z.discriminatedUnion("state", [
   z.object({ state: z.literal("paired") }).strict(),
+  z.object({ state: z.literal("rejected") }).strict(),
+  z
+    .object({
+      state: z.literal("confirmation_required"),
+      account: Account,
+      administrator: Account,
+      confirmationToken: z.string().regex(SECRET_PATTERN),
+      expiresAt: DateTime,
+    })
+    .strict(),
   z.object({ state: z.literal("waiting"), code: Code, account: Account, expiresAt: DateTime }).strict(),
 ]);
-export const PwaRenewResultSchema = z.object({ renewed: z.boolean(), otherAccount: Account.optional() }).strict();
+export const PwaRenewResultSchema = z
+  .object({ renewed: z.boolean(), otherAccount: Account.optional(), builds: z.record(z.string(), z.string()) })
+  .strict();
 export const PwaRenameSchema = z.object({ name: z.string().trim().min(1).max(PWA_LIMITS.nameMaxLength) }).strict();

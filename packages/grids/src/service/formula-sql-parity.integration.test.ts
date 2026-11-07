@@ -1,6 +1,6 @@
 import { beforeAll, describe, expect } from "bun:test";
+import { sql } from "@k2b/cloud";
 import type { DateContext } from "@k2b/stdlib";
-import { sql } from "bun";
 import { testFor, testInfra } from "../../../../scripts/fixtures/test-infra";
 import { evaluate } from "../formula/evaluator";
 import { parseFormula } from "../formula/parser";

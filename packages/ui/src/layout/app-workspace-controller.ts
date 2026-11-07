@@ -66,8 +66,6 @@ const DETAIL_DRAWER_SELECTOR = '.k2b-app-workspace__detail[data-workspace-detail
 const cssState = (element: HTMLElement, name: string) => getComputedStyle(element).getPropertyValue(name).trim();
 const detailWaiting = (aside: HTMLElement) => cssState(aside, "--k2b-workspace-detail-waiting") === "1";
 const detailDrawer = (aside: HTMLElement) => aside.dataset.workspaceDetailDrawer === "open";
-// The stylesheet's phone page, read from CSS: WebKit can report a resize before its media query changes.
-const detailPhonePage = (aside: HTMLElement) => cssState(aside, "--k2b-workspace-detail-phone-page") === "1";
 const detailToggle = (aside: HTMLElement) => {
   const root = workspaceRoot(aside);
   return rootElements(root ?? aside, DETAIL_TOGGLE_SELECTOR).find((toggle) => toggle.getAttribute("aria-controls") === aside.id);
@@ -75,11 +73,8 @@ const detailToggle = (aside: HTMLElement) => {
 // The trail's registered property accepts a length, not the drawer's percentage
 // cap. Only a user-opened drawer needs this measurement; the first frame stays CSS-owned.
 const detailDrawerContent = (aside: HTMLElement) => aside.closest<HTMLElement>(".k2b-app-workspace__content");
-// A phone page covers Main entirely, so nothing beside it needs room.
-const syncDetailDrawerSpace = (aside: HTMLElement) => {
-  if (aside.dataset.workspaceDetailPhone === "page" && detailPhonePage(aside)) return;
+const syncDetailDrawerSpace = (aside: HTMLElement) =>
   detailDrawerContent(aside)?.style.setProperty("--k2b-detail-space", `${aside.getBoundingClientRect().width}px`);
-};
 const parkDetailDrawer = (aside: HTMLElement, focus = false) => {
   if (!detailDrawer(aside)) return;
   delete aside.dataset.workspaceDetailDrawer;
@@ -89,15 +84,10 @@ const parkDetailDrawer = (aside: HTMLElement, focus = false) => {
   if (focus) detailReturnControl(aside)?.focus({ preventScroll: true });
 };
 
-// Asks the controller to park a drawer, so a phone page releases Main's inert before focus returns there.
-const DETAIL_PARK_EVENT = "k2b-app-workspace-detail-park";
 /** Parks open waiting-detail drawers; focus follows only when it was inside one. */
 export const parkWorkspaceDetailDrawers = (root: ParentNode = document): void => {
-  for (const aside of root.querySelectorAll<HTMLElement>(DETAIL_DRAWER_SELECTOR)) {
-    const focus = aside.contains(aside.ownerDocument.activeElement);
-    const park = new CustomEvent<{ focus: boolean }>(DETAIL_PARK_EVENT, { bubbles: true, cancelable: true, detail: { focus } });
-    if (aside.dispatchEvent(park)) parkDetailDrawer(aside, focus);
-  }
+  for (const aside of root.querySelectorAll<HTMLElement>(DETAIL_DRAWER_SELECTOR))
+    parkDetailDrawer(aside, aside.contains(aside.ownerDocument.activeElement));
 };
 const FOCUSABLE_SELECTOR = [
   "a[href]",
@@ -121,6 +111,7 @@ const SELECTION_MARK_SELECTOR =
 const IGNORED_SELECTION_MARK_SELECTOR = "[data-calendar-day-key]";
 const clamp = (value: number, min: number, max: number) => Math.round(Math.min(max, Math.max(min, value)));
 const eventElement = (event: Event) => (event.target instanceof Element ? event.target : null);
+const PREVIEW_FOCUS_SELECTOR = ".k2b-app-workspace__sidebar-preview-trigger:not([data-row-trigger])";
 const resizeHandle = (event: Event) => eventElement(event)?.closest<HTMLElement>(HANDLE_SELECTOR) ?? null;
 const resizeKind = (handle: HTMLElement): AppWorkspaceResizeKind | null => {
   const value = handle.dataset.appWorkspaceResize;
@@ -142,6 +133,8 @@ const sidebarHideable = (root: HTMLElement) => sidebarElement(root)?.dataset.wor
  * stays application state, so the controller only requests the change.
  */
 export const APP_WORKSPACE_SIDEBAR_HIDE_EVENT = "k2b-app-workspace-sidebar-hide";
+/** Asks the owning `AppWorkspace.Sidebar` to show again; its `onHiddenChange` decides. */
+export const APP_WORKSPACE_SIDEBAR_SHOW_EVENT = "k2b-app-workspace-sidebar-show";
 /** Asks the owning Detail to reopen its current available object. */
 export const APP_WORKSPACE_DETAIL_OPEN_EVENT = "k2b-app-workspace-detail-open";
 /** Asks the owning `AppWorkspace.Detail` to close; its `onClose` decides. */
@@ -194,6 +187,16 @@ const flexibleLevel = (pane: HTMLElement) => {
   const root = workspaceRoot(pane);
   const widthClass = root ? cssState(root, "--k2b-workspace-level-class") : "";
   return Boolean(widthClass && pane.dataset.workspaceLevelLast?.split(" ").includes(widthClass));
+};
+/** How much more than Main's default minimum the filling last level declares, such as a wide list. */
+const flexibleLevelExtra = (main: HTMLElement | null) => {
+  const level = main
+    ? Array.from(main.querySelectorAll<HTMLElement>(":scope > [data-workspace-level]")).find(
+        (pane) => flexibleLevel(pane) && isVisible(pane),
+      )
+    : undefined;
+  const minimum = level ? Number.parseFloat(getComputedStyle(level).getPropertyValue("--k2b-workspace-level-min")) : Number.NaN;
+  return Number.isFinite(minimum) ? Math.max(0, minimum - APP_WORKSPACE_MAIN_MIN) : 0;
 };
 const levelsMain = (handle: HTMLElement) => handle.closest(".k2b-app-workspace__main")?.hasAttribute("data-workspace-levels") ?? false;
 const controlsResizableRegion = (root: HTMLElement, handle: HTMLElement, kind: AppWorkspaceResizeKind) => {
@@ -290,7 +293,9 @@ const sizeLimits = (root: HTMLElement, handle: HTMLElement, kind: AppWorkspaceRe
         : kind === "detail"
           ? 8 + (reserveMainMinimum ? mainExtra : 0)
           : kind === "pane"
-            ? panes.reduce((total, pane) => total + (pane === controlled ? 0 : elementSize(pane, "pane")), 0) + separatorSize
+            ? panes.reduce((total, pane) => total + (pane === controlled ? 0 : elementSize(pane, "pane")), 0) +
+              separatorSize +
+              flexibleLevelExtra(main)
             : 0,
     min: numberData(handle, "workspaceMinSize", defaultMin),
     max: numberData(handle, "workspaceMaxSize", defaultMax),
@@ -421,7 +426,7 @@ const reconcilePanes = (root: HTMLElement, layoutState: AppWorkspaceLayoutState,
   });
   if (!fits.length) return;
 
-  const budget = main.getBoundingClientRect().width - fixedWidth - APP_WORKSPACE_MAIN_MIN;
+  const budget = main.getBoundingClientRect().width - fixedWidth - APP_WORKSPACE_MAIN_MIN - flexibleLevelExtra(main);
   // Each share default clamps only against Main, not its resizable or non-resizable siblings. When panes
   // together leave Main's primary region less than its minimum, fit them like stored widths, allowing subpixels.
   if (fits.reduce((total, fit) => total + fit.desired, 0) > budget + 0.5)
@@ -481,6 +486,13 @@ const overlayRegions = (root: HTMLElement, sidebar: HTMLElement) =>
     )
     .filter((child): child is HTMLElement => child instanceof HTMLElement && child !== sidebar && !child.contains(sidebar));
 
+/**
+ * A sidebar button tells whether its sidebar shows: as an open overlay where the sidebar is one, otherwise as a
+ * column that is not hidden.
+ */
+const sidebarShown = (root: HTMLElement, sidebar: HTMLElement) =>
+  sidebarForm(root) === "overlay" ? root.dataset.sidebarOverlay === "open" : !sidebar.hidden;
+
 export const installAppWorkspaceController = (options: AppWorkspaceControllerOptions = {}): (() => void) => {
   const eventRoot = options.root ?? document;
   // A document has no owner document; an element root listens on its own.
@@ -489,12 +501,26 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
   let overlay: OpenOverlay | null = null;
   // A server-rendered head names the sidebar before the sidebar renders; the button learns its real id now.
   for (const toggle of eventRoot.querySelectorAll<HTMLElement>(TOGGLE_SELECTOR)) overlayTarget(toggle);
+  /** Every sidebar button, the workspace head's and an application's own, states whether its sidebar shows. */
+  const syncSidebarToggles = () => {
+    for (const toggle of eventRoot.querySelectorAll<HTMLElement>(TOGGLE_SELECTOR)) {
+      const root = workspaceRoot(toggle);
+      const sidebar = root ? sidebarElement(root) : null;
+      if (!root || !sidebar) continue;
+      // The head's button only opens the overlay; an application's button also shows and hides the column.
+      const expanded = String(
+        toggle.closest(".k2b-app-workspace__head") ? root.dataset.sidebarOverlay === "open" : sidebarShown(root, sidebar),
+      );
+      if (toggle.getAttribute("aria-expanded") !== expanded) toggle.setAttribute("aria-expanded", expanded);
+    }
+  };
   const openOverlay = (target: OverlaySidebar) => {
     if (overlay) closeOverlay("none");
     const inerted = overlayRegions(target.root, target.sidebar).filter((region) => !region.hasAttribute("inert"));
     overlay = { ...target, inerted };
     target.root.dataset.sidebarOverlay = "open";
     target.toggle.setAttribute("aria-expanded", "true");
+    syncSidebarToggles();
     inerted.forEach((region) => region.setAttribute("inert", ""));
     // Focus starts on the current destination, so the reader knows where they
     // are: on its own tab stop, or on the tree item around it.
@@ -520,6 +546,8 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
     overlay = null;
     delete closing.root.dataset.sidebarOverlay;
     closing.toggle.setAttribute("aria-expanded", "false");
+    // Escape, the scrim or a chosen destination also close it: every sidebar button of the workspace says so.
+    syncSidebarToggles();
     closing.inerted.forEach((region) => region.removeAttribute("inert"));
     if (focus === "none") return;
     const active = document.activeElement;
@@ -540,14 +568,14 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
         // The app may reject opening (for example while navigating). Never
         // override hidden ourselves or reveal retained, unavailable contents.
         if (aside.hidden) return;
-        if (detailWaiting(aside)) openDetailDrawer(aside);
+        if (wide?.matches && detailWaiting(aside)) openDetailDrawer(aside);
         if (event.detail === 0 || phone?.matches) requestTitle(aside);
         else detailButton.focus({ preventScroll: true });
-      } else if (reopenable && !detailWaiting(aside)) requestClose(aside);
+      } else if (reopenable && (!wide?.matches || !detailWaiting(aside))) requestClose(aside);
       else if (detailDrawer(aside)) parkDetailDrawer(aside);
       else {
         openDetailDrawer(aside);
-        if (event.detail === 0 || pageShown(aside)) requestTitle(aside);
+        if (event.detail === 0) requestTitle(aside);
         else detailButton.focus({ preventScroll: true });
       }
       syncDetailRequestControls();
@@ -555,11 +583,28 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
     }
     const toggle = target?.closest<HTMLElement>(TOGGLE_SELECTOR);
     if (toggle) {
+      if (claimedToggleClicks.has(event)) return;
+      const root = workspaceRoot(toggle);
+      const sidebar = root ? sidebarElement(root) : null;
+      // A sidebar the person hid comes back first; where it is an overlay, it then opens.
+      if (root && sidebar?.hidden && sidebarHideable(root)) {
+        claimedToggleClicks.add(event);
+        sidebar.dispatchEvent(new CustomEvent(APP_WORKSPACE_SIDEBAR_SHOW_EVENT));
+        ownerWindow.requestAnimationFrame(() => {
+          const next = !sidebar.hidden && sidebarForm(root) === "overlay" ? overlayTarget(toggle) : null;
+          if (next) openOverlay(next);
+          syncSidebarToggles();
+        });
+        return;
+      }
       const next = overlayTarget(toggle);
-      if (!next || claimedToggleClicks.has(event)) return;
+      if (!next) return;
       claimedToggleClicks.add(event);
       if (overlay?.sidebar === next.sidebar) closeOverlay("button");
       else if (sidebarForm(next.root) === "overlay") openOverlay(next);
+      // A column: an application's own button hides a sidebar it lets people hide.
+      else if (sidebarHideable(next.root)) next.sidebar.dispatchEvent(new CustomEvent(APP_WORKSPACE_SIDEBAR_HIDE_EVENT));
+      syncSidebarToggles();
       return;
     }
     if (!overlay || !target) return;
@@ -595,12 +640,13 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
       return;
     }
     const aside = target.closest<HTMLElement>(detailSelector);
-    const panel = overlay?.sidebar ?? (phone?.matches && aside && pageShown(aside) && eventRoot.contains(aside) ? aside : null);
+    const panel =
+      overlay?.sidebar ?? (phone?.matches && aside && !aside.hidden && phonePage(aside) && eventRoot.contains(aside) ? aside : null);
     if (event.key !== "Tab") return;
     if (!panel) {
       // Focus outside an open phone page, on the body after a load or on chrome the page covers, enters the page.
       // Dialogs and popovers keep their own Tab order.
-      const page = phone?.matches ? allRoots().flatMap(openDetails).find(pageShown) : undefined;
+      const page = phone?.matches ? allRoots().flatMap(openDetails).find(phonePage) : undefined;
       if (!page || ownerDocument.querySelector("dialog[open], [aria-modal='true']") || target.closest("[popover]")) return;
       if (target !== ownerDocument.body) {
         const rect = target.getBoundingClientRect();
@@ -643,7 +689,7 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
     else control.setAttribute("aria-expanded", state.aside.hidden || !state.aside.isConnected ? "false" : state.rendered);
   };
   const requestedWaitingDetail = (control: HTMLElement) => {
-    if (control.matches(DETAIL_TOGGLE_SELECTOR) || !eventRoot.contains(control)) return null;
+    if (!wide?.matches || control.matches(DETAIL_TOGGLE_SELECTOR) || !eventRoot.contains(control)) return null;
     const root = workspaceRoot(control);
     const region = control.closest(".k2b-app-workspace__main, .k2b-app-workspace__detail");
     if (!root || !region || region.closest(ROOT_SELECTOR) !== root) return null;
@@ -654,15 +700,18 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
     for (const root of allRoots()) {
       for (const aside of rootElements(root, detailSelector)) {
         const toggle = detailToggle(aside);
-        if (toggle?.dataset.workspaceDetailReopen !== "true") continue;
-        const expanded = !aside.hidden && (!detailWaiting(aside) || detailDrawer(aside));
+        // The panel decides whether it reopens; its button may be the workspace's own or an application's.
+        if (!toggle || aside.dataset.workspaceDetailReopen !== "true") continue;
+        const expanded = !aside.hidden && (!wide?.matches || !detailWaiting(aside) || detailDrawer(aside));
         const value = String(expanded);
         if (toggle.getAttribute("aria-expanded") !== value) toggle.setAttribute("aria-expanded", value);
       }
     }
     const waitingControls = new Map<HTMLElement, HTMLElement>();
     for (const root of allRoots()) {
-      const waitingDetails = rootElements(root, detailSelector).filter((aside) => !aside.hidden && detailWaiting(aside));
+      const waitingDetails = wide?.matches
+        ? rootElements(root, detailSelector).filter((aside) => !aside.hidden && detailWaiting(aside))
+        : [];
       if (!waitingDetails.length) continue;
       // Only a control that names a Detail can request it.
       for (const control of rootElements(root, "[aria-controls]")) {
@@ -701,11 +750,10 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
     cancelTitle();
     clearActivation();
     // A control inside the drawer leaves with it, so focus goes to Details.
-    if (detailDrawer(aside)) parkDrawer(aside, aside.contains(ownerDocument.activeElement));
+    if (detailDrawer(aside)) parkDetailDrawer(aside, aside.contains(ownerDocument.activeElement));
     else {
       openDetailDrawer(aside);
-      // Main is inert behind a phone page, so focus enters the page.
-      if (event.detail === 0 || pageShown(aside)) requestTitle(aside);
+      if (event.detail === 0) requestTitle(aside);
       else control.focus({ preventScroll: true });
     }
     syncDetailRequestControls();
@@ -748,52 +796,9 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
     detailControlVisible(control) &&
     !control.matches(":disabled, [aria-disabled='true']") &&
     !control.closest("[inert], [hidden], [aria-hidden='true']");
-  // Focus that leaves a Detail while it is visible leaves on purpose; hiding the Detail drops focus without that.
-  const departedDetails = new WeakSet<HTMLElement>();
-  const onDetailControlFocusOut = (event: FocusEvent) => {
+  const onDetailControlFocusOut = () => {
     // Explicit blur of a visible control is not a responsive focus loss.
     if (detailControlFocus && detailControlVisible(detailControlFocus.control)) detailControlFocus = null;
-    // Only a phone page reads it, so other Details never force a layout while they close.
-    const aside = eventElement(event)?.closest<HTMLElement>(detailSelector);
-    const next = event.relatedTarget instanceof Node ? event.relatedTarget : null;
-    if (!aside || !phonePage(aside) || (next && aside.contains(next))) return;
-    if (aside.getClientRects().length > 0) departedDetails.add(aside);
-  };
-  const onDetailFocusReturn = (event: FocusEvent) => {
-    const aside = eventElement(event)?.closest<HTMLElement>(detailSelector);
-    if (aside) departedDetails.delete(aside);
-  };
-  const onDetailPark = (event: Event) => {
-    const aside = eventElement(event);
-    if (event.defaultPrevented || !(event instanceof CustomEvent) || !aside?.matches(detailSelector)) return;
-    event.preventDefault();
-    parkDrawer(aside as HTMLElement, event.detail?.focus === true);
-    syncDetailRequestControls();
-  };
-  // Below 48 rem a page that its application keeps open across layouts waits
-  // behind its control, like a drawer (see the stylesheet). A column that
-  // narrows to a phone while someone works in it, or on a control for it,
-  // stays open as the page instead.
-  // Main stops being inert behind a parked phone page before focus returns to it.
-  const parkDrawer = (aside: HTMLElement, focus: boolean) => {
-    parkDetailDrawer(aside);
-    syncPhonePages();
-    if (focus) detailReturnControl(aside)?.focus({ preventScroll: true });
-  };
-  const keepFocusedPhonePages = () => {
-    const active = ownerDocument.activeElement;
-    for (const root of allRoots()) {
-      for (const aside of rootElements(root, detailSelector)) {
-        if (!phonePage(aside) || aside.hidden || detailDrawer(aside) || detailWasWaiting.get(aside) === true || !detailPhonePage(aside))
-          continue;
-        // Hiding the column for a frame can already have dropped its focus to the body.
-        const dropped = active === ownerDocument.body && !departedDetails.has(aside) ? lastFocus.get(root) : undefined;
-        const working = aside.contains(active) || aside.contains(dropped ?? null) || detailControlFocus?.aside === aside;
-        if (!working) continue;
-        openDetailDrawer(aside);
-        if (dropped instanceof HTMLElement && aside.contains(dropped)) dropped.focus({ preventScroll: true });
-      }
-    }
   };
   const rescueDetailControlFocus = () => {
     const previous = detailControlFocus;
@@ -811,7 +816,14 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
       return;
     }
     const shared = detailToggle(aside);
-    if (shared?.dataset.workspaceDetailReopen === "true" && phone?.matches && pageShown(aside) && !aside.contains(control)) {
+    if (
+      shared &&
+      aside.dataset.workspaceDetailReopen === "true" &&
+      phone?.matches &&
+      phonePage(aside) &&
+      !aside.hidden &&
+      !aside.contains(control)
+    ) {
       // WebKit can update matchMedia after resize has already focused the now
       // visible application control. Move into the page before Main becomes inert.
       detailControlFocus = null;
@@ -820,7 +832,7 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
     }
     if (detailControlVisible(control)) return;
     detailControlFocus = null;
-    if (shared?.dataset.workspaceDetailReopen !== "true") {
+    if (!shared || aside.dataset.workspaceDetailReopen !== "true") {
       // Selection-only details keep their existing returning-column title target.
       if (control === shared && !aside.hidden && !detailWaiting(aside)) requestTitle(aside);
       return;
@@ -832,7 +844,7 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
     replacement?.focus({ preventScroll: true });
   };
   const syncHostState = () => {
-    keepFocusedPhonePages();
+    syncSidebarToggles();
     rescueDetailControlFocus();
     if (pendingDetail && !canOpenPendingDetail(pendingDetail.aside)) cancelPendingDetail();
     if (overlay && sidebarForm(overlay.root) !== "overlay") closeOverlay("none");
@@ -1094,9 +1106,6 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
     observer.observe(ownerDocument, { childList: true, subtree: true });
   };
   const phonePage = (aside: HTMLElement) => aside.dataset.workspaceDetailPhone === "page";
-  /** A phone page covers the window: open, and not waiting behind its control (see `keepFocusedPhonePages`). */
-  const pageShown = (aside: HTMLElement) =>
-    Boolean(phone?.matches) && phonePage(aside) && !aside.hidden && (!detailWaiting(aside) || detailDrawer(aside));
   const setDetent = (aside: HTMLElement, full: boolean) => {
     if (phonePage(aside)) return;
     touchedDetails.add(aside);
@@ -1334,7 +1343,8 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
       const toggle = detailToggle(aside);
       const returnControl = detailReturnControl(aside);
       if (
-        toggle?.dataset.workspaceDetailReopen === "true" &&
+        toggle &&
+        aside.dataset.workspaceDetailReopen === "true" &&
         returnControl &&
         (aside.contains(focused) || (focused === ownerDocument.body && aside.contains(lastFocus.get(root) ?? null)))
       ) {
@@ -1366,8 +1376,9 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
     if (!target || target.closest(KEY_OWNER_SELECTOR)) return;
     if (ownerDocument.querySelector("dialog[open], [aria-modal='true']")) return;
     try {
-      // A passive hint does not own the keyboard.
-      if (ownerDocument.querySelector(":popover-open:not(.k2b-moved-hint)")) return;
+      // Passive hints and tooltips do not own J/K or F6. Keep Escape with an undismissed tooltip.
+      if (event.key === "Escape" && ownerDocument.querySelector("[role='tooltip']:popover-open")) return;
+      if (ownerDocument.querySelector(":popover-open:not(.k2b-moved-hint):not([role='tooltip'])")) return;
     } catch {
       // Older engines have no popover selector; the other popup guards still apply.
     }
@@ -1383,7 +1394,7 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
     const owningRoot = aside?.closest<HTMLElement>(ROOT_SELECTOR);
     if (!aside || !owningRoot || !isVisible(aside)) return;
     if (event.key === "Escape" && detailDrawer(aside)) {
-      parkDrawer(aside, true);
+      parkDetailDrawer(aside, true);
       syncDetailRequestControls();
       event.preventDefault();
       return;
@@ -1946,7 +1957,7 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
     if (phone?.matches) {
       for (const root of allRoots()) {
         if (!root.isConnected) continue;
-        for (const aside of openDetails(root).filter(pageShown)) {
+        for (const aside of openDetails(root).filter(phonePage)) {
           for (let node: HTMLElement | null = aside; node && node !== root; node = node.parentElement) {
             const parent: HTMLElement | null = node.parentElement;
             if (parent) overlayRegions(parent, aside).forEach((region) => regions.add(region));
@@ -2020,7 +2031,17 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
    * arriving at a handle was announced whatever `aria-valuenow`/`valuemax` the
    * last drag left behind.
    */
+  // A keyboard-focused action preview covers the row's last action, so the actions before it say so. CSS cannot ask
+  // this through `:has()` from the actions' buttons without restyling every button of the page on each DOM change.
+  const syncPreviewFocus = (event: FocusEvent) => {
+    const trigger = eventElement(event)?.closest<HTMLElement>(PREVIEW_FOCUS_SELECTOR);
+    const actions = trigger?.previousElementSibling;
+    if (!trigger || !actions?.matches(".k2b-app-workspace__sidebar-item-actions")) return;
+    if (event.type === "focusin" && trigger.matches(":focus-visible")) actions.setAttribute("data-preview-focus", "");
+    else actions.removeAttribute("data-preview-focus");
+  };
   const onFocusIn = (event: FocusEvent) => {
+    syncPreviewFocus(event);
     const handle = resizeHandle(event);
     const kind = handle ? resizeKind(handle) : null;
     const root = handle ? workspaceRoot(handle) : null;
@@ -2147,6 +2168,20 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
             )
           )
             syncDetailRequestControls();
+          // A sidebar shown or hidden, or a sidebar button added: the buttons state it.
+          if (
+            records.some(
+              (record) =>
+                (record.type === "attributes" &&
+                  record.attributeName === "hidden" &&
+                  record.target instanceof Element &&
+                  record.target.matches(".k2b-app-workspace__sidebar")) ||
+                [...record.addedNodes].some(
+                  (node) => node instanceof Element && (node.matches(TOGGLE_SELECTOR) || node.querySelector(TOGGLE_SELECTOR)),
+                ),
+            )
+          )
+            syncSidebarToggles();
           syncPhonePages();
           if (pendingTitle && (pendingTitle.aside.hidden || !pendingTitle.aside.isConnected)) cancelTitle();
           if (
@@ -2193,8 +2228,6 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
   ownerWindow.addEventListener("keydown", onDetailKeyDown);
   ownerDocument.addEventListener("focusin", cancelTitleOnInteraction, true);
   ownerDocument.addEventListener("focusout", onDetailControlFocusOut, true);
-  ownerDocument.addEventListener("focusin", onDetailFocusReturn, true);
-  eventRoot.addEventListener(DETAIL_PARK_EVENT, onDetailPark);
   ownerDocument.addEventListener("pointerdown", cancelTitleOnInteraction, true);
   ownerDocument.addEventListener("keydown", cancelTitleOnInteraction, true);
   ownerDocument.addEventListener("click", onDetailRequestClick, true);
@@ -2219,10 +2252,12 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
   phone?.addEventListener("change", syncPhonePages);
   eventRoot.addEventListener("keydown", onKeyDown as EventListener);
   eventRoot.addEventListener("focusin", onFocusIn as EventListener);
+  eventRoot.addEventListener("focusout", syncPreviewFocus as EventListener);
   window.addEventListener("resize", onResize);
   syncPhonePages();
   syncObservedRoots();
   syncDetailRequestControls();
+  syncSidebarToggles();
   mutationObserver?.observe(eventRoot, {
     attributes: true,
     attributeOldValue: true,
@@ -2263,8 +2298,6 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
     ownerWindow.removeEventListener("keydown", onDetailKeyDown);
     ownerDocument.removeEventListener("focusin", cancelTitleOnInteraction, true);
     ownerDocument.removeEventListener("focusout", onDetailControlFocusOut, true);
-    ownerDocument.removeEventListener("focusin", onDetailFocusReturn, true);
-    eventRoot.removeEventListener(DETAIL_PARK_EVENT, onDetailPark);
     detailControlFocus = null;
     ownerDocument.removeEventListener("pointerdown", cancelTitleOnInteraction, true);
     ownerDocument.removeEventListener("keydown", cancelTitleOnInteraction, true);
@@ -2306,6 +2339,7 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
     phone?.removeEventListener("change", syncHostState);
     eventRoot.removeEventListener("keydown", onKeyDown as EventListener);
     eventRoot.removeEventListener("focusin", onFocusIn as EventListener);
+    eventRoot.removeEventListener("focusout", syncPreviewFocus as EventListener);
     window.removeEventListener("resize", onResize);
   };
 };

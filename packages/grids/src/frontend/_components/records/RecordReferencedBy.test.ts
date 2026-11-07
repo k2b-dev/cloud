@@ -40,8 +40,10 @@ describe("RecordReferencedBy", () => {
 
     expect(REFERENCED_BY_PAGE_SIZE).toBe(5);
     expect(referencedByEndpoint("TABLE1", "REC001")).toEndWith("/referenced-by?limit=5");
-    expect(html).toContain("Referenced by");
-    expect(html).toContain("ti-link-plus");
+    // The reverse relations are the "Linked from" side of the one Links section; it holds its place while it loads.
+    expect(html).toContain(">Links</h3>");
+    expect(html).toContain("Loading links");
+    expect(html).not.toContain("ti-link-plus");
     expect(html).not.toContain("<details");
   });
 });

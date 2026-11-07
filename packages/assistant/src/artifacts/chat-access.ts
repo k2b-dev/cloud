@@ -20,7 +20,7 @@ export async function requireToolChat(
     !chat ||
     chat.archivedAt ||
     (chat.allowedTools && !chat.allowedTools.includes(tool)) ||
-    (chat.projectId && !(await aiProjects.get(chat.projectId, identity.accessSubject, "read")))
+    (chat.projectId && !(await aiProjects.get(chat.projectId, identity, "read")))
   )
     throw new ArtifactError("ACCESS_DENIED");
   return chat;

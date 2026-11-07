@@ -48,6 +48,7 @@ export const createRegistryMembership = (
     instanceId?: string;
     hostname?: string;
     startedAt?: number;
+    bootstrap?: AppInstanceRecord["bootstrap"];
     writeTimeoutMs?: number;
   },
 ) => {
@@ -60,6 +61,8 @@ export const createRegistryMembership = (
     hostname: options.hostname ?? hostname(),
     startedAt: options.startedAt ?? Date.now(),
     entries: {},
+    ...(appId === "core" ? { legacyEvidence: 1 as const } : {}),
+    ...(options.bootstrap ? { bootstrap: structuredClone(options.bootstrap) } : {}),
   };
   const writeTimeoutMs = options.writeTimeoutMs ?? HEARTBEAT_WRITE_TIMEOUT_MS;
   if (!Number.isFinite(writeTimeoutMs) || writeTimeoutMs <= 0) throw new RangeError("Membership write timeout must be positive and finite");
@@ -94,6 +97,25 @@ export const createRegistryMembership = (
   };
 
   return {
+    instanceId,
+    // Establish process identity before lifecycle workers start, without advertising routes yet.
+    register: async () => {
+      let timer: Timer | undefined;
+      // This runs before the ordinary heartbeat supplies its write deadline.
+      const write = upsert().finally(async () => {
+        if (left) await options.registry().delete({ key });
+      });
+      try {
+        await Promise.race([
+          write,
+          new Promise<never>((_, reject) => {
+            timer = setTimeout(() => reject(new Error(`Instance registration timed out after ${writeTimeoutMs}ms`)), writeTimeoutMs);
+          }),
+        ]);
+      } finally {
+        clearTimeout(timer);
+      }
+    },
     join: async (sharedKey: string, sharedValue: unknown, entry: SharedEntry): Promise<void> => {
       left = false;
       await prepareShared(sharedKey);

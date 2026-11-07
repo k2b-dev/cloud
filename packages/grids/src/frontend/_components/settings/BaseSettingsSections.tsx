@@ -20,7 +20,6 @@ import { apiClient } from "@/api/client";
 import type { PublicBase } from "../../../api/public-dto";
 import type { DocumentDefaults } from "../../../contracts";
 import { createDraft } from "../editor-draft";
-import { ScopedPermissionEditor } from "../permissions/ScopedPermissionEditor";
 import { errorMessage } from "../utils/api-helpers";
 import { useGridsSettingsMessages } from "./messages";
 
@@ -494,10 +493,6 @@ export function GeneralForm(props: {
       </SettingsModal.Footer>
     </>
   );
-}
-
-export function PermissionsSection(props: { baseId: string; initialEntries: AccessEntry[] }) {
-  return <ScopedPermissionEditor scope={{ type: "base", id: props.baseId }} initialEntries={props.initialEntries} canEdit />;
 }
 
 export function DangerZone(props: { baseId: string; baseName: string; onSavingChange: (saving: boolean) => void }) {

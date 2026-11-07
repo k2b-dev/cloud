@@ -20,7 +20,7 @@ Gateway Ops is the administration console for the Cloud gateway. Use it to see w
 ## Start a task {icon="route"}
 
 :::reference
-- **Check the platform state:** Start with **Apps** to see online, degraded, and offline services. Remove an offline registration only when you do not expect the app to return.
+- **Check the platform state:** Start in **Administration → Apps** to see which apps run, which are disturbed and which do not run. Remove an app that is not running from that list only when you do not expect it to return.
 - **Trace routing:** Open **Routes** to check the route prefixes, total hits, and recorded errors of each prefix that the gateway serves.
 - **Investigate a request problem:** Use **Telemetry** for request events, slow requests, status codes, route prefixes, methods, and error kinds. Use **Logs** when the app wrote structured log entries.
 - **Check platform storage:** Use the **Postgres** and **Redis** diagnostics to check table growth, dead rows, installed extensions, key counts, prefix distribution, TTL coverage, and warnings.

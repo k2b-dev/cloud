@@ -1,5 +1,6 @@
 import { expect, spyOn, test } from "bun:test";
-import { sql } from "bun";
+import { sql } from "@k2b/cloud";
+import { stubConnections } from "../../../../scripts/fixtures/platform";
 import type { DslQueryPreviewResponse } from "../contracts";
 import { CustomAppCapabilitiesSchema, CustomAppDefinitionSchema } from "../custom-apps/contracts";
 import { buildCustomAppQueryContext } from "../custom-apps/query-context";
@@ -7,8 +8,8 @@ import { executePublishedCustomAppRecords } from "./custom-app-records-query";
 import * as runtimeQuery from "./custom-app-runtime-query";
 
 test("Records admission retains the same labeled byte-budget page as presentation", async () => {
-  const originalSecret = process.env.APP_SECRET;
-  process.env.APP_SECRET = "records-admission-test-secret";
+  let secretStub: ReturnType<typeof stubConnections> | undefined;
+  secretStub = stubConnections({ appSecret: { current: "records-admission-test-secret" } });
   const tableId = "00000000-0000-4000-8000-000000000001";
   const recordId = "00000000-0000-4000-8000-000000000002";
   const definition = CustomAppDefinitionSchema.parse({
@@ -111,7 +112,6 @@ test("Records admission retains the same labeled byte-budget page as presentatio
     expect(admitted?.response).toBe(response);
   } finally {
     query.mockRestore();
-    if (originalSecret === undefined) delete process.env.APP_SECRET;
-    else process.env.APP_SECRET = originalSecret;
+    secretStub?.mockRestore();
   }
 });

@@ -19,7 +19,7 @@ test("Studio editor keeps pending edits and file sessions; SQL and local data ar
       if (path === "/ui.css") return new Response(Bun.file(new URL("../../../ui/dist/styles.css", import.meta.url)));
       if (path === "/app.css") return new Response(Bun.file(new URL("../styles/app.css", import.meta.url)));
       return new Response(
-        '<!doctype html><link rel="stylesheet" href="/ui.css"><link rel="stylesheet" href="/app.css"><body class="k2b-ui" style="height:100vh"><div id="root" style="height:100%"></div><script src="/bundle.js"></script>',
+        '<!doctype html><link rel="stylesheet" href="/ui.css"><link rel="stylesheet" href="/app.css"><body class="k2b-ui" style="height:100vh"><div id="root" style="height:100%"></div><script type="module" src="/bundle.js"></script>',
         { headers: { "content-type": "text/html; charset=utf-8" } },
       );
     },

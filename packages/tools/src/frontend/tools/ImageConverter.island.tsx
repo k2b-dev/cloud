@@ -562,14 +562,13 @@ export function ImageConverterView(props: ImageConverterViewProps = {}) {
       >
         <DetailPanel>
           <DetailPanel.Header
-            icon="ti ti-arrows-exchange"
             title={t().panelTitle}
             subtitle={images().length > 0 ? t().imagesReady({ count: images().length }) : loading() ? t().panelPreparing : t().panelEmpty}
           />
 
           <DetailPanel.Body scrollPreserveKey="image-converter-settings">
             <DetailPanel.Group label={t().groupOutput}>
-              <DetailPanel.Section title={t().sectionFormat} icon="ti ti-photo" tone="neutral">
+              <DetailPanel.Section title={t().sectionFormat}>
                 <SegmentedControl<ImageConverterFormat>
                   options={[
                     { value: "jpeg", label: "JPEG" },
@@ -610,12 +609,7 @@ export function ImageConverterView(props: ImageConverterViewProps = {}) {
             </DetailPanel.Group>
 
             <DetailPanel.Group label={t().groupSize}>
-              <DetailPanel.Section
-                title={t().maxDimensions}
-                icon="ti ti-arrows-maximize"
-                tone="neutral"
-                description={t().maxDimensionsDescription}
-              >
+              <DetailPanel.Section title={t().maxDimensions} description={t().maxDimensionsDescription}>
                 <div class="grid grid-cols-2 gap-2">
                   <NumberInput
                     name="image-converter-max-width"

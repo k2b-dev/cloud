@@ -3,7 +3,7 @@ import { mutation as mutations } from "@k2b/stdlib/solid";
 import { Button, ButtonLink, NoticeCard, useLocale } from "@k2b/ui";
 import { createSignal, Show } from "solid-js";
 import { signOutOthersRetryPath } from "../../sign-out-others";
-import { afterSignInHref } from "../login-redirect";
+import { afterSignInHref, confirmationRequestOptions } from "../login-redirect";
 import { authMessages } from "../messages";
 import { PasswordChangedSignInAgain } from "../PasswordChangedSignInAgain";
 import { PasswordSetupFields } from "../PasswordSetupFields";
@@ -33,13 +33,16 @@ export default function PasswordResetCompleteForm(props: PasswordResetCompleteFo
 
   const mutation = mutations.create({
     mutation: async () => {
-      const res = await apiClient.auth["password-reset"].complete.$post({
-        json: {
-          token: props.token,
-          newPassword: newPassword(),
-          confirmPassword: confirmPassword(),
+      const res = await apiClient.auth["password-reset"].complete.$post(
+        {
+          json: {
+            token: props.token,
+            newPassword: newPassword(),
+            confirmPassword: confirmPassword(),
+          },
         },
-      });
+        confirmationRequestOptions(props.redirectTo),
+      );
       if (res.status === 409) return "sign-in-again";
       const data = (await res.json().catch(() => null)) as {
         message?: string;

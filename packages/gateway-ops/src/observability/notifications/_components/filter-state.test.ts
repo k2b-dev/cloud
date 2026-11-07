@@ -33,10 +33,10 @@ describe("notification admin filter state", () => {
         appIds: ["assistant"],
         page: 2,
       }),
-    ).toBe("/admin/observability/notifications?search=provider+error&status=failed&channels=browser&apps=assistant&page=2");
+    ).toBe("/admin/observability/deliveries?search=provider+error&status=failed&channels=browser&apps=assistant&page=2");
     expect(buildRegistryNotificationsUrl({ search: "", status: "active", appIds: [] })).toBe(
-      "/admin/observability/notifications?view=registry&status=active",
+      "/admin/observability/deliveries?view=registry&status=active",
     );
-    expect(buildLegacyNotificationsUrl({ search: "", status: "all" })).toBe("/admin/observability/notifications?view=legacy");
+    expect(buildLegacyNotificationsUrl({ search: "", status: "all" })).toBe("/admin/observability/deliveries?view=legacy");
   });
 });

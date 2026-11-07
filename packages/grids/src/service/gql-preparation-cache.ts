@@ -1,6 +1,6 @@
 import { createHash, createHmac, timingSafeEqual } from "node:crypto";
-import { env } from "@k2b/cloud/config";
-import { RedisClient } from "bun";
+import { connections, createRedis } from "@k2b/cloud";
+import type { RedisClient } from "bun";
 import { z } from "zod";
 import { stableCustomAppStringify } from "../custom-apps/stable-value";
 import { canonicalizeDslQuery } from "../query-dsl/canonical";
@@ -100,9 +100,7 @@ let reconnectAfter = 0;
 const connectedClient = (): RedisClient | null => {
   if (Date.now() < reconnectAfter) return null;
   if (!client) {
-    const url = env.REDIS_URL;
-    if (!url) return null;
-    client = new RedisClient(url, { enableOfflineQueue: false });
+    client = createRedis({ enableOfflineQueue: false });
   }
   // Never delay a query for connection setup; also recover after Bun exhausts
   // automatic reconnect attempts during a longer outage.
@@ -147,16 +145,23 @@ export const withPreparationCacheDeadline = async <T>(connection: Pick<RedisClie
   }
 };
 
-export const gqlPreparation = createGqlPreparationCache(
-  {
-    get: async (key) => {
-      const connection = connectedClient();
-      return connection ? withPreparationCacheDeadline(connection, () => connection.get(key)) : null;
+let preparation: ReturnType<typeof createGqlPreparationCache> | undefined;
+const getPreparation = () =>
+  (preparation ??= createGqlPreparationCache(
+    {
+      get: async (key) => {
+        const connection = connectedClient();
+        return connection ? withPreparationCacheDeadline(connection, () => connection.get(key)) : null;
+      },
+      set: async (key, value) => {
+        const connection = connectedClient();
+        if (connection) await withPreparationCacheDeadline(connection, () => connection.set(key, value, "EX", TTL_SECONDS));
+      },
     },
-    set: async (key, value) => {
-      const connection = connectedClient();
-      if (connection) await withPreparationCacheDeadline(connection, () => connection.set(key, value, "EX", TTL_SECONDS));
-    },
-  },
-  env.APP_SECRET,
-);
+    connections().appSecret.current,
+  ));
+
+export const gqlPreparation: ReturnType<typeof createGqlPreparationCache> = {
+  resolve: (...args) => getPreparation().resolve(...args),
+  canonicalize: (...args) => getPreparation().canonicalize(...args),
+};

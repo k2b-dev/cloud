@@ -65,8 +65,8 @@ export default ssr<AuthContext>(async (c) => {
   const perPage = 50;
   const status = validStatus(c.req.query("status"));
 
-  const [pendingRequestsPage, batchesPage] = await Promise.all([
-    accountsService.accountRequest.list({ access: { userId: user.id, isAdmin: true }, filter: { status: "pending" } }),
+  const [pendingRequests, batchesPage] = await Promise.all([
+    accountsService.accountRequest.countPending(),
     notificationBatches.list({ page, perPage, status }),
   ]);
   const totalPages = Math.max(1, Math.ceil(batchesPage.total / perPage));
@@ -89,12 +89,7 @@ export default ssr<AuthContext>(async (c) => {
       fullWidth
       title={[{ title: t.start, href: "/" }, { title: t.accounts, href: "/app/accounts" }, { title: t.notifications }]}
     >
-      <AccountsWorkspace
-        active="notifications"
-        isAdmin
-        pendingRequests={pendingRequestsPage.total}
-        scrollPreserveKey="accounts-notifications"
-      >
+      <AccountsWorkspace active="notifications" isAdmin pendingRequests={pendingRequests} scrollPreserveKey="accounts-notifications">
         <div class="flex flex-col gap-2">
           <div class="flex flex-wrap items-start gap-3" style="view-transition-name: accounts-notifications-title">
             <div class="min-w-0 flex-1">

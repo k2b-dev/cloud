@@ -9,9 +9,6 @@ const callingProvider = (name: string, requests: ProviderRequest[]): Provider =>
   family: "openai-compatible",
   model: "fixture",
   capabilities: { streaming: true, tools: true, images: false, thinking: false, usage: true },
-  async complete() {
-    throw new Error("Unexpected completion");
-  },
   async *stream(request) {
     requests.push(structuredClone({ ...request, signal: undefined }));
     if (requests.length === 1) {

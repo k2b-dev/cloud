@@ -13,6 +13,8 @@ type Props = {
   bookId: string;
   contactId: string;
   initialFavorite: boolean;
+  /** `sm` matches the other buttons of a detail panel header. */
+  size?: "sm";
 };
 
 export default function ContactFavoriteButton(props: Props) {
@@ -80,8 +82,9 @@ export default function ContactFavoriteButton(props: Props) {
 
   return (
     <IconButton
+      size={props.size}
       label={favorite() ? t().removeFromFavorites : t().addToFavorites}
-      classList={{ "app-accent-text": favorite(), "text-dimmed": !favorite() }}
+      class={favorite() ? "app-accent-text" : "text-dimmed"}
       aria-pressed={favorite()}
       disabled={saving()}
       onClick={(event) => {

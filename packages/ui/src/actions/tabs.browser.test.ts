@@ -115,3 +115,77 @@ describe("@k2b/ui tab list scrolling", () => {
     }
   });
 });
+
+// A selected tab past the list's edge is revealed by scrolling the list alone. `scrollIntoView` also scrolled every
+// ancestor, so a review page opened scrolled down below its header.
+const dist = resolve(import.meta.dir, "../../dist/browser/index.js");
+const mountEntry = resolve(import.meta.dir, "tabs-reveal.fixture.ts");
+const mountFixture = `
+import { createComponent, render } from "solid-js/web";
+import { SettingsModal, Tabs } from ${JSON.stringify(dist)};
+
+const sections = Array.from({ length: 24 }, (_, index) => ({ value: "tab-" + index, label: "Section " + (index + 1) }));
+render(() => createComponent(Tabs, { ariaLabel: "Files", value: "tab-20", onValueChange: () => {}, options: sections }), document.getElementById("tabs"));
+render(
+  () =>
+    createComponent(SettingsModal, {
+      title: "Settings",
+      defaultTab: "s-20",
+      get children() {
+        return sections.map((section, index) =>
+          createComponent(SettingsModal.Tab, { id: "s-" + index, title: section.label, children: section.label }),
+        );
+      },
+    }),
+  document.getElementById("settings"),
+);
+`;
+const mountBuild = await Bun.build({ entrypoints: [mountEntry], files: { [mountEntry]: mountFixture }, target: "browser", format: "iife" });
+if (!mountBuild.success) throw new AggregateError(mountBuild.logs, "Could not bundle the tab reveal fixture for the browser.");
+const mountScript = await mountBuild.outputs[0]!.text();
+
+describe("@k2b/ui selected tab reveal", () => {
+  for (const options of Object.values(viewports)) {
+    test(`at ${options.viewport.width} px a mounted strip shows its selected tab without moving any outer scroller`, async () => {
+      const page = await browser.newPage(options);
+      try {
+        // Both strips start below the fold of a scrolling panel inside a scrolling page.
+        await page.setContent(
+          `<!doctype html><html><head><meta name="viewport" content="width=device-width, initial-scale=1"><style>${css}</style></head>` +
+            `<body class="k2b-ui" style="margin:0"><div style="height:150vh"><div id="panel" style="height:50vh;overflow:auto">` +
+            `<div style="height:80vh"></div><div id="tabs"></div><div id="settings" style="height:24rem"></div><div style="height:80vh"></div>` +
+            `</div></div></body></html>`,
+        );
+        await page.addScriptTag({ content: mountScript });
+        await page.waitForFunction(() => document.querySelectorAll('[role="tab"]').length === 48);
+        // The reveal runs in a microtask; two frames are well past it.
+        await page.evaluate(() => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done))));
+        const measured = await page.evaluate(() => {
+          const reveal = (list: Element, selected: Element) => {
+            const strip = list.getBoundingClientRect();
+            const tab = selected.getBoundingClientRect();
+            return {
+              scrolled: list.scrollLeft + list.scrollTop > 0,
+              whole:
+                tab.left >= strip.left - 0.5 &&
+                tab.right <= strip.right + 0.5 &&
+                tab.top >= strip.top - 0.5 &&
+                tab.bottom <= strip.bottom + 0.5,
+            };
+          };
+          const tabs = document.querySelector('#tabs [role="tablist"]')!;
+          const settings = document.querySelector('#settings [role="tablist"]')!;
+          return {
+            page: window.scrollY,
+            panel: document.getElementById("panel")!.scrollTop,
+            tabs: reveal(tabs, tabs.querySelector('[aria-selected="true"]')!),
+            settings: reveal(settings, settings.querySelector('[data-active="true"]')!),
+          };
+        });
+        expect(measured).toEqual({ page: 0, panel: 0, tabs: { scrolled: true, whole: true }, settings: { scrolled: true, whole: true } });
+      } finally {
+        await page.close();
+      }
+    });
+  }
+});

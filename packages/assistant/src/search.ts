@@ -17,7 +17,7 @@ const textOf = (message: AiStoredMessage): string =>
 /** Both projections reuse the existing owner-scoped Assistant search service. */
 export const searchAssistant = async (
   input: UniversalSearchInput,
-  context: Pick<CapabilityExecutionContext, "accessSubject" | "locale">,
+  context: Pick<CapabilityExecutionContext, "actor" | "accessSubject" | "locale">,
   store: SearchStore,
   projects: Pick<typeof aiProjects, "getByShortId">,
 ) => {
@@ -26,7 +26,7 @@ export const searchAssistant = async (
   const ownerUserId = context.accessSubject.userId;
   let projectId: string | undefined;
   if (input.scope?.type === "assistant.project") {
-    const project = await projects.getByShortId(input.scope.id, context.accessSubject);
+    const project = await projects.getByShortId(input.scope.id, context);
     if (!project) return fail(err.notFound(t.project));
     projectId = project.id;
   } else if (input.scope) {
@@ -65,12 +65,12 @@ export const searchAssistant = async (
 /** Reuse the authorized project catalog; filter before applying the result limit. */
 export const searchAssistantProjects = async (
   input: UniversalSearchInput,
-  context: Pick<CapabilityExecutionContext, "accessSubject" | "locale">,
+  context: Pick<CapabilityExecutionContext, "actor" | "accessSubject" | "locale">,
   projects: Pick<typeof aiProjects, "list">,
 ) => {
   if (input.scope) return fail(err.badInput(assistantCommandMessages.resolve([context.locale]).t.invalidSearchScope));
   const terms = input.query.toLocaleLowerCase(context.locale).trim().split(/\s+/u).filter(Boolean);
-  const visible = await projects.list(context.accessSubject);
+  const visible = await projects.list(context);
   const data: CloudResourceView[] = visible
     .filter((project) => {
       const text = `${project.name} ${project.description}`.toLocaleLowerCase(context.locale);
@@ -91,7 +91,7 @@ export const searchAssistantProjects = async (
 /** Studio search uses the same permission-aware published/draft projection as its catalog. */
 export const searchAssistantApps = async (
   input: UniversalSearchInput,
-  context: Pick<CapabilityExecutionContext, "actor" | "accessSubject" | "locale">,
+  context: Pick<CapabilityExecutionContext, "actor" | "actor" | "accessSubject" | "locale">,
   store: Pick<typeof artifacts, "list">,
 ) => {
   const t = assistantCommandMessages.resolve([context.locale]).t;

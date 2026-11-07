@@ -91,7 +91,7 @@ const openSourceSearch = async (title: string, sources: readonly AiConversationS
       const normalized = query.trim().toLocaleLowerCase();
       return sources
         .filter((source) => !normalized || `${source.title} ${source.preview ?? ""}`.toLocaleLowerCase().includes(normalized))
-        .map((source) => ({ value: source, label: source.title, desc: source.preview ?? undefined, icon: source.icon }));
+        .map((source) => ({ id: source.key, value: source, label: source.title, desc: source.preview ?? undefined, icon: source.icon }));
     },
     { title, icon: "ti ti-search", placeholder: assistantBrowserCopy().searchNamed({ name: title }), minQueryLength: 0, size: "small" },
   );
@@ -417,6 +417,10 @@ function AssistantChatContextView(
                     `${reference.title} ${reference.description ?? ""} ${reference.searchText}`.toLocaleLowerCase().includes(normalized),
                 )
                 .map((reference) => ({
+                  id:
+                    reference.kind === "source"
+                      ? `source:${reference.source.key}`
+                      : `project:${reference.reference.ref.type}:${reference.reference.ref.id}`,
                   value: reference,
                   label: reference.title,
                   desc: reference.description,

@@ -42,7 +42,12 @@ export const createNoteCommands = (currentNotebookId?: () => string | undefined)
                     NotebookBrowseDataSchema,
                   );
                   if (!result.ok) throw new Error(result.error.message);
-                  return result.data.data.map((book) => ({ value: book.ref.id, label: book.title, icon: "ti ti-notebook" }));
+                  return result.data.data.map((book) => ({
+                    id: book.ref.id,
+                    value: book.ref.id,
+                    label: book.title,
+                    icon: "ti ti-notebook",
+                  }));
                 },
                 { title: t().choose, placeholder: t().search, noResultsText: t().empty, minQueryLength: 0, size: "small" },
               );

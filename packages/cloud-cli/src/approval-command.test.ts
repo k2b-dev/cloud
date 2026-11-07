@@ -1,8 +1,12 @@
-import { expect, test } from "bun:test";
+import { beforeAll, expect, test } from "bun:test";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { installFirstPartyModules } from "../test/fixtures/first-party";
+import { bundleFirstPartyModule, installFirstPartyModules } from "../test/fixtures/first-party";
+
+beforeAll(async () => {
+  await bundleFirstPartyModule("assistant");
+});
 
 test("approval commands parse global profile/server before the module and flag-like IDs after --", async () => {
   const directory = await mkdtemp(join(tmpdir(), "cld-approval-test-"));

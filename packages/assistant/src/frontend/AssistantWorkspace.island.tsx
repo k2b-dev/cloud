@@ -6,11 +6,10 @@ import type {
   AiOpenQuestion,
   AiOpenQuestions,
   AiProject,
-  AiPublicModelProfile,
   AiSettingsError,
   AiStoredMessage,
 } from "@k2b/cloud/ai";
-import { CODE_RUNTIME_TOOL_NAMES, parseAiTodoPlan } from "@k2b/cloud/ai/browser";
+import { CODE_RUNTIME_TOOL_NAMES, createLiveDictationSource, parseAiTodoPlan } from "@k2b/cloud/ai/browser";
 import { createAiChatController } from "@k2b/cloud/ai/solid";
 import {
   AI_COMPOSER_TEXT_MAX_CHARS,
@@ -19,6 +18,9 @@ import {
   AiChatTurnNavigator,
   type AiComposerAttachment,
   type AiComposerSendInput,
+  AiModelChooser,
+  type AiModelChooserState,
+  AiModelNote,
   aiChatAttachments,
   aiChatModelOptions,
   aiComposerAttachmentRecords,
@@ -27,9 +29,12 @@ import {
   aiComposerFileAccept,
   aiComposerSendInput,
   aiLatestUsageSnapshot,
+  aiModelBlocksSending,
+  aiModelRequestFor,
   createAiChatTimeline,
   createAiPastedTextFile,
   readAiComposerFiles,
+  resolveAiModelChoice,
   shouldAttachAiPastedText,
 } from "@k2b/cloud/ai/ui";
 import { consumeCommandLink, registerCommandHandler, registerContextAwareCommand } from "@k2b/cloud/browser/commands";
@@ -38,17 +43,22 @@ import { chooseFiles } from "@k2b/cloud/browser/files";
 import { closePanel, type getContext, onPanelBeforeLeave } from "@k2b/cloud/browser/panel";
 import { reloadOnce } from "@k2b/cloud/browser/reload";
 import { cloudResourceClipboard } from "@k2b/cloud/browser/resource-clipboard";
+import { pastedCloudLink, type ResolvedCloudResourceUrl, resolveCloudUrl } from "@k2b/cloud/browser/resource-links";
 import { openGlobalSearch, registerSearchNavigation } from "@k2b/cloud/browser/search";
 import type { ApprovalPage } from "@k2b/cloud/contracts/approvals";
+import { type AiModelRequest, type AiPeopleModels, aiModelClassFallbackChain } from "@k2b/cloud/shared";
 import { navigate, navigateTo } from "@k2b/ssr/nav";
 import { mutation, query } from "@k2b/stdlib/solid";
 import {
   AppWorkspace,
   appWorkspaceDetailElementId,
   Button,
+  ButtonLink,
   Chat,
   type ChatMention,
+  DetailsToggle,
   dialogCore,
+  LocaleProvider,
   NoticeCard,
   openSpotlightSearch,
   Placeholder,
@@ -117,6 +127,8 @@ import { assistantSearchOptions } from "./assistant-search";
 import { audioMessages } from "./audio-messages";
 import { resolveChatFileLink } from "./chat-file-link";
 import { CHAT_DETAILS_ID, CHAT_MAIN_MIN_WIDTH, createChatSidebarHost, revealChatDelivery } from "./chat-sidebar-layout";
+import { chatSidebarMessages } from "./chat-sidebar-messages";
+import { pastedLinkCurrent, pastedLinkPlace, watchPastedLink, withoutPastedLink } from "./composer-cloud-link";
 import {
   assistantBuiltInCommands,
   assistantCommandScopes,
@@ -132,6 +144,7 @@ import {
 } from "./composer-commands";
 import { releaseWhenPageReturns } from "./composer-file-choice";
 import {
+  type ComposerSession,
   confirmComposerSave,
   editComposerSession,
   newComposerSession,
@@ -146,14 +159,14 @@ import { assistantTaskTitle } from "./scheduled-task-format";
 import { useAssistantCopy, useAssistantText } from "./ui-copy";
 import { waitingQuestionsView } from "./waiting-questions";
 
-type Status = {
+type Status = AiPeopleModels & {
   ok: boolean;
   enabled: boolean;
-  defaultModelId: string;
   visionModelConfigured: boolean;
   audioModelConfigured?: boolean;
+  /** Live dictation replaces recording when a live model is set up; recording stays the way out when it is busy. */
+  liveDictationAvailable?: boolean;
   error: AiSettingsError | null;
-  models: AiPublicModelProfile[];
 };
 
 type InitialDetail = {
@@ -171,9 +184,8 @@ type Props = {
   userId: string;
   cloudUrl: string;
   status: Status;
-  models: AiPublicModelProfile[];
+  models: AiPeopleModels["options"];
   /** Model of the user's most recent turn (any chat) — preselected for new chats. */
-  lastModelId: string;
   /** The viewer's time zone from the request; the chat list's day sections use it on the server and in the browser. */
   timeZone: string;
   /** The server's render time, so hydration builds the same day sections as the server. */
@@ -275,8 +287,6 @@ export default function AssistantWorkspace(props: Props) {
       : []),
   ];
   const audioCopy = () => audioMessages.resolve([locale()]).t;
-  const isSelectable = (modelId: string | null | undefined): modelId is string =>
-    Boolean(modelId && props.models.some((model) => model.id === modelId));
 
   const [liveError, setLiveError] = createSignal<string | null>(null);
   const liveHub = createAssistantLiveHub();
@@ -379,29 +389,43 @@ export default function AssistantWorkspace(props: Props) {
   // was made in. Without a pick, a chat shows the model of its own last
   // assistant turn; new chats start on the user's last-used model.
   const projectComposerKey = (projectId: string) => `project:${projectId}`;
-  const [modelChoices, setModelChoices] = createSignal<Record<string, string>>({});
+  const [modelChoices, setModelChoices] = createSignal<Record<string, AiModelRequest>>({});
   const modelSessionKey = () => chat.activeConversationId() ?? (activeProject() ? projectComposerKey(activeProject()!.id) : "__new__");
   const modelOfActiveChat = createMemo(() => {
     if (!chat.activeConversationId()) return null;
     const entry = chat
       .messages()
-      .findLast((message) => message.kind === "message" && message.message.role === "assistant" && isSelectable(message.modelProfileId));
-    return entry?.modelProfileId ?? null;
+      .findLast((message) => message.kind === "message" && message.message.role === "user" && message.meta?.modelRequest);
+    return entry?.meta?.modelRequest ?? null;
   });
-  const fallbackModelId = () => {
-    if (isSelectable(props.lastModelId)) return props.lastModelId;
-    if (isSelectable(props.status.defaultModelId)) return props.status.defaultModelId;
-    return props.models[0]?.id ?? "";
-  };
-  const selectedModelId = createMemo(() => {
+  const selectedModelRequest = createMemo<AiModelRequest>(() => {
     const explicit = modelChoices()[modelSessionKey()];
-    if (isSelectable(explicit)) return explicit;
-    return modelOfActiveChat() ?? fallbackModelId();
+    if (explicit) return explicit;
+    const previous = modelOfActiveChat();
+    return previous ?? props.status.selection ?? props.status.effectiveDefault;
   });
-  const setSelectedModelId = (modelId: string) => {
+  const selectedModelId = createMemo(() => {
+    const request = selectedModelRequest();
+    if ("id" in request) return request.id;
+    for (const modelClass of [request.class, ...aiModelClassFallbackChain(request.class)]) {
+      const id = props.status.classes.find((option) => option.class === modelClass)?.variantId;
+      if (id) return id;
+    }
+    return "";
+  });
+  /** A class when the person chose one, so the chat follows the administration's assignment. */
+  const setSelectedModelRequest = (request: AiModelRequest) => {
     const key = modelSessionKey();
-    setModelChoices((current) => ({ ...current, [key]: modelId }));
+    setModelChoices((current) => ({ ...current, [key]: request }));
   };
+  /** `/model` picks a model; like the card, a model inside a class keeps the class. */
+  const setSelectedModelId = (modelId: string) =>
+    setSelectedModelRequest(props.status.ok ? aiModelRequestFor(props.status, modelId) : { id: modelId });
+  const modelState = (): AiModelChooserState => (props.status.ok ? { status: "ready", models: props.status } : { status: "error" });
+  const modelNote = () =>
+    aiModelBlocksSending(modelState(), selectedModelRequest()) || resolveAiModelChoice(props.status, selectedModelRequest()).unavailable ? (
+      <AiModelNote state={modelState()} value={selectedModelRequest()} onChange={setSelectedModelRequest} />
+    ) : undefined;
 
   const [composerFocusToken, setComposerFocusToken] = createSignal(0);
   const [composerDrafts, setComposerDrafts] = createSignal<Record<string, string>>({});
@@ -515,7 +539,7 @@ export default function AssistantWorkspace(props: Props) {
   const usageSnapshot = createMemo(() => aiLatestUsageSnapshot(chat.usageMessages()));
   const usageModel = createMemo(() => {
     const snapshot = usageSnapshot();
-    const modelId = snapshot ? snapshot.modelProfileId : selectedModelId();
+    const modelId = snapshot ? snapshot.modelId : selectedModelId();
     return props.models.find((model) => model.id === modelId) ?? null;
   });
   const composerSessionKey = () => chat.activeConversationId() ?? (activeProject() ? projectComposerKey(activeProject()!.id) : "__new__");
@@ -561,12 +585,15 @@ export default function AssistantWorkspace(props: Props) {
     setComposerAttachments((current) => ({ ...current, [key]: attachments }));
   };
 
+  /** Pending pasted links per composer session; a restored draft replaces the text without any input in the field. */
+  const pastedLinkRestores = new WeakMap<ComposerSession, Set<() => void>>();
   const hydrateComposer = (key: string, draft: AiConversation["draft"]) => {
     const restored = aiComposerDraft(draft.content);
     setComposerDrafts((current) => ({ ...current, [key]: restored.text }));
     setComposerAttachments((current) => ({ ...current, [key]: restored.attachments }));
     setComposerMentions((current) => ({ ...current, [key]: restored.mentions }));
     const local = session(key);
+    for (const restored of pastedLinkRestores.get(local) ?? []) restored();
     local.editGeneration++;
     local.baseRevision = draft.revision;
     local.dirty = false;
@@ -646,6 +673,14 @@ export default function AssistantWorkspace(props: Props) {
       mentions: override?.mentions ?? mentionsFor(key),
       attachments: aiChatAttachments(composerAttachmentsFor(key)),
     });
+  /**
+   * Only a save the server rejected for its revision is a conflict. Any other failure, such as an unreachable app,
+   * leaves the saved draft as it was: the composer keeps its unsaved text and says that saving failed.
+   */
+  const failComposerSave = (local: ComposerSession, target: string) => {
+    if (chat.draftSaveFailure(target) === "failed") chat.setError(audioCopy().saveFailed);
+    else local.conflict = true;
+  };
   const saveComposer = (key: string, target: string, override?: ComposerOverride) => {
     // An override snapshots this generation, even if newer edits arrive before its queued save starts.
     const overrideGeneration = override ? session(key).editGeneration : undefined;
@@ -660,10 +695,12 @@ export default function AssistantWorkspace(props: Props) {
           conversationId: target,
           expectedDraftRevision: local.baseRevision,
         });
-        if (saved) confirmComposerSave(local, saved.revision, generation);
-        else {
-          local.conflict = true;
-          if (chat.activeConversationId() === target) await chat.refreshActiveConversation();
+        if (saved) {
+          confirmComposerSave(local, saved.revision, generation);
+          if (chat.error() === audioCopy().saveFailed) chat.setError(null);
+        } else {
+          failComposerSave(local, target);
+          if (local.conflict && chat.activeConversationId() === target) await chat.refreshActiveConversation();
         }
         return saved;
       } finally {
@@ -675,12 +712,7 @@ export default function AssistantWorkspace(props: Props) {
     });
   };
 
-  const selectedModel = createMemo(() => props.models.find((model) => model.id === selectedModelId()) ?? null);
-  const acceptsImages = () =>
-    Boolean(
-      selectedModel()?.capabilities.includes("vision") ||
-        (selectedModel()?.capabilities.includes("tools") && props.status.visionModelConfigured),
-    );
+  const acceptsImages = () => true;
   const focusComposer = () => setComposerFocusToken((value) => value + 1);
   const commitConversationUrl = (conversationId: string, replace = false) => {
     const href = assistantConversationHref(window.location.href, conversationId);
@@ -1252,11 +1284,11 @@ export default function AssistantWorkspace(props: Props) {
             ...input,
             conversationId: target,
             expectedDraftRevision: local.baseRevision,
-            modelProfileId: selectedModelId() || undefined,
+            model: selectedModelRequest(),
           });
           const draft = chat.conversation()?.id === target ? chat.conversation()?.draft : undefined;
           if (draft) local.baseRevision = draft.revision;
-          if (!result) local.conflict = true;
+          if (!result) failComposerSave(local, target);
           return result;
         } finally {
           local.saving = false;
@@ -1271,11 +1303,11 @@ export default function AssistantWorkspace(props: Props) {
   const sendProjectMessage = async (projectId: string, input: AiComposerSendInput) => {
     if (!canSend() || dictation.busy()) return false;
     dictation.invalidateAutomatic();
-    const modelProfileId = selectedModelId() || undefined;
+    const model = selectedModelRequest();
     return submitAssistantProjectMessage({
       projectId,
       message: input,
-      modelProfileId,
+      model,
       pendingConversation: pendingProjectChats()[projectId],
       activeConversationId: chat.activeConversationId,
       openConversation: chat.openConversation,
@@ -1293,7 +1325,7 @@ export default function AssistantWorkspace(props: Props) {
             const sent = await chat.send({ ...message, conversationId: target, expectedDraftRevision: local.baseRevision });
             const draft = chat.conversation()?.draft;
             if (draft) local.baseRevision = draft.revision;
-            if (!sent) local.conflict = true;
+            if (!sent) failComposerSave(local, target);
             return sent;
           } finally {
             local.saving = false;
@@ -1350,9 +1382,10 @@ export default function AssistantWorkspace(props: Props) {
             ...input,
             conversationId,
             expectedDraftRevision: local.baseRevision,
-            modelProfileId: selectedModelId() || undefined,
+            model: selectedModelRequest(),
           });
           if (accepted && chat.conversation()?.id === conversationId) local.baseRevision = chat.conversation()!.draft.revision;
+          if (!accepted && chat.draftSaveFailure(conversationId) === "conflict") local.conflict = true;
           // Acceptance is durable even if refreshing the visible queue fails.
           void queuedMessages.refresh().catch(() => chat.setError(t().chatActionFailed));
           return accepted;
@@ -1590,12 +1623,12 @@ export default function AssistantWorkspace(props: Props) {
 
   /** From this device or from a Cloud app, within what the draft can still take; a full draft says so at once. */
   const chooseComposerFiles = (sessionKey: string): Promise<readonly File[]> => {
-    const maxBytes = aiComposerChooseMaxBytes(composerPartCount(sessionKey));
-    if (maxBytes === 0) {
+    const maxTotalBytes = aiComposerChooseMaxBytes(composerPartCount(sessionKey));
+    if (maxTotalBytes === 0) {
       chat.setError(t().attachmentLimit({ count: AI_TURN_ATTACHMENT_MAX_ITEMS }));
       return Promise.resolve([]);
     }
-    return chooseFiles({ multiple: true, accept: aiComposerFileAccept, maxBytes });
+    return chooseFiles({ multiple: true, accept: aiComposerFileAccept, maxTotalBytes });
   };
 
   const composerAttachmentsBlocked = (sessionKey: string) => chat.activeConversationId() === sessionKey && chat.running();
@@ -1606,7 +1639,13 @@ export default function AssistantWorkspace(props: Props) {
     return false;
   };
 
-  const addResolvedComposerResource = async (sessionKey: string, ref: { type: string; id: string }, isCurrent = () => true) => {
+  const addResolvedComposerResource = async (
+    sessionKey: string,
+    ref: { type: string; id: string },
+    isCurrent = () => true,
+    /** The resource as a pasted link resolved it, with its own title. */
+    known?: Pick<ResolvedCloudResourceUrl, "title" | "icon" | "href">,
+  ) => {
     const target = followComposerSession(sessionKey);
     const release = holdComposerSave();
     try {
@@ -1620,7 +1659,7 @@ export default function AssistantWorkspace(props: Props) {
         chat.setError(t().attachmentLimit({ count: AI_TURN_ATTACHMENT_MAX_ITEMS }));
         return;
       }
-      const resource = await resolveAssistantCloudResource(ref);
+      const resource = known ? { ref, ...known, icon: known.icon ?? "ti ti-link" } : await resolveAssistantCloudResource(ref);
       if (!isCurrent()) return;
       const key = target();
       const latest = composerAttachmentsFor(key);
@@ -1722,6 +1761,51 @@ export default function AssistantWorkspace(props: Props) {
       );
       return;
     }
+    const link = pastedCloudLink(event);
+    if (link && event.target instanceof HTMLTextAreaElement) {
+      // The link lands as text at once. Once its resource is recognized, a reference with its title takes its place;
+      // an unreadable or unknown link stays text. Ctrl+Shift+V keeps the link as text.
+      // The draft right after this paste: the link is recognized only while it is still this paste's link.
+      const place = pastedLinkPlace(
+        composerDraft(sessionKey),
+        { start: event.target.selectionStart, end: event.target.selectionEnd },
+        event.clipboardData?.getData("text/plain") ?? "",
+        link,
+      );
+      const target = followComposerSession(sessionKey);
+      const watch = watchPastedLink(event.target);
+      // A restored draft, such as "Use saved draft", also ends this paste.
+      const restores = pastedLinkRestores.get(session(sessionKey)) ?? new Set<() => void>();
+      pastedLinkRestores.set(session(sessionKey), restores);
+      let restored = false;
+      const onRestore = () => {
+        restored = true;
+      };
+      restores.add(onRestore);
+      const inPlace = (key: string) => pastedLinkCurrent({ edited: watch.edited() || restored, draft: composerDraft(key) }, place);
+      void resolveCloudUrl(link)
+        .then(async (resolved) => {
+          if (!resolved) return;
+          const key = target();
+          const attached = composerAttachmentsFor(key).some(
+            (item) => item.kind === "resource" && item.ref.type === resolved.ref.type && item.ref.id === resolved.ref.id,
+          );
+          // An edited or removed link, a reference already attached, a full draft, or attachments waiting for a
+          // response all leave the text as it is.
+          if (!inPlace(key) || attached || composerAttachmentsBlocked(key) || composerPartCount(key) >= AI_TURN_ATTACHMENT_MAX_ITEMS)
+            return;
+          const count = composerAttachmentsFor(key).length;
+          await addResolvedComposerResource(key, resolved.ref, () => inPlace(target()), resolved).catch(() => undefined);
+          const current = target();
+          if (composerAttachmentsFor(current).length === count || !inPlace(current)) return;
+          setComposerDraft(current, withoutPastedLink(composerDraft(current), place, link));
+        })
+        .finally(() => {
+          watch.stop();
+          restores.delete(onRestore);
+        });
+      return;
+    }
     const text = event.clipboardData?.getData("text/plain") ?? "";
     if (!text || !shouldAttachAiPastedText(text, composerDraft(sessionKey).length)) return;
     event.preventDefault();
@@ -1731,6 +1815,7 @@ export default function AssistantWorkspace(props: Props) {
 
   const dictationKey = () => (activeProject() ? projectComposerKey(activeProject()!.id) : composerSessionKey());
   const dictationTarget = () => (activeProject() ? (pendingProjectChats()[activeProject()!.id]?.id ?? null) : chat.activeConversationId());
+  const liveDictationSource = createLiveDictationSource({ app: "assistant" });
   const dictation = createAssistantDictation({
     configured: () => Boolean(props.status.audioModelConfigured) && canUseComposer(),
     key: dictationKey,
@@ -1769,9 +1854,12 @@ export default function AssistantWorkspace(props: Props) {
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ expectedRevision: local.baseRevision, content: saved.content }),
           });
+          // The dictation reports any failure itself; only a changed saved draft is also a conflict.
           if (!response.ok) {
-            local.conflict = true;
-            await chat.refreshActiveConversation();
+            if (response.status === 409) {
+              local.conflict = true;
+              await chat.refreshActiveConversation();
+            }
             return false;
           }
           const result: { disposition: string; draft: AiConversation["draft"] | null } = await response.json();
@@ -2017,40 +2105,49 @@ export default function AssistantWorkspace(props: Props) {
         </Show>
         <dictation.Status />
         <Show when={(sessionVersion(), session(sessionKey()).conflict) && !submissionUnknown(sessionKey())}>
-          <div role="status" class="space-y-2 rounded-lg border border-border p-3 text-sm">
-            <p>{audioCopy().conflict}</p>
+          <NoticeCard role="status" tone="warning" title={audioCopy().conflict} detail={audioCopy().conflictDetail}>
             <Show when={serverDrafts()[sessionKey()]}>
-              {(saved) => (
-                <>
-                  <p>{audioCopy().savedDraft}</p>
-                  <pre class="max-h-48 overflow-auto whitespace-pre-wrap">
-                    {saved()
-                      .content.filter((part) => part.type === "text")
-                      .map((part) => part.text)
-                      .join("\n\n")}
-                  </pre>
-                  <Button size="sm" variant="secondary" onClick={() => hydrateComposer(sessionKey(), saved())}>
-                    {audioCopy().useSaved}
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    onClick={async () => {
-                      const key = sessionKey();
-                      const target = dictationTarget();
-                      if (!target) return;
-                      const local = session(key);
-                      local.baseRevision = saved().revision;
-                      local.conflict = false;
-                      await saveComposer(key, target);
-                    }}
-                  >
-                    {audioCopy().keepLocal}
-                  </Button>
-                </>
-              )}
+              {(saved) => {
+                const savedText = () =>
+                  saved()
+                    .content.filter((part) => part.type === "text")
+                    .map((part) => part.text)
+                    .join("\n\n");
+                return (
+                  <>
+                    <Show when={savedText()} fallback={<p class="text-dimmed">{audioCopy().savedDraftEmpty}</p>}>
+                      {(text) => (
+                        <div class="space-y-1">
+                          <p class="text-dimmed">{audioCopy().savedDraft}</p>
+                          <p class="max-h-40 overflow-auto whitespace-pre-wrap break-words">{text()}</p>
+                        </div>
+                      )}
+                    </Show>
+                    <div class="flex flex-wrap gap-2 pt-1">
+                      <Button
+                        size="sm"
+                        variant="secondary"
+                        onClick={async () => {
+                          const key = sessionKey();
+                          const target = dictationTarget();
+                          if (!target) return;
+                          const local = session(key);
+                          local.baseRevision = saved().revision;
+                          local.conflict = false;
+                          await saveComposer(key, target);
+                        }}
+                      >
+                        {audioCopy().keepLocal}
+                      </Button>
+                      <Button size="sm" variant="secondary" onClick={() => hydrateComposer(sessionKey(), saved())}>
+                        {audioCopy().useSaved}
+                      </Button>
+                    </div>
+                  </>
+                );
+              }}
             </Show>
-          </div>
+          </NoticeCard>
         </Show>
         <Chat.Composer
           addOpensCommands
@@ -2125,7 +2222,7 @@ export default function AssistantWorkspace(props: Props) {
               hasAssistantMessage: chat.messages().some((message) => message.message.role === "assistant"),
               compact: async () => {
                 const key = sessionKey();
-                if (!(await chat.compactConversation({ modelProfileId: selectedModelId() || undefined })))
+                if (!(await chat.compactConversation({ model: selectedModelRequest() })))
                   throw commandFailure(key, commandCopy().compactFailed);
                 // The request queues a compaction turn; the chat shows its progress and result, so this only says it started.
                 return { done: commandCopy().compactDone };
@@ -2217,7 +2314,30 @@ export default function AssistantWorkspace(props: Props) {
             ]);
             return rows;
           }}
-          submitTools={<dictation.Control />}
+          submitTools={
+            <>
+              <AiModelChooser
+                state={modelState()}
+                value={selectedModelRequest()}
+                onChange={setSelectedModelRequest}
+                locked={!projectComposer() && chat.running()}
+                lockedReason={t().modelLockedWhileRunning}
+              />
+              <Show when={!props.status.liveDictationAvailable || dictation.busy() || dictation.pendingResult()}>
+                <dictation.Control />
+              </Show>
+            </>
+          }
+          dictation={
+            props.status.liveDictationAvailable && canUseComposer() && !dictation.busy() && !dictation.pendingResult()
+              ? {
+                  source: liveDictationSource,
+                  alternative: props.status.audioModelConfigured
+                    ? { label: audioCopy().recordInstead, note: audioCopy().recordInsteadNote, run: () => void dictation.startRecording() }
+                    : undefined,
+                }
+              : undefined
+          }
           footerContent={dictation.recording() ? <dictation.RecordingFooter /> : undefined}
           value={composerDraft(sessionKey())}
           onValueChange={(value) => setComposerDraft(sessionKey(), value)}
@@ -2234,9 +2354,6 @@ export default function AssistantWorkspace(props: Props) {
             disabled: !projectComposer() && chat.running(),
             label: t().attachFiles,
           }}
-          models={aiChatModelOptions(props.models)}
-          selectedModelId={selectedModelId()}
-          onModelChange={setSelectedModelId}
           modelDetails={
             <AssistantQuota
               snapshot={quotas.data()}
@@ -2267,6 +2384,7 @@ export default function AssistantWorkspace(props: Props) {
                   : "idle"
           }
           focusToken={projectComposer() ? undefined : composerFocusToken()}
+          submitDisabled={aiModelBlocksSending(modelState(), selectedModelRequest())}
           runningSubmitIntent={!projectComposer() ? "queue" : undefined}
           placeholder={
             props.status.enabled && props.models.length === 0
@@ -2332,7 +2450,7 @@ export default function AssistantWorkspace(props: Props) {
                   disabled: chat.running(),
                   onSelect: async () => {
                     if (!chat.activeConversationId()) return;
-                    await chat.compactConversation({ modelProfileId: selectedModelId() || undefined });
+                    await chat.compactConversation({ model: selectedModelRequest() });
                   },
                 }
               : undefined
@@ -2343,7 +2461,6 @@ export default function AssistantWorkspace(props: Props) {
               : {
                   usage: usageSnapshot()?.request ?? null,
                   loopUsage: usageSnapshot()?.loop ?? null,
-                  contextWindow: usageModel()?.contextWindow,
                   modelLabel: usageModel()?.label,
                 }
           }
@@ -2478,13 +2595,63 @@ export default function AssistantWorkspace(props: Props) {
     );
   };
 
+  // The side panel has no head row; a quiet row under the composer leads on. "All chats" opens the Assistant
+  // application at what the panel shows (the current chat, Project or approvals), so a chat continues in the full view.
+  const panelFullViewHref = () => {
+    const project = activeProject();
+    const pending = project ? pendingProjectChats()[project.id]?.id : undefined;
+    if (pending) return assistantConversationHref("/app/assistant", pending);
+    if (project) return assistantProjectHref("/app/assistant", project.id);
+    if (approvalsOpen()) return "/app/assistant?approvals=1";
+    return assistantConversationHref("/app/assistant", chat.activeConversationId());
+  };
+  const PanelAllChats = () => (
+    <ButtonLink
+      href={panelFullViewHref()}
+      size="xs"
+      variant="ghost"
+      class="assistant-panel-link"
+      // Before the panel scripts run, the host opens the link instead of the panel frame.
+      target={workspaceMounted() ? undefined : "_top"}
+    >
+      <i class="ti ti-messages" aria-hidden="true" />
+      {t().allChats}
+    </ButtonLink>
+  );
+  // The panel reopens the chat it remembers, so the row also starts a new one whenever the panel holds a chat, even one
+  // without messages (a saved draft, or a chat that failed to load).
+  const PanelNewChat = () => (
+    <Button
+      size="xs"
+      variant="ghost"
+      class="assistant-panel-link"
+      disabled={newConversation.loading() || composerPicking() > 0}
+      onClick={() => void createAndFocusConversation()}
+    >
+      <i class="ti ti-plus" aria-hidden="true" />
+      {t().newChat}
+    </Button>
+  );
+  const PanelRow = () => (
+    <div class="assistant-panel-row">
+      <PanelNewChat />
+      <PanelAllChats />
+    </div>
+  );
+  // In the empty chat the Project choice keeps the start of the row; these links share its end.
+  const PanelRowEnd = () => (
+    <div class="assistant-panel-row-end">
+      <Show when={chat.activeConversationId()}>
+        <PanelNewChat />
+      </Show>
+      <PanelAllChats />
+    </div>
+  );
+
   return (
     <AssistantLiveProvider value={liveHub}>
       <AppWorkspace mobileSurface="flush" class="flex-1 min-h-0">
         <AssistantSidebar
-          fullViewConversationId={activeProject() ? pendingProjectChats()[activeProject()!.id]?.id : undefined}
-          embedded={props.embedded}
-          panelReady={workspaceMounted()}
           basePath={basePath}
           conversations={conversations}
           timeZone={props.timeZone}
@@ -2534,7 +2701,16 @@ export default function AssistantWorkspace(props: Props) {
               </Show>
               <Show
                 when={!approvalsOpen()}
-                fallback={<AssistantApprovalsView initial={approvalsRendered() ? props.approvals.page : undefined} />}
+                fallback={
+                  <>
+                    <AssistantApprovalsView initial={approvalsRendered() ? props.approvals.page : undefined} />
+                    <Show when={props.embedded}>
+                      <div class="mx-auto w-full max-w-3xl shrink-0 px-[var(--ui-space-section)] pb-[var(--ui-space-section)]">
+                        <PanelRow />
+                      </div>
+                    </Show>
+                  </>
+                }
               >
                 <Show
                   keyed
@@ -2577,7 +2753,7 @@ export default function AssistantWorkspace(props: Props) {
                                     onRetryMessage: async (entry, input) => {
                                       const retried = await chat.retryUserMessage(entry.id, {
                                         ...input,
-                                        modelProfileId: selectedModelId() || undefined,
+                                        model: selectedModelRequest(),
                                       });
                                       if (!retried) throw new Error(chat.error() ?? t().retryMessageFailed);
                                     },
@@ -2622,11 +2798,13 @@ export default function AssistantWorkspace(props: Props) {
                               <AssistantEmptyChat
                                 composer={<AssistantComposer />}
                                 notices={<ComposerNotices />}
+                                modelNote={modelNote()}
                                 projects={projects()}
                                 selectedProjectId={emptyProjectId()}
                                 choosingProject={choosingProject()}
                                 onChooseProject={() => void chooseEmptyChatProject()}
-                                onStarter={useStarter}
+                                onStarter={props.embedded ? undefined : useStarter}
+                                rowEnd={props.embedded ? <PanelRowEnd /> : undefined}
                               />
                             </Show>
                             <codeApprovals.View
@@ -2638,7 +2816,11 @@ export default function AssistantWorkspace(props: Props) {
                             <div class="assistant-chat-composer shrink-0 px-[var(--ui-space-section)] pb-[var(--ui-space-section)] pt-2">
                               <div class="mx-auto flex max-w-3xl flex-col gap-2">
                                 <ComposerNotices />
+                                {modelNote()}
                                 <AssistantComposer />
+                                <Show when={props.embedded}>
+                                  <PanelRow />
+                                </Show>
                               </div>
                             </div>
                           </Show>
@@ -2654,7 +2836,15 @@ export default function AssistantWorkspace(props: Props) {
                           project={project()}
                           initialPage={view.page}
                           initialContext={view.context}
-                          composer={<AssistantComposer projectId={project().id} projectName={project().name} />}
+                          composer={
+                            <div class="flex flex-col gap-2">
+                              {modelNote()}
+                              <AssistantComposer projectId={project().id} projectName={project().name} />
+                              <Show when={props.embedded}>
+                                <PanelRow />
+                              </Show>
+                            </div>
+                          }
                           onOpenConversation={openAndFocusConversation}
                         />
                       )}

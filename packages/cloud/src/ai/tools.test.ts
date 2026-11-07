@@ -22,6 +22,7 @@ import {
   createDefaultCloudAiTools,
 } from "./default-tools";
 import { aiModelAccess } from "./model-access";
+import { aiAssignmentFixture, aiSettingsFixture } from "./model-fixture";
 import { AiTurnActionSchema } from "./runtime";
 import * as settings from "./settings";
 import { cloudToolReview } from "./tool-sentences";
@@ -32,6 +33,12 @@ afterEach(() => mock.restore());
 
 const configureAudio = async () => {
   const audio: AiModelProfile = {
+    modelId: "speech",
+    providerId: "speech",
+    variantLabel: "Standard",
+    description: "",
+    icon: { kind: "provider" },
+    showInPicker: true,
     id: "speech",
     label: "Speech",
     provider: "openai-compatible",
@@ -41,11 +48,11 @@ const configureAudio = async () => {
     capabilities: ["transcription"],
     dataBoundary: "private",
   };
-  const chat: AiModelProfile = { ...audio, id: "chat", capabilities: ["streaming", "tools"] };
-  const state = await settings.resolveAiSettingsStateFromRaw({
+  const chat: AiModelProfile = { ...audio, id: "chat", capabilities: ["tools"] };
+  const state = aiSettingsFixture({
     enabled: true,
-    defaultModelId: chat.id,
-    profilesJson: JSON.stringify([chat, audio]),
+    assignments: [aiAssignmentFixture("balanced", chat.id), aiAssignmentFixture("audio", audio.id)],
+    profiles: [chat, audio],
   });
   spyOn(settings, "readAiSettingsState").mockResolvedValue(state);
   spyOn(coreSettings, "get").mockResolvedValue(audio.id);
@@ -80,6 +87,53 @@ describe("AI tools", () => {
     expect(prepared.approvalPolicies.get("create_record")).toBe("once");
   });
 
+  test("only a read-only tool runs next to other reads; a resumed turn may run any Cloud tool again", () => {
+    const tool = (name: string, readOnly?: true) =>
+      defineAiTool({ name, description: name, inputSchema: z.object({}), outputSchema: z.unknown(), approval: "never", readOnly }).server(
+        async () => "ok",
+      );
+    const prepared = prepareAiTools({ tools: [tool("read_record", true), tool("send_mail")], actor });
+    expect(prepared.tools.map((each) => [each.def.name, each.def.concurrency, each.def.replay])).toEqual([
+      ["read_record", "parallel", "safe"],
+      ["send_mail", undefined, "safe"],
+    ]);
+  });
+
+  test("intermediate results use the declared schema and normal result budget", async () => {
+    const reports: unknown[] = [];
+    const tool = defineAiTool({
+      name: "show_partial",
+      description: "Show progress",
+      inputSchema: z.object({ text: z.string() }),
+      outputSchema: z.object({ text: z.string() }),
+      approval: "never",
+    }).server(async (input, ctx) => {
+      await ctx.reportResult?.(input);
+      return input;
+    });
+    const prepared = prepareAiTools({
+      tools: [tool],
+      actor,
+      maxToolResultChars: 40,
+      reportToolResult: async (_, value) => {
+        reports.push(value);
+      },
+    });
+    const runtime = prepared.tools[0]!;
+    if (runtime.kind !== "server") throw new Error("Expected server tool");
+    const context = {
+      callId: "partial",
+      signal: new AbortController().signal,
+      requestApproval: async () => true,
+      requestClientTool: async () => {
+        throw new Error("unused");
+      },
+    };
+    await runtime.execute({ text: "ready" }, context);
+    expect(reports).toEqual([{ text: "ready" }]);
+    await expect(runtime.execute({ text: "x".repeat(100) }, context)).rejects.toThrow("AI_TOOL_INTERIM_RESULT_TOO_LARGE");
+    expect(reports).toHaveLength(1);
+  });
   test("forwards optional historical result projectors to Nessi", async () => {
     const tool = defineAiTool({
       name: "read_report",
@@ -126,9 +180,6 @@ describe("AI tools", () => {
         yield { type: "block_delta", blockId: `text-${providerCall}`, delta: "Done" };
         yield { type: "block_end", blockId: `text-${providerCall}`, index: 0, block: { type: "text", text: "Done" } };
         yield { type: "usage", usage: { input: 120, output: 5, total: 125 }, finishReason: "stop" };
-      },
-      async complete() {
-        throw new Error("complete should not be used");
       },
     };
     const tool = defineAiTool({
@@ -213,9 +264,6 @@ describe("AI tools", () => {
         yield { type: "block_start", blockId: "text", index: 0, kind: "text" };
         yield { type: "block_end", blockId: "text", index: 0, block: { type: "text", text: "Done" } };
         yield { type: "usage", usage: { input: 1, output: 1, total: 2 }, finishReason: "stop" };
-      },
-      async complete() {
-        throw new Error("complete should not be used");
       },
     };
     const entries: StoreEntry[] = [];
@@ -338,6 +386,7 @@ describe("AI tools", () => {
       "survey",
       "text_editor",
       "chart",
+      "map",
       "code_create",
       "list_files",
       "read_file",
@@ -449,9 +498,6 @@ describe("AI tools", () => {
         };
         yield { type: "usage", usage: { input: 1, output: 1, total: 2 }, finishReason: "tool_use" };
       },
-      async complete() {
-        throw new Error("complete should not be used");
-      },
     };
     const prepared = prepareAiTools({ tools: [createCloudAiCardTool()], actor });
     const loop = nessi({
@@ -496,9 +542,6 @@ describe("platform approval consumption in server tools", () => {
       family: "openai-compatible",
       model: "test",
       capabilities: { streaming: true, tools: true, images: false, thinking: false, usage: true },
-      async complete() {
-        throw new Error("Unexpected completion");
-      },
       async *stream() {
         if (calls++ === 0) {
           yield { type: "block_start", blockId: "call", index: 0, kind: "tool_call", callId: "run", name };

@@ -43,18 +43,17 @@ describe("notebook route state public IDs", () => {
   });
 });
 
-test("the authorized route snapshot carries authors into soft-navigation detail", async () => {
+test("the authorized route snapshot carries authors, outgoing links, and tags into soft-navigation detail", async () => {
   const timestamp = "2026-10-01T10:00:00.000Z";
   const author = { kind: "user" as const, id: base.userId, displayName: "Jana Berger", avatarHash: "avatar" };
   const authors = { createdBy: author, lastEditedBy: author };
   const noteId = "33333333-3333-4333-8333-333333333333";
-  const note = spyOn(notebooksService.note, "getWithContentByShortId").mockResolvedValue({
+  const note = spyOn(notebooksService.note, "getByShortId").mockResolvedValue({
     id: noteId,
     shortId: "note01",
     notebookId: base.notebookId,
     title: "Test",
-    contentMd: "# Test",
-    yjsSnapshot: null,
+    contentMd: "# Test\n\nSee #cold-chain.",
     historyIncomplete: false,
     lockedAt: null,
     parentId: null,
@@ -66,6 +65,8 @@ test("the authorized route snapshot carries authors into soft-navigation detail"
     yjsSnapshotAt: null,
   });
   const backlinks = spyOn(notebooksService.note.backlinks, "list").mockResolvedValue([]);
+  const linked = { noteId: "note02", title: "Glossary", notebookId: "book02", notebookName: "Private", updatedAt: timestamp };
+  const outgoing = spyOn(notebooksService.note.outgoingLinks, "list").mockResolvedValue([linked]);
   const authorsRead = spyOn(notebooksService.activity, "noteAuthors").mockResolvedValue(authors);
   try {
     const result = await loadEditableNoteRouteData({ ...base, href: "/app/notebooks/book01/notes/note01" });
@@ -73,9 +74,13 @@ test("the authorized route snapshot carries authors into soft-navigation detail"
     if (result.kind !== "ok") throw new Error("Expected editable route state");
     expect(result.state.detail.noteAuthors).toEqual(authors);
     expect(authorsRead).toHaveBeenCalledWith({ noteId });
+    expect(result.state.detail.relations).toEqual({ outgoing: [linked], tags: ["cold-chain"] });
+    // Outgoing links follow the backlinks' access rule, including the admin bypass.
+    expect(outgoing).toHaveBeenCalledWith({ noteId, userId: base.userId, bypassAccess: base.bypassAccess, limit: 100 });
   } finally {
     note.mockRestore();
     backlinks.mockRestore();
+    outgoing.mockRestore();
     authorsRead.mockRestore();
   }
 });

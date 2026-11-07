@@ -5,7 +5,7 @@ section: Automation
 order: 680
 description: Build a workflow definition and publish a version that can be executed.
 tags: [workflows, authoring, publication]
-updated: 2026-08-05
+updated: 2026-10-26
 ---
 
 # Author and publish workflows
@@ -211,6 +211,43 @@ The runtime port remains application-wired because authorization and text
 rendering belong to the application, including for independently deployed
 workflow providers.
 
+## Compare values in conditions
+
+A condition contains one operator. Use `equals` or `notEquals` for exact JSON
+values, `includes` for exact array membership, and `textEquals`, `contains`,
+`startsWith`, or `endsWith` for normalized, case-insensitive text. `exists`
+accepts one reference. `all` and `any` combine non-empty condition lists;
+`not` negates one condition.
+
+Number comparisons take exactly two operands, in left-to-right order:
+
+| Operator | True when |
+| --- | --- |
+| `greaterThan` | Left is greater than right (`>`) |
+| `lessThan` | Left is less than right (`<`) |
+| `atLeast` | Left is greater than or equal to right (`>=`) |
+| `atMost` | Left is less than or equal to right (`<=`) |
+
+```yaml
+steps:
+  - if:
+      greaterThan: ["${{ inputs.quantity }}", 150]
+    then:
+      - setVariable: { name: largeOrder, value: true }
+```
+
+Both resolved operands must be finite JSON numbers. Numeric strings are not
+converted. This includes Grids decimal inputs and record number fields, which
+resolve to decimal strings. A missing reference or a non-number value makes a
+number comparison `false`, without failing the run. A reference waiting for an application-owned
+dependency still waits. These rules apply specifically to number comparisons;
+other operators retain their own type and missing-value behavior.
+
+Compilation rejects non-number literals. An application's binder must also
+report `condition.type` diagnostics for references whose known value-path type
+is not `core.number`; an unknown dynamic type can be checked only at runtime.
+Diagnostics keep the operand path and source location for the editor.
+
 ## Publish one version
 
 Create the workflow identity once. Then publish immutable versions:
@@ -278,3 +315,27 @@ data in the same transaction as kernel publication.
 
 Use [Start workflow runs](/en/docs/automation/emit-events-and-start-runs) after
 publication.
+
+## Try Mail workflows before activation
+
+Mail provides **Dry run** for a saved workflow's current version or unsaved
+YAML. It checks the latest 50 visible messages by default, up to 100, newest
+first. The preview changes no mail, sends nothing, creates no drafts and calls
+no AI. It reports condition values, planned actions and target problems.
+
+AI steps report that they would start. Their output remains unavailable;
+branches and actions that need that output stay uncertain. The AI call range
+counts certain calls and the maximum possible calls across those branches.
+
+Use `cld mail workflow try <workflow-id> --last 50`, or
+`cld mail workflow try --file workflow.yaml`. Saved workflows keep their read
+permission; unsaved YAML needs mailbox administration permission.
+
+API clients post exactly one of `source` or `workflowId` to
+`/api/mail/mailboxes/:mailboxId/workflows/try`. `last` accepts 1–100 (default 50)
+and `batch` accepts 1–25 (default 10). Repeat the request with the returned
+opaque `cursor` until it is `null`; keep the source and window size unchanged.
+`checked` is cumulative, while `items` and `aiCalls: { min, max }` describe the
+new batch. Stop requesting batches to cancel. `preflight` reports static user
+and folder targets, possible sends and drafts, and the number of AI steps.
+Invalid YAML returns HTTP 422 with the workflow validation diagnostics.

@@ -10,14 +10,14 @@ import { MarkdownEditor } from "./markdown/MarkdownEditor";
 
 export type TextInputProps = Omit<
   JSX.InputHTMLAttributes<HTMLInputElement>,
-  "onChange" | "onInput" | "prefix" | "suffix" | "type" | "value" | keyof ValueFieldProps<string>
+  "onChange" | "onInput" | "onKeyDown" | "prefix" | "suffix" | "type" | "value" | keyof ValueFieldProps<string>
 > &
   ValueFieldProps<string> & {
     minLength?: number;
     maxLength?: number;
     type?: "text" | "search" | "email" | "url" | "tel";
     variant?: "default" | "ai" | "compact";
-    /** Set false for a plain field without a leading icon. */
+    /** A leading icon such as a search magnifier. Plain text fields have none. */
     icon?: string | false;
     activeIcon?: string;
     /** ID of a consumer-owned visible error; caller owns its announcement. Native controls only. */
@@ -32,6 +32,7 @@ export type TextInputProps = Omit<
     password?: boolean;
     markdown?: boolean;
     onSubmit?: () => void;
+    onKeyDown?: JSX.EventHandlerUnion<HTMLInputElement | HTMLTextAreaElement, KeyboardEvent>;
     lines?: number;
     abbreviations?: Record<string, string>;
     completions?: readonly Completion[];
@@ -58,6 +59,7 @@ export function TextInput(props: TextInputProps): JSX.Element {
     "markdown",
     "minLength",
     "maxLength",
+    "onKeyDown",
     "monospace",
     "multiline",
     "onClear",
@@ -90,18 +92,32 @@ export function TextInput(props: TextInputProps): JSX.Element {
   const [passwordVisible, setPasswordVisible] = createSignal(false);
   const multiline = () => Boolean(local.multiline || local.markdown);
   const compact = () => local.variant === "compact";
-  const icon = () =>
-    local.icon === false
-      ? ""
-      : (local.icon ?? (local.variant === "ai" ? "ti ti-sparkles" : local.markdown ? "ti ti-markdown" : "ti ti-cursor-text"));
-  // A custom icon stays while typing (a search field keeps its magnifier); only the default icon switches to the pencil.
-  const activeIcon = () => local.activeIcon ?? (local.icon || undefined) ?? (local.variant === "ai" ? "ti ti-sparkles" : "ti ti-pencil");
+  // The field's edge already shows where to type; only a meaningful icon (a search magnifier, the AI mark) leads.
+  const icon = () => (local.icon === false ? "" : (local.icon ?? (local.variant === "ai" ? "ti ti-sparkles" : "")));
+  // An icon stays while typing unless `activeIcon` names a different one.
+  const activeIcon = () => local.activeIcon ?? icon();
   // Names, addresses and passwords are typed exactly: phone keyboards must not capitalize or "correct" them.
   const verbatim = () =>
     local.password || local.type === "email" || local.type === "url" || /\b(username|email|url)\b/.test(String(rest.autocomplete ?? ""));
   const input = (next: string) => local.onValueChange?.(next);
   const commit = (next: string) => local.onValueCommit?.(next);
-  const clear = () => {
+  const submitOnEnter = (event: KeyboardEvent) => {
+    if (local.onSubmit && event.key === "Enter" && !event.shiftKey && !event.metaKey) {
+      event.preventDefault();
+      local.onSubmit();
+    }
+  };
+  /** The caller's key handler runs first; Enter submits unless it handled the key. */
+  const keyDown: JSX.EventHandler<HTMLInputElement | HTMLTextAreaElement, KeyboardEvent> = (event) => {
+    const handler = local.onKeyDown;
+    if (typeof handler === "function") handler(event);
+    else if (Array.isArray(handler)) handler[0](handler[1], event);
+    if (!event.defaultPrevented) submitOnEnter(event);
+  };
+  const clear: JSX.EventHandler<HTMLButtonElement, MouseEvent> = (event) => {
+    // Clearing removes the button. Return to the field before notifying the caller, whose handler
+    // may deliberately navigate or move focus somewhere else.
+    event.currentTarget.ownerDocument.getElementById(meta.controlId)?.focus();
     if (local.onClear) {
       local.onClear();
       return;
@@ -131,7 +147,7 @@ export function TextInput(props: TextInputProps): JSX.Element {
             data-monospace={local.monospace ? "true" : undefined}
             style={multiline() ? { "--k2b-editor-lines": String(local.lines ?? 3) } : undefined}
           >
-            <Show when={!compact() && local.icon !== false}>
+            <Show when={!compact() && icon()}>
               <span class="k2b-input-shell__icon k2b-text-input__icon" aria-hidden="true">
                 <i class={icon()} />
                 <i class={activeIcon()} />
@@ -161,12 +177,7 @@ export function TextInput(props: TextInputProps): JSX.Element {
                     input(event.currentTarget.value);
                   }}
                   onChange={(event) => commit(event.currentTarget.value)}
-                  onKeyDown={(event) => {
-                    if (local.onSubmit && event.key === "Enter" && !event.shiftKey && !event.metaKey) {
-                      event.preventDefault();
-                      local.onSubmit();
-                    }
-                  }}
+                  onKeyDown={keyDown}
                 />
               }
             >
@@ -184,12 +195,7 @@ export function TextInput(props: TextInputProps): JSX.Element {
                   input(event.currentTarget.value);
                 }}
                 onChange={(event) => commit(event.currentTarget.value)}
-                onKeyDown={(event) => {
-                  if (local.onSubmit && event.key === "Enter" && !event.shiftKey && !event.metaKey) {
-                    event.preventDefault();
-                    local.onSubmit();
-                  }
-                }}
+                onKeyDown={keyDown}
               >
                 {/* HTML consumes one leading newline in textarea content. */}
                 {isServer ? `\n${value()}` : undefined}

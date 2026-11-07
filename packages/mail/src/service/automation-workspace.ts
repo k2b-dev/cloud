@@ -1,7 +1,7 @@
-import { logger, trace } from "@k2b/cloud/services";
+import { logger } from "@k2b/cloud/services";
 import { listWorkflowRuns } from "@k2b/cloud/workflows/store";
 import { err, fail, ok, type Result } from "@k2b/stdlib";
-import type { Mailbox, MailWorkflow, SenderIdentity } from "../contracts";
+import type { AutomationLogPage, AutomationLogQuery, Mailbox, MailWorkflow, SenderIdentity } from "../contracts";
 import { type MailWorkflowCatalogSnapshot, snapshotMailWorkflowCatalog } from "../workflows/catalog";
 import * as access from "./access";
 import type { MailRequestContext } from "./auth";
@@ -10,11 +10,11 @@ import type { AutomaticReplyConfiguration } from "./automatic-reply-configuratio
 import * as automaticReplies from "./automatic-reply-configuration";
 import {
   type MailAutomationActivityItem,
-  mailBackfillWorkflowId,
   projectMailBackfillActivity,
   projectMailWorkflowActivity,
   summarizeMailAutomationActivity,
 } from "./automation-activity";
+import { listAutomationLog, MAIL_AUTOMATION_LOG_TIME_ZONE } from "./automation-log";
 import type { ConversationReferenceConfiguration } from "./conversation-reference";
 import * as conversationReferences from "./conversation-reference";
 import type { IncomingAutomation, IncomingAutomationActivityMetadata } from "./incoming-automations";
@@ -105,26 +105,13 @@ const loadActivityItems = async (
   const since = new Date(Date.now() - 30 * 24 * 60 * 60 * 1_000);
   const [runs, backfills] = await Promise.all([
     listWorkflowRuns({ appId: "mail", scopeId: mailboxId, since, limit }),
-    trace.list(
-      { page: 1, perPage: limit, offset: 0 },
-      {
-        filter: {
-          appId: "mail",
-          source: "mail:incoming-automation-backfill",
-          category: "backfill",
-          window: "30d",
-          attributeEquals: { "mail.mailbox.id": mailboxId },
-        },
-      },
-    ),
+    incomingAutomations.listIncomingAutomationBackfillActivity(context, mailboxId, since, limit),
   ]);
+  if (!backfills.ok) throw new Error(backfills.error.message);
   const replyWorkflowIds = new Set(replies.map((configuration) => configuration.workflowId));
   const automationResult = await incomingAutomations.listIncomingAutomationActivityMetadata(context, mailboxId, [
     ...runs.map((run) => run.workflowId),
-    ...backfills.spans.flatMap((span) => {
-      const workflowId = mailBackfillWorkflowId(span);
-      return workflowId ? [workflowId] : [];
-    }),
+    ...backfills.data.map((backfill) => backfill.workflowId),
   ]);
   if (!automationResult.ok) throw new Error(automationResult.error.message);
   const automations: IncomingAutomationActivityMetadata[] = automationResult.data;
@@ -138,7 +125,7 @@ const loadActivityItems = async (
     ...runs.map((run) =>
       projectMailWorkflowActivity({ mailboxId, run, replyWorkflowIds, incomingAutomationWorkflowIds, workflowNames, locale }),
     ),
-    ...backfills.spans.map((span) => projectMailBackfillActivity({ mailboxId, span, automationNames, locale })),
+    ...backfills.data.map((backfill) => projectMailBackfillActivity({ mailboxId, backfill, automationNames, locale })),
   ]
     .toSorted((left, right) => right.occurredAt.localeCompare(left.occurredAt))
     .slice(0, limit);
@@ -279,5 +266,28 @@ export const loadMailAutomationActivity = async (
     ...accessResult.data,
     items,
     counts: summarizeMailAutomationActivity(items),
+  });
+};
+
+export type MailAutomationLogData = Omit<MailAutomationAccessData, "mailbox"> & {
+  mailbox: Mailbox & { timeZone: string };
+  log: AutomationLogPage;
+};
+
+export const loadMailAutomationLog = async (
+  context: MailRequestContext,
+  mailboxId: string,
+  query: AutomationLogQuery = {},
+): Promise<Result<MailAutomationLogData>> => {
+  const permission = await access.requireMailboxAccess(context, mailboxId, "read");
+  if (!permission.ok) return permission;
+  const mailbox = await mailboxes.getMailbox(context, mailboxId);
+  if (!mailbox.ok) return mailbox;
+  const log = await listAutomationLog(context, mailboxId, query);
+  if (!log.ok) return log;
+  return ok({
+    mailbox: { ...mailbox.data, timeZone: MAIL_AUTOMATION_LOG_TIME_ZONE },
+    permission: permission.data.permission,
+    log: log.data,
   });
 };

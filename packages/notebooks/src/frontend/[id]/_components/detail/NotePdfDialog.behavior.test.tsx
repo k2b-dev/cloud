@@ -20,6 +20,10 @@ describe("the note PDF dialog", () => {
     const dom = createDomTestHarness();
     dom.document.documentElement.lang = "en";
     dom.root.className = "k2b-ui";
+    // The Tailwind utility the shared notice cell toggles, so the test reads computed visibility.
+    const style = dom.document.createElement("style");
+    style.textContent = ".invisible { visibility: hidden; }";
+    dom.document.head.append(style);
     const downloads: string[] = [];
     Object.assign(dom.window.URL, { createObjectURL: () => "blob:pdf", revokeObjectURL: () => {} });
     dom.window.HTMLAnchorElement.prototype.click = function (this: HTMLAnchorElement) {
@@ -51,6 +55,11 @@ describe("the note PDF dialog", () => {
       signal: () => signal,
       closed: () => closed,
       report: () => dom.document.querySelector("[data-pdf-omissions]"),
+      // The texts of the notices a reader can see in the shared cell.
+      visibleNotices: () =>
+        Array.from(dom.document.querySelectorAll(".k2b-inline-guidance"))
+          .filter((element) => getComputedStyle(element).visibility !== "hidden")
+          .map((element) => element.textContent ?? ""),
       list: () => Array.from(dom.document.querySelectorAll("[data-pdf-omission-list] li")).map((item) => item.textContent ?? ""),
       cleanup: () => {
         while (dialogCore.isOpen()) dialogCore.close();
@@ -69,6 +78,18 @@ describe("the note PDF dialog", () => {
       await tick();
       expect(page.downloads).toEqual(["Trip plan.pdf"]);
       expect(page.closed()).toBe(true);
+      expect(page.report()).toBeNull();
+    } finally {
+      page.cleanup();
+    }
+  });
+
+  test("shows only the data notice until a report arrives", async () => {
+    const page = await setup(async () => pdf());
+    try {
+      const notices = page.visibleNotices();
+      expect(notices).toHaveLength(1);
+      expect(notices[0]).toContain("processed in memory");
       expect(page.report()).toBeNull();
     } finally {
       page.cleanup();
@@ -97,6 +118,9 @@ describe("the note PDF dialog", () => {
       expect(report?.textContent).toContain("3 items are not in the PDF.");
       // The data notice keeps sharing the summary's cell, so the summary takes no new room.
       expect(report?.parentElement?.querySelector('[aria-hidden="true"].invisible')?.textContent).toContain("processed in memory");
+      const notices = page.visibleNotices();
+      expect(notices).toHaveLength(1);
+      expect(notices[0]).toContain("3 items are not in the PDF.");
       const details = page.button("Details")!;
       expect(details.getAttribute("aria-expanded")).toBe("false");
       expect(page.list()).toEqual([]);

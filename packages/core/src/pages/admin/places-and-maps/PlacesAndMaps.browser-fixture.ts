@@ -53,7 +53,7 @@ const setStatus = (): GeoAdminStatus => ({
     customRps: 5,
     customDailyCredits: 3000,
     monthlyCredits: 90000,
-    personDailyCredits: 300,
+
     unreadable: [],
     changedAt: "2026-10-19T09:14:00.000Z",
     changedBy: lea,
@@ -61,7 +61,7 @@ const setStatus = (): GeoAdminStatus => ({
   plans,
   timezone: "Europe/Berlin",
 });
-const usageOf = (month: number, today: number, peopleAtLimit = 0): GeoAdminUsage => ({
+const usageOf = (month: number, today: number): GeoAdminUsage => ({
   month: { period: "2026-10", used: month, limit: 90000, resetsAt: "2026-10-31T23:00:00.000Z" },
   today: { period: "2026-10-20", used: today, allowance: 3000, resetsAt: "2026-10-20T22:00:00.000Z" },
   // 46 %, 22 %, 18 % and 14 % of the month, as in the approved mockup.
@@ -72,7 +72,6 @@ const usageOf = (month: number, today: number, peopleAtLimit = 0): GeoAdminUsage
     { group: "address", credits: month - Math.round(month * 0.46) - Math.round(month * 0.22) - Math.round(month * 0.18) },
   ],
   routeCostOverruns: 0,
-  peopleAtLimit,
   timezone: "Europe/Berlin",
 });
 
@@ -89,7 +88,6 @@ export const PLACES_AND_MAPS_SCENARIOS = {
   leer: () => ({ status: setStatus(), usage: usageOf(0, 0) }),
   "cost-overrun": () => ({ status: setStatus(), usage: { ...usageOf(41230, 2140), routeCostOverruns: 2 } }),
   "budget-cloud": () => ({ status: setStatus(), usage: usageOf(90000, 0) }),
-  "budget-person": () => ({ status: setStatus(), usage: usageOf(41230, 2960, 3) }),
   "verbrauch-fehler": () => ({ status: setStatus(), usage: null }),
   "nicht-geladen": () => ({ status: null, usage: null }),
 } satisfies Record<string, () => { status: GeoAdminStatus | null; usage: GeoAdminUsage | null }>;
@@ -204,7 +202,7 @@ export async function placesAndMapsBrowserFixture() {
         ...next.budget,
         plan: input.plan,
         monthlyCredits: Number(input.monthlyCredits),
-        personDailyCredits: Number(input.personDailyCredits),
+
         ...(input.plan === "custom" ? { customRps: Number(input.customRps), customDailyCredits: Number(input.customDailyCredits) } : {}),
         changedAt: "2026-10-20T12:00:00.000Z",
         changedBy: lea,
@@ -230,7 +228,7 @@ export async function placesAndMapsBrowserFixture() {
       page: { title?: string; theme: "light" | "dark" };
     };
   }>();
-  pages.get("/admin/places-and-maps", (c) => {
+  pages.get("/admin/base/places", (c) => {
     const locale = c.req.query("locale") === "en" ? "en" : "de";
     const theme = c.req.query("theme") === "dark" ? "dark" : "light";
     const scenario = Object.entries(PLACES_AND_MAPS_SCENARIOS).find(([name]) => name === c.req.query("state"));
@@ -279,7 +277,7 @@ export async function placesAndMapsBrowserFixture() {
     },
   });
   return {
-    url: `http://127.0.0.1:${server.port}/admin/places-and-maps`,
+    url: `http://127.0.0.1:${server.port}/admin/base/places`,
     control,
     close() {
       server.stop(true);

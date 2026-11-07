@@ -577,6 +577,7 @@ export default function BasesAdmin(props: { initialPolicy: PulsePolicy | null; i
 
   const columns = (): DataTableColumn<AdminBaseRow>[] => [
     { id: "base", header: t().colBase, value: "name" },
+    { id: "profile", header: t().colProfile, nowrap: true, value: (row) => profileLabel(t(), row.store.profile) },
     { id: "admins", header: t().colAdmins, value: (row) => row.admins.join(", "), class: "max-sm:hidden" },
     { id: "storage", header: t().colStorage, align: "right", nowrap: true, value: (row) => row.store.usage?.bytes ?? null },
     {
@@ -711,6 +712,7 @@ export default function BasesAdmin(props: { initialPolicy: PulsePolicy | null; i
                     </Show>
                   </span>
                 );
+              if (col.id === "profile") return profileLabel(t(), row.store.profile);
               if (col.id === "admins")
                 return (
                   <span class="truncate text-secondary">

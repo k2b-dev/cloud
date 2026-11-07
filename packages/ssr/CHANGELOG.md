@@ -1,5 +1,26 @@
 # Changelog
 
+## [0.21.0](https://github.com/k2b-dev/cloud/compare/npm-ssr-v0.20.2...npm-ssr-v0.21.0) (2026-11-03)
+
+
+### Features
+
+* **accounts:** pages, filters and actions change without a document load ([#2535](https://github.com/k2b-dev/cloud/issues/2535)) ([7753c4b](https://github.com/k2b-dev/cloud/commit/7753c4b15804139486bfd58a01bb6d28e8186283))
+
+## [0.20.2](https://github.com/k2b-dev/cloud/compare/npm-ssr-v0.20.1...npm-ssr-v0.20.2) (2026-10-30)
+
+
+### Bug Fixes
+
+* **ssr:** a view transition that has not reached its update within 200 ms is skipped ([#2126](https://github.com/k2b-dev/cloud/issues/2126)) ([4f3d7c2](https://github.com/k2b-dev/cloud/commit/4f3d7c2cdc6d2e46732b95b39e2cf1afaf64b11d))
+
+## [0.20.1](https://github.com/k2b-dev/cloud/compare/npm-ssr-v0.20.0...npm-ssr-v0.20.1) (2026-10-27)
+
+
+### Bug Fixes
+
+* **ssr:** a skipped view transition raises no unhandled error ([#1918](https://github.com/k2b-dev/cloud/issues/1918)) ([e21b7e6](https://github.com/k2b-dev/cloud/commit/e21b7e6d1e4d608f0185c08a4d1a79883854f576))
+
 ## [0.20.0](https://github.com/k2b-dev/cloud/compare/npm-ssr-v0.19.0...npm-ssr-v0.20.0) (2026-10-23)
 
 

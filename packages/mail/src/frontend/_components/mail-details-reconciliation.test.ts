@@ -10,6 +10,7 @@ import {
   reconcileConversationTags,
   reconcileReminder,
 } from "./mail-details-reconciliation";
+import { summaryState } from "./mail-summary-fixtures";
 
 const collaboration = (revision: number, workStatus: ConversationCollaboration["workStatus"]): ConversationCollaboration => ({
   conversationId: "00000000-0000-4000-8000-000000000001",
@@ -57,8 +58,8 @@ const reminder = (revision: number, state: ConversationReminder["state"] = "pend
 
 describe("Mail details reconciliation", () => {
   test("applies a confirmed conversation summary without regressing a newer live revision", () => {
-    const saved = { summary: "Saved now", summaryRevision: 2, conversationRevision: 5 };
-    const newer = { summary: "Updated elsewhere", summaryRevision: 3, conversationRevision: 6 };
+    const saved = summaryState({ summary: "Saved now", summaryRevision: 2, conversationRevision: 5 });
+    const newer = summaryState({ summary: "Updated elsewhere", summaryRevision: 3, conversationRevision: 6 });
 
     expect(reconcileConversationSummary(null, saved)).toEqual(saved);
     expect(reconcileConversationSummary(saved, newer)).toEqual(newer);

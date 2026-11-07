@@ -1,3 +1,4 @@
+import type { GeoAvailabilityData } from "@k2b/cloud/contracts/geo";
 import { mutation as mutations } from "@k2b/stdlib/solid";
 import { Button, InlineGuidance, PanelDialog, useLocale } from "@k2b/ui";
 import { createSignal, onCleanup, Show } from "solid-js";
@@ -13,6 +14,7 @@ type Props = {
   parent: Contact;
   /** Resolves with the saved/linked member, or null if cancelled. */
   close: (member: Contact | null) => void;
+  geoAvailability?: GeoAvailabilityData;
 };
 
 /**
@@ -71,6 +73,7 @@ export default function AddMemberDialog(props: Props) {
           icon="ti ti-user-plus"
           onCancel={() => setMode("pick")}
           onSaved={(created) => props.close(created)}
+          geoAvailability={props.geoAvailability}
         />
       }
     >

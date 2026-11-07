@@ -1,0 +1,6 @@
+### A planner test asserted a plan on statistics another test left behind
+
+- **What happened:** `batch candidates have an indexed batch/order access path without sorting the whole activity table` in `packages/filesv2/src/service/activity-reader.integration.test.ts` failed on #2174, which does not touch filesv2 (#2180). The plan read the history through the location indexes and sorted the result.
+- **Root cause:** The test seeded one row and asserted a plan, so the planner used whatever statistics the table had. `TRUNCATE … CASCADE` before each test empties `filesv2.activity` and resets its row count, but column statistics stay. An autoanalyze during the previous test, with 500 rows in one batch and one location, made the location indexes look cheaper. Emulating that autoanalyze reproduced the failure every time. The test also asserted "no Sort node", which is stricter than the intent: sorting the batch's own rows is fine.
+- **Error class:** A test asserts a planner choice without setting the data and statistics that choice depends on.
+- **Guard:** The test inserts 2,000 rows of one location in 200 batches, the anchor's among them, runs `ANALYZE`, and asserts that every read of the history goes through `filesv2_activity_batch_effective` with no Seq Scan. It passes with and without the emulated stale statistics, and fails when the batch index is dropped.

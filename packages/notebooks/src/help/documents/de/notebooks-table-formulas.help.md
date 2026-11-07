@@ -47,7 +47,7 @@ Tabellenformeln machen aus Zellen einer Markdown-Tabelle berechnete Werte. Sie s
 
 ### Autovervollständigung und Darstellung nutzen dieselben Funktionen
 
-Die Autovervollständigung für Tabellen, die Vorschau beim Bearbeiten und der Lesemodus nutzen dieselben Funktionsnamen.
+Vorschläge für Funktionen und Spalten gibt es beim Bearbeiten einer Zelle in **Formatiert** und in der Ansicht **Markdown**. Beide Ansichten und der Lesemodus nutzen dieselben Funktionsnamen.
 
 ### Namen unterscheiden keine Groß- und Kleinschreibung
 

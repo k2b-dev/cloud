@@ -1,13 +1,12 @@
 import { afterAll, beforeAll, expect, spyOn, test } from "bun:test";
+import { sql } from "@k2b/cloud";
 import type { User } from "@k2b/cloud/contracts";
 import { oauthTokens, toPgTextArray } from "@k2b/cloud/services";
-import { sql } from "bun";
 import { uniqueCallerAddress } from "../../../../scripts/fixtures/caller-address";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import api from "../api";
 import type { FolderRole, SenderDispositionInput } from "../contracts";
 import { newShortId } from "../lib/short-id";
-import { migrate } from "../migrate";
 import { grantMailboxAccess } from "./access";
 import type { MailRequestContext } from "./auth";
 import { DISPOSITION_LIMIT } from "./bulk-disposition";
@@ -121,7 +120,6 @@ suite("sender bulk disposition", () => {
     });
 
   beforeAll(async () => {
-    await migrate();
     for (const role of ["owner", "reader", "writer", "assigned-writer"]) {
       const [row] = await sql<{ id: string; uid: string }[]>`
         INSERT INTO auth.users (uid, provider, profile, display_name, admin)
@@ -205,7 +203,7 @@ suite("sender bulk disposition", () => {
       VALUES (${newShortId()}, ${mailboxId}::uuid, 'Own', 'own@cleanup.test', 'verified')
     `;
     verifyToken = spyOn(oauthTokens, "verifyAccessToken").mockImplementation(async (token) =>
-      token === "owner" ? { kind: "user", payload: {}, user: required(users[0]), scopes: [] } : null,
+      token === "owner" ? { kind: "user", payload: {}, user: required(users[0]), scopes: ["read", "write"] } : null,
     );
   });
 

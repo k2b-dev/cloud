@@ -1,16 +1,21 @@
-import { hasRole } from "@k2b/cloud/contracts";
+import type { CapabilityCaller } from "@k2b/cloud/capabilities/server";
+import { hasRole, type PermissionLevel } from "@k2b/cloud/contracts";
 import { type AuthContext, expectUserBackedActor, getDateConfig, getLocale } from "@k2b/cloud/server";
 import { get } from "@k2b/cloud/services";
+import { extractNamedBlockSummaries } from "@k2b/editor/markdown/lib/named-blocks";
 import type { Context } from "hono";
 import { toPublicNotebook, toPublicNoteComment } from "@/api/public-resources";
-import { orderBookTree } from "@/lib/book-tree";
-import { extractNamedBlockSummaries } from "@/lib/named-blocks";
 import { isPresentationMode, type PresentationMode, resolvePresentationMode } from "@/lib/presentation-mode";
 import { requestedPresentationMode } from "@/lib/presentation-url";
-import { parseSidebarFilter } from "@/lib/sidebar-filter";
+import { parseQueryPages, QUERY_PAGES_PARAM } from "@/lib/query-blocks";
+import { parseSidebarFilter, type SidebarFilter } from "@/lib/sidebar-filter";
+import { SIDEBAR_PAGE_SIZE, type SidebarTreeState } from "@/lib/sidebar-tree";
 import { notebooksService } from "@/service";
+import { countOpenAnnotations } from "@/service/annotation-count";
+import * as annotations from "@/service/annotations";
 import { loadBookNote } from "@/service/book";
 import { loadSelectedNoteRouteState, type SelectedNoteRouteState } from "@/service/route-state";
+import { resolveNotebookNoteIds } from "@/service/tree-levels";
 import { buildNoteUrl } from "../params";
 import { extractTocFromMarkdown } from "./_components/detail/toc";
 import { parseGraphViewState } from "./_components/graph/view-state";
@@ -58,19 +63,17 @@ export async function loadNotebookPageData(c: NotebookPageContext) {
   notebook = snapshotNotebook;
   const graphBack = isGraphMode ? parseGraphBack(c.req.query("back"), notebook.shortId) : undefined;
   const locale = getLocale(c);
-  const internalTree = await notebooksService.note.getTree({ notebookId, locale });
-  const tree = projectTree(internalTree, notebook.shortId);
   const publicNotebook = projectNotebook(notebook);
   // A lock only turns Write into Read-only, so Book is known before a note is chosen.
   const isBookMode =
     resolvePresentationMode({ permission, requestedMode: mode, defaultPresentationMode: notebook.defaultPresentationMode }) === "book" &&
     !isVersionsMode &&
     !isGraphMode;
-  const bookTree =
-    isBookMode || graphShell === "book" ? orderBookTree(tree, { id: (node) => node.id, homeId: notebook.homepageNoteShortId, locale }) : [];
+  const readsBook = isBookMode || graphShell === "book";
 
   const cookieHeader = c.req.header("Cookie");
   const settings = parseSettings(cookieHeader, notebook.shortId);
+  const sidebarScope = { notebookId, sort: settings.treeSort, locale, homepageId: notebook.homepageNoteId };
   const detailPanelOpen = parseDetailPanelOpen(cookieHeader);
   const noteParam = c.req.param("noteId");
   const selectedNoteId = await resolveSelectedNoteId({
@@ -79,8 +82,11 @@ export async function loadNotebookPageData(c: NotebookPageContext) {
     graphNoteParam: isGraphMode ? c.req.query("note") : undefined,
     lastNoteId: settings.lastNoteId,
     homepageNoteId: notebook.homepageNoteShortId,
-    // Book opens where its sidebar starts.
-    firstNoteId: (isBookMode || graphShell === "book" ? bookTree : tree)[0]?.id ?? null,
+    // Book opens where its sidebar starts; elsewhere the first note of the top level in the notebook order.
+    firstNoteId: () =>
+      readsBook
+        ? notebooksService.note.sidebar.firstNote({ ...sidebarScope, sort: "title", book: true })
+        : notebooksService.note.sidebar.firstNote({ ...sidebarScope, sort: "title", homepageId: null }),
   });
   if (noteParam && !selectedNoteId) return { kind: "not_found" as const };
 
@@ -88,6 +94,7 @@ export async function loadNotebookPageData(c: NotebookPageContext) {
     notebookId,
     notebookShortId: notebook.shortId,
     selectedNoteId,
+    geoCaller: { cookie: c.req.header("Cookie"), authorization: c.req.header("Authorization"), locale, signal: c.req.raw.signal },
     isVersionsMode,
     canWrite,
     userId: user.id,
@@ -96,6 +103,7 @@ export async function loadNotebookPageData(c: NotebookPageContext) {
     requestedMode: mode,
     defaultPresentationMode: notebook.defaultPresentationMode,
     locale,
+    queryPages: parseQueryPages(c.req.query(QUERY_PAGES_PARAM)),
   });
   if (noteParam && !selected.note) return { kind: "not_found" as const };
 
@@ -130,7 +138,7 @@ export async function loadNotebookPageData(c: NotebookPageContext) {
     selected.note && !isVersionsMode && !isGraphMode && !isBookMode
       ? await notebooksService.note.getByShortId({ shortId: selected.note.id })
       : null;
-  const [attachmentCount, tags, favoriteRows, commentsPage] = await Promise.all([
+  const [attachmentCount, tags, favoriteRows, commentsPage, pageTemplates] = await Promise.all([
     notebooksService.attachment.count({ notebookId }),
     notebooksService.tag.listForNotebook({ notebookId }),
     notebooksService.note.favorites.listIds({ notebookId, userId: user.id }),
@@ -142,7 +150,26 @@ export async function loadNotebookPageData(c: NotebookPageContext) {
           pagination: { page: 1, perPage: 30 },
         })
       : Promise.resolve(null),
+    notebooksService.pageTemplate.list({ notebookId, permission, locale }),
   ]);
+  // The margin's comments arrive with the page, so its first render already shows them where they belong.
+  const initialAnnotations =
+    selectedCommentNote?.notebookId === notebookId && selected.note
+      ? await annotations
+          .list(
+            selected.note.id,
+            {},
+            {
+              actor: c.get("actor"),
+              accessSubject: c.get("accessSubject"),
+              locale: getLocale(c),
+              requestId: c.req.raw.headers.get("x-request-id")?.slice(0, 200) ?? crypto.randomUUID(),
+              signal: c.req.raw.signal,
+            },
+          )
+          .then((result) => (result.ok ? result.data : null))
+          .catch(() => null)
+      : null;
   const initialCommentsPage =
     commentsPage && selected.note
       ? {
@@ -151,9 +178,18 @@ export async function loadNotebookPageData(c: NotebookPageContext) {
         }
       : null;
 
+  const sidebarFilter = parseSidebarFilter(new URL(c.req.url).searchParams);
+  const [selectedInternalId] = selectedNoteId ? [...(await resolveNotebookNoteIds(notebookId, [selectedNoteId])).values()] : [];
+  const bookNavigation = readsBook ? await loadBookNavigation(notebook, selectedInternalId ?? null, locale) : EMPTY_NAVIGATION;
+  const [sidebarTree, sidebarList] = await Promise.all([
+    notebooksService.note.sidebar.tree({ ...sidebarScope, selectedNoteId: selectedInternalId ?? null }),
+    loadFirstListPage(notebookId, user.id, sidebarFilter),
+  ]);
+
   const ctx: NotebookContext = {
     notebook: publicNotebook,
-    tree,
+    sidebarTree,
+    sidebarList,
     selectedNoteId,
     userId: user.id,
     settings,
@@ -163,11 +199,20 @@ export async function loadNotebookPageData(c: NotebookPageContext) {
     attachmentCount,
     favoriteNoteIds: favoriteRows.map((row) => row.noteId),
     tags,
+    pageTemplates: pageTemplates.ok ? pageTemplates.data : [],
     workspaceCursor,
     dateConfig: getDateConfig(c),
-    sidebarFilter: parseSidebarFilter(new URL(c.req.url).searchParams),
+    sidebarFilter,
     presentationMode: isGraphMode ? graphFrom : requestedPresentationMode(new URL(c.req.url).searchParams),
   };
+
+  const showDetailPanel = !!selected.note && !isVersionsMode && !isGraphMode && !isBookMode;
+  // Everyone with access of their own, a group's, or all signed-in people's may see who else has access; public
+  // access alone may not. `GET /:id/access/members` decides the same way.
+  const accessVisible =
+    showDetailPanel &&
+    (hasRole(user, "admin") ||
+      (await notebooksService.notebook.access.memberPermission({ notebookId, subject: c.get("accessSubject") })) !== "none");
 
   const appUrl = await get<string>("app.url");
   const requestUrl = new URL(c.req.url);
@@ -176,7 +221,6 @@ export async function loadNotebookPageData(c: NotebookPageContext) {
     kind: "ok" as const,
     user,
     notebook: publicNotebook,
-    tree,
     permission,
     canWrite,
     isVersionsMode,
@@ -195,7 +239,7 @@ export async function loadNotebookPageData(c: NotebookPageContext) {
     readonlyMode,
     presentationMode,
     isBookMode,
-    bookTree,
+    bookNavigation,
     bookHtml: selected.bookHtml,
     graph,
     versionHistory: publicVersionHistory,
@@ -203,10 +247,15 @@ export async function loadNotebookPageData(c: NotebookPageContext) {
     appUrl,
     currentHref: `${requestUrl.pathname}${requestUrl.search}`,
     detailPanelOpen,
-    showDetailPanel: !!selected.note && !isVersionsMode && !isGraphMode && !isBookMode,
+    showDetailPanel,
+    accessVisible,
     panelAttachments: selected.routeState?.panelAttachments ?? [],
     backlinks: selected.routeState?.backlinks ?? [],
+    relations: selected.routeState?.relations ?? { outgoing: [], tags: [] },
     initialCommentsPage,
+    initialAnnotations,
+    // Without the count Book just leaves out its comments entry; the note itself still opens.
+    bookOpenComments: isBookMode && selected.internalNoteId ? await countOpenAnnotations(selected.internalNoteId).catch(() => 0) : 0,
     dateConfig: ctx.dateConfig,
   };
 }
@@ -231,7 +280,7 @@ async function resolveSelectedNoteId(params: {
   graphNoteParam: string | undefined;
   lastNoteId: string | null;
   homepageNoteId: string | null;
-  firstNoteId: string | null;
+  firstNoteId: () => Promise<string | null> | string | null;
 }): Promise<string | null> {
   const resolveNoteInNotebook = async (shortId: string | null | undefined): Promise<string | null> => {
     if (!shortId) return null;
@@ -246,10 +295,11 @@ async function resolveSelectedNoteId(params: {
   if (resolvedFromGraph) return resolvedFromGraph;
   const resolvedFromCookie = await resolveNoteInNotebook(params.lastNoteId);
   const resolvedHomepage = await resolveNoteInNotebook(params.homepageNoteId);
-  return resolvedFromPath ?? resolvedFromCookie ?? resolvedHomepage ?? params.firstNoteId;
+  return resolvedFromPath ?? resolvedFromCookie ?? resolvedHomepage ?? (await params.firstNoteId());
 }
 
 async function loadSelectedNote(params: {
+  geoCaller?: CapabilityCaller;
   notebookId: string;
   notebookShortId: string;
   selectedNoteId: string | null;
@@ -261,6 +311,8 @@ async function loadSelectedNote(params: {
   requestedMode: string | undefined;
   defaultPresentationMode: PresentationMode;
   locale: string;
+  /** The page each query of a Book page shows, from the address. */
+  queryPages: ReadonlyMap<number, number>;
 }): Promise<{
   internalNoteId: string | null;
   note: SelectedNote | null;
@@ -281,9 +333,11 @@ async function loadSelectedNote(params: {
   });
   if (presentationMode === "book" && !params.isVersionsMode && params.requestedMode !== "graph") {
     const book = await loadBookNote({
+      pages: params.queryPages,
       notebookId: params.notebookId,
       notebookShortId: params.notebookShortId,
       noteShortId: params.selectedNoteId,
+      geoCaller: params.geoCaller,
       userId: params.userId,
       locale: params.locale,
       bypassAccess: params.bypassAccess,
@@ -295,7 +349,6 @@ async function loadSelectedNote(params: {
         id: book.note.shortId,
         title: book.note.title,
         contentMd: null,
-        yjsSnapshot: null,
         historyIncomplete: book.note.historyIncomplete,
         lockedAt: book.note.lockedAt,
         parentId: null,
@@ -327,7 +380,6 @@ async function loadSelectedNote(params: {
         createdBy: note.createdBy,
         parentId: null,
         contentMd: null,
-        yjsSnapshot: null,
       },
       routeState: null,
       tocItems: [],
@@ -345,7 +397,6 @@ async function loadSelectedNote(params: {
       id: noteMeta.shortId,
       title: noteMeta.title,
       historyIncomplete: noteMeta.historyIncomplete,
-      yjsSnapshot: null,
       contentMd: noteMeta.contentMd,
       lockedAt: noteMeta.lockedAt,
       parentId: noteMeta.parentId
@@ -386,33 +437,48 @@ async function loadSelectedNote(params: {
 
 export const projectNotebook = toPublicNotebook;
 
-export function projectTree(
-  nodes: Awaited<ReturnType<typeof notebooksService.note.getTree>>,
-  notebookShortId: string,
-): NotebookContext["tree"] {
-  const byUuid = new Map<string, string>();
-  const index = (items: typeof nodes): void => {
-    for (const item of items) {
-      byUuid.set(item.id, item.shortId);
-      index(item.children);
-    }
-  };
-  index(nodes);
-  const project = (items: typeof nodes): NotebookContext["tree"] =>
-    items.map((item) => ({
-      id: item.shortId,
-      notebookId: notebookShortId,
-      parentId: item.parentId ? (byUuid.get(item.parentId) ?? null) : null,
-      title: item.title,
-      position: item.position,
-      hasChildren: item.hasChildren,
-      yjsSnapshotAt: item.yjsSnapshotAt,
-      contentMd: item.contentMd,
-      createdBy: item.createdBy,
-      createdAt: item.createdAt,
-      updatedAt: item.updatedAt,
-      lockedAt: item.lockedAt,
-      children: project(item.children),
-    }));
-  return project(nodes);
-}
+/** Book's navigation on arrival: the way to the open page in the reading order, never the whole tree. */
+export const loadBookNavigation = (notebook: { id: string; homepageNoteId: string | null }, selectedNoteId: string | null, locale = "en") =>
+  notebooksService.note.sidebar.book({ notebookId: notebook.id, homepageId: notebook.homepageNoteId, locale, selectedNoteId });
+
+export const EMPTY_NAVIGATION: SidebarTreeState = {
+  total: 0,
+  levels: [{ parentId: null, total: 0, offset: 0, items: [] }],
+  expandedIds: [],
+};
+
+/** The sidebar of a notebook page that shows no note, such as the attachments or a tag. */
+export const loadSidebarWithoutNote = async (params: {
+  notebook: { id: string; homepageNoteId: string | null };
+  userId: string;
+  sort: NotebookContext["settings"]["treeSort"];
+  locale: string;
+  filter: SidebarFilter;
+  permission: PermissionLevel;
+}) => {
+  const [sidebarTree, sidebarList, pageTemplates] = await Promise.all([
+    notebooksService.note.sidebar.tree({
+      notebookId: params.notebook.id,
+      sort: params.sort,
+      locale: params.locale,
+      homepageId: params.notebook.homepageNoteId,
+      selectedNoteId: null,
+    }),
+    loadFirstListPage(params.notebook.id, params.userId, params.filter),
+    notebooksService.pageTemplate.list({ notebookId: params.notebook.id, permission: params.permission, locale: params.locale }),
+  ]);
+  return { sidebarTree, sidebarList, pageTemplates: pageTemplates.ok ? pageTemplates.data : [] };
+};
+
+/** The first page of the sidebar filter in the address, so the server and the first render show the same list. */
+export const loadFirstListPage = (notebookId: string, userId: string, filter: SidebarFilter) =>
+  filter.view
+    ? notebooksService.note.sidebar.list({
+        notebookId,
+        userId,
+        view: filter.view,
+        tag: filter.view === "tag" ? filter.tag : undefined,
+        offset: 0,
+        limit: SIDEBAR_PAGE_SIZE,
+      })
+    : Promise.resolve(null);

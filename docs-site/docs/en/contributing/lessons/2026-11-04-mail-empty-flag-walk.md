@@ -1,0 +1,6 @@
+### A flag walk on an empty folder repeated every few seconds
+
+- **What happened:** When the CONDSTORE modification sequence of an empty folder rose, Mail opened a flag walk over UIDs 1 to 0. The walk never ended. Every batch asked for a continuation at sync priority, so each such folder synced about every 12 seconds. In production that was about 1,250 empty runs an hour per small mailbox and about 20,000 an hour in all, plus most of the busy lease attempts.
+- **Root cause:** `fetchFlagStep` opened the walk with `flagMaxUid` set to the folder's highest UID, 0 for an empty folder. The check for a finished walk then returned early, before the code that closes the walk, so `flagNextLow` stayed set.
+- **Error class:** A cursor walk without a termination guard for an empty range.
+- **Guard:** `sync-recovery.integration.test.ts`. "a flag walk never starts on an empty folder, and one left open there ends in one batch" requires a modseq bump on an empty folder to cause no continuation. It also requires both stuck cursor shapes from production to close in the next batch, so existing cursors heal without a migration. "a flag walk over a folder ends after one batch per window" bounds a real walk to one batch per 5,000 UIDs. A walk now also ends when the server stops reporting a modification sequence, and an empty folder takes a new one without a walk.

@@ -54,6 +54,8 @@ Changes are emitted immediately. This makes the component suitable for URL-backe
 | `iconOnly` | `boolean` | `false` | Shows only the icon; the label stays the accessible name and appears as its tooltip. |
 | `variant` | `ButtonVariant` | none | Uses the standard button appearance, for example `input` beside a search field. Omit to keep the default filter field. |
 | `showValue` | `boolean` | `false` | An active chip names its first value instead of a count ("Tags: Customer"). Use it in `AppWorkspace.Head`. |
+| `only` | `boolean` | `false` | Each option of a `multiple` section offers **Only** at the end of its row. |
+| `swatches` | `boolean` | `false` | The trigger shows the colors of the first four chosen options in the place of its icon. |
 
 ## Sections and options
 
@@ -63,6 +65,7 @@ type FilterChipSection = {
   options: readonly FilterChipOption[];
   multiple?: boolean;
   layout?: "row";
+  toggleAll?: boolean;
 };
 
 type FilterChipOption = {
@@ -70,8 +73,25 @@ type FilterChipOption = {
   label: string;
   icon?: string;
   color?: string;
+  trailing?: JSX.Element;
 };
 ```
+
+For a long list of sources, such as the calendars of several apps, three
+options keep the choice quick:
+
+- `toggleAll` on a labelled `multiple` section offers **All** beside its
+  label, and **None** once all its options are chosen;
+- `only` offers **Only** at the end of each row of a `multiple` section: it
+  chooses that option alone among the `multiple` sections and keeps the
+  choices of single-select sections;
+- `trailing` adds quiet information at the end of an option's row, such as a
+  short note or a loading or warning icon. Give an icon its own accessible
+  name, for example `role="img"` with `aria-label`.
+
+With `swatches`, the trigger shows the colors of the first four chosen options
+in the place of its icon, as a quiet hint of what is in view; the label still
+names the filter, so color is never the only signal.
 
 Use section labels when the dropdown combines different filter dimensions. Icons suit single-select status choices. Colors can identify tags or categories. A row section suits a short display choice that belongs with the filters, such as what a color shows, without a control of its own in the toolbar.
 
@@ -149,13 +169,18 @@ const sections: FilterChipSection[] = [
 
 Use `FilterToggle` for one on/off filter, such as **Service accounts** or
 **Only mine**. The parent owns `active` and updates the URL or filter state.
-It looks like a `FilterChip`, and an active toggle has the same selection fill.
+It looks like a `FilterChip`, and an active toggle has the same selected edge and fill.
 Selection changes only color and background, so neighboring chips stay in place.
 
 Pass `href` to render a native link that works without JavaScript. The active
 link carries `aria-current="true"`. Without `href`, it renders a button with
 `aria-pressed`; use `onClick` to update the controlled state. A disabled toggle
 renders a disabled button even when `href` is supplied.
+
+A button toggle may open a dialog with more filters, such as a filter builder:
+set `opensDialog`, and `active` while those filters apply. Set `busy` while
+the dialog's code loads; the button stays enabled, so it keeps focus for the
+dialog to return it.
 
 ```tsx
 const [onlyMine, setOnlyMine] = createSignal(false);
@@ -182,6 +207,8 @@ type FilterToggleProps = {
   active: boolean;
   href?: string;
   onClick?: (event: MouseEvent) => void;
+  opensDialog?: boolean;
+  busy?: boolean;
   title?: string;
   disabled?: boolean;
   class?: string;

@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, expect, spyOn, test } from "bun:test";
 import { Hono } from "hono";
+import { logger } from "../../services/logging";
 import type { AuthContext } from "./auth";
 import { requestLogger } from "./request-logger";
 
@@ -102,4 +103,13 @@ test("panel request logging excludes the context parameter from messages and met
   expect(entries[0]?.[2]).toMatchObject({ path: "/app/fixture/panel" });
   expect(JSON.stringify(entries)).not.toContain("cloud_panel_context");
   expect(JSON.stringify(entries)).not.toContain("private-place");
+});
+
+test("the platform logger scrubs one-time tokens in console messages and ordinary metadata", () => {
+  const token = `cl_${"a".repeat(43)}`;
+  logger("http").error(`Failed https://example.test/confirm?code=${token}`, { address: `/confirm/${token}`, nested: { value: token } });
+  expect(entries).toHaveLength(1);
+  expect(entries[0]?.[1]).toBe("Failed https://example.test/confirm?code=[REDACTED]");
+  expect(entries[0]?.[2]).toEqual({ address: "/confirm/[REDACTED]", nested: { value: "[REDACTED]" } });
+  expect(JSON.stringify(entries)).not.toContain(token);
 });

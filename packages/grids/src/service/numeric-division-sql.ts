@@ -1,4 +1,4 @@
-import { sql } from "bun";
+import { sql } from "@k2b/cloud";
 
 /** Ignore insignificant display zeroes, matching the formula runtime's decimal values. */
 export const numericDivideSql = (left: unknown, right: unknown) =>

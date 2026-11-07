@@ -1,5 +1,6 @@
 import { type JSX, Show } from "solid-js";
 import type { OpenDialogOptions } from "../feedback/dialog-core";
+import type { DialogTone } from "../feedback/dialog-tone";
 import { suppressTextSelection } from "../internal/text-selection";
 import { useUiMessages } from "../intl/messages";
 import PanelDialog from "./PanelDialog";
@@ -38,6 +39,8 @@ export type BottomSheetProps = {
   dismissDisabled?: boolean;
   dismissLabel?: string;
   handle?: boolean;
+  /** See `PanelDialog`'s `tone`. */
+  tone?: DialogTone;
 };
 
 function BottomSheetRoot(props: BottomSheetProps) {
@@ -48,7 +51,7 @@ function BottomSheetRoot(props: BottomSheetProps) {
     if (!props.dismissDisabled) void props.onDismiss();
   };
   return (
-    <PanelDialog>
+    <PanelDialog tone={props.tone}>
       <Show when={props.handle !== false}>
         <button
           type="button"

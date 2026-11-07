@@ -75,19 +75,45 @@ device: an iPad in Split View narrower than 48 rem shows the tab bar.
 - The head shows the decorative `logo` and the app's `title`, as high as the
   page's header, so both titles share one line.
 - `items`, each `sections` group, and `footer` take the tab bar's items, with
-  an optional `count` after the label, such as unread messages. A group
+  an optional quiet `count` after the label, such as open tasks: a number, or
+  an element that renders one, such as a count read in the browser. An item's
+  `badge`, which calls for attention, such as unread messages, takes the
+  count's place. A group
   without items is left out. Rows are 44 px with 1rem labels; the open item is
-  in the action colour and weight. A press shows the item's page frame at
+  tinted like the selected row of a web sidebar, in the action colour and
+  weight. A press shows the item's page frame at
   once, as a tab does, and the row of a loading page pulses.
-- The sidebar is a muted surface beside the page, without a rule. Beside it,
-  the header and the content are the page's surface and run to the window's
-  edge, with a 1.25 rem gutter.
+- The sidebar lies on the page's surface, like the web's sidebar, without a
+  fill or a rule; space separates it from the page. The header and the content
+  run to the window's edge, with a 1.25 rem gutter.
 - `MobileShell.Header` takes `sidebarTitle` for a page whose title the
   sidebar's head already says, such as Start titled with the app's name on the
   phone. `back.withSidebar: false` hides Back beside the sidebar when it leads
   to a destination the sidebar lists, such as Start from Settings.
 - Toasts stand centred at the bottom of the page beside the sidebar, never over
   it.
+
+### Content that owns the bottom edge
+
+Mark an element `data-k2b-shell-bottom` when it owns the bottom edge of the
+page, such as a chat's composer. The shell counts it as the footer, so toasts
+stand above it at every width. While the on-screen keyboard is up, the shell
+reads its height from `visualViewport` and the footer steps aside. Mark the
+element `data-k2b-shell-bottom="keyboard"` when it should stand above the
+keyboard, such as a quick add field; content that follows the visual viewport
+itself, such as a chat's frame, keeps the plain attribute. The shell carries
+`data-k2b-keyboard` and the height as `--k2b-mobile-shell-keyboard`
+meanwhile.
+
+### A screen of its own
+
+Pass `screen` when the content is a screen of its own, such as an open chat on
+a phone with its composer at the bottom edge. The footer steps aside, and the
+content pads the bottom safe area itself. Content that opens or leaves such a
+screen without loading a page calls `MobileShell.setScreen(element, screen)`
+with any element inside the shell; the server renders the first state through
+the prop, so the first paint already matches. Beside the sidebar nothing
+changes, because there is no footer.
 
 ### Content with its own heads
 
@@ -106,7 +132,12 @@ the scroll area, not fixed or sticky layers.
 ### Touch rules
 
 While a shell is mounted, these rules apply to the whole page, portalled
-dialogs and menus included. They never apply to pages without a shell.
+dialogs and menus included. They never apply to pages without a shell. The
+shell marks the document with `data-k2b-mobile-shell` on `<html>` when it
+mounts (`"sidebar"` while it shows its sidebar). Inside the shell the sizes
+apply from the first paint; a host that renders the page on the server writes
+`data-k2b-mobile-shell=""` into its `<html>`, so the document rules apply from
+the first paint too.
 
 - `html` and `body` do not scroll and have `overscroll-behavior: none`, so
   there is nothing to rubber-band. Only the content scrolls, and it contains
@@ -205,10 +236,23 @@ restored from the back/forward cache shows its own frame again. Give each
 tab's page the title of its tab item, so the header does not change when the
 page arrives.
 
+In a [view transition](https://developer.mozilla.org/docs/Web/API/View_Transition_API),
+within the document or between documents of a host that turns those on, the
+frame stands still and only the content area takes part. The header, the
+sidebar, and the footer carry the names `k2b-mobile-shell-header`,
+`k2b-mobile-shell-sidebar`, and `k2b-mobile-shell-footer`. Their groups show
+the next page's frame at once, without animation, and a new title replaces
+the old one immediately. One shell per page keeps the names unique. A part
+that is not shown takes no part, and while a modal dialog is open the frame
+stays in the page's own picture, under the dialog's backdrop. Between
+documents, the frame stands still only when it is in the new page's markup
+when the browser first shows that page, as with a page rendered on the server.
+
 A page that renders the shell only on the server, with islands inside
 it, calls `observeMobileShell(root)` once in the browser instead, with the
-shell's root element. It keeps the same measurements, the scroll fade, and link
-taps working and returns the cleanup:
+shell's root element. It keeps the same measurements, the scroll fade, link
+taps, and the document's `data-k2b-mobile-shell` working and returns the
+cleanup:
 
 ```ts
 import { observeMobileShell } from "@k2b/ui";

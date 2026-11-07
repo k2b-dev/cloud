@@ -1,3 +1,4 @@
+import { personColor } from "@k2b/ui";
 import type { CalendarItem, Priority, SpaceColumn } from "@/contracts";
 import type { CalendarColorBy } from "./filter";
 
@@ -12,16 +13,8 @@ export const CALENDAR_PRIORITY_COLORS: Record<Priority, string> = {
   low: "#3b82f6",
 };
 
-/** The tints behind avatar initials in `@k2b/ui`, in the order of its `data-tint` rules. */
-const PERSON_COLORS = ["#3b82f6", "#8b5cf6", "#ec4899", "#f97316", "#eab308", "#22c55e", "#14b8a6", "#06b6d4", "#6366f1", "#a855f7"];
-
-/** A person's avatar tint: the same name hashes to the same color as the `@k2b/ui` avatar initials. */
-export const calendarPersonColor = (displayName: string): string => {
-  const name = displayName.trim();
-  let hash = 0;
-  for (let index = 0; index < name.length; index++) hash = (hash * 31 + name.charCodeAt(index)) >>> 0;
-  return PERSON_COLORS[hash % PERSON_COLORS.length]!;
-};
+/** A person's color, the same as their avatar initials and comments: `personColor` of `@k2b/ui`. */
+export const calendarPersonColor = (displayName: string): string => personColor(displayName);
 
 export type CalendarColorSource = Pick<CalendarItem, "tags" | "columnId" | "priority" | "assignees">;
 

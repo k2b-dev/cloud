@@ -84,7 +84,7 @@ export default function Demo() {
 
   return (
     <div class="k2b-ui" data-theme={theme()}>
-      <div style="min-height:100vh;background:var(--k2b-app-background);color:var(--k2b-text);padding:24px">
+      <div style="min-height:100vh;background:var(--k2b-surface-canvas);color:var(--k2b-text);padding:24px">
         <header style="display:flex;align-items:center;justify-content:space-between;gap:16px;margin:0 auto 20px;max-width:1120px">
           <div>
             <p style="margin:0;color:var(--k2b-text-muted);font-size:12px">@k2b/ui standalone fixture</p>

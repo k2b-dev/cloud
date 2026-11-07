@@ -1,15 +1,16 @@
 // Pins today's reach of real admin routes for each credential kind.
 // Step-up for admin routes will deliberately change the session-less rows
 // when those routes require session-bound proof.
+import { createHash } from "node:crypto";
 import { suiteFor } from "../../../scripts/fixtures/test-infra";
 import "../../../scripts/fixtures/authorization-preload";
 import { afterAll, beforeAll, expect, test } from "bun:test";
-import { redis, sql } from "bun";
 import { createLocalJWKSet, decodeJwt } from "jose";
 import accountsRoutes from "../../../packages/accounts/src/api";
 import coreSettingsRoutes from "../../../packages/cloud/src/api/admin-core-settings";
 import identityRoutes from "../../../packages/cloud/src/api/admin-identity";
 import { AI_INFERENCE_SCOPE } from "../../../packages/cloud/src/contracts/shared";
+import { redis, sql } from "../../../packages/cloud/src/runtime/clients";
 import { resolveInvocationAuthority } from "../../../packages/cloud/src/services/identity/invocation-actor";
 import {
   type InvocationAuthority,
@@ -55,9 +56,9 @@ const expected = {
   },
   "read-only cld OAuth token of an admin": {
     createServiceAccount: 403,
-    saveSecuritySetting: 204,
-    createLoginToken: 200,
-    regenerateClientSecret: 200,
+    saveSecuritySetting: 403,
+    createLoginToken: 403,
+    regenerateClientSecret: 403,
   },
   "personal API key of an admin": {
     createServiceAccount: 201,
@@ -357,7 +358,7 @@ suite("Admin credential matrix", () => {
   afterAll(async () => {
     const errors: unknown[] = [];
     try {
-      for (const token of loginTokens) await redis.del(`email-login:${token}`);
+      for (const token of loginTokens) await redis.del(`email-login:${createHash("sha256").update(token).digest("hex")}`);
     } catch (error) {
       errors.push(error);
     }
@@ -427,8 +428,11 @@ suite("Admin credential matrix", () => {
       const createdAccounts = await sql<{ id: string }[]>`
         SELECT id FROM auth.service_accounts WHERE name = ${accountName}
       `;
-      expect(createdAccounts).toHaveLength(statuses.createServiceAccount === 201 ? 1 : 0);
       // PUT /api/admin/core/settings
+      // Pin the database fixture's time so successive saves cannot share the comparison baseline's clock tick.
+      await sql`
+        UPDATE settings.entries SET updated_at = '2000-01-01T00:00:00Z'::timestamptz WHERE key = ${settingKey}
+      `;
       const [settingBefore] = await sql<{ updated_at: number }[]>`
         SELECT extract(epoch FROM updated_at)::double precision AS updated_at FROM settings.entries WHERE key = ${settingKey}
       `;
@@ -436,12 +440,6 @@ suite("Admin credential matrix", () => {
       const [settingAfter] = await sql<{ updated_at: number }[]>`
         SELECT extract(epoch FROM updated_at)::double precision AS updated_at FROM settings.entries WHERE key = ${settingKey}
       `;
-      if (statuses.saveSecuritySetting === 204) {
-        if (!settingAfter) throw new Error("Successful settings save did not write a row");
-        if (settingBefore) expect(settingAfter.updated_at).toBeGreaterThan(settingBefore.updated_at);
-      } else {
-        expect(settingAfter).toEqual(settingBefore);
-      }
       // POST /api/accounts/users/:id/login-token
       const login = await request("accounts", accountsRoutes.request, `/users/${targetId}/login-token`, "POST");
       // Read only to remove the one-time credential from Valkey; never assert or print it.
@@ -460,6 +458,13 @@ suite("Admin credential matrix", () => {
         createLoginToken: login.status,
         regenerateClientSecret: regenerated.status,
       }).toEqual(statuses);
+      expect(createdAccounts).toHaveLength(statuses.createServiceAccount === 201 ? 1 : 0);
+      if (statuses.saveSecuritySetting === 204) {
+        if (!settingAfter) throw new Error("Successful settings save did not write a row");
+        if (settingBefore) expect(settingAfter.updated_at).toBeGreaterThan(settingBefore.updated_at);
+      } else {
+        expect(settingAfter).toEqual(settingBefore);
+      }
     });
   }
 });

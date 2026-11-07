@@ -112,14 +112,18 @@ test(`${browserName}: Close, zoom and the navigation toggle live in toolbars, no
       ),
     );
     expect(placement.every((position) => position !== "absolute" && position !== "fixed")).toBe(true);
-    const toggle = tools.getByRole("button", { name: "Hide navigation" });
+    const toggle = tools.getByRole("button", { name: "Navigation", exact: true });
     expect(await toggle.getAttribute("aria-controls")).toBe("notebook-navigation");
+    expect(await toggle.getAttribute("aria-expanded")).toBe("true");
     await toggle.click();
-    // The toolbar keeps the only way back; no second control appears in a corner of the graph.
-    const show = page.locator('[aria-controls="notebook-navigation"]:visible');
-    await page.waitForFunction(() => document.querySelectorAll('[aria-controls="notebook-navigation"][aria-expanded="false"]').length > 0);
-    expect(await show.count()).toBe(1);
-    expect(await tools.getByRole("button", { name: "Show navigation" }).isVisible()).toBe(true);
+    // The toolbar keeps the only way back; no head and no second control in a corner of the graph.
+    await page.waitForFunction(() => document.getElementById("notebook-navigation")?.hidden === true);
+    expect(await toggle.getAttribute("aria-expanded")).toBe("false");
+    expect(await page.locator('[aria-controls="notebook-navigation"]:visible').count()).toBe(1);
+    expect(await page.locator(".k2b-app-workspace__head").count()).toBe(0);
+    await toggle.click();
+    await page.waitForFunction(() => document.getElementById("notebook-navigation")?.hidden === false);
+    expect(await toggle.getAttribute("aria-expanded")).toBe("true");
   } finally {
     await close(page);
   }
@@ -159,12 +163,13 @@ test(`${browserName}: showing the navigation on a tablet keeps keyboard focus on
   const page = await open(graphPath("hand01"), { width: 900, height: 900 });
   try {
     const tools = page.getByRole("toolbar", { name: "Graph tools" });
-    // At this width the navigation is hidden first through the shared command, then shown again with the toolbar.
+    // At this width the navigation is hidden first through the shared command, then the toolbar shows it again as the
+    // overlay, which takes focus.
     await page.evaluate(() =>
       window.dispatchEvent(new CustomEvent("notebooks.navigation.visibilityChanged", { detail: { hidden: true } })),
     );
-    const show = tools.getByRole("button", { name: "Show navigation" });
-    await show.waitFor();
+    const show = tools.getByRole("button", { name: "Navigation", exact: true });
+    await page.waitForFunction(() => document.getElementById("notebook-navigation")?.hidden === true);
     await show.focus();
     await page.keyboard.press("Enter");
     await page.waitForFunction(() => document.activeElement !== null && document.activeElement !== document.body);

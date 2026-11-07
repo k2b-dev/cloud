@@ -274,7 +274,8 @@ const typedComparisonLeaf = (
     }
     return publicRelationPredicate(field, [value], op === "=" ? "any" : "none", span);
   }
-  if (typeof value !== "string" || !UUID_RE.test(value)) return diagnostic(`"${field.name}" expects a user or group id (uuid)`, span);
+  if (typeof value !== "string" || !UUID_RE.test(value))
+    return diagnostic(`"${field.name}" expects a user, group, or service account id (uuid)`, span);
   return filterLeaf(field.id, op === "=" ? "containsAny" : "notContainsAny", [value]);
 };
 

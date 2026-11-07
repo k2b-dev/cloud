@@ -222,7 +222,12 @@ export const artifactClient = {
     },
     grant: async (
       id: string,
-      principal: { type: "user"; userId: string } | { type: "group"; groupId: string } | { type: "authenticated" } | { type: "public" },
+      principal:
+        | { type: "user"; userId: string }
+        | { type: "group"; groupId: string }
+        | { type: "service_account"; serviceAccountId: string }
+        | { type: "authenticated" }
+        | { type: "public" },
       permission: "read" | "admin",
     ) => {
       const response = await client.admin.resources[":id"].access.$post({ param: { id }, json: { principal, permission } });
@@ -318,7 +323,12 @@ export const artifactClient = {
   },
   grant: async (
     id: string,
-    principal: { type: "user"; userId: string } | { type: "group"; groupId: string } | { type: "authenticated" } | { type: "public" },
+    principal:
+      | { type: "user"; userId: string }
+      | { type: "group"; groupId: string }
+      | { type: "service_account"; serviceAccountId: string }
+      | { type: "authenticated" }
+      | { type: "public" },
     permission: "read" | "admin",
   ) => {
     const response = await client[":id"].access.$post({ param: { id }, json: { principal, permission } });

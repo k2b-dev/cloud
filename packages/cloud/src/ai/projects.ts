@@ -1,21 +1,31 @@
-import { type SQL, type SQLQuery, sql } from "bun";
+import type { SQL, SQLQuery } from "bun";
 import type { CloudResourceRef } from "../contracts/capabilities";
 import { AuthenticatedPrincipalSchema, type ServiceAccountKind } from "../contracts/shared";
-import type { AccessSubject } from "../server";
+import { sql } from "../runtime/clients";
 import {
   buildAccessPrincipalCondition,
   createAccess,
   deleteAccess,
+  ensureManagerRemains,
   hasPermission,
   type PermissionLevel,
   type Principal,
 } from "../server/services/access";
+import { audit } from "../services/audit";
 import { stripImageMetadata } from "../services/image-metadata";
 import { toPgUuidArray } from "../services/postgres";
+import { type AiModelRequest, AiModelRequestSchema } from "../shared/ai-models";
 import { AiFileVersionConflict, AiFileWriteError, aiFileContentVersion } from "./file-content-version";
 import { isAiImage } from "./file-media-type";
 import { mountAiProjectFilePath } from "./file-mount";
 import { pickStoredAiFilePath } from "./files-store";
+import {
+  type AiResourceContext,
+  aiResourceAccessSubject,
+  aiResourcePermissionCap,
+  capAiResourcePermission,
+  requireAiResourceCreation,
+} from "./projects-authorization";
 import { withAiShortIdForDb } from "./short-id";
 import type { AiProjectPromptSnapshot } from "./types";
 
@@ -42,7 +52,7 @@ export type AiProject = {
   description: string;
   icon: string;
   instructions: string;
-  defaultModelProfileId: string | null;
+  defaultModel: AiModelRequest | null;
   permission: AiProjectPermission;
   revision: number;
   createdAt: string;
@@ -85,7 +95,7 @@ export type AiProjectAccess = {
   permission: AiProjectPermission;
   displayName?: string;
   avatarHash?: string | null;
-  /** Kind of a `service_account` principal; presentation only. */
+  /** Kind of a `service_account` principal, including manager eligibility. */
   serviceAccountKind?: ServiceAccountKind;
   createdAt: string;
 };
@@ -115,7 +125,7 @@ type ProjectRow = {
   description: string;
   icon: string;
   instructions: string;
-  default_model_profile_id: string | null;
+  default_model: AiModelRequest | null;
   revision: number;
   created_at: Date | string;
   updated_at: Date | string;
@@ -170,15 +180,21 @@ type AdminProjectRow = ProjectRow & {
 };
 
 const iso = (value: Date | string): string => (value instanceof Date ? value.toISOString() : new Date(value).toISOString());
-const actorUserId = (subject: AccessSubject | null): string | null => (subject?.type === "user" ? subject.userId : null);
+const actorUserId = (input: AiResourceContext | null): string | null => {
+  const subject = aiResourceAccessSubject(input);
+  return subject?.type === "user" ? subject.userId : null;
+};
 
-const principalForSubject = (subject: AccessSubject): Principal =>
-  subject.type === "user"
+const principalForSubject = (input: AiResourceContext): Principal => {
+  const subject = aiResourceAccessSubject(input)!;
+  return subject.type === "user"
     ? { type: "user", userId: subject.userId }
     : { type: "service_account", serviceAccountId: subject.serviceAccountId };
+};
 
-const accessMatch = (subject: AccessSubject | null): SQLQuery =>
-  subject === null
+const accessMatch = (input: AiResourceContext | null): SQLQuery => {
+  const subject = aiResourceAccessSubject(input);
+  return subject === null || aiResourcePermissionCap(input) === "none"
     ? sql`FALSE`
     : buildAccessPrincipalCondition({
         subject,
@@ -189,8 +205,9 @@ const accessMatch = (subject: AccessSubject | null): SQLQuery =>
           authenticatedOnly: sql`access.authenticated_only`,
         },
       });
+};
 
-const permissionFor = async (row: ProjectRow, subject: AccessSubject | null, db: SQL = sql): Promise<AiProjectPermission | "none"> => {
+const permissionFor = async (row: ProjectRow, subject: AiResourceContext | null, db: SQL = sql): Promise<AiProjectPermission | "none"> => {
   const match = accessMatch(subject);
   const rows = await db<{ permission: AiProjectPermission }[]>`
     SELECT access.permission
@@ -200,10 +217,10 @@ const permissionFor = async (row: ProjectRow, subject: AccessSubject | null, db:
     ORDER BY CASE access.permission WHEN 'admin' THEN 3 WHEN 'write' THEN 2 WHEN 'read' THEN 1 ELSE 0 END DESC
     LIMIT 1
   `;
-  return rows[0]?.permission ?? "none";
+  return capAiResourcePermission(rows[0]?.permission ?? "none", subject);
 };
 
-const toProject = async (row: ProjectRow, subject: AccessSubject | null, db: SQL = sql): Promise<AiProject | null> => {
+const toProject = async (row: ProjectRow, subject: AiResourceContext | null, db: SQL = sql): Promise<AiProject | null> => {
   const permission = await permissionFor(row, subject, db);
   if (permission === "none") return null;
   return {
@@ -213,7 +230,7 @@ const toProject = async (row: ProjectRow, subject: AccessSubject | null, db: SQL
     description: row.description,
     icon: row.icon,
     instructions: row.instructions,
-    defaultModelProfileId: row.default_model_profile_id,
+    defaultModel: row.default_model ? AiModelRequestSchema.parse(row.default_model) : null,
     permission,
     revision: Number(row.revision),
     createdAt: iso(row.created_at),
@@ -330,41 +347,34 @@ const createProjectAccess = async (
 };
 
 const updateProjectAccess = async (projectId: string, accessId: string, permission: AiProjectPermission, db: SQL): Promise<boolean> => {
-  const [bound] = await db<{ id: string; permission: AiProjectPermission }[]>`
-    SELECT access.id, access.permission
+  const [bound] = await db<{ id: string }[]>`
+    SELECT access.id
     FROM ai.project_access project_access
     JOIN auth.access access ON access.id = project_access.access_id
     WHERE project_access.project_id = ${projectId}::uuid AND project_access.short_id = ${accessId}
   `;
   if (!bound) return false;
-  if (bound.permission === "admin" && permission !== "admin") {
-    const [admins] = await db<{ count: number }[]>`
-      SELECT count(*)::int AS count FROM ai.project_access project_access
-      JOIN auth.access access ON access.id = project_access.access_id
-      WHERE project_access.project_id = ${projectId}::uuid AND access.permission = 'admin'
-    `;
-    if ((admins?.count ?? 0) <= 1) throw new AiProjectLastAdminError();
-  }
+  const before = await listProjectAccess(projectId, db);
+  const guarded = ensureManagerRemains({
+    before,
+    after: before.map((entry) => (entry.shortId === accessId ? { ...entry, permission } : entry)),
+  });
+  if (!guarded.ok) throw new AiProjectLastAdminError();
   const result = await db`UPDATE auth.access SET permission = ${permission}::auth.permission_level WHERE id = ${bound.id}::uuid`;
   return result.count === 1;
 };
 
 const revokeProjectAccess = async (projectId: string, accessId: string, db: SQL): Promise<boolean> => {
-  const [bound] = await db<{ access_id: string; permission: AiProjectPermission }[]>`
-    SELECT project_access.access_id, access.permission
+  const [bound] = await db<{ access_id: string }[]>`
+    SELECT project_access.access_id
     FROM ai.project_access project_access
     JOIN auth.access access ON access.id = project_access.access_id
     WHERE project_access.project_id = ${projectId}::uuid AND project_access.short_id = ${accessId}
   `;
   if (!bound) return false;
-  if (bound.permission === "admin") {
-    const [admins] = await db<{ count: number }[]>`
-      SELECT count(*)::int AS count FROM ai.project_access project_access
-      JOIN auth.access access ON access.id = project_access.access_id
-      WHERE project_access.project_id = ${projectId}::uuid AND access.permission = 'admin'
-    `;
-    if ((admins?.count ?? 0) <= 1) throw new AiProjectLastAdminError();
-  }
+  const before = await listProjectAccess(projectId, db);
+  const guarded = ensureManagerRemains({ before, after: before.filter((entry) => entry.shortId !== accessId) });
+  if (!guarded.ok) throw new AiProjectLastAdminError();
   const deleted = await deleteAccess({ id: bound.access_id }, db);
   if (!deleted.ok) throw new Error(deleted.error.message);
   return true;
@@ -372,7 +382,7 @@ const revokeProjectAccess = async (projectId: string, accessId: string, db: SQL)
 
 const requireProject = async (
   projectId: string,
-  subject: AccessSubject | null,
+  subject: AiResourceContext | null,
   permission: AiProjectPermission = "read",
 ): Promise<AiProject | null> => {
   const row = await getRow(projectId);
@@ -383,7 +393,7 @@ const requireProject = async (
 
 const requireProjectByShortId = async (
   shortId: string,
-  subject: AccessSubject | null,
+  subject: AiResourceContext | null,
   permission: AiProjectPermission = "read",
 ): Promise<AiProject | null> => {
   const row = await getRowByShortId(shortId);
@@ -412,22 +422,23 @@ const projectSearchPattern = (value: string | undefined): string | null => {
 
 export const aiProjects = {
   async create(input: {
-    subject: AccessSubject;
+    subject: AiResourceContext;
     name: string;
     description?: string;
     icon?: string;
     instructions?: string;
-    defaultModelProfileId?: string | null;
+    defaultModel?: AiModelRequest | null;
   }): Promise<AiProject> {
+    requireAiResourceCreation(input.subject);
     return sql.begin(async (tx) => {
       const rows = await withAiShortIdForDb(
         tx,
         "idx_ai_projects_short_id",
         (attempt, shortId) => attempt<ProjectRow[]>`
-        INSERT INTO ai.projects (short_id, name, description, icon, instructions, default_model_profile_id)
+        INSERT INTO ai.projects (short_id, name, description, icon, instructions, default_model)
         VALUES (
           ${shortId}, ${input.name.trim()}, ${input.description?.trim() ?? ""}, ${input.icon?.trim() || "ti ti-folders"},
-          ${input.instructions?.trim() ?? ""}, ${input.defaultModelProfileId?.trim() || null}
+          ${input.instructions?.trim() ?? ""}, ${input.defaultModel ? JSON.stringify(AiModelRequestSchema.parse(input.defaultModel)) : null}::text::jsonb
         )
         RETURNING *
       `,
@@ -442,11 +453,11 @@ export const aiProjects = {
         VALUES (${rows[0]!.id}::uuid, ${created.data.id}::uuid, ${shortId})
       `,
       );
-      return { ...(await toProject(rows[0]!, input.subject, tx))!, permission: "admin" };
+      return (await toProject(rows[0]!, input.subject, tx))!;
     });
   },
 
-  async list(subject: AccessSubject | null): Promise<AiProject[]> {
+  async list(subject: AiResourceContext | null): Promise<AiProject[]> {
     const match = accessMatch(subject);
     const rows = await sql<ProjectRow[]>`
       SELECT DISTINCT project.*, lower(project.name) AS sort_name
@@ -459,7 +470,7 @@ export const aiProjects = {
     return (await Promise.all(rows.map((row) => toProject(row, subject)))).filter((project): project is AiProject => Boolean(project));
   },
 
-  async resolveShortIds(projectIds: readonly string[], subject: AccessSubject | null): Promise<Map<string, string>> {
+  async resolveShortIds(projectIds: readonly string[], subject: AiResourceContext | null): Promise<Map<string, string>> {
     const ids = [...new Set(projectIds)];
     if (!ids.length) return new Map();
     const match = accessMatch(subject);
@@ -474,7 +485,7 @@ export const aiProjects = {
     return new Map(rows.map((row) => [row.id, row.short_id]));
   },
 
-  async scopeVersion(subject: AccessSubject | null): Promise<string> {
+  async scopeVersion(subject: AiResourceContext | null): Promise<string> {
     const projects = await this.list(subject);
     return projects
       .map((project) => `${project.shortId}:${project.permission}`)
@@ -487,30 +498,34 @@ export const aiProjects = {
 
   async update(
     projectId: string,
-    subject: AccessSubject | null,
-    input: Partial<Pick<AiProject, "name" | "description" | "icon" | "instructions" | "defaultModelProfileId">>,
+    subject: AiResourceContext | null,
+    input: Partial<Pick<AiProject, "name" | "description" | "icon" | "instructions" | "defaultModel">>,
   ): Promise<AiProject | null> {
-    const changesTrustedInstructions = Object.hasOwn(input, "instructions") || Object.hasOwn(input, "defaultModelProfileId");
-    if (!(await requireProject(projectId, subject, changesTrustedInstructions ? "admin" : "write"))) return null;
-    const rows = await sql<ProjectRow[]>`
-      UPDATE ai.projects
-      SET name = COALESCE(${input.name?.trim() ?? null}, name),
-          description = COALESCE(${input.description?.trim() ?? null}, description),
-          icon = COALESCE(${input.icon?.trim() ?? null}, icon),
-          instructions = COALESCE(${input.instructions?.trim() ?? null}, instructions),
-          default_model_profile_id = CASE
-            WHEN ${Object.hasOwn(input, "defaultModelProfileId")} THEN ${input.defaultModelProfileId?.trim() || null}
-            ELSE default_model_profile_id
-          END,
-          revision = revision + 1,
-          updated_at = now()
-      WHERE id = ${projectId}::uuid
-      RETURNING *
-    `;
-    return rows[0] ? toProject(rows[0], subject) : null;
+    const changesTrustedInstructions = Object.hasOwn(input, "instructions") || Object.hasOwn(input, "defaultModel");
+    return sql.begin(async (tx) => {
+      const [project] = await tx<ProjectRow[]>`SELECT * FROM ai.projects WHERE id = ${projectId}::uuid FOR UPDATE`;
+      if (!project || !hasPermission(await permissionFor(project, subject, tx), changesTrustedInstructions ? "admin" : "write"))
+        return null;
+      const rows = await tx<ProjectRow[]>`
+        UPDATE ai.projects
+        SET name = COALESCE(${input.name?.trim() ?? null}, name),
+            description = COALESCE(${input.description?.trim() ?? null}, description),
+            icon = COALESCE(${input.icon?.trim() ?? null}, icon),
+            instructions = COALESCE(${input.instructions?.trim() ?? null}, instructions),
+            default_model = CASE
+              WHEN ${Object.hasOwn(input, "defaultModel")} THEN ${input.defaultModel ? JSON.stringify(AiModelRequestSchema.parse(input.defaultModel)) : null}::text::jsonb
+              ELSE default_model
+            END,
+            revision = revision + 1,
+            updated_at = now()
+        WHERE id = ${projectId}::uuid
+        RETURNING *
+      `;
+      return rows[0] ? toProject(rows[0], subject, tx) : null;
+    });
   },
 
-  async delete(projectId: string, subject: AccessSubject | null): Promise<boolean> {
+  async delete(projectId: string, subject: AiResourceContext | null): Promise<boolean> {
     return sql.begin(async (tx) => {
       const [project] = await tx<ProjectRow[]>`
         SELECT * FROM ai.projects WHERE id = ${projectId}::uuid FOR UPDATE
@@ -525,7 +540,7 @@ export const aiProjects = {
     });
   },
 
-  async snapshot(projectId: string, subject: AccessSubject | null): Promise<AiProjectPromptSnapshot | null> {
+  async snapshot(projectId: string, subject: AiResourceContext | null): Promise<AiProjectPromptSnapshot | null> {
     return sql.begin(async (tx) => {
       const [row] = await tx<ProjectRow[]>`SELECT * FROM ai.projects WHERE id = ${projectId}::uuid FOR SHARE`;
       if (!row || !hasPermission(await permissionFor(row, subject, tx), "read")) return null;
@@ -563,19 +578,19 @@ export const aiProjects = {
         instructions: project.instructions,
         context: lines.join("\n").slice(0, AI_PROJECT_PROMPT_MANIFEST_MAX_CHARS),
         references: references.map((reference) => reference.ref),
-        defaultModelProfileId: project.defaultModelProfileId,
+        defaultModel: project.defaultModel,
       };
     });
   },
 
-  async listAccess(projectId: string, subject: AccessSubject | null): Promise<AiProjectAccess[] | null> {
+  async listAccess(projectId: string, subject: AiResourceContext | null): Promise<AiProjectAccess[] | null> {
     if (!(await requireProject(projectId, subject, "admin"))) return null;
     return listProjectAccess(projectId);
   },
 
   async grantAccess(
     projectId: string,
-    subject: AccessSubject | null,
+    subject: AiResourceContext | null,
     input: { principal: Principal; permission: AiProjectPermission },
   ): Promise<AiProjectAccess | null> {
     return sql.begin(async (tx) => {
@@ -590,7 +605,7 @@ export const aiProjects = {
   async updateAccess(
     projectId: string,
     accessId: string,
-    subject: AccessSubject | null,
+    subject: AiResourceContext | null,
     permission: AiProjectPermission,
   ): Promise<boolean> {
     return sql.begin(async (tx) => {
@@ -602,7 +617,7 @@ export const aiProjects = {
     });
   },
 
-  async revokeAccess(projectId: string, accessId: string, subject: AccessSubject | null): Promise<boolean> {
+  async revokeAccess(projectId: string, accessId: string, subject: AiResourceContext | null): Promise<boolean> {
     return sql.begin(async (tx) => {
       const [project] = await tx<ProjectRow[]>`
         SELECT * FROM ai.projects WHERE id = ${projectId}::uuid FOR UPDATE
@@ -691,28 +706,63 @@ export const aiProjects = {
     async grantAccess(
       projectId: string,
       input: { principal: Principal; permission: AiProjectPermission },
+      actorId?: string,
     ): Promise<AiProjectAccess | null> {
       return sql.begin(async (tx) => {
         const [project] = await tx<ProjectRow[]>`SELECT * FROM ai.projects WHERE id = ${projectId}::uuid FOR UPDATE`;
-        return project ? createProjectAccess(projectId, input, tx) : null;
+        if (!project) return null;
+        const result = await createProjectAccess(projectId, input, tx);
+        if (result && actorId)
+          await audit.record(
+            {
+              action: "ai.project.access.grant",
+              outcome: "allowed",
+              actor: { userId: actorId },
+              target: { type: "ai_project", id: projectId },
+            },
+            tx,
+          );
+        return result;
       });
     },
 
-    async updateAccess(projectId: string, accessId: string, permission: AiProjectPermission): Promise<boolean> {
+    async updateAccess(projectId: string, accessId: string, permission: AiProjectPermission, actorId?: string): Promise<boolean> {
       return sql.begin(async (tx) => {
         const [project] = await tx<ProjectRow[]>`SELECT * FROM ai.projects WHERE id = ${projectId}::uuid FOR UPDATE`;
-        return project ? updateProjectAccess(projectId, accessId, permission, tx) : false;
+        const result = project ? await updateProjectAccess(projectId, accessId, permission, tx) : false;
+        if (result && actorId)
+          await audit.record(
+            {
+              action: "ai.project.access.update",
+              outcome: "allowed",
+              actor: { userId: actorId },
+              target: { type: "ai_project", id: projectId },
+            },
+            tx,
+          );
+        return result;
       });
     },
 
-    async revokeAccess(projectId: string, accessId: string): Promise<boolean> {
+    async revokeAccess(projectId: string, accessId: string, actorId?: string): Promise<boolean> {
       return sql.begin(async (tx) => {
         const [project] = await tx<ProjectRow[]>`SELECT * FROM ai.projects WHERE id = ${projectId}::uuid FOR UPDATE`;
-        return project ? revokeProjectAccess(projectId, accessId, tx) : false;
+        const result = project ? await revokeProjectAccess(projectId, accessId, tx) : false;
+        if (result && actorId)
+          await audit.record(
+            {
+              action: "ai.project.access.revoke",
+              outcome: "allowed",
+              actor: { userId: actorId },
+              target: { type: "ai_project", id: projectId },
+            },
+            tx,
+          );
+        return result;
       });
     },
 
-    async delete(projectId: string): Promise<boolean> {
+    async delete(projectId: string, actorId?: string): Promise<boolean> {
       return sql.begin(async (tx) => {
         const [project] = await tx<ProjectRow[]>`SELECT * FROM ai.projects WHERE id = ${projectId}::uuid FOR UPDATE`;
         if (!project) return false;
@@ -721,12 +771,17 @@ export const aiProjects = {
         ).map((row) => row.access_id);
         await tx`DELETE FROM ai.projects WHERE id = ${projectId}::uuid`;
         if (accessIds.length) await tx`DELETE FROM auth.access WHERE id = ANY(${toPgUuidArray(accessIds)}::uuid[])`;
+        if (actorId)
+          await audit.record(
+            { action: "ai.project.delete", outcome: "allowed", actor: { userId: actorId }, target: { type: "ai_project", id: projectId } },
+            tx,
+          );
         return true;
       });
     },
   },
 
-  async listKnowledge(projectId: string, subject: AccessSubject | null, query?: string): Promise<AiProjectKnowledge[]> {
+  async listKnowledge(projectId: string, subject: AiResourceContext | null, query?: string): Promise<AiProjectKnowledge[]> {
     if (!(await requireProject(projectId, subject, "read"))) return [];
     const q = query?.trim() || null;
     const pattern = q ? `%${q.toLowerCase().replace(/[\\%_]/g, (char) => `\\${char}`)}%` : null;
@@ -741,7 +796,7 @@ export const aiProjects = {
     return rows.map(toKnowledge);
   },
 
-  async getKnowledgeByShortId(projectId: string, shortId: string, subject: AccessSubject | null): Promise<AiProjectKnowledge | null> {
+  async getKnowledgeByShortId(projectId: string, shortId: string, subject: AiResourceContext | null): Promise<AiProjectKnowledge | null> {
     if (!(await requireProject(projectId, subject, "read"))) return null;
     const rows = await sql<KnowledgeRow[]>`
       SELECT * FROM ai.project_knowledge
@@ -753,11 +808,12 @@ export const aiProjects = {
 
   async createKnowledge(
     projectId: string,
-    subject: AccessSubject | null,
+    subject: AiResourceContext | null,
     input: { title: string; content: string },
   ): Promise<AiProjectKnowledge | null> {
-    if (!(await requireProject(projectId, subject, "write"))) return null;
     return sql.begin(async (tx) => {
+      const [project] = await tx<ProjectRow[]>`SELECT * FROM ai.projects WHERE id = ${projectId}::uuid FOR UPDATE`;
+      if (!project || !hasPermission(await permissionFor(project, subject, tx), "write")) return null;
       const rows = await withAiShortIdForDb(
         tx,
         "idx_ai_project_knowledge_short_id",
@@ -775,11 +831,12 @@ export const aiProjects = {
   async updateKnowledge(
     projectId: string,
     knowledgeId: string,
-    subject: AccessSubject | null,
+    subject: AiResourceContext | null,
     input: { title?: string; content?: string },
   ): Promise<AiProjectKnowledge | null> {
-    if (!(await requireProject(projectId, subject, "write"))) return null;
     return sql.begin(async (tx) => {
+      const [project] = await tx<ProjectRow[]>`SELECT * FROM ai.projects WHERE id = ${projectId}::uuid FOR UPDATE`;
+      if (!project || !hasPermission(await permissionFor(project, subject, tx), "write")) return null;
       const rows = await tx<KnowledgeRow[]>`
         UPDATE ai.project_knowledge
         SET title = COALESCE(${input.title?.trim() ?? null}, title), content = COALESCE(${input.content?.trim() ?? null}, content), updated_at = now()
@@ -791,9 +848,10 @@ export const aiProjects = {
     });
   },
 
-  async deleteKnowledge(projectId: string, knowledgeId: string, subject: AccessSubject | null): Promise<boolean> {
-    if (!(await requireProject(projectId, subject, "write"))) return false;
+  async deleteKnowledge(projectId: string, knowledgeId: string, subject: AiResourceContext | null): Promise<boolean> {
     return sql.begin(async (tx) => {
+      const [project] = await tx<ProjectRow[]>`SELECT * FROM ai.projects WHERE id = ${projectId}::uuid FOR UPDATE`;
+      if (!project || !hasPermission(await permissionFor(project, subject, tx), "write")) return false;
       const rows = await tx<{ id: string }[]>`
         DELETE FROM ai.project_knowledge WHERE short_id = ${knowledgeId} AND project_id = ${projectId}::uuid RETURNING id
       `;
@@ -802,7 +860,11 @@ export const aiProjects = {
     });
   },
 
-  async listFiles(projectId: string, subject: AccessSubject | null, page?: { after?: string; limit: number }): Promise<AiProjectFile[]> {
+  async listFiles(
+    projectId: string,
+    subject: AiResourceContext | null,
+    page?: { after?: string; limit: number },
+  ): Promise<AiProjectFile[]> {
     if (!(await requireProject(projectId, subject, "read"))) return [];
     if (page && (!Number.isInteger(page.limit) || page.limit < 1 || page.limit > 1000)) throw new Error("Invalid file page limit");
     return (
@@ -814,7 +876,7 @@ export const aiProjects = {
 
   async writeFile(
     projectId: string,
-    subject: AccessSubject | null,
+    subject: AiResourceContext | null,
     input: { path: string; mediaType: string; bytes: Uint8Array; expectedVersion?: string | null },
   ): Promise<AiProjectFile | null> {
     if (!(await requireProject(projectId, subject, "write"))) return null;
@@ -853,7 +915,7 @@ export const aiProjects = {
   async readFile(
     projectId: string,
     fileId: string,
-    subject: AccessSubject | null,
+    subject: AiResourceContext | null,
   ): Promise<(AiProjectFile & { bytes: Uint8Array }) | null> {
     if (!(await requireProject(projectId, subject, "read"))) return null;
     const rows = await sql<(FileRow & { bytes: Uint8Array })[]>`
@@ -866,7 +928,7 @@ export const aiProjects = {
   async readFileByPath(
     projectId: string,
     path: string,
-    subject: AccessSubject | null,
+    subject: AiResourceContext | null,
   ): Promise<(AiProjectFile & { bytes: Uint8Array }) | null> {
     if (!(await requireProject(projectId, subject, "read"))) return null;
     const normalized = normalizeProjectPath(path);
@@ -883,7 +945,7 @@ export const aiProjects = {
     return rows[0] ? { ...toFile(rows[0]), bytes: rows[0].bytes } : null;
   },
 
-  async deleteFile(projectId: string, fileId: string, subject: AccessSubject | null): Promise<boolean> {
+  async deleteFile(projectId: string, fileId: string, subject: AiResourceContext | null): Promise<boolean> {
     if (!(await requireProject(projectId, subject, "write"))) return false;
     return sql.begin(async (tx) => {
       const [row] = await tx<ProjectRow[]>`SELECT * FROM ai.projects WHERE id=${projectId}::uuid FOR UPDATE`;
@@ -897,7 +959,7 @@ export const aiProjects = {
     });
   },
 
-  async listReferences(projectId: string, subject: AccessSubject | null): Promise<AiProjectReference[]> {
+  async listReferences(projectId: string, subject: AiResourceContext | null): Promise<AiProjectReference[]> {
     if (!(await requireProject(projectId, subject, "read"))) return [];
     return (
       await sql<
@@ -908,11 +970,12 @@ export const aiProjects = {
 
   async createReference(
     projectId: string,
-    subject: AccessSubject | null,
+    subject: AiResourceContext | null,
     input: { ref: CloudResourceRef; label?: string },
   ): Promise<AiProjectReference | null> {
-    if (!(await requireProject(projectId, subject, "write"))) return null;
     return sql.begin(async (tx) => {
+      const [project] = await tx<ProjectRow[]>`SELECT * FROM ai.projects WHERE id = ${projectId}::uuid FOR UPDATE`;
+      if (!project || !hasPermission(await permissionFor(project, subject, tx), "write")) return null;
       const rows = await withAiShortIdForDb(
         tx,
         "idx_ai_project_resource_refs_short_id",
@@ -927,9 +990,10 @@ export const aiProjects = {
     });
   },
 
-  async deleteReference(projectId: string, referenceId: string, subject: AccessSubject | null): Promise<boolean> {
-    if (!(await requireProject(projectId, subject, "write"))) return false;
+  async deleteReference(projectId: string, referenceId: string, subject: AiResourceContext | null): Promise<boolean> {
     return sql.begin(async (tx) => {
+      const [project] = await tx<ProjectRow[]>`SELECT * FROM ai.projects WHERE id = ${projectId}::uuid FOR UPDATE`;
+      if (!project || !hasPermission(await permissionFor(project, subject, tx), "write")) return false;
       const rows = await tx<{ id: string }[]>`
         DELETE FROM ai.project_resource_refs WHERE short_id = ${referenceId} AND project_id = ${projectId}::uuid RETURNING id
       `;

@@ -6,7 +6,7 @@ import { resolveSettingPresentation, toLegacySettingDefs } from "./defaults";
 
 test("geo settings have en/de labels/help and no endpoint setting", () => {
   const defs = toLegacySettingDefs(CORE_SETTINGS).filter((def) => def.key.startsWith("geo."));
-  expect(defs).toHaveLength(6);
+  expect(defs).toHaveLength(5);
   for (const def of defs) {
     const en = resolveSettingPresentation(def, "en"),
       de = resolveSettingPresentation(def, "de");
@@ -15,7 +15,7 @@ test("geo settings have en/de labels/help and no endpoint setting", () => {
   }
   expect(CORE_SETTINGS["geo.api_key"].kind).toBe("secret");
   expect(CORE_SETTINGS["geo.monthly_budget_credits"].default).toBe(90000);
-  expect(CORE_SETTINGS["geo.person_daily_credits"].default).toBe(300);
+  expect(Object.hasOwn(CORE_SETTINGS, "geo.person_daily_credits")).toBe(false);
 });
 test("plan rates and provider credit allowances match the verified table", () => {
   expect(Object.values(GEO_PLANS).map((p) => [p.dailyCredits, p.rps])).toEqual([

@@ -35,14 +35,14 @@ Names are unique within the table. Grids ignores case and surrounding whitespace
 | `boolean` | `{}`. Stores true, false, or null when optional. |
 | `date` | `includeTime` (false), `min`, `max`. Date-only values use `YYYY-MM-DD`. Date-time values include a timezone. |
 | `select` | Required `options: [{id, label, color?, description?}]`; `multiple` (false); `minSelected` ≥ 0; `maxSelected` ≥ 1. Values are arrays of option IDs, also for a single-select field. |
-| `principal` | `cardinality: "single" \| "multiple"` (multiple). Values are arrays of typed Cloud user or group UUID references, at most 100. The picker shows only identities that the person can see. |
+| `principal` | `cardinality: "single" \| "multiple"` (multiple). Values are arrays of typed Cloud user, group, or service-account UUID references, at most 100. The picker shows only identities that the person can see. |
 | `percent` | `range: "percent" \| "fraction"` (percent), `decimals` 0–8 (2). Fraction 0.19 and percent 19 both display 19%. The stored scale matters in formulas. |
 | `duration` | `unit: "seconds" \| "minutes" \| "hours"`. Values are nonnegative seconds. Grids rounds numeric input to whole seconds. Also accepts `HH:MM:SS` and `MM:SS`. The display unit does not change the storage unit. |
 | `json` | `{}`. Any valid JSON value. Its properties have no declared Grids field schema. Grids reads a string input as JSON text. |
 | `file` | `maxFiles` 1–100 when set; `accept` with up to 100 MIME types, wildcard MIME types, or extensions. Upload and detach use the file operations, not record JSON writes. |
 | `object_list` | See the column contract below. |
 
-For a principal value, use `[{"type":"user","id":"<user-uuid>"}]` or a `group` reference. An identity in a field is data. It does not give access. To fill in the current user securely, use the configured submission action of a published app, not an input that the user can edit.
+For a principal value, use `[{"type":"user","id":"<user-uuid>"}]` or a `group` or `service_account` reference. Machine callers can read stored references, but writing nonempty Principal values requires a user-backed directory context. Hidden identities keep private labels. An identity in a field is data. It does not give access. To fill in the current user securely, use the configured submission action of a published app, not an input that the user can edit.
 
 ## Configure relations and calculated values {icon="link"}
 

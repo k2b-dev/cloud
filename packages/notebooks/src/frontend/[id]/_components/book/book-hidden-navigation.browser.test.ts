@@ -6,6 +6,7 @@ import type { Browser, Page } from "playwright";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
 import { browserName, launchBrowser } from "../../../../../../ui/test/browser";
+import { bookNavigationState } from "../sidebar/sidebar-tree.test-fixture";
 
 // What a reader sees on the first paint of Book view depends on the shipped
 // cascade of Cloud, @k2b/ui and the app's own stylesheet, so a real engine
@@ -40,7 +41,10 @@ const render = (navigationHidden: boolean, html = welcome) =>
           tags: [],
           navigationHidden,
           fullWidth: false,
-          tree: [{ id: "note01", title: "Private folder", children: [{ id: "note02", title: "Welcome", children: [] }] }],
+          navigation: bookNavigationState(
+            [{ id: "note01", title: "Private folder", children: [{ id: "note02", title: "Welcome", children: [] }] }],
+            "note02",
+          ),
         });
       },
     }),

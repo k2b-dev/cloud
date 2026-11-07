@@ -1,0 +1,6 @@
+### A Mail draft test started a second recovery while it waited for the first
+
+- **What happened:** `old SSR generation without offline bytes opens the freshly authorized generation once, then unchanged creates no Rest draft` in `packages/mail/src/lib/draft-document-client-session.test.ts` counted 4 `/document` requests instead of 3 on a loaded unit shard (#2103).
+- **Root cause:** For a closed generation, the client starts its recovery by itself (`queueMicrotask(() => recover())` in `draft-document-client.ts`). `recover()` returns the running recovery only while it runs. The test called `client.recover()` to wait for it. When the automatic recovery had already finished, because its asynchronous content fingerprint was fast, that call started a second recovery with its own authorization. With a 50 ms pause before the call, the old test fails every time with 4.
+- **Error class:** A test waits for background work by calling the operation again, so it starts a second run when the first has already finished.
+- **Guard:** The test waits, with a bounded poll, for the automatic recovery's recorded end state (`restUnchanged`) and calls nothing that starts work. It passed 10 of 10 runs locally.

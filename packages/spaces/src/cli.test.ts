@@ -48,6 +48,7 @@ const spaceDetail = {
       spaceId: "Space1",
       kind: "task",
       name: "Weekly report",
+      icon: "ti ti-report",
       title: "Weekly report {{week}}",
       description: null,
       priority: "medium",
@@ -70,6 +71,7 @@ const spaceDetail = {
       spaceId: "Space1",
       kind: "event",
       name: "Weekly report",
+      icon: null,
       title: "Review",
       description: null,
       priority: null,
@@ -209,7 +211,15 @@ beforeAll(async () => {
         );
       if (path === "/api/spaces/Space1/items/filter") return json({ items: [task], total: 1, page: 1, pageSize: 50, totalPages: 1 });
       if (path === "/api/spaces/Space1/items") return json({ ...task, ...(body as object), id: "New002" });
-      if (path === "/api/spaces/Space1/templates") return json(spaceDetail.templates);
+      if (path === "/api/spaces/Space1/templates") {
+        if (request.method === "POST") {
+          const input = body as { name: string };
+          if (input.name === "Weekly report") return conflict("A template with this name already exists");
+          if (input.name === "Over limit") return conflict("This Space already has the maximum number of templates of this kind");
+          return json({ ...spaceDetail.templates[0], ...input, id: "NewTpl" });
+        }
+        return json(spaceDetail.templates);
+      }
       if (path === "/api/spaces/Space1/templates/Tpl001/draft")
         return json({
           templateId: "Tpl001",
@@ -472,6 +482,36 @@ describe("changes", () => {
     }
   });
 
+  test("add without --column puts a task in the first open column, like spaces.task.create", async () => {
+    const [first, second] = spaceDetail.columns;
+    try {
+      first!.isDone = true;
+      expect(writes((await run(["add", "Roadmap:Write notes"])).requests)[0]?.body).toMatchObject({ columnId: "Col002" });
+      second!.isDone = true;
+      const refused = await failing(["add", "Roadmap:Write notes"]);
+      expect(refused.stderr).toContain("Roadmap has no open column.");
+      expect(writes(refused.requests)).toEqual([]);
+      // An event keeps the first column; done columns are a task workflow.
+      const event = await run(["add", "Roadmap:Review", "--starts-at", "2026-10-20T09:00:00Z", "--ends-at", "2026-10-20T10:00:00Z"]);
+      expect(writes(event.requests)[0]?.body).toMatchObject({ columnId: "Col001" });
+    } finally {
+      first!.isDone = false;
+      second!.isDone = false;
+    }
+  });
+
+  test("exposes retry keys, title preconditions and incremental assignment writes", async () => {
+    const created = await run(["add", "Roadmap:Write notes", "--request-key", "retry-create"]);
+    expect(writes(created.requests)[0]?.body).toMatchObject({ requestKey: "retry-create" });
+    const renamed = await run(["set", "Item01", "--title", "Next", "--expected-title", "Original"]);
+    expect(writes(renamed.requests)[0]?.body).toEqual({ title: "Next", expectedTitle: "Original" });
+    const assigned = await run(["set", "Item01", "--add-assignee", "me", "--remove-assignee", OTHER_ID]);
+    expect(writes(assigned.requests)[0]?.body).toEqual({ addAssigneeIds: [USER_ID], removeAssigneeIds: [OTHER_ID] });
+    expect(
+      (await failing(["set", "Item01", "--add-assignee", "me", "--clear-assignees"])).requests.filter((r) => r.method === "PATCH"),
+    ).toEqual([]);
+  });
+
   test("preserves real inline line breaks and literal file content", async () => {
     const description = "Caption:\nText";
     const added = await run(["add", "Roadmap:Write notes", "--description", description]);
@@ -511,6 +551,7 @@ describe("changes", () => {
     expect(writes(added.requests)[0]?.body).toEqual({
       columnId: "Col001",
       title: "Write notes",
+      requestKey: expect.any(String),
       description: "Long text",
       deadline: "2026-10-20",
       estimatedDurationMinutes: 90,
@@ -522,7 +563,7 @@ describe("changes", () => {
     expect(writes(set.requests)[0]).toEqual({
       method: "PATCH",
       path: "/api/spaces/Space1/items/Item01",
-      body: { title: "Ship it", estimatedDurationMinutes: null, assigneeIds: [], tagIds: [] },
+      body: { title: "Ship it", expectedTitle: task.title, estimatedDurationMinutes: null, assigneeIds: [], tagIds: [] },
     });
 
     expect(writes((await run(["mv", "Roadmap:Ship release", "Doing"])).requests)[0]?.body).toEqual({ columnId: "Col002" });
@@ -773,6 +814,148 @@ describe("secondary resources", () => {
 });
 
 describe("templates", () => {
+  test("templates add sends task defaults and resolves repeated tags by name or ID", async () => {
+    const created = await run([
+      "templates",
+      "add",
+      "Roadmap",
+      "--kind",
+      "task",
+      "--name",
+      "Report",
+      "--title",
+      "Report {{week}}",
+      "--description",
+      "Weekly summary",
+      "--icon",
+      "ti ti-report",
+      "--priority",
+      "high",
+      "--tag",
+      "Backend",
+      "--tag",
+      "Tag001",
+      "--checklist",
+      "Collect",
+      "--checklist",
+      "Send",
+      "--time",
+      "16:00",
+      "--weekdays",
+      "we,th",
+      "--estimate",
+      "30",
+    ]);
+    expect(writes(created.requests)).toEqual([
+      {
+        method: "POST",
+        path: "/api/spaces/Space1/templates",
+        body: {
+          kind: "task",
+          name: "Report",
+          title: "Report {{week}}",
+          description: "Weekly summary",
+          icon: "ti ti-report",
+          priority: "high",
+          tagIds: ["Tag001", "Tag001"],
+          checklist: ["Collect", "Send"],
+          timeOfDay: "16:00",
+          dateRule: { type: "weekdays", weekdays: ["WE", "TH"] },
+          estimatedDurationMinutes: 30,
+          assignCreator: false,
+          allDay: false,
+        },
+      },
+    ]);
+    expect(created.json).toMatchObject({ id: "NewTpl", icon: "ti ti-report" });
+    expect(writes(created.requests)[0]?.body).not.toHaveProperty("columnId");
+  });
+
+  test("templates add supports events, zero-day offsets and omitted optional fields", async () => {
+    const created = await run([
+      "templates",
+      "add",
+      "Space1",
+      "--kind",
+      "event",
+      "--name",
+      "Review",
+      "--duration",
+      "45",
+      "--all-day",
+      "--location",
+      "Room 2",
+      "--url",
+      "https://example.test/review",
+      "--offset-days",
+      "0",
+    ]);
+    expect(writes(created.requests)[0]?.body).toEqual({
+      kind: "event",
+      name: "Review",
+      title: "",
+      assignCreator: false,
+      allDay: true,
+      durationMinutes: 45,
+      location: "Room 2",
+      url: "https://example.test/review",
+      dateRule: { type: "offset", days: 0 },
+    });
+    const minimal = await run(["templates", "add", "Roadmap", "--kind", "task", "--name", "Notes"]);
+    expect(writes(minimal.requests)[0]?.body).toEqual({
+      kind: "task",
+      name: "Notes",
+      title: "",
+      assignCreator: false,
+      allDay: false,
+      dateRule: { type: "none" },
+    });
+  });
+
+  test("templates add rejects missing flags, conflicting date rules, invalid values and fields of the other kind", async () => {
+    const base = ["templates", "add", "Roadmap"];
+    for (const flags of [
+      ["--kind", "task"],
+      ["--name", "Report"],
+    ])
+      expect((await failing([...base, ...flags])).stderr).toContain("Missing required flag");
+    for (const flags of [
+      ["--weekdays", "we", "--offset-days", "0"],
+      ["--weekdays", "xx"],
+      ["--time", "25:00"],
+      ["--icon", "ti-report"],
+      ["--icon", "ti ti-report extra"],
+      ["--icon", `ti ti-${"a".repeat(75)}`],
+      ["--offset-days", "366"],
+      ["--duration", "30"],
+      ["--location", "Room"],
+      ["--all-day"],
+    ]) {
+      const result = await failing([...base, "--kind", "task", "--name", "Report", ...flags]);
+      expect(writes(result.requests)).toEqual([]);
+    }
+    const event = await failing([...base, "--kind", "event", "--name", "Review", "--checklist", "Send"]);
+    expect(event.stderr).toContain("checklist");
+    expect(writes(event.requests)).toEqual([]);
+  });
+
+  test("templates add reports name conflicts and template limits", async () => {
+    const base = ["templates", "add", "Roadmap", "--kind", "task", "--name"];
+    expect((await failing([...base, "Weekly report"])).stderr).toContain("A template with this name already exists");
+    expect((await failing([...base, "Over limit"])).stderr).toContain("maximum number of templates of this kind");
+  });
+
+  test("templates add help includes examples in English and German", async () => {
+    const help = await cld(["spaces", "templates", "add", "--help"]);
+    expect(help.exitCode).toBe(0);
+    expect(help.stdout).toContain("--kind");
+    expect(help.stdout).toContain("--icon");
+    expect(help.stdout).toContain('cld spaces templates add "Roadmap"');
+    const de = await cld(["--locale", "de", "spaces", "templates", "add", "--help"]);
+    expect(de.exitCode).toBe(0);
+    expect(de.stdout).toContain("Schreibzugriff erforderlich");
+  });
+
   test("templates ls and show list rules and proposals; a name both kinds use needs --kind", async () => {
     const listed = await run(["templates", "ls", "Roadmap", "--kind", "task"]);
     expect(listed.json).toEqual(spaceDetail.templates);
@@ -789,6 +972,8 @@ describe("templates", () => {
     expect(shown.proposals).toHaveLength(1);
     const text = await cld(["spaces", "templates", "ls", "Roadmap"]);
     expect(text.stdout).toContain("Wed or Thu · all day");
+    expect(text.stdout).not.toContain("ti ti-report");
+    expect(text.stdout).not.toContain("ICON");
     expect(text.stdout).toContain("In 2 days · 10:00");
   });
 
@@ -811,6 +996,7 @@ describe("templates", () => {
     expect(writes(added.requests)[0]?.body).toEqual({
       columnId: "Col001",
       title: "Weekly report 42",
+      requestKey: expect.any(String),
       priority: "high",
       tagIds: ["Tag001"],
       assigneeIds: [],
@@ -848,15 +1034,20 @@ describe("templates", () => {
   });
 });
 
-test("add takes the field flags of set except --title and --clear-*, as the reference says", async () => {
+test("add shares field flags with set and documents create-only and update-only flags", async () => {
   const flags = async (command: string) =>
     [...(await cld(["spaces", command, "--help"])).stdout.matchAll(/^ {2}(--[a-z-]+)/gm)].map((match) => match[1]);
   const reference = await readFile(new URL("./cli-references/index.md", import.meta.url), "utf8");
-  expect(reference).toContain("`add` takes the field flags of `set` except `--title` and `--clear-*`");
+  expect(reference).toContain(
+    "`add` takes the field flags of `set` except `--title`, `--expected-title`, the assignee delta flags and `--clear-*`",
+  );
   const add = await flags("add");
   expect(add).toContain("--from");
-  expect(add.filter((flag) => !["--column", "--template", "--kind", "--date", "--no-date"].includes(flag ?? ""))).toEqual(
-    (await flags("set")).filter((flag) => flag !== "--title" && !flag?.startsWith("--clear-")),
+  expect(add.filter((flag) => !["--column", "--template", "--kind", "--date", "--no-date", "--request-key"].includes(flag ?? ""))).toEqual(
+    (await flags("set")).filter(
+      (flag) =>
+        !["--title", "--expected-title", "--add-assignee", "--remove-assignee"].includes(flag ?? "") && !flag?.startsWith("--clear-"),
+    ),
   );
 });
 

@@ -12,16 +12,17 @@ test("pins precede unpinned Spaces in stored order without changing the input", 
   expect(spaces.map((space) => space.id)).toEqual(["First01", "Other01", "Last001"]);
 });
 
-test("phone navigation contains My work and every Space with exactly the current Space active", () => {
+test("phone navigation contains My work, the calendar of all Spaces, and every Space with exactly the current Space active", () => {
   const items = createSpacesNavigationItems({
     spaces,
     pinnedSpaceIds: ["Other01"],
     current: { kind: "space", id: "First01" },
     canCreate: true,
     myWorkLabel: "My work",
+    calendarLabel: "Calendar",
     newSpaceLabel: "New space",
   });
-  expect(items.map(({ id }) => id)).toEqual(["my-work", "Other01", "First01", "Last001", "new-space"]);
+  expect(items.map(({ id }) => id)).toEqual(["my-work", "all-calendars", "Other01", "First01", "Last001", "new-space"]);
   expect(items.filter(({ active }) => active).map(({ id }) => id)).toEqual(["First01"]);
   expect(items[0]?.href).toBe("/app/spaces");
   expect(items.at(-1)?.action).toBe("new-space");
@@ -35,8 +36,23 @@ test("overview marks My work and hides creation when it is not allowed", () => {
     current: { kind: "overview" },
     canCreate: false,
     myWorkLabel: "Meine Arbeit",
+    calendarLabel: "Kalender",
     newSpaceLabel: "Neuer Space",
   });
   expect(items.filter(({ active }) => active).map(({ label }) => label)).toEqual(["Meine Arbeit"]);
   expect(items.some(({ action }) => action === "new-space")).toBe(false);
+});
+
+test("the calendar page marks Calendar, right below My work", () => {
+  const items = createSpacesNavigationItems({
+    spaces,
+    pinnedSpaceIds: [],
+    current: { kind: "calendar" },
+    canCreate: true,
+    myWorkLabel: "Meine Arbeit",
+    calendarLabel: "Kalender",
+    newSpaceLabel: "Neuer Space",
+  });
+  expect(items.slice(0, 2).map(({ label }) => label)).toEqual(["Meine Arbeit", "Kalender"]);
+  expect(items.filter(({ active }) => active).map(({ href }) => href)).toEqual(["/app/spaces/calendar"]);
 });

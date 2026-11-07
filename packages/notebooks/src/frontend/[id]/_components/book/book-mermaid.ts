@@ -1,6 +1,7 @@
+import { mermaidConfig } from "@k2b/cloud/browser/mermaid";
+import { MermaidViewport } from "@k2b/editor/markdown/mermaid-viewport";
 import { createComponent } from "solid-js";
 import { render } from "solid-js/web";
-import { MermaidViewport } from "../../../lib/mermaid-viewport";
 
 /** Enhance static source figures without ever mounting returned SVG as live DOM. */
 export async function enhanceBookMermaid(
@@ -51,6 +52,7 @@ export async function enhanceBookMermaid(
         () =>
           createComponent(MermaidViewport, {
             class: "notebook-book-diagram-view",
+            configuration: mermaidConfig,
             // The first call mounts the tracked inline image; fullscreen gets its own copy.
             diagram: () => {
               const next = inline ?? createImage();

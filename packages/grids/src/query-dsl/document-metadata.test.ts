@@ -1,8 +1,11 @@
 import { expect, test } from "bun:test";
+import { useUnitClients } from "../../../../scripts/fixtures/unit-clients";
 import { compileFormulaSourceToSql } from "../service/formula-sql-compiler";
 import { resolveDslQueryToQueryPlan } from "./resolver";
 import { ctx as defaultContext, fields, normalizedSql, orders, parseOk } from "./resolver-fixtures";
 import { compileDslQueryPlanToSql } from "./sql-compiler";
+
+useUnitClients();
 
 const ctx = () => ({ ...defaultContext(), documentMetadata: true });
 

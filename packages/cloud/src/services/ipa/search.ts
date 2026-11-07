@@ -1,5 +1,5 @@
-import { sql } from "bun";
 import type { BaseGroup, BaseUser, UserProfile, UserProvider } from "../../contracts/shared";
+import { sql } from "../../runtime/clients";
 import { freeipa } from "../../server/services";
 import { buildRoles } from "../account-model";
 import { getFreeIpaConfig } from "../freeipa-config";

@@ -1,9 +1,11 @@
 import { describe, expect, test } from "bun:test";
+import { checkMailKeptAdminMessages } from "./kept-admin-messages";
 import { checkMailPageMessages, mailPageMessages } from "./pages-messages";
 
 describe("Mail SSR messages", () => {
   test("keeps English and German catalogs complete", () => {
     expect(checkMailPageMessages()).toEqual([]);
+    expect(checkMailKeptAdminMessages()).toEqual([]);
   });
 
   test("resolves German regional locales and falls back to English", () => {

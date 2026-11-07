@@ -59,10 +59,12 @@ On phones, reopen the sheet after
 a page reload. Browser termination and forced native navigation cannot guarantee
 recovery of unsaved work.
 
-Assistant starts without choosing an unrelated recent conversation. Its
-conversation selector stays inside the panel, and **Open full view** opens the
-current conversation in the application window. Application commands in Assistant's
-composer are available in the full view. A shared page reference enters
+Assistant starts without choosing an unrelated recent conversation. The panel
+shows the composer without a head row or start suggestions. A quiet row under the
+composer offers **All chats**, which opens the Assistant application in the
+application window at the current conversation, so the chat list and that chat
+are both there. In an ongoing conversation the same row also offers **New chat**.
+Application commands in Assistant's composer are available in the full view. A shared page reference enters
 the draft only through **Attach current view**, after the existing resource
 reader checks access. Later host context changes never reassign that attachment
 or an already submitted turn.
@@ -156,9 +158,10 @@ panel cookie.
 Inside a provider page, `openPanel()` returns `false` because that page has no
 slot.
 
-With multiple providers, Cloud shows tabs and a Panel button in the rail and
-phone header. A single provider has a title instead of tabs; use its app action
-or the shortcut to open it. Tab arrows and Home/End move focus; click, Enter,
+With multiple providers, Cloud shows tabs and a Panel button in the rail. A
+single provider has a title instead of tabs; use its app action or the
+shortcut to open it. Phones have no Panel button: help opens the panel, and its
+tabs lead to the other providers. Tab arrows and Home/End move focus; click, Enter,
 or Space activates a provider. Switching unloads the old iframe, leaving only
 one provider loaded.
 
@@ -258,8 +261,18 @@ never writes the panel cookie. A new document always starts with it closed.
 Back and Forward between app pages, a restored page, and an in-page navigation
 of the app that adds a history entry close the sheet; the last needs a browser
 with the Navigation API. History entries of the provider page stay with the
-panel: Back after a navigation inside the panel shows the panel's previous page. Replacing the URL for page state keeps the sheet open. While the sheet is
-open, a regular page can scroll its last row above it.
+panel: Back after a navigation inside the panel shows the panel's previous page. Replacing the URL for page state keeps the sheet open.
+
+The sheet opens at full height below the title row, so a provider's page and
+the consent question are never cut off. Its handle stays a button: Enter,
+Space, or a tap switches between full and a little over half the height, and
+its name says which way it goes. Dragging the handle moves the sheet with the
+finger; on release it snaps to the nearer height, taking a flick's speed into
+account, and a drag well below half the height closes the panel as its close
+button does. The snap animates with the sheet transition, which reduced motion,
+from the system or the Cloud preference, makes instant. Each opening starts at
+full height again. While the sheet is at half height, a regular page can scroll
+its last row above it.
 
 ## Loading and message boundaries
 

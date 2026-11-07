@@ -118,6 +118,9 @@ const tree: Record<string, { writable: boolean; items: FileProviderEntry[] }> = 
 const sources: Record<string, string> = { "report.pdf": "%PDF-report", "notes.txt": "meeting notes", "huge.zip": "" };
 
 let catalogApps: unknown[] = [];
+let catalogRequests = 0;
+let catalogStatus = 200;
+let catalogGate: Promise<void> | undefined;
 /** Paths of the files the provider stores, with their bytes. */
 const stored = new Map<string, string>();
 const saveCalls: { input: Record<string, unknown>; key: string | null }[] = [];
@@ -128,7 +131,12 @@ const json = (body: unknown, status = 200) => Response.json(body, { status });
 
 const answer = async (request: Request): Promise<Response> => {
   const url = new URL(request.url);
-  if (url.pathname === "/api/capabilities/v1/catalog") return json({ protocolVersion: 2, apps: catalogApps, page: { hasMore: false } });
+  if (url.pathname === "/api/capabilities/v1/catalog") {
+    catalogRequests++;
+    await catalogGate;
+    if (catalogStatus !== 200) return json({ code: "APP_UNAVAILABLE", message: "Unavailable" }, catalogStatus);
+    return json({ protocolVersion: 2, apps: catalogApps, page: { hasMore: false } });
+  }
   if (url.pathname === "/api/capabilities/v1/queries/drive/folder.list") {
     const { input } = (await request.json()) as { input: { parent?: string; query?: string } };
     const page = tree[input.parent ?? ""] ?? { writable: false, items: [] };
@@ -198,7 +206,7 @@ beforeAll(async () => {
       );
     },
   });
-  browser = await launchBrowser();
+  browser = await launchBrowser({ serveShellCatalog: true });
 }, 60_000);
 afterAll(async () => {
   await browser?.close();
@@ -222,9 +230,7 @@ const open = async (view: View, query = "") => {
   });
   const page = await context.newPage();
   await page.goto(`http://127.0.0.1:${server.port}/${query}`);
-  // The idle discovery has answered once the shared button names the one app that stores files.
-  await page.waitForFunction(() => document.querySelector("#icon button")?.getAttribute("aria-label")?.includes("Drive"));
-  await page.waitForTimeout(50);
+
   return { page, close: () => context.close() };
 };
 const saved = (page: Page) => page.evaluate(() => (window as unknown as { saved: unknown[] }).saved);
@@ -247,17 +253,52 @@ const footer = (page: Page) =>
 const saveButton = (page: Page) => page.locator(".cloud-file-chooser__actions").getByRole("button", { name: "Save", exact: true });
 
 describe("saving files into a provider in a browser", () => {
+  test("rendering SaveFilesButton does no discovery; activating it shows loading and a retryable catalog failure", async () => {
+    catalogApps = [drive];
+    const before = catalogRequests;
+    const { page, close } = await open(phone);
+    let release!: () => void;
+    catalogGate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    catalogStatus = 503;
+    try {
+      await page.waitForTimeout(1200);
+      expect(catalogRequests).toBe(before);
+      await page.locator("#icon button").click();
+      await page.getByText("Looking for apps that store files…").waitFor({ state: "attached" });
+      expect(catalogRequests).toBe(before + 1);
+      const frame = await dialogBox(page);
+      release();
+      await page.getByRole("button", { name: "Try again", exact: true }).waitFor();
+      expect(await dialogBox(page)).toEqual(frame);
+      catalogStatus = 200;
+      catalogGate = undefined;
+      await page.getByRole("button", { name: "Try again", exact: true }).click();
+      await row(page, "Home").waitFor();
+      expect(catalogRequests).toBe(before + 2);
+      expect(await dialogBox(page)).toEqual(frame);
+      expect(await page.locator("#icon button").getAttribute("aria-label")).toBe("Save report.pdf to Drive");
+    } finally {
+      release();
+      catalogGate = undefined;
+      catalogStatus = 200;
+      await close();
+    }
+  }, 30_000);
+
   test("one app opens straight into its folders, saves a downloaded attachment there, and links to it", async () => {
     catalogApps = [archive, drive];
     for (const view of [desktop, phone]) {
       const { page, close } = await open(view);
       try {
-        expect(await page.locator("#icon button").getAttribute("aria-label")).toBe("Save report.pdf to Drive");
+        expect(await page.locator("#icon button").getAttribute("aria-label")).toBe("Save report.pdf to…");
         await page.locator("#save").click();
         await row(page, "Home").waitFor();
-        // Focus starts on the first folder once the app's root arrived, so the keyboard continues there.
-        await page.waitForFunction(() => document.activeElement?.matches('dialog [role="gridcell"]'));
-        expect(await page.evaluate(() => document.activeElement?.textContent)).toContain("Home");
+        expect(await page.locator("#icon button").getAttribute("aria-label")).toBe("Save report.pdf to Drive");
+        // Focus starts on the open app in the sources, like a system save dialog's sidebar.
+        await page.waitForFunction(() => document.activeElement?.matches('dialog .cloud-file-dialog__source[aria-current="true"]'));
+        expect(await page.evaluate(() => document.activeElement?.textContent)).toContain("Drive");
         const frame = await dialogBox(page);
         if (view === phone) expect(frame).toEqual([0, 0, phone.width, phone.height]);
         // The read-only app is a place to choose from, never one to save into, so Drive is the only one and opens.
@@ -420,8 +461,9 @@ describe("saving files into a provider in a browser", () => {
     catalogApps = [drive];
     const { page, close } = await open(phone, "?lang=de");
     try {
-      expect(await page.locator("#icon button").getAttribute("aria-label")).toBe("report.pdf in Drive speichern");
+      expect(await page.locator("#icon button").getAttribute("aria-label")).toBe("report.pdf speichern in …");
       await page.locator("#save").click();
+      await page.locator("dialog h2").waitFor();
       expect(await page.locator("dialog h2").textContent()).toBe("„report.pdf“ speichern");
       await row(page, "Team").click();
       await row(page, "plan.txt").waitFor();

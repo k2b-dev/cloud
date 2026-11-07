@@ -26,7 +26,7 @@ export const app = defineApp({
       de: { name: "API-Dokumentation", description: "Gesammelte OpenAPI-Dokumentation aller Cloud-Apps." },
     },
   },
-  appearance: { accent: "#0f766e", background: { from: "#14b8a6", to: "#22d3ee", angle: 135 } },
+  appearance: { accent: "#0f766e", background: { from: "#14b8a6", to: "#0d9488", angle: 135 } },
   basePath: "/app/api-docs",
   baseUrl: "http://app-api-docs:3000",
   nav: {

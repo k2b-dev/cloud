@@ -11,7 +11,9 @@ import {
   clearInvocationVerifierCachesForTest,
   isInvocationJwtCandidate,
   normalizeInvocationRequestId,
+  signAppEventInvocation,
   signInvocationToken,
+  verifyAppEventInvocation,
   verifyInvocationToken,
 } from "./invocation-token";
 import * as runtimeConfig from "./runtime-config";
@@ -405,5 +407,63 @@ describe("Cloud invocation JWT", () => {
         }),
       ),
     ).toBeNull();
+  });
+});
+
+describe("App event invocation JWT", () => {
+  const input = { appId: targetAppId, subscriptionId: "mail:core.user.created@1", eventId: jti, payload: { eventId: jti, attempt: 1 } };
+  const sign = () =>
+    signAppEventInvocation({ ...input, issuer, now, jti, signer: { key: privateKey, kid, signUntil: new Date(now.getTime() + 60_000) } });
+  const check = (value: string, expected = input, at = now) => verifyAppEventInvocation(value, expected, { issuer, key: keySet, now: at });
+  test("accepts the exact event and rejects changed target, subscription, event or body", async () => {
+    const value = await sign();
+    expect(await check(value)).toBe(true);
+    expect(await check(value, { ...input, appId: "filesv2" })).toBe(false);
+    expect(await check(value, { ...input, subscriptionId: "other:core.user.created@1" })).toBe(false);
+    expect(await check(value, { ...input, eventId: userId })).toBe(false);
+    expect(await check(value, { ...input, payload: { eventId: jti, attempt: 2 } })).toBe(false);
+  });
+  test("app deliveries preserve warm keys when the shared forced JWKS refresh fails", async () => {
+    let unavailable = false;
+    let fetches = 0;
+    const pair = await generateKeyPair(CLOUD_IDENTITY_ALGORITHM, { extractable: true });
+    const activeKey = { ...(await exportJWK(pair.publicKey)), alg: CLOUD_IDENTITY_ALGORITHM, kid, use: "sig" };
+    const server = Bun.serve({
+      hostname: "127.0.0.1",
+      port: 0,
+      fetch: () => {
+        fetches++;
+        return unavailable ? new Response(null, { status: 503 }) : Response.json({ keys: [activeKey] });
+      },
+    });
+    const signed = (signingKid: string) =>
+      signAppEventInvocation({
+        ...input,
+        issuer,
+        now,
+        jti,
+        signer: { key: pair.privateKey, kid: signingKid, signUntil: new Date(now.getTime() + 60_000) },
+      });
+    try {
+      const options = { issuer, jwksUrl: new URL(`http://127.0.0.1:${server.port}/jwks`), now };
+      const known = await signed(kid);
+      expect(await verifyAppEventInvocation(known, input, options)).toBe(true);
+      unavailable = true;
+      expect(await verifyAppEventInvocation(await signed("530b8902-c7c9-4131-8c81-bfe128f550fd"), input, options)).toBe(false);
+      expect(fetches).toBe(2);
+      expect(await verifyAppEventInvocation(known, input, options)).toBe(true);
+      expect(await verifyAppEventInvocation(await signed("530b8902-c7c9-4131-8c81-bfe128f550fd"), input, options)).toBe(false);
+      expect(fetches).toBe(2);
+    } finally {
+      server.stop(true);
+      clearInvocationVerifierCachesForTest();
+    }
+  });
+  test("rejects expired tokens and a user invocation on the app-only route", async () => {
+    expect(await check(await sign(), input, new Date(now.getTime() + 60_000))).toBe(false);
+    expect(await check(await token())).toBe(false);
+  });
+  test("delivery tokens grant no user invocation", async () => {
+    expect(await verify(await sign())).toBeNull();
   });
 });

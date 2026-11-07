@@ -1,6 +1,6 @@
+import { sql } from "@k2b/cloud";
 import { toPgUuidArray } from "@k2b/cloud/services";
 import { err } from "@k2b/stdlib";
-import { sql } from "bun";
 import type { GridsWorkflowEmailDelivery as WorkflowEmailDelivery } from "../workflows/contracts";
 import type { SqlClient } from "./audit";
 import { workflowConflict } from "./workflow-errors";
@@ -88,7 +88,7 @@ type DeliveryIntentRow = DeliveryRow & {
   rendered_html: string | null;
 };
 
-const intentColumns = sql`
+const intentColumns = () => sql`
   id, workflow_id, workflow_run_id, workflow_step_key, recipient_index, template_id, recipient_kind, recipient_value, recipient_summary,
   notification_id, provider_status, status, subject, rendered_html, idempotency_key, error, created_at,
   (created_at::text || '|' || id::text) AS cursor_token
@@ -101,7 +101,7 @@ export const getWorkflowEmailDeliveryIntent = async (
   client: SqlClient = sql,
 ): Promise<WorkflowEmailDeliveryIntent | null> => {
   const [row] = await client<DeliveryIntentRow[]>`
-    SELECT ${intentColumns}
+    SELECT ${intentColumns()}
     FROM grids.workflow_email_deliveries
     WHERE workflow_run_id = ${workflowRunId}::uuid
       AND workflow_step_key = ${workflowStepKey}
@@ -137,12 +137,12 @@ export const getOrCreateWorkflowEmailDeliveryIntent = async (
       'pending', ${input.subject}, ${input.renderedHtml}
     )
     ON CONFLICT DO NOTHING
-    RETURNING ${intentColumns}
+    RETURNING ${intentColumns()}
   `;
   const [row] = rows.length
     ? rows
     : await client<DeliveryIntentRow[]>`
-        SELECT ${intentColumns}
+        SELECT ${intentColumns()}
         FROM grids.workflow_email_deliveries
         WHERE idempotency_key = ${input.idempotencyKey}
       `;
@@ -179,11 +179,11 @@ export const finishWorkflowEmailDeliveryIntent = async (
         updated_at = now()
     WHERE id = ${deliveryId}::uuid
       AND status = 'pending'
-    RETURNING ${intentColumns}
+    RETURNING ${intentColumns()}
   `;
   if (row) return { delivery: mapIntent(row), transitioned: true };
   const [existing] = await client<DeliveryIntentRow[]>`
-    SELECT ${intentColumns}
+    SELECT ${intentColumns()}
     FROM grids.workflow_email_deliveries
     WHERE id = ${deliveryId}::uuid
   `;

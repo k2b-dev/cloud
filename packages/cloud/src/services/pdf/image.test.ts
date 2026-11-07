@@ -48,6 +48,33 @@ function variant(result: PreparePdfImageResult): PdfImageVariant {
 }
 const bytes = async (image: PdfImageVariant) => Buffer.from(await image.data.arrayBuffer());
 
+function countThreadNames(names: string[]) {
+  const counts = new Map<string, number>();
+  const bunWorkers = new Set<string>();
+  for (const rawName of names) {
+    // Linux children inherit their creator's name until they set their own.
+    // Bun assigns a unique numeric name to each actual pool worker.
+    if (/^Bun Pool \d+$/.test(rawName)) {
+      if (bunWorkers.has(rawName)) continue;
+      bunWorkers.add(rawName);
+    }
+    const name = rawName.replace(/ \d+$/, "");
+    counts.set(name, (counts.get(name) ?? 0) + 1);
+  }
+  return counts;
+}
+
+describe("decoder thread sampling", () => {
+  test("does not count a libvips child inheriting its Bun worker's name as another Bun worker", () => {
+    const counts = countThreadNames(["Bun Pool 0", "Bun Pool 1", "Bun Pool 1", "libvips worker", "libvips worker", "HeapHelper"]);
+    expect(Object.fromEntries(counts)).toEqual({ "Bun Pool": 2, "libvips worker": 2, HeapHelper: 1 });
+  });
+
+  test("still counts a third distinct Bun worker", () => {
+    expect(countThreadNames(["Bun Pool 0", "Bun Pool 1", "Bun Pool 2"]).get("Bun Pool")).toBe(3);
+  });
+});
+
 function oversizedPng() {
   const chunk = (name: string, data: Buffer) => {
     const content = Buffer.concat([Buffer.from(name), data]);
@@ -360,15 +387,14 @@ runtime("preparePdfImage", () => {
     try {
       while (!finished) {
         const child = spawn.mock.results[0];
-        const counts = new Map<string, number>();
+        const names: string[] = [];
         if (child?.type === "return") {
           try {
             for (const tid of readdirSync(`/proc/${child.value.pid}/task`)) {
-              const name = readFileSync(`/proc/${child.value.pid}/task/${tid}/comm`, "utf8").trim().replace(/ \d+$/, "");
-              counts.set(name, (counts.get(name) ?? 0) + 1);
+              names.push(readFileSync(`/proc/${child.value.pid}/task/${tid}/comm`, "utf8").trim());
             }
           } catch {} // A thread can exit during sampling.
-          for (const [name, count] of counts) peak.set(name, Math.max(peak.get(name) ?? 0, count));
+          for (const [name, count] of countThreadNames(names)) peak.set(name, Math.max(peak.get(name) ?? 0, count));
         }
         await Bun.sleep(1);
       }

@@ -1,4 +1,4 @@
-import { sql } from "bun";
+import { sql } from "@k2b/cloud";
 import { numericDivideSql } from "./numeric-division-sql";
 
 /** PostgreSQL percentile_cont coerces numeric to float8. Keep both middle values numeric. */

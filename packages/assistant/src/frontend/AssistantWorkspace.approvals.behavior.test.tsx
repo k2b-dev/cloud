@@ -57,9 +57,18 @@ test("New chat and the chat row leave the approvals view opened over an empty ch
       <AssistantWorkspace
         userId="user123"
         cloudUrl="http://localhost"
-        status={{ ok: true, enabled: true, defaultModelId: "", visionModelConfigured: false, error: null, models: [] }}
+        status={{
+          ok: true,
+          enabled: true,
+          status: "ok",
+          selection: null,
+          effectiveDefault: { class: "balanced" },
+          classes: [],
+          visionModelConfigured: false,
+          error: null,
+          options: [],
+        }}
         models={[]}
-        lastModelId=""
         timeZone="UTC"
         renderedAt="2026-10-08T10:00:00.000Z"
         initialLiveCursor="s6t.cloud-live-core.0"

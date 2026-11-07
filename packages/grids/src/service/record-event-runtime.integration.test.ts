@@ -1,5 +1,5 @@
 import { expect, spyOn, test } from "bun:test";
-import { sql } from "bun";
+import { sql } from "@k2b/cloud";
 import { createDisposableDatabase, testFor, testInfra } from "../../../../scripts/fixtures/test-infra";
 
 const databaseName = process.env.GRIDS_RECORD_EVENTS_DB_CHILD;
@@ -40,7 +40,8 @@ if (!databaseName) {
       await sql`CREATE SCHEMA auth`.simple();
       await sql`CREATE TABLE auth.users (id UUID PRIMARY KEY)`.simple();
       await sql`CREATE TABLE auth.access (id UUID PRIMARY KEY)`.simple();
-      await sql`CREATE TABLE auth.service_accounts (id UUID PRIMARY KEY)`.simple();
+      await sql`CREATE TABLE auth.service_accounts (id UUID PRIMARY KEY, name TEXT, kind TEXT, status TEXT)`.simple();
+      await sql`CREATE TABLE auth.mandates (id UUID PRIMARY KEY)`.simple();
       const { migrate: migrateWorkflows } = await import("../../../core/src/migrate/core/workflows");
       const { migrate: migrateLogging } = await import("../../../core/src/migrate/core/logging");
       const { migrate: migrateEvents } = await import("../../../core/src/migrate/core/events");
@@ -74,6 +75,26 @@ if (!databaseName) {
       ).rejects.toThrow("rollback");
       const [empty] = await sql<{ count: number }[]>`SELECT count(*)::int AS count FROM grids.record_event_outbox`;
       expect(empty?.count).toBe(0);
+      const { insertTestWorkflow } = await import("./workflow-test-fixture");
+      await insertTestWorkflow({
+        baseId,
+        enabled: true,
+        recordEventActiveSince: new Date(0),
+        plan: {
+          schemaVersion: 2,
+          languageId: "grids",
+          languageVersion: 1,
+          sourceHash: "a".repeat(64),
+          manifestHash: "b".repeat(64),
+          catalogHash: "c".repeat(64),
+          maxLoopItems: 10000,
+          actionPolicies: {},
+          inputs: [],
+          steps: [],
+          triggers: [{ kind: "recordEvent", config: { event: "updated" }, with: {} }],
+          bindings: { "triggers.recordEvent.table": tableId },
+        },
+      });
       const first = await enqueueRecordEvent(sql, event(recordId, 1));
       await enqueueRecordEvent(sql, event(recordId, 2));
       await enqueueRecordEvent(sql, event(otherRecordId, 1));
@@ -196,26 +217,6 @@ if (!databaseName) {
       checkpoint("501-event backlog drained");
       // An individual workflow's snapshot failure must surface from dispatch so
       // the delivery handler retains it instead of acknowledging silently.
-      const { insertTestWorkflow } = await import("./workflow-test-fixture");
-      await insertTestWorkflow({
-        baseId,
-        enabled: true,
-        recordEventActiveSince: new Date(0),
-        plan: {
-          schemaVersion: 2,
-          languageId: "grids",
-          languageVersion: 1,
-          sourceHash: "a".repeat(64),
-          manifestHash: "b".repeat(64),
-          catalogHash: "c".repeat(64),
-          maxLoopItems: 10000,
-          actionPolicies: {},
-          inputs: [],
-          steps: [],
-          triggers: [{ kind: "recordEvent", config: { event: "updated" }, with: {} }],
-          bindings: { "triggers.recordEvent.table": tableId },
-        },
-      });
       const { createWorkflowRecordEventRuntime } = await import("./workflow-record-events");
       const runtime = createWorkflowRecordEventRuntime(async () => {
         throw new Error("missing snapshot must prevent invocation");

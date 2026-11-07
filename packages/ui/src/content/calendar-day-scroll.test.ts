@@ -67,6 +67,13 @@ describe("week gestures", () => {
     expect(snapToColumn(245, 0, 250)).toBe(245);
   });
 
+  test("settle on a whole pixel when the room beside the drawer is fractional", () => {
+    // WebKit drops the fraction of a scroll position: 250.75 would rest at 250, short of the day end (#1713).
+    expect(snapToColumn(205, 100, 249.25, 1)).toBe(251);
+    expect(snapToColumn(245, 100, 249.4)).toBe(251);
+    expect(snapToColumn(310, 100.25)).toBe(301);
+  });
+
   test("settle a scroll without a gesture onward in its direction", () => {
     // A reveal that left a day end 5px past the room's end goes on, where the nearest edge would slide back over it.
     expect(snapToColumn(255, 100, 250)).toBe(250);

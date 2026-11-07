@@ -1,6 +1,10 @@
 ---
 name: skill-creator
 description: Create and improve reusable Assistant Skills. Use this whenever the user wants to turn instructions or a recurring workflow into a Skill, revise an existing Skill, add supporting information, or enable, disable, or remove a Skill.
+load-tools:
+  - core.ai.skill.create
+  - core.ai.skill.read
+  - core.ai.skill.update
 ---
 
 # Create and improve Skills

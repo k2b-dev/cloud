@@ -16,6 +16,36 @@ import { DescriptionList, DetailPanel, NumberInput } from "@k2b/ui";
 
 ## Use DetailPanel
 
+### One outline for every app
+
+A details panel follows one order of use, so it reads the same in every app.
+Each app leaves out what its object does not have:
+
+1. **Header** with the title, a short meta line, and the actions on the
+   item.
+2. **Here now** (`DetailPresence`), only for objects several people have
+   open live, such as a note: who is here, who writes where, and you.
+3. **Fields people edit** as quiet rows: name, then value. A click on an
+   editable row opens its picker ([property rows](/en/ui/surfaces/details#property-rows)).
+   No form fields.
+4. **Comments** or notes as a [`Discussion`](/en/ui/layout/discussion): the
+   newest three, older ones folded.
+5. **The object's own content**, such as tasks, an outline, or a checklist.
+6. **Tags** (`DetailTags`), **links** (`DetailLinks`: "Linked from" and
+   "Links to" in one section), **attachments** (a section with a
+   [`FileGrid`](/en/ui/content/files#file-lists-in-a-details-panel) list and
+   `limit={5}`), and other references.
+7. **More about …**: a `DetailPanel.Group` with a `title` whose sections are
+   closed and say in their `summary` what they hold: **Access**
+   (`DetailAccess`), **Properties** (`DetailProperties`: created, edited,
+   size, and the way to the version history), and **Activity**.
+
+What people work with stands open without a click; context waits below
+(progressive disclosure). Each app decides which sections it has and which
+belong under "More about …"; the building blocks decide how they look. Every
+section has an icon, and every section's content starts on its title's text
+edge (see [One edge per section](#one-edge-per-section)).
+
 Place it inside `AppWorkspace.Detail` for persistent selection context, or in
 another host when the same inspector content is reused. The host owns opening,
 closing, sizing, and persistence. An `AppWorkspace.Detail` column shares the
@@ -39,10 +69,18 @@ spacing as `AppWorkspace.Detail`. Omit it to keep the default section surfaces.
 ```
 
 `DetailPanel.Header` keeps identity and actions in one compact region. Pass
+`kind` for a short line above the title that names what the panel shows, such
+as "Conversation" or "Task", followed by its state badge; it shares the first
+row with the compact `actions`. Pass
 `icon` for the standard accent-tinted identity tile or `leading` for an avatar
-or another custom identity; they are mutually exclusive. Pass `actions` for
-compact utilities such as more and close, and `primaryActions` for the small
-set of prominent commands below the identity row. On touch devices, primary
+or another custom identity; they are mutually exclusive. Pass the resource's
+less frequent commands as `menu` (`DropdownItem[]`): the header shows one
+"…" button and opens a sheet on phones, so every panel opens its menu from the
+same place. With `primaryActions` it ends their row, next to the commands it
+extends; without them it sits before `actions`. An empty list shows no button; name it with
+`menuLabel` when "More actions" is too vague. Pass `actions` for compact
+utilities such as close, and `primaryActions` for the small set of prominent
+commands below the identity row. On touch devices, primary
 actions keep 0.625rem from the identity row and between wrapped lines, so
 their [tap areas](/en/ui/actions/buttons#touch-targets) stay clear of a
 `meta` action or the line above.
@@ -106,12 +144,22 @@ the relevant section after validation fails. `disabled` disables both toggle
 buttons; it does not disable the child controls. Use a fieldset for that.
 The content owns its layout: wrap form controls in a column with a gap.
 
+Pass `summary` to a collapsible section for one line that says what it
+holds while it is closed, such as its newest entry or "Sender, headers,
+original". The line takes the room the title, count, and meta leave and
+fades at its end; it is gone while the section is open. A section with a
+summary is 2.75rem tall in both states, so opening it moves nothing above
+its body.
+
 Use `DetailPanel.Group` when one or more sections form one stable context, such
 as a company and its contacts or a document and its derived metadata. Merge
 adjacent sections when they belong to that same context. Outside
 `AppWorkspace.Detail`, the group owns the same quiet surface as the summary. Inside it, or with `surface="plain"`, the group is transparent. Spacing and section headings
 separate its sections without borders or lines. Pass `label` when the
-shared context benefits from an accessible group name.
+shared context benefits from an accessible group name. Pass `title` for a
+visible quiet title, such as "More about this conversation": it names the
+group, and its sections stand flush below it as rows. Use it for collapsed
+secondary sections with a `summary`.
 
 A section placed directly in `DetailPanel.Body` is a group of one. It follows
 the group’s surface and inset in its host, so
@@ -122,8 +170,8 @@ add an application frame, border, or padding around a section. Only a notice,
 a progress bar, a short row of commands, or a feed whose items are each one
 frame stands in the body without a section frame. Loose text belongs in the
 header subtitle or a section, and a block with its own heading becomes a
-section. Give every section of a panel an `icon` so the
-titles share one column, and use `size="xs"` for text buttons in its
+section. Give every section of one panel an `icon`, as in the outline above,
+so the titles share one column. Use `size="xs"` for text buttons in its
 `actions`, so their label text ends at the same trailing edge as row metadata.
 
 Sections accept arbitrary content. Use `DescriptionList layout="rows"` for
@@ -141,14 +189,94 @@ message, start at the content edge without their own horizontal padding. A
 left-aligned `Placeholder` in a section does the same on its own. Do not
 add domain variants such as `record`, `mail`, or `workflow` to `DetailPanel`.
 
+### One edge per section
+
+A section heading is its icon, title, and count. Everything below it starts
+on the title's text edge: chips, sub-labels such as "Linked from 3", rows
+with their icons and avatars, comments, properties, and the summary of a
+closed section, which follows the title on its row. Nothing sits under the
+section icon. Only a real sub-level, such as an H3 in an outline, indents
+further. Hover fills may reach past the edge into the panel gutter; text and
+icons never do. `DetailPanel.Section`, `Discussion`, `DetailPanel.Action`,
+`DetailPanel.Row`, `FileGrid` in a section, and the shared sections below
+keep this edge on their own; app content inside a section must not add an
+indent or step back from it. To check it, measure: the left edge of every
+visible text, icon, avatar, or chip in a section body equals the left edge of
+its title text, at desktop and phone width.
+
+### Shared sections
+
+The common sections of an object's panel are shared components on top of
+`DetailPanel.Section`. Apps pass data; the components own the icon, title,
+count, states, and the edge. Each keeps its height while its data changes, so
+nothing moves when people come, go, or a list loads.
+
+- **`DetailPresence`** shows "Here now" in two fixed lines. The first holds
+  one chip per person: avatar with a live dot, short name, and a pen while
+  writing or an eye while reading, in the person's `color` (the same as
+  their cursor and comments). Chips that do not fit count as "+n"; "+n" and
+  the fixed "You" chip open the full list, a bottom sheet on phones. The
+  second line says who writes where ("Jana in Cold goods · Paul is reading
+  along") or the app's `note`. `state` covers `loading` (placeholders of the
+  same height), `live`, `offline` (the last people, pale, without live dots;
+  `note` says since when), and `unavailable` (`onRetry`, and a `note` such as
+  "Your changes are still being saved"). Alone, the count reads "Only you".
+  Pass one `actions` control, such as "Copy link". `DetailPresenceSlot` is
+  the fixed-width avatar slot for the people at one row, such as an outline
+  heading.
+- **`DetailAccess`** lists who has access and with which role, read-only,
+  closed by default with the first names as its summary. It shows `limit`
+  rows (5) and "Show n more", `manage` only for people who may change
+  access, and a `note` such as "Applies to the whole notebook". Pass
+  `state="loading"` while the list loads after the first paint and `"error"` with
+  `onRetry`. Show the section only to people with access of their own: the
+  platform's `getMemberPermission` and `AccessMember` decide that on the
+  server ([Show who has access](/en/docs/identity/authorization#show-who-has-access)).
+- **`DetailLinks`** puts `incoming` ("Linked from n") and `outgoing` ("Links
+  to n") in one section, five rows per direction before "Show n more".
+  Without links it is one row: the title and "None yet". A row can carry a
+  `description`, its own `leading` (such as a site's favicon), `target` and
+  `rel` for another site, `menuItems` with `menuLabel` (such as "Unlink"),
+  and `disabled` for an item that cannot be opened right now. Pass
+  `state="loading"` while links still load after the first paint: a
+  placeholder row takes the place of the next links. `"error"` keeps the
+  loaded rows, says that the rest failed, and offers `onRetry`. `footer`
+  holds rows after the links, such as "Add link" or "Load more", only for
+  people who may use them; it also follows "None yet".
+- **`DetailProperties`** shows facts as label and value rows, closed under
+  "More about …" with a `summary`. An item with `href` is a link, such as the
+  way to the version history. Pass `title` when the panel already has a
+  section of editable fields, such as "Technical details", and `children` for
+  rows after the facts, such as "Copy Cloud ID".
+- **`DetailTags`** shows tags as chips; a chip with `href` leads to
+  everything with that tag. Without tags it reads "None yet" and an optional
+  `emptyHint`.
+- **`DetailPanel.Row`** is a row that only shows something, such as a person
+  and their role: the columns of `DetailPanel.Action` without a command.
+
+```tsx
+<DetailPanel.Body>
+  <DetailPresence people={people()} state={presenceState()} note={presenceNote()} onRetry={retry} />
+  <Discussion label="Comments" icon="ti ti-message-circle" count={comments().length}>…</Discussion>
+  <DetailTags tags={tags()} />
+  <DetailLinks incoming={linkedFrom()} outgoing={linksTo()} />
+  <DetailPanel.Group title="More about this note">
+    <Show when={accessVisible}>
+      <DetailAccess entries={access()} state={accessState()} onRetry={loadAccess} />
+    </Show>
+    <DetailProperties items={facts()} summary={factsSummary()} />
+  </DetailPanel.Group>
+</DetailPanel.Body>
+```
+
 Use `DetailPanel.Action` for a full-width destination or command such as a
 related record, attachment, or in-panel jump. Pass `href` for native link
 semantics; omit it for a native button. `leading`, `title`, optional
 `description`, and `trailing` keep row geometry and interaction states
-consistent. Action rows align their optional leading icon with the section
-icon column and keep their titles at the section title's text edge, even
-without `leading`. All other content of a section with an icon inside a
-`DetailPanel` starts at that same text edge: comment authors, static text,
+consistent. An action row's optional leading icon or avatar starts on the
+section title's text edge and its title follows; without `leading` the title
+itself starts on that edge. All other content of a section with an icon inside
+a `DetailPanel` starts at that same text edge: comment authors, static text,
 progress, and row titles. A section used outside a panel, such as a form
 section in an editor dialog, keeps its full width. Do not
 add a second indent around action rows. Hover fill extends 0.5rem into the
@@ -175,7 +303,11 @@ as deleting an attachment, pass `secondaryAction` with an `icon`, an accessible
 `Delete budget.xlsx`, so repeated buttons stay distinguishable. It renders as a
 sibling icon button at the end of the row, before an optional Dots trigger, and
 appears on row hover or keyboard focus with any pointer that can hover.
-Touch-only screens always show it. Set `variant: "danger"` for a destructive
+Touch-only screens always show it. A row with a secondary action or a menu is
+one surface: hover and `current` fill the whole row, its trailing buttons
+included, so the buttons appear inside the surface they belong to and nothing
+moves. Keep `trailing` for quiet facts such as a time or a size, not for a
+command. Set `variant: "danger"` for a destructive
 command; hover and focus then use the danger text color. The button only reports the
 click. The application confirms destructive work, performs it, and refreshes
 the list. When that removes the focused row, the application moves focus to
@@ -189,7 +321,7 @@ type DetailPanelProps = {
 };
 
 type DetailPanelHeaderBaseProps = {
-  title: JSX.Element; subtitle?: JSX.Element; meta?: JSX.Element; actions?: JSX.Element;
+  kind?: JSX.Element; title: JSX.Element; subtitle?: JSX.Element; meta?: JSX.Element; actions?: JSX.Element;
   primaryActions?: JSX.Element; class?: string;
 };
 
@@ -214,7 +346,7 @@ type DetailPanelSummaryProps = {
 };
 
 type DetailPanelGroupProps = {
-  children: JSX.Element; label?: string; class?: string;
+  children: JSX.Element; label?: string; title?: JSX.Element; class?: string;
 };
 
 type DetailPanelTone = "accent" | "neutral" | "success" | "warning" | "danger";
@@ -230,6 +362,7 @@ type DetailPanelSectionProps = DetailPanelSectionBaseProps &
         children?: JSX.Element;
         actions?: JSX.Element;
         collapsible?: false;
+        summary?: never;
         defaultOpen?: never;
         open?: never;
         onOpenChange?: never;
@@ -239,6 +372,7 @@ type DetailPanelSectionProps = DetailPanelSectionBaseProps &
         children: JSX.Element;
         actions?: never;
         collapsible: true;
+        summary?: JSX.Element;
         defaultOpen?: boolean;
         open?: boolean;
         onOpenChange?: (open: boolean) => void;
@@ -278,7 +412,112 @@ type DetailPanelActionButtonProps = DetailPanelActionBaseProps &
   };
 
 type DetailPanelActionProps = DetailPanelActionLinkProps | DetailPanelActionButtonProps;
+
+type DetailPanelRowProps = {
+  title: JSX.Element;
+  description?: JSX.Element;
+  leading?: JSX.Element;
+  trailing?: JSX.Element;
+  class?: string;
+};
 ```
+
+Shared sections:
+
+```ts
+type DetailPresencePerson = {
+  id: string;
+  name: string;
+  shortName?: string; // defaults to name
+  src?: string | null;
+  icon?: string;
+  shape?: "circle" | "square";
+  color?: string; // defaults to personColor(name)
+  activity?: "writing" | "reading";
+  place?: string;
+  trailing?: JSX.Element; // in the full list, such as "2 tabs"
+  onSelect?: () => void; // go to the person's place
+  self?: boolean;
+};
+type DetailPresenceState = "live" | "loading" | "offline" | "unavailable";
+type DetailPresenceProps = {
+  people: readonly DetailPresencePerson[];
+  state?: DetailPresenceState; // default "live"
+  note?: JSX.Element;
+  onRetry?: () => void;
+  actions?: JSX.Element;
+  title?: string; // default "Here now"
+  listHint?: JSX.Element;
+  class?: string;
+};
+// DetailPresenceSlot: { people: readonly DetailPresencePerson[]; max?: number } — default max 2
+
+type DetailAccessEntry = {
+  id: string;
+  name: string;
+  kind?: "person" | "group" | "service" | "everyone" | "public";
+  src?: string | null;
+  detail?: JSX.Element;
+  role: JSX.Element;
+  self?: boolean;
+};
+type DetailAccessProps = {
+  entries: readonly DetailAccessEntry[];
+  state?: "ready" | "loading" | "error"; // default "ready"
+  onRetry?: () => void;
+  limit?: number; // default 5
+  manage?: { label: string; href?: string; onClick?: () => void };
+  note?: JSX.Element;
+  title?: string; // default "Access"
+  defaultOpen?: boolean;
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
+  class?: string;
+};
+
+type DetailLinkItem = {
+  id: string;
+  title: string;
+  href?: string;
+  onClick?: (event: MouseEvent) => void;
+  icon?: string; // default "ti ti-file-text"
+  leading?: JSX.Element; // replaces the icon
+  description?: JSX.Element;
+  trailing?: JSX.Element;
+  target?: string;
+  rel?: string;
+  disabled?: boolean;
+} & ({ menuItems?: never; menuLabel?: never } | { menuItems: readonly DropdownItem[]; menuLabel: string });
+type DetailLinksProps = {
+  incoming: readonly DetailLinkItem[];
+  outgoing: readonly DetailLinkItem[];
+  limit?: number; // per direction, default 5
+  title?: string; // default "Links"
+  defaultOpen?: boolean; // default true
+  state?: "ready" | "loading" | "error"; // default "ready"
+  onRetry?: () => void;
+  footer?: JSX.Element; // rows after the links, such as "Add link"
+  class?: string;
+};
+
+type DetailProperty = { id: string; label: JSX.Element; value: JSX.Element; leading?: JSX.Element; href?: string };
+type DetailPropertiesProps = {
+  items: readonly DetailProperty[];
+  title?: string; // default "Properties"
+  icon?: string; // default "ti ti-info-square"
+  summary?: JSX.Element;
+  defaultOpen?: boolean;
+  children?: JSX.Element; // rows after the facts, such as "Copy Cloud ID"
+  class?: string;
+};
+
+type DetailTag = { id: string; label: string; href?: string };
+type DetailTagsProps = { tags: readonly DetailTag[]; title?: string; emptyHint?: JSX.Element; class?: string };
+```
+
+Titles and sentences ("Here now", "Only you", "Linked from 3", "Show 2 more")
+are localized through the inherited UI locale; pass your own `title` only
+for a different noun.
 
 The `*BaseProps` shapes explain shared fields of the public unions. `Header` chooses icon/title or custom leading content through its union; `Action` chooses a menu, link, or native button. `DropdownItem` uses the [menu contract](/en/ui/actions/menus#api-reference); native button/link attributes retain their usual types. Boolean features are off unless enabled; `Body` owns the scroll area by default.
 
@@ -293,6 +532,11 @@ Every icon-only action and every control embedded in a description value still
 needs its own accessible name. `DetailPanel.Action` keeps its visible title as
 the accessible name and renders a real link or button. Its secondary action is a
 separate button in the tab order, named by `label`.
+`DetailPresence` names each chip with the person and what they do ("Jana
+Berger, writing in “Cold goods”. Jump there"); chips that do not fit leave the
+tab order, and the "+n" and "You" button names everyone here. Loading and
+outage states announce themselves through a status region; the live dot is
+never the only signal, the chip's pen or eye and its name say the same.
 
 ## Runtime
 

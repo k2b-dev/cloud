@@ -1,8 +1,8 @@
 import { afterAll, afterEach, beforeAll, beforeEach, expect, setSystemTime, spyOn, test } from "bun:test";
 import * as webAuthnServer from "@simplewebauthn/server";
-import { sql } from "bun";
 import { SignJWT } from "jose";
 import { databaseSuite } from "../../../../scripts/fixtures/test-infra";
+import { sql } from "../runtime/clients";
 import "../../../../scripts/fixtures/authorization-preload";
 import { accounts } from "../services/accounts";
 import { prepareIdentitySigner } from "../services/identity/key-ring";
@@ -94,7 +94,7 @@ suite("personal access requires a confirmed browser sign-in", () => {
     const response = await post("/api-keys", oauthToken, { name: "Neu" }, "de");
     expect(await response.json()).toMatchObject({
       code: "BROWSER_SIGN_IN_REQUIRED",
-      message: "API-Schlüssel und Passkeys legst du im Browser an.",
+      message: "API Keys und Passkeys legst du im Browser an.",
     });
   });
 

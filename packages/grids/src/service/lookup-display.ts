@@ -1,4 +1,4 @@
-import { sql } from "bun";
+import { sql } from "@k2b/cloud";
 import { LOOKUP_TARGET_META_KEY, type LookupTargetMeta } from "../lookup-display";
 import type { SqlClient } from "./audit";
 import { parseJsonbRow } from "./jsonb";

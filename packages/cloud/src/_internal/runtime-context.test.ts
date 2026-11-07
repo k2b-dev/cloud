@@ -31,7 +31,7 @@ describe("buildRuntimeFromRegistry", () => {
     expect(buildRuntimeFromRegistry([entry()]).apps[0]?.appearance).toBeUndefined();
   });
 
-  it("copies the mobile app part without sharing the registry's role list", () => {
+  it("copies the Cloud app part without sharing the registry's role list", () => {
     const app = entry();
     app.pwa = { href: "/pwa/example", requiresRoles: ["user"] };
 

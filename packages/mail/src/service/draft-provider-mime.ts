@@ -101,7 +101,10 @@ export const buildDraftProviderMimeStream = (params: {
     cc: params.content.cc.map(formatAddress),
     bcc: params.content.bcc.map(formatAddress),
     subject: params.content.subject,
-    text: params.content.body,
+    // Import removes one transport line ending from every provider copy (`removeMimeTransportLineEnding`).
+    // Adding it here keeps Cloud's own copy identical on the way back, also for a body that ends in a line
+    // break; otherwise the sync took the copy for an outside edit and raised the revision under the composer.
+    text: `${params.content.body}\n`,
     html,
     messageId: params.messageId,
     date: params.date,
