@@ -1,15 +1,16 @@
 import { describe, expect, test } from "bun:test";
 import { sql } from "@k2b/cloud";
 import { useUnitClients } from "../../../../scripts/fixtures/unit-clients";
+import { normalizeMailKeywords } from "./command-message-state";
 import { extractMessageProtocolFacts } from "./message-protocol";
 import type { MailWorkflowTargetSnapshot } from "./workflow-data";
-import { getWorkflowSnapshot, getWorkflowSnapshots, mailWorkflowEventContext, normalizeWorkflowKeywords } from "./workflow-data";
+import { getWorkflowSnapshot, getWorkflowSnapshots, mailWorkflowEventContext } from "./workflow-data";
 import { mailWorkflowMessagePrecondition } from "./workflow-message-preconditions";
 
 describe("Mail workflow event context", () => {
   test("freezes only keywords the remote precondition can express", () => {
     const target = { messageId: "message", remoteMessageRefId: "remote", folderId: "folder" };
-    const keywords = normalizeWorkflowKeywords(["\\Inbox", "\\Important", " review ", "needs action", "", "zebra", "a".repeat(101)]);
+    const keywords = normalizeMailKeywords(["\\Inbox", "\\Important", " review ", "needs action", "", "zebra", "a".repeat(101)]);
     expect(keywords).toEqual(["review", "zebra"]);
     expect(
       mailWorkflowMessagePrecondition(
