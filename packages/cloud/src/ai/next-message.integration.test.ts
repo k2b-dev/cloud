@@ -58,11 +58,11 @@ databaseSuite()("next message storage and projections", () => {
     return { userId, conversation, turnId, messageId, input, complete, read };
   };
 
-  test("migration keeps only the suggestion JSON in the history table shapes", async () => {
+  test("migration adds the suggestion JSON to both history tables", async () => {
     const rows = await sql<{ table_name: string; column_name: string }[]>`
       SELECT table_name, column_name FROM information_schema.columns
       WHERE table_schema = 'ai' AND table_name IN ('messages', 'task_messages')
-        AND column_name IN ('suggested_next_message', 'suggestion_user_id') ORDER BY table_name`;
+        AND column_name = 'suggested_next_message' ORDER BY table_name`;
     expect(rows).toEqual([
       { table_name: "messages", column_name: "suggested_next_message" },
       { table_name: "task_messages", column_name: "suggested_next_message" },

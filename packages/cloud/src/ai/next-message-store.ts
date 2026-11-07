@@ -4,13 +4,11 @@ import type { AiStoredMessage } from "./types";
 /** Separate answer metadata: model history, exports, indexing and notifications never load these columns. */
 export const migrateAiNextMessages = async () => {
   await sql`ALTER TABLE ai.messages
-    ADD COLUMN IF NOT EXISTS suggested_next_message JSONB,
-    DROP COLUMN IF EXISTS suggestion_user_id`.simple();
+    ADD COLUMN IF NOT EXISTS suggested_next_message JSONB`.simple();
   // Context history unions the interactive and background tables with SELECT *.
   // Keep their shapes equal; background runs never write these fields.
   await sql`ALTER TABLE ai.task_messages
-    ADD COLUMN IF NOT EXISTS suggested_next_message JSONB,
-    DROP COLUMN IF EXISTS suggestion_user_id`.simple();
+    ADD COLUMN IF NOT EXISTS suggested_next_message JSONB`.simple();
   await sql`ALTER TABLE ai.user_prefs ADD COLUMN IF NOT EXISTS suggest_next_message BOOLEAN NOT NULL DEFAULT true`.simple();
 };
 
