@@ -45,12 +45,16 @@ application declared that event type and version.
 
 Spaces, Notebooks, and Mail publish these version 1 events. The envelope's
 `subject` and `place` carry public resource IDs accepted by the corresponding
-Type readers. Spaces and Notebooks use a strict empty `data` object (`{}`);
-Mail carries only the receipt reference described below.
+Type readers. Notebooks and most Spaces events use a strict empty `data` object
+(`{}`). `spaces.item.updated` carries only change categories; Mail carries only
+the receipt reference described below.
 
 | Full event type | Subject Type | Place Type | When it is published |
 | --- | --- | --- | --- |
 | `spaces.item.created` | `spaces.item` | `spaces.space` | A task, calendar event, stored occurrence override, or split series is created. |
+| `spaces.comment.created` | `spaces.comment` | `spaces.space` | A comment is created on an item or recurring occurrence; a retried comment request emits no second event. |
+| `spaces.item.updated` | `spaces.item` | `spaces.space` | An existing item's assignees, deadline or status changes. Data is `{ changed: [...] }`, with one to three values from `assignees`, `due`, `status`. |
+| `spaces.item.due` | `spaces.item` | `spaces.space` | An open task reaches its deadline, once per item and due value. |
 | `spaces.item.completed` | `spaces.item` | `spaces.space` | An existing item changes from open to completed, including a drag, calendar cancellation, or transfer into a done column. |
 | `notebooks.notebook.created` | `notebooks.notebook` | `notebooks.notebook` | A notebook is created. |
 | `notebooks.notebook.updated` | `notebooks.notebook` | `notebooks.notebook` | Notebook metadata or settings change. |
@@ -59,17 +63,40 @@ Mail carries only the receipt reference described below.
 | `mail.message.received` | `mail.message` | `mail.mailbox` | An incoming message reaches its first eligible provider placement. |
 
 The place Types have permission-aware readers: `spaces.space.read` and
-`notebooks.notebook.read`, plus `mail.mailbox.read` for Mail. Subject readers are `spaces.item.read`,
+`notebooks.notebook.read`, plus `mail.mailbox.read` for Mail. Subject readers are `spaces.item.read`, `spaces.comment.read`,
 `notebooks.notebook.read`, `notebooks.note.read`, and `mail.message.read`. Read content through those
 readers; events contain no titles, text, names, email addresses, content counts,
 parent IDs, or previous-place references. Repeating completion or reopening an
-item does not publish `spaces.item.completed`.
+item does not publish `spaces.item.completed`. A completion or reopening does
+publish `spaces.item.updated` with `status`; repeated or otherwise unchanged
+updates emit nothing. Status includes moving between columns and changing
+completion state. Assignee order and equivalent timestamp offsets do not count
+as changes. Title, description, priority, tags, progress, and rank alone do
+not emit `item.updated`. Claims that add or remove assignees do.
 
-A Spaces transfer that completes an item publishes under its **new place only**.
+A Spaces transfer publishes its assignee or status changes, and any completion,
+under its **new place only**.
 Its source receives no resource event naming the destination. A note move
 carries only the note and its current notebook refs; it omits parent and position.
 Moving notes between notebooks remains unsupported; copying creates a new note
 and emits `note.created` in the destination notebook.
+
+`spaces.item.due` uses a minute sweep with at most four tasks per tick across
+all replicas per UTC minute. Timed deadlines use their exact instant; all-day deadlines become
+eligible at midnight in the installation's `app.timezone` (UTC when the
+setting is empty or invalid). Only tasks with no
+completion timestamp and outside done columns are eligible; calendar events
+are excluded. The oldest eligible deadlines go first. The sweep includes
+previously overdue tasks on upgrade or restart, so backlog can delay an event.
+The event contains no deadline value: read the item's current state through
+`spaces.item.read` before acting.
+
+The sweep saves a durable receipt for each item and due value atomically with
+the outbox event. Moving the deadline allows one event for the new value;
+returning to an already announced value or reopening the task emits no second
+due event for that value. Receipts last until the item is deleted. Tick claims
+and row locks keep retries and replicas within the shared batch limit. An
+outbox failure rolls back the whole batch, receipts and tick claim for retry.
 
 `notebooks.note.updated` uses trailing coalescing. A changed note records its
 first pending change and latest change in the domain transaction. A minute
@@ -90,13 +117,14 @@ Collaborative edits mark the note when persisted to its snapshot, including
 shared-log snapshot workers and server-side edits, rather than on each Yjs
 update. Existing workspace and collaborative text streams retain their own behavior.
 
-Creates and completions remain transactional discrete facts. Notebook metadata
+Creates, comments, item changes and completions remain transactional discrete facts. Notebook metadata
 updates also remain transactional: one update affects one notebook and does
-not fan out to its notes. These event rates equal the corresponding domain
-write rates; they have no aggregate event throttle. The domain helpers can
+not fan out to its notes. Their rates follow domain
+writes; they have no aggregate event throttle. A completion can emit both
+`item.updated` and `item.completed`. The domain helpers can
 participate in a caller-owned transaction, so they rely on the platform's
 one-second outbox reconciliation instead of waking before that transaction
-commits. The note sweep owns its transaction and calls `wake()` after commit.
+commits. The note and due sweeps own their transactions and call `wake()` after commit.
 
 **Applications do not receive these events.** They are resource events: an
 application subscription to them stays `blocked` with

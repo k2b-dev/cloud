@@ -122,12 +122,26 @@ These commands call the matching administrative endpoints:
 | `redeliver <id>` | `POST /api/app-events/deliveries/:id/redeliver` |
 | `record <type> --shape-only` | `GET /api/app-events/record/:eventType` |
 
-Spaces now publishes `spaces.item.created` and `spaces.item.completed`.
+Spaces publishes `spaces.item.created`, `spaces.item.completed`,
+`spaces.comment.created`, `spaces.item.updated`, and `spaces.item.due`.
 Notebooks publishes `notebooks.notebook.created`, `notebooks.notebook.updated`,
 `notebooks.note.created`, and `notebooks.note.updated`. All are version 1
-resource events with public refs and empty data. They are retained through the
+resource events with public refs. Only `spaces.item.updated` carries data:
+`changed` lists `assignees`, `due`, or `status`, with no old or new values. They are retained through the
 normal event pipeline, but **are not delivered to app subscribers**. Retrying,
 redelivering, or restarting does not remove the authorization block.
+
+Spaces due events use the existing maintenance scheduler, once per minute, with
+at most **four tasks** across all replicas per UTC minute. The durable tick claim and
+per-item, per-due-value receipt commit with the outbox. Retrying a failed batch
+is safe; restarting does not forget receipts or pending deadlines. All-day
+deadlines use midnight in `app.timezone` (UTC if empty or invalid); timed
+deadlines use their instant.
+Completed tasks, done columns, and calendar events are excluded. Existing
+overdue tasks are eligible on upgrade. Backlog can delay delivery. Moving a
+deadline can emit again for the new value; reverting to an announced value
+cannot. Receipts are removed with their item. The scheduler's existing job
+status and retry handling expose failures.
 
 Note updates are trailing, bounded batches: Q = **30 seconds** quiet time,
 W = **five minutes** until eligibility despite continuous edits, T = **one minute**
@@ -139,8 +153,9 @@ each marker. Locked notes remain eligible. An outbox failure rolls back the
 batch and tick claim, leaving markers for retry. Backlog and skipped row locks
 can delay delivery beyond W; W bounds coalescing, not queueing time.
 
-Creates and completions are discrete facts retained in their domain
-transactions. Their rate equals the domain write rate. Both APIs install the
+Creates, comments, item changes and completions are discrete facts retained in their domain
+transactions. Their rates follow domain writes; one completion can emit both
+`item.updated` and `item.completed`. Both APIs install the
 shared `rateLimit()` middleware: by default 60 requests/s per session user or
 client IP, configurable through `security.rate_limit_per_second`. That is not
 an installation-wide event bound, and direct services and capability Actions
@@ -230,11 +245,13 @@ letters can accept older events later, so handlers must tolerate that order.
 
 The stream budget is shared by **all producers**. The producer fixture tests
 measure compact JSON envelopes at **241 bytes** for `spaces.item.created`,
-**243 bytes** for `spaces.item.completed`, **256 bytes** for either note event,
+**243 bytes** for `spaces.item.completed`, **247 bytes** for
+`spaces.comment.created`, **237 bytes** for `spaces.item.due`, and **279 bytes**
+for `spaces.item.updated` with all three change categories, **256 bytes** for either note event,
 and **264 bytes** for either notebook event (six-character public IDs, a UUID
-event ID, fixed ISO timestamp, empty data, no cause). Mail's
+event ID, fixed ISO timestamp, empty data except the change categories, no cause). Mail's
 `mail.message.received` fixture is **292 bytes**, including its UUID receipt
-reference. PostgreSQL `jsonb::text` adds whitespace: **262–314 bytes** across
+reference. PostgreSQL `jsonb::text` adds whitespace: **258–314 bytes** across
 these fixtures. Longer refs or an optional cause increase the size; the platform maximum remains
 **4096 bytes** in PostgreSQL `jsonb::text`.
 
@@ -263,8 +280,12 @@ The existing Sync scheduler has minute resolution, so T = 60 s and
 `M = floor(0.25 × 0.3 × 60) = 4`. Thus sustained `note.updated` throughput is
 at most `M/T = 4/60 = 0.0667 events/s`, **22.2%** of the shared planning rate
 (with an initial burst of at most four). Q = 30 s merges short editing bursts;
-W = 300 s lets continuous editing become eligible within five minutes. The
-remaining 0.233 events/s is a planning allowance for all other events, including
+W = 300 s lets continuous editing become eligible within five minutes.
+
+Spaces due events allocate another 25% with the same formula: four per minute
+is 0.0667 events/s. Together these two sweeps use at most **0.1333 events/s**,
+44.4% of the shared planning rate, with an initial burst of at most eight. The
+remaining **0.1667 events/s** is a planning allowance for all other events, including
 discrete Mail receipts at the eligible incoming-message rate, not a
 publisher limit. Sustained discrete writes above it require more capacity or
 a shorter outage target. A missed or expired event requires domain reconciliation.
