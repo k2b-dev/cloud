@@ -25,8 +25,8 @@ import * as statsExamples from "./stats";
 export const exampleModules: Record<string, unknown>[] = [
   areaExamples,
   balanceExamples,
-  bar_basicExamples,
   barExamples,
+  bar_basicExamples,
   barGaugeExamples,
   boxplotExamples,
   budgetExamples,
