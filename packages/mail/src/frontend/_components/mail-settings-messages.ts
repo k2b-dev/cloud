@@ -183,7 +183,7 @@ export const mailSettingsMessages = i18n.define({
       codeUnknown: "Numbers are not available right now",
       codeAutomations: ({ n }: { n: number }) => (n === 1 ? "1 automation" : `${n} automations`),
       codeAccess: ({ n, title }: { n: number; title: string }) => (n === 1 ? `access to 1 ${title}` : `access to ${n} × ${title}`),
-      moveToRecentlyDeleted: "Move to recently deleted",
+      deleteMailbox: "Delete mailbox",
       mailboxSettings: "Mailbox settings",
       personal: "Personal",
       reading: "Reading",
@@ -260,8 +260,8 @@ export const mailSettingsMessages = i18n.define({
       lifecycle: "Lifecycle",
       dangerZone: "Danger zone",
       dangerZoneDescription: "Remove this mailbox from normal use.",
-      recentlyDeletedGroupDescription:
-        "Pause and hide the mailbox. Its Code is permanently deleted; provider mail and other Cloud data remain available for restoration.",
+      deleteMailboxGroupDescription:
+        "Pause and hide the mailbox. Its Code is permanently deleted; provider mail and other Cloud data remain available for restoration under Mailboxes → … → Deleted mailboxes.",
       sent: "Sent",
       drafts: "Drafts",
       archive: "Archive",
@@ -707,6 +707,8 @@ export const mailSettingsMessages = i18n.define({
       emailDesignDescription: "Preview and adjust mailbox branding for Markdown messages.",
       editDesign: "Edit design",
       logo: "Logo",
+      logoChanged: "The logo changed. Load the current logo to review it; your width and alt text stay here.",
+      loadCurrentLogo: "Load current logo",
       logoVariableHint: "In a signature, {{\u00a0mailbox.logo\u00a0}} places the mailbox logo from Writing → Logo.",
       logoDescription:
         "One logo for this mailbox. Place it in any signature with {{\u00a0mailbox.logo\u00a0}}. Mail sends it inside the email, never as a link.",
@@ -1079,7 +1081,7 @@ export const mailSettingsMessages = i18n.define({
       codeUnknown: "Zahlen gerade nicht verfügbar",
       codeAutomations: ({ n }: { n: number }) => (n === 1 ? "1 Automation" : `${n} Automationen`),
       codeAccess: ({ n, title }: { n: number; title: string }) => (n === 1 ? `Zugriff auf 1 ${title}` : `Zugriff auf ${n} × ${title}`),
-      moveToRecentlyDeleted: "In „Kürzlich gelöscht“ verschieben",
+      deleteMailbox: "Postfach löschen",
       mailboxSettings: "Postfacheinstellungen",
       personal: "Persönlich",
       reading: "Lesen",
@@ -1157,8 +1159,8 @@ export const mailSettingsMessages = i18n.define({
       lifecycle: "Lebenszyklus",
       dangerZone: "Gefahrenbereich",
       dangerZoneDescription: "Dieses Postfach aus der normalen Verwendung entfernen.",
-      recentlyDeletedGroupDescription:
-        "Pausiert das Postfach und blendet es aus. Sein Code wird dauerhaft gelöscht. E-Mails beim Anbieter und andere Cloud-Daten bleiben zur Wiederherstellung erhalten.",
+      deleteMailboxGroupDescription:
+        "Pausiert das Postfach und blendet es aus. Sein Code wird dauerhaft gelöscht. E-Mails beim Anbieter und andere Cloud-Daten bleiben zur Wiederherstellung unter „Postfächer“ → „…“ → „Gelöschte Postfächer“ erhalten.",
       sent: "Gesendet",
       drafts: "Entwürfe",
       archive: "Archiv",
@@ -1618,6 +1620,8 @@ export const mailSettingsMessages = i18n.define({
       emailDesignDescription: "Postfachdesign für Markdown-Nachrichten prüfen und anpassen.",
       editDesign: "Design bearbeiten",
       logo: "Logo",
+      logoChanged: "Das Logo wurde geändert. Lade das aktuelle Logo zum Prüfen. Deine Breite und dein Alternativtext bleiben erhalten.",
+      loadCurrentLogo: "Aktuelles Logo laden",
       logoVariableHint: "In einer Signatur setzt {{\u00a0mailbox.logo\u00a0}} das Postfachlogo aus Schreiben → Logo ein.",
       logoDescription:
         "Ein Logo für dieses Postfach. Setze es mit {{\u00a0mailbox.logo\u00a0}} in eine beliebige Signatur. Mail sendet es in der E-Mail, nie als Link.",

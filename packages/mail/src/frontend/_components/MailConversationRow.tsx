@@ -6,7 +6,13 @@ import { useMailCloudId } from "./mail-cloud-id";
 import { type MailRespondIntent, mailConversationMenuItems } from "./mail-conversation-menu";
 import { MAX_MAIL_CONVERSATION_SELECTION } from "./mail-conversation-selection";
 import { mailConversationUiMessages } from "./mail-conversation-ui-messages";
-import { buildMailAttachmentDownloadHref, buildMailSelectionHref, isMailListItemActive, type MailListItem } from "./mail-navigation";
+import {
+  buildMailAttachmentDownloadHref,
+  buildMailAttachmentThumbnailHref,
+  buildMailSelectionHref,
+  isMailListItemActive,
+  type MailListItem,
+} from "./mail-navigation";
 import { type MailRowAssignee, mailRowAssigneeLabels } from "./mail-row-assignees";
 import { mailParticipantFaces, mailParticipantSummary, mailRowParticipants } from "./mail-row-participants";
 
@@ -62,6 +68,44 @@ export type MailConversationRowColumns = {
   /** The people responsible, or null in a personal mailbox where the column is left out. */
   assignees: MailRowAssignee[] | null;
 };
+
+/** At most this many image thumbnails; the rest are counted. */
+const MAX_ROW_THUMBNAILS = 3;
+
+/**
+ * Small thumbnails of a row's image attachments in the columns view. They load lazily from Mail's thumbnail route,
+ * which checks access as opening the mail does, and only where the stylesheet shows them, so narrow widths and phones
+ * load none. Each box has its size before the image arrives; one that fails keeps its box with a quiet image icon.
+ */
+function MailRowThumbnails(props: { item: MailListItem; requestUrl: URL }) {
+  const images = () =>
+    (props.item.imageAttachments ?? []).slice(0, MAX_ROW_THUMBNAILS).flatMap((image) => {
+      const href = buildMailAttachmentThumbnailHref(props.requestUrl, image);
+      return href ? [{ key: image.attachmentId, href }] : [];
+    });
+  const more = () => Math.max(0, (props.item.imageAttachmentCount ?? images().length) - images().length);
+  return (
+    <Show when={images().length > 0}>
+      <span class="mail-row-thumbnails" aria-hidden="true" data-mail-row-thumbnails>
+        <For each={images()}>
+          {(image) => {
+            const [failed, setFailed] = createSignal(false);
+            return (
+              <span class="mail-row-thumbnail" data-failed={failed() ? "true" : undefined}>
+                <Show when={!failed()} fallback={<i class="ti ti-photo" />}>
+                  <img src={image.href} alt="" loading="lazy" decoding="async" draggable={false} onError={() => setFailed(true)} />
+                </Show>
+              </span>
+            );
+          }}
+        </For>
+        <Show when={more() > 0}>
+          <span class="mail-row-thumbnail-more">+{more()}</span>
+        </Show>
+      </span>
+    </Show>
+  );
+}
 
 export default function MailConversationRow(props: {
   item: MailListItem;
@@ -242,6 +286,7 @@ export default function MailConversationRow(props: {
                 </Show>
                 <span class="mail-row-subject">{props.item.subject || t().noSubject}</span>
                 <span class="mail-row-inline-preview">{props.item.preview}</span>
+                <MailRowThumbnails item={props.item} requestUrl={props.requestUrl} />
                 <Show when={props.item.attachmentCount || props.item.flagged || props.item.kept}>
                   <span class="mail-row-marks">
                     <Show when={props.item.attachmentCount}>

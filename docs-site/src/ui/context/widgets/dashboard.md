@@ -2,6 +2,8 @@
 
 The widget family composes compact dashboard blocks from semantic presentation
 data. It does not fetch endpoints or depend on a dashboard registry.
+`DashboardGrid`, `DashboardSection`, and `DashboardPanel` lay out a whole
+dashboard of framed panels on six columns.
 
 ## Use Widget composition
 
@@ -23,10 +25,64 @@ arrives.
 The header icon sits in a soft chip of its color, using the host's
 `--k2b-app-workspace-active` accent hook.
 
+## Dashboard grid
+
+Use the dashboard grid for a page of panels, such as a Pulse dashboard or a
+page of figures in an app:
+
+- `DashboardGrid` is the measuring container. Panel widths follow its own
+  width, so a dashboard in a side panel folds like one in a narrow window.
+- `DashboardSection` is one titled group of panels. It shows an optional plain
+  icon, the title, and a quiet description next to it, which wraps under the
+  title when space runs out. Without `title`, pass `ariaLabel` to name it.
+- `DashboardPanel` is one framed cell: a light 1 px frame with a 12 px radius
+  and 14 px by 16 px padding. Panels in one row share the height of the
+  tallest. The panel is the only frame: its content, such as a table, adds no
+  second frame and runs to the edges where it needs to.
+
+`width` is the panel's share of six columns:
+
+| `width` | Wide | 1000 px or less | 600 px or less |
+| --- | --- | --- | --- |
+| `third` (default) | 2 | 3 | 6 |
+| `half` | 3 | 3 | 6 |
+| `twoThirds` | 4 | 6 | 6 |
+| `full` | 6 | 6 | 6 |
+
+The widths in the table are the dashboard's own width, not the window's.
+Panels keep their source order: the grid never reorders or packs them, so the
+reading order and the keyboard order are the same as on the screen.
+
+A `StatGrid` inside a section is its row of key figures. It always spans all
+six columns, keeps four tiles to a row and two at 600 px or less, and stands in
+the section where you place it, usually first.
+
+```tsx
+<DashboardGrid>
+  <DashboardSection title="Impact" icon="ti ti-chart-dots" description="Recipients · one dot is 5 %">
+    <StatGrid columns={4}>
+      <StatCell label="Subscribers" value={48210} />
+      <StatCell label="Open rate" value="49.2 %" />
+    </StatGrid>
+    <DashboardPanel width="twoThirds" aria-label="Opens and clicks">…</DashboardPanel>
+    <DashboardPanel aria-label="Revenue">…</DashboardPanel>
+  </DashboardSection>
+</DashboardGrid>
+```
+
+`DashboardSection` also takes `iconColor`, which tints the glyph and stays
+readable in light and dark, and `headingLevel` (2 by default). `DashboardPanel`
+renders an `article` by default; set `as` to `section`, `div`, or `li`. It
+passes other attributes, such as `aria-label` or `data-*`, to that element.
+The host still owns loading, failure, and the content height of each panel.
+
 ## Import
 
 ```tsx
 import {
+  DashboardGrid,
+  DashboardPanel,
+  DashboardSection,
   Widget,
   WidgetHero,
   WidgetList,

@@ -21,8 +21,10 @@ COPY packages/editor/src packages/editor/src
 COPY packages/ui/src packages/ui/src
 COPY packages/ui/scripts packages/ui/scripts
 COPY docs-site docs-site
+# The image ships no tests, so it typechecks the site without them; their helpers in
+# packages/ui/test stay outside this context. The PR docs job typechecks the tests.
 RUN bun packages/ui/scripts/build.ts \
-  && bun run --cwd docs-site typecheck \
+  && bun run --cwd docs-site tsc --checkers 2 -p ./tsconfig.build.json --noEmit --pretty false \
   && cd docs-site \
   && NODE_ENV=production bun src/build.ts
 

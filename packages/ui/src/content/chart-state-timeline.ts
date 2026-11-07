@@ -1,4 +1,4 @@
-import { chartDatumSvg, computeDomain, escapeXml, extendDomainToNice, mapRange, niceStep, svgRoot } from "@k2b/stdlib";
+import { chartDatumSvg, computeDomain, escapeXml, extendDomainToNice, mapRange, niceStep, svgRoot } from "../charts/core/svg";
 
 export type StateTimelineDomain = readonly [number, number];
 

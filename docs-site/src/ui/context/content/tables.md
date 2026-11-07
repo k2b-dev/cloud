@@ -59,6 +59,96 @@ that visible text. References contain only `{type, id, title?}`, with no URL,
 and open after a confirmation through the owning app's reader with the viewer's
 access. Original row-index keys let the host recover the reference after sorting.
 
+## Column types
+
+Give a column a `type` when it holds one kind of value. The type decides its
+alignment, wrapping, the shown text, search and sort, so a host passes raw
+values instead of formatted strings:
+
+| `type` | Shows | Align |
+| --- | --- | --- |
+| `text` | the string; breaks between words inside its cell | left |
+| `number` | the number in the reader's language, by `format` | right |
+| `amount` | money in `format.currency` | right |
+| `date` | ISO text, a timestamp, or a `Date` in the reader's language and in `timeZone` when given; a day without a time stays that day | left |
+| `status` | a status badge with the label and tone from `states[value]` | left |
+| `bar` | the value and a short track filled to `max`, or to the column's largest value | right |
+| `flow` | money with its direction, as `FlowAmount`: in turquoise with an arrow down-left, out in violet with an arrow up-right, no sign; needs `format.currency` | right |
+| `delta` | the change badge of a key figure, `0.082` as `+8.2 %`; `delta: { unit: "points" }` reads `0.031` as `+3.1 pts`, and `delta.better` rates it | right |
+
+`format` is a number format by name: `style` (`number`, `percent`, or
+`currency`), `currency`, `decimals`, and `compact`. A missing value, `null` or
+an empty string, shows a dash, sorts last in both directions, and never counts
+as zero. `renderCell` still wins; its `render` callback draws the typed value.
+A column without `type` keeps the plain rendering described above.
+
+## Search, groups, and order in the browser
+
+For a complete set of rows that a reader searches in the browser:
+
+- `filterRows(rows, columns, query, locale)` keeps the rows any of whose shown
+  values contains the query, ignoring case and accents. A status matches by its
+  label, an amount as it is formatted.
+- `sortRows(rows, columns, sort, locale)` orders by one column: numbers by value,
+  dates by time, a status by its label, missing values last.
+- `createDataTableView({ rows, columns })` holds `query`, `sort`, and `groupBy`
+  and returns the matching rows in order.
+- `DataTableTools` is the search field and the group choice. Place it in the
+  head of the frame that holds the table, never inside the table. Below a frame
+  width of 560 px it takes its own line under the title.
+
+Pass `groupBy` with a column id: each group becomes its own `<tbody>` under a
+row-group header (`scope="rowgroup"`) with the group's shown value and its
+count, in the order the groups first appear. Pass the search text as `query`
+and a way back as `onClearQuery`: with no row left, the table says “No row
+matches “…”.” and offers **Clear search** at a fixed height instead of `empty`. Clearing removes the button the
+reader pressed, so move focus back to the search field in `onClearQuery`.
+With `groupBy`, `createDataTableView` returns the rows in the order the groups
+show them, so keyboard selection follows the screen. Below a priority's width,
+the totals of hidden columns show in a line under the totals row.
+A date with a time reads in the reader's zone; pass `timeZone` when the server
+renders the table or the data belongs to a zone, so both show the same clock.
+
+```tsx
+const view = createDataTableView({ rows: () => campaigns, columns: () => columns });
+
+<DashboardPanel width="full" aria-label="Campaigns">
+  <header>
+    <h3>Campaigns</h3>
+    <DataTableTools
+      label="Campaigns"
+      query={view.query()}
+      onQueryChange={view.setQuery}
+      groups={[{ id: "status", label: "Status" }]}
+      groupBy={view.groupBy()}
+      onGroupByChange={view.setGroupBy}
+    />
+  </header>
+  <DataTable
+    surface="plain"
+    columns={columns}
+    rows={view.rows()}
+    sort={view.sort()}
+    onSortChange={view.setSort}
+    groupBy={view.groupBy() ?? undefined}
+    query={view.query()}
+    onClearQuery={() => {
+      view.setQuery("");
+      searchField.focus();
+    }}
+  />
+</DashboardPanel>
+```
+
+## Priority on narrow tables
+
+`priority` says how much a narrow table needs a column: `1`, the default,
+always shows; `3` hides below a table width of 560 px and `2` below 420 px. The
+table measures its own width, not the window's. Once a column is hidden, each
+row shows a details button at its end; it opens a line under the row with
+exactly the values that are hidden at that width. The button names what it
+does, exposes `aria-expanded`, and controls the details line.
+
 ## Add a header and controls
 
 The basic `DataTable` stays valid on its own. The compound panel adds only
@@ -176,7 +266,14 @@ type DataTableColumn<T> = {
   subtitle?: JSX.Element | ((ctx: { col: DataTableColumn<T> }) => JSX.Element);
   value?: keyof T | ((row: T) => unknown); class?: string; headerClass?: string; cellClass?: string;
   align?: "left" | "center" | "right"; nowrap?: boolean; sortable?: boolean | string;
+  type?: DataTableColumnType; format?: DataTableNumberFormat; states?: Record<string, DataTableStatusState>;
+  max?: number; timeZone?: string; delta?: { unit?: "ratio" | "points"; better?: "up" | "down" };
+  priority?: 1 | 2 | 3;
 };
+
+type DataTableColumnType = "text" | "number" | "date" | "status" | "bar" | "amount" | "flow" | "delta";
+type DataTableNumberFormat = { style?: "number" | "percent" | "currency"; currency?: string; decimals?: number; compact?: boolean };
+type DataTableStatusState = { label: string; tone: StatusTone };
 
 type DataTableSort = { key: string; direction: "asc" | "desc" };
 
@@ -203,6 +300,7 @@ type DataTableProps<T> = {
   stickyHeader?: boolean; highlightColumns?: boolean; verticalAlign?: "top" | "middle" | "bottom";
   cellContentClass?: string; fillHeight?: boolean; surface?: "paper" | "plain"; class?: string;
   tableClass?: string; scrollClass?: string; scrollPreserveKey?: string | false;
+  groupBy?: string; query?: string; onClearQuery?: () => void;
 };
 
 type DataTablePanelProps = {

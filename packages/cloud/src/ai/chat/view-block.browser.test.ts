@@ -1,9 +1,9 @@
 import { afterAll, afterEach, beforeAll, expect, test } from "bun:test";
-import { resolve } from "node:path";
+import { basename, resolve } from "node:path";
 import tailwind from "bun-plugin-tailwind";
 import type { Browser, Page } from "playwright";
 import { z } from "zod";
-import { launchBrowser } from "../../../../ui/test/browser";
+import { launchBrowser, settled } from "../../../../ui/test/browser";
 import type { CloudResourceRef } from "../../contracts/capabilities";
 import { cloudAiNumberFormatters } from "../chart-block";
 import type { AiTurnBlock } from "../protocol";
@@ -13,7 +13,7 @@ import { cloudAiViewSummary, parseCloudAiView } from "../view-block";
 // measures the blocks in a browser.
 const ui = resolve(import.meta.dir, "../../../../ui");
 
-const buildHarness = async (): Promise<string> => {
+const buildHarness = async (): Promise<Map<string, string>> => {
   const { transformAsync } = await import(Bun.resolveSync("@babel/core", ui));
   const typescript = (await import(Bun.resolveSync("@babel/preset-typescript", ui))).default;
   const solid = (await import(Bun.resolveSync("babel-preset-solid", ui))).default;
@@ -22,6 +22,8 @@ const buildHarness = async (): Promise<string> => {
     target: "browser",
     // MapView's lazy worker uses import.meta; keep the shared chat harness a module.
     format: "esm",
+    splitting: true,
+    naming: { entry: "harness.js", chunk: "chunk-[hash].js" },
     conditions: ["browser"],
     plugins: [
       {
@@ -41,7 +43,7 @@ const buildHarness = async (): Promise<string> => {
     ],
   });
   if (!build.success) throw new AggregateError(build.logs, "View block harness build failed");
-  return build.outputs[0]!.text();
+  return new Map(await Promise.all(build.outputs.map(async (output) => [basename(output.path), await output.text()] as const)));
 };
 
 const chart = {
@@ -386,6 +388,7 @@ const files: Record<string, unknown> = {
 
 let browser: Browser;
 let server: ReturnType<typeof Bun.serve>;
+let tableModulePath: string;
 /** Files a test holds back until it releases them, so it can measure the loading frame without racing the file. */
 const held = new Map<string, PromiseWithResolvers<void>>();
 const release = (path: string) => {
@@ -407,12 +410,19 @@ beforeAll(async () => {
   ]);
   if (!styles.success) throw new AggregateError(styles.logs, "Could not compile the global stylesheet.");
   const css = await styles.outputs[0]!.text();
+  const tableModule = [...harness].find(([name, source]) => name !== "harness.js" && source.includes("/ai/chat/table-block.tsx"));
+  if (!tableModule) throw new Error("Table controls must have their own lazy browser module");
+  tableModulePath = `/${tableModule[0]}`;
   server = Bun.serve({
     port: 0,
     hostname: "127.0.0.1",
     fetch: (request) => {
       const url = new URL(request.url);
-      if (url.pathname === "/harness.js") return new Response(harness, { headers: { "content-type": "text/javascript" } });
+      const asset = harness.get(url.pathname.slice(1));
+      if (asset)
+        return Promise.resolve(held.get(url.pathname)?.promise).then(
+          () => new Response(asset, { headers: { "content-type": "text/javascript" } }),
+        );
       // View files arrive late, so a block that sized itself by its content would move what follows it.
       if (url.pathname === "/files") {
         const path = url.searchParams.get("path") ?? "";
@@ -613,6 +623,75 @@ for (const view of [
         await context.close();
       }
     });
+
+const campaigns = {
+  view: "table",
+  title: "Campaigns",
+  columns: [
+    { id: "name", label: "Campaign", type: "text" },
+    { id: "status", label: "Status", type: "text" },
+    { id: "sent", label: "Sent", type: "date", priority: 3 },
+    { id: "rate", label: "Opened", type: "number", format: { style: "percent", decimals: 1 } },
+  ],
+  rows: [
+    { name: "Autumn selection", status: "Sending", sent: "2026-11-06", rate: 0.314 },
+    { name: "Weekly letter 44", status: "Delivered", sent: "2026-10-29", rate: 0.492 },
+    { name: "New in stock", status: "Delivered", sent: "2026-10-22", rate: 0.526 },
+  ],
+  search: true,
+  groupBy: [{ id: "status" }],
+};
+files["/views/campaigns-4d5e6f7a.view.json"] = campaigns;
+
+for (const view of [
+  { name: "desktop", width: 1280, height: 900 },
+  { name: "phone", width: 390, height: 844 },
+] as const)
+  test(`a table with search and groups reserves its tools while loading and narrows its rows (${view.name})`, async () => {
+    const context = await browser.newContext({ viewport: { width: view.width, height: view.height }, reducedMotion: "reduce" });
+    try {
+      const page = await context.newPage();
+      await page.goto(`http://127.0.0.1:${server.port}/?lang=en&theme=light`);
+      const loaded = hold("/views/campaigns-4d5e6f7a.view.json");
+      await page.evaluate(
+        (value) => window.show(value),
+        [
+          present("/views/campaigns-4d5e6f7a.view.json", {
+            view: "table",
+            title: campaigns.title,
+            rows: campaigns.rows.length,
+            columns: campaigns.columns.length,
+            footer: false,
+            search: true,
+            grouped: true,
+          }),
+        ],
+      );
+      await page.waitForSelector("[data-view-path] .k2b-data-table-tools");
+      // The tools wait, disabled, in the place they keep once the rows arrive.
+      const search = page.getByRole("searchbox", { name: "Search Campaigns" });
+      expect(await search.isDisabled()).toBe(true);
+      await settled(page);
+      const loading = await boxes(page);
+      loaded();
+      await page.waitForSelector("[data-view-path] table");
+      await settled(page);
+      expect(await boxes(page)).toEqual(loading);
+      await search.fill("deliv");
+      expect(await page.locator("[data-view-path] tbody tr.k2b-data-table__row").count()).toBe(2);
+      await search.fill("");
+      await page.getByRole("combobox", { name: "Group rows" }).click();
+      await page.getByRole("option", { name: "By Status" }).click();
+      await page.waitForSelector("[data-view-path] tbody.k2b-data-table__group");
+      expect(await page.locator('[data-view-path] th[scope="rowgroup"]').allTextContents()).toEqual([
+        "Sending1, 1 row",
+        "Delivered2, 2 rows",
+      ]);
+      expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBe(0);
+    } finally {
+      await context.close();
+    }
+  });
 
 test("a stats trend tooltip uses the item label and number format", async () => {
   const context = await browser.newContext({ viewport: { width: 1280, height: 900 }, reducedMotion: "reduce" });
@@ -1233,6 +1312,72 @@ test("explorer references open the original dataset row after table sorting and 
     expect(copied).toContain("Second product");
     expect(copied).not.toContain("spaces.item");
     expect(copied).not.toContain("second");
+  } finally {
+    await context.close();
+  }
+});
+
+// Hold both independent arrivals: downloading table code must not move the frame any more than loading its rows.
+for (const width of [1280, 390])
+  test(`a deferred table module preserves the first frame and loads only for a table (${width})`, async () => {
+    const context = await browser.newContext({ viewport: { width, height: 900 }, reducedMotion: "reduce" });
+    try {
+      const page = await context.newPage();
+      const requested: string[] = [];
+      page.on("request", (request) => requested.push(new URL(request.url()).pathname));
+      await page.goto(`http://127.0.0.1:${server.port}/?lang=en`);
+      expect(requested).not.toContain(tableModulePath);
+      const code = hold(tableModulePath);
+      const path = "/views/campaigns-4d5e6f7a.view.json";
+      const file = hold(path);
+      const parsed = parseCloudAiView(campaigns);
+      if (!parsed) throw new Error("Invalid table fixture");
+      await page.evaluate(
+        (block) => {
+          window.show([block]);
+        },
+        present(path, cloudAiViewSummary(parsed)),
+      );
+      await page.waitForSelector("[data-view-path] .k2b-data-table-tools .k2b-skeleton");
+      await settled(page);
+      const first = await boxes(page);
+      code();
+      const search = page.getByRole("searchbox", { name: "Search Campaigns" });
+      await search.waitFor();
+      expect(await search.isDisabled()).toBe(true);
+      await settled(page);
+      expect(await boxes(page)).toEqual(first);
+      file();
+      await page.waitForSelector("[data-view-path] table");
+      await settled(page);
+      expect(await boxes(page)).toEqual(first);
+      expect(requested).toContain(tableModulePath);
+      if (process.env.VIEW_SHOTS) await page.screenshot({ path: `${process.env.VIEW_SHOTS}/table-light-${width}.png`, fullPage: true });
+    } finally {
+      await context.close();
+    }
+  });
+
+test("a failed table module keeps its frame and offers a reload", async () => {
+  const context = await browser.newContext({ viewport: { width: 390, height: 900 }, reducedMotion: "reduce" });
+  try {
+    const page = await context.newPage();
+    await page.route(`**${tableModulePath}`, (route) => route.abort());
+    await page.goto(`http://127.0.0.1:${server.port}/?lang=en`);
+    const parsed = parseCloudAiView(campaigns);
+    if (!parsed) throw new Error("Invalid table fixture");
+    await page.evaluate(
+      (block) => {
+        window.show([block]);
+      },
+      present("/views/campaigns-4d5e6f7a.view.json", cloudAiViewSummary(parsed)),
+    );
+    await page.getByText("Part of this page could not load. Reload the page and try again.").waitFor();
+    expect(await page.getByRole("button", { name: "Reload", exact: true }).count()).toBe(1);
+    expect(await page.locator("[data-view-path] [role=status]").textContent()).toBe(
+      "This view is no longer available. Its file was changed or deleted.",
+    );
+    expect(await page.locator("[data-view-path]").boundingBox()).not.toBeNull();
   } finally {
     await context.close();
   }

@@ -23,6 +23,8 @@ export function schemaTypes(
     if (value === true) return "unknown";
     if (value === false) return "never";
     const schema = object(value);
+    if (schema.not === true || (schema.not !== null && typeof schema.not === "object" && Object.keys(schema.not).length === 0))
+      return "never";
     const parts: string[] = [];
     if (schema.$ref !== undefined) {
       const ref = schema.$ref;

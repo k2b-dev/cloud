@@ -157,7 +157,7 @@ test("an app keeps starting while Core has not created the catalog schema yet", 
   });
   const failing = (error: Error) => ({ begin: async () => Promise.reject(error) }) as unknown as Parameters<typeof registerAppSkills>[3];
   const skills = [skill({ markdown: markdown() })];
-  await expect(registerAppSkills("inventory", skills, appSkillManifestHash(skills), failing(missing))).resolves.toBeUndefined();
+  await expect(registerAppSkills("inventory", skills, appSkillManifestHash(skills), failing(missing))).resolves.toBe(false);
   const refused = Object.assign(new Error("permission denied"), { code: "ERR_POSTGRES_SERVER_ERROR", errno: "42501" });
   await expect(registerAppSkills("inventory", skills, appSkillManifestHash(skills), failing(refused))).rejects.toThrow("permission denied");
 });
