@@ -5,6 +5,7 @@ import {
   ChartExplorer,
   type ChartSnapshot,
   createDataTableView,
+  DashboardPanel as DashboardFrame,
   DataTable,
   type DataTableColumn,
   DataTableTools,
@@ -140,7 +141,7 @@ export default function DashboardPanelView(props: {
       ariaLabel={props.panel.title}
       class="pulse-dashboard__table"
       density="compact"
-      surface="paper"
+      surface="plain"
       rows={table.rows()}
       columns={tableColumns()}
       sort={table.sort()}
@@ -213,11 +214,11 @@ export default function DashboardPanelView(props: {
     },
   ];
   return (
-    <article
+    <DashboardFrame
       class="pulse-dashboard__panel"
       data-panel={props.panel.id}
       data-kind={props.panel.kind}
-      data-width={props.panel.width}
+      width={props.panel.width}
       aria-label={props.panel.title}
       aria-busy={props.pending}
     >
@@ -253,6 +254,8 @@ export default function DashboardPanelView(props: {
             height="13.5rem"
             tableRows={100}
             renderDetails={false}
+            // The panel's padding: in the table view the table runs to its frame instead of adding a second one.
+            inset="0.875rem 1rem"
           />
         </div>
       </Show>
@@ -446,6 +449,6 @@ export default function DashboardPanelView(props: {
           </Disclosure>
         </div>
       </Show>
-    </article>
+    </DashboardFrame>
   );
 }
