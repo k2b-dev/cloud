@@ -1,6 +1,7 @@
 import { createEffect, createUniqueId, type JSX, onCleanup, onMount } from "solid-js";
 import { isServer } from "solid-js/web";
 import { useLocale } from "../intl/locale";
+import { calendarInspectionNavigation, mountCalendarScroll } from "./chart-calendar";
 import type { ChartCursor } from "./chart-cursor";
 import { createChartInspection } from "./chart-inspection";
 import { closeChartInspectionOnOutside, sameChartDatum } from "./chart-inspection-core";
@@ -32,6 +33,7 @@ export function ChartSnapshotView(props: {
     anchor: () => anchor,
     kind: () => props.snapshot.kind,
     enabled: () => true,
+    nav: () => (props.snapshot.maxWidth ? calendarInspectionNavigation : undefined),
     format: ({ datum }) => props.snapshot.marks.find((m) => sameChartDatum(m.datum, datum))?.tooltip ?? { rows: [] },
     select: ({ datum }) => {
       const mark = props.snapshot.marks.find((m) => sameChartDatum(m.datum, datum));
@@ -44,11 +46,13 @@ export function ChartSnapshotView(props: {
   });
   createEffect(() => inspection.selectData(props.snapshot.marks.filter((m) => m.rowKey === props.selectedKey).map((m) => m.datum)));
   onMount(() => {
+    if (container && props.snapshot.maxWidth) onCleanup(mountCalendarScroll(container));
     onCleanup(
       closeChartInspectionOnOutside({
         container: () => container,
         tooltip: () => tooltip,
         close: inspection.close,
+        keepScroll: () => Boolean(props.snapshot.maxWidth),
       }),
     );
   });
@@ -76,6 +80,7 @@ export function ChartSnapshotView(props: {
         data-stretch={props.snapshot.stretch ? "true" : undefined}
         style={{
           "min-width": props.snapshot.minWidth ? `${props.snapshot.minWidth}px` : undefined,
+          "max-width": props.snapshot.maxWidth ? `${props.snapshot.maxWidth}px` : undefined,
           "--k2b-chart-width": `${props.snapshot.width}px`,
           "--k2b-chart-height": `${props.snapshot.height}px`,
           "aspect-ratio": `${props.snapshot.width}/${props.snapshot.height}`,

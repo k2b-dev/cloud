@@ -24,17 +24,28 @@ export function mountCalendarScroll(container: HTMLElement): () => void {
       );
     }
   };
+  let previousEnd = container.scrollWidth - container.clientWidth;
   const reset = () => {
     if (!drawing.querySelector("svg[data-calendar]")) return;
     container.scrollLeft = container.scrollWidth;
+    previousEnd = container.scrollWidth - container.clientWidth;
     header();
   };
   reset();
   const observer = new MutationObserver(reset);
   observer.observe(drawing, { childList: true });
+  // Keep the newest week visible across responsive resizes, while preserving
+  // an intentionally older scroll position whenever it still fits.
+  const resize = new ResizeObserver(() => {
+    if (container.scrollLeft >= previousEnd - 1) container.scrollLeft = container.scrollWidth;
+    previousEnd = container.scrollWidth - container.clientWidth;
+    header();
+  });
+  resize.observe(container);
   container.addEventListener("scroll", header, { passive: true });
   return () => {
     observer.disconnect();
+    resize.disconnect();
     container.removeEventListener("scroll", header);
   };
 }

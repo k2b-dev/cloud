@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { mkdir } from "node:fs/promises";
 import type { Browser, Page } from "playwright";
-import { launchBrowser } from "../../../../ui/test/browser";
+import { launchBrowser, settled } from "../../../../ui/test/browser";
 import type { AppFrameAssets } from "./assets";
 import { buildBaseCss, buildChartModule, buildPrelude } from "./build-assets";
 import type { AppFiles } from "./compose";
@@ -79,13 +79,15 @@ async function open(width: number, source = assets.chartModule, theme: "light" |
   await ready(page);
   return { page, context, requests };
 }
-const boxes = (page: Page) =>
-  app(page)
+const boxes = async (page: Page) => {
+  await settled(page);
+  return app(page)
     .locator("#charts")
     .evaluate((element) => ({
       height: element.getBoundingClientRect().height,
       after: document.querySelector("#after")!.getBoundingClientRect().top,
     }));
+};
 const release = (page: Page) =>
   app(page)
     .locator("body")

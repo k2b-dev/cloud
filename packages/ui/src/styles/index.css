@@ -17612,7 +17612,19 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 
 /* Calendar coordinates stay square in every host. */
 .k2b-ui .k2b-chart[data-chart-kind="heatmap"]:has(svg[data-calendar]) { overflow-x: auto; }
-.k2b-ui .k2b-chart__svg:has(> svg[data-calendar]) { width: var(--k2b-chart-width); }
+.k2b-ui .k2b-chart__svg:has(> svg[data-calendar]) {
+  width: 100%;
+  height: auto;
+  container-type: inline-size;
+  --k2b-calendar-inverse: tan(atan2(var(--k2b-chart-width), 100cqw));
+}
+.k2b-ui .k2b-chart__svg:has(> svg[data-calendar]) rect { vector-effect: non-scaling-stroke; }
+/* Growing cells must not grow their labels. Their positions still follow the SVG. */
+.k2b-ui .k2b-chart__svg:has(> svg[data-calendar]) text {
+  transform-box: fill-box;
+  transform-origin: left bottom;
+  scale: var(--k2b-calendar-inverse);
+}
 .k2b-ui .k2b-chart[data-chart-kind="heatmap"]:has(svg[data-calendar]) [data-inspected]:not([data-selected]):not([data-chart-role="value"]) > rect { stroke-width: 1.5px; }
 .k2b-ui .k2b-chart[data-chart-kind="heatmap"]:has(svg[data-calendar]) [data-selected] > rect { stroke-width: 2.5px !important; }
 @media print {

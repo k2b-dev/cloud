@@ -54,20 +54,21 @@ export function calendarLayout(spec: CalendarHeatmapOptions, size = { width: spe
   const first = dates[0]?.time ?? 0;
   const monday = first - ((new Date(first).getUTCDay() - weekStart + 7) % 7) * DAY;
   const weeks = dates.length ? Math.floor((dates.at(-1)!.time - monday) / DAY / 7) + 1 : 0;
-  const headerHeight = renderHeader(size.width, spec.title, spec.subtitle).height;
-  // Seven square rows use the available panel height. Wider calendars scroll rather than flattening their cells.
-  const cell = Math.max(14, Math.floor((size.height - headerHeight - 32 - 20 - 18) / 7)),
-    gap = 3,
+  // A minimum-size coordinate space scales uniformly in CSS, including on the
+  // first server frame. Height follows the seven rows, never a host's fixed box.
+  const gap = 3,
     left = 32;
-  const width = Math.max(spec.displayWidth ?? size.width, left + weeks * (cell + gap) + 4);
+  const cell = Math.max(14, Math.min(32, Math.floor(((spec.displayWidth ?? size.width) - left - 4) / Math.max(1, weeks) - gap)));
+  const width = Math.max(240, left + weeks * (cell + gap) + 4);
   const top = 32 + renderHeader(width, spec.title, spec.subtitle).height;
   const min = Math.min(...points.map((p) => p.value), 0),
     max = Math.max(...points.map((p) => p.value), 0);
   const absMax = Math.max(-min, max);
   return {
     width,
-    height: size.height,
-    minWidth: width,
+    height: top + 7 * (cell + gap) + 18,
+    minWidth: Math.max(240, (width * 14) / cell),
+    maxWidth: (width * 32) / cell,
     firstMonday: monday,
     weekStart,
     weeks,
@@ -196,3 +197,11 @@ export function renderCalendarSvg(spec: CalendarHeatmapOptions): string {
 }
 export const renderHeatmapSvg = (spec: HeatmapChartOptions): string =>
   spec.layout === "calendar" ? renderCalendarSvg(spec) : heatmap(spec);
+
+/** A calendar viewport reserves the same content height in every request state. */
+export function calendarViewportHeight(
+  size: { width: number; height: number; minWidth: number; maxWidth: number },
+  availableWidth = "100cqw",
+): string {
+  return `calc(clamp(${size.minWidth}px, ${availableWidth}, ${size.maxWidth}px) * ${size.height / size.width})`;
+}
