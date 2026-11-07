@@ -90,6 +90,7 @@ type FormatCurrencyProps = SpanProps &
     value: number | null | undefined;
     currency: string;
     decimals?: number;
+    signDisplay?: Intl.NumberFormatOptions["signDisplay"];
   };
 
 type FormatBytesProps = SpanProps &
@@ -142,7 +143,7 @@ type FormatDurationMsProps = TimeElementProps &
 
 `SpanProps` means native `JSX.HTMLAttributes<HTMLSpanElement>`. `TimeElementProps` means native HTML attributes without `ref`; the formatter owns `datetime`. `ByteMode` is `"iec" | "si"`. `LocaleProp` and `FallbackProp` name shared shapes in this reference, not additional component exports.
 
-`Format.Percent.decimals` defaults to 0 and `clamp` to false. Currency decimals default to the currency's standard digits. Dates accept `Date` or a parseable string; prefer explicit offset-bearing instants. `Format.RelativeTime.base` defaults to now; supply the same base for deterministic server/browser output. `Format.Duration` takes from/to instants, whereas DurationMs takes a number of milliseconds.
+`Format.Percent.decimals` defaults to 0 and `clamp` to false. Currency decimals default to the currency's standard digits. `Format.Currency.signDisplay` follows `Intl.NumberFormat`: `"exceptZero"` writes `+1.234,50 €` for a balance change or net amount and leaves zero without a sign; the default `"auto"` signs only negative amounts. Dates accept `Date` or a parseable string; prefer explicit offset-bearing instants. `Format.RelativeTime.base` defaults to now; supply the same base for deterministic server/browser output. `Format.Duration` takes from/to instants, whereas DurationMs takes a number of milliseconds.
 
 ## Calendar-relative dates
 

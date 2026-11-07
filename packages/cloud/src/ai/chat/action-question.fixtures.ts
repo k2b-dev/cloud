@@ -28,7 +28,7 @@ const FILES = (l: ActionFixtureLocale) => app("files", "Files", "ti ti-folder", 
 const SPACES = (l: ActionFixtureLocale, title: string) => app("spaces", "Spaces", "ti ti-layout-kanban", "#4d7c0f", title);
 const NOTES = (l: ActionFixtureLocale) =>
   app("notebooks", "Notebooks", "ti ti-notebook", "#a16207", l === "de" ? "Notiz ergänzen" : "Add to note");
-const ASSISTANT = (title: string) => app("core", "Assistant", "ti ti-sparkles", "#0e7490", title);
+const ASSISTANT = (title: string) => app("core", "Assistant", "ti ti-sparkles", "#8e1b6f", title);
 
 const lea = { name: "Lea Berg", address: "lea.berg@example.com" };
 const tom = { name: "Tom Weber", address: "tom.weber@k2b.dev" };
