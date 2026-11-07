@@ -1,4 +1,4 @@
-import { Checkbox, type CollectionSelection, FileTypeIcon, Format, IconButton, MatchText } from "@k2b/ui";
+import { Button, Checkbox, type CollectionSelection, FileTypeIcon, Format, IconButton, MatchText } from "@k2b/ui";
 import { For, type JSX, Show } from "solid-js";
 
 export type RowAttributes = JSX.HTMLAttributes<HTMLDivElement> & { [key: `data-${string}`]: string | undefined };
@@ -192,9 +192,10 @@ export default function FileList(props: {
                 </Show>
                 <span role="gridcell" class="filesv2-list__cell filesv2-list__cell--icon" />
                 <span role="gridcell" class="filesv2-list__cell filesv2-list__cell--name">
-                  <button type="button" class="filesv2-list__more" onClick={() => props.onLoadMore?.(row)}>
+                  <Button size="sm" variant="link" onClick={() => props.onLoadMore?.(row)}>
                     {props.messages.more}
-                  </button>
+                    <i class="ti ti-chevron-down" aria-hidden="true" />
+                  </Button>
                 </span>
               </div>
             }
