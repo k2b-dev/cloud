@@ -5,18 +5,11 @@ import { ok } from "@k2b/stdlib";
 import { z } from "zod";
 import { type FixtureCorpus, fixtureHelpReader } from "../../test/help-reader";
 import { compileCapabilities } from "../_internal/capabilities";
-import {
-  type CapabilityActionReview,
-  type CapabilityActionReviewData,
-  CapabilityActionReviewSchema,
-  defineCapabilities,
-} from "../contracts/capabilities";
+import { type CapabilityActionReviewData, CapabilityActionReviewSchema, defineCapabilities } from "../contracts/capabilities";
 import { geoMapContract } from "../contracts/geo-map";
 import type { AppRegistryEntry, CapabilityRegistryEntry } from "../contracts/registry";
 import { coreSettings } from "../services";
-import { parseMandatePolicy } from "../services/mandates/policy";
 import { aiChatAccessSubject } from "./assistant-models";
-import { authorizeBackgroundAction } from "./background-review";
 import {
   aiCapabilityInputSchema,
   aiCapabilityToolName,
@@ -33,7 +26,6 @@ import {
   reduceAiCapabilityInputSchema,
   searchAiTools,
 } from "./capabilities";
-import { aiChatTasks } from "./chat-tasks";
 import * as credentials from "./credentials";
 import { createConfiguredDefaultCloudAiTools } from "./default-tools";
 import { aiModelAccess } from "./model-access";
@@ -460,7 +452,6 @@ describe("AI capability catalog", () => {
   });
 
   test("keeps Help isolated and retries the live registry after a failure", async () => {
-    const failures: unknown[] = [];
     let attempts = 0;
     const help: FixtureCorpus = {
       appId: "contacts",
@@ -860,7 +851,7 @@ describe("AI capability catalog", () => {
     expect(execute).not.toHaveBeenCalled();
   });
 
-  test.each(["scope", "mandate", "hidden", "offline"] as const)("search fallback preserves %s exclusions", async (exclusion) => {
+  test.each(["scope", "hidden", "offline"] as const)("search fallback preserves %s exclusions", async (exclusion) => {
     const core = capabilityApp("core", "Core", { title: "Show a map", description: "Return a Cloud map style URL." });
     const venue = capabilityApp("venue", "Venue");
     const tools = await createAiToolResolver({
@@ -870,17 +861,6 @@ describe("AI capability catalog", () => {
       store: createRunToolStore([]),
       listRegistry: async () => (exclusion === "offline" ? [venue] : [core, venue]),
       ...(exclusion === "scope" ? { allowedTools: ["venue.list"] } : {}),
-      ...(exclusion === "mandate"
-        ? {
-            mandatePolicy: parseMandatePolicy({
-              version: 1,
-              apps: ["venue"],
-              operations: ["capability.query:list"],
-              actions: "deny",
-              grants: [{ appId: "venue", capabilityId: "list", kind: "query", fixedInput: {} }],
-            }),
-          }
-        : {}),
       ...(exclusion === "hidden"
         ? {
             listApps: async () => [
@@ -1493,215 +1473,6 @@ describe("AI capability catalog", () => {
     expect(actionExecutions).toBe(1);
   });
 
-  test("background authorization gates queries and actions before execution and never opens approvals", async () => {
-    const app = capabilityApp("contacts");
-    app.manifest.actions[0]!.approval = "rememberable";
-    const catalog = buildAiCapabilityCatalog([app]);
-    let allow = false;
-    const calls: string[] = [];
-    const prepared = prepareAiTools({
-      tools: createLoadedAiCapabilityTools({
-        apps: [],
-        catalog,
-        actor,
-        loadedNames: ["contacts.create", "contacts.list"],
-        authorizeBackground: async (entry) => {
-          calls.push(`authorize:${entry.name}`);
-          if (!allow) throw new Error("Grant denied");
-        },
-        review: async () => {
-          throw new Error("Unexpected interactive review");
-        },
-        execute: async (entry) => {
-          calls.push(`execute:${entry.name}`);
-          return { data: {} };
-        },
-      }),
-      actor,
-      conversationId: "conversation-1",
-    });
-    const context = {
-      signal: AbortSignal.timeout(1000),
-      requestApproval: async () => {
-        throw new Error("Unexpected approval");
-      },
-      requestClientTool: async <T>(): Promise<T> => {
-        throw new Error("Unexpected client");
-      },
-    };
-    for (const action of prepared.tools) {
-      if (action.kind !== "server") throw new Error("Expected server tool");
-      await expect(action.execute({ title: "Example" }, context)).rejects.toThrow("Grant denied");
-    }
-    expect(calls.some((call) => call.startsWith("execute:"))).toBe(false);
-    allow = true;
-    for (const action of prepared.tools) if (action.kind === "server") await action.execute({ title: "Example" }, context);
-    expect(calls.filter((call) => call.startsWith("execute:"))).toHaveLength(2);
-  });
-
-  for (const outcome of ["no scope", "scope", "review error", "mandate denied"] as const) {
-    test(`background loaded capability ${outcome} runs the shared review gate before execute`, async () => {
-      const app = capabilityApp("contacts");
-      app.manifest.actions[0]!.approval = "rememberable";
-      app.manifest.actions[0]!.review = true;
-      const review = mock(async (): Promise<CapabilityActionReview> => {
-        if (outcome === "review error") throw new Error("Review unavailable");
-        return { message: "Create item?", ...(outcome === "scope" ? { approvalScope: "contacts:own" } : {}) };
-      });
-      spyOn(aiChatTasks, "authorizeCapability").mockImplementation(async () => {
-        if (outcome === "mandate denied") throw new Error("Grant denied");
-      });
-      const markNeedsApproval = spyOn(aiChatTasks, "markNeedsApproval").mockImplementation(async () => {});
-      const execute = mock(async () => ({ data: {} }));
-      const prepared = prepareAiTools({
-        tools: createLoadedAiCapabilityTools({
-          apps: [],
-          catalog: buildAiCapabilityCatalog([app]),
-          actor,
-          loadedNames: ["contacts.create"],
-          authorizeBackground: async (entry, args, context) => {
-            await authorizeBackgroundAction({
-              turnId: "turn",
-              mandate: { id: "mandate", revision: 1 },
-              appId: entry.appId,
-              capabilityId: entry.operation.localId,
-              kind: entry.kind,
-              args,
-              approval: "approval" in entry.operation ? entry.operation.approval : undefined,
-              hasReview: "review" in entry.operation && entry.operation.review === true,
-              action: entry.display.title,
-              review,
-              signal: context.signal,
-            });
-          },
-          review: async () => {
-            throw new Error("Unexpected interactive review");
-          },
-          execute,
-        }),
-        actor,
-        conversationId: "conversation-1",
-      });
-      const tool = prepared.tools[0];
-      if (!tool || tool.kind !== "server") throw new Error("Missing server tool");
-      const call = tool.execute(
-        { title: "Example" },
-        {
-          signal: new AbortController().signal,
-          requestApproval: async () => {
-            throw new Error("Unexpected approval");
-          },
-          requestClientTool: async <T>(): Promise<T> => {
-            throw new Error("Unexpected client");
-          },
-        },
-      );
-      if (outcome === "scope") {
-        await call;
-        expect(execute).toHaveBeenCalledTimes(1);
-        expect(markNeedsApproval).not.toHaveBeenCalled();
-      } else {
-        await expect(call).rejects.toThrow(outcome === "mandate denied" ? "Grant denied" : "NEEDS_APPROVAL:");
-        expect(execute).not.toHaveBeenCalled();
-        if (outcome === "mandate denied") {
-          expect(review).not.toHaveBeenCalled();
-          expect(markNeedsApproval).not.toHaveBeenCalled();
-        } else expect(markNeedsApproval).toHaveBeenCalledTimes(1);
-      }
-      if (outcome !== "mandate denied") expect(review).toHaveBeenCalledTimes(1);
-    });
-  }
-
-  test("a background refusal reaches the model as the exact NEEDS_APPROVAL tool error and allows its final sentence", async () => {
-    const catalog = buildAiCapabilityCatalog([capabilityApp("contacts")]);
-    const execute = mock(async () => ({ data: {} }));
-    spyOn(aiChatTasks, "authorizeCapability").mockImplementation(async () => {});
-    const markNeedsApproval = spyOn(aiChatTasks, "markNeedsApproval").mockImplementation(async () => {});
-    const prepared = prepareAiTools({
-      actor,
-      conversationId: "conversation-1",
-      tools: createLoadedAiCapabilityTools({
-        apps: [],
-        catalog,
-        loadedNames: ["contacts.create"],
-        actor,
-        authorizeBackground: async (entry, args, context) => {
-          await authorizeBackgroundAction({
-            turnId: "turn",
-            mandate: { id: "mandate", revision: 1 },
-            appId: entry.appId,
-            capabilityId: entry.operation.localId,
-            kind: entry.kind,
-            args,
-            approval: "approval" in entry.operation ? entry.operation.approval : undefined,
-            hasReview: "review" in entry.operation && entry.operation.review === true,
-            action: entry.display.title,
-            review: async () => ({ message: "Create item?" }),
-            signal: context.signal,
-          });
-        },
-        execute,
-      }),
-    });
-    const message =
-      "NEEDS_APPROVAL: Create item needs the user's approval every time, and routines never ask. Stop and say in one sentence what was missing.";
-    const entries: StoreEntry[] = [];
-    const requests: ProviderRequest[] = [];
-    const provider: Provider = {
-      name: "background-review",
-      family: "openai-compatible",
-      model: "fixture",
-      capabilities: { streaming: true, tools: true, images: false, thinking: false, usage: true },
-      async *stream(request) {
-        requests.push(request);
-        if (requests.length === 1) {
-          yield { type: "block_start", blockId: "call", index: 0, kind: "tool_call", callId: "call", name: "contacts__action__create" };
-          yield {
-            type: "block_end",
-            blockId: "call",
-            index: 0,
-            block: { type: "tool_call", id: "call", name: "contacts__action__create", args: { title: "Example" } },
-          };
-          yield { type: "usage", usage: { input: 1, output: 1, total: 2 }, finishReason: "tool_use" };
-        } else {
-          yield { type: "block_start", blockId: "answer", index: 0, kind: "text" };
-          yield {
-            type: "block_end",
-            blockId: "answer",
-            index: 0,
-            block: { type: "text", text: "I needed your approval to create the item." },
-          };
-          yield { type: "usage", usage: { input: 1, output: 1, total: 2 }, finishReason: "stop" };
-        }
-      },
-    };
-    for await (const _event of nessi({
-      provider,
-      systemPrompt: "test",
-      input: "Run",
-      tools: prepared.tools,
-      maxTurns: 3,
-      store: {
-        load: async () => entries,
-        append: async (message) => {
-          entries.push({ seq: entries.length + 1, kind: "message", message });
-        },
-      },
-    })) {
-      /* drain */
-    }
-    const result = requests[1]?.messages.find((message) => message.role === "tool_result");
-    expect(result).toMatchObject({ role: "tool_result", isError: true, result: message });
-    expect(entries.at(-1)?.message).toMatchObject({
-      role: "assistant",
-      content: [{ type: "text", text: "I needed your approval to create the item." }],
-    });
-    expect(execute).not.toHaveBeenCalled();
-    expect(markNeedsApproval).toHaveBeenCalledTimes(1);
-    expect(requests[0]?.tools?.[0]?.description).toContain("Never retry ACTION_OUTCOME_UNKNOWN or NEEDS_APPROVAL.");
-    expect(requests[0]?.tools?.[0]?.description).toContain("After ACTION_NOT_DONE, ask the person before trying again.");
-  });
-
   test("background discovery keeps loaded tool names isolated with the existing eviction contract", async () => {
     const seed = ["mail.list"];
     const store = createRunToolStore(seed);
@@ -2218,7 +1989,6 @@ describe("AI capability catalog", () => {
     for await (const _event of nessi({ input: "Find my contacts", provider, systemPrompt: "test", tools: resolver, store, maxTurns: 6 })) {
       // drain
     }
-
     expect((requests[0]?.tools ?? []).map((tool) => tool.name)).toEqual(["search_tools", "load_tools", "list_apps"]);
     expect(requests[0]?.tools?.find((tool) => tool.name === "search_tools")?.description).toContain(
       "Live capability apps: contacts (Contacts)",
@@ -2268,175 +2038,6 @@ test("unconfigured audio cannot be discovered or loaded, including previously lo
     unavailable: [{ name: "transcribe_audio" }],
   });
   expect(loaded).toEqual(["transcribe_audio"]);
-});
-
-describe("background mandate tool scope", () => {
-  const grantedIds = ["space.search", "space.list", "task.list", "task.focus"];
-  const spaces = capabilityApp("spaces");
-  const query = spaces.manifest.queries[0]!;
-  const registry = [
-    { ...spaces, manifest: { ...spaces.manifest, queries: [...grantedIds, "space.read"].map((localId) => ({ ...query, localId })) } },
-    capabilityApp("mail"),
-  ];
-  const policy = parseMandatePolicy({
-    version: 1,
-    apps: ["spaces"],
-    operations: grantedIds.map((id) => `capability.query:${id}`),
-    actions: "deny",
-    grants: grantedIds.map((capabilityId) => ({ appId: "spaces", capabilityId, kind: "query", fixedInput: {} })),
-  });
-  const context = {
-    signal: AbortSignal.timeout(1_000),
-    requestApproval: async () => false,
-    requestClientTool: async () => {
-      throw new Error("Unexpected client tool");
-    },
-  };
-
-  test("discovers only S8 grants and never makes excluded persisted tools callable", async () => {
-    const store = createRunToolStore(["spaces.space.read", "spaces.space.list", "mail.list"]);
-    const resolver = createAiToolResolver({
-      conversationId: "background",
-      actor,
-      staticTools: [],
-      mandatePolicy: policy,
-      store,
-      listRegistry: async () => registry,
-      execute: async () => ({ data: [] }),
-    });
-    const tools = await resolver();
-    expect(tools.map((tool) => tool.def.name)).toContain("spaces__query__space_dot_list");
-    expect(tools.map((tool) => tool.def.name)).not.toContain("spaces__query__space_dot_read");
-    expect(tools.map((tool) => tool.def.name)).not.toContain("mail__query__list");
-    const search = tools.find((tool) => tool.def.name === "search_tools")!;
-    expect(await search.execute({ query: "items", appId: "spaces" }, context)).toMatchObject({
-      tools: [...grantedIds].sort().map((id) => expect.objectContaining({ name: `spaces.${id}` })),
-    });
-    const apps = tools.find((tool) => tool.def.name === "list_apps")!;
-    expect(await apps.execute({}, context)).toEqual({ apps: { spaces: expect.any(String) } });
-    const load = tools.find((tool) => tool.def.name === "load_tools")!;
-    expect(
-      await load.execute({ names: ["spaces.space.read", "spaces__query__space_dot_read", "mail.list", "spaces.task.focus"] }, context),
-    ).toMatchObject({
-      loaded: [{ name: "spaces.task.focus", call: "spaces__query__task_dot_focus" }],
-      unavailable: [
-        { name: "spaces.space.read", reason: "not_allowed" },
-        { name: "spaces__query__space_dot_read", reason: "not_allowed" },
-        { name: "mail.list", reason: "not_allowed" },
-      ],
-    });
-    expect((await resolver()).map((tool) => tool.def.name)).not.toContain("spaces__query__space_dot_read");
-  });
-
-  test("the resource reader cannot invoke an excluded canonical reader", async () => {
-    const execute = mock(async () => ({ data: [] }));
-    const tools = await createAiToolResolver({
-      conversationId: "background",
-      actor,
-      staticTools: [],
-      mandatePolicy: policy,
-      store: createRunToolStore(["read_cloud_resource"]),
-      listRegistry: async () => [
-        {
-          ...registry[0]!,
-          manifest: {
-            ...registry[0]!.manifest,
-            types: [{ localId: "space", title: "Space", description: "One space.", reader: "space.read" }],
-          },
-        },
-      ],
-      execute,
-    })();
-    const read = tools.find((tool) => tool.def.name === "read_cloud_resource");
-    if (!read) throw new Error("Expected resource reader");
-    await expect(read.execute({ type: "spaces.space", id: "space-1" }, context)).rejects.toThrow("spaces.space.read is unavailable");
-    expect(execute).not.toHaveBeenCalled();
-  });
-
-  test("intersects mandate scope with allowedTools", async () => {
-    const tools = await createAiToolResolver({
-      conversationId: "background",
-      actor,
-      staticTools: [],
-      mandatePolicy: policy,
-      allowedTools: ["spaces.space.read"],
-      store: createRunToolStore(["spaces.space.read"]),
-      listRegistry: async () => registry,
-      execute: async () => ({ data: [] }),
-    })();
-    expect(tools.map((tool) => tool.def.name)).toEqual(["search_tools", "load_tools", "list_apps"]);
-  });
-
-  test.each([
-    parseMandatePolicy({ version: 1, apps: [], operations: [], actions: "deny", grants: [] }),
-    parseMandatePolicy({
-      version: 1,
-      apps: ["assistant"],
-      operations: ["runtime.http"],
-      actions: "preapproved",
-      grants: [{ kind: "http", fixedInput: {} }],
-    }),
-  ])("explains when task grants allow no app operations: %j", async (mandatePolicy) => {
-    const tools = await createAiToolResolver({
-      conversationId: "background",
-      actor,
-      staticTools: [],
-      mandatePolicy,
-      store: createRunToolStore([]),
-      listRegistry: async () => registry,
-    })();
-    const description = tools.find((tool) => tool.def.name === "search_tools")!.def.description;
-    expect(description).toContain("This chat's tool scope or task grants allow no app operations.");
-    expect(description).not.toContain("No Cloud app publishes operations right now");
-  });
-
-  test("explains when an interactive scope offers only built-in tools", async () => {
-    const tools = await createAiToolResolver({
-      conversationId: "interactive",
-      actor,
-      staticTools: [],
-      allowedTools: ["read_file", "memory"],
-      store: createRunToolStore([]),
-      listRegistry: async () => registry,
-    })();
-    const description = tools.find((tool) => tool.def.name === "search_tools")!.def.description;
-    expect(description).toContain("This chat's tool scope or task grants allow no app operations.");
-    expect(description).not.toContain("No Cloud app publishes operations right now");
-  });
-
-  test("reports an outage when the granted app is not live", async () => {
-    const tools = await createAiToolResolver({
-      conversationId: "background",
-      actor,
-      staticTools: [],
-      mandatePolicy: policy,
-      store: createRunToolStore([]),
-      listRegistry: async () => [capabilityApp("mail")],
-    })();
-    const description = tools.find((tool) => tool.def.name === "search_tools")!.def.description;
-    expect(description).toContain("No Cloud app publishes operations right now");
-    expect(description).not.toContain("This chat's tool scope or task grants allow no app operations.");
-  });
-
-  test("fails closed when the background mandate policy is unavailable", async () => {
-    const tools = await createAiToolResolver({
-      conversationId: "background",
-      actor,
-      staticTools: [],
-      mandatePolicy: null,
-      store: createRunToolStore(["spaces.space.list"]),
-      listRegistry: async () => registry,
-      execute: async () => ({ data: [] }),
-    })();
-    expect(tools.map((tool) => tool.def.name)).toEqual(["search_tools", "load_tools", "list_apps"]);
-    const description = tools.find((tool) => tool.def.name === "search_tools")!.def.description;
-    expect(description).toContain("This chat's tool scope or task grants allow no app operations.");
-    expect(description).not.toContain("No Cloud app publishes operations right now");
-    expect(await tools.find((tool) => tool.def.name === "load_tools")!.execute({ names: ["spaces.space.list"] }, context)).toMatchObject({
-      loaded: [],
-      unavailable: [{ name: "spaces.space.list", reason: "not_allowed" }],
-    });
-  });
 });
 
 test("app access removes Assistant schemas, app names and loaded tools from discovery", async () => {

@@ -388,12 +388,11 @@ describe("assistant CLI", () => {
     expect(help).toContain("personalization");
     expect(help).toContain("prefs");
     expect(help).toContain("resources");
-    expect(help).toContain("tasks");
+    expect(help).not.toContain("Manage routines");
     expect(help).toContain("Create, inspect, and manage Assistant chats");
     expect(help).toContain("Review and resolve pending turn actions");
     expect(help).toContain("Manage personal facts, preferences, and learning");
     expect(help).toContain("Find structured Cloud resources used in Assistant chats");
-    expect(help).toContain("Manage routines, called tasks in the CLI, that run once or repeatedly in a chat");
     expect(help).not.toMatch(/^\s+\w+\s+Commands$/m);
   });
 
@@ -426,52 +425,6 @@ describe("assistant CLI", () => {
     confirmed.ctx.flags = { yes: true };
     await assistantCli.run(confirmed.ctx);
     expect(requests).toEqual([`/api/assistant/artifacts/${id}/database/status`, `/api/assistant/artifacts/${id}/database/reset`]);
-  });
-
-  test("creates and manually runs chat-bound routines", async () => {
-    const requests: Array<{ path: string; method: string; body: unknown; idempotencyKey: string | null }> = [];
-    const task = {
-      id: "tSk234",
-      chatId: "cHt234",
-      chatTitle: "Release planning",
-      conversationId: "22222222-2222-4222-8222-222222222222",
-      sponsorUserId: "33333333-3333-4333-8333-333333333333",
-      prompt: "Check the release.",
-      schedule: { kind: "once", runAt: "2099-06-15T07:30:00.000Z" },
-      timezone: "Europe/Berlin",
-      state: "active",
-      lastError: null,
-      createdAt: "2026-08-11T10:00:00.000Z",
-      updatedAt: "2026-08-11T10:00:00.000Z",
-    };
-    const fetcher: CloudCliContext["fetch"] = async (path, init) => {
-      requests.push({
-        path: String(path),
-        method: init?.method ?? "GET",
-        body: init?.body ? JSON.parse(String(init.body)) : null,
-        idempotencyKey: new Headers(init?.headers).get("Idempotency-Key"),
-      });
-      return json(String(path).endsWith("/run") ? { id: "oCc234", taskId: "tSk234", state: "queued" } : task);
-    };
-
-    const create = createContext(["tasks", "create"], fetcher);
-    create.ctx.flags.chat = "cHt234";
-    create.ctx.flags.prompt = "Check the release.";
-    create.ctx.flags.at = "2099-06-15T09:30";
-    await assistantCli.run(create.ctx);
-
-    const run = createContext(["tasks", "run", "tSk234"], fetcher);
-    await assistantCli.run(run.ctx);
-
-    expect(requests.map(({ path, method, body }) => ({ path, method, body }))).toEqual([
-      {
-        path: "/api/ai/tasks",
-        method: "POST",
-        body: { chatId: "cHt234", prompt: "Check the release.", schedule: { kind: "once", localAt: "2099-06-15T09:30" }, grants: [] },
-      },
-      { path: "/api/ai/tasks/tSk234/run", method: "POST", body: null },
-    ]);
-    expect(requests.every((request) => Boolean(request.idempotencyKey))).toBe(true);
   });
 
   test("lists a pending approval from an older server as the plain question, its reason, its rows and both commands", async () => {
@@ -528,15 +481,6 @@ describe("assistant CLI", () => {
     // The shell reads the quoted call ID back as exactly itself.
     const word = printed.at(-1)?.split(" reject -- ")[1] ?? "";
     expect(Bun.spawnSync(["sh", "-c", `printf %s ${word.split(" ").slice(2).join(" ")}`]).stdout.toString()).toBe("call$(id)'x");
-  });
-
-  test("shows the task scheduling timezone", async () => {
-    const request = createContext(["tasks", "status"], async (path) => {
-      expect(String(path)).toBe("/api/ai/tasks/status");
-      return json({ timezone: "Europe/Berlin" });
-    });
-    await assistantCli.run(request.ctx);
-    expect(request.stdout.join("")).toContain("Europe/Berlin");
   });
 
   test("searches chat messages and structured resources with readable IDs", async () => {

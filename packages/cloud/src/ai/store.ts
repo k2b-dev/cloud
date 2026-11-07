@@ -9,6 +9,7 @@ import { logger } from "../services/logging";
 import { toPgTextArray } from "../services/postgres";
 import { AI_TOOL_CHECK_STALE_MS, type AiActionCheck, type AiStoredActionReview } from "./action-review";
 import { AiMapSchema } from "./map-contracts";
+import { assertInteractiveChatTurn } from "./retired-routines";
 
 export { AI_TOOL_CHECK_STALE_MS };
 
@@ -168,7 +169,6 @@ type ConversationRow = {
   done: boolean | null;
   last_used_at: Date | string;
   is_done?: boolean;
-  has_active_schedule?: boolean;
   background_received_at?: Date | string | null;
   last_viewed_at: Date | string | null;
   latest_turn_status?: AiTurnStatus | null;
@@ -563,7 +563,6 @@ const fieldSource = (value: string | null): AiConversation["titleSource"] => (va
 // Pins stay active; otherwise explicit choices win and automatic completion never hides pending work.
 const effectiveDone = () => sql`(conversation.pinned_at IS NULL AND COALESCE(conversation.done,
   conversation.last_used_at <= now() - interval '7 days'
-  AND NOT EXISTS (SELECT 1 FROM ai.chat_tasks schedule WHERE schedule.conversation_id = conversation.id AND schedule.state = 'active')
   AND NOT EXISTS (SELECT 1 FROM ai.turns active_turn
     WHERE active_turn.conversation_id = conversation.id
       AND NOT COALESCE(active_turn.run_config ? 'background', false)
@@ -615,7 +614,6 @@ const visibleToTurn = (turnId?: string) => sql`(
 const rowToConversation = (row: ConversationRow): AiConversation => ({
   ...(row.activity ? { activity: row.activity } : {}),
   id: row.id,
-  hasActiveSchedule: Boolean(row.has_active_schedule),
   shortId: row.short_id,
   title: row.title,
   titleSource: fieldSource(row.title_source),
@@ -630,7 +628,6 @@ const rowToConversation = (row: ConversationRow): AiConversation => ({
     : (row.is_done ??
       row.done ??
       (new Date(row.last_used_at).getTime() <= Date.now() - 7 * 86400000 &&
-        !row.has_active_schedule &&
         !["queued", "running", "waiting_for_action"].includes(row.latest_turn_status ?? ""))),
   lastUsedAt: iso(row.last_used_at),
   runStatus: conversationRunStatus(row.latest_turn_status, row.latest_browser_pending),
@@ -838,7 +835,6 @@ const loadConversationSummary = async (input: {
     SELECT
       conversation.*,
       ${effectiveDone()} AS is_done,
-        EXISTS (SELECT 1 FROM ai.chat_tasks schedule WHERE schedule.conversation_id = conversation.id AND schedule.state = 'active') AS has_active_schedule,
       latest.status AS latest_turn_status,
       ${browserWorkPending()} AS latest_browser_pending,
       latest.error AS latest_turn_error,
@@ -924,7 +920,7 @@ const recordTurnEnd = async (
   input: { conversationId: string; turnId: string; reason: "aborted" | "error"; turnError?: AiTurnError | null },
 ): Promise<void> => {
   const replaces = input.reason === "error" ? "aborted" : null;
-  for (const table of ["ai.messages", "ai.task_messages"]) {
+  for (const table of ["ai.messages"]) {
     if (input.turnError) {
       await db`
         UPDATE ${db(table)}
@@ -1041,7 +1037,7 @@ const recordAiToolMeta = async (
   db = sql,
 ): Promise<void> => {
   let written = false;
-  for (const table of ["ai.messages", "ai.task_messages"]) {
+  for (const table of ["ai.messages"]) {
     const rows = await db<{ id: string }[]>`
       UPDATE ${db(table)}
       SET meta = COALESCE(meta, '{}'::jsonb) || jsonb_build_object(
@@ -1081,7 +1077,7 @@ const writeAiToolCheckWhere = async (
   allowed: (current: SQL.Query<unknown>) => SQL.Query<unknown>,
 ): Promise<boolean> => {
   let written = false;
-  for (const table of ["ai.messages", "ai.task_messages"]) {
+  for (const table of ["ai.messages"]) {
     const current = sql`meta->'toolChecks'->${input.callId}::text`;
     const rows = await sql<{ id: string }[]>`
       UPDATE ${sql(table)}
@@ -1226,7 +1222,6 @@ const insertMessageLocked = async (
 
 /** Append a turn-owned (assistant/tool_result/summary) message, guarded by lease ownership in one statement. */
 const appendTurnOwnedMessage = async (input: {
-  background?: boolean;
   conversationId: string;
   turnId: string;
   leaseOwner: string;
@@ -1238,13 +1233,13 @@ const appendTurnOwnedMessage = async (input: {
   meta?: AiStoredMessage["meta"];
 }): Promise<AiStoredMessage | null> => {
   return sql.begin(async (tx) => {
-    if (!input.background) await tx`SELECT id FROM ai.conversations WHERE id = ${input.conversationId}::uuid FOR UPDATE`;
+    await tx`SELECT id FROM ai.conversations WHERE id = ${input.conversationId}::uuid FOR UPDATE`;
     const { usage, providerModel, stopReason } = messageColumns(input.message);
     const rows = await withAiShortIdForDb(
       tx,
       "idx_ai_messages_conversation_short_id",
       (attempt, shortId) => attempt<MessageRow[]>`
-    INSERT INTO ${sql(input.background ? "ai.task_messages" : "ai.messages")} (
+    INSERT INTO ai.messages (
       short_id,
       conversation_id,
       seq,
@@ -1262,8 +1257,8 @@ const appendTurnOwnedMessage = async (input: {
       ${shortId},
       ${input.conversationId},
       CASE
-        WHEN NOT ${Boolean(input.background)} AND ${input.kind === "summary"} AND ${input.seq ?? null}::int IS NOT NULL AND ${input.seq ?? null}::int > 0 THEN ${input.seq ?? null}::int
-        ELSE (SELECT COALESCE(MAX(seq), 0) + 1 FROM ${sql(input.background ? "ai.task_messages" : "ai.messages")} WHERE conversation_id = ${input.conversationId} AND seq > 0 AND (NOT ${Boolean(input.background)} OR loop_id = ${input.turnId}))
+        WHEN ${input.kind === "summary"} AND ${input.seq ?? null}::int IS NOT NULL AND ${input.seq ?? null}::int > 0 THEN ${input.seq ?? null}::int
+        ELSE (SELECT COALESCE(MAX(seq), 0) + 1 FROM ai.messages WHERE conversation_id = ${input.conversationId} AND seq > 0)
       END,
       ${input.kind ?? "message"},
       ${input.message.role},
@@ -1286,7 +1281,7 @@ const appendTurnOwnedMessage = async (input: {
   `,
     );
     if (rows[0]) {
-      if (!input.background) await tx`UPDATE ai.conversations SET updated_at = now() WHERE id = ${input.conversationId}`;
+      await tx`UPDATE ai.conversations SET updated_at = now() WHERE id = ${input.conversationId}`;
       return rowToMessage(rows[0]);
     }
     return null;
@@ -1555,7 +1550,6 @@ export const aiConversations: AiConversationService = {
       SELECT
         conversation.*,
         ${effectiveDone()} AS is_done,
-        EXISTS (SELECT 1 FROM ai.chat_tasks schedule WHERE schedule.conversation_id = conversation.id AND schedule.state = 'active') AS has_active_schedule,
         latest.status AS latest_turn_status,
         ${browserWorkPending()} AS latest_browser_pending,
         latest.error AS latest_turn_error,
@@ -1613,7 +1607,6 @@ export const aiConversations: AiConversationService = {
   listSidebarConversations: async (input) => {
     const rows = await sql<ConversationRow[]>`
       SELECT conversation.*, ${effectiveDone()} AS is_done,
-        EXISTS (SELECT 1 FROM ai.chat_tasks schedule WHERE schedule.conversation_id = conversation.id AND schedule.state = 'active') AS has_active_schedule,
         latest.status AS latest_turn_status, ${browserWorkPending()} AS latest_browser_pending,
         latest.error AS latest_turn_error, latest.completed_at AS latest_turn_completed_at, latest.short_id AS latest_turn_short_id,
         jsonb_build_object('completed', COALESCE(progress.completed,0), 'total', COALESCE(progress.total,0),
@@ -1658,7 +1651,6 @@ export const aiConversations: AiConversationService = {
       SELECT
         conversation.*,
         ${effectiveDone()} AS is_done,
-        EXISTS (SELECT 1 FROM ai.chat_tasks schedule WHERE schedule.conversation_id = conversation.id AND schedule.state = 'active') AS has_active_schedule,
         latest.status AS latest_turn_status,
         ${browserWorkPending()} AS latest_browser_pending,
         latest.error AS latest_turn_error,
@@ -2900,15 +2892,13 @@ export const aiConversations: AiConversationService = {
 
   setLatestAssistantLoopAggregate: async (input) => {
     const loopId = input.loopId ?? null;
-    const config = loopId ? await aiConversations.getTurnRunConfig({ conversationId: input.conversationId, turnId: loopId }) : null;
-    const table = config?.kind === "chat" && config.background ? "ai.task_messages" : "ai.messages";
     await sql`
-      UPDATE ${sql(table)}
+      UPDATE ai.messages
       SET loop_aggregate = ${JSON.stringify(input.aggregate)}::text::jsonb,
           loop_done_reason = ${input.doneReason}
       WHERE id = (
         SELECT id
-        FROM ${sql(table)}
+        FROM ai.messages
         WHERE conversation_id = ${input.conversationId}
           AND compacted_at IS NULL
           AND kind = 'message'
@@ -3002,6 +2992,7 @@ export const aiConversations: AiConversationService = {
     }),
 
   submitChatTurn: async (input, db) => {
+    assertInteractiveChatTurn(input.runConfig);
     const submit = async (tx: SQL) => {
       const [conversation] = await tx<{ draft_revision: number | string; project_id: string | null }[]>`
         SELECT draft_revision, project_id FROM ai.conversations WHERE id = ${input.conversationId} FOR UPDATE
@@ -3257,6 +3248,7 @@ export const aiConversations: AiConversationService = {
       WHERE id = ${input.turnId}
         AND conversation_id = ${input.conversationId}
         AND cancel_requested_at IS NULL
+        AND NOT COALESCE(run_config ? 'background' OR run_config ? 'mandate', false)
         AND attempt - (
           SELECT COUNT(*)::int
           FROM ai.pending_actions
@@ -3969,12 +3961,6 @@ export const aiConversations: AiConversationService = {
     load: async (): Promise<StoreEntry[]> => {
       const projectCalls = (entries: StoreEntry[]) =>
         input.turnId ? projectMigratedCapabilityCalls(sql, input.conversationId, input.turnId, entries) : Promise.resolve(entries);
-      // The loop must only ever see the active model context, never archived history.
-      if (input.background && input.turnId) {
-        const own = await aiConversations.listTurnMessages({ conversationId: input.conversationId, loopId: input.turnId });
-        const context = input.background.context;
-        return projectCalls([...context, ...projectSettledAiToolChecks(own.map((row) => ({ ...row, seq: context.length + row.seq })))]);
-      }
       // Results delivered after this turn started belong to the next turn's context.
       // Compare durable message sequences rather than wall-clock timestamps.
       const rows = input.turnId
@@ -4018,14 +4004,13 @@ export const aiConversations: AiConversationService = {
 
       if (input.turnId && input.leaseOwner) {
         const appended = await appendTurnOwnedMessage({
-          background: Boolean(input.background),
           conversationId: input.conversationId,
           turnId: input.turnId,
           leaseOwner: input.leaseOwner,
           message,
           kind: opts?.kind,
           seq: opts?.seq,
-          loopId: opts?.kind === "summary" && !input.background ? null : input.turnId,
+          loopId: opts?.kind === "summary" ? null : input.turnId,
           modelId: input.modelId,
           meta,
         });

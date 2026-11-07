@@ -1,5 +1,5 @@
 import { sql } from "@k2b/cloud";
-import { authorizeBackgroundAction, hasRememberedAiToolApproval, rememberAiToolApproval } from "@k2b/cloud/ai";
+import { hasRememberedAiToolApproval, rememberAiToolApproval } from "@k2b/cloud/ai";
 import { CodeResourceId } from "@k2b/cloud/ai/browser";
 import {
   type CapabilityCaller,
@@ -165,12 +165,7 @@ export const runtimeCapabilities = {
     if (stream.size > LIMITS.inputFileBytes) throw new ArtifactError("INVALID_INPUT");
     return transferCapabilityStream(stream, verb, caller, verb === "write" ? (body ?? undefined) : undefined);
   },
-  async prepare(
-    input: unknown,
-    identity: RuntimeCapabilityIdentity,
-    caller: CapabilityCaller,
-    task?: { turnId: string; mandate: { id: string; revision: number } },
-  ) {
+  async prepare(input: unknown, identity: RuntimeCapabilityIdentity, caller: CapabilityCaller) {
     const request = RuntimeCapabilityRequest.parse(input),
       actor = user(identity);
     const { resource, conversationId } = await authorizeWithChat(request, identity, request.name);
@@ -194,25 +189,7 @@ export const runtimeCapabilities = {
       if (!response.ok) throw new Error(response.error.message);
       return response.data;
     };
-    const review =
-      task && target.action
-        ? await authorizeBackgroundAction({
-            ...task,
-            appId: target.appId,
-            capabilityId: target.localId,
-            kind: target.kind,
-            args: body.input,
-            ...(call ? { call } : {}),
-            approval: target.action.approval,
-            policy: target.policy,
-            hasReview: target.action.review === true,
-            action: target.operation.title,
-            review: getReview,
-            signal: caller.signal,
-          })
-        : target.action?.review
-          ? await getReview()
-          : null;
+    const review = target.action?.review ? await getReview() : null;
     const scope = review ? (capabilityReviewRememberScope(review, target.action?.approval) ?? null) : null;
     const prepared = Prepared.parse({
       appId: target.appId,
@@ -229,12 +206,10 @@ export const runtimeCapabilities = {
       ...(untrusted ? { resource: { id: resource.id, title: resource.title } } : {}),
     });
     const remembered =
-      !task &&
       !untrusted &&
       scope !== null &&
       (await hasRememberedAiToolApproval({ actorUserId: actor.id }, { toolName: request.name, approvalScope: scope, conversationId }));
-    // Only the managed host supplies task context; Core also checks the mandate on every dispatch.
-    const automatic = Boolean(task) || (!untrusted && (!target.action || target.action.approval === "none" || remembered));
+    const automatic = !untrusted && (!target.action || target.action.approval === "none" || remembered);
     const wording =
       !automatic && target.action
         ? await getCapabilityActionWording(target.appId, target.localId, caller.locale ?? undefined, identity.authority ?? null)
@@ -285,7 +260,7 @@ export const runtimeCapabilities = {
       await db`DELETE FROM assistant.capability_calls WHERE id IN (SELECT id FROM assistant.capability_calls
         WHERE user_id=${actor.id}::uuid AND status IN ('completed','denied','abandoned') ORDER BY created_at DESC OFFSET ${LIMITS.logs})`;
     });
-    if (automatic) return resolveCapability(request.id, { approved: true }, identity, caller, true, Boolean(task));
+    if (automatic) return resolveCapability(request.id, { approved: true }, identity, caller, true);
     return response;
   },
   async resolve(
@@ -304,7 +279,6 @@ async function resolveCapability(
   identity: RuntimeCapabilityIdentity,
   caller: CapabilityCaller,
   automatic = false,
-  background = false,
 ) {
   z.uuid().parse(id);
   const actor = user(identity);
@@ -332,9 +306,8 @@ async function resolveCapability(
     throw new ArtifactError("CONFLICT");
   const body = prepared.call ? capabilityInvocationBody(prepared.call) : { input: request.input };
   // Approval applies to the reviewed consequence, not a changed action.
-  // The routine gate already reviewed this call. Interactive approvals still revalidate their reviewed consequence.
-  let currentReview: z.infer<typeof CapabilityActionReviewDataSchema> | null = background ? prepared.review : null;
-  if (!background && target.action?.review) {
+  let currentReview: z.infer<typeof CapabilityActionReviewDataSchema> | null = null;
+  if (target.action?.review) {
     const response = await reviewCapabilityAction(
       { appId: target.appId, capabilityId: target.localId, ...body, signal: caller.signal },
       { ...caller, locale: prepared.locale ?? caller.locale },

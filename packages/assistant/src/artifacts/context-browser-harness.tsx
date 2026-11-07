@@ -68,7 +68,6 @@ render(() => {
             </AppWorkspace.MainPane>
             <AppWorkspace.MainPane id="workspace" label="Workspace" open={controller.state().tabs.length > 0} defaultSize={620}>
               <ArtifactWorkspace
-                onEditTask={() => {}}
                 controller={controller}
                 userId="test"
                 refreshKey="initial"

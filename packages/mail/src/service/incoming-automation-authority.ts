@@ -1,5 +1,5 @@
 import { type CapabilityGrant, type MandatePolicyV1, MandatePolicyV1Schema } from "@k2b/cloud/services/mandates";
-import { migrateLegacyRoutinePolicy } from "@k2b/cloud/services/mandates/target-migration";
+import { migrateLegacyCapabilityPolicy } from "@k2b/cloud/services/mandates/target-migration";
 import { err } from "@k2b/stdlib";
 import type { MailAutomationStep } from "../contracts";
 
@@ -52,7 +52,7 @@ export const migrateIncomingAutomationPolicy = (value: unknown, steps: MailAutom
   if (!configured) return null;
   // Existing grants may carry narrower payload restrictions. Never replace them from the steps.
   if (old.data.grants !== undefined) {
-    const migrated = migrateLegacyRoutinePolicy(old.data);
+    const migrated = migrateLegacyCapabilityPolicy(old.data);
     if (!migrated.ok) return null;
     const grants: CapabilityGrant[] = [];
     for (const wanted of configured.grants ?? []) {

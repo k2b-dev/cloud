@@ -3,116 +3,25 @@ import { capabilityCallDigest, capabilityValueDigest, normalizeCapabilityCall } 
 import { type NormalizedCapabilityCall, NormalizedCapabilityCallSchema } from "../contracts/capabilities";
 import { sql } from "../runtime/clients";
 import { audit } from "../services/audit";
-import { legacyTargetOperation, migrateLegacyCapabilityCall, migrateLegacyRoutinePolicy } from "../services/mandates/target-migration";
+import { legacyTargetOperation, migrateLegacyCapabilityCall } from "../services/mandates/target-migration";
 import { parsePgJsonValue } from "../services/postgres";
 
 export const CAPABILITY_TARGET_REASK_HINT = "Bitte neu anfragen";
-export const routineTargetMigrationHint = (capability: string | null): string =>
-  capability
-    ? `Bitte Routine neu bestätigen: ${capability} braucht jetzt ein festes Ziel`
-    : "Was sie darf, hat sich geändert. Bitte neu bestätigen.";
 
-/** Each existing routine and pending question is upgraded once, before Core starts AI workers. */
+/** Each pending question is upgraded once, before Core starts AI workers. */
 export const migrateAiCapabilityTargets = async (db: SQL = sql): Promise<void> => {
   // Existing rows start at zero; rows created by the upgraded code need no legacy conversion.
   await db.begin(async (tx) => {
     await tx`SELECT pg_advisory_xact_lock(hashtext('ai.capability-targets-v1'))`;
-    await tx`ALTER TABLE ai.chat_tasks ADD COLUMN IF NOT EXISTS capability_target_version INTEGER NOT NULL DEFAULT 0`;
-    await tx`ALTER TABLE ai.chat_tasks ALTER COLUMN capability_target_version SET DEFAULT 1`;
     await tx`ALTER TABLE ai.pending_actions ADD COLUMN IF NOT EXISTS capability_target_version INTEGER NOT NULL DEFAULT 0`;
     await tx`ALTER TABLE ai.pending_actions ALTER COLUMN capability_target_version SET DEFAULT 1`;
     // Each checkpoint removes one entry; later rows never require rescanning completed history.
-    await tx`CREATE INDEX IF NOT EXISTS idx_ai_chat_tasks_capability_target_upgrade
-      ON ai.chat_tasks(id) WHERE capability_target_version = 0`;
     await tx`CREATE INDEX IF NOT EXISTS idx_ai_pending_actions_capability_target_upgrade
       ON ai.pending_actions(id) WHERE capability_target_version = 0 AND status = 'pending'`;
   });
-  while (await db.begin(migrateRoutine)) {
-    /* One transaction, including its audit, per routine. */
-  }
   while (await db.begin(migrateApproval)) {
     /* Bounded rows; no payload-sized batches in memory. */
   }
-};
-
-const migrateRoutine = async (tx: SQL): Promise<boolean> => {
-  await tx`SELECT pg_advisory_xact_lock(hashtext('ai.capability-targets-v1'))`;
-  const [task] = await tx<
-    {
-      id: string;
-      mandate_id: string | null;
-      mandate_revision: number | bigint | null;
-      sponsor_user_id: string;
-    }[]
-  >`SELECT id, mandate_id, mandate_revision, sponsor_user_id FROM ai.chat_tasks
-    WHERE capability_target_version = 0 ORDER BY id LIMIT 1 FOR UPDATE`;
-  if (!task) return false;
-  const [mandate] = task.mandate_id
-    ? await tx<
-        {
-          policy: unknown;
-          revision: number | bigint;
-          state: string;
-          owner_app_id: string;
-          workload_type: string;
-          workload_id: string;
-          subject_kind: string;
-          subject_user_id: string | null;
-        }[]
-      >`SELECT policy, revision, state, owner_app_id, workload_type, workload_id, subject_kind, subject_user_id
-    FROM auth.mandates WHERE id = ${task.mandate_id}::uuid FOR UPDATE`
-    : [];
-  const owned =
-    mandate?.owner_app_id === "core" &&
-    mandate.workload_type === "ai.chat-task" &&
-    mandate.workload_id === task.id &&
-    mandate.subject_kind === "user" &&
-    mandate.subject_user_id === task.sponsor_user_id;
-  const result =
-    owned && Number(task.mandate_revision) === Number(mandate.revision)
-      ? migrateLegacyRoutinePolicy(parsePgJsonValue(mandate.policy))
-      : { ok: false as const, capability: null };
-  let revision = mandate ? Number(mandate.revision) : null;
-  // This is a one-time representation migration, not a policy update by the workload.
-  // Its converter proves literal equality; normal mandate narrowing never drops fixedInput restrictions.
-  if (owned && (result.ok ? result.changed : mandate.state === "active")) {
-    const [updated] = await tx<{ revision: number | bigint }[]>`UPDATE auth.mandates
-      SET policy = ${JSON.stringify(result.ok ? result.policy : mandate.policy)}::text::jsonb,
-        state = ${!result.ok && mandate.state === "active" ? "paused" : mandate.state},
-        revision = revision + 1, updated_at = now()
-      WHERE id = ${task.mandate_id}::uuid RETURNING revision`;
-    revision = Number(updated!.revision);
-  }
-  if (result.ok) {
-    await tx`UPDATE ai.chat_tasks SET capability_target_version = 1,
-      mandate_revision = ${revision}, revision = revision + ${result.changed ? 1 : 0},
-      updated_at = CASE WHEN ${result.changed} THEN now() ELSE updated_at END WHERE id = ${task.id}::uuid`;
-  } else {
-    await tx`UPDATE ai.chat_tasks SET capability_target_version = 1, state = 'needs_attention',
-      reason_code = 'rights_changed', reason_action = ${result.capability}, reason_at = now(),
-      last_error = ${routineTargetMigrationHint(result.capability)},
-      mandate_revision = ${owned ? revision : task.mandate_revision}, revision = revision + 1, updated_at = now()
-      WHERE id = ${task.id}::uuid`;
-  }
-  await audit.record(
-    {
-      action: "ai.routine.targets.migrate",
-      outcome: "allowed",
-      target: { type: "ai_chat_task", id: task.id },
-      metadata: {
-        version: 1,
-        mandateId: task.mandate_id,
-        state: result.ok ? "preserved" : "needs_attention",
-        ...(result.ok
-          ? { changed: result.changed }
-          : result.capability
-            ? { capability: result.capability }
-            : { reason: "mandate_unavailable" }),
-      },
-    },
-    tx,
-  );
-  return true;
 };
 
 type LegacyApprovalRow = {

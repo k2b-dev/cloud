@@ -7,7 +7,6 @@ import { dispatchCapabilityStream } from "../api/capability-streams";
 import { CAPABILITY_MAX_REQUEST_BYTES, CapabilityInvocationBodySchema } from "../contracts/capabilities";
 import { type AuthContext, getLocale, type RequestAuthority } from "../server";
 import { requireInvocation } from "../server/middleware/invocation";
-import { getMandate } from "../services/mandates";
 import { codeCapabilityOperation } from "./code-capability-transport";
 import { authorizeCodeExecution } from "./code-execution";
 import { aiConversations } from "./store";
@@ -20,16 +19,13 @@ export function createCodeCapabilityRoutes(
   dependencies: {
     invocation?: Parameters<typeof requireInvocation>[1];
     store?: Pick<typeof aiConversations, "getConversation" | "getTurn" | "getActiveTurn" | "getTurnRunConfig">;
-    getMandate?: typeof getMandate;
     dispatch?: typeof dispatchCapability;
     stream?: typeof dispatchCapabilityStream;
     runner?: Hono<AuthContext>;
   } = {},
 ) {
   const store = dependencies.store ?? aiConversations;
-  // This Core-only exchange resumes the verified turn; background calls also pass
-  // their persisted mandate to the dispatcher. Ordinary
-  // app invocations remain non-exchangeable; this is not an interactive cookie.
+  // This Core-only exchange resumes the verified interactive turn.
   const turnAuthority = (c: Context<AuthContext>): RequestAuthority => ({
     actor: c.get("actor"),
     accessSubject: c.get("accessSubject"),
@@ -54,9 +50,6 @@ export function createCodeCapabilityRoutes(
         origin: "assistant",
         assistantTurn: { conversationId: c.req.param("conversationId")!, turnId: c.req.param("turnId")! },
         continuation: codeCapabilityOperation(c.req.param("conversationId")!, c.req.param("turnId")!),
-        mandate: config.mandate
-          ? { mandateId: config.mandate.id, mandateRevision: config.mandate.revision, ownerAppId: "core" }
-          : undefined,
         review,
         kind: review || c.req.param("kind") === "actions" ? "actions" : "queries",
         appId,
@@ -87,7 +80,7 @@ export function createCodeCapabilityRoutes(
       const conversationId = c.req.param("conversationId")!;
       const turnId = c.req.param("turnId")!;
       try {
-        await authorizeCodeExecution(conversationId, turnId, actor.user.id, { store, getMandate: dependencies.getMandate ?? getMandate });
+        await authorizeCodeExecution(conversationId, turnId, actor.user.id, { store });
       } catch {
         return denied();
       }

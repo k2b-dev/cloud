@@ -1,5 +1,4 @@
 import type {
-  AiChatTaskView,
   AiConversation,
   AiConversationPage,
   AiConversationTimelineEntry,
@@ -76,13 +75,12 @@ import { ChatPresentation } from "../artifacts/ChatPresentation";
 import { artifactMessages } from "../artifacts/messages";
 import { browserHttpHost, openSecretsDialog } from "../artifacts/SecretsDialog";
 import { ArtifactWorkspace, createArtifactWorkspace } from "../artifacts/Workspace";
-import { appTab, contextTab, fileTab, taskTab } from "../artifacts/workspace-state";
+import { appTab, contextTab, fileTab } from "../artifacts/workspace-state";
 import type { AssistantChatContextSnapshot } from "../chat-context";
 import type { CodeRunCount, CodeSummaryPage } from "../code-summary";
 import { assistantCommandMessages, ChatComposeInputSchema } from "../commands";
 import type { AssistantProjectContextSnapshot } from "../project-context";
 import type { AssistantSidebarSnapshot } from "../sidebar";
-import { openAssistantTaskRun } from "./AssistantActivitiesDialog";
 import AssistantApprovalsView from "./AssistantApprovalsView";
 import {
   AssistantChatContextContent,
@@ -146,7 +144,6 @@ import {
   assistantRecentCommands,
   createAssistantCommandSession,
   createAssistantRecentResources,
-  createAssistantTaskRunKeys,
 } from "./composer-commands";
 import { releaseWhenPageReturns } from "./composer-file-choice";
 import {
@@ -161,7 +158,6 @@ import {
 import { isPlainChat } from "./conversation-view";
 import { assistantMessageAnchorSeq } from "./message-anchor";
 import { assistantMessages } from "./messages";
-import { assistantTaskTitle } from "./scheduled-task-format";
 import { useAssistantCopy, useAssistantText } from "./ui-copy";
 import { waitingQuestionsView } from "./waiting-questions";
 
@@ -246,20 +242,17 @@ export default function AssistantWorkspace(props: Props) {
   const locale = useLocale();
   const contextText = useAssistantText();
   const commandCopy = useAssistantCopy();
-  const runKeys = createAssistantTaskRunKeys();
   const artifactWorkspace = createArtifactWorkspace(props.initialWorkspaceHref);
   const [workspaceMounted, setWorkspaceMounted] = createSignal(false);
   // Grows when a version card in this chat switched Code on, so the panel's block above it shows the new state.
   const [codeRevision, setCodeRevision] = createSignal(0);
   const openContextView = (view: ContextView) =>
     artifactWorkspace.open(
-      view.task
-        ? taskTab(view.task.id, view.title)
-        : view.context
-          ? contextTab(view.context.conversationId, view.context.category, view.title, view.context.project)
-          : view.file
-            ? { ...fileTab(view.file.conversationId, view.file.path), title: view.title }
-            : { ...view, kind: "view" },
+      view.context
+        ? contextTab(view.context.conversationId, view.context.category, view.title, view.context.project)
+        : view.file
+          ? { ...fileTab(view.file.conversationId, view.file.path), title: view.title }
+          : { ...view, kind: "view" },
     );
   const openContextOverview = (category: ContextCategory, title: string) => {
     const chatId = chat.activeConversationId();
@@ -299,15 +292,6 @@ export default function AssistantWorkspace(props: Props) {
             label: contextText("Project knowledge"),
             icon: "ti ti-bulb",
             action: () => openContextOverview("knowledge", contextText("Project knowledge")),
-          },
-        ]
-      : []),
-    ...(workspaceContext()?.tasks.length
-      ? [
-          {
-            label: contextText("Routines"),
-            icon: "ti ti-calendar-time",
-            action: () => openContextOverview("tasks", contextText("Routines")),
           },
         ]
       : []),
@@ -1743,35 +1727,6 @@ export default function AssistantWorkspace(props: Props) {
     }
   };
 
-  const editScheduledTask = async (task: AiChatTaskView, repair: boolean) => {
-    if (!(await openAndFocusConversation(task.chatId))) return;
-    const key = task.chatId;
-    const attachments = composerAttachmentsFor(key);
-    const attached = attachments.some((item) => item.kind === "resource" && item.ref.type === "core.ai.task" && item.ref.id === task.id);
-    if (!attached && composerPartCount(key) >= AI_TURN_ATTACHMENT_MAX_ITEMS) {
-      chat.setError(t().attachmentLimit({ count: AI_TURN_ATTACHMENT_MAX_ITEMS }));
-      return;
-    }
-    if (!attached)
-      setComposerAttachmentsFor(key, [
-        ...attachments,
-        {
-          kind: "resource",
-          id: `resource:core.ai.task:${task.id}`,
-          name: assistantTaskTitle(task),
-          ref: { type: "core.ai.task", id: task.id },
-          icon: "ti ti-calendar-time",
-        },
-      ]);
-    const instruction = contextText(
-      repair ? "Please review the last run of this routine with me and help me fix the problem." : "Please help me adjust this routine.",
-    );
-    const existing = composerDraft(key);
-    setComposerDraft(key, existing.trim() ? `${existing}\n\n${instruction}` : instruction);
-    artifactWorkspace.setMobile("chat");
-    focusComposer();
-  };
-
   const showComposerTextAttachment = async (sessionKey: string, attachment: AiComposerAttachment) => {
     const target = followComposerSession(sessionKey);
     const release = holdComposerSave();
@@ -2326,7 +2281,6 @@ export default function AssistantWorkspace(props: Props) {
                 scope: search.scope,
                 session: search.opening,
                 sessionLoader: commandSession,
-                runKeys,
                 models: aiChatModelOptions(props.models),
                 selectedModelId: selectedModelId(),
                 chooseModel: setSelectedModelId,
@@ -2893,8 +2847,6 @@ export default function AssistantWorkspace(props: Props) {
                                         save: () => saveComposer(target, target),
                                       });
                                     },
-                                    onOpenScheduledTaskRun: (taskId, occurrenceId) =>
-                                      void openAssistantTaskRun(taskId, occurrenceId, liveHub),
                                     onOpenFile: (path) => void openFiles(path),
                                     resolveFileLink: (href) => {
                                       const context = workspaceContext();
@@ -3006,7 +2958,6 @@ export default function AssistantWorkspace(props: Props) {
                 }
               >
                 <ArtifactWorkspace
-                  onEditTask={(task, repair) => void editScheduledTask(task, repair)}
                   onOpenView={openContextView}
                   project={activeConversationProject()}
                   conversationId={chat.activeConversationId()}

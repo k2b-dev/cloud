@@ -97,10 +97,6 @@ export const coreCapabilityPresentation: CapabilityPresentationCatalog = {
           title: "Skill",
           description: "Ein wiederverwendbarer Ablauf für den Assistenten mit eigenen Zugriffsrechten.",
         },
-        "ai.task": {
-          title: "Assistant-Routine",
-          description: "Ein einmaliger oder wiederkehrender Auftrag in einem deiner KI-Chats.",
-        },
       },
       queries: {
         "ai.generate": {
@@ -300,15 +296,6 @@ export const coreCapabilityPresentation: CapabilityPresentationCatalog = {
           },
         },
         ...geoCapabilityPresentation,
-        "ai.task.run.read": {
-          title: "Lauf einer Assistant-Routine lesen",
-          description:
-            "Zeigt Ergebnis, Fehler und den eigenen Laufverlauf einer deiner Routinen. Nutze Routine- und Lauf-IDs aus ai.task.read. Prüfe und ändere bei einer blockierten Routine zuerst die Freigaben mit ai.task.update. Rufe danach ai.task.run auf.",
-          input: {
-            taskId: "Routine-ID aus ai.task.read.",
-            occurrenceId: "ID des konkreten Laufs aus ai.task.read.",
-          },
-        },
         "entities.search": {
           title: "Empfänger für Zugriffsrechte suchen",
           description:
@@ -334,7 +321,7 @@ export const coreCapabilityPresentation: CapabilityPresentationCatalog = {
         "ai.chat.read": {
           title: "KI-Chat lesen",
           description:
-            "Lesen Sie sichtbaren Text von einem core.ai.chat ref, der von ai.chats.search, ai.tasks.list oder einem Core Action zurückgegeben wird. Verwenden Sie ai.chat.search für die Textsuche im bekannten Chat und ai.chat.resources für referenced Cloud-Ressourcen.",
+            "Lesen Sie sichtbaren Text von einem core.ai.chat ref, der von ai.chats.search oder einem Core Action zurückgegeben wird. Verwenden Sie ai.chat.search für die Textsuche im bekannten Chat und ai.chat.resources für referenced Cloud-Ressourcen.",
           input: {
             id: "Lesbares ID des eigenen Chats zum Lesen.",
             cursor: "Numerischer Cursor, der von der vorherigen Nachrichtenseite zurückgegeben wurde.",
@@ -344,7 +331,7 @@ export const coreCapabilityPresentation: CapabilityPresentationCatalog = {
         "ai.chat.resources": {
           title: "In einem KI-Chat verwendete Ressourcen auflisten",
           description:
-            "Listen Sie die Cloud-Ressource refs auf oder suchen Sie sie, die in einem bekannten core.ai.chat beobachtet wurde. Holen Sie sich die Chat-ID von ai.chats.search, ai.chat.read oder einem core.ai.task ref. zurückgegebene refs können direkt an die jeweiligen App-Reader weitergegeben werden.",
+            "Listen Sie die Cloud-Ressource refs auf oder suchen Sie sie, die in einem bekannten core.ai.chat beobachtet wurde. Holen Sie sich die Chat-ID von ai.chats.search oder ai.chat.read. zurückgegebene refs können direkt an die jeweiligen App-Reader weitergegeben werden.",
           input: {
             chatId: "Lesbare sechsstellige AI-Konversation ID.",
             query: "Optionaler Filter für Titel, Typ oder lesbare Ressource ID.",
@@ -355,7 +342,7 @@ export const coreCapabilityPresentation: CapabilityPresentationCatalog = {
         "ai.chat.search": {
           title: "Nachrichten in einem KI-Chat durchsuchen",
           description:
-            "Durchsuchen Sie sichtbaren Text in einem bekannten core.ai.chat ref, einschließlich komprimiertem Verlauf. Holen Sie sich die Chat-ID von ai.chats.search, ai.chat.read oder einem core.ai.task ref. Verwenden Sie ai.chat.read, um ohne Suchbegriff zu suchen.",
+            "Durchsuchen Sie sichtbaren Text in einem bekannten core.ai.chat ref, einschließlich komprimiertem Verlauf. Holen Sie sich die Chat-ID von ai.chats.search oder ai.chat.read. Verwenden Sie ai.chat.read, um ohne Suchbegriff zu suchen.",
           input: {
             chatId: "Lesbare sechsstellige AI-Konversation ID.",
             cursor: "Numerischer Cursor, der von der vorherigen Nachrichtenseite zurückgegeben wurde.",
@@ -376,7 +363,7 @@ export const coreCapabilityPresentation: CapabilityPresentationCatalog = {
         "ai.chats.search": {
           title: "KI-Chats durchsuchen",
           description:
-            "Normaler Eintrag zum Suchen der AI-Konversationen des aktuellen Benutzers nach Text oder nach der genauen Cloud-Ressource refs. Verwenden Sie das zurückgegebene core.ai.chat refs mit ai.chat.read, ai.chat.search, ai.chat.resources, Aufgabenerstellung oder ai.chat.message.",
+            "Normaler Eintrag zum Suchen der AI-Konversationen des aktuellen Benutzers nach Text oder nach der genauen Cloud-Ressource refs. Verwenden Sie das zurückgegebene core.ai.chat refs mit ai.chat.read, ai.chat.search, ai.chat.resources oder ai.chat.message.",
           input: {
             query: "Wörter, die in Chattiteln, Zusammenfassungen oder sichtbaren Nachrichten übereinstimmen.",
             refs: "Erfordern, dass Chats jede genau strukturierte Cloud-Ressource ref enthalten.",
@@ -412,25 +399,6 @@ export const coreCapabilityPresentation: CapabilityPresentationCatalog = {
             enabled: "Optionaler persönlicher aktivierter Statusfilter.",
             limit: "Maximale Anzahl lesbarer Skills, die zurückgegeben werden sollen.",
             cursor: "Undurchsichtiger Cursor, der von der vorherigen Skill-Seite zurückgegeben wurde.",
-          },
-        },
-        "ai.task.read": {
-          title: "Assistant-Routine lesen",
-          description:
-            "Lies eine Routine aus ai.tasks.list oder einer Routine-Aktion über ihren core.ai.task-Verweis, einschließlich des zugehörigen core.ai.chat-Verweises und der letzten Läufe.",
-          input: {
-            id: "Routine-ID aus „Assistant-Routinen auflisten“ oder einem core.ai.task-Verweis.",
-          },
-        },
-        "ai.tasks.list": {
-          title: "Assistant-Routinen auflisten",
-          description:
-            "Liste deine Routinen auf, optional für einen core.ai.chat-Verweis oder einen Status. Nutze die zurückgegebenen core.ai.task-Verweise mit ai.task.read oder den Routine-Aktionen.",
-          input: {
-            chatId: "Optionale KI-Chat-ID aus der Chat-Suche, dem Lesen eines Chats oder einem core.ai.chat-Verweis.",
-            state: "Optionaler Status der Routine.",
-            limit: "Maximale Anzahl der zurückzugebenden Routinen.",
-            cursor: "Cursor aus der vorherigen Seite mit Routinen.",
           },
         },
       },
@@ -594,70 +562,6 @@ export const coreCapabilityPresentation: CapabilityPresentationCatalog = {
             name: "Kleingeschriebener Skill-Name mit Wörtern, die durch einzelne Bindestriche getrennt sind.",
             description: "Kurze, klare Beschreibung, was der Skill tut und wann der Assistent ihn laden soll.",
             instructions: "Vollständige Markdown-Anweisungen für den Skill.",
-          },
-        },
-        "ai.task.create": {
-          title: "Assistant-Routine anlegen",
-          description:
-            "Lege eine autonome Routine in einem deiner KI-Chats an. Ermittle vorher die benötigten Capabilities und lass deren Freigaben prüfen. Code Mode läuft mit bestätigten Capability-, HTTP- und Datenbankfreigaben im Hintergrund. Immer bestätigungspflichtige Capabilities und interaktive Dialoge sind dort nicht verfügbar. Rechne relative Zeitangaben vor dem Aufruf in localAt um.",
-          input: {
-            grants: "Geprüfte Freigaben für Capabilities, HTTP und RSQL für diese Routine.",
-            "grants[].appId": "ID der App, die die Capability bereitstellt.",
-            "grants[].capabilityId": "Lokale ID der zuvor gefundenen Capability.",
-            "grants[].kind": "Freigabetyp: query/action für Capabilities, http für HTTP-Anfragen oder database für RSQL.",
-            "grants[].fixedInput":
-              "Festgelegte Eingabefelder zur Einschränkung der Berechtigung; ein leeres Objekt erlaubt beliebige gültige Eingaben.",
-            prompt: "Genauer Auftrag für diesen Chat, wenn die Routine läuft.",
-            schedule: "Wann diese Routine laufen soll.",
-            timezone: "Genaue IANA-Zeitzone aus dem aktuellen Laufzeitkontext.",
-            title:
-              "Kurzer Name der Routine in der Sprache der Person, etwa „Neue Rechnungen eintragen“. Er steht in Benachrichtigungen und Listen.",
-          },
-        },
-        "ai.task.delete": {
-          title: "Assistant-Routine löschen",
-          description: "Lösche eine Routine und ihren gesamten Laufverlauf nach der Prüfung.",
-          input: {
-            taskId: "Lesbare Routine-ID mit sechs Zeichen.",
-          },
-        },
-        "ai.task.pause": {
-          title: "Assistant-Routine pausieren",
-          description: "Pausiere eine deiner Routinen nach der Prüfung.",
-          input: {
-            taskId: "Lesbare Routine-ID mit sechs Zeichen.",
-          },
-        },
-        "ai.task.resume": {
-          title: "Assistant-Routine fortsetzen",
-          description: "Setze eine deiner Routinen nach der Prüfung fort.",
-          input: {
-            taskId: "Lesbare Routine-ID mit sechs Zeichen.",
-          },
-        },
-        "ai.task.run": {
-          title: "Assistant-Routine jetzt ausführen",
-          description: "Plane einen manuellen Lauf ein, ohne den zukünftigen Zeitplan zu ändern.",
-          input: {
-            taskId: "Lesbare Routine-ID mit sechs Zeichen.",
-          },
-        },
-        "ai.task.update": {
-          title: "Assistant-Routine ändern",
-          description:
-            "Ändere Auftrag, zukünftigen Zeitplan oder Capability-Freigaben einer deiner Routinen nach Prüfung der genauen Änderungen. Lies bei fehlenden Rechten zuerst die Routine und den fehlgeschlagenen Lauf. Lass erweiterte Rechte ausdrücklich prüfen und berücksichtige bereits ausgeführte Änderungen vor einem erneuten Start.",
-          input: {
-            grants: "Vollständige neue Liste der Freigaben; du musst sie prüfen. Lass sie weg, um bestehende Freigaben zu behalten.",
-            "grants[].appId": "ID der App, die die Capability bereitstellt.",
-            "grants[].capabilityId": "Lokale ID der zuvor gefundenen Capability.",
-            "grants[].kind": "Freigabetyp: query/action für Capabilities, http für HTTP-Anfragen oder database für RSQL.",
-            "grants[].fixedInput":
-              "Festgelegte Eingabefelder zur Einschränkung der Berechtigung; ein leeres Objekt erlaubt beliebige gültige Eingaben.",
-            taskId: "Lesbare Routine-ID mit sechs Zeichen.",
-            prompt: "Neuer Auftrag für die nächsten Läufe der Routine.",
-            schedule: "Neuer einmaliger oder wiederkehrender Zeitplan.",
-            title: "Neuer kurzer Name der Routine in der Sprache der Person. Er steht in Benachrichtigungen und Listen.",
-            timezone: "Mit Zeitplan erforderlich; übernimm die aktuelle IANA-Zeitzone aus dem Laufzeitkontext.",
           },
         },
       },

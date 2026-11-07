@@ -182,22 +182,9 @@ profile still uses an `assistant` CLI plugin from an earlier release. Run
 `cld plugins update assistant` for that profile; see
 [Conversation streams announce provider retries](/en/docs/reference/deprecations-and-migrations#conversation-streams-announce-provider-retries).
 
-## Assistant routines need attention
+## Assistant routines no longer run
 
-Routine runs discover and load app capabilities only within their mandate
-policy and routine grants. A call rejected by a grant or fixed input returns a tool
-error and lets the model continue. Check a routine (scheduled task) marked `needs_attention` for
-unavailable or changed mandate authority, a target app denying the sponsor,
-an unknown action outcome, or an operation requiring approval or a browser.
-A `needs_approval` reason names the first Action whose app review required
-confirmation for every call. The mandate is checked before that review, both
-for direct tools and background Code Mode. The refused Action never runs;
-missing reviews and review errors also refuse it. Handle that change in an
-interactive chat, then resume the routine (or give a one-time routine a new
-time). Widening grants cannot replace a missing `approvalScope`.
-
-Review the routine's grants in the normal chat before changing its scope. See
-[Background mandates](/en/docs/identity/background-mandates#grant-capabilities-to-an-unattended-assistant-routine).
+This release retires scheduled chat routines. Restarting or restoring a chat does not resume them. See [Routines became Code](/en/docs/operations/routines-to-code).
 
 ## AI turns stop using tools before they finish
 

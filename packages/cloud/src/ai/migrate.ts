@@ -2,11 +2,11 @@ import { CapabilityActionReviewDataSchema } from "../contracts/capabilities";
 import { sql } from "../runtime/clients";
 import { APPROVAL_MAX_WAIT_MS, approvalAssurance, approvalScopeFromToolName, approvals, migrateApprovals } from "../services/approvals";
 import { migrateAiCapabilityTargets } from "./capability-targets-migrate";
-import { migrateChatTaskReasons } from "./chat-task-reasons-migrate";
 import { migrateAiMaps } from "./map-store";
 import { migrateAiMessageQueue } from "./message-queue";
 import { migrateAiModelAccess } from "./model-access-migrate";
 import { migrateAiQuotas } from "./quotas-migrate";
+import { retireChatRoutines } from "./retired-routines-migrate";
 import { withAiShortId } from "./short-id";
 
 const backfillAiShortIds = async (
@@ -884,205 +884,7 @@ export const migrateCloudAi = async (): Promise<void> => {
     WHERE status = 'pending'
   `.simple();
 
-  await sql`
-    CREATE TABLE IF NOT EXISTS ai.chat_tasks (
-      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-      short_id TEXT NOT NULL,
-      conversation_id UUID NOT NULL REFERENCES ai.conversations(id) ON DELETE CASCADE,
-      sponsor_user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
-      prompt TEXT NOT NULL,
-      schedule_kind TEXT NOT NULL,
-      run_at TIMESTAMPTZ,
-      cron TEXT,
-      timezone TEXT NOT NULL,
-      state TEXT NOT NULL DEFAULT 'active',
-      revision BIGINT NOT NULL DEFAULT 0,
-      mandate_id UUID,
-      mandate_revision BIGINT,
-      last_error TEXT,
-      idempotency_key TEXT,
-      idempotency_fingerprint TEXT,
-      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-      updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-      CONSTRAINT ai_chat_tasks_short_id_unique UNIQUE (short_id),
-      CONSTRAINT ai_chat_tasks_prompt_check CHECK (length(btrim(prompt)) BETWEEN 1 AND 10000),
-      CONSTRAINT ai_chat_tasks_schedule_kind_check CHECK (schedule_kind IN ('once', 'cron')),
-      CONSTRAINT ai_chat_tasks_schedule_check CHECK (
-        (schedule_kind = 'once' AND run_at IS NOT NULL AND cron IS NULL) OR
-        (schedule_kind = 'cron' AND run_at IS NULL AND cron IS NOT NULL)
-      ),
-      CONSTRAINT ai_chat_tasks_state_check CHECK (state IN ('active', 'paused', 'completed', 'needs_attention'))
-    )
-  `.simple();
-
-  await sql.begin(migrateChatTaskReasons);
-
-  await sql`ALTER TABLE ai.chat_tasks ADD COLUMN IF NOT EXISTS idempotency_fingerprint TEXT`.simple();
-  await sql`ALTER TABLE ai.chat_tasks ADD COLUMN IF NOT EXISTS revision BIGINT NOT NULL DEFAULT 0`.simple();
-  await sql`ALTER TABLE ai.chat_tasks ADD COLUMN IF NOT EXISTS mandate_id UUID`.simple();
-  await sql`ALTER TABLE ai.chat_tasks ADD COLUMN IF NOT EXISTS mandate_revision BIGINT`.simple();
-  await sql`
-    DO $$
-    BEGIN
-      IF EXISTS (
-        SELECT 1 FROM pg_constraint
-        WHERE conname = 'ai_chat_tasks_mandate_fkey' AND confdeltype <> 'n'
-      ) THEN
-        ALTER TABLE ai.chat_tasks DROP CONSTRAINT ai_chat_tasks_mandate_fkey;
-      END IF;
-      IF NOT EXISTS (
-        SELECT 1 FROM pg_constraint WHERE conname = 'ai_chat_tasks_mandate_fkey'
-      ) THEN
-        ALTER TABLE ai.chat_tasks ADD CONSTRAINT ai_chat_tasks_mandate_fkey
-          FOREIGN KEY (mandate_id) REFERENCES auth.mandates(id) ON DELETE SET NULL;
-      END IF;
-    END $$
-  `.simple();
-  // Existing tasks are upgraded under a row lock when first reconciled or run.
-  // Avoid an unbounded migration and never fall back to an interactive session.
-  await sql`ALTER TABLE ai.chat_tasks ALTER COLUMN mandate_id DROP NOT NULL`.simple();
-  await sql`ALTER TABLE ai.chat_tasks ALTER COLUMN mandate_revision DROP NOT NULL`.simple();
-  await sql`
-    CREATE OR REPLACE FUNCTION ai.clear_chat_task_mandate_revision() RETURNS trigger AS $$
-    BEGIN
-      IF NEW.mandate_id IS NULL THEN NEW.mandate_revision := NULL; END IF;
-      RETURN NEW;
-    END
-    $$ LANGUAGE plpgsql
-  `.simple();
-  await sql`DROP TRIGGER IF EXISTS ai_chat_task_mandate_clear ON ai.chat_tasks`.simple();
-  await sql`
-    CREATE TRIGGER ai_chat_task_mandate_clear
-    BEFORE UPDATE OF mandate_id ON ai.chat_tasks
-    FOR EACH ROW EXECUTE FUNCTION ai.clear_chat_task_mandate_revision()
-  `.simple();
-  await sql`
-    CREATE OR REPLACE FUNCTION ai.revoke_chat_task_mandate() RETURNS trigger AS $$
-    DECLARE
-      revoked_count INTEGER;
-    BEGIN
-      UPDATE auth.mandates
-      SET state = 'revoked', revision = revision + 1, updated_at = now(), revoked_at = now(),
-          revoked_by_app_id = 'core', revoke_reason = 'Scheduled chat task deleted'
-      WHERE id = OLD.mandate_id AND state <> 'revoked';
-      GET DIAGNOSTICS revoked_count = ROW_COUNT;
-      IF revoked_count = 1 THEN
-        INSERT INTO audit.events (
-          action, outcome, target_type, target_id, reason, metadata
-        ) VALUES (
-          'mandate.revoke', 'allowed', 'mandate', OLD.mandate_id::text,
-          'Scheduled chat task deleted',
-          jsonb_build_object(
-            'ownerAppId', 'core',
-            'workloadType', 'ai.chat-task',
-            'workloadId', OLD.id::text,
-            'provenance', 'ai.chat-task-cascade'
-          )
-        );
-      END IF;
-      RETURN OLD;
-    END
-    $$ LANGUAGE plpgsql
-  `.simple();
-  await sql`DROP TRIGGER IF EXISTS ai_chat_task_mandate_revoke ON ai.chat_tasks`.simple();
-  await sql`
-    CREATE TRIGGER ai_chat_task_mandate_revoke
-    BEFORE DELETE ON ai.chat_tasks
-    FOR EACH ROW EXECUTE FUNCTION ai.revoke_chat_task_mandate()
-  `.simple();
-  await sql`ALTER TABLE ai.chat_tasks DROP CONSTRAINT IF EXISTS chat_tasks_idempotency_key_key`.simple();
-  await sql`
-    CREATE UNIQUE INDEX IF NOT EXISTS idx_ai_chat_tasks_owner_idempotency
-    ON ai.chat_tasks(sponsor_user_id, idempotency_key)
-    WHERE idempotency_key IS NOT NULL
-  `.simple();
-
-  await sql`
-    CREATE INDEX IF NOT EXISTS idx_ai_chat_tasks_owner_created
-    ON ai.chat_tasks(sponsor_user_id, created_at DESC, id DESC)
-  `.simple();
-
-  await sql`
-    CREATE INDEX IF NOT EXISTS idx_ai_chat_tasks_due_once
-    ON ai.chat_tasks(run_at ASC, id ASC)
-    WHERE state = 'active' AND schedule_kind = 'once'
-  `.simple();
-
-  await sql`
-    CREATE TABLE IF NOT EXISTS ai.chat_task_occurrences (
-      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-      short_id TEXT NOT NULL,
-      task_id UUID NOT NULL REFERENCES ai.chat_tasks(id) ON DELETE CASCADE,
-      scheduled_for TIMESTAMPTZ NOT NULL,
-      trigger TEXT NOT NULL DEFAULT 'scheduled',
-      state TEXT NOT NULL DEFAULT 'queued',
-      task_revision BIGINT NOT NULL DEFAULT 0,
-      request_key TEXT NOT NULL,
-      turn_id UUID REFERENCES ai.turns(id) ON DELETE SET NULL,
-      error TEXT,
-      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-      started_at TIMESTAMPTZ,
-      completed_at TIMESTAMPTZ,
-      CONSTRAINT ai_chat_task_occurrences_short_id_unique UNIQUE (short_id),
-      CONSTRAINT ai_chat_task_occurrences_slot_unique UNIQUE (task_id, scheduled_for),
-      CONSTRAINT ai_chat_task_occurrences_trigger_check CHECK (trigger IN ('scheduled', 'manual')),
-      CONSTRAINT ai_chat_task_occurrences_state_check CHECK (state IN ('queued', 'running', 'completed', 'failed'))
-    )
-  `.simple();
-
-  await sql`
-    DO $$ BEGIN
-      IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'ai_chat_task_occurrences_state_check'
-          AND pg_get_constraintdef(oid) LIKE '%stopped%') THEN
-        ALTER TABLE ai.chat_task_occurrences DROP CONSTRAINT IF EXISTS ai_chat_task_occurrences_state_check;
-        ALTER TABLE ai.chat_task_occurrences ADD CONSTRAINT ai_chat_task_occurrences_state_check
-          CHECK (state IN ('queued', 'running', 'completed', 'failed', 'stopped'));
-      END IF;
-    END $$
-  `.simple();
-
-  await sql`ALTER TABLE ai.chat_task_occurrences ADD COLUMN IF NOT EXISTS task_revision BIGINT NOT NULL DEFAULT 0`.simple();
-
-  await sql`
-    CREATE UNIQUE INDEX IF NOT EXISTS idx_ai_chat_task_occurrences_request_key
-    ON ai.chat_task_occurrences(request_key)
-  `.simple();
-
-  await sql`
-    CREATE INDEX IF NOT EXISTS idx_ai_chat_task_occurrences_turn
-    ON ai.chat_task_occurrences(turn_id)
-  `.simple();
-
-  await sql`
-    CREATE INDEX IF NOT EXISTS idx_ai_chat_task_occurrences_queued
-    ON ai.chat_task_occurrences(created_at ASC, id ASC)
-    WHERE state = 'queued'
-  `.simple();
-
-  await sql`
-    DO $$ BEGIN
-      IF EXISTS (SELECT 1 FROM pg_indexes WHERE schemaname = 'ai' AND indexname = 'idx_ai_chat_task_occurrences_finished'
-          AND indexdef NOT LIKE '%stopped%') THEN
-        DROP INDEX ai.idx_ai_chat_task_occurrences_finished;
-      END IF;
-    END $$
-  `.simple();
-  await sql`
-    CREATE INDEX IF NOT EXISTS idx_ai_chat_task_occurrences_finished
-    ON ai.chat_task_occurrences(completed_at, id)
-    WHERE state IN ('completed', 'failed', 'stopped')
-  `.simple();
-
-  await sql`
-    CREATE UNIQUE INDEX IF NOT EXISTS idx_ai_chat_task_occurrences_active_task
-    ON ai.chat_task_occurrences(task_id)
-    WHERE state IN ('queued', 'running')
-  `.simple();
-
-  await sql`
-    CREATE INDEX IF NOT EXISTS idx_ai_chat_task_occurrences_task_created
-    ON ai.chat_task_occurrences(task_id, created_at DESC, id DESC)
-  `.simple();
+  // Retired routine tables are preserved in place by retireChatRoutines.
 
   await sql`
     CREATE TABLE IF NOT EXISTS ai.user_prefs (
@@ -2091,7 +1893,7 @@ export const migrateCloudAi = async (): Promise<void> => {
       created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
       CONSTRAINT ai_live_invalidation_domains_check CHECK (
         cardinality(domains) > 0 AND domains <@ ARRAY[
-          'conversation-list', 'conversation-detail', 'conversation-sources', 'conversation-files', 'conversation-tasks', 'conversation-dictations',
+          'conversation-list', 'conversation-detail', 'conversation-sources', 'conversation-files', 'conversation-dictations',
           'project-list', 'project-detail', 'project-context'
         ]::text[]
       )
@@ -2278,11 +2080,7 @@ export const migrateCloudAi = async (): Promise<void> => {
       conversation UUID;
     BEGIN
       IF TG_OP = 'DELETE' THEN row_data := OLD; ELSE row_data := NEW; END IF;
-      IF TG_TABLE_NAME = 'chat_task_occurrences' THEN
-        SELECT conversation_id INTO conversation FROM ai.chat_tasks WHERE id = row_data.task_id;
-      ELSE
-        conversation := row_data.conversation_id;
-      END IF;
+      conversation := row_data.conversation_id;
       IF conversation IS NOT NULL THEN
         PERFORM ai.enqueue_live_for_conversation(conversation, string_to_array(TG_ARGV[0], ','));
       END IF;
@@ -2332,17 +2130,6 @@ export const migrateCloudAi = async (): Promise<void> => {
     FOR EACH ROW WHEN (OLD.kind IN ('approval', 'custom_approval'))
     EXECUTE FUNCTION ai.live_conversation_child_changed('conversation-list')
   `.simple();
-  await sql`DROP TRIGGER IF EXISTS ai_live_chat_tasks_changed ON ai.chat_tasks`.simple();
-  await sql`
-    CREATE TRIGGER ai_live_chat_tasks_changed AFTER INSERT OR UPDATE OR DELETE ON ai.chat_tasks
-    FOR EACH ROW EXECUTE FUNCTION ai.live_conversation_child_changed('conversation-tasks')
-  `.simple();
-  await sql`DROP TRIGGER IF EXISTS ai_live_chat_task_occurrences_changed ON ai.chat_task_occurrences`.simple();
-  await sql`
-    CREATE TRIGGER ai_live_chat_task_occurrences_changed AFTER INSERT OR UPDATE OR DELETE ON ai.chat_task_occurrences
-    FOR EACH ROW EXECUTE FUNCTION ai.live_conversation_child_changed('conversation-tasks')
-  `.simple();
-
   await sql`
     CREATE OR REPLACE FUNCTION ai.live_project_row_changed() RETURNS trigger AS $$
     DECLARE row_data RECORD;
@@ -2598,8 +2385,6 @@ export const migrateCloudAi = async (): Promise<void> => {
   await sql`CREATE UNIQUE INDEX IF NOT EXISTS ai_task_messages_id ON ai.task_messages(id)`.simple();
   await sql`CREATE UNIQUE INDEX IF NOT EXISTS ai_task_messages_seq ON ai.task_messages(loop_id, seq)`.simple();
 
-  await sql`ALTER TABLE ai.chat_task_occurrences ADD COLUMN IF NOT EXISTS result_text TEXT`.simple();
-  await sql`ALTER TABLE ai.chat_task_occurrences ADD COLUMN IF NOT EXISTS delivered_at TIMESTAMPTZ`.simple();
   await sql`ALTER TABLE ai.conversations ADD COLUMN IF NOT EXISTS background_received_at TIMESTAMPTZ`.simple();
   await migrateAiMessageQueue();
 
@@ -2637,6 +2422,7 @@ export const migrateCloudAi = async (): Promise<void> => {
       `  ! ${legacyPaths.files} conversation and ${legacyPaths.project_files} project file paths keep a non-NFC Unicode form because a normalized twin exists`,
     );
   }
+  await retireChatRoutines();
   await migrateAiCapabilityTargets();
   await backfillApprovalRequests();
   await sql`CREATE INDEX IF NOT EXISTS idx_ai_messages_submitted_draft

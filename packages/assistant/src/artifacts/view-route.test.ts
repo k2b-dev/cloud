@@ -126,7 +126,6 @@ test("managed Chromium host reaches the view route as the user's actor", async (
     key: conversation.id,
     conversationId: conversation.id,
     turnId: turn.id,
-    background: false,
     context,
     lastUsed: Date.now(),
     busy: new Set(),

@@ -7,9 +7,8 @@ Use `cld assistant` for interactive access to the user's personal Cloud agent an
 Before you configure the Assistant for someone, read
 [How the Assistant works](how-it-works.md) (`cld assistant reference how-it-works.md`).
 It explains whose permissions the Assistant uses, what Projects share and
-whether it is live, which Actions need approval, how routines are
-authorized, and when to use instructions, Skills, memories, or knowledge.
-The CLI and API call routines tasks: `cld assistant tasks`, `core.ai.task.*`.
+whether it is live, which Actions need approval, and when to use instructions, Skills, memories, or knowledge.
+Scheduled chat routines and their task commands are retired.
 
 ## Move Skills between Cloud and folders
 
@@ -525,65 +524,9 @@ the reviewed `core.ai.chat.message` Action. The approval names the target and te
 delivery is durable, attributable to the source chat, same-user only, and
 asynchronous when the target is busy.
 
-## Routines
+## Routines became Code
 
-Routines belong to a chat, but each run uses an independent execution history.
-It starts from completed chat context and reads current files, memories, and
-Project knowledge and files. App reads, including Project references, need grants. Interactive chatting can continue while it runs. Results and
-failures are delivered to the original chat, reopening it and updating its
-activity time. One-time `--at` values are local wall-clock times in `app.timezone`,
-with the exact format `YYYY-MM-DDTHH:mm`. Recurring routines use a five-field cron
-expression in the same timezone.
-
-```bash
-cld assistant tasks list
-cld assistant tasks status
-cld assistant tasks list --chat <chat-id> --state active
-cld assistant tasks get <task-id>
-cld assistant tasks activities --limit 50
-cld assistant tasks run-get <task-id> <occurrence-id>
-cld assistant tasks create --chat <chat-id> --prompt "Check the release" --at 2026-08-12T09:30
-cld assistant tasks create --chat <chat-id> --prompt-file ./weekly-review.md --cron "0 9 * * 1"
-cld assistant tasks update <task-id> --at 2026-08-13T10:00
-cld assistant tasks pause <task-id>
-cld assistant tasks resume <task-id>
-cld assistant tasks run <task-id>
-cld assistant tasks delete <task-id> --yes
-```
-
-Capability grants are a JSON list. Each entry contains `appId`, `capabilityId`,
-`kind` (`query` or `action`), and `fixedInput`. Fixed fields must match exactly;
-`{}` allows any input within the caller's current access. Omitting grants when
-creating a routine gives it no capability grants. Updating grants replaces the list.
-Only Actions whose `approval` is `none` or `rememberable` can be granted; an Action
-without an `approval` field in the catalog asks every time and cannot be granted.
-`--yes` is required only for a non-empty grants list.
-
-```json
-[
-  {
-    "appId": "notebooks",
-    "capabilityId": "note.edit",
-    "kind": "action",
-    "fixedInput": { "noteId": "<note-id>" }
-  }
-]
-```
-
-```bash
-cld assistant tasks update <task-id> --grants-file ./grants.json --yes
-```
-
-Read capabilities and resolve resource IDs before proposing grants. Ask the user
-to approve the actual scope, including unrestricted fields, before using `--yes`.
-An existing remembered chat approval does not authorize a background routine.
-
-Use `tasks status` before creating a schedule when you need to confirm the
-effective application timezone. `tasks get` includes recent occurrence history. A terminal delivery or turn
-failure moves the routine to `needs_attention`. Resume a recurring routine after
-fixing the cause; a failed one-time routine needs a new future schedule via
-`tasks update`. Deleting a routine deletes its history, and deleting its chat cascades
-to the routine and all occurrences.
+Scheduled chat routines and `cld assistant tasks` are retired. Ask Gustav to rebuild an exported definition as personal Code with `app.schedule`, an explicit `timeZone`, and `core.ai.chat.run`. Review the Code and its grants before activation. Old runs cannot resume.
 
 ## Conversation files
 

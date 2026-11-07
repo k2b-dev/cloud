@@ -199,17 +199,6 @@ export const launchAssistant = async (input: LaunchAssistantInput): Promise<Assi
     href: `/app/assistant?conversation=${encodeURIComponent(conversation.id)}`,
   };
 };
-
-export {
-  CHAT_TASK_REASON_CODES,
-  type ChatTaskReason,
-  type ChatTaskReasonCode,
-  chatTaskLocale,
-  chatTaskNeedsNewTime,
-  chatTaskReasonSentence,
-  chatTaskReasonState,
-  chatTaskStopSentence,
-} from "./chat-task-reasons";
 export {
   createLiveDictationSource,
   type DictationDevice,

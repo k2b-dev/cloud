@@ -48,7 +48,7 @@ test("a PDF file tab previews the conversation file bytes instead of the attachm
   const dispose = render(
     () => (
       <AssistantLiveProvider value={live}>
-        <ArtifactWorkspace controller={controller} userId="user123" refreshKey="0" onEditTask={() => {}} />
+        <ArtifactWorkspace controller={controller} userId="user123" refreshKey="0" />
       </AssistantLiveProvider>
     ),
     dom.root,
@@ -97,7 +97,7 @@ for (const [path, content, highlighted] of [
     const dispose = render(
       () => (
         <AssistantLiveProvider value={live}>
-          <ArtifactWorkspace controller={controller} userId="user123" refreshKey="0" onEditTask={() => {}} />
+          <ArtifactWorkspace controller={controller} userId="user123" refreshKey="0" />
         </AssistantLiveProvider>
       ),
       dom.root,

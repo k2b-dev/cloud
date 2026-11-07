@@ -270,8 +270,8 @@ const germanText: Record<string, string> = {
   "Project file is no longer available.": "Die Projektdatei ist nicht mehr verfügbar.",
   "Project saved": "Projekt gespeichert",
   "Default model": "Standardmodell",
-  "Routines in this Project use it. Without a default, they use the person's choice, otherwise Balanced.":
-    "Routinen in diesem Projekt nutzen es. Ohne Standard gilt die Wahl der Person, sonst „Ausgewogen“.",
+  "Chats in this Project use it. Without a default, they use the person's choice, otherwise Balanced.":
+    "Chats in diesem Projekt nutzen es. Ohne Standard gilt die Wahl der Person, sonst „Ausgewogen“.",
   "No Project default": "Kein Projekt-Standard",
   "Models could not be loaded.": "Modelle konnten nicht geladen werden.",
   "Reference name": "Name der Referenz",
@@ -579,39 +579,15 @@ const copy = i18n.define({
       commandSearchChatHint: "Search messages and files",
       commandChatEmpty: "The chat is still empty",
       commandAllSkillsHint: "Narrow the list",
-      commandTasks: "Routines",
       commandApps: "Open in apps",
       commandDraftConflict: "The draft was changed elsewhere. Nothing was opened.",
       commandDraftNotSaved: "The draft could not be saved. Nothing was opened.",
       commandSuperseded: "You moved to another chat, so nothing was opened. The draft is saved.",
-      commandNewTaskLabel: "New routine",
-      commandNewTaskHint: "Have something done regularly, even without you",
-      commandNewTaskSkillDisabled: "You turned off the Skill for this",
-      commandNewTaskSkillUnavailable: "The Skill for this is not available to you",
-      commandTaskPaused: "Paused. Resume the routine first.",
-      commandTaskNeedsAttention: "Needs your attention before it can run",
-      commandTaskAlreadyRunning: "it is already running or no longer active",
-      commandTasksFailed: "Routines could not be loaded",
       commandTryAgain: "Try again",
       commandSkillsFailed: "Skills could not be loaded",
-      commandTaskGone: "it no longer exists",
-      commandTaskTooMany: "too many starts right now. Try again in a moment",
-      commandTaskNotAccepted: "the server did not accept the start",
-      commandTaskOffline: "no connection to the server",
-      commandTaskNoAnswer: "the server gave no clear answer",
-      commandTaskRunUnconfirmed: ({ title, reason }: { title: string; reason: string }) =>
-        `Not sure whether “${title}” started: ${reason}. Choose it here again to check; that does not start it twice.`,
-      commandTaskAlreadyRan: ({ title }: { title: string }) => `“${title}” already ran. The result is in the routine's chat.`,
-      commandTaskAlreadyFailed: ({ title }: { title: string }) => `“${title}” already ran but failed. The routine's chat has the details.`,
-      commandTaskAlreadyStopped: ({ title }: { title: string }) =>
-        `“${title}” was stopped while it ran. The routine's chat says what was already done.`,
       commandModelNow: ({ name }: { name: string }) => `Now: ${name}`,
       commandModelChosen: ({ name }: { name: string }) => `Model for this chat: ${name}`,
       commandAllSkills: ({ count }: { count: number }) => `All ${count} Skills`,
-      commandTaskRunHint: ({ schedule }: { schedule: string }) => `Run now · otherwise ${schedule}`,
-      commandTaskStarting: ({ title }: { title: string }) => `Starting “${title}” …`,
-      commandTaskRunning: ({ title }: { title: string }) => `“${title}” is running. The result arrives in the routine's chat.`,
-      commandTaskRunFailed: ({ title, reason }: { title: string; reason: string }) => `“${title}” did not start: ${reason}.`,
       commandSkills: "Skills",
       commandFiles: "Files in this chat",
       commandStudioApps: "Studio apps",
@@ -652,14 +628,6 @@ const copy = i18n.define({
       newChatDraftKept: ({ title }: { title: string }) => `Your draft stays in the chat “${title}”.`,
       text: ({ value }: { value: string }) => value,
       archiveChat: ({ title }: { title: string }) => `Archive "${title}"?`,
-      archiveChatRoutines: ({ names }: { names: string[] }) => {
-        const shown = names.slice(0, 3).map((name) => `“${name}”`);
-        const list = names.length > 3 ? `${shown.join(", ")} and ${names.length - 3} more` : shown.join(", ");
-        return names.length === 1
-          ? `1 routine runs in this chat (${list}). Archiving pauses it.`
-          : `${names.length} routines run in this chat (${list}). Archiving pauses them.`;
-      },
-      archiveChatAnyRoutines: "Archiving pauses the routines in this chat.",
       deleteNamed: ({ name }: { name: string }) => `Delete "${name}"?`,
       deleteChatFile: ({ name }: { name: string }) =>
         `Delete “${name}” from this chat? Earlier messages keep their text, but their links to this file stop working.`,
@@ -676,7 +644,6 @@ const copy = i18n.define({
       unsafeArchivePath: ({ path }: { path: string }) => `Skill archive contains an unsafe path: ${path}`,
       skippedSkillFiles: ({ paths }: { paths: string }) =>
         `${paths}. Cloud keeps SKILL.md and Markdown files directly in references/ with lowercase names (a-z, 0-9, ., _, -), and does not run scripts.`,
-      deleteScheduledTask: ({ prompt }: { prompt: string }) => `Delete routine “${prompt}”?`,
       editNamed: ({ name }: { name: string }) => `Edit ${name}`,
       deleteFileNamed: ({ name }: { name: string }) => `Delete ${name}`,
       restoreNamed: ({ name }: { name: string }) => `Restore ${name}`,
@@ -695,40 +662,15 @@ const copy = i18n.define({
       commandSearchChatHint: "Nachrichten und Dateien durchsuchen",
       commandChatEmpty: "Der Chat ist noch leer",
       commandAllSkillsHint: "Liste eingrenzen",
-      commandTasks: "Routinen",
       commandApps: "In Apps öffnen",
       commandDraftConflict: "Der Entwurf wurde inzwischen woanders geändert. Nichts wurde geöffnet.",
       commandDraftNotSaved: "Der Entwurf konnte nicht gespeichert werden. Nichts wurde geöffnet.",
       commandSuperseded: "Du bist in einem anderen Chat, darum wurde nichts geöffnet. Der Entwurf ist gespeichert.",
-      commandNewTaskLabel: "Neue Routine",
-      commandNewTaskHint: "Etwas regelmäßig erledigen lassen, auch ohne dich",
-      commandNewTaskSkillDisabled: "Du hast den Skill dafür ausgeschaltet",
-      commandNewTaskSkillUnavailable: "Der Skill dafür ist für dich nicht verfügbar",
-      commandTaskPaused: "Pausiert. Setze die Routine zuerst fort.",
-      commandTaskNeedsAttention: "Braucht deinen Eingriff, bevor sie laufen kann",
-      commandTaskAlreadyRunning: "sie läuft schon oder ist nicht mehr aktiv",
-      commandTasksFailed: "Routinen konnten nicht geladen werden",
       commandTryAgain: "Erneut versuchen",
       commandSkillsFailed: "Skills konnten nicht geladen werden",
-      commandTaskGone: "es gibt sie nicht mehr",
-      commandTaskTooMany: "gerade zu viele Starts. Versuche es gleich noch einmal",
-      commandTaskNotAccepted: "der Server hat den Start nicht angenommen",
-      commandTaskOffline: "keine Verbindung zum Server",
-      commandTaskNoAnswer: "der Server hat keine klare Antwort gegeben",
-      commandTaskRunUnconfirmed: ({ title, reason }: { title: string; reason: string }) =>
-        `Ob „${title}“ gestartet ist, ist unklar: ${reason}. Wähle sie hier noch einmal, um nachzusehen; das startet sie nicht doppelt.`,
-      commandTaskAlreadyRan: ({ title }: { title: string }) => `„${title}“ ist schon gelaufen. Das Ergebnis steht im Chat der Routine.`,
-      commandTaskAlreadyFailed: ({ title }: { title: string }) =>
-        `„${title}“ ist schon gelaufen, aber fehlgeschlagen. Mehr dazu steht im Chat der Routine.`,
-      commandTaskAlreadyStopped: ({ title }: { title: string }) =>
-        `„${title}“ wurde angehalten, während sie lief. Im Chat der Routine steht, was schon erledigt war.`,
       commandModelNow: ({ name }: { name: string }) => `Jetzt: ${name}`,
       commandModelChosen: ({ name }: { name: string }) => `Modell für diesen Chat: ${name}`,
       commandAllSkills: ({ count }: { count: number }) => `Alle ${count} Skills`,
-      commandTaskRunHint: ({ schedule }: { schedule: string }) => `Jetzt ausführen · sonst ${schedule}`,
-      commandTaskStarting: ({ title }: { title: string }) => `„${title}“ wird gestartet …`,
-      commandTaskRunning: ({ title }: { title: string }) => `„${title}“ läuft. Das Ergebnis kommt in den Chat der Routine.`,
-      commandTaskRunFailed: ({ title, reason }: { title: string; reason: string }) => `„${title}“ ist nicht gestartet: ${reason}.`,
       commandSkills: "Skills",
       commandFiles: "Dateien in diesem Chat",
       commandStudioApps: "Studio-Apps",
@@ -769,14 +711,6 @@ const copy = i18n.define({
       newChatDraftKept: ({ title }: { title: string }) => `Dein Entwurf bleibt im Chat „${title}“.`,
       text: ({ value }: { value: string }) => germanText[value] ?? value,
       archiveChat: ({ title }: { title: string }) => `„${title}“ archivieren?`,
-      archiveChatRoutines: ({ names }: { names: string[] }) => {
-        const shown = names.slice(0, 3).map((name) => `„${name}“`);
-        const list = names.length > 3 ? `${shown.join(", ")} und ${names.length - 3} weitere` : shown.join(", ");
-        return names.length === 1
-          ? `In diesem Chat läuft 1 Routine (${list}). Archivieren pausiert sie.`
-          : `In diesem Chat laufen ${names.length} Routinen (${list}). Archivieren pausiert sie.`;
-      },
-      archiveChatAnyRoutines: "Archivieren pausiert die Routinen in diesem Chat.",
       deleteNamed: ({ name }: { name: string }) => `„${name}“ löschen?`,
       deleteChatFile: ({ name }: { name: string }) =>
         `„${name}“ aus diesem Chat löschen? Frühere Nachrichten bleiben erhalten, ihre Verweise auf diese Datei funktionieren aber nicht mehr.`,
@@ -794,7 +728,6 @@ const copy = i18n.define({
       unsafeArchivePath: ({ path }: { path: string }) => `Das Skill-Archiv enthält einen unsicheren Pfad: ${path}`,
       skippedSkillFiles: ({ paths }: { paths: string }) =>
         `${paths}. Cloud übernimmt SKILL.md und Markdown-Dateien direkt in references/ mit kleingeschriebenen Namen (a-z, 0-9, ., _, -) und führt keine Skripte aus.`,
-      deleteScheduledTask: ({ prompt }: { prompt: string }) => `Routine „${prompt}“ löschen?`,
       editNamed: ({ name }: { name: string }) => `${name} bearbeiten`,
       deleteFileNamed: ({ name }: { name: string }) => `${name} löschen`,
       restoreNamed: ({ name }: { name: string }) => `${name} wiederherstellen`,

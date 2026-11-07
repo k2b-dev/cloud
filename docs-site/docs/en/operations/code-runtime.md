@@ -50,10 +50,7 @@ checked description reaches the browser; no Code source runs there.
 Rebuild an open-ended routine as personal Code with `app.schedule` and
 `core.ai.chat.run`, preserving its prompt, destination and explicit time zone.
 Use `{ at, timeZone }` for one-time work. For recurring work, the installed SDK
-must support `{ cron, timeZone }` before preserving a non-UTC schedule. Review
-and activate the new Code before the cut, then stop the old routine before
-enabling its replacement schedule. Do not run both for the same occurrence.
-Existing routines stay unchanged until that cut.
+must support `{ cron, timeZone }` before preserving a non-UTC schedule. Export definitions on the old release before upgrading. The upgrade stops all old routines; it does not activate replacements. Ask Gustav to rebuild and review the new Code, then enable its schedule. See [Routines became Code](/en/docs/operations/routines-to-code).
 
 The replacement starts a normal turn in the owner's chat. Required approvals
 wait there and the Code run ends promptly; this differs from routines that

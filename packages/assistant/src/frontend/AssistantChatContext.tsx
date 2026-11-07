@@ -1,4 +1,4 @@
-import type { AiConversationSource, AiProject, AiChatTaskView as AssistantChatTask } from "@k2b/cloud/ai";
+import type { AiConversationSource, AiProject } from "@k2b/cloud/ai";
 import { conversationFileSource } from "@k2b/cloud/ai/solid";
 import { query } from "@k2b/stdlib/solid";
 import {
@@ -9,7 +9,6 @@ import {
   MarkdownView,
   Placeholder,
   prompts,
-  StatusBadge,
   TextInput,
   toast,
   useLocale,
@@ -20,7 +19,6 @@ import { assistantApi } from "../api/client";
 import { ContextStudio } from "../artifacts/ContextStudio";
 import type { AssistantChatContextSnapshot } from "../chat-context";
 import type { AssistantProjectContextSnapshot } from "../project-context";
-import { openAssistantTaskRun } from "./AssistantActivitiesDialog";
 import { AssistantChatSidebarTab, type ChatSidebarActions, type ChatSidebarJump, createChatSourcePages } from "./AssistantChatSidebar";
 import {
   type AssistantContextFile,
@@ -38,7 +36,6 @@ import {
   openAssistantKnowledgeSearch,
   openAssistantMarkdown,
 } from "./AssistantContextContent";
-import { AssistantTasksView } from "./AssistantTasksDialog";
 import {
   assistantChatContextFor,
   assistantReferenceTitle,
@@ -46,16 +43,9 @@ import {
   splitAssistantConversationSources,
   visibleAssistantReferences,
 } from "./assistant-context";
-import {
-  type AssistantLiveHub,
-  type AssistantLiveInvalidation,
-  AssistantLiveProvider,
-  matchesAssistantInvalidation,
-  useAssistantLive,
-} from "./assistant-live";
+import { type AssistantLiveHub, type AssistantLiveInvalidation, matchesAssistantInvalidation, useAssistantLive } from "./assistant-live";
 import { chatSidebarMessages } from "./chat-sidebar-messages";
 import { formatDictationTimestamp } from "./dictation-files";
-import { assistantTaskTitle, formatAssistantTaskSchedule } from "./scheduled-task-format";
 import { assistantBrowserCopy, useAssistantCopy, useAssistantText } from "./ui-copy";
 
 export { splitAssistantConversationSources } from "./assistant-context";
@@ -63,9 +53,8 @@ export { splitAssistantConversationSources } from "./assistant-context";
 const CONTEXT_PREVIEW_LIMIT = 3;
 /** The primary control of a focusable context row. */
 const CONTEXT_ROW_ACTION = ":is(a, button).k2b-detail-panel__action";
-export type ContextCategory = "apps" | "files" | "sources" | "knowledge" | "tasks";
+export type ContextCategory = "apps" | "files" | "sources" | "knowledge";
 export type ContextView = {
-  task?: { id: string };
   context?: { conversationId: string; category: ContextCategory; project?: AiProject | null };
   file?: { conversationId: string; path: string };
   key: string;
@@ -77,12 +66,6 @@ type ContextNavigation = {
   /** Called after a chat file was deleted, so the host can close its open views. */
   onFileDeleted?: (file: { conversationId: string; path: string }) => void;
   category?: ContextCategory;
-};
-
-const taskStatus = (task: AssistantChatTask, text: (value: string) => string) => {
-  if (task.state === "active") return { label: text(task.schedule.kind === "once" ? "Pending" : "Active"), tone: "ok" as const };
-  if (task.state === "paused") return { label: text("Paused"), tone: "neutral" as const };
-  return { label: text("Needs attention"), tone: "warning" as const };
 };
 
 const openSourceSearch = async (title: string, sources: readonly AiConversationSource[]) => {
@@ -129,9 +112,7 @@ export const createAssistantChatContextState = (props: AssistantChatContextQuery
   let timer: ReturnType<typeof setTimeout> | undefined;
   const unregisterChat = live.register({
     matches: (invalidation) =>
-      matchesAssistantInvalidation(["conversation-sources", "conversation-files", "conversation-tasks", "conversation-detail"])(
-        invalidation,
-      ) &&
+      matchesAssistantInvalidation(["conversation-sources", "conversation-files", "conversation-detail"])(invalidation) &&
       (!invalidation.conversationIds || invalidation.conversationIds.has(props.chatId)),
     invalidate: (invalidation) => {
       if (batch) {
@@ -171,7 +152,7 @@ export const createAssistantChatContextState = (props: AssistantChatContextQuery
     if (!chat || (props.project && !projectSnapshot.data())) return null;
     const sources = splitAssistantConversationSources(chat.sources);
     return {
-      chat: { ...chat, ...sources, tasks: chat.tasks.filter((task) => task.state !== "completed") },
+      chat: { ...chat, ...sources },
       project: props.project ?? null,
       projectContext: projectSnapshot.data() ?? null,
     };
@@ -192,8 +173,6 @@ type AssistantChatContextState = ReturnType<typeof createAssistantChatContextSta
 function AssistantChatContextView(
   props: ContextNavigation & { state: AssistantChatContextState; onOpenApp?: (id: string, title: string, start?: boolean) => void },
 ) {
-  const live = useAssistantLive();
-  const openRun = (taskId: string, occurrenceId: string) => void openAssistantTaskRun(taskId, occurrenceId, live);
   const locale = useLocale();
   const text = useAssistantText();
   const copy = useAssistantCopy();
@@ -280,8 +259,6 @@ function AssistantChatContextView(
           onClick: () => void deleteChatFile(file),
         }
       : undefined;
-  const openTask = (task: AssistantChatTask) =>
-    props.onOpenView?.({ task: { id: task.id }, key: `task:${task.id}`, title: assistantTaskTitle(task), render: () => null });
   const overview = (category: ContextCategory, title: string) => {
     const context = props.state.context();
     if (!context || !props.onOpenView) return;
@@ -378,7 +355,7 @@ function AssistantChatContextView(
         const chatSources = () => [...value().chat.sources, ...olderSources().sources];
         const chatReferences = () => [...value().chat.references, ...olderSources().references];
         const allReferences = () => [
-          ...visibleAssistantReferences(chatReferences(), value().chat.chatId, value().chat.tasks[0]?.id).map((source) => ({
+          ...visibleAssistantReferences(chatReferences(), value().chat.chatId).map((source) => ({
             kind: "source" as const,
             title: assistantReferenceTitle(source, text),
             description: source.preview || (source.ref ? assistantResourceTypeLabel(source.ref, text) : text("Cloud resource")),
@@ -438,7 +415,7 @@ function AssistantChatContextView(
         };
         return (
           <div ref={root} class={props.category ? "flex flex-col gap-4" : "flex flex-col gap-3"}>
-            <Show when={props.category && props.category !== "tasks"}>
+            <Show when={props.category}>
               <TextInput value={search()} onValueChange={setSearch} aria-label={text("Search")} placeholder={text("Search")} />
             </Show>
             <Show
@@ -453,7 +430,7 @@ function AssistantChatContextView(
                         chatSources().filter((item) => includes(item.title)).length
                       : props.category === "knowledge"
                         ? (value().project ? 1 : 0) + (value().projectContext?.knowledge.length ?? 0)
-                        : value().chat.tasks.length)
+                        : 0)
               }
             >
               <p role="status" class="text-sm text-secondary">
@@ -695,50 +672,6 @@ function AssistantChatContextView(
               </AssistantContextSection>
             </Show>
 
-            <Show when={props.category === "tasks"}>
-              <AssistantTasksView chatId={value().chat.chatId} onOpenRun={openRun} onOpenTask={props.onOpenView ? openTask : undefined} />
-            </Show>
-            <Show when={!props.category && section("tasks") && value().chat.tasks[0]}>
-              {(task) => {
-                const status = () => taskStatus(task(), text);
-                return (
-                  <AssistantContextSection title={text("Scheduled")}>
-                    <AssistantContextRows>
-                      <AssistantContextRow
-                        title={assistantTaskTitle(task())}
-                        description={formatAssistantTaskSchedule(task(), locale())}
-                        onClick={props.onOpenView ? () => openTask(task()) : undefined}
-                        trailing={<StatusBadge label={status().label} tone={status().tone} variant="text" />}
-                      />
-                      <Show when={!props.category && value().chat.tasks.length > 1}>
-                        <AssistantContextViewAll
-                          onClick={() =>
-                            props.onOpenView
-                              ? overview("tasks", text("Routines"))
-                              : void prompts.dialog<void>(
-                                  () => (
-                                    <AssistantLiveProvider value={live}>
-                                      <AssistantTasksView
-                                        chatId={value().chat.chatId}
-                                        onOpenRun={openRun}
-                                        onOpenTask={props.onOpenView ? openTask : undefined}
-                                      />
-                                    </AssistantLiveProvider>
-                                  ),
-                                  {
-                                    title: text("Routines"),
-                                    icon: "ti ti-calendar-time",
-                                    size: "large",
-                                  },
-                                )
-                          }
-                        />
-                      </Show>
-                    </AssistantContextRows>
-                  </AssistantContextSection>
-                );
-              }}
-            </Show>
             <Show when={lightbox()}>
               {(state) => (
                 <Lightbox
@@ -786,8 +719,6 @@ export const assistantChatSidebarActions = (input: {
     onOpenStudio: () => overview("apps", input.copy.apps),
     onOpenKnowledge: () => overview("knowledge", input.copy.knowledge),
     onOpenReferences: () => overview("sources", input.copy.sources),
-    onOpenTask: (task) =>
-      input.onOpenView({ task: { id: task.id }, key: `task:${task.id}`, title: assistantTaskTitle(task), render: () => null }),
     onOpenProjectFile: input.project
       ? (file) => {
           const project = input.project!;

@@ -6,6 +6,17 @@ const messages = i18n.define({
   messages: {
     en: {
       backgroundRun: "Background run",
+      routineHistoryReason: ({ code, action }: { code: string; action?: string }) => {
+        const labels: Record<string, string> = {
+          paused: "The run was paused.",
+          chat_archived: "The chat was archived.",
+          owner_inactive: "The account was inactive.",
+          failed: "The last run failed.",
+          rights_changed: "The run's permissions changed.",
+          needs_approval: "The run needed approval.",
+        };
+        return `${labels[code] ?? code}${action ? ` ${action}` : ""}`;
+      },
       tableLinks: "Links",
       tableOpen: "Open",
       tableEmpty: "No matching rows.",
@@ -313,6 +324,17 @@ const messages = i18n.define({
     },
     de: {
       backgroundRun: "Hintergrundlauf",
+      routineHistoryReason: ({ code, action }) => {
+        const labels: Record<string, string> = {
+          paused: "Der Lauf war pausiert.",
+          chat_archived: "Der Chat war archiviert.",
+          owner_inactive: "Das Konto war inaktiv.",
+          failed: "Der letzte Lauf ist fehlgeschlagen.",
+          rights_changed: "Die Berechtigungen des Laufs hatten sich geändert.",
+          needs_approval: "Der Lauf benötigte eine Freigabe.",
+        };
+        return `${labels[code] ?? code}${action ? ` ${action}` : ""}`;
+      },
       tableLinks: "Links",
       tableOpen: "Öffnen",
       tableEmpty: "Keine passenden Zeilen.",

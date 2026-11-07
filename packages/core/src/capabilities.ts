@@ -6,8 +6,6 @@ import {
   AI_SKILL_NAME_PATTERN,
   AI_SKILL_REFERENCE_MAX_CHARS,
   AI_SKILL_REFERENCE_PATH_PATTERN,
-  type AiChatTask,
-  AiChatTaskIdempotencyConflictError,
   type AiConversation,
   type AiConversationResourceRef,
   AiResourceCredentialError,
@@ -18,20 +16,9 @@ import {
   AiSkillRevisionConflictError,
   type AiStoredMessage,
   aiCapabilityId,
-  aiChatTasks,
   aiConversations,
   aiSkills,
-  CHAT_TASK_REASON_CODES,
-  ChatTaskGrantsSchema,
-  ChatTaskIdSchema,
-  ChatTaskOccurrenceIdSchema,
-  ChatTaskScheduleInputSchema,
-  chatTaskCreateFingerprint,
-  chatTaskNeedsNewTime,
-  chatTaskReasonSentence,
   isConversationResourceCursor,
-  normalizeChatTaskSchedule,
-  toAiChatTaskOccurrenceView,
 } from "@k2b/cloud/ai";
 import {
   AuthenticatedPrincipalSchema,
@@ -54,7 +41,6 @@ import { principalLabel } from "@k2b/cloud/shared";
 import { dates, err, fail, i18n, ok } from "@k2b/stdlib";
 import { z } from "zod";
 import { aiChatRunAction, aiChatRunReadQuery } from "./ai-chat-run";
-import { aiChatTaskRuntime, reconcileAiChatTasks } from "./ai-chat-tasks-runtime";
 import { aiDecisionQuery } from "./ai-decision-capability";
 import { aiGenerationQuery } from "./ai-generation-capability";
 import { deliverPendingAiMessages } from "./ai-inter-chat-messages";
@@ -87,7 +73,6 @@ import {
 } from "./code/versions";
 import { codeWorkloadReaderContract, readCodeWorkload } from "./code/workload-reader";
 import { runGeoQuery } from "./geo-capability-result";
-import { taskGrantReview } from "./task-grant-presentation";
 
 // Manual starts review the current Code and named entrypoint through the same editor permission check.
 const reviewCodeOperation = async (
@@ -131,12 +116,6 @@ const reviewCodeOperation = async (
 };
 
 const chatTargetId = (context: CapabilityExecutionContext) => (context.target?.type === "core.ai.chat" ? context.target.id : "");
-
-const taskInTargetChat = async (taskId: string, context: CapabilityExecutionContext) => {
-  if (!context.user) return null;
-  const task = await aiChatTasks.get({ userId: context.user.id, taskId });
-  return task?.chatId === chatTargetId(context) ? task : null;
-};
 
 const skillTargetId = (context: CapabilityExecutionContext) => (context.target?.type === "core.ai.skill" ? context.target.id : "");
 const codeTargetId = (context: CapabilityExecutionContext) => (context.target?.type === "core.code" ? context.target.id : "");
@@ -185,137 +164,6 @@ const resourceCursorSchema = (scope: "conversation" | "user") =>
     .optional()
     .describe("Opaque cursor returned by the previous resource page.");
 const CHAT_MESSAGE_TOOL_NAME = aiCapabilityId(CORE_APP_ID, "ai.chat.message");
-const ChatTaskCreateInputSchema = z
-  .object({
-    title: z
-      .string()
-      .trim()
-      .min(1)
-      .max(80)
-      .optional()
-      .describe(
-        'Short name of the routine in the user\'s language, for example "Neue Rechnungen eintragen". People see it in notifications and lists.',
-      ),
-    prompt: z.string().trim().min(1).max(10_000).describe("Exact prompt to deliver to this chat when the routine runs."),
-    grants: ChatTaskGrantsSchema.default([]).describe(
-      "Routine grants: capability query/action, HTTP requests or Studio RSQL database operations. Fix input fields as narrowly as the request allows; empty fixedInput permits any inputs within current user access. Always-approval capabilities cannot be granted.",
-    ),
-    schedule: ChatTaskScheduleInputSchema.describe("When this routine should run."),
-    timezone: z.string().min(1).max(100).describe("Exact IANA timezone from the current runtime context."),
-  })
-  .strict();
-const ChatTaskUpdateInputSchema = z
-  .object({
-    taskId: ChatTaskIdSchema,
-    title: z
-      .string()
-      .trim()
-      .min(1)
-      .max(80)
-      .optional()
-      .describe(
-        'Short name of the routine in the user\'s language, for example "Neue Rechnungen eintragen". People see it in notifications and lists.',
-      ),
-    prompt: z.string().trim().min(1).max(10_000).optional().describe("Replacement prompt delivered when the routine runs."),
-    grants: ChatTaskGrantsSchema.optional().describe("Replacement full grant list; requires user review. Omit to retain existing grants."),
-    schedule: ChatTaskScheduleInputSchema.optional().describe("Replacement one-time or recurring schedule."),
-    timezone: z.string().min(1).max(100).optional().describe("Required with schedule; copy the current runtime IANA timezone."),
-  })
-  .strict()
-  .superRefine((value, context) => {
-    if (value.title === undefined && value.prompt === undefined && value.schedule === undefined && value.grants === undefined)
-      context.addIssue({ code: "custom", message: "Provide a title, prompt, schedule or grants" });
-    if (value.schedule !== undefined && value.timezone === undefined)
-      context.addIssue({ code: "custom", path: ["timezone"], message: "Provide the runtime timezone with a schedule" });
-    if (value.schedule === undefined && value.timezone !== undefined)
-      context.addIssue({ code: "custom", path: ["timezone"], message: "Timezone is only used with a schedule" });
-  });
-const ChatTaskIdInputSchema = z.object({ taskId: ChatTaskIdSchema }).strict();
-const ChatTaskReadInputSchema = z
-  .object({ id: ChatTaskIdSchema.describe("Routine ID returned by List Assistant routines or a core.ai.task ref.") })
-  .strict();
-const ChatTasksListInputSchema = z
-  .object({
-    chatId: ChatIdSchema.optional().describe("Optional AI conversation ID returned by chat search/read or a core.ai.chat ref."),
-    state: z.enum(["active", "paused", "completed", "needs_attention"]).optional().describe("Optional routine lifecycle state."),
-    limit: z.number().int().min(1).max(50).default(20).describe("Maximum number of routines to return."),
-    cursor: z.string().regex(/^\d+$/).optional().describe("Opaque cursor returned by the previous routine page."),
-  })
-  .strict();
-const ChatTaskDataSchema = z
-  .object({
-    id: ChatTaskIdSchema,
-    chatId: ChatIdSchema,
-    chatTitle: z.string(),
-    title: z.string().nullable(),
-    name: z.string(),
-    reason: z.object({ code: z.enum(CHAT_TASK_REASON_CODES), sentence: z.string() }).nullable(),
-    prompt: z.string(),
-    grants: ChatTaskGrantsSchema,
-    schedule: z.union([z.object({ kind: z.literal("once"), runAt: z.string() }), z.object({ kind: z.literal("cron"), cron: z.string() })]),
-    timezone: z.string(),
-    state: z.enum(["active", "paused", "completed", "needs_attention"]),
-    lastError: z.string().nullable(),
-    createdAt: z.string(),
-    updatedAt: z.string(),
-  })
-  .strict();
-const ChatTaskDetailDataSchema = z
-  .object({
-    task: ChatTaskDataSchema,
-    occurrences: z.array(
-      z.object({
-        id: ChatTaskOccurrenceIdSchema,
-        scheduledFor: z.string(),
-        trigger: z.enum(["scheduled", "manual"]),
-        state: z.enum(["queued", "running", "completed", "failed", "stopped"]),
-        error: z.string().nullable(),
-        createdAt: z.string(),
-        completedAt: z.string().nullable(),
-      }),
-    ),
-  })
-  .strict();
-const ChatTaskListItemDataSchema = ChatTaskDataSchema.extend({
-  ref: z.object({ type: z.literal("core.ai.task"), id: ChatTaskIdSchema }).strict(),
-}).strict();
-
-/** A scheduled task holds a background mandate that outlives the phone: the mobile app may not create, change or resume one. */
-const appSessionTaskError = (context: Pick<CapabilityExecutionContext, "actor">) =>
-  isAppSessionActor(context.actor) ? fail(err.forbidden("Use Cloud on the web for this.")) : null;
-
-const taskData = (task: AiChatTask, locale: string): z.infer<typeof ChatTaskDataSchema> => ({
-  title: task.title,
-  name: task.name,
-  reason:
-    task.reasonCode && task.reasonAt
-      ? {
-          code: task.reasonCode,
-          sentence: chatTaskReasonSentence(
-            { code: task.reasonCode, at: task.reasonAt, action: task.reasonAction ?? undefined },
-            { locale, timeZone: task.timezone },
-          ),
-        }
-      : null,
-  id: task.shortId,
-  chatId: task.chatId,
-  chatTitle: task.chatTitle,
-  prompt: task.prompt,
-  grants: task.grants,
-  schedule: task.schedule,
-  timezone: task.timezone,
-  state: task.state,
-  lastError: task.lastError,
-  createdAt: task.createdAt,
-  updatedAt: task.updatedAt,
-});
-/** A schedule as people read it: a one-time run in the task's own timezone, a recurring one by its exact cron. */
-const scheduleLabel = (schedule: AiChatTask["schedule"], timezone: string, locale: string): string => {
-  const { t, locale: resolved } = coreCapabilityMessages(locale);
-  return schedule.kind === "once"
-    ? `${dates.formatDateTime(schedule.runAt, { locale: resolved, timeZone: timezone })} (${timezone})`
-    : `${t.recurring}: ${schedule.cron} (${timezone})`;
-};
 const referenceMessages = i18n.define({
   baseLocale: "en",
   messages: {
@@ -337,28 +185,6 @@ const referenceMessages = i18n.define({
     },
   },
 });
-const taskReference = (task: AiChatTask, locale: string) => {
-  const resolved = referenceMessages.resolve([locale]);
-  const t = resolved.t;
-  const schedule =
-    task.schedule.kind === "once"
-      ? dates.formatDateTime(task.schedule.runAt, { locale: resolved.locale, timeZone: task.timezone })
-      : `${t.recurring}: ${task.schedule.cron}`;
-  return {
-    type: "core.ai.task",
-    id: task.shortId,
-    title: task.name,
-    preview: `${t[task.state]} · ${schedule} · ${task.timezone}`,
-    icon: "ti ti-calendar-clock",
-  };
-};
-const taskChatReference = (task: AiChatTask, locale: string) => ({
-  type: "core.ai.chat",
-  id: task.chatId,
-  title: task.chatTitle,
-  preview: referenceMessages.resolve([locale]).t.chat,
-  icon: "ti ti-message-chatbot",
-});
 const chatReference = (chat: AiConversation) => ({
   type: "core.ai.chat",
   id: chat.shortId,
@@ -366,27 +192,6 @@ const chatReference = (chat: AiConversation) => ({
   preview: chat.description,
   icon: "ti ti-message-chatbot",
 });
-const taskUpdateSummary = (input: z.infer<typeof ChatTaskUpdateInputSchema>, task: AiChatTask, locale: string): string => {
-  const { t } = coreCapabilityMessages(locale);
-  const name = task.name;
-  if (input.title !== undefined && input.prompt === undefined && input.schedule === undefined && input.grants === undefined)
-    return t.taskRenamed({ name: task.name });
-  if (input.prompt !== undefined && input.schedule !== undefined) return t.taskInstructionsAndScheduleChanged({ name });
-  if (input.prompt !== undefined) return t.taskInstructionsChanged({ name });
-  if (input.schedule !== undefined) return t.taskScheduleChanged({ name });
-  return t.taskGrantsChanged({ name });
-};
-const invalidTaskState = (task: AiChatTask, action: "pause" | "resume" | "run"): string | null => {
-  if (action === "pause")
-    return task.state === "active" || task.state === "paused" ? null : `Task “${task.name}” cannot be paused while ${task.state}`;
-  if (action === "resume")
-    return chatTaskNeedsNewTime(task)
-      ? `Task “${task.name}” needs a new future schedule before it can resume`
-      : task.state === "paused" || task.state === "needs_attention" || task.state === "active"
-        ? null
-        : `Task “${task.name}” cannot be resumed while ${task.state}`;
-  return task.state === "active" ? null : `Task “${task.name}” cannot run while ${task.state}`;
-};
 
 const ChatsSearchInputSchema = z
   .object({
@@ -778,12 +583,6 @@ export const aiCapabilities = defineCapabilities({
       icon: "ti ti-message-chatbot",
       reader: "ai.chat.read",
     },
-    "ai.task": {
-      title: "Assistant routine",
-      description: "A one-time or recurring prompt attached to one of your AI conversations.",
-      icon: "ti ti-calendar-clock",
-      reader: "ai.task.read",
-    },
     "ai.skill": {
       title: "Assistant Skill",
       description: "A permission-managed reusable Assistant workflow.",
@@ -1159,105 +958,10 @@ export const aiCapabilities = defineCapabilities({
         });
       },
     },
-    "ai.tasks.list": {
-      title: "List Assistant routines",
-      description:
-        "Normal entry for routine work. List your routines, optionally for a core.ai.chat ref or state; use returned core.ai.task refs with ai.task.read or routine Actions.",
-      input: ChatTasksListInputSchema,
-      data: z.array(ChatTaskListItemDataSchema),
-      openWorld: false,
-      async run(input, context) {
-        if (!context.user) return fail(err.forbidden("Scheduled tasks require a user-backed actor"));
-        const offset = Number(input.cursor ?? "0");
-        const tasks = await aiChatTasks.list({ userId: context.user.id, ...input, offset, limit: input.limit + 1 });
-        const items = tasks.slice(0, input.limit);
-        return ok({
-          data: items.map((task) => ({ ...taskData(task, context.locale), ref: { type: "core.ai.task" as const, id: task.shortId } })),
-          refs: items.map((task) => taskReference(task, context.locale)),
-          page: capabilityPage(tasks.length > input.limit ? String(offset + input.limit) : undefined),
-        });
-      },
-    },
-    "ai.task.run.read": {
-      title: "Read an Assistant routine run",
-      description:
-        "Inspect one of your routine runs, including its normal-language result, errors and isolated execution history. Use routine IDs and run IDs returned by ai.task.read. To repair a blocked routine, use ai.task.update with reviewed grants and then ai.task.run.",
-      input: z.object({ taskId: ChatTaskIdSchema, occurrenceId: ChatTaskOccurrenceIdSchema }).strict(),
-      data: z
-        .object({
-          task: ChatTaskDataSchema,
-          occurrence: z
-            .object({
-              id: ChatTaskOccurrenceIdSchema,
-              taskId: ChatTaskIdSchema,
-              scheduledFor: z.string(),
-              trigger: z.enum(["scheduled", "manual"]),
-              state: z.enum(["queued", "running", "completed", "failed", "stopped"]),
-              error: z.string().nullable(),
-              resultText: z.string().nullable(),
-              createdAt: z.string(),
-              startedAt: z.string().nullable(),
-              completedAt: z.string().nullable(),
-            })
-            .strict(),
-          messages: z.array(z.json()),
-        })
-        .strict(),
-      openWorld: false,
-      async run(input, context) {
-        if (!context.user) return fail(err.forbidden("Scheduled tasks require a user-backed actor"));
-        const detail = await aiChatTasks.getOccurrenceDetail({ userId: context.user.id, ...input });
-        if (!detail) return fail(err.notFound("Task run"));
-        const { t } = coreCapabilityMessages(context.locale);
-        return ok({
-          data: {
-            task: taskData(detail.task, context.locale),
-            occurrence: toAiChatTaskOccurrenceView(detail.occurrence, detail.task.shortId),
-            messages: detail.messages.map((message) => z.json().parse(message)),
-          },
-          summary: detail.occurrence.resultText ?? t.taskRunState({ state: t[detail.occurrence.state] }),
-          refs: [taskReference(detail.task, context.locale)],
-        });
-      },
-    },
-    "ai.task.read": {
-      title: "Read an Assistant routine",
-      description:
-        "Read one core.ai.task ref returned by ai.tasks.list or a routine Action, including its parent core.ai.chat ref and recent runs.",
-      input: ChatTaskReadInputSchema,
-      data: ChatTaskDetailDataSchema,
-      openWorld: false,
-      async run(input, context) {
-        if (!context.user) return fail(err.forbidden("Scheduled tasks require a user-backed actor"));
-        const task = await aiChatTasks.get({ userId: context.user.id, taskId: input.id });
-        if (!task) return fail(err.notFound("Task"));
-        const occurrences = (await aiChatTasks.listOccurrences({ userId: context.user.id, taskId: input.id })) ?? [];
-        return ok({
-          data: {
-            task: taskData(task, context.locale),
-            occurrences: occurrences.map((occurrence) => ({
-              id: occurrence.shortId,
-              scheduledFor: occurrence.scheduledFor,
-              trigger: occurrence.trigger,
-              state: occurrence.state,
-              error: occurrence.error,
-              createdAt: occurrence.createdAt,
-              completedAt: occurrence.completedAt,
-            })),
-          },
-          summary: coreCapabilityMessages(context.locale).t.taskRead({
-            state: referenceMessages.resolve([context.locale]).t[task.state],
-            name: task.name,
-          }),
-          refs: [taskReference(task, context.locale), taskChatReference(task, context.locale)],
-          links: [{ rel: "open", href: chatHref(task.chatId) }],
-        });
-      },
-    },
     "ai.chats.search": {
       title: "Search AI conversations",
       description:
-        "Normal entry for finding the current user's AI conversations by text or exact Cloud resource refs. Use returned core.ai.chat refs with ai.chat.read, ai.chat.search, ai.chat.resources, task creation, or ai.chat.message.",
+        "Normal entry for finding the current user's AI conversations by text or exact Cloud resource refs. Use returned core.ai.chat refs with ai.chat.read, ai.chat.search, ai.chat.resources or ai.chat.message.",
       input: ChatsSearchInputSchema,
       data: UniversalSearchDataSchema,
       openWorld: false,
@@ -1276,7 +980,7 @@ export const aiCapabilities = defineCapabilities({
     "ai.chat.read": {
       title: "Read an AI conversation",
       description:
-        "Read visible text from one core.ai.chat ref returned by ai.chats.search, ai.tasks.list, or a Core Action. Use ai.chat.search for text lookup inside the known chat and ai.chat.resources for referenced Cloud resources.",
+        "Read visible text from one core.ai.chat ref returned by ai.chats.search or a Core Action. Use ai.chat.search for text lookup inside the known chat and ai.chat.resources for referenced Cloud resources.",
       input: ChatReadInputSchema,
       data: ChatMessagesDataSchema,
       openWorld: false,
@@ -1300,7 +1004,7 @@ export const aiCapabilities = defineCapabilities({
     "ai.chat.search": {
       title: "Search messages in an AI conversation",
       description:
-        "Search visible text inside one known core.ai.chat ref, including compacted history. Get chatId from ai.chats.search, ai.chat.read, or a core.ai.task ref; use ai.chat.read to browse without a search term.",
+        "Search visible text inside one known core.ai.chat ref, including compacted history. Get chatId from ai.chats.search or ai.chat.read; use ai.chat.read to browse without a search term.",
       input: ChatSearchInputSchema,
       data: ChatMessagesDataSchema,
       openWorld: false,
@@ -1327,7 +1031,7 @@ export const aiCapabilities = defineCapabilities({
     "ai.chat.resources": {
       title: "List resources used in an AI conversation",
       description:
-        "List or search Cloud resource refs observed in one known core.ai.chat. Get chatId from ai.chats.search, ai.chat.read, or a core.ai.task ref; returned refs can be passed directly to their owning app readers.",
+        "List or search Cloud resource refs observed in one known core.ai.chat. Get chatId from ai.chats.search or ai.chat.read; returned refs can be passed directly to their owning app readers.",
       input: ChatResourcesInputSchema,
       data: ChatResourcesDataSchema,
       openWorld: false,
@@ -2009,351 +1713,6 @@ export const aiCapabilities = defineCapabilities({
           if (error instanceof AiSkillAppForbiddenError) return fail(err.forbidden(error.message));
           throw error;
         }
-      },
-    },
-    "ai.task.create": {
-      target: "ai.chat",
-      title: "Create an Assistant routine",
-      description:
-        "Create one reviewed autonomous routine in one of your AI conversations. Discover the capabilities needed for the whole routine first and propose their grants. Fix input fields such as a note or notebook ID where the user's request permits; leave them unrestricted when broader scope is needed. Code Mode works unattended with confirmed capability, HTTP and database grants; always-approval capabilities and interactive dialogs remain unavailable. Explain the proposed scope for user review. Resolve relative user wording to localAt before calling.",
-      input: ChatTaskCreateInputSchema,
-      data: ChatTaskDataSchema,
-      destructive: false,
-      openWorld: false,
-      idempotency: "required",
-      async review(input, context) {
-        const appSession = appSessionTaskError(context);
-        if (appSession) return appSession;
-        if (!context.user) return fail(err.forbidden("Scheduled tasks require a user-backed actor"));
-        const chat = await ownedChat(chatTargetId(context), context.user.id);
-        if (!chat) return fail(err.notFound("Chat"));
-        try {
-          await aiChatTasks.validateGrants(input.grants);
-          const normalized = await normalizeChatTaskSchedule(input.schedule, input.timezone);
-          const { t } = coreCapabilityMessages(context.locale);
-          return ok({
-            message: t.taskCreate({ chat: chat.title }),
-            details: [
-              ...(input.title ? [{ label: t.name, value: input.title }] : []),
-              { label: t.chat, value: chat.title },
-              { label: t.schedule, value: scheduleLabel(normalized.schedule, normalized.timezone, context.locale) },
-              { label: t.instructions, value: input.prompt, display: "block" },
-              await taskGrantReview(input.grants, context.locale, context.authority ?? null),
-            ],
-          });
-        } catch (error) {
-          return fail(err.badInput(error instanceof Error ? error.message : "Invalid schedule"));
-        }
-      },
-      async run(input, context) {
-        const appSession = appSessionTaskError(context);
-        if (appSession) return appSession;
-        if (!context.user || !context.idempotencyKey) return fail(err.forbidden("Scheduled tasks require an idempotent user action"));
-        const idempotencyFingerprint = chatTaskCreateFingerprint({ ...input, chatId: chatTargetId(context) });
-        try {
-          const replay = await aiChatTasks.getCreateByIdempotency({
-            userId: context.user.id,
-            idempotencyKey: context.idempotencyKey,
-            idempotencyFingerprint,
-          });
-          if (replay)
-            return ok({
-              data: taskData(replay, context.locale),
-              summary: coreCapabilityMessages(context.locale).t.taskCreated({ name: replay.name }),
-              refs: [taskReference(replay, context.locale), taskChatReference(replay, context.locale)],
-              links: [{ rel: "open", href: chatHref(replay.chatId) }],
-            });
-        } catch (error) {
-          if (error instanceof AiChatTaskIdempotencyConflictError) return fail(capabilityIdempotencyConflict(error.message));
-          throw error;
-        }
-        let normalized: Awaited<ReturnType<typeof normalizeChatTaskSchedule>>;
-        try {
-          await aiChatTasks.validateGrants(input.grants);
-          normalized = await normalizeChatTaskSchedule(input.schedule, input.timezone);
-        } catch (error) {
-          return fail(err.badInput(error instanceof Error ? error.message : "Invalid schedule"));
-        }
-        let task: AiChatTask | null;
-        try {
-          task = await aiChatTasks.create({
-            userId: context.user.id,
-            chatId: chatTargetId(context),
-            prompt: input.prompt,
-            title: input.title,
-            locale: context.locale,
-            grants: input.grants,
-            ...normalized,
-            idempotencyKey: context.idempotencyKey,
-            idempotencyFingerprint,
-          });
-        } catch (error) {
-          if (error instanceof AiChatTaskIdempotencyConflictError) return fail(capabilityIdempotencyConflict(error.message));
-          throw error;
-        }
-        if (!task) return fail(err.notFound("Chat"));
-        void reconcileAiChatTasks().catch(() => undefined);
-        return ok({
-          data: taskData(task, context.locale),
-          summary: coreCapabilityMessages(context.locale).t.taskCreated({ name: task.name }),
-          refs: [taskReference(task, context.locale), taskChatReference(task, context.locale)],
-          links: [{ rel: "open", href: chatHref(task.chatId) }],
-        });
-      },
-    },
-    "ai.task.update": {
-      target: "ai.chat",
-      title: "Update an Assistant routine",
-      description:
-        "Update the prompt, future schedule or capability grants of one of your routines after reviewing the exact replacement. Read the routine and failed run first when repairing missing rights. Fix inputs where practical, retain the intended broader scope where needed, and explicitly review expanded authority. Then resume or retry only after accounting for any writes already performed.",
-      input: ChatTaskUpdateInputSchema,
-      data: ChatTaskDataSchema,
-      destructive: false,
-      openWorld: false,
-      idempotency: "none",
-      async review(input, context) {
-        const appSession = appSessionTaskError(context);
-        if (appSession) return appSession;
-        if (!context.user) return fail(err.forbidden("Scheduled tasks require a user-backed actor"));
-        const task = await taskInTargetChat(input.taskId, context);
-        if (!task) return fail(err.notFound("Task"));
-        try {
-          if (input.grants !== undefined) await aiChatTasks.validateGrants(input.grants);
-          const normalized = input.schedule ? await normalizeChatTaskSchedule(input.schedule, input.timezone) : null;
-          const { t } = coreCapabilityMessages(context.locale);
-          return ok({
-            message: t.taskUpdate({ name: task.name }),
-            details: [
-              ...(input.title ? [{ label: t.name, value: input.title }] : []),
-              { label: t.chat, value: task.chatTitle },
-              {
-                label: t.schedule,
-                value: scheduleLabel(normalized?.schedule ?? task.schedule, normalized?.timezone ?? task.timezone, context.locale),
-              },
-              { label: t.instructions, value: input.prompt ?? task.prompt, display: "block" },
-              await taskGrantReview(input.grants ?? task.grants, context.locale, context.authority ?? null),
-            ],
-          });
-        } catch (error) {
-          return fail(err.badInput(error instanceof Error ? error.message : "Invalid schedule"));
-        }
-      },
-      async run(input, context) {
-        const appSession = appSessionTaskError(context);
-        if (appSession) return appSession;
-        if (!context.user) return fail(err.forbidden("Scheduled tasks require a user-backed actor"));
-        const current = await taskInTargetChat(input.taskId, context);
-        if (!current) return fail(err.notFound("Task"));
-        let normalized: Partial<Awaited<ReturnType<typeof normalizeChatTaskSchedule>>> = {};
-        try {
-          if (input.grants !== undefined) await aiChatTasks.validateGrants(input.grants);
-          if (input.schedule) normalized = await normalizeChatTaskSchedule(input.schedule, input.timezone);
-        } catch (error) {
-          return fail(err.badInput(error instanceof Error ? error.message : "Invalid schedule"));
-        }
-        const task = await aiChatTasks.update({
-          userId: context.user.id,
-          taskId: input.taskId,
-          prompt: input.prompt,
-          title: input.title,
-          grants: input.grants,
-          ...normalized,
-        });
-        if (!task) return fail(err.notFound("Task"));
-        void reconcileAiChatTasks().catch(() => undefined);
-        return ok({
-          data: taskData(task, context.locale),
-          summary: taskUpdateSummary(input, task, context.locale),
-          refs: [taskReference(task, context.locale)],
-          links: [{ rel: "open", href: chatHref(task.chatId) }],
-        });
-      },
-    },
-    "ai.task.pause": {
-      target: "ai.chat",
-      title: "Pause an Assistant routine",
-      description: "Pause one of your routines after review.",
-      input: ChatTaskIdInputSchema,
-      data: ChatTaskDataSchema,
-      destructive: false,
-      openWorld: false,
-      idempotency: "none",
-      approval: "rememberable",
-      async review(input, context) {
-        if (!context.user) return fail(err.forbidden("Scheduled tasks require a user-backed actor"));
-        const task = await taskInTargetChat(input.taskId, context);
-        if (!task) return fail(err.notFound("Task"));
-        const stateError = invalidTaskState(task, "pause");
-        if (stateError) return fail(err.conflict(stateError));
-        const { t } = coreCapabilityMessages(context.locale);
-        return ok({
-          message: t.taskPause({ name: task.name }),
-          details: [
-            { label: t.task, value: task.prompt, display: "block" },
-            { label: t.schedule, value: scheduleLabel(task.schedule, task.timezone, context.locale) },
-          ],
-          approvalScope: `task:${task.shortId}`,
-        });
-      },
-      async run(input, context) {
-        if (!context.user) return fail(err.forbidden("Scheduled tasks require a user-backed actor"));
-        const current = await taskInTargetChat(input.taskId, context);
-        if (!current) return fail(err.notFound("Task"));
-        const stateError = invalidTaskState(current, "pause");
-        if (stateError) return fail(err.conflict(stateError));
-        const task = await aiChatTasks.setState({
-          userId: context.user.id,
-          taskId: input.taskId,
-          state: "paused",
-        });
-        if (!task) return fail(err.conflict("Task state changed; read it and retry"));
-        void reconcileAiChatTasks().catch(() => undefined);
-        return ok({
-          data: taskData(task, context.locale),
-          summary: coreCapabilityMessages(context.locale).t.taskPaused({ name: task.name }),
-          refs: [taskReference(task, context.locale)],
-          links: [{ rel: "open", href: chatHref(task.chatId) }],
-        });
-      },
-    },
-    "ai.task.resume": {
-      target: "ai.chat",
-      title: "Resume an Assistant routine",
-      description: "Resume one of your routines after review.",
-      input: ChatTaskIdInputSchema,
-      data: ChatTaskDataSchema,
-      destructive: false,
-      openWorld: false,
-      idempotency: "none",
-      async review(input, context) {
-        const appSession = appSessionTaskError(context);
-        if (appSession) return appSession;
-        if (!context.user) return fail(err.forbidden("Scheduled tasks require a user-backed actor"));
-        const task = await taskInTargetChat(input.taskId, context);
-        if (!task) return fail(err.notFound("Task"));
-        const stateError = invalidTaskState(task, "resume");
-        if (stateError) return fail(err.conflict(stateError));
-        const { t } = coreCapabilityMessages(context.locale);
-        return ok({
-          message: t.taskResume({ name: task.name }),
-          details: [
-            { label: t.task, value: task.prompt, display: "block" },
-            { label: t.schedule, value: scheduleLabel(task.schedule, task.timezone, context.locale) },
-          ],
-        });
-      },
-      async run(input, context) {
-        const appSession = appSessionTaskError(context);
-        if (appSession) return appSession;
-        if (!context.user) return fail(err.forbidden("Scheduled tasks require a user-backed actor"));
-        const current = await taskInTargetChat(input.taskId, context);
-        if (!current) return fail(err.notFound("Task"));
-        const stateError = invalidTaskState(current, "resume");
-        if (stateError) return fail(err.conflict(stateError));
-        const task = await aiChatTasks.setState({
-          userId: context.user.id,
-          taskId: input.taskId,
-          state: "active",
-        });
-        if (!task) return fail(err.conflict("Task state changed; read it and retry"));
-        void reconcileAiChatTasks().catch(() => undefined);
-        return ok({
-          data: taskData(task, context.locale),
-          summary: coreCapabilityMessages(context.locale).t.taskResumed({ name: task.name }),
-          refs: [taskReference(task, context.locale)],
-          links: [{ rel: "open", href: chatHref(task.chatId) }],
-        });
-      },
-    },
-    "ai.task.run": {
-      target: "ai.chat",
-      title: "Run an Assistant routine now",
-      description: "Queue one manual occurrence without changing the future schedule.",
-      input: ChatTaskIdInputSchema,
-      data: z.object({ id: ChatTaskOccurrenceIdSchema, state: z.enum(["queued", "running", "completed", "failed", "stopped"]) }),
-      destructive: false,
-      openWorld: false,
-      idempotency: "required",
-      async review(input, context) {
-        if (!context.user) return fail(err.forbidden("Scheduled tasks require a user-backed actor"));
-        const task = await taskInTargetChat(input.taskId, context);
-        if (!task) return fail(err.notFound("Task"));
-        const stateError = invalidTaskState(task, "run");
-        if (stateError) return fail(err.conflict(stateError));
-        const { t } = coreCapabilityMessages(context.locale);
-        return ok({
-          message: t.taskRun({ name: task.name }),
-          details: [
-            { label: t.chat, value: task.chatTitle },
-            { label: t.instructions, value: task.prompt, display: "block" },
-          ],
-        });
-      },
-      async run(input, context) {
-        if (!context.user || !context.idempotencyKey) return fail(err.forbidden("Scheduled tasks require an idempotent user action"));
-        const task = await taskInTargetChat(input.taskId, context);
-        if (!task) return fail(err.notFound("Task"));
-        let occurrence: Awaited<ReturnType<typeof aiChatTasks.createOccurrence>>;
-        try {
-          occurrence = await aiChatTasks.createOccurrence({
-            taskId: task.id,
-            scheduledFor: new Date().toISOString(),
-            trigger: "manual",
-            requestKey: `manual:${CORE_APP_ID}:${context.user.id}:${context.idempotencyKey}`,
-          });
-        } catch (error) {
-          if (error instanceof AiChatTaskIdempotencyConflictError) return fail(capabilityIdempotencyConflict(error.message));
-          throw error;
-        }
-        if (!occurrence) return fail(err.conflict("This task already has a queued or running occurrence"));
-        void aiChatTaskRuntime.recover().catch(() => undefined);
-        return ok({
-          data: { id: occurrence.shortId, state: occurrence.state },
-          summary: coreCapabilityMessages(context.locale).t.taskQueued({ name: task.name }),
-          refs: [taskReference(task, context.locale)],
-          links: [{ rel: "open", href: chatHref(task.chatId) }],
-        });
-      },
-    },
-    "ai.task.delete": {
-      target: "ai.chat",
-      title: "Delete an Assistant routine",
-      description: "Delete one routine and all of its run history after review.",
-      input: ChatTaskIdInputSchema,
-      data: z.object({ deleted: z.literal(true) }),
-      destructive: true,
-      openWorld: false,
-      idempotency: "required",
-      async review(input, context) {
-        if (!context.user) return fail(err.forbidden("Scheduled tasks require a user-backed actor"));
-        const task = await taskInTargetChat(input.taskId, context);
-        if (!task) return fail(err.notFound("Task"));
-        const { t } = coreCapabilityMessages(context.locale);
-        return ok({
-          message: t.taskDelete({ name: task.name }),
-          details: [
-            { label: t.chat, value: task.chatTitle },
-            { label: t.instructions, value: task.prompt, display: "block" },
-            { label: t.schedule, value: scheduleLabel(task.schedule, task.timezone, context.locale) },
-          ],
-        });
-      },
-      async run(input, context) {
-        if (!context.user) return fail(err.forbidden("Scheduled tasks require a user-backed actor"));
-        if (!context.idempotencyKey) return fail(err.badInput("An idempotency key is required"));
-        const task = await taskInTargetChat(input.taskId, context);
-        if (!task) return fail(err.notFound("Task"));
-        const deleted = await aiChatTasks.delete({ userId: context.user.id, taskId: input.taskId });
-        if (deleted) void reconcileAiChatTasks().catch(() => undefined);
-        return audit.recordResultAfterSideEffect({
-          ...actionAudit(context, "ai.task.delete", "ai_chat_task", task.id),
-          result: deleted
-            ? ok({
-                data: { deleted: true as const },
-                summary: coreCapabilityMessages(context.locale).t.taskDeleted({ name: task.name }),
-              })
-            : fail(err.notFound("Task")),
-        });
       },
     },
     "ai.chat.message": {

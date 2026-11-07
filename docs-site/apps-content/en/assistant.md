@@ -34,61 +34,13 @@ continue on the web. Sending, deleting, sharing, and inviting wait for your
 confirmation in Cloud; the editor shows the chat link. See
 [Assistant in editors](/en/docs/ai/editors) for installation and setup.
 
-## Background tasks
+## Routines became Code
 
-The built-in **scheduled-tasks** Skill guides Assistant through one-time
-reminders (“Remind me tomorrow at 09:00”), recurring work, and repairing failed
-tasks. It helps select the needed tools and propose task-specific approvals.
-You can change the instructions, timing or approvals in the normal chat.
-
-Ask Assistant to run a task once or on a recurring schedule. Each run starts
-with the completed chat context available at that moment and works independently,
-so you can continue chatting. Files, memories, Skills, and Project resources stay
-live; they are not copied into a frozen workspace. A schedule has at most one
-queued or running occurrence; ticks during that run are skipped. Different
-schedules can run independently in the same chat.
-
-The **Background activity** view lists runs across your chats. Open a run to read
-its result and inspect its history, or return to the chat to adjust the task.
-Results and failures arrive as ordinary messages. A new result reopens a completed
-chat and moves it to the top of recent activity. Chats with active schedules show
-a clock and do not become done automatically. Marking a chat done manually does
-not pause its schedules. After a successful Done action, the card briefly shows
-green confirmation before fading out. Failed requests leave it in place.
-
-Before enabling a task, approve its capabilities and any fixed inputs. For example,
-fixing `noteId` permits updates only to that note. Leaving inputs unrestricted
-permits any input allowed by your existing access. These approvals belong only to
-the task; they do not grant additional resource permissions. Actions that require
-a fresh confirmation every time cannot run unattended.
-
-If a run fails or lacks permission, ask in the original chat to change its
-instructions, schedule, or approvals and try again. Expanding its approvals needs
-confirmation. Failed runs remain available for inspection. Do not blindly repeat
-a write whose outcome is unknown. Browser interaction and Code Mode are unavailable
-in background runs. Background runs do not compact the parent chat; a run that
-exceeds its context or runtime limit reports a failure.
-
-The workspace panel opens during server rendering when a tab is selected in the URL,
-using the saved panel width. A loading placeholder reserves its space until the
-interactive content is ready.
-
-Scheduled tasks are planned and adjusted in the chat. The context panel lists tasks;
-each opens in its own reusable workspace tab with the latest result, run history, and
-allowed access. “Adjust in chat” prepares a task reference and editable message in
-the owning conversation without sending it or replacing an existing draft. Additional
-permissions still require approval. The standard approval card describes each allowed
-action and its fixed inputs using localized capability metadata instead of a JSON
-grants dump. Each permission shows its action and app on one line, followed by
-its fixed inputs or a short unrestricted-content notice.
-
-The next run is shown in relative time. Hover over it for the exact date and
-timezone. **Run now** confirms that a run was requested; its queued or running
-status and final result update in the task panel automatically.
-
-Background activities show compact answer previews. Open a run for its instructions
-and result; **Run history** opens a separate read-only chat view with tool calls.
-A neutral **Finished** status means the run ended, not that its goal succeeded.
+Scheduled Assistant chat routines and their controls are retired. Existing chat
+messages remain readable. Export definitions before upgrading, then ask Gustav
+to rebuild reviewed personal Code with `app.schedule`, an explicit `timeZone`
+and `core.ai.chat.run`. Activation and current grants require a fresh review.
+See [Routines became Code](/en/docs/operations/routines-to-code).
 
 ## Studio
 
@@ -653,7 +605,7 @@ screenshots and findings.
 ### Store data and combine Cloud actions
 
 Code Mode exposes one frozen global `cloud` in HTML apps, scripts, app actions,
-Studio, CLI, and scheduled hosts. The code-mode skill includes the self-contained
+Studio and CLI hosts. The code-mode skill includes the self-contained
 `cloud.md` contract reference.
 
 Choose storage by who owns the data: `cloud.kv.user` for personal preferences
@@ -749,7 +701,7 @@ A script default-exports `(input, {files,signal,progress}) => Json | void`.
 loads on demand. App actions receive an empty array. Stop aborts the signal.
 Progress is available only while the entry function runs. Reports renew the 15-second responsive-work watchdog; time-limit
 errors name the limit and suggest splitting work, reporting progress, or using
-a scheduled action. Completed writes are not rolled back.
+another bounded run. Completed writes are not rolled back.
 
 `cloud.sheet` detects CSV delimiters and UTF-8/Windows-1252 encoding. Numeric
 columns become numbers in their source convention, including currency values;

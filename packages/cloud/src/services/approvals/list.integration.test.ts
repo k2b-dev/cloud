@@ -219,39 +219,31 @@ databaseSuite()("pending approval lists", () => {
     expect(await options(standard)).toEqual({ chat: false, always: false, website: true });
   });
 
-  test.each(["ai.messages", "ai.task_messages"])(
-    "reads the pending call's stored review from %s without changing approval details",
-    async (table) => {
-      const { userId, chat, turn, ask } = await fixture();
-      const review = reviewFixture();
-      const id = await ask({ review });
-      const query = { approverUserId: userId, id };
-      const before = (await listPending(query)).items[0]!;
-      expect(before.storedReview).toBeNull();
-      const [pending] = await sql<{ callId: string }[]>`SELECT call_id AS "callId" FROM ai.pending_actions WHERE approval_id=${id}::uuid`;
-      if (!pending) throw new Error("Missing pending call");
-      const store = aiConversations.createSessionStore({ conversationId: chat.id, turnId: turn.id });
-      await store.append({
-        role: "assistant",
-        content: [pending.callId, "other-call"].map((callId) => ({ type: "tool_call", id: callId, name: "mail.draft.send", args: {} })),
-      });
-      if (table === "ai.task_messages") {
-        await sql`WITH moved AS (
-        DELETE FROM ai.messages WHERE conversation_id=${chat.id}::uuid AND loop_id=${turn.id}::text AND role='assistant' RETURNING *
-      ) INSERT INTO ai.task_messages SELECT * FROM moved`;
-      }
-      const target = { conversationId: chat.id, turnId: turn.id };
-      const storedReview = { ...review, ask: "sensitive" as const };
-      await recordAiToolReview({ ...target, callId: pending.callId, review: storedReview });
-      await recordAiToolReview({ ...target, callId: "other-call", review: { ...review, ask: "deletes" } });
-      const row = (await listPending(query)).items[0]!;
-      expect(row.storedReview).toEqual(storedReview);
-      expect(row.details).toEqual(review);
-      expect(row.argsDigest).toBe(before.argsDigest);
-      expect(presentPendingApproval(row, [], { ask: "sends" }).review).toEqual(storedReview);
-      expect(presentPendingApproval(row, []).review).toEqual(storedReview);
-    },
-  );
+  test("reads the pending call's stored review without changing approval details", async () => {
+    const { userId, chat, turn, ask } = await fixture();
+    const review = reviewFixture();
+    const id = await ask({ review });
+    const query = { approverUserId: userId, id };
+    const before = (await listPending(query)).items[0]!;
+    expect(before.storedReview).toBeNull();
+    const [pending] = await sql<{ callId: string }[]>`SELECT call_id AS "callId" FROM ai.pending_actions WHERE approval_id=${id}::uuid`;
+    if (!pending) throw new Error("Missing pending call");
+    const store = aiConversations.createSessionStore({ conversationId: chat.id, turnId: turn.id });
+    await store.append({
+      role: "assistant",
+      content: [pending.callId, "other-call"].map((callId) => ({ type: "tool_call", id: callId, name: "mail.draft.send", args: {} })),
+    });
+    const target = { conversationId: chat.id, turnId: turn.id };
+    const storedReview = { ...review, ask: "sensitive" as const };
+    await recordAiToolReview({ ...target, callId: pending.callId, review: storedReview });
+    await recordAiToolReview({ ...target, callId: "other-call", review: { ...review, ask: "deletes" } });
+    const row = (await listPending(query)).items[0]!;
+    expect(row.storedReview).toEqual(storedReview);
+    expect(row.details).toEqual(review);
+    expect(row.argsDigest).toBe(before.argsDigest);
+    expect(presentPendingApproval(row, [], { ask: "sends" }).review).toEqual(storedReview);
+    expect(presentPendingApproval(row, []).review).toEqual(storedReview);
+  });
 
   test("a capability's own approval reads the review stored under its parent call", async () => {
     const { userId, chat, turn, ask } = await fixture();
