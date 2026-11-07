@@ -413,8 +413,9 @@ suite("Spaces declared resource event producers", () => {
       const due = await sql<{ id: string; short_id: string }[]>`
         INSERT INTO spaces.items(short_id, space_id, column_id, title, deadline)
         SELECT input.short_id, ${space.id}::uuid, ${space.open}::uuid, 'Burst task', ${at}::timestamptz
-        FROM jsonb_to_recordset(${JSON.stringify(burst)}::jsonb) AS input(short_id text)
+        FROM jsonb_to_recordset(${JSON.stringify(burst)}::text::jsonb) AS input(short_id text)
         RETURNING id, short_id`;
+      expect(due).toHaveLength(ITEM_DUE_BATCH + 1);
       expect(ITEM_DUE_BATCH).toBeGreaterThanOrEqual(500);
       expect(ITEM_DUE_BATCH * (4096 + 1024)).toBeLessThanOrEqual(0.01 * 256 * 1024 ** 2);
       const future = await create(space);
