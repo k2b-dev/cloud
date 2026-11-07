@@ -1,6 +1,7 @@
 import { sql } from "@k2b/cloud";
 import { capabilityIdempotencyConflict } from "@k2b/cloud/contracts";
 import { err, fail, ok, type PageParams, type Paginated, paginate, type Result } from "@k2b/stdlib";
+import { contactEventState, publishContactUpdated } from "../app-events";
 import { newShortId, withShortId, withShortIdRetry } from "../lib/short-id";
 import { publishContactChange } from "./live";
 import { isUuid, type SqlExecutor } from "./shared";
@@ -142,6 +143,7 @@ export const create = async (config: {
 
   const row = await withShortId("note", (shortId) =>
     sql.begin(async (tx) => {
+      const before = await contactEventState(tx, config.contactId);
       const [created] = await tx<DbContactNote[]>`
         WITH inserted AS (
           INSERT INTO contacts.contact_notes (
@@ -163,6 +165,7 @@ export const create = async (config: {
         FROM inserted i
         LEFT JOIN auth.users u ON u.id = i.author_user_id
       `;
+      if (created) await publishContactUpdated(tx, before);
       if (created) await publishContactChange(tx, { type: "notes.changed", bookId: config.bookId, contactId: config.contactId });
       return created;
     }),
@@ -229,10 +232,12 @@ export const createIdempotent = async (config: {
         return note ? ok({ note, replayed: true }) : fail(err.conflict("The note created by this idempotency key no longer exists"));
       }
 
+      const before = await contactEventState(tx, config.contactId);
       await tx`
       INSERT INTO contacts.contact_notes (id, short_id, contact_id, author_user_id, author_display_name, content)
       VALUES (${allocated.id}::uuid, ${shortId}, ${config.contactId}::uuid, ${config.authorUserId}::uuid, ${config.authorDisplayName}, ${trimmed})
     `;
+      await publishContactUpdated(tx, before);
       await publishContactChange(tx, { type: "notes.changed", bookId: config.bookId, contactId: config.contactId });
       const note = await loadNote({ noteId: allocated.id, contactId: config.contactId, viewerUserId: config.authorUserId, db: tx });
       return note ? ok({ note, replayed: false }) : fail(err.internal("Failed to load created note"));
@@ -272,6 +277,7 @@ export const update = async (config: {
   }
 
   const [row] = await sql.begin(async (tx) => {
+    const before = await contactEventState(tx, config.contactId);
     const rows = await tx<DbContactNote[]>`
       WITH updated AS (
         UPDATE contacts.contact_notes
@@ -285,6 +291,7 @@ export const update = async (config: {
       FROM updated u2
       LEFT JOIN auth.users au ON au.id = u2.author_user_id
     `;
+    if (rows.length > 0) await publishContactUpdated(tx, before);
     if (rows.length > 0) await publishContactChange(tx, { type: "notes.changed", bookId: config.bookId, contactId: config.contactId });
     return rows;
   });
@@ -314,6 +321,7 @@ export const remove = async (config: {
   if (!canMutateNote(existing, config.authorUserId)) return fail(err.forbidden("Notes can only be deleted within 10 minutes"));
 
   const deleted = await sql.begin(async (tx) => {
+    const before = await contactEventState(tx, config.contactId);
     const [note] = await tx<{ id: string }[]>`
       DELETE FROM contacts.contact_notes
       WHERE id = ${config.noteId}::uuid
@@ -321,6 +329,7 @@ export const remove = async (config: {
         AND created_at >= now() - interval '10 minutes'
       RETURNING id
     `;
+    if (note) await publishContactUpdated(tx, before);
     if (note) await publishContactChange(tx, { type: "notes.changed", bookId: config.bookId, contactId: config.contactId });
     return note;
   });
