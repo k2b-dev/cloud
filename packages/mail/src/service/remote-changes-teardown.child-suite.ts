@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, test } from "bun:test";
-import { sql } from "bun";
+import { sql } from "@k2b/cloud";
 import { useRemoteChangesFixture } from "./remote-changes-fixture";
 
 describe("remote changes teardown", () => {

@@ -3,7 +3,7 @@ import { isDateNowDefault } from "../field-defaults";
 
 export { materializeFieldDefault } from "../field-defaults";
 
-import { sql } from "bun";
+import { sql } from "@k2b/cloud";
 import { getFieldType, getRecordWritableFieldType } from "../field-types";
 import { ObjectListConfigSchema, objectListInputValue } from "../field-types/object-list";
 import { collectFieldRefs, parseFormula } from "../formula/parser";

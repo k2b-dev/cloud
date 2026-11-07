@@ -1,5 +1,5 @@
-import { sql } from "bun";
 import type { IpaUserData } from "../../contracts/shared";
+import { sql } from "../../runtime/clients";
 
 type DbRow = Record<string, unknown>;
 

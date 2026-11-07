@@ -1,4 +1,5 @@
 import { env } from "@k2b/cloud/config";
+import { sendAppRequest } from "@k2b/cloud/services/identity";
 import { z } from "zod";
 
 export type OAuthUserGrantReference =
@@ -48,21 +49,30 @@ const coreOrigin = (): string => {
   return url.origin;
 };
 
+const sendOAuthRequest = (url: URL, init: RequestInit, options: { fetch?: AuthorityFetch; brokerSecret?: string }) =>
+  sendAppRequest(new Request(url, init), {
+    appId: "oauth",
+    transport: options.fetch,
+    bearer: () => {
+      const secret = options.brokerSecret ?? env.CLOUD_OAUTH_BROKER_SECRET;
+      if (!secret || !/^[a-fA-F0-9]{64}$/.test(secret))
+        throw new Error("CLOUD_OAUTH_BROKER_SECRET must contain exactly 64 hexadecimal characters for Core OAuth issuance");
+      return secret;
+    },
+  });
+
 export const probeOAuthTokenAuthority = async (
   options: { fetch?: AuthorityFetch; brokerSecret?: string; origin?: string } = {},
 ): Promise<void> => {
-  const brokerSecret = options.brokerSecret ?? env.CLOUD_OAUTH_BROKER_SECRET;
-  if (!brokerSecret || !/^[a-fA-F0-9]{64}$/.test(brokerSecret)) {
-    throw new Error("CLOUD_OAUTH_BROKER_SECRET must contain exactly 64 hexadecimal characters for Core OAuth issuance");
-  }
-  const response = await (options.fetch ?? globalThis.fetch)(
+  const response = await sendOAuthRequest(
     new URL("/api/_internal/identity/v1/oauth/ready", options.origin ?? coreOrigin()),
     {
       method: "POST",
       redirect: "error",
-      headers: { authorization: `Bearer ${brokerSecret}` },
+      headers: {},
       signal: AbortSignal.timeout(5_000),
     },
+    options,
   );
   if (!response.ok) throw new Error(`Core OAuth authority readiness failed with status ${response.status}`);
 };
@@ -73,23 +83,19 @@ export const issueOAuthTokenBatch = async (
   options: { fetch?: AuthorityFetch; brokerSecret?: string; origin?: string } = {},
 ): Promise<string[]> => {
   if (requests.length < 1 || requests.length > 2) throw new Error("OAuth authority accepts one or two tokens per batch");
-  const brokerSecret = options.brokerSecret ?? env.CLOUD_OAUTH_BROKER_SECRET;
-  if (!brokerSecret || !/^[a-fA-F0-9]{64}$/.test(brokerSecret)) {
-    throw new Error("CLOUD_OAUTH_BROKER_SECRET must contain exactly 64 hexadecimal characters for Core OAuth issuance");
-  }
 
-  const response = await (options.fetch ?? globalThis.fetch)(
+  const response = await sendOAuthRequest(
     new URL("/api/_internal/identity/v1/oauth/token", options.origin ?? coreOrigin()),
     {
       method: "POST",
       redirect: "error",
       headers: {
-        authorization: `Bearer ${brokerSecret}`,
         "content-type": "application/json",
       },
       body: JSON.stringify({ tokens: requests }),
       signal: AbortSignal.timeout(5_000),
     },
+    options,
   );
   if (response.status === 403) throw new OAuthAuthorityGrantRejectedError();
   if (!response.ok) throw new Error(`Core OAuth issuance failed with status ${response.status}`);
@@ -111,19 +117,16 @@ export const startOAuthDeviceApproval = async (
   request: { deviceAuthorizationId: string; identifier: string; clientId: string; scopes: string[]; lifetimeSeconds: number },
   options: { fetch?: AuthorityFetch; brokerSecret?: string; origin?: string } = {},
 ): Promise<{ comparison: string; expiresAt: string }> => {
-  const brokerSecret = options.brokerSecret ?? env.CLOUD_OAUTH_BROKER_SECRET;
-  if (!brokerSecret || !/^[a-fA-F0-9]{64}$/.test(brokerSecret)) {
-    throw new Error("CLOUD_OAUTH_BROKER_SECRET must contain exactly 64 hexadecimal characters for Core OAuth issuance");
-  }
-  const response = await (options.fetch ?? globalThis.fetch)(
+  const response = await sendOAuthRequest(
     new URL("/api/_internal/identity/v1/oauth/device-approval", options.origin ?? coreOrigin()),
     {
       method: "POST",
       redirect: "error",
-      headers: { authorization: `Bearer ${brokerSecret}`, "content-type": "application/json" },
+      headers: { "content-type": "application/json" },
       body: JSON.stringify(request),
       signal: AbortSignal.timeout(5_000),
     },
+    options,
   );
   if (response.status !== 200) throw new OAuthDeviceApprovalUnavailableError(response.status);
   let body: unknown;

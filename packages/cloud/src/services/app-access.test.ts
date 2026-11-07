@@ -1,11 +1,14 @@
 import { afterEach, describe, expect, mock, setSystemTime, spyOn, test } from "bun:test";
-import { sql } from "bun";
+import { useUnitClients } from "../../../../scripts/fixtures/unit-clients";
 import { bindAppAccessRequest } from "../_internal/app-access-request";
 import { bindResourceAppAccess, resourceAppAccess } from "../_internal/app-access-resources";
 import { appAccess, compileAppAccess } from "../contracts/app-access";
 import type { User } from "../contracts/shared";
+import { sql } from "../runtime/clients";
 import type { RequestAuthority } from "../server/middleware/auth";
 import { canUseApp, evaluateAppAccess, usableAppIds } from "./app-access";
+
+useUnitClients();
 
 const user: User = {
   id: "11111111-1111-4111-8111-111111111111",
@@ -236,7 +239,7 @@ describe("resource-derived app access", () => {
       expect(await canUseApp(bindAppAccessRequest(person(), request), app)).toBe(true);
       expect(hasAnyRight).toHaveBeenCalledTimes(1);
       // A cached allow must still honor the current caller's shorter budget.
-      expect(await canUseApp(authority, app, { signal: AbortSignal.abort(new Error("deadline")) })).toBe(false);
+      await expect(canUseApp(authority, app, { signal: AbortSignal.abort(new Error("deadline")) })).rejects.toThrow("deadline");
       expect(hasAnyRight).toHaveBeenCalledTimes(1);
       expect(await canUseApp(authority, app, { db: sql })).toBe(false);
       expect(await canUseApp(bindAppAccessRequest(person(), new Request(request)), app)).toBe(false);

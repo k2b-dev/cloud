@@ -1,6 +1,6 @@
+import { sql } from "@k2b/cloud";
 import { isUniqueViolation } from "@k2b/cloud/services";
 import { crypto, err } from "@k2b/stdlib";
-import { sql } from "bun";
 import type { SqlClient } from "./audit";
 import { getGridsCrudMessages } from "./crud-messages";
 

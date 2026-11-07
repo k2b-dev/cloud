@@ -1,3 +1,5 @@
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { CloudResourceRef } from "@k2b/cloud/contracts";
@@ -127,34 +129,46 @@ export const tobias: Person = { id: "33333333-3333-4333-8333-333333333333", name
 const threadId = (chat: string, index: number) => `T${chat.slice(-3)}${index.toString(36).padStart(2, "0")}`;
 
 const ui = new URL("../../../ui/", import.meta.url).pathname;
-const buildHarness = async (): Promise<string> => {
+const buildHarness = async () => {
   const { transformAsync } = await import(Bun.resolveSync("@babel/core", ui));
   const typescript = (await import(Bun.resolveSync("@babel/preset-typescript", ui))).default;
   const solid = (await import(Bun.resolveSync("babel-preset-solid", ui))).default;
-  const build = await Bun.build({
-    entrypoints: [new URL("./ChatWorkspace.browser-harness.tsx", import.meta.url).pathname],
-    target: "browser",
-    format: "iife",
-    conditions: ["browser"],
-    plugins: [
-      {
-        name: "solid-chat-workspace-test",
-        setup(builder) {
-          builder.onLoad({ filter: /\.tsx$/ }, async ({ path }) => {
-            const result = await transformAsync(await Bun.file(path).text(), {
-              filename: path,
-              babelrc: false,
-              configFile: false,
-              presets: [typescript, [solid, { generate: "dom", hydratable: false }]],
+  const outputDirectory = await mkdtemp(resolve(tmpdir(), "chat-harness-"));
+  try {
+    const build = await Bun.build({
+      entrypoints: [new URL("./ChatWorkspace.browser-harness.tsx", import.meta.url).pathname],
+      target: "browser",
+      format: "esm",
+      splitting: true,
+      outdir: outputDirectory,
+      naming: { entry: "harness.js", chunk: "[name]-[hash].[ext]" },
+      conditions: ["browser"],
+      plugins: [
+        {
+          name: "solid-chat-workspace-test",
+          setup(builder) {
+            // Exercise the current shared component source without a separate UI build.
+            builder.onResolve({ filter: /^@k2b\/ui$/ }, () => ({ path: resolve(ui, "src/index.ts") }));
+            builder.onLoad({ filter: /\.tsx$/ }, async ({ path }) => {
+              const result = await transformAsync(await Bun.file(path).text(), {
+                filename: path,
+                babelrc: false,
+                configFile: false,
+                presets: [typescript, [solid, { generate: "dom", hydratable: false }]],
+              });
+              return { contents: result.code, loader: "js" };
             });
-            return { contents: result.code, loader: "js" };
-          });
+          },
         },
-      },
-    ],
-  });
-  if (!build.success) throw new AggregateError(build.logs, "Chat workspace harness build failed");
-  return build.outputs[0]!.text();
+      ],
+    });
+    if (!build.success) throw new AggregateError(build.logs, "Chat workspace harness build failed");
+    return new Map<string, string>(
+      await Promise.all(build.outputs.map(async (output) => [`/${output.path.split("/").pop()}`, await output.text()] as const)),
+    );
+  } finally {
+    await rm(outputDirectory, { recursive: true, force: true });
+  }
 };
 const buildCss = async (entry: string): Promise<string> => {
   const tailwind = (await import(Bun.resolveSync("bun-plugin-tailwind", new URL("../../../cloud/", import.meta.url).pathname))).default;
@@ -208,6 +222,8 @@ export const startChatHarness = async (options: { autoMount?: boolean; renderPag
   let nextAccess = 0;
   let nextPerson = 0;
   let failing = 0;
+  // While set, a send waits to be stored and delivered live, then waits again before the server answers it.
+  let heldSends: { stored: Promise<void>; answered: Promise<void> } | null = null;
   let failingReactions = 0;
   let failingMutations = 0;
   const reactionRequests: { method: string; messageId: string; emoji?: string }[] = [];
@@ -483,7 +499,13 @@ export const startChatHarness = async (options: { autoMount?: boolean; renderPag
     body: string,
     at: Date,
     kind: "text" | "system" = "text",
-    target: { thread?: string | null; replyTo?: string; refs?: CloudResourceRef[]; attachments?: AttachmentView[] } = {},
+    target: {
+      thread?: string | null;
+      replyTo?: string;
+      refs?: CloudResourceRef[];
+      attachments?: AttachmentView[];
+      clientId?: string;
+    } = {},
   ) => {
     const entry = chats.get(chat)!;
     const seq = entry.messages.length + 1;
@@ -491,6 +513,8 @@ export const startChatHarness = async (options: { autoMount?: boolean; renderPag
     const original = target.replyTo ? entry.messages.find((message) => message.id === target.replyTo) : undefined;
     const thread = original ? original.thread : (target.thread ?? null);
     const message: Message = {
+      via: null,
+      clientId: target.clientId ?? null,
       reactions: [],
       mentions: [],
       refs: target.refs ?? [],
@@ -836,7 +860,8 @@ export const startChatHarness = async (options: { autoMount?: boolean; renderPag
           app: target.pathname === "/pwa/chat" || target.pathname.startsWith("/pwa/chat/"),
         });
       }
-      if (url.pathname === "/harness.js") return new Response(harness, { headers: { "Content-Type": "text/javascript; charset=utf-8" } });
+      if (harness.has(url.pathname))
+        return new Response(harness.get(url.pathname), { headers: { "Content-Type": "text/javascript; charset=utf-8" } });
       if (url.pathname === "/styles.css") return new Response(css, { headers: { "Content-Type": "text/css; charset=utf-8" } });
       if (url.pathname === "/fonts.css") return new Response(fontAssets.css, { headers: { "Content-Type": "text/css; charset=utf-8" } });
       if (url.pathname === "/tabler-icons.woff2") return new Response(Bun.file(fontAssets.icons));
@@ -988,14 +1013,16 @@ export const startChatHarness = async (options: { autoMount?: boolean; renderPag
         if (failingSystems-- > 0) return Response.json({ message: "Unavailable" }, { status: 503 });
         return Response.json({
           items: [...containers.values()]
-            .filter((item) => url.searchParams.get(item.ref.type === "spaces.space" ? "spacesCursor" : "notebooksCursor") !== "")
+            .filter((item) => !url.searchParams.has("cursors") || JSON.parse(url.searchParams.get("cursors") ?? "{}")[item.ref.type] !== "")
             .map((item) => ({
               ref: item.ref,
               name: item.name,
+              typeTitle: "Collection",
+              icon: "ti ti-box",
               conversation: item.chat ? (chats.get(item.chat)?.conversation ?? null) : null,
             })),
-          spacesCursor: null,
-          notebooksCursor: null,
+          cursors: Object.fromEntries([...containers.values()].map((item) => [item.ref.type, ""])),
+          skipped: [],
         });
       }
       const systemOpen = /^\/api\/chat\/system-chats\/([^/]+)\/([^/]+)\/open$/.exec(url.pathname);
@@ -1024,7 +1051,7 @@ export const startChatHarness = async (options: { autoMount?: boolean; renderPag
             ref: { type: element.type ?? "spaces.task", id: element.id },
             title: element.title,
             preview: element.context || undefined,
-            href: `/app/spaces/task/${element.id}`,
+            href: element.kind === "note" ? `/app/notebooks/notes/${element.id}` : `/app/spaces/task/${element.id}`,
           }));
         const lines = [
           { type: "start", query, apps: [{ id: "spaces", name: "Spaces", icon: "ti ti-layout-kanban" }], providers: ["spaces"] },
@@ -1096,7 +1123,7 @@ export const startChatHarness = async (options: { autoMount?: boolean; renderPag
           // Without Spaces and Notebooks, their chats and item threads cannot be checked, so none come back.
           if (row.kind === "system" && searchSystemUnavailable) continue;
           if (row.kind === "system" && (ref?.type === "spaces.space" || ref?.type === "notebooks.notebook")) {
-            if (match(row.title)) items.push({ kind: "system", ref, name: row.title, conversation: row });
+            if (match(row.title)) items.push({ kind: "system", ref, name: row.title, icon: row.icon ?? "ti ti-box", conversation: row });
           } else if (row.member && match(row.title)) items.push({ kind: "chat", conversation: row });
           if (row.kind !== "system" && !row.member) continue;
           for (const thread of chat.threads)
@@ -1107,12 +1134,13 @@ export const startChatHarness = async (options: { autoMount?: boolean; renderPag
                 thread: {
                   id: thread.id,
                   name: thread.name,
-                  ...(thread.resource ? { resource: { kind: thread.resource.kind, done: thread.resource.done } } : {}),
+                  ...(thread.resource ? { resource: { icon: thread.resource.icon, done: thread.resource.done } } : {}),
                 },
               });
         }
         if (!searchSystemUnavailable)
-          for (const hit of emptyContainerHits) if (match(hit.name)) items.push({ kind: "system", ...hit, conversation: null });
+          for (const hit of emptyContainerHits)
+            if (match(hit.name)) items.push({ kind: "system", ...hit, icon: "ti ti-box", conversation: null });
         return Response.json({ items: items.slice(0, 8), ...(searchSystemUnavailable ? { systemUnavailable: true } : {}) });
       }
       if (url.pathname === "/api/chat/for-you" && request.method === "GET") {
@@ -1184,7 +1212,7 @@ export const startChatHarness = async (options: { autoMount?: boolean; renderPag
         };
         chat.discovery = input.discovery?.map((entry) => ({
           ...entry,
-          displayName: entry.principal.type === "authenticated" ? "All signed-in accounts" : groups.get(entry.principal.groupId)!.name,
+          displayName: entry.principal.type === "authenticated" ? "All signed-in people" : groups.get(entry.principal.groupId)!.name,
         }));
         for (const principal of input.members.filter((principal) => principal.type !== "user"))
           chat.members.push(makeMember(principal, "write", chat.conversation.createdAt));
@@ -1296,7 +1324,7 @@ export const startChatHarness = async (options: { autoMount?: boolean; renderPag
                 ...entry,
                 displayName:
                   entry.principal.type === "authenticated"
-                    ? "All signed-in accounts"
+                    ? "All signed-in people"
                     : (groups.get(entry.principal.groupId)?.name ?? "Directory group"),
                 accessId: `cccccccc-cccc-4ccc-8ccc-${String(index).padStart(12, "0")}`,
               })),
@@ -1410,10 +1438,13 @@ export const startChatHarness = async (options: { autoMount?: boolean; renderPag
                 lastActivityAt: chatTestNow.toISOString(),
                 resource: {
                   ref: input.ref,
-                  kind: element.kind ?? "task",
+                  title: element.title,
+                  permission: "read",
+                  typeTitle: element.kind === "note" ? "Note" : "Item",
+                  icon: element.kind === "note" ? "ti ti-note" : "ti ti-package",
                   done: element.done ?? false,
-                  status: element.status ?? null,
-                  href: `/app/spaces/task/${element.id}`,
+                  status: element.status ?? undefined,
+                  href: element.kind === "note" ? `/app/notebooks/notes/${element.id}` : `/app/spaces/task/${element.id}`,
                 },
               };
               chat.threads.push(thread);
@@ -1752,7 +1783,10 @@ export const startChatHarness = async (options: { autoMount?: boolean; renderPag
           if (input.thread && !thread) return Response.json({ code: "NOT_FOUND", message: "Thread not found." }, { status: 404 });
           if (thread?.archived)
             return Response.json({ code: "THREAD_ARCHIVED", message: "Restore this thread before sending a message." }, { status: 409 });
+          const held = heldSends;
+          await held?.stored;
           const message = append(id!, viewer, input.body, now(), "text", {
+            clientId: input.clientId,
             thread: input.thread ?? null,
             replyTo: input.replyTo,
             refs: input.refs ?? [],
@@ -1762,6 +1796,7 @@ export const startChatHarness = async (options: { autoMount?: boolean; renderPag
             }),
           });
           publish(message);
+          await held?.answered;
           return Response.json(message, { status: 201 });
         }
       }
@@ -1776,7 +1811,7 @@ export const startChatHarness = async (options: { autoMount?: boolean; renderPag
           // Every weight and the icon font load with the page, so a font swap never moves rows during a test.
           '<div aria-hidden="true" style="position:absolute;visibility:hidden"><b>a</b><b style="font-weight:600">a</b><span style="font-weight:500">a</span><em>a</em>' +
           '<span>a</span><i class="ti ti-check"></i></div>' +
-          '<script src="/harness.js"></script>' +
+          '<script type="module" src="/harness.js"></script>' +
           (options.autoMount
             ? `<script>window.addEventListener('load',async()=>{const props=await(await fetch('/__props?path='+encodeURIComponent(location.pathname+location.search))).json();window.mountChat(props,new URLSearchParams(location.search).get('locale')||'en')})</script>`
             : "") +
@@ -1832,7 +1867,16 @@ export const startChatHarness = async (options: { autoMount?: boolean; renderPag
     systemRequests,
     setSystem: (id: string, ref: CloudResourceRef) => {
       const chat = chats.get(id)!;
-      chat.conversation = { ...chat.conversation, kind: "system", channel: false, member: false, resource: ref, summaryCursor: null };
+      chat.conversation = {
+        ...chat.conversation,
+        kind: "system",
+        channel: false,
+        member: false,
+        resource: ref,
+        summaryCursor: null,
+        icon: "ti ti-box",
+        discussionItemType: ref.type === "notebooks.notebook" ? "notebooks.note" : "spaces.item",
+      };
       containers.set(`${ref.type}:${ref.id}`, { ref, name: chat.conversation.title, chat: id });
     },
     emptyContainer: (ref: CloudResourceRef, name: string) => containers.set(`${ref.type}:${ref.id}`, { ref, name, chat: null }),
@@ -1878,7 +1922,7 @@ export const startChatHarness = async (options: { autoMount?: boolean; renderPag
     addChannel: (name: string, purpose: string, member = false, permission: "read" | "write" = "write") => {
       const id = addChat({ name, members: [nora], count: 3, end: now(), spacing: 1 });
       const chat = chats.get(id)!;
-      chat.discovery = [{ principal: { type: "authenticated" }, permission, displayName: "All signed-in accounts" }];
+      chat.discovery = [{ principal: { type: "authenticated" }, permission, displayName: "All signed-in people" }];
       if (!member) chat.members = chat.members.filter((entry) => entry.principal.type !== "user" || entry.principal.userId !== viewer.id);
       chat.conversation = {
         ...chat.conversation,
@@ -2041,6 +2085,7 @@ export const startChatHarness = async (options: { autoMount?: boolean; renderPag
       failingReactions = 0;
       discoveryUpdates.length = 0;
       failing = 0;
+      heldSends = null;
       failingUnread = 0;
       failingThreads = 0;
       failingShared = 0;
@@ -2067,6 +2112,23 @@ export const startChatHarness = async (options: { autoMount?: boolean; renderPag
     /** Makes the next `count` sends fail with 503. */
     failSends: (count = 1) => {
       failing = count;
+    },
+    /**
+     * Holds the next sends: `store` lets the server store them and deliver them live, `answer` lets it answer them, so
+     * a test decides whether the live message or the answer comes first.
+     */
+    holdSends: () => {
+      const stored = Promise.withResolvers<void>();
+      const answered = Promise.withResolvers<void>();
+      heldSends = { stored: stored.promise, answered: answered.promise };
+      return {
+        store: () => stored.resolve(),
+        answer: () => {
+          heldSends = null;
+          stored.resolve();
+          answered.resolve();
+        },
+      };
     },
     /** Makes the next `count` thread creations or changes fail with 503. */
     failThreads: (count = 1) => {
@@ -2124,7 +2186,11 @@ export const startChatHarness = async (options: { autoMount?: boolean; renderPag
       failingUnread = count;
     },
     /** Stores a message from another person and delivers it live. */
-    receive: (chat: string, author: Person, body: string) => publish(append(chat, author, body, now())),
+    receive: (chat: string, author: Person, body: string, via: "assistant" | "mcp" | null = null) => {
+      const message = append(chat, author, body, now());
+      message.via = via;
+      publish(message);
+    },
     /** Renames a chat and announces it live with a system message, as a details change does. */
     rename: (chat: string, title: string) => {
       const entry = chats.get(chat)!;

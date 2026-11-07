@@ -22,6 +22,8 @@ test("existing reader fields and accepted tree requests survive compact addition
     "createdAt",
     "updatedAt",
     "links",
+    // Additive standard reader view for consumers such as discussion providers.
+    "view",
   ]);
   for (const key of ["id", "notebookId", "noteId", "authorUserId", "authorDisplayName", "content", "createdAt", "updatedAt"]) {
     expect(CommentDataSchema.shape).toHaveProperty(key);

@@ -3,8 +3,8 @@ import { appendFileSync, createReadStream } from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { createInterface } from "node:readline";
+import { redis, sql } from "@k2b/cloud";
 import type { User } from "@k2b/cloud/contracts";
-import { redis, sql } from "bun";
 import { z } from "zod";
 import type { ConnectorVerification } from "../../src/contracts";
 import type { MailRequestContext } from "../../src/service/auth";
@@ -144,6 +144,8 @@ export async function run(options: Options): Promise<void> {
     process.env.DATABASE_URL = database.url;
     const namespace = `test-mail-memory-${crypto.randomUUID()}`;
     process.env.SYNC_NAMESPACE = namespace;
+    const { initializeTestPlatform } = await import("../../../../scripts/fixtures/platform");
+    await initializeTestPlatform("mail");
     memoryBudget = await import("../../src/service/processing-memory-budget");
     const { deleteTestNamespace } = await import("../../../../scripts/fixtures/test-sync");
     cleanup.push(() => redis.close());

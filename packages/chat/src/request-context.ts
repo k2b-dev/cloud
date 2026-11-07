@@ -4,8 +4,11 @@ import type { Context } from "hono";
 import type { ChatContext } from "./service/access";
 
 export type ChatRequestContext = ChatContext & { caller: CapabilityCaller; credentialPrincipal: string };
+const contexts = new WeakMap<Request, ChatRequestContext>();
 /** API and SSR use the same caller and credential partition as Cloud's LiveViewer. */
 export const chatRequestContext = <Env extends AuthContext>(c: Context<Env>): ChatRequestContext => {
+  const existing = contexts.get(c.req.raw);
+  if (existing) return existing;
   const accessSubject = c.get("accessSubject");
   const principal = accessSubject.type === "user" ? `user:${accessSubject.userId}` : `service_account:${accessSubject.serviceAccountId}`;
   const scopes = c.get("credentialScopes") ?? [];
@@ -15,7 +18,7 @@ export const chatRequestContext = <Env extends AuthContext>(c: Context<Env>): Ch
         ? ":app"
         : ""
       : `:scopes=${[...new Set(scopes)].sort().join(",")}`;
-  return {
+  const context: ChatRequestContext = {
     actor: c.get("actor"),
     accessSubject,
     locale: getLocale(c),
@@ -30,4 +33,6 @@ export const chatRequestContext = <Env extends AuthContext>(c: Context<Env>): Ch
       requestId: c.req.header("x-request-id"),
     },
   };
+  contexts.set(c.req.raw, context);
+  return context;
 };

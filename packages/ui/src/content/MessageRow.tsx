@@ -168,7 +168,7 @@ export type MessageRowProps = {
    * the author and time. Defaults to true; `startsMessageGroup` decides it from the previous message.
    */
   groupStart?: boolean;
-  /** Shown next to the name at the start of a group, for example the kind of account. */
+  /** Shown next to the name (or own-message time) at the start of a group, for example the kind of account. */
   badge?: JSX.Element;
   /** Send state. Sets a line of fixed height below the message: a clock, a check, or "Not sent" with "Retry". */
   status?: MessageRowStatus;
@@ -682,6 +682,9 @@ export function MessageRow(props: MessageRowProps): JSX.Element {
             fallback={
               <div class="k2b-message-row__meta">
                 <span class="k2b-sr-only">{props.author.name}, </span>
+                <Show when={props.badge}>
+                  <span class="k2b-message-row__badge">{props.badge}</span>
+                </Show>
                 <time class="k2b-message-row__time" datetime={dateTimeOf(props.dateTime)}>
                   {props.time}
                 </time>

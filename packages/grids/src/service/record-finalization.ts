@@ -1,6 +1,7 @@
+import { sql } from "@k2b/cloud";
 import { getEffectiveGroupIds } from "@k2b/cloud/server";
 import { type DateContext, err, fail, ok, type Result } from "@k2b/stdlib";
-import { type SQLQuery, sql } from "bun";
+import type { SQLQuery } from "bun";
 import { getRecordWritableFieldType } from "../field-types";
 import { validateObjectList } from "../field-types/object-list";
 import { fieldValidationMessages } from "../field-types/validation-messages";

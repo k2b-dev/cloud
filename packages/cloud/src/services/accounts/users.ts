@@ -1,4 +1,4 @@
-import { type SQL, sql } from "bun";
+import type { SQL } from "bun";
 import type {
   BaseUser,
   MutationResult,
@@ -9,6 +9,7 @@ import type {
   UserProfile,
   UserProvider,
 } from "../../contracts/shared";
+import { sql } from "../../runtime/clients";
 import { freeipa } from "../../server/services";
 import { createAuthLoginUrl } from "../../shared/redirect";
 import { isAccountCategoryAllowed } from "../account-category-policy";
@@ -479,7 +480,7 @@ export const demoteToGuest = async (params: { id: string; actor: { userId: strin
 export const create = async (params: {
   data: CreateUserData;
   actor?: AuditActor;
-}): Promise<MutationResult<{ user: User; temporaryPassword?: string }>> => {
+}): Promise<MutationResult<{ user: User; temporaryPassword?: string; reactivated?: boolean }>> => {
   if (!(await isAccountCategoryAllowed(params.data)))
     return { ok: false, error: "This account category is disabled. Contact an administrator.", status: 403 };
   if (params.data.provider === "local" && params.data.admin && !canPersistStoredAdmin("local", params.data.profile)) {
@@ -537,6 +538,7 @@ export const create = async (params: {
     data: {
       user,
       temporaryPassword: created.data._temporaryPassword,
+      reactivated: created.data.reactivated,
     },
   };
 };

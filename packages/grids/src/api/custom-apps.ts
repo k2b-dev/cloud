@@ -1,5 +1,5 @@
 import { Buffer } from "node:buffer";
-import { env } from "@k2b/cloud/config";
+import { connections } from "@k2b/cloud";
 import { type AuthContext, auth, getDateConfig, getLocale, respond } from "@k2b/cloud/server";
 import { ImageMetadataError } from "@k2b/cloud/services/image-metadata";
 import { hashWorkflowJson } from "@k2b/cloud/workflows/language";
@@ -954,7 +954,7 @@ export const createCustomAppsApi = (
     )
     .get("/runtime/:shortId/:pageId/:blockId/files/:token", loadOptionalActor, async (c) => {
       const runtime = await resolvePublishedRuntime(c);
-      const secret = env.APP_SECRET;
+      const secret = connections().appSecret.current;
       const token = secret ? verifyCustomAppFileToken(c.req.param("token") ?? "", secret) : null;
       if (
         !runtime ||

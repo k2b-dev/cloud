@@ -12,7 +12,7 @@ const filters = {
   workflowId: flag.string({ name: "workflow", description: "Workflow definition UUID" }),
   workflowRunId: flag.string({ name: "workflow-run", description: "Workflow run UUID" }),
   appId: flag.string({ name: "app", description: "Source application ID" }),
-  kind: flag.enum(["chat", "background"] as const, { description: "Run kind (runs only)" }),
+  kind: flag.enum(["chat", "background", "live-transcription"] as const, { description: "Run kind (runs only)" }),
   status: flag.string({ description: "Run status, e.g. failed (runs only)" }),
   task: flag.string({ description: "Exact background task name (runs only)" }),
   errorCode: flag.string({ name: "error-code", description: "Stored error code (runs only)" }),

@@ -221,6 +221,11 @@ const MenusDemo = () => (
   <Dropdown.Trigger variant="secondary">Wide menu</Dropdown.Trigger>
 </Dropdown.Root>
 
+{/* A search field above many entries */}
+<Dropdown.Root items={templates} label="New task" icons="tile" search={{ label: "Find template" }}>
+  <Dropdown.Trigger variant="secondary">New task</Dropdown.Trigger>
+</Dropdown.Root>
+
 <ContextMenu label="Record actions" items={items}>
   <div>Right click or press Shift+F10</div>
 </ContextMenu>`}
@@ -263,6 +268,31 @@ const MenusDemo = () => (
         ]}
       >
         <Dropdown.Trigger variant="secondary">Wide menu (18rem)</Dropdown.Trigger>
+      </Dropdown.Root>
+      <Dropdown.Root
+        label="New task"
+        icons="tile"
+        phone="sheet"
+        search={{ label: "Find template" }}
+        items={[
+          { label: "Blank task", icon: "ti ti-plus", variant: "accent", action: () => {} },
+          {
+            sectionLabel: "Templates",
+            items: [
+              ["ti ti-report", "Weekly report", "next Fri · checklist 3"],
+              ["ti ti-package", "Goods receipt", "+1 day · checklist 4"],
+              ["ti ti-alert-triangle", "Complaint", "+2 days · high"],
+              ["ti ti-clipboard-list", "Inventory", "Mon"],
+              ["ti ti-route", "Route plan", "Thu"],
+              ["ti ti-receipt", "Check invoice", "+3 days"],
+              ["ti ti-tool", "Forklift service", "+7 days · checklist 6"],
+              ["ti ti-user-plus", "Onboarding", "checklist 12"],
+            ].map(([icon, label, description]) => ({ icon, label, description, action: () => {} })),
+          },
+          { label: "Create template…", icon: "ti ti-template", action: () => {} },
+        ]}
+      >
+        <Dropdown.Trigger variant="secondary">Searchable menu</Dropdown.Trigger>
       </Dropdown.Root>
       <ContextMenu
         label="Record actions"

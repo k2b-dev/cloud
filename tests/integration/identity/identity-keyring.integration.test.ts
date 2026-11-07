@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
-import { sql } from "bun";
 import { bindProcessApplicationId, clearProcessApplicationId } from "../../../packages/cloud/src/_internal/process-identity";
+import { sql } from "../../../packages/cloud/src/runtime/clients";
 import {
   clearIdentityKeyCachesForTest,
   getIdentitySigningKeyStatus,

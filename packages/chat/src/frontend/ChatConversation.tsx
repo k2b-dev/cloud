@@ -1,5 +1,5 @@
 import { chooseFiles, SAVE_FILES_ICON, saveFiles, saveFilesLabel } from "@k2b/cloud/browser/files";
-import { type CloudResourceRef, CloudResourceRefSchema } from "@k2b/cloud/contracts";
+import { type CloudResourceRef, CloudResourceRefSchema } from "@k2b/cloud/contracts/capabilities";
 import type { LinkNavigateEvent } from "@k2b/ssr/nav";
 import type { DateContext } from "@k2b/stdlib";
 import {
@@ -10,6 +10,7 @@ import {
   type ChatComposerPeople,
   type ChatComposerReply,
   type ChatMention,
+  type DictationSource,
   EmojiPicker,
   FileDropTarget,
   IconButtonLink,
@@ -42,7 +43,7 @@ import {
 } from "../service/contracts";
 import { isShownImage, rowAttachments } from "./attachment-views";
 import ChatResourceCards, { type ResourceCards } from "./ChatResourceCards";
-import { dayLabel, messageTime, sameDay } from "./chat-format";
+import { createMessageDates } from "./chat-message-dates";
 import { followVisualViewport } from "./follow-viewport";
 import ThreadMetadata from "./ThreadMetadata";
 import type { Thread } from "./threads";
@@ -67,6 +68,7 @@ export type ChatFeedItem = {
   revision?: number;
   edited?: boolean;
   deleted?: boolean;
+  via?: "assistant" | "mcp" | null;
   status?: MessageRowStatus;
   /** Set on a failed send: sends it again with the same client ID. */
   retry?: () => void;
@@ -88,6 +90,8 @@ export type ChatFeedItem = {
 };
 
 export type ChatConversationProps = {
+  /** Live dictation into the draft; without a source there is no microphone. */
+  dictation?: DictationSource;
   /** The chat's own commands at the end of the header, such as its info. */
   actions?: JSX.Element;
   listHref?: string;
@@ -190,11 +194,10 @@ const EVENT_ESTIMATE = 26;
 export default function ChatConversation(props: ChatConversationProps): JSX.Element {
   const locale = useLocale();
   const t = () => chatMessages.resolve([locale()]).t;
-  const resourceLabel = () =>
-    props.resource?.kind === "note" ? t().goToNote : props.resource?.kind === "event" ? t().goToEvent : t().goToTask;
-  const resourceKind = () => (props.resource?.kind === "note" ? t().note : props.resource?.kind === "event" ? t().event : t().task);
+  const resourceLabel = () => t().openInType({ title: props.resource?.typeTitle ?? "" });
+  const resourceKind = () => props.resource?.typeTitle ?? "";
   const resourceStatus = () => props.resource?.status ?? (props.resource?.done ? t().threadsDone : null);
-  const config = () => ({ ...props.dateConfig, locale: locale() });
+  const messageDates = createMemo(() => createMessageDates({ ...props.dateConfig, locale: locale() }));
   const [emojiTarget, setEmojiTarget] = createSignal<{ anchor: HTMLElement; insert: (text: string) => void }>();
   // Elements picked for the next message; they belong to the draft they were picked for.
   const [shared, setShared] = createSignal<readonly ChatAttachment[]>([]);
@@ -397,7 +400,8 @@ export default function ChatConversation(props: ChatConversationProps): JSX.Elem
 
   const startsGroup = (item: ChatFeedItem, previous: ChatFeedItem | undefined) =>
     !previous ||
-    !sameDay(item.at, previous.at, config()) ||
+    (item.via ?? null) !== (previous.via ?? null) ||
+    messageDates().read(item).dayKey !== messageDates().read(previous).dayKey ||
     startsMessageGroup(
       { author: item.authorId, at: item.at, system: item.kind !== "text" },
       { author: previous.authorId, at: previous.at, system: previous.kind !== "text" },
@@ -463,7 +467,7 @@ export default function ChatConversation(props: ChatConversationProps): JSX.Elem
               <h1 class="chat-conversation__wide-name">{wide().title}</h1>
               <p class="chat-conversation__wide-subtitle">{wide().subtitle}</p>
               <p class="chat-conversation__phone-subtitle">
-                {wide().chat} · {props.subtitle ?? t().members({ count: props.memberCount })}
+                {[...new Set([wide().chat, props.subtitle ?? t().members({ count: props.memberCount })])].join(" · ")}
               </p>
             </div>
           )}
@@ -481,16 +485,22 @@ export default function ChatConversation(props: ChatConversationProps): JSX.Elem
               <span class="chat-resource-head__metadata">
                 <ThreadMetadata resource={resource()} dateConfig={props.dateConfig} />
               </span>
-              <span class="chat-resource-head__link">
-                <ButtonLink href={resource().href} variant="text" size="sm">
-                  {resourceLabel()}
-                </ButtonLink>
-              </span>
-              <span class="chat-resource-head__icon">
-                <IconButtonLink href={resource().href} label={resourceLabel()}>
-                  <i class="ti ti-external-link" aria-hidden="true" />
-                </IconButtonLink>
-              </span>
+              <Show when={resource().href}>
+                {(href) => (
+                  <>
+                    <span class="chat-resource-head__link">
+                      <ButtonLink href={href()} variant="text" size="sm">
+                        {resourceLabel()}
+                      </ButtonLink>
+                    </span>
+                    <span class="chat-resource-head__icon">
+                      <IconButtonLink href={href()} label={resourceLabel()}>
+                        <i class="ti ti-external-link" aria-hidden="true" />
+                      </IconButtonLink>
+                    </span>
+                  </>
+                )}
+              </Show>
             </>
           )}
         </Show>
@@ -515,14 +525,21 @@ export default function ChatConversation(props: ChatConversationProps): JSX.Elem
       <Show when={props.resource}>
         {(resource) => (
           <div class="chat-resource-head__mobile">
-            <span>{resourceKind()}</span>
+            {/* The reader's context line already names the kind; show it only when the reader gives none. */}
+            <Show when={!resource().context}>
+              <span>{resourceKind()}</span>
+            </Show>
             <Show when={resourceStatus()}>
               {(status) => <StatusBadge tone={resource().done ? "ok" : "neutral"} label={status()} icon={null} />}
             </Show>
             <ThreadMetadata resource={resource()} dateConfig={props.dateConfig} />
-            <ButtonLink href={resource().href} variant="text" size="xs">
-              {resourceLabel()}
-            </ButtonLink>
+            <Show when={resource().href}>
+              {(href) => (
+                <ButtonLink href={href()} variant="text" size="xs">
+                  {resourceLabel()}
+                </ButtonLink>
+              )}
+            </Show>
           </div>
         )}
       </Show>
@@ -535,10 +552,12 @@ export default function ChatConversation(props: ChatConversationProps): JSX.Elem
         estimateSize={(item) => (item.kind === "system" ? SYSTEM_ESTIMATE : item.kind === "text" ? ROW_ESTIMATE : EVENT_ESTIMATE)}
         label={t().history({ title: props.title })}
         itemLabel={(item) =>
-          item.kind === "text" ? `${item.own ? t().you : item.authorName}, ${messageTime(item.at, config())}` : undefined
+          item.kind === "text" ? `${item.own ? t().you : item.authorName}, ${messageDates().read(item).time}` : undefined
         }
         separator={(item, previous) =>
-          previous && sameDay(item.at, previous.at, config()) ? undefined : dayLabel(item.at, props.now(), config())
+          previous && messageDates().read(item).dayKey === messageDates().read(previous).dayKey
+            ? undefined
+            : messageDates().label(item, props.now())
         }
         hasOlder={props.hasOlder}
         hasNewer={props.hasNewer}
@@ -575,22 +594,23 @@ export default function ChatConversation(props: ChatConversationProps): JSX.Elem
               icon={item.icon}
               origin={item.origin}
               href={item.href}
-              time={messageTime(item.at, config())}
+              time={messageDates().read(item).time}
               dateTime={item.at}
             >
               {item.body}
             </MessageEventRow>
           ) : item.kind === "system" ? (
-            <MessageSystemRow time={messageTime(item.at, config())} dateTime={item.at}>
+            <MessageSystemRow time={messageDates().read(item).time} dateTime={item.at}>
               {item.body}
             </MessageSystemRow>
           ) : (
             <MessageRow
               author={{ name: item.authorName }}
+              badge={item.via ? (item.via === "assistant" ? t().viaAssistant : t().viaMcp) : undefined}
               text={item.body}
               edited={item.edited}
               deleted={item.deleted}
-              time={messageTime(item.at, config())}
+              time={messageDates().read(item).time}
               dateTime={item.at}
               own={item.own}
               groupStart={startsGroup(item, props.items[index() - 1])}
@@ -733,6 +753,7 @@ export default function ChatConversation(props: ChatConversationProps): JSX.Elem
         <div class="chat-conversation__composer" data-k2b-shell-bottom>
           <Chat.Composer
             variant="conversation"
+            dictation={props.dictation ? { source: props.dictation } : undefined}
             value={props.draft}
             onValueChange={props.onDraftChange}
             onSubmit={async ({ text, attachments, mentions: typed }) => {

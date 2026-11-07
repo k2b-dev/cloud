@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { CloudRuntime, User } from "@k2b/cloud/contracts";
+import { validateNetworkAllowlist } from "@k2b/cloud/services/settings/validation";
 import { createConfig } from "@k2b/ssr";
 import { type Context, Hono } from "hono";
 import { createComponent, type JSX } from "solid-js";
@@ -118,6 +119,7 @@ export async function observabilityAreaBrowserFixture(options: { port?: number }
   const { AlertsView } = await import("../alerts/view");
   const { HealthCheckView } = await import("../health-check/view");
   const { RetentionView } = await import("../retention/view");
+  const { NatsAccessView } = await import("../nats/access-view");
   const { defaultLogFilter } = await import("../logs/_components/types");
 
   const { transformAsync } = await import(Bun.resolveSync("@babel/core", ui));
@@ -181,6 +183,7 @@ export async function observabilityAreaBrowserFixture(options: { port?: number }
     (c: Context<{ Variables: Variables }>) => {
       const url = new URL(c.req.url);
       const locale = url.searchParams.get("locale") === "en" ? "en" : "de";
+      const theme = url.searchParams.get("theme") === "dark" ? "dark" : "light";
       const state = (url.searchParams.get("state") ?? "normal") as ObservabilityFixtureState;
       c.req.raw.headers.set("x-cloud-locale", locale);
       c.set("runtime", {
@@ -222,10 +225,10 @@ export async function observabilityAreaBrowserFixture(options: { port?: number }
       });
       c.set("user", user);
       c.set("settings", { app: { name: "Cloud", locale } });
-      c.set("page", { title: "Observability", theme: "light" });
+      c.set("page", { title: "Observability", theme });
       const body = renderToString(() => render(c, locale, state, url));
       return c.html(
-        `<!doctype html><html lang="${locale}" class="light" data-theme="light"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="stylesheet" href="/fonts.css"><style>${css}</style></head><body class="k2b-ui">${body}<script src="/fixture.js"></script></body></html>`,
+        `<!doctype html><html lang="${locale}" class="${theme}" data-theme="${theme}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="stylesheet" href="/fonts.css"><style>${css}</style></head><body class="k2b-ui">${body}<script src="/fixture.js"></script></body></html>`,
       );
     };
   const attention = { home: "warning" as const, nats: "warning" as const };
@@ -275,7 +278,13 @@ export async function observabilityAreaBrowserFixture(options: { port?: number }
   pages.get(
     "/admin/observability/health-check",
     page((c, locale, state) =>
-      createComponent(HealthCheckView, { c, locale, attention, schedule: "*/5 * * * *", unreadable: state === "unreadable" }),
+      createComponent(HealthCheckView, {
+        c,
+        locale,
+        attention,
+        values: { schedule: "*/5 * * * *", targets: ["alerts.internal", "10.20.0.0/16"] },
+        unreadable: { schedule: state === "unreadable" },
+      }),
     ),
   );
   pages.get(
@@ -291,6 +300,19 @@ export async function observabilityAreaBrowserFixture(options: { port?: number }
     ),
   );
 
+  pages.get(
+    "/admin/observability/nats/access",
+    page((c, locale, state) =>
+      createComponent(NatsAccessView, {
+        c,
+        locale,
+        attention,
+        values: { servers: ["tls://nats.example:4222"], kind: "creds", ca: "" },
+        unreadable: { servers: false, kind: false, access: state === "unreadable", ca: false },
+      }),
+    ),
+  );
+
   const stateOf = (request: Request) =>
     (new URL(request.headers.get("referer") ?? "http://x/").searchParams.get("state") ?? "normal") as ObservabilityFixtureState;
   const api = async (request: Request, url: URL): Promise<Response> => {
@@ -299,7 +321,12 @@ export async function observabilityAreaBrowserFixture(options: { port?: number }
     if (state === "savefail" && request.method !== "GET")
       return Response.json({ message: "Der Wert passt nicht zum erwarteten Format." }, { status: 400 });
     if (url.pathname === "/api/logging/settings/retention" && request.method === "PUT") return Response.json({ message: "ok" });
-    if (url.pathname.startsWith("/api/gateway/settings/") && request.method === "PUT") return Response.json({ message: "ok" });
+    if (url.pathname.startsWith("/api/gateway/settings/") && request.method === "PUT") {
+      const { value } = (await request.json()) as { value: unknown };
+      // The same check the setting declaration runs on the server.
+      const refused = url.pathname.endsWith("/gateway.webhook_allowed_targets") ? validateNetworkAllowlist(value) : undefined;
+      return refused ? Response.json({ message: refused }, { status: 400 }) : Response.json({ message: "ok" });
+    }
     const hook = url.pathname.match(/^\/api\/gateway\/health\/webhooks\/([^/]+)(\/test)?$/);
     if (hook && hook[2]) return Response.json({ message: "submitted" });
     if (hook && request.method === "PUT") {

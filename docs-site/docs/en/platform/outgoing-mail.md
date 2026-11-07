@@ -11,7 +11,7 @@ updated: 2026-10-22
 # Outgoing mail
 
 SMTP and bounce IMAP targets must be public unless the operator allows them with
-`OUTGOING_MAIL_ALLOWED_TARGETS` in Core; see [Outgoing mail operations](/en/docs/operations/outgoing-mail#configure-a-sender).
+`outgoing_mail.allowed_targets` in Core; see [Outgoing mail operations](/en/docs/operations/outgoing-mail#configure-a-sender).
 
 Declare `platformPermissions: ["mail:send"]`, then use `mail` from
 `@k2b/cloud/services` after `app.start()` completes. Cloud owns sender profiles,

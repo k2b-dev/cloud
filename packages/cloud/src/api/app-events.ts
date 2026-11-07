@@ -1,10 +1,10 @@
-import { sql } from "bun";
 import { Hono, type MiddlewareHandler } from "hono";
 import { describeRoute } from "hono-openapi";
 import { z } from "zod";
 import { AppDetailsSchema } from "../contracts/app-details";
 import { AppEventEnvelopeSchema } from "../contracts/app-events";
 import { CapabilityQualifiedIdSchema } from "../contracts/capabilities";
+import { sql } from "../runtime/clients";
 import { type AuthContext, auth, expectUserBackedActor, getLocale, v } from "../server";
 import { AppAccessManagementError } from "../services/app-access-management";
 import { appDetails } from "../services/app-details";
@@ -26,7 +26,9 @@ export const createAppEventRoutes = (
 ) =>
   new Hono<AuthContext>()
     .use(authenticate)
-    .use(auth.requireOAuthScope("admin"))
+    .use((c, next) =>
+      auth.requireOAuthScope(...(c.req.method === "GET" || c.req.method === "HEAD" ? ["read", "admin"] : ["admin"]))(c, next),
+    )
     .get(
       "/apps/:appId",
       describeRoute({ tags: ["App events"], summary: "Inspect one application's access, events and notifications" }),

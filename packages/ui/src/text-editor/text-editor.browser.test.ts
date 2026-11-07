@@ -1,6 +1,6 @@
 import { afterAll, afterEach, beforeAll, describe, expect, test } from "bun:test";
 import { type Browser, type BrowserContextOptions, devices } from "playwright";
-import { browserName, launchBrowser, pageErrors } from "../../test/browser";
+import { browserName, launchBrowser, pageErrors, settled } from "../../test/browser";
 import type {} from "../../test/text-editor-browser-harness";
 
 let browser: Browser;
@@ -615,6 +615,21 @@ for (const [name, options] of Object.entries(profiles))
         expect(await page.evaluate(() => window.sharedEditorHarness.text())).toStartWith("### Paragraph");
         await page.evaluate(() => window.sharedEditorHarness.command("heading2"));
         expect(await page.evaluate(() => window.sharedEditorHarness.text())).toStartWith("## Paragraph");
+      } finally {
+        await context.close();
+      }
+    });
+    test("headings show their size and weight without an underline", async () => {
+      const { context, page } = await open();
+      try {
+        await page.evaluate(() => window.sharedEditorHarness.load("# Title\n\nText with a [link](https://example.com)\n\n## Section\n"));
+        await page.locator(".k2b-ste-h2").waitFor();
+        await settled(page);
+        const decorations = await page
+          .locator(".k2b-ste-h, .k2b-ste-h *")
+          .evaluateAll((elements) => elements.map((element) => getComputedStyle(element).textDecorationLine));
+        expect(decorations.length).toBeGreaterThan(1);
+        expect(decorations.filter((line) => line !== "none")).toEqual([]);
       } finally {
         await context.close();
       }

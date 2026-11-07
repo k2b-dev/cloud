@@ -164,6 +164,61 @@ describe("ChatWorkspace browser full view", () => {
       }
     }, 30_000);
   }
+  for (const { name, options } of [{ name: "wide", options: { viewport: { width: 900, height: 900 } } }, viewports[1]!]) {
+    test(`${name}: threaded PWA header Back traverses its predecessor and retains Forward`, async () => {
+      const chat = harness.addChat({ members: [viewer, nora], name: "Launch planning", count: 3, end: harness.now() });
+      harness.addThread(chat, { name: "Schedule", count: 2, end: harness.now() });
+      const { page, errors } = await load(options, { app: true }, false, undefined, { theme: "light" });
+      try {
+        const length = await page.evaluate(() => history.length);
+        const directory = `/pwa/chat/c/${chat}/threads`;
+        await page.locator(`.chat-app__rows a[href="/pwa/chat/c/${chat}"]`).click();
+        if (name === "phone") {
+          await page.waitForURL(`**${directory}`);
+          await viewTransitionEnded(page);
+          await page.locator(`.chat-threads-page__list a[href="/pwa/chat/c/${chat}"]`).click();
+        }
+        await page.waitForURL(`**/pwa/chat/c/${chat}`);
+        await viewTransitionEnded(page);
+        const back = page.locator(".chat-conversation__back a");
+        expect(await back.getAttribute("href")).toBe(name === "phone" ? directory : "/pwa/chat");
+        expect(await back.getAttribute("aria-label")).toBe(name === "phone" ? "Back to the threads" : "Back to chats");
+        await page.getByRole("link", { name: "Chat info", exact: true }).click();
+        await page.waitForURL("**?panel=info");
+        await viewTransitionEnded(page);
+        const expectedLength = length + (name === "phone" ? 3 : 2);
+        expect(await page.evaluate(() => history.length)).toBe(expectedLength);
+        await page.getByRole("button", { name: "Close chat info", exact: true }).click();
+        await page.waitForURL(`**/pwa/chat/c/${chat}`);
+        await viewTransitionEnded(page);
+        const shots = process.env.PWA_CHAT_BACK_SHOTS;
+        if (shots) await page.screenshot({ path: `${shots}/01-chat-light-${options.viewport!.width}.png`, animations: "disabled" });
+        await back.click();
+        await page.waitForURL((url) => url.pathname === (name === "phone" ? directory : "/pwa/chat"));
+        await viewTransitionEnded(page);
+        expect(await page.evaluate(() => history.length)).toBe(expectedLength);
+        if (shots) await page.screenshot({ path: `${shots}/02-back-light-${options.viewport!.width}.png`, animations: "disabled" });
+        if (name === "phone") {
+          await page.locator(".chat-threads-page .chat-conversation__back a").click();
+          await page.waitForURL((url) => url.pathname === "/pwa/chat");
+          await viewTransitionEnded(page);
+          expect(await page.evaluate(() => history.length)).toBe(expectedLength);
+          await page.goForward();
+          await page.waitForURL(`**${directory}`);
+        }
+        await page.goForward();
+        await page.waitForURL(`**/pwa/chat/c/${chat}`);
+        await viewTransitionEnded(page);
+        expect(await page.locator(".chat-conversation__header").textContent()).toContain("Launch planning");
+        await page.goForward();
+        await page.waitForURL("**?panel=info");
+        await page.getByRole("button", { name: "Close chat info", exact: true }).waitFor({ state: "visible" });
+        expect(errors).toEqual([]);
+      } finally {
+        await page.context().close();
+      }
+    }, 30_000);
+  }
   for (const { name, options } of viewports) {
     test(`live arrivals keep layout stable and follow the newest message on ${name}`, async () => {
       const chat = harness.addChat({ members: [viewer, nora], count: 40, end: harness.now() });
@@ -1666,6 +1721,46 @@ describe("Chat info reopening", () => {
     test(`info stays reachable after X and preserves Back on ${name}`, async () => {
       const chat = harness.addChat({ members: [viewer, nora], count: 8, end: harness.now() });
       const { page, errors } = await load(options, { chat });
+      // What the page did around each press, for the failure report (#2116): input targets, history, and view transitions.
+      await page.evaluate(() => {
+        const trace: string[] = [];
+        const at = () => Math.round(performance.now());
+        const name = (target: EventTarget | null) =>
+          target instanceof Element
+            ? `${target.tagName}${target.getAttribute("aria-label") ? `[${target.getAttribute("aria-label")}]` : ""}`
+            : String(target);
+        Object.assign(window, { chatInfoTrace: trace });
+        for (const type of ["pointerdown", "click"])
+          addEventListener(
+            type,
+            (event) => trace.push(`${at()} ${type} ${name((event.target as Element).closest("a, button") ?? event.target)}`),
+            true,
+          );
+        addEventListener("popstate", () => trace.push(`${at()} popstate ${location.pathname}${location.search}`));
+        for (const method of ["pushState", "replaceState"] as const) {
+          const original = history[method].bind(history);
+          history[method] = (state, unused, url) => {
+            trace.push(`${at()} ${method} ${String(url)}`);
+            original(state, unused, url);
+          };
+        }
+        const back = history.back.bind(history);
+        history.back = () => {
+          trace.push(`${at()} back`);
+          back();
+        };
+        const start = document.startViewTransition?.bind(document);
+        if (start)
+          document.startViewTransition = ((update: () => unknown) => {
+            trace.push(`${at()} view transition starts`);
+            const transition = start(() => {
+              trace.push(`${at()} view transition update`);
+              return update();
+            });
+            void transition.finished.then(() => trace.push(`${at()} view transition finished`));
+            return transition;
+          }) as typeof document.startViewTransition;
+      });
       try {
         const toggle = page.locator('.chat-conversation__header a[aria-controls="k2b-workspace-detail-chat-info"]');
         expect(await toggle.isVisible()).toBe(true);
@@ -1683,6 +1778,11 @@ describe("Chat info reopening", () => {
         await page.getByRole("button", { name: "Close chat info", exact: true }).click();
         await page.waitForURL(`**/c/${chat}`);
         await viewTransitionEnded(page);
+        // A wide screen slides the panel out first and gives the chat its room back 140 ms later, in one step.
+        // Playwright's stability check can pass before that step, so the press could land as Info moves (#2487).
+        // The pointer leaves X first: Info could move under it, and its hover would start while the page settles.
+        await page.mouse.move(0, 0);
+        await settled(page);
         expect(await toggle.isVisible()).toBe(true);
         expect(await toggle.getAttribute("aria-expanded")).toBe("false");
         await toggle.click();
@@ -1698,6 +1798,13 @@ describe("Chat info reopening", () => {
         expect(await toggle.isVisible()).toBe(true);
         expect(await toggle.isEnabled()).toBe(true);
         expect(errors).toEqual([]);
+      } catch (error) {
+        const trace = await Promise.race([
+          page.evaluate(() => (window as Window & { chatInfoTrace?: string[] }).chatInfoTrace ?? []),
+          Bun.sleep(1_000).then(() => ["no answer within 1 s"]),
+        ]).catch((reason: unknown) => [`unreadable: ${String(reason)}`]);
+        console.error(`Chat info trace (ms since page start):\n${trace.join("\n")}`);
+        throw error;
       } finally {
         await page.context().close();
       }

@@ -1,4 +1,4 @@
-import { sql } from "bun";
+import { sql } from "@k2b/cloud";
 
 /** Additive startup migration; rerunning preserves both data and definitions. */
 export const migrate = async (): Promise<void> => {
@@ -50,6 +50,8 @@ export const migrate = async (): Promise<void> => {
       )
     );
     ALTER TABLE chat.messages ADD COLUMN IF NOT EXISTS refs jsonb NOT NULL DEFAULT '[]'::jsonb;
+    ALTER TABLE chat.messages ADD COLUMN IF NOT EXISTS via text CHECK (via IN ('assistant', 'mcp'));
+    ALTER TABLE chat.messages ADD COLUMN IF NOT EXISTS client_input_hash text;
     ALTER TABLE chat.messages ADD COLUMN IF NOT EXISTS links text[] NOT NULL DEFAULT '{}';
     CREATE INDEX IF NOT EXISTS idx_chat_messages_refs ON chat.messages(conversation_id, seq DESC) WHERE refs <> '[]'::jsonb;
     CREATE INDEX IF NOT EXISTS idx_chat_messages_links ON chat.messages(conversation_id, seq DESC) WHERE links <> '{}';

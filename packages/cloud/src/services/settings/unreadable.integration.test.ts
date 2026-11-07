@@ -1,7 +1,7 @@
 import { afterAll, beforeEach, expect, test } from "bun:test";
 import { crypto } from "@k2b/stdlib";
-import { redis, sql } from "bun";
 import { suiteFor } from "../../../../../scripts/fixtures/test-infra";
+import { redis, sql } from "../../runtime/clients";
 import { settingsService } from "./app";
 import { encryptValue, getAppSecret } from "./crypto";
 import { registerSettings } from "./defaults";

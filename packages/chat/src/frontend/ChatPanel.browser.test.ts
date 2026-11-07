@@ -29,7 +29,11 @@ const verifyPanelGeometry = async (page: Page, width: number) => {
   const box = await page.locator("#cloud-panel").boundingBox();
   expect(box).not.toBeNull();
   expect(box!.width).toBe(width >= 1280 ? 416 : width >= 768 ? 344 : width);
-  if (width < 768) expect(box!.height).toBe(522);
+  // On a phone the panel sheet opens at full height: it reaches the bottom edge and leaves only the top bar above it.
+  if (width < 768) {
+    expect(box!.y + box!.height).toBe(900);
+    expect(box!.height).toBeGreaterThan(900 * 0.9);
+  }
   expect(box!.x >= 0 && box!.x + box!.width <= width).toBe(true);
   console.info("panel geometry", JSON.stringify({ viewport: width, ...box }));
 };
@@ -1048,7 +1052,7 @@ for (const width of [1440, 390]) {
       const replayResponse = await replay;
       expect(replayResponse.ok()).toBe(true);
       expect((await replayResponse.json()).draft).toEqual(savedDraft);
-      await panel.getByText("The saved draft changed. Your local text has been kept.", { exact: true }).waitFor();
+      await panel.getByText("The saved draft was changed.", { exact: true }).waitFor();
       expect(await composer.inputValue()).toBe("Local draft A");
       await panel.getByText("Other tab draft B", { exact: true }).waitFor();
       expect(created.draft).toMatchObject({ revision, content: [{ type: "text", text: "Other tab draft B" }] });
@@ -1247,8 +1251,24 @@ for (const historyFailure of [false, true]) {
       await page.locator('html[data-fixture-ready="true"]').waitFor();
       await page.locator("#open-chat").click();
       const panel = page.frameLocator("[data-cloud-panel-frame]");
-      await panel.locator(`a[href="/app/chat/panel/c/${id}"]:visible`).click();
+      // The list opens the chat in place, one entry above the list, so Back to chats would step back in history.
+      // A click before the island mounted would load the chat as a document instead and test another way back.
       await panel.locator('html[data-fixture-ready="true"]').waitFor();
+      await panel.locator(`a[href="/app/chat/panel/c/${id}"]:visible`).click();
+      await panel.getByRole("link", { name: "Back to chats", exact: true }).waitFor();
+      expect(
+        await panel.locator("html").evaluate(() => [location.pathname, (history.state as { chatFromList?: boolean } | null)?.chatFromList]),
+      ).toEqual([`/app/chat/panel/c/${id}`, true]);
+      // The open ran in the panel's view transition; WebKit sends input to <html> while one is active.
+      await page.waitForFunction(
+        () =>
+          !(
+            document.querySelector<HTMLIFrameElement>("[data-cloud-panel-frame]")?.contentDocument as
+              | (Document & { activeViewTransition?: unknown })
+              | null
+              | undefined
+          )?.activeViewTransition,
+      );
       await page.route(`**/api/chat/conversations/${id}/messages`, async (route) => {
         if (route.request().method() === "GET") {
           await gate;
@@ -1266,19 +1286,26 @@ for (const historyFailure of [false, true]) {
       await panel.getByRole("button", { name: "Send message", exact: true }).click();
       await reading;
       expect(fixture.backend.posted).toHaveLength(0);
+      // Back is refused before history moves: a Back that left and then came back showed the list's address in
+      // between (#2503). Back runs first, so the one notice is its own; the notice throttles a second one.
+      await panel.locator("html").evaluate(() => {
+        const traversals: string[] = [];
+        addEventListener("popstate", () => traversals.push(location.pathname));
+        Object.assign(window, { chatTraversals: traversals });
+      });
+      await panel.getByRole("link", { name: "Back to chats", exact: true }).click();
+      await panel
+        .getByRole("region", { name: "Notifications", exact: true })
+        .getByText("Your message is being prepared. Wait before switching chats.", { exact: true })
+        .waitFor();
+      expect(
+        await panel.locator("html").evaluate(() => [location.pathname, (window as Window & { chatTraversals?: string[] }).chatTraversals]),
+      ).toEqual([`/app/chat/panel/c/${id}`, []]);
       // The same archive action is visible in a wide full view; a narrow panel keeps it in the list.
       const archive = panel.locator('a[href="/app/chat/panel/archive"]').first();
       await archive.evaluate((element: HTMLAnchorElement) => element.click());
       expect(await archive.getAttribute("aria-current")).not.toBe("page");
       expect(await panel.locator("html").evaluate(() => location.search)).toBe("");
-      await panel.getByRole("link", { name: "Back to chats", exact: true }).click();
-      await panel
-        .getByRole("region", { name: "Notifications", exact: true })
-        .getByText("Your message is being prepared. Wait before switching chats.", { exact: true })
-        // Archive and Back can each notify after the throttle elapses; expiration is not the subject of this guard.
-        .first()
-        .waitFor();
-      expect(await panel.locator("html").evaluate(() => location.pathname)).toBe(`/app/chat/panel/c/${id}`);
       await page.locator("[data-cloud-panel-close]").click();
       expect(await page.locator("[data-cloud-panel-frame]").count()).toBe(1);
       await page.locator('[data-cloud-panel-provider="second"]').click();
@@ -1372,7 +1399,7 @@ for (const editDuringSave of [false, true]) {
       } else {
         await panel.getByRole("button", { name: "Retry creating conversation", exact: true }).click();
       }
-      await panel.getByText("The saved draft changed. Your local text has been kept.", { exact: true }).waitFor();
+      await panel.getByText("The saved draft was changed.", { exact: true }).waitFor();
       expect(await composer.inputValue()).toBe("Local creation draft A");
       const otherDraft = editDuringSave ? "Later local draft B2" : "Second local draft B";
       await panel.getByText(otherDraft, { exact: true }).waitFor();
@@ -1458,6 +1485,30 @@ for (const { embedded, width } of [
   test(`catalog and resource recovery in real ${embedded ? "panel" : "fullview"} at ${width}px`, async () => {
     fixture.assistant.reset();
     const context = await newContext({ viewport: { width, height: 900 } });
+    // What each frame saw, for the failure report (#2140): input targets, focus, keys, history, and when the command
+    // list showed or went. #2169 showed the list closed between press and release with "/notes" kept.
+    await context.addInitScript(() => {
+      const presses: string[] = [];
+      Object.assign(window, { presses });
+      const at = () => Math.round(performance.now());
+      const name = (target: EventTarget | null) => {
+        const element = target instanceof Element ? (target.closest('[role="option"], button') ?? target) : null;
+        return element ? `${element.tagName}#${element.id} ${(element.textContent ?? "").trim().slice(0, 30)}` : String(target);
+      };
+      for (const type of ["pointerdown", "pointerup", "click", "focusin", "focusout", "keydown"])
+        addEventListener(
+          type,
+          (event) => presses.push(`${at()} ${type} ${type === "keydown" ? (event as KeyboardEvent).key : name(event.target)}`),
+          true,
+        );
+      addEventListener("popstate", () => presses.push(`${at()} popstate ${location.pathname}${location.search}`));
+      let listed = false;
+      new MutationObserver(() => {
+        const shown = document.querySelector('[role="listbox"]') !== null;
+        if (shown !== listed) presses.push(`${at()} command list ${shown ? "shown" : "gone"}`);
+        listed = shown;
+      }).observe(document, { subtree: true, childList: true });
+    });
     const page = await context.newPage();
     let documents = 0;
     page.on("request", (request) => {
@@ -1467,32 +1518,24 @@ for (const { embedded, width } of [
     let recoveredCatalogLoads = 0;
     let searches = 0;
     let catalogFailed = true;
-    let releaseInitial!: () => void;
     let releaseComposer!: () => void;
-    const initialCatalog = new Promise<void>((resolve) => {
-      releaseInitial = resolve;
-    });
     const composerCatalog = new Promise<void>((resolve) => {
       releaseComposer = resolve;
     });
     let catalogRequests = 0;
-    // The page's file-provider discovery reads the catalog on its own once it is idle (in WebKit after 1 s), so it
-    // could otherwise land after the recovery and count as a second recovered load (#1876). Each case waits for that
-    // first read of the document it tests, while the catalog still fails, before the command menu opens.
-    const initialRequested = page.waitForRequest(
-      (request) =>
+    // File providers are discovered only when a person chooses files or opens the command menu, so the composer's
+    // own read is the document's first; nothing reads the catalog while the page idles.
+    let ownReads = 0;
+    page.on("request", (request) => {
+      if (
         request.url().includes("/capabilities/v1/catalog") &&
-        (!embedded || new URL(request.frame().url()).pathname === "/app/assistant/panel"),
-    );
+        (!embedded || new URL(request.frame().url()).pathname === "/app/assistant/panel")
+      )
+        ownReads++;
+    });
     await page.route("**/api/capabilities/v1/catalog?*", async (route) => {
-      const ordinal = ++catalogRequests;
-      if (!embedded) {
-        if (ordinal === 1) {
-          await initialCatalog;
-          return route.fulfill({ status: 503, json: { message: "Synthetic earlier catalog failure" } });
-        }
-        await composerCatalog;
-      }
+      catalogRequests++;
+      if (!embedded) await composerCatalog;
       if (catalogFailed) return route.fulfill({ status: 503, json: { message: "Synthetic catalog failure" } });
       recoveredCatalogLoads++;
       return route.fulfill({ json: catalog });
@@ -1537,7 +1580,7 @@ for (const { embedded, width } of [
       const view = embedded ? page.frameLocator("[data-cloud-panel-frame]") : page;
       await view.locator('html[data-fixture-ready="true"]').waitFor();
       const composer = view.locator('textarea:not([aria-hidden="true"])');
-      await initialRequested;
+      expect(ownReads).toBe(0);
       const failed = page.waitForResponse(
         (response) =>
           response.url().includes("/capabilities/v1/catalog") &&
@@ -1546,10 +1589,9 @@ for (const { embedded, width } of [
       );
       await composer.fill(embedded ? "/" : "/notes");
       await composer.click();
-      releaseInitial();
-      await failed;
       await view.getByRole("listbox").waitFor();
       releaseComposer();
+      await failed;
       if (embedded) {
         expect(await view.getByText("Commands from apps could not be loaded", { exact: true }).count()).toBe(0);
         catalogFailed = false;
@@ -1597,10 +1639,36 @@ for (const { embedded, width } of [
         await page.screenshot({ path: resolve(process.env.PANEL_SCREENSHOTS, `resource-recovery-${embedded ? "panel" : "fullview"}.png`) });
       }
     } catch (error) {
-      console.error("Catalog recovery failed", { url: page.url(), frames: page.frames().map((frame) => frame.url()) });
+      // Where a missing dialog is, if anywhere, and what the composer was doing; a read that fails is reported, never awaited.
+      const state = (frame: import("playwright").Frame) =>
+        Promise.race([
+          frame.evaluate(() => {
+            const area = document.querySelector<HTMLTextAreaElement>('textarea:not([aria-hidden="true"])');
+            return {
+              url: location.pathname + location.search,
+              dialogs: Array.from(document.querySelectorAll('[role="dialog"], dialog[open]')).map((element) =>
+                `${element.tagName}${element.hasAttribute("open") ? "[open]" : ""} ${element.checkVisibility() ? "visible" : "hidden"} ${element.className}`.trim(),
+              ),
+              listbox: Boolean(document.querySelector('[role="listbox"]')),
+              composer: area ? { value: area.value, readOnly: area.readOnly, disabled: area.disabled } : null,
+              presses: ((window as Window & { presses?: string[] }).presses ?? []).slice(-24),
+              active: document.activeElement
+                ? `${document.activeElement.tagName}.${String(document.activeElement.className).slice(0, 40)}`
+                : null,
+            };
+          }),
+          new Promise((resolve) => setTimeout(() => resolve("no answer within 1 s"), 1_000)),
+        ]).catch((reason: unknown) => `unreadable: ${reason instanceof Error ? reason.message : String(reason)}`);
+      const report = {
+        url: page.url(),
+        frames: await Promise.all(page.frames().map(async (frame) => ({ frame: frame.url(), state: await state(frame) }))),
+        catalogRequests,
+        recoveredCatalogLoads,
+        searches,
+      };
+      console.error(`Catalog recovery failed ${JSON.stringify(report, null, 1)}`);
       throw error;
     } finally {
-      releaseInitial();
       releaseComposer();
       await context.close();
     }

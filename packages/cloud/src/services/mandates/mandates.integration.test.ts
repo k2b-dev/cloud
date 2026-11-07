@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, expect, spyOn, test } from "bun:test";
-import { sql } from "bun";
 import { databaseSuite } from "../../../../../scripts/fixtures/test-infra";
 import * as registry from "../../_internal/registry";
+import { sql } from "../../runtime/clients";
 import { parsePgJsonRecord, toPgTextArray } from "../postgres";
 import { MANDATE_MAX_PENDING_PER_USER, mandates } from ".";
 

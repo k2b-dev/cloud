@@ -1,6 +1,6 @@
+import { sql } from "@k2b/cloud";
 import { isUniqueViolation, logger, toPgUuidArray } from "@k2b/cloud/services";
 import { err, fail, ok, type Result } from "@k2b/stdlib";
-import { sql } from "bun";
 import { FieldColumnSpecSchema, RecordDisplayConfigSchema, ViewUiSettingsSchema } from "../contracts";
 import { isKnownFieldType } from "../field-types";
 import { groupedColumnFieldId } from "../presentation-ids";
@@ -280,11 +280,11 @@ const lockTableColumns = async (tx: SqlClient, tableId: string): Promise<LockedT
 const addFieldToTableColumns = async (tx: SqlClient, table: LockedTableColumns, field: Field, actorId: string | null) => {
   const parsed = FieldColumnSpecSchema.array().safeParse(table.columns ?? []);
   if (!parsed.success || parsed.data.length === 0 || field.hideInTable) {
-    await tx`UPDATE grids.tables SET updated_at = ${NEXT_TABLE_VERSION} WHERE id = ${field.tableId}::uuid`;
+    await tx`UPDATE grids.tables SET updated_at = ${NEXT_TABLE_VERSION()} WHERE id = ${field.tableId}::uuid`;
     return false;
   }
   const columns = [...parsed.data, { fieldId: field.id }];
-  await tx`UPDATE grids.tables SET columns = ${columns}::jsonb, updated_at = ${NEXT_TABLE_VERSION} WHERE id = ${field.tableId}::uuid`;
+  await tx`UPDATE grids.tables SET columns = ${columns}::jsonb, updated_at = ${NEXT_TABLE_VERSION()} WHERE id = ${field.tableId}::uuid`;
   await logAudit(
     {
       baseId: table.base_id,
@@ -953,7 +953,7 @@ export const softDelete = async (id: string, actorId: string | null, locale?: st
         UPDATE grids.tables
         SET columns = ${columns.data.filter((column) => column.fieldId !== id)}::jsonb,
             display_config = ${withoutFieldDisplayReference(table.display_config, id)}::jsonb,
-            updated_at = ${NEXT_TABLE_VERSION}
+            updated_at = ${NEXT_TABLE_VERSION()}
         WHERE id = ${existing.tableId}::uuid
       `;
     }

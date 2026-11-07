@@ -1,5 +1,5 @@
-import { sql } from "bun";
 import type { BaseGroup, GroupMember, MutationResult, UserProvider } from "../../contracts/shared";
+import { sql } from "../../runtime/clients";
 import { freeipa } from "../../server/services";
 import { getServiceIpaSession } from "../ipa/service-account";
 import { toPgUuidArray } from "../postgres";

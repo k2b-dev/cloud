@@ -12,6 +12,7 @@ import { z } from "zod";
 import type { RequestAuthority } from "../server/middleware/auth";
 import type { AppEventDefinition, AppEventSubscriptionDefinition } from "./app-events";
 import { CommandPathSchema } from "./commands";
+import { type PlatformPermission, PlatformPermissionSchema } from "./outgoing-mail";
 import type { AccessSubject, RequestActor, User } from "./shared";
 import { AuthenticatedPrincipalSchema } from "./shared";
 
@@ -774,6 +775,26 @@ export type CapabilityError = {
 export type CapabilityInvocationResult<T> = { ok: true; data: CapabilityResult<T> } | { ok: false; error: CapabilityError };
 export type CapabilityActionReviewResult = { ok: true; data: CapabilityActionReviewData } | { ok: false; error: CapabilityError };
 
+/**
+ * One labelled fact of a result. A `date` or `date-time` value is a machine date that the reader formats in their
+ * locale and time zone; the first one also appears as a short date on the result's row.
+ */
+export const CloudResourceMetadataSchema = z
+  .object({
+    label: z.string().min(1).max(120),
+    value: z.string().max(1000),
+    format: z.enum(["date", "date-time"]).optional().describe("date: YYYY-MM-DD or RFC 3339; date-time: RFC 3339 with offset."),
+  })
+  .strict()
+  .superRefine((entry, context) => {
+    const schema =
+      entry.format === "date" ? CapabilityReviewDateSchema : entry.format === "date-time" ? CapabilityReviewDateTimeSchema : null;
+    if (schema?.safeParse(entry.value).success === false)
+      context.addIssue({ code: "custom", path: ["value"], message: "Invalid date or time" });
+  });
+
+export type CloudResourceMetadata = z.infer<typeof CloudResourceMetadataSchema>;
+
 export const CloudResourceViewSchema = z
   .object({
     ref: CloudResourceRefSchema.describe("Stable identity of the result."),
@@ -783,18 +804,7 @@ export const CloudResourceViewSchema = z
     context: CloudResourceReferenceSchema.shape.context,
     status: CloudResourceReferenceSchema.shape.status,
     priority: z.number().int().min(0).max(9).optional().describe("App-local relevance hint from zero to nine."),
-    metadata: z
-      .array(
-        z
-          .object({
-            label: z.string().min(1).max(120),
-            value: z.string().max(1000),
-          })
-          .strict(),
-      )
-      .max(20)
-      .optional()
-      .describe("Small structured metadata shown with the result."),
+    metadata: z.array(CloudResourceMetadataSchema).max(20).optional().describe("Small structured metadata shown with the result."),
     links: z.array(CapabilitySemanticLinkSchema).min(1).max(10).describe("Semantic links for the resource."),
   })
   .strict();
@@ -955,12 +965,12 @@ export type CapabilityPresentationCatalog = {
 
 /** App authority has no grant-bearing subject, user, nested exchange, or interactive credential. */
 export type CapabilityAppExecutionContext = {
-  actor: { kind: "app"; appId: string };
+  actor: { kind: "app"; appId: string; keyId?: string };
   accessSubject: { type: "none" };
   user: null;
   authority?: never;
   query?: never;
-  idempotencyKey?: never;
+  idempotencyKey?: string;
   locale: string;
   requestId: string;
   origin: CapabilityOrigin;
@@ -968,8 +978,18 @@ export type CapabilityAppExecutionContext = {
   signal: AbortSignal;
 };
 
+/** Explicit provider entry for calls paid for and authorized as the calling application. */
+export type CapabilityAppHandler<Input extends z.ZodType, Data extends z.ZodType> = {
+  permission: PlatformPermission;
+  run: (
+    input: z.output<Input>,
+    context: CapabilityAppExecutionContext,
+  ) => CapabilityInvocationResult<z.output<Data>> | Promise<CapabilityInvocationResult<z.output<Data>>>;
+};
+
 export type CapabilityQueryDefinition<Input extends z.ZodType = z.ZodType<any>, Data extends z.ZodType = z.ZodType<any>> = {
   appOnly?: never;
+  app?: CapabilityAppHandler<Input, Data>;
   title: string;
   description: string;
   input: Input;
@@ -988,6 +1008,7 @@ export type CapabilityActionApprovalPolicy = "rememberable" | "none";
 
 export type CapabilityActionDefinition<Input extends z.ZodType = z.ZodType<any>, Data extends z.ZodType = z.ZodType<any>> = {
   appOnly?: never;
+  app?: CapabilityAppHandler<Input, Data>;
   title: string;
   description: string;
   input: Input;
@@ -1039,6 +1060,8 @@ export type CapabilityFileProviderDeclaration = { list: string; read: string; sa
 
 export type CapabilityCalendarSourceDeclaration = { calendars: string; events: string; update?: string; move?: string; delete?: string };
 
+export type CapabilityAppStatusDeclaration = { summary: string; detail: string; forget: string };
+
 export type CapabilityDiscussionsDeclaration = { item: string; containers: string; activity?: string };
 
 export type CapabilityDefinitions = {
@@ -1051,6 +1074,7 @@ export type CapabilityDefinitions = {
   fileProvider?: CapabilityFileProviderDeclaration;
   calendarSource?: CapabilityCalendarSourceDeclaration;
   discussions?: CapabilityDiscussionsDeclaration;
+  appStatus?: CapabilityAppStatusDeclaration;
   events?: CapabilityDefinitionCatalog<AppEventDefinition>;
   subscribes?: CapabilityDefinitionCatalog<AppEventSubscriptionDefinition>;
 };
@@ -1101,6 +1125,7 @@ const CapabilityOperationManifestBaseSchema = z
     inputSchema: z.record(z.string(), z.unknown()),
     dataSchema: z.record(z.string(), z.unknown()),
     stream: CapabilityStreamPolicySchema.optional(),
+    appPermission: PlatformPermissionSchema.optional(),
     schemaHash: z.string().regex(/^[a-f0-9]{64}$/),
   })
   .strict();
@@ -1176,6 +1201,14 @@ export const CapabilityResourcePageManifestSchema = z
       .min(1)
       .max(RESOURCE_PAGE_MAX_LENGTH)
       .refine((path) => !resourcePageIssue(path), "Invalid resource page pattern"),
+  })
+  .strict();
+
+export const CapabilityAppStatusManifestSchema = z
+  .object({
+    summary: CapabilityLocalIdSchema,
+    detail: CapabilityLocalIdSchema,
+    forget: CapabilityLocalIdSchema,
   })
   .strict();
 
@@ -1268,6 +1301,7 @@ const readableManifest = (value: unknown, personCatalog = false): unknown => {
     resourcePages: sentPages,
     resourceTypes: sentModels,
     discussions: sentDiscussions,
+    appStatus: sentAppStatus,
     ...rest
   } = sent;
   const models = readEntries(sentModels ?? [], CapabilityResourceTypeModelSchema) ?? [];
@@ -1309,6 +1343,14 @@ const readableManifest = (value: unknown, personCatalog = false): unknown => {
     (!role.data.activity || queryIds.has(role.data.activity))
       ? role.data
       : undefined;
+  const statusRole = CapabilityAppStatusManifestSchema.safeParse(sentAppStatus);
+  const appStatus =
+    statusRole.success &&
+    queryIds.has(statusRole.data.summary) &&
+    queryIds.has(statusRole.data.detail) &&
+    readableActions.some((action) => action.localId === statusRole.data.forget)
+      ? statusRole.data
+      : undefined;
   const provider = CapabilityFileProviderManifestSchema.safeParse(sentProvider);
   const calendar = CapabilityCalendarSourceManifestSchema.safeParse(sentCalendarSource);
   const pageCounts = new Map<string, number>();
@@ -1328,6 +1370,7 @@ const readableManifest = (value: unknown, personCatalog = false): unknown => {
     ...rest,
     ...(sentModels !== undefined ? { resourceTypes } : {}),
     ...(discussions ? { discussions } : {}),
+    ...(appStatus ? { appStatus } : {}),
     ...(sentPages !== undefined ? { resourcePages } : {}),
     ...(provider.success ? { fileProvider: provider.data } : {}),
     ...(calendar.success ? { calendarSource: calendar.data } : {}),
@@ -1371,6 +1414,7 @@ export const CapabilityManifestSchema = z.preprocess(
     fileProvider: CapabilityFileProviderManifestSchema.optional(),
     calendarSource: CapabilityCalendarSourceManifestSchema.optional(),
     discussions: CapabilityDiscussionsManifestSchema.optional(),
+    appStatus: CapabilityAppStatusManifestSchema.optional(),
     resourceTypes: z.array(CapabilityResourceTypeModelSchema).max(MAX_MANIFEST_ENTRIES).optional(),
     policies: z.record(CapabilityLocalIdSchema, CapabilityActionPolicySchema).optional(),
     events: z.array(CapabilityEventManifestSchema).max(MAX_MANIFEST_ENTRIES).optional(),

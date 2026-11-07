@@ -1,10 +1,11 @@
 import { describe, expect, spyOn, test } from "bun:test";
-import { redis } from "bun";
 import { Hono } from "hono";
+import { useUnitClients } from "../../../../../scripts/fixtures/unit-clients";
 import * as assistantModels from "../../ai/assistant-models";
 import { aiRoutes } from "../../ai/routes";
 import meRoutes from "../../api/me";
 import { AI_INFERENCE_SCOPE } from "../../contracts/shared";
+import { redis } from "../../runtime/clients";
 import { authenticateModelsOnlyCredential } from "../../services/identity/models-only-auth";
 import { authenticateWorkloadCredential } from "../../services/identity/workload-auth";
 import { type AuthenticatedServiceAccountCredential, serviceAccountCredentials } from "../../services/service-account-credentials";
@@ -12,6 +13,8 @@ import { buildProjectedUser } from "../../services/session/user";
 import * as settings from "../../services/settings";
 import { coreSettings } from "../../services/settings/api";
 import { type AuthContext, auth } from "./auth";
+
+useUnitClients();
 
 const user = buildProjectedUser({ id: "11111111-1111-4111-8111-111111111111", uid: "models-user", provider: "local", profile: "user" });
 const token = "cld_0123456789abcdef01234567_0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";

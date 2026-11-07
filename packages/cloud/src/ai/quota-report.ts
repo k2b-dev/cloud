@@ -1,4 +1,5 @@
-import { sql } from "bun";
+import { sql } from "../runtime/clients";
+
 import { resolveDisplayNames } from "../server/services/access";
 import { recursiveGroupIdsSubquery } from "../services/accounts/group-sql";
 import { toPgTextArray } from "../services/postgres";

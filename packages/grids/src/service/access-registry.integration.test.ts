@@ -1,5 +1,5 @@
 import { beforeAll, describe, expect } from "bun:test";
-import { sql } from "bun";
+import { sql } from "@k2b/cloud";
 import { testFor, testInfra } from "../../../../scripts/fixtures/test-infra";
 import { testShortId } from "../integration-test-utils";
 import { migrate } from "../migrate";
@@ -67,7 +67,7 @@ describe("access resource registry integration", () => {
 
       expect(rejected.ok).toBe(false);
       if (!rejected.ok) {
-        expect(rejected.error.message).toBe("Grids App account grants require a standalone or agent account.");
+        expect(rejected.error.message).toBe("Grids App account grants require an agent account.");
       }
       expect(await listCustomAppAccess(item.customAppId)).toEqual([
         expect.objectContaining({

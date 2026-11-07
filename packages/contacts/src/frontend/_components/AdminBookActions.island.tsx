@@ -1,149 +1,71 @@
-import { type GrantableLevel, PermissionEditor } from "@k2b/cloud/access/ui";
-import type { AccessEntry, Principal } from "@k2b/cloud/contracts";
+import { openAccessDialog } from "@k2b/cloud/access/ui";
 import { refreshCurrentPath } from "@k2b/ssr/nav";
-import { query } from "@k2b/stdlib/solid";
-import { Button, Dropdown, InlineGuidance, Placeholder, prompts, useLocale } from "@k2b/ui";
-import { createSignal, onCleanup, Show } from "solid-js";
+import { mutation as mutations } from "@k2b/stdlib/solid";
+import { Dropdown, toast, useLocale } from "@k2b/ui";
+import { onCleanup } from "solid-js";
 import { apiClient } from "@/api/client";
 import { readErrorMessage } from "./api";
 import { bookMessages } from "./book-messages";
-import { createQueuedReconciliation } from "./book-settings-reconcile";
 
 type AdminBookActionsProps = {
   bookId: string;
   bookName: string;
 };
 
-const PermissionDialogBody = (props: AdminBookActionsProps) => {
-  const locale = useLocale();
-  const t = () => bookMessages.resolve([locale()]).t;
-  const entries = query.create<string, AccessEntry[]>({
-    source: () => props.bookId,
-    load: async (bookId, { abortSignal }) => {
-      const response = await apiClient.admin.books[":bookId"].access.$get({ param: { bookId } }, { init: { signal: abortSignal } });
-      if (!response.ok) throw new Error(await readErrorMessage(response, t().loadPermissionsFailed));
+const openPermissionDialog = async (props: AdminBookActionsProps, locale: string, signal: AbortSignal) => {
+  const t = bookMessages.resolve([locale]).t;
+  const response = await apiClient.admin.books[":bookId"].access.$get({ param: { bookId: props.bookId } }, { init: { signal } });
+  if (!response.ok) throw new Error(await readErrorMessage(response, t.loadPermissionsFailed));
+  const initialEntries = await response.json();
+  // The page may have changed while the list loaded; never open the dialog over another page.
+  if (signal.aborted) return;
+  // Set by every saved change, also when a later one fails and the person discards the rest.
+  let wrote = false;
+  await openAccessDialog({
+    resourceName: props.bookName,
+    subtitle: t.accessDialogSubtitle,
+    initialEntries,
+    grantAccess: async (principal, permission) => {
+      const response = await apiClient.admin.books[":bookId"].access.$post({
+        param: { bookId: props.bookId },
+        json: { principal, permission },
+      });
+      if (!response.ok) throw new Error(await readErrorMessage(response, t.adminGrantAccessFailed));
+      wrote = true;
       return response.json();
     },
+    updateAccess: async (accessId, permission) => {
+      const response = await apiClient.admin.books[":bookId"].access[":accessId"].$patch({
+        param: { bookId: props.bookId, accessId },
+        json: { permission },
+      });
+      if (!response.ok) throw new Error(await readErrorMessage(response, t.adminUpdateAccessFailed));
+      wrote = true;
+    },
+    revokeAccess: async (accessId) => {
+      const response = await apiClient.admin.books[":bookId"].access[":accessId"].$delete({
+        param: { bookId: props.bookId, accessId },
+      });
+      if (!response.ok) throw new Error(await readErrorMessage(response, t.adminRevokeAccessFailed));
+      wrote = true;
+    },
   });
-  const [reconcileError, setReconcileError] = createSignal<string | null>(null);
-  const [reconciling, setReconciling] = createSignal(false);
-  let disposed = false;
-  const coverage = createQueuedReconciliation(entries.invalidate, (state) => {
-    setReconciling(state.reconciling);
-    setReconcileError(state.error);
-  });
-  const reconcile = () => coverage.run(t().accessSavedReloadFailed);
-  const coverageBlocked = () => reconciling() || reconcileError() !== null;
-  const requestControllers = new Set<AbortController>();
-  const runRequest = async <T,>(request: (signal: AbortSignal) => Promise<T>): Promise<T> => {
-    if (disposed) throw new DOMException(t().permissionsClosedAbort, "AbortError");
-    if (coverageBlocked() || requestControllers.size > 0) throw new Error(t().permissionChangeInProgress);
-    const controller = new AbortController();
-    requestControllers.add(controller);
-    try {
-      const result = await request(controller.signal);
-      if (disposed) throw new DOMException(t().permissionsClosedAbort, "AbortError");
-      return result;
-    } finally {
-      requestControllers.delete(controller);
-    }
-  };
-  const grant = async (input: { bookId: string; principal: Principal; permission: GrantableLevel }): Promise<AccessEntry> => {
-    const created = await runRequest(async (abortSignal) => {
-      const response = await apiClient.admin.books[":bookId"].access.$post(
-        { param: { bookId: input.bookId }, json: { principal: input.principal, permission: input.permission } },
-        { init: { signal: abortSignal } },
-      );
-      if (!response.ok) throw new Error(await readErrorMessage(response, t().adminGrantAccessFailed));
-      return response.json();
-    });
-    await reconcile();
-    return created;
-  };
-  const update = async (input: { bookId: string; accessId: string; permission: GrantableLevel }): Promise<void> => {
-    await runRequest(async (abortSignal) => {
-      const response = await apiClient.admin.books[":bookId"].access[":accessId"].$patch(
-        { param: { bookId: input.bookId, accessId: input.accessId }, json: { permission: input.permission } },
-        { init: { signal: abortSignal } },
-      );
-      if (!response.ok) throw new Error(await readErrorMessage(response, t().adminUpdateAccessFailed));
-    });
-    await reconcile();
-  };
-  const revoke = async (input: { bookId: string; accessId: string }): Promise<void> => {
-    await runRequest(async (abortSignal) => {
-      const response = await apiClient.admin.books[":bookId"].access[":accessId"].$delete(
-        { param: { bookId: input.bookId, accessId: input.accessId } },
-        { init: { signal: abortSignal } },
-      );
-      if (!response.ok) throw new Error(await readErrorMessage(response, t().adminRevokeAccessFailed));
-    });
-    await reconcile();
-  };
-  onCleanup(() => {
-    disposed = true;
-    for (const controller of requestControllers) controller.abort();
-    requestControllers.clear();
-    coverage.dispose();
-  });
-
-  return (
-    <div class="flex w-full max-w-full flex-col gap-2">
-      <p class="text-xs text-dimmed">{t().manageAccessHint}</p>
-      <Show when={!entries.loading()} fallback={<Placeholder state="loading" variant="compact" title={t().loadingAccess} />}>
-        <Show
-          when={entries.data()}
-          fallback={
-            <Placeholder
-              state="error"
-              variant="compact"
-              title={t().loadAccessErrorTitle}
-              description={entries.error()?.message}
-              action={
-                <Button type="button" variant="secondary" size="sm" onClick={() => void entries.refresh()}>
-                  {t().retry}
-                </Button>
-              }
-            />
-          }
-        >
-          {(currentEntries) => (
-            <PermissionEditor
-              initialEntries={currentEntries()}
-              canEdit={reconcileError() === null}
-              grantAccess={async (principal, permission) => {
-                return grant({ bookId: props.bookId, principal, permission });
-              }}
-              updateAccess={async (accessId, permission) => {
-                await update({ bookId: props.bookId, accessId, permission });
-              }}
-              revokeAccess={async (accessId) => {
-                await revoke({ bookId: props.bookId, accessId });
-              }}
-            />
-          )}
-        </Show>
-      </Show>
-      <Show when={reconcileError()}>
-        <InlineGuidance tone="warning" icon="ti ti-alert-triangle" role="status">
-          {reconcileError()}{" "}
-          <Button type="button" variant="text" size="xs" onClick={() => void coverage.retry()} disabled={reconciling()}>
-            {t().retryReload}
-          </Button>
-        </InlineGuidance>
-      </Show>
-    </div>
-  );
-};
-
-const openPermissionDialog = async (props: AdminBookActionsProps) => {
-  await prompts.dialog<void>(() => <PermissionDialogBody {...props} />, { title: props.bookName, icon: "ti ti-shield" });
-  refreshCurrentPath();
+  // After navigation the page is another one; refreshing it would cancel where the person went.
+  if (wrote && !signal.aborted) refreshCurrentPath();
 };
 
 const AdminBookActions = (props: AdminBookActionsProps) => {
   const locale = useLocale();
   const t = () => bookMessages.resolve([locale()]).t;
+  const loading = new AbortController();
+  onCleanup(() => loading.abort());
+  // Loading the stored entries shows on the trigger; a failure says why instead of opening an empty dialog.
+  const permissions = mutations.create<void, void>({
+    mutation: () => openPermissionDialog(props, locale(), loading.signal),
+    onError: (error) => {
+      if (!loading.signal.aborted) toast.error(error.message);
+    },
+  });
   return (
     <Dropdown.Root
       position="bottom-left"
@@ -154,14 +76,14 @@ const AdminBookActions = (props: AdminBookActionsProps) => {
             {
               icon: "ti ti-shield",
               label: t().permissionsLabel,
-              action: () => void openPermissionDialog(props),
+              action: () => void (permissions.loading() || permissions.mutate()),
             },
           ],
         },
       ]}
     >
       <Dropdown.Trigger iconOnly label={t().managePermissionsFor({ name: props.bookName })} size="xs" tooltip={t().managePermissions}>
-        <i class="ti ti-settings text-sm" />
+        <i class={permissions.loading() ? "ti ti-loader-2 animate-spin text-sm" : "ti ti-settings text-sm"} />
       </Dropdown.Trigger>
     </Dropdown.Root>
   );

@@ -1,9 +1,10 @@
 import type { DoneReason, InboundEvent, LoopAggregate, Message, SessionStore, StoreEntry } from "@k2b/nessi";
 import type { Usage } from "@k2b/nessi/ai";
-import { type SQL, sql } from "bun";
+import type { SQL } from "bun";
 import { capabilityRequestHash } from "../capabilities/claims";
 import { restoreReviewSnapshot, serializeReviewSnapshot } from "../capabilities/review-storage";
 import { type CapabilityActionReviewPresentation, CapabilityActionReviewPresentationSchema } from "../contracts/capabilities";
+import { sql } from "../runtime/clients";
 import { logger } from "../services/logging";
 import { toPgTextArray } from "../services/postgres";
 import { AI_TOOL_CHECK_STALE_MS, type AiActionCheck, type AiStoredActionReview } from "./action-review";

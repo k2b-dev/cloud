@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { sql } from "bun";
+import { sql } from "@k2b/cloud";
 import type { MailboxComposeLogo } from "../contracts";
 import type { OutboundDraftSnapshot } from "./outbound-mime";
 

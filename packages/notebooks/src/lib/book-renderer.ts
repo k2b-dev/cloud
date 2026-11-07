@@ -1,4 +1,11 @@
 import { markdownCalloutSanitizeOptions } from "@k2b/cloud/shared";
+import { parseNotebookChartBlocks, renderNotebookChartFigure } from "@k2b/editor/markdown/lib/chart-blocks";
+import { anchorHash, headingAnchor, parseNoteLink } from "@k2b/editor/markdown/lib/heading-anchors";
+import { frontMatterLength, LIGATURE_CLASS, ligatureHtml } from "@k2b/editor/markdown/lib/ligatures";
+import { literalMarkdownLines, notebookDirectiveLength } from "@k2b/editor/markdown/lib/markdown-context";
+import { parseSizedMarkdownImage } from "@k2b/editor/markdown/lib/markdown-image";
+import { extractNamedBlocks, type NamedDataValue, parseNamedDataBlockResult } from "@k2b/editor/markdown/lib/named-blocks";
+import { renderPrettyTableHtml } from "@k2b/editor/markdown/pretty-table";
 import { dates, highlight, text } from "@k2b/stdlib";
 import {
   type MarkdownReference,
@@ -11,17 +18,11 @@ import {
 import katex from "katex";
 import { Marked, Renderer, type Tokens } from "marked";
 import sanitizeHtml from "sanitize-html";
-import { renderPrettyTableHtml } from "../frontend/lib/pretty-table";
 import type { NoteQueryResult } from "../service/note-query";
 import { bookRendererMessages, notebookBlockDiagnosticMessage } from "./book-renderer-messages";
-import { parseNotebookChartBlocks, renderNotebookChartFigure } from "./chart-blocks";
-import { anchorHash, headingAnchor, parseNoteLink } from "./heading-anchors";
-import { frontMatterLength, LIGATURE_CLASS, ligatureHtml } from "./ligatures";
+import { notebookChartOptions } from "./chart-options";
 import { type NotebookMapImage, type NotebookMapState, parseNotebookMapBlocks, renderNotebookMapFigure } from "./map-blocks";
 import { notebookMapMessages } from "./map-messages";
-import { literalMarkdownLines, notebookDirectiveLength } from "./markdown-context";
-import { parseSizedMarkdownImage } from "./markdown-image";
-import { extractNamedBlocks, type NamedDataValue, parseNamedDataBlockResult } from "./named-blocks";
 import { type NotePdfOmission, type NotePdfOmissionKind, notePdfOmissionLabel } from "./pdf-omissions";
 import {
   type NotebookBlockDiagnostic,
@@ -30,6 +31,7 @@ import {
   type QueryBlock,
   type QueryField,
 } from "./query-blocks";
+import { notebookTableOptions } from "./table-options";
 
 export type BookImagePlacement = {
   token: string;
@@ -126,7 +128,7 @@ export const renderNotebookBook = (
   const tocResult = parseNotebookTocBlocks(markdown);
   const queries = new Map(queryResult.blocks.map((block) => [block.line, block]));
   const tocs = new Map(tocResult.blocks.map((block) => [block.line, block]));
-  const chartResult = parseNotebookChartBlocks(markdown);
+  const chartResult = parseNotebookChartBlocks(markdown, notebookChartOptions);
   const charts = new Map(chartResult.blocks.map((block) => [block.line, block.input]));
   const chartSlots: string[] = [];
   const mapResult = parseNotebookMapBlocks(markdown);
@@ -403,7 +405,7 @@ export const renderNotebookBook = (
     const cells = new Map([...header, ...rows.flat()].map((cell) => [cell.text, cell.tokens]));
     const html = renderPrettyTableHtml(
       { headers: header.map((cell) => cell.text), rows: rows.map((row) => row.map((cell) => cell.text)), align },
-      { notebookId: input.notebookId, locale, renderInline: (value) => this.parser.parseInline(cells.get(value) ?? []) },
+      { ...notebookTableOptions(input.notebookId), locale, renderInline: (value) => this.parser.parseInline(cells.get(value) ?? []) },
     );
     return html.replace(
       /<span class="md-table-cell md-formula-error[^"]*"[^>]*>⚠ ([^<]*)<\/span>/g,
@@ -527,7 +529,7 @@ export const renderNotebookBook = (
       if (handle.type !== "data")
         prepared.push(
           "",
-          slot(() => `<div class="md-block-handle" id="${anchorId(`block-${handle.name}`)}">@${escape(handle.name)}</div>`),
+          slot(() => `<div class="md-block-handle" id="${anchorId(`block-${handle.name}`)}">${escape(handle.name)}</div>`),
           "",
         );
       continue;
@@ -625,7 +627,7 @@ export const renderNotebookBook = (
           const data = parseNamedDataBlockResult(body);
           if (data.diagnostics.length) return diagnostic(start + 1, kind) + source(body);
           const name = dataNames.get(start);
-          const title = name ? `<div class="md-block-handle" id="${anchorId(`block-${name}`)}">@${escape(name)}</div>` : "";
+          const title = name ? `<div class="md-block-handle" id="${anchorId(`block-${name}`)}">${escape(name)}</div>` : "";
           return `<div class="md-data-block">${title}${data.entries.length ? `<dl class="md-data-grid">${data.entries.map((entry) => `<div class="md-data-row"><dt class="md-data-key">${escape(text.humanize(entry.key))}</dt><dd class="md-data-value">${valueHtml(entry.value)}</dd></div>`).join("")}</dl>` : `<p class="notebook-book-empty">${escape(t.emptyData)}</p>`}</div>`;
         }
         if (!notice) return "";

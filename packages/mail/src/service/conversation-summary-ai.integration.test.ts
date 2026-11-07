@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { sql } from "bun";
+import { sql } from "@k2b/cloud";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import { newShortId } from "../lib/short-id";
 import { generateConversationSummaryAi } from "./conversation-summary-ai";

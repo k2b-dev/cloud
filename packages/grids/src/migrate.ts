@@ -1,4 +1,5 @@
-import { sql as defaultSql, type SQL } from "bun";
+import { sql as defaultSql } from "@k2b/cloud";
+import type { SQL } from "bun";
 
 // Current Grids schema plus explicit, one-way upgrades from the preceding schema.
 // IF NOT EXISTS does not reconcile existing columns or constraints. Schema

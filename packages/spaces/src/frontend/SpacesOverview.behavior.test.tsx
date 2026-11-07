@@ -20,6 +20,7 @@ const snapshot = (view: OverviewView): OverviewWork => ({
       endsAt: null,
       deadline: null,
       deadlineAllDay: false,
+      canWrite: true,
     },
   ],
 });

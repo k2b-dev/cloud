@@ -3,12 +3,15 @@ import { type Job, StoreFullError, type Worker } from "@k2b/sync";
 import { lazySync } from "../../_internal/process-sync";
 import { AiBackgroundAdmissionError, AiBackgroundCostError } from "../../ai/inference-calls";
 import { AiQuotaError } from "../../ai/quotas";
+import { aiSettingsFailure } from "../../ai/settings";
 import { resolveAiWorkflowModel, runAiStructured } from "../../ai/structured";
 import { executeAiTask } from "../../ai/task-execution";
 import { resolveApplicationAiTaskModel } from "../../ai/task-model";
 import { isAiSettingsError } from "../../ai/validate";
-import { env } from "../../config/env";
+import { DEFAULT_WORKFLOW_AI_BUDGET } from "../../config/workflow-ai";
+import { coreSettings } from "../../services/settings/api";
 import { WorkflowAiAdmissionError, workflowAiModelHash } from "./policy";
+import { getWorkflowAiBudget } from "./settings";
 
 import {
   claimWorkflowAiTask,
@@ -44,13 +47,14 @@ export type WorkflowAiProcessOptions = Required<Omit<WorkflowAiRuntimeOptions, "
   attemptTimeoutMs?: number;
 };
 
+let workerBudget = DEFAULT_WORKFLOW_AI_BUDGET;
 const workflowAiJob = lazySync((sync) =>
   sync.job<{ taskId: string }>({
     id: WORKFLOW_AI_JOB_ID,
     whenFull: "reject",
     owner: "cloud",
     delivery: {
-      maxInFlight: env.WORKFLOW_AI_BUDGET.globalConcurrent,
+      maxInFlight: workerBudget.globalConcurrent,
       ackWaitMs: 30_000,
       maxAttempts: MAX_ATTEMPTS,
       backoffMs: [1_000, 2_000],
@@ -104,6 +108,12 @@ export const executeWorkflowAiRequest = async (task: WorkflowAiTask, runStructur
         const resolved = task.runId
           ? await resolveAiWorkflowModel({ id: task.modelId })
           : await resolveApplicationAiTaskModel(task.usageSubject, { id: task.modelId });
+        // A task admitted for a class never runs on a restricted model, even when its pinned ID is reused later.
+        if (resolved.profile.dataBoundary === "restricted" && task.modelRef?.class)
+          aiSettingsFailure("model_policy_mismatch", `The AI model "${task.modelId}" has no data-protection commitment.`, {
+            model: task.modelId,
+            boundary: "restricted",
+          });
         if (task.modelConfigHash && workflowAiModelHash(resolved.profile) !== task.modelConfigHash)
           throw new WorkflowAiAdmissionError("WORKFLOW_AI_MODEL_CHANGED");
         return { ...resolved, model: task.modelRef ?? resolved.model };
@@ -137,6 +147,7 @@ export const processWorkflowAiTask = async (
   ctx: { signal: AbortSignal; heartbeat(): Promise<void> },
   options: WorkflowAiProcessOptions,
 ): Promise<void> => {
+  const attemptTimeoutMs = options.attemptTimeoutMs ?? (await coreSettings.get<number>("ai.workflow_attempt_timeout_ms"));
   const task = await claimWorkflowAiTask(taskId);
   if (!task) {
     const terminal = await getWorkflowAiTask(taskId);
@@ -150,7 +161,7 @@ export const processWorkflowAiTask = async (
   const deadline = setTimeout(() => {
     timedOut = true;
     controller.abort(new Error("Workflow AI attempt deadline exceeded. Retry the workflow or inspect the provider."));
-  }, options.attemptTimeoutMs ?? env.WORKFLOW_AI_ATTEMPT_TIMEOUT_MS);
+  }, attemptTimeoutMs);
   let canceled = false;
   let monitorError: unknown;
   let checking = false;
@@ -230,9 +241,12 @@ let recovery: Promise<void> | null = null;
 let shutdown: AbortController | null = null;
 
 const recover = (): Promise<void> => {
-  recovery ??= expireWorkflowAiTasks(env.WORKFLOW_AI_QUEUE_TIMEOUT_MS).finally(() => {
-    recovery = null;
-  });
+  recovery ??= coreSettings
+    .get<number>("ai.workflow_queue_timeout_ms")
+    .then((timeout) => expireWorkflowAiTasks(timeout))
+    .finally(() => {
+      recovery = null;
+    });
   return recovery;
 };
 
@@ -242,14 +256,15 @@ export const startWorkflowAiRuntime = async (input: WorkflowAiRuntimeOptions = {
     runStructured: input.runStructured ?? runAiStructured,
     maxAttempts: MAX_ATTEMPTS,
     cancelPollMs: input.cancelPollMs ?? DEFAULT_CANCEL_POLL_MS,
-    attemptTimeoutMs: input.attemptTimeoutMs ?? env.WORKFLOW_AI_ATTEMPT_TIMEOUT_MS,
+    attemptTimeoutMs: input.attemptTimeoutMs,
   };
+  workerBudget = await getWorkflowAiBudget();
   const next = workflowAiJob();
   activeJob = next;
   const controller = new AbortController();
   shutdown = controller;
   try {
-    activeWorker = await next.process({ concurrency: env.WORKFLOW_AI_BUDGET.globalConcurrent }, async (context) => {
+    activeWorker = await next.process({ concurrency: workerBudget.globalConcurrent }, async (context) => {
       try {
         await processWorkflowAiTask(
           context.input.taskId,

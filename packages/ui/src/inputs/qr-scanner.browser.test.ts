@@ -44,7 +44,15 @@ type Camera = "fake" | "code" | "turning" | "rear-overconstrained" | "NotReadabl
  */
 type Play = "normal" | "refuse" | "hang";
 type Calls = { results: string[]; errors: string[]; stops: number };
-type Probe = { scanner: Calls; detects: number; requests: MediaTrackConstraints[]; codeVisible: boolean; turned: boolean };
+type Probe = {
+  scanner: Calls;
+  detects: number;
+  requests: MediaTrackConstraints[];
+  codeVisible: boolean;
+  turned: boolean;
+  /** Media events of the preview and play() calls, for the report of a scan that never ends (#2187). */
+  media: string[];
+};
 
 /**
  * Stands in for the parts a phone decides: the native BarcodeDetector of Chrome for Android, which answers an empty
@@ -65,6 +73,30 @@ function stubDevice({
   code: { text: string; path: string; size: number };
 }) {
   const probe = globalThis as unknown as Probe;
+  probe.media = [];
+  const note = (entry: string) => {
+    if (probe.media.length < 60) probe.media.push(`${Math.round(performance.now())} ${entry}`);
+  };
+  for (const type of ["loadstart", "loadedmetadata", "play", "playing", "pause", "waiting", "stalled", "resize", "emptied", "error"])
+    document.addEventListener(
+      type,
+      ({ target }) => {
+        if (target instanceof HTMLVideoElement)
+          note(`${type} ${target.videoWidth}x${target.videoHeight} paused=${target.paused} ready=${target.readyState}`);
+      },
+      true,
+    );
+  const ownPlay = HTMLMediaElement.prototype.play;
+  HTMLMediaElement.prototype.play = function (this: HTMLMediaElement) {
+    note("play()");
+    return ownPlay.call(this).then(
+      () => note("play() resolved"),
+      (error: unknown) => {
+        note(`play() refused: ${error instanceof Error ? error.name : String(error)}`);
+        throw error;
+      },
+    );
+  };
   probe.detects = 0;
   probe.requests = [];
   probe.codeVisible = false;
@@ -226,16 +258,41 @@ const probe = (page: Page) =>
     return { detects, requests };
   });
 const calls = (page: Page) => page.evaluate(() => (globalThis as unknown as Probe).scanner);
-/** Waits until the scanner reports a code or an error. */
-const settled = (page: Page) =>
-  page.waitForFunction(
-    () => {
-      const { results, errors } = (globalThis as unknown as Probe).scanner;
-      return results.length + errors.length > 0;
-    },
-    undefined,
-    { timeout: 15_000 },
-  );
+/** Waits until the scanner reports a code or an error; without one, the error says what the preview and scanner did. */
+const settled = async (page: Page) => {
+  try {
+    await page.waitForFunction(
+      () => {
+        const { results, errors } = (globalThis as unknown as Probe).scanner;
+        return results.length + errors.length > 0;
+      },
+      undefined,
+      { timeout: 15_000 },
+    );
+  } catch (error) {
+    const state = await Promise.race([
+      page.evaluate(() => {
+        const probe = globalThis as unknown as Probe;
+        const video = document.querySelector("video");
+        return {
+          status: document.querySelector('[role="status"]')?.textContent,
+          retryShown: document.querySelector(".k2b-qr-scanner__retry") !== null,
+          video: video && {
+            paused: video.paused,
+            readyState: video.readyState,
+            size: `${video.videoWidth}x${video.videoHeight}`,
+            stream: video.srcObject instanceof MediaStream ? video.srcObject.active : null,
+          },
+          detects: probe.detects,
+          media: probe.media,
+        };
+      }),
+      Bun.sleep(1_000).then(() => "no answer within 1 s"),
+    ]).catch((reason: unknown) => `unreadable: ${String(reason)}`);
+    if (error instanceof Error) error.message += `\n\nScanner state: ${JSON.stringify(state, null, 1)}`;
+    throw error;
+  }
+};
 const status = (page: Page) => page.locator('[role="status"]').textContent();
 
 describe("@k2b/ui QrScanner in a browser", () => {

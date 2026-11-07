@@ -23,12 +23,9 @@
  * from it with `testSyncNamespace()`, are deleted once the process's tests are
  * done (`test-sync.ts`).
  *
- * Bun's default `redis` handle resolves `REDIS_URL` when the process starts,
- * before any preload runs. `bun run test` therefore exports the aliases into
- * the child environment first; under a direct `bun test`, the default handle
- * is only redirected when `REDIS_URL` was exported before Bun started. The
- * default `sql` handle binds on its first query and the NATS registry reads
- * lazily, so those follow the preload in both cases.
+ * The preload selects runtime URLs before initializing the platform's native
+ * clients. After selecting another private database, initializeTestPlatform()
+ * closes the old clients and binds both handles to the new snapshot.
  *
  *   CLOUD_TEST_DATABASE_URL   postgres://user:pass@host:5432/<name>_test
  *   CLOUD_TEST_NATS_SERVERS   nats://host:4222[,nats://host:4223]
@@ -42,8 +39,8 @@
  *   CLOUD_TEST_S3_ACCESS_KEY_ID / CLOUD_TEST_S3_SECRET_ACCESS_KEY / CLOUD_TEST_S3_REGION
  *   CLOUD_TEST_RSQL_URL       http://host:8080
  */
-import { afterAll, beforeAll, describe, test } from "bun:test";
-import { S3Client, SQL, sql } from "bun";
+import { afterAll, afterEach, beforeAll, describe, test } from "bun:test";
+import { S3Client, SQL } from "bun";
 import {
   applyTestRuntimeEnv,
   dotenvLeak,
@@ -53,9 +50,15 @@ import {
   readTestTarget,
 } from "./test-infra-env";
 import { connectTestNats } from "./test-nats";
+import { cancellingTestWork, finishTestWork, observeTestWork } from "./test-work";
 
 export type { InfraKind } from "./test-infra-env";
 export { connectTestNats } from "./test-nats";
+// Unit and CLI processes load this gate too; do not load server clients until needed.
+export const initializeTestPlatform = async (appId?: string): Promise<void> => {
+  const platform = await import("./platform");
+  await platform.initializeTestPlatform(appId);
+};
 
 const testOnlyDefaults: Record<string, string> = {
   APP_SECRET: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
@@ -129,6 +132,7 @@ const applyMappings = (): Record<InfraKind, string | undefined> => {
 
 /** Resolved `CLOUD_TEST_*` targets; `undefined` means the suite must skip. */
 export const testInfra: Readonly<Record<InfraKind, string | undefined>> = applyMappings();
+if (Object.values(testInfra).some(Boolean)) await initializeTestPlatform();
 
 const tcpReachable = async (url: string): Promise<void> => {
   const parsed = new URL(url);
@@ -247,13 +251,8 @@ export const testFor = (...needs: InfraKind[]): typeof test => (needs.every((kin
 
 export const databaseSuite = (): typeof describe => suiteFor("database");
 
-/**
- * Points Bun's default `sql` handle at a private, empty database for suites
- * that build their own schema. The default handle binds `DATABASE_URL` on its
- * first query, so such a file must run in its own process (`bun test --isolate`)
- * before any other query; otherwise this throws instead of touching the shared
- * test database. Call `drop()` in `afterAll`.
- */
+/** Bind platform clients to a private, empty database for suites that build
+ * their own schema. Select it before importing domain code; call drop() in afterAll. */
 export const useFreshDatabase = async (prefix: string): Promise<{ url: string; name: string; drop: () => Promise<void> }> => {
   return bindDefaultDatabase(prefix, await createDisposableDatabase(prefix));
 };
@@ -280,12 +279,14 @@ export const useMigratedDatabase = async (prefix: string) => bindDefaultDatabase
 
 const bindDefaultDatabase = async (prefix: string, database: Awaited<ReturnType<typeof createDisposableDatabase>>) => {
   process.env.DATABASE_URL = database.url;
+  ownTestDatabase(database.name);
+  await initializeTestPlatform();
+  // Loaded on demand: the gate itself must not load platform clients without test targets.
+  const { sql } = await import("../../packages/cloud/src/runtime/clients");
   const [row] = await sql<{ name: string }[]>`SELECT current_database() AS name`;
   if (row?.name !== database.name) {
     await database.drop();
-    throw new Error(
-      `${prefix}: the default sql handle is already bound to "${row?.name}"; run this file in its own process (bun test --isolate)`,
-    );
+    throw new Error(`${prefix}: the platform sql handle is already bound to "${row?.name}"; run this file in its own process`);
   }
   return database;
 };
@@ -329,6 +330,64 @@ try {
   });
 } catch {
   // Bootstrap scripts outside bun test close their lease explicitly.
+}
+
+// Private databases this process owns: nothing else runs in them, so work that outlives a test belongs to this process.
+const ownedDatabases = new Set<string>();
+
+/** Marks a private database of this process, so work an aborted test leaves running there ends after each test. */
+export const ownTestDatabase = (name: string): void => {
+  ownedDatabases.add(name);
+};
+
+/**
+ * Ends work that outlives its test in this process's private databases. Bun cannot stop the body of a test that timed
+ * out, so its statements keep running, or its transaction keeps holding locks, and every later hook waits on them.
+ * Statements still running are cancelled and transactions left open are ended; each is reported with its blockers.
+ */
+export const endLingeringTestWork = async (): Promise<string[]> => {
+  if (ownedDatabases.size === 0) return [];
+  const admin = new SQL(requireDatabaseUrl(), { max: 1 });
+  try {
+    type Lingering = { pid: number; database: string; state: string; ms: number; query: string; blockers: number[]; wait: string };
+    const rows: Lingering[] = [];
+    for (const database of ownedDatabases)
+      rows.push(
+        ...(await admin<Lingering[]>`
+          SELECT pid, datname AS database, state, (extract(epoch FROM now() - state_change) * 1000)::int AS ms,
+            left(query, 300) AS query, pg_blocking_pids(pid) AS blockers,
+            coalesce(wait_event_type || ':' || wait_event, 'running') AS wait
+          FROM pg_stat_activity
+          WHERE datname = ${database} AND pid <> pg_backend_pid()
+            AND (state = 'active' OR state LIKE 'idle in transaction%') AND state_change < now() - interval '250 milliseconds'`),
+      );
+    const reports: string[] = [];
+    for (const row of rows) {
+      const action = row.state === "active" ? "cancelled" : "ended";
+      cancellingTestWork();
+      if (row.state === "active") {
+        await admin`SELECT pg_cancel_backend(${row.pid})`;
+      } else {
+        await admin`SELECT pg_terminate_backend(${row.pid})`;
+      }
+      reports.push(
+        `${action} ${row.state} work in ${row.database} after ${row.ms} ms (pid ${row.pid}, blocked by ${row.blockers.join(", ") || "nothing"}, waiting on ${row.wait}): ${row.query}`,
+      );
+    }
+    for (const report of reports) console.warn(`[test-infra] work outlived its test and was ${report}`);
+    return reports;
+  } finally {
+    await admin.close();
+  }
+};
+
+try {
+  afterEach(async () => {
+    finishTestWork();
+    await endLingeringTestWork();
+  });
+} catch {
+  // Loaded by a script outside bun test, which runs no tests.
 }
 
 /** The configured target for one infrastructure kind; throws when it is not set. */
@@ -392,3 +451,7 @@ export const redactTarget = (target: string): string =>
       }
     })
     .join(",");
+
+// Install after registering the fixture's own hooks, but before test files load.
+// beforeAll may claim a private database only after its tests were registered.
+if (testInfra.database) observeTestWork();

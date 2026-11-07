@@ -2,12 +2,13 @@ import { afterEach, beforeEach, spyOn } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { redis } from "bun";
 import { buildRuntimeFromRegistry } from "../../packages/cloud/src/_internal/runtime-context";
 import * as runtime from "../../packages/cloud/src/_internal/runtime-watcher";
+import { redis } from "../../packages/cloud/src/runtime/clients";
 import * as snapshot from "../../packages/cloud/src/services/settings/snapshot";
 import * as settings from "../../packages/cloud/src/services/settings/store";
 import { createConfig } from "../../packages/ssr/src";
+import { useUnitClients } from "./unit-clients";
 
 /**
  * Stub what real routers reach without a database, NATS, or Valkey: the runtime registry, settings reads (only the
@@ -30,6 +31,7 @@ export const stubRouterInfrastructure = () => [
 
 /** Compile real routers/SSR routes; stub infrastructure reads only during each test. */
 export const prepareNoTransformRouterTest = () => {
+  useUnitClients();
   const root = mkdtempSync(join(tmpdir(), "compression-router-"));
   const { plugin } = createConfig({ dev: true, rootDir: root });
   Bun.plugin(plugin());

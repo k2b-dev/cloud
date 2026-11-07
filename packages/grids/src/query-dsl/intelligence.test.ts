@@ -1,10 +1,13 @@
 import { describe, expect, test } from "bun:test";
+import { useUnitClients } from "../../../../scripts/fixtures/unit-clients";
 import { hydrateDslViewQueries } from "../service/gql-resolver-context";
 import type { Field } from "../service/types";
 import { buildDslQueryIntelligence } from "./intelligence";
 import { parseGridsQueryDsl } from "./parser";
 import type { DslResolverContext, DslTableSource, DslViewSource } from "./resolver";
 import { resolveDslQueryToQueryPlan } from "./resolver";
+
+useUnitClients();
 
 const table = (id: string, shortId: string, name: string): DslTableSource => ({
   kind: "table",

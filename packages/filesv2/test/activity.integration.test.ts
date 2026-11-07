@@ -1,11 +1,10 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, mock, spyOn, test } from "bun:test";
-import { type ProcessSync, startProcessSync } from "@k2b/cloud";
+import { type ProcessSync, sql, startProcessSync } from "@k2b/cloud";
 import { type CapabilityExecutionContext, UserSchema } from "@k2b/cloud/contracts";
 import { type RequestActor, resolveDisplayNames } from "@k2b/cloud/server";
 import { accountIdentities } from "@k2b/cloud/services";
 import { Filegate, FilegateError, type WriteOptions } from "@k2b/filegate";
-import { sql } from "bun";
-import { suiteFor } from "../../../scripts/fixtures/test-infra";
+import { endLingeringTestWork, suiteFor } from "../../../scripts/fixtures/test-infra";
 import { migrate as migrateAudit } from "../../core/src/migrate/core/audit";
 import { filesCapabilities } from "../src/capabilities";
 import type { Configuration } from "../src/contracts";
@@ -15,7 +14,15 @@ import { persistedEntryRefId } from "../src/data/references";
 import { type Upload, uploadSessionId, uploads } from "../src/data/uploads";
 import { migrate } from "../src/migrate";
 import { createFilesService, filesService } from "../src/service";
-import { currentActivityId, fileAction, type Intent, purgeActivity, recoverActivity, uploadAction } from "../src/service/activity";
+import {
+  ACTIVITY_PURGE_BATCH,
+  currentActivityId,
+  fileAction,
+  type Intent,
+  purgeActivity,
+  recoverActivity,
+  uploadAction,
+} from "../src/service/activity";
 import { signEditorToken } from "../src/service/collabora";
 import { FilesError } from "../src/service/errors";
 import { connectFilegate, type FilesFilegate } from "../src/service/filegate-facade";
@@ -951,11 +958,41 @@ suite("Files activity with real storage", () => {
     expect((await row(pending)).state).toBe("pending");
     expect((await row(boundary)).state).toBe("done");
   });
-  test("retention deletes at most 10000 rows per call", async () => {
+  test("retention deletes at most one batch per call", async () => {
+    // The bound, not bulk speed: 10,005 rows took over 4.7 s in CI once, unexplained, against 33 ms locally (#2153).
+    expect(ACTIVITY_PURGE_BATCH).toBe(10_000);
     await sql`INSERT INTO filesv2.activity(id,state,action,server_url,root,directory,name,actor_kind,via,started_at)
-      SELECT gen_random_uuid(),'done','folder.create',${config.url},'cloud',true,'expired','system','system',${new Date(now.getTime() - 366 * day)} FROM generate_series(1,10005)`;
-    expect(await purgeActivity({ now, retentionDays: 365 })).toEqual({ purged: 10000 });
-    expect(await purgeActivity({ now, retentionDays: 365 })).toEqual({ purged: 5 });
+      SELECT gen_random_uuid(),'done','folder.create',${config.url},'cloud',true,'expired','system','system',${new Date(now.getTime() - 366 * day)} FROM generate_series(1,105)`;
+    expect(await purgeActivity({ now, retentionDays: 365, batch: 100 })).toEqual({ purged: 100 });
+    expect(await purgeActivity({ now, retentionDays: 365, batch: 100 })).toEqual({ purged: 5 });
+  });
+  test("work an aborted test leaves holding the history table is ended before the next test's cleanup waits on it", async () => {
+    // Like the body of a test that timed out: its transaction keeps the table locked and never finishes (#1797).
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const lingering = sql
+      .begin(async (tx) => {
+        await tx`LOCK TABLE filesv2.activity IN ACCESS EXCLUSIVE MODE`;
+        await held;
+      })
+      .catch((error: unknown) => error);
+    const lockedElsewhere = async () => {
+      const [row] = await sql<{ n: number }[]>`SELECT count(*)::int AS n FROM pg_locks l JOIN pg_class c ON c.oid = l.relation
+        WHERE c.relname = 'activity' AND l.mode = 'AccessExclusiveLock' AND l.granted AND l.pid <> pg_backend_pid()`;
+      return row!.n > 0;
+    };
+    for (const deadline = performance.now() + 2_000; !(await lockedElsewhere()); )
+      if (performance.now() > deadline) throw new Error("The lock was never taken");
+    // The fixture leaves work alone for its first 250 ms, so a short statement of background work is never touched.
+    await Bun.sleep(300);
+    const reports = await endLingeringTestWork();
+    expect(reports.some((report) => report.includes("idle in transaction") && report.includes("LOCK TABLE filesv2.activity"))).toBe(true);
+    expect(await lingering).toBeInstanceOf(Error);
+    release();
+    expect(await lockedElsewhere()).toBe(false);
+    await sql`TRUNCATE filesv2.activity`;
   });
   test("account deletion removes the person link without deleting history", async () => {
     const userId = Bun.randomUUIDv7();

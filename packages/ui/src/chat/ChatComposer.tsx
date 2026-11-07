@@ -17,6 +17,18 @@ import {
 import { Dropdown, type DropdownItem as DropdownItemData } from "../actions/Dropdown";
 import { dialogHistorySettled, holdDialogHistory } from "../feedback/dialog-core";
 import { Tooltip } from "../feedback/Tooltip";
+import { createDictation } from "../inputs/dictation/create-dictation";
+import { DictationBar, DictationButton, dictationBarShown } from "../inputs/dictation/Dictation";
+import {
+  beginTextDictation,
+  discardTextDictation,
+  insertTextDictation,
+  mapTextDictation,
+  mapTextOffset,
+  splitDictationSegments,
+  type TextDictationState,
+} from "../inputs/dictation/text-dictation";
+import type { DictationAlternative, DictationSource } from "../inputs/dictation/types";
 import { replaceTextareaRange } from "../inputs/editor-dom";
 import {
   completedEmojiShortcode,
@@ -35,6 +47,7 @@ import { SelectChip } from "../inputs/SelectChip";
 import { useSelectMessages } from "../inputs/select-messages";
 import { useLocale } from "../intl/locale";
 import { useUiMessages } from "../intl/messages";
+import { ProgressRing } from "../surfaces/ProgressRing";
 import { ChatContextUsage as ContextUsage } from "./ChatPrimitives";
 import {
   chatCommandKey,
@@ -291,6 +304,11 @@ export type ChatComposerProps = {
   emoji?: ChatComposerEmoji;
   /** A microphone at a fixed place: a tap dictates, holding it or its menu asks for a voice message. */
   microphone?: ChatComposerMicrophone;
+  /**
+   * Live dictation at the microphone's place, before Send. A press starts it; while it runs, the dictation bar stands in
+   * for the footer and the words land at the caret, also when the person types elsewhere. Sending waits until it ended.
+   */
+  dictation?: { source: DictationSource; alternative?: DictationAlternative };
   /** One line above the field. The conversation variant always keeps its height; the default shows it only with content. */
   hint?: JSX.Element;
   /**
@@ -427,7 +445,9 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
   const dictation = () => props.microphone?.dictation ?? null;
   const showHint = () => conversation() || dictation() !== null || hasContent(hint.toArray());
 
-  const state = () => props.state ?? "idle";
+  // Handlers such as sending read these outside any owner. A host's conditional prop is a getter that creates a
+  // computation on each read, which would never be disposed there; memos read it inside the composer's owner.
+  const state = createMemo(() => props.state ?? "idle");
   const running = () => state() === "running";
   const stopping = () => state() === "stopping";
   const runningSubmitIntent = () => props.runningSubmitIntent ?? "steer";
@@ -605,7 +625,10 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
     const fixed = new Set((props.commandSections ?? []).filter((section) => section.fixedWhileOpen).map((section) => section.id));
     return commands.filter((command) => !fixed.has(command.section ?? "") || keys.has(chatCommandKey(command)));
   });
-  const commandModel = createMemo(() =>
+  // While a pointer is down on a row, the list keeps the rows it showed at the press: rows arriving then would move the
+  // pressed row away from under the pointer, and the release would land beside it (#2079). They show after the release.
+  const [holdingRows, setHoldingRows] = createSignal(false);
+  const liveCommandModel = createMemo(() =>
     chatCommandListModel({
       query: commandQuery()?.query ?? "",
       scopes: props.commandScopes,
@@ -617,6 +640,9 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
       searching: searching(),
       fallback: commandFallbackRow(),
     }),
+  );
+  const commandModel = createMemo<ReturnType<typeof liveCommandModel>>((previous) =>
+    holdingRows() && previous ? previous : liveCommandModel(),
   );
   const commandMatches = createMemo(() => (commandQuery() ? commandModel().rows.map((row) => row.command) : []));
   /** Rows that matched; an unscoped fallback row only follows them. */
@@ -943,13 +969,123 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
       syncCaret();
     });
   };
+  /** Whether the person placed the caret in this field yet; before that, dictation starts at the end. */
+  let caretPlaced = false;
   const syncCaret = () => {
+    caretPlaced = true;
     // One update, so no effect sees a half-moved selection (it would read as "no `/` here" and reopen a closed list).
     batch(() => {
       setCaret(textareaRef?.selectionStart ?? props.value.length);
       setSelectionEnd(textareaRef?.selectionEnd ?? props.value.length);
     });
   };
+  // Live dictation writes at its own mark. Edits elsewhere move the mark and the dictated ranges along, and the
+  // person's own caret stays where it was while words arrive.
+  let dictated: TextDictationState | undefined;
+  let dictatedValue = "";
+  const [dictationView, setDictationView] = createSignal<{ mark: number; fresh: readonly (readonly [number, number])[] }>();
+  let freshWords: { from: number; to: number; at: number }[] = [];
+  let freshTimer: ReturnType<typeof setTimeout> | undefined;
+  const freshMs = 1_500;
+  const showDictation = () => {
+    if (freshTimer) clearTimeout(freshTimer);
+    freshTimer = undefined;
+    if (!dictated) {
+      freshWords = [];
+      setDictationView(undefined);
+      return;
+    }
+    const now = performance.now();
+    freshWords = freshWords.filter((word) => now - word.at < freshMs && word.to > word.from);
+    setDictationView({ mark: dictated.mark, fresh: freshWords.map((word) => [word.from, word.to] as const) });
+    if (freshWords.length) freshTimer = setTimeout(showDictation, Math.max(50, freshMs - (now - freshWords[0]!.at)));
+  };
+  createEffect(
+    on(
+      () => props.value,
+      (value) => {
+        if (!dictated || value === dictatedValue) return;
+        const previous = dictatedValue;
+        dictated = mapTextDictation(dictated, previous, value);
+        freshWords = freshWords.map((word) => ({
+          ...word,
+          from: mapTextOffset(previous, value, word.from, true),
+          to: mapTextOffset(previous, value, word.to, false),
+        }));
+        dictatedValue = value;
+        showDictation();
+      },
+    ),
+  );
+  const writeDictated = (value: string, mapSelection: (offset: number) => number) => {
+    const field = textareaRef;
+    const focused = field && field.ownerDocument.activeElement === field;
+    const start = field ? mapSelection(field.selectionStart) : 0;
+    const end = field ? mapSelection(field.selectionEnd) : 0;
+    dictatedValue = value;
+    edit(value);
+    autoResize();
+    if (!field || !focused) return;
+    const restore = () => field.setSelectionRange(Math.min(start, field.value.length), Math.min(end, field.value.length));
+    restore();
+    queueMicrotask(restore);
+  };
+  const liveDictation = createDictation({
+    source: {
+      start: (options) => props.dictation!.source.start(options),
+      devices: () => props.dictation?.source.devices() ?? Promise.resolve([]),
+    },
+    get alternative() {
+      return props.dictation?.alternative;
+    },
+    disabled: () => !props.dictation || editBlocked(),
+    target: {
+      begin: () => {
+        if (dictated) {
+          dictated = { ...dictated, fresh: true };
+          return;
+        }
+        const field = textareaRef;
+        dictated = beginTextDictation(field && caretPlaced ? Math.min(field.selectionEnd, props.value.length) : props.value.length);
+        dictatedValue = props.value;
+        freshWords = [];
+        showDictation();
+      },
+      insert: (text) => {
+        if (!dictated) return;
+        const before = dictated.mark;
+        const next = insertTextDictation(dictated, props.value, text);
+        const added = next.value.length - props.value.length;
+        if (!added) return;
+        dictated = next.state;
+        freshWords.push({ from: next.state.mark - added, to: next.state.mark, at: performance.now() });
+        writeDictated(next.value, (offset) => (offset >= before ? offset + added : offset));
+        showDictation();
+      },
+      discard: () => {
+        if (!dictated) return;
+        const state = dictated;
+        const next = discardTextDictation(state, props.value);
+        dictated = undefined;
+        writeDictated(next.value, (offset) => {
+          let moved = offset;
+          for (const [from, to] of state.ranges)
+            if (offset >= to) moved -= to - from;
+            else if (offset > from) moved -= offset - from;
+          return moved;
+        });
+        showDictation();
+      },
+      end: () => {
+        dictated = undefined;
+        showDictation();
+      },
+    },
+  });
+  onCleanup(() => {
+    if (freshTimer) clearTimeout(freshTimer);
+  });
+  const dictating = () => Boolean(props.dictation) && dictationBarShown(liveDictation);
   /** Closes the list opened from "+"; `refocus` gives the field its focus and the selection it had when "+" was pressed. */
   const endAddSearch = (refocus: boolean) => {
     const search = addSearch();
@@ -1000,14 +1136,26 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
     selectedCommandKey();
     setAnnouncement(undefined);
   });
-  const busy = () => Boolean(props.disabled || stopping() || state() === "submitting" || executing() || addingFiles());
+  const busy = createMemo(() => Boolean(props.disabled || stopping() || state() === "submitting" || executing() || addingFiles()));
   const blocked = () => busy() || submitting();
   /** The conversation field stays editable while a message is sent, so it keeps the focus and a phone its keyboard. */
   const editBlocked = () => (conversation() ? busy() : blocked());
+  // Dictation belongs to one draft in one editable field: another draft, a field that turns read-only or a host that
+  // drops the source ends it; the words so far stay.
+  // Memos compare values, so typing and arriving words never end it.
+  const dictationField = createMemo(() => `${Boolean(props.dictation)}:${editBlocked()}`);
+  const dictationDraft = createMemo(() => props.draftKey);
+  createEffect(on([dictationField, dictationDraft], () => liveDictation.end(), { defer: true }));
   const hasDraft = () => Boolean(props.value.trim() || (!running() && attachments().length > 0));
   /** The draft may go out now, apart from a submission that is already on its way. */
-  const submittable = () =>
-    !busy() && !props.submitDisabled && hasDraft() && !(running() && runningSubmitIntent() === "steer" && mentions().length);
+  const submittable = createMemo(
+    () =>
+      !busy() &&
+      !props.submitDisabled &&
+      hasDraft() &&
+      !(props.dictation && liveDictation.active()) &&
+      !(running() && runningSubmitIntent() === "steer" && mentions().length),
+  );
   const canSubmit = () => !submitting() && submittable();
   const canSelectFiles = () => Boolean(props.fileSelection && !props.fileSelection.disabled && !running() && !blocked());
   const hasAddMenu = () => Boolean(props.fileSelection || props.menuActions?.length);
@@ -2029,10 +2177,20 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
 
   const field = () => (
     <div class="k2b-chat-composer__input" role="group" aria-label={chatMessages().messageInput}>
-      <Show when={mentions().length > 0}>
+      <Show when={mentions().length > 0 || dictationView()}>
         <div ref={highlightRef} class="k2b-chat-composer__highlight" aria-hidden="true">
-          <For each={chatMentionSegments(props.value, mentions())}>
-            {(part) => <span classList={{ "k2b-chat-composer__mention": Boolean(part.mention) }}>{part.text}</span>}
+          <For
+            each={splitDictationSegments(chatMentionSegments(props.value, mentions()), dictationView()?.fresh ?? [], dictationView()?.mark)}
+          >
+            {(part) =>
+              part.mark ? (
+                <span class="k2b-dictation-mark" />
+              ) : (
+                <span classList={{ "k2b-chat-composer__mention": Boolean(part.mention), "k2b-dictation-fresh": Boolean(part.fresh) }}>
+                  {part.text}
+                </span>
+              )
+            }
           </For>
           {"\n"}
         </div>
@@ -2040,7 +2198,7 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
       {/* biome-ignore lint/a11y/useAriaPropsSupportedByRole: popup attributes are conditional with the combobox role */}
       <textarea
         ref={textareaRef}
-        classList={{ "k2b-chat-composer__textarea--highlighted": mentions().length > 0 }}
+        classList={{ "k2b-chat-composer__textarea--highlighted": mentions().length > 0 || Boolean(dictationView()) }}
         rows={1}
         value={props.value}
         // An `open` row keeps the field focused, so the list stays, and only read-only while it runs.
@@ -2120,34 +2278,67 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
     </div>
   );
 
-  const commandRowMap = createMemo(() => new Map(commandModel().rows.map((row) => [row.command, row])));
+  // A press on a row remembers its command. The host can rebuild the list, or the whole menu, between press and release;
+  // the browser then sends the click to a common ancestor (#2140). A release on the same command's new row runs it.
+  let pressedCommand: { key: string; row: HTMLElement } | undefined;
+  onMount(() => {
+    const release = (event: PointerEvent | FocusEvent) => {
+      const pressed = pressedCommand;
+      pressedCommand = undefined;
+      // After this release's click, which the browser dispatches in the same task.
+      if (holdingRows()) setTimeout(() => setHoldingRows(false));
+      if (!pressed || pressed.row.isConnected || !(event instanceof PointerEvent) || event.type !== "pointerup") return;
+      const under = document.elementFromPoint(event.clientX, event.clientY)?.closest<HTMLElement>("[data-command-key]");
+      if (!under || under.dataset.commandKey !== pressed.key || !shellRef?.contains(under)) return;
+      const command = commandRowMap().get(pressed.key)?.command;
+      if (command) void executeCommand(command);
+    };
+    window.addEventListener("pointerup", release, true);
+    window.addEventListener("pointercancel", release, true);
+    window.addEventListener("blur", release);
+    onCleanup(() => {
+      window.removeEventListener("pointerup", release, true);
+      window.removeEventListener("pointercancel", release, true);
+      window.removeEventListener("blur", release);
+    });
+  });
+  // Rows are keyed by the command's key, not its object: hosts rebuild their command objects whenever their inputs change,
+  // and a row replaced between the press and the release would swallow the click (#2140).
+  const commandRowMap = createMemo(() => new Map(commandModel().rows.map((row) => [chatCommandKey(row.command), row])));
   const commandGroupKey = (group: ReturnType<typeof commandModel>["groups"][number]) =>
     group.scopeTitle ? "scope" : group.section ? `section:${group.section.id}` : "flat";
-  const renderCommandRow = (command: ChatCommand) => {
-    const highlight = () => commandRowMap().get(command)?.highlight;
-    const title = () => command.label ?? command.name;
-    const opening = () => openingRow() === chatCommandKey(command);
-    const failure = () => openFailures()[chatCommandKey(command)];
+  const renderCommandRow = (initial: ChatCommand) => {
+    const key = chatCommandKey(initial);
+    const command = () => commandRowMap().get(key)?.command ?? initial;
+    const highlight = () => commandRowMap().get(key)?.highlight;
+    const title = () => command().label ?? command().name;
+    const opening = () => openingRow() === key;
+    const failure = () => openFailures()[key];
     return (
       <button
         class="k2b-chat-composer__command"
-        id={commandOptionId(command)}
+        id={commandOptionId(command())}
         type="button"
         role="option"
         tabIndex={-1}
-        aria-selected={selectedCommand() === command}
-        aria-disabled={Boolean(command.disabled || command.reason)}
+        aria-selected={selectedCommandKey() === key}
+        aria-disabled={Boolean(command().disabled || command().reason)}
         aria-busy={opening() ? "true" : undefined}
-        aria-describedby={command.reason ? `${commandOptionId(command)}-reason` : undefined}
-        data-reason={command.reason ? "true" : undefined}
-        data-active={selectedCommand() === command ? "true" : undefined}
+        aria-describedby={command().reason ? `${commandOptionId(command())}-reason` : undefined}
+        data-reason={command().reason ? "true" : undefined}
+        data-active={selectedCommandKey() === key ? "true" : undefined}
+        data-command-key={key}
+        onPointerDown={(event) => {
+          pressedCommand = { key, row: event.currentTarget };
+          setHoldingRows(true);
+        }}
         onMouseDown={keepFieldFocus}
         onClick={(event) => {
           event.preventDefault();
-          void executeCommand(command);
+          void executeCommand(command());
         }}
       >
-        <i class={command.icon ?? "ti ti-slash"} aria-hidden="true" />
+        <i class={command().icon ?? "ti ti-slash"} aria-hidden="true" />
         <span class="k2b-chat-composer__command-text">
           <strong>
             <Show when={highlight()} fallback={title()}>
@@ -2161,26 +2352,26 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
             </Show>
           </strong>
           <Show
-            when={command.open && !command.reason}
+            when={command().open && !command().reason}
             fallback={
-              <Show when={command.reason ?? command.description}>
-                <small id={command.reason ? `${commandOptionId(command)}-reason` : undefined}>
-                  {command.reason ?? command.description}
+              <Show when={command().reason ?? command().description}>
+                <small id={command().reason ? `${commandOptionId(command())}-reason` : undefined}>
+                  {command().reason ?? command().description}
                 </small>
               </Show>
             }
           >
             {/* The busy line shares the description's place, so the row keeps its height while it opens. */}
             <span class="k2b-chat-composer__command-detail" data-state={opening() ? "busy" : failure() ? "failed" : undefined}>
-              <small aria-hidden={opening() ? "true" : undefined}>{failure() ?? command.description}</small>
+              <small aria-hidden={opening() ? "true" : undefined}>{failure() ?? command().description}</small>
               <small aria-hidden={opening() ? undefined : "true"}>
                 <i class="ti ti-loader-2 k2b-spin" aria-hidden="true" />
-                {command.busyLabel ?? chatMessages().commandOpening}
+                {command().busyLabel ?? chatMessages().commandOpening}
               </small>
             </span>
           </Show>
         </span>
-        <Show when={command.selected}>
+        <Show when={command().selected}>
           <span class="k2b-chat-composer__command-end">
             <i class="ti ti-check" aria-hidden="true" />
             <span class="k2b-sr-only">{chatMessages().commandSelected}</span>
@@ -2332,9 +2523,10 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
                     const group = createMemo(() => commandModel().groups.find((group) => commandGroupKey(group) === key));
                     const headingId = () =>
                       `${commandListId}-g-${key === "scope" ? "scope" : props.commandSections?.findIndex((section) => section.id === group()?.section?.id)}`;
-                    const rows = () => group()?.rows.map((row) => row.command) ?? [];
+                    const rows = () => group()?.rows.map((row) => chatCommandKey(row.command)) ?? [];
+                    const row = (key: string) => commandRowMap().get(key)!.command;
                     return (
-                      <Show when={key !== "flat"} fallback={<For each={rows()}>{renderCommandRow}</For>}>
+                      <Show when={key !== "flat"} fallback={<For each={rows()}>{(key) => renderCommandRow(row(key))}</For>}>
                         <div class="k2b-chat-composer__command-group" role="group" aria-labelledby={headingId()}>
                           <div class="k2b-chat-composer__command-heading" id={headingId()} role="presentation">
                             <span>{group()?.scopeTitle ?? group()?.section?.label}</span>
@@ -2342,7 +2534,7 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
                               <i class="ti ti-loader-2 k2b-spin" aria-hidden="true" />
                             </Show>
                           </div>
-                          <For each={rows()}>{renderCommandRow}</For>
+                          <For each={rows()}>{(key) => renderCommandRow(row(key))}</For>
                           <Index each={Array.from({ length: Math.max(group()?.placeholder ? 1 : 0, group()?.pendingRows ?? 0) })}>
                             {() => (
                               <div class="k2b-chat-composer__command-placeholder" aria-hidden="true">
@@ -2400,6 +2592,8 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
         class={`k2b-chat-composer ${props.class ?? ""}`}
         data-running={running() ? "true" : undefined}
         data-variant={conversation() ? "conversation" : undefined}
+        data-invalid={props.error ? "true" : undefined}
+        data-disabled={props.disabled ? "true" : undefined}
         role="group"
         aria-label={props.label ?? chatMessages().messageComposer}
       >
@@ -2460,7 +2654,9 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
                 <div class="k2b-chat-composer__attachment" role="listitem">
                   <div
                     class="k2b-chat-composer__attachment-content"
-                    classList={{ "k2b-chat-composer__attachment-content--action": Boolean(attachment.action) }}
+                    classList={{
+                      "k2b-chat-composer__attachment-content--action": Boolean(attachment.action) || attachment.progress !== undefined,
+                    }}
                   >
                     <Show
                       when={attachment.href}
@@ -2494,11 +2690,19 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
                         </a>
                       )}
                     </Show>
-                    <Show when={attachment.action}>
+                    <Show when={attachment.progress !== undefined}>
+                      <span class="k2b-chat-composer__attachment-action k2b-chat-composer__attachment-progress">
+                        <ProgressRing value={attachment.progress ?? 0} label={chatMessages().uploading({ name: attachment.name })} />
+                        {new Intl.NumberFormat(locale(), { style: "percent" }).format(Math.round(attachment.progress ?? 0) / 100)}
+                      </span>
+                    </Show>
+                    <Show when={attachment.progress === undefined && attachment.action}>
                       {(action) => (
                         <button
                           type="button"
                           class="k2b-chat-composer__attachment-action"
+                          data-tone={action().variant === "danger" ? "danger" : undefined}
+                          data-waiting={action().disabled ? "" : undefined}
                           disabled={blocked() || action().disabled}
                           onClick={() => reportChatFailure(() => executeChatAction(action()), props.onError)}
                         >
@@ -2542,7 +2746,7 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
 
               <footer class="k2b-chat-composer__footer">
                 <Show
-                  when={footer()}
+                  when={dictating() || footer()}
                   fallback={
                     <>
                       <div class="k2b-chat-composer__tools">
@@ -2610,13 +2814,18 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
                           {(usage) => <ContextUsage {...usage()} action={props.contextPopupAction} onActionError={props.onError} />}
                         </Show>
                         {props.submitTools}
+                        <Show when={props.dictation}>
+                          <DictationButton dictation={liveDictation} class="k2b-chat-composer__icon-action" cardAnchor={() => shellRef} />
+                        </Show>
                         {microphoneControl()}
                         {sendControl()}
                       </div>
                     </>
                   }
                 >
-                  {footer()}
+                  <Show when={dictating()} fallback={footer()}>
+                    <DictationBar dictation={liveDictation} />
+                  </Show>
                 </Show>
               </footer>
             </>
@@ -2628,7 +2837,12 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
               {props.error}
             </div>
           </Show>
-          {formatRow()}
+          {/* While dictating, the bar takes the row above the field, as formatting does; the field stays put. */}
+          <Show when={dictating()} fallback={formatRow()}>
+            <div class="k2b-chat-composer__dictation">
+              <DictationBar dictation={liveDictation} />
+            </div>
+          </Show>
           {/* One row: attach, the field with its tools, and Send. */}
           <div class="k2b-chat-composer__row">
             {attachControl()}
@@ -2638,6 +2852,9 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
               <div class="k2b-chat-composer__field-tools">
                 {formatToggle()}
                 {emojiButton()}
+                <Show when={props.dictation}>
+                  <DictationButton dictation={liveDictation} class="k2b-chat-composer__icon-action" cardAnchor={() => shellRef} />
+                </Show>
                 {microphoneControl()}
               </div>
             </div>

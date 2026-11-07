@@ -1,11 +1,11 @@
 import { afterAll, afterEach, beforeAll, beforeEach, expect, setSystemTime, spyOn, test } from "bun:test";
-import { sql } from "bun";
 import { generateKeyPair } from "jose";
 import { z } from "zod";
 import { suiteFor } from "../../../../../scripts/fixtures/test-infra";
 import { dispatchCapability } from "../../api/capabilities";
 import * as executions from "../../capabilities/executions";
 import { listCapabilityExecutions, migrateCloudCapabilities } from "../../capabilities/executions";
+import { sql } from "../../runtime/clients";
 import { requestCacheRedis } from "../request-cache-redis";
 import { createApiToken } from "../service-account-credentials";
 import { createTestBrowserSignIn } from "../session/session.test-fixture";

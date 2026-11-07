@@ -1,8 +1,9 @@
 import { describe, expect, jest, mock, setSystemTime, spyOn, test } from "bun:test";
 import { ok } from "@k2b/stdlib";
-import { sql } from "bun";
+import { Hono } from "hono";
 import { generateKeyPair } from "jose";
 import { z } from "zod";
+import { useUnitClients } from "../../../../scripts/fixtures/unit-clients";
 import { futureLibrary } from "../../test/future-capability-manifest";
 import { compileCapabilities } from "../_internal/capabilities";
 import { compileReviewFixture, outcomeCheckCases, receiptCases, reviewCases } from "../_internal/capability-review.test-fixture";
@@ -11,10 +12,14 @@ import { resolveLiveCapabilityRegistryEntry } from "../_internal/registry";
 import { env } from "../config/env";
 import { CapabilityCatalogSchema, defineCapabilities } from "../contracts/capabilities";
 import type { AppRegistryEntry, CapabilityRegistryEntry } from "../contracts/registry";
+import { sql } from "../runtime/clients";
+import { stubConnections } from "../runtime/connections.test-fixture";
 import { auth, type RequestAuthority } from "../server";
 import { AppAccessDeniedError } from "../server/middleware/app-access";
+import { sessionOriginGuard } from "../server/middleware/session-origin";
 import { signInvocationToken } from "../services/identity/invocation-token";
 import type { withActiveIdentitySigner } from "../services/identity/key-ring";
+import * as settings from "../services/settings";
 import {
   createCapabilityRoutes as buildCapabilityRoutes,
   type CapabilityRouteDependencies,
@@ -22,7 +27,9 @@ import {
   dispatchCapability as performDispatch,
 } from "./capabilities";
 
-Object.defineProperty(env, "APP_SECRET", { value: "capability-stream-tests-only", configurable: true });
+useUnitClients();
+
+stubConnections({ appSecret: { current: "capability-stream-tests-only" } });
 
 // The dispatcher records executions and idempotency claims through the store.
 // This suite is a unit test of the dispatch path: keep it away from any database.
@@ -173,6 +180,75 @@ const dispatchCapability = (params: Parameters<typeof performDispatch>[0]) =>
   });
 
 describe("capability API", () => {
+  test("session origin guard rejects simple-body capability Actions before authentication, parsing or provider dispatch", async () => {
+    const origin = "https://cloud.example.test";
+    const authenticateSession = jest.fn(credentialAuthenticate);
+    const getCapability = jest.fn(async () => entry());
+    const fetchProvider = jest.fn(async () => Response.json({ data: { id: "one", name: "Two" } }));
+    const routes = new Hono()
+      .use(
+        "*",
+        sessionOriginGuard([], async () => origin),
+      )
+      .route("/api", createCapabilityRoutes({ authenticate: authenticateSession, getCapability, fetch: fetchProvider }));
+    const path = "http://core.internal/api/capabilities/v1/actions/demo/rename";
+    const input = { id: "one", name: "Two" };
+    const json = JSON.stringify({ input });
+    const rejectedOrigins: Record<string, string>[] = [
+      { Origin: "https://sibling.example.test", "Sec-Fetch-Site": "same-site" },
+      { Origin: "https://sibling.example.test" },
+      { Origin: origin, "Sec-Fetch-Site": "same-site" },
+      { Origin: "https://attacker.test", "Sec-Fetch-Site": "cross-site" },
+      { Origin: "null" },
+      {},
+    ];
+    for (const cookie of ["session_token", "pwa_session"]) {
+      for (const contentType of [
+        "text/plain",
+        "application/x-www-form-urlencoded",
+        "multipart/form-data",
+        "application/json",
+        "bodyless",
+      ]) {
+        for (const originHeaders of rejectedOrigins) {
+          const headers = new Headers({ Cookie: `${cookie}=session-token`, ...originHeaders });
+          const form = new FormData();
+          form.set("input", JSON.stringify(input));
+          const body =
+            contentType === "bodyless"
+              ? undefined
+              : contentType === "multipart/form-data"
+                ? form
+                : contentType === "application/x-www-form-urlencoded"
+                  ? new URLSearchParams({ input: JSON.stringify(input) })
+                  : json;
+          if (contentType !== "bodyless" && contentType !== "multipart/form-data") headers.set("Content-Type", contentType);
+          const request = new Request(path, { method: "POST", headers, body });
+          const response = await routes.fetch(request);
+          expect(response.status).toBe(403);
+          expect(await response.json()).toMatchObject({ code: "INVALID_ORIGIN" });
+          expect(request.bodyUsed).toBe(false);
+          expect(authenticateSession).not.toHaveBeenCalled();
+          expect(getCapability).not.toHaveBeenCalled();
+          expect(fetchProvider).not.toHaveBeenCalled();
+        }
+      }
+    }
+    // The route accepts JSON bytes in text/plain. The mandatory
+    // Origin boundary, before this reader, prevents that from becoming CSRF.
+    for (const cookie of ["session_token", "pwa_session"]) {
+      const response = await routes.request(path, {
+        method: "POST",
+        headers: { Cookie: `${cookie}=session-token`, Origin: origin, "Sec-Fetch-Site": "same-origin", "Content-Type": "text/plain" },
+        body: json,
+      });
+      expect(response.status).toBe(200);
+      expect(await response.json()).toMatchObject({ data: input });
+    }
+    expect(authenticateSession).toHaveBeenCalledTimes(2);
+    expect(fetchProvider).toHaveBeenCalledTimes(2);
+  });
+
   test("event catalog uses full literal type IDs and includes authorized subscribers outside the page", async () => {
     const schema = z.strictObject({ id: z.uuid() });
     const publisher = {
@@ -908,7 +984,7 @@ describe("capability API", () => {
     const routes = createCapabilityRoutes({
       getCapability: async () => entry(),
       authenticate,
-      fetch: async () => Response.json({ code: "RATE_LIMITED", message: "Retry later" }, { status: 429 }),
+      fetch: async () => Response.json({ code: "RATE_LIMITED", message: "Retry later", details: { retryAfter: 7 } }, { status: 429 }),
     });
     const response = await routes.request("/capabilities/v1/queries/demo/get", {
       method: "POST",
@@ -916,7 +992,23 @@ describe("capability API", () => {
       body: JSON.stringify({ input: { id: "one" } }),
     });
     expect(response.status).toBe(429);
-    expect(await response.json()).toEqual({ code: "RATE_LIMITED", message: "Retry later" });
+    expect(response.headers.get("retry-after")).toBe("7");
+    expect(await response.json()).toEqual({ code: "RATE_LIMITED", message: "Retry later", details: { retryAfter: 7 } });
+  });
+
+  test.each([0, -1, 1.5, "7", Number.MAX_SAFE_INTEGER + 1])("throttling omits invalid Retry-After %p", async (retryAfter) => {
+    const routes = createCapabilityRoutes({
+      getCapability: async () => entry(),
+      authenticate,
+      fetch: async () => Response.json({ code: "RATE_LIMITED", message: "Retry later", details: { retryAfter } }, { status: 429 }),
+    });
+    const response = await routes.request("/capabilities/v1/queries/demo/get", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ input: { id: "one" } }),
+    });
+    expect(response.status).toBe(429);
+    expect(response.headers.get("retry-after")).toBeNull();
   });
 
   test("dispatches only advertised Action reviews through the read-only review route", async () => {
@@ -1953,13 +2045,20 @@ test("calendar sources are discovered and read through Core's normal capability 
     },
   });
   const previous = env.CLOUD_CORE_INTERNAL_ORIGIN;
+  const publicOrigin = "https://cloud.example.test";
+  // The trusted cookie transport reads app.url to stamp Core's required Origin.
+  // This unit fixture supplies that setting instead of consulting infrastructure.
+  const appUrl = spyOn(settings, "get").mockResolvedValue(`${publicOrigin}/configured/path`);
   Object.defineProperty(env, "CLOUD_CORE_INTERNAL_ORIGIN", { value: "http://core.test", configurable: true });
   try {
     const credentials = {
-      cookie: "session=test",
+      cookie: "session_token=session-token",
       requestId: "calendar-wire",
       locale: "en",
-      transport: async (request: Request) => routes.request(new Request(request.url.replace("/api/", "/"), request)),
+      transport: async (request: Request) => {
+        expect(request.headers.get("Origin")).toBe(publicOrigin);
+        return routes.request(new Request(request.url.replace("/api/", "/"), request));
+      },
     };
     const sources = await listCalendarSources(credentials, { deadline: Date.now() + 2500 });
     expect(sources).toMatchObject([{ appId: "absence", state: "ok", calendars: [descriptor] }]);
@@ -1973,8 +2072,43 @@ test("calendar sources are discovered and read through Core's normal capability 
     expect(result.items).toEqual([{ ...deadline, appId: "absence" }]);
     expect(result.sources).toEqual([{ appId: "absence", state: "ok", error: null }]);
     expect(upstream).toEqual(["calendars", "events"]);
+    expect(appUrl.mock.calls.every(([key]) => key === "app.url")).toBe(true);
   } finally {
+    appUrl.mockRestore();
     Object.defineProperty(env, "CLOUD_CORE_INTERNAL_ORIGIN", { value: previous, configurable: true });
     setSystemTime();
+  }
+});
+
+test("invocation issuance preserves temporary app unavailability without calling the provider", async () => {
+  const { AppAccessUnavailableError } = await import("../services/app-access");
+  const fetch = mock(async () => Response.json({ data: { id: "one" } }));
+  const response = await queryDispatch({
+    getCapability: async () => entry(),
+    signInvocation: async () => {
+      throw new AppAccessUnavailableError(summary(entry()));
+    },
+    fetch,
+  });
+  expect(response.status).toBe(503);
+  expect(response.headers.get("retry-after")).toBe("1");
+  expect(await response.json()).toMatchObject({ code: "app_access_unavailable", app: "demo" });
+  expect(fetch).not.toHaveBeenCalled();
+});
+
+test("Command resolution preserves temporary app unavailability", async () => {
+  const access = await import("../services/app-access");
+  const check = spyOn(access, "canUseApp").mockRejectedValue(new access.AppAccessUnavailableError(summary(entry())));
+  const routes = buildCapabilityRoutes({ authenticate, listApps: async () => [summary(entry())] });
+  try {
+    const response = await routes.request("/capabilities/v1/commands/demo/compose", {
+      method: "POST",
+      body: JSON.stringify({ input: {} }),
+    });
+    expect(response.status).toBe(503);
+    expect(response.headers.get("retry-after")).toBe("1");
+    expect(await response.json()).toMatchObject({ code: "app_access_unavailable", app: "demo" });
+  } finally {
+    check.mockRestore();
   }
 });

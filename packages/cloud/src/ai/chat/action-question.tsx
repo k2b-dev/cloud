@@ -823,6 +823,8 @@ export type ActionQuestionProps = {
   remember?: { label: string; onSelect: () => void | Promise<void> };
   /** Turns the confirming answers off; this reason replaces the asking reason in its place. */
   unavailable?: string;
+  /** Turns every answer off until it clears, such as without a connection; this reason replaces the others. */
+  waiting?: string;
   anchorId?: string | number;
   class?: string;
 };
@@ -844,6 +846,7 @@ export function ActionQuestion(props: ActionQuestionProps) {
         sentence={<ActionTextView text={props.card.question} accent={props.card.app.accent} />}
         reason={{ text: props.card.reason.text, icon: props.card.reason.icon, tone: props.card.reason.tone }}
         unavailable={unavailable() ? { text: unavailable()!, icon: "ti ti-player-pause", tone: "neutral" } : undefined}
+        waiting={props.waiting ? { text: props.waiting, icon: "ti ti-wifi-off", tone: "neutral" } : undefined}
         preview={<ActionPreview card={props.card} timeZone={props.timeZone} onContentLoaded={setLoadedContent} />}
         confirm={{
           label: props.card.confirm.label,

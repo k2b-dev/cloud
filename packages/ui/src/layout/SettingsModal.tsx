@@ -1,5 +1,6 @@
-import { children, createEffect, createMemo, createSignal, createUniqueId, For, type JSX, Show } from "solid-js";
+import { type Accessor, children, createEffect, createMemo, createSignal, createUniqueId, For, type JSX, Show } from "solid-js";
 import { IconButton } from "../actions/Button";
+import { revealInScroller } from "../internal/reveal-in-scroller";
 import { useUiMessages } from "../intl/messages";
 import { createScrollFade } from "./scroll-fade";
 import { useSettingsMessages } from "./settings-messages";
@@ -37,6 +38,8 @@ type SettingsModalTabDefinition = {
 type SettingsModalGroupDefinition = {
   readonly kind: typeof SETTINGS_MODAL_GROUP;
   readonly props: SettingsModalGroupProps;
+  /** The group's children, created once and resolved like `children()`, so a `<Show>` tab follows its condition. */
+  readonly resolved: Accessor<unknown>;
 };
 
 type SettingsModalFooterDefinition = {
@@ -77,7 +80,7 @@ const isFooterDefinition = (value: unknown): value is SettingsModalFooterDefinit
 
 const collectTabs = (value: unknown): SettingsModalTabDefinition[] => {
   if (Array.isArray(value)) return value.flatMap(collectTabs);
-  if (isGroupDefinition(value)) return collectTabs(value.props.children);
+  if (isGroupDefinition(value)) return collectTabs(value.resolved());
   return isTabDefinition(value) ? [value] : [];
 };
 
@@ -107,7 +110,10 @@ function SettingsModalTab(props: SettingsModalTabProps): JSX.Element {
 }
 
 function SettingsModalGroup(props: SettingsModalGroupProps): JSX.Element {
-  return { kind: SETTINGS_MODAL_GROUP, props } satisfies SettingsModalGroupDefinition as unknown as JSX.Element;
+  // The modal's own `children()` does not reach into a group. Resolving here keeps the other tabs of a group the same
+  // objects when a conditional tab comes or goes, so the open panel and its unsaved input stay in place.
+  const resolved = children(() => props.children);
+  return { kind: SETTINGS_MODAL_GROUP, props, resolved } satisfies SettingsModalGroupDefinition as unknown as JSX.Element;
 }
 
 function SettingsModalFooter(props: SettingsModalFooterProps): JSX.Element {
@@ -144,9 +150,10 @@ const SettingsModal = ((props: SettingsModalProps): JSX.Element => {
   // `defaultTab`, `activeTab` and clicks can select a category past the edge of the scrolling row or rail.
   createEffect(() => {
     const id = resolvedActiveTabId();
-    queueMicrotask(() => tabRefs.get(id)?.scrollIntoView?.({ block: "nearest", inline: "nearest" }));
+    queueMicrotask(() => revealInScroller(tabList, tabRefs.get(id)));
   });
-  const activeTab = () => tabs().find((tab) => tab.props.id === resolvedActiveTabId()) ?? null;
+  // A memo, so a change elsewhere in the tab list does not create the open panel again.
+  const activeTab = createMemo(() => tabs().find((tab) => tab.props.id === resolvedActiveTabId()) ?? null);
   const resolvedPanelChildren = children(() => activeTab()?.props.children);
   const panelChildren = createMemo(() => splitPanelChildren(resolvedPanelChildren()));
 
@@ -192,7 +199,7 @@ const SettingsModal = ((props: SettingsModalProps): JSX.Element => {
         onKeyDown={(event) => moveTabFocus(event, tab.props.id)}
       >
         <Show when={tab.props.icon}>{(icon) => <i class={icon()} aria-hidden="true" />}</Show>
-        <span class="k2b-truncate-fade">{tab.props.title}</span>
+        <span class="k2b-truncate-fade-lines">{tab.props.title}</span>
       </button>
     );
   };
@@ -220,7 +227,7 @@ const SettingsModal = ((props: SettingsModalProps): JSX.Element => {
                   <span class="k2b-settings__tab-group-label k2b-truncate-fade" aria-hidden="true">
                     {entry.props.title}
                   </span>
-                  <For each={collectTabs(entry.props.children)}>{(tab) => TabButton(tab)}</For>
+                  <For each={collectTabs(entry.resolved())}>{(tab) => TabButton(tab)}</For>
                 </div>
               ) : (
                 TabButton(entry)

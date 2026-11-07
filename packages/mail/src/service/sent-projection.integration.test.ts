@@ -1,9 +1,9 @@
 import { afterAll, beforeAll, expect, spyOn, test } from "bun:test";
-import { Readable } from "node:stream";
+import { Readable, Writable } from "node:stream";
+import { sql } from "@k2b/cloud";
 import { serviceAccountCredentials } from "@k2b/cloud/services";
 import { createTestBrowserSignIn } from "@k2b/cloud/services/session/session.test-fixture";
-import { sql } from "bun";
-import type { FetchMessageObject, MessageAddressObject } from "imapflow";
+import { type FetchMessageObject, ImapFlow, type MessageAddressObject } from "imapflow";
 import { type AddressObject, simpleParser } from "mailparser";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import { reviewedDraftContentHash } from "../../test/fixtures/send-content";
@@ -48,6 +48,10 @@ import { createProviderConnection } from "./provider-connections";
 import { getScheduledSend } from "./scheduled-sends";
 import { enqueueFolderReconciliation, hydrateMessageBatch, ingestEnvelope, syncFolderBatch } from "./sync-runtime";
 import { loadMailboxPageData, resolveWorkspaceRequest } from "./workspace";
+
+// Keep the real connector operations for tests that fake only the wire transport.
+const realAppendSource = imapSmtpConnector.appendSource;
+const realFindMessageById = imapSmtpConnector.findMessageById;
 
 const markComposeTemplateSegment = (source: string): string => `\u2063${source}\u2064`;
 
@@ -195,6 +199,29 @@ const createProvider = (kind: ProviderKind) => {
     } as FetchMessageObject;
   };
 
+  const append: typeof imapSmtpConnector.appendSource = async (_config, path, source, _length, flags, internalDate) => {
+    appends.push(path);
+    const bytes = await readAll(source);
+    const during = path === draftsPath ? duringNextDraftAppend : null;
+    if (during) {
+      duringNextDraftAppend = null;
+      await during(bytes);
+    }
+    const stored = await store(bytes, path, flags ?? [], internalDate ?? undefined);
+    return { uidValidity: folder(path).uidValidity, uid: stored.uid };
+  };
+  const find: typeof imapSmtpConnector.findMessageById = async (_config, path, messageId) => {
+    searches += 1;
+    if (failingSearches > 0) {
+      failingSearches -= 1;
+      throw Object.assign(new Error("Connection failed"), { code: searchFailureCode });
+    }
+    return [...folder(path).entries.entries()]
+      .filter(([, message]) => !unindexed.has(message) && message.messageId?.toLowerCase() === messageId.trim().toLowerCase())
+      .map(([uid]) => uid)
+      .sort((left, right) => left - right);
+  };
+
   const spies = [
     spyOn(imapSmtpConnector, "getFolderStatus").mockImplementation(async (_config, path) => {
       const during = path === draftsPath ? duringNextDraftsStatus : null;
@@ -255,28 +282,8 @@ const createProvider = (kind: ProviderKind) => {
         messageId: request.messageId,
       };
     }),
-    spyOn(imapSmtpConnector, "appendSource").mockImplementation(async (_config, path, source, _length, flags, internalDate) => {
-      appends.push(path);
-      const bytes = await readAll(source);
-      const during = path === draftsPath ? duringNextDraftAppend : null;
-      if (during) {
-        duringNextDraftAppend = null;
-        await during(bytes);
-      }
-      const stored = await store(bytes, path, flags ?? [], internalDate ?? undefined);
-      return { uidValidity: folder(path).uidValidity, uid: stored.uid };
-    }),
-    spyOn(imapSmtpConnector, "findMessageById").mockImplementation(async (_config, path, messageId) => {
-      searches += 1;
-      if (failingSearches > 0) {
-        failingSearches -= 1;
-        throw Object.assign(new Error("Connection failed"), { code: searchFailureCode });
-      }
-      return [...folder(path).entries.entries()]
-        .filter(([, message]) => !unindexed.has(message) && message.messageId?.toLowerCase() === messageId.trim().toLowerCase())
-        .map(([uid]) => uid)
-        .sort((left, right) => left - right);
-    }),
+    spyOn(imapSmtpConnector, "appendSource").mockImplementation(append),
+    spyOn(imapSmtpConnector, "findMessageById").mockImplementation(find),
     spyOn(imapSmtpConnector, "getMessageState").mockImplementation(async (_config, target) => {
       const message = folder(target.folderPath).entries.get(target.uid);
       const flags = [...(message?.flags.get(target.folderPath) ?? [])];
@@ -331,8 +338,11 @@ const createProvider = (kind: ProviderKind) => {
       failingSearches = count;
       searchFailureCode = code;
     },
-    failNextSubmission: (code: string, afterTransfer: boolean) => {
-      submissionFailure = { error: Object.assign(new Error(`SMTP failure ${code}`), { code, command: "CONN" }), afterTransfer };
+    failNextSubmission: (code: string, afterTransfer: boolean, responseCode?: number) => {
+      submissionFailure = {
+        error: Object.assign(new Error(`SMTP failure ${code}`), { code, command: "CONN", ...(responseCode ? { responseCode } : {}) }),
+        afterTransfer,
+      };
     },
     refuseRecipient: (address: string) => {
       refusedRecipients.add(address);
@@ -347,6 +357,14 @@ const createProvider = (kind: ProviderKind) => {
     searches: () => searches,
     messagesWithId: (path: string, messageId: string) =>
       [...folder(path).entries.values()].filter((message) => message.messageId?.toLowerCase() === messageId.toLowerCase()),
+    useRealSentTransport: () => {
+      spyOn(imapSmtpConnector, "appendSource").mockImplementation((config, path, ...args) =>
+        (path === sentPath ? realAppendSource : append)(config, path, ...args),
+      );
+      spyOn(imapSmtpConnector, "findMessageById").mockImplementation((config, path, ...args) =>
+        (path === sentPath ? realFindMessageById : find)(config, path, ...args),
+      );
+    },
     restore: () => {
       for (const spy of spies) spy.mockRestore();
     },
@@ -354,6 +372,63 @@ const createProvider = (kind: ProviderKind) => {
 };
 
 type Provider = ReturnType<typeof createProvider>;
+
+/** Real connector searches, streaming APPEND and shared-session lifecycle; only the wire is fake. */
+const sentWire = (provider: Provider, dropAfterLookup = false) => {
+  provider.useRealSentTransport();
+  let connections = 0;
+  const submissionsAtConnect: number[] = [];
+  const connect = spyOn(ImapFlow.prototype, "connect").mockImplementation(async function (this: ImapFlow) {
+    connections += 1;
+    submissionsAtConnect.push(provider.submissions());
+    if (dropAfterLookup && connections > 1) throw Object.assign(new Error("Connection dropped"), { code: "ECONNRESET" });
+    const client = this;
+    const chunks: Buffer[] = [];
+    Object.assign(client, {
+      usable: true,
+      writeSocket: new Writable({
+        write(chunk, _encoding, callback) {
+          chunks.push(Buffer.from(chunk));
+          callback();
+        },
+      }),
+      async logout() {
+        client.usable = false;
+      },
+      close() {
+        client.usable = false;
+      },
+      async getMailboxLock(path: string) {
+        expect(path).toBe(provider.sentPath);
+        return { release() {} };
+      },
+      async search(query: { header: { "message-id": string } }) {
+        if (dropAfterLookup) client.usable = false;
+        return [...provider.folder(provider.sentPath).entries]
+          .filter(([, message]) => message.messageId === query.header["message-id"])
+          .map(([uid]) => uid);
+      },
+      async fetchOne(uid: number) {
+        return { envelope: { messageId: provider.folder(provider.sentPath).entries.get(uid)?.messageId } };
+      },
+      async exec(command: string, _attributes: unknown[], options: { onPlusTag(): Promise<void> }) {
+        expect(command).toBe("APPEND");
+        await options.onPlusTag();
+        const source = Buffer.concat(chunks).subarray(0, -2).toString();
+        const { uid } = await provider.storeIn(provider.sentPath, source, ["\\Seen"]);
+        return {
+          response: {
+            attributes: [
+              { section: [{ value: "APPENDUID" }, { value: provider.folder(provider.sentPath).uidValidity }, { value: String(uid) }] },
+            ],
+          },
+          next() {},
+        };
+      },
+    });
+  });
+  return { connect, connections: () => connections, submissionsAtConnect };
+};
 
 const verification = (kind: ProviderKind): ConnectorVerification => ({
   authenticatedPrincipal: OWNER,
@@ -428,8 +503,9 @@ const waitFor = async (ready: () => Promise<boolean>, what: string, timeoutMs = 
 
 /**
  * The draft projection worker this suite runs exports, imports, and retires drafts under the same
- * provider lease as sync and hydration. Their jobs wait out that routine contention instead of
- * failing, and so do the direct calls here.
+ * provider lease as sync, hydration, and sends. Their jobs wait out that routine contention instead
+ * of failing, and so do the direct calls here: a sync or hydration finds it as `SYNC_BUSY`, a send as
+ * `REMOTE_RESOURCE_BUSY`, which the outbox job resubmits (#2522).
  */
 const whenProviderFree = async <T>(work: () => Promise<T>, timeoutMs = 60_000): Promise<T> => {
   const deadline = Date.now() + timeoutMs;
@@ -437,7 +513,7 @@ const whenProviderFree = async <T>(work: () => Promise<T>, timeoutMs = 60_000): 
     try {
       return await work();
     } catch (error) {
-      const busy = error instanceof Error && "code" in error && error.code === "SYNC_BUSY";
+      const busy = error instanceof Error && "code" in error && (error.code === "SYNC_BUSY" || error.code === "REMOTE_RESOURCE_BUSY");
       if (!busy || Date.now() >= deadline) throw error;
       await Bun.sleep(25);
     }
@@ -492,7 +568,9 @@ suite("mail sent message projection", () => {
     for (const userId of userIds) await sql`DELETE FROM auth.users WHERE id = ${userId}::uuid`;
   });
 
-  const connect = async (provider: Provider) => {
+  const connect = async (provider: Provider, realTransport = false) => {
+    // The wire fixture uses a public literal to avoid DNS while keeping endpoint policy real.
+    const imapHost = realTransport ? "93.184.216.34" : `imap.${provider.kind}.example.test`;
     const mailbox = await createMailbox(context, { name: `Sent projection ${provider.kind} ${suffix}` });
     if (!mailbox.ok) throw new Error(mailbox.error.message);
     mailboxIds.push(mailbox.data.id);
@@ -507,7 +585,7 @@ suite("mail sent message projection", () => {
           name: `Sent projection ${provider.kind}`,
           email: OWNER,
           username: OWNER,
-          imap: { host: `imap.${provider.kind}.example.test`, port: 993, tlsMode: "implicit" },
+          imap: { host: imapHost, port: 993, tlsMode: "implicit" },
           smtp: { host: `smtp.${provider.kind}.example.test`, port: 587, tlsMode: "starttls" },
           secret: { kind: "password", password: "fixture-secret" },
         },
@@ -517,7 +595,7 @@ suite("mail sent message projection", () => {
       const evidence = {
         version: 1,
         serverKey: sha256Json({
-          host: `imap.${provider.kind}.example.test`,
+          host: imapHost,
           port: 993,
           tlsMode: "implicit",
           serverInfo: { name: provider.kind },
@@ -631,7 +709,7 @@ suite("mail sent message projection", () => {
     revision: number,
     key: string,
     expectedState = "sent",
-    options: { as?: MailRequestContext } = {},
+    options: { as?: MailRequestContext; previousEffect?: boolean } = {},
   ) => {
     const command = await createActorCommand({
       context: options.as ?? context,
@@ -654,7 +732,13 @@ suite("mail sent message projection", () => {
       WHERE command_id = ${command.data.id}::uuid
       RETURNING id, stable_message_id, message_id
     `;
-    expect(await executeOutboxSubmission(outbox!.id)).toBe(expectedState);
+    if (options.previousEffect) {
+      await sql`UPDATE mail.outbox_submissions SET attempt = 1 WHERE id = ${outbox!.id}::uuid`;
+      await sql`UPDATE mail.commands SET attempt = 1, provider_effect_attempt = 1, provider_effect_started_at = now()
+        WHERE id = ${command.data.id}::uuid`;
+    }
+    // The worker may still export the draft or retire an earlier one; the send waits its turn like the outbox job.
+    expect(await whenProviderFree(() => executeOutboxSubmission(outbox!.id))).toBe(expectedState);
     return outbox!;
   };
 
@@ -926,6 +1010,79 @@ suite("mail sent message projection", () => {
     }
   });
 
+  test("a fresh send uses one real IMAP connection for Sent and one SMTP submission", async () => {
+    const provider = createProvider("imap");
+    let wire: ReturnType<typeof sentWire> | undefined;
+    try {
+      const mailbox = await connect(provider, true);
+      const draft = await newDraft(mailbox, "One send session");
+      wire = sentWire(provider);
+      const outbox = await send(mailbox, draft.id, draft.revision, "one-send-session");
+      expect(wire.connections()).toBe(1);
+      expect(wire.submissionsAtConnect).toEqual([1]);
+      expect(provider.submissions()).toBe(1);
+      expect(provider.messagesWithId("Sent", outbox.stable_message_id)).toHaveLength(1);
+      expect(await delivery(outbox.id)).toMatchObject({ state: "sent", command_state: "confirmed" });
+    } finally {
+      wire?.connect.mockRestore();
+      provider.restore();
+    }
+  });
+
+  test("a dropped Sent session after SMTP keeps the delivery confirmed and never resends", async () => {
+    const provider = createProvider("imap");
+    let wire: ReturnType<typeof sentWire> | undefined;
+    try {
+      const mailbox = await connect(provider, true);
+      const draft = await newDraft(mailbox, "Sent session dropped");
+      wire = sentWire(provider, true);
+      const outbox = await send(mailbox, draft.id, draft.revision, "sent-session-dropped", "sent_sync_pending");
+      expect(wire.connections()).toBeGreaterThan(1);
+      expect(provider.submissions()).toBe(1);
+      expect(await delivery(outbox.id)).toMatchObject({ state: "sent_sync_pending", command_state: "confirmed", draft_state: "sent" });
+      expect(provider.messagesWithId("Sent", outbox.stable_message_id)).toHaveLength(0);
+    } finally {
+      wire?.connect.mockRestore();
+      provider.restore();
+    }
+  });
+
+  for (const refunded of [false, true]) {
+    test(`a ${refunded ? "refunded first attempt" : "retry"} with provider-effect evidence checks Sent before SMTP and reconciles its earlier copy`, async () => {
+      const provider = createProvider("imap");
+      try {
+        const mailbox = await connect(provider);
+        const draft = await newDraft(mailbox, "Earlier provider effect");
+        // The first attempt reaches beginProviderEffect, but its SMTP connection fails before transfer.
+        provider.failNextSubmission("ESOCKET", false);
+        const outbox = await send(mailbox, draft.id, draft.revision, "earlier-effect", "scheduled");
+        const [command] = await sql<{ provider_effect_attempt: number | null }[]>`
+        SELECT provider_effect_attempt FROM mail.commands
+        WHERE id = (SELECT command_id FROM mail.outbox_submissions WHERE id = ${outbox.id}::uuid)
+      `;
+        expect(command?.provider_effect_attempt).toBe(1);
+        if (refunded) {
+          // A refunded counter alone is not proof that a send never reached a provider effect.
+          await sql`UPDATE mail.outbox_submissions SET attempt = 0 WHERE id = ${outbox.id}::uuid`;
+          await sql`UPDATE mail.commands SET attempt = 0
+          WHERE id = (SELECT command_id FROM mail.outbox_submissions WHERE id = ${outbox.id}::uuid)`;
+        }
+        // A provider copy appears before retry. Its stable Message-ID proves the earlier send.
+        await provider.storeSent(
+          `Message-ID: ${outbox.stable_message_id}\r\nDate: Sun, 01 Nov 2026 12:00:00 +0000\r\n\r\nEarlier copy`,
+          false,
+        );
+        const searches = provider.searches();
+        expect(await sendRetryNow(outbox.id)).toBe("reconciled_accepted");
+        expect(provider.searches() - searches).toBe(1);
+        expect(provider.submissions()).toBe(0);
+        expect(await delivery(outbox.id)).toMatchObject({ state: "reconciled_accepted", command_state: "reconciled" });
+      } finally {
+        provider.restore();
+      }
+    });
+  }
+
   test("an IMAP failure after SMTP accepted the message keeps the send confirmed and stores the copy later", async () => {
     const provider = createProvider("imap");
     try {
@@ -1006,13 +1163,88 @@ suite("mail sent message projection", () => {
     }
   });
 
+  test("an SMTP rejection never sends twice and always ends visible: 4xx retries for about an hour, other 5xx fail at once", async () => {
+    const provider = createProvider("imap");
+    try {
+      const mailbox = await connect(provider);
+      const counters = async (outboxId: string) => {
+        const [row] = await sql<{ outbox_attempt: number; command_attempt: number; retries: number | null; delay_seconds: number }[]>`
+          SELECT outbox.attempt AS outbox_attempt, command.attempt AS command_attempt,
+            (command.transport_metadata ->> 'smtpTransientRetries')::int AS retries,
+            round(EXTRACT(EPOCH FROM (outbox.scheduled_at - now())))::int AS delay_seconds
+          FROM mail.outbox_submissions outbox JOIN mail.commands command ON command.id = outbox.command_id
+          WHERE outbox.id = ${outboxId}::uuid`;
+        return row!;
+      };
+      // A temporary rejection at the end of DATA: the server took the bytes but accepted nothing.
+      const draft = await newDraft(mailbox, "SMTP temporarily rejected");
+      provider.failNextSubmission("EMESSAGE", true, 451);
+      const outbox = await send(mailbox, draft.id, draft.revision, "smtp-4xx", "scheduled");
+      expect(await delivery(outbox.id)).toEqual({
+        state: "scheduled",
+        last_error_code: "SMTP_TRANSIENT_REJECTION",
+        command_state: "queued",
+        draft_state: "scheduled",
+      });
+      expect(await counters(outbox.id)).toMatchObject({ outbox_attempt: 0, command_attempt: 1, retries: 1, delay_seconds: 30 });
+      // More rejections than the general attempt budget keep the send waiting with a growing pause.
+      // They give the outbox attempt back, so later steps keep their budget; the command's attempt
+      // still counts, so no claim reuses the attempt its effect marker covers.
+      for (let rejection = 2; rejection <= 7; rejection += 1) {
+        provider.failNextSubmission("EMESSAGE", true, 451);
+        expect(await sendRetryNow(outbox.id)).toBe("scheduled");
+      }
+      expect(await counters(outbox.id)).toMatchObject({ outbox_attempt: 0, command_attempt: 7, retries: 7, delay_seconds: 900 });
+      expect(provider.submissions()).toBe(7);
+
+      // A rejection after the hour returns the message to the drafts.
+      await sql`
+        UPDATE mail.commands command
+        SET transport_metadata = transport_metadata || jsonb_build_object('smtpTransientSince', (now() - interval '61 minutes')::text)
+        FROM mail.outbox_submissions outbox
+        WHERE outbox.id = ${outbox.id}::uuid AND command.id = outbox.command_id`;
+      provider.failNextSubmission("EMESSAGE", true, 451);
+      await sendRetryNow(outbox.id);
+      expect(provider.submissions()).toBe(8);
+      expect(await delivery(outbox.id)).toMatchObject({ state: "failed", command_state: "failed", draft_state: "draft" });
+      expect(await sendRetryNow(outbox.id)).toBeNull();
+      expect(provider.submissions()).toBe(8);
+
+      // A send that gets through after a rejection goes out once and keeps the full budget for its copy.
+      const later = await newDraft(mailbox, "SMTP rejected once");
+      provider.failNextSubmission("EMESSAGE", true, 421);
+      const retried = await send(mailbox, later.id, later.revision, "smtp-4xx-once", "scheduled");
+      expect(await sendRetryNow(retried.id)).toBe("sent");
+      expect(provider.submissions()).toBe(10);
+      expect(provider.messagesWithId("Sent", retried.stable_message_id)).toHaveLength(1);
+      expect(await counters(retried.id)).toMatchObject({ outbox_attempt: 1, command_attempt: 2 });
+
+      // A permanent rejection fails at once, without a second submission. A refused login (534/535)
+      // waits for a new login instead; see the test after this one.
+      for (const [code, responseCode, key] of [
+        ["EENVELOPE", 550, "smtp-5xx"],
+        ["EENVELOPE", 554, "smtp-554"],
+      ] as const) {
+        const rejected = await newDraft(mailbox, `SMTP ${responseCode}`);
+        provider.failNextSubmission(code, false, responseCode);
+        const failed = await send(mailbox, rejected.id, rejected.revision, key, "failed");
+        expect(await delivery(failed.id)).toMatchObject({ state: "failed", command_state: "failed", draft_state: "draft" });
+        expect(await sendRetryNow(failed.id)).toBeNull();
+      }
+      expect(provider.submissions()).toBe(10);
+      expect(provider.messagesWithId("Sent", outbox.stable_message_id)).toHaveLength(0);
+    } finally {
+      provider.restore();
+    }
+  });
+
   test("a send whose IMAP server is unreachable before dispatch is retried instead of dropped", async () => {
     const provider = createProvider("imap");
     try {
       const mailbox = await connect(provider);
       const draft = await newDraft(mailbox, "IMAP unreachable");
       provider.failNextSearches(1, "CONNECT_TIMEOUT");
-      const outbox = await send(mailbox, draft.id, draft.revision, "imap-unreachable", "scheduled");
+      const outbox = await send(mailbox, draft.id, draft.revision, "imap-unreachable", "scheduled", { previousEffect: true });
       expect(provider.submissions()).toBe(0);
       expect(await delivery(outbox.id)).toEqual({
         state: "scheduled",
@@ -1034,7 +1266,7 @@ suite("mail sent message projection", () => {
       const mailbox = await connect(provider);
       const draft = await newDraft(mailbox, "IMAP throttled");
       provider.failNextSearches(1, "ETHROTTLE");
-      const outbox = await send(mailbox, draft.id, draft.revision, "imap-throttled");
+      const outbox = await send(mailbox, draft.id, draft.revision, "imap-throttled", "sent", { previousEffect: true });
       expect(provider.submissions()).toBe(1);
       expect(await delivery(outbox.id)).toMatchObject({ state: "sent", last_error_code: null, command_state: "confirmed" });
       expect(provider.messagesWithId("Sent", outbox.stable_message_id)).toHaveLength(1);
@@ -1654,6 +1886,9 @@ suite("mail sent message projection", () => {
       const draft = await newDraft(mailbox, "Lease lost before SMTP");
       const outbox = await schedule(mailbox, draft.id, draft.revision, "lease-lost-before-smtp");
       await sql`UPDATE mail.outbox_submissions SET scheduled_at = now() - interval '1 second' WHERE id = ${outbox.id}::uuid`;
+      await sql`UPDATE mail.outbox_submissions SET attempt = 1 WHERE id = ${outbox.id}::uuid`;
+      await sql`UPDATE mail.commands SET attempt = 1, provider_effect_attempt = 1, provider_effect_started_at = now()
+        WHERE id = (SELECT command_id FROM mail.outbox_submissions WHERE id = ${outbox.id}::uuid)`;
       const searchesBefore = provider.searches();
       // The job's lease renews fine until the send has looked for an earlier copy in Sent.
       const leaseLost = executeOutboxSubmissionWithHeartbeat(outbox.id, async () => {
@@ -1743,6 +1978,58 @@ suite("mail sent message projection", () => {
         draft_state: "sent",
       });
       expect(provider.submissions()).toBe(1);
+    } finally {
+      provider.restore();
+    }
+  });
+
+  test("every settled send records one feed event in its conversation, with its outcome", async () => {
+    const sentEvents = async (outboxId: string) =>
+      sql<
+        {
+          conversation_id: string | null;
+          outcome: string;
+          metadata: { result: string; intent: string | null; code: string | null; outboundMessageId: string | null };
+        }[]
+      >`
+        SELECT activity.conversation_id, activity.outcome, activity.metadata
+        FROM mail.activity_events activity
+        JOIN mail.outbox_submissions outbox ON outbox.command_id = activity.command_id
+        WHERE outbox.id = ${outboxId}::uuid AND activity.action = 'message.sent'
+      `;
+    const provider = createProvider("imap");
+    try {
+      const mailbox = await connect(provider);
+      const inbound = await receive(provider, mailbox, "feed-reply");
+      const reply = await replyDraft(mailbox, inbound);
+      const sent = await send(mailbox, reply.id, reply.revision, "feed-reply");
+      expect(await sentEvents(sent.id)).toEqual([
+        {
+          conversation_id: inbound.conversation_id,
+          outcome: "confirmed",
+          metadata: { result: "sent", intent: "reply", code: null, outboundMessageId: sent.message_id },
+        },
+      ]);
+
+      // A new message names the conversation it started once it is sent.
+      const fresh = await newDraft(mailbox, "Feed new message");
+      const started = await send(mailbox, fresh.id, fresh.revision, "feed-new");
+      const [newEvent] = await sentEvents(started.id);
+      expect(newEvent?.metadata).toEqual({ result: "sent", intent: "new", code: null, outboundMessageId: started.message_id });
+      expect(newEvent?.conversation_id).toBe((await sentProjection(mailbox, started.stable_message_id)).messages[0]!.conversation_id);
+      expect(newEvent?.conversation_id).not.toBeNull();
+
+      const rejected = await newDraft(mailbox, "Feed failed send");
+      provider.failNextSubmission("ETLS", false);
+      const failed = await send(mailbox, rejected.id, rejected.revision, "feed-failed", "failed");
+      expect((await sentEvents(failed.id)).map((row) => [row.outcome, row.metadata.result, row.metadata.code])).toEqual([
+        ["failed", "failed", "ETLS"],
+      ]);
+
+      const partly = await partlyDeliverableDraft(mailbox, "Feed partial send");
+      provider.refuseRecipient(MISTYPED);
+      const partial = await send(mailbox, partly.id, partly.revision, "feed-partial", "needs_attention");
+      expect((await sentEvents(partial.id)).map((row) => [row.outcome, row.metadata.result])).toEqual([["failed", "partial"]]);
     } finally {
       provider.restore();
     }
@@ -1918,7 +2205,7 @@ suite("mail sent message projection", () => {
     }
   });
 
-  test("an operator's reconcile of a partly accepted send ends the retry of its Sent copy", async () => {
+  test("an operator's reconcile of a partly accepted send checks it once from its recorded SMTP answer", async () => {
     const provider = createProvider("imap");
     try {
       const mailbox = await connect(provider);
@@ -1938,12 +2225,70 @@ suite("mail sent message projection", () => {
       if (!reconcile.ok) throw new Error(JSON.stringify(reconcile.error));
       expect(await executeMaintenanceCommand(reconcile.data.id, undefined, { enqueueWork: false })).toBe("confirmed");
 
-      // The operator took the send over, so its copy retry ends instead of coming back with every schedule.
-      const searches = provider.searches();
-      expect(await executeOutboxSubmission(outbox.id)).toBeNull();
+      // The reconcile checks the send: the recorded SMTP answer settles its partial outcome again, its
+      // copy is stored, and nothing is submitted a second time.
+      expect(await delivery(outbox.id)).toMatchObject({ state: "unknown", command_state: "ambiguous" });
+      expect(await executeOutboxSubmission(outbox.id)).toBe("needs_attention");
+      expect(await delivery(outbox.id)).toMatchObject({ state: "needs_attention", last_error_code: "SMTP_PARTIAL_ACCEPTANCE" });
       expect(await copyRetry(outbox.id)).toMatchObject({ sent_copy_pending: false });
-      expect(provider.searches()).toBe(searches);
-      expect(provider.appends).toEqual(["Drafts"]);
+      expect(provider.submissions()).toBe(1);
+      expect(provider.appends).toEqual(["Drafts", "Sent"]);
+      expect(await executeOutboxSubmission(outbox.id)).toBeNull();
+    } finally {
+      provider.restore();
+    }
+  });
+
+  test("an operator's reconcile of an unclear send checks Sent and settles it without sending again", async () => {
+    const provider = createProvider("imap");
+    try {
+      const mailbox = await connect(provider);
+      const draft = await newDraft(mailbox, "Unclear, then reconciled");
+      // The connection dropped after the server received the message; Sent has no copy yet.
+      provider.failNextSubmission("ECONNECTION", true);
+      const outbox = await send(mailbox, draft.id, draft.revision, "operator-reconciles-unclear", "unknown");
+      expect(await executeOutboxSubmission(outbox.id)).toBe("needs_attention");
+      expect(await delivery(outbox.id)).toMatchObject({ last_error_code: "AMBIGUOUS_SMTP_OUTCOME", command_state: "needs_attention" });
+
+      // The copy shows up later, for example after the server's own delay.
+      await provider.storeSent(`Message-ID: ${outbox.stable_message_id}\r\nSubject: Unclear, then reconciled\r\n\r\nBody\r\n`, false);
+      const [target] = await sql<{ command_id: string }[]>`
+        SELECT command_id FROM mail.outbox_submissions WHERE id = ${outbox.id}::uuid
+      `;
+      const reconcile = await createMailCommand({
+        context,
+        mailboxId: mailbox.mailboxId,
+        input: { kind: "reconcile_effect", commandId: target!.command_id, idempotencyKey: `operator-reconcile-of-unclear-${suffix}` },
+        enqueue: false,
+      });
+      if (!reconcile.ok) throw new Error(JSON.stringify(reconcile.error));
+      const attempts = () =>
+        sql<{ outbox_attempt: number; command_attempt: number }[]>`
+          SELECT outbox.attempt AS outbox_attempt, command.attempt AS command_attempt
+          FROM mail.outbox_submissions outbox JOIN mail.commands command ON command.id = outbox.command_id
+          WHERE outbox.id = ${outbox.id}::uuid`;
+      // Its checks were used up, as for a provider that saves sent mail itself.
+      await sql`UPDATE mail.outbox_submissions SET attempt = 5 WHERE id = ${outbox.id}::uuid`;
+      const [before] = await attempts();
+      expect(await executeMaintenanceCommand(reconcile.data.id, undefined, { enqueueWork: false })).toBe("confirmed");
+      // The attempts fence the outbox worker, so a stale worker never matches the check's claim.
+      expect(await attempts()).toEqual([before!]);
+
+      expect(await executeOutboxSubmission(outbox.id)).toBe("reconciled_accepted");
+      expect(await delivery(outbox.id)).toEqual({
+        state: "reconciled_accepted",
+        last_error_code: null,
+        command_state: "reconciled",
+        draft_state: "sent",
+      });
+      expect(provider.submissions()).toBe(1);
+      // The feed reports each outcome once: unclear, which the check that gave up repeated (#2522), then sent.
+      const feed = await sql<{ result: string }[]>`
+        SELECT metadata ->> 'result' AS result FROM mail.activity_events
+        WHERE target_id = ${outbox.id}::uuid AND action = 'message.sent'
+        ORDER BY id
+      `;
+      expect(feed.map((row) => row.result)).toEqual(["unknown", "sent"]);
     } finally {
       provider.restore();
     }
@@ -2107,6 +2452,103 @@ suite("mail sent message projection", () => {
     }
   });
 
+  test("a send whose SMTP login is refused waits for a new login and goes out once the mailbox is signed in again", async () => {
+    const provider = createProvider("imap");
+    try {
+      const mailbox = await connect(provider);
+      for (const [responseCode, key] of [
+        [535, "smtp-login-refused"],
+        [534, "smtp-login-elsewhere"],
+      ] as const) {
+        const draft = await newDraft(mailbox, `SMTP ${responseCode}`);
+        provider.failNextSubmission("EAUTH", false, responseCode);
+        const outbox = await send(mailbox, draft.id, draft.revision, key, "scheduled");
+        // The mailbox shows that it needs a new login, as when IMAP refuses it, and the send waits.
+        expect(await delivery(outbox.id)).toEqual({
+          state: "scheduled",
+          last_error_code: "MAILBOX_AUTH_REQUIRED",
+          command_state: "queued",
+          draft_state: "scheduled",
+        });
+        const [state] = await sql<{ health: string; connection_status: string; binding_state: string }[]>`
+          SELECT mailbox.health, connection.status AS connection_status, binding.state AS binding_state
+          FROM mail.outbox_submissions outbox
+          JOIN mail.mailboxes mailbox ON mailbox.id = outbox.mailbox_id
+          JOIN mail.provider_bindings binding ON binding.id = outbox.selected_binding_id
+          JOIN mail.provider_connections connection ON connection.id = binding.connection_id
+          WHERE outbox.id = ${outbox.id}::uuid
+        `;
+        expect(state).toEqual({ health: "auth_required", connection_status: "degraded", binding_state: "degraded" });
+        // The refused attempt counts, so the next claim's attempt is not the one its effect marker
+        // covers: a worker that stops before SMTP then is recovered as unsent, not as unclear.
+        const [marker] = await sql<{ provider_effect_attempt: number | null; attempt: number }[]>`
+          SELECT command.provider_effect_attempt, command.attempt
+          FROM mail.outbox_submissions outbox JOIN mail.commands command ON command.id = outbox.command_id
+          WHERE outbox.id = ${outbox.id}::uuid`;
+        expect(marker).toEqual({ provider_effect_attempt: 1, attempt: 1 });
+        // A folder sync queued before finds no binding; the mailbox still asks for the login.
+        await expect(syncFolderBatch(mailbox.folderId(INBOX), async () => undefined)).rejects.toMatchObject({ code: "NO_SYNC_BINDING" });
+        // So does a rediscovery that cannot reach the server.
+        const unreachable = spyOn(imapSmtpConnector, "verify").mockRejectedValue(
+          Object.assign(new Error("Failed to establish connection in required time"), { code: "CONNECT_TIMEOUT" }),
+        );
+        try {
+          const [binding] = await sql<{ id: string }[]>`
+            SELECT selected_binding_id AS id FROM mail.outbox_submissions WHERE id = ${outbox.id}::uuid`;
+          await rediscoverProviderBinding({ bindingId: binding!.id }).catch(() => undefined);
+        } finally {
+          unreachable.mockRestore();
+        }
+        const [health] = await sql<{ health: string }[]>`SELECT health FROM mail.mailboxes WHERE id = ${mailbox.mailboxId}::uuid`;
+        expect(health?.health).toBe("auth_required");
+        expect(await sendRetryNow(outbox.id)).toBe("scheduled");
+        expect(await delivery(outbox.id)).toMatchObject({ last_error_code: "MAILBOX_AUTH_REQUIRED" });
+
+        // A new password, verified for the account and its sender, lets the send go out once.
+        await sql`
+          UPDATE mail.provider_connections connection
+          SET secret_revision = connection.secret_revision + 1, status = 'active', last_error_code = NULL, last_error_message = NULL
+          FROM mail.provider_bindings binding
+          WHERE binding.id = (SELECT selected_binding_id FROM mail.outbox_submissions WHERE id = ${outbox.id}::uuid)
+            AND connection.id = binding.connection_id
+        `;
+        await sql`
+          UPDATE mail.provider_bindings binding
+          SET state = 'active', verified_secret_revision = connection.secret_revision, last_error_code = NULL, last_error_message = NULL
+          FROM mail.provider_connections connection
+          WHERE binding.id = (SELECT selected_binding_id FROM mail.outbox_submissions WHERE id = ${outbox.id}::uuid)
+            AND connection.id = binding.connection_id
+        `;
+        await sql`
+          UPDATE mail.sender_identity_bindings sender_binding
+          SET verified_secret_revision = binding.verified_secret_revision
+          FROM mail.provider_bindings binding
+          WHERE sender_binding.sender_identity_id = ${mailbox.identityId}::uuid AND binding.id = sender_binding.binding_id
+        `;
+        // The rediscovery after the new login makes the provider resource active again.
+        await sql`
+          UPDATE mail.remote_resources resource
+          SET status = 'active', last_error_code = NULL, last_error_message = NULL
+          FROM mail.provider_bindings binding
+          WHERE binding.id = (SELECT selected_binding_id FROM mail.outbox_submissions WHERE id = ${outbox.id}::uuid)
+            AND resource.id = binding.remote_resource_id
+        `;
+        await sql`UPDATE mail.mailboxes SET health = 'active', health_reason = NULL WHERE id = ${mailbox.mailboxId}::uuid`;
+        const submitted = provider.submissions();
+        expect(await sendRetryNow(outbox.id)).toBe("sent");
+        expect(provider.submissions()).toBe(submitted + 1);
+      }
+
+      // Any other permanent rejection stays final.
+      const rejected = await newDraft(mailbox, "SMTP 550");
+      provider.failNextSubmission("EENVELOPE", false, 550);
+      const failed = await send(mailbox, rejected.id, rejected.revision, "smtp-550", "failed");
+      expect(await delivery(failed.id)).toMatchObject({ state: "failed", draft_state: "draft" });
+    } finally {
+      provider.restore();
+    }
+  });
+
   const loginWait = async (outboxId: string) => {
     const [row] = await sql<{ outbox_attempt: number; command_attempt: number; mime_blob_id: string | null; mailbox_short_id: string }[]>`
       SELECT
@@ -2238,8 +2680,8 @@ suite("mail sent message projection", () => {
       const mailbox = await connect(provider);
       const draft = await newDraft(mailbox, "Built before the wait");
       const outbox = await schedule(mailbox, draft.id, draft.revision, "auth-built-before");
-      // The first attempt builds the message, then cannot search the Sent folder.
-      provider.failNextSearches(1, "CONNECT_TIMEOUT");
+      // The first attempt builds the message, then cannot connect to SMTP before transfer.
+      provider.failNextSubmission("ESOCKET", false);
       expect(await sendRetryNow(outbox.id)).toBe("scheduled");
       expect(await delivery(outbox.id)).toMatchObject({ last_error_code: "OUTBOX_PREDISPATCH_RETRY" });
       const [built] = await sql<{ mime_blob_id: string | null }[]>`
@@ -3076,6 +3518,30 @@ suite("mail sent message projection", () => {
       expect(await mailboxDrafts(mailbox.mailboxId)).toEqual([
         expect.objectContaining({ id: imported.id, body: "Cloud edit.", revision: "2", state: "draft", recoveries: 2 }),
       ]);
+    } finally {
+      provider.restore();
+    }
+  });
+
+  test("a draft whose text ends in a line break keeps its revision when the sync sees Mail's own copy", async () => {
+    const provider = createProvider("imap");
+    try {
+      const mailbox = await connect(provider);
+      const draft = await newDraft(mailbox, "Typing a new line");
+      // Someone presses Enter at the end of the text; the composer saves while they keep typing.
+      const typed = "Hi\n\n\nDas ist ein test\n";
+      const saved = await editInCloud(mailbox, draft.id, draft.revision, typed);
+      await settleDraftImports(mailbox.mailboxId);
+      await mailbox.syncAll();
+      await settleDraftImports(mailbox.mailboxId);
+
+      expect(await mailboxDrafts(mailbox.mailboxId)).toEqual([
+        expect.objectContaining({ id: draft.id, body: typed, revision: String(saved.revision), state: "draft", recoveries: 0 }),
+      ]);
+      // The composer's next save still holds the current revision.
+      const next = await editInCloud(mailbox, draft.id, saved.revision, `${typed}weiter`);
+      expect(next.revision).toBe(saved.revision + 1);
+      await settleDraftImports(mailbox.mailboxId);
     } finally {
       provider.restore();
     }

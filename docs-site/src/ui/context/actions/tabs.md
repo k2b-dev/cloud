@@ -77,7 +77,8 @@ The classic tab list scrolls horizontally and never vertically; its focus ring s
 scrollbars, the horizontal one is thin. Subtle overflow fades appear only at edges
 with hidden content and disappear when the list fits. Vertical tabs are not
 masked; forced-color mode leaves every orientation unmasked. The active tab
-remains visible. Use
+remains visible: only the list scrolls to show it, never the page or a panel
+around it, so a page with tabs opens at its top. Use
 `trailing` for a fixed action outside the scrollport, such as an IconButton or
 Dropdown trigger. The application owns that action and its menu entries.
 Do not nest a close button inside a tab label.
@@ -111,6 +112,26 @@ original order, with counts as quiet trailing text. It never repeats the
 current view. Opening the menu is the only step that reads CSS visibility;
 the server already renders the final strip and both counts.
 
+Set `fit` when the head should show as many views as its room allows, as in
+a mailbox with many work and saved views, and pair it with a larger `max`,
+such as the number of views. A fitting strip measures its room and moves the
+views that do not fit under **More**, last ones first, instead of scrolling
+them; the current view and pinned views stay. **More +n** then counts every
+view behind it. The strip fits again, before paint, when the width of the
+head's lead or of a shown view changes, for example once web fonts or icons
+load, also in the server frame and on the narrow head level. A fit only shows
+and hides views and never changes those widths, so it never causes another
+one: the strip settles after one pass per change. Outside `AppWorkspace.Head`, a fitting
+strip fits when it renders. The phone's head row keeps its scrolling strip.
+Without `fit`, the levels above apply unchanged.
+
+A `pinned` view takes no slot and never moves under **More**: it stays after
+**More** at every width, also while it is current. Use it for one view of
+another kind than the ones that overflow, such as an activity feed beside
+work views. A `badge` adds a short quiet label after the label and count,
+such as "New" until a person first opens the view. Neither changes the tab's
+height.
+
 Every view is a document link, in the strip and under **More**, so reload,
 back, and forward show the view that the URL names.
 
@@ -129,18 +150,21 @@ ring stays fully visible. Labels keep the shared
 [fade utility](/en/ui/layout/navigation#label-overflow), which stays inactive
 while a label fits.
 
-Both tab controls have a soft appearance: no tray, baseline, selection ring,
-or underline. The selected tab or view takes the selection fill; see
-[Colors and selection](/en/ui/surfaces/color). Font weight never changes
-with selection or hover, so neighbouring controls keep their positions.
-Keyboard focus retains its visible focus ring.
+Both tab controls have no tray, baseline, or underline. A tab has no edge
+until selected; the selected tab or view takes the selected edge, fill, and
+ink of the app, like a segment (see
+[Filters, buttons, and clickable cards](/en/ui/surfaces/color#filters-buttons-and-clickable-cards)).
+Keyboard focus turns the same 2 px edge blue. Font weight and box never change
+with selection, hover, or focus, so neighbouring controls keep their positions.
+A pill tab draws the edge around its label and close button together.
 
 ```ts
 type ViewTab = {
   id: string; label: string; href: string; icon?: string; count?: number | string;
+  badge?: string; pinned?: boolean;
 };
 type ViewTabsProps = {
   label: string; items: readonly ViewTab[]; current: string | undefined; max?: number;
-  class?: string;
+  fit?: boolean; class?: string;
 };
 ```

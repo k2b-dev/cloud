@@ -10,6 +10,12 @@ Schreibe Notizen als lesbares Markdown. Nutze dann Links, Tags, Anhänge und die
 
 **Zusammenarbeit**
 
+## Sehen, wer gerade hier ist {icon="users"}
+
+Oben in den Notizdetails steht **Gerade hier**. Dort siehst du, wer die Notiz gerade offen hat. Ein Stift zeigt, wer schreibt, ein Auge, wer liest. Die Zeile darunter sagt, wer in welchem Abschnitt schreibt. Wähle eine schreibende Person, um zu ihrer Stelle zu springen. **Link kopieren** kopiert die Adresse der Notiz, damit du jemanden dazuholen kannst.
+
+Unter **Inhalt** stehen neben jeder Überschrift die Personen, die dort gerade schreiben. Ohne Verbindung zeigt **Gerade hier** den letzten Stand mit Uhrzeit.
+
 ## Eine Seite diskutieren {icon="message-circle"}
 
 Nutze **Kommentare** in den Notizdetails für Fragen, Feedback und Entscheidungen. Kommentare gehören neben die Seite, ändern aber nicht ihr Markdown.
@@ -53,6 +59,25 @@ Markiere eine Stelle im Text. Über der Auswahl erscheint eine kleine Leiste mit
 Zum Wiederherstellen brauchst du Zugriff **Bearbeiten**. Eine gesperrte Notiz kannst du nur als Kopie wiederherstellen.
 
 **Markdown**
+
+## Eine Notiz mit einer Vorlage beginnen {icon="template"}
+
+Eine Vorlage gibt einer neuen Notiz Überschriften, Tabellen und Aufgabenlisten. Jedes Notizbuch bietet **Besprechungsprotokoll**, **Projektseite** und **Entscheidung**. Du kannst eigene Vorlagen hinzufügen.
+
+1. Wähle oben in der Seitenleiste **Neue Notiz**.
+2. Wähle im Menü eine Vorlage.
+
+Cloud setzt für `{{date}}` das heutige Datum und für `{{author}}` deinen Namen ein. Die neue Notiz bleibt nicht mit ihrer Vorlage verbunden.
+
+:::reference
+- **Leere Notiz:** Eine Notiz mit nur einem Titel zeigt unter dem Titel **Mit einer Vorlage beginnen**. Wähle dort eine Vorlage. Sie ersetzt die leere Notiz. Drücke ⌘Z (Windows und Linux: Strg+Z), um das rückgängig zu machen.
+- **Slash-Menü:** Tippe /vorlage in einer Notiz und wähle eine Vorlage. In einer Notiz mit Text kommen die Abschnitte der Vorlage an den Cursor.
+- **Eigene Vorlage:** Öffne das Menü einer Notiz und wähle **Als Vorlage speichern …**. Gib der Vorlage einen Namen. Die Vorlage übernimmt den aktuellen Text der Notiz.
+- **Umbenennen oder löschen:** Öffne **Einstellungen → Notizbuch → Vorlagen**. Notizen aus einer Vorlage bleiben, wie sie sind.
+- **Wer was darf:** Mit Zugriff **Ansehen** siehst du die Vorlagen. Mit Zugriff **Bearbeiten** nutzt, speicherst, benennst und löschst du sie. Ein Notizbuch hat höchstens 100 eigene Vorlagen.
+- **Telefon:** Öffne das Menü und wähle **Neue Notiz aus Vorlage**.
+- **Terminal:** `cld notebooks page-templates` listet, nutzt, speichert, benennt und löscht Vorlagen.
+:::
 
 ## Eine nützliche Notiz schreiben {icon="pencil"}
 

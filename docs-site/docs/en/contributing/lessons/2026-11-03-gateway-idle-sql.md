@@ -1,0 +1,6 @@
+### Registry heartbeats rewrote unchanged application records
+
+- **What happened:** A near-idle production measurement recorded 623 upserts of `gateway.registered_apps` per minute after release 0.63.
+- **Root cause:** Gateway Ops persisted every live app on every registry notification, including lease renewals. The router also reconciled every five seconds against a 30-second presence lease. Removing all idle writes then left durable offline timestamps stale after a Gateway Ops restart that missed an app departure.
+- **Error class:** Persisting liveness as repeated content writes, then dropping the durable liveness bound when separating them.
+- **Guard:** `registered-apps.test.ts` counts zero SQL calls in the first idle minute with 5 and 20 apps, then one timestamp update per app per five minutes (one/four updates per minute on average), with zero idle content upserts. A fresh-process read verifies that the last checkpoint keeps a just-departed app inside the ten-minute offline audit grace. It also covers content changes, failed checkpoint/content writes, departure and reappearance. `gateway/src/runtime.test.ts` verifies the 30-second reconciliation, presence renewal and immediate domain hints. `services/gateway.integration.test.ts` provisions the old NATS bucket first and verifies the new per-entry 90-second TTL without declaration drift.

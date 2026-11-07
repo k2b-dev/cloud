@@ -1,7 +1,8 @@
-import { sql } from "bun";
 import { Hono } from "hono";
 import { CAPABILITY_MAX_REQUEST_BYTES } from "../contracts/capabilities";
+import { sql } from "../runtime/clients";
 import { resolveLocale } from "../server/locale";
+import { getActiveAppKey } from "../services/app-keys";
 import { verifyAppQueryInvocation } from "../services/identity/invocation-token";
 import { get } from "../services/settings";
 import { readBoundedJson } from "./bounded-json";
@@ -39,15 +40,18 @@ export const createAppQueryRoutes = (compiled: CompiledCapabilities) =>
         return c.json({ code: "APP_UNAVAILABLE", message: "Invocation verification unavailable" }, 503);
       }
       if (!claims) return deny();
-      // Revoking/expiring the workload credential also invalidates already-issued query tokens.
-      const [active] = await sql<{ id: string }[]>`
-    SELECT c.id FROM auth.service_account_credentials c JOIN auth.service_accounts sa ON sa.id = c.service_account_id
+      // Recheck the app binding and current credential at execution, including already-issued tokens.
+      const [active] = await sql<{ id: string; kind: "api_token" | "app_key" }[]>`
+    SELECT c.id, c.kind FROM auth.service_account_credentials c JOIN auth.service_accounts sa ON sa.id = c.service_account_id
     WHERE c.id = ${claims.credential_id}::uuid AND sa.id = ${claims.service_account_id}::uuid
-      AND c.kind = 'api_token' AND c.status = 'active' AND (c.expires_at IS NULL OR c.expires_at > now())
-      AND 'identity:invoke' = ANY(c.scopes) AND sa.status = 'active' AND sa.kind = 'resource_bound'
+      AND (c.kind = 'app_key' OR (c.kind = 'api_token' AND 'identity:invoke' = ANY(c.scopes)))
+      AND c.status = 'active' AND (c.expires_at IS NULL OR c.expires_at > now())
+      AND sa.status = 'active' AND sa.kind = 'resource_bound'
       AND sa.delegated_user_id IS NULL AND sa.app_id = ${claims.sub} AND sa.resource_type = 'cloud.app' AND sa.resource_id = ${claims.sub}
   `;
       if (!active) return deny();
+      // App keys have identity:invoke intrinsically; share bootstrap's key policy, including development-key rejection.
+      if (active.kind === "app_key" && !(await getActiveAppKey({ appId: claims.sub, keyId: active.id }))) return deny();
       const result = await invokeCompiledCapability({
         compiled,
         kind: "query",

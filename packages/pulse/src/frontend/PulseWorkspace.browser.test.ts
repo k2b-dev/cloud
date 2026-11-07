@@ -126,6 +126,7 @@ describe("Pulse base overview", () => {
           return {
             host: rect(".layout-content-main", true),
             workspace: rect(".k2b-app-workspace"),
+            header: rect(".pulse-workspace__mobile-header"),
             numbers: rect(".pulse-overview__numbers"),
             documentHeight: document.documentElement.scrollHeight,
             documentWidth: document.documentElement.scrollWidth,
@@ -146,7 +147,7 @@ describe("Pulse base overview", () => {
         await tab.evaluate(() => document.fonts.ready);
         await tab.locator(".pulse-overview__headline").waitFor();
         const before = await geometry();
-        expect(before.workspace.top).toBeCloseTo(before.host.top, 0);
+        expect(before.workspace.top).toBeCloseTo(before.host.top + before.header.height, 0);
         expect(before.workspace.bottom).toBeCloseTo(before.host.bottom, 0);
         expect(before.host.bottom).toBeLessThanOrEqual(view.height);
         expect(before.documentHeight).toBeLessThanOrEqual(view.height + 1);
@@ -704,17 +705,21 @@ describe("Pulse base page after the cut", () => {
     }
   }, 60_000);
 
-  test("where dashboards used to be, one hint explains what comes back and leads to the sources", async () => {
+  test("empty dashboards offer SQL and Assistant and keep their first frame stable", async () => {
     for (const view of views) {
-      const { tab } = await open(view, { ...workspaceFixture, initialRouteState: { view: "coming-back", sourceId: "" } });
+      const { tab } = await open(view, {
+        ...workspaceFixture,
+        initialRouteState: { view: "dashboards", sourceId: "" },
+        initialDashboards: { items: [], total: 0, nextOffset: null, selected: null, error: null },
+      });
       try {
-        await tab.getByText("Dashboards kommen zurück").first().waitFor();
-        const hint = await tab.getByText("Dashboards kommen zurück").first().boundingBox();
-        expect(await tab.getByRole("button", { name: "Zu den Quellen" }).isVisible()).toBe(true);
+        await tab.getByRole("heading", { name: "Noch kein Dashboard", exact: true }).waitFor();
+        const hint = await tab.getByRole("heading", { name: "Noch kein Dashboard", exact: true }).boundingBox();
+        expect(await tab.getByRole("link", { name: "SQL-Konsole öffnen" }).isVisible()).toBe(true);
         expect(await overflow(tab)).toBeLessThanOrEqual(0);
         // Nothing loads after the first frame, so the hint stays where it was a few frames later.
         await tab.clock.runFor(100);
-        expect(await tab.getByText("Dashboards kommen zurück").first().boundingBox()).toEqual(hint);
+        expect(await tab.getByRole("heading", { name: "Noch kein Dashboard", exact: true }).boundingBox()).toEqual(hint);
       } finally {
         await tab.close();
       }
@@ -762,7 +767,12 @@ describe("Pulse base page after the cut", () => {
     };
     const { tab, calls } = await open(
       views[1]!,
-      { ...workspaceFixture, initialBases: [clearing], initialRouteState: { view: "coming-back", sourceId: "" } },
+      {
+        ...workspaceFixture,
+        initialBases: [clearing],
+        initialRouteState: { view: "dashboards", sourceId: "" },
+        initialDashboards: { items: [], total: 0, nextOffset: null, selected: null, error: null },
+      },
       "de",
       (url) => {
         const path = new URL(url).pathname;
@@ -917,17 +927,17 @@ test("base settings preserve arbitrary values and show only measured usage on ph
       await raw.waitFor();
       const fieldGeometry = await raw.evaluate((element) => {
         const field = element.closest(".k2b-settings-field")!;
+        const name = field.querySelector(".k2b-settings-field__copy")!.getBoundingClientRect();
+        const control = field.querySelector(".k2b-settings-field__control")!.getBoundingClientRect();
         return {
-          display: getComputedStyle(field).display,
-          columns: getComputedStyle(field).gridTemplateColumns,
           padding: getComputedStyle(field).paddingLeft,
+          wide: field.getBoundingClientRect().width >= 640,
+          besideName: control.left >= name.right,
         };
       });
       expect(fieldGeometry.padding).toBe("0px");
-      if (view.width >= 768) {
-        expect(fieldGeometry.display).toBe("grid");
-        expect(fieldGeometry.columns.startsWith("170px ")).toBe(true);
-      }
+      // The shared settings row puts name and control side by side wherever the field has room.
+      expect(fieldGeometry.besideName).toBe(fieldGeometry.wide);
       for (const name of ["Aufbewahrung von Rohdaten", "Aufbewahrung stündlicher Aggregate", "Aufbewahrung sensibler Ereignisdaten"]) {
         const input = dialog.getByRole("spinbutton", { name, exact: true });
         await input.waitFor();

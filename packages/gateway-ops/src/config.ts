@@ -1,4 +1,7 @@
 import { appAccess, defineApp } from "@k2b/cloud";
+import { validateNetworkAllowlist } from "@k2b/cloud/services/settings/validation";
+import { appEnv } from "./env";
+import { natsDiagnosticsSettings } from "./observability/nats/settings";
 
 const port = 3000;
 
@@ -28,7 +31,6 @@ export const app = defineApp({
         },
         adminGroups: { gateway: "Gateway", observability: "Systembeobachtung" },
         adminLinks: {
-          "/admin/observability/gateway": "Apps",
           "/admin/observability/gateway/routes": "Routen",
           "/admin/observability": "Übersicht",
           "/admin/observability/logs": "Protokolle",
@@ -49,7 +51,7 @@ export const app = defineApp({
   },
   // Stone rather than red: the console uses red for failures and amber for
   // warnings throughout, so a red chrome carried the same hue as its own most
-  // urgent signal. Cyan belongs to the AI accent, so a neutral stone stays clear
+  // urgent signal. Plum belongs to the AI accent, so a neutral stone stays clear
   // of both and reads as an instrument panel rather than an alarm.
   appearance: { accent: "#57534e", background: { from: "#78716c", to: "#57534e", angle: 135 } },
   basePath: "/admin/observability",
@@ -60,10 +62,7 @@ export const app = defineApp({
       section: "observability",
       id: "gateway",
       label: "Gateway",
-      links: [
-        { href: "/admin/observability/gateway", icon: "ti-apps", label: "Apps" },
-        { href: "/admin/observability/gateway/routes", icon: "ti-route", label: "Routes" },
-      ],
+      links: [{ href: "/admin/observability/gateway/routes", icon: "ti-route", label: "Routes" }],
     },
     {
       section: "observability",
@@ -88,7 +87,27 @@ export const app = defineApp({
   ],
   nav: { href: "", section: "hidden", requiresRoles: ["admin"] },
   settings: {
+    "gateway.webhook_allowed_targets": {
+      kind: "string_list",
+      default: [],
+      label: "Health webhook allowed targets",
+      description: "Exact internal hosts, IPs or CIDRs allowed for health webhooks. Changes apply to new deliveries.",
+      envVariable: "GATEWAY_OPS_WEBHOOK_ALLOWED_TARGETS",
+      envBootstrap: () => appEnv.$readPresent("GATEWAY_OPS_WEBHOOK_ALLOWED_TARGETS"),
+      validate: validateNetworkAllowlist,
+      presentation: {
+        translations: {
+          de: {
+            label: "Erlaubte Health-Webhook-Ziele",
+            description: "Exakte interne Hosts, IPs oder CIDRs für Health-Webhooks. Änderungen gelten für neue Zustellungen.",
+          },
+        },
+      },
+    },
+
+    ...natsDiagnosticsSettings,
     "gateway.health_check_schedule": {
+      adminWrite: "application",
       kind: "cron",
       label: "Health Check Schedule",
       default: "*/5 * * * *",

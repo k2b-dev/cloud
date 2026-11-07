@@ -9,7 +9,7 @@ import type {
   AiSettingsError,
   AiStoredMessage,
 } from "@k2b/cloud/ai";
-import { CODE_RUNTIME_TOOL_NAMES, parseAiTodoPlan } from "@k2b/cloud/ai/browser";
+import { CODE_RUNTIME_TOOL_NAMES, createLiveDictationSource, parseAiTodoPlan } from "@k2b/cloud/ai/browser";
 import { createAiChatController } from "@k2b/cloud/ai/solid";
 import {
   AI_COMPOSER_TEXT_MAX_CHARS,
@@ -55,8 +55,8 @@ import {
   ButtonLink,
   Chat,
   type ChatMention,
+  DetailsToggle,
   dialogCore,
-  IconButton,
   LocaleProvider,
   NoticeCard,
   openSpotlightSearch,
@@ -162,6 +162,8 @@ type Status = AiPeopleModels & {
   enabled: boolean;
   visionModelConfigured: boolean;
   audioModelConfigured?: boolean;
+  /** Live dictation replaces recording when a live model is set up; recording stays the way out when it is busy. */
+  liveDictationAvailable?: boolean;
   error: AiSettingsError | null;
 };
 
@@ -669,6 +671,14 @@ export default function AssistantWorkspace(props: Props) {
       mentions: override?.mentions ?? mentionsFor(key),
       attachments: aiChatAttachments(composerAttachmentsFor(key)),
     });
+  /**
+   * Only a save the server rejected for its revision is a conflict. Any other failure, such as an unreachable app,
+   * leaves the saved draft as it was: the composer keeps its unsaved text and says that saving failed.
+   */
+  const failComposerSave = (local: ComposerSession, target: string) => {
+    if (chat.draftSaveFailure(target) === "failed") chat.setError(audioCopy().saveFailed);
+    else local.conflict = true;
+  };
   const saveComposer = (key: string, target: string, override?: ComposerOverride) => {
     // An override snapshots this generation, even if newer edits arrive before its queued save starts.
     const overrideGeneration = override ? session(key).editGeneration : undefined;
@@ -683,10 +693,12 @@ export default function AssistantWorkspace(props: Props) {
           conversationId: target,
           expectedDraftRevision: local.baseRevision,
         });
-        if (saved) confirmComposerSave(local, saved.revision, generation);
-        else {
-          local.conflict = true;
-          if (chat.activeConversationId() === target) await chat.refreshActiveConversation();
+        if (saved) {
+          confirmComposerSave(local, saved.revision, generation);
+          if (chat.error() === audioCopy().saveFailed) chat.setError(null);
+        } else {
+          failComposerSave(local, target);
+          if (local.conflict && chat.activeConversationId() === target) await chat.refreshActiveConversation();
         }
         return saved;
       } finally {
@@ -1274,7 +1286,7 @@ export default function AssistantWorkspace(props: Props) {
           });
           const draft = chat.conversation()?.id === target ? chat.conversation()?.draft : undefined;
           if (draft) local.baseRevision = draft.revision;
-          if (!result) local.conflict = true;
+          if (!result) failComposerSave(local, target);
           return result;
         } finally {
           local.saving = false;
@@ -1311,7 +1323,7 @@ export default function AssistantWorkspace(props: Props) {
             const sent = await chat.send({ ...message, conversationId: target, expectedDraftRevision: local.baseRevision });
             const draft = chat.conversation()?.draft;
             if (draft) local.baseRevision = draft.revision;
-            if (!sent) local.conflict = true;
+            if (!sent) failComposerSave(local, target);
             return sent;
           } finally {
             local.saving = false;
@@ -1371,6 +1383,7 @@ export default function AssistantWorkspace(props: Props) {
             model: selectedModelRequest(),
           });
           if (accepted && chat.conversation()?.id === conversationId) local.baseRevision = chat.conversation()!.draft.revision;
+          if (!accepted && chat.draftSaveFailure(conversationId) === "conflict") local.conflict = true;
           // Acceptance is durable even if refreshing the visible queue fails.
           void queuedMessages.refresh().catch(() => chat.setError(t().chatActionFailed));
           return accepted;
@@ -1611,12 +1624,12 @@ export default function AssistantWorkspace(props: Props) {
 
   /** From this device or from a Cloud app, within what the draft can still take; a full draft says so at once. */
   const chooseComposerFiles = (sessionKey: string): Promise<readonly File[]> => {
-    const maxBytes = aiComposerChooseMaxBytes(composerPartCount(sessionKey));
-    if (maxBytes === 0) {
+    const maxTotalBytes = aiComposerChooseMaxBytes(composerPartCount(sessionKey));
+    if (maxTotalBytes === 0) {
       chat.setError(t().attachmentLimit({ count: AI_TURN_ATTACHMENT_MAX_ITEMS }));
       return Promise.resolve([]);
     }
-    return chooseFiles({ multiple: true, accept: aiComposerFileAccept, maxBytes });
+    return chooseFiles({ multiple: true, accept: aiComposerFileAccept, maxTotalBytes });
   };
 
   const composerAttachmentsBlocked = (sessionKey: string) => chat.activeConversationId() === sessionKey && chat.running();
@@ -1803,6 +1816,7 @@ export default function AssistantWorkspace(props: Props) {
 
   const dictationKey = () => (activeProject() ? projectComposerKey(activeProject()!.id) : composerSessionKey());
   const dictationTarget = () => (activeProject() ? (pendingProjectChats()[activeProject()!.id]?.id ?? null) : chat.activeConversationId());
+  const liveDictationSource = createLiveDictationSource({ app: "assistant" });
   const dictation = createAssistantDictation({
     configured: () => Boolean(props.status.audioModelConfigured) && canUseComposer(),
     key: dictationKey,
@@ -1841,9 +1855,12 @@ export default function AssistantWorkspace(props: Props) {
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ expectedRevision: local.baseRevision, content: saved.content }),
           });
+          // The dictation reports any failure itself; only a changed saved draft is also a conflict.
           if (!response.ok) {
-            local.conflict = true;
-            await chat.refreshActiveConversation();
+            if (response.status === 409) {
+              local.conflict = true;
+              await chat.refreshActiveConversation();
+            }
             return false;
           }
           const result: { disposition: string; draft: AiConversation["draft"] | null } = await response.json();
@@ -2089,40 +2106,49 @@ export default function AssistantWorkspace(props: Props) {
         </Show>
         <dictation.Status />
         <Show when={(sessionVersion(), session(sessionKey()).conflict) && !submissionUnknown(sessionKey())}>
-          <div role="status" class="space-y-2 rounded-lg border border-border p-3 text-sm">
-            <p>{audioCopy().conflict}</p>
+          <NoticeCard role="status" tone="warning" title={audioCopy().conflict} detail={audioCopy().conflictDetail}>
             <Show when={serverDrafts()[sessionKey()]}>
-              {(saved) => (
-                <>
-                  <p>{audioCopy().savedDraft}</p>
-                  <pre class="max-h-48 overflow-auto whitespace-pre-wrap">
-                    {saved()
-                      .content.filter((part) => part.type === "text")
-                      .map((part) => part.text)
-                      .join("\n\n")}
-                  </pre>
-                  <Button size="sm" variant="secondary" onClick={() => hydrateComposer(sessionKey(), saved())}>
-                    {audioCopy().useSaved}
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    onClick={async () => {
-                      const key = sessionKey();
-                      const target = dictationTarget();
-                      if (!target) return;
-                      const local = session(key);
-                      local.baseRevision = saved().revision;
-                      local.conflict = false;
-                      await saveComposer(key, target);
-                    }}
-                  >
-                    {audioCopy().keepLocal}
-                  </Button>
-                </>
-              )}
+              {(saved) => {
+                const savedText = () =>
+                  saved()
+                    .content.filter((part) => part.type === "text")
+                    .map((part) => part.text)
+                    .join("\n\n");
+                return (
+                  <>
+                    <Show when={savedText()} fallback={<p class="text-dimmed">{audioCopy().savedDraftEmpty}</p>}>
+                      {(text) => (
+                        <div class="space-y-1">
+                          <p class="text-dimmed">{audioCopy().savedDraft}</p>
+                          <p class="max-h-40 overflow-auto whitespace-pre-wrap break-words">{text()}</p>
+                        </div>
+                      )}
+                    </Show>
+                    <div class="flex flex-wrap gap-2 pt-1">
+                      <Button
+                        size="sm"
+                        variant="secondary"
+                        onClick={async () => {
+                          const key = sessionKey();
+                          const target = dictationTarget();
+                          if (!target) return;
+                          const local = session(key);
+                          local.baseRevision = saved().revision;
+                          local.conflict = false;
+                          await saveComposer(key, target);
+                        }}
+                      >
+                        {audioCopy().keepLocal}
+                      </Button>
+                      <Button size="sm" variant="secondary" onClick={() => hydrateComposer(sessionKey(), saved())}>
+                        {audioCopy().useSaved}
+                      </Button>
+                    </div>
+                  </>
+                );
+              }}
             </Show>
-          </div>
+          </NoticeCard>
         </Show>
         <Chat.Composer
           addOpensCommands
@@ -2298,8 +2324,20 @@ export default function AssistantWorkspace(props: Props) {
                 locked={!projectComposer() && chat.running()}
                 lockedReason={t().modelLockedWhileRunning}
               />
-              <dictation.Control />
+              <Show when={!props.status.liveDictationAvailable || dictation.busy() || dictation.pendingResult()}>
+                <dictation.Control />
+              </Show>
             </>
+          }
+          dictation={
+            props.status.liveDictationAvailable && canUseComposer() && !dictation.busy() && !dictation.pendingResult()
+              ? {
+                  source: liveDictationSource,
+                  alternative: props.status.audioModelConfigured
+                    ? { label: audioCopy().recordInstead, note: audioCopy().recordInsteadNote, run: () => void dictation.startRecording() }
+                    : undefined,
+                }
+              : undefined
           }
           footerContent={dictation.recording() ? <dictation.RecordingFooter /> : undefined}
           value={composerDraft(sessionKey())}
@@ -2794,18 +2832,15 @@ export default function AssistantWorkspace(props: Props) {
                           </Show>
                         </div>
                         <Show when={activeConversation() && !emptyChat()}>
-                          <IconButton
+                          <DetailsToggle
                             ref={contextHost.toggleRef}
                             class="assistant-context-toggle"
                             size="sm"
-                            variant="ghost"
                             label={sidebarCopy().show}
                             aria-expanded="false"
                             aria-controls="assistant-chat-context"
                             onClick={contextHost.open}
-                          >
-                            <i class="ti ti-layout-sidebar-right-expand" aria-hidden="true" />
-                          </IconButton>
+                          />
                           <AssistantChatSidebarPanel
                             id="assistant-chat-context"
                             state={contextState}

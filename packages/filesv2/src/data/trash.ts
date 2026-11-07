@@ -1,5 +1,6 @@
+import { sql } from "@k2b/cloud";
 import { FilegateError, type Node } from "@k2b/filegate";
-import { sql, type TransactionSQL } from "bun";
+import type { TransactionSQL } from "bun";
 import type { FilesCall, Intent, UserFilesCall } from "../service/activity";
 import { FilesError } from "../service/errors";
 import type { FilesRoot } from "../service/filegate-facade";

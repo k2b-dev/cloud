@@ -1,4 +1,5 @@
 import { spyOn } from "bun:test";
+import * as settings from "@k2b/cloud/services/settings";
 import { app } from "../config";
 export const settingsFixture = () => {
   const values = {
@@ -19,11 +20,15 @@ export const settingsFixture = () => {
   const set = spyOn(app.settings, "set").mockImplementation(async (key, value) => {
     Object.assign(values, { [key]: value });
   });
+  const transactionalSet = spyOn(settings, "set").mockImplementation(async (key, value) => {
+    Object.assign(values, { [key]: value });
+  });
   return {
     values,
     restore: () => {
       get.mockRestore();
       set.mockRestore();
+      transactionalSet.mockRestore();
     },
   };
 };

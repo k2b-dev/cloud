@@ -4,7 +4,11 @@ import { EditorState } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
 import { isServer } from "solid-js/web";
 import { createDomTestHarness } from "../../../../../ui/test/dom";
-import { buildNoteLinkCompletionSource, noteLinkSuggestionsAfterDelete } from "./note-link-autocomplete";
+
+// The extension barrel includes UI browser exports, which need the DOM at load time.
+const loading = createDomTestHarness();
+const { buildNoteLinkCompletionSource, noteLinkSuggestionsAfterDelete } = await import("./note-link-autocomplete");
+loading.cleanup();
 
 describe("[[ link suggestions in the editor", () => {
   if (isServer) {

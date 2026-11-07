@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
-import { sql } from "bun";
 import { databaseSuite } from "../../../../../scripts/fixtures/test-infra";
 import { createAccountsEntitiesRoutes } from "../../api/accounts-entities";
+import { sql } from "../../runtime/clients";
 import { accountsAppService } from "./app";
 import type { AccountsActor } from "./authz";
 import * as localGroups from "./local-groups";

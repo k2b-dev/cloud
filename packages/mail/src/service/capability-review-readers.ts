@@ -1,7 +1,8 @@
 /** Reads used only by Assistant/MCP reviews. No writes, provider calls or queue work. */
+
+import { sql } from "@k2b/cloud";
 import type { CapabilityPerson } from "@k2b/cloud/contracts";
 import { err, fail, ok, type Result } from "@k2b/stdlib";
-import { sql } from "bun";
 import type { DraftPreviewSource } from "../capability-reviews";
 import type { MailDraft } from "../contracts";
 import { actorRefFromRequest, type MailRequestContext } from "./auth";

@@ -2,6 +2,13 @@ import { i18n } from "@k2b/stdlib";
 import { type ToastHandle, toast } from "@k2b/ui";
 
 /**
+ * Holds automatic Cloud app update reloads for a write the platform does not see, such as an upload over
+ * XMLHttpRequest; call the returned function on every exit path. Typed API writes and `fetch` writes of the AI chat
+ * already hold them.
+ */
+export { beginAppAction } from "./app-actions";
+
+/**
  * Default window in which a second automatic reload for the same key is
  * suppressed. A page load, hydration, and the first live subscription finish
  * within a few seconds, so a condition that fails again right after a reload

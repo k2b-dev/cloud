@@ -1,5 +1,5 @@
+import { sql } from "@k2b/cloud";
 import { audit, logger, toPgTextArray, toPgUuidArray } from "@k2b/cloud/services";
-import { sql } from "bun";
 import { MAIL_ACTION_OUTCOME_TTL_MS, MAX_CONVERSATION_ACTION_MESSAGES } from "../command-outcomes";
 import type { CommandState } from "../contracts";
 import { auditActorFromRequest, durableCredentialSnapshot, type MailRequestContext } from "./auth";

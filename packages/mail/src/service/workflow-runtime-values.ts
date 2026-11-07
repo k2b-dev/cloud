@@ -1,9 +1,9 @@
+import { sql } from "@k2b/cloud";
 import type { WorkflowIrStep, WorkflowJsonValue } from "@k2b/cloud/workflows";
 import { readWorkflowValuePath } from "@k2b/cloud/workflows/language";
 import { WorkflowValueError, type WorkflowValueResolverPort } from "@k2b/cloud/workflows/runtime";
 import type { WorkflowRunClaim } from "@k2b/cloud/workflows/store";
-import { sql } from "bun";
-import { appEnv } from "../env";
+import { app } from "../config";
 import { mailMessageTextLength } from "./message-text";
 import { resolveMailboxPublicId } from "./public-resources";
 import { enqueueMessageHydration } from "./sync-runtime";
@@ -265,7 +265,7 @@ export const createMailWorkflowValueResolver = (params: {
   };
   return {
     resolve: async ({ reference, path, plan, fallback }) => {
-      const bodyLimit = isAiValuePath(plan.steps, path) ? appEnv.MAIL_WORKFLOW_AI_BODY_MAX_CHARS : undefined;
+      const bodyLimit = isAiValuePath(plan.steps, path) ? await app.settings.get("mail.workflow_ai_body_max_chars") : undefined;
       const candidate = messageForReference(reference, params.claim.inputs);
       if (!candidate) {
         const action = path.at(-2);

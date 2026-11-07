@@ -1,3 +1,5 @@
+import { sql } from "@k2b/cloud";
+import type { ResourcePrincipal } from "@k2b/cloud/contracts";
 import { hasRole } from "@k2b/cloud/contracts";
 import {
   type AccessEntry,
@@ -7,6 +9,8 @@ import {
   deleteAccess,
   ensureManagerRemains,
   getEffectivePermission,
+  getEffectivePermissions,
+  getMemberPermission,
   type PermissionLevel,
   type Principal,
   type RequestActor,
@@ -19,10 +23,11 @@ import {
   serviceAccountCredentials,
   serviceAccounts,
 } from "@k2b/cloud/services";
+import { type ResourceReader, resolveResourceReaders } from "@k2b/cloud/services/identity";
 import { err, fail, ok, type Result } from "@k2b/stdlib";
-import { type SQL, sql } from "bun";
+import type { SQL } from "bun";
 import { resolveNotebookApiKeyPermission } from "./api-key-permissions";
-import { invalidated } from "./workspace-events";
+import { invalidated, workspaceTransaction } from "./workspace-events";
 
 // ==========================
 // Notebook Access Adapter
@@ -279,11 +284,13 @@ export const listNotebookAccessPage = async (
  */
 export const addNotebookAccess = async (notebookId: string, accessId: string): Promise<Result<void>> => {
   try {
-    await sql`
+    await workspaceTransaction(async (tx) => {
+      await tx`
       INSERT INTO notebooks.notebook_access (notebook_id, access_id)
       VALUES (${notebookId}::uuid, ${accessId}::uuid)
     `;
-    await invalidated({ notebookId, reason: "permissions", scopes: ["permissions"] });
+      await invalidated({ notebookId, reason: "permissions", scopes: ["permissions"] }, tx);
+    });
     return ok();
   } catch (e: unknown) {
     const error = e as { code?: string };
@@ -323,7 +330,7 @@ const mutateNotebookAccess = async (params: {
   permission?: PermissionLevel;
   caller?: NotebookAccessCaller;
 }): Promise<Result<void>> => {
-  const result = await sql.begin(async (tx): Promise<Result<void>> => {
+  const result = await workspaceTransaction(async (tx): Promise<Result<void>> => {
     const [resource] = await tx`SELECT id FROM notebooks.notebooks WHERE id = ${params.notebookId}::uuid FOR UPDATE`;
     if (!resource) return fail(err.notFound("Notebook"));
     const before = await listNotebookAccess(params.notebookId, tx);
@@ -341,9 +348,9 @@ const mutateNotebookAccess = async (params: {
       params.permission === undefined
         ? await deleteAccess({ id: params.accessId }, tx)
         : await updateAccess({ id: params.accessId, permission: params.permission }, tx);
+    if (changed.ok) await invalidated({ notebookId: params.notebookId, reason: "permissions", scopes: ["permissions"] }, tx);
     return changed;
   });
-  if (result.ok) await invalidated({ notebookId: params.notebookId, reason: "permissions", scopes: ["permissions"] });
   return result;
 };
 
@@ -388,6 +395,21 @@ export const getNotebookPermission = async (params: {
 };
 
 /**
+ * The permission a subject holds on a notebook as a member: through its own, group, or authenticated grants, never
+ * through public access. It decides who may see who else has access.
+ */
+export const getNotebookMemberPermission = async (params: {
+  notebookId: string;
+  subject: AccessSubject | null;
+}): Promise<PermissionLevel> => {
+  const accessRows = await sql<{ access_id: string }[]>`
+    SELECT access_id FROM notebooks.notebook_access
+    WHERE notebook_id = ${params.notebookId}::uuid
+  `;
+  return getMemberPermission({ accessIds: accessRows.map((row) => row.access_id), subject: params.subject });
+};
+
+/**
  * Create a new access entry and add it to a notebook.
  */
 export const grantNotebookAccess = async (params: {
@@ -397,7 +419,7 @@ export const grantNotebookAccess = async (params: {
   caller?: NotebookAccessCaller;
 }): Promise<Result<AccessEntry>> => {
   const { notebookId, principal, permission } = params;
-  const result = await sql.begin(async (tx): Promise<Result<string>> => {
+  const result = await workspaceTransaction(async (tx): Promise<Result<string>> => {
     const [resource] = await tx`SELECT id FROM notebooks.notebooks WHERE id = ${notebookId}::uuid FOR UPDATE`;
     if (!resource) return fail(err.notFound("Notebook"));
     const before = await listNotebookAccess(notebookId, tx);
@@ -423,10 +445,10 @@ export const grantNotebookAccess = async (params: {
     const created = await createAccess({ principal, permission }, tx);
     if (!created.ok) return created;
     await tx`INSERT INTO notebooks.notebook_access (notebook_id, access_id) VALUES (${notebookId}::uuid, ${created.data.id}::uuid)`;
+    await invalidated({ notebookId, reason: "permissions", scopes: ["permissions"] }, tx);
     return ok(created.data.id);
   });
   if (!result.ok) return result;
-  await invalidated({ notebookId, reason: "permissions", scopes: ["permissions"] });
   const created = (await listNotebookAccess(notebookId)).find((entry) => entry.id === result.data);
   return created ? ok(created) : fail(err.internal("Failed to retrieve created access entry"));
 };
@@ -501,4 +523,29 @@ export const listNotebookApiKeys = async (notebookId: string): Promise<NotebookA
     const { serviceAccount: _serviceAccount, owner: _owner, ...credential } = item;
     return { ...credential, permission };
   });
+};
+
+/** Current account grants and resource binding, independent of credential scopes. */
+export const getResourceNotebookPermissions = async (
+  notebookId: string,
+  readers: readonly ResourceReader[],
+): Promise<PermissionLevel[]> => {
+  const granted = await getEffectivePermissions({
+    accessIds: sql`SELECT access_id FROM notebooks.notebook_access WHERE notebook_id = ${notebookId}::uuid`,
+    subjects: readers.map((reader) => reader.subject),
+  });
+  return readers.map(({ binding }, index) =>
+    binding && (binding.appId !== NOTEBOOKS_APP_ID || binding.resourceType !== NOTEBOOK_RESOURCE_TYPE || binding.resourceId !== notebookId)
+      ? "none"
+      : (granted[index] ?? "none"),
+  );
+};
+
+export const readableNotebookPrincipals = async (
+  notebookId: string,
+  principals: readonly ResourcePrincipal[],
+): Promise<ResourcePrincipal[]> => {
+  const readers = await resolveResourceReaders(principals);
+  const permissions = await getResourceNotebookPermissions(notebookId, readers);
+  return readers.filter((_, index) => permissions[index] !== "none").map((reader) => reader.principal);
 };

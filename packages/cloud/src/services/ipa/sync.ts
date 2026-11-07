@@ -1,5 +1,5 @@
-import { sql } from "bun";
 import { coreUserEventPublisher } from "../../events/core-user-created";
+import { sql } from "../../runtime/clients";
 import { freeipa } from "../../server/services";
 import { writeDeletedAccountAudit } from "../account-lifecycle/audit";
 import { calculateIpaProfileFromGroupNames, parseIpaAccountTransitionPolicy, parseIpaMatchMode } from "../account-model";

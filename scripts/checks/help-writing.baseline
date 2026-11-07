@@ -75,7 +75,6 @@ packages/contacts/src/help/documents/en/contacts-hierarchy.help.md | frontmatter
 packages/contacts/src/help/documents/en/contacts-start.help.md | frontmatter | kind
 packages/contacts/src/help/documents/en/contacts-work.help.md | frontmatter | kind
 packages/core/src/help/documents/en/core-admin.help.md | frontmatter | kind
-packages/core/src/help/documents/en/core-admin.help.md | steps | In App credentials, choose Create credential.
 packages/core/src/help/documents/en/core-notifications.help.md | frontmatter | kind
 packages/core/src/help/documents/en/core-profile.help.md | frontmatter | kind
 packages/core/src/help/documents/en/core-security.help.md | frontmatter | kind

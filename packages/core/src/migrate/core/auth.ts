@@ -1,4 +1,8 @@
-import { sql } from "bun";
+import { sql } from "@k2b/cloud";
+import { migrateAppBootstrap } from "./app-bootstrap";
+import { migrateAppKeys } from "./app-keys";
+import { migrateAppMigration } from "./app-migration";
+import { enrollDevelopmentAppKeys } from "./development-app-keys";
 import { repairEncodedMetadata } from "./jsonb-metadata";
 import { migratePosix } from "./posix";
 import { migrate as migrateServiceAccountGroupManagers } from "./service-account-group-managers";
@@ -298,6 +302,20 @@ export const migrate = async (): Promise<void> => {
     WHERE uid_number IS NOT NULL
   `.simple();
   console.log("  ✓ auth.user_ipa_data table");
+
+  // Committed before remote mutation, retained if the local promotion rolls back.
+  await sql`
+    CREATE TABLE IF NOT EXISTS auth.ipa_reactivations (
+      user_id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
+      directory_url TEXT NOT NULL,
+      uid TEXT NOT NULL,
+      mail TEXT NOT NULL,
+      remote_id TEXT NOT NULL,
+      previous_expiry TIMESTAMPTZ,
+      was_disabled BOOLEAN NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    )
+  `.simple();
 
   await sql`
     CREATE TABLE IF NOT EXISTS auth.groups (
@@ -817,7 +835,22 @@ export const migrate = async (): Promise<void> => {
     ON auth.service_account_credentials(token_prefix)
     WHERE status = 'active'
   `.simple();
+  await migrateAppKeys();
+  await migrateAppMigration();
+  await migrateAppBootstrap();
+  await enrollDevelopmentAppKeys(sql);
   console.log("  ✓ auth.service_account_credentials table");
+  await sql`
+    CREATE TABLE IF NOT EXISTS auth.app_workload_instances (
+      app_id TEXT NOT NULL,
+      instance_id TEXT NOT NULL,
+      credential_id UUID NOT NULL UNIQUE REFERENCES auth.service_account_credentials(id) ON DELETE CASCADE,
+      previous_credential_id UUID UNIQUE REFERENCES auth.service_account_credentials(id) ON DELETE SET NULL,
+      PRIMARY KEY (app_id, instance_id)
+    )
+  `.simple();
+
+  await sql`ALTER TABLE auth.app_workload_instances ADD COLUMN IF NOT EXISTS last_refreshed_at TIMESTAMPTZ NOT NULL DEFAULT now()`.simple();
 
   await sql`
     CREATE TABLE IF NOT EXISTS auth.webauthn_credentials (

@@ -5,6 +5,7 @@ import {
   getNatsDiagnostics,
   getNatsInventorySummary,
   type NatsDiagnostics,
+  type NatsDiagnosticsConfig,
   type NatsInventorySummary,
   type NatsStream,
   natsDiagnosticsConfig,
@@ -77,9 +78,10 @@ export const selectNatsStreams = (snapshot: NatsInventorySummary, query: NatsQue
 
 export const readNatsDiagnostics = async (
   query: NatsQuery,
-  config = natsDiagnosticsConfig(),
+  config: NatsDiagnosticsConfig | Promise<NatsDiagnosticsConfig> = natsDiagnosticsConfig(),
   dependencies = natsDiagnosticsDependencies,
 ) => {
+  config = await config;
   const [cluster, snapshot] = await Promise.all([
     getNatsClusterDiagnostics(config, dependencies),
     getNatsInventorySummary(config, dependencies),

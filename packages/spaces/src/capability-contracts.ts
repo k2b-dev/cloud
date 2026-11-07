@@ -1,11 +1,15 @@
 import {
   CapabilitySemanticLinkSchema,
+  CloudResourceReaderViewSchema,
   CloudResourceRefSchema,
   CloudResourceViewSchema,
+  DiscussionActivityInputSchema,
+  ResourceActivityEventSchema,
   ServiceAccountKindSchema,
 } from "@k2b/cloud/contracts";
 import { z } from "zod";
 import {
+  AssigneeDeltaShape,
   CreateItemTemplateSchema,
   CreateTaskChecklistEntrySchema,
   DeadlineAllDaySchema,
@@ -26,6 +30,7 @@ import {
   SpaceItemReactionsResponseSchema,
   SpaceItemResourceReferenceInputSchema,
   SpaceItemResourceReferenceSchema,
+  SpaceItemTemplateSchema,
   SpaceTaskChecklistEntrySchema,
   SpaceTaskDependencySchema,
   SpaceTaskDependentSchema,
@@ -33,6 +38,7 @@ import {
   TimeOfDaySchema,
   UpdateItemTemplateSchema,
   UpdateTaskChecklistEntrySchema,
+  validAssigneeDelta,
 } from "./contracts";
 import {
   CalendarAddressSchema,
@@ -178,6 +184,7 @@ export const SpaceSummaryDataSchema = z
   .strict();
 
 export const SpaceDetailDataSchema = SpaceSummaryDataSchema.extend({
+  view: CloudResourceReaderViewSchema,
   columns: z.array(SpaceColumnDataSchema).max(100),
   columnsTruncated: z.boolean(),
   tags: z.array(SpaceTagDataSchema).max(100),
@@ -296,8 +303,8 @@ const ItemContainerSchema = z.strictObject({
   permission: z.enum(["read", "write", "admin"]),
 });
 export const ItemReadDataSchema = z.discriminatedUnion("kind", [
-  TaskDataSchema.extend({ container: ItemContainerSchema }),
-  EventDataSchema.extend({ container: ItemContainerSchema }),
+  TaskDataSchema.extend({ container: ItemContainerSchema, view: CloudResourceReaderViewSchema.required({ container: true }) }),
+  EventDataSchema.extend({ container: ItemContainerSchema, view: CloudResourceReaderViewSchema.required({ container: true }) }),
 ]);
 const ItemListBaseDataShape = {
   id: ResourceShortIdSchema,
@@ -420,6 +427,7 @@ export const SpaceAssigneeDataSchema = z
 export const SpaceAssigneeListDataSchema = z.array(SpaceAssigneeDataSchema).max(100);
 
 const ItemRelationInputShape = {
+  ...AssigneeDeltaShape,
   assigneeIds: UserIdListSchema.optional().describe(
     "Complete replacement set of person or service account UUIDs returned by List assignable Space members. Dropping the account holding an active claim is refused; release it first with task.release.",
   ),
@@ -428,6 +436,11 @@ const ItemRelationInputShape = {
 
 const TaskFieldsInputShape = {
   title: z.string().trim().min(1).max(200).optional().describe("Optional task title."),
+  expectedTitle: z
+    .string()
+    .max(200)
+    .optional()
+    .describe("Exact previously read title; mismatch returns TITLE_CONFLICT. Required with title."),
   description: markdownInput(z.string().max(5000).nullable().optional().describe("Optional task description; null clears it.")),
   deadline: DeadlineInputSchema.nullable()
     .optional()
@@ -461,6 +474,7 @@ const TemplateSummaryDataShape = {
   spaceId: ResourceShortIdSchema,
   kind: ItemTemplateKindSchema,
   name: z.string().min(1).max(100),
+  icon: SpaceItemTemplateSchema.shape.icon,
   dateRule: TemplateDateRuleSchema,
   timeOfDay: TimeOfDaySchema.nullable(),
   rule: z.string().max(200).describe("The date rule as people read it, e.g. Wed or Thu · all day."),
@@ -508,7 +522,9 @@ const TemplateUseInputShape = {
 export const TaskCreateInputSchema = z
   .object({
     spaceId: SpaceIdSchema,
-    columnId: ResourceShortIdSchema.describe("Target column ID returned by Read space for the selected Space."),
+    columnId: ResourceShortIdSchema.optional().describe(
+      "Optional target column ID returned by Read space. When omitted, the task goes to the Space's first open column, the first one in board order that is not marked done.",
+    ),
     title: z.string().trim().min(1).max(200).optional().describe("Task title; required unless the template has one."),
     description: markdownInput(z.string().max(5000).optional().describe("Optional task description.")),
     deadline: DeadlineInputSchema.optional(),
@@ -534,6 +550,11 @@ export const TaskCreateInputSchema = z
 export const TaskUpdateInputSchema = z
   .object({ itemId: ItemIdSchema, ...ItemRelationInputShape, ...TaskFieldsInputShape })
   .strict()
+  .refine(validAssigneeDelta, { message: "Do not mix replacement and assignee deltas or add and remove the same assignee" })
+  .refine((data) => data.title === undefined || data.expectedTitle !== undefined, {
+    message: "expectedTitle is required with title",
+    path: ["expectedTitle"],
+  })
   .refine(({ itemId: _itemId, ...changes }) => Object.values(changes).some((value) => value !== undefined), {
     message: "At least one task field must be provided",
   });
@@ -592,6 +613,7 @@ export const EventCreateInputSchema = z
 export const EventUpdateInputSchema = z
   .object({ itemId: ItemIdSchema, ...ItemRelationInputShape, ...EventFieldsInputShape })
   .strict()
+  .refine(validAssigneeDelta, { message: "Do not mix replacement and assignee deltas or add and remove the same assignee" })
   .refine(({ itemId: _itemId, ...changes }) => Object.values(changes).some((value) => value !== undefined), {
     message: "At least one event field must be provided",
   })
@@ -727,10 +749,9 @@ export const EventInvitationCommitDataSchema = z
   .strict();
 export const CommentDeleteDataSchema = z.object({ commentId: ResourceShortIdSchema, deleted: z.literal(true) }).strict();
 
-export const ActivityInputSchema = z.strictObject({
-  space: ResourceShortIdSchema.describe("Container short ID returned by space.list or space.read."),
-  item: ResourceShortIdSchema.optional().describe("Optional item short ID in this container."),
-  timeZone: TimeZoneInputSchema.refine((zone) => {
+export const ActivityInputSchema = DiscussionActivityInputSchema.extend({
+  container: DiscussionActivityInputSchema.shape.container.optional(),
+  timeZone: DiscussionActivityInputSchema.shape.timeZone.refine((zone) => {
     if (!zone) return true;
     try {
       new Intl.DateTimeFormat("en", { timeZone: zone });
@@ -738,24 +759,18 @@ export const ActivityInputSchema = z.strictObject({
     } catch {
       return false;
     }
-  }).describe("IANA time zone for date presentation; the installation zone when omitted."),
-  before: TimestampSchema.max(40).optional().describe("Exclusive upper bound on the last occurrence, as an ISO datetime."),
-  after: TimestampSchema.max(40).optional().describe("Exclusive lower bound on the last occurrence, as an ISO datetime."),
-  cursor: CursorSchema,
-  limit: z.number().int().min(1).max(100).default(50).describe("Maximum rows to return, from 1 to 100; defaults to 50."),
-});
+  }, "Expected an IANA time zone"),
+  space: ResourceShortIdSchema.optional().describe("Published alias for container; use either field, or the same ID in both."),
+})
+  .refine((input) => Boolean(input.container ?? input.space), "A container is required")
+  .refine((input) => !input.container || !input.space || input.container === input.space, "Container aliases must agree");
 export const ActivityDataSchema = z
   .array(
-    z.strictObject({
-      id: z.string().max(100),
-      at: TimestampSchema,
-      ref: z.strictObject({ type: z.literal("spaces.item"), id: ResourceShortIdSchema }).nullable(),
-      /** The item's current title, for a badge where the event shows outside the item's own place. */
+    ResourceActivityEventSchema.extend({
       title: z.string().max(500).nullable(),
-      actor: z.strictObject({ type: z.enum(["user", "service_account", "system"]), id: z.uuid().nullable(), name: z.string().max(1000) }),
-      icon: z.string().max(80),
-      sentence: z.string().max(4000),
-      count: z.number().int().min(1),
+      ref: resourceRef("spaces.item")
+        .extend({ id: ResourceShortIdSchema.min(6).max(6) })
+        .nullable(),
     }),
   )
   .max(100);

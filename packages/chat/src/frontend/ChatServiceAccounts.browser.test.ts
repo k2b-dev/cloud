@@ -146,7 +146,7 @@ for (const mode of [
           await page.goto(new URL(path, harness.url).href);
           await page.evaluate(
             async ({ path, locale }) => {
-              window.mountChat(await (await fetch(`/__props?path=${encodeURIComponent(path)}`)).json(), locale);
+              await window.mountChat(await (await fetch(`/__props?path=${encodeURIComponent(path)}`)).json(), locale);
             },
             { path, locale: mode.locale },
           );

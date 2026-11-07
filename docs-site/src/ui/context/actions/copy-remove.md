@@ -19,7 +19,7 @@ import {
 
 ## CopyButton
 
-Pass the exact clipboard value through `text`. With `label`, the component shows text and changes it to “Copied” for about two seconds. Without `label`, it renders an icon button with a tooltip and live announcement. The default action is neutral rather than primary.
+Pass the exact clipboard value through `text`. With `label`, or with `iconOnly={false}` for the default “Copy”, the component shows text and changes it to “Copied” for about two seconds; the button keeps the width of the longer word, so a field beside it does not move. Without `label`, it renders an icon button with a tooltip. Both forms announce success to screen readers. The default action is neutral rather than primary.
 
 `class` adds classes. Use `variant` (default `"ghost"`) and `size` (default `"sm"`) to change the button treatment. `iconOnly` overrides the default derived from whether `label` is present; `copiedLabel` overrides the success text.
 
@@ -35,7 +35,7 @@ Normal native button attributes pass through. `ariaLabel: string` is required; t
 
 ## Accessibility
 
-Use a specific remove label such as “Remove Alice from project”, not “Delete”. Clipboard success is announced in icon-only mode.
+Use a specific remove label such as “Remove Alice from project”, not “Delete”. Clipboard success is announced in both forms.
 
 If removal is destructive or difficult to reverse, confirm it before calling the mutation.
 

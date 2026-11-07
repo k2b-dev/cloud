@@ -5,10 +5,188 @@ section: Reference
 order: 1250
 description: Find removed or superseded APIs and the supported migration path.
 tags: [deprecations, migrations, compatibility]
-updated: 2026-10-28
+updated: 2026-11-05
 ---
 
 # Deprecations and migrations
+
+## Geo uses a global budget
+
+`geo.person_daily_credits` and the admin budget field `personDailyCredits`
+have been removed. Stored daily values are ignored. Use
+`geo.monthly_budget_credits` for the installation-wide credit budget and
+`geo.plan` (or `geo.custom_rps` for Custom) for the shared request rate.
+The retained capability result field `person.exhausted` is always `false`.
+
+App servers may call `geoClient.autocomplete(input)` without an app key or
+session through the private Core origin. Existing caller arguments remain
+supported. See [Geo rollout](/en/docs/operations/runtime-configuration#anonymous-internal-geo-autocomplete).
+
+## AI providers use their OpenAI-compatible endpoints
+
+Cloud now uses Nessi 1.1, which has one chat adapter for OpenAI-compatible
+endpoints. Every provider type keeps its name, stored connection and context
+window. An address stored for a native API reaches the same service's
+OpenAI-compatible API: Anthropic and Ollama addresses get `/v1`, and a Gemini
+address ending in `/v1beta` or `/v1beta/models` uses `/v1beta/openai`. Review
+these differences:
+
+- **Anthropic** runs through Anthropic's OpenAI SDK compatibility at
+  `https://api.anthropic.com/v1`. It returns no thinking text, ignores the
+  thinking level, and supports structured output only as a strict JSON schema.
+  Anthropic describes this layer as meant for testing and comparison. Budget
+  reservations no longer assume an output limit of 8,192 tokens.
+- **Gemini** receives the thinking level as `reasoning_effort` instead of
+  `thinkingConfig`; structured tasks send `none`. Thought signatures of tool
+  calls are kept and sent back, as Gemini 3 requires.
+- **Ollama** is reached under `/v1` of its stored address. A profile's
+  `contextWindow` is no longer sent as `num_ctx`; set the context length in
+  Ollama itself, for example with `OLLAMA_CONTEXT_LENGTH` or the model's
+  Modelfile.
+- `top_p` from the OpenAI-compatible API is passed on as `top_p` for every
+  provider type.
+- A response cut off at the output limit runs none of its tool calls. The
+  malformed-call limit now counts responses in a row, and a message the person
+  sends during the turn starts it again.
+- Read-only capability Queries of one response run at the same time, at most
+  four at once.
+
+See [Models and providers](/en/docs/ai/models-and-providers#set-the-thinking-level)
+and [Failed turns](/en/docs/ai/chat-runtime-and-streaming#failed-turns).
+
+## Authenticated grants apply only to people
+
+**Breaking:** “All signed-in people” (`authenticated`) now includes people
+and guests, with their delegated credentials, and excludes agents and other
+service accounts. Public grants keep their behavior. Give affected machines
+a direct or group grant before upgrading. Third-party apps using an older
+`@k2b/cloud` keep the previous behavior until their dependency is updated and
+they are redeployed. Run the read-only
+[pre-switch inventory](/en/docs/operations/app-access-upgrade#all-signed-in-people)
+and review app-owned copies of the predicate before switching.
+
+## New agent API keys act as their account
+
+For standalone and agent keys, `POST /api/admin/identity/service-accounts/<id>/api-keys`
+with `access: "full"` and no `scopes` now stores `read`, `write`, and `admin`.
+Explicit scopes are deprecated for new keys but remain accepted unchanged.
+Existing keys, including empty-scope keys, keep their limits. No migration
+widens issued keys. New OAuth clients from `cld admin agents create` also
+include `admin`; existing clients are unchanged. Scopes do not grant roles or
+resource permissions. See [Standalone service accounts and agents](/en/docs/identity/service-accounts)
+for issuance and the `cld admin agents keys` commands.
+
+## Application deployment moves to key files
+
+This release replaces ordinary apps' shared infrastructure environment block
+with an app key file and Core address. Core and Gateway retain infrastructure
+values. Existing environment mode remains supported during the parallel
+release; environment overrides also remain supported afterward.
+
+Follow [Upgrade applications to app keys](/en/docs/operations/app-key-upgrade)
+for settings checks, resumable enrollment, expected-app and replica checks,
+file permissions and the three rollback boundaries. Use the Compose template
+from that release. Do not remove legacy workload or OAuth credentials until
+the verification steps pass. Removing those authentication paths is a later
+breaking release, separate from this configuration migration.
+
+## App keys authenticate background work and OAuth
+
+Applications with `CLOUD_APP_KEY` or `CLOUD_APP_KEY_FILE` now sign each request
+to Core. The same key authenticates background capability calls and, with the
+operator-owned `oauth:issue` grant, OAuth issuance. Keys enrolled before this
+release for the built-in `oauth` app get the grant once through the migration;
+every new key needs `--grant oauth:issue` explicitly, and third-party app keys can
+hold it too. Keep
+`CLOUD_CORE_INTERNAL_ORIGIN` pointing at Core.
+Mandates, current grants, and domain idempotency still apply.
+
+`CLOUD_APP_CREDENTIAL` and `CLOUD_OAUTH_BROKER_SECRET` are deprecated. During
+this release, apps without an app key can still use automatically delivered or
+explicit workload credentials, and OAuth can still use its broker secret. A
+configured app key takes precedence; rejection never falls back to a bearer.
+Their removal belongs to the following release as a separate breaking change.
+The former Compose input `CLOUD_MAIL_APP_CREDENTIAL` is already unused; remove
+it and revoke the corresponding old credential after verifying background work.
+
+`CLOUD_OAUTH_JWKS_ORIGIN` is also deprecated. Remove it to load OAuth public
+keys directly from Core through `CLOUD_CORE_INTERNAL_ORIGIN`. An explicit old
+origin remains honored during this release. The public OAuth JWKS endpoint
+and token issuer stay unchanged.
+
+Enroll keys, roll out Core before its callers, verify a background action and
+OAuth readiness and token issuance, then remove legacy secret injection and
+revoke obsolete workload credentials. Keep the legacy configuration until
+these checks pass. A rollback during this release can restore the old env
+configuration; legacy credentials must still be active. See
+[App keys](/en/docs/operations/app-keys) and
+[runtime configuration](/en/docs/operations/runtime-configuration).
+
+## Apps, app credentials and Gateway › Apps are one Apps page
+
+**Administration → Apps** now lists every app the registry, Core or an
+[App status](/en/docs/platform/app-status) provider knows, with its state and
+the one hint that needs attention. Search and **Problems** narrow the list. An
+app opens beside the list with state, traffic, access, keys and events; a linked
+value opens its view in the same place, with a back step to the app. The
+address keeps the selection and the list's search and filter, for example
+`/admin/apps?app=mail&view=keys&filter=problems`.
+
+| Before | Now |
+| --- | --- |
+| `/admin/apps?app=<id>` | unchanged; opens the app |
+| `/admin/app-credentials` | opens `/admin/apps` with a hint; tokens are under the app's **Keys → Tokens for host operation** |
+| `/admin/observability/gateway` (Apps table) | opens `/admin/apps` with a hint |
+| **Remove offline app** in the Gateway Apps table | **Remove from list …** in the app's detail under **More**, only for an app that is not running |
+| `/admin/observability/gateway/routes` | unchanged; app IDs link to the app |
+
+Operators: no migration is needed beyond Core's own. `cld admin app-credentials …`,
+`cld admin apps keys …` and `DELETE /api/gateway/apps/<id>` keep working.
+Update bookmarks in your own runbooks.
+
+## NATS diagnostics access moves to settings
+
+The four Gateway Ops `NATS_ADMIN_*` inputs are deprecated. During this release,
+startup imports missing settings from them, storing credentials, seeds, and CA
+PEM as **contents**, never paths. Stored rows take precedence. Unreadable files
+produce a warning with the variable and path; correct the mount and restart,
+or configure diagnostics in **Administration → Observability → NATS → Diagnostics access**.
+
+Verify cluster diagnostics with a refresh before removing the old inputs and
+mounts. Later changes apply to the next diagnostics connection. The secret
+System access value stays encrypted and hidden in administration responses.
+See [NATS diagnostics access](/en/docs/operations/nats-operations#give-gateway-ops-access-to-diagnostics)
+for setting keys and the migration steps.
+
+## App workload credentials are delivered automatically
+
+Core now issues and rotates a credential for every registered app instance.
+Remove `CLOUD_MAIL_APP_CREDENTIAL` from Compose environment files and secret
+injection. Update Core and app images together so both support automatic
+delivery. Keep `CLOUD_CORE_INTERNAL_ORIGIN` pointing at Core's private listener.
+After the upgrade, check the credential state under **Administration → App
+credentials** and verify the app's background work. Then revoke the old manually
+created Mail credential there.
+Removing its old Compose input does not itself revoke that credential.
+
+For apps without an app key, the deprecated `CLOUD_APP_CREDENTIAL` remains an
+explicit host-run override and takes precedence over automatic delivery. Existing admin UI, API and CLI creation and revocation
+paths remain available. See [runtime configuration](/en/docs/operations/runtime-configuration)
+for credential lifetimes, recovery after revocation, and the shared-infrastructure trust limit.
+
+## Storage import
+
+Import `storage` from `@k2b/cloud`. The former `@k2b/cloud/services` export
+remains available for this release and is deprecated. Its behavior and saved
+storage configuration are unchanged. See [Object store](/en/docs/platform/object-store).
+
+## Network and AI environment values become administrator settings
+
+This release imports nine network and AI values at startup, without replacing
+stored rows. `GOTENBERG_URL` is bootstrap-only; `CLOUD_IDENTITY_JWKS_ORIGIN`
+is replaced by `CLOUD_CORE_INTERNAL_ORIGIN`, and `GATEWAY_INSTANCE_ID` defaults
+to a random per-process ID. Run `cld admin settings status --env` before
+removing legacy variables. Follow the [operator migration steps](/en/docs/operations/deprecations-and-migrations).
 
 ## Personal Linux groups in exports
 
@@ -1746,8 +1924,8 @@ removes them after verifying Files:
   choose **Clean up**. The cleanup removes every stored key that no running
   application registers, not only `files.*`, so first check that the list holds
   nothing you still need.
-- the offline `files` registration: in `/admin/observability/gateway`, choose
-  **Remove offline app** for Files (legacy).
+- the offline `files` registration: in **Administration → Apps** (`/admin/apps`), open
+  Files (legacy) and choose **Remove from list …**.
 
 Once Files serves every directory you still need, stop the Filegate v2 daemon
 and remove its configuration and token. Keep its storage: the home and group

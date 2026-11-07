@@ -1,10 +1,11 @@
-import { type SQL, sql } from "bun";
+import type { SQL } from "bun";
 import type { Context } from "hono";
 import { deleteCookie, getCookie, setCookie } from "hono/cookie";
 import { HTTPException } from "hono/http-exception";
 import { env } from "../../config/env";
 import { PWA_AUTH_PATH, PWA_COOKIES } from "../../contracts/pwa";
 import type { User } from "../../contracts/shared";
+import { sql } from "../../runtime/clients";
 import { getLocale } from "../../server/locale";
 import { describeRequest } from "../../server/request-context";
 import { isAccountCategoryAllowed } from "../account-category-policy";

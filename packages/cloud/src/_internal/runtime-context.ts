@@ -77,6 +77,7 @@ export const buildRuntimeFromRegistry = (entries: AppRegistryEntry[], capabiliti
             requiresRoles: e.pwa.requiresRoles ? ([...e.pwa.requiresRoles] as Role[]) : undefined,
             ...(e.pwa.badge ? { badge: e.pwa.badge } : {}),
             ...(e.pwa.summary ? { summary: e.pwa.summary } : {}),
+            ...(e.pwa.order !== undefined ? { order: e.pwa.order } : {}),
           }
         : undefined,
       installable: e.installable ? structuredClone(e.installable) : undefined,

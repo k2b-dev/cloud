@@ -1,5 +1,6 @@
 import { Button, useLocale } from "@k2b/ui";
 import { createSignal, onCleanup, onMount, Show } from "solid-js";
+import { notebookChartOptions } from "../../../../lib/chart-options";
 import { notebookMapMessages } from "../../../../lib/map-messages";
 import { BOOK_CONTENT_EVENT } from "./book-state";
 
@@ -21,11 +22,11 @@ export default function BookCharts(props: { rootId: string }) {
       if (!root?.querySelector("figure.notebook-book-chart[data-chart], figure.notebook-map[data-map-document]")) return;
       try {
         const [{ enhanceNotebookCharts }, { enhanceNotebookMaps }] = await Promise.all([
-          import("../../../lib/notebook-charts"),
+          import("@k2b/editor/markdown/notebook-charts"),
           import("../../../lib/notebook-maps"),
         ]);
         if (current !== run || !root.isConnected) return;
-        const charts = enhanceNotebookCharts(root, locale());
+        const charts = enhanceNotebookCharts(root, locale(), notebookChartOptions);
         const maps = enhanceNotebookMaps(root, locale());
         cleanup = () => {
           maps();

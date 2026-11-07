@@ -1,5 +1,5 @@
+import { sql } from "@k2b/cloud";
 import type { WorkflowBoundPlan, WorkflowIrStep } from "@k2b/cloud/workflows";
-import { sql } from "bun";
 import type { ActorRef, AuditStep, AutomationLogItem } from "../contracts";
 import { actorRefFromRequest, type MailRequestContext, userBackedActor } from "./auth";
 import { loadAutomationEffects } from "./automation-effect-state";

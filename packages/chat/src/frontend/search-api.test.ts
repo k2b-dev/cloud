@@ -50,3 +50,13 @@ test("invalid queries never send requests and malformed success bodies reject", 
   await expect(createSearchApi().search("IT")).rejects.toThrow();
   expect(calls).toBe(1);
 });
+
+test("search preserves the partial-scope marker without claiming a provider outage", async () => {
+  const original = globalThis.fetch;
+  globalThis.fetch = Object.assign(async () => Response.json({ items: [], incomplete: true }), { preconnect: original.preconnect });
+  try {
+    expect(await createSearchApi().search("Box")).toEqual({ items: [], incomplete: true });
+  } finally {
+    globalThis.fetch = original;
+  }
+});

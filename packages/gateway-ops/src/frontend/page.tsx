@@ -1,8 +1,15 @@
 import { readAppRegistrySnapshot } from "@k2b/cloud";
 import { type AuthContext, getDateConfig, getLocale } from "@k2b/cloud/server";
 import { latestGatewayRouteSnapshot } from "@k2b/cloud/services";
+import { formatNumber as fmtCount } from "@k2b/cloud/shared";
+import { SearchBar } from "@k2b/cloud/ssr/islands";
+import { DataTable, type DataTableColumn, StatCell, StatGrid } from "@k2b/ui";
+import { ssr } from "../config";
+import { gatewayOpsMessages } from "../messages";
 import { areaText, ObservabilityArea, ObservabilityPane, readAttention } from "../observability/_components/ObservabilityArea";
 import { DEFAULT_TELEMETRY_RANGE, isTelemetryRange, TELEMETRY_RANGES, type TelemetryRange } from "../observability/telemetry/contracts";
+import { getTelemetryAppTotals, getTelemetryPrefixTotals } from "../observability/telemetry/service";
+import RangeTabs from "./RangeTabs";
 
 const TELEMETRY_RANGE_KEYS = Object.keys(TELEMETRY_RANGES) as TelemetryRange[];
 
@@ -15,42 +22,10 @@ const rangeUrl = (url: URL, range: TelemetryRange): string => {
   return query ? `${url.pathname}?${query}` : url.pathname;
 };
 
-import { formatNumber as fmtCount, formatDurationMs as fmtMs, formatRatio as fmtRatio, formatDateTime } from "@k2b/cloud/shared";
-import { SearchBar } from "@k2b/cloud/ssr/islands";
-import { DataTable, type DataTableColumn, NoticeCard, StatCell, StatGrid, StatusBadge, ViewTabs } from "@k2b/ui";
-import { type AppRuntimeStatus, buildAppRuntimeStatuses } from "../app-runtime-status";
-import { ssr } from "../config";
-import { type GatewayOpsMessages, gatewayOpsMessages } from "../messages";
-import { getTelemetryAppTotals, getTelemetryPrefixTotals } from "../observability/telemetry/service";
-import { listRegisteredAppStatus, type RegisteredAppStatus } from "../registered-apps";
-import { AppIcon } from "./AppIcon";
-import RangeTabs from "./RangeTabs";
-import RemoveRegisteredAppButton from "./RemoveRegisteredAppButton.island";
-
-// ── Helpers ──────────────────────────────────────────────────────────────────
-
-const timeAgo = (ts: number, t: GatewayOpsMessages) => {
-  const s = Math.floor((Date.now() - ts) / 1000);
-  if (s < 5) return t.justNow;
-  if (s < 60) return t.secondsAgo({ count: s });
-  if (s < 3600) return t.minutesAgo({ count: Math.floor(s / 60) });
-  return t.hoursAgo({ count: Math.floor(s / 3600) });
-};
-
 const fmtUptime = (ms: number, locale: string) => {
   if (ms < 60_000) return `${Math.round(ms / 1000)}s`;
   if (ms < 3_600_000) return `${Math.round(ms / 60_000)}m`;
   return `${fmtCount(ms / 3_600_000, { locale, decimals: 1 })}h`;
-};
-
-const Check = () => <i class="ti ti-check text-emerald-500 text-xs" />;
-const Dash = () => <i class="ti ti-minus text-dimmed text-xs" />;
-
-type GatewayAppRow = RegisteredAppStatus & {
-  traffic: { count: number; totalMs: number; errors: number } | undefined;
-  isHealthy: boolean;
-  upSince: number;
-  runtimeStatus: AppRuntimeStatus;
 };
 
 type GatewayRouteRow = {
@@ -62,12 +37,15 @@ type GatewayRouteRow = {
 
 // ── Page ─────────────────────────────────────────────────────────────────────
 
+/**
+ * Routes across all apps: the router's table with the traffic of each prefix. The per-app view lives in
+ * Administration › Apps, where every app ID here leads.
+ */
 export default ssr<AuthContext>(async (c) => {
   const locale = getLocale(c);
   const dateConfig = getDateConfig(c);
   const { t } = gatewayOpsMessages.resolve([locale]);
   const url = new URL(c.req.url);
-  const isRoutesPage = url.pathname.endsWith("/routes");
   const range = isTelemetryRange(url.searchParams.get("range"))
     ? (url.searchParams.get("range") as TelemetryRange)
     : DEFAULT_TELEMETRY_RANGE;
@@ -81,51 +59,10 @@ export default ssr<AuthContext>(async (c) => {
     getTelemetryAppTotals(range),
     getTelemetryPrefixTotals(range),
   ]);
-  const appTraffic = new Map(
-    [...appTotals].map(([appId, totals]) => [
-      appId,
-      { appId, count: totals.requests, errors: totals.errors, totalMs: (totals.avgDurationMs ?? 0) * totals.requests },
-    ]),
-  );
-  const routeHits = new Map(
-    [...prefixTotals].map(([prefix, totals]) => [prefix, { prefix, count: totals.requests, errors: totals.errors, lastSeen: 0 }]),
-  );
+  const routeHits = new Map([...prefixTotals].map(([prefix, totals]) => [prefix, { count: totals.requests, errors: totals.errors }]));
   const windowRequests = [...appTotals.values()].reduce((sum, totals) => sum + totals.requests, 0);
   const unmatchedRequests = appTotals.get("gateway")?.requests ?? 0;
-  const registeredApps = await listRegisteredAppStatus(registry.apps);
-  const runtimeStatuses = buildAppRuntimeStatuses(registry.apps, registry.issues);
-  const visibleApps = registeredApps.filter((a) => a.id !== "gateway" && a.id !== "gateway-router");
-
-  const navOf = (app: RegisteredAppStatus) => app.live?.nav ?? app.nav;
-  const capabilitiesOf = (app: RegisteredAppStatus) => app.live?.capabilities ?? app.capabilities;
-  const withNav = visibleApps.filter((a) => navOf(a)?.href);
-  const withAdmin = visibleApps.filter((a) => navOf(a)?.adminHref);
-  const withCapabilities = visibleApps.filter((a) => capabilitiesOf(a));
-  const appCount = visibleApps.length;
-  const offlineCount = visibleApps.filter((a) => !a.isOnline).length;
-
-  const appRows = visibleApps
-    .map((app) => {
-      const traffic = appTraffic.get(app.id);
-      const fresh = Boolean(app.live && app.live.expiresAt - Date.now() > 30_000);
-      const currentRuntimeStatus = runtimeStatuses.get(app.id);
-      const runtimeStatus: AppRuntimeStatus = {
-        status: currentRuntimeStatus?.status ?? "ok",
-        signals: [...(currentRuntimeStatus?.signals ?? [])],
-      };
-      if (!app.isOnline) {
-        runtimeStatus.status = "error";
-        runtimeStatus.signals = [...runtimeStatus.signals, t.noLiveHeartbeat];
-      } else if (!fresh && runtimeStatus.status === "ok") {
-        runtimeStatus.status = "warn";
-        runtimeStatus.signals = [...runtimeStatus.signals, t.heartbeatExpiresSoon];
-      }
-      const isHealthy = runtimeStatus.status === "ok";
-      const upSince = app.live ? Math.max(0, Date.now() - app.live.createdAt) : app.offlineForMs;
-      return { ...app, traffic, isHealthy, upSince, runtimeStatus };
-    })
-    .sort((a, b) => Number(b.isOnline) - Number(a.isOnline) || (b.traffic?.count ?? 0) - (a.traffic?.count ?? 0));
-  const healthy = appRows.filter((app) => app.isHealthy);
+  const withCapabilities = registry.apps.filter((app) => app.id !== "gateway" && app.id !== "gateway-router" && app.capabilities);
 
   // Route data with hit counts, server-side filtered
   const searchQuery = url.searchParams.get("search")?.toLowerCase().trim() ?? "";
@@ -136,63 +73,6 @@ export default ssr<AuthContext>(async (c) => {
     })
     .sort((a, b) => b.count - a.count);
   const filteredRoutes = searchQuery ? allRoutes.filter((r) => r.prefix.includes(searchQuery) || r.appId.includes(searchQuery)) : allRoutes;
-  const appColumns: DataTableColumn<GatewayAppRow>[] = [
-    { id: "app", header: t.app, value: (app) => app.name },
-    { id: "status", header: t.status, value: (app) => app.isOnline, headerClass: "text-center", cellClass: "text-center" },
-    { id: "runtime", header: t.release, value: (app) => (app.live?.runtime ?? app.runtime)?.release },
-    { id: "baseUrl", header: t.baseUrl, value: (app) => app.baseUrl },
-    { id: "nav", header: t.navigation, value: (app) => app.nav?.href, headerClass: "text-center", cellClass: "text-center" },
-    { id: "admin", header: t.admin, value: (app) => app.nav?.adminHref, headerClass: "text-center", cellClass: "text-center" },
-    {
-      id: "capabilities",
-      header: t.capabilities,
-      value: (app) => app.capabilities,
-      headerClass: "text-center",
-      cellClass: "text-center",
-    },
-    {
-      id: "heartbeat",
-      header: t.heartbeat,
-      value: (app) => app.updatedAt,
-      headerClass: "text-right",
-      cellClass: "text-right whitespace-nowrap",
-    },
-    {
-      id: "upSince",
-      header: t.upSince,
-      value: (app) => app.upSince,
-      headerClass: "text-right",
-      cellClass: "text-right whitespace-nowrap",
-    },
-    {
-      id: "requests",
-      header: t.requests,
-      value: (app) => app.traffic?.count,
-      headerClass: "text-right",
-      cellClass: "text-right tabular-nums",
-    },
-    {
-      id: "latency",
-      header: t.latency,
-      value: (app) => (app.traffic ? app.traffic.totalMs / app.traffic.count : null),
-      headerClass: "text-right",
-      cellClass: "text-right tabular-nums",
-    },
-    {
-      id: "errors",
-      header: t.errors,
-      subtitle: range,
-      value: (app) => app.traffic?.errors,
-      headerClass: "text-right",
-      cellClass: "text-right tabular-nums",
-    },
-    {
-      id: "actions",
-      header: <span class="sr-only">{t.actions}</span>,
-      headerClass: "text-right",
-      cellClass: "text-right whitespace-nowrap max-w-none",
-    },
-  ];
   const routeColumns: DataTableColumn<GatewayRouteRow>[] = [
     { id: "prefix", header: t.prefix, value: (route) => route.prefix },
     { id: "app", header: t.app, value: (route) => route.appId },
@@ -209,18 +89,7 @@ export default ssr<AuthContext>(async (c) => {
   const attention = await readAttention();
   return () => (
     <ObservabilityArea c={c} locale={locale} section="gateway" attention={attention}>
-      <ObservabilityPane
-        label={areaText(locale).gateway}
-        description={isRoutesPage ? t.gatewayRoutesDescription : t.gatewayAppsDescription}
-      >
-        <ViewTabs
-          label={areaText(locale).gateway}
-          current={isRoutesPage ? "routes" : "apps"}
-          items={[
-            { id: "apps", label: t.gatewayAppsTitle, href: rangeUrl(new URL("/admin/observability/gateway", url), range) },
-            { id: "routes", label: t.gatewayRoutesTitle, href: rangeUrl(new URL("/admin/observability/gateway/routes", url), range) },
-          ]}
-        />
+      <ObservabilityPane label={areaText(locale).gateway} description={t.gatewayRoutesDescription}>
         <RangeTabs
           caption={t.trafficWindow}
           label={t.trafficWindow}
@@ -229,8 +98,7 @@ export default ssr<AuthContext>(async (c) => {
         />
 
         {/* ── Stats — see skills/cloud-app/references/frontend.md § Stats ── */}
-        <StatGrid columns={6}>
-          <StatCell value={appCount} label={t.apps} sub={t.navAdminSummary({ nav: withNav.length, admin: withAdmin.length })} />
+        <StatGrid columns={4}>
           <StatCell
             value={routerSnapshot?.routeCount ?? 0}
             label={t.gatewayRoutesTitle}
@@ -259,193 +127,59 @@ export default ssr<AuthContext>(async (c) => {
                 : t.noRouterSnapshot
             }
           />
-          <StatCell
-            value={`${healthy.length}/${appCount}`}
-            label={t.healthy}
-            sub={
-              healthy.length === appCount
-                ? t.allSystems
-                : t.healthSummary({ offline: offlineCount, degraded: appCount - healthy.length - offlineCount })
-            }
-            accent={healthy.length === appCount ? { tone: "emerald", icon: "ti ti-check" } : { tone: "red", icon: "ti ti-alert-circle" }}
-          />
         </StatGrid>
 
-        {/* ── Apps Table ── */}
-        {!isRoutesPage ? (
-          <DataTable.Panel>
-            {registry.issues.length > 0 ? (
-              <NoticeCard
-                tone="danger"
-                title={t.invalidRegistryEntries({ count: registry.issues.length })}
-                detail={registry.issues.map((issue) => `${issue.key}: ${issue.reason}`).join(" · ")}
-                class="m-3"
-              />
-            ) : null}
-            <DataTable
-              ariaLabel={t.apps}
-              rows={appRows}
-              columns={appColumns}
-              getRowId={(app) => app.id}
-              hoverRows
-              highlightColumns={false}
-              rowClass={(app) =>
-                app.runtimeStatus.status === "error"
-                  ? "bg-red-50/50 dark:bg-red-950/20"
-                  : app.runtimeStatus.status === "warn"
-                    ? "bg-amber-50/50 dark:bg-amber-950/20"
-                    : ""
-              }
-              surface="plain"
-              tableClass="w-full text-sm"
-              renderCell={({ row: app, col }) => {
-                if (col.id === "app") {
-                  return (
-                    <div class="flex items-center gap-2">
-                      <AppIcon icon={app.icon} accent={app.appearance?.accent} />
-                      <span class="font-medium text-primary text-xs">{app.name}</span>
-                      <code class="text-[9px] text-dimmed">{app.id}</code>
-                    </div>
-                  );
-                }
-                if (col.id === "baseUrl") return <code class="text-[10px] text-dimmed">{app.baseUrl}</code>;
-                if (col.id === "status") {
-                  const label = !app.isOnline
-                    ? t.offline
-                    : app.runtimeStatus.status === "error"
-                      ? t.incompatible
-                      : app.runtimeStatus.status === "warn"
-                        ? t.degraded
-                        : t.live;
-                  return (
-                    <div class="flex max-w-64 flex-col items-center gap-1">
-                      <StatusBadge
-                        tone={app.runtimeStatus.status === "warn" ? "warning" : app.runtimeStatus.status}
-                        label={label}
-                        title={app.runtimeStatus.signals.join("\n") || undefined}
-                      />
-                      {app.runtimeStatus.signals.length > 0 ? (
-                        <span class="text-[9px] leading-tight text-dimmed">{app.runtimeStatus.signals[0]}</span>
-                      ) : null}
-                    </div>
-                  );
-                }
-                if (col.id === "runtime") {
-                  const runtime = app.live?.runtime ?? app.runtime;
-                  return (
-                    <div class="flex flex-col whitespace-nowrap">
-                      <code class="text-[10px] text-primary">{runtime?.release ?? t.unknown}</code>
-                      <span class="text-[9px] text-dimmed">Sync {runtime?.syncVersion ?? t.unknown}</span>
-                    </div>
-                  );
-                }
-                if (col.id === "nav") return navOf(app)?.href ? <Check /> : <Dash />;
-                if (col.id === "admin") {
-                  const adminHref = navOf(app)?.adminHref;
-                  return adminHref ? (
-                    <a href={adminHref} class="text-emerald-500 hover:text-emerald-700" title={t.openAppAdmin({ name: app.name })}>
-                      <i class="ti ti-check text-xs" aria-hidden="true" />
-                      <span class="sr-only">{t.openAppAdmin({ name: app.name })}</span>
-                    </a>
-                  ) : (
-                    <Dash />
-                  );
-                }
-                if (col.id === "capabilities") return capabilitiesOf(app) ? <Check /> : <Dash />;
-                if (col.id === "heartbeat") {
-                  return (
-                    <span class={`text-[10px] ${app.isHealthy ? "text-emerald-600 dark:text-emerald-400" : "text-red-500"}`}>
-                      <i class={`ti ${app.isHealthy ? "ti-heartbeat" : "ti-alert-triangle"} text-[9px]`} />{" "}
-                      {app.isOnline ? timeAgo(app.live!.updatedAt, t) : t.lastSeen({ value: timeAgo(app.lastSeenAt, t) })}
-                    </span>
-                  );
-                }
-                if (col.id === "upSince") {
-                  return (
-                    <span
-                      class={`text-[10px] tabular-nums ${app.isHealthy ? "text-dimmed" : "text-red-500"}`}
-                      title={formatDateTime(new Date(app.live?.createdAt ?? app.lastSeenAt), dateConfig)}
-                    >
-                      {fmtUptime(app.upSince, locale)}
-                    </span>
-                  );
-                }
-                if (col.id === "requests")
-                  return <span class="text-xs text-dimmed">{app.traffic ? fmtCount(app.traffic.count, { locale }) : "—"}</span>;
-                if (col.id === "latency") {
-                  return (
-                    <span class="text-xs tabular-nums text-dimmed">
-                      {app.traffic && app.traffic.count > 0 ? fmtMs(app.traffic.totalMs / app.traffic.count, { locale }) : "—"}
-                    </span>
-                  );
-                }
-                if (col.id === "errors") {
-                  return app.traffic && app.traffic.errors > 0 ? (
-                    <span class="text-xs tabular-nums text-red-500">
-                      {fmtCount(app.traffic.errors, { locale })}{" "}
-                      <span class="text-[9px]">({fmtRatio(app.traffic.errors, app.traffic.count, { locale, decimals: 0 })})</span>
-                    </span>
-                  ) : (
-                    <span class="text-xs text-dimmed">—</span>
-                  );
-                }
-                if (col.id === "actions") {
-                  return <RemoveRegisteredAppButton id={app.id} name={app.name} disabled={app.isOnline} />;
-                }
-                return "";
-              }}
-            />
-          </DataTable.Panel>
-        ) : null}
-
         {/* ── Routes: title + search + table (same pattern as logs) ── */}
-        {isRoutesPage ? (
-          <DataTable.Panel>
-            <DataTable.Header
-              title={t.gatewayRoutesTitle}
-              subtitle={
-                searchQuery
-                  ? t.filteredRoutesCount({
-                      count: fmtCount(filteredRoutes.length, { locale }),
-                      total: fmtCount(allRoutes.length, { locale }),
-                    })
-                  : t.routesCount({ count: allRoutes.length })
+        <DataTable.Panel>
+          <DataTable.Header
+            title={t.gatewayRoutesTitle}
+            subtitle={
+              searchQuery
+                ? t.filteredRoutesCount({
+                    count: fmtCount(filteredRoutes.length, { locale }),
+                    total: fmtCount(allRoutes.length, { locale }),
+                  })
+                : t.routesCount({ count: allRoutes.length })
+            }
+          />
+          <DataTable.Controls>
+            <SearchBar
+              placeholder={t.filterRoutes}
+              ariaLabel={t.filterRoutesLabel}
+              action={rangeUrl(new URL("/admin/observability/gateway/routes", url), range)}
+              value={searchQuery}
+            />
+          </DataTable.Controls>
+          <DataTable
+            rows={filteredRoutes}
+            columns={routeColumns}
+            getRowId={(route) => route.prefix}
+            hoverRows
+            highlightColumns={false}
+            density="compact"
+            surface="plain"
+            empty={t.noMatchingRoutes({ query: searchQuery })}
+            renderCell={({ row: route, col }) => {
+              if (col.id === "prefix") return <code class="text-[10px] text-primary">{route.prefix}</code>;
+              if (col.id === "app")
+                return (
+                  <a class="text-[10px] text-dimmed hover:underline" href={`/admin/apps?app=${encodeURIComponent(route.appId)}`}>
+                    {route.appId}
+                  </a>
+                );
+              if (col.id === "hits")
+                return <span class="text-[10px] text-dimmed">{route.count > 0 ? fmtCount(route.count, { locale }) : "—"}</span>;
+              if (col.id === "errors") {
+                return route.errors > 0 ? (
+                  <span class="text-[10px] tabular-nums text-red-500">{fmtCount(route.errors, { locale })}</span>
+                ) : (
+                  <span class="text-[10px] text-dimmed">—</span>
+                );
               }
-            />
-            <DataTable.Controls>
-              <SearchBar
-                placeholder={t.filterRoutes}
-                ariaLabel={t.filterRoutesLabel}
-                action={rangeUrl(new URL("/admin/observability/gateway/routes", url), range)}
-                value={searchQuery}
-              />
-            </DataTable.Controls>
-            <DataTable
-              rows={filteredRoutes}
-              columns={routeColumns}
-              getRowId={(route) => route.prefix}
-              hoverRows
-              highlightColumns={false}
-              density="compact"
-              surface="plain"
-              empty={t.noMatchingRoutes({ query: searchQuery })}
-              renderCell={({ row: route, col }) => {
-                if (col.id === "prefix") return <code class="text-[10px] text-primary">{route.prefix}</code>;
-                if (col.id === "app") return <span class="text-[10px] text-dimmed">{route.appId}</span>;
-                if (col.id === "hits")
-                  return <span class="text-[10px] text-dimmed">{route.count > 0 ? fmtCount(route.count, { locale }) : "—"}</span>;
-                if (col.id === "errors") {
-                  return route.errors > 0 ? (
-                    <span class="text-[10px] tabular-nums text-red-500">{fmtCount(route.errors, { locale })}</span>
-                  ) : (
-                    <span class="text-[10px] text-dimmed">—</span>
-                  );
-                }
-                return "";
-              }}
-            />
-          </DataTable.Panel>
-        ) : null}
+              return "";
+            }}
+          />
+        </DataTable.Panel>
       </ObservabilityPane>
     </ObservabilityArea>
   );

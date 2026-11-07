@@ -20,7 +20,7 @@ test("typed summaries queue accepted email but preserve errors for required chan
     globalThis.notificationPlatformSql = sql;
     Bun.plugin({ name: "notification-platform-mail-sql", setup(build) {
       build.onLoad({ filter: /[\\/]notifications[\\/]platform\\.ts$/ }, async ({ path }) => ({
-        contents: (await Bun.file(path).text()).replace('import { sql } from "bun";', 'const sql = globalThis.notificationPlatformSql;'), loader: "ts",
+        contents: (await Bun.file(path).text()).replace('import { sql } from "../../runtime/clients";', 'const sql = globalThis.notificationPlatformSql;'), loader: "ts",
       }));
     }});
     mock.module(${JSON.stringify(new URL("./catalog.ts", import.meta.url).pathname)}, () => ({ ensureNotificationDefinition: async () => {} }));

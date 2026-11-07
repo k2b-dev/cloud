@@ -36,7 +36,7 @@ describe("group POSIX actions", () => {
   beforeEach(async () => {
     dom = createDomTestHarness();
     ({ prompts } = await import("@k2b/ui"));
-    spyOn(navigation, "refreshCurrentPath").mockImplementation(refreshed);
+    spyOn(navigation, "swapPage").mockImplementation(async () => refreshed());
     cleanup = () => dom.cleanup();
   });
   afterEach(() => {

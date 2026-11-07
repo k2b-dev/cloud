@@ -1,7 +1,7 @@
 import type { ConversationView } from "../../contracts";
 import { mailPlacementsBelongInListing, mailRowLeavesListing } from "../../folder-display-rules";
 import type { ConversationViewCounts, MailFolderView } from "../../service/messages";
-import type { MailListItem, MailListMode } from "../../service/workspace";
+import type { MailAssignedGroups, MailListItem, MailListMode } from "../../service/workspace";
 import { mailListMessagePendingKey } from "./mail-list-optimistic";
 
 export const MAIL_ROW_LEAVE_MS = 160;
@@ -58,7 +58,9 @@ export const projectMailCounts = (params: {
   shown: readonly MailListItem[];
   removals: readonly MailListRemoval[];
   scope: string;
-}): { folders: MailFolderView[]; viewCounts: ConversationViewCounts } => {
+  /** Assigned to me's group counts; a row that leaves the list leaves its group's count with it. */
+  assignedGroups?: MailAssignedGroups | null;
+}): { folders: MailFolderView[]; viewCounts: ConversationViewCounts; assignedGroups: MailAssignedGroups | null } => {
   const snapshot = new Map(params.items.map((item) => [mailListRowKey(item), item]));
   const shown = new Map(params.shown.map((item) => [mailListRowKey(item), item]));
   const deltas = new Map<string, number>();
@@ -67,6 +69,7 @@ export const projectMailCounts = (params: {
   const removedKeys = new Set<string>();
   const removedFolders = new Map<string, ReadonlySet<string>>();
   let viewDelta = 0;
+  const groupDeltas = { needsAction: 0, waiting: 0 };
   const viewDeltas = new Map<ConversationView, number>();
   for (const removal of params.removals) {
     if (removal.scope !== params.scope || removedKeys.has(removal.rowKey)) continue;
@@ -79,6 +82,7 @@ export const projectMailCounts = (params: {
     if (!conversations.has(removal.conversationId)) {
       conversations.add(removal.conversationId);
       viewDelta += delta;
+      groupDeltas[removal.item.workStatus === "waiting" ? "waiting" : "needsAction"] += delta;
       if (params.listMode === "conversations") {
         const row = removal.item;
         const snoozed = row.snoozedUntil !== null && Date.parse(row.snoozedUntil) > params.now;
@@ -141,5 +145,13 @@ export const projectMailCounts = (params: {
   if (params.activeView && params.listMode === "conversations" && viewDelta !== 0) viewDeltas.set(params.activeView, viewDelta);
   const viewCounts = [...viewDeltas.values()].some((delta) => delta !== 0) ? { ...params.viewCounts } : params.viewCounts;
   for (const [view, delta] of viewDeltas) if (delta !== 0) viewCounts[view] = Math.max(0, params.viewCounts[view] + delta);
-  return { folders, viewCounts };
+  const groups = params.assignedGroups ?? null;
+  const assignedGroups =
+    groups && (groupDeltas.needsAction !== 0 || groupDeltas.waiting !== 0)
+      ? {
+          needsAction: Math.max(0, groups.needsAction + groupDeltas.needsAction),
+          waiting: Math.max(0, groups.waiting + groupDeltas.waiting),
+        }
+      : groups;
+  return { folders, viewCounts, assignedGroups };
 };

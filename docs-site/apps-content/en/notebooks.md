@@ -5,7 +5,7 @@ section: Work
 order: 120
 description: Markdown handbooks and collaborative notebooks with structured blocks, discussions, links, and files.
 tags: [notebooks, markdown, collaboration]
-updated: 2026-10-27
+updated: 2026-10-29
 ---
 
 # Notebooks
@@ -667,3 +667,17 @@ deduplicate requests. On failure, `accepted: false` means the action was rejecte
 `accepted: null` means the outcome is unknown. Preserve accepted receipts and
 synchronize instead of automatically submitting the action again. The API does
 not itself enable the formatted table editor.
+
+## Integrate resource discussions
+
+The `notebook` and `note` capability readers return a standard localized
+`view` with the current title and caller permission. The `note` view also
+identifies its owning notebook and gives a one-line context. Existing reader
+fields remain available.
+
+The [discussions role](/en/docs/platform/resource-types-and-discussions)
+declares `note` inside `notebook`, lists authorized containers through
+`notebook.containers`, and reads activity through `notebook.activity`.
+Activity accepts `container` alongside the published `notebook` alias; when
+both are supplied they must identify the same notebook. The existing list
+and activity results remain compatible.

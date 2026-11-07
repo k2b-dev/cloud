@@ -18,8 +18,10 @@ export const notificationProjection = async (db: typeof sql, context: ChatContex
       SELECT t.id, t.short_id, t.resource_type, t.resource_id FROM chat.thread_follows f JOIN chat.threads t ON t.id = f.thread_id
       WHERE f.principal_type = ${self.type} AND f.principal_id = ${self.id}::uuid AND f.conversation_id = ${conversation.id}::uuid
       ORDER BY f.since DESC, f.thread_id LIMIT 1`;
-    const resource = first ? await threadResource(context, first) : null;
-    following = { count: count!.count, first: first && resource ? { id: first.short_id, name: resource.name } : null };
+    const resource = first
+      ? await threadResource(context, { ...first, container_type: conversation.resource_type, container_id: conversation.resource_id })
+      : null;
+    following = { count: count!.count, first: first && resource ? { id: first.short_id, name: resource.title } : null };
   }
   return {
     ...resolveNotifications(

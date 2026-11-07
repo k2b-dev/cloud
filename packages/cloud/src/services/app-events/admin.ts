@@ -13,12 +13,12 @@ type Dependencies = {
   deadLetters: (after?: string) => Promise<TopicDeadLetter<AppEventEnvelope>[]>;
   streams: () => AsyncIterable<Pick<TopicInventoryEntry, "id" | "firstSequence">>;
 };
-export function createEventAdministration(db: SQL, dependencies: Dependencies) {
+export function createEventAdministration(db: () => SQL, dependencies: Dependencies) {
   const catalog = async (locale = "en"): Promise<{ events: CapabilityEventCatalogEntry[] }> => {
     const [entries, declarations, storedSubscriptions] = await Promise.all([
       dependencies.registry(),
-      db<StoredDeclaration[]>`SELECT * FROM events.app_declarations WHERE retired_at IS NULL ORDER BY type, version`,
-      db<
+      db()<StoredDeclaration[]>`SELECT * FROM events.app_declarations WHERE retired_at IS NULL ORDER BY type, version`,
+      db()<
         {
           appId: string;
           subscriptionId: string;
@@ -62,7 +62,7 @@ export function createEventAdministration(db: SQL, dependencies: Dependencies) {
   };
   const subscriptions = async (app?: string) => {
     return {
-      items: await db`
+      items: await db()`
         SELECT subscription.id, subscription.app_id AS "appId", subscription.event_type AS "eventType", subscription.version,
           subscription.state, subscription.reason, subscription.first_seen_at AS "firstSeenAt",
           (SELECT jsonb_object_agg(state, count) FROM (
@@ -77,7 +77,7 @@ export function createEventAdministration(db: SQL, dependencies: Dependencies) {
   const deliveries = async (filter: { app?: string; state?: string; eventType?: string; offset?: number; limit?: number } = {}) => {
     const limit = Math.max(1, Math.min(100, filter.limit ?? 50));
     const offset = Math.max(0, filter.offset ?? 0);
-    const rows = await db`
+    const rows = await db()`
       SELECT delivery.id, delivery.event_id AS "eventId", delivery.subscription_id AS "subscriptionId",
         subscription.app_id AS "appId", event.type AS "eventType", delivery.state, delivery.code, delivery.attempts,
         delivery.last_error AS "lastError", delivery.last_attempt_at AS "lastAttemptAt",
@@ -104,7 +104,7 @@ export function createEventAdministration(db: SQL, dependencies: Dependencies) {
     };
   };
   const redeliver = async (id: string, actor: AuditActor) =>
-    db.begin(async (tx) => {
+    db().begin(async (tx) => {
       const changed = await tx`
         UPDATE events.app_deliveries delivery SET state = 'pending', code = NULL, last_error = NULL,
           attempts = 0, unreachable_count = 0, retained_from = now(), next_attempt_at = now(), claimed_until = NULL, claim_token = NULL, updated_at = now()
@@ -129,12 +129,12 @@ export function createEventAdministration(db: SQL, dependencies: Dependencies) {
     });
 
   const status = async () => {
-    const [stored] = await db`
+    const [stored] = await db()`
       SELECT state, code, last_sequence AS "lastSequence", gap_from AS "gapFrom", gap_to AS "gapTo", updated_at AS "updatedAt"
       FROM events.app_broker_status WHERE id = true
     `;
-    const [rejected] = await db`SELECT count(*)::int AS count FROM events.app_events WHERE state = 'rejected'`;
-    const rejections = await db`
+    const [rejected] = await db()`SELECT count(*)::int AS count FROM events.app_events WHERE state = 'rejected'`;
+    const rejections = await db()`
       SELECT type, source, code, received_at AS time FROM events.app_events
       WHERE state = 'rejected' ORDER BY seq DESC LIMIT 10
     `;
@@ -156,7 +156,7 @@ export function createEventAdministration(db: SQL, dependencies: Dependencies) {
     };
   };
   const checkGap = async () => {
-    const [stored] = await db<{ last_sequence: string }[]>`
+    const [stored] = await db()<{ last_sequence: string }[]>`
       SELECT last_sequence FROM events.app_broker_status WHERE id = true
     `;
     let position = Number(stored?.last_sequence ?? 0);
@@ -175,7 +175,7 @@ export function createEventAdministration(db: SQL, dependencies: Dependencies) {
       after = next;
     }
     if (seen.size) {
-      await db`
+      await db()`
         UPDATE events.app_broker_status SET unseen_sequences = unseen_sequences - (
           SELECT range_agg(int8range(sequence, sequence + 1, '[)'))
           FROM unnest(${toPgTextArray([...seen].map(String))}::bigint[]) AS sequence
@@ -183,13 +183,13 @@ export function createEventAdministration(db: SQL, dependencies: Dependencies) {
       `;
     }
     while (seen.has(position + 1)) position++;
-    await db`
+    await db()`
       UPDATE events.app_broker_status SET last_sequence = ${position}, updated_at = now()
       WHERE id = true AND last_sequence < ${position}
     `;
     for await (const stream of dependencies.streams()) {
       if (stream.id !== "cloud:app-events") continue;
-      await db`
+      await db()`
         UPDATE events.app_broker_status SET state = 'gap_detected', code = 'reconcile_required',
           gap_from = COALESCE(gap_from, LEAST(lower(unseen_sequences), last_sequence + 1)), gap_to = ${stream.firstSequence - 1}, updated_at = now()
         WHERE id = true AND LEAST(lower(unseen_sequences), last_sequence + 1) < ${stream.firstSequence}
@@ -199,7 +199,7 @@ export function createEventAdministration(db: SQL, dependencies: Dependencies) {
     }
   };
   const acknowledgeGap = async (actor: AuditActor) =>
-    db.begin(async (tx) => {
+    db().begin(async (tx) => {
       const [previous] = await tx`
         SELECT state, gap_from, gap_to FROM events.app_broker_status WHERE id = true FOR UPDATE
       `;
@@ -223,7 +223,7 @@ export function createEventAdministration(db: SQL, dependencies: Dependencies) {
       return result;
     });
   const retain = async () =>
-    db.begin(async (tx) => {
+    db().begin(async (tx) => {
       await tx`
         UPDATE events.app_deliveries SET state = 'cancelled', code = 'retention_expired',
           claimed_until = NULL, claim_token = NULL, updated_at = now()

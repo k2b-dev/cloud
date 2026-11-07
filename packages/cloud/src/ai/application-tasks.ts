@@ -1,6 +1,6 @@
 import type { SQL } from "bun";
-import { env } from "../config/env";
 import type { AccessSubject } from "../server/services/access";
+import { coreSettings } from "../services/settings/api";
 import { WorkflowAiAdmissionError, type WorkflowAiScope, workflowAiHash, workflowAiModelHash } from "../workflows/ai/policy";
 import { submitWorkflowAiTask } from "../workflows/ai/runtime";
 import {
@@ -56,7 +56,10 @@ export const runApplicationAiTask = async (input: ApplicationAiTaskInput) => {
   let task = await getWorkflowAiTaskByEffectKey(effectKey);
   if (!task) {
     const resolved = await resolveApplicationAiTaskModel(input.usageSubject, input.request.model);
-    const admissionSignal = AbortSignal.any([input.signal, AbortSignal.timeout(env.WORKFLOW_AI_QUEUE_TIMEOUT_MS)]);
+    const admissionSignal = AbortSignal.any([
+      input.signal,
+      AbortSignal.timeout(await coreSettings.get<number>("ai.workflow_queue_timeout_ms")),
+    ]);
     for (;;) {
       input.signal.throwIfAborted();
       if (admissionSignal.aborted) throw new WorkflowAiAdmissionError("WORKFLOW_AI_QUEUE_TIMEOUT");

@@ -2,12 +2,17 @@ import { isolateHistory } from "@codemirror/commands";
 import { ensureSyntaxTree } from "@codemirror/language";
 import { type ChangeSet, type ChangeSpec, EditorSelection, type EditorState, type SelectionRange } from "@codemirror/state";
 import type { EditorView } from "@codemirror/view";
+import {
+  buildDataBlockTemplate,
+  dataBlockRefSelection,
+  inCode,
+  listIndentAvailability,
+  listKindAt,
+  MARK_REGEX,
+  TAG_REGEX,
+} from "@k2b/editor/markdown";
 import type { SyntaxNode, Tree } from "@lezer/common";
-import { MARK_REGEX, TAG_REGEX } from "../../../lib/editor/_lib/inline-syntax";
-import { inCode } from "../../../lib/editor/_lib/list-item-line";
-import { excludedSpans } from "../../../lib/editor/_lib/list-structure";
-import { buildDataBlockTemplate, dataBlockRefSelection } from "../../../lib/editor/data-block-template";
-import { listIndentAvailability, listKindAt } from "../../../lib/editor/list-commands";
+import { notebookExcludedRanges } from "../../../lib/editor/notebook-options";
 import { notebookWorkspaceMessages } from "../../messages";
 import { openNoteLinkPrompt } from "../search/openNoteSearchPrompt";
 
@@ -327,7 +332,7 @@ export const setHeadingLevel = (view: EditorView, level: HeadingLevel): void => 
   const leading = /^[ \t]*(?:(?:>[ \t]*|(?:[-+*]|\d{1,9}[.)])[ \t]+)[ \t]*)*/.exec(content.text)![0];
   if (/(?:[-+*]|\d{1,9}[.)])[ \t]+$/.test(leading) && /^\[[ xX]\](?:[ \t]+|$)/.test(content.text.slice(leading.length))) return;
   const from = content.from + leading.length;
-  if (inCode(tree, from) || excludedSpans(state).some((span) => from >= span.from && from < span.to)) return;
+  if (inCode(tree, from) || notebookExcludedRanges(state.doc.toString()).some((span) => from >= span.from && from < span.to)) return;
   const heading = /^(#{1,6})(?:[ \t]+|$)/.exec(content.text.slice(leading.length));
   const prefix = level ? `${"#".repeat(level)} ` : "";
   const changes = state.changes(

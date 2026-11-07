@@ -297,7 +297,12 @@ describe("Spaces claim take-over", () => {
     dialogButton("Remove and end claim")!.click();
     await waitFor(() => reloaded);
     expect(calls).toEqual(["patch"]);
-    expect(patch.mock.calls[0]![0].json).toEqual({ assigneeIds: [], claimId: claim.id, force: true });
+    expect(patch.mock.calls[0]![0].json).toEqual({
+      addAssigneeIds: [],
+      removeAssigneeIds: [claim.actor.id],
+      claimId: claim.id,
+      force: true,
+    });
 
     dispose();
     dom.cleanup();

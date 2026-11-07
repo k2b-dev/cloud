@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, expect, spyOn } from "bun:test";
-import { type SQL, sql, type TransactionSQL } from "bun";
+import { sql } from "@k2b/cloud";
+import type { SQL, TransactionSQL } from "bun";
 import { testFor, testInfra } from "../../../../scripts/fixtures/test-infra";
 import { testShortId } from "../../../../scripts/fixtures/test-short-id";
 import { buildNotePaths, noteSlug } from "../lib/note-path";

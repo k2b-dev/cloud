@@ -1,4 +1,8 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, setSystemTime, test } from "bun:test";
+import { formatAppKey, importAppPublicKey } from "@k2b/cloud/app-key";
+import { env } from "@k2b/cloud/config";
+import { decodeJwt, jwtVerify } from "jose";
+import { APP_KEY_FIXTURES } from "../../../../scripts/fixtures/app-key-fixtures";
 import {
   issueOAuthTokenBatch,
   OAuthAuthorityGrantRejectedError,
@@ -110,7 +114,7 @@ describe("OAuth Core device approval client", () => {
       await startOAuthDeviceApproval(approval, {
         ...options,
         fetch: async (input, init) => {
-          expect(init?.signal).toBeInstanceOf(AbortSignal);
+          expect(new Request(input, init).signal).toBeInstanceOf(AbortSignal);
           seen.push(new Request(input, init));
           return Response.json(result);
         },
@@ -183,4 +187,67 @@ describe("OAuth Core device approval client", () => {
       expect(calls).toBe(1);
     }
   });
+});
+
+test("OAuth signs readiness, each issuance and device approval without a broker secret", async () => {
+  const descriptor = Object.getOwnPropertyDescriptor(env, "CLOUD_APP_KEY")!;
+  const appKey = {
+    installationId: "11111111-1111-4111-8111-111111111111",
+    appId: "oauth",
+    keyId: "22222222-2222-4222-8222-222222222222",
+    seed: APP_KEY_FIXTURES[0].seed,
+  };
+  Object.defineProperty(env, "CLOUD_APP_KEY", { value: formatAppKey(appKey), configurable: true });
+  const proofs: string[] = [];
+  const bodies: string[] = [];
+  setSystemTime(new Date("2030-01-02T03:04:05Z"));
+  try {
+    const options = {
+      origin: "http://core.test",
+      brokerSecret: "",
+      fetch: async (input: RequestInfo | URL, init?: RequestInit) => {
+        const sent = new Request(input, init);
+        const proof = sent.headers.get("authorization")!.slice(7);
+        const body = await sent.text();
+        const { payload } = await jwtVerify(proof, await importAppPublicKey(APP_KEY_FIXTURES[0].publicKey), {
+          algorithms: ["EdDSA"],
+          typ: "cloud-app+jwt",
+          currentDate: new Date("2030-01-02T03:04:05Z"),
+        });
+        expect(payload).toMatchObject({
+          iss: "oauth",
+          sub: "oauth",
+          aud: `cloud-core:${appKey.installationId}`,
+          htm: sent.method,
+          htu: new URL(sent.url).pathname,
+        });
+        const digest = Buffer.from(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(body))).toString("base64url");
+        expect(payload.bdh).toBe(digest);
+        proofs.push(proof);
+        bodies.push(body);
+        if (sent.url.endsWith("/ready")) return new Response(null, { status: 204 });
+        if (sent.url.endsWith("/device-approval")) return Response.json({ comparison: "012345", expiresAt: "2030-01-02T03:09:05Z" });
+        return Response.json({ tokens: ["signed.jwt"] });
+      },
+    };
+    await probeOAuthTokenAuthority(options);
+    await issueOAuthTokenBatch([request], options);
+    await issueOAuthTokenBatch([{ ...request, expiresIn: 1800 }], options);
+    await startOAuthDeviceApproval(
+      {
+        deviceAuthorizationId: "33333333-3333-4333-8333-333333333333",
+        identifier: "alice@example.test",
+        clientId: "cloud-cli",
+        scopes: ["openid"],
+        lifetimeSeconds: 3600,
+      },
+      options,
+    );
+    expect(proofs).toHaveLength(4);
+    expect(new Set(proofs.map((proof) => decodeJwt(proof).jti)).size).toBe(4);
+    expect(bodies[1]).not.toBe(bodies[2]);
+  } finally {
+    Object.defineProperty(env, "CLOUD_APP_KEY", descriptor);
+    setSystemTime();
+  }
 });

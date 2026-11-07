@@ -1,3 +1,5 @@
+import { sql } from "@k2b/cloud";
+import type { ResourcePrincipal } from "@k2b/cloud/contracts";
 import { hasRole } from "@k2b/cloud/contracts";
 import {
   type AccessEntry,
@@ -8,20 +10,24 @@ import {
   ensureManagerRemains,
   getEffectivePermission,
   getEffectivePermissions,
+  getMemberPermission,
   type PermissionLevel,
   type Principal,
   type RequestActor,
   type ResourceAccessAdapter,
   updateAccess,
+  userFromActor,
 } from "@k2b/cloud/server";
 import {
+  audit,
   isStandaloneServiceAccountKind,
   type ServiceAccountCredential,
   serviceAccountCredentials,
   serviceAccounts,
 } from "@k2b/cloud/services";
+import { type ResourceReader, resolveResourceReaders } from "@k2b/cloud/services/identity";
 import { err, fail, ok, type Result } from "@k2b/stdlib";
-import { type SQL, sql } from "bun";
+import type { SQL } from "bun";
 import { publishSpaceChange, spacesLive } from "./live";
 
 // ==========================
@@ -260,7 +266,20 @@ const mutateSpaceAccess = async (params: {
       params.permission === undefined
         ? await deleteAccess({ id: params.accessId }, tx)
         : await updateAccess({ id: params.accessId, permission: params.permission }, tx);
-    if (changed.ok) await publishSpaceChange(tx, { type: "access.changed", spaceId: params.spaceId });
+    if (changed.ok) {
+      if (params.caller)
+        await audit.record(
+          {
+            action: params.permission === undefined ? "spaces.access.revoke" : "spaces.access.update",
+            outcome: "allowed",
+            actor: { userId: userFromActor(params.caller.actor)?.id },
+            target: { type: "space", id: params.spaceId },
+            metadata: { accessId: params.accessId },
+          },
+          tx,
+        );
+      await publishSpaceChange(tx, { type: "access.changed", spaceId: params.spaceId });
+    }
     return changed;
   });
   if (result.ok) spacesLive.wake();
@@ -330,6 +349,37 @@ export const getActorsSpacePermissions = async (
   });
 };
 
+/** The permission a subject holds on a Space through access of its own, without the public tier. */
+export const getSpaceMemberPermission = async (params: { spaceId: string; subject: AccessSubject }): Promise<PermissionLevel> => {
+  const accessRows = await sql<{ access_id: string }[]>`
+    SELECT access_id FROM spaces.space_access WHERE space_id = ${params.spaceId}::uuid
+  `;
+  return getMemberPermission({ accessIds: accessRows.map((row) => row.access_id), subject: params.subject });
+};
+
+/**
+ * The permission an actor holds on a Space through access of its own: a direct, group, or all-signed-in grant, never
+ * the public tier. Everyone with read here may see who has access; public-link readers may not. The same caps as
+ * `getActorsSpacePermissions` apply: a resource-bound key holds nothing outside its Space, and a service account that
+ * does not act as its user is capped by its credential scopes.
+ */
+export const getActorSpaceMemberPermission = async (
+  spaceId: string,
+  reader: { actor: RequestActor; subject: AccessSubject },
+): Promise<PermissionLevel> => {
+  const account = reader.actor.kind === "service_account" ? reader.actor.serviceAccount : null;
+  if (
+    account?.kind === "resource_bound" &&
+    (account.appId !== SPACES_APP_ID || account.resourceType !== SPACE_RESOURCE_TYPE || account.resourceId !== spaceId)
+  ) {
+    return "none";
+  }
+  const permission = await getSpaceMemberPermission({ spaceId, subject: reader.subject });
+  return reader.actor.kind === "service_account" && reader.actor.serviceAccount.kind !== "user_delegated"
+    ? minPermission(permission, permissionFromScopes(reader.actor.scopes))
+    : permission;
+};
+
 /**
  * Create a new access entry and add it to a space.
  * Combined operation for convenience.
@@ -367,6 +417,17 @@ export const grantSpaceAccess = async (params: {
     const created = await createAccess({ principal, permission }, tx);
     if (!created.ok) return created;
     await tx`INSERT INTO spaces.space_access (space_id, access_id) VALUES (${spaceId}::uuid, ${created.data.id}::uuid)`;
+    if (params.caller)
+      await audit.record(
+        {
+          action: "spaces.access.grant",
+          outcome: "allowed",
+          actor: { userId: userFromActor(params.caller.actor)?.id },
+          target: { type: "space", id: spaceId },
+          metadata: { accessId: created.data.id, permission },
+        },
+        tx,
+      );
     await publishSpaceChange(tx, { type: "access.changed", spaceId });
     return ok(created.data.id);
   });
@@ -439,4 +500,23 @@ export const spaceAccessAdapter: ResourceAccessAdapter = {
   add: addSpaceAccess,
   remove: removeSpaceAccess,
   count: countSpaceAccess,
+};
+
+/** Current account grants and resource binding, independent of credential scopes. */
+export const getResourceSpacePermissions = async (spaceId: string, readers: readonly ResourceReader[]): Promise<PermissionLevel[]> => {
+  const granted = await getEffectivePermissions({
+    accessIds: sql`SELECT access_id FROM spaces.space_access WHERE space_id = ${spaceId}::uuid`,
+    subjects: readers.map((reader) => reader.subject),
+  });
+  return readers.map(({ binding }, index) =>
+    binding && (binding.appId !== SPACES_APP_ID || binding.resourceType !== SPACE_RESOURCE_TYPE || binding.resourceId !== spaceId)
+      ? "none"
+      : (granted[index] ?? "none"),
+  );
+};
+
+export const readableSpacePrincipals = async (spaceId: string, principals: readonly ResourcePrincipal[]): Promise<ResourcePrincipal[]> => {
+  const readers = await resolveResourceReaders(principals);
+  const permissions = await getResourceSpacePermissions(spaceId, readers);
+  return readers.filter((_, index) => permissions[index] !== "none").map((reader) => reader.principal);
 };

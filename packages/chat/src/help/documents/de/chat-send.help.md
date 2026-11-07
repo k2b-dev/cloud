@@ -68,7 +68,7 @@ Du kannst in einem Chat, in dem du Mitglied bist, mit Zugriff **Schreiben** oder
 3. Sende die Nachricht.
 :::
 
-Die Liste zeigt die Mitglieder des Chats und die Personen, die darin geschrieben haben. In einem Chat eines Space oder Notebooks zeigt sie die Personen, die dort geschrieben haben. Die erwähnte Person findet die Nachricht unter **Für dich**, sofern sie sie lesen darf.
+Die Liste zeigt die Mitglieder des Chats und die Personen, die darin geschrieben haben. In einer Ressourcen-Diskussion zeigt sie die Personen, die dort geschrieben haben. Die erwähnte Person findet die Nachricht unter **Für dich**, sofern sie sie lesen darf.
 
 ## Cloud-Element teilen {icon="share"}
 
@@ -115,3 +115,7 @@ Eine Änderung erhält die Marke **bearbeitet**. Löschen entfernt Text, Dateien
 Scheitert das Speichern, bleibt dein Text im Dialog. Mit **Erneut versuchen** wiederholst du denselben Versuch. Wurde die Nachricht inzwischen geändert oder sind die zehn Minuten vorbei, schließe den Dialog und öffne die aktuelle Nachricht erneut.
 
 Bestehende Erwähnungen bleiben verknüpft, wenn Text und Position unverändert bleiben. Andere Verknüpfungen entfallen; erwähne die Person bei Bedarf erneut in einer neuen Nachricht.
+
+Nachrichten, die über Assistant oder MCP gesendet oder bearbeitet wurden, zeigen
+**über Assistant** oder **über MCP** neben dem Namen. Eine direkte Änderung behält
+die Marke. Sie bezeichnet den Aufrufweg, nicht die Person, die den Text verfasst hat.

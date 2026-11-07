@@ -1,8 +1,8 @@
 import { afterAll, expect, setDefaultTimeout, test } from "bun:test";
+import { sql } from "@k2b/cloud";
 import { ServiceAccountSchema } from "@k2b/cloud/contracts";
 import type { LiveViewer } from "@k2b/cloud/events";
 import { createAccess, type Principal, type RequestActor } from "@k2b/cloud/server";
-import { sql } from "bun";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import "../../../../scripts/fixtures/authorization-preload";
 import { messageFixtures, type Person } from "../api/messages.test-fixture";

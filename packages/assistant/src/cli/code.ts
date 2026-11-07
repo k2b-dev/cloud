@@ -2,7 +2,7 @@ import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, join, resolve } from "node:path";
 import { CodeResourceId, parseCodeToolInput } from "@k2b/cloud/ai/browser";
-import { arg, command, flag, readCliInput } from "@k2b/cloud/cli";
+import { arg, command, confirmFlag, flag, readCliInput } from "@k2b/cloud/cli";
 import { z } from "zod";
 import { DatabaseSql } from "../artifacts/database-contracts";
 import { CHECK_LIMITS, CheckReport } from "../artifacts/html/check-contracts";
@@ -18,8 +18,14 @@ export function databaseRequestPath(input: unknown) {
 
 const resource = arg.required({ valueLabel: "resource-id" });
 const path = (id: string, suffix = "") => `/artifacts/${encodeURIComponent(CodeResourceId.parse(id))}${suffix}`;
-const jsonInput = async (input: Parameters<typeof readCliInput>[0]) =>
-  parseJson((await readCliInput(input, { label: "JSON input", required: true })) ?? "", "input");
+const jsonInput = async (input: Parameters<typeof readCliInput>[0]): Promise<unknown> => {
+  const raw = await readCliInput(input, { label: "JSON input", required: true });
+  try {
+    return JSON.parse(raw ?? "");
+  } catch {
+    throw new Error("Input must be valid JSON.");
+  }
+};
 const inputFlag = () => flag.input({ description: "JSON input; use --input-file or stdin, especially for secrets" });
 
 const runtimeCommand = (name: "run" | "action") =>
@@ -327,8 +333,9 @@ export const assistantCodeCommands = [
   }),
   command("studio-admin storage-configure", {
     summary: "Set instance-wide {fileMiB,totalMiB} shared file limits",
-    flags: { input: inputFlag() },
+    flags: { input: inputFlag(), yes: confirmFlag("Confirm storage policy change") },
     async run({ ctx, flags }) {
+      requireConfirmation(flags.yes, "Storage configuration");
       printValue(ctx, await readAssistantApi(ctx, "/artifacts/admin/storage/settings", jsonRequest("PUT", await jsonInput(flags.input))));
     },
   }),
@@ -639,8 +646,10 @@ export const assistantCodeCommands = [
   }),
   command("studio-admin configure", {
     summary: "Configure rsql through secret-aware settings; supply JSON through a private file or stdin",
-    flags: { input: inputFlag(), test: flag.boolean() },
+    flags: { input: inputFlag(), test: flag.boolean(), yes: confirmFlag("Confirm database configuration or connection test") },
     async run({ ctx, flags }) {
+      requireConfirmation(flags.yes, "Database configuration");
+      if (flags.input.source === "value") throw new Error("Database credentials require --input-file or --stdin.");
       printValue(
         ctx,
         await readAssistantApi(
@@ -661,8 +670,9 @@ export const assistantCodeCommands = [
   command("studio-admin grant", {
     summary: "Grant access to any resource as administrator",
     args: { id: resource },
-    flags: { input: inputFlag() },
+    flags: { input: inputFlag(), yes: confirmFlag("Confirm administrator access change") },
     async run({ ctx, args, flags }) {
+      requireConfirmation(flags.yes, "Administrator access changes");
       printValue(
         ctx,
         await readAssistantApi(
@@ -676,8 +686,9 @@ export const assistantCodeCommands = [
   command("studio-admin change-grant", {
     summary: "Change or remove any resource grant as administrator",
     args: { id: resource, access: arg.required() },
-    flags: { input: inputFlag() },
+    flags: { input: inputFlag(), yes: confirmFlag("Confirm administrator access change") },
     async run({ ctx, args, flags }) {
+      requireConfirmation(flags.yes, "Administrator access changes");
       printValue(
         ctx,
         await readAssistantApi(

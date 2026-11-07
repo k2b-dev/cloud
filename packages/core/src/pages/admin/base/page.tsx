@@ -32,7 +32,7 @@ const formSection = (section: Exclude<BaseSection, "places">, groups: string[], 
     );
   });
 
-export const generalPage = formSection("general", ["app"], generalSections);
+export const generalPage = formSection("general", ["app", "outgoing_mail", "gateway"], generalSections);
 export const legalPage = formSection("legal", ["legal"], legalSections);
 export const pdfPage = formSection("pdf", ["gotenberg"], pdfSections);
 export const cliPage = formSection("cli", ["cli"], cliSections);

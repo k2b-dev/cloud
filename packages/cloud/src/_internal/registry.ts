@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
-import type { EphemeralConfig, MutexConfig } from "@k2b/sync";
+import type { Ephemeral, EphemeralConfig, EphemeralEntry, MutexConfig } from "@k2b/sync";
 import type { AppAppearanceColor } from "../contracts/app";
+import { appStatusIssues } from "../contracts/app-status";
 import { calendarSourceIssues } from "../contracts/calendar-source";
 import type { CapabilityManifest, CapabilityPresentationCatalog } from "../contracts/capabilities";
 import { discussionsIssues } from "../contracts/discussions";
@@ -16,10 +17,12 @@ import {
   WIDGET_TITLE_MAX_LENGTH,
   type WidgetSettingsDeclaration,
 } from "../contracts/widgets";
+import type { PlatformBootstrapMetadata } from "../runtime/connections";
 import { resolveAppPresentations } from "../shared/app-presentation";
 import { compileCapabilityPresentation, parseCapabilityManifest } from "./capabilities";
-import { lazySync } from "./process-sync";
-import { asAppRegistryEntry, validateAppRegistryEntry } from "./registry-validation";
+import { createObservedView, freezeObserved } from "./observed-view";
+import { lazySync, processSyncReaders } from "./process-sync";
+import { parseAppRegistryEntry } from "./registry-validation";
 import { watchRegistryChanges } from "./registry-watch";
 import { WidgetSettingsDeclarationSchema } from "./widget-settings";
 
@@ -63,6 +66,10 @@ export type AppInstanceRecord = {
   hostname: string;
   startedAt: number;
   entries: Record<string, string>;
+  /** Missing on older instances means unknown, never env or successful bootstrap. */
+  bootstrap?: PlatformBootstrapMetadata;
+  /** Core can durably observe both accepted legacy identity paths. */
+  legacyEvidence?: 1;
 };
 
 // The id and owner are a cross-version contract: all replicas must use the same lock.
@@ -78,18 +85,72 @@ export const appMembershipLock = lazySync((sync) => sync.mutex(APP_MEMBERSHIP_LO
 
 export type CapabilityRegistryRecord = { appId: string; manifest: CapabilityManifest; presentation?: CapabilityPresentationCatalog };
 
-export const appRegistry = lazySync((sync) => sync.ephemeral<AppRegistryEntry>(APP_REGISTRY_CONFIG));
-export const capabilityRegistry = lazySync((sync) => sync.ephemeral<CapabilityRegistryRecord>(CAPABILITY_REGISTRY_CONFIG));
+type RegistryWriter<T> = Pick<ReturnType<typeof createObservedView<T, unknown>>, "accept" | "reconcile" | "invalidate">;
+
+/** Local acknowledgements update only their key; remote mutations arrive through the watch. */
+const observedRegistry = <T>(config: EphemeralConfig) => {
+  const context = lazySync((sync) => {
+    const registry = sync.ephemeral<T>(config);
+    let view: RegistryWriter<T> | undefined;
+    const mutation = async <R>(
+      input: { key: string; tenantId?: string },
+      write: () => Promise<R>,
+      accept: (result: R) => Promise<void> | void,
+    ) => {
+      try {
+        const result = await write();
+        if (!input.tenantId || input.tenantId === "default") await accept(result);
+        return result;
+      } catch (error) {
+        view?.invalidate();
+        throw error;
+      }
+    };
+    const published: Ephemeral<T> = {
+      ...registry,
+      upsert: (input) =>
+        mutation(
+          input,
+          () => registry.upsert(input),
+          (entry) => view?.accept(entry),
+        ),
+      touch: (input) =>
+        mutation(
+          input,
+          () => registry.touch(input),
+          () => view?.reconcile(input.key),
+        ),
+      delete: (input) =>
+        mutation(
+          input,
+          () => registry.delete(input),
+          () => view?.reconcile(input.key),
+        ),
+    };
+    return {
+      published,
+      observe: (observed: RegistryWriter<T>) => {
+        view = observed;
+      },
+    };
+  });
+  return { published: () => context().published, observe: (view: RegistryWriter<T>) => context().observe(view) };
+};
+const appsObserved = observedRegistry<AppRegistryEntry>(APP_REGISTRY_CONFIG);
+const capabilitiesObserved = observedRegistry<CapabilityRegistryRecord>(CAPABILITY_REGISTRY_CONFIG);
+export const appRegistry = appsObserved.published;
+export const capabilityRegistry = capabilitiesObserved.published;
 
 /**
  * Follow the app registry until `signal` aborts. The watch first replays the
- * current entries, then streams changes. While a refresh runs, further events
- * coalesce into one follow-up refresh. Resync also refreshes an empty registry.
+ * current entries, then streams content changes and lease renewals. While a
+ * refresh runs, further events coalesce into one follow-up refresh. Resync also
+ * refreshes an empty registry.
  * Shutdown waits for received invalidations; refresh errors stop the watch.
  */
 export const watchAppRegistry = async ({ signal, onChange }: { signal: AbortSignal; onChange: () => Promise<void> }): Promise<void> => {
-  const registry = appRegistry();
-  await watchRegistryChanges({ signal, onChange, watch: (signal) => registry.watch({ prefix: APP_REGISTRY_PREFIX, signal }) });
+  const view = observedApps();
+  await watchRegistryChanges({ signal, onChange, watch: (signal) => view.changes(signal, { liveness: true }) });
 };
 
 /**
@@ -103,6 +164,8 @@ export type AppRegistryDetail = AppRegistryEntry & {
   updatedAt: number;
   expiresAt: number;
   version: string;
+  /** Per-process startup metadata for admin readers. null means an older/unknown producer. */
+  instances?: { instanceId: string; hostname: string; startedAt: number; bootstrap: PlatformBootstrapMetadata | null }[];
 };
 
 export type AppRegistryIssue = {
@@ -133,38 +196,79 @@ const reportInvalidEntry = (issue: AppRegistryIssue): void => {
   );
 };
 
+/** Own transport invalidation and cleanup identically for every observed registry. */
+const processObservedView = <T, V>(source: () => Ephemeral<T>, prefix: string, read: (entry: EphemeralEntry<T>) => V) =>
+  lazySync(() => {
+    const readers = processSyncReaders();
+    const view = createObservedView({ registry: source(), prefix, ttlMs: APP_REGISTRY_TTL_MS, signal: readers.signal, read });
+    const status = readers.connection?.status()[Symbol.asyncIterator]();
+    const statusTask = status
+      ? (async () => {
+          for (;;) {
+            const next = await status.next();
+            if (next.done || readers.signal.aborted) break;
+            if (["disconnect", "reconnect", "reconnecting", "staleConnection", "close"].includes(next.value.type)) view.invalidate();
+          }
+        })()
+      : undefined;
+    void readers.connection?.closed().then(() => view.invalidate());
+    const stop = async () => {
+      await view.stop();
+      // return() cannot interrupt a pending NATS status next(); transport drain closes it.
+      void statusTask?.finally(() => status?.return?.());
+      readers.stops.delete(stop);
+    };
+    readers.stops.add(stop);
+    return view;
+  });
+
+type ObservedApp = { app: AppRegistryEntry; issue?: never } | { app?: never; issue: string };
+const appRegistryView = processObservedView(appRegistry, APP_REGISTRY_PREFIX, (entry): ObservedApp => {
+  const parsed = parseAppRegistryEntry(entry.value);
+  const reason = parsed.reason ?? (entry.key !== `${APP_REGISTRY_PREFIX}${parsed.value.id}` ? "registry key must match entry id" : null);
+  if (reason || !parsed.value) {
+    const issue = { key: entry.key, version: entry.revision, reason: reason ?? "invalid entry" };
+    reportInvalidEntry(issue);
+    return { issue: issue.reason };
+  }
+  loggedInvalidReasons.delete(entry.key);
+  return { app: parsed.value };
+});
+const observedApps = () => {
+  // Initialize the published handle before attaching its local write-through view.
+  appRegistry();
+  const view = appRegistryView();
+  appsObserved.observe(view);
+  return view;
+};
+const capabilityRegistryView = processObservedView(capabilityRegistry, "capabilities/", (entry) => entry.value);
+const observedCapabilities = () => {
+  capabilityRegistry();
+  const view = capabilityRegistryView();
+  capabilitiesObserved.observe(view);
+  return view;
+};
+
 export const readAppRegistrySnapshot = async (): Promise<AppRegistrySnapshot> => {
-  const snapshot = await appRegistry().snapshot({ prefix: APP_REGISTRY_PREFIX });
-  const apps: AppRegistryDetail[] = [];
-  const issues: AppRegistryIssue[] = [];
-  const presentKeys = new Set<string>();
-
-  for (const entry of snapshot.entries) {
-    presentKeys.add(entry.key);
-    const expectedKey =
-      entry.value && typeof entry.value === "object" && "id" in entry.value ? `${APP_REGISTRY_PREFIX}${String(entry.value.id)}` : undefined;
-    const reason = entry.key !== expectedKey ? "registry key must match entry id" : validateAppRegistryEntry(entry.value);
-    if (reason) {
-      const issue = { key: entry.key, version: entry.revision, reason };
-      issues.push(issue);
-      reportInvalidEntry(issue);
-      continue;
-    }
-    loggedInvalidReasons.delete(entry.key);
-    const value = asAppRegistryEntry(entry.value)!;
-    const updatedAt = entry.updatedAt.getTime();
-    apps.push({
-      ...value,
-      createdAt: value.startedAt ?? updatedAt,
-      updatedAt,
-      expiresAt: updatedAt + APP_REGISTRY_TTL_MS,
-      version: entry.revision,
-    });
-  }
-
-  for (const key of loggedInvalidReasons.keys()) {
-    if (!presentKeys.has(key)) loggedInvalidReasons.delete(key);
-  }
+  const entries = await observedApps().entries();
+  const apps = entries.flatMap((entry) =>
+    entry.value.app
+      ? [
+          {
+            ...entry.value.app,
+            createdAt: entry.value.app.startedAt ?? entry.updatedAt.getTime(),
+            updatedAt: entry.updatedAt.getTime(),
+            expiresAt: entry.updatedAt.getTime() + APP_REGISTRY_TTL_MS,
+            version: entry.revision,
+          },
+        ]
+      : [],
+  );
+  const issues = entries.flatMap((entry) =>
+    entry.value.issue ? [{ key: entry.key, version: entry.revision, reason: entry.value.issue }] : [],
+  );
+  const keys = new Set(entries.map((entry) => entry.key));
+  for (const key of loggedInvalidReasons.keys()) if (!keys.has(key)) loggedInvalidReasons.delete(key);
   return { apps, issues };
 };
 
@@ -178,27 +282,20 @@ export const requireUsableAppRegistry = (snapshot: AppRegistrySnapshot): AppRegi
 /**
  * List all currently live (TTL-valid) app registry entries.
  */
-export const listApps = async (): Promise<AppRegistryEntry[]> => {
-  const snapshot = await readAppRegistrySnapshot();
-  return requireUsableAppRegistry(snapshot);
+export const listApps = async (): Promise<AppRegistryEntry[]> => requireUsableAppRegistry(await readAppRegistrySnapshot());
+
+/** Stable payload identities for joins; public lists retain their lease metadata. */
+const listObservedApps = async (): Promise<AppRegistryEntry[]> => {
+  const values = await observedApps().values();
+  const apps = values.flatMap((value) => (value.app ? [value.app] : []));
+  if (!apps.length && values.some((value) => value.issue))
+    throw new Error(`App registry contains no valid entries (${values.length} rejected)`);
+  return apps;
 };
 
-/** Reads one live app without materializing the full registry. */
+/** Reads one live app from the process-owned registry view. */
 export const getApp = async (appId: string): Promise<AppRegistryEntry | null> => {
-  const key = `${APP_REGISTRY_PREFIX}${appId}`;
-  const snap = await appRegistry().snapshot({ prefix: key });
-  const entry = snap.entries.find((candidate) => candidate.key === key);
-  if (!entry) return null;
-  const reason =
-    !entry.value || typeof entry.value !== "object" || !("id" in entry.value) || entry.value.id !== appId
-      ? "registry key must match entry id"
-      : validateAppRegistryEntry(entry.value);
-  if (!reason) {
-    loggedInvalidReasons.delete(key);
-    return asAppRegistryEntry(entry.value);
-  }
-  reportInvalidEntry({ key, version: entry.revision, reason });
-  return null;
+  return (await observedApps().get(`${APP_REGISTRY_PREFIX}${appId}`))?.app ?? null;
 };
 
 const capabilityEndpoint = (baseUrl: string): string | null => {
@@ -238,6 +335,7 @@ const reportLeftOutEntries = (sent: unknown, manifest: CapabilityManifest): void
   });
   if (groups.calendarSource !== undefined && !manifest.calendarSource) leftOut.push("calendarSource");
   if (groups.fileProvider !== undefined && !manifest.fileProvider) leftOut.push("fileProvider");
+  if (groups.appStatus !== undefined && !manifest.appStatus) leftOut.push("appStatus");
   if (groups.discussions !== undefined && !manifest.discussions) leftOut.push("discussions");
   if (leftOut.length === 0) return;
   console.warn(
@@ -348,6 +446,32 @@ const withValidDiscussions = (manifest: CapabilityManifest): CapabilityManifest 
   return rest;
 };
 
+const checkedAppStatus = new Map<string, { manifestHash: string; valid: boolean }>();
+const withValidAppStatus = (manifest: CapabilityManifest): CapabilityManifest => {
+  if (!manifest.appStatus) return manifest;
+  const checked = checkedAppStatus.get(manifest.appId);
+  let valid = checked?.manifestHash === manifest.manifestHash ? checked.valid : undefined;
+  if (valid === undefined) {
+    const issues = appStatusIssues(manifest);
+    valid = issues.length === 0;
+    checkedAppStatus.set(manifest.appId, { manifestHash: manifest.manifestHash, valid });
+    if (!valid)
+      console.error(
+        JSON.stringify({
+          level: "error",
+          source: "capability-registry",
+          message: "Ignored an incompatible appStatus provider",
+          appId: manifest.appId,
+          manifestHash: manifest.manifestHash,
+          issues,
+        }),
+      );
+  }
+  if (valid) return manifest;
+  const { appStatus: _ignored, ...rest } = manifest;
+  return rest;
+};
+
 /** Ignores record fields from a newer release; the endpoint always comes from the live app registry. */
 export const resolveLiveCapabilityRegistryEntry = (
   key: string,
@@ -362,7 +486,7 @@ export const resolveLiveCapabilityRegistryEntry = (
   if (!endpoint) return null;
   try {
     const read = parseCapabilityManifest(record.manifest, app.id);
-    const supported = withValidDiscussions(withValidCalendarSource(withValidFileProvider(read)));
+    const supported = withValidAppStatus(withValidDiscussions(withValidCalendarSource(withValidFileProvider(read))));
     const manifest = supported.resourcePages
       ? {
           ...supported,
@@ -390,29 +514,106 @@ export const resolveLiveCapabilityRegistryEntry = (
   }
 };
 
+// Cache joins by immutable payload identity; lease metadata never invalidates a manifest.
+const resolvedCapabilities = new WeakMap<AppRegistryEntry, WeakMap<CapabilityRegistryRecord, CapabilityRegistryEntry | null>>();
+const resolveObservedCapability = (key: string, record: CapabilityRegistryRecord, app: AppRegistryEntry | undefined) => {
+  if (!app) return null;
+  let records = resolvedCapabilities.get(app);
+  if (!records) {
+    records = new WeakMap();
+    resolvedCapabilities.set(app, records);
+  }
+  if (record && typeof record === "object") {
+    if (records.has(record)) return records.get(record) ?? null;
+    const resolved = freezeObserved(resolveLiveCapabilityRegistryEntry(key, record, app));
+    records.set(record, resolved);
+    return resolved;
+  }
+  return null;
+};
 export const listCapabilities = async (appSnapshot?: AppRegistryEntry[]): Promise<CapabilityRegistryEntry[]> => {
-  const [snap, apps] = await Promise.all([capabilityRegistry().snapshot({ prefix: "capabilities/" }), appSnapshot ?? listApps()]);
+  const [entries, apps] = await Promise.all([observedCapabilities().entries(), appSnapshot ?? listObservedApps()]);
   const byId = new Map(apps.map((app) => [app.id, app]));
-  return snap.entries.flatMap((entry) => {
-    const appId = entry.key.startsWith("capabilities/") ? entry.key.slice("capabilities/".length) : "";
-    const capability = resolveLiveCapabilityRegistryEntry(entry.key, entry.value, byId.get(appId));
+  return entries.flatMap((entry) => {
+    const app = byId.get(entry.key.slice("capabilities/".length));
+    // Supplied snapshots belong to the caller and may change between calls.
+    // Never freeze them or cache joins under their mutable object identity.
+    const capability = appSnapshot
+      ? freezeObserved(structuredClone(resolveLiveCapabilityRegistryEntry(entry.key, entry.value, app)))
+      : resolveObservedCapability(entry.key, entry.value, app);
     return capability ? [capability] : [];
   });
 };
 
 export const getCapability = async (appId: string): Promise<CapabilityRegistryEntry | null> => {
   const key = `capabilities/${appId}`;
-  const [snap, app] = await Promise.all([capabilityRegistry().snapshot({ prefix: key }), getApp(appId)]);
-  const entry = snap.entries.find((candidate) => candidate.key === key);
-  return entry ? resolveLiveCapabilityRegistryEntry(entry.key, entry.value, app ?? undefined) : null;
+  const [record, app] = await Promise.all([observedCapabilities().get(key), getApp(appId)]);
+  return record ? resolveObservedCapability(key, record, app ?? undefined) : null;
+};
+
+/** Internal runtime consumer: one refresh for content changes in either registry. */
+export const watchRuntimeRegistry = async ({ signal, onChange }: { signal: AbortSignal; onChange: () => Promise<void> }): Promise<void> => {
+  const views = [observedApps(), observedCapabilities()];
+  await watchRegistryChanges({
+    signal,
+    onChange,
+    watch: (signal) => ({
+      async *[Symbol.asyncIterator]() {
+        let dirty = true;
+        let wake: (() => void) | undefined;
+        const controller = new AbortController();
+        const notify = () => {
+          dirty = true;
+          wake?.();
+        };
+        const abort = () => {
+          controller.abort();
+          notify();
+        };
+        signal.addEventListener("abort", abort, { once: true });
+        if (signal.aborted) abort();
+        const tasks = views.map(async (view) => {
+          for await (const _ of view.changes(controller.signal, { initial: false })) notify();
+        });
+        try {
+          while (!signal.aborted) {
+            if (!dirty)
+              await new Promise<void>((resolve) => {
+                wake = resolve;
+              });
+            if (signal.aborted) break;
+            dirty = false;
+            yield { type: "change" };
+          }
+        } finally {
+          controller.abort();
+          signal.removeEventListener("abort", abort);
+          await Promise.all(tasks);
+        }
+      },
+    }),
+  });
 };
 
 /**
  * Same as `listApps` but returns registry metadata for admin observability.
  */
 export const listAppsDetailed = async (): Promise<AppRegistryDetail[]> => {
-  const snapshot = await readAppRegistrySnapshot();
-  return snapshot.apps;
+  const [snapshot, instances] = await Promise.all([
+    readAppRegistrySnapshot(),
+    appInstanceRegistry().snapshot({ prefix: APP_INSTANCE_PREFIX }),
+  ]);
+  return snapshot.apps.map((app) => ({
+    ...app,
+    instances: instances.entries
+      .filter(({ value }) => value.appId === app.id)
+      .map(({ value }) => ({
+        instanceId: value.instanceId,
+        hostname: value.hostname,
+        startedAt: value.startedAt,
+        bootstrap: value.bootstrap ?? null,
+      })),
+  }));
 };
 
 /**

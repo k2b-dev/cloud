@@ -1,8 +1,10 @@
 import { expect, test } from "bun:test";
-import { databaseSuite } from "../../../../../scripts/fixtures/test-infra";
+import { createHash } from "node:crypto";
+import { suiteFor } from "../../../../../scripts/fixtures/test-infra";
+import { redis } from "../../runtime/clients";
 import * as proxyReturn from "./proxy-return";
 
-const suite = databaseSuite();
+const suite = suiteFor("valkey");
 
 suite("proxy auth return tokens", () => {
   test("creates and consumes one-time return tokens", async () => {
@@ -13,6 +15,11 @@ suite("proxy auth return tokens", () => {
     });
 
     expect(token).toBeTruthy();
+    expect(await redis.get(`auth:proxy-return:${token}`)).toBeNull();
+    const cacheKey = `auth:proxy-return:${createHash("sha256").update(token!).digest("hex")}`;
+    expect(await redis.exists(cacheKey)).toBe(true);
+    expect(await redis.ttl(cacheKey)).toBeGreaterThan(0);
+    expect(await redis.ttl(cacheKey)).toBeLessThanOrEqual(30);
     const consumed = await proxyReturn.consume({ token: token! });
     expect(consumed).toEqual({
       clientId: "proxy-client",

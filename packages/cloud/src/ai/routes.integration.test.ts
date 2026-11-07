@@ -1,8 +1,8 @@
 import { beforeAll, describe, expect, spyOn, test } from "bun:test";
-import { redis, sql } from "bun";
 import { z } from "zod";
 import { tinyJpeg, withCameraMetadata } from "../../../../scripts/fixtures/image-metadata";
 import { databaseSuite, suiteFor } from "../../../../scripts/fixtures/test-infra";
+import { redis, sql } from "../runtime/clients";
 import { userResourceContext } from "./projects.test-fixture";
 import * as aiSettings from "./settings";
 import { composeAiSystemPrompt } from "./system-prompt";

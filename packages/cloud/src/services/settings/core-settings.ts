@@ -1,5 +1,7 @@
 import { env } from "../../config/env";
+import { DEFAULT_WORKFLOW_AI_BUDGET, validateWorkflowAiBudget } from "../../config/workflow-ai";
 import { GEO_MAX_CREDITS, GEO_MAX_RPS } from "../../contracts/geo-admin";
+import { DEFAULT_TRUSTED_PROXIES, validateNetworkAllowlist, validateTrustedProxies } from "./validation";
 
 /**
  * Platform-owned settings, declared in the `defineApp({ settings: ... })` shape.
@@ -30,6 +32,121 @@ const IPA_ACCOUNT_TRANSITION_OPTIONS = [
 ] as const;
 
 export const CORE_SETTINGS = {
+  "outgoing_mail.allowed_targets": {
+    kind: "string_list",
+    default: [],
+    label: "Outgoing mail allowed targets",
+    description: "Exact internal SMTP and IMAP hosts, IPs or CIDRs. Changes apply to new connections.",
+    envVariable: "OUTGOING_MAIL_ALLOWED_TARGETS",
+    envBootstrap: () => env.$readPresent("OUTGOING_MAIL_ALLOWED_TARGETS"),
+    validate: validateNetworkAllowlist,
+    presentation: {
+      translations: {
+        de: {
+          label: "Erlaubte Ziele für ausgehende E-Mails",
+          description: "Exakte interne SMTP- und IMAP-Hosts, IPs oder CIDRs. Änderungen gelten für neue Verbindungen.",
+        },
+      },
+    },
+  },
+  "gateway.ingress_cert_resolver": {
+    kind: "string",
+    default: "le",
+    label: "App domain certificate resolver",
+    description:
+      "Traefik certificate resolver used by app domain routers. Must name a configured ACME resolver; changes apply within five seconds.",
+    validate: (value: unknown) =>
+      typeof value === "string" && /^[a-zA-Z0-9_-]+$/.test(value)
+        ? undefined
+        : "Use a Traefik certificate resolver name (letters, digits, underscores or hyphens).",
+    presentation: {
+      translations: {
+        de: {
+          label: "Zertifikatsresolver für App-Domains",
+          description:
+            "Traefik-Zertifikatsresolver der App-Domains. Muss einen konfigurierten ACME-Resolver benennen; Änderungen wirken innerhalb von fünf Sekunden.",
+        },
+      },
+    },
+  },
+  "gateway.trusted_proxies": {
+    kind: "string_list",
+    default: DEFAULT_TRUSTED_PROXIES,
+    label: "Trusted gateway proxies",
+    description: "IP addresses or CIDRs allowed to supply forwarded client addresses. Changes take effect after gateway restart.",
+    envVariable: "GATEWAY_TRUSTED_PROXIES",
+    envBootstrap: () => env.$readPresent("GATEWAY_TRUSTED_PROXIES"),
+    validate: validateTrustedProxies,
+    presentation: {
+      translations: {
+        de: {
+          label: "Vertrauenswürdige Gateway-Proxys",
+          description:
+            "IP-Adressen oder CIDRs, die weitergeleitete Client-Adressen liefern dürfen. Änderungen wirken nach einem Gateway-Neustart.",
+        },
+      },
+    },
+  },
+  "ai.workflow_budget": {
+    kind: "text",
+    default: JSON.stringify(DEFAULT_WORKFLOW_AI_BUDGET),
+    label: "Workflow AI budget",
+    description:
+      "JSON limits for source, rate and concurrency admission. Changes apply to new work; globalConcurrent also sets worker capacity and requires restarting all AI workers.",
+    envVariable: "WORKFLOW_AI_BUDGET",
+    envBootstrap: () => {
+      const value = env.$readPresent("WORKFLOW_AI_BUDGET");
+      return value === undefined ? undefined : JSON.stringify(value);
+    },
+    validate: validateWorkflowAiBudget,
+    presentation: {
+      translations: {
+        de: {
+          label: "KI-Workflow-Budget",
+          description:
+            "JSON-Grenzen für Quellen, Rate und gleichzeitige Arbeit. Änderungen gelten für neue Arbeit; globalConcurrent bestimmt auch die Worker-Kapazität und erfordert den Neustart aller KI-Worker.",
+        },
+      },
+    },
+  },
+  "ai.workflow_attempt_timeout_ms": {
+    kind: "number",
+    default: 60000,
+    label: "Workflow AI attempt timeout (ms)",
+    description: "Absolute attempt deadline including admission and repair. Changes apply to new attempts.",
+    envVariable: "WORKFLOW_AI_ATTEMPT_TIMEOUT_MS",
+    envBootstrap: () => env.$readPresent("WORKFLOW_AI_ATTEMPT_TIMEOUT_MS"),
+    integer: true,
+    min: 1,
+    presentation: {
+      translations: {
+        de: {
+          label: "Zeitlimit je KI-Workflow-Versuch (ms)",
+          description: "Absolute Frist einschließlich Zulassung und Reparatur. Änderungen gelten für neue Versuche.",
+        },
+      },
+    },
+  },
+  "ai.workflow_queue_timeout_ms": {
+    kind: "number",
+    default: 60000,
+    label: "Workflow AI queue timeout (ms)",
+    description: "Maximum queue wait before visible failure. Changes apply to new requests and the next recovery scan.",
+    envVariable: "WORKFLOW_AI_QUEUE_TIMEOUT_MS",
+    envBootstrap: () => env.$readPresent("WORKFLOW_AI_QUEUE_TIMEOUT_MS"),
+    integer: true,
+    min: 1,
+    presentation: {
+      translations: {
+        de: {
+          label: "Wartezeitlimit für KI-Workflows (ms)",
+          description:
+            "Maximale Wartezeit bis zum sichtbaren Fehler. Änderungen gelten für neue Anfragen und den nächsten Wiederherstellungslauf.",
+        },
+      },
+    },
+  },
+
   "storage.endpoint": {
     kind: "url",
     label: "Garage S3 endpoint",
@@ -163,42 +280,49 @@ export const CORE_SETTINGS = {
     default: false,
   },
   "user.category.guest.enabled": {
+    adminWrite: "application",
     kind: "boolean",
     label: "Guest accounts allowed",
     description: "Allow Guest sign-in and user-bound credentials. Disabling retains accounts and their data.",
     default: true,
   },
   "user.category.guest.visible": {
+    adminWrite: "application",
     kind: "boolean",
     label: "Show Guest in login",
     description: "Hidden allowed accounts can still use direct login links. This does not enable self-registration.",
     default: true,
   },
   "user.category.login.enabled": {
+    adminWrite: "application",
     kind: "boolean",
     label: "Login accounts allowed",
     description: "Allow passwordless local full accounts to sign in and use user-bound credentials.",
     default: true,
   },
   "user.category.login.visible": {
+    adminWrite: "application",
     kind: "boolean",
     label: "Show Login in login",
     description: "Show this category in the general login page. Direct entry remains available when hidden but allowed.",
     default: true,
   },
   "user.category.login.label": {
+    adminWrite: "application",
     kind: "string",
     label: "Login account label",
     description: "Name used for local full accounts, for example Company account. Empty uses Login.",
     default: "Login",
   },
   "user.category.freeipa.enabled": {
+    adminWrite: "application",
     kind: "boolean",
     label: "FreeIPA accounts allowed",
     description: "Allow FreeIPA-backed accounts to sign in and use user-bound credentials. Directory synchronization is not stopped.",
     default: true,
   },
   "user.category.freeipa.visible": {
+    adminWrite: "application",
     kind: "boolean",
     label: "Show FreeIPA in login",
     description: "The FreeIPA connection must also be enabled to offer this login method.",
@@ -228,6 +352,7 @@ export const CORE_SETTINGS = {
     placeholder: "e.g. https://cloud.example.org",
     envFallback: () => env.APP_URL,
     envBootstrap: () => env.APP_URL,
+    envVariable: "APP_URL",
   },
   "app.home_path": {
     kind: "string",
@@ -293,6 +418,7 @@ export const CORE_SETTINGS = {
 
   // ── Places and addresses ──────────────────────────────────────────────
   "geo.api_key": {
+    adminWrite: "application",
     kind: "secret",
     label: "Geoapify API key",
     description: "Used only for HTTPS requests to the fixed EU endpoint.",
@@ -359,24 +485,6 @@ export const CORE_SETTINGS = {
       translations: { de: { label: "Monatsbudget Geo (Credits)", description: "Harte Cloud-Grenze je Kalendermonat in app.timezone." } },
     },
   },
-  "geo.person_daily_credits": {
-    kind: "number",
-    label: "Daily geo credits per person",
-    description: "Hard limit per access subject and local day; must not exceed the monthly budget. Agents and service accounts count too.",
-    default: 300,
-    integer: true,
-    min: 0,
-    max: GEO_MAX_CREDITS,
-    presentation: {
-      translations: {
-        de: {
-          label: "Tägliche Geo-Credits pro Person",
-          description:
-            "Harte Grenze je Zugriffsidentität und lokalem Tag; darf das Monatsbudget nicht überschreiten. Gilt auch für Agenten und Dienstkonten.",
-        },
-      },
-    },
-  },
 
   // ── AI ──────────────────────────────────────────────────────────────────
   "ai.enabled": {
@@ -384,6 +492,43 @@ export const CORE_SETTINGS = {
     label: "Enable AI",
     default: false,
     description: "Enable Cloud AI features including personal conversations, Assistant, and app Capabilities.",
+  },
+  "ai.live_dictation_concurrency": {
+    kind: "number",
+    integer: true,
+    default: 4,
+    min: 1,
+    max: 1024,
+    label: "Concurrent live dictations",
+    description:
+      "Installation-wide live model capacity. Each session uses one model connection; load-test before increasing (maximum 1024 connections).",
+    presentation: {
+      translations: {
+        de: {
+          label: "Gleichzeitige Live-Diktate",
+          description:
+            "Modellkapazität der Installation. Jede Sitzung belegt eine Modellverbindung; vor Erhöhungen einen Lasttest durchführen (höchstens 1024 Verbindungen).",
+        },
+      },
+    },
+  },
+  "ai.live_dictation_minutes_per_day": {
+    kind: "number",
+    integer: true,
+    default: 60,
+    min: 1,
+    max: 1440,
+    label: "Live dictation minutes per person per day",
+    description: "Resets at the installation's local midnight. At most 1440 minutes (24 hours). Separate from chat allowances.",
+    presentation: {
+      translations: {
+        de: {
+          label: "Live-Diktat-Minuten pro Person und Tag",
+          description:
+            "Zurücksetzen um Mitternacht in der Zeitzone der Installation. Höchstens 1440 Minuten (24 Stunden). Unabhängig vom Chatkontingent.",
+        },
+      },
+    },
   },
   "ai.enrich_cron": {
     kind: "cron",
@@ -494,8 +639,8 @@ export const CORE_SETTINGS = {
     default: "",
     description: "Internal base URL of the Gotenberg service used for HTML-to-PDF rendering.",
     placeholder: "e.g. http://gotenberg:3000",
-    envFallback: () => env.GOTENBERG_URL,
     envBootstrap: () => env.GOTENBERG_URL,
+    envVariable: "GOTENBERG_URL",
   },
   "gotenberg.username": {
     kind: "string",
@@ -552,6 +697,7 @@ export const CORE_SETTINGS = {
     placeholder: "e.g. ipa.example.org",
   },
   "freeipa.ca_cert": {
+    adminWrite: "application",
     kind: "text",
     label: "CA Certificate (PEM)",
     default: "",
@@ -630,6 +776,7 @@ export const CORE_SETTINGS = {
     description: "Five-field cron schedule for the FreeIPA sync job in app.timezone.",
   },
   "freeipa.sync_guard.max_user_changes": {
+    adminWrite: "application",
     kind: "number",
     label: "Max User Changes",
     default: 10,
@@ -645,6 +792,7 @@ export const CORE_SETTINGS = {
     description: "Maximum percentage of existing IPA users one sync may remove from scope or demote.",
   },
   "freeipa.sync_guard.max_group_deletions": {
+    adminWrite: "application",
     kind: "number",
     label: "Max Group Deletions",
     default: 5,

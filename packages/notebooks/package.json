@@ -40,6 +40,7 @@
     "@uiw/codemirror-themes": "4.25.12",
     "@k2b/ui": "workspace:*",
     "@k2b/cloud": "workspace:*",
+    "@k2b/editor": "workspace:*",
     "@k2b/ssr": "workspace:*",
     "@k2b/stdlib": "catalog:",
     "@k2b/sync": "catalog:",

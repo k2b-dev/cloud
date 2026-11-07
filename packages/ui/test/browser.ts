@@ -212,7 +212,16 @@ const probeMainThread = async (page: Page): Promise<string> => {
   let timer: ReturnType<typeof setTimeout> | undefined;
   try {
     return await Promise.race([
-      page.evaluate(() => document.readyState).then((state) => `Main thread: answered in ${Date.now() - started} ms, readyState ${state}`),
+      page
+        .evaluate(() => ({
+          state: document.readyState,
+          // An enhanced link moves history only from inside its view transition's update.
+          transition: Boolean((document as Document & { activeViewTransition?: unknown }).activeViewTransition),
+        }))
+        .then(
+          ({ state, transition }) =>
+            `Main thread: answered in ${Date.now() - started} ms, readyState ${state}, view transition ${transition ? "active" : "none"}`,
+        ),
       new Promise<string>((resolve) => {
         // Before a commit, Chromium holds page.evaluate until the pending navigation ends, so silence alone does not prove a blocked page there.
         timer = setTimeout(
@@ -334,7 +343,8 @@ const explainNavigations = (page: Page): Page => {
     for (const record of records) record.load = true;
   });
 
-  const explained = async <T>(name: string, call: () => Promise<T>): Promise<T> => {
+  // `navigation` marks a navigation the test starts, during which pageErrors() ignores WebKit's refused loads.
+  const explained = async <T>(name: string, call: () => Promise<T>, navigation = true): Promise<T> => {
     const started = Date.now();
     const before = page.url();
     const record: NavigationRecord = {
@@ -345,14 +355,14 @@ const explainNavigations = (page: Page): Page => {
       load: false,
     };
     records.add(record);
-    const navigation = { from: before };
-    navigations.add(navigation);
+    const navigationEntry = { from: before };
+    if (navigation) navigations.add(navigationEntry);
     try {
       try {
         return await call();
       } finally {
         records.delete(record);
-        navigations.delete(navigation);
+        navigations.delete(navigationEntry);
       }
     } catch (error) {
       // Every failure carries the evidence. Bun's test timeout can kill the browser before Playwright's own timeout;
@@ -393,6 +403,9 @@ const explainNavigations = (page: Page): Page => {
 
   const goto = page.goto.bind(page);
   page.goto = (url, options) => explained("goto", () => goto(url, options));
+  // A click on an enhanced link changes the address later, so a wait for it explains itself too.
+  const waitForURL = page.waitForURL.bind(page);
+  page.waitForURL = (url, options) => explained("waitForURL", () => waitForURL(url, options), false);
   const reload = page.reload.bind(page);
   page.reload = (options) => explained("reload", () => reload(options));
   const goBack = page.goBack.bind(page);
@@ -529,12 +542,36 @@ export const launchBrowser = async ({
 };
 
 /**
+ * Presses the middle of `target`, runs `rebuild` while the button is down, and releases at the same point.
+ * Use it for every list whose host can rebuild equal items: a row replaced between press and release swallows
+ * the click (#2140). `rebuild` gives the page new objects with the same identity, as a host does on any change.
+ * Where a host can also drop and rebuild the list's container (a menu that closes and reopens), let `rebuild` do
+ * that too and wait until the new container shows before the release.
+ */
+export const pressAcrossRebuild = async (page: Page, target: Locator, rebuild: () => Promise<unknown>): Promise<void> => {
+  await target.waitFor();
+  await settled(page);
+  const box = await target.boundingBox();
+  if (!box) throw new Error("pressAcrossRebuild: the target has no box");
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await page.mouse.down();
+  try {
+    await rebuild();
+  } finally {
+    await page.mouse.up();
+  }
+};
+
+/**
  * Guards against state sampled before it settled (#1476, #1499).
  * Waits for fonts, running finite document-timeline animations, then two frames.
  * Infinite, scroll-driven, and paused animations are not waited for. A page that
  * keeps starting finite animations is not settled: this throws with their names,
  * and the test must wait for its own condition instead. Suites not about motion
- * pass `reducedMotion: "reduce"` to newPage/newContext themselves.
+ * pass `reducedMotion: "reduce"` to newPage/newContext themselves. Playwright's
+ * pointer rests at the top left from the first page on, touch contexts included,
+ * so content that arrives there later fades into hover; the error marks such
+ * targets with `"hovered":true`.
  */
 export const settled = async (page: Page): Promise<void> => {
   const remaining = await page.evaluate(async () => {
@@ -579,6 +616,7 @@ export const settled = async (page: Page): Promise<void> => {
               ? animation.animationName
               : animation.id,
         currentTime: animation.currentTime,
+        hovered: target instanceof Element && target.matches(":hover"),
       };
     });
   });

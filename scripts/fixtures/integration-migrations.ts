@@ -1,11 +1,12 @@
 /** The production migration path, shared by the target bootstrap and template builder. */
 import { existsSync } from "node:fs";
 import { join } from "node:path";
-import { sql } from "bun";
+import { sql } from "../../packages/cloud/src/runtime/clients";
 import { appIds, workspaceRoot } from "../workspace";
-import { requireInfra } from "./test-infra";
+import { initializeTestPlatform, requireInfra } from "./test-infra";
 
 export const migrateIntegrationDatabase = async (): Promise<void> => {
+  await initializeTestPlatform();
   const { runCoreSetup } = await import("../../packages/core/src/runtime-helpers");
   await runCoreSetup();
 

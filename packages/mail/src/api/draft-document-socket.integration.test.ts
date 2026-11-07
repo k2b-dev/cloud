@@ -1,8 +1,9 @@
 import { afterAll, afterEach, beforeAll, expect, spyOn, test } from "bun:test";
+import { sql } from "@k2b/cloud";
 import { auth } from "@k2b/cloud/server";
 import { fromBase64, toBase64 } from "@k2b/cloud/shared-text";
 import type { Result } from "@k2b/stdlib";
-import { type Server, sql } from "bun";
+import type { Server } from "bun";
 import { Hono } from "hono";
 import { websocket } from "hono/bun";
 import { Awareness, applyAwarenessUpdate, encodeAwarenessUpdate } from "y-protocols/awareness";

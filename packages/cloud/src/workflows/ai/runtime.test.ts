@@ -1,14 +1,22 @@
-import { describe, expect, spyOn, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
 import type { z } from "zod";
 import type { RunAiStructuredInput, RunAiStructuredResult } from "../../ai";
 import { AiBackgroundAdmissionError, AiBackgroundCostError } from "../../ai/inference-calls";
-import { aiModelFixture } from "../../ai/model-fixture";
+import { aiModelFixture, aiSettingsFixture } from "../../ai/model-fixture";
 import { createAiProvider } from "../../ai/provider";
+import * as settings from "../../ai/settings";
 import * as structured from "../../ai/structured";
 import * as taskModel from "../../ai/task-model";
+import { coreSettings } from "../../services/settings/api";
 import { executeWorkflowAiRequest, processWorkflowAiTask, settleWorkflowAiAttemptFailure } from "./runtime";
 import * as store from "./store";
 import type { WorkflowAiTask } from "./types";
+
+let settingsGet: ReturnType<typeof spyOn<typeof coreSettings, "get">>;
+beforeEach(() => {
+  settingsGet = spyOn(coreSettings, "get").mockResolvedValue(60_000);
+});
+afterEach(() => settingsGet.mockRestore());
 
 const task = {
   id: "00000000-0000-4000-8000-000000000001",
@@ -127,7 +135,8 @@ for (const retryable of [true, false])
     }
   });
 
-test("a keepalive-only or non-settling runner cannot hold a workflow attempt past its absolute budget", async () => {
+test("a new attempt reads its current setting and bounds a keepalive-only runner", async () => {
+  settingsGet.mockResolvedValue(20);
   const claim = spyOn(store, "claimWorkflowAiTask").mockResolvedValue(task);
   const cancel = spyOn(store, "workflowAiTaskCancellationRequested").mockResolvedValue(false);
   let providerSignal: AbortSignal | undefined;
@@ -142,7 +151,6 @@ test("a keepalive-only or non-settling runner cannot hold a workflow attempt pas
         {
           maxAttempts: 3,
           cancelPollMs: 500,
-          attemptTimeoutMs: 20,
           runStructured: async (input) => {
             providerSignal = input.signal;
             // An SSE provider may continue sending comments without ever completing.
@@ -152,6 +160,7 @@ test("a keepalive-only or non-settling runner cannot hold a workflow attempt pas
       ),
     ).rejects.toMatchObject({ code: "WORKFLOW_AI_TIMEOUT", retryable: true });
     expect(providerSignal?.aborted).toBe(true);
+    expect(settingsGet).toHaveBeenCalledWith("ai.workflow_attempt_timeout_ms");
   } finally {
     claim.mockRestore();
     cancel.mockRestore();
@@ -261,6 +270,33 @@ test("workflow execution keeps its admitted variant and class trace after a clas
     expect(resolve).toHaveBeenCalledWith({ id: "model" });
   } finally {
     resolve.mockRestore();
+  }
+});
+
+test("workflow runs never reach a restricted model; application tasks without a person name it", async () => {
+  const profile = aiModelFixture({ id: "model", modelId: "model", dataBoundary: "restricted" });
+  const read = spyOn(settings, "readAiSettingsState").mockResolvedValue(aiSettingsFixture({ profiles: [profile] }));
+  const run: typeof structured.runAiStructured = async (input) => {
+    const resolved = await input.resolveModel!(input.model);
+    return {
+      output: input.output.parse({ ready: true }),
+      model: resolved.model,
+      structuredMeta: { mode: "native", repaired: false, attempts: 1, usedResponseFormat: true },
+    };
+  };
+  try {
+    await expect(executeWorkflowAiRequest(task, run, new AbortController().signal)).rejects.toMatchObject({
+      aiError: { code: "model_policy_mismatch", fields: { boundary: "restricted" } },
+    });
+    const application = { ...task, runId: null, usageUserId: undefined } satisfies WorkflowAiTask;
+    expect(await executeWorkflowAiRequest(application, run, new AbortController().signal)).toMatchObject({ output: { ready: true } });
+    // A task admitted for a class stays off restricted models when its pinned ID is reused under such a provider.
+    const admittedForClass = { ...application, modelRef: { requestedClass: "fast", class: "fast", id: "model" } } satisfies WorkflowAiTask;
+    await expect(executeWorkflowAiRequest(admittedForClass, run, new AbortController().signal)).rejects.toMatchObject({
+      aiError: { code: "model_policy_mismatch", fields: { boundary: "restricted" } },
+    });
+  } finally {
+    read.mockRestore();
   }
 });
 

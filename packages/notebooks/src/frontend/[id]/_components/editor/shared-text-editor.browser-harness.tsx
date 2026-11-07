@@ -1,3 +1,4 @@
+import { caretIntoTableCell, createEditor, tableCellCompletions } from "@k2b/editor";
 /**
  * The Notebook editor composition from NoteEditor.client.tsx around the shared
  * @k2b/ui TextEditor, with an in-page server and a second person instead of
@@ -7,29 +8,28 @@
 import { EditorState } from "@codemirror/state";
 import { EditorView, lineNumbers } from "@codemirror/view";
 import { createSharedTextActionHistory } from "@k2b/cloud/browser/shared-text";
+import { isolateYjsHistory, remoteCursors } from "@k2b/editor/collab";
+import {
+  createNotebookTablePresentation,
+  listCommandsExtension,
+  localChartPreviews,
+  notebookSourceFormulasExtension,
+} from "@k2b/editor/markdown";
 import { encoding } from "@k2b/stdlib";
-import { Button, LocaleProvider, NoticeCard, ScrollArea } from "@k2b/ui";
+import { AppWorkspace, Button, installAppWorkspaceController, LocaleProvider, NoticeCard, ScrollArea } from "@k2b/ui";
 import { TextEditor, type TextEditorControls } from "@k2b/ui/text-editor";
 import { createSignal, onMount, Show } from "solid-js";
 import { render } from "solid-js/web";
 import { yCollab } from "y-codemirror.next";
 import { Awareness, applyAwarenessUpdate, encodeAwarenessUpdate } from "y-protocols/awareness";
 import * as Y from "yjs";
+import { notebookChartOptions } from "../../../../lib/chart-options";
 import type { NoteTableActionRequest } from "../../../../lib/table-actions";
+import { notebookTableOptions } from "../../../../lib/table-options";
 import { editor } from "../../../lib/editor";
-import { listCommandsExtension } from "../../../lib/editor/list-commands";
-import { remoteCursors } from "../../../lib/editor/remote-cursors";
-import {
-  caretIntoTableCell,
-  cellFormattingKeys,
-  createDynamicExtensions,
-  outsideTable,
-  tableCellCompletions,
-  tableCellPresence,
-  tableCellSearch,
-} from "../../../lib/editor/shared-editor";
-import { createNotebookTablePresentation, notebookSourceFormulasExtension } from "../../../lib/editor/shared-tables";
-import { isolateYjsHistory } from "../../../lib/yjs/history";
+import { notebookListOptions, notebookUrlOptions } from "../../../lib/editor/notebook-options";
+import { createQueryBlockPreviews } from "../../../lib/editor/query-blocks";
+import { cellFormattingKeys, outsideTable, tableCellPresence, tableCellSearch } from "../../../lib/editor/shared-editor";
 import { notebookWorkspaceMessages } from "../../messages";
 import EditorToolbar, { formattingKeymap } from "./EditorToolbar";
 import { caretFormat, insertTable, sameCaretFormat } from "./editor-actions";
@@ -142,7 +142,7 @@ function Harness() {
   const [readOnly, setReadOnly] = createSignal(false);
   const [unknown, setUnknown] = createSignal<UnknownTableAction | null>(null);
   const [format, setFormat] = createSignal(caretFormat(EditorState.create()), { equals: sameCaretFormat });
-  const presentation = createNotebookTablePresentation({ notebookId: "Book01", locale: () => locale });
+  const presentation = createNotebookTablePresentation({ ...notebookTableOptions("Book01"), locale: () => locale });
 
   const structure = createNotebookTableStructure({
     ytext,
@@ -159,55 +159,70 @@ function Harness() {
     onUnknown: (action) => setUnknown(action),
   });
 
+  // Charts draw from the note's own tables here; the application loads the same previews from its server.
+  const blockPreviews = createQueryBlockPreviews({
+    notebookId: "Book01",
+    noteId: "Note01",
+    readOnly: false,
+    initialMarkdown: initial,
+    view,
+    enabled: rich,
+    locale: () => locale,
+    load: async (markdown) =>
+      localChartPreviews(markdown ?? ytext.toString(), locale, notebookChartOptions, (diagnostic) => diagnostic.code),
+  });
+
   // Same order and modes as NoteEditor.client.tsx.
   let openTablePicker = () => {};
-  const extensions = createDynamicExtensions();
-  extensions.add(cellFormattingKeys(controls));
-  extensions.add(tableCellSearch);
-  extensions.add(() => yCollab(ytext, null, { undoManager }));
-  extensions.add(() => isolateYjsHistory(undoManager));
-  extensions.add(() => remoteCursors(ytext, awareness));
-  extensions.add(tableCellPresence(ytext, awareness));
-  extensions.add(editor.basicExtensions());
-  extensions.add(
+  const extensions = createEditor();
+  extensions.use(blockPreviews.listener);
+  extensions.use(cellFormattingKeys(controls));
+  extensions.use(tableCellSearch);
+  extensions.use(() => yCollab(ytext, null, { undoManager }));
+  extensions.use(() => isolateYjsHistory(undoManager));
+  extensions.use(() => remoteCursors(ytext, awareness));
+  extensions.use(tableCellPresence(ytext, awareness));
+  extensions.use(editor.basicExtensions());
+  extensions.use(
     slashCommandsExtension({ notebookId: "Book01", notebookName: "Budget", locale, openTablePicker: () => openTablePicker() }),
   );
-  extensions.add(() => formattingKeymap({ notebookId: "Book01" }));
-  extensions.add(editor.markdownExtension());
-  extensions.add(editor.searchTheme());
-  extensions.add(() =>
+  extensions.use(() => formattingKeymap({ notebookId: "Book01" }));
+  extensions.use(editor.markdownExtension());
+  extensions.use(editor.searchTheme());
+  extensions.use(() =>
     readOnly()
       ? []
       : [
-          listCommandsExtension(),
+          listCommandsExtension(notebookListOptions),
           EditorView.updateListener.of((update) => {
             if (update.docChanged || update.selectionSet) setFormat(caretFormat(update.state));
           }),
         ],
   );
-  extensions.add(() => {
+  extensions.use(() => {
     const dark = document.documentElement.classList.contains("dark");
     if (rich()) return dark ? editor.customDarkInit() : editor.customLightInit();
     return dark ? editor.rawDarkInit() : editor.rawLightInit();
   });
-  extensions.add(editor.noteScroller);
-  extensions.add(() => (rich() ? [] : [lineNumbers(), notebookSourceFormulasExtension({ locale: () => locale })]));
-  extensions.add(() =>
+  extensions.use(editor.noteScroller);
+  extensions.use(() => (rich() ? [] : [lineNumbers(), notebookSourceFormulasExtension({ locale: () => locale })]));
+  extensions.use(() =>
     rich()
       ? [
           presentation.extension,
           caretIntoTableCell,
           tableCellCompletions,
-          editor.imageExtension("Book01"),
-          editor.listsExtension(),
+          editor.imageExtension(notebookUrlOptions("Book01")),
+          editor.listsExtension(notebookListOptions),
           editor.infoBlocksExtension(locale),
           editor.dataBlocksExtension(),
+          blockPreviews.extension,
           editor.namedBlocksExtension(),
-          editor.linksExtension("Book01"),
+          editor.linksExtension(notebookUrlOptions("Book01")),
           editor.markupExtension(),
           editor.markExtension(),
           editor.subSupExtension(),
-          editor.ligaturesExtension(),
+          editor.ligaturesExtension(notebookListOptions),
           editor.initialMarkdownDecorationRefreshExtension(),
           editor.pointerSelectionMarkdownRefreshExtension(),
           editor.katexExtension(),
@@ -254,6 +269,26 @@ function Harness() {
         mode = next;
       },
       posts: () => posts,
+      blockDrift() {
+        const current = view();
+        if (!current) throw new Error("Editor not ready");
+        // CodeMirror places every line from its height map; each drawn block must sit where the map says.
+        const children = [...current.contentDOM.children].filter((child) => !child.classList.contains("cm-gap"));
+        return current.viewportLineBlocks.flatMap((block, index) => {
+          const child = children[index];
+          const box = child?.getBoundingClientRect();
+          // A relative offset moves only the drawing, not the lines after it.
+          const style = child && getComputedStyle(child);
+          const offset = style?.position === "relative" ? Number.parseFloat(style.top) || 0 : 0;
+          const top = box ? Math.round(box.top - offset - current.documentTop - block.top) : null;
+          const height = box ? Math.round(box.height - block.height) : null;
+          // A rounding pixel is no drift.
+          return top !== null && height !== null && Math.abs(top) <= 1 && Math.abs(height) <= 1
+            ? []
+            : [{ block: child?.className ?? "missing", top, height }];
+        });
+      },
+      mounts: () => editorMounts,
       uploads: () => [...uploads],
       undo: async () => {
         await actions.undo();
@@ -336,7 +371,8 @@ function Harness() {
             }}
             onDroppedImages={(count, files) => files.length >= count}
             onReady={(controller, next) => {
-              extensions.attach(controller.view);
+              editorMounts++;
+              extensions.attach(controller.view, { controller, controls: next });
               setControls(next);
               setView(controller.view);
             }}
@@ -344,10 +380,9 @@ function Harness() {
         </ScrollArea>
         <EditorToolbar
           connected={true}
-          editorView={view()}
+          editor={extensions}
           notebookId="Book01"
           noteId="Note01"
-          initialPanelOpen={false}
           format={format()}
           onUndo={() => {
             void actions.undo();
@@ -375,6 +410,9 @@ export type NoteHarness = {
   setOnline: (online: boolean) => void;
   setServer: (mode: ServerMode) => void;
   posts: () => number;
+  /** Drawn blocks whose position or height differs from CodeMirror's height map, in whole pixels. */
+  blockDrift: () => { block: string; top: number | null; height: number | null }[];
+  mounts: () => number;
   uploads: () => string[];
   undo: () => Promise<void>;
   peerType: (after: string, insert: string) => void;
@@ -390,4 +428,47 @@ declare global {
   }
 }
 
-const dispose = render(() => <Harness />, document.getElementById("root")!);
+let editorMounts = 0;
+const [navigationHidden, setNavigationHidden] = createSignal(false);
+// `workspace` puts the editor where the notebook page does: beside the resizable navigation, in the document surface.
+const dispose = params.has("workspace")
+  ? (() => {
+      const stop = installAppWorkspaceController();
+      const unmount = render(
+        () => (
+          <LocaleProvider locale={locale}>
+            {/* As on the note page: no head; the toolbar holds the navigation button. */}
+            <AppWorkspace mobileSurface="flush" class="notebooks-workspace flex-1 min-h-0" head={false}>
+              <AppWorkspace.Sidebar
+                id="notebook-navigation"
+                class="notebook-sidebar"
+                label="Navigation"
+                resizable
+                defaultSize={256}
+                hidden={navigationHidden()}
+                onHiddenChange={setNavigationHidden}
+              >
+                <nav class="p-3 text-sm">Budget</nav>
+              </AppWorkspace.Sidebar>
+              <AppWorkspace.Content>
+                <AppWorkspace.Main scroll={false}>
+                  <div
+                    class="notebook-document-surface flex flex-1 min-w-0 min-h-0 flex-col"
+                    data-comments=""
+                    data-full-width={params.has("fullWidth") ? "" : undefined}
+                  >
+                    <Harness />
+                  </div>
+                </AppWorkspace.Main>
+              </AppWorkspace.Content>
+            </AppWorkspace>
+          </LocaleProvider>
+        ),
+        document.getElementById("root")!,
+      );
+      return () => {
+        unmount();
+        stop();
+      };
+    })()
+  : render(() => <Harness />, document.getElementById("root")!);

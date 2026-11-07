@@ -60,5 +60,15 @@ export type {
   NotificationSendInput,
 } from "./contracts/notification-types";
 export { notification } from "./contracts/notification-types";
+export { createRedis, createSql, redis, type SqlPoolOptions, sql } from "./runtime/clients";
+export {
+  type ConnectionSource,
+  connections,
+  type PlatformBootstrapMetadata,
+  type PlatformConnectionSources,
+  type PlatformConnections,
+  type PlatformConnectionValues,
+} from "./runtime/connections";
 export type { HelpDefinition, HelpDefinitionDocument } from "./server/help";
 export { defineHelp } from "./server/help";
+export { storage } from "./services/object-store";

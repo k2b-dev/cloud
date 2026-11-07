@@ -1,11 +1,11 @@
 import { afterEach, beforeAll, beforeEach, expect, spyOn, test } from "bun:test";
-import { appAccess, appRegistry } from "@k2b/cloud";
+import { APP_REGISTRY_CONFIG, appAccess, appRegistry, getApp, getProcessSync, sql, watchAppRegistry } from "@k2b/cloud";
 import { accounts, coreSettings, serviceAccountCredentials } from "@k2b/cloud/services";
 import * as notificationPlatform from "@k2b/cloud/services/notifications/platform";
 import { createTestSession } from "@k2b/cloud/services/session/session.test-fixture";
 import { encryptValue } from "@k2b/cloud/services/settings/crypto";
-import { sql } from "bun";
 import { z } from "zod";
+import { getProcessNats } from "../../../../scripts/fixtures/platform";
 import { suiteFor, testInfra } from "../../../../scripts/fixtures/test-infra";
 import * as machineAuthority from "../service/workflow-machine-authority";
 import { getWorkflowRunByShortId, getWorkflowRunScope } from "../service/workflow-runs";
@@ -56,6 +56,28 @@ const source = `triggers:
 steps:
   - succeed:
       message: Done`;
+
+// Bypass the local writer's acknowledgement: authorization must observe remote
+// entry-rule changes through the real registry watch, without per-call snapshots.
+const publishRemoteAppEntry = async (value: typeof app.meta & { baseUrl: string }) => {
+  const observed = Promise.withResolvers<void>();
+  const controller = new AbortController();
+  const watcher = watchAppRegistry({
+    signal: controller.signal,
+    onChange: async () => {
+      if (JSON.stringify((await getApp("grids"))?.access) === JSON.stringify(value.access)) observed.resolve();
+    },
+  });
+  // Propagate a failed watch instead of waiting for a notification it cannot send.
+  void watcher.catch(observed.reject);
+  try {
+    await getProcessSync().ephemeral<typeof value>(APP_REGISTRY_CONFIG).upsert({ key: "apps/grids", value });
+    await observed.promise;
+  } finally {
+    controller.abort();
+    await watcher;
+  }
+};
 suite("machine workflow execution authority", () => {
   for (const kind of ["standalone", "agent"] as const)
     test(`${kind}: real token, mandate and effect-time revocation remain independent of the administrator`, async () => {
@@ -143,15 +165,12 @@ suite("machine workflow execution authority", () => {
         expect(await canExecuteWorkflow(claim)).toBe(true);
         // A domain grant and a live mandate cannot bypass the application's
         // current entry rule, including inside the effect transaction.
-        await appRegistry().upsert({
-          key: "apps/grids",
-          value: { ...app.meta, baseUrl: app.baseUrl, access: appAccess.roles(["admin"]) },
-        });
+        await publishRemoteAppEntry({ ...app.meta, baseUrl: app.baseUrl, access: appAccess.roles(["admin"]) });
         expect((await invoke()).status).toBe(403);
         expect(await canExecuteWorkflow(claim)).toBe(false);
         expect(await sql.begin((db) => canExecuteWorkflow(claim, db))).toBe(false);
         expect((await getWorkflowTriggerRuntimeState(workflow)).schedule?.state).toBe("degraded");
-        await appRegistry().upsert({ key: "apps/grids", value: { ...app.meta, baseUrl: app.baseUrl } });
+        await publishRemoteAppEntry({ ...app.meta, baseUrl: app.baseUrl });
         expect(await canExecuteWorkflow(claim)).toBe(true);
         expect((await invoke()).status).toBe(200);
         expect(await canExecuteWorkflow({ ...claim, baseId: otherBaseId })).toBe(false);
@@ -1712,6 +1731,20 @@ suite("HTTP authorization registry cancellation", () => {
       const scope = await getWorkflowRunScope(queued.id);
       if (!scope) throw new Error("Machine scope missing");
       let sent = false;
+      // A heartbeat keeps the view warm. A real transport reconnect invalidates
+      // its covering watch, so authorization must await a recovery snapshot.
+      const connection = getProcessNats();
+      const statuses = connection.status()[Symbol.asyncIterator]();
+      try {
+        await connection.reconnect();
+        for (;;) {
+          const next = await statuses.next();
+          if (next.done) throw new Error("NATS closed before reconnecting");
+          if (next.value.type === "reconnect") break;
+        }
+      } finally {
+        await statuses.return?.();
+      }
       hold = true;
       pending = requestWorkflowHttp(
         {

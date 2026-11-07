@@ -19,10 +19,7 @@ export function createSystemChatList() {
     setMore(append);
     try {
       const previous = page();
-      const next = await loadSystemChats(
-        append ? { spacesCursor: previous?.spacesCursor ?? "", notebooksCursor: previous?.notebooksCursor ?? "" } : {},
-        request.signal,
-      );
+      const next = await loadSystemChats(append ? { cursors: previous?.cursors ?? {} } : {}, request.signal);
       if (request.signal.aborted) return;
       if (append && previous) {
         const items = new Map(previous.items.map((item) => [`${item.ref.type}:${item.ref.id}`, item]));
@@ -68,7 +65,7 @@ export default function ChatSystemChats(props: {
     return [...rows.values()];
   });
   const unread = () => rows().reduce((sum, row) => sum + row.unread, 0);
-  const incomplete = () => rows().some((row) => row.summaryCursor != null);
+  const incomplete = () => rows().some((row) => row.summaryCursor != null || row.incomplete);
   return (
     <AppWorkspace.SidebarSection
       class={`chat-system-chats${unread() === 0 && !incomplete() ? " chat-system-chats--read" : ""}`}
@@ -98,10 +95,18 @@ export default function ChatSystemChats(props: {
             </Button>
           </InlineGuidance>
         </Show>
+        <Show when={props.state.status() === "ready" && props.state.page()?.skipped.length}>
+          <InlineGuidance tone="warning" role="status">
+            {t().systemChatsPartial}{" "}
+            <Button variant="text" size="xs" onClick={() => void props.state.load(false)}>
+              {t().retry}
+            </Button>
+          </InlineGuidance>
+        </Show>
         <Show when={props.state.status() === "ready" && rows().length === 0}>
           <p class="chat-system-chats__empty">{t().systemChatsEmpty}</p>
         </Show>
-        <Show when={props.state.page()?.spacesCursor || props.state.page()?.notebooksCursor}>
+        <Show when={Object.values(props.state.page()?.cursors ?? {}).some(Boolean)}>
           <Button variant="ghost" size="sm" loading={props.state.status() === "loading"} onClick={() => void props.state.load(true)}>
             {t().showMoreChats}
           </Button>

@@ -36,7 +36,7 @@ const start = async (phone: boolean, locale: string, path = "/app/chat") => {
     ({ locale }) => {
       window.addEventListener("load", async () => {
         const response = await fetch(`/__props?path=${encodeURIComponent(location.pathname + location.search)}`);
-        window.mountChat(await response.json(), locale);
+        await window.mountChat(await response.json(), locale);
       });
     },
     { locale },

@@ -26,6 +26,8 @@ test("a second user cannot read, overwrite or clear another user's journal or un
     second = openMailUserDraftStorage(storage, "Usr002");
   first.setItem("draft:Box001:Draft1", "first user's input");
   expect(second.getItem("draft:Box001:Draft1")).toBeNull();
+  expect(first.keys()).toEqual(["draft:Box001:Draft1"]);
+  expect(second.keys()).toEqual([]);
   second.setItem("draft:Box001:Draft1", "second user's input");
   second.clear();
   expect(first.getItem("draft:Box001:Draft1")).toBe("first user's input");
@@ -40,6 +42,7 @@ test("logout's persistent epoch fences old tab reads/writes, including delayed a
   storage.removeItem("cloud:user:Usr001:mail:seed");
   expect(() => oldTab.setItem("seed", "late response")).toThrow("session ended");
   expect(() => oldTab.getItem("seed")).toThrow("session ended");
+  expect(() => oldTab.keys()).toThrow("session ended");
   expect(storage.getItem("cloud:user:Usr001:mail:seed")).toBeNull();
   const freshTab = openMailUserDraftStorage(storage, "Usr001");
   freshTab.setItem("seed", "new session");

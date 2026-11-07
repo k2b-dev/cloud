@@ -1,5 +1,5 @@
+import { sql } from "@k2b/cloud";
 import { audit } from "@k2b/cloud/services";
-import { sql } from "bun";
 import { finishActivity, insertActivity } from "../data/activity";
 import type { ActivityReaderDependencies } from "./activity-reader";
 

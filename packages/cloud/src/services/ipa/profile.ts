@@ -5,8 +5,8 @@
  * Local group mutations keep that projection as source of truth; the local
  * display mirror is only a bootstrap fallback before the first full sync.
  */
+import { sql } from "../../runtime/clients";
 
-import { sql } from "bun";
 import { calculateIpaProfileFromGroupNames } from "../account-model";
 import { getFreeIpaConfig } from "../freeipa-config";
 

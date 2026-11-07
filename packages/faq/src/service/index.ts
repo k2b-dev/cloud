@@ -1,6 +1,6 @@
+import { sql } from "@k2b/cloud";
 import { logger, toPgTextArray, toPgUuidArray } from "@k2b/cloud/services";
 import { err, fail, ok, type PageParams, type Paginated, paginate } from "@k2b/stdlib";
-import { sql } from "bun";
 import { normalizeFaqTranslations, resolveFaqEntry } from "@/content";
 import { type CreateFaq, type FaqEntry, FaqTranslationsSchema, type UpdateFaq } from "@/contracts";
 import { faqServiceMessages } from "./messages";

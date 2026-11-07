@@ -1,6 +1,5 @@
 import { afterAll, afterEach, beforeAll, beforeEach, expect, spyOn, test } from "bun:test";
 import { createSync, type Sync } from "@k2b/sync";
-import { sql } from "bun";
 import { smtpSink } from "../../../../../scripts/fixtures/smtp-sink";
 import { connectTestNats, suiteFor, testSyncNamespace, useFreshDatabase } from "../../../../../scripts/fixtures/test-infra";
 import { deleteTestNamespace } from "../../../../../scripts/fixtures/test-sync";
@@ -9,9 +8,12 @@ import { migrate as migrateNotifications } from "../../../../core/src/migrate/co
 import { migrate as migrateMail } from "../../../../core/src/migrate/core/outgoing-mail";
 import { bindProcessSync, unbindProcessSync } from "../../_internal/process-sync";
 import * as registry from "../../_internal/registry";
+import { sql } from "../../runtime/clients";
+import { parseNetworkAllowlist } from "../../shared/network-address";
 import { processOutgoingMail } from "../outgoing-mail/dispatcher";
 import { drainOutgoingMail } from "../outgoing-mail/drain";
 import { outgoingMailMessages } from "../outgoing-mail/messages";
+import * as mailNetwork from "../outgoing-mail/resolve-host";
 import * as mailSender from "../outgoing-mail/send";
 import { outgoingMailStore } from "../outgoing-mail/store";
 import { encryptSecret } from "../secrets";
@@ -28,15 +30,13 @@ suiteFor(
   "nats",
   "valkey",
 )("notification email through outgoing mail", () => {
-  let originalTargets: string | undefined;
+  let targets: string[] = [];
+  let network: ReturnType<typeof spyOn<typeof mailNetwork, "outgoingMailAllowlist">>;
   beforeEach(() => {
-    originalTargets = process.env.OUTGOING_MAIL_ALLOWED_TARGETS;
-    process.env.OUTGOING_MAIL_ALLOWED_TARGETS = "127.0.0.1";
+    targets = ["127.0.0.1"];
+    network = spyOn(mailNetwork, "outgoingMailAllowlist").mockImplementation(async () => parseNetworkAllowlist(targets));
   });
-  afterEach(() => {
-    if (originalTargets === undefined) delete process.env.OUTGOING_MAIL_ALLOWED_TARGETS;
-    else process.env.OUTGOING_MAIL_ALLOWED_TARGETS = originalTargets;
-  });
+  afterEach(() => network.mockRestore());
 
   let fresh: Awaited<ReturnType<typeof useFreshDatabase>>;
   let connection: Awaited<ReturnType<typeof connectTestNats>>;

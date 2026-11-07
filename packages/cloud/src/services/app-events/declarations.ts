@@ -34,13 +34,14 @@ async function auditTransitions(tx: SQL, transitions: Transition[]) {
   }
 }
 
-export function createDeclarationSync(db: SQL, registry: () => Promise<CapabilityRegistryEntry[]>) {
+export function createDeclarationSync(db: () => SQL, registry: () => Promise<CapabilityRegistryEntry[]>) {
   let previousSnapshot: string | undefined;
+  let previousDatabase: SQL | undefined;
   let lastCheckedAt = -Infinity;
   let running: Promise<void> | undefined;
 
   async function sync(entries: CapabilityRegistryEntry[]) {
-    await db.begin(async (tx) => {
+    await db().begin(async (tx) => {
       for (const entry of entries.toSorted((left, right) => left.appId.localeCompare(right.appId))) {
         const hash = capabilityHash({ events: entry.manifest.events ?? [], subscribes: entry.manifest.subscribes ?? [] });
         const [known] = await tx`SELECT hash FROM events.app_manifests WHERE app_id = ${entry.appId}`;
@@ -173,11 +174,13 @@ export function createDeclarationSync(db: SQL, registry: () => Promise<Capabilit
         }))
         .sort((left, right) => left.appId.localeCompare(right.appId)),
     );
-    if (snapshotHash === previousSnapshot && performance.now() - lastCheckedAt < 30_000) return;
+    const database = db();
+    if (database === previousDatabase && snapshotHash === previousSnapshot && performance.now() - lastCheckedAt < 30_000) return;
     running = sync(entries);
     try {
       await running;
       previousSnapshot = snapshotHash;
+      previousDatabase = database;
       lastCheckedAt = performance.now();
     } finally {
       running = undefined;

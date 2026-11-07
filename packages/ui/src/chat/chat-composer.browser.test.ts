@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import type { Browser, BrowserContextOptions, Page } from "playwright";
-import { browserName, launchBrowser, settled } from "../../test/browser";
+import { browserName, launchBrowser, pressAcrossRebuild, settled } from "../../test/browser";
 
 // How far the field grows, whether it ever collapses to be measured, and whether anything moves are results of layout
 // in a real engine. The composer sits under a VirtualFeed, as in a conversation, inside a size container.
@@ -57,7 +57,19 @@ if (options.tabBar) {
 }
 let resolveSearch;
 let searches = 0;
+const [commandGeneration, setCommandGeneration] = createSignal(0);
+// While hidden, the host offers nothing, so the composer removes its whole menu; it then rebuilds it with new objects.
+const [menuHidden, setMenuHidden] = createSignal(false);
+const searchSlash = () => new Promise((resolve) => { searches++; resolveSearch = resolve; });
 window.fixture = { setHint, setDictation, setDraft,
+  rebuildCommands: () => setCommandGeneration((generation) => generation + 1),
+  rebuildMenu: () => {
+    setMenuHidden(true);
+    setTimeout(() => {
+      setMenuHidden(false);
+      setCommandGeneration((generation) => generation + 1);
+    });
+  },
   resolveSearch: (rows) => resolveSearch?.(rows),
   searchCount: () => searches,
 };
@@ -86,15 +98,16 @@ render(
             addOpensCommands: options.add ? true : undefined,
             variant: options.mode === "slash" ? "default" : "conversation",
             commandSections: options.sections ? [{ id: "local", label: "Local commands" }, { id: "remote", label: "Results", searched: true }] : undefined,
-            commands: options.sections ? Array.from({ length: 24 }, (_, index) => ({ id: "local-" + index, name: "Query " + index, description: "Local command", section: "local" })) : options.mode === "slash" ? [
+            // A host rebuilds its command objects whenever its inputs change; fixture.rebuildCommands does that on demand.
+            get commands() { commandGeneration(); if (menuHidden()) return []; return options.sections ? Array.from({ length: 24 }, (_, index) => ({ id: "local-" + index, name: "Query " + index, description: "Local command", section: "local" })) : options.mode === "slash" ? [
               { id: "alpha", name: "alpha", label: "Alpha", description: "First local command", keywords: ["q", "qu"] },
               { id: "blocked", name: "blocked", label: "Blocked", description: "Unused", keywords: ["q", "qu"], reason: "Available after the first response" },
               { name: "fail", description: "Reject this action", action: async () => { throw new Error("Please try again"); } },
               { name: "done", description: "Finish this action", action: async () => ({ done: "All done" }) },
               // An action that navigates within the page at once, as an application's router does.
               ...(options.navigate ? [{ name: "go", label: "Go", description: "Open the next page", action: () => { history.pushState({ page: 2 }, "", "#next"); } }] : []),
-            ] : undefined,
-            searchCommands: options.mode === "slash" ? () => new Promise((resolve) => { searches++; resolveSearch = resolve; }) : undefined,
+            ] : undefined; },
+            get searchCommands() { return options.mode === "slash" && !menuHidden() ? searchSlash : undefined; },
             get value() {
               return draft();
             },
@@ -160,6 +173,8 @@ if (!build.success) throw new AggregateError(build.logs, "Could not bundle the C
 const script = await build.outputs[0]!.text();
 
 type Fixture = {
+  rebuildCommands: () => void;
+  rebuildMenu: () => void;
   resolveSearch: (rows: { id?: string; name: string; description: string; section?: string; keywords?: string[] }[]) => void;
   searchCount: () => number;
   setHint: (hint: string | undefined) => void;
@@ -646,6 +661,101 @@ describe(`default slash ChatComposer in ${browserName}`, () => {
         await page.evaluate(() => fixture.resolveSearch([{ id: "replacement", name: "Replacement", description: "New result" }]));
         await page.locator('[role="option"]').filter({ hasText: "New result" }).waitFor();
         expect(await page.locator('[role="option"]').filter({ hasText: "Previous result" }).count()).toBe(0);
+      } finally {
+        await page.close();
+      }
+    }, 30_000);
+
+    test(`rows that arrive while a command is pressed wait for the release, so it lands on that command at ${width}px`, async () => {
+      const page = await open({ mode: "slash", width });
+      try {
+        const field = page.locator("textarea").first();
+        await field.fill("/do");
+        await page.waitForFunction(() => fixture.searchCount() === 1);
+        const option = page.locator('[role="option"]').filter({ hasText: "Finish this action" });
+        await option.waitFor();
+        await settled(page);
+        const before = await option.boundingBox();
+        await pressAcrossRebuild(page, option, async () => {
+          // Server rows arrive during the press, as the Assistant's searched sections do (#2079).
+          await page.evaluate(() =>
+            fixture.resolveSearch(
+              ["One", "Two", "Three"].map((name) => ({ id: `server-${name}`, name: `do-${name}`, description: `Server ${name}` })),
+            ),
+          );
+          await page.evaluate(() => new Promise((frame) => requestAnimationFrame(() => requestAnimationFrame(frame))));
+          expect(await option.boundingBox()).toEqual(before);
+        });
+        await page.locator('.k2b-chat-composer__status-line[data-tone="done"]').waitFor();
+      } finally {
+        await page.close();
+      }
+    }, 30_000);
+
+    test(`rows held back during a press show once the pointer is released elsewhere at ${width}px`, async () => {
+      const page = await open({ mode: "slash", width });
+      try {
+        const field = page.locator("textarea").first();
+        await field.fill("/do");
+        await page.waitForFunction(() => fixture.searchCount() === 1);
+        const option = page.locator('[role="option"]').filter({ hasText: "Finish this action" });
+        await option.waitFor();
+        await settled(page);
+        const box = (await option.boundingBox())!;
+        const fieldBox = (await field.boundingBox())!;
+        await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+        await page.mouse.down();
+        await page.evaluate(() => fixture.resolveSearch([{ id: "server-late", name: "do-late", description: "Server late" }]));
+        expect(await page.locator('[role="option"]').filter({ hasText: "Server late" }).count()).toBe(0);
+        // The release lands outside the list, so nothing runs, and the held rows show.
+        await page.mouse.move(fieldBox.x + 8, fieldBox.y + fieldBox.height / 2);
+        await page.mouse.up();
+        await page.locator('[role="option"]').filter({ hasText: "Server late" }).waitFor();
+        expect(await page.locator(".k2b-chat-composer__status-line").count()).toBe(0);
+      } finally {
+        await page.close();
+      }
+    }, 30_000);
+
+    test(`a press on a command runs it when the host rebuilds the whole menu before the release at ${width}px`, async () => {
+      const page = await open({ mode: "slash", width });
+      try {
+        const field = page.locator("textarea").first();
+        await field.fill("/done");
+        const option = page.locator('[role="option"]').filter({ hasText: "Finish this action" });
+        await option.waitFor();
+        const listbox = await page.locator('[role="listbox"]').elementHandle();
+        const box = (await option.boundingBox())!;
+        await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+        await page.mouse.down();
+        // As in the Assistant's empty page in CI: the menu goes and comes back, rebuilt, while the button is down (#2140).
+        await page.evaluate(() => fixture.rebuildMenu());
+        await page.waitForFunction((old) => !old?.isConnected && document.querySelector('[role="listbox"]') !== null, listbox);
+        await option.waitFor();
+        await page.mouse.up();
+        await page.locator('.k2b-chat-composer__status-line[data-tone="done"]').waitFor();
+      } finally {
+        await page.close();
+      }
+    }, 30_000);
+
+    test(`a press on a command runs it when the host rebuilds its commands before the release at ${width}px`, async () => {
+      const page = await open({ mode: "slash", width });
+      try {
+        const field = page.locator("textarea").first();
+        await field.fill("/done");
+        const option = page.locator('[role="option"]').filter({ hasText: "Finish this action" });
+        await option.waitFor();
+        const id = await option.getAttribute("id");
+        const box = (await option.boundingBox())!;
+        await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+        await page.mouse.down();
+        // As a host does when its catalog or state settles: new command objects with the same keys (#2140).
+        await page.evaluate(() => fixture.rebuildCommands());
+        expect(await option.getAttribute("id")).toBe(id);
+        await page.mouse.up();
+        await page.locator('.k2b-chat-composer__status-line[data-tone="done"]').waitFor();
+        expect(await page.locator('[role="listbox"]').count()).toBe(0);
       } finally {
         await page.close();
       }

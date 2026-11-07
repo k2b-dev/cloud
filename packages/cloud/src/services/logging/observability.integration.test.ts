@@ -1,15 +1,20 @@
 import { expect, test } from "bun:test";
-import { sql } from "bun";
 import { databaseSuite } from "../../../../../scripts/fixtures/test-infra";
+import { sql } from "../../runtime/clients";
 import { logger, logging } from "./index";
 
 const suite = databaseSuite();
 
 suite("logging observability", () => {
-  test("persists logger metadata as an object readable by the admin projection", async () => {
+  test("persists redacted log messages and metadata readable by the admin projection", async () => {
     const source = `observability-${crypto.randomUUID()}`;
+    const token = `cl_${"a".repeat(43)}`;
     try {
-      logger(source).warn("Fixture warning", { code: "fixture_warning", conversationId: "fixture" });
+      logger(source).warn(`Fixture warning ${token}`, {
+        code: "fixture_warning",
+        conversationId: "fixture",
+        address: `https://example.test/?code=${token}`,
+      });
       let kind: string | undefined;
       // The logger inserts fire-and-forget; wait for the row by time, not by iterations.
       const deadline = Date.now() + 5_000;
@@ -20,7 +25,13 @@ suite("logging observability", () => {
       }
       expect(kind).toBe("object");
       const result = await logging.list({ page: 1, perPage: 10, offset: 0 }, { source, search: "fixture_warning" });
-      expect(result.entries[0]?.metadata).toEqual({ code: "fixture_warning", conversationId: "fixture" });
+      expect(result.entries[0]?.message).toBe("Fixture warning [REDACTED]");
+      expect(result.entries[0]?.metadata).toEqual({
+        code: "fixture_warning",
+        conversationId: "fixture",
+        address: "https://example.test/?code=[REDACTED]",
+      });
+      expect(JSON.stringify(result)).not.toContain(token);
     } finally {
       await sql`DELETE FROM logging.entries WHERE source=${source}`;
     }

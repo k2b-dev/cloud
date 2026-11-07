@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { type Browser, type BrowserContextOptions, devices, type Page } from "playwright";
 import { browserName, launchBrowser } from "../../../../../ui/test/browser";
+import { solidTestPlugin } from "../../../../../ui/test/solid-test-plugin";
 import type {} from "./selection.browser-harness";
 
 // Painted selections, pointer drags and remote carets depend on real layout, so two editors run in a real browser.
@@ -14,6 +15,7 @@ beforeAll(async () => {
     target: "browser",
     conditions: ["browser"],
     format: "iife",
+    plugins: [solidTestPlugin()],
   });
   if (!build.success) throw new AggregateError(build.logs, "Could not bundle the selection harness.");
   const bundle = await build.outputs[0]!.text();

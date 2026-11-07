@@ -282,6 +282,8 @@
 .k2b-ui .k2b-button.chat-info__main {
   color: var(--k2b-detail-panel-accent, var(--k2b-action));
   background: color-mix(in srgb, var(--k2b-detail-panel-accent, var(--k2b-action)) 11%, transparent);
+  /* The tint is its edge: no grey subtle-button border around it. */
+  border-color: transparent;
 }
 
 .k2b-ui .k2b-button.chat-info__main:not(:disabled, [aria-disabled="true"]):hover {
@@ -864,7 +866,7 @@
   padding-inline-end: 0.25rem;
   color: var(--k2b-action);
 }
-.chat-conversation__back .k2b-icon-button:has(.chat-conversation__back-count) i {
+.chat-conversation__back .k2b-icon-button i:has(~ .chat-conversation__back-count) {
   color: var(--k2b-action);
 }
 
@@ -1065,6 +1067,9 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.chat-resource-head__status {
+  margin-inline-start: 0.5rem;
+}
 .chat-resource-head__metadata {
   min-width: 0;
   max-width: 24rem;
@@ -1185,3 +1190,11 @@
   gap: 0.5rem;
 
 }
+
+/* Import, retry and dialog content occupy the same destination. */
+.chat-deferred-view { display: contents; }
+.chat-deferred-feedback { display: flex; flex: 1; align-items: flex-start; padding: 1rem; }
+.chat-deferred-dialog { display: flex; flex-direction: column; height: min(32rem, 65dvh); min-height: 0; }
+.chat-deferred-dialog > * { min-height: 0; flex: 1; }
+.chat-deferred-dialog .chat-dialog__body { flex: 1; }
+.chat-deferred-dialog > .chat-deferred-feedback { height: 100%; }

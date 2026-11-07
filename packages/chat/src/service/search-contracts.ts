@@ -1,3 +1,4 @@
+import { CloudResourceRefSchema } from "@k2b/cloud/contracts";
 import { z } from "zod";
 import { ConversationSchema, ShortIdSchema, ThreadIdSchema } from "./contracts";
 
@@ -11,12 +12,13 @@ export const SearchHitSchema = z.discriminatedUnion("kind", [
     thread: z.strictObject({
       id: ThreadIdSchema,
       name: z.string(),
-      resource: z.strictObject({ kind: z.enum(["task", "event", "note"]), done: z.boolean() }).optional(),
+      resource: z.strictObject({ icon: z.string(), done: z.boolean().optional() }).optional(),
     }),
   }),
   z.strictObject({
     kind: z.literal("system"),
-    ref: z.strictObject({ type: z.enum(["spaces.space", "notebooks.notebook"]), id: ShortIdSchema }),
+    ref: CloudResourceRefSchema,
+    icon: z.string(),
     name: z.string(),
     conversation: ConversationSchema.nullable(),
   }),
@@ -24,6 +26,7 @@ export const SearchHitSchema = z.discriminatedUnion("kind", [
 export const SearchResultSchema = z.strictObject({
   items: z.array(SearchHitSchema).max(SEARCH_LIMIT),
   systemUnavailable: z.literal(true).optional(),
+  incomplete: z.literal(true).optional(),
 });
 export type SearchHit = z.infer<typeof SearchHitSchema>;
 export type SearchResult = z.infer<typeof SearchResultSchema>;

@@ -97,6 +97,8 @@ const PLACEHOLDER_ROWS = 4;
 
 type Row = { kind: "heading"; id: string; label: string } | { kind: "item"; item: RichSelectItem; index: number };
 
+const rowKey = (row: Row) => (row.kind === "heading" ? `heading:${row.id}` : `item:${row.item.value}`);
+
 const isPhone = () => typeof matchMedia === "function" && matchMedia(PHONE_QUERY).matches;
 
 function RichSelectVisual(props: { item: RichSelectItem }): JSX.Element {
@@ -349,6 +351,9 @@ export function RichSelect(props: RichSelectProps): JSX.Element {
     });
     return result;
   });
+  // Rows are keyed by heading and value, not by object: a host that rebuilds equal items must not replace the option
+  // under a press, which would swallow its click.
+  const rowsByKey = createMemo(() => new Map(rows().map((row) => [rowKey(row), row])));
   const selected = createMemo(() => {
     const current = value();
     return current === null ? undefined : props.items.find((item) => item.value === current);
@@ -681,49 +686,61 @@ export function RichSelect(props: RichSelectProps): JSX.Element {
                       <RichSelectPlaceholders visual={anyVisual() || props.items.length === 0} />
                     </Show>
                     <Show when={status() === "ready"}>
-                      <For each={rows()} fallback={<div class="k2b-rich-select__no-results">{messages().noResults}</div>}>
-                        {(row) =>
-                          row.kind === "heading" ? (
-                            <div class="k2b-rich-select__heading" role="presentation">
-                              {row.label}
-                            </div>
-                          ) : (
+                      <For each={rows().map(rowKey)} fallback={<div class="k2b-rich-select__no-results">{messages().noResults}</div>}>
+                        {(key) => {
+                          const first = rowsByKey().get(key)!;
+                          if (first.kind === "heading") {
+                            const label = () => {
+                              const current = rowsByKey().get(key);
+                              return current?.kind === "heading" ? current.label : first.label;
+                            };
+                            return (
+                              <div class="k2b-rich-select__heading" role="presentation">
+                                {label()}
+                              </div>
+                            );
+                          }
+                          const entry = () => {
+                            const current = rowsByKey().get(key);
+                            return current?.kind === "item" ? current : first;
+                          };
+                          return (
                             // biome-ignore lint/a11y/useKeyWithClickEvents: the trigger or search field handles the keys through aria-activedescendant.
                             <div
-                              id={optionId(row.index)}
+                              id={optionId(entry().index)}
                               class="k2b-rich-select__option"
                               role="option"
-                              aria-selected={row.item.value === value()}
-                              aria-disabled={row.item.disabledReason ? "true" : undefined}
-                              aria-labelledby={`${optionId(row.index)}-label`}
+                              aria-selected={entry().item.value === value()}
+                              aria-disabled={entry().item.disabledReason ? "true" : undefined}
+                              aria-labelledby={`${optionId(entry().index)}-label`}
                               aria-describedby={
                                 [
-                                  row.item.disabledReason || row.item.description ? `${optionId(row.index)}-line` : "",
-                                  withPreview() && row.index === active() ? previewId : "",
+                                  entry().item.disabledReason || entry().item.description ? `${optionId(entry().index)}-line` : "",
+                                  withPreview() && entry().index === active() ? previewId : "",
                                 ]
                                   .filter(Boolean)
                                   .join(" ") || undefined
                               }
-                              data-active={row.index === active() ? "true" : undefined}
+                              data-active={entry().index === active() ? "true" : undefined}
                               onPointerMove={() => {
-                                if (active() !== row.index) setActive(row.index);
+                                if (active() !== entry().index) setActive(entry().index);
                               }}
-                              onClick={() => choose(row.item)}
+                              onClick={() => choose(entry().item)}
                             >
                               <Show when={anyVisual()}>
-                                <Show when={hasVisual(row.item)} fallback={<span class="k2b-rich-select__visual" />}>
-                                  <RichSelectVisual item={row.item} />
+                                <Show when={hasVisual(entry().item)} fallback={<span class="k2b-rich-select__visual" />}>
+                                  <RichSelectVisual item={entry().item} />
                                 </Show>
                               </Show>
                               <RichSelectRowText
-                                item={row.item}
-                                labelId={`${optionId(row.index)}-label`}
-                                lineId={`${optionId(row.index)}-line`}
+                                item={entry().item}
+                                labelId={`${optionId(entry().index)}-label`}
+                                lineId={`${optionId(entry().index)}-line`}
                               />
                               <i class="ti ti-check k2b-rich-select__check" aria-hidden="true" />
                             </div>
-                          )
-                        }
+                          );
+                        }}
                       </For>
                     </Show>
                   </div>

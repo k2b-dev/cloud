@@ -38,9 +38,9 @@ created or reverse completed handler effects.
 
 ## Inspect readiness and failures
 
-Open **Administration → Apps** (`/admin/apps`) and select an app to inspect
-its access rule, requested platform permissions, sent events, subscriptions,
-and active notification definitions. Deploying an app approves its declared
+Open **Administration → Apps** (`/admin/apps`), select an app and open **Events**
+(`/admin/apps?app=<id>&view=events`) to inspect sent events, subscriptions and active
+notification definitions; the app page itself shows the requested platform permissions. Deploying an app approves its declared
 subscriptions; the detail view makes them visible rather than asking for a
 second approval. Subscriptions first observed in the last seven days are marked
 **New**. Blocked subscriptions show their reason and failed deliveries offer
@@ -55,7 +55,8 @@ cld apps show filesv2 --json
 
 `GET /api/app-events/apps/:appId` returns `{ app, access, sends, hears,
 notifications, totals }`. It requires the administrator role and, for OAuth,
-the `admin` scope. Unknown app IDs return 404. Offline apps remain inspectable
+`read` or `admin` scope, checked against the person’s current role. Mutations
+retain the explicit `admin` scope. Unknown app IDs return 404. Offline apps remain inspectable
 while Core has declarations, subscriptions, notification definitions or access
 records for them. Their saved, non-retired declarations remain visible; metadata
 Core does not hold is unknown, with the app ID used as its name. An offline app's unknown

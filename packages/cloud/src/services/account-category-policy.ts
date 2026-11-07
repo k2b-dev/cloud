@@ -1,10 +1,10 @@
-import { sql } from "bun";
 import {
   type AccountCategory,
   type AccountCategoryPolicy,
   accountCategory,
   DEFAULT_ACCOUNT_CATEGORY_POLICY,
 } from "../contracts/account-categories";
+import { sql } from "../runtime/clients";
 import { decryptValue } from "./settings/crypto";
 
 const prefix = "user.category.";

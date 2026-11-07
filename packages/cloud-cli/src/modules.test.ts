@@ -19,11 +19,14 @@ test("host commands load no module", async () => {
     const loaded = Object.keys(require.cache).filter((path) => !path.includes("/node_modules/"));
     process.stderr.write("CLD_PROBE" + JSON.stringify(loaded));
   `;
+  // This probe measures CLI imports, not the infrastructure preload's server startup.
+  const env = { ...process.env };
+  for (const key of Object.keys(env)) if (key.startsWith("CLOUD_TEST_")) delete env[key];
   try {
     for (const args of [["--version"], ["help"], ["profile", "list"], ["plugins", "list"], ["auth", "status"], ["update", "--help"]]) {
       const child = Bun.spawn([process.execPath, "-e", probe], {
         env: {
-          ...process.env,
+          ...env,
           HOME: directory,
           XDG_CONFIG_HOME: directory,
           CLD_CONFIG: join(directory, "config.json"),

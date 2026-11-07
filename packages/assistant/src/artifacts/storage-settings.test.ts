@@ -1,9 +1,14 @@
 import { afterAll, afterEach, beforeEach, expect, spyOn, test } from "bun:test";
+import { sql } from "@k2b/cloud";
+import { audit } from "@k2b/cloud/services";
 import * as settings from "@k2b/cloud/services/settings";
-import { SQL, sql } from "bun";
+import { SQL } from "bun";
+import { useUnitClients } from "../../../../scripts/fixtures/unit-clients";
 import { app } from "../config";
 import { storageSettings } from "./storage-settings";
 import { testIdentity } from "./test-identity";
+
+useUnitClients();
 
 const tx = Object.assign(new SQL("postgres://localhost/unused_test"), {
   savepoint: () => {
@@ -19,9 +24,11 @@ beforeEach(() => {
     if (typeof run !== "function") throw new Error("Expected transaction callback");
     await run(tx);
   });
+  const record = spyOn(audit, "record").mockResolvedValue();
   const invalidate = spyOn(settings, "invalidateSettingsCache").mockResolvedValue();
   restoreTransaction = () => {
     begin.mockRestore();
+    record.mockRestore();
     invalidate.mockRestore();
   };
 });
@@ -36,6 +43,7 @@ test("only instance administrators configure validated storage settings", async 
       "assistant.storage_total_mib": 250,
       "assistant.rsql_url": "",
       "assistant.rsql_api_token": "",
+      "assistant.rsql_allowed_targets": ["rsql"],
     }[key],
   }));
   const write = spyOn(settings, "set").mockResolvedValue();
@@ -75,6 +83,7 @@ test("storage shows unreadable per key and preflights a full save before writing
       "assistant.storage_total_mib": 250,
       "assistant.rsql_url": "",
       "assistant.rsql_api_token": "",
+      "assistant.rsql_allowed_targets": ["rsql"],
     }[key],
     stored: key === "assistant.storage_total_mib" ? "unreadable" : "readable",
   }));

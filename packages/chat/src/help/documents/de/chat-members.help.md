@@ -111,4 +111,4 @@ Wähle im Listenmenü eines Chats **Chat anheften**, um ihn unter **Angeheftet**
 
 **Chat archivieren** blendet einen Chat aus deiner Liste aus, ohne ihn zu verlassen. Auch neue Nachrichten holen ihn nicht zurück. Öffne **Archiv** am Fuß der Liste und wähle im Menü **Zurückholen**, um ihn wieder einzublenden, einschließlich seiner alten Position unter **Angeheftet**. Archivieren ändert nur deine eigene Liste.
 
-Diese Aktionen gelten auch für abonnierte Kanäle. Nicht angeheftete Kanäle stehen unter **Kanäle**. **Alle** und **Ungelesen** filtern Chats und Kanäle; jeder Abschnitt behält seinen gespeicherten Einklappzustand. Spaces und Notebooks bleiben in ihrem eigenen Abschnitt und lassen sich weder anheften noch persönlich archivieren.
+Diese Aktionen gelten auch für abonnierte Kanäle. Nicht angeheftete Kanäle stehen unter **Kanäle**. **Alle** und **Ungelesen** filtern Chats und Kanäle; jeder Abschnitt behält seinen gespeicherten Einklappzustand. Ressourcen-Diskussionen bleiben in ihrem eigenen Abschnitt und lassen sich weder anheften noch persönlich archivieren.

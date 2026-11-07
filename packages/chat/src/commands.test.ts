@@ -16,6 +16,12 @@ test("Chat publishes a localized, non-mutating command owned by its workspace", 
   const manifest = compileCapabilityManifest("chat", chatCapabilities);
   expect(manifest.commands).toHaveLength(1);
   expect(manifest.commands[0]).toMatchObject({ localId: "conversation.compose", path: "/app/chat" });
-  expect(manifest.actions.map((action) => action.localId)).toEqual(["notifications.set", "thread.follow"]);
-  expect(manifest.queries.map((query) => query.localId)).toEqual(["notifications.read"]);
+  expect(manifest.actions.map((action) => action.localId)).toEqual([
+    "discussion.post",
+    "message.delete",
+    "message.edit",
+    "notifications.set",
+    "thread.follow",
+  ]);
+  expect(manifest.queries.map((query) => query.localId)).toEqual(["discussion.list", "message.read", "notifications.read"]);
 });

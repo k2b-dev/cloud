@@ -280,6 +280,16 @@ encrypted delivery payload until the attempt succeeds or fails permanently,
 never on the event or in history. Only the browser channel receives `preview`;
 email and deployment channels never see it.
 
+Resource discussion consumers can use
+`readResourcePrincipals({ ref, container, principals })` from
+`@k2b/cloud/capabilities/server` immediately before `send()`. Declare
+`platformPermissions: ["resources:readers"]`, bind candidates to the consumer's
+own participants or followers, and handle checked, not-configured and temporary
+failure outcomes separately. The check grants no content access. See
+[App-to-app reader checks](/en/docs/platform/app-to-app-queries) for admission
+and [Chat notifications](/en/docs/operations/chat-notifications) for Chat's
+freshness and retry rules.
+
 The preview is fixed when `send()` runs. Cloud does not check access again
 before a queued, retried, or fallback browser delivery. After the push service
 accepts a push, Cloud cannot recall or change it. An offline device receives it

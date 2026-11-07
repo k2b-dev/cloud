@@ -1,6 +1,6 @@
 import { CloudAvatar } from "@k2b/cloud/account/ui";
 import { groupDisplayName } from "@k2b/cloud/shared";
-import { Avatar, DataTable, type DataTableColumn, Pagination, Paper, Placeholder, Tag, useLocale } from "@k2b/ui";
+import { DataTable, type DataTableColumn, Pagination, Paper, Placeholder, Tag, useLocale } from "@k2b/ui";
 import type { EntityListItem, PaginationResponse } from "@/contracts";
 import AccountAvatar from "@/frontend/AccountAvatar";
 
@@ -164,8 +164,7 @@ export default function ManagersTab(props: ManagersTabProps) {
                         ? messages().agent
                         : messages().resourceBound;
                 const href = props.isAdmin ? `/app/accounts/service-accounts?search=${encodeURIComponent(serviceAccount.name)}` : undefined;
-                if (col.id === "type")
-                  return <span class="text-dimmed">{serviceAccount.kind === "agent" ? messages().agent : messages().serviceAccount}</span>;
+                if (col.id === "type") return <span class="text-dimmed">{kindLabel}</span>;
                 if (col.id === "name") {
                   const content = (
                     <>

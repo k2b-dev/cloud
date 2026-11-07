@@ -1,8 +1,8 @@
 import { expect, test } from "bun:test";
 import { createHash } from "node:crypto";
-import { sql } from "bun";
 import { tinyJpeg, withCameraMetadata } from "../../../../../scripts/fixtures/image-metadata";
 import { databaseSuite } from "../../../../../scripts/fixtures/test-infra";
+import { sql } from "../../runtime/clients";
 import "../../../../../scripts/fixtures/authorization-preload";
 import { createAdminIdentityRoutes } from "../../api/admin-identity";
 import meApi from "../../api/me";

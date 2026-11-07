@@ -300,6 +300,8 @@ for (const mode of ["write", "book"] as const) {
   test.skipIf(mode === "book" || browserName !== "chromium")(
     `${mode}: dragging a wide table's classic scrollbar scrolls it and keeps the preview`,
     async () => {
+      // Keep only one browser alive while this case needs different launch options.
+      await browser.close();
       const engine = await launchBrowser({ ignoreDefaultArgs: ["--hide-scrollbars"] });
       try {
         const page = await open(mode, 1280, false, {}, engine);
@@ -326,6 +328,7 @@ for (const mode of ["write", "book"] as const) {
         expect(await page.evaluate(() => (window as unknown as { harness: ReadingColumnHarness }).harness.anchor())).toBe(anchor);
       } finally {
         await engine.close();
+        browser = await launchBrowser();
       }
     },
   );

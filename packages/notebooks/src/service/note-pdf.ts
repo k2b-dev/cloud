@@ -9,9 +9,9 @@ import {
   type RenderHtmlToPdfResult,
   renderHtmlToPdfWithConfig,
 } from "@k2b/cloud/services/pdf";
+import { LIGATURE_CLASS, LIGATURES } from "@k2b/editor/markdown/lib/ligatures";
 import katexCss from "katex/dist/katex.min.css" with { type: "text" };
 import { type BookImagePlacement, type BookReferences, renderNotebookBook } from "../lib/book-renderer";
-import { LIGATURE_CLASS, LIGATURES } from "../lib/ligatures";
 import { type NotebookMapImage, notebookMapRevision, parseNotebookMapBlocks } from "../lib/map-blocks";
 import type { NotePdfOmission } from "../lib/pdf-omissions";
 import * as attachments from "./attachments";
@@ -48,7 +48,7 @@ const NOTE_PRINT_CSS = `
 .notebook-map__name { margin-right: .5em; }
 .notebook-map__source, .notebook-map__summary { font-size: .85em; color: #475569; }
 
-.md-block-handle { display: inline-block; margin: .5em 0 .25em; padding: .05em .4em; border-radius: 3px; background: #eff6ff; color: #1d4ed8; font: 600 .75em/1.4 ui-monospace, SFMono-Regular, Menlo, monospace; }
+.md-block-handle { display: block; margin: .5em 0 .25em; color: #45454e; font-size: .8125em; font-weight: 600; line-height: 1.4; }
 .md-data-block { margin: 0 0 1em; break-inside: avoid; }
 .md-data-grid { display: grid; grid-template-columns: minmax(7em, max-content) minmax(0, 1fr); margin: 0; border: 1px solid #cbd5e1; border-radius: 4px; }
 .md-data-row { display: contents; }

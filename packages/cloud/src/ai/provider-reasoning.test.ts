@@ -83,7 +83,6 @@ test("reasoning_content frames reach the Assistant stream as thinking blocks wit
     createAiProvider({ ...profile, baseURL: `http://localhost:${server.port}/v1` }, "secret-key"),
     profile,
     { kind: "chat", task: "chat" },
-    undefined,
     {
       begin: async () => ({ id: crypto.randomUUID(), maxOutputTokens: undefined }),
       finish: async (_id, _usage, status, details) => {

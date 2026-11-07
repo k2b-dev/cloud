@@ -37,6 +37,8 @@ export type MailListHarnessOptions = {
   deletedOnServer?: boolean;
   /** Makes plain text conversations a reply with this body, for example quoted text, after an earlier message. */
   plainText?: string;
+  /** Draws the columns view (F2) of a shared or a personal mailbox. */
+  columns?: "shared" | "personal";
 };
 
 declare global {
@@ -301,10 +303,22 @@ window.mountMailList = (options) => {
                   onBulkAction={noop}
                   onItemAction={noop}
                   onManageTags={noop}
+                  onRespondItem={noop}
+                  onSetItemCompletion={noop}
+                  currentUserId={null}
+                  assigneeNames={() => []}
                   onMergeItem={noop}
                   onOpenHref={openHref}
                   onLoadMore={() => false}
                   onRefresh={async () => {}}
+                  columns={
+                    options.columns
+                      ? {
+                          shared: options.columns === "shared",
+                          assignees: (ids) => ids.map((id) => ({ id, name: id.replace("user-", "") })),
+                        }
+                      : undefined
+                  }
                 />
               </AppWorkspace.MainPane>
               <div id="reader" class="flex h-full min-h-0 flex-col overflow-hidden bg-[var(--ui-surface-raised)]">
@@ -337,10 +351,9 @@ window.mountMailList = (options) => {
                     readingFormat="automatic"
                     theme="light"
                     calendarIntegrationAvailable={false}
-                    listCollapsed={false}
+                    listAway={false}
                     detailsOpen={false}
                     toolbarActions={options.toolbarActions ?? ["reply"]}
-                    onToggleList={noop}
                     onToggleDetails={noop}
                     onToolbarActionsChange={noop}
                     actionPending={false}
@@ -354,6 +367,12 @@ window.mountMailList = (options) => {
                     onUndoAutomation={noop}
                     onAssignConversation={noop}
                     onAssignConversationToMe={noop}
+                    assignment={null}
+                    workStatus={null}
+                    completionPending={false}
+                    onSetCompletion={noop}
+                    respondRequest={null}
+                    onRespondRequestHandled={noop}
                     onSplitMessage={noop}
                     onKeep={noop}
                     onStopKeeping={noop}

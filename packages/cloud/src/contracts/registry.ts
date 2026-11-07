@@ -8,8 +8,8 @@ import type { DashboardWidgetPresentation, DashboardWidgetSize, WidgetSettingsDe
 
 /**
  * App-registry entry type. Populated internally by `defineApp()` + the
- * heartbeat runtime. Values are validated when read because Redis may still
- * contain records written by older or interrupted runtimes.
+ * heartbeat runtime. Values are validated before publication and once per observed NATS revision
+ * because readers may encounter records from older or interrupted runtimes.
  */
 
 export type AppRegistryNav = {
@@ -29,6 +29,8 @@ export type AppRegistryPwaPart = {
   badge?: string;
   /** Summary route for the part's line on Start; older readers ignore it. */
   summary?: string;
+  /** Position among the parts; older readers ignore it. */
+  order?: number;
 };
 
 export type AppRegistryCapabilitySummary = {
@@ -83,6 +85,8 @@ export type AppRuntimeMetadata = {
 };
 
 export type AppRegistryEntry = {
+  /** Opt-in public site, served only through the app public router. */
+  public?: true;
   access?: AppAccessRule;
   platformPermissions?: readonly PlatformPermission[];
   id: string;

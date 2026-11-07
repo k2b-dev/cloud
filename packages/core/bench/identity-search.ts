@@ -2,7 +2,8 @@ import { spyOn } from "bun:test";
 import assert from "node:assert/strict";
 import { connect, createServer, type Socket } from "node:net";
 import { cpus, loadavg } from "node:os";
-import { RedisClient, redis, SQL, sql } from "bun";
+import { redis, sql } from "@k2b/cloud";
+import { RedisClient, SQL } from "bun";
 import { Hono } from "hono";
 import { bindProcessApplicationId } from "../../cloud/src/_internal/process-identity";
 import { benchmarkConfiguration } from "./configuration";
@@ -96,6 +97,8 @@ const meteredUrl = new URL(source);
 meteredUrl.hostname = "127.0.0.1";
 meteredUrl.port = String(address.port);
 process.env.DATABASE_URL = metered ? meteredUrl.href : source.href;
+const { initializePlatform } = await import("@k2b/cloud/start");
+await initializePlatform({ appId: "core", source: "env" });
 const telemetry = new RedisClient(process.env.REDIS_URL!);
 const redisSnapshot = async (): Promise<Counts> => {
   const raw = String(await telemetry.send("INFO", ["commandstats"]));
@@ -175,7 +178,7 @@ const warmCaches = async () => {
   if (performance.now() - lastCacheWarmup < 30_000 && cacheWarmups > 0) return;
   invalidateIdentityRuntimeConfig();
   identity.invalidateIdentitySignerCache("invocation");
-  await getIdentityRuntimeConfig();
+  assert.equal((await getIdentityRuntimeConfig()).issuer, issuer, "Benchmark settings must use the seeded cache");
   await identity.prepareIdentitySigner("invocation");
   await providerControl("warm");
   lastCacheWarmup = performance.now();

@@ -1,5 +1,5 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
-import { env } from "@k2b/cloud/config";
+import { connections } from "@k2b/cloud";
 import { z } from "zod";
 import { FilesError } from "./errors";
 
@@ -39,7 +39,7 @@ export type EditorTokenPayload = {
   };
 };
 const encode = (value: string) => Buffer.from(value).toString("base64url");
-const sign = (body: string) => createHmac("sha256", env.APP_SECRET).update(`filesv2.editor:${body}`).digest("base64url");
+const sign = (body: string) => createHmac("sha256", connections().appSecret.current).update(`filesv2.editor:${body}`).digest("base64url");
 
 export function signEditorToken(payload: EditorTokenPayload): string {
   const body = encode(

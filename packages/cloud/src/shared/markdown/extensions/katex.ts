@@ -1,13 +1,17 @@
 /**
  * KaTeX extension for marked
  *
- * Renders LaTeX math expressions server-side:
+ * Renders LaTeX math expressions:
  * - Inline: $..$ or \(..\)
  * - Block: $$...$$ or \[..\] or ```math
+ *
+ * The server renders KaTeX right away. A browser loads KaTeX only when content has math: until then the formula's
+ * source stands at its place, in the same containers, and a reactive render shows the formula once KaTeX arrived.
+ * Hydration keeps the server's HTML meanwhile, so a page rendered with math shows it from the first frame.
  */
 
-import katex from "katex";
 import type { MarkedExtension, Tokens } from "marked";
+import { renderLatex } from "#katex-render";
 import { escapeHtml } from "../shared";
 
 /**
@@ -19,10 +23,8 @@ type MathToken = Tokens.Generic & { latex: string };
 
 function renderBlockMath(latex: string): string {
   try {
-    const html = katex.renderToString(latex, {
-      throwOnError: false,
-      displayMode: true,
-    });
+    const html =
+      renderLatex(latex, true) ?? `<span class="katex-display md-katex-pending"><span class="katex">${escapeHtml(latex)}</span></span>`;
     return `<div class="md-katex-block my-3 flex items-center justify-center">${html}</div>`;
   } catch {
     return `<div class="md-katex-block my-3 flex items-center justify-center text-red-500 text-sm"><i class="ti ti-alert-circle mr-1"></i> Invalid LaTeX</div>`;
@@ -31,10 +33,7 @@ function renderBlockMath(latex: string): string {
 
 function renderInlineMath(latex: string): string {
   try {
-    const html = katex.renderToString(latex, {
-      throwOnError: false,
-      displayMode: false,
-    });
+    const html = renderLatex(latex, false) ?? `<span class="katex md-katex-pending">${escapeHtml(latex)}</span>`;
     return `<span class="md-katex-inline">${html}</span>`;
   } catch {
     return `<span class="md-katex-inline text-red-500 font-mono text-sm">$${latex}$</span>`;

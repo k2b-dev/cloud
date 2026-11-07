@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { chartDataIssue, chartDateTime, chartDrawingIssue, chartSteppingIssue, cloudAiChartMarks } from "./chart-block";
+import { chartDataIssue, chartDrawingIssue, cloudAiChartMarks } from "./chart-block";
 
 const ToneSchema = z.enum(["neutral", "blue", "teal", "green", "amber", "red"]);
 
@@ -28,261 +28,30 @@ export const CLOUD_AI_VIEW_MAX_MARKS = CLOUD_AI_CHART_MAX_SERIES * CLOUD_AI_CHAR
  */
 export const CLOUD_AI_GROUP_MAX_CHARTS = 6;
 
-// Every chart schema is built by a function whose call is marked pure, so a bundle that imports neither chart contract
-// leaves them out. App frames include the app contract through `cloud.chart()`.
-export const cloudAiNumberFormatSchema = () =>
-  z
-    .strictObject({
-      style: z.enum(["number", "percent", "currency"]).optional(),
-      currency: z
-        .string()
-        .regex(/^[A-Z]{3}$/)
-        .optional(),
-      // Units fit after a value in the shared renderer, like the existing gauge unit.
-      unit: z.string().trim().min(1).max(12).optional(),
-      // Intl.NumberFormat supports this precision; table formats already use 0..10.
-      decimals: z.number().int().min(0).max(10).optional(),
-      compact: z.boolean().optional(),
-    })
-    .superRefine((value, ctx) => {
-      if ((value.style === "currency") !== (value.currency !== undefined))
-        ctx.addIssue({ code: "custom", path: ["currency"], message: "Currency is required exactly when style is currency." });
-    });
-const dateFormatSchema = () => z.strictObject({ date: z.enum(["day", "minute", "second"]) });
-export const cloudAiFormatSchema = () => z.union([cloudAiNumberFormatSchema(), dateFormatSchema()]);
-export type CloudAiNumberFormat = z.output<ReturnType<typeof cloudAiNumberFormatSchema>>;
-export type CloudAiDateFormat = z.output<ReturnType<typeof dateFormatSchema>>;
-export type CloudAiFormat = CloudAiNumberFormat | CloudAiDateFormat;
+import {
+  type ChartInput as CloudAiChartInput,
+  type ChartDateFormat as CloudAiDateFormat,
+  type ChartFormat as CloudAiFormat,
+  type ChartNumberFormat as CloudAiNumberFormat,
+  chartKinds,
+  chartParts,
+  chartSchema,
+  chartKindSchema as cloudAiChartKindSchema,
+  chartFormatSchema as cloudAiFormatSchema,
+  chartNumberFormatSchema as cloudAiNumberFormatSchema,
+} from "@k2b/editor/charts";
 
-export const cloudAiChartKindSchema = () =>
-  z.enum(["bar", "line", "scatter", "pie", "donut", "histogram", "gauge", "sparkline", "boxplot", "heatmap", "barGauge", "stat"]);
+export type { CloudAiChartInput, CloudAiDateFormat, CloudAiFormat, CloudAiNumberFormat };
+// Portable formats and chart types retain their existing Cloud export names.
+export { cloudAiChartKindSchema, cloudAiFormatSchema, cloudAiNumberFormatSchema };
 
-const chartParts = (limits = true) => {
-  const ChartLabel = limits ? z.string().trim().min(1).max(80) : z.union([z.string(), z.number().transform(String)]);
-  const ChartTooltip = z
-    .strictObject({ label: ChartLabel.optional(), format: cloudAiNumberFormatSchema().optional() })
-    .describe("All kinds: what tooltips and the data table call the value and how they format it; axes keep their own format.");
-  // Missing observations stay numeric so the renderer can omit them with its finite-value checks.
-  const ChartNumber = limits
-    ? z.number()
-    : z
-        .custom<number>((value) => typeof value === "number", "Expected a number, null or undefined.")
-        .nullable()
-        .optional()
-        .transform((value) => value ?? Number.NaN);
-  const list = <T extends z.ZodType>(item: T, min: number, max?: number, message?: string) => {
-    const array = z.array(item);
-    const bounded = limits && min > 0 ? array.min(min) : array;
-    return limits && max !== undefined ? bounded.max(max, message) : bounded;
-  };
-  const ChartDate = z
-    .string()
-    .regex(/^\d{4}-\d{2}-\d{2}(?:T\d{2}:\d{2}(?::\d{2})?)?$/)
-    .refine((value) => chartDateTime(value) !== undefined, "Not a valid date.");
-  const ChartPoint = z.object({
-    x: z.union([ChartNumber, ChartDate]).describe("line, scatter: number or YYYY-MM-DD[THH:mm[:ss]], wall-clock time without an offset."),
-    y: ChartNumber.describe("line, scatter: value."),
-  });
-  // As many lines as series a reader can tell apart.
-  const ChartReferences = list(
-    z.object({ value: z.union([z.number(), ChartDate]), axis: z.enum(["x", "y"]).optional(), label: ChartLabel.optional() }),
-    0,
-    CLOUD_AI_CHART_MAX_SERIES,
-    `Use at most ${CLOUD_AI_CHART_MAX_SERIES} references.`,
-  );
-  // One palette color per band.
-  const ChartThresholds = list(
-    z.object({ value: z.number(), label: ChartLabel.optional() }),
-    1,
-    CLOUD_AI_CHART_MAX_SERIES,
-    `Use at most ${CLOUD_AI_CHART_MAX_SERIES} thresholds.`,
-  );
-  return {
-    ChartLabel,
-    ChartTooltip,
-    ChartNumber,
-    list,
-    ChartReferences,
-    ChartThresholds,
-    ChartAxis: z.object({
-      label: ChartLabel.optional(),
-      domain: z.array(z.number()).length(2).optional().describe("Exact [min, max]; must contain every value and reference."),
-      ticks: (limits ? z.number().int().min(2).max(12) : z.number().int().min(2)).optional(),
-      scale: z.enum(["linear", "log"]).optional().describe("log needs values above zero."),
-      format: cloudAiFormatSchema().optional(),
-    }),
-    ChartCategory: z.object({ label: ChartLabel, value: ChartNumber }),
-    ChartSlice: z.object({ label: ChartLabel, value: limits ? z.number().min(0) : ChartNumber }),
-    ChartSeries: (points: z.ZodArray<typeof ChartPoint>) =>
-      z.object({
-        label: ChartLabel.optional(),
-        data: points,
-        role: z.literal("reference").optional(),
-      }),
-    ChartPoints: list(ChartPoint, 0, CLOUD_AI_CHART_MAX_VALUES),
-    ChartBins: z
-      .union([
-        limits ? z.number().int().min(1).max(CLOUD_AI_CHART_MAX_VALUES) : z.number().int().min(1),
-        limits
-          ? z
-              .array(z.number())
-              .min(2)
-              .max(CLOUD_AI_CHART_MAX_VALUES + 1)
-          : z.array(z.number()).min(2),
-      ])
-      .describe("histogram: a bin count or ascending bin edges."),
-    ChartCommon: {
-      title: (limits ? z.string().trim().min(1).max(160) : z.string()).describe("All kinds and groups: chart title."),
-      subtitle: (limits ? z.string().trim().min(1).max(300) : z.string())
-        .optional()
-        .describe("All kinds and groups: unit, period or source."),
-    },
-    ChartUnit: limits ? z.string().trim().min(1).max(12) : z.string(),
-    ChartBox: z.object({ label: ChartLabel, values: list(ChartNumber, 1) }),
-    ChartCell: z.object({ x: ChartLabel, y: ChartLabel, value: ChartNumber }),
-    ChartBarGauge: z.object({ label: ChartLabel, value: ChartNumber, min: z.number().optional(), max: z.number().optional() }),
-  };
-};
-
-const chartKinds = (limits = true) => {
-  const {
-    ChartNumber,
-    list,
-    ChartAxis,
-    ChartBins,
-    ChartCategory,
-    ChartCommon,
-    ChartTooltip,
-    ChartLabel,
-    ChartPoints,
-    ChartSeries,
-    ChartSlice,
-    ChartReferences,
-    ChartThresholds,
-    ChartUnit,
-    ChartBox,
-    ChartCell,
-    ChartBarGauge,
-  } = chartParts(limits);
-  const ChartKindCommon = { ...ChartCommon, tooltip: ChartTooltip.optional() };
-  const numberFormat = cloudAiNumberFormatSchema();
-  return z.discriminatedUnion("kind", [
-    z.object({
-      kind: z.literal("bar"),
-      ...ChartKindCommon,
-      data: list(ChartCategory, 1, CLOUD_AI_CHART_MAX_VALUES),
-      xAxis: ChartAxis.pick({ label: true }).strict().optional(),
-      yAxis: ChartAxis.optional(),
-      colorByBar: z.boolean().optional(),
-      showValues: z.boolean().optional(),
-      legend: z.boolean().optional(),
-      references: ChartReferences.optional(),
-    }),
-    z.object({
-      kind: z.literal("line"),
-      ...ChartKindCommon,
-      series: list(
-        ChartSeries(
-          limits
-            ? ChartPoints.min(2, "A line needs at least two points per series; show single values as a bar or scatter chart.")
-            : ChartPoints,
-        ).extend({ style: z.enum(["solid", "dashed", "dotted"]).optional() }),
-        1,
-        CLOUD_AI_CHART_MAX_SERIES,
-      ),
-      xAxis: ChartAxis.optional(),
-      yAxis: ChartAxis.optional(),
-      legend: z.boolean().optional(),
-      area: z.boolean().optional(),
-      smooth: z.boolean().optional(),
-      references: ChartReferences.optional(),
-    }),
-    z.object({
-      kind: z.literal("scatter"),
-      ...ChartKindCommon,
-      series: list(ChartSeries(limits ? ChartPoints.min(1) : ChartPoints), 1, CLOUD_AI_CHART_MAX_SERIES),
-      xAxis: ChartAxis.optional(),
-      yAxis: ChartAxis.optional(),
-      legend: z.boolean().optional(),
-      references: ChartReferences.optional(),
-    }),
-    z.object({
-      kind: z.enum(["pie", "donut"]),
-      ...ChartKindCommon,
-      data: list(ChartSlice, 1, CLOUD_AI_CHART_MAX_VALUES),
-      legend: z.boolean().optional(),
-      showLabels: z.boolean().optional(),
-      format: numberFormat.optional(),
-    }),
-    z.object({
-      kind: z.literal("histogram"),
-      ...ChartKindCommon,
-      data: list(ChartNumber, 1, CLOUD_AI_CHART_MAX_VALUES),
-      bins: ChartBins.optional(),
-      references: ChartReferences.optional(),
-    }),
-    z.object({
-      kind: z.literal("gauge"),
-      ...ChartKindCommon,
-      value: ChartNumber,
-      min: z.number().optional(),
-      max: z.number().optional(),
-      label: ChartLabel.optional(),
-      unit: ChartUnit.optional(),
-      format: numberFormat.optional(),
-      thresholds: ChartThresholds.optional(),
-    }),
-    z.object({
-      kind: z.literal("sparkline"),
-      ...ChartKindCommon,
-      data: list(ChartNumber, 2, CLOUD_AI_CHART_MAX_VALUES),
-      area: z.boolean().optional(),
-    }),
-    z.object({
-      kind: z.literal("boxplot"),
-      ...ChartKindCommon,
-      data: list(ChartBox, 1, CLOUD_AI_CHART_MAX_VALUES),
-      yAxis: ChartAxis.optional(),
-      references: ChartReferences.optional(),
-    }),
-    z.object({
-      kind: z.literal("heatmap"),
-      ...ChartKindCommon,
-      data: list(ChartCell, 1, CLOUD_AI_VIEW_MAX_MARKS),
-      format: numberFormat.optional(),
-      showValues: z.boolean().optional(),
-      min: z.number().optional(),
-      max: z.number().optional(),
-    }),
-    z.object({
-      kind: z.literal("barGauge"),
-      ...ChartKindCommon,
-      // The shared renderer draws 280 units high and a bar gauge row is 28 units, so 8 rows fit without a taller drawing.
-      data: list(ChartBarGauge, 1, CLOUD_AI_CHART_MAX_SERIES, `Use at most ${CLOUD_AI_CHART_MAX_SERIES} bar gauge items.`),
-      min: z.number().optional(),
-      max: z.number().optional(),
-      unit: ChartUnit.optional(),
-      format: numberFormat.optional(),
-      thresholds: ChartThresholds.optional(),
-    }),
-    z.object({
-      kind: z.literal("stat"),
-      ...ChartKindCommon,
-      value: ChartNumber,
-      format: numberFormat.optional(),
-      unit: ChartUnit.optional(),
-      delta: limits ? z.number().optional() : ChartNumber,
-      better: z.enum(["up", "down"]).optional(),
-      sparkline: list(ChartNumber, 2, CLOUD_AI_CHART_MAX_VALUES).optional(),
-    }),
-  ]);
-};
+const chartLimits = { maxSeries: CLOUD_AI_CHART_MAX_SERIES, maxValues: CLOUD_AI_CHART_MAX_VALUES, maxMarks: CLOUD_AI_VIEW_MAX_MARKS };
 
 /** Checks run on complete input only, so out-of-range input fails on its bounds before anything is computed or drawn. */
 const whenValid = { when: (payload: { issues: readonly unknown[] }) => payload.issues.length === 0 };
 
 export const cloudAiChartSchema = () =>
-  chartKinds().superRefine((chart, context) => {
+  chartKinds(chartLimits).superRefine((chart, context) => {
     const total = cloudAiChartMarks(chart);
     const issue =
       total > CLOUD_AI_VIEW_MAX_MARKS
@@ -291,15 +60,8 @@ export const cloudAiChartSchema = () =>
     if (issue) context.addIssue({ code: "custom", message: issue });
   }, whenValid);
 /** Apps retain the renderer's permissive data contract, except values that would stall tick generation. */
-export const cloudAiAppChartSchema = () =>
-  chartKinds(false).superRefine((chart, context) => {
-    const issue = chartSteppingIssue(chart);
-    if (issue) context.addIssue({ code: "custom", message: issue });
-  }, whenValid);
+export const cloudAiAppChartSchema = chartSchema;
 const ChartSchema = /* @__PURE__ */ cloudAiChartSchema();
-
-/** One chart as the renderers read it: a `cloud.chart()` kind with its options. */
-export type CloudAiChartInput = z.output<ReturnType<typeof chartKinds>>;
 
 /**
  * Reads one chart without drawing it; undefined when it is not a chart. Writers have drawn it once already, so
@@ -311,7 +73,7 @@ export const parseCloudAiChartInput = (value: unknown): CloudAiChartInput | unde
 };
 
 export const cloudAiGroupSchema = () => {
-  const { ChartCommon } = chartParts();
+  const { ChartCommon } = chartParts(chartLimits);
   return z
     .strictObject({
       ...ChartCommon,
@@ -354,7 +116,7 @@ const flatChartSchema = () => {
     ChartThresholds,
     ChartUnit,
     ChartTooltip,
-  } = chartParts();
+  } = chartParts(chartLimits);
   return z.object({
     kind: cloudAiChartKindSchema().optional().describe("Single charts: kind. Omit for groups."),
     ...ChartCommon,

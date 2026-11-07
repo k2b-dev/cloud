@@ -24,10 +24,10 @@ describe("coreHelp", () => {
     expect(coreHelp.getMarkdown("core-profile", "de-CH")).toBe(coreHelp.getMarkdown("core-profile", "de"));
     expect(coreHelp.getMarkdown("core-start", "de-CH")).toContain("Core stellt die Seiten und Dienste der ganzen Plattform bereit");
     expect(coreHelp.getMarkdown("core-profile", "de-CH")).toContain("Der Kontobereich bündelt lokale Cloud-Daten");
-    expect(coreHelp.getMarkdown("core-security", "de-CH")).toContain("API-Schlüssel wie Passwörter");
+    expect(coreHelp.getMarkdown("core-security", "de-CH")).toContain("API Keys wie Passwörter");
     expect(coreHelp.getMarkdown("core-notifications", "de-CH")).toContain("Zustellverlauf prüfen");
     expect(coreHelp.getMarkdown("core-admin", "de-CH")).toContain("Die Core-Administrationsseiten konfigurieren Plattformdienste");
-    expect(coreHelp.getMarkdown("core-admin", "de-CH")).toContain("**App-Schlüssel → Schlüssel erstellen**");
+    expect(coreHelp.getMarkdown("core-admin", "de-CH")).toContain("**Tokens für Host-Betrieb**");
     expect(coreHelp.getMarkdown("core-admin", "de-CH")).not.toContain("App-Zugang");
     expect(coreHelp.getMarkdown("core-start", "fr")).toBe(coreHelp.getMarkdown("core-start"));
   });

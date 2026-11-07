@@ -5,7 +5,7 @@ section: Operations
 order: 1125
 description: Choose Cloud applications and identify their infrastructure, secrets, feature dependencies, startup order, and verification checks.
 tags: [deployment, dependencies, infrastructure, configuration, bootstrap]
-updated: 2026-10-28
+updated: 2026-11-02
 ---
 
 # Deployment requirements
@@ -27,6 +27,79 @@ In the supplied Compose files, an app ID such as `mail` maps to service
 package, CLI and desktop development tools are not additional server apps in
 this service set.
 
+## Applications start with a key file and Core address
+
+This release supplies a Compose template that gives ordinary apps only
+`CLOUD_APP_KEY_FILE` and `CLOUD_CORE_INTERNAL_ORIGIN`. Core and Gateway keep
+their infrastructure environment. Core must migrate and become ready before
+applications bootstrap. An unavailable Core blocks startup for up to five
+minutes, after which the process exits and the deployment restart policy
+applies. Existing running processes retain their connections during a Core
+outage; new starts still need Core.
+
+Follow [Upgrade applications to app keys](/en/docs/operations/app-key-upgrade)
+for the required settings check, enrollment, file permissions, strict inventory
+check, Kubernetes mount example and three rollback boundaries. Keep legacy
+configuration until the checks and background/OAuth verification pass.
+Environment overrides remain supported per value for third-party apps.
+
+## App-domain routing and unknown hosts
+
+**After upgrading the gateway, unknown Host headers receive HTTP 421.**
+Cloud clients, monitoring routes other than health/readiness, and reverse-proxy
+aliases must use the configured `app.url` host or the internal gateway service
+host. A second site hostname needs a durable app-domain assignment; adding a
+DNS record or forwarding `X-Forwarded-Host` alone does not enable it. Development
+also permits loopback hosts. `/health` and `/_cloud/ready` remain available on
+unassigned hosts for container checks; an assigned site's `/health` belongs to
+its app.
+
+Deploy Core first for the assignment table, then the gateway, then applications
+with `public: true`. Configure Traefik's HTTP provider or Caddy's certificate
+admission against the separate private gateway port `3001`
+(`GATEWAY_INGRESS_PORT`). Keep this port off public ingress; it has no public
+router or host-port mapping. Set `APP_URL` on the gateway too. The production
+Compose uses the private alias `cloud-gateway-${CLOUD_HOST}` and sets
+`GATEWAY_INTERNAL_URL` to its port `3000`; use that alias for ingress discovery
+to avoid collisions on a shared network. `GATEWAY_INGRESS_ENTRYPOINT` defaults
+to `websecure`. See [App domains](/en/docs/operations/app-domains)
+for DNS, TLS, checks, and development setup.
+
+## Upgrade public app sites
+
+Deploy Core first: its settings migration creates `settings.app_domains`, the
+app lookup index, and stored domain-check state. Domain assignment requires
+an app ID already recorded in `platform.application_packages`; it does not
+require the app to be running. Core adds the administrator domains API and
+`cld admin apps domains` commands. Refresh the installed `admin` CLI module
+when using a previously installed profile.
+
+The gateway reads assignments within its five-second route refresh. Updated
+apps must declare `public: true` and serve their separate public router.
+Before Core's table exists, a gateway sees no assignments. Core's part adds
+no environment variable or external service; checks use existing Valkey for
+short-lived challenges. Core must resolve and reach each assigned host on
+TLS port 443, including through hairpin NAT or split DNS where required.
+See [Public site](/en/docs/build/public-surface#assign-and-check-domains) and
+[App domains](/en/docs/operations/app-domains).
+
+## App-paid capabilities
+
+Upgrade Core before deploying callers that use `appCaller()` or providers that
+add `app` handlers. These calls require the enrolled Ed25519 app key and
+`CLOUD_CORE_INTERNAL_ORIGIN`; a legacy workload token does not work.
+Before declaring `geo:query`, upgrade any registry readers older than the
+resource-reader release described below: those versions reject unknown
+platform permissions. Built-in and third-party applications follow this same
+upgrade order.
+
+The opted-in Core geo Queries have new schema hashes. Update older catalog
+consumers to this release so they retain these Queries; recreate any prepared
+capability call that reports a schema conflict. Existing interactive calls
+through the upgraded Core broker continue to work. See
+[App keys](/en/docs/operations/app-keys#app-paid-capability-calls) for shared
+request and cost limits, audit migration and key revocation.
+
 ## Resource reader checks and discussions
 
 Upgrade Core before deploying applications that declare resource containment,
@@ -42,9 +115,10 @@ drop unknown permission IDs without granting them and keep the application
 registered; that rule cannot change the behavior of older releases.
 
 Applications that perform reader checks declare `resources:readers` in their
-platform permissions and need `CLOUD_APP_CREDENTIAL` plus
-`CLOUD_CORE_INTERNAL_ORIGIN`. Provision the existing app-bound workload
-credential with `identity:invoke`; this change adds no automatic provisioning.
+platform permissions and need an app key (or legacy `CLOUD_APP_CREDENTIAL`) plus
+`CLOUD_CORE_INTERNAL_ORIGIN`. Without a key, Core automatically delivers an
+app-bound `identity:invoke` workload credential; host-run apps may provision
+an explicit legacy override.
 There is no separate operator approval toggle. Core checks the live registry
 permission and uses Valkey for the shared 1,501-request/minute app budget.
 An unavailable registry or limiter fails closed. Providers need the existing
@@ -205,7 +279,9 @@ Core's [geo Queries](/en/docs/platform/places-and-maps) need outbound HTTPS to
 **Administration → Places and maps**. Core checks it with one provider lookup
 before storing it as the secret `geo.api_key`. There is no endpoint setting or
 new environment variable.
-Choose `geo.plan`, then review the monthly and per-person daily credit limits.
+Choose `geo.plan`, then review the installation-wide monthly credit budget and
+request rate. Address autocomplete can be called anonymously only through
+`CLOUD_CORE_INTERNAL_ORIGIN`; keep Core private behind the gateway.
 Core creates its durable geo ledger during startup migrations.
 Routing shares these settings and counters. Core atomically reserves its full
 provider chain using straight-line distance times a fixed detour factor of 2.0.
@@ -235,6 +311,104 @@ Valkey admission, paid calls are refused with `GEO_BUSY`; there is no
 unlimited fallback. Availability checks remain free. Cache failures alone do
 not fail a request that admission accepts.
 
+## Prepare application connection bootstrap
+
+Core and Gateway keep their infrastructure environment configuration. Every
+Core replica must start with the same database, Valkey, NATS, namespace,
+replica count and `APP_SECRET` values, including optional rotation values and
+NATS credentials/CA **file contents**. Core reads the NATS files once at
+platform startup; replacing them requires a rolling restart of Core and its
+application clients. Bootstrap does not reload existing connections.
+
+Give an application its enrolled `CLOUD_APP_KEY` or readable
+`CLOUD_APP_KEY_FILE`, plus `CLOUD_CORE_INTERNAL_ORIGIN` pointing directly to
+Core. The gateway blocks `/_internal/*`. Across hosts, require HTTPS with
+server verification: bootstrap responses contain installation credentials.
+For a private CA, provide `NODE_EXTRA_CA_CERTS` before the first fetch, through
+the image or deployment. Never disable certificate verification. A TLS/CA
+failure follows the bounded network retry policy, so inspect the CA deployment
+when bootstrap repeatedly reports transient failures.
+
+A Kubernetes Secret can mount the private key as a file; the application
+process must be able to read it. Core and Gateway refuse app keys. No init
+container or Kubernetes API access is required. Size Kubernetes startup probes
+to cover **bootstrap (up to five minutes), NATS connection startup (up to five
+minutes), and application setup**, plus the deployment's scheduling margin.
+While bootstrap waits, there is no HTTP listener or readiness response. A
+permanent credential/protocol failure exits immediately; an exhausted network
+budget exits so the container restart policy can retry.
+
+Cloud no longer rewrites an application's `DATABASE_URL` to add
+`application_name`. The platform clients (`sql` and `createSql()` from
+`@k2b/cloud`) still name their connections `cloud:<app-id>` unless the URL sets
+an operator name or startup options. An application that still uses Bun-global
+clients shows no Cloud application name in `pg_stat_activity`.
+
+**Key-only production operation is supported.** Built-in applications use the
+platform connection handles. Upgrade Core and Gateway with their existing
+infrastructure environment first, enroll application keys with explicit grants,
+then adopt the key-file templates and recreate applications. Complete the strict
+status, signed probes and legacy-use observation before retiring old credentials.
+Follow [the upgrade steps](/en/docs/operations/app-key-upgrade). See
+[Runtime configuration](/en/docs/operations/runtime-configuration#bootstrap-application-connections-from-core)
+and [App keys](/en/docs/operations/app-keys#use-the-key-at-start).
+
+## Treat the gateway as a trusted platform service
+
+Like application services, Core and the gateway hold the installation's
+infrastructure credentials in their environment. The gateway needs `DATABASE_URL` and `APP_SECRET` to read
+and decrypt the storage settings for `/public/storage`, `REDIS_URL` to enforce
+its request budgets, and NATS access for discovery and telemetry. It reads
+only the storage configuration and the public-storage rate-limit setting for
+that delivery path. These narrow reads do not restrict what its credentials
+can access.
+
+The gateway shares the installation database role and encryption secret.
+A gateway compromise is an installation compromise, as with Core: an attacker
+can access the shared database and decrypt settings and credentials. Cloud
+does not isolate applications with separate database roles or infrastructure
+credentials. Install only trusted applications and protect the gateway host,
+container environment and private service network accordingly.
+
+Keep Core's identity key-encryption keys and the Core/OAuth broker secret out
+of the gateway. Their absence does not make it a separate trust boundary.
+See [runtime configuration](/en/docs/operations/runtime-configuration#set-infrastructure-variables).
+
+## Preserve the browser mutation origin
+
+All Cloud applications require an `Origin` exactly equal to the public origin
+of the stored `app.url` setting for cookie-bearing `POST`, `PUT`, `PATCH` and
+`DELETE` requests and cookie-authenticated WebSocket upgrades. Preserve `Origin`
+and `Sec-Fetch-Site` through the reverse proxy and gateway. Foreign and same-site sibling origins are
+rejected with `403 INVALID_ORIGIN` for HTTP mutations, including logout and SSR
+form actions. A missing or `null` Origin passes only with `Sec-Fetch-Site:
+same-origin`, which a page with `Referrer-Policy: no-referrer` sends with its
+own form posts; without either header the request is rejected. Refused WebSocket upgrades lose session authority; live sockets
+close with `1008 forbidden_origin` to stop reconnecting.
+Do not replace these headers with the proxy's or upstream service's address.
+
+When upgrading, check `app.url` against the address people use. Scripts that
+mutate state with session cookies must send that canonical Origin; prefer an
+explicit Bearer credential for integrations. WOPI, OAuth protocol endpoints,
+signed app-approval commands, token-bound shares, webhooks and ingest retain
+their own credential checks. Their declared sessionless paths cannot gain
+session authority from an attached Cloud cookie. See [Route policies](/en/docs/identity/route-policies#send-browser-mutations-from-the-cloud-origin)
+for the application contract.
+
+Application authors must run their own state-changing Cloud cookie routes through
+`app.start()` too. A separate HTTP server needs the same exact Origin check
+against the public Cloud origin before authenticating cookies or reading the
+body. Pages on another origin cannot mutate Cloud state with Cloud session
+cookies. Keep cookie-authenticated actions on the Cloud origin. For requests
+from a cross-origin embed, use a protocol with its own credential and narrowly
+declared `sessionlessRoutes`; those routes receive no Cloud session authority. Adding a
+CORS allowance or an `access.publicRoutes` entry does not exempt a cookie route.
+
+OAuth clients navigating to `/oauth/logout` now show a confirmation before the
+browser signs out. Cloud server capability and sync-operations transports set
+the canonical Origin when forwarding a session to Core; the originating
+application has already applied the same mandatory ingress check.
+
 ## Prepare the common infrastructure
 
 | Requirement | Used for | Operator responsibility |
@@ -245,7 +419,7 @@ not fail a request that admission accepts.
 | NATS JetStream 2.14.3+ | Registry, coordination, durable jobs, schedules and live events | Supply `NATS_SERVERS` and one `SYNC_NAMESPACE` shared by the deployment. Use persistent storage on three nodes (default `SYNC_REPLICAS=3`) and `max_payload: 16MB` for notebook updates. The JetStream account must fit every stream's configured byte limit times its replicas; see [Reserve JetStream storage](#reserve-jetstream-storage) for the budget per application. Production can use mounted credentials and TLS through `NATS_CREDS_FILE` and `NATS_TLS_CA_FILE`; both are optional in `compose.prod.yml`. The supplied Compose wires one shared credentials path into every application service; per-application NATS credentials or a separate system credential need per-service overrides of that shared environment. |
 | Valkey / Redis-compatible service | Rate limits, caches and short-lived authentication flows | Supply `REDIS_URL`. JWT browser sessions do not use Redis session storage. |
 | Private service network | Gateway-to-app traffic, public-key retrieval and Core broker calls | Make each advertised app address reachable. Do not publish individual app, database or coordination ports. Protect cross-host traffic with authenticated TLS or an equivalent protected transport. |
-| Public gateway and HTTPS origin | Browser/API entry, callbacks, secure cookies and WebSockets | Configure DNS, ingress/TLS and `app.url` (`APP_URL` can bootstrap it). Preserve streaming, WebSocket upgrades and the `Origin` header: application live sockets signed in with a session accept only the origin of `app.url`. Only the gateway receives public application traffic. The gateway streams HTML and JSON with Brotli or gzip according to `Accept-Encoding`; ingress compression of these responses is not needed. Pass `Content-Encoding` through and do not compress or buffer SSE or NDJSON streams. Proxies and ingress must pass responses with `Cache-Control: no-transform` through without compression or any other transformation. Pass the `Sec-Fetch-Site` and `Sec-Fetch-Dest` request headers through unchanged; the gateway keeps cross-site requests and subresource loads uncompressed. Browsers that send no Fetch Metadata headers, such as Safari before 16.4, receive uncompressed answers. The gateway waits up to 4 minutes for an app's response headers and then answers 502; a reverse proxy in front of the gateway must wait at least 5 minutes for response headers. |
+| Public gateway and HTTPS origin | Browser/API entry, callbacks, secure cookies and WebSockets | Configure DNS, ingress/TLS and `app.url` (`APP_URL` can bootstrap it). Preserve streaming, WebSocket upgrades and the `Origin` header: application live sockets signed in with a session accept only the origin of `app.url`. Only the gateway receives public application traffic. On the Cloud host, the gateway streams HTML and JSON with Brotli or gzip according to `Accept-Encoding`; ingress compression of these responses is not needed. Pass `Content-Encoding` through and do not compress or buffer SSE or NDJSON streams. Proxies and ingress must pass responses with `Cache-Control: no-transform` through without compression or any other transformation. Pass the `Sec-Fetch-Site` and `Sec-Fetch-Dest` request headers through unchanged; on the Cloud host, the gateway keeps cross-site requests and subresource loads uncompressed. Cookie-less app-domain requests without `Authorization` also compress text, JavaScript, XML and SVG, including cross-site visits. Browsers that send no Fetch Metadata headers, such as Safari before 16.4, receive uncompressed answers. The gateway waits up to 4 minutes for an app's response headers and then answers 502; a reverse proxy in front of the gateway must wait at least 5 minutes for response headers. |
 | Clock synchronization | JWT expiry and short-lived invocations | Synchronize all hosts; invocation clock-skew tolerance is two seconds. |
 | Browser for diagrams | Mermaid diagrams in Notebooks and rendered Markdown | Users on Safari need Safari 17.4 or later (iOS and iPadOS 17.4 or later). Mermaid 12 targets ES2024 and is not transpiled for older browsers. |
 
@@ -398,7 +572,7 @@ sign-in and device pairing. Behind a reverse proxy such as Traefik, the gateway
 only sees the proxy's address, so the proxy must name the client in
 `X-Forwarded-For`, and the gateway must trust the proxy to do so.
 
-`GATEWAY_TRUSTED_PROXIES` lists the IP addresses or CIDR ranges of trusted
+The `gateway.trusted_proxies` admin setting lists the IP addresses or CIDR ranges of trusted
 proxies. The gateway reads `X-Forwarded-For` from right to left, skips every
 trusted proxy, and takes the first other address as the client. It forwards
 that address as `X-Real-IP` and as the first entry of `X-Forwarded-For`,
@@ -420,7 +594,7 @@ name any address and escape per-client limits whenever its own
 directly, or when the proxy appends to the client's header instead of
 replacing it, as nginx does with `$proxy_add_x_forwarded_for`. If clients can
 connect from private or IPv6 unique local addresses in such a setup, set
-`GATEWAY_TRUSTED_PROXIES` to the proxy's exact address or subnet.
+`gateway.trusted_proxies` to the proxy's exact address or subnet.
 
 | Setup | Value |
 | --- | --- |
@@ -436,12 +610,14 @@ header through unchanged. Traefik replaces it by default; do not enable
 limits and audit entries must show different addresses, not the proxy's.
 
 A public proxy or CDN in front of the gateway that is absent from
-`GATEWAY_TRUSTED_PROXIES`, such as Cloudflare, makes Core see the proxy's
+`gateway.trusted_proxies`, such as Cloudflare, makes Core see the proxy's
 address. Sign-in places and network names will then describe the proxy instead
 of the person when those details are used; see
 [Sign-in locations](/en/docs/operations/sign-in-locations). Private-network
 proxy addresses are ignored by the place lookup, but those proxies still need
 to be trusted for rate limits.
+
+Changes to `gateway.trusted_proxies` take effect after restarting each gateway. Invalid stored lists stop gateway startup with a CLI repair hint. The deprecated `GATEWAY_TRUSTED_PROXIES` variable only bootstraps an absent setting.
 
 ## Assign configuration to the correct service
 
@@ -452,13 +628,13 @@ environment fallback.
 
 | Configuration | Recipient | When required |
 | --- | --- | --- |
-| `DATABASE_URL`, `REDIS_URL`, `APP_SECRET` | Built-in application services | Common application baseline. Every app must use the same stable `APP_SECRET` for encrypted settings and credentials. The gateway receives Postgres for logging and NATS for discovery; it does not receive Valkey, `APP_SECRET`, or identity credentials. |
+| `DATABASE_URL`, `REDIS_URL`, `APP_SECRET` | Built-in application services | Common application baseline. Every app must use the same stable `APP_SECRET` for encrypted settings and credentials. The gateway also receives Postgres, Valkey, NATS and the same `APP_SECRET` to validate encrypted settings before serving HTTP; it does not receive Core signing credentials. |
 | `CLOUD_IDENTITY_KEY_ENCRYPTION_KEY` | **Core only** | Core identity issuance; generate an independent 32-byte key as 64 hex characters. `CLOUD_IDENTITY_NEXT_KEY` / `CLOUD_IDENTITY_PREVIOUS_KEY` are temporary rotation inputs, also Core-only. |
-| `CLOUD_OAUTH_BROKER_SECRET` | **Core and OAuth only** | Running OAuth. Generate an independent 32-byte secret as 64 hex characters. No admin credential provisioning is needed. Dev Compose provides a development-only default; production requires an explicit value. |
+| `CLOUD_OAUTH_BROKER_SECRET` | **Core and OAuth only** | Deprecated legacy authentication for OAuth without an app key. Generate an independent 32-byte secret as 64 hex characters. Prefer an enrolled `oauth` app key; retain the secret only for the parallel release. |
 | `CLOUD_CORE_INTERNAL_ORIGIN` | OAuth, background broker callers, resource-derived app discovery, and managed Assistant code hosts | Direct private Core origin, not the gateway. Compose supplies it. Code hosts use it for turn-bound capability callbacks and binary streams. |
-| `CLOUD_APP_CREDENTIAL` | Each background caller separately | Mandate-backed cross-app work, such as Mail incoming automations; scope `identity:invoke`. Compose passes `CLOUD_MAIL_APP_CREDENTIAL` only to Mail under this runtime name. OAuth does not use it. |
-| `CLOUD_IDENTITY_JWKS_ORIGIN`, `CLOUD_OAUTH_JWKS_ORIGIN` | JWT-verifying applications | Optional private transport origins for Core and OAuth public keys. If omitted, verification retrieves keys through the public issuer origin. Neither value grants signing authority. |
-| `APP_URL` | Application services | Initial public URL; saved `app.url` takes precedence. Built-in images run in production mode on port 3000. |
+| `CLOUD_APP_CREDENTIAL` | Optional host-run app override | Core automatically issues and rotates app-bound `identity:invoke` credentials over NATS. No per-app Compose secret is needed. An explicit override wins among legacy credentials; a configured app key takes precedence. OAuth does not use this credential. See [runtime configuration](/en/docs/operations/runtime-configuration#shared-infrastructure-trust-limit) for the shared-infrastructure trust limit. |
+| `CLOUD_OAUTH_JWKS_ORIGIN` | JWT-verifying applications | Deprecated OAuth public-key transport override. Without it, applications use Core through `CLOUD_CORE_INTERNAL_ORIGIN`, then the public issuer. Core identity keys use `CLOUD_CORE_INTERNAL_ORIGIN`; the deprecated `CLOUD_IDENTITY_JWKS_ORIGIN` override is still honored this release. Neither value grants signing authority. |
+| `APP_URL` | Gateway and application services | Initial public URL; saved `app.url` takes precedence. Built-in images run in production mode on port 3000. |
 | `GOTENBERG_URL` | Application services | Optional initial Gotenberg URL for PDF rendering; saved `gotenberg.url` takes precedence. Dev Compose sets `http://gotenberg:3000`. |
 | `ADMIN_LOGIN_TOKEN` | **Core only** | Temporary first administrator access on a fresh installation; no production default. Remove after configuring and verifying normal administrator sign-in. |
 
@@ -537,11 +713,11 @@ or mutate real data without approval.
 
 | Service / app ID | Startup requirements | Feature dependencies and configuration | Functional check |
 | --- | --- | --- | --- |
-| Gateway (`gateway`) | Postgres, NATS JetStream and private reachability to advertised app addresses | Upstream apps provide the routes. The gateway compresses HTML and JSON itself with Brotli or gzip according to `Accept-Encoding`, while preserving streaming. Ingress compression of these responses is not needed. Proxies and ingress must pass `Cache-Control: no-transform` responses through without compression or any other transformation. Ingress must pass `Content-Encoding` through, preserve WebSockets, and must not buffer or compress SSE or NDJSON streams, such as the `application/x-ndjson` lines of [universal search](/en/docs/platform/search#stream-results-as-applications-answer). Optional `GATEWAY_INSTANCE_ID` identifies a replica. `GATEWAY_TRUSTED_PROXIES` names the reverse proxies allowed to set the client address; see [Pass client addresses through the reverse proxy](#pass-client-addresses-through-the-reverse-proxy). No independent signing secret. | Read `/health`, inspect registered routes, then request an actual app route through the public origin. |
+| Gateway (`gateway`) | Postgres, Valkey, NATS JetStream, `APP_SECRET` and private reachability to advertised app addresses | Upstream apps provide the routes. The gateway compresses HTML and JSON itself with Brotli or gzip according to `Accept-Encoding`, while preserving streaming. Ingress compression of these responses is not needed. Proxies and ingress must pass `Cache-Control: no-transform` responses through without compression or any other transformation. Ingress must pass `Content-Encoding` through, preserve WebSockets, and must not buffer or compress SSE or NDJSON streams, such as the `application/x-ndjson` lines of [universal search](/en/docs/platform/search#stream-results-as-applications-answer). Each process gets a random replica ID; the deprecated `GATEWAY_INSTANCE_ID` override is still honored this release. `gateway.trusted_proxies` names the reverse proxies allowed to set the client address; see [Pass client addresses through the reverse proxy](#pass-client-addresses-through-the-reverse-proxy). No independent signing secret. | Read `/health`, inspect registered routes, then request an actual app route through the public origin. |
 | [Core](/en/apps/core) (`core`) | Postgres, Valkey, NATS JetStream, `APP_SECRET`, Core identity KEK; runs shared schema setup and starts identity maintenance | Runs AI workers and shared notifications. Optional SMTP, IMAP bounce polling, FreeIPA, AI providers, web push, Gotenberg and weather services are described below. `app.home_path` defaults to `/app/dashboard`: deploy Dashboard or choose an installed home route. | Sign in using the intended account provider; load the profile; verify session and invocation public-key endpoints. |
-| [Gateway operations](/en/apps/gateway-ops) (`gateway-ops`) | Baseline; runs its operations lifecycle | Gateway snapshots and registered apps supply health/telemetry; outgoing health webhooks need reachable configured destinations. Optional metrics scraping uses `/metrics`. Settings include `gateway.health_check_schedule` and telemetry retention. | Open `/admin/observability/gateway` and `/admin/observability`; verify current app state and an observed request. |
+| [Gateway operations](/en/apps/gateway-ops) (`gateway-ops`) | Baseline; runs its operations lifecycle | Gateway snapshots and registered apps supply health/telemetry; outgoing health webhooks need reachable configured destinations. Optional metrics scraping uses `/metrics`. Settings include `gateway.health_check_schedule` and telemetry retention. | Open `/admin/apps` and `/admin/observability`; verify current app state and an observed request. |
 | [Accounts](/en/apps/accounts) (`accounts`) | Baseline | Local accounts do not require FreeIPA. IPA users/groups require configured FreeIPA access; account emails use notifications as app `core` and require a [default outgoing mail sender profile](/en/docs/operations/outgoing-mail). | Read a local account and group; if IPA is enabled, verify directory connectivity and the intended group scope. |
-| [OAuth](/en/apps/oauth) (`oauth`) | Baseline; same database as Core; direct Core origin and matching broker secret. Readiness probes Core before OAuth migrations. | Register external clients with exact callbacks and access rules. OAuth needs no workload credential and never receives Core's KEK. | Fetch discovery, then complete a test authorization-code/PKCE flow and refresh a token. For headless CLI sign-in, also approve one `cld login --device` code at `/oauth/device` and, with Cloud Login approval enabled, one `cld login --user` request on a paired device. Discovery alone is insufficient. |
+| [OAuth](/en/apps/oauth) (`oauth`) | Baseline; same database as Core; direct Core origin and an enrolled `oauth` app key (or matching legacy broker secret). Readiness probes Core before OAuth migrations. | Register external clients with exact callbacks and access rules. OAuth needs no workload credential and never receives Core's KEK. | Fetch discovery, then complete a test authorization-code/PKCE flow and refresh a token. For headless CLI sign-in, also approve one `cld login --device` code at `/oauth/device` and, with Cloud Login approval enabled, one `cld login --user` request on a paired device. Discovery alone is insufficient. |
 | [Proxy Auth](/en/apps/proxy-auth) (`proxy-auth`) | Baseline | Configure a proxy-auth client and the external reverse proxy's forward-auth/callback integration. This is not an OAuth-client requirement. | Check denied and permitted access to one test upstream through that reverse proxy. |
 | [API Docs](/en/apps/api-docs) (`api-docs`) | Baseline | Registered applications must publish reachable OpenAPI endpoints to appear as usable sources. | Open `/app/api-docs`, select an installed app, and load its specification. |
 | [Capabilities](/en/apps/capabilities) (`capabilities`) | Baseline | Core's dispatcher and the selected provider apps. The Capabilities app is a UI, not a prerequisite for other apps to call capabilities. | Open `/app/capabilities` and execute a permitted read-only query against an installed provider. |
@@ -585,7 +761,7 @@ egress is needed from Core, while Mail needs access to its mailbox providers.
 | AI web tools | `ai.firecrawl_api_key` and provider egress | Test the selected web tool; this is not required for basic chat. |
 | HTML/Markdown PDF | `gotenberg.url`, optional `gotenberg.username` / `gotenberg.password`, and configured limits/timeouts; [keep Gotenberg offline](#keep-gotenberg-offline) | Follow [PDF and templates](/en/docs/platform/pdf-and-templates). `GOTENBERG_URL` can bootstrap `gotenberg.url`; Dev Compose sets it to `http://gotenberg:3000`. A saved setting wins. Without a URL, Grids tells users that an administrator must configure PDF rendering. |
 | Browser push | `notifications.web_push_public_key`, `notifications.web_push_private_key`, browser subscription/permission and outbound push-service access | Test native notification delivery to an opted-in browser with Cloud visible and with no open Cloud tab. Notification history does not depend on browser push. |
-| City search | Core’s Geoapify EU service (`geo.api_key`) | Sign-in required. Core `address.autocomplete` suggests up to five German cities for at least three characters and charges the caller’s geo budget. `GEO_NOT_CONFIGURED` means an administrator must configure Core. `GEO_BUDGET_EXHAUSTED` includes its scope and reset time. Forecasts for known coordinates remain independent. |
+| City search | Core’s Geoapify EU service (`geo.api_key`) | Sign-in required. Core `address.autocomplete` suggests up to five German cities for at least three characters and charges the installation-wide geo budget. `GEO_NOT_CONFIGURED` means an administrator must configure Core. `GEO_BUDGET_EXHAUSTED` includes its scope and reset time. Forecasts for known coordinates remain independent. |
 
 For S3 snapshots, enter credentials in the individual notebook's snapshot
 configuration, not invented global S3 credential environment keys. Snapshots upload
@@ -603,16 +779,17 @@ address it embeds, so IPv6-only servers with DNS64 still reach public IPv4
 hosts. To test an internal service, use an address that is public from the
 server.
 
-Operators can allow internal administrator-configured endpoints with
-`GATEWAY_OPS_WEBHOOK_ALLOWED_TARGETS` in `app-gateway-ops` (default empty,
+Administrators can allow internal administrator-configured endpoints with the settings
+`gateway.webhook_allowed_targets` owned by Gateway operations (default empty,
 public targets only),
-`ASSISTANT_RSQL_ALLOWED_TARGETS` in `app-assistant` (default `rsql`), and
-`OUTGOING_MAIL_ALLOWED_TARGETS` in `app-core` (default empty, covering both SMTP
-and bounce IMAP). Each accepts exact host names, IP addresses and CIDRs.
+`assistant.rsql_allowed_targets` owned by Assistant (default `rsql`), and
+`outgoing_mail.allowed_targets` owned by the platform (default empty, covering both SMTP
+and bounce IMAP). Administrators edit them under **Observability → Health
+check**, in **Database settings** on the Studio administration page, and under
+**Base settings**. Each accepts exact host names, IP addresses and CIDRs.
 `host:port` and `[ipv6]:port` restrict a host or IP to one port (1–65535, no
 leading zeros); bare hosts, IPs and CIDRs still cover every port. CIDRs cannot
-include a port. An explicit value replaces the default. Empty Compose passthrough values use the
-default. Invalid entries, including `/0`, stop the owning process at startup.
+include a port. A saved list replaces the default and applies to new requests or connections. Invalid entries, including `/0`, are rejected on write. The deprecated environment variables bootstrap absent settings once; invalid bootstrap input is ignored with a warning.
 The HTTP transports for these endpoints never follow redirects; health
 webhooks previously followed them. They request identity encoding and reject
 compressed responses. IMAP tries every validated address. SMTP connects to one
@@ -625,7 +802,7 @@ certificate verification.
 **After this update:** Existing installations whose health webhooks, outgoing
 mail SMTP/IMAP profiles or rsql URL point at internal hosts other than
 the defaults fail with a clear reason until the operator sets the corresponding
-variable. Stored configuration stays. Mail delivery policy refusals remain retryable
+setting. Stored configuration stays. Mail delivery policy refusals remain retryable
 until the message deadline. Use narrow entries and retain `rsql` in an
 explicit list if the shipped containers must stay reachable.
 
@@ -639,10 +816,11 @@ scrape and every redirect (at most three) and pins each connection. Revocation
 takes effect on the next scrape. Responses must be uncompressed.
 
 Notebooks operators can allow internal S3-compatible storage with
-`NOTEBOOKS_SNAPSHOT_ALLOWED_TARGETS` in the Notebooks container environment.
+the `notebooks.snapshot_allowed_targets` admin setting, under **Settings** on
+`/admin/notebooks`.
 Use the narrowest entry: an exact host name, one IP address, or the smallest
 required CIDR range. Host entries trust all validated addresses for that exact
-name; reserved names need a host entry. Bare entries cover every port and path; use `host:port` for one port. `/0` and other invalid entries stop Notebooks at startup.
+name; reserved names need a host entry. Bare entries cover every port and path; use `host:port` for one port. `/0` and other invalid entries are rejected on write. Changes apply to new snapshot requests.
 Failed and empty lookups still refuse an upload, even for listed names.
 
 After this update, existing snapshot configurations that point at internal
@@ -682,17 +860,18 @@ image, to confirm that assets still load.
    token and a fresh database has no normal administrator account.
 2. Generate and store the independent deployment secrets. Set the public
    origin, private service addresses, database, Valkey and NATS connections. Give
-   Core and OAuth the same broker secret if OAuth is selected; only Core gets
-   the identity KEK.
+   only Core the identity KEK. OAuth will need its enrolled app key or the
+   matching legacy broker secret before starting.
 3. Start and check persistent infrastructure. Start Core and wait for schema
    setup, identity initialization and readiness before starting dependent
    apps. Start the gateway with private app reachability and keep public
    access restricted during setup.
-4. Start the selected apps. OAuth checks Core at startup and requires **no
-   credential-creation request**. The development and production Compose files
+4. Start the selected apps. OAuth checks Core at startup. Enroll its app key
+   before starting it, or keep the legacy broker secret for this release.
+   The development and production Compose files
    wait for Core's readiness healthcheck before starting OAuth.
    For mandate-backed background integrations,
-   provision the owning app's `identity:invoke` credential using
+   configure the owning app key, or provision a legacy `identity:invoke` credential using
    [Background mandates](/en/docs/identity/background-mandates), inject it only
    into that app, and recreate that app's container to apply environment changes.
 5. Open `/auth/login?method=admin` at the public origin and enter the temporary
@@ -784,6 +963,15 @@ transition and are dispatched afterwards; background notifications use the
 operator’s `app.locale` setting, and request-triggered outages retain the
 request locale.
 
+Pulse dashboards add Postgres definitions, publication hashes, and execution
+receipts to the control-data backup. Valkey stores disposable result snapshots,
+bounded to 500 entries or 64 MiB of serialized keys and data. Losing that cache
+can leave a panel waiting for its next permitted refresh; it does not permit
+another calculation in the same interval. Dashboards share SQL admission and
+read profiles but do not consume the questions quota. Public links are checked
+on every read and can be revoked by a base writer. Clearing measurements keeps
+dashboard definitions and invalidates their cached results.
+
 Back up all `pulse_*` databases with ClickHouse `BACKUP`, together with Cloud
 Postgres and its encryption keys. Restore them as a consistent set.
 
@@ -791,10 +979,39 @@ Without a saved connection, Cloud and Pulse still report ready; Pulse data APIs
 answer `503 PULSE_STORE_NOT_CONFIGURED`, and the Pulse page shows **Pulse is not
 set up yet**. Administration remains available for setup. Production Compose does not provision ClickHouse; the operator supplies it.
 
-After a restore, Pulse compares each database’s checkpoint with Postgres and
-blocks measurement writes if they differ or the database is missing. A Cloud
-admin can recheck a corrected restore or recreate an empty database. Recreating
-removes measurements while preserving sources, source credentials, settings, and access.
+Pulse verifies each base's checkpoint before accepting measurements, mirroring
+sources, computing rollups, or pruning stored data, even while its startup scan
+is still pending. An unavailable store refuses that work while other Cloud
+applications can start normally.
+
+After a restore, Pulse blocks measurement writes if the checkpoint differs
+from Postgres or the database is missing. A Cloud admin can recheck a corrected
+restore or recreate an empty database. Recreating removes measurements while
+preserving sources, source credentials, settings, and access.
+
+Within the 24-hour idempotency window, a completed receipt returns its saved
+counts without quota or repeat writes while its reset generation and both
+committed and pending checkpoint IDs match the currently validated base.
+A checkpoint identity transition invalidates that completion. The next retry
+replays the original acceptance time, event identities, and state plan, and
+rebuilds missing metric-series mirrors. Replays pass ordinary write limits,
+including quota, and can be refused until capacity is available. Only a
+successful replay renews completion for the new identity. Existing receipts
+from before this upgrade keep their acceptance times and plans; their first
+retry must replay before completion becomes valid.
+
+Raw metrics can remain longer than their retention period while an unexpired
+receipt could need them for replay. This guarantee detects hourly checkpoint
+mismatches; it does not detect per-batch data loss within a matching checkpoint.
+Checkpoints do not recover data automatically. Restore both stores as a
+consistent set.
+
+Clearing a base increments its reset generation. An earlier scrape cannot
+write measurements, scrape history, diagnostics, or source watermarks into the
+cleared generation, even if its endpoint responds after the clear completes.
+Clear also releases the previous scrape lease. An old worker cannot release a
+new generation's lease or defer its rollups after a failure. The source
+configuration and credentials remain available for the next scrape.
 
 ## Verify readiness and upgrades
 
@@ -804,6 +1021,11 @@ apps start returning them: older strict reference schemas may reject the new
 fields. Core adds nullable columns to its existing Assistant reference index
 through its normal startup migration; no operator configuration is needed.
 See [result references](/en/docs/platform/capabilities).
+
+Universal Search result metadata may now carry a `format` for dates. Upgrade
+Core before the apps: Core accepts the search of apps built by earlier
+releases, but an earlier Core leaves out the search of an app built by this
+release until Core is upgraded. See [Search](/en/docs/platform/search).
 
 During the rollout to this release, and during a rollback to the previous
 version, replicas of the previous version write no liveness key. While they
@@ -815,7 +1037,7 @@ next refresh until they stop. No configuration or rollout order is required.
 Check `/_cloud/ready` on each service's **private** origin, then check gateway
 registration and request an owned route through the public origin. The gateway's
 own readiness response is not aggregate readiness for all applications.
-Inspect `/admin/observability/gateway` and `/admin/observability` when Gateway operations
+Inspect `/admin/apps` and `/admin/observability` when Gateway operations
 is installed. Missing optional providers may leave the process ready while
 individual features remain unavailable.
 
@@ -845,6 +1067,11 @@ setup lock. Restart old and new replicas of one app one at a time until all
 run this release. Keep Core first: it creates the shared schemas and the
 installation-wide `pgcrypto` extension other applications need. Updated app
 migrations no longer create that extension independently.
+
+Pulse base responses include `memberCount`, the number of configured person,
+group and agent grants with access. The sidebar reads this authorized base
+metadata; group sizes and general-access rules are not expanded into a people
+count.
 
 ### Pulse agent telemetry actions
 
@@ -891,9 +1118,31 @@ a healthy container alone does not prove that the caller can read a calendar.
 The aggregate reader has a 42-day view range, 100-calendar selection,
 60-call/six-concurrent-call budget, 4 MiB page budget, and caller deadline.
 
+### Upgrade Spaces task writes
+
+Spaces creates `spaces.item_create_requests` on startup for actor-scoped,
+24-hour create receipts. Task creation, its receipt and outbox commit together.
+The Spaces lifecycle starts an hourly NATS scheduler that removes expired
+receipts in bounded batches and drains on shutdown.
+Ship the matching server, browser and CLI assets together so new callers can
+use assignment deltas, title preconditions and retry keys. No configuration or
+new service is required. Verify one title conflict and one keyed create replay
+after upgrading. See [Spaces task writes](/en/docs/reference/spaces-task-mutations)
+for request fields, error codes and the retry window.
+
 ### Upgrade Spaces task deadlines
 
 Spaces adds the nullable `spaces.items.deadline_date` DATE column and the `items_deadline_one_kind` check on startup. The check permits at most one of `deadline` and `deadline_date`. Existing timestamp deadlines remain timed; there is no backfill. API and capability consumers, such as scripts, agents and integrations, must accept `deadline` as either `YYYY-MM-DD` or an ISO instant and can use `deadlineAllDay` to distinguish them. Deploy the updated Spaces server and its matching browser and CLI assets together. Verify a date-only deadline, a timed deadline, and switching between them after the upgrade.
+
+### Upgrade Spaces item templates
+
+Spaces adds a nullable `spaces.item_templates.icon` column on startup. Its check
+accepts Tabler classes such as `ti ti-report`, up to 80 characters. Existing
+templates use the default icon for their kind. Template creation, updates, and
+deletion now require Space write access, including agent credentials with write
+scope. Readers can still list and read templates. No configuration is needed.
+After upgrading, verify that a writer can create, edit, and delete a template
+and that a reader cannot.
 
 ### Upgrade Spaces user claims and assignments
 
@@ -977,6 +1226,46 @@ or `null` when unknown. Clients can compare known checksums to identify the
 same file; matching filenames alone do not establish equal content. This uses
 the existing nullable column and needs no migration or configuration change.
 
+### Mail workspace count cache
+
+Mail reuses a reader's workspace view counts in the existing Valkey service for
+up to 30 seconds. Reads after 15 seconds refresh the snapshot in the background.
+A committed Mail live invalidation changes the mailbox's cache version before
+its live event is delivered. The covering workspace refresh therefore reads the
+new counts after an action; reload and the first browser render use one snapshot.
+The standalone conversation-count API continues to compute fresh counts.
+
+The cache needs no environment variable or operator-managed index. Mail adds two
+small tables at startup: the current version per mailbox and transaction-local
+pending invalidations. Pending rows are consumed at commit; versions advance in
+mailbox order after domain writes. No message or conversation backfill runs.
+
+A cold, expired, or invalidated cache computes the counts once per reader and
+version. Concurrent opens share a Valkey lease; healthy owners renew it every
+3.3 seconds. Fills across different readers use at most the shared SQL pool size
+minus one connection (at least one). At capacity, background refreshes are skipped
+and cold reads wait. Local and remote waiters have the same 30-second budget;
+after that the workspace API returns `503 MAIL_COUNTS_REFRESHING`, and a mailbox
+reload uses the existing service error page with a Home link. Browser reload
+retries the same mailbox. Live refresh keeps the current view on failure; a retry
+can reuse the completed fill.
+The mailbox page and workspace-route handlers allow 40 seconds of idle time
+while loading, then restore the normal request limit before responding. Database
+statements time out after 30 seconds, and shutdown drains fills for at most
+30 seconds. Mail never substitutes invented zero counts on this path.
+
+If Valkey is unavailable, Mail computes directly with the same local concurrency
+bound; reads can take longer. Entries expire on their own and contain only the
+counts for their mailbox, person, and current visibility. No cache flush is needed.
+
+The fast path needs a reusable snapshot. A continuously changing mailbox can
+still pay for the authoritative aggregate after each committed live invalidation,
+including background updates. Changes without live invalidation, including
+assignment eligibility changes, age out within 30 seconds on the next workspace
+read. Complete the rollout across replicas: an older image can reinstall the
+previous invalidation function, leaving only age-based refresh until a new image
+starts again.
+
 ### Mail storage for kept conversations
 
 Mail adds the table `mail.conversation_keeps` and a trigger on
@@ -1023,6 +1312,27 @@ Rolling back keeps the wider constraint, and the previous version ignores
 waiting verifications. After the next update, a verification that waited
 longer than 10 minutes fails with `SENDER_VERIFICATION_TIMEOUT`, and the person
 verifies the identity again.
+
+### Index Mail's provider-message lookups
+
+Mail builds `mail.remote_message_refs_provider_message_idx` concurrently
+in the background. It accelerates matching a provider message across folders
+without changing message identity rules. The command-target, provider-message,
+and optional search builds share one renewable NATS lease and reserve their
+SQL connection, so ordinary queries cannot queue behind an index waiting for
+an old snapshot. Startup does not wait for these builds. A failed or busy
+build is retried at the next start; check warnings from `mail:migrate` and
+`pg_index.indisvalid` before expecting the new plan.
+
+After deployment, compare interval deltas in `pg_stat_statements` for the
+`SELECT DISTINCT remote_ref.message_id` statement that joins `mail.folders`
+and filters `connector_ref ->> 'providerMessageId'`. The new statement adds an
+`md5` equality before the full-ID equality, so it has a new query ID. Compare
+old statement intervals with new statement intervals after the index is valid:
+calls, total execution time and shared blocks read per call. The hash bounds
+index entries for legacy oversized provider IDs; the full equality still
+rejects hash collisions. This index does not reduce the number
+of statements or row writes per idle sync run.
 
 ### Index Mail's per-message command lookups
 
@@ -1310,11 +1620,11 @@ and gives up on one after a minute; requests asked for meanwhile share one
 read after it. Hidden tabs send nothing. Count these requests when sizing the
 application.
 
-### Show app badges in the phone bar
+### Show app badges in the phone's app menu
 
-On phones, the floating bar shows the same count on an application's icon as
-the rail. It reads no extra route: the counts come from the rail's reads. No
-migration or configuration change is required.
+On phones, the web shell has no bottom bar. The app menu shows the same count
+on an application's icon as the rail. It reads no extra route: the counts come
+from the rail's reads. No migration or configuration change is required.
 
 ### Let widgets declare settings
 
@@ -1586,8 +1896,9 @@ Notebook, or application-schema upgrade checks.
    `CLOUD_IDENTITY_KEY_ENCRYPTION_KEY` for Core; Core creates its signing keys
    during startup. Do not replace a KEK protecting existing rows with a newly
    generated value.
-3. When running OAuth, supply the same independent
-   `CLOUD_OAUTH_BROKER_SECRET` to Core and OAuth. OAuth needs no app-credential
+3. When running OAuth, supply
+   an enrolled `oauth` app key, or give the same legacy
+   `CLOUD_OAUTH_BROKER_SECRET` to Core and OAuth. OAuth needs no workload-credential
    provisioning. Supply private Core/OAuth origins as described in
    [Runtime configuration](/en/docs/operations/runtime-configuration), and check
    NATS, database, cache, private-network, and clock prerequisites above.
@@ -2050,3 +2361,27 @@ metadata (`assistant`, `mcp`, or `null`). Application authors must persist and d
 create or change visible content. Existing stored content is not backfilled.
 This adds no permission and needs no operator configuration. See
 [App capabilities](/en/docs/platform/capabilities).
+
+## Enroll an application before its first start
+
+An administrator can register Ed25519 public keys for stopped and third-party
+apps through `cld admin apps keys` or Core’s administrator API. Enrollment uses
+the same app-bound service account as workload credentials. Keep the current
+runtime configuration when enrolling; see [App keys](/en/docs/operations/app-keys)
+for the supported commands and recovery steps.
+
+### Cloud app static assets
+
+Rebuild applications to let the Cloud app retain their versioned static files.
+`defineApp()` supplies an internal build catalog at `/_internal/pwa-assets`; the
+Cloud app reads it directly from registered Core, shell, and part services. No
+new gateway route or operator setting is needed. Deploy the complete `_ssr` and
+`public` output beside the server bundle as before. The catalog hashes the final
+uncompressed files, including any build rewrites.
+
+The network-served worker pins the active catalogs and verifies SHA-256 on every
+cache read. An app whose catalog does not answer is left out until the next worker
+update; its files then load from the network. Worker updates remove entries absent from those builds. Static cache
+storage is limited to 16 MiB; storage denial or eviction falls back to the network.
+Pages and API responses remain network-only. See
+[Offline and updates](/en/docs/frontend/mobile-app-pages#offline-and-updates).

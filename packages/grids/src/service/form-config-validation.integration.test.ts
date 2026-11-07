@@ -1,6 +1,6 @@
 import { beforeAll, describe, expect } from "bun:test";
+import { sql } from "@k2b/cloud";
 import { err, fail, ok } from "@k2b/stdlib";
-import { sql } from "bun";
 import { testFor, testInfra } from "../../../../scripts/fixtures/test-infra";
 import { fromPublicFormConfig } from "../api/form-api-shared";
 import { createAuthenticatedFormRoutes } from "../api/form-authenticated-routes";

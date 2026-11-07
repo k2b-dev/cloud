@@ -10,12 +10,13 @@
  */
 
 import { beforeAll, describe, expect, spyOn } from "bun:test";
+import { sql } from "@k2b/cloud";
 import type { User } from "@k2b/cloud/contracts";
 import type { AuthContext } from "@k2b/cloud/server";
 import type { WorkflowBoundPlan, WorkflowIrStep, WorkflowJsonValue } from "@k2b/cloud/workflows";
 import { hashWorkflowJson } from "@k2b/cloud/workflows/language";
 import { createWorkflowRun } from "@k2b/cloud/workflows/store";
-import { type SQL, sql } from "bun";
+import type { SQL } from "bun";
 import type { MiddlewareHandler } from "hono";
 import { Hono } from "hono";
 import { z } from "zod";

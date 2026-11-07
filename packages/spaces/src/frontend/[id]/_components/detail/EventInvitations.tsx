@@ -325,7 +325,7 @@ export default function EventInvitations(props: { spaceId: string; itemId: strin
     }
   });
   return (
-    <DetailPanel.Section title={t.invitations}>
+    <DetailPanel.Section title={t.invitations} icon="ti ti-send">
       <Show when={contextQuery.error()}>
         {(error) => (
           <Placeholder

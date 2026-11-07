@@ -55,7 +55,9 @@ const withGroups = async (total: number, run: (app: Hono<AuthContext & { Variabl
       homeTemplate: "/home/{uid}",
       loginShell: "/bin/bash",
     }),
-    spyOn(accountsAppService.accountRequest, "list").mockResolvedValue({ items: [], page: 1, perPage: 100, total: 0, hasNext: false }),
+    // Guard: the requests badge only counts; reading request rows for it made every page slower.
+    spyOn(accountsAppService.accountRequest, "list").mockRejectedValue(new Error("The requests badge must not list requests")),
+    spyOn(accountsAppService.accountRequest, "countPending").mockResolvedValue(3),
     spyOn(accountsAppService.group, "list").mockImplementation(async ({ pagination }) => {
       const page = pagination?.page ?? 1;
       const perPage = pagination?.perPage ?? 100;
@@ -106,5 +108,12 @@ test("a list page past the end opens the last page with the same filters", async
     const response = await app.request("/app/accounts/groups?page=3");
     expect(response.status).toBe(302);
     expect(response.headers.get("location")).toBe("/app/accounts/groups");
+  });
+});
+
+test("the requests badge shows the counted open requests", async () => {
+  await withGroups(1, async (app) => {
+    const html = await (await app.request("/app/accounts/groups", { headers: { "Accept-Language": "en" } })).text();
+    expect(html).toMatch(/href="\/app\/accounts\/requests"[\s\S]{0,600}?<span class="text-xs text-dimmed">3<\/span>/);
   });
 });

@@ -33,9 +33,17 @@ test("a chosen icon replaces the initials; a channel without one shows its sign"
   expect(avatar({ channel: true, icon: "ti ti-run" })).toContain('class="ti ti-run"');
 });
 
-test("a Space's or notebook's chat is a square with the container's sign, whatever icon it carries", () => {
-  const html = avatar({ kind: "system", icon: "ti ti-rocket", resource: { type: "notebooks.notebook", id: "Book01" } });
+test("a discussion renders the catalog type icon in a square", () => {
+  // System rows receive the provider type's icon from Chat's authorized projection.
+  const html = avatar({ kind: "system", icon: "ti ti-box", resource: { type: "inventory.collection", id: "collection/warehouse" } });
   expect(html).toContain('data-shape="square"');
-  expect(html).not.toContain("ti-rocket");
-  expect(html).toMatch(/class="ti ti-[a-z-]+"/);
+  expect(html).toContain('class="ti ti-box"');
+});
+
+test("a discussion uses the generic fallback for absent or invalid catalog icons", () => {
+  for (const icon of [null, "ti ti-box arbitrary-class", " ti ti-box", "not-an-icon"]) {
+    const html = avatar({ kind: "system", icon, resource: { type: "inventory.collection", id: "collection/warehouse" } });
+    expect(html).toContain('data-shape="square"');
+    expect(html).toContain('class="ti ti-messages"');
+  }
 });

@@ -390,16 +390,20 @@ into `DEV`, so the streams keep their data.
 
 ## Add a built-in application
 
-A new application touches exactly three files: the `workspaces.packages` list
-in the root `package.json`, its service in `compose.dev.yml`, and its service
-in `compose.prod.yml`. Image names, the release set, and the CI matrix derive
-from `scripts/workspace.ts`; the `app-set` check in `bun run check` fails when
-the three files disagree.
+A new application has three source inputs: the `workspaces.packages` list
+in the root `package.json`, its service in `scripts/templates/compose.dev.yml`,
+and its service in `scripts/templates/compose.prod.yml`. Run
+`bun scripts/generate-app-deployments.ts` and include the generated Compose
+files and development key fixtures in the change. The generator preserves
+existing development identities and creates fixtures for new workspace apps;
+no manual seed, public key or fingerprint is needed. Image names, the release
+set, and the CI matrix derive from `scripts/workspace.ts`; the `app-set`
+check in `bun run check` fails when the workspace and generated files disagree.
 
 The development service needs:
 
-- the shared environment;
-- `APP_ID`;
+- any application-owned image settings;
+- the generated bootstrap environment and secret mount;
 - the Cloud source and script mounts;
 - its own source mount;
 - the shared stylesheet;
@@ -409,7 +413,7 @@ An HTTP application registers itself at startup. The gateway discovers it from
 the shared registry.
 
 An application that is built on `main` before its release gets
-`profiles: ["unreleased"]` on its `compose.prod.yml` service. Its image is
+`profiles: ["unreleased"]` on its production template service. Its image is
 built and published, but a plain `docker compose up`, the release smoke, and
 the upgrade preflight leave it out. Compose starts it only with
 `--profile unreleased` or when the command names the service, and both are
@@ -605,8 +609,8 @@ enforce their own authorization. See [Universal search](/en/docs/platform/search
 
 ## Workflow inference budgets
 
-Workflow AI uses `WORKFLOW_AI_ATTEMPT_TIMEOUT_MS` and
-`WORKFLOW_AI_QUEUE_TIMEOUT_MS` (both 60,000 ms by default). Keep these budgets
+Workflow AI uses `ai.workflow_attempt_timeout_ms` and
+`ai.workflow_queue_timeout_ms` (both 60,000 ms by default). Keep these budgets
 consistent across workers. Queue overload rejects new work; failed run details
 provide the recovery path after capacity recovers. The queue deadline includes
 application downtime: pending tasks older than the queue budget fail visibly on
@@ -623,15 +627,15 @@ expire healthy legacy attempts. Then remove the legacy
 retain its diagnostics until every associated Postgres task is terminal. Do not
 delete pending domain tasks to clear a queue.
 
-`MAIL_WORKFLOW_AI_BODY_MAX_CHARS` defaults to 20,000, the long-input pilot budget.
+`mail.workflow_ai_body_max_chars` defaults to 20,000, the long-input pilot budget.
 The complete request still has to fit the existing 100,000-byte JSONB limit.
 Increasing the body allowance does not bypass that storage constraint. Oversize
 messages require narrower workflow input or manual inspection, followed by retry;
 the stored mail remains intact.
 
-`WORKFLOW_AI_BUDGET` is one JSON registry entry. Its default is
+`ai.workflow_budget` is an admin text setting containing JSON. Its default is
 `{"maxStepsPerSource":2,"tasksPerMinute":10,"burst":20,"sourcesPer24Hours":2000,"scopeConcurrent":1,"globalConcurrent":4}`.
-Deploy the same value to all Mail workers. Postgres serializes short admission
+Restart all AI workers after changing `globalConcurrent`; other budget fields apply to new work. Postgres serializes short admission
 transactions across replicas; reservations count queued and running work.
 Capacity and rate admission rejections use bounded workflow retries; source and
 daily limits are terminal. Exhaustion remains visible in run details. The rolling ledger
@@ -659,3 +663,22 @@ including unscoped callers. This prevents one slow call from blocking other
 admitted work behind a serial worker. Changing
 that resource setting requires the same deliberate Sync migration as other
 durable consumer configuration changes.
+
+## Regenerate deployment templates
+
+Compose app environment and secret mounts are generated from the environment
+registry and workspace. Edit service configuration in
+`scripts/templates/compose.dev.yml` or `scripts/templates/compose.prod.yml`,
+then run:
+
+```bash
+bun scripts/generate-app-deployments.ts
+bun scripts/generate-config-docs.ts
+```
+
+The configuration check verifies both outputs. Full startup and the shared
+single-app startup helper prepare development key files before Compose
+recreates any app, including newly added workspace apps; Core enrolls them after its
+migration and before application readiness. See the
+[development installation](/en/docs/operations/app-key-upgrade#development-installation)
+for database identity and fixture restrictions.

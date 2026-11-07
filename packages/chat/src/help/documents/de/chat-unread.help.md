@@ -57,7 +57,7 @@ Kommen Nachrichten an, während du in einem anderen Tab bist, bringt dich **Neue
 
 ## Sehen, was für dich ist {icon="at"}
 
-**Für dich** oben in der Liste zeigt Nachrichten, die dich erwähnen, und Antworten auf deine Nachrichten, aus allen Chats, auch aus Spaces und Notebooks. Die neuesten stehen oben, und die Zahl zeigt, wie viele du noch nicht gelesen hast.
+**Für dich** oben in der Liste zeigt Nachrichten, die dich erwähnen, und Antworten auf deine Nachrichten, aus allen Chats, auch aus Ressourcen-Diskussionen. Die neuesten stehen oben, und die Zahl zeigt, wie viele du noch nicht gelesen hast.
 
 :::steps
 1. Wähle **Für dich** in der Liste.

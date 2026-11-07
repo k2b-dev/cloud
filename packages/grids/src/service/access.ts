@@ -1,3 +1,4 @@
+import { sql } from "@k2b/cloud";
 import {
   type AccessEntry,
   type AccessSubject,
@@ -8,7 +9,6 @@ import {
 } from "@k2b/cloud/server";
 import type { ServiceAccountKind } from "@k2b/cloud/services";
 import { err, fail, ok, type Result } from "@k2b/stdlib";
-import { sql } from "bun";
 import { unshadowedGrants } from "../access-precedence";
 import { logAudit, type SqlClient } from "./audit";
 import { getGridsCrudMessages } from "./crud-messages";

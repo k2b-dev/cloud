@@ -1,13 +1,23 @@
-import { expect, spyOn, test } from "bun:test";
+import { afterEach, beforeEach, expect, spyOn, test } from "bun:test";
 import { StoreFullError } from "@k2b/sync";
 import { natsSuite } from "../../../../../scripts/fixtures/test-infra";
 import { openSync, until } from "../../../test/integration/sync-contracts/harness";
 import { bindProcessSync, unbindProcessSync } from "../../_internal/process-sync";
-import { env } from "../../config/env";
+import { DEFAULT_WORKFLOW_AI_BUDGET } from "../../config/workflow-ai";
+import * as settingsStore from "../../services/settings/store";
 import { startWorkflowAiRuntime, stopWorkflowAiRuntime, submitWorkflowAiTask } from "./runtime";
 import * as store from "./store";
 
+const persistedBudget = { ...DEFAULT_WORKFLOW_AI_BUDGET, globalConcurrent: 2 };
+
 natsSuite()("workflow AI delivery admission", () => {
+  let settings: ReturnType<typeof spyOn<typeof settingsStore, "readKey">>;
+  beforeEach(() => {
+    settings = spyOn(settingsStore, "readKey").mockImplementation(async (key) =>
+      key === "ai.workflow_budget" ? JSON.stringify(persistedBudget) : 60_000,
+    );
+  });
+  afterEach(() => settings.mockRestore());
   test("rejects excess coalesced work and preserves accepted work", async () => {
     const fixture = await openSync("workflow-ai-full");
     const job = fixture.sync.job<string>({
@@ -61,7 +71,7 @@ natsSuite()("workflow AI delivery admission", () => {
     try {
       await startWorkflowAiRuntime();
       await submitWorkflowAiTask("third");
-      expect(observedConcurrency).toBe(env.WORKFLOW_AI_BUDGET.globalConcurrent);
+      expect(observedConcurrency).toBe(persistedBudget.globalConcurrent);
       expect(submitted).toEqual(["task:first", "task:second", "task:third"]);
       expect(fail).toHaveBeenCalledWith("first", expect.objectContaining({ code: "WORKFLOW_AI_SUBMISSION_FAILED" }));
     } finally {

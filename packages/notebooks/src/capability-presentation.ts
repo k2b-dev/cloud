@@ -89,6 +89,37 @@ export const notebooksCapabilityPresentation: CapabilityPresentationCatalog = {
         },
       },
       queries: {
+        "notebook.containers": {
+          title: "Diskussionsorte auflisten",
+          description: "Lesbare Notizbücher mit Fortsetzung auflisten.",
+          input: {
+            query: "Optionaler Suchtext für Orte.",
+            cursor: "Fortsetzung der vorherigen Seite.",
+            limit: "Höchstens so viele Orte auf dieser Seite.",
+          },
+        },
+        "notebook.readable": {
+          title: "Leser für Notizbuch prüfen",
+          description: "Prüfen, welche aktuellen Konten dieses Notizbuch lesen dürfen; ohne Grenzen einzelner Anmeldedaten.",
+          input: {
+            id: "Öffentliche ID der Ressource.",
+            container: "Erwarteter aktueller Ort; nur bei Typen mit Ort.",
+            "container.type": "Typ des erwarteten Orts.",
+            "container.id": "Öffentliche ID des erwarteten Orts.",
+            principals: "Konkrete Konten, deren Leserecht geprüft wird; höchstens 500.",
+          },
+        },
+        "note.readable": {
+          title: "Leser für Notiz prüfen",
+          description: "Prüfen, welche aktuellen Konten den Eintrag im erwarteten Container lesen dürfen; ohne Inhaltszugriff.",
+          input: {
+            id: "Öffentliche ID der Ressource.",
+            container: "Erwarteter aktueller Ort der Ressource.",
+            "container.type": "Deklarierter Typ des Orts.",
+            "container.id": "Öffentliche ID des Orts.",
+            principals: "Konkrete Konten, deren Leserecht geprüft wird; höchstens 500.",
+          },
+        },
         "annotation.list": {
           title: "Kommentare zum Text auflisten",
           description:
@@ -124,8 +155,10 @@ export const notebooksCapabilityPresentation: CapabilityPresentationCatalog = {
           description:
             "Berechtigte Änderungen an Notizen eines Notizbuchs lesen, neueste zuerst. Optional auf eine Notiz begrenzen. Kommentare und gelöschte Notizen werden ausgelassen. Dem Cursor folgen.",
           input: {
-            notebook: "Öffentliche ID des Notizbuchs.",
+            container: "Öffentliche ID des Notizbuchs; die bisherige Eingabe notebook bleibt möglich.",
+            notebook: "Bisherige Eingabe für container; beide IDs müssen übereinstimmen.",
             item: "Optional auf eine Notiz in diesem Notizbuch begrenzen.",
+            timeZone: "IANA-Zeitzone für die Datumsanzeige; ohne Angabe gilt die Zeitzone der Installation.",
             before: "Nur Ereignisse, deren letztes Auftreten vor diesem ISO-Zeitpunkt liegt.",
             after: "Nur Ereignisse, deren letztes Auftreten nach diesem ISO-Zeitpunkt liegt.",
             cursor: "Cursor der vorherigen Seite.",
@@ -284,6 +317,14 @@ export const notebooksCapabilityPresentation: CapabilityPresentationCatalog = {
             notebookId: "Notebook ID zurückgegeben durch Notebook-Suche/-Liste/-Lesen oder ein notebooks.notebook ref.",
             cursor: "Undurchsichtiger Cursor, der von der vorherigen Seite zurückgegeben wurde.",
             limit: "Maximale Anzahl der zurückzugebenden Ergebnisse.",
+          },
+        },
+        "template.list": {
+          title: "Seitenvorlagen auflisten",
+          description:
+            "Listen Sie die Seitenvorlagen eines bekannten Notizbuchs auf: zuerst die eigenen nach Namen, dann die eingebauten. Verwenden Sie eine zurückgegebene ID als templateId mit note.create.",
+          input: {
+            notebookId: "Notebook ID zurückgegeben durch Notebook-Suche/-Liste/-Lesen oder ein notebooks.notebook ref.",
           },
         },
         "tag.notes": {
@@ -484,13 +525,16 @@ export const notebooksCapabilityPresentation: CapabilityPresentationCatalog = {
         },
         "note.create": {
           title: "Notiz erstellen",
-          description: "Erstellen Sie eine Markdown-Notiz in einem explizit ausgewählten beschreibbaren Notizbuch.",
+          description:
+            "Erstellen Sie eine Markdown-Notiz in einem explizit ausgewählten beschreibbaren Notizbuch, aus Inhalt oder aus einer templateId von template.list.",
           input: {
             notebookId: "Beschreibbares Notizbuch ID.",
             parentId: "Optionale Elternnotiz ID im selben Notizbuch.",
             position:
               "Optionale 0-basierte Position; Einordnen nummeriert alle Notizen der Ebene in der gewählten manuellen Reihenfolge. Ohne Position folgt die Notiz dem Ordnungsmodus der Ebene.",
             content: "Ursprüngliche Markdown-Quelle; Ein Titel wird vom Notizbuch abgeleitet oder generiert.",
+            templateId:
+              "Statt content mit dieser Seitenvorlage von template.list beginnen; {{date}} und {{author}} werden für den Aufrufer eingesetzt.",
           },
         },
         "note.edit": {

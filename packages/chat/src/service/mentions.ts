@@ -1,7 +1,7 @@
+import { sql } from "@k2b/cloud";
 import { err, fail, getEffectivePermissions, ok } from "@k2b/cloud/server";
 import { toPgUuidArray } from "@k2b/cloud/services";
 import { principalLabel } from "@k2b/cloud/shared";
-import { sql } from "bun";
 import type { ChatContext, ConversationRow } from "./access";
 import { messages, requireConversation, subjectPrincipal } from "./access";
 import { type Mention, MentionCandidateQuerySchema, PEOPLE_PAGE_SIZE } from "./contracts";

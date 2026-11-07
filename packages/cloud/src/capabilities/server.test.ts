@@ -1,19 +1,74 @@
-import { afterEach, describe, expect, spyOn, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
+import { Hono } from "hono";
 import { z } from "zod";
 import * as dispatcher from "../api/capabilities";
 import type { RequestAuthority } from "../server";
-import { invokeCapability, invokeCapabilityWithDataSchema, reviewCapabilityAction } from "./server";
+import { sessionOriginGuard } from "../server/middleware/session-origin";
+import * as settings from "../services/settings";
+import { invokeCapability, invokeCapabilityWithDataSchema, reviewCapabilityAction, transferCapabilityStream } from "./server";
 
 const originalFetch = globalThis.fetch;
 const originalCoreOrigin = process.env.CLOUD_CORE_INTERNAL_ORIGIN;
+const publicOrigin = "https://cloud.example.test";
+let settingSpy: ReturnType<typeof spyOn<typeof settings, "get">>;
+beforeEach(() => {
+  settingSpy = spyOn(settings, "get").mockResolvedValue(`${publicOrigin}/configured/path`);
+});
 
 afterEach(() => {
+  expect(settingSpy.mock.calls.every(([key]) => key === "app.url")).toBe(true);
+  settingSpy.mockRestore();
   globalThis.fetch = originalFetch;
   if (originalCoreOrigin === undefined) delete process.env.CLOUD_CORE_INTERNAL_ORIGIN;
   else process.env.CLOUD_CORE_INTERNAL_ORIGIN = originalCoreOrigin;
 });
 
 describe("server capability client", () => {
+  test("guarded ingress and cookie transports preserve SSR reads, actions and streams without laundering browser Origins", async () => {
+    process.env.CLOUD_CORE_INTERNAL_ORIGIN = "http://core.internal";
+    let calls = 0;
+    const core = new Hono().use(sessionOriginGuard([], async () => publicOrigin)).post("*", (c) => {
+      calls++;
+      expect(c.req.header("Origin")).toBe(publicOrigin);
+      expect(c.req.header("Cookie")).toBe("session_token=source-session");
+      return c.json({ data: { value: 42 } });
+    });
+    const app = new Hono().use(sessionOriginGuard([], async () => publicOrigin)).all("/call", async (c) => {
+      const caller = { cookie: c.req.header("Cookie"), transport: async (request: Request) => core.fetch(request) };
+      const query = await invokeCapability({ kind: "query", appId: "demo", capabilityId: "read", input: {} }, caller);
+      const action =
+        c.req.method === "POST"
+          ? await invokeCapability({ kind: "action", appId: "demo", capabilityId: "write", input: {} }, caller)
+          : undefined;
+      return c.json({ query, action });
+    });
+    const cookie = "session_token=source-session";
+    expect(await (await app.request("/call", { headers: { Cookie: cookie } })).json()).toMatchObject({ query: { ok: true } });
+    expect(calls).toBe(1);
+    for (const origin of [undefined, "null", "https://evil.example.test"]) {
+      const headers = new Headers({ Cookie: cookie });
+      if (origin) headers.set("Origin", origin);
+      expect((await app.request("/call", { method: "POST", headers })).status).toBe(403);
+      expect(calls).toBe(1);
+    }
+    expect(await (await app.request("/call", { method: "POST", headers: { Cookie: cookie, Origin: publicOrigin } })).json()).toMatchObject({
+      query: { ok: true },
+      action: { ok: true },
+    });
+    expect(calls).toBe(3);
+    const stream = {
+      id: "stream-fixture",
+      direction: "read" as const,
+      mediaType: "text/plain",
+      size: 1,
+      expiresAt: "2026-12-01T00:00:00Z",
+    };
+    expect((await transferCapabilityStream(stream, "read", { cookie, transport: async (request) => core.fetch(request) })).status).toBe(
+      200,
+    );
+    expect(calls).toBe(4);
+  });
+
   test("verified host authority uses the canonical dispatcher without exposing a credential to fetch", async () => {
     process.env.CLOUD_CORE_INTERNAL_ORIGIN = "http://core.internal";
     const authority: RequestAuthority = {
@@ -195,7 +250,7 @@ describe("server capability client", () => {
     globalThis.fetch = Object.assign(
       async (input: string | URL | Request, init?: RequestInit) => {
         requests.push(input instanceof Request ? input : new Request(input, init));
-        expect(init?.redirect).toBe("error");
+        expect(new Request(input, init).redirect).toBe("error");
         return Response.json({ data: { readable: [] } });
       },
       { preconnect: originalFetch.preconnect },

@@ -10,6 +10,8 @@ updated: 2026-10-19
 
 # Request identity
 
+See [Who may do what](/en/docs/identity/access-model) for the access model.
+
 Cloud turns a browser session or bearer token into a request actor.
 Applications select an auth policy. They do not parse or store credentials.
 The choice of [sign-in method](/en/docs/accounts) does not change this contract.
@@ -63,6 +65,12 @@ that JWT. Cloud verifies its exact target and operation, reloads the current
 principal, and exposes the same `actor` and `accessSubject` values to the
 provider. Optional `actor.delegation` records the calling app, original
 credential kind, and invocation ID for audit context; it grants no permission.
+
+App-owned platform capability calls use a separate authority through
+[`appCaller()`](/en/docs/platform/capabilities#call-as-the-application).
+Their app/key actor has no grant-bearing access subject and never enters the
+ordinary person-authentication middleware. Use it for app-paid operations;
+use the person's credentials or a mandate for their resources.
 
 ### Which session a request uses
 

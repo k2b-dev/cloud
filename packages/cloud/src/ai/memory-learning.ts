@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
-import { sql } from "bun";
 import { z } from "zod";
 import { CloudResourceRefSchema } from "../contracts/capabilities";
+import { sql } from "../runtime/clients";
 import { coreSettings } from "../services";
 import { logger } from "../services/logging";
 import { normalizeLocale } from "../shared/locale";

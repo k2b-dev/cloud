@@ -1,6 +1,6 @@
+import { sql } from "@k2b/cloud";
 import { err, fail, ok, type Result } from "@k2b/cloud/server";
 import { toPgTextArray } from "@k2b/cloud/services";
-import { sql } from "bun";
 import type { z } from "zod";
 import { type ChatContext, messages as catalog, requireConversation, subjectPrincipal } from "./access";
 import { DeleteMessageSchema, EditMessageSchema, MessageIdSchema, type MessageViewSchema, withinMessageMutationWindow } from "./contracts";
@@ -63,6 +63,8 @@ export const mutateMessage =
       WHERE id = ${current.data.id}::uuid RETURNING rev`;
       const [changed] = await db<MessageRow[]>`UPDATE chat.messages SET rev = ${head!.rev}, content_rev = content_rev + 1,
       body_md = ${body ?? ""}, links = ${toPgTextArray(body === null ? [] : extractMessageLinks(body))}::text[],
+      via = ${operation === "edit" && input.via ? input.via : db`via`},
+      client_input_hash = ${operation === "delete" ? db`NULL` : db`client_input_hash`},
       edited_at = ${operation === "edit" ? db`clock_timestamp()` : db`edited_at`},
       deleted_at = ${operation === "delete" ? db`clock_timestamp()` : db`NULL`},
       refs = ${operation === "delete" ? db`'[]'::jsonb` : db`refs`}

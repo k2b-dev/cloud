@@ -4,6 +4,7 @@ import { Awareness, applyAwarenessUpdate, encodeAwarenessUpdate, removeAwareness
 import * as Y from "yjs";
 import { notebooksWorkspace } from "../../../lib/workspace-events";
 import { notebooksYjs } from "../../../lib/yjs";
+import { presencePeerId } from "../presence-peer";
 import { reconnectDelayMs } from "../reconnect";
 import { createYjsProvider } from "./provider";
 
@@ -1535,7 +1536,10 @@ test("the shared provider adapter retains exact Notebook request packets and ser
     expect(socket.url).toBe("wss://example.invalid/api/notebooks/ws");
     expect(socket.sent.map((value) => JSON.parse(value))).toEqual([
       { type: "notes.workspace.subscribe", payload: { notebookId: NOTEBOOK_ID, fromCursor: "s6t.workspace.1" } },
-      { type: "notes.yjs.replay.request", payload: { noteId: NOTE_ID, fromCursor: "s6t.fixture.1", restoreRevision: "7" } },
+      {
+        type: "notes.yjs.replay.request",
+        payload: { noteId: NOTE_ID, fromCursor: "s6t.fixture.1", restoreRevision: "7", presencePeerId: presencePeerId() },
+      },
     ]);
     socket.message({ type: notebooksYjs.wsType.replayReady, payload: { noteId: NOTE_ID, restoreRevision: "7" } });
     const awarenessPacket = JSON.parse(socket.sent.at(-1)!);

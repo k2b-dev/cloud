@@ -1,4 +1,6 @@
 import { appAccess, defineApp } from "@k2b/cloud";
+import { validateNetworkAllowlist } from "@k2b/cloud/services/settings/validation";
+import { appEnv } from "./env";
 import { SKILLS } from "./skills";
 
 export const app = defineApp({
@@ -55,7 +57,26 @@ export const app = defineApp({
   openapi: "/api/notebooks/openapi.json",
   routes: ["/api/notebooks", "/app/notebooks", "/admin/notebooks", "/public/notebooks"],
   settings: {
+    "notebooks.snapshot_allowed_targets": {
+      kind: "string_list",
+      default: [],
+      label: "Snapshot allowed targets",
+      description: "Exact internal S3 hosts, IPs or CIDRs. Changes apply to new snapshot requests.",
+      envVariable: "NOTEBOOKS_SNAPSHOT_ALLOWED_TARGETS",
+      envBootstrap: () => appEnv.$readPresent("NOTEBOOKS_SNAPSHOT_ALLOWED_TARGETS"),
+      validate: validateNetworkAllowlist,
+      presentation: {
+        translations: {
+          de: {
+            label: "Erlaubte Snapshot-Ziele",
+            description: "Exakte interne S3-Hosts, IPs oder CIDRs. Änderungen gelten für neue Snapshot-Anfragen.",
+          },
+        },
+      },
+    },
+
     "notebooks.reindex_cron": {
+      adminWrite: "application",
       kind: "cron",
       label: "Reindex Cron",
       default: "0 */12 * * *",
@@ -71,6 +92,7 @@ export const app = defineApp({
       },
     },
     "notebooks.snapshot_cron": {
+      adminWrite: "application",
       kind: "cron",
       label: "Snapshot Cron",
       default: "0 3 * * *",

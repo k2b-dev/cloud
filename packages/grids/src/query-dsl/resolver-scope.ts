@@ -1,4 +1,4 @@
-import { sql } from "bun";
+import { sql } from "@k2b/cloud";
 import { normalizeRefKey } from "../ref-syntax";
 import { storageOf } from "../service/field-storage";
 import type { FormulaSqlExpression } from "../service/formula-sql-compiler";

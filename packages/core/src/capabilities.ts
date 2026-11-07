@@ -537,7 +537,7 @@ const SkillAccessChangeInput = z
       .regex(/^[a-f0-9]{64}$/)
       .describe("Exact revision from ai.skill.access.read; re-read and review after a conflict."),
     principal: AuthenticatedPrincipalSchema.optional().describe(
-      "Recipient for a NEW grant: user, group, service account, or all authenticated identities. Public access is not supported. Supply principal OR accessId.",
+      "Recipient for a NEW grant: user, group, service account, or all signed-in people including guests. Public access is not supported. Supply principal OR accessId.",
     ),
     accessId: z
       .string()
@@ -721,6 +721,7 @@ export const aiCapabilities = defineCapabilities({
       data: geoRouteContract.calculateRoute.data,
       openWorld: true,
       run: (input, context) => runGeoQuery(context, () => coreGeo.calculateRoute(input, context)),
+      app: { permission: "geo:query", run: (input, context) => runGeoQuery(context, () => coreGeo.calculateRoute(input, context)) },
     },
     "route.update": {
       title: "Preview a route change",
@@ -730,6 +731,7 @@ export const aiCapabilities = defineCapabilities({
       data: geoRouteContract.updateRoute.data,
       openWorld: true,
       run: (input, context) => runGeoQuery(context, () => coreGeo.updateRoute(input, context)),
+      app: { permission: "geo:query", run: (input, context) => runGeoQuery(context, () => coreGeo.updateRoute(input, context)) },
     },
     "address.autocomplete": {
       title: "Suggest addresses",
@@ -739,6 +741,7 @@ export const aiCapabilities = defineCapabilities({
       data: geoContract.autocomplete.data,
       openWorld: true,
       run: (input, context) => runGeoQuery(context, () => coreGeo.autocomplete(input, context)),
+      app: { permission: "geo:query", run: (input, context) => runGeoQuery(context, () => coreGeo.autocomplete(input, context)) },
     },
     "address.geocode": {
       title: "Locate an address",
@@ -748,6 +751,7 @@ export const aiCapabilities = defineCapabilities({
       data: geoContract.geocode.data,
       openWorld: true,
       run: (input, context) => runGeoQuery(context, () => coreGeo.geocode(input, context)),
+      app: { permission: "geo:query", run: (input, context) => runGeoQuery(context, () => coreGeo.geocode(input, context)) },
     },
     "address.reverse": {
       title: "Find an address at coordinates",
@@ -757,6 +761,7 @@ export const aiCapabilities = defineCapabilities({
       data: geoContract.reverse.data,
       openWorld: true,
       run: (input, context) => runGeoQuery(context, () => coreGeo.reverse(input, context)),
+      app: { permission: "geo:query", run: (input, context) => runGeoQuery(context, () => coreGeo.reverse(input, context)) },
     },
     "place.search": {
       title: "Search places",
@@ -766,6 +771,7 @@ export const aiCapabilities = defineCapabilities({
       data: geoContract.searchPlaces.data,
       openWorld: true,
       run: (input, context) => runGeoQuery(context, () => coreGeo.searchPlaces(input, context)),
+      app: { permission: "geo:query", run: (input, context) => runGeoQuery(context, () => coreGeo.searchPlaces(input, context)) },
     },
     "geo.availability": {
       title: "Check geo availability",
@@ -775,6 +781,7 @@ export const aiCapabilities = defineCapabilities({
       data: geoContract.availability.data,
       openWorld: false,
       run: (_input, context) => runGeoQuery(context, () => coreGeo.availability(context)),
+      app: { permission: "geo:query", run: (_input, context) => runGeoQuery(context, () => coreGeo.availability(context)) },
     },
     "entities.search": {
       title: "Find access recipients",

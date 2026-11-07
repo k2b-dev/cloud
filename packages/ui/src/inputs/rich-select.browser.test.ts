@@ -43,6 +43,8 @@ document.addEventListener("fixture:state", (event) => {
   if (next === "empty") { setTargets([]); setStatus("ready"); }
   if (next === "error" || next === "loading") setStatus(next);
   if (next === "disable") setDisabled(true);
+  // A host that rebuilds equal items, as a live list does.
+  if (next === "rebuild") setTargets(targets().map((item) => ({ ...item })));
   if (next === "unmount") dispose();
   if (next === "many") setTargets([...items, ...Array.from({ length: 5 }, (_, index) => ({ value: "extra-" + index, label: "Extra " + index }))]);
   if (next === "hold-history") {
@@ -187,6 +189,24 @@ describe("RichSelect shipped browser contract", () => {
       await close();
     }
   }, 10_000);
+
+  test("a press on an option commits it when the host rebuilds equal items before the release", async () => {
+    const { page, close } = await open({ viewport: { width: 1440, height: 900 } });
+    try {
+      await page.getByRole("combobox", { name: "Move card" }).click();
+      const option = page.getByRole("option").filter({ hasText: "Archive · Done" });
+      await option.waitFor();
+      await settled(page);
+      const bounds = await box(option);
+      await page.mouse.move(bounds.x + bounds.width / 2, bounds.y + bounds.height / 2);
+      await page.mouse.down();
+      await page.evaluate(() => document.dispatchEvent(new CustomEvent("fixture:state", { detail: "rebuild" })));
+      await page.mouse.up();
+      await page.waitForFunction(() => document.querySelector("form")?.dataset.committed === "archive");
+    } finally {
+      await close();
+    }
+  });
 
   test("desktop preview, list, popover and trigger never move while keys and hover change the active row", async () => {
     const { page, close } = await open({ viewport: { width: 1440, height: 900 } });

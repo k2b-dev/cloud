@@ -1,4 +1,5 @@
-import { sql } from "bun";
+import { sql } from "../runtime/clients";
+
 import type { RequestActor } from "../server";
 import { type AiModelRequest, AiModelRequestSchema } from "../shared/ai-models";
 

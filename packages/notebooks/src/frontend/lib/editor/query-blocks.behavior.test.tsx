@@ -10,6 +10,8 @@ import type { BlockPreviewResult } from "./query-blocks";
 
 // The notebook parsers share the info block grammar of @k2b/ui; its browser build needs the DOM globals before it loads.
 const loading = createDomTestHarness();
+const { createQueryBlockPreviews } = await import("./query-blocks");
+const { notebookChartOptions } = await import("../../../lib/chart-options");
 const { extractNotebookDirectiveRanges } = await import("../../../lib/query-blocks");
 loading.cleanup();
 
@@ -38,7 +40,6 @@ describe("query block previews", () => {
     readOnly = false,
   ) => {
     const dom = createDomTestHarness();
-    const { createQueryBlockPreviews } = await import("./query-blocks");
     let editor: EditorView;
     const dispose = render(() => {
       const host = document.createElement("div");
@@ -88,7 +89,7 @@ describe("query block previews", () => {
       const previous = app.view().state.selection.main.anchor;
       anchor.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true }));
       expect(app.view().state.selection.main.anchor).toBe(previous);
-      const button = Array.from(app.dom.root.querySelectorAll("button")).find((button) => button.textContent?.includes("Quelltext"))!;
+      const button = app.dom.root.querySelector<HTMLButtonElement>('button[aria-label="Quelltext anzeigen"]')!;
       button.click();
       expect(app.view().state.selection.main.anchor).toBe(DOCUMENT.indexOf(":::query"));
       expect(app.dom.root.querySelectorAll(".cm-query-block-widget").length).toBe(1);
@@ -167,20 +168,22 @@ describe("query block previews", () => {
       "# Chart\n\n:::chart\ntype: bar\ntitle: Umsatz\ncolumns: [Monat, Umsatz]\nrows:\n  - [Januar, 1200]\nx: Monat\ny: Umsatz\ntooltip:\n  label: Betrag\n  format: EUR\n:::";
     let serverHtml = "";
     const app = await mount(async () => {
-      const { parseNotebookChartBlocks, renderNotebookChartFigure } = await import("../../../lib/chart-blocks");
-      const parsed = parseNotebookChartBlocks(markdown);
+      const { parseNotebookChartBlocks, renderNotebookChartFigure } = await import("@k2b/editor/markdown/lib/chart-blocks");
+      const parsed = parseNotebookChartBlocks(markdown, notebookChartOptions);
       expect(parsed.diagnostics).toEqual([]);
       serverHtml = renderNotebookChartFigure(parsed.blocks[0]!.input, "de")!;
       return { markdown, blocks: [{ line: 3, html: serverHtml }], diagnostics: [], headings: [] };
     }, markdown);
     try {
       // Wait for the preview response instead of a fixed time: the widget draws once the debounced request resolves.
-      for (let wait = 0; wait < 200 && !app.dom.root.querySelector(".notebook-book-chart__actions button"); wait++) await Bun.sleep(10);
+      for (let wait = 0; wait < 200 && !app.dom.root.querySelector('[aria-label="Daten kopieren"]'); wait++) await Bun.sleep(10);
       const widget = app.dom.root.querySelector<HTMLElement>(".cm-query-block-widget")!;
       const preview = widget.querySelector<HTMLElement>(".cm-query-block-preview")!;
       const original = document.createElement("div");
       original.innerHTML = serverHtml;
-      expect(widget.querySelectorAll(".notebook-book-chart__actions button")).toHaveLength(2);
+      expect(
+        [...widget.querySelectorAll(".notebook-book-chart__actions button")].map((button) => button.getAttribute("aria-label")),
+      ).toEqual(["Daten kopieren", "Als Tabelle", "Quelltext anzeigen"]);
       expect(widget.querySelector('[aria-label="Daten kopieren"]')).not.toBeNull();
       const toggle = widget.querySelector<HTMLButtonElement>('[aria-label="Als Tabelle"]')!;
       toggle.click();
@@ -217,7 +220,9 @@ describe("query block previews", () => {
     }));
     try {
       const style = document.createElement("style");
-      style.textContent = readFileSync(new URL("../../../styles/app.css", import.meta.url), "utf8");
+      style.textContent =
+        readFileSync(new URL("../../../../../editor/src/styles.css", import.meta.url), "utf8") +
+        readFileSync(new URL("../../../styles/app.css", import.meta.url), "utf8");
       document.head.append(style);
       await Bun.sleep(30);
       const preview = app.dom.root.querySelector<HTMLElement>(".cm-query-block-preview")!;

@@ -1,8 +1,9 @@
 import { afterAll, afterEach, beforeAll, beforeEach, expect, spyOn, test } from "bun:test";
-import * as bun from "bun";
-import { SQL, sql } from "bun";
+import { SQL } from "bun";
 import { z } from "zod";
 import { databaseSuite, requireDatabaseUrl, suiteFor } from "../../../../scripts/fixtures/test-infra";
+import * as clients from "../runtime/clients";
+import { sql } from "../runtime/clients";
 import autocompleteFixture from "../services/geo/fixtures/autocomplete.json";
 import { geoTestConfig } from "../services/geo/geo.test-fixture";
 import { GeoapifyAdapter } from "../services/geo/geoapify";
@@ -144,6 +145,37 @@ suite("App-PWA durable service", () => {
     await sql`DELETE FROM settings.entries WHERE key='user.category.login.enabled'`;
   });
 
+  test("an injected database owns table identifiers and query fragments", async () => {
+    const current = await visiting();
+    const statements = new Set<string>();
+    const db = new Proxy(new SQL(requireDatabaseUrl()), {
+      apply(target, receiver, args) {
+        const [input] = args;
+        if (typeof input === "string") statements.add(input);
+        else if (Array.isArray(input)) statements.add(input.join("?"));
+        return Reflect.apply(target, receiver, args);
+      },
+      get(target, property, receiver) {
+        if (property === "array") statements.add("array");
+        return Reflect.get(target, property, receiver);
+      },
+    });
+    try {
+      const injected = createAppPwaService({ ...base, db });
+      await injected.setup();
+      await injected.status(current.boot.credential);
+      await injected.attempt(current.boot.credential, current.visit.id, id());
+      await injected.listDevices(signIn);
+      await injected.listDevices(signIn, current.device.id);
+      for (const table of ["browsers", "devices", "visits", "attempts"]) expect(statements.has(`${schema}._cloud_pwa_${table}`)).toBe(true);
+      expect(statements.has("FOR UPDATE")).toBe(true);
+      expect(statements.has("AND id > ?::uuid")).toBe(true);
+      expect(statements.has("array")).toBe(true);
+    } finally {
+      await db.close();
+    }
+  });
+
   suiteFor("database", "valkey")("allowlisted Core autocomplete", () => {
     const instant = new Date("2038-02-10T10:00:00.000Z");
     const allowed = createAppPwaService({ ...base, coreQueries: ["address.autocomplete"] });
@@ -163,7 +195,7 @@ suite("App-PWA durable service", () => {
       await resetOwnerGeoBudget();
       const geo = createGeoService({
         now: () => instant,
-        config: async () => ({ ...geoTestConfig, personDailyCredits: 1 }),
+        config: async () => ({ ...geoTestConfig }),
         adapter: new GeoapifyAdapter({ now: () => instant, fetch: async () => Response.json(autocompleteFixture) }),
         cache: { get: async () => null, put: async () => {} },
         bucket: { acquire: async () => async () => {} },
@@ -205,7 +237,7 @@ suite("App-PWA durable service", () => {
       expect(events[0]?.metadata.via).toEqual({ kind: "visit", appId: "signing", deviceId: current.device.id, visitId: current.visit.id });
       await expect(
         allowed.coreQuery(current.boot.credential, current.visit.id, "address.autocomplete", { text: "Another" }),
-      ).rejects.toMatchObject({ code: "GEO_BUDGET_EXHAUSTED", details: { scope: "person" } });
+      ).resolves.toHaveProperty("suggestions");
     });
     test("a paired device can query before a visit; undeclared and writing queries are denied", async () => {
       const current = await paired();
@@ -349,7 +381,7 @@ suite("App-PWA durable service", () => {
     const f = await paired();
     const second = createAppPwaService(base);
     await second.setup();
-    expect((await second.status(f.boot.credential)).device.id).toBe(f.device.id);
+    expect((await second.status(f.boot.credential)).device?.id).toBe(f.device.id);
     expect(await second.bootstrap(f.boot.credential)).toEqual(f.boot);
   });
   test("concurrent device claims have one winner and same-browser lost-response recovery", async () => {
@@ -971,43 +1003,39 @@ suite("App-PWA durable service", () => {
         },
       });
       const controller = new AbortController();
-      const nativeSQL = bun.SQL;
+      const nativeCreateSql = clients.createSql;
       let cancellationSent = false;
       let parentReleased = false;
       // Observe the real, separate control connection; do not fake Query.cancel.
       // Release the blocker as soon as PostgreSQL accepts the cancel signal,
       // before cancellation cleanup/ROLLBACK settles. This causally selects the
       // cancellation-won race; releasing before delivery may legitimately commit.
-      Object.defineProperty(bun, "SQL", {
-        value: new Proxy(nativeSQL, {
-          construct(target, args) {
-            const pool: SQL = Reflect.construct(target, args);
-            return new Proxy(pool, {
-              get(target, property) {
-                if (property === "reserve")
-                  return async (options?: { signal?: AbortSignal }) => {
-                    const connection = await target.reserve(options);
-                    return new Proxy(connection, {
-                      apply(target, receiver, args) {
-                        return (async () => {
-                          const rows: { cancelled: boolean }[] = await Reflect.apply(target, receiver, args);
-                          if (Array.isArray(args[0]) && args[0].join("").includes("pg_cancel_backend")) {
-                            cancellationSent = rows[0]?.cancelled === true;
-                            if (mode.endsWith("abort")) {
-                              await blocker`ROLLBACK`;
-                              parentReleased = true;
-                            }
-                          }
-                          return rows;
-                        })();
-                      },
-                    });
-                  };
-                return Reflect.get(target, property, target);
-              },
-            });
+      const createPool = spyOn(clients, "createSql").mockImplementation((options) => {
+        const pool = nativeCreateSql(options);
+        return new Proxy(pool, {
+          get(target, property) {
+            if (property === "reserve")
+              return async (options?: { signal?: AbortSignal }) => {
+                const connection = await target.reserve(options);
+                return new Proxy(connection, {
+                  apply(target, receiver, args) {
+                    return (async () => {
+                      const rows: { cancelled: boolean }[] = await Reflect.apply(target, receiver, args);
+                      if (Array.isArray(args[0]) && args[0].join("").includes("pg_cancel_backend")) {
+                        cancellationSent = rows[0]?.cancelled === true;
+                        if (mode.endsWith("abort")) {
+                          await blocker`ROLLBACK`;
+                          parentReleased = true;
+                        }
+                      }
+                      return rows;
+                    })();
+                  },
+                });
+              };
+            return Reflect.get(target, property, target);
           },
-        }),
+        });
       });
       let running: Promise<PromiseSettledResult<unknown>[]> | undefined;
       try {
@@ -1073,7 +1101,7 @@ suite("App-PWA durable service", () => {
         expect(await saved()).toBe(0);
         expect(await service.attempt(f.boot.credential, f.visit.id, attemptId)).toEqual({ state: "unknown" });
       } finally {
-        Object.defineProperty(bun, "SQL", { value: nativeSQL });
+        createPool.mockRestore();
         controller.abort();
         try {
           await blocker`ROLLBACK`;

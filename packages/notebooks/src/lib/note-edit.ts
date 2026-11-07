@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { extractNamedBlocks, type NamedBlock, type NamedBlockType, namedBlockBody } from "./named-blocks";
+import { extractNamedBlocks, type NamedBlock, type NamedBlockType, namedBlockBody } from "@k2b/editor/markdown/lib/named-blocks";
 
 export type NoteEditBlockSelector = {
   name: string;

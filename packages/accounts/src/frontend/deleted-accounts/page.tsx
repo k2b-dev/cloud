@@ -44,8 +44,8 @@ export default ssr<AuthContext>(async (c) => {
   const search = (c.req.query("search") ?? "").trim();
   const reason = (c.req.query("reason") ?? "").trim();
 
-  const [pendingRequestsPage, deletedAccountsPage] = await Promise.all([
-    accountsService.accountRequest.list({ access: { userId: user.id, isAdmin: true }, filter: { status: "pending" } }),
+  const [pendingRequests, deletedAccountsPage] = await Promise.all([
+    accountsService.accountRequest.countPending(),
     accountsService.lifecycle.deletedAccounts.list({
       page,
       perPage,
@@ -79,7 +79,7 @@ export default ssr<AuthContext>(async (c) => {
       fullWidth
       title={[{ title: t.start, href: "/" }, { title: t.accounts, href: "/app/accounts" }, { title: t.deletedAccounts }]}
     >
-      <AccountsWorkspace active="deleted-accounts" isAdmin pendingRequests={pendingRequestsPage.total} scrollPreserveKey="accounts-deleted">
+      <AccountsWorkspace active="deleted-accounts" isAdmin pendingRequests={pendingRequests} scrollPreserveKey="accounts-deleted">
         <div class="flex flex-col gap-2">
           <div class="min-w-0" style="view-transition-name: accounts-deleted-title">
             <h1 class="text-base font-semibold text-primary">{t.deletedAccounts}</h1>

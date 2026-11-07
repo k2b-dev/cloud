@@ -94,7 +94,7 @@ export type ActionCard = {
     unknown: ActionText;
     unknownStill: ActionText;
   };
-  /** The thing the question is about, for "Your answer about … didn't arrive". */
+  /** The thing the question is about, for "Your answer about … is not confirmed". */
   subject: ActionText;
   /** One short plain sentence, for a message that asks the Assistant again. */
   short: string;
@@ -277,7 +277,12 @@ export const reviewActionCard = (
     app: context.app,
     question: parts("question"),
     questionText: capabilityReviewSentence(review, "question", tz),
-    reason: actionReason(code, { locale, appName: context.app.name }),
+    reason: {
+      ...actionReason(code, { locale, appName: context.app.name }),
+      // A consent-dependent Action may be remembered for the chat. Only an
+      // explicit app_asks review promises that the app asks every time.
+      ...(!review.ask ? { text: aiChatMessages(locale).approvalRunsAfter } : {}),
+    },
     preview:
       preview || review.consequences?.length
         ? {

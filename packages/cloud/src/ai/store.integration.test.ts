@@ -1,9 +1,9 @@
 import { beforeAll, expect, test } from "bun:test";
 import { type LoopAggregate, type Message, nessi, type Provider, type ProviderRequest } from "@k2b/nessi";
-import { sql } from "bun";
 import { collectPages, descending } from "../../../../scripts/fixtures/stable-paging";
 import { databaseSuite } from "../../../../scripts/fixtures/test-infra";
 import { reviewFixture } from "../_internal/capability-review.test-fixture";
+import { sql } from "../runtime/clients";
 import { userResourceContext } from "./projects.test-fixture";
 import { readReviewContent } from "./review-content";
 import "../../../../scripts/fixtures/authorization-preload";
@@ -392,12 +392,9 @@ suite("AI conversation store integration", () => {
     const requests: ProviderRequest[] = [];
     const provider: Provider = {
       name: "anthropic",
-      family: "anthropic",
+      family: "openai-compatible",
       model: "fixture",
       capabilities: { streaming: true, tools: false, images: false, thinking: true, usage: true },
-      complete: async () => {
-        throw new Error("Unexpected completion");
-      },
       async *stream(request) {
         requests.push(request);
         yield { type: "usage", usage: { input: 1, output: 1, total: 2 }, finishReason: "stop" };

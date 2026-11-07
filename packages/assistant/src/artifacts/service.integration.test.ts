@@ -1,5 +1,6 @@
 import { afterAll, afterEach, beforeAll, beforeEach, expect, spyOn, test } from "bun:test";
 import { readdir } from "node:fs/promises";
+import { sql } from "@k2b/cloud";
 import {
   AI_WEBSITE_APPROVAL_TOOL,
   aiChatTasks,
@@ -21,8 +22,8 @@ import { type AuthContext, accessRevision } from "@k2b/cloud/server";
 import { secrets } from "@k2b/cloud/services";
 import { approvalReviewDigest, approvals, migrateApprovals } from "@k2b/cloud/services/approvals";
 import * as settingsService from "@k2b/cloud/services/settings";
+import * as settingsStore from "@k2b/cloud/services/settings/store";
 import { ok } from "@k2b/stdlib";
-import { sql } from "bun";
 import { Hono } from "hono";
 import { z } from "zod";
 import { tinyJpeg, withCameraMetadata } from "../../../../scripts/fixtures/image-metadata";
@@ -78,19 +79,16 @@ function checkConversation(conversationId: string, userId: string) {
 }
 
 databaseSuite()("Assistant artifacts in disposable Postgres", () => {
-  let originalTargets: string | undefined;
+  let targets: string[];
+  let policy: ReturnType<typeof spyOn<typeof settingsStore, "readKey">>;
+  const readSetting = settingsStore.readKey;
   beforeEach(() => {
-    originalTargets = process.env.ASSISTANT_RSQL_ALLOWED_TARGETS;
-    process.env.ASSISTANT_RSQL_ALLOWED_TARGETS = [
-      "127.0.0.1",
-      "localhost",
-      ...(testInfra.rsql ? [new URL(testInfra.rsql).hostname] : []),
-    ].join(",");
+    targets = ["127.0.0.1", "localhost", ...(testInfra.rsql ? [new URL(testInfra.rsql).hostname] : [])];
+    policy = spyOn(settingsStore, "readKey").mockImplementation((key) =>
+      key === "assistant.rsql_allowed_targets" ? Promise.resolve(targets) : readSetting(key),
+    );
   });
-  afterEach(() => {
-    if (originalTargets === undefined) delete process.env.ASSISTANT_RSQL_ALLOWED_TARGETS;
-    else process.env.ASSISTANT_RSQL_ALLOWED_TARGETS = originalTargets;
-  });
+  afterEach(() => policy.mockRestore());
 
   const owner = testIdentity("00000000-0000-4000-8000-000000000001");
   const reader = testIdentity("00000000-0000-4000-8000-000000000002");
@@ -104,9 +102,8 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
   });
   beforeAll(async () => {
     // scripts/test-artifacts.ts provides an empty database in a disposable
-    // container. database.ts binds its own pool to DATABASE_URL at import
-    // time, so this suite cannot move to a fresh database in beforeAll; it
-    // builds the stand-in schema in the runner's database instead.
+    // container. Build this suite's stand-in schema only in that isolated
+    // target; a production migration template has different table contracts.
     const [existing] = await sql<
       { name: string }[]
     >`SELECT nspname AS name FROM pg_namespace WHERE nspname IN ('ai','auth','settings','assistant') LIMIT 1`;
@@ -372,13 +369,14 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
     let total = 1,
       single = 1;
     let cleanup = "";
-    const settings = spyOn(app.settings, "get").mockImplementation(
+    const settings = spyOn(settingsStore, "readKey").mockImplementation(
       async (key) =>
         ({
           "assistant.storage_total_mib": total,
           "assistant.storage_file_mib": single,
           "assistant.rsql_url": "",
           "assistant.rsql_api_token": "",
+          "assistant.rsql_allowed_targets": targets,
         })[key],
     );
     try {
@@ -2059,13 +2057,14 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
     let url = "",
       token = "",
       creates = 0;
-    const settings = spyOn(app.settings, "get").mockImplementation(
+    const settings = spyOn(settingsStore, "readKey").mockImplementation(
       async (key) =>
         ({
           "assistant.storage_total_mib": 250,
           "assistant.storage_file_mib": 50,
           "assistant.rsql_url": url,
           "assistant.rsql_api_token": token,
+          "assistant.rsql_allowed_targets": targets,
         })[key],
     );
     const upstream = Bun.serve({
@@ -2156,13 +2155,14 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
     const [metadata] = await sql<{ bytes: number }[]>`SELECT pg_column_size(ROW('é-1'::text,${mediaType}::text)) AS bytes`;
     const metadataBytes = Number(metadata!.bytes);
     let totalBytes = 2 * metadataBytes;
-    const settings = spyOn(app.settings, "get").mockImplementation(
+    const settings = spyOn(settingsStore, "readKey").mockImplementation(
       async (key) =>
         ({
           "assistant.storage_total_mib": totalBytes / (1024 * 1024),
           "assistant.storage_file_mib": 50,
           "assistant.rsql_url": requireInfraUrl("rsql"),
           "assistant.rsql_api_token": "artifact-test-only",
+          "assistant.rsql_allowed_targets": targets,
         })[key],
     );
     const write = (key: string, data = new Uint8Array(), type = mediaType) =>
@@ -2291,13 +2291,14 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
       });
-      const settings = spyOn(app.settings, "get").mockImplementation(
+      const settings = spyOn(settingsStore, "readKey").mockImplementation(
         async (key) =>
           ({
             "assistant.storage_total_mib": 250,
             "assistant.storage_file_mib": 50,
             "assistant.rsql_url": requireInfraUrl("rsql"),
             "assistant.rsql_api_token": "artifact-test-only",
+            "assistant.rsql_allowed_targets": targets,
           })[key],
       );
       const real = await artifacts.create(
@@ -2447,13 +2448,14 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
     await artifacts.grant(resource.id, { type: "user", userId: reader.user.id }, "read", owner);
     const anonymous = { ...owner };
     Reflect.deleteProperty(anonymous, "actor");
-    const settings = spyOn(app.settings, "get").mockImplementation(
+    const settings = spyOn(settingsStore, "readKey").mockImplementation(
       async (key) =>
         ({
           "assistant.storage_total_mib": 250,
           "assistant.storage_file_mib": 50,
           "assistant.rsql_url": requireInfraUrl("rsql"),
           "assistant.rsql_api_token": "artifact-test-only",
+          "assistant.rsql_allowed_targets": targets,
         })[key],
     );
     try {
@@ -2581,13 +2583,14 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
 
   testFor("rsql")("real rsql imports and rejoins 2500 rows without duplicating retries", async () => {
     const resource = await artifacts.create({ title: "Excel import", kind: "app", source }, owner);
-    const settings = spyOn(app.settings, "get").mockImplementation(
+    const settings = spyOn(settingsStore, "readKey").mockImplementation(
       async (key) =>
         ({
           "assistant.storage_total_mib": 250,
           "assistant.storage_file_mib": 50,
           "assistant.rsql_url": requireInfraUrl("rsql"),
           "assistant.rsql_api_token": "artifact-test-only",
+          "assistant.rsql_allowed_targets": targets,
         })[key],
     );
     try {
@@ -2633,13 +2636,14 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
   });
 
   testFor("rsql")("database clear preserves schema and every attempted write invalidates reviewed state", async () => {
-    const settings = spyOn(app.settings, "get").mockImplementation(
+    const settings = spyOn(settingsStore, "readKey").mockImplementation(
       async (key) =>
         ({
           "assistant.storage_total_mib": 250,
           "assistant.storage_file_mib": 50,
           "assistant.rsql_url": requireInfraUrl("rsql"),
           "assistant.rsql_api_token": "artifact-test-only",
+          "assistant.rsql_allowed_targets": targets,
         })[key],
     );
     const resource = await artifacts.create({ title: "Clear rows", source }, owner);
@@ -2730,13 +2734,14 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
         return fetch(new Request(target, request));
       },
     });
-    const settings = spyOn(app.settings, "get").mockImplementation(
+    const settings = spyOn(settingsStore, "readKey").mockImplementation(
       async (key) =>
         ({
           "assistant.storage_total_mib": 250,
           "assistant.storage_file_mib": 50,
           "assistant.rsql_url": proxy.url.toString(),
           "assistant.rsql_api_token": "artifact-test-only",
+          "assistant.rsql_allowed_targets": targets,
         })[key],
     );
     const resource = await artifacts.create({ title: "Partial clear", source }, owner);
@@ -2791,13 +2796,14 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
   test("database connection errors distinguish invalid credentials from an unavailable server", async () => {
     const applet = await artifacts.create({ title: "Database errors", source }, owner);
     const upstream = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: () => Response.json({ error: "unauthorized" }, { status: 401 }) });
-    const settings = spyOn(app.settings, "get").mockImplementation(
+    const settings = spyOn(settingsStore, "readKey").mockImplementation(
       async (key) =>
         ({
           "assistant.storage_total_mib": 250,
           "assistant.storage_file_mib": 50,
           "assistant.rsql_url": upstream.url.origin,
           "assistant.rsql_api_token": "private-fixture-token",
+          "assistant.rsql_allowed_targets": targets,
         })[key],
     );
     try {
@@ -2844,13 +2850,14 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
 
   testFor("rsql")("Studio database backup and reset preserve source and rotate namespace generations", async () => {
     const resource = await artifacts.create({ title: "Reset lifecycle", source }, owner);
-    const settings = spyOn(app.settings, "get").mockImplementation(
+    const settings = spyOn(settingsStore, "readKey").mockImplementation(
       async (key) =>
         ({
           "assistant.storage_total_mib": 250,
           "assistant.storage_file_mib": 50,
           "assistant.rsql_url": requireInfraUrl("rsql"),
           "assistant.rsql_api_token": "artifact-test-only",
+          "assistant.rsql_allowed_targets": targets,
         })[key],
     );
     try {
@@ -2958,12 +2965,12 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
       },
     });
     try {
-      delete process.env.ASSISTANT_RSQL_ALLOWED_TARGETS;
+      targets = [];
       await expect(
         artifactDatabase.configure({ url: upstream.url.origin, token: "guard-fixture" }, administrator, true),
       ).rejects.toMatchObject({ code: "DB_TARGET_BLOCKED", status: 502 });
       expect(received).toBe(0);
-      process.env.ASSISTANT_RSQL_ALLOWED_TARGETS = "127.0.0.1";
+      targets = ["127.0.0.1"];
       expect(await artifactDatabase.configure({ url: upstream.url.origin, token: "guard-fixture" }, administrator, true)).toEqual({
         connected: true,
       });
@@ -2990,6 +2997,7 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
         "assistant.storage_file_mib": 50,
         "assistant.rsql_url": upstream.url.origin,
         "assistant.rsql_api_token": "secret-fixture",
+        "assistant.rsql_allowed_targets": targets,
       }[key],
     }));
     const writes = spyOn(settingsService, "set").mockResolvedValue();
@@ -2998,7 +3006,8 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
       expect(await artifactDatabase.settings(administrator)).toEqual({
         url: upstream.url.origin,
         tokenSet: true,
-        unreadable: { "assistant.rsql_url": false, "assistant.rsql_api_token": false },
+        allowedTargets: targets,
+        unreadable: { "assistant.rsql_url": false, "assistant.rsql_api_token": false, "assistant.rsql_allowed_targets": false },
       });
       expect(await artifactDatabase.configure({ url: upstream.url.origin }, administrator, true)).toEqual({ connected: true });
       expect(writes).not.toHaveBeenCalled();
@@ -3297,13 +3306,14 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
         }),
         spyOn(aiConversations, "getTurn").mockImplementation(async (request) => turnOf(request.conversationId)),
         spyOn(aiConversations, "getTurnRunConfig").mockResolvedValue({ kind: "chat", input: "Eval", toolSource: { kind: "none" } }),
-        spyOn(app.settings, "get").mockImplementation(
+        spyOn(settingsStore, "readKey").mockImplementation(
           async (key) =>
             ({
               "assistant.storage_total_mib": 250,
               "assistant.storage_file_mib": 50,
               "assistant.rsql_url": requireInfraUrl("rsql"),
               "assistant.rsql_api_token": "artifact-test-only",
+              "assistant.rsql_allowed_targets": targets,
             })[key],
         ),
       ];
@@ -3550,13 +3560,14 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
       await expect(agentHost.call(call, { ...context, ...stranger })).rejects.toThrow();
       const inspect = { ...call, name: "code_inspect" as const, callId: "server-inspect", args: { runId: call.callId } };
       expect(await wait(inspect)).toMatchObject({ status: "done", result: { runId: call.callId, status: "ready" } });
-      const exampleSettings = spyOn(app.settings, "get").mockImplementation(
+      const exampleSettings = spyOn(settingsStore, "readKey").mockImplementation(
         async (key) =>
           ({
             "assistant.storage_total_mib": 250,
             "assistant.storage_file_mib": 50,
             "assistant.rsql_url": requireInfraUrl("rsql"),
             "assistant.rsql_api_token": "artifact-test-only",
+            "assistant.rsql_allowed_targets": targets,
           })[key],
       );
       try {

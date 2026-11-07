@@ -4,9 +4,15 @@ import { listFiles } from "./files";
 import type { Finding, Rule } from "./rule";
 
 const BASELINE = "scripts/checks/test-waits.baseline";
-const testWaitFiles = /\.test\.tsx?$/;
+// Browser suites hold the test bodies a `.test.ts` file runs for each engine.
+const testWaitFiles = /\.(?:test|browser-suite)\.tsx?$/;
 const message =
   "Wait for an observable condition with a bounded deadline (poll it, await an event, a log, a hook, or a recorded state), or add // fixed wait: <reason>.";
+const cappedMessage =
+  "A polling loop with a fixed number of attempts is a hidden wall-clock budget that a loaded runner outlasts (#2204). Await the condition's own signal, or bound it by the test's timeout; or add // fixed wait: <reason>.";
+/** `for (let i = 0; i < N && …; i++) await sleep(ms)`: N attempts of ms each decide the outcome, not the condition. */
+const cappedPolling =
+  /\bfor\s*\(\s*let\s+([A-Za-z_$][\w$]*)\s*=\s*0\s*;\s*\1\s*<\s*\d[\d_]*\s*(?:&&|\|\|)[^;]*;[^)]*\)\s*await\s+(?:Bun\s*\.\s*)?sleep\s*\(/g;
 
 /** Read a call's arguments from code whose comments and strings have been blanked. */
 const callArguments = (code: string, opening: number): { end: number; args: string[] } => {
@@ -74,6 +80,10 @@ export const checkTestWaitsSource = (file: string, source: string): Finding[] =>
     }
     const line = code.slice(0, match.index).split("\n").length;
     if (fixed && !optOuts.has(line) && !optOuts.has(line - 1)) findings.push({ file, line, message });
+  }
+  for (const match of code.matchAll(cappedPolling)) {
+    const line = code.slice(0, match.index).split("\n").length;
+    if (!optOuts.has(line) && !optOuts.has(line - 1)) findings.push({ file, line, message: cappedMessage });
   }
   return findings;
 };

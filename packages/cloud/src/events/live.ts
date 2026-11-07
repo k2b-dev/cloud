@@ -5,6 +5,7 @@ import type { z } from "zod";
 import { guardAppAccessSocket } from "../server/middleware/app-access";
 import { type AuthContext, auth } from "../server/middleware/auth";
 import { rateLimit } from "../server/middleware/rate-limit";
+import { hasRefusedSessionOrigin } from "../server/middleware/session-origin";
 import * as settings from "../services/settings";
 import { publicCloudOrigin } from "../shared/app-url";
 import { defineLivePublisher, liveTopic, startLiveDelivery } from "./live-delivery";
@@ -101,9 +102,11 @@ type Refusal = { code: "login_required" | "forbidden_origin" | "missing_scope"; 
  * into a retryable 1012.
  */
 const refusalOf = async (c: Context<AuthContext>): Promise<Refusal | null> => {
+  if (hasRefusedSessionOrigin(c.req.raw))
+    return { code: "forbidden_origin", message: "Live sockets signed in with a session must come from the Cloud origin." };
   if (!c.get("actor")) return { code: "login_required", message: "Sign in again to receive live updates." };
-  // A session cookie travels with every page of the browser, so a browser's socket must come from Cloud's own origin.
-  // Browsers always send Origin on a socket; a client without one is no page that another site could have opened.
+  // Session tokens can also arrive as Bearer credentials or through standalone
+  // mounts. Retain this check in addition to the runtime's cookie boundary.
   const origin = c.req.header("Origin");
   if (
     c.get("credentialKind") === "session" &&

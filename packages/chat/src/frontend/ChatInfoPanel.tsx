@@ -12,13 +12,14 @@ import {
   Tooltip,
   toast,
 } from "@k2b/ui";
-import { createEffect, createMemo, createSignal, For, type JSX, on, onCleanup, Show } from "solid-js";
+import { type ComponentProps, createEffect, createMemo, createSignal, For, type JSX, on, onCleanup, Show } from "solid-js";
 import { createStore, produce, reconcile } from "solid-js/store";
 import type { z } from "zod";
 import type { MemberSchema, PermissionSchema } from "../service/contracts";
+import ChatNotificationSettings from "./ChatNotificationSettings";
+import ChatSharedSection from "./ChatSharedSection";
 import { type ChatDialogStore, type Conversation, errorMessage, useChatMessages } from "./chat-dialog";
 import { MemberAvatar } from "./MemberPicker";
-import { systemMembers } from "./system-chats";
 
 type Member = z.infer<typeof MemberSchema>;
 type Permission = z.infer<typeof PermissionSchema>;
@@ -45,9 +46,9 @@ export default function ChatInfoPanel(props: {
   /** For admins: "New thread", also where the chat has none yet. */
   onCreateThread?: () => void;
   /** What the chat shared, below its members. */
-  shared?: JSX.Element;
+  sharedProps?: ComponentProps<typeof ChatSharedSection>;
   /** The reader's notifications for this chat, above its members. */
-  notifications?: JSX.Element;
+  notificationProps?: ComponentProps<typeof ChatNotificationSettings>;
   onDiscovery?: () => void;
   onLeave: () => void;
 }): JSX.Element {
@@ -212,7 +213,7 @@ export default function ChatInfoPanel(props: {
       <DetailPanel.Header
         kind={<span>{props.conversation.channel ? t().channelChoice : t().chatChoice}</span>}
         title={props.conversation.title}
-        subtitle={system() ? systemMembers(props.conversation.resource?.type, t()) : t().members({ count: props.conversation.memberCount })}
+        subtitle={system() ? t().systemMembers : t().members({ count: props.conversation.memberCount })}
         menu={commands()}
         menuLabel={t().chatActions({ title: props.conversation.title })}
         actions={
@@ -237,7 +238,7 @@ export default function ChatInfoPanel(props: {
             </Show>
           </DetailPanel.Section>
           {/* Above the members, whose pages load and grow: the level stands in the first picture and never moves. */}
-          {props.notifications}
+          {props.notificationProps && <ChatNotificationSettings {...props.notificationProps} />}
           <DetailPanel.Section title={t().membersTitle}>
             <div class="flex flex-col gap-2" aria-busy={status() === "loading"}>
               <TextInput
@@ -307,12 +308,14 @@ export default function ChatInfoPanel(props: {
         </Show>
         <Show when={system()}>
           <p class="chat-system-chats__membership">
-            {systemMembers(props.conversation.resource?.type, t())}. {t().systemAccessHint}
+            {t().systemMembers}. {t().systemAccessHint}
           </p>
-          {props.notifications}
+          {props.notificationProps && <ChatNotificationSettings {...props.notificationProps} />}
         </Show>
         {/* The first member page owns this space. Showing shared items before it arrives would push them out of view. */}
-        <Show when={system() || status() !== "loading" || rows.length > 0}>{props.shared}</Show>
+        <Show when={system() || status() !== "loading" || rows.length > 0}>
+          {props.sharedProps && <ChatSharedSection {...props.sharedProps} />}
+        </Show>
       </DetailPanel.Body>
     </DetailPanel>
   );

@@ -10,7 +10,7 @@ updated: 2026-10-28
 
 # Object store
 
-Use `storage` from `@k2b/cloud/services` after `app.start()`. The operator
+Use `storage` from `@k2b/cloud` after `app.start()`. The operator
 configures one S3 bucket and credential pair for the installation. The API
 selects your package's area from the started app declaration; no method accepts
 another package or area ID. Declare `package: "warenfluss"` alongside `id` in

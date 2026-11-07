@@ -1,8 +1,8 @@
 import { startCompletion } from "@codemirror/autocomplete";
 import { serializeGeoDocument } from "@k2b/cloud/geo/document";
+import { setListKind } from "@k2b/editor/markdown";
 import { crypto as stdCrypto } from "@k2b/stdlib";
 import { notebookMapMessages } from "../../../../../lib/map-messages";
-import { setListKind } from "../../../../lib/editor/list-commands";
 import { openNoteSearchPrompt } from "../../search/openNoteSearchPrompt";
 import { openAttachmentPicker } from "../AttachmentPicker";
 import {
@@ -14,6 +14,7 @@ import {
   insertTable,
   setHeadingLevel,
 } from "../editor-actions";
+import { applyPageTemplateById, pickPageTemplate } from "../page-templates";
 import type { SlashCommand } from "./types";
 
 // =============================================================================
@@ -293,6 +294,18 @@ export const slashCommands: SlashCommand[] = [
     description: "\\`\\`\\`bash",
     aliases: ["sh", "shell"],
     run: (view) => insertCodeBlock(view, { language: "bash" }),
+  },
+  {
+    name: "template",
+    label: "Template",
+    icon: "ti-template",
+    section: "Insert",
+    description: "Start from a template; on an empty note it becomes the whole note",
+    aliases: ["vorlage", "templates"],
+    run: async (view, ctx) => {
+      const template = await pickPageTemplate(ctx.notebookId, ctx.locale);
+      if (template) await applyPageTemplateById(view, ctx.notebookId, template, ctx.locale);
+    },
   },
   {
     name: "table",

@@ -1,12 +1,12 @@
 import { EditorState } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
+import { isolateYjsHistory } from "@k2b/editor/collab";
 import { createSignal, onCleanup, onMount } from "solid-js";
 import { render } from "solid-js/web";
 import { yCollab } from "y-codemirror.next";
 import * as Y from "yjs";
 import { parseNotebookMapBlocks, renderNotebookMapFigure } from "../../lib/map-blocks";
 import { createQueryBlockPreviews } from "./editor/query-blocks";
-import { isolateYjsHistory } from "./yjs/history";
 
 /** Real editor and Yjs path; all documents and capability replies are fictional. */
 export function mountMapEditorFixture(root: HTMLElement) {

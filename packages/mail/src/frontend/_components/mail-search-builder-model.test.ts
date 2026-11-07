@@ -195,8 +195,8 @@ describe("Mail search builder model", () => {
     };
     const references = {
       folders: [
-        { id: "Fold01", parentId: null, name: "Projects" },
-        { id: "Fold02", parentId: "Fold01", name: "Harbor" },
+        { id: "Fold01", parentId: null, name: "Projects", role: "other" },
+        { id: "Fold02", parentId: "Fold01", name: "Harbor", role: "other" },
       ],
       tags: [{ id: "Tag001", name: "Invoices" }],
     };
@@ -246,9 +246,9 @@ test("flag conditions keep their own folder when siblings or negation change", (
   expect(normalizeMailSearchExpression(updated)).toEqual(updated);
   expect(createMailSearchCondition("unread")).toEqual({ type: "unread" });
   expect(createMailSearchCondition("flagged")).toEqual({ type: "flagged" });
-  const folders = [{ id: "Fold01", parentId: null, name: "Inbox" }];
+  const folders = [{ id: "Fold01", parentId: null, name: "INBOX", role: "inbox" }];
   expect(summarizeMailSearchExpression({ type: "unread", folderId: "Fold01" }, "en", { folders })).toBe("Unread: In folder “Inbox”");
-  expect(summarizeMailSearchExpression({ type: "flagged", folderId: "Fold01" }, "de", { folders })).toBe("Markiert: Im Ordner „Inbox“");
+  expect(summarizeMailSearchExpression({ type: "flagged", folderId: "Fold01" }, "de", { folders })).toBe("Markiert: Im Ordner „Eingang“");
   expect(summarizeMailSearchExpression({ type: "unread" })).toBe("Unread: Any included folder");
   expect(summarizeMailSearchExpression({ type: "flagged", folderId: "Gone01" }, "en", { folders })).toBe("Flagged: In a deleted folder");
 });

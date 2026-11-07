@@ -1,5 +1,6 @@
 import { request as httpsRequest } from "node:https";
 import { urlToHttpOptions } from "node:url";
+import { sql } from "@k2b/cloud";
 import {
   type NetworkLookup,
   type PublicNetworkAddress,
@@ -13,7 +14,6 @@ import {
   withNetworkDeadline,
 } from "@k2b/cloud/services/network-transport";
 import { err, fail, ok, type Result } from "@k2b/stdlib";
-import { sql } from "bun";
 import { z } from "zod";
 import {
   type MailingListDispositionInput,
@@ -98,7 +98,7 @@ const externalFailureCode = (error: unknown): string => {
   return `ONE_CLICK_${code.replace(/[^A-Z0-9_]/giu, "_").toUpperCase()}`.slice(0, 200);
 };
 
-const listKeySql = sql`
+const listKeySql = () => sql`
   lower(
     btrim(
       CASE
@@ -109,7 +109,7 @@ const listKeySql = sql`
     )
   )
 `;
-const listKeyHashSql = sql`md5(${listKeySql})`;
+const listKeyHashSql = () => sql`md5(${listKeySql()})`;
 
 export const listSubscriptions = async (params: {
   context: MailRequestContext;
@@ -133,7 +133,7 @@ export const listSubscriptions = async (params: {
         content.subject,
         content.internal_date,
         content.protocol_facts,
-        ${listKeySql} AS list_key,
+        ${listKeySql()} AS list_key,
         conversation_message.conversation_id,
         sender.display_name,
         sender.email
@@ -266,8 +266,8 @@ export const getSubscription = async (
         LIMIT 1
       ) sender ON true
       WHERE content.mailbox_id = ${mailboxId}::uuid
-        AND ${listKeyHashSql} = md5(${canonicalListKey})
-        AND ${listKeySql} = ${canonicalListKey}
+        AND ${listKeyHashSql()} = md5(${canonicalListKey})
+        AND ${listKeySql()} = ${canonicalListKey}
     )
     SELECT
       ${canonicalListKey}::text AS list_key,
@@ -571,8 +571,8 @@ export const applyMailingListDisposition = async (params: {
     matches: sql`EXISTS (
       SELECT 1 FROM mail.message_contents content
       WHERE content.id = message.id
-        AND ${listKeyHashSql} = md5(${parsed.data.listKey})
-        AND ${listKeySql} = ${parsed.data.listKey}
+        AND ${listKeyHashSql()} = md5(${parsed.data.listKey})
+        AND ${listKeySql()} = ${parsed.data.listKey}
     )`,
   });
 };

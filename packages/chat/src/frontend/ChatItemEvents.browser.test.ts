@@ -40,7 +40,7 @@ const load = async (options: BrowserContextOptions, address: { chat: string; thr
   await page.goto(new URL(`/app/chat/c/${address.chat}${address.thread ? `/t/${address.thread}` : ""}`, harness.url).href);
   await page.evaluate((props) => {
     document.documentElement.lang = "de";
-    window.mountChat(props, "de");
+    return window.mountChat(props, "de");
   }, harness.props(address));
   await page.locator(".chat-workspace").waitFor();
   await settled(page);
@@ -56,7 +56,10 @@ const seed = () => {
     const thread = harness.addThread(chat, { name, description: "Item", count: 1, end: new Date(minutesAgo(40 + index)) });
     harness.resourceThread(chat, thread, {
       ref: { type: "spaces.item", id: `Item0${index}` },
-      kind: index === 1 ? "event" : "task",
+      title: name,
+      permission: "read",
+      typeTitle: "Item",
+      icon: "ti ti-package",
       status: "Offen",
       done: false,
       href: `/app/spaces/items/Item0${index}`,

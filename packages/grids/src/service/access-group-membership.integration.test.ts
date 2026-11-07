@@ -1,5 +1,5 @@
 import { beforeAll, expect } from "bun:test";
-import { sql } from "bun";
+import { sql } from "@k2b/cloud";
 import { testFor, testInfra } from "../../../../scripts/fixtures/test-infra";
 import { testShortId, testUuid } from "../integration-test-utils";
 import { migrate } from "../migrate";

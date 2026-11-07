@@ -332,6 +332,18 @@ Each level starts alphabetically, with every note at position 0. Placing a note 
 
 `mv` moves into the target when it names an existing note, like `mv file dir/`. Otherwise the last target segment becomes the new title below its parent path. Moving between notebooks is not supported; use `cp` and `rm`. `rm` and `lock` ask for confirmation in a terminal and require `--yes` otherwise. A lock is permanent. A notebook admin can reserve deleting and locking notes for admins with `cld notebooks update <notebook> --note-delete-permission admin` (`write` restores the default). Then `rm` and `lock` by anyone else fail with status 403 and the message that deleting or locking is reserved for admins (API codes `NOTE_DELETE_ADMIN_ONLY` and `NOTE_LOCK_ADMIN_ONLY`); editing, including removing content, still works. Do not work around the rule by emptying the note; ask an admin instead.
 
+## Page templates
+
+```bash
+cld notebooks page-templates list Docs --json
+cld notebooks page-templates use Docs meeting-notes --parent <note>
+cld notebooks page-templates save <note> "Weekly"            # --replace replaces an existing one
+cld notebooks page-templates rename Docs "Weekly" "Weekly sync"
+cld notebooks page-templates delete Docs "Weekly" --yes
+```
+
+A page template is Markdown a new note starts from. Every notebook offers built-in templates (`meeting-notes`, `project-page`, `decision-record`, named in your language) and up to 100 own templates. Own templates belong to their notebook: everyone who can read it lists them, everyone who can write it uses, saves, renames, and deletes them. Built-in ones cannot be changed. `save` copies the note's current text; links and files keep working because they stay in the same notebook. `{{date}}` becomes today as `YYYY-MM-DD` in your time zone and `{{author}}` your name; other `{{…}}` stay as typed. A note made from a template keeps no link to it.
+
 New notes without content get their H1 from the notebook's default note title template (default `New Document`). Change it with `cld notebooks update <notebook> --default-note-title-template '<liquid>'`. The template receives `notebook.id`, `notebook.name`, `note.id`, `note.depth`, `parent.exists`, `parent.id`, `parent.title`, `parent.path`, `date`, `time`, `datetime`, and `timezone`.
 
 ## Search and discovery
@@ -430,6 +442,7 @@ All commands support the global options `--json`, `--profile`, `--server`, and `
 | `tags`, `backlinks`, `graph` | Tags, incoming links, link graph. |
 | `create <name>` | Empty notebook, or `--template <id>`. |
 | `templates`, `update`, `delete`, `export` | Notebook templates, settings, deletion, ZIP export. |
+| `page-templates list\|use\|save\|rename\|delete` | Page templates of a notebook. |
 | `comments list\|show\|add\|reply\|accept\|reject\|resolve\|…` | Comments on the text; see [comments.md](comments.md). |
 | `discussion list\|add\|update\|delete` | Page discussion of a note. |
 | `versions list\|cat\|restore` | Note history. |

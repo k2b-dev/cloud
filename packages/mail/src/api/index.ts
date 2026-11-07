@@ -1,7 +1,17 @@
 import { Readable } from "node:stream";
 import { decodeTableActionIntent, decodeTableFocus } from "@k2b/cloud/browser/shared-text";
 import { CloudResourceRefSchema, ErrorResponseSchema } from "@k2b/cloud/contracts";
-import { auth, getLocale, jsonResponse, rateLimit, requiresAuth, respond, v } from "@k2b/cloud/server";
+import {
+  auth,
+  getLocale,
+  jsonResponse,
+  REQUEST_IDLE_TIMEOUT_SECONDS,
+  rateLimit,
+  requiresAuth,
+  respond,
+  setRequestTimeout,
+  v,
+} from "@k2b/cloud/server";
 import { fromBase64, toBase64 } from "@k2b/cloud/shared-text";
 import { err, fail, ok, type Result } from "@k2b/stdlib";
 import { type Context, Hono, type Next } from "hono";
@@ -64,6 +74,7 @@ import {
   MAX_MAILBOX_PREFERENCES,
   type MailCommand,
   type MailCommandInput,
+  mailActivityKindSchema,
   mailboxComposeLogoSchema,
   mailboxGrantAccessSchema,
   mailboxSchema,
@@ -162,6 +173,7 @@ import {
   mailboxAccess,
   mailboxDetails,
   mailboxes,
+  messageBodyRequests,
   messageInspector,
   messages,
   notificationTargets,
@@ -193,6 +205,7 @@ import { mailLive } from "../service/live";
 import { mailLiveChannels } from "../service/live-channels";
 import type { AttachmentDownload } from "../service/messages";
 import { discoverMailConfigurations } from "../service/onboarding-discovery";
+import { CountRefreshBusy } from "../service/view-count-cache";
 import { loadMailboxConversationDetail, loadMailboxListView, loadMailboxPageData, resolveWorkspaceRequest } from "../service/workspace";
 import legacyLiveRoutes from "../ws";
 import { projectActivityResult } from "./activity-public";
@@ -201,11 +214,13 @@ import contactDirectoryRoutes from "./contact-directory";
 import { requireDraftDocumentAccount } from "./draft-document-identity";
 import { upgradeMailDraftDocumentSocket } from "./draft-document-socket";
 import {
+  internalDraftSeedInput,
   internalInput,
   internalMailboxId,
   internalParams,
   type MailApiContext,
   mailboxParamSchema,
+  projectDraftSeed,
   projectResourcePaths,
   projectRootRelation,
   resolveMailboxParam,
@@ -214,6 +229,7 @@ import {
   respondPublic,
 } from "./public-resource-boundary";
 import resourceRoutes from "./resources";
+import workflowAiSettingsRoutes from "./workflow-ai-settings";
 import workflowRoutes from "./workflows";
 
 const mailboxAndIdParamSchema = (name: string, idSchema: z.ZodType = ResourceShortIdSchema) =>
@@ -262,10 +278,19 @@ const mailboxOperationsQuerySchema = z.object({
   attentionCursor: z.string().max(2_000).optional(),
   attentionLimit: z.coerce.number().int().min(1).max(200).default(100),
 });
+/** Work lists leave out done and snoozed conversations; `includeDone=true` lists them too. */
+const includeDoneQuerySchema = z
+  .enum(["true", "false"])
+  .optional()
+  .transform((value) => value === "true")
+  .describe(
+    "Also list done and snoozed conversations. Without a view, status or filing folder (Archive, Sent, Trash, Junk, All Mail), the list leaves them out.",
+  );
 const conversationQuerySchema = cursorQuerySchema.extend({
   folderId: ResourceShortIdSchema.optional(),
   status: z.enum(["needs_action", "waiting", "done"]).optional(),
   view: conversationViewSchema.optional(),
+  includeDone: includeDoneQuerySchema,
 });
 const mailFocusQuerySchema = cursorQuerySchema.extend({
   view: mailFocusViewSchema.default("mine"),
@@ -288,6 +313,23 @@ const collaboratorQuerySchema = z.object({
 });
 const activityQuerySchema = cursorQuerySchema.extend({
   conversationId: ResourceShortIdSchema.optional(),
+  kind: z
+    .string()
+    .max(200)
+    .optional()
+    .transform((value) => (value ? [...new Set(value.split(",").filter(Boolean))] : undefined))
+    .pipe(z.array(mailActivityKindSchema).optional())
+    .describe(
+      "Comma-separated event kinds of the mailbox's event feed: assignment, sent, draft, status (done or reopened), comment, automation. Without it, every recorded action is listed.",
+    ),
+  actor: z.string().uuid().optional().describe("Only events this principal caused"),
+  mine: z
+    .enum(["true", "false"])
+    .optional()
+    .transform((value) => value === "true")
+    .describe(
+      "Only events that concern the caller: their own, ones that assign or unassign them, and ones on conversations assigned to them",
+    ),
 });
 const workspaceRouteQuerySchema = z.object({
   href: z.string().trim().min(1).max(MAX_MAIL_WORKSPACE_HREF_LENGTH),
@@ -955,36 +997,52 @@ const mailOperationsApi = new Hono<MailApiContext>()
     async (c) => respondMailboxes(c, mailboxes.getMailbox(requestContext(c), internalMailboxId(c))),
   )
   .get("/mailboxes/:mailboxId/workspace-route", v("param", mailboxParamSchema), v("query", workspaceRouteQuerySchema), async (c) => {
-    const mailboxId = internalMailboxId(c);
-    const query = c.req.valid("query");
-    const publicUrl = parseWorkspaceRouteUrl(c.req.valid("param").mailboxId, query.href);
-    const request = publicUrl ? await resolveWorkspaceRequest(publicUrl, mailboxId) : null;
-    if (!request) return respondPublic(c, fail(err.badInput("Workspace route must target this mailbox")));
-    const data = await loadMailboxPageData({
-      context: requestContext(c),
-      mailboxId,
-      ...request,
-      listMode: query.listMode,
-      locale: getLocale(c),
-    });
-    return respondAggregate(c, data.ok ? data : fail(err.notFound("Mailbox")));
+    // Allow the bounded cold count fill to finish before the server's idle timeout.
+    setRequestTimeout(c, 40);
+    try {
+      const mailboxId = internalMailboxId(c);
+      const query = c.req.valid("query");
+      const publicUrl = parseWorkspaceRouteUrl(c.req.valid("param").mailboxId, query.href);
+      const request = publicUrl ? await resolveWorkspaceRequest(publicUrl, mailboxId) : null;
+      if (!request) return respondPublic(c, fail(err.badInput("Workspace route must target this mailbox")));
+      const data = await loadMailboxPageData({
+        context: requestContext(c),
+        mailboxId,
+        ...request,
+        listMode: query.listMode,
+        locale: getLocale(c),
+      });
+      return respondAggregate(c, data.ok ? data : fail(err.notFound("Mailbox")));
+    } catch (error) {
+      if (error instanceof CountRefreshBusy)
+        return respond(c, { ok: false, error: error.message, status: 503, code: "MAIL_COUNTS_REFRESHING" });
+      throw error;
+    } finally {
+      setRequestTimeout(c, REQUEST_IDLE_TIMEOUT_SECONDS);
+    }
   })
   .get("/mailboxes/:mailboxId/workspace-list", v("param", mailboxParamSchema), v("query", workspaceRouteQuerySchema), async (c) => {
-    const mailboxId = internalMailboxId(c);
-    const query = c.req.valid("query");
-    const publicUrl = parseWorkspaceRouteUrl(c.req.valid("param").mailboxId, query.href);
-    publicUrl?.searchParams.delete("conversation");
-    publicUrl?.searchParams.delete("message");
-    const request = publicUrl ? await resolveWorkspaceRequest(publicUrl, mailboxId) : null;
-    if (!request) return respondPublic(c, fail(err.badInput("Workspace route must target this mailbox")));
-    const data = await loadMailboxListView({
-      context: requestContext(c),
-      mailboxId,
-      ...request,
-      listMode: query.listMode,
-      locale: getLocale(c),
-    });
-    return respondAggregate(c, data.ok ? data : fail(err.notFound("Mailbox")));
+    // A list's last page names the done conversations it leaves out from the cached counts; allow their bounded cold fill.
+    setRequestTimeout(c, 40);
+    try {
+      const mailboxId = internalMailboxId(c);
+      const query = c.req.valid("query");
+      const publicUrl = parseWorkspaceRouteUrl(c.req.valid("param").mailboxId, query.href);
+      publicUrl?.searchParams.delete("conversation");
+      publicUrl?.searchParams.delete("message");
+      const request = publicUrl ? await resolveWorkspaceRequest(publicUrl, mailboxId) : null;
+      if (!request) return respondPublic(c, fail(err.badInput("Workspace route must target this mailbox")));
+      const data = await loadMailboxListView({
+        context: requestContext(c),
+        mailboxId,
+        ...request,
+        listMode: query.listMode,
+        locale: getLocale(c),
+      });
+      return respondAggregate(c, data.ok ? data : fail(err.notFound("Mailbox")));
+    } finally {
+      setRequestTimeout(c, REQUEST_IDLE_TIMEOUT_SECONDS);
+    }
   })
   .get(
     "/mailboxes/:mailboxId/workspace-detail/:conversationId",
@@ -1508,6 +1566,10 @@ const mailOperationsApi = new Hono<MailApiContext>()
   .get("/mailboxes/:mailboxId/access", v("param", mailboxParamSchema), async (c) =>
     respondPublic(c, mailboxAccess.listMailboxAccess(requestContext(c), internalMailboxId(c))),
   )
+  // Who has access, read-only, for everyone with mailbox-wide access of their own.
+  .get("/mailboxes/:mailboxId/access/members", v("param", mailboxParamSchema), async (c) =>
+    respondPublic(c, mailboxAccess.listMailboxAccessMembers(requestContext(c), internalMailboxId(c))),
+  )
   .post("/mailboxes/:mailboxId/access", v("param", mailboxParamSchema), v("json", mailboxGrantAccessSchema), async (c) => {
     const input = await internalInput(c, c.req.valid("json"));
     if (input.permission === "none") return respondPublic(c, fail(err.badInput("Access permission cannot be none")));
@@ -1722,10 +1784,13 @@ const mailOperationsApi = new Hono<MailApiContext>()
     ),
   )
   .get("/mailboxes/:mailboxId/activity", v("param", mailboxParamSchema), v("query", activityQuerySchema), async (c) => {
+    const { kind, actor, ...query } = c.req.valid("query");
     const result = await collaboration.listActivity({
       context: requestContext(c),
       mailboxId: internalMailboxId(c),
-      ...(await internalInput(c, c.req.valid("query"))),
+      ...(await internalInput(c, query)),
+      kinds: kind,
+      actorId: actor,
     });
     return respondPublic(c, projectActivityResult(result));
   })
@@ -1857,7 +1922,7 @@ const mailOperationsApi = new Hono<MailApiContext>()
   .get(
     "/mailboxes/:mailboxId/saved-views/:viewId/conversations",
     v("param", mailboxAndIdParamSchema("viewId")),
-    v("query", cursorQuerySchema),
+    v("query", cursorQuerySchema.extend({ includeDone: includeDoneQuerySchema })),
     async (c) =>
       respondConversations(
         c,
@@ -2384,6 +2449,20 @@ const mailOperationsApi = new Hono<MailApiContext>()
     };
     return respondMessages(c, messages.getMessage({ context: requestContext(c), ...params }));
   })
+  // Loading a body the caller may read changes nothing they could not read before, so read access suffices.
+  .post(
+    "/mailboxes/:mailboxId/messages/:messageId/body-request",
+    auth.readOnly,
+    v("param", mailboxAndIdParamSchema("messageId")),
+    v("json", z.object({ retry: z.boolean().optional() }).strict()),
+    async (c) => {
+      const params = internalParams(c, c.req.valid("param")) as { mailboxId: string; messageId: string };
+      return respondPublic(
+        c,
+        messageBodyRequests.requestMessageBody({ context: requestContext(c), ...params, retry: c.req.valid("json").retry === true }),
+      );
+    },
+  )
   .post("/mailboxes/:mailboxId/messages/:messageId/security-report", v("param", mailboxAndIdParamSchema("messageId")), async (c) =>
     respondPublic(
       c,
@@ -2992,11 +3071,13 @@ const mailOperationsApi = new Hono<MailApiContext>()
   .post("/mailboxes/:mailboxId/draft-seeds", v("param", mailboxParamSchema), v("json", prepareDraftSeedInputSchema), async (c) =>
     respondPublic(
       c,
-      drafts.prepareDraftSeed({
-        context: requestContext(c),
-        mailboxId: internalMailboxId(c),
-        origin: (await internalInput(c, c.req.valid("json"))).origin,
-      }),
+      projectDraftSeed(
+        drafts.prepareDraftSeed({
+          context: requestContext(c),
+          mailboxId: internalMailboxId(c),
+          origin: (await internalDraftSeedInput(c, c.req.valid("json"))).origin,
+        }),
+      ),
     ),
   )
   .post(
@@ -3009,7 +3090,7 @@ const mailOperationsApi = new Hono<MailApiContext>()
         drafts.materializeDraftSeed({
           context: requestContext(c),
           mailboxId: internalMailboxId(c),
-          input: await internalInput(c, c.req.valid("json")),
+          input: await internalDraftSeedInput(c, c.req.valid("json")),
         }),
       ),
   )
@@ -3637,6 +3718,7 @@ const adminApi = new Hono<MailApiContext>()
       ),
   )
   .route("/", contactDirectoryRoutes)
+  .route("/", workflowAiSettingsRoutes)
   .get("/admin/operations", v("query", platformOperationsQuerySchema), async (c) =>
     respondPublic(c, operations.getPlatformMailOperations(requestContext(c), c.req.valid("query"))),
   )

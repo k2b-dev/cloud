@@ -49,7 +49,7 @@ suiteFor("database", "valkey")("Core geo durable admission and accounting", () =
   });
   test("tiles share durable budgets with geo Queries and use an independent provider bucket", async () => {
     const instant = new Date("2028-02-12T10:00:00.000Z");
-    const settings = { ...geoTestConfig, monthlyCredits: 1, personDailyCredits: 1 };
+    const settings = { ...geoTestConfig, monthlyCredits: 1 };
     const bucket = createGeoBucket({ redis: async () => redis, prefix: `${prefix}:tiles` });
     let sent = 0;
     const map = createGeoMapService({
@@ -66,15 +66,23 @@ suiteFor("database", "valkey")("Core geo durable admission and accounting", () =
     expect(results.filter((result) => result.status === "fulfilled")).toHaveLength(4);
     expect(sent).toBe(4);
     const balances = await ledger().availability(geoTestContext.accessSubject!, settings, instant);
-    expect(balances.person.exhausted).toBe(true);
+    expect(balances.person.exhausted).toBe(false);
     expect(balances.cloud.exhausted).toBe(true);
     const rows = await db<
       { used: number }[]
     >`SELECT used::int AS used FROM geo.shares WHERE period IN ('2028-02', '2028-02-12') AND function_group='tiles'`;
     expect(rows.map((row) => row.used)).toEqual([1000, 1000]);
   });
+  test("person and app callers have no daily allowance; all share the monthly budget", async () => {
+    const settings = { ...geoTestConfig, monthlyCredits: 1000 };
+    for (const caller of [subject, { type: "app", appId: "vendor-web" } as const]) {
+      await ledger().reserve(caller, settings, 300000, "address", GEO_TEST_NOW);
+      await ledger().reserve(caller, settings, 1000, "address", GEO_TEST_NOW);
+      expect((await ledger().availability(caller, settings, GEO_TEST_NOW)).person.exhausted).toBe(false);
+    }
+  });
   test("parallel reservations admit exactly floor(budget/price) with no partial cloud debit", async () => {
-    const settings = { ...geoTestConfig, monthlyCredits: 100, personDailyCredits: 3 };
+    const settings = { ...geoTestConfig, monthlyCredits: 3 };
     const results = await Promise.allSettled(
       Array.from({ length: 25 }, () => ledger().reserve(subject, settings, 1000, "address", GEO_TEST_NOW)),
     );
@@ -83,7 +91,7 @@ suiteFor("database", "valkey")("Core geo durable admission and accounting", () =
       if (result.status === "rejected")
         expect(result.reason).toMatchObject({
           code: "GEO_BUDGET_EXHAUSTED",
-          details: { scope: "person", requiredCredits: 1, availableCredits: 0, shortfallCredits: 1 },
+          details: { scope: "cloud", requiredCredits: 1, availableCredits: 0, shortfallCredits: 1 },
         });
     const rows = await db<
       { scope: string; used: number }[]
@@ -94,7 +102,7 @@ suiteFor("database", "valkey")("Core geo durable admission and accounting", () =
   });
   test("Cloud scope is shared by different people and service accounts", async () => {
     const instant = new Date("2027-01-12T10:00:00.000Z"),
-      settings = { ...geoTestConfig, monthlyCredits: 3, personDailyCredits: 3 };
+      settings = { ...geoTestConfig, monthlyCredits: 3 };
     const results = await Promise.allSettled(
       Array.from({ length: 15 }, (_, i) =>
         ledger().reserve(
@@ -112,7 +120,7 @@ suiteFor("database", "valkey")("Core geo durable admission and accounting", () =
         expect(result.reason).toMatchObject({ details: { scope: "cloud", resetsAt: "2027-01-31T23:00:00.000Z" } });
   });
   test("timezone midnight and month rollover renew the right counters", async () => {
-    const settings = { ...geoTestConfig, monthlyCredits: 1, personDailyCredits: 1 };
+    const settings = { ...geoTestConfig, monthlyCredits: 1 };
     await ledger().reserve(subject, settings, 1000, "address", new Date("2027-03-31T21:59:59.999Z"));
     await expect(ledger().reserve(subject, settings, 1000, "address", new Date("2027-03-31T21:59:59.999Z"))).rejects.toMatchObject({
       details: { scope: "cloud", resetsAt: "2027-03-31T22:00:00.000Z" },
@@ -121,14 +129,12 @@ suiteFor("database", "valkey")("Core geo durable admission and accounting", () =
     const daySettings = { ...settings, monthlyCredits: 10 };
     const service = { type: "service_account", serviceAccountId: "daily-rollover" } as const;
     await ledger().reserve(service, daySettings, 1000, "places", new Date("2027-04-15T21:59:59.999Z"));
-    await expect(ledger().reserve(service, daySettings, 1000, "places", new Date("2027-04-15T21:59:59.999Z"))).rejects.toMatchObject({
-      details: { scope: "person", resetsAt: "2027-04-15T22:00:00.000Z" },
-    });
+    await ledger().reserve(service, daySettings, 1000, "places", new Date("2027-04-15T21:59:59.999Z"));
     await ledger().reserve(service, daySettings, 1000, "places", new Date("2027-04-15T22:00:00.000Z"));
   });
   test("settlement refunds only the surplus, availability does not write", async () => {
     const instant = new Date("2027-05-01T10:00:00.000Z"),
-      settings = { ...geoTestConfig, monthlyCredits: 10, personDailyCredits: 10 };
+      settings = { ...geoTestConfig, monthlyCredits: 10 };
     const reservation = await ledger().reserve(subject, settings, 3000, "address", instant);
     await ledger().settle(reservation, 1000);
     const before = await db`SELECT * FROM geo.usage ORDER BY scope,subject,period`;
@@ -260,7 +266,7 @@ suiteFor("database", "valkey")("Core geo durable admission and accounting", () =
   });
   test("concurrent admitted routing reservations settle actual overruns atomically and refuse further admission", async () => {
     const instant = new Date("2028-01-12T10:00:00.000Z");
-    const settings = { ...geoTestConfig, monthlyCredits: 3, personDailyCredits: 3 };
+    const settings = { ...geoTestConfig, monthlyCredits: 3 };
     const results = await Promise.allSettled(Array.from({ length: 12 }, () => ledger().reserve(subject, settings, 1000, "route", instant)));
     const reservations = results.flatMap((result) => (result.status === "fulfilled" ? [result.value] : []));
     expect(reservations).toHaveLength(3);
@@ -277,7 +283,7 @@ suiteFor("database", "valkey")("Core geo durable admission and accounting", () =
     expect(usage.map((row) => row.used)).toEqual([6000, 6000]);
     expect(shares.map((row) => row.used)).toEqual([6000, 6000]);
     expect(await ledger().availability(subject, settings, instant)).toMatchObject({
-      person: { exhausted: true },
+      person: { exhausted: false },
       cloud: { exhausted: true },
     });
     for (const actual of [-1, NaN, Infinity, 0.5, Number.MAX_SAFE_INTEGER + 1])
@@ -286,7 +292,7 @@ suiteFor("database", "valkey")("Core geo durable admission and accounting", () =
   });
   test("routing overrun debits real usage and shares beyond reservation and stops later paid legs", async () => {
     const instant = new Date("2028-02-12T10:00:00.000Z");
-    const settings = { ...geoTestConfig, monthlyCredits: 2, personDailyCredits: 2 };
+    const settings = { ...geoTestConfig, monthlyCredits: 2 };
     let fetches = 0;
     const service = createGeoService({
       config: async () => settings,

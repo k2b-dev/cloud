@@ -163,6 +163,7 @@ export default function MailConversationContext(props: {
             abortSignal,
           );
           return result.data.map((book) => ({
+            id: book.id,
             value: { id: book.id, name: book.name },
             label: book.name,
             desc: book.description ?? undefined,
@@ -213,6 +214,7 @@ export default function MailConversationContext(props: {
         return (await response.json())
           .filter((item) => !linkedItemIds.has(item.ref.id))
           .map((item) => ({
+            id: item.ref.id,
             value: { id: item.ref.id, title: item.title },
             label: item.title,
             desc: item.metadata?.find((entry) => entry.label === "Space")?.value,

@@ -142,9 +142,9 @@ describe("For you", () => {
     }
   }, 30_000);
 
-  test("a mention in a Space's chat opens there and unfolds “Spaces and Notebooks”", async () => {
+  test("a mention in a provider discussion opens there and unfolds “Discussions”", async () => {
     const space = harness.addChat({ members: [viewer, nora], name: "Spring fair", count: 2, end: chatTestNow });
-    harness.setSystem(space, { type: "spaces.space", id: "Space1" });
+    harness.setSystem(space, { type: "inventory.collection", id: "11111111-1111-4111-8111-111111111111" });
     harness.setForYou([
       {
         kind: "mention",
@@ -163,10 +163,10 @@ describe("For you", () => {
     const { page, errors } = await load(desktop, { forYouPage: true });
     try {
       const sidebar = page.locator(".k2b-app-workspace__sidebar");
-      await sidebar.getByRole("button", { name: /Spaces and Notebooks/, expanded: false }).waitFor();
+      await sidebar.getByRole("button", { name: /Discussions/, expanded: false }).waitFor();
       await page.getByRole("region", { name: "For you" }).locator(".chat-for-you__row").first().click();
       await page.waitForURL(`**/app/chat/c/${space}**`);
-      await sidebar.getByRole("button", { name: /Spaces and Notebooks/, expanded: true }).waitFor();
+      await sidebar.getByRole("button", { name: /Discussions/, expanded: true }).waitFor();
       expect(errors).toEqual([]);
     } finally {
       await page.context().close();

@@ -8,11 +8,14 @@ order: 100
 
 Chat ist für Gespräche mit anderen Personen, eigene Notizen und Kanäle, die du abonnierst.
 
+
+Formulare, Suche, Chat-Info sowie Kanal- und Thread-Seiten laden beim Öffnen. Solange sie laden, steht der Hinweis in dieser Ansicht. Schlägt das Laden fehl, wähle dort **Erneut versuchen**.
+
 ## Einen Chat starten {icon="message-plus"}
 
 :::steps
 1. Wähle **Neuer Chat**.
-2. Lass **Chat** ausgewählt und wähle die Personen oder Dienstkonten für den Chat.
+2. Lass **Chat** ausgewählt und wähle die Personen, Agenten oder Dienstkonten für den Chat.
 3. Gib einen Namen ein, wenn du möchtest.
 4. Wähle **Chat starten**.
 :::
@@ -36,9 +39,9 @@ mit der Zurück-Funktion des Browsers kommst du zu Files zurück. Nach dem Öffn
 2. Wähle einen Treffer, um ihn zu öffnen.
 :::
 
-Die Suche findet deine Chats und Kanäle, die Chats von Spaces und Notebooks, die du öffnen kannst, und Threads nach Namen.
-Jeder Thread-Treffer sagt, wo er steht, zum Beispiel **Thread in IT** oder **Aufgabe in Frühlingsausstellung**. Du siehst höchstens acht Treffer.
-Antworten Spaces oder Notebooks nicht, siehst du die übrigen Treffer trotzdem, und **Erneut versuchen** fragt noch einmal.
+Die Suche findet deine Chats und Kanäle, Ressourcen-Diskussionen, die du öffnen kannst, und Threads nach Namen.
+Jeder Thread-Treffer sagt, wo er steht, zum Beispiel **Thread in IT** oder **Thread in Frühlingsausstellung**. Du siehst höchstens acht Treffer.
+Antwortet eine zugehörige App nicht, siehst du die übrigen Treffer trotzdem, und **Erneut versuchen** fragt noch einmal.
 Drücke `Escape` oder leere das Feld, um wieder die Liste zu sehen.
 
 ## Kanäle entdecken {icon="compass"}
@@ -68,7 +71,7 @@ Bestehende Mitglieder behalten ihren Zugriff, wenn du die Zielgruppe änderst.
 5. Wähle **Neuer Kanal**.
 :::
 
-Wenn der Betreiber es erlaubt, kannst du **Alle mit einem Cloud-Konto** wählen. Dazu gehören Gäste und Dienstkonten.
+Wenn der Betreiber es erlaubt, kannst du **Alle Personen mit einem Cloud-Konto** wählen. Dazu gehören Gäste. Agenten und Dienstkonten brauchen ein eigenes Recht.
 Fehlt die Bestätigung, öffne wieder **Neuer Chat → Kanal** und wähle **Erneut versuchen**, um dieselbe Anfrage fortzusetzen.
 
 ## Wenn die Bestätigung fehlt {icon="refresh"}

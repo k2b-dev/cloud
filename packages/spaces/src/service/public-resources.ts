@@ -1,5 +1,5 @@
+import { sql } from "@k2b/cloud";
 import { toPgTextArray, toPgUuidArray } from "@k2b/cloud/services";
-import { sql } from "bun";
 import type {
   CalendarItem,
   ItemGroupBy,
@@ -115,35 +115,35 @@ export const resolveSpacePublicIds = async (
   return input.every((value) => byShortId.has(value)) ? values.map((value) => byShortId.get(value)!) : null;
 };
 
-const shortIds = async (table: ResourceTable, ids: (string | null | undefined)[]): Promise<Map<string, string>> => {
+const shortIds = async (table: ResourceTable, ids: (string | null | undefined)[], db: typeof sql = sql): Promise<Map<string, string>> => {
   const unique = [...new Set(ids.filter((id): id is string => Boolean(id)))];
   if (unique.length === 0) return new Map();
   const array = toPgUuidArray(unique);
   let rows: { id: string; short_id: string }[];
   switch (table) {
     case "spaces":
-      rows = await sql`SELECT id, short_id FROM spaces.spaces WHERE id = ANY(${array}::uuid[])`;
+      rows = await db`SELECT id, short_id FROM spaces.spaces WHERE id = ANY(${array}::uuid[])`;
       break;
     case "columns":
-      rows = await sql`SELECT id, short_id FROM spaces.columns WHERE id = ANY(${array}::uuid[])`;
+      rows = await db`SELECT id, short_id FROM spaces.columns WHERE id = ANY(${array}::uuid[])`;
       break;
     case "items":
-      rows = await sql`SELECT id, short_id FROM spaces.items WHERE id = ANY(${array}::uuid[])`;
+      rows = await db`SELECT id, short_id FROM spaces.items WHERE id = ANY(${array}::uuid[])`;
       break;
     case "checklist":
-      rows = await sql`SELECT id, short_id FROM spaces.item_checklist_entries WHERE id = ANY(${array}::uuid[])`;
+      rows = await db`SELECT id, short_id FROM spaces.item_checklist_entries WHERE id = ANY(${array}::uuid[])`;
       break;
     case "comments":
-      rows = await sql`SELECT id, short_id FROM spaces.comments WHERE id = ANY(${array}::uuid[])`;
+      rows = await db`SELECT id, short_id FROM spaces.comments WHERE id = ANY(${array}::uuid[])`;
       break;
     case "tags":
-      rows = await sql`SELECT id, short_id FROM spaces.tags WHERE id = ANY(${array}::uuid[])`;
+      rows = await db`SELECT id, short_id FROM spaces.tags WHERE id = ANY(${array}::uuid[])`;
       break;
     case "wormholes":
-      rows = await sql`SELECT id, short_id FROM spaces.wormholes WHERE id = ANY(${array}::uuid[])`;
+      rows = await db`SELECT id, short_id FROM spaces.wormholes WHERE id = ANY(${array}::uuid[])`;
       break;
     case "templates":
-      rows = await sql`SELECT id, short_id FROM spaces.item_templates WHERE id = ANY(${array}::uuid[])`;
+      rows = await db`SELECT id, short_id FROM spaces.item_templates WHERE id = ANY(${array}::uuid[])`;
       break;
   }
   return new Map(rows.map((row) => [row.id, row.short_id]));
@@ -236,26 +236,30 @@ export const projectItemListResult = async (result: ItemListResult, groupBy: Ite
   return { ...result, items: await projectItems(result.items), ...(groupCounts ? { groupCounts } : {}) };
 };
 
-export const projectItems = async <T extends SpaceItem>(items: T[]): Promise<T[]> => {
+export const projectItems = async <T extends SpaceItem>(items: T[], db: typeof sql = sql): Promise<T[]> => {
   const tagIds = items.flatMap((item) => item.tags?.map((tag) => tag.id) ?? []);
   const [ids, spaces, columns, recurring, tags] = await Promise.all([
     shortIds(
       "items",
       items.map((item) => item.id),
+      db,
     ),
     shortIds(
       "spaces",
       items.map((item) => item.spaceId),
+      db,
     ),
     shortIds(
       "columns",
       items.map((item) => item.columnId),
+      db,
     ),
     shortIds(
       "items",
       items.map((item) => item.recurringEventId),
+      db,
     ),
-    shortIds("tags", tagIds),
+    shortIds("tags", tagIds, db),
   ]);
   return items.map((item) => ({
     ...item,

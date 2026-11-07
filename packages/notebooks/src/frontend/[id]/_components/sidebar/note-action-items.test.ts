@@ -18,11 +18,16 @@ const node: FixtureNote = {
 };
 
 const deleted: string[] = [];
+const savedAsTemplate: string[] = [];
 const locked: string[] = [];
 const placed: [string, NotePlacement | null][] = [];
 const sorted: (string | null)[] = [];
 const actions = {
   handleCreateNote: async () => undefined,
+  handleCreateFromTemplate: async () => undefined,
+  handleSaveAsTemplate: async (target: SidebarNote) => {
+    savedAsTemplate.push(target.id);
+  },
   handleMove: async () => undefined,
   handlePlace: (noteId: string, placement: NotePlacement | null) => {
     placed.push([noteId, placement]);
@@ -154,4 +159,11 @@ test("every action in a note's menu has its own label, which keys the action in 
     expect(labels).toContain(locale === "en" ? "Sort top level alphabetically" : "Oberste Ebene alphabetisch sortieren");
     expect(new Set(labels).size).toBe(labels.length);
   }
+});
+
+test("a note's menu saves it as a template, beside Duplicate", () => {
+  const labels = menu(node, true, "de").map((entry) => entry.label);
+  expect(labels.indexOf("Als Vorlage speichern …")).toBe(labels.indexOf("Duplizieren") + 1);
+  actionItem("ti ti-template", true, "en")?.action?.();
+  expect(savedAsTemplate).toEqual(["Note01"]);
 });

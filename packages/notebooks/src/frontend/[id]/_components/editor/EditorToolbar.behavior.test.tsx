@@ -2,6 +2,17 @@ import { describe, expect, spyOn, test } from "bun:test";
 import { isServer, render } from "solid-js/web";
 import { createDomTestHarness } from "../../../../../../ui/test/dom";
 
+const loading = createDomTestHarness();
+const { createEditor } = await import("@k2b/editor");
+loading.cleanup();
+
+/** The shared editor state the toolbar formats, bound to a test view. */
+const editorFor = (view?: import("@codemirror/view").EditorView) => {
+  const editor = createEditor();
+  if (view) editor.attach(view);
+  return editor;
+};
+
 const read = (path: string) => Bun.file(new URL(path, import.meta.url)).text();
 
 describe("editor toolbar phone viewport and menus", () => {
@@ -27,7 +38,7 @@ describe("editor toolbar phone viewport and menus", () => {
     const { EditorState } = await import("@codemirror/state");
     const { EditorView } = await import("@codemirror/view");
     const { tableGrid } = await import("@k2b/ui/text-editor");
-    const { markdownExtension } = await import("../../../lib/editor/markdown");
+    const { markdownExtension } = await import("@k2b/editor/markdown");
     const { caretFormat } = await import("./editor-actions");
     const { default: EditorToolbar } = await import("./EditorToolbar");
     const { LocaleProvider } = await import("@k2b/ui");
@@ -44,10 +55,9 @@ describe("editor toolbar phone viewport and menus", () => {
         <LocaleProvider locale="en">
           <EditorToolbar
             connected
-            editorView={view}
+            editor={editorFor(view)}
             notebookId="Book01"
             noteId="Note01"
-            initialPanelOpen={false}
             format={caretFormat(view.state)}
             onUndo={() => {}}
             onRedo={() => {}}
@@ -241,10 +251,9 @@ describe("editor toolbar pointer and keyboard focus", () => {
         <LocaleProvider locale="de">
           <EditorToolbar
             connected
-            editorView={undefined}
+            editor={editorFor()}
             notebookId="notebook-1"
             noteId="note-1"
-            initialPanelOpen={false}
             format={{
               bold: false,
               italic: false,
@@ -294,23 +303,18 @@ describe("editor toolbar navigation toggle", () => {
     return;
   }
 
-  test("hides and shows the navigation from the first toolbar button without taking focus from the note", async () => {
+  test("the first toolbar button is the workspace's navigation button and keeps focus in the note", async () => {
     const dom = createDomTestHarness();
     const { LocaleProvider } = await import("@k2b/ui");
     const { default: EditorToolbar } = await import("./EditorToolbar");
-    const { NAVIGATION_VISIBILITY_EVENT } = await import("../sidebar/navigation-visibility");
-    const changes: boolean[] = [];
-    const onChange = (event: Event) => void changes.push((event as CustomEvent<{ hidden: boolean }>).detail.hidden);
-    window.addEventListener(NAVIGATION_VISIBILITY_EVENT, onChange);
     const dispose = render(
       () => (
         <LocaleProvider locale="de">
           <EditorToolbar
             connected
-            editorView={undefined}
+            editor={editorFor()}
             notebookId="notebook-1"
             noteId="note-1"
-            initialPanelOpen={false}
             format={{
               bold: false,
               italic: false,
@@ -332,25 +336,17 @@ describe("editor toolbar navigation toggle", () => {
     try {
       const buttons = Array.from(dom.document.querySelectorAll<HTMLButtonElement>(".notebooks-editor-toolbar .k2b-icon-button"));
       const toggle = buttons[0]!;
-      // Navigation stays outside the formatting toolbar.
-      expect(toggle.getAttribute("aria-label")).toBe("Navigation ausblenden");
-      expect(toggle.getAttribute("aria-expanded")).toBe("true");
+      // Navigation stays outside the formatting toolbar. The shared workspace controller shows, hides or opens the
+      // navigation and states it in aria-expanded (packages/ui workspace-app-toggles.browser.test.ts).
+      expect(toggle.getAttribute("aria-label")).toBe("Navigation");
       expect(toggle.getAttribute("aria-controls")).toBe("notebook-navigation");
+      expect(toggle.hasAttribute("data-app-workspace-sidebar-toggle")).toBe(true);
       expect(toggle.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true }))).toBe(false);
-
-      toggle.click();
-      expect(changes).toEqual([true]);
-      expect(toggle.getAttribute("aria-label")).toBe("Navigation einblenden");
-      expect(toggle.getAttribute("aria-expanded")).toBe("false");
-      expect(decodeURIComponent(dom.document.cookie)).toContain('"navigationHidden":true');
-
-      toggle.click();
-      expect(changes).toEqual([true, false]);
-      expect(toggle.getAttribute("aria-label")).toBe("Navigation ausblenden");
-      // A default value stays out of the cookie.
-      expect(decodeURIComponent(dom.document.cookie)).not.toContain('"navigationHidden"');
+      // The Details button belongs to the workspace in the same way.
+      const details = buttons.find((button) => button.getAttribute("aria-label") === "Detailbereich")!;
+      expect(details.getAttribute("aria-controls")).toBe("k2b-workspace-detail-notebook-detail");
+      expect(details.hasAttribute("data-app-workspace-detail-toggle")).toBe(true);
     } finally {
-      window.removeEventListener(NAVIGATION_VISIBILITY_EVENT, onChange);
       dispose();
       dom.cleanup();
     }
@@ -369,7 +365,7 @@ describe("editor toolbar formats and shortcuts", () => {
     const { EditorState } = await import("@codemirror/state");
     const { EditorView } = await import("@codemirror/view");
     const { forceParsing } = await import("@codemirror/language");
-    const { markdownExtension } = await import("../../../lib/editor/markdown");
+    const { markdownExtension } = await import("@k2b/editor/markdown");
     const { caretFormat } = await import("./editor-actions");
     const { default: EditorToolbar, formattingKeymap } = await import("./EditorToolbar");
     const { LocaleProvider } = await import("@k2b/ui");
@@ -393,10 +389,9 @@ describe("editor toolbar formats and shortcuts", () => {
         <LocaleProvider locale="en">
           <EditorToolbar
             connected
-            editorView={view}
+            editor={editorFor(view)}
             notebookId="Book01"
             noteId="Note01"
-            initialPanelOpen={false}
             format={format()}
             onUndo={() => {}}
             onRedo={() => {}}

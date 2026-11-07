@@ -1,6 +1,5 @@
 import { expect, spyOn } from "bun:test";
 import { StructuredOutputError } from "@k2b/nessi";
-import { sql } from "bun";
 import type { z } from "zod";
 import { databaseSuite, testFor } from "../../../../../scripts/fixtures/test-infra";
 import { migrate as migrateWorkflows } from "../../../../core/src/migrate/core/workflows";
@@ -8,6 +7,7 @@ import { openSync } from "../../../test/integration/sync-contracts/harness";
 import { createWorkflowIntegrationFixture } from "../../../test/workflows/integration-fixture";
 import { bindProcessSync, unbindProcessSync } from "../../_internal/process-sync";
 import type { RunAiStructuredInput, RunAiStructuredResult } from "../../ai";
+import { sql } from "../../runtime/clients";
 import type { WorkflowBoundPlan } from "../contracts";
 import { hashWorkflowJson } from "../language/canonical";
 import { defineWorkflowModule } from "../module";

@@ -17,7 +17,7 @@ export type TextInputProps = Omit<
     maxLength?: number;
     type?: "text" | "search" | "email" | "url" | "tel";
     variant?: "default" | "ai" | "compact";
-    /** Set false for a plain field without a leading icon. */
+    /** A leading icon such as a search magnifier. Plain text fields have none. */
     icon?: string | false;
     activeIcon?: string;
     /** ID of a consumer-owned visible error; caller owns its announcement. Native controls only. */
@@ -92,12 +92,10 @@ export function TextInput(props: TextInputProps): JSX.Element {
   const [passwordVisible, setPasswordVisible] = createSignal(false);
   const multiline = () => Boolean(local.multiline || local.markdown);
   const compact = () => local.variant === "compact";
-  const icon = () =>
-    local.icon === false
-      ? ""
-      : (local.icon ?? (local.variant === "ai" ? "ti ti-sparkles" : local.markdown ? "ti ti-markdown" : "ti ti-cursor-text"));
-  // A custom icon stays while typing (a search field keeps its magnifier); only the default icon switches to the pencil.
-  const activeIcon = () => local.activeIcon ?? (local.icon || undefined) ?? (local.variant === "ai" ? "ti ti-sparkles" : "ti ti-pencil");
+  // The field's edge already shows where to type; only a meaningful icon (a search magnifier, the AI mark) leads.
+  const icon = () => (local.icon === false ? "" : (local.icon ?? (local.variant === "ai" ? "ti ti-sparkles" : "")));
+  // An icon stays while typing unless `activeIcon` names a different one.
+  const activeIcon = () => local.activeIcon ?? icon();
   // Names, addresses and passwords are typed exactly: phone keyboards must not capitalize or "correct" them.
   const verbatim = () =>
     local.password || local.type === "email" || local.type === "url" || /\b(username|email|url)\b/.test(String(rest.autocomplete ?? ""));
@@ -149,7 +147,7 @@ export function TextInput(props: TextInputProps): JSX.Element {
             data-monospace={local.monospace ? "true" : undefined}
             style={multiline() ? { "--k2b-editor-lines": String(local.lines ?? 3) } : undefined}
           >
-            <Show when={!compact() && local.icon !== false}>
+            <Show when={!compact() && icon()}>
               <span class="k2b-input-shell__icon k2b-text-input__icon" aria-hidden="true">
                 <i class={icon()} />
                 <i class={activeIcon()} />

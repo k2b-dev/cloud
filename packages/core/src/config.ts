@@ -5,9 +5,16 @@ import { NOTIFICATIONS } from "./notifications";
 
 export const app = defineApp({
   id: "core",
+  // These protocols validate their own credentials and never use Cloud session authority.
+  sessionlessRoutes: [
+    "/api/auth/app-approval/v1/pairings/claim",
+    "/api/auth/app-approval/v1/pairings/result",
+    "/api/auth/app-approval/v1/device",
+  ],
   // These routes keep their own authentication, including workload and models-only credentials.
   access: appAccess.signedIn({
     publicRoutes: [
+      "/_internal/apps/bootstrap",
       "/auth/continue",
       "/auth/login",
       "/auth/new-password",
@@ -39,6 +46,9 @@ export const app = defineApp({
       "/.well-known/cloud-session-jwks.json",
       "/.well-known/cloud-invocation-jwks.json",
       "/.well-known/oauth-protected-resource/api/mcp/v1",
+      "/api/_internal/ip-country",
+      // Anonymous Geo is confined to the private network and gateway-blocked namespace.
+      "/api/_internal/geo/v1/autocomplete",
       "/api/_internal/identity/v1/invoke",
       "/api/_internal/identity/v1/invoke-child",
       "/api/_internal/ai/code/*",
@@ -47,6 +57,7 @@ export const app = defineApp({
       "/api/_internal/identity/v1/mandates/:mandateId/policy",
       "/api/_internal/identity/v1/mandates/:mandateId/pause",
       "/api/_internal/identity/v1/mandates/:mandateId/revoke",
+      "/api/_internal/identity/v1/oauth/jwks",
       "/api/_internal/identity/v1/oauth/ready",
       "/api/_internal/identity/v1/oauth/token",
       "/api/_internal/identity/v1/oauth/device-approval",
@@ -158,9 +169,11 @@ export const app = defineApp({
     "/api/search",
     "/api/resources",
     "/api/geo",
+    "/api/_internal/ip-country",
     "/api/accounts/entities",
     "/api/admin/account-lifecycle",
     "/api/admin/core",
+    "/api/admin/apps",
     "/api/openapi.json",
     "/.well-known/cloud-session-jwks.json",
     "/.well-known/cloud-invocation-jwks.json",

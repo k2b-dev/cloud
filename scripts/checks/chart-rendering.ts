@@ -8,7 +8,7 @@ import type { Finding, Rule } from "./rule";
 
 const RENDERERS = new Set(["charts", ...Object.keys(charts)]);
 const CHART_COMPONENTS = new Set(["Chart", "ChartExplorer", "ChartSnapshotView", "StatCell"]);
-const LIBRARIES = new Set(["ui", "cloud", "ssr"]);
+const LIBRARIES = new Set(["ui", "cloud", "ssr", "editor"]);
 /** The browser entries @k2b/ssr discovers (`**\/*.{island,client}.tsx`). */
 const BROWSER_ENTRY = /\.(?:island|client)\.tsx$/;
 const ALLOWED_RENDERERS = new Map([
@@ -21,7 +21,7 @@ const ALLOWED_RENDERERS = new Map([
     "packages/assistant/src/artifacts/runtime/lib.ts",
     "Studio cloud.chart() runs in a sandbox whose frame prelude enhances SVG with inspectChart.",
   ],
-  ["packages/cloud/src/ai/chart-block.ts", "Reads SVG marks for validation and tables; the SVG never reaches the DOM."],
+  ["packages/editor/src/charts.ts", "Reads SVG marks for validation and tables; the SVG never reaches the DOM."],
 ]);
 
 const skipped = (file: string): boolean =>

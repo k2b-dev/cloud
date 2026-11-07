@@ -96,7 +96,11 @@ const fakeSync = (controls: SyncControl[]) =>
     ],
   }) as unknown as Sync;
 
-const harness = () => {
+const harness = (
+  credentialKind: AuthContext["Variables"]["credentialKind"] = "session",
+  scopes: string[] = [],
+  originalKind: "oauth" | "session" | "api_key" = "oauth",
+) => {
   const controls: SyncControl[] = [];
   const audits: AuditCall[] = [];
   const routes = createSyncOpsRoutes(() => fakeSync(controls), {
@@ -109,8 +113,16 @@ const harness = () => {
   });
   const app = new Hono<AuthContext>()
     .use("*", async (c, next) => {
+      c.set("credentialKind", credentialKind);
+      c.set("credentialScopes", scopes);
       c.set("user", admin);
-      c.set("actor", { kind: "user", user: admin });
+      c.set("actor", {
+        kind: "user",
+        user: admin,
+        ...(credentialKind === "invocation"
+          ? { delegation: { kind: "invocation", callingAppId: "core", credentialKind: originalKind, invocationId: "fixture" } as const }
+          : {}),
+      });
       await next();
     })
     .route("/", routes);
@@ -473,4 +485,83 @@ test("topic dead letters retain consumer identity, replay without requeue, and a
   failure = new SyncUsageError("Historical entry has no original event context");
   expect((await json("/dead-letters/topic/telemetry/replay", request(input))).status).toBe(400);
   expect((await json("/dead-letters/topic/telemetry/42", { method: "DELETE" })).status).toBe(200);
+});
+
+test("read-scoped Sync diagnostics exclude payloads and raw errors at every dead-letter read", async () => {
+  for (const kind of ["oauth", "invocation"] as const)
+    for (const scopes of [["read"], ["read", "write"], ["admin"]]) {
+      const { controls, json } = harness(kind, scopes);
+      const entry = {
+        ...deadLetter("secret", { token: "private-sync-fixture" }),
+        error: "private-sync-fixture",
+        reason: "private-sync-fixture",
+      };
+      const store = fakeStore([entry]);
+      controls.push({ namespace: "test", owner: "test", id: "mail", kind: "queue", deadLetters: store.store });
+      const topicEntry = { ...entry, consumer: "writer", eventId: "event", replayAvailable: true };
+      controls.push({
+        namespace: "test",
+        owner: "test",
+        id: "events",
+        kind: "topic",
+        deadLetters: {
+          list: async () => [topicEntry],
+          get: async () => topicEntry,
+          delete: async () => true,
+          replay: async () => ({ messageId: "secret", eventId: "event", consumer: "writer", completed: true }),
+        },
+      });
+      for (const path of [
+        "/dead-letters",
+        "/dead-letters/queue/mail",
+        "/dead-letters/queue/mail/secret?sequence=1",
+        "/dead-letters/topic/events",
+        "/dead-letters/topic/events/secret",
+      ]) {
+        const response = await json(path);
+        expect(response.status).toBe(200);
+        expect(JSON.stringify(response.body).includes("private-sync-fixture")).toBe(scopes.includes("admin"));
+        if (!scopes.includes("admin")) expect(JSON.stringify(response.body)).toContain("[redacted]");
+      }
+      store.store.page = async () => {
+        throw new Error("private-sync-fixture");
+      };
+      const failure = await json("/dead-letters/queue/mail");
+      expect(failure.status).toBe(500);
+      expect(JSON.stringify(failure.body).includes("private-sync-fixture")).toBe(scopes.includes("admin"));
+    }
+});
+
+test("session and API-key invocations preserve their existing content authority", async () => {
+  for (const kind of ["session", "api_key"] as const) {
+    const { controls, json } = harness("invocation", [], kind);
+    const store = fakeStore([deadLetter("entry", { value: "content-fixture" })]);
+    controls.push({ namespace: "test", owner: "test", id: "mail", kind: "queue", deadLetters: store.store });
+    expect(JSON.stringify((await json("/dead-letters/queue/mail/entry?sequence=1")).body)).toContain("content-fixture");
+  }
+});
+
+test("ordinary OAuth schedule reads redact metadata and raw failures while retaining counters", async () => {
+  for (const scopes of [["read", "write"], ["admin"]]) {
+    const { controls, json } = harness("invocation", scopes);
+    controls.push({
+      namespace: "test",
+      owner: "test",
+      kind: "scheduler",
+      id: "mail",
+      scheduler: {
+        list: async () => [
+          { ...scheduleInfo("work"), failureCount: 2, lastError: "private-schedule-fixture", meta: { token: "private-schedule-fixture" } },
+        ],
+        runNow: async () => ({ runId: "run" }),
+        awaitRun: async () => ({ completed: true, error: "private-schedule-fixture" }),
+      },
+    });
+    const list = await json("/schedules");
+    expect(list.body).toMatchObject({ schedules: [{ failureCount: 2 }] });
+    expect(JSON.stringify(list.body).includes("private-schedule-fixture")).toBe(scopes.includes("admin"));
+    const run = await json("/schedules/mail/work/runs/run");
+    expect(run.body).toMatchObject({ completed: true });
+    expect(JSON.stringify(run.body).includes("private-schedule-fixture")).toBe(scopes.includes("admin"));
+  }
 });

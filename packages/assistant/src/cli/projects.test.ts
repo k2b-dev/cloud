@@ -17,5 +17,5 @@ test("project access rows name audiences and missing people for people, never by
     [entry({ type: "authenticated" }), entry({ type: "user", userId }), entry({ type: "user", userId }, "Ada Example")],
     "de",
   );
-  expect(rows.map((row) => row.principal)).toEqual(["Alle Benutzer einschließlich Gäste", "Unbekannte Person", "Ada Example"]);
+  expect(rows.map((row) => row.principal)).toEqual(["Alle angemeldeten Personen", "Unbekannte Person", "Ada Example"]);
 });

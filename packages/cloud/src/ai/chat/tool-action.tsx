@@ -1,6 +1,6 @@
 import { dates } from "@k2b/stdlib";
 import { Button, ButtonLink, type ChatDecisionState, useLocale } from "@k2b/ui";
-import { createEffect, createMemo, createSignal, For, type JSX, on, onCleanup, Show } from "solid-js";
+import { createEffect, createMemo, createSignal, For, type JSX, on, onCleanup, onMount, Show } from "solid-js";
 import { CapabilityActionReceiptSchema } from "../../contracts/capabilities";
 import { AI_TOOL_CHECK_STALE_MS, type AiActionCheck } from "../action-review";
 import type { AiTurnBlock } from "../protocol";
@@ -135,6 +135,18 @@ export function ToolActionView(props: {
   const [checked, setChecked] = createSignal<AiActionCheck | null>(null);
   const [checking, setChecking] = createSignal(false);
   const [checkError, setCheckError] = createSignal(false);
+  // Without a connection neither answer can arrive, so both wait; the server renders the question as answerable.
+  const [online, setOnline] = createSignal(true);
+  onMount(() => {
+    const update = () => setOnline(navigator.onLine);
+    update();
+    window.addEventListener("online", update);
+    window.addEventListener("offline", update);
+    onCleanup(() => {
+      window.removeEventListener("online", update);
+      window.removeEventListener("offline", update);
+    });
+  });
   // A new approval for the same block, such as the next website a code run asks for, starts a fresh question. `on`
   // runs again whenever the block changes, so the call id is compared by hand.
   let answeredCall = props.block.callId;
@@ -401,6 +413,7 @@ export function ToolActionView(props: {
       timeZone={timeZone}
       anchorId={props.block.id}
       unavailable={unavailable()}
+      waiting={online() ? undefined : actionMessages(card().locale).offline}
       remember={remember()}
       onConfirm={() => submit({ approved: true })}
       onDecline={() => submit({ approved: false })}
@@ -445,7 +458,7 @@ export function ResultLinks(props: { links: Record<string, unknown>[]; align?: "
   );
 }
 
-/** Puts a sentence into a frame such as "Your answer about \u0000 didn't arrive." */
+/** Puts a sentence into a frame such as "Your answer about \u0000 is not confirmed." */
 const splitFrame = (frame: string, inner: ActionText): ActionText => {
   const [before = "", after = ""] = frame.split("\u0000");
   return [

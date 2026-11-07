@@ -9,6 +9,7 @@ import WebhookDetail from "../alerts/WebhookDetail.island";
 import HealthCheckForm from "../health-check/HealthCheckForm.island";
 import LogEntryDetail from "../logs/_components/LogEntryDetail.island";
 import LogTable from "../logs/_components/LogTable.island";
+import NatsAccessForm from "../nats/NatsAccessForm.island";
 import RetentionForm from "../retention/RetentionForm.island";
 
 /** Mounts the area's islands the way @k2b/ssr does: the server-rendered wrapper carries its props. */
@@ -19,6 +20,7 @@ const islands: Record<string, Component<never>> = {
   "LogEntryDetail.island.tsx": LogEntryDetail as Component<never>,
   "LogTable.island.tsx": LogTable as Component<never>,
   "OperationalCharts.island.tsx": OperationalCharts as Component<never>,
+  "NatsAccessForm.island.tsx": NatsAccessForm as Component<never>,
   "RetentionForm.island.tsx": RetentionForm as Component<never>,
   "WebhookDetail.island.tsx": WebhookDetail as Component<never>,
 };

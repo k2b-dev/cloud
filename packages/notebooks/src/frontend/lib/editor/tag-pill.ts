@@ -13,10 +13,8 @@ import { syntaxTree } from "@codemirror/language";
 import type { EditorState, Extension, Range, Transaction } from "@codemirror/state";
 import { RangeSet } from "@codemirror/state";
 import { Decoration, EditorView, WidgetType } from "@codemirror/view";
+import { type CursorZoneState, cursorZoneStateField, makeOpener, selectionIntersectsRange, TAG_REGEX } from "@k2b/editor/markdown";
 import { notebookWorkspaceMessages } from "../../[id]/messages";
-import { type CursorZoneState, cursorZoneStateField, selectionIntersectsRange } from "./_lib/cursor-zone-field";
-import { TAG_REGEX } from "./_lib/inline-syntax";
-import { makeOpener } from "./_lib/link-opener";
 
 class TagWidget extends WidgetType {
   constructor(

@@ -1,14 +1,17 @@
 import { afterEach, expect, spyOn, test } from "bun:test";
+import { redis } from "@k2b/cloud";
 import { type AiSkillSummary, aiProjects, aiSkills } from "@k2b/cloud/ai";
 import type { AppRegistryEntry } from "@k2b/cloud/contracts/registry";
 import type { RequestAuthority } from "@k2b/cloud/server";
 import { canUseApp, oauthTokens } from "@k2b/cloud/services";
 import * as settings from "@k2b/cloud/services/settings";
-import { redis } from "bun";
+import { useUnitClients } from "../../../scripts/fixtures/unit-clients";
 import api from "./api";
 import { artifacts } from "./artifacts/service";
 import { testIdentity } from "./artifacts/test-identity";
 import { loadAssistantProjectContextSnapshot } from "./project-context";
+
+useUnitClients();
 
 const identity = testIdentity("11111111-1111-4111-8111-111111111111");
 const authority: RequestAuthority = { ...identity, credentialKind: "oauth", scopes: ["demo:read"] };

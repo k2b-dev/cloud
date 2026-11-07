@@ -70,6 +70,7 @@ function fixtures(permission: PermissionLevel = "read") {
   track(spyOn(notebooksService.attachment, "count")).mockResolvedValue(0);
   track(spyOn(notebooksService.note.favorites, "listIds")).mockResolvedValue([]);
   const tags = track(spyOn(notebooksService.tag, "listForNotebook")).mockResolvedValue([{ tag: "team", count: 101 }]);
+  track(spyOn(notebooksService.pageTemplate, "list")).mockResolvedValue({ ok: true, data: [] });
   const count = track(spyOn(notebooksService.tag, "countNotesForTag")).mockResolvedValue(101);
   const notes = track(spyOn(notebooksService.tag, "listNotesForTag")).mockResolvedValue({
     items: [

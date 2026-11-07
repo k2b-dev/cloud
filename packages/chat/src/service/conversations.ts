@@ -1,3 +1,4 @@
+import { sql } from "@k2b/cloud";
 import {
   createAccess,
   deleteAccess,
@@ -13,7 +14,6 @@ import {
 } from "@k2b/cloud/server";
 import { audit, toPgTextArray, toPgUuidArray } from "@k2b/cloud/services";
 import { crypto } from "@k2b/stdlib";
-import { sql } from "bun";
 import { z } from "zod";
 import { ChatComposeInputSchema } from "../commands";
 import { messagePreview } from "../system-messages";
@@ -36,7 +36,8 @@ import {
 } from "./access";
 import { titles } from "./conversation-titles";
 import { validateDiscovery, writeDiscovery } from "./discovery";
-import { forYouUnread, mentionsUnread } from "./for-you";
+import { providerFor } from "./discussion-read";
+import { forYouUnread, mentionsUnread, prepareSystemReaderCounts } from "./for-you";
 import { notificationProjection } from "./notification-projection";
 import { TransactionFailure, value } from "./transaction-failure";
 
@@ -68,8 +69,9 @@ import { deletedPeople } from "./former-accounts";
 import { chatLive } from "./live";
 import { publishMembership } from "./live-updates";
 import { appendMessage, personSnapshots, queueAddedNotification } from "./message-store";
+import { notificationOutbox } from "./notification-delivery";
 import { projectRead, type ReadProjection, readProjection, unreadQuery } from "./read-state";
-import { readerBatch, readResource } from "./resource-access";
+import { discussionIncomplete, readerBatch, readResource } from "./resource-access";
 import { messageCondition, type ThreadBudget, visibleThreadIdPage } from "./thread-access";
 
 import { threadStates } from "./thread-state";
@@ -79,7 +81,10 @@ const creationLimit = ratelimit({ id: "chat.conversation.create", limit: CREATE_
 export const transaction = async <T>(work: (db: typeof sql) => Promise<Result<T>>): Promise<Result<T>> => {
   try {
     const result = await sql.begin(work);
-    if (result.ok) chatLive.wake();
+    if (result.ok) {
+      chatLive.wake();
+      void notificationOutbox.notify();
+    }
     return result;
   } catch (error) {
     if (error instanceof TransactionFailure) return fail(error.error);
@@ -299,7 +304,7 @@ const lastMessages = async (rows: ConversationRow[], context: ChatContext, db: t
   await readerBatch(found, async (row) => {
     if (!row.resource_type || !row.resource_id) return;
     const resource = await readResource(context, { type: row.resource_type, id: row.resource_id });
-    row.thread_name = resource?.name ?? row.thread_name;
+    row.thread_name = resource?.title ?? row.thread_name;
   });
   const absent = await Promise.all(
     (["user", "service_account"] as const).map((type) =>
@@ -572,7 +577,10 @@ const create = async (input: ChatContext & { input: unknown }): Promise<Result<C
         ),
       });
     });
-    if (result.ok) chatLive.wake();
+    if (result.ok) {
+      chatLive.wake();
+      void notificationOutbox.notify();
+    }
     return result;
   } catch (error) {
     if (error instanceof TransactionFailure) return fail(error.error);
@@ -606,32 +614,44 @@ const getInSnapshot = async (
   const names = await titles([row], input, db);
   const latest = await lastMessages([row], input, db, visibleIds);
   return ok({
-    ...(row.kind === "system" ? { summaryCursor: page.nextCursor } : {}),
+    ...(row.kind === "system"
+      ? {
+          summaryCursor: page.nextCursor,
+          ...(discussionIncomplete(input) ? { incomplete: true as const } : {}),
+          discussionItemType: row.resource_type ? (await providerFor(input, row.resource_type, "container"))?.itemType : undefined,
+        }
+      : {}),
     ...(await project(
       db,
       input,
       resource
         ? {
             ...row,
-            name: resource.name,
-            purpose: resource.description,
+            name: resource.title,
+            icon: resource.icon,
+            purpose: resource.context ?? null,
             last_activity_at: latest.get(row.id) ? new Date(latest.get(row.id)!.createdAt) : row.created_at,
           }
         : row,
       row.permission,
-      resource?.name ?? names.get(row.id)!,
+      resource?.title ?? names.get(row.id)!,
       latest.get(row.id) ?? null,
       (await lifecycleFlags([row], input, db)).get(row.id)!,
       read,
     )),
   });
 };
-const get = (
+const get = async (
   input: ChatContext & { conversationId: string; summaryCursor?: string; threadBudget?: ThreadBudget; selectedThread?: string | null },
   db?: typeof sql,
-) => (db ? getInSnapshot(input, db) : sql.begin("ISOLATION LEVEL REPEATABLE READ READ ONLY", (tx) => getInSnapshot(input, tx)));
-const list = (input: ChatContext & { query?: unknown }): Promise<Result<z.infer<typeof ConversationPageSchema>>> =>
-  sql.begin("ISOLATION LEVEL REPEATABLE READ READ ONLY", async (db) => {
+) => {
+  if (db) return getInSnapshot(input, db);
+  await prepareSystemReaderCounts(input);
+  return sql.begin("ISOLATION LEVEL REPEATABLE READ READ ONLY", (tx) => getInSnapshot(input, tx));
+};
+const list = async (input: ChatContext & { query?: unknown }): Promise<Result<z.infer<typeof ConversationPageSchema>>> => {
+  await prepareSystemReaderCounts(input);
+  return sql.begin("ISOLATION LEVEL REPEATABLE READ READ ONLY", async (db) => {
     const parsed = parse(ConversationQuerySchema, input.query ?? {}, input);
     if (!parsed.ok) return parsed;
     const bound = boundConversation(input.actor, input.locale);
@@ -675,6 +695,8 @@ const list = (input: ChatContext & { query?: unknown }): Promise<Result<z.infer<
           : null,
     });
   });
+};
+
 const update = async (input: ChatContext & { conversationId: string; input: unknown }) => {
   const parsed = parse(UpdateConversationSchema, input.input, input);
   if (!parsed.ok) return parsed;

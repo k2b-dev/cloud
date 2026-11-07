@@ -92,22 +92,28 @@ export default function ExecutionDetail(props: { executions: CapabilityExecution
                   },
                   {
                     term: t.actor,
-                    description: execution.actorId ? (
-                      <span class="break-all select-all">
-                        {execution.actorKind ?? "—"} ·{" "}
-                        {
-                          // principal-id-labels: The execution detail identifies the recorded actor by kind and ID.
-                          execution.actorId
-                        }
-                      </span>
-                    ) : (
-                      "—"
-                    ),
+                    description:
+                      execution.actorKind === "app" && execution.actorAppId ? (
+                        <span class="break-all select-all">
+                          {t.app} · {execution.actorAppId}
+                        </span>
+                      ) : execution.actorId ? (
+                        <span class="break-all select-all">
+                          {execution.actorKind ?? "—"} ·{" "}
+                          {
+                            // principal-id-labels: The execution detail identifies the recorded actor by kind and ID.
+                            execution.actorId
+                          }
+                        </span>
+                      ) : (
+                        "—"
+                      ),
                   },
                   {
                     term: t.accessSubject,
                     description: execution.accessSubjectId ? `${execution.accessSubjectType ?? "—"} · ${execution.accessSubjectId}` : "—",
                   },
+                  ...(execution.actorKind === "app" ? [{ term: t.appKeyId, description: mono(execution.actorKeyId ?? null) }] : []),
                   { term: t.user, description: mono(execution.userId) },
                   { term: t.startedAt, description: formatDateTime(execution.startedAt, props.dateConfig) },
                   { term: t.completedAt, description: formatDateTime(execution.completedAt, props.dateConfig) },

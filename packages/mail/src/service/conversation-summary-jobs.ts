@@ -1,8 +1,7 @@
-import { lazySync } from "@k2b/cloud";
+import { lazySync, sql } from "@k2b/cloud";
 import { createRuntimeLifecycle, createRuntimeTaskTracker, logger, stopRuntimeJobs, toPgTextArray } from "@k2b/cloud/services";
 import { err, fail, ok, type Result, unwrap } from "@k2b/stdlib";
 import type { JobContext, Worker } from "@k2b/sync";
-import { sql } from "bun";
 import { z } from "zod";
 import { consumeAiDailyBudget, releaseAiDailyBudget, reserveAiDailyBudget } from "./ai-daily-budget";
 import { durableCredentialSnapshot, type MailRequestContext, userBackedActor } from "./auth";

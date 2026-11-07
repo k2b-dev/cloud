@@ -1,6 +1,6 @@
+import { sql } from "@k2b/cloud";
 import { markdown } from "@k2b/cloud/shared";
 import { err, fail, ok, type Result } from "@k2b/stdlib";
-import { sql } from "bun";
 import { convert, type HtmlToTextOptions } from "html-to-text";
 import { requireMailboxAccess, requireVisibleConversation } from "./access";
 import { attachmentMimeOrder } from "./attachment-order";
@@ -187,7 +187,7 @@ export const getConversationPreview = async (params: {
       JOIN mail.attachments attachment ON attachment.message_id = attachment_cm.message_id
       JOIN mail.message_parts part ON part.id = attachment.part_id
       WHERE attachment_cm.conversation_id = c.id
-      ORDER BY attachment_message.internal_date DESC, attachment_message.id DESC, ${attachmentMimeOrder}
+      ORDER BY attachment_message.internal_date DESC, attachment_message.id DESC, ${attachmentMimeOrder()}
       LIMIT 1
     ) first_attachment ON true
     WHERE c.id = ${params.conversationId}::uuid AND c.mailbox_id = ${params.mailboxId}::uuid

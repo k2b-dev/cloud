@@ -1,4 +1,4 @@
-import { afterEach, expect, mock, spyOn, test } from "bun:test";
+import { afterEach, expect, mock, setSystemTime, spyOn, test } from "bun:test";
 import { compileCapabilityManifest } from "@k2b/cloud/capabilities/testing";
 import { type CapabilityExecutionContext, capabilityResultSchema, geoContract, geoRouteContract } from "@k2b/cloud/contracts";
 import { coreGeo } from "@k2b/cloud/services";
@@ -48,13 +48,13 @@ test("service accounts retain their access subject and request locale", async ()
 });
 test("stable errors preserve structured details and localize only their message", async () => {
   spyOn(coreGeo, "autocomplete").mockRejectedValue(
-    new GeoError("GEO_BUDGET_EXHAUSTED", { scope: "person", resetsAt: "2026-10-20T22:00:00.000Z" }),
+    new GeoError("GEO_BUDGET_EXHAUSTED", { scope: "cloud", resetsAt: "2026-10-31T23:00:00.000Z" }),
   );
   const en = await aiCapabilities.queries["address.autocomplete"].run({ text: "Orle" }, context);
   const de = await aiCapabilities.queries["address.autocomplete"].run({ text: "Orle" }, { ...context, locale: "de" });
   expect(de).toMatchObject({
     ok: false,
-    error: { code: "GEO_BUDGET_EXHAUSTED", details: { scope: "person", resetsAt: "2026-10-20T22:00:00.000Z" } },
+    error: { code: "GEO_BUDGET_EXHAUSTED", details: { scope: "cloud", resetsAt: "2026-10-31T23:00:00.000Z" } },
   });
   if (!en.ok && !de.ok) expect(en.error.message).not.toBe(de.error.message);
   for (const code of [
@@ -139,4 +139,28 @@ test("geo budget refusals show the required credits and shortfall in the request
     ok: false,
     error: { message: expect.stringContaining("Benötigt: 12 Credits; verfügbar: 7; fehlen: 5.") },
   });
+});
+
+test("app-paid geo handler preserves the app actor and exposes budget reset as Retry-After", async () => {
+  setSystemTime(new Date("2030-01-02T03:04:05Z"));
+  const appContext = {
+    actor: { kind: "app" as const, appId: "vendor-web", keyId: "22222222-2222-4222-8222-222222222222" },
+    accessSubject: { type: "none" as const },
+    user: null,
+    locale: "en",
+    requestId: "public-form",
+    origin: "app" as const,
+    signal: new AbortController().signal,
+  };
+  try {
+    const query = aiCapabilities.queries["address.autocomplete"].app;
+    expect(query.permission).toBe("geo:query");
+    const autocomplete = spyOn(coreGeo, "autocomplete").mockRejectedValue(
+      new GeoError("GEO_BUDGET_EXHAUSTED", { scope: "person", resetsAt: "2030-01-02T03:05:05Z" }),
+    );
+    expect(await query.run({ text: "Orle" }, appContext)).toMatchObject({ ok: false, error: { status: 429, details: { retryAfter: 60 } } });
+    expect(autocomplete).toHaveBeenCalledWith({ text: "Orle" }, appContext);
+  } finally {
+    setSystemTime();
+  }
 });

@@ -1,4 +1,4 @@
-import { sql } from "bun";
+import { sql } from "../../runtime/clients";
 
 export const migrateApprovals = async (): Promise<void> => {
   await sql`CREATE SCHEMA IF NOT EXISTS approvals`.simple();

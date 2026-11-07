@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, mock, setSystemTime, spyOn, test } from "bun:test";
-import { assertResourceOpenLink, compileCapabilityManifest } from "@k2b/cloud/capabilities/testing";
+import { assertResourceOpenLink, assertResourceView, compileCapabilityManifest } from "@k2b/cloud/capabilities/testing";
 import {
   CAPABILITY_MAX_RESULT_BYTES,
   type CapabilityActionDefinition,
@@ -8,6 +8,8 @@ import {
   type CapabilityExecutionContext,
   type CapabilityInvocationResult,
   capabilityResultSchema,
+  discussionsIssues,
+  typeViewIssues,
   type User,
 } from "@k2b/cloud/contracts";
 import { resolveCapabilityResourceReader } from "@k2b/cloud/contracts/capabilities";
@@ -224,6 +226,7 @@ const weeklyTemplate: SpaceItemTemplate = {
   spaceId: spaceUuid,
   kind: "task",
   name: "Weekly report",
+  icon: "ti ti-report",
   title: "Weekly report {{week}}",
   description: null,
   priority: "medium",
@@ -696,6 +699,7 @@ const publicIds: Record<ResourceTable, Map<string, string>> = {
   spaces: new Map([
     [spaceUuid, spaceId],
     [otherSpaceUuid, otherSpaceId],
+    ["00000000-0000-4000-8000-000000000003", "third1"],
   ]),
   columns: new Map([[columnUuid, columnId]]),
   items: new Map([
@@ -871,6 +875,7 @@ describe("spaces capabilities", () => {
       "space.activity",
       "space.assignee.list",
       "space.browse",
+      "space.containers",
       "space.list",
       "space.read",
       "space.search",
@@ -1766,6 +1771,7 @@ describe("spaces capabilities", () => {
       data: { columnId: columnUuid, title: task.title, priority: "high", tagIds: [] },
       createdBy: userId,
       actor: { kind: "user", id: userId },
+      access: { actor: userContext.actor, subject: userContext.accessSubject },
     });
     expect(result).toMatchObject({
       ok: true,
@@ -1779,6 +1785,67 @@ describe("spaces capabilities", () => {
       },
     });
     expect(recordAllowed).toHaveBeenCalledWith(expect.objectContaining({ action: "spaces.capability.task.create" }));
+  });
+
+  test("creates a task without columnId in the Space's first open column", async () => {
+    spyOn(spacesService.space, "get").mockResolvedValue(space);
+    spyOn(spacesService.space.permission, "get").mockResolvedValue("write");
+    const firstOpen = spyOn(spacesService.column, "firstOpen").mockResolvedValue({
+      id: columnUuid,
+      spaceId: spaceUuid,
+      name: "To do",
+      color: null,
+      rank: "1024",
+      isDone: false,
+    });
+    const resolve = spyOn(spacesPublicResources, "resolveSpacePublicIds");
+    const create = spyOn(spacesService.item, "create").mockResolvedValue({ ok: true, data: task });
+    spyOn(audit, "recordResultAfterSideEffect").mockImplementation(async ({ result }) => result);
+
+    const input = TaskCreateInputSchema.parse({ spaceId, title: task.title });
+    const review = await spacesCapabilities.actions["task.create"].review!(input, userContext);
+    expect(review).toMatchObject({
+      ok: true,
+      data: {
+        details: [
+          { label: "Space", value: space.name },
+          { label: "Column", value: "To do" },
+          { label: "Title", value: task.title },
+        ],
+      },
+    });
+    const result = await spacesCapabilities.actions["task.create"].run(input, userContext);
+
+    expect(result.ok).toBeTrue();
+    expect(firstOpen).toHaveBeenCalledWith({ spaceId: spaceUuid });
+    expect(resolve).not.toHaveBeenCalledWith("columns", expect.anything(), expect.anything());
+    expect(create).toHaveBeenCalledWith(expect.objectContaining({ data: { columnId: columnUuid, title: task.title, tagIds: [] } }));
+  });
+
+  test("refuses a task without columnId in a Space without an open column, before approval and before writing", async () => {
+    spyOn(spacesService.space, "get").mockResolvedValue(space);
+    spyOn(spacesService.space.permission, "get").mockResolvedValue("write");
+    spyOn(spacesService.column, "firstOpen").mockResolvedValue(null);
+    const create = spyOn(spacesService.item, "create");
+    spyOn(audit, "recordResult").mockImplementation(async ({ result }) => result);
+    const input = TaskCreateInputSchema.parse({ spaceId, title: task.title });
+
+    for (const result of [
+      await spacesCapabilities.actions["task.create"].review!(input, userContext),
+      await spacesCapabilities.actions["task.create"].run(input, userContext),
+    ])
+      expect(result).toMatchObject({
+        ok: false,
+        error: {
+          code: "BAD_INPUT",
+          message: "This Space has no open column for new tasks. Add a column that is not marked done, or name a column.",
+        },
+      });
+    expect(await spacesCapabilities.actions["task.create"].review!(input, { ...userContext, locale: "de" })).toMatchObject({
+      ok: false,
+      error: { message: expect.stringContaining("keine offene Spalte") },
+    });
+    expect(create).not.toHaveBeenCalled();
   });
 
   test("lists templates with proposals in the person's zone", async () => {
@@ -1795,7 +1862,13 @@ describe("spaces capabilities", () => {
     if (!result.ok) return;
     expect(capabilityResultSchema(TemplateListDataSchema).safeParse(result.data).success).toBeTrue();
     const [summary] = result.data.data;
-    expect(summary).toMatchObject({ id: templateId, name: "Weekly report", rule: "Mi oder Do · ganztägig", timeZone: "Europe/Berlin" });
+    expect(summary).toMatchObject({
+      id: templateId,
+      name: "Weekly report",
+      icon: "ti ti-report",
+      rule: "Mi oder Do · ganztägig",
+      timeZone: "Europe/Berlin",
+    });
     expect(summary?.proposals).toHaveLength(3);
     for (const date of summary?.proposals ?? []) expect([3, 4]).toContain(new Date(`${date}T12:00:00Z`).getUTCDay());
     expect(
@@ -1859,6 +1932,7 @@ describe("spaces capabilities", () => {
       },
       createdBy: userId,
       actor: { kind: "user", id: userId },
+      access: { actor: userContext.actor, subject: userContext.accessSubject },
     });
     expect(result).toMatchObject({
       ok: true,
@@ -1962,7 +2036,20 @@ describe("spaces capabilities", () => {
     );
   });
 
-  test("only Space admins change templates, never a write-scoped key", async () => {
+  test("template inputs accept omitted or cleared icons and reject invalid icon classes", () => {
+    const create = { spaceId, kind: "task", name: "Report" };
+    expect(TemplateCreateInputSchema.safeParse(create).success).toBeTrue();
+    for (const icon of [null, "ti ti-report", "ti ti-calendar-event", `ti ti-${"a".repeat(74)}`]) {
+      expect(TemplateCreateInputSchema.safeParse({ ...create, icon }).success).toBeTrue();
+      expect(TemplateUpdateInputSchema.safeParse({ templateId, icon }).success).toBeTrue();
+    }
+    for (const icon of ["", "ti-report", "ti ti-Report", "ti ti-report extra", `ti ti-${"a".repeat(75)}`]) {
+      expect(TemplateCreateInputSchema.safeParse({ ...create, icon }).success).toBeFalse();
+      expect(TemplateUpdateInputSchema.safeParse({ templateId, icon }).success).toBeFalse();
+    }
+  });
+
+  test("writers and write-scoped agents change templates; read-only actors cannot", async () => {
     spyOn(settings, "get").mockResolvedValue("Europe/Berlin");
     spyOn(spacesService.space, "get").mockResolvedValue(space);
     const permission = spyOn(spacesService.space.permission, "get").mockResolvedValue("write");
@@ -1989,29 +2076,45 @@ describe("spaces capabilities", () => {
       },
       accessSubject: { type: "service_account" as const, serviceAccountId: agentId },
     };
-    const createInput = TemplateCreateInputSchema.parse({ spaceId, kind: "task", name: "Weekly", tagIds: [tagId] });
-    const updateInput = TemplateUpdateInputSchema.parse({ templateId, name: "Status report" });
+    const createInput = TemplateCreateInputSchema.parse({ spaceId, kind: "task", name: "Weekly", icon: "ti ti-report", tagIds: [tagId] });
+    const updateInput = TemplateUpdateInputSchema.parse({ templateId, name: "Status report", icon: null });
     const attempt = async (context: CapabilityExecutionContext) => [
       (await spacesCapabilities.actions["template.create"].run(createInput, context)).ok,
       (await spacesCapabilities.actions["template.update"].run(updateInput, context)).ok,
       (await spacesCapabilities.actions["template.delete"].run({ templateId }, context)).ok,
     ];
 
-    for (const level of ["read", "write"] as const) {
-      permission.mockResolvedValue(level);
-      expect(await attempt(userContext)).toEqual([false, false, false]);
+    permission.mockResolvedValue("read");
+    for (const context of [userContext, writeKey]) {
+      expect(await attempt(context)).toEqual([false, false, false]);
+      expect((await spacesCapabilities.actions["template.create"].review!(createInput, context)).ok).toBeFalse();
+      expect((await spacesCapabilities.actions["template.update"].review!(updateInput, context)).ok).toBeFalse();
+      expect((await spacesCapabilities.actions["template.delete"].review!({ templateId }, context)).ok).toBeFalse();
     }
+    // A read-scoped credential cannot mutate even when its account has admin access.
     permission.mockResolvedValue("admin");
-    expect(await attempt(writeKey)).toEqual([false, false, false]);
+    const readKey = { ...writeKey, actor: { ...writeKey.actor, scopes: ["read"] } };
+    expect(await attempt(readKey)).toEqual([false, false, false]);
+    expect((await spacesCapabilities.actions["template.create"].review!(createInput, readKey)).ok).toBeFalse();
+    expect((await spacesCapabilities.actions["template.update"].review!(updateInput, readKey)).ok).toBeFalse();
+    expect((await spacesCapabilities.actions["template.delete"].review!({ templateId }, readKey)).ok).toBeFalse();
     expect(create).not.toHaveBeenCalled();
     expect(update).not.toHaveBeenCalled();
     expect(remove).not.toHaveBeenCalled();
 
+    permission.mockResolvedValue("write");
+    for (const context of [userContext, writeKey]) {
+      expect(await attempt(context)).toEqual([true, true, true]);
+      expect((await spacesCapabilities.actions["template.create"].review!(createInput, context)).ok).toBeTrue();
+      expect((await spacesCapabilities.actions["template.update"].review!(updateInput, context)).ok).toBeTrue();
+      expect((await spacesCapabilities.actions["template.delete"].review!({ templateId }, context)).ok).toBeTrue();
+    }
+    permission.mockResolvedValue("admin");
     expect(await attempt(userContext)).toEqual([true, true, true]);
     expect(create).toHaveBeenCalledWith(
-      expect.objectContaining({ spaceId: spaceUuid, data: expect.objectContaining({ tagIds: [tagUuid] }) }),
+      expect.objectContaining({ spaceId: spaceUuid, data: expect.objectContaining({ tagIds: [tagUuid], icon: "ti ti-report" }) }),
     );
-    expect(update).toHaveBeenCalledWith({ id: templateUuid, data: expect.objectContaining({ name: "Status report" }) });
+    expect(update).toHaveBeenCalledWith({ id: templateUuid, data: expect.objectContaining({ name: "Status report", icon: null }) });
     expect(remove).toHaveBeenCalledWith({ id: templateUuid });
     const review = await spacesCapabilities.actions["template.delete"].review!({ templateId }, userContext);
     expect(review).toMatchObject({ ok: true, data: { message: "Delete template “Weekly report”. Items created from it stay." } });
@@ -2094,7 +2197,13 @@ describe("spaces capabilities", () => {
 
     const result = await spacesCapabilities.actions["item.tags.set"].run({ itemId, tagIds: [tagId] }, userContext);
 
-    expect(update).toHaveBeenCalledWith({ id: itemUuid, data: { tagIds: [tagUuid] }, actor: { kind: "user", id: userId } });
+    expect(update).toHaveBeenCalledWith({
+      id: itemUuid,
+      data: { tagIds: [tagUuid] },
+      actor: { kind: "user", id: userId },
+      access: { actor: userContext.actor, subject: userContext.accessSubject },
+      expectedSpaceId: spaceUuid,
+    });
     expect(result).toMatchObject({
       ok: true,
       data: {
@@ -2591,6 +2700,11 @@ for (const [locale, taskContext, eventContext, due, done] of [
         name: containerName,
         permission: "read",
       });
+      const view = assertResourceView(result.data, { type: "spaces.space", id: spaceId });
+      expect(view).toMatchObject({ title: result.data.data.title, permission: "read", container: { title: containerName } });
+      expect(view.context).toBe(result.data.refs![0]!.context);
+      expect(view.status).toBe(result.data.refs![0]!.status);
+      expect(view.done).toBe(Boolean(result.data.data.completedAt));
       return result.data.refs![0]!;
     };
     expect(await read()).toMatchObject({ context: taskContext, status: "Offen" });
@@ -2606,6 +2720,8 @@ for (const [locale, taskContext, eventContext, due, done] of [
     const eventRef = await read();
     expect(eventRef.context).toBe(`${eventContext} · ${locale === "en" ? "Oct 30, 2026" : "30. Okt. 2026"}, 19:00`);
     expect(eventRef).not.toHaveProperty("status");
+    get.mockResolvedValue({ ...event, completedAt: createdAt });
+    await read();
     get.mockResolvedValue({ ...event, allDay: true, startsAt: "2026-10-31T07:00:00Z", endsAt: "2026-11-01T07:00:00Z" });
     expect((await read()).context).toBe(`${eventContext} · ${locale === "en" ? "Oct 31, 2026" : "31. Okt. 2026"}`);
     spyOn(spacesService.space, "get").mockResolvedValue({ ...space, name: "x".repeat(200) });
@@ -2663,4 +2779,124 @@ test("space.activity stops before listing when the owning reader denies the cont
   expect(result.ok).toBeFalse();
   if (!result.ok) expect(result.error.status).toBe(404);
   expect(list).not.toHaveBeenCalled();
+});
+
+test("declares compatible discussions and standard reader views", () => {
+  const manifest = compileCapabilityManifest("spaces", spacesCapabilities);
+  expect(discussionsIssues(manifest)).toEqual([]);
+  for (const type of ["space", "item"]) expect(typeViewIssues(manifest, type)).toEqual([]);
+  expect(manifest.discussions).toEqual({ item: "item", containers: "space.containers", activity: "space.activity" });
+  expect(manifest.resourceTypes).toContainEqual({ type: "space", view: true, readable: true });
+  expect(manifest.resourceTypes).toContainEqual({ type: "item", container: "space", view: true, readable: true });
+});
+
+for (const permission of ["read", "write", "admin", "none"] as const) {
+  test(`standard Space and item views authorize ${permission} access`, async () => {
+    spyOn(settings, "get").mockResolvedValue("UTC");
+    spyOn(spacesService.space, "get").mockResolvedValue(space);
+    spyOn(spacesService.space, "getDetail").mockResolvedValue({ ...space, columns: [], virtualColumns: [], tags: [], templates: [] });
+    spyOn(spacesService.space.permission, "get").mockResolvedValue(permission);
+    spyOn(spacesService.item, "get").mockResolvedValue(task);
+    spyOn(spacesService.item.attachments, "list").mockResolvedValue([]);
+    spyOn(spacesService.column, "get").mockResolvedValue(null);
+    const container = await spacesCapabilities.queries["space.read"].run({ id: spaceId }, { ...userContext, locale: "de" });
+    const item = await spacesCapabilities.queries["item.read"].run({ id: itemId }, userContext);
+    expect(container.ok).toBe(permission !== "none");
+    expect(item.ok).toBe(permission !== "none");
+    if (permission === "none") return;
+    if (container.ok) expect(assertResourceView(container.data)).toEqual({ title: space.name, context: "Space", permission });
+    if (item.ok) expect(assertResourceView(item.data, { type: "spaces.space", id: spaceId }).permission).toBe(permission);
+  });
+}
+
+test("activity accepts the shared container and published space alias and rejects ambiguity", async () => {
+  spyOn(spacesService.space, "get").mockResolvedValue(space);
+  spyOn(spacesService.space.permission, "get").mockResolvedValue("read");
+  const list = spyOn(spacesService.activity, "list").mockResolvedValue({ items: [], nextCursor: null });
+  const operation = spacesCapabilities.queries["space.activity"];
+  for (const input of [{ space: spaceId }, { container: spaceId }, { container: spaceId, space: spaceId }]) {
+    const result = await operation.run(operation.input.parse(input), userContext);
+    expect(result.ok && result.data.data).toEqual([]);
+    expect(list).toHaveBeenLastCalledWith(expect.objectContaining({ spaceId: spaceUuid }));
+  }
+  expect(operation.input.safeParse({}).success).toBeFalse();
+  expect(operation.input.safeParse({ container: otherSpaceId, space: spaceId }).success).toBeFalse();
+  expect(operation.input.safeParse({ container: spaceId, timeZone: "Mars/Base" }).success).toBeFalse();
+});
+
+test("discussion containers continue from the same offset when the limit changes", async () => {
+  const spaces = [space, { ...space, id: otherSpaceUuid }, { ...space, id: "00000000-0000-4000-8000-000000000003" }];
+  const list = spyOn(spacesService.space, "listWithPermission").mockImplementation(async (input) => {
+    const offset = input.pagination?.offset ?? 0;
+    const perPage = input.pagination?.perPage ?? 50;
+    return {
+      items: spaces.slice(offset, offset + perPage).map((value) => ({ ...value, permission: "read" })),
+      total: spaces.length,
+      page: 1,
+      perPage,
+      hasNext: offset + perPage < spaces.length,
+    };
+  });
+  const operation = spacesCapabilities.queries["space.containers"];
+  const first = await operation.run(operation.input.parse({ query: "Product", limit: 1 }), userContext);
+  if (!first.ok) throw new Error("Expected containers");
+  expect(operation.data.safeParse(first.data.data).success).toBeTrue();
+  expect(first.data.data).toEqual({ items: [{ ref: { type: "spaces.space", id: spaceId }, title: space.name }], next: expect.any(String) });
+  const last = await operation.run(operation.input.parse({ query: "Product", limit: 2, cursor: first.data.data.next }), userContext);
+  if (!last.ok) throw new Error("Expected containers");
+  expect(last.data.data).toEqual({
+    items: [
+      { ref: { type: "spaces.space", id: otherSpaceId }, title: space.name },
+      { ref: { type: "spaces.space", id: "third1" }, title: space.name },
+    ],
+    next: null,
+  });
+  expect(list).toHaveBeenLastCalledWith(
+    expect.objectContaining({ query: "Product", requiredLevel: "read", pagination: { perPage: 2, offset: 1 } }),
+  );
+  expect((await operation.run(operation.input.parse({ cursor: "invalid" }), userContext)).ok).toBeFalse();
+});
+
+test("task edits carry deltas and title preconditions and preserve the conflict code", async () => {
+  spyOn(spacesService.item, "get").mockResolvedValue(task);
+  spyOn(spacesService.space, "get").mockResolvedValue(space);
+  spyOn(spacesService.space.permission, "get").mockResolvedValue("write");
+  spyOn(audit, "recordResult").mockImplementation(async ({ result }) => result);
+  const update = spyOn(spacesService.item, "update").mockResolvedValue({
+    ok: false,
+    error: "Title changed; reload and review the current title",
+    code: "TITLE_CONFLICT",
+    status: 409,
+  });
+  const input = TaskUpdateInputSchema.parse({ itemId, title: "Next", expectedTitle: task.title, addAssigneeIds: [userId] });
+  expect(await spacesCapabilities.actions["task.update"].run(input, userContext)).toMatchObject({
+    ok: false,
+    error: { code: "TITLE_CONFLICT", status: 409 },
+  });
+  expect(update).toHaveBeenCalledWith(
+    expect.objectContaining({
+      data: { title: "Next", expectedTitle: task.title, addAssigneeIds: [userId] },
+      access: { actor: userContext.actor, subject: userContext.accessSubject },
+    }),
+  );
+  expect(
+    await spacesCapabilities.actions["task.update"].review({ itemId, title: "Next", expectedTitle: "Stale" }, userContext),
+  ).toMatchObject({ ok: false, error: { code: "TITLE_CONFLICT" } });
+});
+
+test("task and event create keep separate capability idempotency scopes", async () => {
+  spyOn(spacesService.space, "get").mockResolvedValue(space);
+  spyOn(spacesService.space.permission, "get").mockResolvedValue("write");
+  spyOn(audit, "recordResultAfterSideEffect").mockImplementation(async ({ result }) => result);
+  const create = spyOn(spacesService.item, "create").mockResolvedValue({ ok: true, data: task });
+  const context = { ...userContext, idempotencyKey: "one-key-two-actions" };
+  await spacesCapabilities.actions["task.create"].run({ spaceId, columnId, title: "Task" }, context);
+  await spacesCapabilities.actions["event.create"].run(
+    { spaceId, columnId, title: "Event", startsAt: "2026-11-05T08:00:00.000Z", endsAt: "2026-11-05T09:00:00.000Z" },
+    context,
+  );
+  const [taskCall, eventCall] = create.mock.calls;
+  expect(taskCall?.[0].data.requestKey).toBeString();
+  expect(eventCall?.[0].data.requestKey).toBeString();
+  expect(taskCall?.[0].data.requestKey).not.toBe(eventCall?.[0].data.requestKey);
 });

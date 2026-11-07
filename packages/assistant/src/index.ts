@@ -29,7 +29,7 @@ const result = await app.start({
   lifecycle: {
     setup: migrateArtifacts,
     start: async () => {
-      rsqlAllowlist();
+      await rsqlAllowlist();
       hostTimer = setInterval(() => {
         hostSweep ??= agentHost
           .sweep()

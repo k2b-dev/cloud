@@ -8,11 +8,14 @@ order: 100
 
 Chat is for conversations with other people, notes for yourself, and channels you subscribe to.
 
+
+Forms, search, chat info and the channel and thread pages load when you open them. While they load, a notice stays in that view. If loading fails, choose **Try again** there.
+
 ## Start a chat {icon="message-plus"}
 
 :::steps
 1. Choose **New chat**.
-2. Keep **Chat** selected and choose the people or service accounts for the chat.
+2. Keep **Chat** selected and choose the people, agents or service accounts for the chat.
 3. Enter a name if you want one.
 4. Choose **Start chat**.
 :::
@@ -36,9 +39,9 @@ Reloading after the form opens does not reopen it.
 2. Choose a hit to open it.
 :::
 
-The search finds your chats and channels, the chats of Spaces and notebooks you can open, and threads by name.
-Each thread hit says where it is, for example **Thread in IT** or **Task in Spring fair**. You see at most eight hits.
-If Spaces or Notebooks do not answer, you still see the other hits, and **Try again** asks again.
+The search finds your chats and channels, resource discussions you can open, and threads by name.
+Each thread hit says where it is, for example **Thread in IT** or **Thread in Spring fair**. You see at most eight hits.
+If a resource provider does not answer, you still see the other hits, and **Try again** asks again.
 Press `Escape` or empty the field to see the list again.
 
 ## Discover channels {icon="compass"}
@@ -68,7 +71,7 @@ Existing members keep their access when you change the audience.
 5. Choose **New channel**.
 :::
 
-If the operator allows it, you can choose **Everyone with a Cloud account**. This includes guests and service accounts.
+If the operator allows it, you can choose **Every person with a Cloud account**. This includes guests. Agents and service accounts need their own access.
 If confirmation is missing, reopen **New chat → Channel** and choose **Try again** to resume the same request.
 
 ## If confirmation is missing {icon="refresh"}

@@ -5,7 +5,7 @@ section: AI
 order: 1060
 description: Run validated model tasks outside an interactive chat request.
 tags: [ai, structured-output, background]
-updated: 2026-10-18
+updated: 2026-11-04
 ---
 
 # Structured and background AI
@@ -65,9 +65,9 @@ The returned value includes the parsed output, a resolved `model` reference, usa
 structured-output metadata.
 
 Structured tasks and context compaction keep their previous reasoning requests:
-`low` for OpenAI, OpenRouter, vLLM and OpenAI-compatible profiles, a zero thinking
-budget for Gemini, and no thinking field for Anthropic, Mistral and Ollama, which
-keep their model defaults. The profile thinking level does not apply. Profile
+`low` for OpenAI, OpenRouter, vLLM and OpenAI-compatible profiles, `none` for
+Gemini, and no thinking field for Anthropic, Mistral and Ollama, which keep their
+model defaults. The profile thinking level does not apply. Profile
 `extraBody` still applies and can override nested provider parameters; see
 [Thinking level](/en/docs/ai/models-and-providers#set-the-thinking-level).
 
@@ -460,12 +460,12 @@ It does not deliver into an archived chat.
 ## Workflow inference limits and reuse
 
 Workflow inference has an absolute attempt budget, including admission and
-structured-output repair. `WORKFLOW_AI_ATTEMPT_TIMEOUT_MS` defaults to 60,000 ms:
+structured-output repair. `ai.workflow_attempt_timeout_ms` defaults to 60,000 ms:
 the pilot p95 was about four seconds, so a minute leaves substantial headroom
 while bounding occupied capacity. Timeout aborts the provider with
 `WORKFLOW_AI_TIMEOUT` and follows the existing three-attempt retry policy.
 
-`WORKFLOW_AI_QUEUE_TIMEOUT_MS` defaults to 60,000 ms. Recovery checks every ten
+`ai.workflow_queue_timeout_ms` defaults to 60,000 ms. Recovery checks every ten
 seconds in bounded batches. Overdue queued tasks become
 `WORKFLOW_AI_QUEUE_TIMEOUT`; a worker without a heartbeat for 30 seconds becomes
 `WORKFLOW_AI_INTERRUPTED`. Both persist a failure and wake the waiting workflow.
@@ -485,7 +485,7 @@ fails permanently as `WORKFLOW_AI_INPUT_TOO_LARGE`: narrow the supplied content
 or inspect the original manually, then start a new run. The original is retained;
 no content is silently truncated.
 
-Mail additionally rejects bodies over `MAIL_WORKFLOW_AI_BODY_MAX_CHARS` before
+Mail additionally rejects bodies over `mail.workflow_ai_body_max_chars` before
 loading them into an AI step (pilot default: 20,000 characters). Frozen bodies and text supplied through source aliases
 receive the same per-string check. Attachments are metadata only, not extracted contents.
 Application value resolvers may throw `WorkflowValueError(message, code)` from
@@ -508,7 +508,7 @@ dispatch fail as `WORKFLOW_AI_MODEL_CHANGED` rather than recording an answer
 under an obsolete cache key. A provider response followed by a process crash
 before persistence can still incur another call: this remains at least once.
 
-Mail reserves new inference against `WORKFLOW_AI_BUDGET`, independently of
+Mail reserves new inference against `ai.workflow_budget`, independently of
 per-run effect caps and the installation's existing priced background budget.
 The pilot defaults are two active or successful logical requests per message in a rolling 24 hours,
 10 tasks per minute per mailbox with burst 20, 2,000 distinct messages per
@@ -539,6 +539,102 @@ The shared Workflow AI consumer also uses the registry budget’s `globalConcurr
 value as its global NATS in-flight bound, including unscoped callers. Changing
 that resource setting requires the same deliberate Sync migration as other
 durable consumer configuration changes.
+
+## Ask typed decision questions
+
+Use `runAiDecision()` from `@k2b/cloud/ai` (also exported from `@k2b/cloud`)
+for yes/no, choice and score questions answered with probabilities. It calls a
+decision model through System One. Configure the installation’s
+[decision model](/en/docs/operations/decision-models) first.
+
+```ts
+import { runAiDecision } from "@k2b/cloud/ai";
+
+const result = await runAiDecision({
+  task: "mail.triage",
+  appId: "mail",
+  usageSubject: accessSubject,
+  state: { subject: mail.subject, text: mail.text },
+  questions: {
+    category: {
+      type: "choice",
+      instructions: "What kind of message is this?",
+      criteria: {
+        sales: "Orders and offers",
+        support: "Help with existing orders",
+        spam: "Unsolicited advertising or deceptive messages",
+        other: "Other messages",
+      },
+    },
+    urgent: { type: "noul", instructions: "Does this message need urgent attention?" },
+    severity: {
+      type: "score",
+      instructions: "How severe is the reported problem?",
+      criteria: ["No problem", "Minor problem", "Major problem"],
+    },
+  },
+  signal,
+});
+
+const category = result.answers.category;
+if (
+  (category.choice === "sales" || category.choice === "support") &&
+  category.confidence >= 0.9 &&
+  result.answers.urgent.probability >= 0.9
+) {
+  flagForReview(mail.id);
+}
+```
+
+Authorize the mail read before calling. Read the category first and use urgency
+only within relevant categories. Urgent wording in spam can produce a high
+urgency probability; urgency alone must not drive triage. Choose thresholds for
+the application’s cost of mistakes. A probability is a model estimate, not a
+guarantee. For question variables, use `satisfies DecisionQuestions` or
+`as const` to preserve literal option IDs; `DecisionQuestions`, `DecisionAnswers` and `DecisionImage`
+are exported from `@k2b/cloud/ai`.
+
+`noul` returns `probability` and `value` (`probability >= 0.5`). `choice` returns
+`choice`, `confidence` and per-option `probabilities`. `score` returns the
+probability-weighted `score`, most likely zero-based `level`, `confidence` and
+per-level `probabilities`. The result contains `answers`, the resolved
+`model: { id }` and `usage`; provider response bodies are not exposed.
+
+Omit `model` to use the `decision` slot. An explicit `model: { id }` selects a
+decision model’s standard variant. Chat classes and class fallback do not
+apply. Application server code may use a `restricted` provider only with an
+explicit ID. With `usageSubject`, Cloud excludes restricted providers, checks
+model grants immediately before admission and charges that subject’s Assistant
+allowance. Without it, central background accounting applies. Use
+`allowedDataBoundaries` to narrow either path, for example to `["private"]`.
+Optional `attribution`, `appId` and `traceParent` follow the structured API.
+
+Send 1–128 questions. Choices and scores need at least two alternatives.
+State must serialize as JSON. Cloud estimates the UTF-8 size of serialized
+state and questions at four bytes per token and rejects input beyond the
+configured model context. This is a preflight estimate; a provider may reject
+input that needs more tokens. Optional `images` contain `{ data, mediaType }`,
+with base64 data without a data-URL prefix, and require `vision`. Image support
+depends on both the provider and model. Cloud trusts the administrator’s
+configured `vision` capability; it does not probe whether images are processed.
+As of 2026-11-04, cortecs ignores images on `/v1/systemone`, so use text-only
+decisions there. Existing AI limits apply: 16 images, 10 MiB per image and
+40 MiB total.
+
+Each call has a 60-second deadline and honors `signal`. There is no automatic
+retry. Cloud records metadata-only runs and usage. Missing measurements become
+`usage.estimated: true`; refused calls are booked with zero usage. Admission
+reserves the configured context as the output bound because System One cannot
+accept a smaller output-token cap; insufficient allowance fails before dispatch.
+Images reserve the full context as input too.
+
+`AiDecisionError.code` distinguishes `decision_not_configured`,
+`decision_model_unavailable`, `decision_images_not_supported`,
+`decision_input_invalid` and `decision_input_too_large`. Provider failures use
+`provider_error` (including the internal deadline) or `provider_aborted`
+(for caller cancellation); budget and model-access errors retain the existing
+Cloud codes. Show failures for work a person started. The caller
+owns persistence, cancellation feedback, domain effects and deliberate retries.
 
 ## Request a class
 
@@ -575,6 +671,41 @@ AI off produces `ai_disabled`; all classes empty produces `ai_no_model`.
 Missing, disabled, forbidden or incompatible models produce
 `model_policy_mismatch`. Budget exhaustion fails without fallback. Show errors
 for work a person started. Optional titles and enrichment skip unavailable AI.
+
+## Use a model without a data-protection commitment
+
+A provider with `dataBoundary: "restricted"` makes no data-protection
+commitment, see [Choose the data boundary](/en/docs/ai/models-and-providers#choose-the-data-boundary).
+Only application server code reaches its models, and only by naming the
+variant ID:
+
+- `runAiStructured({ model: { id } })` with its default model resolution;
+- `executeAiTask` with `model: { id }` and that default resolution;
+- `runApplicationAiTask` without `usageSubject`.
+
+```ts
+const { productTextModel } = await settings.read();
+const result = await runAiStructured({
+  task: "product-description",
+  appId: "inventory",
+  model: { id: productTextModel },
+  input: article.facts,
+  output: ProductText,
+});
+```
+
+Store the ID in an application setting and let the administrator enter it.
+The application decides and is responsible for what it sends to such a model.
+To offer a list, call `listAiModels({ kind: "selectable", allowedDataBoundaries: ["restricted"] })`;
+without an explicit `allowedDataBoundaries` that names `restricted`, model
+lists and policies leave these models out.
+
+A class request never resolves to a `restricted` model. Workflows, code,
+`runApplicationAiTask` with `usageSubject` and every chat surface reject one
+with `model_policy_mismatch` and `fields.boundary: "restricted"`. A deleted or
+disabled model fails with `model_policy_mismatch` and `fields.model` naming
+the stored ID; show that error so an administrator can choose another model.
+Provider failures keep `provider_error`.
 ## Reuse durable AI from an application job
 
 Use `runApplicationAiTask()` from `@k2b/cloud/ai` when an application-owned
@@ -585,7 +716,7 @@ coverage metadata that actually produced them.
 
 ```ts
 import { runApplicationAiTask } from "@k2b/cloud/ai";
-import { env } from "@k2b/cloud/config";
+import { getWorkflowAiBudget } from "@k2b/cloud/workflows/ai";
 
 const result = await runApplicationAiTask({
   appId: "inventory",
@@ -595,7 +726,7 @@ const result = await runApplicationAiTask({
   source: {
     sourceId: item.id,
     sourceRevision: item.revision,
-    budget: env.WORKFLOW_AI_BUDGET,
+    budget: await getWorkflowAiBudget(),
   },
   request: {
     kind: "classify",
@@ -672,3 +803,13 @@ trimmed length; values are trimmed before applying that minimum and `maxLength`.
 An optional `date_time` field validates a timestamp with a timezone inside the
 structured call. Omit it when the source supplies no date. These constraints
 apply before a durable task can become a cached success.
+
+## Administrator workflow budgets
+
+Read the current installation policy with `await getWorkflowAiBudget()` from
+`@k2b/cloud/workflows/ai` when constructing a workflow AI source scope. The
+operator manages `ai.workflow_budget`, `ai.workflow_attempt_timeout_ms`, and
+`ai.workflow_queue_timeout_ms` as settings. Admission uses the current budget
+for new work. Changing the budget's `globalConcurrent` also changes worker
+capacity and requires restarting all AI workers. See the
+[environment migration guide](/en/docs/operations/deprecations-and-migrations).

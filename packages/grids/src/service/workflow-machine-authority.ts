@@ -1,7 +1,7 @@
+import { sql } from "@k2b/cloud";
 import type { RequestActor } from "@k2b/cloud/server";
 import { accounts, type Mandate, mandates } from "@k2b/cloud/services";
 import { err, fail, ok, type Result } from "@k2b/stdlib";
-import { SQL, sql } from "bun";
 import type { GridsWorkflowChannel, GridsWorkflowPrincipal, WorkflowMachineAuthorityChange } from "../workflows/contracts";
 import { hasTransactionalBaseAdmin, lockBaseAuthorization } from "./access";
 import { logAudit, type SqlClient } from "./audit";
@@ -258,7 +258,7 @@ export async function configureWorkflowMachineAuthority(params: {
     return ok();
   });
   const changed = await mutation.catch((error): Result<void> => {
-    if (error instanceof SQL.PostgresError && error.errno === "55P03")
+    if (error instanceof Error && error.name === "PostgresError" && "errno" in error && error.errno === "55P03")
       return fail(err.conflict("Workflow authorization is changing; reload before trying again"));
     throw error;
   });

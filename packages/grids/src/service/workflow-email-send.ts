@@ -6,8 +6,9 @@
  * So each recipient gets its own delivery intent, keyed by the run, the step
  * and the position; a replay finds the ones already settled and skips them.
  */
+
+import { sql } from "@k2b/cloud";
 import type { WorkflowJsonValue } from "@k2b/cloud/workflows";
-import { sql } from "bun";
 import { app } from "../config";
 import type { EmailTemplate } from "../contracts";
 import { createWorkflowNotificationSender } from "../notifications";

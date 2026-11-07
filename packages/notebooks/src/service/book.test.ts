@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, spyOn, test } from "bun:test";
+import * as charts from "@k2b/editor/markdown/lib/chart-blocks";
 import { renderNotebookBook } from "../lib/book-renderer";
-import * as charts from "../lib/chart-blocks";
 import { loadBookBlockPreview, loadBookNote, resolveBookQueries } from "./book";
 import * as query from "./note-query";
 import * as notebooks from "./notebooks";

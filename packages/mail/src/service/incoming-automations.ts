@@ -1,11 +1,10 @@
-import { lazySync } from "@k2b/cloud";
+import { lazySync, sql } from "@k2b/cloud";
 import { isAppSessionActor } from "@k2b/cloud/server";
-import { audit, mandates, toPgTextArray, toPgUuidArray, trace } from "@k2b/cloud/services";
+import { audit, mandates, toPgTextArray, toPgUuidArray } from "@k2b/cloud/services";
 import type { WorkflowJsonValue } from "@k2b/cloud/workflows";
 import { emitWorkflowEvent, notifyWorkflowWorker } from "@k2b/cloud/workflows/store";
 import { err, fail, isServiceError, ok, type Result, unwrap } from "@k2b/stdlib";
-import type { PumpState, Worker } from "@k2b/sync";
-import { sql } from "bun";
+import type { PumpState, PumpStatus, Worker } from "@k2b/sync";
 import {
   type CreateIncomingAutomation,
   createIncomingAutomationSchema,
@@ -79,6 +78,18 @@ type StoredIncomingAutomation = IncomingAutomation & {
 
 export type IncomingAutomationActivityMetadata = Pick<IncomingAutomation, "id" | "workflowId" | "name">;
 
+export type IncomingAutomationBackfillActivity = {
+  operationId: string;
+  automationId: string;
+  workflowId: string;
+  name: string;
+  status: PumpStatus;
+  dispatched: number;
+  lastError: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
 type IncomingAutomationRow = {
   id: string;
   mailbox_id: string;
@@ -99,7 +110,7 @@ type IncomingAutomationRow = {
 type AutomationActor = { kind: "user" | "service_account"; id: string };
 type AutomationConditionSet = { mode: MailAutomationConditions["mode"]; items: MailAutomationCondition[] };
 
-const incomingAutomationColumns = sql`
+const incomingAutomationColumns = () => sql`
   automation.id,
   automation.mailbox_id,
   automation.workflow_id,
@@ -332,12 +343,12 @@ const incomingAutomationPreviewIsExact = (scope: MailAutomationScope): boolean =
   scope.conditions.items.every((condition) => condition.field === "sender_address" || condition.field === "sender_domain");
 
 // Preview and backfill must use the first From address, like workflow snapshot execution.
-const firstFromAddress = sql`sender.position = (
+const firstFromAddress = () => sql`sender.position = (
   SELECT min(first_sender.position) FROM mail.message_addresses first_sender
   WHERE first_sender.message_id = message.id AND first_sender.role = 'from'
 )`;
 
-const incomingAutomationTargetFrom = sql`
+const incomingAutomationTargetFrom = () => sql`
   FROM mail.remote_message_refs remote_ref
   JOIN mail.message_placements placement
     ON placement.remote_message_ref_id = remote_ref.id
@@ -352,12 +363,12 @@ const incomingAutomationTargetFrom = sql`
   LEFT JOIN mail.message_addresses sender
     ON sender.message_id = message.id
    AND sender.role = 'from'
-   AND ${firstFromAddress}
+   AND ${firstFromAddress()}
   LEFT JOIN mail.conversation_messages conversation_message
     ON conversation_message.message_id = message.id
 `;
 
-const inboundIncomingAutomationTarget = sql`
+const inboundIncomingAutomationTarget = () => sql`
   NOT EXISTS (
     SELECT 1
     FROM mail.sender_identities identity
@@ -371,8 +382,8 @@ const inboundIncomingAutomationTarget = sql`
 export const senderMatchesSql = (kind: SenderMatchKind, value: string): SqlFragment => sql`EXISTS (
   SELECT 1 FROM mail.message_addresses sender
   WHERE sender.message_id = message.id AND sender.role = 'from'
-    AND ${firstFromAddress}
-    AND ${inboundIncomingAutomationTarget}
+    AND ${firstFromAddress()}
+    AND ${inboundIncomingAutomationTarget()}
     AND ${senderMatchSql(kind, value)}
 )`;
 
@@ -599,7 +610,7 @@ const loadIncomingAutomation = async (
   includeDeleted = false,
 ): Promise<Result<StoredIncomingAutomation>> => {
   const [row] = await db<IncomingAutomationRow[]>`
-    SELECT ${incomingAutomationColumns}
+    SELECT ${incomingAutomationColumns()}
     FROM mail.incoming_automations automation
     WHERE automation.id = ${automationId}::uuid
       AND automation.mailbox_id = ${mailboxId}::uuid
@@ -622,7 +633,13 @@ const recordActivity = async (params: {
   db: SqlClient;
   context: MailRequestContext;
   automation: IncomingAutomation;
-  action: "incoming_automation.created" | "incoming_automation.updated" | "incoming_automation.deleted";
+  action:
+    | "incoming_automation.created"
+    | "incoming_automation.updated"
+    | "incoming_automation.deleted"
+    | "incoming_automation.backfill.start";
+  metadata?: Record<string, unknown>;
+  outcome?: "requested" | "confirmed";
 }): Promise<string> => {
   const actor = requestActor(params.context);
   const [activity] = await params.db<{ id: string | number }[]>`
@@ -633,7 +650,7 @@ const recordActivity = async (params: {
       ${actor.kind},
       ${actor.id}::uuid,
       ${params.action},
-      'confirmed',
+      ${params.outcome ?? "confirmed"},
       'incoming_automation',
       ${params.automation.id}::uuid,
       ${{
@@ -642,6 +659,7 @@ const recordActivity = async (params: {
         scope: params.automation.scope,
         ai: incomingAutomationHasAi(params.automation.steps),
         revision: params.automation.revision,
+        ...params.metadata,
       }}::jsonb
     )
     RETURNING id
@@ -664,7 +682,7 @@ export const listIncomingAutomations = async (context: MailRequestContext, mailb
   const allowed = await requireMailboxPermission(context, mailboxId, "read");
   if (!allowed.ok) return allowed;
   const rows = await sql<IncomingAutomationRow[]>`
-    SELECT ${incomingAutomationColumns}
+    SELECT ${incomingAutomationColumns()}
     FROM mail.incoming_automations automation
     WHERE automation.mailbox_id = ${mailboxId}::uuid
       AND automation.deleted_at IS NULL
@@ -722,10 +740,10 @@ export const previewIncomingAutomationMatches = async (params: {
     SELECT
       COUNT(DISTINCT remote_ref.id)::int AS message_count,
       COUNT(DISTINCT conversation_message.conversation_id)::int AS conversation_count
-    ${incomingAutomationTargetFrom}
+    ${incomingAutomationTargetFrom()}
     WHERE resource.mailbox_id = ${params.mailboxId}::uuid
       AND remote_ref.stale_at IS NULL
-      AND ${inboundIncomingAutomationTarget}
+      AND ${inboundIncomingAutomationTarget()}
       AND ${incomingAutomationCandidateSql(scope.data)}
   `;
   const messageCount = Number(counts?.message_count ?? 0);
@@ -778,7 +796,7 @@ const incomingAutomationBackfillCandidateSql = (input: IncomingAutomationBackfil
   resource.mailbox_id = ${input.mailboxId}::uuid
   AND remote_ref.stale_at IS NULL
   AND remote_ref.first_seen_at <= ${input.cutoffAt}
-  AND ${inboundIncomingAutomationTarget}
+  AND ${inboundIncomingAutomationTarget()}
   AND ${incomingAutomationCandidateSql(input.scope)}
   ${
     input.retryFailed === true
@@ -837,6 +855,8 @@ const BACKFILL_PUMP_ID = "mail:incoming-automation-backfill";
 const getIncomingAutomationBackfillPump = lazySync((sync) =>
   sync.pump<IncomingAutomationBackfillInput, never, IncomingAutomationBackfillItem>({
     id: BACKFILL_PUMP_ID,
+    // The Mail activity view promises a 30-day history, independently of diagnostic retention.
+    retention: { terminalMs: 30 * 24 * 60 * 60 * 1_000 },
     batchSize: EXISTING_MESSAGE_APPLICATION_LIMIT,
     retry: { maxAttempts: 3, backoffMs: [1_000, 2_000, 4_000] },
     // One backfill applies at most EXISTING_MESSAGE_APPLICATION_LIMIT messages —
@@ -847,7 +867,7 @@ const getIncomingAutomationBackfillPump = lazySync((sync) =>
       await loadCurrentBackfillAutomation(input, sql);
       const rows = await sql<{ remote_message_ref_id: string }[]>`
         SELECT DISTINCT remote_ref.id AS remote_message_ref_id, message.internal_date
-        ${incomingAutomationTargetFrom}
+        ${incomingAutomationTargetFrom()}
         WHERE ${incomingAutomationBackfillCandidateSql(input)}
           AND NOT ${incomingAutomationBackfillAcceptedSql(input)}
         ORDER BY message.internal_date DESC, remote_ref.id DESC
@@ -890,6 +910,64 @@ const getIncomingAutomationBackfillPump = lazySync((sync) =>
   }),
 );
 
+export const listIncomingAutomationBackfillActivity = async (
+  context: MailRequestContext,
+  mailboxId: string,
+  since: Date,
+  limit = 200,
+): Promise<Result<IncomingAutomationBackfillActivity[]>> => {
+  const allowed = await requireMailboxPermission(context, mailboxId, "read");
+  if (!allowed.ok) return allowed;
+  const rows = await sql<
+    {
+      automation_id: string;
+      operation_id: string;
+      workflow_id: string;
+      name: string;
+      outcome: string;
+      last_error: string | null;
+      stored_status: PumpStatus | null;
+      dispatched: number | null;
+      updated_at: string | null;
+      created_at: Date;
+    }[]
+  >`
+    SELECT target_id AS automation_id, metadata ->> 'operationId' AS operation_id,
+      metadata ->> 'workflowId' AS workflow_id, metadata ->> 'name' AS name,
+      outcome, metadata ->> 'lastError' AS last_error,
+      metadata ->> 'backfillStatus' AS stored_status,
+      metadata -> 'dispatched' AS dispatched, metadata ->> 'updatedAt' AS updated_at, created_at
+    FROM mail.activity_events
+    WHERE mailbox_id = ${mailboxId}::uuid
+      AND action = 'incoming_automation.backfill.start'
+      AND created_at >= ${since}
+    ORDER BY created_at DESC, id DESC
+    LIMIT ${Math.min(limit, 200)}
+  `;
+  const items: IncomingAutomationBackfillActivity[] = [];
+  // Read only the bounded page, sequentially rather than fan out broker requests.
+  for (const row of rows) {
+    const state = await getIncomingAutomationBackfillPump().get({
+      key: incomingAutomationBackfillKey(row.automation_id, row.operation_id),
+    });
+    if (state && (state.input.mailboxId !== mailboxId || state.input.automationId !== row.automation_id)) {
+      throw new Error("Mail backfill activity does not match its operation");
+    }
+    items.push({
+      operationId: row.operation_id,
+      automationId: row.automation_id,
+      workflowId: row.workflow_id,
+      name: row.name,
+      status: state?.status ?? row.stored_status ?? (row.outcome === "requested" ? "queued" : "failed"),
+      dispatched: state?.dispatched ?? row.dispatched ?? 0,
+      lastError: state?.lastError ?? row.last_error,
+      createdAt: new Date(state?.createdAt ?? row.created_at).toISOString(),
+      updatedAt: new Date(state?.updatedAt ?? row.updated_at ?? row.created_at).toISOString(),
+    });
+  }
+  return ok(items);
+};
+
 let backfillWorker: Worker | undefined;
 export const startIncomingAutomationBackfillRuntime = async (): Promise<void> => {
   backfillWorker = await getIncomingAutomationBackfillPump().process();
@@ -909,7 +987,7 @@ const loadIncomingAutomationBackfillCounts = async (
       COUNT(DISTINCT remote_ref.id) FILTER (
         WHERE ${incomingAutomationBackfillAcceptedSql(input)}
       )::bigint AS accepted
-    ${incomingAutomationTargetFrom}
+    ${incomingAutomationTargetFrom()}
     WHERE ${incomingAutomationBackfillCandidateSql(input)}
   `;
   return { candidates: Number(row?.candidates ?? 0), accepted: Number(row?.accepted ?? 0) };
@@ -1065,22 +1143,29 @@ export const startIncomingAutomationBackfill = async (params: {
           if (!associated) {
             return fail(err.conflict("Mail automation changed before the backfill started"));
           }
+          // Startup import uses the same journal lock. Correctness does not
+          // depend on the concurrent unique index having finished building.
+          const activityId = await sql.begin(async (tx) => {
+            await tx`SELECT pg_advisory_xact_lock(hashtextextended('cloud.mail.backfill-activity', 0))`;
+            const [recorded] = await tx<{ id: string | number }[]>`
+              SELECT id FROM mail.activity_events
+              WHERE mailbox_id = ${params.mailboxId}::uuid AND target_id = ${automation.id}::uuid
+                AND action = 'incoming_automation.backfill.start'
+                AND metadata ->> 'operationId' = ${parsed.data.operationId}
+              LIMIT 1
+            `;
+            return recorded
+              ? String(recorded.id)
+              : recordActivity({
+                  db: tx,
+                  context: params.context,
+                  automation,
+                  action: "incoming_automation.backfill.start",
+                  metadata: { operationId: parsed.data.operationId, name: automation.name },
+                  outcome: "requested",
+                });
+          });
           if (!existing) {
-            await trace.start({
-              name: "Mail automation backfill",
-              source: BACKFILL_PUMP_ID,
-              appId: "mail",
-              category: "backfill",
-              spanKey: trace.syncSpanKey("pump", BACKFILL_PUMP_ID, key),
-              attributes: {
-                "mail.mailbox.id": params.mailboxId,
-                "mail.incoming_automation.id": automation.id,
-                "mail.workflow.id": automation.workflowId,
-                "mail.workflow.version_id": automation.workflowVersionId,
-                "mail.backfill.operation_id": parsed.data.operationId,
-                "mail.backfill.retry_failed": parsed.data.retryFailed === true,
-              },
-            });
             try {
               await assertLeaseActive();
               const input: IncomingAutomationBackfillInput = {
@@ -1098,16 +1183,17 @@ export const startIncomingAutomationBackfill = async (params: {
                 key: incomingAutomationBackfillKey(automation.id, parsed.data.operationId),
                 input: { ...input, startCounts: await loadIncomingAutomationBackfillCounts(input) },
               });
+              await sql`UPDATE mail.activity_events SET outcome = 'confirmed', metadata = metadata - 'lastError' WHERE id = ${activityId}::bigint`;
             } catch (error) {
-              // The span was opened before the pump run existed; close it so it does not dangle.
-              await trace.end({
-                spanKey: trace.syncSpanKey("pump", BACKFILL_PUMP_ID, key),
-                status: "error",
-                statusMessage: error instanceof Error ? error.message : String(error),
-              });
+              await sql`
+                UPDATE mail.activity_events
+                SET outcome = 'failed', metadata = metadata || ${{ lastError: error instanceof Error ? error.message : String(error) }}::jsonb
+                WHERE id = ${activityId}::bigint
+              `;
               throw error;
             }
           }
+          mailLive.wake();
           const state = existing ?? (await pump.get({ key }));
           if (!state) throw new Error("Mail automation backfill was not persisted");
           const result = ok(await mapIncomingAutomationBackfill(state));
@@ -1273,7 +1359,7 @@ export const createIncomingAutomation = async (params: {
           ${actor.id}::uuid,
           ${mandate?.id ?? null}::uuid
         )
-        RETURNING ${incomingAutomationColumns}
+        RETURNING ${incomingAutomationColumns()}
       `,
       );
       const [row] = rows;
@@ -1328,7 +1414,6 @@ export const updateIncomingAutomation = async (params: {
       );
       const actions = incomingAutomationActions(steps);
       const current = unwrap(await loadIncomingAutomation(params.mailboxId, params.automationId, tx, true));
-      if (current.revision !== parsed.data.expectedRevision) unwrap(fail(err.conflict("Incoming automation was changed")));
       unwrap(
         await rejectOwnSenderTargets({
           mailboxId: params.mailboxId,
@@ -1347,9 +1432,10 @@ export const updateIncomingAutomation = async (params: {
       const definitionChanged = sha256Json(current.scope) !== sha256Json(scope.data) || sha256Json(current.steps) !== sha256Json(steps);
       const enabledChanged = current.enabled !== parsed.data.enabled;
       const changed = current.name !== name || definitionChanged || enabledChanged;
-      if (!changed) {
+      if (!changed && parsed.data.expectedRevision <= current.revision) {
         return { automation: current, activityId: null as string | null };
       }
+      if (current.revision !== parsed.data.expectedRevision) unwrap(fail(err.conflict("Incoming automation was changed")));
       if (definitionChanged && current.mandateId && !userBackedActor(params.context)) {
         unwrap(fail(err.forbidden("Spaces automation actions require a user-backed actor")));
       }
@@ -1446,10 +1532,10 @@ export const setIncomingAutomationEnabled = async (params: {
     const result = await sql.begin(async (tx) => {
       unwrap(await lockMailbox(params.context, params.mailboxId, tx));
       const current = unwrap(await loadIncomingAutomation(params.mailboxId, params.automationId, tx, true));
-      if (current.revision !== parsed.data.expectedRevision) unwrap(fail(err.conflict("Incoming automation was changed")));
-      if (current.enabled === parsed.data.enabled) {
+      if (current.enabled === parsed.data.enabled && parsed.data.expectedRevision <= current.revision) {
         return { automation: current, activityId: null as string | null };
       }
+      if (current.revision !== parsed.data.expectedRevision) unwrap(fail(err.conflict("Incoming automation was changed")));
       unwrap(await rejectActiveBackfillMutation(current));
       if (parsed.data.enabled) {
         const validation = await validateMailWorkflowSource({
@@ -1547,7 +1633,7 @@ export const deleteIncomingAutomation = async (params: {
         UPDATE mail.incoming_automations AS automation
         SET enabled = false, mandate_id = NULL, revision = revision + 1, deleted_at = now()
         WHERE automation.id = ${params.automationId}::uuid AND automation.mailbox_id = ${params.mailboxId}::uuid
-        RETURNING ${incomingAutomationColumns}
+        RETURNING ${incomingAutomationColumns()}
       `;
       if (!row) throw new Error("Deleted incoming automation could not be reloaded");
       const automation = mapIncomingAutomation(row);

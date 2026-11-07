@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, expect, setSystemTime, spyOn, test } from "bun:test";
 import { Readable } from "node:stream";
+import { sql } from "@k2b/cloud";
 import { encryptSecret } from "@k2b/cloud/services";
-import { sql } from "bun";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import { reviewedDraftContentHash } from "../../test/fixtures/send-content";
 import { mailCapabilities } from "../capabilities";
@@ -1525,8 +1525,16 @@ suite("mail PostgreSQL foundation", () => {
       leaseToken: recoveryLease.data.token,
     });
     expect(restoredDraft.ok && restoredDraft.data.body).toBe("Recovered stale body");
-    expect(restoredDraft.ok && restoredDraft.data.recoveryCopyCount).toBe(0);
+    expect(restoredDraft.ok && restoredDraft.data.recoveryCopyCount).toBe(1);
     if (!restoredDraft.ok) return;
+    const retainedCopies = await listDraftRecoveryCopies({
+      context,
+      mailboxId: mailbox.data.id,
+      draftId: draft.data.id,
+    });
+    expect(retainedCopies.ok && retainedCopies.data.filter((copy) => !copy.restoredAt).map((copy) => copy.content.body)).toEqual([
+      "Integration searchable body",
+    ]);
     const outgoingAttachment = Buffer.from(`outgoing attachment ${suffix}`);
     const draftWithAttachment = await uploadDraftAttachmentStream({
       context,

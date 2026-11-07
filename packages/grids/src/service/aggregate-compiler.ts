@@ -1,4 +1,4 @@
-import { sql } from "bun";
+import { sql } from "@k2b/cloud";
 import { type AggregateKind, aggregateOutputKey, isFieldAggregatable } from "./aggregate-capabilities";
 import { storageOf } from "./field-storage";
 import type { FormulaSqlExpression } from "./formula-sql-compiler";

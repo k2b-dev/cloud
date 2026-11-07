@@ -1,8 +1,8 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
-import { sql } from "bun";
 import { databaseSuite, useFreshDatabase } from "../../../../scripts/fixtures/test-infra";
 import { migrate as migrateAuth } from "../../../core/src/migrate/core/auth";
 import { migrate as migrateEvents } from "../../../core/src/migrate/core/events";
+import { sql } from "../runtime/clients";
 import { mapFixture } from "./map.test-fixture";
 import { aiMapToolResult } from "./map-contracts";
 import { AiMapConflict, aiMaps } from "./map-store";

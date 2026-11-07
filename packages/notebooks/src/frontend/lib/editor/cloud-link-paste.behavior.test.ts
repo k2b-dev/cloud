@@ -3,9 +3,9 @@ import { history, undo } from "@codemirror/commands";
 import { forceParsing } from "@codemirror/language";
 import { Compartment, EditorSelection, EditorState } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
+
 import { isServer } from "solid-js/web";
 import { createDomTestHarness } from "../../../../../ui/test/dom";
-import { markdownExtension } from "./markdown";
 
 describe("pasted Cloud links", () => {
   if (isServer) {
@@ -25,6 +25,7 @@ describe("pasted Cloud links", () => {
   /** An editor with the paste recognition; `answer()` lets the resolve request finish. */
   const mount = async (doc: string, selection: EditorSelection | { anchor: number }) => {
     const dom = createDomTestHarness();
+    const { markdownExtension } = await import("@k2b/editor/markdown");
     const shell = document.createElement("script");
     shell.id = "cloud-shell-data";
     shell.type = "application/json";

@@ -84,9 +84,9 @@ describe("Notebook on the shared text editor", () => {
     const { page, errors, close } = await open();
     try {
       expect(await cell(page, 1, 2).textContent()).toContain("100");
-      // One editable caption: the @handle stays source text, with no second rendered caption.
-      expect(await page.locator(".cm-notebook-table-caption").count()).toBe(1);
-      expect(await page.locator(".cm-notebook-table-caption").textContent()).toBe("@costs");
+      // One anchor label above the table, without @; the source line stays in the text.
+      expect(await page.locator(".md-block-handle").count()).toBe(1);
+      expect(await page.locator(".md-block-handle").textContent()).toBe("costs");
 
       const before = await text(page);
       await cell(page, 1, 1).click();
@@ -278,7 +278,8 @@ describe("Notebook on the shared text editor", () => {
       await page.evaluate(() => window.noteHarness.setOnline(false));
       await cell(page, 2, 1).click();
       await toolbarButton(page, "Edit table").click();
-      expect(await page.getByRole("menuitem", { name: "Insert column right", exact: true }).getAttribute("aria-disabled")).toBe("true");
+      // The menu follows the connection state reactively; wait for it instead of reading once.
+      await page.getByRole("menuitem", { name: "Insert column right", exact: true }).and(page.locator('[aria-disabled="true"]')).waitFor();
       expect(await page.getByRole("menuitem", { name: "Delete row" }).getAttribute("aria-disabled")).toBe("true");
       expect(await page.getByRole("menuitem", { name: /^Insert row below(?:\s*Enter)?$/ }).getAttribute("aria-disabled")).not.toBe("true");
       expect(
@@ -291,7 +292,10 @@ describe("Notebook on the shared text editor", () => {
       // Reconnecting re-enables the menu without another document change.
       await page.evaluate(() => window.noteHarness.setOnline(true));
       await toolbarButton(page, "Edit table").click();
-      expect(await page.getByRole("menuitem", { name: "Insert column right", exact: true }).getAttribute("aria-disabled")).not.toBe("true");
+      await page
+        .getByRole("menuitem", { name: "Insert column right", exact: true })
+        .and(page.locator(':not([aria-disabled="true"])'))
+        .waitFor();
       expect(await page.evaluate(() => window.noteHarness.posts())).toBe(0);
     } finally {
       await close();
@@ -583,6 +587,37 @@ describe("Notebook on the shared text editor", () => {
     }
   });
 
+  test("typing changes no element outside the text, also while table actions come and go", async () => {
+    const { page, close } = await open();
+    try {
+      await page.waitForFunction(() => document.querySelectorAll(".k2b-ste-table-menu .k2b-dropdown__item").length > 0);
+      await page.evaluate(() => window.noteHarness.placeCaret("After the table.", "After the table.".length));
+      const changes = await page.evaluateHandle(() => {
+        const found: string[] = [];
+        new MutationObserver((records) => {
+          for (const { target, addedNodes, removedNodes } of records) {
+            if (!(target instanceof Element) || target.closest(".cm-content")) continue;
+            for (const node of [...addedNodes, ...removedNodes])
+              if (node instanceof Element) found.push(`${target.className} > ${node.tagName.toLowerCase()}.${node.className}`);
+          }
+        }).observe(document.body, { childList: true, subtree: true });
+        return found;
+      });
+      // A Notebook re-checks its table actions on every edit, and unsent text makes them unavailable for a moment.
+      // Each element inserted while typing restyles the whole page through the shared `:has()` rules.
+      for (const [index, key] of [..."typing"].entries()) {
+        await page.evaluate((online) => window.noteHarness.setOnline(online), index % 2 === 1);
+        await page.keyboard.type(key);
+      }
+      await page.evaluate(() => window.noteHarness.setOnline(true));
+      await waitForText(page, "After the table.typing");
+      await settled(page);
+      expect(await changes.jsonValue()).toEqual([]);
+    } finally {
+      await close();
+    }
+  });
+
   test("read-only keeps the rendered table and formula results without editable cells", async () => {
     const { page, close } = await open();
     try {
@@ -670,13 +705,39 @@ describe("Notebook on the shared text editor", () => {
       await page.waitForFunction(() => document.querySelector(".cm-notebook-active-result")?.textContent?.includes("150"));
       expect(await prose.evaluate((element) => element.getBoundingClientRect().top)).toBe(top);
       expect(await activeCell(page)).toBe("1,2");
+      // An error is one flat chip right below the cell, with the message and suggestion, described to the cell.
+      await page.keyboard.press("ControlOrMeta+a");
+      await page.keyboard.type("=SUMM(Hours)");
+      await page.waitForFunction(() => document.querySelector(".cm-notebook-active-result[data-error]")?.textContent?.includes("SUMM"));
+      const chip = await page.evaluate(() => {
+        const result = document.querySelector<HTMLElement>(".cm-notebook-active-result")!;
+        const cell = document.activeElement as HTMLElement;
+        const style = getComputedStyle(result);
+        return {
+          text: result.textContent,
+          described: cell.getAttribute("aria-describedby") === result.id,
+          below: result.getBoundingClientRect().top >= cell.parentElement!.getBoundingClientRect().bottom,
+          open: result.matches(":popover-open"),
+          flat: style.boxShadow === "none" && style.borderTopWidth === "0px",
+          wraps: style.whiteSpace === "normal",
+        };
+      });
+      expect(chip).toEqual({
+        text: expect.stringContaining("Suggestion: SUM"),
+        described: true,
+        below: true,
+        open: true,
+        flat: true,
+        wraps: true,
+      });
+      expect(await prose.evaluate((element) => element.getBoundingClientRect().top)).toBe(top);
       expect(errors).toEqual([]);
     } finally {
       await close();
     }
   });
 
-  test("approved WAVE1 right-click and grips use identical menus, including local Markdown", async () => {
+  test("right-click shows the whole menu and each grip its row's or column's part, including local Markdown", async () => {
     const { page, errors, close } = await open();
     try {
       await page.evaluate(() => {
@@ -724,14 +785,25 @@ describe("Notebook on the shared text editor", () => {
       expect(menuGeometry.height).toBe(32);
       expect(menuGeometry.font).toBe("13.5px");
       await page.keyboard.press("Escape");
+      // Approved F2: a row grip offers row and table actions, a column grip column, alignment and table actions.
+      await cell(page, 1, 0).hover();
       await page.locator(".k2b-ste-rowMenu").nth(1).click();
       await entries.first().waitFor();
-      expect(await entries.allTextContents()).toEqual(labels);
+      const row = await entries.allTextContents();
+      expect(row.every((label) => labels.includes(label))).toBe(true);
+      expect(row.some((label) => label.includes("Insert row above"))).toBe(true);
+      expect(row.some((label) => label.includes("Edit as Markdown"))).toBe(true);
+      expect(row.some((label) => /column/i.test(label))).toBe(false);
       expect(await page.locator('[role="menu"]:visible').evaluate((element) => element.getBoundingClientRect().width)).toBe(menuWidth);
       await page.keyboard.press("Escape");
+      await cell(page, 1, 0).hover();
       await page.locator(".k2b-ste-columnMenu").first().click();
       await entries.first().waitFor();
-      expect(await entries.allTextContents()).toEqual(labels);
+      const column = await entries.allTextContents();
+      expect(column.every((label) => labels.includes(label))).toBe(true);
+      expect(column.some((label) => label.includes("Insert column left"))).toBe(true);
+      expect(column.some((label) => label.includes("Edit as Markdown"))).toBe(true);
+      expect(column.some((label) => /\brow\b/i.test(label) && !/Header row/.test(label))).toBe(false);
       expect(errors).toEqual([]);
     } finally {
       await close();

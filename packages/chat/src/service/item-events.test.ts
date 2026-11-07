@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test";
 import { ItemEventSchema, ItemEventsPageSchema, ItemEventsQuerySchema } from "./contracts";
+import { providerApp } from "./discussions.test-fixture";
 import { activityQuery, mapItemEvent, OwnerActivitySchema } from "./item-events";
 
 const event = {
@@ -30,11 +31,19 @@ test("maps container and item selection, independent time bounds and opaque curs
     limit: "100",
     cursor: "opaque",
   });
-  expect(activityQuery({ type: "spaces.space", id: "Spc001" }, query, event.ref, "Europe/Berlin")).toEqual({
+  expect(
+    activityQuery(
+      { app: providerApp("spaces", "space"), activity: "space.activity" },
+      { type: "spaces.space", id: "Spc001" },
+      query,
+      event.ref,
+      "Europe/Berlin",
+    ),
+  ).toEqual({
     appId: "spaces",
     capabilityId: "space.activity",
     input: {
-      space: "Spc001",
+      container: "Spc001",
       item: "Itm001",
       timeZone: "Europe/Berlin",
       before: query.before,
@@ -43,10 +52,16 @@ test("maps container and item selection, independent time bounds and opaque curs
       limit: 100,
     },
   });
-  expect(activityQuery({ type: "notebooks.notebook", id: "Ntb001" }, ItemEventsQuerySchema.parse({}))).toEqual({
+  expect(
+    activityQuery(
+      { app: providerApp("notebooks", "notebook", "note"), activity: "notebook.activity" },
+      { type: "notebooks.notebook", id: "Ntb001" },
+      ItemEventsQuerySchema.parse({}),
+    ),
+  ).toEqual({
     appId: "notebooks",
     capabilityId: "notebook.activity",
-    input: { notebook: "Ntb001", before: undefined, after: undefined, cursor: undefined, limit: 50 },
+    input: { container: "Ntb001", before: undefined, after: undefined, cursor: undefined, limit: 50 },
   });
 });
 test("bounds every page and rejects invalid provider rows", () => {
@@ -54,14 +69,14 @@ test("bounds every page and rejects invalid provider rows", () => {
     { limit: 101 },
     { limit: 0 },
     { limit: 1.5 },
-    { cursor: "x".repeat(257) },
+    { cursor: "x".repeat(2049) },
     { before: "yesterday" },
     { thread: "general" },
   ])
     expect(ItemEventsQuerySchema.safeParse(input).success).toBeFalse();
   expect(OwnerActivitySchema.parse([event])).toEqual([event]);
   expect(OwnerActivitySchema.safeParse(Array.from({ length: 101 }, () => event)).success).toBeFalse();
-  expect(OwnerActivitySchema.safeParse([{ ...event, ref: { type: "spaces.space", id: "Spc001" } }]).success).toBeFalse();
+  expect(OwnerActivitySchema.safeParse([{ ...event, ref: { type: "inventory.item", id: "uuid-is-opaque" } }]).success).toBeTrue();
   expect(OwnerActivitySchema.safeParse([{ ...event, icon: "arbitrary-class" }]).success).toBeFalse();
 });
 
