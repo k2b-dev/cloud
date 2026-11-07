@@ -36,7 +36,7 @@ const pareto = {
   labels: ["Now", "Before"] as [string, string],
   data: [
     { label: "Small", value: 10, prev: 0 },
-    { label: "Rest", value: 100, prev: 80 },
+    { label: "Rest", rest: true, value: 100, prev: 80 },
     { label: "Main", value: 90, prev: 100 },
   ],
 };
@@ -67,4 +67,34 @@ test("zero totals and extreme ratios remain finite without fabricated area", () 
   expect(renderParetoSvg({ labels: ["Now", "Before"], data: [{ label: "Zero", value: 0, prev: 0 }], inspect: true })).not.toMatch(
     /NaN|Infinity/,
   );
+});
+
+test("Pareto fits natural label widths, signs change and treats remainder as data", () => {
+  const spec = {
+    labels: ["Now", "Before"] as [string, string],
+    data: [
+      { label: "Nordrhein", value: 120, prev: 100 },
+      { label: "Rest", value: 200, prev: 100 },
+      { label: "Andere", value: 300, prev: 100, rest: true },
+    ],
+  };
+  expect(paretoLayout(spec).rows.map((r) => r.label)).toEqual(["Rest", "Nordrhein", "Andere"]);
+  const svg = renderParetoSvg({ ...spec, inspect: true });
+  expect(svg).toContain(">Nordrhein</text>");
+  expect(renderParetoSvg({ ...spec, width: 296 })).toContain(">Nordrhein</text>");
+  expect(svg).toContain("+20%");
+  expect(svg).not.toContain("textLength");
+});
+test("zero-area treemap cells retain source layout data but have no inspection target in the header", () => {
+  const svg = renderTreemapSvg({
+    groups: ["A"],
+    title: "Inventory",
+    data: [
+      { label: "Zero", group: "A", value: 0 },
+      { label: "Positive", group: "A", value: 1 },
+    ],
+    inspect: true,
+  });
+  expect([...svg.matchAll(/data-chart-datum=/g)]).toHaveLength(1);
+  expect(svg).not.toContain("&quot;label&quot;:&quot;Zero&quot;");
 });

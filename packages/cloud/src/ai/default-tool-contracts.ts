@@ -33,6 +33,7 @@ import {
   type ChartDateFormat as CloudAiDateFormat,
   type ChartFormat as CloudAiFormat,
   type ChartNumberFormat as CloudAiNumberFormat,
+  chartAcceptsLocale,
   chartKinds,
   chartLocaleSchema,
   chartParts,
@@ -135,6 +136,7 @@ const flatChartSchema = () => {
               value: z.number().optional(),
               group: ChartLabel.optional(),
               prev: z.number().optional(),
+              rest: z.boolean().optional().describe("pareto: place this remainder category last; the label is free text."),
               values: z.array(z.number()).min(1).optional(),
               x: ChartLabel.optional(),
               y: ChartLabel.optional(),
@@ -206,8 +208,8 @@ const chartInputSchema = () => {
       }
       if (value.charts !== undefined) {
         value.charts.forEach((chart, index) => {
-          if (chart.locale !== undefined && chart.kind !== "treemap" && chart.kind !== "pareto")
-            context.addIssue({ code: "custom", message: "locale belongs to treemap and Pareto charts.", path: ["charts", index] });
+          if (chart.locale !== undefined && !chartAcceptsLocale(chart))
+            context.addIssue({ code: "custom", message: "Unsupported chart locale.", path: ["charts", index] });
         });
         const parsed = groupSchema.safeParse(value);
         if (!parsed.success) {
@@ -221,8 +223,8 @@ const chartInputSchema = () => {
       } else {
         if (value.linkX !== undefined || value.layout !== undefined)
           context.addIssue({ code: "custom", message: "linkX and layout belong to groups." });
-        if (value.locale !== undefined && value.kind !== "treemap" && value.kind !== "pareto")
-          context.addIssue({ code: "custom", message: "locale belongs to treemap and Pareto charts." });
+        if (value.locale !== undefined && !chartAcceptsLocale(value))
+          context.addIssue({ code: "custom", message: "Unsupported chart locale." });
         const parsed = ChartSchema.safeParse(value);
         if (!parsed.success) {
           for (const issue of parsed.error.issues) context.addIssue({ code: "custom", message: issue.message, path: issue.path });
