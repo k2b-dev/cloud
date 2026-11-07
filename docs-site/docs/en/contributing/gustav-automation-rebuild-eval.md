@@ -37,15 +37,17 @@ bun packages/assistant/scripts/eval-automation-rebuild.ts --case mail-rule --tra
 bun packages/assistant/scripts/eval-automation-rebuild.ts --case routine --trace /path/to/routine-trace.json
 ```
 
-The scorer checks the init, SDK, write, check, test and submit sequence. The
-submitted source, base and fictional tests must match the checked project.
-Missing checks, changed source, failed tests and unexpected tools fail the
-mechanical check. This script does not run Gustav, execute source or prove
+The scorer checks the sequence from init (or pull of an agreed replacement)
+through SDK, write, check, test and submit. The submitted source, base and fictional tests must match the checked project.
+Missing checks, empty assertions, changed source, failed tests and unexpected
+tools fail the mechanical check. This script does not run Gustav, execute source or prove
 semantic equivalence. A mechanical pass always requires human comparison
 against the case's rubric and the live SDK.
 
-For the Mail case, review the sender filter and message-level keyword action,
-including nonmatching arrivals, refusal and replay. For the routine case,
+For the Mail case, review the sender filter and conversation-local tag action,
+including nonmatching arrivals, refusal, revision conflicts and repeat delivery
+without duplicate tags. The tag action declares `idempotency: "none"`; review
+the current-state guard rather than inventing receipt keys. For the routine case,
 review the once schedule, UTC instant, generated text and explicitly chosen
 new Chat destination. Both sources are inactive; neither result may activate
 Code or copy grants.

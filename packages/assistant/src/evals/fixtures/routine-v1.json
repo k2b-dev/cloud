@@ -19,7 +19,7 @@
       },
       "schedule": {
         "kind": "once",
-        "runAt": "2030-01-07T09:00:00.000Z"
+        "runAt": "2030-01-07T09:00:00+00:00"
       },
       "timezone": "UTC",
       "grants": [],
@@ -28,15 +28,15 @@
         "revision": 1,
         "state": "paused",
         "expiresAt": null,
-        "apps": ["assistant"],
+        "apps": [],
         "operations": [],
         "actions": "deny"
       },
       "state": "paused",
       "revision": 2,
       "reasonCode": null,
-      "createdAt": "2026-11-07T00:00:00.000Z",
-      "updatedAt": "2026-11-07T00:00:00.000Z"
+      "createdAt": "2026-11-07T00:00:00+00:00",
+      "updatedAt": "2026-11-07T00:00:00+00:00"
     }
   ]
 }

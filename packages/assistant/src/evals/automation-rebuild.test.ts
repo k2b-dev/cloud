@@ -40,6 +40,28 @@ test("scores same-source authoring evidence, with semantic review still required
   expect(scoreAutomationRebuild(passing())).toEqual({ mechanicalPassed: true, failures: [], semanticReviewRequired: true });
 });
 
+test("accepts pulling an agreed replacement and the real read/discovery/simulation tools", () => {
+  const trace = passing();
+  trace.calls[0]!.name = "code_pull";
+  trace.calls[0]!.args = { codeId: "fixture-code" };
+  trace.calls.push(
+    ...["search_skills", "list_apps", "search_help", "read_help", "code_simulate"].map((name) => ({ name, args: {}, result: {} })),
+  );
+  expect(scoreAutomationRebuild(trace).mechanicalPassed).toBe(true);
+});
+
+test("rejects empty assertions even when fixed fixtures were passed to test and submit", () => {
+  const trace = passing();
+  for (const call of [trace.calls[4]!, trace.calls[5]!]) {
+    const args = z.record(z.string(), z.json()).parse(call.args);
+    const tests = z.record(z.string(), z.string()).parse(args.tests);
+    const fixture = JSON.parse(tests["test/report.json"]!);
+    fixture.runs[0].expect = {};
+    call.args = { ...args, tests: { "test/report.json": JSON.stringify(fixture) } };
+  }
+  expect(scoreAutomationRebuild(trace).mechanicalPassed).toBe(false);
+});
+
 test("rejects changed source, tests or base after successful checks", () => {
   for (const change of [{ files: { "code.ts": "changed after test" } }, { tests: {} }, { baseVersionId: "changed-base" }]) {
     const trace = passing();

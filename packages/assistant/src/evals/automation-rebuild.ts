@@ -11,9 +11,9 @@ export const AUTOMATION_REBUILD_CASES = [
     request:
       "Explain this exported rule and draft its equivalent as mailbox-owned Code. Keep it inactive. Use the supplied fictional mailbox only in fictional tests; discover its real replacement before submission.",
     review: [
-      "Explains disabled source, priority 7/order 1, chosen current version, sender filter and message-level keyword effect.",
-      "Uses discovered app.on/mail.message.received and Mail message read/keyword operations; no polling or conversation-wide substitute.",
-      "Covers matching and nonmatching arrivals, action refusal and repeat delivery with the same logical effect key.",
+      "Explains disabled source, priority 7/order 1, chosen current version, sender filter and conversation-local tag effect.",
+      "Uses discovered app.on/mail.message.received and Mail message/conversation reads and conversation.tag.update; preserves unrelated tags and uses the current revision guard, without polling.",
+      "Covers matching and nonmatching arrivals, action refusal, revision conflict and repeat delivery without duplicate tags; this tag action declares idempotency none.",
     ],
   },
   {
@@ -57,7 +57,7 @@ export function scoreAutomationRebuild(trace: AutomationRebuildTrace) {
   if (
     trace.calls.some(
       (call) =>
-        !/^(code_(init|sdk|write|check|test|submit|diff)|load_[a-z_]+|read_skill_reference|discover_[a-z_]+|todo_write|survey|search_tools|read_file|list_files)$/.test(
+        !/^(code_(init|pull|read|sdk|write|check|test|simulate|submit|diff)|load_(tools|skill)|todo_write|survey|search_(tools|skills|help)|read_(file|help)|list_(files|apps))$/.test(
           call.name,
         ),
     )
@@ -83,18 +83,23 @@ export function scoreAutomationRebuild(trace: AutomationRebuildTrace) {
   const tested = before.findLastIndex(
     (call) => call.name === "code_test" && sameSource(call) && succeeded(call) && object.safeParse(call.result).data?.ok === true,
   );
-  const init = before.findIndex((call) => call.name === "code_init" && succeeded(call));
+  const init = before.findLastIndex(
+    (call) =>
+      (call.name === "code_init" || call.name === "code_pull" || call.name === "code_read") &&
+      object.safeParse(object.safeParse(call.result).data?.config).data?.codeId === submitted.data.codeId &&
+      succeeded(call),
+  );
   const sdk = before.findIndex(
     (call) => call.name === "code_sdk" && object.safeParse(call.args).data?.codeId === submitted.data.codeId && succeeded(call),
   );
   const write = before.findIndex((call) => call.name === "code_write" && succeeded(call));
   if (!(init >= 0 && sdk > init && write > sdk && checked > write && tested > checked))
-    failures.push("Need init → sdk → write → successful check → successful test → submit for the submitted source.");
+    failures.push("Need init/pull → sdk → write → successful check → successful test → submit for the submitted source.");
   const initialized = object.safeParse(before[init]?.result).data;
   const config = object.safeParse(initialized?.config).data;
   const submitArgs = object.parse(submit.args);
   if (!config || config.codeId !== submitted.data.codeId || config.baseVersionId !== submitArgs.baseVersionId)
-    failures.push("Submitted project/base differs from init.");
+    failures.push("Submitted project/base differs from init/pull.");
   const tests = z.record(z.string(), z.string()).safeParse(submitArgs.tests);
   const testedArgs = object.safeParse(before[tested]?.args).data;
   if (!tests.success || Object.keys(tests.data).length === 0 || stable(tests.data) !== stable(testedArgs?.tests))
@@ -103,7 +108,8 @@ export function scoreAutomationRebuild(trace: AutomationRebuildTrace) {
     for (const [path, content] of Object.entries(tests.data)) {
       try {
         const fixture = CodeTestCaseSchema.parse(JSON.parse(content));
-        if (!/^test\/.+\.json$/.test(path) || fixture.runs.some((run) => !run.expect)) throw new Error("Missing assertions");
+        if (!/^test\/.+\.json$/.test(path) || fixture.runs.some((run) => !run.expect || Object.keys(run.expect).length === 0))
+          throw new Error("Missing assertions");
       } catch {
         failures.push(`Invalid fixed-clock/seed fixture or missing assertions: ${path}`);
       }
