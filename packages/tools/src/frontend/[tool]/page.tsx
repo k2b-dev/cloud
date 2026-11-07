@@ -1,7 +1,7 @@
 import { type AuthContext, getLocale } from "@k2b/cloud/server";
 import { Layout } from "@k2b/cloud/ssr";
 import type { JSX } from "solid-js";
-import { resolveSpeedtestBase } from "../../api/_url";
+import { readSpeedtestConfig } from "../../api/speedtest";
 import { ssr } from "../../config";
 import { ToolsWorkspace } from "../ToolsWorkspace";
 import ColorConverter from "../tools/ColorConverter.island";
@@ -23,7 +23,11 @@ import WebhookTester, { parseWebhookTesterState, type WebhookTesterInitialState 
 
 const toolComponents: Record<
   string,
-  (props: { speedtestBase?: string; webhookState?: WebhookTesterInitialState; baseHref?: string }) => JSX.Element
+  (props: {
+    speedtestConfig?: { server: string; enabled: boolean };
+    webhookState?: WebhookTesterInitialState;
+    baseHref?: string;
+  }) => JSX.Element
 > = {
   mailto: () => <MailtoGenerator />,
   qr: () => <QrCodeGenerator />,
@@ -38,7 +42,7 @@ const toolComponents: Record<
   image: () => <ImageProcessor />,
   encryption: () => <EncryptionTool />,
   password: () => <PasswordGenerator />,
-  speedtest: (props) => <SpeedTest cliBaseUrl={props.speedtestBase} />,
+  speedtest: (props) => <SpeedTest server={props.speedtestConfig?.server} enabled={props.speedtestConfig?.enabled} />,
   webhooks: (props) => <WebhookTester initialState={props.webhookState} baseHref={props.baseHref} />,
 };
 
@@ -52,7 +56,7 @@ export default ssr<AuthContext>(async (c) => {
   if (!tool) return ssr.error(c, 404);
 
   const renderTool = toolComponents[tool.id];
-  const speedtestBase = tool.id === "speedtest" ? resolveSpeedtestBase(c) : undefined;
+  const speedtestConfig = tool.id === "speedtest" ? await readSpeedtestConfig() : undefined;
   const webhookState = tool.id === "webhooks" ? parseWebhookTesterState(new URL(c.req.url)) : undefined;
   const breadcrumbs = [{ title: labels.home, href: "/" }, { title: labels.appName, href: "/tools" }, { title: tool.name }];
   const regionLayout = tool.id === "image" || tool.id === "image-converter" || tool.id === "webhooks";
@@ -61,11 +65,11 @@ export default ssr<AuthContext>(async (c) => {
     <Layout c={c} fullPage workspaceSidebarCollapsible title={breadcrumbs}>
       <ToolsWorkspace activeToolId={tool.id} layout={regionLayout ? "regions" : "main"}>
         {regionLayout ? (
-          renderTool?.({ speedtestBase, webhookState, baseHref: `/tools/${tool.id}` })
+          renderTool?.({ speedtestConfig, webhookState, baseHref: `/tools/${tool.id}` })
         ) : (
           <div class="mx-auto flex h-full min-h-0 w-full max-w-5xl flex-col gap-4">
             <ShowToolHeader icon={tool.icon} name={tool.name} description={tool.description} />
-            {renderTool?.({ speedtestBase, baseHref: `/tools/${tool.id}` })}
+            {renderTool?.({ speedtestConfig, baseHref: `/tools/${tool.id}` })}
           </div>
         )}
       </ToolsWorkspace>
