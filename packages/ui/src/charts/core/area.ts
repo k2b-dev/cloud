@@ -1,5 +1,5 @@
-import { chartDatumSvg, escapeXml, niceStep } from "@k2b/stdlib";
 import { chartMessages } from "../../content/chart-message-catalog";
+import { chartDatumSvg, escapeXml, niceStep } from "./svg";
 
 export type AreaOptions = {
   layout: "stacked";
