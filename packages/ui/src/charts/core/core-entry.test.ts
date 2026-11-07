@@ -16,6 +16,8 @@ test("core entry bundles for server and browser without Solid, DOM or upstream d
             builder.onResolve({ filter: /^@k2b\/stdlib(?:\/|$)/ }, ({ path, importer }) => {
               // Calendar arithmetic remains owned by stdlib dates; SVG helpers must be UI-owned.
               if (importer.endsWith("/content/chart-time-axis.ts")) return;
+              // The pure catalogue uses only stdlib localization, never its drawing functions.
+              if (path === "@k2b/stdlib" && importer.endsWith("/content/chart-message-catalog.ts")) return;
               throw new Error(`Chart core must not load upstream drawing imports: ${path}`);
             });
           },

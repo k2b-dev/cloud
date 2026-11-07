@@ -35,6 +35,7 @@ const catalogs = {
   Panes: (await import("../layout/panes-messages")).checkPanesMessages,
   FloatingWindow: (await import("../layout/floating-window-messages")).checkFloatingWindowMessages,
   DataTable: (await import("../content/data-table-messages")).checkDataTableMessages,
+  FlowAmount: (await import("../content/flow-amount-messages")).checkFlowAmountMessages,
   StatCell: (await import("../surfaces/stat-cell-messages")).checkStatCellMessages,
   Lightbox: (await import("../content/lightbox-messages")).checkLightboxMessages,
   Prompt: (await import("../feedback/prompt-messages")).checkPromptMessages,

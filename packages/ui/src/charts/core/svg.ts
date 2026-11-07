@@ -13,15 +13,10 @@
 // `--stdlib-chart-c8`). Axes and labels use `currentColor` so parent `color`
 // drives theming (dark mode "just works").
 
-import { i18n } from "@k2b/stdlib";
+import { chartMessages } from "../../content/chart-message-catalog";
 import type { IntentTone } from "../../semantics";
 import { WORLD_LAND_PATH, WORLD_MAP_HEIGHT, WORLD_MAP_WIDTH } from "./chart-map-data";
 import type { ChartDatum } from "./types";
-
-const lineMessages = /* @__PURE__ */ i18n.define({
-  baseLocale: "en",
-  messages: { en: { series: "Series" }, de: { series: "Datenreihe" } },
-});
 
 // ==========================
 // PUBLIC TYPES
@@ -1779,7 +1774,7 @@ export const line = (opts: LineOptions): string => {
         point && Number.isFinite(point.y)
           ? (opts.yAxis?.format?.(point.y) ?? new Intl.NumberFormat(opts.locale ?? "en", { maximumFractionDigits: 6 }).format(point.y))
           : "—";
-      const label = series.label || `${lineMessages.resolve([opts.locale ?? "en"]).t.series} ${entry.seriesIndex + 1}`;
+      const label = series.label || `${chartMessages.resolve([opts.locale ?? "en"]).t.series} ${entry.seriesIndex + 1}`;
       const room = Math.max(1, Math.floor((cell * 296) / width / 6) - Math.min(14, amount.length) - 4);
       const shortened = label.length > room ? label.slice(0, Math.max(0, room - 1)) + "…" : label;
       legend.push(
