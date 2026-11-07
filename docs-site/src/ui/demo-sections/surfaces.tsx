@@ -652,7 +652,9 @@ const DetailsDemo = () => {
     { term: "Priority", description: <Select aria-label="Priority" appearance="plain" placeholder="No priority" clearable options={priorities} value={priority} onValueChange={setPriority} /> },
     { term: "Labels", description: <MultiSelectInput aria-label="Labels" appearance="plain" placeholder="Label" placeholderIcon="ti ti-plus" options={labelOptions} value={labels} onValueChange={setLabels} /> },
   ]}
-/>`}
+/>
+{/* Fallback only: a wide sum list joins term and value with a dotted leader */}
+<DescriptionList layout="rows" size="sm" leader="dotted" items={sums} />`}
     >
       <div class="ui-demo-form-grid">
         <article class="ui-detail-panel-pattern">
@@ -776,6 +778,22 @@ const DetailsDemo = () => {
                 ),
               },
               { term: "Created", description: "31 July 2026, 14:32" },
+            ]}
+          />
+        </article>
+        <article class="ui-detail-panel-pattern" style={{ "grid-column": "1 / -1" }}>
+          <header>
+            <strong>Wide sums with a dotted leader (fallback)</strong>
+            <span>Only for a list that must span a very wide container: the leader joins each term to its right-aligned value.</span>
+          </header>
+          <DescriptionList
+            layout="rows"
+            size="sm"
+            leader="dotted"
+            items={[
+              { term: "Net amount", description: "€1,240.00" },
+              { term: "VAT 19 %", description: "€235.60" },
+              { term: "Total", description: "€1,475.60" },
             ]}
           />
         </article>
