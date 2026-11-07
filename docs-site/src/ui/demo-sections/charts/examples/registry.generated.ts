@@ -7,6 +7,7 @@ import * as bar_basicExamples from "./bar-basic";
 import * as barGaugeExamples from "./barGauge";
 import * as boxplotExamples from "./boxplot";
 import * as budgetExamples from "./budget";
+import * as calendarExamples from "./calendar";
 import * as donutExamples from "./donut";
 import * as flowExamples from "./flow";
 import * as gaugeExamples from "./gauge";
@@ -30,6 +31,7 @@ export const exampleModules: Record<string, unknown>[] = [
   barGaugeExamples,
   boxplotExamples,
   budgetExamples,
+  calendarExamples,
   donutExamples,
   flowExamples,
   gaugeExamples,

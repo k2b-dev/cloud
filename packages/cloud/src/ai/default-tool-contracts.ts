@@ -33,7 +33,9 @@ import {
   type ChartDateFormat as CloudAiDateFormat,
   type ChartFormat as CloudAiFormat,
   type ChartNumberFormat as CloudAiNumberFormat,
+  chartAcceptsLocale,
   chartKinds,
+  chartLocaleSchema,
   chartParts,
   chartSchema,
   chartKindSchema as cloudAiChartKindSchema,
@@ -121,6 +123,12 @@ const flatChartSchema = () => {
     kind: cloudAiChartKindSchema().optional().describe("Single charts: kind. Omit for groups."),
     ...ChartCommon,
     tooltip: ChartTooltip.optional(),
+    layout: z
+      .enum(["columns", "rows", "grouped", "stacked", "calendar"])
+      .optional()
+      .describe("bar: columns, rows, grouped or stacked. area: stacked. heatmap: calendar."),
+    scale: z.enum(["sequential", "diverging"]).optional().describe("Calendar heatmap color scale; domain includes all days."),
+    locale: chartLocaleSchema().optional(),
     // One item object preserves every kind's fields before canonical validation; unions would strip overlapping items.
     data: z
       .union([
@@ -139,10 +147,14 @@ const flatChartSchema = () => {
           .min(1)
           .max(CLOUD_AI_VIEW_MAX_MARKS),
         z.array(z.number()).min(1).max(CLOUD_AI_CHART_MAX_VALUES),
+        z
+          .array(z.array(z.union([z.string(), z.number(), z.null()])).length(2))
+          .min(1)
+          .max(CLOUD_AI_VIEW_MAX_MARKS),
       ])
       .optional()
       .describe(
-        "bar, pie, donut, barGauge: label/value (barGauge: min/max). boxplot: label/values. heatmap: x/y/value. histogram, sparkline: numbers.",
+        "bar, pie, donut, barGauge: label/value (barGauge: min/max). boxplot: label/values. heatmap: x/y/value, or calendar [YYYY-MM-DD,number] pairs. histogram, sparkline: numbers.",
       ),
     x: z
       .array(z.union([ChartLabel, z.number()]))
@@ -162,7 +174,6 @@ const flatChartSchema = () => {
       .max(CLOUD_AI_CHART_MAX_VALUES)
       .optional()
       .describe("hbar: grouped rows of aligned segment values."),
-    layout: z.enum(["columns", "rows", "grouped", "stacked"]).optional().describe("bar: category layout. area: stacked."),
     series: z
       .array(
         z.union([
@@ -221,9 +232,11 @@ const chartInputSchema = () => {
         .describe(`Groups: 2..${CLOUD_AI_GROUP_MAX_CHARTS} related charts, each with a kind.`),
       linkX: z.boolean().optional().describe("Groups: share the x cursor between line charts with the same kind of x."),
       layout: z
-        .enum(["stack", "grid", "columns", "rows", "grouped", "stacked"])
+        .enum(["stack", "grid", "columns", "rows", "grouped", "stacked", "calendar"])
         .optional()
-        .describe("Groups: stack or grid. Bar: columns, rows, grouped or stacked. Area: stacked."),
+        .describe(
+          "Groups: stack/grid. Bar: columns, rows, grouped or stacked. Area: stacked. heatmap: calendar uses ISO date/value pairs.",
+        ),
     })
     .superRefine((value, context) => {
       if ((value.kind !== undefined) === (value.charts !== undefined)) {
@@ -231,6 +244,14 @@ const chartInputSchema = () => {
         return;
       }
       if (value.charts !== undefined) {
+        value.charts.forEach((chart, index) => {
+          if ((chart.layout === "calendar" && chart.kind !== "heatmap") || (chart.locale !== undefined && !chartAcceptsLocale(chart)))
+            context.addIssue({
+              code: "custom",
+              message: "Unsupported calendar layout or locale.",
+              path: ["charts", index],
+            });
+        });
         const parsed = groupSchema.safeParse(value);
         if (!parsed.success) {
           for (const issue of parsed.error.issues) context.addIssue({ code: "custom", message: issue.message, path: issue.path });
@@ -241,8 +262,15 @@ const chartInputSchema = () => {
           if (issue) context.addIssue({ code: "custom", message: issue, path: ["charts", index] });
         });
       } else {
-        if (value.linkX !== undefined || (value.layout !== undefined && value.kind !== "bar" && value.kind !== "area"))
-          context.addIssue({ code: "custom", message: "linkX belongs to groups; layouts belong to bar or area charts." });
+        if (
+          value.linkX !== undefined ||
+          (value.layout !== undefined && value.kind !== "bar" && value.kind !== "area" && value.layout !== "calendar")
+        )
+          context.addIssue({ code: "custom", message: "linkX belongs to groups; layouts belong to bar, area or calendar heatmap charts." });
+        if (value.locale !== undefined && !chartAcceptsLocale(value))
+          context.addIssue({ code: "custom", message: "Unsupported chart locale." });
+        if (value.layout === "calendar" && value.kind !== "heatmap")
+          context.addIssue({ code: "custom", message: "calendar layout belongs to heatmaps." });
         const parsed = ChartSchema.safeParse(value);
         if (!parsed.success) {
           for (const issue of parsed.error.issues) context.addIssue({ code: "custom", message: issue.message, path: issue.path });

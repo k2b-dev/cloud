@@ -80,6 +80,8 @@ for (const width of [1440, 390])
         await settled(page);
         const before = await sample.boundingBox();
         const marks = chart.locator("[data-chart-datum]");
+        const legendValue = chart.locator("[data-chart-legend-value]").first();
+        const legendDefault = await legendValue.textContent();
         await marks
           .first()
           .locator(".k2b-chart-category-band")
@@ -87,15 +89,20 @@ for (const width of [1440, 390])
         await chart.locator('[role="tooltip"]:popover-open').waitFor();
         const first = await chart.locator('[role="tooltip"]').textContent();
         expect(first).not.toContain("series:");
-        const legendValue = chart.locator("[data-bar-legend]").first();
-        expect(await legendValue.textContent()).not.toBe(await legendValue.getAttribute("data-bar-total"));
+        const fieldKey = await legendValue.getAttribute("data-field");
+        const expectedValue = await marks.first().evaluate((n, key) => {
+          const datum = JSON.parse(n.getAttribute("data-chart-datum")!);
+          return datum.values.find((field: { key: string }) => field.key === key).formatted;
+        }, fieldKey);
+        expect(await legendValue.textContent()).toBe(expectedValue);
+        expect(await legendValue.textContent()).not.toBe(legendDefault);
         const rects = await marks.evaluateAll((nodes) =>
           nodes.flatMap((g) => [g, ...g.querySelectorAll(".stdlib-chart-bar")].map((e) => getComputedStyle(e).opacity)),
         );
         expect(
           await marks
             .first()
-            .locator(":scope > .stdlib-chart-bar")
+            .locator(".stdlib-chart-bar")
             .evaluateAll((nodes) => nodes.every((n) => getComputedStyle(n).stroke === "none")),
         ).toBe(true);
         expect(
@@ -126,13 +133,14 @@ for (const width of [1440, 390])
         expect(
           await marks
             .first()
-            .locator(":scope > .stdlib-chart-bar")
+            .locator(".stdlib-chart-bar")
             .evaluateAll((nodes) =>
               nodes.every((n) => getComputedStyle(n).stroke !== "none" && parseFloat(getComputedStyle(n).strokeWidth) > 0),
             ),
         ).toBe(true);
         await chart.press("Escape");
         expect(await chart.locator('[role="tooltip"]:popover-open').count()).toBe(0);
+        expect(await legendValue.textContent()).toBe(legendDefault);
         await marks.first().evaluate((g) => g.setAttribute("data-selected", ""));
         await settled(page);
         expect(
@@ -241,15 +249,16 @@ test("standalone and base-only hosts paint transparent bands and distinct previo
   try {
     const base = await Bun.file(resolve(import.meta.dir, "../base/base.css")).text();
     const specs = [
-      renderBarChartSvg({ data: [{ label: "Old", value: 10 }], width: 480, height: 280 }),
+      renderBarChartSvg({ data: [{ label: "Old", value: 10 }], width: 480, height: 280, inspect: true }),
       renderBarChartSvg({
         x: ["A"],
         series: [{ label: "Now", data: [15] }],
         compare: { label: "Prior", data: [10] },
+        inspect: true,
         width: 480,
         height: 280,
       }),
-      renderHbarSvg({ series: ["A"], rows: [{ label: "Row", values: [15] }], width: 480, height: 280 }),
+      renderHbarSvg({ series: ["A"], rows: [{ label: "Row", values: [15] }], width: 480, height: 280, inspect: true }),
     ];
     for (const strip of [false, true]) {
       await page.setContent(
@@ -288,9 +297,9 @@ test("standalone and base-only hosts paint transparent bands and distinct previo
           await page
             .locator(".k2b-chart")
             .nth(1)
-            .locator("[data-inspected] > rect")
+            .locator("[data-inspected] rect")
             .evaluateAll((nodes) => nodes.map((n) => getComputedStyle(n).stroke)),
-        ).toEqual(["none", "none"]);
+        ).toEqual(["none", "none", "none"]);
       }
     }
     expect(errors).toEqual([]);
@@ -325,6 +334,8 @@ test("old bars keep valid SSR/client selection and inspection outlines inside k2
     expect(serverStroke).not.toBe("none");
     await page.addScriptTag({ content: bundle });
     const chart = page.locator("#old-bar-outline .k2b-chart");
+    await settled(page);
+    await chart.scrollIntoViewIfNeeded();
     await settled(page);
     const first = chart.locator("[data-chart-datum]").first();
     const second = chart.locator("[data-chart-datum]").nth(1);

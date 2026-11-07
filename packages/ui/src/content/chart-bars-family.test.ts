@@ -38,8 +38,8 @@ describe("category bars", () => {
     expect(svg).toContain('class="k2b-chart-previous"');
     expect(svg).toContain("&quot;key&quot;:&quot;delta&quot;");
     expect(svg).toContain("+50%");
-    expect(svg).toContain('data-bar-total="15"');
-    expect(svg).toContain('data-bar-total="10"');
+    expect(svg).toContain('data-default="15"');
+    expect(svg).toContain('data-default="10"');
     expect(svg).toContain("k2b-chart-category-band");
     expect(svg).not.toMatch(/NaN|Infinity/);
   });

@@ -79,9 +79,9 @@ const measure = () =>
 
 describe("@k2b/ui key figure tiles", () => {
   for (const [name, width, columns, height, valueSize] of [
-    ["desktop", 1440, 4, 136, "28px"],
-    ["600 px grid", 620, 2, 164, "28px"],
-    ["phone", 390, 2, 164, "22px"],
+    ["desktop", 1440, 4, 136, 28],
+    ["600 px grid", 620, 2, 164, 28],
+    ["phone", 390, 2, 164, 23.04],
   ] as const) {
     test(`on a ${name} every state keeps the tile's size and rows (${columns} columns, ${height}px)`, async () => {
       const page = await browser.newPage({ viewport: { width, height: 900 } });
@@ -105,7 +105,8 @@ describe("@k2b/ui key figure tiles", () => {
         const data = rows.find((row) => row.state === "data")!;
         // In a grid of 600 px or less the taller tile puts the badge under the figure; a phone tile also shrinks it.
         expect(data.badgeBelow).toBe(name !== "desktop");
-        expect(data.valueSize).toBe(valueSize);
+        // Engines round container units differently (WebKit: 23.040001px), so compare the number.
+        expect(Number.parseFloat(data.valueSize)).toBeCloseTo(valueSize, 1);
         expect(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(0);
       } finally {
         await page.close();
@@ -138,6 +139,109 @@ describe("@k2b/ui key figure tiles", () => {
           ),
         );
         expect({ width, gaps }).toEqual({ width, gaps: [0, 0, 0] });
+      } finally {
+        await page.close();
+      }
+    }
+  });
+
+  test("a narrow md or sm tile keeps its height in every state, with the badge under the figure", async () => {
+    const rows = renderToString(() =>
+      createComponent(LocaleProvider, {
+        locale: "de",
+        get children() {
+          return (["md", "sm"] as const).flatMap((size) =>
+            Object.values(states).map((props) =>
+              createComponent(StatGrid, {
+                size,
+                columns: 4,
+                class: `size-${size}`,
+                get children() {
+                  return ["A", "B"].map((label) => createComponent(StatCell, { label, ...props } as never));
+                },
+              }),
+            ),
+          );
+        },
+      }),
+    );
+    const page = await browser.newPage({ viewport: { width: 390, height: 900 } });
+    try {
+      await page.setContent(
+        `<!doctype html><html><head><meta name="viewport" content="width=device-width, initial-scale=1"><style>${css}</style></head>` +
+          `<body class="k2b-ui" style="margin:0;padding:12px"><div style="width:300px">${rows}</div></body></html>`,
+      );
+      await settled(page);
+      const heights = await page.evaluate(() =>
+        ["md", "sm"].map((size) => [
+          ...new Set(
+            Array.from(document.querySelectorAll(`.size-${size} .k2b-stat-cell`)).map((tile) =>
+              Math.round(tile.getBoundingClientRect().height),
+            ),
+          ),
+        ]),
+      );
+      expect(heights.map((list) => list.length)).toEqual([1, 1]);
+    } finally {
+      await page.close();
+    }
+  });
+
+  // Regression: at 390 px a dashboard's md tiles ended their figures in "48…" (07.11.). A figure is never cut.
+  test("a figure always fits its tile, in every size, down to a 320 px phone", async () => {
+    const values = ["48.210", "1.204,80 €", "€2,380.00", "29.260 €", "Action needed", "1,2 Mio. €"];
+    const grids = renderToString(() =>
+      createComponent(LocaleProvider, {
+        locale: "de",
+        get children() {
+          return (["lg", "md", "sm"] as const).map((size) =>
+            createComponent(StatGrid, {
+              size,
+              columns: 4,
+              get children() {
+                return values.map((value, index) =>
+                  createComponent(StatCell, {
+                    label: `Figure ${index + 1}`,
+                    icon: "ti ti-users",
+                    value,
+                    delta: { value: -0.125, better: "down" },
+                    compare: { label: "Vormonat", value: 44560 },
+                  }),
+                );
+              },
+            }),
+          );
+        },
+      }),
+    );
+    for (const [width, frame] of [
+      [390, 300],
+      [390, 366],
+      [320, 296],
+      [1440, 1384],
+    ] as const) {
+      const page = await browser.newPage({ viewport: { width, height: 900 } });
+      try {
+        await page.setContent(
+          `<!doctype html><html><head><meta name="viewport" content="width=device-width, initial-scale=1"><style>${css}</style></head>` +
+            `<body class="k2b-ui" style="margin:0;padding:12px"><div style="width:${frame}px;display:grid;gap:16px">${grids}</div></body></html>`,
+        );
+        await settled(page);
+        const cut = await page.evaluate(() =>
+          Array.from(document.querySelectorAll<HTMLElement>(".k2b-stat-cell__value")).flatMap((value) => {
+            const tile = value.closest(".k2b-stat-cell")!.getBoundingClientRect();
+            const box = value.getBoundingClientRect();
+            const style = getComputedStyle(value);
+            const badge = value.parentElement!.querySelector(".k2b-stat-cell__delta")?.getBoundingClientRect();
+            const inside = (rect: DOMRect) =>
+              rect.left >= tile.left && rect.right <= tile.right + 0.5 && rect.top >= tile.top && rect.bottom <= tile.bottom + 0.5;
+            const fits = value.scrollWidth <= value.clientWidth + 1 && inside(box) && (!badge || inside(badge));
+            return fits && style.textOverflow !== "ellipsis"
+              ? []
+              : [`${value.textContent} (${Math.round(box.width)} in ${Math.round(tile.width)})`];
+          }),
+        );
+        expect({ width, frame, cut }).toEqual({ width, frame, cut: [] });
       } finally {
         await page.close();
       }

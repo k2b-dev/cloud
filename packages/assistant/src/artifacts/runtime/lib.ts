@@ -21,7 +21,6 @@ import {
   escapeXml,
   gauge,
   hbarLayout,
-  heatmap,
   histogram,
   isChartDatum,
   line,
@@ -29,6 +28,7 @@ import {
   renderAreaSvg,
   renderBarChartSvg,
   renderHbarSvg,
+  renderHeatmapSvg,
   scatter,
   sparkline,
   stat,
@@ -140,7 +140,7 @@ function drawChart(options: StoredChart, locale: string, width: number, height: 
         svg = stat({ ...mapped, ...common, label: options.title ?? "" });
         break;
       case "heatmap":
-        svg = heatmap({ ...mapped, ...common });
+        svg = renderHeatmapSvg({ ...mapped, ...common });
         break;
       case "sparkline":
         svg = sparkline({ ...mapped, ...common });
@@ -177,7 +177,10 @@ function drawChart(options: StoredChart, locale: string, width: number, height: 
     );
     // stdlib embeds an unlayered <style> with fixed colors; the base stylesheet owns those rules instead.
     svg = svg.replace(/<style>[\s\S]*?<\/style>/, "");
-    return { svg: KEEP_ASPECT.has(mapped.kind) ? svg : responsive(svg), table: rows.table() };
+    return {
+      svg: KEEP_ASPECT.has(mapped.kind) || (mapped.kind === "heatmap" && mapped.layout === "calendar") ? svg : responsive(svg),
+      table: rows.table(),
+    };
   } catch (error) {
     throw new CloudError("invalid", `cloud.chart: ${error instanceof Error ? error.message : String(error)}`);
   }
@@ -228,8 +231,10 @@ export function chart(options: ChartOptions, locale: string, timeZone = "UTC"): 
   const prepared = { input, ...stored, height, title: typeof options.title === "string" ? options.title : undefined };
   const { svg, table } = drawChart(prepared, locale, width, height);
   // Bar rows take the height their labels need; the box reserves it.
+  const calendar = input.kind === "heatmap" && input.layout === "calendar";
+  const calendarWidth = calendar ? Number(/data-chart-min-width="([\d.]+)"/.exec(svg)?.[1]) || width : width;
   const drawnHeight = Number(/viewBox="0 0 [\d.]+ ([\d.]+)"/.exec(svg)?.[1]) || height;
-  const stretch = !KEEP_ASPECT.has(input.kind);
+  const stretch = !calendar && !KEEP_ASPECT.has(input.kind);
   const title = typeof options.title === "string" ? options.title : "";
   const subtitle = typeof options.subtitle === "string" ? options.subtitle : "";
   const caption = [title, subtitle].filter(Boolean).join(" — ") || `${input.kind} chart`;
@@ -245,13 +250,13 @@ export function chart(options: ChartOptions, locale: string, timeZone = "UTC"): 
         .join("")}</tbody></table>`
     : "";
   let id = "";
-  if (stretch && !logicalWidth) {
+  if ((stretch || calendar) && !logicalWidth) {
     id = `c${++chartSeq}`;
     chartOptions.set(id, prepared);
     if (chartOptions.size > 200) chartOptions.delete(chartOptions.keys().next().value!);
   }
   return new Html(
-    `<div class="k2b-chart" data-chart-kind="${input.kind}"${label}><div class="k2b-chart__svg"${stretch ? " data-stretch" : ""}${id ? ` data-chart-id="${id}"` : ""} style="--k2b-chart-width:${width}px;--k2b-chart-height:${drawnHeight}px">${svg}</div></div>${values}`,
+    `<div class="k2b-chart" data-chart-kind="${input.kind}"${calendar ? ' style="overflow-x:auto"' : ""}${label}><div class="k2b-chart__svg"${stretch ? " data-stretch" : ""}${id ? ` data-chart-id="${id}"` : ""} style="${calendar ? `min-width:${calendarWidth}px;width:${calendarWidth}px;` : ""}--k2b-chart-width:${calendarWidth}px;--k2b-chart-height:${drawnHeight}px">${svg}</div></div>${values}`,
   );
 }
 

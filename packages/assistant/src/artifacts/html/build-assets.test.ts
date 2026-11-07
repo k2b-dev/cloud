@@ -6,9 +6,8 @@ test("normal mounts omit app checks and stay within the prelude budget", async (
   const [normal, check] = await Promise.all([buildPrelude(), buildCheckPrelude()]);
   // Slice 3 measured 248 KB. cloud.chart() drawing through the chat's chart mapping, with four more chart kinds and
   // its app contract, brought normal mounts to 279 KB: allow 10% growth over that, not the 851 KB app-check bundle.
-  // Stacked/100 % area adds 12,292 bytes to the measured 299,838-byte main prelude. Reserve 13 KB for this
-  // synchronous renderer, validation and tooltip support, retaining the existing headroom for other changes.
-  expect(Buffer.byteLength(normal)).toBeLessThan(279_000 * 1.1 + 13_000);
+  // Area plus calendar renderer/schema: measured 328,198 B; offline synchronous drawing keeps a 328.5 KB ceiling.
+  expect(Buffer.byteLength(normal)).toBeLessThan(328_500);
   expect(normal).toContain("k2b-area-layer");
   // Reference cells need only the resource identity schema, not capability registration and mail contracts.
   expect(normal).not.toContain("Idempotency keys must contain only visible ASCII characters");

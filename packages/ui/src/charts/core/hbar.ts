@@ -80,7 +80,7 @@ export function renderHbarSvg(spec: HorizontalBarOptions & { width: number; heig
           header + entry.y,
           entry.total === null ? "–" : g.format(entry.total),
           "end",
-          `data-bar-legend="series:${i}" data-bar-total="${escapeXml(entry.total === null ? "–" : g.format(entry.total))}"`,
+          `data-chart-legend-value data-field="series:${i}" data-default="${escapeXml(entry.total === null ? "–" : g.format(entry.total))}"`,
         ),
       );
     });

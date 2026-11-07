@@ -20,6 +20,7 @@ render(
       <div id="old-bar-outline" style={{ height: "240px" }}>
         <Chart
           kind="bar"
+          style={{ height: "100%" }}
           data={[
             { label: "Old A", value: 10 },
             { label: "Old B", value: 20 },

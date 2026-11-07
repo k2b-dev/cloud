@@ -634,7 +634,7 @@ const renderSeriesBars = (opts: BarChartOptions & { width: number; height: numbe
           entry.total === null ? "–" : g.format(entry.total),
           "stdlib-chart-bar-value",
           "end",
-          `data-bar-legend="${i < (opts.series?.length ?? 0) ? `series:${i}` : "previous"}" data-bar-total="${escapeXml(entry.total === null ? "–" : g.format(entry.total))}"`,
+          `data-chart-legend-value data-field="${i < (opts.series?.length ?? 0) ? `series:${i}` : "previous"}" data-default="${escapeXml(entry.total === null ? "–" : g.format(entry.total))}"`,
         ),
       );
     });
