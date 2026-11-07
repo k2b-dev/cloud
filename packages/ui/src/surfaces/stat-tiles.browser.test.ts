@@ -81,7 +81,7 @@ describe("@k2b/ui key figure tiles", () => {
   for (const [name, width, columns, height, valueSize] of [
     ["desktop", 1440, 4, 136, "28px"],
     ["600 px grid", 620, 2, 164, "28px"],
-    ["phone", 390, 2, 164, "22px"],
+    ["phone", 390, 2, 164, "23.04px"],
   ] as const) {
     test(`on a ${name} every state keeps the tile's size and rows (${columns} columns, ${height}px)`, async () => {
       const page = await browser.newPage({ viewport: { width, height: 900 } });
@@ -138,6 +138,64 @@ describe("@k2b/ui key figure tiles", () => {
           ),
         );
         expect({ width, gaps }).toEqual({ width, gaps: [0, 0, 0] });
+      } finally {
+        await page.close();
+      }
+    }
+  });
+
+  // Regression: at 390 px a dashboard's md tiles ended their figures in "48…" (07.11.). A figure is never cut.
+  test("a figure always fits its tile, in every size, down to a 320 px phone", async () => {
+    const values = ["48.210", "1.204,80 €", "€2,380.00", "29.260 €", "Action needed", "1,2 Mio. €"];
+    const grids = renderToString(() =>
+      createComponent(LocaleProvider, {
+        locale: "de",
+        get children() {
+          return (["lg", "md", "sm"] as const).map((size) =>
+            createComponent(StatGrid, {
+              size,
+              columns: 4,
+              get children() {
+                return values.map((value, index) =>
+                  createComponent(StatCell, {
+                    label: `Figure ${index + 1}`,
+                    icon: "ti ti-users",
+                    value,
+                    delta: { value: -0.125, better: "down" },
+                    compare: { label: "Vormonat", value: 44560 },
+                  }),
+                );
+              },
+            }),
+          );
+        },
+      }),
+    );
+    for (const [width, frame] of [
+      [390, 300],
+      [390, 366],
+      [320, 296],
+      [1440, 1384],
+    ] as const) {
+      const page = await browser.newPage({ viewport: { width, height: 900 } });
+      try {
+        await page.setContent(
+          `<!doctype html><html><head><meta name="viewport" content="width=device-width, initial-scale=1"><style>${css}</style></head>` +
+            `<body class="k2b-ui" style="margin:0;padding:12px"><div style="width:${frame}px;display:grid;gap:16px">${grids}</div></body></html>`,
+        );
+        await settled(page);
+        const cut = await page.evaluate(() =>
+          Array.from(document.querySelectorAll<HTMLElement>(".k2b-stat-cell__value")).flatMap((value) => {
+            const tile = value.closest(".k2b-stat-cell")!.getBoundingClientRect();
+            const box = value.getBoundingClientRect();
+            const style = getComputedStyle(value);
+            const fits = value.scrollWidth <= value.clientWidth + 1 && box.left >= tile.left && box.right <= tile.right + 0.5;
+            return fits && style.textOverflow !== "ellipsis"
+              ? []
+              : [`${value.textContent} (${Math.round(box.width)} in ${Math.round(tile.width)})`];
+          }),
+        );
+        expect({ width, frame, cut }).toEqual({ width, frame, cut: [] });
       } finally {
         await page.close();
       }
