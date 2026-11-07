@@ -109,8 +109,7 @@ const checkEmbeddableUiStyles = (packagesRoot: string, report: Report) => {
   }
 
   for (const prelude of selectorPreludes(source)) {
-    if (prelude.startsWith("@") || prelude === "from" || prelude === "to" || /^(?:\d+(?:\.\d+)?%)(?:\s*,\s*\d+(?:\.\d+)?%)*$/.test(prelude))
-      continue;
+    if (prelude.startsWith("@") || prelude.split(",").every((part) => /^(?:from|to|\d+(?:\.\d+)?%)$/.test(part.trim()))) continue;
     if (!prelude.includes(".k2b-ui")) report(uiStylesheet, `selector must stay below .k2b-ui: ${prelude}`);
   }
 

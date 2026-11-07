@@ -177,7 +177,7 @@ test("embeddable CSS scopes compact, multiline and adjacent rules", async () => 
 @media (width < 400px) { .nested { color: red; } }
 .multiline,
 .other { color: red; }
-@keyframes fixture { from { opacity: 0; } 50%, 75% { opacity: .5; } to { opacity: 1; } }
+@keyframes fixture { from, to { opacity: 0; } 50%, 75% { opacity: .5; } to { opacity: 1; } }
 `,
   );
   expect(findings.filter((message) => message.startsWith("selector must stay below"))).toEqual([
