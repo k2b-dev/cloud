@@ -23,15 +23,25 @@ The scope follows the UI theme. Light primary fills use `#8e1b6f` and white
 labels. Dark primary fills use `#b7408f` and white labels, while primary text
 uses `#f0abdc`. Selected surfaces use the existing AI surface token in each theme.
 Use the site theme switch to compare light and dark in the demo below,
-including selection, focus, switches, and sliders.
+including selection, hover, focus, switches, and sliders. Light hover uses a
+subtler plum surface than selection; dark hover keeps the neutral UI surface.
 
 ## Nested surfaces
 
 Nested `.k2b-ui` roots keep the primary scope. Menus, dialogs, and floating
-windows opened from the scoped area inherit it too. Keep the trigger inside
-the scope; programmatic dialogs use the currently focused UI area.
+windows opened from the scoped area inherit it too. Each dialog level follows
+its own opener; closing a nested level restores the previous level’s scope.
+Keep the trigger inside the scope; programmatic opens use the currently focused
+UI area. Notifications share one rail, with each toast retaining its source’s
+scope, so blue and plum notifications can appear together.
 
 The scope remaps the action, hover, selected, focus, link, row selection,
 and workspace selection roles. It also updates text selection and inset focus
-fills. Status colours and explicit object or file-type colours retain their
-meaning.
+fills. Informational notices, default tags and choice pills, running status
+badges, uncoloured timeline entries, and calendar dots also follow the scope.
+Warning, error, and success colours retain their meaning.
+
+Explicit object colours stay unchanged: file-type and avatar colours, colour
+choices and presence colours, `tint-blue`,
+`data-tone="blue"`, explicit blue calendar/timeline colours, chart series and data bars, syntax
+colours, and the map’s location marker (`--k2b-map-me`).

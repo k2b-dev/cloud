@@ -585,7 +585,10 @@ const DisclosureDemo = () => {
         <strong>Order context</strong>
         <Disclosure surface="plain" summary="More details" defaultValue>
           The plain surface shares this parent paper without adding another frame. Select this text or{" "}
-          <a href="#disclosure">follow this link</a> without closing the details.
+          <a href="#disclosure" style={{ color: "var(--k2b-link-accent)" }}>
+            follow this link
+          </a>{" "}
+          without closing the details.
         </Disclosure>
         <Disclosure surface="plain" summary="Unavailable details" disabled>
           Disabled summaries do not respond to hover or toggle.

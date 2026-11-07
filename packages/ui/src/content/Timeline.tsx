@@ -96,7 +96,7 @@ const HEX_COLOR = /^#[0-9a-f]{3,8}$/i;
 const colorAttributes = (color: string | undefined) =>
   color && HEX_COLOR.test(color)
     ? { token: undefined, accent: color }
-    : { token: color && COLOR_TOKENS.has(color) ? color : "blue", accent: undefined };
+    : { token: color && COLOR_TOKENS.has(color) ? color : undefined, accent: undefined };
 
 const isAllDay = (entry: TimelineEntry) => entry.kind === "all-day" || (entry.kind === "more" && entry.area === "all-day");
 const asItem = (entry: TimelineEntry): TimelineItemEntry | undefined => (entry.kind === "more" ? undefined : entry);

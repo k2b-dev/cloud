@@ -1,14 +1,25 @@
-let interaction: WeakRef<Event> | undefined;
+type UiScope = { primary: string | null; theme: "light" | "dark" };
+let interaction: { event: WeakRef<Event>; scope: UiScope } | undefined;
 
-// Safari can leave focus elsewhere when a button is clicked. During dispatch,
-// the trigger owns the surface; programmatic opens fall back to focused UI.
-// A weak reference retains neither a detached trigger nor its document.
+const scopeFrom = (source: Element | undefined): UiScope => ({
+  primary: source?.closest("[data-k2b-primary]")?.getAttribute("data-k2b-primary") ?? null,
+  theme: (source?.ownerDocument.defaultView ?? window).getComputedStyle(source ?? document.body).colorScheme === "dark" ? "dark" : "light",
+});
+
+const liveInteraction = () => {
+  const event = interaction?.event.deref();
+  return event && event.eventPhase !== 0 ? event : undefined;
+};
+
+// Capture before a menu's handler removes its trigger. Keep only palette values
+// and a weak event reference, never the detached trigger or its document.
 if (typeof document !== "undefined") {
   for (const type of ["click", "contextmenu", "keydown", "pointerdown", "pointerup"]) {
     document.addEventListener(
       type,
       (event) => {
-        interaction = new WeakRef(event);
+        const source = event.composedPath().find((node): node is Element => node instanceof Element);
+        interaction = { event: new WeakRef(event), scope: scopeFrom(source) };
       },
       true,
     );
@@ -16,15 +27,23 @@ if (typeof document !== "undefined") {
 }
 
 export const currentUiSource = (): Element | undefined => {
-  const event = interaction?.deref();
-  const trigger = event && event.eventPhase !== 0 ? event.composedPath().find((node) => node instanceof Element) : undefined;
+  const trigger = liveInteraction()
+    ?.composedPath()
+    .find((node) => node instanceof Element);
   const source = trigger instanceof Element ? trigger : document.activeElement;
   return source instanceof Element ? source : undefined;
 };
 
-/** Detached UI roots keep their source's primary role and theme without moving into it. */
-export const inheritUiScope = (target: HTMLElement, source = currentUiSource()): void => {
-  const primary = source?.closest("[data-k2b-primary]")?.getAttribute("data-k2b-primary");
-  if (primary) target.setAttribute("data-k2b-primary", primary);
-  target.setAttribute("data-theme", getComputedStyle(source ?? document.body).colorScheme === "dark" ? "dark" : "light");
+/** A trigger owns the palette during dispatch; programmatic opens use focused UI. */
+export const readUiScope = (source?: Element): UiScope =>
+  source ? scopeFrom(source) : liveInteraction() && interaction ? interaction.scope : scopeFrom(currentUiSource());
+
+export const applyUiScope = (target: HTMLElement, scope: UiScope): void => {
+  if (scope.primary) target.setAttribute("data-k2b-primary", scope.primary);
+  else target.removeAttribute("data-k2b-primary");
+  target.setAttribute("data-theme", scope.theme);
+};
+
+export const inheritUiScope = (target: HTMLElement, source?: Element): void => {
+  applyUiScope(target, readUiScope(source));
 };

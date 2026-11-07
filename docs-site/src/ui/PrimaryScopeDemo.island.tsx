@@ -1,4 +1,18 @@
-import { Button, Checkbox, ChoiceSlider, ContextMenu, Dropdown, openFloatingWindow, prompts, Switch, Tabs, TextInput } from "@k2b/ui";
+import {
+  Button,
+  Checkbox,
+  ChoiceList,
+  ChoiceSlider,
+  ContextMenu,
+  Dropdown,
+  NoticeCard,
+  openFloatingWindow,
+  prompts,
+  Switch,
+  Tabs,
+  TextInput,
+  toast,
+} from "@k2b/ui";
 import { createSignal } from "solid-js";
 
 export function PrimaryScopeControls() {
@@ -6,6 +20,7 @@ export function PrimaryScopeControls() {
   const [checked, setChecked] = createSignal(true);
   const [tab, setTab] = createSignal("notes");
   const [level, setLevel] = createSignal("balanced");
+  const [note, setNote] = createSignal("selected");
   const [text, setText] = createSignal("");
   return (
     <div style={{ display: "grid", gap: "20px" }}>
@@ -32,6 +47,21 @@ export function PrimaryScopeControls() {
         </Button>
         <Button disabled>Unavailable</Button>
       </div>
+      <NoticeCard tone="info" icon>
+        Suggestions are ready to review.
+      </NoticeCard>
+      <Button variant="secondary" onClick={() => toast("Scoped suggestions are ready.", { duration: 0 })}>
+        Show notification
+      </Button>
+      <ChoiceList
+        aria-label="Example selection"
+        value={note()}
+        onValueChange={setNote}
+        options={[
+          { value: "selected", label: "Selected note" },
+          { value: "other", label: "Hover this note" },
+        ]}
+      />
       <Tabs
         ariaLabel="Note views"
         value={tab()}
@@ -57,7 +87,19 @@ export function PrimaryScopeControls() {
       <Dropdown.Root items={[{ label: "New note", variant: "accent", action: () => setText("New note") }]}>
         <Dropdown.Trigger variant="secondary">More actions</Dropdown.Trigger>
       </Dropdown.Root>
-      <ContextMenu label="Note menu" items={[{ label: "Select note", variant: "accent", action: () => setText("Selected note") }]}>
+      <ContextMenu
+        label="Note menu"
+        items={[
+          {
+            label: "Select note",
+            variant: "accent",
+            action: () =>
+              void prompts.confirm("These are fictional demo notes.", { title: "Select note?" }).then((confirmed) => {
+                if (confirmed) setText("Selected note");
+              }),
+          },
+        ]}
+      >
         <p>Right-click here for the note menu.</p>
       </ContextMenu>
     </div>

@@ -475,7 +475,7 @@ export const bindDragSource = (
       }
       // In the top layer the preview is placed against the viewport, also inside a transformed dialog, and stays above it.
       preview.setAttribute("popover", "manual");
-      getK2bPortalRoot(undefined, source).append(preview);
+      getK2bPortalRoot(scope ?? doc.body, source, doc).append(preview);
       preview.showPopover?.();
       preview.style.transform = `translate3d(${point.x}px, ${point.y}px, 0)`;
       for (const target of engine.targets) mark(target, payload);
