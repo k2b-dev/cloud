@@ -67,8 +67,23 @@ import { Chart } from "@k2b/ui";
 DOM dependencies. Use `layout(spec, { width, height })` and `toSvg(scene)` for
 a fixed logical scene, or `renderChartSvg(spec, width, height)` for the same SVG
 that `Chart` displays. `chartRenderHeight(spec)` calculates the standard height.
+For a bar gauge in a host without an explicit height, opt into its compact row
+height with `chartRenderHeight(spec, { contentHeight: true })` and pass the result
+to both the drawing and its container. The standard calculation keeps its
+280-unit minimum; explicit-height drawings keep their existing geometry.
+
+```ts
+const spec = { kind: "barGauge" as const, data: [
+  { label: "CPU", value: 65 }, { label: "Memory", value: 72 },
+] };
+const height = chartRenderHeight(spec, { contentHeight: true });
+const svg = renderChartSvg(spec, 480, height);
+```
+
 `prepareChartSnapshot` prepares that drawing and its keyed inspection data for
-`ChartSnapshotView` and `ChartExplorer`. Existing root imports remain supported.
+`ChartSnapshotView` and `ChartExplorer`. Its optional third argument forwards
+`{ contentHeight: true }` to the height calculation for unsized bar-gauge hosts.
+Existing root imports remain supported.
 
 ```ts
 import { layout, toSvg } from "@k2b/ui/charts/core";
@@ -222,7 +237,7 @@ and controlled selection outline the marks using their series color. Arrow keys 
 Home/End jump to the edges, Enter pins and Escape closes inspection. A tap
 selects only when it has not become a swipe.
 
-Category hover bands carry a transparent SVG presentation fill, so standalone SVGs and base-styled print or app frames retain the same drawing. Series legends use at most one quarter of the frame and truncate long names; the tooltip and data table retain full names. Dense grouped bars drop their inner gap before reducing bar width. Category labels stay whole and thin to fit. Missing totals display “–”; zero observations remain zero. Comparison changes and total labels inherit the UI locale.
+Category hover bands carry a transparent SVG presentation fill, so standalone SVGs and base-styled print or app frames retain the same drawing. Series legends keep each value six pixels after its label, use at most one quarter of the frame, and truncate long names; the tooltip and data table retain full names. Dense grouped bars drop their inner gap before reducing bar width. Category labels stay whole and thin to fit. Missing totals display “–”; zero observations remain zero. Comparison changes and total labels inherit the UI locale.
 
 ## Props reference
 

@@ -627,16 +627,10 @@ const renderSeriesBars = (opts: BarChartOptions & { width: number; height: numbe
           `<path d="M ${x} ${y - 4} l ${4 * g.units} -4 M ${x + 2 * g.units} ${y} l ${6 * g.units} -6 M ${x + 6 * g.units} ${y} l ${2 * g.units} -2" fill="none" stroke="var(--stdlib-chart-c1,#3b82f6)" stroke-width="1"/>`,
         );
       const label = wrapLabel(entry.label, Math.max(8, entry.labelWidth), 1).lines[0] ?? entry.label;
+      const value = escapeXml(entry.total === null ? "–" : g.format(entry.total));
+      // One text run keeps the value six CSS pixels after its label even when the SVG stretches.
       parts.push(
-        text(x + 14 * g.units, y, label),
-        text(
-          entry.valueX,
-          y,
-          entry.total === null ? "–" : g.format(entry.total),
-          "stdlib-chart-bar-value",
-          "end",
-          `data-chart-legend-value data-field="${i < (opts.series?.length ?? 0) ? `series:${i}` : "previous"}" data-default="${escapeXml(entry.total === null ? "–" : g.format(entry.total))}"`,
-        ),
+        `<text x="${fmt(x + 14 * g.units)}" y="${fmt(y)}"><tspan class="stdlib-chart-tick-label">${escapeXml(label)}</tspan><tspan class="stdlib-chart-bar-value" dx="6" data-chart-legend-value data-field="${i < (opts.series?.length ?? 0) ? `series:${i}` : "previous"}" data-default="${value}">${value}</tspan></text>`,
       );
     });
   if (g.legend && g.legendLayout.hidden)

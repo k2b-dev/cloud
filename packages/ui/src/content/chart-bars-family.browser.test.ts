@@ -379,3 +379,50 @@ test("old bars keep valid SSR/client selection and inspection outlines inside k2
     await page.close();
   }
 });
+
+for (const width of [1440, 390])
+  test(`legend pairs and compact bar gauges keep their geometry at ${width}px`, async () => {
+    const page = await browser.newPage({ viewport: { width, height: 700 } });
+    const errors = pageErrors(page);
+    try {
+      const gauge = {
+        kind: "barGauge" as const,
+        data: [
+          { label: "CPU", value: 65 },
+          { label: "Memory", value: 72 },
+          { label: "Disk", value: 38 },
+        ],
+      };
+      const height = chartRenderHeight(gauge, { contentHeight: true });
+      await page.setContent(`<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><style>${css}
+        body{margin:0;padding:20px}section{margin-bottom:24px}.k2b-chart{height:240px}#compact .k2b-chart{height:${height}px}
+        </style></head><body class="k2b-ui" data-theme="light"><section><h2>Orders by channel</h2><div class="k2b-chart"><div class="k2b-chart__svg" data-stretch style="--k2b-chart-width:480px;--k2b-chart-height:280px">${renderChartSvg(barFamilyFixtures[0]!, 480, 280)}</div></div></section>
+        <section id="compact"><h2>Resource utilization</h2><div class="k2b-chart"><div class="k2b-chart__svg" data-stretch style="--k2b-chart-width:480px;--k2b-chart-height:${height}px">${renderChartSvg(gauge, 480, height)}</div></div></section></body></html>`);
+      await settled(page);
+      const gaps = await page.locator("[data-chart-legend-value]").evaluateAll((nodes) =>
+        nodes.map((node) => {
+          const value = node.getBoundingClientRect(),
+            label = node.previousElementSibling!.getBoundingClientRect();
+          return value.left - label.right;
+        }),
+      );
+      expect(gaps).toHaveLength(3);
+      for (const gap of gaps) expect(gap).toBeCloseTo(6, 0);
+      const geometry = await page.locator("#compact svg").evaluate((node) => {
+        const box = node.getBoundingClientRect();
+        const lastRow = [...node.querySelectorAll(".stdlib-chart-bar-gauge-track")].at(-1)!.getBoundingClientRect();
+        return { height: box.height, trailing: box.bottom - lastRow.bottom };
+      });
+      expect(geometry.height).toBe(height);
+      expect(geometry.trailing).toBeGreaterThan(0);
+      expect(geometry.trailing).toBeLessThan(28);
+      expect(errors).toEqual([]);
+      const shots = process.env.CHARTS_SCREENSHOTS;
+      if (shots) {
+        await mkdir(shots, { recursive: true });
+        await page.screenshot({ path: `${shots}/legend-compact-gauge-light-${width}.png`, fullPage: true });
+      }
+    } finally {
+      await page.close();
+    }
+  });

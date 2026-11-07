@@ -179,15 +179,20 @@ export function resolveDrawing(spec: JsonValue, locale = "en"): ShowcaseDrawing 
   if (lost.length) return { mode: "slot", kind, reason: `Its options ${lost.join(", ")} arrive with their catalog step.` };
   const input: ChartInput = parsed.data;
   const table = chartRows(input, locale);
-  const snapshot = prepareChartSnapshot(chartRenderOptions(input, locale, { legend: "outside" }), {
-    key: ({ datum }) => chartMarkKey(datum),
-    // Add the row first: it may introduce the columns its own tooltip names.
-    tooltip: ({ datum }) => {
-      const row = table.add(datum);
-      return chartTooltip(table.columns(), row);
+  const snapshot = prepareChartSnapshot(
+    chartRenderOptions(input, locale, { legend: "outside" }),
+    {
+      key: ({ datum }) => chartMarkKey(datum),
+      // Add the row first: it may introduce the columns its own tooltip names.
+      tooltip: ({ datum }) => {
+        const row = table.add(datum);
+        return chartTooltip(table.columns(), row);
+      },
+      reference: ({ datum }) => chartReferenceMark(input, datum),
     },
-    reference: ({ datum }) => chartReferenceMark(input, datum),
-  });
+    // This host has no explicit drawing height; bar gauges use their rows instead of a 280-unit canvas.
+    { contentHeight: input.kind === "barGauge" },
+  );
   const { columns, rows } = table.table();
   return { mode: "snapshot", snapshot, rows, columns: columnsOf(columns), legend: chartLegend(input, locale) };
 }
