@@ -1231,7 +1231,7 @@ export default function Browser(props: {
     if (props.onOpenOverview) return { label: b().allStorage, ariaLabel: b().allStorageUp, icon: "ti ti-layout-grid", action: goUp };
     return null;
   };
-  // Alt+↑ follows the same way up as the listing; the shell offers no way up for a folder (see `filesTitle`).
+  // Alt+↑ follows the same way up as the listing; the shell offers no way up for a folder (see `snapshotTitle`).
   createEffect(() => {
     const target = up();
     if (!target) return;

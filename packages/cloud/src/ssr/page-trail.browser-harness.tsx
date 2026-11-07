@@ -86,7 +86,7 @@ const filesTitle = (depth: number): Title => [
   ...folders.slice(0, depth - 1).map((name, index) => ({ title: name, href: folderHref(index + 1) })),
   { title: folders[depth - 1]! },
 ];
-/** A document in the editor, as Files names it: its way up is its folder with the document's row selected. */
+/** A document below its folder, named with its folder as the level above and the document's row selected. */
 const editorTitle = (depth: number, file: string): Title => [
   ...filesTitle(depth).slice(0, -1),
   { title: folders[depth - 1]!, href: `${folderHref(depth)}&file=${encodeURIComponent(file)}` },
