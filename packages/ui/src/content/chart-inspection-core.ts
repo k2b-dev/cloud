@@ -739,7 +739,6 @@ export function inspectChart(container: HTMLElement, options: InspectChartOption
   const removeOutside = closeChartInspectionOnOutside({
     container: () => container,
     tooltip: () => tooltip,
-    scroll: inspector.scroll,
     close: inspector.close,
     keepScroll: () => options.nav?.keepScroll,
   });

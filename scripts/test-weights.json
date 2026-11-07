@@ -236,6 +236,7 @@
     "@k2b/pwa-auth src/icons.behavior.test.ts": 0.8,
     "@k2b/pwa-auth src/pairing.browser.test.ts": 11.8,
     "@k2b/pwa-auth src/status-bar.behavior.test.ts": 12.1,
+    "@k2b/ssr test/engine/island-focus.engine.test.ts": 2.5,
     "@k2b/ssr test/engine/nav-history.engine.test.ts": 4.9,
     "@k2b/ssr test/engine/nav-swap.engine.test.ts": 9,
     "@k2b/ssr test/engine/nav-veto.engine.test.ts": 6.5,

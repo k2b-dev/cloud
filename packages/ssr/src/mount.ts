@@ -64,6 +64,11 @@ const mountElement = <Props extends object>(
   if (mounted.has(element)) return;
   const start = (): void => {
     try {
+      // The browser renders the island again over its server markup. Focus taken before that (a keyboard user, or a
+      // test that is faster than the island's script) moves to the same element of the new markup instead of the body.
+      const path: number[] = [];
+      for (let node = document.activeElement; node && node !== element && element.contains(node); node = node.parentElement)
+        path.unshift([...node.parentElement!.children].indexOf(node));
       element.innerHTML = "";
       const dispose = render(() => {
         const owner = getOwner();
@@ -93,6 +98,11 @@ const mountElement = <Props extends object>(
         });
       }, element);
       mounted.set(element, dispose);
+      if (path.length) {
+        let node: Element | undefined = element;
+        for (const index of path) node = node?.children[index];
+        if (node instanceof HTMLElement || node instanceof SVGElement) node.focus({ preventScroll: true });
+      }
     } catch (error) {
       report(element, error, start);
       element.replaceChildren(defaultFallback(start));
