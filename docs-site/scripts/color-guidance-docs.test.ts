@@ -17,6 +17,13 @@ const blocks = (matches: CssRule[]) => new Set(matches.map(block).filter((name) 
 const values = (rule: CssRule) => [...cssDeclarations(rule.body).values()].flat();
 const consumes = (hook: string) => rules.filter((rule) => values(rule).some((value) => value.includes(`var(${hook})`)));
 const nav = blocks(consumes("--k2b-app-workspace-selected"));
+// Tabs, segments, and active filters mix their selected edge from the host ink instead of the navigation fill.
+// Choice cards mix the same share from platform blue; they are controls (see "Controls stay platform blue").
+const edgeSelected = blocks(
+  consumes("--k2b-edge-selected-share").filter((rule) =>
+    values(rule).some((value) => value.includes("var(--k2b-edge-selected-share)") && value.includes("var(--k2b-app-workspace-active)")),
+  ),
+);
 const row = blocks(consumes("--k2b-row-selected"));
 // A dropdown menu control is not a drag-and-drop target.
 const isDropTarget = (rule: CssRule) => /drop(?!down)/.test(rule.selector);
@@ -91,13 +98,12 @@ describe("color guide agrees with the shared CSS", () => {
     expect(definedIn.get("TableSizePicker")).toBe("text-editor");
   });
 
-  test("navigation and selection-control tables split the navigation fill consumers", () => {
+  test("navigation and selection-control tables cover the navigation fill and the selected edge consumers", () => {
     const source = readPage();
     const navigation = table(source, "### Navigation fill");
     const tabs = table(source, "### Selected tabs, segments, and filters");
-    expect(sorted([...navigation.classes, ...tabs.classes]), "The two tables must cover every navigation fill consumer").toEqual(
-      sorted(nav),
-    );
+    expect(sorted(navigation.classes), "The navigation table must cover every navigation fill consumer").toEqual(sorted(nav));
+    expect(sorted(tabs.classes), "The selection-control table must cover every selected edge consumer").toEqual(sorted(edgeSelected));
     expect(
       [...navigation.classes].filter((name) => tabs.classes.has(name)),
       "Navigation and selection-control tables must be disjoint",

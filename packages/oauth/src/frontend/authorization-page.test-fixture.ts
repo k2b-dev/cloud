@@ -21,6 +21,7 @@ const { ConsentDecision } = await import("./_components/ConsentDecision");
 const { DeviceApproval } = await import("./_components/DeviceApproval");
 const { default: devicePage } = await import("./device");
 const { default: errorPage } = await import("./error");
+const { default: logoutPage } = await import("./logout");
 const { oauthMessages } = await import("./messages");
 
 /** Synthetic data only. */
@@ -116,6 +117,7 @@ const pages = new Hono<AuthContext>()
   .get("/oauth/device", ...devicePage)
   .get("/fixture/app-session/oauth/device", ...devicePage)
   .get("/oauth/error", ...errorPage)
+  .get("/oauth/logout", ...logoutPage)
   .get("/fixture/device-confirm", ...confirmPage(false))
   .get("/fixture/device-confirm-reauthenticate", ...confirmPage(true))
   .get("/fixture/consent", ...consentPage("dynamic", false))
@@ -125,6 +127,7 @@ const pages = new Hono<AuthContext>()
 /** Every authorization state by name, as the path a browser would open. */
 export const authorizationStates = {
   entry: "/oauth/device",
+  logout: "/oauth/logout?client_id=reference&post_logout_redirect_uri=https%3A%2F%2Fclient.example%2Fsigned-out",
   confirm: "/fixture/device-confirm",
   confirmReauthenticate: "/fixture/device-confirm-reauthenticate",
   consent: "/fixture/consent",

@@ -1,4 +1,4 @@
-import { type JSX, Show } from "solid-js";
+import { For, type JSX, Show } from "solid-js";
 
 export type StatusTone = "info" | "ok" | "warning" | "error" | "degraded" | "running" | "neutral";
 
@@ -7,6 +7,11 @@ export type StatusBadgeProps = {
   label: JSX.Element;
   icon?: string | null;
   variant?: "chip" | "dot" | "text";
+  /**
+   * Every label this place can show, such as all states of a list's status. The badge keeps the width of the longest,
+   * so in a right-aligned slot its dot starts at one x in every row and stays put when the state changes.
+   */
+  labels?: readonly string[];
   title?: string;
   class?: string;
 };
@@ -29,7 +34,12 @@ export function StatusBadge(props: StatusBadgeProps): JSX.Element {
       <Show when={variant() !== "dot"} fallback={<span class="k2b-status-badge__dot" aria-hidden="true" />}>
         <Show when={icon()}>{(glyph) => <i class={glyph()} aria-hidden="true" />}</Show>
       </Show>
-      <span class="k2b-status-badge__label">{props.label}</span>
+      <Show when={props.labels?.length} fallback={<span class="k2b-status-badge__label">{props.label}</span>}>
+        <span class="k2b-status-badge__label" data-reserve="">
+          <span>{props.label}</span>
+          <For each={props.labels}>{(label) => <span aria-hidden="true">{label}</span>}</For>
+        </span>
+      </Show>
     </span>
   );
 }

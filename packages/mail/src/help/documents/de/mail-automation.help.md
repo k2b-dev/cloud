@@ -146,7 +146,7 @@ Formuliere Kategoriebeschreibungen genau und prüfe die ersten Läufe unter **Ak
 
 Eine erzeugte Textausgabe wirkt erst, wenn ein späterer Schritt sie nutzt. Die Antwortautomatisierung erstellt nur Entwürfe zur Prüfung durch Menschen und sendet sie nie.
 
-Spaces-Schritte laufen mit einer Delegation der Person, die die Automatisierung eingerichtet hat, und diese Person kann sie widerrufen. Mail speichert das Token verschlüsselt. Es widerruft das Token, wenn jemand den letzten Spaces-Schritt entfernt oder die Automatisierung löscht. Jeder Lauf prüft trotzdem den aktuellen Zugriff in Mail und in Spaces. Verknüpfen aktualisiert eine vorhandene Verknüpfung oder legt eine an, und das Erstellen von Terminen nutzt einen dauerhaften Idempotenzschlüssel, damit Wiederholungen keine doppelten Termine anlegen. Widerruft jemand den delegierten API-Schlüssel oder entfernt den Zugriff auf den Space, schlagen künftige Läufe fehl, statt ohne diesen Zugriff zu handeln.
+Spaces-Schritte laufen mit einer Delegation der Person, die die Automatisierung eingerichtet hat, und diese Person kann sie widerrufen. Mail speichert das Token verschlüsselt. Es widerruft das Token, wenn jemand den letzten Spaces-Schritt entfernt oder die Automatisierung löscht. Jeder Lauf prüft trotzdem den aktuellen Zugriff in Mail und in Spaces. Verknüpfen aktualisiert eine vorhandene Verknüpfung oder legt eine an, und das Erstellen von Terminen nutzt einen dauerhaften Idempotenzschlüssel, damit Wiederholungen keine doppelten Termine anlegen. Widerruft jemand den delegierten API Key oder entfernt den Zugriff auf den Space, schlagen künftige Läufe fehl, statt ohne diesen Zugriff zu handeln.
 
 Ungelesen-Zahlen folgen der Gelesen-Markierung beim Anbieter. Erledigt markiert E-Mails nicht als gelesen. Die Anleitung in **Unwichtiges aus Handlungsbedarf heraushalten** ergänzt deshalb **Als gelesen markieren**. Nutze `needs_action` oder `waiting`, um eine Unterhaltung ausdrücklich wieder zu öffnen.
 
@@ -264,6 +264,8 @@ Die **Ausführungslimits** sind harte Obergrenzen für Verschiebungen, Sendungen
 ## Workflow-Läufe beobachten und stoppen {icon="activity"}
 
 Mit Zugriff **Verwalten** nutzt du **Automatisierungen → Aktivität** für die automatischen Antworten, Automatisierungen für eingehende E-Mails, eigenen Workflows und die fortsetzbare nachträgliche Verarbeitung des Postfachs. Die Tabelle zeigt Typ der Automatisierung, Status, Dauer, Zeitpunkt und eine kurze Fehler- oder Ergebnismeldung. Die Cloud-Administration behält die Detailansicht über alle Apps unter **Administration → Systembeobachtung → Workflows**.
+
+Erfolgreiche nachträgliche Verarbeitungen bleiben 30 Tage in der Aktivität sichtbar, auch wenn du ihre Regel löschst. Dieselbe Operation erneut anzufragen erzeugt keinen zweiten Eintrag.
 
 Wähle **Abbrechen**, wenn keine weiteren Effekte beginnen sollen. Das Abbrechen macht bereits abgeschlossene Verschiebungen, Sendungen oder Änderungen an der Zusammenarbeit nicht rückgängig. Ein Lauf mit Klärungsbedarf wartet, bis die Cloud-Administration festhält, ob ein unklarer externer Effekt eingetreten ist. Das Ausschalten eines Mail-Workflows verhindert neue passende Auslöser. Es ändert den abgeschlossenen Verlauf nicht.
 

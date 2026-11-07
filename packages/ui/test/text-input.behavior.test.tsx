@@ -131,7 +131,8 @@ test("compact values retain names, refs, submission and associated errors withou
     expect(submitted).toBe(1);
     expect(enter.defaultPrevented).toBeTrue();
     const defaultField = dom.root.querySelector('input:not([aria-label="Region"])')!.closest(".k2b-field")!;
-    expect(defaultField.querySelector(".k2b-input-shell__icon")).not.toBeNull();
+    // Plain text fields have no default icon either; the edge shows where to type.
+    expect(defaultField.querySelector(".k2b-input-shell__icon")).toBeNull();
     expect(defaultField.querySelector(".k2b-field__error--sr-only")).toBeNull();
   } finally {
     dispose();

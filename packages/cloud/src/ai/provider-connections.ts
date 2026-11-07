@@ -10,7 +10,12 @@ export type AiProviderTestResult = {
   message: string;
   latencyMs?: number;
 };
-export type AiAvailableProviderModel = { providerModel: string; label?: string; kind?: "chat" | "transcription"; contextWindow?: number };
+export type AiAvailableProviderModel = {
+  providerModel: string;
+  label?: string;
+  kind?: "chat" | "transcription" | "live-transcription";
+  contextWindow?: number;
+};
 type Connection = Pick<AiProvider, "type" | "baseUrl"> & { apiKey?: string; headers?: Record<string, string> };
 const defaults = {
   openai: "https://api.openai.com/v1",
@@ -20,6 +25,7 @@ const defaults = {
   gemini: "https://generativelanguage.googleapis.com/v1beta/openai",
   ollama: "http://localhost:11434",
   vllm: "http://localhost:8000/v1",
+  "vllm-realtime": "",
   "openai-compatible": "",
 };
 export class AiProviderListError extends Error {
@@ -130,6 +136,7 @@ export const listProviderModels = async (provider: Connection, signal?: AbortSig
       models.push(
         ...page.data.map((model) => ({
           providerModel: model.id,
+          ...(provider.type === "vllm-realtime" ? { kind: "live-transcription" as const } : {}),
           ...((model.display_name ?? model.name) ? { label: model.display_name ?? model.name } : {}),
           ...(model.context_length ? { contextWindow: model.context_length } : {}),
         })),

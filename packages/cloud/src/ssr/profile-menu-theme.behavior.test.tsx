@@ -64,9 +64,10 @@ test("the profile appearance row cycles in place, keeps the menu open and keeps 
   trigger.click();
   await Promise.resolve();
   const menu = profile.querySelector<HTMLElement>(".k2b-dropdown__menu")!;
-  const item = menu.querySelector<HTMLButtonElement>('[role="menuitem"]')!;
+  // The appearance row opens the preferences, the section after the sidebar entry.
+  const preferencesSection = () => menu.querySelectorAll(".k2b-dropdown__section")[1]!;
+  const item = preferencesSection().querySelector<HTMLButtonElement>('[role="menuitem"]')!;
   expect(item.textContent).toBe("Automatisch");
-  expect(menu.querySelector('[data-divided="true"]')).toBeNull();
   expect(menu.querySelector('[role="menuitemradio"]')).toBeNull();
   expect(profile.querySelector('[aria-live="polite"]')?.textContent).toBe("");
   item.focus();
@@ -75,7 +76,7 @@ test("the profile appearance row cycles in place, keeps the menu open and keeps 
     await Promise.resolve();
     expect(trigger.getAttribute("aria-expanded")).toBe("true");
     expect(menu.matches(":popover-open")).toBe(true);
-    expect(menu.querySelector('[role="menuitem"]')).toBe(item);
+    expect(preferencesSection().querySelector('[role="menuitem"]')).toBe(item);
     expect(item.textContent).toBe(current);
     expect(item.querySelector("i")?.className).toBe(icon);
     expect(item.getAttribute("aria-label")).toBe(`Darstellung: ${current}. Wechselt zu ${next}.`);

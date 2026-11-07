@@ -1,6 +1,6 @@
 import { createEffect, type JSX, onCleanup } from "solid-js";
 import { isServer } from "solid-js/web";
-import { Toolbar } from "./Toolbar";
+import { Toolbar, ToolbarHintsContext } from "./Toolbar";
 
 export type SelectionToolbarProps = {
   /**
@@ -116,7 +116,9 @@ export function SelectionToolbar(props: SelectionToolbarProps): JSX.Element {
         props.onEscape();
       }}
     >
-      <Toolbar label={props.label}>{props.children}</Toolbar>
+      <ToolbarHintsContext.Provider value={false}>
+        <Toolbar label={props.label}>{props.children}</Toolbar>
+      </ToolbarHintsContext.Provider>
     </div>
   );
 }

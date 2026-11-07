@@ -152,7 +152,12 @@ export default function TaskAttachmentsSection(props: {
    */
   const chooseAndUploadMedia = async () => {
     try {
-      const chosen = await chooseFiles({ accept: MEDIA_ACCEPT, multiple: true, maxBytes: remaining() * MAX_TASK_ATTACHMENT_SIZE_BYTES });
+      const chosen = await chooseFiles({
+        accept: MEDIA_ACCEPT,
+        multiple: true,
+        maxFiles: remaining(),
+        maxTotalBytes: remaining() * MAX_TASK_ATTACHMENT_SIZE_BYTES,
+      });
       if (chosen.length > 0) await uploadMedia(chosen);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : t.uploadMediaFilesFailed);
@@ -230,7 +235,7 @@ export default function TaskAttachmentsSection(props: {
 
   return (
     <>
-      <DetailPanel.Section title={t.attachments} count={media().length || undefined}>
+      <DetailPanel.Section title={t.attachments} icon="ti ti-paperclip" count={media().length || undefined}>
         <div class="flex flex-col gap-2">
           <Show when={media().length > 0}>
             {/* Videos as rows first, then images as tiles: the short list keeps the order of the full one. */}

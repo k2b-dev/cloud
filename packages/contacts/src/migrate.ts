@@ -1,4 +1,4 @@
-import { sql } from "bun";
+import { sql } from "@k2b/cloud";
 
 /** A release that still assigns missing short IDs at startup; every release from v0.7.0 did. */
 const SHORT_ID_BRIDGE_RELEASE = "v0.45.0";

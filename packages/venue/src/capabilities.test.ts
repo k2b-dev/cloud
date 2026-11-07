@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { sql } from "@k2b/cloud";
 import { assertResourceOpenLink, compileCapabilityManifest } from "@k2b/cloud/capabilities/testing";
 import {
   type CapabilityActionDefinition,
@@ -7,7 +8,6 @@ import {
   capabilityResultSchema,
   type User,
 } from "@k2b/cloud/contracts";
-import { sql } from "bun";
 import { testFor } from "../../../scripts/fixtures/test-infra";
 import { venueCapabilities } from "./capabilities";
 import { VenueListDataSchema } from "./capability-contracts";

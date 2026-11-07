@@ -200,7 +200,7 @@ export const adminMessages = i18n.define({
       close: "Schließen",
       unixOwnership: "Unix-Eigentümer",
       cloudOwnership:
-        "Neue Dateien gehören dem Filegate-Servicekonto. Die Cloud steuert den Zugriff über Konten und Gruppenmitgliedschaften.",
+        "Neue Dateien gehören dem Filegate-Dienstkonto. Die Cloud steuert den Zugriff über Konten und Gruppenmitgliedschaften.",
       overview: "Übersicht",
       directories: "Verzeichnisse",
       archives: "Archiv",

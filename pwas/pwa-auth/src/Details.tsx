@@ -1,9 +1,11 @@
 import { AppApprovalClientError } from "@k2b/cloud/browser/app-approval";
 import {
+  BottomSheet,
+  Button,
+  bottomSheetAdaptiveOptions,
   CopyButton,
   DescriptionList,
   type DescriptionListItem,
-  IconButton,
   InlineGuidance,
   LocaleProvider,
   PanelDialog,
@@ -23,8 +25,15 @@ const problemOf = (error: unknown): Problem => {
   return failure(error) === "forbidden" ? "forbidden" : "unavailable";
 };
 
-/** What this device knows about one connected Cloud: the account it signs in and its own pairing. */
-export function Details(props: { auth: Authenticator; binding: Binding; close: () => void }) {
+/** What this device knows about one connected Cloud: the account it signs in and its own pairing. `problem` is the
+ * long explanation of the card's error line. */
+export function Details(props: {
+  auth: Authenticator;
+  binding: Binding;
+  problem?: string;
+  dismiss: () => void | Promise<void>;
+  close: () => void;
+}) {
   const locale = useLocale();
   const t = createMemo(() => authMessages.resolve([locale()]).t);
   const [record, setRecord] = createSignal(props.binding);
@@ -58,6 +67,8 @@ export function Details(props: { auth: Authenticator; binding: Binding; close: (
     if (reason === "unsupported") return t().detailsUnsupported;
     // Without a fresh answer, any account details shown are the saved copy: say when it was saved.
     const saved = details();
+    // Without a saved copy, the card's explanation above already says why nothing is shown.
+    if (props.problem && !saved) return undefined;
     if (reason === "forbidden") return saved ? `${t().forbidden} ${t().detailsSaved({ date: date(saved.checkedAt) })}` : t().forbidden;
     return saved ? t().detailsCached({ date: date(saved.checkedAt) }) : t().detailsUnreachable;
   };
@@ -80,18 +91,27 @@ export function Details(props: { auth: Authenticator; binding: Binding; close: (
     ];
   };
   return (
-    <PanelDialog>
+    <BottomSheet onDismiss={props.dismiss}>
+      {/* Drag, a tap beside the sheet, Escape and the quiet Close all close it. */}
       <PanelDialog.Header
         title={props.binding.label}
         subtitle={props.binding.issuer}
         actions={
-          <IconButton label={t().close} variant="ghost" tooltip={false} onClick={() => props.close()}>
-            <i class="ti ti-x" aria-hidden="true" />
-          </IconButton>
+          <Button class="auth-details-close" variant="ghost" size="sm" onClick={() => props.close()}>
+            {t().close}
+          </Button>
         }
       />
       <PanelDialog.Body>
         <div class="auth-details">
+          <Show when={props.problem}>
+            {(text) => (
+              <p class="auth-details-problem">
+                <i class="ti ti-alert-circle" aria-hidden="true" />
+                <span>{text()}</span>
+              </p>
+            )}
+          </Show>
           <Show when={notice()}>
             {(text) => (
               <InlineGuidance tone={problem() === "forbidden" ? "warning" : "info"} role="status">
@@ -113,17 +133,17 @@ export function Details(props: { auth: Authenticator; binding: Binding; close: (
           </section>
         </div>
       </PanelDialog.Body>
-    </PanelDialog>
+    </BottomSheet>
   );
 }
 
-export function openDetails(auth: Authenticator, binding: Binding, preferences: Preferences) {
+export function openDetails(auth: Authenticator, binding: Binding, preferences: Preferences, problem?: string) {
   return openDialog(
-    (close) => (
+    (close, context) => (
       <LocaleProvider locale={preferences.locale()}>
-        <Details auth={auth} binding={binding} close={() => close()} />
+        <Details auth={auth} binding={binding} problem={problem} dismiss={context.requestDismiss} close={() => close()} />
       </LocaleProvider>
     ),
-    { panelClassName: "k2b-dialog k2b-dialog--small", contentClassName: "k2b-dialog__viewport" },
+    bottomSheetAdaptiveOptions,
   );
 }

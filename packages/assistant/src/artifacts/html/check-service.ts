@@ -1,5 +1,5 @@
+import { sql } from "@k2b/cloud";
 import { CodeCheckInput } from "@k2b/cloud/ai/browser";
-import { sql } from "bun";
 import { requireToolChat } from "../chat-access";
 import { ArtifactSource, hasInterface, LIMITS } from "../contracts";
 import { artifactDatabase } from "../database";

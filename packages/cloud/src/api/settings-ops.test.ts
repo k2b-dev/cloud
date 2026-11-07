@@ -12,8 +12,17 @@ import { createSettingsOpsRoutes, settingsInvocationOperation } from "./settings
 
 const key = "test.env_migration";
 registerSettings([
+  { key: "test.application_setting", kind: "string", default: "", group: "test", description: "Setting without environment migration" },
   { key, kind: "string", default: "", group: "test", description: "Test setting", envBootstrap: () => undefined },
-  { key: "test.custom_hook", kind: "string", default: "", group: "test", description: "Setting with an app-owned write hook" },
+  {
+    key: "test.custom_hook",
+    adminWrite: "application",
+    envBootstrap: () => undefined,
+    kind: "string",
+    default: "",
+    group: "test",
+    description: "Setting with an app-owned write hook",
+  },
 ]);
 const user = buildProjectedUser({ id: "11111111-1111-4111-8111-111111111111", provider: "local", profile: "user", effective_admin: true });
 const kid = "33333333-3333-4333-8333-333333333333";
@@ -76,7 +85,7 @@ const request = async (
         },
       ),
     )
-    .route("/_internal/settings", createSettingsOpsRoutes([key, "test.custom_hook"]));
+    .route("/_internal/settings", createSettingsOpsRoutes([key, "test.custom_hook", "test.application_setting"]));
   const token = await new SignJWT(claims(method, options.tokenRoute ?? route))
     .setProtectedHeader({ alg: "RS256", kid, typ: "cloud-invocation+jwt" })
     .sign(signingKey);
@@ -91,17 +100,32 @@ test("a real signed admin invocation reaches app diagnostics without session rea
   expect((await request("GET", "env")).status).toBe(200);
   expect(read).toHaveBeenCalledTimes(1);
   expect((await request("GET", "env", { admin: false })).status).toBe(403);
-  expect((await request("GET", "env", { scopes: ["read"] })).status).toBe(403);
+  expect((await request("GET", "env", { scopes: ["read"] })).status).toBe(200);
   expect((await request("GET", "env", { tokenRoute: "other" })).status).toBe(401);
-  expect(read).toHaveBeenCalledTimes(1);
+  expect(read).toHaveBeenCalledTimes(2);
 });
 test("migration repair rejects settings with custom write paths and carries replacement intent", async () => {
   const update = spyOn(settingsService.entry, "update").mockResolvedValue({ ok: true, data: undefined });
   expect((await request("PUT", "test.custom_hook", { body: { value: "changed" } })).status).toBe(400);
   expect(update).not.toHaveBeenCalled();
   expect((await request("PUT", key, { body: { value: "repaired", replaceUnreadable: true } })).status).toBe(200);
-  expect(update).toHaveBeenCalledWith({ key, value: "repaired", replaceUnreadable: true });
+  expect(update).toHaveBeenCalledWith({
+    key,
+    value: "repaired",
+    replaceUnreadable: true,
+    audit: { action: "settings.update", outcome: "allowed", actor: { userId: user.id }, target: { type: "setting", id: key } },
+  });
 });
 test("malformed encoded paths fail authentication without throwing", () => {
   expect(settingsInvocationOperation("GET", "%")).toBe("settings.invalid");
+});
+
+test("ordinary application settings accept writes without environment migration metadata", async () => {
+  const update = spyOn(settingsService.entry, "update").mockResolvedValue({ ok: true, data: undefined });
+  const response = await request("PUT", "test.application_setting", { body: { value: "configured" } });
+  expect(response.status).toBe(200);
+  expect(update).toHaveBeenCalledWith(expect.objectContaining({ key: "test.application_setting", value: "configured" }));
+  expect((await request("PUT", "test.undeclared", { body: { value: "x" } })).status).toBe(400);
+  expect((await request("PUT", "test.application_setting", { scopes: ["read"], body: { value: "x" } })).status).toBe(403);
+  expect(update).toHaveBeenCalledTimes(1);
 });

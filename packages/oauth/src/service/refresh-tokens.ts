@@ -1,5 +1,5 @@
+import { sql } from "@k2b/cloud";
 import { toPgTextArray, toPgUuidArray } from "@k2b/cloud/services";
-import { sql } from "bun";
 import type { OAuthClient, OAuthScope } from "@/contracts";
 
 type RefreshTokenStatus = "active" | "issuing" | "rotated" | "revoked" | "reused";

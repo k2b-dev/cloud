@@ -1,8 +1,8 @@
 import { expect, setDefaultTimeout, setSystemTime } from "bun:test";
-import { sql } from "bun";
 import { Hono } from "hono";
 import { findTargetHandler } from "hono/utils/handler";
 import { SignJWT } from "jose";
+import { sql } from "../../packages/cloud/src/runtime/clients";
 import { type AuthContext, auth } from "../../packages/cloud/src/server/middleware/auth";
 import { prepareIdentitySigner } from "../../packages/cloud/src/services/identity/key-ring";
 import { getIdentityRuntimeConfig } from "../../packages/cloud/src/services/identity/runtime-config";

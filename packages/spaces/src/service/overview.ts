@@ -1,6 +1,6 @@
+import { sql } from "@k2b/cloud";
 import { toPgUuidArray } from "@k2b/cloud/services";
 import type { DateContext } from "@k2b/stdlib";
-import { sql } from "bun";
 import { parsePinnedSpaceIds } from "../frontend/[id]/_components/settings/SpaceSettingsStore";
 import type { SpacesSidebarData } from "../frontend/[id]/_components/sidebar/spaces-navigation";
 import type { OverviewView, OverviewWork } from "../overview-contracts";
@@ -10,9 +10,13 @@ import { spacesPublicResources } from "./public-resources";
 
 /** Both SSR and view navigation use the same permission-filtered reads and limits. */
 export async function loadOverviewWork(params: { userId: string; view: OverviewView; dateConfig: DateContext }): Promise<OverviewWork> {
-  const [dashboard, mine] = await Promise.all([
+  const [dashboard, mine, writable] = await Promise.all([
     dashboardSnapshot({ ...params, view: params.view === "mine" ? "counts" : params.view, todoLimit: 30 }),
     params.view === "mine" ? listMyTasks({ userId: params.userId, limit: 100, dateConfig: params.dateConfig }) : Promise.resolve([]),
+    // The same permission check as a change through the API, read once for every row.
+    spacesService.space
+      .list({ subject: { type: "user", userId: params.userId }, requiredLevel: "write" })
+      .then((page) => new Set(page.items.map((space) => space.id))),
   ]);
   const items = params.view === "mine" ? mine : params.view === "today" ? dashboard.events : dashboard.todos;
   return {
@@ -29,6 +33,7 @@ export async function loadOverviewWork(params: { userId: string; view: OverviewV
       endsAt: "endsAt" in item ? item.endsAt : null,
       deadline: item.deadline,
       deadlineAllDay: item.deadlineAllDay,
+      canWrite: writable.has(item.spaceId),
     })),
   };
 }

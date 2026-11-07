@@ -1,6 +1,6 @@
 import { expect, mock } from "bun:test";
+import { sql } from "@k2b/cloud";
 import { CAPABILITY_MAX_RESULT_BYTES, type CapabilityExecutionContext, type CapabilityResult } from "@k2b/cloud/contracts";
-import { sql } from "bun";
 import { requireInfra, testFor } from "../../../scripts/fixtures/test-infra";
 import { assertPrivateDatabase } from "../test/private-database";
 import type { FileEntry } from "./contracts";

@@ -1,5 +1,6 @@
 import { afterEach, expect, spyOn, test } from "bun:test";
 import * as storageConfig from "../_internal/object-store-config";
+import { audit } from "../services/audit";
 import { session } from "../services/session";
 import { buildProjectedUser } from "../services/session/user";
 import routes from "./admin-core-settings";
@@ -9,6 +10,7 @@ afterEach(() => {
   for (const spy of restores.splice(0).reverse()) spy.mockRestore();
 });
 const authenticate = (admin: boolean) => {
+  restores.push(spyOn(audit, "record").mockResolvedValue());
   const user = buildProjectedUser({
     id: "00000000-0000-4000-8000-000000000003",
     provider: "local",
@@ -43,6 +45,9 @@ test("administrator checks use saved configuration and return no credentials", a
   expect(response.headers.get("cache-control")).toBe("no-store");
   expect(await response.json()).toEqual({ ok: true });
   expect(connect).toHaveBeenCalledTimes(1);
+  expect(audit.record).toHaveBeenCalledWith(
+    expect.objectContaining({ action: "settings.test.storage", actor: { userId: "00000000-0000-4000-8000-000000000003" } }),
+  );
 });
 test("backend failures leave actionable feedback without transport errors or secrets", async () => {
   authenticate(true);

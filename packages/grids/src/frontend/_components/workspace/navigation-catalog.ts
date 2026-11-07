@@ -80,6 +80,7 @@ export const activeNavigationKey = (route: PublicOkWorkspaceState["route"]): str
   if (route.kind === "queryResultView") return navigationReferenceKey({ type: "view", id: route.activeView.id });
   if (route.kind === "documentTemplate") return navigationReferenceKey({ type: "documentTemplate", id: route.template.id });
   if (route.kind === "customApp") return navigationReferenceKey({ type: "customApp", id: route.app.id });
-  if (route.kind === "workflows" && route.activeWorkflow) return navigationReferenceKey({ type: "workflow", id: route.activeWorkflow.id });
+  if (route.kind === "workflows")
+    return route.activeWorkflow ? navigationReferenceKey({ type: "workflow", id: route.activeWorkflow.id }) : "workflow:all";
   return null;
 };

@@ -1,7 +1,7 @@
+import { sql } from "@k2b/cloud";
 import { capabilityIdempotencyConflict } from "@k2b/cloud/contracts";
 import { type AccessSubject, buildAccessPrincipalCondition } from "@k2b/cloud/server";
 import { err, fail, ok, type PageParams, type Paginated, paginate, type Result } from "@k2b/stdlib";
-import { sql } from "bun";
 import { newShortId, withShortIdRetry } from "../lib/short-id";
 import { resolveContactName, resolveStoredContactLabel } from "../shared";
 import {

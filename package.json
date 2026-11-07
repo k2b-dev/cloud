@@ -1,9 +1,9 @@
 {
   "name": "@k2b/cloud-workspace",
   "private": true,
-  "version": "0.56.0",
+  "version": "0.67.0",
   "type": "module",
-  "packageManager": "bun@1.4.2",
+  "packageManager": "bun@1.4.4",
   "workspaces": {
     "packages": [
       "docs-site",
@@ -84,7 +84,7 @@
       "@codemirror/language": "6.12.4",
       "@codemirror/state": "6.7.1",
       "@codemirror/view": "6.43.7",
-      "@k2b/nessi": "0.18.0",
+      "@k2b/nessi": "1.2.0",
       "axe-core": "4.11.0",
       "maplibre-gl": "6.14.0"
     }

@@ -33,8 +33,12 @@ For partial bulk selections, pass `indeterminate` to `Checkbox` only. A checkbox
 accessible name with `aria-label`.
 
 `CheckboxCard` takes a text or JSX `label`. Add either `icon` or a valid three-
-or six-digit hex `color` as supporting context. `variant="input"` uses the
-denser input surface; the default is `"card"`.
+or six-digit hex `color` as supporting context. The card follows the field
+edge: 2 px grey at rest, a darker fill on hover, a strong blue edge on focus,
+and a light blue edge and fill when checked; see
+[Controls stay platform blue](/en/ui/surfaces/color#controls-stay-platform-blue).
+`variant="input"` renders the same card, because fields share that edge; the
+default is `"card"`.
 
 All three inherit [ValueFieldProps<boolean>](/en/ui/getting-started#shared-field-props).
 `Checkbox` and `Switch` also accept `name?: string`; Checkbox adds

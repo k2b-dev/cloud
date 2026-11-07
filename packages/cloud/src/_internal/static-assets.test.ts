@@ -98,6 +98,20 @@ describe("public assets", () => {
     }
   });
 
+  test("content-versioned icon fonts are immutable for GET and HEAD", async () => {
+    const font = "complete icon font";
+    const filename = `tabler-icons-${createHash("sha256").update(font).digest("hex")}.woff2`;
+    mkdirSync(join(root, "public/fonts"), { recursive: true });
+    writeFileSync(join(root, "public/fonts", filename), font);
+    for (const method of ["GET", "HEAD"]) {
+      const response = await serve(false).request(`/public/fonts/${filename}`, { method });
+      expect(response.status).toBe(200);
+      expect(response.headers.get("Cache-Control")).toBe(immutable);
+      expect(response.headers.get("Content-Type")).toContain("font/woff2");
+      expect(await response.text()).toBe(method === "GET" ? font : "");
+    }
+  });
+
   test("other public files stay immutable without a version query", async () => {
     writeFileSync(join(root, "public", "logo.svg"), "<svg/>");
     const response = await serve(false).request("/public/logo.svg");

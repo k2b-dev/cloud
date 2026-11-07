@@ -17,18 +17,20 @@ export const loadFavoriteKeysForContacts = (actor: RequestActor, contacts: Conta
 
 export const loadContactBookPermissions = async (config: { books: ContactBook[]; actor: RequestActor; accessSubject: AccessSubject }) => {
   const entries = await Promise.all(
-    config.books.map(async (book) => ({
-      book,
-      permission: await contactsService.book.permission.forActor({
-        bookId: book.id,
-        actor: config.actor,
-        accessSubject: config.accessSubject,
-      }),
-    })),
+    config.books.map(async (book) => {
+      const caller = { bookId: book.id, actor: config.actor, accessSubject: config.accessSubject };
+      const [permission, member] = await Promise.all([
+        contactsService.book.permission.forActor(caller),
+        contactsService.book.permission.memberForActor(caller),
+      ]);
+      return { book, permission, member };
+    }),
   );
 
   return {
     entries,
+    /** Books whose access list the person may read: access of their own, never public access alone. */
+    memberBookIds: entries.filter((entry) => hasPermission(entry.member, "read")).map((entry) => entry.book.id),
     adminBookIds: entries.filter((entry) => entry.permission === "admin").map((entry) => entry.book.id),
     writableBooks: entries
       .filter((entry) => hasPermission(entry.permission, "write"))

@@ -2,7 +2,9 @@ import { parseAiModelChoice } from "../../cloud/src/shared/ai-models";
 // Real model evaluation against disposable data services; never writes to a user's chat.
 
 import { parseArgs } from "node:util";
-import { sql } from "bun";
+import { sql } from "@k2b/cloud";
+import { initializePlatform } from "@k2b/cloud/start";
+import { complete } from "@k2b/nessi/ai";
 import { resolveAiModel } from "../../cloud/src/ai/settings";
 import type { AiResolvedModel } from "../../cloud/src/ai/types";
 import { STUDIO_EVAL_CASES } from "../src/artifacts/studio-eval-cases";
@@ -30,7 +32,7 @@ Options:
   --out <dir>         Directory for summary.md and one folder per case (default: /tmp/assistant-code-mode-eval/<time>)
   --concurrency <n>   Cases running at the same time (default: 3)
   --model <class-or-id> Class or variant from the configured Cloud catalog (default: balanced).
-                      Requires DATABASE_URL and APP_SECRET of that installation.
+                      Requires DATABASE_URL, REDIS_URL and APP_SECRET of that installation.
   --help              Show this help
 
 Needs CLOUD_TEST_VALKEY_URL and CLOUD_TEST_GOTENBERG_URL; Postgres and rsql run in disposable containers.
@@ -52,6 +54,7 @@ const commit = Bun.spawnSync(["git", "describe", "--always", "--dirty", "--exclu
 async function model(): Promise<AiResolvedModel> {
   return resolveAiModel(undefined, options.model ? parseAiModelChoice(options.model) : undefined);
 }
+await initializePlatform({ appId: "assistant", source: "env" });
 const { provider, profile } = await model();
 const token = crypto.randomUUID();
 // Credentials stay in this process; the test process reaches the model only through this loopback proxy.
@@ -63,7 +66,7 @@ const proxy = Bun.serve({
     if (request.headers.get("authorization") !== `Bearer ${token}`) return new Response(null, { status: 403 });
     try {
       const input = await request.json();
-      return Response.json(await provider.complete({ ...input, signal: request.signal }));
+      return Response.json(await complete(provider, { ...input, signal: request.signal }));
     } catch (error) {
       console.error("Evaluation provider request failed", error instanceof Error ? error.message : error);
       return Response.json({ error: "Configured provider request failed" }, { status: 502 });

@@ -3,6 +3,7 @@ import { type Job, StoreFullError, type Worker } from "@k2b/sync";
 import { lazySync } from "../../_internal/process-sync";
 import { AiBackgroundAdmissionError, AiBackgroundCostError } from "../../ai/inference-calls";
 import { AiQuotaError } from "../../ai/quotas";
+import { aiSettingsFailure } from "../../ai/settings";
 import { resolveAiWorkflowModel, runAiStructured } from "../../ai/structured";
 import { executeAiTask } from "../../ai/task-execution";
 import { resolveApplicationAiTaskModel } from "../../ai/task-model";
@@ -107,6 +108,12 @@ export const executeWorkflowAiRequest = async (task: WorkflowAiTask, runStructur
         const resolved = task.runId
           ? await resolveAiWorkflowModel({ id: task.modelId })
           : await resolveApplicationAiTaskModel(task.usageSubject, { id: task.modelId });
+        // A task admitted for a class never runs on a restricted model, even when its pinned ID is reused later.
+        if (resolved.profile.dataBoundary === "restricted" && task.modelRef?.class)
+          aiSettingsFailure("model_policy_mismatch", `The AI model "${task.modelId}" has no data-protection commitment.`, {
+            model: task.modelId,
+            boundary: "restricted",
+          });
         if (task.modelConfigHash && workflowAiModelHash(resolved.profile) !== task.modelConfigHash)
           throw new WorkflowAiAdmissionError("WORKFLOW_AI_MODEL_CHANGED");
         return { ...resolved, model: task.modelRef ?? resolved.model };

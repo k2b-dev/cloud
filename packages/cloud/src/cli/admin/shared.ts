@@ -58,8 +58,8 @@ export const readJsonInput = async <T>(input: CliInputFlagValue, label: string):
   const raw = await readCliInput(input, { label, required: true });
   try {
     return JSON.parse(raw ?? "") as T;
-  } catch (error) {
-    throw new Error(`Invalid ${label} JSON: ${error instanceof Error ? error.message : String(error)}`);
+  } catch {
+    throw new Error(`Invalid ${label} JSON.`);
   }
 };
 

@@ -59,6 +59,10 @@ const listFields = [
   "draftsMode",
   "draftsPage",
   "draftsError",
+  // Events is a list of its own: a tab or filter switch loads it through the list, as Drafts and Scheduled do.
+  "eventsMode",
+  "eventsPage",
+  "eventsError",
   "activeView",
   "savedViewId",
   "listMode",
@@ -69,6 +73,9 @@ const listFields = [
   "listCursor",
   "nextListCursor",
   "listError",
+  "hiddenDone",
+  // Assigned to me's group headings belong to its list, as the done line does.
+  "assignedGroups",
   "listTitle",
 ] as const;
 const listPart = (data: MailboxListView) =>
@@ -301,6 +308,20 @@ suite("Mail workspace list pages", () => {
         expect(seen.size).toBe(token === "reader" ? 52 : 53);
       }
     }, 30_000);
+
+  for (const token of ["owner", "reader"])
+    test(`${token}: the Events tab's list matches the full route`, async () => {
+      const scope: Scope = { name: "events", params: { view: "events" } };
+      const href = hrefFor(scope);
+      const full = await page("workspace-route", href, token, scope);
+      const list = await page("workspace-list", href, token, scope);
+      expect(listPart(list)).toEqual(listPart(full));
+      expect(Object.keys(list).sort()).toEqual(Object.keys(listPart(list)).sort());
+      expect(list.eventsMode).toBe(true);
+      // The feed replaces the conversations; the full route keeps the reader for the open conversation.
+      expect(list.listItems).toEqual([]);
+      expect(list.eventsPage === null).toBe(list.eventsError !== null);
+    });
 
   test("work guard: list pages never rebuild the workspace or read the selection", async () => {
     const spies = [

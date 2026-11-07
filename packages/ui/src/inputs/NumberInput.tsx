@@ -16,7 +16,7 @@ export type NumberInputProps = Omit<
     min?: number;
     /** Stepper increment and commit grid; defaults to `1`. A fractional step also sets the default `decimalPlaces`. */
     step?: number;
-    /** Accepted fraction digits. Defaults to the fraction digits of `step` (`0.01` → `2`, `1` → `0`); an explicit value wins. */
+    /** Accepted and displayed fraction digits. Defaults to the fraction digits of `step` (`0.01` → `2`, `1` → `0`); an explicit value wins. */
     decimalPlaces?: number;
     allowNegative?: boolean;
     clearable?: boolean;
@@ -98,16 +98,29 @@ export function NumberInput(props: NumberInputProps): JSX.Element {
   const messages = useUiMessages();
   const inputMessages = useInputMessages();
   const separator = createMemo(() => decimalSeparator(local.locale ?? contextLocale()));
-  // The visible text keeps the canonical number, only the decimal separator
-  // follows the effective locale; grouping is never rendered while editing.
-  const display = (value: number | null | undefined) => (value == null ? "" : String(value).replace(".", separator()));
-  const [raw, setRaw] = createSignal(display(value()));
   const min = () => local.min ?? -Infinity;
   const max = () => local.max ?? Infinity;
   const step = () => local.step ?? 1;
   // `step` and the accepted decimals never disagree: a fractional step implies
   // its own precision unless the caller states `decimalPlaces` explicitly.
   const places = () => Math.max(0, local.decimalPlaces ?? fractionDigits(step()));
+  // Keep ASCII digits and no grouping so display text round-trips through parse,
+  // including numbers that String/toFixed would write in exponential notation.
+  const formatter = createMemo(
+    () =>
+      new Intl.NumberFormat("en", {
+        useGrouping: false,
+        minimumFractionDigits: places(),
+        maximumFractionDigits: places(),
+      }),
+  );
+  const display = (value: number | null | undefined) => {
+    if (value == null) return "";
+    // Match normalize's rounding; toFixed switches to exponents at 1e21.
+    const text = Math.abs(value) < 1e21 ? value.toFixed(places()) : formatter().format(value);
+    return text.replace(".", separator());
+  };
+  const [raw, setRaw] = createSignal(display(value()));
 
   const filter = (input: string) => {
     let output = "";
@@ -155,7 +168,9 @@ export function NumberInput(props: NumberInputProps): JSX.Element {
 
   createEffect(() => {
     if (focused()) return;
-    if (parse(raw()) !== value()) setRaw(display(value()));
+    // Synchronize display text: precision or locale can change
+    // without changing the controlled number. This effect never emits changes.
+    setRaw(display(value()));
   });
   // Enter already committed the current text, so leaving the field does not commit it twice.
   let committedOnEnter = false;

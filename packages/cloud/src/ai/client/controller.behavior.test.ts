@@ -2,6 +2,7 @@ import { afterEach, describe, expect, jest, test } from "bun:test";
 import { createRoot } from "solid-js";
 import { isServer } from "solid-js/web";
 import { createDomTestHarness } from "../../../../ui/test/dom";
+import { hasAppActions } from "../../browser/app-actions";
 import { AI_TURN_LEASE_MS, type AiStreamSseEvent, type AiTurnBlock, type AiTurnSnapshot } from "../protocol";
 import type { AiConversation, AiStoredMessage } from "../types";
 import { __aiControllerTest, createAiChatController } from "./controller";
@@ -77,6 +78,42 @@ describe("AI controller draft submission", () => {
     expect((await first)?.conversationId).toBe("created");
     expect((await second)?.conversationId).toBe("created");
     expect(createCalls).toBe(1);
+    dispose();
+  });
+
+  test("tells a revision conflict, which sets no chat error, apart from another failed draft save", async () => {
+    const answers = [
+      () => Response.json({ message: "The conversation draft changed in another session." }, { status: 409 }),
+      () => new Response("Bad Gateway", { status: 502 }),
+      () => Response.json({ content: [], revision: 1, updatedAt: null }),
+    ];
+    globalThis.fetch = Object.assign(
+      async (request: RequestInfo | URL, init?: RequestInit) => {
+        const path = String(request);
+        if (path === "/api/ai/conversations" && init?.method === "POST") return Response.json(conversation("created"), { status: 201 });
+        if (path.endsWith("/draft") && init?.method === "PUT") return answers.shift()!();
+        if (init?.headers && new Headers(init.headers).get("Accept") === "text/event-stream") return new Response(new ReadableStream());
+        return Response.json({});
+      },
+      { preconnect: originalFetch.preconnect },
+    );
+    let dispose!: () => void;
+    const controller = createRoot((rootDispose) => {
+      dispose = rootDispose;
+      return createAiChatController({ baseUrl: "/api/ai" });
+    });
+    await controller.createConversation();
+
+    expect(await controller.saveDraft({ conversationId: "created", message: "Mine" })).toBeNull();
+    expect(controller.draftSaveFailure("created")).toBe("conflict");
+    expect(controller.error()).toBeNull();
+
+    expect(await controller.saveDraft({ conversationId: "created", message: "Mine" })).toBeNull();
+    expect(controller.draftSaveFailure("created")).toBe("failed");
+    expect(controller.error()).toBe("Failed to save conversation draft");
+
+    expect(await controller.saveDraft({ conversationId: "created", message: "Mine" })).not.toBeNull();
+    expect(controller.draftSaveFailure("created")).toBeNull();
     dispose();
   });
 
@@ -756,6 +793,68 @@ describe("AI controller message feedback", () => {
 });
 
 describe("AI controller stream sessions", () => {
+  test.skipIf(isServer)("only an active AI answer protects app updates, not the idle GET subscription", () => {
+    const dom = createDomTestHarness();
+    dom.window.history.replaceState(null, "", "/pwa/assistant");
+    const current = conversation("Chat01");
+    let emit!: Parameters<AiConversationStreamTransport["subscribe"]>[0]["onEvent"];
+    let dispose = () => {};
+    try {
+      createRoot((cleanup) => {
+        dispose = cleanup;
+        createAiChatController({
+          baseUrl: "/api/ai",
+          initialConversationId: current.id,
+          initialDetail: { conversation: current, messages: [], activeTurn: null },
+          streamTransport: {
+            subscribe: (input) => {
+              emit = input.onEvent;
+              return { close() {} };
+            },
+          },
+        });
+      });
+      expect(hasAppActions()).toBe(false);
+      emit({
+        type: "state",
+        conversation: current,
+        messages: [],
+        activeTurn: {
+          turnId: "running",
+          attempt: 1,
+          seq: 1,
+          status: "running",
+          blocks: [],
+          modelId: null,
+          createdAt: "2026-11-04T00:00:00.000Z",
+        },
+      });
+      expect(hasAppActions()).toBe(true);
+      emit({ type: "state", conversation: current, messages: [], activeTurn: null });
+      expect(hasAppActions()).toBe(false);
+      emit({
+        type: "state",
+        conversation: current,
+        messages: [],
+        activeTurn: {
+          turnId: "again",
+          attempt: 1,
+          seq: 1,
+          status: "running",
+          blocks: [],
+          modelId: null,
+          createdAt: "2026-11-04T00:00:00.000Z",
+        },
+      });
+      expect(hasAppActions()).toBe(true);
+      dispose();
+      expect(hasAppActions()).toBe(false);
+    } finally {
+      dispose();
+      dom.cleanup();
+    }
+  });
+
   test("uses an injected stream transport and closes it with the controller owner", () => {
     const calls: string[] = [];
     const transport: AiConversationStreamTransport = {

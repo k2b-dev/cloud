@@ -143,7 +143,7 @@ describe("Assistant frontend contracts", () => {
 
     expect(workspace).toContain("choose: () => trackComposerFileChoice(chooseComposerFiles(sessionKey()))");
     expect(workspace).toContain("aiComposerChooseMaxBytes(composerPartCount(sessionKey))");
-    expect(workspace).toContain("chooseFiles({ multiple: true, accept: aiComposerFileAccept, maxBytes })");
+    expect(workspace).toContain("chooseFiles({ multiple: true, accept: aiComposerFileAccept, maxTotalBytes })");
   });
 
   test("follows AI live updates on Core's shared live socket and streams the visible turn over SSE", async () => {
@@ -255,7 +255,7 @@ describe("Assistant frontend contracts", () => {
     expect(skills).not.toContain("Skill file");
     expect(skills).not.toContain("Reference filename");
     expect(skills).not.toContain("This becomes /skills/");
-    expect(skills).toContain("<PermissionEditor");
+    expect(skills).toContain("openAccessDialog(");
     expect(files).toContain('file.name.toLowerCase() === "skill.md"');
     expect(files).toContain("parseAiSkillArchive");
     expect(client).toContain("listSkillAccess");

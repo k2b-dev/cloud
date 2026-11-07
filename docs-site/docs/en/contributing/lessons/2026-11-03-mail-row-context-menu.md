@@ -1,0 +1,6 @@
+### A right-click on a Mail conversation row did nothing
+
+- **What happened:** In the Mail list, a right-click on a conversation row showed the browser's own menu, and the context-menu key and Shift+F10 did nothing. Only the reader and the message cards answered with the conversation's menu. "Assign to me" in the reader replaced everyone already assigned instead of adding the person.
+- **Root cause:** `MailConversationRow` built its "…" menu items inline and never wrapped the row in `ContextMenu`; the reader kept its own, differently ordered item list. The reader's assign-to-me request sent `mode: "replace"`.
+- **Error class:** Two menus for the same object, each with its own item list, drift apart and leave one surface without the shared interaction.
+- **Guard:** `mailConversationMenuItems` in `packages/mail/src/frontend/_components/mail-conversation-menu.ts` builds the row's "…" and right-click menus and the reader's menus from one definition. `mail-shell.browser-suite.ts` ("a list row opens its … menu on right-click and with the context-menu key or Shift+F10") compares the row's right-click, Shift+F10, and context-menu-key menus with its "…" menu, checks the order, and checks that Assign to me sends `mode: "add"`.

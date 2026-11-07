@@ -32,9 +32,9 @@ export default function MinimalLayoutPreferences(props: { initialTheme: CloudThe
       >
         <Dropdown.Trigger label={`${t().language}: ${languageName()}`} size="sm" tooltip={false} variant="ghost">
           <i class="ti ti-language" aria-hidden="true" />
-          <span class="hidden md:inline">{languageName()}</span>
+          <span class="max-md:hidden md:inline">{languageName()}</span>
           <span class="md:hidden">{language().toUpperCase()}</span>
-          <i class="ti ti-chevron-down hidden md:inline" aria-hidden="true" />
+          <i class="ti ti-chevron-down max-md:hidden md:inline" aria-hidden="true" />
         </Dropdown.Trigger>
       </Dropdown.Root>
       <ThemeCycleButton preferences={preferences} size="sm" variant="ghost" compact />

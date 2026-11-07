@@ -1,4 +1,4 @@
-import { Button, toast } from "@k2b/ui";
+import { Button, Checkbox, toast } from "@k2b/ui";
 import { createSignal, Show, untrack } from "solid-js";
 import { api } from "../lib/api";
 import type { NoteRecord } from "../lib/model";
@@ -47,10 +47,7 @@ function DeleteBody(props: { record: NoteRecord; close: (deleted: boolean) => vo
       <h2>{t().deleteTitle({ title: props.record.meta.title || t().untitled })}</h2>
       <p class="n-lead">{t().deleteLead}</p>
       <Show when={shared}>
-        <label class="n-check">
-          <input type="checkbox" checked={alsoShared()} onChange={(event) => setAlsoShared(event.currentTarget.checked)} />
-          <span>{t().deleteShared}</span>
-        </label>
+        <Checkbox class="n-check" value={alsoShared()} onValueChange={setAlsoShared} label={t().deleteShared} />
       </Show>
       <div class="n-dialog-acts">
         <Button variant="ghost" onClick={() => props.close(false)}>

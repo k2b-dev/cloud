@@ -257,6 +257,126 @@ describe("Mail composer preview", () => {
   }
 });
 
+describe("Mail composer layout", () => {
+  test("puts the formatting toolbar right under the subject and the pane tabs, aligned with the preview", async () => {
+    const page = await (await browser.newContext(desktop)).newPage();
+    const errors = pageErrors(page);
+    try {
+      await page.goto(server.url.href);
+      await page.evaluate(() => window.mountComposer({ locale: "de", intent: "new", signatureTemplateId: null, seed: true, split: true }));
+      const toolbar = page.getByRole("toolbar", { name: "Formatierung", exact: true });
+      await toolbar.waitFor();
+      await page.evaluate(() => document.fonts.ready);
+      const subject = await page.getByRole("textbox", { name: "Betreff", exact: true }).boundingBox();
+      const write = await page.getByRole("tab", { name: "Verfassen", exact: true }).boundingBox();
+      const preview = await page.getByRole("tab", { name: "Vorschau", exact: true }).boundingBox();
+      const bold = await toolbar.getByRole("button", { name: "Fett", exact: true }).boundingBox();
+      if (!subject || !write || !preview || !bold) throw new Error("The composer layout is not visible");
+      // No empty status row or doubled padding: subject → pane tabs → toolbar with the normal small gaps only.
+      expect(write.y - (subject.y + subject.height)).toBeLessThanOrEqual(20);
+      expect(bold.y - (write.y + write.height)).toBeLessThanOrEqual(20);
+      expect(bold.y - (subject.y + subject.height)).toBeLessThanOrEqual(64);
+      // Both panes start on the same line.
+      expect(Math.abs(preview.y - write.y)).toBeLessThanOrEqual(1);
+      expect(await page.locator(".k2b-ste-status").count()).toBe(0);
+      expect(await page.locator(".k2b-ste-views").count()).toBe(0);
+      expect(errors).toEqual([]);
+    } finally {
+      await page.context().close();
+    }
+  }, 30_000);
+});
+
+describe("Mail composer with a long message", () => {
+  // A reply quotes the whole earlier message, so the draft is far longer than the Write pane.
+  const longMessage = [
+    "Thanks, see my answer below.",
+    ...Array.from({ length: 60 }, (_, index) => `> Quoted line ${index + 1} of the earlier message.`),
+    "Last line of the reply.",
+  ].join("\n\n");
+  for (const [label, context] of [
+    ["desktop", desktop],
+    ["phone", phone],
+  ] as const) {
+    test(`scrolls the message by wheel and keeps the caret visible below the toolbar on ${label}`, async () => {
+      const page = await (await browser.newContext(context)).newPage();
+      const errors = pageErrors(page);
+      try {
+        await page.goto(server.url.href);
+        await page.evaluate(() => window.mountComposer({ locale: "en", intent: "reply_all", signatureTemplateId: null, seed: true }));
+        const editor = page.getByRole("textbox", { name: "Message body", exact: true });
+        await editor.fill(longMessage);
+        await settled(page);
+        const scroller = page.locator(".k2b-text-editor").locator("xpath=..");
+        const geometry = () =>
+          page.evaluate(() => {
+            const scroller = document.querySelector(".k2b-text-editor")!.parentElement!;
+            const view = scroller.getBoundingClientRect();
+            const toolbar = document.querySelector(".k2b-ste-toolbar")!.getBoundingClientRect();
+            const caret = document.querySelector(".cm-cursor")?.getBoundingClientRect();
+            return {
+              scrollTop: scroller.scrollTop,
+              overflow: scroller.scrollHeight - scroller.clientHeight,
+              view: { top: view.top, bottom: view.bottom },
+              toolbar: { top: toolbar.top, bottom: toolbar.bottom },
+              caret: caret ? { top: caret.top, bottom: caret.bottom } : null,
+            };
+          });
+        const end = await geometry();
+        expect(end.overflow).toBeGreaterThan(500);
+        // The caret at the end of the text is on screen inside the Write pane, not under the toolbar or past the pane.
+        expect(end.caret).not.toBeNull();
+        expect(end.caret!.bottom).toBeLessThanOrEqual(Math.min(end.view.bottom, label === "phone" ? end.toolbar.top : end.view.bottom) + 1);
+        if (label === "desktop") expect(end.caret!.top).toBeGreaterThanOrEqual(end.toolbar.bottom - 1);
+
+        // The Write pane itself scrolls: a wheel (desktop) or a finger (phone) moves the message back up.
+        // Mobile WebKit has no wheel, so the phone case checks that the pane accepts user scrolling and scrolls it.
+        if (label === "desktop") {
+          const box = await scroller.boundingBox();
+          if (!box) throw new Error("The Write pane is not visible");
+          await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+          await page.mouse.wheel(0, -600);
+        } else {
+          await settled(page);
+          expect(await scroller.evaluate((element) => getComputedStyle(element).overflowY)).toMatch(/^(auto|scroll)$/);
+          await scroller.evaluate((element) => element.scrollBy({ top: -600 }));
+        }
+        await page.waitForFunction(
+          (before) => document.querySelector(".k2b-text-editor")!.parentElement!.scrollTop < before,
+          end.scrollTop,
+        );
+        const wheeled = await geometry();
+        expect(wheeled.scrollTop).toBeLessThan(end.scrollTop);
+        if (label === "desktop") {
+          // The toolbar stays where it was, right under the pane tabs.
+          expect(Math.abs(wheeled.toolbar.top - end.toolbar.top)).toBeLessThanOrEqual(1);
+        }
+
+        // The caret moved by keyboard to the start scrolls the first line into view, and back to the end.
+        await page.keyboard.press("ControlOrMeta+Home");
+        await page.waitForFunction(() => {
+          const scroller = document.querySelector(".k2b-text-editor")!.parentElement!;
+          const line = document.querySelector(".cm-line")?.getBoundingClientRect();
+          return !!line && line.top >= scroller.getBoundingClientRect().top - 1 && scroller.scrollTop < 120;
+        });
+        await page.keyboard.press("ControlOrMeta+End");
+        await page.waitForFunction(() => {
+          const scroller = document.querySelector(".k2b-text-editor")!.parentElement!;
+          return scroller.scrollTop + scroller.clientHeight >= scroller.scrollHeight - 120;
+        });
+        await settled(page);
+        const back = await geometry();
+        expect(back.caret).not.toBeNull();
+        expect(back.caret!.bottom).toBeLessThanOrEqual(back.view.bottom + 1);
+        if (label === "desktop") expect(back.caret!.top).toBeGreaterThanOrEqual(back.toolbar.bottom - 1);
+        expect(errors).toEqual([]);
+      } finally {
+        await page.context().close();
+      }
+    }, 60_000);
+  }
+});
+
 describe("Mail composer action bar", () => {
   for (const [device, context] of [
     ["desktop", { viewport: { width: 1366, height: 900 } }],
@@ -652,7 +772,7 @@ describe("shared Mail text editor", () => {
       }
     });
 
-    test(`edits table cells and preserves the same text across source and plain views on ${label}`, async () => {
+    test(`edits table cells, offers no Markdown view, and keeps the same text in the plain view on ${label}`, async () => {
       const page = await (await browser.newContext(context)).newPage();
       const initial = "Before\n\n| Item | Cost |\n| --- | ---: |\n| Paper | 4 |\n\nAfter";
       const errors = pageErrors(page);
@@ -663,11 +783,11 @@ describe("shared Mail text editor", () => {
         await cell.fill("Ink");
         const expected = initial.replace("Paper", "Ink");
         expect(await page.evaluate(() => window.editorBody())).toBe(expected);
-        await page.getByRole("radio", { name: "Markdown", exact: true }).click();
         expect(await page.evaluate(() => window.editorSource())).toBe(expected);
-        expect(await page.evaluate(() => window.editorBody())).toBe(expected);
-        // innerText adds layout-dependent separators around empty CodeMirror lines.
-        expect(await page.locator(".cm-content > .cm-line").allTextContents()).toEqual(expected.split("\n"));
+        // The composer always edits formatted: no Formatted/Markdown switch.
+        expect(await page.locator(".k2b-ste-views").count()).toBe(0);
+        expect(await page.getByRole("radio").count()).toBe(0);
+        expect(await page.locator(".k2b-text-editor").getAttribute("data-mode")).toBe("formatted");
         await page.evaluate(() => window.setEditorFormat("plain"));
         await page.waitForSelector('.k2b-text-editor[data-mode="plain"]');
         expect(await page.evaluate(() => window.editorSource())).toBe(expected);
@@ -679,6 +799,40 @@ describe("shared Mail text editor", () => {
         await page.waitForSelector('.cm-content[contenteditable="false"]');
         await page.evaluate(() => window.replaceEditorBody("Restored body"));
         expect(await page.locator(".cm-content").innerText()).toBe("Restored body");
+        expect(errors).toEqual([]);
+      } finally {
+        await page.context().close();
+      }
+    });
+
+    test(`opens a draft written in the former Markdown view formatted with identical text on ${label}`, async () => {
+      const page = await (await browser.newContext(context)).newPage();
+      // Drafts always stored Markdown; the removed switch only changed how the editor showed it.
+      const draft = [
+        "## Angebot",
+        "",
+        "Hallo **Jana**, hier ist *unser* Angebot mit [Link](https://example.test/angebot):",
+        "",
+        "- Visitenkarten",
+        "- Versand",
+        "",
+        "| Position | Preis |",
+        "| :--- | ---: |",
+        "| Druck | 89,00 € |",
+        "",
+        "> Gilt bis Freitag.",
+        "",
+        "`Code` und ~~alt~~",
+      ].join("\n");
+      const errors = pageErrors(page);
+      try {
+        await page.goto(server.url.href);
+        await page.evaluate((body) => window.mountComposerEditor({ locale: "de", body, editorActive: true }), draft);
+        await page.locator(".k2b-ste-table").first().waitFor();
+        expect(await page.locator(".k2b-text-editor").getAttribute("data-mode")).toBe("formatted");
+        expect(await page.locator(".k2b-ste-views").count()).toBe(0);
+        expect(await page.evaluate(() => window.editorSource())).toBe(draft);
+        expect(await page.evaluate(() => window.editorBody())).toBe(draft);
         expect(errors).toEqual([]);
       } finally {
         await page.context().close();

@@ -132,10 +132,12 @@ describe("@k2b/ui Cloud content contract", () => {
     expect(html).not.toContain("background-color:color-mix");
     expect(contentCss).toContain("--k2b-calendar-accent: #10b981");
     expect(contentCss).not.toContain("--k2b-calendar-event-text");
-    expect(contentCss).toMatch(/\.k2b-calendar-event \{[^}]*border: 0;[^}]*color: var\(--k2b-text\);/s);
-    expect(contentCss).toContain(
-      "background: color-mix(in srgb, var(--k2b-calendar-accent, var(--k2b-text-muted)) 12%, var(--k2b-surface-elevated))",
+    // An entry is a light neutral surface with neutral text; a thin edge in its color carries the category.
+    expect(contentCss).toMatch(
+      /\.k2b-calendar-event \{[^}]*border: 1px solid var\(--k2b-calendar-edge\);[^}]*color: var\(--k2b-text\);[^}]*background: var\(--k2b-calendar-event-surface\);/s,
     );
+    // The edge clamps its color's lightness per theme, so any colorHex keeps 3:1 against the surface.
+    expect(contentCss).toContain("clamp(var(--k2b-calendar-edge-floor), l, var(--k2b-calendar-edge-ceiling))");
     expect(contentCss).toMatch(/\.k2b-calendar-event__title \{[^}]*font-weight: 500;/s);
     expect(contentCss).toMatch(/\.k2b-calendar-event__title \+ \.k2b-calendar-event__meta \{[^}]*margin-top: 0\.25rem;/s);
     const createInMonthHtml = renderToString(() =>
@@ -171,11 +173,13 @@ describe("@k2b/ui Cloud content contract", () => {
         timeZone: "UTC",
       }),
     );
+    // A deadline draws no dot: its dashed edge in its color sets it apart from the event beside it.
     expect(markerHtml).toMatch(
-      /data-display="marker"[^>]*>(?:<!--[^>]*-->)*<span class="k2b-calendar-event__title">(?:<!--[^>]*-->)*<span class="k2b-calendar-event__marker" aria-hidden="true">/,
+      /data-display="marker"[^>]*>(?:<!--[^>]*-->)*<span class="k2b-calendar-event__title">(?:<!--[^>]*-->)*Submit report/,
     );
-    expect(markerHtml.match(/k2b-calendar-event__marker/g)).toHaveLength(1);
-    expect(contentCss).toMatch(/\.k2b-calendar-event\[data-display="marker"\] \{\s*background: transparent;/);
+    expect(markerHtml.match(/data-display="marker"/g)).toHaveLength(1);
+    expect(markerHtml).not.toContain("k2b-calendar-event__marker");
+    expect(contentCss).toMatch(/\.k2b-calendar-event\[data-display="marker"\] \{\s*border-style: dashed;\s*background: transparent;/);
     // Hover and selection come later in the sheet, so a marker still tints like an event.
     expect(contentCss.indexOf('[data-display="marker"]')).toBeLessThan(contentCss.indexOf('.k2b-calendar-event[data-selected="true"] {'));
     const describedEventHtml = renderToString(() =>
@@ -217,8 +221,9 @@ describe("@k2b/ui Cloud content contract", () => {
       /\.k2b-calendar-event\[data-short="true"\] \{[^}]*display: flex;[^}]*align-items: center;[^}]*padding-block: 0;/s,
     );
     expect(contentCss).toMatch(/\.k2b-calendar-event\[data-selected="true"\] \.k2b-calendar-event__title \{[^}]*font-weight: 600;/s);
-    expect(contentCss).toContain(
-      "box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--k2b-calendar-accent, var(--k2b-action)) 42%, transparent)",
+    // Selection doubles the edge inside, so the entry keeps its size.
+    expect(contentCss).toMatch(
+      /\.k2b-calendar-event\[data-selected="true"\] \{[^}]*box-shadow: inset 0 0 0 1px var\(--k2b-calendar-edge\);/s,
     );
     expect(contentCss).not.toContain("0 0 0 2px color-mix(in srgb, var(--k2b-calendar-accent");
     // Hover tints an event; it never lifts it with an outer shadow.
@@ -509,11 +514,16 @@ describe("@k2b/ui Cloud content contract", () => {
   });
 
   test("keeps table hover subtle without weakening the selected row", () => {
-    expect(uiCss).toMatch(/\.k2b-data-table :is\(th, td\)\[data-highlighted="true"\] \{[^}]*var\(--k2b-hover\) 30%, transparent/s);
+    expect(uiCss).toMatch(/\.k2b-data-table td\[data-highlighted="true"\] \{[^}]*var\(--k2b-text\) 3%, transparent/s);
+    expect(uiCss).toMatch(
+      /\.k2b-data-table__head-row > th\[data-highlighted="true"\] \{[^}]*var\(--k2b-text\) 6%, var\(--k2b-surface-muted\)/s,
+    );
     expect(uiCss).toMatch(
       /\.k2b-data-table__row\[data-hover="true"\]:not\(\[data-selected="true"\]\):hover \{[^}]*var\(--k2b-hover\) 50%, transparent/s,
     );
-    expect(uiCss).toMatch(/\.k2b-data-table__row\[data-selected="true"\] \{[^}]*background: var\(--k2b-row-selected\)/s);
+    expect(uiCss).toMatch(
+      /\.k2b-data-table__row\[data-selected="true"\] \{[^}]*background: color-mix\(in srgb, var\(--k2b-app-workspace-active\) 16%, var\(--k2b-surface\)\)/s,
+    );
     expect(uiCss).toMatch(/\.k2b-data-table__row\[data-selected="true"\] > td\[data-highlighted="true"\] \{[^}]*background: transparent/s);
   });
 

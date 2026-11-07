@@ -59,22 +59,22 @@ const open = async (current: string) => {
 };
 
 describe("Gateway Ops range selection", () => {
-  test("uses the app navigation fill and ink instead of a solid action fill", async () => {
+  test("uses the app ink's selected edge and fill instead of a solid action fill", async () => {
     const page = await open("24h");
     try {
       const colors = await page.locator('nav a[aria-current="page"]').evaluate((tab) => {
         // Resolve each variable in the tab's scope; CSS may store an alias or a color-mix expression.
         const probe = document.createElement("span");
         tab.append(probe);
-        const resolve = (token: string) => {
-          probe.style.backgroundColor = `var(${token})`;
+        const resolve = (value: string) => {
+          probe.style.backgroundColor = value.startsWith("--") ? `var(${value})` : value;
           return getComputedStyle(probe).backgroundColor;
         };
         const actual = getComputedStyle(tab);
         const result = {
           background: actual.backgroundColor,
           color: actual.color,
-          selected: resolve("--k2b-app-workspace-selected"),
+          selected: resolve("color-mix(in srgb, var(--k2b-app-workspace-active) var(--k2b-edge-selected-fill), var(--k2b-surface))"),
           solid: resolve("--k2b-action-solid"),
           active: resolve("--k2b-app-workspace-active"),
         };

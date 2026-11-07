@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
+import { sql } from "@k2b/cloud";
 import type { AccessSubject } from "@k2b/cloud/server";
 import { crypto as stdCrypto } from "@k2b/stdlib";
-import { sql } from "bun";
 import { databaseSuite } from "../../../../scripts/fixtures/test-infra";
 import type { User } from "../contracts";
 import { type CalendarAddress, MAX_PREPARED_EVENT_INVITATION_CALENDAR_LENGTH } from "../integration";

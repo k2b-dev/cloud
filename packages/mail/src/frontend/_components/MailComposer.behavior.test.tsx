@@ -3,7 +3,7 @@ import { setImmediate } from "node:timers";
 import { EditorView } from "@codemirror/view";
 import { compileCapabilityManifest } from "@k2b/cloud/capabilities/testing";
 import { contactDirectory, defineCapabilities } from "@k2b/cloud/contracts";
-import { encoding } from "@k2b/stdlib";
+import { crypto as cryptoUtils, encoding } from "@k2b/stdlib";
 import { delegateEvents, isServer, render } from "solid-js/web";
 import * as Y from "yjs";
 import { z } from "zod";
@@ -441,6 +441,15 @@ describe("MailComposer signature choice", () => {
       await new Promise<void>((resolve) => setImmediate(resolve));
     };
     const fetchWithFixtures = globalThis.fetch;
+    const hashing = Promise.withResolvers<void>();
+    const continueHashing = Promise.withResolvers<void>();
+    const updated = Promise.withResolvers<void>();
+    const originalHash = cryptoUtils.common.hash;
+    const hash = spyOn(cryptoUtils.common, "hash").mockImplementation(async (...args) => {
+      hashing.resolve();
+      await continueHashing.promise;
+      return originalHash(...args);
+    });
     let grant: ((response: Response) => void) | undefined;
     let heartbeats = 0;
     globalThis.fetch = Object.assign(
@@ -452,7 +461,9 @@ describe("MailComposer signature choice", () => {
           });
         }
         if (request.method === "PUT" && new URL(request.url).pathname.endsWith("/lease")) heartbeats++;
-        return fetchWithFixtures(request);
+        const response = await fetchWithFixtures(request);
+        if (request.method === "PUT" && new URL(request.url).pathname.endsWith("/drafts/Draft1")) updated.resolve();
+        return response;
       },
       { preconnect: originalFetch.preconnect },
     );
@@ -482,6 +493,16 @@ describe("MailComposer signature choice", () => {
           expiresAt: now,
         }),
       );
+      await hashing.promise;
+      await flush();
+      expect(saves).toHaveLength(1);
+      expect(view.state.readOnly).toBe(false);
+      expect(dom.document.activeElement).toBe(editor);
+      expect(view.state.doc.toString()).toBe("First lines and more");
+      continueHashing.resolve();
+      // SHA-256 runs outside the fake timer/microtask queue. Await the PUT,
+      // rather than assuming one event-loop turn finishes the native digest.
+      await updated.promise;
       await flush();
       expect(view.state.readOnly).toBe(false);
       expect(dom.document.activeElement).toBe(editor);
@@ -492,6 +513,8 @@ describe("MailComposer signature choice", () => {
       expect(heartbeats).toBe(1);
       expect(saves).toHaveLength(2);
     } finally {
+      continueHashing.resolve();
+      hash.mockRestore();
       jest.useRealTimers();
     }
   });
@@ -604,7 +627,7 @@ describe("MailComposer signature choice", () => {
       const options = chooseFiles.mock.calls[0]![0]!;
       expect(options).toMatchObject({
         multiple: true,
-        maxBytes: MAX_DRAFT_ATTACHMENT_BYTES,
+        maxTotalBytes: MAX_DRAFT_ATTACHMENT_BYTES,
         noMatchingFiles: "Keine passenden Dateien für diese Empfänger",
       });
       expect(typeof options.context).toBe("function");

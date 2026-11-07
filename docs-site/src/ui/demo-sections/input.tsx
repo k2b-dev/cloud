@@ -25,6 +25,7 @@ import {
   FileDropzone,
   fileDropTarget,
   highlightSql,
+  IconChoices,
   IconInput,
   ImageCropper,
   type ImageCropState,
@@ -56,6 +57,7 @@ import {
 import { TextEditor } from "@k2b/ui/text-editor";
 import { createSignal, createUniqueId } from "solid-js";
 import { DemoCard } from "../DemoCard";
+import { DictationDemo, DictationHostDemo } from "./dictation";
 import { QrScannerDemo } from "./mobile-navigation";
 import { DemoGrid, type DemoSection } from "./types";
 
@@ -658,7 +660,7 @@ const NumberDemo = () => {
     <DemoCard
       id="number"
       chip={{ kind: "component", name: "NumberInput", from: "@k2b/ui" }}
-      description="Accessor-controlled numeric input with raw focused text, committed bounds, precision, steppers, units, and an explicit empty state."
+      description="Numeric input with raw text while typing, padded decimals after commit, bounds, steppers, units, and an explicit empty state."
       code={`<NumberInput
   label="Budget"
   value={budget}
@@ -707,6 +709,7 @@ const DateDemo = () => {
   });
   const [singleDayRange, setSingleDayRange] = createSignal<DateRangeValue>({ start: "2026-07-28", end: "2026-07-28" });
   const [fridayWeekendDate, setFridayWeekendDate] = createSignal<string | null>("2026-07-31");
+  const [inJuly, setInJuly] = createSignal<string | null>(null);
   return (
     <DemoCard
       id="date-picker"
@@ -715,8 +718,10 @@ const DateDemo = () => {
         { kind: "component", name: "DateTimePicker", from: "@k2b/ui" },
         { kind: "component", name: "DateRangePicker", from: "@k2b/ui" },
       ]}
-      description="Date, date-time, and range pickers share one controlled, timezone-aware calendar interaction with clear and preset support. Every calendar marks today in its time zone; the empty Due picker opens on it. The Deadline picker keeps a date and adds a time only on request."
+      description="Date, date-time, and range pickers share one controlled, timezone-aware calendar interaction with clear and preset support. Date fields take typed dates too, such as 11.11., morgen, wed or +14, and the line below says which day that means before it is saved. Every calendar marks today in its time zone; the empty Due picker opens on it. The Deadline picker keeps a date and adds a time only on request."
       code={`<DatePicker label="Release date" value={date()} onValueChange={setDate} clearable />
+<DatePicker label="In July" min="2026-07-01" max="2026-07-31" value={inJuly()} onValueChange={setInJuly} />
+<DatePicker label="Created" value="2026-07-14" readOnly />
 <DatePicker label="Due" placeholder="Pick a due date" value={due()} onValueChange={setDue} dateConfig={dateConfig} clearable />
 <DateTimePicker label="Starts at" value={dateTime()} onValueChange={setDateTime} dateConfig={dateConfig} />
 <DateTimePicker label="Deadline" optionalTime defaultTime="17:00" value={deadline()} onValueChange={setDeadline} dateConfig={dateConfig} clearable />
@@ -742,6 +747,8 @@ const DateDemo = () => {
           dateConfig={{ locale: "he-IL" }}
         />
         <DateRangePicker label="One-day range" value={singleDayRange()} onValueChange={setSingleDayRange} />
+        <DatePicker label="In July" min="2026-07-01" max="2026-07-31" value={inJuly()} onValueChange={setInJuly} />
+        <DatePicker label="Created" value="2026-07-14" readOnly />
         <DatePicker
           label="Due"
           placeholder="Pick a due date"
@@ -1668,11 +1675,14 @@ const ChoiceChipsDemo = () => {
 const ChoiceListDemo = () => {
   const [level, setLevel] = createSignal<string | null>("off");
   const [duration, setDuration] = createSignal<string | null>("8h");
+  const [billing, setBilling] = createSignal<string | null>("fixed");
+  const [repeat, setRepeat] = createSignal<string | null>("once");
+  const [delivery, setDelivery] = createSignal<string | null>("parcel");
   return (
     <DemoCard
       id="choice-list"
       chip={{ kind: "component", name: "ChoiceList", from: "@k2b/ui" }}
-      description="A labeled radio group of rows, each with one sentence on its consequence. A quiet marker names the default, details open under the chosen row, and a save in progress shows a spinner without moving anything."
+      description="A labeled radio group of cards, each with one sentence on its consequence. Cards sit side by side while each gets 11rem and stack in narrow places. A quiet marker names the default, an icon helps tell choices apart, a choice that is not possible now says why, details open under the chosen card, and a save in progress shows a spinner without moving anything."
       code={`<ChoiceList
   label="Notifications"
   value={level}
@@ -1685,7 +1695,44 @@ const ChoiceListDemo = () => {
   details={level() === "off" ? <ChoiceChips ... /> : undefined}
 />`}
     >
-      <div class="max-w-sm">
+      <div class="grid max-w-xl gap-4">
+        <ChoiceList
+          label="How do we bill?"
+          value={billing}
+          onValueChange={setBilling}
+          options={[
+            { value: "fixed", label: "Fixed price", description: "The customer pays the agreed amount." },
+            { value: "time", label: "Time and material", description: "Hours and material go on the invoice." },
+          ]}
+        />
+        <ChoiceList
+          label="Delivery"
+          value={delivery}
+          onValueChange={setDelivery}
+          options={[
+            { value: "pickup", label: "Pickup", description: "The customer collects it at the shop.", icon: "ti ti-building-store" },
+            { value: "parcel", label: "Parcel", description: "Tracking goes to the customer by email.", icon: "ti ti-truck" },
+            {
+              value: "courier",
+              label: "Courier",
+              description: "Only within the city; this address is outside.",
+              icon: "ti ti-bike",
+              disabled: true,
+            },
+          ]}
+        />
+        <ChoiceList
+          label="Repeat"
+          value={repeat}
+          onValueChange={setRepeat}
+          options={[
+            { value: "once", label: "Once" },
+            { value: "monthly", label: "Monthly" },
+            { value: "yearly", label: "Yearly" },
+          ]}
+        />
+      </div>
+      <div class="mt-6 max-w-sm">
         <ChoiceList
           label="Notifications"
           value={level}
@@ -1761,6 +1808,41 @@ const ChoiceTilesDemo = () => {
           ]}
         />
       </div>
+    </DemoCard>
+  );
+};
+
+const IconChoicesDemo = () => {
+  const [icon, setIcon] = createSignal<string | null>("ti ti-report");
+  return (
+    <DemoCard
+      id="icon-choices"
+      chip={{ kind: "component", name: "IconChoices", from: "@k2b/ui" }}
+      description="A labeled radio group of a few named icons, such as the icon a template shows in a menu. Every icon carries its name; touch screens get 44 px buttons."
+      code={`<IconChoices
+  label="Icon"
+  value={icon}
+  onValueChange={setIcon}
+  options={[
+    { value: "ti ti-report", label: "Report", icon: "ti ti-report" },
+    { value: "ti ti-package", label: "Package", icon: "ti ti-package" },
+  ]}
+/>`}
+    >
+      <IconChoices
+        label="Icon"
+        value={icon}
+        onValueChange={setIcon}
+        options={[
+          { value: "ti ti-report", label: "Report", icon: "ti ti-report" },
+          { value: "ti ti-package", label: "Package", icon: "ti ti-package" },
+          { value: "ti ti-alert-triangle", label: "Warning", icon: "ti ti-alert-triangle" },
+          { value: "ti ti-truck", label: "Truck", icon: "ti ti-truck" },
+          { value: "ti ti-users", label: "People", icon: "ti ti-users" },
+          { value: "ti ti-coffee", label: "Coffee", icon: "ti ti-coffee" },
+          { value: "ti ti-receipt", label: "Receipt", icon: "ti ti-receipt" },
+        ]}
+      />
     </DemoCard>
   );
 };
@@ -1858,6 +1940,12 @@ const demos: DemoSection = {
       <EmojiPickerDemo />
     </DemoGrid>
   ),
+  dictation: () => (
+    <DemoGrid columns="one">
+      <DictationDemo />
+      <DictationHostDemo />
+    </DemoGrid>
+  ),
   "qr-scanner": () => <QrScannerDemo />,
   text: () => (
     <DemoGrid columns="one">
@@ -1948,6 +2036,11 @@ const demos: DemoSection = {
   "color-choices": () => (
     <DemoGrid columns="one">
       <ColorChoicesDemo />
+    </DemoGrid>
+  ),
+  "icon-choices": () => (
+    <DemoGrid columns="one">
+      <IconChoicesDemo />
     </DemoGrid>
   ),
   "autocomplete-select": () => (

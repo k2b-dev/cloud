@@ -3,8 +3,10 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import type { Browser, Page } from "playwright";
 import { browserName, launchBrowser } from "../../test/browser";
-import { renderSafeMarkdown } from "./MarkdownView";
+import "../../test/solid-ssr-preload";
 import { renderMarkdownLink } from "./markdown-links";
+
+const { renderSafeMarkdown } = await import("./MarkdownView");
 
 // Hover and focus must never move text: the shipped stylesheet decides that,
 // so a real engine measures every line box before and after each state.

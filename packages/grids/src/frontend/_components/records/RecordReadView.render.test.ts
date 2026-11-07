@@ -76,8 +76,10 @@ describe("RecordReadView", () => {
     expect(html).not.toContain(">Draft<");
     expect(html).not.toContain("font-mono");
     expect(html).toContain("Fields");
-    expect(html).not.toContain("ti-list-details");
-    expect(html).not.toContain("k2b-detail-panel__section-icon");
+    // Every section carries its icon (UI-27), the technical details the shared properties.
+    expect(html).toContain("ti ti-list-details");
+    expect(html).toContain("ti ti-info-square");
+    expect(html).toContain("k2b-detail-properties");
     expect(html).toContain("Room");
     expect(html).not.toContain(">Notes<");
     expect(html).not.toContain("detail-stack");
@@ -136,7 +138,7 @@ describe("RecordReadView", () => {
     expect(finalizedHtml).toContain("ti-lock");
   });
 
-  test("lists relations under Linked, followed by reverse-relation content", () => {
+  test("lists relations as Links to, and hands them to the caller's Links section with the reverse relations", () => {
     const name = field({ id: "name", name: "Name", type: "text", presentable: true });
     const relation = field({
       id: "camera",
@@ -153,17 +155,33 @@ describe("RecordReadView", () => {
         fields: [name, relation],
         record: record({ name: "Loan", camera: ["CAM001"] }),
         relationLabels: { CAM001: "Sony FX3" },
-        relationsAfter: "Referenced by content",
       }),
     );
 
-    expect(html).toContain("Linked");
+    expect(html).toContain(">Links</h3>");
+    expect(html).toContain("Links to 1");
     expect(html).toContain("Category · Sony FX3");
     expect(html).toContain("Reusable equipment category.");
+    expect(html).toContain('href="/app/grids/base/table/cameras?record=CAM001"');
     expect(html).toContain("k2b-detail-panel__action");
     expect(html).not.toContain("ti-chevron-right");
-    expect(html).toContain("Referenced by content");
-    expect(html.indexOf("Category · Sony FX3")).toBeLessThan(html.indexOf("Referenced by content"));
+    let handed: readonly { title: string }[] = [];
+    const withReverse = renderToString(() =>
+      createComponent(RecordReadView, {
+        baseId: "base",
+        tableId: "table",
+        tableName: "Loans",
+        fields: [name, relation],
+        record: record({ name: "Loan", camera: ["CAM001"] }),
+        relationLabels: { CAM001: "Sony FX3" },
+        links: (outgoing) => {
+          handed = outgoing();
+          return "Links with reverse relations";
+        },
+      }),
+    );
+    expect(withReverse).toContain("Links with reverse relations");
+    expect(handed.map((item) => item.title)).toEqual(["Category · Sony FX3"]);
     expect(html).not.toContain("Unknown record");
     expect(html).not.toContain("No record values yet");
   });

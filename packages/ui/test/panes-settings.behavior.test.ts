@@ -991,16 +991,24 @@ describe("@k2b/ui Panes and SettingsModal behavior", () => {
     dom.cleanup();
   });
 
-  test("scrolls the selected settings category into the row when it opens past the edge or changes", async () => {
+  test("scrolls only the row to the selected settings category when it opens past the edge or changes", async () => {
     const dom = createDomTestHarness();
     // Solid binds delegated clicks to the document of the first import, an earlier test's.
     delegateEvents(["click"], dom.document);
     const { default: SettingsModal } = await import("../src/layout/SettingsModal");
-    const revealed: Array<[string, boolean | ScrollIntoViewOptions | undefined]> = [];
-    HTMLElement.prototype.scrollIntoView = function (this: HTMLElement, options?: boolean | ScrollIntoViewOptions) {
-      revealed.push([this.textContent ?? "", options]);
+    // Every category sits past the row's right edge, so each selection must scroll the row, and only the row.
+    const revealed: string[] = [];
+    const ancestorsMoved: string[] = [];
+    const prototype = HTMLElement.prototype;
+    prototype.getBoundingClientRect = function (this: HTMLElement) {
+      return this.getAttribute("role") === "tablist" ? rect(0, 0, 100, 40) : rect(200, 0, 80, 40);
     };
-    const nearest: ScrollIntoViewOptions = { block: "nearest", inline: "nearest" };
+    prototype.scrollBy = function (this: HTMLElement) {
+      revealed.push(this.querySelector('[data-active="true"]')?.textContent ?? "");
+    } as HTMLElement["scrollBy"];
+    prototype.scrollIntoView = function (this: HTMLElement) {
+      ancestorsMoved.push(this.textContent ?? "");
+    };
     const tabs = () =>
       ["General", "Tags", "Defaults", "Access", "Keys"].map((title) =>
         createComponent(SettingsModal.Tab, { id: title.toLowerCase(), title, children: `${title} content` }),
@@ -1030,20 +1038,17 @@ describe("@k2b/ui Panes and SettingsModal behavior", () => {
     );
     try {
       await Promise.resolve();
-      expect(revealed).toEqual([
-        ["Defaults", nearest],
-        ["Access", nearest],
-      ]);
+      expect(revealed).toEqual(["Defaults", "Access"]);
       setActive("keys");
       await Promise.resolve();
-      expect(revealed.at(-1)).toEqual(["Keys", nearest]);
+      expect(revealed.at(-1)).toBe("Keys");
       const local = dom.root.querySelector<HTMLElement>('[aria-label="Local settings"]')!;
       Array.from(local.querySelectorAll<HTMLButtonElement>('[role="tab"]'))
         .find((tab) => tab.textContent === "Tags")
         ?.click();
       await Promise.resolve();
-      expect(revealed.at(-1)).toEqual(["Tags", nearest]);
-      expect(revealed).toHaveLength(4);
+      expect(revealed).toEqual(["Defaults", "Access", "Keys", "Tags"]);
+      expect(ancestorsMoved).toEqual([]);
     } finally {
       dispose();
       dom.cleanup();

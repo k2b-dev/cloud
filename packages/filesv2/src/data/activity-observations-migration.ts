@@ -1,4 +1,4 @@
-import { sql } from "bun";
+import { sql } from "@k2b/cloud";
 
 /** Observation guards and comparison schedules expire with history. */
 export async function migrateActivityObservations(): Promise<void> {

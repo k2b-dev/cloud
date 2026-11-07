@@ -10,13 +10,19 @@ export type ConversationCursorScope = {
   view: ConversationView | null;
   unread: boolean | null;
   userId: string | null;
+  /** The list left out done and snoozed conversations; a page of the other list cannot continue it. */
+  openOnly: boolean;
 };
+
+/** "Assigned to me" lists whose turn it is first; its cursor names the group the page ended in. */
+export type ConversationCursorGroup = "needs_action" | "waiting";
 
 type ConversationCursor = {
   version: 4;
   scope: ConversationCursorScope;
   date: string;
   id: string;
+  group?: ConversationCursorGroup;
 };
 
 const conversationCursorSchema = z.object({
@@ -29,9 +35,11 @@ const conversationCursorSchema = z.object({
     view: conversationViewSchema.nullable(),
     unread: z.boolean().nullable(),
     userId: z.uuid().nullable(),
+    openOnly: z.boolean().default(false),
   }),
   date: z.iso.datetime({ offset: true }),
   id: z.uuid(),
+  group: z.enum(["needs_action", "waiting"]).optional(),
 });
 
 const sameScope = (left: ConversationCursorScope, right: ConversationCursorScope): boolean =>
@@ -42,7 +50,8 @@ const sameScope = (left: ConversationCursorScope, right: ConversationCursorScope
   left.status === right.status &&
   left.view === right.view &&
   left.unread === right.unread &&
-  left.userId === right.userId;
+  left.userId === right.userId &&
+  left.openOnly === right.openOnly;
 
 export const encodeConversationCursor = (cursor: Omit<ConversationCursor, "version">): string =>
   Buffer.from(JSON.stringify({ version: 4, ...cursor })).toString("base64url");

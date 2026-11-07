@@ -281,6 +281,11 @@ describe("Spaces templates in the new item dialog", () => {
     const view = await open({ type: "event", templates: [], timeZone });
     view.type('input[placeholder="Event title"]', "Offsite");
     view.allDaySwitch().click();
+    // An all-day range is a typed field; its calendar, with the presets and Apply, renders once it opens.
+    view.dom.root
+      .querySelector<HTMLInputElement>(".k2b-date-field input")!
+      .dispatchEvent(new view.dom.window.KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true }) as unknown as Event);
+    await Promise.resolve();
     view.button("Tomorrow").click();
     view.button("Apply").click();
     view.submit();

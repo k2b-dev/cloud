@@ -23,6 +23,7 @@ const mailboxPreferenceChangeSchema = z
   })
   .refine((value) => value.pinned !== undefined || value.hidden !== undefined, "Set pinned, hidden, or both");
 const mailboxPreferenceSchema = z.object({ pinned: z.boolean(), hidden: z.boolean() });
+const focusNoticeSchema = z.object({ dismissed: z.literal(true) });
 
 const requestContext = (c: Context<MailApiContext>): MailRequestContext => ({
   actor: c.get("actor"),
@@ -43,6 +44,22 @@ export default new Hono<MailApiContext>()
       responses: { 200: jsonResponse(mailboxPreferencesSchema, "Your pinned and hidden mailboxes") },
     }),
     async (c) => respondPublic(c, ok(await mailboxPreferences.listMailboxPreferences(requestContext(c)))),
+  )
+  .put(
+    "/mailboxes/preferences/focus-notice",
+    describeRoute({
+      tags: ["Mail:Mailboxes"],
+      summary: "Close the notice that Focus is gone",
+      description:
+        "Closes the one-time sidebar notice for you on every device. Closing it again changes nothing. " +
+        "The Focus endpoint GET /overview/conversations and `cld mail focus` stay available.",
+      ...requiresAuth,
+      responses: {
+        200: jsonResponse(focusNoticeSchema, "The notice is closed"),
+        403: jsonResponse(ErrorResponseSchema, "The caller is not a person"),
+      },
+    }),
+    async (c) => respondPublic(c, mailboxPreferences.dismissFocusNotice(requestContext(c))),
   )
   .get(
     "/mailboxes/:mailboxId/view",

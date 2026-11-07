@@ -115,7 +115,7 @@ test("an HTTP ingest source keeps its API keys open and its example collapsed, i
   expect(html).not.toContain("<span>Abrufen</span>");
   expect(html).toContain("POST https://cloud.example.test/api/pulse/ingest");
   expect(html).toMatch(
-    />Eigenschaften<\/h3>[\s\S]*>API-Schlüssel<\/h3>[\s\S]*>Mehr zu dieser Quelle<\/div>[\s\S]*>HTTP-Beispiel für die Datenaufnahme<\/span>/,
+    />Eigenschaften<\/h3>[\s\S]*>API Keys<\/h3>[\s\S]*>Mehr zu dieser Quelle<\/div>[\s\S]*>HTTP-Beispiel für die Datenaufnahme<\/span>/,
   );
   expect(html).toContain(">curl mit Messwerten, Ereignissen und Zuständen</span>");
   expect(html).not.toContain(">Abrufverlauf<");

@@ -8,6 +8,7 @@ import {
   dialogCore,
   IconButton,
   NoticeCard,
+  NumberInput,
   PanelDialog,
   Placeholder,
   panelDialogOptions,
@@ -24,7 +25,12 @@ import { proposeAiModelIds } from "./model-ids";
 import { AI_PROVIDER_TYPES, type AiAreaMessages, aiProviderTypeDescription, aiProviderTypeInfo, aiProviderTypeLabel } from "./presentation";
 
 type TestResult = { status: "ok" | "unreachable" | "key_rejected" | "error"; httpStatus?: number; message: string; latencyMs?: number };
-type AvailableModel = { providerModel: string; label?: string; kind?: "chat" | "transcription"; contextWindow?: number };
+type AvailableModel = {
+  providerModel: string;
+  label?: string;
+  kind?: "chat" | "transcription" | "live-transcription" | "decision";
+  contextWindow?: number;
+};
 
 const useT = () => {
   const locale = useLocale();
@@ -70,7 +76,7 @@ function AddProviderDialog(props: { close: () => void; setDismissHandler: (handl
   const [name, setName] = createSignal("");
   const [url, setUrl] = createSignal("");
   const [key, setKey] = createSignal("");
-  const [boundary, setBoundary] = createSignal<"hosted" | "private">("hosted");
+  const [boundary, setBoundary] = createSignal<AiProvider["dataBoundary"]>("hosted");
   const [headers, setHeaders] = createSignal<{ name: string; value: string }[]>([]);
   const [id, setId] = createSignal("");
   const [test, setTest] = createSignal<TestResult | null>(null);
@@ -278,12 +284,11 @@ function AddProviderDialog(props: { close: () => void; setDismissHandler: (handl
                         options={[
                           { value: "hosted", label: t().hosted, icon: "ti ti-world" },
                           { value: "private", label: t().private, icon: "ti ti-lock" },
+                          { value: "restricted", label: t().boundaryRestricted, icon: "ti ti-shield-off" },
                         ]}
                       />
                     </span>
-                    <p class="text-xs text-(--k2b-text-muted)">
-                      {boundary() === "private" ? t().boundaryHelpPrivate : t().boundaryHelpHosted}
-                    </p>
+                    <BoundaryHelp t={t()} boundary={boundary()} options={["hosted", "private", "restricted"]} />
                   </div>
                 </fieldset>
                 <div class="mt-4 flex flex-wrap items-center gap-3">
@@ -337,6 +342,31 @@ function AddProviderDialog(props: { close: () => void; setDismissHandler: (handl
 }
 
 /** Extra headers: names are visible, values are write-only. */
+const boundaryHelp = (t: AiAreaMessages, boundary: AiProvider["dataBoundary"]) =>
+  boundary === "private"
+    ? t.boundaryHelpPrivate
+    : boundary === "restricted"
+      ? `${t.boundaryHelpRestricted} ${t.boundaryChosenOnce}`
+      : t.boundaryHelpHosted;
+
+/** Every offered help text shares one grid cell, so switching the boundary never moves the fields below. */
+export function BoundaryHelp(props: { t: AiAreaMessages; boundary: AiProvider["dataBoundary"]; options: AiProvider["dataBoundary"][] }) {
+  return (
+    <p class="grid text-xs">
+      <For each={props.options}>
+        {(option) => (
+          <span
+            class={`[grid-area:1/1] ${option === "restricted" ? "text-(--k2b-warning-text)" : "text-(--k2b-text-muted)"}`}
+            classList={{ invisible: option !== props.boundary }}
+          >
+            {boundaryHelp(props.t, option)}
+          </span>
+        )}
+      </For>
+    </p>
+  );
+}
+
 export function HeaderRows(props: {
   t: AiAreaMessages;
   headers: { name: string; value: string; stored?: boolean }[];
@@ -401,6 +431,8 @@ export function HeaderRows(props: {
 /** B2: models from the provider's list, or a provider model id by hand. */
 function AddModelsDialog(props: {
   providerId: string;
+  providerType?: AiProviderType;
+  chatOnly?: boolean;
   providerLabel: string;
   existing: string[];
   close: () => void;
@@ -419,6 +451,8 @@ function AddModelsDialog(props: {
   const [selected, setSelected] = createSignal<string[]>([]);
   const [manual, setManual] = createSignal(false);
   const [manualId, setManualId] = createSignal("");
+  const [manualKind, setManualKind] = createSignal<"chat" | "decision">("chat");
+  const [decisionContext, setDecisionContext] = createSignal<number | null>(null);
   const [saving, setSaving] = createSignal(false);
   const [error, setError] = createSignal("");
   const requestClose = () => {
@@ -427,15 +461,21 @@ function AddModelsDialog(props: {
   props.setDismissHandler(requestClose);
   const visible = () => {
     const q = query().trim().toLowerCase();
-    return (list() ?? []).filter((model) => !q || `${model.providerModel} ${model.label ?? ""}`.toLowerCase().includes(q));
+    return (list() ?? []).filter(
+      (model) =>
+        (!props.chatOnly || (model.kind ?? "chat") === "chat") &&
+        (!q || `${model.providerModel} ${model.label ?? ""}`.toLowerCase().includes(q)),
+    );
   };
   const showManual = () => manual() || (list.state === "ready" && (list() ?? []).length === 0);
   const facts = (model: AvailableModel) =>
-    model.kind === "transcription"
-      ? t().kindAudio
-      : model.contextWindow
-        ? `${Math.round(model.contextWindow / 1000)}k ${t().ctxShort}`
-        : "";
+    model.kind === "live-transcription"
+      ? t().kindLiveAudio
+      : model.kind === "transcription"
+        ? t().kindAudio
+        : model.contextWindow
+          ? `${Math.round(model.contextWindow / 1000)}k ${t().ctxShort}`
+          : "";
 
   const picks = () => {
     const available = list() ?? [];
@@ -443,7 +483,15 @@ function AddModelsDialog(props: {
       ...new Map(
         [
           ...selected().map((providerModel) => available.find((model) => model.providerModel === providerModel) ?? { providerModel }),
-          ...(showManual() && manualId().trim() ? [{ providerModel: manualId().trim() }] : []),
+          ...(showManual() && manualId().trim()
+            ? [
+                {
+                  providerModel: manualId().trim(),
+                  kind: manualKind(),
+                  contextWindow: manualKind() === "decision" ? (decisionContext() ?? undefined) : undefined,
+                },
+              ]
+            : []),
         ].map((model) => [model.providerModel, model]),
       ).values(),
     ];
@@ -461,6 +509,10 @@ function AddModelsDialog(props: {
     return values.every((id) => id && !(modelIds() ?? []).includes(id)) && new Set(values).size === values.length;
   };
   const add = async () => {
+    if (picks().some((model) => model.kind === "decision" && !model.contextWindow)) {
+      setError(t().decisionHelp);
+      return;
+    }
     if (saving() || !count() || modelIds.state !== "ready" || !idsValid()) return;
     setSaving(true);
     setError("");
@@ -469,8 +521,13 @@ function AddModelsDialog(props: {
         id: proposed()[model.providerModel]!,
         providerModel: model.providerModel,
         label: model.label ?? model.providerModel.split("/").at(-1) ?? model.providerModel,
-        kind: model.kind === "transcription" ? ("transcription" as const) : ("chat" as const),
-        capabilities: model.kind === "transcription" ? (["transcription"] as const).slice() : [],
+        kind: props.providerType === "vllm-realtime" ? ("live-transcription" as const) : (model.kind ?? ("chat" as const)),
+        capabilities:
+          props.providerType === "vllm-realtime" || model.kind === "live-transcription"
+            ? ["live-transcription" as const]
+            : model.kind === "transcription"
+              ? ["transcription" as const]
+              : [],
         contextWindow: model.contextWindow ?? null,
       }));
       const created = await readAiAdmin<{ models: { id: string }[] }>(
@@ -505,6 +562,28 @@ function AddModelsDialog(props: {
             placeholder={t().amManualPh}
             disabled={saving()}
           />
+          <Show when={props.providerType === "openai-compatible"}>
+            <SegmentedControl
+              ariaLabel={t().kind}
+              value={manualKind}
+              onValueChange={setManualKind}
+              options={[
+                { value: "chat", label: t().kindChat },
+                { value: "decision", label: t().kindDecision },
+              ]}
+            />
+            <Show when={manualKind() === "decision"}>
+              <NumberInput
+                label={t().ctx}
+                description={t().decisionHelp}
+                value={decisionContext}
+                onValueChange={setDecisionContext}
+                min={1}
+                required
+                disabled={saving()}
+              />
+            </Show>
+          </Show>
         </Show>
         <Show when={list.state === "pending" || list.state === "refreshing"}>
           <Placeholder state="loading" title={t().modelsLoading} />
@@ -632,7 +711,13 @@ export const openAddProvider = () =>
     panelDialogOptions,
   );
 
-export const openAddModels = (provider: { providerId: string; providerLabel: string; existing: string[] }) =>
+export const openAddModels = (provider: {
+  providerId: string;
+  providerType?: AiProviderType;
+  chatOnly?: boolean;
+  providerLabel: string;
+  existing: string[];
+}) =>
   void dialogCore.open<void>(
     (close, context) => <AddModelsDialog {...provider} close={() => close()} setDismissHandler={context.setDismissHandler} />,
     panelDialogOptions,

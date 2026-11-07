@@ -1,7 +1,7 @@
 import { afterAll, afterEach, beforeEach, expect, test } from "bun:test";
+import { sql } from "@k2b/cloud";
 import { assertResourceOpenLink } from "@k2b/cloud/capabilities/testing";
 import type { CapabilityExecutionContext } from "@k2b/cloud/contracts";
-import { sql } from "bun";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import { testShortId } from "../../../../scripts/fixtures/test-short-id";
 import { chatCapabilities } from "../capabilities";

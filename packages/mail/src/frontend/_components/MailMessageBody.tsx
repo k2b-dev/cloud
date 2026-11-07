@@ -8,18 +8,17 @@ import { readApiError } from "./api-response";
 import { buildMessageDocument, estimateInitialMessageBodyHeight, normalizeMessageBodyHeight } from "./mail-message-document";
 import { mailMessageMessages } from "./mail-message-messages";
 import {
+  inlineBodyImages,
   type MessageBodyFormat,
   type MessageColors,
   markCidImageSources,
   normalizeContentId,
-  referencedContentIds,
+  plainTextClipboardHtml,
   referencedRemoteImageIds,
   splitPlainMessageSegments,
   splitPlainTextLinks,
 } from "./mail-message-presentation";
 
-const MAX_INLINE_IMAGE_COUNT = 32;
-const MAX_INLINE_IMAGE_BYTES = 25 * 1024 * 1024;
 const MAX_REMOTE_IMAGE_BYTES = 25 * 1024 * 1024;
 const REMOTE_IMAGE_WORKERS = 2;
 const REMOTE_IMAGE_REQUEST_GAP_MS = 350;
@@ -109,6 +108,34 @@ export default function MailMessageBody(props: {
         ? selection.toString().trim().slice(0, 10_000)
         : "";
     props.onSelectionChange(value);
+  };
+
+  // Plain text keeps its line breaks in <pre>, and a copied <pre> reaches editors as a code block. A copy that
+  // touches the message puts its text on the clipboard as plain text and as simple paragraphs instead. Within the
+  // message, the text comes from the shown segments, without the quote toggle's labels.
+  const segmentText = (range: Range, body: HTMLElement): string =>
+    [...body.querySelectorAll("pre")]
+      .filter((segment) => range.intersectsNode(segment) && !segment.closest("details:not([open])"))
+      .map((segment) => {
+        const part = document.createRange();
+        part.selectNodeContents(segment);
+        if (range.compareBoundaryPoints(Range.START_TO_START, part) > 0) part.setStart(range.startContainer, range.startOffset);
+        if (range.compareBoundaryPoints(Range.END_TO_END, part) < 0) part.setEnd(range.endContainer, range.endOffset);
+        return part.toString();
+      })
+      .join("\n");
+  const copyPlainText = (event: ClipboardEvent) => {
+    const selection = window.getSelection();
+    const body = plainBody;
+    if (event.defaultPrevented || !event.clipboardData || !selection || selection.isCollapsed || !body?.isConnected) return;
+    const ranges = Array.from({ length: selection.rangeCount }, (_, index) => selection.getRangeAt(index));
+    if (!ranges.some((range) => range.intersectsNode(body))) return;
+    const text = ranges.every((range) => body.contains(range.commonAncestorContainer))
+      ? ranges.map((range) => segmentText(range, body)).join("\n")
+      : selection.toString();
+    event.clipboardData.setData("text/plain", text);
+    event.clipboardData.setData("text/html", plainTextClipboardHtml(text));
+    event.preventDefault();
   };
 
   const sendFrameImages = (images: FrameImage[]) => {
@@ -253,18 +280,7 @@ export default function MailMessageBody(props: {
   };
 
   const loadCidImages = async (signal: AbortSignal) => {
-    const referenced = new Set(referencedContentIds(props.html ?? ""));
-    let selectedBytes = 0;
-    const selected = props.attachments
-      .filter((attachment) => {
-        if (!attachment.contentId || !attachment.contentType.toLowerCase().startsWith("image/")) return false;
-        if (!referenced.has(normalizeContentId(attachment.contentId))) return false;
-        if (!Number.isSafeInteger(attachment.sizeBytes) || attachment.sizeBytes < 0) return false;
-        if (selectedBytes + attachment.sizeBytes > MAX_INLINE_IMAGE_BYTES) return false;
-        selectedBytes += attachment.sizeBytes;
-        return true;
-      })
-      .slice(0, MAX_INLINE_IMAGE_COUNT);
+    const selected = inlineBodyImages(props.html ?? "", props.attachments);
     for (const attachment of selected) {
       const response = await fetch(
         `/api/mail/mailboxes/${props.mailboxId}/messages/${props.messageId}/attachments/${attachment.id}?inline=true`,
@@ -311,6 +327,8 @@ export default function MailMessageBody(props: {
 
   onMount(() => {
     window.addEventListener("message", receiveMessage);
+    // A selection that starts in the message header never sends its copy event through the body.
+    document.addEventListener("copy", copyPlainText);
     sendFrameMotion();
     const motionObserver = new MutationObserver(sendFrameMotion);
     motionObserver.observe(document.documentElement, { attributes: true, attributeFilter: ["data-k2b-motion"] });
@@ -323,6 +341,7 @@ export default function MailMessageBody(props: {
       frameImages.length = 0;
       motionObserver.disconnect();
       window.removeEventListener("message", receiveMessage);
+      document.removeEventListener("copy", copyPlainText);
       document.removeEventListener("selectionchange", reportPlainSelection);
       props.onSelectionChange("");
     });

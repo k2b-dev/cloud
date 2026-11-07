@@ -1,5 +1,4 @@
 import { type AccountCategory, type AccountCategoryPolicy, accountCategoryLabel } from "@k2b/cloud/contracts";
-import { navigateTo, refreshCurrentPath } from "@k2b/ssr/nav";
 import { dates } from "@k2b/stdlib";
 import { mutation } from "@k2b/stdlib/solid";
 import {
@@ -20,6 +19,7 @@ import {
 import { createEffect, createSignal, createUniqueId, onCleanup, onMount, Show } from "solid-js";
 import { apiClient } from "@/api/client";
 import { type CreateUserResponse, CreateUserResponseSchema, ErrorResponseSchema } from "@/contracts";
+import { usePageSwap } from "@/frontend/lib/page-swap";
 import { type accountsMessages, useAccountsMessages } from "../../messages";
 
 type PrefillData = {
@@ -405,6 +405,7 @@ const buildSuccessDialog = (payload: CreateUserPayload, data: CreateUserResponse
 };
 
 export default function CreateUserForm(props: Props) {
+  const { openPage, showChanges } = usePageSwap();
   const messages = useAccountsMessages();
   const locale = useLocale();
   let opened = false;
@@ -433,9 +434,9 @@ export default function CreateUserForm(props: Props) {
       );
       if (result) {
         const action = await buildSuccessDialog(result.payload, result.data, messages(), locale(), props.categoryPolicy.login.label);
-        if (action === "view") navigateTo(`/app/accounts/users/${result.data.id}`);
-        else if (props.autoOpen) navigateTo("/app/accounts/users");
-        else refreshCurrentPath();
+        if (action === "view") openPage(`/app/accounts/users/${result.data.id}`);
+        else if (props.autoOpen) openPage("/app/accounts/users");
+        else showChanges();
       }
     } finally {
       setOpening(false);

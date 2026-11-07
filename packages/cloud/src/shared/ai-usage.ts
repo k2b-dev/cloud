@@ -14,7 +14,7 @@ export const AiUsageQuerySchema = z.object({
   workflowId: z.uuid().optional(),
   workflowRunId: z.uuid().optional(),
   view: z.enum(AI_USAGE_VIEWS).default("overview"),
-  kind: z.enum(["chat", "background"]).optional(),
+  kind: z.enum(["chat", "background", "live-transcription"]).optional(),
   status: z.enum(["completed", "failed", "running"]).optional(),
   task: text,
   errorCode: text,

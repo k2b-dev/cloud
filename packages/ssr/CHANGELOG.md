@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.21.0](https://github.com/k2b-dev/cloud/compare/npm-ssr-v0.20.2...npm-ssr-v0.21.0) (2026-11-03)
+
+
+### Features
+
+* **accounts:** pages, filters and actions change without a document load ([#2535](https://github.com/k2b-dev/cloud/issues/2535)) ([7753c4b](https://github.com/k2b-dev/cloud/commit/7753c4b15804139486bfd58a01bb6d28e8186283))
+
 ## [0.20.2](https://github.com/k2b-dev/cloud/compare/npm-ssr-v0.20.1...npm-ssr-v0.20.2) (2026-10-30)
 
 

@@ -10,6 +10,7 @@ import type { Extension } from "@codemirror/state";
 import { type EditorView, ViewPlugin } from "@codemirror/view";
 import { fuzzy } from "@k2b/stdlib";
 import type { EditorAction } from "./editor-state";
+import { caretIntoTableCell, tableCellCompletions } from "./table-cells";
 
 /** One entry of the slash menu: an editor action reached by typing `/` and its name. */
 export type SlashAction = Omit<EditorAction, "run"> & {
@@ -40,7 +41,7 @@ export type SlashMenuOptions = {
 };
 
 /** `/name` after the line start or a space; group 1 is the space, group 2 the typed name and suffix. */
-const trigger = /(^|\s)\/(\w*)$/;
+const trigger = /(^|\s)\/([\p{L}\p{N}_]*)$/u;
 /** stdlib's fuzzy scores run up to about 100; below this, accidental subsequence matches crowd the list. */
 const minimumScore = 25;
 
@@ -206,6 +207,9 @@ const safe =
  */
 export const slashMenu = (options: SlashMenuOptions): Extension => [
   pointerTiming,
+  // The popup also serves the table grid's own cells, which write to the same document.
+  caretIntoTableCell,
+  tableCellCompletions,
   autocompletion({
     override: [
       safe("slash", slashCompletionSource(options.actions)),

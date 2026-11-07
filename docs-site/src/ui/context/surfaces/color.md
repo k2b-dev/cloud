@@ -41,17 +41,61 @@ Content weight also carries meaning. In a mail list, read senders and subjects
 use regular weight; unread rows add semibold type and the unread marker.
 Selection keeps its fill independently of unread emphasis.
 
+## Field edge
+
+Every control a person fills in shares one edge: text fields, number fields,
+selects, comboboxes, tag and date fields, colour fields, input buttons, the
+Markdown editor, and the signature pad. The field is white, and its edge is
+always `--k2b-edge-width` (2 px) wide, drawn inside the box as a 1 px border
+plus a 1 px inset in the same colour. A state changes only the colour or the
+fill, so the box and the text never move:
+
+| State | Edge | Fill |
+| --- | --- | --- |
+| Rest | `--k2b-edge` (light grey, the strong border) | `--k2b-surface` |
+| Hover | unchanged | `--k2b-edge-hover-bg`, slightly darker |
+| Focus | `--k2b-edge-focus` (strong blue) | `--k2b-surface` |
+| Error | `--k2b-edge-danger` | unchanged |
+| Error with focus | `--k2b-edge-focus`; the error message stays | unchanged |
+| Disabled | none | `--k2b-surface-muted` |
+
+The focus blue keeps 3:1 against the grey edge it replaces, so focus shows
+without a second width. No field casts a shadow. A control with its own edge
+reads `--k2b-edge-color`, the colour of the current state, for example a
+stepper that fills to the border. In forced-colors mode the border takes the
+system colour and focus adds the system outline.
+
+### Filters, buttons, and clickable cards
+
+Controls next to fields follow the same rule: the box never changes and no
+control casts a shadow.
+
+| Control | Edge | Hover | Active | Focus |
+| --- | --- | --- | --- | --- |
+| `FilterChip`, `FilterToggle` | the field edge, as a 2 px inset | `--k2b-edge-hover-bg` | selected edge and fill in the app ink | `--k2b-edge-focus` edge |
+| `SegmentedControl` option, `Tabs` tab, `ViewTabs` view | none until selected; segments sit on `--k2b-tray` | light tint | selected edge and fill in the app ink | `--k2b-edge-focus` edge |
+| Secondary and subtle `Button` | 1 px `--k2b-control-border-soft`, never darker | `--k2b-edge-hover-bg` | | focus ring |
+| Interactive `Paper` | 1 px `--k2b-border-strong`, never darker | `--k2b-edge-hover-bg` | | focus ring |
+
+The selected edge mixes `--k2b-edge-selected-share` of the app ink into the
+surface; the fill mixes `--k2b-edge-selected-fill`, and on hover
+`--k2b-edge-selected-hover-fill`. All of them are white on a tinted section
+group as well.
+
 ## Selection color
 
 Selection marks where the person is or what they picked. Three optional host
 hooks carry it:
 
-- `--k2b-app-workspace-selected` fills selected navigation and the selection
-  controls below. It defaults to `var(--k2b-selected)`.
-- `--k2b-app-workspace-active` is the ink on that fill. It defaults to
-  `var(--k2b-action)`.
-- `--k2b-row-selected` fills selected content rows. It defaults to
+- `--k2b-app-workspace-selected` fills selected navigation. It defaults to
   `var(--k2b-selected)`.
+- `--k2b-app-workspace-active` is the ink on that fill, and the selection
+  controls below mix their selected edge and fill from it. It defaults to
+  `var(--k2b-action)`.
+- `--k2b-row-selected` fills selected list rows and files. It defaults to
+  `var(--k2b-selected)`. A selected `DataTable` row mixes 16 % of
+  `--k2b-app-workspace-active` into the surface instead, so it still reads
+  between the table's lines.
 
 Without a host value, selection keeps the platform selection color. A host
 sets the hooks on its own scope to give selection its color. Cloud maps them
@@ -74,11 +118,11 @@ sidebar row also turns semibold; its label reserves that width in advance.
 
 ### Selected tabs, segments, and filters
 
-A selected tab, view tab, or segment and an active filter chip are selection
-states, in the same family as the selected navigation row. They mark where
-the person is or what they picked, so they share the navigation fill and its
-ink. This is a decision of 19 October 2026; the shell designs approved on
-17 October 2026 show exactly this.
+A selected tab, view tab, or segment and an active filter are selection
+states and carry the app ink like the selected navigation row. They draw it as
+the selected edge with a light fill instead of the navigation fill, so they
+read as controls (see
+[Filters, buttons, and clickable cards](#filters-buttons-and-clickable-cards)).
 
 | State | Primitive | Class |
 | --- | --- | --- |
@@ -86,6 +130,7 @@ ink. This is a decision of 19 October 2026; the shell designs approved on
 | Current view | `ViewTabs` | `k2b-view-tabs` |
 | Selected segment | `SegmentedControl` | `k2b-segmented-control` |
 | Active filter | `FilterChip`, `FilterToggle` | `k2b-filter-chip` |
+| Selected choice in a menu's segment row | `Dropdown` | `k2b-dropdown` |
 
 Do not draw a chosen view, range, or filter as a filled primary button such
 as `variant={chosen ? "primary" : "secondary"}`. That makes a choice look like
@@ -95,9 +140,11 @@ the main action.
 
 | State | Primitive | Class |
 | --- | --- | --- |
-| Selected table row | `DataTable` | `k2b-data-table` |
 | Selected file tile or list row | `FileGrid` | `k2b-file-grid` |
 | Selected file tree row | `FileTree` | `k2b-content-file-tree` |
+
+A selected table row (`DataTable`) is a stronger fill of the same app ink and
+never a coloured line or bar; see [Tables](/en/ui/content/tables#presentation).
 
 ## Controls stay platform blue
 
@@ -117,7 +164,8 @@ and checked cards.
 | Keyboard-active or selected option | `Select`, `Combobox`, `MultiSelectInput` | `k2b-choice-option` |
 | Checked choice chip in a field or picker filter | `ChoiceChips`, `Select` | `k2b-choice-groups` |
 | Chosen tile with a preview | `ChoiceTiles` | `k2b-choice-tiles` |
-| Chosen row with its sentence | `ChoiceList` | `k2b-choice-list` |
+| Chosen card with its sentence | `ChoiceList` | `k2b-choice-list` |
+| Chosen icon of a few | `IconChoices` | `k2b-icon-choices` |
 | Keyboard-active suggestion | `AutocompleteEditor` | `k2b-autocomplete` |
 | Current page | `Pagination` | `k2b-pagination` |
 | Selected date, month, or duration | `DatePicker` | `k2b-date-grid`, `k2b-date-months`, `k2b-date-durations` |
@@ -127,6 +175,15 @@ and checked cards.
 | Pressed formatting tool | `MarkdownEditor` | `k2b-markdown-editor` |
 | Selected table size | `TableSizePicker` | `k2b-ste-size-row` |
 | Enabled table header | `TextEditor` | `k2b-ste-header-choice` |
+
+Choice cards (`ChoiceList` and `CheckboxCard`) are cards on the field edge:
+a 2 px grey edge at rest, `--k2b-edge-hover-bg` on hover, and a strong blue
+`--k2b-edge-focus` edge on focus, also when chosen. A chosen or checked card
+mixes `--k2b-edge-selected-share` of `--k2b-action` into its edge and
+`--k2b-edge-selected-fill` into its fill (`--k2b-edge-selected-hover-fill` on
+hover), in platform blue like the radio or checkbox inside it. An invalid
+checkbox card has the `--k2b-edge-danger` edge; a disabled card has no edge on
+`--k2b-surface-muted`. Only colours change, so no card or text moves.
 
 `TextEditor` and `TableSizePicker` use the optional `@k2b/ui/text-editor`
 entry point. The header switch is a checked menu control; it is not a drop
@@ -180,7 +237,7 @@ A person has one color wherever they appear: the tint behind their avatar
 initials, their cursor in a shared text, and the passages they comment on.
 `personColor(name)` returns it from the display name, and `Avatar` uses the
 same palette (`PERSON_COLORS`), so build person colors from it instead of a
-second palette. The palette has no cyan, which means AI, and no yellow, which
+second palette. The palette has no plum, which means AI, and no yellow, which
 reads as a text highlight. Two people can share a color, so the name always
 appears next to it.
 
@@ -194,11 +251,12 @@ six-digit accent works. See
 [Define an application](/en/docs/build/define-app#set-the-application-appearance) and
 [Styling and accessibility](/en/docs/frontend/styling-and-accessibility#keep-color-roles-independent).
 
-Cyan means AI. `--k2b-ai-accent` marks AI surfaces, which also carry ✦ or the
+Plum means AI. `--k2b-ai-accent` (`#8e1b6f` light, `#f0abdc` dark) and
+`--k2b-ai-surface` mark AI surfaces, which also carry ✦ or the
 word "KI", so no app color may look like it: keep the accent and every
 background stop at least 20° of OKLCH hue away from both AI accents. Near-gray
 colors carry no hue and are fine. Only the Assistant, the AI app itself, may
-use cyan. In the Cloud repository the `ai-color` check enforces this for every
+use plum. In the Cloud repository the `ai-color` check enforces this for every
 built-in app and for the launchpad's fallback tile colors.
 
 ## Import

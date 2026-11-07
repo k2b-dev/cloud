@@ -61,6 +61,7 @@ export const createRegistryMembership = (
     hostname: options.hostname ?? hostname(),
     startedAt: options.startedAt ?? Date.now(),
     entries: {},
+    ...(appId === "core" ? { legacyEvidence: 1 as const } : {}),
     ...(options.bootstrap ? { bootstrap: structuredClone(options.bootstrap) } : {}),
   };
   const writeTimeoutMs = options.writeTimeoutMs ?? HEARTBEAT_WRITE_TIMEOUT_MS;

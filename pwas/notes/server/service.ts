@@ -4,13 +4,13 @@ import * as encoding from "lib0/encoding";
 import * as sync from "y-protocols/sync";
 import * as Y from "yjs";
 import { ackFrame, frame, message, rejectFrame } from "../protocol";
-import { SocketAwareness } from "./awareness";
+import { type PresencePerson, SocketAwareness } from "./awareness";
 import { validateDocument } from "./document";
 import { NotesError } from "./errors";
 import type { CheckedFile } from "./files";
 import { limits, RateLimits } from "./limits";
 import type { NotesStore } from "./store";
-import { hash } from "./tokens";
+import { hash, validId } from "./tokens";
 
 const read = <T>(decode: () => T): T => {
   try {
@@ -52,6 +52,7 @@ export class NotesService {
   private readonly padConnections = new Map<string, number>();
   private loadingRooms = 0;
   private reading = 0;
+  private polling = 0;
   private nextAwarenessId = randomInt(2 ** 32, 2 ** 48);
   private stopping = false;
   private timer?: ReturnType<typeof setInterval>;
@@ -147,6 +148,26 @@ export class NotesService {
     } finally {
       this.reading--;
       loaded?.doc.destroy();
+    }
+  }
+  async presence(readIds: string[]): Promise<Record<string, PresencePerson[]>> {
+    if (readIds.length > limits.presencePads || !readIds.every(validId)) throw new NotesError("invalid_presence");
+    if (this.stopping) throw new NotesError("unavailable", 503);
+    if (this.polling >= this.options.maxOpenPads) throw new NotesError("overloaded", 429);
+    this.polling++;
+    try {
+      if (!(await this.store.ownsDatabase()) || this.stopping) throw new NotesError("unavailable", 503);
+      // Only read capabilities index existing rooms. Polling never opens a room or extends retention.
+      return Object.fromEntries(
+        [...new Set(readIds)].map((readId) => [
+          readId,
+          [...(this.rooms.get(readId)?.peers ?? [])].flatMap((peer) =>
+            !peer.released && peer.access === "edit" && peer.awareness.person ? [{ ...peer.awareness.person }] : [],
+          ),
+        ]),
+      );
+    } finally {
+      this.polling--;
     }
   }
   async upload(token: string, file: CheckedFile): Promise<{ key: string }> {

@@ -1,5 +1,5 @@
+import { sql } from "@k2b/cloud";
 import { err, fail, ok } from "@k2b/cloud/server";
-import { sql } from "bun";
 import { type ChatContext, messages, requireConversation, subjectPrincipal } from "./access";
 import { NotificationUpdateSchema } from "./contracts";
 import { record } from "./conversations";

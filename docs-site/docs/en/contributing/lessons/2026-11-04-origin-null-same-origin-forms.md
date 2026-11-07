@@ -1,0 +1,6 @@
+### A no-referrer page's own form posts failed the origin check
+
+- **What happened:** Pages served with `Referrer-Policy: no-referrer`, such as an app's token share page, post their native forms with `Origin: null`. When the visitor still had a Cloud session cookie, even an expired one, the session origin check refused these same-origin posts with `403 INVALID_ORIGIN`. The gateway's origin rule for app domains refused them the same way.
+- **Root cause:** The check required the exact public Cloud origin in `Origin` and treated `null` like a foreign origin. For form posts, browsers send `null` whenever the page's referrer policy is `no-referrer`, also to the page's own origin.
+- **Error class:** A browser-security check that judges one header alone, although the browser states the same fact more reliably in another header.
+- **Guard:** A missing or `null` Origin now passes only together with the browser-set `Sec-Fetch-Site: same-origin`; same-site, cross-site, a foreign Origin and a request with neither header still fail. `session-origin.test.ts` and the gateway's `app-domains.test.ts` cover each combination, and `session-origin.browser.test.ts` submits a real no-referrer form in Chromium from the same origin (passes) and from another site (refused).

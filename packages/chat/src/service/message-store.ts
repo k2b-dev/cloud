@@ -23,6 +23,7 @@ export type MessageRow = {
   author_id: string;
   author_name: string;
   body_md: string | null;
+  client_id?: string | null;
   client_input_hash?: string | null;
   refs: CloudResourceRef[];
   links: string[];
@@ -61,6 +62,7 @@ export const projectMessage = (
   editedAt: row.edited_at?.toISOString() ?? null,
   deletedAt: row.deleted_at?.toISOString() ?? null,
   via: row.via ?? null,
+  clientId: row.client_id ?? null,
 });
 const systemPeople = (system: SystemMessage | null) => {
   if (!system) return [];

@@ -86,8 +86,8 @@ afterAll(async () => {
 
 const rgb = (hex: string) => `rgb(${[1, 3, 5].map((offset) => Number.parseInt(hex.slice(offset, offset + 2), 16)).join(", ")})`;
 const defaults = {
-  light: { ink: "#2469d4", selected: "#f0f6ff", selectedNav: "#eaf2ff" },
-  dark: { ink: "#589aff", selected: "#15243b", selectedNav: "#152742" },
+  light: { ink: "#2469d4", selectedNav: "#eaf2ff" },
+  dark: { ink: "#589aff", selectedNav: "#152742" },
 };
 const settle = (page: Page) =>
   page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
@@ -100,17 +100,39 @@ const tabBoxes = (page: Page) =>
   );
 const selectedColors = (page: Page) =>
   page.evaluate(() => {
+    // color-mix() serializes as color(srgb …); a canvas turns every color into rgb().
+    const context = document.createElement("canvas").getContext("2d")!;
+    const rgbOf = (color: string) => {
+      context.clearRect(0, 0, 1, 1);
+      context.fillStyle = color;
+      context.fillRect(0, 0, 1, 1);
+      const [r, g, b] = context.getImageData(0, 0, 1, 1).data;
+      return [r!, g!, b!] as const;
+    };
     const tab = getComputedStyle(document.querySelector('dialog [role="tab"][aria-selected="true"]')!);
-    const row = getComputedStyle(document.querySelector('dialog tr[data-selected="true"]')!);
-    return { ink: tab.color, selected: row.backgroundColor, selectedNav: tab.backgroundColor };
+    const row = document.querySelector('dialog tr[data-selected="true"]')!;
+    // The surface under the row, read in the row's own scope.
+    const probe = row.querySelector("td")!.appendChild(document.createElement("span"));
+    probe.style.background = "var(--k2b-surface)";
+    const surface = rgbOf(getComputedStyle(probe).backgroundColor);
+    probe.remove();
+    return { ink: tab.color, selectedNav: tab.backgroundColor, row: rgbOf(getComputedStyle(row).backgroundColor), surface };
   });
+const channels = (hex: string) => [1, 3, 5].map((offset) => Number.parseInt(hex.slice(offset, offset + 2), 16));
 const assertAppColors = async (page: Page, theme: "light" | "dark") => {
   const colors = await selectedColors(page);
   const expected = appColors("#0f766e")[theme];
-  for (const key of ["ink", "selected", "selectedNav"] as const) {
+  for (const key of ["ink", "selectedNav"] as const) {
     expect(colors[key], `${theme} ${key}`).toBe(rgb(expected[key]));
     expect(colors[key], `${theme} ${key} differs from platform default`).not.toBe(rgb(defaults[theme][key]));
   }
+  // A selected table row is 16 % of the app ink on the surface, so it follows the app scope inside the portal too.
+  const mix = (hex: string) => channels(hex).map((channel, i) => channel * 0.16 + colors.surface[i]! * 0.84);
+  colors.row.forEach((channel, i) => expect(Math.abs(channel - mix(expected.ink)[i]!), `${theme} row`).toBeLessThanOrEqual(1.5));
+  expect(
+    colors.row.some((channel, i) => Math.abs(channel - mix(defaults[theme].ink)[i]!) > 3),
+    `${theme} row differs from platform default`,
+  ).toBe(true);
 };
 
 for (const viewport of [

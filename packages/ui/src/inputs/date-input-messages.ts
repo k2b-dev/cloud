@@ -1,0 +1,81 @@
+import { i18n } from "@k2b/stdlib";
+
+/** Status line and errors of the typed date field; dates, weekdays and distances come from Intl. */
+const dateInputMessages = i18n.define({
+  baseLocale: "en",
+  messages: {
+    en: {
+      dayLetters: "DD",
+      monthLetters: "MM",
+      yearLetters: "YYYY",
+      openCalendar: "Open calendar",
+      closeCalendar: "Close calendar",
+      notADate: ({ example }: { example: string }) => `Not a date. Example: ${example}, wed or +14`,
+      notYet: "Not a date yet",
+      ambiguous: "Ambiguous. Keep typing.",
+      incompleteYear: ({ year }: { year: string }) => `Incomplete year, e.g. ${year}.`,
+      unknownUnit: "Unknown unit. Use d, w, m or y.",
+      noSuchMonth: ({ month }: { month: number }) => `There is no month ${month}.`,
+      shortMonth: ({ month, days }: { month: string; days: number }) => `${month} has only ${days} days.`,
+      earliest: ({ date }: { date: string }) => `${date} at the earliest.`,
+      latest: ({ date }: { date: string }) => `${date} at the latest.`,
+      outsideRange: "Outside the allowed dates",
+      required: "Enter a date.",
+      endBeforeStart: "The end is before the start.",
+      missingEnd: "Enter an end too.",
+      missingStart: "Enter a start too.",
+      nextWeekday: ({ weekday }: { weekday: string }) => `next ${weekday}`,
+      nextWeek: "next week",
+      notSelectable: ({ date }: { date: string }) => `${date}, not available`,
+      limitFrom: ({ date }: { date: string }) => `from ${date}`,
+      limitUntil: ({ date }: { date: string }) => `until ${date}`,
+      start: "Start",
+      end: "End",
+      startOf: ({ label }: { label: string }) => `${label}: start`,
+      endOf: ({ label }: { label: string }) => `${label}: end`,
+      startMissing: "start missing",
+      endMissing: "end missing",
+      noDate: "No date",
+    },
+    de: {
+      dayLetters: "TT",
+      monthLetters: "MM",
+      yearLetters: "JJJJ",
+      openCalendar: "Kalender öffnen",
+      closeCalendar: "Kalender schließen",
+      notADate: ({ example }) => `Kein Datum. Beispiel: ${example}, mi oder +14`,
+      notYet: "Noch kein Datum",
+      ambiguous: "Mehrdeutig. Bitte weiter tippen.",
+      incompleteYear: ({ year }) => `Jahr unvollständig, z. B. ${year}.`,
+      unknownUnit: "Einheit unbekannt. Möglich: t, w, m, j",
+      noSuchMonth: ({ month }) => `Einen ${month}. Monat gibt es nicht.`,
+      shortMonth: ({ month, days }) => `Der ${month} hat nur ${days} Tage.`,
+      earliest: ({ date }) => `Frühestens am ${date}.`,
+      latest: ({ date }) => `Spätestens am ${date}.`,
+      outsideRange: "Außerhalb der erlaubten Daten",
+      required: "Bitte ein Datum eingeben.",
+      endBeforeStart: "Das Ende liegt vor dem Start.",
+      missingEnd: "Bitte auch ein Ende eingeben.",
+      missingStart: "Bitte auch einen Start eingeben.",
+      nextWeekday: ({ weekday }) => `nächster ${weekday}`,
+      nextWeek: "nächste Woche",
+      notSelectable: ({ date }) => `${date}, nicht wählbar`,
+      limitFrom: ({ date }) => `ab ${date}`,
+      limitUntil: ({ date }) => `bis ${date}`,
+      start: "Start",
+      end: "Ende",
+      startOf: ({ label }) => `${label}: Start`,
+      endOf: ({ label }) => `${label}: Ende`,
+      startMissing: "Start fehlt",
+      endMissing: "Ende fehlt",
+      noDate: "Kein Datum",
+    },
+  },
+});
+
+export type DateInputMessages = ReturnType<(typeof dateInputMessages)["resolve"]>["t"];
+
+/** Resolved from the date locale, so the words join the dates they describe in one language. */
+export const resolveDateInputMessages = (locale?: string): DateInputMessages => dateInputMessages.resolve([locale ?? "en"]).t;
+
+export const checkDateInputMessages = () => dateInputMessages.check();

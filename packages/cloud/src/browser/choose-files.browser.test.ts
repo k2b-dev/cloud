@@ -141,6 +141,8 @@ let catalogRequests = 0;
 let catalogGate: Promise<void> | undefined;
 let brokenAnswers = 0;
 let readGate: Promise<void> | undefined;
+/** Holds every folder listing while set, so a test can see a folder that is still loading. */
+let listGate: Promise<void> | undefined;
 /** The one stream the gate holds, as `app:id`; without it the gate holds every read. */
 let gatedRead: string | undefined;
 let openReads = 0;
@@ -160,6 +162,7 @@ const answer = async (request: Request): Promise<Response> => {
   if (operation === "folder.list") {
     const { input } = (await request.json()) as { input: { parent?: string; query?: string } };
     queries.push(input);
+    await listGate;
     if (app === "invoices") {
       const refs = (input as { context?: { refs: { type: string; id: string }[] } }).context?.refs ?? [];
       const customers = refs.filter((ref) => ref.type === "customers.customer" && ref.id === "c1").map((ref) => ref.id);
@@ -233,9 +236,8 @@ type View = { width: number; height: number; touch: boolean };
 const desktop: View = { width: 1440, height: 900, touch: false };
 const phone: View = { width: 390, height: 844, touch: true };
 
-/** Opens the harness once the idle provider discovery has answered, like a click some time after the page loaded. */
-const open = async (view: View, query = "") => {
-  const before = catalogRequests;
+/** A fresh document does no discovery. Warm only when a test explicitly needs a previously known list. */
+const open = async (view: View, query = "", warm = false) => {
   const context = await browser.newContext({
     viewport: { width: view.width, height: view.height },
     isMobile: view.touch,
@@ -247,8 +249,15 @@ const open = async (view: View, query = "") => {
   // listener added only right before the key press can miss a chooser that opens at once, so subscribe up front.
   page.on("filechooser", () => undefined);
   await page.goto(`http://127.0.0.1:${server.port}/${query}`);
-  for (let attempt = 0; catalogRequests === before && attempt < 100; attempt++) await Bun.sleep(20);
-  await page.waitForTimeout(50);
+  if (warm) {
+    await page.locator("#attach").click();
+    await page.locator("dialog[open] .cloud-file-chooser").waitFor();
+    await page.waitForFunction(() => !document.querySelector(".cloud-file-dialog__source-skeleton"));
+    await page.keyboard.press("Escape");
+    await page.locator("dialog[open]").waitFor({ state: "hidden" });
+    // This setup choice is not part of the result being tested.
+    await page.evaluate(() => (window as unknown as { chosen: unknown[] }).chosen.splice(0));
+  }
   return { page, context, close: () => context.close() };
 };
 const chosen = (page: Page) => page.evaluate(() => (window as unknown as { chosen: unknown[] }).chosen);
@@ -258,16 +267,23 @@ const dialogBox = (page: Page) =>
     return [Math.round(rect.left), Math.round(rect.top), Math.round(rect.width), Math.round(rect.height)];
   });
 const rows = (page: Page) => page.locator('dialog [role="gridcell"]');
-const rowNames = (page: Page) => page.locator('dialog [role="gridcell"] .k2b-file-grid__name').allTextContents();
-const row = (page: Page, name: string) => page.locator("dialog .k2b-file-grid__name").getByText(name, { exact: true });
+const rowNames = (page: Page) => page.locator('dialog [role="gridcell"] .cloud-file-dialog__name').allTextContents();
+const row = (page: Page, name: string) => page.locator("dialog .cloud-file-dialog__name").getByText(name, { exact: true });
+const sourceNames = (page: Page) => page.locator("dialog .cloud-file-dialog__source-name").allTextContents();
+const source = (page: Page, name: string) =>
+  page.locator("dialog .cloud-file-dialog__source").filter({ has: page.getByText(name, { exact: true }) });
+const currentSource = (page: Page) => page.locator('dialog .cloud-file-dialog__source[aria-current="true"]').textContent();
 /** The text of the focused row, or null when focus is anywhere else. */
 const focusedRow = (page: Page) =>
   page.evaluate(() => (document.activeElement?.matches('[role="gridcell"]') ? document.activeElement.textContent : null));
-const attach = async (page: Page) => {
+const focusedSource = (page: Page) =>
+  page.evaluate(() => (document.activeElement?.matches(".cloud-file-dialog__source") ? document.activeElement.textContent : null));
+const attach = async (page: Page, loading = false) => {
   await page.locator("#attach").click();
   await page.locator("dialog[open]").waitFor();
-  // The chooser moves focus to its first row once it opened; a key pressed before that would reach the page.
-  await page.waitForFunction(() => document.activeElement?.matches('dialog [role="gridcell"]'));
+  if (!loading) await page.waitForFunction(() => !document.querySelector(".cloud-file-dialog__source-skeleton"));
+  // The chooser moves focus to This device once it opened; a key pressed before that would reach the page.
+  await page.waitForFunction(() => document.activeElement?.matches('dialog .cloud-file-dialog__source[aria-current="true"]'));
 };
 const status = (page: Page) => page.locator(".cloud-file-chooser__status").textContent();
 /** Where the footer buttons are; selecting and adding must not move them. */
@@ -275,14 +291,66 @@ const footer = (page: Page) =>
   page.locator(".cloud-file-chooser__actions button").evaluateAll((buttons) =>
     buttons.map((button) => {
       const rect = button.getBoundingClientRect();
-      return [button.textContent, Math.round(rect.left), Math.round(rect.top), Math.round(rect.width)];
+      return [Math.round(rect.left), Math.round(rect.top), Math.round(rect.width), Math.round(rect.height)];
     }),
   );
+/** One element's box, rounded, relative to the dialog's surface inside its 1 px frame. */
+const boxIn = (page: Page, selector: string) =>
+  page.evaluate((selector) => {
+    const frame = document.querySelector("dialog[open] .k2b-panel-dialog")!.getBoundingClientRect();
+    const rect = document.querySelector(selector)?.getBoundingClientRect();
+    if (!rect) return null;
+    return {
+      left: Math.round(rect.left - frame.left),
+      top: Math.round(rect.top - frame.top),
+      right: Math.round(frame.right - rect.right),
+      width: Math.round(rect.width),
+      height: Math.round(rect.height),
+    };
+  }, selector);
 
 describe("choosing files in a browser", () => {
+  test("page load and idle do not request providers; the first action loads them with retry in the same frame", async () => {
+    catalogApps = [drive];
+    catalogStatus = 503;
+    const before = catalogRequests;
+    const { page, close } = await open(phone);
+    try {
+      // Allow both the native idle callback and its one-second fallback to run.
+      await page.waitForTimeout(1200);
+      expect(catalogRequests).toBe(before);
+      await attach(page);
+      expect(catalogRequests).toBe(before + 1);
+      await page.getByText("Apps not loaded", { exact: false }).waitFor();
+      const frame = await dialogBox(page);
+      const actions = await footer(page);
+      let release!: () => void;
+      catalogGate = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      catalogStatus = 200;
+      try {
+        await page.getByRole("button", { name: "Try again", exact: true }).click();
+        await page.locator(".cloud-file-dialog__source-skeleton").first().waitFor();
+        expect(await dialogBox(page)).toEqual(frame);
+        release();
+        await source(page, "Drive").waitFor();
+        expect(await dialogBox(page)).toEqual(frame);
+        expect(await footer(page)).toEqual(actions);
+        expect(catalogRequests).toBe(before + 2);
+      } finally {
+        release();
+      }
+    } finally {
+      catalogGate = undefined;
+      catalogStatus = 200;
+      await close();
+    }
+  }, 30_000);
+
   test("without providers, Attach opens the device's file dialog directly", async () => {
     catalogApps = [notes];
-    const { page, close } = await open(desktop, "?single");
+    const { page, close } = await open(desktop, "?single", true);
     try {
       const picker = page.waitForEvent("filechooser");
       await page.locator("#attach").click();
@@ -297,9 +365,9 @@ describe("choosing files in a browser", () => {
     }
   }, 30_000);
 
-  test("without providers, an abort while the device's dialog is open resolves nothing and drops a later pick", async () => {
+  test("with no providers already known, an abort while the device's dialog is open resolves nothing and drops a later pick", async () => {
     catalogApps = [notes];
-    const { page, close } = await open(desktop);
+    const { page, close } = await open(desktop, "", true);
     try {
       const picker = page.waitForEvent("filechooser");
       await page.locator("#attach").click();
@@ -314,21 +382,29 @@ describe("choosing files in a browser", () => {
     }
   }, 30_000);
 
-  test("with providers, This device comes first and still opens the device's file dialog", async () => {
+  test("with providers, the chooser opens on This device: Enter, a click on it, or its drop zone opens the device's dialog", async () => {
     catalogApps = [notes, drive];
     for (const view of [desktop, phone]) {
       const { page, close } = await open(view);
       try {
         await attach(page);
-        expect(await rowNames(page)).toEqual(["This device", "Drive"]);
-        // Focus starts on the first source, so Enter is the same activation as a click.
-        expect(await focusedRow(page)).toContain("This device");
+        expect(await sourceNames(page)).toEqual(["This device", "Drive"]);
+        expect(await focusedSource(page)).toContain("This device");
+        expect(await page.locator("dialog .k2b-dropzone").isVisible()).toBe(true);
         const box = await dialogBox(page);
         if (view === phone) expect(box).toEqual([0, 0, phone.width, phone.height]);
-        const picker = page.waitForEvent("filechooser");
+        else expect(box).toEqual([(desktop.width - 680) / 2, (desktop.height - 480) / 2, 680, 480]);
+        // No source chosen yet: Add stays in its place, disabled.
+        expect(await page.getByRole("button", { name: "Add", exact: true }).isDisabled()).toBe(true);
+        let picker = page.waitForEvent("filechooser");
         await page.keyboard.press("Enter");
+        expect((await picker).isMultiple()).toBe(true);
+        picker = page.waitForEvent("filechooser");
+        await page.locator("dialog .k2b-dropzone").click();
+        await picker;
+        picker = page.waitForEvent("filechooser");
+        await source(page, "This device").click();
         const chooser = await picker;
-        expect(chooser.isMultiple()).toBe(true);
         await chooser.setFiles([{ name: "a.txt", mimeType: "text/plain", buffer: Buffer.from("a") }]);
         await page.waitForFunction(() => (window as unknown as { chosen: unknown[] }).chosen.length === 1);
         expect(await page.locator("dialog[open]").count()).toBe(0);
@@ -338,68 +414,137 @@ describe("choosing files in a browser", () => {
     }
   }, 60_000);
 
-  test("sources keep no selection, so one Escape closes the chooser after This device or the arrow keys", async () => {
+  test("arrow keys move between sources without opening one, and one Escape closes the chooser", async () => {
     catalogApps = [drive];
     const { page, close } = await open(desktop);
     try {
       await attach(page);
-      const picker = page.waitForEvent("filechooser");
-      await row(page, "This device").click();
-      await picker;
-      expect(await page.locator('dialog [aria-selected="true"]').count()).toBe(0);
+      await page.keyboard.press("ArrowDown");
+      expect(await focusedSource(page)).toContain("Drive");
+      expect(await currentSource(page)).toContain("This device");
+      await page.keyboard.press("ArrowUp");
+      expect(await focusedSource(page)).toContain("This device");
       await page.keyboard.press("Escape");
       await page.waitForFunction(() => (window as unknown as { chosen: unknown[] }).chosen.length === 1);
+      expect(await chosen(page)).toEqual([[]]);
       expect(await page.locator("dialog[open]").count()).toBe(0);
-
-      await attach(page);
-      await page.keyboard.press("ArrowDown");
-      expect(await focusedRow(page)).toContain("Drive");
-      await page.keyboard.press("Escape");
-      await page.waitForFunction(() => (window as unknown as { chosen: unknown[] }).chosen.length === 2);
-      expect(await chosen(page)).toEqual([[], []]);
     } finally {
       await close();
     }
   }, 30_000);
 
-  test("a double-click on a source opens it once, even when its folder answers between the two clicks", async () => {
+  test("a double-click on a source opens it once", async () => {
     catalogApps = [drive];
     const { page, close } = await open(desktop);
     try {
       await attach(page);
-      const box = (await row(page, "Drive").boundingBox())!;
-      await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
-      await page.mouse.down({ clickCount: 1 });
-      await page.mouse.up({ clickCount: 1 });
+      const before = queries.length;
+      await source(page, "Drive").dblclick();
       await row(page, "Team").waitFor();
-      // The second click of the same double-click lands on "Team", which now sits where "Drive" was.
-      await page.mouse.down({ clickCount: 2 });
-      await page.mouse.up({ clickCount: 2 });
       await page.waitForTimeout(150);
+      expect(queries.length - before).toBe(1);
       expect(await rowNames(page)).toEqual(["Home", "Team", "Broken"]);
     } finally {
       await close();
     }
   }, 30_000);
 
-  test("providers that answer after the click join below This device without moving it or taking focus", async () => {
+  test("apps that answer after the click replace two placeholder rows without moving anything or taking focus", async () => {
     catalogApps = [drive];
-    let release!: () => void;
-    catalogGate = new Promise((resolve) => {
-      release = resolve;
-    });
-    const { page, close } = await open(phone);
+    for (const view of [desktop, phone]) {
+      let release!: () => void;
+      catalogGate = new Promise((resolve) => {
+        release = resolve;
+      });
+      // A fresh page: the first file action starts discovery and opens its reserved loading frame.
+      const context = await browser.newContext({
+        viewport: { width: view.width, height: view.height },
+        isMobile: view.touch,
+        hasTouch: view.touch,
+        reducedMotion: "reduce",
+      });
+      const page = await context.newPage();
+      try {
+        await page.goto(`http://127.0.0.1:${server.port}/`);
+        await attach(page, true);
+        await page.getByText("Looking for apps with files…").waitFor({ state: "attached" });
+        expect(await sourceNames(page)).toEqual(["This device"]);
+        expect(await page.locator("dialog .cloud-file-dialog__source-skeleton").count()).toBe(2);
+        await settled(page);
+        const frame = await dialogBox(page);
+        const device = await boxIn(page, ".cloud-file-dialog__source");
+        const zone = await boxIn(page, "dialog .k2b-dropzone");
+        const buttons = await footer(page);
+        release();
+        await source(page, "Drive").waitFor();
+        await settled(page);
+        expect(await page.locator("dialog .cloud-file-dialog__source-skeleton").count()).toBe(0);
+        expect(await dialogBox(page)).toEqual(frame);
+        expect(await boxIn(page, ".cloud-file-dialog__source")).toEqual(device);
+        expect(await boxIn(page, "dialog .k2b-dropzone")).toEqual(zone);
+        expect(await footer(page)).toEqual(buttons);
+        expect(await focusedSource(page)).toContain("This device");
+      } finally {
+        catalogGate = undefined;
+        await context.close();
+      }
+    }
+  }, 60_000);
+
+  test("one grid: sources, toolbar, list, and buttons share their edges, and loading a folder moves nothing", async () => {
+    catalogApps = [drive, vault];
+    const { page, close } = await open(desktop);
     try {
       await attach(page);
-      await page.getByText("Looking for apps with files…").waitFor();
-      expect(await rowNames(page)).toEqual(["This device"]);
-      const before = await rows(page).first().boundingBox();
+      // This device: the first source and the drop zone start on one line.
+      const firstSource = (await boxIn(page, ".cloud-file-dialog__source"))!;
+      expect((await boxIn(page, "dialog .k2b-dropzone"))!.top).toBe(firstSource.top);
+      expect(firstSource.height).toBe(36);
+      expect((await boxIn(page, ".cloud-file-dialog__chip"))!.left).toBe(20);
+      expect((await boxIn(page, "dialog h2"))!.left).toBe(20);
+      expect((await boxIn(page, "dialog .k2b-dialog__close"))!.right).toBe(12);
+      expect((await boxIn(page, ".cloud-file-chooser__add"))!.right).toBe(12);
+
+      await source(page, "Drive").click();
+      let release!: () => void;
+      listGate = new Promise((resolve) => {
+        release = resolve;
+      });
+      await row(page, "Home").click();
+      // While the folder loads, rows of the same height stand where its entries will be.
+      await page.locator("dialog .cloud-file-dialog__skeleton-row").first().waitFor();
+      await settled(page);
+      const placeholder = (await boxIn(page, "dialog .cloud-file-dialog__skeleton-row"))!;
       release();
-      await row(page, "Drive").waitFor();
-      expect(await rows(page).first().boundingBox()).toEqual(before);
-      expect(await focusedRow(page)).toContain("This device");
+      listGate = undefined;
+      await row(page, "notes.txt").waitFor();
+      await settled(page);
+      const loaded = (await boxIn(page, 'dialog [role="gridcell"]'))!;
+      expect([loaded.top, loaded.left, loaded.height]).toEqual([placeholder.top, placeholder.left, placeholder.height]);
+      const toolbar = (await boxIn(page, ".cloud-file-chooser__toolbar"))!;
+      const filter = (await boxIn(page, ".cloud-file-chooser__filter .k2b-input-shell"))!;
+      expect(toolbar.top).toBe(firstSource.top);
+      expect(filter.top).toBe(firstSource.top);
+      expect(filter.height).toBe(firstSource.height);
+      expect(filter.right).toBe(12);
+      const firstRow = (await boxIn(page, 'dialog [role="gridcell"]'))!;
+      expect(firstRow.height).toBe(48);
+      expect(firstRow.top).toBe(toolbar.top + 36 + 12);
+
+      // Add keeps one width for none, two, and more files.
+      const add = page.locator(".cloud-file-chooser__add");
+      const empty = (await add.boundingBox())!.width;
+      await row(page, "notes.txt").click();
+      await row(page, "todo.txt").click();
+      expect(await add.textContent()).toBe("Add (2)");
+      await settled(page);
+      expect((await add.boundingBox())!.width).toBe(empty);
+      expect(await status(page)).toBe("2 files selected");
+      await row(page, "plan.txt").click();
+      await settled(page);
+      expect((await add.boundingBox())!.width).toBe(empty);
     } finally {
-      catalogGate = undefined;
+      listGate = undefined;
       await close();
     }
   }, 30_000);
@@ -419,12 +564,11 @@ describe("choosing files in a browser", () => {
           document.body.style.cssText = style ?? "";
         }, appAccentStyle("#0f766e"));
         await attach(page);
-        await page.keyboard.press("ArrowDown");
-        await page.keyboard.press("Enter");
-        await page.waitForFunction(() => document.querySelectorAll('dialog [role="gridcell"]').length === 3);
-        await page.keyboard.press("Enter");
+        await source(page, "Drive").click();
+        await row(page, "Home").click();
         await page.waitForFunction(() => document.querySelectorAll('dialog [role="gridcell"]').length === 5);
         expect(await rowNames(page)).toEqual(["Reports", "notes.txt", "todo.txt", "plan.txt", "huge.zip"]);
+        expect(await focusedRow(page)).toContain("Reports");
         await page.keyboard.press("ArrowDown");
         expect(await focusedRow(page)).toContain("notes.txt");
         const fileRow = rows(page).nth(1);
@@ -432,51 +576,45 @@ describe("choosing files in a browser", () => {
         const before = await fileRow.boundingBox();
         expect(before).not.toBeNull();
         await page.keyboard.press("Space");
-        const icon = fileRow.locator('.cloud-file-chooser__icon[data-selected="true"]');
-        await icon.waitFor({ state: "attached" });
         expect(await fileRow.getAttribute("aria-selected")).toBe("true");
+        await settled(page);
         expect(await fileRow.boundingBox()).toEqual(before);
-        const colors = await icon.evaluate((element) => {
+        const colors = await fileRow.locator(".k2b-file-grid__check-box").evaluate((element) => {
           const probe = document.createElement("span");
-          probe.style.cssText = "position:absolute;visibility:hidden;color:var(--ui-app-accent-text)";
-          document.body.append(probe);
+          probe.style.cssText = "position:absolute;visibility:hidden;color:var(--k2b-app-workspace-active)";
+          element.append(probe);
           const appInk = getComputedStyle(probe).color;
-          // Outside the body scope, the probe reads the `:root` default.
           document.documentElement.append(probe);
           const defaultInk = getComputedStyle(probe).color;
-          document.body.append(probe);
-          probe.style.color = "var(--k2b-action)";
-          const actionInk = getComputedStyle(probe).color;
           probe.remove();
-          return { selectedInk: getComputedStyle(element).color, appInk, defaultInk, actionInk };
+          return { checked: getComputedStyle(element).backgroundColor, appInk, defaultInk };
         });
-        expect(colors.selectedInk).toBe(colors.appInk);
-        expect(colors.selectedInk).not.toBe(colors.defaultInk);
-        expect(colors.selectedInk).not.toBe(colors.actionInk);
+        expect(colors.checked).toBe(colors.appInk);
+        expect(colors.checked).not.toBe(colors.defaultInk);
       } finally {
         await close();
       }
     }
   }, 30_000);
 
-  test("browses a provider by keyboard, disables what does not fit, and reads at most two files at once", async () => {
+  test("browses a provider by keyboard, disables what does not fit, and reads at most three files at once", async () => {
     catalogApps = [drive];
     for (const view of [desktop, phone]) {
       const { page, close } = await open(view, "?max=100");
       try {
         await attach(page);
-        const sources = await dialogBox(page);
+        const frame = await dialogBox(page);
         await page.keyboard.press("ArrowDown");
         await page.keyboard.press("Enter");
         await page.waitForFunction(() => document.querySelectorAll('dialog [role="gridcell"]').length === 3);
         expect(await rowNames(page)).toEqual(["Home", "Team", "Broken"]);
-        expect(await focusedRow(page)).toContain("Home");
-        await page.keyboard.press("Enter");
+        expect(await currentSource(page)).toContain("Drive");
+        await row(page, "Home").click();
         await page.waitForFunction(() => document.querySelectorAll('dialog [role="gridcell"]').length === 5);
-        expect(await rowNames(page)).toEqual(["Reports", "notes.txt", "todo.txt", "plan.txt", "huge.zip"]);
+        expect(await focusedRow(page)).toContain("Reports");
         const huge = rows(page).nth(4);
         expect(await huge.getAttribute("aria-disabled")).toBe("true");
-        expect(await huge.textContent()).toContain("Too large, up to 100 B");
+        expect(await huge.textContent()).toContain(view === phone ? "Over 100 B" : "Too large, up to 100 B");
         expect(await rows(page).nth(1).textContent()).toContain("Draft");
         const buttons = await footer(page);
 
@@ -487,7 +625,8 @@ describe("choosing files in a browser", () => {
         await page.keyboard.press("Space");
         await rows(page).nth(3).click();
         expect(await page.locator('dialog [aria-selected="true"]').count()).toBe(3);
-        expect(await dialogBox(page)).toEqual(sources);
+        await settled(page);
+        expect(await dialogBox(page)).toEqual(frame);
         expect(await footer(page)).toEqual(buttons);
 
         // The file that does not fit is a focus stop, so its reason is read out, but Space and Enter do nothing.
@@ -503,13 +642,13 @@ describe("choosing files in a browser", () => {
           release = resolve;
         });
         peakReads = 0;
-        await page.getByRole("button", { name: "Add", exact: true }).click();
+        await page.getByRole("button", { name: "Add (3)", exact: true }).click();
         await page.locator(".cloud-file-chooser__downloads").waitFor();
-        expect(await dialogBox(page)).toEqual(sources);
+        expect(await dialogBox(page)).toEqual(frame);
         expect(await footer(page)).toEqual(buttons);
-        for (let attempt = 0; openReads < 2 && attempt < 100; attempt++) await Bun.sleep(10);
+        for (let attempt = 0; openReads < 3 && attempt < 100; attempt++) await Bun.sleep(10);
         await Bun.sleep(100);
-        expect(peakReads).toBe(2);
+        expect(peakReads).toBe(3);
         release();
         await page.waitForFunction(() => (window as unknown as { chosen: unknown[] }).chosen.length === 1);
         readGate = undefined;
@@ -520,7 +659,6 @@ describe("choosing files in a browser", () => {
             { name: "plan.txt", type: "text/plain", size: 6, text: "plan b" },
           ],
         ]);
-        expect(peakReads).toBe(2);
         expect(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(0);
       } finally {
         await close();
@@ -538,20 +676,19 @@ describe("choosing files in a browser", () => {
     const { page, close } = await open(desktop);
     try {
       await attach(page);
-      await row(page, "Drive").click();
+      await source(page, "Drive").click();
       await row(page, "Home").click();
       await row(page, "notes.txt").click();
       await row(page, "todo.txt").click();
-      await page.getByRole("button", { name: "Add", exact: true }).click();
+      await page.getByRole("button", { name: "Add (2)", exact: true }).click();
       await page.locator(".cloud-file-chooser__status").getByText("1 of 2 ready").waitFor();
       await page.getByRole("button", { name: "Cancel" }).click();
       await row(page, "notes.txt").waitFor();
       expect(await page.locator('dialog [aria-selected="true"]').count()).toBe(2);
 
-      await page.getByRole("button", { name: "Sources" }).click();
-      await row(page, "Vault").click();
+      await source(page, "Vault").click();
       await row(page, "notes.txt").click();
-      await page.getByRole("button", { name: "Add", exact: true }).click();
+      await page.getByRole("button", { name: "Add (1)", exact: true }).click();
       await page.waitForFunction(() => (window as unknown as { chosen: unknown[] }).chosen.length === 1);
       expect(await chosen(page)).toEqual([[{ name: "notes.txt", type: "text/plain", size: 11, text: "vault notes" }]]);
     } finally {
@@ -562,23 +699,29 @@ describe("choosing files in a browser", () => {
     }
   }, 30_000);
 
-  test("maxBytes bounds the whole choice: files that fit alone cannot be added together above it", async () => {
+  test("maxFiles and maxTotalBytes bound one choice: Add stays disabled with the reason in the status", async () => {
     catalogApps = [drive];
     for (const view of [desktop, phone]) {
-      const { page, close } = await open(view, "?max=20");
+      const { page, close } = await open(view, "?maxTotal=20&maxFiles=2");
       try {
         await attach(page);
-        await row(page, "Drive").click();
+        await source(page, "Drive").click();
         await row(page, "Home").click();
-        const add = page.getByRole("button", { name: "Add", exact: true });
+        await row(page, "notes.txt").waitFor();
+        expect(await status(page)).toBe("Select one or more files · at most 2 files, up to 20 B together");
+        const add = page.locator(".cloud-file-chooser__add");
         await row(page, "notes.txt").click();
         await row(page, "todo.txt").click();
         expect(await status(page)).toBe("Too large together, up to 20 B");
-        expect(await page.locator(".cloud-file-chooser__status").isVisible()).toBe(true);
+        expect(await page.locator('.cloud-file-chooser__status[data-error="true"]').isVisible()).toBe(true);
         expect(await add.isDisabled()).toBe(true);
         await row(page, "todo.txt").click();
         await row(page, "plan.txt").click();
         expect(await status(page)).toBe("2 files selected");
+        await row(page, "todo.txt").click();
+        expect(await status(page)).toBe("At most 2 files");
+        expect(await add.isDisabled()).toBe(true);
+        await row(page, "todo.txt").click();
         await add.click();
         await page.waitForFunction(() => (window as unknown as { chosen: unknown[] }).chosen.length === 1);
         expect((await chosen(page))[0]).toMatchObject([{ name: "notes.txt" }, { name: "plan.txt" }]);
@@ -588,55 +731,61 @@ describe("choosing files in a browser", () => {
     }
   }, 60_000);
 
-  test("explains empty, filtered, forbidden, unavailable, and offline folders in one unmoving frame", async () => {
+  test("explains empty, filtered, forbidden, unavailable, and offline folders in one unmoving frame, on desktop and phone", async () => {
     catalogApps = [drive];
-    brokenAnswers = 0;
-    const { page, context, close } = await open(desktop);
-    try {
-      await attach(page);
-      const frame = await dialogBox(page);
-      await rows(page).nth(1).click();
-      await row(page, "Team").waitFor();
-      await rows(page).nth(0).click();
-      await row(page, "Reports").waitFor();
+    for (const view of [desktop, phone]) {
+      brokenAnswers = 0;
+      const { page, context, close } = await open(view);
+      try {
+        await attach(page);
+        const frame = await dialogBox(page);
+        const buttons = await footer(page);
+        const crumb = (name: string) => page.locator(".cloud-file-chooser__crumbs").getByRole("button", { name, exact: true });
+        await source(page, "Drive").click();
+        await row(page, "Team").waitFor();
+        await row(page, "Home").click();
+        await row(page, "Reports").waitFor();
+        expect(await dialogBox(page)).toEqual(frame);
 
-      await page.getByRole("searchbox", { name: "Filter by name" }).fill("zzz");
-      await page.getByText("Nothing matches “zzz”").waitFor();
-      expect(queries.at(-1)).toEqual({ parent: "home", query: "zzz", limit: 50 });
-      expect(await dialogBox(page)).toEqual(frame);
-      await page.getByRole("button", { name: "Clear filter" }).click();
-      await row(page, "notes.txt").waitFor();
+        if (view === desktop) {
+          await page.getByRole("searchbox", { name: "Filter by name" }).fill("zzz");
+          await page.getByText("Nothing matches “zzz”").waitFor();
+          expect(queries.at(-1)).toEqual({ parent: "home", query: "zzz", limit: 50 });
+          expect(await dialogBox(page)).toEqual(frame);
+          await page.getByRole("button", { name: "Clear filter" }).click();
+          await row(page, "notes.txt").waitFor();
+        }
 
-      await rows(page).nth(0).click();
-      await page.getByText("This folder is empty").waitFor();
-      expect(await dialogBox(page)).toEqual(frame);
+        await row(page, "Reports").click();
+        await page.getByText("This folder is empty").waitFor();
+        expect(await dialogBox(page)).toEqual(frame);
 
-      await page.getByRole("button", { name: "Drive" }).click();
-      await row(page, "Team").waitFor();
-      await rows(page).nth(1).click();
-      await page.getByText("You no longer have access to this folder").waitFor();
-      expect(await dialogBox(page)).toEqual(frame);
-      await page.locator("dialog .k2b-placeholder").getByRole("button", { name: "Up" }).click();
-      await row(page, "Broken").waitFor();
+        await crumb("Drive").click();
+        await row(page, "Team").click();
+        await page.getByText("You no longer have access to this folder").waitFor();
+        expect(await dialogBox(page)).toEqual(frame);
+        await page.locator("dialog .k2b-placeholder").getByRole("button", { name: "Up" }).click();
+        await row(page, "Broken").click();
+        await page.getByText("Drive is not available right now").waitFor();
+        expect(await dialogBox(page)).toEqual(frame);
+        await page.getByRole("button", { name: "Try again" }).click();
+        await page.getByText("This folder is empty").waitFor();
 
-      await rows(page).nth(2).click();
-      await page.getByText("Drive is not available right now").waitFor();
-      await page.getByRole("button", { name: "Try again" }).click();
-      await page.getByText("This folder is empty").waitFor();
-
-      await page.getByRole("button", { name: "Drive" }).click();
-      await row(page, "Home").waitFor();
-      await context.setOffline(true);
-      await rows(page).nth(0).click();
-      await page.getByText("You are offline").waitFor();
-      expect(await dialogBox(page)).toEqual(frame);
-      await context.setOffline(false);
-      await page.getByRole("button", { name: "Try again" }).click();
-      await row(page, "notes.txt").waitFor();
-    } finally {
-      await close();
+        await crumb("Drive").click();
+        await row(page, "Home").waitFor();
+        await context.setOffline(true);
+        await row(page, "Home").click();
+        await page.getByText("You are offline").waitFor();
+        expect(await dialogBox(page)).toEqual(frame);
+        expect(await footer(page)).toEqual(buttons);
+        await context.setOffline(false);
+        await page.getByRole("button", { name: "Try again" }).click();
+        await row(page, "notes.txt").waitFor();
+      } finally {
+        await close();
+      }
     }
-  }, 60_000);
+  }, 90_000);
 
   test("context reaches only the provider that accepts it, which shows its customer's files or a calm empty root in place", async () => {
     catalogApps = [drive, invoices];
@@ -645,12 +794,11 @@ describe("choosing files in a browser", () => {
     try {
       await attach(other.page);
       const frame = await dialogBox(other.page);
-      await row(other.page, "Invoices").click();
+      await source(other.page, "Invoices").click();
       await other.page.getByText(title).waitFor();
       expect(queries.at(-1)).toEqual({ context: { refs: [{ type: "customers.customer", id: "c2" }] }, limit: 50 });
       expect(await dialogBox(other.page)).toEqual(frame);
-      await other.page.getByRole("button", { name: "Choose another source" }).click();
-      await row(other.page, "Drive").click();
+      await source(other.page, "Drive").click();
       await row(other.page, "Home").waitFor();
       // Drive's list input is closed and names no context, so it never receives one.
       expect(queries.at(-1)).toEqual({ limit: 50 });
@@ -660,7 +808,7 @@ describe("choosing files in a browser", () => {
     const matching = await open(desktop, "?customer=c1");
     try {
       await attach(matching.page);
-      await row(matching.page, "Invoices").click();
+      await source(matching.page, "Invoices").click();
       await row(matching.page, "Invoice c1.pdf").waitFor();
       expect(await rowNames(matching.page)).toEqual(["Invoice c1.pdf"]);
     } finally {
@@ -673,7 +821,7 @@ describe("choosing files in a browser", () => {
     const { page, close } = await open(phone, "?lang=de");
     try {
       await attach(page);
-      expect(await rowNames(page)).toEqual(["Dieses Gerät", "Drive"]);
+      expect(await sourceNames(page)).toEqual(["Dieses Gerät", "Drive"]);
       expect(await page.locator("dialog h2").textContent()).toBe("Dateien hinzufügen");
       await page.keyboard.press("Escape");
       await page.waitForFunction(() => (window as unknown as { chosen: unknown[] }).chosen.length === 1);
@@ -687,7 +835,7 @@ describe("choosing files in a browser", () => {
   test("a visitor the catalog refuses gets the device's file dialog directly, with no error", async () => {
     catalogApps = [drive];
     catalogStatus = 401;
-    const { page, close } = await open(desktop, "?single");
+    const { page, close } = await open(desktop, "?single", true);
     try {
       const picker = page.waitForEvent("filechooser");
       await page.locator("#attach").click();
@@ -719,12 +867,11 @@ describe("choosing through a dropzone inside a dialog, as Notebooks does", () =>
       try {
         await openDropzone(page);
         await dropzone(page).click();
-        await page.waitForFunction(() => document.activeElement?.matches('dialog [role="gridcell"]'));
-        expect(await dropzone(page).isVisible()).toBe(false);
-        await row(page, "Drive").click();
+        await page.waitForFunction(() => document.activeElement?.matches('dialog .cloud-file-dialog__source[aria-current="true"]'));
+        await source(page, "Drive").click();
         await row(page, "Home").click();
         await row(page, "notes.txt").click();
-        await page.getByRole("button", { name: "Add", exact: true }).click();
+        await page.getByRole("button", { name: "Add (1)", exact: true }).click();
         await page.waitForFunction(() => (window as unknown as { chosen: unknown[] }).chosen.length === 1);
         expect(await chosen(page)).toEqual([[{ name: "notes.txt", type: "text/plain", size: 13, text: "meeting notes" }]]);
         // Only the chooser closed; the dialog that asked is back, and its dropzone has focus again.
@@ -737,7 +884,7 @@ describe("choosing through a dropzone inside a dialog, as Notebooks does", () =>
     }
   }, 60_000);
 
-  test("the keyboard reaches the chooser through the dropzone, Escape closes only the chooser, and without providers the dropzone opens the device's dialog directly", async () => {
+  test("the keyboard reaches the chooser through the dropzone, Escape returns focus, and an empty catalog still offers this device", async () => {
     catalogApps = [drive];
     const withProviders = await open(desktop, "?dropzone");
     try {
@@ -750,7 +897,7 @@ describe("choosing through a dropzone inside a dialog, as Notebooks does", () =>
       for (let presses = 0; presses < 3 && !(await zoneFocused()); presses++) await page.keyboard.press("Tab");
       expect(await zoneFocused()).toBe(true);
       await page.keyboard.press("Space");
-      await page.waitForFunction(() => document.activeElement?.matches('dialog [role="gridcell"]'));
+      await page.waitForFunction(() => document.activeElement?.matches('dialog .cloud-file-dialog__source[aria-current="true"]'));
       await page.keyboard.press("Escape");
       await dropzone(page).waitFor();
       await page.waitForFunction(() => document.activeElement?.classList.contains("k2b-dropzone"));
@@ -765,10 +912,11 @@ describe("choosing through a dropzone inside a dialog, as Notebooks does", () =>
     try {
       const { page } = withoutProviders;
       await openDropzone(page);
-      const picker = page.waitForEvent("filechooser");
       await dropzone(page).click();
+      await source(page, "This device").waitFor();
+      const picker = page.waitForEvent("filechooser");
+      await source(page, "This device").click();
       const chooser = await picker;
-      expect(await chooserOpen(page)).toBe(false);
       await chooser.setFiles({ name: "local.txt", mimeType: "text/plain", buffer: Buffer.from("local") });
       await page.waitForFunction(() => (window as unknown as { chosen: unknown[] }).chosen.length === 1);
       expect(await chosen(page)).toEqual([[{ name: "local.txt", type: "text/plain", size: 5, text: "local" }]]);

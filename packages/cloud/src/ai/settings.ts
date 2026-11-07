@@ -15,8 +15,8 @@ import { getAiRequestHeaders } from "./request-headers";
 import type { AiDataBoundary, AiModelPolicy, AiModelProfile, AiResolvedModel, AiSettingsError, AiSettingsState } from "./types";
 
 export { providerRequiresCredential, providerSupportsCredential };
-export const aiSettingsFailure = (code: AiSettingsError["code"], message: string): never => {
-  throw Object.assign(new Error(message), { aiError: { code, message } satisfies AiSettingsError });
+export const aiSettingsFailure = (code: AiSettingsError["code"], message: string, fields?: AiSettingsError["fields"]): never => {
+  throw Object.assign(new Error(message), { aiError: { code, message, ...(fields ? { fields } : {}) } satisfies AiSettingsError });
 };
 export const readAiSettingsState = async (): Promise<AiSettingsState> => {
   const [
@@ -52,9 +52,12 @@ export const readAiSettingsState = async (): Promise<AiSettingsState> => {
 };
 export const matchesAiModelPolicy = (profile: AiModelProfile, policy: AiModelPolicy): boolean =>
   profile.enabled &&
+  profile.kind !== "decision" &&
+  profile.capabilities.includes("live-transcription") === Boolean(policy.requiredCapabilities?.includes("live-transcription")) &&
   profile.capabilities.includes("transcription") === Boolean(policy.requiredCapabilities?.includes("transcription")) &&
   (!("allowedModelIds" in policy) || !policy.allowedModelIds || policy.allowedModelIds.includes(profile.id)) &&
-  (!policy.allowedDataBoundaries || policy.allowedDataBoundaries.includes(profile.dataBoundary)) &&
+  // Safe by default: a policy reaches `restricted` models only when it names that boundary.
+  (policy.allowedDataBoundaries ? policy.allowedDataBoundaries.includes(profile.dataBoundary) : profile.dataBoundary !== "restricted") &&
   (!policy.requiredCapabilities || policy.requiredCapabilities.every((capability) => profile.capabilities.includes(capability)));
 
 export const resolveAiModelRef = (
@@ -74,8 +77,20 @@ const policyRequest = (policy: AiModelPolicy, request?: AiModelRequest): AiModel
 export const selectAiModelProfile = (state: AiSettingsState, policy: AiModelPolicy, request?: AiModelRequest): AiModelProfile => {
   const ref = resolveAiModelRef(state, policyRequest(policy, request));
   const profile = state.profiles.find((candidate) => candidate.id === ref.id);
-  if (!profile || !matchesAiModelPolicy(profile, policy))
-    return aiSettingsFailure("model_policy_mismatch", "The AI model is missing, disabled, or outside the permitted policy.");
+  if (!profile)
+    return aiSettingsFailure("model_policy_mismatch", `The AI model "${ref.id}" does not exist. It may have been deleted.`, {
+      model: ref.id,
+    });
+  // A class never resolves to a restricted model, even if an assignment still held one.
+  if (profile.dataBoundary === "restricted" && (ref.class || !policy.allowedDataBoundaries?.includes("restricted")))
+    return aiSettingsFailure(
+      "model_policy_mismatch",
+      `The AI model "${ref.id}" has no data-protection commitment. Only application server code that names its ID can use it.`,
+      { model: ref.id, boundary: "restricted" },
+    );
+  if (!profile.enabled) return aiSettingsFailure("model_policy_mismatch", `The AI model "${ref.id}" is disabled.`, { model: ref.id });
+  if (!matchesAiModelPolicy(profile, policy))
+    return aiSettingsFailure("model_policy_mismatch", `The AI model "${ref.id}" is outside the permitted policy.`, { model: ref.id });
   return profile;
 };
 export const resolveAiModelFromState = async (

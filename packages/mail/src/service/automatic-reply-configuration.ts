@@ -812,10 +812,13 @@ export const updateAutomaticReplySetup = async (params: {
         unwrap(await lockMailboxForAutomaticReply(params.context, params.mailboxId, tx));
         const current = unwrap(await loadConfiguration(params.mailboxId, params.configurationId, tx, true));
         const configurationId = params.configurationId;
-        if (current.revision !== automaticReply.expectedRevision) {
+        const changes = automaticReplyChanges(current, automaticReply, schedule.data, name);
+        if (
+          current.revision !== automaticReply.expectedRevision &&
+          (changes.changed || automaticReply.expectedRevision > current.revision)
+        ) {
           unwrap(fail(err.conflict("Automatic reply was changed")));
         }
-        const changes = automaticReplyChanges(current, automaticReply, schedule.data, name);
         let workflowSenderIdentityId: string | null = null;
         if (automaticReply.enabled || changes.senderChanged) {
           workflowSenderIdentityId = unwrap(await requireAutomationSender(tx, params.mailboxId, automaticReply.senderIdentityId));

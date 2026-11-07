@@ -1,5 +1,5 @@
+import { sql } from "@k2b/cloud";
 import { toPgUuidArray } from "@k2b/cloud/services";
-import { sql } from "bun";
 
 /** Existing Postgres measurement suites exercise an already provisioned base, without doing ClickHouse DDL. */
 export const seedActiveBaseStore = async (...ids: string[]) => {

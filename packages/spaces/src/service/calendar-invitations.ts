@@ -1,8 +1,8 @@
 import { createHash } from "node:crypto";
+import { sql } from "@k2b/cloud";
 import { capabilityIdempotencyConflict } from "@k2b/cloud/contracts";
 import type { AccessSubject } from "@k2b/cloud/server";
 import { err, fail, ok, type Result } from "@k2b/stdlib";
-import { sql } from "bun";
 import { publishItemEvent } from "../app-events";
 import type { SpaceItemResourceReferenceInput, User } from "../contracts";
 import {

@@ -1,4 +1,4 @@
-import { createComputed, createEffect, createMemo, type JSX, on, Show } from "solid-js";
+import { createComputed, createEffect, createMemo, For, type JSX, on, Show } from "solid-js";
 import type { ButtonSize } from "../actions/Button";
 import { Dropdown, type DropdownItem, type DropdownPosition } from "../actions/Dropdown";
 import { createFieldMeta, Field, fieldControlAria } from "../internal/field";
@@ -32,6 +32,8 @@ export type SelectChipProps<T extends string | number = string> = ValueFieldProp
   loading?: boolean;
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
+  /** Keeps the width of the longest option label, so a new choice never moves what sits beside the chip. */
+  stableWidth?: boolean;
 };
 
 export function SelectChip<T extends string | number = string>(props: SelectChipProps<T>): JSX.Element {
@@ -126,7 +128,12 @@ export function SelectChip<T extends string | number = string>(props: SelectChip
             {(image) => <img src={image()} alt="" />}
           </Show>
           <Show when={!props.iconOnly}>
-            <span data-placeholder={selected() ? undefined : "true"}>{selected()?.label ?? props.placeholder ?? ""}</span>
+            <span data-placeholder={selected() ? undefined : "true"} data-stable-width={props.stableWidth ? "true" : undefined}>
+              <Show when={props.stableWidth} fallback={selected()?.label ?? props.placeholder ?? ""}>
+                <span>{selected()?.label ?? props.placeholder ?? ""}</span>
+                <For each={props.options}>{(option) => <span aria-hidden="true">{option.label}</span>}</For>
+              </Show>
+            </span>
             {/* Both glyphs are one icon wide, so a saving chip keeps its size. */}
             <i class={props.loading ? "ti ti-loader-2 k2b-spin" : "ti ti-chevron-down"} aria-hidden="true" />
           </Show>

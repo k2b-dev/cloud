@@ -1,10 +1,9 @@
 import { afterAll, afterEach, beforeAll, beforeEach, expect, setDefaultTimeout, setSystemTime, spyOn, test } from "bun:test";
-import { bindProcessSync, unbindProcessSync } from "@k2b/cloud";
+import { bindProcessSync, sql, unbindProcessSync } from "@k2b/cloud";
 import type { CapabilityExecutionContext, User } from "@k2b/cloud/contracts";
 import type { AppEventEnvelope } from "@k2b/cloud/events";
 import { appEventFixture, deliverAppEvent } from "@k2b/cloud/events/testing";
 import { createSync } from "@k2b/sync";
-import { sql } from "bun";
 import * as Y from "yjs";
 import { connectTestNats, suiteFor, testInfra, testSyncNamespace } from "../../../../scripts/fixtures/test-infra";
 import * as producer from "../app-events";

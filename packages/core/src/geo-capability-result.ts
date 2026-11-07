@@ -1,8 +1,7 @@
-import type { CapabilityAppExecutionContext, CapabilityExecutionContext } from "@k2b/cloud/contracts";
 import { GeoError } from "@k2b/cloud/services/geo/errors";
 import { geoCapabilityMessages } from "./geo-capability-messages";
 
-export const runGeoQuery = async <T>(context: CapabilityExecutionContext | CapabilityAppExecutionContext, call: () => Promise<T>) => {
+export const runGeoQuery = async <T>(context: { locale: string }, call: () => Promise<T>) => {
   try {
     return { ok: true as const, data: { data: await call() } };
   } catch (cause) {

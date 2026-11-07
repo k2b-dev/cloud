@@ -242,14 +242,8 @@ export const createAiOpenAiRoutes = (dependencies: Dependencies = {}) => {
             maxOutputTokens,
             reasoningEffort: resolved.profile.reasoningEffort,
             signal: AbortSignal.any([c.req.raw.signal, controller.signal]),
-            extraBody:
-              data.top_p == null
-                ? undefined
-                : resolved.provider.family === "ollama"
-                  ? { options: { top_p: data.top_p } }
-                  : resolved.provider.family === "gemini"
-                    ? { generationConfig: { topP: data.top_p } }
-                    : { top_p: data.top_p },
+            // Every provider type is an OpenAI-compatible endpoint, so top_p keeps its name.
+            extraBody: data.top_p == null ? undefined : { top_p: data.top_p },
           };
           const token = c.req.header("Authorization")?.match(/^Bearer\s+(\S+)$/i)?.[1];
           const credential = await authenticate(token);
@@ -274,11 +268,6 @@ export const createAiOpenAiRoutes = (dependencies: Dependencies = {}) => {
           };
           const guarded: Provider = {
             ...resolved.provider,
-            complete: async (request) => {
-              await admit();
-              if (request.signal?.aborted) throw new AiProviderAdmissionError("Request cancelled before dispatch");
-              return resolved.provider.complete(request);
-            },
             stream: async function* (request) {
               await admit();
               if (request.signal?.aborted) throw new AiProviderAdmissionError("Request cancelled before dispatch");

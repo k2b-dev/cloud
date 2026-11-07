@@ -80,6 +80,7 @@ const portableSections = [
         "A labeled single choice of tiles with a preview, for picking how something looks.",
       ),
       page("color-choices", "ColorChoices", "ti ti-palette", "A labeled single choice from a fixed palette of named colour swatches."),
+      page("icon-choices", "IconChoices", "ti ti-icons", "A labeled single choice from a few named icons."),
       page(
         "autocomplete-select",
         "AutocompleteSelect",
@@ -109,6 +110,12 @@ const portableSections = [
       ),
       page("emoji-picker", "EmojiPicker", "ti ti-mood-smile", "Emoji search in English and German, recently used emoji, and skin tones."),
       page("signature", "SignatureInput", "ti ti-signature", "Draw with finger, pen, or mouse, or type the name, as an SVG value."),
+      page(
+        "dictation",
+        "Dictation",
+        "ti ti-microphone",
+        "Live dictation with a bar in place of the controls, its notices, and a source contract.",
+      ),
       page("qr-scanner", "QrScanner", "ti ti-qrcode", "Camera QR scanning with host validation and explicit camera errors."),
       page("file-dropzone", "FileDropzone", "ti ti-cloud-upload", "Accessible click and drag file selection with validation state."),
       page(
@@ -175,7 +182,7 @@ const portableSections = [
       page(
         "detail-panel",
         "DetailPanel",
-        "ti ti-layout-sidebar-right",
+        "ti ti-info-circle",
         "Quiet contextual inspectors with compact identity, flat sections, and one scroll owner.",
       ),
       page(
@@ -260,6 +267,7 @@ const portableSections = [
       page("avatar-stack", "AvatarStack", "ti ti-users", "Overlapping faces that open the full list of people."),
       page("details", "Description list", "ti ti-list-details", "Semantic responsive key-value details with optional actions."),
       page("progress", "Progress", "ti ti-progress", "Determinate progress in compact sizes and semantic tones."),
+      page("change-list", "ChangeList", "ti ti-list-check", "Pending changes before saving, one line each, with tone icons."),
       page("stats", "Statistics", "ti ti-chart-bar", "Labeled values, context, accents, trends, and grids."),
       page(
         "observability",
@@ -430,7 +438,7 @@ const cloudEntries = cloudPages.map((page, pageIndex) => entry("cloud", "Cloud c
 export const uiCatalogEntries: UiCatalogEntry[] = [...portableEntries, ...cloudEntries];
 
 /** Runtime component exports from @k2b/ui. Kept honest by check-ui-catalog.ts. */
-export const portableUiComponentCount = 167;
+export const portableUiComponentCount = 180;
 
 export const uiCatalogSections: UiCatalogSection[] = [
   ...portableSections.map((section) => ({
@@ -470,6 +478,7 @@ export const hiddenUiCatalogExports = {
  * inferred from arbitrary prose mentions.
  */
 export const documentedOnlyUiCatalogExports = {
+  DETAILS_ICON: "The one Details icon class that DetailsToggle and AppWorkspace.Detail show; documented on the AppWorkspace page.",
   personColor: "Documented person color for avatars, cursors and comments in Colors and selection (/en/ui/surfaces/color).",
   PERSON_COLORS: "Documented person color palette in Colors and selection (/en/ui/surfaces/color).",
   MapAttribution: "Linked credits for OpenMapTiles maps; documented with the host tile and glyph setup on the MapView page.",
@@ -481,6 +490,7 @@ export const documentedOnlyUiCatalogExports = {
   truncateMiddle: "Documented ReferenceChip helper for shortening titles by whole graphemes.",
   REFERENCE_CHIP_MAX_CHARACTERS: "Documented ReferenceChip maximum visible title length.",
   prefersReducedMotion: "Documented OS and host preference helper in the Motion guide (/en/ui/motion).",
+  attachSheetHandle: "Draggable, keyboard-operable handle for sheets with more than one height; documented on the BottomSheet page.",
   measureScrollFade: "Documented ScrollArea helper that measures a scrollport's fades at once for a reader in the same frame.",
   formatShortcut: "Documented Kbd formatter for plain text labels and spoken names.",
   matchParts: "Documented MatchText helper for hosts that render search matches in their own markup.",

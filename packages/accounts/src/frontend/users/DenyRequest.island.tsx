@@ -1,7 +1,7 @@
-import { refreshCurrentPath } from "@k2b/ssr/nav";
 import { mutation as mutations } from "@k2b/stdlib/solid";
 import { Button, NoticeCard, prompts } from "@k2b/ui";
 import { apiClient } from "@/api/client";
+import { usePageSwap } from "@/frontend/lib/page-swap";
 import { useAccountsMessages } from "../messages";
 
 type DenyRequestProps = {
@@ -11,6 +11,7 @@ type DenyRequestProps = {
 };
 
 export default function DenyRequest(props: DenyRequestProps) {
+  const { showChanges } = usePageSwap();
   const messages = useAccountsMessages();
   const mutation = mutations.create<void, { reason?: string }>({
     mutation: async (vars) => {
@@ -24,7 +25,7 @@ export default function DenyRequest(props: DenyRequestProps) {
       }
     },
     onSuccess: () => {
-      refreshCurrentPath();
+      showChanges();
     },
     onError: (err) => prompts.error(err.message),
   });

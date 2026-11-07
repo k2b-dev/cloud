@@ -19,10 +19,9 @@
  * A topic an old node recreates after deletion is simply found again: with no
  * recorded sequence, all of its events are republished.
  */
-import { getProcessSync } from "@k2b/cloud";
+import { getProcessSync, sql } from "@k2b/cloud";
 import { logger } from "@k2b/cloud/services";
 import { RetentionGapError } from "@k2b/sync";
-import { sql } from "bun";
 import * as Y from "yjs";
 import { markNoteUpdated } from "../app-events";
 import * as notes from "./notes";

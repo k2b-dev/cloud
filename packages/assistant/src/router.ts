@@ -7,6 +7,7 @@ import { machineApi } from "./artifacts/machine-api";
 import { runnerApi } from "./artifacts/runner-api";
 import { ssr } from "./config";
 import pageRoutes from "./frontend";
+import { pwaApi, pwaRoutes } from "./pwa";
 
 // The same relative API tree drives request routing and the published schema.
 // Human routes retain their own user-backed middleware.
@@ -18,8 +19,11 @@ export const router = new Hono<AuthContext>()
   .use("*", middleware.settings())
   .route("/_internal/assistant/tools", codeToolRoutes)
   .route("/api/assistant/runner", runnerApi)
+  .route("/api/assistant/pwa", pwaApi)
   .route("/api/assistant", apiRoutes)
   .route("/app/assistant", pageRoutes)
-  .route("/admin/assistant", adminPages);
+  .route("/admin/assistant", adminPages)
+  .route("/pwa/assistant", pwaRoutes);
 
 router.get("/app/assistant/*", auth.requireRole("*"), (c) => ssr.error(c, 404));
+router.get("/pwa/assistant/*", auth.requireRole("*"), (c) => ssr.error(c, 404, { layout: "pwa" }));

@@ -1,3 +1,4 @@
+import { sql } from "@k2b/cloud";
 import { CodeResourceId } from "@k2b/cloud/ai/browser";
 import {
   type AuthContext,
@@ -12,7 +13,6 @@ import {
   v,
 } from "@k2b/cloud/server";
 import { ok } from "@k2b/stdlib";
-import { sql } from "bun";
 import { type Context, Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { z } from "zod";

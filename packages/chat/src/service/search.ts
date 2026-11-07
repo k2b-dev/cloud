@@ -1,7 +1,8 @@
+import { sql } from "@k2b/cloud";
 import { DISCUSSION_PAGE_LIMIT } from "@k2b/cloud/contracts";
 import { err, fail, ok, type Result } from "@k2b/cloud/server";
 import { toPgTextArray } from "@k2b/cloud/services";
-import { type SQLQuery, sql } from "bun";
+import type { SQLQuery } from "bun";
 import { boundConversation, type ChatContext, capPermission, messages, readableMemberCondition, subjectPrincipal } from "./access";
 import { conversationSearchTitle } from "./conversation-titles";
 import { conversations } from "./conversations";
@@ -12,7 +13,7 @@ import { nameMatchRank, rankSearchCandidates, type SearchCandidate } from "./sea
 import { SUMMARY_TRAVERSAL_BUDGET } from "./thread-access";
 
 const run = async <T>(query: SQLQuery<T>, signal?: AbortSignal): Promise<T> => {
-  const cancel = () => query.cancel();
+  const cancel = () => void query.cancel().catch(() => {});
   try {
     signal?.throwIfAborted();
     signal?.addEventListener("abort", cancel, { once: true });
