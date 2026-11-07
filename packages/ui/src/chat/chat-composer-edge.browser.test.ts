@@ -23,7 +23,7 @@ import { createComponent, render } from "solid-js/web";
 import { Chat } from ${JSON.stringify(resolve(ui, "dist/browser/index.js"))};
 const [error, setError] = createSignal(undefined);
 const [disabled, setDisabled] = createSignal(false);
-window.composerState = (next) => { setError(next.error); setDisabled(next.disabled ?? false); };
+document.addEventListener("composer-state", ({ detail }) => { setError(detail.error); setDisabled(detail.disabled ?? false); });
 const cell = (name, variant) => {
   const node = document.createElement("div");
   node.dataset.composer = name;
@@ -144,6 +144,8 @@ const tokens = (page: Page) =>
     return result;
   });
 
+type Rgba = Awaited<ReturnType<typeof tokens>>["rest"];
+
 const luminance = ([r, g, b]: readonly number[]) => {
   const [lr, lg, lb] = [r!, g!, b!].map((value) => {
     const c = value / 255;
@@ -172,7 +174,7 @@ const STATES: Record<string, State> = {
 const enter = async (page: Page, name: string, state: State) => {
   await page.mouse.move(2, 898);
   await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
-  if (name === "assistant") await page.evaluate((next) => (window as unknown as { composerState: (s: State) => void }).composerState(next), state);
+  if (name === "assistant") await page.evaluate((detail) => document.dispatchEvent(new CustomEvent("composer-state", { detail })), state);
   await settled(page);
   const cell = page.locator(`[data-composer="${name}"]`);
   if (state.focus) await cell.locator(FIELD).evaluate((node: HTMLElement) => node.focus({ focusVisible: true } as FocusOptions));
@@ -224,7 +226,7 @@ describe("assistant composer edge in the browser", () => {
               expect(actual.drop, `${label} ${state} shadow on the card`).toBe(0);
               expect(actual.glow, `${label} ${state} glow`).toBe(state.includes("focus"));
             }
-            const expected: Record<string, [readonly number[], readonly number[]]> = {
+            const expected: Record<string, [Rgba, Rgba]> = {
               rest: [token.rest, token.surface],
               hover: [token.rest, token.hover],
               focus: [token.focus, token.surface],
