@@ -28,15 +28,17 @@ function resolveSourceFile(importer: string, specifier: string, files: ReadonlyM
   );
 }
 
-let runtime: Promise<string> | undefined;
-export function runtimeSource(): Promise<string> {
+const runtimes = new Map<boolean, Promise<string>>();
+export function runtimeSource(runner = false): Promise<string> {
+  let runtime = runtimes.get(runner);
   if (env.NODE_ENV === "production") {
-    runtime ??= Bun.file(new URL("./assistant-artifact-worker.js", import.meta.url))
+    runtime ??= Bun.file(new URL(runner ? "./assistant-artifact-runner-worker.js" : "./assistant-artifact-worker.js", import.meta.url))
       .text()
       .catch((error) => {
-        runtime = undefined;
+        runtimes.delete(runner);
         throw error;
       });
+    runtimes.set(runner, runtime);
     return runtime;
   }
   if (!runtime)
@@ -45,20 +47,26 @@ export function runtimeSource(): Promise<string> {
       target: "browser",
       format: "iife",
       minify: true,
-      define: { "import.meta.url": JSON.stringify("about:blank") },
+      define: { "import.meta.url": JSON.stringify("about:blank"), __CLOUD_CODE_RUNNER__: String(runner) },
     })
       .then(async (build) => {
         if (!build.success) throw new Error(build.logs.join("\n"));
         return build.outputs[0]!.text();
       })
       .catch((error) => {
-        runtime = undefined;
+        runtimes.delete(runner);
         throw error;
       });
+  runtimes.set(runner, runtime);
   return runtime;
 }
 
-export async function compileArtifact(input: unknown, invocation?: { action: string; input?: unknown }, sdk?: GeneratedCodeSdk) {
+export async function compileArtifact(
+  input: unknown,
+  invocation?: { action: string; input?: unknown },
+  sdk?: GeneratedCodeSdk,
+  runner = false,
+) {
   const source = ArtifactSource.parse(input);
   const actions = sourceActions(source);
   const action = invocation ? actions.find((action) => action.name === invocation.action) : undefined;
@@ -68,7 +76,7 @@ export async function compileArtifact(input: unknown, invocation?: { action: str
     throw new ArtifactCompileError(
       "This app has an index.html interface, which runs in the browser and is not compiled. Open it with code_open or show it with code_present; code_run and code_action run scripts.",
     );
-  const runtimeCode = await runtimeSource();
+  const runtimeCode = await runtimeSource(runner);
   const files = new Map(source.files.map((file) => [file.path, file.content]));
   // An action-only app needs no placeholder UI module. Its manifest and action
   // modules remain the same immutable source bundle as an ordinary GUI app.
@@ -100,7 +108,9 @@ export async function compileArtifact(input: unknown, invocation?: { action: str
                     : sdk
                       ? `import {__codeSdk} from "@sdk";
                        globalThis.__artifactStart(async (...args) => {
-                         __codeSdk.bind({call: async (name, {call, metadata}) => {
+                         __codeSdk.bind({call: async (name, invocation) => {
+                           ${runner ? 'if (name === "http.fetch") return globalThis.__artifactHttp(invocation);' : ""}
+                           const {call, metadata} = invocation;
                            const envelope = await globalThis.cloud.capabilities.run(name, call.input, {
                              ...(call.target ? {target: call.target} : {}), refs: call.refs, ...metadata
                            });

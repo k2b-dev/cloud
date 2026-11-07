@@ -1,9 +1,11 @@
 # Runtime and input files
 
 Read [cloud contract](cloud.md) first. A script runs in an isolated, terminable
-worker with one frozen global `cloud`, no DOM, and no native network access. It
+workerd isolate on the Code runner with one frozen global `cloud`, no DOM, and
+no native network access. Managed `code_run` never starts Chromium. It
 has no interface; interfaces are [HTML apps](apps.md). Imports may reference only
-the resource’s own JavaScript, TypeScript, JSON, CSV, TSV, or text source files.
+the resource’s own JavaScript, TypeScript, JSON, CSV, TSV, or text source files,
+plus the generated `@sdk` supplied to chat scripts.
 
 A script or app action default-exports a function:
 
@@ -23,18 +25,24 @@ export default async (input, { files, signal, progress }) => {
 `files` contains only the chat files selected through `code_run.inputPaths`:
 `{path, size, type, file(): Promise<File>}`. Actions receive an empty array.
 Files load on demand. `cloud.files` is separate durable shared app storage.
-Input and captured output budgets are 50 MiB per file, 250 MiB total, and
-64 paths. Output names are plain filenames; a repeated name replaces the
-captured file. Large downloads should use a Blob to avoid the JSON-message budget.
+Selection and captured output budgets are 50 MiB per file, 250 MiB total, and
+64 paths. Runner bridge requests and responses must additionally fit 256 KiB,
+including JSON envelopes and base64 file bytes. A Blob does not bypass this
+runner limit. Output names are plain filenames; a repeated name replaces the
+captured file. Split transfers that exceed the bridge budget.
 
 `signal` aborts when the host stops the run. `progress(completed,total?,label?)`
-reports bounded progress and renews the 15-second responsive-work watchdog.
-Split long synchronous loops into batches, yield to the event loop, and check
-the signal. Progress is available only while the entry function runs and does not roll back completed writes. For durable unattended
-work use a scheduled action; the task must grant its capabilities, HTTP targets,
-and database operations. Flat `cloud.db` operations `list`, `get`, `insert`, `update`, and `delete` match grants `rows.list`, `rows.get`, `rows.insert`, `rows.update`, and `rows.delete`; `query` matches `query`.
-Runtime calls need no `connect` grant; `code_database` `tables.create` provisions the database under its `tables.create` grant.
-Scheduled hosts use the same library and permissions.
+reports progress but never extends the runner's fixed wall-clock budget:
+`core.code.wall_clock_ms`, at most 300 seconds including queue and approval
+waits. The initial silent-script watchdog remains 15 seconds after admission.
+The default 200 bridge-message budget includes logs, progress, RPCs and terminal
+messages; keep diagnostics compact. At most 32 host messages may be pending.
+
+Unattended turns use their current routine mandate on the same runner path.
+Capability grants and HTTP grants still apply. Studio RSQL `database` grants
+are unavailable in runner `code_run`, even with a saved script or `resourceId`;
+use application capabilities. No replacement database is created. The remaining
+Studio HTML checks, actions and presentations retain their legacy browser host.
 
 Return JSON or nothing; do not return functions or class instances.
 Logs appear in diagnostics. A script download is captured for `code_export`;

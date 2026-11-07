@@ -3,17 +3,30 @@ import { dirname, resolve } from "node:path";
 
 const output = process.env.DIST_DIR;
 if (!output) throw new Error("DIST_DIR is required");
-const build = await Bun.build({
-  entrypoints: [resolve(import.meta.dir, "../src/artifacts/runtime/worker.ts")],
-  target: "browser",
-  format: "iife",
-  minify: true,
-  define: { "import.meta.url": JSON.stringify("about:blank") },
-});
-if (!build.success) throw new Error(build.logs.join("\n"));
-await Bun.write(resolve(output, "assistant-artifact-worker.js"), await build.outputs[0]!.text());
+for (const runner of [false, true]) {
+  const build = await Bun.build({
+    entrypoints: [resolve(import.meta.dir, "../src/artifacts/runtime/worker.ts")],
+    target: "browser",
+    format: "iife",
+    minify: true,
+    define: { "import.meta.url": JSON.stringify("about:blank"), __CLOUD_CODE_RUNNER__: String(runner) },
+  });
+  if (!build.success) throw new Error(build.logs.join("\n"));
+  await Bun.write(
+    resolve(output, runner ? "assistant-artifact-runner-worker.js" : "assistant-artifact-worker.js"),
+    await build.outputs[0]!.text(),
+  );
+}
 
 const chunks: Record<string, string> = {};
+const prelude = await Bun.build({
+  entrypoints: [resolve(import.meta.dir, "../src/artifacts/runtime/runner-worker.ts")],
+  target: "browser",
+  format: "esm",
+  minify: true,
+});
+if (!prelude.success) throw new Error(prelude.logs.join("\n"));
+await Bun.write(resolve(output, "assistant-artifact-runner-prelude.js"), await prelude.outputs[0]!.text());
 for (const [name, entry] of Object.entries({
   csv: "sheet-lib.ts",
   sheet: "sheet-chunk.ts",

@@ -9,6 +9,7 @@ import { lintApp } from "./html/compose";
 import { type HttpHost, runHttp } from "./http-host";
 import { type ApproveCapability, runCapability } from "./runtime/capabilities";
 import { CloudError, cloudError } from "./runtime/errors";
+import { inspectCodeRun as inspect } from "./runtime/run-result";
 import { type ArtifactSession, createArtifactSession } from "./runtime/session";
 import { sharedStorage } from "./runtime/shared-storage";
 import { ViewRefSchema } from "./runtime/views";
@@ -40,37 +41,6 @@ const failure = (error: unknown, guidance?: string): CodeToolFailure => {
     ...(guidance ? { guidance } : {}),
   };
 };
-
-function inspect(runId: string, entry: Entry) {
-  const state = entry.session.snapshot();
-  const invalidOutput =
-    entry.outputSchema &&
-    state.status === "ready" &&
-    state.work?.status !== "running" &&
-    !entry.outputSchema.safeParse(state.output).success;
-  const output = state.output === undefined ? null : JSON.stringify(state.output);
-  return {
-    userVisible: false,
-    delivery:
-      "Show views from cloud.view.* with present({path}); never retype their values. Return key figures, use code_export then present for files, or show an HTML app with code_present or code_open.",
-    runId,
-    id: entry.artifactId,
-    revision: entry.artifactId ? entry.revision : undefined,
-    resourceId: entry.resourceId,
-    status: invalidOutput ? "error" : state.status,
-    work: state.work,
-    error: invalidOutput
-      ? "Action output does not match its schema. Effects may have completed; inspect state before retrying."
-      : state.error
-        ? text(state.error, 6000)
-        : null,
-    logs: state.logs.slice(-20).map((log) => ({ ...log, text: text(log.text, 2000) })),
-    output: output === null ? null : text(output, 16000),
-    outputTruncated: output !== null && output.length > 16000,
-    files: state.files,
-    views: state.views,
-  };
-}
 
 export function createArtifactAgentRuntime(
   open: ((tab: WorkspaceTab) => void) | null,

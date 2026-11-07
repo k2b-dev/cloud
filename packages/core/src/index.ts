@@ -34,6 +34,7 @@ import identityOAuthDeviceApprovalRoutes, { terminalLogins } from "./api/identit
 import { createIdentityOAuthIssuanceRoutes } from "./api/identity-oauth-issuance";
 import { aiCapabilities } from "./capabilities";
 import { createCodeBridgeRoutes } from "./code/bridge";
+import { createChatRunnerRoutes } from "./code/chat-runner";
 import { createCodeHostingRoutes } from "./code/hosting";
 import { createCodeRunnerRoutes } from "./code/runner-routes";
 import { app } from "./config";
@@ -50,6 +51,7 @@ export type CoreAppContext = AppContext<typeof app>;
 const notificationSender = createCoreNotificationSender(app.notifications);
 const aiNotifications = createAiNotificationService(app.notifications);
 const { api } = createCoreApiRouter({
+  codeChatRunner: createChatRunnerRoutes(),
   notifications: notificationSender,
   terminalLogins,
   principalSearchTarget: managesAiPrincipalSearchTarget,

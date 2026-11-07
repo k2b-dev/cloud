@@ -89,7 +89,7 @@ export const TaskGrantSchema = z.union([
   CapabilityGrantSchema,
   z
     .object({
-      kind: z.literal("http").describe("Authorize scheduled Code Mode HTTP requests."),
+      kind: z.literal("http").describe("Authorize unattended runner code_run HTTP requests under this routine mandate."),
       fixedInput: z
         .object({
           origin: httpsUrl
@@ -109,7 +109,9 @@ export const TaskGrantSchema = z.union([
     .strict(),
   z
     .object({
-      kind: z.literal("database").describe("Authorize scheduled Code Mode RSQL operations."),
+      kind: z
+        .literal("database")
+        .describe("Legacy Studio RSQL grant. Unavailable in runner code_run; no replacement database is provisioned."),
       fixedInput: z
         .object({
           resourceId: z.string().min(1).max(80).optional().describe("Exact Studio app ID whose database may be used."),
