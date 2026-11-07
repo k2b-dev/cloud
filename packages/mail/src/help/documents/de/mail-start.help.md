@@ -58,7 +58,8 @@ Die Seitenleiste enthält deine Postfächer, angeheftete zuerst. Das geöffnete 
 - **Mehr** für Archiv, Papierkorb und Spam. Die Gruppe bleibt offen, solange einer dieser Ordner aktiv ist.
 - Standardordner zeigen ihren üblichen Namen in deiner Sprache, zum Beispiel **Gesendet** für „Sent Items“. Ein Ordner mit eigenem Namen behält diesen Namen. Die Ordnereinstellungen zeigen auch den Namen auf dem Mailserver.
 - Eigene Ordner des Anbieters mit ihrer Hierarchie und der Zahl ungelesener E-Mails.
-- **Ausgeblendete Postfächer**, **Neues Postfach** und **Kürzlich gelöschte Postfächer** unter der Postfachliste.
+- **Ausgeblendet** nach der Postfachliste fasst deine ausgeblendeten Postfächer in einer Zeile zusammen. Wähle die Zeile, um sie zu zeigen.
+- **…** neben **Postfächer** enthält **Neues Postfach** und **Gelöschte Postfächer**. Zeige auf die Überschrift oder drücke Tab, um es zu sehen.
 
 Im Kopfbereich findest du:
 

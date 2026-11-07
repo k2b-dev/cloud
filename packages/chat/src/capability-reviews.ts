@@ -52,7 +52,7 @@ const sentences = {
 /** Keep the compact approval bounded, with the complete proposed/deleted text in its authorized content view. */
 export const discussionReview = (
   operation: "post" | "edit" | "delete",
-  item: CloudResourceRef,
+  item: CloudResourceRef | undefined,
   title: string,
   body: string,
   locale?: string,
@@ -67,7 +67,7 @@ export const discussionReview = (
   return {
     locale: language,
     sentence: sentences[language][operation],
-    slots: { item: { kind: "object", title: label, ref: item } },
+    slots: { item: { kind: "object", title: label, ...(item ? { ref: item } : {}) } },
     content: { kind: "page", title: label, body, format: "plain", ...(revision === undefined ? {} : { baseRevision: revision }) },
     ...(operation === "post" ? { reach: "shared" as const } : {}),
   };
