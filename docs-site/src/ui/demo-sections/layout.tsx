@@ -2128,11 +2128,53 @@ const DetailsToggleDemo = () => {
   );
 };
 
+const DetailPanelTaskRows = () => {
+  const [tasks, setTasks] = createSignal([
+    { title: "Call Mrs. Weber about the pickup", due: "Today", done: false },
+    { title: "Send photos of the oak chest", due: "Tomorrow", done: true },
+    { title: "Confirm the appraisal date", due: "Fri", done: false },
+  ]);
+  const toggle = (index: number, done: boolean) => setTasks((list) => list.map((task, at) => (at === index ? { ...task, done } : task)));
+  return (
+    <article class="ui-detail-panel-pattern">
+      <header>
+        <strong>Tasks</strong>
+        <span>The checkbox marks a task done on its own; the row opens the task.</span>
+      </header>
+      <div class="ui-detail-panel-pattern__frame" style="height: 16rem">
+        <DetailPanel class="ui-detail-panel-grouped">
+          <DetailPanel.Body>
+            <DetailPanel.Group label="Customer tasks">
+              <DetailPanel.Section
+                title="Tasks"
+                icon="ti ti-checkbox"
+                tone="neutral"
+                meta={`${tasks().filter((task) => task.done).length} of ${tasks().length} done`}
+              >
+                <For each={tasks()}>
+                  {(task, index) => (
+                    <DetailPanel.Action
+                      onClick={() => {}}
+                      title={<span style={task.done ? { color: "var(--k2b-text-muted)" } : undefined}>{task.title}</span>}
+                      trailing={task.due}
+                      checkbox={{ checked: task.done, label: `Done: ${task.title}`, onChange: (done) => toggle(index(), done) }}
+                    />
+                  )}
+                </For>
+              </DetailPanel.Section>
+            </DetailPanel.Group>
+          </DetailPanel.Body>
+        </DetailPanel>
+      </div>
+    </article>
+  );
+};
+
 const DetailPanelActionDemo = () => (
   <DemoCard
     id="detail-panel-action"
     chip={{ kind: "component", name: "DetailPanel.Action", from: "@k2b/ui" }}
-    description="Full-width destinations keep navigation primary while a sibling overflow menu or one direct secondary action holds further commands. Disabled rows preserve unavailable resource context."
+    description="Full-width destinations keep navigation primary while a sibling overflow menu or one direct secondary action holds further commands. A leading checkbox toggles a row's state, such as a task's done, without opening it. Disabled rows preserve unavailable resource context."
     code={`<DetailPanel.Section title="Related resources" icon="ti ti-link">
   <DetailPanel.Action
     href="/app/mail/inbox?conversation=Conv01"
@@ -2148,6 +2190,12 @@ const DetailPanelActionDemo = () => (
     title="budget.xlsx"
     description="Spreadsheet · Uploaded today"
     secondaryAction={{ icon: "ti ti-trash", label: "Delete budget.xlsx", variant: "danger", onClick: confirmDelete }}
+  />
+  <DetailPanel.Action
+    onClick={openTask}
+    title="Call Mrs. Weber about the pickup"
+    trailing="Today"
+    checkbox={{ checked: task.done, label: "Done: Call Mrs. Weber about the pickup", onChange: setDone }}
   />
   <DetailPanel.Action
     type="button"
@@ -2204,6 +2252,7 @@ const DetailPanelActionDemo = () => (
           </DetailPanel>
         </div>
       </article>
+      <DetailPanelTaskRows />
     </div>
   </DemoCard>
 );
