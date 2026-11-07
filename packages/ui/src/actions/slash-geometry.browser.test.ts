@@ -22,13 +22,18 @@ const avatar = () => {
   return span;
 };
 const composer = document.getElementById("composer");
+globalThis.assigned = [];
+const names = ["Lea Krüger", "Valentin Brandt", "Mara Brandt"];
+const entries = () => names.map((name) => ({ label: name, onSelect: (context) => globalThis.assigned.push({ name, path: context.path.map((item) => item.label), text: context.text }) }));
+// "#slow" answers each search after a while, as a server would.
+const people = location.hash === "#slow" ? () => new Promise((resolve) => setTimeout(() => resolve(entries()), 400)) : entries();
 const [textarea, setTextarea] = createSignal();
 render(
   () => [
     createComponent(MarkdownEditor, { "aria-label": "Nachricht", variant: "embedded", noToolbar: true, showStats: false, lines: 3, textareaRef: setTextarea }),
     createComponent(SlashCommands, { get textarea() { return textarea(); }, composer, items: [
       { label: "Telefonat", description: "Anruf festhalten", icon: "ti ti-phone", onSelect: () => {} },
-      { label: "Kunde zuordnen", description: "Aus der Kundenliste", icon: "ti ti-user-plus", next: { label: "Kunden suchen", items: [{ label: "Mara Brandt", onSelect: () => {} }] } },
+      { label: "Zuweisen", description: "Person und Rolle", icon: "ti ti-user-plus", next: { label: "Person suchen", items: people } },
     ] }),
   ],
   composer,
@@ -66,7 +71,7 @@ afterAll(async () => {
 });
 
 /** Loads the menu; the slow logo answers only when the test releases it. */
-const load = async (theme?: "dark", composerAt: "top" | "bottom" = "bottom") => {
+const load = async (theme?: "dark", composerAt: "top" | "bottom" = "bottom", hash = "") => {
   const page = await browser.newPage({ viewport: { width: 900, height: 600 } });
   let release!: () => void;
   const slow = new Promise<void>((done) => {
@@ -82,7 +87,7 @@ const load = async (theme?: "dark", composerAt: "top" | "bottom" = "bottom") => 
     `<body class="k2b-ui"${theme ? ` data-theme="${theme}"` : ""} style="margin:0"><main id="app" style="padding:24px"></main>` +
     `<div id="composer" style="position:fixed;left:120px;width:520px;${composerAt === "top" ? "top:16px" : "bottom:16px"};border:2px solid #ccc;padding:4px"></div></body></html>`;
   await page.route("http://image.test/", (route) => route.fulfill({ contentType: "text/html", body: html }));
-  await page.goto("http://image.test/");
+  await page.goto(`http://image.test/${hash}`);
   await page.addScriptTag({ content: script });
   await page.getByRole("button", { name: "Hinzufügen" }).click();
   await page.getByRole("option", { name: /Telefonat/ }).waitFor();
@@ -149,6 +154,57 @@ describe("docked slash list", () => {
       expect(list.side).toBe("below");
       expect(list.width).toBe(before.width);
       expect(list.top - before.bottom).toBe(6);
+    } finally {
+      release();
+      await page.close();
+    }
+  });
+});
+
+describe("keyboard flow: /zuw ⏎ val ⏎", () => {
+  const flow = async (page: Page) => {
+    const text = page.getByRole("textbox", { name: "Nachricht" });
+    await text.click();
+    await page.keyboard.type("Guten Tag, ");
+    await page.keyboard.type("/zuw");
+    await page.keyboard.press("Enter");
+    // The second level has its own search field, which has the focus; the `/zuw` left the text.
+    await page.locator(".k2b-dropdown__search > input:focus").waitFor();
+    expect(await text.inputValue()).toBe("Guten Tag, ");
+    await page.keyboard.type("val");
+    await page.keyboard.press("Enter");
+    await page.waitForFunction(() => (globalThis as unknown as { assigned: unknown[] }).assigned.length > 0);
+    return {
+      assigned: await page.evaluate(() => (globalThis as unknown as { assigned: unknown[] }).assigned),
+      text: await text.inputValue(),
+      focus: await page.evaluate(() => {
+        const element = document.activeElement as HTMLTextAreaElement | null;
+        return { tag: element?.tagName, caret: element?.selectionStart };
+      }),
+      open: await page.locator(".k2b-autocomplete__options[data-commands]").count(),
+    };
+  };
+
+  test("Enter opens the person search, the typed name finds them, Enter assigns, and the focus is back in the text", async () => {
+    const { page, release } = await load();
+    try {
+      const result = await flow(page);
+      expect(result.assigned).toEqual([{ name: "Valentin Brandt", path: ["Zuweisen"], text: "Guten Tag, " }]);
+      expect(result.text).toBe("Guten Tag, ");
+      expect(result.focus).toEqual({ tag: "TEXTAREA", caret: "Guten Tag, ".length });
+      expect(result.open).toBe(0);
+    } finally {
+      release();
+      await page.close();
+    }
+  });
+
+  test("Enter while the search still loads waits for that search and assigns its first match", async () => {
+    const { page, release } = await load(undefined, "bottom", "#slow");
+    try {
+      const result = await flow(page);
+      expect(result.assigned).toEqual([{ name: "Valentin Brandt", path: ["Zuweisen"], text: "Guten Tag, " }]);
+      expect(result.focus).toEqual({ tag: "TEXTAREA", caret: "Guten Tag, ".length });
     } finally {
       release();
       await page.close();

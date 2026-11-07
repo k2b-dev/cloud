@@ -29,7 +29,7 @@ export type CommandStatus =
  * Keeps the steps, the marked entry, and the running command of a command list. The host owns the query and the
  * effects: `onText` places an entry's text; for an entry with `onSelect`, `beforeRun` lets the host remove its query,
  * `context` describes the text the command acts on, and `afterRun` closes the list once the command finished.
- * `onStep` runs after a second list opened or closed, so the host clears its query.
+ * `onStep` runs after a further list opened or closed, with the new depth, so the host clears its query.
  */
 export const createCommandNavigator = (options: {
   items: Accessor<CommandSource>;
@@ -41,7 +41,7 @@ export const createCommandNavigator = (options: {
   active: () => boolean;
   beforeRun?: () => void;
   afterRun: () => void;
-  onStep?: () => void;
+  onStep?: (depth: number) => void;
 }) => {
   const [status, setStatus] = createSignal<CommandStatus>();
   let running: AbortController | undefined;
@@ -132,7 +132,7 @@ export const createCommandNavigator = (options: {
     );
     return { token };
   });
-  /** Pending, failed, or ready; while a new list loads, the previous entries stay in place. */
+  /** Pending, failed, or ready; while a new query loads, the step's previous entries stay in place. */
   const load = createMemo<CommandListLoad>(() => {
     const current = request();
     const result = current.token ? (settled()?.token === current.token ? settled() : undefined) : current;
@@ -143,12 +143,19 @@ export const createCommandNavigator = (options: {
     }
     return { state: "ready" };
   });
-  const entries = createMemo<readonly CommandItem[]>((previous) => {
-    const current = request();
-    if (!current.token) return current.items ?? [];
-    const result = settled();
-    return result?.token === current.token ? (result.items ?? []) : previous;
-  }, []);
+  // Only entries of the same step stay while a query loads: a further list never shows the list it came from.
+  const shown = createMemo<{ step: CommandItem | undefined; items: readonly CommandItem[] }>(
+    (previous) => {
+      const current = request();
+      const at = step();
+      if (!current.token) return { step: at, items: current.items ?? [] };
+      const result = settled();
+      if (result?.token === current.token) return { step: at, items: result.items ?? [] };
+      return { step: at, items: previous.step === at ? previous.items : [] };
+    },
+    { step: undefined, items: [] },
+  );
+  const entries = () => shown().items;
   const groups = createMemo<CommandGroup[]>(() => groupCommandItems(entries()));
   const ordered = createMemo(() => groups().flatMap((group) => group.entries.map((entry) => entry.item)));
   // The marked entry is remembered for the query and step it was marked in; a new query marks the first entry again.
@@ -177,13 +184,36 @@ export const createCommandNavigator = (options: {
     }
     return from;
   };
+  /** Chooses the marked entry or the one at `index`. An unavailable entry, or any while a command runs, does nothing. */
+  const choose = (index = active()) => {
+    const item = ordered()[index];
+    if (!item || item.disabled || status()?.state === "running") return;
+    if (item.next) changeStep([...steps(), item]);
+    else if (item.text !== undefined) options.onText(item);
+    else run(item);
+  };
   const changeStep = (next: readonly CommandItem[]) => {
     setSteps(next);
     setWanted(undefined);
-    options.onStep?.();
+    options.onStep?.(next.length);
   };
+  // Enter while entries load waits for that query's entries and takes the first that can be chosen; a new query or no
+  // match chooses nothing.
+  const [awaiting, setAwaiting] = createSignal<string>();
+  createEffect(() => {
+    const query = awaiting();
+    if (query === undefined) return;
+    if (query !== options.query()) return setAwaiting(undefined);
+    const state = load().state;
+    if (state === "loading") return;
+    setAwaiting(undefined);
+    if (state !== "ready") return;
+    const index = ordered().findIndex((item) => !item.disabled);
+    if (index >= 0) untrack(() => choose(index));
+  });
 
   return {
+    query: options.query,
     step,
     groups,
     entries: ordered,
@@ -198,14 +228,11 @@ export const createCommandNavigator = (options: {
     retry: () => setRetries((value) => value + 1),
     /** Whether a command's promise is pending; the list then waits for it. */
     busy: () => status()?.state === "running",
-    /** Chooses the marked entry or the one at `index`. An unavailable entry, or any while a command runs, does nothing. */
-    choose: (index = active()) => {
-      const item = ordered()[index];
-      if (!item || item.disabled || status()?.state === "running") return;
-      if (item.next) changeStep([...steps(), item]);
-      else if (item.text !== undefined) options.onText(item);
-      else run(item);
-    },
+    choose: (index?: number) => choose(index),
+    /** Enter while entries load: chooses the first entry of this query once it arrives. */
+    chooseWhenLoaded: () => setAwaiting(options.query()),
+    /** Whether a choice waits for entries on their way. */
+    awaitingChoice: () => awaiting() !== undefined,
     /** Stops a running command: its signal aborts, and its result no longer reaches the list. */
     abort: () => {
       running?.abort();
@@ -394,7 +421,7 @@ export function CommandList(props: {
         <Show when={nav.load().state === "loading"}>
           <p class="k2b-command-list__state">
             <i class="ti ti-loader-2 k2b-spin" aria-hidden="true" />
-            <span>{commandMessages().loading}</span>
+            <span>{nav.awaitingChoice() ? commandMessages().loadingChoice : commandMessages().loading}</span>
           </p>
         </Show>
         <Show when={nav.load().state === "failed" ? (nav.load() as { message?: string }) : undefined}>
@@ -463,6 +490,11 @@ export const commandListKey = (nav: CommandNavigator, event: KeyboardEvent, quer
       return true;
     case "Enter":
     case "Tab":
+      // Enter while entries load takes the first entry of exactly this query once it arrives, never a stale one.
+      if (event.key === "Enter" && !event.shiftKey && nav.load().state === "loading") {
+        nav.chooseWhenLoaded();
+        return true;
+      }
       // Enter asks a list that could not load again.
       if (event.key === "Enter" && !event.shiftKey && nav.load().state === "failed" && nav.entries().length === 0) {
         nav.retry();

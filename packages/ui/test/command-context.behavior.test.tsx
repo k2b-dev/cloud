@@ -259,10 +259,12 @@ describe("slash command context", () => {
     await type(textarea, "/");
     key(textarea, "Enter");
     await Promise.resolve();
-    key(textarea, "Enter");
+    const field = dom.document.querySelector<HTMLInputElement>(".k2b-dropdown__search > input")!;
+    key(field, "Enter");
     expect(row("Mara Brandt")?.getAttribute("aria-busy")).toBe("true");
-    expect(key(textarea, "Escape")).toBe(true);
+    expect(key(field, "Escape")).toBe(true);
     expect(signal?.aborted).toBe(true);
+    expect(dom.document.activeElement).toBe(textarea);
   });
 
   test("typing after a failure moves on: the list closes", async () => {
@@ -389,11 +391,14 @@ describe("dynamic entries", () => {
     await type(textarea, "/zuw");
     key(textarea, "Enter");
     await Promise.resolve();
-    await type(textarea, "lea");
-    key(textarea, "Enter");
+    const field = () => dom.document.querySelector<HTMLInputElement>(".k2b-dropdown__search > input")!;
+    field().value = "lea";
+    field().dispatchEvent(new Event("input", { bubbles: true }));
+    await Promise.resolve();
+    key(field(), "Enter");
     await Promise.resolve();
     expect(labels()).toEqual(["Verantwortlich", "Beteiligt"]);
-    key(textarea, "Enter");
+    key(field(), "Enter");
     expect(paths.at(0)).toEqual(["Zuweisen"]);
     expect(paths.at(-1)).toEqual(["Zuweisen", "Lea Krüger"]);
     expect(chosen?.path.map((item) => item.label)).toEqual(["Zuweisen", "Lea Krüger"]);
@@ -424,6 +429,60 @@ describe("dynamic entries", () => {
     await settle();
     expect(labels()).toEqual(["Mara Brandt"]);
     expect(dom.document.querySelector(".k2b-command-list__state")).toBeNull();
+  });
+
+  test("Enter while people load waits for that query and takes its first match; a changed query or no match takes none", async () => {
+    const assigned: string[] = [];
+    const requests: { query: string; run: ReturnType<typeof deferred> }[] = [];
+    const people = ["Valentin Brandt", "Valeska Öz", "Lea Krüger"];
+    const search = (context: CommandContext) => {
+      const run = deferred();
+      requests.push({ query: context.query, run });
+      return run.promise.then(() =>
+        people.map((name) => ({ label: name, onSelect: (chosen: CommandContext) => assigned.push(`${chosen.path[0]?.label}:${name}`) })),
+      );
+    };
+    const { textarea } = await mountWith([{ label: "Zuweisen", next: { label: "Person suchen", items: search } }], "");
+    const field = () => dom.document.querySelector<HTMLInputElement>(".k2b-dropdown__search > input")!;
+    const typeSearch = async (text: string) => {
+      field().value = text;
+      field().dispatchEvent(new Event("input", { bubbles: true }));
+      await Promise.resolve();
+    };
+    await type(textarea, "/zuw");
+    key(textarea, "Enter");
+    await Promise.resolve();
+    // While the further list loads, the list it came from is gone: no row can choose "Zuweisen" again.
+    expect(labels()).toEqual([]);
+    requests.at(-1)!.run.resolve();
+    await settle();
+    await typeSearch("val");
+    expect(key(field(), "Enter")).toBe(true);
+    expect(dom.document.querySelector(".k2b-command-list__state")?.textContent).toContain("Loading, then the first match");
+    requests.at(-1)!.run.resolve();
+    await settle();
+    expect(assigned).toEqual(["Zuweisen:Valentin Brandt"]);
+    expect(dom.document.activeElement).toBe(textarea);
+
+    // A query changed while waiting chooses nothing.
+    await type(textarea, "/zuw");
+    key(textarea, "Enter");
+    await Promise.resolve();
+    await typeSearch("val");
+    key(field(), "Enter");
+    await typeSearch("lea");
+    for (const request of requests) request.run.resolve();
+    await settle();
+    expect(assigned).toEqual(["Zuweisen:Valentin Brandt"]);
+    expect(labels()).toEqual(["Lea Krüger"]);
+
+    // No match chooses nothing and says so.
+    await typeSearch("xyz");
+    key(field(), "Enter");
+    requests.at(-1)!.run.resolve();
+    await settle();
+    expect(assigned).toEqual(["Zuweisen:Valentin Brandt"]);
+    expect(dom.document.querySelector(".k2b-dropdown__empty")?.textContent).toBe("No results");
   });
 
   test("a list that could not load says why and loads again on Retry or Enter", async () => {

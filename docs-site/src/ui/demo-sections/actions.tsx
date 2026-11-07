@@ -216,7 +216,7 @@ const CommandMenuDemo = () => {
   const [kind, setKind] = createSignal("Nachricht");
   const [done, setDone] = createSignal<string[]>([]);
   const note = (entry: string) => setDone((list) => [entry, ...list].slice(0, 3));
-  const customers = ["Mara Brandt", "Jonas Öztürk", "Lea Krüger", "Tom Weiß"];
+  const customers = ["Mara Brandt", "Jonas Öztürk", "Lea Krüger", "Tom Weiß", "Valentin Berg"];
   const initials = (name: string) => () => (
     <span
       style={{
@@ -313,9 +313,20 @@ const CommandMenuDemo = () => {
     {
       group: "Aktionen",
       label: "Zuweisen",
-      description: "Person und Rolle",
+      description: "An eine Person",
       icon: "ti ti-user-plus",
       keywords: ["zuständig", "assign"],
+      // "/zuw ⏎ val ⏎": Enter opens the person search, the name finds them, Enter assigns.
+      next: {
+        label: "Person suchen",
+        items: customers.map((name) => ({ label: name, leading: initials(name), onSelect: () => note(`Zugewiesen: ${name}`) })),
+      },
+    },
+    {
+      group: "Aktionen",
+      label: "Beteiligen",
+      description: "Person und Rolle",
+      icon: "ti ti-users",
       next: {
         label: "Person suchen",
         items: customers.map((name) => ({
@@ -347,7 +358,7 @@ const CommandMenuDemo = () => {
         { kind: "component", name: "CommandMenu", from: "@k2b/ui" },
         { kind: "component", name: "SlashCommands", from: "@k2b/ui" },
       ]}
-      description="One list of commands for `/` in the text and the “+” button, docked above the composer at its full width. Entries carry an icon or a logo and a quiet description; a callback gets the composer's text and inserts at its caret, and an asynchronous one shows its progress and a failure on its row. The entries are a function of the context: templates only at the start of the text, “/zuweisen” everywhere with a person and then a role, and markets first while the text names an article. Try “/preis” with and without an article number, or “zustaendig”."
+      description="One list of commands for `/` in the text and the “+” button, docked above the composer at its full width. Entries carry an icon or a logo and a quiet description; a callback gets the composer's text and inserts at its caret, and an asynchronous one shows its progress and a failure on its row. The entries are a function of the context: templates only at the start of the text, actions everywhere, and markets first while the text names an article. Type “/zuw ⏎ val ⏎” to assign Valentin, “/bet” for a person and then a role, or “/preis” with and without an article number."
       code={`const entries: CommandItem[] = [
   { group: "Vorlagen", label: "Fotos erbeten", icon: "ti ti-photo", text: "Könnten Sie uns noch zwei Fotos schicken?" },
   {

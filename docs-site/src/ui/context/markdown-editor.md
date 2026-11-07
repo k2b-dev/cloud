@@ -109,8 +109,11 @@ keywords, without regard to case or accents. A `/` inside a word or after punctu
   keeps the list open with the entry busy; a rejection shows its message on the entry. See
   [Context](/en/ui/actions/command-menu#context).
 - An entry with `text` puts its text in place of `/query`.
-- An entry with `next` opens its list in the same place; the typed word gives way to a bare `/`, and typing filters
-  the second list. <kbd>Esc</kbd>, or <kbd>Backspace</kbd> after the bare `/`, goes back.
+- An entry with `next` opens its list in the same place: the typed `/query` leaves the text, the list gets its own
+  search field, and the focus moves there. Typing filters the list, the first match is marked, and <kbd>Enter</kbd>
+  chooses it: `/zuw` <kbd>Enter</kbd> `val` <kbd>Enter</kbd> assigns Valentin and puts the caret back where the slash
+  stood. <kbd>Esc</kbd>, or <kbd>Backspace</kbd> in the empty field, goes back; back in the first list, the `/query`
+  returns. While entries load, <kbd>Enter</kbd> waits for that query and takes its first match.
 - <kbd>↑</kbd> <kbd>↓</kbd> <kbd>Home</kbd> <kbd>End</kbd> mark the entries that can be chosen while the list is open,
   <kbd>Enter</kbd> and <kbd>Tab</kbd> choose, and <kbd>Esc</kbd> stops a running command or, in the first list,
   closes it and keeps the text. It stays closed until the next `/`.

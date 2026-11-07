@@ -69,9 +69,9 @@ const type = async (textarea: HTMLTextAreaElement, text: string) => {
   textarea.dispatchEvent(new Event("input", { bubbles: true }));
   await Promise.resolve();
 };
-const key = (textarea: HTMLTextAreaElement, name: string) => {
+const key = (target: HTMLElement, name: string) => {
   const event = new KeyboardEvent("keydown", { key: name, bubbles: true, cancelable: true });
-  textarea.dispatchEvent(event);
+  target.dispatchEvent(event);
   return event.defaultPrevented;
 };
 const options = () => Array.from(dom.document.querySelectorAll<HTMLElement>(".k2b-command-list [role='option']"));
@@ -192,37 +192,51 @@ describe("MarkdownEditor slash commands", () => {
     expect(value()).toBe("Please send us a few photos.");
   });
 
-  test("a second list filters by the typed word and goes back with Backspace or Escape", async () => {
+  test("a further list has its own search field: the /query leaves the text, Escape and Backspace go back", async () => {
     const { commands, log } = fixture();
     const { textarea, value } = await mount({ commands: () => commands });
-    await type(textarea, "/assi");
+    await type(textarea, "Hallo /assi");
     key(textarea, "Enter");
     await Promise.resolve();
-    expect(value()).toBe("/");
+    // The typed word left the text; the focus is in the list's own search field.
+    expect(value()).toBe("Hallo ");
+    const field = () => dom.document.querySelector<HTMLInputElement>(".k2b-dropdown__search > input")!;
+    expect(dom.document.activeElement).toBe(field());
+    expect(field().getAttribute("placeholder")).toBe("Search person");
     expect(dom.document.querySelector(".k2b-command-list")?.getAttribute("aria-label")).toBe("Search person");
-    expect(dom.document.querySelector(".k2b-command-list__step-hint")?.textContent).toBe("Search person");
     expect(options()).toHaveLength(3);
-    await type(textarea, "ozt");
+    const search = async (text: string) => {
+      field().value = text;
+      field().dispatchEvent(new Event("input", { bubbles: true }));
+      await Promise.resolve();
+    };
+    await search("ozt");
     expect(options().map((option) => option.textContent)).toEqual(["Jonas Öztürk"]);
-    // Backspace with a query edits the query.
-    expect(key(textarea, "Backspace")).toBe(false);
-    textarea.value = "/";
-    textarea.setSelectionRange(1, 1);
-    textarea.dispatchEvent(new Event("input", { bubbles: true }));
-    expect(key(textarea, "Backspace")).toBe(true);
-    expect(dom.document.querySelector(".k2b-command-list__step")).toBeNull();
-    expect(options()).toHaveLength(4);
-    // Into the list again by pointer, back with Escape, and in once more to pick a person.
-    options()[3]!.click();
-    await Promise.resolve();
-    expect(key(textarea, "Escape")).toBe(true);
-    expect(options()).toHaveLength(4);
-    options()[3]!.click();
-    await Promise.resolve();
-    await type(textarea, "lea");
+    expect(value()).toBe("Hallo ");
+    // Backspace with a query edits the query; in an empty field it goes back and brings the /query back.
+    expect(key(field(), "Backspace")).toBe(false);
+    await search("");
+    expect(key(field(), "Backspace")).toBe(true);
+    expect(value()).toBe("Hallo /assi");
+    expect(dom.document.activeElement).toBe(textarea);
+    expect(options()).toHaveLength(1);
+    // In again, back with Escape, and a second Escape closes the list and keeps the text.
     key(textarea, "Enter");
+    await Promise.resolve();
+    expect(key(field(), "Escape")).toBe(true);
+    expect(value()).toBe("Hallo /assi");
+    expect(key(textarea, "Escape")).toBe(true);
+    expect(options()).toHaveLength(0);
+    // In once more to pick a person: the list closes and the caret is back where the slash stood.
+    await type(textarea, " /assi");
+    key(textarea, "Enter");
+    await Promise.resolve();
+    await search("lea");
+    key(field(), "Enter");
     expect(log).toEqual(["assign:Lea Krüger"]);
-    expect(value()).toBe("");
+    expect(value()).toBe("Hallo /assi ");
+    expect(dom.document.activeElement).toBe(textarea);
+    expect(textarea.selectionStart).toBe("Hallo /assi ".length);
   });
 
   test("Escape closes the commands, keeps the text, and they stay closed for that word", async () => {

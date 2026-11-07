@@ -10,6 +10,7 @@ const commandMessages = i18n.define({
       running: ({ label }: { label: string }) => `${label} is running`,
       failed: "That did not work.",
       loading: "Loading",
+      loadingChoice: "Loading, then the first match",
       loadFailed: "The entries could not load.",
     },
     de: {
@@ -18,6 +19,7 @@ const commandMessages = i18n.define({
       running: ({ label }: { label: string }) => `${label} läuft`,
       failed: "Das hat nicht geklappt.",
       loading: "Wird geladen",
+      loadingChoice: "Lädt, dann der erste Treffer",
       loadFailed: "Die Einträge konnten nicht geladen werden.",
     },
   },

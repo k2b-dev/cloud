@@ -61,6 +61,25 @@ function AttachedCommands(props: { textarea: HTMLTextAreaElement; items: Command
   const [held, setHeld] = createSignal<{ start: number; query: string }>();
   /** Where Escape closed the commands; they stay closed while the caret stays in that `/query`. */
   let dismissedAt: number | null = null;
+  /**
+   * How deep the list is. A further list has its own search field: the `/query` leaves the text, the focus moves into
+   * the field, and the composer's text stays as it is while the person searches.
+   */
+  const [depth, setDepth] = createSignal(0);
+  const [search, setSearch] = createSignal("");
+  let searchField: HTMLInputElement | undefined;
+  /** Set while this part moves the focus between the text and the search field itself. */
+  let moving = false;
+  /** Puts the focus back in the text at `at`, where the slash stood. */
+  const focusText = (at: number) => {
+    moving = true;
+    try {
+      textarea.focus();
+      textarea.setSelectionRange(at, at);
+    } finally {
+      moving = false;
+    }
+  };
   /** Set while this part edits the text itself, so its own edit does not count as the person typing. */
   let editing = false;
   let popover: HTMLDivElement | undefined;
@@ -74,7 +93,7 @@ function AttachedCommands(props: { textarea: HTMLTextAreaElement; items: Command
   };
   const nav = createCommandNavigator({
     items: () => props.items,
-    query: () => context()?.query ?? held()?.query ?? "",
+    query: () => (depth() > 0 ? search() : (context()?.query ?? held()?.query ?? "")),
     onText: (item) => {
       // After a command failed, the held list has no `/query` left; a snippet goes where it stood.
       const current = context();
@@ -102,13 +121,48 @@ function AttachedCommands(props: { textarea: HTMLTextAreaElement; items: Command
         insert: (text: string) => edit(textarea.selectionStart, textarea.selectionEnd, text),
       };
     },
-    afterRun: () => close(),
+    // A finished command leaves the focus in the text where the slash stood.
+    afterRun: () => {
+      const at = held()?.start;
+      close();
+      if (at !== undefined && document.activeElement !== textarea) focusText(at);
+    },
     active: () => context() !== null || held() !== undefined,
-    // A second list starts with an empty query: the typed word gives way to the bare `/`.
-    onStep: () => {
-      const current = context();
-      // Not `edit`: the bare `/` is a new query that the detection reads.
-      if (current && current.text !== "/") replace(textarea, current.start, current.end, "/");
+    onStep: (next) => {
+      const previous = depth();
+      setDepth(next);
+      setSearch("");
+      if (next > 0 && previous === 0) {
+        // Into a further list: the `/query` leaves the text, and the list stays where it was.
+        const current = context();
+        if (current) {
+          setHeld({ start: current.start, query: current.query });
+          setContext(null);
+          edit(current.start, current.end, "");
+        }
+      }
+      if (next === 0) {
+        // Back to the first list: the typed `/query` comes back, and the text has the focus again.
+        const at = held();
+        setHeld(undefined);
+        if (at) {
+          moving = true;
+          try {
+            replace(textarea, at.start, at.start, `/${at.query}`);
+          } finally {
+            moving = false;
+          }
+        }
+        return;
+      }
+      queueMicrotask(() => {
+        moving = true;
+        try {
+          searchField?.focus({ preventScroll: true });
+        } finally {
+          moving = false;
+        }
+      });
     },
   });
   // Entries on their way, or a list that could not load, show too, so the person sees what happens.
@@ -120,6 +174,8 @@ function AttachedCommands(props: { textarea: HTMLTextAreaElement; items: Command
   const close = () => {
     setContext(null);
     setHeld(undefined);
+    setDepth(0);
+    setSearch("");
     nav.reset();
   };
 
@@ -146,8 +202,10 @@ function AttachedCommands(props: { textarea: HTMLTextAreaElement; items: Command
   // The textarea points at the list while it shows, as a combobox does.
   createEffect(() => {
     const marked = nav.entries()[nav.active()];
-    const active = open() && marked && !marked.disabled ? commandOptionId(id, nav.active()) : undefined;
-    if (open()) textarea.setAttribute("aria-controls", id);
+    // In a further list the search field points at it instead.
+    const pointing = open() && depth() === 0;
+    const active = pointing && marked && !marked.disabled ? commandOptionId(id, nav.active()) : undefined;
+    if (pointing) textarea.setAttribute("aria-controls", id);
     else if (textarea.getAttribute("aria-controls") === id) textarea.removeAttribute("aria-controls");
     if (active) textarea.setAttribute("aria-activedescendant", active);
     else if (textarea.getAttribute("aria-activedescendant")?.startsWith(`${id}-`)) textarea.removeAttribute("aria-activedescendant");
@@ -182,7 +240,7 @@ function AttachedCommands(props: { textarea: HTMLTextAreaElement; items: Command
       if (document.activeElement === textarea && !held()) detect();
     };
     const blur = (event: FocusEvent) => {
-      if (event.relatedTarget instanceof Node && popover?.contains(event.relatedTarget)) return;
+      if (moving || (event.relatedTarget instanceof Node && popover?.contains(event.relatedTarget))) return;
       close();
       dismissedAt = null;
     };
@@ -204,7 +262,56 @@ function AttachedCommands(props: { textarea: HTMLTextAreaElement; items: Command
   return (
     <Show when={open()}>
       <div ref={popover} popover="manual" class="k2b-autocomplete__options" data-commands="" role="presentation">
-        <CommandList navigator={nav} id={id} label={messages().commands} stepHint query={() => context()?.query ?? held()?.query ?? ""} />
+        <CommandList
+          navigator={nav}
+          id={id}
+          label={messages().commands}
+          query={nav.query}
+          header={
+            <Show when={depth() > 0}>
+              <label class="k2b-dropdown__search">
+                <i class="ti ti-search" aria-hidden="true" />
+                <input
+                  ref={searchField}
+                  type="search"
+                  role="combobox"
+                  aria-label={nav.step()?.next?.label}
+                  aria-expanded="true"
+                  aria-controls={id}
+                  aria-autocomplete="list"
+                  aria-activedescendant={
+                    nav.entries()[nav.active()] && !nav.entries()[nav.active()]!.disabled ? commandOptionId(id, nav.active()) : undefined
+                  }
+                  autocomplete="off"
+                  spellcheck={false}
+                  enterkeyhint="go"
+                  placeholder={nav.step()?.next?.label}
+                  value={search()}
+                  // While a command runs, the list waits for it.
+                  readOnly={nav.busy()}
+                  onInput={(event) => setSearch(event.currentTarget.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Escape" && nav.busy()) {
+                      // Escape stops a running command and closes the list.
+                      event.preventDefault();
+                      const at = held()?.start;
+                      nav.abort();
+                      close();
+                      if (at !== undefined) focusText(at);
+                      return;
+                    }
+                    if (commandListKey(nav, event, search())) event.preventDefault();
+                  }}
+                  onBlur={(event) => {
+                    // Leaving the list, other than to the text by this part itself, closes it.
+                    if (moving || (event.relatedTarget instanceof Node && popover?.contains(event.relatedTarget))) return;
+                    close();
+                  }}
+                />
+              </label>
+            </Show>
+          }
+        />
       </div>
     </Show>
   );

@@ -71,6 +71,15 @@ context what it offers where:
 const commands = ({ atStart }: CommandContext) => (atStart ? [...templates, ...actions] : actions);
 ```
 
+### Further lists
+
+An entry with `next` opens its list in the same place. In `SlashCommands` the typed `/query` then leaves the text,
+the list gets its own search field with the list's label as its hint, and the focus moves into it; the composer's text
+stays as it is while the person searches. The first match is always marked, so `/zuw` <kbd>Enter</kbd> `val`
+<kbd>Enter</kbd> assigns Valentin: the command runs with `path` `[Zuweisen]`, the list closes, and the caret is back
+where the slash stood. <kbd>Esc</kbd>, or <kbd>Backspace</kbd> in the empty field, goes back one level; back in the
+first list, the `/query` returns to the text with the focus.
+
 ### Entries on their way
 
 A function may return a promise, such as people from a server search. While it is pending, the previous entries stay
@@ -114,8 +123,8 @@ The focus stays in the search field (in the editor: in the text). The marked ent
 | --- | --- |
 | <kbd>↑</kbd> <kbd>↓</kbd> | Mark the previous or next entry, wrapping. Unavailable entries are passed over. |
 | <kbd>Home</kbd> <kbd>End</kbd> | Mark the first or last entry that can be chosen. |
-| <kbd>Enter</kbd> <kbd>Tab</kbd> | Choose the marked entry. While a command runs, nothing else runs. |
-| <kbd>Esc</kbd> | Stop a running command and close; leave a further list; in the first list, close. |
+| <kbd>Enter</kbd> <kbd>Tab</kbd> | Choose the marked entry. While entries load, <kbd>Enter</kbd> waits for this query's entries and takes the first; a changed query or no match takes none. While a command runs, nothing else runs. |
+| <kbd>Esc</kbd> | Stop a running command and close; leave a further list; in the first list, close. Two presses from a further list close. |
 | <kbd>Backspace</kbd> | In an empty field, leave a second list. |
 
 A pointer chooses with a click and marks an entry it moves over; unavailable entries are never marked. The back control
