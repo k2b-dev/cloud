@@ -1,15 +1,21 @@
 import { afterAll, beforeAll, beforeEach, expect, setSystemTime, spyOn, test } from "bun:test";
-import { sql } from "@k2b/cloud";
+import { bindProcessSync, sql, unbindProcessSync } from "@k2b/cloud";
+import * as catalogProvider from "@k2b/cloud/capabilities/server";
 import { compileCapabilityManifest } from "@k2b/cloud/capabilities/testing";
-import { CloudResourceRefSchema, type CodeCheckedVersionManifest } from "@k2b/cloud/contracts";
+import type { CodeRunTokenClaims } from "@k2b/cloud/code/run-token";
+import { CloudResourceRefSchema, CodeCheckedVersionManifestSchema } from "@k2b/cloud/contracts";
 import type { AppEventEnvelope } from "@k2b/cloud/contracts/app-events";
 import type { CapabilityRegistryEntry } from "@k2b/cloud/contracts/registry";
+import { appEventFixture } from "@k2b/cloud/events/testing";
 import { accounts } from "@k2b/cloud/services";
+import * as eventPlatform from "@k2b/cloud/services/app-events";
 import { cancelResourceEventSubscriptions, createAppEventBroker, type ResourceEventBinding } from "@k2b/cloud/services/app-events";
 import { nestedInvocationLeases } from "@k2b/cloud/services/identity";
 import { resolveInvocationAuthority } from "@k2b/cloud/services/identity/invocation-actor";
+import { createSync } from "@k2b/sync";
 import { z } from "zod";
-import { databaseSuite, useFreshDatabase } from "../../../../scripts/fixtures/test-infra";
+import { connectTestNats, suiteFor, testSyncNamespace, useFreshDatabase } from "../../../../scripts/fixtures/test-infra";
+import { mailCapabilities } from "../../../mail/src/capabilities";
 import { migrate as migrateAppApproval } from "../migrate/core/app-approval";
 import { migrate as migrateAppEvents } from "../migrate/core/app-events";
 import { migrate as migrateAudit } from "../migrate/core/audit";
@@ -25,10 +31,18 @@ import { migrate as migrateRailPreferences } from "../migrate/core/rail-preferen
 import { migrate as migrateRailShortcuts } from "../migrate/core/rail-shortcuts";
 import { migrate as migrateSettings } from "../migrate/core/settings";
 import type { CodeContext } from "./access";
+import {
+  cancelCodeEventCatchup,
+  codeEventCatchupPumpConfig,
+  readCodeEventCatchup,
+  resumeCodeEventCatchup,
+  startCodeEventCatchup,
+  startCodeEventCatchupRuntime,
+} from "./event-catchup";
 import { CODE_EVENT_CONSUMER, syncCodeEventSubscriptions } from "./event-subscriptions";
-import { admitCodeEvent, listCodeRunsWithEvents, replayCodeEventDelivery, startCodeEventConsumer } from "./events";
+import { admitCodeEvent, codeEventTargetKey, listCodeRunsWithEvents, replayCodeEventDelivery, startCodeEventConsumer } from "./events";
 import { processCodeOwnerDeleted } from "./lifecycle";
-import { claimCodeRuns, reconcileCodeRuns } from "./scheduling";
+import { claimCodeRuns, completeCodeRun, reconcileCodeRuns, startCodeRun } from "./scheduling";
 import { CODE_SETTINGS, codeSettings } from "./settings";
 import { codeBundleHash, codeSourceHash, findCode } from "./store";
 
@@ -50,6 +64,14 @@ const declaration: CapabilityRegistryEntry = {
       collection: { title: "Collection", description: "Fixture collection.", reader: "collection.read" },
     },
     queries: {
+      "item.event": {
+        title: "Resolve historical item",
+        description: "Resolve an immutable fixture occurrence.",
+        openWorld: false,
+        input: z.strictObject({ id: CloudResourceRefSchema.shape.id.describe("Item ID.") }),
+        data: z.object({}),
+        run: async () => ({ ok: true, data: { data: {} } }),
+      },
       "collection.read": {
         title: "Read collection",
         description: "Read fixture collection.",
@@ -66,14 +88,17 @@ const declaration: CapabilityRegistryEntry = {
         description: "An item changed.",
         subject: "item",
         place: "collection",
+        catchup: "item.event",
         schema: z.strictObject({ id: CloudResourceRefSchema.shape.id }),
       },
     },
   }),
 };
 
-databaseSuite()("Code event delivery to durable run admission", () => {
+suiteFor("database", "nats")("Code event delivery to durable run admission", () => {
   let database: Awaited<ReturnType<typeof useFreshDatabase>>;
+  let connection: Awaited<ReturnType<typeof connectTestNats>>;
+  let sync: ReturnType<typeof createSync>;
   let broker: ReturnType<typeof createAppEventBroker>;
   let stopConsumer: (() => void) | undefined;
   let settings: ReturnType<typeof spyOn<typeof codeSettings, "get">>;
@@ -85,7 +110,7 @@ databaseSuite()("Code event delivery to durable run admission", () => {
     number = 0;
   const makeBroker = (loseAcknowledgement = false) =>
     createAppEventBroker({
-      registry: async () => [declaration],
+      registry: async () => [declaration, { ...declaration, appId: "mail", manifest: compileCapabilityManifest("mail", mailCapabilities) }],
       // The fixture reader has ordinary live read permission. Resolve the production event-proof identity against SQL first.
       authorizeResource: async (appId, current, envelope) => {
         const authority = await resolveInvocationAuthority(
@@ -137,28 +162,28 @@ databaseSuite()("Code event delivery to durable run admission", () => {
     binding = row.resource_binding;
     time = row.cutoff;
   }
-  async function version() {
+  async function version(eventType = "fixture.changed", eventPlace = place, ai = false) {
     number++;
     const files = { "code.ts": `fixture ${number}` },
       bundle = "export default {};";
-    const manifest: CodeCheckedVersionManifest = {
+    const manifest = CodeCheckedVersionManifestSchema.parse({
       version: 1,
       entry: "code.ts",
       hashes: { source: codeSourceHash(files, "code.ts"), bundle: codeBundleHash(bundle), sdk: "a".repeat(64) },
       entrypoints: [
         {
           kind: "event",
-          entrypoint: "event:fixture.changed@1",
+          entrypoint: `event:${eventType}@1`,
           cron: null,
           file: "code.ts",
           line: 1,
-          event: { type: "fixture.changed", version: 1, place },
+          event: { type: eventType, version: 1, place: eventPlace },
         },
       ],
       permissions: [],
-      ai: false,
-      policyRows: ["read"],
-    };
+      ai,
+      policyRows: ai ? ["ai", "read"] : ["read"],
+    });
     const [row] = await sql<
       { id: string }[]
     >`INSERT INTO code.versions(code_id,number,source_files,bundle,source_hash,bundle_hash,manifest,source_bytes,bundle_bytes,created_by)
@@ -192,6 +217,10 @@ databaseSuite()("Code event delivery to durable run admission", () => {
   const readyRetries = () => sql`UPDATE events.app_deliveries SET next_attempt_at='2000-01-01T00:00:00Z' WHERE state='retrying'`;
   beforeAll(async () => {
     database = await useFreshDatabase("code_resource_events");
+    connection = await connectTestNats();
+    sync = createSync({ connection, namespace: testSyncNamespace("code-event-catchup"), application: "core", defaults: { replicas: 1 } });
+    await sync.ready();
+    bindProcessSync(sync, connection);
     await migrateAuth();
     await migrateRailPreferences();
     await migrateRailShortcuts();
@@ -217,17 +246,20 @@ databaseSuite()("Code event delivery to durable run admission", () => {
     );
     setSystemTime(new Date("2026-11-06T12:00:00Z"));
   });
+  async function createOwnedCode(ownerPlace = place) {
+    await sql`INSERT INTO auth.service_accounts(id,name,kind,created_by) VALUES(${principal}::uuid,${`code:${ownerPlace.type}:${ownerPlace.id}`},'code',${owner}::uuid)`;
+    await sql`INSERT INTO code.codes(id,owner_kind,owner_type,owner_id,service_account_id,title,state,created_by)
+      VALUES(${codeId},'resource',${ownerPlace.type},${ownerPlace.id},${principal}::uuid,'Events','draft',${owner}::uuid)`;
+    await sql`INSERT INTO auth.access(id,user_id,permission) VALUES(${id(3)}::uuid,${owner}::uuid,'write')`;
+    await sql`INSERT INTO code.shares(code_id,access_id) VALUES(${codeId},${id(3)}::uuid)`;
+  }
   beforeEach(async () => {
     stopConsumer?.();
     stopConsumer = startCodeEventConsumer();
     await sql`TRUNCATE events.app_deliveries,events.app_subscriptions,events.app_events,events.app_declarations,events.app_manifests RESTART IDENTITY CASCADE`.simple();
     await sql`DELETE FROM code.codes`;
     await sql`DELETE FROM auth.mandates`;
-    await sql`INSERT INTO auth.service_accounts(id,name,kind,created_by) VALUES(${principal}::uuid,${`code:${place.type}:${place.id}`},'code',${owner}::uuid)`;
-    await sql`INSERT INTO code.codes(id,owner_kind,owner_type,owner_id,service_account_id,title,state,created_by)
-      VALUES(${codeId},'resource',${place.type},${place.id},${principal}::uuid,'Events','draft',${owner}::uuid)`;
-    await sql`INSERT INTO auth.access(id,user_id,permission) VALUES(${id(3)}::uuid,${owner}::uuid,'write')`;
-    await sql`INSERT INTO code.shares(code_id,access_id) VALUES(${codeId},${id(3)}::uuid)`;
+    await createOwnedCode();
     readable = true;
     backlog = 100;
     sequence = 0;
@@ -239,6 +271,9 @@ databaseSuite()("Code event delivery to durable run admission", () => {
   afterAll(async () => {
     stopConsumer?.();
     settings?.mockRestore();
+    unbindProcessSync();
+    await sync?.drain({ timeoutMs: 1000 });
+    await connection?.drain();
     setSystemTime();
     await sql.close();
     await database?.drop();
@@ -270,7 +305,7 @@ databaseSuite()("Code event delivery to durable run admission", () => {
     await Promise.all([admitCodeEvent(binding, envelope, context), admitCodeEvent(binding, envelope, context)]);
     expect(await runs()).toHaveLength(1);
     expect(await sql`SELECT run_id FROM code.run_outbox`).toHaveLength(1);
-    expect(await sql`SELECT run_id FROM code.run_requests`).toHaveLength(1);
+    expect(await sql`SELECT run_id FROM code.run_requests WHERE request_key LIKE 'event:%'`).toHaveLength(1);
   });
   test("a claimed event's nested reader dependency retains its proof and requires the matching parent lease", async () => {
     const envelope = await publish(29);
@@ -390,7 +425,7 @@ databaseSuite()("Code event delivery to durable run admission", () => {
     await replayCodeEventDelivery(codeId, recoverable!.id, editor);
     await broker.work();
     expect(await runs()).toEqual([expect.objectContaining({ id: original.id, version_id: versionId, state: "queued" })]);
-    expect(await sql`SELECT * FROM code.run_requests`).toHaveLength(1);
+    expect(await sql`SELECT * FROM code.run_requests WHERE request_key LIKE 'event:%'`).toHaveLength(1);
     expect(await sql`SELECT * FROM code.run_outbox`).toHaveLength(1);
     // A started attempt is an effect boundary and must never be rebound by delivery replay.
     await sql`UPDATE code.runs SET generation=1,started_at=clock_timestamp(),state='failed',outcome='code_not_active',ended_at=clock_timestamp()`;
@@ -433,18 +468,252 @@ databaseSuite()("Code event delivery to durable run admission", () => {
     expect((await listCodeRunsWithEvents({ codeId, limit: 20 }, editor)).eventDeliveries).toHaveLength(0);
     expect(await sql`SELECT * FROM code.run_requests WHERE request_key=${`event:${id(19)}`}`).toHaveLength(1);
   });
-  test("one subject runs in admission order even when per-Code concurrency is increased", async () => {
+  const limits = { perCode: 3, perOwner: 10, wallMs: 30000, attempts: 3 };
+  function claims(run: Awaited<ReturnType<typeof claimCodeRuns>>[number]): CodeRunTokenClaims {
+    return {
+      ver: 1,
+      token_use: "code_run",
+      iss: "https://cloud.test",
+      aud: "cloud-code-bridge",
+      iat: 0,
+      nbf: 0,
+      exp: Math.floor(run.deadline_at.getTime() / 1000) + 1,
+      codeId: run.code_id,
+      versionId: run.version_id,
+      runId: run.id,
+      entrypoint: run.entrypoint,
+      generation: run.generation,
+      mandateId: run.mandate_id,
+      mandateRevision: run.mandate_revision,
+      bundleHash: run.bundle_hash,
+    };
+  }
+  test("different messages of one resource run in receipt order even with raised concurrency", async () => {
     await publish(20);
-    await publish(21);
-    await publish(22, "independent");
-    await broker.work();
-    const limits = { perCode: 3, perOwner: 10, wallMs: 30000, attempts: 3 };
-    const first = await claimCodeRuns(3, limits);
-    expect(first).toHaveLength(2);
-    expect(first.map((run) => run.input)).toEqual(expect.arrayContaining([event(20), event(22, "independent")]));
-    await sql`UPDATE code.runs SET state='succeeded',ended_at=clock_timestamp() WHERE id=${(await runs())[0]!.id}::uuid`;
-    const next = await claimCodeRuns(3, limits);
-    expect(next).toHaveLength(1);
-    expect(next[0]?.input).toEqual(event(21));
+    await publish(21, "another-message");
+    await publish(22, "third-message");
+    // Generic resource delivery serializes admission too, including across distinct message subjects.
+    for (let n = 0; n < 3; n++) await broker.work();
+    for (const expected of [event(20), event(21, "another-message"), event(22, "third-message")]) {
+      const next = await claimCodeRuns(3, limits);
+      expect(next).toHaveLength(1);
+      expect(next[0]!.input).toEqual(expected);
+      await completeCodeRun(claims(next[0]!), "succeeded");
+    }
   });
+  test("bounded retries hold receipt order, then visible failure releases later messages and deliberate replay preserves input", async () => {
+    await publish(30);
+    await broker.work();
+    await publish(31, "later");
+    await broker.work();
+    let failedId = "";
+    for (let n = 0; n < 3; n++) {
+      const [run] = await claimCodeRuns(3, limits);
+      expect(run?.input).toEqual(event(30));
+      failedId = run!.id;
+      await completeCodeRun(claims(run!), "failed");
+    }
+    expect((await runs()).find((run) => run.id === failedId)).toMatchObject({ state: "failed", outcome: "retry_exhausted" });
+    const [later] = await claimCodeRuns(3, limits);
+    expect(later?.input).toEqual(event(31, "later"));
+    await completeCodeRun(claims(later!), "succeeded");
+    await expect(
+      startCodeRun(
+        { codeId, entrypoint: "event:fixture.changed@1", input: event(32), rerunOf: failedId, idempotencyKey: "changed-envelope" },
+        editor,
+      ),
+    ).rejects.toMatchObject({ code: "BAD_INPUT" });
+    const replay = await startCodeRun(
+      { codeId, entrypoint: "event:fixture.changed@1", input: event(30), rerunOf: failedId, idempotencyKey: "deliberate-replay" },
+      editor,
+    );
+    expect(replay.runId).not.toBe(failedId);
+    const [again] = await claimCodeRuns(3, limits);
+    expect(again?.input).toEqual(event(30));
+    await sql`UPDATE code.runs SET effect_started=true WHERE id=${again!.id}::uuid`;
+    await completeCodeRun(claims(again!), "failed");
+    expect((await runs()).find((run) => run.id === again!.id)).toMatchObject({ state: "failed", generation: 1 });
+    expect(await claimCodeRuns(3, limits)).toEqual([]);
+  });
+  test("an exhausted resource delivery remains visible without permanently blocking a later message", async () => {
+    backlog = 1;
+    await publish(40);
+    await broker.work();
+    await publish(41, "poison");
+    await publish(42, "later");
+    for (let n = 0; n < 8; n++) {
+      await readyRetries();
+      await broker.work();
+    }
+    expect((await broker.deliveries()).items.find((row: Record<string, unknown>) => row.eventId === id(41))).toMatchObject({
+      state: "failed",
+    });
+    await sql`UPDATE code.runs SET state='succeeded',ended_at=clock_timestamp()`;
+    await readyRetries();
+    await broker.work();
+    expect((await runs()).at(-1)?.input).toEqual(event(42, "later"));
+  });
+  test("the real Mail event reaches mailbox-owned Code through its generic app.on subscription exactly once", async () => {
+    const mailbox = { type: "mail.mailbox", id: "Box123" };
+    // Code identity is immutable: create this fixture with the real mailbox owner and matching account.
+    await cancelResourceEventSubscriptions(sql, CODE_EVENT_CONSUMER, codeId);
+    await sql`DELETE FROM code.codes WHERE id=${codeId}`;
+    await createOwnedCode(mailbox);
+    const mailboxType = compileCapabilityManifest("mail", mailCapabilities).types.find((type) => type.localId === "mailbox");
+    expect(mailboxType?.reader).toBe("mailbox.read");
+    await version("mail.message.received", mailbox);
+    await activate();
+    expect(binding.place).toEqual(mailbox);
+    expect(await findCode(codeId)).toMatchObject({ owner: { kind: "resource", ref: mailbox }, serviceAccountId: principal });
+    const envelope = appEventFixture(
+      mailCapabilities,
+      "message.received",
+      { subject: "Msg123", place: mailbox.id, data: { receiptId: id(51) } },
+      { appId: "mail", id: id(50), time },
+    );
+    await broker.accept(envelope, ++sequence);
+    const accepted = await sql<
+      { state: string; code: string | null }[]
+    >`SELECT state,code FROM events.app_events WHERE id=${envelope.id}::uuid`;
+    expect(accepted).toEqual([{ state: "accepted", code: null }]);
+    expect((await broker.deliveries()).items).toEqual([expect.objectContaining({ eventId: envelope.id, state: "pending", attempts: 0 })]);
+    await broker.work();
+    expect((await broker.deliveries()).items).toEqual([expect.objectContaining({ eventId: envelope.id, state: "done", attempts: 1 })]);
+    await broker.accept(envelope, ++sequence);
+    await broker.work();
+    expect(await runs()).toEqual([
+      expect.objectContaining({ input: envelope, entrypoint: "event:mail.message.received@1", version_id: versionId }),
+    ]);
+    expect((await claimCodeRuns(3, limits))[0]?.input).toEqual(z.json().parse(envelope));
+  });
+  test("catch-up cancels, resumes a pinned snapshot and recovers a dispatch committed before checkpoint without broadcast", async () => {
+    const catalog = spyOn(catalogProvider, "getCapabilityCatalogApp").mockResolvedValue({
+      ok: true,
+      data: { appId: "fixture", appName: "Fixture", appIcon: "box", appDescription: "Fixture", manifest: declaration.manifest },
+    });
+    const resource = spyOn(eventPlatform, "authorizeResourceEvent").mockResolvedValue(true);
+    const source = spyOn(catalogProvider, "invokeCapabilityWithDataSchema").mockImplementation(async (invocation, schema) => {
+      const subject = z.object({ id: z.string() }).parse(invocation.input).id;
+      const index = Number(subject.replace("message-", ""));
+      return { ok: true, data: { data: schema.parse(event(100 + index, subject)) } };
+    });
+    let stop: (() => Promise<void>) | undefined;
+    const input = { operationId: id(60), versionId, events: Array.from({ length: 45 }, (_, n) => event(100 + n, `message-${n}`)) };
+    const dispatch = codeEventCatchupPumpConfig.dispatch;
+    let lost = false;
+    const crash = spyOn(codeEventCatchupPumpConfig, "dispatch").mockImplementation(async (request) => {
+      await dispatch(request);
+      if (!lost) {
+        lost = true;
+        throw new Error("fixture_crash_after_run_commit");
+      }
+    });
+    try {
+      expect(await startCodeEventCatchup(codeId, input, editor)).toMatchObject({ total: 45, dispatched: 0 });
+      expect(await cancelCodeEventCatchup(codeId, input.operationId, editor)).toMatchObject({ status: "canceled", dispatched: 0 });
+      expect(await runs()).toHaveLength(0);
+      await resumeCodeEventCatchup(codeId, input.operationId, id(61), editor);
+      stop = await startCodeEventCatchupRuntime();
+      let state = await readCodeEventCatchup(codeId, id(61), editor);
+      for (let n = 0; n < 150 && state.status !== "completed"; n++) {
+        await Bun.sleep(50);
+        state = await readCodeEventCatchup(codeId, id(61), editor);
+      }
+      expect(state).toMatchObject({ status: "completed", total: 45, dispatched: 45 });
+      expect(lost).toBe(true);
+      expect(await runs()).toHaveLength(45);
+      expect(await sql`SELECT * FROM code.run_requests WHERE request_key LIKE 'catchup:%'`).toHaveLength(45);
+      expect(await sql`SELECT * FROM events.app_events`).toHaveLength(0);
+      expect(await sql`SELECT * FROM events.app_deliveries`).toHaveLength(0);
+      // Lost responses use the exact operation receipt; a fresh operation still skips every admitted message.
+      expect(await startCodeEventCatchup(codeId, { ...input, operationId: id(61) }, editor)).toMatchObject({
+        status: "completed",
+        dispatched: 45,
+      });
+      await startCodeEventCatchup(codeId, { ...input, operationId: id(62) }, editor);
+      for (let n = 0; n < 100; n++) {
+        if ((await readCodeEventCatchup(codeId, id(62), editor)).status === "completed") break;
+        await Bun.sleep(30);
+      }
+      expect((await readCodeEventCatchup(codeId, id(62), editor)).status).toBe("completed");
+      expect(await runs()).toHaveLength(45);
+      // Catch-up first, then delayed generic delivery: one run and one live receipt.
+      const delayed = input.events[0]!;
+      const [historicalReceipt] = await sql`SELECT run_id FROM code.run_requests
+        WHERE code_id=${codeId} AND request_key=${`historical:${codeEventTargetKey(versionId, delayed)}`}`;
+      expect(historicalReceipt).toEqual({ run_id: expect.any(String) });
+      await broker.accept(delayed, ++sequence);
+      await broker.work();
+      expect(await runs()).toHaveLength(45);
+      expect(await sql`SELECT * FROM code.run_requests WHERE request_key=${`event:${delayed.id}`}`).toHaveLength(1);
+      expect(source.mock.calls[0]?.[2]?.authority).toBe(editor.authority);
+      source.mockResolvedValueOnce({ ok: false, error: { code: "FORBIDDEN", message: "unavailable", status: 403 } });
+      await expect(startCodeEventCatchup(codeId, { ...input, operationId: id(63) }, editor)).rejects.toMatchObject({ code: "FORBIDDEN" });
+      await sql`UPDATE code.runs SET state='succeeded',ended_at=clock_timestamp()`;
+      backlog = 2;
+      const limited = { ...input, operationId: id(65), events: [event(400, "message-300"), event(401, "message-301")] };
+      await startCodeEventCatchup(codeId, limited, editor);
+      for (let n = 0; n < 100; n++) {
+        if ((await readCodeEventCatchup(codeId, id(65), editor)).dispatched === 1) break;
+        await Bun.sleep(30);
+      }
+      expect(await readCodeEventCatchup(codeId, id(65), editor)).toMatchObject({ status: "waiting", dispatched: 1, failureCount: 0 });
+      await publish(402, "live-with-reserved-capacity");
+      await broker.work();
+      expect(await sql`SELECT * FROM code.run_requests WHERE request_key=${`event:${id(402)}`}`).toHaveLength(1);
+      expect(await cancelCodeEventCatchup(codeId, id(65), editor)).toMatchObject({ status: "canceled", dispatched: 1, total: 2 });
+      await stop();
+      stop = undefined;
+      await sql`UPDATE code.runs SET state='succeeded',ended_at=clock_timestamp()`;
+      const [historical] = await sql<{ id: string; input: AppEventEnvelope }[]>`SELECT id,input FROM code.runs
+        WHERE code_id=${codeId} AND input->'subject'->>'id'='message-0'`;
+      await sql`UPDATE code.runs SET state='failed',effect_started=true WHERE id=${historical!.id}::uuid`;
+      const replay = await startCodeRun(
+        {
+          codeId,
+          entrypoint: "event:fixture.changed@1",
+          input: z.json().parse(historical!.input),
+          rerunOf: historical!.id,
+          idempotencyKey: "historical-deliberate-replay",
+        },
+        editor,
+      );
+      expect(
+        await sql`SELECT * FROM code.run_requests WHERE run_id=${replay.runId}::uuid AND request_key LIKE 'historical:%'`,
+      ).toHaveLength(1);
+      await sql`UPDATE code.runs SET state='failed',ended_at=clock_timestamp() WHERE id=${replay.runId}::uuid`;
+      // Versions are immutable too: activate a new AI version instead of editing the historical one.
+      await version("fixture.changed", place, true);
+      await activate();
+      await expect(
+        startCodeRun(
+          {
+            codeId,
+            entrypoint: "event:fixture.changed@1",
+            input: z.json().parse(historical!.input),
+            rerunOf: replay.runId,
+            idempotencyKey: "historical-ai-replay",
+          },
+          editor,
+        ),
+      ).rejects.toMatchObject({ code: "BAD_INPUT" });
+      // Isolate the account fence from AI approval and the original canceled operation.
+      await version();
+      await activate();
+      await sql`UPDATE auth.service_accounts SET status='disabled' WHERE id=${principal}::uuid`;
+      await expect(
+        codeEventCatchupPumpConfig.dispatch({
+          input: { ...input, operationId: id(66), versionId, codeId, requestDigest: "fixture", capacityDeadline: Date.parse(time) },
+          item: { key: "disabled-account", event: event(999, "message-899") },
+          signal: new AbortController().signal,
+        }),
+      ).rejects.toMatchObject({ code: "CONFLICT", message: "The handler's active execution binding changed." });
+    } finally {
+      await stop?.();
+      crash.mockRestore();
+      catalog.mockRestore();
+      source.mockRestore();
+      resource.mockRestore();
+    }
+  }, 20000);
 });

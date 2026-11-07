@@ -491,3 +491,16 @@ Code's resource-owned `app.on` registrations use these workload subscriptions,
 with their checked owner, event version and execution mandate. Delivery commits
 the event-to-run receipt before acknowledgment. See
 [Code event deliveries](/en/docs/platform/code-runs#understand-event-deliveries).
+
+## Resolve an occurrence for catch-up
+
+An event with one immutable occurrence per subject can declare `catchup` as the
+local ID of a permission-aware query. The query accepts `{ id: subject.id }` and
+returns the canonical event envelope as its capability data. It must check the
+requester's current read permission and derive receipt identity, owner and data
+from the application's own state. Repeating event types must not declare this
+contract. The resolver does not publish an event.
+
+Code catch-up uses that resolver before saving its bounded snapshot, and admits
+only to the selected Code version. It does not notify other subscriptions. See
+[Mail automations](/en/docs/platform/mail-code-automations) for the first consumer.

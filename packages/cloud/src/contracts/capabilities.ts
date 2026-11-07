@@ -1270,6 +1270,7 @@ export const CapabilityEventManifestSchema = z
     dataSchema: z.record(z.string(), z.unknown()),
     schemaHash: z.string().regex(/^[a-f0-9]{64}$/),
     automation: z.literal(false).optional(),
+    catchup: CapabilityLocalIdSchema.optional(),
   })
   .strict();
 export type CapabilityEventManifest = z.infer<typeof CapabilityEventManifestSchema>;

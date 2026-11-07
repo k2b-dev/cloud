@@ -103,6 +103,11 @@ export const coreCapabilityPresentation: CapabilityPresentationCatalog = {
         },
       },
       queries: {
+        "code.event.catchup.read": {
+          title: "Fortschritt des Code-Nachholens lesen",
+          description: "Liest den dauerhaften Annahmefortschritt eines Vorgangs. Ausführungsergebnisse stehen unter Läufe.",
+          input: { operationId: "UUID des Nachholvorgangs." },
+        },
         "ai.generate": {
           title: "Text oder strukturierte Daten erzeugen",
           description:
@@ -435,6 +440,41 @@ export const coreCapabilityPresentation: CapabilityPresentationCatalog = {
         },
       },
       actions: {
+        "code.event.catchup": {
+          title: "Code für vorhandene Ereignisse nachholen",
+          description:
+            "Bearbeiter wenden die aktive Version ohne KI auf höchstens 100 historische Verweise an. Andere Abonnenten erhalten sie nicht.",
+          input: {
+            operationId: "UUID für diesen Vorgang; bei Wiederholung dieselbe Auswahl verwenden.",
+            versionId: "Aktive unveränderliche Code-Version.",
+            events: "Höchstens 100 historische Ereignisse in Ausführungsreihenfolge.",
+            "events[].id": "Stabile Ereignis-UUID.",
+            "events[].type": "Vollständiger deklarierter Ereignisname.",
+            "events[].version": "Version des Ereignisschemas.",
+            "events[].source": "Veröffentlichende Anwendung.",
+            "events[].time": "Zeit des ursprünglichen Empfangs.",
+            "events[].subject": "Verweis auf das betroffene Objekt.",
+            "events[].subject.type": "Vollständiger Ressourcentyp.",
+            "events[].subject.id": "Öffentliche Objekt-ID.",
+            "events[].place": "Ressource, der der Handler gehört.",
+            "events[].place.type": "Vollständiger Ressourcentyp.",
+            "events[].place.id": "Öffentliche Ressourcen-ID.",
+            "events[].cause": "Optionale Angaben zur ursprünglichen Anfrage.",
+            "events[].cause.requestId": "Identität der ursprünglichen Anfrage.",
+            "events[].data": "Daten gemäß dem deklarierten Ereignisschema.",
+          },
+        },
+        "code.event.catchup.cancel": {
+          title: "Code-Nachholen abbrechen",
+          description: "Stoppt weitere Annahmen. Bereits angenommene Läufe bleiben sichtbar und können enden.",
+          input: { operationId: "UUID des Nachholvorgangs." },
+        },
+        "code.event.catchup.resume": {
+          title: "Code-Nachholen fortsetzen",
+          description:
+            "Setzt eine fehlgeschlagene oder abgebrochene Auswahl mit ihrer gebundenen Version fort. Bereits angenommene Nachrichten werden übersprungen.",
+          input: { operationId: "UUID des gestoppten Vorgangs.", newOperationId: "Neue UUID zum Fortsetzen der gespeicherten Auswahl." },
+        },
         "code.run": {
           title: "Code ausführen",
           description:

@@ -16,6 +16,7 @@ import {
   type UniversalSearchInput,
   UniversalSearchInputSchema,
 } from "@k2b/cloud/contracts";
+import { AppEventEnvelopeSchema } from "@k2b/cloud/events";
 import { logger } from "@k2b/cloud/services";
 import { principalLabel } from "@k2b/cloud/shared";
 import { err, fail, i18n, ok, type Result } from "@k2b/stdlib";
@@ -51,6 +52,12 @@ import { MailComposeCommandInputSchema, MailDraftCalendarInputSchema } from "./c
 import { type Mailbox, type MailDraft, type MailSearchExpression, type MailSubscriptionSummary, ResourceShortIdSchema } from "./contracts";
 import { mailFolderPaths } from "./folder-tree";
 import {
+  MailCodePreviewInputSchema,
+  MailCodePreviewSchema,
+  MailCodeSelectionInputSchema,
+  MailCodeSelectionSchema,
+} from "./mail-code-contracts";
+import {
   activityPublic,
   attachmentExtraction,
   collaboration,
@@ -80,6 +87,7 @@ import {
   triage,
 } from "./service";
 import * as reviewReaders from "./service/capability-review-readers";
+import { previewMailCodeMessage, resolveMailCodeEvent, selectMailCodeMessages } from "./service/code-messages";
 import { keepError } from "./service/conversation-keep-rules";
 import { localizeMailError } from "./service/error-messages";
 import type { ConversationSummary, MessageSummary } from "./service/messages";
@@ -655,8 +663,9 @@ const mapMessageSummary = (
     addressesTruncated: message.from.length > addressLimit || message.to.length > addressLimit,
     flags: message.flags.slice(0, 10).map((flag) => truncateText(flag, 128).text),
     flagsTruncated: message.flags.length > 10 || message.flags.some((flag) => truncateText(flag, 128).truncated),
-    keywords: message.keywords.slice(0, 10).map((keyword) => truncateText(keyword, 128).text),
-    keywordsTruncated: message.keywords.length > 10 || message.keywords.some((keyword) => truncateText(keyword, 128).truncated),
+    keywords: message.keywords.slice(0, c.MESSAGE_KEYWORD_LIMIT).map((keyword) => truncateText(keyword, 128).text),
+    keywordsTruncated:
+      message.keywords.length > c.MESSAGE_KEYWORD_LIMIT || message.keywords.some((keyword) => truncateText(keyword, 128).truncated),
     hydrationStatus: truncateText(message.hydrationStatus, 100).text,
     remoteAvailable: message.remoteAvailable,
   };
@@ -969,6 +978,38 @@ const runSearch = async (
 };
 
 const queryDefinitions = {
+  "message.event": {
+    title: "Resolve a historical mail receipt",
+    description: "Resolve an incoming message reference to its source-owned receipt envelope with current whole-mailbox read permission.",
+    openWorld: false,
+    input: c.MessageReadInputSchema.pick({ id: true }),
+    data: AppEventEnvelopeSchema,
+    run: (input: { id: string }, context: CapabilityExecutionContext) => resolveMailCodeEvent(input.id, context),
+  },
+  "message.catchup": {
+    title: "Select existing messages for Code",
+    description:
+      "Read at most 100 incoming message references in date order for a folder or time range. No events are sent. Continue with the returned cutoff and cursor.",
+    target: "mailbox",
+    openWorld: false,
+    input: MailCodeSelectionInputSchema,
+    data: MailCodeSelectionSchema,
+    run: (input: z.infer<typeof MailCodeSelectionInputSchema>, context: CapabilityExecutionContext) =>
+      selectMailCodeMessages(context.target!.id, input, context),
+  },
+  "message.event-preview": {
+    title: "Prepare a mail Code preview",
+    description: "Read one real message as a fake-only Code simulation fixture. This does not run Code or execute effects.",
+    target: "mailbox",
+    openWorld: false,
+    input: MailCodePreviewInputSchema,
+    data: MailCodePreviewSchema,
+    run: (input: z.infer<typeof MailCodePreviewInputSchema>, context: CapabilityExecutionContext) =>
+      previewMailCodeMessage(context.target!.id, input.messageId, context, () =>
+        queryDefinitions["message.read"].run({ id: input.messageId }, context),
+      ),
+  },
+
   "mailbox.browse": {
     title: "Choose a mailbox",
     description:

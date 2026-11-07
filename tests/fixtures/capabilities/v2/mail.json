@@ -1,7 +1,7 @@
 {
   "protocolVersion": 2,
   "appId": "mail",
-  "manifestHash": "30abf06e79ca2e5fbd5b4298c9cbca9f66e24093940319a16362046f981fd345",
+  "manifestHash": "6a5a54201a9e2afc92b6b6ed539809dfcf9d095916edd7372c2d86457feb01d3",
   "types": [
     {
       "localId": "attachment",
@@ -5199,7 +5199,7 @@
             "type": "boolean"
           },
           "keywords": {
-            "maxItems": 10,
+            "maxItems": 1024,
             "type": "array",
             "items": {
               "type": "string",
@@ -5480,7 +5480,7 @@
         ],
         "additionalProperties": false
       },
-      "schemaHash": "d4246e79c3a426cdfb44d02fa493b33e40ee74ccda269a8c74395da1bd2591ec",
+      "schemaHash": "ef3b3a27d8fef2b0792e5cd3d59b0eec37b48240526d68914e5d313133e96356",
       "openWorld": true
     },
     {

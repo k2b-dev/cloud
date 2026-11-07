@@ -465,6 +465,9 @@ execution mandate. The stable entrypoint is `event:<event-type>@<version>`.
 See [Code runs](/en/docs/platform/code-runs#understand-event-deliveries) for
 pause, replay, deduplication and queue behavior.
 
+For an incoming-mail pattern, ordered helper functions, catch-up and real-message
+preview, see [Mail automations with Code](/en/docs/platform/mail-code-automations).
+
 ## Serve routes
 
 Resource-, app-owned and personal Code can register routes. Register routes at

@@ -2,11 +2,13 @@
 import CodePage, { type CodePageData, codePageNeedsAttention } from "@k2b/cloud/ssr/code-page";
 import { navigateTo } from "@k2b/ssr/nav";
 import { AppWorkspace } from "@k2b/ui";
+import { Show } from "solid-js";
 import type { MailContactDirectory } from "../contact-directory-settings";
 import type { MailboxCodePageData } from "../service/workspace";
 import MailSidebar from "./_components/MailSidebar";
 import { MailContactDirectoryProvider } from "./_components/mail-contact-directory-context";
 import { createMailboxPreferences } from "./_components/mail-mailbox-preferences";
+import MailCodeTools from "./MailCodeTools";
 import type { MailSidebarData } from "./mail-sidebar-data";
 
 /** The mailbox's tools live on its own page; beside its Code the sidebar row offers none. */
@@ -59,6 +61,22 @@ export default function MailboxCode(props: {
         <AppWorkspace.Content>
           <AppWorkspace.Main class="p-[var(--ui-space-shell)]">
             <CodePage data={props.code} />
+            <Show
+              when={
+                props.code.state.kind === "ready" && props.code.state.permission === "editor" && props.code.state.code.state === "active"
+                  ? props.code.state
+                  : null
+              }
+            >
+              {(state) => (
+                <MailCodeTools
+                  mailboxId={props.mailbox.mailbox.id}
+                  codeId={state().code.id}
+                  versionId={state().code.activeVersionId!}
+                  folders={props.mailbox.folders}
+                />
+              )}
+            </Show>
           </AppWorkspace.Main>
         </AppWorkspace.Content>
       </AppWorkspace>

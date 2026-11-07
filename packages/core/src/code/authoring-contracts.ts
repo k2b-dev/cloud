@@ -1,5 +1,6 @@
-import { CODE_CHECK_LIMITS, CodeCheckResultSchema, CodeTestCaseSchema, CodeTestResultSchema } from "@k2b/cloud/code";
+import { CODE_CHECK_LIMITS, CodeCheckResultSchema, CodeTestCaseSchema, CodeTestMockSchema, CodeTestResultSchema } from "@k2b/cloud/code";
 import { CodeCheckedVersionManifestSchema } from "@k2b/cloud/contracts";
+import { AppEventEnvelopeSchema } from "@k2b/cloud/events";
 import { z } from "zod";
 import { codeActivationContracts } from "./activation-contracts";
 import { CodeIdSchema, type CodeOwner, CodeOwnerSchema, CodeSchema, CodeSourceFilesSchema, codeQueryContracts } from "./contracts";
@@ -177,7 +178,16 @@ export const codeAuthoringContracts = {
   },
   check: { input: source, data: check },
   test: { input: source.extend({ tests: CodeSourceFilesSchema, trace: z.boolean().default(false) }), data: CodeTestResultSchema },
-  simulate: { input: source.extend({ fixture: CodeTestCaseSchema, trace: z.boolean().default(false) }), data: CodeTestResultSchema },
+  simulate: {
+    input: source.extend({ fixture: CodeTestCaseSchema, trace: z.boolean().default(false) }),
+    data: CodeTestResultSchema,
+  },
+  simulateEvent: {
+    input: z
+      .object({ codeId: CodeIdSchema, versionId: z.uuid(), event: AppEventEnvelopeSchema, mocks: z.array(CodeTestMockSchema).max(100) })
+      .strict(),
+    data: CodeTestResultSchema,
+  },
   push: { input: source.extend({ baseVersionId: z.uuid().nullable(), tests: CodeSourceFilesSchema.optional() }), data: submitted },
   submit: { input: source.extend({ baseVersionId: z.uuid().nullable(), tests: CodeSourceFilesSchema.optional() }), data: submitted },
   /** Submits the latest source once more, for a page without a local project: it picks up changed secret bindings. */

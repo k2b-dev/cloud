@@ -345,7 +345,7 @@ describe("mail capabilities", () => {
       refs: {},
       input: { draftId, expectedRevision: 2, patch: { subject: "New" } },
     });
-    expect(manifest.queries.filter((query) => query.target === "mailbox")).toHaveLength(16);
+    expect(manifest.queries.filter((query) => query.target === "mailbox")).toHaveLength(18);
     for (const query of manifest.queries.filter((query) => query.target)) {
       expect(query.inputSchema.properties).not.toHaveProperty("mailboxId");
       expect(query.target).toBe("mailbox");
@@ -670,7 +670,7 @@ describe("mail capabilities", () => {
         replyTo: [],
         cc: [],
         flags: [],
-        keywords: [],
+        keywords: Array.from({ length: 1025 }, (_, n) => `provider-label-${n}`),
         hydrationStatus: "hydrated",
         remoteAvailable: true,
         plainText: "\u0001".repeat(96 * 1024),
@@ -686,6 +686,9 @@ describe("mail capabilities", () => {
     if (!result.ok) throw new Error("Expected message");
     expect(Buffer.byteLength(JSON.stringify(result.data))).toBeLessThan(CAPABILITY_MAX_RESULT_BYTES);
     expect(result.data.data).toMatchObject({ bodyTruncated: true, conversationId });
+    expect(result.data.data.keywords).toHaveLength(1024);
+    expect(result.data.data.keywords[1023]).toBe("provider-label-1023");
+    expect(result.data.data.keywordsTruncated).toBe(true);
     expect(capabilityResultSchema(MessageDataSchema).safeParse(result.data).success).toBeTrue();
   });
 
@@ -976,6 +979,9 @@ describe("mail capabilities", () => {
       "mailbox.tag.list",
       "mailing-list.subscription.get",
       "mailing-list.subscription.list",
+      "message.catchup",
+      "message.event",
+      "message.event-preview",
       "message.list",
       "message.read",
       "message.read-content",

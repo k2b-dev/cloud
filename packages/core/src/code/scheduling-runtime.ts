@@ -6,6 +6,7 @@ import { logger } from "@k2b/cloud/services";
 import { createPgOutbox, type OutboxRow } from "@k2b/cloud/services/outbox";
 import type { Queue, Scheduler, Worker } from "@k2b/sync";
 import { claimCodeWork } from "./dispatch";
+import { startCodeEventCatchupRuntime } from "./event-catchup";
 import { startCodeEventConsumer } from "./events";
 import { reconcileCodeJobs } from "./runner-jobs";
 import {
@@ -210,6 +211,7 @@ export function createCodeScheduleReconciler(scheduler: Scheduler) {
 export async function startCodeScheduling(): Promise<() => Promise<void>> {
   const stopEventConsumer = startCodeEventConsumer();
   let worker: Worker | undefined;
+  let stopCatchup: (() => Promise<void>) | undefined;
   let pending: Promise<void> | undefined;
   const reconcileSchedules = createCodeScheduleReconciler(codeRunScheduler());
   const recover = async () => {
@@ -221,10 +223,12 @@ export async function startCodeScheduling(): Promise<() => Promise<void>> {
   };
   try {
     worker = await codeRunScheduler().process();
+    stopCatchup = await startCodeEventCatchupRuntime();
     codeRunOutbox.start();
     codeJobOutbox.start();
   } catch (error) {
     stopEventConsumer();
+    await stopCatchup?.();
     worker?.stop();
     await worker?.drain();
     await codeRunOutbox.stop();
@@ -250,6 +254,7 @@ export async function startCodeScheduling(): Promise<() => Promise<void>> {
     clearInterval(timer);
     await pending;
     stopEventConsumer();
+    await stopCatchup?.();
     worker?.stop();
     await worker?.drain();
     await codeRunOutbox.stop();

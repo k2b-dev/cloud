@@ -1051,6 +1051,7 @@ export const compileCapabilities = (
         place: true,
         schema: true,
         automation: true,
+        catchup: true,
       } satisfies DefinedFields<AppEventDefinition>,
       `Event ${localId}`,
     );
@@ -1058,6 +1059,7 @@ export const compileCapabilities = (
     if (definition.place && !types.some((type) => type.localId === definition.place && type.reader))
       throw new Error(`Event ${localId} place must reference a local Type with a reader`);
     const schemas = compileAppEventSchema(definition.schema, `Event ${localId} data`);
+    if (definition.catchup && !queries.has(definition.catchup)) throw new Error(`Event ${localId} catchup must reference a local Query`);
     assertAppEventDeclarationSize(appId, localId, definition, schemas.dataSchema);
     const manifest = CapabilityEventManifestSchema.parse({
       localId,
@@ -1068,6 +1070,7 @@ export const compileCapabilities = (
       ...(definition.place !== undefined ? { place: definition.place } : {}),
       ...schemas,
       ...(definition.automation !== undefined ? { automation: definition.automation } : {}),
+      ...(definition.catchup !== undefined ? { catchup: definition.catchup } : {}),
     });
     events.set(localId, { definition, manifest });
   }

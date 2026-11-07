@@ -69,6 +69,31 @@ export const mailCapabilityPresentation: CapabilityPresentationCatalog = {
         },
       },
       queries: {
+        "message.event": {
+          title: "Historischen Mail-Empfang auflösen",
+          description:
+            "Löst eine eingehende Nachrichtenreferenz mit aktuellem Leserecht für das gesamte Postfach in ihren Empfangsumschlag auf.",
+          input: { id: "Öffentliche Nachrichten-ID aus einer Nachrichtenliste oder Suche." },
+        },
+        "message.catchup": {
+          title: "Vorhandene Nachrichten für Code auswählen",
+          description:
+            "Liest höchstens 100 eingehende Nachrichtenverweise nach Datum für einen Ordner oder Zeitraum. Sendet keine Ereignisse.",
+          input: {
+            folderId: "Öffentliche Ordner-ID im Postfach.",
+            from: "Untere Datumsgrenze einschließlich.",
+            to: "Obere Datumsgrenze ausschließlich.",
+            cutoffAt: "Ursprünglicher Stichtag der ersten Seite.",
+            cursor: "Fortsetzung aus der vorherigen Seite.",
+            "cursor.date": "Datum der letzten Nachricht.",
+            "cursor.id": "Identität der letzten Nachricht im Cursor.",
+          },
+        },
+        "message.event-preview": {
+          title: "Vorschau für Postfach-Code vorbereiten",
+          description: "Liest eine echte Nachricht als Testantwort für die Code-Simulation. Führt keinen Code und keine Auswirkungen aus.",
+          input: { messageId: "Öffentliche Nachrichten-ID im Postfach für die Vorschau." },
+        },
         "draft.send.check": {
           title: "Sendeausgang des Entwurfs prüfen",
           description:
