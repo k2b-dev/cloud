@@ -250,6 +250,7 @@ const inspections = new Map<Element, ChartInspection>();
 const chartTooltips = new WeakMap<Element, Map<string, ChartTooltip>>();
 const chartKinds: readonly ChartKind[] = [
   "waterfall",
+  "area",
   "bar",
   "line",
   "scatter",
@@ -354,6 +355,7 @@ new MutationObserver((records) => {
       chart,
       inspectChart(chart, {
         kind,
+        locale: config.context.locale,
         format: ({ datum }) => {
           const key = cloudAiChartMarkKey(datum);
           return chartTooltips.get(chart)?.get(key) ?? readChartTooltips(chart).get(key) ?? { rows: [] };

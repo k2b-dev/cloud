@@ -25,6 +25,7 @@ export const chartNumberFormatSchema = () =>
     });
 const dateFormatSchema = () => z.strictObject({ date: z.enum(["day", "minute", "second"]) });
 export const chartFormatSchema = () => z.union([chartNumberFormatSchema(), dateFormatSchema()]);
+
 export type ChartNumberFormat = z.output<ReturnType<typeof chartNumberFormatSchema>>;
 export type ChartDateFormat = z.output<ReturnType<typeof dateFormatSchema>>;
 export type ChartFormat = ChartNumberFormat | ChartDateFormat;
@@ -32,6 +33,7 @@ export type ChartFormat = ChartNumberFormat | ChartDateFormat;
 export const chartKindSchema = () =>
   z.enum([
     "waterfall",
+    "area",
     "bar",
     "line",
     "scatter",
@@ -74,7 +76,13 @@ export const chartParts = (limits?: ChartLimits) => {
   });
   // As many lines as series a reader can tell apart.
   const ChartReferences = list(
-    z.object({ value: z.union([z.number(), ChartDate]), axis: z.enum(["x", "y"]).optional(), label: ChartLabel.optional() }),
+    z.object({
+      value: z.union([z.number(), ChartDate]),
+      axis: z.enum(["x", "y"]).optional(),
+      label: ChartLabel.optional(),
+      style: z.enum(["solid", "dashed", "dotted"]).optional(),
+      tone: z.enum(["neutral", "info", "success", "warning", "danger"]).optional(),
+    }),
     0,
     limits?.maxSeries,
     `Use at most ${limits?.maxSeries} references.`,
@@ -176,6 +184,27 @@ export const chartKinds = (limits?: ChartLimits) => {
         }
         if (!Number.isFinite(balance) || !Number.isFinite(hi - lo))
           ctx.addIssue({ code: "custom", message: "Waterfall balances must form a finite range." });
+      }),
+    z
+      .object({
+        kind: z.literal("area"),
+        ...ChartKindCommon,
+        layout: z.literal("stacked"),
+        normalize: z.boolean().optional(),
+        x: list(z.union([z.number(), ChartLabel]), 1, limits?.maxValues),
+        series: list(z.object({ label: ChartLabel, data: list(z.number().min(0).nullable(), 0, limits?.maxValues) }), 1, limits?.maxSeries),
+        legend: z.boolean().optional(),
+        format: numberFormat.optional(),
+      })
+      .superRefine((spec, ctx) => {
+        spec.series.forEach((s, i) => {
+          if (s.data.length !== spec.x.length)
+            ctx.addIssue({ code: "custom", path: ["series", i, "data"], message: "Area series must match x length." });
+        });
+        spec.x.forEach((_, i) => {
+          const sum = spec.series.reduce((sum, s) => sum + (s.data[i] ?? 0), 0);
+          if (!Number.isFinite(sum)) ctx.addIssue({ code: "custom", path: ["x", i], message: "Area totals must be finite." });
+        });
       }),
     z.object({
       kind: z.literal("bar"),

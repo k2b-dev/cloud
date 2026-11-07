@@ -8,6 +8,7 @@ export const chartFixtures = {
     steps: [{ label: "Receipts", value: 5 }],
     end: { label: "Closing" },
   },
+  area: { kind: "area", layout: "stacked", x: ["Jan", "Feb"], series: [{ label: "Sales", data: [3, 4] }] },
   line: {
     kind: "line",
     series: [

@@ -62,25 +62,15 @@ render(
         <div class="state-explorer">
           <ChartExplorer
             title="Kontobewegungen"
-            description={state() === "stale" ? "Veraltet · Oktober 2026" : "Oktober 2026"}
+            description="Oktober 2026"
+            request={{ status: state() === "loading" ? "loading" : state() === "error" || state() === "stale" ? "error" : "idle" }}
+            asOf="09:12"
+            onRetry={() => setState("data")}
             data={state() === "data" || state() === "stale" ? { chart: snapshot, rows } : { rows: [] }}
             columns={[{ id: "amount", label: "Betrag", value: (row) => row.amount }]}
             height="280px"
             renderDetails={false}
-            empty={
-              state() === "loading" ? (
-                <p role="status">Daten werden geladen.</p>
-              ) : state() === "error" ? (
-                <div role="alert">
-                  Daten konnten nicht geladen werden.
-                  <button type="button" onClick={() => setState("data")}>
-                    Erneut versuchen
-                  </button>
-                </div>
-              ) : (
-                <p>Noch keine Kontobewegungen.</p>
-              )
-            }
+            empty="Noch keine Kontobewegungen."
           />
         </div>
       </main>

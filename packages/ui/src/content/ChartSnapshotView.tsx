@@ -1,5 +1,6 @@
 import { createEffect, createUniqueId, type JSX, onCleanup, onMount } from "solid-js";
 import { isServer } from "solid-js/web";
+import { useLocale } from "../intl/locale";
 import type { ChartCursor } from "./chart-cursor";
 import { createChartInspection } from "./chart-inspection";
 import { closeChartInspectionOnOutside, sameChartDatum } from "./chart-inspection-core";
@@ -11,10 +12,12 @@ import { selectedChartSvg } from "./chart-svg";
 export function ChartSnapshotView(props: {
   snapshot: ChartSnapshot;
   cursor?: ChartCursor;
+  legend?: () => ParentNode | undefined;
   selectedKey: string | null;
   onSelect: (key: string) => void;
   style?: JSX.CSSProperties;
 }) {
+  const locale = useLocale();
   const chartMessages = useChartMessages();
   let container: HTMLDivElement | undefined;
   let tooltip: HTMLSpanElement | undefined;
@@ -22,6 +25,8 @@ export function ChartSnapshotView(props: {
   const id = `k2b-chart-tooltip-${createUniqueId()}`;
   const inspection = createChartInspection({
     container: () => container,
+    locale,
+    legend: props.legend,
     cursor: () => props.cursor,
     tooltip: () => tooltip,
     anchor: () => anchor,

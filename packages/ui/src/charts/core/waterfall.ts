@@ -1,4 +1,4 @@
-import { chartDatumSvg, escapeXml, niceStep } from "@k2b/stdlib";
+import { chartDatumSvg, escapeXml, niceStep } from "./svg";
 
 export type WaterfallOptions = {
   start: { label: string; value: number };
@@ -10,7 +10,7 @@ export type WaterfallOptions = {
   /** Formats balances and absolute changes. */
   format?: (value: number) => string;
   locale?: string;
-  /** Narrowest displayed width in CSS pixels; measured hosts pass their actual width. */
+  /** Displayed width in CSS pixels; defaults to the SVG width. Stretching hosts pass their layout width. */
   displayWidth?: number;
 };
 
@@ -48,7 +48,7 @@ export function waterfallLayout(spec: WaterfallOptions, size: { width: number; h
     ticks: Array.from({ length: Math.round((upper - lower) / step) + 1 }, (_, i) => lower + i * step),
   };
   const format = spec.format ?? new Intl.NumberFormat(spec.locale ?? "en", { maximumFractionDigits: 2 }).format;
-  const displayWidth = spec.displayWidth ?? 296;
+  const displayWidth = spec.displayWidth ?? size.width;
   if (!Number.isFinite(displayWidth) || displayWidth <= 0) throw new RangeError("Invalid waterfall display width");
   const ratio = size.width / displayWidth;
   const left = Math.min(size.width * 0.6, Math.max(48, ...scale.ticks.map((v) => format(v).length * 7 + 12)) * ratio);
@@ -65,9 +65,22 @@ const text = (x: number, y: number, value: string, anchor = "middle", extra = ""
   `<text x="${f(x)}" y="${f(y)}" text-anchor="${anchor}" fill="currentColor" stroke="none" font-family="var(--k2b-font-sans, sans-serif)" font-size="11" ${extra}>${escapeXml(value)}</text>`;
 
 /** Pure SVG, including presentation attributes for PDF and hosts outside .k2b-ui. */
-export function renderWaterfallSvg(spec: WaterfallOptions & { width: number; height: number; inspect?: boolean }): string {
+export function renderWaterfallSvg(
+  spec: WaterfallOptions & { width: number; height: number; inspect?: boolean },
+  responsive = false,
+): string {
   const g = waterfallLayout(spec, spec);
   const parts: string[] = [];
+  // The Solid host stretches a stable viewBox. Container queries use its drawn CSS width on the first frame,
+  // rather than freezing the labels to the phone fallback or measuring and redrawing after hydration.
+  const visibility = (minimumWidth: number) => {
+    if (!responsive || minimumWidth <= 0) return "";
+    const threshold = f(minimumWidth);
+    parts.push(
+      `<style>@container (max-width: ${f(minimumWidth - 0.01)}px) { .k2b-waterfall [data-waterfall-min-width="${threshold}"] { display: none; } }</style>`,
+    );
+    return ` data-waterfall-min-width="${threshold}"`;
+  };
   if (spec.title) parts.push(text(spec.width / 2, 16, spec.title));
   if (spec.subtitle) parts.push(text(spec.width / 2, spec.title ? 34 : 16, spec.subtitle));
   parts.push(
@@ -99,12 +112,16 @@ export function renderWaterfallSvg(spec: WaterfallOptions & { width: number; hei
     const amount = `${bar.total ? "" : bar.value > 0 ? "↙ " : bar.value < 0 ? "↗ " : "= "}${g.format(bar.total ? bar.value : Math.abs(bar.value))}`;
     const band = `<rect class="k2b-chart-category-band" x="${f(center - g.slot / 2)}" y="${f(g.top)}" width="${f(g.slot)}" height="${f(g.bottom - g.top)}" fill="currentColor" fill-opacity="0" stroke="none"/>`;
     const mark = `<rect class="k2b-waterfall-bar" x="${f(center - width / 2)}" y="${f(top)}" width="${f(width)}" height="${f(Math.max(height, 1))}" rx="3" fill="${color}" stroke="none"/>`;
+    const valueWidth = Math.max((46 * spec.width) / width, ((amount.length * 6 + 8) * spec.width) / g.slot);
     const value =
-      width / g.ratio >= 46 && amount.length * 6 + 8 <= cssSlot
-        ? text(center, Math.max(g.top - 8, top - 6), amount, "middle", 'class="k2b-waterfall-value" font-weight="600"').replace(
-            'fill="currentColor"',
-            'fill="var(--k2b-text-secondary, #52525b)"',
-          )
+      responsive || (width / g.ratio >= 46 && amount.length * 6 + 8 <= cssSlot)
+        ? text(
+            center,
+            Math.max(g.top - 8, top - 6),
+            amount,
+            "middle",
+            `class="k2b-waterfall-value" font-weight="600"${visibility(valueWidth)}`,
+          ).replace('fill="currentColor"', 'fill="var(--k2b-text-secondary, #52525b)"')
         : "";
     parts.push(
       chartDatumSvg(
@@ -129,10 +146,24 @@ export function renderWaterfallSvg(spec: WaterfallOptions & { width: number; hei
       parts.push(
         `<line class="k2b-waterfall-connector" x1="${f(center + width / 2)}" x2="${f(center + g.slot - width / 2)}" y1="${f(g.project(bar.to))}" y2="${f(g.project(bar.to))}" stroke="currentColor" stroke-opacity=".3" stroke-dasharray="3 3"/>`,
       );
-    if (index % stride === 0) {
-      const limit = Math.max(1, Math.floor(Math.min(cssSlot * stride - 8, (2 * Math.min(center, spec.width - center)) / g.ratio) / 6) - 1);
+    if (responsive || index % stride === 0) {
+      // Power-of-two subsets keep adjacent labels at least one visible slot apart at every container width.
+      let spacing = 1;
+      if (index > 0) while (index % (spacing * 2) === 0) spacing *= 2;
+      const minimumWidth = index === 0 ? 0 : ((longest + 8) * spec.width) / (g.slot * spacing);
+      const limit = responsive
+        ? 18
+        : Math.max(1, Math.floor(Math.min(cssSlot * stride - 8, (2 * Math.min(center, spec.width - center)) / g.ratio) / 6) - 1);
       const label = bar.label.length > limit ? `${bar.label.slice(0, Math.max(0, limit - 1))}…` : bar.label;
-      parts.push(text(center, g.bottom + 20, label, "middle", `class="stdlib-chart-tick-label stdlib-chart-category-label "`));
+      parts.push(
+        text(
+          center,
+          g.bottom + 20,
+          label,
+          "middle",
+          `class="stdlib-chart-tick-label stdlib-chart-category-label "${visibility(minimumWidth)}`,
+        ),
+      );
     }
   });
   return `<svg xmlns="http://www.w3.org/2000/svg" class="stdlib-chart k2b-waterfall ${escapeXml(spec.className ?? "")}" width="${spec.width}" height="${spec.height}" viewBox="0 0 ${spec.width} ${spec.height}" aria-hidden="true" focusable="false">${parts.join("")}</svg>`;

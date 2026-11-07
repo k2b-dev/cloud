@@ -1,5 +1,6 @@
 import {
   announce,
+  BalanceSummary,
   Button,
   Chart,
   CodeDisplay,
@@ -19,6 +20,7 @@ import {
   type FileSource,
   FileView,
   FilterChip,
+  FlowAmount,
   Format,
   InlineGuidance,
   installInputModeController,
@@ -76,7 +78,7 @@ import {
 import { batch, createMemo, createSignal, onCleanup, onMount, Show } from "solid-js";
 import { createStore } from "solid-js/store";
 import { DemoCard } from "../DemoCard";
-import { BarChartStatesDemo, ChartDemo, CountryMapDemo } from "./charts";
+import { BarChartStatesDemo, ChartDemo, ChartFrameStatesDemo, CountryMapDemo, ReferenceLineStylesDemo } from "./charts";
 import { FileGridDemo } from "./file-grid";
 import { PaginationDemo } from "./layout";
 import { CalendarDemo } from "./surfaces";
@@ -1886,6 +1888,33 @@ const IntlValues = () => {
   );
 };
 
+const MoneyDemo = () => (
+  <DemoCard
+    id="money"
+    chip={[
+      { kind: "component", name: "FlowAmount", from: "@k2b/ui" },
+      { kind: "component", name: "BalanceSummary", from: "@k2b/ui" },
+    ]}
+    description="Money with a direction carries no sign: incoming is turquoise on a ringed surface with an arrow down-left, outgoing is violet with an arrow up-right, zero is grey with “=”. Screen readers hear the direction as a word. BalanceSummary puts a period on one line: start, in, out, end."
+    code={`<FlowAmount value={31240.5} currency="EUR" />
+<FlowAmount value={-30500} currency="EUR" />
+<FlowAmount value={0} currency="EUR" />
+<FlowAmount value={-1204.8} currency="EUR" size="lg" labels={{ out: "Expense" }} />
+<BalanceSummary start={18800} in={29260} out={29520} currency="EUR" />`}
+  >
+    <div style="display:grid;gap:20px">
+      <div style="display:flex;flex-wrap:wrap;gap:14px 26px;align-items:center">
+        <FlowAmount value={31240.5} currency="EUR" />
+        <FlowAmount value={-30500} currency="EUR" />
+        <FlowAmount value={0} currency="EUR" />
+        <FlowAmount value={4820} currency="EUR" size="lg" />
+        <FlowAmount value={-1204.8} currency="EUR" size="lg" labels={{ out: "Expense" }} />
+      </div>
+      <BalanceSummary start={18800} in={29260} out={29520} currency="EUR" />
+    </div>
+  </DemoCard>
+);
+
 const IntlDemo = () => (
   <DemoCard
     id="intl"
@@ -2035,6 +2064,8 @@ const demos: DemoSection = {
     <DemoGrid columns="one">
       <ChartDemo window={new URLSearchParams(props.search).get("window") === "1h" ? "1h" : "24h"} />
       <BarChartStatesDemo />
+      <ChartFrameStatesDemo />
+      <ReferenceLineStylesDemo />
       <CountryMapDemo />
       <DemoCard
         id="line-top-legend"
@@ -2133,6 +2164,11 @@ const demos: DemoSection = {
   markdown: (props) => (
     <DemoGrid columns="one">
       <MarkdownDemo html={props.markdownHtml} />
+    </DemoGrid>
+  ),
+  money: () => (
+    <DemoGrid columns="one">
+      <MoneyDemo />
     </DemoGrid>
   ),
   intl: () => (

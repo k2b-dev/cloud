@@ -1,4 +1,15 @@
-import { Chart, type ChartKind, type ChartProps, type ChartSelection, type ChartTooltipFormatter, RangePicker } from "@k2b/ui";
+import {
+  Chart,
+  ChartExplorer,
+  type ChartFrameRequest,
+  type ChartKind,
+  type ChartProps,
+  type ChartSelection,
+  type ChartTooltipFormatter,
+  Paper,
+  RangePicker,
+  SegmentedControl,
+} from "@k2b/ui";
 import { CountryMap } from "@k2b/ui/country-map";
 import { createSignal, For, Show } from "solid-js";
 import { DemoCard } from "../DemoCard";
@@ -17,6 +28,19 @@ const examples = {
         { label: "Other", value: -1920 },
       ],
       end: { label: "Closing" },
+    },
+  },
+  area: {
+    description: "Area · Compare recurring and one-off sales as shares of each month's total.",
+    chart: {
+      kind: "area",
+      layout: "stacked",
+      normalize: true,
+      x: ["Jan", "Feb", "Mar", "Apr"],
+      series: [
+        { label: "Recurring", data: [30, 40, 50, 60] },
+        { label: "One-off", data: [70, 60, 50, 40] },
+      ],
     },
   },
   line: {
@@ -258,7 +282,11 @@ type TooltipField = { label: string; unit?: string; names?: Record<string, strin
 type TooltipExample = { title: string; fields: Record<string, TooltipField> };
 
 const tooltipExamples: Record<ChartKind, TooltipExample> = {
-  waterfall: { title: "Running balance", fields: { value: { label: "Amount" }, from: { label: "Before" }, to: { label: "After" } } },
+  waterfall: {
+    title: "Running balance",
+    fields: { balance: { label: "Balance" }, inflow: { label: "In" }, outflow: { label: "Out" }, after: { label: "Balance after" } },
+  },
+  area: { title: "Sales mix", fields: { value: { label: "Sales" }, percent: { label: "Share", unit: "%" } } },
   line: {
     title: "Request rate",
     fields: {
@@ -537,5 +565,102 @@ export const CountryMapDemo = () => (
     code={`<CountryMap label="Visitors by country" data={[{ code: "DE", value: 12840 }, { code: "US", value: 7310 }]} />`}
   >
     <CountryMap label="Visitors by country" data={visitorsByCountry} />
+  </DemoCard>
+);
+
+type SignupRow = { key: string; month: string; signups: number };
+const signups: SignupRow[] = [
+  { key: "jun", month: "June", signups: 412 },
+  { key: "jul", month: "July", signups: 468 },
+  { key: "aug", month: "August", signups: 391 },
+  { key: "sep", month: "September", signups: 524 },
+  { key: "oct", month: "October", signups: 610 },
+  { key: "nov", month: "November", signups: 575 },
+];
+const frameStates = {
+  data: { rows: signups, request: { status: "idle" } },
+  loading: { rows: [], request: { status: "loading" } },
+  empty: { rows: [], request: { status: "idle" } },
+  error: { rows: [], request: { status: "error" } },
+  stale: { rows: signups, request: { status: "error" } },
+} satisfies Record<string, { rows: SignupRow[]; request: ChartFrameRequest }>;
+
+export const ChartFrameStatesDemo = () => {
+  const [state, setState] = createSignal<keyof typeof frameStates>("data");
+  return (
+    <DemoCard
+      id="charts-frame-states"
+      chip={{ kind: "component", name: "ChartExplorer", from: "@k2b/ui" }}
+      description="A framed chart keeps its title and its place while it loads, is empty, fails or goes stale. Switch the state; nothing moves."
+      code={`<Paper class="p-4">
+  <ChartExplorer title="Signups per month" description="All sources" inset="1rem" renderDetails={false}
+    request={{ status: "error" }} asOf="09:12" onRetry={refetch}
+    empty="No signups in this period." data={{ rows }} columns={columns}>
+    <Chart kind="bar" style={{ height: "100%" }} data={bars} />
+  </ChartExplorer>
+</Paper>`}
+    >
+      <div class="ui-chart-frame-demo">
+        <SegmentedControl
+          ariaLabel="Frame state"
+          value={state()}
+          onValueChange={setState}
+          options={(Object.keys(frameStates) as (keyof typeof frameStates)[]).map((value) => ({
+            value,
+            label: value[0]!.toUpperCase() + value.slice(1),
+          }))}
+        />
+        <Paper class="ui-chart-frame-demo__frame">
+          <ChartExplorer<SignupRow>
+            title="Signups per month"
+            description="All sources · invented data"
+            height="15rem"
+            inset="1rem"
+            renderDetails={false}
+            request={frameStates[state()].request}
+            asOf="09:12"
+            onRetry={() => setState("data")}
+            empty="No signups in this period."
+            data={{ rows: frameStates[state()].rows }}
+            columns={[
+              { id: "month", label: "Month", value: (row) => row.month, sortValue: (row) => signups.indexOf(row) },
+              { id: "signups", label: "Signups", value: (row) => String(row.signups), sortValue: (row) => row.signups, align: "right" },
+            ]}
+          >
+            <Chart kind="bar" style={{ height: "100%" }} data={signups.map((row) => ({ label: row.month, value: row.signups }))} />
+          </ChartExplorer>
+        </Paper>
+      </div>
+    </DemoCard>
+  );
+};
+const referenceStyleExample = {
+  kind: "line",
+  series: [
+    {
+      label: "Orders",
+      data: [
+        { x: 1, y: 12 },
+        { x: 2, y: 16 },
+        { x: 3, y: 14 },
+        { x: 4, y: 21 },
+      ],
+    },
+  ],
+  references: [
+    { value: 14, label: "Target", style: "solid", tone: "success" },
+    { value: 18, label: "Forecast", style: "dashed", tone: "info" },
+    { value: 20, label: "Limit", style: "dotted", tone: "danger" },
+  ],
+} satisfies ChartProps;
+
+export const ReferenceLineStylesDemo = () => (
+  <DemoCard
+    id="charts-reference-styles"
+    chip={{ kind: "component", name: "Chart.Line", from: "@k2b/ui" }}
+    description="Targets, forecasts and limits use independent line styles and semantic tones. Labels keep their meaning visible."
+    code={`<Chart {...${JSON.stringify(referenceStyleExample, null, 2)}} />`}
+  >
+    <Chart {...referenceStyleExample} style={{ height: "16rem" }} />
   </DemoCard>
 );

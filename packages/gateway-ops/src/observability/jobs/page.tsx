@@ -383,41 +383,44 @@ const SuccessMinutesTable = (props: {
     { id: "p95", header: "P95 ≤", value: (row) => row.p95DurationMs },
     { id: "max", header: t.successMaximum, value: (row) => row.maxDurationMs },
   ];
+  // The key figures stand above the panel: each is a framed tile, so inside the panel they would be a box in a box.
   return (
-    <DataTable.Panel>
-      <DataTable.Header title={t.successMinutes} subtitle={t.successRollupHint} />
+    <div class="flex min-w-0 flex-col gap-3">
       <StatGrid columns={4}>
         <StatCell label={t.succeeded} value={formatNumber(props.result.count, { locale: locale() })} />
         <StatCell label={t.runtime} value={formatMs(props.result.avgDurationMs, { locale: locale() })} />
         <StatCell label="P95 ≤" value={formatMs(props.result.p95DurationMs, { locale: locale() })} />
         <StatCell label={t.successMaximum} value={formatMs(props.result.maxDurationMs, { locale: locale() })} />
       </StatGrid>
-      <DataTable
-        rows={props.result.minutes}
-        columns={columns}
-        getRowId={(row) => JSON.stringify([row.at, row.source, row.appId, row.category, row.name])}
-        density="compact"
-        surface="plain"
-        empty={t.noSuccessMinutes}
-        renderCell={({ row, col }) => {
-          if (col.id === "at") return formatTimestamp(row.at, props.dateConfig);
-          if (col.id === "source")
-            return (
-              <a class="hover:underline" href={sourceUrl(props.filter, row.source)}>
-                {row.source}
-              </a>
-            );
-          if (col.id === "name") return row.name;
-          if (col.id === "count") return formatNumber(row.count, { locale: locale() });
-          return formatMs(col.id === "average" ? row.avgDurationMs : col.id === "max" ? row.maxDurationMs : row.p95DurationMs, {
-            locale: locale(),
-          });
-        }}
-      />
-      <DataTable.Footer>
-        <Pagination currentPage={props.pagination.page} totalPages={props.pagination.total_pages} baseUrl={props.baseUrl} />
-      </DataTable.Footer>
-    </DataTable.Panel>
+      <DataTable.Panel>
+        <DataTable.Header title={t.successMinutes} subtitle={t.successRollupHint} />
+        <DataTable
+          rows={props.result.minutes}
+          columns={columns}
+          getRowId={(row) => JSON.stringify([row.at, row.source, row.appId, row.category, row.name])}
+          density="compact"
+          surface="plain"
+          empty={t.noSuccessMinutes}
+          renderCell={({ row, col }) => {
+            if (col.id === "at") return formatTimestamp(row.at, props.dateConfig);
+            if (col.id === "source")
+              return (
+                <a class="hover:underline" href={sourceUrl(props.filter, row.source)}>
+                  {row.source}
+                </a>
+              );
+            if (col.id === "name") return row.name;
+            if (col.id === "count") return formatNumber(row.count, { locale: locale() });
+            return formatMs(col.id === "average" ? row.avgDurationMs : col.id === "max" ? row.maxDurationMs : row.p95DurationMs, {
+              locale: locale(),
+            });
+          }}
+        />
+        <DataTable.Footer>
+          <Pagination currentPage={props.pagination.page} totalPages={props.pagination.total_pages} baseUrl={props.baseUrl} />
+        </DataTable.Footer>
+      </DataTable.Panel>
+    </div>
   );
 };
 

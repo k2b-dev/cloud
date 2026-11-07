@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, setSystemTime, test } from "bu
 import type { AppRegistryEntry } from "../contracts/registry";
 import { FreeIpaTransportError } from "../server/services/freeipa/transport";
 import { superviseRuntimeTask } from "../services/runtime-lifecycle";
+import { createCatalogPublication } from "./catalog-publication";
 import { createHeartbeat, createRegistryMembership } from "./heartbeat";
 import { APP_REGISTRY_TTL_MS, appInstancePrefix } from "./registry";
 
@@ -550,7 +551,7 @@ describe("replica membership", () => {
       writeTimeoutMs = 500,
       intervalMs: number | { app: number; capability: number } = 3_600_000,
       appId = "test",
-      hooks: { beforeWrite?: () => Promise<void>; onCapabilityError?: (error: unknown) => void } = {},
+      hooks: { beforeWrite?: (force?: boolean) => Promise<void>; onCapabilityError?: (error: unknown) => void } = {},
     ) => {
       const membership = createRegistryMembership(appId, {
         registry: () => instances,
@@ -911,6 +912,41 @@ describe("replica membership", () => {
     expect(reads.length).toBeGreaterThanOrEqual(16);
     for (const value of reads) expect(value).toHaveProperty("instanceId", "vB");
     expect(await f.values()).toEqual([{ ...entry, instanceId: "vB" }, { instanceId: "vB" }]);
+  });
+
+  test("an older replica rewrites its pruned catalog before adopting a departed publisher's entry", async () => {
+    const f = fixture();
+    const publish = createCatalogPublication();
+    let catalog = false;
+    let writes = 0;
+    const old = f.process("old", 500, 3_600_000, "test", {
+      beforeWrite: (force) =>
+        publish(
+          "old-hash",
+          async () => {
+            catalog = true;
+            writes++;
+          },
+          { force },
+        ),
+    });
+    const next = f.process("new");
+    await old.start();
+    await next.start();
+    expect(writes).toBe(1);
+    catalog = false; // One-day hash retention prunes the no-longer-advertised source.
+    await next.stop();
+    const upsert = f.apps.upsert;
+    f.apps.upsert = async (input) => {
+      if (input.key === "apps/test") expect(catalog).toBe(true);
+      return upsert(input);
+    };
+    await old.membership.adopt("apps/test");
+    expect(catalog).toBe(true);
+    expect(writes).toBe(2);
+    expect(await f.values()).toEqual([{ ...entry, instanceId: "old" }, { instanceId: "old" }]);
+    await old.membership.adopt("apps/test");
+    expect(writes).toBe(2);
   });
 
   test("a newer live replica takes back a pair that an older replica repaired, and both then keep it", async () => {

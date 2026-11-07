@@ -198,6 +198,37 @@ test("measured widths bound many labels and print amounts only on sufficiently w
   await page.locator("#width-check").evaluate((e) => e.remove());
 });
 
+test("the Solid waterfall uses its drawn width for every desktop label and amount", async () => {
+  const page = pages[0]!;
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.locator("main").evaluate((main) => {
+    main.style.maxWidth = "1000px";
+  });
+  await page.getByRole("button", { name: "data", exact: true }).click();
+  await settled(page);
+  const chart = page.locator(".waterfall-panel .k2b-chart");
+  expect((await chart.boundingBox())!.width).toBeGreaterThanOrEqual(900);
+  const labels = chart.locator(".stdlib-chart-category-label:visible");
+  expect(await labels.allTextContents()).toEqual([
+    waterfallFixture.start.label,
+    ...waterfallFixture.steps.map((step) => step.label),
+    waterfallFixture.end.label,
+  ]);
+  expect(await chart.locator(".k2b-waterfall-value:visible").count()).toBe(7);
+  const drawing = await chart.locator(".k2b-chart__svg").innerHTML();
+  await page.setViewportSize({ width: 390, height: 900 });
+  await settled(page);
+  expect(await chart.locator(".k2b-chart__svg").innerHTML()).toBe(drawing);
+  expect(await chart.locator(".k2b-waterfall-value:visible").count()).toBe(0);
+  const boxes = await chart.locator(".stdlib-chart-category-label:visible").evaluateAll((nodes) =>
+    nodes.map((node) => {
+      const r = node.getBoundingClientRect();
+      return { left: r.left, right: r.right };
+    }),
+  );
+  for (let i = 1; i < boxes.length; i++) expect(boxes[i]!.left).toBeGreaterThan(boxes[i - 1]!.right);
+});
+
 test("pure waterfall SVG keeps distinct flow paint with base.css alone", async () => {
   const page = await browser.newPage();
   pages.push(page);

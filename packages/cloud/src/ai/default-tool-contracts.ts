@@ -151,12 +151,27 @@ const flatChartSchema = () => {
       .optional()
       .describe("waterfall: positive inflows and negative outflows."),
     end: z.strictObject({ label: ChartLabel }).optional().describe("waterfall: closing label; balance is calculated."),
+    x: z
+      .array(z.union([ChartLabel, z.number()]))
+      .min(1)
+      .max(CLOUD_AI_CHART_MAX_VALUES)
+      .optional()
+      .describe("area: ordered categories or numeric X values."),
+    normalize: z.boolean().optional().describe("area: show shares as 100 % while retaining original amounts."),
+    layout: z.literal("stacked").optional().describe("area: stacked layers."),
     series: z
-      .array(ChartSeries(ChartPoints.min(1)).extend({ style: z.enum(["solid", "dashed", "dotted"]).optional() }))
+      .array(
+        z.union([
+          ChartSeries(ChartPoints.min(1)).extend({ style: z.enum(["solid", "dashed", "dotted"]).optional() }),
+          z.object({ label: ChartLabel, data: z.array(z.number().nonnegative().nullable()).min(1).max(CLOUD_AI_CHART_MAX_VALUES) }),
+        ]),
+      )
       .min(1)
       .max(CLOUD_AI_CHART_MAX_SERIES)
       .optional()
-      .describe("line, scatter: label/data, optional reference role; line: style. Line needs 2 points per series."),
+      .describe(
+        "line, scatter: label/data points, optional reference role; line: style, at least 2 points. area: label/data with nonnegative numbers or null gaps, matching x length.",
+      ),
     xAxis: ChartAxis.optional().describe("line, scatter: x axis. bar: only label, the category axis title."),
     yAxis: ChartAxis.optional().describe("bar, line, scatter, boxplot: y axis; label names the value, format sets units."),
     legend: z
@@ -176,7 +191,7 @@ const flatChartSchema = () => {
     unit: ChartUnit.optional().describe("gauge, barGauge, stat: unit after value."),
     format: cloudAiNumberFormatSchema()
       .optional()
-      .describe("waterfall, gauge, barGauge, stat, heatmap, pie, donut: number format; percent values are fractions."),
+      .describe("area, waterfall, gauge, barGauge, stat, heatmap, pie, donut: number format; percent values are fractions."),
     references: ChartReferences.optional().describe(
       "bar, line, scatter, histogram, boxplot: reference lines; x only for line, scatter, histogram.",
     ),
@@ -198,7 +213,7 @@ const chartInputSchema = () => {
         .optional()
         .describe(`Groups: 2..${CLOUD_AI_GROUP_MAX_CHARTS} related charts, each with a kind.`),
       linkX: z.boolean().optional().describe("Groups: share the x cursor between line charts with the same kind of x."),
-      layout: z.enum(["stack", "grid"]).optional().describe("Groups: stack (default) or grid."),
+      layout: z.enum(["stack", "grid", "stacked"]).optional().describe("Groups: stack (default) or grid. Area: stacked."),
     })
     .superRefine((value, context) => {
       if ((value.kind !== undefined) === (value.charts !== undefined)) {
@@ -216,7 +231,7 @@ const chartInputSchema = () => {
           if (issue) context.addIssue({ code: "custom", message: issue, path: ["charts", index] });
         });
       } else {
-        if (value.linkX !== undefined || value.layout !== undefined)
+        if (value.linkX !== undefined || (value.layout !== undefined && value.kind !== "area"))
           context.addIssue({ code: "custom", message: "linkX and layout belong to groups." });
         const parsed = ChartSchema.safeParse(value);
         if (!parsed.success) {

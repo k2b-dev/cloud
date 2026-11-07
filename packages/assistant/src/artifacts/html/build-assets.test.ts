@@ -4,9 +4,11 @@ import { buildCheckPrelude, buildPrelude } from "./build-assets";
 
 test("normal mounts omit app checks and stay within the prelude budget", async () => {
   const [normal, check] = await Promise.all([buildPrelude(), buildCheckPrelude()]);
-  // Slice 3 measured 248 KB. cloud.chart() drawing through the chat's chart mapping, with four more chart kinds and
-  // its app contract, brought normal mounts to 279 KB: allow 10% growth over that, not the 851 KB app-check bundle.
-  expect(Buffer.byteLength(normal)).toBeLessThan(279_000 * 1.1);
+  // Stacked area plus waterfall drawing, validation and flow tooltips measure 322,542 bytes.
+  // Keep about 2% headroom while guarding both renderers at the app-frame boundary.
+  expect(Buffer.byteLength(normal)).toBeLessThan(330_000);
+  expect(normal).toContain("k2b-waterfall-bar");
+  expect(normal).toContain("k2b-area-layer");
   // The frame imports `@k2b/cloud/ai/app-frame`: the `ai/browser` barrel kept its skill parser and YAML (34 KB).
   expect(normal).not.toContain("tag:yaml.org,2002:");
   expect(normal).not.toMatch(/axe\.run|axe-core|axeVersion/);

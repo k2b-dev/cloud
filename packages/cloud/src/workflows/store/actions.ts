@@ -14,6 +14,7 @@
  * shape that cannot occur.
  */
 import { SQL } from "bun";
+import { workflowEffectKey } from "../../shared/effect-key";
 import { type WorkflowDependency, type WorkflowJsonValue, type WorkflowStepOutcome, workflowPathKey } from "../contracts";
 import type { ErasedWorkflowAction, WorkflowActionContext } from "../definition";
 import type { DefinedWorkflowModule } from "../module";
@@ -37,14 +38,7 @@ import {
 } from "./runs";
 import { withTransaction } from "./transaction";
 
-/**
- * The key an idempotent effect deduplicates on.
- *
- * Derived from the run and step rather than generated, so a replay after a
- * crash presents the provider with the same key and gets the same answer
- * instead of performing the work twice.
- */
-export const workflowEffectKey = (runId: string, stepKey: string): string => `workflow:${runId}:step:${stepKey}`;
+export { workflowEffectKey } from "../../shared/effect-key";
 
 /** Unwinds a transactional action's transaction while keeping how it failed. */
 class WorkflowTransactionalFailure extends Error {

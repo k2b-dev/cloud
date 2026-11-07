@@ -54,7 +54,7 @@ test("all-negative balances, many categories and measured widths remain finite a
     steps: Array.from({ length: 10 }, (_, i) => ({ label: `Cat${i}`, value: -10 })),
     end: { label: "Closing balance" },
   };
-  const phone = waterfallLayout(many, { width: 900, height: 280 });
+  const phone = waterfallLayout({ ...many, displayWidth: 296 }, { width: 900, height: 280 });
   const wide = waterfallLayout({ ...many, displayWidth: 900 }, { width: 900, height: 280 });
   expect(wide.left).toBeLessThan(phone.left);
   expect(wide.left).toBeLessThan(100);
@@ -72,4 +72,14 @@ test("all-negative balances, many categories and measured widths remain finite a
 test("initial controlled selection uses the actual flow mark paint, skipping its category band", () => {
   const selected = selectedChartSvg(renderWaterfallSvg({ ...spec, ...size, inspect: true }), { role: "item", index: 2 });
   expect(selected).toContain("--k2b-chart-selection-color:color-mix(in srgb,var(--k2b-flow-out-mark, #8b5cf6)");
+});
+
+test("responsive waterfall emits desktop labels and amounts with actual-width guards", () => {
+  const input = { ...spec, ...size, inspect: true };
+  const svg = renderWaterfallSvg(input, true);
+  expect(svg.match(/class="k2b-waterfall-value"/g)).toHaveLength(5);
+  expect(svg.match(/class="stdlib-chart-tick-label stdlib-chart-category-label /g)).toHaveLength(5);
+  expect(svg).toContain("@container (max-width:");
+  expect(svg).toContain("data-waterfall-min-width=");
+  expect(svg).not.toMatch(/NaN|Infinity/);
 });
