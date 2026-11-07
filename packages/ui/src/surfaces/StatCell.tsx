@@ -48,6 +48,8 @@ export type StatCellProps = {
   tone?: StatCellTone | "in" | "out";
   accent?: StatCellAccent;
   delta?: StatCellDelta;
+  /** Keep the figure and change on separate rows, including while loading. Defaults to beside the figure. */
+  deltaPlacement?: "below";
   compare?: StatCellCompare;
   href?: string;
   title?: string;
@@ -279,6 +281,7 @@ export function StatCell(props: StatCellProps): JSX.Element {
           data-size={size()}
           data-surface={surface}
           data-wrap={props.wrap || undefined}
+          data-delta-placement={props.deltaPlacement}
           data-status={props.status}
           aria-busy={props.status === "loading" || undefined}
         >
@@ -292,6 +295,7 @@ export function StatCell(props: StatCellProps): JSX.Element {
         data-size={size()}
         data-surface={surface}
         data-wrap={props.wrap || undefined}
+        data-delta-placement={props.deltaPlacement}
       >
         <i class="ti ti-external-link k2b-stat-cell__link-icon" aria-hidden="true" />
         <Body {...props} />

@@ -1255,26 +1255,29 @@ test("explorer references open the original dataset row after table sorting and 
 test("stats show the shared change badge and comparison without moving during loading", async () => {
   const parsed = parseCloudAiView(comparedStats);
   if (!parsed) throw new Error("Invalid stats");
-  for (const width of [1280, 390]) {
-    const context = await browser.newContext({ viewport: { width, height: 900 }, reducedMotion: "reduce" });
-    try {
-      const page = await context.newPage();
-      await page.goto(`http://127.0.0.1:${server.port}/`);
-      const path = "/views/compared-12345678.view.json";
-      const loaded = hold(path);
-      await page.evaluate((block) => window.show([block]), present(path, cloudAiViewSummary(parsed)));
-      await page.waitForSelector("[data-view-path]");
-      await settled(page);
-      const loading = await boxes(page);
-      loaded();
-      const badge = page.locator('.k2b-stat-cell__delta[role="img"]');
-      await badge.waitFor();
-      expect(await badge.getAttribute("aria-label")).toContain("Last month");
-      expect(await badge.textContent()).toContain("+3.1 pts");
-      expect(await page.locator(".k2b-stat-cell__support").textContent()).toContain("46.1%");
-      expect(await boxes(page)).toEqual(loading);
-    } finally {
-      await context.close();
+  for (const locale of ["en", "de"])
+    for (const width of [1280, 390]) {
+      const context = await browser.newContext({ viewport: { width, height: 900 }, reducedMotion: "reduce" });
+      try {
+        const page = await context.newPage();
+        await page.goto(`http://127.0.0.1:${server.port}/?lang=${locale}`);
+        const path = "/views/compared-12345678.view.json";
+        const loaded = hold(path);
+        await page.evaluate((block) => window.show([block]), present(path, cloudAiViewSummary(parsed)));
+        await page.waitForSelector("[data-view-path]");
+        await settled(page);
+        const loading = await boxes(page);
+        loaded();
+        const badge = page.locator('.k2b-stat-cell__delta[role="img"]');
+        await badge.waitFor();
+        expect(await badge.getAttribute("aria-label")).toContain("Last month");
+        expect(await badge.textContent()).toContain(locale === "de" ? "+3,1 Pkt." : "+3.1 pts");
+        expect(await page.locator(".k2b-stat-cell__support").textContent()).toContain(
+          cloudAiNumberFormatters({ style: "percent", decimals: 1 }, locale).value(0.461),
+        );
+        expect(await boxes(page)).toEqual(loading);
+      } finally {
+        await context.close();
+      }
     }
-  }
 });

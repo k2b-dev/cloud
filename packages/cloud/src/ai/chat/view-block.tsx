@@ -221,6 +221,7 @@ function CloudStatsView(props: { summary: StatsSummary; input: CloudStatsDescrip
                   {(item) => (
                     <StatCell
                       label={item().label}
+                      deltaPlacement="below"
                       value="0"
                       trend={item().sparkline ? [0, 1] : undefined}
                       sub={item().sub ? "\u00a0" : undefined}
@@ -243,6 +244,7 @@ function CloudStatsView(props: { summary: StatsSummary; input: CloudStatsDescrip
               {(tile, index) => (
                 <StatCell
                   label={tile().label}
+                  deltaPlacement="below"
                   value={tile().value}
                   title={tile().value}
                   trend={tile().sparkline}
