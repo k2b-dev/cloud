@@ -43,6 +43,9 @@ const rowLayout = (container: HTMLElement | undefined) => Boolean(container?.que
 const categoryRoles: Partial<Record<ChartKind, string>> = { bar: "item", histogram: "bin", boxplot: "box" };
 type CategoryBand = { entry: Entry; left: number; right: number; top: number; bottom: number };
 
+/** An element's box on screen; one name for the many reads below keeps the framework-free entry small. */
+const box = (element: Element) => element.getBoundingClientRect();
+
 /** Enhances existing SVG nodes. Pointer/focus changes never rebuild the chart. */
 export function createChartInspector(options: {
   container: () => HTMLElement | undefined;
@@ -127,7 +130,7 @@ export function createChartInspector(options: {
     const matrix = entry.element.getScreenCTM?.();
     const [x, y] = entry.datum.anchor;
     if (matrix) return { x: matrix.a * x + matrix.c * y + matrix.e, y: matrix.b * x + matrix.d * y + matrix.f };
-    const rect = entry.element.getBoundingClientRect();
+    const rect = box(entry.element);
     return { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 };
   };
   const visibleRecords = () => {
@@ -184,7 +187,6 @@ export function createChartInspector(options: {
     const state = linkedCursor?.read();
     if (broadcast && state && state.source !== source) return;
     if (broadcast) linkedCursor?.clear(source);
-    byKeyboard = false;
     options.container()?.removeAttribute("data-cursor-source");
     pinned = false;
     active = undefined;
@@ -310,7 +312,7 @@ export function createChartInspector(options: {
         tooltip.append(line);
       }
     }
-    const rect = container.getBoundingClientRect(),
+    const rect = box(container),
       point = screenPoint(entry);
     const slot = categoryBands().find((candidate) => candidate.entry === entry);
     // A renderer that draws its own band inside the category's mark keeps it; the overlay only fills the others.
@@ -348,11 +350,9 @@ export function createChartInspector(options: {
     const rows = rowLayout(container);
     const slots = records()
       .filter((entry) => entry.datum.role === role)
-      .map((entry) => ({ entry, rect: entry.element.getBoundingClientRect() }));
+      .map((entry) => ({ entry, rect: box(entry.element) }));
     if (!slots.length) return [];
-    const guides = Array.from(container.querySelectorAll(".stdlib-chart-grid, .stdlib-chart-axis")).map((node) =>
-      node.getBoundingClientRect(),
-    );
+    const guides = Array.from(container.querySelectorAll(".stdlib-chart-grid, .stdlib-chart-axis")).map((node) => box(node));
     // The band spans the plot across the categories: grid lines and every mark, so rows without value ticks, whose
     // only guide is one vertical baseline, still get a band from the baseline to the longest bar.
     const spans = [...guides, ...slots.map((slot) => slot.rect)];
@@ -376,14 +376,14 @@ export function createChartInspector(options: {
   const updatePlotBounds = () => {
     const container = options.container();
     if (!container) return;
-    const axes = Array.from(container.querySelectorAll(".stdlib-chart-axis")).map((axis) => axis.getBoundingClientRect());
+    const axes = Array.from(container.querySelectorAll(".stdlib-chart-axis")).map(box);
     if (axes.length < 2) return;
     const left = Math.min(...axes.map((a) => a.left)),
       right = Math.max(...axes.map((a) => a.right));
     const top = Math.min(...axes.map((a) => a.top)),
       bottom = Math.max(...axes.map((a) => a.bottom));
     if (right <= left || bottom <= top) return;
-    const rect = container.getBoundingClientRect();
+    const rect = box(container);
     for (const [name, value] of Object.entries({
       left: left - rect.left,
       right: rect.right - right,
@@ -512,7 +512,7 @@ export function createChartInspector(options: {
         if (seriesChart()) {
           const container = options.container();
           container?.setAttribute("data-cursor-source", "true");
-          container?.style.setProperty("--k2b-chart-inspection-y", `${sample.y - container.getBoundingClientRect().top}px`);
+          container?.style.setProperty("--k2b-chart-inspection-y", `${sample.y - box(container).top}px`);
         }
       } else close();
     });
@@ -545,11 +545,10 @@ export function createChartInspector(options: {
       pointerFocusing = false;
       return;
     }
-    const fromPointer = pointerFocusing;
+    byKeyboard = !pointerFocusing;
     const nodes = visibleRecords();
     const first = options.nav?.()?.last ? nodes.at(-1) : options.kind() === "line" ? sortedPoints.at(-1) : nodes[0];
     if (first) show(first);
-    byKeyboard = Boolean(first) && !fromPointer;
   };
   const key = (event: KeyboardEvent): boolean => {
     if (!options.enabled() || event.target !== options.container()) return false;
@@ -631,7 +630,17 @@ export function createChartInspector(options: {
     click,
     focus,
     key,
-    followsFocus: () => byKeyboard && active !== undefined,
+    /**
+     * The page scrolled: a keyboard tooltip, or one a linked chart keeps open, follows its mark; others close. A
+     * focused chart scrolled into view would otherwise close the tooltip its focus just opened.
+     */
+    scroll: () => {
+      if (!byKeyboard) close();
+      // Still open (keyboard, or a linked chart keeps it): show the same mark again at its new place.
+      const entry = active;
+      active = undefined;
+      if (entry) show(entry, false);
+    },
     close: () => close(),
     invalidate,
     leave: () => {
@@ -644,11 +653,9 @@ export function createChartInspector(options: {
 export function closeChartInspectionOnOutside(options: {
   container: () => HTMLElement | undefined;
   tooltip: () => HTMLElement | undefined;
-  /** The tooltip's anchor, for a tooltip that follows its mark when the page scrolls. */
-  anchor?: () => HTMLElement | undefined;
-  /** Whether the open tooltip came from the keyboard; only such a tooltip follows its mark instead of closing. */
-  follow?: () => boolean;
   close: () => void;
+  /** What a page scroll does; defaults to close. An inspector passes its `scroll`, which keeps keyboard tooltips. */
+  scroll?: () => void;
   keepScroll?: () => boolean | undefined;
 }): () => void {
   const outside = (event: PointerEvent) => {
@@ -657,14 +664,7 @@ export function closeChartInspectionOnOutside(options: {
   const scroll = (event: Event) => {
     if (event.target === options.container() && options.keepScroll?.()) return;
     if (event.target instanceof Node && options.tooltip()?.contains(event.target)) return;
-    // Keyboard inspection keeps its tooltip while the page scrolls, such as when focus scrolls the chart into view a
-    // frame after the tooltip opened; the tooltip follows its mark. A pointer's tooltip closes: the pointer left it.
-    const container = options.container(),
-      tooltip = options.tooltip(),
-      anchor = options.anchor?.();
-    if (!(options.follow?.() && container?.matches(":focus-within"))) options.close();
-    // A tooltip that stays open, kept by the keyboard or by a linked chart that owns the cursor, moves with its mark.
-    if (tooltip && anchor && tooltip.matches(":popover-open")) positionTooltipSurface(tooltip, anchor);
+    (options.scroll ?? options.close)();
   };
   window.addEventListener("pointerdown", outside);
   window.addEventListener("scroll", scroll, true);
@@ -739,8 +739,7 @@ export function inspectChart(container: HTMLElement, options: InspectChartOption
   const removeOutside = closeChartInspectionOnOutside({
     container: () => container,
     tooltip: () => tooltip,
-    anchor: () => anchor,
-    follow: inspector.followsFocus,
+    scroll: inspector.scroll,
     close: inspector.close,
     keepScroll: () => options.nav?.keepScroll,
   });

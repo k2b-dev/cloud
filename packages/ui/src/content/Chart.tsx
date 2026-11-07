@@ -539,8 +539,7 @@ const ChartRoot = (props: ChartProps): JSX.Element => {
       closeChartInspectionOnOutside({
         container: () => containerRef,
         tooltip: () => chartTooltipRef,
-        anchor: () => lineAnchorRef,
-        follow: inspection.followsFocus,
+        scroll: inspection.scroll,
         close: closeChartTooltip,
         keepScroll: () => props.kind === "heatmap" && props.layout === "calendar",
       }),
