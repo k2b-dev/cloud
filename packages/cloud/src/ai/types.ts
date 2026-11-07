@@ -312,6 +312,8 @@ export type AiStoredMessage = {
       sourceTitle: string;
       sourceHref?: string;
     };
+    /** A committed personal Code result; deferred from any already-running model turn. */
+    codeDelivery?: { codeId: string; runId: string; effectKey: string };
     scheduledTask?: {
       reason?: import("./chat-task-reasons").ChatTaskReason;
       /** The message text is only the reason sentence; the chat words the reason itself instead. */

@@ -1535,6 +1535,29 @@ For a multilingual app, resolve `forms` once from the app's catalog using
 `"{amount} {item} an {to} übergeben"`, with matching running, done, confirm,
 and decline forms.
 
+## Deliver personal Code results to a chat
+
+Core's `core.ai.chat.deliver` Action targets `core.ai.chat`. Its closed input is
+`{ text }`, with 1–10,000 characters after trimming; supply the required
+idempotency key as invocation metadata. It returns
+`{ id, status: "delivered", targetChatId }` and an open link to the destination.
+
+The caller must be a delegated personal Code run whose owner owns the active
+target chat. Core checks both identities on review and execution. Resource- and
+app-owned Code and ordinary person calls are refused. Its policy is
+`{ silent: "you" }`, so approved personal versions can deliver unattended.
+The destination is always explicit; no chat is created or selected implicitly.
+
+A committed call appends one assistant message, marks the chat unread and leaves
+a durable receipt for the existing Assistant response notification recovery.
+Messages retain their Code/run provenance, form separate answers, and enter
+model context after an already-running interactive turn finishes.
+Notification delivery follows the person's preferences. The Action starts no
+AI turn. A repeated key in the same run returns the original message; changed
+text or destination returns `IDEMPOTENCY_CONFLICT`. Each call uses the ordinary
+Code call log. See [Code SDK](/en/docs/platform/code-sdk#deliver-a-result-to-your-gustav-chat)
+for the generated handle and an example.
+
 ## Write valid contracts
 
 Cloud validates the declaration at startup:

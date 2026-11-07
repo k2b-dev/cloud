@@ -53,6 +53,7 @@ import { coreUserEvents, coreUserEventTypes } from "@k2b/cloud/services/core-use
 import { principalLabel } from "@k2b/cloud/shared";
 import { dates, err, fail, i18n, ok } from "@k2b/stdlib";
 import { z } from "zod";
+import { aiChatDeliveryAction } from "./ai-chat-delivery";
 import { aiChatTaskRuntime, reconcileAiChatTasks } from "./ai-chat-tasks-runtime";
 import { aiDecisionQuery } from "./ai-decision-capability";
 import { aiGenerationQuery } from "./ai-generation-capability";
@@ -2337,6 +2338,7 @@ export const aiCapabilities = defineCapabilities({
         });
       },
     },
+    "ai.chat.deliver": aiChatDeliveryAction,
     "ai.chat.message": {
       target: "ai.chat",
       title: "Message another AI conversation",

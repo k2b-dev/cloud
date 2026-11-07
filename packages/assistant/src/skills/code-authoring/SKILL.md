@@ -46,6 +46,24 @@ Studio HTML apps retain `code_create` and the existing `code_read/write/check`
 inputs with `id`, revision and screenshots. Load `assistant-code-mode` for them.
 
 
+## Rebuild an Assistant routine
+
+Ask for or retain the routine's IANA time zone. Declare recurring timing at
+module level as `app.schedule({ cron, timeZone, name }, handler)` with constant
+values; a cron string without a zone runs in UTC. Spring-forward gaps skip the
+missing local minute, and repeated autumn minutes run only once.
+
+For a result in the person's Gustav chat, use personal Code. Discover the owned
+chat and `core.ai.chat.deliver` through the live SDK. The generated call is
+`core.ai.chat(chatId).ai.chat.deliver({ text, idempotencyKey: "result" })`. Keep the
+effect key stable within a run; Core scopes it per run. The result text is
+1–10,000 characters after trimming. Delivery appends an assistant message and
+queues the existing response notification without starting an AI turn. Another
+person's chat, an archived chat, or resource/app Code cannot receive this
+personal delivery. Do not substitute `ai.chat.message`, which requires an
+interactive AI turn. Test the delivery with fictional SDK replies before
+submitting, and retain the original routine until the person accepts its rebuild.
+
 ## Mail triage: category first
 
 Discover `core.ai.decide` with `code_sdk` and use its generated handle. It is a
