@@ -6,10 +6,10 @@ test("normal mounts omit app checks and stay within the prelude budget", async (
   const [normal, check] = await Promise.all([buildPrelude(), buildCheckPrelude()]);
   // Slice 3 measured 248 KB. cloud.chart() drawing through the chat's chart mapping, with four more chart kinds and
   // its app contract, brought normal mounts to 279 KB: allow 10% growth over that, not the 851 KB app-check bundle.
-  // Calendar drawing/validation and explicit scroll handling measure 312,047 B. The frame is offline and
-  // cloud.chart() is synchronous: a network-loaded chunk would break that contract. Keep a 313 KB ceiling
+  // Calendar drawing/validation and explicit scroll handling measure 314,513 B. The frame is offline and
+  // cloud.chart() is synchronous: a network-loaded chunk would break that contract. Keep a 315 KB ceiling
   // (under 1 KB headroom) rather than extending the previous percentage allowance.
-  expect(Buffer.byteLength(normal)).toBeLessThan(313_000);
+  expect(Buffer.byteLength(normal)).toBeLessThan(315_000);
   // The frame imports `@k2b/cloud/ai/app-frame`: the `ai/browser` barrel kept its skill parser and YAML (34 KB).
   expect(normal).not.toContain("tag:yaml.org,2002:");
   expect(normal).not.toMatch(/axe\.run|axe-core|axeVersion/);

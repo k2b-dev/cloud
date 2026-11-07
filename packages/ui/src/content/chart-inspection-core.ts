@@ -610,6 +610,13 @@ export function mountCalendarScroll(container: HTMLElement): () => void {
     const group = svg?.querySelector("[data-calendar-header]");
     const scale = 1 / (svg?.getScreenCTM()?.a || 1);
     if (group) container.style.setProperty("--k2b-calendar-header-x", `${container.scrollLeft * scale}px`);
+    for (const label of svg?.querySelectorAll<SVGTextElement>("[data-calendar-month]") ?? []) {
+      // A month name is useful whole; hide a fragment behind the fixed weekday rail.
+      container.style.setProperty(
+        `--k2b-calendar-month-${label.dataset.calendarMonth}`,
+        label.x.baseVal[0]!.value < container.scrollLeft * scale + 32 ? "hidden" : "visible",
+      );
+    }
   };
   const reset = () => {
     if (!drawing.querySelector("svg[data-calendar]")) return;

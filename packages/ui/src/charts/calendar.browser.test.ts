@@ -43,9 +43,9 @@ test("Calendar SSR, calm hover, keyboard, touch, scroll, theme and fixed host st
  const snapshot=prepareChartSnapshot(spec,{key:s=>String(s.datum.index),tooltip:s=>({title:s.datum.label,rows:s.datum.values.map(v=>({label:'Value',value:v.formatted}))})});
  const populated={chart:snapshot,rows:snapshot.marks.map(m=>({key:m.key}))};
  const empty={chart:{...snapshot,svg:'',marks:[]},rows:[]};
- render(()=>createComponent(ChartExplorer,{title:'Calendar states',height:'280px',renderDetails:false,get data(){return ['data','stale'].includes(state())?populated:empty},columns:[{id:'day',label:'Day',value:r=>r.key}],get empty(){return state()==='loading'?'Loading':state()==='error'?'Could not load observations.':'No observations in this period.'}}),document.querySelector('#explorer'));
- document.querySelectorAll('[data-state]').forEach(button=>button.onclick=()=>{setState(button.dataset.state);document.querySelector('#retry').hidden=state()!=='error';document.querySelector('#subtitle').textContent=state()==='stale'?'Previous data':'November 2026';});
- document.querySelector('#retry').onclick=()=>document.querySelector('[data-state=data]').click();
+ render(()=>createComponent(ChartExplorer,{title:'Calendar states',height:'280px',renderDetails:false,get data(){return ['data','stale'].includes(state())?populated:empty},columns:[{id:'day',label:'Day',value:r=>r.key}],get request(){return {status:state()==='loading'?'loading':['error','stale'].includes(state())?'error':'idle',message:'Could not load observations.'}},onRetry:()=>setState('data'),empty:'No observations in this period.'}),document.querySelector('#explorer'));
+ document.querySelectorAll('button[data-state]').forEach(button=>button.onclick=()=>{setState(button.dataset.state);document.querySelector('#retry').hidden=state()!=='error';document.querySelector('#subtitle').textContent=state()==='stale'?'Previous data':'November 2026';});
+ document.querySelector('#retry').onclick=()=>document.querySelector('button[data-state=data]').click();
  `,
           }));
         },
@@ -91,6 +91,19 @@ test("Calendar SSR, calm hover, keyboard, touch, scroll, theme and fixed host st
           last = await chart.locator("[data-chart-datum]").last().boundingBox();
         expect(last!.x).toBeGreaterThanOrEqual(visible!.x);
         expect(last!.x + last!.width).toBeLessThanOrEqual(visible!.x + visible!.width + 1);
+        const weekdayBox = await chart.locator("[data-calendar-weekdays] text").first().boundingBox();
+        expect(weekdayBox!.x).toBeGreaterThanOrEqual(visible!.x);
+        expect(weekdayBox!.x + weekdayBox!.width).toBeLessThanOrEqual(visible!.x + 32);
+        const monthBoxes = await chart
+          .locator("svg > text")
+          .evaluateAll((elements) =>
+            elements.map((e) => (e as SVGGraphicsElement).getBBox()).map((b) => ({ left: b.x, right: b.x + b.width })),
+          );
+        for (let i = 1; i < monthBoxes.length; i++) expect(monthBoxes[i]!.left).toBeGreaterThan(monthBoxes[i - 1]!.right);
+        const cellBox = await chart.locator("[data-chart-datum] rect").last().boundingBox();
+        const legendBox = await chart.locator("[data-calendar-legend]").boundingBox();
+        expect(legendBox!.y + legendBox!.height - visible!.y).toBeGreaterThan(visible!.height * 0.85);
+        expect(Math.abs(cellBox!.height - cellBox!.width)).toBeLessThan(0.2);
         await chart.focus();
         await settled(page);
         expect(await chart.locator("[data-inspected]").getAttribute("data-chart-datum")).toContain("Sunday, 1 March 2026");
@@ -146,12 +159,13 @@ test("Calendar SSR, calm hover, keyboard, touch, scroll, theme and fixed host st
             .evaluate((e) => getComputedStyle(e).fill),
         ).not.toBe("rgb(0, 0, 0)");
         for (const state of ["loading", "empty", "error", "stale", "data"]) {
-          await page.locator(`[data-state=${state}]`).click();
+          await page.locator(`button[data-state=${state}]`).click();
           await settled(page);
           expect(await frame.evaluate(documentBox)).toEqual(box);
           expect(await chart.evaluate(documentBox)).toEqual(realBox);
+          expect(await page.locator("#explorer .k2b-chart-explorer").getAttribute("data-state")).toBe(state === "data" ? "data" : state);
           if (state === "error") {
-            await page.locator("#retry").click();
+            await page.locator("#explorer .k2b-chart-explorer__state[data-state=error] button").click();
             await settled(page);
             expect(await page.locator("#mount").isVisible()).toBe(true);
           }

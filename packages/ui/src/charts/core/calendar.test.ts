@@ -84,3 +84,11 @@ test("calendar gaps, square cells, locale weeks, months and complete scale legen
     }),
   ).toThrow("three years");
 });
+
+test("calendar squares fill the panel and reserve a visible weekday rail", () => {
+  const s = calendarLayout(spec);
+  expect(s.cell).toBeGreaterThan(14);
+  expect(s.top + 7 * (s.cell + 3) + 12).toBeGreaterThan(s.height - 16);
+  expect(s.top + 7 * (s.cell + 3) + 12).toBeLessThanOrEqual(s.height);
+  expect(renderCalendarSvg(spec)).toContain('data-calendar-weekdays="true"');
+});

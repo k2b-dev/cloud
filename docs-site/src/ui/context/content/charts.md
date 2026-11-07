@@ -1092,7 +1092,7 @@ for positive and violet for negative values, with zero neutral. Phone charts
 scroll to the newest weeks. Left/right inspect a week; up/down inspect a day.
 Home/End jump, Enter pins and Escape dismisses. The exact date and value are
 also available in the table. Optional `locale` takes precedence over the UI
-provider, and `format` formats values. `label` names their unit. Diverging values read “more in” or “more out” without a sign. Cells stay square; print output scales uniformly to the page. Measured hosts pass `displayWidth`.
+provider, and `format` formats values. `label` names their unit. Diverging values read “more in” or “more out” without a sign. Square cells use the available height. Weekday labels stay visible while the weeks scroll, and partially visible month names are hidden. Print output scales uniformly to the page. Measured hosts pass `displayWidth`.
 
 Keep loading, empty, error/retry and stale feedback in the host's fixed-height
 frame. The newsletter example shows daily opens across a complete year.

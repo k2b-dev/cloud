@@ -46,7 +46,9 @@ export function calendarLayout(spec: CalendarHeatmapOptions, size = { width: spe
   const first = dates[0]?.time ?? 0;
   const monday = first - ((new Date(first).getUTCDay() - weekStart + 7) % 7) * DAY;
   const weeks = dates.length ? Math.floor((dates.at(-1)!.time - monday) / DAY / 7) + 1 : 0;
-  const cell = 14,
+  const headerHeight = renderHeader(size.width, spec.title, spec.subtitle).height;
+  // Seven square rows use the available panel height. Wider calendars scroll rather than flattening their cells.
+  const cell = Math.max(14, Math.floor((size.height - headerHeight - 22 - 20 - 18) / 7)),
     gap = 3,
     left = 32;
   const width = Math.max(spec.displayWidth ?? size.width, left + weeks * (cell + gap) + 4);
@@ -98,8 +100,11 @@ export function renderCalendarSvg(spec: CalendarHeatmapOptions): string {
     .replace(/text-anchor="middle"/g, 'text-anchor="start"')
     .replace(/<text /g, '<text fill="var(--k2b-text,#27272a)" font-size="12" ');
   const body: string[] = [`<g data-calendar-header="true" style="transform:translateX(var(--k2b-calendar-header-x,0px))">${header}</g>`];
+  const days: string[] = [
+    `<g data-calendar-weekdays="true" pointer-events="none" style="transform:translateX(var(--k2b-calendar-header-x,0px))"><rect x="-1" y="${s.top - 18}" width="33" height="${7 * (s.cell + 3) + 18}" fill="var(--k2b-surface,#fff)"/>`,
+  ];
   for (const day of [0, 2, 4])
-    body.push(
+    days.push(
       `<text x="0" y="${s.top + day * (s.cell + 3) + s.cell - 2}" fill="var(--k2b-text-muted,#45454e)" font-size="11">${escapeXml(weekday.format(Date.UTC(2026, 0, 4 + s.weekStart + day)))}</text>`,
     );
   let lastRight = -Infinity,
@@ -113,10 +118,12 @@ export function renderCalendarSvg(spec: CalendarHeatmapOptions): string {
     const firstLabel = lastMonth === "";
     lastMonth = ym;
     const text = `${month.format(next)}${firstLabel || nextDate.getUTCMonth() === 0 ? ` ${nextDate.getUTCFullYear()}` : ""}`;
-    const x = 32 + week * (s.cell + 3),
-      textWidth = text.length * 6;
+    const textWidth = text.length * 7;
+    const x = Math.max(32, Math.min(32 + week * (s.cell + 3), s.width - textWidth - 2));
     if (x < lastRight + 2) continue;
-    body.push(`<text x="${x}" y="${s.top - 10}" font-size="11" fill="var(--k2b-text-muted,#45454e)">${escapeXml(text)}</text>`);
+    body.push(
+      `<text data-calendar-month="${week}" style="visibility:var(--k2b-calendar-month-${week},visible)" x="${x}" y="${s.top - 10}" textLength="${textWidth}" lengthAdjust="spacingAndGlyphs" font-size="11" fill="var(--k2b-text-muted,#45454e)">${escapeXml(text)}</text>`,
+    );
     lastRight = x + textWidth;
   }
   for (const c of s.cells) {
@@ -140,7 +147,9 @@ export function renderCalendarSvg(spec: CalendarHeatmapOptions): string {
       ),
     );
   }
-  const legendY = s.top + 7 * (s.cell + 3) + 16;
+  days.push("</g>");
+  body.push(days.join(""));
+  const legendY = s.top + 7 * (s.cell + 3) + 12;
   const start = spec.scale === "diverging" ? words.moreOut : words.less,
     end = spec.scale === "diverging" ? words.moreIn : words.more;
   const swatches = spec.scale === "diverging" ? [-1, -0.5, 0, 0.5, 1] : [0, 0.25, 0.5, 0.75, 1];
