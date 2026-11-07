@@ -248,6 +248,7 @@
     "@k2b/ui src/actions/menu-width.browser.test.ts": 27,
     "@k2b/ui src/actions/rebuilt-rows.browser.test.ts": 3,
     "@k2b/ui src/actions/selection-toolbar.browser.test.ts": 4.7,
+    "@k2b/ui src/actions/slash-geometry.browser.test.ts": 16,
     "@k2b/ui src/actions/tabs.browser.test.ts": 3,
     "@k2b/ui src/actions/toolbar.browser.test.ts": 25.2,
     "@k2b/ui src/actions/view-tabs.browser.test.ts": 24.4,
