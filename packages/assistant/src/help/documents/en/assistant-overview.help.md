@@ -38,11 +38,11 @@ Gustav also works in editors such as T3 Code and Zed through `cld acp`. Sending,
 - **Images:** A Vision model inspects newly attached images directly. A tool-capable model can instead use the configured image-inspection model. Attachments remain conversation files, so the file context updates without storing image bytes inside the message.
 - **Keep the useful thread:** Rename the chat or add a description when the conversation should be easy to find later.
 - **Search inside a chat:** Use `/search` to find visible messages or inspect the structured Cloud resources used in this chat or across your active chats.
-- **Schedule future work:** Ask Gustav for personal Code with a schedule and time zone. Review the Code and its grants before activating it.
+- **Schedule future work:** Ask Gustav for personal Code with a schedule and time zone. Review the Code and its access before activating it.
 - **Next steps:** When a concrete follow-up would save you work, Gustav may end its answer with one offer, such as drafting the reply. Answer yes to accept it. If you do not want such offers, tell Gustav.
 - **Working files:** Gustav keeps intermediate files in the chat folder `temp/` and saves results outside it, together with the Markdown or HTML source a PDF was made from.
 :::
 
 ## Routines became Code {icon="clock"}
 
-Scheduled chat routines are retired. Ask Gustav to rebuild an exported routine as personal Code. Review its schedule, time zone and grants before activation. Historical chat messages remain readable; old routines cannot resume.
+Scheduled chat routines are retired. Ask Gustav to rebuild an exported routine as personal Code. Review its schedule, time zone and access before activation. Historical chat messages remain readable; old routines cannot resume.

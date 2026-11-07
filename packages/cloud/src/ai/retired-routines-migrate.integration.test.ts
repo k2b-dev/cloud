@@ -84,11 +84,13 @@ databaseSuite()("scheduled routine retirement", () => {
         runBudgetMs: 60_000,
       }),
     ).toBeNull();
-    await expect(sql`UPDATE ai.turns SET status='queued' WHERE id=${turnId}::uuid`).rejects.toThrow("routines are retired");
-    await expect(sql`UPDATE auth.mandates SET state='active' WHERE id=${mandateId}::uuid`).rejects.toThrow("routines are retired");
-    await expect(sql`UPDATE ai.chat_tasks SET state='active'`).rejects.toThrow("read-only");
-    await expect(sql`DELETE FROM ai.chat_task_occurrences`).rejects.toThrow("read-only");
-    await expect(sql`TRUNCATE ai.task_messages`).rejects.toThrow("read-only");
+    await expect(sql`UPDATE ai.turns SET status='queued' WHERE id=${turnId}::uuid`.execute()).rejects.toThrow("routines are retired");
+    await expect(sql`UPDATE auth.mandates SET state='active' WHERE id=${mandateId}::uuid`.execute()).rejects.toThrow(
+      "routines are retired",
+    );
+    await expect(sql`UPDATE ai.chat_tasks SET state='active'`.execute()).rejects.toThrow("read-only");
+    await expect(sql`DELETE FROM ai.chat_task_occurrences`.execute()).rejects.toThrow("read-only");
+    await expect(sql`TRUNCATE ai.task_messages`.execute()).rejects.toThrow("read-only");
     await sql`DELETE FROM ai.conversations WHERE id=${chat.id}::uuid`;
     await sql`DELETE FROM auth.users WHERE id=${owner!.id}::uuid`;
     expect(await evidence()).toEqual(before);

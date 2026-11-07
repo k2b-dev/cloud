@@ -38,11 +38,11 @@ Mit `cld acp` kannst du Gustav auch in Editoren wie T3 Code und Zed nutzen. Wenn
 - **Bilder:** Ein Vision-Modell prüft neu angehängte Bilder direkt. Ein Modell mit Tool-Unterstützung kann stattdessen das konfigurierte Modell zur Bildanalyse verwenden. Anhänge bleiben Dateien der Unterhaltung. Dadurch wird der Dateikontext aktualisiert, ohne Bilddaten in der Nachricht zu speichern.
 - **Nützliche Chats wiederfinden:** Benenne den Chat um oder füge eine Beschreibung hinzu, wenn du ihn später leicht wiederfinden möchtest.
 - **Im Chat suchen:** Nutze `/search`, um sichtbare Nachrichten zu finden oder die strukturierten Cloud-Ressourcen zu prüfen, die in diesem oder anderen aktiven Chats verwendet wurden.
-- **Künftige Arbeit planen:** Bitte Gustav um persönlichen Code mit Zeitplan und Zeitzone. Prüfe Code und Berechtigungen vor der Aktivierung.
+- **Künftige Arbeit planen:** Bitte Gustav um persönlichen Code mit Zeitplan und Zeitzone. Prüfe Code und Zugriff vor der Aktivierung.
 - **Nächste Schritte:** Wenn ein konkreter nächster Schritt dir Arbeit spart, beendet Gustav seine Antwort manchmal mit einem Angebot, etwa einen Antwortentwurf zu schreiben. Antworte mit Ja, um es anzunehmen. Möchtest du keine solchen Angebote, sag es Gustav.
 - **Arbeitsdateien:** Zwischenstände legt Gustav im Chat-Ordner `temp/` ab, Ergebnisse außerhalb davon, zusammen mit der Markdown- oder HTML-Quelle, aus der ein PDF entstanden ist.
 :::
 
 ## Routinen werden Code {icon="clock"}
 
-Geplante Chat-Routinen sind eingestellt. Bitte Gustav, eine exportierte Routine als persönlichen Code neu aufzubauen. Prüfe Zeitplan, Zeitzone und Berechtigungen vor der Aktivierung. Alte Chat-Nachrichten bleiben lesbar; alte Routinen lassen sich nicht fortsetzen.
+Geplante Chat-Routinen sind eingestellt. Bitte Gustav, eine exportierte Routine als persönlichen Code neu aufzubauen. Prüfe Zeitplan, Zeitzone und Zugriff vor der Aktivierung. Alte Chat-Nachrichten bleiben lesbar; alte Routinen lassen sich nicht fortsetzen.
