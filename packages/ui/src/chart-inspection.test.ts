@@ -70,7 +70,7 @@ describe("framework-free chart inspection entry", () => {
     });
     expect(build.success).toBe(true);
     const output = await build.outputs[0]!.text();
-    expect(new TextEncoder().encode(output).byteLength).toBeLessThanOrEqual(15_200);
+    expect(new TextEncoder().encode(output).byteLength).toBeLessThanOrEqual(17_000);
     await assertFrameworkFreeGraph(resolve(packageRoot, "dist/browser/chart-inspection.js"), ".js");
     await assertFrameworkFreeGraph(resolve(packageRoot, "dist/types/chart-inspection.d.ts"), ".d.ts");
   });

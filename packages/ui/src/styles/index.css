@@ -76,6 +76,15 @@
   --k2b-tint-zinc: var(--k2b-neutral-600);
   --k2b-tint-cyan: #0e7490;
   --k2b-tint-rose: #e11d48;
+  /* Money with a direction (FlowAmount): turquoise comes in, violet goes out. Text keeps 4.5:1 on its surface;
+     `mark` colours bars and areas. */
+  --k2b-flow-in-text: #0e7490;
+  --k2b-flow-in-surface: #ecfeff;
+  --k2b-flow-in-ring: #a5f3fc;
+  --k2b-flow-in-mark: #0891b2;
+  --k2b-flow-out-text: #6d28d9;
+  --k2b-flow-out-surface: #f5f3ff;
+  --k2b-flow-out-mark: #8b5cf6;
   --k2b-app-workspace-active: var(--k2b-action);
   /* `--k2b-app-workspace-selected` is the fill of a selected navigation row
      or object chip, beside the selected ink above; the soft tabs, view tabs,
@@ -294,6 +303,13 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   --k2b-tint-zinc: var(--k2b-neutral-400);
   --k2b-tint-cyan: #22d3ee;
   --k2b-tint-rose: #fb7185;
+  --k2b-flow-in-text: #67e8f9;
+  --k2b-flow-in-surface: rgb(8 51 68 / 0.55);
+  --k2b-flow-in-ring: #155e75;
+  --k2b-flow-in-mark: #22d3ee;
+  --k2b-flow-out-text: #c4b5fd;
+  --k2b-flow-out-surface: rgb(46 16 101 / 0.55);
+  --k2b-flow-out-mark: #a78bfa;
   --k2b-action-solid: var(--k2b-accent-600);
   --k2b-action-solid-hover: var(--k2b-accent-700);
   --k2b-selection: rgb(147 197 253 / 0.35);
@@ -1740,10 +1756,34 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 .k2b-ui .k2b-chart [data-chart-datum] {
   cursor: crosshair;
 }
-.k2b-ui .k2b-chart [data-inspected]:not([data-chart-role="value"]) > :is(rect, path, circle) {
+/* Calm hover: nothing else dims. A single mark gets a thin outline; a column or row
+ * of a category chart gets a light band behind it instead (data-inspecting="category"). */
+.k2b-ui .k2b-chart:not([data-chart-kind="bar"], [data-chart-kind="histogram"], [data-chart-kind="boxplot"]) [data-inspected]:not([data-chart-role="value"]) > :is(rect, path, circle) {
   stroke: var(--k2b-chart-inspection-color) !important;
-  stroke-width: 2px;
   vector-effect: non-scaling-stroke;
+}
+.k2b-ui .k2b-chart:not([data-chart-kind="bar"], [data-chart-kind="histogram"], [data-chart-kind="boxplot"]) [data-inspected]:not([data-chart-role="value"]) > :is(rect, path) {
+  stroke-width: 1.5px;
+}
+/* Points keep a 2 px ring: a tiny point is hit through its stroke, so a thinner ring would let the drawing take the pointer. */
+.k2b-ui .k2b-chart:not([data-chart-kind="bar"], [data-chart-kind="histogram"], [data-chart-kind="boxplot"]) [data-inspected]:not([data-chart-role="value"]) > circle {
+  stroke-width: 2px;
+}
+/* The band sits behind the marks without positioning the drawing, which would change what lies on top. */
+.k2b-ui .k2b-chart[data-inspecting="category"] {
+  isolation: isolate;
+}
+.k2b-ui .k2b-chart[data-inspecting="category"]::before {
+  content: "";
+  position: absolute;
+  left: var(--k2b-chart-band-left);
+  top: var(--k2b-chart-band-top);
+  width: var(--k2b-chart-band-width);
+  height: var(--k2b-chart-band-height);
+  z-index: -1;
+  border-radius: 3px;
+  background: color-mix(in srgb, currentColor 7%, transparent);
+  pointer-events: none;
 }
 .k2b-ui .k2b-chart [data-inspected] > .stdlib-chart-inspection-point {
   fill: var(--k2b-chart-inspection-color);
@@ -16455,6 +16495,30 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 .k2b-ui .k2b-chart-legend__swatch[data-style] { width: 1rem; height: 0; border-radius: 0; background: none; border-top: 2px var(--k2b-chart-legend-style, dashed) var(--k2b-chart-legend-color); }
 .k2b-ui .k2b-chart-legend__swatch[data-style="dotted"] { --k2b-chart-legend-style: dotted; }
 .k2b-ui .k2b-chart-legend__swatch[data-reference]:not([data-style]) { background: none; box-shadow: inset 0 0 0 1.5px var(--k2b-chart-legend-color); }
+/* Frame states (with a request): the subtitle is one reserved line, and every state fills the viewport's height. */
+.k2b-ui .k2b-chart-explorer[data-state] .k2b-chart-explorer__description { min-height: 1.25rem; overflow: hidden; color: var(--k2b-text-muted); font-size: .8125rem; line-height: 1.25rem; text-overflow: ellipsis; white-space: nowrap; }
+.k2b-ui .k2b-chart-explorer[data-state] .k2b-chart-explorer__description > * { margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.k2b-ui .k2b-chart-explorer__status-line { display: flex; align-items: center; gap: .3125rem; min-width: 0; }
+.k2b-ui .k2b-chart-explorer__status-line > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.k2b-ui .k2b-chart-explorer[data-state] .k2b-chart-explorer__status-line[data-tone="warning"] { color: var(--k2b-warning-text); }
+.k2b-ui .k2b-chart-explorer__status-line > i { flex: none; font-size: .875rem; }
+.k2b-ui .k2b-chart-explorer__status-line > .k2b-button { flex: none; height: 1.25rem; min-height: 0; padding: 0; font-size: inherit; color: var(--k2b-link-accent); text-decoration: underline; text-underline-offset: 2px; }
+.k2b-ui .k2b-chart-explorer__views { display: contents; }
+.k2b-ui .k2b-chart-explorer__views[inert] > * { visibility: hidden; }
+.k2b-ui .k2b-chart-explorer__chart { height: 100%; min-height: 0; }
+.k2b-ui .k2b-chart-explorer__viewport[data-legend] > .k2b-chart-explorer__chart { flex: 1 1 0; min-height: 60%; }
+.k2b-ui .k2b-chart-explorer__chart > .k2b-chart { height: 100%; }
+.k2b-ui .k2b-chart-explorer__state { display: flex; height: 100%; flex-direction: column; align-items: center; justify-content: center; gap: .625rem; padding: 0 1rem; text-align: center; }
+.k2b-ui .k2b-chart-explorer__state > p { max-width: 28rem; margin: 0; color: var(--k2b-text-secondary); font-size: .875rem; line-height: 1.25rem; text-wrap: balance; }
+.k2b-ui .k2b-chart-explorer__state-icon { display: inline-grid; place-items: center; width: 2.5rem; height: 2.5rem; border-radius: 999px; background: var(--k2b-surface-muted); color: var(--k2b-text-muted); font-size: 1.125rem; }
+.k2b-ui .k2b-chart-explorer__state[data-state="error"] .k2b-chart-explorer__state-icon { background: var(--k2b-danger-surface, color-mix(in srgb, var(--k2b-danger-500) 10%, transparent)); color: var(--k2b-danger-text); }
+.k2b-ui .k2b-chart-explorer__skeleton { display: flex; height: 100%; align-items: flex-end; gap: clamp(.25rem, 1.5%, 1rem); padding: .5rem 0 1.5rem 3rem; }
+.k2b-ui .k2b-chart-explorer__skeleton > span { flex: 1 1 0; min-width: 0; border-radius: 3px 3px 0 0; background: var(--k2b-surface-muted); animation: k2b-chart-explorer-pulse 1.6s ease-in-out infinite; }
+@keyframes k2b-chart-explorer-pulse { 50% { opacity: .55; } }
+@media (prefers-reduced-motion: reduce) { .k2b-ui .k2b-chart-explorer__skeleton > span { animation: none; } }
+/* Inside a frame the table reaches its left, right and bottom edges; the viewport grows by the inset it covers. */
+.k2b-ui .k2b-chart-explorer[data-inset] .k2b-chart-explorer__viewport[data-view="table"] { margin: 0 calc(-1 * var(--k2b-chart-explorer-inset)) calc(-1 * var(--k2b-chart-explorer-inset)); }
+.k2b-ui .k2b-chart-explorer[data-inset] .k2b-chart-explorer__viewport[data-view="table"] .k2b-chart-explorer__note { padding: 0 var(--k2b-chart-explorer-inset) .5rem; }
 .k2b-ui .k2b-chart-explorer__details:empty { display: none; }
 .k2b-ui .k2b-chart-explorer__detail-paper { padding: .75rem 1rem; }
 .k2b-ui .k2b-chart-explorer__detail-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: .5rem; color: var(--k2b-text-muted); font-size: .75rem; }

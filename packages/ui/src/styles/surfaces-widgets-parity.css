@@ -762,6 +762,9 @@
 .k2b-ui .k2b-stat-cell__icon[data-tone="emerald"] { color: var(--k2b-tint-emerald); }
 .k2b-ui .k2b-stat-cell__icon[data-tone="amber"] { color: var(--k2b-tint-amber); }
 .k2b-ui .k2b-stat-cell__icon[data-tone="red"] { color: var(--k2b-tint-red); }
+/* Money tiles: the chip takes the flow surface, as a FlowAmount's arrow does. */
+.k2b-ui .k2b-stat-cell__icon[data-tone="in"] { color: var(--k2b-flow-in-text); background: var(--k2b-flow-in-surface); }
+.k2b-ui .k2b-stat-cell__icon[data-tone="out"] { color: var(--k2b-flow-out-text); background: var(--k2b-flow-out-surface); }
 /* Micro labels stay in sentence case: capitals with tracking read as an admin
    template and truncate long German compounds early. The value is the anchor. */
 .k2b-ui .k2b-stat-cell__label {
