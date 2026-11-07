@@ -1556,6 +1556,7 @@ export const createCodeRunnerCallRoutes = (dependencies: CodeRunnerDispatchDepen
         const failure = z.object({ code: z.string().regex(/^[A-Za-z][A-Za-z0-9_]{0,127}$/) }).safeParse(result.ok ? result.data : null);
         const code = failure.success ? failure.data.code.toLowerCase() : "code_call_failed";
         authority.onRefusal?.(failure.success ? codeBridgeDispatchRefusalKind(code, targetStatus) : "bridge");
+        if (result.ok) authority.onFailure?.(result.data);
         return codeBridgeError(code, 200, response.status >= 400 && response.status <= 599 ? response.status : undefined);
       });
     } catch (error) {

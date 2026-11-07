@@ -37,6 +37,7 @@ function fixture(events: ProviderEvent[]) {
     details?: AiCallDetails;
   }[] = [];
   const contexts: AiCallContext[] = [];
+  const observed: ({ input: number; output: number; estimated?: boolean } | undefined)[] = [];
   let calls = 0;
   const provider: Provider = {
     name: "fixture",
@@ -63,12 +64,25 @@ function fixture(events: ProviderEvent[]) {
     },
     heartbeat: async (_id: string) => {},
   };
-  const wrap = () => inferenceProvider(withProviderErrors(provider), profile, { kind: "chat", task: "chat" }, lifecycle);
+  const wrap = () =>
+    inferenceProvider(
+      withProviderErrors(provider),
+      profile,
+      {
+        kind: "chat",
+        task: "chat",
+        onUsage: (usage) => {
+          observed.push(usage);
+        },
+      },
+      lifecycle,
+    );
   return {
     provider,
     lifecycle,
     wrap,
     booked,
+    observed,
     contexts,
     get calls() {
       return calls;
@@ -85,6 +99,7 @@ test("usage snapshots count once", async () => {
   await drain(f.wrap());
   expect(f.booked.map((b) => b.usage)).toEqual([{ input: 8, output: 2 }]);
   expect(f.contexts.map((c) => c.kind)).toEqual(["chat"]);
+  expect(f.observed).toEqual(f.booked.map((b) => b.usage));
 });
 test("every actual model call is recorded separately", async () => {
   const f = fixture([event]);
@@ -101,6 +116,7 @@ test("rejected admission never invokes provider", async () => {
   };
   await expect(drain(f.wrap())).rejects.toThrow("Background AI");
   expect(f.calls).toBe(0);
+  expect(f.observed).toEqual([]);
 });
 test("accounting completion failure never retries successful inference", async () => {
   const f = fixture([event]);
@@ -109,6 +125,26 @@ test("accounting completion failure never retries successful inference", async (
   };
   await drain(f.wrap());
   expect(f.calls).toBe(1);
+  expect(f.observed).toEqual([{ input: 8, output: 2 }]);
+});
+test("observer failure cannot change inference or book it twice", async () => {
+  const f = fixture([event]);
+  await drain(
+    inferenceProvider(
+      f.provider,
+      profile,
+      {
+        kind: "chat",
+        task: "chat",
+        onUsage: () => {
+          throw new Error("observer");
+        },
+      },
+      f.lifecycle,
+    ),
+  );
+  expect(f.calls).toBe(1);
+  expect(f.booked).toHaveLength(1);
 });
 test("consumer return preserves already reported usage", async () => {
   const f = fixture([event, event]);
@@ -141,6 +177,7 @@ test("normal missing or synthetic zero usage remains unknown", async () => {
     const f = fixture(events);
     await drain(f.wrap());
     expect(f.booked[0]?.usage).toBeUndefined();
+    expect(f.observed).toEqual([undefined]);
   }
 });
 test("early return estimates partial output including final-only tool blocks", async () => {
@@ -160,6 +197,7 @@ test("a stream exception preserves estimated input", async () => {
   expect(f.booked).toHaveLength(1);
   expect(f.booked[0]).toMatchObject({ status: "failed", usage: { estimated: true } });
   expect(f.booked[0]!.usage!.input).toBeGreaterThan(0);
+  expect(f.observed).toEqual(f.booked.map((b) => b.usage));
 });
 test("chunking does not change estimates and encoded file data is excluded", async () => {
   const failure: ProviderEvent = { type: "issue", issue: { kind: "provider_error", message: "lost", retryable: true } };

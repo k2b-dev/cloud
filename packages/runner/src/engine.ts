@@ -1,5 +1,6 @@
 import { chmod, chown, lstat, mkdtemp, readFile, rmdir, unlink } from "node:fs/promises";
 import { join } from "node:path";
+import { CODE_REQUEST_LIMITS, type CodeRouteResponse, CodeRouteResponseSchema } from "@k2b/cloud/code";
 import type { RunnerConfig, RunnerJsonValue, RunnerLease, RunnerOutcome } from "@k2b/cloud/code/runner";
 import { RunnerCallError } from "@k2b/cloud/code/runner";
 import { z as schema } from "zod";
@@ -9,9 +10,10 @@ import { allocateRunnerIdentities } from "./identities";
 /** Only bridge calls can leave a sandbox. No run token or app key crosses this interface. */
 export type SandboxCall = (operation: string, input: RunnerJsonValue) => Promise<RunnerJsonValue>;
 /** Execution seam for C14 attacks and C17 simulations. load does not execute user code. */
+export type RunnerExecutionResult = RunnerOutcome | { outcome: RunnerOutcome; response: CodeRouteResponse };
 export interface RunnerEngine {
   load(lease: RunnerLease, source: string, config: RunnerConfig, call: SandboxCall, signal: AbortSignal): Promise<void>;
-  run(lease: RunnerLease, signal: AbortSignal): Promise<RunnerOutcome>;
+  run(lease: RunnerLease, signal: AbortSignal): Promise<RunnerExecutionResult>;
   kill(runId: string): Promise<void>;
   close(): Promise<void>;
 }
@@ -250,7 +252,7 @@ const config :Workerd.Config = (
     }
     await group.closing;
   }
-  async run(lease: RunnerLease, signal: AbortSignal): Promise<RunnerOutcome> {
+  async run(lease: RunnerLease, signal: AbortSignal): Promise<RunnerExecutionResult> {
     const loaded = this.#loaded.get(lease.runId);
     if (!loaded) throw new Error("runner_not_loaded");
     const key = JSON.stringify([lease.organizationId, lease.trustTier]);
@@ -286,6 +288,10 @@ const config :Workerd.Config = (
         signal,
         timeout: false,
       });
+      if (response.ok && lease.kind === "request") {
+        const bytes = await readBytes(response, CODE_REQUEST_LIMITS.responseBytes, signal);
+        return { outcome: "succeeded", response: CodeRouteResponseSchema.parse(JSON.parse(new TextDecoder().decode(bytes))) };
+      }
       await response.body?.cancel();
       return response.ok ? "succeeded" : "failed";
     } catch {

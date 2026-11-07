@@ -13,11 +13,13 @@ if (Bun.argv.includes("--help")) {
     console.log(JSON.stringify(analyzeCode(request)));
   } else if (Bun.argv[2] === "bundle") {
     const expected = JSON.stringify(
-      request.entrypoints
+      [...request.entrypoints]
+        .sort((a, b) => a.entrypoint.localeCompare(b.entrypoint))
         .filter((e) => e.kind !== "manual")
-        .map(({ kind, entrypoint, cron, title, event }) => ({
+        .map(({ kind, entrypoint, cron, title, route, event }) => ({
           kind,
           entrypoint,
+          ...(route ? { route } : {}),
           cron,
           ...(event === undefined ? {} : { event }),
           ...(title === undefined ? {} : { title }),
@@ -29,13 +31,14 @@ if (Bun.argv.includes("--help")) {
           request.sdk.manifest.mode === "code_run"
             ? `return user.default(input);`
             : `return __codeSdk.run(${JSON.stringify(entry.entrypoint)}, input);`;
-        return `async function run${i}(input, cloud) { __codeSdk.bind(cloud); const user = await import("code:entry"); if (JSON.stringify(__codeSdk.entries()) !== ${JSON.stringify(expected)}) throw new Error("code_entrypoints_changed"); ${body} }\nexport { run${i} as ${JSON.stringify(entry.entrypoint)} };`;
+        return `async function run${i}(input, cloud) { __codeSdk.bind(cloud); const user = await import("code:entry"); if (JSON.stringify(__codeSdk.entries().sort((a,b) => a.entrypoint.localeCompare(b.entrypoint))) !== ${JSON.stringify(expected)}) throw new Error("code_entrypoints_changed"); ${body} }\nexport { run${i} as ${JSON.stringify(entry.entrypoint)} };`;
       })
       .join("\n");
     const modules = new Set<string>();
     const build = await Bun.build({
       entrypoints: ["code:host"],
       target: "browser",
+      jsx: { runtime: "classic", factory: "jsx" },
       format: "esm",
       splitting: false,
       plugins: [

@@ -6,6 +6,7 @@ const catalog = i18n.define({
     en: {
       mailboxSyncProblem: "Mailbox sync is unavailable; counts may be out of date.",
       noSubject: "(no subject)",
+      conversationNoun: "Conversation",
       none: "None",
       unknown: "Unknown",
       unassigned: "Unassigned",
@@ -80,6 +81,21 @@ const catalog = i18n.define({
       unassignBatchReview: ({ count }: { count: number }) =>
         `Remove the assignee from ${count} ${count === 1 ? "conversation" : "conversations"}.`,
       conversations: "Conversations",
+      summaryPreserved: "Kept the person's summary unchanged.",
+      summaryWritten: "Saved the automated summary.",
+      referenceEnsured: ({ value }: { value: string }) => `Conversation reference: ${value}.`,
+      workStatusSummary: ({ subject, status }: { subject: string; status: "done" | "open" | "waiting" | "needs_action" }) =>
+        `${subject}: ${{ done: "done", open: "reopened", waiting: "waiting", needs_action: "needs action" }[status]}.`,
+      workStatusBatchSummary: ({
+        count,
+        missing,
+        status,
+      }: {
+        count: number;
+        missing: number;
+        status: "done" | "open" | "waiting" | "needs_action";
+      }) =>
+        `${count} conversation(s): ${{ done: "done", open: "reopened", waiting: "waiting", needs_action: "needs action" }[status]}; ${missing} not found.`,
       statusBatchReview: ({ count, done }: { count: number; done: boolean }) =>
         done ? `Mark ${count} conversation(s) done.` : `Reopen ${count} conversation(s).`,
       statusBatchSummary: ({ count, missing, done }: { count: number; missing: number; done: boolean }) =>
@@ -124,6 +140,11 @@ const catalog = i18n.define({
       unread: "unread",
       flagged: "flagged",
       unflagged: "unflagged",
+      answered: "answered",
+      unanswered: "unanswered",
+      draftFlag: "draft",
+      notDraft: "not a draft",
+      markedMessage: ({ subject, states }: { subject: string; states: string }) => `Marked the message “${subject}” as ${states}.`,
       markedConversation: ({ subject, states }: { subject: string; states: string }) => `Marked “${subject}” as ${states}.`,
       movedConversation: ({ subject, destination }: { subject: string; destination: string }) => `Moved “${subject}” to ${destination}.`,
       assignedConversation: ({ subject, assignee }: { subject: string; assignee: string }) => `Assigned “${subject}” to ${assignee}.`,
@@ -218,6 +239,7 @@ const catalog = i18n.define({
     de: {
       mailboxSyncProblem: "Die Postfach-Synchronisierung ist nicht verfügbar; die Zähler können veraltet sein.",
       noSubject: "(kein Betreff)",
+      conversationNoun: "Unterhaltung",
       none: "Keine",
       unknown: "Unbekannt",
       unassigned: "Nicht zugewiesen",
@@ -291,6 +313,13 @@ const catalog = i18n.define({
       assignBatchReview: ({ count, assignee }) => `${count} ${count === 1 ? "Unterhaltung" : "Unterhaltungen"} ${assignee} zuweisen.`,
       unassignBatchReview: ({ count }) => `Zuweisung von ${count} ${count === 1 ? "Unterhaltung" : "Unterhaltungen"} entfernen.`,
       conversations: "Unterhaltungen",
+      summaryPreserved: "Die Zusammenfassung der Person bleibt unverändert.",
+      summaryWritten: "Automatische Zusammenfassung gespeichert.",
+      referenceEnsured: ({ value }) => `Referenz der Unterhaltung: ${value}.`,
+      workStatusSummary: ({ subject, status }) =>
+        `${subject}: ${{ done: "erledigt", open: "wieder geöffnet", waiting: "wartend", needs_action: "zu bearbeiten" }[status]}.`,
+      workStatusBatchSummary: ({ count, missing, status }) =>
+        `${count} Unterhaltung(en): ${{ done: "erledigt", open: "wieder geöffnet", waiting: "wartend", needs_action: "zu bearbeiten" }[status]}; ${missing} nicht gefunden.`,
       statusBatchReview: ({ count, done }) =>
         done ? `${count} Unterhaltung(en) als erledigt markieren.` : `${count} Unterhaltung(en) wieder öffnen.`,
       statusBatchSummary: ({ count, missing, done }) =>
@@ -334,6 +363,11 @@ const catalog = i18n.define({
       unread: "ungelesen",
       flagged: "markiert",
       unflagged: "nicht markiert",
+      answered: "beantwortet",
+      unanswered: "nicht beantwortet",
+      draftFlag: "Entwurf",
+      notDraft: "kein Entwurf",
+      markedMessage: ({ subject, states }) => `Nachricht „${subject}“ als ${states} markiert.`,
       markedConversation: ({ subject, states }) => `„${subject}“ als ${states} markiert.`,
       movedConversation: ({ subject, destination }) => `„${subject}“ nach ${destination} verschoben.`,
       assignedConversation: ({ subject, assignee }) => `„${subject}“ ${assignee} zugewiesen.`,

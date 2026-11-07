@@ -170,7 +170,8 @@ export function createCodeTestExecutor(config: RunnerConfig, suppliedLimits: Cod
               },
               controller.signal,
             );
-            outcome = await engine.run(lease, controller.signal);
+            const executed = await engine.run(lease, controller.signal);
+            outcome = typeof executed === "string" ? executed : executed.outcome;
           } finally {
             await engine.close();
           }

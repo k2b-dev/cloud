@@ -67,6 +67,13 @@ export const migrate = async (db: SQL = sql): Promise<void> => {
       ADD COLUMN IF NOT EXISTS ai_reference_cost NUMERIC NOT NULL DEFAULT 0 CHECK (ai_reference_cost>=0),
       ADD COLUMN IF NOT EXISTS ai_reserved_cost NUMERIC NOT NULL DEFAULT 0 CHECK (ai_reserved_cost>=0),
       ADD COLUMN IF NOT EXISTS ai_budget_call INTEGER CHECK (ai_budget_call>0)`.simple();
+    await tx`ALTER TABLE code.runs ADD COLUMN IF NOT EXISTS ai_budget_day DATE,
+      ADD COLUMN IF NOT EXISTS ai_budget_owner_key TEXT`.simple();
+    // Independent of run/Code deletion: deleting or recreating Code cannot replenish an owner's day.
+    await tx`CREATE TABLE IF NOT EXISTS code.ai_daily_budget (
+      day DATE NOT NULL, scope_kind TEXT NOT NULL CHECK (scope_kind IN ('code','owner')), scope_key TEXT NOT NULL,
+      reference_cost NUMERIC NOT NULL DEFAULT 0 CHECK (reference_cost>=0), PRIMARY KEY(day,scope_kind,scope_key)
+    )`.simple();
     // A run keeps its origin as long as the failed run and the person's account exist.
     await tx`ALTER TABLE code.runs ADD COLUMN IF NOT EXISTS rerun_of UUID REFERENCES code.runs(id) ON DELETE SET NULL,
       ADD COLUMN IF NOT EXISTS rerun_by UUID REFERENCES auth.users(id) ON DELETE SET NULL`.simple();

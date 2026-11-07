@@ -47,6 +47,8 @@ test("A3a policy refusals never become target refusals", () => {
   for (const code of [
     "code_policy_never",
     "code_ai_budget_limit",
+    "code_ai_daily_budget_limit",
+    "code_ai_owner_daily_budget_limit",
     "code_sends_not_yet",
     "code_unattended_forbidden",
     "code_http_origin_forbidden",

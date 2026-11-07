@@ -905,6 +905,19 @@ test("assignment schemas bound sets and require users for add and remove", () =>
   ).toBeFalse();
 });
 
+test("assignment revision fences apply only to a single unassigned claim", () => {
+  const input = {
+    conversationIds: ["Conv01"],
+    assigneeUserIds: ["00000000-0000-4000-8000-000000000001"],
+    mode: "add",
+    onlyIfUnassigned: true,
+    expectedRevision: 2,
+  };
+  expect(assignConversationsSchema.safeParse(input).success).toBeTrue();
+  expect(assignConversationsSchema.safeParse({ ...input, onlyIfUnassigned: undefined }).success).toBeFalse();
+  expect(assignConversationsSchema.safeParse({ ...input, conversationIds: ["Conv01", "Conv02"] }).success).toBeFalse();
+});
+
 describe("compose formatting contracts", () => {
   test("keeps HTML warnings and adds strict stored-design warnings", () => {
     const warnings: ComposeFormattingWarning[] = [
@@ -1023,17 +1036,22 @@ describe("conversation action undo contracts", () => {
 });
 
 describe("batch conversation completion contracts", () => {
-  test("accepts bounded unique IDs and done or open, without revisions", () => {
+  test("accepts all work statuses and complete optional batch revision fences", () => {
     const conversationIds = Array.from({ length: 50 }, (_, index) => `Cv${String(index).padStart(4, "0")}`);
-    for (const completion of ["done", "open"] as const) {
+    for (const completion of ["done", "open", "waiting", "needs_action"] as const) {
       expect(completeConversationsSchema.parse({ conversationIds, completion })).toEqual({ conversationIds, completion });
+      const expectedRevisions = Object.fromEntries(conversationIds.map((id) => [id, 2]));
+      expect(completeConversationsSchema.parse({ conversationIds, completion, expectedRevisions }).expectedRevisions).toEqual(
+        expectedRevisions,
+      );
     }
     for (const input of [
       { conversationIds: [], completion: "done" },
       { conversationIds: [...conversationIds, "Cv9999"], completion: "done" },
       { conversationIds: ["Convo1", "Convo1"], completion: "done" },
       { conversationIds: ["invalid-id"], completion: "done" },
-      { conversationIds: ["Convo1"], completion: "waiting" },
+      { conversationIds: ["Convo1"], completion: "unknown" },
+      { conversationIds: ["Convo1", "Convo2"], completion: "waiting", expectedRevisions: { Convo1: 1 } },
       { conversationIds: ["Convo1"], completion: "done", expectedRevision: 1 },
     ])
       expect(completeConversationsSchema.safeParse(input).success).toBeFalse();

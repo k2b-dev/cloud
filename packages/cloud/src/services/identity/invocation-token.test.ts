@@ -280,6 +280,10 @@ describe("Cloud invocation JWT", () => {
     };
     expect(await verify(await token(proof))).toMatchObject({ workload_event: proof.workload_event });
     expect(await verify(await token({ ...baseClaims(), workload_event: proof.workload_event }))).toBeNull();
+    expect(await verify(await token({ ...proof, workload_type: "code.version" }))).toMatchObject({
+      workload_type: "code.version",
+      workload_event: proof.workload_event,
+    });
     const action = "capability.action.run:message.read";
     expect(await verify(await token({ ...proof, op: action }), { operation: action })).toBeNull();
   });

@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { decisionResultFixture } from "../../../core/src/ai-decision-capability.test-fixture";
-import { codeAiReferenceCost } from "../../../core/src/code/ai-budget";
+import { codeAiBudgetRemainder, codeAiReferenceCost } from "../../../core/src/code/ai-budget";
 import { aiModelFixture } from "../ai/model-fixture";
 
 const profiles = [aiModelFixture({ id: "clef", pricing: { inputPerMillion: 1, outputPerMillion: 2 } })];
@@ -33,4 +33,33 @@ test("known pre-provider refusals and successful AI history reads spend no refer
   for (const code of ["quota_exhausted", "decision_input_invalid", "decision_not_configured", "model_policy_mismatch", "VALIDATION_FAILED"])
     expect(codeAiReferenceCost("core.ai.decide", { ok: false, error: { code } }, profiles, "1")).toBe("0");
   expect(codeAiReferenceCost("core.ai.skills.list", { ok: true, data: { skills: [] } }, profiles, "1")).toBe("0");
+});
+
+test("generation uses measured pricing and conservatively retains unknown usage", () => {
+  const generated = { ok: true, data: { output: "Summary", model: { id: "clef" }, usage: { input: 40, output: 3, total: 43 } } };
+  expect(codeAiReferenceCost("core.ai.generate", generated, profiles, "1")).toBe("0.000046000000");
+  expect(codeAiReferenceCost("core.ai.generate", { ok: true, data: { ...generated.data, usage: null } }, profiles, "1")).toBe("1");
+  for (const code of ["ai_input_too_large", "ai_model_unavailable"])
+    expect(codeAiReferenceCost("core.ai.generate", { ok: false, error: { code } }, profiles, "1")).toBe("0");
+  for (const code of ["ai_invalid_output", "quota_exhausted", "quota_usage_unknown", "quota_conflict"])
+    expect(codeAiReferenceCost("core.ai.generate", { ok: false, error: { code } }, profiles, "1")).toBe("1");
+});
+
+test("attempt and daily admission use exact picounits and clamp overspend at zero", () => {
+  expect(codeAiBudgetRemainder(1, "0.999999999999")).toBe(1n);
+  expect(codeAiBudgetRemainder(0.000092, "0.000046000000")).toBe(46_000_000n);
+  expect(codeAiBudgetRemainder(0, "0")).toBe(0n);
+  expect(codeAiBudgetRemainder(1, "1")).toBe(0n);
+  expect(codeAiBudgetRemainder(1, "2")).toBe(0n);
+});
+
+test("failed generation settles measured repairs and known zero but keeps unknown outcomes spent", () => {
+  const failed = (usage: unknown) => ({
+    ok: false,
+    error: { code: "quota_exhausted", details: { aiUsage: { model: { id: "clef" }, usage } } },
+  });
+  expect(codeAiReferenceCost("core.ai.generate", failed({ input: 40, output: 3 }), profiles, "1")).toBe("0.000046000000");
+  expect(codeAiReferenceCost("core.ai.generate", failed({ input: 0, output: 0 }), profiles, "1")).toBe("0.000000000000");
+  for (const usage of [null, { input: -1, output: 0 }, { input: 2 }])
+    expect(codeAiReferenceCost("core.ai.generate", failed(usage), profiles, "1")).toBe("1");
 });

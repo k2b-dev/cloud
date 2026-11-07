@@ -562,6 +562,10 @@ describe("Code page helpers", () => {
     const budget = { ok: false, error: { code: "code_ai_budget_limit" } };
     expect(summarizeCallResult(budget, "en")).toContain("No AI call was started");
     expect(summarizeCallResult(budget, "de-CH")).toContain("Es wurde kein KI-Aufruf gestartet");
+    for (const code of ["code_ai_daily_budget_limit", "code_ai_owner_daily_budget_limit"]) {
+      expect(summarizeCallResult({ ok: false, error: { code } }, "en")).toContain("next installation calendar day");
+      expect(summarizeCallResult({ ok: false, error: { code } }, "de-CH")).toContain("Kalendertag der Installation");
+    }
     expect(summarizeCallResult({ error: { code: "FORBIDDEN", message: "Zugriff entfernt" } })).toBe("Zugriff entfernt");
     expect(summarizeCallResult({ id: "t_1" })).toBe('{"id":"t_1"}');
     expect(summarizeCallResult("x".repeat(400))?.length).toBe(160);

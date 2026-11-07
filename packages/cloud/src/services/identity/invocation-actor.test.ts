@@ -189,3 +189,32 @@ test("a nested visibility proof cannot replace its current parent lease", async 
     await client.close();
   }
 });
+
+test("a claimed Code event resolves its account without a run and retains event provenance", async () => {
+  const eventClaims = {
+    ...claims("service_account"),
+    credential_kind: "mandate" as const,
+    mandate_id: "33333333-3333-4333-8333-333333333333",
+    mandate_revision: 1,
+    workload_type: "code.version",
+    workload_id: "approved-version",
+    workload_event: claims("user").jti,
+  };
+  for (const currentEntry of [true, false]) {
+    let queries = 0;
+    const query = (() => {
+      queries++;
+      return Promise.resolve(
+        queries === 1 ? [{ id: eventClaims.jti }] : queries === 2 ? (currentEntry ? [{ id: eventClaims.mandate_id }] : []) : [accountRow],
+      );
+    }) as unknown as typeof sql;
+    const result = await resolveInvocationAuthority(eventClaims, query, []);
+    if (!currentEntry) expect(result).toBeNull();
+    else {
+      expect(result?.accessSubject).toEqual({ type: "service_account", serviceAccountId: eventClaims.sub });
+      expect(result?.actor.delegation).toMatchObject({ workloadEvent: eventClaims.workload_event, workloadType: "code.version" });
+      expect(result?.scopes).toEqual([]);
+    }
+    expect(queries).toBe(currentEntry ? 3 : 2);
+  }
+});

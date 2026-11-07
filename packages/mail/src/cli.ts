@@ -21,11 +21,12 @@ import {
   readCliInput,
   withCloudResourcePermalink,
 } from "@k2b/cloud/cli";
-import type { AccessEntry, PermissionLevel, Principal } from "@k2b/cloud/contracts";
+import { type AccessEntry, capabilityResultSchema, type PermissionLevel, type Principal } from "@k2b/cloud/contracts";
 import { principalLabel } from "@k2b/cloud/shared";
 import { text } from "@k2b/stdlib";
 import { z } from "zod";
 import type { CalendarInvitationImportResult, CalendarInvitationPreview, SpacesMailDestinationContext } from "./app-integration-contracts";
+import { ConversationSummaryWriteDataSchema } from "./capability-contracts";
 import { composeFormattingMessages, describeComposeFormattingWarning, describeIgnoredMailboxCss } from "./compose-formatting-messages";
 import {
   MAIL_CONTACT_DIRECTORY_DEFAULTS,
@@ -2076,6 +2077,55 @@ const everydayCommands = (t: Translate) => {
         ctx.print(message.plainText ?? t({ en: "[Body not loaded yet]", de: "[Text noch nicht geladen]" }));
       },
     }),
+    command("conversation summary write", {
+      summary: t({
+        en: "Save prepared summary text while preserving person edits",
+        de: "Vorbereiteten Zusammenfassungstext unter Schutz von Personenänderungen speichern",
+      }),
+      args: { conversation: arg.required({ description: t({ en: "Conversation ID", de: "Unterhaltungs-ID" }) }) },
+      flags: {
+        ...mailboxOption,
+        body: bodyFlag,
+        revision: flag.int({
+          required: true,
+          min: 1,
+          description: t({ en: "Expected conversation revision", de: "Erwartete Unterhaltungsrevision" }),
+        }),
+        summaryRevision: flag.int({
+          name: "summary-revision",
+          required: true,
+          min: 1,
+          description: t({ en: "Expected summary revision", de: "Erwartete Zusammenfassungsrevision" }),
+        }),
+        idempotencyKey: flag.string({
+          name: "idempotency-key",
+          required: true,
+          description: t({ en: "Stable retry key", de: "Stabiler Wiederholungsschlüssel" }),
+        }),
+      },
+      run: async ({ ctx, args, flags }) => {
+        const mailbox = await resolveMailbox(ctx, flags.mailbox, t);
+        const summary = await readCliInput(flags.body);
+        const response = await ctx.fetch("/api/capabilities/v1/actions/mail/conversation.summary.write", {
+          method: "POST",
+          headers: { "content-type": "application/json", "idempotency-key": flags.idempotencyKey! },
+          body: JSON.stringify({
+            target: { type: "mail.mailbox", id: mailbox.id },
+            input: {
+              conversationId: requireMailResourceId(args.conversation, "Conversation id"),
+              expectedRevision: flags.revision,
+              expectedSummaryRevision: flags.summaryRevision,
+              summary,
+            },
+          }),
+        });
+        const result = capabilityResultSchema(ConversationSummaryWriteDataSchema, { consumer: true }).parse(
+          await ctx.readJson<unknown>(response),
+        );
+        if (!printStructured(ctx, result.data))
+          ctx.print(result.summary ?? t({ en: "Summary processed.", de: "Zusammenfassung bearbeitet." }));
+      },
+    }),
     command("conversation summary generate", {
       summary: t({
         en: "Request an AI summary using your Assistant allowance",
@@ -2127,6 +2177,12 @@ const everydayCommands = (t: Translate) => {
           }),
         }),
         unassign: flag.boolean({ description: t({ en: "Clear all assignees", de: "Alle Zuweisungen aufheben" }) }),
+        status: flag.enum(["needs_action", "waiting", "done", "open"] as const, {
+          description: t({
+            en: "Explicit work status; open derives the next step",
+            de: "Bearbeitungsstand; open leitet den nächsten Schritt ab",
+          }),
+        }),
         done: flag.boolean({ description: "Mark the conversation done" }),
         reopen: flag.boolean({ description: "Reopen the conversation and derive its next step" }),
         snoozeUntil: flag.string({
@@ -2138,9 +2194,10 @@ const everydayCommands = (t: Translate) => {
       run: async ({ ctx, args, flags }) => {
         if (!flags.revision) throw new Error("Missing expected conversation revision.");
         if (flags.assignee.length > 0 && flags.unassign) throw new Error("Use either --assignee or --unassign.");
+        if (flags.status && (flags.done || flags.reopen)) throw new Error("Use --status separately from --done and --reopen.");
         if (flags.done && flags.reopen) throw new Error("Use either --done or --reopen.");
         if (flags.snoozeUntil && flags.unsnooze) throw new Error("Use either --snooze-until or --unsnooze.");
-        if ((flags.done || flags.reopen) && (flags.snoozeUntil || flags.unsnooze)) {
+        if ((flags.status || flags.done || flags.reopen) && (flags.snoozeUntil || flags.unsnooze)) {
           throw new Error("Change completion and the time to show the conversation again in separate commands.");
         }
         let snoozedUntil: string | null | undefined;
@@ -2155,7 +2212,11 @@ const everydayCommands = (t: Translate) => {
           ...(flags.assignee.length > 0 || flags.unassign
             ? { assigneeUserIds: flags.unassign ? [] : await resolveAssigneeUserIds(ctx, mailbox.id, flags.assignee) }
             : {}),
-          ...(flags.done || flags.reopen ? { completion: flags.done ? ("done" as const) : ("open" as const) } : {}),
+          ...(flags.status
+            ? { completion: flags.status }
+            : flags.done || flags.reopen
+              ? { completion: flags.done ? ("done" as const) : ("open" as const) }
+              : {}),
           ...(snoozedUntil !== undefined ? { snoozedUntil } : {}),
         };
         if (Object.keys(input).length === 1) throw new Error("Pass at least one collaboration change.");
@@ -2203,6 +2264,14 @@ const everydayCommands = (t: Translate) => {
             de: "Kommagetrennte Benutzer- oder Dienstkonto-UUIDs, exakte Namen, me oder none",
           }),
         }),
+        onlyIfUnassigned: flag.boolean({
+          name: "only-if-unassigned",
+          description: t({
+            en: "Assign only if nobody is assigned; requires one conversation and --revision",
+            de: "Nur zuweisen, wenn niemand zuständig ist; erfordert eine Unterhaltung und --revision",
+          }),
+        }),
+        revision: flag.int({ min: 1, description: t({ en: "Expected conversation revision", de: "Erwartete Unterhaltungsrevision" }) }),
         replace: flag.boolean({ description: t({ en: "Replace all assignees with --to", de: "Alle Zuständigen durch --to ersetzen" }) }),
         remove: flag.string({
           valueLabel: "users",
@@ -2219,13 +2288,27 @@ const everydayCommands = (t: Translate) => {
         if (Boolean(flags.to) === Boolean(flags.remove))
           throw new Error(t({ en: "Use exactly one of --to or --remove.", de: "Genau eine Option verwenden: --to oder --remove." }));
         if (flags.replace && !flags.to) throw new Error(t({ en: "--replace requires --to.", de: "--replace erfordert --to." }));
+        if (flags.revision && !flags.onlyIfUnassigned)
+          throw new Error(t({ en: "--revision requires --only-if-unassigned.", de: "--revision erfordert --only-if-unassigned." }));
         const clear = flags.to?.trim() === "none";
         const mode = clear || flags.replace ? "replace" : flags.remove ? "remove" : "add";
         const assigneeUserIds = clear ? [] : await resolveAssigneeUserIds(ctx, mailbox.id, [flags.to ?? flags.remove ?? ""]);
+        if (flags.onlyIfUnassigned && (conversationIds.length !== 1 || mode !== "add" || !flags.revision))
+          throw new Error(
+            t({
+              en: "--only-if-unassigned requires one conversation, --to, and --revision, without --replace.",
+              de: "--only-if-unassigned erfordert eine Unterhaltung, --to und --revision, ohne --replace.",
+            }),
+          );
         const result = await readApi<ConversationAssignmentResult>(
           ctx,
           `/mailboxes/${mailbox.id}/conversations/assign`,
-          jsonRequest("POST", { conversationIds, assigneeUserIds, mode }),
+          jsonRequest("POST", {
+            conversationIds,
+            assigneeUserIds,
+            mode,
+            ...(flags.onlyIfUnassigned ? { onlyIfUnassigned: true, expectedRevision: flags.revision } : {}),
+          }),
         );
         const missing = result.results.filter((item) => item.status !== "ok");
         if (!printStructured(ctx, result)) {

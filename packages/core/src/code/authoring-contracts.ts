@@ -2,15 +2,48 @@ import { CODE_CHECK_LIMITS, CodeCheckResultSchema, CodeTestCaseSchema, CodeTestR
 import { CodeCheckedVersionManifestSchema } from "@k2b/cloud/contracts";
 import { z } from "zod";
 import { codeActivationContracts } from "./activation-contracts";
-import { CodeIdSchema, CodeOwnerSchema, CodeSchema, CodeSourceFilesSchema, codeQueryContracts } from "./contracts";
+import { CodeIdSchema, type CodeOwner, CodeOwnerSchema, CodeSchema, CodeSourceFilesSchema, codeQueryContracts } from "./contracts";
 import { codePolicyContracts } from "./policy-contracts";
 import { codeSchedulingContracts } from "./scheduling-contracts";
 import { codeSecretContracts } from "./secret-contracts";
 import { CodeVersionDiffFileSchema, codeVersionContracts } from "./version-contracts";
 
-/** Source returned by init for CLI and chat checkouts. */
+/** Schedule returned by init for personal CLI and chat checkouts. */
 export const CODE_INITIAL_SOURCE =
   'import { app } from "@sdk";\n\napp.schedule("0 8 * * 1", async () => {\n}, { name: "monday" });\nexport default app;\n';
+/** Resource- and app-owned Code starts with a signed-in page. */
+export const CODE_INITIAL_PAGE_SOURCE = `import { app, jsx, Page, Section, Text, Chart } from "@sdk";
+
+app.get("/", c => c.page(
+  <Page title="Overview">
+    <Section title="Today">
+      <Text>Your Code page is ready.</Text>
+      <Chart.Bar title="Items" data={[{ label: "Ready", value: 1 }]} />
+    </Section>
+  </Page>
+));
+export default app;
+`;
+/** Personal Code has no Code account and therefore cannot host routes. */
+export function codeInitialFiles(owner: CodeOwner) {
+  const entry = owner.kind === "person" ? "code.ts" : "code.tsx";
+  return { entry, files: { [entry]: owner.kind === "person" ? CODE_INITIAL_SOURCE : CODE_INITIAL_PAGE_SOURCE } };
+}
+/** Local editor checking uses the same description-only JSX factory as the checker. */
+export const CODE_PROJECT_TSCONFIG = {
+  compilerOptions: {
+    target: "ESNext",
+    module: "ESNext",
+    moduleResolution: "Bundler",
+    strict: true,
+    noEmit: true,
+    jsx: "react",
+    jsxFactory: "jsx",
+    paths: { "@sdk": ["./sdk/sdk.d.ts"] },
+  },
+  include: ["**/*.ts", "**/*.tsx"],
+  exclude: ["sdk"],
+};
 /** Versioned local code.json. IDs determine folders; title and owner remain metadata. Never stores credentials. */
 export const CodeProjectSchema = z
   .object({

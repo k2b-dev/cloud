@@ -79,7 +79,8 @@ export default ssr<AuthContext>(async (c) => {
     .reduce((sum, index) => sum + index.sizeBytes, 0);
 
   const sessionColumns: DataTableColumn<PostgresSession>[] = [
-    { id: "pid", header: "PID", value: (session) => session.pid, cellClass: "tabular-nums" },
+    // A PID is an identifier, not a quantity: its digits stay ungrouped.
+    { id: "pid", header: "PID", value: (session) => String(session.pid), align: "right", cellClass: "tabular-nums" },
     { id: "state", header: t.state },
     { id: "application", header: t.application },
     { id: "wait", header: t.waitingOn },

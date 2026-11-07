@@ -2288,12 +2288,16 @@ test("target HTTP statuses survive runner dispatch and Code page data without pa
         const operation = `demo.${capabilityId}`;
         const input = capabilityId === "get" ? { id: "one" } : { id: "one", name: "New name" };
         let stored: RunnerCallResponse | undefined;
+        let originalFailure: unknown;
         let fetched = false;
         const route = createCodeRunnerCallRoutes({
           ownOrigins: async () => [],
           host: {
             async withCall(call, execute) {
               const response = await execute({
+                onFailure: (error) => {
+                  originalFailure = error;
+                },
                 mandateId: claims.mandateId,
                 mandateRevision: 1,
                 ownerAppId: "core",
@@ -2345,6 +2349,8 @@ test("target HTTP statuses survive runner dispatch and Code page data without pa
         expect(response.status).toBe(200);
         expect(fetched).toBe(true);
         expect(stored).toEqual({ ok: false, error: { code: failure.code.toLowerCase(), status: failure.status } });
+        // Core can settle AI usage from the original error; runner/page errors remain payload-free.
+        expect(originalFailure).toEqual({ code: failure.code, message: failure.message, details: { payload: "private" } });
         let pageResult = stored;
         let pageKind: string | undefined = failure.status === 403 || failure.status === 404 ? "target_refused" : "bridge";
         const invoke: CodePageInvoke = async (_invocation, schema) => ({

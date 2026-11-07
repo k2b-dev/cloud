@@ -813,3 +813,27 @@ Structured CLI output has the same shape. Read
 and results. `mail.summary.allowance_exhausted` leaves the conversation
 unchanged. Allowance presentation contains only `unlimited`, `usedPercent`
 and `resetsAt`.
+
+## Prepared summaries and protected claims
+
+Save prepared text through the shared Mail capability path, with explicit
+conversation and summary revisions and a stable retry key:
+
+```bash
+cld mail conversation summary write <conversation> --mailbox <mailbox> \
+  --revision 7 --summary-revision 3 --body-file summary.md \
+  --idempotency-key summary-42
+cld mail conversation update <conversation> --revision 7 --status waiting
+cld mail assign <conversation> --to ada --only-if-unassigned --revision 7
+```
+
+`summary write` never replaces text a person edited or cleared. Its structured
+result reports `skipped: "edited_by_person"` without changing either revision.
+It does not generate text. Both revisions must match; reread after a conflict.
+`conversation update --status` accepts `needs_action`, `waiting`, `done`, or
+`open`; `open` derives the next step from verified mail flow. Do not combine
+`--status` with `--done`, `--reopen`, or snooze changes.
+
+`assign --only-if-unassigned` requires one conversation, a nonempty `--to`, and
+`--revision`. Mail checks the revision and complete assignee set atomically;
+existing assignments and stale revisions return a conflict without changes.

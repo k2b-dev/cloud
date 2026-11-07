@@ -3,6 +3,8 @@ export const CODE_SDK_RUNTIME = String.raw`
 const handles = new WeakMap();
 let bridge;
 const schedules = [];
+const routes = [];
+const routeResponses = new WeakMap();
 const diagnostics = [];
 const node = () => Object.create(null);
 function setPath(root, path, value) {
@@ -104,7 +106,15 @@ app.on = (...args) => {
   schedules.push({ kind: "event", entrypoint, cron: null, event: { type: eventType, version: spec.version, place: { type: place.type, id: place.id } }, handler: fn });
   return app;
 };
-for (const method of Object.keys(manifest.appMethods).filter(name => name !== "schedule" && name !== "on")) app[method] = () => unavailable(method);
+for (const method of Object.keys(manifest.appMethods).filter(name => manifest.appMethods[name] !== 1)) app[method] = () => unavailable(method);
+for (const method of ["get", "post", "put", "delete", "all"]) app[method] = (path, handler, options) => {
+  if (typeof path !== "string" || typeof handler !== "function") throw new Error("code_sdk_invalid_route");
+  const route = { method: method.toUpperCase(), path, public: options?.public === true };
+  const entrypoint = "route:" + route.method + ":" + path;
+  if (routes.some(value => value.entrypoint === entrypoint)) throw new Error("code_sdk_duplicate_route");
+  routes.push({ entrypoint, route, handler });
+  return app;
+};
 Object.freeze(app);
 const secrets = new Proxy(node(), {
   get(_target, name) {
@@ -127,9 +137,55 @@ const __codeSdk = Object.freeze({
     if (bridge || !cloud || typeof cloud.call !== "function") throw new Error("code_sdk_invalid_bridge");
     bridge = cloud;
   },
-  entries: () => schedules.map(({ kind, entrypoint, cron, title, event }) => ({ kind, entrypoint, cron, ...(event === undefined ? {} : { event }), ...(title === undefined ? {} : { title }) })),
+  entries: () => [...schedules.map(({ kind, entrypoint, cron, title, event }) => ({ kind, entrypoint, cron, ...(event === undefined ? {} : { event }), ...(title === undefined ? {} : { title }) })),
+    ...routes.map(({ entrypoint, route }) => ({ kind: "route", entrypoint, route, cron: null }))],
   diagnostics: () => diagnostics.map(value => ({ ...value })),
   async run(entrypoint, input) {
+    const registered = routes.find(value => value.entrypoint === entrypoint);
+    if (registered) {
+      const raw = new Request("https://code.invalid" + input.path + input.query, {
+        method: input.method, headers: { "Content-Type": input.contentType },
+        ...(input.method === "GET" || input.method === "HEAD" ? {} : { body: input.body }),
+      });
+      const output = (value) => { const response = new Response(null); routeResponses.set(response, value); return response; };
+      const status = (value) => { if (!Number.isInteger(value) || value < 200 || value > 599) throw new Error("code_invalid_response"); return value; };
+      const c = {
+        user: registered.route.public ? null : input.user,
+        req: { raw, param: name => input.params[name] ?? "", query: name => new URL(raw.url).searchParams.get(name) ?? undefined,
+          json: () => raw.json(), text: () => raw.text(), formData: () => raw.formData() },
+        json: (value, code = 200) => output({ kind: "json", status: status(code), body: JSON.stringify(value) }),
+        text: (value, code = 200) => output({ kind: "text", status: status(code), body: String(value) }),
+        page: tree => {
+          const ancestors = new Set(); let count = 0; let bytes = 0;
+          const visit = (value, depth) => {
+            if (++count > manifest.pageLimits.bytes || depth > manifest.pageLimits.depth * 3) throw new Error("code_page_limit");
+            if (typeof value === "string") { bytes += new TextEncoder().encode(value).byteLength; if (bytes > manifest.pageLimits.bytes) throw new Error("code_page_limit"); return; }
+            if (value === null || typeof value === "boolean" || (typeof value === "number" && Number.isFinite(value))) return;
+            if (typeof value !== "object" || ancestors.has(value)) throw new Error("code_page_data_only");
+            if (Object.getPrototypeOf(value) !== Object.prototype && Object.getPrototypeOf(value) !== null && !Array.isArray(value)) throw new Error("code_page_data_only");
+            ancestors.add(value);
+            for (const key of Reflect.ownKeys(value)) {
+              if (Array.isArray(value) && key === "length") continue;
+              const descriptor = Object.getOwnPropertyDescriptor(value, key);
+              if (typeof key !== "string" || !descriptor.enumerable || !Object.hasOwn(descriptor, "value")) throw new Error("code_page_data_only");
+              bytes += new TextEncoder().encode(key).byteLength;
+              if (bytes > manifest.pageLimits.bytes) throw new Error("code_page_limit");
+              visit(descriptor.value, depth + 1);
+            }
+            ancestors.delete(value);
+          };
+          visit(tree, 0);
+          if (tree.kind !== "Page" || tree.version !== 1) throw new Error("code_page_root");
+          if (new TextEncoder().encode(JSON.stringify(tree)).byteLength > manifest.pageLimits.bytes) throw new Error("code_page_limit");
+          return output({ kind: "page", status: 200, tree });
+        },
+        redirect: (location, code = 303) => output({ kind: "redirect", status: code, location }),
+      };
+      const response = await registered.handler(c);
+      const result = routeResponses.get(response);
+      if (!result) throw new Error("code_invalid_response");
+      return result;
+    }
     const schedule = schedules.find(value => value.entrypoint === entrypoint);
     if (!schedule) throw new Error("code_sdk_missing_entrypoint");
     if (schedule.kind === "event") {

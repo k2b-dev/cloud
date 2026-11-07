@@ -4,14 +4,23 @@ import { chmod, copyFile, cp, mkdir, mkdtemp, readdir, rmdir, unlink, writeFile 
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { aiDecisionQuery } from "../../../core/src/ai-decision-capability";
-import { CODE_INITIAL_SOURCE } from "../../../core/src/code/authoring-contracts";
+import { aiGenerationQuery } from "../../../core/src/ai-generation-capability";
+import codeCli from "../../../core/src/cli/code";
+import {
+  CODE_INITIAL_SOURCE,
+  CODE_PROJECT_TSCONFIG,
+  codeAuthoringContracts,
+  codeInitialFiles,
+} from "../../../core/src/code/authoring-contracts";
 import { readCodeCheckLimits } from "../../../core/src/code/runner-jobs";
 import { CODE_SETTINGS, codeSettings } from "../../../core/src/code/settings";
 import { capabilityHash } from "../_internal/capability-schemas";
 import { compileCapabilityManifest } from "../capabilities/testing";
+import type { CloudCliContext } from "../cli";
 import { type CodeCheckHost, checkCode } from "./checker";
 import { CODE_CHECK_LIMITS, type CodeCheckRequest, CodeVersionManifestSchema } from "./checker-contract";
 import { generateCodeSdk } from "./generator";
+import { validateCodePage } from "./page-contract";
 import { sdkFixture } from "./sdk.test-fixture";
 
 let directory: string;
@@ -74,7 +83,7 @@ beforeAll(async () => {
   await copyFile(host.isolate, join(image, "checker-isolate"));
   await chmod(join(image, "compiler/tsc"), 0o755);
   await chmod(join(image, "checker-isolate"), 0o755);
-});
+}, 60_000);
 afterAll(async () => {
   async function clean(path: string): Promise<void> {
     for (const entry of await readdir(path, { withFileTypes: true })) {
@@ -109,6 +118,81 @@ test("the unchanged init template passes the real checker with default Core job 
     settings.mockRestore();
   }
 });
+
+test("cld code init's TSX page passes cld code check and its generated editor tsconfig", async () => {
+  const owner = { kind: "resource" as const, ref: { type: "work-shop.workshop", id: "owner-shop" } };
+  const template = codeInitialFiles(owner);
+  const config = { version: 1, codeId: "c_fixture", title: "Overview", owner, entry: template.entry, baseVersionId: null };
+  const root = join(directory, "init-tsx");
+  const project = join(root, "work-shop", "owner-shop");
+  const outputs: unknown[] = [];
+  const commands: string[] = [];
+  const context: CloudCliContext = {
+    args: ["init"],
+    flags: { title: "Overview", "owner-type": owner.ref.type, "owner-id": owner.ref.id, out: root },
+    options: { profile: "fixture", server: "https://cloud.test", token: "fixture", output: "json", locale: "en" },
+    getDefault: async () => undefined,
+    setDefault: async () => {},
+    createApiClient: () => {
+      throw new Error("unused");
+    },
+    fetch: async (path, init) => {
+      commands.push(path);
+      if (path.endsWith("/init")) return Response.json({ version: 1, config, files: template.files });
+      if (path.endsWith("/sdk"))
+        return Response.json({
+          version: 1,
+          files: {
+            "sdk/sdk.d.ts": sdk.declarations,
+            "sdk/sdk.js": sdk.runtime,
+            "tsconfig.json": JSON.stringify(CODE_PROJECT_TSCONFIG),
+          },
+        });
+      expect(path).toBe("/api/code/authoring/check");
+      const input = codeAuthoringContracts.check.input.parse(JSON.parse(String(init?.body)));
+      expect(input).toEqual({ codeId: config.codeId, ...template });
+      const result = await checkCode({ ...base, entry: input.entry, files: input.files }, host);
+      expect(result.ok).toBe(true);
+      if (!result.ok) throw new Error(JSON.stringify(result.diagnostics));
+      expect(result.manifest.entrypoints).toMatchObject([{ kind: "route", route: { method: "GET", path: "/", public: false } }]);
+      return Response.json({ version: 1, result, manifest: { ...result.manifest, entry: input.entry, policyRows: [] }, permissions: [] });
+    },
+    readJson: async (response) => response.json(),
+    print: (value) => {
+      outputs.push(value);
+    },
+    write: async (value) => {
+      outputs.push(value);
+    },
+    error: (message) => {
+      throw new Error(message);
+    },
+    json: (value) => {
+      outputs.push(value);
+    },
+    jsonLine: (value) => {
+      outputs.push(value);
+    },
+    table: () => {
+      throw new Error("unused");
+    },
+  };
+  expect(template.entry).toBe("code.tsx");
+  expect(await codeCli.run(context)).toBe(0);
+  context.args = ["sdk", "pull", project];
+  context.flags = {};
+  expect(await codeCli.run(context)).toBe(0);
+  context.args = ["check", project];
+  expect(await codeCli.run(context)).toBe(0);
+  expect(commands).toEqual(["/api/code/authoring/init", "/api/code/authoring/sdk", "/api/code/authoring/check"]);
+  expect(outputs.at(-1)).toMatchObject({ result: { ok: true } });
+  const types = Bun.spawn([host.compiler, "--checkers", "1", "--project", join(project, "tsconfig.json"), "--pretty", "false"], {
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+  const [exit, stdout, stderr] = await Promise.all([types.exited, new Response(types.stdout).text(), new Response(types.stderr).text()]);
+  expect({ exit, stdout, stderr }).toEqual({ exit: 0, stdout: "", stderr: "" });
+}, 60_000);
 
 test("core.ai.decide is AI in the generated SDK and mail triage checks category before urgency", async () => {
   const manifests = [compileCapabilityManifest("core", { protocolVersion: 2, queries: { "ai.decide": aiDecisionQuery } })];
@@ -169,6 +253,29 @@ export default app;`,
   if (!lasting.ok) throw new Error(JSON.stringify(lasting.diagnostics));
   expect(lasting.permissions).toMatchObject([{ operation: "core.ai.decide", target: null }]);
 });
+
+test("text and JSON generation SDK example passes the real checker as AI for one-off and lasting Code", async () => {
+  const manifests = [compileCapabilityManifest("core", { protocolVersion: 2, queries: { "ai.generate": aiGenerationQuery } })];
+  const docs = await Bun.file(resolve(import.meta.dir, "../../../../docs-site/docs/en/platform/code-sdk.md")).text();
+  const source = docs.split("<!-- gate-1a-generation -->")[1]!.split("```ts\n")[1]!.split("```")[0]!.trim();
+  const aiOperations = ["core.ai.generate"];
+  const checked = await check(source, { sdk: generateCodeSdk(manifests, { mode: "code_run" }), aiOperations });
+  expect(checked).toMatchObject({ ok: true, manifest: { ai: true } });
+  if (!checked.ok) throw new Error(JSON.stringify(checked.diagnostics));
+  expect(checked.permissions.map((permission) => permission.operation)).toEqual(["core.ai.generate", "core.ai.generate"]);
+  const lasting = await check("", {
+    sdk: generateCodeSdk(manifests, { mode: "personal" }),
+    aiOperations,
+    files: {
+      "code.ts":
+        'import { app } from "@sdk"; import summarize from "./summary"; app.schedule("0 8 * * 1", async () => { await summarize(); }, { name: "summary" }); export default app;',
+      "summary.ts": source,
+    },
+  });
+  expect(lasting).toMatchObject({ ok: true, manifest: { ai: true } });
+  if (!lasting.ok) throw new Error(JSON.stringify(lasting.diagnostics));
+  expect(lasting.permissions.map((permission) => permission.operation)).toEqual(["core.ai.generate", "core.ai.generate"]);
+}, 30_000);
 
 test("checks imported literal constants, refs and finite unions, with source lines, new/existing status, AI and hashes", async () => {
   const result = await check("", {
@@ -485,7 +592,7 @@ test("a checked resource event bundle receives the reference envelope as its one
   const manifest = sdkFixture();
   manifest.events![0]!.place = "workshop";
   const result = await check(
-    'import {app,owner} from "@sdk"; app.on("work-shop.changed", async event => {await owner.stock.list({cursor:event.subject.id});}); export default app;',
+    'import {app,owner} from "@sdk"; app.get("/health", c => c.text("Ready")); app.on("work-shop.changed", async event => {await owner.stock.list({cursor:event.subject.id});}); export default app;',
     {
       sdk: generateCodeSdk([manifest], {
         mode: "resource",
@@ -496,6 +603,7 @@ test("a checked resource event bundle receives the reference envelope as its one
   expect(result).toMatchObject({ ok: true });
   if (!result.ok) return;
   expect(result.manifest.entrypoints).toMatchObject([
+    { kind: "route", entrypoint: "route:GET:/health", route: { method: "GET", path: "/health", public: false } },
     {
       kind: "event",
       entrypoint: "event:work-shop.changed@1",
@@ -515,6 +623,18 @@ test("a checked resource event bundle receives the reference envelope as its one
     place: { type: "work-shop.workshop", id: "owner-shop" },
     data: { title: "fixture" },
   };
+  // Each runner starts a fresh module with its own one-use bridge.
+  const routeModule = await import(`${file}?route`);
+  expect(
+    await routeModule["route:GET:/health"](
+      { method: "GET", path: "/health", query: "", contentType: "", params: {}, user: { id: "visitor", groups: [] } },
+      {
+        call: async () => {
+          throw new Error("unexpected_call");
+        },
+      },
+    ),
+  ).toEqual({ kind: "text", status: 200, body: "Ready" });
   const calls: unknown[] = [];
   await module["event:work-shop.changed@1"](input, {
     call: async (operation: string, value: unknown) => {
@@ -543,7 +663,7 @@ test("rejects duplicate event/place subscriptions", async () => {
   });
 });
 
-test.each(["get", "post", "put", "delete", "all", "nav", "webhook", "fetch"])("reports Phase 2/3 for app.%s", async (method) => {
+test.each(["nav", "webhook", "fetch"])("reports Phase 2/3 for app.%s", async (method) => {
   const result = await check(`import { app as application } from "@sdk"; application.${method}("/", () => {});`);
   expect(result).toMatchObject({
     ok: false,
@@ -669,3 +789,93 @@ test("a titled schedule runs by its stable identifier and a title change changes
   expect(changed.manifest.hashes.source).not.toBe(result.manifest.hashes.source);
   expect(changed.manifest.hashes.bundle).not.toBe(result.manifest.hashes.bundle);
 });
+
+test("checked route bundles execute the selected request handler without a web framework", async () => {
+  const result = await check(`import { app } from "@sdk";
+app.get("/hello/:name", c => c.json({ person: c.user?.id ?? null, name: c.req.param("name") }));
+app.post("/save", c => c.redirect("/hello/saved"));`);
+  expect(result.ok).toBe(true);
+  if (!result.ok) throw new Error(JSON.stringify(result.diagnostics));
+  expect(result.manifest.entrypoints[0]).toMatchObject({ kind: "route", route: { method: "GET", path: "/hello/:name", public: false } });
+  const module = await import(`data:text/javascript;base64,${Buffer.from(result.bundle).toString("base64")}`);
+  expect(
+    await module["route:GET:/hello/:name"](
+      {
+        method: "GET",
+        path: "/hello/Valentin",
+        query: "",
+        params: { name: "Valentin" },
+        contentType: "text/plain",
+        body: "",
+        user: { id: "visitor", groups: [] },
+      },
+      { call: async () => null },
+    ),
+  ).toEqual({ kind: "json", status: 200, body: JSON.stringify({ person: "visitor", name: "Valentin" }) });
+  expect(result.bundle).not.toContain("hono");
+}, 30_000);
+
+test("TSX and object pages produce identical validated trees without a framework bundle", async () => {
+  const result = await checkCode(
+    {
+      ...base,
+      entry: "code.tsx",
+      limits: { ...CODE_CHECK_LIMITS, checkMs: 30000 },
+      files: {
+        "code.tsx": `import { app, jsx, Page, Section, Text, Form, Chart } from "@sdk";
+app.get("/", c => c.page(<Page title="Items"><Section title="Today"><Text>Hello {"there"}</Text><Chart.Bar title="Count" data={[{label:"One",value:2}]} /><Form title="Find" action="/find" fields={[{type:"scan",name:"barcode",label:"Barcode"}]} submit="Find" /></Section></Page>));
+app.get("/object", c => c.page({
+  version: 1, kind: "Page", title: "Items", children: [{ kind: "Section", title: "Today", children: [
+    { kind: "Text", text: "Hello there" },
+    { kind: "Chart", description: { kind: "bar", title: "Count", data: [{ label: "One", value: 2 }] } },
+    { kind: "Form", title: "Find", action: "/find", fields: [{ type: "scan", name: "barcode", label: "Barcode" }], submit: "Find" },
+  ] }],
+}));`,
+      },
+    },
+    host,
+  );
+  expect(result.ok).toBe(true);
+  if (!result.ok) throw new Error(JSON.stringify(result.diagnostics));
+  const module = await import(`data:text/javascript;base64,${Buffer.from(result.bundle).toString("base64")}`);
+  const response = await module["route:GET:/"](
+    { method: "GET", path: "/", query: "", params: {}, contentType: "text/plain", body: "", user: null },
+    { call: async () => null },
+  );
+  expect(response).toMatchObject({
+    kind: "page",
+    tree: {
+      version: 1,
+      kind: "Page",
+      title: "Items",
+      children: [
+        { kind: "Section", title: "Today", children: [{ kind: "Text", text: "Hello there" }, { kind: "Chart" }, { kind: "Form" }] },
+      ],
+    },
+  });
+  const objectPath = join(directory, "object-page.mjs");
+  await writeFile(objectPath, result.bundle);
+  const objectModule = await import(objectPath);
+  const objectResponse = await objectModule["route:GET:/object"](
+    { method: "GET", path: "/object", query: "", params: {}, contentType: "text/plain", body: "", user: null },
+    { call: async () => null },
+  );
+  expect(response).toEqual(objectResponse);
+  expect(validateCodePage(response.tree, "c_fixture")).toEqual(validateCodePage(objectResponse.tree, "c_fixture"));
+  for (const runtime of ["solid-js", "hono", "react/jsx-runtime"]) expect(result.bundle).not.toContain(runtime);
+}, 30000);
+test("TSX refuses intrinsic HTML and handler props", async () => {
+  for (const child of ["<div>HTML</div>", "<Text onClick={() => {}}>Handler</Text>"]) {
+    const result = await checkCode(
+      {
+        ...base,
+        entry: "code.tsx",
+        limits: { ...CODE_CHECK_LIMITS, checkMs: 30000 },
+        files: { "code.tsx": `import { app, jsx, Page, Text } from "@sdk"; app.get("/",c=>c.page(<Page title="Bad">${child}</Page>));` },
+      },
+      host,
+    );
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.diagnostics.some((diagnostic) => diagnostic.code.startsWith("TS"))).toBe(true);
+  }
+}, 60000);

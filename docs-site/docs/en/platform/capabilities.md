@@ -27,6 +27,10 @@ app-specific CLI modules.
 > A capability is discoverable, not authorized. The owning application must
 > authenticate the request and check current resource access for every call.
 
+For protected Mail summary writes, explicit work status, exact-message changes,
+unassigned claims, and reference allocation, see
+[Mail conversation actions](/en/docs/platform/mail-conversation-actions).
+
 ## Choose what to publish
 
 Publish an operation when it is:

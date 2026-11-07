@@ -14,6 +14,8 @@ COPY patches/ patches/
 COPY --parents packages/*/package.json pwas/*/package.json fixtures/*/package.json docs-site/package.json ./
 RUN bun install --frozen-lockfile --ignore-scripts
 COPY packages/cloud/src packages/cloud/src
+# The portable chart contract has no renderer or UI build dependency.
+COPY packages/editor/src/chart-schema.ts packages/editor/src/chart-schema.ts
 COPY packages/cloud/scripts/code-check*.ts packages/cloud/scripts/
 COPY packages/runner/src packages/runner/src
 COPY packages/runner/scripts packages/runner/scripts

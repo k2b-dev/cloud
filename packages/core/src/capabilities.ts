@@ -55,6 +55,7 @@ import { dates, err, fail, i18n, ok } from "@k2b/stdlib";
 import { z } from "zod";
 import { aiChatTaskRuntime, reconcileAiChatTasks } from "./ai-chat-tasks-runtime";
 import { aiDecisionQuery } from "./ai-decision-capability";
+import { aiGenerationQuery } from "./ai-generation-capability";
 import { deliverPendingAiMessages } from "./ai-inter-chat-messages";
 import { coreCapabilityMessages } from "./capability-messages";
 import { coreCapabilityPresentation } from "./capability-presentation";
@@ -791,6 +792,7 @@ export const aiCapabilities = defineCapabilities({
   },
   queries: {
     "ai.decide": aiDecisionQuery,
+    "ai.generate": aiGenerationQuery,
     "code.secret.list": {
       title: "List Code secret bindings",
       description: "Editors list metadata and immutable binding revisions only. Values and ciphertext are never returned.",

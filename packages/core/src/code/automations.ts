@@ -19,7 +19,7 @@ export const CodeAutomationSchema = z
   .object({
     entrypoint: z.string(),
     title: CodeAutomationTitleSchema.optional(),
-    kind: z.enum(["schedule", "manual", "event"]),
+    kind: z.enum(["schedule", "manual", "event", "route"]),
     cron: z.string().nullable(),
     /** When the installation's scheduler runs it next; null when it does not or the scheduler cannot say. */
     nextRunAt: z.iso.datetime().nullable(),

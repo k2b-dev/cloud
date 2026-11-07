@@ -3,9 +3,9 @@ title: Code SDK
 navTitle: Code SDK
 section: Platform services
 order: 680
-description: Generate a typed Code SDK from application capability contracts and call operations through resource handles.
+description: Build checked TSX pages, serve routes and call application operations through a generated typed Code SDK.
 tags: [code, capabilities, sdk, handles]
-updated: 2026-11-05
+updated: 2026-11-06
 ---
 
 # Code SDK
@@ -20,8 +20,95 @@ The checker collects exact origins into `manifest.internet`; declare dynamic des
 and redirect origins with a literal `http.allow(["https://api.example.com"])` list.
 Read [Code secrets](/en/docs/platform/code-secrets) for approved destinations and result encoding.
 
-This is the Phase 1 SDK contract on the Code integration branch. The SDK
-registers schedules; Core owns scheduling, authorization and execution.
+The SDK registers routes and schedules. Core owns hosting, scheduling,
+authorization and execution.
+
+## Return a page
+
+Start with a TSX page:
+
+```sh
+cld code init --title 'Workshop' --owner-type work-shop.workshop --owner-id workshop-owner
+cld code sdk pull ./code/work-shop/workshop-owner
+cld code check ./code/work-shop/workshop-owner
+```
+ Resource- and app-owned projects start with
+`code.tsx`; personal projects start with a schedule because they cannot host routes.
+
+Use `c.page(tree)` for a Cloud-rendered document. In a `.tsx` entry file, import
+`jsx` and the description components from `@sdk`. The checker compiles TSX with
+this factory. The generated `tsconfig.json` includes `.ts` and `.tsx` files and
+sets `jsx: "react"` with `jsxFactory: "jsx"`. No React, Hono or Solid runtime is
+needed; the factory produces description objects.
+
+```tsx
+import { app, jsx, Page, Section, Text, Form, Chart } from "@sdk";
+
+app.get("/", c => c.page(
+  <Page title="Workshop">
+    <Section title="Today">
+      <Text>Scan an item to open its details.</Text>
+      <Chart.Bar title="Items" data={[{ label: "Ready", value: 12 }]} />
+      <Form title="Find an item" action="/find" submit="Find"
+        fields={[{ type: "scan", name: "barcode", label: "Barcode", required: true }]} />
+    </Section>
+  </Page>
+));
+app.post("/find", async c => {
+  const form = await c.req.formData();
+  return c.redirect(`/items/${encodeURIComponent(String(form.get("barcode") ?? ""))}`);
+});
+```
+
+Components build data only. The root is `{ version: 1, kind: "Page", title,
+children }`. Plain objects are an equal alternative, for example:
+
+```ts
+app.get("/", c => c.page({
+  version: 1, kind: "Page", title: "Workshop",
+  children: [{ kind: "Text", text: "Your Code page is ready." }],
+}));
+```
+
+TSX and objects produce the same tree and pass the same Core validation. Core checks
+every returned tree before rendering it. Text is escaped. Unknown kinds and
+properties, HTML/SVG, event handlers, functions, accessors and foreign links
+are rejected. `c.html()` is unavailable.
+
+The version 1 allow-list is:
+
+| Node | Description fields |
+| --- | --- |
+| `Page` | `title`, `children`; root only, `version: 1` |
+| `Section` | `title`, `children` |
+| `Text` | `text`; TSX also accepts a text child |
+| `Heading` | `text`, optional `level: 2 \| 3 \| 4` |
+| `Table` | `title`, `columns: [{ key, label }]`, `rows` of scalar values |
+| `Form` | `title`, `action`, `fields`, `submit`; always POST |
+| `Detail` | `title`, `items: [{ label, value }]` |
+| `Chart` | `description: { kind, … }`; portable chart data, no callbacks |
+| `Link` | `label`, `href` |
+| `Button`, `Action` | `label`, `action`, optional string `values`; always POST |
+| `Notice` | `title`, optional `text`, `tone: info \| success \| warning \| danger` |
+
+Fields have `name`, `label`, `type`, optional `value` and `required`. Types are
+`text`, `email`, `number`, `textarea`, `select`, `checkbox` and `scan`. Only
+`select` takes `options: [{ value, label }]`. Values match the field type.
+Field names are unique; `_csrf` is reserved. Cloud inserts the CSRF token into
+forms and actions and removes it before invoking the handler. Links and POST
+destinations resolve inside `/code/<id>/`; they cannot leave that Code.
+
+The first renderer presents chart descriptions as their data tables and scan
+fields as text inputs. Chart drawings, camera scanning and live subscriptions
+are separate renderer work. Supported chart descriptions are `bar`, `line`,
+`scatter`, `pie`, `donut`, `histogram`, `gauge`, `sparkline`, `boxplot`, `heatmap`,
+`barGauge` and `stat`, with matching `Chart.Bar`, `Chart.Line`, etc. builders.
+The portable chart data contract is exported by `@k2b/editor/chart-schema`.
+
+A tree is limited to 64 KiB, 256 nodes and 12 node levels. A table has at most
+200 rows and 20 columns; a form has at most 40 fields. Portable chart budgets
+are eight series, 200 values per series and 1,600 marks. Request and response
+limits still apply to the complete envelope.
 
 ## Call operations on a handle
 
@@ -156,20 +243,67 @@ execution mandate. The stable entrypoint is `event:<event-type>@<version>`.
 See [Code runs](/en/docs/platform/code-runs#understand-event-deliveries) for
 pause, replay, deduplication and queue behavior.
 
+## Serve routes
+
+Routes currently require resource- or app-owned Code with its own Code account.
+Personal Code cannot register routes. Register routes at module scope with literal paths. Core hosts the active,
+approved version at `/code/<code-id>/…`:
+
+```ts
+import { app } from "@sdk";
+
+app.get("/hello/:name", c => c.json({
+  hello: c.req.param("name"),
+  visitor: c.user?.id,
+}));
+app.get("/health", c => c.text("Ready"), { public: true });
+app.post("/save", async c => {
+  const input = await c.req.json();
+  // Validate input and perform any authorized SDK calls here.
+  return c.redirect("/hello/saved");
+});
+```
+
+`get`, `post`, `put`, `delete` and `all` accept a handler and optional
+`{ public: true | false }`. Paths contain literal segments and named parameters
+such as `:id`; declarations match in order. `HEAD` uses the GET handler.
+Handlers return `c.json(value, status?)`, `c.text(text, status?)` or
+`c.redirect(path, status?)`. Redirects stay inside this Code's namespace;
+`/next` resolves to `/code/<code-id>/next`. Code cannot return arbitrary headers,
+cookies or HTML. `c.req` provides `raw`, `param(name)`, `query(name)`, `json()`,
+`text()` and `formData()`. Core forwards only the request data, never browser
+cookies or credentials.
+
+Routes require a signed-in session by default. `c.user` contains that person's
+ID and effective group IDs; check it in the handler when access depends on the
+visitor. Public routes also require the `public_routes` policy classification and version-bound
+administrator approval by default. Existing policy tables initially forbid this new
+classification until an operator chooses its rule. Public routes require the literal `{ public: true }` in the checked
+version and always receive `c.user === null`, including for signed-in visitors.
+There is no platform audience or implicit access to underlying resources.
+SDK calls retain the Code's execution principal and its existing grants;
+the visitor's grants never become data authority.
+
+POST, PUT and DELETE need a session-bound CSRF token. Read `X-Code-CSRF` from
+a preceding GET response and send it as the same header, retaining the cookie.
+URL-encoded forms may submit it as `_csrf`; Core removes that field before
+dispatch. Public forms use a separate HttpOnly cookie when no session exists.
+A token from another session or another Code is refused.
+
+Requests share runner slots and Code concurrency limits. Their eight-second
+budget includes queueing; busy admission returns 503 and a deadline returns
+504. Mutations are never automatically retried. JSON, plain text and
+URL-encoded bodies are supported, up to 8 KiB (4 KiB for public routes).
+Responses are at most 128 KiB. Public requests share a 20-per-minute limit per
+client network and per Code. The Code page lists route entrypoints and their
+last results; request runs appear in Runs with their timing and capability
+calls. Visitor input and response payloads are transient.
+
 ## Recognize later-phase APIs
 
-The `app` type includes `schedule`, `on`, `get`, `post`, `put`, `delete`, `all`,
-`nav`, `webhook`, and `fetch`. `schedule` and resource-scoped `on` are available.
-Route, navigation and fetch registrations report
-`app.<method> kommt in Phase 2`; webhooks report Phase 3. The runtime
-also refuses these calls. Declaring a later-phase method never silently
-registers a working route or event handler.
-
-Event data types come from event schemas. Events with
-`automation: false` are absent. Future route contexts provide `c.req`,
-`c.user`, `c.json`, `c.text`, `c.html`, and `c.redirect`. Webhook contexts have
-`c.verify(secret)` and no `c.user`. Navigation controls presentation only;
-a route must check its own authorization.
+`nav` and `fetch` registrations still report Phase 2; `webhook`
+reports Phase 3. The runtime refuses these registrations too. Eligible event
+payloads come from event schemas; events with `automation: false` are absent.
 
 ## Generate and host an SDK
 
@@ -204,7 +338,7 @@ unresolved or external references fail generation.
 The checker uses these paths with the user's source to resolve handle literals and
 permissions. This generation manifest is not a checked version manifest or
 an authorization grant. `codeSdkPhaseDiagnostic(method)` returns the shared
-Phase 1 diagnostic so the checker can attach a source location.
+unavailable-phase diagnostic so the checker can attach a source location.
 
 The runtime exports an internal `__codeSdk` control object for the trusted
 host. Import the SDK and bind it once **before evaluating the user module**
@@ -218,7 +352,7 @@ identity and credentials outside the sandbox. The checker must reserve
 `__codeSdk` for the host and reject imports of it from user code; hiding it
 from declarations alone does not enforce that rule.
 
-`__codeSdk.entries()` returns schedule descriptors with `kind`, `cron` and
+`__codeSdk.entries()` returns schedule and route descriptors with `kind`, `cron` and
 an `entrypoint` equal to the explicit schedule name, plus `title` when declared. For unnamed schedules,
 entrypoints use registration order (`schedule:0`, `schedule:1`, …); these are
 version-local and change when registrations are reordered.
@@ -302,3 +436,56 @@ when deciding whether a separate authorized action is appropriate.
 Optional images and `model: { id }`, provider-dependent image support, quota
 failures and byte limits follow
 [Typed decision questions](/en/docs/ai/structured-and-background-ai#ask-typed-decision-questions).
+
+
+## Generate text and extract fields
+
+Discover `core.ai.generate` in the live SDK. It is a read-only query classified
+as **AI / KI**, using the caller's allowance and Code's execution budgets.
+Use it for summaries, draft text or validated extraction. Put source data in
+`input` and trusted instructions in `prompt`.
+
+<!-- gate-1a-generation -->
+```ts
+import { core } from "@sdk";
+
+export default async function summarize() {
+  // Fictional source; read real mail through its authorized SDK first.
+  const input = { body: "Please deliver three chairs by Friday." };
+  const summary = await core.app().ai.generate({
+    task: "mail.summary",
+    prompt: "Summarize the message in one sentence.",
+    input,
+    model: { class: "fast" },
+    output: { type: "text", maxChars: 500 },
+  });
+  const extracted = await core.app().ai.generate({
+    task: "mail.extract",
+    prompt: "Extract the requested item and quantity from the message.",
+    input,
+    output: {
+      type: "json",
+      schema: {
+        type: "object",
+        properties: {
+          item: { type: "string", maxLength: 100 },
+          quantity: { type: "integer" },
+        },
+        required: ["item", "quantity"],
+        additionalProperties: false,
+      },
+    },
+  });
+  return { summary: summary.output, extracted: extracted.output };
+}
+```
+
+The generated SDK types describe the request and JSON result. A schema supplied
+at runtime cannot become a compile-time TypeScript shape; narrow `output`
+before reading its fields. Cloud validates the declared schema before returning
+it. For lasting Code, call this helper from a schedule; its callback returns
+`void`. Summarizing or drafting does not send or save anything. A separate
+application capability performs that effect under its own permissions.
+
+See [Text and JSON capabilities](/en/docs/ai/structured-and-background-ai#generate-text-and-extract-json-through-capabilities)
+for schemas, size limits, model selection and stable errors.

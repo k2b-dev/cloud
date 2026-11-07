@@ -1,3 +1,4 @@
+import { z } from "zod";
 import { stableJsonValue } from "../_internal/capability-schemas";
 import {
   type CapabilityManifest,
@@ -6,6 +7,9 @@ import {
   CloudResourceRefSchema,
 } from "../contracts/capabilities";
 import * as authoringTypes from "./authoring-types.ts" with { type: "text" };
+import * as pageTypes from "./page-authoring-types.ts" with { type: "text" };
+import { CODE_PAGE_LIMITS, CodeChartDescriptionSchema, CodePageTreeSchema } from "./page-contract";
+import { CODE_PAGE_BUILDERS } from "./page-source";
 import { CODE_SDK_RUNTIME } from "./runtime-source";
 import { schemaTypes } from "./schema-types";
 import { CODE_SDK_APP_PHASES, type CodeSdkManifest, type CodeSdkOperation, type CodeSdkOptions, type GeneratedCodeSdk } from "./types";
@@ -16,6 +20,19 @@ const path = (value: string): string[] => value.split(".");
 const quote = JSON.stringify;
 const forbiddenProperties = new Set(["__proto__", "prototype", "constructor"]);
 const reservedExports = new Set([
+  "Page",
+  "Section",
+  "Text",
+  "Heading",
+  "Table",
+  "Form",
+  "Detail",
+  "Chart",
+  "Link",
+  "Button",
+  "Action",
+  "Notice",
+  "jsx",
   "undefined",
   "eval",
   "arguments",
@@ -206,7 +223,10 @@ export function generateCodeSdk(manifests: readonly CapabilityManifest[], option
   }
   if (!("default" in authoringTypes) || typeof authoringTypes.default !== "string")
     throw new Error("Expected Code SDK authoring type source");
-  const declarations = ["// Generated from Cloud capability manifests. Do not edit.", authoringTypes.default.trim()];
+  const declarations = [
+    "// Generated from Cloud capability manifests. Do not edit.",
+    authoringTypes.default.replace(/^import[^\n]*\n/gm, "").trim(),
+  ];
   const methods = new Map<CodeSdkOperation, string>();
   for (const [index, op] of manifest.operations.entries()) {
     const fields = Object.entries(op.refs).map(([name, type]) => ({ name, type: `CodeHandle<${quote(type)}>`, required: true }));
@@ -273,12 +293,12 @@ export function generateCodeSdk(manifests: readonly CapabilityManifest[], option
   /** The checked event is scoped to this resource Code owner. */
   on<Event extends keyof CodeEvents>(event: Event, handler: (data: CodeEvents[Event]) => void | Promise<void>): CodeApp;
   on<Event extends keyof CodeEvents>(handle: CodeHandle<string>, event: Event, handler: (data: CodeEvents[Event]) => void | Promise<void>): CodeApp;
+  get(path: string, handler: (c: CodeContext) => Response | Promise<Response>, options?: { public: boolean }): CodeApp;
+  post(path: string, handler: (c: CodeContext) => Response | Promise<Response>, options?: { public: boolean }): CodeApp;
+  put(path: string, handler: (c: CodeContext) => Response | Promise<Response>, options?: { public: boolean }): CodeApp;
+  delete(path: string, handler: (c: CodeContext) => Response | Promise<Response>, options?: { public: boolean }): CodeApp;
+  all(path: string, handler: (c: CodeContext) => Response | Promise<Response>, options?: { public: boolean }): CodeApp;
   /** Phase 2; check reports code_phase_unavailable. */
-  get(path: string, handler: (c: CodeContext) => Response | Promise<Response>): CodeApp;
-  post(path: string, handler: (c: CodeContext) => Response | Promise<Response>): CodeApp;
-  put(path: string, handler: (c: CodeContext) => Response | Promise<Response>): CodeApp;
-  delete(path: string, handler: (c: CodeContext) => Response | Promise<Response>): CodeApp;
-  all(path: string, handler: (c: CodeContext) => Response | Promise<Response>): CodeApp;
   nav(handler: (user: CodeUser) => CodeNavigationItem[] | Promise<CodeNavigationItem[]>): CodeApp;
   /** Phase 3; check reports code_phase_unavailable. */
   webhook(path: string, handler: (c: CodeWebhookContext) => Response | Promise<Response>): CodeApp;
@@ -287,6 +307,16 @@ export function generateCodeSdk(manifests: readonly CapabilityManifest[], option
       "export declare const app: CodeApp;",
     );
   }
+  if (!("default" in pageTypes) || typeof pageTypes.default !== "string") throw new Error("Expected page type source");
+  const pageType = schemaTypes(z.toJSONSchema(CodePageTreeSchema), "CodePage");
+  const chartType = schemaTypes(z.toJSONSchema(CodeChartDescriptionSchema), "CodeChart");
+  declarations.push(
+    ...pageType.declarations,
+    `export type CodePageTree = ${pageType.type};`,
+    ...chartType.declarations,
+    `export type CodeChartDescription = ${chartType.type};`,
+    pageTypes.default.replace(/^import[^\n]*\n/gm, ""),
+  );
   declarations.push("export declare const secrets: Readonly<Record<string, CodeSecret>>;", "export declare const http: CodeHttp;");
   const runtimeExports = [
     "export const secrets = __codeSdk.secrets;",
@@ -311,10 +341,11 @@ export function generateCodeSdk(manifests: readonly CapabilityManifest[], option
     ...(manifest.owner ? { owner: manifest.owner } : {}),
     appMethods: manifest.appMethods,
     events: manifest.events.map(({ type, version, place }) => ({ type, version, place })),
+    pageLimits: CODE_PAGE_LIMITS,
   };
   return {
     declarations: `${declarations.join("\n\n")}\n`,
-    runtime: `// Generated from Cloud capability manifests. Do not edit.\nconst __codeSdk = (() => {\nconst manifest = ${JSON.stringify(stableJsonValue(runtimeManifest))};\nconst RESOURCE_ID_MAX = ${CLOUD_RESOURCE_ID_MAX_LENGTH};\n${CODE_SDK_RUNTIME}\nreturn __codeSdk;\n})();\n${runtimeExports.join("\n")}\n`,
+    runtime: `// Generated from Cloud capability manifests. Do not edit.\nconst __codeSdk = (() => {\nconst manifest = ${JSON.stringify(stableJsonValue(runtimeManifest))};\nconst RESOURCE_ID_MAX = ${CLOUD_RESOURCE_ID_MAX_LENGTH};\n${CODE_SDK_RUNTIME}\nreturn __codeSdk;\n})();\n${runtimeExports.join("\n")}\n${CODE_PAGE_BUILDERS}\n`,
     manifest,
   };
 }

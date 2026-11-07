@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { CapabilityQualifiedIdSchema, CloudResourceRefSchema } from "./capabilities";
 import { CodeInternetOriginsSchema } from "./code-internet";
+import { CodeRouteSchema } from "./code-routes";
 import { CodeSecretVersionBindingSchema } from "./code-secrets";
 
 /** Automation display title: the Code title's 200-character budget, one line of escaped plain text. */
@@ -31,6 +32,7 @@ export const CODE_POLICY_ROWS = [
   "ask_app_asks",
   "ai",
   "internet",
+  "public_routes",
 ] as const;
 export const CodePolicyRowSchema = z.enum(CODE_POLICY_ROWS);
 /** Stable call classification shared by checker, activation, dispatcher and administration. */
@@ -89,7 +91,10 @@ export const CodeCheckedVersionManifestSchema = CodePolicyManifestSchema.extend(
     .array(
       z
         .object({
-          kind: z.enum(["schedule", "manual", "event"]).describe("Scheduled, manually invoked or event-triggered entrypoint."),
+          kind: z
+            .enum(["schedule", "manual", "event", "route"])
+            .describe("Scheduled, manually invoked, event-triggered or HTTP entrypoint."),
+          route: CodeRouteSchema.optional().describe("Checked method, path and public declaration for a route handler."),
           entrypoint: z.string().min(1).describe("Named ESM export selected by the runner."),
           title: CodeAutomationTitleSchema.optional().describe("Optional reviewed display title; entrypoint remains the stable key."),
           event: CodeEventTriggerSchema.optional().describe("Exact event version and owner place for an event entrypoint."),
@@ -104,6 +109,10 @@ export const CodeCheckedVersionManifestSchema = CodePolicyManifestSchema.extend(
               ? !!entry.event && entry.cron === null && entry.entrypoint === `event:${entry.event.type}@${entry.event.version}`
               : !entry.event,
           "Event metadata and stable entrypoint must match the registration kind",
+        )
+        .refine(
+          (entry) => (entry.kind === "route") === (entry.route !== undefined),
+          "Routes require a route descriptor; other entrypoints forbid it",
         ),
     )
     .describe("All named executable entrypoints detected by the checker."),
@@ -122,6 +131,8 @@ export const CodeCheckedVersionManifestSchema = CodePolicyManifestSchema.extend(
 })
   .strict()
   .superRefine((manifest, ctx) => {
+    if (manifest.entrypoints.some((entry) => entry.route?.public) && !manifest.policyRows.includes("public_routes"))
+      ctx.addIssue({ code: "custom", message: "Public route classification missing from policyRows" });
     if (manifest.internet?.length && !manifest.policyRows.includes("internet"))
       ctx.addIssue({ code: "custom", message: "Internet classification missing from policyRows" });
     if (manifest.secrets?.length && !manifest.policyRows.includes("internet"))

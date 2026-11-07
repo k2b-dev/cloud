@@ -224,7 +224,7 @@ test("Cloud credential cookies are stripped and app cookies survive", async () =
     await f.request("/", {
       headers: {
         Cookie:
-          "session_token=a; pwa_session=b; pwa_device=k; pwa_pairing=s; cloud_browser=c; __Host-cloud_browser=d; __Secure-cloud-app-pwa-site-id=e; portal=f",
+          "session_token=a; pwa_session=b; pwa_device=k; pwa_pairing=s; cloud_browser=c; __Host-cloud_browser=d; __Secure-cloud-app-pwa-site-id=e; __Host-code-page-csrf=n; portal=f",
       },
     })
   ).json();
