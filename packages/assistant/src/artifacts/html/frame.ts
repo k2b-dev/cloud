@@ -88,10 +88,14 @@ for (const level of ["log", "info", "warn", "error"] as const satisfies FrameLog
     if ((level === "error" ? errors : logs)()) send({ type: "log", level, text: clip(args.map(show).join(" ")) });
   };
 }
+/** Caught render failures use the same bounded host diagnostics as uncaught errors.
+ * Native reportError in the opaque frame does not preserve this message in WebKit. */
+function reportError(error: unknown, where?: string) {
+  if (errors()) send({ type: "error", text: clip(show(error)), where });
+}
 addEventListener("error", (event: ErrorEvent) => {
-  if (!errors()) return;
   const where = event.filename ? `${named(event.filename)}:${event.lineno}:${event.colno}` : undefined;
-  send({ type: "error", text: clip(event.error instanceof Error ? show(event.error) : String(event.message)), where });
+  reportError(event.error instanceof Error ? event.error : String(event.message), where);
 });
 addEventListener("unhandledrejection", (event: PromiseRejectionEvent) => {
   if (!errors()) return;

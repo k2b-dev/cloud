@@ -324,6 +324,11 @@ test("rare render errors report their message without an import retry", async ()
     await page.waitForFunction(() =>
       globalThis.lazyChartHarness.events.some((event) => event.type === "error" && event.text.includes("Broken formatter")),
     );
+    expect(
+      await page.evaluate(() =>
+        globalThis.lazyChartHarness.events.filter((event) => event.type === "error" && event.text.includes("Broken formatter")),
+      ),
+    ).toHaveLength(1);
     expect(requests).toEqual([]);
   } finally {
     await context.close();
