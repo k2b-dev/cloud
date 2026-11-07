@@ -181,7 +181,8 @@ jobs:
       fail-fast: false
       # All three modes balance measured suite times from scripts/test-weights.json:
       # longest first; unknown suites use the median. Choose the smallest count
-      # with a predicted slowest shard <= 15 min (half the 30-minute job limit).
+      # with a predicted slowest shard <= 15 min for unit/integration;
+      # WebKit reserves more headroom as described below.
       # Measured maxima from runs 41328825206, 41330725890, 41328826138 and
       # 41324844306 predict 13.8 min for the slowest of 9 unit shards (8 need 15.3 min).
       # --max-minutes 20 fails above 2/3 of the job limit. The last third covers
@@ -227,12 +228,13 @@ jobs:
   # The browser tests again in WebKit, the engine of Safari and of every
   # browser on iOS. The Playwright image of the catalog's version serves it
   # through `playwright run-server`; contributing/testing.md runs the same
-  # locally. Maxima from runs 42371812311, 42373338426 and 42377096341 cover
-  # all 380 files, including completed suites from failed jobs (#1998).
-  # Fifteen shards need 10.97 min; fourteen need 11.75 min. With the command
-  # list browser files (#2797 and its follow-ups) fifteen reach 11.00 min, so
-  # sixteen shards predict 10.31 min. The 11-min target
-  # reserves the full 2-min warm-up plus the measured p95 1.61x slowdown:
+  # locally. Refreshed from runs 42377096341, 42386499318, 42399321076 and
+  # 42399831722, including completed suites from failed and budget-aborted jobs.
+  # The table covers all 382 files. Seventeen shards need 621.5 s (10.36 min),
+  # leaving 38.5 s below the 11-min target; sixteen need 660.4 s and fail it.
+  # Ten extra unmeasured files (median 12.6 s) still fit at 628.9 s.
+  # The 11-min target reserves the full 2-min warm-up plus the measured p95
+  # 1.61x slowdown:
   # 11 * 1.61 + 2 < 20. The runner tests enforce this 55%-of-budget guard.
   # The 20-min guard reserves the last third for setup and finalization;
   # strategy.job-total is the divisor.
@@ -244,7 +246,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]
+        shard: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17]
     env:
       TEST_BROWSER: webkit
       TEST_BROWSER_ENDPOINT: ws://127.0.0.1:3333/
