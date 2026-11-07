@@ -53,7 +53,7 @@ export function lintSource(path: string, raw: string, files: AppFiles): LintIssu
     add(
       "warning",
       "theme",
-      "prefers-color-scheme follows the device, not Cloud; use the --k2b-* tokens, which switch with the Cloud theme",
+      "Use the --k2b-* tokens for colors; they switch with the Cloud theme without prefers-color-scheme rules",
       /prefers-color-scheme/,
     );
     add(
@@ -256,10 +256,12 @@ export function composeApp(files: AppFiles, options: ComposeOptions) {
   if (!doc.title) doc.title = options.title;
 
   const inner = `<!doctype html>${doc.documentElement.outerHTML}`;
+  // WebKit forwards the embedding scheme to prefers-color-scheme, but can
+  // still choose light from a list. Select one scheme explicitly for its canvas.
   const wrapper =
     `<!doctype html><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="${attr(NETWORK)}">` +
     `<meta http-equiv="x-dns-prefetch-control" content="off">` +
-    "<style>html,body{margin:0;height:100%;overflow:hidden;background:transparent}iframe{display:block;border:0;width:100%;height:100%}</style>" +
+    "<style>:root{color-scheme:light}@media(prefers-color-scheme:dark){:root{color-scheme:dark}}html,body{margin:0;height:100%;overflow:hidden;background:transparent}iframe{display:block;border:0;width:100%;height:100%}</style>" +
     `<iframe sandbox="allow-scripts allow-forms" title="${attr(options.title)}" srcdoc="${attr(inner)}"></iframe>`;
   return { wrapper, lint, entries };
 }

@@ -95,7 +95,7 @@ for (const width of [1440, 390])
         expect(
           await marks
             .first()
-            .locator(".stdlib-chart-bar")
+            .locator(":scope > .stdlib-chart-bar")
             .evaluateAll((nodes) => nodes.every((n) => getComputedStyle(n).stroke === "none")),
         ).toBe(true);
         expect(
@@ -119,13 +119,14 @@ for (const width of [1440, 390])
         await chart.press("Enter");
         expect(await chart.locator('[role="tooltip"]').textContent()).not.toBe(first);
         await chart.press("Home");
+        await settled(page);
         expect(await marks.first().evaluate((n) => CSS.supports("color", n.style.getPropertyValue("--k2b-chart-inspection-color")))).toBe(
           true,
         );
         expect(
           await marks
             .first()
-            .locator(".stdlib-chart-bar")
+            .locator(":scope > .stdlib-chart-bar")
             .evaluateAll((nodes) =>
               nodes.every((n) => getComputedStyle(n).stroke !== "none" && parseFloat(getComputedStyle(n).strokeWidth) > 0),
             ),
@@ -236,6 +237,7 @@ for (const width of [1440, 390])
 
 test("standalone and base-only hosts paint transparent bands and distinct previous bars", async () => {
   const page = await browser.newPage();
+  const errors = pageErrors(page);
   try {
     const base = await Bun.file(resolve(import.meta.dir, "../base/base.css")).text();
     const specs = [
@@ -292,6 +294,7 @@ test("standalone and base-only hosts paint transparent bands and distinct previo
         ).toEqual(["none", "none"]);
       }
     }
+    expect(errors).toEqual([]);
   } finally {
     await page.close();
   }
@@ -300,6 +303,7 @@ test("standalone and base-only hosts paint transparent bands and distinct previo
 test("old bars keep valid SSR/client selection and inspection outlines inside k2b-ui", async () => {
   const page = await browser.newPage();
   try {
+    const errors = pageErrors(page);
     const svg = selectedChartSvg(
       renderChartSvg(
         {
@@ -317,6 +321,7 @@ test("old bars keep valid SSR/client selection and inspection outlines inside k2
     await page.setContent(
       `<style>${css}</style><body class="k2b-ui"><div id="ssr" class="k2b-chart">${svg}</div><div id="root"></div></body>`,
     );
+    await settled(page);
     const serverStroke = await page.locator("#ssr [data-selected] .stdlib-chart-bar").evaluate((n) => getComputedStyle(n).stroke);
     expect(serverStroke).not.toBe("none");
     await page.addScriptTag({ content: bundle });
@@ -328,19 +333,24 @@ test("old bars keep valid SSR/client selection and inspection outlines inside k2
     expect(await first.evaluate((n) => CSS.supports("color", n.style.getPropertyValue("--k2b-chart-selection-color")))).toBe(true);
     await second.locator(".k2b-chart-category-band").hover({ position: { x: 3, y: 3 } });
     await chart.locator('[role="tooltip"]:popover-open').waitFor();
+    await settled(page);
     expect(await second.locator(".stdlib-chart-bar").evaluate((n) => getComputedStyle(n).stroke)).toBe("none");
     expect(await second.locator(".k2b-chart-category-band").evaluate((n) => getComputedStyle(n).fill)).not.toBe("none");
     await chart.focus();
     await chart.press("End");
+    await settled(page);
     expect(await second.evaluate((n) => CSS.supports("color", n.style.getPropertyValue("--k2b-chart-inspection-color")))).toBe(true);
     expect(await second.locator(".stdlib-chart-bar").evaluate((n) => getComputedStyle(n).stroke)).not.toBe("none");
     await chart.press("Enter");
+    await settled(page);
     expect(await second.evaluate((n) => CSS.supports("color", n.style.getPropertyValue("--k2b-chart-selection-color")))).toBe(true);
     expect(await second.locator(".stdlib-chart-bar").evaluate((n) => parseFloat(getComputedStyle(n).strokeWidth))).toBeGreaterThan(0);
     await chart.press("Escape");
     await second.locator(".k2b-chart-category-band").hover({ position: { x: 3, y: 3 } });
+    await settled(page);
     expect(await second.locator(".stdlib-chart-bar").evaluate((n) => getComputedStyle(n).stroke)).not.toBe("none");
     expect(await second.locator(".k2b-chart-category-band").evaluate((n) => getComputedStyle(n).stroke)).toBe("none");
+    expect(errors).toEqual([]);
   } finally {
     await page.close();
   }

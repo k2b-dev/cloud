@@ -1,4 +1,4 @@
-import { seriesBarLayout } from "@k2b/ui/charts";
+import { seriesBarLayout } from "@k2b/ui/charts/core";
 
 // Cloud retains AI policy and its public export names; portable rendering lives in @k2b/editor.
 export {

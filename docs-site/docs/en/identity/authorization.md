@@ -252,6 +252,26 @@ per subject, in the same order, with one query instead of one per subject, by
 the same rules. `accessIds` accepts an array or a Bun `SQLQuery` selecting one
 uuid column, so large grant sets can stay in the database.
 
+Pass an owned Bun `SQL` pool or its transaction as the optional second argument,
+`getEffectivePermissions({ accessIds, subjects }, db)`, just as for
+`getEffectivePermission(params, db)`. Omit it to use Cloud's shared pool. The
+batch query reads grants, junction subqueries and nested memberships through
+that executor, including the transaction's uncommitted changes. It returns
+only permission levels and keeps no permission cache or executor reference.
+It uses the caller's transaction isolation and does not lock grants against
+concurrent changes.
+
+```ts
+import { sql } from "@k2b/cloud";
+import { getEffectivePermissions } from "@k2b/cloud/server";
+
+await sql.begin(async (tx) => {
+  // Read or change your resource's junction rows through tx as well.
+  const levels = await getEffectivePermissions({ accessIds, subjects }, tx);
+  // Use levels within this transaction; do not reuse them for later deliveries.
+});
+```
+
 ### Show who has access
 
 Everyone with access of their own may see who else has access to a resource

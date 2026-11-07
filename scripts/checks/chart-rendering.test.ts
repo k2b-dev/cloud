@@ -16,7 +16,7 @@ const findings = async (files: Record<string, string>, packages = ["demo", "ui",
     }
     const found = await rule.run({ workspaceRoot: root, fix: false, flags: new Set() });
     for (const finding of found) {
-      expect(finding.message).toMatch(/Raw stdlib chart renderer|charts need an island for tooltips and keyboard inspection/);
+      expect(finding.message).toMatch(/Raw chart renderer|charts need an island for tooltips and keyboard inspection/);
     }
     return found.map((finding) => `${relative(root, finding.file ?? "")}:${finding.line}`).sort();
   } finally {
@@ -339,4 +339,45 @@ test("names the server importer, or that no island imports the module", async ()
   } finally {
     await rm(root, { recursive: true, force: true });
   }
+});
+
+for (const entry of ["@k2b/ui", "@k2b/ui/charts"]) {
+  test.each([
+    ["Chart", "Chart.Bar"],
+    ["Chart as Plot", "Plot.Pie"],
+  ])(`requires an island for ${entry} named namespace member %s`, async (binding, tag) => {
+    const source = `import { ${binding} } from '${entry}';\nexport const Panel = () => <${tag} data={[]} />;`;
+    expect(await findings({ [panelPath]: source })).toEqual([panelFinding]);
+    expect(
+      await findings({ [panelPath]: source, "packages/demo/src/frontend/Page.island.tsx": "import { Panel } from './Panel';" }),
+    ).toEqual([]);
+  });
+  test.each(["UI.Chart", "UI.Chart.Line", "UI.Chart.StateTimeline"])(`requires an island for ${entry} module namespace %s`, async (tag) => {
+    expect(await findings({ [panelPath]: `import * as UI from '${entry}';\nconst Panel = () => <${tag} />;` })).toEqual([panelFinding]);
+  });
+}
+
+// The pure entry is also a raw drawing boundary: server preparation does not attach inspection.
+test.each(["@k2b/ui/charts/core", "@k2b/ui/charts"])("guards raw renderers from %s", async (entry) => {
+  for (const source of [
+    `import { renderChartSvg } from '${entry}';`,
+    `import { toSvg as draw } from '${entry}';`,
+    `import { layout } from '${entry}';`,
+    `import * as core from '${entry}'; core.charts.bar({});`,
+    `const { renderBarChartSvg } = await import('${entry}');`,
+    `import('${entry}').then(({ renderStateTimelineSvg }) => {});`,
+    `export { charts } from '${entry}';`,
+  ])
+    expect(await findings({ "packages/demo/src/plot.ts": source })).toEqual(["packages/demo/src/plot.ts:1"]);
+});
+
+test("accepts pure snapshot preparation and numeric helpers", async () => {
+  expect(
+    await findings({
+      "packages/demo/src/plot.ts": `
+    import { prepareChartSnapshot, computeDomain, niceStep, barChartLayout, type ChartKind } from '@k2b/ui/charts/core';
+    export { Chart } from '@k2b/ui/charts';
+  `,
+    }),
+  ).toEqual([]);
 });

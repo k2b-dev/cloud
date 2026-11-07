@@ -14,7 +14,7 @@ Start with the symptom that you see. When transport, folders, or search can be i
 :::steps
 1. Clear **Search mailboxes**.
 2. Check that someone with **Manage** access to the mailbox gave you access.
-3. If someone deleted the mailbox, a person with **Manage** access can restore it under **Recently deleted**.
+3. If someone deleted the mailbox, a person with **Manage** access can restore it under **Mailboxes → … → Deleted mailboxes**.
 :::
 
 Mail checks access when the page loads and during live updates. If your access ended, reloads and live views fail and do not keep showing old mailbox data.

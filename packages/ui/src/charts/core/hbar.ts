@@ -1,7 +1,6 @@
-import { chartDatumSvg, escapeXml, extendDomainToNice, niceStep, svgRoot } from "@k2b/stdlib";
 import { barSeriesLegend, chartTextWidth, headerHeight, renderHeader, wrapLabel } from "../../content/chart-bar";
-
 import { categoryLabels } from "./category-labels";
+import { chartDatumSvg, escapeXml, extendDomainToNice, niceStep, svgRoot } from "./svg";
 
 export type HorizontalBarOptions = {
   series: string[];

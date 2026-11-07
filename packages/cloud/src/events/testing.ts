@@ -1,5 +1,8 @@
 import { CursorMismatchError, RetentionGapError, type TopicEvent } from "@k2b/sync";
+import type { SQL } from "bun";
+import { migrateEventsSchema } from "../services/events-schema";
 import type { LiveEnvelope, LiveTopic } from "./live-engine";
+import { assertTestDatabase } from "./test-database";
 
 export { appEventFixture, createAppEventTestHarness, deliverAppEvent } from "./app-events.testing";
 
@@ -87,4 +90,18 @@ export const createMemoryLiveTopic = () => {
       })();
     },
   } satisfies LiveTopic & { publish(data: LiveEnvelope): void; trim(count: number): void };
+};
+
+/**
+ * Install only Core's events schema in the supplied app test database.
+ * Checks current_database() before DDL; never use this for application startup.
+ * Idempotent, transactional, and serialized with Core's migration.
+ * The caller owns the pool and closes it after its tests.
+ */
+export const installLiveOutbox = async (db: SQL): Promise<void> => {
+  await db.begin(async (tx) => {
+    const [database] = await tx<{ name: string }[]>`SELECT current_database() AS name`;
+    assertTestDatabase(database?.name);
+    await migrateEventsSchema(tx);
+  });
 };

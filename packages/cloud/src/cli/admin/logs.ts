@@ -102,13 +102,18 @@ export const logCommands = [
       search: flag.string({ aliases: ["q"], description: "Free-text log search" }),
       source: flag.string({ description: "Log source filter" }),
       level: flag.enum(["debug", "info", "warn", "error"], { description: "Log level filter" }),
-      since: flag.string({ description: "Lookback window like 30m, 6h, or 7d" }),
+      since: flag.string({ default: "24h", description: "Lookback window like 30m, 6h, or 7d (default: 24h)" }),
       messageLength: flag.int({ name: "message-length", default: 140, min: 40, max: 1000, description: "Table message preview length" }),
       ...paginationFlags({ defaultPerPage: 50, maxPerPage: 100 }),
     },
     run: async ({ ctx, flags }) => {
-      const result = await getLogs(ctx, { ...flags, sinceHours: flags.since ? parseLookbackHours(flags.since) : undefined });
-      printJsonOrTable(ctx, result, logRows(result.entries, flags.messageLength), logColumns);
+      const result = await getLogs(ctx, { ...flags, sinceHours: parseLookbackHours(flags.since ?? "24h") });
+      printJsonOrTable(
+        ctx,
+        { ...result, sinceHours: parseLookbackHours(flags.since ?? "24h") },
+        logRows(result.entries, flags.messageLength),
+        logColumns,
+      );
     },
   }),
   command("logs summary", {
@@ -156,7 +161,12 @@ export const logCommands = [
     },
     run: async ({ ctx, flags }) => {
       const result = await getLogs(ctx, { ...flags, level: "error", sinceHours: parseLookbackHours(flags.since) });
-      printJsonOrTable(ctx, result, logRows(result.entries, flags.messageLength), logColumns);
+      printJsonOrTable(
+        ctx,
+        { ...result, sinceHours: parseLookbackHours(flags.since ?? "24h") },
+        logRows(result.entries, flags.messageLength),
+        logColumns,
+      );
     },
   }),
   command("logs problems", {
@@ -261,7 +271,7 @@ export const logCommands = [
       search: flag.string({ aliases: ["q"], description: "Free-text log search" }),
       source: flag.string({ description: "Log source filter" }),
       level: flag.enum(["debug", "info", "warn", "error"], { description: "Log level filter" }),
-      since: flag.string({ description: "Lookback window like 30m, 6h, or 7d" }),
+      since: flag.string({ default: "24h", description: "Lookback window like 30m, 6h, or 7d (default: 24h)" }),
       lines: flag.int({ default: 20, min: 1, max: 100, description: "Rows to show" }),
       follow: flag.boolean({ aliases: ["f"], description: "Poll and print new rows until interrupted" }),
       interval: flag.int({ default: 2, min: 1, max: 60, description: "Follow poll interval in seconds" }),
@@ -273,11 +283,16 @@ export const logCommands = [
           search: flags.search,
           source: flags.source,
           level: flags.level,
-          sinceHours: flags.since ? parseLookbackHours(flags.since) : undefined,
+          sinceHours: parseLookbackHours(flags.since ?? "24h"),
           perPage: flags.lines ?? 20,
         });
       const result = await load();
-      printJsonOrTable(ctx, result, logRows(result.entries, flags.messageLength), logColumns);
+      printJsonOrTable(
+        ctx,
+        { ...result, sinceHours: parseLookbackHours(flags.since ?? "24h") },
+        logRows(result.entries, flags.messageLength),
+        logColumns,
+      );
       if (!flags.follow) return;
       const seen = new Set(result.entries.map((entry) => entry.id));
       while (true) {

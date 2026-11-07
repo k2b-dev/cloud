@@ -492,20 +492,24 @@ const uuidArrayWithNulls = (values: readonly (string | null)[]): string => `{${v
  * Each result is what `getEffectivePermission()` returns for the subject at the
  * same position: the same direct, nested-group, authenticated, and public rules.
  * Use it where one decision is needed for many readers, such as a live
- * channel's `authorize`.
+ * channel's `authorize`. Pass the caller's database or transaction as the second
+ * argument to read its current grants and memberships; results are never cached.
  */
-export const getEffectivePermissions = async (params: {
-  /** Grant IDs, or a subquery selecting one uuid column from the resource's junction table. */
-  accessIds: string[] | SQLQuery;
-  subjects: readonly AccessSubject[];
-}): Promise<PermissionLevel[]> => {
+export const getEffectivePermissions = async (
+  params: {
+    /** Grant IDs, or a subquery selecting one uuid column from the resource's junction table. */
+    accessIds: string[] | SQLQuery;
+    subjects: readonly AccessSubject[];
+  },
+  db: AccessDb = sql,
+): Promise<PermissionLevel[]> => {
   const { accessIds, subjects } = params;
   if (subjects.length === 0) return [];
   if (Array.isArray(accessIds) && accessIds.length === 0) return subjects.map(() => "none");
   const userIds = subjects.map((subject) => (subject.type === "user" ? subject.userId : null));
   const serviceAccountIds = subjects.map((subject) => (subject.type === "service_account" ? subject.serviceAccountId : null));
   // The tiers of buildAccessPrincipalTierConditions, evaluated per row of `s`.
-  const rows = await sql<{ position: number; permission: PermissionLevel | null }[]>`
+  const rows = await db<{ position: number; permission: PermissionLevel | null }[]>`
     SELECT s.position::int AS position, (
       SELECT a.permission
       FROM auth.access a

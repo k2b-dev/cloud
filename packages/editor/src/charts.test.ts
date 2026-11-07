@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
-import { type ChartDatum, charts } from "@k2b/stdlib";
 import { isChartDatum } from "@k2b/ui/chart-inspection";
 import { barChartLayout, renderBarChartSvg } from "@k2b/ui/charts";
+import { type ChartDatum, charts } from "@k2b/ui/charts/core";
 import {
   type ChartInput,
   chartKinds,
@@ -225,6 +225,29 @@ describe("chart render options", () => {
   });
 });
 
+test("saved references preserve their individual style and tone through schema and rendering", () => {
+  const spec = {
+    kind: "line",
+    title: "Flow",
+    series: [
+      {
+        data: [
+          { x: 1, y: 1 },
+          { x: 2, y: 5 },
+        ],
+      },
+    ],
+    references: [{ value: 3, label: "Target", style: "dotted", tone: "success" }],
+  } satisfies ChartInput;
+  const input = parse(spec);
+  const options = chartRenderOptions(input, "en");
+  if (options.kind !== "line") throw new Error("Expected line");
+  expect(options.references).toEqual(spec.references);
+  expect(charts.line(options)).toContain('style="stroke-dasharray:1 3;stroke-linecap:round;color:var(--k2b-success-text,#047857)"');
+  expect(schema.safeParse({ ...spec, references: [{ value: 3, style: "unknown" }] }).success).toBe(false);
+  expect(schema.safeParse({ ...spec, references: [{ value: 3, tone: "unknown" }] }).success).toBe(false);
+});
+
 describe("chart axes", () => {
   const ticks = (input: unknown, anchor: "end" | "middle") => {
     const svg = drawChart(chartRenderOptions(parse(input), "en"));
@@ -288,6 +311,7 @@ describe("shared chart tooltip", () => {
     for (const input of [
       { kind: "bar", title: "B", data: [{ label: "Jan", value: 1200 }], yAxis: { label: "Axis", format: { decimals: 0 } } },
       { kind: "pie", title: "P", data: [{ label: "Jan", value: 1200 }] },
+      { kind: "donut", title: "D", data: [{ label: "Jan", value: 1200 }] },
       { kind: "stat", title: "S", value: 1200, sparkline: [1200, 1500] },
       ...["line", "scatter"].map((kind) => ({
         kind,

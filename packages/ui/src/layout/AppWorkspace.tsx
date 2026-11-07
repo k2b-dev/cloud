@@ -500,6 +500,11 @@ export type AppWorkspaceSidebarItemProps = {
   onNavigate?: (event: LinkNavigateEvent) => void | Promise<void>;
   onClick?: (event: MouseEvent) => void;
   /**
+   * Makes a row without `href` a disclosure: it shows or hides the rows after
+   * it, and assistive technology hears whether they are shown.
+   */
+  expanded?: boolean;
+  /**
    * Marks the current page (`aria-current="page"`). On a page deeper than the
    * sidebar lists, pass `"ancestor"` for the item that contains it: it keeps
    * the highlight and, while the sidebar shows, is the way up, so the head
@@ -1509,6 +1514,7 @@ type AppWorkspaceSidebarRowProps = {
   scroll?: NavigationScrollMode;
   onNavigate?: (event: LinkNavigateEvent) => void | Promise<void>;
   onClick?: (event: MouseEvent) => void;
+  expanded?: boolean;
   active?: boolean | "ancestor";
   activeClass?: string;
   disabled?: boolean;
@@ -1621,7 +1627,14 @@ function AppWorkspaceSidebarRow(props: AppWorkspaceSidebarRowProps): JSX.Element
       <Show
         when={Boolean(props.href && !props.disabled)}
         fallback={
-          <button type="button" {...attrs()} tabIndex={props.tabIndex} disabled={props.disabled} onClick={props.onClick}>
+          <button
+            type="button"
+            {...attrs()}
+            tabIndex={props.tabIndex}
+            disabled={props.disabled}
+            aria-expanded={props.expanded}
+            onClick={props.onClick}
+          >
             {props.children}
           </button>
         }
@@ -1845,6 +1858,7 @@ function AppWorkspaceSidebarItem(props: AppWorkspaceSidebarItemProps): JSX.Eleme
       scroll={props.scroll}
       onNavigate={props.onNavigate}
       onClick={props.onClick}
+      expanded={props.href ? undefined : props.expanded}
       active={props.active}
       activeClass={props.activeClass}
       disabled={props.disabled}

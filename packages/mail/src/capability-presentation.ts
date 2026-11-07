@@ -4,6 +4,12 @@ export const mailCapabilityPresentation: CapabilityPresentationCatalog = {
   baseLocale: "en",
   translations: {
     de: {
+      events: {
+        "message.received": {
+          title: "Nachricht empfangen",
+          description: "Eine eingehende Nachricht hat ihre erste geeignete Ablage im Postfach erreicht.",
+        },
+      },
       commands: {
         "draft.calendar": {
           title: "Kalendereinladung an Entwurf anhängen",
@@ -415,6 +421,8 @@ export const mailCapabilityPresentation: CapabilityPresentationCatalog = {
           title: "Gespräch zuordnen",
           description: "Zuständige einer Konversation hinzufügen, entfernen oder ersetzen.",
           input: {
+            onlyIfUnassigned: "Atomar nur zuweisen, wenn niemand zuständig ist; erfordert add und expectedRevision.",
+            expectedRevision: "Erwartete Revision der Unterhaltung.",
             mailboxId: "Exaktes mail.mailbox ID, das von Listenpostfächern oder einem eingegebenen Postfach ref zurückgegeben wird.",
             conversationId:
               "Exaktes mail.conversation ID, das von einer Konversationsliste, einer Suche, einem Fokusergebnis oder einer eingegebenen Konversation ref zurückgegeben wird.",
@@ -473,25 +481,32 @@ export const mailCapabilityPresentation: CapabilityPresentationCatalog = {
         "conversation.mark": {
           title: "E-Mail-Konversation markieren",
           description:
-            "Markieren Sie eine E-Mail-Konversation im aktuellen Quellordner als gelesen, ungelesen, markiert oder nicht markiert.",
+            "Markieren Sie eine E-Mail-Konversation im aktuellen Quellordner als gelesen, ungelesen, markiert oder nicht markiert. target.messageId begrenzt die Änderung auf eine Nachricht.",
           input: {
             mailboxId: "Exaktes mail.mailbox ID, das von Listenpostfächern oder einem eingegebenen Postfach ref zurückgegeben wird.",
             target: "Konversation und ihr aktueller Anbieterordner.",
             "target.conversationId":
               "Exaktes mail.conversation ID, das von einer Konversationsliste, einer Suche, einem Fokusergebnis oder einer eingegebenen Konversation ref zurückgegeben wird.",
+            "target.messageId":
+              "Optional: nur diese Nachricht und ihre Kopien im Quellordner ändern. Ohne Angabe gilt die ganze Unterhaltung.",
             "target.sourceFolderId": "Anbieterordner ID, aus dem die Konversation geändert wird.",
+            answered: "Beantwortet-Flag beim Anbieter setzen oder entfernen; erfordert target.messageId.",
+            draft: "Entwurf-Flag beim Anbieter setzen oder entfernen; erfordert target.messageId. Erstellt keinen Cloud-Entwurf.",
             read: "Legen Sie „true“ fest, um es als gelesen zu markieren, oder „false“, um es als ungelesen zu markieren.",
             flagged: "Setzen Sie „true“, um die Markierung zu setzen, oder „false“, um die Markierung aufzuheben.",
           },
         },
         "conversation.move": {
           title: "E-Mail-Konversation verschieben",
-          description: "Verschieben Sie eine E-Mail-Konversation in eine Standardrolle oder einen expliziten Ordner.",
+          description:
+            "Verschiebt eine Unterhaltung in eine Standardrolle oder einen Ordner. Mit target.messageId wird nur diese Nachricht verschoben.",
           input: {
             mailboxId: "Exaktes mail.mailbox ID, das von Listenpostfächern oder einem eingegebenen Postfach ref zurückgegeben wird.",
             target: "Konversation und ihr aktueller Anbieterordner.",
             "target.conversationId":
               "Exaktes mail.conversation ID, das von einer Konversationsliste, einer Suche, einem Fokusergebnis oder einer eingegebenen Konversation ref zurückgegeben wird.",
+            "target.messageId":
+              "Optional: nur diese Nachricht und ihre Kopien im Quellordner ändern. Ohne Angabe gilt die ganze Unterhaltung.",
             "target.sourceFolderId": "Anbieterordner ID, aus dem die Konversation geändert wird.",
             destination: "Zielrolle oder Ordner des Anbieters.",
           },
@@ -544,25 +559,65 @@ export const mailCapabilityPresentation: CapabilityPresentationCatalog = {
             snoozedUntil: "Zeitpunkt für die erneute Anzeige oder null, um die Unterhaltung jetzt wieder anzuzeigen.",
           },
         },
-        "conversation.status.update.batch": {
-          title: "Status von Unterhaltungen aktualisieren",
+        "conversation.summary.write": {
+          title: "Automatische Zusammenfassung schreiben",
           description:
-            "Bis zu 50 Unterhaltungen eines Postfachs als erledigt markieren oder wieder öffnen. Meldet ok oder not_found je Unterhaltung.",
+            "Speichert vorbereiteten Text mit Prüfung beider Revisionen. Von Personen bearbeiteter oder geleerter Text bleibt geschützt. Erzeugt selbst keinen Text.",
           input: {
-            mailboxId: "Exakte mail.mailbox ID des Postfachs.",
-            conversationIds: "Exakte mail.conversation IDs desselben Postfachs, höchstens 50.",
-            status: "Unterhaltungen als erledigt markieren oder wieder öffnen.",
+            mailboxId: "Postfach-ID.",
+            conversationId: "Unterhaltungs-ID.",
+            expectedRevision: "Revision der gelesenen Unterhaltung.",
+            expectedSummaryRevision: "Revision der gelesenen Zusammenfassung.",
+            summary: "Vorbereiteter Zusammenfassungstext.",
           },
         },
-        "conversation.status.update": {
+        "conversation.reference.ensure": {
+          title: "Referenz der Unterhaltung sicherstellen",
+          description:
+            "Bei aktivierter Referenzvergabe: Liefert eine bestehende Referenz oder vergibt einmalig eine Nummer nach den Postfacheinstellungen.",
+          input: { mailboxId: "Postfach-ID.", conversationId: "Unterhaltungs-ID." },
+        },
+        "conversation.status.set.batch": {
+          title: "Status von Unterhaltungen aktualisieren",
+          description:
+            "Setzt needs_action, waiting oder done für bis zu 50 Unterhaltungen; open leitet den Status aus dem Verlauf ab. Meldet ok oder not_found je Unterhaltung.",
+          input: {
+            expectedRevisions: "Optional: Revision jeder angefragten Unterhaltung. Ein Konflikt lässt den gesamten Stapel unverändert.",
+            mailboxId: "Exakte mail.mailbox ID des Postfachs.",
+            conversationIds: "Exakte mail.conversation IDs desselben Postfachs, höchstens 50.",
+            status: "needs_action, waiting oder done setzen; open leitet den Status aus dem Verlauf ab.",
+          },
+        },
+        "conversation.status.set": {
           title: "Konversationsstatus aktualisieren",
-          description: "Markieren Sie ein Gespräch als erledigt oder öffnen Sie es erneut.",
+          description: "Setzt needs_action, waiting oder done mit Revisionsprüfung; open leitet den Status aus dem Verlauf ab.",
           input: {
             mailboxId: "Exaktes mail.mailbox ID, das von Listenpostfächern oder einem eingegebenen Postfach ref zurückgegeben wird.",
             conversationId:
               "Exaktes mail.conversation ID, das von einer Konversationsliste, einer Suche, einem Fokusergebnis oder einer eingegebenen Konversation ref zurückgegeben wird.",
             expectedRevision: "Aktuelle Ressourcenrevision, die für optimistische Parallelität verwendet wird.",
-            status: "Markieren Sie das Gespräch als erledigt oder öffnen Sie es erneut.",
+            status: "needs_action, waiting oder done setzen; open leitet den Status aus dem Verlauf ab.",
+          },
+        },
+        "conversation.status.update.batch": {
+          title: "Status von Unterhaltungen aktualisieren",
+          description: "Markiert bis zu 50 Unterhaltungen als erledigt oder öffnet sie erneut. Meldet ok oder not_found je Unterhaltung.",
+          input: {
+            expectedRevisions: "Optional: Revision jeder angefragten Unterhaltung. Ein Konflikt lässt den gesamten Stapel unverändert.",
+            mailboxId: "Exakte mail.mailbox ID des Postfachs.",
+            conversationIds: "Exakte mail.conversation IDs desselben Postfachs, höchstens 50.",
+            status: "done setzt Erledigt; open leitet den Status aus dem Verlauf ab.",
+          },
+        },
+        "conversation.status.update": {
+          title: "Konversationsstatus aktualisieren",
+          description: "Markiert eine Unterhaltung mit Revisionsprüfung als erledigt oder öffnet sie erneut.",
+          input: {
+            mailboxId: "Exaktes mail.mailbox ID, das von Listenpostfächern oder einem eingegebenen Postfach ref zurückgegeben wird.",
+            conversationId:
+              "Exaktes mail.conversation ID, das von einer Konversationsliste, einer Suche, einem Fokusergebnis oder einer eingegebenen Konversation ref zurückgegeben wird.",
+            expectedRevision: "Aktuelle Ressourcenrevision, die für optimistische Parallelität verwendet wird.",
+            status: "done setzt Erledigt; open leitet den Status aus dem Verlauf ab.",
           },
         },
         "conversation.tag.update": {

@@ -1,4 +1,4 @@
-import { computeDomain, extendDomainToNice, niceStep } from "@k2b/stdlib";
+import { computeDomain, extendDomainToNice, niceStep } from "@k2b/ui/charts/core";
 import { z } from "zod";
 import { CloudResourceReferenceSchema } from "../contracts/capabilities";
 import {
