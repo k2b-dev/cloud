@@ -2,7 +2,7 @@ import type { ChartDatum, charts } from "@k2b/stdlib";
 import { positionTooltipSurface } from "../feedback/tooltip-position";
 import type { ChartCursor, ChartCursorState } from "./chart-cursor";
 
-export type ChartKind = keyof typeof charts;
+export type ChartKind = keyof typeof charts | "hbar" | "funnel";
 
 export type ChartDatumRef = Pick<ChartDatum, "role" | "index" | "seriesIndex">;
 export const sameChartDatum = (a: ChartDatumRef, b: ChartDatumRef) =>
@@ -109,7 +109,7 @@ export function createChartInspector(options: {
               : ".stdlib-chart-sparkline, .stdlib-chart-stat-sparkline",
           )
       : (item.element.querySelector(".stdlib-chart-bar-gauge-fill, .stdlib-chart-gauge-fill, .stdlib-chart-stat-value") ??
-        item.element.querySelector("rect, path, circle"));
+        item.element.querySelector(":is(rect, path, circle):not(.k2b-chart-category-band)"));
     const paint = source ? source.ownerDocument.defaultView?.getComputedStyle(source) : undefined;
     const color =
       (point || item.element.hasAttribute("data-chart-reference") ? paint?.stroke : paint?.fill) ||
@@ -158,6 +158,8 @@ export function createChartInspector(options: {
       if (!entry.element.getAttribute("style")) entry.element.removeAttribute("style");
     }
     highlighted = [];
+    for (const value of options.container()?.querySelectorAll<SVGTextElement>("[data-bar-legend]") ?? [])
+      value.textContent = value.getAttribute("data-bar-total");
   };
   const close = (broadcast = true, cancelPending = true) => {
     const state = linkedCursor?.read();
@@ -193,20 +195,27 @@ export function createChartInspector(options: {
     byElement.clear();
     receive(options.cursor?.()?.read() ?? null);
   };
-  const show = (entry: Entry, broadcast = true) => {
+  const show = (entry: Entry, broadcast = true, hover = false) => {
     const x = rawX(entry);
     if (broadcast && options.kind() === "line" && typeof x === "number") options.cursor?.()?.move(source, x);
     const tooltip = options.tooltip(),
       anchor = options.anchor(),
       container = options.container();
     if (!tooltip || !anchor || !container || !options.enabled()) return;
-    if (active === entry && tooltip.matches(":popover-open")) return;
+    if (active === entry && tooltip.matches(":popover-open")) {
+      entry.element.setAttribute("data-inspected", hover ? "hover" : "true");
+      return;
+    }
     clearHighlight();
     active = entry;
     highlighted = options.kind() === "line" ? records().filter((candidate) => rawX(candidate) === rawX(entry)) : [entry];
     for (const item of highlighted) {
       item.element.style.setProperty("--k2b-chart-inspection-color", highlightColor(item));
-      item.element.setAttribute("data-inspected", "true");
+      item.element.setAttribute("data-inspected", hover ? "hover" : "true");
+    }
+    for (const value of container.querySelectorAll<SVGTextElement>("[data-bar-legend]")) {
+      const field = entry.datum.values.find((f) => f.key === value.getAttribute("data-bar-legend"));
+      value.textContent = field?.formatted ?? (field ? String(field.value) : "–");
     }
     const document = tooltip.ownerDocument;
     const contents = highlighted.map((item) => ({
@@ -376,7 +385,7 @@ export function createChartInspector(options: {
   };
   const move = (event: PointerEvent) => {
     if (event.target instanceof Node && options.tooltip()?.contains(event.target)) return;
-    if (pointerStart && Math.hypot(event.clientX - pointerStart.x, event.clientY - pointerStart.y) > 6) moved = true;
+    if (pointerStart && Math.hypot(event.clientX - pointerStart.x, event.clientY - pointerStart.y) > 8) moved = true;
     if (!options.enabled() || pinned || event.pointerType === "touch" || event.buttons) return;
     pending = { x: event.clientX, y: event.clientY, target: event.target instanceof Element ? event.target : null };
     if (frame !== undefined) return;
@@ -387,7 +396,7 @@ export function createChartInspector(options: {
       if (!sample) return;
       const entry = nearest(sample.x, sample.y, sample.target);
       if (entry) {
-        show(entry);
+        show(entry, true, true);
         if (seriesChart()) {
           const container = options.container();
           container?.setAttribute("data-cursor-source", "true");

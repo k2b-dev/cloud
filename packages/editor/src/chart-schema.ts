@@ -30,7 +30,22 @@ export type ChartDateFormat = z.output<ReturnType<typeof dateFormatSchema>>;
 export type ChartFormat = ChartNumberFormat | ChartDateFormat;
 
 export const chartKindSchema = () =>
-  z.enum(["bar", "line", "scatter", "pie", "donut", "histogram", "gauge", "sparkline", "boxplot", "heatmap", "barGauge", "stat"]);
+  z.enum([
+    "bar",
+    "hbar",
+    "funnel",
+    "line",
+    "scatter",
+    "pie",
+    "donut",
+    "histogram",
+    "gauge",
+    "sparkline",
+    "boxplot",
+    "heatmap",
+    "barGauge",
+    "stat",
+  ]);
 
 export const chartParts = (limits?: ChartLimits) => {
   const ChartLabel = limits ? z.string().trim().min(1).max(80) : z.union([z.string(), z.number().transform(String)]);
@@ -142,17 +157,79 @@ export const chartKinds = (limits?: ChartLimits) => {
   const ChartKindCommon = { ...ChartCommon, tooltip: ChartTooltip.optional() };
   const numberFormat = chartNumberFormatSchema();
   return z.discriminatedUnion("kind", [
+    z
+      .object({
+        kind: z.literal("bar"),
+        ...ChartKindCommon,
+        data: list(ChartCategory, 0, limits?.maxValues).default([]),
+        x: list(ChartLabel, 0, limits?.maxValues).optional(),
+        series: list(
+          z.object({ label: ChartLabel, data: list(ChartNumber.nullable(), 0, limits?.maxValues) }),
+          1,
+          limits?.maxSeries,
+        ).optional(),
+        layout: z.enum(["columns", "rows", "grouped", "stacked"]).optional(),
+        normalize: z.boolean().optional(),
+        share: z.boolean().optional(),
+        limit: z.number().int().positive().optional(),
+        tone: z.enum(["in", "out"]).optional(),
+        format: numberFormat.optional(),
+        compare: z.object({ label: ChartLabel, data: list(ChartNumber.nullable(), 0, limits?.maxValues) }).optional(),
+        xAxis: ChartAxis.pick({ label: true }).extend({ ordered: z.boolean().optional() }).strict().optional(),
+        yAxis: ChartAxis.optional(),
+        colorByBar: z.boolean().optional(),
+        showValues: z.boolean().optional(),
+        legend: z.boolean().optional(),
+        references: ChartReferences.optional(),
+      })
+      .superRefine((bar, ctx) => {
+        const issue = (message: string) => ctx.addIssue({ code: "custom", message });
+        if (limits && !bar.series && !bar.data.length)
+          ctx.addIssue({ code: "custom", path: ["data"], message: "A bar chart needs data or aligned series." });
+        if ((bar.share !== undefined || bar.limit !== undefined || bar.tone !== undefined) && bar.layout !== "rows")
+          issue("Share, limit and tone require rows layout.");
+        if (bar.layout === "rows" && bar.data.some((d) => Number.isFinite(d.value) && d.value < 0))
+          issue("Ranked bar lists require nonnegative values.");
+        if (bar.series) {
+          if (!bar.x || bar.series.some((s) => s.data.length !== bar.x?.length)) issue("Bar series must have the same length as x.");
+          if (bar.data.length) issue("Use data or aligned series, not both.");
+          if (bar.layout === "rows" || bar.layout === "columns") issue("Series bars use grouped or stacked layout.");
+        } else if (bar.x || bar.compare || bar.layout === "grouped" || bar.layout === "stacked")
+          issue("This layout needs aligned x and series.");
+        if (bar.layout === "stacked" && bar.yAxis?.scale === "log") issue("Stacked bars need a linear axis.");
+        if (bar.normalize && bar.layout !== "stacked") issue("Normalized bars must be stacked.");
+        if (bar.layout === "stacked" && bar.series?.some((s) => s.data.some((v) => v !== null && v < 0)))
+          issue("Stacked bars require nonnegative values.");
+        if (bar.compare && (bar.series?.length !== 1 || bar.compare.data.length !== bar.x?.length || bar.layout === "stacked"))
+          issue("Comparison needs one current series and aligned previous values.");
+      }),
     z.object({
-      kind: z.literal("bar"),
+      kind: z.literal("funnel"),
       ...ChartKindCommon,
-      data: list(ChartCategory, 1, limits?.maxValues),
-      xAxis: ChartAxis.pick({ label: true }).strict().optional(),
-      yAxis: ChartAxis.optional(),
-      colorByBar: z.boolean().optional(),
-      showValues: z.boolean().optional(),
-      legend: z.boolean().optional(),
-      references: ChartReferences.optional(),
+      data: list(z.object({ label: ChartLabel, value: z.number().nonnegative().nullable() }), 1, limits?.maxValues),
+      format: numberFormat.optional(),
     }),
+    z
+      .object({
+        kind: z.literal("hbar"),
+        ...ChartKindCommon,
+        series: list(ChartLabel, 1, limits?.maxSeries),
+        rows: list(
+          z.object({
+            group: ChartLabel.optional(),
+            label: ChartLabel,
+            values: list(z.number().nonnegative().nullable(), 0, limits?.maxSeries),
+          }),
+          1,
+          limits?.maxValues,
+        ),
+        legend: z.boolean().optional(),
+        format: numberFormat.optional(),
+      })
+      .superRefine((bar, ctx) => {
+        if (bar.rows.some((r) => r.values.length !== bar.series.length))
+          ctx.addIssue({ code: "custom", message: "Horizontal bar values must match series." });
+      }),
     z.object({
       kind: z.literal("line"),
       ...ChartKindCommon,
