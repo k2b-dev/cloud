@@ -4,13 +4,15 @@ import { compileCapabilityManifest } from "@k2b/cloud/capabilities/testing";
 import type { AppEventEnvelope } from "@k2b/cloud/events";
 import { createAppEventBroker } from "@k2b/cloud/services/app-events";
 import { testInfra } from "../../../../scripts/fixtures/test-infra";
-import { MAX_RECORD_EVENTS_PER_BASE_TRANSACTION } from "../app-events";
+import { MAX_RECORD_EVENTS_PER_BASE_TRANSACTION, publishGridsLifecycleEvent } from "../app-events";
 import { gridsCapabilities } from "../capabilities";
 import { postgresTest, testShortId, testUuid } from "../integration-test-utils";
 import { migrate } from "../migrate";
+import * as bases from "./bases";
 import * as durableHistory from "./durable-history";
 import * as finalization from "./record-finalization";
 import * as records from "./record-write";
+import * as tables from "./tables";
 
 beforeAll(async () => {
   if (testInfra.database) await migrate();
@@ -149,25 +151,117 @@ postgresTest("bulk writes publish once per record, and caller rollback discards 
   }
 });
 
-postgresTest("the per-base transaction cap accepts its boundary and rolls back an oversized batch without truncation", async () => {
+postgresTest(
+  "more than 10,000 service writes commit with capped individual events and one overflow summary; parent deletion never fans out",
+  async () => {
+    const f = await fixture();
+    try {
+      const count = MAX_RECORD_EVENTS_PER_BASE_TRANSACTION + 2;
+      const bulk = await records.createMany(
+        f.tableId,
+        Array.from({ length: count }, () => ({})),
+        null,
+        "direct",
+      );
+      if (!bulk.ok) throw bulk.error;
+      expect(bulk.data).toHaveLength(count);
+      const events = await f.events();
+      expect(events.filter((e) => e.type === "grids.record.created")).toHaveLength(MAX_RECORD_EVENTS_PER_BASE_TRANSACTION);
+      const summaries = events.filter((e) => e.type === "grids.records.changed");
+      expect(summaries).toHaveLength(1);
+      const table = await tables.get(f.tableId);
+      expect(summaries[0]).toMatchObject({
+        version: 1,
+        subject: { type: "grids.table", id: table!.shortId },
+        place: { type: "grids.base", id: f.baseShortId },
+        data: { counts: { created: 2, updated: 0, deleted: 0, finalized: 0 } },
+      });
+      expect(JSON.stringify(summaries[0]).length).toBeLessThan(500);
+      expect(await sql`SELECT * FROM grids.record_event_batches WHERE table_id = ${f.tableId}::uuid`).toHaveLength(0);
+      const broker = createAppEventBroker({
+        registry: async () => [
+          {
+            appId: "grids",
+            appName: "Grids",
+            appIcon: "ti ti-table",
+            appDescription: "Records",
+            endpoint: "http://grids.test",
+            manifest: compileCapabilityManifest("grids", gridsCapabilities),
+          },
+        ],
+      });
+      await broker.accept(summaries[0]!, 1);
+      await broker.accept(summaries[0]!, 1);
+      expect(await sql`SELECT id FROM events.app_events WHERE id = ${summaries[0]!.id}::uuid AND state = 'accepted'`).toHaveLength(1);
+
+      expect((await tables.remove(f.tableId, null)).ok).toBe(true);
+      expect((await tables.restore(f.tableId, null)).ok).toBe(true);
+      expect((await bases.remove(f.baseId, null)).ok).toBe(true);
+      expect((await bases.restore(f.baseId, null)).ok).toBe(true);
+      const tableOrderingKeys = await sql`
+        SELECT DISTINCT ordering_key FROM events.outbox WHERE app_id = 'grids' AND kind = 'event'
+          AND payload->'place'->>'id' = ${f.baseShortId} AND payload->'subject'->>'type' = 'grids.table'
+      `;
+      expect(tableOrderingKeys).toHaveLength(1);
+      const lifecycle = (await f.events()).slice(events.length);
+      expect(lifecycle.map((e) => e.type)).toEqual([
+        "grids.table.deleted",
+        "grids.table.restored",
+        "grids.base.deleted",
+        "grids.base.restored",
+      ]);
+      for (const event of lifecycle) {
+        expect(event.place).toEqual({ type: "grids.base", id: f.baseShortId });
+        expect(event.subject).toEqual(
+          event.type.startsWith("grids.table.") ? { type: "grids.table", id: table!.shortId } : { type: "grids.base", id: f.baseShortId },
+        );
+        expect(event.data).toEqual({});
+      }
+      const [stored] = await sql<
+        { count: number }[]
+      >`SELECT count(*)::int AS count FROM grids.records WHERE table_id = ${f.tableId}::uuid AND deleted_at IS NULL`;
+      expect(stored!.count).toBe(count);
+    } finally {
+      await f.cleanup();
+    }
+  },
+  180_000,
+);
+
+postgresTest("overflow counts are combined per table across change kinds and rollback discards summaries and writes", async () => {
   const f = await fixture();
+  const otherTableId = testUuid(),
+    otherTableRef = testShortId();
   try {
-    await expect(
+    await sql`INSERT INTO grids.tables (id, short_id, base_id, name) VALUES (${otherTableId}::uuid, ${otherTableRef}, ${f.baseId}::uuid, 'Other')`;
+    const change = async (rollback: boolean) =>
       sql.begin(async (tx) => {
-        // Put this transaction at the boundary without materializing 10,000 record/snapshot fixtures.
-        await tx`SELECT set_config(${"grids.record_events_" + f.baseId.replaceAll("-", "")}, ${String(MAX_RECORD_EVENTS_PER_BASE_TRANSACTION - 1)}, true)`;
-        expect((await records.createInTransaction(tx, f.tableId, {}, null, "direct")).ok).toBe(true);
+        // Exercise mixed changes past the boundary without repeating the full large-import fixture.
+        await tx`SELECT set_config(${"grids.record_events_" + f.baseId.replaceAll("-", "")}, ${String(MAX_RECORD_EVENTS_PER_BASE_TRANSACTION)}, true)`;
+        const created = await records.createInTransaction(tx, f.tableId, {}, null, "direct");
+        if (!created.ok) throw created.error;
         expect(
-          await tx`SELECT id FROM events.outbox WHERE app_id = 'grids' AND kind = 'event' AND payload->'place'->>'id' = ${f.baseShortId}`,
-        ).toHaveLength(1);
-        await records.createInTransaction(tx, f.tableId, {}, null, "direct");
-      }),
-    ).rejects.toThrow("split the batch");
+          (await records.updateInTransaction(tx, f.tableId, created.data.record.id, { [f.fieldId]: "private" }, null, "direct")).ok,
+        ).toBe(true);
+        expect((await records.softDeleteInTransaction(tx, f.tableId, created.data.record.id, null, "direct")).ok).toBe(true);
+        expect((await records.createInTransaction(tx, otherTableId, {}, null, "direct")).ok).toBe(true);
+        if (rollback) throw new Error("force overflow rollback");
+      });
+    await expect(change(true)).rejects.toThrow("force overflow rollback");
     expect(await f.events()).toHaveLength(0);
-    expect(await sql`SELECT id FROM grids.records WHERE table_id = ${f.tableId}::uuid`).toHaveLength(0);
-    // A new transaction gets a fresh budget.
-    expect((await records.create(f.tableId, {}, null, "direct")).ok).toBe(true);
-    expect(await f.events()).toHaveLength(1);
+    expect(
+      await sql`SELECT * FROM grids.record_event_batches WHERE table_id = ANY(${sql.array([f.tableId, otherTableId], "UUID")})`,
+    ).toHaveLength(0);
+    expect(await sql`SELECT id FROM grids.records WHERE table_id = ANY(${sql.array([f.tableId, otherTableId], "UUID")})`).toHaveLength(0);
+    await change(false);
+    const summaries = await f.events();
+    expect(summaries).toHaveLength(2);
+    expect(summaries.find((e) => e.subject.id === otherTableRef)?.data).toEqual({
+      counts: { created: 1, updated: 0, deleted: 0, finalized: 0 },
+    });
+    expect(summaries.find((e) => e.subject.id !== otherTableRef)?.data).toEqual({
+      counts: { created: 1, updated: 1, deleted: 1, finalized: 0 },
+    });
   } finally {
     await f.cleanup();
   }
@@ -191,6 +285,54 @@ postgresTest("a savepoint rollback restores the per-base event budget and other 
   } finally {
     await f.cleanup();
     await other.cleanup();
+  }
+});
+
+postgresTest("savepoint rollback discards overflow increments and an inserted summary without losing earlier counts", async () => {
+  const f = await fixture();
+  try {
+    await sql.begin(async (tx) => {
+      await tx`SELECT set_config(${"grids.record_events_" + f.baseId.replaceAll("-", "")}, ${String(MAX_RECORD_EVENTS_PER_BASE_TRANSACTION)}, true)`;
+      await tx`SAVEPOINT first_overflow`;
+      expect((await records.createInTransaction(tx, f.tableId, {}, null, "direct")).ok).toBe(true);
+      await tx`ROLLBACK TO SAVEPOINT first_overflow`;
+      await tx`RELEASE SAVEPOINT first_overflow`;
+      expect(await tx`SELECT * FROM grids.record_event_batches WHERE table_id = ${f.tableId}::uuid`).toHaveLength(0);
+      const created = await records.createInTransaction(tx, f.tableId, {}, null, "direct");
+      if (!created.ok) throw created.error;
+      await tx`SAVEPOINT later_overflow`;
+      expect((await records.createInTransaction(tx, f.tableId, {}, null, "direct")).ok).toBe(true);
+      expect((await records.softDeleteInTransaction(tx, f.tableId, created.data.record.id, null, "direct")).ok).toBe(true);
+      await tx`ROLLBACK TO SAVEPOINT later_overflow`;
+      await tx`RELEASE SAVEPOINT later_overflow`;
+      expect((await records.createInTransaction(tx, f.tableId, {}, null, "direct")).ok).toBe(true);
+    });
+    const events = await f.events();
+    expect(events).toHaveLength(1);
+    expect(events[0]).toMatchObject({
+      type: "grids.records.changed",
+      data: { counts: { created: 2, updated: 0, deleted: 0, finalized: 0 } },
+    });
+    expect(await sql`SELECT id FROM grids.records WHERE table_id = ${f.tableId}::uuid AND deleted_at IS NULL`).toHaveLength(2);
+  } finally {
+    await f.cleanup();
+  }
+});
+
+postgresTest("lifecycle publication rejects mismatched table refs and concurrent restores emit one event", async () => {
+  const f = await fixture();
+  try {
+    await expect(sql.begin((tx) => publishGridsLifecycleEvent(tx, "table.deleted", f.baseId, testUuid()))).rejects.toThrow(
+      "mismatched table",
+    );
+    expect(await f.events()).toHaveLength(0);
+    expect((await tables.remove(f.tableId, null)).ok).toBe(true);
+    const restored = await Promise.all([tables.restore(f.tableId, null), tables.restore(f.tableId, null)]);
+    expect(restored.every((result) => result.ok)).toBe(true);
+    expect((await tables.restore(f.tableId, null)).ok).toBe(true);
+    expect((await f.events()).map((event) => event.type)).toEqual(["grids.table.deleted", "grids.table.restored"]);
+  } finally {
+    await f.cleanup();
   }
 });
 
