@@ -255,7 +255,9 @@ export const codeQueryContracts = {
   },
   runList: {
     input: z.object({ codeId: CodeIdSchema, ...pageInput, cursor: CodeRunCursorSchema.optional() }).strict(),
-    data: z.object({ items: z.array(CodeRunSchema), ...page, eventDeliveries: z.array(CodeEventDeliverySchema).max(20) }).strict(),
+    data: z
+      .object({ items: z.array(CodeRunSchema), ...page, eventDeliveries: z.array(CodeEventDeliverySchema).max(20).optional() })
+      .strict(),
   },
   runRead: {
     input: z

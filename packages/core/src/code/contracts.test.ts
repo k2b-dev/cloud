@@ -13,6 +13,7 @@ import { aiCapabilities } from "../capabilities";
 import { CodeOwnerUnavailableError, codePerson, readCodeOwner } from "./access";
 import {
   CodeCallRefusalKindSchema,
+  type CodeEventDeliverySchema,
   CodeOwnerSchema,
   type CodeRefusedCall,
   type CodeRun,
@@ -301,6 +302,28 @@ test("Code data contracts bundle for browsers without loading the server API", a
   const result = await Bun.build({ entrypoints: [new URL("./contracts.ts", import.meta.url).pathname], target: "browser" });
   expect(result.logs).toEqual([]);
   expect(result.success).toBe(true);
+});
+
+test("run lists retain legacy replies and keep event delivery metadata bounded and payload-free", () => {
+  const legacy = { items: [], nextCursor: null };
+  const delivery = {
+    id: user.id,
+    eventId: user.id,
+    eventType: "fixture.changed",
+    state: "failed",
+    code: "handler_failed",
+    attempts: 8,
+    createdAt: "2026-11-03T12:00:00.000Z",
+  } satisfies z.input<typeof CodeEventDeliverySchema>;
+  expect(codeQueryContracts.runList.data.parse(legacy)).toEqual(legacy);
+  const extended = { ...legacy, eventDeliveries: [delivery] };
+  expect(codeQueryContracts.runList.data.parse(extended)).toEqual(extended);
+  expect(
+    codeQueryContracts.runList.data.safeParse({ ...legacy, eventDeliveries: [{ ...delivery, data: { private: "payload" } }] }).success,
+  ).toBe(false);
+  expect(
+    codeQueryContracts.runList.data.safeParse({ ...legacy, eventDeliveries: Array.from({ length: 21 }, () => delivery) }).success,
+  ).toBe(false);
 });
 
 test("Code CLI run payload keeps version 1 and the additive refused-call summary", async () => {

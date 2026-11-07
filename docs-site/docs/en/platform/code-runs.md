@@ -134,7 +134,9 @@ The platform event retention and retry budgets also apply; there is no second
 broker or event archive.
 
 The Code page's Runs tab and `core.code.run.list` show up to 20 unresolved
-event deliveries, with the oldest failures first, in `eventDeliveries`, without payloads. Editors of an active
+event deliveries, with the oldest failures first, in `eventDeliveries`, without payloads.
+This field is optional in run-list responses; clients accept replies without it.
+CLI JSON and JSONL preserve the response fields in either case. Editors of an active
 Code can choose **Retry delivery**. Recoverable cancellations and never-started
 event runs remain in this view across pauses and version switches for 30 days
 after the event reached Core. The current version must still declare the same

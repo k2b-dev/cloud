@@ -15,11 +15,14 @@ import { migrate as migrateAppEvents } from "../migrate/core/app-events";
 import { migrate as migrateAudit } from "../migrate/core/audit";
 import { migrate as migrateAuth } from "../migrate/core/auth";
 import { migrate as migrateCode } from "../migrate/core/code";
+import { migrate as migrateActivation } from "../migrate/core/code-activation";
 import { migrate as migrateLifecycle } from "../migrate/core/code-lifecycle";
 import { migrate as migratePolicy } from "../migrate/core/code-policy";
 import { migrate as migrateScheduling } from "../migrate/core/code-scheduling";
 import { migrate as migrateVersions } from "../migrate/core/code-versions";
 import { migrate as migrateEvents } from "../migrate/core/events";
+import { migrate as migrateRailPreferences } from "../migrate/core/rail-preferences";
+import { migrate as migrateRailShortcuts } from "../migrate/core/rail-shortcuts";
 import { migrate as migrateSettings } from "../migrate/core/settings";
 import type { CodeContext } from "./access";
 import { CODE_EVENT_CONSUMER, syncCodeEventSubscriptions } from "./event-subscriptions";
@@ -190,6 +193,8 @@ databaseSuite()("Code event delivery to durable run admission", () => {
   beforeAll(async () => {
     database = await useFreshDatabase("code_resource_events");
     await migrateAuth();
+    await migrateRailPreferences();
+    await migrateRailShortcuts();
     await migrateAppApproval();
     await migrateAudit();
     await migrateSettings();
@@ -198,6 +203,7 @@ databaseSuite()("Code event delivery to durable run admission", () => {
     await migrateCode();
     await migratePolicy();
     await migrateVersions();
+    await migrateActivation();
     await migrateScheduling();
     await migrateLifecycle();
     await sql`INSERT INTO auth.users(id,uid,provider,profile) VALUES(${owner}::uuid,'event-owner','local','user')`;
@@ -344,7 +350,9 @@ databaseSuite()("Code event delivery to durable run admission", () => {
   test("revocation after authorization still cancels admission", async () => {
     const envelope = await publish(17);
     const claims = await broker.claim();
-    await sql`UPDATE auth.mandates SET state='revoked',revision=revision+1 WHERE id=${mandateId}::uuid`;
+    await sql`UPDATE auth.mandates SET state='revoked',revision=revision+1,
+      revoked_at=clock_timestamp(),revoked_by_app_id='runner',revoke_reason='Fixture revocation'
+      WHERE id=${mandateId}::uuid`;
     for (const claim of claims) await broker.deliver(claim);
     expect(await runs()).toHaveLength(0);
     expect(

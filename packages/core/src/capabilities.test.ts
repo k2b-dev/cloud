@@ -351,6 +351,7 @@ describe("Core AI capabilities", () => {
       "ai.task.resume",
       "ai.task.run",
       "ai.task.update",
+      "code.event.redeliver",
       "code.pause",
       "code.policy.update",
       "code.resume",
@@ -398,6 +399,7 @@ describe("Core AI capabilities", () => {
         manifest.actions.map((action) => [action.localId, { destructive: action.destructive, idempotency: action.idempotency }]),
       ),
     ).toEqual({
+      "code.event.redeliver": { destructive: false, idempotency: "required" },
       "code.policy.update": { destructive: true, idempotency: "required" },
       "code.pause": { destructive: false, idempotency: "required" },
       "code.resume": { destructive: false, idempotency: "required" },
