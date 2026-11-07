@@ -67,19 +67,11 @@ test("a description with an option this build does not know becomes a slot inste
     ],
   });
   expect(known.mode).toBe("snapshot");
-  const unknown = resolveDrawing({
-    kind: "line",
-    title: "Balance",
-    series: [
-      {
-        data: [
-          { x: 1, y: 2 },
-          { x: 2, y: 3 },
-        ],
-      },
-    ],
-    forecast: { from: 2 },
-  });
+  const unknown = resolveDrawing({ kind: "line", title: "Balance", series: [{ data: [{ x: 1, y: 2 }, { x: 2, y: 3 }] }], notAnOption: true });
+  expect(unknown).toMatchObject({ mode: "slot", kind: "line" });
+  expect(resolveDrawing({ kind: "notAKind", title: "Flows", nodes: [] })).toMatchObject({ mode: "slot", kind: "notAKind" });
+  expect(resolveDrawing({ block: "notABlock", items: [] })).toMatchObject({ mode: "slot", kind: "notABlock" });
+});
   expect(unknown).toMatchObject({ mode: "slot", kind: "line" });
   expect(resolveDrawing({ kind: "sankey", title: "Flows", nodes: [], links: [] })).toMatchObject({ mode: "slot", kind: "sankey" });
   expect(resolveDrawing({ block: "budget", items: [] })).toMatchObject({ mode: "slot", kind: "budget" });
@@ -89,6 +81,11 @@ test("TSX is generated from the same description as the JSON", () => {
   for (const example of chartShowcaseExamples) {
     const tsx = specToTsx(example.spec);
     const spec = example.spec as Record<string, unknown>;
+    // Blocks other than key figures are drawn by their own components; their portable form is the JSON alone.
+    if (Array.isArray(example.spec) || (typeof spec.block === "string" && spec.block !== "stats")) {
+      expect(tsx, example.id).toBe("");
+      continue;
+    }
     if (spec.block === "stats") {
       expect(tsx, example.id).toContain("<StatGrid");
       expect(tsx.match(/<StatCell/g)?.length, example.id).toBe((spec.items as unknown[]).length);
