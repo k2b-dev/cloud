@@ -132,12 +132,14 @@ describe("MarkdownEditor slash commands", () => {
     expect(active(textarea)).toContain("Phone call");
   });
 
-  test("arrows, Home, and End mark entries, unavailable ones included, and wrap", async () => {
+  test("arrows, Home, and End mark the entries that can be chosen, passing over unavailable ones, and wrap", async () => {
     const { commands } = fixture();
     const { textarea } = await mount({ commands: () => commands });
     await type(textarea, "/");
     expect(key(textarea, "ArrowDown")).toBe(true);
-    expect(active(textarea)).toContain("Confirm appointment");
+    expect(active(textarea)).toContain("Photos requested");
+    key(textarea, "ArrowUp");
+    expect(active(textarea)).toContain("Phone call");
     expect(key(textarea, "End")).toBe(true);
     expect(active(textarea)).toContain("Assign");
     key(textarea, "ArrowDown");

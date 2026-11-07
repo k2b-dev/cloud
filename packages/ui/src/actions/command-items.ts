@@ -8,10 +8,17 @@ export type CommandItem = {
   label: string;
   /** Heading above the entry. Entries of one group stand together, in the order the groups first appear. */
   group?: string;
+  /** One quiet line of what the entry does, after the label on the same line, such as "Preis aus dem Text prüfen". */
+  description?: string;
   /** Quiet text at the end of the row, such as what a person can type: `/telefonat`. It is searched, too. */
   hint?: string;
   /** Tabler icon class, such as `ti ti-phone`. */
   icon?: string;
+  /**
+   * An image at icon size in place of the icon, such as a service's logo: a URL, or one for each theme when the logo
+   * needs a light variant on dark surfaces. It is decorative; the label names the entry.
+   */
+  image?: string | { light: string; dark: string };
   /**
    * Renders the start of the row in place of the icon, such as an avatar or a tag's color. A function, so each row
    * gets its own element.
@@ -25,8 +32,12 @@ export type CommandItem = {
   id?: string;
 } & (
   | {
-      /** Runs when the entry is chosen. In the editor, the typed `/query` has left the text first. */
-      onSelect: () => void;
+      /**
+       * Runs when the entry is chosen, with the text it acts on. In the editor, the typed `/query` has left the text
+       * first. A returned promise keeps the list open with the entry busy; any other result counts as done; a rejection shows its message on the entry,
+       * which can then run again, and Escape aborts `context.signal`.
+       */
+      onSelect: (context: CommandContext) => unknown;
       text?: never;
       next?: never;
     }
@@ -43,6 +54,23 @@ export type CommandItem = {
       text?: never;
     }
 );
+
+/**
+ * What a command acts on. In `SlashCommands` it is the editor's text, without the typed `/query`; in `CommandMenu` it is
+ * the text of its `target` field, or empty without one.
+ */
+export type CommandContext = {
+  text: string;
+  /** The selection in `text`; `start === end` is the caret. */
+  selection: { start: number; end: number };
+  /**
+   * Puts text at the caret in place of the selection, as typing would, so undo keeps working. Without a `target`,
+   * `CommandMenu` hands it to `onInsert`.
+   */
+  insert: (text: string) => void;
+  /** Aborts when the person closes the list with Escape before a returned promise settled. */
+  signal: AbortSignal;
+};
 
 /** The entries of a list, or a function that returns them for a query, for a list the application filters itself. */
 export type CommandSource = readonly CommandItem[] | ((query: string) => readonly CommandItem[]);
@@ -63,7 +91,7 @@ const spellOut = (text: string) => text.normalize("NFC").toLowerCase().replace(/
 
 // Built on every search, not cached by entry: an application may change an entry in place, such as its label.
 const haystackOf = (item: CommandItem): string => {
-  const text = [item.label, item.hint?.replace(/^\//, ""), ...(item.keywords ?? [])].filter(Boolean).join(" ");
+  const text = [item.label, item.description, item.hint?.replace(/^\//, ""), ...(item.keywords ?? [])].filter(Boolean).join(" ");
   return `${fold(text)} ${fold(spellOut(text))}`;
 };
 

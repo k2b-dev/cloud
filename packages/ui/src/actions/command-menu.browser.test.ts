@@ -105,9 +105,10 @@ describe("CommandMenu", () => {
       expect(await page.getByRole("group", { name: "Snippets" }).isVisible()).toBe(true);
       const unavailable = page.getByRole("option", { name: /Confirm appointment/ });
       expect(await unavailable.getAttribute("aria-disabled")).toBe("true");
+      // The unavailable entry is passed over and cannot be chosen.
       await page.keyboard.press("ArrowDown");
-      expect((await state(page)).active).toBe("Confirm appointment");
-      await page.keyboard.press("Enter");
+      expect((await state(page)).active).toBe("Photos requested");
+      await unavailable.dispatchEvent("click");
       expect(await chosen(page)).toEqual([]);
       await page.keyboard.press("End");
       expect((await state(page)).active).toBe("Tag");

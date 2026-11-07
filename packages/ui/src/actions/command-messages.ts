@@ -7,10 +7,14 @@ const commandMessages = i18n.define({
     en: {
       commands: "Commands",
       back: ({ label }: { label: string }) => `Back from ${label}`,
+      running: ({ label }: { label: string }) => `${label} is running`,
+      failed: "That did not work.",
     },
     de: {
       commands: "Befehle",
       back: ({ label }: { label: string }) => `Zurück aus ${label}`,
+      running: ({ label }: { label: string }) => `${label} läuft`,
+      failed: "Das hat nicht geklappt.",
     },
   },
 });
