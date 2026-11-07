@@ -311,6 +311,6 @@ Alle unterstützten Eingaben, Auslöser, Aktionen, Bedingungen, Ausdrücke, Stan
 
 ## Ein Postfach löschen und wiederherstellen {icon="point"}
 
-**Gefahrenbereich → In „Kürzlich gelöscht“ verschieben** setzt das Postfach in einen gelöschten Zustand, den du wiederherstellen kannst. Mail löscht E-Mails beim Anbieter und aufbewahrte Cloud-Daten nicht endgültig.
+**Gefahrenbereich → Postfach löschen** setzt das Postfach in einen gelöschten Zustand, den du wiederherstellen kannst. Mail löscht E-Mails beim Anbieter und aufbewahrte Cloud-Daten nicht endgültig.
 
-Gelöschte Postfächer erscheinen in der Mail-Übersicht unter **Kürzlich gelöscht** für Personen, die sie wiederherstellen können. Ein wiederhergestelltes Postfach startet pausiert. Prüfe unter **… → Postfachstatus** Verbindung, Ordnerermittlung und Zustand. Wähle dann **Postfach fortsetzen**.
+Gelöschte Postfächer bleiben erhalten, bis jemand sie wiederherstellt. Personen, die sie wiederherstellen dürfen, finden sie in der Seitenleiste unter **Postfächer → … → Gelöschte Postfächer**. Ein wiederhergestelltes Postfach startet pausiert. Prüfe unter **… → Postfachstatus** Verbindung, Ordnerermittlung und Zustand. Wähle dann **Postfach fortsetzen**.

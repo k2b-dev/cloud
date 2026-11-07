@@ -379,16 +379,21 @@ Do not mount a Help API router, render a `Layout.HelpDocuments` registrar, or
 add standalone Help page routes. Those are consumers of the registration, not
 additional declarations.
 
-The existing app heartbeat renews the published collection before renewing app
-registration. If the collection disappears, that heartbeat republishes it from
-the application declaration. Core must recreate a missing schema before this
-can succeed. Persistent registration failures use the existing app-lease
-failure policy and restart the process.
+Cloud writes the collection before advertising the app at startup. Successful
+publication is remembered by content hash; with Core 0.68 or later, unchanged
+heartbeats do not write the collection again. The publisher of the advertised
+hash checks that its collection still exists on its own heartbeat. Missing collections produce a
+warning and are republished; failed publications remain retryable through the
+existing heartbeat failure policy.
 
-Core removes at most one expired collection per minute. A collection becomes
-eligible after six minutes without renewal: two app-lease lifetimes. Stopping
-one replica does not delete Help used by another. Stored collections from
-unavailable applications are not exposed as current Help.
+Core retains the hash advertised in the observed registry. Other hashes and
+collections of removed apps receive one day of grace before deletion. An older
+replica taking over republishes its collection before advertising it. Publishing
+a collection clears its pending deletion in the same transaction. Stored
+collections from unavailable applications are not exposed as current Help.
+Retention uses the registered app and hash, never the age of a publication or
+its last renewal. See [upgrade behavior](/en/docs/operations/scaling-and-shutdown#upgrade-help-and-skill-publication)
+for automatic legacy renewals when an application upgrades before Core.
 
 ## Use the automatically derived surfaces
 
@@ -500,7 +505,8 @@ isolated from ordinary chat and app capabilities; a later tool call can retry.
 Every reader selects the hash advertised by the current app registration.
 Missing articles or versions are not served from an older collection. Database
 failures remain errors rather than appearing as successful empty searches.
-The application heartbeat can restore a missing collection.
+The active publisher restores a missing collection on its next heartbeat and
+logs a warning. Restarting the application also republishes immediately.
 
 ## Search product guidance
 

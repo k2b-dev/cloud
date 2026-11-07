@@ -1,5 +1,6 @@
 import { sql } from "@k2b/cloud";
 import { GATEWAY_TELEMETRY_TENANT, type GatewayTelemetryEvent, gatewayTelemetryTopic } from "@k2b/cloud/services";
+import { readQuery } from "@k2b/cloud/services/logging/read";
 import type { TopicEvent } from "@k2b/sync";
 
 const WORKER_GROUP = "postgres-writer";
@@ -181,15 +182,16 @@ export const cleanupTelemetry = async (
 };
 
 export const getTelemetrySummary = async (hours = 24): Promise<TelemetrySummary> => {
-  const [row] = await sql<
-    {
-      requests: number;
-      errors: number;
-      slow_requests: number;
-      avg_duration_ms: number | null;
-      p95_duration_ms: number | null;
-    }[]
-  >`
+  const [row] = await readQuery(
+    (db) => db<
+      {
+        requests: number;
+        errors: number;
+        slow_requests: number;
+        avg_duration_ms: number | null;
+        p95_duration_ms: number | null;
+      }[]
+    >`
     SELECT
       COUNT(*)::int AS requests,
       COUNT(*) FILTER (WHERE status_code >= 500 OR error_kind IS NOT NULL)::int AS errors,
@@ -198,7 +200,8 @@ export const getTelemetrySummary = async (hours = 24): Promise<TelemetrySummary>
       percentile_cont(0.95) WITHIN GROUP (ORDER BY duration_ms)::float AS p95_duration_ms
     FROM gateway.telemetry_events
     WHERE occurred_at >= now() - (${hours}::int * INTERVAL '1 hour')
-  `;
+  `,
+  );
   return {
     requests: row?.requests ?? 0,
     errors: row?.errors ?? 0,
@@ -209,12 +212,14 @@ export const getTelemetrySummary = async (hours = 24): Promise<TelemetrySummary>
 };
 
 export const listTelemetryApps = async (hours = 24): Promise<string[]> => {
-  const rows = await sql<{ app_id: string }[]>`
+  const rows = await readQuery(
+    (db) => db<{ app_id: string }[]>`
     SELECT DISTINCT app_id
     FROM gateway.telemetry_events
     WHERE occurred_at >= now() - (${hours}::int * INTERVAL '1 hour')
     ORDER BY app_id ASC
-  `;
+  `,
+  );
   return rows.map((row) => row.app_id);
 };
 
@@ -227,9 +232,10 @@ export const listTelemetryEvents = async (filter: TelemetryEventFilter = {}): Pr
   const routePrefix = filter.routePrefix?.trim() || null;
   const slowOnly = filter.slowOnly === true;
   const errorsOnly = filter.errorsOnly === true;
-  const hours = Number.isFinite(filter.hours) && filter.hours && filter.hours > 0 ? Math.min(Math.trunc(filter.hours), 24 * 31) : null;
+  const hours = Number.isFinite(filter.hours) && filter.hours && filter.hours > 0 ? Math.min(Math.trunc(filter.hours), 24 * 31) : 24;
 
-  const [countRow] = await sql<{ count: number }[]>`
+  const [countRow] = await readQuery(
+    (db) => db<{ count: number }[]>`
     SELECT COUNT(*)::int AS count
     FROM gateway.telemetry_events
     WHERE (${searchPattern}::text IS NULL OR app_id ILIKE ${searchPattern} ESCAPE '\' OR route_prefix ILIKE ${searchPattern} ESCAPE '\' OR method ILIKE ${searchPattern} ESCAPE '\' OR error_kind ILIKE ${searchPattern} ESCAPE '\')
@@ -238,20 +244,22 @@ export const listTelemetryEvents = async (filter: TelemetryEventFilter = {}): Pr
       AND (${hours}::int IS NULL OR occurred_at >= now() - (${hours}::int * INTERVAL '1 hour'))
       AND (${slowOnly}::boolean IS FALSE OR duration_ms >= ${SLOW_REQUEST_MS})
       AND (${errorsOnly}::boolean IS FALSE OR status_code >= 500 OR error_kind IS NOT NULL)
-  `;
+  `,
+  );
 
-  const rows = await sql<
-    {
-      id: number;
-      app_id: string;
-      route_prefix: string;
-      method: string;
-      status_code: number;
-      duration_ms: number;
-      error_kind: string | null;
-      occurred_at: string;
-    }[]
-  >`
+  const rows = await readQuery(
+    (db) => db<
+      {
+        id: number;
+        app_id: string;
+        route_prefix: string;
+        method: string;
+        status_code: number;
+        duration_ms: number;
+        error_kind: string | null;
+        occurred_at: string;
+      }[]
+    >`
     SELECT id, app_id, route_prefix, method, status_code, duration_ms, error_kind, occurred_at::text
     FROM gateway.telemetry_events
     WHERE (${searchPattern}::text IS NULL OR app_id ILIKE ${searchPattern} ESCAPE '\' OR route_prefix ILIKE ${searchPattern} ESCAPE '\' OR method ILIKE ${searchPattern} ESCAPE '\' OR error_kind ILIKE ${searchPattern} ESCAPE '\')
@@ -262,7 +270,8 @@ export const listTelemetryEvents = async (filter: TelemetryEventFilter = {}): Pr
       AND (${errorsOnly}::boolean IS FALSE OR status_code >= 500 OR error_kind IS NOT NULL)
     ORDER BY occurred_at DESC, id DESC
     LIMIT ${perPage} OFFSET ${offset}
-  `;
+  `,
+  );
 
   return {
     total: countRow?.count ?? 0,

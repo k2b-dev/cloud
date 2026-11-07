@@ -15,6 +15,12 @@ without creating a workflow run. See
 [Structured and background AI](/en/docs/ai/structured-and-background-ai#reuse-durable-ai-from-an-application-job)
 for the application API.
 
+Use `@k2b/cloud/ai/tasks` for the shared migration, budget and runtime lifecycle.
+The existing `WorkflowAi` symbol names, job identity, settings and `ai.workflow_*`
+tables remain unchanged. `@k2b/cloud/workflows/ai` retains its exports.
+The shared worker keeps the existing completion signals for workflow-owned tasks,
+even when its application uses only `@k2b/cloud/ai/tasks`.
+
 Run the existing `migrateWorkflowAi()` migration before starting workers from
 the new image. It makes `ai.workflow_task.run_id` nullable and adds
 `usage_subject` for authenticated personal calculations and `released_at` for
