@@ -78,7 +78,8 @@ export function selectedChartSvg(
     if (!matches) return attribute;
     const children = svg.slice(offset, svg.indexOf("</g>", offset));
     const palette = (Number(children.match(/stdlib-chart-series-(\d+)/)?.[1] ?? matches.seriesIndex ?? 0) % 8) + 1;
-    const paint = `--k2b-chart-selection-color:color-mix(in srgb,var(--stdlib-chart-c${palette}) 72%,var(--k2b-chart-highlight-mix))`;
+    const markPaint = children.match(/class="k2b-waterfall-bar"[^>]* fill="([^"]+)"/)?.[1] ?? `var(--stdlib-chart-c${palette})`;
+    const paint = `--k2b-chart-selection-color:color-mix(in srgb,${markPaint} 72%,var(--k2b-chart-highlight-mix))`;
     const opening = attribute.includes('style="')
       ? attribute.replace(/style="([^"]*)"/, (_match: string, style: string) => `style="${style};${paint}"`)
       : attribute.replace(">", ` style="${paint}">`);

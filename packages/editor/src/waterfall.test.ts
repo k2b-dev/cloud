@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test";
+import { prepareChartSnapshot } from "@k2b/ui";
 import { chartKinds, chartMarks, chartTable } from "./charts";
 import { notebookChartHeight } from "./markdown/lib/chart-blocks";
 
@@ -29,14 +30,22 @@ test("both application and AI JSON boundaries reject null changes and overflow",
     expect(schema.safeParse({ ...spec, start: { label: "Big", value: 1e308 }, steps: [{ label: "Big", value: 1e308 }] }).success).toBe(
       false,
     );
-    expect(schema.safeParse({ ...spec, end: {label: "Closing", value: 0} }).success).toBe(false);
+    expect(schema.safeParse({ ...spec, end: { label: "Closing", value: 0 } }).success).toBe(false);
     expect(schema.safeParse({ ...spec, steps: [] }).success).toBe(true);
   }
 });
 
 test("all hosts expose direction words, unsigned outflow and only a balance for totals", () => {
-  const table=chartTable(chartKinds().parse(spec), "de");
-  expect(table.rows[0]!.cells).toEqual({label:"Opening",balance:"1.250 €"});
+  const table = chartTable(chartKinds().parse(spec), "de");
+  expect(table.rows[0]!.cells).toEqual({ label: "Opening", balance: "1.250 €" });
   expect(table.rows[2]!.cells.outflow).toBe("↗ 250 €");
   expect(table.rows[2]!.cells.after).toBe("1.700 €");
+});
+
+test("pure snapshots preserve an explicit locale without a component provider", () => {
+  const snapshot = prepareChartSnapshot(
+    { kind: "waterfall", start: { label: "Opening", value: 1.5 }, steps: [], end: { label: "Closing" }, locale: "de" },
+    { key: ({ datum }) => String(datum.index), tooltip: () => ({ rows: [] }) },
+  );
+  expect(snapshot.svg).toContain("1,5");
 });

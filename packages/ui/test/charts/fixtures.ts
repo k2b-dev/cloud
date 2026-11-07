@@ -2,7 +2,12 @@ import type { ChartProps } from "../../src/content/Chart";
 
 /** Shared fictional inputs for entry-point, renderer and hydration parity. */
 export const chartFixtures = {
-  waterfall: { kind: "waterfall", start: { label: "Opening", value: 10 }, steps: [{ label: "Receipts", value: 5 }], end: { label: "Closing" } },
+  waterfall: {
+    kind: "waterfall",
+    start: { label: "Opening", value: 10 },
+    steps: [{ label: "Receipts", value: 5 }],
+    end: { label: "Closing" },
+  },
   line: {
     kind: "line",
     series: [

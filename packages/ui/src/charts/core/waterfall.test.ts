@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test";
+import { selectedChartSvg } from "../../content/chart-svg";
 import { renderWaterfallSvg, waterfallLayout } from "./waterfall";
 
 const size = { width: 480, height: 280 };
@@ -47,18 +48,27 @@ test("every mark includes portable paint, escaped names, raw before and after ba
 });
 
 test("all-negative balances, many categories and measured widths remain finite and bounded", () => {
-  const many = { start: {label:"Opening balance",value:-100}, steps: Array.from({length:10},(_,i)=>({label:`Cat${i}`,value:-10})), end:{label:"Closing balance"} };
-  const phone = waterfallLayout(many, {width:900,height:280});
-  const wide = waterfallLayout({...many,displayWidth:900}, {width:900,height:280});
+  const many = {
+    start: { label: "Opening balance", value: -100 },
+    steps: Array.from({ length: 10 }, (_, i) => ({ label: `Cat${i}`, value: -10 })),
+    end: { label: "Closing balance" },
+  };
+  const phone = waterfallLayout(many, { width: 900, height: 280 });
+  const wide = waterfallLayout({ ...many, displayWidth: 900 }, { width: 900, height: 280 });
   expect(wide.left).toBeLessThan(phone.left);
   expect(wide.left).toBeLessThan(100);
   expect(wide.balance).toBe(-200);
   expect(wide.scale.domain[1]).toBe(0);
-  for (const width of [296,600,650,900]) {
-    const svg=renderWaterfallSvg({...many,width,height:280,displayWidth:width});
+  for (const width of [296, 600, 650, 900]) {
+    const svg = renderWaterfallSvg({ ...many, width, height: 280, displayWidth: width });
     expect(svg).not.toMatch(/NaN|Infinity/);
-    const labels=[...svg.matchAll(/class="stdlib-chart-tick-label stdlib-chart-category-label[^"]*"/g)];
+    const labels = [...svg.matchAll(/class="stdlib-chart-tick-label stdlib-chart-category-label[^"]*"/g)];
     expect(labels.length).toBeLessThanOrEqual(12);
-    if (width <=650) expect(svg).not.toContain('class="k2b-waterfall-value"');
+    if (width <= 650) expect(svg).not.toContain('class="k2b-waterfall-value"');
   }
+});
+
+test("initial controlled selection uses the actual flow mark paint, skipping its category band", () => {
+  const selected = selectedChartSvg(renderWaterfallSvg({ ...spec, ...size, inspect: true }), { role: "item", index: 2 });
+  expect(selected).toContain("--k2b-chart-selection-color:color-mix(in srgb,var(--k2b-flow-out-mark, #8b5cf6)");
 });

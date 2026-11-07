@@ -998,14 +998,17 @@ must be finite. A missing change is rejected rather than treated as zero.
 
 Totals rest on zero in a neutral colour. Inflows use `--k2b-flow-in-mark`
 and ↙; outflows use `--k2b-flow-out-mark` and ↗. Without flow tokens,
-the pure renderer uses a neutral fallback. Connectors join running balances.
-Tooltips show the absolute amount with its direction and the balances before
-and after each step, using the inherited locale. Phone labels are thinned;
+the pure renderer retains turquoise and violet fallback colours. Connectors join running balances.
+Tooltips name the direction (In/Out), show the unsigned amount and the balance
+after each step. Opening and closing totals show only Balance, using the inherited locale. Phone labels are thinned;
 every complete label remains in inspection and the data table.
 
 `renderWaterfallSvg({ ...options, width, height, inspect: true })` and
 `waterfallLayout(options, { width, height })` from `@k2b/ui/charts` expose the
-same pure drawing and calculation. SVG marks carry their paint attributes,
+same pure drawing and calculation; both are also available from `@k2b/ui/charts/core`.
+`Chart.Waterfall` renders the same options as the `kind` discriminator. Measured
+hosts pass `displayWidth` in CSS pixels; other hosts use the phone-safe default.
+Values print when bars have at least 46 CSS pixels and the text fits its slot. SVG marks carry their paint attributes,
 so server, PDF and app-frame hosts do not require `.k2b-ui` to see them.
 Portable JSON accepts `format: { style: "currency", currency: "EUR", decimals: 0 }`;
 the component and renderer accept a `format(value)` function.

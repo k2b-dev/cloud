@@ -10,6 +10,6 @@ test("core entry bundles for server and browser without Solid or DOM", async () 
     const code = await build.outputs[0]!.text();
     expect(code).not.toMatch(/solid-js|document\.|window\.|HTMLElement|createSignal/);
   }
-  expect(Object.keys(chartKinds)).toHaveLength(14);
+  expect(Object.keys(chartKinds)).toHaveLength(15);
   expect(chartDatumRoles).toContain("interval");
 });

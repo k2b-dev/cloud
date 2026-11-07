@@ -51,10 +51,7 @@ export function waterfallLayout(spec: WaterfallOptions, size: { width: number; h
   const displayWidth = spec.displayWidth ?? 296;
   if (!Number.isFinite(displayWidth) || displayWidth <= 0) throw new RangeError("Invalid waterfall display width");
   const ratio = size.width / displayWidth;
-  const left = Math.min(
-    size.width * 0.6,
-    Math.max(48, ...scale.ticks.map((v) => format(v).length * 7 + 12)) * ratio,
-  );
+  const left = Math.min(size.width * 0.6, Math.max(48, ...scale.ticks.map((v) => format(v).length * 7 + 12)) * ratio);
   const top = spec.title || spec.subtitle ? 58 : 24;
   const bottom = Math.max(top + 1, size.height - 30);
   const right = size.width - 10;
@@ -104,7 +101,10 @@ export function renderWaterfallSvg(spec: WaterfallOptions & { width: number; hei
     const mark = `<rect class="k2b-waterfall-bar" x="${f(center - width / 2)}" y="${f(top)}" width="${f(width)}" height="${f(Math.max(height, 1))}" rx="3" fill="${color}" stroke="none"/>`;
     const value =
       width / g.ratio >= 46 && amount.length * 6 + 8 <= cssSlot
-        ? text(center, Math.max(g.top - 8, top - 6), amount, "middle", 'class="k2b-waterfall-value" font-weight="600" style="fill:var(--k2b-text-secondary, #52525b)"')
+        ? text(center, Math.max(g.top - 8, top - 6), amount, "middle", 'class="k2b-waterfall-value" font-weight="600"').replace(
+            'fill="currentColor"',
+            'fill="var(--k2b-text-secondary, #52525b)"',
+          )
         : "";
     parts.push(
       chartDatumSvg(
@@ -129,17 +129,9 @@ export function renderWaterfallSvg(spec: WaterfallOptions & { width: number; hei
         `<line class="k2b-waterfall-connector" x1="${f(center + width / 2)}" x2="${f(center + g.slot - width / 2)}" y1="${f(g.project(bar.to))}" y2="${f(g.project(bar.to))}" stroke="currentColor" stroke-opacity=".3" stroke-dasharray="3 3"/>`,
       );
     if (index % stride === 0) {
-      const limit = Math.max(1, Math.floor((cssSlot * stride) / 6) - 1);
+      const limit = Math.max(1, Math.floor(Math.min(cssSlot * stride - 8, (2 * Math.min(center, spec.width - center)) / g.ratio) / 6) - 1);
       const label = bar.label.length > limit ? `${bar.label.slice(0, Math.max(0, limit - 1))}…` : bar.label;
-      parts.push(
-        text(
-          center,
-          g.bottom + 20,
-          label,
-          "middle",
-          `class="stdlib-chart-tick-label stdlib-chart-category-label "`,
-        ),
-      );
+      parts.push(text(center, g.bottom + 20, label, "middle", `class="stdlib-chart-tick-label stdlib-chart-category-label "`));
     }
   });
   return `<svg xmlns="http://www.w3.org/2000/svg" class="stdlib-chart k2b-waterfall ${escapeXml(spec.className ?? "")}" width="${spec.width}" height="${spec.height}" viewBox="0 0 ${spec.width} ${spec.height}" aria-hidden="true" focusable="false">${parts.join("")}</svg>`;

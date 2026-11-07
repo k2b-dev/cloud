@@ -15,8 +15,8 @@ import {
 } from "solid-js";
 import { isServer } from "solid-js/web";
 import { IconButton } from "../actions/Button";
-import { renderWaterfallSvg, type WaterfallOptions } from "../charts/core/waterfall";
 import { chartKinds, chartRenderers } from "../charts/core/registry";
+import { renderWaterfallSvg, type WaterfallOptions } from "../charts/core/waterfall";
 import { suppressTextSelection } from "../internal/text-selection";
 import { useLocale } from "../intl/locale";
 import { useUiMessages } from "../intl/messages";
@@ -221,7 +221,15 @@ export const renderChartSvg = (
     );
   }
   if (kind === "waterfall")
-    return responsiveChartSvg(renderWaterfallSvg({ ...(opts as WaterfallOptions), locale: renderLocale ?? (opts as WaterfallOptions).locale, width, height, inspect: true }));
+    return responsiveChartSvg(
+      renderWaterfallSvg({
+        ...(opts as WaterfallOptions),
+        locale: renderLocale ?? (opts as WaterfallOptions).locale,
+        width,
+        height,
+        inspect: true,
+      }),
+    );
   if (kind === "bar") return responsiveChartSvg(renderBarChartSvg({ ...(opts as BarChartOptions), width, height, inspect: true }));
   // A time axis needs an explicit X domain: it maps its round ticks onto the axis the renderer drew over it.
   const timeAxis = props.kind === "line" ? props.timeAxis : undefined;
