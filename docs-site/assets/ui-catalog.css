@@ -647,7 +647,7 @@
 }
 
 .ui-discussion-showcase {
-  --k2b-detail-panel-accent: var(--c-accent-ink);
+  --k2b-detail-panel-accent: var(--k2b-action);
 
   width: min(100%, 31rem);
   margin: 0 auto;
@@ -854,7 +854,7 @@
 }
 
 .ui-detail-panel-pattern__frame {
-  --k2b-detail-panel-accent: var(--c-accent-ink);
+  --k2b-detail-panel-accent: var(--k2b-action);
 
   height: 29rem;
   min-width: 0;

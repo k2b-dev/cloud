@@ -1264,7 +1264,7 @@
   width: 0.375rem;
   height: 0.375rem;
   border-radius: 999px;
-  background: var(--k2b-calendar-accent, #3b82f6);
+  background: var(--k2b-calendar-accent, var(--k2b-info-mark));
 }
 
 .k2b-ui :is(.k2b-calendar-event, .k2b-calendar-dot, .k2b-calendar-year__indicator, .k2b-calendar-detail)[data-color="blue"] {
@@ -5945,9 +5945,13 @@
 }
 
 .k2b-ui :is(.k2b-timeline__slot, .k2b-timeline__echo) {
-  --k2b-timeline-accent: #3b82f6;
+  --k2b-timeline-accent: var(--k2b-info-mark);
   position: absolute;
   z-index: 1;
+}
+
+.k2b-ui :is(.k2b-timeline__slot, .k2b-timeline__echo)[data-color="blue"] {
+  --k2b-timeline-accent: #3b82f6;
 }
 
 .k2b-ui :is(.k2b-timeline__slot, .k2b-timeline__echo)[data-color="emerald"] {

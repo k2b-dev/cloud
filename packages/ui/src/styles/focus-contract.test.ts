@@ -114,6 +114,7 @@ describe("@k2b/ui focus and color contract", () => {
 
     expect(shippedStyleFiles(stylesDir)).toEqual([
       "index.css",
+      "primary-scope.css",
       "feedback-parity.css",
       "layout-parity.css",
       "surfaces-widgets-parity.css",
@@ -218,13 +219,14 @@ describe("@k2b/ui focus and color contract", () => {
     expect(cursorFor('.k2b-ui .k2b-button:is(:disabled, [aria-disabled="true"])')).toMatch(/cursor:\s*not-allowed/);
   });
 
-  test("keeps AI theme tokens inside AI and chat components", () => {
+  test("keeps AI theme tokens inside AI components and the explicit primary scope", () => {
     // The AI palette may only be spent where a selector says it is an AI
-    // surface: the `.k2b-ai-*` / `.k2b-chat-*` families, or a component class
-    // whose own name opts in with an `-ai` suffix. Anything else would bleed
-    // the AI accent into general chrome.
+    // surface: the `.k2b-ai-*` / `.k2b-chat-*` families, an AI variant,
+    // or the explicit primary scope. The latter opts a whole subtree in;
+    // ordinary UI roots must keep their blue defaults.
     const leaked = rules
       .filter((rule) => rule.body.includes("var(--k2b-ai-"))
+      .filter((rule) => !rule.selector.includes('[data-k2b-primary="ai"]'))
       .filter((rule) => !/\.k2b-(?:ai|chat)-|\.k2b-[\w-]*-ai(?![\w-])|\.k2b-button\[data-variant=["']ai["']\]/.test(rule.selector))
       .map((rule) => `${rule.file}: ${rule.selector}`);
 

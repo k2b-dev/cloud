@@ -161,6 +161,7 @@
   /* The grey track of a segmented control, and an option hovered on it. */
   --k2b-tray: #ececef;
   --k2b-tray-hover: rgb(9 9 11 / 0.06);
+  --k2b-info-mark: var(--k2b-accent-500);
   --k2b-info-surface: var(--k2b-accent-50);
   --k2b-info-text: var(--k2b-accent-700);
   --k2b-success-surface: #ecfdf5;
@@ -338,6 +339,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   --k2b-control-border-soft: #46505c;
   --k2b-tray: #1a2028;
   --k2b-tray-hover: rgb(255 255 255 / 0.08);
+  --k2b-info-mark: var(--k2b-accent-500);
   --k2b-info-surface: var(--k2b-accent-950);
   --k2b-info-text: var(--k2b-accent-300);
   --k2b-success-surface: #052e26;

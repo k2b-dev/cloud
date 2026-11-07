@@ -1,4 +1,5 @@
 import { getK2bPortalRoot } from "../internal/portal";
+import { inheritUiScope } from "../internal/portal-scope";
 import { resolveUiMessages } from "../intl/messages";
 import { announce, ensureLiveRegions } from "./announce";
 import { resolveToastMessages } from "./toast-messages";
@@ -151,8 +152,7 @@ const ensureContainer = (): HTMLElement | null => {
   if (typeof document === "undefined") return null;
   // The shared live regions exist before the first toast's text arrives.
   ensureLiveRegions(document);
-  const root = getK2bPortalRoot();
-  let container = root.querySelector<HTMLElement>(`[${CONTAINER_ATTRIBUTE}]`);
+  let container = document.querySelector<HTMLElement>(`[${CONTAINER_ATTRIBUTE}]`);
   if (container) return container;
 
   container = document.createElement("div");
@@ -174,7 +174,7 @@ const ensureContainer = (): HTMLElement | null => {
     "max-height:calc(100dvh - env(safe-area-inset-top,0px) - var(--k2b-toast-offset-top,0px) - env(safe-area-inset-bottom,0px));" +
     "margin:0;padding:var(--k2b-toast-rail-padding,0.75rem 1rem);border:0;background:transparent;overflow-x:hidden;overflow-y:auto;overscroll-behavior:contain;" +
     "pointer-events:none;";
-  root.appendChild(container);
+  getK2bPortalRoot(document.body, document.body).appendChild(container);
   return container;
 };
 
@@ -302,6 +302,14 @@ function enforceCap(): void {
   }
 }
 
+const createToastCard = (doc: Document): HTMLDivElement => {
+  const element = doc.createElement("div");
+  element.className = "k2b-ui k2b-toast";
+  element.dataset.k2bToast = "";
+  inheritUiScope(element);
+  return element;
+};
+
 const showToast = (description: string, options?: ToastOptions): ToastHandle => {
   const initialContainer = ensureContainer();
   if (!initialContainer) {
@@ -324,10 +332,8 @@ const showToast = (description: string, options?: ToastOptions): ToastHandle => 
   let timerStartedAt = 0;
   let lastAnnouncement = "";
 
-  const toastElement = doc.createElement("div");
-  toastElement.className = "k2b-toast";
+  const toastElement = createToastCard(doc);
   toastElement.dataset.tone = VARIANT_STYLES[currentVariant].tone;
-  toastElement.dataset.k2bToast = "";
 
   const leadElement = doc.createElement("div");
   leadElement.className = "k2b-toast__icon";
@@ -552,9 +558,7 @@ const showCustom = (content: HTMLElement): ToastSlot => {
   const initialContainer = ensureContainer();
   if (!initialContainer) return { dismiss: () => {} };
   let dismissed = false;
-  const slotElement = document.createElement("div");
-  slotElement.className = "k2b-toast";
-  slotElement.dataset.k2bToast = "";
+  const slotElement = createToastCard(initialContainer.ownerDocument);
   slotElement.dataset.custom = "true";
   // It stays until the application removes it, like a toast without a timer.
   slotElement.dataset.persistent = "true";
