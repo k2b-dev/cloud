@@ -52,7 +52,7 @@ export const tableExamples = [
     options: [
       {
         name: "columns[].type",
-        type: "text | number | date | status | bar | amount | flow | delta",
+        type: "text | number | date | status | bar | amount",
         description: "Alignment, shown text, search and sort; numbers right with equal-width digits.",
       },
       { name: "columns[].format", type: "NumberFormat", description: "number, percent or currency, with decimals and compact." },

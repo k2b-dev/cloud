@@ -73,8 +73,6 @@ values instead of formatted strings:
 | `date` | ISO text, a timestamp, or a `Date` in the reader's language and in `timeZone` when given; a day without a time stays that day | left |
 | `status` | a status badge with the label and tone from `states[value]` | left |
 | `bar` | the value and a short track filled to `max`, or to the column's largest value | right |
-| `flow` | the amount without a sign; the direction shows as in `FlowAmount` | right |
-| `delta` | the signed change, `0.082` as `+8.2 %` | right |
 
 `format` is a number format by name: `style` (`number`, `percent`, or
 `currency`), `currency`, `decimals`, and `compact`. A missing value, `null` or
@@ -270,7 +268,7 @@ type DataTableColumn<T> = {
   max?: number; timeZone?: string; priority?: 1 | 2 | 3;
 };
 
-type DataTableColumnType = "text" | "number" | "date" | "status" | "bar" | "amount" | "flow" | "delta";
+type DataTableColumnType = "text" | "number" | "date" | "status" | "bar" | "amount";
 type DataTableNumberFormat = { style?: "number" | "percent" | "currency"; currency?: string; decimals?: number; compact?: boolean };
 type DataTableStatusState = { label: string; tone: StatusTone };
 

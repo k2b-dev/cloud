@@ -2,15 +2,15 @@ import type { StatusTone } from "../surfaces/StatusBadge";
 
 /**
  * What a column holds. It decides alignment, wrapping, the shown text, search and sort:
- * text wraps; number, amount, bar, flow and delta read right-aligned with equal-width digits; date reads in the
+ * text wraps; number, amount and bar read right-aligned with equal-width digits; date reads in the
  * reader's language; status shows a badge from `states`.
  */
-export type DataTableColumnType = "text" | "number" | "date" | "status" | "bar" | "amount" | "flow" | "delta";
+export type DataTableColumnType = "text" | "number" | "date" | "status" | "bar" | "amount";
 
 /** A number format by name, as a portable description stores it. `decimals` fixes the fraction digits. */
 export type DataTableNumberFormat = {
   style?: "number" | "percent" | "currency";
-  /** ISO 4217 code; required for `style: "currency"`, `amount` and `flow`. */
+  /** ISO 4217 code; required for `style: "currency"` and `amount`. */
   currency?: string;
   decimals?: number;
   compact?: boolean;
@@ -31,7 +31,7 @@ export type DataTableTypedColumn = {
   timeZone?: string;
 };
 
-const numericTypes = new Set<DataTableColumnType>(["number", "amount", "bar", "flow", "delta"]);
+const numericTypes = new Set<DataTableColumnType>(["number", "amount", "bar"]);
 export const isNumericColumnType = (type?: DataTableColumnType): boolean => !!type && numericTypes.has(type);
 
 const finite = (value: unknown): number | null => {
@@ -49,8 +49,8 @@ const fractionDigits = (decimals?: number) => {
 /** Formats a number the way a typed column shows it: in the reader's language, by the column's format. */
 export const formatTableNumber = (value: number, column: DataTableTypedColumn, locale: string): string => {
   const format = column.format ?? {};
-  // Amounts and flows are money: with a currency they always read as one, whatever `style` says.
-  const money = column.type === "amount" || column.type === "flow" || format.style === "currency";
+  // An amount is money: with a currency it always reads as one, whatever `style` says.
+  const money = column.type === "amount" || format.style === "currency";
   const options: Intl.NumberFormatOptions =
     money && format.currency
       ? { style: "currency", currency: format.currency }
@@ -80,8 +80,7 @@ export const formatTableDate = (value: unknown, locale: string, timeZone?: strin
 export const isEmptyCell = (value: unknown): boolean => value === null || value === undefined || value === "";
 
 /**
- * The text a typed cell shows, for search, grouping and copied rows. Amounts and flows read without a sign; a flow
- * is the amount alone because its direction is the arrow, and a delta is the signed change in percent.
+ * The text a typed cell shows, for search, grouping and copied rows.
  */
 export const tableCellText = (value: unknown, column: DataTableTypedColumn, locale: string): string => {
   if (isEmptyCell(value)) return "";
@@ -91,11 +90,7 @@ export const tableCellText = (value: unknown, column: DataTableTypedColumn, loca
   if (isNumericColumnType(type)) {
     const number = finite(value);
     if (number === null) return String(value);
-    if (type === "delta")
-      return new Intl.NumberFormat(locale, { style: "percent", maximumFractionDigits: 1, signDisplay: "exceptZero" })
-        .format(number)
-        .replace("-", "−");
-    return formatTableNumber(type === "flow" ? Math.abs(number) : number, column, locale);
+    return formatTableNumber(number, column, locale);
   }
   return typeof value === "object" ? JSON.stringify(value) : String(value);
 };
