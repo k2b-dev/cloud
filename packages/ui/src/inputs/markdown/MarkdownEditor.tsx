@@ -24,7 +24,7 @@ import { computeActiveFormats } from "./active-formats";
 import { handleListContinuation, handleShortcut, handleSmartPaste } from "./behaviors";
 import { isInCodeZone } from "./code-zone";
 import { useMarkdownEditorMessages } from "./editor-messages";
-import { SelectionFormatting } from "./SelectionFormatting";
+import type { SelectionFormattingProps } from "./SelectionFormatting";
 import Toolbar from "./Toolbar";
 
 export type MarkdownEditorProps = ValueFieldProps<string> & {
@@ -72,10 +72,6 @@ export function MarkdownEditor(props: MarkdownEditorProps): JSX.Element {
   let textarea: HTMLTextAreaElement | undefined;
   let preview: HTMLDivElement | undefined;
   let surface: HTMLDivElement | undefined;
-  let selectionHandlers: { blur: (next: Element | null) => void; focus: () => void; escape: () => boolean } | undefined;
-  // Changes with the text, the selection, and each new presentation, so the selection toolbar measures again.
-  const [selectionRevision, setSelectionRevision] = createSignal(0);
-  const bumpSelection = () => setSelectionRevision((value) => value + 1);
   let dropdown: HTMLDivElement | undefined;
   let completionAbort: AbortController | null = null;
   let completionTimer: ReturnType<typeof setTimeout> | null = null;
@@ -110,6 +106,15 @@ export function MarkdownEditor(props: MarkdownEditorProps): JSX.Element {
     return merged.length > 0 ? merged : undefined;
   });
   const knownLabels = createMemo(() => collectKnownLabels(mergedCompletions()));
+  // The floating toolbar loads on first use and attaches to the textarea itself, so other editors carry none of it.
+  const [selectionFormatting, setSelectionFormatting] = createSignal<(props: SelectionFormattingProps) => JSX.Element>();
+  createEffect(() => {
+    if (props.toolbar === "selection")
+      import("./SelectionFormatting").then(
+        (module) => setSelectionFormatting(() => module.SelectionFormatting),
+        (error: unknown) => console.error(error),
+      );
+  });
 
   createEffect(() => {
     const incoming = resolveMaybeAccessor(props.value);
@@ -142,7 +147,6 @@ export function MarkdownEditor(props: MarkdownEditorProps): JSX.Element {
     renderPendingOverlay = () => {
       if (!preview) return;
       preview.innerHTML = renderWithOverlay(value, (text) => highlight.markdown(text, { knownLabels: labels }), { ghost, anchor });
-      bumpSelection();
       if (textarea) {
         preview.scrollTop = textarea.scrollTop;
         preview.scrollLeft = textarea.scrollLeft;
@@ -379,7 +383,6 @@ export function MarkdownEditor(props: MarkdownEditorProps): JSX.Element {
     updateActiveFormats();
     const selectionChange = (): void => {
       if (document.activeElement === textarea) {
-        bumpSelection();
         updateActiveFormats();
         recomputeCompletion();
       }
@@ -420,7 +423,8 @@ export function MarkdownEditor(props: MarkdownEditorProps): JSX.Element {
   };
 
   const onKeyDown = (event: KeyboardEvent): void => {
-    if (!textarea || event.isComposing) return;
+    // A key that an attached part, such as the slash commands, used is not the text's any more.
+    if (!textarea || event.isComposing || event.defaultPrevented) return;
     if (
       event.key === "Backspace" &&
       !event.metaKey &&
@@ -456,10 +460,6 @@ export function MarkdownEditor(props: MarkdownEditorProps): JSX.Element {
     if (event.key === "Tab" && !event.shiftKey && !event.metaKey && !event.ctrlKey && !event.altKey && current) {
       event.preventDefault();
       activateSuggestion();
-      return;
-    }
-    if (event.key === "Escape" && selectionHandlers?.escape()) {
-      event.preventDefault();
       return;
     }
     if (event.key === "Escape") {
@@ -591,15 +591,11 @@ export function MarkdownEditor(props: MarkdownEditorProps): JSX.Element {
                 preview.scrollTop = event.currentTarget.scrollTop;
                 preview.scrollLeft = event.currentTarget.scrollLeft;
               }
-              // The selection toolbar hides while its line is scrolled away and shows again when it returns.
-              bumpSelection();
             }}
-            onFocus={() => selectionHandlers?.focus()}
             onCompositionStart={() => setComposing(true)}
             onCompositionEnd={() => setComposing(false)}
             onBlur={(event) => {
               const next = event.relatedTarget as HTMLElement | null;
-              selectionHandlers?.blur(next);
               if (next && dropdown?.contains(next)) return;
               completionBehavior.reset();
               clearCompletion();
@@ -615,21 +611,19 @@ export function MarkdownEditor(props: MarkdownEditorProps): JSX.Element {
             aria-activedescendant={dropdownOpen() && state() ? optionId(state()!.selectedIndex) : undefined}
           />
           {/* After the text in the DOM, so Tab from selected text reaches it. */}
-          <Show when={!props.noToolbar && props.toolbar === "selection"}>
-            <SelectionFormatting
-              textarea={() => textarea}
-              layer={() => preview}
-              surface={() => surface}
-              revision={selectionRevision}
-              activeFormats={activeFormats}
-              disabled={props.disabled}
-              bind={(handlers) => {
-                selectionHandlers = handlers;
-                onCleanup(() => {
-                  if (selectionHandlers === handlers) selectionHandlers = undefined;
-                });
-              }}
-            />
+          <Show when={!props.noToolbar && props.toolbar === "selection" && textarea && preview && surface && selectionFormatting()}>
+            {(view) =>
+              untrack(() =>
+                view()({
+                  textarea: textarea!,
+                  layer: preview!,
+                  surface: surface!,
+                  disabled: () => Boolean(props.disabled),
+                  activeFormats,
+                  locale,
+                }),
+              )
+            }
           </Show>
         </div>
         <Show when={(props.showStats ?? true) && !props.disabled}>
