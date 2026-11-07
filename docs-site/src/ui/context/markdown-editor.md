@@ -105,9 +105,10 @@ keywords, without regard to case or accents. A `/` inside a word or after punctu
 
 - An entry with `onSelect` removes the typed `/query` from the text, then runs with the context: the query, the text
   without the `/query`, the text before the slash, whether it stands at the start of the text or a line, the path of
-  entries chosen so far, `insert(text)` at the caret as typing would, and an abort `signal`. A returned promise
-  keeps the list open with the entry busy; a rejection shows its message on the entry. See
-  [Context](/en/ui/actions/command-menu#context).
+  entries chosen so far, `insert(text)` at the caret as typing would, `success(message)` and `error(message)`, and an
+  abort `signal`. A returned promise keeps the list open with the entry busy. What the command reports, or a rejection
+  with Retry, takes the list's place as a short green or red line. See
+  [Context](/en/ui/actions/command-menu#context) and [Outcomes](/en/ui/actions/command-menu#outcomes).
 - An entry with `text` puts its text in place of `/query`.
 - An entry with `next` opens its list in the same place: the typed `/query` leaves the text, the list gets its own
   search field, and the focus moves there. Typing filters the list, the first match is marked, and <kbd>Enter</kbd>

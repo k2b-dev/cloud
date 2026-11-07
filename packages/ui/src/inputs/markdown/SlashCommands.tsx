@@ -290,6 +290,7 @@ function AttachedCommands(props: { textarea: HTMLTextAreaElement; items: Command
 
   return (
     <Show when={open()}>
+      {/* biome-ignore lint/a11y/noStaticElementInteractions: Escape from an outcome's own buttons; the text owns every other key. */}
       <div
         ref={popover}
         popover="manual"

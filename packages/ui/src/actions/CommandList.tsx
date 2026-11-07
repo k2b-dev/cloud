@@ -82,7 +82,7 @@ export const createCommandNavigator = (options: {
     const key = commandKey(item);
     setStatus(undefined);
     if (!again) options.beforeRun?.();
-    // What the command reported; only a command still running can report.
+    // What the command reported before it finished; a stopped command's report never shows.
     let report: CommandOutcome | undefined;
     const reporting = () => running === controller && !controller.signal.aborted;
     const settle = (failure?: { error: unknown }) => {
@@ -110,10 +110,10 @@ export const createCommandNavigator = (options: {
           if (!controller.signal.aborted) base.insert(text);
         },
         success: (message: string) => {
-          if (reporting()) report = { state: "success", message };
+          report = { state: "success", message };
         },
         error: (message: string) => {
-          if (reporting()) report = { state: "error", message };
+          report = { state: "error", message };
         },
         query: options.query(),
         path,
@@ -397,121 +397,120 @@ export function CommandList(props: {
     <>
       {/* After a command reported, a status line of the same width takes the list's place until it clears. */}
       <Show when={!nav.outcome()} fallback={<CommandOutcomeLine navigator={nav} text={outcomeText} onAction={props.onOutcomeAction} />}>
-      <Show when={nav.step()}>
-        {(item) => (
-          <div class="k2b-command-list__step">
-            <button
-              type="button"
-              class="k2b-command-list__back"
-              tabIndex={-1}
-              aria-label={commandMessages().back({ label: item().label })}
-              onMouseDown={(event) => event.preventDefault()}
-              onClick={() => nav.back()}
-            >
-              <i class="ti ti-chevron-left" aria-hidden="true" />
-              <span>{item().label}</span>
-            </button>
-            <Show when={props.stepHint}>
-              <span class="k2b-command-list__step-hint">{item().next?.label}</span>
-            </Show>
-          </div>
-        )}
-      </Show>
-      {props.header}
-      {/* biome-ignore lint/a11y/useFocusableInteractive: the host's field keeps the focus and owns the keys. */}
-      <div
-        id={props.id}
-        role="listbox"
-        aria-label={nav.step()?.next?.label ?? props.label}
-        aria-busy={nav.load().state === "loading" ? "true" : undefined}
-        class="k2b-command-list"
-        // A press on a row leaves the focus in the host's field.
-        onMouseDown={(event) => event.preventDefault()}
-      >
-        <For each={nav.groups()}>
-          {(group) => {
-            const headingId = `${props.id}-group-${group.entries[0]?.index ?? 0}`;
-            return (
-              <div class="k2b-dropdown__section" role="group" aria-labelledby={group.label ? headingId : undefined}>
-                <Show when={group.label}>
-                  <div id={headingId} class="k2b-dropdown__label">
-                    {group.label}
-                  </div>
-                </Show>
-                <For each={group.entries}>
-                  {(entry) => (
-                    // biome-ignore lint/a11y/useKeyWithClickEvents: the host's field handles the keys through aria-activedescendant.
-                    <div
-                      id={commandOptionId(props.id, entry.index)}
-                      role="option"
-                      class="k2b-dropdown__item"
-                      aria-selected={entry.index === nav.active()}
-                      aria-disabled={entry.item.disabled ? "true" : undefined}
-                      aria-busy={statusOf(entry.item)?.state === "running" ? "true" : undefined}
-                      data-active={entry.index === nav.active() && !entry.item.disabled ? "" : undefined}
-                      onPointerMove={() => {
-                        if (entry.index !== nav.active()) nav.setActive(entry.index);
-                      }}
-                      onClick={() => nav.choose(entry.index)}
-                    >
-                      <Show
-                        when={statusOf(entry.item)?.state !== "running"}
-                        fallback={<i class="ti ti-loader-2 k2b-spin k2b-command-list__busy" aria-hidden="true" />}
+        <Show when={nav.step()}>
+          {(item) => (
+            <div class="k2b-command-list__step">
+              <button
+                type="button"
+                class="k2b-command-list__back"
+                tabIndex={-1}
+                aria-label={commandMessages().back({ label: item().label })}
+                onMouseDown={(event) => event.preventDefault()}
+                onClick={() => nav.back()}
+              >
+                <i class="ti ti-chevron-left" aria-hidden="true" />
+                <span>{item().label}</span>
+              </button>
+              <Show when={props.stepHint}>
+                <span class="k2b-command-list__step-hint">{item().next?.label}</span>
+              </Show>
+            </div>
+          )}
+        </Show>
+        {props.header}
+        <div
+          id={props.id}
+          role="listbox"
+          aria-label={nav.step()?.next?.label ?? props.label}
+          aria-busy={nav.load().state === "loading" ? "true" : undefined}
+          class="k2b-command-list"
+          // A press on a row leaves the focus in the host's field.
+          onMouseDown={(event) => event.preventDefault()}
+        >
+          <For each={nav.groups()}>
+            {(group) => {
+              const headingId = `${props.id}-group-${group.entries[0]?.index ?? 0}`;
+              return (
+                <div class="k2b-dropdown__section" role="group" aria-labelledby={group.label ? headingId : undefined}>
+                  <Show when={group.label}>
+                    <div id={headingId} class="k2b-dropdown__label">
+                      {group.label}
+                    </div>
+                  </Show>
+                  <For each={group.entries}>
+                    {(entry) => (
+                      // biome-ignore lint/a11y/useKeyWithClickEvents: the host's field handles the keys through aria-activedescendant.
+                      <div
+                        id={commandOptionId(props.id, entry.index)}
+                        role="option"
+                        class="k2b-dropdown__item"
+                        aria-selected={entry.index === nav.active()}
+                        aria-disabled={entry.item.disabled ? "true" : undefined}
+                        aria-busy={statusOf(entry.item)?.state === "running" ? "true" : undefined}
+                        data-active={entry.index === nav.active() && !entry.item.disabled ? "" : undefined}
+                        onPointerMove={() => {
+                          if (entry.index !== nav.active()) nav.setActive(entry.index);
+                        }}
+                        onClick={() => nav.choose(entry.index)}
                       >
-                        <Show when={entry.item.leading} fallback={<CommandVisual item={entry.item} />}>
-                          {(leading) => (
-                            <span class="k2b-command-list__leading" aria-hidden="true">
-                              {leading()()}
+                        <Show
+                          when={statusOf(entry.item)?.state !== "running"}
+                          fallback={<i class="ti ti-loader-2 k2b-spin k2b-command-list__busy" aria-hidden="true" />}
+                        >
+                          <Show when={entry.item.leading} fallback={<CommandVisual item={entry.item} />}>
+                            {(leading) => (
+                              <span class="k2b-command-list__leading" aria-hidden="true">
+                                {leading()()}
+                              </span>
+                            )}
+                          </Show>
+                        </Show>
+                        {/* One line: the label, then quietly the reason it is unavailable, or what it does. */}
+                        <span class="k2b-dropdown__copy k2b-command-list__text">
+                          <span>{entry.item.label}</span>
+                          <Show when={entry.item.disabled ?? entry.item.description}>
+                            {(text) => <small class="k2b-command-list__description">{text()}</small>}
+                          </Show>
+                        </span>
+                        <Show when={entry.item.hint}>
+                          {(hint) => (
+                            <span class="k2b-command-list__hint" aria-hidden="true">
+                              {hint()}
                             </span>
                           )}
                         </Show>
-                      </Show>
-                      {/* One line: the label, then quietly the reason it is unavailable, or what it does. */}
-                      <span class="k2b-dropdown__copy k2b-command-list__text">
-                        <span>{entry.item.label}</span>
-                        <Show when={entry.item.disabled ?? entry.item.description}>
-                          {(text) => <small class="k2b-command-list__description">{text()}</small>}
+                        <Show when={entry.item.next}>
+                          <i class="ti ti-chevron-right k2b-command-list__next" aria-hidden="true" />
                         </Show>
-                      </span>
-                      <Show when={entry.item.hint}>
-                        {(hint) => (
-                          <span class="k2b-command-list__hint" aria-hidden="true">
-                            {hint()}
-                          </span>
-                        )}
-                      </Show>
-                      <Show when={entry.item.next}>
-                        <i class="ti ti-chevron-right k2b-command-list__next" aria-hidden="true" />
-                      </Show>
-                    </div>
-                  )}
-                </For>
-              </div>
-            );
-          }}
-        </For>
-        <Show when={nav.entries().length === 0 && nav.load().state === "ready"}>
-          <p class="k2b-dropdown__empty">{messages().noResults}</p>
-        </Show>
-        {/* Entries on their way keep the previous ones in place; the state takes one row at the end. */}
-        <Show when={nav.load().state === "loading"}>
-          <p class="k2b-command-list__state">
-            <i class="ti ti-loader-2 k2b-spin" aria-hidden="true" />
-            <span>{nav.awaitingChoice() ? commandMessages().loadingChoice : commandMessages().loading}</span>
-          </p>
-        </Show>
-        <Show when={nav.load().state === "failed" ? (nav.load() as { message?: string }) : undefined}>
-          {(failed) => (
-            <p class="k2b-command-list__state" data-error="">
-              <i class="ti ti-alert-circle" aria-hidden="true" />
-              <span>{failed().message ?? commandMessages().loadFailed}</span>
-              <button type="button" tabIndex={-1} onMouseDown={(event) => event.preventDefault()} onClick={() => nav.retry()}>
-                {messages().retry}
-              </button>
+                      </div>
+                    )}
+                  </For>
+                </div>
+              );
+            }}
+          </For>
+          <Show when={nav.entries().length === 0 && nav.load().state === "ready"}>
+            <p class="k2b-dropdown__empty">{messages().noResults}</p>
+          </Show>
+          {/* Entries on their way keep the previous ones in place; the state takes one row at the end. */}
+          <Show when={nav.load().state === "loading"}>
+            <p class="k2b-command-list__state">
+              <i class="ti ti-loader-2 k2b-spin" aria-hidden="true" />
+              <span>{nav.awaitingChoice() ? commandMessages().loadingChoice : commandMessages().loading}</span>
             </p>
-          )}
-        </Show>
-      </div>
+          </Show>
+          <Show when={nav.load().state === "failed" ? (nav.load() as { message?: string }) : undefined}>
+            {(failed) => (
+              <p class="k2b-command-list__state" data-error="">
+                <i class="ti ti-alert-circle" aria-hidden="true" />
+                <span>{failed().message ?? commandMessages().loadFailed}</span>
+                <button type="button" tabIndex={-1} onMouseDown={(event) => event.preventDefault()} onClick={() => nav.retry()}>
+                  {messages().retry}
+                </button>
+              </p>
+            )}
+          </Show>
+        </div>
       </Show>
       {/* Announced once, when the text changes: a confirmation politely, an error at once. */}
       <span class="k2b-sr-only" role="status">

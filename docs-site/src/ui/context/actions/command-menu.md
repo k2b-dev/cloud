@@ -61,6 +61,8 @@ One `CommandContext` reaches the entries of every level, when `items` is a funct
 | `selection` | `{ start, end }` in `text`; `start === end` is the caret | The same in `target`, or `{ start: 0, end: 0 }` |
 | `path` | The entries chosen so far, such as `[assign, person]` on the third level | The same |
 | `insert(text)` | Puts text at the caret in place of the selection, as typing would, so undo keeps working | Writes into `target` the same way, or hands the text to `onInsert` |
+| `success(message)` | Reports what a command did, such as "Valentin Brandt zugewiesen" (see [Outcomes](#outcomes)) | The same |
+| `error(message)` | Reports why a command could not do it, such as "Keine Artikelnummer im Text" | The same |
 | `signal` | Aborts when a new query replaces a pending list, or when <kbd>Esc</kbd> stops a running command | The same, also when the menu closes |
 
 `/` opens the list at the start of a line or after a space anywhere in the text; the application decides from the
@@ -91,11 +93,41 @@ Nothing moves the composer, and the list keeps its width.
 
 A command that returns a promise runs in place: the list stays open, the entry shows a spinner instead of its icon,
 other entries wait, and the menu's search field waits too. The text keeps the focus. When the promise settles, the list
-closes. When it rejects, the entry shows the error's message in its description's place, quiet in the danger color,
-cut to one line with the full text as its title, and an alert reads the message. Choosing the entry again runs it
-again; typing moves on and closes the list. <kbd>Esc</kbd> stops it, also inside a further list, and a stopped command
-can no longer insert. Any other return value counts as done, so `onSelect: () => setKind("call")` keeps working. Keep
-error messages short: "Keine Artikelnummer im Text".
+closes, or shows its outcome. <kbd>Esc</kbd> stops it, also inside a further list, and a stopped command can no longer
+insert or report. Any other return value counts as done, so `onSelect: () => setKind("call")` keeps working.
+
+### Outcomes
+
+A command can say what happened. `success(message)` and `error(message)` take effect when it finishes; the list then
+gives way to one status line of the same width, docked in the same place, and the composer does not move. The
+application writes the text; keep it short.
+
+| Outcome | How it comes | How it looks | How it goes |
+| --- | --- | --- | --- |
+| Done | `success("Valentin Brandt zugewiesen")` | Status green, ✓ and the message | By itself after 4 s, or when the person types on |
+| Could not | `error("Keine Artikelnummer im Text")` | Status red, the message and Close | When the person types on, presses <kbd>Esc</kbd>, or closes it |
+| Failed | The command throws or its promise rejects | As above with Retry; without a message: "That did not work." | As above, or with Retry, which runs the command again with a fresh context and the same `path` |
+
+Retry only follows a throw or a rejection, which is often passing, such as a server that does not answer; an `error`
+the command reports itself is an answer that trying again does not change.
+
+Every outcome shows for at least 1.2 s, so a person who types on at once still sees it; their typing goes into the
+text, and the line goes when the 1.2 s are over. A new `/` replaces it with the list at once. The focus stays in the
+composer throughout. Both times are fixed for every application: `COMMAND_OUTCOME_MIN_MS` is 1200 and
+`COMMAND_OUTCOME_SUCCESS_MS` is 4000.
+
+```tsx
+const assign = (person: Person): CommandItem => ({
+  label: person.name,
+  onSelect: async ({ success, signal }) => {
+    await api.assign(person.id, { signal }); // a rejection shows with Retry
+    success(`${person.name} zugewiesen`);
+  },
+});
+```
+
+`CommandMenu` shows the outcome the same way in its menu. With a `target`, the focus goes back to the target and
+typing there clears it; without one, the focus rests on the outcome. When the outcome goes, the menu closes.
 
 ## Docking
 
@@ -124,7 +156,7 @@ The focus stays in the search field (in the editor: in the text). The marked ent
 | <kbd>↑</kbd> <kbd>↓</kbd> | Mark the previous or next entry, wrapping. Unavailable entries are passed over. |
 | <kbd>Home</kbd> <kbd>End</kbd> | Mark the first or last entry that can be chosen. |
 | <kbd>Enter</kbd> <kbd>Tab</kbd> | Choose the marked entry. While entries load, <kbd>Enter</kbd> waits for this query's entries and takes the first; a changed query or no match takes none. While a command runs, nothing else runs. |
-| <kbd>Esc</kbd> | Stop a running command and close; leave a further list; in the first list, close. Two presses from a further list close. |
+| <kbd>Esc</kbd> | Stop a running command and close; leave a further list; in the first list, close. Two presses from a further list close. On an outcome, clear it. |
 | <kbd>Backspace</kbd> | In an empty field, leave a second list. |
 
 A pointer chooses with a click and marks an entry it moves over; unavailable entries are never marked. The back control
@@ -162,7 +194,8 @@ Place `CommandMenu.Trigger` inside; it takes the props of `Dropdown.Trigger`.
 
 The field is a combobox that controls a list box. Groups are labeled by their heading. An unavailable entry has
 `aria-disabled="true"` and its reason in its name. A running entry has `aria-busy="true"`, and a polite status names
-it; a failure is read by an alert. The hint, the image, and the leading element are hidden from assistive technology;
+it. An outcome is announced once: a confirmation by the polite status, an error by an alert. The line itself shows
+the same text to the eye only; its Retry and Close are ordinary buttons. The hint, the image, and the leading element are hidden from assistive technology;
 the label names the entry.
 
 ## Runtime

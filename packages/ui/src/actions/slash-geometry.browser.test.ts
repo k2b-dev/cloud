@@ -24,7 +24,12 @@ const avatar = () => {
 const composer = document.getElementById("composer");
 globalThis.assigned = [];
 const names = ["Lea Krüger", "Valentin Brandt", "Mara Brandt"];
-const entries = () => names.map((name) => ({ label: name, onSelect: (context) => globalThis.assigned.push({ name, path: context.path.map((item) => item.label), text: context.text }) }));
+// "#report" lets a person confirm the assignment and adds a command that fails, so the outcome line shows.
+const report = location.hash === "#report";
+const entries = () => names.map((name) => ({ label: name, onSelect: (context) => {
+  globalThis.assigned.push({ name, path: context.path.map((item) => item.label), text: context.text });
+  if (report) context.success(name + " zugewiesen");
+} }));
 // "#slow" answers each search after a while, as a server would.
 const people = location.hash === "#slow" ? () => new Promise((resolve) => setTimeout(() => resolve(entries()), 400)) : entries();
 const [textarea, setTextarea] = createSignal();
@@ -34,6 +39,7 @@ render(
     createComponent(SlashCommands, { get textarea() { return textarea(); }, composer, items: [
       { label: "Telefonat", description: "Anruf festhalten", icon: "ti ti-phone", onSelect: () => {} },
       { label: "Zuweisen", description: "Person und Rolle", icon: "ti ti-user-plus", next: { label: "Person suchen", items: people } },
+      ...(report ? [{ label: "Kunstbörse", onSelect: () => Promise.reject(new Error("Kunstbörse ist nicht erreichbar")) }] : []),
     ] }),
   ],
   composer,
@@ -205,6 +211,87 @@ describe("keyboard flow: /zuw ⏎ val ⏎", () => {
       const result = await flow(page);
       expect(result.assigned).toEqual([{ name: "Valentin Brandt", path: ["Zuweisen"], text: "Guten Tag, " }]);
       expect(result.focus).toEqual({ tag: "TEXTAREA", caret: "Guten Tag, ".length });
+    } finally {
+      release();
+      await page.close();
+    }
+  });
+});
+
+describe("command outcomes", () => {
+  const boxes = (page: Page) =>
+    page.evaluate(() => {
+      const composer = document.getElementById("composer")!.getBoundingClientRect();
+      const line = document.querySelector<HTMLElement>(".k2b-autocomplete__options[data-commands]")!;
+      const rect = line.getBoundingClientRect();
+      return {
+        composer: { left: composer.left, top: composer.top, width: composer.width },
+        line: {
+          left: rect.left,
+          width: rect.width,
+          bottom: rect.bottom,
+          outcome: line.dataset.outcome,
+          background: getComputedStyle(line).backgroundColor,
+        },
+        focus: document.activeElement?.tagName,
+      };
+    });
+
+  test("a confirmation stays docked in green, the composer stays put, and typing clears it only after 1.2 s", async () => {
+    const { page, release } = await load(undefined, "bottom", "#report");
+    try {
+      const text = page.getByRole("textbox", { name: "Nachricht" });
+      await text.click();
+      await settled(page);
+      const before = await page.evaluate(() => document.getElementById("composer")!.getBoundingClientRect().top);
+      await page.keyboard.type("Guten Tag, /zuw");
+      await page.keyboard.press("Enter");
+      await page.locator(".k2b-dropdown__search > input:focus").waitFor();
+      await page.keyboard.type("val");
+      await page.keyboard.press("Enter");
+      const line = page.locator(".k2b-command-outcome[data-state='success']");
+      await line.waitFor();
+      // settled: the docked container is measured, which the dock placed before the line faded in; the moment right
+      // after it showed is the subject, since typing on at once must not clear it.
+      const state = await boxes(page);
+      expect(await line.textContent()).toContain("Valentin Brandt zugewiesen");
+      expect(state.line.outcome).toBe("success");
+      expect(state.line.background).toBe("rgb(236, 253, 245)");
+      expect(state.line.left).toBe(state.composer.left);
+      expect(state.line.width).toBe(state.composer.width);
+      // Docked as the list was: its bottom edge 6 px above the composer, which has not moved.
+      expect(state.line.bottom).toBe(state.composer.top - 6);
+      expect(state.composer.top).toBe(before);
+      expect(state.focus).toBe("TEXTAREA");
+      await page.keyboard.type("D");
+      expect(await line.isVisible()).toBe(true);
+      // The exact least time is covered with a frozen clock in command-context.behavior.test.tsx.
+      await line.waitFor({ state: "detached" });
+      expect(await text.inputValue()).toBe("Guten Tag, D");
+      expect(await page.evaluate(() => document.activeElement?.tagName)).toBe("TEXTAREA");
+    } finally {
+      release();
+      await page.close();
+    }
+  });
+
+  test("a failed command turns red with Retry and stays; Escape clears it; reduced motion has no animation", async () => {
+    const { page, release } = await load(undefined, "bottom", "#report");
+    try {
+      await page.emulateMedia({ reducedMotion: "reduce" });
+      await page.getByRole("textbox", { name: "Nachricht" }).click();
+      await page.keyboard.type("/kunst");
+      await page.keyboard.press("Enter");
+      const line = page.locator(".k2b-command-outcome[data-state='error']");
+      await line.waitFor();
+      expect(await page.getByRole("alert").textContent()).toBe("Kunstbörse ist nicht erreichbar");
+      expect(await page.getByRole("button", { name: "Retry" }).isVisible()).toBe(true);
+      expect((await boxes(page)).line.background).toBe("rgb(254, 242, 242)");
+      expect(await line.evaluate((element) => getComputedStyle(element).animationName)).toBe("none");
+      expect(await page.evaluate(() => document.activeElement?.tagName)).toBe("TEXTAREA");
+      await page.keyboard.press("Escape");
+      await line.waitFor({ state: "detached" });
+      expect(await page.locator(".k2b-autocomplete__options[data-commands]").count()).toBe(0);
     } finally {
       release();
       await page.close();

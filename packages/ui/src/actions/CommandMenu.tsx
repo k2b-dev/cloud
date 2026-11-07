@@ -87,7 +87,8 @@ function CommandMenuRoot(props: CommandMenuProps): JSX.Element {
         if (!outcome) return shell.close(inside);
         focusInMenu = inside && !props.target;
         if (inside && props.target) props.target.focus({ preventScroll: true });
-        else if (focusInMenu) queueMicrotask(() => menu?.querySelector<HTMLElement>(".k2b-command-outcome")?.focus({ preventScroll: true }));
+        else if (focusInMenu)
+          queueMicrotask(() => menu?.querySelector<HTMLElement>(".k2b-command-outcome")?.focus({ preventScroll: true }));
       },
       onStep: () => setQuery(""),
     });
