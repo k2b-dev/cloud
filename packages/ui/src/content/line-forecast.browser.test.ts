@@ -1,13 +1,14 @@
-import { afterAll, beforeAll, expect, test } from "bun:test";
+import { afterAll, afterEach, beforeAll, expect, test } from "bun:test";
 import { resolve } from "node:path";
 import type { Browser, Page } from "playwright";
+import { createComponent } from "solid-js";
+import { renderToString } from "solid-js/web";
 import { launchBrowser, settled } from "../../test/browser";
 import { lineForecastFixture } from "../../test/line-forecast-fixture";
-import { line } from "../charts/core/svg";
-import { responsiveChartSvg } from "./chart-svg";
 
 let browser: Browser, bundle: string, css: string;
 const pages: Page[] = [];
+let ssr: string;
 beforeAll(async () => {
   const { transformAsync } = await import("@babel/core");
   const typescript = (await import("@babel/preset-typescript")).default;
@@ -39,8 +40,27 @@ beforeAll(async () => {
   bundle = await build.outputs[0]!.text();
   css = await Bun.file(resolve(import.meta.dir, "../../dist/styles.css")).text();
   browser = await launchBrowser();
-  pages.push(await open(1440, false, true));
+  const { default: ServerChart } = await import(resolve(import.meta.dir, "../../dist/ssr/content/Chart.js"));
+  const { LocaleProvider } = await import(resolve(import.meta.dir, "../../dist/ssr/intl/locale.js"));
+  ssr = renderToString(() =>
+    createComponent(LocaleProvider, {
+      locale: "de",
+      get children() {
+        return createComponent(ServerChart, {
+          kind: "line",
+          ...lineForecastFixture,
+          yAxis: {
+            format: (value: number) =>
+              new Intl.NumberFormat("de", { style: "currency", currency: "EUR", maximumFractionDigits: 0 }).format(value),
+          },
+        });
+      },
+    }),
+  );
 }, 30000);
+afterEach(async () => {
+  for (const page of pages.splice(0)) await page.close();
+});
 afterAll(async () => {
   for (const page of pages) await page.close();
   await browser?.close();
@@ -54,34 +74,30 @@ const open = async (width: number, dark = false, touch = false) => {
   await settled(page);
   return page;
 };
+const documentBox = (page: Page, selector: string) =>
+  page.locator(selector).evaluate((e) => {
+    const r = e.getBoundingClientRect();
+    return { x: r.x + scrollX, y: r.y + scrollY, width: r.width, height: r.height };
+  });
 const tooltip = (page: Page) => page.locator('[role="tooltip"]:popover-open');
 
 for (const width of [1440, 390])
   test(`line forecast at ${width}: SSR drawing, grouped hover, keyboard and fixed states`, async () => {
-    const page = pages[0]!;
+    const page = await open(width, false, true);
+    pages.push(page);
     await page.setViewportSize({ width, height: 1100 });
     await settled(page);
     const chart = page.locator('.line-forecast-frame [data-chart-kind="line"]');
-    const expected = responsiveChartSvg(
-      line({
-        ...lineForecastFixture,
-        legend: false,
-        width: 480,
-        height: 280,
-        inspect: true,
-        yAxis: {
-          format: (value) => new Intl.NumberFormat("de", { style: "currency", currency: "EUR", maximumFractionDigits: 0 }).format(value),
-        },
-      }),
-    );
+    const expected = ssr;
     expect(
       await chart.locator(".k2b-chart__svg > svg").evaluate((svg, expected) => {
         const host = document.createElement("div");
         host.innerHTML = expected;
-        return svg.outerHTML === host.firstElementChild?.outerHTML;
+        return svg.outerHTML === host.querySelector(".k2b-chart__svg > svg")?.outerHTML;
       }, expected),
     ).toBe(true);
-    const before = await page.locator(".line-forecast-panel").first().boundingBox();
+    const before = await documentBox(page, ".snapshot");
+    const viewportBefore = await documentBox(page, ".snapshot .k2b-chart-explorer__viewport");
     const plot = await chart.locator(".k2b-chart__svg").boundingBox();
     await page.mouse.move(plot!.x + plot!.width * 0.55, plot!.y + plot!.height * 0.3);
     await page.waitForFunction(() => document.querySelector('[role="tooltip"]:popover-open')?.textContent?.includes("Cash"));
@@ -103,10 +119,12 @@ for (const width of [1440, 390])
     await page.keyboard.press("Escape");
     expect(await tooltip(page).count()).toBe(0);
     for (const state of ["loading", "empty", "error", "stale", "data"]) {
-      await page.getByRole("button", { name: state, exact: true }).click();
+      await page.getByRole("button", { name: state, exact: true }).evaluate((button) => (button as HTMLButtonElement).click());
       await settled(page);
-      expect(await page.locator(".line-forecast-panel").first().boundingBox()).toEqual(before);
-      if (state === "error") await page.getByRole("button", { name: "Erneut versuchen" }).click();
+      expect(await documentBox(page, ".snapshot")).toEqual(before);
+      expect(await documentBox(page, ".snapshot .k2b-chart-explorer__viewport")).toEqual(viewportBefore);
+      if (state === "error")
+        await page.getByRole("button", { name: "Erneut versuchen" }).evaluate((button) => (button as HTMLButtonElement).click());
     }
     expect(await chart.locator(".k2b-line-forecast-band").count()).toBe(1);
     expect(await chart.locator(".k2b-line-negative-zone").count()).toBe(1);
@@ -115,7 +133,8 @@ for (const width of [1440, 390])
     expect(await chart.locator(".k2b-chart__legend").evaluate((e) => e.clientHeight)).toBeLessThanOrEqual(44);
   });
 test("line tap pins at a coordinate; dark and unscoped paths remain painted", async () => {
-  const page = pages[0]!;
+  const page = await open(390, true, true);
+  pages.push(page);
   await page.setViewportSize({ width: 390, height: 1100 });
   await page.evaluate(() => document.documentElement.classList.add("dark"));
   await settled(page);
@@ -128,6 +147,7 @@ test("line tap pins at a coordinate; dark and unscoped paths remain painted", as
   await chart.dispatchEvent("pointermove", { pointerType: "touch", clientX: plot!.x + 40, clientY: plot!.y + 70 });
   await chart.dispatchEvent("click", { pointerType: "touch", clientX: plot!.x + 40, clientY: plot!.y + 70 });
   expect(await tooltip(page).count()).toBe(0);
+  expect(await chart.evaluate((e) => getComputedStyle(e).colorScheme)).toBe("dark");
   await page.evaluate(() => document.body.classList.remove("k2b-ui"));
   await settled(page);
   const fills = await chart.locator(".stdlib-chart-line").evaluateAll((nodes) => nodes.map((e) => getComputedStyle(e).stroke));

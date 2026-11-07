@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test";
+import { CloudAiChartInputSchema } from "./default-tool-contracts";
 import { parseCloudAiChartToolView } from "./view-block";
 
 test("Chat accepts additive forecast options and preserves missing observations", () => {
@@ -27,7 +28,8 @@ test("Chat accepts additive forecast options and preserves missing observations"
     zero: true,
     step: "before",
   };
-  const parsed = parseCloudAiChartToolView(input);
+  const validated = CloudAiChartInputSchema.parse(input);
+  const parsed = parseCloudAiChartToolView(validated);
   expect(parsed?.view).toBe("chart");
   if (parsed?.view !== "chart" || parsed.kind !== "line") throw new Error("Expected line");
   expect(parsed.forecast?.band).toEqual([

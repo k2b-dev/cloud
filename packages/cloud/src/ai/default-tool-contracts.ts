@@ -110,6 +110,7 @@ const flatChartSchema = () => {
     ChartBins,
     ChartCommon,
     ChartLabel,
+    ChartCoordinate,
     ChartPoints,
     ChartSeries,
     ChartReferences,
@@ -145,7 +146,15 @@ const flatChartSchema = () => {
         "bar, pie, donut, barGauge: label/value (barGauge: min/max). boxplot: label/values. heatmap: x/y/value. histogram, sparkline: numbers.",
       ),
     series: z
-      .array(ChartSeries(ChartPoints.min(1)).extend({ style: z.enum(["solid", "dashed", "dotted"]).optional() }))
+      .array(
+        ChartSeries(ChartPoints.min(1)).extend({
+          data: z
+            .array(ChartPoints.element.extend({ y: z.number().nullable() }))
+            .min(1)
+            .max(CLOUD_AI_CHART_MAX_VALUES),
+          style: z.enum(["solid", "dashed", "dotted"]).optional(),
+        }),
+      )
       .min(1)
       .max(CLOUD_AI_CHART_MAX_SERIES)
       .optional()
@@ -159,6 +168,20 @@ const flatChartSchema = () => {
     colorByBar: z.boolean().optional().describe("bar: one palette color per bar."),
     showValues: z.boolean().optional().describe("bar: print values, by default when they stay readable. heatmap: print values."),
     area: z.boolean().optional().describe("line, sparkline: fill under the line."),
+    step: z.enum(["after", "before", "middle"]).optional().describe("line: hold each observation until the next, or change before it."),
+    zero: z.boolean().optional().describe("line: include zero and tint the negative plot region."),
+    forecast: z
+      .object({
+        from: ChartCoordinate,
+        band: z
+          .array(z.tuple([z.number(), z.number()]))
+          .max(CLOUD_AI_CHART_MAX_VALUES)
+          .optional(),
+      })
+      .optional()
+      .describe("line: dashed from this first-series X value; band [low, high] pairs match its sorted suffix, including gaps."),
+    threshold: z.object({ value: z.number(), label: ChartLabel }).optional().describe("line: labelled warning threshold."),
+    marker: z.object({ at: ChartCoordinate, label: ChartLabel }).optional().describe("line: labelled vertical marker, for example Today."),
     smooth: z.boolean().optional().describe("line: smooth curves."),
     showLabels: z.boolean().optional().describe("pie, donut: name slices next to them."),
     bins: ChartBins.optional(),

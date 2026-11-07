@@ -198,7 +198,7 @@ of points.
 | Kind | Data and options |
 | --- | --- |
 | `bar` | `data: [{label, value}]`; `xAxis: {label}` (category title), `yAxis`, `colorByBar`, `showValues`, `legend`, `references` |
-| `line`, `scatter` | `series: [{label?, data: [{x, y}], role?}]`; `xAxis`, `yAxis`, `legend`, `references`. Line also accepts `area`, `smooth` and series `style`. |
+| `line`, `scatter` | `series: [{label?, data: [{x, y}], role?}]`; `xAxis`, `yAxis`, `legend`, `references`. Line also accepts `area`, `smooth`, series `style`, `step: "after" | "before" | "middle"`, `zero`, `forecast: {from, band?: [low, high][]}`, `threshold: {value, label}` and `marker: {at, label}`. Forecast bounds match the first series from `from`, sorted by X, including null gaps; every low must be at most its high. |
 | `pie`, `donut` | `data: [{label, value}]`; `legend`, `showLabels`, `format` |
 | `histogram` | `data: number[]`; `bins` (count or ascending edges), `references` |
 | `gauge` | `value`; `min`, `max`, `label`, `unit`, `format`, `thresholds` |
