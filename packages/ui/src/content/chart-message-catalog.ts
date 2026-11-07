@@ -133,4 +133,3 @@ export const chartMessages = i18n.define({
     },
   },
 });
-
