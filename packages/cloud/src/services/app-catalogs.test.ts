@@ -65,3 +65,43 @@ test("catalog maintenance does no storage work across 60 lease-only rounds and o
     setSystemTime();
   }
 });
+
+test("a daily pass reconciles catalogs that a failed startup published without changing the registry", async () => {
+  const epoch = Date.UTC(2030, 0, 1);
+  setSystemTime(new Date(epoch));
+  const apps: AppRegistryEntry[] = [
+    { id: "inventory", name: "Inventory", icon: "box", description: "", baseUrl: "http://inventory:3000", routes: [] },
+  ];
+  let change: (() => Promise<void>) | undefined;
+  const cleanup = spyOn(store, "cleanupAppCatalogs").mockResolvedValue(null);
+  const list = spyOn(registry, "listApps").mockImplementation(async () => apps);
+  const watch = spyOn(registry, "watchAppRegistry").mockImplementation(async ({ signal, onChange }) => {
+    change = onChange;
+    await onChange();
+    await new Promise<void>((resolve) => {
+      if (signal.aborted) resolve();
+      else signal.addEventListener("abort", () => resolve(), { once: true });
+    });
+  });
+  const timer = spyOn(globalThis, "setTimeout");
+  const stop = startAppCatalogMaintenance();
+  try {
+    await change!();
+    expect(cleanup).toHaveBeenCalledTimes(1);
+    // Nothing is pending and the registry stays the same, yet an orphaned catalog may exist.
+    expect(timer).toHaveBeenLastCalledWith(expect.any(Function), APP_CATALOG_RETENTION_MS);
+    const daily = timer.mock.calls.at(-1)?.[0];
+    if (typeof daily !== "function") throw new Error("Missing daily reconciliation");
+    setSystemTime(new Date(epoch + APP_CATALOG_RETENTION_MS));
+    daily();
+    await change!();
+    expect(cleanup).toHaveBeenCalledTimes(2);
+  } finally {
+    await stop();
+    timer.mockRestore();
+    watch.mockRestore();
+    list.mockRestore();
+    cleanup.mockRestore();
+    setSystemTime();
+  }
+});

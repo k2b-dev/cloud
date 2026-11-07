@@ -380,7 +380,7 @@ add standalone Help page routes. Those are consumers of the registration, not
 additional declarations.
 
 Cloud writes the collection before advertising the app at startup. Successful
-publication is remembered by content hash; with Core 0.64 or later, unchanged
+publication is remembered by content hash; with Core 0.68 or later, unchanged
 heartbeats do not write the collection again. The publisher of the advertised
 hash checks that its collection still exists on its own heartbeat. Missing collections produce a
 warning and are republished; failed publications remain retryable through the

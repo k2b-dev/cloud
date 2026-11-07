@@ -37,7 +37,7 @@ bun --no-env-file scripts/scale-acceptance.ts
 
 ## Upgrade Help and Skill publication
 
-Core 0.64 introduces registry-based catalog retention. Upgrade Core first to
+Core 0.68 introduces registry-based catalog retention. Upgrade Core first to
 reduce catalog writes immediately. Third-party applications may also update
 `@k2b/cloud` before the operator upgrades Core: their publishers automatically
 keep the legacy once-per-minute timestamp renewals while the retention column
@@ -48,9 +48,17 @@ Each renewal checks for the new column. Once Core's schema upgrade adds it,
 the process automatically returns to publication at startup, on content
 changes, on replica takeover, and when repairing missing sources. Unchanged
 heartbeats then perform indexed existence reads without catalog writes; no
-application restart is needed to leave legacy mode. Core before 0.64 still
+application restart is needed to leave legacy mode. Core before 0.68 still
 uses timestamp expiry, so upgrade all Core replicas together before completing
 the rollout of the new retention behavior.
+
+Rolling Core back to a release before 0.68 keeps the added column, so updated
+publishers stay in registry mode while old Core expires catalogs by timestamp.
+Each publisher's heartbeat finds its missing source and publishes it again, so
+Help and Skills can be missing for up to one heartbeat at a time until Core is
+upgraded again. Core also reconciles all catalogs once a day, so a catalog that
+a failed startup published without registering is removed after its day of
+grace.
 
 New Core accepts the existing catalog tables and renewal statements from
 older applications, including published `@k2b/cloud 0.55.0`. Their

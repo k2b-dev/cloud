@@ -1,9 +1,12 @@
 import { listApps, watchAppRegistry } from "../_internal/registry";
-import { type AppCatalogTable, cleanupAppCatalogs } from "./app-catalog-store";
+import { APP_CATALOG_RETENTION_MS, type AppCatalogTable, cleanupAppCatalogs } from "./app-catalog-store";
 import { logger } from "./logging";
 import { superviseRuntimeTask } from "./runtime-lifecycle";
 
-/** Core owns catalog retention. Registry changes and pending removals are the only wake-ups. */
+/**
+ * Core owns catalog retention. Registry changes and pending removals wake it, and a daily pass reconciles catalogs that
+ * a failed startup published without ever changing the registry.
+ */
 export const startAppCatalogMaintenance = (tables?: readonly AppCatalogTable[]): (() => Promise<void>) => {
   const controller = new AbortController();
   const log = logger("app-catalogs");
@@ -28,8 +31,8 @@ export const startAppCatalogMaintenance = (tables?: readonly AppCatalogTable[]):
         clearTimeout(timer);
         next = tables ? await cleanupAppCatalogs(apps, undefined, undefined, tables) : await cleanupAppCatalogs(apps);
         state = current;
-        if (next !== null && !controller.signal.aborted) {
-          timer = setTimeout(() => void retry(), Math.max(1, next - Date.now()));
+        if (!controller.signal.aborted) {
+          timer = setTimeout(() => void retry(), next === null ? APP_CATALOG_RETENTION_MS : Math.max(1, next - Date.now()));
         }
       }
     })().finally(() => {
