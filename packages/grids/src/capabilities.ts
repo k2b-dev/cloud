@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { sql } from "@k2b/cloud";
 import {
   CAPABILITY_MAX_RESULT_BYTES,
   type CapabilityActionReview,
@@ -38,8 +39,10 @@ import {
   workflowPrincipalFor,
 } from "./api/permissions";
 import { isQueryAdmissionError } from "./api/query-admission";
+import { PublicRecordFinalizationReadinessSchema, toPublicRecordFinalizationReadiness } from "./api/record-finalization";
 import { toPublicWorkflowReceipt } from "./api/workflow-api-shared";
 import { PublicWorkflowInvocationReceiptSchema } from "./api/workflow-public-contracts";
+import { gridsEvents } from "./app-events";
 import {
   BaseCapabilityDataSchema,
   BaseListDataSchema,
@@ -66,22 +69,409 @@ import {
 } from "./capability-contracts";
 import { capabilityMessagesFor } from "./capability-messages";
 import { gridsCapabilityPresentation } from "./capability-presentation";
-import { type DslQueryPreviewResponse, ShortIdSchema } from "./contracts";
+import { DslQueryExecuteBodySchema, type DslQueryPreviewResponse, ShortIdSchema } from "./contracts";
 import { isRecordWritableFieldType } from "./field-types";
 import { ObjectListConfigSchema } from "./field-types/object-list";
+import {
+  AtomicRecordsDataSchema,
+  AtomicRecordsInputSchema,
+  CorrectionDraftInputSchema,
+  FinalizeRecordInputSchema,
+  IntegrityRecordDataSchema,
+  RecordTargetSchema,
+} from "./integrity-contracts";
+import { gridsActionReview } from "./integrity-review";
 import { queryCapabilityHref } from "./query-capability-link";
+import { parseGridsQueryDsl } from "./query-dsl/parser";
 import { gridsService } from "./service";
-import { withAuditRequest } from "./service/audit";
+import { withCapabilityAudit } from "./service/audit";
 import { MAX_DOCUMENT_ARTIFACT_BYTES } from "./service/document-artifact-drafts";
+import { persistDocumentData, resolveDocumentData } from "./service/document-data";
+import { documentIssuanceService } from "./service/document-issuance";
+import { DocumentQueryOutputSchema } from "./service/document-query-output";
+import { DocumentSourceVersionsInputSchema } from "./service/document-source-versions";
 import { decodeDocumentCursor } from "./service/document-values";
 import { toPublicGqlResponse } from "./service/gql-public-result";
+import { buildTrustedGqlResolverContext } from "./service/gql-resolver-context";
 import { projectPublicId, resolvePublicId, resolvePublicIds } from "./service/public-resources";
+import { bindQueryData, captureQueryData } from "./service/query-capture";
+import { inspect } from "./service/record-finalization";
+import {
+  changeRecordsAtomically,
+  createCorrectionDraft,
+  finalizeRecord,
+  type IntegrityContext,
+  integrityAttempt,
+} from "./service/record-integrity";
 import { buildRelationLabelCacheForIds } from "./service/relation-labels";
 import type { Base, Field, GridRecord, Table } from "./service/types";
 import { admitRecordLauncher, invokeRecordLauncher } from "./service/workflow-launcher-invocations";
 import { listLaunchersForBase } from "./service/workflow-launchers";
 import { getWorkflowRunByShortId } from "./service/workflow-runs";
 import { correctionDraftIntent } from "./workflows/contracts";
+
+export const DocumentCaptureDataSchema = z
+  .object({
+    id: ShortIdSchema.describe("Public immutable document capture ID."),
+    sha256: z
+      .string()
+      .regex(/^[a-f0-9]{64}$/)
+      .describe("Digest returned by document.capture."),
+    rowCount: z.number().int().nonnegative().max(10000).describe("Complete captured row count."),
+    capturedAt: z.iso.datetime().describe("Capture timestamp returned by document.capture."),
+  })
+  .strict();
+
+const text = (context: CapabilityExecutionContext, en: string, de: string) => (context.locale?.startsWith("de") ? de : en);
+const integrityContext = async (context: CapabilityExecutionContext): Promise<IntegrityContext> => ({
+  ...context,
+  dateConfig: {
+    timeZone: normalizeTimeZone(String((await settingsGet<string>("app.timezone")) || "").trim(), "UTC"),
+    locale: context.locale ?? "en",
+    firstDayOfWeek: 1,
+  },
+});
+const base = async (id: string, context: CapabilityExecutionContext, client = sql) => {
+  const [row] = await client<Array<{ id: string }>>`SELECT id::text FROM grids.bases WHERE short_id = ${id} AND deleted_at IS NULL`;
+  if (!row) throw err.notFound("Base");
+  const access = await gateBaseAtAccess(context, row.id, "write", client);
+  if (!access.ok) throw access.error;
+  return row.id;
+};
+const authorizer = (baseId: string, context: CapabilityExecutionContext) => async (ids: readonly string[], client: typeof sql) => {
+  context.signal.throwIfAborted();
+  const access = await gateBaseAtAccess(context, baseId, "write", client);
+  if (!access.ok) throw access.error;
+  for (const id of ids) {
+    const [table] = await client<
+      Array<{ id: string }>
+    >`SELECT t.id::text FROM grids.tables t JOIN grids.bases b ON b.id = t.base_id AND b.deleted_at IS NULL WHERE t.id = ${id}::uuid AND t.base_id = ${baseId}::uuid AND t.deleted_at IS NULL`;
+    if (!table)
+      throw err.forbidden(
+        text(context, "Document source is unavailable in this Base.", "Die Dokumentquelle ist in dieser Base nicht verfügbar."),
+      );
+  }
+};
+const captureInput = z
+  .object({
+    baseId: ShortIdSchema.describe("Writable Base public ID."),
+    query: DslQueryExecuteBodySchema.shape.query.describe(
+      "GQL query; captures its complete result, at most 10,000 rows within the document data budget.",
+    ),
+  })
+  .strict();
+const issueInput = z
+  .object({
+    baseId: ShortIdSchema.describe("Writable Base public ID."),
+    data: DocumentCaptureDataSchema.describe("Immutable capture from document.capture."),
+    output: DocumentQueryOutputSchema.describe("Versioned output definition: PDF, CSV, JSON, XML, ZIP, DATEV or SEPA."),
+    sourceVersions: DocumentSourceVersionsInputSchema.optional().describe(
+      "Current source Record versions; data uses the captured versions. Required for financial exports.",
+    ),
+    filename: z.string().trim().min(1).max(255).optional().describe("Optional output filename."),
+    tags: z.array(z.string().trim().min(1)).max(20).default([]).describe("Up to 20 document tags."),
+  })
+  .strict();
+const confirmationInput = z
+  .object({
+    baseId: ShortIdSchema.describe("Writable Base public ID."),
+    receiptId: ShortIdSchema.describe("Pending receipt from document.issue."),
+    sha256: z
+      .string()
+      .regex(/^[a-f0-9]{64}$/)
+      .describe("Exact confirmation digest from document.issue; changed data requires another confirmation."),
+  })
+  .strict();
+const issueData = z.discriminatedUnion("state", [
+  z.object({ state: z.literal("issued"), document: DocumentCapabilityDataSchema }).strict(),
+  z.object({ state: z.literal("confirmationRequired"), receiptId: ShortIdSchema, sha256: z.string() }).strict(),
+]);
+const reviewed = (context: CapabilityExecutionContext, en: string, de: string, input: unknown) =>
+  ok(gridsActionReview(context, text(context, en, de), input));
+const finalizeReview = (input: z.infer<typeof FinalizeRecordInputSchema>, context: CapabilityExecutionContext) =>
+  reviewed(
+    context,
+    "Close the current Record under its pinned finalization policy. Four-eyes approval remains required.",
+    "Den aktuellen Datensatz nach der festgehaltenen Abschlussregel abschließen. Die Vier-Augen-Freigabe bleibt erforderlich.",
+    input,
+  );
+const confirmationRequest = async (input: z.infer<typeof confirmationInput>, context: CapabilityExecutionContext) => {
+  const baseId = await base(input.baseId, context);
+  return {
+    baseId,
+    runId: null,
+    receiptId: input.receiptId,
+    actor: documentActor(context.actor),
+    locale: context.locale,
+    authorize: authorizer(baseId, context),
+  };
+};
+
+export const integrityCapabilities = defineCapabilities({
+  protocolVersion: 2,
+  queries: {
+    "record.finalization.read": {
+      title: "Read Record finalization readiness",
+      description: "Read current requirements, Four-eyes request and policy revision before closing or finalizing a Record.",
+      input: RecordTargetSchema,
+      data: PublicRecordFinalizationReadinessSchema,
+      openWorld: false,
+      run: (input, context) =>
+        integrityAttempt(async () => {
+          const tableId = await resolvePublicId("table", input.tableId);
+          const recordId = await resolvePublicId("record", input.recordId);
+          if (!tableId || !recordId) return fail(err.notFound("Record"));
+          const [table] = await sql<
+            Array<{ base_id: string }>
+          >`SELECT base_id::text FROM grids.tables WHERE id = ${tableId}::uuid AND deleted_at IS NULL`;
+          if (!table) return fail(err.notFound("Table"));
+          const allowed = await gateBaseAtAccess(context, table.base_id, "read");
+          if (!allowed.ok) return allowed;
+          const result = await inspect({ tableId, recordId, actorId: accessActorUser(context)?.id ?? null, locale: context.locale });
+          return result.ok ? ok({ data: await toPublicRecordFinalizationReadiness(result.data) }) : result;
+        }),
+    },
+  },
+  actions: {
+    "record.atomic": {
+      title: "Change Records atomically",
+      description:
+        "Create/update up to 50 Records in one Base transaction after current-state checks; at most 100 locked Records. Any failure rolls back every change. Requires ordinary Base write access.",
+      input: AtomicRecordsInputSchema,
+      data: AtomicRecordsDataSchema,
+      destructive: false,
+      openWorld: false,
+      idempotency: "required",
+      policy: { silent: "shared" },
+      review: (input, context) => reviewed(context, "Change these Records atomically", "Diese Datensätze atomar ändern", input),
+      run: (input, context) =>
+        withCapabilityAudit(context, async () => {
+          const result = await changeRecordsAtomically(input, await integrityContext(context));
+          return result.ok
+            ? ok({ data: result.data, refs: result.data.records.map((row) => ({ type: "grids.record", id: row.id })) })
+            : result;
+        }),
+    },
+    "record.close": {
+      title: "Close Record",
+      description:
+        "Finalize under Direct policy or create a Four-eyes request. Requires current Record version and finalization policy revision. Always asks.",
+      input: FinalizeRecordInputSchema,
+      data: IntegrityRecordDataSchema.extend({ state: z.enum(["requested", "finalized"]) }),
+      destructive: true,
+      openWorld: false,
+      idempotency: "required",
+      policy: { ask: "cannot_undo" },
+      review: finalizeReview,
+      run: (input, context) =>
+        withCapabilityAudit(context, async () => {
+          const result = await finalizeRecord(input, await integrityContext(context), true);
+          return result.ok ? ok({ data: result.data }) : result;
+        }),
+    },
+    "record.finalize": {
+      title: "Finalize Record",
+      description:
+        "Finalize one version-checked Record without changing the original Four-eyes rules. An independent eligible person must approve an existing request. Always asks.",
+      input: FinalizeRecordInputSchema,
+      data: IntegrityRecordDataSchema.extend({ state: z.enum(["requested", "finalized"]) }),
+      destructive: true,
+      openWorld: false,
+      idempotency: "required",
+      policy: { ask: "cannot_undo" },
+      review: finalizeReview,
+      run: (input, context) =>
+        withCapabilityAudit(context, async () => {
+          const result = await finalizeRecord(input, await integrityContext(context));
+          return result.ok ? ok({ data: result.data }) : result;
+        }),
+    },
+    "record.correction-draft": {
+      title: "Create correction draft",
+      description:
+        "Create an editable correction or cancellation draft linked to a finalized original; never changes or reissues the original. Requires Base write access and current original version.",
+      input: CorrectionDraftInputSchema,
+      data: IntegrityRecordDataSchema,
+      destructive: false,
+      openWorld: false,
+      idempotency: "required",
+      policy: { silent: "shared" },
+      review: (input, context) => reviewed(context, "Create this correction draft", "Diesen Korrekturentwurf erstellen", input),
+      run: (input, context) =>
+        withCapabilityAudit(context, async () => {
+          const result = await createCorrectionDraft(input, await integrityContext(context));
+          return result.ok ? ok({ data: result.data, refs: [{ type: "grids.record", id: result.data.id }] }) : result;
+        }),
+    },
+    "document.capture": {
+      title: "Capture document data",
+      description:
+        "Freeze a complete permission-checked GQL result in Grids, independent of any workflow. The immutable handle pins the values for document.issue. Truncated results are rejected.",
+      input: captureInput,
+      data: DocumentCaptureDataSchema,
+      destructive: false,
+      openWorld: false,
+      idempotency: "required",
+      policy: { silent: "shared" },
+      review: (input, context) => reviewed(context, "Capture these document data", "Diese Dokumentdaten festhalten", input),
+      run: (input, context) =>
+        withCapabilityAudit(context, () =>
+          integrityAttempt(async () => {
+            if (!context.idempotencyKey) return fail(err.badInput("Idempotency key required."));
+            const baseId = await base(input.baseId, context);
+            const dates = (await integrityContext(context)).dateConfig;
+            const parsed = parseGridsQueryDsl(input.query);
+            if (!parsed.ok) return fail(err.badInput("Invalid GQL."));
+            const resolver = await buildTrustedGqlResolverContext({ baseId, ast: parsed.ast, purpose: "workflow-query" });
+            const binding = bindQueryData(input.query, resolver, {}, context.locale);
+            if (!binding.ok) return binding;
+            const captured = await captureQueryData({
+              baseId,
+              binding: binding.data.binding,
+              values: {},
+              timeZone: dates.timeZone,
+              locale: context.locale,
+              signal: context.signal,
+              createTableAccess: async (client) => async (tableId) => {
+                await authorizer(baseId, context)([tableId], client);
+                return true;
+              },
+            });
+            if (!captured.ok) return captured;
+            const persisted = await persistDocumentData(
+              {
+                baseId,
+                capture: captured.data,
+                actor: documentActor(context.actor),
+                requestId: context.requestId,
+                operationKey: `capability:${context.idempotencyKey}`,
+              },
+              sql,
+            );
+            return persisted.ok
+              ? ok({
+                  data: {
+                    id: persisted.data.shortId,
+                    sha256: persisted.data.reference.sha256,
+                    rowCount: persisted.data.reference.rowCount,
+                    capturedAt: persisted.data.reference.capturedAt,
+                  },
+                })
+              : persisted;
+          }),
+        ),
+    },
+    "document.issue": {
+      title: "Issue captured document",
+      description:
+        "Issue an immutable PDF, CSV, JSON, XML or ZIP from frozen data. DATEV/SEPA reserve a versioned preview and require document.confirm before issuance. Financial exports require pinned source versions and retain duplicate-export claims. Always asks.",
+      input: issueInput,
+      data: issueData,
+      destructive: true,
+      openWorld: false,
+      idempotency: "required",
+      policy: { ask: "cannot_undo" },
+      review: (input, context) =>
+        reviewed(
+          context,
+          "Issue this document from the pinned capture. Financial exports require a separate exact preview confirmation.",
+          "Dieses Dokument aus der festgehaltenen Datenaufnahme ausgeben. Finanzexporte benötigen eine separate Bestätigung der genauen Vorschau.",
+          input,
+        ),
+      run: (input, context) =>
+        withCapabilityAudit(context, () =>
+          integrityAttempt<{ data: z.infer<typeof issueData>; refs?: Array<{ type: string; id: string }> }>(async () => {
+            if (!context.idempotencyKey) return fail(err.badInput("Idempotency key required."));
+            const baseId = await base(input.baseId, context);
+            if ((input.output.kind === "datev-csv" || input.output.kind === "sepa-xml") && !input.sourceVersions)
+              return fail(
+                err.badInput(text(context, "Financial exports require source versions.", "Finanzexporte benötigen Quellversionen.")),
+              );
+            const captured = await resolveDocumentData(baseId, input.data.id, input.data.sha256, context.locale, sql);
+            if (!captured.ok) return captured;
+            if (captured.data.reference.rowCount !== input.data.rowCount || captured.data.reference.capturedAt !== input.data.capturedAt)
+              return fail(err.conflict("Document capture changed."));
+            let output = input.output;
+            if (output.kind === "zip") {
+              const files = [];
+              for (const selection of output.files) {
+                const template = selection.template ? await resolvePublicId("documentTemplate", selection.template) : undefined;
+                if (selection.template && !template) return fail(err.notFound("Document template"));
+                files.push({ ...selection, ...(template ? { template } : {}) });
+              }
+              const include = [];
+              for (const id of output.include) {
+                const document = await resolvePublicId("document", id);
+                if (!document) return fail(err.notFound("Document"));
+                include.push(document);
+              }
+              output = { ...output, files, include };
+            }
+            const result = await documentIssuanceService.issueQueryDocument({
+              ...input,
+              output,
+              data: captured.data.reference,
+              baseId,
+              runId: null,
+              stepKey: `capability:${context.idempotencyKey}`,
+              actor: documentActor(context.actor),
+              filename: input.filename ?? null,
+              idempotencyKey: `capability:${context.idempotencyKey}`,
+              locale: context.locale,
+              authorize: authorizer(baseId, context),
+            });
+            if (!result.ok) return result;
+            if ("kind" in result.data)
+              return ok({ data: { state: "confirmationRequired" as const, receiptId: result.data.receiptId, sha256: result.data.sha256 } });
+            const [document] = await projectDocuments([result.data]);
+            return ok({
+              data: { state: "issued" as const, document: DocumentCapabilityDataSchema.parse(document) },
+              refs: [{ type: "grids.document", id: result.data.shortId }],
+            });
+          }),
+        ),
+    },
+    "document.confirm": {
+      title: "Confirm financial document",
+      description:
+        "Confirm the exact frozen DATEV/SEPA preview as its original actor after current permission and source-version checks. Completes issuance from that exact reserved request. Never submits a bank payment. Always asks.",
+      input: confirmationInput,
+      data: DocumentCapabilityDataSchema,
+      destructive: true,
+      openWorld: false,
+      idempotency: "required",
+      policy: { ask: "cannot_undo" },
+      review: (input, context) =>
+        integrityAttempt(async () => {
+          const preview = await documentIssuanceService.inspectQueryDocumentConfirmation(await confirmationRequest(input, context));
+          if (!preview.ok) return preview;
+          if (preview.data.sha256 !== input.sha256) return fail(err.conflict("Confirmation changed."));
+          return ok(
+            gridsActionReview(
+              context,
+              text(context, "Confirm this exact financial export", "Diesen genauen Finanzexport bestätigen"),
+              preview.data,
+            ),
+          );
+        }),
+      run: (input, context) =>
+        withCapabilityAudit(context, () =>
+          integrityAttempt(async () => {
+            const confirmed = await documentIssuanceService.confirmQueryDocument({
+              ...(await confirmationRequest(input, context)),
+              sha256: input.sha256,
+            });
+            if (!confirmed.ok) return confirmed;
+            const issued = await documentIssuanceService.completeQueryDocument(await confirmationRequest(input, context));
+            if (!issued.ok) return issued;
+            if ("kind" in issued.data) return fail(err.conflict("Confirmation required."));
+            const [document] = await projectDocuments([issued.data]);
+            return ok({ data: DocumentCapabilityDataSchema.parse(document), refs: [{ type: "grids.document", id: issued.data.shortId }] });
+          }),
+        ),
+    },
+  },
+});
 
 const readInput = z
   .object({ id: ShortIdSchema.describe("Public ID from the corresponding discovery result or resource reference.") })
@@ -374,6 +764,7 @@ export const dailyCapabilities = defineCapabilities({
   },
   actions: {
     "document.create": {
+      policy: { ask: "cannot_undo" },
       title: "Issue an immutable document",
       description:
         "Issue one document from document.templates and a Record. This may assign an irreversible invoice/document number. Review every issuance; reuse the capability idempotency key only for retries of the same request. No compliance guarantee or external delivery.",
@@ -385,16 +776,19 @@ export const dailyCapabilities = defineCapabilities({
       async review(input, context) {
         const loaded = await loadIssuance(input, context);
         if (!loaded.ok) return loaded;
-        return ok({
-          message: capabilityMessagesFor(context.locale).issueDocumentReview,
-          details: [
-            { label: capabilityMessagesFor(context.locale).template, value: loaded.data.template.name },
-            { label: capabilityMessagesFor(context.locale).record, value: input.recordId },
-          ],
-        });
+        return ok(
+          gridsActionReview(context, capabilityMessagesFor(context.locale).issueDocumentReview, {
+            input,
+            message: capabilityMessagesFor(context.locale).issueDocumentReview,
+            details: [
+              { label: capabilityMessagesFor(context.locale).template, value: loaded.data.template.name },
+              { label: capabilityMessagesFor(context.locale).record, value: input.recordId },
+            ],
+          }),
+        );
       },
       async run(input, context) {
-        return withAuditRequest(context.requestId, async () => {
+        return withCapabilityAudit(context, async () => {
           if (!context.idempotencyKey) return fail(err.badInput(capabilityMessagesFor(context.locale).idempotencyRequired));
           const loaded = await loadIssuance(input, context, true);
           if (!loaded.ok) return loaded;
@@ -412,6 +806,7 @@ export const dailyCapabilities = defineCapabilities({
       },
     },
     "workflow.record-action": {
+      policy: { ask: "app_asks" },
       title: "Run a record workflow action",
       description:
         "Create one linked correction/cancellation Draft through an action from workflow.record-actions at its exact revision. The original must be finalized and remains unchanged. No issuance or external delivery. Obtain explicit approval; no arbitrary workflow source or extra inputs. Follow the run ref for status.",
@@ -423,17 +818,20 @@ export const dailyCapabilities = defineCapabilities({
       async review(input, context) {
         const loaded = await loadRecordAction(input, context);
         if (!loaded.ok) return loaded;
-        return ok({
-          message: capabilityMessagesFor(context.locale).recordActionReview,
-          details: [
-            { label: capabilityMessagesFor(context.locale).action, value: loaded.data.launcher.name },
-            { label: capabilityMessagesFor(context.locale).record, value: input.recordId },
-            { label: capabilityMessagesFor(context.locale).revision, value: String(input.expectedRevision) },
-          ],
-        });
+        return ok(
+          gridsActionReview(context, capabilityMessagesFor(context.locale).recordActionReview, {
+            input,
+            message: capabilityMessagesFor(context.locale).recordActionReview,
+            details: [
+              { label: capabilityMessagesFor(context.locale).action, value: loaded.data.launcher.name },
+              { label: capabilityMessagesFor(context.locale).record, value: input.recordId },
+              { label: capabilityMessagesFor(context.locale).revision, value: String(input.expectedRevision) },
+            ],
+          }),
+        );
       },
       async run(input, context) {
-        return withAuditRequest(context.requestId, async () => {
+        return withCapabilityAudit(context, async () => {
           if (!context.idempotencyKey) return fail(err.badInput(capabilityMessagesFor(context.locale).idempotencyRequired));
           const loaded = await loadRecordAction(input, context);
           if (!loaded.ok) return loaded;
@@ -1327,7 +1725,7 @@ const resolveRecordValues = async (tableId: string, values: Record<string, unkno
 };
 
 const runRecordCreate = async (input: z.infer<typeof RecordCreateInputSchema>, context: CapabilityExecutionContext) => {
-  return withAuditRequest(context.requestId, async () => {
+  return withCapabilityAudit(context, async () => {
     const t = capabilityMessagesFor(context.locale);
     const access = accessContext(context);
     const table = await requireTable(input.tableId, access, "write", context.locale);
@@ -1345,7 +1743,7 @@ const runRecordCreate = async (input: z.infer<typeof RecordCreateInputSchema>, c
 };
 
 const runRecordExternalUpsert = async (input: z.infer<typeof RecordExternalUpsertInputSchema>, context: CapabilityExecutionContext) => {
-  return withAuditRequest(context.requestId, async () => {
+  return withCapabilityAudit(context, async () => {
     const t = capabilityMessagesFor(context.locale);
     if (!context.idempotencyKey) return fail(err.badInput(t.idempotencyRequired));
     const access = accessContext(context);
@@ -1418,7 +1816,7 @@ const runRecordExternalUpsert = async (input: z.infer<typeof RecordExternalUpser
 };
 
 const runRecordUpdate = async (input: z.infer<typeof RecordUpdateInputSchema>, context: CapabilityExecutionContext) => {
-  return withAuditRequest(context.requestId, async () => {
+  return withCapabilityAudit(context, async () => {
     const t = capabilityMessagesFor(context.locale);
     if (Object.keys(input.values).length === 0) return fail(err.badInput(t.valuesRequired));
     const access = accessContext(context);
@@ -1477,6 +1875,7 @@ const prepareViewCreate = async (input: z.infer<typeof ViewCreateInputSchema>, c
 
 export const gridsCapabilities = defineCapabilities({
   protocolVersion: 2,
+  events: gridsEvents,
   presentation: gridsCapabilityPresentation,
   types: {
     ...dailyCapabilities.types,
@@ -1510,6 +1909,7 @@ export const gridsCapabilities = defineCapabilities({
     },
   },
   queries: {
+    ...integrityCapabilities.queries,
     ...dailyCapabilities.queries,
     "base.search": {
       title: "Search Grids bases",
@@ -1601,8 +2001,10 @@ export const gridsCapabilities = defineCapabilities({
     },
   },
   actions: {
+    ...integrityCapabilities.actions,
     ...dailyCapabilities.actions,
     "view.create": {
+      policy: { ask: "app_asks" },
       title: "Save Grids query as View",
       description:
         "Save a reviewed GQL query as a new personal or shared View. Requires base admin access. Does not change tables or records. Never retry an uncertain result; inspect existing Views first.",
@@ -1611,24 +2013,26 @@ export const gridsCapabilities = defineCapabilities({
       openWorld: false,
       destructive: false,
       idempotency: "required",
-      approval: "rememberable",
       review: async (input, context) => {
         const prepared = await prepareViewCreate(input, context);
         if (!prepared.ok) return prepared;
         const t = capabilityMessagesFor(context.locale);
-        return ok({
-          message: t.saveViewReview({ name: input.name }),
-          // A personal View changes only the person's own list; a shared one shows to everyone in the Base and asks each time.
-          ...(input.shared ? {} : { approvalScope: `personal-views:${prepared.data.compiled.tableId}` }),
-          details: [
-            { label: t.viewVisibility, value: input.shared ? t.sharedView : t.personalView },
-            { label: "GQL", value: input.query.slice(0, 10000), display: "block" as const },
-            ...(input.query.length > 10000 ? [{ label: "GQL (2)", value: input.query.slice(10000), display: "block" as const }] : []),
-          ],
-        });
+        return ok(
+          gridsActionReview(context, t.saveViewReview({ name: input.name }), {
+            input,
+            message: t.saveViewReview({ name: input.name }),
+            // A personal View changes only the person's own list; a shared one shows to everyone in the Base and asks each time.
+            ...(input.shared ? {} : { approvalScope: `personal-views:${prepared.data.compiled.tableId}` }),
+            details: [
+              { label: t.viewVisibility, value: input.shared ? t.sharedView : t.personalView },
+              { label: "GQL", value: input.query.slice(0, 10000), display: "block" as const },
+              ...(input.query.length > 10000 ? [{ label: "GQL (2)", value: input.query.slice(10000), display: "block" as const }] : []),
+            ],
+          }),
+        );
       },
       run: async (input, context) => {
-        return withAuditRequest(context.requestId, async () => {
+        return withCapabilityAudit(context, async () => {
           const prepared = await prepareViewCreate(input, context);
           if (!prepared.ok) return prepared;
           const { compiled, user } = prepared.data;
@@ -1646,30 +2050,34 @@ export const gridsCapabilities = defineCapabilities({
       },
     },
     "record.create": {
+      policy: { silent: "shared" },
       title: "Create Grids Record",
       description:
-        "Call gql.context kind fields with includeWriteContext true first, then create once with values keyed by writable Field public ID. Select values use option IDs. Returns bounded metadata; read values with targeted GQL. Reuse the idempotency key only to retry the same create.",
+        "Create a single Grids Record. Call gql.context kind fields with includeWriteContext true first, then create once with values keyed by writable Field public ID. Select values use option IDs. Returns bounded metadata; read values with targeted GQL. Reuse the idempotency key only to retry the same create.",
       input: RecordCreateInputSchema,
       data: RecordCapabilityDataSchema,
       destructive: false,
       openWorld: false,
       idempotency: "required",
-      approval: "rememberable",
       async review(input, context) {
         const table = await requireTable(input.tableId, accessContext(context), "write", context.locale);
         if (!table.ok) return table;
         const values = await resolveRecordValues(table.data.id, input.values, context.locale);
         if (!values.ok) return values;
         const t = capabilityMessagesFor(context.locale);
-        return ok({
-          message: t.reviewCreateRecord({ table: table.data.name }),
-          approvalScope: `table:${input.tableId}`,
-          details: [{ label: t.table, value: table.data.name }, ...recordValuesReview(input.values, values.data.fields, context.locale)],
-        });
+        return ok(
+          gridsActionReview(context, t.reviewCreateRecord({ table: table.data.name }), {
+            input,
+            message: t.reviewCreateRecord({ table: table.data.name }),
+            approvalScope: `table:${input.tableId}`,
+            details: [{ label: t.table, value: table.data.name }, ...recordValuesReview(input.values, values.data.fields, context.locale)],
+          }),
+        );
       },
       run: runRecordCreate,
     },
     "record.upsert-external": {
+      policy: { silent: "shared" },
       title: "Upsert external Grids Record",
       description:
         "Load gql.context kind fields with includeWriteContext true. Retry-safely bind provider + providerAccount + resourceKind + externalId to one Record. " +
@@ -1679,7 +2087,6 @@ export const gridsCapabilities = defineCapabilities({
       destructive: false,
       openWorld: false,
       idempotency: "required",
-      approval: "rememberable",
       review: async (input, context) => {
         const t = capabilityMessagesFor(context.locale);
         const access = accessContext(context);
@@ -1687,23 +2094,27 @@ export const gridsCapabilities = defineCapabilities({
         if (!table.ok) return table;
         const values = await resolveRecordValues(table.data.id, input.values, context.locale);
         if (!values.ok) return values;
-        return ok({
-          message: t.reviewExternalRecord({ table: table.data.name }),
-          approvalScope: `table:${input.tableId}`,
-          details: [
-            { label: t.table, value: table.data.name },
-            { label: t.provider, value: input.externalRef.provider },
-            { label: t.providerAccount, value: input.externalRef.providerAccount },
-            { label: t.resourceKind, value: input.externalRef.resourceKind },
-            { label: t.externalId, value: input.externalRef.externalId },
-            ...(input.ifVersion === undefined ? [] : [{ label: t.expectedVersion, value: String(input.ifVersion) }]),
-            ...recordValuesReview(input.values, values.data.fields, context.locale, 14),
-          ],
-        });
+        return ok(
+          gridsActionReview(context, t.reviewExternalRecord({ table: table.data.name }), {
+            input,
+            message: t.reviewExternalRecord({ table: table.data.name }),
+            approvalScope: `table:${input.tableId}`,
+            details: [
+              { label: t.table, value: table.data.name },
+              { label: t.provider, value: input.externalRef.provider },
+              { label: t.providerAccount, value: input.externalRef.providerAccount },
+              { label: t.resourceKind, value: input.externalRef.resourceKind },
+              { label: t.externalId, value: input.externalRef.externalId },
+              ...(input.ifVersion === undefined ? [] : [{ label: t.expectedVersion, value: String(input.ifVersion) }]),
+              ...recordValuesReview(input.values, values.data.fields, context.locale, 14),
+            ],
+          }),
+        );
       },
       run: runRecordExternalUpsert,
     },
     "record.update": {
+      policy: { silent: "shared" },
       title: "Update Grids Record",
       description:
         "Load gql.context kind fields with includeWriteContext true for value and audit requirements, then record.read for ifVersion. Only supplied Field public IDs change; stale versions are rejected. Returns bounded metadata; read values with targeted GQL.",
@@ -1712,7 +2123,6 @@ export const gridsCapabilities = defineCapabilities({
       destructive: false,
       openWorld: false,
       idempotency: "none",
-      approval: "rememberable",
       review: async (input, context) => {
         const t = capabilityMessagesFor(context.locale);
         if (Object.keys(input.values).length === 0) return fail(err.badInput(t.valuesRequired));
@@ -1730,17 +2140,20 @@ export const gridsCapabilities = defineCapabilities({
         });
         if (!record) return fail(notFoundError(t.recordNotFound));
         const base = await gridsService.base.get(table.data.baseId);
-        return ok({
-          message: t.reviewUpdateRecord({ table: table.data.name }),
-          approvalScope: `table:${input.tableId}`,
-          details: [
-            { label: t.table, value: table.data.name },
-            { label: t.record, value: record.shortId },
-            { label: t.currentVersion, value: String(record.version) },
-            ...recordValuesReview(input.values, values.data.fields, context.locale),
-          ],
-          ...(base ? { links: [{ rel: "open" as const, href: recordHref(base, table.data, record.shortId) }] } : {}),
-        });
+        return ok(
+          gridsActionReview(context, t.reviewUpdateRecord({ table: table.data.name }), {
+            input,
+            message: t.reviewUpdateRecord({ table: table.data.name }),
+            approvalScope: `table:${input.tableId}`,
+            details: [
+              { label: t.table, value: table.data.name },
+              { label: t.record, value: record.shortId },
+              { label: t.currentVersion, value: String(record.version) },
+              ...recordValuesReview(input.values, values.data.fields, context.locale),
+            ],
+            ...(base ? { links: [{ rel: "open" as const, href: recordHref(base, table.data, record.shortId) }] } : {}),
+          }),
+        );
       },
       run: runRecordUpdate,
     },

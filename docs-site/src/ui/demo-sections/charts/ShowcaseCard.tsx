@@ -8,6 +8,8 @@ import { ShowcaseBlockPreview } from "./ShowcaseFrame";
 const DRAWING_WIDTH = 480;
 /** Height of a chart that stretches to any box, such as a line or columns. */
 const STRETCH_HEIGHT = 180;
+/** Height of one bar-gauge row in drawing units; the last row's anchor sits in its middle. */
+const BAR_GAUGE_ROW = 28;
 
 /**
  * How a card holds a drawing without clipping it: a stretching chart takes a calm fixed height; rows (bar lists,
@@ -15,12 +17,38 @@ const STRETCH_HEIGHT = 180;
  * keeps its proportions; a drawing wider than the card (calendar, sankey) keeps its size and scrolls sideways,
  * newest end first.
  */
-export const cardFit = (snapshot: ChartSnapshot): { mode: "stretch" | "rows" | "whole" | "wide"; style: JSX.CSSProperties } => {
+export const cardFit = (
+  snapshot: ChartSnapshot,
+  /** A two-column card keeps the drawing's own height, so guides and labels keep their room. */
+  span: 1 | 2 = 1,
+): { mode: "stretch" | "rows" | "whole" | "wide"; style: JSX.CSSProperties; drawing?: JSX.CSSProperties } => {
   if (snapshot.width > DRAWING_WIDTH) return { mode: "wide", style: { height: `${snapshot.height}px` } };
   if (!snapshot.stretch) return { mode: "whole", style: { "aspect-ratio": `${snapshot.width} / ${snapshot.height}` } };
+  // A bar gauge draws its rows at the top of a fixed minimum height; the card shows the rows at the same scale and
+  // leaves out the empty rest.
+  if (snapshot.kind === "barGauge") {
+    const bottom = Math.min(snapshot.height, Math.max(...snapshot.marks.map((mark) => mark.datum.anchor[1])) + BAR_GAUGE_ROW);
+    return {
+      mode: "rows",
+      style: { "aspect-ratio": `${snapshot.width} / ${bottom}`, overflow: "hidden" },
+      drawing: { height: "auto", "aspect-ratio": `${snapshot.width} / ${snapshot.height}` },
+    };
+  }
   if (/data-bar-layout="rows"/.test(snapshot.svg) || snapshot.height !== 280)
     return { mode: "rows", style: { height: `${snapshot.height}px` } };
-  return { mode: "stretch", style: { height: `${STRETCH_HEIGHT}px` } };
+  return { mode: "stretch", style: { height: `${span === 2 ? snapshot.height : STRETCH_HEIGHT}px` } };
+};
+
+/**
+ * Kinds whose labels and marks need more than one overview column: long row names on the left (state timeline),
+ * labels on both sides (sankey), or marks and guides that crowd a narrow plot (bubble). Their cards span two columns
+ * where the overview has them.
+ */
+const twoColumnKinds = new Set(["bubble", "sankey", "stateTimeline"]);
+export const cardSpan = (example: ChartShowcaseExample): 1 | 2 => {
+  const spec = example.spec;
+  const kind = spec !== null && typeof spec === "object" && !Array.isArray(spec) ? spec.kind : undefined;
+  return typeof kind === "string" && twoColumnKinds.has(kind) ? 2 : 1;
 };
 
 /** Slice names of a pie or donut description, in drawing order. */
@@ -38,7 +66,7 @@ export function ShowcaseCardChart(props: { example: ChartShowcaseExample; height
     <Switch>
       <Match when={drawing().mode === "snapshot" && (drawing() as Extract<ReturnType<typeof resolveDrawing>, { mode: "snapshot" }>)}>
         {(snapshot) => {
-          const fit = () => cardFit(snapshot().snapshot);
+          const fit = () => cardFit(snapshot().snapshot, cardSpan(props.example));
           let scroller: HTMLDivElement | undefined;
           // A wide drawing opens at its newest end, like the calendar in a frame.
           onMount(() => {
@@ -52,7 +80,7 @@ export function ShowcaseCardChart(props: { example: ChartShowcaseExample; height
               <div ref={scroller} class="ui-charts-card__chart" data-fit={fit().mode} style={fit().style}>
                 <div
                   class="ui-charts-card__drawing"
-                  style={fit().mode === "wide" ? { width: `${snapshot().snapshot.width}px` } : undefined}
+                  style={fit().mode === "wide" ? { width: `${snapshot().snapshot.width}px` } : fit().drawing}
                 >
                   <ChartSnapshotView snapshot={snapshot().snapshot} selectedKey={null} onSelect={() => {}} style={{ height: "100%" }} />
                 </div>

@@ -717,6 +717,13 @@
         "typescript": "catalog:",
       },
     },
+    "packages/speedtest": {
+      "name": "@k2b/speedtest",
+      "devDependencies": {
+        "@types/bun": "catalog:",
+        "typescript": "catalog:",
+      },
+    },
     "packages/ssr": {
       "name": "@k2b/ssr",
       "version": "0.20.1",
@@ -1294,6 +1301,8 @@
     "@k2b/pwa-auth": ["@k2b/pwa-auth@workspace:pwas/pwa-auth"],
 
     "@k2b/rsql": ["@k2b/rsql@1.0.0", "", {}, "sha512-PQe40kFEaAqTpqcRa/LzmexuVPaIXAsjaAdy5F46973FqV7AavS7sjbLF66VBF7vIyYF/uMCSbsrWGOilRic2g=="],
+
+    "@k2b/speedtest": ["@k2b/speedtest@workspace:packages/speedtest"],
 
     "@k2b/ssr": ["@k2b/ssr@workspace:packages/ssr"],
 

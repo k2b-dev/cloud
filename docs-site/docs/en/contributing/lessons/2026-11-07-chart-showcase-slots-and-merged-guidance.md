@@ -1,0 +1,6 @@
+### Chart showcase dashboards kept Sankey slots, and kind pages repeated options and keyboard notes
+
+- **What happened:** After the Sankey chart landed, both example dashboards still showed "Sankey comes here". The line page listed `forecast.from` next to `forecast` and three bullets about arrow keys; the bar page listed only two of its five layouts.
+- **Root cause:** The dashboards gave Sankey nodes tones the schema does not accept (`neutral`, `levy`), and the slot read every rejected value as an option of a later step. Kind pages merged the options and notes of every example by exact text, so details and rewordings of the same fact stayed; option types were typed by hand per example.
+- **Error class:** A fallback that hides invalid data behind a "not yet available" state; documentation assembled from several sources without one owner per fact.
+- **Guard:** `docs-site/src/ui/demo-sections/charts/examples/registry.test.ts` requires every dashboard panel to draw once an example with its kind, layout and options draws, and checks that a kind page lists each option once, reads enumerated values from the schema, keeps use and avoid at four bullets and describes the arrow keys once. The browser test checks that every dashboard panel keeps its title and controls on one row at 1440 and 390 px.

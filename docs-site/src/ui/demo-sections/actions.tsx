@@ -2,6 +2,8 @@ import {
   activeDrag,
   Button,
   ButtonLink,
+  type CommandItem,
+  CommandMenu,
   ContextMenu,
   CopyButton,
   Disclosure,
@@ -14,12 +16,14 @@ import {
   type GestureMenuItem,
   IconButton,
   IconButtonLink,
+  MarkdownEditor,
   MessageRow,
   openSpotlightSearch,
   Paper,
   RemoveButton,
   SegmentedControl,
   SelectionToolbar,
+  SlashCommands,
   SplitButton,
   SpotlightButton,
   type SpotlightSearchResolver,
@@ -193,6 +197,154 @@ const CopyRemoveDemo = () => {
         />
         <RemoveButton ariaLabel="Remove attachment" onClick={() => setStatus("Remove requested")} />
         <span aria-live="polite">{status()}</span>
+      </div>
+    </DemoCard>
+  );
+};
+
+const CommandMenuDemo = () => {
+  const [text, setText] = createSignal("");
+  const [textarea, setTextarea] = createSignal<HTMLTextAreaElement>();
+  const [kind, setKind] = createSignal("Message");
+  const [done, setDone] = createSignal<string[]>([]);
+  const note = (entry: string) => setDone((list) => [entry, ...list].slice(0, 3));
+  const people = ["Mara Brandt", "Jonas Öztürk", "Lea Krüger", "Tom Weiß"];
+  const tags = [
+    ["Urgent", "#dc2626"],
+    ["Waiting for reply", "#d97706"],
+    ["Pickup", "#2563eb"],
+  ];
+  const dot = (color: string) => () => (
+    <span style={{ display: "block", width: "0.625rem", height: "0.625rem", "border-radius": "999px", background: color }} />
+  );
+  const initials = (name: string) => () => (
+    <span
+      style={{
+        display: "grid",
+        width: "1.25rem",
+        height: "1.25rem",
+        "place-items": "center",
+        "border-radius": "999px",
+        background: "var(--k2b-surface-muted)",
+        "font-size": "0.625rem",
+        "font-weight": "600",
+      }}
+    >
+      {name
+        .split(" ")
+        .map((part) => part[0])
+        .join("")}
+    </span>
+  );
+  const commands: CommandItem[] = [
+    {
+      group: "Kind",
+      label: "Phone call",
+      hint: "/call",
+      icon: "ti ti-phone",
+      keywords: ["anruf", "telefonat"],
+      onSelect: () => setKind("Phone call"),
+    },
+    {
+      group: "Kind",
+      label: "Internal note",
+      hint: "/note",
+      icon: "ti ti-note",
+      keywords: ["notiz"],
+      onSelect: () => setKind("Internal note"),
+    },
+    {
+      group: "Kind",
+      label: "Confirm appointment",
+      hint: "/appointment",
+      icon: "ti ti-calendar-check",
+      disabled: "Only with an announcement",
+      onSelect: () => {},
+    },
+    {
+      group: "Snippets",
+      label: "Photos requested",
+      hint: "/photos",
+      icon: "ti ti-template",
+      text: "Could you send us a few photos of the piece?",
+    },
+    {
+      group: "Actions",
+      label: "Assign",
+      hint: "/assign",
+      icon: "ti ti-user-plus",
+      keywords: ["zuständig"],
+      next: {
+        label: "Search person",
+        items: people.map((name) => ({ label: name, leading: initials(name), onSelect: () => note(`Assigned ${name}`) })),
+      },
+    },
+    {
+      group: "Actions",
+      label: "Tag",
+      hint: "/tag",
+      icon: "ti ti-tag",
+      next: {
+        label: "Search tag",
+        items: tags.map(([label, color]) => ({ label, leading: dot(color), onSelect: () => note(`Tagged ${label}`) })),
+      },
+    },
+  ];
+  const insert = (snippet: string) => setText((current) => (current ? `${current.trimEnd()} ${snippet}` : snippet));
+  return (
+    <DemoCard
+      id="command-menu"
+      chip={[
+        { kind: "component", name: "CommandMenu", from: "@k2b/ui" },
+        { kind: "component", name: "MarkdownEditor", from: "@k2b/ui" },
+      ]}
+      description="One list of commands for three entry points: `/` in the text, the “+” button, and a chip. Groups, icons or a leading avatar or color, unavailable entries with their reason, snippets, and second lists such as people or tags. Type “anruf” or “zustaendig” to search by keyword without accents."
+      code={`const commands: CommandItem[] = [
+  { group: "Kind", label: "Phone call", hint: "/call", icon: "ti ti-phone", keywords: ["anruf"], onSelect: () => setKind("call") },
+  { group: "Kind", label: "Confirm appointment", icon: "ti ti-calendar-check", disabled: "Only with an announcement", onSelect: confirm },
+  { group: "Snippets", label: "Photos requested", icon: "ti ti-template", text: "Could you send us a few photos?" },
+  { group: "Actions", label: "Assign", icon: "ti ti-user-plus",
+    next: { label: "Search person", items: people.map((p) => ({ label: p.name, leading: () => <Avatar name={p.name} size="xs" />, onSelect: () => assign(p) })) } },
+];
+
+const [textarea, setTextarea] = createSignal<HTMLTextAreaElement>();
+<MarkdownEditor variant="embedded" noToolbar value={text()} onValueChange={setText} textareaRef={setTextarea} />
+<SlashCommands textarea={textarea()} items={commands} />
+
+<CommandMenu items={commands} label="Add to message" search="Search commands" onInsert={insert}>
+  <CommandMenu.Trigger iconOnly label="Add"><i class="ti ti-plus" aria-hidden="true" /></CommandMenu.Trigger>
+</CommandMenu>`}
+    >
+      <div style={{ display: "grid", gap: "0.5rem", "max-width": "36rem" }}>
+        <div style={{ border: "2px solid var(--k2b-border-strong)", "border-radius": "var(--k2b-radius-surface)", padding: "0.25rem" }}>
+          <MarkdownEditor
+            aria-label="Message"
+            variant="embedded"
+            noToolbar
+            showStats={false}
+            lines={3}
+            placeholder="Write a message, or type / for commands"
+            value={text()}
+            onValueChange={setText}
+            textareaRef={setTextarea}
+          />
+          <SlashCommands textarea={textarea()} items={commands} />
+          <div class="ui-demo-row" style={{ padding: "0 0.25rem 0.25rem" }}>
+            <CommandMenu items={commands} label="Add to message" search="Search commands" onInsert={insert}>
+              <CommandMenu.Trigger iconOnly label="Add">
+                <i class="ti ti-plus" aria-hidden="true" />
+              </CommandMenu.Trigger>
+            </CommandMenu>
+            <CommandMenu items={commands.filter((item) => item.group === "Kind")} label="Kind" search="Search kinds">
+              <CommandMenu.Trigger size="sm" variant="secondary">
+                {kind()} <i class="ti ti-chevron-down" aria-hidden="true" />
+              </CommandMenu.Trigger>
+            </CommandMenu>
+          </div>
+        </div>
+        <p class="text-xs text-dimmed" role="status">
+          {done().length ? done().join(" · ") : "Nothing assigned or tagged yet."}
+        </p>
       </div>
     </DemoCard>
   );
@@ -1000,6 +1152,11 @@ const demos: DemoSection = {
   menus: () => (
     <DemoGrid columns="one">
       <MenusDemo />
+    </DemoGrid>
+  ),
+  "command-menu": () => (
+    <DemoGrid columns="one">
+      <CommandMenuDemo />
     </DemoGrid>
   ),
   "drag-and-drop": () => (

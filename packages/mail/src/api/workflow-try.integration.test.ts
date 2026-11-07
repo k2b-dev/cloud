@@ -303,7 +303,7 @@ suite("Mail no-AI workflow dry run HTTP boundary", () => {
     expect((await call({ source: example }, "owner-read")).status).toBe(403);
     expect((await call({ source: example }, "reader")).status).toBe(403);
     expect((await call({ workflowId }, "assigned")).status).toBe(403);
-    expect((await call({ workflowId }, "outsider")).status).toBe(403);
+    expect((await call({ workflowId }, "outsider")).status).toBe(404);
     expect((await call({ workflowId: crypto.randomUUID() })).status).toBe(404);
   });
   test("returns validation diagnostics and refuses malformed or cross-source cursors", async () => {
