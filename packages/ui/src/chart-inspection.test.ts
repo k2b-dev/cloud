@@ -15,6 +15,7 @@ async function assertFrameworkFreeGraph(entry: string, extension: ".js" | ".d.ts
     for (const match of source.matchAll(/\b(?:from\s*|import\s*(?:\(\s*)?)["']([^"']+)["']/g)) {
       const specifier = match[1]!;
       expect(specifier === "solid-js" || specifier.startsWith("solid-js/"), `${file} imports ${specifier}`).toBe(false);
+      expect(specifier.includes("chart-message-catalog"), `${file} imports a UI message catalogue`).toBe(false);
       if (!specifier.startsWith(".")) continue;
       const base = resolve(dirname(file), specifier);
       const candidates = [base + extension, resolve(base, `index${extension}`), base];
@@ -48,6 +49,28 @@ describe("framework-free chart inspection entry", () => {
   });
 
   test("keeps the published JavaScript and declaration import graphs free of Solid", async () => {
+    const build = await Bun.build({
+      entrypoints: ["chart-inspection-budget"],
+      // Match the packed consumer's single public export without installing another dependency tree.
+      plugins: [
+        {
+          name: "chart-inspection-budget",
+          setup(builder) {
+            builder.onResolve({ filter: /^chart-inspection-budget$/ }, () => ({ path: "entry", namespace: "inspection-budget" }));
+            builder.onLoad({ filter: /.*/, namespace: "inspection-budget" }, () => ({
+              contents: `export { inspectChart } from ${JSON.stringify(resolve(packageRoot, "dist/browser/chart-inspection.js"))};`,
+              loader: "ts",
+            }));
+          },
+        },
+      ],
+      target: "browser",
+      external: ["solid-js", "solid-js/*"],
+      minify: true,
+    });
+    expect(build.success).toBe(true);
+    const output = await build.outputs[0]!.text();
+    expect(new TextEncoder().encode(output).byteLength).toBeLessThanOrEqual(15_200);
     await assertFrameworkFreeGraph(resolve(packageRoot, "dist/browser/chart-inspection.js"), ".js");
     await assertFrameworkFreeGraph(resolve(packageRoot, "dist/types/chart-inspection.d.ts"), ".d.ts");
   });

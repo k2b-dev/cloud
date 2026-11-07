@@ -101,3 +101,13 @@ test("single and isolated observations have a visible band and a top edge", () =
   }
   expect(areaLayout({ layout: "stacked", x: [1], series: [{ label: "A", data: [1] }] }, size).top).toBe(36);
 });
+
+test("pure SVG carries the localized total label for every inspection host", () => {
+  for (const [locale, label] of [
+    ["de-DE", "Zusammen"],
+    ["en", "Total"],
+    ["fr", "Total"],
+  ]) {
+    expect(renderAreaSvg({ ...spec, ...size, inspect: true, locale })).toContain(`data-chart-total-label="${label}"`);
+  }
+});

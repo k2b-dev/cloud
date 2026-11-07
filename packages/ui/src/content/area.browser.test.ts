@@ -81,7 +81,7 @@ const documentBox = (page: Page, selector: string) =>
   });
 const tooltip = (page: Page) => page.locator('[role="tooltip"]:popover-open');
 
-for (const width of [1440, 390])
+for (const width of [1440, 390]) {
   test(`area at ${width}: SSR drawing, grouped hover, keyboard and fixed states`, async () => {
     const page = await open(width, false, true);
     pages.push(page);
@@ -137,6 +137,11 @@ for (const width of [1440, 390])
           .getByRole("button", { name: "Erneut versuchen" })
           .evaluate((button) => (button as HTMLButtonElement).click());
     }
+  });
+  test(`area at ${width}: portable paint, bounded legends and selection`, async () => {
+    const page = await open(width, false, true);
+    pages.push(page);
+    const chart = page.locator('.area-frame [data-chart-kind="area"]');
     expect(
       await chart
         .locator(".k2b-area-layer")
@@ -184,6 +189,7 @@ for (const width of [1440, 390])
     ).toBe("1");
     await page.keyboard.press("Escape");
   });
+}
 test("area tap pins at a category; dark and unscoped paths remain painted", async () => {
   const page = await open(390, true, true);
   pages.push(page);

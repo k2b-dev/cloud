@@ -1,9 +1,8 @@
-import { type ChartDatum, type ChartKind, chartDatumRoles } from "../charts/core";
+import { type ChartDatum, type ChartKind, chartDatumRoles } from "../charts/core/types";
 import { positionTooltipSurface } from "../feedback/tooltip-position";
 import type { ChartCursor, ChartCursorState } from "./chart-cursor";
-import { chartMessages } from "./chart-message-catalog";
 
-export type { ChartKind } from "../charts/core";
+export type { ChartKind } from "../charts/core/types";
 
 export type ChartDatumRef = Pick<ChartDatum, "role" | "index" | "seriesIndex">;
 export const sameChartDatum = (a: ChartDatumRef, b: ChartDatumRef) =>
@@ -296,11 +295,12 @@ export function createChartInspector(options: {
     }
     if (options.kind() === "area") {
       const total = entry.datum.values.find((field) => field.key === "total");
-      if (total) {
+      const totalLabel = container.querySelector("svg[data-chart-total-label]")?.getAttribute("data-chart-total-label");
+      if (total && totalLabel) {
         const line = document.createElement("span");
         line.className = "k2b-chart__tooltip-row";
         const label = document.createElement("span");
-        label.textContent = `${chartMessages.resolve([options.locale?.() ?? "en"]).t.chartFields({ key: "areaTotal" })}: `;
+        label.textContent = `${totalLabel}: `;
         const value = document.createElement("b");
         value.textContent = total.formatted ?? String(total.value);
         line.append(label, value);

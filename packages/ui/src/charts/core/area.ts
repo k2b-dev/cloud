@@ -1,4 +1,5 @@
 import { chartDatumSvg, escapeXml, niceStep } from "@k2b/stdlib";
+import { chartMessages } from "../../content/chart-message-catalog";
 
 export type AreaOptions = {
   layout: "stacked";
@@ -209,5 +210,6 @@ export function renderAreaSvg(spec: AreaOptions & { width: number; height: numbe
       ),
     );
   });
-  return `<svg xmlns="http://www.w3.org/2000/svg" class="stdlib-chart k2b-area ${escapeXml(spec.className ?? "")}" width="${spec.width}" height="${spec.height}" viewBox="0 0 ${spec.width} ${spec.height}" aria-hidden="true" focusable="false">${parts.join("")}</svg>`;
+  const totalLabel = chartMessages.resolve([spec.locale ?? "en"]).t.chartFields({ key: "areaTotal" });
+  return `<svg data-chart-total-label="${escapeXml(totalLabel)}" xmlns="http://www.w3.org/2000/svg" class="stdlib-chart k2b-area ${escapeXml(spec.className ?? "")}" width="${spec.width}" height="${spec.height}" viewBox="0 0 ${spec.width} ${spec.height}" aria-hidden="true" focusable="false">${parts.join("")}</svg>`;
 }
