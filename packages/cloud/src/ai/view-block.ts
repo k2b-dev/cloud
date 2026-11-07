@@ -259,43 +259,7 @@ export type CloudExplorerDescription = BlockOf<CloudAiExplorerView>;
 export type CloudBlockDescription = BlockOf<Exclude<CloudAiView, CloudAiChartView | CloudAiStatsView>> | CloudStatsDescription;
 export type CloudViewDescription = import("@k2b/ui/charts").ChartInput | CloudBlockDescription;
 
-/** Saved view envelopes remain compatible; hosts draw their contents through the portable node. */
-export function cloudAiViewDescription<V extends CloudAiView>(
-  view: V,
-): V extends CloudAiChartView ? import("@k2b/ui/charts").ChartInput : V extends CloudAiStatsView ? CloudStatsDescription : BlockOf<V>;
-export function cloudAiViewDescription(view: CloudAiView): CloudViewDescription {
-  if (view.view === "chart") {
-    const { view: _view, ...chart } = view;
-    return chart;
-  }
-  if (view.view === "stats") {
-    const { view: block, items, ...data } = view;
-    return {
-      block,
-      ...data,
-      items: items.map(({ delta, better, ...item }) => ({
-        ...item,
-        ...(delta === undefined
-          ? {}
-          : { delta: typeof delta === "number" ? { value: delta, unit: "absolute", better, format: item.format } : delta }),
-      })),
-    };
-  }
-  if (view.view === "table") {
-    const { view: block, ...data } = view;
-    return { block, ...data };
-  }
-  if (view.view === "details") {
-    const { view: block, ...data } = view;
-    return { block, ...data };
-  }
-  if (view.view === "group") {
-    const { view: block, ...data } = view;
-    return { block, ...data };
-  }
-  const { view: block, ...data } = view;
-  return { block, ...data };
-}
+export { cloudAiViewDescription } from "./view-description";
 
 const explorerViewSchema = () => {
   const common = { id: z.string().trim().min(1).max(40), label: z.string().trim().min(1).max(80), x: z.string() };

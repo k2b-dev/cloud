@@ -3,11 +3,11 @@ import {
   type CloudAiView,
   type CloudAiViewSummary,
   type CloudViewDescription,
-  cloudAiViewDescription,
   cloudAiViewSummary,
   isAiViewFile,
   parseCloudAiView,
 } from "../view-block";
+import { cloudAiViewDescription } from "../view-description";
 
 /** Loads a view file with the viewer's access and validates it again: a file is untrusted whoever wrote it. */
 export async function loadView(
