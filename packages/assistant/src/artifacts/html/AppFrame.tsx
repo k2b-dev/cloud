@@ -82,6 +82,7 @@ export function AppFrame(props: {
       prelude: props.assets.prelude,
       preludeHash: props.assets.preludeHash,
       baseCss: props.assets.baseCss,
+      chartModule: props.assets.chartModule,
       context: props.context,
       title: props.title,
       hash: props.hash,

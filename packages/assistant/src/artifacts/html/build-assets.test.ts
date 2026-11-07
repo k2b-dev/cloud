@@ -1,16 +1,26 @@
 import { expect, test } from "bun:test";
 import { appFrameAssets, checkFrameAssets } from "./assets";
-import { buildCheckPrelude, buildPrelude } from "./build-assets";
+import { buildChartModule, buildCheckPrelude, buildPrelude } from "./build-assets";
 
 test("normal mounts omit app checks and stay within the prelude budget", async () => {
   const [normal, check] = await Promise.all([buildPrelude(), buildCheckPrelude()]);
-  // Slice 3 measured 248 KB. cloud.chart() drawing through the chat's chart mapping, with four more chart kinds and
-  // its app contract, brought normal mounts to 279 KB: allow 10% growth over that, not the 851 KB app-check bundle.
-  // Area plus calendar renderer/schema: measured 328,198 B; offline synchronous drawing keeps a 328.5 KB ceiling.
-  expect(Buffer.byteLength(normal)).toBeLessThan(328_500);
-  for (const feature of ["k2b-line-forecast-band", "k2b-line-negative-zone", "k2b-line-threshold", "k2b-line-marker"])
-    expect(normal).toContain(feature);
-  expect(normal).toContain("k2b-area-layer");
+  // Rare renderers belong to the separate offline module, never to every app's prelude.
+  // Previous main budget was 319,900 B; keep the common frame below it without per-kind raises.
+  expect(Buffer.byteLength(normal)).toBeLessThan(319_900);
+  expect(normal).not.toContain("k2b-area-layer");
+  const rare = await buildChartModule();
+  expect(rare).toContain("k2b-area-layer");
+  expect(normal).not.toContain("k2b-line-forecast");
+  expect(normal).not.toContain("k2b-line-negative-zone");
+  expect(normal).not.toContain("k2b-line-threshold");
+  expect(rare).toContain("k2b-line-forecast-band");
+  // This source travels in every srcdoc too; the same 53 KB ceiling applies to added kinds.
+  expect(Buffer.byteLength(rare)).toBeLessThan(53_000);
+  expect(normal).not.toContain("data-calendar-weekdays");
+  expect(rare).toContain("data-calendar-weekdays");
+  // The blob must be self-contained: no module can fetch a dependency on first use.
+  expect(rare).not.toMatch(/\bimport\s*(?:\(|["'{*])/);
+  console.info(`App prelude: ${Buffer.byteLength(normal)} B; offline chart module: ${Buffer.byteLength(rare)} B`);
   // The frame imports `@k2b/cloud/ai/app-frame`: the `ai/browser` barrel kept its skill parser and YAML (34 KB).
   expect(normal).not.toContain("tag:yaml.org,2002:");
   expect(normal).not.toMatch(/axe\.run|axe-core|axeVersion/);
@@ -30,4 +40,6 @@ test("check assets pin their own prelude and share the normal base stylesheet", 
   expect(check.prelude).toContain("axe-core");
   expect(normal.prelude).not.toContain("axe-core");
   expect(check.baseCss).toBe(normal.baseCss);
+  expect(check.chartModule).toBe(normal.chartModule);
+  expect(normal.chartModule).toContain("k2b-area-layer");
 }, 30000);

@@ -328,6 +328,33 @@ test("dashboard entries, section icons and tables follow the shared frame: plain
   }
 }, 30_000);
 
+test("a table panel searches and sorts its rows in the head, and an empty search offers the way back", async () => {
+  const { tab } = await open({ width: 1440 });
+  try {
+    await ready(tab);
+    const panel = tab.locator('[data-panel="hosts"]');
+    const search = panel.getByRole("searchbox", { name: "Hosts jetzt durchsuchen" });
+    await search.fill("db");
+    expect(await panel.locator("tbody tr.k2b-data-table__row").count()).toBe(1);
+    await search.fill("zebra");
+    expect(await panel.locator("td.k2b-data-table__no-match").textContent()).toContain("Keine Zeile passt zu „zebra“.");
+    await panel.locator("td.k2b-data-table__no-match").getByRole("button", { name: "Suche löschen", exact: true }).click();
+    expect(await panel.locator("tbody tr.k2b-data-table__row").count()).toBe(2);
+    expect(await search.evaluate((input) => input === document.activeElement)).toBe(true);
+    // Numbers sort by value and read right-aligned in the reader's language.
+    const cpu = panel.getByRole("button", { name: "CPU", exact: true });
+    await cpu.click();
+    // The workspace clock is paused, so wait for the sorted head itself rather than for the page to settle.
+    await cpu.locator("xpath=ancestor::th[@aria-sort='descending']").waitFor();
+    expect(
+      await panel
+        .locator("tbody tr.k2b-data-table__row td:nth-child(2)")
+        .evaluateAll((cells) => cells.map((cell) => getComputedStyle(cell).textAlign)),
+    ).toEqual(["right", "right"]);
+  } finally {
+    await tab.close();
+  }
+}, 30_000);
 test("key figures sit in their section, two thirds take four of six columns and every panel and tile is framed", async () => {
   for (const width of [1440, 820, 390]) {
     const { tab } = await open({ dashboard: dashboardTestSectioned, width });

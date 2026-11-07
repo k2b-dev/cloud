@@ -303,7 +303,7 @@ function ComponentBlock(props: Omit<ShowcaseFrameProps, "spec"> & { block: strin
 type TableRow = { key: string; cells: JsonObject };
 
 /** Column fields a typed table (@k2b/ui with `filterRows`) reads; older builds ignore them and get formatted text. */
-const typedColumnKeys = ["type", "format", "states", "max", "priority"] as const;
+const typedColumnKeys = ["type", "format", "states", "max", "priority", "delta", "timeZone"] as const;
 const typedTables = () => typeof Reflect.get(ui, "filterRows") === "function";
 
 /** A cell as text: a number in the column's format, a status by its label, a missing value as a dash. */
@@ -326,12 +326,11 @@ const tableColumnsOf = (columns: JsonObject[], typed: boolean): DataTableColumn<
         return cellText(column, value);
       },
       sortable: true,
-      align: column.type === "number" || column.type === "amount" || column.type === "flow" ? "right" : "left",
+      align: ["number", "amount", "bar", "flow", "delta"].includes(text(column.type)) ? "right" : "left",
     };
     if (!typed) return base;
-    const typedFields = Object.fromEntries(typedColumnKeys.filter((key) => key in column).map((key) => [key, column[key]]));
-    // Money with a direction is an amount to the table; the cell draws its direction with FlowAmount.
-    return Object.assign(base, typedFields, column.type === "flow" ? { type: "amount" } : {});
+    // The table draws every type itself, money with its direction (flow) included.
+    return Object.assign(base, Object.fromEntries(typedColumnKeys.filter((key) => key in column).map((key) => [key, column[key]])));
   });
 
 /**
@@ -461,16 +460,6 @@ function TableBlock(props: ShowcaseFrameProps & { spec: JsonObject }): JSX.Eleme
               sort={sort()}
               onSortChange={setSort}
               columns={tableColumns()}
-              renderCell={({ col, value, render }) => {
-                const column = columns().find((entry) => text(entry.id) === col.id);
-                const format = column && object(column.format) ? column.format : undefined;
-                const flow = column?.type === "flow" ? blockComponent("flow") : undefined;
-                return flow && typeof value === "number" && typeof format?.currency === "string" ? (
-                  <Dynamic component={flow} value={value} currency={format.currency} />
-                ) : (
-                  render(value)
-                );
-              }}
               {...grouping()}
             />
           </div>

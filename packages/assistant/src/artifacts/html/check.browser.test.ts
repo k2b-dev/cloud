@@ -3,7 +3,7 @@ import type { Browser } from "playwright";
 import { browserName, launchBrowser } from "../../../../ui/test/browser";
 import { type ArtifactSource, LIMITS } from "../contracts";
 import type { AppFrameAssets } from "./assets";
-import { buildBaseCss, buildCheckPrelude } from "./build-assets";
+import { buildBaseCss, buildChartModule, buildCheckPrelude } from "./build-assets";
 import { runHtmlCheck } from "./check";
 import { CHECK_LIMITS, type CheckStep, checkHash, readCheckSteps } from "./check-contracts";
 
@@ -11,14 +11,15 @@ let browser: Browser, runtime: string, assets: AppFrameAssets;
 const scopes = new Map<string, Map<string, string>>();
 let seq = 0;
 beforeAll(async () => {
-  const [prelude, baseCss, built] = await Promise.all([
+  const [prelude, baseCss, chartModule, built] = await Promise.all([
     buildCheckPrelude(),
     buildBaseCss(),
+    buildChartModule(),
     Bun.build({ entrypoints: [new URL("./check-host.ts", import.meta.url).pathname], target: "browser", format: "iife" }),
   ]);
   if (!built.success) throw new AggregateError(built.logs, "check harness build failed");
   runtime = await built.outputs[0]!.text();
-  assets = { prelude, preludeHash: `'sha256-${new Bun.CryptoHasher("sha256").update(prelude).digest("base64")}'`, baseCss };
+  assets = { prelude, preludeHash: `'sha256-${new Bun.CryptoHasher("sha256").update(prelude).digest("base64")}'`, baseCss, chartModule };
   browser = await launchBrowser(
     browserName === "chromium" ? { args: ["--site-per-process", "--enable-features=IsolateSandboxedIframes:grouping/per-document"] } : {},
   );

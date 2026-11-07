@@ -4,7 +4,7 @@ import { resolve } from "node:path";
 import multiSeriesSvg from "../../test/charts/legacy-line-multi-series.json";
 import legacySvg from "../../test/charts/legacy-svg.json";
 import { lineCompatibilitySpecs } from "../../test/charts/line-compatibility-specs";
-import { chartRenderHeight, charts, layout, prepareChartSnapshot, renderChartSvg, toSvg } from "./core";
+import { chartRenderHeight, charts, layout, lineBase, prepareChartSnapshot, renderChartSvg, toSvg } from "./core";
 import { chartParity, chartParityMarkdown } from "./parity";
 
 const root = resolve(import.meta.dir, "../../../..");
@@ -65,6 +65,7 @@ test("legacy three- and five-series legends and drawings stay byte-identical to 
   for (const [index, spec] of lineCompatibilitySpecs.entries()) {
     const expected = multiSeriesSvg[index]!;
     expect(charts.line(spec)).toBe(expected.raw);
+    expect(lineBase(spec)).toBe(expected.raw);
     expect(renderChartSvg({ kind: "line", ...spec }, 480, 280)).toBe(expected.ui);
     expect(charts.line(spec)).not.toContain("data-chart-legend-value");
   }

@@ -16,6 +16,7 @@
 import type { IntentTone } from "../../semantics";
 import { WORLD_LAND_PATH, WORLD_MAP_HEIGHT, WORLD_MAP_WIDTH } from "./chart-map-data";
 import { coreChartMessages } from "./chart-messages";
+import { lineBase } from "./line-base";
 import { lineDetailsEnabled, lineForecastLayout } from "./line-options";
 import type { ChartDatum } from "./types";
 
@@ -144,7 +145,7 @@ export const chartDatumSvg = (svg: string, datum: ChartDatum, inspect?: boolean)
   return `<g data-chart-role="${escapeXml(datum.role)}" data-chart-datum="${escapeXml(JSON.stringify(datum))}"><title>${escapeXml(title)}</title>${svg}</g>`;
 };
 
-const inspectionPoint = (datum: ChartDatum, inspect?: boolean): string =>
+export const inspectionPoint = (datum: ChartDatum, inspect?: boolean): string =>
   inspect
     ? chartDatumSvg(
         `<circle class="stdlib-chart-inspection-point" cx="${fmt(datum.anchor[0])}" cy="${fmt(datum.anchor[1])}" r="3" fill="transparent" stroke="none"/>`,
@@ -153,7 +154,7 @@ const inspectionPoint = (datum: ChartDatum, inspect?: boolean): string =>
       )
     : "";
 
-const pointValues = (p: Point, xAxis?: AxisOptions, yAxis?: AxisOptions): ChartDatum["values"] => [
+export const pointValues = (p: Point, xAxis?: AxisOptions, yAxis?: AxisOptions): ChartDatum["values"] => [
   { key: "x", value: p.x, formatted: xAxis?.format?.(p.x) },
   { key: "y", value: p.y, formatted: yAxis?.format?.(p.y) },
   ...Object.entries(p)
@@ -226,17 +227,17 @@ export const referenceLineAttributes = (ref: ReferenceLine, label = false): stri
 // CONSTANTS
 // ==========================
 
-const DEFAULT_WIDTH = 400;
-const DEFAULT_HEIGHT = 240;
+export const DEFAULT_WIDTH = 400;
+export const DEFAULT_HEIGHT = 240;
 const DEFAULT_PADDING: Padding = { top: 16, right: 16, bottom: 32, left: 40 };
 const DEFAULT_TICKS = 5;
 
 const DEFAULT_MARKERS: readonly MarkerShape[] = ["circle", "square", "triangle", "diamond", "plus", "cross"];
 
-const DEFAULT_LINE_STYLES: readonly LineStyle[] = ["solid", "dashed", "dotted", "dashdot"];
+export const DEFAULT_LINE_STYLES: readonly LineStyle[] = ["solid", "dashed", "dotted", "dashdot"];
 
 /** SVG `stroke-dasharray` values per line style. Empty string = no dasharray. */
-const LINE_DASH_PATTERNS: Record<LineStyle, string> = {
+export const LINE_DASH_PATTERNS: Record<LineStyle, string> = {
   solid: "",
   dashed: "6 4",
   dotted: "2 3",
@@ -611,7 +612,7 @@ export const autoBin = (values: readonly number[], bins?: number | readonly numb
 
 export type PlotArea = { x0: number; y0: number; x1: number; y1: number };
 
-const computePlotArea = (
+export const computePlotArea = (
   width: number,
   height: number,
   padding: Padding,
@@ -657,7 +658,7 @@ export const renderHeader = (width: number, title: string | undefined, subtitle:
  * area. Out-of-domain values are silently skipped. Honors per-axis scale
  * (linear or log).
  */
-const renderReferenceLines = (
+export const renderReferenceLines = (
   refs: ReadonlyArray<ReferenceLine>,
   xAxis: { domain: [number, number]; scale: "linear" | "log" },
   yAxis: { domain: [number, number]; scale: "linear" | "log" },
@@ -701,7 +702,7 @@ const renderReferenceLines = (
  * (relative deltas, both ≥ 0). Asymmetric `errYHigh`/`errYLow` take precedence
  * over symmetric `errY`. Returns null when no error info is set.
  */
-const resolveErrorY = (p: Point): [number, number] | null => {
+export const resolveErrorY = (p: Point): [number, number] | null => {
   const high = p.errYHigh ?? p.errY;
   const low = p.errYLow ?? p.errY;
   if (high === undefined && low === undefined) return null;
@@ -716,7 +717,7 @@ const resolveErrorX = (p: Point): [number, number] | null => {
 };
 
 /** Build the SVG fragment for the per-point error bars across all series. */
-const renderErrorBars = (series: ReadonlyArray<Series>, xAxis: AxisScale, yAxis: AxisScale, area: PlotArea): string => {
+export const renderErrorBars = (series: ReadonlyArray<Series>, xAxis: AxisScale, yAxis: AxisScale, area: PlotArea): string => {
   const xMap = pickMapper(xAxis.scale);
   const yMap = pickMapper(yAxis.scale);
   const CAP = 4; // half-width of error bar caps in pixels
@@ -755,7 +756,7 @@ const renderErrorBars = (series: ReadonlyArray<Series>, xAxis: AxisScale, yAxis:
 
 /** Collect all values relevant for axis-domain computation, including error
  *  extents so error bars don't get clipped. */
-const collectAxisValues = (series: ReadonlyArray<Series>, axis: "x" | "y"): number[] => {
+export const collectAxisValues = (series: ReadonlyArray<Series>, axis: "x" | "y"): number[] => {
   const out: number[] = [];
   for (const s of series) {
     for (const p of s.data) {
@@ -777,7 +778,7 @@ const collectAxisValues = (series: ReadonlyArray<Series>, axis: "x" | "y"): numb
  * SVG fragment plus the height it consumed so callers can shift the plot
  * area up accordingly. Empty input yields height 0.
  */
-const renderLegend = (
+export const renderLegend = (
   items: ReadonlyArray<{ label: string; seriesIndex: number }>,
   width: number,
   yTop: number,
@@ -1052,7 +1053,7 @@ export const stepPathD = (points: ReadonlyArray<{ x: number; y: number }>, mode:
 };
 
 /** Format a number for SVG attributes — short, no scientific notation. */
-const fmt = (n: number): string => {
+export const fmt = (n: number): string => {
   if (!Number.isFinite(n)) return "0";
   // 2 decimals is enough for sub-pixel precision at typical sizes.
   const rounded = Math.round(n * 100) / 100;
@@ -1193,21 +1194,25 @@ export type AxisScale = {
   scale: "linear" | "log";
 };
 
-const pickMapper = (scale: "linear" | "log") => (scale === "log" ? mapLog : mapRange);
+export const pickMapper = (scale: "linear" | "log") => (scale === "log" ? mapLog : mapRange);
 
 /**
  * Whether a value is renderable on the given axis. Log axes reject zero and
  * negative values (since `log(<=0)` is undefined). Used to filter data
  * points before rendering so we don't emit huge off-plot SVG coordinates.
  */
-const isOnAxis = (axis: { scale: "linear" | "log" }, v: number): boolean => Number.isFinite(v) && (axis.scale !== "log" || v > 0);
+export const isOnAxis = (axis: { scale: "linear" | "log" }, v: number): boolean => Number.isFinite(v) && (axis.scale !== "log" || v > 0);
 
 /**
  * Compute the domain, major ticks, and (optional) minor ticks for an axis,
  * choosing linear or log scale per `axisOpts`. Filters non-positive values
  * out under log scale and falls back to `[1, 10]` if none remain.
  */
-const computeAxisScale = (values: readonly number[], axisOpts: AxisOptions | undefined, fallbackTicks = DEFAULT_TICKS): AxisScale => {
+export const computeAxisScale = (
+  values: readonly number[],
+  axisOpts: AxisOptions | undefined,
+  fallbackTicks = DEFAULT_TICKS,
+): AxisScale => {
   const scale: "linear" | "log" = axisOpts?.scale === "log" ? "log" : "linear";
 
   if (axisOpts?.domain) {
@@ -1274,7 +1279,7 @@ const computeAxisScale = (values: readonly number[], axisOpts: AxisOptions | und
   return { domain: r.domain, ticks: r.ticks, minorTicks, scale };
 };
 
-const renderYAxis = (axis: AxisScale, area: PlotArea, opts: AxisOptions | undefined): string => {
+export const renderYAxis = (axis: AxisScale, area: PlotArea, opts: AxisOptions | undefined): string => {
   const format = opts?.format ?? ((v: number) => String(v));
   const map = pickMapper(axis.scale);
   const parts: string[] = [];
@@ -1300,7 +1305,7 @@ const renderYAxis = (axis: AxisScale, area: PlotArea, opts: AxisOptions | undefi
   return parts.join("");
 };
 
-const renderXAxisNumeric = (axis: AxisScale, area: PlotArea, height: number, opts: AxisOptions | undefined): string => {
+export const renderXAxisNumeric = (axis: AxisScale, area: PlotArea, height: number, opts: AxisOptions | undefined): string => {
   const format = opts?.format ?? ((v: number) => String(v));
   const map = pickMapper(axis.scale);
   const parts: string[] = [];
@@ -1343,7 +1348,7 @@ const renderXAxisCategorical = (labels: readonly string[], area: PlotArea, heigh
   return parts.join("");
 };
 
-const emptyChart = (width: number, height: number, className: string | undefined, message = "no data"): string =>
+export const emptyChart = (width: number, height: number, className: string | undefined, message = "no data"): string =>
   svgRoot(
     { width, height, className },
     `<text class="stdlib-chart-empty-text" x="${fmt(width / 2)}" y="${fmt(height / 2)}" text-anchor="middle" dominant-baseline="middle">${escapeXml(message)}</text>`,
@@ -1520,7 +1525,7 @@ export const scatter = (opts: ScatterOptions): string => {
   return svgRoot({ width, height, className: opts.className }, header.svg + body.join("") + legend.svg);
 };
 
-const collectSeriesLegend = (opts: { series: Series[]; legend?: boolean }): Array<{ label: string; seriesIndex: number }> => {
+export const collectSeriesLegend = (opts: { series: Series[]; legend?: boolean }): Array<{ label: string; seriesIndex: number }> => {
   if (!opts.legend) return [];
   return opts.series.map((s, i) => ({
     label: s.label && s.label.length > 0 ? s.label : `Series ${i + 1}`,
@@ -1550,12 +1555,11 @@ const collectSeriesLegend = (opts: { series: Series[]; legend?: boolean }): Arra
  * });
  */
 export const line = (opts: LineOptions): string => {
-  const details = lineDetailsEnabled(opts);
+  if (!lineDetailsEnabled(opts)) return lineBase(opts);
   const forecast = lineForecastLayout(opts);
-  if (details && opts.maxGap !== undefined && (!Number.isFinite(opts.maxGap) || opts.maxGap <= 0))
+  if (opts.maxGap !== undefined && (!Number.isFinite(opts.maxGap) || opts.maxGap <= 0))
     throw new RangeError("Chart maxGap must be finite and positive");
-  if (details && opts.maxGap !== undefined && (opts.area || opts.errorBand))
-    throw new Error("Chart maxGap does not support area or errorBand fills");
+  if (opts.maxGap !== undefined && (opts.area || opts.errorBand)) throw new Error("Chart maxGap does not support area or errorBand fills");
   if (opts.threshold && !isOnAxis({ scale: opts.yAxis?.scale ?? "linear" }, opts.threshold.value))
     throw new RangeError("Line threshold must be finite and positive on a log axis");
   if (opts.marker && !isOnAxis({ scale: opts.xAxis?.scale ?? "linear" }, opts.marker.at))
@@ -1567,7 +1571,7 @@ export const line = (opts: LineOptions): string => {
   const padding = normalizePadding(opts.padding);
   const header = renderHeader(width, opts.title, opts.subtitle);
   const legendItems = collectSeriesLegend(opts);
-  const legendHeight = details && legendItems.length > 2 ? 40 : legendItems.length ? 20 : 0;
+  const legendHeight = legendItems.length > 2 ? 40 : legendItems.length ? 20 : 0;
   const finitePoints = opts.series.flatMap((s) => s.data).filter((p) => Number.isFinite(p.x) && Number.isFinite(p.y));
   if (finitePoints.length === 0) return emptyChart(width, height, opts.className);
   const xAxis = computeAxisScale([...collectAxisValues(opts.series, "x"), ...(opts.marker ? [opts.marker.at] : [])], opts.xAxis);
@@ -1646,10 +1650,8 @@ export const line = (opts: LineOptions): string => {
     }
   const boundsByPoint = new Map(forecast.map((point) => [point.source, point]));
   opts.series.forEach((s, i) => {
-    const runs = details
-      ? runsOf(s.data)
-      : [[...s.data].filter((p) => isOnAxis(xAxis, p.x) && isOnAxis(yAxis, p.y)).sort((a, b) => a.x - b.x)];
-    const isolated = new Set((details ? runs : []).filter((run) => run.length === 1).map((run) => run[0]!));
+    const runs = runsOf(s.data);
+    const isolated = new Set(runs.filter((run) => run.length === 1).map((run) => run[0]!));
     s.data.forEach((p, index) => {
       if (!isOnAxis(xAxis, p.x) || !isOnAxis(yAxis, p.y)) return;
       if (!opts.inspect && !isolated.has(p)) return;
@@ -1665,7 +1667,7 @@ export const line = (opts: LineOptions): string => {
         ? inspectionPoint(datum, true)
         : `<circle class="stdlib-chart-inspection-point" cx="${fmt(x(p.x))}" cy="${fmt(y(p.y))}" r="3" fill="transparent" stroke="none"/>`;
       if (isolated.has(p)) mark = mark.replace('fill="transparent"', `fill="${paint(i)}"`);
-      (details ? inspectionMarks : body).push(mark);
+      inspectionMarks.push(mark);
     });
     for (const sorted of runs) {
       if (sorted.length < 2) continue;
@@ -1685,20 +1687,20 @@ export const line = (opts: LineOptions): string => {
             `<path class="stdlib-chart-error-band stdlib-chart-series-${i % 8}" d="${pathFn(upper)}${lower
               .reverse()
               .map((p) => ` L ${fmt(p.x)} ${fmt(p.y)}`)
-              .join("")} Z"${details ? ` fill="${paint(i)}" fill-opacity=".15" stroke="none"` : ""}/>`,
+              .join("")} Z" fill="${paint(i)}" fill-opacity=".15" stroke="none"/>`,
           );
       }
       if (opts.area) {
         const first = mapped[0]!,
           last = mapped.at(-1)!;
         body.push(
-          `<path class="stdlib-chart-area stdlib-chart-series-${i % 8}" d="${linePath} L ${fmt(last.x)} ${fmt(baselineY)} L ${fmt(first.x)} ${fmt(baselineY)} Z"${details ? ` fill="${paint(i)}" fill-opacity=".18" stroke="none"` : ""}/>`,
+          `<path class="stdlib-chart-area stdlib-chart-series-${i % 8}" d="${linePath} L ${fmt(last.x)} ${fmt(baselineY)} L ${fmt(first.x)} ${fmt(baselineY)} Z" fill="${paint(i)}" fill-opacity=".18" stroke="none"/>`,
         );
       }
       const dashStyle = s.lineStyle ?? (opts.autoVariant ? DEFAULT_LINE_STYLES[i % DEFAULT_LINE_STYLES.length]! : "solid");
       const dash = LINE_DASH_PATTERNS[dashStyle];
       const path = (forecastDash = false) =>
-        `<path class="stdlib-chart-line stdlib-chart-series-${i % 8}" d="${linePath}"${details ? ` fill="none" stroke="${paint(i)}" stroke-width="2"` : ""}${forecastDash ? ' stroke-dasharray="5 4"' : dash ? ` stroke-dasharray="${dash}"` : ""}/>`;
+        `<path class="stdlib-chart-line stdlib-chart-series-${i % 8}" d="${linePath}" fill="none" stroke="${paint(i)}" stroke-width="2"${forecastDash ? ' stroke-dasharray="5 4"' : dash ? ` stroke-dasharray="${dash}"` : ""}/>`;
       const from = opts.forecast?.from;
       if (from === undefined || sorted.at(-1)!.x <= from) body.push(path());
       else if (sorted[0]!.x >= from) body.push(`<g class="k2b-line-forecast">${path(true)}</g>`);
@@ -1750,7 +1752,7 @@ export const line = (opts: LineOptions): string => {
   let latest = -Infinity;
   for (const series of opts.series) for (const p of series.data) if (Number.isFinite(p.x)) latest = Math.max(latest, p.x);
   const legend: string[] = [];
-  if (details && legendItems.length) {
+  if (legendItems.length) {
     const entries = legendItems.slice(0, 4),
       cell = width / 2;
     entries.forEach((entry, i) => {
@@ -1778,15 +1780,8 @@ export const line = (opts: LineOptions): string => {
   }
   const svg = svgRoot(
     { width, height, className: opts.className },
-    header.svg +
-      body.join("") +
-      (details
-        ? legend.length
-          ? `<g class="k2b-line-value-legend">${legend.join("")}</g>`
-          : ""
-        : renderLegend(legendItems, width, height - legendHeight).svg),
+    header.svg + body.join("") + (legend.length ? `<g class="k2b-line-value-legend">${legend.join("")}</g>` : ""),
   );
-  if (!details) return svg;
   // CSS adds only the physical room missing in a narrow host. Its SVG transform is
   // visible to the shared inspector, and the server emits the same geometry.
   const fraction = Math.min(0.8, Math.max(0, area.x0 / width));

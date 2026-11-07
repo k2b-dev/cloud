@@ -330,6 +330,26 @@ test("table keeps only listed columns and passes format and sort", async () => {
     sort: { column: "n", direction: "desc" },
   });
 });
+test("table passes search, groups and column priorities to the reader", async () => {
+  const { view, specs } = fixture();
+  const saved = await view.table({
+    title: "Campaigns",
+    rows: [{ name: "Weekly letter", status: "Delivered", sent: 46720 }],
+    columns: ["name", "status", { id: "sent", priority: 3 }],
+    search: true,
+    groupBy: [{ id: "status", label: "Status" }],
+  });
+  expect(specs[0]).toMatchObject({
+    columns: [
+      { id: "name", type: "text" },
+      { id: "status", type: "text" },
+      { id: "sent", type: "number", priority: 3 },
+    ],
+    search: true,
+    groupBy: [{ id: "status", label: "Status" }],
+  });
+  expect(saved).toMatchObject({ search: true, grouped: true });
+});
 test("row conversion ignores inherited properties for missing columns", async () => {
   const { view, specs } = fixture();
   await view.table({ title: "Missing", columns: ["toString", "constructor"], rows: [{}], footer: {} });

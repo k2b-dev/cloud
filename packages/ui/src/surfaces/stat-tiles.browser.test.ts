@@ -80,8 +80,9 @@ const measure = () =>
 describe("@k2b/ui key figure tiles", () => {
   for (const [name, width, columns, height, valueSize] of [
     ["desktop", 1440, 4, 136, 28],
-    ["600 px grid", 620, 2, 164, 28],
-    ["phone", 390, 2, 164, 23.04],
+    // Narrow tiles give the comparison its own line (showcase review 07.11.), so the dashboard tile is 172 px there.
+    ["600 px grid", 620, 2, 172, 28],
+    ["phone", 390, 2, 172, 23.04],
   ] as const) {
     test(`on a ${name} every state keeps the tile's size and rows (${columns} columns, ${height}px)`, async () => {
       const page = await browser.newPage({ viewport: { width, height: 900 } });
@@ -242,6 +243,144 @@ describe("@k2b/ui key figure tiles", () => {
           }),
         );
         expect({ width, frame, cut }).toEqual({ width, frame, cut: [] });
+      } finally {
+        await page.close();
+      }
+    }
+  });
+
+  // Regression (showcase review 07.11.): a tile without a change badge set its figure lower than its neighbours, and a
+  // compare line beside a sparkline ended in "Last month …" at 390 px.
+  test("figures in a row share one line and the comparison is never cut, with or without badge, icon, link and trend", async () => {
+    const trend = [38900, 40500, 42200, 43300, 44000, 44560, 48210];
+    const tiles = (status?: "loading") => [
+      createComponent(StatCell, {
+        label: "Balance today",
+        icon: "ti ti-building-bank",
+        value: "€21,140",
+        delta: { value: -0.047, better: "up" },
+        compare: { label: "30 days ago", value: "€22,180" },
+        status,
+      }),
+      createComponent(StatCell, {
+        label: "Lowest in 60 days",
+        icon: "ti ti-alert-triangle",
+        value: "€6,650",
+        sub: "Expected on 1 Dec · threshold €10,000",
+        status,
+      }),
+      createComponent(StatCell, {
+        label: "Subscribers",
+        icon: "ti ti-users",
+        value: "48,210",
+        delta: { value: 0.082, better: "up" },
+        compare: { label: "Last month", value: 44560 },
+        trend,
+        status,
+      }),
+      createComponent(StatCell, {
+        label: "Unsubscribes",
+        value: "182",
+        compare: { label: "Last month", value: 208 },
+        href: "#unsubscribes",
+        status,
+      }),
+      createComponent(StatCell, { label: "Bounces", value: "1,204", sub: "hard and soft", wrap: true, status }),
+      createComponent(StatCell, {
+        label: "Open rate",
+        icon: "ti ti-mail-opened",
+        value: "49.2%",
+        delta: { value: 0.031, unit: "points", better: "up" },
+        compare: { label: "Last month", value: "46.1%" },
+        trend,
+        status,
+      }),
+    ];
+    const row = (size: "lg" | "md" | "sm", columns: 4 | 6, status?: "loading") =>
+      createComponent(StatGrid, {
+        size,
+        columns,
+        class: `align-${size}-${columns}${status ? "-loading" : ""}`,
+        get children() {
+          return tiles(status).slice(0, columns === 4 ? 4 : 6);
+        },
+      });
+    const html = renderToString(() =>
+      createComponent(LocaleProvider, {
+        locale: "en",
+        get children() {
+          return (["lg", "md", "sm"] as const).flatMap((size) => [
+            row(size, 4),
+            row(size, 6),
+            row(size, 4, "loading"),
+            row(size, 6, "loading"),
+          ]);
+        },
+      }),
+    );
+    for (const [width, frame] of [
+      [390, 366],
+      [1000, 976],
+      [1440, 1384],
+    ] as const) {
+      const page = await browser.newPage({ viewport: { width, height: 900 } });
+      try {
+        await page.setContent(
+          `<!doctype html><html><head><meta name="viewport" content="width=device-width, initial-scale=1"><style>${css}</style></head>` +
+            `<body class="k2b-ui" style="margin:0;padding:12px"><div style="width:${frame}px;display:grid;gap:16px">${html}</div></body></html>`,
+        );
+        await settled(page);
+        const result = await page.evaluate(() =>
+          ["lg", "md", "sm"].flatMap((size) =>
+            [4, 6].map((columns) => {
+              const grid = document.querySelector(`.align-${size}-${columns}`)!;
+              const loading = document.querySelector(`.align-${size}-${columns}-loading`)!;
+              const cells = Array.from(grid.querySelectorAll<HTMLElement>(".k2b-stat-cell"));
+              // Tiles on the same grid row (same top) put their figures on the same line, in the same size.
+              const rows = new Map<number, { top: number; size: string }[]>();
+              for (const tile of cells) {
+                const top = Math.round(tile.getBoundingClientRect().top);
+                const value = tile.querySelector(".k2b-stat-cell__value")!;
+                const size = Math.round(Number.parseFloat(getComputedStyle(value).fontSize) * 10) / 10;
+                rows.set(top, [...(rows.get(top) ?? []), { top: value.getBoundingClientRect().top, size: String(size) }]);
+              }
+              const spread = Math.max(
+                ...[...rows.values()].map((list) => Math.max(...list.map((item) => item.top)) - Math.min(...list.map((item) => item.top))),
+              );
+              const sizes = Math.max(...[...rows.values()].map((list) => new Set(list.map((item) => item.size)).size));
+              const cut = cells.flatMap((tile) => {
+                const box = tile.getBoundingClientRect();
+                const trend = tile.querySelector(".k2b-stat-cell__trend")?.getBoundingClientRect();
+                return Array.from(tile.querySelectorAll<HTMLElement>(".k2b-stat-cell__sub")).flatMap((sub) => {
+                  const text = sub.getBoundingClientRect();
+                  const whole =
+                    sub.scrollWidth <= sub.clientWidth + 1 &&
+                    text.left >= box.left &&
+                    text.right <= box.right + 0.5 &&
+                    text.bottom <= box.bottom + 0.5;
+                  const apart = !trend || trend.width === 0 || trend.top >= text.bottom - 0.5 || trend.left >= text.right - 0.5;
+                  return whole && apart && getComputedStyle(sub).textOverflow !== "ellipsis" ? [] : [sub.textContent];
+                });
+              });
+              // Loading keeps the tile's height: the same row in its loading state is as tall as with data, as long as every
+              // support text fits the two lines a narrow tile reserves (a longer text makes its row taller, by design).
+              const height = (root: Element) => Math.round(root.querySelector(".k2b-stat-cell")!.getBoundingClientRect().height);
+              const lines = Math.max(
+                ...Array.from(grid.querySelectorAll<HTMLElement>(".k2b-stat-cell__sub")).map((sub) =>
+                  Math.round(sub.getBoundingClientRect().height / Number.parseFloat(getComputedStyle(sub).lineHeight)),
+                ),
+              );
+              const shift = lines <= 2 ? height(grid) - height(loading) : 0;
+              return { grid: `${size}-${columns}`, spread: Math.round(spread * 10) / 10, sizes, cut, shift };
+            }),
+          ),
+        );
+        expect({ width, result }).toEqual({
+          width,
+          result: ["lg", "md", "sm"].flatMap((size) =>
+            [4, 6].map((columns) => ({ grid: `${size}-${columns}`, spread: 0, sizes: 1, cut: [], shift: 0 })),
+          ),
+        });
       } finally {
         await page.close();
       }
