@@ -312,6 +312,19 @@ test("a late approval cannot execute after the runner mailbox has ended", async 
   }
 }, 20_000);
 
+test("closing a runner host drains a script that reported progress but never finishes", async () => {
+  const f = fixture();
+  try {
+    expect(
+      await f.execute("code_run", {
+        code: 'export default async (_input,{progress})=>{progress(0,1,"Waiting");await new Promise(()=>{});}',
+      }),
+    ).toMatchObject({ status: "starting", work: { status: "running" } });
+  } finally {
+    await f.close();
+  }
+}, 20_000);
+
 test("completed disposable runner results are reclaimed when the host reaches its run ceiling", async () => {
   const f = fixture();
   try {

@@ -51,6 +51,8 @@ import { HttpError, httpService } from "./http-service";
 import { machineFixtureSchema, machineIntegrationCases } from "./machine.integration-cases";
 import { machineAccess } from "./machine-service";
 import { migrateArtifacts } from "./migrate";
+import { runChatRunnerFixture } from "./runner-code.test-fixture";
+import * as runnerHost from "./runner-code-host";
 import { type ArtifactIdentity, artifacts } from "./service";
 import { STUDIO_EVAL_CASE_MS, STUDIO_EVAL_CASES } from "./studio-eval-cases";
 import { testIdentity } from "./test-identity";
@@ -3611,6 +3613,11 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
     }
   });
   test("server-owned code survives caller detachment, deduplicates calls and never replays a lost host", async () => {
+    // The disposable Assistant database has no Core runner mailbox. Replace only
+    // that transport with the real Runner dispatch/compiler fixture.
+    const createHost = runnerHost.createRunnerCodeHost;
+    const start = spyOn({ run: runChatRunnerFixture }, "run");
+    const runner = spyOn(runnerHost, "createRunnerCodeHost").mockImplementation((options) => createHost({ ...options, start }));
     const conversationId = crypto.randomUUID(),
       turnId = crypto.randomUUID();
     await sql`INSERT INTO ai.conversations(id,created_by_user_id) VALUES(${conversationId}::uuid,${owner.user.id}::uuid)`;
@@ -3662,7 +3669,7 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
     });
     // authorizeCodeExecution reads the turn and its run config; a plain chat turn carries neither mandate nor background.
     // getTurn follows the active-turn stub so cancelling the turn below is seen by both readers.
-    spyOn(aiConversations, "getTurn").mockImplementation(
+    const getTurn = spyOn(aiConversations, "getTurn").mockImplementation(
       async () => (await aiConversations.getActiveTurn({ conversationId }))?.turn ?? null,
     );
     const runConfig = spyOn(aiConversations, "getTurnRunConfig").mockResolvedValue({
@@ -3702,6 +3709,7 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
       const result = observers[0]!;
       expect(result).toMatchObject({ status: "done", result: { status: "ready", output: '{"answer":42,"serverProcess":"undefined"}' } });
       expect(await wait(call)).toEqual(result);
+      expect(start).toHaveBeenCalledTimes(1);
       const presentCall = {
         ...call,
         name: "code_present" as const,
@@ -4114,7 +4122,7 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
           code: 'export default async () => { void cloud.http.fetch("https://example.net/cancel-ready").catch(() => {}); await new Promise(() => {}); }',
         },
       };
-      // A running call record alone does not prove the browser has compiled and started the code.
+      // A running call record alone does not prove the runner has compiled and started the code.
       // Its pending approval proves execution started; never approve or send this marker request.
       // Catch its eventual denial separately so the main execution remains pending until the host closes.
       const pending = await wait(cancelled, (state) => state.approvals.some((approval) => approval.decision === null));
@@ -4129,12 +4137,18 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
       ).toBe("lost");
       turn.mockResolvedValue(active);
       await agentHost.close();
+      const executions = start.mock.calls.length;
       await sql`UPDATE assistant.artifact_agent_calls SET status='running' WHERE turn_id=${turnId}::uuid AND call_id=${call.callId}`;
       expect(await wait(call)).toMatchObject({ status: "lost" });
+      expect(start).toHaveBeenCalledTimes(executions);
     } finally {
       await agentHost.close();
+      runner.mockRestore();
+      start.mockRestore();
       conversation.mockRestore();
       turn.mockRestore();
+      getTurn.mockRestore();
+      runConfig.mockRestore();
     }
   }, 30000);
 

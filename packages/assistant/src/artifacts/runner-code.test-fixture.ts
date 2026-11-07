@@ -29,7 +29,9 @@ export async function runChatRunnerFixture(input: ChatRunInput, hooks: RuntimeHo
       bridgeCall = call;
       modules = extra ?? {};
     },
-    run: async (lease) => {
+    run: async (lease, leaseSignal) => {
+      const stopped = AbortSignal.any([signal, leaseSignal]);
+      stopped.throwIfAborted();
       const context = createContext({
         console: { ...console },
         crypto,
@@ -57,7 +59,21 @@ export async function runChatRunnerFixture(input: ChatRunInput, hooks: RuntimeHo
         },
       });
       const run = Reflect.get(context, "fixtureRun");
-      await run(lease.input, { call: bridgeCall });
+      // Runner.stop() drains accepted work. Model the native engine's abort
+      // behavior too, so closing a host can reclaim a deliberately pending script.
+      let abort: () => void = () => {};
+      try {
+        await Promise.race([
+          run(lease.input, { call: bridgeCall }),
+          new Promise<never>((_, reject) => {
+            abort = () => reject(stopped.reason);
+            stopped.addEventListener("abort", abort, { once: true });
+            if (stopped.aborted) abort();
+          }),
+        ]);
+      } finally {
+        stopped.removeEventListener("abort", abort);
+      }
       return "succeeded";
     },
     kill: async () => {},
@@ -85,7 +101,8 @@ export async function runChatRunnerFixture(input: ChatRunInput, hooks: RuntimeHo
     },
     jobComplete: async (result) => {
       runner.stop();
-      if (result.result.kind !== "chat" || result.result.outcome !== "succeeded") hooks.error(JSON.stringify(result.result));
+      if (!signal.aborted && (result.result.kind !== "chat" || result.result.outcome !== "succeeded"))
+        hooks.error(JSON.stringify(result.result));
     },
     bundle: async () => {
       throw new Error("Chat jobs must not fetch a lasting-Code bundle");
