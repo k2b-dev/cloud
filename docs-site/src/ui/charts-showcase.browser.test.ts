@@ -69,8 +69,15 @@ const islands = (page: Page) =>
                 ? attribute.value
                     .split(";")
                     .map((declaration) => declaration.replace(/\s+/g, ""))
-                    // Tables measure their scroll bars after mounting.
-                    .filter((declaration) => declaration && !declaration.startsWith("--k2b-data-table-scroll"))
+                    // Tables measure their scroll bars and calendars their sticky header after mounting.
+                    .filter(
+                      (declaration) =>
+                        declaration &&
+                        !declaration.startsWith("--k2b-data-table-scroll") &&
+                        !declaration.startsWith("--k2b-calendar-header"),
+                    )
+                    // The browser writes 12.000% as 12%.
+                    .map((declaration) => declaration.replace(/(\d+)\.0+(?!\d)/g, "$1"))
                     .sort()
                     .join(";")
                 : // stdlib numbers sparkline gradients per process, so a server that rendered earlier pages counts on.
