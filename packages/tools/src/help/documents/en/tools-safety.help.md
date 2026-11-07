@@ -11,7 +11,7 @@ order: 120
 - Generators, Base64, Hex, Base32, color conversion, hashing, passwords, encryption, and image processing are for direct interactive use in the page.
 - **Document to Markdown** sends one selected document to this Cloud server for bounded in-memory conversion. The utility does not persist the upload or the result.
 - **Markdown to PDF** sends the Markdown and CSS to this Cloud server, which renders the PDF in memory. The utility does not persist the input or the PDF.
-- **Internet Speed Test** exchanges anonymous test data with the measurement server named on the page. That server sees your IP address; it receives no Cloud credentials or personal files.
+- **Speed test** exchanges anonymous test data with the measurement server named on the page. That server sees your IP address; it receives no Cloud credentials or personal files.
 - **Webhook Tester** creates endpoints on the server and stores the request history, so that you can inspect incoming calls later.
 
 The Webhook Tester sends only to public internet addresses, refuses local, private, and other reserved network addresses, and does not follow redirects.

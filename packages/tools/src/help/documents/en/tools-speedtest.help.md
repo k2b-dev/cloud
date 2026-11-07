@@ -9,7 +9,7 @@ order: 115
 
 ## Run a test {icon="player-play"}
 
-Open **Internet Speed Test**, check the **Measurement server**, then choose
+Open **Speed test**, check the **Measurement server**, then choose
 **Quick · up to 14 s** or **Accurate · up to 29 s**. Press **Start test**.
 The test runs ping, download and upload in order. The remaining time decreases;
 a stable result can finish early. **Stop** cancels the active transfers.
