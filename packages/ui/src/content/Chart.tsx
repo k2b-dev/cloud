@@ -4,6 +4,7 @@ import type { JSX } from "solid-js";
 import { createEffect, createMemo, createSignal, createUniqueId, For, onCleanup, onMount, Show, splitProps, untrack } from "solid-js";
 import { isServer } from "solid-js/web";
 import { IconButton } from "../actions/Button";
+import { type AreaOptions, renderAreaSvg } from "../charts/core/area";
 import { suppressTextSelection } from "../internal/text-selection";
 import { useLocale } from "../intl/locale";
 import { useUiMessages } from "../intl/messages";
@@ -138,11 +139,15 @@ export type ChartProps = {
           timeAxis?: ChartTimeAxis;
         }
       : {}) &
-    (K extends "stateTimeline"
-      ? StateTimelineChartOptions
-      : K extends "bar"
-        ? BarChartOptions
-        : Omit<Parameters<(typeof charts)[K]>[0], "width" | "height" | "inspect">);
+    (K extends "area"
+      ? Omit<AreaOptions, "locale">
+      : K extends "stateTimeline"
+        ? StateTimelineChartOptions
+        : K extends "bar"
+          ? BarChartOptions
+          : K extends keyof typeof charts
+            ? Omit<Parameters<(typeof charts)[K]>[0], "width" | "height" | "inspect">
+            : never);
 }[ChartKind];
 
 /** Pure renderer options: component layout, events and inspection are configured elsewhere. */
@@ -174,6 +179,7 @@ export const renderChartSvg = (
   height: number,
   mapViewport?: MapViewport,
   timelineViewport?: StateTimelineDomain,
+  renderLocale?: string,
 ): string => {
   const {
     kind,
@@ -206,6 +212,17 @@ export const renderChartSvg = (
       }),
     );
   }
+  if (kind === "area")
+    return responsiveChartSvg(
+      renderAreaSvg({
+        ...(opts as AreaOptions),
+        locale: renderLocale ?? (opts as AreaOptions).locale,
+        legend: false,
+        width,
+        height,
+        inspect: true,
+      }),
+    );
   if (kind === "bar") return responsiveChartSvg(renderBarChartSvg({ ...(opts as BarChartOptions), width, height, inspect: true }));
   // A time axis needs an explicit X domain: it maps its round ticks onto the axis the renderer drew over it.
   const timeAxis = props.kind === "line" ? props.timeAxis : undefined;
@@ -247,6 +264,12 @@ const preservesAspectRatio = (kind: ChartKind) => kind === "map" || kind === "pi
  *  block on truly empty inputs; partially-filled series get rendered
  *  as-is and stdlib handles the gaps. */
 const isEmpty = (props: ChartProps): boolean => {
+  if (props.kind === "area")
+    return (
+      !props.x.length ||
+      !props.series.length ||
+      props.x.every((_, i) => props.series.some((s) => s.data[i] === null) || props.series.every((s) => s.data[i] === 0))
+    );
   if (props.kind === "line" || props.kind === "scatter") {
     return !props.series?.length || props.series.every((s) => !s.data.length);
   }
@@ -280,8 +303,22 @@ const Chart = (props: ChartProps): JSX.Element => {
     width: 480,
     height: chartRenderHeight(props),
   });
-  const topLegend = () => props.kind === "line" && props.legend === true && props.legendPlacement === "top-start";
-  const legendSeries = () => (props.kind === "line" ? props.series : []);
+  const topLegend = () =>
+    props.kind === "area"
+      ? props.legend !== false
+      : props.kind === "line" && props.legend === true && props.legendPlacement === "top-start";
+  const legendSeries = () => (props.kind === "line" || props.kind === "area" ? props.series : []);
+  const legendValue = (index: number) => {
+    if (props.kind !== "area") return "";
+    const last = props.x.length - 1;
+    const amount = props.series[index]?.data[last];
+    const values = props.series.map((s) => s.data[last]);
+    const total = values.reduce<number>((sum, value) => sum + (value ?? 0), 0);
+    if (amount == null || values.some((v) => v == null) || total === 0) return "—";
+    return props.normalize
+      ? new Intl.NumberFormat(locale(), { style: "percent", maximumFractionDigits: 1 }).format(amount / total)
+      : (props.format?.(amount) ?? new Intl.NumberFormat(locale(), { maximumFractionDigits: 2 }).format(amount));
+  };
   const dimensions = () => containerRef?.getBoundingClientRect() ?? size();
   const initialMapViewport = props.kind === "map" ? normalizeMapViewport(props.viewport) : DEFAULT_MAP_VIEWPORT;
   const [mapViewport, setMapViewport] = createSignal<MapViewport>(initialMapViewport);
@@ -539,6 +576,7 @@ const Chart = (props: ChartProps): JSX.Element => {
 
   const inspection = createChartInspection({
     container: () => containerRef,
+    locale,
     cursor: () => props.cursor,
     tooltip: () => chartTooltipRef,
     anchor: () => lineAnchorRef,
@@ -548,16 +586,36 @@ const Chart = (props: ChartProps): JSX.Element => {
     format: (selection) => {
       if (props.tooltip) return props.tooltip(selection);
       const fields = chartMessages().chartFields;
+      if (selection.kind === "area" && props.kind === "area") {
+        const amount = selection.datum.values.find((f) => f.key === "value")!;
+        const share = selection.datum.values.find((f) => f.key === "percent");
+        const total = props.series.reduce((sum, s) => sum + (s.data[selection.datum.index] ?? 0), 0);
+        return {
+          title: String(selection.datum.values.find((f) => f.key === "x")?.value ?? ""),
+          rows: [
+            { label: selection.datum.label ?? chartMessages().series, value: `${share ? `${share.formatted} · ` : ""}${amount.formatted}` },
+            ...(selection.datum.seriesIndex === 0
+              ? [
+                  {
+                    label: fields({ key: "total" }),
+                    value: props.format?.(total) ?? new Intl.NumberFormat(locale(), { maximumFractionDigits: 2 }).format(total),
+                  },
+                ]
+              : []),
+          ],
+        };
+      }
       const format = new Intl.NumberFormat(locale(), { maximumFractionDigits: 6 });
       return {
         title:
+          (selection.kind === "area" ? String(selection.datum.values.find((f) => f.key === "x")?.value ?? "") : undefined) ??
           selection.datum.label ??
           (selection.datum.seriesIndex !== undefined
             ? `${labels().series ?? chartMessages().series} ${selection.datum.seriesIndex + 1}`
             : undefined),
         rows: selection.datum.values.map((field) => ({
           label:
-            selection.kind === "line" && field.key === "y"
+            (selection.kind === "line" && field.key === "y") || (selection.kind === "area" && field.key === "value")
               ? (selection.datum.label ?? labels().series ?? chartMessages().series)
               : fields({ key: field.key }),
           value:
@@ -581,6 +639,7 @@ const Chart = (props: ChartProps): JSX.Element => {
       size().height,
       interactiveMap() ? mapViewport() : undefined,
       interactiveTimeline() ? timelineViewport() : undefined,
+      locale(),
     ),
   );
   createEffect(() => {
@@ -671,9 +730,26 @@ const Chart = (props: ChartProps): JSX.Element => {
                     height="10"
                     aria-hidden="true"
                   >
-                    <rect x="1" y="1" width="8" height="8" rx="2" class={`stdlib-chart-series-${index() % 8}`} />
+                    <rect
+                      x="1"
+                      y="1"
+                      width="8"
+                      height="8"
+                      rx="2"
+                      class={`stdlib-chart-series-${index() % 8}`}
+                      fill={`var(--stdlib-chart-c${(index() % 8) + 1}, ${["#2563eb", "#16a34a", "#d97706", "#dc2626", "#a855f7", "#0891b2", "#db2777", "#65a30d"][index() % 8]})`}
+                      stroke="none"
+                    />
                   </svg>
-                  <span>{series.label && series.label.length > 0 ? series.label : `Series ${index() + 1}`}</span>
+                  <span>{series.label && series.label.length > 0 ? series.label : `${chartMessages().series} ${index() + 1}`}</span>
+                  <b
+                    data-chart-legend-value
+                    data-series-index={index()}
+                    data-field={props.kind === "area" && props.normalize ? "percent" : "value"}
+                    data-default={legendValue(index())}
+                  >
+                    {legendValue(index())}
+                  </b>
                 </span>
               )}
             </For>
