@@ -60,9 +60,9 @@ for (const spec of cases)
  const snapshot=prepareChartSnapshot(spec,{key:s=>String(s.datum.index),tooltip:s=>({title:s.datum.label,rows:s.datum.values.map(v=>({label:'Value',value:v.formatted}))})});
  const populated={chart:snapshot,rows:snapshot.marks.map(m=>({key:m.key}))};
  const empty={chart:{...snapshot,svg:'',marks:[]},rows:[]};
- render(()=>createComponent(ChartExplorer,{title:'Calendar states',height:'280px',renderDetails:false,get data(){return ['data','stale'].includes(state())?populated:empty},columns:[{id:'day',label:'Day',value:r=>r.key}],get empty(){return state()==='loading'?'Loading':state()==='error'?'Could not load observations.':'No observations in this period.'}}),document.querySelector('#explorer'));
- document.querySelectorAll('[data-state]').forEach(button=>button.onclick=()=>{setState(button.dataset.state);if(state()==='data')setSelected(null);document.querySelector('#retry').hidden=state()!=='error';document.querySelector('#subtitle').textContent=state()==='stale'?'Previous data':'November 2026';});
- document.querySelector('#retry').onclick=()=>document.querySelector('[data-state=data]').click();
+ render(()=>createComponent(ChartExplorer,{title:'Calendar states',height:'280px',renderDetails:false,get data(){return ['data','stale'].includes(state())?populated:empty},columns:[{id:'day',label:'Day',value:r=>r.key}],get request(){return {status:state()==='loading'?'loading':['error','stale'].includes(state())?'error':'idle',message:'Could not load observations.'}},onRetry:()=>setState('data'),empty:'No observations in this period.'}),document.querySelector('#explorer'));
+ document.querySelectorAll('button[data-state]').forEach(button=>button.onclick=()=>{setState(button.dataset.state);if(state()==='data')setSelected(null);document.querySelector('#retry').hidden=state()!=='error';document.querySelector('#subtitle').textContent=state()==='stale'?'Previous data':'November 2026';});
+ document.querySelector('#retry').onclick=()=>document.querySelector('button[data-state=data]').click();
  `,
             }));
           },
@@ -158,12 +158,13 @@ for (const spec of cases)
             expect(labels.every(Boolean)).toBe(true);
           }
           for (const state of ["loading", "empty", "error", "stale", "data"]) {
-            await page.locator(`[data-state=${state}]`).click();
+            await page.locator(`button[data-state=${state}]`).click();
             await settled(page);
             expect(await frame.evaluate(documentBox)).toEqual(box);
             expect(await chart.evaluate(documentBox)).toEqual(realBox);
+            expect(await page.locator("#explorer .k2b-chart-explorer").getAttribute("data-state")).toBe(state === "data" ? "data" : state);
             if (state === "error") {
-              await page.locator("#retry").click();
+              await page.locator("#explorer .k2b-chart-explorer__state[data-state=error] button").click();
               await settled(page);
               expect(await page.locator("#mount").isVisible()).toBe(true);
             }
