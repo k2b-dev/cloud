@@ -98,6 +98,56 @@ manual run; scheduled callbacks do not create runs while it is paused. If a
 current schedule is refused by policy or version approval, its tick appears as
 a failed run with `code_admission_refused`.
 
+## Understand event deliveries
+
+Each checked `app.on` registration subscribes only to the resource that owns
+its Code. Cloud rechecks the execution mandate, active version, owner place and
+current resource read access before delivery. The event carries references;
+it does not grant read or write access.
+
+Admission commits one pinned `event` run, its event receipt and the existing
+run outbox in the same transaction, before acknowledging platform delivery.
+A crash after that commit can repeat delivery but cannot create a second run.
+The receipt is keyed by Code and event ID, survives run-detail retention and
+version switches, and is deleted with the Code. Receipts are permanent deduplication
+state: deleting one while the publisher can repeat that event ID could admit it twice.
+Its input is the event reference
+envelope. Runs for one event registration and subject start in delivery order without overlapping,
+even when the operator raises per-Code concurrency. Other subjects can run in
+parallel within the ordinary limits.
+
+Pause and deletion cancel subscriptions and pending deliveries, including
+claimed deliveries that have not committed admission. Resume creates fresh
+subscriptions; events published before resume are not replayed. Activation
+replaces subscriptions in the version-switch transaction. A never-started event
+run stays queued during a pause. After a version switch, it becomes visibly
+failed with `code_not_active`; explicit delivery recovery can bind that same
+run ID to the currently approved matching registration, after a fresh read
+check. This recovery never repeats a run that has started. Revoked or expired mandates, disabled
+accounts and lost read access cannot admit a new run.
+
+`core.code.event_backlog` bounds queued and running event runs per Code
+(default 100). When full, admission retries through the platform's existing
+delivery queue and then becomes a visible failed delivery. Failed deliveries
+hold later events for the same subject until replay or retention releases them.
+The platform event retention and retry budgets also apply; there is no second
+broker or event archive.
+
+The Code page's Runs tab and `core.code.run.list` show up to 20 unresolved
+event deliveries, with the oldest failures first, in `eventDeliveries`, without payloads.
+This field is optional in run-list responses; clients accept replies without it.
+CLI JSON and JSONL preserve the response fields in either case. Editors of an active
+Code can choose **Retry delivery**. Recoverable cancellations and never-started
+event runs remain in this view across pauses and version switches for 30 days
+after the event reached Core. The current version must still declare the same
+event and place. The `core.code.event.redeliver` Action takes
+`deliveryId` at the Code target and asks before resetting that exact failed
+platform delivery, transferring it to the current registration when needed.
+Retrying delivery only retries admission or recovers the same never-started
+run; its permanent receipt prevents another run if admission already completed. Event entrypoints
+cannot be started manually or through **Run again**. Ordinary run attempt
+retries remain subject to the effect and deadline rules above.
+
 ## Read runs and calls
 
 Use `core.code.run.list` and `core.code.run.read` as described in

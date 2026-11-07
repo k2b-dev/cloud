@@ -1,6 +1,7 @@
 import { sql } from "@k2b/cloud";
 import { CloudResourceRefSchema, cloudResourceRefAppId } from "@k2b/cloud/contracts";
 import { audit } from "@k2b/cloud/services";
+import { cancelResourceEventSubscriptions } from "@k2b/cloud/services/app-events";
 import { createPgOutbox, type OutboxRow } from "@k2b/cloud/services/outbox";
 import type { SQL } from "bun";
 import type { z } from "zod";
@@ -41,6 +42,7 @@ export async function processCodeOwnerDeleted(row: OwnerDeletedRow): Promise<voi
 }
 
 async function lockDeletedCode(db: SQL, codeId: string, principal: string | null, requestId: string): Promise<void> {
+  await cancelResourceEventSubscriptions(db, "core.code", codeId);
   await db`UPDATE code.codes SET state='deleting',pause_reason='owner_deleted',pause_rows='{}',pause_policy_revision=NULL WHERE id=${codeId}`;
   // Core owns both the workload and its mandate lifecycle. One statement fences every version immediately.
   const revoked = await db`UPDATE auth.mandates m SET state='revoked',revision=revision+1,updated_at=now(),revoked_at=now(),

@@ -605,20 +605,92 @@ test.each([
   expect(result).toMatchObject({ ok: false, diagnostics: expect.arrayContaining([expect.objectContaining({ code })]) });
 });
 
-test("rejects duplicate event/place subscriptions even though events also report Phase 3", async () => {
+test("a checked resource event bundle receives the reference envelope as its one run input", async () => {
+  const manifest = sdkFixture();
+  manifest.events![0]!.place = "workshop";
+  const result = await check(
+    'import {app,owner} from "@sdk"; app.get("/health", c => c.text("Ready")); app.on("work-shop.changed", async event => {await owner.stock.list({cursor:event.subject.id});}); app.schedule({at:"2030-01-02T09:00:00Z",timeZone:"UTC"}, async () => {await owner.stock.list({cursor:"once"});}); export default app;',
+    {
+      sdk: generateCodeSdk([manifest], {
+        mode: "resource",
+        owner: { kind: "resource", ref: { type: "work-shop.workshop", id: "owner-shop" } },
+      }),
+    },
+  );
+  expect(result).toMatchObject({ ok: true });
+  if (!result.ok) return;
+  expect(result.manifest.entrypoints).toMatchObject([
+    { kind: "route", entrypoint: "route:GET:/health", route: { method: "GET", path: "/health", public: false } },
+    {
+      kind: "event",
+      entrypoint: "event:work-shop.changed@1",
+      event: { type: "work-shop.changed", version: 1, place: { type: "work-shop.workshop", id: "owner-shop" } },
+    },
+    { kind: "schedule", entrypoint: "schedule:0", cron: null, at: "2030-01-02T09:00:00Z", timeZone: "UTC" },
+  ]);
+  const file = join(directory, "event-bundle.mjs");
+  await writeFile(file, result.bundle);
+  const module = await import(file);
+  const input = {
+    id: "11111111-1111-4111-8111-111111111111",
+    type: "work-shop.changed",
+    version: 1,
+    source: "work-shop",
+    time: "2026-11-06T12:00:00Z",
+    subject: { type: "work-shop.workshop", id: "item-a" },
+    place: { type: "work-shop.workshop", id: "owner-shop" },
+    data: { title: "fixture" },
+  };
+  // Each runner starts a fresh module with its own one-use bridge.
+  const routeModule = await import(`${file}?route`);
+  expect(
+    await routeModule["route:GET:/health"](
+      { method: "GET", path: "/health", query: "", contentType: "", params: {}, user: { id: "visitor", groups: [] } },
+      {
+        call: async () => {
+          throw new Error("unexpected_call");
+        },
+      },
+    ),
+  ).toEqual({ kind: "text", status: 200, body: "Ready" });
+  const calls: unknown[] = [];
+  await module["event:work-shop.changed@1"](input, {
+    call: async (operation: string, value: unknown) => {
+      calls.push({ operation, value });
+      return { rows: [], next: null };
+    },
+  });
+  expect(calls).toMatchObject([{ operation: "work-shop.stock.list", value: { call: { input: { cursor: "item-a" } } } }]);
+  const onceModule = await import(`${file}?once`);
+  const onceCalls: unknown[] = [];
+  await onceModule["schedule:0"](null, {
+    call: async (operation: string, value: unknown) => {
+      onceCalls.push({ operation, value });
+      return { rows: [], next: null };
+    },
+  });
+  expect(onceCalls).toMatchObject([{ operation: "work-shop.stock.list", value: { call: { input: { cursor: "once" } } } }]);
+}, 30_000);
+
+test("rejects duplicate event/place subscriptions", async () => {
+  const manifest = sdkFixture();
+  manifest.events![0]!.place = "workshop";
   const result = await check(
     `import { app, owner, work_shop } from "@sdk";\napp.on("work-shop.changed", () => {});\napp.on(owner, "work-shop.changed", () => {});`,
+    {
+      sdk: generateCodeSdk([manifest], {
+        mode: "resource",
+        owner: { kind: "resource", ref: { type: "work-shop.workshop", id: "owner-shop" } },
+      }),
+    },
   );
   expect(result).toMatchObject({
     ok: false,
-    diagnostics: expect.arrayContaining([
-      expect.objectContaining({ code: "code_phase_unavailable", message: "app.on kommt in Phase 3" }),
-      expect.objectContaining({ code: "code_duplicate_on", line: 3 }),
-    ]),
+    diagnostics: expect.arrayContaining([expect.objectContaining({ code: "code_duplicate_on", line: 3 })]),
   });
 });
 
-test.each(["nav", "webhook", "on", "fetch"])("reports Phase 2/3 for app.%s", async (method) => {
+test.each(["nav", "webhook", "fetch"])("reports Phase 2/3 for app.%s", async (method) => {
   const result = await check(`import { app as application } from "@sdk"; application.${method}("/", () => {});`);
   expect(result).toMatchObject({
     ok: false,

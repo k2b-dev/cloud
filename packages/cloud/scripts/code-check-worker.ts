@@ -15,13 +15,14 @@ if (Bun.argv.includes("--help")) {
     const expected = JSON.stringify(
       [...request.entrypoints]
         .sort((a, b) => a.entrypoint.localeCompare(b.entrypoint))
-        .filter((e) => e.kind === "schedule" || e.kind === "route")
-        .map(({ kind, entrypoint, cron, at, timeZone, title, route }) => ({
+        .filter((e) => e.kind !== "manual")
+        .map(({ kind, entrypoint, cron, at, timeZone, title, route, event }) => ({
           kind,
           entrypoint,
           ...(route ? { route } : {}),
           cron,
           ...(at === undefined ? {} : { at, timeZone }),
+          ...(event === undefined ? {} : { event }),
           ...(title === undefined ? {} : { title }),
         })),
     );

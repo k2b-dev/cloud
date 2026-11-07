@@ -9,6 +9,7 @@ import {
 } from "@k2b/cloud/contracts";
 import { isAppSessionActor } from "@k2b/cloud/server";
 import { audit, canRepairAppAccess } from "@k2b/cloud/services";
+import { cancelResourceEventSubscriptions } from "@k2b/cloud/services/app-events";
 import {
   APPROVAL_MAX_WAIT_MS,
   type ApprovalDecisionActor,
@@ -26,6 +27,7 @@ import type { z } from "zod";
 import { type CodeContext, CodeDataError, codePerson, requireCodePermission } from "./access";
 import { createCodeCheckRequest, verifyCodeSubmission } from "./authoring-check";
 import { CODE_INLINE_JSON_BYTES, type Code, type CodeSourceFiles, type CodeVersion, CodeVersionSchema } from "./contracts";
+import { CODE_EVENT_CONSUMER, syncCodeEventSubscriptions } from "./event-subscriptions";
 import { readCodePolicyGroups, readCodePolicySnapshot, replaceCodePolicyCoverage, requireCodePolicyAdmin } from "./policy";
 import { codePolicyRow } from "./policy-contracts";
 import { effective } from "./policy-effective";
@@ -677,6 +679,8 @@ export async function setCodePaused(codeId: string, paused: boolean, context: Co
     if (!paused) await requireCodeVersionApproval(code, code.activeVersionId, tx);
     const state = paused ? ("paused" as const) : ("active" as const);
     if (code.state !== state) {
+      if (paused) await cancelResourceEventSubscriptions(tx, CODE_EVENT_CONSUMER, codeId);
+      else await syncCodeEventSubscriptions(code, code.activeVersionId, tx);
       await tx`UPDATE code.codes SET state=${state},pause_reason=${paused ? "manual" : null},pause_rows='{}',pause_policy_revision=NULL WHERE id=${codeId}`;
       await audit.record(
         {
