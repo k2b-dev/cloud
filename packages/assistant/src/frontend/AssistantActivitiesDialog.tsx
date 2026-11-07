@@ -7,11 +7,11 @@ import { query } from "@k2b/stdlib/solid";
 import { Button, Chat, MarkdownView, NoticeCard, Placeholder, prompts, renderSafeMarkdown, StatusBadge, useLocale } from "@k2b/ui";
 import { createMemo, createSignal, For, onCleanup, Show } from "solid-js";
 import { openAssistantCloudReference } from "./AssistantContextContent";
-import { occurrencePresentation, openAssistantTask } from "./AssistantTasksDialog";
+import { openAssistantTask } from "./AssistantTasksDialog";
 import { type AssistantLiveHub, AssistantLiveProvider, matchesAssistantInvalidation, useAssistantLive } from "./assistant-live";
 import { assistantConversationHref } from "./assistant-navigation";
 import { assistantMessages } from "./messages";
-import { formatAssistantTaskSchedule } from "./scheduled-task-format";
+import { formatAssistantTaskSchedule, occurrencePresentation } from "./scheduled-task-format";
 import { assistantBrowserText, useAssistantText } from "./ui-copy";
 
 export type AssistantActivity = { task: AiChatTaskView; occurrence: AiChatTaskOccurrenceView; chatTitle: string | null; unread: boolean };
@@ -175,7 +175,13 @@ function AssistantTaskRun(props: { taskId: string; occurrenceId: string; transcr
             <Button variant="ghost" size="sm" onClick={() => navigateTo(assistantConversationHref("/app/assistant", value().task.chatId))}>
               {text("Open chat")}
             </Button>
-            <Button variant="ghost" size="sm" onClick={() => openAssistantTask(value().task, live)}>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() =>
+                openAssistantTask(value().task, live, (taskId, occurrenceId) => void openAssistantTaskRun(taskId, occurrenceId, live))
+              }
+            >
               {text("Manage routine")}
             </Button>
           </div>

@@ -1531,7 +1531,13 @@ export default function AssistantWorkspace(props: Props) {
       onOpenApp: (id, title) => window.location.assign(`/app/assistant/apps/${encodeURIComponent(id)}`),
       onJump: (target) => void jumpTo(target),
       onOpenSecrets: openChatSecrets,
-      onOpenTask: (task) => void openAssistantTask(task, liveHub, editScheduledTask),
+      onOpenTask: (task) =>
+        void openAssistantTask(
+          task,
+          liveHub,
+          (taskId, occurrenceId) => void openAssistantTaskRun(taskId, occurrenceId, liveHub),
+          editScheduledTask,
+        ),
       onFileDeleted: (file) => artifactWorkspace.closeFile(file.conversationId, file.path),
     });
   const contextHost = createChatSidebarHost({

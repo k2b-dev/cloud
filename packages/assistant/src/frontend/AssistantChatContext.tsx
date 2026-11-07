@@ -278,7 +278,7 @@ function AssistantChatContextView(
           onClick: () => void deleteChatFile(file),
         }
       : undefined;
-  const openTask = (task: AssistantChatTask) => void openAssistantTask(task, live);
+  const openTask = (task: AssistantChatTask) => void openAssistantTask(task, live, openRun);
   const overview = (category: ContextCategory, title: string) => {
     const context = props.state.context();
     if (!context || !props.onOpenView) return;

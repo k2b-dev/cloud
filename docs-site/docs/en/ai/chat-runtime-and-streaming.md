@@ -1006,7 +1006,7 @@ and scripts have no check gate. The self-test is not a security mechanism.
 Desktop and phone run a saved app on separate disposable copies of its data;
 one-off apps have no storage, as in their chat card. AI runs for real; HTTP and
 capability effects are unavailable, and background checks reject all
-capabilities. See [HTML app checks](/en/docs/ai/chat-interface#check-an-html-app-before-showing-it)
+capabilities. See [HTML app checks](/en/docs/ai/chat-interface#legacy-studio-html-checks)
 for step matching, copy/output budgets, cancellation and the report contract.
 
 ## Register host-owned tools
