@@ -432,6 +432,37 @@ describe("public ImageEditor interactions", () => {
     }
   });
 
+  test("committing a redaction and undo paint before a deferred animation frame", async () => {
+    const { page, errors } = await open("", 390);
+    try {
+      await selectTool(page, "Redact");
+      await settled(page);
+      const canvas = page.locator(".k2b-image-editor__image > canvas");
+      const pixel = () =>
+        canvas.evaluate((element) => {
+          const target = element as HTMLCanvasElement;
+          return [...target.getContext("2d")!.getImageData(Math.floor(target.width * 0.3), Math.floor(target.height * 0.3), 1, 1).data];
+        });
+      const original = await pixel();
+      // A backgrounded or busy WebKit may postpone preview frames beyond pointerup.
+      await page.evaluate(() => {
+        window.requestAnimationFrame = () => 0;
+      });
+      const image = (await page.locator(".k2b-image-editor__image").boundingBox())!;
+      await page.mouse.move(image.x + image.width * 0.2, image.y + image.height * 0.2);
+      await page.mouse.down();
+      await page.mouse.move(image.x + image.width * 0.4, image.y + image.height * 0.4);
+      await page.mouse.up();
+      expect(await pixel()).toEqual([0, 0, 0, 255]);
+      await page.getByRole("button", { name: "Undo", exact: true }).click();
+      expect(await pixel()).toEqual(original);
+      expect(await dirty(page)).toBe("false");
+      expect(errors).toEqual([]);
+    } finally {
+      await page.close();
+    }
+  });
+
   test("each drawing tool renders a gesture and undo restores the photo", async () => {
     const { page, errors } = await open();
     try {

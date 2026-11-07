@@ -119,6 +119,8 @@ completed `commit`, not to the promise merely settling.
 `onDirtyChange` reports whether the current history entry differs from the last
 successfully saved entry. Undoing to that entry clears dirty; branching from
 an earlier entry stays dirty. One slider gesture is one history step.
+Completed edits and Undo update the preview immediately. In-progress gestures
+combine preview updates into animation frames.
 
 Cancel asks before discarding edits. The editor warns on reload/close and uses
 `onBeforeLeave` from `@k2b/ssr/nav` for enhanced navigation.

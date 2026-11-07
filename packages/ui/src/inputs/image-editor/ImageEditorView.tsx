@@ -317,7 +317,7 @@ function ImageEditorSession(props: ImageEditorProps): JSX.Element {
     const edit = renderedState();
     if (!image || !canvas) return;
     cancelAnimationFrame(frame);
-    frame = requestAnimationFrame(() => {
+    const paint = () => {
       if (!canvas || !alive) return;
       try {
         scratch ??= document.createElement("canvas");
@@ -329,7 +329,10 @@ function ImageEditorSession(props: ImageEditorProps): JSX.Element {
       } catch {
         setError(t().loadFailed);
       }
-    });
+    };
+    // Gestures may coalesce, but a committed edit (including undo) must already match its visible preview.
+    if (draft()) frame = requestAnimationFrame(paint);
+    else paint();
   });
   const beforeUnload = (event: BeforeUnloadEvent) => {
     if (dirty() || inlineText()) {
