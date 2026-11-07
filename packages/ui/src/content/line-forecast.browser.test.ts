@@ -126,6 +126,10 @@ for (const width of [1440, 390])
       if (state === "error")
         await page.getByRole("button", { name: "Erneut versuchen" }).evaluate((button) => (button as HTMLButtonElement).click());
     }
+    await page.getByRole("button", { name: "Select cash observation", exact: true }).click();
+    expect(await chart.locator("[data-selected]").count()).toBe(1);
+    expect(await chart.locator("[data-selected] circle").evaluate((mark) => getComputedStyle(mark).stroke)).not.toBe("none");
+    await page.getByRole("button", { name: "Select cash observation", exact: true }).click();
     expect(await chart.locator(".k2b-line-forecast-band").count()).toBe(1);
     expect(await chart.locator(".k2b-line-negative-zone").count()).toBe(1);
     expect(await chart.locator(".k2b-line-threshold").count()).toBe(1);

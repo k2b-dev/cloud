@@ -29,11 +29,15 @@ const snapshotRows = snapshot.marks.map((mark) => ({
   amount: String(mark.datum.values.find((f) => f.key === "y")?.value),
 }));
 const [state, setState] = createSignal("data");
+const [selected, setSelected] = createSignal(false);
 render(
   () => (
     <LocaleProvider locale="de">
       <main>
         <nav>
+          <button type="button" onClick={() => setSelected(!selected())}>
+            Select cash observation
+          </button>
           {["data", "loading", "empty", "error", "stale"].map((s) => (
             <button type="button" onClick={() => setState(s)}>
               {s}
@@ -46,6 +50,7 @@ render(
           <div class="line-forecast-frame">
             <Chart
               kind="line"
+              selected={selected() ? { role: "point", seriesIndex: 0, index: 3 } : null}
               {...lineForecastFixture}
               yAxis={{
                 format: (value) =>
