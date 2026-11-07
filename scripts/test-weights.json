@@ -125,6 +125,7 @@
     "@k2b/cloud-app-filesv2 src/frontend/Settings.browser.test.ts": 8.3,
     "@k2b/cloud-app-filesv2 src/frontend/StorageOverview.browser.test.ts": 6.5,
     "@k2b/cloud-app-filesv2 src/frontend/UploadPanel.browser.test.ts": 23.7,
+    "@k2b/cloud-app-filesv2 src/frontend/upload-pacing.browser.test.ts": 5,
     "@k2b/cloud-app-filesv2 src/styles/selection-colors.browser.test.ts": 1.9,
     "@k2b/cloud-app-gateway-ops src/frontend/RangeTabs.browser.test.ts": 3.2,
     "@k2b/cloud-app-gateway-ops src/observability/_components/ObservabilityArea.browser.test.ts": 33.3,
