@@ -1,18 +1,8 @@
-import {
-  CopyButton,
-  DataTable,
-  type DataTableSort,
-  DataTableTools,
-  DescriptionList,
-  filterRows,
-  StatCell,
-  type StatCellAccent,
-  StatGrid,
-  type StatGridColumns,
-  useLocale,
-} from "@k2b/ui";
-import { createMemo, createSignal, createUniqueId, Index, type JSX, Match, onCleanup, onMount, Show, Switch } from "solid-js";
-import { type CloudAiChartRow, cloudAiNumberFormatters } from "../chart-block";
+import { DescriptionList, StatCell, type StatCellAccent, StatGrid, type StatGridColumns, useLocale } from "@k2b/ui";
+import { createMemo, createSignal, createUniqueId, Index, Match, onCleanup, onMount, Show, Switch } from "solid-js";
+import { CloudChartGroupView, CloudChartView, CloudExplorerView } from "#chat-charts";
+import { importOnDemand } from "../../browser/reload";
+import { cloudAiNumberFormatters } from "../chart-block";
 import {
   CLOUD_AI_DETAILS_VIEWPORT_ITEMS,
   CLOUD_AI_VIEW_MAX_BYTES,
@@ -24,28 +14,15 @@ import {
   type CloudAiViewSummary,
   cloudAiDetailsRows,
   cloudAiStatsTiles,
-  cloudAiTableTsv,
   cloudAiViewSummary,
-  cloudAiViewTable,
   isAiViewFile,
   parseCloudAiView,
-  sortCloudAiViewRows,
 } from "../view-block";
-import { CloudChartGroupView, CloudChartView } from "./chart-block";
-import { CloudExplorerView } from "./explorer-block";
 import { useAiChatActions } from "./message-actions";
 import { aiChatMessages } from "./messages";
 import { ReferenceText } from "./reference-text";
-
-/** Rows a table shows inline, as capability tables do; sorting and Copy data use all of them. */
-const VISIBLE_ROWS = 100;
-/** Rows the viewport shows before it scrolls; it reserves their height from the first frame. */
-const VIEWPORT_ROWS = 8;
-/** A compact DataTable row and its totals row, and the quieter header row above them. */
-const ROW_REM = 2.5;
-const HEADER_REM = 2.125;
-/** DataTable draws a hairline between rows only above this many columns. */
-const HAIRLINE_ABOVE_COLUMNS = 8;
+import { CloudTablePlaceholder, type TableSummary } from "./table-placeholder";
+import { ViewHeading } from "./view-heading";
 
 /** Loads a view file with the viewer's access and validates it again: a file is untrusted whoever wrote it. */
 async function loadView(url: string, path: string, signal: AbortSignal): Promise<CloudAiView | null> {
@@ -60,176 +37,33 @@ async function loadView(url: string, path: string, signal: AbortSignal): Promise
   }
 }
 
-/** A view's title and subtitle: the loaded file's once it is there, its summary's before. */
-function ViewHeading(props: { id: string; title: string; subtitle?: string; actions?: JSX.Element }) {
-  return (
-    <header class="flex flex-wrap items-center justify-between gap-2">
-      <div class="min-w-0">
-        <h3 id={props.id} class="m-0 text-base font-semibold">
-          {props.title}
-        </h3>
-        <Show when={props.subtitle}>{(subtitle) => <span class="text-sm text-secondary">{subtitle()}</span>}</Show>
-      </div>
-      {props.actions}
-    </header>
-  );
-}
-
-type TableSummary = Extract<CloudAiViewSummary, { view: "table" }>;
 type ChartSummary = Extract<CloudAiViewSummary, { view: "chart" }>;
 type GroupSummary = Extract<CloudAiViewSummary, { view: "group" }>;
 type ExplorerSummary = Extract<CloudAiViewSummary, { view: "explorer" }>;
 
-/**
- * The header row, the rows up to the viewport's, and the totals row when there is one, inside the paper's 1px frame.
- * Wide tables add a 1px hairline after each visible body row with a following body row; the footer adds none.
- */
-const tableHeight = (summary: TableSummary) => {
-  const bodyRows = Math.max(1, Math.min(summary.rows, VIEWPORT_ROWS));
-  const rows = bodyRows + Number(summary.footer);
-  const lines = summary.columns > HAIRLINE_ABOVE_COLUMNS ? bodyRows - 1 + Number(summary.rows > VIEWPORT_ROWS) : 0;
-  return `calc(${HEADER_REM + rows * ROW_REM}rem + ${2 + lines}px)`;
-};
-
-/**
- * A table view: title, Copy data and a sortable table in a viewport whose height follows the row count of its
- * `present` summary, so loading, the table and the unavailable state take the same room.
- */
+/** A table's controls and row renderer load only when a Chat first presents a table. */
 function CloudTableView(props: { summary: TableSummary; input: CloudAiTableView | null | undefined }) {
-  const locale = useLocale();
-  const t = () => aiChatMessages(locale());
   const id = `cloud-view-${createUniqueId()}`;
-  const table = createMemo(() => (props.input ? cloudAiViewTable(props.input, locale()) : null));
-  // The view's own order applies until the reader picks one.
-  const [picked, setSort] = createSignal<DataTableSort>();
-  const sort = (): DataTableSort | null => {
-    const own = props.input?.sort;
-    return picked() ?? (own ? { key: own.column, direction: own.direction } : null);
-  };
-  // cloudAiViewTable returns the view's own order; a picked one sorts again.
-  const rows = createMemo(() => {
-    const value = table();
-    const order = picked();
-    return !value ? [] : order ? sortCloudAiViewRows(value.rows, order, locale()) : value.rows;
+  const [module, setModule] = createSignal<typeof import("./table-block") | null | undefined>();
+  onMount(() => {
+    let disposed = false;
+    onCleanup(() => {
+      disposed = true;
+    });
+    void importOnDemand(() => import("./table-block")).then((loaded) => {
+      if (!disposed) setModule(loaded ?? null);
+    });
   });
-  const [query, setQuery] = createSignal("");
-  const [groupBy, setGroupBy] = createSignal<string | null>(null);
-  // Search matches the cells as they are shown; Copy data keeps every row of the view.
-  const shown = createMemo(() => {
-    const value = table();
-    return value
-      ? filterRows(
-          rows(),
-          value.columns.map((column) => ({ id: column.id, value: (row: CloudAiChartRow) => row.cells[column.id] ?? "" })),
-          query(),
-          locale(),
-        )
-      : [];
-  });
-  const copyText = createMemo(() => {
-    const value = table();
-    return value ? cloudAiTableTsv({ ...value, rows: rows() }) : "";
-  });
-  const groups = () =>
-    props.input?.groupBy?.map((group) => ({
-      id: group.id,
-      label: group.label ?? props.input?.columns.find((column) => column.id === group.id)?.label ?? group.id,
-    }));
-  let tools: HTMLDivElement | undefined;
-  const number = () => new Intl.NumberFormat(locale());
-  const refColumns = createMemo(() => new Set(props.input?.columns.flatMap((column) => (column.type === "ref" ? [column.id] : []))));
   return (
-    <section class="grid min-w-0 gap-3" aria-labelledby={id}>
-      <ViewHeading
-        id={id}
-        title={props.input?.title ?? props.summary.title}
-        subtitle={props.input ? props.input.subtitle : props.summary.subtitle}
-        actions={
-          <div class="flex min-w-0 flex-wrap items-center gap-2">
-            {/* The summary reserves the tools from the first frame; they wait, disabled, for the rows. */}
-            <Show when={props.summary.search || props.summary.grouped}>
-              <div ref={tools} class="contents">
-                <DataTableTools
-                  label={props.input?.title ?? props.summary.title}
-                  query={query()}
-                  onQueryChange={props.summary.search ? setQuery : undefined}
-                  groups={props.summary.grouped ? (groups() ?? []) : undefined}
-                  groupBy={groupBy()}
-                  onGroupByChange={props.summary.grouped ? setGroupBy : undefined}
-                  disabled={!table()}
-                />
-              </div>
-            </Show>
-            <CopyButton text={copyText()} label={t().viewCopyData} iconOnly size="sm" variant="ghost" disabled={!table()} />
-          </div>
-        }
-      />
-      <div class="min-w-0" style={{ height: tableHeight(props.summary) }}>
-        <Show
-          when={table()}
-          fallback={
-            <div role="status" class="flex h-full items-center justify-center text-center text-xs text-dimmed">
-              {props.input === undefined ? t().viewLoading : t().viewUnavailable}
-            </div>
-          }
-        >
-          {(value) => (
-            <DataTable<CloudAiChartRow>
-              rows={shown().slice(0, VISIBLE_ROWS)}
-              columns={value().columns.map((column) => ({
-                id: column.id,
-                header: column.label,
-                priority: props.input?.columns.find((entry) => entry.id === column.id)?.priority,
-                // A wrapped label would make the header taller than the reserved row; the table scrolls sideways instead.
-                headerClass: "whitespace-nowrap",
-                value: (row) => row.cells[column.id] ?? "",
-                align: column.numeric ? "right" : "left",
-                sortable: true,
-              }))}
-              renderCell={({ row, col, value: text, render }) => {
-                // Row keys are row indexes, so a reference cell finds its object in the loaded view.
-                const cells = props.input?.rows[Number(row.key)];
-                const cell = refColumns().has(col.id) && cells && Object.hasOwn(cells, col.id) ? cells[col.id] : undefined;
-                return cell && typeof cell === "object" ? <ReferenceText text={String(text)} reference={cell} /> : render(text);
-              }}
-              getRowId={(row) => row.key}
-              sort={sort()}
-              onSortChange={setSort}
-              footer={
-                value().footer
-                  ? {
-                      values: value().footer?.cells,
-                      renderCell: ({ col, value }) => {
-                        const text = typeof value === "string" ? value : "";
-                        const cells = props.input?.footer;
-                        const cell = refColumns().has(col.id) && cells && Object.hasOwn(cells, col.id) ? cells[col.id] : undefined;
-                        return cell && typeof cell === "object" ? <ReferenceText text={text} reference={cell} /> : text;
-                      },
-                    }
-                  : undefined
-              }
-              ariaLabelledBy={id}
-              groupBy={groupBy() ?? undefined}
-              query={query()}
-              onClearQuery={() => {
-                setQuery("");
-                tools?.querySelector("input")?.focus();
-              }}
-              density="compact"
-              surface="paper"
-              stickyHeader
-              class="h-full"
-              empty={<span>{t().tableEmpty}</span>}
-            />
-          )}
-        </Show>
-      </div>
-      <Show when={props.summary.rows > VISIBLE_ROWS}>
-        <p class="text-sm text-secondary">
-          {t().viewRowsCapped({ shown: number().format(VISIBLE_ROWS), total: number().format(props.summary.rows) })}
-        </p>
-      </Show>
-    </section>
+    <Show
+      when={module()}
+      fallback={<CloudTablePlaceholder id={id} summary={props.summary} loading={module() !== null && props.input !== null} />}
+    >
+      {(loaded) => {
+        const Table = loaded().CloudTableView;
+        return <Table id={id} summary={props.summary} input={props.input} />;
+      }}
+    </Show>
   );
 }
 

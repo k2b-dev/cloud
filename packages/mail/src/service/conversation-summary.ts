@@ -180,8 +180,9 @@ const applyConversationSummaryInTransaction = async (params: {
   const person = params.context ? userBackedActor(params.context) : null;
   const workflowVersionId = params.actorOverride?.kind === "workflow" ? params.actorOverride.workflowVersionId : null;
   const [workflow] = workflowVersionId
-    ? await params.db<{ id: string; name: string }[]>`SELECT w.id, w.name FROM workflows.workflow w
-        JOIN workflows.version v ON v.workflow_id = w.id WHERE v.id = ${workflowVersionId}::uuid`
+    ? await params.db<
+        { id: string; name: string }[]
+      >`SELECT workflow_id AS id, name FROM mail.workflow_source_names WHERE version_id = ${workflowVersionId}::uuid`
     : [];
   // Sync may link envelopes before hydration advances the conversation revision.
   // Automated text must not claim to cover messages whose body is still unavailable.

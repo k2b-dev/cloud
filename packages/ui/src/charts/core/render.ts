@@ -1,12 +1,7 @@
-import { type BarChartOptions, barChartLayout, renderBarChartSvg } from "../../content/chart-bar";
+import { type BarChartOptions, renderBarChartSvg } from "../../content/chart-bar";
 import { lineGapsSvg } from "../../content/chart-line-gaps";
 import { DEFAULT_MAP_VIEWPORT, normalizeMapViewport } from "../../content/chart-map-viewport";
-import {
-  renderStateTimelineSvg,
-  type StateTimelineChartOptions,
-  type StateTimelineDomain,
-  stateTimelineHeight,
-} from "../../content/chart-state-timeline";
+import { renderStateTimelineSvg, type StateTimelineChartOptions, type StateTimelineDomain } from "../../content/chart-state-timeline";
 import { responsiveChartSvg, responsiveMapSvg } from "../../content/chart-svg";
 import { type ChartTimeAxis, timeAxisSvg } from "../../content/chart-time-axis";
 import { type AreaOptions, renderAreaSvg } from "./area";
@@ -38,13 +33,9 @@ export type ChartDrawingOptions = {
 }[ChartKind];
 export type ChartRenderOptions = RenderOptions<ChartDrawingOptions>;
 
-/** Keep the fixed 28-unit bar-gauge rows inside the shared SSR/browser coordinate space. */
-export const chartRenderHeight = (props: ChartRenderOptions): number => {
-  if (props.kind === "stateTimeline") return stateTimelineHeight(props.rows.length, props.legend !== false);
-  if (props.kind === "bar") return barChartLayout(props).height;
-  if (props.kind === "barGauge") return Math.max(280, (props.title || props.subtitle ? 42 : 16) + props.data.length * 28 + 14);
-  return 280;
-};
+export { chartRenderHeight, preservesAspectRatio } from "./render-size";
+
+import { preservesAspectRatio } from "./render-size";
 
 /** Shared logical SVG renderer; callbacks and browser interaction stay with the Solid host. */
 export const renderChartSvg = (
@@ -121,9 +112,6 @@ const lineTimeDomain = (props: Extract<ChartDrawingOptions, { kind: "line" }>): 
     hi = Math.max(...xs);
   return lo < hi ? [lo, hi] : undefined;
 };
-
-export const preservesAspectRatio = (kind: ChartKind) =>
-  kind === "map" || kind === "pie" || kind === "donut" || kind === "gauge" || kind === "radar";
 
 export type ChartSize = { width: number; height: number };
 export type ChartScene = ChartSize & { kind: ChartKind; svg: string };
