@@ -70,6 +70,16 @@ test("calibrates with a Blob, preserves bytes and does not decay on timer-delaye
 }, 10_000);
 
 test("a bottleneck ACK tail lowers the next target; failed responses do not calibrate", async () => {
+  // Advance logical time by each requested pacing delay; host scheduling must not change the simulated link.
+  spyOn(performance, "now").mockImplementation(() => clock);
+  const schedule = globalThis.setTimeout;
+  Object.defineProperty(globalThis, "setTimeout", {
+    value: (callback: () => void, delay = 0) =>
+      schedule(() => {
+        clock += delay;
+        callback();
+      }, 0),
+  });
   const durations: number[] = [];
   let calls = 0;
   transport(async (init) => {
@@ -90,13 +100,17 @@ test("a bottleneck ACK tail lowers the next target; failed responses do not cali
     return new Response(null, { status: 204 });
   });
   const request = createPacedUploadRequest();
-  await put(request);
-  await put(request);
-  await put(request);
-  await put(request);
-  await put(request);
-  expect(durations[2]).toBeGreaterThan(durations[1]! * 1.4);
-  expect(durations[2]).toBeLessThan(2500); // Never pace below the supported 64 KiB/s.
+  try {
+    await put(request);
+    await put(request);
+    await put(request);
+    await put(request);
+    await put(request);
+    expect(durations[2]).toBeGreaterThan(durations[1]! * 1.4);
+    expect(durations[2]).toBeLessThan(2500); // Never pace below the supported 64 KiB/s.
+  } finally {
+    Object.defineProperty(globalThis, "setTimeout", { value: schedule });
+  }
 }, 10_000);
 
 test("a streaming TypeError leaves the bounded SDK retry a fresh replayable Blob", async () => {
