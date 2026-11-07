@@ -1756,17 +1756,24 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 .k2b-ui .k2b-chart [data-chart-datum] {
   cursor: crosshair;
 }
-/* Calm hover keeps category bands behind marks; keyboard inspection still outlines marks. */
-.k2b-ui .k2b-chart [data-inspected]:not([data-chart-role="value"]) > :is(rect, path, circle):not(.k2b-chart-category-band) {
+/* Calm hover: nothing else dims. A single mark gets a thin outline; a column or row
+ * of a category chart gets a light band behind it instead (data-inspecting="category"). */
+.k2b-ui .k2b-chart:not([data-chart-kind="bar"], [data-chart-kind="histogram"], [data-chart-kind="boxplot"]) [data-inspected]:not([data-chart-role="value"]) > :is(rect, path, circle):not(.k2b-chart-category-band) {
   stroke: var(--k2b-chart-inspection-color) !important;
   vector-effect: non-scaling-stroke;
 }
-.k2b-ui .k2b-chart [data-inspected]:not([data-chart-role="value"]) > :is(rect, path) {
+.k2b-ui .k2b-chart:not([data-chart-kind="bar"], [data-chart-kind="histogram"], [data-chart-kind="boxplot"]) [data-inspected]:not([data-chart-role="value"]) > :is(rect, path) {
   stroke-width: 1.5px;
 }
 /* Points keep a 2 px ring: a tiny point is hit through its stroke, so a thinner ring would let the drawing take the pointer. */
-.k2b-ui .k2b-chart [data-inspected]:not([data-chart-role="value"]) > circle {
+.k2b-ui .k2b-chart:not([data-chart-kind="bar"], [data-chart-kind="histogram"], [data-chart-kind="boxplot"]) [data-inspected]:not([data-chart-role="value"]) > circle {
   stroke-width: 2px;
+}
+/* Keyboard inspection outlines category marks; pointer hover keeps their resting paint. */
+.k2b-ui .k2b-chart:is([data-chart-kind="bar"], [data-chart-kind="hbar"], [data-chart-kind="histogram"], [data-chart-kind="boxplot"]) [data-inspected="true"] > :is(rect, path, circle):not(.k2b-chart-category-band) {
+  stroke: var(--k2b-chart-inspection-color) !important;
+  stroke-width: 1.5px;
+  vector-effect: non-scaling-stroke;
 }
 /* The band sits behind the marks without positioning the drawing, which would change what lies on top. */
 .k2b-ui .k2b-chart[data-inspecting="category"] {
@@ -17357,6 +17364,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 /* Pointer hover paints only the band; keyboard inspection and selection outline the marks. */
 .k2b-ui .k2b-chart-category-band { stroke: none; }
 .k2b-ui .k2b-chart [data-inspected] > .k2b-chart-category-band { fill: color-mix(in srgb, currentColor 5%, transparent); }
-.k2b-ui .k2b-chart:is([data-inspecting="category"],:has(.k2b-chart-category-band)) [data-inspected="hover"]:not([data-selected]) > :is(rect,path,circle):not(.k2b-chart-category-band) { stroke: none !important; }
+.k2b-ui .k2b-chart:has(.k2b-chart-category-band) [data-inspected="hover"]:not([data-selected]) > :is(rect,path,circle):not(.k2b-chart-category-band) { stroke: none !important; }
 .k2b-ui .stdlib-chart .k2b-chart-group-heading { font-size: 11.5px; font-weight: 600; opacity: 1; }
 .k2b-ui .stdlib-chart .k2b-chart-segment-value { font-size: 11px; font-weight: 500; fill: currentColor; opacity: 1; }
+.k2b-ui .k2b-chart[data-chart-kind="area"] [data-selected] > .k2b-area-inspection-point { opacity: 1; stroke-width: 1.5px; }

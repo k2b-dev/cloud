@@ -1,5 +1,5 @@
 import { barSeriesLegend, chartTextWidth, headerHeight, renderHeader, wrapLabel } from "../../content/chart-bar";
-import { categoryLabels } from "./category-labels";
+import { chartMessages } from "../../content/chart-message-catalog";
 import { chartDatumSvg, escapeXml, extendDomainToNice, niceStep, svgRoot } from "./svg";
 
 export type HorizontalBarOptions = {
@@ -68,7 +68,7 @@ export function renderHbarSvg(spec: HorizontalBarOptions & { width: number; heig
   const text = (x: number, y: number, value: string, anchor = "start", extra = "") =>
     `<text class="stdlib-chart-tick-label" x="${x}" y="${y}" text-anchor="${anchor}" ${extra}>${escapeXml(value)}</text>`;
   const parts: string[] = [renderHeader({ title: spec.title, subtitle: spec.subtitle }, spec.width)];
-  const labels = categoryLabels(spec.locale);
+  const labels = chartMessages.resolve([spec.locale ?? "en"]).t;
   const header = headerHeight({ title: spec.title, subtitle: spec.subtitle });
   if (spec.legend !== false)
     g.legend.items.forEach((entry, i) => {
@@ -137,7 +137,7 @@ export function renderHbarSvg(spec: HorizontalBarOptions & { width: number; heig
           row.label,
           row.group,
           ...row.values.map((v, i) => `${spec.series[i]}: ${v === null ? "–" : g.format(v)}`),
-          `${labels.total}: ${row.total === null ? "–" : g.format(row.total)}`,
+          `${labels.chartFields({ key: "total" })}: ${row.total === null ? "–" : g.format(row.total)}`,
         ]
           .filter(Boolean)
           .join(" · "),

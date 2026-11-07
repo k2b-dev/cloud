@@ -30,15 +30,7 @@ test("every parity spec preserves legacy SVG output", () => {
     if (!expected) throw new Error(`Missing frozen pre-port SVG: ${row.id}`);
     const height = chartRenderHeight(spec);
     expect(height, row.id).toBe(expected.height);
-    // Bars deliberately add transparent category hit bands and top-anchored tooltips (D1).
-    // Compare every painted node against the frozen oracle; interaction has its own browser guards.
-    const drawing = (svg: string) =>
-      spec.kind === "bar"
-        ? svg
-            .replace(/<rect class="k2b-chart-category-band" fill="none" pointer-events="all" [^>]*\/>/g, "")
-            .replace(/&quot;anchor&quot;:\[[^\]]+\]/g, "&quot;anchor&quot;:[category]")
-        : svg;
-    expect(drawing(stableIds(renderChartSvg(spec, 480, height))), row.id).toBe(drawing(legacy.drawings[expected.ui]!));
+    expect(stableIds(renderChartSvg(spec, 480, height)), row.id).toBe(legacy.drawings[expected.ui]!);
     const raw = charts[spec.kind] as (spec: unknown) => string;
     expect(stableIds(raw({ ...spec, width: 480, height, inspect: true })), `${row.id}: raw renderer`).toBe(legacy.drawings[expected.raw]!);
   }

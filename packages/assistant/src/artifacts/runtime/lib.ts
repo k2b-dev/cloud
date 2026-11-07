@@ -26,6 +26,7 @@ import {
   isChartDatum,
   line,
   pie,
+  renderAreaSvg,
   renderBarChartSvg,
   renderHbarSvg,
   scatter,
@@ -97,6 +98,9 @@ function drawChart(options: StoredChart, locale: string, width: number, height: 
     const common = { width, height, title: options.title, subtitle: options.input.subtitle, inspect: true };
     let svg: string;
     switch (mapped.kind) {
+      case "area":
+        svg = renderAreaSvg({ ...mapped, ...common });
+        break;
       case "bar": {
         // The title and subtitle take height too: lay out exactly what is drawn.
         const layout = barChartLayout({ ...mapped, ...common }, width);
@@ -164,7 +168,7 @@ function drawChart(options: StoredChart, locale: string, width: number, height: 
           opening = opening.replace(/ data-chart-datum="[^"]*"/, () => ` data-chart-datum="${escapeXml(JSON.stringify(datum))}"`);
         }
         const row = rows.add(datum);
-        const tooltip = cloudAiChartTooltip(rows.columns(), row);
+        const tooltip = cloudAiChartTooltip(rows.columns(), row, options.input.kind);
         const text = [tooltip.title, ...tooltip.rows.map((row) => `${row.label}: ${row.value}`)].filter(Boolean).join(" · ");
         // Single-quoted XML attributes keep compact JSON quotes literal, saving space on dense charts.
         const encodedTooltip = escapeXml(JSON.stringify(tooltip)).replace(/&quot;/g, '"');

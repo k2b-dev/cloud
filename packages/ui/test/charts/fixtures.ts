@@ -2,6 +2,7 @@ import type { ChartProps } from "../../src/content/Chart";
 
 /** Shared fictional inputs for entry-point, renderer and hydration parity. */
 export const chartFixtures = {
+  area: { kind: "area", layout: "stacked", x: ["Jan", "Feb"], series: [{ label: "Sales", data: [3, 4] }] },
   line: {
     kind: "line",
     series: [

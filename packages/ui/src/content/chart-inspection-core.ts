@@ -1,8 +1,6 @@
-import type { ChartDatum, ChartKind } from "../charts/core";
+import type { ChartDatum, ChartKind } from "../charts/core/types";
 import { positionTooltipSurface } from "../feedback/tooltip-position";
 import type { ChartCursor, ChartCursorState } from "./chart-cursor";
-
-export type { ChartKind } from "../charts/core";
 
 export {
   type ChartDatumRef,
@@ -12,6 +10,7 @@ export {
   isChartDatum,
   sameChartDatum,
 } from "../charts/core/inspection";
+export type { ChartKind } from "../charts/core/types";
 
 import {
   type ChartDatumRef,
@@ -44,6 +43,10 @@ export function createChartInspector(options: {
   anchor: () => HTMLSpanElement | undefined;
   kind: () => ChartKind;
   enabled: () => boolean;
+  /** Locale for unformatted values in an attached series legend. */
+  locale?: () => string;
+  /** Legend host when it is outside the inspected SVG container. */
+  legend?: () => ParentNode | undefined;
   format: ChartTooltipFormatter;
   select: (selection: ChartSelection) => void;
 }) {
@@ -137,7 +140,27 @@ export function createChartInspector(options: {
     });
   };
   const rawX = (entry: Entry) => entry.datum.values.find((field) => field.key === "x")?.value;
-  const seriesChart = () => options.kind() === "line" || options.kind() === "sparkline";
+  const category = (entry: Entry) => (options.kind() === "area" ? entry.datum.index : rawX(entry));
+  const seriesChart = () => options.kind() === "line" || options.kind() === "area" || options.kind() === "sparkline";
+  const updateLegend = (items: Entry[] | undefined) => {
+    const root = options.legend?.() ?? options.container();
+    for (const node of root?.querySelectorAll<HTMLElement | SVGElement>("[data-chart-legend-value]") ?? []) {
+      if (!items) {
+        node.textContent = node.getAttribute("data-default") ?? "";
+        continue;
+      }
+      const series = Number(node.getAttribute("data-series-index"));
+      const field = items
+        .find((item) => item.datum.seriesIndex === series)
+        ?.datum.values.find((field) => field.key === node.getAttribute("data-field"));
+      node.textContent = field
+        ? (field.formatted ??
+          (typeof field.value === "number"
+            ? new Intl.NumberFormat(options.locale?.() ?? "en", { maximumFractionDigits: 6 }).format(field.value)
+            : field.value))
+        : "—";
+    }
+  };
   const clearHighlight = () => {
     for (const entry of highlighted) {
       entry.element.removeAttribute("data-inspected");
@@ -155,6 +178,7 @@ export function createChartInspector(options: {
     options.container()?.removeAttribute("data-cursor-source");
     pinned = false;
     active = undefined;
+    updateLegend(undefined);
     clearHighlight();
     const container = options.container(),
       id = options.tooltip()?.id;
@@ -194,13 +218,16 @@ export function createChartInspector(options: {
       anchor = options.anchor(),
       container = options.container();
     if (!tooltip || !anchor || !container || !options.enabled()) return;
-    if (active === entry && tooltip.matches(":popover-open")) {
-      entry.element.setAttribute("data-inspected", hover ? "hover" : "true");
+    if ((active === entry || (seriesChart() && active && category(active) === category(entry))) && tooltip.matches(":popover-open")) {
+      for (const item of highlighted) item.element.setAttribute("data-inspected", hover ? "hover" : "true");
       return;
     }
     clearHighlight();
     active = entry;
-    highlighted = options.kind() === "line" ? records().filter((candidate) => rawX(candidate) === rawX(entry)) : [entry];
+    highlighted =
+      options.kind() === "line" || options.kind() === "area"
+        ? records().filter((candidate) => category(candidate) === category(entry))
+        : [entry];
     for (const item of highlighted) {
       item.element.style.setProperty("--k2b-chart-inspection-color", highlightColor(item));
       item.element.setAttribute("data-inspected", hover ? "hover" : "true");
@@ -209,6 +236,7 @@ export function createChartInspector(options: {
       const field = entry.datum.values.find((f) => f.key === value.getAttribute("data-bar-legend"));
       value.textContent = field?.formatted ?? (field ? String(field.value) : "–");
     }
+    updateLegend(highlighted);
     const document = tooltip.ownerDocument;
     const contents = highlighted.map((item) => ({
       item,
@@ -224,6 +252,7 @@ export function createChartInspector(options: {
       }
       contents.sort((a, b) => (a.item.datum.seriesIndex ?? 0) - (b.item.datum.seriesIndex ?? 0));
     }
+    if (options.kind() === "area") contents.reverse();
     tooltip.replaceChildren();
     const sharedTitle = typeof x === "number" ? options.cursor?.()?.formatX?.(x) : undefined;
     const commonTitle =
@@ -245,10 +274,12 @@ export function createChartInspector(options: {
       for (const row of content.rows) {
         const line = document.createElement("span");
         line.className = "k2b-chart__tooltip-row";
-        if (options.kind() === "line") {
+        if (options.kind() === "line" || options.kind() === "area") {
           const swatch = document.createElement("i");
           swatch.setAttribute("aria-hidden", "true");
-          const series = container.querySelector(`.stdlib-chart-line.stdlib-chart-series-${(item.datum.seriesIndex ?? 0) % 8}`);
+          const series = container.querySelector(
+            `.stdlib-chart-line.stdlib-chart-series-${(item.datum.seriesIndex ?? 0) % 8}, .k2b-area-edge-${(item.datum.seriesIndex ?? 0) % 8}`,
+          );
           swatch.style.background = series
             ? getComputedStyle(series).stroke
             : `var(--stdlib-chart-c${((item.datum.seriesIndex ?? 0) % 8) + 1})`;
@@ -258,6 +289,20 @@ export function createChartInspector(options: {
         label.textContent = `${row.label}: `;
         const value = document.createElement("b");
         value.textContent = missing ? "—" : row.value;
+        line.append(label, value);
+        tooltip.append(line);
+      }
+    }
+    if (options.kind() === "area") {
+      const total = entry.datum.values.find((field) => field.key === "total");
+      const totalLabel = container.querySelector("svg[data-chart-total-label]")?.getAttribute("data-chart-total-label");
+      if (total && totalLabel) {
+        const line = document.createElement("span");
+        line.className = "k2b-chart__tooltip-row";
+        const label = document.createElement("span");
+        label.textContent = `${totalLabel}: `;
+        const value = document.createElement("b");
+        value.textContent = total.formatted ?? String(total.value);
         line.append(label, value);
         tooltip.append(line);
       }
@@ -511,10 +556,10 @@ export function createChartInspector(options: {
     if (!["Home", "End", "ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(event.key)) return false;
     let nodes = visibleRecords();
     if (seriesChart()) nodes = [...nodes].sort((a, b) => a.datum.anchor[0] - b.datum.anchor[0]);
-    if (options.kind() === "line") {
+    if (options.kind() === "line" || options.kind() === "area") {
       const seen = new Set<string | number | undefined>();
       nodes = nodes.filter((entry) => {
-        const x = rawX(entry);
+        const x = category(entry);
         if (seen.has(x)) return false;
         seen.add(x);
         return true;
@@ -524,8 +569,8 @@ export function createChartInspector(options: {
     event.preventDefault();
     pinned = false;
     let index = active
-      ? options.kind() === "line"
-        ? nodes.findIndex((entry) => rawX(entry) === rawX(active!))
+      ? options.kind() === "line" || options.kind() === "area"
+        ? nodes.findIndex((entry) => category(entry) === category(active!))
         : nodes.indexOf(active)
       : -1;
     if (event.key === "Home") index = 0;
@@ -600,6 +645,9 @@ export type InspectChartOptions = {
   format: ChartTooltipFormatter;
   select?: (selection: ChartSelection) => void;
   cursor?: ChartCursor;
+  locale?: string;
+  /** Host for a separately rendered series legend. Defaults to the chart container. */
+  legend?: ParentNode;
 };
 export type ChartInspection = { invalidate(): void; close(): void; destroy(): void };
 
@@ -625,6 +673,8 @@ export function inspectChart(container: HTMLElement, options: InspectChartOption
 
   const inspector = createChartInspector({
     container: () => container,
+    locale: () => options.locale ?? "en",
+    legend: () => options.legend,
     cursor: () => options.cursor,
     tooltip: () => tooltip,
     anchor: () => anchor,

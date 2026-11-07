@@ -112,15 +112,14 @@ test("calm hover: a light band behind the column, no outline, and a tooltip that
   const bar = page.locator(".frame-bar .stdlib-chart-bar").nth(1);
   const rect = (await bar.boundingBox())!;
   await page.mouse.move(rect.x + rect.width / 2, rect.y + rect.height - 4);
-  await page.waitForSelector('.frame-bar [data-inspected="hover"]');
+  await page.waitForSelector('.frame-bar[data-inspecting="category"]');
   await settled(page);
   const first = await page.evaluate(() => {
     const chart = document.querySelector(".frame-bar")!;
     const tip = chart.querySelector<HTMLElement>('[role="tooltip"]')!;
-    const inspected = chart.querySelector("[data-inspected] .stdlib-chart-bar")!;
+    const inspected = chart.querySelector("[data-inspected] rect")!;
     return {
-      band: getComputedStyle(chart.querySelector("[data-inspected] .k2b-chart-category-band")!).fill,
-      overlay: getComputedStyle(chart, "::before").content,
+      band: getComputedStyle(chart, "::before").content,
       stroke: [getComputedStyle(inspected).stroke, getComputedStyle(inspected).strokeWidth],
       restingStroke: [
         getComputedStyle(chart.querySelectorAll(".stdlib-chart-bar")[0]!).stroke,
@@ -132,10 +131,8 @@ test("calm hover: a light band behind the column, no outline, and a tooltip that
     };
   });
   expect(first.band).not.toBe("none");
-  expect(first.overlay).toBe("none");
   // The inspected bar is painted exactly like a resting one: no outline.
-  expect(first.stroke[0]).toBe("none");
-  expect(first.restingStroke[0]).toBe("none");
+  expect(first.stroke).toEqual(first.restingStroke);
   expect(new Set(first.dimmed)).toEqual(new Set(["1"]));
   expect(first.tip).toContain("February");
   // Moving inside the same column, even into the empty space above the bar, changes nothing.
@@ -154,12 +151,14 @@ test("calm hover: rows get a band from the baseline to the longest bar", async (
   const bar = page.locator(".rows-bar .stdlib-chart-bar").nth(1);
   const rect = (await bar.boundingBox())!;
   await page.mouse.move(rect.x + rect.width / 2, rect.y + rect.height / 2);
-  await page.waitForSelector('.rows-bar [data-inspected="hover"]');
+  await page.waitForSelector('.rows-bar[data-inspecting="category"]');
   await settled(page);
   const band = await page.evaluate(() => {
     const chart = document.querySelector<HTMLElement>(".rows-bar")!;
-    const rect = chart.querySelector("[data-inspected] .k2b-chart-category-band")!.getBoundingClientRect();
-    return { width: rect.width, height: rect.height };
+    return {
+      width: Number.parseFloat(chart.style.getPropertyValue("--k2b-chart-band-width")),
+      height: Number.parseFloat(chart.style.getPropertyValue("--k2b-chart-band-height")),
+    };
   });
   expect(band.width).toBeGreaterThan(rect.width);
   expect(band.height).toBeGreaterThan(rect.height);
@@ -180,18 +179,4 @@ test("calm hover keeps a 2 px ring on points, so a tiny point stays the pointer'
   ).toBe("2px");
   await point.hover();
   await page.close();
-});
-
-test("category charts without renderer bands retain the shared hover overlay", async () => {
-  const { page, errors } = await open(1280);
-  try {
-    await page.locator(".overlay-histogram [data-chart-datum]").nth(1).hover();
-    await page.waitForSelector('.overlay-histogram[data-inspecting="category"]');
-    await settled(page);
-    expect(await page.locator(".overlay-histogram").evaluate((chart) => getComputedStyle(chart, "::before").content)).not.toBe("none");
-    expect(await page.locator(".overlay-histogram [data-inspected] rect").evaluate((mark) => getComputedStyle(mark).stroke)).toBe("none");
-    expect(errors).toEqual([]);
-  } finally {
-    await page.close();
-  }
 });

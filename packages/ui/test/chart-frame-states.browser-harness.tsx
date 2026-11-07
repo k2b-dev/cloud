@@ -56,7 +56,6 @@ render(
           { label: "Eastern uplands", value: 97 },
         ]}
       />
-      <Chart kind="histogram" class="overlay-histogram" style={{ height: "160px", width: "360px" }} data={[1, 2, 3, 4, 5]} bins={3} />
       <Chart kind="sparkline" class="trend-spark" style={{ height: "30px", width: "160px" }} data={[3, 5, 4, 8, 9]} />
     </main>
   ),

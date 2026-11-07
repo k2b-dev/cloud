@@ -402,7 +402,7 @@ describe("shared chart tooltip", () => {
       const comparable = (options: typeof before) =>
         JSON.parse(JSON.stringify(options, (_key, value) => (typeof value === "function" ? [0, 1.5, 1200].map(value) : value)));
       expect(comparable(after)).toEqual(comparable(before));
-      if (before.kind === "bar" && after.kind === "bar") expect(drawChart(after)).toEqual(drawChart(before));
+      if (before.kind === "bar" && after.kind === "bar") expect(charts.bar(after)).toEqual(charts.bar(before));
       else if (before.kind === "line" && after.kind === "line") expect(charts.line(after)).toEqual(charts.line(before));
       else throw new Error("Expected matching chart kinds");
     }

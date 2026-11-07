@@ -144,9 +144,13 @@ const flatChartSchema = () => {
       .describe(
         "bar, pie, donut, barGauge: label/value (barGauge: min/max). boxplot: label/values. heatmap: x/y/value. histogram, sparkline: numbers.",
       ),
-    x: z.array(ChartLabel).max(CLOUD_AI_CHART_MAX_VALUES).optional().describe("bar: aligned category labels."),
+    x: z
+      .array(z.union([ChartLabel, z.number()]))
+      .max(CLOUD_AI_CHART_MAX_VALUES)
+      .optional()
+      .describe("bar, area: aligned category labels or numeric X values."),
     compare: z.object({ label: ChartLabel, data: z.array(z.number().nullable()).max(CLOUD_AI_CHART_MAX_VALUES) }).optional(),
-    normalize: z.boolean().optional().describe("stacked bars: normalize positive totals to 100 percent."),
+    normalize: z.boolean().optional().describe("stacked bar, area: normalize positive totals to 100 percent."),
     rows: z
       .array(
         z.object({
@@ -158,7 +162,7 @@ const flatChartSchema = () => {
       .max(CLOUD_AI_CHART_MAX_VALUES)
       .optional()
       .describe("hbar: grouped rows of aligned segment values."),
-    layout: z.enum(["columns", "rows", "grouped", "stacked"]).optional().describe("bar: category layout."),
+    layout: z.enum(["columns", "rows", "grouped", "stacked"]).optional().describe("bar: category layout. area: stacked."),
     series: z
       .array(
         z.union([
@@ -171,7 +175,7 @@ const flatChartSchema = () => {
       .max(CLOUD_AI_CHART_MAX_SERIES)
       .optional()
       .describe(
-        "bar: aligned label/data counts; hbar: series names. line, scatter: label/data points, optional reference role; line: style. Line needs 2 points per series.",
+        "area: nonnegative aligned label/data matching x; bar: aligned label/data counts; hbar: series names. line, scatter: label/data points, optional reference role; line: style. Line needs 2 points per series.",
       ),
     xAxis: ChartAxis.extend({ ordered: z.boolean().optional() })
       .optional()
@@ -194,7 +198,7 @@ const flatChartSchema = () => {
     unit: ChartUnit.optional().describe("gauge, barGauge, stat: unit after value."),
     format: cloudAiNumberFormatSchema()
       .optional()
-      .describe("gauge, barGauge, stat, heatmap, pie, donut: number format; percent values are fractions."),
+      .describe("area, gauge, barGauge, stat, heatmap, pie, donut: number format; percent values are fractions."),
     references: ChartReferences.optional().describe(
       "bar, line, scatter, histogram, boxplot: reference lines; x only for line, scatter, histogram.",
     ),
@@ -219,7 +223,7 @@ const chartInputSchema = () => {
       layout: z
         .enum(["stack", "grid", "columns", "rows", "grouped", "stacked"])
         .optional()
-        .describe("Groups: stack or grid. Bar: columns, rows, grouped or stacked."),
+        .describe("Groups: stack or grid. Bar: columns, rows, grouped or stacked. Area: stacked."),
     })
     .superRefine((value, context) => {
       if ((value.kind !== undefined) === (value.charts !== undefined)) {
@@ -237,8 +241,8 @@ const chartInputSchema = () => {
           if (issue) context.addIssue({ code: "custom", message: issue, path: ["charts", index] });
         });
       } else {
-        if (value.linkX !== undefined || (value.layout !== undefined && value.kind !== "bar"))
-          context.addIssue({ code: "custom", message: "linkX belongs to groups; bar layouts belong to bars." });
+        if (value.linkX !== undefined || (value.layout !== undefined && value.kind !== "bar" && value.kind !== "area"))
+          context.addIssue({ code: "custom", message: "linkX belongs to groups; layouts belong to bar or area charts." });
         const parsed = ChartSchema.safeParse(value);
         if (!parsed.success) {
           for (const issue of parsed.error.issues) context.addIssue({ code: "custom", message: issue.message, path: issue.path });

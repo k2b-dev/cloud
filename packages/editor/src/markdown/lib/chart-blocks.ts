@@ -458,6 +458,7 @@ export const chartBlockFrame = (body: string[], options: Pick<MarkdownChartOptio
 export const notebookChartHeight = (input: ChartInput, locale: string): number | undefined => {
   const options = chartRenderOptions(input, locale, { legend: "outside" });
   if (options.kind === "hbar") return hbarLayout(options).height;
+  if (options.kind === "area") return 280;
   if (options.kind !== "bar") return undefined;
   const layout = barChartLayout(options);
   return layout.layout === "rows" ? layout.height : undefined;
@@ -488,15 +489,29 @@ export const renderNotebookChartFigure = (input: ChartInput, locale: string, opt
       key: ({ datum }) => chartMarkKey(datum),
       tooltip: ({ datum }) => {
         const row = rows.add(datum);
-        return chartTooltip(rows.columns(), row);
+        return chartTooltip(rows.columns(), row, input.kind);
       },
       reference: ({ datum }) => chartReferenceMark(input, datum),
     });
     if (!snapshot.marks.length) return null;
     const legend = chartLegend(input, locale);
     const t = chartBlockMessages.resolve([locale]).t;
+    const valueField = input.kind === "area" ? (input.normalize ? "percent" : "value") : "y";
+    let lastX = -Infinity;
+    for (const mark of snapshot.marks) lastX = Math.max(lastX, mark.datum.anchor[0]);
+    const legendValue = (index: number) => {
+      const field = snapshot.marks
+        .find((mark) => mark.datum.seriesIndex === index && mark.datum.anchor[0] === lastX)
+        ?.datum.values.find((field) => field.key === valueField);
+      return field
+        ? (field.formatted ??
+            (typeof field.value === "number"
+              ? new Intl.NumberFormat(locale, { maximumFractionDigits: 6 }).format(field.value)
+              : field.value))
+        : "—";
+    };
     const legendHtml = legend.length
-      ? `<ul class="k2b-chart-legend" aria-label="${escape(t.chartLegend)}">${legend.map((entry) => `<li><span class="k2b-chart-legend__swatch"${entry.style && entry.style !== "solid" ? ` data-style="${entry.style}"` : ""}${entry.reference ? ' data-reference="true"' : ""} style="--k2b-chart-legend-color:var(--stdlib-chart-c${(entry.color % 8) + 1})" aria-hidden="true"></span>${escape(entry.label)}</li>`).join("")}</ul>`
+      ? `<ul class="k2b-chart-legend" aria-label="${escape(t.chartLegend)}">${legend.map((entry, index) => `<li><span class="k2b-chart-legend__swatch"${entry.style && entry.style !== "solid" ? ` data-style="${entry.style}"` : ""}${entry.reference ? ' data-reference="true"' : ""} style="--k2b-chart-legend-color:var(--stdlib-chart-c${(entry.color % 8) + 1})" aria-hidden="true"></span>${escape(entry.label)}${input.kind === "area" ? `<b data-chart-legend-value data-series-index="${index}" data-field="${valueField}" data-default="${escape(legendValue(index))}">${escape(legendValue(index))}</b>` : ""}</li>`).join("")}</ul>`
       : "";
     const viewport = `<div class="k2b-chart" data-chart-kind="${snapshot.kind}"><div class="k2b-chart__svg"${snapshot.stretch ? ' data-stretch="true"' : ""} style="--k2b-chart-width:${snapshot.width}px;--k2b-chart-height:${snapshot.height}px">${snapshot.svg}</div></div>${legendHtml}`;
     const height = notebookChartHeight(input, locale);

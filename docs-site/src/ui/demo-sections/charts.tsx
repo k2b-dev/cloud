@@ -26,6 +26,19 @@ const examples = {
       ],
     },
   },
+  area: {
+    description: "Area · Compare recurring and one-off sales as shares of each month's total.",
+    chart: {
+      kind: "area",
+      layout: "stacked",
+      normalize: true,
+      x: ["Jan", "Feb", "Mar", "Apr"],
+      series: [
+        { label: "Recurring", data: [30, 40, 50, 60] },
+        { label: "One-off", data: [70, 60, 50, 40] },
+      ],
+    },
+  },
   line: {
     description: "Line · Requests rise from 12 to 42 per second. Inspect individual points with the pointer or keyboard.",
     chart: {
@@ -266,6 +279,7 @@ type TooltipExample = { title: string; fields: Record<string, TooltipField> };
 
 const tooltipExamples: Record<ChartKind, TooltipExample> = {
   hbar: { title: "Quarterly orders", fields: { Q1: { label: "Q1" }, Q2: { label: "Q2" }, total: { label: "Total" } } },
+  area: { title: "Sales mix", fields: { value: { label: "Sales" }, percent: { label: "Share", unit: "%" } } },
   line: {
     title: "Request rate",
     fields: {

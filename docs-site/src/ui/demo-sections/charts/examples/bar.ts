@@ -1,3 +1,5 @@
+import type { ChartShowcaseExample } from "./types";
+
 /** Portable examples; the showcase registry renders these same descriptions and generates TSX from them. */
 export const barExamples = [
   {
@@ -93,4 +95,4 @@ export const barExamples = [
     a11y: ["Period totals appear in the legend; inspection gives the change."],
     options: [{ name: "compare", type: "{ label, data }", description: "One aligned previous-period series." }],
   },
-];
+] satisfies ChartShowcaseExample[];

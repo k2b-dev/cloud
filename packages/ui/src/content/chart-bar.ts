@@ -1,4 +1,3 @@
-import { categoryLabels } from "../charts/core/category-labels";
 import {
   type AxisOptions,
   type BarItem,
@@ -14,6 +13,7 @@ import {
   referenceLineAttributes,
   svgRoot,
 } from "../charts/core/svg";
+import { chartMessages } from "./chart-message-catalog";
 
 /**
  * Bar chart options: stdlib's `charts.bar` options plus a title for the category axis and a separate value format.
@@ -364,8 +364,8 @@ const renderColumns = (opts: BarChartOptions, plan: Plan, width: number, height:
     const series = opts.colorByBar ? colorIndex(item, position) : 0;
     parts.push(
       chartDatumSvg(
-        `<rect class="k2b-chart-category-band" fill="none" pointer-events="all" x="${fmt(center - slot / 2)}" y="${fmt(g.y0)}" width="${fmt(slot)}" height="${fmt(g.plotBottom - g.y0)}" rx="6"/><rect class="stdlib-chart-bar stdlib-chart-series-${series}" x="${fmt(x)}" y="${fmt(top)}" width="${fmt(barWidth)}" height="${fmt(barHeight)}"/>`,
-        datum(item, index, [center, g.y0], format),
+        `<rect class="stdlib-chart-bar stdlib-chart-series-${series}" x="${fmt(x)}" y="${fmt(top)}" width="${fmt(barWidth)}" height="${fmt(barHeight)}"/>`,
+        datum(item, index, [center, top + barHeight / 2], format),
         inspect,
       ),
     );
@@ -457,7 +457,7 @@ const renderRows = (opts: BarChartOptions, plan: Plan, width: number, inspect: b
     const series = opts.colorByBar ? colorIndex(item, position) : 0;
     parts.push(
       chartDatumSvg(
-        `<rect class="k2b-chart-category-band" fill="none" pointer-events="all" x="0" y="${fmt(rowTop)}" width="${width}" height="${fmt(g.pitch)}" rx="6"/><rect class="stdlib-chart-bar stdlib-chart-series-${series}" x="${fmt(left)}" y="${fmt(middle - thickness / 2)}" width="${fmt(barWidth)}" height="${fmt(thickness)}"/>`,
+        `<rect class="stdlib-chart-bar stdlib-chart-series-${series}" x="${fmt(left)}" y="${fmt(middle - thickness / 2)}" width="${fmt(barWidth)}" height="${fmt(thickness)}"/>`,
         datum(item, index, [left + barWidth / 2, middle], format),
         inspect,
       ),
@@ -610,7 +610,7 @@ export function seriesBarLayout(opts: BarChartOptions, size = { width: 480, heig
 const renderSeriesBars = (opts: BarChartOptions & { width: number; height: number; inspect?: boolean }) => {
   const g = seriesBarLayout(opts, opts);
   const parts = [renderHeader(opts, opts.width)];
-  const labels = categoryLabels(opts.locale);
+  const labels = chartMessages.resolve([opts.locale ?? "en"]).t;
   const change = new Intl.NumberFormat(opts.locale ?? "en", { style: "percent", maximumFractionDigits: 1, signDisplay: "exceptZero" });
   const text = (x: number, y: number, value: string, cls = "stdlib-chart-tick-label", anchor = "start", extra = "") =>
     `<text class="${cls}" x="${fmt(x)}" y="${fmt(y)}" text-anchor="${anchor}" ${extra}>${escapeXml(value)}</text>`;
@@ -734,7 +734,7 @@ const renderSeriesBars = (opts: BarChartOptions & { width: number; height: numbe
           column.label,
           ...fields.map(
             (field) =>
-              `${field.key.startsWith("series:") ? opts.series![Number(field.key.slice(7))]!.label : field.key === "previous" ? opts.compare!.label : field.key === "delta" ? labels.change : labels.total}: ${field.formatted}`,
+              `${field.key.startsWith("series:") ? opts.series![Number(field.key.slice(7))]!.label : field.key === "previous" ? opts.compare!.label : field.key === "delta" ? labels.chartFields({ key: "delta" }) : labels.chartFields({ key: "total" })}: ${field.formatted}`,
           ),
         ].join(" · "),
       ),

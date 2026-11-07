@@ -259,7 +259,6 @@ test("standalone and base-only hosts paint transparent bands and distinct previo
       expect(await page.locator(".k2b-chart-category-band").evaluateAll((nodes) => nodes.map((n) => getComputedStyle(n).fill))).toEqual([
         "none",
         "none",
-        "none",
       ]);
       const current = page.locator(".k2b-chart").nth(1).locator(".stdlib-chart-bar").last();
       const prior = page.locator(".k2b-chart-previous rect");
@@ -288,7 +287,7 @@ test("standalone and base-only hosts paint transparent bands and distinct previo
         expect(
           await page
             .locator(".k2b-chart")
-            .first()
+            .nth(1)
             .locator("[data-inspected] > rect")
             .evaluateAll((nodes) => nodes.map((n) => getComputedStyle(n).stroke)),
         ).toEqual(["none", "none"]);
@@ -331,12 +330,18 @@ test("old bars keep valid SSR/client selection and inspection outlines inside k2
     const second = chart.locator("[data-chart-datum]").nth(1);
     expect(await first.locator(".stdlib-chart-bar").evaluate((n) => getComputedStyle(n).stroke)).toBe(serverStroke);
     expect(await first.evaluate((n) => CSS.supports("color", n.style.getPropertyValue("--k2b-chart-selection-color")))).toBe(true);
-    // The center stays inside rounded bands at every SVG stretch factor.
-    await second.locator(".k2b-chart-category-band").hover();
+    const restingStroke = await second
+      .locator(".stdlib-chart-bar")
+      .evaluate((n) => [getComputedStyle(n).stroke, getComputedStyle(n).strokeWidth]);
+    // Legacy specs use the shared overlay and keep their original SVG markup.
+    expect(await chart.locator(".k2b-chart-category-band").count()).toBe(0);
+    await second.locator(".stdlib-chart-bar").hover();
     await chart.locator('[role="tooltip"]:popover-open').waitFor();
     await settled(page);
-    expect(await second.locator(".stdlib-chart-bar").evaluate((n) => getComputedStyle(n).stroke)).toBe("none");
-    expect(await second.locator(".k2b-chart-category-band").evaluate((n) => getComputedStyle(n).fill)).not.toBe("none");
+    expect(
+      await second.locator(".stdlib-chart-bar").evaluate((n) => [getComputedStyle(n).stroke, getComputedStyle(n).strokeWidth]),
+    ).toEqual(restingStroke);
+    expect(await chart.evaluate((n) => getComputedStyle(n, "::before").content)).not.toBe("none");
     await chart.focus();
     await chart.press("End");
     await settled(page);
@@ -347,10 +352,10 @@ test("old bars keep valid SSR/client selection and inspection outlines inside k2
     expect(await second.evaluate((n) => CSS.supports("color", n.style.getPropertyValue("--k2b-chart-selection-color")))).toBe(true);
     expect(await second.locator(".stdlib-chart-bar").evaluate((n) => parseFloat(getComputedStyle(n).strokeWidth))).toBeGreaterThan(0);
     await chart.press("Escape");
-    await second.locator(".k2b-chart-category-band").hover();
+    await second.locator(".stdlib-chart-bar").hover();
     await settled(page);
     expect(await second.locator(".stdlib-chart-bar").evaluate((n) => getComputedStyle(n).stroke)).not.toBe("none");
-    expect(await second.locator(".k2b-chart-category-band").evaluate((n) => getComputedStyle(n).stroke)).toBe("none");
+    expect(await chart.locator(".k2b-chart-category-band").count()).toBe(0);
     expect(errors).toEqual([]);
   } finally {
     await page.close();
