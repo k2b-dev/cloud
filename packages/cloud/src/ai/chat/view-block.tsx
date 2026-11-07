@@ -1,7 +1,6 @@
 import { DescriptionList, StatCell, StatGrid, type StatGridColumns, useLocale } from "@k2b/ui";
 import { createMemo, createSignal, createUniqueId, Index, Match, onCleanup, onMount, Show, Switch } from "solid-js";
 import { importOnDemand } from "../../browser/reload";
-import { cloudAiNumberFormatters } from "../chart-block";
 import {
   CLOUD_AI_DETAILS_VIEWPORT_ITEMS,
   type CloudAiView,
@@ -12,7 +11,6 @@ import {
   type CloudTableDescription,
   type CloudViewDescription,
   cloudAiDetailsRows,
-  cloudAiStatsTiles,
 } from "../view-block";
 import { CloudChartGroupView, CloudChartView } from "./chart-block";
 import { CloudExplorerView } from "./explorer-block";
@@ -75,9 +73,22 @@ function ViewStatus(props: { loading: boolean }) {
  * room while the file loads or when it is unavailable.
  */
 function CloudStatsView(props: { summary: StatsSummary; input: CloudStatsDescription | null | undefined }) {
-  const locale = useLocale();
   const id = `cloud-view-${createUniqueId()}`;
-  const tiles = createMemo(() => (props.input ? cloudAiStatsTiles(props.input, locale()) : null));
+  const [module, setModule] = createSignal<typeof import("./stats-block") | null | undefined>();
+  onMount(() => {
+    let disposed = false;
+    onCleanup(() => {
+      disposed = true;
+    });
+    void importOnDemand(() => import("./stats-block")).then((loaded) => {
+      if (!disposed) setModule(loaded ?? null);
+    });
+  });
+  const ready = createMemo(() => {
+    const renderer = module();
+    const input = props.input;
+    return renderer && input ? { renderer, input } : undefined;
+  });
   const columns = () => STATS_COLUMNS[props.summary.items.length - 1];
   return (
     <section class="grid min-w-0 gap-3" aria-labelledby={id}>
@@ -87,7 +98,7 @@ function CloudStatsView(props: { summary: StatsSummary; input: CloudStatsDescrip
         subtitle={props.input ? props.input.subtitle : props.summary.subtitle}
       />
       <Show
-        when={tiles()}
+        when={ready()}
         fallback={
           <div class="relative min-w-0">
             <div class="invisible" aria-hidden="true">
@@ -108,39 +119,15 @@ function CloudStatsView(props: { summary: StatsSummary; input: CloudStatsDescrip
               </StatGrid>
             </div>
             <div class="absolute inset-0">
-              <ViewStatus loading={props.input === undefined} />
+              <ViewStatus loading={module() !== null && props.input !== null} />
             </div>
           </div>
         }
       >
-        {(value) => (
-          <StatGrid columns={columns()}>
-            <Index each={value()}>
-              {(tile, index) => (
-                <StatCell
-                  label={tile().label}
-                  deltaPlacement="below"
-                  value={tile().value}
-                  title={tile().value}
-                  trend={tile().sparkline}
-                  trendTooltip={({ datum }) => {
-                    const point = tile().sparkline?.[datum.index];
-                    const format = cloudAiNumberFormatters(props.input?.items[index]?.format, locale()).value;
-                    return { rows: point === undefined ? [] : [{ label: tile().label, value: format(point) }] };
-                  }}
-                  sub={tile().sub}
-                  delta={props.input?.items[index]?.delta}
-                  compare={(() => {
-                    const item = props.input?.items[index];
-                    return item?.compare
-                      ? { label: item.compare.label, value: cloudAiNumberFormatters(item.format, locale()).value(item.compare.value) }
-                      : undefined;
-                  })()}
-                />
-              )}
-            </Index>
-          </StatGrid>
-        )}
+        {(ready) => {
+          const Tiles = ready().renderer.CloudStatsTiles;
+          return <Tiles input={ready().input} columns={columns()} />;
+        }}
       </Show>
     </section>
   );

@@ -403,6 +403,7 @@ const files: Record<string, unknown> = {
 let browser: Browser;
 let server: ReturnType<typeof Bun.serve>;
 let tableModulePath: string;
+let statsModulePath: string;
 /** Files a test holds back until it releases them, so it can measure the loading frame without racing the file. */
 const held = new Map<string, PromiseWithResolvers<void>>();
 const release = (path: string) => {
@@ -427,6 +428,9 @@ beforeAll(async () => {
   const tableModule = [...harness].find(([name, source]) => name !== "harness.js" && source.includes("/ai/chat/table-block.tsx"));
   if (!tableModule) throw new Error("Table controls must have their own lazy browser module");
   tableModulePath = `/${tableModule[0]}`;
+  const statsModule = [...harness].find(([name, source]) => name !== "harness.js" && source.includes("/ai/chat/stats-block.tsx"));
+  if (!statsModule) throw new Error("Loaded stats must have their own lazy browser module");
+  statsModulePath = `/${statsModule[0]}`;
   server = Bun.serve({
     port: 0,
     hostname: "127.0.0.1",
@@ -1355,6 +1359,8 @@ for (const locale of ["en", "de"])
           cloudAiNumberFormatters({ style: "percent", decimals: 1 }, locale).value(0.461),
         );
         expect(await boxes(page)).toEqual(loading);
+        if (process.env.VIEW_SHOTS && locale === "en")
+          await page.screenshot({ path: `${process.env.VIEW_SHOTS}/stats-light-${width}.png`, fullPage: true });
       } finally {
         await context.close();
       }
@@ -1422,6 +1428,70 @@ test("a failed table module keeps its frame and offers a reload", async () => {
     );
     expect(await page.locator("[data-view-path]").boundingBox()).not.toBeNull();
   } finally {
+    await context.close();
+  }
+});
+
+for (const width of [1280, 390])
+  test(`a deferred stats module preserves its frame after the file arrives (${width})`, async () => {
+    const context = await browser.newContext({ viewport: { width, height: 900 }, reducedMotion: "reduce" });
+    try {
+      const page = await context.newPage();
+      const requested: string[] = [];
+      page.on("request", (request) => requested.push(new URL(request.url()).pathname));
+      await page.goto(`http://127.0.0.1:${server.port}/?lang=en`);
+      expect(requested).not.toContain(statsModulePath);
+      const code = hold(statsModulePath);
+      const path = "/views/compared-12345678.view.json";
+      const file = hold(path);
+      const parsed = parseCloudAiView(comparedStats);
+      if (!parsed) throw new Error("Invalid stats fixture");
+      await page.evaluate((block) => window.show([block]), present(path, cloudAiViewSummary(parsed)));
+      await page.waitForSelector("[data-view-path] .k2b-stat-cell");
+      await settled(page);
+      const first = await boxes(page);
+      const response = page.waitForResponse((response) => new URL(response.url()).searchParams.get("path") === path);
+      file();
+      await response;
+      await settled(page);
+      expect(await boxes(page)).toEqual(first);
+      expect(await page.locator("[data-view-path] [role=status]").textContent()).toBe("Loading…");
+      code();
+      await page.locator('.k2b-stat-cell__delta[role="img"]').waitFor();
+      await settled(page);
+      expect(await boxes(page)).toEqual(first);
+      expect(requested).toContain(statsModulePath);
+    } finally {
+      await context.close();
+    }
+  });
+
+test("a failed stats module preserves its frame and offers a reload", async () => {
+  const context = await browser.newContext({ viewport: { width: 390, height: 900 }, reducedMotion: "reduce" });
+  const failure = Promise.withResolvers<void>();
+  try {
+    const page = await context.newPage();
+    await page.route(`**${statsModulePath}`, async (route) => {
+      await failure.promise;
+      await route.abort();
+    });
+    await page.goto(`http://127.0.0.1:${server.port}/?lang=en`);
+    const parsed = parseCloudAiView(comparedStats);
+    if (!parsed) throw new Error("Invalid stats fixture");
+    await page.evaluate((block) => window.show([block]), present("/views/compared-12345678.view.json", cloudAiViewSummary(parsed)));
+    await page.waitForSelector("[data-view-path] .k2b-stat-cell");
+    await settled(page);
+    const first = await boxes(page);
+    failure.resolve();
+    await page.getByText("Part of this page could not load. Reload the page and try again.").waitFor();
+    expect(await page.getByRole("button", { name: "Reload", exact: true }).count()).toBe(1);
+    expect(await page.locator("[data-view-path] [role=status]").textContent()).toBe(
+      "This view is no longer available. Its file was changed or deleted.",
+    );
+    await settled(page);
+    expect(await boxes(page)).toEqual(first);
+  } finally {
+    failure.resolve();
     await context.close();
   }
 });
