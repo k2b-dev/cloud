@@ -34,3 +34,13 @@ test("distribution JSON rejects invalid locales and overflowing totals", () => {
     }).success,
   ).toBe(false);
 });
+
+test("distribution kinds accept a validated locale", () => {
+  for (const spec of [
+    { kind: "treemap", title: "Area", groups: ["A"], data: [{ label: "Item", group: "A", value: 2 }] },
+    { kind: "pareto", title: "Rank", labels: ["Now", "Before"], data: [{ label: "Other", value: 2, prev: 1 }] },
+  ]) {
+    expect(CloudAiChartInputSchema.safeParse({ ...spec, locale: "de-DE" }).success).toBe(true);
+    expect(CloudAiChartInputSchema.safeParse({ ...spec, locale: "de_DE" }).success).toBe(false);
+  }
+});

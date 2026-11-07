@@ -123,6 +123,7 @@ export function ChartExplorer<T extends ChartExplorerRow>(props: ChartExplorerPr
   const messages = useUiMessages();
   const chartMessages = useChartMessages();
   const locale = useLocale();
+  let legendHost: HTMLDivElement | undefined;
   const id = `k2b-chart-explorer-${createUniqueId()}`;
   const data = () => props.data;
   const snapshot = () => ("chart" in props.data ? props.data.chart : undefined);
@@ -135,6 +136,27 @@ export function ChartExplorer<T extends ChartExplorerRow>(props: ChartExplorerPr
   };
   const switching = () =>
     state() === "refreshing" && props.request?.requestedRange !== undefined && props.request.requestedRange !== props.range;
+  const legendValue = (index: number) => {
+    const marks = snapshot()?.marks ?? [];
+    let latest = -Infinity;
+    for (const mark of marks) latest = Math.max(latest, mark.datum.anchor[0]);
+    const valueField =
+      snapshot()?.kind === "area"
+        ? marks.some((mark) => mark.datum.values.some((field) => field.key === "percent"))
+          ? "percent"
+          : "value"
+        : "y";
+    const field = marks
+      .find((mark) => mark.datum.seriesIndex === index && mark.datum.anchor[0] === latest)
+      ?.datum.values.find((field) => field.key === valueField);
+    return field
+      ? (field.formatted ??
+          (typeof field.value === "number"
+            ? new Intl.NumberFormat(locale(), { maximumFractionDigits: 6 }).format(field.value)
+            : field.value))
+      : "—";
+  };
+
   const [copyFailed, setCopyFailed] = createSignal(false);
   const [localSelection, setLocalSelection] = createSignal<string | null>(null);
   const [localView, setLocalView] = createSignal(props.defaultView ?? "chart");
@@ -305,6 +327,7 @@ export function ChartExplorer<T extends ChartExplorerRow>(props: ChartExplorerPr
       </Show>
       {props.controls}
       <div
+        ref={legendHost}
         class="k2b-chart-explorer__viewport"
         data-view={tableView() ? "table" : undefined}
         data-legend={view() === "chart" && props.legend?.length && data().rows.length > 0 ? "true" : undefined}
@@ -423,6 +446,7 @@ export function ChartExplorer<T extends ChartExplorerRow>(props: ChartExplorerPr
               {(chart) => (
                 <ChartSnapshotView
                   cursor={props.cursor}
+                  legend={() => legendHost}
                   snapshot={chart()}
                   selectedKey={selected()}
                   onSelect={select}
@@ -430,10 +454,11 @@ export function ChartExplorer<T extends ChartExplorerRow>(props: ChartExplorerPr
                 />
               )}
             </Show>
+
             <Show when={props.legend?.length}>
               <ul class="k2b-chart-legend" aria-label={chartMessages().chartLegend}>
                 <For each={props.legend}>
-                  {(entry) => (
+                  {(entry, index) => (
                     <li>
                       <span
                         class="k2b-chart-legend__swatch"
@@ -443,6 +468,22 @@ export function ChartExplorer<T extends ChartExplorerRow>(props: ChartExplorerPr
                         aria-hidden="true"
                       />
                       {entry.label}
+                      <Show when={snapshot()?.kind === "area"}>
+                        <b
+                          data-chart-legend-value
+                          data-series-index={index()}
+                          data-field={
+                            snapshot()?.kind === "area"
+                              ? snapshot()?.marks.some((mark) => mark.datum.values.some((field) => field.key === "percent"))
+                                ? "percent"
+                                : "value"
+                              : "y"
+                          }
+                          data-default={legendValue(index())}
+                        >
+                          {legendValue(index())}
+                        </b>
+                      </Show>
                     </li>
                   )}
                 </For>

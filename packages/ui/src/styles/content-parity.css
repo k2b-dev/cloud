@@ -6820,3 +6820,11 @@
   .k2b-ui .k2b-stat-cell .k2b-flow-amount[data-size="lg"] { gap: 0.25rem; }
   .k2b-ui .k2b-stat-cell .k2b-flow-amount[data-size="lg"][data-direction="in"] { padding: 0.125rem 0.375rem 0.125rem 0.125rem; }
 }
+
+/* ---------------------------------------------------------- BalanceSummary --
+ * "Start 18,800 € + ↙ in − ↗ out = End 18,540 €" on one line that wraps.
+ */
+.k2b-ui .k2b-balance { display: flex; flex-wrap: wrap; align-items: center; gap: 0.375rem 0.625rem; margin: 0; color: var(--k2b-text-muted); font-size: 0.8125rem; }
+.k2b-ui .k2b-balance__part { white-space: nowrap; }
+.k2b-ui .k2b-balance__part b { color: var(--k2b-text); font-variant-numeric: tabular-nums; font-weight: 600; }
+.k2b-ui .k2b-balance__op { color: var(--k2b-text-muted); font-weight: 600; }

@@ -43,7 +43,7 @@ const draw = (input: ChartInput, locale: string): Drawn => {
     key: ({ datum }) => chartMarkKey(datum),
     tooltip: ({ datum }) => {
       const row = rows.add(datum);
-      return chartTooltip(rows.columns(), row);
+      return chartTooltip(rows.columns(), row, input.kind);
     },
     reference: ({ datum }) => chartReferenceMark(input, datum),
   });
@@ -123,6 +123,8 @@ export function enhanceNotebookCharts(root: HTMLElement, locale: string, options
     chart.dataset.interactive = "true";
     const inspection = inspectChart(chart, {
       kind: input.kind,
+      locale,
+      legend: figure,
       format: ({ datum }) => lazy().tooltips.get(chartMarkKey(datum)) ?? { rows: [] },
     });
     const dispose = render(

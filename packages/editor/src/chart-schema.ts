@@ -1,3 +1,7 @@
+import { chartLocaleSchema } from "./chart-locale";
+
+export { chartAcceptsLocale, chartLocaleSchema } from "./chart-locale";
+
 import { z } from "zod";
 
 /** Optional caller policy. Rendering itself has no AI input budget. */
@@ -30,21 +34,9 @@ export type ChartNumberFormat = z.output<ReturnType<typeof chartNumberFormatSche
 export type ChartDateFormat = z.output<ReturnType<typeof dateFormatSchema>>;
 export type ChartFormat = ChartNumberFormat | ChartDateFormat;
 
-/** BCP 47 locale strings must be accepted by every Intl formatter used during rendering. */
-export const chartLocaleSchema = () =>
-  z
-    .string()
-    .min(1)
-    .refine((value) => {
-      try {
-        return Intl.getCanonicalLocales(value).length === 1;
-      } catch {
-        return false;
-      }
-    }, "Use a valid BCP 47 locale, such as de-DE.");
-
 export const chartKindSchema = () =>
   z.enum([
+    "area",
     "bar",
     "line",
     "scatter",
@@ -177,6 +169,27 @@ export const chartKinds = (limits?: ChartLimits) => {
   const ChartKindCommon = { ...ChartCommon, tooltip: ChartTooltip.optional() };
   const numberFormat = chartNumberFormatSchema();
   return z.discriminatedUnion("kind", [
+    z
+      .object({
+        kind: z.literal("area"),
+        ...ChartKindCommon,
+        layout: z.literal("stacked"),
+        normalize: z.boolean().optional(),
+        x: list(z.union([z.number(), ChartLabel]), 1, limits?.maxValues),
+        series: list(z.object({ label: ChartLabel, data: list(z.number().min(0).nullable(), 0, limits?.maxValues) }), 1, limits?.maxSeries),
+        legend: z.boolean().optional(),
+        format: numberFormat.optional(),
+      })
+      .superRefine((spec, ctx) => {
+        spec.series.forEach((s, i) => {
+          if (s.data.length !== spec.x.length)
+            ctx.addIssue({ code: "custom", path: ["series", i, "data"], message: "Area series must match x length." });
+        });
+        spec.x.forEach((_, i) => {
+          const sum = spec.series.reduce((sum, s) => sum + (s.data[i] ?? 0), 0);
+          if (!Number.isFinite(sum)) ctx.addIssue({ code: "custom", path: ["x", i], message: "Area totals must be finite." });
+        });
+      }),
     z.object({
       kind: z.literal("bar"),
       ...ChartKindCommon,
