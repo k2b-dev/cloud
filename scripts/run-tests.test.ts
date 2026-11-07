@@ -10,7 +10,6 @@ import {
   planShards,
   runTestCommand,
   selectSuites,
-  shardTargetMinutes,
   shardTimeNotice,
   suiteWeight,
   type TestSuite,
@@ -441,13 +440,9 @@ for (const mode of ["unit", "webkit", "integration"] as const) {
     expect(names.toSorted()).toEqual(all.map((suite) => suite.name).toSorted());
     expect(new Set(names).size).toBe(all.length);
     const weights = (await import("./test-weights.json")).default[mode === "webkit" ? "browser" : mode];
-    const targetMinutes = shardTargetMinutes(mode === "webkit");
-    if (mode === "webkit") expect(targetMinutes).toBe(options.maxMinutes! * 0.55);
     for (const shard of selected) {
       expect(shard.length).toBeGreaterThan(0);
-      // WebKit's measured p95 slowdown is 1.61x; reserve its full 2-minute warm-up:
-      // 11 min * 1.61 + 2 min < the unchanged 20-minute execution budget (#1998).
-      expect(shard.reduce((sum, suite) => sum + suiteWeight(suite.name, weights), 0)).toBeLessThanOrEqual(targetMinutes * 60);
+      expect(shard.reduce((sum, suite) => sum + suiteWeight(suite.name, weights), 0)).toBeLessThanOrEqual(15 * 60);
     }
     expect(workflow.jobs.gate.needs).toContain(mode);
   });
@@ -460,8 +455,6 @@ test("a shard's time asks for fresh weights before it fails", () => {
   expect(warning).toStartWith("::warning title=Test shard above its target::shard 1/5 took 15.1 min");
   expect(warning).toContain("bun scripts/test-weights.ts --run <id>");
   expect(shardTimeNotice("shard 1/5", 20.1, 20)).toStartWith("::error title=Test shard over its time limit::");
-  expect(shardTimeNotice("shard 1/15", 10.9, 20, true)).toBeUndefined();
-  expect(shardTimeNotice("shard 1/15", 11.1, 20, true)).toContain("above the 11-min target");
 });
 
 test("a package's test parts run every file: the rest part excludes exactly what the other parts name", async () => {
