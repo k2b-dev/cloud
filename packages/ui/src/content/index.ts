@@ -70,8 +70,17 @@ export type {
   DataTableSort,
 } from "./DataTable";
 export { default as DataTable } from "./DataTable";
+export type { DataTableToolsProps, DataTableView, DataTableViewOptions } from "./DataTableTools";
+export { createDataTableView, DataTableTools } from "./DataTableTools";
 export type { DocCodeHighlighter, DocCodeProps, DocConcept, DocNoteVariant, DocRow } from "./Docs";
 export { DocCode, DocConceptGrid, DocInlineCode, DocLead, DocNote, DocPage, DocRows, DocSection } from "./Docs";
+export type {
+  DataTableColumnType,
+  DataTableNumberFormat,
+  DataTableStatusState,
+  DataTableTypedColumn,
+} from "./data-table-columns";
+export { filterRows, sortRows } from "./data-table-columns";
 export { FileBrowserPanel, type FileBrowserPanelProps, type FileSource, openFileBrowser } from "./FileBrowser";
 export { FileGrid, type FileGridGroup, type FileGridOpenProps, type FileGridProps, type FileGridSelectableProps } from "./FileGrid";
 export { default as FileTree, type FileTreeActions, type FileTreeEntry, type FileTreeProps } from "./FileTree";

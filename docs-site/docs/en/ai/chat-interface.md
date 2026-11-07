@@ -345,6 +345,11 @@ order:
    summaries contain no values. A card's text wraps instead of being cut off. While the call runs, the work
    line names the step and the place stays empty. Table header labels stay on one line and the table
    scrolls sideways, so up to eight rows fit the reserved height on a phone.
+   A table with `search` or `groupBy` shows a search field or a group choice
+   beside its title; the summary reserves them, disabled, while the file loads.
+   Search matches the shown cells and never leaves the browser; Copy data keeps
+   every row. A column's `priority` hides it on a narrow table, and each row's
+   details button shows the hidden values.
    Readers validate the file again; missing or invalid data shows unavailable
    in that frame. A group chart that cannot be drawn shows unavailable in its
    own frame. The CLI fetches and validates views and prints their tables
@@ -930,6 +935,19 @@ sparkline, boxplot, heatmap, barGauge and stat. See
 axes, declarative formats, references, thresholds, series style/role and limits.
 There is no grouped or stacked bar mode, or second y axis. For related computed
 measures in chat, use `cloud.view.group`.
+
+`cloud.chart()` returns synchronously. In HTML apps, line, bar, pie, donut,
+stat and sparkline render immediately. Other kinds return a loading state
+that the frame fills after the markup enters the document, preserving its box
+size. The renderer is bundled with the frame and needs no network request,
+even on first use offline. A loading failure shows a retry button.
+A rendering error (including a throwing format callback) shows its message
+without retry and is reported to the host. Tooltips,
+format callbacks and the print value table remain available after rendering.
+Frame readiness and snapshots wait for pending drawings; `cloud.pdf.render`
+also finishes pending chart markup before creating the PDF. Insert the returned
+markup rather than extracting its SVG immediately. Scripts and PDF markup
+created by scripts still render every kind synchronously.
 
 Function `format(value)` is also accepted on axes and values. `width` and
 `height` set the logical size: 480 × 280 by default, or 160 × 40 for sparkline.

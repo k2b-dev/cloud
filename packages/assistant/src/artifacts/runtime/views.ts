@@ -104,6 +104,15 @@ export function normalizeChartDates(spec: Row, timeZone: string, prefix = "", in
   const day = (x: unknown) => (midnight && typeof x === "string" && MIDNIGHT.test(x) ? x.slice(0, 10) : x);
   return {
     ...spec,
+    ...(spec.kind === "heatmap" && spec.layout === "calendar" && Array.isArray(spec.data)
+      ? {
+          data: spec.data.map((pair, index) =>
+            Array.isArray(pair)
+              ? [typeof pair[0] === "string" ? pair[0] : String(date(pair[0], `${prefix}data[${index}][0]`)).slice(0, 10), pair[1]]
+              : pair,
+          ),
+        }
+      : {}),
     ...(series
       ? {
           series: series.map((raw) => {

@@ -3,7 +3,7 @@ import { resolve } from "node:path";
 import tailwind from "bun-plugin-tailwind";
 import type { Browser, Page } from "playwright";
 import { z } from "zod";
-import { launchBrowser } from "../../../../ui/test/browser";
+import { launchBrowser, settled } from "../../../../ui/test/browser";
 import type { CloudResourceRef } from "../../contracts/capabilities";
 import { cloudAiNumberFormatters } from "../chart-block";
 import type { AiTurnBlock } from "../protocol";
@@ -613,6 +613,75 @@ for (const view of [
         await context.close();
       }
     });
+
+const campaigns = {
+  view: "table",
+  title: "Campaigns",
+  columns: [
+    { id: "name", label: "Campaign", type: "text" },
+    { id: "status", label: "Status", type: "text" },
+    { id: "sent", label: "Sent", type: "date", priority: 3 },
+    { id: "rate", label: "Opened", type: "number", format: { style: "percent", decimals: 1 } },
+  ],
+  rows: [
+    { name: "Autumn selection", status: "Sending", sent: "2026-11-06", rate: 0.314 },
+    { name: "Weekly letter 44", status: "Delivered", sent: "2026-10-29", rate: 0.492 },
+    { name: "New in stock", status: "Delivered", sent: "2026-10-22", rate: 0.526 },
+  ],
+  search: true,
+  groupBy: [{ id: "status" }],
+};
+files["/views/campaigns-4d5e6f7a.view.json"] = campaigns;
+
+for (const view of [
+  { name: "desktop", width: 1280, height: 900 },
+  { name: "phone", width: 390, height: 844 },
+] as const)
+  test(`a table with search and groups reserves its tools while loading and narrows its rows (${view.name})`, async () => {
+    const context = await browser.newContext({ viewport: { width: view.width, height: view.height }, reducedMotion: "reduce" });
+    try {
+      const page = await context.newPage();
+      await page.goto(`http://127.0.0.1:${server.port}/?lang=en&theme=light`);
+      const loaded = hold("/views/campaigns-4d5e6f7a.view.json");
+      await page.evaluate(
+        (value) => window.show(value),
+        [
+          present("/views/campaigns-4d5e6f7a.view.json", {
+            view: "table",
+            title: campaigns.title,
+            rows: campaigns.rows.length,
+            columns: campaigns.columns.length,
+            footer: false,
+            search: true,
+            grouped: true,
+          }),
+        ],
+      );
+      await page.waitForSelector("[data-view-path] .k2b-data-table-tools");
+      // The tools wait, disabled, in the place they keep once the rows arrive.
+      const search = page.getByRole("searchbox", { name: "Search Campaigns" });
+      expect(await search.isDisabled()).toBe(true);
+      await settled(page);
+      const loading = await boxes(page);
+      loaded();
+      await page.waitForSelector("[data-view-path] table");
+      await settled(page);
+      expect(await boxes(page)).toEqual(loading);
+      await search.fill("deliv");
+      expect(await page.locator("[data-view-path] tbody tr.k2b-data-table__row").count()).toBe(2);
+      await search.fill("");
+      await page.getByRole("combobox", { name: "Group rows" }).click();
+      await page.getByRole("option", { name: "By Status" }).click();
+      await page.waitForSelector("[data-view-path] tbody.k2b-data-table__group");
+      expect(await page.locator('[data-view-path] th[scope="rowgroup"]').allTextContents()).toEqual([
+        "Sending1, 1 row",
+        "Delivered2, 2 rows",
+      ]);
+      expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBe(0);
+    } finally {
+      await context.close();
+    }
+  });
 
 test("a stats trend tooltip uses the item label and number format", async () => {
   const context = await browser.newContext({ viewport: { width: 1280, height: 900 }, reducedMotion: "reduce" });

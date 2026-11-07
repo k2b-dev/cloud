@@ -15,6 +15,9 @@ import { sankeyLayout } from "./sankey";
 import type { MapViewport } from "./svg";
 import type { ChartKind } from "./types";
 
+type DrawingOptions<T> = T extends unknown ? Omit<T, "width" | "height" | "inspect" | "interactive"> : never;
+type RenderOptions<T> = T extends unknown ? Omit<T, "legendPlacement"> : never;
+
 export type ChartDrawingOptions = {
   [K in ChartKind]: { kind: K } & (K extends "map"
     ? {
@@ -32,11 +35,9 @@ export type ChartDrawingOptions = {
           timeAxis?: ChartTimeAxis;
         }
       : {}) &
-    Omit<Parameters<(typeof chartRenderers)[K]>[0], "width" | "height" | "inspect" | "interactive">;
+    DrawingOptions<Parameters<(typeof chartRenderers)[K]>[0]>;
 }[ChartKind];
-export type ChartRenderOptions = {
-  [K in ChartKind]: Omit<Extract<ChartDrawingOptions, { kind: K }>, "legendPlacement">;
-}[ChartKind];
+export type ChartRenderOptions = RenderOptions<ChartDrawingOptions>;
 
 /** Keep the fixed 28-unit bar-gauge rows inside the shared SSR/browser coordinate space. */
 export const chartRenderHeight = (props: ChartRenderOptions): number => {
@@ -57,6 +58,7 @@ export const renderChartSvg = (
   renderLocale?: string,
 ): string => {
   if (props.kind === "sankey") return responsiveChartSvg(chartRenderers.sankey({ ...props, width, height, inspect: true }));
+  if (props.kind === "heatmap" && props.layout === "calendar") return chartRenderers.heatmap({ ...props, width, height, inspect: true });
   const {
     kind,
     zoomFocus: _zoomFocus,

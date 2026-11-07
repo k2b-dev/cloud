@@ -1,4 +1,4 @@
-import { type ChartOptions, chartDatumSvg, escapeXml, renderHeader, svgRoot } from "./svg";
+import { type ChartOptions, chartDatumSvg, escapeXml, svgRoot } from "./svg";
 import { chartTextWidth, fitChartText } from "./text";
 
 export type SankeyNode = {
@@ -17,65 +17,15 @@ export type SankeyOptions = ChartOptions & {
   displayWidth?: number;
 };
 
-/** Shared by JSON validation and direct core calls. Kahn's traversal is linear and never recurses. */
-export function sankeyGraph(spec: Pick<SankeyOptions, "nodes" | "links">) {
-  const nodes = spec.nodes.map((node, index) => ({ ...node, index, stage: 0, incoming: 0, outgoing: 0, value: 0, edges: [] as number[] }));
-  const ids = new Map(nodes.map((node, index) => [node.id, index]));
-  if (ids.size !== nodes.length) throw new RangeError("Sankey node ids must be unique.");
-  const indegree = nodes.map(() => 0);
-  spec.links.forEach((link, index) => {
-    const source = ids.get(link.source),
-      target = ids.get(link.target);
-    if (source === undefined || target === undefined) throw new RangeError("Sankey links must reference existing nodes.");
-    if (!Number.isFinite(link.value) || link.value <= 0) throw new RangeError("Sankey link values must be finite and above zero.");
-    nodes[source]!.outgoing += link.value;
-    nodes[target]!.incoming += link.value;
-    nodes[source]!.edges.push(index);
-    indegree[target]!++;
-  });
-  const queue = nodes.filter((node) => indegree[node.index] === 0).map((node) => node.index);
-  for (let position = 0; position < queue.length; position++) {
-    const node = nodes[queue[position]!]!;
-    for (const edge of node.edges) {
-      const target = nodes[ids.get(spec.links[edge]!.target)!]!;
-      target.stage = Math.max(target.stage, node.stage + 1);
-      if (--indegree[target.index]! === 0) queue.push(target.index);
-    }
-  }
-  if (queue.length !== nodes.length) throw new RangeError("Sankey links must not form cycles.");
-  for (const node of nodes) {
-    node.value = Math.max(node.incoming, node.outgoing);
-    if (!Number.isFinite(node.value)) throw new RangeError("Sankey node totals must be finite.");
-  }
-  return { nodes, ids };
-}
+export { sankeyFrame, sankeyGraph, sankeyWidth } from "./sankey-size";
 
-/** Physical flow width is shared by SVG and its scroll hosts. */
-export function sankeyWidth(spec: Pick<SankeyOptions, "nodes" | "links">, width = 480) {
-  const { nodes } = sankeyGraph(spec);
-  return Math.max(620, Math.max(0, ...nodes.map((node) => node.stage)) * 190 + 160, width);
-}
+import { sankeyFrame, sankeyGraph, sankeyWidth } from "./sankey-size";
 
 /** A skipped stage has a private slot so a long link cannot pass through another node. */
 export function sankeyLayout(spec: SankeyOptions, size = { width: spec.width ?? 480, height: spec.height ?? 280 }) {
   const { nodes, ids } = sankeyGraph(spec);
   const stages = Math.max(0, ...nodes.map((node) => node.stage)) + 1;
-  const width = sankeyWidth(spec, spec.displayWidth ?? size.width);
-  const header = renderHeader(width, spec.title, spec.subtitle);
-  const legend: { tone: NonNullable<SankeyNode["tone"]>; label: string; x: number; row: number }[] = [];
-  let lx = 0,
-    lr = 0;
-  for (const item of spec.legend ?? []) {
-    const space = Math.min(width, item.label.length * 12 + 30);
-    if (lx && lx + space > width) {
-      lx = 0;
-      lr++;
-    }
-    legend.push({ ...item, x: lx, row: lr });
-    lx += space;
-  }
-  const top = header.height + 4,
-    bottom = legend.length ? (lr + 1) * 20 + 8 : 4;
+  const { width, height, header, legend, top, bottom } = sankeyFrame(spec, size);
   const slots = nodes.map((node) => ({
     stage: node.stage,
     index: node.index,
@@ -116,11 +66,6 @@ export function sankeyLayout(spec: SankeyOptions, size = { width: spec.width ?? 
     });
   }
   const count = Math.max(1, ...columns.map((column) => column.length));
-  const minimum = Math.max(
-    0,
-    ...columns.map((column) => column.reduce((sum, slot) => sum + Math.max(2, slot.incoming.length, slot.outgoing.length), 0)),
-  );
-  const height = Math.max(size.height, top + bottom + minimum * 1.5);
   const available = height - top - bottom,
     gap = Math.min(10, available / 3 / Math.max(1, count - 1));
   const thickness = (edge: number, scale: number) => Math.max(1, spec.links[edge]!.value * scale);

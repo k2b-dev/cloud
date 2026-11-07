@@ -1,3 +1,4 @@
+import { calendarLayout } from "./calendar";
 import { type ChartSelection, type ChartTooltip, type ChartTooltipFormatter, isChartDatum } from "./inspection";
 import { type ChartRenderOptions, chartRenderHeight, renderChartSvg } from "./render";
 import { sankeyWidth } from "./sankey";
@@ -11,6 +12,7 @@ export type ChartSnapshot = {
   width: number;
   height: number;
   stretch: boolean;
+  minWidth?: number;
   marks: readonly { key: string; rowKey: string; datum: ChartDatum; tooltip: ChartTooltip; reference?: boolean }[];
 };
 
@@ -34,7 +36,8 @@ export function prepareChartSnapshot(
     reference?: (selection: ChartSelection) => boolean;
   },
 ): ChartSnapshot {
-  const width = options.kind === "sankey" ? sankeyWidth(options, options.displayWidth ?? 480) : 480;
+  const calendar = options.kind === "heatmap" && options.layout === "calendar" ? calendarLayout(options) : undefined;
+  const width = options.kind === "sankey" ? sankeyWidth(options, options.displayWidth ?? 480) : calendar?.width ?? 480;
   const height = chartRenderHeight(options);
   const svg = renderChartSvg(options, width, height);
   const marks: ChartSnapshot["marks"][number][] = [];
@@ -74,5 +77,13 @@ export function prepareChartSnapshot(
       return `${opening}${escapeXml(text)}</title>`;
     },
   );
-  return { kind: options.kind, svg: formattedSvg, width, height, stretch: !["map", "pie", "donut", "gauge"].includes(options.kind), marks };
+  return {
+    kind: options.kind,
+    svg: formattedSvg,
+    width,
+    height,
+    ...(calendar ? { minWidth: calendar.minWidth } : {}),
+    stretch: !calendar && !["map", "pie", "donut", "gauge"].includes(options.kind),
+    marks,
+  };
 }

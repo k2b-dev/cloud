@@ -20,6 +20,15 @@ import {
   sameChartDatum,
 } from "../charts/core/inspection";
 
+/** Host policy for inspecting an overflowing drawing. */
+export type ChartInspectionNavigation = {
+  last?: boolean;
+  order?: (entries: { datum: ChartDatum }[]) => void;
+  pointer?: boolean;
+  reveal?: (element: SVGGraphicsElement) => void;
+  keepScroll?: boolean;
+};
+
 type Entry = { element: SVGGraphicsElement; datum: ChartDatum };
 
 /** Adds or removes only the tooltip id, keeping descriptions the host put on the container. */
@@ -49,6 +58,7 @@ export function createChartInspector(options: {
   legend?: () => ParentNode | undefined;
   format: ChartTooltipFormatter;
   select: (selection: ChartSelection) => void;
+  nav?: () => ChartInspectionNavigation | undefined;
 }) {
   const source = Symbol("chart cursor");
   let entries: Entry[] | undefined;
@@ -70,7 +80,7 @@ export function createChartInspector(options: {
       entries = [];
       byElement.clear();
       sortedPoints = [];
-      for (const element of Array.from(options.container()?.querySelectorAll<SVGGraphicsElement>("[data-chart-datum]") ?? [])) {
+      for (const element of options.container()?.querySelectorAll<SVGGraphicsElement>("[data-chart-datum]") ?? []) {
         try {
           const value: unknown = JSON.parse(element.getAttribute("data-chart-datum") ?? "null");
           if (isChartDatum(value)) {
@@ -82,7 +92,7 @@ export function createChartInspector(options: {
           /* Only valid renderer metadata participates in inspection. */
         }
       }
-      if (options.kind() === "sankey") entries.sort((a, b) => a.datum.index - b.datum.index);
+      options.nav?.()?.order?.(entries);
       sortedPoints = entries.filter((entry) => entry.datum.role === "point").sort((a, b) => a.datum.anchor[0] - b.datum.anchor[0]);
     }
     return entries;
@@ -339,9 +349,7 @@ export function createChartInspector(options: {
       .filter((entry) => entry.datum.role === role)
       .map((entry) => ({ entry, rect: entry.element.getBoundingClientRect() }));
     if (!slots.length) return [];
-    const guides = Array.from(container.querySelectorAll(".stdlib-chart-grid, .stdlib-chart-axis")).map((node) =>
-      node.getBoundingClientRect(),
-    );
+    const guides = [...container.querySelectorAll(".stdlib-chart-grid, .stdlib-chart-axis")].map((node) => node.getBoundingClientRect());
     // The band spans the plot across the categories: grid lines and every mark, so rows without value ticks, whose
     // only guide is one vertical baseline, still get a band from the baseline to the longest bar.
     const spans = [...guides, ...slots.map((slot) => slot.rect)];
@@ -365,7 +373,7 @@ export function createChartInspector(options: {
   const updatePlotBounds = () => {
     const container = options.container();
     if (!container) return;
-    const axes = Array.from(container.querySelectorAll(".stdlib-chart-axis")).map((axis) => axis.getBoundingClientRect());
+    const axes = [...container.querySelectorAll(".stdlib-chart-axis")].map((axis) => axis.getBoundingClientRect());
     if (axes.length < 2) return;
     const left = Math.min(...axes.map((a) => a.left)),
       right = Math.max(...axes.map((a) => a.right));
@@ -505,11 +513,17 @@ export function createChartInspector(options: {
       } else close();
     });
   };
+  let pointerFocusing = false;
   const down = (event: PointerEvent) => {
+    pointerFocusing = true;
     pointerStart = { x: event.clientX, y: event.clientY };
     moved = false;
   };
+  const up = () => {
+    pointerFocusing = false;
+  };
   const click = (event: MouseEvent) => {
+    pointerFocusing = false;
     if (!options.enabled() || moved || (event.target instanceof Element && event.target.closest("button,a"))) return;
     const entry = nearest(event.clientX, event.clientY, event.target instanceof Element ? event.target : null);
     if (!entry) {
@@ -522,8 +536,12 @@ export function createChartInspector(options: {
   };
   const focus = (event: FocusEvent) => {
     if (event.target !== options.container() || !options.enabled()) return;
+    if (pointerFocusing && options.nav?.()?.pointer === false) {
+      pointerFocusing = false;
+      return;
+    }
     const nodes = visibleRecords();
-    const first = options.kind() === "line" ? sortedPoints.at(-1) : nodes[0];
+    const first = options.nav?.()?.last ? nodes.at(-1) : options.kind() === "line" ? sortedPoints.at(-1) : nodes[0];
     if (first) show(first);
   };
   const key = (event: KeyboardEvent): boolean => {
@@ -590,7 +608,7 @@ export function createChartInspector(options: {
       if (next) index = nodes.indexOf(next);
     } else index += event.key === "ArrowLeft" || event.key === "ArrowUp" ? -1 : 1;
     const next = nodes[Math.max(0, Math.min(nodes.length - 1, index))]!;
-    if (options.kind() === "sankey") next.element.scrollIntoView({ block: "nearest", inline: "nearest", behavior: "instant" });
+    options.nav?.()?.reveal?.(next.element);
     show(next);
     return true;
   };
@@ -601,6 +619,7 @@ export function createChartInspector(options: {
     destroy: () => close(false),
     move,
     down,
+    up,
     click,
     focus,
     key,
@@ -617,13 +636,14 @@ export function closeChartInspectionOnOutside(options: {
   container: () => HTMLElement | undefined;
   tooltip: () => HTMLElement | undefined;
   close: () => void;
+  keepScroll?: () => boolean | undefined;
 }): () => void {
   const outside = (event: PointerEvent) => {
     if (event.target instanceof Node && !options.container()?.contains(event.target)) options.close();
   };
   const scroll = (event: Event) => {
+    if (event.target === options.container() && options.keepScroll?.()) return;
     if (event.target instanceof Node && options.tooltip()?.contains(event.target)) return;
-    if (event.target === options.container() && options.container()?.dataset.chartKind === "sankey") return;
     options.close();
   };
   window.addEventListener("pointerdown", outside);
@@ -638,6 +658,7 @@ export function closeChartInspectionOnOutside(options: {
 
 export type InspectChartOptions = {
   kind: ChartKind;
+  nav?: ChartInspectionNavigation;
   format: ChartTooltipFormatter;
   select?: (selection: ChartSelection) => void;
   cursor?: ChartCursor;
@@ -675,18 +696,32 @@ export function inspectChart(container: HTMLElement, options: InspectChartOption
     tooltip: () => tooltip,
     anchor: () => anchor,
     kind: () => options.kind,
+    nav: () => options.nav,
     enabled: () => true,
     format: options.format,
     select: (selection) => options.select?.(selection),
   });
-  container.addEventListener("pointerdown", inspector.down);
-  container.addEventListener("pointermove", inspector.move);
-  container.addEventListener("click", inspector.click);
-  container.addEventListener("pointerleave", inspector.leave);
-  container.addEventListener("focusin", inspector.focus);
-  container.addEventListener("focusout", inspector.close);
-  container.addEventListener("keydown", inspector.key);
-  const removeOutside = closeChartInspectionOnOutside({ container: () => container, tooltip: () => tooltip, close: inspector.close });
+  const listen = <K extends keyof HTMLElementEventMap>(name: K, listener: (event: HTMLElementEventMap[K]) => unknown) => {
+    container.addEventListener(name, listener);
+    return () => container.removeEventListener(name, listener);
+  };
+  const removeListeners = [
+    listen("pointerdown", inspector.down),
+    listen("pointerup", inspector.up),
+    listen("pointercancel", inspector.up),
+    listen("pointermove", inspector.move),
+    listen("click", inspector.click),
+    listen("pointerleave", inspector.leave),
+    listen("focusin", inspector.focus),
+    listen("focusout", inspector.close),
+    listen("keydown", inspector.key),
+  ];
+  const removeOutside = closeChartInspectionOnOutside({
+    container: () => container,
+    tooltip: () => tooltip,
+    close: inspector.close,
+    keepScroll: () => options.nav?.keepScroll,
+  });
   const unlinkCursor = inspector.linkCursor(options.cursor);
   let destroyed = false;
   return {
@@ -699,13 +734,7 @@ export function inspectChart(container: HTMLElement, options: InspectChartOption
     destroy() {
       if (destroyed) return;
       destroyed = true;
-      container.removeEventListener("pointerdown", inspector.down);
-      container.removeEventListener("pointermove", inspector.move);
-      container.removeEventListener("click", inspector.click);
-      container.removeEventListener("pointerleave", inspector.leave);
-      container.removeEventListener("focusin", inspector.focus);
-      container.removeEventListener("focusout", inspector.close);
-      container.removeEventListener("keydown", inspector.key);
+      for (const remove of removeListeners) remove();
       removeOutside();
       unlinkCursor();
       inspector.destroy();

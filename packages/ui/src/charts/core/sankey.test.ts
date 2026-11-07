@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { renderSankeySvg, sankeyGraph, sankeyLayout } from "./sankey";
+import { renderSankeySvg, sankeyFrame, sankeyGraph, sankeyLayout } from "./sankey";
 
 const spec = {
   nodes: [
@@ -99,4 +99,22 @@ test("labels truncate by glyph width without deforming their natural metrics", (
   const svg = renderSankeySvg({ ...spec, nodes: spec.nodes.map((n) => ({ ...n, label: "WWW iii WWW iii WWW iii" })) });
   expect(svg).not.toMatch(/textLength|lengthAdjust/);
   expect(svg).toContain("…");
+});
+
+test("eager sizing matches renderer geometry for dense and stage-skipping flows", () => {
+  for (const count of [1, 30, 100]) {
+    const dense = {
+      nodes: [...Array.from({ length: count }, (_, i) => ({ id: `s${i}`, label: `Source ${i}` })), { id: "target", label: "Target" }],
+      links: Array.from({ length: count }, (_, i) => ({ source: `s${i}`, target: "target", value: 1 })),
+      title: "Flows",
+      subtitle: "Fictional",
+      legend: [{ tone: "in" as const, label: "Incoming" }],
+    };
+    for (const width of [390, 900]) {
+      const size = { width, height: 280 };
+      expect(sankeyFrame(dense, size).height).toBe(sankeyLayout(dense, size).height);
+      expect(sankeyFrame(dense, size).width).toBe(sankeyLayout(dense, size).width);
+    }
+  }
+  expect(sankeyFrame(spec).height).toBe(sankeyLayout(spec).height);
 });
