@@ -349,7 +349,17 @@ async function paintChart(element: HTMLElement) {
     const height = Number.parseFloat(element.style.getPropertyValue("--k2b-chart-height")) || 280;
     const markup = chartMarkup(options, config.context.locale, width, height, measure);
     if (markup.includes("data-chart-pending=")) throw new Error("The chart module does not support this chart kind.");
-    element.closest(".k2b-chart")?.replaceWith(document.createRange().createContextualFragment(String(markup)));
+    const fragment = document.createRange().createContextualFragment(String(markup));
+    const chart = fragment.querySelector(".k2b-chart")!;
+    const drawing = chart.firstElementChild!;
+    // Keep author listeners and references on the returned chart and drawing nodes.
+    for (const name of ["data-chart-pending", "data-chart-measure", "aria-busy", "data-chart-id"]) element.removeAttribute(name);
+    for (const attribute of drawing.attributes) element.setAttribute(attribute.name, attribute.value);
+    element.replaceChildren(...drawing.childNodes);
+    const container = element.closest(".k2b-chart");
+    container?.setAttribute("role", chart.getAttribute("role")!);
+    chart.remove();
+    container?.after(fragment);
   } catch (error) {
     if (!element.isConnected) return;
     const german = config.context.locale.startsWith("de");

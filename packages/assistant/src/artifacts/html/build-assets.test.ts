@@ -10,6 +10,8 @@ test("normal mounts omit app checks and stay within the prelude budget", async (
   expect(normal).not.toContain("k2b-area-layer");
   const rare = await buildChartModule();
   expect(rare).toContain("k2b-area-layer");
+  expect(normal).not.toContain("data-calendar-weekdays");
+  expect(rare).toContain("data-calendar-weekdays");
   // The blob must be self-contained: no module can fetch a dependency on first use.
   expect(rare).not.toMatch(/\bimport\s*(?:\(|["'{*])/);
   console.info(`App prelude: ${Buffer.byteLength(normal)} B; offline chart module: ${Buffer.byteLength(rare)} B`);

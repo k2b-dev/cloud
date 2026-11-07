@@ -59,6 +59,7 @@ const files = (script: string): AppFiles => ({
 const histogram = '{kind:"histogram",title:"Delivery days",data:[1,2,2,3,4,4,5],format:v=>"Day "+v}';
 const draw = `document.querySelector("#draw").addEventListener("click",()=>{
   document.querySelector("#charts").innerHTML=cloud.html\`<section class="card">\${cloud.chart(${histogram})}</section><section class="card">\${cloud.chart({kind:"gauge",title:"On time",value:75})}</section>\`;
+  document.querySelector('[data-chart-kind="histogram"]').addEventListener("click",()=>{document.querySelector("#result").textContent="Chart selected";});
 });`;
 async function open(width: number, source = assets.chartModule!, theme: "light" | "dark" = "light", script = draw) {
   const context = await browser.newContext({ viewport: { width, height: 1000 } });
@@ -123,6 +124,8 @@ for (const width of [1200, 390])
         expect(await boxes(page)).toEqual(loading);
         expect(await app(page).locator("[data-chart-pending]").count()).toBe(0);
         expect(await app(page).locator(".k2b-chart__table").count()).toBe(2);
+        await app(page).locator('[data-chart-kind="histogram"]').dispatchEvent("click");
+        expect(await app(page).locator("#result").textContent()).toBe("Chart selected");
         const mark = app(page).locator('[data-chart-kind="histogram"] [data-chart-datum]').first();
         await mark.dispatchEvent("pointermove", { pointerType: "mouse", clientX: 100, clientY: 150 });
         await app(page).locator('[data-chart-kind="histogram"]').focus();
@@ -179,6 +182,38 @@ test("a failed rare import stays in its box and retries offline", async () => {
         .locator("body")
         .evaluate(() => Reflect.get(globalThis, "__chartLoads")),
     ).toBe(2);
+    expect(requests).toEqual([]);
+  } finally {
+    await context.close();
+  }
+});
+
+test("calendar heatmaps load offline with stable phone geometry and their newest week visible", async () => {
+  const script = `document.querySelector("#draw").addEventListener("click",()=>{
+document.querySelector("#charts").innerHTML=cloud.chart({kind:"heatmap",layout:"calendar",title:"Deliveries",scale:"sequential",data:[["2026-01-01",1],["2026-12-31",2]]});
+});`;
+  const { page, context, requests } = await open(390, delayed + assets.chartModule, "light", script);
+  try {
+    await app(page).locator("#draw").click();
+    await app(page)
+      .locator("body")
+      .evaluate(
+        () =>
+          new Promise<void>((resolve) => {
+            const poll = () => (Reflect.get(globalThis, "__releaseCharts") ? resolve() : requestAnimationFrame(poll));
+            poll();
+          }),
+      );
+    const loading = await boxes(page);
+    await release(page);
+    await app(page).locator("svg[data-calendar]").waitFor();
+    expect(await boxes(page)).toEqual(loading);
+    const chart = app(page).locator('[data-chart-kind="heatmap"]');
+    expect(await chart.evaluate((element) => element.scrollLeft)).toBeGreaterThan(0);
+    await chart.focus();
+    await chart.press("End");
+    await chart.locator(".k2b-chart__tooltip").waitFor();
+    expect(await chart.locator(".k2b-chart__tooltip").textContent()).toContain("2026");
     expect(requests).toEqual([]);
   } finally {
     await context.close();
