@@ -118,6 +118,8 @@ test("Try again is reachable by keyboard in a failure and in a stale note, and c
     await page.locator("body").focus();
     await page.keyboard.press("Tab");
     expect(await page.evaluate(() => document.activeElement?.className)).toBe("k2b-dashboard-frame__link");
+    // A link in running text is underlined, also over the base stylesheet's buttons.
+    expect(await page.evaluate(() => getComputedStyle(document.activeElement!).textDecorationLine)).toBe("underline");
     await page.keyboard.press("Enter");
     expect(await retries()).toBe(3);
   } finally {
