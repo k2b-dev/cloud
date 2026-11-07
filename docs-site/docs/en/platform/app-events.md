@@ -54,13 +54,14 @@ Mail carries only the receipt reference described below.
 | `spaces.item.completed` | `spaces.item` | `spaces.space` | An existing item changes from open to completed, including a drag, calendar cancellation, or transfer into a done column. |
 | `notebooks.notebook.created` | `notebooks.notebook` | `notebooks.notebook` | A notebook is created. |
 | `notebooks.notebook.updated` | `notebooks.notebook` | `notebooks.notebook` | Notebook metadata or settings change. |
+| `notebooks.comment.created` | `notebooks.comment` | `notebooks.notebook` | A post is added to a note's page discussion; edits, deletions and passage annotations emit no such event. |
 | `notebooks.note.created` | `notebooks.note` | `notebooks.notebook` | A note is created, including welcome notes, path creation, copies, and restored copies. |
 | `notebooks.note.updated` | `notebooks.note` | `notebooks.notebook` | Persisted Markdown, title, the moved note’s parent or order, lock state, or recovery status changes, coalesced as described below. |
 | `mail.message.received` | `mail.message` | `mail.mailbox` | An incoming message reaches its first eligible provider placement. |
 
 The place Types have permission-aware readers: `spaces.space.read` and
 `notebooks.notebook.read`, plus `mail.mailbox.read` for Mail. Subject readers are `spaces.item.read`,
-`notebooks.notebook.read`, `notebooks.note.read`, and `mail.message.read`. Read content through those
+`notebooks.notebook.read`, `notebooks.note.read`, `notebooks.comment.read`, and `mail.message.read`. Read content through those
 readers; events contain no titles, text, names, email addresses, content counts,
 parent IDs, or previous-place references. Repeating completion or reopening an
 item does not publish `spaces.item.completed`.
