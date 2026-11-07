@@ -267,6 +267,14 @@ remaining 0.233 events/s is a planning allowance for all other events, not a
 publisher limit. Sustained discrete writes above it require more capacity or
 a shorter outage target. A missed or expired event requires domain reconciliation.
 
+Grids record events are discrete transactional facts with empty data and public
+record/base refs. Each base transaction can publish up to 10,000 events; larger
+batches fail and must be split. There is no cross-transaction throttle. Include
+imports and bulk edits when planning peak ingestion, delivery fan-out, and
+outage retention. See [Grids events](/en/docs/reference/grids-events) for the
+mutation and rollback contract. This producer uses the existing platform outbox
+and broker; it needs no additional service or configuration.
+
 Core retains unresolved deliveries for **30 days** from creation or the latest
 administrator redelivery, then marks them
 `cancelled` with `retention_expired`. That cancellation remains visible for

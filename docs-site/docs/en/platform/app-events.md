@@ -101,6 +101,10 @@ application subscription to them stays `blocked` with
 `resource_events_unsupported`, and only resource-bound workload subscriptions with a valid mandate
 and current read access receive them (see [Who receives an event](#who-receives-an-event)).
 
+Grids also publishes version 1 resource events for record creation, updates,
+deletion, and finalization. See [Grids events](/en/docs/reference/grids-events)
+for exact mutation boundaries and the transaction batch limit.
+
 ## Declare events and subscriptions
 
 Add `events` and `subscribes` to the same `defineCapabilities()` declaration
