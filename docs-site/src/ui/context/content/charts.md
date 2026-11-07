@@ -956,3 +956,26 @@ every number readable without a pointer. Countries too small for a shape appear
 as dots; Antarctica appears only in the list. Values that are not positive finite numbers and invalid codes are left
 out. With no data the neutral map stays; the host shows its own empty message.
 Use `format` for units and `limit` to change how many countries the list names.
+
+## Waterfall charts
+
+Use `kind="waterfall"` to explain how ordered changes connect an opening
+balance to a closing balance. Pass `start: { label, value }`,
+`steps: { label, value }[]` and `end: { label }`. The closing balance is
+calculated; callers cannot supply a conflicting total. Negative balances
+and changes that cross zero are supported. All inputs and cumulative balances
+must be finite. A missing change is rejected rather than treated as zero.
+
+Totals rest on zero in a neutral colour. Inflows use `--k2b-flow-in-mark`
+and ↙; outflows use `--k2b-flow-out-mark` and ↗. Without flow tokens,
+the pure renderer uses a neutral fallback. Connectors join running balances.
+Tooltips show the absolute amount with its direction and the balances before
+and after each step, using the inherited locale. Phone labels are thinned;
+every complete label remains in inspection and the data table.
+
+`renderWaterfallSvg({ ...options, width, height, inspect: true })` and
+`waterfallLayout(options, { width, height })` from `@k2b/ui/charts` expose the
+same pure drawing and calculation. SVG marks carry their paint attributes,
+so server, PDF and app-frame hosts do not require `.k2b-ui` to see them.
+Portable JSON accepts `format: { style: "currency", currency: "EUR", decimals: 0 }`;
+the component and renderer accept a `format(value)` function.

@@ -1,0 +1,130 @@
+import { afterAll, beforeAll, expect, test } from "bun:test";
+import { resolve } from "node:path";
+import type { Browser, Page } from "playwright";
+import { launchBrowser, settled } from "../../test/browser";
+import { waterfallFixture } from "../../test/waterfall-fixture";
+import { renderWaterfallSvg } from "../charts/core/waterfall";
+import { responsiveChartSvg } from "./chart-svg";
+
+let browser: Browser, bundle: string, css: string;
+const pages: Page[] = [];
+beforeAll(async () => {
+  const { transformAsync } = await import("@babel/core");
+  const typescript = (await import("@babel/preset-typescript")).default;
+  const solid = (await import("babel-preset-solid")).default;
+  const build = await Bun.build({
+    entrypoints: [resolve(import.meta.dir, "../../test/waterfall.browser-harness.tsx")],
+    target: "browser",
+    format: "iife",
+    conditions: ["browser"],
+    plugins: [
+      {
+        name: "waterfall-dom",
+        setup(builder) {
+          builder.onLoad({ filter: /\.tsx$/ }, async ({ path }) => {
+            const result = await transformAsync(await Bun.file(path).text(), {
+              filename: path,
+              babelrc: false,
+              configFile: false,
+              presets: [typescript, [solid, { generate: "dom", hydratable: false }]],
+            });
+            if (!result?.code) throw new Error(`Transform failed: ${path}`);
+            return { contents: result.code, loader: "js" };
+          });
+        },
+      },
+    ],
+  });
+  if (!build.success) throw new AggregateError(build.logs, "Waterfall harness failed");
+  bundle = await build.outputs[0]!.text();
+  css = await Bun.file(resolve(import.meta.dir, "../../dist/styles.css")).text();
+  browser = await launchBrowser();
+  pages.push(await open(1440, false, true));
+}, 30000);
+afterAll(async () => {
+  for (const page of pages) await page.close();
+  await browser?.close();
+});
+const open = async (width: number, dark = false, touch = false) => {
+  const page = await browser.newPage({ viewport: { width, height: 900 }, hasTouch: touch, isMobile: false });
+  await page.setContent(
+    `<!doctype html><html ${dark ? 'class="dark"' : ""}><head><meta name="viewport" content="width=device-width,initial-scale=1"><style>${css} body{margin:0;padding:20px} main{max-width:900px;margin:auto}.waterfall-panel{border:1px solid var(--k2b-border);border-radius:12px;padding:16px;margin-top:20px}h2{font-size:17px;margin:0}.meta{font-size:13px;margin:4px 0 16px}.waterfall-frame{height:280px}</style></head><body class="k2b-ui"><div id="root"></div></body></html>`,
+  );
+  await page.addScriptTag({ content: bundle });
+  await settled(page);
+  return page;
+};
+const tooltip = (page: Page) => page.locator('[role="tooltip"]:popover-open');
+for (const width of [1440, 390])
+  test(`waterfall at ${width}: SSR drawing, hover, keys, states and retry keep their box`, async () => {
+    const page = pages[0]!;
+    await page.setViewportSize({ width, height: 900 });
+    await settled(page);
+    try {
+      const chart = page.locator('[data-chart-kind="waterfall"]');
+      const expected = responsiveChartSvg(
+        renderWaterfallSvg({ ...waterfallFixture, width: 480, height: 280, inspect: true, locale: "de" }),
+      );
+      expect(
+        await chart.locator("svg").evaluate((svg, expected) => {
+          const host = document.createElement("div");
+          host.innerHTML = expected;
+          return svg.outerHTML === host.firstElementChild?.outerHTML;
+        }, expected),
+      ).toBe(true);
+      const box = await page.locator(".waterfall-panel").boundingBox();
+      await chart.locator(".k2b-waterfall-bar").nth(2).hover();
+      await page.waitForFunction(() => document.querySelector('[role="tooltip"]:popover-open')?.textContent?.includes("Wareneinkauf"));
+      expect(await tooltip(page).textContent()).toContain("48.060");
+      expect(await tooltip(page).textContent()).toContain("33.260");
+      expect(await chart.locator("[data-inspected] .k2b-chart-category-band").evaluate((e) => getComputedStyle(e).fillOpacity)).toBe(
+        "0.05",
+      );
+      await chart.focus();
+      await page.keyboard.press("End");
+      expect(await tooltip(page).textContent()).toContain("31. Okt.");
+      await page.keyboard.press("Home");
+      await page.keyboard.press("ArrowRight");
+      await page.keyboard.press("Enter");
+      await page.mouse.move(0, 0);
+      expect(await tooltip(page).count()).toBe(1);
+      await page.keyboard.press("Escape");
+      expect(await tooltip(page).count()).toBe(0);
+      for (const state of ["loading", "empty", "error", "stale", "data"]) {
+        await page.getByRole("button", { name: state, exact: true }).click();
+        await settled(page);
+        expect(await page.locator(".waterfall-panel").boundingBox()).toEqual(box);
+        if (state === "error") {
+          await page.getByRole("button", { name: "Erneut versuchen" }).click();
+          expect(await chart.count()).toBe(1);
+        }
+      }
+    } finally {
+      /* Shared fixture closes in afterAll. */
+    }
+  });
+test("phone tap pins, swipe leaves no selection, dark and unscoped SVG retain their paint", async () => {
+  const page = pages[0]!;
+  await page.setViewportSize({ width: 390, height: 900 });
+  await page.evaluate(() => document.documentElement.classList.add("dark"));
+  await settled(page);
+  try {
+    const mark = page.locator(".k2b-waterfall-bar").nth(1);
+    await mark.tap();
+    expect(await tooltip(page).count()).toBe(1);
+    await page.keyboard.press("Escape");
+    const chart = page.locator('[data-chart-kind="waterfall"]');
+    await settled(page);
+    const bounds = (await mark.boundingBox())!;
+    await mark.dispatchEvent("pointerdown", { pointerType: "touch", clientX: bounds.x, clientY: bounds.y });
+    await chart.dispatchEvent("pointermove", { pointerType: "touch", clientX: bounds.x, clientY: bounds.y + 30 });
+    await chart.dispatchEvent("click", { pointerType: "touch", clientX: bounds.x, clientY: bounds.y + 30 });
+    expect(await tooltip(page).count()).toBe(0);
+    await page.evaluate(() => document.body.classList.remove("k2b-ui"));
+    await settled(page);
+    const fills = await page.locator(".k2b-waterfall-bar").evaluateAll((nodes) => nodes.map((e) => getComputedStyle(e).fill));
+    expect(fills.every((c) => c !== "rgb(0, 0, 0)" && c !== "none")).toBe(true);
+  } finally {
+    /* Shared fixture closes in afterAll. */
+  }
+});

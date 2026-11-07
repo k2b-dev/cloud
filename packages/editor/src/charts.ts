@@ -20,16 +20,20 @@ import {
   sparkline,
   stat,
 } from "@k2b/stdlib";
-import { type BarChartOptions, barChartLayout, renderBarChartSvg } from "@k2b/ui/charts";
+import { type BarChartOptions, barChartLayout, renderBarChartSvg, renderWaterfallSvg, type WaterfallOptions } from "@k2b/ui/charts";
 import { z } from "zod";
 import { type ChartFormat, type ChartInput, type ChartNumberFormat, chartDateTime, chartKinds } from "./chart-schema";
 
 export * from "./chart-schema";
 
 type RenderOptions = {
-  [K in ChartInput["kind"]]: { kind: K } & (K extends "bar"
-    ? BarChartOptions
-    : Omit<Parameters<(typeof charts)[K]>[0], "width" | "height" | "inspect">);
+  [K in ChartInput["kind"]]: { kind: K } & (K extends "waterfall"
+    ? WaterfallOptions
+    : K extends "bar"
+      ? BarChartOptions
+      : K extends keyof typeof charts
+        ? Omit<Parameters<(typeof charts)[K]>[0], "width" | "height" | "inspect">
+        : never);
 }[ChartInput["kind"]];
 
 /**
@@ -232,6 +236,8 @@ const numberFormat = (format: ChartFormat | undefined) => (format && !("date" in
 /** The values a chart writes with its value format, for whole-number currency. */
 const formattedValues = (input: ChartInput): number[] => {
   switch (input.kind) {
+    case "waterfall":
+      return [input.start.value, ...input.steps.map((step) => step.value)];
     case "line":
     case "scatter":
       return [...input.series.flatMap((series) => series.data.map((point) => point.y)), ...chartReferenceValues(input, "y")];
@@ -346,6 +352,8 @@ export function chartRenderOptions(
   const width = options.width ?? WIDTH;
   const references = renderReferences(input);
   switch (input.kind) {
+    case "waterfall":
+      return { kind: "waterfall", start: input.start, steps: input.steps, end: input.end, locale, format: format.value };
     case "bar":
     case "boxplot": {
       const yAxis = referencedAxis(input, "y");
@@ -501,6 +509,8 @@ const decode = (value: string) =>
 export const drawChart = (options: RenderOptions): string => {
   const common = { width: WIDTH, height: HEIGHT, inspect: true };
   switch (options.kind) {
+    case "waterfall":
+      return renderWaterfallSvg({ ...options, ...common });
     case "bar":
       return renderBarChartSvg({ ...options, ...common, height: barChartLayout(options).height });
     case "line":
@@ -665,6 +675,8 @@ export function chartTable(input: ChartInput, locale: string): ChartTable {
 /** Input values count against the budget, including observations summarized into boxes or bins. */
 export const chartMarks = (input: ChartInput): number => {
   switch (input.kind) {
+    case "waterfall":
+      return input.steps.length + 2;
     case "line":
     case "scatter":
       return input.series.reduce((sum, series) => sum + series.data.length, 0);

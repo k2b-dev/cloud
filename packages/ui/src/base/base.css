@@ -1277,3 +1277,9 @@
     }
   }
 }
+
+/* Floating changes inspect a whole category without dimming other bars. */
+.k2b-chart[data-chart-kind="waterfall"] [data-inspected] > .k2b-chart-category-band { fill-opacity: .05; stroke: none !important; }
+.k2b-chart[data-chart-kind="waterfall"] [data-inspected] > .k2b-waterfall-bar { stroke: none !important; }
+
+@container (max-width: 600px) { .k2b-chart[data-chart-kind="waterfall"] .k2b-waterfall-value, .k2b-chart[data-chart-kind="waterfall"] .k2b-waterfall-label-extra { display: none; } }

@@ -4,6 +4,7 @@ import type { JSX } from "solid-js";
 import { createEffect, createMemo, createSignal, createUniqueId, For, onCleanup, onMount, Show, splitProps, untrack } from "solid-js";
 import { isServer } from "solid-js/web";
 import { IconButton } from "../actions/Button";
+import { renderWaterfallSvg, type WaterfallOptions } from "../charts/core/waterfall";
 import { suppressTextSelection } from "../internal/text-selection";
 import { useLocale } from "../intl/locale";
 import { useUiMessages } from "../intl/messages";
@@ -138,11 +139,15 @@ export type ChartProps = {
           timeAxis?: ChartTimeAxis;
         }
       : {}) &
-    (K extends "stateTimeline"
-      ? StateTimelineChartOptions
-      : K extends "bar"
-        ? BarChartOptions
-        : Omit<Parameters<(typeof charts)[K]>[0], "width" | "height" | "inspect">);
+    (K extends "waterfall"
+      ? Omit<WaterfallOptions, "locale">
+      : K extends "stateTimeline"
+        ? StateTimelineChartOptions
+        : K extends "bar"
+          ? BarChartOptions
+          : K extends keyof typeof charts
+            ? Omit<Parameters<(typeof charts)[K]>[0], "width" | "height" | "inspect">
+            : never);
 }[ChartKind];
 
 /** Pure renderer options: component layout, events and inspection are configured elsewhere. */
@@ -174,6 +179,7 @@ export const renderChartSvg = (
   height: number,
   mapViewport?: MapViewport,
   timelineViewport?: StateTimelineDomain,
+  renderLocale = "en",
 ): string => {
   const {
     kind,
@@ -206,6 +212,8 @@ export const renderChartSvg = (
       }),
     );
   }
+  if (kind === "waterfall")
+    return responsiveChartSvg(renderWaterfallSvg({ ...(opts as WaterfallOptions), locale: renderLocale, width, height, inspect: true }));
   if (kind === "bar") return responsiveChartSvg(renderBarChartSvg({ ...(opts as BarChartOptions), width, height, inspect: true }));
   // A time axis needs an explicit X domain: it maps its round ticks onto the axis the renderer drew over it.
   const timeAxis = props.kind === "line" ? props.timeAxis : undefined;
@@ -581,6 +589,7 @@ const Chart = (props: ChartProps): JSX.Element => {
       size().height,
       interactiveMap() ? mapViewport() : undefined,
       interactiveTimeline() ? timelineViewport() : undefined,
+      locale(),
     ),
   );
   createEffect(() => {

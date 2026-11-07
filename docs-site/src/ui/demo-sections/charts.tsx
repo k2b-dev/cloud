@@ -4,6 +4,21 @@ import { createSignal, For, Show } from "solid-js";
 import { DemoCard } from "../DemoCard";
 
 const examples = {
+  waterfall: {
+    description: "Waterfall · Follow each inflow and outflow from the opening to the closing balance.",
+    chart: {
+      kind: "waterfall",
+      start: { label: "Opening", value: 18800 },
+      steps: [
+        { label: "Sales", value: 29260 },
+        { label: "Stock", value: -14800 },
+        { label: "Payroll", value: -9600 },
+        { label: "Rent", value: -3200 },
+        { label: "Other", value: -1920 },
+      ],
+      end: { label: "Closing" },
+    },
+  },
   line: {
     description: "Line · Requests rise from 12 to 42 per second. Inspect individual points with the pointer or keyboard.",
     chart: {
@@ -243,6 +258,7 @@ type TooltipField = { label: string; unit?: string; names?: Record<string, strin
 type TooltipExample = { title: string; fields: Record<string, TooltipField> };
 
 const tooltipExamples: Record<ChartKind, TooltipExample> = {
+  waterfall: { title: "Running balance", fields: { value: { label: "Amount" }, from: { label: "Before" }, to: { label: "After" } } },
   line: {
     title: "Request rate",
     fields: {

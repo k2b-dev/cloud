@@ -14,7 +14,7 @@ import {
 // Named renderers, not the `charts` namespace, so app frames leave out the map and state timeline renderers.
 import { barGauge, boxplot, donut, escapeXml, gauge, heatmap, histogram, line, money, pie, scatter, sparkline, stat } from "@k2b/stdlib";
 import { isChartDatum } from "@k2b/ui/chart-inspection";
-import { barChartLayout, renderBarChartSvg } from "@k2b/ui/charts";
+import { barChartLayout, renderBarChartSvg, renderWaterfallSvg } from "@k2b/ui/charts";
 import { CloudError } from "./errors";
 import { normalizeChartDates } from "./views";
 
@@ -80,6 +80,9 @@ function drawChart(options: StoredChart, locale: string, width: number, height: 
     const common = { width, height, title: options.title, subtitle: options.input.subtitle, inspect: true };
     let svg: string;
     switch (mapped.kind) {
+      case "waterfall":
+        svg = renderWaterfallSvg({ ...mapped, ...common });
+        break;
       case "bar": {
         // The title and subtitle take height too: lay out exactly what is drawn.
         const layout = barChartLayout({ ...mapped, ...common }, width);
