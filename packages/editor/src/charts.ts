@@ -1,6 +1,5 @@
 // Named renderers, not the `charts` namespace, so bundles leave out the map and state timeline renderers.
 import {
-  autoBin,
   barGauge,
   boxplot,
   type ChartDatum,
@@ -22,7 +21,15 @@ import {
 } from "@k2b/stdlib";
 import { type BarChartOptions, barChartLayout, renderBarChartSvg } from "@k2b/ui/charts";
 import { z } from "zod";
-import { type ChartFormat, type ChartInput, type ChartNumberFormat, chartDateTime, chartKinds } from "./chart-schema";
+import {
+  type ChartAxisInput,
+  type ChartFormat,
+  type ChartInput,
+  type ChartNumberFormat,
+  chartDateTime,
+  chartReferenceValues,
+  chartValueAxes,
+} from "./chart-schema";
 
 export * from "./chart-schema";
 
@@ -105,8 +112,6 @@ const dateTime = (value: number | string) => (typeof value === "number" ? value 
 
 export const chartSeries = (input: ChartInput) => (input.kind === "line" || input.kind === "scatter" ? input.series : []);
 
-type ChartAxisInput = { label?: string; domain?: number[]; ticks?: number; scale?: "linear" | "log"; format?: ChartFormat };
-
 export const chartBounds = (domain: number[] | undefined): [number, number] | undefined => {
   const [min, max] = domain ?? [];
   return min === undefined || max === undefined ? undefined : [min, max];
@@ -117,29 +122,6 @@ const axis = ({ domain, format: _format, ...value }: ChartAxisInput = {}, format
   ...(domain ? { domain: chartBounds(domain) } : {}),
   format,
 });
-
-export const chartReferenceValues = (input: ChartInput, name: "x" | "y") =>
-  "references" in input ? (input.references ?? []).filter((ref) => (ref.axis ?? "y") === name).map((ref) => dateTime(ref.value)) : [];
-
-/** The value axes of a chart with what they show: the data checks and the label room read them alike. */
-export const chartValueAxes = (input: ChartInput): { values: number[]; axis?: ChartAxisInput; zero?: boolean; name: "x" | "y" }[] => {
-  if (input.kind === "bar") return [{ values: input.data.map((item) => item.value), axis: input.yAxis, zero: true, name: "y" }];
-  if (input.kind === "boxplot") return [{ values: input.data.flatMap((item) => item.values), axis: input.yAxis, name: "y" }];
-  if (input.kind === "histogram") {
-    if (!input.references?.length) return [{ values: input.data, name: "x" }];
-    const { edges, counts } = autoBin(input.data, input.bins);
-    return [
-      { values: edges, name: "x" },
-      { values: counts, zero: true, name: "y" },
-    ];
-  }
-  if (input.kind !== "line" && input.kind !== "scatter") return [];
-  const points = input.series.flatMap((series) => series.data);
-  return [
-    { values: points.map((point) => dateTime(point.x)), axis: input.xAxis, name: "x" },
-    { values: points.map((point) => point.y), axis: input.yAxis, name: "y" },
-  ];
-};
 
 /** Only references add a fixed domain; charts without them keep the renderer's existing defaults. */
 const referencedAxis = (input: ChartInput, name: "x" | "y"): ChartAxisInput | undefined => {
@@ -157,16 +139,6 @@ const referencedAxis = (input: ChartInput, name: "x" | "y"): ChartAxisInput | un
 };
 const renderReferences = (input: ChartInput) =>
   "references" in input ? input.references?.map((ref) => ({ ...ref, value: dateTime(ref.value) })) : undefined;
-
-/**
- * Whether the renderer can step from the lowest to the highest tick. Values that differ by less than the float
- * precision of their size, such as 1e17 and 1e17 + 16, would make it count forever.
- */
-const steppable = (values: number[], ticks = TICKS) => {
-  const [min, max] = computeDomain(values);
-  const step = niceStep(max - min, ticks);
-  return [Math.floor(min / step) * step, Math.ceil(max / step) * step].every((value) => value + step !== value && value - step !== value);
-};
 
 /**
  * The values whose labels are the widest on a value axis: its ends and the ticks next to them. The renderer puts ticks
@@ -679,32 +651,9 @@ export const chartMarks = (input: ChartInput): number => {
   }
 };
 
-/** Rejects only precision ranges that would make the renderer count ticks forever. */
-export function chartSteppingIssue(input: ChartInput): string | undefined {
-  // Check raw observations before autoBin computes histogram edges.
-  if (input.kind === "histogram" && !steppable(input.data))
-    return "The values differ too little for their size to label an axis; subtract a common offset first.";
-  for (const { values: data, axis, zero, name } of chartValueAxes(input)) {
-    const values = [...data, ...chartReferenceValues(input, name)];
-    if (axis?.scale !== "log" && !axis?.domain && !steppable(zero ? [...values, 0] : values, axis?.ticks))
-      return "The values differ too little for their size to label an axis; subtract a common offset first.";
-  }
-  return undefined;
-}
-
 /** Both dimensions must fit before suggesting a heatmap orientation change. */
 export const chartHeatmapLabelFit = (columns: string[], rows: string[]) => {
   const left = Math.max(40, Math.ceil((Math.max(0, ...rows.map((label) => label.length)) * CHAR + 8) * NARROW));
   const characters = Math.floor((WIDTH - left - 16) / NARROW / columns.length / CHAR) - 1;
   return { characters, columns: columns.every((label) => label.length <= characters), rows: rows.length <= HEATMAP_MAX_ROWS };
 };
-
-/** Application chart schema: permissive observations, with the renderer's tick-safety guard. */
-export const chartSchema = () =>
-  chartKinds().superRefine(
-    (chart, context) => {
-      const issue = chartSteppingIssue(chart);
-      if (issue) context.addIssue({ code: "custom", message: issue });
-    },
-    { when: (payload) => payload.issues.length === 0 },
-  );
