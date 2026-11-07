@@ -229,7 +229,7 @@ Each row ends with its total; segment values print only where they fit.
 Group headings follow first appearance. All source values remain in the
 accessible table, including values that do not fit on a segment.
 
-`Chart.Bar` exposes grouped, stacked and compared columns; `Chart.Hbar` exposes horizontal segments. The matching JSON kinds are `bar` and `hbar`, and both use the portable `@k2b/ui/charts/core` renderer.
+`Chart.Bar` exposes grouped, stacked and compared columns; `Chart.Hbar` exposes horizontal segments. The matching JSON kinds are `bar` and `hbar`, and both use the portable `@k2b/ui/charts/core` renderer. A host that loads horizontal drawing on demand can reserve `hbarLayout(spec, size).height` and pass the same prepared geometry to `renderHbarLayoutSvg(spec, geometry)` when its drawing module arrives.
 
 Both renderers inspect whole categories. A calm band appears behind the active
 category on pointer hover without outlining its segments. Keyboard inspection

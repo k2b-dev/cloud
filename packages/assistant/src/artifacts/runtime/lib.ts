@@ -106,7 +106,10 @@ function drawChart(
     const formats = { x: options.xFormat, y: options.yFormat, value: options.format };
     const mapped = cloudAiChartRenderOptions(options.input, locale, { width, formats });
     const common: ChartDrawing = { width, height, title: options.title, subtitle: options.input.subtitle, inspect: true };
-    if (mapped.kind === "hbar") common.height = hbarLayout({ ...mapped, ...common }, { width, height }).height;
+    if (mapped.kind === "hbar") {
+      common.hbar = hbarLayout({ ...mapped, ...common }, { width, height });
+      common.height = common.hbar.height;
+    }
     let svg: string | undefined;
     switch (mapped.kind) {
       case "bar": {

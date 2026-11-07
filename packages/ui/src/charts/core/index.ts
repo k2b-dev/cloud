@@ -11,7 +11,7 @@ export {
 export { type ChartTimeAxis } from "../../content/chart-time-axis";
 export { type AreaOptions, areaLayout, renderAreaSvg } from "./area";
 export * from "./calendar";
-export { type HorizontalBarOptions, hbarLayout, renderHbarSvg } from "./hbar";
+export { type HorizontalBarLayout, type HorizontalBarOptions, hbarLayout, renderHbarLayoutSvg, renderHbarSvg } from "./hbar";
 export * from "./inspection";
 export { map } from "./map";
 export * from "./render";

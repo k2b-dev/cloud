@@ -20,6 +20,8 @@ test("normal mounts omit app checks and stay within the prelude budget", async (
 
   expect(normal).not.toContain("k2b-chart-group-heading");
   expect(rare).toContain("k2b-chart-group-heading");
+  expect(normal).toContain("Horizontal bars require aligned nonnegative segment values");
+  expect(rare).not.toContain("Horizontal bars require aligned nonnegative segment values");
   // Reference cells need only identity validation, not capability registration.
   expect(normal).not.toContain("Idempotency keys must contain only visible ASCII characters");
   // The frame imports `@k2b/cloud/ai/app-frame`: the `ai/browser` barrel kept its skill parser and YAML (34 KB).

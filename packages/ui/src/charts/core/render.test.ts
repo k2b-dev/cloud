@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test";
+import { hbarLayout, renderHbarLayoutSvg, renderHbarSvg } from "./hbar";
 import { type ChartRenderOptions, chartRenderHeight, renderChartSvg } from "./render";
 import { prepareChartSnapshot } from "./snapshot";
 import { barGauge } from "./svg";
@@ -39,4 +40,37 @@ test("snapshot hosts opt into compact bar gauges without changing default snapsh
   expect(compact.height).toBe(86);
   expect(compact.svg).toContain('viewBox="0 0 480 86"');
   expect(compact.marks).toEqual(legacy.marks);
+});
+
+test("lazy horizontal drawing reuses its reserved geometry without changing SVG", () => {
+  for (const width of [296, 480, 900]) {
+    for (const locale of ["en", "de"]) {
+      for (const legend of [true, false]) {
+        const spec = {
+          series: ["Previous subscriptions", "New subscriptions"],
+          rows: [
+            { group: "North", label: "Long invented account name", values: [200, 30] },
+            { group: "South", label: "Missing observations", values: [null, null] },
+          ],
+          title: "Accounts",
+          subtitle: "Invented values",
+          legend,
+          locale,
+          valueFormat: new Intl.NumberFormat(locale).format,
+          width,
+          height: 280,
+          inspect: true,
+        };
+        const layout = hbarLayout(spec, spec);
+        const drawing = renderHbarSvg(spec);
+        expect(renderHbarLayoutSvg(spec, layout)).toBe(drawing);
+        // The deferred renderer must use its prepared observations, not silently lay out changed input again.
+        spec.rows[0]!.values[0] = 999_999;
+        expect(renderHbarLayoutSvg(spec, layout)).toBe(drawing);
+        expect(renderHbarSvg(spec)).not.toBe(drawing);
+        expect(layout.rows[1]!.total).toBeNull();
+        expect(layout.height).toBe(280);
+      }
+    }
+  }
 });
