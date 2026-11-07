@@ -121,10 +121,16 @@ test("a tooltip opened by the pointer still closes when the page scrolls", async
     await frames(page, 4);
     const box = (await chart.boundingBox())!;
     await page.mouse.move(box.x + box.width * 0.2, box.y + box.height * 0.6);
-    await frames(page, 4);
+    await page.waitForFunction(
+      (open) => document.querySelectorAll(".k2b-chart")[1]?.querySelector('[role="tooltip"]')?.matches(":popover-open") === open,
+      true,
+    );
     expect((await tooltipOf(page, "snapshot")).open).toBe(true);
     await page.evaluate(() => window.scrollBy(0, 60));
-    await frames(page, 4);
+    await page.waitForFunction(
+      (open) => document.querySelectorAll(".k2b-chart")[1]?.querySelector('[role="tooltip"]')?.matches(":popover-open") === open,
+      false,
+    );
     expect((await tooltipOf(page, "snapshot")).open).toBe(false);
   } finally {
     await page.close();
