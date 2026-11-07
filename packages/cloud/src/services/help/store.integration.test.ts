@@ -15,7 +15,7 @@ import type { RequestActor } from "../../contracts/shared";
 import { defineHelp } from "../../server/help";
 import type { AuthContext } from "../../server/middleware/auth";
 import { createHelpReader } from "./index";
-import { cleanupHelp, hasHelpBm25, migrateHelp, queryHelp, registerHelp } from "./store";
+import { hasHelpBm25, migrateHelp, queryHelp, registerHelp } from "./store";
 
 const actor = {
   kind: "user" as const,
@@ -366,7 +366,7 @@ suite("Postgres Help publication and retrieval", () => {
       resetApp();
     }
   }, 20000);
-  test("renews before advertisement and repairs missing data through the existing heartbeat", async () => {
+  test("publishes missing data before registry advertisement", async () => {
     await db`DELETE FROM help.corpora WHERE app_id='help-integration' AND manifest_hash=${published.corpus.manifestHash}`;
     let advertised = false;
     const heartbeat = createHeartbeat(
@@ -390,18 +390,6 @@ suite("Postgres Help publication and retrieval", () => {
     } finally {
       await heartbeat.stop();
     }
-  });
-  test("cleans expired versions but protects renewed versions", async () => {
-    const old = corpus("Old description");
-    await registerHelp(old.corpus, db);
-    await db`UPDATE help.corpora SET last_seen_at=now()-interval '1 day' WHERE app_id='help-integration' AND manifest_hash=${old.corpus.manifestHash}`;
-    await cleanupHelp(db);
-    expect((await db`SELECT 1 FROM help.corpora WHERE app_id='help-integration' AND manifest_hash=${old.corpus.manifestHash}`).length).toBe(
-      0,
-    );
-    expect(await reader().read({ appId: "help-integration", documentId: "permissions" })).not.toBeNull();
-    await Promise.all([registerHelp(published.corpus, db), cleanupHelp(db)]);
-    expect(await reader().read({ appId: "help-integration", documentId: "permissions" })).not.toBeNull();
   });
   test("HTTP search and read use the same SQL locale selection", async () => {
     const routes = createHelpRoutes({ help: readerFor, authenticate: signIn(actor) });

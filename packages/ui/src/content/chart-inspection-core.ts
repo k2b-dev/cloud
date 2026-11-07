@@ -1,45 +1,26 @@
-import { type ChartDatum, type ChartKind, chartDatumRoles } from "../charts/core/types";
+import type { ChartDatum, ChartKind } from "../charts/core/types";
 import { positionTooltipSurface } from "../feedback/tooltip-position";
 import type { ChartCursor, ChartCursorState } from "./chart-cursor";
 
+export {
+  type ChartDatumRef,
+  type ChartSelection,
+  type ChartTooltip,
+  type ChartTooltipFormatter,
+  isChartDatum,
+  sameChartDatum,
+} from "../charts/core/inspection";
 export type { ChartKind } from "../charts/core/types";
 
-export type ChartDatumRef = Pick<ChartDatum, "role" | "index" | "seriesIndex">;
-export const sameChartDatum = (a: ChartDatumRef, b: ChartDatumRef) =>
-  a.role === b.role && a.index === b.index && a.seriesIndex === b.seriesIndex;
-
-export type ChartSelection = { kind: ChartKind; datum: ChartDatum };
-export type ChartTooltip = { title?: string; rows: readonly { label: string; value: string }[] };
-export type ChartTooltipFormatter = (selection: ChartSelection) => ChartTooltip;
+import {
+  type ChartDatumRef,
+  type ChartSelection,
+  type ChartTooltipFormatter,
+  isChartDatum,
+  sameChartDatum,
+} from "../charts/core/inspection";
 
 type Entry = { element: SVGGraphicsElement; datum: ChartDatum };
-const object = (value: unknown): value is Record<string, unknown> => typeof value === "object" && value !== null;
-const pair = (value: unknown): value is [number, number] =>
-  Array.isArray(value) && value.length === 2 && value.every((n) => typeof n === "number" && Number.isFinite(n));
-const roles: ReadonlySet<string> = new Set(chartDatumRoles);
-export function isChartDatum(value: unknown): value is ChartDatum {
-  return (
-    object(value) &&
-    Number.isInteger(value.index) &&
-    typeof value.index === "number" &&
-    value.index >= 0 &&
-    (value.seriesIndex === undefined ||
-      (typeof value.seriesIndex === "number" && Number.isInteger(value.seriesIndex) && value.seriesIndex >= 0)) &&
-    typeof value.role === "string" &&
-    roles.has(value.role) &&
-    pair(value.anchor) &&
-    (value.grid === undefined || pair(value.grid)) &&
-    (value.label === undefined || typeof value.label === "string") &&
-    Array.isArray(value.values) &&
-    value.values.every(
-      (field) =>
-        object(field) &&
-        typeof field.key === "string" &&
-        (typeof field.value === "string" || (typeof field.value === "number" && Number.isFinite(field.value))) &&
-        (field.formatted === undefined || typeof field.formatted === "string"),
-    )
-  );
-}
 
 /** Adds or removes only the tooltip id, keeping descriptions the host put on the container. */
 const describe = (container: HTMLElement, id: string, on: boolean) => {

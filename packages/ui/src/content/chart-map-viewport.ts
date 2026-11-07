@@ -1,4 +1,4 @@
-import type { MapViewport } from "@k2b/stdlib";
+import type { MapViewport } from "../charts/core/svg";
 
 export const DEFAULT_MAP_VIEWPORT: MapViewport = {
   latitude: 0,

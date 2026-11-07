@@ -1,16 +1,11 @@
 import type { SQL } from "bun";
 import type { AccessSubject } from "../server/services/access";
 import { coreSettings } from "../services/settings/api";
-import { WorkflowAiAdmissionError, type WorkflowAiScope, workflowAiHash, workflowAiModelHash } from "../workflows/ai/policy";
-import { submitWorkflowAiTask } from "../workflows/ai/runtime";
-import {
-  createWorkflowAiTask,
-  getWorkflowAiTask,
-  getWorkflowAiTaskByEffectKey,
-  releaseApplicationAiTaskByEffectKey,
-} from "../workflows/ai/store";
 import { type AiTaskRequestInput, assertAiTaskRequestSize } from "./task-contracts";
 import { resolveApplicationAiTaskModel } from "./task-model";
+import { WorkflowAiAdmissionError, type WorkflowAiScope, workflowAiHash, workflowAiModelHash } from "./tasks/policy";
+import { submitWorkflowAiTask } from "./tasks/runtime";
+import { createWorkflowAiTask, getWorkflowAiTask, getWorkflowAiTaskByEffectKey, releaseApplicationAiTaskByEffectKey } from "./tasks/store";
 
 export type ApplicationAiTaskInput = {
   appId: string;
@@ -32,7 +27,7 @@ const applicationEffectKey = (input: ApplicationAiTaskKey): string =>
 export const releaseApplicationAiTask = (input: ApplicationAiTaskKey, db?: SQL): Promise<boolean> =>
   releaseApplicationAiTaskByEffectKey({ appId: input.appId, scopeId: input.scopeId, effectKey: applicationEffectKey(input) }, db);
 
-export { deleteApplicationAiTasks, listUnreleasedApplicationAiTaskSources } from "../workflows/ai/store";
+export { deleteApplicationAiTasks, listUnreleasedApplicationAiTaskSources } from "./tasks/store";
 
 const waitForTask = (signal: AbortSignal, delayMs = 250) =>
   new Promise<void>((resolve, reject) => {

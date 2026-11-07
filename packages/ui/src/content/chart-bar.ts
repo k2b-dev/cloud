@@ -10,8 +10,9 @@ import {
   niceLogTicks,
   niceStep,
   type ReferenceLine,
+  referenceLineAttributes,
   svgRoot,
-} from "@k2b/stdlib";
+} from "../charts/core/svg";
 
 /**
  * Bar chart options: stdlib's `charts.bar` options plus a title for the category axis and a separate value format.
@@ -369,10 +370,12 @@ const renderColumns = (opts: BarChartOptions, plan: Plan, width: number, height:
     if ((ref.axis ?? "y") !== "y" || !Number.isFinite(ref.value) || ref.value < g.scale.domain[0] || ref.value > g.scale.domain[1])
       continue;
     const ry = y(ref.value);
-    parts.push(`<line class="stdlib-chart-reference" x1="${fmt(g.x0)}" y1="${fmt(ry)}" x2="${fmt(g.x1)}" y2="${fmt(ry)}"/>`);
+    parts.push(
+      `<line class="stdlib-chart-reference"${referenceLineAttributes(ref)} x1="${fmt(g.x0)}" y1="${fmt(ry)}" x2="${fmt(g.x1)}" y2="${fmt(ry)}"/>`,
+    );
     if (ref.label)
       parts.push(
-        `<text class="stdlib-chart-reference-label" x="${fmt(g.x1 - 4)}" y="${fmt(ry - 4)}" text-anchor="end">${escapeXml(ref.label)}</text>`,
+        `<text class="stdlib-chart-reference-label"${referenceLineAttributes(ref, true)} x="${fmt(g.x1 - 4)}" y="${fmt(ry - 4)}" text-anchor="end">${escapeXml(ref.label)}</text>`,
       );
   }
   if (opts.xAxis?.label)
@@ -462,10 +465,12 @@ const renderRows = (opts: BarChartOptions, plan: Plan, width: number, inspect: b
   for (const ref of opts.references ?? []) {
     if ((ref.axis ?? "y") !== "y" || !Number.isFinite(ref.value) || ref.value < scale.domain[0] || ref.value > scale.domain[1]) continue;
     const rx = x(ref.value);
-    parts.push(`<line class="stdlib-chart-reference" x1="${fmt(rx)}" y1="${fmt(g.top)}" x2="${fmt(rx)}" y2="${fmt(plotBottom)}"/>`);
+    parts.push(
+      `<line class="stdlib-chart-reference"${referenceLineAttributes(ref)} x1="${fmt(rx)}" y1="${fmt(g.top)}" x2="${fmt(rx)}" y2="${fmt(plotBottom)}"/>`,
+    );
     if (ref.label)
       parts.push(
-        `<text class="stdlib-chart-reference-label" x="${fmt(rx)}" y="${fmt(g.top - 8)}" text-anchor="middle">${escapeXml(ref.label)}</text>`,
+        `<text class="stdlib-chart-reference-label"${referenceLineAttributes(ref, true)} x="${fmt(rx)}" y="${fmt(g.top - 8)}" text-anchor="middle">${escapeXml(ref.label)}</text>`,
       );
   }
   return parts.join("");

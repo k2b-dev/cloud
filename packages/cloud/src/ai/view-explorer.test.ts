@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { charts } from "@k2b/stdlib";
+import { charts } from "@k2b/ui/charts/core";
 import { z } from "zod";
 import { cloudAiChartRenderOptions } from "./chart-block";
 import { type CloudAiExplorerView, cloudAiExplorerControls, cloudAiExplorerState, cloudAiViewTable, parseCloudAiView } from "./view-block";

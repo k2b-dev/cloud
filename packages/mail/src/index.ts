@@ -1,3 +1,4 @@
+import { startWorkflowAiRuntime, stopWorkflowAiRuntime } from "@k2b/cloud/ai/tasks";
 import { stopRuntimeResources } from "@k2b/cloud/services";
 import { websocket } from "hono/bun";
 import apiRoutes from "./api";
@@ -30,6 +31,7 @@ const stopMailRuntimes = (): Promise<void> =>
     () => stopConversationSummaryRuntime(),
     () => mailRuntime.stop(),
     () => workflowRuntime.stop(),
+    () => stopWorkflowAiRuntime(),
     () => commandRuntime.stop(),
     () => mailNotifications.stop(),
   ]);
@@ -58,6 +60,7 @@ const result = await app.start({
         await mailNotifications.start();
         await mailRuntime.start();
         await commandRuntime.start();
+        await startWorkflowAiRuntime();
         await workflowRuntime.start();
         await startConversationSummaryRuntime();
       } catch (startError) {

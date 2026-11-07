@@ -24,7 +24,10 @@ for (const [dependency, name] of [
 }
 
 const ignoredSource = (path: string): boolean =>
-  /\.(?:test|typecheck)\.[cm]?[jt]sx?$/.test(path) || path.endsWith("styles/css-contract-test-helpers.ts") || path.endsWith(".d.ts");
+  /\.(?:test|typecheck)\.[cm]?[jt]sx?$/.test(path) ||
+  path.endsWith("styles/css-contract-test-helpers.ts") ||
+  path.endsWith("charts/parity.ts") ||
+  path.endsWith(".d.ts");
 
 const sourceFiles = async (directory: string): Promise<string[]> => {
   const files: string[] = [];
