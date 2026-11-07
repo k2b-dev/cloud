@@ -5,6 +5,7 @@ import {
   computeDomain,
   escapeXml,
   extendDomainToNice,
+  MAX_AXIS_TICKS,
   mapLog,
   mapRange,
   niceLogTicks,
@@ -134,7 +135,7 @@ const valueScale = (values: number[], axis: AxisOptions | undefined, nice: boole
     if (log) return { domain: [lo, hi], ticks: niceLogTicks(lo, hi).ticks.filter((tick) => tick >= lo && tick <= hi), log };
     const step = niceStep(hi - lo, axis.ticks ?? 5);
     const ticks = [lo];
-    if (step > 0 && Number.isFinite(step))
+    if (step > 0 && Number.isFinite(step) && (hi - lo) / step <= MAX_AXIS_TICKS)
       for (let value = Math.ceil(lo / step) * step; value < hi; ) {
         if (value > lo) ticks.push(value);
         const next = value + step;

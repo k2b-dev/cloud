@@ -278,6 +278,57 @@
   gap: 0.75rem;
 }
 
+.ui-dashboard-demo__title {
+  margin: 0;
+  font-size: 0.875rem;
+  font-weight: 600;
+  line-height: 1.25rem;
+}
+
+.ui-dashboard-demo__meta {
+  margin: 0 0 0.625rem;
+  color: var(--k2b-text-muted);
+  font-size: 0.8125rem;
+  line-height: 1.125rem;
+}
+
+.ui-typed-table-demo {
+  container: ui-typed-table / inline-size;
+  resize: horizontal;
+  overflow: hidden;
+  min-width: 18rem;
+  max-width: 100%;
+  padding: 0.875rem 0 0;
+}
+
+.ui-typed-table-demo__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0 1rem 0.625rem;
+}
+
+.ui-typed-table-demo__head h3 {
+  margin: 0;
+  font-size: 0.875rem;
+  font-weight: 600;
+  line-height: 1.25rem;
+}
+
+.ui-typed-table-demo__head p {
+  margin: 0;
+  color: var(--k2b-text-muted);
+  font-size: 0.8125rem;
+  line-height: 1.125rem;
+}
+
+@container ui-typed-table (max-width: 560px) {
+  .ui-typed-table-demo__head { flex-wrap: wrap; }
+  .ui-typed-table-demo__head .k2b-data-table-tools { flex: 1 1 100%; }
+  .ui-typed-table-demo__head .k2b-data-table-tools__search { flex: 1; width: auto; }
+}
+
 .ui-settings-demo {
   height: min(40rem, 80vh);
   min-height: 32rem;

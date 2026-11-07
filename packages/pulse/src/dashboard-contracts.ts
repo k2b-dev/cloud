@@ -21,7 +21,11 @@ const DashboardPanelFields = z
       .describe("Stable panel ID within this dashboard."),
     title: z.string().trim().min(1).max(120).describe("Visible panel title."),
     description: z.string().max(1_000).default("").describe("Short explanation of the result and unit."),
-    section: z.string().max(120).default("").describe("Section heading; number panels appear in the summary row."),
+    section: z
+      .string()
+      .max(120)
+      .default("")
+      .describe("Section heading; a number panel joins its section's row of key figures, without one the top row."),
     sectionIcon: z
       .string()
       .regex(/^ti ti-[a-z0-9-]+$/)
@@ -63,7 +67,10 @@ const DashboardPanelFields = z
     series: Column.optional().describe("Column that splits line, scatter or bar values into series, or the heatmap row category."),
     unit: z.string().max(32).default("").describe("Display unit for numeric values."),
     threshold: z.number().finite().optional().describe("Optional horizontal reference value."),
-    width: z.enum(["third", "half", "full"]).default("third").describe("Panel width in the responsive grid."),
+    width: z
+      .enum(["third", "half", "twoThirds", "full"])
+      .default("third")
+      .describe("Share of the six-column grid: third 2, half 3, twoThirds 4, full 6 columns; number panels ignore it."),
   })
   .strict();
 export const PublicDashboardPanelSchema = DashboardPanelFields.omit({ sql: true, params: true });

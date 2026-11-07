@@ -375,6 +375,9 @@ export const niceStep = (range: number, target: number): number => {
   return nice * mag;
 };
 
+/** The most ticks one linear axis counts, the same budget as a time axis; more never fit a readable axis. */
+export const MAX_AXIS_TICKS = 1_000;
+
 /**
  * Round `min` down and `max` up to the nearest multiples of `step`, so the
  * domain edges fall on tick boundaries. Returns the extended domain plus the
@@ -387,7 +390,15 @@ export const extendDomainToNice = (min: number, max: number, step: number): { do
   // Use rounding to avoid floating-point drift at tick positions.
   const decimals = Math.max(0, -Math.floor(Math.log10(step)));
   const round = (v: number): number => Number(v.toFixed(Math.min(decimals + 2, 12)));
-  for (let v = lo; v <= hi + step / 2; v += step) ticks.push(round(v));
+  // A step below the float spacing of large values never advances, and a tiny step counts without end: keep the ends.
+  const ends = { domain: [lo, hi] as [number, number], ticks: [...new Set([round(lo), round(hi)])] };
+  if ((hi - lo) / step > MAX_AXIS_TICKS) return ends;
+  for (let v = lo; v <= hi + step / 2; ) {
+    ticks.push(round(v));
+    const next = v + step;
+    if (next <= v) return ends;
+    v = next;
+  }
   return { domain: [lo, hi], ticks };
 };
 
@@ -634,7 +645,7 @@ const computePlotArea = (
  * SVG. Returns the SVG fragment plus the pixel height it consumed so the
  * caller can shift the plot area down accordingly.
  */
-const renderHeader = (width: number, title: string | undefined, subtitle: string | undefined): { svg: string; height: number } => {
+export const renderHeader = (width: number, title: string | undefined, subtitle: string | undefined): { svg: string; height: number } => {
   if (!title && !subtitle) return { svg: "", height: 0 };
   const cx = width / 2;
   const parts: string[] = [];
@@ -1226,7 +1237,7 @@ const computeAxisScale = (values: readonly number[], axisOpts: AxisOptions | und
       const step = niceStep(hi - lo, axisOpts.ticks ?? fallbackTicks);
       // At extreme magnitudes the step may be smaller than one representable
       // increment. Keep endpoint ticks instead of entering a non-advancing loop.
-      if (step > 0 && Number.isFinite(step)) {
+      if (step > 0 && Number.isFinite(step) && (hi - lo) / step <= MAX_AXIS_TICKS) {
         for (let value = Math.ceil(lo / step) * step; value < hi; ) {
           if (value > lo) ticks.push(value);
           const next = value + step;

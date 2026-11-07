@@ -1,6 +1,7 @@
 import { i18n } from "@k2b/stdlib";
 import { CopyButton, IconButton, LocaleProvider, prepareChartSnapshot, toast } from "@k2b/ui";
 import { type ChartTooltip, inspectChart } from "@k2b/ui/chart-inspection";
+import { calendarInspectionNavigation, mountCalendarScroll } from "@k2b/ui/charts";
 import { createSignal, onCleanup, Show } from "solid-js";
 import { render } from "solid-js/web";
 import { type ChartInput, type ChartTable, chartMarkKey, chartReferenceMark, chartRenderOptions, chartRows, chartTooltip } from "../charts";
@@ -121,8 +122,10 @@ export function enhanceNotebookCharts(root: HTMLElement, locale: string, options
     chart.setAttribute("aria-label", figure.querySelector(".notebook-book-chart__title")?.textContent ?? "");
     chart.setAttribute("aria-description", t.interactiveChart);
     chart.dataset.interactive = "true";
+    if (input.kind === "heatmap" && input.layout === "calendar") cleanups.push(mountCalendarScroll(chart));
     const inspection = inspectChart(chart, {
       kind: input.kind,
+      nav: input.kind === "heatmap" && input.layout === "calendar" ? calendarInspectionNavigation : undefined,
       locale,
       legend: figure,
       format: ({ datum }) => lazy().tooltips.get(chartMarkKey(datum)) ?? { rows: [] },
