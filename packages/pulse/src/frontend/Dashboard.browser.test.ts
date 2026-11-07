@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
-import { launchBrowser } from "../../../ui/test/browser";
+import { launchBrowser, pageErrors } from "../../../ui/test/browser";
 import type { Dashboard } from "../dashboard-contracts";
 import type { DashboardPanelData } from "../dashboard-result";
 import {
@@ -1374,8 +1374,7 @@ test("catalog SQL charts keep their frame through empty, invalid and recovered r
     [390, true],
   ] as const) {
     const view = await open({ width, dark, dashboard: fixture, panelData });
-    const errors: string[] = [];
-    view.tab.on("pageerror", (error) => errors.push(error.message));
+    const errors = pageErrors(view.tab);
     try {
       await ready(view.tab);
       expect(await view.tab.locator(".pulse-dashboard__plot .k2b-chart").count()).toBe(panels.length);

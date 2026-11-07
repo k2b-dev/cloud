@@ -1,5 +1,5 @@
-import { type ChartInput, chartKinds, chartRenderOptions, chartRows, chartTooltip } from "@k2b/editor/charts";
-import { type ChartTooltipFormatter, chartRenderHeight, renderChartSvg } from "@k2b/ui/charts/core";
+import { type ChartInput, chartKinds, chartRenderOptions, chartRows, chartTooltip, drawChart } from "@k2b/editor/charts";
+import type { ChartTooltipFormatter } from "@k2b/ui/charts/core";
 import { DASHBOARD_MAX_MARKS, DASHBOARD_MAX_POINTS, DASHBOARD_MAX_SERIES, type DashboardPanel } from "./dashboard-contracts";
 import type { DashboardPanelData } from "./dashboard-result";
 import { sqlTimestamp } from "./sql-result-values";
@@ -159,6 +159,6 @@ export function dashboardChartRenderOptions(panel: ChartPanel, data: DashboardPa
     const row = rows.add(datum);
     return chartTooltip(rows.columns(), row);
   };
-  budget([...renderChartSvg(options, 480, chartRenderHeight(options)).matchAll(/data-chart-datum=/g)].length, 0, 0);
+  budget([...drawChart(options).matchAll(/data-chart-datum=/g)].length, 0, 0);
   return { ...options, tooltip };
 }
