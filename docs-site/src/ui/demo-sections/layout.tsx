@@ -2129,12 +2129,12 @@ const DetailsToggleDemo = () => {
 };
 
 const DetailPanelTaskRows = () => {
-  const [tasks, setTasks] = createSignal([
-    { title: "Call Mrs. Weber about the pickup", due: "Today", done: false },
-    { title: "Send photos of the oak chest", due: "Tomorrow", done: true },
-    { title: "Confirm the appraisal date", due: "Fri", done: false },
-  ]);
-  const toggle = (index: number, done: boolean) => setTasks((list) => list.map((task, at) => (at === index ? { ...task, done } : task)));
+  // Each task keeps its own state, so a toggle updates its row in place and the focused checkbox stays focused.
+  const tasks = [
+    { title: "Call Mrs. Weber about the pickup", due: "Today", done: createSignal(false) },
+    { title: "Send photos of the oak chest", due: "Tomorrow", done: createSignal(true) },
+    { title: "Confirm the appraisal date", due: "Fri", done: createSignal(false) },
+  ];
   return (
     <article class="ui-detail-panel-pattern">
       <header>
@@ -2149,15 +2149,21 @@ const DetailPanelTaskRows = () => {
                 title="Tasks"
                 icon="ti ti-checkbox"
                 tone="neutral"
-                meta={`${tasks().filter((task) => task.done).length} of ${tasks().length} done`}
+                meta={`${tasks.filter((task) => task.done[0]()).length} of ${tasks.length} done`}
               >
-                <For each={tasks()}>
-                  {(task, index) => (
+                <For each={tasks}>
+                  {(task) => (
                     <DetailPanel.Action
                       onClick={() => {}}
-                      title={<span style={task.done ? { color: "var(--k2b-text-muted)" } : undefined}>{task.title}</span>}
+                      title={<span style={task.done[0]() ? { color: "var(--k2b-text-muted)" } : undefined}>{task.title}</span>}
                       trailing={task.due}
-                      checkbox={{ checked: task.done, label: `Done: ${task.title}`, onChange: (done) => toggle(index(), done) }}
+                      checkbox={{
+                        get checked() {
+                          return task.done[0]();
+                        },
+                        label: `Done: ${task.title}`,
+                        onChange: task.done[1],
+                      }}
                     />
                   )}
                 </For>
