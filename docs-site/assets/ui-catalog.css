@@ -1695,21 +1695,17 @@
   margin-bottom: 1.5rem;
 }
 
+/* The shared k2b-icon-tile owns shape, fill and centring; the showcase sets only its size and accent. */
 .ui-charts-group__icon {
-  display: inline-grid;
-  flex: none;
-  place-items: center;
   width: 2.25rem;
   height: 2.25rem;
-  border-radius: 0.6rem;
-  background: var(--c-accent-soft);
   color: var(--c-accent-ink);
   font-size: 1.15rem;
 }
 
 .ui-charts-group__header p,
 .ui-charts-group__header h2,
-.ui-charts-group__header span {
+.ui-charts-group__header div > span {
   margin: 0;
 }
 
@@ -1728,7 +1724,8 @@
   letter-spacing: -0.015em;
 }
 
-.ui-charts-group__header span {
+/* Only the description line; the icon tile is a span too and keeps its own layout. */
+.ui-charts-group__header div > span {
   display: block;
   margin-top: 0.35rem;
   color: var(--c-muted);
@@ -1736,9 +1733,18 @@
 }
 
 .ui-charts-cards {
+  container: ui-charts-cards / inline-size;
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(min(100%, 19rem), 1fr));
+  grid-auto-flow: row dense;
   gap: 1rem;
+}
+
+/* A kind that needs more width than one column takes two once the overview has two; a smaller card fills the gap. */
+@container ui-charts-cards (min-width: 39rem) {
+  .ui-charts-card[data-span="2"] {
+    grid-column: span 2;
+  }
 }
 
 .ui-charts-card {
