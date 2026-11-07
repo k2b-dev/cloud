@@ -1,6 +1,7 @@
 // Named renderers, not the `charts` namespace, so bundles leave out the map and state timeline renderers.
 import { i18n } from "@k2b/stdlib";
 import {
+  type AreaOptions,
   autoBin,
   type BarChartOptions,
   type BubbleOptions,
@@ -20,6 +21,7 @@ import {
   niceStep,
   pie,
   type RadarOptions,
+  renderAreaSvg,
   renderBarChartSvg,
   renderBubbleSvg,
   renderRadarSvg,
@@ -33,15 +35,17 @@ import { type ChartFormat, type ChartInput, type ChartNumberFormat, chartDateTim
 export * from "./chart-schema";
 
 type RenderOptions = {
-  [K in ChartInput["kind"]]: { kind: K } & (K extends "bubble"
-    ? BubbleOptions
-    : K extends "radar"
-      ? RadarOptions
-      : K extends "bar"
-        ? BarChartOptions
-        : K extends keyof typeof charts
-          ? Omit<Parameters<(typeof charts)[K]>[0], "width" | "height" | "inspect">
-          : never);
+  [K in ChartInput["kind"]]: { kind: K } & (K extends "area"
+    ? AreaOptions
+    : K extends "bubble"
+      ? BubbleOptions
+      : K extends "radar"
+        ? RadarOptions
+        : K extends "bar"
+          ? BarChartOptions
+          : K extends keyof typeof charts
+            ? Omit<Parameters<(typeof charts)[K]>[0], "width" | "height" | "inspect">
+            : never);
 }[ChartInput["kind"]];
 
 /**
@@ -62,6 +66,7 @@ const labels = /* @__PURE__ */ i18n.define({
       series: "Series",
       value: "Value",
       share: "Share",
+      position: "Position",
       from: "From",
       to: "To",
       count: "Count",
@@ -82,6 +87,7 @@ const labels = /* @__PURE__ */ i18n.define({
       series: "Datenreihe",
       value: "Wert",
       share: "Anteil",
+      position: "Position",
       from: "Von",
       to: "Bis",
       count: "Anzahl",
@@ -254,6 +260,8 @@ const formattedValues = (input: ChartInput): number[] => {
       return input.data.flatMap((p) => (p.size === undefined ? [] : [p.size]));
     case "radar":
       return input.series.flatMap((s) => s.data);
+    case "area":
+      return input.series.flatMap((s) => s.data.filter((v): v is number => v !== null));
     case "line":
     case "scatter":
       return [...input.series.flatMap((series) => series.data.map((point) => point.y)), ...chartReferenceValues(input, "y")];
@@ -328,6 +336,7 @@ export function chartLegend(
 ): { label: string; color: number; style?: "solid" | "dashed" | "dotted"; reference?: boolean }[] {
   if (input.kind === "bar")
     return input.colorByBar && input.legend ? input.data.map((entry, index) => ({ label: entry.label, color: index % 8 })) : [];
+  if (input.kind === "area") return input.legend === false ? [] : input.series.map((s, i) => ({ label: s.label, color: i % 8 }));
   if (input.kind !== "line" && input.kind !== "scatter") return [];
   if (!(input.legend ?? input.series.length > 1)) return [];
   const t = labels.resolve([locale]).t;
@@ -396,6 +405,18 @@ export function chartRenderOptions(
         locale,
         displayWidth: options.width,
         format: format.value,
+      };
+    case "area":
+      return {
+        kind: "area",
+        layout: input.layout,
+        normalize: input.normalize,
+        x: input.x,
+        series: input.series,
+        displayWidth: options.width,
+        locale,
+        format: format.value,
+        legend: options.legend === "outside" ? false : input.legend,
       };
     case "bar":
     case "boxplot": {
@@ -556,6 +577,8 @@ export const drawChart = (options: RenderOptions): string => {
       return renderBubbleSvg({ ...options, ...common });
     case "radar":
       return renderRadarSvg({ ...options, ...common });
+    case "area":
+      return renderAreaSvg({ ...options, ...common });
     case "bar":
       return renderBarChartSvg({ ...options, ...common, height: barChartLayout(options).height });
     case "line":
@@ -607,7 +630,16 @@ export type ChartRow = { key: string; cells: Record<string, string>; values: Rec
 export type ChartTable = { columns: ChartColumn[]; rows: ChartRow[] };
 
 /** The first text column titles the tooltip; the other columns become rows, matching the table in every host. */
-export function chartTooltip(columns: ChartColumn[], row: ChartRow): { title?: string; rows: { label: string; value: string }[] } {
+export function chartTooltip(
+  columns: ChartColumn[],
+  row: ChartRow,
+  kind?: ChartInput["kind"],
+): { title?: string; rows: { label: string; value: string }[] } {
+  if (kind === "area")
+    return {
+      title: row.cells.x,
+      rows: [{ label: row.cells.series ?? "", value: `${row.cells.percent ? `${row.cells.percent} · ` : ""}${row.cells.value ?? "—"}` }],
+    };
   const [first, ...rest] = columns;
   const named = first && !first.numeric;
   return {
@@ -636,7 +668,11 @@ export function chartRows(
   const xFormat = options.formats?.x ?? format.x.value;
   const series = chartSeries(input);
   const countFormat = (input.kind === "histogram" ? options.formats?.y : undefined) ?? chartNumberFormatters(undefined, locale).value;
-  const percent = new Intl.NumberFormat(locale, { style: "percent", maximumFractionDigits: 1 });
+  const percent = new Intl.NumberFormat(locale, {
+    style: "percent",
+    minimumFractionDigits: input.kind === "area" ? 1 : 0,
+    maximumFractionDigits: 1,
+  });
   const unit = "unit" in input && input.unit ? ` ${input.unit}` : "";
   const columns = new Map<string, ChartColumn>();
   const rows: ChartRow[] = [];
@@ -649,12 +685,13 @@ export function chartRows(
       cells[id] = text;
       values[id] = value;
     };
+    if (input.kind === "area") cell("series", t.series, datum.label ?? "", datum.label ?? "");
     if (input.kind === "line" || input.kind === "scatter") {
       if (named || series.length > 1) {
         const name = series[datum.seriesIndex ?? 0]?.label ?? `${t.series} ${(datum.seriesIndex ?? 0) + 1}`;
         cell("series", t.series, name, name);
       }
-    } else {
+    } else if (input.kind !== "area") {
       // Bars may hide some axis labels; the table names every category.
       const label =
         input.kind === "bar" || input.kind === "pie" || input.kind === "donut" || input.kind === "boxplot" || input.kind === "barGauge"
@@ -680,18 +717,28 @@ export function chartRows(
         cell(field.key, input.series[Number(field.key.slice(7))]!.label, value, field.formatted ?? String(value));
         continue;
       }
+      if (typeof value === "string" && input.kind === "area" && field.key === "x") {
+        cell("x", t.position, value, field.formatted ?? value);
+        continue;
+      }
       if (typeof value === "string" && input.kind === "heatmap" && (field.key === "x" || field.key === "y")) {
         cell(field.key, field.key.toUpperCase(), value, value);
         continue;
       }
       if (typeof value !== "number" || field.key === "total") continue;
       if (field.key === "x") {
-        const header = (input.kind === "line" || input.kind === "scatter" ? input.xAxis?.label : undefined) ?? "X";
+        const header =
+          (input.kind === "line" || input.kind === "scatter" ? input.xAxis?.label : undefined) ??
+          (input.kind === "area" ? t.position : "X");
         cell(
           "x",
           input.kind === "sparkline" || input.kind === "stat" ? "#" : header,
           value,
-          input.kind === "sparkline" || input.kind === "stat" ? String(value + 1) : xFormat(value),
+          input.kind === "sparkline" || input.kind === "stat"
+            ? String(value + 1)
+            : input.kind === "area"
+              ? (field.formatted ?? String(value))
+              : xFormat(value),
         );
       } else if (field.key === "y") {
         const header =
@@ -739,6 +786,8 @@ export const chartMarks = (input: ChartInput): number => {
   switch (input.kind) {
     case "radar":
       return input.axes.length * input.series.length;
+    case "area":
+      return input.series.reduce((sum, s) => sum + s.data.length, 0);
     case "line":
     case "scatter":
       return input.series.reduce((sum, series) => sum + series.data.length, 0);

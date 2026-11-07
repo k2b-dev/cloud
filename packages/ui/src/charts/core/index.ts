@@ -9,6 +9,7 @@ export {
   stateTimelineHeight,
 } from "../../content/chart-state-timeline";
 export { type ChartTimeAxis } from "../../content/chart-time-axis";
+export { type AreaOptions, areaLayout, renderAreaSvg } from "./area";
 export * from "./bubble";
 export * from "./inspection";
 export * from "./radar";
