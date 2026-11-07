@@ -54,13 +54,14 @@ Mail carries only the receipt reference described below.
 | `spaces.item.completed` | `spaces.item` | `spaces.space` | An existing item changes from open to completed, including a drag, calendar cancellation, or transfer into a done column. |
 | `notebooks.notebook.created` | `notebooks.notebook` | `notebooks.notebook` | A notebook is created. |
 | `notebooks.notebook.updated` | `notebooks.notebook` | `notebooks.notebook` | Notebook metadata or settings change. |
+| `notebooks.comment.created` | `notebooks.comment` | `notebooks.notebook` | A post is added to a note's page discussion; edits, deletions and passage annotations emit no such event. |
 | `notebooks.note.created` | `notebooks.note` | `notebooks.notebook` | A note is created, including welcome notes, path creation, copies, and restored copies. |
 | `notebooks.note.updated` | `notebooks.note` | `notebooks.notebook` | Persisted Markdown, title, the moved note’s parent or order, lock state, or recovery status changes, coalesced as described below. |
 | `mail.message.received` | `mail.message` | `mail.mailbox` | An incoming message reaches its first eligible provider placement. |
 
 The place Types have permission-aware readers: `spaces.space.read` and
 `notebooks.notebook.read`, plus `mail.mailbox.read` for Mail. Subject readers are `spaces.item.read`,
-`notebooks.notebook.read`, `notebooks.note.read`, and `mail.message.read`. Read content through those
+`notebooks.notebook.read`, `notebooks.note.read`, `notebooks.comment.read`, and `mail.message.read`. Read content through those
 readers; events contain no titles, text, names, email addresses, content counts,
 parent IDs, or previous-place references. Repeating completion or reopening an
 item does not publish `spaces.item.completed`.
@@ -103,6 +104,12 @@ application subscription to them stays `blocked` with
 `resource_events_unsupported`, and only resource-bound workload subscriptions with a valid mandate
 and current read access receive them (see [Who receives an event](#who-receives-an-event)).
 
+### Grids record changes
+
+Grids also publishes version 1 resource events for record creation, updates,
+deletion, and finalization. See [Grids events](/en/docs/reference/grids-events)
+for mutation boundaries, bulk summaries, and table/base lifecycle events.
+
 ### Mail receipts
 
 `mail.message.received` has strict data `{ receiptId: UUID }`. The receipt ID
@@ -129,6 +136,68 @@ later catch-up. If such an import consumes a pending receipt, a later move
 does not publish it. Provider drafts remain on Mail's existing draft path.
 Mailbox and message access are still checked through capabilities; the receipt
 grants no read or write rights.
+
+## Chat posted messages
+
+`chat.message.posted` version 1 announces a newly stored text message in an
+ordinary Chat conversation or channel. The subject is `chat.message` (ten-character
+message ID); the place is `chat.conversation` (six-character conversation ID).
+Both general and named-thread messages publish, including quoted replies.
+The strict data object contains:
+
+| Field | Meaning |
+| --- | --- |
+| `threadReply` | Whether the message quotes an earlier message through `replyTo`. A named thread alone does not make a message a reply. |
+| `root` | The reply chain's original `{ type: "chat.message", id }` ref for a reply; otherwise `null`. Replies to replies retain the original root. |
+| `author` | The stored author's principal ref: `{ type: "user" \| "service_account", id: UUID }`. |
+| `mentions` | Distinct validated principal refs, in input order, at most Chat's existing 20 mentions. Ineligible mentions are omitted. |
+
+Each new reply stores its root ref, so later replies need one indexed lookup
+regardless of chain depth. Messages stored before event support have no root
+metadata: quoting one anchors the new chain at that legacy message. Historical
+chains are not scanned or backfilled.
+
+No body, names, mention ranges, previews, attachments or shared refs are included.
+Read the message through `chat.message.read`; authorize the place through
+`chat.conversation.read`. These readers check current grants, credential scopes
+and account binding. The event grants no content access.
+
+Publication shares the message transaction; delivery is woken after commit.
+An idempotent retry emits no second event; rollback removes the message and event together. Edits, deletes, reactions,
+system lines and messages in system conversations do not emit this event.
+System conversations can contain item discussions with separate read checks;
+the owning applications publish their domain events. Chat has no public message
+import operation; migrations and direct database imports do not replay events.
+There is no historical backfill.
+
+### Skip messages from your own automation
+
+Before reading content or performing an effect, compare `data.author` with the
+service-account principal used to post the handler's results. Return immediately
+when both type and ID match. This stops the handler from answering its own posts.
+To react only when mentioned, also require that `data.mentions` contains the
+intended principal. These checks need no message text.
+
+```ts
+const ownPrincipal = { type: "service_account", id: ownServiceAccountId };
+const isOwnMessage = event.data.author.type === ownPrincipal.type
+  && event.data.author.id === ownPrincipal.id;
+if (isOwnMessage) return;
+```
+
+The publisher forwards the request's ID as `cause.requestId` when present,
+including calls through `chat.message.post`, so effects can be correlated with
+the originating capability execution. Empty IDs or IDs over the envelope's
+256-character bound are omitted; optional correlation never prevents posting.
+Correlation does not suppress delivery:
+use the author check for self-posts, and durable event-ID receipts for retries.
+The platform does not infer automation ancestry or prevent two different
+handlers from replying to each other. Design their predicates accordingly.
+
+Chat uses one discrete event per new message, without coalescing or aggregate
+throttling. Its existing per-principal send limits remain in force. Include
+all Chat posts and mention payload sizes in the
+[shared capacity budget](/en/docs/operations/app-events#plan-retention-and-outage-capacity).
 
 ## Declare events and subscriptions
 
