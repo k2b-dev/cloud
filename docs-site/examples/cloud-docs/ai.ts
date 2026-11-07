@@ -6,9 +6,9 @@ import {
   runApplicationAiTask,
 } from "@k2b/cloud/ai";
 import { launchAssistant } from "@k2b/cloud/ai/browser";
+import { getWorkflowAiBudget } from "@k2b/cloud/ai/tasks";
 import { defineCapabilities } from "@k2b/cloud/contracts";
 import type { AuthContext } from "@k2b/cloud/server";
-import { getWorkflowAiBudget } from "@k2b/cloud/workflows/ai";
 import { ok } from "@k2b/stdlib";
 import { z } from "zod";
 

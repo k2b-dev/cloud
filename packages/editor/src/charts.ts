@@ -1,6 +1,9 @@
 // Named renderers, not the `charts` namespace, so bundles leave out the map and state timeline renderers.
+import { i18n } from "@k2b/stdlib";
 import {
   autoBin,
+  type BarChartOptions,
+  barChartLayout,
   barGauge,
   boxplot,
   type ChartDatum,
@@ -11,16 +14,15 @@ import {
   gauge,
   heatmap,
   histogram,
-  i18n,
+  line,
   niceLogTicks,
   niceStep,
   pie,
+  renderBarChartSvg,
   scatter,
   sparkline,
   stat,
-} from "@k2b/stdlib";
-import { type BarChartOptions, barChartLayout, renderBarChartSvg } from "@k2b/ui/charts";
-import { line } from "@k2b/ui/charts/core";
+} from "@k2b/ui/charts/core";
 import { z } from "zod";
 import { type ChartFormat, type ChartInput, type ChartNumberFormat, chartDateTime, chartKinds } from "./chart-schema";
 

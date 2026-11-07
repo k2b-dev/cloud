@@ -25,6 +25,7 @@ export const chartNumberFormatSchema = () =>
     });
 const dateFormatSchema = () => z.strictObject({ date: z.enum(["day", "minute", "second"]) });
 export const chartFormatSchema = () => z.union([chartNumberFormatSchema(), dateFormatSchema()]);
+
 export type ChartNumberFormat = z.output<ReturnType<typeof chartNumberFormatSchema>>;
 export type ChartDateFormat = z.output<ReturnType<typeof dateFormatSchema>>;
 export type ChartFormat = ChartNumberFormat | ChartDateFormat;
@@ -66,7 +67,13 @@ export const chartParts = (limits?: ChartLimits) => {
   });
   // As many lines as series a reader can tell apart.
   const ChartReferences = list(
-    z.object({ value: z.union([z.number(), ChartDate]), axis: z.enum(["x", "y"]).optional(), label: ChartLabel.optional() }),
+    z.object({
+      value: z.union([z.number(), ChartDate]),
+      axis: z.enum(["x", "y"]).optional(),
+      label: ChartLabel.optional(),
+      style: z.enum(["solid", "dashed", "dotted"]).optional(),
+      tone: z.enum(["neutral", "info", "success", "warning", "danger"]).optional(),
+    }),
     0,
     limits?.maxSeries,
     `Use at most ${limits?.maxSeries} references.`,
