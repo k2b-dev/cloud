@@ -1,7 +1,7 @@
 import { beforeAll, expect, test } from "bun:test";
 import { sql } from "@k2b/cloud";
 import { compileCapabilityManifest } from "@k2b/cloud/capabilities/testing";
-import type { CapabilityExecutionContext, User } from "@k2b/cloud/contracts";
+import type { CapabilityExecutionContext } from "@k2b/cloud/contracts";
 import type { AppEventEnvelope } from "@k2b/cloud/events";
 import { appEventFixture, createAppEventTestHarness, deliverAppEvent } from "@k2b/cloud/events/testing";
 import { accounts } from "@k2b/cloud/services";
@@ -101,9 +101,13 @@ suite("Mail receipt events at the sync and event-service seams", () => {
       ingest(envelope(704), "sent", false),
     ]);
     const [person] = await sql<{ id: string }[]>`INSERT INTO auth.users(uid,provider,profile,admin)
-      VALUES(${`mail-code-${crypto.randomUUID()}`},'local','user',true) RETURNING id`;
+      VALUES(${`mail-code-${crypto.randomUUID()}`},'local','user',false) RETURNING id`;
     const user = await accounts.users.get({ id: person!.id });
     if (!user) throw new Error("Missing historical Mail reader");
+    const [grant] = await sql<{ id: string }[]>`INSERT INTO auth.access(user_id,permission)
+      VALUES(${user.id}::uuid,'read') RETURNING id`;
+    if (!grant) throw new Error("Missing historical mailbox grant");
+    await sql`INSERT INTO mail.mailbox_access(mailbox_id,access_id) VALUES(${mailboxId}::uuid,${grant.id}::uuid)`;
     const context: CapabilityExecutionContext = {
       actor: { kind: "user", user },
       accessSubject: { type: "user", userId: user.id },
@@ -115,8 +119,7 @@ suite("Mail receipt events at the sync and event-service seams", () => {
       target: { type: "mail.mailbox", id: mailboxShortId },
     };
     const selected = await mailCapabilities.queries["message.catchup"].run({ cutoffAt: "9999-01-01T00:00:00Z" }, context);
-    expect(selected.ok).toBe(true);
-    if (!selected.ok) throw new Error("Selection refused");
+    if (!selected.ok) throw new Error(`Historical selection refused: ${selected.error.code}: ${selected.error.message}`);
     const [message] = await sql<{ short_id: string }[]>`SELECT short_id FROM mail.message_contents WHERE id=${incoming}::uuid`;
     const excludedRows = await sql<
       { short_id: string }[]
@@ -126,14 +129,12 @@ suite("Mail receipt events at the sync and event-service seams", () => {
     for (const row of excludedRows) expect(ids).not.toContain(row.short_id);
     const resolved = await mailCapabilities.queries["message.event"].run({ id: message!.short_id }, context);
     expect(resolved).toMatchObject({ ok: true, data: { data: { subject: { id: message!.short_id }, place: { id: mailboxShortId } } } });
-    const deniedUser: User = { ...user, roles: ["user"] };
-    const denied = await mailCapabilities.queries["message.event"].run(
-      { id: message!.short_id },
-      { ...context, actor: { kind: "user", user: deniedUser }, user: deniedUser },
-    );
-    expect(denied.ok).toBe(false);
     const outside = await mailCapabilities.queries["message.catchup"].run({ from: "2027-01-01T00:00:00Z" }, context);
     expect(outside).toMatchObject({ ok: true, data: { data: { items: [], nextCursor: null } } });
+    // Administrator status is not mailbox read access. Exercise revocation of the actual grant.
+    await sql`DELETE FROM mail.mailbox_access WHERE mailbox_id=${mailboxId}::uuid AND access_id=${grant.id}::uuid`;
+    const denied = await mailCapabilities.queries["message.event"].run({ id: message!.short_id }, context);
+    expect(denied).toMatchObject({ ok: false, error: { code: "FORBIDDEN" } });
   });
 
   test("one receipt survives sync retry, labels and moves with public refs and the original placement identity", async () => {

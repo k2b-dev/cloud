@@ -104,9 +104,11 @@ export async function admitCodeEvent(
     context.signal.throwIfAborted();
   });
 }
-/** One historical execution per immutable version and message; live admission also reserves this identity. */
+/** One historical execution per immutable version and message; live admission also reserves this identity.
+ * Hash scalar fields: JSONB can reorder the subject object's properties between catch-up and live delivery.
+ */
 export const codeEventTargetKey = (versionId: string, envelope: AppEventEnvelope) =>
-  `catchup:${versionId}:${new Bun.CryptoHasher("sha256").update(JSON.stringify([envelope.type, envelope.version, envelope.subject])).digest("hex")}`;
+  `catchup:${versionId}:${new Bun.CryptoHasher("sha256").update(JSON.stringify([envelope.type, envelope.version, envelope.subject.type, envelope.subject.id])).digest("hex")}`;
 
 export const startCodeEventConsumer = () => registerResourceEventConsumer(CODE_EVENT_CONSUMER, admitCodeEvent);
 

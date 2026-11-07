@@ -40,7 +40,7 @@ import {
   startCodeEventCatchupRuntime,
 } from "./event-catchup";
 import { CODE_EVENT_CONSUMER, syncCodeEventSubscriptions } from "./event-subscriptions";
-import { admitCodeEvent, listCodeRunsWithEvents, replayCodeEventDelivery, startCodeEventConsumer } from "./events";
+import { admitCodeEvent, codeEventTargetKey, listCodeRunsWithEvents, replayCodeEventDelivery, startCodeEventConsumer } from "./events";
 import { processCodeOwnerDeleted } from "./lifecycle";
 import { claimCodeRuns, completeCodeRun, reconcileCodeRuns, startCodeRun } from "./scheduling";
 import { CODE_SETTINGS, codeSettings } from "./settings";
@@ -162,7 +162,7 @@ suiteFor("database", "nats")("Code event delivery to durable run admission", () 
     binding = row.resource_binding;
     time = row.cutoff;
   }
-  async function version(eventType = "fixture.changed", eventPlace = place) {
+  async function version(eventType = "fixture.changed", eventPlace = place, ai = false) {
     number++;
     const files = { "code.ts": `fixture ${number}` },
       bundle = "export default {};";
@@ -181,7 +181,7 @@ suiteFor("database", "nats")("Code event delivery to durable run admission", () 
         },
       ],
       permissions: [],
-      ai: false,
+      ai,
       policyRows: ["read"],
     };
     const [row] = await sql<
@@ -246,17 +246,20 @@ suiteFor("database", "nats")("Code event delivery to durable run admission", () 
     );
     setSystemTime(new Date("2026-11-06T12:00:00Z"));
   });
+  async function createOwnedCode(ownerPlace = place) {
+    await sql`INSERT INTO auth.service_accounts(id,name,kind,created_by) VALUES(${principal}::uuid,${`code:${ownerPlace.type}:${ownerPlace.id}`},'code',${owner}::uuid)`;
+    await sql`INSERT INTO code.codes(id,owner_kind,owner_type,owner_id,service_account_id,title,state,created_by)
+      VALUES(${codeId},'resource',${ownerPlace.type},${ownerPlace.id},${principal}::uuid,'Events','draft',${owner}::uuid)`;
+    await sql`INSERT INTO auth.access(id,user_id,permission) VALUES(${id(3)}::uuid,${owner}::uuid,'write')`;
+    await sql`INSERT INTO code.shares(code_id,access_id) VALUES(${codeId},${id(3)}::uuid)`;
+  }
   beforeEach(async () => {
     stopConsumer?.();
     stopConsumer = startCodeEventConsumer();
     await sql`TRUNCATE events.app_deliveries,events.app_subscriptions,events.app_events,events.app_declarations,events.app_manifests RESTART IDENTITY CASCADE`.simple();
     await sql`DELETE FROM code.codes`;
     await sql`DELETE FROM auth.mandates`;
-    await sql`INSERT INTO auth.service_accounts(id,name,kind,created_by) VALUES(${principal}::uuid,${`code:${place.type}:${place.id}`},'code',${owner}::uuid)`;
-    await sql`INSERT INTO code.codes(id,owner_kind,owner_type,owner_id,service_account_id,title,state,created_by)
-      VALUES(${codeId},'resource',${place.type},${place.id},${principal}::uuid,'Events','draft',${owner}::uuid)`;
-    await sql`INSERT INTO auth.access(id,user_id,permission) VALUES(${id(3)}::uuid,${owner}::uuid,'write')`;
-    await sql`INSERT INTO code.shares(code_id,access_id) VALUES(${codeId},${id(3)}::uuid)`;
+    await createOwnedCode();
     readable = true;
     backlog = 100;
     sequence = 0;
@@ -552,9 +555,16 @@ suiteFor("database", "nats")("Code event delivery to durable run admission", () 
   });
   test("the real Mail event reaches mailbox-owned Code through its generic app.on subscription exactly once", async () => {
     const mailbox = { type: "mail.mailbox", id: "Box123" };
-    await sql`UPDATE code.codes SET owner_type=${mailbox.type},owner_id=${mailbox.id} WHERE id=${codeId}`;
+    // Code identity is immutable: create this fixture with the real mailbox owner and matching account.
+    await cancelResourceEventSubscriptions(sql, CODE_EVENT_CONSUMER, codeId);
+    await sql`DELETE FROM code.codes WHERE id=${codeId}`;
+    await createOwnedCode(mailbox);
+    const mailboxType = compileCapabilityManifest("mail", mailCapabilities).types.find((type) => type.localId === "mailbox");
+    expect(mailboxType?.reader).toBe("mailbox.read");
     await version("mail.message.received", mailbox);
     await activate();
+    expect(binding.place).toEqual(mailbox);
+    expect(await findCode(codeId)).toMatchObject({ owner: { kind: "resource", ref: mailbox }, serviceAccountId: principal });
     const envelope = {
       ...appEventFixture(mailCapabilities, "message.received", { subject: "Msg123", place: mailbox.id, data: { receiptId: id(51) } }),
       id: id(50),
@@ -562,7 +572,13 @@ suiteFor("database", "nats")("Code event delivery to durable run admission", () 
       data: { receiptId: id(51) },
     };
     await broker.accept(envelope, ++sequence);
+    const accepted = await sql<
+      { state: string; code: string | null }[]
+    >`SELECT state,code FROM events.app_events WHERE id=${envelope.id}::uuid`;
+    expect(accepted).toEqual([{ state: "accepted", code: null }]);
+    expect((await broker.deliveries()).items).toEqual([expect.objectContaining({ eventId: envelope.id, state: "pending", attempts: 0 })]);
     await broker.work();
+    expect((await broker.deliveries()).items).toEqual([expect.objectContaining({ eventId: envelope.id, state: "done", attempts: 1 })]);
     await broker.accept(envelope, ++sequence);
     await broker.work();
     expect(await runs()).toEqual([
@@ -623,6 +639,9 @@ suiteFor("database", "nats")("Code event delivery to durable run admission", () 
       expect(await runs()).toHaveLength(45);
       // Catch-up first, then delayed generic delivery: one run and one live receipt.
       const delayed = input.events[0]!;
+      const [historicalReceipt] = await sql`SELECT run_id FROM code.run_requests
+        WHERE code_id=${codeId} AND request_key=${`historical:${codeEventTargetKey(versionId, delayed)}`}`;
+      expect(historicalReceipt).toEqual({ run_id: expect.any(String) });
       await broker.accept(delayed, ++sequence);
       await broker.work();
       expect(await runs()).toHaveLength(45);
@@ -663,7 +682,9 @@ suiteFor("database", "nats")("Code event delivery to durable run admission", () 
         await sql`SELECT * FROM code.run_requests WHERE run_id=${replay.runId}::uuid AND request_key LIKE 'historical:%'`,
       ).toHaveLength(1);
       await sql`UPDATE code.runs SET state='failed',ended_at=clock_timestamp() WHERE id=${replay.runId}::uuid`;
-      await sql`UPDATE code.versions SET manifest=jsonb_set(manifest::jsonb,'{ai}','true'::jsonb) WHERE id=${versionId}::uuid`;
+      // Versions are immutable too: activate a new AI version instead of editing the historical one.
+      await version("fixture.changed", place, true);
+      await activate();
       await expect(
         startCodeRun(
           {
@@ -679,11 +700,11 @@ suiteFor("database", "nats")("Code event delivery to durable run admission", () 
       await sql`UPDATE auth.service_accounts SET status='disabled' WHERE id=${principal}::uuid`;
       await expect(
         codeEventCatchupPumpConfig.dispatch({
-          input: { ...input, codeId, requestDigest: "fixture", capacityDeadline: Date.parse(time) },
+          input: { ...input, versionId, codeId, requestDigest: "fixture", capacityDeadline: Date.parse(time) },
           item: { key: "disabled-account", event: event(999, "message-899") },
           signal: new AbortController().signal,
         }),
-      ).rejects.toMatchObject({ code: "CONFLICT" });
+      ).rejects.toMatchObject({ code: "CONFLICT", message: "The handler's active execution binding changed." });
     } finally {
       await stop?.();
       crash.mockRestore();

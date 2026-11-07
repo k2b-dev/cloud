@@ -45,6 +45,13 @@ test("historical identity pins version and message, independent of operation and
   expect(codeEventTargetKey(input.operationId, input.events[0]!)).not.toBe(original);
 });
 
+test("historical identity survives JSONB subject-property ordering on live delivery", () => {
+  const envelope = input.events[0]!;
+  const fromJsonb = { ...envelope, subject: { id: envelope.subject.id, type: envelope.subject.type } };
+  expect(JSON.stringify(fromJsonb.subject)).not.toBe(JSON.stringify(envelope.subject));
+  expect(codeEventTargetKey(input.versionId, fromJsonb)).toBe(codeEventTargetKey(input.versionId, envelope));
+});
+
 test("Core publishes checked bounded event tool contracts", () => {
   const manifest = compileCapabilityManifest("core", aiCapabilities);
   expect(manifest.actions.find((action) => action.localId === "code.event.catchup")?.code).toBe(false);
