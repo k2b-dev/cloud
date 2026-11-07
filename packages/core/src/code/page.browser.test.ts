@@ -252,7 +252,16 @@ describe("Code page in a browser", () => {
           document.documentElement.className = "dark";
         });
         // The theme change starts colour transitions on every control; they end on their own.
-        await page.waitForFunction(() => document.getAnimations().every((animation) => animation.playState !== "running"));
+        await page.waitForFunction(() =>
+          document
+            .getAnimations()
+            .every(
+              (animation) =>
+                animation.timeline !== document.timeline ||
+                animation.playState !== "running" ||
+                !Number.isFinite(animation.effect?.getComputedTiming().endTime),
+            ),
+        );
         expect((await boxes(page)).overflow).toBeLessThanOrEqual(0);
         if (shots) await page.screenshot({ path: join(shots, `code-page-${width}-dark.png`), fullPage: true });
         expect(errors).toEqual([]);
