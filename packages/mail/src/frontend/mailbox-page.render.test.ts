@@ -55,6 +55,7 @@ afterEach(() => {
 });
 beforeEach(() => {
   spies.push(stubRailSnapshot());
+  spies.push(spyOn(access, "requireMailboxAccess").mockResolvedValue({ ok: true, data: { scope: "mailbox", permission: "read" } }));
   spies.push(
     spyOn(sidebarData, "loadMailSidebarData").mockResolvedValue({
       mailboxes: [],
@@ -154,6 +155,7 @@ test("mailbox SSR keeps the count wait budget and restores the normal timeout on
 
 test("an active mailbox the caller may not read answers the shared no-store 404 page, as for an unknown address", async () => {
   const resolve = spyOn(publicResources, "resolveActiveMailboxId").mockResolvedValue(mailboxId);
+  const select = spyOn(workspace, "resolveWorkspaceRequest").mockRejectedValue(new Error("Unexpected workspace selection"));
   const load = spyOn(workspace, "loadMailboxPageData").mockResolvedValue({
     ok: false,
     error: { code: "FORBIDDEN", message: "Internal mailbox permission details", status: 403 },
@@ -164,27 +166,16 @@ test("an active mailbox the caller may not read answers the shared no-store 404 
     composer: false,
     context: false,
   });
-  spies.push(resolve, load, integration);
+  spies.push(resolve, select, load, integration);
 
   spies.push(spyOn(access, "requireMailboxAccess").mockResolvedValue(fail(err.forbidden("Access denied"))));
 
   const response = await request();
 
   expect(resolve).toHaveBeenCalledWith(mailboxShortId);
-  expect(load).toHaveBeenCalledTimes(1);
-  expect(integration).toHaveBeenCalledWith({
-    actor: { kind: "user", user },
-    accessSubject: { type: "user", userId: user.id },
-    credentialKind: "oauth",
-    scopes: ["mail:read"],
-  });
-  expect(load.mock.calls[0]?.[0]).toMatchObject({
-    mailboxId,
-    context: {
-      actor: { kind: "user", user },
-      accessSubject: { type: "user", userId: user.id },
-    },
-  });
+  expect(select).not.toHaveBeenCalled();
+  expect(load).not.toHaveBeenCalled();
+  expect(integration).not.toHaveBeenCalled();
   expect(response.status).toBe(404);
   expect(response.headers.get("content-type")).toContain("text/html");
   expect(response.headers.get("cache-control")).toBe("private, no-store");
@@ -217,9 +208,9 @@ test.each([
       context: false,
     }),
   );
-  spies.push(spyOn(access, "requireMailboxAccess").mockResolvedValue(fail(err.forbidden("Access denied"))));
   const response = await request(query);
-  expect(response.status).toBe(404);
+  // A readable mailbox retains the snapshot loader's precise permission error.
+  expect(response.status).toBe(403);
   expect(load.mock.calls[0]?.[0].publicSearch).toEqual(
     resolveMailSearchRoute(new URL(`https://cloud.example.test/app/mail/${mailboxShortId}${query}`)),
   );

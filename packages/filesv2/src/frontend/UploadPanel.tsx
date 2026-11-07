@@ -57,6 +57,12 @@ export function UploadPanel<G>(props: { queue: UploadQueue<G> }): JSX.Element {
   const [expanded, setExpanded] = createSignal(batch.phase === "running" || batch.phase === "errors");
   const [live, setLive] = createSignal("");
   const value = () => percent(batch);
+  const remaining = () => {
+    const seconds = props.queue.remainingSeconds();
+    const active = batch.active === null ? null : batch.rows[batch.active];
+    if (!seconds || batch.phase !== "running" || active?.wait || active?.phase) return null;
+    return u().remainingTime(seconds);
+  };
   const action = createMemo(() => (batch.phase === "running" ? "cancel" : batch.failed ? "retry" : null));
   const title = () => {
     switch (batch.phase) {
@@ -283,6 +289,7 @@ export function UploadPanel<G>(props: { queue: UploadQueue<G> }): JSX.Element {
       <div class="filesv2-upload__foot">
         <p class="filesv2-upload__count">
           {batch.count || !batch.skipped ? u().count({ done: batch.done, count: batch.count }) : u().allExist(batch.skipped)}
+          <span class="filesv2-upload__estimate">{remaining() ? ` (${remaining()})` : ""}</span>
         </p>
         <Show when={batch.failed && batch.phase !== "errors"}>
           <p class="filesv2-upload__errors">{u().errors(batch.failed)}</p>

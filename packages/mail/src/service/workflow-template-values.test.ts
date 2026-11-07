@@ -2,9 +2,9 @@ import { describe, expect, mock, test } from "bun:test";
 import type { WorkflowJsonValue } from "@k2b/cloud/workflows";
 import type { WorkflowActionStep, WorkflowExecuteActionContext } from "@k2b/cloud/workflows/runtime";
 import { MAIL_WORKFLOW_RENDERED_TEMPLATE_FIELDS, mailWorkflowTemplateOutput } from "../workflows/template-validation";
-import { renderMailWorkflowTemplate } from "./template-rendering";
 import { markMailWorkflowBodyFieldsLoaded } from "./workflow-body-fields";
 import { projectMailWorkflowFrozenMessage } from "./workflow-runtime-values";
+import { renderMailWorkflowTemplate } from "./workflow-template-rendering";
 import { resolveMailWorkflowTemplateBodies } from "./workflow-template-values";
 
 const step = (message: string): WorkflowActionStep => ({

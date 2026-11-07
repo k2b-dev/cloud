@@ -17,7 +17,7 @@ export const workspaceRoot = join(import.meta.dir, "..");
 type RootPackage = { workspaces?: { packages?: string[] } };
 
 /** Packages that live under `packages/` but are libraries or tools, not deployable applications. */
-const nonApplicationPackages = new Set(["cloud", "ui", "ssr", "editor", "cloud-cli"]);
+const nonApplicationPackages = new Set(["cloud", "ui", "ssr", "editor", "cloud-cli", "speedtest"]);
 
 export const workspacePackages = (root = workspaceRoot): string[] => {
   const pkg = JSON.parse(readFileSync(join(root, "package.json"), "utf8")) as RootPackage;
@@ -48,6 +48,7 @@ export type ReleaseImage = { image: string; dockerfile: string; appId?: string }
 /** Every image of one Cloud release: all applications plus the website and the Cloud Login PWA. */
 export const releaseImages = (): ReleaseImage[] => [
   ...appIds().map((appId) => ({ image: imageName(appId), dockerfile: "Dockerfile", appId })),
+  { image: "cloud-speedtest", dockerfile: "packages/speedtest/Dockerfile" },
   { image: "cloud-website", dockerfile: "docs-site/Dockerfile" },
   { image: "cloud-pwa-auth", dockerfile: "pwas/pwa-auth/Dockerfile" },
   { image: "cloud-notes", dockerfile: "pwas/notes/Dockerfile" },

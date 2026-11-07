@@ -1,5 +1,5 @@
 import { type JSX, Match, Show, Switch } from "solid-js";
-import Chart from "../content/Chart";
+import { ChartSparkline } from "../content/ChartSparkline";
 import type { ChartTooltipFormatter } from "../content/chart-inspection-core";
 import { useLocale } from "../intl/locale";
 import type { AccentColor } from "../semantics";
@@ -162,8 +162,7 @@ function Body(props: StatCellProps): JSX.Element {
                   </Show>
                   {/* No figure, no trend: an empty tile says why in `sub` and keeps the size of its other states. */}
                   <Show when={!empty() && props.trend && props.trend.length > 1}>
-                    <Chart
-                      kind="sparkline"
+                    <ChartSparkline
                       labels={{ interactiveChart: props.label }}
                       tooltip={props.trendTooltip ?? defaultTrendTooltip}
                       class="k2b-stat-cell__trend"
