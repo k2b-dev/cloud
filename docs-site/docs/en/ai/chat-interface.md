@@ -345,6 +345,16 @@ order:
    summaries contain no values. A card's text wraps instead of being cut off. While the call runs, the work
    line names the step and the place stays empty. Table header labels stay on one line and the table
    scrolls sideways, so up to eight rows fit the reserved height on a phone.
+   Chart, group and explorer drawings load when Chat first shows one. Their
+   headings, controls and plot areas reserve the same space while the code and
+   data arrive. A drawing that came from the server stays visible until its
+   browser code is ready, including when reopening history. Its accessible name
+   remains available, “Loading chart” is announced politely, and its controls
+   look disabled until they can respond. If that code cannot
+   load, that chart shows **The chart could not be loaded** with **Reload**.
+   The composer, sidebar and other chat controls remain usable while charts load
+   and if loading fails.
+
    A table with `search` or `groupBy` shows a search field or a group choice
    beside its title. The summary reserves their space while the controls load,
    then shows them disabled until the file arrives. If the controls cannot load,
