@@ -10,8 +10,13 @@ import { DocumentZipOutputSchema } from "./document-zip-output";
 
 export const DocumentQueryOutputSchema = z.union([
   DocumentTableOutputSchema,
-  DocumentHtmlContentSchema.extend({ kind: z.literal("pdf") }),
-  z.object({ kind: z.literal("xml"), body: z.string().trim().min(1).max(200_000) }).strict(),
+  DocumentHtmlContentSchema.extend({ kind: z.literal("pdf").describe("PDF output format.") }),
+  z
+    .object({
+      kind: z.literal("xml").describe("XML output format."),
+      body: z.string().trim().min(1).max(200_000).describe("Liquid XML template from frozen rows."),
+    })
+    .strict(),
   FinancialDocumentOutputSchema,
   DocumentZipOutputSchema,
 ]);

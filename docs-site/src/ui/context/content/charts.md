@@ -1147,3 +1147,6 @@ inspected column. A missing column (or a zero-sum normalized column) has no insp
 legend uses a dash when its final column is a gap.
 
 Pareto axis endpoints align inward so full formatted values remain visible in small cards. Treemap text uses one name/value block with fixed line spacing; cells without room for both lines leave the text to inspection.
+Stat-tile trends use the same sparkline SVG and interaction host as `Chart`,
+without importing the catalog dispatcher. Adding another chart kind therefore
+does not add its renderer to pages that only show stat trends.

@@ -12,9 +12,12 @@ export { type ChartTimeAxis } from "../../content/chart-time-axis";
 export { type AreaOptions, areaLayout, renderAreaSvg } from "./area";
 export * from "./calendar";
 export * from "./inspection";
+export { map } from "./map";
 export * from "./pareto";
 export * from "./render";
+export { chartRenderHeight, preservesAspectRatio } from "./render-size";
 export * from "./snapshot";
+export { charts } from "./svg";
 export {
   type AxisOptions,
   arcPathD,
@@ -25,7 +28,6 @@ export {
   boxplot,
   type ChartOptions,
   chartDatumSvg,
-  charts,
   computeBoxStats,
   computeDomain,
   donut,
@@ -43,7 +45,6 @@ export {
   type MapSeries,
   type MapViewport,
   type MarkerShape,
-  map,
   mapLog,
   mapRange,
   markerPath,
@@ -63,8 +64,7 @@ export {
   stateTimeline,
   stepPathD,
   svgRoot,
-} from "./svg";
-
+} from "./svg-renderers";
 export * from "./treemap";
 export {
   type ChartDateFormat,

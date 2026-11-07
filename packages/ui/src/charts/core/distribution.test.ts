@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test";
 import { paretoLayout, renderParetoSvg } from "./pareto";
+import { chartRenderHeight } from "./render-size";
 import { renderTreemapSvg, treemapLayout } from "./treemap";
 
 const treemap = {
@@ -67,4 +68,12 @@ test("zero totals and extreme ratios remain finite without fabricated area", () 
   expect(renderParetoSvg({ labels: ["Now", "Before"], data: [{ label: "Zero", value: 0, prev: 0 }], inspect: true })).not.toMatch(
     /NaN|Infinity/,
   );
+});
+
+// Chat reserves its frame before the lazy drawing module arrives.
+test("Pareto lazy frame height equals the drawing for every header combination", () => {
+  for (const header of [{}, { title: "Revenue" }, { subtitle: "This month" }, { title: "Revenue", subtitle: "This month" }]) {
+    const spec = { ...pareto, ...header, data: Array.from({ length: 12 }, (_, i) => ({ label: `Region ${i}`, value: i, prev: i })) };
+    expect(chartRenderHeight({ ...spec, kind: "pareto" })).toBe(paretoLayout(spec).height);
+  }
 });
