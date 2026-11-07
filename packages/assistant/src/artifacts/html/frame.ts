@@ -5,12 +5,13 @@
 import "./no-eval";
 import "./no-hints";
 import { cloudAiChartMarkKey } from "@k2b/cloud/ai/app-frame";
-import { type ChartInspection, type ChartKind, type ChartTooltip, inspectChart, isChartDatum } from "@k2b/ui/chart-inspection";
+import { type ChartInspection, type ChartTooltip, inspectChart, isChartDatum } from "@k2b/ui/chart-inspection";
 import { LIMITS } from "../contracts";
 import { createBridge } from "../runtime/bridge";
+import { configureChartModule, loadChartRenderer } from "../runtime/chart-renderers-frame";
 import { createCloud } from "../runtime/cloud";
 import { CloudError } from "../runtime/errors";
-import { chartOptions, chartSvg } from "../runtime/lib";
+import { chartLoading, chartMarkup, chartOptions, chartSvg, isAppChartKind, pendingChartOptions } from "../runtime/lib";
 import { ensureRandomUuid } from "../runtime/random-uuid";
 import { moduleSpecifiers } from "./imports";
 import type { FrameConfig, FrameLogLevel, FrameToHost, HostToFrame } from "./protocol";
@@ -114,6 +115,12 @@ document.addEventListener("securitypolicyviolation", (event) => {
 const bridge = createBridge((message) => send(message as FrameToHost));
 let inflight = 0;
 let lastSettled = performance.now();
+configureChartModule(config.chartModule, (task) => {
+  inflight++;
+  return task.finally(() => {
+    if (!--inflight) lastSettled = performance.now();
+  });
+});
 const thenable = (value: unknown, depth = 0): boolean =>
   !!value &&
   typeof value === "object" &&
@@ -151,6 +158,9 @@ const dataUrl = (blob: Blob) =>
  * of a copy, and images from blob URLs, which only this frame can read, are embedded as data URLs.
  */
 async function shown() {
+  // Snapshot only the drawings on this page. Unrelated slow AI/HTTP calls must
+  // not delay copying the current document beyond the host's snapshot deadline.
+  await Promise.all([...document.querySelectorAll<HTMLElement>("[data-chart-pending]")].map(fillChart));
   const copy = document.documentElement.cloneNode(true) as HTMLElement;
   const copies = copy.querySelectorAll("input, textarea, select");
   document.querySelectorAll("input, textarea, select").forEach((element, index) => {
@@ -248,22 +258,6 @@ addEventListener(
 // labels fit phones as well as wide screens. PDFs keep the stretched logical drawing.
 const inspections = new Map<Element, ChartInspection>();
 const chartTooltips = new WeakMap<Element, Map<string, ChartTooltip>>();
-const chartKinds: readonly ChartKind[] = [
-  "area",
-  "bar",
-  "line",
-  "scatter",
-  "histogram",
-  "boxplot",
-  "pie",
-  "donut",
-  "gauge",
-  "barGauge",
-  "stat",
-  "heatmap",
-  "sparkline",
-];
-const isChartKind = (value: string | null): value is ChartKind => chartKinds.some((kind) => kind === value);
 const isObject = (value: unknown): value is Record<string, unknown> => typeof value === "object" && value !== null;
 const isTooltip = (value: unknown): value is ChartTooltip =>
   isObject(value) &&
@@ -299,6 +293,7 @@ const charts = new ResizeObserver((entries) => {
     const element = entry.target as HTMLElement;
     const options = chartOptions.get(element.dataset.chartId ?? "");
     const width = Math.round(entry.contentRect.width);
+    if (element.hasAttribute("data-chart-pending")) continue;
     if (!options || width < 120 || Math.abs((drawn.get(element) ?? 0) - width) < 8) continue;
     drawn.set(element, width);
     const height = Number.parseFloat(element.style.getPropertyValue("--k2b-chart-height")) || 280;
@@ -314,6 +309,55 @@ const charts = new ResizeObserver((entries) => {
     }
   }
 });
+// Pending markup also works with explicit width and aspect-ratio charts. Each
+// node owns its load, so a replaced/removed chart is never painted after await.
+const loadingCharts = new WeakMap<HTMLElement, Promise<void>>();
+function fillChart(element: HTMLElement): Promise<void> {
+  let task = loadingCharts.get(element);
+  if (!task) {
+    task = paintChart(element);
+    loadingCharts.set(element, task);
+  }
+  return task;
+}
+async function paintChart(element: HTMLElement) {
+  element.innerHTML = chartLoading(config.context.locale);
+  element.setAttribute("aria-busy", "true");
+  try {
+    await loadChartRenderer();
+    if (!element.isConnected) return;
+    const options = pendingChartOptions.get(element.dataset.chartPending ?? "");
+    if (!options) throw new Error("The chart expired. Draw it again.");
+    const measure = element.hasAttribute("data-chart-measure");
+    const width =
+      (measure && Math.round(element.getBoundingClientRect().width)) ||
+      Number.parseFloat(element.style.getPropertyValue("--k2b-chart-width")) ||
+      480;
+    const height = Number.parseFloat(element.style.getPropertyValue("--k2b-chart-height")) || 280;
+    const markup = chartMarkup(options, config.context.locale, width, height, measure);
+    if (markup.includes("data-chart-pending=")) throw new Error("The chart module does not support this chart kind.");
+    element.closest(".k2b-chart")?.replaceWith(document.createRange().createContextualFragment(String(markup)));
+  } catch (error) {
+    if (!element.isConnected) return;
+    const german = config.context.locale.startsWith("de");
+    const state = document.createElement("span");
+    state.style.cssText = "display:grid;place-content:center;justify-items:center;gap:8px;height:100%;color:var(--k2b-text-muted)";
+    const message = document.createElement("span");
+    message.setAttribute("role", "alert");
+    message.textContent = german ? "Diagramm konnte nicht geladen werden." : "The chart could not be loaded.";
+    const retry = document.createElement("button");
+    retry.type = "button";
+    retry.textContent = german ? "Erneut versuchen" : "Try again";
+    retry.addEventListener("click", () => {
+      loadingCharts.delete(element);
+      void fillChart(element);
+    });
+    state.append(message, retry);
+    element.removeAttribute("aria-busy");
+    element.replaceChildren(state);
+    console.error(error);
+  }
+}
 // A table that scrolls inside its <figure> must be reachable by keyboard; only then does it get a tab stop.
 const scrollers = new ResizeObserver((entries) => {
   for (const { target } of entries) {
@@ -339,10 +383,11 @@ new MutationObserver((records) => {
     inspections.delete(element);
     chartTooltips.delete(element);
   }
+  for (const element of document.querySelectorAll<HTMLElement>("[data-chart-pending]")) void fillChart(element);
   for (const chart of document.querySelectorAll<HTMLElement>(".k2b-chart")) {
     if (inspections.has(chart) || !chart.querySelector("[data-chart-datum]")) continue;
     const kind = chart.getAttribute("data-chart-kind");
-    if (!isChartKind(kind)) continue;
+    if (!isAppChartKind(kind)) continue;
     chart.setAttribute("role", "group");
     chart.setAttribute(
       "aria-description",

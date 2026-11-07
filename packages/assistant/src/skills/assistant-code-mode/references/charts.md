@@ -2,7 +2,7 @@
 
 `cloud.chart(options)` returns chart markup in Cloud colors. Use it as
 `innerHTML`, inside `cloud.html`, or in the HTML of `cloud.pdf.render`. It needs
-no DOM, so it works the same in apps, scripts and PDFs. In an app, cartesian
+no DOM in scripts and PDFs. In an app, cartesian
 charts redraw at their real width, so axes and labels fit phones. App charts show
 tooltips by default on hover, keyboard focus and tap. Tab to a chart, use arrow
 keys or Home/End to inspect values, and press Escape to close the tooltip;
@@ -13,6 +13,16 @@ and for that table, so a dense chart is large: 8 series × 480 points is about
 3.1 MB. Aggregate dense data before charting it.
 Draw dense charts in the app that shows them instead of returning their markup
 from an action or storing it in KV.
+
+`cloud.chart()` remains synchronous. In HTML apps, line, bar, pie, donut,
+stat and sparkline draw immediately. Other kinds initially return a loading
+placeholder; insert the markup into the document and the frame fills it at the
+same size. Their renderer ships with the frame and loads without any network
+request, including offline first use. A load failure shows **Try again**.
+Formats, tooltips and print value tables work after loading. Frame readiness,
+snapshots and `cloud.pdf.render({html})` wait for pending chart rendering; do
+not extract SVG from the initial placeholder yourself. Scripts and PDF markup
+created in script runs still draw every kind synchronously.
 
 For computed values in the chat, call `cloud.view.chart`, `cloud.view.group`,
 `cloud.view.table`, `cloud.view.stats`, `cloud.view.details` or `cloud.view.explorer`
