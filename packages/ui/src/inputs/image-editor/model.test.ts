@@ -62,7 +62,7 @@ describe("shared image editor model", () => {
   test("remaining approved looks blend into adjustments with neutral zero strength", () => {
     const base = initialImageEditorState();
     const cases = [
-      { look: "monoHard", expected: { ...base.adjustments, saturation: 0, contrast: 1.45, vignette: 0.25 } },
+      { look: "mono-hard", expected: { ...base.adjustments, saturation: 0, contrast: 1.45, vignette: 0.25 } },
       { look: "faded", expected: { ...base.adjustments, contrast: 0.75, saturation: 0.78, brightness: 1.12 } },
       { look: "vintage", expected: { ...base.adjustments, warmth: 0.45, saturation: 0.75, contrast: 1.12, vignette: 0.6, grain: 0.45 } },
     ] as const;
