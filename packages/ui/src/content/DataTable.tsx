@@ -23,6 +23,7 @@ import { useUiMessages } from "../intl/messages";
 import { PanelHeader } from "../layout/PanelHeader";
 import { Paper } from "../surfaces/Paper";
 import Placeholder from "../surfaces/Placeholder";
+import { DeltaBadge } from "../surfaces/StatCell";
 import { StatusBadge } from "../surfaces/StatusBadge";
 import type { CollectionSelection } from "./collection-selection";
 import {
@@ -35,6 +36,7 @@ import {
   tableCellText,
 } from "./data-table-columns";
 import { useDataTableMessages } from "./data-table-messages";
+import { FlowAmount } from "./FlowAmount";
 
 export type DataTableColumn<T> = {
   id: string;
@@ -70,6 +72,8 @@ export type DataTableColumn<T> = {
   max?: number;
   /** The zone a date column with a time reads in; defaults to the reader's. */
   timeZone?: string;
+  /** How a delta column reads and rates its change. */
+  delta?: DataTableTypedColumn["delta"];
   /**
    * How much a narrow table needs the column: 1 (default) always shows; 3 hides below a table width of 560 px,
    * 2 below 420 px. Hidden values stay one tap away in the row's details.
@@ -527,6 +531,10 @@ function DataTableRoot<T>(props: DataTableProps<T>) {
       const state = col.states?.[String(value)];
       return state ? <StatusBadge tone={state.tone} label={state.label} variant="dot" /> : String(value);
     }
+    if (col.type === "flow" && col.format?.currency && Number.isFinite(Number(value)))
+      return <FlowAmount value={Number(value)} currency={col.format.currency} decimals={col.format.decimals} />;
+    if (col.type === "delta" && Number.isFinite(Number(value)))
+      return <DeltaBadge delta={{ value: Number(value), unit: col.delta?.unit, better: col.delta?.better }} />;
     if (col.type === "bar") {
       const number = Number(value);
       const max = barMax().get(col.id) ?? 0;

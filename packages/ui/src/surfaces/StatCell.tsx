@@ -77,7 +77,7 @@ const deltaTone = (delta: StatCellDelta): "good" | "bad" | "neutral" => {
 };
 
 /** Signed with a true minus sign (U+2212), as figures are typeset. */
-const deltaText = (delta: StatCellDelta, locale: string, t: StatCellMessages): string =>
+export const deltaText = (delta: StatCellDelta, locale: string, t: StatCellMessages): string =>
   (delta.unit === "points"
     ? `${new Intl.NumberFormat(locale, { minimumFractionDigits: 1, maximumFractionDigits: 1, signDisplay: "exceptZero" }).format(shownDelta(delta) * 100)} ${t.points}`
     : new Intl.NumberFormat(locale, {
@@ -89,7 +89,7 @@ const deltaText = (delta: StatCellDelta, locale: string, t: StatCellMessages): s
   ).replace("-", "\u2212");
 
 /** A change badge: arrow, signed text, and a spoken label that names the comparison and, with `better`, the rating. */
-function DeltaBadge(props: { delta: StatCellDelta; compare?: StatCellCompare }): JSX.Element {
+export function DeltaBadge(props: { delta: StatCellDelta; compare?: StatCellCompare }): JSX.Element {
   const locale = useLocale();
   const t = useStatCellMessages();
   const tone = () => deltaTone(props.delta);

@@ -52,7 +52,7 @@ export const tableExamples = [
     options: [
       {
         name: "columns[].type",
-        type: "text | number | date | status | bar | amount",
+        type: "text | number | date | status | bar | amount | flow | delta",
         description: "Alignment, shown text, search and sort; numbers right with equal-width digits.",
       },
       { name: "columns[].format", type: "NumberFormat", description: "number, percent or currency, with decimals and compact." },
@@ -61,6 +61,62 @@ export const tableExamples = [
       { name: "columns[].priority", type: "1 | 2 | 3", description: "3 hides below 560 px, 2 below 420 px; details keep them." },
       { name: "search", type: "true", description: "A search field in the frame's head; the table says when nothing matches." },
       { name: "groupBy", type: "{ id, label }[]", description: "Columns a reader may group by, one body per group." },
+    ],
+  },
+  {
+    id: "table-payments",
+    kind: "table",
+    question: "numbers",
+    title: "Next payments",
+    summary: "Planned money in and out with its direction, the category leaving first on a narrow screen.",
+    spec: {
+      block: "table",
+      empty: "No planned payments.",
+      columns: [
+        { id: "date", label: "Due", type: "date" },
+        { id: "label", label: "Payment", type: "text" },
+        { id: "category", label: "Category", type: "text", priority: 3 },
+        {
+          id: "status",
+          label: "Status",
+          type: "status",
+          priority: 2,
+          states: {
+            overdue: { label: "Overdue", tone: "warning" },
+            planned: { label: "Planned", tone: "neutral" },
+            expected: { label: "Expected", tone: "info" },
+          },
+        },
+        { id: "amount", label: "Amount", type: "flow", format: { style: "currency", currency: "EUR", decimals: 2 } },
+        { id: "change", label: "Against last month", type: "delta", delta: { better: "down" }, priority: 3 },
+      ],
+      rows: [
+        { date: "2026-11-05", label: "Rent warehouse", category: "Rent", status: "overdue", amount: -2400, change: 0 },
+        { date: "2026-11-10", label: "Wholesale order 118", category: "Goods", status: "planned", amount: -8650.5, change: 0.12 },
+        { date: "2026-11-12", label: "Trade fair stand", category: "Fairs", status: "expected", amount: 3200, change: null },
+        { date: "2026-11-15", label: "Payroll", category: "Staff", status: "planned", amount: -14820, change: -0.02 },
+        { date: "2026-11-20", label: "Online shop payout", category: "Sales", status: "expected", amount: 11940.25, change: 0.064 },
+      ],
+    },
+    height: 306,
+    width: "half",
+    useFor: ["Money that comes in and goes out, read by its direction", "A change against a period beside each row"],
+    avoidFor: ["A running balance over time (use a line)", "Signed amounts in red and green: the direction is the arrow"],
+    a11y: [
+      "An amount carries no sign; its arrow and a spoken word (in, out) say the direction, so colour is never the only signal.",
+      "A change badge has a spoken label with its sign and, with better, whether it is better or worse.",
+    ],
+    options: [
+      {
+        name: "columns[].type: flow",
+        type: "number",
+        description: "Positive in, negative out, zero moves nothing; needs format.currency.",
+      },
+      {
+        name: "columns[].delta",
+        type: '{ unit?: "ratio" | "points", better?: "up" | "down" }',
+        description: "How a delta column reads and rates its change.",
+      },
     ],
   },
 ];

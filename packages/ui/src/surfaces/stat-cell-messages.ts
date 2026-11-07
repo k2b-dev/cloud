@@ -35,4 +35,7 @@ export const useStatCellMessages = (): (() => StatCellMessages) => {
   return () => statCellMessages.resolve([locale()]).t;
 };
 
+/** For a caller that already holds the locale, such as table text for search and copy. */
+export const resolveStatCellMessages = (locale: string): StatCellMessages => statCellMessages.resolve([locale]).t;
+
 export const checkStatCellMessages = () => statCellMessages.check();

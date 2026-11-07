@@ -60,6 +60,10 @@ test("a typed cell shows what its type reads, in the reader's language", () => {
   expect(tableCellText("2026-10-20T14:32:00Z", { type: "date", timeZone: "Europe/Berlin" }, "de")).toBe("20.10.2026, 16:32");
   expect(tableCellText("delivered", columns[1]!, "en")).toBe("Delivered");
   expect(tableCellText(null, columns[5]!, "en")).toBe("");
+  // A flow reads without a sign, as its arrow says the direction; a delta is the signed change.
+  expect(tableCellText(-120, { type: "flow", format: { currency: "EUR" } }, "en")).toBe("€120.00");
+  expect(tableCellText(-0.031, { type: "delta" }, "en")).toBe("\u22123.1%");
+  expect(tableCellText(0.031, { type: "delta", delta: { unit: "points" } }, "de")).toBe("+3,1 Pkt.");
 });
 
 test("search matches the shown text without case or accents, and an empty query keeps every row", () => {
@@ -129,6 +133,27 @@ test("typed columns align numbers right, let text wrap and draw status, bars and
   expect(html).toContain("31.4%");
   // A missing value is a dash, never a zero.
   expect(html).not.toContain("€0.00");
+});
+
+test("money moves with an arrow and a change carries its badge, rated only with better", () => {
+  const html = render({
+    columns: [
+      { id: "name", header: "Payment", value: "name", type: "text" },
+      { id: "rev", header: "Amount", value: "rev", type: "flow", format: { currency: "EUR", decimals: 2 } },
+      { id: "open", header: "Change", value: "open", type: "delta", delta: { better: "up" } },
+    ],
+    rows: [
+      { ...rows[0]!, rev: -2140, open: -0.031 },
+      { ...rows[1]!, rev: 4610, open: 0.082 },
+    ],
+  });
+  expect(html).toContain('data-direction="out"');
+  expect(html).toContain('data-direction="in"');
+  expect(html).toContain("€2,140.00");
+  expect(html).not.toContain("-€2,140.00");
+  expect(html).toContain('class="k2b-stat-cell__delta" data-tone="bad"');
+  expect(html).toContain('data-tone="good"');
+  expect(html).toContain("+8.2%");
 });
 
 test("groupBy renders one body per group under a row-group header with its count", () => {

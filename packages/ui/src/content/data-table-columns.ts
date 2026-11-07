@@ -1,16 +1,18 @@
+import { deltaText } from "../surfaces/StatCell";
 import type { StatusTone } from "../surfaces/StatusBadge";
+import { resolveStatCellMessages } from "../surfaces/stat-cell-messages";
 
 /**
  * What a column holds. It decides alignment, wrapping, the shown text, search and sort:
- * text wraps; number, amount and bar read right-aligned with equal-width digits; date reads in the
+ * text wraps; number, amount, bar, flow and delta read right-aligned with equal-width digits; date reads in the
  * reader's language; status shows a badge from `states`.
  */
-export type DataTableColumnType = "text" | "number" | "date" | "status" | "bar" | "amount";
+export type DataTableColumnType = "text" | "number" | "date" | "status" | "bar" | "amount" | "flow" | "delta";
 
 /** A number format by name, as a portable description stores it. `decimals` fixes the fraction digits. */
 export type DataTableNumberFormat = {
   style?: "number" | "percent" | "currency";
-  /** ISO 4217 code; required for `style: "currency"` and `amount`. */
+  /** ISO 4217 code; required for `style: "currency"`, `amount` and `flow`. */
   currency?: string;
   decimals?: number;
   compact?: boolean;
@@ -29,9 +31,11 @@ export type DataTableTypedColumn = {
   max?: number;
   /** The IANA zone a date column with a time reads in, such as the zone of the data's owner; defaults to the reader's. */
   timeZone?: string;
+  /** How a delta column reads its change: `ratio` (default) `0.082` as `+8.2 %`, `points` `0.031` as `+3.1 pts`; `better` rates it. */
+  delta?: { unit?: "ratio" | "points"; better?: "up" | "down" };
 };
 
-const numericTypes = new Set<DataTableColumnType>(["number", "amount", "bar"]);
+const numericTypes = new Set<DataTableColumnType>(["number", "amount", "bar", "flow", "delta"]);
 export const isNumericColumnType = (type?: DataTableColumnType): boolean => !!type && numericTypes.has(type);
 
 const finite = (value: unknown): number | null => {
@@ -49,8 +53,8 @@ const fractionDigits = (decimals?: number) => {
 /** Formats a number the way a typed column shows it: in the reader's language, by the column's format. */
 export const formatTableNumber = (value: number, column: DataTableTypedColumn, locale: string): string => {
   const format = column.format ?? {};
-  // An amount is money: with a currency it always reads as one, whatever `style` says.
-  const money = column.type === "amount" || format.style === "currency";
+  // An amount or a flow is money: with a currency it always reads as one, whatever `style` says.
+  const money = column.type === "amount" || column.type === "flow" || format.style === "currency";
   const options: Intl.NumberFormatOptions =
     money && format.currency
       ? { style: "currency", currency: format.currency }
@@ -80,7 +84,8 @@ export const formatTableDate = (value: unknown, locale: string, timeZone?: strin
 export const isEmptyCell = (value: unknown): boolean => value === null || value === undefined || value === "";
 
 /**
- * The text a typed cell shows, for search, grouping and copied rows.
+ * The text a typed cell shows, for search, grouping and copied rows. A flow is the amount without its sign, as the
+ * arrow says the direction; a delta is its signed change.
  */
 export const tableCellText = (value: unknown, column: DataTableTypedColumn, locale: string): string => {
   if (isEmptyCell(value)) return "";
@@ -90,7 +95,8 @@ export const tableCellText = (value: unknown, column: DataTableTypedColumn, loca
   if (isNumericColumnType(type)) {
     const number = finite(value);
     if (number === null) return String(value);
-    return formatTableNumber(number, column, locale);
+    if (type === "delta") return deltaText({ value: number, unit: column.delta?.unit }, locale, resolveStatCellMessages(locale));
+    return formatTableNumber(type === "flow" ? Math.abs(number) : number, column, locale);
   }
   return typeof value === "object" ? JSON.stringify(value) : String(value);
 };
