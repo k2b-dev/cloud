@@ -80,7 +80,7 @@ export function ShowcaseCardChart(props: { example: ChartShowcaseExample; height
       </Match>
       <Match when={drawing().mode === "live" && (drawing() as Extract<ReturnType<typeof resolveDrawing>, { mode: "live" }>)}>
         {(live) => (
-          <div class="ui-charts-card__chart" style={{ height: `${props.height}px` }}>
+          <div class="ui-charts-card__chart" style={live().props.kind === "balanceFlow" ? undefined : { height: `${props.height}px` }}>
             <Chart {...live().props} style={{ height: "100%" }} />
           </div>
         )}

@@ -4,8 +4,7 @@
 
 export * from "./charts/core";
 export type { ChartKindProps, ChartLabels, ChartProps, ChartRenderOptions } from "./content/Chart";
+export { mountBalanceFlow } from "./content/chart-balance-flow";
 export { type BarChartLayout, type BarChartOptions, barChartLayout, renderBarChartSvg } from "./content/chart-bar";
-
 export { calendarInspectionNavigation, mountCalendarScroll } from "./content/chart-calendar";
-
 export { sankeyInspectionNavigation } from "./content/chart-sankey";

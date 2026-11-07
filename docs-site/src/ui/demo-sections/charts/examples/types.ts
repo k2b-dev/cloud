@@ -93,6 +93,7 @@ export const plannedChartKinds: readonly { kind: string; title: string; question
   { kind: "funnel", title: "Funnel", question: "compare" },
   { kind: "treemap", title: "Treemap", question: "share" },
   { kind: "sankey", title: "Sankey", question: "flow" },
+  { kind: "balanceFlow", title: "Balance flow", question: "flow" },
   { kind: "waterfall", title: "Waterfall", question: "flow" },
   { kind: "bubble", title: "Bubbles with names", question: "distribution" },
   { kind: "radar", title: "Radar", question: "distribution" },

@@ -22,6 +22,7 @@ import { sankeyWidth } from "../charts/core/sankey";
 import { suppressTextSelection } from "../internal/text-selection";
 import { useLocale } from "../intl/locale";
 import { useUiMessages } from "../intl/messages";
+import { type BalanceFlowUiProps, ChartBalanceFlow } from "./ChartBalanceFlow";
 import { calendarInspectionNavigation, mountCalendarScroll } from "./chart-calendar";
 import type { ChartCursor } from "./chart-cursor";
 import { createChartInspection } from "./chart-inspection";
@@ -114,24 +115,25 @@ export type ChartLabels = Partial<{
  * get full type safety.
  */
 export type ChartProps = {
-  [K in ChartKind]: Extract<ChartDrawingOptions, { kind: K }> & {
-    class?: string;
-    style?: JSX.CSSProperties | string;
-    labels?: ChartLabels;
-    /**
-     * Navigation for maps and state timelines: pan, zoom and reset controls.
-     * Arrows pan; Alt+arrows inspect. Every chart shows tooltips and keyboard
-     * inspection without this prop.
-     */
-    interactive?: boolean;
-    onSelect?: (selection: ChartSelection) => void;
-    /** Controlled highlight; indices belong to this exact input snapshot. */
-    selected?: ChartDatumRef | null;
-    /** Customize the always-on tooltip with a title and labeled text rows. */
-    tooltip?: ChartTooltipFormatter;
-    /** Optional shared X cursor for line charts. */
-    cursor?: ChartCursor;
-  };
+  [K in ChartKind]: Extract<ChartDrawingOptions, { kind: K }> &
+    (K extends "balanceFlow" ? Pick<BalanceFlowUiProps, "state" | "error" | "onRetry" | "view" | "onViewChange"> : {}) & {
+      class?: string;
+      style?: JSX.CSSProperties | string;
+      labels?: ChartLabels;
+      /**
+       * Navigation for maps and state timelines: pan, zoom and reset controls.
+       * Arrows pan; Alt+arrows inspect. Every chart shows tooltips and keyboard
+       * inspection without this prop.
+       */
+      interactive?: boolean;
+      onSelect?: (selection: ChartSelection) => void;
+      /** Controlled highlight; indices belong to this exact input snapshot. */
+      selected?: ChartDatumRef | null;
+      /** Customize the always-on tooltip with a title and labeled text rows. */
+      tooltip?: ChartTooltipFormatter;
+      /** Optional shared X cursor for line charts. */
+      cursor?: ChartCursor;
+    };
 }[ChartKind];
 export { type ChartRenderOptions, chartRenderHeight, renderChartSvg } from "../charts/core/render";
 
@@ -168,6 +170,7 @@ const isEmpty = (props: ChartProps): boolean => {
 };
 
 const ChartRoot = (props: ChartProps): JSX.Element => {
+  if (props.kind === "balanceFlow") return <ChartBalanceFlow {...props} />;
   const [, drawingProps] = splitProps(props, ["class", "style", "labels", "interactive", "selected", "onSelect", "tooltip", "cursor"]);
   const messages = useUiMessages();
   const chartMessages = useChartMessages();

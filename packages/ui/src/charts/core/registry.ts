@@ -1,6 +1,7 @@
 import { renderBarChartSvg } from "../../content/chart-bar";
 import { renderStateTimelineSvg } from "../../content/chart-state-timeline";
 import { renderAreaSvg } from "./area";
+import { renderBalanceFlowSvg } from "./balance-flow";
 import { renderHeatmapSvg } from "./calendar";
 import { renderSankeySvg } from "./sankey";
 import { charts } from "./svg";
@@ -24,6 +25,7 @@ export const chartRenderers = {
   map: charts.map,
   stateTimeline: renderStateTimelineSvg,
   sankey: renderSankeySvg,
+  balanceFlow: renderBalanceFlowSvg,
 };
 type Kind = keyof typeof chartRenderers;
 type ChartKinds = { [K in Kind as Capitalize<K>]: K };

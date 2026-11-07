@@ -192,7 +192,9 @@ class QueryBlockWidget extends WidgetType {
       status.className = "notebook-book-chart__status text-sm text-dimmed";
       status.setAttribute("role", "status");
       status.textContent = this.snapshot.failed ? t.failed : this.staleReadOnly ? t.savedChanged : (this.diagnostic ?? t.loading);
-      content.innerHTML = notebookChartFrameHtml(this.chart, "");
+      content.innerHTML = notebookChartFrameHtml(this.chart, "", { locale: this.snapshot.locale });
+      const balanceStatus = content.querySelector(".k2b-balance-flow__status p");
+      if (balanceStatus) balanceStatus.textContent = status.textContent;
       content.querySelector(".notebook-book-chart__viewport")?.append(status);
     } else {
       content.className += " text-sm text-dimmed";

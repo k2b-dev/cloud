@@ -14,6 +14,7 @@ import {
 // Named renderers, not the `charts` namespace, so app frames leave out the map and state timeline renderers.
 import { money } from "@k2b/stdlib";
 import {
+  balanceFlowHeight,
   barChartLayout,
   calendarLayout,
   donut,
@@ -133,7 +134,7 @@ function drawChart(
       default:
         svg = rareChartSvg(mapped, common);
     }
-    if (svg === undefined) return { svg, table: { columns: [], rows: [] } };
+    if (svg === undefined || mapped.kind === "balanceFlow") return { svg, table: { columns: [], rows: [] } };
     // Walk marks in emitted order, exactly as the chat builds its table and tooltips.
     const rows = cloudAiChartRows(options.input, locale, { formats });
     svg = svg.replace(
@@ -228,6 +229,14 @@ export function chartMarkup(prepared: StoredChart, locale: string, width: number
   const { input } = prepared;
   const { svg, table } = drawChart(prepared, locale, width, height);
   if (svg === undefined && !deferChartDrawing) throw new CloudError("invalid", "cloud.chart: The chart renderer returned no SVG.");
+  if (input.kind === "balanceFlow") {
+    if (svg !== undefined) return new Html(svg);
+    const id = `c${++chartSeq}`;
+    pendingChartOptions.set(id, prepared);
+    return new Html(
+      `<div class="k2b-chart k2b-ui" data-balance-pending style="--k2b-balance-flow-height:${balanceFlowHeight(input.periods, height)}px;--k2b-balance-flow-rows:${Math.max(2, ...input.periods.map((p) => p.inflows.length + p.outflows.length + 3))}"><div class="k2b-chart__svg" data-chart-pending="${id}" aria-busy="true" style="--k2b-chart-width:${width}px;--k2b-chart-height:${height}px">${chartLoading(locale)}</div></div>`,
+    );
+  }
   // Bar rows take the height their labels need; the box reserves it.
   const drawnHeight =
     input.kind === "sankey"
@@ -293,7 +302,7 @@ export async function resolveChartHtml(content: string, locale: string): Promise
   if (!content.includes("data-chart-pending=")) return content;
   await loadChartRenderer();
   return content.replace(
-    /<div class="k2b-chart"[^>]*><div class="k2b-chart__svg"[^>]* data-chart-pending="([^"]+)"[^>]*>[\s\S]*?<\/div><\/div>/g,
+    /<div class="k2b-chart(?: k2b-ui)?"[^>]*><div class="k2b-chart__svg"[^>]* data-chart-pending="([^"]+)"[^>]*>[\s\S]*?<\/div><\/div>/g,
     (markup, id: string) => {
       const options = pendingChartOptions.get(id);
       if (!options) throw new CloudError("unavailable", "The chart expired. Draw it again before creating the PDF.");

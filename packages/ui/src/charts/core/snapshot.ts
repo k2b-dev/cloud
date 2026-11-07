@@ -37,7 +37,12 @@ export function prepareChartSnapshot(
   },
 ): ChartSnapshot {
   const calendar = options.kind === "heatmap" && options.layout === "calendar" ? calendarLayout(options) : undefined;
-  const width = options.kind === "sankey" ? sankeyWidth(options, options.displayWidth ?? 480) : (calendar?.width ?? 480);
+  const width =
+    options.kind === "balanceFlow"
+      ? 620
+      : options.kind === "sankey"
+        ? sankeyWidth(options, options.displayWidth ?? 480)
+        : (calendar?.width ?? 480);
   const height = chartRenderHeight(options);
   const svg = renderChartSvg(options, width, height);
   const marks: ChartSnapshot["marks"][number][] = [];
@@ -83,7 +88,7 @@ export function prepareChartSnapshot(
     width,
     height,
     ...(calendar ? { minWidth: calendar.minWidth } : {}),
-    stretch: !calendar && !["map", "pie", "donut", "gauge"].includes(options.kind),
+    stretch: !calendar && !["map", "pie", "donut", "gauge", "balanceFlow"].includes(options.kind),
     marks,
   };
 }

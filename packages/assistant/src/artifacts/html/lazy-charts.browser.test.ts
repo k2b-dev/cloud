@@ -433,3 +433,46 @@ for (const width of [1200, 390])
       await context.close();
     }
   });
+
+for (const width of [1200, 390])
+  test(`balance flow loads offline and keeps its period frame at ${width}px`, async () => {
+    const spec = {
+      kind: "balanceFlow",
+      title: "Settlements",
+      currency: "EUR",
+      periods: [
+        { label: "October", opening: 10, inflows: [{ label: "Orders", value: 20 }], outflows: [{ label: "Fees", value: 5 }], closing: 25 },
+        { label: "November", opening: 25, inflows: [], outflows: [{ label: "Payout", value: 15 }], closing: 10 },
+      ],
+    };
+    const script = `document.querySelector('#draw').onclick=()=>document.querySelector('#charts').innerHTML=cloud.html\`<section class="card">\${cloud.chart(${JSON.stringify(spec)})}</section>\`;`;
+    const { page, context, requests } = await open(width, delayed + assets.chartModule, "dark", script);
+    try {
+      const errors = pageErrors(page);
+      await app(page).locator("#draw").click();
+      await app(page).locator("html[data-chart-module-loading]").waitFor();
+      await settled(page);
+      const loading = await boxes(page);
+      await release(page);
+      await app(page).locator("[data-balance-mounted]").waitFor();
+      await settled(page);
+      expect(await boxes(page)).toEqual(loading);
+      await app(page).locator('[data-balance-step="1"]').click();
+      await settled(page);
+      expect(await app(page).locator("[data-balance-label]").textContent()).toBe("November");
+      expect(await app(page).locator('[data-balance-step="1"]').isDisabled()).toBe(true);
+      expect(
+        await app(page)
+          .locator('[data-balance-key="opening"]')
+          .evaluate((e) => getComputedStyle(e).fill),
+      ).not.toBe("rgb(0, 0, 0)");
+      await app(page).locator('[data-balance-view="table"]').click();
+      await settled(page);
+      expect(await app(page).locator("[data-balance-table]").innerText()).toContain("€25.00");
+      expect(await boxes(page)).toEqual(loading);
+      expect(requests).toEqual([]);
+      expect(errors).toEqual([]);
+    } finally {
+      await context.close();
+    }
+  }, 30000);

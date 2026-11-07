@@ -81,7 +81,10 @@ export function selectedChartSvg(
     if (!matches) return attribute;
     const children = svg.slice(offset, svg.indexOf("</g>", offset));
     const palette = (Number(children.match(/stdlib-chart-series-(\d+)/)?.[1] ?? matches.seriesIndex ?? 0) % 8) + 1;
-    const paint = `--k2b-chart-selection-color:color-mix(in srgb,var(--stdlib-chart-c${palette}) 72%,var(--k2b-chart-highlight-mix))`;
+    const balancePaint = svg.includes('data-balance-flow-svg="true"') ? children.match(/<rect[^>]*fill="([^"]+)"/)?.[1] : undefined;
+    const paint = balancePaint
+      ? `--k2b-chart-selection-color:${balancePaint}`
+      : `--k2b-chart-selection-color:color-mix(in srgb,var(--stdlib-chart-c${palette}) 72%,var(--k2b-chart-highlight-mix))`;
     const opening = attribute.includes('style="')
       ? attribute.replace(/style="([^"]*)"/, (_match: string, style: string) => `style="${style};${paint}"`)
       : attribute.replace(">", ` style="${paint}">`);

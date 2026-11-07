@@ -123,6 +123,27 @@ const flatChartSchema = () => {
     kind: cloudAiChartKindSchema().optional().describe("Single charts: kind. Omit for groups."),
     ...ChartCommon,
     tooltip: ChartTooltip.optional(),
+    periods: z
+      .array(
+        z.object({
+          label: ChartLabel,
+          opening: z.number(),
+          inflows: z.array(z.object({ label: ChartLabel, value: z.number().min(0) })).max(CLOUD_AI_CHART_MAX_VALUES),
+          outflows: z.array(z.object({ label: ChartLabel, value: z.number().min(0) })).max(CLOUD_AI_CHART_MAX_VALUES),
+          closing: z.number(),
+        }),
+      )
+      .max(CLOUD_AI_CHART_MAX_VALUES)
+      .optional()
+      .describe(
+        "balanceFlow: ordered periods; opening + inflows − outflows = closing; closing must equal the next opening. Never adjust inconsistent amounts.",
+      ),
+    currency: z
+      .string()
+      .regex(/^[A-Z]{3}$/)
+      .optional()
+      .describe("balanceFlow: ISO 4217 currency."),
+    period: z.number().int().min(0).optional().describe("balanceFlow: initial period, zero based."),
     nodes: z
       .array(
         z.object({

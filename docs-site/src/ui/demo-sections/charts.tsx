@@ -261,6 +261,23 @@ const examples = {
       interactive: true,
     },
   },
+  balanceFlow: {
+    description: "Balance flow · Reconciled periods carry the closing balance into the next opening.",
+    chart: {
+      kind: "balanceFlow",
+      currency: "EUR",
+      periods: [
+        {
+          label: "October",
+          opening: 100,
+          inflows: [{ label: "Orders", value: 300 }],
+          outflows: [{ label: "Fees", value: 50 }],
+          closing: 350,
+        },
+        { label: "November", opening: 350, inflows: [], outflows: [{ label: "Payout", value: 200 }], closing: 150 },
+      ],
+    },
+  },
   sankey: {
     description: "Sankey · Follow converging paths after a newsletter click; losses stay visible.",
     chart: {
@@ -382,6 +399,10 @@ const tooltipExamples: Record<ChartKind, TooltipExample> = {
       duration: { label: "Time in this state", unit: " h" },
       detail: { label: "Activity" },
     },
+  },
+  balanceFlow: {
+    title: "Settlements",
+    fields: { period: { label: "Period" }, direction: { label: "Direction" }, value: { label: "Amount" } },
   },
   sankey: {
     title: "Paths after the click",

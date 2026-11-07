@@ -3,7 +3,10 @@ import { i18n } from "@k2b/stdlib";
 import {
   type AreaOptions,
   autoBin,
+  type BalanceFlowOptions,
   type BarChartOptions,
+  balanceFlowDatums,
+  balanceFlowWords,
   barChartLayout,
   barGauge,
   boxplot,
@@ -21,6 +24,7 @@ import {
   niceStep,
   pie,
   renderAreaSvg,
+  renderBalanceFlowSvg,
   renderBarChartSvg,
   renderHeatmapSvg,
   renderSankeySvg,
@@ -38,15 +42,17 @@ export * from "./chart-schema";
 type RenderOptions = {
   [K in ChartInput["kind"]]: { kind: K } & (K extends "area"
     ? AreaOptions
-    : K extends "sankey"
-      ? SankeyOptions
-      : K extends "heatmap"
-        ? HeatmapChartOptions
-        : K extends "bar"
-          ? BarChartOptions
-          : K extends keyof typeof charts
-            ? Omit<Parameters<(typeof charts)[K]>[0], "width" | "height" | "inspect">
-            : never);
+    : K extends "balanceFlow"
+      ? BalanceFlowOptions
+      : K extends "sankey"
+        ? SankeyOptions
+        : K extends "heatmap"
+          ? HeatmapChartOptions
+          : K extends "bar"
+            ? BarChartOptions
+            : K extends keyof typeof charts
+              ? Omit<Parameters<(typeof charts)[K]>[0], "width" | "height" | "inspect">
+              : never);
 }[ChartInput["kind"]];
 
 /**
@@ -257,6 +263,8 @@ const numberFormat = (format: ChartFormat | undefined) => (format && !("date" in
 /** The values a chart writes with its value format, for whole-number currency. */
 const formattedValues = (input: ChartInput): number[] => {
   switch (input.kind) {
+    case "balanceFlow":
+      return input.periods.flatMap((p) => [p.opening, p.closing, ...p.inflows.map((n) => n.value), ...p.outflows.map((n) => n.value)]);
     case "sankey":
       return input.links.map((link) => link.value);
     case "area":
@@ -380,6 +388,17 @@ export function chartRenderOptions(
   const width = options.width ?? WIDTH;
   const references = renderReferences(input);
   switch (input.kind) {
+    case "balanceFlow":
+      return {
+        kind: "balanceFlow",
+        periods: input.periods,
+        period: input.period,
+        currency: input.currency,
+        format: input.tooltip?.format ? format.value : options.formats?.value,
+        valueLabel: input.tooltip?.label,
+        locale: input.locale ?? locale,
+        displayWidth: options.width,
+      };
     case "sankey":
       return {
         kind: "sankey",
@@ -568,6 +587,8 @@ const decode = (value: string) =>
 export const drawChart = (options: RenderOptions): string => {
   const common = { width: WIDTH, height: HEIGHT, inspect: true };
   switch (options.kind) {
+    case "balanceFlow":
+      return renderBalanceFlowSvg({ ...options, ...common });
     case "sankey":
       return renderSankeySvg({ ...options, ...common });
     case "area":
@@ -678,6 +699,25 @@ export function chartRows(
       cells[id] = text;
       values[id] = value;
     };
+    if (input.kind === "balanceFlow") {
+      const words = balanceFlowWords(locale);
+      cell("label", words.chartFields({ key: "detail" }), datum.label ?? "", datum.label ?? "");
+      for (const field of datum.values)
+        cell(
+          field.key,
+          field.label ??
+            (field.key === "period"
+              ? words.balancePeriod
+              : field.key === "direction"
+                ? words.balanceDirection
+                : words.chartFields({ key: field.key })),
+          field.value,
+          field.formatted ?? String(field.value),
+        );
+      const row = { key: chartMarkKey(datum), cells, values };
+      rows.push(row);
+      return row;
+    }
     if (input.kind === "area") cell("series", t.series, datum.label ?? "", datum.label ?? "");
     if (input.kind === "line" || input.kind === "scatter") {
       if (named || series.length > 1) {
@@ -773,13 +813,16 @@ export function chartRows(
 /** The data behind every mark of the chart as a table: the accessible alternative and what Copy data copies. */
 export function chartTable(input: ChartInput, locale: string): ChartTable {
   const rows = chartRows(input, locale);
-  for (const datum of chartSvgMarks(drawChart(chartRenderOptions(input, locale)))) rows.add(datum);
+  const drawing = chartRenderOptions(input, locale);
+  for (const datum of drawing.kind === "balanceFlow" ? balanceFlowDatums(drawing) : chartSvgMarks(drawChart(drawing))) rows.add(datum);
   return rows.table();
 }
 
 /** Input values count against the budget, including observations summarized into boxes or bins. */
 export const chartMarks = (input: ChartInput): number => {
   switch (input.kind) {
+    case "balanceFlow":
+      return input.periods.reduce((total, p) => total + p.inflows.length + p.outflows.length + 3, 0);
     case "sankey": {
       const graph = sankeyGraph(input);
       return (

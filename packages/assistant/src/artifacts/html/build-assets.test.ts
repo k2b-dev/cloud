@@ -14,12 +14,14 @@ test("normal mounts omit app checks and stay within the prelude budget", async (
   expect(rare).toContain("data-calendar-weekdays");
   expect(normal).not.toContain("k2b-chart-sankey-link");
   expect(rare).toContain("k2b-chart-sankey-link");
+  expect(normal).not.toContain('data-balance-flow-svg="true"');
+  expect(rare).toContain('data-balance-flow-svg="true"');
   // The blob must be self-contained: no module can fetch a dependency on first use.
   expect(rare).not.toMatch(/\bimport\s*(?:\(|["'{*])/);
   console.info(`App prelude: ${Buffer.byteLength(normal)} B; offline chart module: ${Buffer.byteLength(rare)} B`);
   expect(Buffer.byteLength(normal)).toBeLessThan(319_900);
   // temporary until the last kind PR sets the catalog total, see #2790
-  expect(Buffer.byteLength(rare)).toBeLessThan(59_100);
+  expect(Buffer.byteLength(rare)).toBeLessThan(70_900);
   // The frame imports `@k2b/cloud/ai/app-frame`: the `ai/browser` barrel kept its skill parser and YAML (34 KB).
   expect(normal).not.toContain("tag:yaml.org,2002:");
   expect(normal).not.toMatch(/axe\.run|axe-core|axeVersion/);

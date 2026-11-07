@@ -1141,3 +1141,40 @@ inspected column. A missing column (or a zero-sum normalized column) has no insp
 legend uses a dash when its final column is a gap.
 
 Small Sankey cards start at their source nodes. Labels stay within the scrollable drawing; scroll horizontally to follow later stages.
+
+## Balance flows across periods
+
+`Chart.BalanceFlow` and `kind="balanceFlow"` explain a settlement balance in one
+currency. Supply `currency` and ordered `periods`, each with `label`, `opening`,
+`inflows: {label,value}[]`, `outflows: {label,value}[]`, and `closing`.
+The JSON entry rejects a period unless opening + inflows − outflows = closing,
+and rejects a boundary unless its closing equals the next opening. Decimal input
+values are compared exactly; the chart never rounds an inconsistent ledger into
+balance. Flows are nonnegative; a negative balance is labelled **owed**.
+
+Opening and closing share blue. Receipts use the turquoise money-in tokens,
+deductions the violet money-out tokens, with direction arrows and unsigned
+currency values. The available node stays neutral. Red and green have no role.
+Long labels keep their full text in the tooltip and table. Narrow panels show the
+complete name and amount rows below the drawing, with wrapping names and tabular
+numbers; they do not squeeze or cut labels inside the bands.
+
+Previous/Next or Left/Right move one period. The closing bar travels to the next
+opening position; reduced motion removes the animation. Up/Down inspect amounts,
+Enter pins and Escape dismisses. The buttons disable at the ends. An accessible
+summary reads the period's opening, total inflows, total outflows and closing.
+`period` sets the initial zero-based period; it defaults to 0 on both server and
+browser. Diagram/Table changes the representation of the same period.
+
+The drawing and frame reserve space for the largest period, including on phones.
+`state` is a Solid-only prop: `loading`, `empty`, `error`, `stale` or `data`.
+`onRetry` handles retry; `error` can supply a load-failure explanation. A stale
+notice occupies the subtitle line. Changing period, view, hover or state keeps the
+frame height. `view`/`onViewChange` optionally control the Diagram/Table switch.
+The JSON form carries the data, currency, initial period and optional validated
+BCP 47 `locale`; it uses the inherited UI locale by default. Assistant frames load
+the renderer in their existing offline chart module.
+
+In Notebook chart directives, use `type: balanceFlow`, `currency: EUR` and
+`periods: [...]` with the period array as one line of JSON. The note reserves the
+same frame while loading and keeps the current period's value table in print.
