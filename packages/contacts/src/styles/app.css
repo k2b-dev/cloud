@@ -372,6 +372,8 @@
 .k2b-ui .k2b-button.contacts-details-main {
   color: var(--k2b-detail-panel-accent, var(--k2b-action));
   background: color-mix(in srgb, var(--k2b-detail-panel-accent, var(--k2b-action)) 11%, transparent);
+  /* The tint is its edge: no grey subtle-button border around it. */
+  border-color: transparent;
 }
 .k2b-ui .k2b-button.contacts-details-main:not(:disabled, [aria-disabled="true"]):hover {
   background: color-mix(in srgb, var(--k2b-detail-panel-accent, var(--k2b-action)) 17%, transparent);

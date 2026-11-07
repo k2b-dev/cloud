@@ -46,6 +46,8 @@ export const createAssistantDictation = (props: {
   generation: (key: string) => number;
   live: ReturnType<typeof createAssistantLiveHub>;
   apply: (key: string, target: string, id: string) => Promise<boolean>;
+  /** Shows failures only through `problem` and the control, without a toast; for a surface with a line of its own. */
+  quiet?: boolean;
 }) => {
   const locale = useLocale();
   const t = () => audioMessages.resolve([locale()]).t;
@@ -83,7 +85,7 @@ export const createAssistantDictation = (props: {
     if (disposed || failure()?.key === key) return;
     clearFailure();
     setFailure({ key, message, retry: retryAction, discard: discardAction });
-    notice = toast.error(message, { duration: 0, action: { label: t().retry, onClick: () => void retry() } });
+    if (!props.quiet) notice = toast.error(message, { duration: 0, action: { label: t().retry, onClick: () => void retry() } });
   };
   const list = query.create<string | null, { target: string | null; items: Dictation[] }, AssistantLiveInvalidation>({
     source: target,
@@ -383,6 +385,10 @@ export const createAssistantDictation = (props: {
     /** Records instead of live dictation, as the way out when live dictation is busy. */
     startRecording: start,
     recording: () => phase() === "recording",
+    /** Turns a stopped recording into text: from Stop until the text is ready, as long as nothing failed. */
+    processing: () => !failure() && processing(),
+    /** What failed last, until it is tried again or discarded. */
+    problem: () => failure()?.message ?? null,
     RecordingFooter: () => (
       <div class="assistant-recording-footer">
         <IconButton

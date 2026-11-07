@@ -40,7 +40,7 @@ export default function PanelSlot(props: { panel: NonNullable<ShellData["panel"]
         onResize={() => {}}
       />
       <div class="cloud-panel__card">
-        <button type="button" class="cloud-panel__grabber" data-cloud-panel-grow="" aria-label={t.enlargePanel}>
+        <button type="button" class="cloud-panel__grabber" data-cloud-panel-grow="" aria-label={t.shrinkPanel}>
           <span aria-hidden="true" />
         </button>
         <div class="cloud-panel__head">

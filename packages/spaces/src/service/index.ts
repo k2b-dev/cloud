@@ -90,6 +90,8 @@ export const spacesService = {
     permission: {
       canAccess: spaces.canAccess,
       get: spaces.getPermission,
+      /** Access of one's own, without public access; it decides who may read who has access. */
+      member: access.getSpaceMemberPermission,
     },
     admin: {
       list: async (config: { pagination?: PageParams; filter?: { query?: string } }): Promise<Paginated<spaces.SpaceAdminListItem>> => {
@@ -194,6 +196,7 @@ export const spacesService = {
     findByTitle: items.findByTitle,
     getRecurringOverride: items.getRecurringOverride,
     create: items.create,
+    replayCreate: items.replayCreate,
     update: items.update,
     splitRecurring: items.splitRecurring,
     remove: items.remove,

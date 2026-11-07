@@ -214,4 +214,20 @@ describe("Mail list projection", () => {
       }).viewCounts.mine,
     ).toBe(4);
   });
+  test("Assigned to me's group counts follow the rows that leave the list, by the group each was in", () => {
+    const mine = [mailTestRow("one", { workStatus: "needs_action" }), mailTestRow("two", { workStatus: "waiting" })];
+    const leaving = (item: (typeof mine)[number]): MailListRemoval => ({
+      ...removal(0, "leaving"),
+      rowKey: item.id,
+      conversationId: item.id,
+      item,
+    });
+    const groups = { needsAction: 4, waiting: 2 };
+    const project = (removals: MailListRemoval[]) =>
+      counts({ items: mine, shown: mine, activeView: "mine", assignedGroups: groups, removals }).assignedGroups;
+    expect(project([])).toBe(groups);
+    expect(project([leaving(mine[1]!)])).toEqual({ needsAction: 4, waiting: 1 });
+    expect(project([leaving(mine[0]!), leaving(mine[1]!)])).toEqual({ needsAction: 3, waiting: 1 });
+    expect(counts().assignedGroups).toBeNull();
+  });
 });

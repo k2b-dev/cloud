@@ -1771,6 +1771,7 @@ describe("spaces capabilities", () => {
       data: { columnId: columnUuid, title: task.title, priority: "high", tagIds: [] },
       createdBy: userId,
       actor: { kind: "user", id: userId },
+      access: { actor: userContext.actor, subject: userContext.accessSubject },
     });
     expect(result).toMatchObject({
       ok: true,
@@ -1931,6 +1932,7 @@ describe("spaces capabilities", () => {
       },
       createdBy: userId,
       actor: { kind: "user", id: userId },
+      access: { actor: userContext.actor, subject: userContext.accessSubject },
     });
     expect(result).toMatchObject({
       ok: true,
@@ -2195,7 +2197,13 @@ describe("spaces capabilities", () => {
 
     const result = await spacesCapabilities.actions["item.tags.set"].run({ itemId, tagIds: [tagId] }, userContext);
 
-    expect(update).toHaveBeenCalledWith({ id: itemUuid, data: { tagIds: [tagUuid] }, actor: { kind: "user", id: userId } });
+    expect(update).toHaveBeenCalledWith({
+      id: itemUuid,
+      data: { tagIds: [tagUuid] },
+      actor: { kind: "user", id: userId },
+      access: { actor: userContext.actor, subject: userContext.accessSubject },
+      expectedSpaceId: spaceUuid,
+    });
     expect(result).toMatchObject({
       ok: true,
       data: {
@@ -2847,4 +2855,48 @@ test("discussion containers continue from the same offset when the limit changes
     expect.objectContaining({ query: "Product", requiredLevel: "read", pagination: { perPage: 2, offset: 1 } }),
   );
   expect((await operation.run(operation.input.parse({ cursor: "invalid" }), userContext)).ok).toBeFalse();
+});
+
+test("task edits carry deltas and title preconditions and preserve the conflict code", async () => {
+  spyOn(spacesService.item, "get").mockResolvedValue(task);
+  spyOn(spacesService.space, "get").mockResolvedValue(space);
+  spyOn(spacesService.space.permission, "get").mockResolvedValue("write");
+  spyOn(audit, "recordResult").mockImplementation(async ({ result }) => result);
+  const update = spyOn(spacesService.item, "update").mockResolvedValue({
+    ok: false,
+    error: "Title changed; reload and review the current title",
+    code: "TITLE_CONFLICT",
+    status: 409,
+  });
+  const input = TaskUpdateInputSchema.parse({ itemId, title: "Next", expectedTitle: task.title, addAssigneeIds: [userId] });
+  expect(await spacesCapabilities.actions["task.update"].run(input, userContext)).toMatchObject({
+    ok: false,
+    error: { code: "TITLE_CONFLICT", status: 409 },
+  });
+  expect(update).toHaveBeenCalledWith(
+    expect.objectContaining({
+      data: { title: "Next", expectedTitle: task.title, addAssigneeIds: [userId] },
+      access: { actor: userContext.actor, subject: userContext.accessSubject },
+    }),
+  );
+  expect(
+    await spacesCapabilities.actions["task.update"].review({ itemId, title: "Next", expectedTitle: "Stale" }, userContext),
+  ).toMatchObject({ ok: false, error: { code: "TITLE_CONFLICT" } });
+});
+
+test("task and event create keep separate capability idempotency scopes", async () => {
+  spyOn(spacesService.space, "get").mockResolvedValue(space);
+  spyOn(spacesService.space.permission, "get").mockResolvedValue("write");
+  spyOn(audit, "recordResultAfterSideEffect").mockImplementation(async ({ result }) => result);
+  const create = spyOn(spacesService.item, "create").mockResolvedValue({ ok: true, data: task });
+  const context = { ...userContext, idempotencyKey: "one-key-two-actions" };
+  await spacesCapabilities.actions["task.create"].run({ spaceId, columnId, title: "Task" }, context);
+  await spacesCapabilities.actions["event.create"].run(
+    { spaceId, columnId, title: "Event", startsAt: "2026-11-05T08:00:00.000Z", endsAt: "2026-11-05T09:00:00.000Z" },
+    context,
+  );
+  const [taskCall, eventCall] = create.mock.calls;
+  expect(taskCall?.[0].data.requestKey).toBeString();
+  expect(eventCall?.[0].data.requestKey).toBeString();
+  expect(taskCall?.[0].data.requestKey).not.toBe(eventCall?.[0].data.requestKey);
 });

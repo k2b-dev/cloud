@@ -93,7 +93,7 @@ cld spaces rm Item01 --yes
 cld spaces create "Hiring" --description "Open roles"
 ```
 
-- `add` creates a task; `--starts-at` and `--ends-at` make it an event. Without `--column` a task lands in the space's first open column, the first one in board order that is not marked done, like `spaces.task.create`; an event lands in the first column. `add` takes the field flags of `set` except `--title` and `--clear-*`, including the description from `--description <text>` or `--from <file|->` (5,000 characters at most). It adds `--template`, `--kind`, `--date`, and `--no-date`; see [Templates](#templates).
+- `add` creates a task; `--starts-at` and `--ends-at` make it an event. Without `--column` a task lands in the space's first open column, the first one in board order that is not marked done, like `spaces.task.create`; an event lands in the first column. `add` takes the field flags of `set` except `--title`, `--expected-title`, the assignee delta flags and `--clear-*`, including the description from `--description <text>` or `--from <file|->` (5,000 characters at most). It adds `--template`, `--kind`, `--date`, `--no-date`, and `--request-key`; see [Templates](#templates).
 - `set` changes only the fields you pass. `--description` or `--from` replaces the description. Repeat `--tag` and `--assignee` to set several; they replace the current selection. `--clear-*` cannot be combined with new values.
 - Assignees are `me`, a user or service account UUID, a username, or a service account name with access to the space. Service account names match without regard to case. `assign` replaces all assignees with one person or account, or none.
 - Task deadlines default to all-day: `--deadline YYYY-MM-DD` and `due <item> YYYY-MM-DD` keep that calendar date without a timezone conversion. An ISO date-time sets a timed deadline; offset-free date-times keep their local wall-clock interpretation (`TZ` overrides the system timezone). Responses include `deadlineAllDay`: true only for an all-day deadline, false for timed or absent deadlines. `due <item> none` clears it. `--due-before` keeps its instant comparison and excludes an all-day deadline on the named date. Date-only event bounds still use local midnight, with the end including its whole day; two date-only bounds make an all-day event.
@@ -304,3 +304,27 @@ Resource objects in JSON/JSONL output carry `permalink`, an absolute Cloud link 
 Each assignee has `kind` (`user` or `service_account`), its principal UUID as `id`, and a `displayName`; service accounts have no avatar hash.
 
 An item has `id`, `spaceId`, `columnId`, `title`, `description`, `startsAt`, `endsAt`, `deadline`, `deadlineAllDay`, `estimatedDurationMinutes`, `priority`, `completedAt`, `activeBlockerCount`, `assignees`, `tags`, and timestamps. Errors print `{"error":{"message","status","exitCode"}}` with `--json`; an ambiguous address is status `409`.
+
+### Retry task writes safely
+
+Use `cld spaces add "Roadmap:Write notes" --request-key <stable-key>` after an
+uncertain response, with the identical arguments and the same actor. The key
+replays the original result for 24 hours; a different body returns
+`IDEMPOTENCY_CONFLICT` (409). Keep the key yourself when retrying across CLI
+processes. Without `--request-key`, each command invocation generates a new key.
+
+`cld spaces set Item01 --title "Next" --expected-title "Original"` refuses a
+stale title with `TITLE_CONFLICT` (409). Without `--expected-title`, `set` uses
+the title it reads immediately before writing. Reload and review a conflict
+before sending another title change.
+
+Use `set Item01 --add-assignee me` or `--remove-assignee <account>` to change
+individual assignments without replacing other people. Both flags are
+repeatable. Do not combine them with `--assignee` or `--clear-assignees`, which
+retain their explicit whole-list replacement behavior. Removing a claim holder
+still requires releasing the active claim first.
+
+The `spaces.task.update` capability accepts `addAssigneeIds` and
+`removeAssigneeIds`; a title edit also requires `expectedTitle`. The
+`spaces.task.create` Action uses its invocation idempotency key. Reuse the same
+key and input after an uncertain result.

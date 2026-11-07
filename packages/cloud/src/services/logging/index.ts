@@ -20,6 +20,7 @@ export type {
   TraceSpan,
   TraceSpanKind,
   TraceStatus,
+  TraceSuccessMinutes,
   TraceSummary,
   TraceWindow,
 } from "./trace";
@@ -43,7 +44,14 @@ registerSettings([
     min: 1,
     integer: true,
     default: 30,
-    description: "Automatically delete completed and abandoned traces older than this many days",
+    description: "Automatically delete completed traces older than this many days",
+    group: "logs",
+  },
+  {
+    key: "logs.trace_max_bytes",
+    kind: "number",
+    default: 1024 ** 3,
+    description: "Live trace and background minute row budget in bytes; Core deletes oldest completed records first",
     group: "logs",
   },
 ]);
@@ -433,7 +441,7 @@ const cleanup = async (olderThanDays: number, options: RetentionOptions = {}): P
     `;
     return { entries: rows.count, complete: rows.count < RETENTION_BATCH_SIZE };
   }, options);
-  return { deleted: progress.entries ?? 0 };
+  return { deleted: progress.entries };
 };
 
 export type LogSummary = {

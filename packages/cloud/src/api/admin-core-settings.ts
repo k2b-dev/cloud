@@ -24,7 +24,6 @@ import { testFreeIpaConnection } from "../services/ipa/connection";
 import { GotenbergRenderError, testGotenberg } from "../services/pdf";
 import * as settings from "../services/settings";
 import { SETTINGS_MAP, validateSettingValue } from "../services/settings/defaults";
-import { assertGeoBudgetPair, GeoBudgetSettingError } from "../services/settings/geo-budget";
 import { invalidateSettingsCacheForAdmin } from "../services/settings/store";
 import { assertSettingVersions } from "../services/settings/versions";
 import { adminSettingsEnvRoutes } from "./admin-settings-env";
@@ -343,7 +342,7 @@ const app = new Hono<AuthContext>()
         // connection, so a failure rolls the whole save back.
         await sql.begin(async (tx) => {
           await assertSettingVersions(expectedUpdatedAt, tx);
-          await assertGeoBudgetPair(tx, validatedValues, resets);
+
           for (const [key, value] of Object.entries(validatedValues)) {
             try {
               await settings.set(key, value, tx, { replaceUnreadable: replace.has(key) });
@@ -395,7 +394,6 @@ const app = new Hono<AuthContext>()
             );
         });
       } catch (error) {
-        if (error instanceof GeoBudgetSettingError) return error.getResponse();
         if (error instanceof settings.SettingUnreadableError) {
           return c.json(
             {
@@ -438,7 +436,6 @@ const app = new Hono<AuthContext>()
 
     try {
       await sql.begin(async (tx) => {
-        await assertGeoBudgetPair(tx, {}, [key]);
         await settings.remove(key, tx);
         await audit.record(
           { action: "settings.reset", outcome: "allowed", actor: { userId: c.get("user").id }, target: { type: "setting", id: key } },
@@ -457,7 +454,7 @@ const app = new Hono<AuthContext>()
           );
       });
     } catch (error) {
-      if (error instanceof GeoBudgetSettingError || error instanceof settings.SettingUnreadableError) return error.getResponse();
+      if (error instanceof settings.SettingUnreadableError) return error.getResponse();
       console.error(`[settings] failed to reset "${key}"`, error);
       return c.json({ message: "Reset failed" }, 500);
     }

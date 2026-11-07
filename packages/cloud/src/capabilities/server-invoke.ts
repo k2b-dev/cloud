@@ -14,6 +14,8 @@ import {
 import type { RequestAuthority } from "../server";
 import { sendAppRequest } from "../services/identity/app-request";
 import { coreOrigin } from "../services/identity/core-origin";
+import * as settings from "../services/settings";
+import { publicCloudOrigin } from "../shared/app-url";
 import { capabilityMessages } from "../shared/capability-messages";
 import { LOCALE_HEADER } from "../shared/locale";
 import { readCapabilityResponse } from "./response";
@@ -69,7 +71,13 @@ export const callerRequest = async (
   const headers = new Headers();
   if (caller.authorization) headers.set("authorization", caller.authorization);
   if (!caller.mandate && !caller.workload && !caller.app) {
-    if (caller.cookie) headers.set("cookie", caller.cookie);
+    if (caller.cookie) {
+      headers.set("cookie", caller.cookie);
+      // This trusted server client runs behind the originating app's mandatory
+      // ingress guard, including for SSR reads transported as POST to Core.
+      if (!/^Bearer\s+\S+$/i.test(caller.authorization ?? ""))
+        headers.set("origin", publicCloudOrigin(await settings.get<string>("app.url")));
+    }
     if (caller.requestId) headers.set("x-request-id", caller.requestId);
     if (caller.traceparent) headers.set("traceparent", caller.traceparent);
     if (caller.tracestate) headers.set("tracestate", caller.tracestate);

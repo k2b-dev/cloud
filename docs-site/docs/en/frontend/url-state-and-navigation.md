@@ -171,7 +171,9 @@ that write history. Use the installer island only outside the column.
 A click that an island handler prevented is never swapped. Modifier keys,
 `target`, `download`, `rel="external"`, other origins, links outside the
 scope, and hash links on the same page stay native. `swapPage(href, {
-replace })` starts a swap from code.
+replace })` starts a swap from code. To show the current page again after a
+change, pass `{ replace: true, scroll: "preserve" }`: the window and keyed
+regions keep their scroll position instead of starting at the top.
 
 The swap fetches the page and loads its island modules before it changes the
 old column. Then it disposes the old islands, pushes history, replaces the
@@ -230,13 +232,15 @@ swaps emit no event. A listener error does not trigger a document load.
 ## Cloud page swaps
 
 Opt in with `defineApp({ pageSwap: true, ... })`. The default is off.
-Cloud keeps the rail, phone tab bar, panel slot, and provider document.
+Cloud keeps the rail, panel slot, and provider document.
 It replaces the header, banners, warnings, page trail, main content, footer,
 and the page's shell data and Help ids. Regular and full-page layouts can
 swap between each other.
 
 Back and Forward restore the page scroller; a link opens the next page at the
-top, or at its hash target.
+top, or at its hash target. When a swap takes longer than 200 ms, a thin bar at the top of
+the window shows that the page is changing; the old content stays until the
+new page arrives.
 
 The panel follows the arriving page's consent answer, and the rail and phone
 tab bar follow its rail preferences.

@@ -5,7 +5,7 @@ section: Operations
 order: 420
 description: Collect telemetry and query each base with read-only SQL.
 tags: [pulse, telemetry, metrics]
-updated: 2026-10-24
+updated: 2026-11-06
 ---
 
 # Pulse
@@ -424,6 +424,11 @@ A named section can include an icon, color, and caption describing its sources
 or cadence; these come from the saved definition.
 A map panel shades countries by one value and lists the same numbers. Its `x`
 column holds ISO 3166-1 alpha-2 codes; rows without a country stay off the map.
+While the active City database is DB-IP, a map panel and every panel whose SQL
+mentions `country` show the required "IP Geolocation by DB-IP" link below
+their results, also on a published link. The dashboard needs no extra
+definition; the link disappears after an administrator uploads a City database
+from another provider.
 A number panel shows one numeric value. With a DateTime `x`, it uses the last
 returned row and shows up to 480 trend points. Optional String columns
 `unit`, `detail`, and `detailTone` add a unit and change label.

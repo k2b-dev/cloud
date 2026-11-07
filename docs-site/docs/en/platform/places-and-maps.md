@@ -250,19 +250,23 @@ With the current 20-result limit, a place search costs one credit.
 
 Core reserves address/place costs before calling the provider and settles the
 reference cost afterward. Routing reserves against the distance estimate described above. A complete result served from cache costs zero and creates no ledger write.
-The defaults are **90,000 credits per Cloud calendar month** and **300 per
-access subject per day**. Both periods use `app.timezone`, including daylight
-saving changes. Agents and service accounts count like people. Delegated
-sessions count against their resolved access subject. Concurrent reservations cannot exceed either limit. Known routing overruns
-can exceed a reservation and are recorded as spent.
+The default is **90,000 credits per Cloud calendar month** in `app.timezone`,
+including daylight saving changes. All callers share that budget. Concurrent
+reservations cannot exceed it; known routing overruns can exceed a reservation
+and are recorded as spent. There is no daily allowance per person, service
+account or app.
 
 `geo.plan` selects Free, API 10, API 25, API 50, API 100, API 250, or Custom.
 The plans provide 3,000/5, 10,000/12, 25,000/15, 50,000/20, 100,000/25, and
 250,000/30 daily credits/requests per second respectively. Custom uses
-`geo.custom_daily_credits` and `geo.custom_rps`. The provider allowance is plan
-information; Cloud enforces its monthly and per-subject daily budgets.
-Set those with `geo.monthly_budget_credits` and `geo.person_daily_credits`.
-The daily budget cannot exceed the monthly budget, including on reset.
+`geo.custom_daily_credits` and `geo.custom_rps`. The provider daily allowance
+is plan information; Cloud enforces `geo.monthly_budget_credits` and a shared
+installation-wide request rate. Autocomplete cache hits consume rate admission
+but no credits.
+
+`geo.person_daily_credits` has been removed from the settings registry and
+administration. Old stored values are ignored, including unreadable values;
+they do not constrain calls or prevent lowering the monthly budget.
 
 Calls fail immediately when the shared token bucket or per-function in-flight
 bound is full; there is no queue. The in-flight bound is the plan rate times
@@ -280,7 +284,7 @@ structured `details`:
 | --- | --- |
 | `GEO_NOT_CONFIGURED` | Ask an administrator to enter the key, or to replace an unreadable key or budget value, in Administration → Places and maps. No Valkey, budget, or provider work occurs. |
 | `GEO_FORBIDDEN` | Supply an authenticated actor and access subject. |
-| `GEO_BUDGET_EXHAUSTED` | `scope` (`person` or `cloud`) and `resetsAt`; wait for reset or ask the operator to review the limit. |
+| `GEO_BUDGET_EXHAUSTED` | `scope: "cloud"` and `resetsAt`; wait for reset or ask the operator to review the limit. |
 | `GEO_BUSY` | `retryAfterSeconds`; wait, then retry. If it persists, check Valkey and provider capacity. A provider 429 also uses this code. |
 | `GEO_LIMIT_EXCEEDED` | `limit`, `max`, `actual`; reduce that field. For a minimum bound, `max` reports the required minimum. |
 | `GEO_UNSUPPORTED_OPTION` | Correct the input shape or choose one supported search mode/address representation. |
@@ -292,8 +296,14 @@ structured `details`:
 
 Provider 429 errors also carry costs after a paid request. Provider bodies and
 transport error text are discarded. `geo.availability` is free, reads only
-the caller's counters, and makes no provider call. Missing keys or unreadable
+the global monthly counter (the retained `person.exhausted` field is always `false`), and makes no provider call. Missing keys or unreadable
 `geo.*` settings return `configured: false` without reading counters.
+
+Anonymous app-server autocomplete uses `geoClient.autocomplete(input)` with
+`CLOUD_CORE_INTERNAL_ORIGIN`, without an app key or session. Core exposes only
+this operation on `/api/_internal/geo/v1/autocomplete`; the gateway refuses
+that route. Existing person and app callers keep their identity. See
+[App capabilities](/en/docs/platform/capabilities#call-as-the-application).
 
 ## Administer places and maps
 
@@ -305,10 +315,10 @@ and `write` to change.
 | Request | Effect |
 | --- | --- |
 | `GET /` | Key state (`none`, `set`, `unreadable`) with when and by whom it was set, the plan, the budgets, the plan table, and `app.timezone`. Never the key. |
-| `GET /usage` | This month and today in credits, the share per function (`tiles`, `places`, `route`, `address`), how many access subjects reached their daily limit today, and this month's `routeCostOverruns` count. |
+| `GET /usage` | This month and today in credits, the share per function (`tiles`, `places`, `route`, `address`), and this month's `routeCostOverruns` count. |
 | `PUT /key` `{ apiKey }` | Checks the key with one reverse-geocoding lookup at the EU endpoint, then stores it. A refusal (`422 geo_key_rejected`) or an unreachable provider (`502 geo_key_unverified`) stores nothing; the previous key stays active. `400 geo_key_missing` or `geo_key_malformed` stop before the provider is called. |
 | `DELETE /key` | Removes the key; maps, place search, and address suggestions turn off for everyone. |
-| `PUT /budget` | Saves `plan`, `monthlyCredits`, and `personDailyCredits` (plus `customRps` and `customDailyCredits` for the custom plan) together. Each field must be a whole number within the setting's bounds, and the daily limit at most the monthly budget. A refusal returns `400 geo_budget_invalid` with a code per field and changes nothing. |
+| `PUT /budget` | Saves `plan` and `monthlyCredits` (plus `customRps` and `customDailyCredits` for the custom plan) together. Each field must be a whole number within the setting's bounds. A refusal returns `400 geo_budget_invalid` with a code per field and changes nothing. |
 
 The verification lookup costs about one credit at Geoapify and is not counted
 in Cloud's budget. The general settings API refuses `geo.api_key`, so a key
@@ -347,12 +357,14 @@ with `GEO_BUSY`.
 
 Paired App-PWA devices can use the platform's closed
 [allowlisted autocomplete route](/en/docs/identity/app-pwa-sessions#offer-address-suggestions).
-It checks the live pairing and visit and charges the owner's budget without
+It checks the live pairing and visit and records usage under the owner without
 turning the device into an employee or exposing employee credentials.
 
 ## Call from a server
 
-Import `geoClient` from `@k2b/cloud/server` and pass the same
+For anonymous address suggestions, call `geoClient.autocomplete(input)` from
+an app server with `CLOUD_CORE_INTERNAL_ORIGIN` configured. For the other
+operations, import `geoClient` from `@k2b/cloud/server` and pass the same
 `CapabilityCaller` as other server capability calls. Methods are
 `autocomplete`, `geocode`, `reverse`, `searchPlaces`, `calculateRoute`,
 `updateRoute`, `mapStyle`, and `availability`.

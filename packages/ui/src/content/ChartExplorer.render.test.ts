@@ -54,6 +54,19 @@ describe("SSR chart exploration", () => {
     expect(html).toContain("--k2b-chart-selection-color:");
     expect(html).toMatch(/<h3 [^>]*class="k2b-chart-explorer__title ?"[^>]*>Queues<\/h3>/);
   });
+  test("owner actions sit in the header before Copy data", () => {
+    const html = renderToString(() =>
+      createComponent(ChartExplorer, {
+        title: "Queues",
+        actions: "Show query",
+        data: { chart: chart(), rows },
+        columns: [{ id: "label", label: "Queue", value: (row: (typeof rows)[number]) => row.label }],
+      }),
+    );
+    const actions = html.slice(html.indexOf('class="k2b-chart-explorer__actions"'));
+    expect(actions.indexOf("Show query")).toBeGreaterThan(-1);
+    expect(actions.indexOf("Show query")).toBeLessThan(actions.indexOf('aria-label="Copy data"'));
+  });
   test("a chart below another heading takes the next heading level", () => {
     const html = renderToString(() =>
       createComponent(ChartExplorer, {

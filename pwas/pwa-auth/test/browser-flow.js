@@ -102,8 +102,8 @@ async function _run(page) {
       loginB = await post(b, "start");
     const cloudA = p.locator(".auth-cloud").filter({ has: p.getByRole("heading", { name: "Personal Cloud", exact: true }) });
     const cloudB = p.locator(".auth-cloud").filter({ has: p.getByRole("heading", { name: "Work Cloud", exact: true }) });
-    await cloudA.getByRole("button", { name: "Sign in", exact: true }).waitFor({ timeout: 20000 });
-    await cloudB.getByRole("button", { name: "Sign in", exact: true }).waitFor({ timeout: 20000 });
+    await cloudA.locator(".auth-cloud__open").waitFor({ timeout: 20000 });
+    await cloudB.locator(".auth-cloud__open").waitFor({ timeout: 20000 });
     if ((await post(a, "status", loginA)).state !== "pending") throw new Error("Auto approval");
     await p.locator(".auth-comparison").filter({ hasText: loginA.comparison }).waitFor();
     await p.getByRole("button", { name: "Approve sign-in", exact: true }).click();
@@ -115,7 +115,7 @@ async function _run(page) {
     if ((await post(b, "status", loginB)).state !== "denied") throw new Error("Denial failed");
     step = "lost-response";
     const lost = await post(a, "start");
-    await cloudA.getByRole("button", { name: "Sign in", exact: true }).waitFor({ timeout: 20000 });
+    await cloudA.locator(".auth-cloud__open").waitFor({ timeout: 20000 });
     let decisions = 0;
     await context.route("**/api/auth/app-approval/v1/device", async (route) => {
       const body = route.request().postDataJSON();
@@ -140,7 +140,7 @@ async function _run(page) {
     step = "independent-failure";
     await post(a, "enabled", { enabled: false });
     await post(b, "start");
-    await cloudB.getByRole("button", { name: "Sign in", exact: true }).waitFor({ timeout: 20000 });
+    await cloudB.locator(".auth-cloud__open").waitFor({ timeout: 20000 });
     await cloudA.getByRole("status").waitFor({ timeout: 20000 });
     await post(a, "enabled", { enabled: true });
     if (await p.getByRole("dialog").count()) await p.getByRole("button", { name: "Close", exact: true }).click();

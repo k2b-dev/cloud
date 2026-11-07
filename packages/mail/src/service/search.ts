@@ -1,9 +1,10 @@
 import { sql } from "@k2b/cloud";
 import { logger } from "@k2b/cloud/services";
-import { escapeLikePattern } from "@k2b/cloud/services/postgres";
+import { escapeLikePattern, toPgTextArray } from "@k2b/cloud/services/postgres";
 import { err, fail, ok, type Result } from "@k2b/stdlib";
 import { z } from "zod";
 import type { MailSearchExpression, SearchRequest } from "../contracts";
+import { standardFolderNameAliases } from "../folder-names";
 import { mailFolderPaths } from "../folder-tree";
 import { guaranteedMailSearchFolderIds } from "../search-folder-scope";
 import { conversationVisibleTo, type MailboxAccess, messageVisibleTo } from "./access";
@@ -51,6 +52,7 @@ export type MessageSearchHit = {
   activeFolderIds: string[];
   flagged: boolean;
   hasAttachments: boolean;
+  attachmentCount: number;
   snippet: string | null;
   attachmentMatch: {
     attachmentId: string;
@@ -102,7 +104,7 @@ type DbSearchHit = {
   flags: string[] | null;
   active_folder_ids: unknown[] | string;
   flagged: boolean;
-  has_attachments: boolean;
+  attachment_count: number;
   snippet: string | null;
   attachment_match_id: string | null;
   attachment_match_message_id: string | null;
@@ -291,14 +293,32 @@ const commentMatch = (
     AND ${textMatch(sql`comment.body_markdown`, query, match)}
 )`;
 
+/** The localized names Mail shows for a standard folder (`standardFolderNameKey`), or an empty string. */
+const shownFolderNames = (name: SqlFragment, role: SqlFragment): SqlFragment => {
+  const normalized = sql`lower(regexp_replace(btrim(normalize(${name}, NFC)), '[[:space:]]+', ' ', 'g'))`;
+  const cases = standardFolderNameAliases().map(
+    ({ key, serverNames, names }) =>
+      sql`WHEN ${role} = ${key}::text AND ${normalized} = ANY(${toPgTextArray(serverNames)}::text[]) THEN ${names.join(" ")}::text`,
+  );
+  return sql`(CASE ${cases.reduce((all, next) => sql`${all} ${next}`)} ELSE '' END)`;
+};
+
 const folderMatch = (query: string, match: Extract<MailSearchExpression, { type: "text" }>["match"]): SqlFragment => sql`EXISTS (
   SELECT 1
   FROM mail.message_placements folder_placement
   JOIN mail.folders folder ON folder.id = folder_placement.folder_id
   LEFT JOIN mail.binding_folder_refs folder_ref ON folder_ref.folder_id = folder.id
+  LEFT JOIN mail.folder_role_overrides folder_role_override ON folder_role_override.folder_id = folder.id
   WHERE folder_placement.message_id = mc.id
     AND folder_placement.deleted_at IS NULL
-    AND ${textMatch(sql`(folder.name || ' ' || folder.role || ' ' || COALESCE(folder_ref.remote_path, ''))`, query, match)}
+    AND ${textMatch(
+      sql`(folder.name || ' ' || folder.role || ' ' || COALESCE(folder_ref.remote_path, '') || ' ' || ${shownFolderNames(
+        sql`folder.name`,
+        sql`COALESCE(folder_role_override.role, folder.role)`,
+      )})`,
+      query,
+      match,
+    )}
 )`;
 
 const tagMatch = (
@@ -807,7 +827,8 @@ const mapHit = (row: DbSearchHit, folders: ResultFolders): MessageSearchHit => (
   flags: row.flags ?? [],
   activeFolderIds: parseStringRows(row.active_folder_ids),
   flagged: row.flagged,
-  hasAttachments: row.has_attachments,
+  hasAttachments: row.attachment_count > 0,
+  attachmentCount: row.attachment_count,
   snippet: row.snippet,
   attachmentMatch:
     row.attachment_match_id && row.attachment_match_message_id && row.attachment_match_snippet
@@ -1289,7 +1310,7 @@ const runSearch = async (params: {
         COALESCE(from_rows.addresses, '[]'::jsonb) AS from_addresses,
         COALESCE(to_rows.addresses, '[]'::jsonb) AS to_addresses,
         COALESCE(placement.flags, ARRAY[]::text[]) AS flags,
-        EXISTS (SELECT 1 FROM mail.attachments attachment WHERE attachment.message_id = page.id) AS has_attachments
+        (SELECT COUNT(*)::int FROM mail.attachments attachment WHERE attachment.message_id = page.id) AS attachment_count
       FROM page_candidates page
       JOIN mail.message_contents message ON message.id = page.id
       LEFT JOIN LATERAL (
@@ -1362,14 +1383,14 @@ const runSearch = async (params: {
           )
         END AS flagged,
         CASE
-          WHEN NOT ${params.groupByConversation} OR deduplicated.conversation_id IS NULL THEN deduplicated.has_attachments
-          ELSE EXISTS (
-            SELECT 1
+          WHEN NOT ${params.groupByConversation} OR deduplicated.conversation_id IS NULL THEN deduplicated.attachment_count
+          ELSE (
+            SELECT COUNT(*)::int
             FROM mail.conversation_messages attachment_cm
             JOIN mail.attachments attachment ON attachment.message_id = attachment_cm.message_id
             WHERE attachment_cm.conversation_id = deduplicated.conversation_id
           )
-        END AS has_attachments,
+        END AS attachment_count,
         COALESCE(
           ${snippet},
           NULLIF(
@@ -1773,4 +1794,72 @@ export const searchMessages = async (params: {
           })
         : null,
   });
+};
+
+/**
+ * How many done conversations match `expression`, counted up to `RANKED_MATCH_WINDOW` and one more, which says "more
+ * than that". A work list that leaves done conversations out names this number at its end; the count stops early, so a
+ * large mailbox pays for at most the window.
+ */
+export const countDoneConversations = async (params: {
+  context: MailRequestContext;
+  mailboxId: string;
+  expression: MailSearchExpression;
+  excludedFolderIds?: readonly string[];
+}): Promise<Result<{ count: number; more: boolean }>> => {
+  const complexity = validateSearchComplexity(params.expression);
+  if (!complexity.ok) return complexity;
+  const access = await resolveMailExecution({
+    mailboxId: params.mailboxId,
+    operation: "actorRead",
+    conversationScoped: true,
+    context: params.context,
+  });
+  if (!access.ok) return access;
+  const visibility = access.data.access;
+  if (!visibility) return fail(err.forbidden("Access denied"));
+  const excludedFolderIds = [...new Set(params.excludedFolderIds ?? [])].sort();
+  const lapsedAssignees = searchesUnassigned(params.expression) ? await listLapsedAssignees({ mailboxIds: [params.mailboxId] }) : [];
+  const predicate = compileSearchExpression(
+    params.expression,
+    personalPrincipal(params.context).id,
+    sql`cm.conversation_id`,
+    lapsedAssignees,
+    excludedFolderIds,
+  );
+  try {
+    const [row] = await sql.begin(async (tx) => {
+      await tx`SET LOCAL jit = off`;
+      await limitToDeadline(tx, Date.now() + SEARCH_TIMEOUT_MS);
+      return tx<{ count: number }[]>`
+        SELECT COUNT(*)::int AS count
+        FROM (
+          SELECT 1
+          FROM mail.conversations c
+          WHERE c.mailbox_id = ${params.mailboxId}::uuid
+            AND c.work_status = 'done'
+            AND ${conversationVisibleTo(visibility, sql`c.id`)}
+            AND EXISTS (
+              SELECT 1
+              FROM mail.conversation_messages cm
+              JOIN mail.message_contents mc ON mc.id = cm.message_id
+              WHERE cm.conversation_id = c.id
+                AND ${messageVisibleTo(visibility, sql`mc.id`)}
+                AND EXISTS (
+                  SELECT 1 FROM mail.message_placements visible
+                  WHERE visible.message_id = mc.id
+                    AND visible.deleted_at IS NULL
+                    AND ${includedSearchPlacement(sql`visible.folder_id`, excludedFolderIds)}
+                )
+                AND ${predicate}
+            )
+          LIMIT ${sql.unsafe(String(RANKED_MATCH_WINDOW + 1))}
+        ) bounded
+      `;
+    });
+    const count = row?.count ?? 0;
+    return ok({ count: Math.min(count, RANKED_MATCH_WINDOW), more: count > RANKED_MATCH_WINDOW });
+  } catch (error) {
+    return searchFailure(error);
+  }
 };

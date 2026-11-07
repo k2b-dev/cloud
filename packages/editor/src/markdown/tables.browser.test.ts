@@ -3,6 +3,7 @@ import { resolve } from "node:path";
 import tailwind from "bun-plugin-tailwind";
 import type { Browser } from "playwright";
 import { launchBrowser } from "../../../ui/test/browser";
+import { solidTestPlugin } from "../../../ui/test/solid-test-plugin";
 
 // The table widget's bleed reaches into the editor content's inline padding,
 // which only a real engine lays out and clips.
@@ -45,6 +46,7 @@ editor("raw", [rawLightInit(), lineNumbers()]);
     target: "browser",
     conditions: ["browser"],
     format: "iife",
+    plugins: [solidTestPlugin()],
   });
   if (!build.success) throw new AggregateError(build.logs, "Could not bundle the table widget fixture.");
   const bundle = await build.outputs[0]!.text();

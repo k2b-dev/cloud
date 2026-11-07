@@ -176,8 +176,8 @@ if (!isServer)
   });
 if (!isServer)
   for (const [locale, userBound, edit, apply] of [
-    ["en", "User-bound service account", "Edit rule", "Apply to draft"],
-    ["de", "Benutzergebundenes Dienstkonto", "Regel bearbeiten", "In Entwurf übernehmen"],
+    ["en", "Personal", "Edit rule", "Apply to draft"],
+    ["de", "Persönlich", "Regel bearbeiten", "In Entwurf übernehmen"],
   ] as const)
     test(`${locale}: rule grants show a service account with the kind the principal picker shows`, async () => {
       const dom = createDomTestHarness();

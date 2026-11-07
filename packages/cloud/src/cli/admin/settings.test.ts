@@ -97,3 +97,21 @@ test("contact directory settings use Mail's validated setter", async () => {
     { path: "/api/mail/admin/settings/mail.contact_directory.app", body: { value: "crm", replaceUnreadable: false } },
   ]);
 });
+
+test("platform retention list, show and set omit --app and preserve the platform endpoint", async () => {
+  const row = {
+    key: "logs.trace_retention_days",
+    kind: "number",
+    group: "logs",
+    stored: "none",
+    storedValuePresent: false,
+    envBacked: false,
+  };
+  expect((await invoke(["list"], {}, { settings: [row] })).output).toEqual([{ settings: [row] }]);
+  const shown = await invoke(["show", row.key], {}, { settings: [row] });
+  expect(shown.output).toEqual([row]);
+  expect(shown.requests).toEqual([{ path: "/api/admin/core/settings/env/catalog", body: null }]);
+  expect((await invoke(["set", row.key], { value: "30", yes: true }, {})).requests).toEqual([
+    { path: "/api/admin/core/settings", body: { updates: { [row.key]: 30 }, replaceUnreadable: [] } },
+  ]);
+});

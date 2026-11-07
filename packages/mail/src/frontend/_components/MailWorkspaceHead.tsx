@@ -1,6 +1,7 @@
 import { Dropdown, FilterChip, FilterToggle, useLocale, ViewTabs } from "@k2b/ui";
 import { createMemo, Show } from "solid-js";
 import type { MailSearchState } from "../../contracts";
+import { mailFolderNames } from "../../folder-names";
 import type { ResolvedMailSearchRoute } from "../../search-url";
 import type { LocalTag } from "../../service/local-tags";
 import type { MailFolderView } from "../../service/messages";
@@ -33,8 +34,9 @@ export function MailboxViewTabs(props: {
     () => props.items,
     (href) => props.onOpenHref(href),
   );
-  // A direct child of the head's views slot, so the shared head rules size and scroll the strip.
-  return <ViewTabs label={messages().mailboxViews} items={props.items} current={props.current} />;
+  // A direct child of the head's views slot, so the shared head rules size and scroll the strip. Every view may stand
+  // in the strip: how many do follows the head's room, and the rest wait under More.
+  return <ViewTabs label={messages().mailboxViews} items={props.items} current={props.current} max={props.items.length} fit />;
 }
 
 type MailboxFilterContext = {
@@ -67,6 +69,7 @@ export function MailboxHeadFilters(
 ) {
   const locale = useLocale();
   const messages = createMemo(() => mailSidebarMessages.resolve([locale()]).t);
+  const folderName = createMemo(() => mailFolderNames(locale()));
   const { url, folder, knownQuick } = createMailboxFilterContext(props);
   const searchSummary = () => {
     const expression = props.search.expression;
@@ -86,7 +89,7 @@ export function MailboxHeadFilters(
       <Show when={folder() && knownQuick()}>
         <Show when={props.folderId !== folder()?.id}>
           <span class="shrink-0 text-sm text-primary" data-mail-filter-folder>
-            {messages().inFolder({ name: folder()!.name })}
+            {messages().inFolder({ name: folderName()(folder()!) })}
           </span>
         </Show>
         <Show when={folder()?.role !== "sent"}>

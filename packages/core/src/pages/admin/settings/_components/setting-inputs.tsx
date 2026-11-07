@@ -31,6 +31,8 @@ export const settingControlId = (key: string) => `setting-${key.replaceAll(".", 
 
 export type FieldInputProps = {
   entry: SettingFieldDef;
+  /** Ids of the text that describes the control, when a `SettingsField` around it owns the description. */
+  describedBy?: () => string;
   value: () => unknown;
   error: () => string | undefined;
   onChange: (value: unknown) => void;
@@ -104,7 +106,7 @@ function NumberSettingInput(props: FieldInputProps) {
   return (
     <NumberInput
       aria-label={props.entry.label}
-      aria-describedby={`${settingControlId(props.entry.key)}-description`}
+      aria-describedby={props.describedBy?.() ?? `${settingControlId(props.entry.key)}-description`}
       value={() => (typeof props.value() === "number" ? (props.value() as number) : 0)}
       onValueChange={(v) => props.onChange(v)}
       min={props.entry.min}
@@ -119,7 +121,7 @@ function EnumSettingInput(props: FieldInputProps) {
   return (
     <Select
       aria-label={props.entry.label}
-      aria-describedby={`${settingControlId(props.entry.key)}-description`}
+      aria-describedby={props.describedBy?.() ?? `${settingControlId(props.entry.key)}-description`}
       value={() => (typeof props.value() === "string" ? (props.value() as string) : (props.entry.options?.[0]?.value ?? ""))}
       onValueChange={(v) => props.onChange(v)}
       options={options}
@@ -387,7 +389,7 @@ function DefaultTextSettingInput(props: FieldInputProps) {
   return (
     <TextInput
       aria-label={props.entry.label}
-      aria-describedby={`${settingControlId(props.entry.key)}-description`}
+      aria-describedby={props.describedBy?.() ?? `${settingControlId(props.entry.key)}-description`}
       value={() => (typeof props.value() === "string" ? (props.value() as string) : String(props.value() ?? ""))}
       onValueChange={(v) => props.onChange(v)}
       placeholder={isSecret ? t().leaveSecretEmpty : (props.entry.placeholder ?? props.entry.label)}

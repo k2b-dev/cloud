@@ -500,6 +500,18 @@ describe("changes", () => {
     }
   });
 
+  test("exposes retry keys, title preconditions and incremental assignment writes", async () => {
+    const created = await run(["add", "Roadmap:Write notes", "--request-key", "retry-create"]);
+    expect(writes(created.requests)[0]?.body).toMatchObject({ requestKey: "retry-create" });
+    const renamed = await run(["set", "Item01", "--title", "Next", "--expected-title", "Original"]);
+    expect(writes(renamed.requests)[0]?.body).toEqual({ title: "Next", expectedTitle: "Original" });
+    const assigned = await run(["set", "Item01", "--add-assignee", "me", "--remove-assignee", OTHER_ID]);
+    expect(writes(assigned.requests)[0]?.body).toEqual({ addAssigneeIds: [USER_ID], removeAssigneeIds: [OTHER_ID] });
+    expect(
+      (await failing(["set", "Item01", "--add-assignee", "me", "--clear-assignees"])).requests.filter((r) => r.method === "PATCH"),
+    ).toEqual([]);
+  });
+
   test("preserves real inline line breaks and literal file content", async () => {
     const description = "Caption:\nText";
     const added = await run(["add", "Roadmap:Write notes", "--description", description]);
@@ -539,6 +551,7 @@ describe("changes", () => {
     expect(writes(added.requests)[0]?.body).toEqual({
       columnId: "Col001",
       title: "Write notes",
+      requestKey: expect.any(String),
       description: "Long text",
       deadline: "2026-10-20",
       estimatedDurationMinutes: 90,
@@ -550,7 +563,7 @@ describe("changes", () => {
     expect(writes(set.requests)[0]).toEqual({
       method: "PATCH",
       path: "/api/spaces/Space1/items/Item01",
-      body: { title: "Ship it", estimatedDurationMinutes: null, assigneeIds: [], tagIds: [] },
+      body: { title: "Ship it", expectedTitle: task.title, estimatedDurationMinutes: null, assigneeIds: [], tagIds: [] },
     });
 
     expect(writes((await run(["mv", "Roadmap:Ship release", "Doing"])).requests)[0]?.body).toEqual({ columnId: "Col002" });
@@ -983,6 +996,7 @@ describe("templates", () => {
     expect(writes(added.requests)[0]?.body).toEqual({
       columnId: "Col001",
       title: "Weekly report 42",
+      requestKey: expect.any(String),
       priority: "high",
       tagIds: ["Tag001"],
       assigneeIds: [],
@@ -1020,15 +1034,20 @@ describe("templates", () => {
   });
 });
 
-test("add takes the field flags of set except --title and --clear-*, as the reference says", async () => {
+test("add shares field flags with set and documents create-only and update-only flags", async () => {
   const flags = async (command: string) =>
     [...(await cld(["spaces", command, "--help"])).stdout.matchAll(/^ {2}(--[a-z-]+)/gm)].map((match) => match[1]);
   const reference = await readFile(new URL("./cli-references/index.md", import.meta.url), "utf8");
-  expect(reference).toContain("`add` takes the field flags of `set` except `--title` and `--clear-*`");
+  expect(reference).toContain(
+    "`add` takes the field flags of `set` except `--title`, `--expected-title`, the assignee delta flags and `--clear-*`",
+  );
   const add = await flags("add");
   expect(add).toContain("--from");
-  expect(add.filter((flag) => !["--column", "--template", "--kind", "--date", "--no-date"].includes(flag ?? ""))).toEqual(
-    (await flags("set")).filter((flag) => flag !== "--title" && !flag?.startsWith("--clear-")),
+  expect(add.filter((flag) => !["--column", "--template", "--kind", "--date", "--no-date", "--request-key"].includes(flag ?? ""))).toEqual(
+    (await flags("set")).filter(
+      (flag) =>
+        !["--title", "--expected-title", "--add-assignee", "--remove-assignee"].includes(flag ?? "") && !flag?.startsWith("--clear-"),
+    ),
   );
 });
 

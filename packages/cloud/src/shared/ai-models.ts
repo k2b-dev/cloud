@@ -5,7 +5,7 @@ import { AiExtraBodySchema, AiReasoningEffortSchema } from "./ai-request-options
 
 export const AI_MODEL_CLASSES = ["fast", "balanced", "thorough", "maximum"] as const;
 export type AiModelClass = (typeof AI_MODEL_CLASSES)[number];
-export const AI_MODEL_SLOTS = [...AI_MODEL_CLASSES, "vision", "audio", "liveAudio"] as const;
+export const AI_MODEL_SLOTS = [...AI_MODEL_CLASSES, "vision", "audio", "liveAudio", "decision"] as const;
 export type AiModelSlot = (typeof AI_MODEL_SLOTS)[number];
 export const AiModelRequestSchema = z.union([
   z.object({ class: z.enum(AI_MODEL_CLASSES) }).strict(),
@@ -61,6 +61,12 @@ export const providerRequiresCredential = (provider: AiProviderType): boolean =>
   ["openai", "openrouter", "anthropic", "mistral", "gemini"].includes(provider);
 export const providerSupportsCredential = (provider: AiProviderType): boolean =>
   providerRequiresCredential(provider) || provider === "vllm" || provider === "vllm-realtime" || provider === "openai-compatible";
+/**
+ * Where a provider may process data, from most to least protected. `restricted` providers make no
+ * data-protection commitment: only application server code that names a model ID reaches them.
+ */
+export const AiDataBoundarySchema = z.enum(["private", "hosted", "restricted"]);
+const dataBoundaryRank = { restricted: 0, hosted: 1, private: 2 } as const;
 export const AiProviderStatusSchema = z.enum(["unknown", "ok", "unreachable", "key_rejected", "error"]);
 export const AiProviderInputSchema = z
   .object({
@@ -68,7 +74,7 @@ export const AiProviderInputSchema = z
     type: AiProviderTypeSchema,
     label: z.string().trim().min(1),
     baseUrl: httpUrl.nullable().default(null),
-    dataBoundary: z.enum(["hosted", "private"]),
+    dataBoundary: AiDataBoundarySchema,
     enabled: z.boolean().default(true),
     logo: image.nullable().default(null),
   })
@@ -85,7 +91,7 @@ export const AiModelInputSchema = z
     providerModel: z.string().trim().min(1),
     label: z.string().trim().min(1),
     description: z.string().default(""),
-    kind: z.enum(["chat", "transcription", "live-transcription"]).default("chat"),
+    kind: z.enum(["chat", "transcription", "live-transcription", "decision"]).default("chat"),
     capabilities: z.array(z.enum(["tools", "vision", "transcription", "live-transcription"])).default([]),
     contextWindow: z.number().int().positive().nullable().default(null),
     maxOutputTokens: z.number().int().positive().nullable().default(null),
@@ -254,11 +260,13 @@ export type AiModelAccessDraft = z.infer<typeof AiModelAccessDraftSchema>;
 
 /** Whether a model supports a catalog assignment; safe to use in browser pickers. */
 export const aiModelSupportsSlot = (slot: AiModelSlot, model: Pick<AiModel, "kind" | "capabilities">): boolean =>
-  slot === "liveAudio"
-    ? model.kind === "live-transcription" && model.capabilities.includes("live-transcription")
-    : slot === "audio"
-      ? model.kind === "transcription"
-      : model.kind === "chat" && (slot !== "vision" || model.capabilities.includes("vision"));
+  slot === "decision"
+    ? model.kind === "decision"
+    : slot === "liveAudio"
+      ? model.kind === "live-transcription" && model.capabilities.includes("live-transcription")
+      : slot === "audio"
+        ? model.kind === "transcription"
+        : model.kind === "chat" && (slot !== "vision" || model.capabilities.includes("vision"));
 
 /** The same replacement requirements apply to deletion previews and committed retargeting. */
 export const aiReplacementProblem = (
@@ -266,8 +274,10 @@ export const aiReplacementProblem = (
   target: Pick<AiProvider, "dataBoundary" | "enabled">,
   original: Pick<AiModel, "kind" | "capabilities">,
   replacement: Pick<AiModel, "kind" | "capabilities" | "enabled">,
-): "private_boundary" | "incompatible_model" | null => {
-  if (source.dataBoundary === "private" && target.dataBoundary !== "private") return "private_boundary";
+): "private_boundary" | "restricted_boundary" | "incompatible_model" | null => {
+  // Replacements land in classes, tools, projects and workflows, which people use.
+  if (target.dataBoundary === "restricted") return "restricted_boundary";
+  if (dataBoundaryRank[target.dataBoundary] < dataBoundaryRank[source.dataBoundary]) return "private_boundary";
   if (
     !target.enabled ||
     !replacement.enabled ||

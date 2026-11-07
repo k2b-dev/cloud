@@ -5,7 +5,7 @@ section: Work
 order: 130
 description: Shared boards for tasks, events, comments, views, and calendar planning.
 tags: [spaces, tasks, calendar]
-updated: 2026-10-29
+updated: 2026-11-05
 ---
 
 # Spaces
@@ -78,6 +78,12 @@ sidebar of a wide screen shows the number of tasks for you beside Spaces.
 The page at `/pwa/spaces` shows the start page's **For me**, **Today**, and
 **Upcoming** lists with their counts, across every Space you can read.
 Tasks you claim also count as yours in **For me**.
+The list updates when you return to the app or the network comes back, so
+new assignments and changes by other people appear without reopening it.
+
+After opening a task from the list, header Back and browser Back return to
+that list entry; Forward reopens the task. A task opened directly by its link
+returns to the list by replacing its entry, so Back does not reopen the task.
 
 - Each row shows the title, the Space with its color, and the deadline or, for
   an event, its time or **All day**. An overdue deadline is red.
@@ -89,40 +95,138 @@ Tasks you claim also count as yours in **For me**.
   until the page is ready.
 - Events have no circle. Complete them in Spaces on the web.
 - A task you claimed yourself with **I'm on it** is completed with your claim,
-  as on the web. A task someone else claimed stays open; the app names who is
-  working on it, and you can take it over on the web.
+  as on the web. For a task someone else claimed, the app names who is working
+  on it and asks once whether to take it over and complete it.
 - A task with unfinished blockers stays open, and the app says why. So does a
   task in a Space you can only read, and a task that was deleted in the
   meantime disappears from the list. These notices offer no **Retry**, because
   trying again would not change the answer.
-- If a change cannot be saved, for example while the phone is offline, the
-  task goes back to how it is saved, and a notice offers **Retry**.
+- If a change cannot be saved, the task goes back to how it is saved, and a
+  notice offers **Retry**.
+- While the phone is offline, the circles are off and a line at the bottom
+  says that adding and changing work again with a connection. Everything you
+  already see stays readable.
+- Without write access to a Space, its tasks have no active circle.
+- The magnifier in the head searches the open tasks of every Space you can
+  read. A line under the field says how many tasks match.
 - The selected list is part of the address, so a reload keeps it.
 - Each list shows a bounded number of items, the same as the start page on the
   web: up to 100 for **For me**, 5 for **Today**, and 30 for **Upcoming**. When
   the count is higher, a line under the list says how many more are in Spaces
   on the web.
 
+### Switch to a Space
+
+The title **My tasks** opens a list of your Spaces. On a phone it opens as a
+sheet from the bottom, on a tablet as a menu below the title. Pinned Spaces
+come first, in the order you pinned them on the web. Each Space says how many
+tasks are open, or **Read only** when you cannot change its tasks. From eight
+entries the list has a search field. Without any Space, the page says how to
+get one and links to Spaces on the web.
+
+A Space opens at `/pwa/spaces/<space>` as one list per status, such as
+**Inbox** or **In progress**, in the order of the board on the web. Board,
+table, and calendar stay on the web; **…** in the head opens the Space there
+or copies its link.
+
+- Each status shows its dot, its name, and how many tasks it has. A done
+  status starts folded; tap its name to show its tasks. Tap any status name to
+  fold or unfold it.
+- A status shows its first 30 tasks, as a board column on the web does.
+  **Load more** adds the next ones in place.
+- Each row shows the title and what applies: **Blocked** for a task with
+  unfinished blockers, the deadline (red when overdue), the checklist
+  progress, the tags, and the people assigned.
+- **Assigned to me** and **Tag** narrow the list. A status without a match
+  steps aside, and **Reset** clears both. When nothing matches, the page says
+  so and offers **Reset filters**.
+- The magnifier searches the open tasks of the Space and says how many match.
+- The filters and the search are part of the address, so a reload and Back
+  keep them.
+- Tap the circle to mark a task done, with **Undo** as in **My tasks**. In a
+  done status, the circle opens the task again.
+- The list updates as other people change the Space, and when you return to
+  the app. Rows keep their place while it updates.
+- In a Space you can only read, a line under the title says so, and the
+  circles are off.
+- If the Space cannot be loaded, the page offers **Try again** and keeps your
+  filters. Offline, it says that the Space loads again with a connection.
+- When you lose access, or an old link names a Space you cannot read, the page
+  says that it cannot open the Space and leads back to **My tasks**. It names
+  the Space only when the app already knew it.
+
+### Add a task
+
+**New task** sits at the bottom, under your thumb. In a Space it opens the
+same menu as every **+** in Spaces: **Blank task**, the Space's task
+templates, and **Create template …**, which opens the Space on the web. In
+**My tasks** it opens the field at once.
+
+- The field stands above the keyboard. **×** closes it; what you typed stays
+  on the device as a draft.
+- Below the field you see what the task gets: its status, which starts at the
+  first status that does not complete tasks, **Due**, and **Assigned**. From
+  **My tasks**, a Space chip names where the task goes, the last Space you
+  used on this device, and **Me** assigns it to you. When you change the Space,
+  the status starts at that Space's first open status.
+- A template shows its name above the field and fills what it proposes, such as
+  the due date and the checklist.
+- Enter adds the task and keeps the field open for the next one.
+- The new task appears at once at the end of its status, with a spinner. If no
+  answer comes, the row says **Not confirmed**, and **↻** sends the same
+  request again; the server never adds the task twice. If the server refuses,
+  the row says why.
+- If a filter hides the new task, its row stays until you leave the list, and
+  a notice offers **Open**.
+- Offline, adding is off and says why; your text stays. In a Space without an
+  open status, **New task** is off and says why. In a Space you can only read,
+  and without any Space you can change, there is no **New task**.
+
 ### Open a task
 
 Tap a row to open its task. The task has its own address,
 `/pwa/spaces/<space>/<task>`, so a reload, Back, and rotating the device show
-the same task. Only people who can read the task's Space can open it; for
+the same task. Opened from a Space, the address adds `list=space` and the
+Space's filters, so the Space's list stays beside the task. A shared link
+without them returns to **My tasks**. Only people who can read the task's Space can open it; for
 anyone else the address does not exist.
 
 - On a phone and on an iPad upright, the task replaces the list, with
-  **Back to Spaces** in its head. From 64 rem (1024 px), for example on an
+  **Back to My tasks** or **Back to** the Space in its head. From 64 rem (1024 px), for example on an
   iPad across or a monitor, the list stays beside the task, the open task's
   row is marked, and **No task selected** holds the place until you choose one.
 - The task shows its Space in the head, whether it is done, the deadline or
   for an event the time and place, the people assigned or attending, the
   description, and the checklist with how many items are done.
 - The title, Space, and date show at once from the row; the rest follows.
+- An open task updates as other people change it. Your comment draft and a
+  checklist change that is still saving stay in place. If you lose read
+  access, the task becomes unavailable and offers a way back to the list.
+  If live updates stop, a notice offers **Reload**. A failed refresh keeps the
+  last loaded task visible and offers **Try again**.
 - Tap the circle to mark the task done or open it again, and tap a checklist
   item to check it off. Each change shows at once with a spinner at its place
   while it saves. When it cannot be saved, it goes back, its row offers
   **Retry**, and a line above the checklist says how many changes are not
   saved.
+- **Status**, **Due**, and **Assigned** each open their own picker; on a
+  tablet as a menu at the row. The new value shows at once with a spinner at
+  the end of the row while it saves. When it cannot be saved, the old value
+  comes back, the row offers **↻**, and a notice says what stays.
+- **Status** moves the task without dragging: it lands at the top of the new
+  status, and **Undo** in the notice puts it back where it was. A status that
+  completes tasks says so; while unfinished tasks block the task, it stays
+  closed and says why.
+- In **Assigned**, each person you check or uncheck is added or removed alone,
+  so a change someone else makes at the same time stays. **Assign to me** only
+  adds you. A change from elsewhere while the list is open is said in it.
+- Tap the title, or **…** → **Change title**, to change it. Enter or **Save**
+  stores it. If someone changed the title meanwhile, your text stays, the new
+  title shows under the field, and **Use the new title** takes it.
+- Completing a task that someone else claimed asks once whether to take it
+  over, as on the web.
+- Offline, the task stays readable, says why, and the pickers, the circle, and
+  the checklist are off.
 - Without write access to the Space, the task says so, and the circle and the
   checklist are off.
 - **Comment** sends a comment to the task. What you type stays on the device

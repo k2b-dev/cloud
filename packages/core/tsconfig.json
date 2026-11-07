@@ -3,6 +3,7 @@
   "compilerOptions": {
     "paths": {
       "@/*": ["./src/*"],
+      "@k2b/cloud/capabilities/store": ["../cloud/src/capabilities/executions.ts"],
       "@k2b/cloud": ["../cloud/src/index.ts"],
       "@k2b/cloud/account/ui": ["../cloud/src/account/ui.ts"],
       "@k2b/cloud/ai/ui": ["../cloud/src/ai/ui.tsx"],

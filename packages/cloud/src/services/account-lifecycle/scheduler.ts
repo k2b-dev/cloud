@@ -240,8 +240,16 @@ const processLogCleanupJob = async (ctx: JobContext<null>): Promise<void> => {
           logCleanupLog.info("Log retention cleanup progress", { ...progress, retentionDays });
         },
       });
-      logCleanupLog.info("Log cleanup complete", { deleted: summary.deleted, retentionDays });
-      return { deleted: summary.deleted, retentionDays, complete };
+      const configuredTraceDays = Number((await getSetting<number | string | null>("logs.trace_retention_days")) ?? 30);
+      const configuredTraceBytes = Number((await getSetting<number | string | null>("logs.trace_max_bytes")) ?? 1024 ** 3);
+      const traces = await trace.cleanup({
+        days: configuredTraceDays,
+        maxBytes: configuredTraceBytes,
+        signal: ctx.signal,
+        heartbeat: () => ctx.heartbeat(),
+      });
+      logCleanupLog.info("Log cleanup complete", { deleted: summary.deleted, retentionDays, traces, complete });
+      return { deleted: summary.deleted, retentionDays, traces, complete };
     },
     { summarize: (summary) => summary },
   );

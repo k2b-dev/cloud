@@ -309,7 +309,12 @@ export default function PulseWorkspace(props: PulseWorkspaceProps) {
                             }
                           >
                             <DashboardsView
-                              base={{ id: props.initialBaseId, name: selectedBase()?.name ?? t().appName }}
+                              base={{
+                                id: props.initialBaseId,
+                                name: selectedBase()?.name ?? t().appName,
+                                // A base that left the list is about to show lost access; until then its times read in UTC.
+                                timezone: selectedBase()?.timezone ?? "UTC",
+                              }}
                               actions={dashboardActions()}
                               route={props.initialRouteState}
                               snapshot={props.initialDashboards}

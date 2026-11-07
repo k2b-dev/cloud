@@ -9,7 +9,7 @@ export type GeoContext = {
   signal?: AbortSignal;
   requestId?: string;
 };
-export type GeoBudgetSubject = AccessSubject | { type: "app"; appId: string };
+export type GeoBudgetSubject = AccessSubject | { type: "app"; appId: string } | { type: "none" };
 export type AppPwaGeoContext = { actor: AppPwaActor; locale?: string; signal?: AbortSignal; requestId?: string };
 export type GeoCallContext = GeoContext | AppPwaGeoContext;
 export const geoIdentity = (
@@ -35,9 +35,11 @@ export const geoIdentity = (
 export const geoCallIdentity = (
   context: GeoCallContext,
 ): {
-  actor: RequestActor | CapabilityAppExecutionContext["actor"] | AppPwaActor;
+  actor: RequestActor | CapabilityAppExecutionContext["actor"] | AppPwaActor | undefined;
   accessSubject: GeoBudgetSubject;
 } => {
+  if (!context.actor && !("accessSubject" in context && context.accessSubject))
+    return { actor: undefined, accessSubject: { type: "none" } };
   if (context.actor?.kind === "device" || context.actor?.kind === "visit") {
     if (!context.actor.ownerUserId) throw new GeoError("GEO_FORBIDDEN");
     return { actor: context.actor, accessSubject: { type: "user", userId: context.actor.ownerUserId } };

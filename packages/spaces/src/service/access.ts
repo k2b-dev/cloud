@@ -10,6 +10,7 @@ import {
   ensureManagerRemains,
   getEffectivePermission,
   getEffectivePermissions,
+  getMemberPermission,
   type PermissionLevel,
   type Principal,
   type RequestActor,
@@ -346,6 +347,37 @@ export const getActorsSpacePermissions = async (
       ? minPermission(permission, permissionFromScopes(actor.scopes))
       : permission;
   });
+};
+
+/** The permission a subject holds on a Space through access of its own, without the public tier. */
+export const getSpaceMemberPermission = async (params: { spaceId: string; subject: AccessSubject }): Promise<PermissionLevel> => {
+  const accessRows = await sql<{ access_id: string }[]>`
+    SELECT access_id FROM spaces.space_access WHERE space_id = ${params.spaceId}::uuid
+  `;
+  return getMemberPermission({ accessIds: accessRows.map((row) => row.access_id), subject: params.subject });
+};
+
+/**
+ * The permission an actor holds on a Space through access of its own: a direct, group, or all-signed-in grant, never
+ * the public tier. Everyone with read here may see who has access; public-link readers may not. The same caps as
+ * `getActorsSpacePermissions` apply: a resource-bound key holds nothing outside its Space, and a service account that
+ * does not act as its user is capped by its credential scopes.
+ */
+export const getActorSpaceMemberPermission = async (
+  spaceId: string,
+  reader: { actor: RequestActor; subject: AccessSubject },
+): Promise<PermissionLevel> => {
+  const account = reader.actor.kind === "service_account" ? reader.actor.serviceAccount : null;
+  if (
+    account?.kind === "resource_bound" &&
+    (account.appId !== SPACES_APP_ID || account.resourceType !== SPACE_RESOURCE_TYPE || account.resourceId !== spaceId)
+  ) {
+    return "none";
+  }
+  const permission = await getSpaceMemberPermission({ spaceId, subject: reader.subject });
+  return reader.actor.kind === "service_account" && reader.actor.serviceAccount.kind !== "user_delegated"
+    ? minPermission(permission, permissionFromScopes(reader.actor.scopes))
+    : permission;
 };
 
 /**

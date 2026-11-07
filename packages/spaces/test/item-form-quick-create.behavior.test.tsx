@@ -161,6 +161,52 @@ describe("Spaces item quick create", () => {
     dom.cleanup();
   });
 
+  test("retains the create key for unchanged retries and replaces it for new intent", async () => {
+    const dom = createDomTestHarness();
+    const { default: ItemForm } = await import("../src/frontend/[id]/_components/shared/ItemForm");
+    const attempts: ItemFormData[] = [];
+    const dispose = render(
+      () =>
+        createComponent(ItemForm, {
+          spaceId: SPACE_ID,
+          columns,
+          quickCreate: true,
+          defaults: { type: "task" },
+          onSubmit: async (data) => {
+            attempts.push(data);
+            throw new Error("Response lost");
+          },
+          onCancel: () => undefined,
+        }),
+      dom.root,
+    );
+    try {
+      const title = dom.root.querySelector<HTMLInputElement>('input[placeholder="What needs to be done?"]')!;
+      const type = (value: string) => {
+        title.value = value;
+        title.dispatchEvent(new dom.window.Event("input", { bubbles: true }));
+      };
+      const submit = async () => {
+        dom.root.querySelector("form")!.dispatchEvent(new dom.window.Event("submit", { bubbles: true, cancelable: true }));
+        await Promise.resolve();
+        await Promise.resolve();
+      };
+      type("Prepare launch");
+      await submit();
+      await submit();
+      expect(attempts).toHaveLength(2);
+      expect(attempts[0]?.requestKey).toBeString();
+      expect(attempts[1]?.requestKey).toBe(attempts[0]?.requestKey);
+      expect(dom.root.textContent).toContain("Response lost");
+      type("Prepare another launch");
+      await submit();
+      expect(attempts[2]?.requestKey).not.toBe(attempts[0]?.requestKey);
+    } finally {
+      dispose();
+      dom.cleanup();
+    }
+  });
+
   test("submits a compact task into the first status", async () => {
     const dom = createDomTestHarness();
     const { default: ItemForm } = await import("../src/frontend/[id]/_components/shared/ItemForm");

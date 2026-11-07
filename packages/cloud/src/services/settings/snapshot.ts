@@ -2,7 +2,7 @@
  * Per-request settings snapshot.
  *
  * Loads every known setting via `bulkRead` (one Redis MGET + DB fallback for
- * misses) and builds a frozen nested object keyed by dotted-path segments.
+ * misses; secret cache entries stay encrypted) and builds a frozen nested object keyed by dotted-path segments.
  *
  * Used by the middleware that runs at request start (see `define-app.ts`).
  * Exposed on the Hono context as `c.get("settings")` — typed per-app via

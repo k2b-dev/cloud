@@ -817,6 +817,8 @@ export const createLoadedAiCapabilityTools = (input: {
         // Capability Actions request a custom approval after their optional
         // live review has resolved. The review may supply an app-owned scope.
         approval: "never",
+        // A Query only reads, so it may run next to other Queries.
+        ...(entry.kind === "query" ? { readOnly: true as const } : {}),
       }).server(async (modelArgs, context) => {
         const args = withoutApprovalReason(entry, modelArgs);
         await input.authorizeBackground?.(entry, args, context);

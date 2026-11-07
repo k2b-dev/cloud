@@ -1,5 +1,6 @@
 import { observeMobileShell, syncThemeColor, type ToastHandle, toast, useLocale } from "@k2b/ui";
 import { onCleanup, onMount } from "solid-js";
+import { hasAppActions } from "../browser/app-actions";
 import { renewAppSession } from "../browser/app-session";
 import { pwaDrafts } from "../browser/pwa-drafts";
 import { reloadOnce } from "../browser/reload";
@@ -136,6 +137,7 @@ export default function PwaRuntime(props: PwaRuntimeProps) {
     document.addEventListener("input", input, true);
     cleanups.push(() => document.removeEventListener("input", input, true));
     const unsafe = () =>
+      hasAppActions() ||
       document.activeElement?.matches(textField) ||
       !!(props.accountId && pwaDrafts.has(props.accountId)) ||
       !!document.querySelector('dialog[open]:not([aria-modal="false"])') ||

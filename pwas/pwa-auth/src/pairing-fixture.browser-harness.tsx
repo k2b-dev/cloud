@@ -58,6 +58,7 @@ Reflect.set(
       act: noop,
       decideChange: noop,
       decide: noop,
+      recheck: noop,
       revoke: noop,
       syncPush: noop,
       forget: noop,

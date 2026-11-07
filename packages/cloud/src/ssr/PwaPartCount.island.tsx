@@ -1,4 +1,4 @@
-import { AppWorkspace } from "@k2b/ui";
+import { AppWorkspaceSidebarItemStatus } from "@k2b/ui";
 import { onCleanup, onMount, Show } from "solid-js";
 import { appBadgeCount, watchAppBadges } from "./app-badges";
 
@@ -17,7 +17,7 @@ export default function PwaPartCount(props: PwaPartCountProps) {
   const count = () => appBadgeCount({ endpoint: props.endpoint });
   return (
     <Show when={props.attention} fallback={<Show when={count() > 0}>{count() > 99 ? "99+" : count()}</Show>}>
-      <AppWorkspace.SidebarItemStatus unread={count()} />
+      <AppWorkspaceSidebarItemStatus unread={count()} />
     </Show>
   );
 }

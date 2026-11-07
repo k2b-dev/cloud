@@ -10,6 +10,8 @@ export default function AiAreaActions(props: {
   variant?: "row" | "button" | "icon";
   providerId?: string;
   providerType?: AiProviderType;
+  /** Providers without a data-protection commitment only take chat models. */
+  chatOnly?: boolean;
   providerLabel?: string;
   existing?: string[];
 }) {
@@ -20,6 +22,7 @@ export default function AiAreaActions(props: {
       ? openAddProvider()
       : openAddModels({
           providerType: props.providerType,
+          chatOnly: props.chatOnly,
           providerId: props.providerId ?? "",
           providerLabel: props.providerLabel ?? "",
           existing: props.existing ?? [],

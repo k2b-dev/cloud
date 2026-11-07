@@ -100,6 +100,7 @@ export const listRecordEventBaseIds = async (): Promise<string[]> => {
   const rows = await sql<Array<{ id: string }>>`
     SELECT DISTINCT p.base_id::text AS id
     ${WORKFLOW_FROM()}
+    JOIN grids.bases AS b ON b.id = p.base_id AND b.deleted_at IS NULL
     WHERE p.deleted_at IS NULL
       AND p.enabled = TRUE
       AND p.record_event_active_since IS NOT NULL
@@ -109,9 +110,24 @@ export const listRecordEventBaseIds = async (): Promise<string[]> => {
   return rows.map((row) => row.id);
 };
 
+/** Earliest activation across live bases, used to discard pre-activation queue history without per-event SQL. */
+export const getRecordEventActiveSince = async (): Promise<Date | null> => {
+  const [row] = await sql<Array<{ active_since: Date | null }>>`
+    SELECT min(p.record_event_active_since) AS active_since
+    ${WORKFLOW_FROM()}
+    JOIN grids.bases AS b ON b.id = p.base_id AND b.deleted_at IS NULL
+    WHERE p.deleted_at IS NULL
+      AND p.enabled = TRUE
+      AND p.record_event_active_since IS NOT NULL
+      AND jsonb_path_exists(v.plan, '$.triggers[*] ? (@.kind == "recordEvent")')
+  `;
+  return row?.active_since ?? null;
+};
+
 export const listRecordEventWorkflows = async (baseId: string, occurredAt: string): Promise<GridsWorkflow[]> => {
   const rows = await sql<DbRow[]>`
     SELECT ${WORKFLOW_SELECT()} ${WORKFLOW_FROM()}
+    JOIN grids.bases AS b ON b.id = p.base_id AND b.deleted_at IS NULL
     WHERE p.base_id = ${baseId}::uuid
       AND p.deleted_at IS NULL
       AND p.enabled = TRUE

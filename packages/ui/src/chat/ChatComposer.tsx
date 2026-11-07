@@ -47,6 +47,7 @@ import { SelectChip } from "../inputs/SelectChip";
 import { useSelectMessages } from "../inputs/select-messages";
 import { useLocale } from "../intl/locale";
 import { useUiMessages } from "../intl/messages";
+import { ProgressRing } from "../surfaces/ProgressRing";
 import { ChatContextUsage as ContextUsage } from "./ChatPrimitives";
 import {
   chatCommandKey,
@@ -444,7 +445,9 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
   const dictation = () => props.microphone?.dictation ?? null;
   const showHint = () => conversation() || dictation() !== null || hasContent(hint.toArray());
 
-  const state = () => props.state ?? "idle";
+  // Handlers such as sending read these outside any owner. A host's conditional prop is a getter that creates a
+  // computation on each read, which would never be disposed there; memos read it inside the composer's owner.
+  const state = createMemo(() => props.state ?? "idle");
   const running = () => state() === "running";
   const stopping = () => state() === "stopping";
   const runningSubmitIntent = () => props.runningSubmitIntent ?? "steer";
@@ -1133,7 +1136,7 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
     selectedCommandKey();
     setAnnouncement(undefined);
   });
-  const busy = () => Boolean(props.disabled || stopping() || state() === "submitting" || executing() || addingFiles());
+  const busy = createMemo(() => Boolean(props.disabled || stopping() || state() === "submitting" || executing() || addingFiles()));
   const blocked = () => busy() || submitting();
   /** The conversation field stays editable while a message is sent, so it keeps the focus and a phone its keyboard. */
   const editBlocked = () => (conversation() ? busy() : blocked());
@@ -1145,12 +1148,14 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
   createEffect(on([dictationField, dictationDraft], () => liveDictation.end(), { defer: true }));
   const hasDraft = () => Boolean(props.value.trim() || (!running() && attachments().length > 0));
   /** The draft may go out now, apart from a submission that is already on its way. */
-  const submittable = () =>
-    !busy() &&
-    !props.submitDisabled &&
-    hasDraft() &&
-    !(props.dictation && liveDictation.active()) &&
-    !(running() && runningSubmitIntent() === "steer" && mentions().length);
+  const submittable = createMemo(
+    () =>
+      !busy() &&
+      !props.submitDisabled &&
+      hasDraft() &&
+      !(props.dictation && liveDictation.active()) &&
+      !(running() && runningSubmitIntent() === "steer" && mentions().length),
+  );
   const canSubmit = () => !submitting() && submittable();
   const canSelectFiles = () => Boolean(props.fileSelection && !props.fileSelection.disabled && !running() && !blocked());
   const hasAddMenu = () => Boolean(props.fileSelection || props.menuActions?.length);
@@ -2587,6 +2592,8 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
         class={`k2b-chat-composer ${props.class ?? ""}`}
         data-running={running() ? "true" : undefined}
         data-variant={conversation() ? "conversation" : undefined}
+        data-invalid={props.error ? "true" : undefined}
+        data-disabled={props.disabled ? "true" : undefined}
         role="group"
         aria-label={props.label ?? chatMessages().messageComposer}
       >
@@ -2647,7 +2654,9 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
                 <div class="k2b-chat-composer__attachment" role="listitem">
                   <div
                     class="k2b-chat-composer__attachment-content"
-                    classList={{ "k2b-chat-composer__attachment-content--action": Boolean(attachment.action) }}
+                    classList={{
+                      "k2b-chat-composer__attachment-content--action": Boolean(attachment.action) || attachment.progress !== undefined,
+                    }}
                   >
                     <Show
                       when={attachment.href}
@@ -2681,11 +2690,19 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
                         </a>
                       )}
                     </Show>
-                    <Show when={attachment.action}>
+                    <Show when={attachment.progress !== undefined}>
+                      <span class="k2b-chat-composer__attachment-action k2b-chat-composer__attachment-progress">
+                        <ProgressRing value={attachment.progress ?? 0} label={chatMessages().uploading({ name: attachment.name })} />
+                        {new Intl.NumberFormat(locale(), { style: "percent" }).format(Math.round(attachment.progress ?? 0) / 100)}
+                      </span>
+                    </Show>
+                    <Show when={attachment.progress === undefined && attachment.action}>
                       {(action) => (
                         <button
                           type="button"
                           class="k2b-chat-composer__attachment-action"
+                          data-tone={action().variant === "danger" ? "danger" : undefined}
+                          data-waiting={action().disabled ? "" : undefined}
                           disabled={blocked() || action().disabled}
                           onClick={() => reportChatFailure(() => executeChatAction(action()), props.onError)}
                         >

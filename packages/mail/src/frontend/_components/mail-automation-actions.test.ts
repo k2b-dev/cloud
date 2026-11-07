@@ -1,7 +1,12 @@
 import { describe, expect, test } from "bun:test";
 import type { MailAutomationAction } from "../../contracts";
 import type { MailWorkflowCatalogSnapshot } from "../../workflows/catalog";
-import { createMailAutomationAction, mailAutomationActionKindsFor, mailAutomationDestinationFolders } from "./mail-automation-actions";
+import {
+  createMailAutomationAction,
+  mailAutomationActionKindsFor,
+  mailAutomationDestinationFolders,
+  mailAutomationDestinationOptions,
+} from "./mail-automation-actions";
 
 const catalog: MailWorkflowCatalogSnapshot = {
   folders: [
@@ -13,6 +18,22 @@ const catalog: MailWorkflowCatalogSnapshot = {
 };
 
 describe("mail automation action editor model", () => {
+  test("destination folders show localized standard names, also as parents, beside the server's path", () => {
+    const folders: MailWorkflowCatalogSnapshot["folders"] = [
+      { id: "Fold01", name: "INBOX", path: "INBOX", role: "inbox" },
+      { id: "Fold02", name: "Projects", path: "INBOX / Projects", role: "other" },
+      { id: "Fold03", name: "Sent Items", path: "Sent Items", role: "sent" },
+      { id: "Fold04", name: "Rechnungen gesendet", path: "Rechnungen gesendet" },
+      { id: "Fold05", name: "Deleted Items", path: "Deleted Items", role: "trash" },
+    ];
+    expect(mailAutomationDestinationOptions({ ...catalog, folders }, "de")).toEqual([
+      { id: "Fold01", label: "Eingang", description: "INBOX" },
+      { id: "Fold02", label: "Eingang / Projects", description: "INBOX / Projects" },
+      { id: "Fold03", label: "Gesendet", description: "Sent Items" },
+      { id: "Fold04", label: "Rechnungen gesendet" },
+    ]);
+  });
+
   test("offers one placement after mark as read and composable collaboration actions", () => {
     const actions: MailAutomationAction[] = [{ kind: "mark_read" }];
     expect(mailAutomationActionKindsFor({ actions, catalog })).toEqual([

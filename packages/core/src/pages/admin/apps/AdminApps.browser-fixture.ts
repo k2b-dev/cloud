@@ -8,6 +8,7 @@ import tailwind from "bun-plugin-tailwind";
 import { Hono } from "hono";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
+import { checkFixtureSessionOrigin } from "../../../../../../scripts/fixtures/session-origin";
 import {
   ADMIN_ID,
   FIXTURE_NOW,
@@ -29,6 +30,7 @@ export type AdminAppsFixtureState =
   | "provider"
   | "core-fail"
   | "router-unknown"
+  | "added"
   | "keys-off"
   | "keys-error"
   | "keys-late"
@@ -131,6 +133,7 @@ export async function adminAppsBrowserFixture(options: { port?: number } = {}) {
     };
   }>();
   pages.get("/admin/apps", (c) => {
+    c.header("Set-Cookie", "session_token=fixture-session; Path=/; HttpOnly; SameSite=Lax");
     const locale = c.req.query("locale") === "en" ? "en" : "de";
     const theme = c.req.query("theme") === "dark" ? "dark" : "light";
     const state = (c.req.query("state") ?? "normal") as AdminAppsFixtureState;
@@ -321,7 +324,8 @@ export async function adminAppsBrowserFixture(options: { port?: number } = {}) {
                   ? { state: "failed" }
                   : {
                       state: "ok",
-                      apps: state === "empty" ? [] : apps,
+                      // "added": the open app was just added under "Add app" and is not in any list yet.
+                      apps: state === "empty" ? [] : state === "added" ? apps.filter((app) => app.id !== query.app) : apps,
                       issues: state === "rejected" ? [{ key: "apps/maps", reason: "routes fehlt" }] : [],
                       unchecked: 0,
                       logsHref: "/admin/observability/logs",
@@ -438,6 +442,8 @@ export async function adminAppsBrowserFixture(options: { port?: number } = {}) {
     hostname: "127.0.0.1",
     port: options.port ?? 0,
     async fetch(request) {
+      const refused = await checkFixtureSessionOrigin(request);
+      if (refused) return refused;
       const url = new URL(request.url);
       if (url.pathname === "/fixture.js") return new Response(script, { headers: { "Content-Type": "text/javascript" } });
       if (url.pathname.startsWith("/public/")) {

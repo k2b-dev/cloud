@@ -84,7 +84,7 @@ export function ActionSheet(props: {
   } satisfies Record<Outcome, { icon: string; title: () => string; text: () => string }>;
   return (
     <BottomSheet onDismiss={props.dismiss}>
-      <PanelDialog.Header title={props.binding.label} />
+      <PanelDialog.Header title={t().actionTitle({ cloud: props.binding.label })} subtitle={host()} />
       <PanelDialog.Body>
         {/* The result keeps the height the request had, so the sheet does not jump when it appears. */}
         <div class="auth-action-body" ref={body} style={height() ? { "min-height": `${height()}px` } : undefined}>
@@ -92,35 +92,28 @@ export function ActionSheet(props: {
             when={result()}
             fallback={
               <>
-                {/* Cloud Login's own frame, from the Cloud's registry and address; the app's words follow below it. */}
-                <p class="auth-action-frame">
-                  <span>
-                    <b>{props.view.app.name}</b> {t().actionOn} <b>{host()}</b> {t().actionWants}
-                  </span>
-                  <span>{t().actionRequestedBy({ app: props.view.requester.app.name })}</span>
-                </p>
-                <blockquote class="auth-action-quote">{props.view.sentence}</blockquote>
+                {/* The request itself is the headline, then the app's reason, then who runs it and who asked. The
+                    app name comes from the Cloud's registry; the address stands in the head. */}
+                <h3 class="auth-action-ask">{props.view.sentence}</h3>
                 <Show when={props.view.message}>{(message) => <p class="auth-action-message">{message()}</p>}</Show>
-                <Show when={props.view.requester.title || props.view.details.length > 0}>
-                  <dl class="auth-action-details">
-                    <Show when={props.view.requester.title}>
-                      {(title) => (
-                        <>
-                          <dt>{t().actionChat}</dt>
-                          <dd>{title()}</dd>
-                        </>
-                      )}
+                <dl class="auth-action-details">
+                  <dt>{t().actionApp}</dt>
+                  <dd>{props.view.app.name}</dd>
+                  <dt>{t().actionRequester}</dt>
+                  <dd>
+                    <Show when={props.view.requester.title} fallback={props.view.requester.app.name}>
+                      {(title) => t().actionRequesterChat({ app: props.view.requester.app.name, title: title() })}
                     </Show>
-                    <For each={props.view.details}>
-                      {(detail) => (
-                        <>
-                          <dt>{detail.label}</dt>
-                          <dd>{detailValue(detail)}</dd>
-                        </>
-                      )}
-                    </For>
-                  </dl>
-                </Show>
+                  </dd>
+                  <For each={props.view.details}>
+                    {(detail) => (
+                      <>
+                        <dt>{detail.label}</dt>
+                        <dd>{detailValue(detail)}</dd>
+                      </>
+                    )}
+                  </For>
+                </dl>
                 <Show when={props.view.truncated}>
                   <p class="auth-action-note">
                     <i class="ti ti-info-circle" aria-hidden="true" />
@@ -128,12 +121,16 @@ export function ActionSheet(props: {
                   </p>
                 </Show>
                 <p class="auth-action-meta">
+                  <Show when={props.view.assurance === "confirm"}>
+                    <i class="ti ti-lock" aria-hidden="true" />
+                    <span>{t().actionConfirm}</span>
+                    <span aria-hidden="true">·</span>
+                  </Show>
                   <span>
-                    <Show when={props.view.assurance === "confirm"}>
-                      <i class="ti ti-lock" aria-hidden="true" /> {t().actionConfirm}
-                    </Show>
+                    {t().actionExpires({
+                      time: dates.formatTimeSpan(props.view.expiresAt, { locale: locale(), base: new Date(props.auth.now()) }),
+                    })}
                   </span>
-                  <span>{t().actionExpires({ time: dates.formatTimeSpan(props.view.expiresAt, { locale: locale() }) })}</span>
                 </p>
               </>
             }

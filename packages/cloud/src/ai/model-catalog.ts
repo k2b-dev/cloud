@@ -39,7 +39,7 @@ const parameter = (value: unknown): string | number | boolean | null => {
 };
 export class AiConfigError extends Error {
   constructor(
-    readonly code: "model_not_found" | "invalid_configuration",
+    readonly code: "model_not_found" | "invalid_configuration" | "boundary_fixed" | "restricted_boundary",
     message: string,
   ) {
     super(message);
@@ -104,7 +104,7 @@ const sanitizeModel = (model: z.infer<typeof AiModelInputSchema>) => ({
   ...model,
   icon: model.icon.kind === "image" ? { ...model.icon, dataUrl: stripImageDataUrlMetadata(model.icon.dataUrl) } : model.icon,
 });
-const validateModel = (model: z.infer<typeof AiModelInputSchema>, provider: AiProvider) => {
+export const validateAiCatalogModel = (model: z.infer<typeof AiModelInputSchema>, provider: AiProvider) => {
   if (
     model.kind === "transcription" &&
     (!["openai", "openai-compatible"].includes(provider.type) ||
@@ -127,6 +127,23 @@ const validateModel = (model: z.infer<typeof AiModelInputSchema>, provider: AiPr
       "invalid_configuration",
       "Live transcription requires a realtime provider and has no chat parameters or prices.",
     );
+  if (
+    model.kind === "decision" &&
+    (provider.type !== "openai-compatible" ||
+      !model.contextWindow ||
+      model.capabilities.some((value) => value !== "vision") ||
+      model.extraBody ||
+      model.temperature !== null ||
+      model.maxOutputTokens !== null ||
+      model.maxLoadedTools !== null ||
+      model.maxToolRounds !== null)
+  )
+    throw new AiConfigError(
+      "invalid_configuration",
+      "Decision models require an OpenAI-compatible provider and a context window; only vision and token prices are supported.",
+    );
+  if (provider.dataBoundary === "restricted" && model.kind !== "chat" && model.kind !== "decision")
+    throw new AiConfigError("restricted_boundary", "Providers without a data-protection commitment only support chat models.");
   if (provider.type === "vllm-realtime" && model.kind !== "live-transcription")
     throw new AiConfigError("invalid_configuration", "Realtime providers only support live transcription models.");
   if (model.kind === "chat" && model.capabilities.some((value) => value === "transcription" || value === "live-transcription"))
@@ -163,6 +180,11 @@ export const aiModelCatalog = {
   },
   async model(id: string, db = sql, lock = false): Promise<AiModel> {
     return AiModelSchema.parse(requireRow((await rows("models", id, db, lock))[0]));
+  },
+  /** Every model with whether its provider makes no data-protection commitment, for model access. */
+  async accessModels(db = sql) {
+    const restricted = new Set((await this.providers(db)).filter((p) => p.dataBoundary === "restricted").map((p) => p.id));
+    return (await this.models(db)).map((model) => ({ id: model.id, restricted: restricted.has(model.providerId) }));
   },
   async variants(db = sql): Promise<AiModelVariant[]> {
     return (await rows("model_variants", undefined, db))
@@ -205,9 +227,16 @@ export const aiModelCatalog = {
       const current = await this.providerDetail(id, db);
       await assertAiRevision(current, revision, db);
       const data = AiProviderInputSchema.parse({ ...AiProviderInputSchema.strip().parse(current), ...patch, id });
+      // Running chats and background tasks keep a resolved model, so this boundary never changes after creation.
+      if (data.dataBoundary !== current.dataBoundary && [data.dataBoundary, current.dataBoundary].includes("restricted"))
+        throw new AiConfigError(
+          "boundary_fixed",
+          "A provider without a data-protection commitment keeps that boundary. Create a new provider for another boundary.",
+        );
       validateProvider(data);
       if (data.logo) data.logo = stripImageDataUrlMetadata(data.logo);
-      for (const model of (await this.models(db)).filter((model) => model.providerId === id)) validateModel(model, { ...current, ...data });
+      for (const model of (await this.models(db)).filter((model) => model.providerId === id))
+        validateAiCatalogModel(model, { ...current, ...data });
       if (data.type !== current.type || data.baseUrl !== current.baseUrl) {
         await db`DELETE FROM ai.provider_credentials WHERE provider_id=${id}`;
         await db`DELETE FROM ai.provider_request_headers WHERE provider_id=${id}`;
@@ -234,8 +263,8 @@ export const aiModelCatalog = {
       const result: AiModel[] = [];
       for (const input of inputs) {
         const data = sanitizeModel(AiModelInputSchema.parse(input));
-        validateModel(data, provider);
-        if (data.kind !== "chat") data.capabilities = [data.kind];
+        validateAiCatalogModel(data, provider);
+        if (data.kind === "transcription" || data.kind === "live-transcription") data.capabilities = [data.kind];
         await write("models", { ...data, providerId }, actorId, db);
         await write(
           "model_variants",
@@ -245,11 +274,7 @@ export const aiModelCatalog = {
         );
         result.push(await this.model(data.id, db));
       }
-      await aiModelAccess.syncModels(
-        (await this.models(db)).map((model) => model.id),
-        [],
-        db,
-      );
+      await aiModelAccess.syncModels(await this.accessModels(db), [], db);
       return result;
     });
   },
@@ -265,20 +290,19 @@ export const aiModelCatalog = {
       const current = await this.modelDetail(id, db);
       await assertAiRevision(current, revision, db);
       const data = sanitizeModel(AiModelInputSchema.parse({ ...AiModelInputSchema.strip().parse(current), ...patch, id }));
-      validateModel(data, await this.provider(current.providerId, db));
-      if (data.kind !== "chat") data.capabilities = [data.kind];
+      const provider = await this.provider(current.providerId, db);
+      validateAiCatalogModel(data, provider);
+      if (access?.entries.length && provider.dataBoundary === "restricted")
+        throw new AiConfigError("restricted_boundary", "Models without a data-protection commitment cannot be shared for chat.");
+      if (data.kind === "transcription" || data.kind === "live-transcription") data.capabilities = [data.kind];
       if (data.kind !== "chat" && (await this.variants(db)).some((v) => v.modelId === id && v.slug !== "standard"))
-        throw new AiConfigError("invalid_configuration", "Transcription models only have a standard variant.");
+        throw new AiConfigError("invalid_configuration", "Non-chat models only have a standard variant.");
       const variantIds = (await this.variants(db)).filter((variant) => variant.modelId === id).map((variant) => variant.id);
       for (const assignment of await this.assignments(db))
         if (assignment.variantId && variantIds.includes(assignment.variantId)) validateAiSlot(assignment.slot, data);
       if (access) {
         try {
-          await aiModelAccess.syncModels(
-            (await this.models(db)).map((model) => model.id),
-            [{ ...access, modelId: id }],
-            db,
-          );
+          await aiModelAccess.syncModels(await this.accessModels(db), [{ ...access, modelId: id }], db);
         } catch (error) {
           if (error instanceof AiModelAccessConflict) {
             const detail = await this.modelDetail(id, db);
@@ -295,7 +319,7 @@ export const aiModelCatalog = {
     return sql.begin(async (db) => {
       await lockAiModelCatalog(db);
       const model = await this.model(modelId, db, true);
-      if (model.kind !== "chat") throw new AiConfigError("invalid_configuration", "Transcription models only have a standard variant.");
+      if (model.kind !== "chat") throw new AiConfigError("invalid_configuration", "Non-chat models only have a standard variant.");
       const data = AiVariantInputSchema.parse(input);
       if (data.slug === "standard") throw new AiConfigError("invalid_configuration", "The standard variant already exists.");
       const id = `${modelId}:${data.slug}`;
@@ -311,7 +335,7 @@ export const aiModelCatalog = {
       const data = AiVariantInputSchema.parse({ ...AiVariantInputSchema.strip().parse(current), ...patch, slug: current.slug });
       const model = await this.model(current.modelId, db);
       if (model.kind !== "chat" && (data.reasoningEffort || data.extraBody || data.pricing || data.maxOutputTokens))
-        throw new AiConfigError("invalid_configuration", "Audio variants do not support chat overrides.");
+        throw new AiConfigError("invalid_configuration", "Non-chat variants do not support overrides.");
       await write("model_variants", data, actorId, db, id);
       return this.variant(id, db);
     });
@@ -325,6 +349,11 @@ export const aiModelCatalog = {
         const variant = await this.variant(variantId, db);
         const model = await this.model(variant.modelId, db);
         validateAiSlot(slot, model);
+        if ((await this.provider(model.providerId, db)).dataBoundary === "restricted")
+          throw new AiConfigError(
+            "restricted_boundary",
+            "Models without a data-protection commitment cannot be assigned to classes or tools.",
+          );
       }
       await write("model_assignments", { variantId }, actorId, db, slot);
       return requireRow((await this.assignments(db)).find((row) => row.slot === slot));
@@ -336,6 +365,7 @@ export const validateAiSlot = (slot: import("../shared/ai-models").AiModelSlot, 
 };
 export const flattenAiModelVariant = (provider: AiProvider, model: AiModel, variant: AiModelVariant): AiModelProfile => ({
   id: variant.id,
+  kind: model.kind,
   modelId: model.id,
   providerId: provider.id,
   label: model.label,

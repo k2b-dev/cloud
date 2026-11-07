@@ -279,10 +279,11 @@ export default function MailboxSettings(props: {
               ...context,
               admin: {
                 ...context.admin,
-                folders: context.admin.folders.map((folder) => ({
-                  ...folder,
-                  configuredRole: folder.id === folderId ? role : folder.configuredRole === role ? null : folder.configuredRole,
-                })),
+                folders: context.admin.folders.map((folder) => {
+                  const configuredRole = folder.id === folderId ? role : folder.configuredRole === role ? null : folder.configuredRole;
+                  // The effective role follows the mapping, like the server's, so icons and standard names follow it too.
+                  return { ...folder, configuredRole, role: configuredRole ?? folder.providerRole };
+                }),
               },
             }
           : context,

@@ -1,9 +1,9 @@
 import { describe, expect, test } from "bun:test";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import { createConfig } from "@k2b/ssr";
-import { createComponent, createRoot } from "solid-js";
+import { createComponent, createRoot, createSignal } from "solid-js";
 import { renderToString } from "solid-js/web";
 import { createChoiceLoader, filterChoiceOptions, fitChoicePills, nextEnabledChoiceIndex, placeChoicePopover } from "./choice";
 
@@ -146,8 +146,13 @@ describe("@k2b/ui complete choice input migrations", () => {
     expect(checkbox).toContain("k2b-field__required");
     expect(card).toContain('data-state="checked"');
     expect(card).toContain("ti ti-flask");
-    expect(cssRule('.k2b-ui .k2b-checkbox-card[data-state="checked"]')).toContain("border-color: var(--k2b-action)");
-    expect(cssRule('.k2b-ui .k2b-checkbox-card[data-state="checked"]')).not.toContain("background");
+    // A checked card takes the selected edge and fill of the edge contract, in platform blue.
+    expect(cssRule('.k2b-ui .k2b-checkbox-card[data-state="checked"]')).toContain(
+      "--k2b-edge-color: color-mix(in srgb, var(--k2b-action) var(--k2b-edge-selected-share), var(--k2b-surface))",
+    );
+    expect(cssRule('.k2b-ui .k2b-checkbox-card[data-state="checked"]')).toContain(
+      "background: color-mix(in srgb, var(--k2b-action) var(--k2b-edge-selected-fill), var(--k2b-surface))",
+    );
     expect(toggle).toContain('role="switch"');
     expect(toggle).toContain("checked");
 
@@ -492,6 +497,27 @@ describe("@k2b/ui complete choice input migrations", () => {
     expect(trigger).not.toContain("k2b-button__busy");
   });
 
+  test("a stable-width select chip reserves its longest option, so a new choice never moves its neighbours", () => {
+    const html = renderToString(() =>
+      createComponent(SelectChip, {
+        value: "offers",
+        stableWidth: true,
+        "aria-label": "Chart view",
+        options: [
+          { value: "offers", label: "Offers" },
+          { value: "price", label: "Median price" },
+        ],
+      }),
+    );
+    const trigger = html.match(/<button[^>]*class="[^"]*k2b-select-chip[^>]*>.*?<\/button>/s)![0];
+    expect(trigger).toContain(
+      'data-stable-width="true"><span>Offers</span><span aria-hidden="true">Offers</span><span aria-hidden="true">Median price</span>',
+    );
+    const css = readFileSync(resolve(import.meta.dir, "../styles/index.css"), "utf8");
+    expect(css).toMatch(/span\[data-stable-width="true"\] > span \{\s*grid-area: 1 \/ 1;/);
+    expect(css).toMatch(/span\[data-stable-width="true"\] > span\[aria-hidden="true"\] \{\s*visibility: hidden;/);
+  });
+
   test("an icon-only loading select chip uses the button busy overlay", () => {
     const html = renderToString(() =>
       createComponent(SelectChip, {
@@ -750,7 +776,8 @@ describe("@k2b/ui complete choice input migrations", () => {
   });
 
   test("gives steppers, colour buttons and disabled sliders a visible state", () => {
-    expect(cssRule(".k2b-ui .k2b-number-input__step:focus-visible")).toContain("var(--k2b-focus-ring)");
+    // A focused stepper draws the field's focus edge inside its own box.
+    expect(cssRule(".k2b-ui .k2b-number-input__step:focus-visible")).toContain("var(--k2b-edge-focus)");
     expect(cssRule(".k2b-ui .k2b-slider input:disabled")).toContain("cursor: not-allowed");
     const disabled = renderToString(() =>
       createComponent(Slider, {
@@ -825,6 +852,61 @@ describe("@k2b/ui complete choice input migrations", () => {
           expect(firstAborted).toBe(true);
           expect(loader.error()).toBeUndefined();
           expect(loader.options()).toEqual([{ value: "second", label: "SECOND" }]);
+          dispose();
+          resolveTest();
+        })().catch((error) => {
+          dispose();
+          rejectTest(error);
+        });
+      });
+    });
+  });
+
+  test("is loading from the moment a debounced search is scheduled until it answers or is cancelled", async () => {
+    await new Promise<void>((resolveTest, rejectTest) => {
+      createRoot((dispose) => {
+        const [source, setSource] = createSignal(true);
+        const held = new Map<string, () => void>();
+        const loader = createChoiceLoader(
+          () =>
+            source()
+              ? (query: string) =>
+                  new Promise<readonly { value: string; label: string }[]>((resolve) =>
+                    held.set(query, () => resolve([{ value: query, label: query }])),
+                  )
+              : undefined,
+          () => 5,
+        );
+
+        void (async () => {
+          loader.load("first");
+          expect(loader.loading()).toBe(true);
+          loader.cancel();
+          expect(loader.loading()).toBe(false);
+          // An active request that is cancelled stops loading at once, and its late answer changes nothing.
+          loader.load("active", true);
+          loader.cancel();
+          expect(loader.loading()).toBe(false);
+          held.get("active")!();
+          await Bun.sleep(0);
+          expect(loader.loading()).toBe(false);
+          expect(loader.options()).toEqual([]);
+          // An older answer that arrives while a newer search waits out its debounce keeps it loading.
+          loader.load("older", true);
+          loader.load("newer");
+          held.get("older")!();
+          await Bun.sleep(0);
+          expect(loader.loading()).toBe(true);
+          await Bun.sleep(20);
+          held.get("newer")!();
+          await Bun.sleep(0);
+          expect(loader.loading()).toBe(false);
+          expect(loader.options()).toEqual([{ value: "newer", label: "newer" }]);
+          // A source that goes away during the debounce ends the loading instead of keeping it forever.
+          loader.load("gone");
+          setSource(false);
+          await Bun.sleep(20);
+          expect(loader.loading()).toBe(false);
           dispose();
           resolveTest();
         })().catch((error) => {
@@ -955,7 +1037,7 @@ describe("@k2b/ui complete choice input migrations", () => {
     expect(filled).toContain('<span class="k2b-tag">solid</span>');
   });
 
-  test("sizes choice popovers to their trigger and clamps them into the viewport", () => {
+  test("makes choice popovers at least as wide as their trigger and clamps them into the viewport", () => {
     const originalWindow = globalThis.window;
     Object.assign(globalThis, {
       window: { innerWidth: 1024, innerHeight: 300 },
@@ -968,9 +1050,15 @@ describe("@k2b/ui complete choice input migrations", () => {
           height: values.bottom - values.top,
         }) as DOMRect;
       const style: Record<string, string> = {};
+      const setProperty = (name: string, value: string) => {
+        style[name] = value;
+      };
+      const dataset: Record<string, string> = {};
+      // The stylesheet lets the popover grow to its options; here it renders 240 px wide.
       const popover = {
-        style,
-        getBoundingClientRect: () => ({ height: 200, width: 160 }) as DOMRect,
+        style: Object.assign(style, { setProperty }),
+        dataset,
+        getBoundingClientRect: () => ({ height: 200, width: 240 }) as DOMRect,
       } as unknown as HTMLElement;
 
       placeChoicePopover(
@@ -980,10 +1068,11 @@ describe("@k2b/ui complete choice input migrations", () => {
         popover,
       );
 
-      // Cloud sizes the panel to the control, with no minimum that would make a
-      // narrow trigger open a wider, misaligned dropdown.
-      expect(style.width).toBe("160px");
-      expect(style.left).toBe("856px");
+      // The trigger is the minimum, the rendered width decides the clamp at the viewport edge.
+      expect(dataset.width).toBe("fit");
+      expect(style["--k2b-choice-min-width"]).toBe("160px");
+      expect(style.width).toBeUndefined();
+      expect(style.left).toBe("776px");
       expect(style.top).toBe("46px");
 
       placeChoicePopover(
@@ -991,9 +1080,12 @@ describe("@k2b/ui complete choice input migrations", () => {
           getBoundingClientRect: () => rect({ left: 12, top: 10, bottom: 40, width: 96 }),
         } as HTMLElement,
         popover,
+        {},
+        240,
       );
 
-      expect(style.width).toBe("96px");
+      // While open, the widest width so far is the floor, so filtering never narrows it.
+      expect(style["--k2b-choice-min-width"]).toBe("240px");
       expect(style.left).toBe("12px");
       expect(style.top).toBe("44px");
     } finally {

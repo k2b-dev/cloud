@@ -7,6 +7,7 @@ describe("assistantHelp", () => {
       "assistant-overview",
       "assistant-workflow",
       "assistant-guidance",
+      "assistant-cloud-app",
     ]);
     expect(assistantHelp.getMarkdown("assistant-overview")).toContain("workspace for your personal Cloud agent");
     expect(assistantHelp.getMarkdown("assistant-overview")).toContain("chats started from another application");

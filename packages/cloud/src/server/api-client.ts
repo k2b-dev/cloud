@@ -1,5 +1,6 @@
 import type { Hono } from "hono";
 import { hc } from "hono/client";
+import { beginAppAction } from "../browser/app-actions";
 import { insideMobileApp, renewAppSession } from "../browser/app-session";
 
 export type CreateApiClientConfig = {
@@ -16,12 +17,18 @@ export type CreateApiClientConfig = {
  * answers it before any handler runs, and a route that answers `401` itself must do so before it changes anything.
  */
 const fetchInMobileApp = async (input: Parameters<typeof fetch>[0], init?: Parameters<typeof fetch>[1]): Promise<Response> => {
-  const response = await fetch(input, init);
-  if (response.status !== 401 || init?.body instanceof ReadableStream) return response;
-  // Also after a renewal that found the session current: another renewal on this page may have replaced the session
-  // after this request left with the old one.
-  if (!(await renewAppSession()).ok) return response;
-  return fetch(input, init);
+  const method = (init?.method ?? (input instanceof Request ? input.method : "GET")).toUpperCase();
+  const finish = ["GET", "HEAD", "OPTIONS"].includes(method) ? () => {} : beginAppAction();
+  try {
+    const response = await fetch(input, init);
+    if (response.status !== 401 || init?.body instanceof ReadableStream) return response;
+    // Also after a renewal that found the session current: another renewal on this page may have replaced the session
+    // after this request left with the old one.
+    if (!(await renewAppSession()).ok) return response;
+    return await fetch(input, init);
+  } finally {
+    finish();
+  }
 };
 
 // On the web, the client hands back fetch's own promise, so its answers arrive exactly as without the app session.
@@ -38,7 +45,7 @@ export const createApiClient = <TApi extends Hono<any, any, any>>(config: Create
 /**
  * Untyped fallback API client for core-only browser code.
  */
-export const apiClient: any = hc("/api");
+export const apiClient: any = hc("/api", { fetch: fetchWithAppSession });
 
 // ==========================
 // Clipboard

@@ -1,0 +1,6 @@
+### The Mail composer did not scroll a long message
+
+- **What happened:** In the Mail composer, a message longer than the Write pane could not be scrolled with the mouse wheel or by touch. The HTML preview scrolled. While someone typed, the formatting toolbar scrolled out of view and did not come back.
+- **Root cause:** `TextEditor` grows with its text (`.cm-scroller` is `overflow: visible`), so its host must scroll. Mail put it in an `overflow-hidden` pane. CodeMirror still moved that pane when it scrolled the caret into view, but wheel and touch input could not scroll it. The toolbar sat inside the moved content, so it scrolled away too.
+- **Error class:** A content-sized editor inside a fixed-height host with `overflow: hidden` clips the content instead of scrolling it.
+- **Guard:** `packages/mail/src/frontend/_components/MailComposerEditor.browser.test.ts` ("Mail composer with a long message" uses a desktop and a phone viewport. It scrolls the Write pane with the wheel, moves the caret with the keyboard to the start and the end, and checks that the caret stays visible and the toolbar stays in place). The `TextEditor` toolbar is now sticky in any scrolling host, and the caret keeps clear of it.

@@ -63,6 +63,25 @@ export const migrate = async (): Promise<void> => {
   `.simple();
   console.log("  ✓ logging.trace_spans table");
 
+  // One row per static source/name and UTC minute; no job ids or payloads.
+  await sql`
+    CREATE TABLE IF NOT EXISTS logging.run_minutes (
+      bucket TIMESTAMPTZ NOT NULL,
+      last_ended_at TIMESTAMPTZ NOT NULL,
+      source TEXT NOT NULL,
+      app_id TEXT NOT NULL,
+      category TEXT NOT NULL,
+      name TEXT NOT NULL,
+      run_count BIGINT NOT NULL,
+      total_duration_ms DOUBLE PRECISION NOT NULL,
+      max_duration_ms DOUBLE PRECISION NOT NULL,
+      durations BIGINT[] NOT NULL,
+      PRIMARY KEY (bucket, source, app_id, category, name)
+    )
+  `.simple();
+  await sql`CREATE INDEX IF NOT EXISTS idx_logging_run_minutes_source_bucket
+    ON logging.run_minutes(source, bucket DESC)`.simple();
+
   // span_key deterministically defines the composite primary key. Keeping a
   // second unique constraint creates two competing conflict targets under
   // concurrent idempotent starts.

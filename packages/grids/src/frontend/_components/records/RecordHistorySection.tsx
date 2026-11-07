@@ -223,6 +223,7 @@ export default function RecordHistorySection(props: HistoryProps) {
   return (
     <DetailPanel.Section
       title={t().history}
+      icon="ti ti-history"
       count={props.entries.length || undefined}
       collapsible
       summary={

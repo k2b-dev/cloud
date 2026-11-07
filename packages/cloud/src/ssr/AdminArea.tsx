@@ -79,17 +79,21 @@ export function AdminArea(props: AdminAreaProps) {
 
 /** The save status in a level head. A phone has no room there; `AdminAreaSaveStatusFoot` shows it at the bottom. */
 export const AdminAreaSaveStatusHead = () => (
-  <div class="hidden md:block">
+  <div class="max-md:hidden md:block">
     <SettingsSaveStatus />
   </div>
 );
 export const AdminAreaSaveStatusFoot = () => (
-  <div class="sticky bottom-0 flex justify-end bg-(--k2b-surface) px-2 py-3 md:hidden">
+  <div class="sticky bottom-0 justify-end bg-(--k2b-surface) px-2 py-3 max-md:flex md:hidden">
     <SettingsSaveStatus />
   </div>
 );
 
-/** A section that fills the width beside the first column, such as a dashboard or one form. */
+/**
+ * A section that fills the width beside the first column, such as a dashboard or one form. It is the page: its title
+ * takes the page step of the type scale, and its content starts at the title's edge, so a form or a frame inside it
+ * adds no inset of its own.
+ */
 export function AdminAreaPane(props: {
   label: string;
   description?: JSX.Element;
@@ -107,6 +111,7 @@ export function AdminAreaPane(props: {
   return (
     <AppWorkspace.MainPane
       id="section"
+      heading="page"
       label={props.label}
       description={props.description}
       lead={props.lead}

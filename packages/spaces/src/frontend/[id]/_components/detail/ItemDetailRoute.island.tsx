@@ -1,4 +1,5 @@
 import { registerSearchNavigation } from "@k2b/cloud/browser/search";
+import type { AccessMember } from "@k2b/cloud/contracts";
 import type { DateContext } from "@k2b/stdlib";
 import { query } from "@k2b/stdlib/solid";
 import { AppWorkspace, Button, Placeholder, prompts } from "@k2b/ui";
@@ -31,6 +32,8 @@ type Props = {
   /** List, Table and Kanban step with J and K; the Calendar does not. */
   steppable?: boolean;
   canWrite: boolean;
+  /** Whether the person may read who has access to the space; decided on the server. */
+  accessVisible: boolean;
   mailIntegrationAvailable: boolean;
 };
 
@@ -120,6 +123,18 @@ export default function ItemDetailRoute(props: Props) {
     },
     subscribe: ({ invalidate }) =>
       subscribeToSpacesDataInvalidation(["wormholes"], (invalidation) => (props.canWrite ? invalidate(invalidation) : Promise.resolve())),
+  });
+
+  // Who has access belongs to the space, not the item: it loads once, when the first item opens after the first paint.
+  const [accessWanted, setAccessWanted] = createSignal(false);
+  const accessQuery = query.create<string, AccessMember[]>({
+    source: () => props.spaceId,
+    enabled: () => props.accessVisible && accessWanted(),
+    load: async (spaceId, { abortSignal }) => {
+      const response = await apiClient[":id"].access.members.$get({ param: { id: spaceId } }, { init: { signal: abortSignal } });
+      if (!response.ok) throw new Error(await readResponseError(response, t.loadAccessFailed));
+      return response.json();
+    },
   });
 
   const detailQuery = query.create<string, DetailSnapshot, { cursor: string | null }>({
@@ -299,6 +314,9 @@ export default function ItemDetailRoute(props: Props) {
   });
 
   const detail = currentDetail;
+  createEffect(() => {
+    if (detail()) setAccessWanted(true);
+  });
   const scrollKey = () =>
     `spaces-detail-${props.spaceId}-${detail()?.item.id ?? "empty"}-${detail()?.recurringContext?.recurrenceId ?? "series"}`;
 
@@ -353,6 +371,15 @@ export default function ItemDetailRoute(props: Props) {
               blocks={current().blocks}
               dateConfig={props.dateConfig}
               canWrite={props.canWrite}
+              access={
+                props.accessVisible
+                  ? {
+                      members: accessQuery.data() ?? [],
+                      state: accessQuery.error() ? "error" : accessQuery.data() ? "ready" : "loading",
+                      retry: () => void accessQuery.refresh(),
+                    }
+                  : null
+              }
               mailIntegrationAvailable={props.mailIntegrationAvailable}
               scrollPreserveKey={scrollKey()}
             />

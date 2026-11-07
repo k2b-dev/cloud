@@ -289,6 +289,15 @@ export interface MailConnector {
    * operation and closes when `fn` settles. An operation that finds the connection closed or failed opens
    * a new one, so each operation behaves as it would on its own connection, only without a login per step.
    */
-  withSession<C extends ProviderConnectionInput, T>(config: C, fn: (session: C) => Promise<T>): Promise<T>;
+  /**
+   * Runs `fn` with one shared IMAP connection. With `reuseKey`, the connection may come from, and be
+   * kept for, the previous and next session with the same key; the key must name the same account
+   * and credential revision. `keep`, asked once after `fn` succeeded, can decline keeping it.
+   */
+  withSession<C extends ProviderConnectionInput, T>(
+    config: C,
+    fn: (session: C) => Promise<T>,
+    options?: { reuseKey?: string; keep?: () => Promise<boolean> },
+  ): Promise<T>;
   listenForChanges?(config: ProviderConnectionInput, request: ConnectorChangeListenerRequest): Promise<ConnectorChangeListener>;
 }

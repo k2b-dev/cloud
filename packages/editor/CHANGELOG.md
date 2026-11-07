@@ -1,5 +1,73 @@
 # Changelog
 
+## [0.6.5](https://github.com/k2b-dev/cloud/compare/npm-editor-v0.6.4...npm-editor-v0.6.5) (2026-11-06)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @k2b/ui bumped from 0.48.0 to 0.49.0
+
+## [0.6.4](https://github.com/k2b-dev/cloud/compare/npm-editor-v0.6.3...npm-editor-v0.6.4) (2026-11-05)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @k2b/ui bumped from 0.47.0 to 0.48.0
+
+## [0.6.3](https://github.com/k2b-dev/cloud/compare/npm-editor-v0.6.2...npm-editor-v0.6.3) (2026-11-05)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @k2b/ui bumped from 0.46.0 to 0.47.0
+
+## [0.6.2](https://github.com/k2b-dev/cloud/compare/npm-editor-v0.6.1...npm-editor-v0.6.2) (2026-11-03)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @k2b/ui bumped from 0.45.0 to 0.46.0
+
+## [0.6.1](https://github.com/k2b-dev/cloud/compare/npm-editor-v0.6.0...npm-editor-v0.6.1) (2026-11-02)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @k2b/ui bumped from 0.44.0 to 0.45.0
+
+## [0.6.0](https://github.com/k2b-dev/cloud/compare/npm-editor-v0.5.1...npm-editor-v0.6.0) (2026-11-02)
+
+
+### Features
+
+* **platform:** run on Bun 1.4.4 and Alpine 3.24 so isolated test runs stop segfaulting ([f551aa6](https://github.com/k2b-dev/cloud/commit/f551aa683f43dbf51c709973292649c18e729292))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @k2b/ui bumped from 0.43.0 to 0.44.0
+
+## [0.5.1](https://github.com/k2b-dev/cloud/compare/npm-editor-v0.5.0...npm-editor-v0.5.1) (2026-11-02)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @k2b/ui bumped from 0.42.0 to 0.43.0
+
 ## [0.5.0](https://github.com/k2b-dev/cloud/compare/npm-editor-v0.4.0...npm-editor-v0.5.0) (2026-11-01)
 
 

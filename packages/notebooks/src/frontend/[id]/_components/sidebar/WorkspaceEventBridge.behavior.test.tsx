@@ -4,7 +4,13 @@ import { isServer, render } from "solid-js/web";
 import { createDomTestHarness, type DomTestHarness } from "../../../../../../ui/test/dom";
 import { notebooksWorkspace } from "../../../../lib/workspace-events";
 import { presencePeerId } from "../../../lib/presence-peer";
-import { NOTE_SOFT_NAVIGATED_EVENT, PRESENCE_EVENT, SYNC_STATE_REQUEST_EVENT } from "../detail/events";
+import {
+  NOTE_SOFT_NAVIGATED_EVENT,
+  PRESENCE_EVENT,
+  PRESENCE_RETRY_EVENT,
+  PRESENCE_STATUS_EVENT,
+  SYNC_STATE_REQUEST_EVENT,
+} from "../detail/events";
 import { WORKSPACE_EVENT, type WorkspaceEventDetail } from "./workspace-events";
 
 class FakeWebSocket {
@@ -227,6 +233,44 @@ describe("WorkspaceEventBridge", () => {
     window.dispatchEvent(new CustomEvent(NOTE_SOFT_NAVIGATED_EVENT, { detail: { noteId: "Note02" } }));
     expect(socket.sent).toEqual(initial);
     expect(JSON.parse(socket.sent.at(-1)!)).toMatchObject({ type: "notes.workspace.presence.watch", payload: { noteId: null } });
+  });
+
+  test("presence reports connecting, live, and down, and Try again reconnects or watches again at once", async () => {
+    const statuses: string[] = [];
+    const listener = (event: Event) => statuses.push((event as CustomEvent<{ status: string }>).detail.status);
+    window.addEventListener(PRESENCE_STATUS_EVENT, listener);
+    try {
+      await mount();
+      const socket = latestSocket();
+      socket.open();
+      socket.message(WS.ready, { notebookId: NOTEBOOK_ID });
+      socket.message("notes.presence.snapshot", { noteId: "Note01", participants: [] });
+      expect(statuses.at(-1)).toBe("live");
+      // One quick reconnect is routine; a second failure is an outage.
+      socket.close(1006);
+      expect(statuses.at(-1)).toBe("connecting");
+      runReconnect();
+      latestSocket().close(1006);
+      expect(statuses.at(-1)).toBe("down");
+      const before = FakeWebSocket.instances.length;
+      window.dispatchEvent(new CustomEvent(PRESENCE_RETRY_EVENT));
+      expect(FakeWebSocket.instances.length).toBe(before + 1);
+      expect(pendingReconnects()).toHaveLength(0);
+      expect(statuses.at(-1)).toBe("connecting");
+      // A refused note sends no list, so the panel stops waiting; Try again asks for the note again.
+      const retried = latestSocket();
+      retried.open();
+      retried.message(WS.ready, { notebookId: NOTEBOOK_ID });
+      retried.message(WS.error, { noteId: "Note01", code: "ACCESS_DENIED", message: "Access denied" });
+      expect(statuses.at(-1)).toBe("down");
+      const sent = retried.sent.length;
+      window.dispatchEvent(new CustomEvent(PRESENCE_RETRY_EVENT));
+      expect(JSON.parse(retried.sent.at(-1)!)).toMatchObject({ type: "notes.workspace.presence.watch", payload: { noteId: "Note01" } });
+      expect(retried.sent.length).toBe(sent + 1);
+      expect(statuses.at(-1)).toBe("connecting");
+    } finally {
+      window.removeEventListener(PRESENCE_STATUS_EVENT, listener);
+    }
   });
 
   test("a failed opened-note watch leaves the workspace connected without reloading", async () => {

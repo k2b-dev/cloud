@@ -95,7 +95,11 @@ function DictationCard(props: { dictation: DictationController; notice: Dictatio
         return {
           icon: "ti-microphone-off",
           title: t().blockedTitle,
-          body: (
+          // An installed app has no address bar, and where a device keeps the app's permissions differs, so its
+          // card names no path.
+          body: matchMedia("(display-mode: standalone)").matches ? (
+            <p>{t().blockedApp}</p>
+          ) : (
             <>
               <p>{t().blockedBody}</p>
               <ol>

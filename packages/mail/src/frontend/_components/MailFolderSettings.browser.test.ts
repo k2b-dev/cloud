@@ -238,7 +238,8 @@ describe("Mail folder settings", () => {
           const step = (await left("Accounting")) - (await left("Shared"));
           expect(step).toBe(20);
           expect((await left("Important", 0)) - (await left("Accounting"))).toBe(step);
-          expect(await left("Sent Mail")).toBe(await left("Inbox"));
+          // Standard folders show their localized names.
+          expect(await left(theme === "dark" ? "Gesendet" : "Sent")).toBe(await left(theme === "dark" ? "Eingang" : "Inbox"));
           // Phones say only "inherited"; the source is in the row's name and the menu.
           const inherited = await rowState(page, "2021").innerText();
           expect(inherited).toBe(
@@ -337,9 +338,11 @@ describe("Mail folder settings", () => {
       await choose(page, "Only in the folder");
       await settled(page, 1);
 
-      // Sent Mail never decides what combined views show, so it shows like Everywhere, and its menu says so.
-      expect(await rowState(page, "Sent Mail").getAttribute("data-kind")).toBe("default");
-      await trigger(page, "Sent Mail").click();
+      // Sent never decides what combined views show, so it shows like Everywhere, and its menu says so. The row
+      // shows the localized name and keeps the server's name "Sent Mail" beside it.
+      expect(await rowState(page, "Sent").getAttribute("data-kind")).toBe("default");
+      expect(await trigger(page, "Sent").locator(".mail-folder-tree__note").innerText()).toBe("Sent Mail");
+      await trigger(page, "Sent").click();
       const radio = (label: string) => page.locator(".mail-folder-menu:popover-open [role='menuitemradio']", { hasText: label });
       expect(await radio("Everywhere").getAttribute("aria-checked")).toBe("true");
       expect(await radio("Everywhere").isDisabled()).toBe(false);

@@ -44,6 +44,11 @@
     background: var(--ui-hover);
   }
 
+  /* So does the row whose right-click menu is open; the open and the checked rows keep their own fill. */
+  .mail-list-entry:where(:has(> [aria-haspopup="menu"][aria-expanded="true"])) {
+    background: var(--ui-hover);
+  }
+
   /* The open row and the checked rows share the app row fill; the checkbox carries the checked state. */
   .mail-list-entry-active,
   .mail-list-entry-active:hover,
@@ -159,11 +164,44 @@
     color: var(--k2b-text-muted);
   }
 
+  /* Three faces and "+nn" fit the fixed column, so a row's stack never moves the columns beside it. */
+  .mail-row-participants {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    color: var(--k2b-text-secondary);
+  }
+
   .mail-row-assignee-cell {
-    display: block;
+    color: var(--k2b-text-secondary);
+  }
+
+  /* The first face and name, then "+n". Only the name shortens, so "+n" always shows and every row keeps the column's
+     width. */
+  .mail-row-assignee-cell > .k2b-tooltip-wrapper {
+    min-width: 0;
+  }
+
+  .mail-row-assignee {
+    display: inline-flex;
+    min-width: 0;
+    align-items: center;
+    gap: 0.375rem;
+  }
+
+  .mail-row-assignee > * {
+    flex: none;
+  }
+
+  .mail-row-assignee > .mail-row-assignee-name {
+    flex: 0 1 auto;
+    min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
-    color: var(--k2b-text-secondary);
+  }
+
+  .mail-row-assignee-none {
+    color: var(--k2b-text-muted);
   }
 
   .mail-row-status-cell {
@@ -213,15 +251,42 @@
     font-variant-numeric: tabular-nums;
   }
 
-  /* The column template: shared mailboxes show who is responsible and the status; personal ones do not. */
+  /* The column template: every mailbox shows who wrote; shared ones also who is responsible and the status. */
   .mail-columns,
   .mail-columns-head {
-    --mail-columns: minmax(8rem, 1fr) minmax(0, 2.6fr) minmax(7rem, 0.9fr) 9rem max-content;
+    --mail-columns: minmax(8rem, 1fr) minmax(0, 2.6fr) 6rem minmax(7rem, 0.9fr) 9rem max-content;
   }
 
   .mail-columns.mail-columns-personal,
   .mail-columns-head.mail-columns-personal {
-    --mail-columns: minmax(8rem, 1fr) minmax(0, 3fr) max-content;
+    --mail-columns: minmax(8rem, 1fr) minmax(0, 3fr) 6rem max-content;
+  }
+
+  /* The list and its heading measure their shared width: who wrote shows only where the other columns keep their room,
+     from 52 rem in a shared mailbox and 34 rem in a personal one. The query matches on the server render too, so
+     nothing moves once the page runs. */
+  .mail-columns-area {
+    container: mail-columns / inline-size;
+  }
+
+  @container mail-columns (width < 52rem) {
+    :is(.mail-columns, .mail-columns-head):not(.mail-columns-personal) :is(.mail-row-cells, .mail-columns-head-cells) {
+      --mail-columns: minmax(8rem, 1fr) minmax(0, 2.6fr) minmax(7rem, 0.9fr) 9rem max-content;
+    }
+
+    :is(.mail-columns, .mail-columns-head):not(.mail-columns-personal) :is(.mail-row-participants-cell, .mail-columns-head-participants) {
+      display: none;
+    }
+  }
+
+  @container mail-columns (width < 34rem) {
+    .mail-columns-personal :is(.mail-row-cells, .mail-columns-head-cells) {
+      --mail-columns: minmax(8rem, 1fr) minmax(0, 3fr) max-content;
+    }
+
+    .mail-columns-personal :is(.mail-row-participants-cell, .mail-columns-head-participants) {
+      display: none;
+    }
   }
 
   /* Same horizontal geometry as a row, so every heading sits above its column. */
@@ -252,6 +317,13 @@
     padding: 0 0.625rem 0.25rem 1.3125rem;
   }
 
+  /* Assigned to me's group headings sit where day headings do; the needs-action dot repeats the status column's. */
+  .mail-assigned-group {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+  }
+
   /* The day's progress above the list: fixed height, so it never pushes the rows when the count changes. */
   .mail-done-line {
     display: flex;
@@ -267,6 +339,19 @@
   .mail-done-line b {
     font-weight: 600;
     color: var(--ui-app-accent-text);
+  }
+
+  /* The done conversations a work list leaves out, at its end: one quiet line of fixed height, so nothing moves. */
+  .mail-hidden-done {
+    display: flex;
+    height: 2rem;
+    align-items: center;
+    gap: 0.375rem;
+    margin: 0;
+    padding: 0 0.5rem;
+    font-size: 0.75rem;
+    color: var(--k2b-text-muted);
+    white-space: nowrap;
   }
 
   /* "All done.": a calm moment in the list's place, with the way to what automations did today. */
@@ -343,6 +428,7 @@
       content: none;
     }
 
+    .mail-row-participants-cell,
     .mail-row-assignee-cell,
     .mail-row-status-cell {
       display: none;
@@ -503,11 +589,33 @@
     color: color-mix(in srgb, var(--mail-tag) 40%, white);
   }
 
+  /* A Drafts folder row leads its subject with a small "Draft" tag that never gives way to the subject. */
+  .mail-row-draft-tag {
+    flex: none;
+    font-size: 0.75rem;
+  }
+
+  /* A row whose delete request runs keeps its place and size until the answer. */
+  .mail-list-entry-pending {
+    opacity: 0.6;
+    cursor: progress;
+  }
+
   .mail-row-tag-more,
   .mail-row-waiting {
     display: inline-flex;
     align-items: center;
     gap: 0.1875rem;
+  }
+
+  /* Who wrote sits at the end of the fourth line, clear of the download button of a matched attachment. */
+  .mail-row-extra > .mail-row-extra-participants {
+    display: inline-flex;
+    margin-left: auto;
+  }
+
+  .mail-row-extra > .mail-row-extra-participants[data-clear-download] {
+    margin-right: 2rem;
   }
 
   .mail-recipient-input:has(.mail-recipient-pill-shell :focus-visible):focus-within,
@@ -581,23 +689,21 @@
     background: var(--ui-surface);
   }
 
-  .k2b-ui .mail-focus-workspace {
+  /* Mail's page without a mailbox: the setup or the error on the workspace's surface. */
+  .k2b-ui .mail-landing-workspace {
     background: var(--ui-surface);
   }
 
-  /* The head row above holds the views, so the list starts right below it. */
-  .k2b-ui .mail-focus-main {
+  .k2b-ui .mail-landing-main {
     padding: 0.25rem clamp(1rem, 3vw, 2.5rem) clamp(1rem, 3vw, 2.5rem);
     overflow-y: auto;
     background: var(--ui-surface);
   }
 
-  /* Focus is deliberately not a mailbox: the views in the head, one list on
-     the workspace's surface. Objects live in the sidebar. */
-  .mail-overview-page {
-    display: flex;
-    min-width: 0;
-    flex-direction: column;
+  @media (max-width: 40rem) {
+    .k2b-ui .mail-landing-main {
+      padding: 0.25rem 1rem 1rem;
+    }
   }
 
   .mail-sidebar-needs-action {
@@ -708,68 +814,6 @@
     font-size: 0.6875rem;
   }
 
-  /* Focus rows are the mailbox list's rows, always with the fourth line for
-     their mailbox. The gap matches the mailbox list. */
-  .mail-focus-list {
-    display: flex;
-    flex-direction: column;
-    gap: 0.125rem;
-  }
-
-  .mail-focus-row {
-    color: inherit;
-    text-decoration: none;
-  }
-
-  .mail-focus-row:focus-visible {
-    outline: var(--k2b-focus-width) solid var(--k2b-focus-ring);
-    outline-offset: 2px;
-  }
-
-  /* A long mailbox name shortens before "Waiting", which keeps its room. */
-  .mail-row-mailbox {
-    display: inline-flex;
-    flex: 0 1 auto;
-    min-width: 0;
-    max-width: 16rem;
-    align-items: center;
-    gap: 0.1875rem;
-    overflow: hidden;
-  }
-
-  .mail-row-mailbox-name {
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  /* Loading rows have the layout of the rows they stand for, so the list keeps its size when the
-     rows arrive. They appear only once a read takes a moment, so a fast one never flashes them.
-     The delay is a debounce, not motion: it stays under reduced motion, which only makes the fade instant. */
-  .mail-focus-skeleton > .mail-focus-row {
-    animation: mail-focus-skeleton-appear 150ms ease-out 300ms both;
-    animation-delay: 300ms !important;
-  }
-
-  .mail-focus-skeleton > .mail-focus-row:hover {
-    background: none;
-  }
-
-  .mail-focus-skeleton-shape {
-    display: inline-block;
-    height: 0.75em;
-    border-radius: 0.25rem;
-    vertical-align: middle;
-    background: var(--k2b-surface-muted);
-  }
-
-  @media (max-width: 40rem) {
-    .k2b-ui .mail-focus-main {
-      padding: 0.25rem 1rem 1rem;
-    }
-  }
-
   .mail-list-preview {
     display: block;
     min-width: 0;
@@ -818,11 +862,26 @@
     height: auto;
   }
 
-  .mail-attachment-preview {
+  /* A message's attachments sit between its header and its body, so they show without scrolling past the text. */
+  .mail-message-attachments {
+    margin-bottom: 0.75rem;
+  }
+
+  .mail-message-attachments__head {
+    display: flex;
     min-height: 1.75rem;
-    padding: 0 0.375rem;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+  }
+
+  .mail-message-attachments__count {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
     font-size: 0.75rem;
-    line-height: 1rem;
+    font-weight: 500;
+    color: var(--k2b-text-secondary);
   }
 
   .mail-composer-surface {
@@ -866,7 +925,7 @@
     gap: 0.125rem;
   }
 
-  .mail-reader-toolbar-actions > :has([data-section-start]) {
+  .mail-reader-toolbar-actions > :is([data-section-start], :has([data-section-start])) {
     margin-inline-start: 0.375rem;
   }
 
@@ -1155,7 +1214,7 @@
 
   /* Controls do not print. The message header is a button too, but it carries
      the sender, recipients and date, so it stays on paper. */
-  body.mail-printing-conversation [data-mail-print-root] :where([data-mail-phone-actions], .mail-reader-controls, .mail-reader-back, .mail-reader-show-list) {
+  body.mail-printing-conversation [data-mail-print-root] :where([data-mail-phone-actions], .mail-reader-controls, .mail-reader-back, .mail-reader-close) {
     display: none !important;
   }
 
@@ -1361,8 +1420,7 @@
 }
 
 @media (prefers-reduced-motion: no-preference) {
-  .k2b-ui .mail-quick-look__placeholder,
-  .k2b-ui .mail-focus-skeleton-shape {
+  .k2b-ui .mail-quick-look__placeholder {
     animation: mail-quick-look-pulse 1.4s ease-in-out infinite;
   }
 }
@@ -1379,12 +1437,6 @@
   }
 }
 
-@keyframes mail-focus-skeleton-appear {
-  from {
-    opacity: 0;
-  }
-}
-
 @keyframes mail-quick-look-pulse {
   50% {
     opacity: 0.55;
@@ -1392,10 +1444,11 @@
 }
 
 /* The way back to the list is the reader's first button while the list and
-   the reader take turns (below 64 rem of app width); beside the list the
-   reader shows no back button, and a hidden list comes back from its own
-   button. Unlayered, because the shared button style is unlayered too. */
-.k2b-ui .mail-reader-toolbar .mail-reader-show-list {
+   the reader take turns (below 64 rem of app width). Wider, the reader shows
+   no back button beside the list; a reader without the list beside it ends
+   its toolbar with × instead. Unlayered, because the shared button style is
+   unlayered too. */
+.k2b-ui .mail-reader-toolbar .mail-reader-close {
   display: none;
 }
 
@@ -1412,6 +1465,32 @@
 }
 .k2b-ui .mail-reader-toolbar .mail-reader-respond:is([data-mail-toolbar-action="reply_all"], [data-mail-toolbar-action="forward"]) .mail-reader-respond-label {
   display: none;
+}
+/* The person's other actions are icons until the bar has room for their short names. */
+.k2b-ui .mail-reader-toolbar .mail-reader-toolbar-action {
+  width: 2rem;
+  min-height: 2rem;
+  padding: 0;
+}
+.k2b-ui .mail-reader-toolbar .mail-reader-action-label {
+  display: none;
+}
+/* With the subject in its own row, a wide bar names its actions: the replies, and up to three other actions. */
+@container mail-reader-toolbar (width >= 48rem) {
+  .k2b-ui .mail-reader-toolbar .mail-reader-respond:is([data-mail-toolbar-action="reply_all"], [data-mail-toolbar-action="forward"]) {
+    width: auto;
+    padding-inline: 0.625rem;
+  }
+  .k2b-ui .mail-reader-toolbar .mail-reader-respond:is([data-mail-toolbar-action="reply_all"], [data-mail-toolbar-action="forward"]) .mail-reader-respond-label {
+    display: inline;
+  }
+  .k2b-ui .mail-reader-toolbar-actions:not(:has(> :nth-child(4))) .mail-reader-toolbar-action {
+    width: auto;
+    padding-inline: 0.625rem;
+  }
+  .k2b-ui .mail-reader-toolbar-actions:not(:has(> :nth-child(4))) .mail-reader-action-label {
+    display: inline;
+  }
 }
 .k2b-ui .mail-reader-toolbar-actions > :nth-child(n + 5) {
   display: none;
@@ -1441,8 +1520,18 @@
   }
 }
 
+/* From tablets on, the actions take their own row above the subject, which then has the toolbar's full width to wrap. */
+@media (min-width: 48rem) {
+  .mail-reader-toolbar { flex-wrap: wrap; row-gap: 0.25rem; }
+  .mail-reader-controls { flex: 1 1 auto; min-width: 0; }
+  .mail-reader-toolbar .mail-reader-subject { flex: 1 1 100%; min-width: 0; }
+}
+
 @media not all and (min-width: 48rem) {
   .mail-reader-toolbar { padding: 0.375rem 0.5rem 0.25rem; }
+  /* Phones keep the subject between the way back and the reader's few controls. */
+  .mail-reader-toolbar .mail-reader-subject { order: 1; }
+  .mail-reader-toolbar .mail-reader-controls { order: 2; }
   .k2b-ui .mail-reader-toolbar .mail-reader-back { min-height: 2.25rem; }
   .mail-reader-subject { flex-wrap: wrap; row-gap: 0.125rem; padding-block: 0; }
   .mail-reader-title-line { flex-basis: 100%; min-height: 2.25rem; padding-block-start: 0.4375rem; }
@@ -1480,15 +1569,26 @@
     display: none;
   }
 
-  .k2b-ui .mail-reader-toolbar .mail-reader-show-list {
+  .k2b-ui .mail-reader-toolbar .mail-reader-close {
     display: inline-flex;
   }
 }
 
-/* The overview's Main draws no shadow inside the workspace. Keep this outside
+/* The landing Main draws no shadow inside the workspace. Keep this outside
    layers, like the standalone workspace styles it overrides. */
-.k2b-ui .mail-focus-main {
+.k2b-ui .mail-landing-main {
   box-shadow: none;
+}
+
+/* The one-time notice that Focus is gone fits the sidebar's width and type size. Unlayered, like the notice card. */
+.k2b-ui .k2b-notice-card.mail-focus-notice {
+  padding: 0.625rem 0.75rem;
+  font-size: 0.8125rem;
+  line-height: 1.25rem;
+}
+
+.k2b-ui .mail-focus-notice .k2b-notice-card__description + .k2b-notice-card__body {
+  margin-top: 0.375rem;
 }
 
 /* Folder settings: one compact tree. Each row is the trigger of its folder's menu; the state column has a fixed
@@ -1804,6 +1904,8 @@
 .k2b-ui .k2b-button.mail-details-done {
   color: var(--k2b-detail-panel-accent, var(--k2b-action));
   background: color-mix(in srgb, var(--k2b-detail-panel-accent, var(--k2b-action)) 11%, transparent);
+  /* The tint is its edge: no grey subtle-button border around it. */
+  border-color: transparent;
 }
 
 .k2b-ui .k2b-button.mail-details-done:not(:disabled, [aria-disabled="true"]):hover {
@@ -1939,87 +2041,6 @@
   }
 }
 
-/* Drafts use the mailbox surface: subject first, with recipients and edit
-   context below. Only adjacent drafts get the quiet rule from the compact-head sketch. */
-.mail-drafts-list {
-  display: flex;
-  flex-direction: column;
-  max-width: 57.5rem;
-}
-.mail-draft-row {
-  display: grid;
-  grid-template-columns: 2rem minmax(0, 1fr) auto;
-  gap: 0.1875rem 0.75rem;
-  padding: 1rem;
-  color: var(--k2b-text);
-  text-decoration: none;
-}
-.mail-draft-row + .mail-draft-row {
-  border-top: 1px solid var(--k2b-border);
-}
-.mail-draft-row:focus-visible {
-  outline: var(--k2b-focus-width) solid var(--k2b-focus-ring);
-  outline-offset: -2px;
-}
-.mail-draft-row__icon {
-  grid-row: 1 / 5;
-  display: grid;
-  place-items: center;
-  width: 2rem;
-  height: 2rem;
-  border-radius: var(--k2b-radius-control);
-  background: var(--k2b-surface-muted);
-  color: var(--k2b-text-muted);
-}
-.mail-draft-row__subject {
-  grid-column: 2;
-  grid-row: 1;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: 0.9375rem;
-  font-weight: 600;
-}
-.mail-draft-row__recipients {
-  grid-column: 2;
-  grid-row: 2;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: 0.8125rem;
-  color: var(--k2b-text-secondary);
-}
-.mail-draft-row__time {
-  grid-column: 3;
-  grid-row: 1;
-  font-size: 0.75rem;
-  color: var(--k2b-text-muted);
-}
-.mail-draft-row__preview,
-.mail-draft-row__owner {
-  grid-column: 2 / -1;
-  font-size: 0.8125rem;
-  color: var(--k2b-text-muted);
-  overflow-wrap: anywhere;
-}
-.mail-draft-row__preview {
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-}
-@media (width < 48rem) {
-  .mail-draft-row {
-    grid-template-columns: 2rem minmax(0, 1fr);
-  }
-  .mail-draft-row__icon {
-    grid-row-end: 6;
-  }
-  .mail-draft-row__time {
-    grid-column: 2;
-    grid-row: 3;
-  }
-}
 
 /* Mail's compact search uses the existing head slots. The shared pane/head lifecycle stays in AppWorkspace. */
 .mail-search-trigger { position: relative; display: inline-flex; }
@@ -2045,7 +2066,7 @@
   .mail-head-search-input > .k2b-field { min-width: 0; flex: 1 1 0; }
   .k2b-ui .mail-workspace .mail-head-search-close-phone { display: inline-flex; flex: 0 0 auto; }
   .k2b-ui .mail-workspace .mail-head-search-close-desktop { display: none; }
-  .k2b-ui .mail-workspace > .k2b-app-workspace__head:has([data-mail-head-search], [data-mail-head-selection]) .k2b-app-workspace__head-actions > :not([data-workspace-primary]) { display: none; }
+  .k2b-ui .mail-workspace > .k2b-app-workspace__head:has([data-mail-head-search], [data-mail-head-selection]) .k2b-app-workspace__head-actions > :is(.mail-search-trigger, .k2b-button, .k2b-dropdown, .k2b-tooltip-wrapper):not([data-workspace-primary]) { display: none; }
 }
 .k2b-ui .mail-workspace[data-sidebar-collapsed="true"] [data-mail-head-title] {
   position: static; width: auto; height: auto; margin: 0; overflow: hidden; clip-path: none;
@@ -2069,9 +2090,11 @@
   .k2b-ui .mail-workspace > .k2b-app-workspace__head:has([data-mail-head-selection]) .k2b-app-workspace__head-views { flex: 1 1 100%; }
 }
 
-.mail-search-advanced-label { display: none; }
+/* Wide, the search names its three options; a phone combines them in one menu. */
+.k2b-ui .mail-workspace .mail-search-phone-options { display: none; }
 @media (width < 48rem) {
-  .mail-search-advanced-label { display: inline; }
+  .k2b-ui .mail-workspace .mail-search-wide-option { display: none; }
+  .k2b-ui .mail-workspace .mail-search-phone-options { display: inline-flex; }
 }
 
 @media (width < 48rem) {
@@ -2111,4 +2134,174 @@
   .k2b-ui .mail-reader-controls :is(.mail-reader-respond, .mail-reader-toolbar-actions) { display: none; }
   .mail-reader-subject { flex-wrap: wrap; row-gap: 0.125rem; }
   .mail-reader-title-line { flex-basis: 100%; }
+}
+
+/* The Events tab: one flat feed in the list's place. Rows keep fixed geometry in every state, so loading, a longer
+   detail, or the selection only change colour, never the place of the rows around them. */
+.mail-events {
+  display: flex;
+  height: 100%;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+  overflow: hidden;
+}
+.mail-events__filters {
+  display: flex;
+  min-height: 2.75rem;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.375rem 1rem;
+}
+.mail-events__scroll {
+  flex: 1;
+}
+.mail-events__list,
+.mail-events__skeleton {
+  display: flex;
+  max-width: 57.5rem;
+  flex-direction: column;
+  margin: 0;
+  padding: 0 0 0.5rem;
+  list-style: none;
+}
+.mail-events .mail-day-group {
+  padding-left: 1rem;
+}
+.mail-event {
+  display: grid;
+  grid-template-columns: 2rem minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 0.75rem;
+  min-height: 3rem;
+  padding: 0.5625rem 1rem;
+  color: var(--k2b-text);
+  text-decoration: none;
+}
+.mail-event--link {
+  cursor: pointer;
+}
+.mail-event--link:hover {
+  background: var(--k2b-hover);
+}
+.mail-event--link[aria-current="true"],
+.mail-event--link[aria-current="true"]:hover {
+  background: var(--k2b-row-selected);
+}
+.mail-event--link:focus-visible {
+  outline: var(--k2b-focus-width) solid var(--k2b-focus-ring);
+  outline-offset: -2px;
+}
+.mail-event__robot {
+  display: grid;
+  width: 2rem;
+  height: 2rem;
+  place-items: center;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--color-violet-600) 12%, var(--k2b-surface));
+  color: var(--color-violet-700);
+  font-size: 1rem;
+}
+.dark .mail-event__robot {
+  color: var(--color-violet-300);
+}
+.mail-event__text {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 0.0625rem;
+  font-size: 0.875rem;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+.mail-event__line {
+  min-width: 0;
+}
+.mail-event__icon {
+  display: inline-flex;
+  width: 1.125rem;
+  height: 1.125rem;
+  align-items: center;
+  justify-content: center;
+  margin-right: 0.25rem;
+  vertical-align: -0.1875rem;
+  font-size: 0.8125rem;
+  color: var(--k2b-text-secondary);
+}
+.mail-event__icon[data-tone="assign"] {
+  color: var(--k2b-app-workspace-active);
+}
+.mail-event__icon[data-tone="sent"] {
+  color: var(--k2b-info-text);
+}
+.mail-event__icon[data-tone="draft"],
+.mail-event__icon[data-tone="warning"] {
+  color: var(--k2b-warning-text);
+}
+.mail-event__icon[data-tone="done"] {
+  color: var(--k2b-success-text);
+}
+.mail-event__icon[data-tone="error"] {
+  color: var(--k2b-danger-text);
+}
+.mail-event__icon[data-tone="automation"] {
+  color: var(--color-violet-700);
+}
+.dark .mail-event__icon[data-tone="automation"] {
+  color: var(--color-violet-300);
+}
+.mail-event__actor,
+.mail-event__subject {
+  font-weight: 600;
+}
+.mail-event__count {
+  color: var(--k2b-text-muted);
+}
+.mail-event__detail {
+  font-size: 0.8125rem;
+  color: var(--k2b-text-muted);
+}
+[data-tone="error"] > .mail-event .mail-event__detail {
+  color: var(--k2b-danger-text);
+}
+[data-tone="warning"] > .mail-event .mail-event__detail {
+  color: var(--k2b-warning-text);
+}
+.mail-event__time {
+  padding-top: 0.125rem;
+  font-size: 0.75rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--k2b-text-muted);
+  white-space: nowrap;
+}
+.mail-event--skeleton {
+  align-items: center;
+}
+.mail-event__skeleton-avatar {
+  width: 2rem;
+  height: 2rem;
+  border-radius: 999px;
+}
+.mail-event__skeleton-line {
+  height: 0.875rem;
+  max-width: 26rem;
+}
+.mail-event__skeleton-line--1 {
+  max-width: 21rem;
+}
+.mail-event__skeleton-line--2 {
+  max-width: 17rem;
+}
+.mail-event__skeleton-time {
+  width: 2.5rem;
+  height: 0.75rem;
+}
+.mail-events__more {
+  display: flex;
+  max-width: 57.5rem;
+  min-height: 4.5rem;
+  align-items: center;
+  justify-content: center;
+  padding: 0.75rem 1rem 1.25rem;
 }

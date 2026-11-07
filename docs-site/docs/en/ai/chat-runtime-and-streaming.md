@@ -5,7 +5,7 @@ section: AI
 order: 1030
 description: Create personal conversations, save composer drafts, and stream agent work.
 tags: [ai, chat, streaming]
-updated: 2026-10-31
+updated: 2026-11-04
 ---
 
 # Chat runtime and streaming
@@ -129,7 +129,13 @@ deliberate creation. Without `requestId`, each request creates a conversation.
 The structured composer draft contains text, exact stored-file versions, and
 zero or more Cloud resource refs. Save it with `PUT
 /api/ai/conversations/:id/draft` and an `expectedRevision`. Identical autosaves
-are idempotent; stale writes return a conflict. Submit a turn with the returned
+are idempotent; stale writes return a conflict. In the browser controller, a
+failed `saveDraft`, `send`, or `queueMessage` answers `null` or `false`.
+`draftSaveFailure(conversationId)` then says whether its draft save failed:
+`"conflict"` when the saved draft has another revision, which sets no chat
+error so the app shows its own choice; `"failed"` for any other failure, which
+sets the chat error; or `null` when the draft was saved. Only a conflict means
+that the saved draft changed. Submit a turn with the returned
 `draftRevision`. Local clients may also send `client` (kind `cli` or `acp`,
 optional name, workspace `cwd`, OS, shell and local tools mode) and
 `localContext` (AGENTS.md instructions, local Skill catalog and explicitly
@@ -769,19 +775,27 @@ finish, without rendering a second copy of the active response.
 
 When a model sends a tool call that Cloud cannot use, for example arguments
 that are not valid JSON, the chat keeps it as a failed tool step. Its error
-result asks the model to re-send the call with its exact tool name and complete,
-valid, properly escaped JSON arguments. The step appears when Cloud saves the
-response, after the other steps of that response, and stays in the same place
-after reload and in history. A provider failure keeps a partial response that
-has content, and its failed step, in history. A response that is never saved,
-for example an attempt that exceeded the context window and that compaction
-retries, or an empty response after a provider failure, shows no such step.
-Cloud never runs a malformed call, also
-when a run stopped before it saved the error result. Cloud allows at most two
-repairs per turn, also across approvals, resumes, and compaction. If the model
-sends another malformed call, the turn fails with reason `failed` and keeps the
-completed steps. Repairs do not count as tool rounds, do not acknowledge user
-steering, and do not reset its loop checks.
+result names the problem and asks the model to re-send the call with its exact
+tool name and complete, valid JSON arguments. The step appears when Cloud saves
+the response, after the other steps of that response, and stays in the same
+place after reload and in history. A provider failure keeps a partial response
+that has content in history, without the unusable call. A response that is
+never saved, for example an attempt that exceeded the context window and that
+compaction retries, shows no such step. Cloud never runs a malformed call, also
+when a run stopped before it saved the error result. A response cut off at the
+model's output limit runs none of its calls; each gets an error result that asks
+for a shorter response.
+
+The model may repair two such responses in a row. If its third response in a
+row still has an unusable call, the turn fails with reason `failed` and keeps
+the completed steps; a resumed turn counts the responses it already stored. A
+response with only usable calls, or a message the person sends while the turn
+runs, starts the count again. Repairs do not count as tool rounds and do not
+acknowledge user steering.
+
+Read-only capability Queries of one response run at the same time, at most four
+at once; every other tool call runs alone, in the order the model sent them.
+Their steps and results keep that order.
 
 Truncated streams and provider failures end with `loop_end` reason `error`.
 A provider that stops an answer itself ends the turn as failed with

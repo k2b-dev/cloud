@@ -79,6 +79,7 @@ const DiscussionRoot = (props: DiscussionProps): JSX.Element => {
       {...sectionProps}
       class={classNames("k2b-discussion", local.class)}
       data-surface={local.surface ?? "default"}
+      data-icon={local.icon ? "true" : undefined}
       aria-labelledby={headingId}
     >
       <header class="k2b-discussion__header">

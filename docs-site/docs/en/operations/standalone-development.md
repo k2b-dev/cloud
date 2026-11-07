@@ -44,6 +44,22 @@ Cloud framework source, including when Cloud is installed through npm. The
 production build uses the same selection. Keep the working directory and any
 `appRoot` override consistent between the SSR configuration and its adapter.
 
+### Load JSX through the Solid transform
+
+Every `.tsx` file needs the Solid transform that `defineApp` provides as
+`plugin`. The Cloud preload and `scripts/build.ts` install it for you.
+Outside them, Bun 1.4.3 and later fail on a `.tsx` file with a missing
+`jsx`, `jsxs`, `jsxDEV`, or `Fragment` export of `solid-js`:
+
+- In a script, load it with `--preload`.
+- In a test, register the plugin with `Bun.plugin(plugin())`, then load the
+  module with `await import(...)`, because static imports load first.
+- In your own `Bun.build`, pass the plugin in `plugins`.
+
+The entries `@k2b/cloud`, `@k2b/cloud/start`, and `@k2b/cloud/server` import
+without a transform. A custom `plugin` export that does nothing is not enough
+for a production build that reaches any `.tsx` file, including Cloud's own.
+
 ## Provide the shared platform
 
 A standalone application still needs:

@@ -22,6 +22,12 @@ export type MobileShellProps = {
    * tab's page loads.
    */
   scroll?: boolean;
+  /**
+   * The content is a screen of its own, such as an open chat on a phone: the footer steps aside, so the content
+   * reaches the bottom edge and pads its safe area itself. Content that opens or leaves such a screen in place calls
+   * `MobileShell.setScreen`.
+   */
+  screen?: boolean;
   class?: string;
 };
 
@@ -38,10 +44,34 @@ export type MobileShellHeaderProps = {
   actions?: JSX.Element;
 };
 
+/**
+ * On the document element while a shell is the page: `"sidebar"` when it shows its sidebar, otherwise empty. A host
+ * that renders the shell on the server writes it into its `<html>` too, so the first paint already has it.
+ */
+const SHELL_ATTRIBUTE = "data-k2b-mobile-shell";
+/** On the document element while a shell is mounted and a modal dialog is open. */
+const MODAL_ATTRIBUTE = "data-k2b-mobile-shell-modal";
 /** Read by the toast rail, which is portalled outside the shell, so it lives on the body. */
 const FOOTER_HEIGHT = "--k2b-mobile-shell-footer-height";
 /** How much of the scroll area a persistent toast covers; local to the shell. */
 const TOAST_INSET = "--k2b-mobile-shell-toast-inset";
+/** How far the on-screen keyboard reaches into the shell from the bottom edge; local to the shell. */
+const KEYBOARD_INSET = "--k2b-mobile-shell-keyboard";
+/** On the shell while the on-screen keyboard is up. */
+const KEYBOARD_ATTRIBUTE = "data-k2b-keyboard";
+/** Below this height a change of the visual viewport is browser chrome, such as a hiding address bar, not a keyboard. */
+const KEYBOARD_MIN = 120;
+
+/**
+ * The height the on-screen keyboard covers at the bottom of the layout viewport, from the visual viewport; zero
+ * without a keyboard or without `visualViewport`.
+ */
+export const keyboardInset = (view: Pick<Window, "innerHeight" | "visualViewport">): number => {
+  const visual = view.visualViewport;
+  if (!visual) return 0;
+  const covered = Math.round(view.innerHeight - visual.height - visual.offsetTop);
+  return covered >= KEYBOARD_MIN ? covered : 0;
+};
 
 /**
  * The visible part of the toast rail when it holds a toast without a timer (`duration: 0`, running progress, or a
@@ -55,6 +85,20 @@ const persistentToastInset = (body: HTMLElement): number => {
   const area = body.getBoundingClientRect();
   const top = Math.min(...cards.map((card) => card.getBoundingClientRect().top));
   return Math.max(0, Math.min(area.height, area.bottom - top));
+};
+
+/** On the root while its content is a screen of its own; the footer steps aside. */
+const SCREEN = "data-k2b-screen";
+
+/**
+ * Marks the shell around `from` as showing a screen of its own, or not, after the first paint; the server renders
+ * the first state with the `screen` prop. Does nothing outside a shell.
+ */
+const setMobileShellScreen = (from: Element, screen: boolean): void => {
+  const root = from.closest(".k2b-mobile-shell");
+  if (!root) return;
+  if (screen) root.setAttribute(SCREEN, "");
+  else root.removeAttribute(SCREEN);
 };
 
 /** Marks the link whose page is loading; the tab bar shows it as selected. */
@@ -175,6 +219,11 @@ export function observeMobileShell(root: HTMLElement): () => void {
   const body = main?.querySelector<HTMLElement>(":scope > .k2b-mobile-shell__body");
   if (!main) return () => {};
   const stopLinkTaps = observeLinkTaps(root);
+  // The document says that a shell is the page, for the controls and toasts portalled outside it. An attribute, not
+  // `html:has(.k2b-mobile-shell)`: a `:has()` on the document restyles the whole page on every change inside it.
+  const documentRoot = root.ownerDocument.documentElement;
+  const previousShell = documentRoot.getAttribute(SHELL_ATTRIBUTE);
+  documentRoot.setAttribute(SHELL_ATTRIBUTE, root.querySelector(":scope > .k2b-mobile-shell__sidebar") ? "sidebar" : "");
   // Content with its own scroll areas keeps its own fades; the room a toast takes applies to the whole main area.
   const stopScrollFades = body ? installScrollFades(body) : () => {};
   let frame = 0;
@@ -196,6 +245,12 @@ export function observeMobileShell(root: HTMLElement): () => void {
     const footer = Math.max(0, rootBottom - main.getBoundingClientRect().bottom, owned);
     document.body.style.setProperty(FOOTER_HEIGHT, `${footer}px`);
     root.style.setProperty(TOAST_INSET, `${persistentToastInset(body ?? main)}px`);
+    // Content that owns the bottom edge stands above the keyboard, and the footer under it steps aside.
+    const keyboard = keyboardInset(window);
+    root.style.setProperty(KEYBOARD_INSET, `${keyboard}px`);
+    root.toggleAttribute(KEYBOARD_ATTRIBUTE, keyboard > 0);
+    // A modal dialog takes the bottom edge back for its footer; the toast rules read this, not `html:has(dialog:modal)`.
+    documentRoot.toggleAttribute(MODAL_ATTRIBUTE, document.querySelector("dialog:modal") !== null);
   };
   const schedule = () => {
     if (!frame) frame = requestAnimationFrame(measure);
@@ -215,12 +270,20 @@ export function observeMobileShell(root: HTMLElement): () => void {
     attributeFilter: ["data-state", "data-closing", "data-persistent", "open"],
   });
   document.addEventListener("transitionend", schedule, true);
+  window.visualViewport?.addEventListener("resize", schedule);
+  window.visualViewport?.addEventListener("scroll", schedule);
   return () => {
+    window.visualViewport?.removeEventListener("resize", schedule);
+    window.visualViewport?.removeEventListener("scroll", schedule);
+    root.removeAttribute(KEYBOARD_ATTRIBUTE);
     if (frame) cancelAnimationFrame(frame);
     resize.disconnect();
     mutations.disconnect();
     document.removeEventListener("transitionend", schedule, true);
     document.body.style.removeProperty(FOOTER_HEIGHT);
+    documentRoot.removeAttribute(MODAL_ATTRIBUTE);
+    if (previousShell === null) documentRoot.removeAttribute(SHELL_ATTRIBUTE);
+    else documentRoot.setAttribute(SHELL_ATTRIBUTE, previousShell);
     stopLinkTaps();
     stopScrollFades();
   };
@@ -230,22 +293,29 @@ function MobileShellRoot(props: MobileShellProps): JSX.Element {
   let root!: HTMLDivElement;
 
   onMount(() => onCleanup(observeMobileShell(root)));
-
   return (
-    <div
-      ref={root}
-      class={props.class ? `k2b-mobile-shell ${props.class}` : "k2b-mobile-shell"}
-      data-k2b-content-heads={props.scroll === false ? "" : undefined}
-    >
-      {props.sidebar}
-      {props.header}
-      <main class="k2b-mobile-shell__main">
-        <Show when={props.scroll !== false} fallback={props.children}>
-          <ScrollArea class="k2b-mobile-shell__body">{props.children}</ScrollArea>
-        </Show>
-      </main>
-      {props.footer}
-    </div>
+    <>
+      <div
+        ref={root}
+        class={props.class ? `k2b-mobile-shell ${props.class}` : "k2b-mobile-shell"}
+        data-k2b-content-heads={props.scroll === false ? "" : undefined}
+        data-k2b-screen={props.screen ? "" : undefined}
+      >
+        {props.sidebar}
+        {props.header}
+        <main class="k2b-mobile-shell__main">
+          <Show when={props.scroll !== false} fallback={props.children}>
+            <ScrollArea class="k2b-mobile-shell__body">{props.children}</ScrollArea>
+          </Show>
+        </main>
+        {props.footer}
+      </div>
+      {/* No pinch zoom on the whole page, portalled dialogs and menus included, also before hydration. iOS ignores
+        `user-scalable=no`; it honours touch-action. It lives here, not behind `html:has(.k2b-mobile-shell) *`, which
+        would restyle the document on every `:has()` change. Zero specificity, so a component's own touch-action,
+        such as a drag handle's `none`, still wins. */}
+      <style innerHTML=":where(html *) { touch-action: pan-x pan-y; }" />
+    </>
   );
 }
 
@@ -381,6 +451,10 @@ function MobileShellSidebar(props: MobileShellSidebarProps): JSX.Element {
  * stays in the area beside it. While it is mounted, the document itself never scrolls, pinch zoom and rubber-banding
  * are off, and the toast rail sits above the footer. Mount one per page, as the page's layout.
  */
-export const MobileShell = Object.assign(MobileShellRoot, { Header: MobileShellHeader, Sidebar: MobileShellSidebar });
+export const MobileShell = Object.assign(MobileShellRoot, {
+  Header: MobileShellHeader,
+  Sidebar: MobileShellSidebar,
+  setScreen: setMobileShellScreen,
+});
 
 export default MobileShell;

@@ -1,4 +1,4 @@
-import { lazySync, listApps, listAppsDetailed, watchAppRegistry } from "@k2b/cloud";
+import { lazySync, listAppsDetailed, watchAppRegistry } from "@k2b/cloud";
 import type { AppLifecycle } from "@k2b/cloud/contracts";
 import { get as getSetting, logger, superviseRuntimeTask, trace } from "@k2b/cloud/services";
 import type { Worker } from "@k2b/sync";
@@ -14,11 +14,11 @@ const OFFLINE_AFTER_MS = 10 * 60 * 1000;
 const OFFLINE_LOG_INTERVAL_MS = 60 * 60 * 1000;
 const DEFAULT_CLEANUP_CRON = "0 4 * * *";
 const DEFAULT_HEALTH_CRON = "*/5 * * * *";
-const TELEMETRY_CLEANUP_CRON = "*/5 * * * *";
+const TELEMETRY_CLEANUP_CRON = "17 3 * * *";
 const HEALTH_SCHEDULE_ID = "gateway:health-webhook-check";
 const OFFLINE_AUDIT_ID = "gateway:registered-apps:offline-audit";
 const SCHEDULER_ID = "gateway-ops-lifecycle";
-/** Retention ticks heartbeat per bounded delete batch. */
+/** Telemetry retention heartbeats between bounded delete batches. Core owns trace retention. */
 const SCHEDULER_ACK_WAIT_MS = 5 * 60 * 1000;
 
 const gatewayOpsScheduler = lazySync((sync) => sync.scheduler({ id: SCHEDULER_ID, delivery: { ackWaitMs: SCHEDULER_ACK_WAIT_MS } }));
@@ -103,7 +103,7 @@ const runOfflineAudit = async (signal: AbortSignal): Promise<void> => {
 };
 
 export const refreshRegisteredApps = async (): Promise<void> => {
-  await upsertRegisteredApps(await listApps());
+  await upsertRegisteredApps(await listAppsDetailed());
 };
 
 // `watchAppRegistry` awaits each change callback, so refreshes never overlap.
@@ -222,54 +222,13 @@ const createTelemetryCleanupSchedule = async (): Promise<void> => {
           appId: "gateway-ops",
           category: "schedule",
         },
-        async (span) => {
-          const [eventsDays, rollupsDays, traceDays] = await Promise.all([
+        async () => {
+          const [eventsDays, rollupsDays] = await Promise.all([
             getPositiveIntegerSetting("gateway.telemetry_event_retention_days", 14),
             getPositiveIntegerSetting("gateway.telemetry_rollup_retention_days", 90),
-            getPositiveIntegerSetting("logs.trace_retention_days", 30),
           ]);
-          let traceProgress = { events: 0, spans: 0, complete: false };
-          const failures: unknown[] = [];
-          const traces = await trace
-            .cleanup({
-              days: traceDays,
-              signal: context.signal,
-              heartbeat: () => context.heartbeat(),
-              onProgress: async (progress) => {
-                traceProgress = { events: progress.events ?? 0, spans: progress.spans ?? 0, complete: progress.complete };
-                await trace.record({
-                  context: span,
-                  event: "retention.progress",
-                  attributes: { ...progress, traceDays },
-                  summary: { ...progress, traceDays },
-                });
-              },
-            })
-            .catch((error: unknown) => {
-              failures.push(error);
-              return traceProgress.spans;
-            });
-          const telemetry = await cleanupTelemetry({
-            eventsDays,
-            rollupsDays,
-            signal: context.signal,
-            heartbeat: () => context.heartbeat(),
-          }).catch((error: unknown) => {
-            failures.push(error);
-            return { events: 0, rollups: 0, complete: false };
-          });
-          const summary = {
-            events: telemetry.events,
-            rollups: telemetry.rollups,
-            traces,
-            traceEvents: traceProgress.events,
-            traceRetentionComplete: traceProgress.complete,
-            traceDays,
-            telemetryRetentionComplete: telemetry.complete,
-            failures: failures.length,
-          };
-          await trace.record({ context: span, event: "retention.result", summary });
-          if (failures.length) throw new AggregateError(failures, "Observability retention cleanup failed");
+          const telemetry = await cleanupTelemetry({ eventsDays, rollupsDays, signal: context.signal, heartbeat: () => context.heartbeat() });
+          const summary = { events: telemetry.events, rollups: telemetry.rollups };
           log.info("Observability retention cleanup completed", summary);
           return summary;
         },

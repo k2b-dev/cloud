@@ -1,11 +1,13 @@
 import { createHash, randomBytes } from "node:crypto";
-import type { SyncEvent } from "@k2b/sync";
+import type { JobContext, ScheduleContext, SyncEvent } from "@k2b/sync";
 import { getProcessApplicationId } from "../../_internal/process-identity";
 import type { PaginationParams } from "../../contracts/shared";
 import { sql } from "../../runtime/clients";
 import { escapeLikePattern, parsePgJsonRecord, toPgTextArray } from "../postgres";
+import { type BackgroundLoop, registerBackgroundLoop, SYNC_SLOW_AFTER_MS } from "./background-loop-policy";
 import { isSensitiveMetadataKey, REDACTED, redactLinkTokens, redactMetadata } from "./redaction";
-import { drainRetention, RETENTION_BATCH_SIZE, type RetentionOptions } from "./retention";
+import { RUN_DURATION_BOUNDS, reportRunRollupError, runPercentile, runRollups } from "./run-rollups";
+import { cleanupTraceStorage } from "./trace-retention";
 
 export type TraceAttributeValue = string | number | boolean | null | undefined;
 export type TraceAttributes = Record<string, TraceAttributeValue>;
@@ -112,6 +114,8 @@ export type TraceSourceGroup = {
   avgDurationMs: number | null;
   p95DurationMs: number | null;
   p99DurationMs: number | null;
+  /** Last successful completion, including minute-only runs. Trace counters above remain separate. */
+  latestSuccessAt?: string;
   latestName: string | null;
   latestCategory: TraceCategory | null;
   latestStatus: TraceStatus | null;
@@ -477,6 +481,12 @@ const updateSpan = async (
 };
 
 const start = async (params: TraceStartParams, preservePresentation = false): Promise<TraceContext> => {
+  const deferred = params.spanKey ? deferredSyncRuns.get(params.spanKey) : undefined;
+  if (deferred && !deferred.materialized) {
+    if (!preservePresentation)
+      deferred.params = { ...deferred.params, ...params, attributes: { ...deferred.params.attributes, ...params.attributes } };
+    return newContext(params.spanKey);
+  }
   const context = newContext(params.spanKey, params.parent);
   const attributes = sanitizeAttributes(params.attributes);
   const attributesJson = attributes ? JSON.stringify(attributes) : null;
@@ -523,6 +533,9 @@ const start = async (params: TraceStartParams, preservePresentation = false): Pr
       kind = CASE WHEN ${preservePresentation} THEN logging.trace_spans.kind ELSE EXCLUDED.kind END,
       attributes = COALESCE(logging.trace_spans.attributes, '{}'::jsonb) || COALESCE(EXCLUDED.attributes, '{}'::jsonb),
       started_at = LEAST(logging.trace_spans.started_at, EXCLUDED.started_at),
+      status = CASE WHEN ${preservePresentation} THEN 'unset' ELSE logging.trace_spans.status END,
+      ended_at = CASE WHEN ${preservePresentation} THEN NULL ELSE logging.trace_spans.ended_at END,
+      duration_ms = CASE WHEN ${preservePresentation} THEN NULL ELSE logging.trace_spans.duration_ms END,
       updated_at = now()
     RETURNING trace_id, span_id
   `.catch((error: Error) => {
@@ -537,6 +550,13 @@ const start = async (params: TraceStartParams, preservePresentation = false): Pr
  * can retain exact tracing without a start/update round-trip pair.
  */
 const complete = async (params: TraceCompleteParams, preservePresentation = false): Promise<TraceContext> => {
+  const deferred = params.spanKey ? deferredSyncRuns.get(params.spanKey) : undefined;
+  if (deferred && !deferred.materialized && !preservePresentation) {
+    deferred.params = { ...deferred.params, ...params, attributes: { ...deferred.params.attributes, ...params.attributes } };
+    deferred.summary = { ...deferred.summary, ...params.summary };
+    if (params.status !== "error") return newContext(params.spanKey);
+    await materializeSyncRun(params.spanKey!);
+  }
   const context = newContext(params.spanKey, params.parent);
   const attributes = sanitizeAttributes(params.attributes);
   const summary = sanitizeRecord(params.summary);
@@ -613,6 +633,8 @@ const complete = async (params: TraceCompleteParams, preservePresentation = fals
 };
 
 const record = async (params: TraceRecordParams, preservePresentation = false): Promise<TraceContext> => {
+  const deferredKey = params.spanKey ?? (params.context ? deferredSyncContexts.get(params.context.spanId) : undefined);
+  if (deferredKey) await materializeSyncRun(deferredKey);
   const standalone = !params.context && !params.spanKey;
   const context =
     params.context ??
@@ -657,6 +679,13 @@ const end = async (params: TraceEndParams): Promise<void> => {
   if (params.spanKey) await pendingSyncWrites.get(params.spanKey);
   const context = contextFromParams(params);
   if (!context) return;
+  const deferredKey = params.spanKey ?? deferredSyncContexts.get(context.spanId);
+  const deferred = deferredKey ? deferredSyncRuns.get(deferredKey) : undefined;
+  if (deferred && !deferred.materialized) {
+    deferred.summary = { ...deferred.summary, ...params.summary };
+    if (params.status !== "error") return;
+    await materializeSyncRun(deferredKey!);
+  }
   await updateSpan(context, {
     status: params.status ?? "ok",
     statusMessage: params.statusMessage,
@@ -880,7 +909,38 @@ const sourceGroups = async (options?: { filter?: TraceListFilter }): Promise<Tra
       runs DESC,
       source ASC
   `;
-  return rows.map((row) => ({ ...mapSourceGroupRow(row), stuck: stuckBySource.get(row.source) ?? 0 }));
+  const groups = new Map(rows.map((row) => [row.source, { ...mapSourceGroupRow(row), stuck: stuckBySource.get(row.source) ?? 0 }]));
+  const successes = await sql<Array<{ source: string; app_id: string; categories: TraceCategory[]; names: string[]; latest: Date }>>`
+    SELECT source, (array_agg(DISTINCT app_id))[1] AS app_id, array_agg(DISTINCT category)::text[] AS categories,
+      array_agg(DISTINCT name)::text[] AS names, MAX(last_ended_at) AS latest
+    FROM logging.run_minutes WHERE ${successMinuteWhere(options?.filter)} GROUP BY source`;
+  const filter = options?.filter;
+  const includeMinuteOnly = !filter?.active && filter?.status !== "error" && !filter?.minDurationMs && !filter?.attributeEquals;
+  for (const success of successes) {
+    let group = groups.get(success.source);
+    if (!group && includeMinuteOnly) {
+      group = {
+        ...mapStatsRow(undefined),
+        source: success.source,
+        appId: success.app_id || null,
+        categories: success.categories,
+        names: success.names,
+        jobRuns: 0,
+        scheduleRuns: 0,
+        aiRuns: 0,
+        customRuns: 0,
+        latestName: success.names[0] ?? null,
+        latestCategory: success.categories[0] ?? null,
+        latestStatus: null,
+        latestStartedAt: null,
+        latestEndedAt: null,
+        latestDurationMs: null,
+      };
+      groups.set(success.source, group);
+    }
+    if (group) group.latestSuccessAt = toIso(success.latest);
+  }
+  return [...groups.values()];
 };
 
 const events = async (params: { traceId: string; spanId?: string; limit?: number }): Promise<TraceEvent[]> => {
@@ -944,67 +1004,98 @@ const summary = async (options?: { sinceHours?: number }): Promise<TraceSummary>
   };
 };
 
-const cleanup = async (options: { days: number; source?: string } & RetentionOptions): Promise<number> => {
-  if (!Number.isFinite(options.days) || options.days < 1) throw new Error("Retention days must be a positive number");
-  const cutoff = new Date(Date.now() - Math.trunc(options.days) * 86_400_000);
-  const progress = await drainRetention(async (tx) => {
-    // Prune children explicitly: ON DELETE CASCADE alone could delete an
-    // unbounded number of events for one span. Old open spans are abandoned.
-    const events = await tx`
-      WITH expired AS MATERIALIZED (
-        SELECT trace_id, span_id FROM logging.trace_spans
-        WHERE started_at < ${cutoff}
-          AND (ended_at IS NULL OR ended_at < ${cutoff})
-          AND (${options.source ?? null}::text IS NULL OR source = ${options.source ?? null})
-        ORDER BY started_at
-        LIMIT ${RETENTION_BATCH_SIZE}
-      ), batch AS (
-        SELECT e.id FROM logging.trace_events e JOIN expired s USING (trace_id, span_id)
-        LIMIT ${RETENTION_BATCH_SIZE}
-        FOR UPDATE OF e SKIP LOCKED
-      )
-      DELETE FROM logging.trace_events e USING batch WHERE e.id = batch.id
-    `;
-    const spans = await tx`
-      WITH candidates AS MATERIALIZED (
-        SELECT s.trace_id, s.span_id FROM logging.trace_spans s
-        WHERE s.started_at < ${cutoff}
-          AND (s.ended_at IS NULL OR s.ended_at < ${cutoff})
-          AND (${options.source ?? null}::text IS NULL OR s.source = ${options.source ?? null})
-        ORDER BY s.started_at
-        LIMIT ${RETENTION_BATCH_SIZE}
-        FOR UPDATE OF s SKIP LOCKED
-      ), batch AS (
-        SELECT c.* FROM candidates c
-        WHERE NOT EXISTS (SELECT 1 FROM logging.trace_events e WHERE e.trace_id = c.trace_id AND e.span_id = c.span_id)
-      )
-      DELETE FROM logging.trace_spans s USING batch
-      WHERE s.trace_id = batch.trace_id AND s.span_id = batch.span_id
-    `;
-    return { events: events.count, spans: spans.count, complete: events.count === 0 && spans.count === 0 };
-  }, options);
-  return progress.spans ?? 0;
+export type TraceSuccessMinutes = {
+  minutes: Array<{
+    at: string;
+    source: string;
+    name: string;
+    appId: string;
+    category: TraceCategory;
+    count: number;
+    avgDurationMs: number;
+    maxDurationMs: number;
+    p95DurationMs: number | null;
+  }>;
+  total: number;
+  count: number;
+  avgDurationMs: number | null;
+  maxDurationMs: number | null;
+  p95DurationMs: number | null;
 };
+
+const successMinuteWhere = (filter: TraceListFilter | undefined) => {
+  const seconds = normalizeSinceSeconds(filter) ?? 86_400;
+  const pattern = filter?.search ? `%${escapeLikePattern(filter.search)}%` : null;
+  const sources = filter?.sources?.length ? toPgTextArray(filter.sources) : null;
+  return sql`bucket >= date_trunc('minute', now() - (${seconds}::int * INTERVAL '1 second'))
+    AND (${filter?.source ?? null}::text IS NULL OR source = ${filter?.source ?? null})
+    AND (${sources}::text[] IS NULL OR source = ANY(${sources}::text[]))
+    AND (${filter?.appId ?? null}::text IS NULL OR app_id = ${filter?.appId ?? null})
+    AND (${filter?.category ?? null}::text IS NULL OR category = ${filter?.category ?? null})
+    AND (${pattern}::text IS NULL OR source ILIKE ${pattern} ESCAPE '\' OR name ILIKE ${pattern} ESCAPE '\' OR app_id ILIKE ${pattern} ESCAPE '\')`;
+};
+
+/** Successful completions, including slow runs and recovered retries. Never add these counts to trace totals. */
+const successMinutes = async (pagination: PaginationParams, options?: { filter?: TraceListFilter }): Promise<TraceSuccessMinutes> => {
+  const filter = options?.filter;
+  const empty: TraceSuccessMinutes = { minutes: [], total: 0, count: 0, avgDurationMs: null, maxDurationMs: null, p95DurationMs: null };
+  // Rollups deliberately have no run ids, attributes, or individual durations.
+  if (filter?.status === "error" || filter?.active === true || filter?.attributeEquals) return empty;
+  const where = successMinuteWhere(filter);
+  type Row = {
+    bucket: Date;
+    source: string;
+    name: string;
+    app_id: string;
+    category: TraceCategory;
+    run_count: string | number;
+    total_duration_ms: number;
+    max_duration_ms: number;
+    durations: number[];
+  };
+  const [rows, totals, bins] = await Promise.all([
+    sql<Row[]>`SELECT * FROM logging.run_minutes WHERE ${where}
+      ORDER BY bucket DESC, source, app_id, category, name LIMIT ${Math.min(200, Math.max(1, pagination.perPage))} OFFSET ${Math.max(0, pagination.offset)}`,
+    sql<Array<{ total: number; count: string; duration: number | null; maximum: number | null }>>`
+      SELECT COUNT(*)::int AS total, COALESCE(SUM(run_count), 0)::text AS count,
+        SUM(total_duration_ms)::float8 / NULLIF(SUM(run_count), 0) AS duration, MAX(max_duration_ms)::float8 AS maximum
+      FROM logging.run_minutes WHERE ${where}`,
+    sql<Array<{ index: number; count: string }>>`SELECT bin.index::int, SUM(bin.count)::text AS count
+      FROM logging.run_minutes CROSS JOIN LATERAL unnest(durations) WITH ORDINALITY AS bin(count, index)
+      WHERE ${where} GROUP BY bin.index ORDER BY bin.index`,
+  ]);
+  return {
+    minutes: rows.map((row) => ({
+      at: row.bucket.toISOString(),
+      source: row.source,
+      name: row.name,
+      appId: row.app_id,
+      category: row.category,
+      count: Number(row.run_count),
+      avgDurationMs: row.total_duration_ms / Number(row.run_count),
+      maxDurationMs: row.max_duration_ms,
+      p95DurationMs: runPercentile(row.durations.map(Number), 0.95),
+    })),
+    total: totals[0]?.total ?? 0,
+    count: Number(totals[0]?.count ?? 0),
+    avgDurationMs: totals[0]?.duration ?? null,
+    maxDurationMs: totals[0]?.maximum ?? null,
+    p95DurationMs: runPercentile(
+      RUN_DURATION_BOUNDS.map((_, i) => Number(bins.find((bin) => bin.index === i + 1)?.count ?? 0)),
+      0.95,
+    ),
+  };
+};
+
+const cleanup = cleanupTraceStorage;
 
 // ==========================
 // Sync observe adapter
 // ==========================
 
-/**
- * Sync v6 emits ids, keys and statuses only — never handler results — so a
- * run span carries the run identity and outcome. A handler that wants a
- * summary attaches it itself with `trace.end({ spanKey, summary })`, using
- * `trace.syncSpanKey(kind, resource, runId)` for the same span.
- *
- * Topic consumer runs are traced only when they fail: a successful first
- * attempt writes nothing. Telemetry consumers process one event per request,
- * and two span writes per event would multiply the write load and saturate
- * the bounded observer buffer, dropping the process's other Sync diagnostics.
- * A retry materializes the run as an error span, so a later successful
- * attempt is traced too (one extra write only for runs that retried) and
- * closes that span as `ok` instead of leaving it `error` forever. Topic
- * redeliveries carry no run id and are dropped as well; the retry span
- * already records them.
+/** Automatic Sync run spans are deferred until failure, retry, or the
+ * acknowledgement budget. Fast first-attempt successes use minute rollups.
+ * Explicit domain/child traces with independent keys retain their lifecycle.
  */
 
 type SyncRunKind = "queue" | "job" | "topic" | "scheduler" | "pump";
@@ -1023,6 +1114,55 @@ const syncSpanKey = (kind: SyncRunKind, resource: string, runId: string, consume
     ? `sync:topic:${JSON.stringify([resource, runId, consumer])}`
     : `sync:${kind}:${resource}:${runId}`;
 
+/** Declare once per static loop. Null summaries mean no work; failures/retries are still traced.
+ * Summarize the run here; independently keyed domain/child spans are untouched.
+ */
+const backgroundLoop = <Context extends { attempt: number }, Result>(
+  loop: BackgroundLoop,
+  identity: (context: Context) => { id: string; key: string },
+  run: (context: Context) => Promise<Result>,
+  summarize: (result: Result) => Record<string, unknown> | null,
+): ((context: Context) => Promise<void>) => {
+  const deferred = registerBackgroundLoop(loop);
+  return async (context) => {
+    const result = await run(context);
+    if (!deferred) return;
+    let summary: Record<string, unknown> | null;
+    try {
+      summary = summarize(result);
+    } catch (error) {
+      // The domain work already completed; diagnostic failures must never retry it.
+      console.error("[logging:trace] background summary failed:", error instanceof Error ? error.message : String(error));
+      return;
+    }
+    if (summary === null) return;
+    const { id } = identity(context);
+    const spanKey = syncSpanKey(loop.kind, loop.resource, id);
+    const pending = deferredSyncRuns.get(spanKey);
+    if (pending && !pending.materialized) pending.summary = { ...pending.summary, ...summary };
+    else enqueueSyncTraceWrite(spanKey, () => updateSpan(newContext(spanKey), { summary }));
+  };
+};
+
+const backgroundJob = <Input, Result>(
+  resource: string,
+  run: (context: JobContext<Input>) => Promise<Result>,
+  summarize: (result: Result) => Record<string, unknown> | null,
+) => backgroundLoop({ kind: "job", resource }, (context: JobContext<Input>) => ({ id: context.jobId, key: context.key }), run, summarize);
+
+const backgroundSchedule = <Result>(
+  resource: string,
+  scheduleId: string,
+  run: (context: ScheduleContext) => Promise<Result>,
+  summarize: (result: Result) => Record<string, unknown> | null,
+) =>
+  backgroundLoop(
+    { kind: "scheduler", resource, key: scheduleId },
+    (context: ScheduleContext) => ({ id: context.runId, key: context.scheduleId }),
+    run,
+    summarize,
+  );
+
 const isSyncRunKind = (kind: string): kind is SyncRunKind => kind in SYNC_CATEGORY;
 
 const TRACED_SYNC_EVENT_TYPES = new Set([
@@ -1034,16 +1174,10 @@ const TRACED_SYNC_EVENT_TYPES = new Set([
   "pump_run_settled",
 ]);
 
-/** Whether the adapter records this event at all (see the topic policy above). */
+/** Whether the adapter observes this Sync lifecycle event. */
 const isTracedSyncEvent = (event: SyncEvent): boolean => {
   if (!event.resource || !event.kind || !isSyncRunKind(event.kind) || !TRACED_SYNC_EVENT_TYPES.has(event.type)) return false;
-  if (event.kind !== "topic") return true;
-  if (event.type === "handler_started" || event.type === "redelivery") return false;
-  if (event.type !== "handler_settled") return true;
-  const status = event.detail?.status;
-  if (status === "retry" || status === "dead_letter") return true;
-  const attempt = event.detail?.attempt;
-  return status === "success" && typeof attempt === "number" && attempt > 1;
+  return event.type !== "redelivery" || event.kind !== "topic";
 };
 
 const detailString = (detail: Record<string, unknown>, key: string): string | undefined => {
@@ -1069,6 +1203,56 @@ const detailAttributes = (detail: Record<string, unknown>): TraceAttributes => {
 /** The app hosting this process; Sync events carry no app name. */
 const processAppId = getProcessApplicationId;
 
+export { SYNC_SLOW_AFTER_MS } from "./background-loop-policy";
+
+type DeferredSyncRun = {
+  params: TraceStartParams;
+  summary?: Record<string, unknown>;
+  materialized: boolean;
+  timer: ReturnType<typeof setTimeout>;
+};
+const deferredSyncRuns = new Map<string, DeferredSyncRun>();
+const deferredSyncContexts = new Map<string, string>();
+let reportedActiveOverflow = false;
+const materializeSyncRun = async (key: string): Promise<void> => {
+  const run = deferredSyncRuns.get(key);
+  if (!run || run.materialized) return;
+  run.materialized = true;
+  clearTimeout(run.timer);
+  await start(run.params, true);
+  if (run.summary) await updateSpan(newContext(key), { summary: run.summary });
+};
+const deferSyncRun = async (params: TraceStartParams & { spanKey: string }, attempt: number): Promise<void> => {
+  if (deferredSyncRuns.has(params.spanKey)) {
+    if (attempt > 1) await materializeSyncRun(params.spanKey);
+    return;
+  }
+  // Missing settlement (e.g. a delivery aborted elsewhere) must never crowd
+  // every subsequent run out of slow-start detection. Prefer fresh work.
+  if (deferredSyncRuns.size >= SYNC_TRACE_PENDING_LIMIT) {
+    if (!reportedActiveOverflow) console.error("[logging:trace] active run buffer full; evicting oldest slow-start observation");
+    const oldest = deferredSyncRuns.keys().next().value;
+    if (oldest) takeSyncRun(oldest);
+    reportedActiveOverflow = true;
+  }
+  if (attempt > 1) {
+    await start(params, true);
+    return;
+  }
+  const timer = setTimeout(() => enqueueSyncTraceWrite(params.spanKey, () => materializeSyncRun(params.spanKey)), SYNC_SLOW_AFTER_MS);
+  timer.unref();
+  deferredSyncRuns.set(params.spanKey, { params, materialized: false, timer });
+  deferredSyncContexts.set(newContext(params.spanKey).spanId, params.spanKey);
+};
+const takeSyncRun = (key: string): DeferredSyncRun | undefined => {
+  const run = deferredSyncRuns.get(key);
+  if (run) clearTimeout(run.timer);
+  deferredSyncRuns.delete(key);
+  if (deferredSyncRuns.size < SYNC_TRACE_PENDING_LIMIT) reportedActiveOverflow = false;
+  deferredSyncContexts.delete(newContext(key).spanId);
+  return run;
+};
+
 const traceSyncEvent = async (event: SyncEvent, application?: string): Promise<void> => {
   const resource = event.resource;
   const kind = event.kind;
@@ -1093,7 +1277,10 @@ const traceSyncEvent = async (event: SyncEvent, application?: string): Promise<v
     case "handler_started": {
       const id = detailString(detail, "id");
       if (!id) return;
-      await start({ ...base, spanKey: syncSpanKey(kind, resource, id, consumer), attributes, startedAt: event.at }, true);
+      await deferSyncRun(
+        { ...base, spanKey: syncSpanKey(kind, resource, id, consumer), attributes, startedAt: event.at },
+        detailNumber(detail, "attempt") ?? 1,
+      );
       return;
     }
     case "handler_settled": {
@@ -1103,26 +1290,39 @@ const traceSyncEvent = async (event: SyncEvent, application?: string): Promise<v
       const status = detailString(detail, "status");
       const attempt = detailNumber(detail, "attempt");
       const durationMs = detailNumber(detail, "durationMs") ?? 0;
+      const deferred = takeSyncRun(spanKey);
+      const startedAt = Math.min(normalizeDate(deferred?.params.startedAt ?? event.at).getTime(), event.at.getTime() - durationMs);
+      if (status === "success") {
+        runRollups.add({
+          at: event.at,
+          source: deferred?.params.source ?? resource,
+          appId: deferred?.params.appId ?? appId ?? "",
+          category: deferred?.params.category ?? category,
+          name: deferred?.params.name ?? name,
+          durationMs,
+        });
+        if ((attempt ?? 1) === 1 && durationMs < SYNC_SLOW_AFTER_MS && !deferred?.materialized) return;
+      }
+      const presentation = deferred?.params ?? base;
       if (status === "retry") {
-        // Topic runs have no started span: materialize the failed run first.
-        if (kind === "topic") {
-          await complete(
-            {
-              ...base,
-              spanKey,
-              status: "error",
-              statusMessage: `Retry scheduled after ${attempt ?? "?"} attempt(s)`,
-              attributes,
-              startedAt: event.at.getTime() - durationMs,
-              endedAt: event.at,
-            },
-            true,
-          );
-        }
+        await complete(
+          {
+            ...presentation,
+            spanKey,
+            summary: deferred?.summary,
+            status: "error",
+            statusMessage: `Retry scheduled after ${attempt ?? "?"} attempt(s)`,
+            attributes: { ...deferred?.params.attributes, ...attributes },
+            startedAt,
+            endedAt: event.at,
+          },
+          true,
+        );
         await record(
           {
             ...base,
             spanKey,
+            context: newContext(spanKey),
             event: "sync.retry",
             severity: "warn",
             status: "error",
@@ -1135,12 +1335,13 @@ const traceSyncEvent = async (event: SyncEvent, application?: string): Promise<v
       }
       await complete(
         {
-          ...base,
+          ...presentation,
           spanKey,
+          summary: deferred?.summary,
           status: status === "success" ? "ok" : "error",
           statusMessage: status === "success" ? undefined : `Dead-lettered after ${attempt ?? "?"} attempt(s)`,
-          attributes,
-          startedAt: event.at.getTime() - durationMs,
+          attributes: { ...deferred?.params.attributes, ...attributes },
+          startedAt,
           endedAt: event.at,
         },
         true,
@@ -1151,6 +1352,7 @@ const traceSyncEvent = async (event: SyncEvent, application?: string): Promise<v
       const id = detailString(detail, "messageId") ?? detailString(detail, "eventId");
       if (!id) return;
       const spanKey = syncSpanKey(kind, resource, id, consumer);
+      takeSyncRun(spanKey);
       const reason = detailString(detail, "reason") ?? "dead letter";
       // A message can be dead-lettered without a handler run (attempts
       // exhausted on delivery, undecodable payload): the upsert closes the
@@ -1177,22 +1379,33 @@ const traceSyncEvent = async (event: SyncEvent, application?: string): Promise<v
     }
     case "pump_run_started": {
       if (!key) return;
-      await start({ ...base, spanKey: syncSpanKey("pump", resource, key), attributes, startedAt: event.at }, true);
+      await deferSyncRun({ ...base, spanKey: syncSpanKey("pump", resource, key), attributes, startedAt: event.at }, 1);
       return;
     }
     case "pump_run_settled": {
       if (!key) return;
       const status = detailString(detail, "status");
       const durationMs = detailNumber(detail, "durationMs") ?? 0;
+      const deferred = takeSyncRun(syncSpanKey("pump", resource, key));
+      const startedAt = Math.min(normalizeDate(deferred?.params.startedAt ?? event.at).getTime(), event.at.getTime() - durationMs);
+      if (status === "completed") {
+        runRollups.add({ at: event.at, source: resource, appId: appId ?? "", category, name, durationMs });
+        if ((detailNumber(detail, "failureCount") ?? 0) === 0 && durationMs < SYNC_SLOW_AFTER_MS && !deferred?.materialized) return;
+      }
       await complete(
         {
-          ...base,
+          ...(deferred?.params ?? base),
           spanKey: syncSpanKey("pump", resource, key),
           status: status === "failed" ? "error" : "ok",
           statusMessage: detailString(detail, "error"),
-          attributes,
-          summary: { status, dispatched: detailNumber(detail, "dispatched"), failureCount: detailNumber(detail, "failureCount") },
-          startedAt: event.at.getTime() - durationMs,
+          attributes: { ...deferred?.params.attributes, ...attributes },
+          summary: {
+            ...deferred?.summary,
+            status,
+            dispatched: detailNumber(detail, "dispatched"),
+            failureCount: detailNumber(detail, "failureCount"),
+          },
+          startedAt,
           endedAt: event.at,
         },
         true,
@@ -1211,22 +1424,18 @@ const pendingSyncWrites = new Map<string, Promise<void>>();
 let pendingSyncWriteCount = 0;
 let reportedSyncOverflow = false;
 
-/** Ordered per-run, bounded, non-blocking adapter for createSync({ observe }). */
-export const observeSyncEvent = (event: SyncEvent, application?: string): void => {
-  if (!event.resource || !event.kind || !isSyncRunKind(event.kind) || !isTracedSyncEvent(event)) return;
+/** Shared budget and ordering for automatic events and deferred background summaries. */
+const enqueueSyncTraceWrite = (key: string, writeTrace: () => Promise<unknown>): void => {
   if (pendingSyncWriteCount >= SYNC_TRACE_PENDING_LIMIT) {
     if (!reportedSyncOverflow) console.error("[logging:trace] sync trace buffer full; dropping diagnostics");
     reportedSyncOverflow = true;
     return;
   }
-  const detail = event.detail ?? {};
-  const id =
-    detailString(detail, "id") ?? detailString(detail, "messageId") ?? detailString(detail, "eventId") ?? detailString(detail, "key") ?? "";
-  const consumer = event.kind === "topic" ? (detailString(detail, "key") ?? detailString(detail, "consumer")) : undefined;
-  const key = syncSpanKey(event.kind, event.resource, id, consumer);
   pendingSyncWriteCount++;
   const write = (pendingSyncWrites.get(key) ?? Promise.resolve())
-    .then(() => traceSyncEvent(event, application))
+    .then(async () => {
+      await writeTrace();
+    })
     .catch((error: unknown) => {
       console.error("[logging:trace] sync event failed:", error instanceof Error ? error.message : String(error));
     })
@@ -1238,9 +1447,35 @@ export const observeSyncEvent = (event: SyncEvent, application?: string): void =
   pendingSyncWrites.set(key, write);
 };
 
+/** Ordered per-run, bounded, non-blocking adapter for createSync({ observe }). */
+export const observeSyncEvent = (event: SyncEvent, application?: string): void => {
+  if (!event.resource || !event.kind || !isSyncRunKind(event.kind) || !isTracedSyncEvent(event)) return;
+  const detail = event.detail ?? {};
+  // Sync invokes the observer before the handler. Register a first attempt
+  // synchronously, so an immediate withSpan/end enriches the deferred run
+  // instead of racing the queued observer into a successful database insert.
+  if ((event.type === "handler_started" && (detailNumber(detail, "attempt") ?? 1) === 1) || event.type === "pump_run_started") {
+    void traceSyncEvent(event, application).catch((error: unknown) => console.error("[logging:trace] sync start failed:", error));
+    return;
+  }
+  const id =
+    detailString(detail, "id") ?? detailString(detail, "messageId") ?? detailString(detail, "eventId") ?? detailString(detail, "key") ?? "";
+  const consumer = event.kind === "topic" ? (detailString(detail, "key") ?? detailString(detail, "consumer")) : undefined;
+  const key = syncSpanKey(event.kind, event.resource, id, consumer);
+  enqueueSyncTraceWrite(key, () => traceSyncEvent(event, application));
+};
+
 /** Flush diagnostics after Sync workers stop producing events during shutdown. */
-export const flushSyncTraceEvents = async (): Promise<void> => {
+export const flushSyncTraceEvents = async (options?: { stopping?: boolean }): Promise<void> => {
   while (pendingSyncWrites.size > 0) await Promise.all(pendingSyncWrites.values());
+  if (options?.stopping) {
+    for (const key of deferredSyncRuns.keys()) {
+      await materializeSyncRun(key);
+      await updateSpan(newContext(key), { statusMessage: "Process stopped before observed run settlement" });
+      takeSyncRun(key);
+    }
+  }
+  await runRollups.flush().catch(reportRunRollupError);
 };
 
 /** Awaitable form of {@link observeSyncEvent} for tests. */
@@ -1259,6 +1494,9 @@ export const trace = {
   events,
   sources,
   summary,
+  successMinutes,
   cleanup,
   syncSpanKey,
+  backgroundJob,
+  backgroundSchedule,
 };

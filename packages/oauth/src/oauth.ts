@@ -1066,7 +1066,7 @@ const app = new Hono<AuthContext>()
       }
     },
   )
-  .get(
+  .post(
     "/oauth/logout",
     describeRoute({
       tags: ["OAuth"],
@@ -1078,7 +1078,7 @@ const app = new Hono<AuthContext>()
     }),
     auth.requireRole("*"),
     async (c) => {
-      auth.session.delete(c);
+      await auth.session.delete(c);
 
       const postLogoutRedirectUri = c.req.query("post_logout_redirect_uri");
       const clientId = c.req.query("client_id");

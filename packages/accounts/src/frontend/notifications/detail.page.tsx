@@ -118,10 +118,7 @@ export default ssr<AuthContext>(async (c) => {
   const perPage = 100;
   const recipientStatus = validRecipientStatus(c.req.query("recipient_status"));
 
-  const [pendingRequestsPage, batch] = await Promise.all([
-    accountsService.accountRequest.list({ access: { userId: user.id, isAdmin: true }, filter: { status: "pending" } }),
-    notificationBatches.get(batchId),
-  ]);
+  const [pendingRequests, batch] = await Promise.all([accountsService.accountRequest.countPending(), notificationBatches.get(batchId)]);
 
   if (!batch) {
     return ssr.error(c, 404);
@@ -191,7 +188,7 @@ export default ssr<AuthContext>(async (c) => {
         active="notifications"
         ancestor
         isAdmin
-        pendingRequests={pendingRequestsPage.total}
+        pendingRequests={pendingRequests}
         scrollPreserveKey="accounts-notification-detail"
       >
         <div class="flex flex-col gap-2">

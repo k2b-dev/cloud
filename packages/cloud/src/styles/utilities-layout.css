@@ -604,7 +604,10 @@
   padding: 0.25rem 0.5rem;
 }
 
-.layout-shell-content:not(:has(.layout-content-main .k2b-app-workspace, .k2b-page-title:not([data-fallback]))) .layout-page-head[data-trail="up"] {
+/* Layout marks a page that renders its own title (`data-k2b-own-title`); the
+   row asks the content after it for a workspace. Neither asks the whole shell:
+   a `:has()` on it would restyle the page on every change inside. */
+.layout-shell-content:not([data-k2b-own-title]) .layout-page-head[data-trail="up"]:not(:has(~ .layout-content-main .k2b-app-workspace)) {
   display: flex;
 }
 

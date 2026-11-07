@@ -4,6 +4,9 @@ export const oauthMessages = i18n.define({
   baseLocale: "en",
   messages: {
     en: {
+      signOut: "Sign out",
+      signOutHint: "Sign out of Cloud in this browser?",
+      cancelSignOut: "Stay signed in",
       client: "Client",
       registration: "Registration",
       description: "Description",
@@ -185,6 +188,9 @@ export const oauthMessages = i18n.define({
       deviceEnterAnother: "Enter another code",
     },
     de: {
+      signOut: "Abmelden",
+      signOutHint: "In diesem Browser von Cloud abmelden?",
+      cancelSignOut: "Angemeldet bleiben",
       client: "Client",
       registration: "Registrierung",
       description: "Beschreibung",
@@ -361,7 +367,7 @@ export const oauthMessages = i18n.define({
       deviceExpiredBody:
         "Diese Anmeldeanfrage ist abgelaufen oder wurde bereits beantwortet. Starte die Anmeldung auf deinem Gerät erneut.",
       deviceSessionRequired:
-        "Zum Bestätigen eines Geräts ist eine Anmeldung im Browser erforderlich. API-Schlüssel und Access-Tokens können keine Geräte bestätigen.",
+        "Zum Bestätigen eines Geräts ist eine Anmeldung im Browser erforderlich. API Keys und Access-Tokens können keine Geräte bestätigen.",
       webSessionRequired: "Zugriff freigeben geht nur im Web. Die Cloud-App kann anderen Anwendungen keinen Zugriff geben.",
       deviceSignInAgain: "Melde dich erneut im Browser an und gib den Code noch einmal ein.",
       deviceNoAccess: "Dein Konto darf diese Anwendung nicht verwenden.",

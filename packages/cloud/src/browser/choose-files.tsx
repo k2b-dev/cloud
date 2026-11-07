@@ -1,8 +1,9 @@
 import { showFileDialog } from "@k2b/stdlib/browser";
-import { dialogCore, panelDialogWorkspaceOptions } from "@k2b/ui";
+import { dialogCore, panelDialogWorkspaceOptions, toast } from "@k2b/ui";
 import { createSignal } from "solid-js";
+import { deviceFilesProblem } from "./choice-limits";
 import type { ChooseFilesOptions, FileProviderList } from "./FileChooser";
-import type { FileProviderCaller } from "./file-providers";
+import type { FileProviderCaller, FileProviderSource } from "./file-providers";
 import type { ProviderList } from "./provider-list";
 import { importOnDemand } from "./reload";
 
@@ -25,21 +26,40 @@ export const createFileChoosing = (
       // Only a refusal leaves no request behind; asking again now lets the next choice find a renewed session's apps.
       if (!list.requested()) list.prefetch();
       // The page cannot close a native dialog; an abort resolves `[]` at once and a later pick is dropped.
+      // Without the chooser to say it, a choice above the caller's limits resolves nothing and a toast says why.
+      const fitting = picked.then((files) => {
+        if (signal?.aborted) return [];
+        const why = deviceFilesProblem(files, options, caller().locale);
+        if (!why) return files;
+        toast.error(why);
+        return [];
+      });
       return new Promise((resolve) => {
         const abort = () => resolve([]);
         signal?.addEventListener("abort", abort, { once: true });
-        picked.then(resolve, () => resolve([])).finally(() => signal?.removeEventListener("abort", abort));
+        fitting.then(resolve, () => resolve([])).finally(() => signal?.removeEventListener("abort", abort));
       });
     }
+    // The kept list shows at once and the catalog is read again behind it, once per open; a failed refresh keeps it.
     const [providers, setProviders] = createSignal<FileProviderList>(known ? { state: "ready", providers: known } : { state: "loading" });
+    let open = true;
+    // Closing stops the catalog reads this dialog started.
+    const discovery = new AbortController();
+    const settle = (request: Promise<readonly FileProviderSource[]>) =>
+      request.then(
+        (value) => {
+          if (open) setProviders({ state: "ready", providers: value });
+        },
+        () => {
+          if (open) setProviders({ state: "error" });
+        },
+      );
     const load = () => {
       setProviders({ state: "loading" });
-      list.providers().then(
-        (value) => setProviders({ state: "ready", providers: value }),
-        () => setProviders({ state: "error" }),
-      );
+      void settle(list.providers(discovery.signal));
     };
-    if (!known) load();
+    if (known) void settle(list.refresh(discovery.signal));
+    else load();
     return (async () => {
       let abort = () => {};
       const chooser = await Promise.race([
@@ -50,19 +70,27 @@ export const createFileChoosing = (
           if (signal?.aborted) abort();
         }),
       ]).finally(() => signal?.removeEventListener("abort", abort));
-      if (!chooser) return [];
+      if (!chooser) {
+        discovery.abort();
+        return [];
+      }
       return dialogCore
         .open<File[]>(
           (close) => <chooser.FileChooser options={options} providers={providers} retryProviders={load} caller={caller} close={close} />,
           {
             ...panelDialogWorkspaceOptions,
             panelClassName: `${panelDialogWorkspaceOptions.panelClassName} cloud-file-chooser-dialog`,
-            initialFocus: (dialog) => dialog.querySelector<HTMLElement>('[role="gridcell"][tabindex="0"]'),
+            initialFocus: (dialog) => dialog.querySelector<HTMLElement>('.cloud-file-dialog__source[aria-current="true"]'),
             signal: options.signal,
             history: true,
           },
         )
-        .then((files) => files ?? []);
+        .then((files) => files ?? [])
+        .finally(() => {
+          // Answers that arrive after the dialog closed are dropped.
+          open = false;
+          discovery.abort();
+        });
     })();
   };
 
