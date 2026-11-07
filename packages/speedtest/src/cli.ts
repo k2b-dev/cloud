@@ -1,4 +1,4 @@
-import { DEFAULT_SERVER, type Progress, runSpeedtest } from "./engine";
+import { DEFAULT_SERVER, type Progress, runSpeedtest, SpeedtestError } from "./engine";
 import { createNodeTransport } from "./node";
 import { runUdpTest } from "./udp-client";
 
@@ -46,6 +46,15 @@ export async function main(args: string[]) {
       lineOpen = false;
     }
     console.log(JSON.stringify(result, null, args.includes("--json") ? undefined : 2));
+  } catch (error) {
+    if (error instanceof SpeedtestError && error.retryAfter) {
+      throw new Error(
+        german
+          ? `Test derzeit nicht möglich · noch ${error.retryAfter} s bis zum nächsten Versuch`
+          : `Test unavailable · ${error.retryAfter} s until the next attempt`,
+      );
+    }
+    throw error;
   } finally {
     process.removeListener("SIGINT", cancel);
     if (lineOpen) process.stderr.write("\n");

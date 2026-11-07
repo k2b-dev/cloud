@@ -12,6 +12,8 @@ export const PLANS = {
 export type Mode = keyof typeof PLANS;
 export type Phase = "ping" | "download" | "upload";
 export interface Transport {
+  begin?(mode: Mode, signal: AbortSignal): Promise<void>;
+  end?(): void;
   ping(signal: AbortSignal): Promise<void>;
   download(bytes: number, count: (bytes: number) => void, signal: AbortSignal): Promise<void>;
   upload(bytes: number, count: (bytes: number) => void, signal: AbortSignal): Promise<void>;
@@ -55,7 +57,7 @@ export interface Result {
 }
 export class SpeedtestError extends Error {
   constructor(
-    public readonly code: "network" | "http" | "slow_server" | "cancelled" | "invalid_server",
+    public readonly code: "network" | "http" | "slow_server" | "cancelled" | "invalid_server" | "capacity",
     message: string,
     public readonly status?: number,
     public readonly retryAfter?: number,
@@ -226,6 +228,7 @@ export async function runSpeedtest(options: {
   };
   try {
     await execute("ping", plan.download + plan.upload, async (signal) => {
+      await options.transport.begin?.(mode, signal);
       await options.transport.ping(signal); // Discard connection warmup.
       for (let index = 0; index < plan.samples; index++) {
         signal.throwIfAborted();
@@ -290,6 +293,7 @@ export async function runSpeedtest(options: {
     throw new SpeedtestError("network", error instanceof Error ? error.message : "Speedtest failed");
   } finally {
     root.abort();
+    options.transport.end?.();
     options.signal?.removeEventListener("abort", cancel);
   }
 }

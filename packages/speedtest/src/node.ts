@@ -10,7 +10,7 @@ export function createNodeTransport(server: string): Transport {
   crypto.getRandomValues(chunk);
   return createHttpTransport(
     server,
-    (bytes, count, signal) =>
+    (bytes, count, signal, headers) =>
       new Promise<void>((resolve, reject) => {
         if (signal.aborted) return reject(signal.reason);
         const request = (url.protocol === "https:" ? httpsRequest : httpRequest)(
@@ -18,7 +18,7 @@ export function createNodeTransport(server: string): Transport {
           {
             method: "POST",
             signal,
-            headers: { "Content-Type": "application/octet-stream", "Content-Length": bytes },
+            headers: { ...headers, "Content-Type": "application/octet-stream", "Content-Length": bytes },
           },
           (response) => {
             response.resume();

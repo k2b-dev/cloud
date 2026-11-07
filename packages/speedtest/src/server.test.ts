@@ -1,27 +1,41 @@
 import { describe, expect, test } from "bun:test";
-import { IpBudget } from "./budget";
 import { DOWNLOAD_BYTES, UPLOAD_BYTES } from "./engine";
 import { createSpeedtestHandler } from "./server";
 import { createUdpHandler, UDP_CHALLENGE, UDP_HELLO, UDP_PACKET_BYTES, UDP_PROBE, UDP_REPLY } from "./udp";
 
 const request = (path: string, init?: RequestInit) => new Request(`https://speedtest.example.com${path}`, init);
 const handler = () => createSpeedtestHandler({ maxActive: 128, maxPeers: 4_096, now: () => 0, script: "// shared engine bundle" });
-
+async function start(run: ReturnType<typeof handler>, ip = "192.0.2.1") {
+  const response = await run(request("/session", { method: "POST" }), ip);
+  expect(response.status).toBe(201);
+  const result = await response.json();
+  return { "x-speedtest-token": String(result.token) };
+}
 describe("standalone HTTP server", () => {
-  test("public ping is uncacheable and CORS exposes Retry-After without credentials", async () => {
+  test("public ping is uncacheable and CORS exposes retry without credentials", async () => {
     const response = await handler()(request("/ping"), "192.0.2.1");
     expect(response.status).toBe(204);
-    expect(await response.text()).toBe("");
     expect(response.headers.get("cache-control")).toContain("no-store");
     expect(response.headers.get("access-control-allow-origin")).toBe("*");
     expect(response.headers.get("access-control-allow-credentials")).toBeNull();
     expect(response.headers.get("access-control-expose-headers")).toBe("Retry-After");
+    expect(response.headers.get("access-control-allow-headers")).toContain("X-Speedtest-Token");
+  });
+  test("raw transfer routes require admission and tickets cannot move to another IP", async () => {
+    const run = handler();
+    expect((await run(request("/download"), "192.0.2.1")).status).toBe(401);
+    expect((await run(request("/upload", { method: "POST", body: "x" }), "192.0.2.1")).status).toBe(401);
+    const headers = await start(run);
+    expect((await run(request("/download", { headers }), "192.0.2.2")).status).toBe(401);
+    await run(request("/session/end", { method: "POST", headers }), "192.0.2.1");
+    expect((await run(request("/download", { headers }), "192.0.2.1")).status).toBe(401);
   });
   test("fixed download sizes, strict validation and bounded chunks", async () => {
     const run = handler();
+    const headers = await start(run);
     for (const size of ["0", "-1", "abc", "10.5", String(DOWNLOAD_BYTES + 1)])
-      expect((await run(request(`/download?size=${size}`), "192.0.2.1")).status).toBe(400);
-    const response = await run(request("/download?size=100000"), "192.0.2.1");
+      expect((await run(request(`/download?size=${size}`, { headers }), "192.0.2.1")).status).toBe(400);
+    const response = await run(request("/download?size=100000", { headers }), "192.0.2.1");
     expect(response.headers.get("content-length")).toBe("100000");
     const reader = response.body!.getReader();
     let total = 0;
@@ -35,10 +49,12 @@ describe("standalone HTTP server", () => {
   });
   test("reads streamed upload and rejects oversized declarations or bodies", async () => {
     const run = handler();
+    const headers = await start(run);
     expect(
-      (await run(request("/upload", { method: "POST", headers: { "content-length": String(UPLOAD_BYTES + 1) } }), "192.0.2.1")).status,
+      (await run(request("/upload", { method: "POST", headers: { ...headers, "content-length": String(UPLOAD_BYTES + 1) } }), "192.0.2.1"))
+        .status,
     ).toBe(413);
-    const response = await run(request("/upload", { method: "POST", body: new Uint8Array(100_000) }), "192.0.2.1");
+    const response = await run(request("/upload", { method: "POST", headers, body: new Uint8Array(100_000) }), "192.0.2.1");
     expect(await response.json()).toEqual({ bytes: 100_000 });
     let cancelled = false;
     const body = new ReadableStream<Uint8Array>({
@@ -49,60 +65,63 @@ describe("standalone HTTP server", () => {
         cancelled = true;
       },
     });
-    const large = await run(request("/upload", { method: "POST", body }), "192.0.2.1");
-    expect(large.status).toBe(413);
+    expect((await run(request("/upload", { method: "POST", headers, body }), "192.0.2.1")).status).toBe(413);
     expect(cancelled).toBe(true);
   });
-  test("all transfer paths share one anonymous IP budget; spoofed headers cannot reset it", async () => {
+  test("hundreds of chunks share one test, ended tests still count and proxy spoofing cannot reset the limit", async () => {
     const run = handler();
-    for (let index = 0; index < 300; index++) {
-      const response = await run(
-        request(index % 2 ? "/upload" : "/download?size=1", {
-          method: index % 2 ? "POST" : "GET",
-          headers: { "x-real-ip": `192.0.2.${index}` },
-        }),
-        "198.51.100.1",
-      );
-      await response.arrayBuffer();
-      expect(response.status).toBe(200);
+    for (let testIndex = 0; testIndex < 2; testIndex++) {
+      const headers = await start(run);
+      for (let index = 0; index < 320; index++) {
+        const response = await run(
+          request("/download?size=1", { headers: { ...headers, "x-real-ip": `198.51.100.${index % 255}` } }),
+          "192.0.2.1",
+        );
+        expect(response.status).toBe(200);
+        await response.arrayBuffer();
+      }
+      await run(request("/session/end", { method: "POST", headers }), "192.0.2.1");
     }
-    const response = await run(request("/download?size=1"), "198.51.100.1");
+    const response = await run(request("/session", { method: "POST" }), "192.0.2.1");
     expect(response.status).toBe(429);
-    expect(response.headers.get("retry-after")).toBe("600");
-    expect((await run(request("/ping"), "198.51.100.1")).status).toBe(204);
-    expect((await run(request("/upload", { method: "POST" }), "198.51.100.2")).status).toBe(200);
+    expect(response.headers.get("retry-after")).toBe("60");
   });
-  test("trusts client headers only from configured exact proxy addresses", async () => {
-    const run = createSpeedtestHandler({ maxActive: 1, maxPeers: 1, trustedProxies: ["127.0.0.1"], now: () => 0 });
-    expect((await run(request("/ping", { headers: { "x-real-ip": "192.0.2.1" } }), "127.0.0.1")).status).toBe(204);
-    expect((await run(request("/ping", { headers: { "x-real-ip": "192.0.2.2" } }), "127.0.0.1")).status).toBe(503);
+  test("trusts client headers only from exact configured proxy addresses", async () => {
+    const run = createSpeedtestHandler({ maxActive: 10, maxPeers: 4, trustedProxies: ["127.0.0.1"], now: () => 0 });
+    const headers = await start(run, "192.0.2.1");
+    expect((await run(request("/ping", { headers: { ...headers, "x-real-ip": "192.0.2.1" } }), "::ffff:127.0.0.1")).status).toBe(204);
+    expect((await run(request("/ping", { headers: { ...headers, "x-real-ip": "192.0.2.1" } }), "198.51.100.1")).status).toBe(401);
   });
-  test("cancelling a download releases its active slot", async () => {
-    const run = createSpeedtestHandler({ maxActive: 1, maxPeers: 4, now: () => 0 });
-    const response = await run(request("/download"), "192.0.2.1");
-    expect((await run(request("/download"), "192.0.2.2")).status).toBe(503);
-    await response.body!.cancel();
-    expect((await run(request("/ping"), "192.0.2.2")).status).toBe(204);
+  test("stream cancellation releases slots; session end stops remaining streams", async () => {
+    const run = handler();
+    const headers = await start(run);
+    const responses: Response[] = [];
+    try {
+      for (let index = 0; index < 10; index++) responses.push(await run(request("/download", { headers }), "192.0.2.1"));
+      expect(responses.every((response) => response.status === 200)).toBe(true);
+      expect((await run(request("/download", { headers }), "192.0.2.1")).status).toBe(429);
+      await responses[0]!.body!.cancel();
+      const replacement = await run(request("/download", { headers }), "192.0.2.1");
+      expect(replacement.status).toBe(200);
+      responses.push(replacement);
+      await run(request("/session/end", { method: "POST", headers }), "192.0.2.1");
+      await expect(responses[1]!.arrayBuffer()).rejects.toThrow();
+    } finally {
+      await Promise.all(responses.map((response) => response.body?.cancel().catch(() => {})));
+    }
   });
-  test("scripts are explicit build artifacts and unknown paths never start a transfer", async () => {
+  test("global bandwidth exhaustion fails visibly and never returns a completed truncated download", async () => {
+    const run = createSpeedtestHandler({ maxActive: 10, maxPeers: 4, capacityMbps: 1, testMbps: 1, now: () => 0 });
+    const headers = await start(run);
+    const response = await run(request("/download?size=200000", { headers }), "192.0.2.1");
+    await expect(response.arrayBuffer()).rejects.toThrow();
+    expect(await (await run(request("/session", { headers }), "192.0.2.1")).json()).toEqual({ limited: true });
+    expect((await run(request("/upload", { method: "POST", headers }), "192.0.2.1")).status).toBe(503);
+  });
+  test("scripts are build artifacts and unknown paths never start a transfer", async () => {
     expect((await handler()(request("/cli"), "192.0.2.1")).headers.get("content-type")).toContain("text/javascript");
     expect((await handler()(request("/unknown"), "192.0.2.1")).status).toBe(404);
   });
-});
-
-test("budget storage is bounded, live peers are never evicted and expired records recover", () => {
-  let now = 0;
-  const budget = new IpBudget({ maxPeers: 1, maxActive: 5, now: () => now });
-  const live = budget.acquire("192.0.2.1", true);
-  expect("release" in live).toBe(true);
-  if (!("release" in live)) throw new Error("missing lease");
-  now = 600_000;
-  expect(budget.acquire("192.0.2.2", true)).toMatchObject({ status: 503 });
-  live.release();
-  live.release();
-  const next = budget.acquire("192.0.2.2", true);
-  expect("release" in next).toBe(true);
-  if ("release" in next) next.release();
 });
 
 describe("UDP address confirmation", () => {
@@ -133,46 +152,6 @@ describe("UDP address confirmation", () => {
   });
 });
 
-test("IPv6 interface rotation and mapped IPv4 aliases keep one transfer budget", () => {
-  const budget = new IpBudget({ maxPeers: 4, maxActive: 10, now: () => 0 });
-  for (let index = 0; index < 300; index++) {
-    const result = budget.acquire(`2001:db8:1234:5678::${index.toString(16)}`, true);
-    expect("release" in result).toBe(true);
-    if ("release" in result) result.release();
-  }
-  expect(budget.acquire("2001:db8:1234:5678:ffff:ffff:ffff:ffff", true)).toMatchObject({ status: 429, retryAfter: 600 });
-  for (let index = 0; index < 300; index++) {
-    const result = budget.acquire(index % 2 ? "::ffff:c000:201" : "192.0.2.1", true);
-    if ("release" in result) result.release();
-  }
-  expect(budget.acquire("::ffff:192.0.2.1", true)).toMatchObject({ status: 429 });
-});
-test("a full ledger reports its actual recovery interval", () => {
-  const budget = new IpBudget({ maxPeers: 1, maxActive: 10, now: () => 0 });
-  const first = budget.acquire("192.0.2.1", true);
-  if ("release" in first) first.release();
-  for (let index = 2; index < 100; index++)
-    expect(budget.acquire(`192.0.2.${index}`, true)).toMatchObject({ status: 503, retryAfter: 600 });
-});
-test("mapped proxy peers match the configured IPv4 proxy", async () => {
-  const run = createSpeedtestHandler({ maxActive: 10, maxPeers: 1, trustedProxies: ["127.0.0.1"], now: () => 0 });
-  expect((await run(request("/ping", { headers: { "x-real-ip": "192.0.2.1" } }), "::ffff:127.0.0.1")).status).toBe(204);
-  expect((await run(request("/ping"), "192.0.2.1")).status).toBe(204);
-});
-test("adjacent client phases have cancellation headroom on the server", async () => {
-  const run = handler();
-  const responses: Response[] = [];
-  try {
-    for (let index = 0; index < 10; index++) {
-      const response = await run(request("/download"), "192.0.2.1");
-      responses.push(response);
-      expect(response.status).toBe(200);
-    }
-    expect((await run(request("/download"), "192.0.2.1")).status).toBe(429);
-  } finally {
-    await Promise.all(responses.map((response) => response.body?.cancel()));
-  }
-});
 test("UDP challenges cannot allocate peer records and packet processing has a global ceiling", () => {
   let now = Date.parse("2026-10-15T09:30:00Z");
   const run = createUdpHandler({ maxPeers: 1, now: () => now, maxPacketsPerSecond: 100, secret: new Uint8Array(32).fill(7) });
