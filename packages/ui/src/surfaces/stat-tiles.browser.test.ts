@@ -79,9 +79,9 @@ const measure = () =>
 
 describe("@k2b/ui key figure tiles", () => {
   for (const [name, width, columns, height, valueSize] of [
-    ["desktop", 1440, 4, 136, "28px"],
-    ["600 px grid", 620, 2, 164, "28px"],
-    ["phone", 390, 2, 164, "23.04px"],
+    ["desktop", 1440, 4, 136, 28],
+    ["600 px grid", 620, 2, 164, 28],
+    ["phone", 390, 2, 164, 23.04],
   ] as const) {
     test(`on a ${name} every state keeps the tile's size and rows (${columns} columns, ${height}px)`, async () => {
       const page = await browser.newPage({ viewport: { width, height: 900 } });
@@ -105,7 +105,8 @@ describe("@k2b/ui key figure tiles", () => {
         const data = rows.find((row) => row.state === "data")!;
         // In a grid of 600 px or less the taller tile puts the badge under the figure; a phone tile also shrinks it.
         expect(data.badgeBelow).toBe(name !== "desktop");
-        expect(data.valueSize).toBe(valueSize);
+        // Engines round container units differently (WebKit: 23.040001px), so compare the number.
+        expect(Number.parseFloat(data.valueSize)).toBeCloseTo(valueSize, 1);
         expect(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(0);
       } finally {
         await page.close();
