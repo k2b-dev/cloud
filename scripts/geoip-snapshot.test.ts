@@ -23,7 +23,7 @@ test("rewrites exactly the snapshot reference and gzip checksums in the geoip st
 
 test("takes the snapshot's linux/amd64 manifest on every target platform", async () => {
   // The mirror pushes the snapshot for linux/amd64, possibly as an index with an
-  // attestation; without the pin, arm64 release builds fail with "no match for platform".
+  // attestation; the pin lets source builds for other architectures copy the same data.
   const dockerfile = await Bun.file(new URL("../Dockerfile", import.meta.url)).text();
   const stage = dockerfile.split("\n").filter((line) => line.includes("mirror/dbip-lite:"));
   expect(stage).toEqual([

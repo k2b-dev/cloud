@@ -3,8 +3,8 @@ import { appendFileSync, createReadStream } from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { createInterface } from "node:readline";
+import { redis, sql } from "@k2b/cloud";
 import type { User } from "@k2b/cloud/contracts";
-import { redis, sql } from "bun";
 import { z } from "zod";
 import type { ConnectorVerification } from "../../src/contracts";
 import type { MailRequestContext } from "../../src/service/auth";
@@ -144,6 +144,8 @@ export async function run(options: Options): Promise<void> {
     process.env.DATABASE_URL = database.url;
     const namespace = `test-mail-memory-${crypto.randomUUID()}`;
     process.env.SYNC_NAMESPACE = namespace;
+    const { initializeTestPlatform } = await import("../../../../scripts/fixtures/platform");
+    await initializeTestPlatform("mail");
     memoryBudget = await import("../../src/service/processing-memory-budget");
     const { deleteTestNamespace } = await import("../../../../scripts/fixtures/test-sync");
     cleanup.push(() => redis.close());
@@ -304,7 +306,8 @@ export async function run(options: Options): Promise<void> {
       managesGroupIds: [],
     };
     const context: MailRequestContext = { actor: { kind: "user", user }, accessSubject: { type: "user", userId: user.id }, requestId: uid };
-    oauthTokens.verifyAccessToken = async (token) => (token === "memory-load" ? { kind: "user", payload: {}, user, scopes: [] } : null);
+    oauthTokens.verifyAccessToken = async (token) =>
+      token === "memory-load" ? { kind: "user", payload: {}, user, scopes: ["read"] } : null;
     const create = async (sources: Fixture[], label: string, smallFolders = options.folders): Promise<Mailbox> => {
       check();
       const mailbox = await createMailbox(context, { name: `Memory ${label}` });

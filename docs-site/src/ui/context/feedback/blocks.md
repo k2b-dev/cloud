@@ -61,9 +61,17 @@ title. Use one icon per tone meaning (`ti-info-circle`, `ti-alert-triangle`,
 `ti-alert-circle`) or a specific one when it names the subject, and keep the
 default calm notice for findings that stand on their own.
 
+`icon` set to `true` takes the tone's own icon, the one a dialog with the same
+`tone` shows in its header, and names the tone for screen readers ("Warning: …"),
+so a warning is not carried by color alone. Use it for a warning or risk next
+to the control it is about, such as public access beside its link.
+
 ```tsx
 <NoticeCard tone="warning" icon="ti ti-alert-triangle">
   <p><strong>No one manages access.</strong> Assign at least one person Manage access.</p>
+</NoticeCard>
+<NoticeCard tone="warning" icon>
+  Anyone with the link sees this, also without signing in.
 </NoticeCard>
 ```
 

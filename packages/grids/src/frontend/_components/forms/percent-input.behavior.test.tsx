@@ -28,11 +28,13 @@ for (const [range, initial, edited] of [
     );
     try {
       const input = host.querySelector<HTMLInputElement>("input")!;
-      expect(input.value).toBe(String(initial));
+      expect(input.value).toBe(initial.toFixed(5));
+      input.focus();
       input.value = edited;
       input.dispatchEvent(new Event("input", { bubbles: true }));
       input.dispatchEvent(new Event("change", { bubbles: true }));
-      input.dispatchEvent(new Event("blur"));
+      input.blur();
+      expect(input.value).toBe(Number(edited).toFixed(5));
       expect(value()).toBe(Number(edited));
     } finally {
       dispose();

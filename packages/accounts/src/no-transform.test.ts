@@ -35,6 +35,8 @@ describe("compression boundaries", () => {
   }
   for (const path of [
     "/",
+    "/agents",
+    "/agents/__new_route__",
     "/groups/group",
     "/groups/group/__new_route__",
     "/service-accounts",

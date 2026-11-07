@@ -41,6 +41,7 @@ window.fixture = {
   replace: () => setReactions((items) => items.map((item) => ({ ...item, count: item.count + 1 }))),
   relabel: (label) => setReactions((items) => items.map((item) => (item.key === "0" ? { ...item, label } : item))),
   remove: () => setReactions((items) => items.filter((item) => item.key !== "0")),
+  clear: () => setReactions([]),
   unmount: render(() => createComponent(ReactionBar, {
     get reactions() { return reactions(); },
     onToggle: options.readOnly ? undefined : (key) => window.toggled.push(key),
@@ -67,6 +68,7 @@ declare const fixture: {
   replace: () => void;
   relabel: (label: string) => void;
   remove: () => void;
+  clear: () => void;
   unmount: () => void;
 };
 declare const toggled: string[];
@@ -154,6 +156,14 @@ describe("ReactionBar in the browser", () => {
     expect(await isOpen(page)).toBe(false);
   }, 30_000);
 
+  test("a focused chip that goes away hands focus to the chip in its place, or to Add reaction", async () => {
+    const page = await open({ add: true });
+    await chip(page).focus();
+    await page.evaluate(() => fixture.remove());
+    expect(await page.evaluate(() => (document.activeElement as HTMLElement | null)?.dataset.reactionKey)).toBe("1");
+    await page.evaluate(() => fixture.clear());
+    expect(await page.evaluate(() => document.activeElement?.classList.contains("k2b-reaction-bar__add-button"))).toBe(true);
+  }, 30_000);
   test("an open names hint follows its reaction and closes when the reaction goes", async () => {
     const page = await open();
     await chip(page).hover();

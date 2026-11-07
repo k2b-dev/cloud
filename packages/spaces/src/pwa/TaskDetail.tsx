@@ -1,7 +1,9 @@
+import { CloudAvatar } from "@k2b/cloud/account/ui";
 import type { DateContext } from "@k2b/stdlib";
-import { Avatar, Button, ButtonLink, Checkbox, IconButton, MarkdownView, Placeholder, Skeleton, toast, useLocale } from "@k2b/ui";
+import { Button, ButtonLink, Checkbox, IconButton, MarkdownView, Placeholder, Skeleton, toast, useLocale } from "@k2b/ui";
 import { createEffect, createMemo, createSignal, For, type JSX, on, onMount, Show } from "solid-js";
 import { apiClient } from "@/api/client";
+import type { SpaceItemAssignee } from "@/contracts";
 import { buildSpaceItemHref } from "@/routes";
 import { createRetryToasts } from "../frontend/lib/feedback";
 import { overviewMessages } from "../frontend/overview-messages";
@@ -9,13 +11,18 @@ import { saveCompletion } from "./completion";
 import type { WorkItem } from "./MyTasks";
 import { myTasksMessages } from "./messages";
 import { workSchedule } from "./schedule";
+import TaskComment from "./TaskComment";
+import { type TaskPreview, TaskProps, TitleEditor } from "./TaskFields";
 import type { PwaTask } from "./task";
+
+/** The row a task was opened from: its title, Space and date, and from a Space its status and people. */
+export type OpeningItem = WorkItem & { preview?: TaskPreview; nextShortId?: string; previousShortId?: string };
 
 /** What the detail knows: the row it was opened from, then the whole task, or why it has none. */
 export type TaskDetailState =
-  | { kind: "loading"; item?: WorkItem }
-  | { kind: "ready"; task: PwaTask }
-  | { kind: "failed"; item?: WorkItem }
+  | { kind: "loading"; item?: OpeningItem }
+  | { kind: "ready"; task: PwaTask; item?: OpeningItem }
+  | { kind: "failed"; item?: OpeningItem }
   | { kind: "gone" };
 
 type Props = {
@@ -25,14 +32,19 @@ type Props = {
   listHref: string;
   onRetry: () => void;
   onCompletedChange: (shortId: string, done: boolean) => void;
+  /** Re-read after a write; owns recovery feedback and resolves after a covering canonical snapshot. */
+  onRefresh?: () => Promise<void>;
+  /** The person, for "Assign to me". */
+  me?: SpaceItemAssignee;
+  /** Offline, every change is off and the task says why. */
+  online?: boolean;
+  /** Raised to open the title field, such as from "Change title" in the head's menu. */
+  editTitle?: number;
+  /** A property changed here that lists show, so they read again. */
+  onChanged?: () => void;
 };
 
 type EntryState = { saving: boolean; failed: boolean };
-
-const avatarSrc = (person: PwaTask["people"][number]) =>
-  person.kind === "user" && person.avatarHash
-    ? `/api/accounts/users/${encodeURIComponent(person.id)}/avatar?rev=${encodeURIComponent(person.avatarHash)}`
-    : null;
 
 /**
  * One task in the mobile app: done or open, when, where, who, the description and the checklist. Opened from a row,
@@ -60,17 +72,41 @@ export default function TaskDetail(props: Props) {
   const [entries, setEntries] = createSignal<ReadonlyMap<string, boolean>>(new Map());
   const [entryStates, setEntryStates] = createSignal<ReadonlyMap<string, EntryState>>(new Map());
   const isDone = () => done() ?? summary()?.completed ?? false;
+  const checklist = createMemo(() => new Map(task()?.checklist.map((entry) => [entry.id, entry])));
   const checked = (entry: PwaTask["checklist"][number]) => entries().get(entry.id) ?? entry.completed;
   const writable = () => task()?.canWrite ?? true;
   // The server renders the controls before this island runs; until then a tap would do nothing.
   const [mounted, setMounted] = createSignal(false);
   onMount(() => setMounted(true));
-  const ready = () => props.state.kind === "ready" && mounted();
-  // A completion saved here or elsewhere reaches the task: the task's state counts again.
+  const ready = () => props.state.kind === "ready" && mounted() && props.online !== false;
+  const editable = () => ready() && writable();
+  const [editingTitle, setEditingTitle] = createSignal(false);
   createEffect(
     on(
-      () => task()?.completed,
-      () => setDone(undefined),
+      () => props.editTitle,
+      () => editable() && setEditingTitle(true),
+      { defer: true },
+    ),
+  );
+  const opening = () => (props.state.kind === "gone" ? undefined : props.state.item);
+  const refresh = async () => {
+    try {
+      await props.onRefresh?.();
+      return true;
+    } catch {
+      // The canonical reader exposes its error with Retry; keep the saved overlay until it catches up.
+      return false;
+    }
+  };
+  // A new canonical snapshot retires settled overlays; writes still in flight keep their visible choice.
+  createEffect(
+    on(
+      task,
+      () => {
+        if (!doneSaving()) setDone(undefined);
+        setEntries((current) => new Map([...current].filter(([id]) => entryStates().get(id)?.saving)));
+        setEntryStates((current) => new Map([...current].filter(([, state]) => state.saving)));
+      },
       { defer: true },
     ),
   );
@@ -82,8 +118,14 @@ export default function TaskDetail(props: Props) {
     setDone(next);
     setDoneSaving(true);
     const outcome = await saveCompletion({ item: current, completed: next, userId: props.userId, locale: locale() });
+    if (outcome === "saved") {
+      props.onCompletedChange(current.shortId, next);
+      const refreshed = await refresh();
+      setDoneSaving(false);
+      if (refreshed && props.onRefresh) setDone(undefined);
+      return;
+    }
     setDoneSaving(false);
-    if (outcome === "saved") return props.onCompletedChange(current.shortId, next);
     setDone(!next);
     if (outcome === "failed")
       retryToast(
@@ -109,7 +151,17 @@ export default function TaskDetail(props: Props) {
     const response = await apiClient[":id"].items[":itemId"].checklist[":entryId"]
       .$patch({ param: { id: current.spaceShortId, itemId: current.shortId, entryId: entry.id }, json: { completed: value } })
       .catch(() => null);
-    if (response?.ok) return patchState(entry.id, undefined);
+    if (response?.ok) {
+      const refreshed = await refresh();
+      patchState(entry.id, undefined);
+      if (refreshed && props.onRefresh)
+        setEntries((map) => {
+          const next = new Map(map);
+          next.delete(entry.id);
+          return next;
+        });
+      return;
+    }
     // The server kept the old state: the box springs back.
     setEntries((map) => new Map(map).set(entry.id, !value));
     if (response && (response.status === 403 || response.status === 404)) {
@@ -127,13 +179,13 @@ export default function TaskDetail(props: Props) {
     return current ? workSchedule(current, props.dateConfig, t().allDay) : null;
   };
 
-  const section = (title: string, aside: JSX.Element | undefined, body: JSX.Element, asideTone?: "danger") => (
+  const section = (title: string, aside: (() => JSX.Element) | undefined, body: JSX.Element, asideTone?: () => "danger" | undefined) => (
     <section class="spaces-pwa-task__section">
       <h4>
         {title}
         <Show when={aside}>
-          <span class="spaces-pwa-task__aside" data-tone={asideTone} aria-live="polite">
-            {aside}
+          <span class="spaces-pwa-task__aside" data-tone={asideTone?.()} aria-live="polite">
+            {aside?.()}
           </span>
         </Show>
       </h4>
@@ -197,7 +249,32 @@ export default function TaskDetail(props: Props) {
                 <i class={isDone() ? "ti ti-circle-check" : "ti ti-circle"} aria-hidden="true" />
               </IconButton>
             </Show>
-            <h3>{current().title}</h3>
+            <Show
+              when={editingTitle() && task()}
+              fallback={
+                <h3>
+                  <Show when={editable()} fallback={current().title}>
+                    <button
+                      type="button"
+                      class="spaces-pwa-task__title-button"
+                      aria-label={`${t().editTitle}: ${current().title}`}
+                      onClick={() => setEditingTitle(true)}
+                    >
+                      {current().title}
+                    </button>
+                  </Show>
+                </h3>
+              }
+            >
+              {(loaded) => (
+                <TitleEditor
+                  task={loaded()}
+                  onDone={() => setEditingTitle(false)}
+                  onRefresh={() => props.onRefresh?.() ?? Promise.resolve()}
+                  onChanged={() => props.onChanged?.()}
+                />
+              )}
+            </Show>
           </div>
           <Show when={!writable()}>
             <p class="spaces-pwa-task__note" role="status">
@@ -205,37 +282,71 @@ export default function TaskDetail(props: Props) {
               {t().readOnly({ space: current().spaceName })}
             </p>
           </Show>
-          <dl class="spaces-pwa-task__props">
-            <dt>{current().event ? t().when : t().due}</dt>
-            <dd data-overdue={schedule()?.overdue || undefined}>
-              <i class={schedule()?.icon ?? "ti ti-calendar-due"} aria-hidden="true" />
-              <Show when={schedule()} fallback={t().noDate}>
-                {(info) => <time datetime={info().datetime}>{info().text}</time>}
-              </Show>
-            </dd>
-            <Show when={task()?.location}>
-              {(place) => (
-                <>
-                  <dt>{t().place}</dt>
-                  <dd>
-                    <i class="ti ti-map-pin" aria-hidden="true" />
-                    {place()}
-                  </dd>
-                </>
-              )}
-            </Show>
-            <Show when={task()?.people.length}>
-              <dt>{current().event ? t().attending : t().assigned}</dt>
-              <dd>
-                <span class="spaces-pwa-task__avatars">
-                  <For each={task()?.people}>{(person) => <Avatar name={person.displayName} src={avatarSrc(person)} size="xs" />}</For>
-                </span>
-                {task()
-                  ?.people.map((person) => person.displayName)
-                  .join(", ")}
+          <Show when={writable() && props.online === false}>
+            <p class="spaces-pwa-task__note" role="status">
+              <i class="ti ti-wifi-off" aria-hidden="true" />
+              {t().offlineTask}
+            </p>
+          </Show>
+          <Show when={!current().event}>
+            <dl class="spaces-pwa-task__props spaces-pwa-task__props--edit">
+              <TaskProps
+                task={task() ?? undefined}
+                preview={opening()?.preview ?? { deadline: current().deadline }}
+                userId={props.userId}
+                me={props.me}
+                dateConfig={props.dateConfig}
+                editable={editable()}
+                nextShortId={opening()?.nextShortId}
+                previousShortId={opening()?.previousShortId}
+                onRefresh={() => props.onRefresh?.() ?? Promise.resolve()}
+                onChanged={() => props.onChanged?.()}
+              />
+            </dl>
+          </Show>
+          <Show when={current().event}>
+            <dl class="spaces-pwa-task__props">
+              <dt>{current().event ? t().when : t().due}</dt>
+              <dd data-overdue={schedule()?.overdue || undefined}>
+                <i class={schedule()?.icon ?? "ti ti-calendar-due"} aria-hidden="true" />
+                <Show when={schedule()} fallback={t().noDate}>
+                  {(info) => <time datetime={info().datetime}>{info().text}</time>}
+                </Show>
               </dd>
-            </Show>
-          </dl>
+              <Show when={task()?.location}>
+                {(place) => (
+                  <>
+                    <dt>{t().place}</dt>
+                    <dd>
+                      <i class="ti ti-map-pin" aria-hidden="true" />
+                      {place()}
+                    </dd>
+                  </>
+                )}
+              </Show>
+              <Show when={task()?.people.length}>
+                <dt>{current().event ? t().attending : t().assigned}</dt>
+                <dd>
+                  <span class="spaces-pwa-task__avatars">
+                    <For each={task()?.people}>
+                      {(person) => (
+                        <CloudAvatar
+                          username={person.displayName}
+                          userId={person.id}
+                          avatarHash={person.avatarHash}
+                          kind={person.kind}
+                          size="xs"
+                        />
+                      )}
+                    </For>
+                  </span>
+                  {task()
+                    ?.people.map((person) => person.displayName)
+                    .join(", ")}
+                </dd>
+              </Show>
+            </dl>
+          </Show>
           <Show
             when={task()}
             fallback={
@@ -280,27 +391,29 @@ export default function TaskDetail(props: Props) {
                 <Show when={loaded().checklist.length}>
                   {section(
                     t().checklist,
-                    unsaved() ? (
-                      t().unsaved({ count: unsaved() })
-                    ) : savingEntries() ? (
-                      <>
-                        <i class="ti ti-loader-2 k2b-spin" aria-hidden="true" />
-                        {t().saving}
-                      </>
-                    ) : (
-                      t().checked({ done: loaded().checklist.filter(checked).length, total: loaded().checklist.length })
-                    ),
+                    () =>
+                      unsaved() ? (
+                        t().unsaved({ count: unsaved() })
+                      ) : savingEntries() ? (
+                        <>
+                          <i class="ti ti-loader-2 k2b-spin" aria-hidden="true" />
+                          {t().saving}
+                        </>
+                      ) : (
+                        t().checked({ done: loaded().checklist.filter(checked).length, total: loaded().checklist.length })
+                      ),
                     <ul class="spaces-pwa-task__checklist">
-                      <For each={loaded().checklist}>
-                        {(entry) => {
-                          const state = () => entryStates().get(entry.id);
+                      <For each={[...checklist().keys()]}>
+                        {(id) => {
+                          const entry = () => checklist().get(id)!;
+                          const state = () => entryStates().get(id);
                           return (
-                            <li data-done={checked(entry) || undefined}>
+                            <li data-done={checked(entry()) || undefined}>
                               <Checkbox
-                                label={entry.label}
-                                value={() => checked(entry)}
-                                disabled={!loaded().canWrite || !mounted() || state()?.saving}
-                                onValueChange={(value) => void toggleEntry(entry, value)}
+                                label={entry().label}
+                                value={() => checked(entry())}
+                                disabled={!loaded().canWrite || !mounted() || props.online === false || state()?.saving}
+                                onValueChange={(value) => void toggleEntry(entry(), value)}
                               />
                               <span class="spaces-pwa-task__slot">
                                 <Show when={state()?.saving}>
@@ -309,9 +422,9 @@ export default function TaskDetail(props: Props) {
                                 <Show when={state()?.failed}>
                                   <IconButton
                                     class="spaces-pwa-task__retry"
-                                    label={t().retryItem({ label: entry.label })}
+                                    label={t().retryItem({ label: entry().label })}
                                     tooltip={false}
-                                    onClick={() => void toggleEntry(entry, !checked(entry))}
+                                    onClick={() => void toggleEntry(entry(), !checked(entry()))}
                                   >
                                     <i class="ti ti-refresh" aria-hidden="true" />
                                   </IconButton>
@@ -322,8 +435,14 @@ export default function TaskDetail(props: Props) {
                         }}
                       </For>
                     </ul>,
-                    unsaved() ? "danger" : undefined,
+                    () => (unsaved() ? "danger" : undefined),
                   )}
+                </Show>
+                {/* A reader who may change the task may comment on it; one field per task, so a draft never moves. */}
+                <Show when={loaded().canWrite}>
+                  <Show when={`${loaded().spaceShortId}/${loaded().shortId}`} keyed>
+                    {section(t().comment, undefined, <TaskComment task={loaded()} userId={props.userId} />)}
+                  </Show>
                 </Show>
                 <div class="spaces-pwa-task__foot">
                   <ButtonLink variant="secondary" href={buildSpaceItemHref(loaded().spaceShortId, loaded().shortId)}>

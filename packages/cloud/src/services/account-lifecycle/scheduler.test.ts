@@ -8,6 +8,9 @@ test("scheduled lifecycle scans coalesce on a stable key, retry in minutes, and 
     const schedules = new Map();
     const submitted = [];
     const spanKeys = [];
+    const settings = new Map();
+    const logCleanupDays = [];
+    const traceCleanups = [];
     const worker = { stop() {}, drain: async () => {}, active: 0, capacity: 1 };
     const handlers = new Map();
     const job = id => ({
@@ -25,18 +28,24 @@ test("scheduled lifecycle scans coalesce on a stable key, retry in minutes, and 
     };
     const modulePath = relative => new URL(relative, ${JSON.stringify(import.meta.url)}).pathname;
     mock.module(modulePath("../../_internal/process-sync.ts"), () => ({
+      processSyncReaders: () => ({ signal: new AbortController().signal, stops: new Set() }),
       lazySync: factory => { let handle; return () => handle ??= factory(sync); },
     }));
     mock.module(modulePath("../logging/index.ts"), () => ({
       logger: () => ({ info() {}, warn() {}, error() {} }),
-      logging: { cleanup: async () => ({ deleted: 0 }) },
+      logging: { cleanup: async days => { logCleanupDays.push(days); return { deleted: 0 }; } },
       trace: {
         withSpan: (options, callback) => { spanKeys.push(options.spanKey); return callback(); },
         syncSpanKey: (kind, resource, runId) => kind + ":" + resource + ":" + runId,
+        cleanup: async options => {
+          traceCleanups.push(options);
+          await options.heartbeat();
+          return { deleted: 0 };
+        },
       },
     }));
     mock.module(modulePath("../providers/index.ts"), () => ({ providers: { ipa: { sync: { run: async () => {} } } } }));
-    mock.module(modulePath("../settings/index.ts"), () => ({ get: async () => null }));
+    mock.module(modulePath("../settings/index.ts"), () => ({ get: async key => settings.get(key) ?? null }));
     mock.module(modulePath("./index.ts"), () => ({
       accountLifecycle: {
         demoteExpiredIpaUsers: async () => ({ scanned: 1, changed: 0, skipped: 0, failed: 0 }),
@@ -72,8 +81,26 @@ test("scheduled lifecycle scans coalesce on a stable key, retry in minutes, and 
     }
 
     await handlers.get("auth:ipa:sync")({ jobId: "run-1", attempt: 1, signal: new AbortController().signal, heartbeat: async () => {} });
-    await handlers.get("app:logs:cleanup")({ jobId: "run-2", attempt: 1, signal: new AbortController().signal, heartbeat: async () => {} });
-    assert.deepEqual(spanKeys, ["job:auth:ipa:sync:run-1", "job:app:logs:cleanup:run-2"]);
+    let heartbeats = 0;
+    const cleanupSignal = new AbortController().signal;
+    const cleanupContext = { jobId: "run-2", attempt: 1, signal: cleanupSignal, heartbeat: async () => { heartbeats++; } };
+    await handlers.get("app:logs:cleanup")(cleanupContext);
+    assert.equal(traceCleanups[0].days, 30);
+    assert.equal(traceCleanups[0].maxBytes, 1024 ** 3);
+    assert.equal(traceCleanups[0].signal, cleanupSignal);
+    assert.equal(heartbeats, 1);
+
+    settings.set("logs.retention_days", "14");
+    settings.set("logs.trace_retention_days", "7");
+    settings.set("logs.trace_max_bytes", String(2 * 1024 ** 3));
+    await handlers.get("app:logs:cleanup")({ ...cleanupContext, jobId: "run-3", attempt: 2 });
+    assert.equal(traceCleanups.length, 2);
+    assert.equal(traceCleanups[1].days, 7);
+    assert.equal(traceCleanups[1].maxBytes, 2 * 1024 ** 3);
+    assert.equal(traceCleanups[1].signal, cleanupSignal);
+    assert.equal(heartbeats, 2);
+    assert.deepEqual(logCleanupDays, [30, 14]);
+    assert.deepEqual(spanKeys, ["job:auth:ipa:sync:run-1", "job:app:logs:cleanup:run-2", "job:app:logs:cleanup:run-3"]);
 
     assert.deepEqual(lifecycleJobs.metrics(), { started: true, registered: true, active: 0, capacity: 11 });
     await lifecycleJobs.stop();

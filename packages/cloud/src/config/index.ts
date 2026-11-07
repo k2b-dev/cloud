@@ -4,5 +4,16 @@
  * by application `src/env.ts` files. SSR config is per-app via defineApp().
  */
 
-export { defineEnv, type EnvRegistry, type EnvScope, type EnvSpec, type EnvSpecs, envBoolean, envList, envString } from "./define-env";
+export {
+  defineEnv,
+  type EnvRegistry,
+  type EnvScope,
+  type EnvSource,
+  type EnvSpec,
+  type EnvSpecs,
+  envBoolean,
+  envList,
+  envSource,
+  envString,
+} from "./define-env";
 export { env } from "./env";

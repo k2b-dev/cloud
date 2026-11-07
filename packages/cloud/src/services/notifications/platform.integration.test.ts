@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
-import { sql } from "bun";
 import { z } from "zod";
 import { databaseSuite, testFor } from "../../../../../scripts/fixtures/test-infra";
+import { sql } from "../../runtime/clients";
 import "../../../../../scripts/fixtures/authorization-preload";
 import { defineApp, notification } from "../..";
 import { decryptSecret } from "../secrets";

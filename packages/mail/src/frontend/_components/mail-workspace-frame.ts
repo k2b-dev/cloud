@@ -8,11 +8,21 @@ import { emptyMailSelection } from "./mail-selection-detail";
  */
 export type MailWorkspaceFrame = Pick<
   MailboxPageData,
-  "receivingAddress" | "initialLiveCursor" | "folders" | "identities" | "scheduledCount" | "viewCounts" | "localTags"
+  | "viewPreference"
+  | "doneTodayCounts"
+  | "receivingAddress"
+  | "initialLiveCursor"
+  | "folders"
+  | "identities"
+  | "scheduledCount"
+  | "viewCounts"
+  | "localTags"
 >;
 
 /** Typed field by field, so the frame cannot take a list or selection field the snapshot gains. */
 export const pickMailWorkspaceFrame = (data: MailboxPageData): MailWorkspaceFrame => ({
+  viewPreference: data.viewPreference,
+  doneTodayCounts: data.doneTodayCounts,
   receivingAddress: data.receivingAddress,
   initialLiveCursor: data.initialLiveCursor,
   folders: data.folders,
@@ -38,6 +48,9 @@ export const composeMailListSnapshot = (frame: MailWorkspaceFrame, list: Mailbox
   draftsMode: list.draftsMode,
   draftsPage: list.draftsPage,
   draftsError: list.draftsError,
+  eventsMode: list.eventsMode,
+  eventsPage: list.eventsPage,
+  eventsError: list.eventsError,
   activeView: list.activeView,
   savedViewId: list.savedViewId,
   listMode: list.listMode,
@@ -48,6 +61,8 @@ export const composeMailListSnapshot = (frame: MailWorkspaceFrame, list: Mailbox
   listCursor: list.listCursor,
   nextListCursor: list.nextListCursor,
   listError: list.listError,
+  hiddenDone: list.hiddenDone,
+  assignedGroups: list.assignedGroups,
   listTitle: list.listTitle,
   scheduledCount: list.scheduledPage ? list.scheduledPage.total : frame.scheduledCount,
   ...emptyMailSelection(),

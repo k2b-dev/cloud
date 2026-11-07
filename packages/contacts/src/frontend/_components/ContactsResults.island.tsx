@@ -1,6 +1,18 @@
 import { documentNavigate, type LinkNavigateEvent, navigate } from "@k2b/ssr/nav";
 import { query as queries, timed } from "@k2b/stdlib/solid";
-import { Button, FilterChip, type FilterChipSection, InlineGuidance, Pagination, ScrollArea, Tag, TextInput, useLocale } from "@k2b/ui";
+import {
+  Button,
+  Disclosure,
+  FilterChip,
+  type FilterChipSection,
+  InlineGuidance,
+  Pagination,
+  ScrollArea,
+  Tag,
+  TextInput,
+  useLocale,
+  ViewTabs,
+} from "@k2b/ui";
 import { createEffect, createSignal, onCleanup, onMount, Show } from "solid-js";
 import { apiClient } from "@/api/client";
 import type { Contact, ContactPresenceFilter, ContactSort, ContactTag } from "../../service";
@@ -11,7 +23,7 @@ import ContactsBulkActions from "./ContactsBulkActions";
 import ContactsList from "./ContactsList";
 import CreateBookAction from "./CreateBookAction";
 import { type ContactsScope, contactsEmptyState } from "./contacts-empty-state";
-import { listenForContactFavoriteChanges } from "./contacts-favorites";
+import { createContactFavoriteProjection, listenForContactFavoriteChanges } from "./contacts-favorites";
 import { listenForContactsLiveInvalidation, requiresContactsResultsRefresh } from "./contacts-live";
 import { createContactsResultsNavigation, selectContactsResultsSnapshot } from "./contacts-results-navigation";
 import {
@@ -212,6 +224,7 @@ export default function ContactsResults(props: Props) {
     });
   };
   const currentHref = () => current()?.href ?? source();
+  const favoriteProjection = createContactFavoriteProjection(() => current()?.favoriteKeys ?? props.initialFavoriteKeys);
 
   // The scope comes from SSR and never changes inside this island, so the action is created once.
   const createBookAction = props.scope === "noBooks" ? <CreateBookAction /> : undefined;
@@ -230,9 +243,22 @@ export default function ContactsResults(props: Props) {
     );
   };
 
+  const preserveAddressEditor = (href: string) => {
+    const current = new URL(pathWithQuery(), "http://contacts.local");
+    if (!current.searchParams.has("address")) return href;
+    const next = new URL(href, current);
+    for (const key of ["contact", "contactBook", "address"]) {
+      const value = current.searchParams.get(key);
+      if (value) next.searchParams.set(key, value);
+    }
+    return `${next.pathname}${next.search}`;
+  };
   const commitHistory = (href: string) => {
-    navigate(href, { replace: true, scroll: "preserve" });
-    syncContactDetailFromUrl();
+    const next = preserveAddressEditor(href);
+    navigate(next, { replace: true, scroll: "preserve" });
+    // The same editor owns an unsaved draft. Re-selecting its contact would
+    // refresh/unmount it even though the URL kept the same address.
+    if (next === href) syncContactDetailFromUrl();
   };
 
   const navigateHref = (
@@ -242,7 +268,12 @@ export default function ContactsResults(props: Props) {
     setFailedSource(null);
     return navigation.navigate(contactsResultHref(href), {
       onApply: options.onApply ?? commitHistory,
-      onFallback: options.onFallback ?? ((fallbackHref) => documentNavigate(fallbackHref, { replace: true })),
+      onFallback:
+        options.onFallback ??
+        ((fallbackHref) => {
+          // A failed list refresh must not discard an address draft through a document reload.
+          if (preserveAddressEditor(fallbackHref) === fallbackHref) documentNavigate(fallbackHref, { replace: true });
+        }),
       retainCommitted: options.retainCommitted,
     });
   };
@@ -285,10 +316,23 @@ export default function ContactsResults(props: Props) {
       onFallback: (fallbackHref) => documentNavigate(fallbackHref, { replace: true }),
     });
   };
+  let compactHeading: HTMLDivElement | undefined;
   onMount(() => {
+    const followCompactView = (event: MouseEvent) => {
+      if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+      const link = event.target instanceof Element ? event.target.closest("a[href]") : null;
+      if (!(link instanceof HTMLAnchorElement) || !compactHeading?.contains(link)) return;
+      event.preventDefault();
+      debounce.cancel();
+      void navigateHref(buildContactsSearchHref(link.pathname + link.search, query()));
+    };
+    compactHeading?.addEventListener("click", followCompactView);
+    const stopFavoriteProjection = listenForContactFavoriteChanges(favoriteProjection.apply);
     window.addEventListener("popstate", handlePopState);
     onCleanup(() => {
       debounce.cancel();
+      stopFavoriteProjection();
+      compactHeading?.removeEventListener("click", followCompactView);
       window.removeEventListener("popstate", handlePopState);
       navigation.dispose();
     });
@@ -328,62 +372,110 @@ export default function ContactsResults(props: Props) {
         ? t().resultCount({ total: current()!.total, search: committedSearch().trim() })
         : t().contactCount({ total: current()!.total });
 
+  // The snapshot knows the active total. Only a complete page without the favorites filter
+  // can also supply the other count; page-local favorites are not a total.
+  const compactViews = () => {
+    const snapshot = current();
+    const favorites = readContactsQueryOptions(currentHref()).favorites;
+    return [
+      {
+        id: "all",
+        label: t().allContactsView,
+        href: buildContactsQueryHref(currentHref(), { favorites: false }),
+        count: !favorites ? snapshot?.total : undefined,
+      },
+      {
+        id: "favorites",
+        label: t().favoritesView,
+        href: buildContactsQueryHref(currentHref(), { favorites: true }),
+        count: favorites
+          ? snapshot?.total
+          : snapshot && snapshot.total === snapshot.contacts.length
+            ? snapshot.contacts.filter(favoriteProjection.favoriteFor).length
+            : undefined,
+      },
+    ];
+  };
+
+  const renderSearchForm = () => (
+    <form
+      role="search"
+      action={formAction()}
+      method="get"
+      onSubmit={(event) => {
+        event.preventDefault();
+        commitImmediately(query());
+      }}
+      onFocusIn={() => setFocused(true)}
+      onFocusOut={() => setFocused(false)}
+    >
+      <TextInput
+        name="search"
+        type="search"
+        aria-label={t().filterContacts}
+        placeholder={props.searchPlaceholder}
+        icon="ti ti-search"
+        activeIcon="ti ti-search"
+        value={query}
+        onValueChange={(value) => {
+          navigation.supersede();
+          setQuery(value);
+          debounce.debouncedFn(value);
+        }}
+        clearable
+        clearLabel={t().clearSearch}
+        onClear={() => {
+          setQuery("");
+          commitImmediately("");
+        }}
+        suffix={
+          debounce.isPending() || results.loading() || results.refreshing() ? (
+            <i class="ti ti-loader-2 animate-spin text-dimmed" aria-hidden="true" />
+          ) : undefined
+        }
+      />
+      <Show when={props.activeTagId}>{(tagId) => <input type="hidden" name="tag_id" value={tagId()} />}</Show>
+      <Show when={readContactsQueryOptions(currentHref()).sort !== "name"}>
+        <input type="hidden" name="sort" value={readContactsQueryOptions(currentHref()).sort} />
+      </Show>
+      <Show when={readContactsQueryOptions(currentHref()).email !== "all"}>
+        <input type="hidden" name="email" value={readContactsQueryOptions(currentHref()).email} />
+      </Show>
+      <Show when={readContactsQueryOptions(currentHref()).phone !== "all"}>
+        <input type="hidden" name="phone" value={readContactsQueryOptions(currentHref()).phone} />
+      </Show>
+      <Show when={readContactsQueryOptions(currentHref()).favorites}>
+        <input type="hidden" name="favorites" value="true" />
+      </Show>
+    </form>
+  );
+
   return (
     <div class="flex min-h-0 flex-1 flex-col">
-      <div class="shrink-0 px-3 pb-3 sm:px-4">
+      <div ref={compactHeading} class="contacts-results__compact-heading">
+        <p class="sr-only" aria-live="polite">
+          {resultCopy()}
+        </p>
+        <ViewTabs
+          label={t().contactsViews}
+          items={compactViews()}
+          current={readContactsQueryOptions(currentHref()).favorites ? "favorites" : "all"}
+        />
+        <Disclosure
+          class="contacts-results__compact-search"
+          surface="plain"
+          summary={<span class="sr-only">{t().filterContacts}</span>}
+          icon="ti ti-search"
+          defaultValue={Boolean(props.initialSearch)}
+        >
+          {renderSearchForm()}
+        </Disclosure>
+      </div>
+      <div class="contacts-results__normal-controls shrink-0 px-3 pb-3 sm:px-4">
         <p class="mb-2 text-xs text-dimmed" aria-live="polite">
           <span class="tabular-nums text-secondary">{resultCopy()}</span>
         </p>
-        <form
-          role="search"
-          action={formAction()}
-          method="get"
-          onSubmit={(event) => {
-            event.preventDefault();
-            commitImmediately(query());
-          }}
-          onFocusIn={() => setFocused(true)}
-          onFocusOut={() => setFocused(false)}
-        >
-          <TextInput
-            name="search"
-            type="search"
-            aria-label={t().filterContacts}
-            placeholder={props.searchPlaceholder}
-            icon="ti ti-search"
-            activeIcon="ti ti-search"
-            value={query}
-            onValueChange={(value) => {
-              navigation.supersede();
-              setQuery(value);
-              debounce.debouncedFn(value);
-            }}
-            clearable
-            clearLabel={t().clearSearch}
-            onClear={() => {
-              setQuery("");
-              commitImmediately("");
-            }}
-            suffix={
-              debounce.isPending() || results.loading() || results.refreshing() ? (
-                <i class="ti ti-loader-2 animate-spin text-dimmed" aria-hidden="true" />
-              ) : undefined
-            }
-          />
-          <Show when={props.activeTagId}>{(tagId) => <input type="hidden" name="tag_id" value={tagId()} />}</Show>
-          <Show when={readContactsQueryOptions(currentHref()).sort !== "name"}>
-            <input type="hidden" name="sort" value={readContactsQueryOptions(currentHref()).sort} />
-          </Show>
-          <Show when={readContactsQueryOptions(currentHref()).email !== "all"}>
-            <input type="hidden" name="email" value={readContactsQueryOptions(currentHref()).email} />
-          </Show>
-          <Show when={readContactsQueryOptions(currentHref()).phone !== "all"}>
-            <input type="hidden" name="phone" value={readContactsQueryOptions(currentHref()).phone} />
-          </Show>
-          <Show when={readContactsQueryOptions(currentHref()).favorites}>
-            <input type="hidden" name="favorites" value="true" />
-          </Show>
-        </form>
+        {renderSearchForm()}
         <Show when={(props.tags?.length ?? 0) > 0 && props.filtersBasePath}>
           <nav aria-label={t().filterContactsByTag} class="mt-2 flex min-w-0 items-center gap-1.5 overflow-x-auto pb-0.5">
             <a
@@ -474,7 +566,7 @@ export default function ContactsResults(props: Props) {
         </Show>
       </div>
 
-      <ScrollArea class="flex-1 px-3 pb-3 sm:px-4" scrollPreserveKey="contacts-main-list">
+      <ScrollArea class="contacts-results__scroll flex-1 px-3 pb-3 sm:px-4" scrollPreserveKey="contacts-main-list">
         <Show when={results.error()}>
           {(error) => (
             <div class="mb-2 flex items-center justify-between gap-2">

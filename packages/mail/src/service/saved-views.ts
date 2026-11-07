@@ -1,5 +1,5 @@
+import { sql } from "@k2b/cloud";
 import { err, fail, ok, type Result } from "@k2b/stdlib";
-import { sql } from "bun";
 import type {
   CreateSavedConversationView,
   MailSearchExpression,
@@ -8,11 +8,13 @@ import type {
   UpdateSavedConversationView,
 } from "../contracts";
 import { internalMailSearchStateSchema } from "../contracts";
+import { withOpenWork } from "../folder-display-rules";
 import { withShortIdDb } from "../lib/short-id";
 import { MAIL_SEARCH_MATCHES_NOTHING, mailSearchReferences, replaceMailSearchReferences } from "../search-state";
 import { type MailRequestContext, userBackedActor } from "./auth";
 import { lockMailboxForCollaboration } from "./collaboration";
 import { hasCurrentMailboxUserPermission } from "./collaborators";
+import * as messages from "./messages";
 import * as publicResources from "./public-resources";
 import * as search from "./search";
 
@@ -108,7 +110,7 @@ const mapView = (row: SavedViewRow): Result<SavedConversationView> => {
   });
 };
 
-const viewColumns = sql`
+const viewColumns = () => sql`
   id,
   mailbox_id,
   scope,
@@ -200,7 +202,7 @@ const loadVisibleView = async (params: {
   const db = params.db ?? sql;
   const rows = params.forUpdate
     ? await db<SavedViewRow[]>`
-        SELECT ${viewColumns}
+        SELECT ${viewColumns()}
         FROM mail.saved_conversation_views
         WHERE id = ${params.viewId}::uuid
           AND mailbox_id = ${params.mailboxId}::uuid
@@ -209,7 +211,7 @@ const loadVisibleView = async (params: {
         FOR UPDATE
       `
     : await db<SavedViewRow[]>`
-        SELECT ${viewColumns}
+        SELECT ${viewColumns()}
         FROM mail.saved_conversation_views
         WHERE id = ${params.viewId}::uuid
           AND mailbox_id = ${params.mailboxId}::uuid
@@ -227,7 +229,7 @@ export const listSavedConversationViews = async (params: {
   if (!allowed.ok) return allowed;
   const userId = userBackedActor(params.context)?.id ?? null;
   const rows = await sql<SavedViewRow[]>`
-    SELECT ${viewColumns}
+    SELECT ${viewColumns()}
     FROM mail.saved_conversation_views
     WHERE mailbox_id = ${params.mailboxId}::uuid
       AND disabled_at IS NULL
@@ -295,7 +297,7 @@ export const createSavedConversationView = async (params: {
           ${actor.kind},
           ${actor.id}::uuid
         )
-        RETURNING ${viewColumns}
+        RETURNING ${viewColumns()}
       `,
       );
       const [row] = rows;
@@ -355,7 +357,7 @@ export const updateSavedConversationView = async (params: {
         UPDATE mail.saved_conversation_views
         SET name = ${params.input.name ?? current.name}, filter = ${filter}::jsonb, revision = ${revision}
         WHERE id = ${current.id}::uuid
-        RETURNING ${viewColumns}
+        RETURNING ${viewColumns()}
       `;
       if (!row) return fail(err.internal("Updated saved conversation view could not be loaded"));
       if (row.scope === "mailbox") {
@@ -424,22 +426,35 @@ export const listSavedViewConversations = async (params: {
   context: MailRequestContext;
   mailboxId: string;
   viewId: string;
+  /** Also list done and snoozed conversations where the view would leave them out. */
+  includeDone?: boolean;
   cursor?: string;
   limit?: number;
 }) => {
   const view = await getSavedConversationView(params);
   if (!view.ok) return view;
+  // A saved view without a status condition is a work list: it leaves out done and snoozed conversations.
+  const openOnly = await messages.listingOpenOnly({
+    mailboxId: params.mailboxId,
+    view: null,
+    status: null,
+    expression: view.data.filter.expression,
+    folderId: null,
+    includeDone: params.includeDone,
+  });
   const result = await search.searchMessages({
     context: params.context,
     mailboxId: params.mailboxId,
     request: {
       ...view.data.filter,
+      expression: openOnly ? withOpenWork(view.data.filter.expression) : view.data.filter.expression,
       cursor: params.cursor,
       limit: params.limit ?? 50,
     },
   });
   if (!result.ok) return result;
   return ok({
+    openOnly,
     nextCursor: result.data.nextCursor,
     items: result.data.items.map((item) => ({
       id: item.conversationId ?? item.id,
@@ -458,6 +473,7 @@ export const listSavedViewConversations = async (params: {
       activeFolderIds: item.activeFolderIds,
       flagged: item.flagged,
       hasAttachments: item.hasAttachments,
+      attachmentCount: item.attachmentCount,
       messageCount: item.messageCount,
       preview: item.snippet,
       folderId: item.sourceFolderId,

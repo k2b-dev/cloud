@@ -45,3 +45,19 @@ export const activeAdminHref = (currentPath: string, hrefs: readonly string[]): 
   }
   return best;
 };
+
+/**
+ * The link whose own href or one of its `match` paths covers the current path most specifically. An area link, such
+ * as Observability, stays active on every page of the area.
+ */
+export const activeAdminLink = <Link extends { href: string; match?: readonly string[] }>(
+  currentPath: string,
+  links: readonly Link[],
+): Link | null => {
+  const candidates = links.flatMap((link) => [link.href, ...(link.match ?? [])].map((path) => ({ link, path })));
+  const best = activeAdminHref(
+    currentPath,
+    candidates.map((candidate) => candidate.path),
+  );
+  return best === null ? null : (candidates.find((candidate) => candidate.path === best)?.link ?? null);
+};

@@ -71,7 +71,7 @@ test("a composer in conflict sends nothing beside it", async () => {
 
 test("accepted submission recognizes restored content without discarding newer text or replacement files", () => {
   const file = new File(["original"], "note.txt");
-  const sent = { message: "Sent text", files: [file], modelProfileId: "standard" };
+  const sent = { message: "Sent text", files: [file], model: { id: "standard" } };
   expect(sameComposerSubmission({ message: "Sent text", files: [file] }, sent)).toBe(true);
   expect(sameComposerSubmission({ ...sent, message: "Sent text\nNew text" }, sent)).toBe(false);
   expect(sameComposerSubmission({ ...sent, files: [new File(["other"], "note.txt")] }, sent)).toBe(false);

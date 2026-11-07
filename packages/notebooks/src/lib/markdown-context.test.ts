@@ -1,8 +1,8 @@
 import { describe, expect, spyOn, test } from "bun:test";
+import * as context from "@k2b/editor/markdown/lib/markdown-context";
+import { literalMarkdownLines } from "@k2b/editor/markdown/lib/markdown-context";
+import { extractDataBlocks, extractNamedBlocks } from "@k2b/editor/markdown/lib/named-blocks";
 import { renderNotebookBook } from "./book-renderer";
-import * as context from "./markdown-context";
-import { literalMarkdownLines } from "./markdown-context";
-import { extractDataBlocks, extractNamedBlocks } from "./named-blocks";
 import { extractTocFromMarkdown } from "./note-insights";
 import { extractNotebookDirectiveRanges, parseNotebookQueryBlocks, parseNotebookTocBlocks } from "./query-blocks";
 

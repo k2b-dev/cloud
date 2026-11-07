@@ -21,7 +21,7 @@ const openMobileMenu = async (profile: { name: string; theme: "light"; appHref?:
   };
 };
 
-test("the mobile profile actions offer the App item only while the mobile app runs", async () => {
+test("the mobile profile actions offer the App item only while the Cloud app runs", async () => {
   let close = await openMobileMenu({ name: "Test user", theme: "light", appHref: "/me/app" });
   try {
     const item = document.querySelector<HTMLAnchorElement>('dialog .cloud-mobile-profile a[href="/me/app"]');

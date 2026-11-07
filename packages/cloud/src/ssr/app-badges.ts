@@ -14,6 +14,11 @@ export const APP_BADGE_INTERVAL_MS = 60_000;
 // Keyed by endpoint, so a pinned app shortcut and the app's own entry share one
 // count. Only the browser ever writes it; server renders always see no badge.
 const [counts, setCounts] = createSignal<ReadonlyMap<string, number>>(new Map());
+// The line a Cloud app part's summary route returns beside its count, keyed like the counts.
+const [texts, setTexts] = createSignal<ReadonlyMap<string, string>>(new Map());
+
+/** The text of a `PwaPartSummary` route once the browser has read it; undefined before or when the read failed. */
+export const appPartSummaryText = (endpoint: string): string | undefined => texts().get(endpoint);
 
 const [approvalCounts, setApprovalCounts] = createSignal<ApprovalCounts | null>(null);
 
@@ -37,16 +42,28 @@ export const parseAppBadge = (body: unknown): number => {
   return typeof count === "number" && Number.isSafeInteger(count) && count > 0 ? count : 0;
 };
 
-const readBadge = async (endpoint: string, signal: AbortSignal): Promise<number> => {
+/** A one-line text of at most 200 characters from a `PwaPartSummary` body, else undefined. */
+export const parsePartSummaryText = (body: unknown): string | undefined => {
+  if (typeof body !== "object" || body === null || !("text" in body)) return undefined;
+  const text = body.text;
+  return typeof text === "string" && text.trim() !== "" && text.length <= 200 && !/[\r\n]/.test(text) ? text.trim() : undefined;
+};
+
+type BadgeRead = { count: number; text?: string };
+
+const readBadge = async (endpoint: string, signal: AbortSignal): Promise<BadgeRead> => {
   try {
     const response = await fetch(endpoint, { credentials: "same-origin", headers: { accept: "application/json" }, signal });
-    if (response.status === 200) return parseAppBadge(await response.json());
+    if (response.status === 200) {
+      const body: unknown = await response.json();
+      return { count: parseAppBadge(body), text: parsePartSummaryText(body) };
+    }
     // Release the response without buffering an unused, potentially unbounded error body.
     await response.body?.cancel();
-    return 0;
+    return { count: 0 };
   } catch {
     // An unreachable or failing app shows no badge rather than a stale one.
-    return 0;
+    return { count: 0 };
   }
 };
 
@@ -108,10 +125,17 @@ export const watchAppBadges = (endpoints: readonly string[]): (() => void) => {
     running.set(endpoint, false);
     const signal = AbortSignal.any([stopped.signal, AbortSignal.timeout(APP_BADGE_INTERVAL_MS)]);
     const result = endpoint === APPROVAL_COUNTS_PATH ? readApprovalCounts(signal) : readBadge(endpoint, signal);
-    void result.then((count) => {
+    void result.then((answer) => {
       if (stopped.signal.aborted) return;
-      if (typeof count === "number") setCounts((previous) => new Map(previous).set(endpoint, count));
-      else setApprovalCounts(count);
+      if ("count" in answer) {
+        setCounts((previous) => new Map(previous).set(endpoint, answer.count));
+        setTexts((previous) => {
+          const next = new Map(previous);
+          if (answer.text === undefined) next.delete(endpoint);
+          else next.set(endpoint, answer.text);
+          return next;
+        });
+      } else setApprovalCounts(answer);
       const queued = running.get(endpoint);
       running.delete(endpoint);
       if (queued && document.visibilityState !== "hidden") read(endpoint);

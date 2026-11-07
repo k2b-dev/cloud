@@ -1,10 +1,16 @@
-import { expect, test } from "bun:test";
+import { afterEach, beforeEach, expect, test } from "bun:test";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
 import { mockPdfAdmission } from "../../../../../../scripts/fixtures/pdf-admission";
 import "../ssr-test-plugin";
 
 const { QueryExportStarter, queryExportMessages, queryExportTemplates } = await import("./QueryExportStarter");
+
+let admission: ReturnType<typeof mockPdfAdmission>;
+beforeEach(() => {
+  admission = mockPdfAdmission();
+});
+afterEach(() => admission.mockRestore());
 
 test("query export starts with schema-aware GQL and requires a preview before file options", () => {
   const html = renderToString(() =>

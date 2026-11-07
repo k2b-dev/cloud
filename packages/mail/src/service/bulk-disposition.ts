@@ -1,5 +1,5 @@
+import { sql } from "@k2b/cloud";
 import { ok, type Result } from "@k2b/stdlib";
-import { sql } from "bun";
 import type { MailingListDispositionResult } from "../contracts";
 import type { MailRequestContext } from "./auth";
 import { createActorCommands } from "./commands";

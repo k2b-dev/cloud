@@ -1,4 +1,5 @@
-import { AI_WORKFLOW_ACTIONS, defineWorkflowModule, type WorkflowFieldSchema } from "@k2b/cloud/workflows";
+import { createWorkflowAiActions, defineWorkflowModule, type WorkflowFieldSchema } from "@k2b/cloud/workflows";
+import { mailWorkflowAiScope } from "../service/workflow-ai";
 import { MAIL_WORKFLOW_ACTIONS } from "./actions";
 
 const text = (description: string, optional = false, maxLength = 1_000): WorkflowFieldSchema => ({
@@ -66,5 +67,5 @@ export const mailWorkflows = defineWorkflowModule({
       }),
     },
   ],
-  actions: { ...MAIL_WORKFLOW_ACTIONS, ...AI_WORKFLOW_ACTIONS },
+  actions: { ...MAIL_WORKFLOW_ACTIONS, ...createWorkflowAiActions({ scope: mailWorkflowAiScope }) },
 });

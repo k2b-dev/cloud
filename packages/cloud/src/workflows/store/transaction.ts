@@ -10,7 +10,8 @@
  * handle only has `savepoint` when it *is* a transaction, which is what makes
  * this reliable rather than a convention callers have to remember.
  */
-import { type SQL, sql } from "bun";
+import type { SQL } from "bun";
+import { sql } from "../../runtime/clients";
 
 type Savepointed = SQL & { savepoint: <T>(fn: (tx: SQL) => Promise<T>) => Promise<T> };
 

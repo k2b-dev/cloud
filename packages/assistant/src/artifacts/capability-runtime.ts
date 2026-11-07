@@ -1,3 +1,4 @@
+import { sql } from "@k2b/cloud";
 import { authorizeBackgroundAction, hasRememberedAiToolApproval, rememberAiToolApproval } from "@k2b/cloud/ai";
 import { CodeResourceId } from "@k2b/cloud/ai/browser";
 import {
@@ -18,7 +19,7 @@ import {
   approvalReviewDigest,
   approvals,
 } from "@k2b/cloud/services/approvals";
-import { type SQL, sql } from "bun";
+import type { SQL } from "bun";
 import { z } from "zod";
 import { requireToolChat } from "./chat-access";
 import { codeApprovalMessage } from "./code-approval-message";

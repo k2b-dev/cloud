@@ -195,7 +195,7 @@ export default function WorkspaceLevelsDemo(props: {
           </AppWorkspace.Content>
         </AppWorkspace>
       </AppWorkspace.LayoutStateProvider>
-      <style>{`.ui-workspace-levels-demo-page{position:fixed;inset:0;background:var(--k2b-surface)}.ui-workspace-levels-demo{height:100%}.ui-workspace-levels-demo-detail{padding:0.25rem 1rem 1rem}.ui-workspace-levels-demo .k2b-app-workspace__level-body>.k2b-app-workspace__sidebar-section{padding-inline:0.5rem}`}</style>
+      <style>{`.ui-workspace-levels-demo-page{position:fixed;inset:0;background:var(--k2b-surface)}.ui-workspace-levels-demo{height:100%}.ui-workspace-levels-demo-detail{padding:0.25rem 1rem 1rem}`}</style>
     </div>
   );
 }

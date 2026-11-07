@@ -51,6 +51,7 @@ const sources = walk(resolve(packageRoot, "src"));
  * package's own code highlighter; `md-*` and `stdlib-chart-*` are emitted by
  * `@k2b/stdlib` and cannot be renamed without forking it. `maplibregl-*` is the DOM
  * MapLibre builds inside MapView, styled by the package instead of MapLibre's stylesheet.
+ * `cm-*` is CodeMirror's DOM, including its Yjs awareness binding.
  */
 const isForeignContract = (token: string) =>
   token === "ti" ||
@@ -58,7 +59,8 @@ const isForeignContract = (token: string) =>
   token.startsWith("cd-") ||
   token.startsWith("md-") ||
   token.startsWith("stdlib-") ||
-  token.startsWith("maplibregl-");
+  token.startsWith("maplibregl-") ||
+  token.startsWith("cm-");
 
 /** Marker classes: CopyButton uses its base styles; Navigation styles its lists and rows. */
 const HOOK_CLASSES = new Set(["k2b-copy-button", "k2b-navigation"]);

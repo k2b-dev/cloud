@@ -16,7 +16,8 @@
  * that lost its lease writes with a stale generation and every one of its
  * updates matches zero rows. Nothing here trusts wall-clock ordering.
  */
-import { type SQL, sql } from "bun";
+import type { SQL } from "bun";
+import { sql } from "../../runtime/clients";
 import type { WorkflowBoundPlan, WorkflowDependency, WorkflowInvocationMode, WorkflowJsonValue, WorkflowRunState } from "../contracts";
 import type {
   WorkflowCoordinatorFinishState,
@@ -24,7 +25,7 @@ import type {
   WorkflowCoordinatorPort,
   WorkflowCoordinatorReleaseState,
 } from "../runtime/coordinator";
-import { WorkflowLeaseLostError } from "../runtime/executor";
+import { WorkflowLeaseLostError, WorkflowRetryableStepError } from "../runtime/executor";
 import type {
   WorkflowHeartbeatOutcome,
   WorkflowRestoredStep,
@@ -401,7 +402,7 @@ export const finishWorkflowRun = async (
  */
 export const releaseWorkflowRun = async (
   claim: { runId: string; executionGeneration: number; consecutiveFailures?: number },
-  options: { backoffMs?: number; db?: SQL } = {},
+  options: { backoffMs?: number; db?: SQL; error?: WorkflowJsonValue } = {},
 ): Promise<WorkflowCoordinatorReleaseState> => {
   const db = options.db ?? sql;
   const backoffMs =
@@ -413,6 +414,7 @@ export const releaseWorkflowRun = async (
         lease_expires_at = NULL,
         retry_after = now() + ${`${backoffMs} milliseconds`}::interval,
         consecutive_failures = consecutive_failures + 1,
+        error = ${options.error ?? null},
         updated_at = now()
     WHERE id = ${claim.runId}
       AND execution_generation = ${claim.executionGeneration}
@@ -545,7 +547,8 @@ export const createWorkflowCoordinatorPort = (options: {
   claim: () => claimWorkflowRun(options),
   renew: (claim) => renewWorkflowRunLease(claim, { leaseMs: options.leaseMs }),
   finish: (claim, result) => finishWorkflowRun(claim, result),
-  release: (claim) => releaseWorkflowRun(claim),
+  release: (claim, error) =>
+    releaseWorkflowRun(claim, { ...(error instanceof WorkflowRetryableStepError ? { error: error.executionError } : {}) }),
 });
 
 // ─── Scans ───────────────────────────────────────────────────────────────────

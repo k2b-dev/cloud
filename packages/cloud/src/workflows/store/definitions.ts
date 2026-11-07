@@ -9,7 +9,8 @@
  * edit, and an activation that pins one cannot be left pointing at a plan that
  * no longer exists.
  */
-import { type SQL, sql } from "bun";
+import type { SQL } from "bun";
+import { sql } from "../../runtime/clients";
 import type { WorkflowBoundPlan, WorkflowDiagnostic, WorkflowJsonValue } from "../contracts";
 import { validateWorkflowEffectBudget } from "./budget";
 import { withTransaction } from "./transaction";
@@ -145,6 +146,11 @@ export const deleteWorkflowScope = async (scope: { appId: string; scopeId: strin
       DELETE FROM workflows.workflow WHERE app_id = ${scope.appId} AND scope_id = ${scope.scopeId} RETURNING id
     `;
     await tx`DELETE FROM workflows.event WHERE app_id = ${scope.appId} AND scope_id = ${scope.scopeId}`;
+    const [ai] = await tx<{ present: boolean }[]>`SELECT to_regclass('ai.workflow_scope_budget') IS NOT NULL AS present`;
+    if (ai?.present) {
+      await tx`DELETE FROM ai.workflow_scope_budget WHERE app_id = ${scope.appId} AND scope_id = ${scope.scopeId}`;
+      await tx`DELETE FROM ai.workflow_scope_admission WHERE app_id = ${scope.appId} AND scope_id = ${scope.scopeId}`;
+    }
     return rows.length;
   });
 };

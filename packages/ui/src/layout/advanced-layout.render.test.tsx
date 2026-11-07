@@ -71,7 +71,11 @@ describe("@k2b/ui complete advanced layout migrations", () => {
     expect(html).toMatch(/<a[^>]*href="\/devices"[^>]*aria-current="page"/);
     const source = readFileSync(resolve(import.meta.dir, "../styles/layout-parity.css"), "utf8");
     expect(source).toMatch(
-      /@container k2b-app-area \(min-width: 64rem\) \{[^}]*\[aria-current="page"\][^}]*> \.k2b-app-workspace__head\[data-trail="up"\] \{[^}]*clip-path: inset\(50%\)/,
+      /@container k2b-app-area \(min-width: 64rem\) \{[^}]*\[aria-current="page"\][^}]*~ \.k2b-app-workspace__head\s*\)\[data-trail="up"\] \{[^}]*clip-path: inset\(50%\)/,
+    );
+    // A sidebar item marked `active="ancestor"` is the way up as well, so the head hides beside it too.
+    expect(source).toMatch(
+      /@container k2b-app-area \(min-width: 64rem\) \{[^}]*\.k2b-app-workspace__sidebar-item-main\)\[aria-current="true"\][^}]*~ \.k2b-app-workspace__head\s*\)\[data-trail="up"\] \{[^}]*clip-path: inset\(50%\)/,
     );
   });
 
@@ -824,6 +828,32 @@ describe("@k2b/ui complete advanced layout migrations", () => {
     expect(appWorkspaceResizeLimits({ kind: "drawer", workspaceSize: 700, reservedSize: 0 }).max).toBe(460);
   });
 
+  test("renders a level title that switches places as a menu button before hydration", () => {
+    const html = renderToString(() =>
+      createComponent(AppWorkspace.Main, {
+        level: "list",
+        get children() {
+          return createComponent(AppWorkspace.MainPane, {
+            id: "list",
+            label: "Workshop",
+            href: "/spaces/workshop",
+            lead: "•",
+            switcher: { label: "Switch Space", items: [{ label: "My tasks", href: "/spaces" }] },
+            children: "Rows",
+          });
+        },
+      }),
+    );
+    const heading = html.match(/<h2[^>]*>.*?<\/h2>/s)?.[0] ?? "";
+    expect(heading).toContain('aria-haspopup="menu"');
+    expect(heading).toContain('aria-label="Workshop, Switch Space"');
+    expect(heading).toContain("k2b-app-workspace__level-lead");
+    expect(heading).toContain("ti-chevron-down");
+    // The menu stands beside the heading, never inside it.
+    expect(heading).not.toContain('role="menu"');
+    expect(html).toContain('role="menu" aria-label="Switch Space"');
+  });
+
   test("lets one bounded child own scrolling without nesting workspace scrollports", () => {
     const html = renderToString(() =>
       createComponent(AppWorkspace.Main, {
@@ -935,7 +965,12 @@ describe("@k2b/ui complete advanced layout migrations", () => {
     });
 
     test("reduces a collapsible sidebar to an intentional icon rail", () => {
-      expect(css).toMatch(/data-sidebar-collapsed=true\][^{]*sidebar-item-label[^}]*\{display:none!important/);
+      expect(css).toMatch(/data-sidebar-collapsed=true\][^{]*sidebar-item-meta[^}]*\{display:none!important/);
+      // Labels leave the view but stay the entries' accessible names, and the rail marks itself for their hints.
+      expect(css).toMatch(/data-sidebar-collapsed=true\][^{]*sidebar-item-label\)[^{]*\{position:absolute;[^}]*clip:rect\(0/);
+      expect(css).toMatch(
+        /data-sidebar-collapsed=true\] \.k2b-app-workspace__sidebar\[data-workspace-collapsible=true\]\{--k2b-sidebar-rail:1\}/,
+      );
       expect(css).toMatch(/data-sidebar-collapsed=true\][^{]*:is\(\.k2b-app-workspace__sidebar-item,[^{]*\)\{justify-content:center/);
     });
 
@@ -1039,11 +1074,12 @@ describe("@k2b/ui complete advanced layout migrations", () => {
 
     test("keeps SettingsField a plain row and scopes its typography", () => {
       const field = rule(".k2b-settings-field");
-      // Cloud: `flex flex-col gap-1.5 px-3 py-3` — no fill, no radius.
-      expect(field).toContain("gap:.375rem");
+      // No fill and no radius; the row decides its own columns from its width.
+      expect(field).toContain("container:k2b-settings-field/inline-size");
+      expect(rule(".k2b-settings-field__row")).toContain("gap:.375rem .75rem");
       expect(field).not.toContain("background");
       expect(field).not.toContain("border-radius");
-      expect(rule(".k2b-settings-field__heading strong")).toContain("font-size:.875rem");
+      expect(rule(".k2b-settings-field__heading strong")).toContain("font-size:.8125rem");
       expect(rule(".k2b-settings-field__heading strong")).toContain("font-weight:500");
       // The description rule must not reach the error line or consumer content.
       expect(css).not.toMatch(/\.k2b-settings-field p\s*\{/);

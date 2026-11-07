@@ -22,18 +22,26 @@ Die Kategorien ordnen die Einstellungen nach Zuständigkeit und Auswirkung:
 - **Space** enthält den gemeinsamen Namen und die Angaben, Tags und Workflow-Status.
 - **Persönlich** enthält deine Browser-Voreinstellungen. Sie gelten sofort und nur für dich.
 - **Verbindungen** enthält das Kalender-Abonnement, die Wormholes und das GitHub-Token für Linkvorschauen. Wormholes und Token ändern nur Personen mit Zugriff **Verwalten**.
-- **Freigabe** enthält Zugriff und API-Schlüssel. Sie ist für Personen mit Zugriff **Verwalten**.
+- **Freigabe** enthält Zugriff und API Keys. Sie ist für Personen mit Zugriff **Verwalten**.
 - **Verwaltung** enthält das endgültige Löschen des Space.
 
-Formulare mit einer Fußzeile zeigen die Anzahl der Änderungen. Prüfe diese Zahl und wähle **Änderungen speichern**. Aktionen in einer Liste, etwa einen Status hinzufügen, einen Zugriff ändern oder einen Schlüssel widerrufen, speichern sofort nach deiner Bestätigung.
+Formulare mit einer Fußzeile zeigen die Anzahl der Änderungen. Prüfe diese Zahl und wähle **Änderungen speichern**. Aktionen in einer Liste, etwa einen Status hinzufügen oder einen Schlüssel widerrufen, speichern sofort nach deiner Bestätigung. Änderungen am Zugriff gelten, wenn du in **Zugriff bearbeiten** **Speichern** wählst.
 
 ## Zugriffsstufe wählen {icon="shield-lock"}
 
 :::reference
 - **Ansehen:** Den Space und seine Einträge sehen. Eigene Voreinstellungen ändern und das Kalender-Abonnement kopieren.
 - **Bearbeiten:** Zusätzlich Einträge, Kommentare, Status, Datumsangaben und Zuständigkeiten erstellen und ändern. Angaben zum Space, Tags, Status, die automatischen Kanban-Spalten und die Spaltenreihenfolge ändern.
-- **Verwalten:** Zusätzlich Wormholes, GitHub-Token, Zugriff, API-Schlüssel, den Kalenderexport und das Löschen ändern.
+- **Verwalten:** Zusätzlich Wormholes, GitHub-Token, Zugriff, API Keys, den Kalenderexport und das Löschen ändern.
 :::
+
+Wer eigenen Zugriff hat, direkt, über eine Gruppe oder als angemeldete Person, sieht am Ende der Details eines Eintrags unter **Zugriff**, wer Zugriff hat und mit welcher Stufe. Wer einen öffentlichen Space nur öffnet, sieht diese Liste nicht.
+
+## Einer Integration oder einem Agenten Zugriff geben {icon="key"}
+
+Füge den Agenten unter **Freigabe → Zugriff** hinzu. Der Eintrag zeigt Name und Kontoart. Mit Zugriff **Verwalten** und dem Token-Scope `admin` kann das Konto Freigaben über die API verwalten. Ein Token mit dem Scope `read` kann keine Freigaben ändern.
+
+Gib dem neuen Konto zuerst Zugriff **Verwalten**, bevor du deinen eigenen Zugriff herabsetzt oder entfernst. Ein Agent kann als einziges verwaltendes Konto verbleiben. Den letzten verwaltenden Eintrag kannst du nicht entfernen; füge vorher einen weiteren hinzu. Ressourcenbezogene API Keys zählen dafür nicht und bleiben auf ihren Space beschränkt.
 
 ## GitHub-Token hinterlegen {icon="brand-github"}
 

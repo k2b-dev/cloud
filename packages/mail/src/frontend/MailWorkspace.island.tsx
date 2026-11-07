@@ -6,6 +6,7 @@ import { layout } from "@k2b/cloud/ssr/layout-runtime";
 import {
   captureScroll,
   documentNavigate,
+  type EnhancedNavigateOptions,
   type LinkNavigateEvent,
   listenPopState,
   navigate,
@@ -18,7 +19,10 @@ import {
   AppWorkspace,
   type AppWorkspaceWidthShare,
   announce,
+  appWorkspaceDetailElementId,
+  Dropdown,
   IconButton,
+  Kbd,
   openSpotlightSearch,
   Placeholder,
   prompts,
@@ -31,23 +35,29 @@ import { type Accessor, batch, createEffect, createMemo, createSignal, on, onCle
 import { createStore, reconcile, unwrap } from "solid-js/store";
 import { apiClient } from "../api/client";
 import type { MailContactDirectory } from "../contact-directory";
-import type { MailDraftSeed } from "../contracts";
+import type { AutomationLogItem, MailDraftSeed } from "../contracts";
 import { isAggregatedListing, mailListingExcludesTrashAndJunk, mailRowLeavesListing } from "../folder-display-rules";
+import { mailFolderNames } from "../folder-names";
 import { mailFolderPaths } from "../folder-tree";
 import { parseMailLiveEvent } from "../live-event";
+import { isMailEventsRoute, readMailEventsFilter } from "../mail-events-route";
+import type { MailViewPreference } from "../mail-view-preference";
 import { guaranteedMailSearchFolderIds } from "../search-folder-scope";
+import type { MailboxAccessMember } from "../service/access";
 import type { ConversationCollaboration, MailActivityEvent } from "../service/collaboration";
 import type { ConversationLocalTags } from "../service/local-tags";
 import type { ConversationPresenceSnapshot } from "../service/presence";
 import type { MailboxListView, MailboxPageData, MailConversationDetailData, MailListItem } from "../service/workspace";
 import { readApiError } from "./_components/api-response";
+import { UndoNotPossible } from "./_components/MailAutomationLog";
 import MailBulkActionBar from "./_components/MailBulkActionBar";
 import { chooseBulkTags, chooseConversationTags } from "./_components/MailBulkTagDialog";
 import { createMailboxMenu, MailboxMenuButton } from "./_components/MailboxMenu";
 import MailConversationList from "./_components/MailConversationList";
 import MailConversationReader, { MAIL_CONTEXT_DETAIL_ID } from "./_components/MailConversationReader";
-import MailDetailsPanel from "./_components/MailDetailsPanel";
+import MailDetailsPanel, { MailDetailsSkeleton } from "./_components/MailDetailsPanel";
 import MailDraftsView from "./_components/MailDraftsView";
+import { createMailEventsFeed, MailEventsFeed } from "./_components/MailEventsFeed";
 import MailScheduledView from "./_components/MailScheduledView";
 import { observeMailUserPreferences, readMailUserPreferences, writeMailUserPreferences } from "./_components/MailSettingsStore";
 import MailSidebar, { type MailSidebarMailbox, type MailSidebarOpenMailbox } from "./_components/MailSidebar";
@@ -65,12 +75,16 @@ import {
   spamActionForConversation,
 } from "./_components/mail-actions";
 import { chooseMailAssignee } from "./_components/mail-assign-picker";
+import { formatLogTime, undoRevertedAssignment } from "./_components/mail-automation-log-format";
+import { mailAutomationLogMessages } from "./_components/mail-automation-log-messages";
 import { MAIL_BULK_NO_PROVIDER_PLACEMENT, MAIL_BULK_QUEUE_FAILED, type MailBulkTarget } from "./_components/mail-bulk-actions";
 import { runMailBulkAssignment } from "./_components/mail-bulk-assignment";
+import { MailCloudIdProvider } from "./_components/mail-cloud-id";
 import { mailDraftSeedHref } from "./_components/mail-compose-route";
 import { mailComposeDraftSeedInput } from "./_components/mail-compose-seed";
 import { MailContactDirectoryProvider } from "./_components/mail-contact-directory-context";
 import { mailConversationListMessages } from "./_components/mail-conversation-list-messages";
+import { type MailRespondIntent, type MailRespondRequest, openMailReplyWindow } from "./_components/mail-conversation-menu";
 import {
   emptyMailConversationSelection,
   findMailFocusAfterRemoval,
@@ -82,6 +96,7 @@ import { mailConversationUiMessages } from "./_components/mail-conversation-ui-m
 import { mergeMailCursorPage } from "./_components/mail-cursor-page";
 import { preserveUnavailableMailDetail } from "./_components/mail-detail-availability";
 import { reconcileConversationSummary } from "./_components/mail-details-reconciliation";
+import { mailEventsMessages } from "./_components/mail-events-messages";
 import { createRetryToasts } from "./_components/mail-feedback";
 import { buildVisibleMailFolderTree, flattenMailFolderTree, onlyInFolderFolders } from "./_components/mail-folder-tree";
 import { mailboxNeedsConnection } from "./_components/mail-health-presentation";
@@ -103,16 +118,21 @@ import { createMailboxPreferences } from "./_components/mail-mailbox-preferences
 import {
   buildMailListHref,
   buildMailSearchClearHref,
+  buildMailSelectionHref,
+  buildMailShowDoneHref,
   isMailWorkspaceUrl,
   MAIL_SEARCH_FROM_PARAMETER,
   mailRouteUrl,
   resolveMailWorkspaceUrl,
 } from "./_components/mail-navigation";
 import { createMailPresenceSession } from "./_components/mail-presence-session";
+import { mailRowAssignees } from "./_components/mail-row-assignees";
 import { emptyMailSelection, mailRowOlderThanDetail, pickMailSelection } from "./_components/mail-selection-detail";
 import { readMailSenderPreference, selectComposeSenderIdentity, writeMailSenderPreference } from "./_components/mail-sender-preference";
 import { mailSidebarMessages } from "./_components/mail-sidebar-messages";
+import { openMailUserDraftStorage } from "./_components/mail-user-draft-storage";
 import type { MailUserPreferences } from "./_components/mail-user-preferences";
+import { type MailLargeView, resolveMailLargeLayout, resolveMailListPresence, toggleMailLargeView } from "./_components/mail-view-mode";
 import { mailboxCurrentTab, mailboxViewTabs } from "./_components/mail-view-tabs";
 import {
   decideMailAutoReadIntent,
@@ -129,6 +149,7 @@ import {
   requireMailWorkspaceRefresh,
 } from "./_components/mail-workspace-refresh";
 import { createMailboxSearch } from "./_components/mailbox-search";
+import { automationLogHref } from "./automation-log-href";
 import { mailWorkspaceMessages } from "./mail-workspace-messages";
 import { mailPageMessages } from "./pages-messages";
 import { assertCursorProgress } from "./pagination";
@@ -168,6 +189,8 @@ type MailWorkspaceProps = {
   data: MailboxPageData;
   /** Route as `pathname + search`; resolved against the browser origin, never an upstream URL. */
   requestPath: string;
+  /** Canonical Cloud origin from `app.url`, for copied resource references. */
+  cloudUrl: string;
   currentUserId: string;
   currentUserEmail: string | null;
   contactDirectory: MailContactDirectory;
@@ -182,6 +205,8 @@ type MailWorkspaceProps = {
     mailboxes: MailSidebarMailbox[];
     pinnedMailboxIds: string[];
     hiddenMailboxIds: string[];
+    /** The one-time notice that Focus is gone; the page leaves it out once the person closed it. */
+    focusNoticeOpen?: boolean;
   };
 };
 
@@ -197,16 +222,27 @@ type MailboxSessionControls = {
   };
 };
 
-function MailboxWorkspace(
-  props: MailWorkspaceProps & {
-    switching: Accessor<boolean>;
-    onReady: (controls: MailboxSessionControls) => void;
-    onNavigationStart: () => void;
-    onOpenMailboxHistory: (url: URL, completeScrollRestore: () => void) => void;
-  },
-) {
+type MailboxControllerProps = MailWorkspaceProps & {
+  switching: Accessor<boolean>;
+  onReady: (controls: MailboxSessionControls) => void;
+  onNavigationStart: () => void;
+  onOpenMailboxHistory: (url: URL, completeScrollRestore: () => void) => void;
+};
+
+function createMailboxController(props: MailboxControllerProps) {
   const locale = useLocale();
+  let seedStorage: Storage | undefined;
+  onMount(() => {
+    if (props.currentUserId) {
+      try {
+        seedStorage = openMailUserDraftStorage(localStorage, props.currentUserId);
+      } catch {
+        /* Starting a draft reports storage failure. */
+      }
+    }
+  });
   const t = createMemo(() => mailWorkspaceMessages.resolve([locale()]).t);
+  const folderName = createMemo(() => mailFolderNames(locale()));
   const conversationText = createMemo(() => mailConversationUiMessages.resolve([locale()]).t);
   // A store keeps shell, list, and detail consumers granular even though the
   // server snapshot remains one canonical contract.
@@ -218,6 +254,24 @@ function MailboxWorkspace(
   const [theme, setTheme] = createSignal<CloudTheme | null>(props.initialTheme);
   const [presence, setPresence] = createSignal<ConversationPresenceSnapshot>({
     participants: [],
+  });
+  /** Whether the people here are known: loading until the first heartbeat answers, unavailable after one failed. */
+  const [presenceState, setPresenceState] = createSignal<"loading" | "live" | "unavailable">("loading");
+  let retryPresence = () => {};
+  // Who has access belongs to the mailbox, so it loads once, when details first show a conversation. Only people
+  // with mailbox-wide access read it; the server decides the same way.
+  const [accessWanted, setAccessWanted] = createSignal(false);
+  const accessMembers = query.create<string, MailboxAccessMember[]>({
+    source: () => data.mailbox.id,
+    enabled: () => accessWanted() && data.access.scope === "mailbox",
+    load: async (id, { abortSignal }) => {
+      const response = await apiClient.mailboxes[":mailboxId"].access.members.$get(
+        { param: { mailboxId: id } },
+        { init: { signal: abortSignal } },
+      );
+      if (!response.ok) throw new Error(String(response.status));
+      return response.json();
+    },
   });
   const [settingsOpening, setSettingsOpening] = createSignal(false);
   const [detailsOpening, setDetailsOpening] = createSignal(false);
@@ -326,6 +380,7 @@ function MailboxWorkspace(
       shown: data.listItems,
       removals: removals(),
       scope: mailListScope(requestPath()),
+      assignedGroups: data.assignedGroups,
     }),
   );
   /** The folders whose messages the shown list leaves out, by the listing rule the server applies. */
@@ -667,7 +722,14 @@ function MailboxWorkspace(
           pageNextCursor: reconciled.nextListCursor,
         });
         if (!merged.ok) continue;
-        next = { ...next, listItems: merged.items, nextListCursor: merged.nextCursor, listError: reconciled.listError };
+        next = {
+          ...next,
+          listItems: merged.items,
+          nextListCursor: merged.nextCursor,
+          listError: reconciled.listError,
+          // The last page names the done conversations the whole list leaves out.
+          hiddenDone: reconciled.hiddenDone,
+        };
       }
       batch(() => {
         // Only the page 1 of the requested selection commits its route; an older one keeps the route shown.
@@ -712,6 +774,10 @@ function MailboxWorkspace(
   const listText = createMemo(() => mailConversationListMessages.resolve([locale()]).t);
   const [searchDiscovered, setSearchDiscovered] = createSignal(Boolean(props.initialPreferences.searchDiscovered));
   const [searchHintDismissed, setSearchHintDismissed] = createSignal(Boolean(props.initialPreferences.searchHintDismissed));
+  // Events is marked new until the person has opened it once. The first visit only stores that, so the mark stays where
+  // it is until the next page load and the tabs never move under the pointer.
+  const eventsDiscovered = Boolean(props.initialPreferences.eventsDiscovered);
+  let eventsVisitStored = eventsDiscovered;
   const searchControls = createMailboxSearch({
     mailboxId,
     get requestUrl() {
@@ -739,7 +805,7 @@ function MailboxWorkspace(
       return canWrite();
     },
     get enabled() {
-      return !data.scheduledMode && !data.draftsMode && !selectionMode();
+      return !data.scheduledMode && !data.draftsMode && !data.eventsMode && !selectionMode();
     },
     onOpenHref: (href, replace) => openWorkspaceHref(href, replace),
     onNavigationStart: props.onNavigationStart,
@@ -767,15 +833,28 @@ function MailboxWorkspace(
     } else if (result === "failed") toast.error(t().openViewFailed);
   };
 
-  const closeConversation = async (nav: LinkNavigateEvent) => {
-    navigationStart(nav.href);
-    const previousConversationId = data.selectedConversationId;
-    const result = inCurrentList(nav.href) ? closeConversationInList(nav.href) : await replaceWorkspaceRoute(nav.href);
+  // A list that leaves the screen for the reader leaves its place here, for the way back with × or Escape.
+  let listPlace: { scope: string; scroll: ScrollSnapshot } | null = null;
+  const rememberListPlace = () => {
+    if (listAway()) return;
+    listPlace = { scope: mailListScope(requestPath()), scroll: captureScroll(`[data-scroll-preserve="mail-list-${mailboxId}"]`) };
+  };
+  /** Returns to the list at `href`; the row that was open takes the focus, and the list is where the person left it. */
+  const closeConversationAt = async (href: string, push: (options: EnhancedNavigateOptions) => void) => {
+    navigationStart(href);
+    const previousRow =
+      data.listMode === "messages" && data.selectedMessageId ? `message:${data.selectedMessageId}` : data.selectedConversationId;
+    const place = listAway() && listPlace?.scope === mailListScope(href) ? listPlace : null;
+    listPlace = null;
+    const result = inCurrentList(href) ? closeConversationInList(href) : await replaceWorkspaceRoute(href);
     if (result === "applied") {
-      nav.push(undefined, { scroll: "preserve" });
-      if (previousConversationId) focusConversation(previousConversationId, "row");
+      // A deferred view transition would commit the list's first position over the restored one.
+      push(place ? { scroll: "preserve", viewTransition: false } : { scroll: "preserve" });
+      if (place) restoreScroll(place.scroll, { window: false });
+      if (previousRow) focusConversation(previousRow, "row", !place);
     } else if (result === "failed") toast.error(t().closeConversationFailed);
   };
+  const closeConversation = (nav: LinkNavigateEvent) => closeConversationAt(nav.href, (options) => nav.push(undefined, options));
 
   const transitionWorkspaceHref = async (href: string, replace = false): Promise<MailWorkspaceRefreshResult> => {
     navigationStart(href);
@@ -815,7 +894,14 @@ function MailboxWorkspace(
     }, 120);
   };
 
+  createEffect(() => {
+    if (!data.eventsMode || eventsVisitStored) return;
+    eventsVisitStored = true;
+    persistPreferences({ eventsDiscovered: true });
+  });
+
   const setCollapsed = (collapsed: boolean) => {
+    if (collapsed) rememberListPlace();
     setListCollapsed(collapsed);
     persistPreferences({ listCollapsed: collapsed });
   };
@@ -848,8 +934,10 @@ function MailboxWorkspace(
     const conversationId = selectedConversationId();
     if (!conversationId) {
       setPresence({ participants: [] });
+      setPresenceState("loading");
       return;
     }
+    setPresenceState("loading");
     const peerId = crypto.randomUUID();
     const session = createMailPresenceSession({
       heartbeat: async (signal) => {
@@ -874,8 +962,13 @@ function MailboxWorkspace(
           { init: { keepalive: true } },
         );
       },
-      onSnapshot: setPresence,
+      onSnapshot: (snapshot) => {
+        setPresence(snapshot);
+        setPresenceState("live");
+      },
+      onFailure: () => setPresenceState("unavailable"),
     });
+    retryPresence = () => void session.heartbeat();
     const heartbeat = () => {
       if (document.visibilityState === "visible") void session.heartbeat();
     };
@@ -887,6 +980,7 @@ function MailboxWorkspace(
       window.clearInterval(timer);
       document.removeEventListener("visibilitychange", onVisibility);
       session.dispose();
+      retryPresence = () => {};
       setPresence({ participants: [] });
     });
   });
@@ -1022,7 +1116,8 @@ function MailboxWorkspace(
     if (!store) return endComposeStart();
     writeMailSenderPreference(localStorage, seed.mailboxId, identity.id);
     try {
-      store.storeMailDraftSeed(localStorage, seed);
+      if (!seedStorage) throw new Error(t().localMessageFailed);
+      store.storeMailDraftSeed(seedStorage, seed);
     } catch {
       endComposeStart();
       void prompts.error(t().localMessageFailed, { title: t().startMessageFailed });
@@ -1214,7 +1309,42 @@ function MailboxWorkspace(
   });
 
   const hasSelection = createMemo(() => Boolean(data.selectedConversationId || data.selectedMessageId));
-  const listOpen = () => !listCollapsed() || !hasSelection();
+  // F2: the person's view for this mailbox, from the server so the first render already shows it.
+  const [viewPreference, setViewPreference] = createSignal<MailViewPreference>(data.viewPreference);
+  createEffect(
+    on(
+      () => data.viewPreference,
+      (preference) => setViewPreference(preference),
+      { defer: true },
+    ),
+  );
+  // The Events feed has no columns: it fills the main area until a conversation opens beside it.
+  const largeLayout = createMemo(() => resolveMailLargeLayout(data.eventsMode ? "auto" : viewPreference().large, hasSelection()));
+  /** Columns over the full main area: the list pane closes and the list takes the reader's place. */
+  const columnsWide = () => !data.scheduledMode && !data.draftsMode && largeLayout().list === "full";
+  const listPresence = createMemo(() => resolveMailListPresence(largeLayout(), hasSelection(), listCollapsed()));
+  const listOpen = () => listPresence().open;
+  const listAway = () => listPresence().away;
+  const listHideable = () => listPresence().hideable;
+  // Who is responsible only matters where more than one person can be assigned.
+  const sharedMailbox = () => data.assignableUsers.length > 1;
+  const assigneeNames = (userIds: readonly string[]) =>
+    userIds.map((userId) => data.assignableUsers.find((user) => user.id === userId)?.displayName ?? listText().unknownPerson);
+  const rowAssignees = (userIds: readonly string[]) => mailRowAssignees(userIds, data.assignableUsers, listText().unknownPerson);
+  /** Shows the new view at once and stores it for this person and mailbox; a failed save keeps it until reload. */
+  const changeLargeView = async (large: MailLargeView) => {
+    const before = viewPreference();
+    if (before.large === large) return;
+    const mailboxId = data.mailbox.id;
+    rememberListPlace();
+    setViewPreference({ ...before, large });
+    try {
+      const response = await apiClient.mailboxes[":mailboxId"].view.$patch({ param: { mailboxId }, json: { large } });
+      if (!response.ok) throw new Error(await readApiError(response, t().viewSaveFailed));
+    } catch {
+      if (!disposed && data.mailbox.id === mailboxId) toast.error(t().viewSaveFailed);
+    }
+  };
   const selectedListItem = createMemo(() =>
     selectableRows().find((item) =>
       item.selectionKind === "message" ? item.id === data.selectedMessageId : item.conversationId === data.selectedConversationId,
@@ -1293,7 +1423,8 @@ function MailboxWorkspace(
     }
   };
 
-  const focusConversation = (rowKey: string | null, target: "reader" | "row") => {
+  /** `reveal` scrolls the row into view; a list that returns to its remembered place keeps it. */
+  const focusConversation = (rowKey: string | null, target: "reader" | "row", reveal = true) => {
     if (disposed) return;
     const selector = rowKey?.startsWith("message:")
       ? `[data-message-id="${CSS.escape(rowKey.slice("message:".length))}"] .mail-list-row`
@@ -1303,7 +1434,7 @@ function MailboxWorkspace(
         ? document.querySelector<HTMLElement>("[data-mail-reader-heading]")
         : document.querySelector<HTMLElement>(rowKey ? selector : "[data-mail-list-heading]");
     element?.focus({ preventScroll: true });
-    if (target === "row") element?.scrollIntoView({ block: "nearest" });
+    if (target === "row" && reveal) element?.scrollIntoView({ block: "nearest" });
   };
 
   /**
@@ -1437,6 +1568,7 @@ function MailboxWorkspace(
   };
 
   const navigateConversation = async (href: string, item: MailListItem, activation: "keyboard" | "pointer") => {
+    rememberListPlace();
     navigationStart(href);
     const result = item.conversationId ? await applyConversationRoute(href, item, activation) : await replaceWorkspaceRoute(href);
     if (result === "applied") {
@@ -1537,6 +1669,54 @@ function MailboxWorkspace(
   };
 
   onMount(() => {
+    const ownsKeys = (target: EventTarget | null) =>
+      target instanceof Element &&
+      target.closest(
+        '[role="dialog"],[role="menu"],[role="listbox"],input,textarea,select,[contenteditable]:not([contenteditable="false"])',
+      );
+    // V switches between columns and list with reader (F2); typing, menus and dialogs keep the key.
+    const switchView = (event: KeyboardEvent) => {
+      if (event.key.toLowerCase() !== "v" || event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) return;
+      if (event.defaultPrevented || event.repeat || event.isComposing || data.scheduledMode || data.draftsMode || data.eventsMode) return;
+      if (ownsKeys(event.target)) return;
+      event.preventDefault();
+      void changeLargeView(toggleMailLargeView(viewPreference().large, hasSelection()));
+    };
+    // [ hides or shows the list beside the reader. Layouts that type [ with Alt or AltGr keep it; Cmd+[ stays Back.
+    const toggleList = (event: KeyboardEvent) => {
+      if (event.key !== "[" || event.metaKey || (event.ctrlKey && !event.altKey)) return;
+      if (event.defaultPrevented || event.repeat || event.isComposing || !listHideable() || ownsKeys(event.target)) return;
+      // The key works where its View menu is: not on phones and not in Events, which have none.
+      if (data.eventsMode || !document.querySelector(".mail-workspace [data-mail-view-menu]")?.getClientRects().length) return;
+      event.preventDefault();
+      setCollapsed(!listCollapsed());
+    };
+    // Escape returns from a reader without the list beside it. An open menu, dialog, hint, or Details column takes it first.
+    const leaveReader = (event: KeyboardEvent) => {
+      if (event.key !== "Escape" || event.defaultPrevented || event.isComposing || selectionMode() || !listAway()) return;
+      if (ownsKeys(event.target) || document.querySelector("dialog[open], [aria-modal='true']")) return;
+      try {
+        // A shown hint takes Escape first, like every open popup; the "moved" hint does not hold it.
+        if (document.querySelector(":popover-open:not(.k2b-moved-hint)")) return;
+      } catch {
+        // Older engines have no popover selector; the other guards still apply.
+      }
+      const details = document.getElementById(appWorkspaceDetailElementId(MAIL_CONTEXT_DETAIL_ID));
+      if (details && !details.hidden && details.getClientRects().length > 0) return;
+      event.preventDefault();
+      const href = buildMailListHref(mailRouteUrl(requestPath()));
+      void closeConversationAt(href, (options) => navigate(href, options));
+    };
+    document.addEventListener("keydown", switchView);
+    document.addEventListener("keydown", toggleList);
+    document.addEventListener("keydown", leaveReader);
+    onCleanup(() => {
+      document.removeEventListener("keydown", switchView);
+      document.removeEventListener("keydown", toggleList);
+      document.removeEventListener("keydown", leaveReader);
+    });
+  });
+  onMount(() => {
     const keydown = (event: KeyboardEvent) => {
       if (event.key !== "Escape" || event.defaultPrevented || !selectionMode() || event.isComposing) return;
       if (
@@ -1611,10 +1791,12 @@ function MailboxWorkspace(
   };
 
   const chooseDestinationFolder = async () => {
-    const paths = mailFolderPaths(data.folders);
+    // The picker shows localized standard folder names; a search also finds the server's names.
+    const paths = mailFolderPaths(data.folders, folderName());
+    const serverPaths = mailFolderPaths(data.folders);
     const folders = data.folders
       .filter((folder) => folder.selectable && folder.discoveryState === "active")
-      .map((folder) => ({ ...folder, path: paths.get(folder.id) ?? folder.name }));
+      .map((folder) => ({ ...folder, path: paths.get(folder.id) ?? folder.name, serverPath: serverPaths.get(folder.id) ?? folder.name }));
     const selected = await openSpotlightSearch<{ folderId: string }>({
       title: t().moveToFolder,
       icon: "ti ti-folder-symlink",
@@ -1623,10 +1805,13 @@ function MailboxWorkspace(
       resolve: ({ query }) => {
         const needle = query.trim().toLocaleLowerCase();
         return folders
-          .filter((folder) => !needle || folder.path.toLocaleLowerCase().includes(needle))
+          .filter(
+            (folder) =>
+              !needle || folder.path.toLocaleLowerCase().includes(needle) || folder.serverPath.toLocaleLowerCase().includes(needle),
+          )
           .map((folder) => ({
             label: folder.path,
-            desc: folder.role === "folder" ? t().providerFolder : folder.role,
+            desc: folder.serverPath !== folder.path ? folder.serverPath : folder.role === "folder" ? t().providerFolder : folder.role,
             icon: "ti ti-folder",
             value: { folderId: folder.id },
           }));
@@ -1874,20 +2059,33 @@ function MailboxWorkspace(
   >({
     onBefore: ({ keep }) => ({ keep }),
     mutation: async ({ conversationId, keep }, { abortSignal }) => {
+      let reason: string | undefined;
       if (!keep) {
-        const confirmed = await prompts.confirm(conversationText().stopKeepingConsequence, {
+        // Only a Cloud administrator gets here; the reason goes into the log with the change.
+        const confirmed = await prompts.form({
           title: conversationText().stopKeepingTitle,
           icon: "ti ti-lock-open",
           confirmText: conversationText().stopKeeping,
           variant: "danger",
+          fields: {
+            consequence: { type: "info", content: () => <p class="k2b-prompt-copy">{conversationText().stopKeepingConsequence}</p> },
+            reason: {
+              type: "text",
+              multiline: true,
+              label: conversationText().stopKeepingReason,
+              description: conversationText().stopKeepingReasonDescription,
+              maxLength: 500,
+            },
+          },
         });
         if (!confirmed || abortSignal.aborted || disposed) return;
+        reason = confirmed.reason?.trim() || undefined;
       }
       const route = apiClient.mailboxes[":mailboxId"].conversations[":conversationId"].keep;
       const request = { param: { mailboxId, conversationId } };
       const response = keep
         ? await route.$put(request, { init: { signal: abortSignal } })
-        : await route.$delete(request, { init: { signal: abortSignal } });
+        : await route.$delete({ ...request, json: reason ? { reason } : {} }, { init: { signal: abortSignal } });
       if (!response.ok) {
         throw new Error(await readApiError(response, keep ? conversationText().keepFailed : conversationText().stopKeepingFailed));
       }
@@ -1907,7 +2105,7 @@ function MailboxWorkspace(
   });
   const setConversationKept = (keep: boolean) => {
     const conversationId = data.selectedConversationId;
-    if (!conversationId || disposed || structurePending() || (keep ? !canWrite() : !canAdmin())) return Promise.resolve();
+    if (!conversationId || disposed || structurePending() || (keep ? !canWrite() : !data.keep?.canLift)) return Promise.resolve();
     return keepMutation.mutate({ conversationId, keep });
   };
 
@@ -2219,7 +2417,8 @@ function MailboxWorkspace(
         if (disposed) return;
         const messageRows = targets.every((target) => target.messageIds);
         const count = messageRows ? targets.reduce((count, target) => count + (target.messageIds?.length ?? 0), 0) : targets.length;
-        const folder = data.folders.find((folder) => folder.id === destinationFolderId)?.name ?? "";
+        const destination = data.folders.find((folder) => folder.id === destinationFolderId);
+        const folder = destination ? folderName()(destination) : "";
         const notice = toast.success(t().actionMoved({ actionId, count, messages: messageRows, folder }), {
           action: {
             label: t().undo,
@@ -2316,7 +2515,8 @@ function MailboxWorkspace(
       },
       showUndoFailed: (targets, destinationFolderId) => {
         if (disposed) return;
-        const folder = data.folders.find((folder) => folder.id === destinationFolderId)?.name ?? null;
+        const destination = data.folders.find((folder) => folder.id === destinationFolderId);
+        const folder = destination ? folderName()(destination) : null;
         const first = targets[0];
         if (!first) return;
         toast.error(
@@ -2442,6 +2642,162 @@ function MailboxWorkspace(
       ),
     onError: (error) => toast.error(error.message),
   });
+  /** Undo of a rule's assignment from the reader: the rule never assigns this conversation again. */
+  const automationText = createMemo(() => mailAutomationLogMessages.resolve([locale()]).t);
+  const automationRequest = async (item: AutomationLogItem, action: "undo" | "redo") => {
+    const endpoint = apiClient.mailboxes[":mailboxId"]["automation-log"][":itemId"];
+    const response = await (action === "undo" ? endpoint.undo : endpoint.redo).$post({ param: { mailboxId, itemId: item.id } });
+    if (response.status === 409) {
+      // Someone changed the assignment since: the refreshed entry says who; nothing changed.
+      const body: unknown = await response.json();
+      // The schema loads only for this rare answer: Zod stays out of the mailbox's first load.
+      const { automationLogItemSchema } = await import("../contracts");
+      const parsed = automationLogItemSchema.safeParse(body && typeof body === "object" && "item" in body ? body.item : null);
+      throw new UndoNotPossible(parsed.success ? parsed.data : item);
+    }
+    if (!response.ok) throw new Error(await readApiError(response, automationText().undoFailed));
+  };
+  const automationUndo = mutation.create<void, AutomationLogItem>({
+    mutation: async (item) => {
+      await automationRequest(item, "undo");
+      await requireWorkspaceReconcile();
+      if (disposed) return;
+      const message = undoRevertedAssignment(item) ? automationText().undoneToast : automationText().undoneEffectsToast;
+      const notice = toast(message({ subject: item.conversation.subject }), {
+        action: {
+          label: automationText().redo,
+          onClick: () => {
+            notice.dismiss();
+            void automationRequest(item, "redo")
+              .then(() => requireWorkspaceReconcile())
+              .catch(() => toast.error(automationText().redoFailed));
+          },
+        },
+      });
+    },
+    onError: (error) => {
+      if (error instanceof UndoNotPossible) {
+        const by = error.item.undo.by;
+        void requireWorkspaceReconcile();
+        toast.error(
+          error.item.undo.reason === "provider_pending"
+            ? automationText().providerPending
+            : error.item.undo.reason === "conversation_gone" || !by
+              ? automationText().notPossibleGone
+              : automationText().notPossible({
+                  name: by.name,
+                  time: error.item.undo.at ? formatLogTime(error.item.undo.at, locale(), props.dateConfig.timeZone) : "",
+                }),
+          { title: automationText().notPossibleTitle },
+        );
+        return;
+      }
+      toast.error(error.message);
+    },
+  });
+  const assignOpenConversation = () => {
+    const conversationId = data.selectedConversationId;
+    if (!canWrite() || structurePending() || !conversationId) return Promise.resolve();
+    return assignSelectionMutation.mutate([conversationId]);
+  };
+  const assignToMe = mutation.create<void, string>({
+    mutation: async (conversationId) => {
+      if (!props.currentUserId) return;
+      const response = await apiClient.mailboxes[":mailboxId"].conversations.assign.$post({
+        param: { mailboxId },
+        // You join the people responsible; whoever is assigned already stays.
+        json: { conversationIds: [conversationId], assigneeUserIds: [props.currentUserId], mode: "add" },
+      });
+      if (!response.ok) throw new Error(await readApiError(response, t().assignFailed));
+      const refreshError = await captureMailWorkspaceRefreshError(requireWorkspaceReconcile);
+      if (refreshError) reportRefreshFailure(refreshError, t().assignFailed);
+    },
+    onError: (error) => toast.error(error.message),
+  });
+  const assignOpenConversationToMe = () => {
+    const conversationId = data.selectedConversationId;
+    if (!canWrite() || structurePending() || assignToMe.loading() || !conversationId) return;
+    void assignToMe.mutate(conversationId);
+  };
+  const assignItemToMe = (item: MailListItem) => {
+    if (!canWrite() || structurePending() || assignToMe.loading() || !item.conversationId) return;
+    void assignToMe.mutate(item.conversationId);
+  };
+  // Where more than one person can be responsible, the conversation's menus offer to take it.
+  const assignment = createMemo(() => {
+    const userId = props.currentUserId;
+    const conversationId = data.selectedConversationId;
+    if (!userId || !conversationId || !canAssign() || !sharedMailbox()) return null;
+    const state = data.collaborationState;
+    const assignees =
+      state?.conversationId === conversationId
+        ? state.assignees.map((assignee) => assignee.id)
+        : (selectedListItem()?.assigneeUserIds ?? []);
+    return { assigned: assignees.includes(userId), others: assigneeNames(assignees.filter((id) => id !== userId)) };
+  });
+  const selectedWorkStatus = () => {
+    const state = data.collaborationState;
+    return state?.conversationId === data.selectedConversationId ? state.workStatus : (selectedListItem()?.workStatus ?? null);
+  };
+  /** Marks one conversation done or reopens it, through the same path as the details panel's button. */
+  const completion = mutation.create<void, { conversationId: string; completion: "done" | "open" }>({
+    mutation: async ({ conversationId, completion }) => {
+      const response = await apiClient.mailboxes[":mailboxId"].conversations.completion.$post({
+        param: { mailboxId },
+        json: { conversationIds: [conversationId], completion },
+      });
+      if (!response.ok) throw new Error(await readApiError(response, conversationText().completionFailed));
+      for (const result of (await response.json()).results) {
+        if (result.status !== "ok") throw new Error(conversationText().completionFailed);
+        const patch = { workStatus: result.workStatus, snoozedUntil: null, revision: result.revision };
+        rememberPendingListState(result.conversationId, patch);
+        setConversationListState(result.conversationId, patch);
+        setData("collaborationState", (current) =>
+          current?.conversationId === result.conversationId ? { ...current, ...patch } : current,
+        );
+      }
+      const refreshError = await captureMailWorkspaceRefreshError(requireWorkspaceReconcile);
+      if (refreshError) reportRefreshFailure(refreshError, conversationText().completionFailed);
+    },
+    onError: (error) => toast.error(error.message),
+  });
+  const setItemCompletion = (item: MailListItem, next: "done" | "open") => {
+    if (!canWrite() || completion.loading() || !item.conversationId) return;
+    void completion.mutate({ conversationId: item.conversationId, completion: next });
+  };
+  const setOpenConversationCompletion = (next: "done" | "open") => {
+    const conversationId = data.selectedConversationId;
+    if (!canWrite() || completion.loading() || !conversationId) return;
+    void completion.mutate({ conversationId, completion: next });
+  };
+  /**
+   * A row's Reply opens its conversation first; the reader then answers the latest message. A window of its own opens
+   * during the click, as browsers allow only then, and closes again when the conversation does not open.
+   */
+  const [respondRequest, setRespondRequest] = createSignal<MailRespondRequest | null>(null);
+  // The latest Reply wins: an earlier one still opening its conversation gives up its window.
+  let respondGeneration = 0;
+  let respondOpening = false;
+  const respondToItem = async (item: MailListItem, intent: MailRespondIntent, options: { window: boolean }) => {
+    const conversationId = item.conversationId;
+    if (!conversationId || !canWrite()) return;
+    const generation = ++respondGeneration;
+    const target = options.window ? openMailReplyWindow() : null;
+    if (options.window && !target) return void prompts.error(conversationText().allowReplyWindow);
+    respondRequest()?.window?.close();
+    setRespondRequest(null);
+    // Another Reply still opening its conversation would select it afterwards; this one opens its own again.
+    if (data.selectedConversationId !== conversationId || respondOpening) {
+      respondOpening = true;
+      try {
+        await navigateConversation(buildMailSelectionHref(mailRouteUrl(requestPath()), item), item, "pointer");
+      } finally {
+        if (generation === respondGeneration) respondOpening = false;
+      }
+    }
+    if (disposed || generation !== respondGeneration || data.selectedConversationId !== conversationId) return void target?.close();
+    setRespondRequest({ conversationId, intent, window: target });
+  };
   const assignSelection = () => {
     const conversationIds = [...selectedConversationIds()];
     if (!canWrite() || structurePending() || conversationIds.length === 0) return Promise.resolve();
@@ -2505,6 +2861,7 @@ function MailboxWorkspace(
   };
 
   const sidebarText = createMemo(() => mailSidebarMessages.resolve([locale()]).t);
+  const eventsText = createMemo(() => mailEventsMessages.resolve([locale()]).t);
   const mailboxMenu = createMailboxMenu(() => ({
     mailboxId: data.mailbox.id,
     syncEnabled: data.mailbox.syncEnabled,
@@ -2527,6 +2884,7 @@ function MailboxWorkspace(
     mailboxCurrentTab({
       scheduledMode: data.scheduledMode,
       draftsMode: data.draftsMode,
+      eventsMode: data.eventsMode,
       folderId: data.folderId,
       activeView: data.query ? null : data.activeView,
       savedViewId: data.savedViewId,
@@ -2554,6 +2912,7 @@ function MailboxWorkspace(
       assignedOnly: assignedOnly(),
       labels: {
         all: sidebarText().allConversations,
+        events: eventsText().events,
         needs_action: sidebarText().needsAction,
         mine: sidebarText().assignedToMe,
         waiting: sidebarText().waitingForReply,
@@ -2563,9 +2922,40 @@ function MailboxWorkspace(
         recently_active: sidebarText().recentActivity,
         kept: sidebarText().kept,
       },
+      eventsBadge: eventsDiscovered ? undefined : eventsText().eventsNew,
       formatCount: (count) => count.toLocaleString(locale()),
     }),
   );
+  const eventsFeed = createMailEventsFeed({
+    mailboxId,
+    page: () => data.eventsPage,
+    failedMessage: () => eventsText().loadMoreFailed,
+  });
+  const eventsFilter = createMemo(() => data.eventsPage?.filter ?? readMailEventsFilter(mailRouteUrl(requestPath())));
+  /**
+   * Another filter of the feed is on its way: the shown pages belong to another list than the route. Opening a
+   * conversation beside the feed and a live refresh stay in the same list, so they keep the feed in place.
+   */
+  const eventsLoading = () => {
+    const shown = workspaceQuery.pages()[0];
+    return (
+      data.eventsMode &&
+      !!shown &&
+      routeListKey(shown.source) !== routeKey() &&
+      isMailEventsRoute(mailRouteUrl(decodeRouteSource(routeSource()).href))
+    );
+  };
+  /** A click on an event opens its conversation beside the feed; the feed keeps its pages. */
+  const openEventConversation = async (href: string, conversationId: string, subject: string) => {
+    navigationStart(href);
+    const result = inCurrentList(href)
+      ? await openConversationInList(href, conversationId, null, subject)
+      : await replaceWorkspaceRoute(href);
+    if (result === "applied") {
+      setConversationOpenIntent((intent) => intent + 1);
+      navigate(href, { scroll: "preserve", viewTransition: false });
+    } else if (result === "failed") toast.error(t().openConversationFailed);
+  };
   /** A search narrows the list: the head offers Reset back to where the search started. */
   const searchFiltered = () => Boolean(data.query.trim() || activeSearch().expression);
 
@@ -2620,157 +3010,493 @@ function MailboxWorkspace(
     onCleanup(publishPageContext({ scope: { type: "mail.mailbox", id: mailboxId } }));
   });
 
+  return {
+    viewPreference,
+    largeLayout,
+    columnsWide,
+    listCounts,
+    sharedMailbox,
+    assigneeNames,
+    rowAssignees,
+    changeLargeView,
+    automationUndo,
+    assignToMe,
+    assignOpenConversation,
+    assignOpenConversationToMe,
+    assignItemToMe,
+    assignment,
+    selectedWorkStatus,
+    completion,
+    setItemCompletion,
+    setOpenConversationCompletion,
+    respondRequest,
+    setRespondRequest,
+    respondToItem,
+    actionTargetForItem,
+    addTagsToSelection,
+    applyCollaborationState,
+    applyConversationTags,
+    applySavedConversationSummary,
+    assignSelection,
+    assignedOnly,
+    canAdmin,
+    canAssign,
+    canShowDetails,
+    canWrite,
+    clearConversationSelection,
+    closeConversation,
+    composeStarting,
+    conversationActivity,
+    conversationText,
+    currentTab,
+    data,
+    detailsOpen,
+    exitHeadSelection,
+    folderOnlyHint,
+    hasSelection,
+    listAway,
+    listCollapsed,
+    listHideable,
+    listNamedBy,
+    listOpen,
+    listText,
+    listView,
+    liveUnavailable,
+    loadMoreConversations,
+    mailboxMenu,
+    manageConversationTags,
+    mergeConversation,
+    mergeSelectedConversation,
+    navigateConversation,
+    navigateWorkspace,
+    openEventConversation,
+    eventsFeed,
+    eventsFilter,
+    eventsLoading,
+    openHealth,
+    openSettings,
+    openWorkspaceHref,
+    persistPreferences,
+    presence,
+    presenceState,
+    retryPresence: () => retryPresence(),
+    accessMembers,
+    wantAccessMembers: () => setAccessWanted(true),
+    reassignMessage,
+    reconcileWorkspace,
+    requestPath,
+    requireWorkspaceReconcile,
+    routeLoading,
+    runAction,
+    searchControls,
+    searchDiscovered,
+    searchFiltered,
+    searchHintDismissed,
+    selectedConversationIds,
+    selectedFlagged,
+    selectedInJunk,
+    selectedListItem,
+    selectedUnread,
+    selectionMode,
+    setCollapsed,
+    setConversationKept,
+    setDetailsVisible,
+    setSearchHintDismissed,
+    sidebarText,
+    splitMessage,
+    startCompose,
+    structureMutationLoading,
+    structurePending,
+    t,
+    theme,
+    toggleConversationSelection,
+    toggleConversationSelectionMode,
+    toolbarActions,
+    updateListMode,
+    updateToolbarActions,
+    userPreferences,
+    viewTabs,
+    workspaceQuery,
+  };
+}
+
+function MailboxWorkspace(props: Omit<MailboxControllerProps, keyof MailboxSession> & { session: MailboxSession }) {
+  // One mailbox owns its store, queries, search, actions, effects and live subscription.
+  // Changing the committed session disposes that owner before creating the next one,
+  // while the presentation below stays mounted and reads the new controller.
+  let initialized = false;
+  const controller = createMemo(
+    on(
+      () => props.session,
+      (session) => {
+        if (initialized) {
+          const list = document.querySelector<HTMLElement>(".mail-workspace [data-scroll-preserve^='mail-list-']");
+          if (list) list.scrollTop = 0;
+        }
+        initialized = true;
+        return createMailboxController({ ...props, ...session });
+      },
+    ),
+  );
+
+  /** The Events tab's feed, in the list's place: over the full main area, or beside the open conversation. */
+  const eventsFeed = () => (
+    <MailEventsFeed
+      mailboxId={controller().data.mailbox.id}
+      requestPath={controller().requestPath()}
+      feed={controller().eventsFeed}
+      page={controller().data.eventsPage}
+      filter={controller().eventsFilter()}
+      error={controller().data.eventsError}
+      loading={controller().eventsLoading()}
+      selectedConversationId={controller().data.selectedConversationId}
+      currentUserId={props.currentUserId}
+      dateConfig={props.dateConfig}
+      localTags={controller().data.localTags}
+      onOpenHref={(href) => void controller().openWorkspaceHref(href)}
+      onOpenConversation={(href, conversationId, subject) => void controller().openEventConversation(href, conversationId, subject)}
+      onRetry={() => void controller().reconcileWorkspace()}
+    />
+  );
+
+  /** The conversation list; `wide` draws the columns view (F2) over the full main area. */
+  const conversationList = (wide: boolean) => (
+    <MailConversationList
+      mailbox={controller().data.mailbox}
+      mailboxId={controller().data.mailbox.id}
+      requestUrl={controller().requestPath()}
+      query={controller().data.query}
+      search={controller().data.search}
+      title={controller().data.listTitle}
+      namedBy={controller().listNamedBy()}
+      items={controller().listView().items}
+      leavingKeys={controller().listView().leavingKeys}
+      error={controller().data.listError}
+      selectedConversationId={controller().data.selectedConversationId}
+      selectedMessageId={controller().data.selectedMessageId}
+      selectedConversationIds={controller().selectedConversationIds()}
+      selectionMode={controller().selectionMode()}
+      nextCursor={controller().data.nextListCursor}
+      dateConfig={props.dateConfig}
+      canWrite={controller().canWrite()}
+      canAdmin={controller().canAdmin()}
+      viewFolderId={controller().data.folderId}
+      folders={controller().data.folders}
+      localTags={controller().data.localTags}
+      savedViews={controller().data.savedViews}
+      activeSavedViewId={controller().data.savedViewId}
+      folderOnlyHint={controller().folderOnlyHint()}
+      listMode={controller().data.listMode}
+      loading={controller().routeLoading()}
+      liveDegraded={controller().liveUnavailable()}
+      onCollapse={() => controller().setCollapsed(true)}
+      onOpenHealth={() => void controller().openHealth()}
+      onOpenDeliverySettings={() => void controller().openSettings("delivery")}
+      onNavigate={controller().navigateWorkspace}
+      onNavigateItem={controller().navigateConversation}
+      onToggleSelectionMode={controller().toggleConversationSelectionMode}
+      onToggleSelection={controller().toggleConversationSelection}
+      onClearSelection={controller().clearConversationSelection}
+      onAddTags={controller().assignedOnly() ? undefined : controller().addTagsToSelection}
+      onAssign={controller().canAssign() ? controller().assignSelection : undefined}
+      onBulkAction={controller().runAction}
+      onItemAction={(item, actionId) => {
+        const target = controller().actionTargetForItem(item, actionId);
+        if (target) void controller().runAction(actionId, { targets: [target] });
+      }}
+      onManageTags={controller().manageConversationTags}
+      onRespondItem={(item, intent, options) => void controller().respondToItem(item, intent, options)}
+      onAssignItemToMe={
+        controller().canAssign() && controller().sharedMailbox() && props.currentUserId ? controller().assignItemToMe : undefined
+      }
+      onSetItemCompletion={controller().setItemCompletion}
+      currentUserId={props.currentUserId ?? null}
+      assigneeNames={controller().assigneeNames}
+      onMergeItem={
+        controller().assignedOnly()
+          ? undefined
+          : (item) => {
+              if (item.conversationId)
+                void controller().mergeConversation({
+                  conversationId: item.conversationId,
+                  revision: item.revision,
+                  subject: item.subject,
+                });
+            }
+      }
+      onOpenHref={controller().openWorkspaceHref}
+      onNavigationStart={props.onNavigationStart}
+      searchDiscoveryHint={
+        !controller().searchDiscovered() && !controller().searchHintDismissed()
+          ? () => {
+              controller().setSearchHintDismissed(true);
+              controller().persistPreferences({ searchHintDismissed: true });
+            }
+          : undefined
+      }
+      onLoadMore={controller().loadMoreConversations}
+      onRefresh={controller().reconcileWorkspace}
+      columns={wide ? { shared: controller().sharedMailbox(), assignees: controller().rowAssignees } : undefined}
+      assignedGroups={controller().listCounts().assignedGroups}
+      hiddenDone={(() => {
+        const data = controller().data;
+        // Assigned to me ends with the done conversations that were assigned to you.
+        if (data.assignedGroups)
+          return {
+            count: null,
+            more: false,
+            href: buildMailShowDoneHref({
+              requestUrl: mailRouteUrl(controller().requestPath()),
+              mailboxId: data.mailbox.id,
+              search: data.search,
+              folderId: null,
+              savedViewExpression: { type: "assigned_to_me" },
+            }),
+          };
+        if (!data.hiddenDone) return null;
+        return {
+          ...data.hiddenDone,
+          href: buildMailShowDoneHref({
+            requestUrl: mailRouteUrl(controller().requestPath()),
+            mailboxId: data.mailbox.id,
+            search: data.search,
+            folderId: data.folderId,
+            savedViewExpression: data.savedViews.find((view) => view.id === data.savedViewId)?.filter.expression ?? null,
+          }),
+        };
+      })()}
+      doneToday={
+        controller().data.listMode === "conversations"
+          ? {
+              done: controller().data.doneTodayCounts.doneToday,
+              automated: controller().data.doneTodayCounts.doneByAutomation,
+              open: controller().data.viewCounts.needs_action,
+              logHref: automationLogHref(controller().data.mailbox.id),
+            }
+          : null
+      }
+    />
+  );
+
   return (
     <>
       <AppWorkspace.Head
-        mobilePane="conversations"
+        // On a phone the head belongs to the list: its pane, or Main while the columns fill it (#2507).
+        mobilePane={controller().columnsWide() ? "main" : "conversations"}
         views={
-          canWrite() && selectionMode() ? (
+          controller().canWrite() && controller().selectionMode() ? (
             <div data-mail-head-selection class="mail-head-selection">
               <MailBulkActionBar
-                selectedCount={selectedConversationIds().size}
+                selectedCount={controller().selectedConversationIds().size}
                 selectedInJunk={
-                  selectedConversationIds().size > 0 &&
-                  listView()
-                    .items.filter((item) => item.conversationId && selectedConversationIds().has(item.conversationId))
+                  controller().selectedConversationIds().size > 0 &&
+                  controller()
+                    .listView()
+                    .items.filter((item) => item.conversationId && controller().selectedConversationIds().has(item.conversationId))
                     .every(
                       (item) =>
                         spamActionForConversation({
-                          viewFolderId: data.folderId,
+                          viewFolderId: controller().data.folderId,
                           activeFolderIds: item.activeFolderIds,
-                          folders: data.folders,
+                          folders: controller().data.folders,
                         }) === "not_spam",
                     )
                 }
-                busy={routeLoading()}
-                onClear={exitHeadSelection}
-                onAddTags={assignedOnly() ? undefined : addTagsToSelection}
-                onAssign={canAssign() ? assignSelection : undefined}
-                onAction={runAction}
+                busy={controller().routeLoading()}
+                onClear={controller().exitHeadSelection}
+                onAddTags={controller().assignedOnly() ? undefined : controller().addTagsToSelection}
+                onAssign={controller().canAssign() ? controller().assignSelection : undefined}
+                onAction={controller().runAction}
               />
             </div>
-          ) : searchControls.opened() && !data.draftsMode && !data.scheduledMode ? (
-            <MailSearchInput search={searchControls} mailboxName={data.mailbox.name} />
-          ) : data.draftsMode || data.scheduledMode ? (
+          ) : controller().searchControls.opened() && !controller().data.draftsMode && !controller().data.scheduledMode ? (
+            <MailSearchInput search={controller().searchControls} mailboxName={controller().data.mailbox.name} />
+          ) : controller().data.draftsMode || controller().data.scheduledMode ? (
             <span class="mail-queue-count text-xs text-muted" data-mail-queue-count>
-              {data.draftsMode
-                ? conversationText().draftCount({ count: data.draftsPage?.total ?? 0 })
-                : conversationText().waitingForDelivery({ count: data.scheduledPage?.total ?? data.scheduledCount })}
+              {controller().data.draftsMode
+                ? controller()
+                    .conversationText()
+                    .draftCount({ count: controller().data.draftsPage?.total ?? 0 })
+                : controller()
+                    .conversationText()
+                    .waitingForDelivery({ count: controller().data.scheduledPage?.total ?? controller().data.scheduledCount })}
             </span>
-          ) : currentTab() !== null ? (
+          ) : controller().currentTab() !== null ? (
             <MailboxViewTabs
-              items={viewTabs()}
-              current={currentTab()!}
+              items={controller().viewTabs()}
+              current={controller().currentTab()!}
               onOpenHref={(href) => {
-                searchControls?.cancelPending();
-                void openWorkspaceHref(href);
+                controller().searchControls?.cancelPending();
+                void controller().openWorkspaceHref(href);
               }}
             />
           ) : (
             <span
               data-mail-head-title
-              class={listNamedBy() === "sidebar" ? "mail-list-heading truncate text-sm font-semibold" : "truncate text-sm font-semibold"}
+              class={
+                controller().listNamedBy() === "sidebar"
+                  ? "mail-list-heading truncate text-sm font-semibold"
+                  : "truncate text-sm font-semibold"
+              }
             >
-              {data.listTitle}
+              {controller().data.listTitle}
             </span>
           )
         }
         filters={
-          selectionMode() || data.scheduledMode || data.draftsMode ? undefined : searchControls.opened() ? (
-            <MailSearchOptions search={searchControls} count={listView().items.length} />
+          controller().selectionMode() ||
+          controller().data.scheduledMode ||
+          controller().data.draftsMode ||
+          controller().data.eventsMode ? undefined : controller().searchControls.opened() ? (
+            <MailSearchOptions search={controller().searchControls} count={controller().listView().items.length} />
           ) : (
             <MailboxHeadFilters
-              requestUrl={requestPath()}
-              search={data.search}
-              folderId={data.folderId}
-              folders={data.folders}
-              localTags={data.localTags}
+              requestUrl={controller().requestPath()}
+              search={controller().data.search}
+              folderId={controller().data.folderId}
+              folders={controller().data.folders}
+              localTags={controller().data.localTags}
               onEditSearch={(state, source) => {
-                searchControls?.cancelPending();
-                searchControls?.edit(state, source);
+                controller().searchControls?.cancelPending();
+                controller().searchControls?.edit(state, source);
               }}
               onOpenHref={(href) => {
-                searchControls?.cancelPending();
-                void openWorkspaceHref(href);
+                controller().searchControls?.cancelPending();
+                void controller().openWorkspaceHref(href);
               }}
             />
           )
         }
-        filtered={!searchControls.opened() && !selectionMode() && searchFiltered()}
-        resetHref={searchFiltered() ? buildMailSearchClearHref(mailRouteUrl(requestPath())) : undefined}
+        filtered={!controller().searchControls.opened() && !controller().selectionMode() && controller().searchFiltered()}
+        resetHref={controller().searchFiltered() ? buildMailSearchClearHref(mailRouteUrl(controller().requestPath())) : undefined}
         onReset={() => {
-          searchControls?.cancelPending();
-          void openWorkspaceHref(buildMailSearchClearHref(mailRouteUrl(requestPath())));
+          controller().searchControls?.cancelPending();
+          void controller().openWorkspaceHref(buildMailSearchClearHref(mailRouteUrl(controller().requestPath())));
         }}
         actions={
           <>
-            <Show when={!data.scheduledMode && !data.draftsMode}>
-              <Show when={!searchControls.opened() && !selectionMode()}>
-                <MailSearchTrigger search={searchControls} unseen={!searchDiscovered()} />
+            <Show when={!controller().data.scheduledMode && !controller().data.draftsMode && !controller().data.eventsMode}>
+              <Show when={!controller().searchControls.opened() && !controller().selectionMode()}>
+                <MailSearchTrigger search={controller().searchControls} unseen={!controller().searchDiscovered()} />
+                <span class="max-md:hidden">
+                  <Dropdown.Root
+                    position="bottom-left"
+                    width="20rem"
+                    items={[
+                      {
+                        sectionLabel: controller().t().viewMenu,
+                        items: (
+                          [
+                            ["auto", "ti ti-wand", controller().t().viewAuto, controller().t().viewAutoText],
+                            ["columns", "ti ti-list", controller().t().viewColumns, controller().t().viewColumnsText],
+                            ["split", "ti ti-layout-columns", controller().t().viewSplit, controller().t().viewSplitText],
+                          ] as const
+                        ).map(([value, icon, label, description]) => ({
+                          choice: "radio" as const,
+                          checked: () => controller().viewPreference().large === value,
+                          icon,
+                          label,
+                          description,
+                          action: () => void controller().changeLargeView(value),
+                        })),
+                      },
+                      {
+                        items: [
+                          {
+                            choice: "checkbox" as const,
+                            // Without a reader beside the list nothing is hidden, also while the choice waits for the next one.
+                            checked: () => controller().listHideable() && controller().listCollapsed(),
+                            icon: "ti ti-layout-sidebar-left-collapse",
+                            label: controller().t().viewHideList,
+                            description: controller().listHideable()
+                              ? controller().t().viewHideListText
+                              : controller().t().viewHideListUnavailable,
+                            disabled: !controller().listHideable(),
+                            trailing: <Kbd keys="[" />,
+                            action: () => controller().setCollapsed(!controller().listCollapsed()),
+                          },
+                        ],
+                      },
+                      {
+                        items: [
+                          {
+                            label: controller().t().viewNote({ mailbox: controller().data.mailbox.name }),
+                            disabled: true,
+                            action: () => {},
+                          },
+                        ],
+                      },
+                    ]}
+                  >
+                    <Dropdown.Trigger iconOnly type="button" variant="ghost" label={controller().t().viewMenu} data-mail-view-menu>
+                      <i class={controller().largeLayout().rows === "columns" ? "ti ti-list" : "ti ti-layout-columns"} aria-hidden="true" />
+                    </Dropdown.Trigger>
+                  </Dropdown.Root>
+                </span>
                 <MailboxTagFilter
-                  requestUrl={requestPath()}
-                  search={data.search}
-                  folderId={data.folderId}
-                  folders={data.folders}
-                  localTags={data.localTags}
+                  requestUrl={controller().requestPath()}
+                  search={controller().data.search}
+                  folderId={controller().data.folderId}
+                  folders={controller().data.folders}
+                  localTags={controller().data.localTags}
                   onOpenHref={(href) => {
-                    searchControls.cancelPending();
-                    void openWorkspaceHref(href);
+                    controller().searchControls.cancelPending();
+                    void controller().openWorkspaceHref(href);
                   }}
                 />
               </Show>
-              <Show when={canWrite() && data.listMode === "conversations" && !selectionMode()}>
-                <Tooltip.Anchor content={listText().selectConversations}>
+              <Show when={controller().canWrite() && controller().data.listMode === "conversations" && !controller().selectionMode()}>
+                <Tooltip.Anchor content={controller().listText().selectConversations}>
                   <IconButton
                     type="button"
-                    label={listText().selectConversations}
+                    label={controller().listText().selectConversations}
                     data-mail-selection-trigger
                     onClick={(event) => {
-                      searchControls.cancelPending();
-                      searchControls.lockHeight(event.currentTarget);
-                      toggleConversationSelectionMode();
+                      controller().searchControls.cancelPending();
+                      controller().searchControls.lockHeight(event.currentTarget);
+                      controller().toggleConversationSelectionMode();
                     }}
                   >
                     <i class="ti ti-checkbox" aria-hidden="true" />
                   </IconButton>
                 </Tooltip.Anchor>
               </Show>
-              <Show when={liveUnavailable()}>
-                <span class="mail-head-live text-xs text-muted" title={listText().updatesPaused}>
+              <Show when={controller().liveUnavailable()}>
+                <span class="mail-head-live text-xs text-muted" title={controller().listText().updatesPaused}>
                   <i class="ti ti-cloud-off" aria-hidden="true" />
-                  <span>{listText().updatesPaused}</span>
+                  <span>{controller().listText().updatesPaused}</span>
                 </span>
               </Show>
             </Show>
             <MailboxMenuButton
-              menu={mailboxMenu}
-              label={sidebarText().mailboxMenu({ name: data.mailbox.name })}
+              menu={controller().mailboxMenu}
+              label={controller().sidebarText().mailboxMenu({ name: controller().data.mailbox.name })}
               leading={
-                data.draftsMode || data.scheduledMode
+                controller().data.draftsMode || controller().data.scheduledMode || controller().data.eventsMode
                   ? []
                   : [
                       {
-                        sectionLabel: listText().chooseListView,
+                        sectionLabel: controller().listText().chooseListView,
                         items: [
                           {
                             id: "list-conversations",
-                            label: listText().conversationView,
-                            icon: data.listMode === "conversations" ? "ti ti-check" : "ti ti-messages",
-                            action: () => updateListMode("conversations"),
+                            label: controller().listText().conversationView,
+                            icon: controller().data.listMode === "conversations" ? "ti ti-check" : "ti ti-messages",
+                            action: () => controller().updateListMode("conversations"),
                           },
                           {
                             id: "list-messages",
-                            label: listText().messageView,
-                            icon: data.listMode === "messages" ? "ti ti-check" : "ti ti-mail",
-                            action: () => updateListMode("messages"),
+                            label: controller().listText().messageView,
+                            icon: controller().data.listMode === "messages" ? "ti ti-check" : "ti ti-mail",
+                            action: () => controller().updateListMode("messages"),
                           },
-                          ...(hasSelection() && listOpen()
+                          ...(controller().hasSelection() && controller().listOpen()
                             ? [
                                 {
                                   id: "hide-list",
-                                  label: listText().hideList,
+                                  label: controller().listText().hideList,
                                   icon: "ti ti-layout-sidebar-left-collapse",
-                                  action: () => setCollapsed(true),
+                                  action: () => controller().setCollapsed(true),
                                 },
                               ]
                             : []),
@@ -2782,20 +3508,20 @@ function MailboxWorkspace(
           </>
         }
         primary={
-          canWrite() && !assignedOnly()
+          controller().canWrite() && !controller().assignedOnly()
             ? {
-                label: sidebarText().compose,
-                icon: composeStarting() ? "ti ti-loader-2 animate-spin" : "ti ti-pencil",
+                label: controller().sidebarText().compose,
+                icon: controller().composeStarting() ? "ti ti-loader-2 animate-spin" : "ti ti-pencil",
                 // Modified and middle clicks, a new tab, and a page before hydration open the compose page.
-                href: `/app/mail/compose?mailbox=${data.mailbox.id}&autostart=1`,
+                href: `/app/mail/compose?mailbox=${controller().data.mailbox.id}&autostart=1`,
                 onClick: (event) => {
                   if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey)
                     return;
                   event.preventDefault();
-                  const href = `/app/mail/compose?mailbox=${data.mailbox.id}&autostart=1`;
+                  const href = `/app/mail/compose?mailbox=${controller().data.mailbox.id}&autostart=1`;
                   // The spinner replaces the icon; screen readers hear the same progress.
-                  if (!composeStarting()) announce(t().preparingMessage);
-                  void startCompose({ fallback: () => documentNavigate(href), progressToast: false });
+                  if (!controller().composeStarting()) announce(controller().t().preparingMessage);
+                  void controller().startCompose({ fallback: () => documentNavigate(href), progressToast: false });
                 },
               }
             : undefined
@@ -2804,243 +3530,235 @@ function MailboxWorkspace(
       <AppWorkspace.Content>
         <AppWorkspace.Main
           class="p-0"
-          aria-busy={routeLoading()}
-          mobilePane={hasSelection() ? "main" : "conversations"}
+          aria-busy={controller().routeLoading()}
+          mobilePane={controller().hasSelection() || controller().columnsWide() ? "main" : "conversations"}
           scroll={false}
-          minWidth={data.scheduledMode || data.draftsMode ? undefined : listOpen() ? MAIL_MAIN_WITH_LIST : MAIL_READER_BESIDE_DETAIL}
+          minWidth={
+            controller().data.scheduledMode || controller().data.draftsMode || controller().columnsWide()
+              ? undefined
+              : controller().listOpen()
+                ? MAIL_MAIN_WITH_LIST
+                : MAIL_READER_BESIDE_DETAIL
+          }
         >
           <Show
-            when={data.scheduledMode || data.draftsMode}
+            when={controller().data.scheduledMode || controller().data.draftsMode}
             fallback={
               <>
                 <AppWorkspace.MainPane
                   id="conversations"
-                  label={t().conversationList}
+                  label={controller().t().conversationList}
                   scroll={false}
-                  open={listOpen()}
+                  open={controller().listOpen()}
                   defaultSize={MAIL_LIST_WIDTH}
                   minSize={300}
                   maxSize={620}
                 >
-                  <MailConversationList
-                    mailbox={data.mailbox}
-                    mailboxId={data.mailbox.id}
-                    requestUrl={requestPath()}
-                    query={data.query}
-                    search={data.search}
-                    title={data.listTitle}
-                    namedBy={listNamedBy()}
-                    items={listView().items}
-                    leavingKeys={listView().leavingKeys}
-                    error={data.listError}
-                    selectedConversationId={data.selectedConversationId}
-                    selectedMessageId={data.selectedMessageId}
-                    selectedConversationIds={selectedConversationIds()}
-                    selectionMode={selectionMode()}
-                    nextCursor={data.nextListCursor}
-                    dateConfig={props.dateConfig}
-                    canWrite={canWrite()}
-                    canAdmin={canAdmin()}
-                    viewFolderId={data.folderId}
-                    folders={data.folders}
-                    localTags={data.localTags}
-                    savedViews={data.savedViews}
-                    activeSavedViewId={data.savedViewId}
-                    folderOnlyHint={folderOnlyHint()}
-                    listMode={data.listMode}
-                    loading={routeLoading()}
-                    liveDegraded={liveUnavailable()}
-                    onCollapse={() => setCollapsed(true)}
-                    onOpenHealth={() => void openHealth()}
-                    onOpenDeliverySettings={() => void openSettings("delivery")}
-                    onNavigate={navigateWorkspace}
-                    onNavigateItem={navigateConversation}
-                    onToggleSelectionMode={toggleConversationSelectionMode}
-                    onToggleSelection={toggleConversationSelection}
-                    onClearSelection={clearConversationSelection}
-                    onAddTags={assignedOnly() ? undefined : addTagsToSelection}
-                    onAssign={canAssign() ? assignSelection : undefined}
-                    onBulkAction={runAction}
-                    onItemAction={(item, actionId) => {
-                      const target = actionTargetForItem(item, actionId);
-                      if (target) void runAction(actionId, { targets: [target] });
-                    }}
-                    onManageTags={manageConversationTags}
-                    onMergeItem={
-                      assignedOnly()
-                        ? undefined
-                        : (item) => {
-                            if (item.conversationId)
-                              void mergeConversation({
-                                conversationId: item.conversationId,
-                                revision: item.revision,
-                                subject: item.subject,
-                              });
-                          }
-                    }
-                    onOpenHref={openWorkspaceHref}
-                    onNavigationStart={props.onNavigationStart}
-                    searchDiscoveryHint={
-                      !searchDiscovered() && !searchHintDismissed()
-                        ? () => {
-                            setSearchHintDismissed(true);
-                            persistPreferences({ searchHintDismissed: true });
-                          }
-                        : undefined
-                    }
-                    onLoadMore={loadMoreConversations}
-                    onRefresh={reconcileWorkspace}
-                  />
+                  {controller().data.eventsMode ? eventsFeed() : conversationList(false)}
                 </AppWorkspace.MainPane>
-                <MailConversationReader
-                  mailboxId={data.mailbox.id}
-                  requestUrl={requestPath()}
-                  canWrite={canWrite()}
-                  canAdmin={canAdmin()}
-                  mailboxWide={!assignedOnly()}
-                  identities={data.identities}
-                  onOpenDeliverySettings={() => void openSettings("delivery")}
-                  selectionKey={data.selectedMessageId ?? data.selectedConversationId}
-                  selectedConversationId={data.selectedConversationId}
-                  selectedMessageId={data.selectedMessageId}
-                  unread={selectedUnread()}
-                  flagged={selectedFlagged()}
-                  inJunk={selectedInJunk()}
-                  keep={data.keep}
-                  reference={data.selectedReference}
-                  subject={data.selectedSubject}
-                  messages={hasSelection() ? data.detailMessages : []}
-                  activity={conversationActivity()}
-                  conversationSummary={data.conversationSummary}
-                  conversationDrafts={data.conversationDrafts}
-                  totalMessageCount={hasSelection() ? (selectedListItem()?.messageCount ?? data.detailMessages.length) : 0}
-                  error={hasSelection() ? data.detailError : null}
-                  dateConfig={props.dateConfig}
-                  readingFormat={userPreferences().readingFormat}
-                  theme={theme()}
-                  calendarIntegrationAvailable={props.calendarIntegrationAvailable}
-                  listCollapsed={listCollapsed()}
-                  detailsOpen={detailsOpen()}
-                  toolbarActions={toolbarActions()}
-                  onToggleList={() => setCollapsed(!listCollapsed())}
-                  onToggleDetails={() => canShowDetails() && setDetailsVisible(!detailsOpen())}
-                  onToolbarActionsChange={updateToolbarActions}
-                  actionPending={structureMutationLoading()}
-                  structurePending={structurePending()}
-                  onAction={runAction}
-                  onOpenHref={openWorkspaceHref}
-                  onManageTags={() => {
-                    const item = selectedListItem();
-                    if (item) return manageConversationTags(item);
-                  }}
-                  onMergeConversation={mergeSelectedConversation}
-                  onReassignMessage={reassignMessage}
-                  onSplitMessage={splitMessage}
-                  onKeep={() => setConversationKept(true)}
-                  onStopKeeping={() => setConversationKept(false)}
-                  onSummarySaved={applySavedConversationSummary}
-                  onReconcile={reconcileWorkspace}
-                  onReconcileAfterWrite={requireWorkspaceReconcile}
-                  onClose={closeConversation}
-                />
+                <Show when={!controller().columnsWide()} fallback={controller().data.eventsMode ? eventsFeed() : conversationList(true)}>
+                  <MailConversationReader
+                    currentUserId={props.currentUserId}
+                    mailboxId={controller().data.mailbox.id}
+                    requestUrl={controller().requestPath()}
+                    canWrite={controller().canWrite()}
+                    canAdmin={controller().canAdmin()}
+                    mailboxWide={!controller().assignedOnly()}
+                    identities={controller().data.identities}
+                    onOpenDeliverySettings={() => void controller().openSettings("delivery")}
+                    selectionKey={controller().data.selectedMessageId ?? controller().data.selectedConversationId}
+                    selectedConversationId={controller().data.selectedConversationId}
+                    selectedMessageId={controller().data.selectedMessageId}
+                    unread={controller().selectedUnread()}
+                    flagged={controller().selectedFlagged()}
+                    inJunk={controller().selectedInJunk()}
+                    keep={controller().data.keep}
+                    reference={controller().data.selectedReference}
+                    subject={controller().data.selectedSubject}
+                    messages={controller().hasSelection() ? controller().data.detailMessages : []}
+                    activity={controller().conversationActivity()}
+                    conversationSummary={controller().data.conversationSummary}
+                    conversationDrafts={controller().data.conversationDrafts}
+                    automationTrace={controller().data.automationTrace}
+                    onUndoAutomation={(item) => controller().automationUndo.mutate(item)}
+                    onAssignConversation={controller().assignOpenConversation}
+                    onAssignConversationToMe={controller().assignOpenConversationToMe}
+                    automationPending={controller().automationUndo.loading() || controller().assignToMe.loading()}
+                    assignment={controller().assignment()}
+                    workStatus={controller().selectedWorkStatus()}
+                    completionPending={controller().completion.loading()}
+                    onSetCompletion={controller().setOpenConversationCompletion}
+                    respondRequest={controller().respondRequest()}
+                    onRespondRequestHandled={() => controller().setRespondRequest(null)}
+                    totalMessageCount={
+                      controller().hasSelection()
+                        ? (controller().selectedListItem()?.messageCount ?? controller().data.detailMessages.length)
+                        : 0
+                    }
+                    error={controller().hasSelection() ? controller().data.detailError : null}
+                    dateConfig={props.dateConfig}
+                    readingFormat={controller().userPreferences().readingFormat}
+                    theme={controller().theme()}
+                    calendarIntegrationAvailable={props.calendarIntegrationAvailable}
+                    listAway={controller().listAway()}
+                    detailsOpen={controller().detailsOpen()}
+                    toolbarActions={controller().toolbarActions()}
+                    onToggleDetails={() => controller().canShowDetails() && controller().setDetailsVisible(!controller().detailsOpen())}
+                    onToolbarActionsChange={controller().updateToolbarActions}
+                    actionPending={controller().structureMutationLoading()}
+                    structurePending={controller().structurePending()}
+                    onAction={controller().runAction}
+                    onOpenHref={controller().openWorkspaceHref}
+                    onManageTags={() => {
+                      const item = controller().selectedListItem();
+                      if (item) return controller().manageConversationTags(item);
+                    }}
+                    onMergeConversation={controller().mergeSelectedConversation}
+                    onReassignMessage={controller().reassignMessage}
+                    onSplitMessage={controller().splitMessage}
+                    onKeep={() => controller().setConversationKept(true)}
+                    onStopKeeping={() => controller().setConversationKept(false)}
+                    onSummarySaved={controller().applySavedConversationSummary}
+                    onReconcile={controller().reconcileWorkspace}
+                    onReconcileAfterWrite={controller().requireWorkspaceReconcile}
+                    onClose={controller().closeConversation}
+                  />
+                </Show>
               </>
             }
           >
             <Show
-              when={data.draftsMode}
+              when={controller().data.draftsMode}
               fallback={
-                <MailScheduledView
-                  mailboxId={data.mailbox.id}
-                  page={
-                    data.scheduledPage ?? {
-                      items: [],
-                      nextCursor: null,
-                      total: data.scheduledCount,
-                    }
-                  }
-                  error={data.scheduledError}
-                  dateConfig={props.dateConfig}
-                  canWrite={canWrite()}
-                  loading={routeLoading()}
-                  onNavigate={async () => {
-                    await workspaceQuery.loadMore();
-                    if (workspaceQuery.error()) toast.error(workspaceQuery.error()!.message);
-                  }}
-                  onRefresh={requireWorkspaceReconcile}
-                />
+                <Show when={controller()} keyed>
+                  {(mailbox) => (
+                    <MailScheduledView
+                      mailboxId={mailbox.data.mailbox.id}
+                      page={
+                        mailbox.data.scheduledPage ?? {
+                          items: [],
+                          nextCursor: null,
+                          total: mailbox.data.scheduledCount,
+                        }
+                      }
+                      error={mailbox.data.scheduledError}
+                      dateConfig={props.dateConfig}
+                      canWrite={mailbox.canWrite()}
+                      loading={mailbox.routeLoading()}
+                      onNavigate={async () => {
+                        await mailbox.workspaceQuery.loadMore();
+                        if (mailbox.workspaceQuery.error()) toast.error(mailbox.workspaceQuery.error()!.message);
+                      }}
+                      onRefresh={mailbox.requireWorkspaceReconcile}
+                    />
+                  )}
+                </Show>
               }
             >
-              <MailDraftsView
-                mailboxId={data.mailbox.id}
-                canWrite={canWrite()}
-                title={data.listTitle}
-                returnHref={requestPath()}
-                page={data.draftsPage ?? { items: [], nextCursor: null, total: 0 }}
-                error={data.draftsError}
-                dateConfig={props.dateConfig}
-                loading={routeLoading()}
-                onNavigate={async () => {
-                  await workspaceQuery.loadMore();
-                  if (workspaceQuery.error()) toast.error(workspaceQuery.error()!.message);
-                }}
-              />
+              <Show when={controller()} keyed>
+                {(mailbox) => (
+                  <MailDraftsView
+                    mailboxId={mailbox.data.mailbox.id}
+                    canWrite={mailbox.canWrite()}
+                    title={mailbox.data.listTitle}
+                    returnHref={mailbox.requestPath()}
+                    page={mailbox.data.draftsPage ?? { items: [], nextCursor: null, total: 0 }}
+                    error={mailbox.data.draftsError}
+                    dateConfig={props.dateConfig}
+                    loading={mailbox.routeLoading()}
+                    columns={mailbox.largeLayout().rows === "columns"}
+                    onNavigate={async () => {
+                      await mailbox.workspaceQuery.loadMore();
+                      if (mailbox.workspaceQuery.error()) toast.error(mailbox.workspaceQuery.error()!.message);
+                    }}
+                    onRefresh={mailbox.requireWorkspaceReconcile}
+                  />
+                )}
+              </Show>
             </Show>
           </Show>
         </AppWorkspace.Main>
         <AppWorkspace.Detail
           id={MAIL_CONTEXT_DETAIL_ID}
           openOnChoice={false}
-          open={detailsOpen() && canShowDetails()}
-          available={canShowDetails()}
-          onOpen={() => setDetailsVisible(true, false)}
-          onClose={() => setDetailsVisible(false)}
+          open={controller().detailsOpen() && controller().canShowDetails()}
+          available={controller().canShowDetails()}
+          onOpen={() => controller().setDetailsVisible(true, false)}
+          onClose={() => controller().setDetailsVisible(false)}
           width="lg"
           maxWidth={520}
         >
           <Show
-            when={data.selectedConversationId && data.collaborationState && data.conversationLocalTags}
+            when={
+              controller().data.selectedConversationId && controller().data.collaborationState && controller().data.conversationLocalTags
+            }
             fallback={
-              <div class="flex h-full items-center justify-center p-4">
-                <Placeholder
-                  state={routeLoading() ? "loading" : "error"}
-                  title={routeLoading() ? t().loadingDetails : t().detailsUnavailable}
-                  description={
-                    routeLoading()
-                      ? undefined
-                      : (data.detailErrors.collaboration ?? data.detailErrors.tags ?? data.collaborationError ?? t().refreshConversation)
-                  }
-                />
-              </div>
+              <Show when={!controller().routeLoading()} fallback={<MailDetailsSkeleton label={controller().t().loadingDetails} />}>
+                <div class="flex h-full items-center justify-center p-4">
+                  <Placeholder
+                    state="error"
+                    title={controller().t().detailsUnavailable}
+                    description={
+                      controller().data.detailErrors.collaboration ??
+                      controller().data.detailErrors.tags ??
+                      controller().data.collaborationError ??
+                      controller().t().refreshConversation
+                    }
+                    onRetry={() => void controller().reconcileWorkspace()}
+                  />
+                </div>
+              </Show>
             }
           >
-            <MailDetailsPanel
-              mailboxId={data.mailbox.id}
-              conversationId={data.selectedConversationId!}
-              active={detailsOpen()}
-              canWrite={canWrite()}
-              mailboxWide={!assignedOnly()}
-              initialState={data.collaborationState!}
-              initialLocalTags={data.localTags}
-              initialConversationLocalTags={data.conversationLocalTags!}
-              initialComments={data.comments}
-              initialCommentsCursor={data.commentsCursor}
-              assignableUsers={data.assignableUsers}
-              presence={presence().participants}
-              currentUserId={props.currentUserId}
-              activity={conversationActivity()}
-              initialReminder={data.reminder}
-              detailErrors={data.detailErrors}
-              conversationDrafts={data.conversationDrafts}
-              messages={data.detailMessages}
-              subject={data.selectedSubject}
-              requestUrl={requestPath()}
-              dateConfig={props.dateConfig}
-              onCollaborationChange={applyCollaborationState}
-              onConversationTagsChange={applyConversationTags}
-              onClose={() => setDetailsVisible(false)}
-              onOpenHref={openWorkspaceHref}
-              onReconcile={reconcileWorkspace}
-            />
+            <Show when={controller()} keyed>
+              {(mailbox) => (
+                <MailDetailsPanel
+                  mailboxId={mailbox.data.mailbox.id}
+                  conversationId={mailbox.data.selectedConversationId!}
+                  active={mailbox.detailsOpen()}
+                  canWrite={mailbox.canWrite()}
+                  mailboxWide={!mailbox.assignedOnly()}
+                  initialState={mailbox.data.collaborationState!}
+                  initialLocalTags={mailbox.data.localTags}
+                  initialConversationLocalTags={mailbox.data.conversationLocalTags!}
+                  initialComments={mailbox.data.comments}
+                  initialCommentsCursor={mailbox.data.commentsCursor}
+                  assignableUsers={mailbox.data.assignableUsers}
+                  presence={mailbox.presence().participants}
+                  presenceState={mailbox.presenceState()}
+                  onRetryPresence={mailbox.retryPresence}
+                  access={
+                    mailbox.assignedOnly()
+                      ? null
+                      : {
+                          members: mailbox.accessMembers.data() ?? [],
+                          // A failed refresh says so instead of keeping a list that may be out of date.
+                          state: mailbox.accessMembers.error() ? "error" : mailbox.accessMembers.data() ? "ready" : "loading",
+                          load: mailbox.wantAccessMembers,
+                          retry: () => void mailbox.accessMembers.refresh(),
+                          // Settings change grants in place, so the list reloads once they close.
+                          manage: mailbox.canAdmin()
+                            ? () => void mailbox.openSettings("access").finally(() => void mailbox.accessMembers.refresh())
+                            : undefined,
+                        }
+                  }
+                  currentUserId={props.currentUserId}
+                  activity={mailbox.conversationActivity()}
+                  initialReminder={mailbox.data.reminder}
+                  detailErrors={mailbox.data.detailErrors}
+                  conversationDrafts={mailbox.data.conversationDrafts}
+                  messages={mailbox.data.detailMessages}
+                  subject={mailbox.data.selectedSubject}
+                  requestUrl={mailbox.requestPath()}
+                  dateConfig={props.dateConfig}
+                  onCollaborationChange={mailbox.applyCollaborationState}
+                  onConversationTagsChange={mailbox.applyConversationTags}
+                  onClose={() => mailbox.setDetailsVisible(false)}
+                  onOpenHref={mailbox.openWorkspaceHref}
+                  onReconcile={mailbox.reconcileWorkspace}
+                />
+              )}
+            </Show>
           </Show>
         </AppWorkspace.Detail>
       </AppWorkspace.Content>
@@ -3128,43 +3846,42 @@ export default function MailWorkspace(props: MailWorkspaceProps) {
 
   return (
     <MailContactDirectoryProvider value={props.contactDirectory}>
-      <AppWorkspace mobileSurface="flush" class="mail-workspace">
-        {(() => {
-          // Resolve the session before the sidebar, so its first server and browser render already has the open mailbox.
-          const workspace = (
-            <Show when={session()} keyed>
-              {(s) => (
-                <MailboxWorkspace
-                  {...props}
-                  {...s}
-                  switching={switching}
-                  onReady={setControls}
-                  onNavigationStart={cancelSwitch}
-                  onOpenMailboxHistory={(url, completeScrollRestore) => {
-                    void switchMailbox(url, undefined, completeScrollRestore);
-                  }}
-                />
-              )}
-            </Show>
-          );
-          return (
-            <>
-              <MailSidebar
-                canCreate={Boolean(props.currentUserId)}
-                currentUserEmail={props.currentUserEmail}
-                contactDirectory={props.contactDirectory}
-                mailboxes={props.sidebar.mailboxes}
-                preferences={mailboxPreferences}
-                counts={[]}
-                open={controls()?.open() ?? null}
-                onOpenPlaceRowHiddenChange={(hidden) => controls()?.onOpenPlaceRowHiddenChange(hidden)}
-                onOpenMailbox={(nav) => switchMailbox(new URL(nav.href, window.location.origin), nav)}
+      <MailCloudIdProvider cloudUrl={props.cloudUrl}>
+        <AppWorkspace mobileSurface="flush" class="mail-workspace">
+          {(() => {
+            // Resolve the session before the sidebar, so its first server and browser render already has the open mailbox.
+            const workspace = (
+              <MailboxWorkspace
+                {...props}
+                session={session()}
+                switching={switching}
+                onReady={setControls}
+                onNavigationStart={cancelSwitch}
+                onOpenMailboxHistory={(url, completeScrollRestore) => {
+                  void switchMailbox(url, undefined, completeScrollRestore);
+                }}
               />
-              {workspace}
-            </>
-          );
-        })()}
-      </AppWorkspace>
+            );
+            return (
+              <>
+                <MailSidebar
+                  canCreate={Boolean(props.currentUserId)}
+                  currentUserEmail={props.currentUserEmail}
+                  contactDirectory={props.contactDirectory}
+                  mailboxes={props.sidebar.mailboxes}
+                  preferences={mailboxPreferences}
+                  counts={[]}
+                  focusNoticeOpen={props.sidebar.focusNoticeOpen}
+                  open={controls()?.open() ?? null}
+                  onOpenPlaceRowHiddenChange={(hidden) => controls()?.onOpenPlaceRowHiddenChange(hidden)}
+                  onOpenMailbox={(nav) => switchMailbox(new URL(nav.href, window.location.origin), nav)}
+                />
+                {workspace}
+              </>
+            );
+          })()}
+        </AppWorkspace>
+      </MailCloudIdProvider>
     </MailContactDirectoryProvider>
   );
 }

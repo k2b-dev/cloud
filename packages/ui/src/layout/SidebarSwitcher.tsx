@@ -4,6 +4,7 @@ import { isServer } from "solid-js/web";
 import { dropdownPosition } from "../actions/Dropdown";
 import { returnFocus, ringOnReturn } from "../internal/focus-return";
 import { useUiMessages } from "../intl/messages";
+import { SidebarRailHint } from "./SidebarRailHint";
 
 /** One container a person can switch to, such as a notebook, a space, or a mailbox. */
 export type AppWorkspaceSwitcherOption = {
@@ -80,6 +81,7 @@ export function AppWorkspaceSidebarSwitcher(props: AppWorkspaceSidebarSwitcherPr
   const [open, setOpen] = createSignal(false);
   const [query, setQuery] = createSignal("");
   let trigger: HTMLButtonElement | undefined;
+  const [hinted, setHinted] = createSignal(false);
   let panel: HTMLDivElement | undefined;
   let search: HTMLInputElement | undefined;
   let keyboardOpened = true;
@@ -266,8 +268,8 @@ export function AppWorkspaceSidebarSwitcher(props: AppWorkspaceSidebarSwitcherPr
         aria-haspopup="dialog"
         aria-expanded={open()}
         aria-controls={id}
-        // The full name for a truncated title and for the icon in a collapsed rail.
-        title={props.label}
+        // The full name without JavaScript; the hydrated hint replaces it.
+        title={hinted() ? undefined : props.label}
         onPointerEnter={load}
         onFocus={load}
         onPointerDown={() => (openAtPress = panel?.matches(":popover-open"))}
@@ -296,6 +298,13 @@ export function AppWorkspaceSidebarSwitcher(props: AppWorkspaceSidebarSwitcherPr
           {[props.description, props.switchLabel].filter(Boolean).join(", ")}
         </span>
       </button>
+      <SidebarRailHint
+        target={() => trigger}
+        label={props.label}
+        labelSelector=".k2b-sidebar-switcher__copy > span"
+        titled
+        onArm={() => setHinted(true)}
+      />
       <div
         ref={panel}
         id={id}

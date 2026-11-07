@@ -1,0 +1,1 @@
+| Cross-application extension creation races | Per-app setup locks leave two applications free to race on the same PostgreSQL extension catalog entry. | Core owns `pgcrypto`; `core/migrate/core/extensions.integration.test.ts` provisions it on a fresh database before two different application migrations run concurrently. |

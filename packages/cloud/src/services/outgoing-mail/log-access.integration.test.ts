@@ -1,6 +1,5 @@
 import { afterAll, beforeAll, beforeEach, expect, spyOn, test } from "bun:test";
 import { createSync, type Sync } from "@k2b/sync";
-import { sql } from "bun";
 import { connectTestNats, suiteFor, testSyncNamespace, useFreshDatabase } from "../../../../../scripts/fixtures/test-infra";
 import { deleteTestNamespace } from "../../../../../scripts/fixtures/test-sync";
 import { migrate as migrateAudit } from "../../../../core/src/migrate/core/audit";
@@ -10,6 +9,7 @@ import { bindProcessApplicationId, clearProcessApplicationId } from "../../_inte
 import { bindProcessSync, unbindProcessSync } from "../../_internal/process-sync";
 import * as registry from "../../_internal/registry";
 import type { MailFilter, MailPageParams } from "../../contracts/outgoing-mail";
+import { sql } from "../../runtime/clients";
 import { audit } from "../audit";
 import { toPgTextArray } from "../postgres";
 import { outgoingMailLog } from "./admin";

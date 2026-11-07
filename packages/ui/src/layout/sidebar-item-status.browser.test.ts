@@ -26,7 +26,8 @@ const states = {
   all: { unread: 120, mention: true, muted: true },
   mutedOnly: { muted: true },
 };
-const counted = new Set(["one", "many", "mention", "all"]);
+// A muted item is set aside: its count stays, but its label keeps the regular weight.
+const counted = new Set(["one", "many", "mention"]);
 // Each row variant and container, with the states it is checked in.
 const groups = {
   flat: Object.keys(states),
@@ -466,6 +467,7 @@ describe("@k2b/ui sidebar item status", () => {
         [{ unread: 2 }, { unread: 2, mention: true }, { mention: true }, { unread: true, mention: true }, { unread: 0, mention: true }],
       ];
       const places: Record<"unread" | "mention" | "muted", Set<number>> = { unread: new Set(), mention: new Set(), muted: new Set() };
+      const countStarts = new Set<number>();
       for (const [index, sequence] of sequences.entries()) {
         const mention = new Set<number>();
         for (const status of sequence) {
@@ -474,11 +476,29 @@ describe("@k2b/ui sidebar item status", () => {
           expect(live.unread).not.toBeNull();
           places.unread.add(Math.round(live.unread!.right * 10));
           if (live.muted) places.muted.add(Math.round(live.muted.right * 10));
+          if (live.count) countStarts.add(Math.round(live.count.left * 10));
           if (live.mention) mention.add(Math.round(live.mention.right * 10));
         }
         expect({ sequence: index, mention: mention.size }).toEqual({ sequence: index, mention: 1 });
       }
       expect({ unread: places.unread.size, muted: places.muted.size }).toEqual({ unread: 1, muted: 1 });
+      expect(countStarts.size).toBe(1);
+    } finally {
+      await page.close();
+    }
+  }, 30_000);
+
+  test("an object row's icon chip has the same inset before it as above and below it", async () => {
+    const page = await load("light");
+    try {
+      const insets = await page.locator('[data-group="object"][data-state="plain"]').evaluate((row) => {
+        const outer = row.getBoundingClientRect();
+        const chip = row.querySelector(".k2b-icon-tile")!.getBoundingClientRect();
+        return { start: chip.left - outer.left, top: chip.top - outer.top, bottom: outer.bottom - chip.bottom };
+      });
+      // A two-line copy may make the row one pixel taller than the chip's even frame; never more.
+      expect(Math.abs(insets.start - insets.top)).toBeLessThanOrEqual(1);
+      expect(Math.abs(insets.start - insets.bottom)).toBeLessThanOrEqual(1);
     } finally {
       await page.close();
     }

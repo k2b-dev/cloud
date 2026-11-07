@@ -1151,38 +1151,49 @@ describe("Spaces Kanban board in a browser", () => {
     }
   }, 30_000);
 
-  test("keyboard: Escape cancels a move: nothing is sent, the line goes, the workspace does not see Escape, and focus stays", async () => {
-    const page = await open(desktop, { locale: "en" });
-    try {
-      moves.splice(0);
-      // As the workspace controller: an Escape that reaches the window unprevented closes the detail panel.
-      await page.evaluate(() => {
-        const escapes: string[] = [];
-        Object.assign(window, { __workspaceEscapes: escapes });
-        window.addEventListener("keydown", (event) => {
-          if (event.key === "Escape" && !event.defaultPrevented) escapes.push(event.key);
+  for (const tooltip of ["pending", "open"] as const) {
+    test(`keyboard: Escape cancels a move with its tooltip ${tooltip}: only the next Escape reaches the workspace`, async () => {
+      const page = await open(desktop, { locale: "en" });
+      try {
+        moves.splice(0);
+        // As the workspace controller: an Escape that reaches the window unprevented closes the detail panel.
+        await page.evaluate(() => {
+          const escapes: string[] = [];
+          Object.assign(window, { __workspaceEscapes: escapes });
+          window.addEventListener("keydown", (event) => {
+            if (event.key === "Escape" && !event.defaultPrevented) escapes.push(event.key);
+          });
         });
-      });
-      const workspaceEscapes = () => page.evaluate<unknown>(() => Reflect.get(window, "__workspaceEscapes"));
-      await page.locator('[data-spaces-kanban-grip="Item01"]').focus();
-      await page.keyboard.press("Space");
-      await page.keyboard.press("ArrowDown");
-      expect(await page.locator("[data-spaces-kanban-drop-indicator]").count()).toBe(1);
-      await page.keyboard.press("Escape");
-      await page.waitForTimeout(200);
-      expect(moves).toEqual([]);
-      expect(await page.locator("[data-spaces-kanban-drop-indicator]").count()).toBe(0);
-      expect(await cardsIn(page, "column:Col001")).toEqual(["Item01", "Item02", "Item03"]);
-      await waitForAnnouncement(page, "Cancelled drag for Order banners for the spring fair");
-      expect(await workspaceEscapes()).toEqual([]);
-      expect(await focusedGrip(page)).toBe("Item01");
-      // Without a move in progress, Escape is the workspace's again.
-      await page.keyboard.press("Escape");
-      expect(await workspaceEscapes()).toEqual(["Escape"]);
-    } finally {
-      await page.context().close();
-    }
-  }, 30_000);
+        const workspaceEscapes = () => page.evaluate<unknown>(() => Reflect.get(window, "__workspaceEscapes"));
+        // Control the delayed hint so both sides of the old timing race are covered.
+        await page.clock.install({ time: new Date("2026-10-27T12:00:00Z") });
+        await page.clock.pauseAt(new Date("2026-10-27T12:00:01Z"));
+        await page.locator('[data-spaces-kanban-grip="Item01"]').focus();
+        if (tooltip === "open") await page.clock.runFor(300);
+        expect(await page.locator('[role="tooltip"]:popover-open').count()).toBe(tooltip === "open" ? 1 : 0);
+        await page.keyboard.press("Space");
+        // Using the grip closes the hint and cancels a pending hint before the local handler stops bubbling.
+        await page.clock.runFor(300);
+        expect(await page.locator('[role="tooltip"]:popover-open').count()).toBe(0);
+        await page.clock.resume();
+        await page.keyboard.press("ArrowDown");
+        expect(await page.locator("[data-spaces-kanban-drop-indicator]").count()).toBe(1);
+        await page.keyboard.press("Escape");
+        expect(moves).toEqual([]);
+        expect(await page.locator("[data-spaces-kanban-drop-indicator]").count()).toBe(0);
+        expect(await cardsIn(page, "column:Col001")).toEqual(["Item01", "Item02", "Item03"]);
+        await waitForAnnouncement(page, "Cancelled drag for Order banners for the spring fair");
+        expect(moves).toEqual([]);
+        expect(await workspaceEscapes()).toEqual([]);
+        expect(await focusedGrip(page)).toBe("Item01");
+        // Without a move in progress, Escape is the workspace's again.
+        await page.keyboard.press("Escape");
+        expect(await workspaceEscapes()).toEqual(["Escape"]);
+      } finally {
+        await page.context().close();
+      }
+    }, 30_000);
+  }
 
   test("keyboard: ArrowRight skips an automatic column", async () => {
     const page = await open(desktop, { locale: "en", buckets: withAutomaticColumns() });

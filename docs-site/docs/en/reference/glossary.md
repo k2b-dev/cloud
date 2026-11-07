@@ -5,7 +5,7 @@ section: Reference
 order: 1245
 description: Use one English and one German term for each Cloud product concept in Help and interface text.
 tags: [glossary, terminology, writing, help, english, german]
-updated: 2026-10-10
+updated: 2026-11-05
 ---
 
 # Cloud glossary
@@ -48,18 +48,23 @@ the term.
 | access | Zugriff | What a person, group, or service account can do with a resource. Write “give access”, „Zugriff geben“. | `permission`, `permissions`, `rights`, `privilege`, `privileges`, `grant`, `grants`, `granted`, `granting` | `Berechtigung*`, `Zugriffsrecht*`, `Rechte`, `Rechten` |
 | **View**, **Edit**, **Manage** | **Ansehen**, **Bearbeiten**, **Verwalten** | The shared access levels. Write “**Edit** access”, „Zugriff **Bearbeiten**“. An app with its own level labels quotes those labels. | `read access`, `write access`, `admin access`, `admin rights` | `Lesezugriff`, `Schreibzugriff`, `Adminzugriff`, `Leserecht*`, `Schreibrecht*`, `Adminrecht*`, `Administratorrecht*`, `Verwaltungsrecht*`, `Bearbeitungsrecht*` |
 | administrator | Administration | The role that manages the Cloud installation in the admin area. A person with **Manage** access to one resource is not an administrator. | `admin`, `admins`, `sysadmin` | `Admin`, `Admins`, `Administrator`, `Administratoren`, `Administratorin*` |
-| account | Konto | The sign-in identity of one person. | — | `Account`, `Benutzerkonto*` |
-| service account | Dienstkonto | An account that is not a person. It acts with its own access; a user-bound service account acts with the current access of its person. | `service user`, `technical user`, `bot`, `bots` | `Servicekonto*`, `Service-Account*`, `Dienstaccount*`, `Bot`, `Bots` |
-| agent | Agent | A service account that appears as an agent in pickers, activity, and audit. | — | — |
+| account | Konto | A person, an agent, or a service account. | — | `Account`, `Benutzerkonto*` |
+| service account | Dienstkonto | The account that Code of a resource or an app runs as. It has no sign-in and no API key. | `service user`, `technical user`, `bot`, `bots` | `Servicekonto*`, `Service-Account*`, `Dienstaccount*`, `Bot`, `Bots` |
+| agent | Agent | An account without a person that an administrator creates for programs. It signs in with an API key or an OAuth client. | — | — |
+| handle | Kennung | The copyable identifier of a service account, such as code-7k2q9m4xwt. | — | `Handle` |
 | sign in, sign out | anmelden, abmelden | Start or end a session. | `log in`, `log out`, `logged in`, `login`, `logon` | `einloggen`, `ausloggen`, `eingeloggt`, `ausgeloggt`, `Login` |
-| API key | API-Schlüssel | A secret that an integration uses instead of a password. | `API token`, `API tokens` | `API-Token*`, `API-Key*` |
+| API key | API Key | A secret that an integration uses instead of a password. | `API token`, `API tokens` | `API-Token*`, `API-Key*`, `API-Schlüssel*` |
+
+The API and the CLI keep the technical name `service_account` for agents and
+service accounts, such as `cld … --service-account`. Help and interface text
+use the terms above.
 
 ## Sharing and work
 
 | English | German | Meaning | Not in English | Not in German |
 | --- | --- | --- | --- | --- |
-| share, sharing | teilen, Freigabe | Give other people access to a resource. „Freigabe“ is the sharing area or one share. In new text it never means an approval. | — | `Zugriffsfreigabe*`, `Lesefreigabe*` |
-| approve, approval | genehmigen, Genehmigung | A person confirms a change before it takes effect. | `sign off`, `sign-off` | — |
+| share, sharing | teilen, Freigabe | Give other people access to a resource. „Freigabe“ is the sharing area or one share. | — | `Zugriffsfreigabe*`, `Lesefreigabe*` |
+| approve, approval | freigeben, Freigabe | A person confirms a change or a version before it takes effect, such as „Diese Version braucht die Freigabe des Cloud-Admins“. Name who approves, so the approval does not read as a share. | `sign off`, `sign-off` | — |
 | claim | übernehmen | Take a task or a shift so that others see who works on it. Use „übernehmen“ only in this sense; for settings write „anwenden“ or „speichern“. | `pick up`, `grab` | `beanspruchen` |
 | assign, assignee | zuweisen, zugewiesene Person | Make a person responsible for an item. In Spaces, a person's claim is the working state of one assignee. | — | — |
 | notification | Benachrichtigung | A message from Cloud about a change or an event. | — | `Mitteilung*`, `Notification*` |
@@ -69,6 +74,8 @@ the term.
 | English | German | Meaning | Not in English | Not in German |
 | --- | --- | --- | --- | --- |
 | app | App | A Cloud application such as Mail or Spaces. | `application`, `applications` | `Anwendung`, `Anwendungen`, `Applikation*` |
+| public site | Webseite | An app-owned website on domains assigned to the app; visitors use its own session. | — | — |
+| app domain | App-Domain | A host assigned to one app’s public site. | — | — |
 | delete | löschen | Destroy an object or move it to the trash. | — | — |
 | remove | entfernen | Take an object out of a list, a group, or a link. The object continues to exist. | — | — |
 | trash | Papierkorb | Deleted items wait here until Cloud deletes them permanently. | `bin`, `recycle bin`, `wastebasket` | `Mülleimer` |

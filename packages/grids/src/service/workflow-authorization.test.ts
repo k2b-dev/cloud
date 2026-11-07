@@ -1,7 +1,7 @@
 import { describe, expect, mock, test } from "bun:test";
+import { sql } from "@k2b/cloud";
 import type { User } from "@k2b/cloud/contracts";
 import type { ServiceAccount, ServiceAccountCredentialOverview } from "@k2b/cloud/services";
-import { sql } from "bun";
 import { testFor } from "../../../../scripts/fixtures/test-infra";
 import { migrate } from "../migrate";
 import type { GridsWorkflowPrincipal } from "../workflows/contracts";
@@ -155,6 +155,26 @@ describe("workflow principal revalidation", () => {
 
     expect(removed).toEqual({ ok: false, reason: "Workflow user is inactive." });
     expect(expiredUser).toEqual({ ok: false, reason: "Workflow user is inactive." });
+  });
+
+  test("full personal keys retain their user's grants while revalidating revocation", async () => {
+    const account = serviceAccount({ kind: "user_delegated", delegatedUserId: USER_ID, appId: null, resourceType: null, resourceId: null });
+    const source = principal();
+    if (!source.credential) throw new Error("Missing fixture credential");
+    const personal: GridsWorkflowPrincipal = {
+      ...source,
+      userId: USER_ID,
+      serviceAccountId: null,
+      credential: { ...source.credential, scopes: [], permissionCap: "admin", resourceBinding: null },
+    };
+    const dependencies = deps({
+      getServiceAccount: mock(async () => account),
+      findCredential: mock(async () => ({ ...credential([]), serviceAccount: account })),
+    });
+    expect(await revalidateWorkflowPrincipal(personal, BASE_ID, dependencies)).toMatchObject({ ok: true, permissionCap: "admin" });
+    expect(await revalidateWorkflowPrincipal(personal, BASE_ID, { ...dependencies, findCredential: mock(async () => null) })).toMatchObject(
+      { ok: false },
+    );
   });
 
   test("applies the lower of accepted and current credential scopes", async () => {

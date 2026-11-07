@@ -124,7 +124,7 @@ describe("Cloud app approval UI", () => {
       dom.cleanup();
     };
     expect(dom.root.textContent).toContain("Enabled — setup required");
-    expect(dom.root.querySelector('a[href="/admin/settings?tab=user"]')).not.toBeNull();
+    expect(dom.root.querySelector('a[href="/admin/signin"]')).not.toBeNull();
     expect(dom.root.querySelector('a[href="/me/security/pair"]')).toBeNull();
     expect(pairStart).not.toHaveBeenCalled();
   });
@@ -144,7 +144,7 @@ describe("Cloud app approval UI", () => {
       dom.cleanup();
     };
     expect(dom.root.textContent).toContain("Your administrator still needs");
-    expect(dom.root.querySelector('a[href="/admin/settings?tab=user"]')).toBeNull();
+    expect(dom.root.querySelector('a[href="/admin/signin"]')).toBeNull();
     expect(dom.root.querySelector('a[href="/me/security/pair"]')).toBeNull();
   });
   test("installation uses the configured origin for desktop QR/copy and mobile new tabs", async () => {
@@ -216,7 +216,7 @@ describe("Cloud app approval UI", () => {
       dom.root,
     );
     expect(dom.root.textContent).toContain("App sign-in disabled");
-    expect(dom.root.querySelector('a[href="/admin/settings?tab=user"]')).not.toBeNull();
+    expect(dom.root.querySelector('a[href="/admin/signin"]')).not.toBeNull();
     expect(dom.root.querySelector('a[href="/me/security/pair"]')).toBeNull();
   });
   test("returning from identity confirmation resumes only the intended account pairing", async () => {
@@ -822,6 +822,13 @@ describe("Cloud app approval UI", () => {
       dom.cleanup();
     };
     await flush();
+    const protectedDialog = dom.document.querySelector("dialog")!;
+    protectedDialog.dispatchEvent(new Event("cancel", { cancelable: true }));
+    protectedDialog.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));
+    protectedDialog.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    await flush();
+    expect(dialogCore.isOpen()).toBe(true);
+    expect(closed).not.toHaveBeenCalled();
     dialogCore.close();
     await flush();
     expect(closed).toHaveBeenCalledTimes(1);
@@ -842,6 +849,38 @@ describe("Cloud app approval UI", () => {
     expect(dom.document.body.textContent).not.toContain("Step 1 of 2");
     expect(dom.document.body.textContent).not.toContain("Step 2 of 2");
     expect(pairStart).toHaveBeenCalledTimes(1);
+  });
+  test("a failed pairing start stays open and offers an explicit retry", async () => {
+    const dom = createDomTestHarness();
+    const { default: Pairing } = await import("../src/pages/app-approval/Pairing");
+    pairStart.mockImplementationOnce(async () => {
+      throw new Error("Network interrupted");
+    });
+    const dispose = render(
+      () =>
+        createComponent(Pairing, {
+          actorId: id,
+          userId: id,
+          name: "Ada",
+          appOrigin: "https://app.example",
+          returnTo: "/me/security",
+          onClose: () => {},
+        }),
+      dom.root,
+    );
+    cleanup = () => {
+      dispose();
+      dom.cleanup();
+    };
+    await Bun.sleep(170);
+    await flush();
+    expect(dom.document.querySelector("dialog[open]")).not.toBeNull();
+    expect(button(dom.document.body, "Try again")).toBeDefined();
+    // The retry enters loading without closing the dialog or requiring another page visit.
+    button(dom.document.body, "Try again").click();
+    await flush();
+    expect(pairStart).toHaveBeenCalledTimes(2);
+    expect(dom.document.querySelector('[data-state="loading"]')).not.toBeNull();
   });
   test("pairing transfers no secrets into storage and never confirms before explicit comparison", async () => {
     const dom = createDomTestHarness();

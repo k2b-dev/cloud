@@ -1414,8 +1414,9 @@ for (const theme of ["light", "dark"] as const) {
         `data:image/png;base64,${png.toString("base64")}`,
       );
       console.info(`column shadow ${theme}: ${JSON.stringify(contrast)}`);
-      expect(contrast.top).toBeGreaterThan(theme === "light" ? 5 : 0.5);
-      expect(contrast.top).toBeLessThan(theme === "light" ? 13 : 5);
+      // 55 % of the #1672 shadow, the one every column boundary uses.
+      expect(contrast.top).toBeGreaterThan(theme === "light" ? 2.5 : 0.5);
+      expect(contrast.top).toBeLessThan(theme === "light" ? 7.5 : 3);
       expect(Math.abs(contrast.top - contrast.middle)).toBeLessThan(1);
       expect(contrast.bottom).toBeGreaterThan(theme === "light" ? 1 : 0.2);
       expect(contrast.bottom).toBeLessThan(contrast.middle);

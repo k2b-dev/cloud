@@ -1,5 +1,5 @@
+import { sql } from "@k2b/cloud";
 import { logger, stopRuntimeJobs, trace } from "@k2b/cloud/services";
-import { sql } from "bun";
 import type { SqlClient } from "./audit";
 import { gridsLive } from "./live";
 import { type GridsRecordEvent, GridsRecordEventSchema, publishRecordEvent } from "./record-events";
@@ -152,10 +152,22 @@ const recordDeliveryFailure = async (row: OutboxRow, error: unknown): Promise<"f
 };
 
 const dispatchRecordEventOutboxOnce = async (id: string, publish: (event: GridsRecordEvent) => Promise<void>): Promise<DispatchStatus> => {
-  const [row] = await sql<OutboxRow[]>`
-    SELECT id::text, base_id::text, payload, status, attempts
-    FROM grids.record_event_outbox
-    WHERE id = ${id}::uuid
+  const [row] = await sql<Array<OutboxRow & { workflow_eligible: boolean }>>`
+    SELECT outbox.id::text, outbox.base_id::text, outbox.payload, outbox.status, outbox.attempts,
+      EXISTS (
+        SELECT 1
+        FROM grids.workflow_profile AS p
+        JOIN grids.bases AS b ON b.id = p.base_id AND b.deleted_at IS NULL
+        JOIN LATERAL (
+          SELECT plan FROM workflows.version WHERE workflow_id = p.id ORDER BY revision DESC LIMIT 1
+        ) AS v ON TRUE
+        WHERE p.base_id = outbox.base_id
+          AND p.deleted_at IS NULL AND p.enabled = TRUE
+          AND p.record_event_active_since <= grids.try_timestamptz(outbox.payload->>'occurredAt')
+          AND jsonb_path_exists(v.plan, '$.triggers[*] ? (@.kind == "recordEvent")')
+      ) AS workflow_eligible
+    FROM grids.record_event_outbox AS outbox
+    WHERE outbox.id = ${id}::uuid
   `;
   if (!row || row.status === "delivered") return "already-delivered";
   if (row.status === "dead") return "dead";
@@ -164,7 +176,10 @@ const dispatchRecordEventOutboxOnce = async (id: string, publish: (event: GridsR
     const event = parsePayload(row.payload);
     // Sync publication performs network I/O. It must never run inside the
     // outbox state transaction.
-    await publish(event);
+    // Keep the outbox/change feed and snapshots even without workflow demand.
+    // Read demand in the same database snapshot as the event, rather than a
+    // replica-local negative cache that could miss a concurrent activation.
+    if (row.workflow_eligible) await publish(event);
   } catch (error) {
     await recordDeliveryFailure(row, error);
     throw error;

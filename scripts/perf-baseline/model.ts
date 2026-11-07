@@ -21,8 +21,10 @@ export const pageApps: Record<PageId, string[]> = {
   files: ["filesv2"],
   accounts: ["accounts"],
   spaces: ["spaces"],
-  pwa: ["pwa", "spaces"],
+  pwa: ["pwa", "spaces", "chat"],
 };
+/** Started only in local mode for `pwa`: a remote installation measures the Assistant part only where it shows it. */
+export const localPwaApps = ["assistant"];
 
 export function parseArgs(args: string[]) {
   const options: {
@@ -139,6 +141,10 @@ export const pwaStepIds = [
   "relaunch-start-url",
   "launch-expired",
   "launch-timezone",
+  "tab-start-chat",
+  "tab-chat-start",
+  "tab-start-assistant",
+  "tab-assistant-chat",
   "tab-start-spaces",
   "tab-spaces-start",
   "tab-start-settings",
@@ -161,6 +167,7 @@ export const pwaAssetSchema = z.object({
   state: z.enum(assetCacheStates),
   transferSize: nullableMetric,
   encodedBodySize: nullableMetric,
+  decodedBodySize: nullableMetric.optional(),
   status: z.number().int().nullable(),
   repeat: z.boolean(),
 });
@@ -189,6 +196,9 @@ export const pwaStepSchema = z.object({
   round: z.union([z.literal(1), z.literal(2)]),
   serviceWorker: z.enum(["allowed", "blocked"]),
   ...pwaTimings,
+  interactiveMs: nullableMetric.optional(),
+  requests: nullableMetric.optional(),
+  cls: nullableMetric.optional(),
   titleFrame: z.boolean().nullable(),
   persisted: z.boolean().nullable(),
   documents: z.array(pwaDocumentSchema),
@@ -885,6 +895,27 @@ export function renderSummary(result: Result, old?: Result) {
             `| ${row.id} | ${row.round} | ${row.serviceWorker} | ${metrics.map((value) => cell(value?.median)).join(" | ")} | ${row.persisted === null ? "—" : `${Math.round(row.persisted * 100)}%`} |`,
           );
         }
+        lines.push(
+          "",
+          "| Cold Start | FCP (ms) | Interactive (ms) | JS transferred (B) | JS unpacked (B) | Requests | CLS |",
+          "| --- | ---: | ---: | ---: | ---: | ---: | ---: |",
+        );
+        const cold = profile.steps.filter((step) => step.id === "launch-first" && step.serviceWorker === "allowed");
+        const median = (read: (step: PwaStep) => number | null | undefined) => {
+          const values = cold.map(read).filter((value): value is number => value !== null && value !== undefined);
+          values.sort((a, b) => a - b);
+          const low = values[Math.floor((values.length - 1) / 2)];
+          const high = values[Math.floor(values.length / 2)];
+          return low === undefined || high === undefined ? null : (low + high) / 2;
+        };
+        const jsBytes = (step: PwaStep, field: "transferSize" | "decodedBodySize") => {
+          const scripts = step.assets.filter((asset) => asset.kind === "script");
+          if (scripts.some((asset) => asset[field] === null || asset[field] === undefined)) return null;
+          return scripts.reduce((sum, asset) => sum + (asset[field] ?? 0), 0);
+        };
+        lines.push(
+          `| ${cold.length} samples | ${cell(median((step) => step.contentMs))} | ${cell(median((step) => step.interactiveMs))} | ${cell(median((step) => jsBytes(step, "transferSize")))} | ${cell(median((step) => jsBytes(step, "decodedBodySize")))} | ${cell(median((step) => step.requests))} | ${median((step) => step.cls) ?? "—"} |`,
+        );
         for (const step of profile.steps.filter((step) => step.id === "relaunch-start-url"))
           lines.push(
             `Relaunch through start_url (run ${step.run}, SW ${step.serviceWorker}): ${escape(step.finalPath)}; visible after ${cell(step.doneMs)} ms.`,

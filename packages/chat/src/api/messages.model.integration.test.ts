@@ -1,5 +1,5 @@
 import { expect, setDefaultTimeout, test } from "bun:test";
-import { sql } from "bun";
+import { sql } from "@k2b/cloud";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import { ChatModel, type ModelOperation, randomOperation } from "../service/chat-model.test-fixture";
 import { MessageViewSchema } from "../service/contracts";

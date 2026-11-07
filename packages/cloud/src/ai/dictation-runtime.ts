@@ -1,5 +1,6 @@
-import { sql } from "bun";
 import { lazySync } from "../_internal/process-sync";
+import { sql } from "../runtime/clients";
+import { get as getUser } from "../services/accounts/users";
 import { logger, trace } from "../services/logging";
 import { superviseRuntimeTask } from "../services/runtime-lifecycle";
 import { aiModelAccess } from "./model-access";
@@ -43,7 +44,7 @@ export const isRetryableDictationError = (error: unknown): boolean => {
 export const processAiDictation = async (
   id: string,
   signal: AbortSignal,
-  run: (input: RunAiTranscriptionInput) => Promise<{ text: string; modelProfileId: string }> = runAiTranscription,
+  run: (input: RunAiTranscriptionInput) => Promise<{ text: string; modelId: string }> = runAiTranscription,
 ): Promise<void> => {
   const token = crypto.randomUUID();
   const [task] = await sql<ClaimedDictation[]>`
@@ -57,7 +58,7 @@ export const processAiDictation = async (
     name: "ai.dictation",
     source: "ai:dictations",
     category: "ai",
-    attributes: { dictationId: id, conversationId: task.conversation_id, modelProfileId: task.model_profile_id, attempt: task.attempts },
+    attributes: { dictationId: id, conversationId: task.conversation_id, modelId: task.model_profile_id, attempt: task.attempts },
   });
   let failure: AiTranscriptionError | undefined;
   const canceled = new AbortController();
@@ -85,14 +86,17 @@ export const processAiDictation = async (
     if (!conversation) throw new Error("Conversation unavailable.");
     const subject = { type: "user" as const, userId: task.user_id };
     await aiModelAccess.assertAllowed(task.model_profile_id, subject);
-    if (conversation.project_id && !(await aiProjects.snapshot(conversation.project_id, subject)))
-      throw new Error("Project access unavailable.");
+    if (conversation.project_id) {
+      const user = await getUser({ id: task.user_id });
+      if (!user || !(await aiProjects.snapshot(conversation.project_id, { actor: { kind: "user", user }, accessSubject: subject })))
+        throw new Error("Project access unavailable.");
+    }
     const result = await run({
       task: "dictation",
       traceParent: span,
       file: new Blob([new Uint8Array(task.source_bytes)]),
       filename: task.source_path,
-      requestedModelId: task.model_profile_id,
+      model: { id: task.model_profile_id },
       language: task.language ?? undefined,
       signal: combined,
       attribution: { userId: task.user_id, conversationId: task.conversation_id },
@@ -109,7 +113,7 @@ export const processAiDictation = async (
     log[combined.aborted ? "info" : retry ? "warn" : "error"](failure.message, {
       dictationId: id,
       traceId: span.traceId,
-      modelProfileId: task.model_profile_id,
+      modelId: task.model_profile_id,
       attempt: task.attempts,
       retry,
       errorCode: failure.code,

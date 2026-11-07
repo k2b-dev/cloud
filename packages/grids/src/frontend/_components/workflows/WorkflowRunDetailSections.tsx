@@ -1,6 +1,18 @@
-import { Button, DetailPanel, IconButton, NoticeCard, Placeholder, StatusBadge, Tooltip, useLocale } from "@k2b/ui";
+import {
+  Button,
+  DescriptionList,
+  DetailPanel,
+  FileGrid,
+  FileTypeIcon,
+  fileKindLabel,
+  IconButton,
+  NoticeCard,
+  Placeholder,
+  StatusBadge,
+  Tooltip,
+  useLocale,
+} from "@k2b/ui";
 import { For, Show } from "solid-js";
-import { documentFileIcon } from "../documents/document-workspace-utils";
 import type { PublicDocument } from "../documents/public-document-types";
 import type { PublicWorkflowRun, PublicWorkflowStepRun, PublicWorkspaceWorkflowRunDetail } from "../workspace/workspace-public-state-model";
 import { financialExportMessages } from "./financial-export-messages";
@@ -29,66 +41,64 @@ export function WorkflowRunExecutionSection(props: {
   provenance: PublicWorkspaceWorkflowRunDetail["provenance"] | null;
   latestProgressAt: string | null;
   waitingFor: string | null;
-  canInspectRevision: boolean;
-  onInspectRevision: () => void;
 }) {
   const locale = useLocale();
   const t = () => workflowMessages.resolve([locale()]).t;
-  const startedBy =
+  const startedBy = () =>
     props.provenance?.actorLabel ??
     props.provenance?.serviceAccountLabel ??
     (props.run.actorUserId ? t().user : props.run.serviceAccountId ? t().serviceAccount : t().system);
   return (
-    <DetailPanel.Summary title={t().execution}>
-      <dl class="grid grid-cols-[7rem_1fr] gap-x-3 gap-y-2 text-xs">
-        <dt class="text-dimmed">{t().channel}</dt>
-        <dd class="text-primary">{workflowChannelLabel(props.run.channel, locale())}</dd>
-        <dt class="text-dimmed">{t().startedBy}</dt>
-        <dd class="text-primary">{startedBy}</dd>
-        <dt class="text-dimmed">{t().runOption}</dt>
-        <dd class="text-primary">{props.provenance?.launcherName ?? t().directRun}</dd>
-        <dt class="text-dimmed">{t().mode}</dt>
-        <dd class="text-primary">{props.run.mode === "dryRun" ? t().dryRun : t().execute}</dd>
-        <dt class="text-dimmed">{t().revision}</dt>
-        <dd>
-          <Show when={props.canInspectRevision} fallback={<span class="text-primary tabular-nums">{props.run.workflowRevision}</span>}>
-            <Button variant="ghost" size="xs" type="button" class="tabular-nums" onClick={props.onInspectRevision}>
-              {t().revisionNumber({ revision: props.run.workflowRevision })}
-            </Button>
-          </Show>
-        </dd>
-        <dt class="text-dimmed">{t().started}</dt>
-        <dd class="text-primary">{formatDate(props.run.startedAt, locale())}</dd>
-        <dt class="text-dimmed">{t().finished}</dt>
-        <dd class="text-primary">{formatDate(props.run.finishedAt, locale())}</dd>
-        <dt class="text-dimmed">{t().duration}</dt>
-        <dd class="text-primary tabular-nums">{formatDuration(props.run, locale())}</dd>
-        <dt class="text-dimmed">{t().lastProgress}</dt>
-        <dd class="text-primary">{formatDate(props.latestProgressAt, locale())}</dd>
-        <Show when={props.waitingFor}>
-          {(summary) => (
-            <>
-              <dt class="text-dimmed">{t().waitingFor}</dt>
-              <dd class="text-primary">{summary().replace(/^(Waiting for|Wartet auf)\s*/i, "")}</dd>
-            </>
-          )}
-        </Show>
-      </dl>
-      <Show when={props.run.error}>
-        {(error) => (
-          <NoticeCard tone="danger" class="mt-3">
-            {error().message}
-          </NoticeCard>
-        )}
-      </Show>
-      <Show when={props.run.resultMessage}>
-        {(message) => (
-          <NoticeCard tone="success" class="mt-3">
-            {message()}
-          </NoticeCard>
-        )}
-      </Show>
-    </DetailPanel.Summary>
+    <>
+      <Show when={props.run.error}>{(error) => <NoticeCard tone="danger">{error().message}</NoticeCard>}</Show>
+      <Show when={props.run.resultMessage}>{(message) => <NoticeCard tone="success">{message()}</NoticeCard>}</Show>
+      <DetailPanel.Section title={t().execution}>
+        <DescriptionList
+          layout="rows"
+          size="sm"
+          items={[
+            { term: t().startedBy, description: startedBy() },
+            { term: t().runOption, description: props.provenance?.launcherName ?? t().directRun },
+            { term: t().started, description: formatDate(props.run.startedAt, locale()) },
+            { term: t().finished, description: formatDate(props.run.finishedAt, locale()) },
+            { term: t().duration, description: <span class="tabular-nums">{formatDuration(props.run, locale())}</span> },
+            { term: t().lastProgress, description: formatDate(props.latestProgressAt, locale()) },
+            ...(props.waitingFor
+              ? [{ term: t().waitingFor, description: props.waitingFor.replace(/^(Waiting for|Wartet auf)\s*/i, "") }]
+              : []),
+          ]}
+        />
+      </DetailPanel.Section>
+    </>
+  );
+}
+
+/** ID, channel, mode, and revision: what support and audits ask for, collapsed under "More about this run". */
+export function WorkflowRunTechnicalSection(props: { run: PublicWorkflowRun; canInspectRevision: boolean; onInspectRevision: () => void }) {
+  const locale = useLocale();
+  const t = () => workflowMessages.resolve([locale()]).t;
+  return (
+    <DetailPanel.Section title={t().technicalDetails} collapsible summary={t().runTechnicalSummary}>
+      <DescriptionList
+        layout="rows"
+        size="sm"
+        items={[
+          { term: t().runId, description: <span class="block truncate">{props.run.id}</span> },
+          { term: t().channel, description: workflowChannelLabel(props.run.channel, locale()) },
+          { term: t().mode, description: props.run.mode === "dryRun" ? t().dryRun : t().execute },
+          {
+            term: t().revision,
+            description: (
+              <Show when={props.canInspectRevision} fallback={<span class="tabular-nums">{props.run.workflowRevision}</span>}>
+                <Button variant="text" size="xs" type="button" class="tabular-nums" onClick={props.onInspectRevision}>
+                  {t().revisionNumber({ revision: props.run.workflowRevision })}
+                </Button>
+              </Show>
+            ),
+          },
+        ]}
+      />
+    </DetailPanel.Section>
   );
 }
 
@@ -96,19 +106,21 @@ export function WorkflowRunInputsSection(props: { inputs: WorkflowRunInputRow[] 
   const locale = useLocale();
   const t = () => workflowMessages.resolve([locale()]).t;
   return (
-    <DetailPanel.Section title={t().input} icon="ti ti-forms">
-      <dl class="grid grid-cols-[minmax(7rem,auto)_1fr] gap-x-3 gap-y-2 text-xs">
-        <For each={props.inputs} fallback={<span class="text-dimmed">{t().noInputs}</span>}>
-          {(input) => (
-            <>
-              <dt class="text-dimmed">{input.label}</dt>
-              <dd class="break-words text-primary" title={input.name}>
+    <DetailPanel.Section title={t().input}>
+      <Show when={props.inputs.length > 0} fallback={<p class="grids-details-none">{t().noInputs}</p>}>
+        <DescriptionList
+          layout="rows"
+          size="sm"
+          items={props.inputs.map((input) => ({
+            term: input.label,
+            description: (
+              <span class="break-words" title={input.name}>
                 {input.display}
-              </dd>
-            </>
-          )}
-        </For>
-      </dl>
+              </span>
+            ),
+          }))}
+        />
+      </Show>
     </DetailPanel.Section>
   );
 }
@@ -122,11 +134,15 @@ export function WorkflowRunStepsSection(props: {
   const locale = useLocale();
   const t = () => workflowMessages.resolve([locale()]).t;
   return (
-    <DetailPanel.Section title={t().steps} icon="ti ti-list-check">
+    <DetailPanel.Section title={t().steps}>
       <div class="flex flex-col gap-2">
         <For
           each={props.steps}
-          fallback={<Placeholder align="left" class="py-3" description={<>{props.loading ? t().loadingSteps : t().noStepDetails}</>} />}
+          fallback={
+            <Show when={props.loading} fallback={<p class="grids-details-none">{t().noStepDetails}</p>}>
+              <Placeholder state="loading" variant="compact" align="left" title={t().loadingSteps} />
+            </Show>
+          }
         >
           {(step) => {
             const stepError = () => workflowStepErrorMessage(step.outcome, locale());
@@ -206,29 +222,30 @@ export function WorkflowRunDocumentsSection(props: {
   return (
     <DetailPanel.Section
       title={t().generatedDocuments}
-      icon="ti ti-files"
+      count={props.documents.total || undefined}
       actions={
         <Show when={props.documents.total > 0}>
           <Tooltip.Anchor content={downloadAll().hint}>
             <Button variant="ghost" size="xs" type="button" onClick={props.onDownloadAll} disabled={props.downloadingAll}>
-              <i class={props.downloadingAll ? "ti ti-loader-2 animate-spin" : "ti ti-download"} /> {downloadAll().label}
+              <i class={props.downloadingAll ? "ti ti-loader-2 animate-spin" : "ti ti-download"} aria-hidden="true" /> {downloadAll().label}
             </Button>
           </Tooltip.Anchor>
         </Show>
       }
     >
       <div class="flex flex-col gap-2">
-        <For
-          each={props.documents.items}
-          fallback={<Placeholder align="left" class="py-3" description={<>{t().noGeneratedDocuments}</>} />}
-        >
-          {(document) => (
-            <div class="grid grid-cols-[auto_1fr_auto] items-center gap-2 py-1 text-xs">
-              <i class={`${documentFileIcon(document)} text-dimmed`} aria-hidden="true" />
-              <span class="min-w-0">
-                <span class="block truncate text-primary">{document.filename}</span>
-                <span class="block truncate text-dimmed">{document.number}</span>
-              </span>
+        <Show when={props.documents.items.length > 0} fallback={<p class="grids-details-none">{t().noGeneratedDocuments}</p>}>
+          <FileGrid
+            rows={props.documents.items}
+            getRowId={(document) => document.id}
+            label={t().generatedDocuments}
+            layout="list"
+            limit={5}
+            actionVisibility="progressive"
+            renderPreview={(document) => <FileTypeIcon name={document.filename} />}
+            renderLabel={(document) => document.filename}
+            renderMeta={(document) => `${fileKindLabel({ name: document.filename }, locale())} · ${document.number}`}
+            renderActions={(document) => (
               <Tooltip.Anchor content={t().downloadDocument}>
                 <IconButton
                   variant="ghost"
@@ -238,23 +255,27 @@ export function WorkflowRunDocumentsSection(props: {
                   onClick={() => props.onDownload(document)}
                   disabled={props.downloadingDocumentId === document.id}
                 >
-                  {props.downloadingDocumentId === document.id ? <i class="ti ti-loader-2 animate-spin" /> : <i class="ti ti-download" />}
+                  <i
+                    class={props.downloadingDocumentId === document.id ? "ti ti-loader-2 animate-spin" : "ti ti-download"}
+                    aria-hidden="true"
+                  />
                 </IconButton>
               </Tooltip.Anchor>
-            </div>
-          )}
-        </For>
+            )}
+            onOpen={props.onDownload}
+          />
+        </Show>
         <Show when={props.documents.hasMore && props.documents.nextOffset !== null ? props.documents.nextOffset : null}>
           {(offset) => (
             <Button
-              variant="secondary"
+              variant="ghost"
               size="sm"
               type="button"
-              class="self-center"
+              class="w-fit"
               disabled={props.loadingMore}
               onClick={() => props.onLoadMore(offset())}
             >
-              <i class={props.loadingMore ? "ti ti-loader-2 animate-spin" : "ti ti-chevron-down"} />
+              <i class={props.loadingMore ? "ti ti-loader-2 animate-spin" : "ti ti-chevron-down"} aria-hidden="true" />
               {t().loadMoreDocuments}
             </Button>
           )}

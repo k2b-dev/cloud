@@ -16,6 +16,8 @@ import {
   prompts,
   ScrollArea,
   Select,
+  StatusBadge,
+  type StatusTone,
   TextInput,
   toast,
   useLocale,
@@ -807,12 +809,24 @@ function SendPanel(props: {
 export function RequestDetail(props: { log: WebhookLog; endpoint: Endpoint | null | undefined; onClose: () => void }) {
   const locale = useLocale();
   const t = () => webhookMessages.resolve([locale()]).t;
-  const title = () => props.endpoint?.name ?? (props.log.direction === "incoming" ? t().incomingRequest : t().outgoingRequest);
+  const kindLabel = () => (props.log.direction === "incoming" ? t().incomingRequest : t().outgoingRequest);
+  const title = () => props.endpoint?.name ?? kindLabel();
   const location = () => props.log.path || props.log.url;
+  const status = (): { tone: StatusTone; label: string } => {
+    if (props.log.error) return { tone: "error", label: t().statusError };
+    const code = props.log.responseStatus;
+    if (!code) return { tone: "neutral", label: t().statusLogged };
+    return { tone: code >= 500 ? "error" : code >= 400 ? "warning" : "ok", label: String(code) };
+  };
   return (
     <DetailPanel>
       <DetailPanel.Header
-        icon={props.log.direction === "incoming" ? "ti ti-inbox" : "ti ti-send"}
+        kind={
+          <>
+            <span>{kindLabel()}</span>
+            <StatusBadge tone={status().tone} label={status().label} variant="dot" />
+          </>
+        }
         title={title()}
         subtitle={
           <span class="flex min-w-0 items-center gap-1">
@@ -824,52 +838,41 @@ export function RequestDetail(props: { log: WebhookLog; endpoint: Endpoint | nul
           </span>
         }
         meta={<span title={formatDate(props.log.createdAt, locale())}>{formatDate(props.log.createdAt, locale())}</span>}
+        primaryActions={<CopyButton text={JSON.stringify(props.log, null, 2)} label={t().copyJson} variant="subtle" size="sm" />}
         actions={
-          <>
-            <CopyButton text={JSON.stringify(props.log, null, 2)} label={t().copyJson} variant="secondary" size="sm" />
-            <IconButton label={t().closeRequestDetails} onClick={props.onClose}>
-              <i class="ti ti-x" aria-hidden="true" />
-            </IconButton>
-          </>
+          <IconButton label={t().closeRequestDetails} onClick={props.onClose}>
+            <i class="ti ti-x" aria-hidden="true" />
+          </IconButton>
         }
       />
 
       <DetailPanel.Body scrollPreserveKey={`webhook-request-detail-${props.log.id}`}>
-        <DetailPanel.Summary title={t().overview}>
+        <DetailPanel.Section title={t().properties}>
           <DescriptionList
             layout="rows"
             size="sm"
             items={[
-              {
-                term: t().colStatus,
-                description: props.log.error
-                  ? t().statusError
-                  : props.log.responseStatus
-                    ? String(props.log.responseStatus)
-                    : t().statusLogged,
-              },
               { term: t().duration, description: props.log.durationMs === null ? "-" : `${props.log.durationMs} ms` },
               { term: t().contentType, description: props.log.requestContentType ?? "-" },
               { term: t().queryLabel, description: props.log.query || "-" },
             ]}
           />
-        </DetailPanel.Summary>
+        </DetailPanel.Section>
 
-        <DetailPanel.Group label={t().requestData}>
-          <LogBlock title={t().requestHeaders} icon="ti ti-list-details" value={props.log.requestHeaders} />
-          <LogBlock title={t().requestBody} icon="ti ti-braces" value={props.log.requestBody ?? "-"} />
-        </DetailPanel.Group>
+        <LogBlock title={t().requestBody} value={props.log.requestBody ?? "-"} />
+        <LogBlock title={t().responseBody} value={props.log.responseBody ?? props.log.error ?? "-"} />
 
-        <DetailPanel.Group label={t().responseData}>
-          <LogBlock title={t().responseHeaders} icon="ti ti-list-details" value={props.log.responseHeaders ?? "-"} />
-          <LogBlock title={t().responseBody} icon="ti ti-braces" value={props.log.responseBody ?? props.log.error ?? "-"} />
+        <DetailPanel.Group title={t().moreAboutRequest}>
+          <LogBlock title={t().requestHeaders} value={props.log.requestHeaders} collapsible />
+          <LogBlock title={t().responseHeaders} value={props.log.responseHeaders ?? "-"} collapsible />
         </DetailPanel.Group>
       </DetailPanel.Body>
     </DetailPanel>
   );
 }
 
-const LogBlock = (props: { title: string; icon: string; value: unknown }) => {
+/** A request or response part. Header parts stay closed under "More about this request" and name their keys while closed. */
+const LogBlock = (props: { title: string; value: unknown; collapsible?: boolean }) => {
   const locale = useLocale();
   const t = () => webhookMessages.resolve([locale()]).t;
   const [raw, setRaw] = createSignal(false);
@@ -882,45 +885,57 @@ const LogBlock = (props: { title: string; icon: string; value: unknown }) => {
     if (data.value && typeof data.value === "object") return Object.entries(data.value as Record<string, unknown>);
     return [["value", data.value] as const];
   };
+  const commands = () => (
+    <>
+      <Button variant="secondary" size="xs" class="text-[11px]" onClick={() => setRaw(!raw())}>
+        {raw() ? t().pretty : t().raw}
+      </Button>
+      <CopyButton text={rawText()} label={t().copy} variant="secondary" size="xs" class="text-[11px]" />
+    </>
+  );
+  const content = () => (
+    <Show
+      when={!raw() && parsed().ok}
+      fallback={<pre class="max-h-64 overflow-auto whitespace-pre-wrap break-words text-[11px] leading-relaxed">{rawText()}</pre>}
+    >
+      <ScrollArea class="max-h-80 rounded-md bg-zinc-50 px-3 py-2 dark:bg-zinc-900/60">
+        <div class="grid grid-cols-[minmax(7rem,auto)_1fr] gap-x-3 gap-y-1.5 text-xs">
+          <For each={prettyRows()}>
+            {([key, value]) => {
+              const isComplex = typeof value === "object" && value !== null;
+              return (
+                <>
+                  <span class="min-w-0 truncate font-medium text-dimmed" title={key}>
+                    {key}
+                  </span>
+                  <span class={`min-w-0 whitespace-pre-wrap break-words text-secondary ${isComplex ? "font-mono text-[11px]" : ""}`}>
+                    {formatPrettyValue(value)}
+                  </span>
+                </>
+              );
+            }}
+          </For>
+        </div>
+      </ScrollArea>
+    </Show>
+  );
+
+  if (props.collapsible) {
+    const summary = () => {
+      const rows = prettyRows();
+      return rows.length > 0 ? rows.map(([key]) => key).join(", ") : rawText();
+    };
+    return (
+      <DetailPanel.Section title={props.title} collapsible summary={summary()}>
+        <div class="mb-2 flex justify-end gap-1">{commands()}</div>
+        {content()}
+      </DetailPanel.Section>
+    );
+  }
 
   return (
-    <DetailPanel.Section
-      title={props.title}
-      icon={props.icon}
-      tone="neutral"
-      actions={
-        <>
-          <Button variant="secondary" size="xs" class="text-[11px]" onClick={() => setRaw(!raw())}>
-            {raw() ? t().pretty : t().raw}
-          </Button>
-          <CopyButton text={rawText()} label={t().copy} variant="secondary" size="xs" class="text-[11px]" />
-        </>
-      }
-    >
-      <Show
-        when={!raw() && parsed().ok}
-        fallback={<pre class="max-h-64 overflow-auto whitespace-pre-wrap break-words text-[11px] leading-relaxed">{rawText()}</pre>}
-      >
-        <ScrollArea class="max-h-80 rounded-md bg-zinc-50 px-3 py-2 dark:bg-zinc-900/60">
-          <div class="grid grid-cols-[minmax(7rem,auto)_1fr] gap-x-3 gap-y-1.5 text-xs">
-            <For each={prettyRows()}>
-              {([key, value]) => {
-                const isComplex = typeof value === "object" && value !== null;
-                return (
-                  <>
-                    <span class="min-w-0 truncate font-medium text-dimmed" title={key}>
-                      {key}
-                    </span>
-                    <span class={`min-w-0 whitespace-pre-wrap break-words text-secondary ${isComplex ? "font-mono text-[11px]" : ""}`}>
-                      {formatPrettyValue(value)}
-                    </span>
-                  </>
-                );
-              }}
-            </For>
-          </div>
-        </ScrollArea>
-      </Show>
+    <DetailPanel.Section title={props.title} actions={commands()}>
+      {content()}
     </DetailPanel.Section>
   );
 };

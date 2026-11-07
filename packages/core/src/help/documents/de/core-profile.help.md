@@ -2,7 +2,7 @@
 id: core-profile
 title: Profil und Konto
 icon: ti ti-user-circle
-description: Konto, Gruppen und Aktivitäten prüfen, FreeIPA-Zugang beantragen und API-Schlüssel und Passkeys nutzen.
+description: Konto, Gruppen und Aktivitäten prüfen, FreeIPA-Zugang beantragen und API Keys und Passkeys nutzen.
 updated: 2026-10-12
 order: 110
 ---
@@ -22,16 +22,16 @@ Der Kontobereich bündelt lokale Cloud-Daten, optionale FreeIPA-Daten und die Ak
 ## Anmeldung und Automatisierung schützen {icon="shield-lock"}
 
 :::reference
-- **Entwicklung → API-Schlüssel:** Persönliche Schlüssel für Automatisierung. Ein Schlüssel mit **Vollzugriff** hat denselben Zugriff wie dein Konto. Wenn deine Administration die OpenAI-kompatible API anbietet, kannst du stattdessen **Nur KI-Modelle** wählen: So ein Schlüssel kann nur die KI-Modelle aufrufen, die du im Assistenten nutzen darfst, zum Beispiel aus einer Diktier-App. Cloud zeigt den vollständigen Schlüssel nur einmal, direkt nach dem Erstellen.
+- **Entwicklung → API Keys:** Persönliche Schlüssel für Automatisierung. Ein Schlüssel mit **Vollzugriff** hat denselben Zugriff wie dein Konto. Wenn deine Administration die OpenAI-kompatible API anbietet, kannst du stattdessen **Nur KI-Modelle** wählen: So ein Schlüssel kann nur die KI-Modelle aufrufen, die du im Assistenten nutzen darfst, zum Beispiel aus einer Diktier-App. Cloud zeigt den vollständigen Schlüssel nur einmal, direkt nach dem Erstellen.
 - **Anmeldung → Passkeys:** WebAuthn-Passkeys für die Anmeldung an deinem Konto. Nachdem du einen Passkey entfernt hast, kann sich niemand mehr damit anmelden.
 :::
 
-Lege API-Schlüssel unter **Entwicklung** und Passkeys unter **Anmeldung** im
+Lege API Keys unter **Entwicklung** und Passkeys unter **Anmeldung** im
 Browser an. Deine Browser-Anmeldung muss aus den letzten zehn Minuten stammen.
 Bittet Cloud dich, deine Identität zu bestätigen, melde dich mit demselben Konto
 erneut an. Der Dialog öffnet sich danach wieder. Die mobile App, eine Anmeldung über die
-Kommandozeile und vorhandene API-Schlüssel können keine persönlichen
-API-Schlüssel oder Passkeys anlegen.
+Kommandozeile und vorhandene API Keys können keine persönlichen
+API Keys oder Passkeys anlegen.
 
 ## Darstellung wählen {icon="palette"}
 

@@ -1,5 +1,6 @@
 import { expect, setSystemTime, spyOn, test } from "bun:test";
 import { type LoopAggregate, memoryStore, nessi, type Provider, type ProviderEvent } from "@k2b/nessi";
+import { complete } from "@k2b/nessi/ai";
 import {
   AiBackgroundAdmissionError,
   AiBackgroundCostError,
@@ -7,16 +8,23 @@ import {
   type AiCallDetails,
   type AiCallStatus,
 } from "./inference-calls";
+import { withProviderErrors } from "./provider-errors";
 import { AiProviderAdmissionError, inferenceProvider } from "./quota-provider";
 import type { AiModelProfile } from "./types";
 
 const profile: AiModelProfile = {
+  modelId: "a",
+  providerId: "a",
+  variantLabel: "Standard",
+  description: "",
+  icon: { kind: "provider" },
+  showInPicker: true,
   id: "a",
   label: "A",
   provider: "openai",
   model: "a",
   enabled: true,
-  capabilities: ["streaming"],
+  capabilities: [],
   dataBoundary: "hosted",
   pricing: { inputPerMillion: 1, outputPerMillion: 2 },
 };
@@ -39,10 +47,6 @@ function fixture(events: ProviderEvent[]) {
       calls++;
       yield* events;
     },
-    async complete() {
-      calls++;
-      return { message: { role: "assistant", content: [] }, finishReason: "stop", usage: event.type === "usage" ? event.usage : undefined };
-    },
   };
   const lifecycle = {
     begin: async (_profile: AiModelProfile, context: AiCallContext) => {
@@ -59,8 +63,7 @@ function fixture(events: ProviderEvent[]) {
     },
     heartbeat: async (_id: string) => {},
   };
-  const wrap = () =>
-    inferenceProvider(provider, profile, { kind: "chat", task: "chat" }, { kind: "background", task: "chat-compaction" }, lifecycle);
+  const wrap = () => inferenceProvider(withProviderErrors(provider), profile, { kind: "chat", task: "chat" }, lifecycle);
   return {
     provider,
     lifecycle,
@@ -77,21 +80,17 @@ const drain = async (provider: Provider) => {
   }
 };
 
-test("usage snapshots count once and complete has a separate purpose", async () => {
+test("usage snapshots count once", async () => {
   const f = fixture([event, event]);
   await drain(f.wrap());
-  await f.wrap().complete(request);
-  expect(f.booked.map((b) => b.usage)).toEqual([
-    { input: 8, output: 2 },
-    { input: 8, output: 2 },
-  ]);
-  expect(f.contexts.map((c) => c.kind)).toEqual(["chat", "background"]);
+  expect(f.booked.map((b) => b.usage)).toEqual([{ input: 8, output: 2 }]);
+  expect(f.contexts.map((c) => c.kind)).toEqual(["chat"]);
 });
-test("every actual complete attempt is recorded separately", async () => {
-  const f = fixture([]);
+test("every actual model call is recorded separately", async () => {
+  const f = fixture([event]);
   const p = f.wrap();
-  await p.complete(request);
-  await p.complete(request);
+  await complete(p, request);
+  await complete(p, request);
   expect(f.calls).toBe(2);
   expect(f.booked).toHaveLength(2);
 });
@@ -121,6 +120,22 @@ test("known context rejection costs zero and permits compaction", async () => {
   await drain(f.wrap());
   expect(f.booked[0]?.usage).toEqual({ input: 0, output: 0 });
 });
+test("a request the provider refused costs nothing; one it may have processed is estimated", async () => {
+  for (const [report, usage] of [
+    [{ status: 429 }, { input: 0, output: 0 }],
+    [{ connectionCode: "ECONNREFUSED" }, { input: 0, output: 0 }],
+    [{ status: 502 }, expect.objectContaining({ estimated: true })],
+  ] as const) {
+    const f = fixture([]);
+    f.provider.stream = async function* (request) {
+      // nessi reports the settled request before the error reaches its caller.
+      request.onTransport?.({ startedAt: Date.now(), ...("status" in report ? { headersAt: Date.now() } : {}), ...report });
+      yield { type: "issue", issue: { kind: "provider_error", message: "rejected", retryable: true } };
+    };
+    await drain(f.wrap());
+    expect(f.booked[0]?.usage).toEqual(usage);
+  }
+});
 test("normal missing or synthetic zero usage remains unknown", async () => {
   for (const events of [[], [{ type: "usage" as const, usage: { input: 0, output: 0, total: 0 } }]]) {
     const f = fixture(events);
@@ -136,25 +151,15 @@ test("early return estimates partial output including final-only tool blocks", a
   expect(f.booked[0]?.usage?.estimated).toBe(true);
   expect(f.booked[0]!.usage!.output).toBeGreaterThan(0);
 });
-test("stream exception and complete exception preserve estimated input", async () => {
+test("a stream exception preserves estimated input", async () => {
   const f = fixture([]);
   f.provider.stream = async function* () {
     throw new Error("timeout");
   };
-  f.provider.complete = async () => {
-    throw new Error("timeout");
-  };
-  await expect(drain(f.wrap())).rejects.toThrow("timeout");
-  await expect(f.wrap().complete({ messages: [], systemPrompt: "S".repeat(100) })).rejects.toThrow("timeout");
-  expect(f.booked.every((b) => b.usage?.estimated && b.status === "failed")).toBe(true);
-  expect(f.booked[1]!.usage!.input).toBeGreaterThan(0);
-});
-test("provider-declared complete abort is a failed estimate", async () => {
-  const f = fixture([]);
-  f.provider.complete = async () => ({ message: { role: "assistant", content: [] }, finishReason: "aborted" });
-  await f.wrap().complete(request);
-  expect(f.booked[0]?.status).toBe("failed");
-  expect(f.booked[0]?.usage?.estimated).toBe(true);
+  await expect(complete(f.wrap(), { messages: [], systemPrompt: "S".repeat(100) })).rejects.toThrow("AI provider request failed.");
+  expect(f.booked).toHaveLength(1);
+  expect(f.booked[0]).toMatchObject({ status: "failed", usage: { estimated: true } });
+  expect(f.booked[0]!.usage!.input).toBeGreaterThan(0);
 });
 test("chunking does not change estimates and encoded file data is excluded", async () => {
   const failure: ProviderEvent = { type: "issue", issue: { kind: "provider_error", message: "lost", retryable: true } };
@@ -186,16 +191,22 @@ test("unrestricted admission preserves undefined provider output defaults", asyn
   const f = fixture([event]);
   f.provider.contextWindow = 200_000;
   const observed: (number | undefined)[] = [];
-  f.provider.complete = async (request) => {
+  f.provider.stream = async function* (request) {
     observed.push(request.maxOutputTokens);
-    return { message: { role: "assistant", content: [] }, finishReason: "stop" };
+    yield event;
   };
-  const wrapped = inferenceProvider(f.provider, profile, { kind: "background", task: "default" }, undefined, {
-    ...f.lifecycle,
-    begin: async (_profile, _context, _input, requested) => ({ id: crypto.randomUUID(), maxOutputTokens: requested }),
-  });
-  await wrapped.complete({ messages: [] });
-  await wrapped.complete({ messages: [], maxOutputTokens: 123 });
+  const wrapped = inferenceProvider(
+    f.provider,
+    profile,
+    { kind: "background", task: "default" },
+    {
+      ...f.lifecycle,
+      begin: async (_profile, _context, _input, requested) => ({ id: crypto.randomUUID(), maxOutputTokens: requested }),
+    },
+  );
+  await drain(wrapped);
+  for await (const _ of wrapped.stream({ messages: [], maxOutputTokens: 123 })) {
+  }
   expect(observed).toEqual([undefined, 123]);
 });
 
@@ -207,7 +218,7 @@ test("background admission waits for reservations without calling the provider t
     if (++attempts === 1) throw new AiBackgroundAdmissionError(true);
     return admit(...args);
   };
-  await f.wrap().complete(request);
+  await drain(f.wrap());
   expect(attempts).toBe(2);
   expect(f.calls).toBe(1);
   expect(f.booked).toHaveLength(1);
@@ -219,7 +230,7 @@ test("waiting for a reservation can be canceled without spending or booking", as
     queueMicrotask(() => controller.abort());
     throw new AiBackgroundAdmissionError(true);
   };
-  await expect(f.wrap().complete({ ...request, signal: controller.signal })).rejects.toThrow();
+  await expect(complete(f.wrap(), { ...request, signal: controller.signal })).rejects.toThrow();
   expect(f.calls).toBe(0);
   expect(f.booked).toHaveLength(0);
 });
@@ -228,7 +239,7 @@ test("a call too expensive even without reservations does not wait", async () =>
   f.lifecycle.begin = async () => {
     throw new AiBackgroundAdmissionError(false);
   };
-  await expect(f.wrap().complete(request)).rejects.toMatchObject({ code: "ai_background_budget_insufficient" });
+  await expect(drain(f.wrap())).rejects.toMatchObject({ code: "ai_background_budget_insufficient" });
   expect(f.calls).toBe(0);
 });
 
@@ -240,7 +251,7 @@ test("reservation waiting is bounded and returns a retryable error on timeout", 
     throw new AiBackgroundAdmissionError(true);
   };
   try {
-    await expect(f.wrap().complete(request)).rejects.toMatchObject({ code: "ai_background_budget_reserved", retryable: true });
+    await expect(drain(f.wrap())).rejects.toMatchObject({ code: "ai_background_budget_reserved", retryable: true });
     expect(f.calls).toBe(0);
     expect(f.booked).toHaveLength(0);
   } finally {
@@ -258,7 +269,7 @@ test("a provider timeout is retained as the call's error and is not a cancellati
   await drain(f.wrap());
   expect(f.booked[0]).toMatchObject({
     status: "failed",
-    details: { error: "SSE stream first byte timeout after 60000ms.", cancelled: false },
+    details: { error: "AI provider request timed out.", cancelled: false },
   });
   expect(f.booked[0]!.details!.requestStartedAt).toBeGreaterThan(0);
 });
@@ -279,22 +290,18 @@ test("a caller abort is recorded as aborted without an error", async () => {
   expect(f.booked[0]).toMatchObject({ status: "aborted", details: { error: null, cancelled: true } });
   expect(f.booked[0]!.usage!.estimated).toBe(true);
 });
-test("a thrown provider error keeps its message and the timing of the first visible block", async () => {
+test("a thrown provider error uses fixed text and keeps the timing of the first visible block", async () => {
   const f = fixture([]);
   f.provider.stream = async function* () {
     yield { type: "block_start", blockId: "a", index: 0, kind: "text" };
     throw new Error("openai-compatible connection failed: socket hang up");
   };
-  await expect(drain(f.wrap())).rejects.toThrow("socket hang up");
+  await expect(drain(f.wrap())).rejects.toThrow("AI provider request failed.");
   expect(f.booked[0]).toMatchObject({
     status: "failed",
-    details: { error: "openai-compatible connection failed: socket hang up", cancelled: false },
+    details: { error: "AI provider request failed.", cancelled: false },
   });
   expect(f.booked[0]!.details!.firstBlockMs).toBeGreaterThanOrEqual(0);
-  const complete = fixture([]);
-  complete.provider.complete = async () => ({ message: { role: "assistant", content: [] }, finishReason: "error" });
-  await complete.wrap().complete(request);
-  expect(complete.booked[0]).toMatchObject({ status: "failed", details: { error: "The provider finished with error." } });
 });
 
 test("a provider-stopped stream records a failure detail while preserving measured usage once", async () => {
@@ -317,7 +324,7 @@ for (const ending of ["provider_stop", "provider_error", "abort"] as const)
       yield { type: "block_end", blockId: "text", index: 0, block: { type: "text", text: "Partial" } };
       yield {
         type: "usage",
-        usage: { input: 8, output: 2, total: 10, creditsUsed: 3 },
+        usage: { input: 8, output: 2, total: 10 },
         finishReason: ending === "provider_stop" ? "error" : undefined,
       };
       if (ending === "provider_error")
@@ -327,7 +334,6 @@ for (const ending of ["provider_stop", "provider_error", "abort"] as const)
         controller.signal.throwIfAborted();
       }
     };
-    const deductions: number[] = [];
     const store = memoryStore();
     let aggregate: LoopAggregate | undefined;
     let turnEnds = 0;
@@ -338,12 +344,6 @@ for (const ending of ["provider_stop", "provider_error", "abort"] as const)
       store,
       input: "Hello",
       signal: controller.signal,
-      creditStore: {
-        remaining: async () => 100,
-        deduct: async (value) => {
-          deductions.push(value);
-        },
-      },
     })) {
       if (event.type === "turn_end") {
         turnEnds++;
@@ -356,9 +356,8 @@ for (const ending of ["provider_stop", "provider_error", "abort"] as const)
     }
     expect(turnEnds).toBe(1);
     expect(reason).toBe(ending === "abort" ? "aborted" : "error");
-    expect(aggregate?.usage).toEqual({ input: 8, output: 2, total: 10, creditsUsed: 3 });
+    expect(aggregate?.usage).toEqual({ input: 8, output: 2, total: 10 });
     expect(aggregate?.assistantMessageCount).toBe(1);
-    expect(deductions).toEqual([3]);
     expect(f.booked).toHaveLength(1);
     expect(f.booked[0]).toMatchObject({ usage: { input: 8, output: 2 }, status: ending === "abort" ? "aborted" : "failed" });
     const history = await store.load();
@@ -372,13 +371,10 @@ test("dispatch admission rejection clears reservations without estimated usage",
   f.provider.stream = async function* () {
     throw rejection;
   };
-  f.provider.complete = async () => {
-    throw rejection;
-  };
-  await expect(drain(f.wrap())).rejects.toBe(rejection);
-  await expect(f.wrap().complete(request)).rejects.toBe(rejection);
-  expect(f.booked.map((booking) => booking.usage)).toEqual([
-    { input: 0, output: 0 },
-    { input: 0, output: 0 },
-  ]);
+  // The trusted dispatch guard wraps an already normalized adapter, as in openai-api.ts.
+  const guarded = inferenceProvider(f.provider, profile, { kind: "chat", task: "chat" }, f.lifecycle);
+  await expect(drain(guarded)).rejects.toBe(rejection);
+  expect(f.booked.map((booking) => booking.usage)).toEqual([{ input: 0, output: 0 }]);
+  expect(f.booked.every((booking) => booking.status === "failed")).toBe(true);
+  expect(f.calls).toBe(0);
 });

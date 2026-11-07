@@ -5,7 +5,7 @@ import { createSignal, onCleanup, onMount } from "solid-js";
 import type { overviewMessages } from "../../../overview-messages";
 
 export type SidebarSpace = { id: string; name: string; color: string; description: string | null; openItemCount: number };
-export type SpacesSidebarCurrent = { kind: "overview" } | { kind: "space"; id: string };
+export type SpacesSidebarCurrent = { kind: "overview" } | { kind: "calendar" } | { kind: "space"; id: string };
 export type SpacesSidebarData = { spaces: SidebarSpace[]; pinnedSpaceIds: string[]; myWorkCount: number };
 
 const PINS_CHANGED_EVENT = "spaces-pins-changed";
@@ -59,9 +59,17 @@ export const createSpacesNavigationItems = (props: {
   current: SpacesSidebarCurrent;
   canCreate: boolean;
   myWorkLabel: string;
+  calendarLabel: string;
   newSpaceLabel: string;
 }): NavigationItem[] => [
   { id: "my-work", label: props.myWorkLabel, icon: "ti ti-checkbox", href: "/app/spaces", active: props.current.kind === "overview" },
+  {
+    id: "all-calendars",
+    label: props.calendarLabel,
+    icon: "ti ti-calendar",
+    href: "/app/spaces/calendar",
+    active: props.current.kind === "calendar",
+  },
   ...orderSidebarSpaces(props.spaces, props.pinnedSpaceIds).map((space) => ({
     id: space.id,
     label: space.name,

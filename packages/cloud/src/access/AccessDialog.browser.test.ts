@@ -1,0 +1,334 @@
+import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { mkdirSync } from "node:fs";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+import tailwind from "bun-plugin-tailwind";
+import type { Browser, Page } from "playwright";
+import { launchBrowser, settled } from "../../../ui/test/browser";
+
+// The dialog's layout and its marks depend on the real layout engine: rows must not move when a change is staged.
+let browser: Browser;
+let css: string;
+let harness: string;
+let icons: { css: string; font: string };
+
+const buildHarness = async () => {
+  const ui = resolve(import.meta.dir, "../../../ui");
+  const { transformAsync } = await import(Bun.resolveSync("@babel/core", ui));
+  const typescript = (await import(Bun.resolveSync("@babel/preset-typescript", ui))).default;
+  const solid = (await import(Bun.resolveSync("babel-preset-solid", ui))).default;
+  const build = await Bun.build({
+    entrypoints: [resolve(import.meta.dir, "AccessDialog.browser-harness.tsx")],
+    target: "browser",
+    format: "iife",
+    conditions: ["browser"],
+    plugins: [
+      {
+        name: "solid-access-dialog-test",
+        setup(builder) {
+          builder.onLoad({ filter: /\.tsx$/ }, async ({ path }) => {
+            const result = await transformAsync(await Bun.file(path).text(), {
+              filename: path,
+              babelrc: false,
+              configFile: false,
+              presets: [typescript, [solid, { generate: "dom", hydratable: false }]],
+            });
+            return { contents: result.code, loader: "js" };
+          });
+        },
+      },
+    ],
+  });
+  if (!build.success) throw new AggregateError(build.logs, "AccessDialog harness build failed");
+  return build.outputs[0]!.text();
+};
+beforeAll(async () => {
+  const build = await Bun.build({ entrypoints: [resolve(import.meta.dir, "../../../../styles.css")], plugins: [tailwind] });
+  if (!build.success) throw new AggregateError(build.logs, "Could not compile the global stylesheet.");
+  css = await build.outputs[0]!.text();
+  harness = await buildHarness();
+  const iconCss = fileURLToPath(import.meta.resolve("@k2b/ui/icons/tabler.css"));
+  const source = await Bun.file(iconCss).text();
+  const font = source.match(/url\((\.\/[^)"']+\.woff2)[^)]*\)/)?.[1];
+  if (!font) throw new Error("Missing Tabler WOFF2 file");
+  icons = { css: source.replace(font, "https://harness.test/tabler.woff2"), font: resolve(dirname(iconCss), font) };
+  browser = await launchBrowser();
+}, 60_000);
+afterAll(async () => {
+  await browser?.close();
+});
+
+// An app's own sheet repeats common utilities and may load after the shared one, as in app browser fixtures.
+const appSheet = "@layer utilities{.contents{display:contents}.inline-flex{display:inline-flex}.flex{display:flex}.hidden{display:none}}";
+
+/** Set ACCESS_DIALOG_SHOTS to a directory to keep screenshots of each state for a visual review. */
+const shots = process.env.ACCESS_DIALOG_SHOTS;
+const shot = async (page: Page, name: string) => {
+  if (!shots) return;
+  mkdirSync(shots, { recursive: true });
+  await page.screenshot({ path: resolve(shots, `${name}.png`) });
+};
+
+/** The shell data of a Spaces page signed in as Mia Hoffmann; no app passes the viewer to the dialog. */
+const shellData = JSON.stringify({ appId: "spaces", profile: { userId: "10000000-0000-4000-8000-000000000001", name: "Mia Hoffmann" } });
+
+const open = async (width: number, locale: string, state?: "loading" | "saving") => {
+  const page = await browser.newPage({ viewport: { width, height: 900 } });
+  // The icon font URL carries a version query (`?v…`); the glob keeps it routed.
+  await page.route("https://harness.test/tabler.woff2*", (route) => route.fulfill({ path: icons.font, contentType: "font/woff2" }));
+  await page.setContent(
+    `<!doctype html><html lang="${locale}"><head><meta name="viewport" content="width=device-width, initial-scale=1"><style>${icons.css}</style><style>${css}</style><style>${appSheet}</style></head>` +
+      // As on every Cloud page, the shell data names the signed-in person; the clipboard records what is copied.
+      `<body class="k2b-ui"><script id="cloud-shell-data" type="application/json">${shellData}</script>` +
+      `<script>Object.defineProperty(navigator, "clipboard", { value: { writeText: async (text) => { window.copiedText = text; } } })</script>` +
+      `<script>window.accessDialogState = ${JSON.stringify(state ?? "")}</script><script>${harness}</script></body></html>`,
+  );
+  await page.waitForSelector("dialog[open]");
+  await settled(page);
+  return page;
+};
+
+const rowTop = (page: Page, name: string) =>
+  page.evaluate((text) => {
+    const row = Array.from(document.querySelectorAll("dialog li")).find((item) => item.textContent?.includes(text));
+    return row ? Math.round(row.getBoundingClientRect().top) : -1;
+  }, name);
+
+describe("AccessDialog in a browser", () => {
+  for (const [width, locale] of [
+    [1440, "de"],
+    [390, "de"],
+    [390, "en"],
+  ] as const)
+    test(`${locale} ${width}px: staging changes moves no row and nothing overflows`, async () => {
+      const page = await open(width, locale);
+      try {
+        await shot(page, `${locale}-${width}-normal`);
+        const before = await Promise.all(["Jonas Weber", "Logistik", "Lagerbot", "Lea Schmitt"].map((name) => rowTop(page, name)));
+        const lea = page.locator("dialog li", { hasText: "Lea Schmitt" });
+        await lea.locator("button[aria-haspopup]").first().click();
+        // The level menu offers each level with what it means, as in the approved mockup.
+        await page
+          .locator('[role="dialog"] [role="radio"]', { hasText: locale === "de" ? "Bearbeiten" : "Edit" })
+          .last()
+          .click();
+        await page.locator(`dialog button[aria-label="${locale === "de" ? "Lagerbot entfernen" : "Remove Lagerbot"}"]`).click();
+        await settled(page);
+        const after = await Promise.all(["Jonas Weber", "Logistik", "Lagerbot", "Lea Schmitt"].map((name) => rowTop(page, name)));
+        expect(after).toEqual(before);
+        // Each staged row shows its mark once: beside the name on a wide screen, below it on a phone.
+        for (const name of ["Lea Schmitt", "Lagerbot"])
+          expect(await page.locator("dialog li", { hasText: name }).locator(".k2b-status-badge:visible").count()).toBe(1);
+        await page.locator("dialog input[type=checkbox]").first().check();
+        await settled(page);
+        await shot(page, `${locale}-${width}-changes`);
+        const overflow = await page.evaluate(() => {
+          const dialog = document.querySelector("dialog")!;
+          return (
+            Array.from(dialog.querySelectorAll<HTMLElement>("*"))
+              // Inputs scroll their own text, and a switch hides its checkbox; neither pushes the layout.
+              .filter((element) => element.tagName !== "INPUT")
+              .filter((element) => element.scrollWidth > element.clientWidth + 1 && getComputedStyle(element).overflowX === "visible")
+              .map((element) => `${element.tagName.toLowerCase()}.${element.className}`)
+          );
+        });
+        expect(overflow).toEqual([]);
+        expect(await page.locator("dialog").textContent()).toContain(locale === "de" ? "3 Änderungen" : "3 changes");
+      } finally {
+        await page.close();
+      }
+    });
+
+  // Mockup v31 `editor · A · aenderungen` at 390 px: full level words, whole marks, names on one line.
+  for (const locale of ["de", "en"] as const)
+    test(`${locale} 390px: no mark, level or name in a row is cut off`, async () => {
+      const page = await open(390, locale);
+      const level = async (name: string, de: string, en: string) => {
+        await page.locator("dialog li", { hasText: name }).locator("button[aria-haspopup]").first().click();
+        await page
+          .locator('[role="dialog"] [role="radio"]', { hasText: locale === "de" ? de : en })
+          .last()
+          .click();
+      };
+      try {
+        await level("Lea Schmitt", "Bearbeiten", "Edit");
+        // The longest pairs: "vorher Bearbeiten" beside "Verwalten" and "vorher Verwalten" beside "Bearbeiten".
+        await level("Jonas Weber", "Verwalten", "Manage");
+        await level("Mia Hoffmann", "Bearbeiten", "Edit");
+        await page.locator(`dialog button[aria-label="${locale === "de" ? "Lagerbot entfernen" : "Remove Lagerbot"}"]`).click();
+        await page.locator("dialog input[type=checkbox]").first().check();
+        await settled(page);
+        const cut = await page.evaluate(() => {
+          /** Text is cut when it or a part of it overflows its box (an ellipsis) or reaches past an ancestor that clips. */
+          const clipped = (element: HTMLElement) => {
+            if ([element, ...element.querySelectorAll<HTMLElement>("*")].some((part) => part.scrollWidth > part.clientWidth + 1))
+              return true;
+            const box = element.getBoundingClientRect();
+            for (let parent = element.parentElement; parent && parent.tagName !== "LI"; parent = parent.parentElement) {
+              if (getComputedStyle(parent).overflowX === "visible") continue;
+              const clip = parent.getBoundingClientRect();
+              if (box.right > clip.right + 0.5 || box.left < clip.left - 0.5) return true;
+            }
+            return false;
+          };
+          const visible = (element: HTMLElement) => element.getClientRects().length > 0;
+          const rows = Array.from(document.querySelectorAll<HTMLElement>("dialog li"));
+          const marks = rows.flatMap((row) => Array.from(row.querySelectorAll<HTMLElement>(".k2b-status-badge")).filter(visible));
+          const levels = rows.flatMap((row) => Array.from(row.querySelectorAll<HTMLElement>(".k2b-choice-trigger__value")));
+          const names = rows
+            .map((row) => row.querySelector<HTMLElement>("[data-access-name]"))
+            .filter((name): name is HTMLElement => Boolean(name));
+          // Level and remove, or Undo in their place, take one width in every people row, so staging leaves a name its room.
+          const people = Array.from(
+            document.querySelector("dialog ul")!.children,
+            (row) => row.lastElementChild!.getBoundingClientRect().width,
+          );
+          return {
+            controls: new Set(people).size,
+            marks: marks.length,
+            levels: levels.length,
+            names: names.length,
+            cut: [...marks, ...levels, ...names].filter(clipped).map((element) => element.textContent?.trim()),
+            // A name wraps when its text lies on more than one line.
+            wrapped: names
+              .filter((name) => {
+                const range = document.createRange();
+                range.selectNodeContents(name);
+                return new Set(Array.from(range.getClientRects(), (rect) => Math.round(rect.top))).size > 1;
+              })
+              .map((name) => name.textContent?.trim()),
+          };
+        });
+        expect(cut).toEqual({ controls: 1, marks: 5, levels: 5, names: 7, cut: [], wrapped: [] });
+      } finally {
+        await page.close();
+      }
+    });
+  // Mockup v31 `editor · A · laedt`, `speichert`, `oeffentlich` and `stufe`: every state of the approved dialog.
+  for (const width of [1440, 390] as const) {
+    test(`de ${width}px: loading keeps General in place, and the list shows e-mails and the number of people`, async () => {
+      const page = await open(width, "de", "loading");
+      try {
+        const dialog = page.locator("dialog");
+        const before = await dialog.boundingBox();
+        await shot(page, `de-${width}-laedt`);
+        expect(await dialog.locator("h3", { hasText: "Allgemein" }).count()).toBe(1);
+        expect(await dialog.locator("input[type=checkbox]:disabled").count()).toBe(2);
+        await page.evaluate(() => (window as unknown as { finishLoading: () => void }).finishLoading());
+        await page.waitForSelector("dialog li:has-text('mia.hoffmann@beispiel.de')");
+        await settled(page);
+        expect((await dialog.boundingBox())?.width).toBe(before?.width);
+        const mia = dialog.locator("li", { hasText: "Mia Hoffmann" });
+        // "Du" stands once, read from the page's shell data: beside the name on a wide screen, before the e-mail on a phone.
+        expect(
+          await mia.evaluate(
+            (row) =>
+              Array.from(row.querySelectorAll("span")).filter(
+                (span) => /^Du( · )?$/.test(span.textContent ?? "") && span.getClientRects().length > 0,
+              ).length,
+          ),
+        ).toBe(1);
+        expect(await dialog.locator("li", { hasText: "Jonas Weber" }).textContent()).toContain("jonas.weber@beispiel.de");
+        // An agent keeps its kind; the directory knows e-mail addresses only for people.
+        expect(await dialog.locator("li", { hasText: "Lagerbot" }).textContent()).toContain("Agent");
+        const checkboxes = dialog.locator("input[type=checkbox]");
+        await checkboxes.nth(0).check();
+        await checkboxes.nth(1).check();
+        await settled(page);
+        expect(await dialog.textContent()).toContain("214 Personen dürfen ansehen, auch Gäste.");
+        await shot(page, `de-${width}-oeffentlich`);
+      } finally {
+        await page.close();
+      }
+    });
+
+    test(`de ${width}px: public with link warns in the warning tone and copies the link with a label that keeps its size`, async () => {
+      const page = await open(width, "de");
+      try {
+        const dialog = page.locator("dialog");
+        await dialog.locator("input[type=checkbox]").nth(1).check();
+        await settled(page);
+        const notice = dialog.locator(".k2b-notice-card", { hasText: "Jeder mit dem Link sieht das" });
+        expect(await notice.getAttribute("data-tone")).toBe("warning");
+        expect(await notice.locator("i.ti-alert-triangle").count()).toBe(1);
+        expect(await notice.locator(".k2b-sr-only").textContent()).toBe("Warnung: ");
+        const [color, warning] = await notice.evaluate((card) => {
+          const probe = document.createElement("span");
+          probe.style.color = "var(--k2b-warning-text)";
+          card.append(probe);
+          const expected = getComputedStyle(probe).color;
+          probe.remove();
+          return [getComputedStyle(card).color, expected];
+        });
+        expect(color).toBe(warning);
+        const copy = dialog.locator(".k2b-copy-button");
+        const link = dialog.locator(".k2b-input-shell", { has: page.locator("input[readonly]") });
+        expect(await copy.innerText()).toBe("Kopieren");
+        // Clicking scrolls the dialog to the button; scroll first so the boxes compare the layout alone.
+        await copy.scrollIntoViewIfNeeded();
+        const before = { copy: await copy.boundingBox(), link: await link.boundingBox() };
+        expect(before.copy?.height).toBe(before.link?.height);
+        await shot(page, `de-${width}-oeffentlich-link`);
+        await copy.click();
+        await page.waitForFunction(() => document.querySelector(".k2b-copy-button")?.textContent?.startsWith("Kopiert"));
+        await settled(page);
+        expect(await copy.innerText()).toBe("Kopiert");
+        expect(await page.evaluate(() => (window as unknown as { copiedText?: string }).copiedText)).toBe(
+          "https://cloud.example.test/s/einkauf-2027",
+        );
+        expect(await dialog.locator("[aria-live=polite]", { hasText: "Kopiert" }).count()).toBe(1);
+        expect({ copy: await copy.boundingBox(), link: await link.boundingBox() }).toEqual(before);
+      } finally {
+        await page.close();
+      }
+    });
+
+    test(`de ${width}px: saving says so in the button, which keeps its size`, async () => {
+      const page = await open(width, "de", "saving");
+      try {
+        const lea = page.locator("dialog li", { hasText: "Lea Schmitt" });
+        await lea.locator("button[aria-haspopup]").first().click();
+        await page.locator('[role="dialog"] [role="radio"]', { hasText: "Bearbeiten" }).last().click();
+        await settled(page);
+        // At rest the button is named only by its label; the reserved width adds nothing to the name.
+        const save = page.getByRole("button", { name: "Speichern", exact: true });
+        const before = await save.boundingBox();
+        await save.click();
+        await page.waitForSelector("dialog button[aria-busy=true]");
+        await settled(page);
+        const busy = page.locator("dialog button[aria-busy=true]");
+        expect(await busy.evaluate((button) => (button as HTMLButtonElement).innerText.trim())).toBe("Speichert …");
+        expect(await busy.isDisabled()).toBe(true);
+        expect(await busy.boundingBox()).toEqual(before);
+        await shot(page, `de-${width}-speichert`);
+        await page.evaluate(() => (window as unknown as { finishSaving: () => void }).finishSaving());
+        await page.waitForSelector("dialog[open]", { state: "detached" });
+      } finally {
+        await page.close();
+      }
+    });
+
+    test(`de ${width}px: Remove in the level menu is red`, async () => {
+      const page = await open(width, "de");
+      try {
+        await page.locator("dialog li", { hasText: "Lea Schmitt" }).locator("button[aria-haspopup]").first().click();
+        const remove = page.locator('[role="dialog"] button', { hasText: "Entfernen" });
+        await remove.waitFor();
+        await settled(page);
+        await shot(page, `de-${width}-stufe`);
+        const [color, danger] = await remove.evaluate((button) => {
+          const probe = document.createElement("span");
+          probe.style.color = "var(--k2b-danger-text)";
+          button.parentElement!.append(probe);
+          const expected = getComputedStyle(probe).color;
+          probe.remove();
+          return [getComputedStyle(button).color, expected];
+        });
+        expect(danger).toBe("rgb(185, 28, 28)");
+        expect(color).toBe(danger);
+      } finally {
+        await page.close();
+      }
+    });
+  }
+});

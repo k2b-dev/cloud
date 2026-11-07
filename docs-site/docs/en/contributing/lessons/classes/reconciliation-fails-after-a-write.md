@@ -1,0 +1,1 @@
+| Reconciliation fails after a write | A lost response leaves a create outcome unknown, or a failed canonical reread leaves a pin pending forever. Retrying a create can duplicate it. | Pulse browser tests keep the source draft, block another create, expose the canonical source list, and release pin pending state with a visible recovery action. |

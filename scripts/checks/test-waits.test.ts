@@ -217,3 +217,15 @@ test("fix lowers known counts without adding a new file or hiding its findings",
     await rm(root, { recursive: true, force: true });
   }
 });
+
+test("finds polling loops whose fixed attempt count decides the outcome, and honours the opt-out", () => {
+  expect(
+    check(`for (let attempt = 0; attempt < 100 && writes.length < count; attempt += 1) await Bun.sleep(20);
+for (let step = 0; step < 40 || !ready(); step++) await sleep(5);
+// fixed wait: a probe that must give up after its own budget
+for (let attempt = 0; attempt < 10 && !done; attempt += 1) await Bun.sleep(1);
+for (let attempt = 0; attempt < 10; attempt += 1) await Bun.sleep(1);
+while (writes.length < count) await nextWrite();
+`),
+  ).toEqual([1, 2]);
+});

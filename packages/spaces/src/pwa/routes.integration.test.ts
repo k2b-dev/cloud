@@ -2,11 +2,11 @@ import { afterAll, expect, setDefaultTimeout, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { sql } from "@k2b/cloud";
 import type { RuntimeAppMeta } from "@k2b/cloud/contracts";
 import type { AuthContext } from "@k2b/cloud/server";
 import { createTestAppSession, createTestSession } from "@k2b/cloud/services/session/session.test-fixture";
 import { createConfig } from "@k2b/ssr";
-import { sql } from "bun";
 import { Hono } from "hono";
 import { uniqueCallerAddress } from "../../../../scripts/fixtures/caller-address";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
@@ -40,7 +40,7 @@ const script = { "sec-fetch-mode": "cors", "sec-fetch-dest": "empty" };
 const users: string[] = [];
 const spaces: string[] = [];
 
-suite("Spaces in the mobile app", () => {
+suite("Spaces in the Cloud app", () => {
   afterAll(async () => {
     for (const id of spaces) await sql`DELETE FROM spaces.spaces WHERE id = ${id}::uuid`;
     for (const id of users) await sql`DELETE FROM auth.users WHERE id = ${id}::uuid`;
@@ -82,6 +82,16 @@ suite("Spaces in the mobile app", () => {
     expect(html).toContain("Order the tents");
     expect(html).toContain(`Mark “Order the tents” as done`);
 
+    // Start and the sidebar of the app say what waits in Spaces, in the reader's language.
+    const summary = async () => {
+      const response = await server.request(`${origin}/api/spaces/overview/summary`, {
+        headers: { cookie: phone, "accept-language": "en", "x-forwarded-for": uniqueCallerAddress() },
+      });
+      expect(response.status).toBe(200);
+      return response.json();
+    };
+    expect(await summary()).toEqual({ count: 1, text: "1 task for you" });
+
     // The person claims the task on the web with I'm on it; the phone completes it with that claim, as the web does.
     const itemPath = `${origin}/api/spaces/${space!.short_id}/items/${item!.short_id}`;
     const post = (cookie: string, path: string, body: unknown) =>
@@ -106,6 +116,7 @@ suite("Spaces in the mobile app", () => {
     const work = (await onTheWeb.json()) as { items: { shortId: string }[]; counts: { mine: number } };
     expect(work.items.map((entry) => entry.shortId)).not.toContain(item!.short_id);
     expect(work.counts.mine).toBe(0);
+    expect(await summary()).toEqual({ count: 0, text: "No tasks for you" });
   });
 
   test("a task opens at its own address only for readers of its Space, and only write access may change it", async () => {
@@ -183,6 +194,104 @@ suite("Spaces in the mobile app", () => {
         expect(response.status).toBe(404);
         expect(await response.text()).not.toContain("Order the tents");
       }
+    }
+  });
+
+  test("a Space lists its statuses for its readers with the same permission as the API, and a stranger learns nothing", async () => {
+    const suffix = crypto.randomUUID().slice(0, 8);
+    const person = async (uid: string) => {
+      const [row] = await sql<{ id: string }[]>`
+        INSERT INTO auth.users (uid, provider, profile, display_name)
+        VALUES (${`${uid}-${suffix}`}, 'local', 'user', ${uid}) RETURNING id`;
+      users.push(row!.id);
+      return row!.id;
+    };
+    const [writer, reader, stranger] = [
+      await person("spaces-pwa-list-writer"),
+      await person("spaces-pwa-list-reader"),
+      await person("spaces-pwa-list-stranger"),
+    ];
+    const [space] = await sql<{ id: string; short_id: string }[]>`
+      INSERT INTO spaces.spaces (short_id, name, color) VALUES (${newShortId()}, ${`Workshop ${suffix}`}, '#4d7c0f') RETURNING id, short_id`;
+    spaces.push(space!.id);
+    for (const [userId, permission] of [
+      [writer, "write"],
+      [reader, "read"],
+    ] as const) {
+      const [access] = await sql<{ id: string }[]>`
+        INSERT INTO auth.access (user_id, permission) VALUES (${userId}::uuid, ${permission}) RETURNING id`;
+      await sql`INSERT INTO spaces.space_access (space_id, access_id) VALUES (${space!.id}::uuid, ${access!.id}::uuid)`;
+    }
+    const column = async (name: string, rank: number, done = false) => {
+      const [row] = await sql<{ id: string; short_id: string }[]>`
+        INSERT INTO spaces.columns (short_id, space_id, name, rank, is_done)
+        VALUES (${newShortId()}, ${space!.id}::uuid, ${name}, ${rank}, ${done}) RETURNING id, short_id`;
+      return row!;
+    };
+    const [inbox, finished] = [await column("Inbox", 1024), await column("Done", 2048, true)];
+    const [tag] = await sql<{ id: string; short_id: string }[]>`
+      INSERT INTO spaces.tags (short_id, space_id, name, color) VALUES (${newShortId()}, ${space!.id}::uuid, 'Customer', '#0e7490') RETURNING id, short_id`;
+    const item = async (title: string, columnId: string, rank: number, completed = false) => {
+      const [row] = await sql<{ id: string; short_id: string }[]>`
+        INSERT INTO spaces.items (short_id, space_id, column_id, title, rank, completed_at)
+        VALUES (${newShortId()}, ${space!.id}::uuid, ${columnId}::uuid, ${title}, ${rank}, ${completed ? sql`now()` : null}) RETURNING id, short_id`;
+      return row!;
+    };
+    const chair = await item("Check chair springs", inbox.id, 1024);
+    await item("Order velvet samples", inbox.id, 2048);
+    await item("Cushions for the window", finished.id, 1024, true);
+    await sql`INSERT INTO spaces.item_assignees (item_id, user_id) VALUES (${chair.id}::uuid, ${writer}::uuid)`;
+    await sql`INSERT INTO spaces.item_tags (item_id, tag_id) VALUES (${chair.id}::uuid, ${tag!.id}::uuid)`;
+    for (const [label, completed, rank] of [
+      ["Remove the cover", true, 1024],
+      ["Test the springs", false, 2048],
+    ] as const)
+      await sql`
+        INSERT INTO spaces.item_checklist_entries (short_id, item_id, label, completed, rank)
+        VALUES (${newShortId()}, ${chair.id}::uuid, ${label}, ${completed}, ${rank})`;
+
+    const read = async (userId: string, path: string, accept = "application/json") => {
+      const cookie = `pwa_session=${(await createTestAppSession(userId)).token}`;
+      return server.request(`${origin}${path}`, { headers: { cookie, accept, ...document } });
+    };
+    const address = `/pwa/spaces/${space!.short_id}`;
+    type Space = {
+      canWrite: boolean;
+      statuses: { id: string; name: string; done: boolean }[];
+      groups: { statusId: string; total: number; pages: number; rows: { title: string; checklist: unknown; tags: { name: string }[] }[] }[];
+    };
+
+    const own = (await (await read(writer, address)).json()) as Space;
+    expect(own.canWrite).toBe(true);
+    expect(own.statuses.map((status) => [status.name, status.done])).toEqual([
+      ["Inbox", false],
+      ["Done", true],
+    ]);
+    // Open statuses read their first page in board order; the done one only its count.
+    expect(own.groups.map((group) => [group.total, group.pages, group.rows.map((row) => row.title)])).toEqual([
+      [2, 1, ["Check chair springs", "Order velvet samples"]],
+      [1, 0, []],
+    ]);
+    expect(own.groups[0]!.rows[0]).toMatchObject({ checklist: { done: 1, total: 2 }, tags: [{ name: "Customer" }] });
+
+    // The address's filter narrows the read; a done status unfolds through its own page.
+    const mine = (await (await read(writer, `${address}?mine=1&tag=${tag!.short_id}`)).json()) as Space;
+    expect(mine.groups[0]!.rows.map((row) => row.title)).toEqual(["Check chair springs"]);
+    const page = (await (await read(writer, `${address}?status=${finished.short_id}&page=1`)).json()) as Space["groups"][number];
+    expect(page.rows.map((row) => row.title)).toEqual(["Cushions for the window"]);
+
+    const readOnly = (await (await read(reader, address)).json()) as Space;
+    expect(readOnly.canWrite).toBe(false);
+    const html = await read(reader, address, "text/html");
+    expect(html.status).toBe(200);
+    expect(await html.text()).toContain("Check chair springs");
+
+    for (const accept of ["application/json", "text/html"]) {
+      const response = await read(stranger, address, accept);
+      expect(response.status).toBe(404);
+      const body = await response.text();
+      expect(body).not.toContain("Check chair springs");
+      expect(body).not.toContain(`Workshop ${suffix}`);
     }
   });
 });

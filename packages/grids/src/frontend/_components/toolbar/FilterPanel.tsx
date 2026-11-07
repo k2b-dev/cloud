@@ -1,4 +1,5 @@
 import { EntitySearch, type EntitySearchPrincipal } from "@k2b/cloud/account/ui";
+import type { EntityListItem, ServiceAccountKind } from "@k2b/cloud/contracts/shared";
 import { groupDisplayName } from "@k2b/cloud/shared";
 import type { DateContext } from "@k2b/stdlib";
 import {
@@ -425,7 +426,7 @@ function FilterValueInput(props: {
   );
 }
 
-type PrincipalFilterOption = { id: string; type: "user" | "group"; label: string };
+type PrincipalFilterOption = { id: string; type?: "user" | "group" | "service_account"; label: string; accountKind?: ServiceAccountKind };
 
 function PrincipalFilterInput(props: { value: unknown; onChange: (value: unknown) => void }) {
   const locale = useLocale();
@@ -436,26 +437,21 @@ function PrincipalFilterInput(props: { value: unknown; onChange: (value: unknown
   createEffect(() => {
     const nextIds = ids();
     const current = new Map(untrack(options).map((option) => [option.id, option]));
-    setOptions(nextIds.map((id) => current.get(id) ?? { id, type: "user", label: t().selectedIdentity }));
+    setOptions(nextIds.map((id) => current.get(id) ?? { id, label: t().selectedIdentity }));
   });
 
   onMount(async () => {
     const initialIds = ids();
     if (initialIds.length === 0) return;
     const url = new URL("/api/accounts/entities", window.location.origin);
-    url.searchParams.set("kinds", "user,group");
+    url.searchParams.set("kinds", "user,group,service_account");
     url.searchParams.set("user_ids", initialIds.join(","));
     url.searchParams.set("group_ids", initialIds.join(","));
-    url.searchParams.set("per_page", String(Math.min(100, initialIds.length * 2)));
+    url.searchParams.set("service_account_ids", initialIds.join(","));
+    url.searchParams.set("per_page", String(Math.min(100, initialIds.length * 3)));
     const response = await fetch(url, { credentials: "same-origin" });
     if (!response.ok) return;
-    const body = (await response.json()) as {
-      items?: Array<{
-        kind: "user" | "group";
-        user?: { id: string; uid: string; displayName: string };
-        group?: { id: string; name: string };
-      }>;
-    };
+    const body = (await response.json()) as { items?: EntityListItem[] };
     const resolved = new Map<string, PrincipalFilterOption>();
     for (const item of body.items ?? []) {
       if (item.kind === "user" && item.user) {
@@ -463,6 +459,16 @@ function PrincipalFilterInput(props: { value: unknown; onChange: (value: unknown
       }
       if (item.kind === "group" && item.group) {
         resolved.set(item.group.id, { id: item.group.id, type: "group", label: groupDisplayName(item.group.name, locale()) });
+      }
+    }
+    for (const item of body.items ?? []) {
+      if (item.kind === "service_account") {
+        resolved.set(item.serviceAccount.id, {
+          id: item.serviceAccount.id,
+          type: "service_account",
+          label: item.serviceAccount.name,
+          accountKind: item.serviceAccount.kind,
+        });
       }
     }
     setOptions((current) => current.map((option) => resolved.get(option.id) ?? option));
@@ -474,7 +480,9 @@ function PrincipalFilterInput(props: { value: unknown; onChange: (value: unknown
         ? { id: principal.userId, type: "user", label: principal.displayName || principal.uid }
         : principal.type === "group"
           ? { id: principal.groupId, type: "group", label: groupDisplayName(principal.name, locale()) }
-          : null;
+          : principal.type === "service_account"
+            ? { id: principal.serviceAccountId, type: "service_account", label: principal.name, accountKind: principal.kind }
+            : null;
     if (!option) return;
     const next = [...options().filter((item) => item.id !== option.id), option];
     setOptions(next);
@@ -493,7 +501,10 @@ function PrincipalFilterInput(props: { value: unknown; onChange: (value: unknown
         <For each={options()}>
           {(option) => (
             <div class="flex items-center gap-2 rounded-md bg-[var(--ui-surface-subtle)] px-2 py-1.5">
-              <i class={`ti ${option.type === "user" ? "ti-user" : "ti-users-group"} text-dimmed`} aria-hidden="true" />
+              <i
+                class={`ti ${option.type === "user" ? "ti-user" : option.type === "group" ? "ti-users-group" : option.type === "service_account" ? (option.accountKind === "agent" ? "ti-robot" : "ti-key") : "ti-users"} text-dimmed`}
+                aria-hidden="true"
+              />
               <span class="min-w-0 flex-1 truncate text-sm">{option.label}</span>
               <IconButton size="xs" variant="ghost" label={t().removeIdentity({ name: option.label })} onClick={() => remove(option.id)}>
                 <i class="ti ti-x" aria-hidden="true" />
@@ -504,6 +515,8 @@ function PrincipalFilterInput(props: { value: unknown; onChange: (value: unknown
         <EntitySearch
           includeUsers
           includeGroups
+          includeServiceAccounts
+          excludeServiceAccountIds={ids()}
           excludeUserIds={ids()}
           excludeGroupIds={ids()}
           placeholder={t().searchUsersGroups}

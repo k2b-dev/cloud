@@ -1,15 +1,28 @@
 import { reloadOnce } from "@k2b/cloud/browser/reload";
+import { type NotebookPresenceParticipant, NotebookPresenceParticipantSchema } from "@k2b/cloud/contracts";
 import { toast, useLocale } from "@k2b/ui";
 import { onCleanup, onMount } from "solid-js";
 import { notebooksWorkspace, type PublicNotebookWorkspaceEvent } from "../../../../lib/workspace-events";
+import { notebooksYjs } from "../../../../lib/yjs";
+import { presencePeerId } from "../../../lib/presence-peer";
 import { RECONNECT_HEALTHY_AFTER_MS, reconnectDelayMs } from "../../../lib/reconnect";
 import { notebookWorkspaceMessages } from "../../messages";
+import {
+  NOTE_SOFT_NAVIGATED_EVENT,
+  PRESENCE_EVENT,
+  PRESENCE_RETRY_EVENT,
+  PRESENCE_STATUS_EVENT,
+  type PresenceStatusEventDetail,
+  SYNC_STATE_REQUEST_EVENT,
+} from "../detail/events";
 import { dispatchWorkspaceEvent } from "./workspace-events";
 
 type Props = {
   notebookId: string;
   appUrl: string;
   initialCursor: string | null;
+  /** Opened reading/editor note; graph and list surfaces do not watch a note. */
+  initialNoteId?: string | null;
 };
 
 const resolveHttpBaseUrl = (raw: string): URL => {
@@ -36,6 +49,37 @@ export default function WorkspaceEventBridge(props: Props) {
     let eventQueue = Promise.resolve();
     let generation = 0;
     let activeWorkspaceId = props.notebookId;
+    let openedNoteId = props.initialNoteId ?? null;
+    let participants: NotebookPresenceParticipant[] = [];
+    let presenceStatus: PresenceStatusEventDetail["status"] = "connecting";
+    // The status goes first, so the panel knows whether the list that follows is live or an outage's empty list.
+    const emitPresence = () => {
+      window.dispatchEvent(new CustomEvent<PresenceStatusEventDetail>(PRESENCE_STATUS_EVENT, { detail: { status: presenceStatus } }));
+      window.dispatchEvent(new CustomEvent(PRESENCE_EVENT, { detail: participants }));
+    };
+    const clearPresence = () => {
+      participants = [];
+      emitPresence();
+    };
+    const watchOpenedNote = () => {
+      if (socket?.readyState !== WebSocket.OPEN) return;
+      socket.send(
+        JSON.stringify({
+          type: notebooksWorkspace.wsType.presenceWatch,
+          payload: { noteId: openedNoteId, presencePeerId: presencePeerId() },
+        }),
+      );
+    };
+    const onSoftNavigated = (event: Event) => {
+      const detail = (event as CustomEvent<{ noteId?: string }>).detail;
+      if (!props.initialNoteId || !detail?.noteId || detail.noteId === openedNoteId) return;
+      openedNoteId = detail.noteId;
+      if (presenceStatus === "live") presenceStatus = "connecting";
+      clearPresence();
+      watchOpenedNote();
+    };
+    window.addEventListener(NOTE_SOFT_NAVIGATED_EVENT, onSoftNavigated);
+    window.addEventListener(SYNC_STATE_REQUEST_EVENT, emitPresence);
 
     // Reloading lets the page's route policy send an expired session to
     // sign-in. A failure that survives the reload (for example a live origin
@@ -44,6 +88,8 @@ export default function WorkspaceEventBridge(props: Props) {
     // return here; a manual reload is the one action that can help.
     const terminateAndRefresh = () => {
       if (disposed) return;
+      presenceStatus = "down";
+      clearPresence();
       disposed = true;
       if (reconnectTimer) clearTimeout(reconnectTimer);
       socket?.close();
@@ -65,6 +111,7 @@ export default function WorkspaceEventBridge(props: Props) {
       let readyAt: number | undefined;
 
       ws.onopen = () => {
+        if (disposed || socket !== ws || socketGeneration !== generation) return;
         ws.send(
           JSON.stringify({
             type: notebooksWorkspace.wsType.subscribe,
@@ -74,7 +121,7 @@ export default function WorkspaceEventBridge(props: Props) {
       };
 
       ws.onmessage = (message) => {
-        if (typeof message.data !== "string") return;
+        if (disposed || socketGeneration !== generation || socket !== ws || typeof message.data !== "string") return;
         let parsed: unknown;
         try {
           parsed = JSON.parse(message.data);
@@ -83,14 +130,40 @@ export default function WorkspaceEventBridge(props: Props) {
         }
         const value = parsed as {
           type?: unknown;
-          payload?: { notebookId?: unknown; cursor?: unknown; event?: unknown; code?: unknown };
+          payload?: { notebookId?: unknown; cursor?: unknown; event?: unknown; code?: unknown; noteId?: unknown; participants?: unknown };
         };
+        if (value.type === notebooksYjs.wsType.presenceSnapshot || value.type === notebooksYjs.wsType.presenceChanged) {
+          if (!openedNoteId || value.payload?.noteId !== openedNoteId) return;
+          const parsed = NotebookPresenceParticipantSchema.array().safeParse(value.payload.participants);
+          if (!parsed.success) return;
+          participants = parsed.data;
+          presenceStatus = "live";
+          emitPresence();
+          return;
+        }
+        if (value.type === notebooksYjs.wsType.error) {
+          const code = value.payload?.code;
+          if (typeof code === "string" && (TERMINAL_CODES.has(code) || code === "NOTE_LOCKED")) terminateAndRefresh();
+          else ws.close();
+          return;
+        }
         if (value.type === notebooksWorkspace.wsType.revoked) {
           terminateAndRefresh();
           return;
         }
         if (value.type === notebooksWorkspace.wsType.error) {
           const code = value.payload?.code;
+          if (
+            typeof value.payload?.noteId === "string" &&
+            (code === "ACCESS_DENIED" || code === "ACCESS_REVOKED" || code === "NOTE_NOT_FOUND")
+          ) {
+            if (value.payload.noteId === openedNoteId) {
+              // No list will follow for this note, so the panel must not keep waiting for one.
+              presenceStatus = "down";
+              clearPresence();
+            }
+            return;
+          }
           if (typeof code === "string" && TERMINAL_CODES.has(code)) terminateAndRefresh();
           else ws.close();
           return;
@@ -98,6 +171,7 @@ export default function WorkspaceEventBridge(props: Props) {
         if (value.type === notebooksWorkspace.wsType.ready) {
           readyAt = Date.now();
           if (typeof value.payload?.notebookId === "string") activeWorkspaceId = value.payload.notebookId;
+          watchOpenedNote();
           return;
         }
         if (value.type !== notebooksWorkspace.wsType.event) return;
@@ -112,13 +186,23 @@ export default function WorkspaceEventBridge(props: Props) {
             if (socketGeneration === generation && cursor) lastCursor = cursor;
           })
           .catch(() => {
-            if (!disposed && socketGeneration === generation) ws.close();
+            if (!disposed && socketGeneration === generation) {
+              // Stop this queue before closing: later queued events must not
+              // advance past the snapshot that failed to cover this event.
+              generation += 1;
+              ws.close();
+            }
           });
       };
 
       ws.onclose = (event) => {
-        if (socket === ws) socket = undefined;
-        if (disposed) return;
+        // The socket identifies a stale close; a queue that stopped itself after a failed covering read raised the
+        // generation and still needs this reconnect.
+        if (disposed || socket !== ws) return;
+        socket = undefined;
+        // One quick reconnect is routine; a connection that fails again is shown as an outage with a retry.
+        presenceStatus = failedConnects > 0 ? "down" : "connecting";
+        clearPresence();
         if (event.code === 1008) {
           terminateAndRefresh();
           return;
@@ -131,11 +215,37 @@ export default function WorkspaceEventBridge(props: Props) {
       ws.onerror = () => ws.close();
     };
 
+    // "Try again" in the panel: connect now instead of waiting out the backoff.
+    const retryNow = () => {
+      // Live updates stopped for good (see terminateAndRefresh): only a reload can bring them back.
+      if (disposed) {
+        window.location.reload();
+        return;
+      }
+      // A connected socket asks for the note's people again.
+      if (socket?.readyState === WebSocket.OPEN) {
+        presenceStatus = "connecting";
+        emitPresence();
+        watchOpenedNote();
+        return;
+      }
+      if (socket || !reconnectTimer) return;
+      clearTimeout(reconnectTimer);
+      reconnectTimer = undefined;
+      presenceStatus = "connecting";
+      emitPresence();
+      connect();
+    };
+    window.addEventListener(PRESENCE_RETRY_EVENT, retryNow);
+
     connect();
     onCleanup(() => {
+      window.removeEventListener(PRESENCE_RETRY_EVENT, retryNow);
       disposed = true;
       if (reconnectTimer) clearTimeout(reconnectTimer);
       socket?.close();
+      window.removeEventListener(NOTE_SOFT_NAVIGATED_EVENT, onSoftNavigated);
+      window.removeEventListener(SYNC_STATE_REQUEST_EVENT, emitPresence);
     });
   });
 

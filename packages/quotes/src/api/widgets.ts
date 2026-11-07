@@ -24,7 +24,8 @@ export const quoteWidgetBody = (result: QuoteWidgetResult, locale: string): Widg
     ? {
         title: t.title,
         icon: "ti ti-quote",
-        blocks: [{ kind: "hero", icon: "ti ti-quote", tone: "blue", title: result.data.text, subtitle: `— ${result.data.author}` }],
+        // The header carries the quote mark, so the quote has the whole body.
+        blocks: [{ kind: "hero", title: result.data.text, subtitle: `— ${result.data.author}` }],
       }
     : {
         title: t.title,

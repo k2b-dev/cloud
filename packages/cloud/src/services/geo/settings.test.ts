@@ -1,9 +1,15 @@
 import { afterEach, expect, mock, spyOn, test } from "bun:test";
-import { redis as cacheClient } from "bun";
+import { useUnitClients } from "../../../../../scripts/fixtures/unit-clients";
+import { redis as cacheClient } from "../../runtime/clients";
+
+import { stubConnections } from "../../runtime/connections.test-fixture";
 import * as redis from "../request-cache-redis";
+import { encodeSecretCache } from "../settings/secret-cache";
 import * as settingsStore from "../settings/store";
 import { GEO_TEST_KEY } from "./geo.test-fixture";
 import { readGeoConfig } from "./settings";
+
+useUnitClients();
 
 const values: Record<string, unknown> = {
   "geo.api_key": GEO_TEST_KEY,
@@ -11,7 +17,7 @@ const values: Record<string, unknown> = {
   "geo.custom_rps": 5,
   "geo.custom_daily_credits": 3000,
   "geo.monthly_budget_credits": 90000,
-  "geo.person_daily_credits": 300,
+
   "app.timezone": "Europe/Berlin",
 };
 afterEach(() => mock.restore());
@@ -44,9 +50,13 @@ test("every unreadable geo setting disables configuration and warns with keys on
   expect(warn).toHaveBeenCalledTimes(1);
   expect(warn.mock.calls[0]?.[1]).toEqual({ keys: Object.keys(values).filter((key) => key.startsWith("geo.")) });
 });
-test("warm generic settings reads include the provider key in one cache read without Postgres", async () => {
+test("warm generic settings reads decrypt the provider key in one cache read without Postgres", async () => {
+  stubConnections();
   const cache = spyOn(redis, "requestCacheRedis").mockResolvedValue(cacheClient);
-  const mget = spyOn(cacheClient, "mget").mockResolvedValue([JSON.stringify(GEO_TEST_KEY), JSON.stringify("Cloud")]);
+  const mget = spyOn(cacheClient, "mget").mockResolvedValue([
+    await encodeSecretCache("geo.api_key", GEO_TEST_KEY),
+    JSON.stringify("Cloud"),
+  ]);
   const state = spyOn(settingsStore, "readKeyState").mockRejectedValue(new Error("No direct DB access permitted"));
   expect(await settingsStore.bulkRead(["geo.api_key", "app.name"])).toEqual(
     new Map([

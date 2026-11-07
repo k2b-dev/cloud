@@ -7,6 +7,7 @@ import { chatMessages } from "../messages";
 import type { ConversationSchema } from "../service/contracts";
 import { viewIcon } from "./ChatThreads";
 import { listTime } from "./chat-format";
+import SystemThreadDirectory from "./SystemThreadDirectory";
 import { activeThreads, archivedThreads, type Thread, type ThreadList, type ThreadView, threadHref } from "./threads";
 
 type Conversation = z.infer<typeof ConversationSchema>;
@@ -25,9 +26,14 @@ export default function ChatThreadsPage(props: {
   dateConfig: DateContext;
   now: () => Date;
   info: JSX.Element;
+  /** Unread messages in the other chats, beside the back button in a slot of fixed width; none without it. */
+  backCount?: number;
   onBack: (navigation: LinkNavigateEvent) => void | Promise<void>;
   onOpen: (view: ThreadView, navigation: LinkNavigateEvent) => void | Promise<void>;
   onCreate: () => void;
+  canCreate: boolean;
+  creating?: boolean;
+  revision?: number;
   onRetry: () => void;
 }): JSX.Element {
   const locale = useLocale();
@@ -46,7 +52,7 @@ export default function ChatThreadsPage(props: {
       onNavigate={(navigation) => props.onOpen(view, navigation)}
       description={<span class="chat-list__preview">{preview(last, fallback)}</span>}
     >
-      <AppWorkspace.SidebarItemIcon icon={viewIcon(view)} />
+      <AppWorkspace.SidebarItemIcon icon={viewIcon(view, props.threads)} />
       <AppWorkspace.SidebarItemLabel marquee={false}>{name}</AppWorkspace.SidebarItemLabel>
       <AppWorkspace.SidebarItemMeta>
         <span class="chat-list__meta">
@@ -67,27 +73,32 @@ export default function ChatThreadsPage(props: {
   const thread = (entry: Thread) => row(entry.id, entry.name, entry.unread, entry.lastMessage, entry.description ?? t().noMessagesYet);
   return (
     <section class="chat-threads-page" aria-label={t().threadsIn({ title: props.conversation.title })}>
-      <header class="chat-conversation__header">
+      <header class="chat-conversation__header" classList={{ "chat-threads-page__header--system": props.conversation.kind === "system" }}>
         <span class="chat-conversation__back">
           <IconButtonLink
             href={props.basePath ?? "/app/chat"}
             navigation="enhanced"
             onNavigate={props.onBack}
-            label={t().backToChats}
+            label={props.backCount ? t().backToChatsUnread({ count: props.backCount }) : t().backToChats}
             tooltip={false}
           >
             <i class="ti ti-chevron-left" aria-hidden="true" />
+            <Show when={props.backCount !== undefined}>
+              <span class="chat-conversation__back-count" aria-hidden="true">
+                {props.backCount ? (props.backCount > 99 ? "99+" : props.backCount) : ""}
+              </span>
+            </Show>
           </IconButtonLink>
         </span>
         <PageTitle
           trail={{ title: props.conversation.title, ancestors: [] }}
-          subtitle={t().members({ count: props.conversation.memberCount })}
+          subtitle={props.conversation.kind === "system" ? t().systemMembers : t().members({ count: props.conversation.memberCount })}
         />
         <div class="chat-conversation__actions">
-          <Show when={props.conversation.permission === "admin"}>
-            <Button size="sm" onClick={() => props.onCreate()}>
+          <Show when={props.canCreate}>
+            <Button size="sm" disabled={props.creating} onClick={() => props.onCreate()}>
               <i class="ti ti-plus" aria-hidden="true" />
-              {t().newThread}
+              {props.conversation.kind === "system" ? t().discussElement : t().newThread}
             </Button>
           </Show>
           {props.info}
@@ -95,26 +106,57 @@ export default function ChatThreadsPage(props: {
       </header>
       <nav class="chat-threads-page__list" aria-label={t().threadsIn({ title: props.conversation.title })}>
         <Show
-          when={props.status !== "failed"}
-          fallback={<ThreadsFailed message={t().threadsLoadFailed} retry={t().retry} onRetry={props.onRetry} />}
+          when={props.conversation.kind === "system"}
+          fallback={
+            <>
+              <Show
+                when={props.status !== "failed"}
+                fallback={<ThreadsFailed message={t().threadsLoadFailed} retry={t().retry} onRetry={props.onRetry} />}
+              >
+                {row("all", t().allThreads, props.conversation.unread, props.conversation.lastMessage, t().allThreadsHint)}
+                {row(
+                  "general",
+                  t().general,
+                  props.threads?.general.unread ?? 0,
+                  props.threads?.general.lastMessage ?? null,
+                  t().generalHint,
+                )}
+                <For each={activeThreads(props.threads)}>{thread}</For>
+                <Show when={props.status === "ready" && activeThreads(props.threads).length === 0}>
+                  <p class="chat-threads-page__empty">
+                    {(
+                      props.conversation.kind === "system"
+                        ? props.conversation.permission !== "read"
+                        : props.conversation.permission === "admin"
+                    )
+                      ? t().noThreadsYetAdmin
+                      : t().noThreadsYet}
+                  </p>
+                </Show>
+                <Show when={archivedThreads(props.threads).length > 0}>
+                  <AppWorkspace.SidebarItem
+                    icon={archiveOpen() ? "ti ti-chevron-down" : "ti ti-chevron-right"}
+                    onClick={() => setArchiveOpen((open) => !open)}
+                  >
+                    {t().archivedThreads({ count: archivedThreads(props.threads).length })}
+                  </AppWorkspace.SidebarItem>
+                  <Show when={archiveOpen()}>
+                    <For each={archivedThreads(props.threads)}>{thread}</For>
+                  </Show>
+                </Show>
+              </Show>
+            </>
+          }
         >
-          {row("all", t().allThreads, props.conversation.unread, props.conversation.lastMessage, t().allThreadsHint)}
-          {row("general", t().general, props.threads?.general.unread ?? 0, props.threads?.general.lastMessage ?? null, t().generalHint)}
-          <For each={activeThreads(props.threads)}>{thread}</For>
-          <Show when={props.status === "ready" && activeThreads(props.threads).length === 0}>
-            <p class="chat-threads-page__empty">{props.conversation.permission === "admin" ? t().noThreadsYetAdmin : t().noThreadsYet}</p>
-          </Show>
-          <Show when={archivedThreads(props.threads).length > 0}>
-            <AppWorkspace.SidebarItem
-              icon={archiveOpen() ? "ti ti-chevron-down" : "ti ti-chevron-right"}
-              onClick={() => setArchiveOpen((open) => !open)}
-            >
-              {t().archivedThreads({ count: archivedThreads(props.threads).length })}
-            </AppWorkspace.SidebarItem>
-            <Show when={archiveOpen()}>
-              <For each={archivedThreads(props.threads)}>{thread}</For>
-            </Show>
-          </Show>
+          <SystemThreadDirectory
+            basePath={props.basePath}
+            viewerId={props.viewerId}
+            dateConfig={props.dateConfig}
+            now={props.now}
+            conversation={props.conversation}
+            revision={props.revision ?? 0}
+            onOpen={props.onOpen}
+          />
         </Show>
       </nav>
     </section>

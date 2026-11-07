@@ -1,7 +1,7 @@
 import type { ChatAttachment, ChatMention, ChatModelOption, ChatSubmitInput } from "@k2b/ui";
 import { AI_TURN_IMAGE_MAX_TOTAL_BYTES } from "../limits";
 import type { AiResourceMarker } from "../resource-markers";
-import type { AiDraftContentPart, AiPublicModelProfile, AiUserContentPart } from "../types";
+import type { AiDraftContentPart, AiUserContentPart } from "../types";
 import {
   type AiComposerAttachment,
   FILE_INPUT_ACCEPT,
@@ -39,20 +39,21 @@ export type AiComposerFileResult = {
 export const aiComposerFileAccept = FILE_INPUT_ACCEPT;
 
 /**
- * The `maxBytes` for `chooseFiles` while a composer holds `attached` attachments. Files from Cloud apps are read into
+ * The `maxTotalBytes` for `chooseFiles` while a composer holds `attached` attachments. Files from Cloud apps are read into
  * the browser before `readAiComposerFiles` checks them, so together they stay within what the draft can still take:
  * each free slot at most the largest file the composer attaches. 0 when every slot is taken.
  */
 export const aiComposerChooseMaxBytes = (attached: number): number => Math.max(0, MAX_ATTACHMENTS - attached) * VFS_FILE_MAX_BYTES;
 
-export const aiChatModelOptions = (profiles: readonly AiPublicModelProfile[]): ChatModelOption[] =>
+export const aiChatModelOptions = (
+  profiles: readonly import("../../shared/ai-models").AiPeopleModels["options"][number][],
+): ChatModelOption[] =>
   profiles.map((profile) => ({
     id: profile.id,
-    label: profile.label,
-    description: profile.model,
-    image: profile.image,
-    icon: profile.capabilities.includes("vision") ? "ti ti-photo-spark" : "ti ti-message",
-    capabilities: profile.capabilities,
+    label: [profile.label, profile.variantLabel].filter(Boolean).join(" · "),
+    description: profile.description,
+    image: profile.icon.kind === "image" ? profile.icon.src : undefined,
+    icon: "ti ti-sparkles",
   }));
 
 const isTextAttachment = (

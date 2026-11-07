@@ -35,7 +35,7 @@ import {
 
 ## Rows and columns
 
-Each column has a stable `id`, a `header`, and usually a `value` key or function. Numeric values align right by default. `renderCell` and `renderHeader` customize presentation without changing the underlying row model.
+Each column has a stable `id`, a `header`, and usually a `value` key or function. Numeric values align right by default, with tabular figures, and the default renderer formats numbers and bigints in the inherited locale (`48.210` in German, `48,210` in English; at most three decimals). Identifiers that are numbers, such as ports, years, or Unix IDs, are no quantities: pass them as strings or render them in `renderCell` so they keep their digits unchanged. `renderCell` and `renderHeader` customize presentation without changing the underlying row model.
 
 The default cell wrapper keeps every value on one line and truncates it.
 With `cellContentClass`, values can wrap, and a column's `nowrap` decides:
@@ -122,12 +122,26 @@ Do not filter or sort a paginated result in the browser. The client does not own
 
 ## Presentation
 
-Rows follow the minimal Grids reference: no row lines, grid, or zebra striping;
-44px rows (40px compact); a hover fill; a small muted header at weight 500 with
-no line underneath; numbers aligned right with tabular figures. Tables with
-more than 8 columns automatically get a hairline between body rows, the
-approved exception for wide editing tables. There is no prop to change this.
-`data-table-minimal.browser.test.ts` pins this threshold and presentation.
+Tables are the one surface that keeps lines, so values can be read across
+and down:
+
+- The head is grey (`--k2b-surface-muted`), with small semibold secondary text
+  and a stronger line (`--k2b-border-strong`) below it.
+- Every body row has a line below it (`--k2b-border`), except the last, which
+  ends at the table's frame. Columns are separated by a lighter line (70 % of
+  the row line). A totals footer has the head's stronger line above it.
+- Rows are 44px (40px compact); numbers align right with tabular figures; no
+  zebra striping.
+- Hovering a row tints it; hovering a column turns its body cells light grey
+  and its head cell one step darker than the grey head.
+- A selected row is a fill only: 16 % of the app ink on the surface, never a
+  line or bar in the app colour. In forced colors it takes the system highlight.
+
+Every line is an inset shadow inside its cell, so hover and selection never
+change a row's size and a sticky head lies on the same pixels as the body.
+There is no prop to change the lines, and no app adds row borders or its own
+selection fill. Inside a frame the table runs edge to edge; it never adds a
+second frame. `data-table-lines.browser.test.ts` pins this presentation.
 
 Pass `loading` for the initial read. With no rows, `loadingRows` renders
 row-height placeholders (default 5, clamped to an integer from 1 to 50).

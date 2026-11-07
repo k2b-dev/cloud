@@ -82,7 +82,7 @@ Rücke wie im Beispiel ein. Setze zwei Leerzeichen vor Einträge der Filterliste
 | `match` | `all` (Standard) verlangt jeden Filter; `any` mindestens einen. Ohne Filter passen alle Notizen im Bereich. |
 | `sort` | `field`: `$title`, `$created` oder `$updated`; `direction`: `asc` oder `desc`. Standard: zuletzt geändert, absteigend. |
 | `columns` | Anzuzeigende Felder, je eines als eingerückter Listeneintrag. Ohne Spalten zeigt die Abfrage eine Liste verlinkter Titel. |
-| `limit` | 1–100 Ergebnisse, Standard 25. Ein Hinweis zeigt, dass weitere Notizen passen. Grenze die Filter ein, um sie zu sehen. |
+| `limit` | 1–100, Standard 25. In Book und im Editor legt `limit` die Zeilen pro Seite fest, höchstens 20. Passen mehr Notizen, zeigen die Seitenknöpfe unter der Liste alle; die Liste behält ihre Höhe. Book merkt sich die Seite in der Adresse. Ein PDF zeigt die ersten `limit` Zeilen und wie viele Notizen passen. |
 
 Eine Abfrage hat höchstens 32 Filter und 16 verschiedene Spalten. Eine Seite hat höchstens 20 Abfrageblöcke. Listen in Filtern verwenden Inline-Syntax wie `[active, draft]` mit 1–100 Werten. Eine Filterzeichenfolge hat höchstens 2.000 Zeichen. Setze Listenwerte mit Kommas in Anführungszeichen, etwa `["Sales, Europe", Support]`.
 
@@ -134,9 +134,9 @@ title: Sales 2026
 data: @sales
 x: Date
 y: [Revenue, Costs]
+format: EUR
 tooltip:
   label: Amount
-  format: EUR
 :::
 ```
 
@@ -163,7 +163,11 @@ y: Revenue
 
 Rücke Zeileneinträge und Tooltip-Felder um zwei Leerzeichen ein. Jede Zeile muss zur Spaltenzahl passen. Kombiniere `data` nicht mit direkt angegebenen Zeilen. Das Format ähnelt YAML, ist aber kein allgemeines YAML.
 
-Der optionale Abschnitt `tooltip` erlaubt `label`, `format` und `unit`. Formate sind `number`, `percent` oder ein Währungscode aus drei Großbuchstaben wie `EUR`. `unit` ergänzt ein kurzes Suffix. Kreis-, Ring- und Kennzahldiagramme verwenden dieses Format auch für die angezeigte Zahl. Eine einzelne Wertspalte liefert standardmäßig die Tooltip-Beschriftung; die y-Spaltennamen beschriften die Datenreihen.
+Mit `format` und `unit` legst du fest, wie das Diagramm seine Werte schreibt: an der Werteachse, neben den Balken, in Tooltips und in der Tabelle. Formate sind `number`, `percent` oder ein Währungscode aus drei Großbuchstaben wie `EUR`. `unit` ergänzt ein kurzes Suffix wie `kg`. Kreis-, Ring- und Kennzahldiagramme verwenden dieses Format für die angezeigte Zahl.
+
+Das Diagramm beschriftet seine Achsen mit der `x`-Spalte und dem Namen des Werts. Eine einzelne Wertspalte benennt den Wert; `tooltip.label` kann ihn umbenennen. Zwei oder mehr y-Spalten bekommen eine Legende mit ihren Namen. Ein Balkendiagramm beschriftet jede Kategorie und zeigt jeden Wert neben seinem Balken. Wenige kurze Beschriftungen stehen unter Säulen. Sonst bekommt jede Kategorie eine eigene Zeile, und das Diagramm wächst mit der Zahl der Zeilen.
+
+Der optionale Abschnitt `tooltip` erlaubt `label`, `format` und `unit`. Ein `format` oder `unit` im Tooltip gilt für Tooltips und die Tabelle. Ohne `format` für das ganze Diagramm formatiert es auch die Achse und die Werte neben den Balken.
 
 Eine Notiz kann 20 Diagramme enthalten. Jede Datenliste hat höchstens 480 Werte, ein Diagramm höchstens 8 Datenreihen. Das Diagramm prüft außerdem die Gesamtzahl der Datenpunkte und ob Werte und Beschriftungen passen. Ungültige Einstellungen zeigen einen Fehler in der Quellzeile; der Quelltext bleibt sichtbar. Der PDF-Export enthält das Diagramm und danach seine Datentabelle.
 
@@ -184,7 +188,7 @@ Die Buchansicht verlinkt auch Überschriften in Listen, Zitaten und Hinweisen. D
 
 ## Blöcke in der Vorschau sehen und aktualisieren {icon="refresh"}
 
-Der Rich-Modus zeigt Vorschauen für Abfragen, Inhaltsverzeichnisse und Diagramme, die der Server rendert. Um einen Block zu bearbeiten, setze den Cursor hinein oder wähle **Quelltext anzeigen**. Notebooks markiert ungültige Einstellungen in ihren Quellzeilen.
+Der Rich-Modus zeigt Vorschauen für Abfragen, Inhaltsverzeichnisse und Diagramme, die der Server rendert. Um einen Block zu bearbeiten, setze den Cursor hinein oder wähle das Code-Symbol (**Quelltext anzeigen**) in seiner Ecke. Dasselbe Symbol bringt die Vorschau zurück. Notebooks markiert ungültige Einstellungen in ihren Quellzeilen.
 
 Eine Entwurfsvorschau nutzt die Abfrageeinstellungen und Überschriften deines Entwurfs. Abfragen lesen trotzdem gespeicherte Daten, auch für die aktuelle Notiz. Die Vorschau speichert den Entwurf nicht und ändert keine passenden Notizen.
 
@@ -195,3 +199,15 @@ Die Buchansicht rendert dieselben Blöcke auf dem Server, ohne Editor. Ist JavaS
 Normale Tabellen, Listen, Kontrollkästchen und benannte Abschnitte bleiben Markdown. Verwende Tabellenformeln für Berechnungen in einer Tabelle. Abfragen indexieren nur benannte `:::data`-Eigenschaften und die oben genannten Systemfelder.
 
 Die Buchansicht berechnet dieselben Tabellenformeln wie der Editor, auch berechnete Spalten, Summen und Fortschrittsbalken. Ein Formelfehler bleibt in seiner Zelle sichtbar. Tabellenüberschriften und normale Zellen unterstützen außerdem Formatierungen, Links, Bilder und LaTeX. Formelergebnisse bleiben reine Werte.
+
+## Orte auf einer Karte verknüpfen {icon="map-2"}
+
+Tippe `/map` in einer bearbeitbaren Notiz, um einen Kartenblock einzufügen. Suche über der Karte einen Ort, wähle einen Treffer und verknüpfe den Pin mit einer Notiz, einer Überschrift oder einer Website. **Abbrechen** schließt die Verknüpfungsauswahl, ohne einen Pin hinzuzufügen. Eine Karte enthält bis zu 20 Pins.
+
+Wähle einen Pin in der Liste oder auf der Karte. In der Liste wechseln die Pfeiltasten sowie Pos1 und Ende die Auswahl. Im Menü **Kartenaktionen** ändert **Verknüpfung ändern** das Ziel; **Pin entfernen** entfernt ihn aus dieser Karte. Schreibgeschützte und gesperrte Notizen zeigen die gespeicherte Karte ohne Bearbeitungsaktionen.
+
+Wähle ab zwei Pins unter **Kartenaktionen** die Aktion **Route durch die Pins speichern**, wähle das Verkehrsmittel und bestätige. Die Route folgt der Listenreihenfolge und bleibt mit Strecke, geschätzter Zeit und Berechnungsdatum gespeichert. Beim Lesen wird sie nicht neu berechnet. Eine gespeicherte Route kann auch vom Assistant kommen.
+
+Ohne eingerichtete Karten oder bei aufgebrauchtem Budget bleiben Pins und Routen als Listen mit Quellen lesbar. Der Budgethinweis zeigt, wann neue Anfragen möglich sind. Bei einem fehlgeschlagenen Kartenaufruf bleiben die Pins erhalten; **Erneut versuchen** lädt die Karte neu. **Als Liste** zeigt die Verknüpfungen ohne Karte.
+
+Öffne **PDF herunterladen**, um die Vorschau mit Karten- und Routenbildern und ihren Quellen vorzubereiten. Drucken und PDF warten, bis alle Bilder bereit sind. Schlägt ein Bild fehl, versuche es erneut oder wähle **Mit Quellenlisten fortfahren**. Schließen bricht die Vorbereitung ab. Beim direkten Browserdruck und bei Exporten ohne Browserbilder stehen Pins und Route als verknüpfte Listen; ausgelassene Kartenbilder werden gemeldet.

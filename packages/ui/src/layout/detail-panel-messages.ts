@@ -10,12 +10,14 @@ const detailPanelMessages = i18n.define({
       showOlder: ({ count }: { count: number }) => `Show ${count} older`,
       showMore: ({ count }: { count: number }) => `Show ${count} more`,
       showLess: "Show less",
+      moreActions: "More actions",
     },
     de: {
       noneYet: "Noch keine",
       showOlder: ({ count }) => `${count} ältere anzeigen`,
       showMore: ({ count }) => `${count} weitere anzeigen`,
       showLess: "Weniger anzeigen",
+      moreActions: "Weitere Aktionen",
     },
   },
 });

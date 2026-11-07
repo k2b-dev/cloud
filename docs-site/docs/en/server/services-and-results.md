@@ -93,7 +93,7 @@ Use expected failures for conditions a caller can encounter. Do not throw for a
 missing item or denied permission.
 
 Return `err.unauthenticated()` only before the operation changes anything. A
-`401` tells the caller that nothing was applied: on a page of the mobile app,
+`401` tells the caller that nothing was applied: on a page of the Cloud app,
 the typed browser client renews the app session and sends such a request once
 more.
 
@@ -133,6 +133,23 @@ A failed result becomes:
 The HTTP status comes from the `ServiceError`.
 
 `respond()` also accepts a function that returns `Result<T>`.
+
+When a failed operation needs to return recovery information, pass selected fields
+through `errorDetails`. This overload accepts the legacy error shape with an
+explicit HTTP status:
+
+```ts
+return respond(
+  c,
+  { ok: false, error: "Published but not saved", status: 500, code: "save_failed" },
+  { errorDetails: { accepted: true, cursor: result.cursor, receipt: result.receipt } },
+);
+```
+
+The response keeps these fields beside `message` and `code`, so the client can
+recover a published change without submitting it twice. The error result owns
+`message` and `code`; details cannot override them. Select only fields that the
+caller may read. Do not spread an entire service result into the response.
 
 ## Return a success message
 

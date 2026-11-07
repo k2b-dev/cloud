@@ -1,5 +1,5 @@
+import { extractNamedBlockSummaries, type NamedBlockSummary } from "@k2b/editor/markdown/lib/named-blocks";
 import type { NoteAuthors } from "../lib/activity-actions";
-import { extractNamedBlockSummaries, type NamedBlockSummary } from "../lib/named-blocks";
 import { extractTaskProgress, extractTocFromMarkdown, type TaskProgress, type TocItem } from "../lib/note-insights";
 import { type PresentationMode, resolvePresentationMode } from "../lib/presentation-mode";
 import { requestedPresentationMode, withPresentationMode } from "../lib/presentation-url";
@@ -7,7 +7,8 @@ import { hasOnlySidebarFilterQuery, parseSidebarFilter, withSidebarFilter } from
 import type { Attachment } from "./attachments";
 import { notebooksService } from "./index";
 import type { Backlink } from "./links";
-import type { NoteWithContent } from "./notes";
+import type { Note } from "./notes";
+import { extractTags } from "./tags";
 
 type PublicAttachment = Omit<Attachment, "shortId">;
 
@@ -15,7 +16,6 @@ export type SelectedNoteRouteState = {
   note: {
     id: string;
     title: string;
-    yjsSnapshot: string | null;
     historyIncomplete: boolean;
     contentMd: string | null;
     lockedAt: string | null;
@@ -30,15 +30,24 @@ export type SelectedNoteRouteState = {
   taskProgress: TaskProgress;
   namedBlocks: NamedBlockSummary[];
   backlinks: Backlink[];
+  relations: NoteDetailRelations;
   panelAttachments: PublicAttachment[];
 };
+
+/** What a note links to and its tags, for the detail panel. */
+export type NoteDetailRelations = {
+  outgoing: Backlink[];
+  tags: string[];
+};
+
+/** Links the panel lists for a note, the most one page of note links returns. */
+const OUTGOING_LINKS_LIMIT = 100;
 
 export type EditableNoteRouteData = {
   href: string;
   note: {
     id: string;
     title: string;
-    yjsSnapshot: string | null;
     historyIncomplete: boolean;
     contentMd: string | null;
     createdAt: string;
@@ -60,6 +69,7 @@ export type EditableNoteRouteData = {
     taskProgress: TaskProgress;
     attachments: PublicAttachment[];
     backlinks: Backlink[];
+    relations: NoteDetailRelations;
     namedBlocks: NamedBlockSummary[];
   };
 };
@@ -77,10 +87,9 @@ type LoadSelectedNoteParams = {
   bypassAccess: boolean;
 };
 
-const toSelectedNote = async (note: NoteWithContent): Promise<SelectedNoteRouteState["note"]> => ({
+const toSelectedNote = async (note: Note): Promise<SelectedNoteRouteState["note"]> => ({
   id: note.shortId,
   title: note.title,
-  yjsSnapshot: note.yjsSnapshot,
   historyIncomplete: note.historyIncomplete,
   contentMd: note.contentMd,
   lockedAt: note.lockedAt,
@@ -93,7 +102,8 @@ const toSelectedNote = async (note: NoteWithContent): Promise<SelectedNoteRouteS
 });
 
 export const loadSelectedNoteRouteState = async (params: LoadSelectedNoteParams): Promise<SelectedNoteRouteState | null> => {
-  const note = await notebooksService.note.getWithContentByShortId({ shortId: params.noteId });
+  // The saved Markdown is all a note needs to open; its Yjs state loads only when someone edits it.
+  const note = await notebooksService.note.getByShortId({ shortId: params.noteId });
   if (!note || note.notebookId !== params.notebookId) return null;
 
   const readonlyMode = !params.canWrite || !!note.lockedAt;
@@ -102,7 +112,7 @@ export const loadSelectedNoteRouteState = async (params: LoadSelectedNoteParams)
   const namedBlocks = extractNamedBlockSummaries(note.contentMd);
 
   const attachmentShortIds = notebooksService.attachment.extractIds(note.contentMd);
-  const [referencedAttachments, backlinks, noteAuthors] = await Promise.all([
+  const [referencedAttachments, backlinks, outgoing, noteAuthors] = await Promise.all([
     attachmentShortIds.length > 0
       ? notebooksService.attachment.listByShortIds({ shortIds: attachmentShortIds, notebookId: params.notebookId })
       : Promise.resolve([]),
@@ -110,6 +120,12 @@ export const loadSelectedNoteRouteState = async (params: LoadSelectedNoteParams)
       noteId: note.id,
       userId: params.userId,
       bypassAccess: params.bypassAccess,
+    }),
+    notebooksService.note.outgoingLinks.list({
+      noteId: note.id,
+      userId: params.userId,
+      bypassAccess: params.bypassAccess,
+      limit: OUTGOING_LINKS_LIMIT,
     }),
     notebooksService.activity.noteAuthors({ noteId: note.id }),
   ]);
@@ -122,6 +138,10 @@ export const loadSelectedNoteRouteState = async (params: LoadSelectedNoteParams)
     taskProgress,
     namedBlocks,
     backlinks,
+    relations: {
+      outgoing,
+      tags: extractTags(note.contentMd),
+    },
     panelAttachments: referencedAttachments.map((attachment) => ({
       id: attachment.shortId,
       notebookId: params.notebookShortId,
@@ -197,7 +217,6 @@ export const loadEditableNoteRouteData = async (params: ResolveEditableRoutePara
       note: {
         id: state.note.id,
         title: state.note.title,
-        yjsSnapshot: state.note.yjsSnapshot,
         historyIncomplete: state.note.historyIncomplete,
         contentMd: state.note.contentMd,
         createdAt: state.note.createdAt,
@@ -219,6 +238,7 @@ export const loadEditableNoteRouteData = async (params: ResolveEditableRoutePara
         taskProgress: state.taskProgress,
         attachments: state.panelAttachments,
         backlinks: state.backlinks,
+        relations: state.relations,
         namedBlocks: state.namedBlocks,
       },
     },

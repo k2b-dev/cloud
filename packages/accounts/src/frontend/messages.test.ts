@@ -6,7 +6,9 @@ describe("accounts messages", () => {
     const { locale, t } = accountsMessages.resolve(["de-CH"]);
 
     expect(locale).toBe("de");
-    expect(t.accounts).toBe("Konten");
+    expect(t.accounts).toBe("Zugänge");
+    expect(t.accountTotalLabel).toBe("Konten");
+    expect(t.searchAccounts).toBe("Zugänge durchsuchen");
     expect(t.groupCreatedMessage({ name: "Support" })).toBe("Gruppe „Support“ erstellt.");
   });
 

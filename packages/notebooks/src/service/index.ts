@@ -2,6 +2,7 @@ import type { AccessEntry } from "@k2b/cloud/contracts";
 import { type PageParams, type Paginated, paginate } from "@k2b/stdlib";
 import * as access from "./access";
 import * as activity from "./activity";
+import * as annotations from "./annotations";
 import * as apiKeys from "./api-keys";
 import * as attachments from "./attachments";
 import * as backup from "./backup";
@@ -14,9 +15,11 @@ import * as noteQuery from "./note-query";
 import * as noteRefs from "./note-refs";
 import * as notebooks from "./notebooks";
 import * as notes from "./notes";
+import * as pageTemplates from "./page-templates";
 import * as presence from "./presence";
 import { reindexRuntime } from "./reindex-scheduler";
 import * as search from "./search";
+import * as sidebarTree from "./sidebar-tree";
 import * as tags from "./tags";
 import * as templates from "./templates";
 import * as workspaceEvents from "./workspace-events";
@@ -128,11 +131,11 @@ export const notebooksService = {
       grant: access.grantNotebookAccess,
       ensureServiceAccount: access.ensureNotebookServiceAccountAccess,
       update: access.updateNotebookAccess,
-      remove: (config: { notebookId: string; accessId: string }) => access.removeNotebookAccess(config.notebookId, config.accessId),
+      remove: access.revokeNotebookAccess,
       add: (config: { notebookId: string; accessId: string }) => access.addNotebookAccess(config.notebookId, config.accessId),
       count: (config: { notebookId: string }) => access.countNotebookAccess(config.notebookId),
-      guard: (config: { notebookId: string; accessId: string }) => access.getNotebookAccessGuard(config),
       getPermission: access.getNotebookPermission,
+      memberPermission: access.getNotebookMemberPermission,
       apiKeys: {
         list: apiKeys.list,
         create: apiKeys.create,
@@ -140,12 +143,20 @@ export const notebooksService = {
       },
     },
   },
+  pageTemplate: {
+    list: pageTemplates.list,
+    draft: pageTemplates.draft,
+    create: pageTemplates.create,
+    update: pageTemplates.update,
+    remove: pageTemplates.remove,
+  },
   template: {
     list: templates.list,
     get: templates.get,
     instantiate: templates.instantiate,
   },
   note: {
+    annotations,
     list: async (config: {
       notebookId: string;
       pagination?: PageParams;
@@ -168,6 +179,7 @@ export const notebooksService = {
         hasNext: page * perPage < result.total,
       };
     },
+    findByTitle: notes.findByTitle,
     get: notes.get,
     getByShortId: notes.getByShortId,
     getWithContent: notes.getWithContent,
@@ -176,6 +188,15 @@ export const notebooksService = {
     resolveIdsToShortIds: notes.resolveIdsToShortIds,
     resolveShortIdsToNotebookShortIds: notes.resolveShortIdsToNotebookShortIds,
     getTree: notes.getTree,
+    /** The sidebar's bounded view of the tree: opened levels as windows, and the filtered lists. */
+    sidebar: {
+      tree: sidebarTree.loadSidebarTree,
+      levels: sidebarTree.loadSidebarLevels,
+      reveal: sidebarTree.revealSidebarNote,
+      list: sidebarTree.loadSidebarList,
+      firstNote: sidebarTree.firstSidebarNote,
+      book: sidebarTree.loadBookNavigation,
+    },
     /** `<notebook>:<path>` addresses and the content-free outline used by the CLI mirror. */
     paths: {
       outline: notePaths.listOutline,
@@ -185,6 +206,8 @@ export const notebooksService = {
     create: notes.create,
     update: notes.update,
     editContent: notes.editContent,
+    tableAction: notes.tableAction,
+    acceptYjsUpdate: notes.acceptYjsUpdate,
     remove: notes.remove,
     move: notes.move,
     resetOrder: notes.resetOrder,
@@ -192,6 +215,7 @@ export const notebooksService = {
     isLocked: notes.isLocked,
     lock: notes.lock,
     getYjsStateWithCursor: notes.getYjsStateWithCursor,
+    deliverAtRestoreRevision: notes.deliverAtRestoreRevision,
     getAnchoredYjsState: notes.getAnchoredYjsState,
     adoptSnapshotAtHead: notes.adoptSnapshotAtHead,
     versions: {
@@ -215,6 +239,9 @@ export const notebooksService = {
     },
     backlinks: {
       list: links.listBacklinks,
+    },
+    outgoingLinks: {
+      list: links.listOutgoingLinks,
     },
     comments: {
       getByShortId: comments.getByShortId,

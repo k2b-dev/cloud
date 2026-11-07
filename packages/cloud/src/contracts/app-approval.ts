@@ -265,7 +265,14 @@ export const AppPendingLoginSchema = z
   })
   .strict();
 export const AppPairingPayloadSchema = z
-  .object({ protocol: z.literal(APP_APPROVAL_PROTOCOL), issuer: z.string().url(), pairingId: Id, secret: Secret, expiresAt: DateTime })
+  .object({
+    protocol: z.literal(APP_APPROVAL_PROTOCOL),
+    issuer: z.string().url(),
+    pairingId: Id,
+    secret: Secret,
+    expiresAt: DateTime,
+    label: z.string().trim().min(1).max(80).optional(),
+  })
   .strict();
 export type AppPairingPayload = z.infer<typeof AppPairingPayloadSchema>;
 

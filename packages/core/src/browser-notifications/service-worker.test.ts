@@ -167,6 +167,48 @@ describe("browser notification service worker", () => {
     expect(visible.get("inventory:stock:one")).toEqual(shown[1]);
   });
 
+  test("replaces a group's notification quietly when the push asks for no alert", async () => {
+    const { listeners, shown, visible } = loadWorker([]);
+    for (const [title, alert] of [
+      ["First", undefined],
+      ["Second", false],
+    ] as const) {
+      const push = pushEvent({ type: "cloud-notification", eventId: crypto.randomUUID(), title, group: "chat:one", alert });
+      listeners.get("push")!(push.event);
+      await push.completion();
+    }
+    expect(shown[0]?.options).toMatchObject({ tag: "chat:one", renotify: true });
+    expect(shown[0]?.options).not.toHaveProperty("silent");
+    expect(shown[1]?.options).toMatchObject({ tag: "chat:one", silent: true });
+    expect(shown[1]?.options).not.toHaveProperty("renotify");
+    expect(visible.size).toBe(1);
+    expect(visible.get("chat:one")?.title).toBe("Second");
+  });
+
+  test("restores a quiet newer notification silently when an older push arrives late", async () => {
+    const { listeners, shown, visible } = loadWorker([]);
+    for (const [title, createdAt, alert] of [
+      ["Second", 2000, false],
+      ["First", 1000, undefined],
+    ] as const) {
+      const push = pushEvent({ type: "cloud-notification", eventId: crypto.randomUUID(), title, createdAt, group: "chat:one", alert });
+      listeners.get("push")!(push.event);
+      await push.completion();
+    }
+    expect(visible.get("chat:one")?.title).toBe("Second");
+    expect(shown.map(({ options }) => options.silent)).toEqual([true, true]);
+    expect(shown.some(({ options }) => "renotify" in options)).toBe(false);
+  });
+
+  test("shows an ungrouped quiet notification without sound", async () => {
+    const { listeners, shown } = loadWorker([]);
+    const push = pushEvent({ type: "cloud-notification", eventId: crypto.randomUUID(), title: "Ready", alert: false });
+    listeners.get("push")!(push.event);
+    await push.completion();
+    expect(shown[0]?.options.silent).toBe(true);
+    expect(shown[0]?.options).not.toHaveProperty("renotify");
+  });
+
   test("keeps a newer grouped notification and badge when an older push arrives late", async () => {
     const badges: number[] = [];
     const { listeners, shown, visible } = loadWorker([], { setAppBadge: (count: number) => badges.push(count) });
@@ -188,7 +230,13 @@ describe("browser notification service worker", () => {
     }
     expect(visible.get("chat:one")).toEqual({
       title: "Second",
-      options: { icon: "/branding/logo", tag: "chat:one", body: "Second preview", data: { targetHref: "/", createdAt: 2000 } },
+      options: {
+        icon: "/branding/logo",
+        tag: "chat:one",
+        body: "Second preview",
+        silent: true,
+        data: { targetHref: "/", createdAt: 2000 },
+      },
     });
     expect(shown[0]?.options.renotify).toBe(true);
     expect(shown[1]?.options).not.toHaveProperty("renotify");
@@ -426,7 +474,8 @@ describe("browser notification service worker", () => {
     ...[null, 42, "", "group space", "group/one", " group", "group\n"].map((group) => ({ group })),
     ...[null, "2", -1, 1.5, Number.NaN, Number.POSITIVE_INFINITY, Number.MAX_SAFE_INTEGER + 1].map((badge) => ({ badge })),
     ...[null, "1", -1, 1.5, Number.NaN, Number.POSITIVE_INFINITY, Number.MAX_SAFE_INTEGER + 1].map((createdAt) => ({ createdAt })),
-  ])("rejects invalid grouping, badge, or timestamp metadata: %j", (metadata) => {
+    ...[null, true, 0, "false"].map((alert) => ({ alert })),
+  ])("rejects invalid grouping, badge, timestamp, or alert metadata: %j", (metadata) => {
     const { listeners, shown } = loadWorker([]);
     const push = pushEvent({ type: "cloud-notification", eventId: crypto.randomUUID(), title: "Ready", ...metadata });
     listeners.get("push")!(push.event);

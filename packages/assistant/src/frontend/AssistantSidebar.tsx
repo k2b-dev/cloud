@@ -6,14 +6,11 @@ import { WorkspaceNavigationProvider } from "@k2b/cloud/ssr/islands";
 import { navigate, navigateTo } from "@k2b/ssr/nav";
 import {
   AppWorkspace,
-  Button,
   createNavigation,
   Dropdown,
   dialogCore,
   IconButton,
-  IconButtonLink,
   type IntentTone,
-  Navigation,
   type NavigationItem,
   PanelDialog,
   Placeholder,
@@ -53,10 +50,7 @@ const navigationTone = {
 } as const satisfies Record<ConversationStatusTone, IntentTone>;
 
 type AssistantSidebarProps = {
-  fullViewConversationId?: string;
   basePath?: string;
-  embedded?: boolean;
-  panelReady?: boolean;
   conversations: Accessor<AiConversation[]>;
   /** The viewer's time zone from the request, so the server and the browser put chats in the same day sections. */
   timeZone: string;
@@ -720,54 +714,6 @@ export default function AssistantSidebar(props: AssistantSidebarProps) {
   return (
     <>
       <WorkspaceNavigationProvider navigation={mobileNavigation} label={t().assistant} />
-      <Show when={props.embedded}>
-        <AppWorkspace.Head
-          actions={
-            <>
-              <Button
-                variant="ghost"
-                onClick={() => {
-                  void dialogCore.open<void>(
-                    (close) => (
-                      <PanelDialog>
-                        <PanelDialog.Header title={t().assistant} close={() => close()} />
-                        <PanelDialog.Body>
-                          <Navigation
-                            navigation={mobileNavigation}
-                            label={t().assistant}
-                            beforeSelect={() => {
-                              close();
-                            }}
-                          />
-                        </PanelDialog.Body>
-                      </PanelDialog>
-                    ),
-                    panelDialogOptions,
-                  );
-                }}
-              >
-                <i class="ti ti-messages" aria-hidden="true" />
-                {t().recentAllChats}
-              </Button>
-              <IconButtonLink
-                href={
-                  props.fullViewConversationId
-                    ? assistantConversationHref("/app/assistant", props.fullViewConversationId)
-                    : activeProjectId()
-                      ? assistantProjectHref("/app/assistant", activeProjectId()!)
-                      : approvalsActive()
-                        ? "/app/assistant?approvals=1"
-                        : assistantConversationHref("/app/assistant", activeConversationId())
-                }
-                label={t().openFullView}
-                target={props.panelReady ? undefined : "_top"}
-              >
-                <i class="ti ti-arrows-maximize" aria-hidden="true" />
-              </IconButtonLink>
-            </>
-          }
-        />
-      </Show>
       <AppWorkspace.Sidebar collapsible>
         <AppWorkspace.SidebarDesktop>
           <AppWorkspace.SidebarIconGrid columns={2} sidebarMode="expanded">

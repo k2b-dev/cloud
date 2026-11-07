@@ -1,0 +1,28 @@
+.notes-admin {
+  max-width: 52rem;
+  margin-inline: auto;
+  padding: var(--k2b-space-6, 1.5rem);
+  color: var(--k2b-text);
+}
+.notes-admin-heading,
+.notes-admin-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--k2b-space-3, 0.75rem);
+}
+.notes-admin form,
+.notes-admin-report {
+  display: grid;
+  gap: var(--k2b-space-4, 1rem);
+  padding-block: var(--k2b-space-6, 1.5rem);
+}
+.notes-admin-report {
+  border-top: 1px solid var(--k2b-border);
+}
+.notes-admin-prose {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.notes-admin-actions { justify-content: flex-start; }

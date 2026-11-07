@@ -8,6 +8,8 @@ order: 100
 ---
 Pulse sammelt Metriken, Ereignisse und Zustände in Bases. Öffne eine Base, um Quellen einzurichten und eingehende Daten zu prüfen.
 
+Öffne **Pulse** über das App-Menü. In der App-Leiste ist Pulse standardmäßig ausgeblendet. Wenn du Pulse dort eingeblendet oder angeheftet hast, bleibt deine Auswahl erhalten.
+
 ## Lies die Übersicht
 
 Eine Base öffnet die **Übersicht**. Sie zeigt, was Aufmerksamkeit braucht, bis zu vier wichtige Zahlen und letzte Änderungen. Sie aktualisiert sich alle 60 Sekunden, solange sie sichtbar ist. **Ansehen** öffnet die SQL-Abfrage eines Alarms mit ihren Parameterwerten, ohne sie auszuführen.
@@ -30,8 +32,8 @@ Pulse braucht einen verbundenen Datenspeicher. Wenn **Pulse ist noch nicht einge
 :::
 
 Eine Metrikquelle ruft einen Prometheus-Endpunkt im eingestellten Intervall ab.
-Eine HTTP-Ingest-Quelle nimmt Batches mit einem API-Schlüssel der Quelle an.
-Erstelle benannte Schlüssel unter **API-Schlüssel** in den Quellendetails. Bewahre sie im Geheimnisspeicher deines Datenlieferanten auf.
+Eine HTTP-Ingest-Quelle nimmt Batches mit einem API Key der Quelle an.
+Erstelle benannte Schlüssel unter **API Keys** in den Quellendetails. Bewahre sie im Geheimnisspeicher deines Datenlieferanten auf.
 
 ## Wähle die Metriken für den Abruf
 

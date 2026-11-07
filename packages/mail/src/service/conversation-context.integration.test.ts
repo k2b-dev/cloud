@@ -1,9 +1,8 @@
 import { afterAll, beforeAll, expect, spyOn, test } from "bun:test";
-import { sql } from "bun";
+import { sql } from "@k2b/cloud";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import { DEFAULT_MAIL_CONTACT_DIRECTORY } from "../contact-directory-settings";
 import { newShortId } from "../lib/short-id";
-import { migrate } from "../migrate";
 import * as appIntegrations from "./app-integrations";
 import type { MailRequestContext } from "./auth";
 import { listRelatedConversations, listRelatedMail } from "./conversation-context";
@@ -41,7 +40,6 @@ suite("related Mail conversations", () => {
   let createConversation: (uid: number, subject: string, participant: string, minutesAgo: number) => Promise<string>;
 
   beforeAll(async () => {
-    await migrate();
     const [createdOwner] = await sql<{ id: string; uid: string }[]>`
       INSERT INTO auth.users (uid, provider, profile, display_name, admin)
       VALUES (${`related-mail-${suffix}`}, 'local', 'user', 'Related Mail', false)

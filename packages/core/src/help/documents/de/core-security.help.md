@@ -2,7 +2,7 @@
 id: core-security
 title: Anmeldung und Sicherheit
 icon: ti ti-shield-lock
-description: Anmelden, Zugang wiederherstellen, eine Anmelde-App koppeln und Passkeys, API-Schlüssel und Sitzungen schützen.
+description: Anmelden, Zugang wiederherstellen, eine Anmelde-App koppeln und Passkeys, API Keys und Sitzungen schützen.
 order: 112
 ---
 
@@ -30,9 +30,9 @@ Ein bestehender Passkey funktioniert weiter, solange dein Kontotyp erlaubt ist. 
 
 ## Passwort ändern {icon="shield-lock"}
 
-Öffne für ein FreeIPA-Konto **Anmeldung** in deinem Konto, wähle **Passwort ändern** und gib dein aktuelles Passwort ein. Cloud meldet dich danach überall sonst ab: in anderen Browsern, in der Mobile App, in der Kommandozeile und in verbundenen Apps. Verbinde die Kommandozeile danach mit `cld login` neu.
+Öffne für ein FreeIPA-Konto **Anmeldung** in deinem Konto, wähle **Passwort ändern** und gib dein aktuelles Passwort ein. Cloud meldet dich danach überall sonst ab: in anderen Browsern, in der Cloud-App, in der Kommandozeile und in verbundenen Apps. Verbinde die Kommandozeile danach mit `cld login` neu.
 
-In diesem Browser bleibst du angemeldet. Deine gekoppelten Anmeldegeräte bleiben gekoppelt. API-Schlüssel und Passkeys funktionieren weiter.
+In diesem Browser bleibst du angemeldet. Deine gekoppelten Anmeldegeräte bleiben gekoppelt. API Keys und Passkeys funktionieren weiter.
 
 Legst du auf der Anmeldeseite ein neues Passwort fest, zum Beispiel mit einem Link zum Zurücksetzen oder nach einem abgelaufenen Passwort, meldet Cloud dich ebenfalls überall sonst ab. Kann Cloud dich nicht überall sonst abmelden, zeigt Cloud das an. Nach einem abgelaufenen Passwort wählst du **Erneut versuchen**, bevor du weitermachst. Nach einem Link zum Zurücksetzen forderst du einen neuen Link an.
 
@@ -66,9 +66,9 @@ Der Link gilt fünf Minuten. Teile ihn nicht außerhalb dieser Einrichtung.
 
 Wenn Cloud Browserdetails liefert, zeigt die App sie über dem Code:
 
-- Browser, System und Startzeit in der Zeitzone deines Telefons.
+- Browser, System und Startzeit in der Zeitzone deines Geräts.
 - **Ungefähr {Ort}** und **Netz: …**, nur wenn die Standortdatenbank von Cloud die Adresse kennt. Das Netz nennt den Betreiber.
-- **Gleiche Internetadresse wie dieses Telefon**, nur wenn das zutrifft. Fehlt die Zeile, sagt das nichts aus.
+- **Gleiche Internetadresse wie dieses Gerät**, nur wenn das zutrifft. Fehlt die Zeile, sagt das nichts aus.
 - **Bekannter Browser · seit …** oder **Cloud kennt diesen Browser noch nicht**. Beides fehlt in den ersten 14 Tagen nach dem Update. Bekannt heißt „hier schon angemeldet“, nicht „sicher“.
 - Ein bekannter Browser in einem neuen Land bekommt einen ruhigen Hinweis zur Länderhistorie. Bei einem neuen Browser kann **Hast du diese Anmeldung gestartet?** erscheinen. Die Warnung erscheint nur, wenn dein Konto schon Anmeldeländer hat, aber keine Anmeldung aus diesem Land in den letzten 90 Tagen. Bei kürzerer Historie gilt deren Startdatum. **Ablehnen** ist dann der Hauptknopf, **Trotzdem erlauben** bleibt verfügbar.
 
@@ -82,7 +82,7 @@ Ist das Ergebnis einer Anmeldung unklar, lade die Seite neu, um deine Sitzung zu
 
 ## Benachrichtigung zu neuen Anmeldungen {icon="bell"}
 
-Nach einer erfolgreichen Anmeldung sendet Cloud einmal pro neuem Browser **Neue Anmeldung aus einem neuen Browser**. Das beginnt 14 Tage nach dem Upgrade. Die Benachrichtigung gilt nicht für die Mobile App.
+Nach einer erfolgreichen Anmeldung sendet Cloud einmal pro neuem Browser **Neue Anmeldung aus einem neuen Browser**. Das beginnt 14 Tage nach dem Upgrade. Die Benachrichtigung gilt nicht für die Cloud-App.
 
 Sie zeigt Browser und Zeit. Die E-Mail zeigt zusätzlich den Anmeldeweg und den ungefähren Ort, wenn er bekannt ist.
 
@@ -104,7 +104,7 @@ Koppeln, Umbenennen und Widerrufen können eine Bestätigung deiner Identität v
 
 ## Neuen Zugang bestätigen {icon="shield-lock"}
 
-Lege persönliche API-Schlüssel unter **Entwicklung → API-Schlüssel** und
+Lege persönliche API Keys unter **Entwicklung → API Keys** und
 Passkeys unter **Anmeldung → Passkeys** im Browser an. Deine Browser-Anmeldung
 muss aus den letzten zehn Minuten stammen. Bittet Cloud dich, deine Identität zu
 bestätigen, melde dich mit demselben Konto erneut an, ohne dich vorher
@@ -118,11 +118,11 @@ an die Administration.
 
 ## Konto schützen {icon="shield-lock"}
 
-:::warning Gib Wiederherstellungslinks und API-Schlüssel nie weiter
-Wer einen gültigen Wiederherstellungslink oder einen aktiven API-Schlüssel hat, kann möglicherweise mit dessen Zugriff handeln. Füge solche Daten nicht in Supportnachrichten, Screenshots oder Dokumentation ein.
+:::warning Gib Wiederherstellungslinks und API Keys nie weiter
+Wer einen gültigen Wiederherstellungslink oder einen aktiven API Key hat, kann möglicherweise mit dessen Zugriff handeln. Füge solche Daten nicht in Supportnachrichten, Screenshots oder Dokumentation ein.
 :::
 
 - Registriere Passkeys nur auf Geräten, die du kontrollierst. Gib ihnen erkennbare Namen und entferne Passkeys für Geräte, die du nicht mehr hast oder nutzt.
 - Prüfe deine letzten Kontoaktivitäten auf unerwartete Änderungen oder eine unbekannte Nutzung von Zugangsdaten.
-- Behandle API-Schlüssel wie Passwörter. Gib jeder Integration einen eigenen Schlüssel mit Ablaufdatum und widerrufe ihn, sobald du die Integration nicht mehr nutzt.
+- Behandle API Keys wie Passwörter. Gib jeder Integration einen eigenen Schlüssel mit Ablaufdatum und widerrufe ihn, sobald du die Integration nicht mehr nutzt.
 - Prüfe Browser und Konto, bevor du eine sicherheitsrelevante Aktion bestätigst.

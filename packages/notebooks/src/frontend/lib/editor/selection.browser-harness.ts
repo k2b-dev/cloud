@@ -1,12 +1,14 @@
 import { EditorSelection, EditorState } from "@codemirror/state";
 import { BlockType, EditorView } from "@codemirror/view";
+import { remoteCursors } from "@k2b/editor/collab";
+import { pointerSelectionHeld } from "@k2b/editor/markdown";
 import { yCollab } from "y-codemirror.next";
 import { Awareness, applyAwarenessUpdate, encodeAwarenessUpdate } from "y-protocols/awareness";
 import * as Y from "yjs";
+import { notebookTableOptions } from "../../../lib/table-options";
 import { handleSoftNoteNavigationRequests } from "../soft-navigation";
-import { pointerSelectionHeld } from "./_lib/cursor-zone-field";
 import { editor } from "./index";
-import { remoteCursors } from "./remote-cursors";
+import { notebookListOptions, notebookMermaidOptions, notebookUrlOptions } from "./notebook-options";
 
 const doc = [
   "# Project heading",
@@ -46,20 +48,20 @@ const makeClient = (parent: HTMLElement, name: string, color: string, seed?: Y.D
         editor.searchTheme(),
         editor.customLightInit(),
         editor.noteScroller,
-        editor.tablesExtension("n1"),
-        editor.imageExtension("n1"),
-        editor.listsExtension(),
+        editor.tablesExtension(notebookTableOptions("n1")),
+        editor.imageExtension(notebookUrlOptions("n1")),
+        editor.listsExtension(notebookListOptions),
         editor.infoBlocksExtension("en"),
         editor.dataBlocksExtension(),
         editor.namedBlocksExtension(),
-        editor.linksExtension("n1"),
+        editor.linksExtension(notebookUrlOptions("n1")),
         editor.markupExtension(),
         editor.markExtension(),
         editor.subSupExtension(),
-        editor.ligaturesExtension(),
+        editor.ligaturesExtension(notebookListOptions),
         editor.initialMarkdownDecorationRefreshExtension(),
         editor.pointerSelectionMarkdownRefreshExtension(),
-        editor.mermaidExtension(),
+        editor.mermaidExtension(notebookMermaidOptions),
         editor.katexExtension(),
         editor.codeFontExtension(),
         editor.tagPillExtension("n1"),
@@ -136,8 +138,11 @@ const harness = {
       const style = getComputedStyle(line);
       return {
         left: content.left + parseFloat(getComputedStyle(view.contentDOM).paddingLeft) + parseFloat(style.paddingLeft),
-        top: view.documentTop + block.top,
-        height: view.defaultLineHeight,
+        // Inside a rendered block the caret runs along the whole block as drawn.
+        ...(() => {
+          const box = view.coordsAtPos(block.from, 1)!;
+          return { top: box.top, height: box.bottom - box.top };
+        })(),
       };
     }
     const coords = harness.coords(side, head, head > anchor ? -1 : 1);

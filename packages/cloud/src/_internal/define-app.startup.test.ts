@@ -1,21 +1,40 @@
 import { describe, expect, spyOn, test } from "bun:test";
 import type { Sync } from "@k2b/sync";
-import { env } from "../config/env";
+import { stubConnections } from "../runtime/connections.test-fixture";
+import * as linksRuntime from "../services/links/runtime";
 import * as notificationCatalog from "../services/notifications/catalog";
 import * as settingsService from "../services/settings";
+import * as applicationPackage from "./application-package";
 import { defineApp } from "./define-app";
 import * as heartbeat from "./heartbeat";
 import * as processSync from "./process-sync";
 import * as watcher from "./runtime-watcher";
+import * as workload from "./workload-credential";
 
 describe("application startup readiness", () => {
-  for (const mode of ["setup", "start", "ready", "advertise", null, "skip"] as const) {
+  for (const mode of [
+    "package",
+    "links",
+    "setup",
+    "settings",
+    "start",
+    "ready",
+    "advertise",
+    "workload",
+    "calendar",
+    null,
+    "skip",
+    "budget",
+    "spent-budget",
+  ] as const) {
     const skipSetup = mode === "skip";
-    const failure = skipSetup ? null : mode;
-    test(`advertises only ready resources and cleans up ${failure ?? (skipSetup ? "skipped setup" : "successful startup")}`, async () => {
+    const failure = skipSetup || mode === "budget" || mode === "spent-budget" ? null : mode;
+    test(`advertises only ready resources and cleans up ${mode ?? "successful startup"}`, async () => {
       const events: string[] = [];
-      const originalSecret = Object.getOwnPropertyDescriptor(env, "APP_SECRET")!;
-      Object.defineProperty(env, "APP_SECRET", { value: "startup-test-only", configurable: true });
+      let elapsed = 0;
+      const timeout = spyOn(AbortSignal, "timeout");
+      let settingsSignal: AbortSignal | undefined;
+
       const signals = ["SIGTERM", "SIGINT"] as const;
       const previousListeners = signals.map((signal) => new Set(process.listeners(signal)));
       const step = async (name: string) => {
@@ -30,15 +49,37 @@ describe("application startup readiness", () => {
           ready: () => step("setup-lock-ready"),
           acquire: async ({ resource }: { resource: string }) => {
             await step("setup-lock-acquire");
-            return { resource, ownerToken: "startup-test", fence: 1n, expiresAt: new Date(Date.now() + 60_000) };
+            return { resource, ownerToken: "startup-test", fence: 1n, expiresAt: new Date("2026-01-01T00:01:00Z") };
           },
           release: () => step("setup-lock-release").then(() => true),
         }),
       } as unknown as Sync;
       const spies = [
+        timeout,
+        spyOn(performance, "now").mockImplementation(() => elapsed),
+        // The setup mutex always acquires immediately; its fixed lease uses this clock.
+        spyOn(Date, "now").mockReturnValue(Date.parse("2026-01-01T00:00:00Z")),
+        spyOn(workload, "createAppWorkloadCredential").mockImplementation(() => ({
+          start: () => step("workload"),
+          refresh: async () => {},
+          stop: async () => {
+            events.push("stop-workload");
+          },
+        })),
+        stubConnections(),
+        spyOn(linksRuntime, "startLinksRuntime").mockImplementation(async (applicationId) => {
+          expect(applicationId).toBe("startup-test");
+          await step("links");
+          return async () => {
+            events.push("stop-links");
+          };
+        }),
+        spyOn(applicationPackage, "registerApplicationPackage").mockImplementation(() => step("package")),
         spyOn(processSync, "startProcessSync").mockImplementation(async () => {
           processSync.bindProcessSync(sync);
           events.push("connect");
+          if (mode === "budget") elapsed = 4 * 60_000;
+          if (mode === "spent-budget") elapsed = 5 * 60_000;
           return {
             sync,
             stop: async () => {
@@ -46,6 +87,15 @@ describe("application startup readiness", () => {
               processSync.unbindProcessSync();
             },
           };
+        }),
+        spyOn(heartbeat, "createRegistryMembership").mockReturnValue({
+          instanceId: "0123456789abcdef",
+          register: () => step("register-instance"),
+          leave: () => step("leave-instance"),
+          join: async () => {},
+          publish: async () => {},
+          adopt: async () => {},
+          renew: async () => {},
         }),
         spyOn(heartbeat, "createHeartbeat").mockReturnValue({
           start: () => step("advertise"),
@@ -62,7 +112,12 @@ describe("application startup readiness", () => {
             events.push("stop-notifications");
           };
         }),
-        spyOn(settingsService, "loadCache").mockImplementation(() => step("settings")),
+        spyOn(settingsService, "loadCache").mockImplementation((signal) => {
+          settingsSignal = signal;
+          if (mode === "budget") expect(timeout.mock.calls.at(-1)).toEqual([60_000]);
+          if (mode === "spent-budget") expect(timeout.mock.calls.at(-1)).toEqual([0]);
+          return step("settings");
+        }),
       ];
       try {
         const app = defineApp({
@@ -76,6 +131,9 @@ describe("application startup readiness", () => {
         const started = app.start({
           fetch: () => new Response("application"),
           skipSetup,
+          ...(mode === "calendar"
+            ? { capabilities: { protocolVersion: 2 as const, calendarSource: { calendars: "missing", events: "missing" } } }
+            : {}),
           lifecycle: {
             setup: async () => {
               expect(events).toContain("setup-lock-acquire");
@@ -89,18 +147,27 @@ describe("application startup readiness", () => {
             },
           },
         });
-        if (failure) {
+        if (failure === "calendar" || failure === "package") {
+          await expect(started).rejects.toThrow(failure === "package" ? "failed:package" : "calendarSource does not match");
+          expect(events).toEqual(["connect", "package", "disconnect"]);
+          expect(() => processSync.getProcessSync()).toThrow("not available");
+        } else if (failure) {
           await expect(started).rejects.toThrow(`failed:${failure}`);
-          expect(events).toContain("setup-lock-release");
+          if (failure !== "links") expect(events).toContain("setup-lock-release");
           expect(events.at(-1)).toBe("disconnect");
           expect(events).toContain("stop-lifecycle");
           expect(events).toContain("stop-watch");
           expect(events).toContain("unregister");
-          if (failure !== "setup") expect(events).toContain("stop-notifications");
-          if (failure !== "advertise") expect(events).not.toContain("advertise");
+          if (failure !== "setup" && failure !== "links") expect(events).toContain("stop-notifications");
+          if (failure !== "advertise" && failure !== "workload") expect(events).not.toContain("advertise");
+          if (failure === "workload") {
+            expect(events.indexOf("stop-lifecycle")).toBeLessThan(events.indexOf("stop-workload"));
+            expect(events.indexOf("stop-workload")).toBeLessThan(events.indexOf("disconnect"));
+          }
           expect(() => processSync.getProcessSync()).toThrow("not available");
         } else {
           const server = await started;
+          expect(settingsSignal).toBeInstanceOf(AbortSignal);
           if (skipSetup) {
             expect(events).not.toContain("setup");
             expect(events).not.toContain("setup-lock-ready");
@@ -110,6 +177,8 @@ describe("application startup readiness", () => {
           }
           expect(events.indexOf("advertise")).toBeGreaterThan(events.indexOf("start"));
           expect(events.indexOf("advertise")).toBeGreaterThan(events.indexOf("ready"));
+          expect(events.indexOf("workload")).toBeLessThan(events.indexOf("start"));
+          expect(events.indexOf("register-instance")).toBeLessThan(events.indexOf("workload"));
           expect(await (await server.fetch(new Request("http://startup-test/_cloud/ready"))).json()).toEqual({
             status: "ready",
             appId: "startup-test",
@@ -125,7 +194,6 @@ describe("application startup readiness", () => {
         }
         processSync.unbindProcessSync();
         for (const spy of spies.toReversed()) spy.mockRestore();
-        Object.defineProperty(env, "APP_SECRET", originalSecret);
       }
     });
   }

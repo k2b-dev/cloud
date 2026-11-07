@@ -2,7 +2,8 @@ import { existsSync } from "node:fs";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { cpus, loadavg } from "node:os";
 import { join } from "node:path";
-import { SQL } from "bun";
+import { createSql } from "@k2b/cloud";
+import type { SQL } from "bun";
 import { z } from "zod";
 import {
   command,
@@ -46,7 +47,6 @@ import {
   sortedJson,
   summarizeSamples,
 } from "./model";
-
 import { draftSeedBodies, mailboxBody, searchBodies } from "./requests";
 import { seedWithAbort } from "./seed";
 
@@ -275,14 +275,18 @@ export async function run(options: Options) {
     );
     // This connection follows the global setting so reload checks can observe
     // it; the observer's role override intentionally always stays at -1.
-    explainControl = new SQL(pgUrl);
+    process.env.DATABASE_URL = pgUrl;
+    process.env.REDIS_URL = `redis://127.0.0.1:${runtime.published.valkey}`;
+    const { initializePlatform } = await import("@k2b/cloud/start");
+    await initializePlatform({ appId: "mail", source: "env" });
+    explainControl = createSql({ url: pgUrl });
     await explainControl`CREATE EXTENSION IF NOT EXISTS pg_stat_statements`;
     await explainControl`CREATE ROLE mail_perf_observer LOGIN SUPERUSER PASSWORD 'run-owned-observer'`;
     await explainControl`ALTER ROLE mail_perf_observer SET auto_explain.log_min_duration = -1`;
     const observerUrl = new URL(pgUrl);
     observerUrl.username = "mail_perf_observer";
     observerUrl.password = "run-owned-observer";
-    db = new SQL(observerUrl.href);
+    db = createSql({ url: observerUrl.href });
     await setExplainDuration(explainControl, -1);
     const api = new Api(runtime.origin, controller.signal);
     const userId = await api.login(runtime.adminToken);

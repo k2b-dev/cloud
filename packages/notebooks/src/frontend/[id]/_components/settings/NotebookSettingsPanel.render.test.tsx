@@ -7,6 +7,7 @@ import "../detail/ssr-test-plugin";
 const { NotebookSettingsBody } = await import("./NotebookSettingsPanel.tsx");
 const { DefaultPresentationSection, FeaturesSection } = await import("./FeaturesSection.tsx");
 const { NoteDeleteAndLockSection } = await import("./AccessSection.tsx");
+const { TemplatesSection } = await import("./TemplatesSection.tsx");
 
 const notebook: Notebook = {
   id: "notes1",
@@ -26,7 +27,6 @@ const renderSettings = (isAdmin: boolean) =>
   renderToString(() => (
     <NotebookSettingsBody
       notebook={notebook}
-      tree={[]}
       isAdmin={isAdmin}
       canWrite={isAdmin}
       dateConfig={{ locale: "en", timeZone: "Europe/Berlin" }}
@@ -115,6 +115,17 @@ describe("Notebook settings", () => {
     expect(html).toContain("Book");
   });
 
+  test("the templates tab says it is loading until the list arrives, in English and German", () => {
+    const html = renderToString(() => <TemplatesSection notebook={notebook} canWrite />);
+    expect(html).toContain("Loading templates…");
+    const german = renderToString(() => (
+      <LocaleProvider locale="de">
+        <TemplatesSection notebook={notebook} canWrite={false} />
+      </LocaleProvider>
+    ));
+    expect(german).toContain("Vorlagen werden geladen …");
+  });
+
   test("renders grouped admin navigation and the shared save footer", () => {
     const html = renderSettings(true);
 
@@ -124,6 +135,7 @@ describe("Notebook settings", () => {
     expect(html).toContain("Data");
     expect(html).toContain("Lifecycle");
     expect(html).toContain("View &amp; behavior");
+    expect(html).toContain("Templates");
     expect(html).toContain("Access");
     expect(html).toContain("API keys");
     expect(html).toContain("Export &amp; snapshots");
@@ -136,9 +148,11 @@ describe("Notebook settings", () => {
   test("keeps read-only settings focused on visible notebook preferences", () => {
     const html = renderSettings(false);
 
-    expect(html.match(/role="tab"/g)).toHaveLength(2);
+    expect(html.match(/role="tab"/g)).toHaveLength(3);
     expect(html).toContain("General");
     expect(html).toContain("View &amp; behavior");
+    // Everyone who reads the notebook sees its templates; writing decides who changes them.
+    expect(html).toContain("Templates");
     expect(html).not.toContain("Sharing");
     expect(html).not.toContain("Export &amp; snapshots");
     expect(html).not.toContain("Danger zone");

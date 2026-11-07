@@ -1,4 +1,4 @@
-import { sql } from "bun";
+import { sql } from "@k2b/cloud";
 import { backfillShortIds, type ShortIdTable } from "./lib/short-id";
 
 /** Converges both fresh and upgraded assignee tables; schema is injectable for isolated migration tests. */
@@ -53,7 +53,7 @@ export const migrateAssigneePrincipals = async ({
     .simple();
 };
 
-const claimHolderJoins = sql`
+const claimHolderJoins = () => sql`
   LEFT JOIN auth.users u ON tw.claim->'actor'->>'kind' = 'user' AND u.id::text = tw.claim->'actor'->>'id'
   LEFT JOIN auth.service_accounts sa ON tw.claim->'actor'->>'kind' = 'service_account'
     AND sa.id::text = tw.claim->'actor'->>'id' AND sa.kind <> 'user_delegated'
@@ -69,7 +69,7 @@ export const backfillClaimAssignees = async (db = sql): Promise<number> => {
   const candidates = await db<{ item_id: string }[]>`
     SELECT tw.item_id
     FROM spaces.task_work tw
-    ${claimHolderJoins}
+    ${claimHolderJoins()}
     WHERE tw.claim IS NOT NULL AND (u.id IS NOT NULL OR sa.id IS NOT NULL)
       AND NOT EXISTS (
         SELECT 1 FROM spaces.item_assignees ia
@@ -84,7 +84,7 @@ export const backfillClaimAssignees = async (db = sql): Promise<number> => {
         INSERT INTO spaces.item_assignees (item_id, user_id, service_account_id)
         SELECT tw.item_id, u.id, sa.id
         FROM spaces.task_work tw
-        ${claimHolderJoins}
+        ${claimHolderJoins()}
         WHERE tw.item_id = ${itemId}::uuid AND tw.claim IS NOT NULL AND (u.id IS NOT NULL OR sa.id IS NOT NULL)
         ON CONFLICT DO NOTHING
       `;
@@ -241,6 +241,23 @@ export const migrate = async (): Promise<void> => {
         )
       )
     )
+  `.simple();
+
+  // The receipt commits with the task and outbox, so a lost response cannot create a second task.
+  await sql`
+    CREATE TABLE IF NOT EXISTS spaces.item_create_requests (
+      actor_kind TEXT NOT NULL CHECK (actor_kind IN ('user', 'service_account')),
+      actor_id UUID NOT NULL,
+      request_key TEXT NOT NULL CHECK (char_length(request_key) BETWEEN 1 AND 200),
+      space_id UUID NOT NULL REFERENCES spaces.spaces(id) ON DELETE CASCADE,
+      item_id UUID REFERENCES spaces.items(id) ON DELETE SET NULL,
+      request JSONB NOT NULL,
+      response JSONB NOT NULL,
+      public_response JSONB NOT NULL,
+      expires_at TIMESTAMPTZ NOT NULL DEFAULT (now() + interval '24 hours'),
+      PRIMARY KEY (actor_kind, actor_id, request_key)
+    );
+    CREATE INDEX IF NOT EXISTS item_create_requests_expiry ON spaces.item_create_requests(expires_at)
   `.simple();
 
   await sql`
@@ -688,6 +705,11 @@ export const migrate = async (): Promise<void> => {
         kind = 'task' OR (cardinality(checklist) = 0 AND estimated_duration_minutes IS NULL)
       )
     )
+  `.simple();
+  await sql`
+    ALTER TABLE spaces.item_templates
+      ADD COLUMN IF NOT EXISTS icon TEXT
+        CONSTRAINT item_templates_icon_format CHECK (char_length(icon) <= 80 AND icon ~ '^ti ti-[a-z0-9]+(-[a-z0-9]+)*$')
   `.simple();
   await sql`CREATE UNIQUE INDEX IF NOT EXISTS idx_item_templates_short_id ON spaces.item_templates(short_id)`.simple();
   await sql`

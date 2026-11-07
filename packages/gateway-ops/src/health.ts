@@ -1,5 +1,4 @@
-import { readAppRegistrySnapshot } from "@k2b/cloud";
-import { env } from "@k2b/cloud/config";
+import { connections, readAppRegistrySnapshot } from "@k2b/cloud";
 import { listGatewayRouteSnapshots } from "@k2b/cloud/services";
 import { AI_LIVE_FUNCTION_OUTDATED_SIGNAL, aiLiveFunctionOutdated } from "./ai-live-health";
 import { buildAppRuntimeStatuses } from "./app-runtime-status";
@@ -84,7 +83,7 @@ export const buildGatewayHealth = async (scopeAppIds?: readonly string[]): Promi
   const syncOperations = buildSyncOperationalHealth(
     natsInventory,
     registeredApps.map((app) => app.id),
-    env.SYNC_NAMESPACE,
+    connections().nats.namespace,
   );
   const runtimeStatuses = buildAppRuntimeStatuses(registry.apps, registry.issues);
   const latestSnapshot = snapshots.sort((a, b) => b.updatedAt - a.updatedAt)[0] ?? null;

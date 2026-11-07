@@ -1,10 +1,12 @@
 import { err, fail, ok, type Result } from "@k2b/stdlib";
-import { type SQLQuery, sql } from "bun";
+import type { SQLQuery } from "bun";
 import { type ManagerCandidate, removesLastManager } from "../../access/managers";
 import { accessMessages } from "../../access/messages";
-import { recursiveGroupIdsSubquery } from "../../services/accounts/group-sql";
+import { sql } from "../../runtime/clients";
+import { recursiveGroupIdsSubquery, recursiveServiceAccountGroupIdsSubquery } from "../../services/accounts/group-sql";
 import { toPgUuidArray } from "../../services/postgres";
 import type { ServiceAccountKind } from "../../services/service-accounts";
+import type { RequestAuthority } from "../middleware/auth";
 
 export type AccessDb = typeof sql;
 
@@ -246,7 +248,7 @@ export const updateAccess = async (params: { id: string; permission: PermissionL
  * Pass the resource's entries before and after the change, read in the
  * transaction that writes it after locking the resource, so concurrent changes
  * see each other. A manager is an `admin` entry for a user, a group, all
- * signed-in users, or a standalone or agent service account; service-account
+ * signed-in people, or a standalone or agent service account; service-account
  * entries need their `serviceAccountKind`. Only a change from at least one
  * manager to none fails, with status 409 and code `LAST_MANAGER`. An app whose
  * own precedence lets another entry shadow `admin` drops the shadowed entries
@@ -265,19 +267,26 @@ export const ensureManagerRemains = (params: {
   return fail({ code: "LAST_MANAGER", message: t.lastManager({ level: params.level ?? t.manage }), status: 409 });
 };
 
-/** Resolve direct and nested group memberships from the authoritative database mirror. */
-export const getEffectiveGroups = async (params: { userId: string | null }, db: AccessDb = sql): Promise<EffectiveGroup[]> => {
-  if (!params.userId) return [];
+type EffectiveGroupParams = { userId: string | null; serviceAccountId?: never } | { serviceAccountId: string | null; userId?: never };
+
+/** Resolve authoritative memberships; machine recipients inherit local groups only. */
+export const getEffectiveGroups = async (params: EffectiveGroupParams, db: AccessDb = sql): Promise<EffectiveGroup[]> => {
+  const groupIds = params.userId
+    ? recursiveGroupIdsSubquery(params.userId)
+    : params.serviceAccountId
+      ? recursiveServiceAccountGroupIdsSubquery(params.serviceAccountId)
+      : null;
+  if (!groupIds) return [];
   const rows = await db<{ id: string; name: string }[]>`
     SELECT g.id, g.name
     FROM auth.groups g
-    WHERE g.id IN (${recursiveGroupIdsSubquery(params.userId)})
+    WHERE g.id IN (${groupIds})
     ORDER BY g.name
   `;
   return rows;
 };
 
-export const getEffectiveGroupIds = async (params: { userId: string | null }, db: AccessDb = sql): Promise<string[]> =>
+export const getEffectiveGroupIds = async (params: EffectiveGroupParams, db: AccessDb = sql): Promise<string[]> =>
   (await getEffectiveGroups(params, db)).map((group) => group.id);
 
 /**
@@ -305,6 +314,13 @@ export const deleteAccess = async (params: { id: string }, db: AccessDb = sql): 
  * Each app implements this to connect their resources to auth.access.
  */
 export type ResourceAccessAdapter<TResourceId = string> = {
+  /**
+   * Whether any resource in this adapter has an effective read/write/admin right.
+   * Use an existence query, never enumerate resources. Preserve domain eligibility,
+   * principal semantics, resource binding and credential ceilings. Use db and signal.
+   * Optional for existing adapters; required when selected by appAccess.resources().
+   */
+  hasAnyRight?: (subject: AccessSubject, context: { authority: RequestAuthority; db: AccessDb; signal: AbortSignal }) => Promise<boolean>;
   /** Get all access entries for a resource */
   list: (resourceId: TResourceId) => Promise<AccessEntry[]>;
   /** Add an access entry to a resource */
@@ -321,7 +337,7 @@ export type ResourceAccessAdapter<TResourceId = string> = {
  *
  * Apps provide column fragments because access rows are commonly joined under
  * different aliases. The subject is authoritative: group membership is always
- * resolved recursively from its user id and never accepted from a caller.
+ * resolved recursively from its user or service-account id and never accepted from a caller.
  * Resource binding, credential scopes, and permission precedence remain the
  * responsibility of the app using the predicate.
  */
@@ -331,15 +347,20 @@ export const buildAccessPrincipalTierConditions = (params: {
 }): AccessPrincipalTierConditions => {
   const userId = params.subject?.type === "user" ? params.subject.userId : null;
   const serviceAccountId = params.subject?.type === "service_account" ? params.subject.serviceAccountId : null;
-  const authenticated = params.subject !== null;
+  const authenticated = params.subject?.type === "user";
   const columns = params.columns;
 
   return {
     serviceAccount: sql`${columns.serviceAccountId} = ${serviceAccountId}::uuid`,
     user: sql`${columns.userId} = ${userId}::uuid`,
     group: sql`(
-      ${userId}::uuid IS NOT NULL
-      AND ${columns.groupId} IN (${userId ? recursiveGroupIdsSubquery(userId) : sql`SELECT NULL::uuid WHERE FALSE`})
+      ${columns.groupId} IN (${
+        userId
+          ? recursiveGroupIdsSubquery(userId)
+          : serviceAccountId
+            ? recursiveServiceAccountGroupIdsSubquery(serviceAccountId)
+            : sql`SELECT NULL::uuid WHERE FALSE`
+      })
     )`,
     authenticated: sql`${authenticated} AND ${columns.authenticatedOnly} = true`,
     public: sql`(
@@ -361,8 +382,8 @@ export const buildAccessPrincipalCondition = (params: { subject: AccessSubject |
  * Get the effective permission level for an actor on a resource.
  * Returns the highest permission from:
  * - Direct user or service-account access
- * - Direct and nested user group memberships resolved from the database
- * - Authenticated access for every authenticated subject
+ * - Direct and nested group memberships for users and active standalone/agent accounts
+ * - Authenticated access for people, including guests
  * - Public access for every subject, including anonymous callers
  *
  * Pass the transaction that locked the resource as `db` to authorize a change
@@ -395,7 +416,7 @@ export const getEffectivePermission = async (
   if (accessIds.length === 0) return "none";
 
   // Legacy callers did not provide resource binding or scope context. Keep
-  // their service-account lookup direct-only so the new authenticated/public
+  // their service-account lookup direct-only so the shared principal
   // semantics require an explicit AccessSubject migration.
   const principalMatch = legacyServiceAccountId
     ? sql`a.service_account_id = ${legacyServiceAccountId}::uuid`
@@ -427,6 +448,42 @@ export const getEffectivePermission = async (
   return rows[0]?.permission ?? "none";
 };
 
+/**
+ * The permission a subject holds as a member: through its own, group, or authenticated grants, never through public
+ * access. Anyone with the link reads a public resource, so public access alone never shows who else has access.
+ * Pass the result to decide who may read a resource's `AccessMember` list.
+ */
+export const getMemberPermission = async (
+  params: { accessIds: string[]; subject: AccessSubject | null },
+  db: AccessDb = sql,
+): Promise<PermissionLevel> => {
+  if (params.accessIds.length === 0 || !params.subject) return "none";
+  const tiers = buildAccessPrincipalTierConditions({
+    subject: params.subject,
+    columns: {
+      userId: sql`a.user_id`,
+      groupId: sql`a.group_id`,
+      serviceAccountId: sql`a.service_account_id`,
+      authenticatedOnly: sql`a.authenticated_only`,
+    },
+  });
+  const rows = await db<{ permission: PermissionLevel }[]>`
+    SELECT a.permission
+    FROM auth.access a
+    WHERE a.id = ANY(${toPgUuidArray(params.accessIds)}::uuid[])
+      AND (${tiers.serviceAccount} OR ${tiers.user} OR ${tiers.group} OR ${tiers.authenticated})
+    ORDER BY
+      CASE permission
+        WHEN 'admin' THEN 4
+        WHEN 'write' THEN 3
+        WHEN 'read' THEN 2
+        WHEN 'none' THEN 1
+      END DESC
+    LIMIT 1
+  `;
+  return rows[0]?.permission ?? "none";
+};
+
 /** A Postgres UUID[] literal that keeps `null` entries in place. */
 const uuidArrayWithNulls = (values: readonly (string | null)[]): string => `{${values.map((value) => value ?? "NULL").join(",")}}`;
 
@@ -447,7 +504,7 @@ export const getEffectivePermissions = async (params: {
   if (Array.isArray(accessIds) && accessIds.length === 0) return subjects.map(() => "none");
   const userIds = subjects.map((subject) => (subject.type === "user" ? subject.userId : null));
   const serviceAccountIds = subjects.map((subject) => (subject.type === "service_account" ? subject.serviceAccountId : null));
-  // The tiers of buildAccessPrincipalTierConditions, evaluated per row of `s`; every subject here is authenticated.
+  // The tiers of buildAccessPrincipalTierConditions, evaluated per row of `s`.
   const rows = await sql<{ position: number; permission: PermissionLevel | null }[]>`
     SELECT s.position::int AS position, (
       SELECT a.permission
@@ -457,7 +514,8 @@ export const getEffectivePermissions = async (params: {
           a.service_account_id = s.service_account_id
           OR a.user_id = s.user_id
           OR (s.user_id IS NOT NULL AND a.group_id IN (${recursiveGroupIdsSubquery(sql`s.user_id`)}))
-          OR a.authenticated_only = true
+          OR (s.service_account_id IS NOT NULL AND a.group_id IN (${recursiveServiceAccountGroupIdsSubquery(sql`s.service_account_id`)}))
+          OR (s.user_id IS NOT NULL AND a.authenticated_only = true)
           OR (a.user_id IS NULL AND a.group_id IS NULL AND a.service_account_id IS NULL AND a.authenticated_only = false)
         )
       ORDER BY

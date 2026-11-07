@@ -5,6 +5,8 @@ export const workflowServiceMessages = i18n.define({
   messages: {
     en: {
       workflowNotFound: "Workflow not found",
+      automaticOwnerRequired:
+        "Automatic triggers require a workflow with a supported user owner. Save it disabled or use direct execution.",
       workflowVersionNotFound: "Workflow version not found",
       launcherNotFound: "Workflow launcher not found",
       actorCannotRun: "Workflow actor cannot run this workflow.",
@@ -74,6 +76,8 @@ export const workflowServiceMessages = i18n.define({
     },
     de: {
       workflowNotFound: "Workflow nicht gefunden",
+      automaticOwnerRequired:
+        "Automatische Auslöser benötigen einen Workflow mit unterstütztem Benutzer als Eigentümer. Speichere ihn deaktiviert oder führe ihn direkt aus.",
       workflowVersionNotFound: "Workflow-Version nicht gefunden",
       launcherNotFound: "Workflow-Ausführungsoption nicht gefunden",
       actorCannotRun: "Der Workflow-Akteur darf diesen Workflow nicht ausführen.",

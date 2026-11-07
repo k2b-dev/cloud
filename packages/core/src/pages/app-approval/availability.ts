@@ -7,6 +7,8 @@ export const approvalAvailability = (config: { enabled: boolean; appOrigin: stri
 /** Set in this browser after a FreeIPA sign-in through the app; it names no account. */
 export const FREEIPA_APP_SIGN_IN_COOKIE = "login_freeipa_app";
 
+export const LOGIN_EMAIL_SIGN_IN_COOKIE = "login_email";
+
 const remembersFreeIpaApp = (cookieHeader: string | null | undefined) =>
   (cookieHeader ?? "").split(";").some((part) => part.trim() === `${FREEIPA_APP_SIGN_IN_COOKIE}=1`);
 
@@ -25,7 +27,8 @@ export const useAppSignIn = (input: {
   if (!input.configured) return false;
   if (input.credential === "app") return true;
   if (input.credential === "legacy") return false;
-  if (input.category === "login") return true;
+  if (input.category === "login")
+    return !(input.cookieHeader ?? "").split(";").some((part) => part.trim() === `${LOGIN_EMAIL_SIGN_IN_COOKIE}=1`);
   // Most FreeIPA users sign in with their password; the app stays first only where this browser used it last.
   return input.category === "freeipa" && remembersFreeIpaApp(input.cookieHeader);
 };

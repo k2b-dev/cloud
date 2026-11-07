@@ -61,16 +61,20 @@ opened with. A request without `context` shows the earlier sheet.
 `src/decision.browser.test.ts` checks that the sheet and the dialog keep their
 height when an ending or the offline note replaces part of the request. The image build has no
 browser and skips `*.browser.test.*`; the gate runs them in Chromium and WebKit.
-Actions appear per Cloud and open a review only on a tap or a tapped
-notification. The row's **Review** button loads a fresh SDK-checked view first
-and opens the review only with it, so it never grows after its first frame; a
-load failure replaces the row's origin line. A tapped notification names its
+Each Cloud card has one status line. While a request waits, the whole card is
+one button over the card (`.auth-cloud__open`) that opens the oldest request;
+the info button lies above it. `src/cards.browser.test.ts` checks the line,
+the targets, the reload and that the pending glow moves nothing; with
+`CLOUD_PWA_AUTH_SHOTS=<dir>` it also saves every state. Actions open a review
+only on a tap or a tapped notification. A tap loads a fresh SDK-checked view
+first and opens the review only with it, so it never grows after its first
+frame; a load failure becomes the card's **Approval not loaded** line. A tapped notification names its
 Cloud and loads the Action directly, also when the inbox left it out. The
 review renders app text without HTML or links and arms approve/deny after
 500 ms. Every ending of an Action (approved, denied, **Not applied** for HTTP
 409, **Not confirmed** for an uncertain result, **Expired**) and of a sign-in
 (**Not confirmed**, **Expired**, and **Denied** after a warning) replaces the request in place at the same
-height, with a focused **Done** button. A 409 also removes the row. An uncertain result
+height, with a focused **Done** button. A 409 also removes the request from the card. An uncertain result
 is never sent again, including from another tab. Language and theme
 preferences are local.
 

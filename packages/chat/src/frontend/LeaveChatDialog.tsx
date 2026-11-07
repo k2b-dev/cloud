@@ -1,30 +1,15 @@
-import { Button, Combobox, InlineGuidance, LocaleProvider, prompts, toast } from "@k2b/ui";
+import { Button, Combobox, InlineGuidance, toast } from "@k2b/ui";
 import { createResource, createSignal, type JSX, Show } from "solid-js";
 import type { z } from "zod";
-import { chatMessages } from "../messages";
 import type { MemberSchema } from "../service/contracts";
 import { type ChatDialogStore, type Conversation, DialogActions, DialogError, errorMessage, useChatMessages } from "./chat-dialog";
 import { ChatRequestError } from "./chat-store";
 import { MemberAvatar } from "./MemberPicker";
 
-type LeaveProps = { store: ChatDialogStore; conversation: Conversation; viewerId: string; locale: string };
+export type LeaveProps = { store: ChatDialogStore; conversation: Conversation; viewerId: string; locale: string };
 type Member = z.infer<typeof MemberSchema>;
 
 /** Resolves true once the viewer has left; their open view then ends in "No access" through the live revoke. */
-export const openLeaveChatDialog = (props: LeaveProps): Promise<boolean | undefined> =>
-  prompts.dialog<boolean>(
-    (close, context) => (
-      // A prompt renders outside the workspace, so its content gets the workspace's locale again.
-      <LocaleProvider locale={props.locale}>
-        <LeaveChatDialog {...props} close={close} setDismissHandler={context.setDismissHandler} />
-      </LocaleProvider>
-    ),
-    {
-      title: chatMessages.resolve([props.locale]).t.leaveChatTitle,
-      icon: "ti ti-logout",
-      size: "medium",
-    },
-  );
 
 /**
  * Leaving ends access to the history, unless a group keeps the person in the chat. The last manager hands the chat
@@ -57,13 +42,15 @@ export function LeaveChatDialog(
     const current = loaded();
     return current?.managers === 1 && current.self?.permission === "admin" && current.self.active;
   };
-  // Nobody else holds a direct entry, so there is nobody to hand the chat to and leaving is refused.
+  const canSucceed = (member: Member) =>
+    !member.deactivated &&
+    ((member.principal.type === "user" && member.principal.userId !== props.viewerId) ||
+      (member.principal.type === "service_account" &&
+        (member.serviceAccountKind === "standalone" || member.serviceAccountKind === "agent")));
+  // With no eligible direct member, there is nobody to hand the chat to.
   const alone = () => {
     const current = loaded();
-    return (
-      current?.nextCursor === null &&
-      !current.items.some((member) => member.principal.type === "user" && member.principal.userId !== props.viewerId)
-    );
+    return current?.nextCursor === null && !current.items.some(canSucceed);
   };
   const checking = () => (manager() || refused()) && page.loading;
   const blocked = () => checking() || Boolean(page.error) || alone() || (needsSuccessor() && !successor());
@@ -90,7 +77,7 @@ export function LeaveChatDialog(
   return (
     <div class="chat-dialog">
       <div class="chat-dialog__body">
-        <p class="text-sm">{t().leaveChatDescription}</p>
+        <p class="text-sm">{props.conversation.channel ? t().leaveChannelDescription : t().leaveChatDescription}</p>
         <Show when={checking()}>
           <InlineGuidance loading>{t().membersLoading}</InlineGuidance>
         </Show>
@@ -115,11 +102,13 @@ export function LeaveChatDialog(
               fetchData={async (search, signal) => {
                 const found = await props.store.members(props.conversation.id, { q: search.trim().slice(0, 100) });
                 if (signal.aborted) return [];
-                const candidates = found.items.filter(
-                  (member) => member.principal.type === "user" && member.principal.userId !== props.viewerId && !member.deactivated,
-                );
+                const candidates = found.items.filter(canSucceed);
                 offered = new Map(candidates.map((member) => [member.accessId, member]));
-                return candidates.map((member) => ({ id: member.accessId, label: member.displayName, icon: "ti-user" }));
+                return candidates.map((member) => ({
+                  id: member.accessId,
+                  label: member.displayName,
+                  icon: member.principal.type === "service_account" ? "ti ti-robot" : "ti ti-user",
+                }));
               }}
               onSelect={(option) => setSuccessor(offered.get(option.id) ?? null)}
             />

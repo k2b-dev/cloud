@@ -1,8 +1,11 @@
 import { describe, expect, test } from "bun:test";
+import { useUnitClients } from "../../../../scripts/fixtures/unit-clients";
 import { parseGridsQueryDsl } from "../query-dsl/parser";
 import { resolveDslQueryToQueryPlan } from "../query-dsl/resolver";
 import { ctx, orders, parseOk } from "../query-dsl/resolver-fixtures";
 import { buildTrustedGqlResolverContext, hydrateDslViewQueries } from "./gql-resolver-context";
+
+useUnitClients();
 
 const baseId = "11111111-1111-4111-8111-111111111111";
 const ordersTableId = "22222222-2222-4222-8222-222222222222";

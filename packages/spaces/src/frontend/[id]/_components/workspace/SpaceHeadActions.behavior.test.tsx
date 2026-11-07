@@ -73,7 +73,11 @@ if (isServer) {
         openMenu();
         expect(dom.document.querySelector('[role="menu"]')?.textContent).toContain("People with access");
         expect(dom.root.querySelector("[data-spaces-people-row]")?.getAttribute("aria-label")).toContain("Mara Lind, Task worker");
-        expect(dom.root.querySelector("[data-spaces-people-row] .ti-api")).not.toBeNull();
+        // A service account shows its robot in a square, never a bare icon.
+        const robot = dom.root.querySelector(
+          '[data-spaces-people-row] img[src="/api/accounts/users/22222222-2222-4222-8222-222222222222/avatar"]',
+        );
+        expect(robot?.getAttribute("data-shape")).toBe("square");
         clickText("Space settings");
         await settle();
         expect(dialog).toHaveBeenCalledTimes(1);

@@ -1,9 +1,10 @@
 import { lazySync } from "../_internal/process-sync";
+import type { EnvSettingStatus } from "../contracts/settings-env";
 import { logger } from "./logging";
 
 /** Written by the gateway router, read by gateway-ops: one owner, one declaration. */
 const GATEWAY_RESOURCE_OWNER = "cloud";
-const SNAPSHOT_TTL_MS = 30_000;
+const SNAPSHOT_TTL_MS = 90_000;
 const TOPIC_ID = "cloud-gateway-telemetry";
 const TOPIC_RETENTION_MS = 24 * 60 * 60 * 1000;
 /** Hard loss boundary for the 24h request-telemetry buffer (discard-old). */
@@ -24,6 +25,8 @@ export type GatewayRouteWarning = {
 
 export type GatewayRouteSnapshotInput = {
   instanceId: string;
+  /** Sanitized migration diagnostics; omitted by pre-migration gateways. */
+  envSettings?: EnvSettingStatus[];
   baseUrl: string;
   startedAt: number;
   routeHash: string;
@@ -44,6 +47,8 @@ export type GatewayRouteSnapshotInput = {
 
 export type GatewayRouteSnapshot = {
   instanceId: string;
+  /** Sanitized migration diagnostics; omitted by pre-migration gateways. */
+  envSettings?: EnvSettingStatus[];
   baseUrl: string;
   startedAt: number;
   updatedAt: number;
@@ -90,13 +95,37 @@ const snapshots = lazySync((sync) =>
   sync.ephemeral<GatewayRouteSnapshot>({
     id: "gateway-route-snapshots",
     owner: GATEWAY_RESOURCE_OWNER,
-    ttlMs: SNAPSHOT_TTL_MS,
+    // Preserve the existing bucket declaration across rolling upgrades; each write sets its lease.
+    ttlMs: 30_000,
     maxValueBytes: 128_000,
   }),
 );
 
+// A lost hint is repaired by the gateway's 30-second durable domain reconciliation.
+const domainChanges = lazySync((sync) =>
+  sync.topic<null>({
+    id: "cloud:gateway-domain-changes",
+    owner: GATEWAY_RESOURCE_OWNER,
+    retention: { maxAgeMs: 120_000, maxBytes: 1_048_576 },
+    maxPayloadBytes: 2000,
+  }),
+);
+
+export const notifyGatewayDomainsChanged = (): void => {
+  void Promise.resolve()
+    .then(() => domainChanges().publish({ tenantId: "default", data: null }))
+    .catch((error) => {
+      log.warn("Gateway domain notification failed; periodic reconciliation will repair it", { error: String(error) });
+    });
+};
+
+export const watchGatewayDomainChanges = async (options: { signal: AbortSignal; onChange(): Promise<void> }): Promise<void> => {
+  for await (const _event of domainChanges().live({ tenantId: "default", signal: options.signal })) await options.onChange();
+};
+
 export const buildGatewayRouteSnapshot = (input: GatewayRouteSnapshotInput): GatewayRouteSnapshot => ({
   instanceId: input.instanceId,
+  ...(input.envSettings ? { envSettings: input.envSettings } : {}),
   baseUrl: input.baseUrl,
   startedAt: input.startedAt,
   updatedAt: Date.now(),
@@ -115,7 +144,7 @@ export const buildGatewayRouteSnapshot = (input: GatewayRouteSnapshotInput): Gat
 });
 
 export const publishGatewayRouteSnapshot = async (snapshot: GatewayRouteSnapshot): Promise<void> => {
-  await snapshots().upsert({ key: `instances/${snapshot.instanceId}`, value: snapshot });
+  await snapshots().upsert({ key: `instances/${snapshot.instanceId}`, value: snapshot, ttlMs: SNAPSHOT_TTL_MS });
 };
 
 export const removeGatewayRouteSnapshot = async (instanceId: string): Promise<void> => {

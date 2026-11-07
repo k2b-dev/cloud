@@ -8,14 +8,22 @@ import { Hono } from "hono";
 import cliInstaller from "../../../cloud-cli/scripts/install.sh" with { type: "text" };
 import browserNotificationServiceWorker from "../browser-notifications/service-worker.js" with { type: "text" };
 import { ssr } from "../config";
+import aiAdminPage from "./admin/ai/page";
 import announcementsAdminPage from "./admin/announcements/page";
-import appCredentialsPage from "./admin/app-credentials/page";
 import appsAccessPage from "./admin/apps/page";
+import { cliPage, generalPage, legalPage, pdfPage, placesPage } from "./admin/base/page";
 import outgoingMailPage from "./admin/outgoing-mail/page";
 import adminPage from "./admin/page";
-import placesAndMapsPage from "./admin/places-and-maps/page";
 import railAdminPage from "./admin/rail/page";
 import settingsPage from "./admin/settings/page";
+import {
+  securityPage as adminSecurityPage,
+  freeipaPage,
+  linuxPage,
+  operationsPage,
+  registrationPage,
+  signinPage,
+} from "./admin/signin/page";
 import pairDevicePage from "./app-approval/pair.page";
 import { createAppIconRoutes } from "./app-icons";
 import consentPage from "./auth/consent.page";
@@ -51,6 +59,11 @@ export const createPagesRouter = (options?: { brandingPublicDir?: string }): Hon
     .use("/me/approvals/*", middleware.noTransform())
     // Several settings tabs serialize text users write (feedback, conversation titles) next to other users' records.
     .use("/admin/settings/*", middleware.noTransform())
+    // Sign-in & security came from those tabs: Linux identities and account operations list other people's records.
+    .use("/admin/signin", middleware.noTransform())
+    .use("/admin/signin/*", middleware.noTransform())
+    .use("/admin/ai", middleware.noTransform())
+    .use("/admin/ai/*", middleware.noTransform())
     // Prevent browser from caching SSR pages (user state changes on login/logout)
     // Skip for branding assets — they set their own cache headers
     .use("*", async (c, next) => {
@@ -101,15 +114,27 @@ export const createPagesRouter = (options?: { brandingPublicDir?: string }): Hon
     .get("/admin/rail", auth.requireRole("admin", ssr.access), ...railAdminPage)
     .get("/admin/announcements", auth.requireRole("admin", ssr.access), ...announcementsAdminPage)
     .get("/admin/apps", auth.requireRole("admin", ssr.access), ...appsAccessPage)
-    .get("/admin/app-credentials", auth.requireRole("admin", ssr.access), ...appCredentialsPage)
+    // App credentials now live with each app under Keys › Tokens for host operation; the old address says so.
+    .get("/admin/app-credentials", auth.requireRole("admin", ssr.access), (c) => c.redirect("/admin/apps?moved=credentials", 302))
     .get("/admin/outgoing-mail", auth.requireRole("admin", ssr.access), ...outgoingMailPage)
-    .get("/admin/places-and-maps", auth.requireRole("admin", ssr.access), ...placesAndMapsPage)
+    .get("/admin/base", auth.requireRole("admin", ssr.access), ...generalPage)
+    .get("/admin/base/legal", auth.requireRole("admin", ssr.access), ...legalPage)
+    .get("/admin/base/pdf", auth.requireRole("admin", ssr.access), ...pdfPage)
+    .get("/admin/base/places", auth.requireRole("admin", ssr.access), ...placesPage)
+    .get("/admin/base/cli", auth.requireRole("admin", ssr.access), ...cliPage)
+    .get("/admin/signin", auth.requireRole("admin", ssr.access), ...signinPage)
+    .get("/admin/signin/registration", auth.requireRole("admin", ssr.access), ...registrationPage)
+    .get("/admin/signin/security", auth.requireRole("admin", ssr.access), ...adminSecurityPage)
+    .get("/admin/signin/linux", auth.requireRole("admin", ssr.access), ...linuxPage)
+    .get("/admin/signin/freeipa", auth.requireRole("admin", ssr.access), ...freeipaPage)
+    .get("/admin/signin/operations", auth.requireRole("admin", ssr.access), ...operationsPage)
     .get("/admin/settings", auth.requireRole("admin", ssr.access), ...settingsPage)
+    .get("/admin/ai", auth.requireRole("admin", ssr.access), ...aiAdminPage)
     // Keep legacy admin entry points useful when their optional UI apps are absent.
     .get("/admin/sync", auth.requireRole("admin", ssr.access), (c) => {
       const apps = getRuntimeContext(c).apps;
       return c.redirect(
-        hasDedicatedRuntimeRoute(apps, "/app/accounts", "core") ? "/app/accounts#sync-activity" : "/admin/settings?tab=freeipa",
+        hasDedicatedRuntimeRoute(apps, "/app/accounts", "core") ? "/app/accounts#sync-activity" : "/admin/signin/freeipa",
         302,
       );
     })

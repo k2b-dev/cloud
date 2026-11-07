@@ -1,9 +1,8 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
-import { sql } from "bun";
+import { sql } from "@k2b/cloud";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import { createRecipientMailboxFixture, recipientSuggestionNow as now, recipientContext } from "../../test/fixtures/recipient-suggestions";
 import { newShortId } from "../lib/short-id";
-import { migrate } from "../migrate";
 import type { MailRequestContext } from "./auth";
 import { listRecipientSuggestions } from "./recipient-suggestions";
 
@@ -50,7 +49,6 @@ suite("mailbox recipient suggestions", () => {
   };
 
   beforeAll(async () => {
-    await migrate();
     fixture = await createRecipientMailboxFixture();
     other = await createRecipientMailboxFixture();
     assigned = await createRecipientMailboxFixture();

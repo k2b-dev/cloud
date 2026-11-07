@@ -1,4 +1,5 @@
-import { sql } from "bun";
+import { sql } from "../../runtime/clients";
+
 import { backfillWeatherLocationShortIds } from "./short-id";
 
 export const migrate = async (): Promise<void> => {

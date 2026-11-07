@@ -1,8 +1,11 @@
 import { describe, expect, test } from "bun:test";
+import { useUnitClients } from "../../../../scripts/fixtures/unit-clients";
 import { MAX_FILTER_DEPTH, MAX_FILTER_GROUP_ITEMS } from "../contracts";
 import { normalizedSql } from "../sql-test-utils";
 import { type CompiledClause, compileFilter, renderClause } from "./filter-compiler";
 import type { Field } from "./types";
+
+useUnitClients();
 
 const mkField = (id: string, type: string, config: Record<string, unknown> = {}): Field => ({
   id,

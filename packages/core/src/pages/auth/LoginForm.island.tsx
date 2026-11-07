@@ -4,7 +4,7 @@ import { mutation as mutations } from "@k2b/stdlib/solid";
 import { Button, NoticeCard, TextInput, useLocale } from "@k2b/ui";
 import { createSignal } from "solid-js";
 import { FREEIPA_APP_SIGN_IN_COOKIE } from "../app-approval/availability";
-import { afterSignInHref } from "./login-redirect";
+import { afterSignInHref, confirmationRequestOptions } from "./login-redirect";
 import { authMessages } from "./messages";
 
 export default function LoginForm(props: { redirectTo?: string; showBanner?: boolean; defaultUsername?: string; appName?: string }) {
@@ -15,9 +15,12 @@ export default function LoginForm(props: { redirectTo?: string; showBanner?: boo
 
   const mutation = mutations.create({
     mutation: async () => {
-      const res = await apiClient.auth.login.$post({
-        json: { username: username(), password: password() },
-      });
+      const res = await apiClient.auth.login.$post(
+        {
+          json: { username: username(), password: password() },
+        },
+        confirmationRequestOptions(props.redirectTo),
+      );
       if (res.status === 409) throw new Error(t().signedOutWhileSigningIn);
       if (!res.ok) {
         const data = (await res.json().catch(() => null)) as {

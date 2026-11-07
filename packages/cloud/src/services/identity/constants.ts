@@ -1,6 +1,7 @@
 export const CLOUD_SESSION_JWKS_PATH = "/.well-known/cloud-session-jwks.json";
 export const CLOUD_INVOCATION_JWKS_PATH = "/.well-known/cloud-invocation-jwks.json";
 export const CLOUD_OAUTH_JWKS_PATH = "/.well-known/jwks.json";
+export const CLOUD_INTERNAL_OAUTH_JWKS_PATH = "/api/_internal/identity/v1/oauth/jwks";
 export const CLOUD_SESSION_TOKEN_TYPE = "cloud-session+jwt";
 export const CLOUD_SESSION_AUDIENCE = "cloud";
 export const CLOUD_INVOCATION_TOKEN_TYPE = "cloud-invocation+jwt";

@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { sql } from "bun";
+import { sql } from "@k2b/cloud";
+import { useUnitClients } from "../../../../scripts/fixtures/unit-clients";
 import { compileFilter, renderClause } from "../service/filter-compiler";
 import type { FormulaSqlExpression } from "../service/formula-sql-values";
 import { compileSort } from "../service/sort-compiler";
@@ -10,10 +11,15 @@ import { aggregateExprForField, groupFieldProjection } from "./sql-compiler-grou
 import { compileViewSourceRecordScope } from "./sql-compiler-scope";
 import { compileWherePredicate } from "./sql-compiler-where";
 
+useUnitClients();
+
 const amount = field({ id: "amount-id", shortId: "Amount", name: "Amount", type: "number" });
-const prepared: FormulaSqlExpression = { sql: sql`mapped_amount`, type: "numeric", errorSql: sql`mapped_error` };
-const computedFieldSql = new Map([[amount.id, prepared]]);
-const options = { fieldsByTableId: { [orders.id]: [amount] }, computedFieldSql };
+const preparedFields = () => {
+  const prepared: FormulaSqlExpression = { sql: sql`mapped_amount`, type: "numeric", errorSql: sql`mapped_error` };
+  const computedFieldSql = new Map([[amount.id, prepared]]);
+  const options = { fieldsByTableId: { [orders.id]: [amount] }, computedFieldSql };
+  return { prepared, computedFieldSql, options };
+};
 const checked = "grids.require_valid_calculation(mapped_error, mapped_amount)";
 
 const projectedSql = (result: ReturnType<typeof fieldProjection>) => {
@@ -23,6 +29,7 @@ const projectedSql = (result: ReturnType<typeof fieldProjection>) => {
 
 describe("prepared ordinary field values retain calculation errors", () => {
   test("selection and sorting consume the prepared value at the query boundary", () => {
+    const { options, computedFieldSql } = preparedFields();
     expect(projectedSql(fieldProjection(amount, "r", options))).toBe(checked);
     expect(projectedSql(sortProjectionForField(amount, "r", options))).toBe(checked);
     const sort = compileSort([{ fieldId: amount.id, direction: "asc" }], [amount], null, computedFieldSql);
@@ -31,6 +38,7 @@ describe("prepared ordinary field values retain calculation errors", () => {
   });
 
   test("filter leaves, including empty checks beneath OR and NOT, guard the prepared value", () => {
+    const { options } = preparedFields();
     const filtered = compileFilter({ fieldId: amount.id, op: "isEmpty" }, [amount]);
     if (!filtered.ok) throw new Error(filtered.error);
     const rendered = renderClause({ kind: "not", inner: { kind: "or", parts: [filtered.clause] } }, options);
@@ -55,6 +63,7 @@ describe("prepared ordinary field values retain calculation errors", () => {
   });
 
   test("joined filters use their own prepared map", () => {
+    const { options } = preparedFields();
     const result = compileWherePredicate(
       {
         kind: "scoped",
@@ -89,6 +98,7 @@ describe("prepared ordinary field values retain calculation errors", () => {
   });
 
   test("group keys and aggregate arguments guard ordinary mapped fields", () => {
+    const { options } = preparedFields();
     const group = groupFieldProjection({ fieldId: amount.id, tableId: orders.id }, amount, "r", options, 0);
     if (!group.ok) throw new Error(group.error);
     expect(normalizedSql(group.expr)).toBe(checked);
@@ -100,6 +110,7 @@ describe("prepared ordinary field values retain calculation errors", () => {
   });
 
   test("date buckets and exploding select buckets retain prepared error guards", () => {
+    const { options } = preparedFields();
     const date = field({ id: "date-id", shortId: "Date", name: "Date", type: "date" });
     const select = field({ id: "select-id", shortId: "Tags", name: "Tags", type: "select", config: { multiple: true } });
     for (const value of [date, select]) {
@@ -128,6 +139,7 @@ describe("prepared ordinary field values retain calculation errors", () => {
   });
 
   test("saved-view filters and sorts receive the same prepared values", () => {
+    const { options } = preparedFields();
     const source = compileViewSourceRecordScope(
       {
         tableId: orders.id,
@@ -144,6 +156,7 @@ describe("prepared ordinary field values retain calculation errors", () => {
   });
 
   test("qualified formula references preserve the value/error pair so IFERROR can consume it", () => {
+    const { prepared, computedFieldSql } = preparedFields();
     const resolve = createDslScopedFormulaFieldResolver({ base: { alias: "base", fields: [amount], recordAlias: "r", computedFieldSql } });
     expect(resolve("base.Amount")).toBe(prepared);
     expect(normalizedSql(prepared.sql)).not.toContain("require_valid_calculation");

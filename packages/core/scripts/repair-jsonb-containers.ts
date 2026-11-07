@@ -1,5 +1,7 @@
 import { parseArgs } from "node:util";
-import { SQL } from "bun";
+import { createSql } from "@k2b/cloud";
+import { initializePlatform } from "@k2b/cloud/start";
+import type { SQL } from "bun";
 
 // Explicit data contracts only: arbitrary JSON values (for example workflow results) are excluded.
 export const targets = {
@@ -82,6 +84,7 @@ export async function repairJsonbContainers(db: SQL, table: keyof typeof targets
 }
 
 if (import.meta.main) {
+  let repairStarted = false;
   try {
     const { values } = parseArgs({
       args: Bun.argv.slice(2),
@@ -92,13 +95,12 @@ if (import.meta.main) {
     if (!table || !Object.hasOwn(targets, table)) {
       console.error(`Choose --table from: ${Object.keys(targets).join(", ")}`);
       process.exitCode = 1;
-    } else if (!process.env.DATABASE_URL) {
-      console.error("DATABASE_URL must identify the intended database");
-      process.exitCode = 1;
     } else {
-      const db = new SQL(process.env.DATABASE_URL);
+      await initializePlatform({ appId: "core", source: "env" });
+      const db = createSql();
       try {
         // The allowlist check above confines all SQL identifiers to this file.
+        repairStarted = true;
         const totals = await repairJsonbContainers(db, table as keyof typeof targets, values.apply);
         console.log(JSON.stringify({ table, mode: values.apply ? "apply" : "dry-run", ...totals }));
       } finally {
@@ -111,7 +113,11 @@ if (import.meta.main) {
       process.exitCode = 1;
     } else {
       // Database errors may contain credentials or JSON fragments in DETAIL/CONTEXT.
-      console.error("JSON metadata repair failed. Check the database connection and selected table; earlier batches may remain committed.");
+      console.error(
+        repairStarted
+          ? "JSON metadata repair failed. Check the database connection and selected table; earlier batches may remain committed."
+          : "JSON metadata repair could not start. Check DATABASE_URL, REDIS_URL and the selected table.",
+      );
       process.exitCode = 1;
     }
   }

@@ -5,7 +5,7 @@ section: Operations
 order: 1550
 description: Understand the scope of metadata removal for newly uploaded content images.
 tags: [operations, images, uploads, privacy]
-updated: 2026-10-08
+updated: 2026-10-24
 ---
 
 # Image upload privacy operations
@@ -22,13 +22,13 @@ the replacement; it does not erase retained older versions.
 Inline images stored inside a larger value are sanitized when that value is
 saved again: saving the model profile list processes every profile logo, and
 saving a Form configuration, Venue settings, or a Venue section processes
-its images. If such a stored image is a malformed JPEG, PNG, or WebP, the save
+its images. If such a stored image is a malformed JPEG, PNG, WebP, or GIF, the save
 answers HTTP 422 until the image is replaced. Images that the Assistant
 fetches or writes are processed the same way, so a malformed fetched image is
 not stored.
 
 Files originals and Mail draft attachments remain unchanged. HEIC, AVIF,
-TIFF, SVG, GIF, BMP, video, and unrecognized formats also remain unchanged.
+TIFF, SVG, BMP, video, and unrecognized formats also remain unchanged.
 This change does not guarantee that every stored image is free of location
 metadata. For an existing sensitive image, follow the application's retention
 and deletion rules before deciding how to remove all retained copies.

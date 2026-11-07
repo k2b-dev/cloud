@@ -1,6 +1,6 @@
 import { expect } from "bun:test";
-import { sql } from "bun";
 import { testFor } from "../../../../scripts/fixtures/test-infra";
+import { sql } from "../runtime/clients";
 import "../../../../scripts/fixtures/authorization-preload";
 import { runAiTranscription } from "./transcription";
 
@@ -16,7 +16,14 @@ testFor("database")("transcription failure reaches logs, trace and accounting wi
         file: new Blob([bytes]),
         filename: "test.wav",
         resolveModel: async () => ({
+          model: { id: "diagnostic" },
           profile: {
+            modelId: "diagnostic",
+            providerId: "diagnostic",
+            variantLabel: "Standard",
+            description: "",
+            icon: { kind: "provider" },
+            showInPicker: true,
             id: "diagnostic",
             label: "Diagnostic",
             provider: "openai-compatible",

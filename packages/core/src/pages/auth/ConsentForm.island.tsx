@@ -1,9 +1,10 @@
+import { signOutBrowserSession } from "@k2b/cloud/browser/session";
 import { apiClient } from "@k2b/cloud/clients/core";
 import { Button, Checkbox, NoticeCard, useLocale } from "@k2b/ui";
 import { createSignal, Show } from "solid-js";
 import { authMessages } from "./messages";
 
-export default function ConsentForm(props: { version: string; redirectTo: string }) {
+export default function ConsentForm(props: { userId: string; version: string; redirectTo: string }) {
   const locale = useLocale();
   const t = () => authMessages.resolve([locale()]).t;
   const [accepted, setAccepted] = createSignal(false);
@@ -15,9 +16,15 @@ export default function ConsentForm(props: { version: string; redirectTo: string
     setBusy(true);
     setError(undefined);
     try {
-      const response = accept
-        ? await apiClient.auth["legal-consent"].$post({ json: { accepted: true, version: props.version } })
-        : await apiClient.auth.logout.$post();
+      if (!accept) {
+        await signOutBrowserSession(props.userId, t().consentFailed);
+        window.location.assign("/auth/login");
+        return;
+      }
+      // Authentication and consent middleware also return 401/409 before the handler.
+      const response: Pick<Response, "ok" | "status"> = await apiClient.auth["legal-consent"].$post({
+        json: { accepted: true, version: props.version },
+      });
       if (!response.ok) {
         if (response.status === 409) {
           setStale(true);

@@ -35,8 +35,8 @@ export default ssr<AuthContext>(async (c) => {
   const kind = (c.req.query("kind") ?? "").trim();
   const status = (c.req.query("status") ?? "").trim();
 
-  const [pendingRequestsPage, remindersPage] = await Promise.all([
-    accountsService.accountRequest.list({ access: { userId: user.id, isAdmin: true }, filter: { status: "pending" } }),
+  const [pendingRequests, remindersPage] = await Promise.all([
+    accountsService.accountRequest.countPending(),
     accountsService.lifecycle.reminders.list({
       page,
       perPage,
@@ -75,7 +75,7 @@ export default ssr<AuthContext>(async (c) => {
       fullWidth
       title={[{ title: t.start, href: "/" }, { title: t.accounts, href: "/app/accounts" }, { title: t.reminderHistory }]}
     >
-      <AccountsWorkspace active="reminders" isAdmin pendingRequests={pendingRequestsPage.total} scrollPreserveKey="accounts-reminders">
+      <AccountsWorkspace active="reminders" isAdmin pendingRequests={pendingRequests} scrollPreserveKey="accounts-reminders">
         <div class="flex flex-col gap-2">
           <div class="min-w-0" style="view-transition-name: accounts-reminders-title">
             <h1 class="text-base font-semibold text-primary">{t.reminderHistory}</h1>

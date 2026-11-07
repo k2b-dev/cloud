@@ -205,8 +205,48 @@ const sharedImapSessions = new WeakMap<ProviderConnectionInput, SharedImapSessio
 type SharedImapConnection = { session: ImapSession; connected: Promise<Error | null> };
 
 /**
+ * Connections a finished shared session left open for the next session with the same `reuseKey`,
+ * such as the next folder check of the same mailbox in this minute. One per key, for at most
+ * IMAP_SESSION_REUSE_MS, well inside the 60-second socket timeout of an idle connection.
+ */
+const reusableImapSessions = new Map<string, { session: ImapSession; timer: ReturnType<typeof setTimeout> }>();
+const IMAP_SESSION_REUSE_MS = 30_000;
+
+const takeReusableImapSession = (key: string): ImapSession | null => {
+  const entry = reusableImapSessions.get(key);
+  if (!entry) return null;
+  reusableImapSessions.delete(key);
+  clearTimeout(entry.timer);
+  if (entry.session.client.usable && !entry.session.failure()) return entry.session;
+  void disposeImapClient(entry.session.client);
+  return null;
+};
+
+/** Keeps a usable connection for the next session with the key; returns whether it did. */
+const keepReusableImapSession = (key: string, session: ImapSession): boolean => {
+  if (reusableImapSessions.has(key) || !session.client.usable || session.failure()) return false;
+  const timer = setTimeout(() => {
+    if (reusableImapSessions.get(key)?.session !== session) return;
+    reusableImapSessions.delete(key);
+    void disposeImapClient(session.client);
+  }, IMAP_SESSION_REUSE_MS);
+  timer.unref?.();
+  reusableImapSessions.set(key, { session, timer });
+  return true;
+};
+
+/** Closes every kept connection, for example when the process stops. */
+export const closeReusableImapSessions = async (): Promise<void> => {
+  const entries = [...reusableImapSessions.values()];
+  reusableImapSessions.clear();
+  for (const entry of entries) clearTimeout(entry.timer);
+  await Promise.all(entries.map((entry) => disposeImapClient(entry.session.client)));
+};
+
+/**
  * Runs `fn` with a copy of `config` whose operations share one connection, created by `createSession` on
- * first use and disposed when `fn` settles. Each operation is checked like one in `runImapSession`. An
+ * first use and disposed when `fn` settles. With `reuseKey`, a connection the last session with that key
+ * kept serves this one, and a usable connection outlives a successful `fn` for the next one. Each operation is checked like one in `runImapSession`. An
  * operation that finds the connection closed or failed, for example by the idle socket timeout while the
  * caller worked between two operations, opens a new one, exactly as a step on its own connection would.
  */
@@ -214,9 +254,17 @@ export const withSharedImapSession = async <C extends ProviderConnectionInput, T
   config: C,
   createSession: () => Promise<ImapSession>,
   fn: (session: C) => Promise<T>,
+  options: { reuseKey?: string; keep?: () => Promise<boolean> } = {},
 ): Promise<T> => {
   const opened: Promise<SharedImapConnection>[] = [];
   let current: Promise<SharedImapConnection> | undefined;
+  const reused = options.reuseKey ? takeReusableImapSession(options.reuseKey) : null;
+  if (reused) {
+    current = Promise.resolve({ session: reused, connected: Promise.resolve(null) });
+    opened.push(current);
+  }
+  // The session succeeded and may hand its connection on.
+  let succeeded = false;
   const open = async (): Promise<SharedImapConnection> => {
     const session = await createSession();
     return {
@@ -262,13 +310,34 @@ export const withSharedImapSession = async <C extends ProviderConnectionInput, T
   const scoped = { ...config };
   sharedImapSessions.set(scoped, run);
   try {
-    return await fn(scoped);
+    const result = await fn(scoped);
+    // Asked once at the end, and only with a connection to keep: whether the caller's next work
+    // may want it at all.
+    succeeded =
+      options.keep && options.reuseKey && opened.length > 0
+        ? await Promise.resolve()
+            .then(() => options.keep?.())
+            .then(
+              (keep) => keep === true,
+              () => false,
+            )
+        : true;
+    return result;
   } finally {
     sharedImapSessions.delete(scoped);
     for (const connection of opened) {
       const settled = await connection.catch(() => null);
       if (!settled) continue;
-      await settled.connected;
+      const connectFailure = await settled.connected;
+      if (
+        succeeded &&
+        options.reuseKey &&
+        connection === current &&
+        !connectFailure &&
+        keepReusableImapSession(options.reuseKey, settled.session)
+      ) {
+        continue;
+      }
       await disposeImapClient(settled.session.client);
     }
   }
@@ -286,8 +355,11 @@ const withImapClient = async <T>(
   return runImapSession(createImapClient(config, endpoint), fn, signal);
 };
 
-const withSession = <C extends ProviderConnectionInput, T>(config: C, fn: (session: C) => Promise<T>): Promise<T> =>
-  withSharedImapSession(config, async () => createImapClient(config, await resolvePublicEndpoint(config.imap)), fn);
+const withSession = <C extends ProviderConnectionInput, T>(
+  config: C,
+  fn: (session: C) => Promise<T>,
+  options: { reuseKey?: string; keep?: () => Promise<boolean> } = {},
+): Promise<T> => withSharedImapSession(config, async () => createImapClient(config, await resolvePublicEndpoint(config.imap)), fn, options);
 
 const capability = (client: ImapFlow, name: string): boolean => client.capabilities.has(name) || client.enabled.has(name);
 
@@ -1141,6 +1213,17 @@ const fetchFlagChanges = async (
           });
         }
         assertSelectedMailbox(client, uidValidity);
+        // Exhausted FETCH retries can yield no rows or only part of a window. SEARCH MODSEQ
+        // is inclusive, unlike CHANGEDSINCE, so start at the following sequence number.
+        const found = await client.search(
+          { uid: `${Math.max(1, lowUid)}:${Math.max(1, highUid)}`, modseq: BigInt(sinceModseq) + 1n },
+          { uid: true },
+        );
+        if (!Array.isArray(found)) throw unconfirmedAbsence();
+        const returned = new Set(changes.map((change) => change.uid));
+        const unreturned = found.filter((uid) => !returned.has(uid));
+        if (unreturned.length > 0) throw unconfirmedAbsence(unreturned);
+        assertSelectedMailbox(client, uidValidity);
         return changes;
       } finally {
         lock.release();
@@ -1204,7 +1287,8 @@ type SourceDownloadClient = SelectedMailboxClient &
  * whose partial-source probe answers metadata without a source yields nothing for the caller's
  * missing-source budget. A probe with a source retries the download; an empty retry or an
  * unanswered probe fails transiently without using that budget. A recovered source streams normally.
- * Source EOF is accepted only while the connection remains usable and the same mailbox stays selected.
+ * Source EOF requires the same usable connection; a source shorter than announced also needs
+ * an explicit empty partial-source answer at the next byte.
  * A consumer that resolves "stop" leaves the remaining sources unfetched.
  */
 export const downloadSelectedSources = async (
@@ -1224,20 +1308,27 @@ export const downloadSelectedSources = async (
       download = await client.download(request.uid, undefined, { uid: true });
       if (!download.content || !download.meta) throw unconfirmedAbsence([request.uid]);
     }
+    let receivedBytes = 0;
+    const expectedSize = download.meta.expectedSize ?? null;
+    const confirmEnd = async (): Promise<void> => {
+      assertSelectedMailbox(client, request.uidValidity);
+      if (expectedSize == null || receivedBytes >= expectedSize) return;
+      // A short source can be a provider size quirk or exhausted midstream FETCH retries.
+      // Only an explicit empty literal at the next byte proves EOF; a missing answer does not.
+      const probe = await client.fetchOne(request.uid, { uid: true, source: { start: receivedBytes, maxLength: 1 } }, { uid: true });
+      if (!probe || probe.source?.length !== 0) throw unconfirmedAbsence([request.uid]);
+      assertSelectedMailbox(client, request.uidValidity);
+    };
     const guarded = new Transform({
       transform(chunk, _encoding, callback) {
+        receivedBytes += chunk.length;
         callback(null, chunk);
       },
       flush(callback) {
-        try {
-          // ImapFlow ends the download without an error when the connection closes between chunks,
-          // e.g. while hydration waits for memory. Even a disconnect just after the last chunk
-          // retries rather than risk accepting a truncated source.
-          assertSelectedMailbox(client, request.uidValidity);
-          callback();
-        } catch (error) {
-          callback(error instanceof Error ? error : new Error(String(error)));
-        }
+        void confirmEnd().then(
+          () => callback(),
+          (error: unknown) => callback(error instanceof Error ? error : new Error(String(error))),
+        );
       },
     });
     pipeline(download.content, guarded, () => {
@@ -1499,18 +1590,29 @@ const appendSource = async (
   internalDate = new Date(),
   signal?: AbortSignal,
 ): Promise<RemoteAppendResult> => {
+  let effectPossible = false;
   try {
     return await withImapClient(
       config,
       async (client) => {
-        return appendStream({ client, path: folderPath, source, byteLength, flags, internalDate });
+        try {
+          const result = await appendStream({ client, path: folderPath, source, byteLength, flags, internalDate });
+          effectPossible = true;
+          return result;
+        } catch (error) {
+          // Disposal can replace this error. Preserve the command's effect evidence too.
+          effectPossible = !!(error && typeof error === "object" && "effectPossible" in error && error.effectPossible);
+          throw error;
+        }
       },
       signal,
     );
   } catch (error) {
-    if (error && typeof error === "object" && "effectPossible" in error) throw error;
-    const sourceError = error instanceof Error ? error : new Error("IMAP APPEND failed before transfer");
-    throw Object.assign(sourceError, { effectPossible: false });
+    // A successful APPEND can still be rejected by session postconditions or
+    // disposal. Such failures must retain the export's reconciliation marker.
+    if (!effectPossible && error && typeof error === "object" && "effectPossible" in error) throw error;
+    const sourceError = error instanceof Error ? error : new Error("IMAP APPEND failed");
+    throw Object.assign(sourceError, { effectPossible });
   }
 };
 

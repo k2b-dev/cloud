@@ -1,7 +1,7 @@
 import { beforeAll, expect, test } from "bun:test";
-import { sql } from "bun";
 import { Hono } from "hono";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
+import { sql } from "../runtime/clients";
 import "../../../../scripts/fixtures/authorization-preload";
 import { migrateCloudAi } from "../ai/migrate";
 import { aiConversations } from "../ai/store";
@@ -56,7 +56,7 @@ suiteFor(
       const chat = await aiConversations.createConversation({ ownerUserId: user.id });
       const { turn } = await aiConversations.submitChatTurn({
         conversationId: chat.id,
-        modelProfileId: "mock",
+        modelId: "mock",
         runConfig: { kind: "chat", input: "Send" },
         userMessage: { role: "user", content: [{ type: "text", text: "Send" }] },
       });

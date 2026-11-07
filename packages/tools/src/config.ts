@@ -3,6 +3,8 @@ import { germanToolSearchDescriptions, germanToolSearchLabels, toolSearchLinks }
 
 export const app = defineApp({
   id: "tools",
+  // These protocols validate their own credentials and never use Cloud session authority.
+  sessionlessRoutes: ["/tools/api/webhooks/receive/:token", "/tools/api/webhooks/receive/:token/*"],
   access: appAccess.signedIn({
     publicRoutes: [
       "/tools",

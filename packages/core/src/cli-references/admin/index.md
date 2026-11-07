@@ -19,6 +19,30 @@ Route hit and error counts are scoped to `--range` (1h, 6h, 24h, 7d, 30d). They 
 
 Use `diagnose` for a bounded troubleshooting bundle. Narrow its time window and included sections before requesting more data. Its `telemetry.failingRoutes` and `jobs` sections name the endpoints and background jobs that are actually failing, which is usually the fastest way into a problem.
 
+## App domains
+
+Assign a domain to an app's public site, then inspect DNS, certificate and
+gateway reachability. New assignments accept known app IDs from the durable
+application package registry, including stopped apps. `active` requires a live
+registry entry with `public: true`.
+
+```bash
+cld --profile operator admin apps domains ls website --json
+cld --profile operator admin apps domains add website example.com --yes
+cld --profile operator admin apps domains add website www.example.com --redirect-to example.com --yes
+cld --profile operator admin apps domains check website example.com --yes --json
+cld --profile operator admin apps domains set website www.example.com --no-redirect --yes
+cld --profile operator admin apps domains rm website www.example.com --yes
+```
+
+`set` takes exactly one of `--redirect-to <host>` or `--no-redirect`. Redirects
+stay within the app, without chains. Remove incoming redirects before removing
+their target; the error names those domains. Changes require an administrator;
+OAuth mutations require `write` or `admin` scope. Domain changes and checks require `--yes`. The initial check runs in the
+background. Checks run at most once per 60 seconds; later stages are `null`
+after a failure. `--json` and `--jsonl` preserve the API payload. A first check
+in progress can return `status: null`; list again shortly.
+
 ## Logs and storage diagnostics
 
 ```bash
@@ -70,7 +94,7 @@ Three states are deliberately distinct:
 - **stuck** — open past the abandonment threshold. Nothing is working on these; a process died mid-run and left the span open. Stuck is counted across all retained spans rather than within the window, because an abandonment is old by definition and a windowed count would hide it.
 - **anomalous** — finished, but took longer than that threshold. These come from sweeps closing orphaned spans long after the fact and are excluded from the duration percentiles so those describe real runs.
 
-`--health failed` means the most recent run of a source failed, i.e. it is unhealthy right now — it does not list every source that has ever failed. `--health stuck` lists sources with abandoned spans. Use `jobs runs --source <id>` for run history and `jobs show` for a single run with its recorded events, which is the closest thing a background job has to a log. These commands are read-only; trigger a schedule from the admin UI.
+`--health failed` means the most recent run of a source failed, i.e. it is unhealthy right now — it does not list every source that has ever failed. `--health stuck` lists sources with abandoned spans. Fast successful runs are counted by minute in Gateway Ops rather than stored individually. Slow successes and recovered retries also enter those counters; do not add counts to trace totals. Use `jobs runs --source <id>` for diagnostic run history and `jobs show` for a single run with its recorded events, which is the closest thing a background job has to a log. These commands are read-only; trigger a schedule from the admin UI.
 
 Backfills process existing records. Sync pump runs appear under `--type backfill`;
 their source is the pump ID. Inspect the returned source with `jobs runs` and
@@ -258,7 +282,7 @@ including its full stored error. No command exposes private chat message text.
 ## Sync and NATS
 
 `admin sync` inspects application-owned work; `admin nats` reads broker diagnostics.
-Both use administrator access; OAuth callers need the `admin` scope.
+Both use the current administrator role. OAuth reads accept `read` or `admin`; recovery actions still require `admin` scope (see the step-up instructions below).
 
 ```bash
 cld admin sync status --json
@@ -296,22 +320,30 @@ cld admin app-credentials apps
 cld admin app-credentials list mail --json
 (umask 077; cld admin app-credentials create mail --name production --yes > mail-credential.txt)
 cld admin app-credentials revoke mail <credential-id> --yes
+cld admin app-credentials enable mail --yes
+cld admin app-credentials disable mail --yes
 ```
 
 Creation prints the token once; structured output includes token and metadata.
 Transfer the token to the deployment secret store, then remove the temporary
 file. An optional `--expires-at` takes a future ISO 8601 timestamp. Lists show
-metadata only. Configure `CLOUD_APP_CREDENTIAL` only in its owning app and
+metadata only. Core issues and rotates `Runtime <instance>` credentials automatically.
+Revoking an automatic runtime credential disables the app's workload account
+across all instances and restarts. `enable <app> --yes` allows issuance again;
+`disable <app> --yes` blocks workload access explicitly. The equivalent API is
+`PATCH /api/admin/identity/workloads/<app>` with `{"status":"active"}` or
+`{"status":"disabled"}`. Revoked tokens stay revoked after re-enabling. For an explicit
+host-run override, configure `CLOUD_APP_CREDENTIAL` only in its owning app and
 `CLOUD_CORE_INTERNAL_ORIGIN` with Core's private origin. Mandates still control
 the allowed background actions. For rotation, create and deploy a replacement,
 verify its calls, then revoke the old credential. The equivalent UI is
-**Administration → App credentials**.
+**Administration → Apps**, then the app and **Keys → Tokens for host operation**.
 
 
 ## Agents
 
 An agent is a standalone service account of kind `agent` with its own OAuth
-client. It appears with a robot icon in pickers, activity, and audit, starts
+client. It appears with its robot picture in pickers, activity, and audit, starts
 with no access, and is granted access like a person (Space membership, Notebook
 access, and so on).
 
@@ -319,11 +351,15 @@ access, and so on).
 cld admin agents create "Release agent" --profile release-agent --yes
 cld admin agents ls --json
 cld admin agents rotate-secret "Release agent" --profile release-agent --yes
+cld admin agents keys create "Release agent" --name automation
+cld admin agents keys list "Release agent"
+cld admin agents keys revoke "Release agent" <key-id> --yes
 cld admin agents revoke "Release agent" --yes
 ```
 
-`create` creates the account and a confidential OAuth client with the scopes of
-a `cld login` session (`openid profile email offline_access read write`), then
+`create` creates the account and a confidential OAuth client with the scopes
+`openid profile email offline_access read write admin`, so the agent acts as
+far as its grants reach; `admin` gives no administrator role. It then
 writes the client ID and secret into the local `cld` profile named by
 `--profile`. The secret is never printed, also not with `--json`; add `--fd0`
 to keep it in fd0 instead of the config file, and `--server` when the profile
@@ -331,6 +367,13 @@ should target another origin than the administrator's. If the client or the
 profile cannot be created, the new account is disabled again. Afterwards the
 agent runs `cld --profile release-agent …` and `cld` obtains and renews its
 access tokens itself.
+
+`keys create` issues an API key that acts as the agent and prints it once;
+`--models` limits it to AI models, `--expires` sets an ISO 8601 expiry. There
+are no scope flags. `keys list` shows each key's metadata and access: `full`,
+`models`, or `legacy, limited` for an older key that keeps its narrower scopes.
+To replace such a key, create a new one and revoke the old one with
+`keys revoke`, which revokes only a key of the named agent.
 
 `revoke` disables the account: its tokens, secret, and API keys stop working
 at once. `rotate-secret` regenerates the client secret and updates the local
@@ -371,37 +414,38 @@ stay intact. Identity, grants, personal activation, and loaded turn snapshots ar
 preserved. Deleted linked Skills stay deleted; there is no automatic recreation,
 merge, or version history.
 
-## Model request settings
+## Models, variants and request settings
 
-Read and change a profile's thinking level, extra provider parameters and
-write-only endpoint headers:
+Configure provider connections, models and class assignments with
+`admin ai providers`, `admin ai models`, `admin ai variants` and `admin ai classes`.
+See [Models and providers](/en/docs/ai/models-and-providers) for creation,
+access, deletion and class fallback.
+
+Read a model with its variants, then update shared model parameters or a
+variant's thinking level and overrides:
 
 ```bash
-cld admin ai models settings get --id MODEL_ID --json
-cld admin ai models settings set --id MODEL_ID --thinking-level low --yes --json
-cld admin ai models settings set --id MODEL_ID --extra-body-file parameters.json --yes --json
-cld admin ai models settings set --id MODEL_ID --headers-file headers.json --yes --json
-cld admin ai models settings set --id MODEL_ID --headers-stdin --yes --json < headers.json
-cld admin ai models settings set --id MODEL_ID --clear-thinking-level --clear-extra-body --clear-headers --yes --json
+cld admin ai models list --json
+cld admin ai models show MODEL_ID --json
+cld admin ai models update MODEL_ID --input-file model-patch.json --yes --json
+cld admin ai variants update MODEL_ID:deep --input-file variant-patch.json --yes --json
 ```
 
-`set` changes only supplied fields and requires `--yes`. Extra parameters accept
-`--extra-body <json>`, `--extra-body-file <path>` or `--stdin`. Header patches accept
-`--headers <json>`, `--headers-file <path>` or `--headers-stdin`; prefer files or
-standard input because values may be secrets. A string sets a header and `null`
-removes it. Omitted names keep their values. `--clear-headers` removes all headers
-before applying any patch. Output contains only configured header names.
+For example, `model-patch.json` can contain `{"extraBody":{"custom":true}}`.
+`variant-patch.json` can contain `{"reasoningEffort":"low","extraBody":null}`.
+Use the model ID alone to update its standard variant. Only supplied fields
+change; JSON `null` clears an optional value. Updates also accept
+`--input <json>` or `--stdin`. Each command reads the current row revision before
+saving; read again and reconcile on conflict.
 
-The thinking level passes unchanged to chat and tool loops; clearing it restores
-the model default. Extra parameters apply to every call, including titles,
-summaries and compaction. Headers require vLLM or OpenAI-compatible chat profiles;
-if an API key is configured, it replaces custom Authorization with its Bearer
-value. Transcription profiles reject all three settings.
-
-The command reads the current revision before saving and rejects concurrent
-changes. Read again before retrying. See
-[Models and providers](/en/docs/ai/models-and-providers) for reserved parameters,
-size limits and provider thinking-level mappings.
+Endpoint headers belong to the provider connection. Configure them in
+administration or through `PUT /api/admin/core/ai/providers/{id}/headers` with
+`{"revision":CURRENT_REVISION,"headers":{"X-Endpoint-Token":"value","X-Old":null}}`.
+Read its revision with `cld admin ai providers show PROVIDER_ID --json`.
+Header values are write-only; reads expose `requestHeaderNames`. Use protected
+input for header values. Extra headers require vLLM or OpenAI-compatible
+providers. See [Models and providers](/en/docs/ai/models-and-providers) for
+connection and request settings.
 
 ## AI prices, Assistant cost budgets, and background stop
 
@@ -499,7 +543,7 @@ retain their response envelope and pagination fields.
 
 Interrupted-call token amounts can be estimates; balances expose the number of
 `estimated` calls separately from `unknown`. Estimates count toward limits.
-The `authenticated` principal also matches service accounts. Raw call history
+The `authenticated` principal matches people, including guests and their delegated credentials. Agents and other service accounts need their own grant or a group. Raw call history
 is retained for 8,760 hours (the maximum quota window), with bounded cleanup;
 usage history in balances is not a lifetime total. Reset IDs remain durable.
 
@@ -507,17 +551,18 @@ usage history in balances is not a lifetime total. Reset IDs remain durable.
 Set reference prices before creating model-specific budgets:
 
 ```bash
-cld admin ai models pricing get --json
-cld admin ai models pricing set --id MODEL_ID --pricing-file prices.json --yes --json
+cld admin ai models list --json
+cld admin ai models update MODEL_ID --input-file model-patch.json --yes --json
+cld admin ai variants update MODEL_ID:deep --input-file variant-patch.json --yes --json
 ```
 
-The file contains `{"inputPerMillion":0.5,"outputPerMillion":2}` or JSON `null`
-to remove pricing. Both prices are required, nonnegative, with up to six decimal
-places and a maximum of 1,000,000. Zero is explicitly free. Missing prices mean
-unpriced usage: these models bypass all cost budgets, including wildcard rules
-and the background stop. Audio pricing is not supported. The command reads
-current prices and submits an optimistic precondition; it does not touch
-credentials or grants. Re-read and reconcile on conflict.
+A price patch is `{"pricing":{"inputPerMillion":0.5,"outputPerMillion":2}}`;
+`{"pricing":null}` removes model pricing or a variant's price override. Both
+prices are required, nonnegative, with up to six decimal places and a maximum
+of 1,000,000. A variant inherits model prices unless overridden. Zero is
+explicitly free. Unpriced or free calls bypass cost budgets and the background
+stop. Audio pricing is not supported. Updates use the current model or variant
+revision and leave omitted fields unchanged. Read again and reconcile on conflict.
 
 Configuration additionally includes `unit` (default `EUR`, maximum 16 characters)
 and optional `background: {"enabled":true,"warnAt":5,"stopAt":10}`. All model
@@ -659,7 +704,7 @@ values as `outgoing_mail.retention.update`.
 ## Sign-in locations
 
 Inspect or replace the City and ASN databases used for approximate sign-in
-locations. These commands use the same API as **Admin → Settings → Sign-in →
+locations. These commands use the same API as **Admin → Sign-in & security → Sign-in →
 Sign-in locations** and require an administrator:
 
 ```bash
@@ -675,3 +720,118 @@ marks data older than about six months. Postgres stores one upload per type,
 which stays active until reset. Other Core instances pick up changes within
 about a minute of lookups. `reset asn --yes` resets ASN; `reset --yes` resets
 both types. Status includes DB-IP attribution while DB-IP data is active.
+
+## Environment-backed settings
+
+Run `cld admin settings status --env --json` after an upgrade. Exit 0 means no
+reported process needs attention; nonzero means a conflict, invalid env value,
+unreadable row, pending import, or unavailable process. Values are never
+printed. Resolve the problem before removing deprecated environment entries.
+Use `cld admin settings list [--app <id>] --json` to discover keys and types, then `settings show <key>` for presence and readability. Neither prints values. Omit `--app` for the platform catalog, including `logs.trace_retention_days` and `logs.retention_days`; `--app core` restricts the result to Core settings. Use `--app <id>` for application-owned settings.
+Use `cld admin settings set <key> --value '<JSON>' --yes`, adding `--app <id>`
+for application-owned keys. Secret settings require `--from <private-json-file>` or `--from -` for stdin; they cannot be supplied with `--value`. Use `--replace-unreadable` only for an explicit
+whole replacement.
+## Application Ed25519 keys
+
+```bash
+cld --profile operator admin apps keys create inventory --out-dir ./secrets
+cld --profile operator admin apps keys create oauth --grant oauth:issue --out-dir ./secrets
+cld --profile operator admin apps keys create --all --apps ./apps.txt --out-dir ./secrets --format k8s-secret
+cld --profile operator admin apps keys list inventory --json
+cld --profile operator admin apps keys revoke inventory <keyId> --yes
+```
+
+Creation generates keys locally. `--out-dir` is required; files and provisional
+enrollment state have mode 0600. Formats are `file` (default), `env`, `compose`,
+and `k8s-secret`; `--uid` requires root or the current UID. `--name` labels keys.
+Repeat the same directory after an interruption; its provisional seed is reused
+with idempotent registration. Use a new directory to rotate. No private key
+appears in command output. `--all` requires an explicit comma/whitespace list
+or file through `--apps`. Core and Gateway are reserved; stopped apps and oauth
+are allowed. At most two unexpired, unrevoked keys are active per app. Listing
+accepts `--page` and `--per-page` (default 100, maximum 500). Enrollment alone
+does not change runtime configuration. The CLI refuses revoked or expired keys
+and disabled accounts; listings include separate key and account statuses.
+
+New keys have no OAuth issuance grant by default, even for `oauth` and during
+rotation. `--grant oauth:issue` assigns it to each new key named in the command;
+repeat the flag for every issuer rotation. `--no-grant` explicitly selects no
+grants and cannot be combined with `--grant`. Repeating an existing enrollment
+keeps its original grants. To withdraw issuance, create and deploy an ungranted
+replacement, then revoke every granted key for that app. Listings include
+`grants`. Issuance uses clients and grants registered in Cloud's OAuth registry.
+
+
+## Administrator login and step-up
+
+A normal `cld login` requests `read write`. With a person's current administrator
+role, this reads NATS, Sync, app events, Core app status, settings status and
+Pulse administration. The server checks the role on every request. Removing
+the role ends access with the same token. A standalone OAuth client has no
+administrator role, even when its token contains `admin`.
+
+Routine configuration uses `write` plus that role. App access repair, Sync
+recovery, app-event replay/acknowledgment/recording, Pulse store credentials and
+backend actions, Pulse base recovery/orphan deletion, Studio machine servers
+and secrets, and Files machine provisioning/grants retain their explicit
+`admin` requirement. To perform an authorized action, obtain a short-lived
+login through browser or device approval:
+
+```bash
+cld login admin-step-up --server https://cloud.example --device --ttl 15m \
+  --scope 'openid profile email offline_access read write admin'
+cld --profile admin-step-up admin sync --help
+cld logout admin-step-up
+```
+
+Approve the code in your browser as the administrator. `--user` (Cloud Login)
+does not issue `admin`; adding it to a token never grants the person that role.
+Commands still require their normal `--yes` confirmation.
+
+## Configure the instance and applications
+
+Use `--help` to inspect a command's positional arguments. Named JSON setters
+below take `--from <file|-> --yes`. Input follows the same schema as the UI API;
+`cld api-docs` describes the fields. Reads accept `--query '<URL query>'` when
+filters or pagination are needed.
+
+| UI area | CLI |
+| --- | --- |
+| Navigation/app bar | `admin rail show`, `rail set`, `rail cache-clear --yes` |
+| AI projects and access | `admin ai projects list`, `access list\|grant\|set\|revoke`, `projects delete` |
+| Geo provider and budget | `admin geo status\|usage`, `geo key set\|remove`, `geo budget set` |
+| Signing keys and mandates | `admin identity keys status`, `identity mandates list` |
+| Exact directory shares | `admin directory-shares list\|grant\|revoke` |
+| Capability execution journal | `admin capabilities summary`, `executions list\|show` |
+| Browser/Web Vitals | `admin telemetry browser` |
+| Account lifecycle reports | `admin lifecycle deleted-accounts\|reminders\|health`, `lifecycle run` |
+| Retention | `admin retention show`, `admin logs retention show\|set`; telemetry periods through `settings set --app gateway-ops` |
+| NATS diagnostics access, Gateway Ops and network lists | `admin settings list --app gateway-ops`; `settings set ... --app gateway-ops` |
+| Notebook settings and cron | `admin settings list\|set --app notebooks` |
+| Grids settings | `admin settings list\|set --app grids` |
+| Chat instance policy | `admin settings list\|set --app chat` |
+| Weather settings | `admin settings list --app weather`, `admin weather config set\|reset` |
+| Files configuration | `filesv2 admin configuration get\|set\|reset` |
+| Files machine storage and grants | `admin files machines list\|create`, `machines grants list\|grant\|revoke` |
+| Studio machine access and secret metadata | `admin studio machines access list\|set`, `machines secrets list\|set\|delete` |
+| Contacts administration and recovery | `admin contacts list`, `contacts access list\|grant\|set\|revoke` |
+| Spaces administration and recovery | `admin spaces list`, `spaces access list\|grant\|set\|revoke`, `spaces delete` |
+| Chat health | `admin chat status` |
+| Proxy authentication policy | `admin proxy-auth list\|show\|add\|set\|delete` |
+| Pulse policy, limits and internal targets | `pulse admin policy set`, `bases limits`, `targets add\|remove` |
+| Assistant Studio storage/database | `assistant studio-admin storage-configure\|configure --yes` (database JSON through `--input-file` or `--stdin`) |
+
+`admin settings apply --from <file|-> --yes` applies Core updates and resets
+atomically. `settings reset <key> --yes` restores one Core default. Saved
+backend checks use `settings test pdf|storage|freeipa --yes`; manual AI
+enrichment uses `ai enrichment run --yes`. On success they print `ok: true`, a
+message, and the check's details, not `saved`.
+
+Core settings, AI execution limits and instance network allowlists use
+`admin settings list|show|set`. Existing commands continue to own outgoing mail,
+AI models/quotas, OAuth clients, app keys and grants, sign-in, account policy,
+webhooks and resource access. Structured app setters preserve their validation,
+connection checks and live rescheduling. Settings writes record keys and actor
+in audit without copying submitted values.
+
+Sync diagnostic reads redact payloads and raw error text with ordinary `read` scope. Use an explicitly approved `admin` step-up profile when unredacted dead-letter content is required.

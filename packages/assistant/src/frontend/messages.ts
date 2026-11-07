@@ -4,7 +4,6 @@ export const assistantMessages = i18n.define({
   baseLocale: "en",
   messages: {
     en: {
-      openFullView: "Open full view",
       panelUnsaved: "Draft not saved yet",
       panelSaveHint: "Save drafts before closing or switching the panel. Then repeat your navigation.",
       panelSave: "Save drafts",
@@ -97,6 +96,7 @@ export const assistantMessages = i18n.define({
       stopping: "Stopping response",
       queueMessage: "Queue another message",
       askAnything: "Ask Assistant anything",
+      modelLockedWhileRunning: "While an answer runs, the model stays the same.",
       aiNotConfigured: "AI is not configured",
       noModelsAvailable: "No model available. Contact an administrator.",
       chatActionFailed: "Chat action failed.",
@@ -144,7 +144,6 @@ export const assistantMessages = i18n.define({
       messageNumber: ({ seq }: { seq: number }) => `Message ${seq}`,
     },
     de: {
-      openFullView: "In Vollansicht öffnen",
       panelUnsaved: "Entwurf noch nicht gespeichert",
       panelSaveHint: "Speichere die Entwürfe vor dem Schließen oder Wechseln des Panels. Wiederhole danach den Wechsel.",
       panelSave: "Entwürfe speichern",
@@ -240,6 +239,7 @@ export const assistantMessages = i18n.define({
       stopping: "Antwort wird beendet",
       queueMessage: "Weitere Nachricht vormerken",
       askAnything: "Assistent etwas fragen",
+      modelLockedWhileRunning: "Während eine Antwort läuft, bleibt das Modell gleich.",
       aiNotConfigured: "KI ist nicht konfiguriert",
       noModelsAvailable: "Kein Modell verfügbar. Wende dich an einen Administrator.",
       chatActionFailed: "Chataktion fehlgeschlagen.",

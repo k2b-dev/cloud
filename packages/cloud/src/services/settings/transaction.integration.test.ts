@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
-import { sql } from "bun";
 import { tinyJpeg, withCameraMetadata } from "../../../../../scripts/fixtures/image-metadata";
 import { databaseSuite } from "../../../../../scripts/fixtures/test-infra";
+import { sql } from "../../runtime/clients";
 import { decryptValue } from "./crypto";
 import { registerSettings } from "./defaults";
 import * as settings from "./index";

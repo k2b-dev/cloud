@@ -1,6 +1,7 @@
 import { request as httpRequest } from "node:http";
 import { request as httpsRequest } from "node:https";
 import { createBrotliDecompress, createGunzip, createInflate } from "node:zlib";
+import { sql } from "@k2b/cloud";
 import {
   NetworkTargetBlockedError,
   type PublicNetworkAddress,
@@ -8,7 +9,6 @@ import {
   resolvePublicNetworkAddresses,
 } from "@k2b/cloud/services/network-security";
 import { networkAddressFamily, normalizeNetworkHostname } from "@k2b/cloud/shared";
-import { sql } from "bun";
 
 export type WebhookEndpoint = {
   id: string;

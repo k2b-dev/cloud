@@ -1,8 +1,10 @@
-import { type SQL, sql } from "bun";
+import type { SQL } from "bun";
+import { sql } from "../runtime/clients";
 import { type AccessSubject, buildAccessPrincipalCondition } from "../server/services/access";
 import { hasBillableAiPricing } from "../shared/ai-costs";
 import { type AiQuotaConfig, AiQuotaConfigSchema, type AiQuotaIdentity, type AiQuotaSnapshot } from "../shared/ai-quotas";
 import { readAiSettingsState } from "./settings";
+import type { AiSettingsState } from "./types";
 
 export class AiQuotaError extends Error {
   constructor(
@@ -43,10 +45,18 @@ export const aiQuotas = {
       return { ...config, revision };
     });
   },
-  async snapshot(subject: AccessSubject, model?: string, now = new Date(), db: SQL = sql): Promise<AiQuotaSnapshot> {
-    const config = await aiQuotas.config(db);
+  async snapshot(
+    subject: AccessSubject,
+    model?: string,
+    now = new Date(),
+    db: SQL = sql,
+    context?: { state: AiSettingsState; config: AiQuotaConfig },
+  ): Promise<AiQuotaSnapshot> {
+    const config = context?.config ?? (await aiQuotas.config(db));
     const identity = ids(subject);
-    const pricedModels = new Set((await readAiSettingsState()).profiles.filter((p) => hasBillableAiPricing(p.pricing)).map((p) => p.id));
+    const pricedModels = new Set(
+      (context?.state ?? (await readAiSettingsState())).profiles.filter((p) => hasBillableAiPricing(p.pricing)).map((p) => p.modelId),
+    );
     const matches = buildAccessPrincipalCondition({
       subject,
       columns: {
@@ -76,7 +86,7 @@ export const aiQuotas = {
             (c.finished_at IS NOT NULL OR (c.lease_expires_at <= now() OR (c.turn_id IS NOT NULL AND NOT EXISTS(SELECT 1 FROM ai.turns t WHERE t.id=c.turn_id AND t.attempt=c.turn_attempt AND t.status='running' AND t.lease_expires_at>now())))))::int AS unknown
         FROM ai.inference_calls c
         WHERE c.kind='chat' AND c.user_id IS NOT DISTINCT FROM ${identity.user}::uuid AND c.service_account_id IS NOT DISTINCT FROM ${identity.service}::uuid
-          AND (${rule.scope}='*' OR c.model_profile_id=${rule.scope})
+          AND (${rule.scope}='*' OR c.model_id=${rule.scope})
           AND c.started_at>=${window.from} AND c.started_at<${window.until}
           AND c.started_at>COALESCE((SELECT max(r.created_at) FROM ai.cost_resets r
             WHERE r.user_id IS NOT DISTINCT FROM ${identity.user}::uuid AND r.service_account_id IS NOT DISTINCT FROM ${identity.service}::uuid AND r.scope=${rule.scope}),'-infinity'::timestamptz)`;
@@ -110,13 +120,15 @@ export const aiQuotas = {
       GROUP BY model_profile_id ORDER BY model_profile_id`;
     return { enabled: config.enabled, unit: config.unit ?? "EUR", balances, usage };
   },
-  async assertAllowed(subject: AccessSubject, model: string) {
+  async assertAllowed(subject: AccessSubject, variantId: string, providedState?: AiSettingsState) {
+    const state = providedState ?? (await readAiSettingsState());
+    const profile = state.profiles.find((profile) => profile.id === variantId);
+    if (!profile || !hasBillableAiPricing(profile.pricing)) return false;
+    const model = profile.modelId;
     // Fast default path: no additional identity/usage queries on unrestricted installations.
-    const pricing = (await readAiSettingsState()).profiles.find((profile) => profile.id === model)?.pricing;
-    if (!hasBillableAiPricing(pricing)) return false;
     const config = await aiQuotas.config();
     if (!config.enabled || !config.rules.some((r) => r.scope === "*" || r.scope === model)) return false;
-    const snapshot = await aiQuotas.snapshot(subject, model);
+    const snapshot = await aiQuotas.snapshot(subject, model, undefined, undefined, { state, config });
     for (const b of snapshot.balances) {
       if (b.bypassed || b.limit === null) continue;
       if (b.unknown)

@@ -32,6 +32,9 @@ const renderPanel = (overrides: Partial<Props> = {}) =>
           taskProgress: { done: 2, total: 4 },
           attachments: [],
           backlinks: [],
+          relations: { outgoing: [], tags: [] },
+          accessVisible: false,
+          canManageAccess: false,
           namedBlocks: [],
           currentNotebookId: "book01",
           notebookId: "book01",
@@ -63,6 +66,10 @@ const inspect = (overrides: Partial<Props>, check: (document: Document) => void)
   }
 };
 const text = (element: Element | null) => element?.textContent?.replace(/\s+/g, " ").trim() ?? "";
+/** A panel section by its title, open or closed. */
+const titled = (root: ParentNode | null | undefined, title: string) =>
+  [...(root?.querySelectorAll("section.k2b-detail-panel__section") ?? [])].find((section) => text(section.querySelector("h3")) === title) ??
+  null;
 
 describe("Notebook note detail panel", () => {
   test.each(["write", "readonly", "book"] as const)("graph action preserves the explicit %s presentation", (presentationMode) => {
@@ -139,6 +146,93 @@ describe("Notebook note detail panel", () => {
       expect(rows.map((row) => text(row))).toEqual(["Überblick", "Anlieferung"]);
       expect(rows.some((row) => /\bH[1-6]\b/.test(text(row)))).toBe(false);
     });
+  });
+  test("follows the shared outline: kind line, section icons, order of use, more under Mehr zu dieser Notiz", () => {
+    inspect({}, (document) => {
+      expect(text(document.querySelector(".k2b-detail-panel__kind"))).toBe("Notiz");
+      expect(document.querySelector(".k2b-detail-panel__header-icon")).toBeNull();
+      // Every section has its icon, so its content starts on the title's text edge (one edge per section).
+      const titles = [...document.querySelectorAll(".k2b-detail-panel__body :is(.k2b-detail-panel__section, .k2b-discussion)")]
+        .filter((section) => !section.closest(".k2b-detail-panel__group"))
+        .map((section) => {
+          expect(
+            section.querySelector(
+              ":scope > header .k2b-detail-panel__section-icon, :scope > header .k2b-discussion__icon, :scope > div > .k2b-button .k2b-detail-panel__section-icon, :scope > div > header .k2b-detail-panel__section-icon",
+            ),
+          ).not.toBeNull();
+          return text(section.querySelector("h3, .k2b-detail-panel__section-title"));
+        });
+      expect(titles).toEqual(["Gerade hier", "Kommentare", "Aufgaben", "Inhalt", "Tags", "Verknüpfungen"]);
+      const more = [...document.querySelectorAll(".k2b-detail-panel__group .k2b-detail-panel__section-title")].map((title) => text(title));
+      expect(more).toEqual(["Eigenschaften", "Aktivität"]);
+      // "More actions" sits in the action row beside Ansicht; the header's trailing slot keeps only Close.
+      expect(document.querySelector('.k2b-detail-panel__primary-actions [role="menu"][aria-label="Weitere Aktionen"]')).not.toBeNull();
+      const group = document.querySelector(".k2b-detail-panel__group-title")?.closest(".k2b-detail-panel__group");
+      expect(text(group?.querySelector(".k2b-detail-panel__group-title") ?? null)).toBe("Mehr zu dieser Notiz");
+      expect(group?.querySelector(".notebook-activity")).not.toBeNull();
+      // Closed, the activity says in one line what it holds: here the note's creation, before the log has loaded.
+      const summary = group?.querySelector(".notebook-activity .k2b-detail-panel__section-summary");
+      expect(summary?.getAttribute("aria-expanded")).toBe("false");
+    });
+  });
+  test("Zugriff is read-only for members and absent for public-link readers", () => {
+    inspect({ accessVisible: true, canManageAccess: false }, (document) => {
+      const group = document.querySelector(".k2b-detail-panel__group");
+      const titles = [...(group?.querySelectorAll(".k2b-detail-panel__section-title") ?? [])].map((title) => text(title));
+      expect(titles).toEqual(["Zugriff", "Eigenschaften", "Aktivität"]);
+      // Closed; the list loads after the first paint, so the server render holds no names.
+      expect(titled(group, "Zugriff")?.querySelector(".k2b-detail-panel__section-summary")?.getAttribute("aria-expanded")).toBe("false");
+      expect(text(group)).not.toContain("Zugriff verwalten");
+    });
+    inspect({ accessVisible: true, canManageAccess: true }, (document) => expect(text(document.body)).toContain("Zugriff verwalten"));
+    inspect({ accessVisible: false }, (document) => expect(titled(document, "Zugriff")).toBeNull());
+  });
+  test("tags lead to their notes and links show both directions", () => {
+    inspect(
+      {
+        relations: {
+          tags: ["kühlkette"],
+          outgoing: [{ noteId: "n5", title: "Lagerplätze", notebookId: "book01", notebookName: "Handbuch", updatedAt: created }],
+        },
+        backlinks: [{ noteId: "n2", title: "Onboarding", notebookId: "book02", notebookName: "Handbuch Versand", updatedAt: created }],
+      },
+      (document) => {
+        expect(document.querySelector('.k2b-detail-tag[href="/app/notebooks/book01/tags/k%C3%BChlkette"]')).not.toBeNull();
+        const links = text(titled(document, "Verknüpfungen"));
+        expect(links).toContain("Verlinkt von 1");
+        expect(links).toContain("Verweist auf 1");
+        expect(links).toContain("Handbuch Versand");
+        expect(titled(document, "Verknüpfungen")?.querySelector('a[href="/app/notebooks/book01/notes/n5"]')).not.toBeNull();
+      },
+    );
+    inspect({}, (document) => expect(text(titled(document, "Verknüpfungen"))).toBe("VerknüpfungenNoch keine"));
+  });
+  test("attachments are a short file list: kind and size, files before images", () => {
+    const attachment = (id: string, filename: string, mimeType: string) => ({
+      id,
+      kind: mimeType.startsWith("image/") ? ("image" as const) : ("file" as const),
+      filename,
+      mimeType,
+      sizeBytes: 4_400_000,
+      notebookId: "book01",
+      createdBy: null,
+      createdAt: created,
+    });
+    inspect(
+      {
+        attachments: [
+          attachment("img001", "Rampe.png", "image/png"),
+          attachment("pdf001", "Lieferschein.pdf", "application/pdf"),
+          attachment("xls001", "Bestand.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"),
+        ],
+      },
+      (document) => {
+        const names = [...document.querySelectorAll(".k2b-file-grid__name")].map((name) => text(name));
+        expect(names).toEqual(["Lieferschein.pdf", "Bestand.xlsx", "Rampe.png"]);
+        expect(text(document.querySelector(".k2b-file-grid__meta"))).toBe("PDF · 4,2 MB");
+        expect(document.querySelector('.k2b-file-grid a[href="/api/notebooks/book01/attachments/pdf001/content?v=1"]')).not.toBeNull();
+      },
+    );
   });
   test("activity has no count and ends with the creator rather than a raw key", () => {
     inspect({}, (document) => {

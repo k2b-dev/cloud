@@ -119,7 +119,5 @@ test("validates principals per resource boundary", () => {
   expect(validateAccessPrincipal("base", { type: "public" })).toBe("Public access is only supported for Grids Apps.");
   expect(validateAccessPrincipal("customApp", { type: "public" })).toBeNull();
   expect(validateAccessPrincipal("base", { type: "service_account", serviceAccountId: ACCESS_ID })).toBeNull();
-  expect(validateAccessPrincipal("customApp", { type: "service_account", serviceAccountId: ACCESS_ID })).toBe(
-    "Grids App access does not support service accounts. Grant access to the delegated user instead.",
-  );
+  expect(validateAccessPrincipal("customApp", { type: "service_account", serviceAccountId: ACCESS_ID })).toBeNull();
 });

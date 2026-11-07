@@ -52,29 +52,29 @@ const open = async (current: string) => {
   });
   await page.route(`${origin}/public/**`, (route) => route.fulfill({ path: join(root, new URL(route.request().url()).pathname) }));
   await page.setContent(
-    `<!doctype html><html lang="en" class="light"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="stylesheet" href="${origin}/public/fonts.css"><style>${css}</style></head><body class="k2b-ui"><div class="cloud-app-canvas" style="--app-accent:#155e75;${appColorStyle("#155e75")}"><div id="range-host">${content(current)}</div></div></body></html>`,
+    `<!doctype html><html lang="en" class="light"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="stylesheet" href="${origin}/public/fonts.css"><style>${css}</style></head><body class="k2b-ui"><div class="cloud-app-canvas" style="--app-accent:#57534e;${appColorStyle("#57534e")}"><div id="range-host">${content(current)}</div></div></body></html>`,
   );
   await settled(page);
   return page;
 };
 
 describe("Gateway Ops range selection", () => {
-  test("uses the app navigation fill and ink instead of a solid action fill", async () => {
+  test("uses the app ink's selected edge and fill instead of a solid action fill", async () => {
     const page = await open("24h");
     try {
       const colors = await page.locator('nav a[aria-current="page"]').evaluate((tab) => {
         // Resolve each variable in the tab's scope; CSS may store an alias or a color-mix expression.
         const probe = document.createElement("span");
         tab.append(probe);
-        const resolve = (token: string) => {
-          probe.style.backgroundColor = `var(${token})`;
+        const resolve = (value: string) => {
+          probe.style.backgroundColor = value.startsWith("--") ? `var(${value})` : value;
           return getComputedStyle(probe).backgroundColor;
         };
         const actual = getComputedStyle(tab);
         const result = {
           background: actual.backgroundColor,
           color: actual.color,
-          selected: resolve("--k2b-app-workspace-selected"),
+          selected: resolve("color-mix(in srgb, var(--k2b-app-workspace-active) var(--k2b-edge-selected-fill), var(--k2b-surface))"),
           solid: resolve("--k2b-action-solid"),
           active: resolve("--k2b-app-workspace-active"),
         };

@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import type { SyncEvent } from "@k2b/sync";
-import { sql } from "bun";
 import { databaseSuite } from "../../../../../scripts/fixtures/test-infra";
+import { sql } from "../../runtime/clients";
 import { flushSyncTraceEvents, observeSyncEvent, trace, traceSyncEvent } from "./trace";
 
 /** Reported as skipped rather than silently passing when the backing service is absent. */
@@ -150,7 +150,8 @@ suite("logging.trace", () => {
         }),
       );
       const midway = await trace.list({ page: 1, perPage: 10, offset: 0 }, { filter: { source: resource } });
-      expect(midway.spans[0]).toMatchObject({ status: "error", endedAt: null });
+      expect(midway.spans[0]).toMatchObject({ status: "error" });
+      expect(midway.spans[0]?.endedAt).not.toBeNull();
 
       await traceSyncEvent(syncEvent({ type: "handler_started", resource, kind: "job", detail: { id: jobId, key: "task:1", attempt: 2 } }));
       await traceSyncEvent(
@@ -228,7 +229,7 @@ suite("logging.trace", () => {
           type: "handler_settled",
           resource: scheduler,
           kind: "scheduler",
-          detail: { id: runId, key: "nightly", attempt: 1, status: "success", durationMs: 12 },
+          detail: { id: runId, key: "nightly", attempt: 1, status: "success", durationMs: 30_000 },
         }),
       );
       const schedules = await trace.list({ page: 1, perPage: 10, offset: 0 }, { filter: { source: scheduler } });
@@ -256,7 +257,7 @@ suite("logging.trace", () => {
           type: "pump_run_settled",
           resource,
           kind: "pump",
-          detail: { key, status: "completed", dispatched: 2, failureCount: 0, durationMs: 20 },
+          detail: { key, status: "completed", dispatched: 2, failureCount: 0, durationMs: 30_000 },
         }),
       );
 
@@ -338,17 +339,19 @@ suite("logging.trace", () => {
     const suffix = crypto.randomUUID();
     const source = `test:trace:${suffix}`;
     const spanKey = `test:trace:${suffix}`;
+    const link = `cl_${"a".repeat(43)}`;
     const span = await trace.start({
-      name: "Trace test",
+      name: `Trace test ${link}`,
       source,
       spanKey,
-      attributes: { apiKey: "secret", safe: "ok" },
+      attributes: { apiKey: "secret", safe: "ok", address: `/confirm?code=${link}` },
     });
 
     try {
       await trace.record({
         context: span,
-        event: "test.step",
+        event: `test.step ${link}`,
+        body: `Redeem ${link}`,
         attributes: { accessToken: "token", count: 1 },
       });
       await trace.end({
@@ -364,12 +367,15 @@ suite("logging.trace", () => {
         status: "ok",
         eventCount: 1,
       });
-      expect(result.spans[0]?.attributes).toMatchObject({ apiKey: "[REDACTED]", safe: "ok" });
+      expect(result.spans[0]?.name).toBe("Trace test [REDACTED]");
+      expect(result.spans[0]?.attributes).toMatchObject({ apiKey: "[REDACTED]", safe: "ok", address: "/confirm?code=[REDACTED]" });
       expect(result.spans[0]?.summary).toMatchObject({ password: "[REDACTED]", kept: "yes" });
 
       const events = await trace.events({ traceId: span.traceId, spanId: span.spanId });
       expect(events).toHaveLength(1);
       expect(events[0]?.attributes).toMatchObject({ accessToken: "[REDACTED]", count: 1 });
+      expect(events[0]?.name).toBe("test.step [REDACTED]");
+      expect(events[0]?.body).toBe("Redeem [REDACTED]");
 
       const groups = await trace.sourceGroups({ filter: { source } });
       expect(groups).toHaveLength(1);

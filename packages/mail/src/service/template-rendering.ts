@@ -186,7 +186,7 @@ export const renderMailWorkflowTemplate = (
 };
 
 export const migrateWorkflowTextTemplateToLiquid = (source: string): string =>
-  source.replace(/\$\{\{\s*([^{}]+?)\s*\}\}/g, (_match, expression: string) => `{{ ${expression.trim()} }}`);
+  source.replace(/\$\{\{([^{}]+)\}\}/g, (_match, expression: string) => `{{ ${expression.trim()} }}`);
 
 export const migrateReferenceTemplateToLiquid = (source: string): string =>
   source.replace(/{{[\s\S]*?}}|{%[\s\S]*?%}|\{sequence:([1-9]\d?)\}|\{sequence\}|\{year\}/g, (match, width: string | undefined) => {

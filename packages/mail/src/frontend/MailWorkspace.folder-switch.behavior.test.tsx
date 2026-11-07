@@ -33,6 +33,8 @@ const MAILBOX_ID = "Box001";
 const now = "2026-10-03T10:00:00.000Z";
 
 const data: MailboxPageData = {
+  viewPreference: { large: "auto", phone: "compact" },
+  doneTodayCounts: { doneToday: 0, doneByAutomation: 0 },
   receivingAddress: null,
   mailbox: {
     id: MAILBOX_ID,
@@ -65,6 +67,9 @@ const data: MailboxPageData = {
   draftsMode: false,
   draftsPage: null,
   draftsError: null,
+  eventsMode: false,
+  eventsPage: null,
+  eventsError: null,
   activeView: null,
   savedViewId: null,
   savedViews: [
@@ -91,11 +96,14 @@ const data: MailboxPageData = {
   listCursor: null,
   nextListCursor: null,
   listError: null,
+  hiddenDone: null,
+  assignedGroups: null,
   listTitle: "Needs action",
   conversationRowState: null,
   detailMessages: [],
   conversationSummary: null,
   conversationDrafts: [],
+  automationTrace: [],
   detailError: null,
   collaborationState: null,
   localTags: [],
@@ -193,7 +201,7 @@ describe("Mail workspace folder switches", () => {
       : draftsMode
         ? "Drafts"
         : scheduledMode
-          ? "Scheduled"
+          ? "Outbox"
           : savedViewId
             ? (truth.savedViews.find((view) => view.id === savedViewId)?.name ?? "All mail")
             : activeView
@@ -248,6 +256,8 @@ describe("Mail workspace folder switches", () => {
                 to: [],
                 cc: [],
                 bcc: [],
+                revision: 1,
+                attachmentCount: 0,
                 bodyPreview: "Preview",
                 createdByDisplayName: "Ada",
                 updatedAt: now,
@@ -258,6 +268,9 @@ describe("Mail workspace folder switches", () => {
           }
         : null,
       draftsError: null,
+      eventsMode: false,
+      eventsPage: null,
+      eventsError: null,
       activeView,
       savedViewId,
       listMode,
@@ -268,6 +281,8 @@ describe("Mail workspace folder switches", () => {
       listCursor: null,
       nextListCursor: null,
       listError: null,
+      hiddenDone: null,
+      assignedGroups: null,
       listTitle: title,
     };
   };
@@ -354,6 +369,7 @@ describe("Mail workspace folder switches", () => {
           currentUserId: "user-1",
           currentUserEmail: "reader@example.test",
           contactDirectory: m.DEFAULT_MAIL_CONTACT_DIRECTORY,
+          cloudUrl: "https://cloud.example",
           dateConfig: { timeZone: "Europe/Berlin", locale: "en" },
           initialPreferences: m.readMailWorkspacePreferences(""),
           initialUserPreferences: m.readMailUserPreferencesFromCookieHeader("", MAILBOX_ID),
@@ -489,7 +505,7 @@ describe("Mail workspace folder switches", () => {
     await switchTo("scheduled=1");
     expectRequests("workspace-list", `${path}?scheduled=1`);
     expect(dom.root.textContent).toContain("Scheduled offer");
-    expect(dom.root.querySelector("h1")?.textContent).toBe("Scheduled");
+    expect(dom.root.querySelector("h1")?.textContent).toBe("Outbox");
     const scheduledLabel = link(`${path}?scheduled=1`).textContent;
     expect(location()).toBe(`${path}?scheduled=1`);
     counts();
@@ -509,7 +525,7 @@ describe("Mail workspace folder switches", () => {
     await settle();
     assertList(`${path}?folder=Filed1`, "Filed");
     counts();
-    expect(scheduledLabel).toBe("Scheduled6");
+    expect(scheduledLabel).toBe("Outbox6");
   });
 
   test("a caught-up folder switch takes mailbox and saved view names from the list and keeps counts", async () => {

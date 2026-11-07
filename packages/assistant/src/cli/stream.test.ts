@@ -1,7 +1,15 @@
 import { describe, expect, test } from "bun:test";
 import type { AiConversation, AiStoredMessage, AiStreamSseEvent, AiTurnBlock } from "@k2b/cloud/ai";
 import type { CloudCliContext, CloudCliOutputMode } from "@k2b/cloud/cli";
-import { type AssistantClientTools, type AssistantTurnOutput, createAssistantTurnOutput, streamAssistantTurn } from "./stream";
+import {
+  type AssistantClientTools,
+  type AssistantTurnOutput,
+  CLIENT_CALL_RECEIPTS_MAX,
+  type ClientCallReceipts,
+  createAssistantTurnOutput,
+  keepClientCallReceipt,
+  streamAssistantTurn,
+} from "./stream";
 
 const conversation: AiConversation = {
   id: "chat",
@@ -33,7 +41,7 @@ const stored = (seq: number, message: AiStoredMessage["message"]): AiStoredMessa
   kind: "message",
   loopId: "turn",
   message,
-  modelProfileId: null,
+  modelId: null,
   providerModel: null,
   usage: null,
   stopReason: null,
@@ -57,7 +65,7 @@ const state = (blocks: AiTurnBlock[]): AiStreamSseEvent => ({
   type: "state",
   conversation,
   messages: [],
-  activeTurn: { turnId: "turn", attempt: 1, seq, status: "running", blocks, modelProfileId: null, createdAt: "" },
+  activeTurn: { turnId: "turn", attempt: 1, seq, status: "running", blocks, modelId: null, createdAt: "" },
 });
 const finished = (text: string[]): AiStreamSseEvent => ({
   ...wire(),
@@ -319,7 +327,7 @@ describe("Assistant CLI stream", () => {
         {
           ...wire(),
           type: "turn_started",
-          modelProfileId: "model",
+          modelId: "model",
           providerModel: "fixture",
           blocks: [{ id: "saved", kind: "text", text: "Checking." }],
         },
@@ -377,7 +385,7 @@ describe("Assistant CLI stream", () => {
         {
           ...wire(),
           type: "turn_started",
-          modelProfileId: "model",
+          modelId: "model",
           providerModel: "fixture",
           blocks: [{ id: "saved-answer", kind: "text", text: "Found it." }],
         },
@@ -892,6 +900,7 @@ test("inline local tools run once across duplicate state snapshots and finish on
     undefined,
     {
       names: new Set(["local_read"]),
+      receipts: new Map(),
       run: async (call, signal) => {
         expect(call.args).toEqual({ path: "notes.md" });
         expect(signal.aborted).toBeFalse();
@@ -923,6 +932,7 @@ test.each(["local_read", "local_bash"])("inline %s errors become the tool's fail
   };
   const output = await run([[state([tool]), finished([])]], "text", undefined, undefined, undefined, undefined, {
     names: new Set([name]),
+    receipts: new Map(),
     run: async () => {
       throw new Error("Cannot read");
     },
@@ -970,6 +980,7 @@ test("local running lines show short targets and escape untrusted filenames", as
     undefined,
     {
       names: new Set(tools.map(([name]) => name)),
+      receipts: new Map(),
       run: async () => ({ status: "completed" }),
     },
   );
@@ -1077,4 +1088,56 @@ test("renders supplied resource permalinks as full Cloud addresses in terminal o
     "https://cloud.test",
   );
   expect(reply.text).toBe("[Draft](https://cloud.test/open/mail.draft/AbC123)\n");
+});
+
+test("a finished turn's older snapshot in another stream never runs its call again", async () => {
+  const append: Extract<AiTurnBlock, { kind: "tool" }> = {
+    id: "tool",
+    kind: "tool",
+    name: "local_write",
+    callId: "append",
+    args: { path: "notes.md", mode: "append", content: "X" },
+    status: "awaiting_client",
+  };
+  const receipts: ClientCallReceipts = new Map();
+  let runs = 0;
+  const tools: AssistantClientTools = {
+    names: new Set(["local_write"]),
+    receipts,
+    run: async () => {
+      runs++;
+      return { status: "completed" };
+    },
+  };
+  for (let stream = 0; stream < 2; stream++)
+    await run([[state([append]), finished([])]], "text", undefined, undefined, undefined, undefined, tools);
+  expect(runs).toBe(1);
+});
+
+test("receipts stay bounded and never drop a result still to deliver", () => {
+  const receipts: ClientCallReceipts = new Map();
+  keepClientCallReceipt(receipts, "undelivered", { state: "ran", result: "kept" });
+  for (let i = 0; i <= CLIENT_CALL_RECEIPTS_MAX; i++) keepClientCallReceipt(receipts, `call-${i}`, { state: "delivered" });
+  expect(receipts.size).toBe(CLIENT_CALL_RECEIPTS_MAX);
+  expect(receipts.get("undelivered")).toEqual({ state: "ran", result: "kept" });
+  expect(receipts.has("call-0")).toBe(false);
+  expect(receipts.has(`call-${CLIENT_CALL_RECEIPTS_MAX}`)).toBe(true);
+});
+
+test("a long streamed reply costs time in proportion to its length", async () => {
+  const stream = async (count: number) => {
+    const events = [...Array.from({ length: count }, () => delta("long", "word ".repeat(20))), finished([])];
+    const started = performance.now();
+    const output = await run([events], "jsonl");
+    const elapsed = performance.now() - started;
+    expect(output.lines.filter((line) => typeof line === "object" && line !== null && "delta" in line)).toHaveLength(count);
+    return elapsed;
+  };
+  // The fastest of three runs keeps a busy machine from deciding the result.
+  const fastest = async (count: number) => Math.min(await stream(count), await stream(count), await stream(count));
+  await stream(500);
+  const short = await fastest(1_000);
+  const long = await fastest(20_000);
+  // Twenty times the text takes about twenty times as long; comparing the whole text per delta took about four hundred.
+  expect(long / short).toBeLessThan(80);
 });

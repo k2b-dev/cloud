@@ -110,16 +110,19 @@ export const incomingAutomationMessageLeft = async (params: Omit<IncomingAutomat
 /**
  * Only incoming automations yield to a moved message, a pending move, or an
  * older automation. Other workflows reach the target lookup in actions.ts
- * and fail there if the message has left its frozen folder.
+ * and fail there if the message has left its frozen folder. Ordered ingress
+ * already uses frozen priority/UUID precedence; only older unordered events
+ * retain the legacy creation-age check. Both paths still validate the source
+ * placement and pending provider moves.
  */
 export const resolveIncomingAutomationPlacementTurn = async (
-  params: IncomingAutomationMessageTurnParams,
+  params: IncomingAutomationMessageTurnParams & { ordered?: boolean },
 ): Promise<IncomingAutomationPlacementTurn> => {
   const self = await incomingAutomationOfRun(params.db, params.runId);
   if (!self) return { state: "ready" };
 
   const turn = await resolveMessageTurn(params);
-  if (turn.state === "skip") return turn;
+  if (turn.state === "skip" || params.ordered) return turn;
 
   const older = await params.db<{ steps: MailAutomationStep[] | string }[]>`
     SELECT older.steps

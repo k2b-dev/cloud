@@ -1,12 +1,11 @@
 import { afterAll, beforeAll, expect, spyOn, test } from "bun:test";
+import { sql } from "@k2b/cloud";
 import { audit, encryptSecret, serviceAccountCredentials, toPgTextArray } from "@k2b/cloud/services";
 import { createTestBrowserSignIn } from "@k2b/cloud/services/session/session.test-fixture";
-import { sql } from "bun";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import { MAIL_ACTION_OUTCOME_TTL_MS, MAX_CONVERSATION_ACTION_MESSAGES } from "../command-outcomes";
 import type { CommandState } from "../contracts";
 import { newShortId } from "../lib/short-id";
-import { migrate } from "../migrate";
 import { grantMailboxAccess } from "./access";
 import { auditActorFromRequest, type MailRequestContext } from "./auth";
 import { executeMutationCommand, finishUndoRequests, runMailboxCommandsJob } from "./command-runtime";
@@ -92,7 +91,6 @@ suite("mail conversation action undo", () => {
   };
 
   beforeAll(async () => {
-    await migrate();
     const uid = `mail-conversation-action-undo-${suffix}`;
     const [user] = await sql<{ id: string }[]>`
       INSERT INTO auth.users (uid, provider, profile, display_name, admin)

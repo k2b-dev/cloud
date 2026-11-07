@@ -1,6 +1,6 @@
+import { sql } from "@k2b/cloud";
 import { audit, decryptSecret, encryptSecret, isUniqueViolation, logger } from "@k2b/cloud/services";
 import { err, fail, isServiceError, ok, type Result, type ServiceError } from "@k2b/stdlib";
-import { sql } from "bun";
 import type { ConnectorVerification, ProviderConnection, ProviderConnectionInput, ProviderSecret } from "../contracts";
 import { parseProviderLimitSnapshot, providerSecretSchema } from "../contracts";
 import { requireMailboxPermission } from "./access";
@@ -42,7 +42,7 @@ type DbProviderConnection = {
   updated_at: Date | string;
 };
 
-const connectionColumns = sql`
+const connectionColumns = () => sql`
   pc.id,
   pc.owner_mailbox_id,
   pc.name,
@@ -227,7 +227,7 @@ export const createProviderConnection = async (params: {
           ${verification.data.limits}::jsonb,
           now()
         )
-        RETURNING ${connectionColumns}
+        RETURNING ${connectionColumns()}
         `;
         if (!row) throw new Error("Provider connection insert returned no row");
         const connection = mapConnection(row);
@@ -269,7 +269,7 @@ export const listProviderConnections = async (context: MailRequestContext, mailb
   const access = await authorizeMailbox(context, mailboxId);
   if (!access.ok) return access;
   const rows = await sql<DbProviderConnection[]>`
-    SELECT ${connectionColumns}
+    SELECT ${connectionColumns()}
     FROM mail.provider_connections pc
     WHERE pc.owner_mailbox_id = ${mailboxId}::uuid
     ORDER BY pc.updated_at DESC, pc.id DESC
@@ -314,7 +314,7 @@ export const refreshProviderConnectionLimits = async (params: {
             UPDATE mail.provider_connections pc
             SET limit_snapshot = ${limits}::jsonb, updated_at = now()
             WHERE pc.id = ${params.connectionId}::uuid
-            RETURNING ${connectionColumns}
+            RETURNING ${connectionColumns()}
           `;
         if (!updated) return fail(err.notFound("Provider connection"));
         await audit.record(
@@ -352,7 +352,7 @@ export const refreshProviderConnectionLimits = async (params: {
 const loadConnectionRow = async (connectionId: string, db: SqlClient = sql, lock = false): Promise<DbProviderConnection | null> => {
   const lockClause = lock ? sql`FOR UPDATE` : sql``;
   const [row] = await db<DbProviderConnection[]>`
-    SELECT ${connectionColumns}
+    SELECT ${connectionColumns()}
     FROM mail.provider_connections pc
     WHERE pc.id = ${connectionId}::uuid
     ${lockClause}
@@ -490,7 +490,7 @@ export const replaceProviderConnection = async (params: {
           last_error_code = NULL,
           last_error_message = NULL
         WHERE pc.id = ${params.connectionId}::uuid
-        RETURNING ${connectionColumns}
+        RETURNING ${connectionColumns()}
         `;
         if (!row) throw new Error("Provider connection update returned no row");
         const affectedBindings = await tx<{ id: string; remote_resource_id: string }[]>`

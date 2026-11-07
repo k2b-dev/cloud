@@ -1,22 +1,24 @@
-import { hasRole } from "@k2b/cloud/contracts";
+import { sql } from "@k2b/cloud";
+import { type AccessMember, hasRole, toAccessMember } from "@k2b/cloud/contracts";
 import {
   type AccessEntry,
   type AccessSubject,
   createAccess,
-  deleteAccess,
   ensureManagerRemains,
   getEffectivePermission,
   getEffectivePermissions,
+  getMemberPermission,
   hasPermission,
   type PermissionLevel,
   type Principal,
   paginateItems,
   type RequestActor,
   resolveDisplayNames,
+  userFromActor,
 } from "@k2b/cloud/server";
-import { isStandaloneServiceAccountKind, type ServiceAccountCredential, serviceAccountCredentials } from "@k2b/cloud/services";
+import { audit, isStandaloneServiceAccountKind, type ServiceAccountCredential, serviceAccountCredentials } from "@k2b/cloud/services";
 import { err, fail, ok, type PageParams, type Paginated, type Result } from "@k2b/stdlib";
-import { type SQL, sql } from "bun";
+import type { SQL } from "bun";
 import { publishContactChange } from "./live";
 import { conflictError, contactsMessages, notFoundError } from "./messages";
 import { isUuid } from "./shared";
@@ -183,6 +185,7 @@ export const listBookAccessPaginated = async (config: {
  */
 export const grantBookAccess = async (config: {
   bookId: string;
+  actor?: RequestActor;
   principal: Principal;
   permission: PermissionLevel;
   locale?: string;
@@ -219,17 +222,32 @@ export const grantBookAccess = async (config: {
     return fail(conflictError(t.principalAlreadyHasAccess));
   }
 
-  const created = await createAccess({
-    principal: config.principal,
-    permission: config.permission,
-  });
+  const created = await sql
+    .begin(async (tx) => {
+      const result = await createAccess({ principal: config.principal, permission: config.permission }, tx);
+      if (!result.ok) return result;
+      await tx`INSERT INTO contacts.book_access (book_id, access_id) VALUES (${config.bookId}::uuid, ${result.data.id}::uuid)`;
+      if (config.actor)
+        await audit.record(
+          {
+            action: "contacts.access.grant",
+            outcome: "allowed",
+            actor: { userId: userFromActor(config.actor)?.id },
+            target: { type: "contact_book", id: config.bookId },
+            metadata: { accessId: result.data.id, permission: config.permission },
+          },
+          tx,
+        );
+      await publishContactChange(tx, { type: "access.changed", bookId: config.bookId });
+      return result;
+    })
+    .catch((error: unknown) => {
+      const code = error && typeof error === "object" && "code" in error ? error.code : null;
+      if (code === "23505") return fail(conflictError(t.bookAccessEntryExists));
+      if (code === "23503") return fail(notFoundError(t.bookOrAccessEntryNotFound));
+      throw error;
+    });
   if (!created.ok) return created;
-
-  const linked = await addBookAccess(config.bookId, created.data.id);
-  if (!linked.ok) {
-    await deleteAccess({ id: created.data.id });
-    return linked;
-  }
 
   const entries = await listBookAccess(config.bookId);
   const createdEntry = entries.find((entry) => entry.id === created.data.id);
@@ -311,6 +329,16 @@ export const removeBookAccess = async (config: {
       return fail(err.notFound("Access entry for this book"));
     }
 
+    await audit.record(
+      {
+        action: "contacts.access.revoke",
+        outcome: "allowed",
+        actor: { userId: userFromActor(actor)?.id },
+        target: { type: "contact_book", id: bookId },
+        metadata: { accessId },
+      },
+      tx,
+    );
     await publishContactChange(tx, { type: "access.changed", bookId });
     return ok();
   });
@@ -360,6 +388,16 @@ export const updateBookAccessPermission = async (config: {
       return fail(err.notFound("Access entry for this book"));
     }
 
+    await audit.record(
+      {
+        action: "contacts.access.update",
+        outcome: "allowed",
+        actor: { userId: userFromActor(actor)?.id },
+        target: { type: "contact_book", id: bookId },
+        metadata: { accessId },
+      },
+      tx,
+    );
     await publishContactChange(tx, { type: "access.changed", bookId });
     return ok();
   });
@@ -454,6 +492,31 @@ export const getActorBookPermission = async (
 ): Promise<PermissionLevel> =>
   fixedBookPermission(config.actor, config.bookId) ??
   capByCredential(config.actor, await getBookPermission({ bookId: config.bookId, subject: config.accessSubject }, db));
+
+/**
+ * The permission an actor holds on a book through access of its own: a direct, group, or all-signed-in grant, never
+ * the public tier, with the same binding and scope caps as `getActorBookPermission`. Everyone with read here may see
+ * who has access; people who read only through public access may not.
+ */
+export const getActorBookMemberPermission = async (config: {
+  bookId: string;
+  actor: RequestActor;
+  accessSubject: AccessSubject;
+}): Promise<PermissionLevel> => {
+  const fixed = fixedBookPermission(config.actor, config.bookId);
+  if (fixed) return fixed;
+  if (!isUuid(config.bookId)) return "none";
+  const accessRows = await sql<{ access_id: string }[]>`
+    SELECT access_id FROM contacts.book_access WHERE book_id = ${config.bookId}::uuid
+  `;
+  return capByCredential(
+    config.actor,
+    await getMemberPermission({ accessIds: accessRows.map((row) => row.access_id), subject: config.accessSubject }),
+  );
+};
+
+/** Who has access to a book, read-only: names and roles without grant IDs or dates. */
+export const listBookAccessMembers = async (bookId: string): Promise<AccessMember[]> => (await listBookAccess(bookId)).map(toAccessMember);
 
 /** `getActorBookPermission` for many actors on one existing book, with one query for all their grants. */
 export const getActorsBookPermissions = async (

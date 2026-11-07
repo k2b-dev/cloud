@@ -1,10 +1,12 @@
 import { describe, expect, mock, test } from "bun:test";
-import { resolvePackedConsumerPins } from "./packed-consumer-pins";
+import { packedSiblings, resolvePackedConsumerPins } from "./packed-consumer-pins";
 
 const fixture = {
-  pins: { "@k2b/ui": "0.25.0", "@k2b/ssr": "0.16.0" },
-  workspaceVersions: { "@k2b/ui": "0.26.0", "@k2b/ssr": "0.16.0" },
-  archives: { "@k2b/ui": "/tmp/ui.tgz", "@k2b/ssr": "/tmp/ssr.tgz" },
+  cloudPublished: false,
+  publishedTypesMatch: async () => true,
+  pins: { "@k2b/ui": "0.25.0", "@k2b/ssr": "0.16.0", "@k2b/editor": "0.2.0" },
+  workspaceVersions: { "@k2b/ui": "0.26.0", "@k2b/ssr": "0.16.0", "@k2b/editor": "0.2.0" },
+  archives: { "@k2b/ui": "/tmp/ui.tgz", "@k2b/ssr": "/tmp/ssr.tgz", "@k2b/editor": "/tmp/editor.tgz" },
 };
 
 describe("packed consumer sibling pins", () => {
@@ -14,6 +16,7 @@ describe("packed consumer sibling pins", () => {
     expect(result).toEqual({
       "@k2b/ui": { pin: "0.25.0", spec: "/tmp/ui.tgz", source: "packed" },
       "@k2b/ssr": { pin: "0.16.0", spec: "/tmp/ssr.tgz", source: "packed" },
+      "@k2b/editor": { pin: "0.2.0", spec: "/tmp/editor.tgz", source: "packed" },
     });
     expect(isPublished).not.toHaveBeenCalled();
   });
@@ -24,17 +27,73 @@ describe("packed consumer sibling pins", () => {
     expect(result).toEqual({
       "@k2b/ui": { pin: "0.25.0", spec: "0.25.0", source: "npm" },
       "@k2b/ssr": { pin: "0.16.0", spec: "/tmp/ssr.tgz", source: "packed" },
+      "@k2b/editor": { pin: "0.2.0", spec: "/tmp/editor.tgz", source: "packed" },
     });
     expect(isPublished.mock.calls).toEqual([
       ["@k2b/ui", "0.25.0"],
       ["@k2b/ssr", "0.16.0"],
+      ["@k2b/editor", "0.2.0"],
     ]);
   });
 
-  test("already published versions win even when they equal the workspace versions", async () => {
+  test("published versions with matching types win when they equal the workspace versions", async () => {
     const result = await resolvePackedConsumerPins({ ...fixture, mode: "release", isPublished: async () => true });
     expect(result["@k2b/ssr"]).toEqual({ pin: "0.16.0", spec: "0.16.0", source: "npm" });
   });
+
+  test("a published Cloud snapshot uses current types after same-version sibling source drift", async () => {
+    const publishedTypesMatch = mock(async () => false);
+    const result = await resolvePackedConsumerPins({
+      ...fixture,
+      mode: "release",
+      cloudPublished: true,
+      isPublished: async () => true,
+      publishedTypesMatch,
+    });
+    expect(result["@k2b/ui"]).toEqual({ pin: "0.25.0", spec: "0.25.0", source: "npm" });
+    expect(result["@k2b/ssr"]).toEqual({ pin: "0.16.0", spec: "/tmp/ssr.tgz", source: "packed", sourceChanged: true });
+    expect(publishedTypesMatch.mock.calls).toHaveLength(2);
+  });
+
+  test("an unpublished Cloud release rejects same-version sibling source drift", async () => {
+    await expect(
+      resolvePackedConsumerPins({
+        ...fixture,
+        mode: "release",
+        isPublished: async () => true,
+        publishedTypesMatch: async () => false,
+      }),
+    ).rejects.toThrow("@k2b/ssr@0.16.0 source changed without a version bump");
+  });
+
+  test("comparison failures propagate instead of silently using workspace types", async () => {
+    await expect(
+      resolvePackedConsumerPins({
+        ...fixture,
+        mode: "release",
+        cloudPublished: true,
+        isPublished: async () => true,
+        publishedTypesMatch: async () => {
+          throw new Error("registry tarball unavailable");
+        },
+      }),
+    ).rejects.toThrow("registry tarball unavailable");
+  });
+
+  for (const name of packedSiblings) {
+    test(`same-version ${name} drift is tested as current source only for an already-published Cloud snapshot`, async () => {
+      const input = {
+        ...fixture,
+        pins: fixture.workspaceVersions,
+        mode: "release" as const,
+        isPublished: async () => true,
+        publishedTypesMatch: async (candidate: string) => candidate !== name,
+      };
+      await expect(resolvePackedConsumerPins(input)).rejects.toThrow(`${name}@${input.pins[name]} source changed without a version bump`);
+      const snapshot = await resolvePackedConsumerPins({ ...input, cloudPublished: true });
+      expect(snapshot[name]).toEqual({ pin: input.pins[name], spec: input.archives[name], source: "packed", sourceChanged: true });
+    });
+  }
 
   test("unpublished pins matching this release use their tarballs", async () => {
     const result = await resolvePackedConsumerPins({
@@ -48,7 +107,7 @@ describe("packed consumer sibling pins", () => {
     expect(Object.values(result).every((pin) => pin.source === "packed")).toBe(true);
   });
 
-  for (const name of ["@k2b/ui", "@k2b/ssr"] as const) {
+  for (const name of ["@k2b/ui", "@k2b/ssr", "@k2b/editor"] as const) {
     test(`rejects an unpublished ${name} pin that this release does not publish`, async () => {
       await expect(
         resolvePackedConsumerPins({

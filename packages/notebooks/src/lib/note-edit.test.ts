@@ -77,3 +77,21 @@ describe("note edit", () => {
     expect(() => applyNoteEdits(duplicated, [{ kind: "append-block", name: "tasks", content: "- nope" }])).toThrow(NoteEditError);
   });
 });
+
+test("exact append joins JSON fragments byte-for-byte while default append keeps paragraphs", () => {
+  const before = '# Map\n\n:::geo\n{"polyline6":"\\\\';
+  const fragment = '😀\\\\","name":"東京"}\n:::\n';
+  const exact = applyNoteEdits(before, [{ kind: "append", content: fragment, separator: "none" }], {
+    ifContentHash: noteContentHash(before),
+  });
+  expect(exact.content).toBe(before + fragment);
+  expect(exact.afterHash).toBe(noteContentHash(before + fragment));
+  expect(applyNoteEdits("first", [{ kind: "append", content: "second" }]).content).toBe("first\n\nsecond");
+  expect(applyNoteEdits("first\n", [{ kind: "append", content: "second" }]).content).toBe("first\nsecond");
+  expect(applyNoteEdits("", [{ kind: "append", content: "second", separator: "none" }]).content).toBe("second");
+  expect(() =>
+    applyNoteEdits(before, [{ kind: "append", content: fragment, separator: "none" }], {
+      ifContentHash: noteContentHash("external edit"),
+    }),
+  ).toThrow(NoteEditError);
+});

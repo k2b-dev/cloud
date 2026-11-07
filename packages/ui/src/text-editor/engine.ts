@@ -1,0 +1,172 @@
+import { standardKeymap } from "@codemirror/commands";
+import { defaultHighlightStyle, HighlightStyle, syntaxHighlighting } from "@codemirror/language";
+import { Compartment, EditorState, type Extension, Prec, Text } from "@codemirror/state";
+import { drawSelection, EditorView, keymap, placeholder, runScopeHandlers } from "@codemirror/view";
+import { tags } from "@lezer/highlight";
+import { clipboardLoading } from "./clipboard-loading";
+import { commands } from "./format";
+import { formattedView } from "./formatted";
+import { markdown } from "./language";
+import { cleanPaste } from "./paste";
+import { type TableHost, tableGrid, tableHost } from "./table";
+
+export type TextEditorMode = "formatted" | "source" | "plain";
+export type TextEditorOptions = {
+  parent: HTMLElement;
+  /** Initial Markdown. Subsequent collaborative changes arrive through extensions. */
+  doc?: string;
+  mode?: TextEditorMode;
+  readOnly?: boolean;
+  placeholder?: string;
+  label: string;
+  extensions?: Extension;
+  /**
+   * Replaces the built-in Markdown language, highlighting, formatted markers and
+   * formatting keys of the formatted and source modes. The engine keeps the
+   * table grid, clean paste, limits and history routing in every mode.
+   */
+  presentation?: (mode: Exclude<TextEditorMode, "plain">) => Extension;
+  /** The host owns history; collaboration bindings supply theirs. */
+  host: TableHost;
+  onChange?: (text: string) => void;
+  onDroppedImages?: (count: number, files: File[]) => void;
+};
+
+// CodeMirror's default style underlines headings; heading lines carry their own size and weight instead.
+const highlightStyle = HighlightStyle.define(defaultHighlightStyle.specs.filter((spec) => spec.tag !== tags.heading));
+
+const builtInPresentation = (mode: Exclude<TextEditorMode, "plain">): Extension => [
+  markdown(),
+  syntaxHighlighting(highlightStyle, { fallback: true }),
+  mode === "formatted" ? formattedView : EditorView.contentAttributes.of({ class: "k2b-ste-source" }),
+  keymap.of([
+    { key: "Mod-b", run: commands.bold },
+    { key: "Mod-i", run: commands.italic },
+    { key: "Mod-k", run: commands.link },
+    { key: "Mod-Shift-x", run: commands.strike },
+  ]),
+];
+
+/** Shared engine; application extensions own transport, awareness and domain features. */
+export function createTextEditor(options: TextEditorOptions) {
+  const modeSlot = new Compartment();
+  const readOnlySlot = new Compartment();
+  // The label is read on every view update; changing it never dispatches, so a host may set it during an update.
+  let label = options.label;
+  const presentation = options.presentation ?? builtInPresentation;
+  const runHistory = (view: EditorView, direction: "undo" | "redo") => {
+    view.state.facet(tableHost)?.[direction]();
+    // Consume even an empty or read-only history, so another binding cannot handle it again.
+    return true;
+  };
+  const modeExtensions = (mode: TextEditorMode): Extension =>
+    mode === "plain"
+      ? [clipboardLoading(() => options.host), cleanPaste(options.onDroppedImages, true)]
+      : [
+          presentation(mode),
+          mode === "formatted" ? tableGrid() : clipboardLoading(() => options.host),
+          cleanPaste(options.onDroppedImages),
+        ];
+  const view = new EditorView({
+    parent: options.parent,
+    state: EditorState.create({
+      doc: Text.of((options.doc ?? "").split("\n")),
+      extensions: [
+        drawSelection(),
+        EditorView.lineWrapping,
+        placeholder(options.placeholder ?? ""),
+        EditorView.contentAttributes.of(() => ({ "aria-label": label })),
+        Prec.highest([
+          keymap.of([
+            { key: "Mod-z", run: (view) => runHistory(view, "undo"), shift: (view) => runHistory(view, "redo"), preventDefault: true },
+            { key: "Mod-y", run: (view) => runHistory(view, "redo"), preventDefault: true },
+          ]),
+          EditorView.domEventHandlers({
+            beforeinput(event, view) {
+              if (event.inputType === "historyUndo") return runHistory(view, "undo");
+              if (event.inputType === "historyRedo") return runHistory(view, "redo");
+              return false;
+            },
+          }),
+        ]),
+        keymap.of(standardKeymap),
+        tableHost.of({
+          ...options.host,
+          onDroppedImages: options.onDroppedImages,
+          undo: () => {
+            if (!view.state.readOnly) options.host.undo();
+          },
+          redo: () => {
+            if (!view.state.readOnly) options.host.redo();
+          },
+        }),
+        EditorState.transactionFilter.of((tr) => {
+          // Only growth is refused: an over-limit text stays editable so it can be shortened.
+          if (
+            tr.docChanged &&
+            tr.isUserEvent("input") &&
+            tr.newDoc.length > options.host.maxLength &&
+            tr.newDoc.length > tr.startState.doc.length
+          ) {
+            const inserted: string[] = [];
+            tr.changes.iterChanges((_from, _to, _newFrom, _newTo, text) => {
+              if (text.length) inserted.push(text.toString());
+            });
+            queueMicrotask(() => {
+              if (inserted.length) options.host.onRecovery(inserted.join("\n"));
+              options.host.onError("textTooLarge");
+            });
+            return [];
+          }
+          return tr;
+        }),
+        EditorView.updateListener.of((update) => {
+          if (update.docChanged) options.onChange?.(update.state.doc.toString());
+        }),
+        modeSlot.of(modeExtensions(options.mode ?? "formatted")),
+        readOnlySlot.of([EditorState.readOnly.of(options.readOnly ?? false), EditorView.editable.of(!options.readOnly)]),
+        options.extensions ?? [],
+      ],
+    }),
+  });
+  // CM's Android DOM-input deferral can lose a physical Enter when the next
+  // EditContext update arrives before its animation frame. Run the public
+  // keymap synchronously only for that reliable, non-composing key event.
+  const enter = (event: KeyboardEvent) => {
+    if (
+      event.target !== view.contentDOM ||
+      event.key !== "Enter" ||
+      event.keyCode !== 13 ||
+      event.isComposing ||
+      view.composing ||
+      event.defaultPrevented ||
+      !/Android/.test(view.dom.ownerDocument.defaultView?.navigator.userAgent ?? "") ||
+      !("editContext" in view.contentDOM && view.contentDOM.editContext)
+    )
+      return;
+    if (runScopeHandlers(view, event, "editor")) {
+      event.preventDefault();
+      event.stopImmediatePropagation();
+    }
+  };
+  view.contentDOM.addEventListener("keydown", enter, true);
+  return {
+    view,
+    /** Also re-reads `presentation`, so a host can refresh it, e.g. after a theme change. */
+    setMode: (mode: TextEditorMode) => view.dispatch({ effects: modeSlot.reconfigure(modeExtensions(mode)) }),
+    setLabel: (next: string) => {
+      label = next;
+      view.contentDOM.setAttribute("aria-label", next);
+    },
+    // Hosts re-run this from reactive state that may change inside an editor update; an unchanged value must not dispatch.
+    setReadOnly: (readOnly: boolean) => {
+      if (view.state.readOnly === readOnly && view.state.facet(EditorView.editable) === !readOnly) return;
+      view.dispatch({ effects: readOnlySlot.reconfigure([EditorState.readOnly.of(readOnly), EditorView.editable.of(!readOnly)]) });
+    },
+    destroy: () => {
+      view.contentDOM.removeEventListener("keydown", enter, true);
+      view.destroy();
+    },
+  };
+}
+export type TextEditorController = ReturnType<typeof createTextEditor>;

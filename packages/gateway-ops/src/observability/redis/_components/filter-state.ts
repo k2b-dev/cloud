@@ -15,7 +15,7 @@ export const buildRedisFilterUrl = (current: RedisFilter, updates: Partial<Redis
   if (next.search.trim()) params.set("search", next.search.trim());
   if (next.depth !== defaultRedisFilter.depth) params.set("depth", String(next.depth));
   const query = params.toString();
-  return query ? `/admin/observability/redis?${query}` : "/admin/observability/redis";
+  return query ? `/admin/observability/valkey?${query}` : "/admin/observability/valkey";
 };
 
 export const hasActiveRedisFilters = (filter: RedisFilter): boolean => filter.search !== "" || filter.depth !== defaultRedisFilter.depth;

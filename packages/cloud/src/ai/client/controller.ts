@@ -1,7 +1,9 @@
-import { type Accessor, createMemo, createSignal, onCleanup } from "solid-js";
+import { type Accessor, createEffect, createMemo, createSignal, onCleanup } from "solid-js";
 import { createStore, reconcile } from "solid-js/store";
 import { z } from "zod";
+import { beginAppAction, fetchAppAction } from "../../browser/app-actions";
 import { CapabilityActionReceiptSchema } from "../../contracts/capabilities";
+import type { AiModelRequest } from "../../shared/ai-models";
 import { type AiActionCheck, preferredActionCheck } from "../action-review";
 import { type AiAttachmentRef, aiAttachmentMarker } from "../attachments";
 import { aiChatMessages } from "../chat/messages";
@@ -246,6 +248,8 @@ export const createAiChatController = (options: CreateAiChatControllerOptions) =
   let historyLoadPromise: Promise<boolean> | null = null;
   let draftSaveQueue: Promise<unknown> = Promise.resolve();
   let conversationCreationPromise: Promise<AiConversation | null> | null = null;
+  /** Why the last draft save of a conversation failed; no entry after a successful save. */
+  const draftSaveFailures = new Map<string, "conflict" | "failed">();
 
   const isActiveConversation = (conversationId: string) => activeConversationId() === conversationId;
   const timeline = () => {
@@ -270,7 +274,7 @@ export const createAiChatController = (options: CreateAiChatControllerOptions) =
   };
 
   const request = async <T>(path: string, init: RequestInit, fallback: string): Promise<T> => {
-    const response = await fetch(url(path), { ...init, headers: { "Content-Type": "application/json", ...init.headers } });
+    const response = await fetchAppAction(url(path), { ...init, headers: { "Content-Type": "application/json", ...init.headers } });
     if (!response.ok) throw new AiRequestError(await readError(response, fallback), response.status);
     return (await response.json()) as T;
   };
@@ -304,6 +308,11 @@ export const createAiChatController = (options: CreateAiChatControllerOptions) =
     const status = runStatus();
     return status === "streaming" || status === "waiting_for_action" || status === "stopping";
   };
+
+  // The SSE subscription is a GET that stays open while idle too. Only an active answer holds update reloads.
+  createEffect(() => {
+    if (running()) onCleanup(beginAppAction());
+  });
 
   // ---- streaming --------------------------------------------------------
 
@@ -771,7 +780,7 @@ export const createAiChatController = (options: CreateAiChatControllerOptions) =
     const upload = (async () => {
       const form = new FormData();
       form.append("file", file);
-      const response = await fetch(url(`/conversations/${conversationId}/files`), { method: "POST", body: form });
+      const response = await fetchAppAction(url(`/conversations/${conversationId}/files`), { method: "POST", body: form });
       if (!response.ok) throw new Error(await readError(response, `Failed to upload ${file.name}`));
       const body = (await response.json()) as { file: { path: string; mediaType: string; size: number; version: number } };
       return { path: body.file.path, mediaType: body.file.mediaType, size: body.file.size, version: body.file.version };
@@ -791,12 +800,16 @@ export const createAiChatController = (options: CreateAiChatControllerOptions) =
   ): Promise<{ conversationId: string; content: AiDraftContentPart[]; revision: number } | null> => {
     if (!conversationId || uncertainSubmissions()[conversationId] !== undefined) return null;
     const conversation = isActiveConversation(conversationId) ? state.conversation : cache.get(conversationId)?.conversation;
-    if (!conversation) return null;
+    if (!conversation) {
+      draftSaveFailures.set(conversationId, "failed");
+      return null;
+    }
 
     let uploaded: Array<AiAttachmentRef & { version: number }> = [];
     try {
       uploaded = input.files?.length ? await Promise.all(input.files.map((file) => uploadConversationFile(conversationId, file))) : [];
     } catch (uploadError) {
+      draftSaveFailures.set(conversationId, "failed");
       setConversationError(conversationId, uploadError instanceof Error ? uploadError.message : "Attachment upload failed");
       return null;
     }
@@ -835,9 +848,14 @@ export const createAiChatController = (options: CreateAiChatControllerOptions) =
         : { ...(cache.get(conversationId) ?? emptyProjection(nextConversation)), conversation: nextConversation };
       cache.set(conversationId, projection);
       if (isActiveConversation(conversationId)) setState("conversation", nextConversation);
+      draftSaveFailures.delete(conversationId);
       return { conversationId, content, revision: draft.revision };
     } catch (draftError) {
-      setConversationError(conversationId, draftError instanceof Error ? draftError.message : "Failed to save conversation draft");
+      // The caller chose the expected revision, so it shows a conflict itself; it is no chat error.
+      const conflict = draftError instanceof AiRequestError && draftError.status === 409;
+      draftSaveFailures.set(conversationId, conflict ? "conflict" : "failed");
+      if (!conflict)
+        setConversationError(conversationId, draftError instanceof Error ? draftError.message : "Failed to save conversation draft");
       return null;
     }
   };
@@ -857,7 +875,7 @@ export const createAiChatController = (options: CreateAiChatControllerOptions) =
   };
 
   const queuedAttempts = new Map<string, { key: string; files?: File[]; id: string }>();
-  const queueMessage = (input: ComposerDraftInput & { modelProfileId?: string }): Promise<boolean> => {
+  const queueMessage = (input: ComposerDraftInput & { model?: AiModelRequest }): Promise<boolean> => {
     if (!input.conversationId || !isComposerDraftSendable(input)) return Promise.resolve(false);
     const conversationId = input.conversationId;
     const key = JSON.stringify({
@@ -866,7 +884,7 @@ export const createAiChatController = (options: CreateAiChatControllerOptions) =
       draftContent: input.draftContent,
       resources: input.resources,
       storedFiles: input.storedFiles,
-      model: input.modelProfileId,
+      model: input.model,
     });
     const previous = queuedAttempts.get(conversationId);
     if (uncertainSubmissions()[conversationId] !== undefined) {
@@ -886,7 +904,7 @@ export const createAiChatController = (options: CreateAiChatControllerOptions) =
         const body = JSON.stringify({
           draftRevision: saved.revision,
           queueId,
-          modelProfileId: input.modelProfileId,
+          model: input.model,
           clientToolIds: options.clientToolIds?.filter((id) => options.frontendTools?.[id]),
         });
         queuedAttempts.set(conversationId, { key, files: input.files, id: queueId });
@@ -914,7 +932,7 @@ export const createAiChatController = (options: CreateAiChatControllerOptions) =
     });
   };
 
-  const send = (input: ComposerDraftInput & { modelProfileId?: string }): Promise<boolean> => {
+  const send = (input: ComposerDraftInput & { model?: AiModelRequest }): Promise<boolean> => {
     if (!isComposerDraftSendable(input)) return Promise.resolve(false);
     const targetConversation = input.conversationId ? Promise.resolve(input.conversationId) : ensureConversation();
     return queueDraftOperation(async () => {
@@ -945,7 +963,7 @@ export const createAiChatController = (options: CreateAiChatControllerOptions) =
         kind: "message",
         message: { role: "user", content: optimisticContent },
         loopId: null,
-        modelProfileId: null,
+        modelId: null,
         providerModel: null,
         usage: null,
         stopReason: null,
@@ -993,7 +1011,7 @@ export const createAiChatController = (options: CreateAiChatControllerOptions) =
         const submissionBody = JSON.stringify({
           draftRevision: savedDraft.revision,
           clientToolIds: options.clientToolIds?.filter((id) => options.frontendTools?.[id]),
-          modelProfileId: input.modelProfileId,
+          model: input.model,
         });
         submissionBodies.set(conversationId, submissionBody);
         const result = await request<SubmitTurnResult>(
@@ -1024,7 +1042,7 @@ export const createAiChatController = (options: CreateAiChatControllerOptions) =
                   seq: 0,
                   status: "running",
                   blocks: [],
-                  modelProfileId: result.turn.modelProfileId,
+                  modelId: result.turn.modelId,
                 }),
         );
         if (state.conversation) {
@@ -1244,7 +1262,7 @@ export const createAiChatController = (options: CreateAiChatControllerOptions) =
     return requestPromise;
   };
 
-  const compactConversation = async (input: { modelProfileId?: string } = {}) => {
+  const compactConversation = async (input: { model?: AiModelRequest } = {}) => {
     const conversationId = activeConversationId();
     if (!conversationId) {
       setGlobalError("Open a chat before compacting context.");
@@ -1272,7 +1290,7 @@ export const createAiChatController = (options: CreateAiChatControllerOptions) =
     input: {
       content?: AiUserContentPart[];
       mode?: "retry" | "details" | "concise";
-      modelProfileId?: string;
+      model?: AiModelRequest;
     } = {},
   ) => {
     const conversationId = activeConversationId();
@@ -1292,7 +1310,7 @@ export const createAiChatController = (options: CreateAiChatControllerOptions) =
           body: JSON.stringify({
             mode: input.mode ?? "retry",
             content: input.content,
-            modelProfileId: input.modelProfileId,
+            model: input.model,
           }),
         },
         "AI retry failed",
@@ -1576,6 +1594,12 @@ export const createAiChatController = (options: CreateAiChatControllerOptions) =
     reconcileSubmission,
     retrySubmission,
     saveDraft,
+    /**
+     * Why the last draft save of this conversation, alone or within `send` or `queueMessage`, failed: `conflict`
+     * when the saved draft has another revision, which sets no chat error; `failed` for any other failure, which
+     * sets it; null after a successful save.
+     */
+    draftSaveFailure: (conversationId: string) => draftSaveFailures.get(conversationId) ?? null,
     queueMessage,
     send,
     steer,

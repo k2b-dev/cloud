@@ -5,7 +5,7 @@ section: Contributing
 order: 1306
 description: Where dependencies are declared, which root overrides and patches exist, why, and when each one can go.
 tags: [contributing, dependencies, security]
-updated: 2026-10-09
+updated: 2026-11-07
 ---
 
 # Dependency policy

@@ -1,6 +1,7 @@
 export { buildMetadata } from "../_internal/build-metadata";
 export { loadPendingApprovals } from "../api/approvals-loader";
 export { geoClient } from "../capabilities/geo-client";
+export { appCaller } from "../capabilities/server-invoke";
 export { expectUserBackedActor, getUserBackedActor, isAppSessionActor, userFromActor } from "./actor";
 export type { ApiErrorBody, ApiErrorResponse, ApiErrorStatus } from "./api";
 export { api, respond, respondMessage } from "./api";
@@ -8,8 +9,10 @@ export type { CreateApiClientConfig } from "./api-client";
 export { api as apiClient } from "./api-client";
 export { appAssetPath } from "./app-assets";
 export type { AppContext } from "./app-context";
+export { appKey } from "./app-key";
 export { clientIp, clientIpBucket } from "./client-ip";
 export { defineHelp, defineHelpCollection, type HelpCollection, type HelpDefinition, type HelpDefinitionDocument } from "./help";
+export { DBIP_ATTRIBUTION, type IpCountryResult, ipCountry } from "./ip-country";
 export { DEFAULT_LOCALE, getLocale, LOCALE_COOKIE, LOCALE_HEADER, locale, preferredLocale, resolveLocale } from "./locale";
 export type {
   AuthContext,
@@ -26,6 +29,7 @@ export type {
 export {
   auth,
   imageResponse,
+  isRequestCredentialCurrent,
   jsonResponse,
   middleware,
   openApiMeta,
@@ -78,6 +82,7 @@ export {
   getEffectiveGroups,
   getEffectivePermission,
   getEffectivePermissions,
+  getMemberPermission,
   hasPermission,
   images,
   isServiceError,
@@ -88,6 +93,7 @@ export {
   paginate,
   paginateItems,
   password,
+  recursiveServiceAccountGroupIdsSubquery,
   resolveDisplayNames,
   services,
   tryCatch,

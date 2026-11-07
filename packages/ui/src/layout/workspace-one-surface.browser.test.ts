@@ -116,24 +116,34 @@ test("1440: panes have 12px of space; sidebar/pane grips and shadows appear only
     expect(gap.space).toBeGreaterThanOrEqual(12);
     for (const kind of ["pane", "sidebar"]) {
       const handle = page.locator(`[data-app-workspace-resize="${kind}"]`).first();
-      const expectCue = async (visible: boolean) => {
-        const cue = await handle.evaluate((element) => {
+      // The handle paints no shadow of its own; it darkens the boundary's column shadow.
+      const cueOf = () =>
+        handle.evaluate((element) => {
           const line = getComputedStyle(element, "::before");
           const shadow = getComputedStyle(element, "::after");
           const generated = (style: CSSStyleDeclaration) =>
             style.content !== "none" && style.content !== "normal" && style.display !== "none";
+          const boundary =
+            element.getAttribute("data-app-workspace-resize") === "sidebar"
+              ? getComputedStyle(element.closest(".k2b-app-workspace")!.querySelector(".k2b-app-workspace__content")!, "::before")
+              : getComputedStyle(element.nextElementSibling!, "::before");
           return {
             line: generated(line),
             shadow: generated(shadow),
-            shadowPaint: shadow.backgroundImage,
-            shadowOpacity: shadow.opacity,
+            column: generated(boundary),
+            columnEdge: boundary.getPropertyValue("--k2b-workspace-shade-edge"),
             gripOpacity: getComputedStyle(element.querySelector("span")!).opacity,
           };
         });
+      await page.mouse.move(0, 0);
+      await settled(page);
+      const rest = await cueOf();
+      const expectCue = async (visible: boolean) => {
+        const cue = await cueOf();
         expect(cue.line).toBe(false);
-        expect(cue.shadow).toBe(true);
-        expect(cue.shadowPaint).not.toBe("none");
-        expect(cue.shadowOpacity).toBe(visible ? "1" : "0");
+        expect(cue.shadow).toBe(false);
+        expect(cue.column).toBe(true);
+        expect(cue.columnEdge !== rest.columnEdge).toBe(visible);
         expect(cue.gripOpacity).toBe(visible ? "1" : "0");
       };
       await page.mouse.move(0, 0);

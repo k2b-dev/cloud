@@ -1,6 +1,6 @@
 import { lstat, mkdir, readdir, realpath, stat, writeFile } from "node:fs/promises";
 import { dirname, isAbsolute, join, relative, sep } from "node:path";
-import type { AiSkill, AiSkillSummary } from "@k2b/cloud/ai";
+import type { AiSkill, AiSkillAccess, AiSkillSummary } from "@k2b/cloud/ai";
 import {
   AI_SKILL_REFERENCE_MAX_CHARS,
   AI_SKILL_REFERENCE_MAX_ITEMS,
@@ -12,7 +12,7 @@ import {
   serializeAiSkillMarkdown,
   validateAiSkillReferences,
 } from "@k2b/cloud/ai/browser";
-import { arg, type CloudCliContext, cloudResourceUrl, command, flag } from "@k2b/cloud/cli";
+import { arg, type CloudCliContext, cloudResourceUrl, command, createAccessCommands, flag } from "@k2b/cloud/cli";
 import { maxSkillBytes } from "./local-context";
 import { resolveLocalPath } from "./local-paths";
 import { jsonRequest, printRows, printValue, queryString, readApi } from "./shared";
@@ -132,7 +132,40 @@ const writeSkillFiles = async (dir: string, files: { path: string; content: stri
   }
 };
 
+const skillAccessCommands = createAccessCommands({
+  resourceLabel: "Skill",
+  resourceArgLabel: "skill-id-or-name",
+  async resolveResource(ctx, args) {
+    if (args.length !== 1) throw new Error("Pass one Skill name or ID.");
+    const skill = await getSkill(ctx, args[0]!);
+    return { id: skill.shortId, label: skill.name };
+  },
+  async list(ctx, resource) {
+    return (await readApi<{ access: AiSkillAccess[] }>(ctx, `/skills/${encodeURIComponent(resource.id)}/access`)).access;
+  },
+  async grant(ctx, resource, principal, permission) {
+    return (
+      await readApi<{ access: AiSkillAccess }>(
+        ctx,
+        `/skills/${encodeURIComponent(resource.id)}/access`,
+        jsonRequest("POST", { principal, permission }),
+      )
+    ).access;
+  },
+  async update(ctx, resource, accessId, permission) {
+    await readApi(
+      ctx,
+      `/skills/${encodeURIComponent(resource.id)}/access/${encodeURIComponent(accessId)}`,
+      jsonRequest("PATCH", { permission }),
+    );
+  },
+  async revoke(ctx, resource, accessId) {
+    await readApi(ctx, `/skills/${encodeURIComponent(resource.id)}/access/${encodeURIComponent(accessId)}`, { method: "DELETE" });
+  },
+}).map((definition) => ({ ...definition, path: ["skills", ...definition.path] }));
+
 export const assistantSkillCommands = [
+  ...skillAccessCommands,
   command("skills list", {
     summary: "List accessible Cloud Skills",
     flags: { search: flag.string({ description: "Search enabled Skills by name and description" }) },

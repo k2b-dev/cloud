@@ -1,0 +1,1 @@
+| Shared resource removed by one of several owners | One replica’s clean stop deleted the shared registry entry that other replicas still advertised. | Tests: `heartbeat.test.ts` replica-membership cases and `heartbeat.integration.test.ts`, plus the nightly scale-acceptance `chat-replica-stop` scenario ([#1561](https://github.com/k2b-dev/cloud/issues/1561)). |

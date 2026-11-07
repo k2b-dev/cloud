@@ -1,0 +1,1 @@
+| SQL parameters infer the wrong type | A date parameter in a SELECT, CASE, or arithmetic expression becomes text or an interval before assignment. | Tests: Pulse ingest identity, scrape, rollup, and store maintenance integration suites execute the SQL against PostgreSQL. |

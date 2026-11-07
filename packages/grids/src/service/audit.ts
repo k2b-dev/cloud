@@ -1,5 +1,5 @@
 import { AsyncLocalStorage } from "node:async_hooks";
-import { sql } from "bun";
+import { sql } from "@k2b/cloud";
 import { z } from "zod";
 import { RecordAuditContextSchema } from "../contracts";
 import { parseJsonbRow } from "./jsonb";

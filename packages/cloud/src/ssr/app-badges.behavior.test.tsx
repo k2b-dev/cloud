@@ -4,7 +4,7 @@ import { render } from "solid-js/web";
 import { createDomTestHarness, type DomTestHarness } from "../../../ui/test/dom";
 import { refreshAppBadges } from "../browser/app-badges";
 import { APPROVAL_COUNTS_PATH } from "../contracts/approvals";
-import { APP_BADGE_INTERVAL_MS, appBadgeCount, approvalCount, watchAppBadges } from "./app-badges";
+import { APP_BADGE_INTERVAL_MS, appBadgeCount, appPartSummaryText, approvalCount, watchAppBadges } from "./app-badges";
 import type { RailApp } from "./rail-navigation";
 import type { ShellData } from "./shell-data";
 
@@ -84,21 +84,18 @@ const mountRail = async () => {
   return render(() => createComponent(RailApps, { apps, settings, currentPath: "/app/mail" }), dom.root);
 };
 
-test.each(["rail", "phone bar"])("the retained %s follows the arriving page's rail preferences", async (surface) => {
+test("the retained rail follows the arriving page's rail preferences", async () => {
   const { default: CloudShell } = await import("./CloudShell.island");
   const data: ShellData = { apps, rail: settings, legalLinks: [], profile: { name: "Fixture" }, theme: "system", searchLinks: {} };
   const script = document.createElement("script");
   script.id = "cloud-shell-data";
   script.type = "application/json";
   script.textContent = JSON.stringify(data);
-  const bar = document.createElement("div");
-  bar.className = "cloud-tab-bar__row";
   const mount = document.createElement("div");
-  dom.root.append(script, bar, mount);
+  dom.root.append(script, mount);
   const dispose = render(() => createComponent(CloudShell, { slot: "rail", currentPath: "/" }), mount);
   try {
     expect(mount.querySelector('[data-cloud-rail-apps] a[href="/app/mail"]')).not.toBeNull();
-    expect(bar.querySelector(".cloud-tab-bar__live")).toBeNull();
     const arriving = document.createElement("script");
     arriving.id = script.id;
     arriving.type = script.type;
@@ -112,10 +109,8 @@ test.each(["rail", "phone bar"])("the retained %s follows the arriving page's ra
     });
     script.replaceWith(arriving);
     window.dispatchEvent(new CustomEvent("ssr:nav-swapped", { detail: { root: dom.root } }));
-    const root = surface === "rail" ? mount : bar;
-    const links = surface === "rail" ? "[data-cloud-rail-apps]" : ".cloud-tab-bar__live";
-    expect(root.querySelector(`${links} a[href="/app/mail"]`) === null).toBe(true);
-    expect(root.querySelector(`${links} a[href="/custom"]`) !== null).toBe(true);
+    expect(mount.querySelector('[data-cloud-rail-apps] a[href="/app/mail"]')).toBeNull();
+    expect(mount.querySelector('[data-cloud-rail-apps] a[href="/custom"]')).not.toBeNull();
   } finally {
     dispose();
   }
@@ -442,5 +437,24 @@ test("a disposed watcher cannot clear new counts when its error cleanup rejects 
   } finally {
     stop();
     for (const reject of rejectCleanup) reject();
+  }
+});
+
+test("a Cloud app part's summary keeps its one-line text beside its count; a missing or invalid text clears it", async () => {
+  responses["/api/spaces/summary"] = () => Response.json({ count: 5, text: "5 tasks for you · 1 today" });
+  const stop = watchAppBadges(["/api/spaces/summary"]);
+  try {
+    await settle();
+    expect(appBadgeCount({ endpoint: "/api/spaces/summary" })).toBe(5);
+    expect(appPartSummaryText("/api/spaces/summary")).toBe("5 tasks for you · 1 today");
+    for (const text of [undefined, "", "two\nlines", "x".repeat(201), 3]) {
+      responses["/api/spaces/summary"] = () => Response.json({ count: 2, text });
+      refreshAppBadges();
+      await settle();
+      expect(appBadgeCount({ endpoint: "/api/spaces/summary" })).toBe(2);
+      expect(appPartSummaryText("/api/spaces/summary")).toBeUndefined();
+    }
+  } finally {
+    stop();
   }
 });

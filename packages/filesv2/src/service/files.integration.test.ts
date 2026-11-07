@@ -1,21 +1,23 @@
 import { afterAll, beforeAll, beforeEach, expect, test } from "bun:test";
-import { getProcessSync, type ProcessSync, startProcessSync } from "@k2b/cloud";
+import { getProcessSync, type ProcessSync, sql, startProcessSync } from "@k2b/cloud";
 import { UserSchema } from "@k2b/cloud/contracts";
 import { type Principal, type RequestActor, resolveDisplayNames } from "@k2b/cloud/server";
 import { accountIdentities, secrets } from "@k2b/cloud/services";
 import { type ExecutionIdentity, Filegate, FilegateError, type Node, type WriteOptions } from "@k2b/filegate";
-import { sql } from "bun";
 import { z } from "zod";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
+import { migrate as migrateAudit } from "../../../core/src/migrate/core/audit";
+import { migratePosix } from "../../../core/src/migrate/core/posix";
 import { testCall } from "../../test/files-call";
 import { assertPrivateDatabase } from "../../test/private-database";
 import { bindings } from "../data/bases";
-import { ROOT_LOCK_WAIT_MS, withRootLock, withUploadLock } from "../data/operations";
+import { operations, ROOT_LOCK_WAIT_MS, withRootLock, withUploadLock } from "../data/operations";
 import { resolveEntryRefId } from "../data/references";
 import type { DocumentFormat } from "../documents";
 import { migrate } from "../migrate";
 import { entryRefId } from "../resource-ref";
 import { createFilesService } from ".";
+import { systemCall } from "./activity";
 import { connectFilegate } from "./filegate-facade";
 import { createTemplateService } from "./templates";
 
@@ -95,7 +97,7 @@ suite("Files service and durable bindings", () => {
       groups: "groups",
       archive: "archive",
     },
-    freeipa: { enabled: true, root: "freeipa", prefix: "", homes: "users", groups: "groups", archive: "archive" },
+    freeipa: { autoCreate: false, enabled: true, root: "freeipa", prefix: "", homes: "users", groups: "groups", archive: "archive" },
     collabora: { url: "", internalUrl: "", wopiOrigin: "", documentFormat: "odf" as DocumentFormat },
   };
   const set = async (key: string, value: unknown) => {
@@ -736,11 +738,10 @@ suite("Files service and durable bindings", () => {
     await migrate();
     await sql`CREATE SCHEMA IF NOT EXISTS auth`.simple();
     await sql`CREATE SCHEMA IF NOT EXISTS settings`.simple();
-    await sql`CREATE SCHEMA IF NOT EXISTS audit`.simple();
-    await sql`CREATE TABLE IF NOT EXISTS audit.events(id bigserial primary key,action text,outcome text,actor_user_id uuid,actor_uid text,actor_provider text,actor_roles text[],target_type text,target_id text,target_label text,target_provider text,reason text,error_code text,error_message text,request_id text,metadata jsonb)`.simple();
+    await migrateAudit();
     await sql`ALTER TABLE auth.users ADD COLUMN IF NOT EXISTS display_name text, ADD COLUMN IF NOT EXISTS avatar_hash text`.simple();
-    await sql`CREATE TABLE IF NOT EXISTS auth.user_posix(user_id uuid PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,managed_by text,uid_number integer,primary_gid_number integer,primary_group_id uuid,home_directory text,login_shell text)`.simple();
     await sql`CREATE TABLE IF NOT EXISTS auth.groups(id uuid PRIMARY KEY DEFAULT gen_random_uuid(),name text,provider text,gid_number integer)`.simple();
+    await migratePosix();
     await sql`CREATE TABLE IF NOT EXISTS auth.user_groups_v2(user_id uuid REFERENCES auth.users(id),group_id uuid REFERENCES auth.groups(id))`.simple();
     await sql`CREATE TABLE IF NOT EXISTS auth.group_groups_v2(parent_group_id uuid,child_group_id uuid)`.simple();
     await sql`CREATE TABLE IF NOT EXISTS auth.ipa_user_effective_groups(user_id uuid,group_name text)`.simple();
@@ -770,7 +771,7 @@ suite("Files service and durable bindings", () => {
     config.collabora = { url: "", internalUrl: "", wopiOrigin: "", documentFormat: "odf" };
     archives.length = 0;
     lostCommitResponse = false;
-    await sql`TRUNCATE filesv2.templates,auth.access,filesv2.recent,filesv2.favorites,filesv2.shares,filesv2.trash,filesv2.uploads,filesv2.operations,filesv2.maintenance,filesv2.bases,audit.events,auth.users,auth.user_posix,auth.groups,auth.user_groups_v2,auth.group_groups_v2,auth.ipa_user_effective_groups,settings.entries CASCADE`.simple();
+    await sql`TRUNCATE filesv2.templates,auth.access,filesv2.recent,filesv2.favorites,filesv2.shares,filesv2.trash,filesv2.uploads,filesv2.operations,filesv2.maintenance,filesv2.bases,audit.events,auth.users,auth.user_posix,auth.personal_groups,auth.groups,auth.user_groups_v2,auth.group_groups_v2,auth.ipa_user_effective_groups,settings.entries CASCADE`.simple();
     await set(
       "linux.identity_config",
       JSON.stringify({ enabled: true, rangeStart: 200000, rangeEnd: 200100, homeTemplate: "/home/{username}", loginShell: "/bin/bash" }),
@@ -1874,6 +1875,11 @@ suite("Files service and durable bindings", () => {
     ).rejects.toMatchObject({
       code: "invalid_path",
     });
+    await expect(
+      service.restoreVersion(testCall(admin), { baseId, path: "report.txt", id: v1.id, expectedRevision: "stale-view" }),
+    ).rejects.toMatchObject({ code: "version_restore_changed", status: 409 });
+    expect(nodes.get("cloud:users/admin/report.txt")).toEqual(originalNode);
+    expect(contents.get("cloud:users/admin/report.txt")).toBe(originalContent);
     const restored = await service.restoreVersion(testCall(admin), { baseId, path: "report.txt", id: v1.id });
     expect(restored.entry.modified).toBe(`restored:${v1.id}`);
     expect((await service.versionDownload(testCall(admin), { baseId, path: "report.txt", id: v1.id })).url).toContain(v1.id);
@@ -2275,6 +2281,52 @@ suite("Files service and durable bindings", () => {
     directory("freeipa", ".", 0, 0, "0700");
     expect((await service.bases(testCall(actor))).items[0]).toMatchObject({ status: "conflict", reason: "forbidden" });
   });
+  test("explicit and automatic adoption record the original actor atomically and only once", async () => {
+    const admin = await user("admin", "local", true);
+    directory("cloud", "users/admin", 99, 99);
+    const call = { ...testCall(admin), via: "agent" as const, requestId: "adoption-request" };
+    await service.adopt(call, { area: "cloud", kind: "users", identityId: id(admin) });
+    await service.adopt(call, { area: "cloud", kind: "users", identityId: id(admin) });
+    const [binding] = await sql<
+      { id: string; xmin: string }[]
+    >`SELECT id,xmin::text FROM filesv2.bases WHERE identity_id=${id(admin)}::uuid`;
+    const [event] = await sql<{ actor_user_id: string; target_id: string; request_id: string; metadata: { via: string }; xmin: string }[]>`
+      SELECT actor_user_id,target_id,request_id,metadata,xmin::text FROM audit.events WHERE action='filesv2.adopt'`;
+    expect(event).toMatchObject({
+      actor_user_id: id(admin),
+      target_id: binding!.id,
+      request_id: "adoption-request",
+      metadata: { via: "agent" },
+      xmin: binding!.xmin,
+    });
+    expect(await sql`SELECT 1 FROM audit.events WHERE action='filesv2.adopt'`).toHaveLength(1);
+    const actor = await user("alice", "ipa");
+    directory("freeipa", "users/alice");
+    await service.bases(testCall(actor));
+    await service.bases(testCall(actor));
+    const automatic = await sql<
+      { actor_user_id: string }[]
+    >`SELECT actor_user_id FROM audit.events WHERE action='filesv2.adopt' AND actor_user_id=${id(actor)}::uuid`;
+    expect(automatic).toEqual([{ actor_user_id: id(actor) }]);
+  });
+  test("failed adoption audit rolls the new binding back and leaves a safe retry", async () => {
+    const admin = await user("admin", "local", true);
+    directory("cloud", "users/admin", 99, 99);
+    await sql`CREATE FUNCTION audit.reject_adoption() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN
+      IF NEW.action='filesv2.adopt' THEN RAISE EXCEPTION 'adoption audit unavailable'; END IF; RETURN NEW;
+    END $$`.simple();
+    await sql`CREATE TRIGGER reject_adoption BEFORE INSERT ON audit.events FOR EACH ROW EXECUTE FUNCTION audit.reject_adoption()`.simple();
+    try {
+      await expect(service.adopt(testCall(admin), { area: "cloud", kind: "users", identityId: id(admin) })).rejects.toThrow();
+      expect(await sql`SELECT 1 FROM filesv2.bases`).toHaveLength(0);
+      expect(await sql`SELECT 1 FROM audit.events`).toHaveLength(0);
+    } finally {
+      await sql`DROP TRIGGER reject_adoption ON audit.events`.simple();
+      await sql`DROP FUNCTION audit.reject_adoption()`.simple();
+    }
+    await service.adopt(testCall(admin), { area: "cloud", kind: "users", identityId: id(admin) });
+    expect(await sql`SELECT 1 FROM audit.events WHERE action='filesv2.adopt'`).toHaveLength(1);
+  });
   test("Cloud adoption remains stable after POSIX allocation, provider off/on, and hides top-level trash", async () => {
     const admin = await user("admin", "local", true);
     directory("cloud", "users/admin", 99, 99);
@@ -2282,7 +2334,11 @@ suite("Files service and durable bindings", () => {
     directory("cloud", "users/admin/report", 99, 99, "0600", false);
     expect((await service.bases(testCall(admin))).items[0]?.status).toBe("unassigned");
     const base = await service.adopt(testCall(admin), { area: "cloud", kind: "users", identityId: id(admin) });
-    await sql`INSERT INTO auth.user_posix VALUES(${id(admin)},'local',200001,200001)`;
+    const [personal] = await sql<
+      { id: string }[]
+    >`INSERT INTO auth.groups(name,provider,gid_number) VALUES('admin','local',200001) RETURNING id`;
+    await sql`INSERT INTO auth.user_posix(user_id,managed_by,uid_number,primary_gid_number,primary_group_id,home_directory,login_shell)
+      VALUES(${id(admin)},'local',200001,200001,${personal!.id},'/home/admin','/bin/bash')`;
     await set("freeipa.enable", false);
     expect((await service.list(testCall(admin), { baseId: base.id })).items.map((item) => item.name)).toEqual(["report"]);
     await expect(service.download(testCall(admin), { baseId: base.id, path: "trash/report" })).rejects.toMatchObject({
@@ -2369,12 +2425,119 @@ suite("Files service and durable bindings", () => {
     await sql`INSERT INTO auth.user_groups_v2 VALUES(${id(actor)},${personal!.id}),(${id(actor)},${team!.id})`;
     await sql`INSERT INTO auth.user_posix(user_id,managed_by,uid_number,primary_gid_number,primary_group_id,home_directory,login_shell)
       VALUES(${id(actor)},'local',200001,200004,${personal!.id},'/home/quinn','/bin/bash')`;
+    const [ownership] = await sql`SELECT owner_id,group_name,gid_number FROM auth.personal_groups WHERE group_id=${personal!.id}`;
+    expect(ownership).toMatchObject({ owner_id: id(actor), group_name: "quinn", gid_number: 200004 });
     const bases = await service.bases(testCall(actor));
     expect(bases.issues).toEqual([]);
     expect(bases.items.map((item) => [item.area, item.kind, item.name])).toEqual([
       ["cloud", "users", "quinn"],
       ["cloud", "groups", "team"],
     ]);
+    await sql`DELETE FROM auth.user_posix WHERE user_id=${id(actor)}`;
+    const removedPosix = await service.bases(testCall(actor));
+    expect(removedPosix.issues).toEqual([]);
+    expect(removedPosix.items.map((item) => [item.area, item.kind, item.name])).toEqual([
+      ["cloud", "users", "quinn"],
+      ["cloud", "groups", "team"],
+    ]);
+  });
+  test("personal-group directories stay Legacy after retirement and automatic maintenance preserves their contents", async () => {
+    const admin = await user("admin", "local", true);
+    const owner = await user("legacy-owner");
+    const [group] = await sql<{ id: string }[]>`INSERT INTO auth.groups(name,provider,gid_number)
+      VALUES('legacy-owner','local',200004) RETURNING id`;
+    directory("cloud", "groups/legacy-owner", 0, 200004);
+    await sql`INSERT INTO auth.personal_groups(group_id,owner_id,group_name,gid_number)
+      VALUES(${group!.id},${id(owner)},'legacy-owner',200004)`;
+    await service.adopt(testCall(admin), { area: "cloud", kind: "groups", identityId: group!.id });
+    // From the start: a personal group's directory lists in the identity pass while the group exists, later in the filesystem pass.
+    const inventory = async () => service.admin(testCall(admin), { area: "cloud", kind: "groups", status: "legacy" });
+    expect((await inventory()).items).toContainEqual(
+      expect.objectContaining({
+        name: "legacy-owner",
+        status: "legacy",
+        reason: "legacy_personal_group",
+        actions: expect.objectContaining({ browse: true, archive: true }),
+      }),
+    );
+    await sql`DELETE FROM auth.groups WHERE id=${group!.id}`;
+    await sql`UPDATE auth.personal_groups SET retired_at=now() WHERE group_id=${group!.id}`;
+    expect((await service.maintain()).archived).toBe(0);
+    expect(nodes.has("cloud:groups/legacy-owner")).toBeTrue();
+    expect((await inventory()).items.map((item) => item.status)).toEqual(["legacy"]);
+    const binding = await bindings.path("cloud", "groups/legacy-owner");
+    const pendingId = crypto.randomUUID();
+    await operations.insert(
+      {
+        id: pendingId,
+        area: "cloud",
+        kind: "groups",
+        root: "cloud",
+        server_url: config.url,
+        name: "legacy-owner",
+        action: "archive",
+        source: "groups/legacy-owner",
+        target: `archive/${pendingId}/contents`,
+        base_id: binding!.id,
+        archive_id: null,
+        actor_id: null,
+        actor_name: "automatic-policy",
+        snapshot: nodes.get("cloud:groups/legacy-owner")!,
+      },
+      systemCall("automatic-archive"),
+    );
+    expect((await service.maintain()).archived).toBe(0);
+    expect(nodes.has("cloud:groups/legacy-owner")).toBeTrue();
+    expect((await inventory()).items.map((item) => item.status)).toEqual(["legacy"]);
+    expect((await inventory()).items[0]?.reason).toBe("legacy_personal_group_pending");
+    expect((await operations.get(pendingId))?.state).toBe("pending");
+    await sql`DELETE FROM filesv2.operations WHERE id=${pendingId}::uuid`;
+    // Filesystem-only historical paths use the retained ownership name too.
+    await sql`DELETE FROM filesv2.bases WHERE identity_id=${group!.id}`;
+    expect((await inventory()).items.map((item) => item.status)).toEqual(["legacy"]);
+    const archived = await service.archive(testCall(admin), { area: "cloud", kind: "groups", name: "legacy-owner" });
+    expect(nodes.has("cloud:groups/legacy-owner")).toBeFalse();
+    expect(nodes.has(`cloud:${archived.path}`)).toBeTrue();
+  });
+  test("an unbound personal directory stays Legacy when a team reuses its name", async () => {
+    const admin = await user("admin", "local", true);
+    const owner = await user("former-owner");
+    const formerId = crypto.randomUUID();
+    await sql`INSERT INTO auth.personal_groups(group_id,owner_id,group_name,gid_number,retired_at)
+      VALUES(${formerId},${id(owner)},'former-owner',200004,now())`;
+    await sql`INSERT INTO auth.groups(name,provider,gid_number) VALUES('former-owner','local',200005)`;
+    directory("cloud", "groups/former-owner", 0, 200004);
+    // The team that reuses the name lists the directory in the identity pass, so read the inventory from its start.
+    const result = await service.admin(testCall(admin), { area: "cloud", kind: "groups" });
+    expect(result.items).toContainEqual(
+      expect.objectContaining({ name: "former-owner", status: "legacy", reason: "legacy_personal_group" }),
+    );
+    expect(nodes.has("cloud:groups/former-owner")).toBeTrue();
+  });
+  test("maintenance completes an already moved personal-group archive without another move", async () => {
+    const admin = await user("admin", "local", true);
+    const owner = await user("archived-owner");
+    const [group] = await sql<{ id: string }[]>`INSERT INTO auth.groups(name,provider,gid_number)
+      VALUES('archived-owner','local',200004) RETURNING id`;
+    await sql`INSERT INTO auth.personal_groups(group_id,owner_id,group_name,gid_number)
+      VALUES(${group!.id},${id(owner)},'archived-owner',200004)`;
+    directory("cloud", "groups/archived-owner", 0, 200004);
+    await service.adopt(testCall(admin), { area: "cloud", kind: "groups", identityId: group!.id });
+    await sql`ALTER TABLE filesv2.operations ADD CONSTRAINT test_pause_finish CHECK (state<>'complete')`.simple();
+    try {
+      await expect(service.archive(testCall(admin), { area: "cloud", kind: "groups", name: "archived-owner" })).rejects.toThrow();
+    } finally {
+      await sql`ALTER TABLE filesv2.operations DROP CONSTRAINT test_pause_finish`.simple();
+    }
+    const [pending] = await sql<
+      { id: string; target: string }[]
+    >`SELECT id,target FROM filesv2.operations WHERE action='archive' AND state='pending'`;
+    await sql`UPDATE filesv2.operations SET actor_id=NULL,actor_name='automatic-policy' WHERE id=${pending!.id}::uuid`;
+    expect(nodes.has("cloud:groups/archived-owner")).toBeFalse();
+    expect(nodes.has(`cloud:${pending!.target}`)).toBeTrue();
+    await service.maintain();
+    expect((await operations.get(pending!.id))?.state).toBe("complete");
+    expect(nodes.has(`cloud:${pending!.target}`)).toBeTrue();
   });
   test("guest and global Cloud prerequisite denial occurs before leases", async () => {
     const guest = await user("guest", "local", false, "guest");

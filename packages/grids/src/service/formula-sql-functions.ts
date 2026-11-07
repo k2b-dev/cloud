@@ -1,6 +1,6 @@
+import { sql } from "@k2b/cloud";
 import { normalizeTimeZone } from "@k2b/cloud/shared";
 import { type DateContext, dates } from "@k2b/stdlib";
-import { sql } from "bun";
 import { DATEADD_RANGE } from "../formula/date-range";
 import {
   type FormulaFunctionName,

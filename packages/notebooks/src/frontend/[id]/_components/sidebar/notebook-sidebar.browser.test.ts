@@ -5,7 +5,12 @@ import { appColors } from "@k2b/cloud/ssr/app-color";
 import type { Browser, BrowserContextOptions, Page } from "playwright";
 import { launchBrowser, settled } from "../../../../../../ui/test/browser";
 import { compareNoteOrder } from "../../../../lib/note-order";
-import type { NotebookContext, NoteTreeNode } from "./types";
+import type { SidebarLevel, SidebarNote, SidebarTreeState } from "../../../../lib/sidebar-tree";
+import { extractTags } from "../../../lib/tag-extract";
+import type { NotebookContext } from "./types";
+
+/** A note of the fake notebook: a sidebar row plus the Markdown its tags come from. */
+type NoteTreeNode = SidebarNote & { contentMd: string; children: NoteTreeNode[] };
 
 // Icon size, row alignment, theme colours and the accessible names of the tree need real layout and a real
 // accessibility tree, so the real sidebar runs in a browser with the shipped stylesheets.
@@ -52,21 +57,62 @@ const buildCss = async (entry: string): Promise<string> => {
 
 const note = (id: string, title: string, children: NoteTreeNode[] = [], parentId: string | null = null, position = 0): NoteTreeNode => ({
   id,
-  notebookId: "Book01",
   parentId,
   title,
   position,
   hasChildren: children.length > 0,
-  yjsSnapshotAt: null,
   contentMd: `Notes about ${title}.`,
-  createdBy: null,
   createdAt: "2026-01-01T00:00:00.000Z",
   updatedAt: "2026-01-01T00:00:00.000Z",
   lockedAt: null,
   children,
 });
 
+const row = (node: NoteTreeNode): SidebarNote => ({
+  id: node.id,
+  parentId: node.parentId,
+  title: node.title,
+  position: node.position,
+  hasChildren: node.children.length > 0,
+  createdAt: node.createdAt,
+  updatedAt: node.updatedAt,
+  lockedAt: node.lockedAt,
+});
+const byDate = (field: "createdAt" | "updatedAt") => (left: NoteTreeNode, right: NoteTreeNode) =>
+  right[field].localeCompare(left[field]) || left.title.localeCompare(right.title) || left.id.localeCompare(right.id);
+/** A level in the server's order: the notebook order or newest first, the homepage leading its own level. */
+const ordered = (level: NoteTreeNode[], sort: string, homepageId: string | null): NoteTreeNode[] => {
+  const sorted = [...level].sort(
+    sort === "title" ? compareNoteOrder("en", (node: NoteTreeNode) => node.id) : byDate(sort === "created" ? "createdAt" : "updatedAt"),
+  );
+  const home = sorted.findIndex((node) => node.id === homepageId);
+  if (home > 0) sorted.unshift(...sorted.splice(home, 1));
+  return sorted;
+};
+/** A small notebook as the server hands it over: every level complete, every branch open. */
+const stateOf = (tree: NoteTreeNode[], homepageId: string | null = "Home01", sort = "title"): SidebarTreeState => {
+  const levels: SidebarLevel[] = [];
+  const expandedIds: string[] = [];
+  const visit = (level: NoteTreeNode[], parentId: string | null) => {
+    levels.push({ parentId, total: level.length, offset: 0, items: ordered(level, sort, homepageId).map(row) });
+    for (const node of level)
+      if (node.children.length > 0) {
+        expandedIds.push(node.id);
+        visit(node.children, node.id);
+      }
+  };
+  visit(tree, null);
+  return { total: levels.reduce((sum, level) => sum + level.total, 0), levels, expandedIds };
+};
+const flatten = (nodes: NoteTreeNode[]): NoteTreeNode[] => nodes.flatMap((node) => [node, ...flatten(node.children)]);
+
 /** The maintainer's example: the homepage "Overview" sits among top-level notes and one note with sub-notes. */
+const defaultTree = () => [
+  note("Reels1", "Reels"),
+  note("Rules1", "Content rules", [note("Lang01", "Language", [], "Rules1")]),
+  note("Home01", "Overview"),
+  note("Exam01", "Examples"),
+];
 const ctx = (homepageNoteId: string | null = "Home01"): NotebookContext => ({
   notebook: {
     id: "Book01",
@@ -81,12 +127,8 @@ const ctx = (homepageNoteId: string | null = "Home01"): NotebookContext => ({
     createdAt: "2026-01-01T00:00:00.000Z",
     updatedAt: "2026-01-01T00:00:00.000Z",
   },
-  tree: [
-    note("Reels1", "Reels"),
-    note("Rules1", "Content rules", [note("Lang01", "Language", [], "Rules1")]),
-    note("Home01", "Overview"),
-    note("Exam01", "Examples"),
-  ],
+  sidebarTree: stateOf(defaultTree(), homepageNoteId),
+  sidebarList: null,
   selectedNoteId: null,
   userId: "user01",
   settings: { lastNoteId: null, richMode: "rich", treeSort: "title" },
@@ -96,6 +138,7 @@ const ctx = (homepageNoteId: string | null = "Home01"): NotebookContext => ({
   attachmentCount: 0,
   favoriteNoteIds: [],
   tags: [],
+  pageTemplates: [],
   workspaceCursor: null,
   dateConfig: { locale: "en", timeZone: "UTC" },
   sidebarFilter: {},
@@ -134,17 +177,59 @@ const parentOf = (nodes: NoteTreeNode[], id: string): string | null => {
   return walk(nodes, null) ?? null;
 };
 const handleApi = async (request: Request, path: string): Promise<Response> => {
+  const query = new URL(request.url).searchParams;
   if (path === "workspace-state")
     return Response.json({
       notebook: api.notebook,
-      tree: api.tree,
       favoriteNoteIds: api.favoriteNoteIds,
       tags: api.tags,
       attachmentCount: 0,
+      pageTemplates: [],
     });
+  if (path === "tree/levels") {
+    const levels = (query.get("levels") ?? "").split(",").filter(Boolean);
+    return Response.json({
+      levels: levels.map((entry) => {
+        const [parent = "", offset = "0", limit = "100"] = entry.split(":");
+        const level = ordered(levelOf(api.tree, parent || null) ?? [], query.get("sort") ?? "title", api.notebook.homepageNoteId);
+        return {
+          parentId: parent || null,
+          total: level.length,
+          offset: Number(offset),
+          items: level.slice(Number(offset), Number(offset) + Number(limit)).map(row),
+        };
+      }),
+      expandedIds: [],
+    });
+  }
+  if (path === "tree/list") {
+    const view = query.get("view");
+    const notes = flatten(api.tree)
+      .filter((node) =>
+        view === "favorites"
+          ? api.favoriteNoteIds.includes(node.id)
+          : view === "tag"
+            ? extractTags(node.contentMd).includes(query.get("tag")!)
+            : true,
+      )
+      .sort(byDate("updatedAt"))
+      .slice(0, view === "recents" ? 12 : 100);
+    return Response.json({
+      total: notes.length,
+      offset: 0,
+      items: notes.map((node) => ({ ...row(node), tags: extractTags(node.contentMd) })),
+    });
+  }
   const body = (await request.json()) as { before?: string; after?: string; parentId?: string | null; favorite?: boolean };
   api.requests.push({ path, body });
-  if (path.endsWith("/favorite")) return Response.json({ favorite: body.favorite });
+  const favorited = /^notes\/(\w+)\/favorite$/u.exec(path)?.[1];
+  if (favorited) {
+    // The server keeps the choice, so the next favorites list reflects it.
+    api.favoriteNoteIds = body.favorite
+      ? [...new Set([...api.favoriteNoteIds, favorited])]
+      : api.favoriteNoteIds.filter((id) => id !== favorited);
+    return Response.json({ favorite: body.favorite });
+  }
   const moved = /^notes\/(\w+)\/move$/u.exec(path)?.[1];
   const anchor = body.before ?? body.after;
   const level = levelOf(api.tree, moved && !("parentId" in body) ? parentOf(api.tree, anchor!) : (body.parentId ?? null));
@@ -325,11 +410,12 @@ describe("One notebook sidebar with quick filters", () => {
   const filtered = (): NotebookContext => {
     const base = ctx();
     const dated = (node: NoteTreeNode, updatedAt: string, contentMd: string): NoteTreeNode => ({ ...node, updatedAt, contentMd });
+    const start = defaultTree();
     const tree = [
-      dated(base.tree[0]!, "2026-09-01T00:00:00.000Z", "Short videos #video #social #weekly"),
-      { ...base.tree[1]!, children: [dated(base.tree[1]!.children[0]!, "2026-10-01T00:00:00.000Z", `Tone #${LONG_TAG}`)] },
-      base.tree[2]!,
-      dated(base.tree[3]!, "2026-08-01T00:00:00.000Z", `Samples #video #${LONG_TAG}`),
+      dated(start[0]!, "2026-09-01T00:00:00.000Z", "Short videos #video #social #weekly"),
+      { ...start[1]!, children: [dated(start[1]!.children[0]!, "2026-10-01T00:00:00.000Z", `Tone #${LONG_TAG}`)] },
+      start[2]!,
+      dated(start[3]!, "2026-08-01T00:00:00.000Z", `Samples #video #${LONG_TAG}`),
     ];
     api.tree = structuredClone(tree);
     api.favoriteNoteIds = ["Reels1", "Exam01"];
@@ -338,14 +424,14 @@ describe("One notebook sidebar with quick filters", () => {
       { tag: LONG_TAG, count: 2 },
     ];
     api.requests = [];
-    return { ...base, tree, favoriteNoteIds: [...api.favoriteNoteIds], tags: [...api.tags] };
+    return { ...base, sidebarTree: stateOf(tree), favoriteNoteIds: [...api.favoriteNoteIds], tags: [...api.tags] };
   };
   const rgb = (hex: string) => `rgb(${[1, 3, 5].map((offset) => Number.parseInt(hex.slice(offset, offset + 2), 16)).join(", ")})`;
   for (const viewport of [
     { width: 1440, height: 900 },
     { width: 390, height: 844 },
   ]) {
-    test(`pressed sidebar chips use the notebook navigation fill and ink at ${viewport.width}px`, async () => {
+    test(`pressed sidebar chips use the selected edge and fill in the notebook ink at ${viewport.width}px`, async () => {
       const page = await open({ viewport, reducedMotion: "reduce" }, filtered());
       try {
         await page.clock.setFixedTime(new Date("2026-10-01T12:00:00Z"));
@@ -369,11 +455,31 @@ describe("One notebook sidebar with quick filters", () => {
           }, theme);
           await settled(page);
           const colors = await page.evaluate(() => {
-            const chip = getComputedStyle(document.querySelector('.notebook-sidebar-chip[aria-pressed="true"]')!);
+            const pressed = document.querySelector<HTMLElement>('.notebook-sidebar-chip[aria-pressed="true"]')!;
+            const chip = getComputedStyle(pressed);
             const old = getComputedStyle(document.querySelector("#old-chip")!);
-            return { fill: chip.backgroundColor, ink: chip.color, oldFill: old.backgroundColor };
+            // The selected edge and fill mix the notebook ink in the chip's own scope.
+            const probe = document.createElement("span");
+            pressed.parentElement!.append(probe);
+            const mix = (share: string) => {
+              probe.style.backgroundColor = `color-mix(in srgb, var(--k2b-app-workspace-active) var(${share}), var(--k2b-surface))`;
+              return getComputedStyle(probe).backgroundColor;
+            };
+            const result = {
+              fill: chip.backgroundColor,
+              edge: chip.borderTopColor,
+              inset: chip.boxShadow,
+              ink: chip.color,
+              oldFill: old.backgroundColor,
+              selectedFill: mix("--k2b-edge-selected-fill"),
+              selectedEdge: mix("--k2b-edge-selected-share"),
+            };
+            probe.remove();
+            return result;
           });
-          expect(colors.fill, theme).toBe(rgb(appColors("#eab308")[theme].selectedNav));
+          expect(colors.fill, theme).toBe(colors.selectedFill);
+          expect(colors.edge, theme).toBe(colors.selectedEdge);
+          expect(colors.inset, theme).toContain("inset");
           expect(colors.ink, theme).toBe(rgb(appColors("#eab308")[theme].ink));
           expect(colors.fill).not.toBe(colors.oldFill);
         }
@@ -389,13 +495,16 @@ describe("One notebook sidebar with quick filters", () => {
       body: document.querySelector(".k2b-app-workspace__sidebar-body")!.getBoundingClientRect().top,
       chips: document.querySelector(".notebook-sidebar-chips")!.getBoundingClientRect().height,
     }));
-  const listed = (page: Page) =>
-    page.evaluate(() =>
+  /** The rows once the filter's list has arrived from the server. */
+  const listed = async (page: Page) => {
+    await page.waitForFunction(() => !document.querySelector('[role="tree"] [data-k2b-nav-tree-id^="loading:"]'));
+    return page.evaluate(() =>
       Array.from(document.querySelectorAll<HTMLElement>('[role="tree"] > [role="treeitem"]')).map((row) => ({
         id: row.dataset.k2bNavTreeId,
         meta: row.querySelector(".k2b-app-workspace__sidebar-item-description")?.textContent ?? null,
       })),
     );
+  };
 
   for (const theme of ["light", "dark"] as const) {
     test(`chips turn the tree into a list newest first and back, and nothing above the list moves (${theme})`, async () => {
@@ -636,7 +745,7 @@ describe("Notebook sidebar order by hand", () => {
     api.favoriteNoteIds = [];
     api.tags = [];
     api.requests = [];
-    return { ...ctx(), tree, permission: "write" };
+    return { ...ctx(), sidebarTree: stateOf(tree), permission: "write" };
   };
   const startTree = () => [
     note("Reels1", "Reels"),

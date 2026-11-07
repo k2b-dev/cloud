@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
 import { ChangesQuerySchema, MessageQuerySchema, MessageSchema, SendMessageSchema } from "./contracts";
 import { chatLiveUpdates } from "./live-updates";
+import { type MessageRow, projectMessage } from "./message-store";
 
 test("client IDs and Markdown are bounded without trimming content or splitting emoji", () => {
   for (const clientId of ["", "a!", "a".repeat(65)]) expect(SendMessageSchema.safeParse({ clientId, body: "hello" }).success).toBeFalse();
@@ -9,6 +10,39 @@ test("client IDs and Markdown are bounded without trimming content or splitting 
   const body = "😀".repeat(20_000);
   expect(SendMessageSchema.parse({ clientId: "a".repeat(64), body }).body).toBe(body);
   expect(SendMessageSchema.parse({ clientId: "ok", body: " \n**hello**\n " }).body).toBe(" \n**hello**\n ");
+});
+test("a stored message keeps the clientId it was sent with in views and live events, so the sender replaces its send", () => {
+  const row: MessageRow = {
+    short_id: "Message001",
+    seq: "1",
+    rev: "1",
+    kind: "text",
+    author_type: "user",
+    author_id: "11111111-1111-4111-8111-111111111111",
+    author_name: "Robin Example",
+    body_md: "hello",
+    client_id: "send_1",
+    refs: [],
+    links: [],
+    system_code: null,
+    system_params: null,
+    created_at: new Date("2026-10-14T10:00:00.000Z"),
+    thread_id: null,
+    reply_to_seq: null,
+  };
+  const message = projectMessage(row, "Chat01");
+  expect(MessageSchema.parse(message).clientId).toBe("send_1");
+  const [live] = chatLiveUpdates("Chat01", message, "hello", []);
+  expect(live?.data.type === "message" && live.data.message.clientId).toBe("send_1");
+  const system = {
+    ...row,
+    kind: "system" as const,
+    body_md: null,
+    client_id: null,
+    system_code: "conversation_created",
+    system_params: {},
+  };
+  expect(projectMessage(system, "Chat01").clientId).toBeNull();
 });
 test("history cursors are mutually exclusive safe integers; after and delta accept zero, before stays positive", () => {
   for (const query of [
@@ -41,6 +75,10 @@ test("an empty group membership change still invalidates conversation and sideba
     kind: "system",
     author: { type: "user", id: "11111111-1111-4111-8111-111111111111", name: "Alex" },
     body: null,
+    reactions: [],
+    mentions: [],
+    refs: [],
+    attachments: [],
     system: { code: "groups_added", params: { groups: [{ id: "22222222-2222-4222-8222-222222222222", name: "Empty" }] } },
     createdAt: "2026-10-12T00:00:00.000Z",
   });

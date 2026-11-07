@@ -78,7 +78,7 @@ test("validates opaque resource cursors before they reach PostgreSQL", () => {
   expect(isConversationResourceCursor("not-json", "conversation")).toBe(false);
 });
 
-test("observations accept only validated hrefs and otherwise keep strict reference parsing", () => {
+test("observations validate hrefs and ignore unfamiliar reference fields", () => {
   expect(
     collectConversationResourceObservations({
       refs: [
@@ -88,7 +88,10 @@ test("observations accept only validated hrefs and otherwise keep strict referen
         { type: "mail.draft", id: "four", href: "/open/mail.draft/~four", extra: true },
       ],
     }),
-  ).toEqual([{ ref: { type: "mail.draft", id: "one" }, title: "Draft", href: "/open/mail.draft/~one" }]);
+  ).toEqual([
+    { ref: { type: "mail.draft", id: "one" }, title: "Draft", href: "/open/mail.draft/~one" },
+    { ref: { type: "mail.draft", id: "four" }, href: "/open/mail.draft/~four" },
+  ]);
 });
 
 test("enriches only top-level refs with live readers, preserving existing hrefs and all data", () => {
@@ -159,4 +162,14 @@ test("enriches only top-level refs with live readers, preserving existing hrefs 
   expect(result.refs[0]).not.toHaveProperty("href");
   expect(addCloudResourceHrefs(view, apps)).toBe(view);
   expect(addCloudResourceHrefs(result, [])).toEqual(result);
+});
+
+test("Assistant observations retain optional card facts in refs and views", () => {
+  const facts = { context: "Task in Planning · due 30 Oct", status: "Open" };
+  for (const value of [
+    { type: "spaces.item", id: "one", title: "Plan", ...facts, futurePresentation: "ignored" },
+    { ref: { type: "spaces.item", id: "one" }, title: "Plan", ...facts, links: [{ rel: "open", href: "/app/spaces" }] },
+  ]) {
+    expect(collectConversationResourceObservations(value)).toMatchObject([{ ref: { type: "spaces.item", id: "one" }, ...facts }]);
+  }
 });

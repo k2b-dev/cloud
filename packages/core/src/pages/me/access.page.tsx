@@ -25,7 +25,12 @@ export default ssr<AuthContext>(async (c) => {
   const freeIpaEnabled = Boolean(freeIpaEnabledRaw);
   const accountsUiAvailable = hasDedicatedRuntimeRoute(getRuntimeContext(c).apps, "/app/accounts/groups", "core");
   const showAllGroups = c.req.query("groups") === "all";
-  const directGroups = user.memberofGroup;
+  const directGroups = (
+    await accountsAppService.user.group.list({
+      userId: user.id,
+      recursive: false,
+    })
+  ).items;
   const displayGroups = showAllGroups
     ? (await accountsAppService.user.group.list({ userId: user.id, recursive: true })).items
     : directGroups;
@@ -87,12 +92,10 @@ export default ssr<AuthContext>(async (c) => {
               }
               subtitle={t.groupMembershipsDescription}
               actions={
-                displayGroups.length > 0 && (
-                  <ButtonLink href={showAllGroups ? "/me/access" : "/me/access?groups=all"} variant="ghost" size="sm">
-                    <i class="ti ti-git-branch" aria-hidden="true" />
-                    {showAllGroups ? t.directOnly : t.showInherited}
-                  </ButtonLink>
-                )
+                <ButtonLink href={showAllGroups ? "/me/access" : "/me/access?groups=all"} variant="ghost" size="sm">
+                  <i class="ti ti-git-branch" aria-hidden="true" />
+                  {showAllGroups ? t.directOnly : t.showInherited}
+                </ButtonLink>
               }
             >
               {displayGroups.length > 0 ? (

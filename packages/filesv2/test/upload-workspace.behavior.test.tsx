@@ -143,7 +143,7 @@ describe("uploads in the Files workspace", () => {
     Object.defineProperty(globalThis, "localStorage", { configurable: true, value: dom.window.localStorage });
     const initial: WorkspaceSnapshot = { source: "/app/filesv2?base=home", bases, selectedId: base.id, directory, errorCode: null };
     dom.window.history.replaceState(null, "", initial.source);
-    const dispose = render(() => createComponent(Workspace!, { initial, cloudUrl: "https://cloud.test" }), dom.root);
+    const dispose = render(() => createComponent(Workspace!, { initial }), dom.root);
     cleanup = () => {
       dispose();
       dom.cleanup();

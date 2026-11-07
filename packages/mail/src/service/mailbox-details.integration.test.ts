@@ -1,9 +1,8 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
+import { sql } from "@k2b/cloud";
 import type { Principal } from "@k2b/cloud/contracts";
 import { encryptSecret } from "@k2b/cloud/services";
-import { sql } from "bun";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
-import { migrate } from "../migrate";
 import { grantMailboxAccess, listMailboxAccess } from "./access";
 import type { MailRequestContext } from "./auth";
 import { getMailboxDetails } from "./mailbox-details";
@@ -81,7 +80,6 @@ suite("mail mailbox details", () => {
   };
 
   beforeAll(async () => {
-    await migrate();
     owner = (await createUser("owner", `Owner ${suffix}`)).context;
     const readerUser = await createUser("reader", `Reader ${suffix}`);
     reader = readerUser.context;

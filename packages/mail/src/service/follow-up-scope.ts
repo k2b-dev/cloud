@@ -1,4 +1,4 @@
-import { sql } from "bun";
+import { sql } from "@k2b/cloud";
 
 export { FOLLOW_UP_VIEWS } from "../folder-display-rules";
 
@@ -61,3 +61,10 @@ export const isFollowUpConversation = (conversationId: SqlFragment): SqlFragment
       )`,
     )}
 )`;
+
+/**
+ * Whether a conversation is open work: not done and not snoozed. The Focus view "All active" and every work list
+ * that leaves out closed conversations use this one rule; `OPEN_WORK_EXPRESSION` in folder-display-rules is its search form.
+ */
+export const isOpenConversation = (conversation: SqlFragment): SqlFragment =>
+  sql`(${conversation}.work_status <> 'done' AND (${conversation}.snoozed_until IS NULL OR ${conversation}.snoozed_until <= now()))`;

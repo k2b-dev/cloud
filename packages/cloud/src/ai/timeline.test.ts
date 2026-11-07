@@ -18,7 +18,7 @@ const stored = (input: {
   kind: "message",
   message: input.message,
   loopId: input.loopId ?? null,
-  modelProfileId: null,
+  modelId: null,
   providerModel: null,
   usage: null,
   stopReason: input.message.role === "assistant" ? (input.message.stopReason ?? null) : null,

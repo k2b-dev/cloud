@@ -1,4 +1,4 @@
-import { sql } from "bun";
+import { sql } from "@k2b/cloud";
 import type { Field } from "./types";
 
 /** Stored scalar columns do not require a table-field lifecycle or record identity. */

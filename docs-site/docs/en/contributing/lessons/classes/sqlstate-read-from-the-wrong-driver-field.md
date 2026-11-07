@@ -1,0 +1,1 @@
+| SQLSTATE read from the wrong driver field | A schema retry checks only `code`, while Bun exposes PostgreSQL's SQLSTATE in `errno` with a generic `code`. | Tests: notification `catalog.test.ts` covers all supported schema states in both fields, retry completion, and propagation of initial non-schema errors. |

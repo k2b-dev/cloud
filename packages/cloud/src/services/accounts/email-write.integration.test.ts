@@ -1,6 +1,6 @@
 import { afterAll, afterEach, beforeAll, beforeEach, expect, mock, spyOn, test } from "bun:test";
-import { sql } from "bun";
 import { suiteFor } from "../../../../../scripts/fixtures/test-infra";
+import { sql } from "../../runtime/clients";
 import "../../../../../scripts/fixtures/authorization-preload";
 import { migrate as migrateAuth } from "../../../../core/src/migrate/core/auth";
 import { freeipa } from "../../server/services";
@@ -38,7 +38,11 @@ suite("account email writes with legacy duplicates", () => {
     for (const [key, value] of Object.entries(configuration)) await settings.set(key, JSON.stringify(value));
   });
   beforeEach(() => {
-    spyOn(freeipa.client, "call").mockResolvedValue({ result: { result: {} }, error: null, id: 1 });
+    spyOn(freeipa.client, "call").mockImplementation(async ({ method }) =>
+      method === "user_show"
+        ? { result: null, error: { code: 4001, name: "NotFound", message: "not found", kind: "rpc" }, id: 1 }
+        : { result: { result: {} }, error: null, id: 1 },
+    );
   });
   afterEach(() => mock.restore());
   afterAll(async () => {
@@ -154,14 +158,14 @@ suite("account email writes with legacy duplicates", () => {
     const created = await Promise.all([createIpa(address), createIpa(address.toUpperCase())]);
     expect(created.filter((result) => result.ok)).toHaveLength(1);
     expect(created.filter((result) => !result.ok)).toMatchObject([{ ok: false, status: 409 }]);
-    expect(freeipa.client.call).toHaveBeenCalledTimes(1);
+    expect(freeipa.client.call).toHaveBeenCalledTimes(2);
     const one = await fixture(email("concurrent-edit-one"), "ipa");
     const two = await fixture(email("concurrent-edit-two"), "ipa");
     const target = email("concurrent-ipa-edit");
     const changed = await Promise.all([one, two].map((id) => updateProfile({ id, ipaSession: "fixture", data: { mail: target } })));
     expect(changed.filter((result) => result.ok)).toHaveLength(1);
     expect(changed.filter((result) => !result.ok)).toMatchObject([{ ok: false, status: 409 }]);
-    expect(freeipa.client.call).toHaveBeenCalledTimes(2);
+    expect(freeipa.client.call).toHaveBeenCalledTimes(3);
   });
 
   test("failed FreeIPA requests leave the address available and release the claim", async () => {

@@ -1,14 +1,15 @@
 import type { AppAdminNavigationGroup, AppAppearance, AppAppearanceColor, AppPanel, AppPresentationCatalog, AppSearchLink } from "./app";
 import type { AppAccessRule } from "./app-access";
 import type { CapabilityManifest, CapabilityPresentationCatalog } from "./capabilities";
+import type { AppInstallable } from "./installable";
 import type { PlatformPermission } from "./outgoing-mail";
 import type { Role } from "./shared";
 import type { DashboardWidgetPresentation, DashboardWidgetSize, WidgetSettingsDeclaration } from "./widgets";
 
 /**
  * App-registry entry type. Populated internally by `defineApp()` + the
- * heartbeat runtime. Values are validated when read because Redis may still
- * contain records written by older or interrupted runtimes.
+ * heartbeat runtime. Values are validated before publication and once per observed NATS revision
+ * because readers may encounter records from older or interrupted runtimes.
  */
 
 export type AppRegistryNav = {
@@ -24,6 +25,12 @@ export type AppRegistryNav = {
 export type AppRegistryPwaPart = {
   href: string;
   requiresRoles?: Role[];
+  /** Count route for the part's sidebar entry; older readers ignore it. */
+  badge?: string;
+  /** Summary route for the part's line on Start; older readers ignore it. */
+  summary?: string;
+  /** Position among the parts; older readers ignore it. */
+  order?: number;
 };
 
 export type AppRegistryCapabilitySummary = {
@@ -78,9 +85,13 @@ export type AppRuntimeMetadata = {
 };
 
 export type AppRegistryEntry = {
+  /** Opt-in public site, served only through the app public router. */
+  public?: true;
   access?: AppAccessRule;
   platformPermissions?: readonly PlatformPermission[];
   id: string;
+  /** Shared object-store package; omitted means the app ID. */
+  package?: string;
   name: string;
   icon: string;
   description: string;
@@ -105,6 +116,7 @@ export type AppRegistryEntry = {
   searchLinks?: readonly AppSearchLink[];
   /** The app's part of the mobile app (preview); `href` is `/pwa/<id>`. Older readers ignore it. */
   pwa?: AppRegistryPwaPart;
+  installable?: AppInstallable;
   /** Optional panel declaration; older readers ignore it. */
   panel?: AppPanel;
   widgets?: AppRegistryWidget[];

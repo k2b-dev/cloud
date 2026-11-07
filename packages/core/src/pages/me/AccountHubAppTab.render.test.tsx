@@ -57,7 +57,7 @@ const render = (appTab: boolean, locale = "en") =>
   );
 
 describe("account App tab", () => {
-  test("appears only while the mobile app runs", () => {
+  test("appears only while the Cloud app runs", () => {
     const shown = render(true);
     expect(shown).toContain('href="/me/app"');
     expect(shown).toMatch(/href="\/me\/app"[^>]*aria-current="page"|aria-current="page"[^>]*href="\/me\/app"/);

@@ -8,6 +8,7 @@ import {
   MalformedSharedTextEventError,
   maxStreamCursor,
   parseStreamCursor,
+  SHARED_TEXT_NAME,
   toBase64,
 } from "./index";
 
@@ -90,4 +91,42 @@ describe("shared text stream helpers", () => {
       reloaded.destroy();
     }
   });
+});
+
+test("versioned server updates apply only to their snapshot lineage and require explicit coverage", () => {
+  const before = new Y.Doc({ gc: false }),
+    changed = new Y.Doc({ gc: false }),
+    restored = new Y.Doc();
+  before.clientID = 101;
+  changed.clientID = 202;
+  restored.clientID = 303;
+  try {
+    before.getText(SHARED_TEXT_NAME).insert(0, "KEEP");
+    const base = Y.encodeStateAsUpdate(before);
+    Y.applyUpdate(changed, base);
+    changed.getText(SHARED_TEXT_NAME).delete(0, 4);
+    const vector = Y.encodeStateVector(changed);
+    changed.getText(SHARED_TEXT_NAME).insert(0, "repair");
+    const event = {
+      cursor: "s6t.fixture.1",
+      data: {
+        kind: "sync" as const,
+        payload: toBase64(Y.encodeStateAsUpdate(changed, vector)),
+        originNodeId: "test",
+        originPeerId: null,
+        restoreRevision: "0",
+      },
+    };
+    Y.applyUpdate(restored, base);
+    expect(applySharedTextEvent(restored, event, "doc", "1")).toBe(false);
+    expect(restored.getText(SHARED_TEXT_NAME).toString()).toBe("KEEP");
+    expect(restored.store.pendingStructs).toBeNull();
+    expect(() => applySharedTextEvent(restored, event, "doc")).toThrow(TypeError);
+    expect(restored.getText(SHARED_TEXT_NAME).toString()).toBe("KEEP");
+    expect(applySharedTextEvent(changed, event, "doc", "0")).toBe(true);
+  } finally {
+    before.destroy();
+    changed.destroy();
+    restored.destroy();
+  }
 });

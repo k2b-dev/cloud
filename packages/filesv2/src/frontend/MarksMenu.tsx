@@ -114,7 +114,7 @@ function MarksList(props: { kind: MarksKind; items: MarkedEntry[]; onOpen: (entr
         <Placeholder
           variant="inline"
           align="left"
-          icon={props.kind === "recent" ? "ti ti-history" : "ti ti-star"}
+          icon={props.kind === "recent" ? "ti ti-clock" : "ti ti-star"}
           description={props.kind === "recent" ? b().noRecent : b().noFavorites}
         />
       }
@@ -149,7 +149,7 @@ export function MarksSidebarItem(props: MarksOptions) {
   const label = () => (props.kind === "recent" ? b().recent : b().favorites);
   return (
     <AppWorkspace.SidebarItem
-      icon={props.kind === "recent" ? "ti ti-history" : "ti ti-star"}
+      icon={props.kind === "recent" ? "ti ti-clock" : "ti ti-star"}
       preview={{
         label: label(),
         trigger: "row",

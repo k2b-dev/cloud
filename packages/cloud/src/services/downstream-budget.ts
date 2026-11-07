@@ -1,4 +1,4 @@
-import { env } from "../config/env";
+import { connections } from "../runtime/connections";
 import { logger } from "./logging";
 import { requestCacheRedis } from "./request-cache-redis";
 
@@ -31,7 +31,7 @@ export const createDownstreamBudget = (options: { client?: () => Promise<Client>
   async acquire(input: { downstream: Downstream; timeoutMs: number; signal: AbortSignal }): Promise<() => void> {
     input.signal.throwIfAborted();
     if (!Number.isFinite(input.timeoutMs) || input.timeoutMs <= 0) throw new RangeError("Downstream timeout must be positive and finite");
-    const namespace = options.namespace?.() ?? env.SYNC_NAMESPACE;
+    const namespace = options.namespace?.() ?? connections().nats.namespace;
     if (!namespace.trim()) throw new Error("SYNC_NAMESPACE is required for shared downstream budgets");
     const key = `cloud:downstream:{${namespace}}:${input.downstream}`;
     const token = crypto.randomUUID();

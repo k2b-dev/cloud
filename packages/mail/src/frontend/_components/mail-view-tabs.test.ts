@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { mailboxCurrentTab, mailboxViewTabs } from "./mail-view-tabs";
 
-const root = { scheduledMode: false, draftsMode: false, folderId: null, activeView: null, savedViewId: null };
+const root = { scheduledMode: false, draftsMode: false, eventsMode: false, folderId: null, activeView: null, savedViewId: null };
 const expectedViews = ["needs_action", "mine", "waiting", "unassigned", "snoozed", "done", "recently_active", "kept"] as const;
 const counts = { needs_action: 3, mine: 2, waiting: 1, unassigned: 4, snoozed: 5, done: 6, recently_active: 7, kept: 8, send_problems: 9 };
 describe("mailbox head tabs", () => {
@@ -16,6 +16,7 @@ describe("mailbox head tabs", () => {
   });
   test.each([...expectedViews])("selects %s", (activeView) => expect(mailboxCurrentTab({ ...root, activeView })).toBe(activeView));
   test("saved views have their own IDs", () => expect(mailboxCurrentTab({ ...root, savedViewId: "Saved1" })).toBe("saved:Saved1"));
+  test("the Events tab has its own ID", () => expect(mailboxCurrentTab({ ...root, eventsMode: true })).toBe("events"));
   test.each([{ folderId: "Inbox1" }, { draftsMode: true }, { scheduledMode: true }, { activeView: "send_problems" as const }])(
     "places suppress tabs: %j",
     (place) => {
@@ -28,6 +29,7 @@ describe("mailbox head tabs", () => {
     assignedOnly: false,
     labels: {
       all: "All",
+      events: "Events",
       needs_action: "Needs action",
       mine: "Assigned to me",
       waiting: "Waiting for reply",
@@ -52,16 +54,21 @@ describe("mailbox head tabs", () => {
       },
     ],
   };
-  test("All comes first, followed by ordered views and saved views with reloadable hrefs", () => {
+  test("All comes first, followed by ordered views, saved views and the pinned Events tab with reloadable hrefs", () => {
     const tabs = mailboxViewTabs(input);
-    expect(tabs.map((tab) => tab.id)).toEqual(["all", ...expectedViews, "saved:Saved1"]);
+    expect(tabs.map((tab) => tab.id)).toEqual(["all", ...expectedViews, "saved:Saved1", "events"]);
     expect(tabs.map((tab) => tab.href)).toEqual([
       "/app/mail/Box001",
       ...expectedViews.map((view) => `/app/mail/Box001?view=${view}`),
       "/app/mail/Box001?savedView=Saved1",
+      "/app/mail/Box001?view=events",
     ]);
+    expect(tabs.at(-1)).toMatchObject({ pinned: true, label: "Events" });
+    expect(tabs.at(-1)?.badge).toBeUndefined();
+    expect(mailboxViewTabs({ ...input, eventsBadge: "New" }).at(-1)?.badge).toBe("New");
     expect(tabs[1]?.count).toBe("#3");
-    expect(tabs.at(-1)).toMatchObject({ label: "Invoices", icon: "ti ti-user" });
+    expect(tabs.at(-2)).toMatchObject({ label: "Invoices", icon: "ti ti-user" });
+    // People who see only assigned conversations get no mailbox-wide feed.
     expect(mailboxViewTabs({ ...input, assignedOnly: true }).map((tab) => tab.id)).toEqual([
       "all",
       ...expectedViews.filter((view) => view !== "unassigned"),

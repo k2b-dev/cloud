@@ -54,6 +54,8 @@ type RecordsViewColumnControllerOptions = {
   };
   fields: Accessor<Field[]>;
   setFields: Setter<Field[]>;
+  /** Given in a saved view, whose `fields` are its own columns: a reload refreshes the table's fields through it. */
+  setTableFields?: (next: Field[]) => void;
   tableColumns: Accessor<FieldColumnSpec[]>;
   setTableColumns: Setter<FieldColumnSpec[]>;
   /** The table version `tableColumns` belongs to; a column write names it so a write from an older state fails. */
@@ -76,6 +78,7 @@ export const createRecordsViewColumnController = ({
   props,
   fields,
   setFields,
+  setTableFields,
   tableColumns,
   setTableColumns,
   tableUpdatedAt,
@@ -169,7 +172,13 @@ export const createRecordsViewColumnController = ({
       const [table, nextFields] = await Promise.all([tableRes.json(), fieldsRes.json()]);
       setTableColumns(table.columns);
       setTableUpdatedAt(table.updatedAt);
-      setFields([...nextFields].sort((a, b) => a.position - b.position));
+      const sorted = [...nextFields].sort((a, b) => a.position - b.position);
+      if (setTableFields) {
+        // The view keeps its own columns; only renamed, changed, or deleted fields reach them.
+        setTableFields(sorted);
+        const current = new Map(sorted.map((field) => [field.id, field]));
+        setFields((viewFields) => viewFields.flatMap((field) => current.get(field.id) ?? []));
+      } else setFields(sorted);
       return true;
     } catch {
       return false;

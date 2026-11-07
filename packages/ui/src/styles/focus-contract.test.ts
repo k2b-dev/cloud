@@ -120,6 +120,7 @@ describe("@k2b/ui focus and color contract", () => {
       "content-parity.css",
       "editors-parity.css",
       "print.css",
+      "text-editor.css",
     ]);
     expect(focused.length).toBeGreaterThan(0);
     expect(signaled.length).toBeGreaterThan(0);
@@ -164,7 +165,7 @@ describe("@k2b/ui focus and color contract", () => {
     expect(isFocusSelector(".k2b-field.is-focused")).toBe(true);
   });
 
-  test("keeps shared fields aligned with Cloud's filled field contract", async () => {
+  test("keeps shared fields on one edge contract", async () => {
     const css = await Bun.file(resolve(stylesDir, "index.css")).text();
     const shared = [
       ".k2b-ui .k2b-input-shell",
@@ -182,9 +183,11 @@ describe("@k2b/ui focus and color contract", () => {
         .map((rule) => rule.body)
         .join("\n");
       expect(body, selector).toMatch(/min-height:\s*2\.25rem/);
-      // Consumers can opt into a border; ordinary filled fields remain transparent.
-      expect(body, selector).toMatch(/border:\s*1px solid var\(--k2b-field-border, transparent\)/);
-      expect(body, selector).toMatch(/background:\s*var\(--k2b-field-surface, var\(--k2b-surface-muted\)\)/);
+      // White field, 2 px edge drawn inside: a 1 px border plus a 1 px inset in the same state colour.
+      expect(body, selector).toMatch(/--k2b-edge-color:\s*var\(--k2b-edge\)/);
+      expect(body, selector).toMatch(/border:\s*1px solid var\(--k2b-edge-color\)/);
+      expect(body, selector).toMatch(/background:\s*var\(--k2b-surface\)/);
+      expect(body, selector).toMatch(/box-shadow:\s*inset 0 0 0 calc\(var\(--k2b-edge-width\) - 1px\) var\(--k2b-edge-color\)/);
     }
     expect(css).not.toContain(".k2b-select-shell");
     expect(css).toMatch(
@@ -264,11 +267,8 @@ describe("@k2b/ui focus and color contract", () => {
     expect(focus?.body).toContain("background: var(--k2b-surface)");
   });
 
-  test("draws the TextInput focus ring above the autofill fill", () => {
-    const ring = rules.find((rule) => rule.selector === ".k2b-ui .k2b-text-input:has(> .k2b-input:autofill):focus-within::after");
-    const invalid = rules.find(
-      (rule) => rule.selector === '.k2b-ui .k2b-text-input[data-invalid="true"]:has(> .k2b-input:autofill):focus-within::after',
-    );
+  test("draws the TextInput edge above the autofill fill", () => {
+    const ring = rules.find((rule) => rule.selector === ".k2b-ui .k2b-text-input:has(> .k2b-input:autofill)::after");
     const anchor = rules.find(
       (rule) => rule.selector === ".k2b-ui .k2b-text-input:has(> .k2b-input:autofill)" && rule.body.includes("position"),
     );
@@ -276,9 +276,8 @@ describe("@k2b/ui focus and color contract", () => {
     expect(anchor?.body).toContain("position: relative");
     expect(ring?.body).toContain("position: absolute");
     expect(ring?.body).toContain("inset: 0");
-    expect(ring?.body).toContain("box-shadow: var(--k2b-focus-inset)");
+    expect(ring?.body).toContain("box-shadow: inset 0 0 0 calc(var(--k2b-edge-width) - 1px) var(--k2b-edge-color)");
     expect(ring?.body).toContain("pointer-events: none");
-    expect(invalid?.body).toContain("box-shadow: inset 0 0 0 var(--k2b-focus-width) var(--k2b-danger-500)");
   });
 
   test("keeps the tags editor geometry stable while its markup changes on focus", () => {

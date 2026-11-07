@@ -145,7 +145,7 @@ const createSchedule = async (config: {
       resourceKind: config.resourceKind,
       resourceId: config.resourceId,
       resourceLabel: config.label,
-      detailHref: "/admin/settings?tab=ai",
+      detailHref: "/admin/ai?sec=general",
     },
     process: async (context) => {
       await config.submit(`slot:${context.slot.getTime()}`);

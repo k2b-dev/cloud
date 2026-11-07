@@ -36,6 +36,7 @@ import {
   SubscriptionUnsubscribeInputSchema,
 } from "./capability-contracts";
 import { checkMailCapabilityMessages } from "./capability-messages";
+import { summaryState } from "./frontend/_components/mail-summary-fixtures";
 import {
   attachmentExtraction,
   collaboration,
@@ -265,6 +266,8 @@ beforeEach(() => {
     added: [],
     removed: [],
     addedTotal: 0,
+    granted: [],
+    grantedTotal: 0,
     removedTotal: 0,
   }));
   spyOn(reviewReaders, "loadSendReviewContent").mockImplementation(async ({ draft }) => ({
@@ -531,21 +534,31 @@ describe("mail capabilities", () => {
     expect(checkMailCapabilityMessages()).toEqual([]);
   });
 
-  test("keep release requires Manage and its review explains deletion and kept-copy visibility", async () => {
-    spyOn(messages, "listConversationMessages").mockResolvedValue({
+  test("keep release refuses non-admin review before resolving content and accepts Cloud admins without mailbox grants", async () => {
+    const allowed = spyOn(conversationKeeps, "canLiftConversationKeeps").mockResolvedValue(false);
+    const subject = spyOn(conversationKeeps, "getConversationKeepReleaseSubject").mockResolvedValue({
       ok: true,
-      data: { items: [{ id: internalMessageId, subject: "Evidence" }], nextCursor: null },
-    } as never);
-    const access = spyOn(mailboxAccess, "requireMailboxPermission").mockResolvedValue({ ok: true, data: "admin" });
+      data: { subject: "Evidence" },
+    });
+    const access = spyOn(mailboxAccess, "requireMailboxPermission");
     const release = mailCapabilities.actions["conversation.keep.release"];
-    const review = await release.review({ mailboxId, conversationId }, context);
-    expect(access.mock.calls[0]?.[2]).toBe("admin");
+    expect(await release.review({ mailboxId, conversationId }, context)).toMatchObject({
+      ok: false,
+      error: {
+        code: "FORBIDDEN",
+        message: "Only a Cloud administrator can stop keeping a conversation",
+      },
+    });
+    expect(subject).not.toHaveBeenCalled();
+    allowed.mockResolvedValue(true);
+    const review = await release.review({ mailboxId, conversationId, reason: "Policy reviewed" }, context);
     expect(review).toMatchObject({ ok: true });
+    expect(access).not.toHaveBeenCalled();
     if (!review.ok) throw new Error(review.error.message);
     expect(review.data.sentence.action).toBe("Stop keeping the conversation {conversation}");
+    expect(review.data.consequences?.map((c) => c.text).join(" ")).toContain("Cloud administrator");
     expect(review.data.consequences?.map((c) => c.text).join(" ")).toContain("disappear from view");
     expect(release.destructive).toBeTrue();
-    expect("approval" in release).toBeFalse();
   });
   test("kept conversations cannot be reviewed for a Trash or Drafts move, by either folder role", async () => {
     spyOn(messages, "listConversationMessages").mockResolvedValue({
@@ -557,6 +570,7 @@ describe("mail capabilities", () => {
       ok: true,
       data: {
         conversationId: internalConversationId,
+        canLift: false,
         keptAt: timestamp,
         keptBy: { kind: "user", id: userId, displayName: "Ada", avatarHash: null },
       },
@@ -1147,6 +1161,8 @@ describe("mail capabilities", () => {
       added: [],
       removed: [],
       addedTotal: 0,
+      granted: [],
+      grantedTotal: 0,
       removedTotal: 0,
     });
     const review = await mailCapabilities.actions["conversation.assign"].review(
@@ -1168,6 +1184,50 @@ describe("mail capabilities", () => {
       },
     });
   });
+
+  for (const serviceAccountKind of ["agent", "standalone"] as const) {
+    test(`reviews a named ${serviceAccountKind} assignment as access, without promising a user notification`, async () => {
+      const name = `Mail ${serviceAccountKind}`;
+      spyOn(messages, "listConversationMessages").mockResolvedValue({
+        ok: true,
+        data: { items: [{ subject: "Release follow-up" }], nextCursor: null },
+      } as never);
+      spyOn(mailboxAccess, "requireMailboxPermission").mockResolvedValue({ ok: true, data: "write" });
+      spyOn(collaboration, "listEligibleAssignees").mockResolvedValue([
+        {
+          id: userId,
+          uid: name,
+          displayName: name,
+          avatarHash: null,
+          type: "service_account",
+          serviceAccountKind,
+          permission: "write",
+          scope: "assigned",
+          source: { type: "direct" },
+        },
+      ]);
+      spyOn(reviewReaders, "loadAssignmentReviewChange").mockResolvedValue({
+        requested: [{ name }],
+        added: [],
+        removed: [],
+        addedTotal: 0,
+        removedTotal: 0,
+        granted: [{ name }],
+        grantedTotal: 1,
+      });
+      const review = await mailCapabilities.actions["conversation.assign"].review(
+        { mailboxId, conversationId, assigneeUserIds: [userId], mode: "add" },
+        context,
+      );
+      expect(review.ok).toBe(true);
+      if (!review.ok) return;
+      expect(review.data.ask).toBe("changes_access");
+      expect(review.data.slots.people).toMatchObject({ people: [{ name }] });
+      expect(review.data.consequences?.map((item) => item.text).join(" ")).toContain("gain access");
+      expect(JSON.stringify(review.data)).not.toContain("will be notified");
+      expect(JSON.stringify(review.data.slots.people)).not.toContain('"userId"');
+    });
+  }
 
   test("names the move destination by its full folder path", async () => {
     spyOn(mailboxAccess, "requireMailboxPermission").mockResolvedValue({ ok: true, data: "write" });
@@ -1436,10 +1496,12 @@ describe("mail capabilities", () => {
       ok: true,
       data: {
         conversationId: internalConversationId,
+        canLift: false,
         keptAt: timestamp,
         keptBy: { kind: "user", id: userId, displayName: "Test user", avatarHash: null },
       },
     });
+    spyOn(conversationKeeps, "getConversationKeepReleaseSubject").mockResolvedValue({ ok: true, data: { subject: "Evidence" } });
     spyOn(conversationKeeps, "releaseConversationKeep").mockResolvedValue({
       ok: true,
       data: { conversationId: internalConversationId, released: true },
@@ -2143,7 +2205,7 @@ describe("mail capabilities", () => {
     spyOn(resourceParents, "conversation").mockResolvedValue(internalMailboxId);
     const getSummary = spyOn(conversationSummaries, "getConversationSummary").mockResolvedValue({
       ok: true,
-      data: { summary: "Launch approved; waiting for the checklist.", summaryRevision: 3, conversationRevision: 7 },
+      data: summaryState({ summary: "Launch approved; waiting for the checklist.", summaryRevision: 3, conversationRevision: 7 }),
     });
     const getCollaboration = spyOn(collaboration, "getConversationCollaboration").mockResolvedValue({
       ok: true,
@@ -2553,11 +2615,67 @@ describe("mail capabilities", () => {
       subject: "Quarterly report",
       snippet: "The report is ready",
       from: [{ name: "Ada", address: "ada@example.test" }],
+      to: [{ name: null, address: "team@example.test" }],
       internalDate: "2026-08-04T10:00:00.000Z",
+      folderPath: null,
+      attachmentCount: 0,
       attachmentMatch: null,
     };
     const page = (items: unknown[]) => ({ ok: true, data: { items, nextCursor: null, backend: "native" } }) as never;
     const searchFailed = { ok: false, error: { code: "INTERNAL", message: "Mail search failed", status: 500 } } as const;
+
+    test("lists every matching mail newest first with what tells similar mails apart", async () => {
+      const list = spyOn(mailboxes, "listMailboxes").mockResolvedValue({
+        ok: true,
+        data: [mailboxRow(internalMailboxId, "Support"), mailboxRow(otherMailboxId, "Sales")],
+      } as never);
+      const older = {
+        ...hit,
+        subject: "Changes from 1 November",
+        from: [{ name: "Ben", address: "ben@example.test" }],
+        internalDate: "2026-10-30T08:00:00.000Z",
+      };
+      const newer = {
+        ...hit,
+        id: "34343434-3434-4434-8434-343434343434",
+        subject: "Changes from 1 November",
+        from: [{ name: null, address: "carla@example.test" }],
+        to: ["Ada", "Ben", "Dan", "Eve"].map((name) => ({ name, address: `${name.toLowerCase()}@example.test` })),
+        internalDate: "2026-11-02T09:30:00.000Z",
+        folderPath: "Projects / Moves",
+        attachmentCount: 2,
+      };
+      const query = spyOn(search, "searchMessages").mockImplementation(async ({ mailboxId }) =>
+        page(mailboxId === internalMailboxId ? [older] : [newer]),
+      );
+      spyOn(publicResources, "publicIds").mockImplementation(async (_kind, ids) => new Map(ids.map((id) => [id, id])) as never);
+
+      const result = await mailCapabilities.queries.search.run({ query: "changes", tags: [], limit: 31 }, { ...context, locale: "en" });
+
+      if (!result.ok) throw new Error("Expected search results");
+      expect(list.mock.calls[0]?.[1]).toBe(200);
+      for (const call of query.mock.calls)
+        expect(call[0]).toMatchObject({ request: { sort: "newest", limit: 31 }, groupByConversation: false });
+      const [first, second] = result.data.data;
+      expect(first?.context).toBe("carla@example.test · Sales");
+      expect(first?.metadata).toEqual([
+        { label: "From", value: "carla@example.test" },
+        { label: "Recipients", value: "Ada, Ben, Dan +1" },
+        { label: "Date", value: "2026-11-02T09:30:00.000Z", format: "date-time" },
+        { label: "Folder", value: "Projects / Moves" },
+        { label: "Mailbox", value: "Sales" },
+        { label: "Attachments", value: "2" },
+      ]);
+      // Both mails share one conversation; each row opens its own mail.
+      expect(first?.links[0]?.href).toEndWith(`?message=${newer.id}`);
+      expect(second?.links[0]?.href).toEndWith(`?message=${older.id}`);
+      expect(second?.context).toBe("Ben · Support");
+      expect(second?.metadata?.find((entry) => entry.label === "Date")).toEqual({
+        label: "Date",
+        value: "2026-10-30T08:00:00.000Z",
+        format: "date-time",
+      });
+    });
 
     test("keeps the results of answering mailboxes and names the mailbox that failed", async () => {
       spyOn(mailboxes, "listMailboxes").mockResolvedValue({
@@ -2789,6 +2907,7 @@ describe("mail capabilities", () => {
             contentType: "application/pdf",
             sizeBytes: 123,
             contentId: null,
+            checksum: null,
           },
         ],
       } as never,
@@ -2835,6 +2954,7 @@ describe("mail capabilities", () => {
             contentType: "application/pdf",
             sizeBytes: 123,
             contentId: null,
+            checksum: null,
           },
         ],
       } as never,
@@ -2877,6 +2997,7 @@ describe("mail capabilities", () => {
             contentType: "application/pdf",
             sizeBytes: 123,
             contentId: null,
+            checksum: null,
           },
         ],
       } as never,
@@ -2917,7 +3038,9 @@ describe("mail capabilities", () => {
     spyOn(messages, "getMessage").mockResolvedValue({
       ok: true,
       data: {
-        attachments: [{ id: internalAttachmentId, filename: "emoji.txt", contentType: "text/plain", sizeBytes: 6, contentId: null }],
+        attachments: [
+          { id: internalAttachmentId, filename: "emoji.txt", contentType: "text/plain", sizeBytes: 6, contentId: null, checksum: null },
+        ],
       } as never,
     });
     spyOn(attachmentExtraction, "loadAttachmentExtraction").mockResolvedValue({
@@ -3070,7 +3193,9 @@ test("every declared Type has a reader open-link case or an explicit reason", as
     mailingList: null,
     remoteContent: { imageIds: [], allowedByRule: false, sender: null, domain: null },
     delivery: null,
-    attachments: [{ id: internalAttachmentId, filename: "notes.pdf", contentType: "application/pdf", sizeBytes: 123, contentId: null }],
+    attachments: [
+      { id: internalAttachmentId, filename: "notes.pdf", contentType: "application/pdf", sizeBytes: 123, contentId: null, checksum: null },
+    ],
   };
   spyOn(mailboxes, "getMailbox").mockResolvedValue({
     ok: true,
@@ -3100,7 +3225,7 @@ test("every declared Type has a reader open-link case or an explicit reason", as
   spyOn(messages, "listConversationMessages").mockResolvedValue({ ok: true, data: { items: [message], nextCursor: null } });
   spyOn(conversationSummaries, "getConversationSummary").mockResolvedValue({
     ok: true,
-    data: { summary: "Follow-up", summaryRevision: 1, conversationRevision: 5 },
+    data: summaryState({ summary: "Follow-up", summaryRevision: 1, conversationRevision: 5 }),
   });
   spyOn(collaboration, "getConversationCollaboration").mockResolvedValue({
     ok: true,

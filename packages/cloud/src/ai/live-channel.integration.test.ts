@@ -1,9 +1,9 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
-import { sql } from "bun";
 import { Hono } from "hono";
 import { websocket } from "hono/bun";
 import { uniqueCallerAddress } from "../../../../scripts/fixtures/caller-address";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
+import { sql } from "../runtime/clients";
 import { useRegisteredTestApp } from "../services/identity/application.test-fixture";
 import "../../../../scripts/fixtures/authorization-preload";
 import { startLiveOutbox } from "../events/live";

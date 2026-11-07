@@ -1,5 +1,6 @@
 import { createEffect, createSignal, type JSX, on, Show } from "solid-js";
 import { useAvatarMessages } from "./avatar-messages";
+import { personTint } from "./person-color";
 
 export type AvatarSize = "xs" | "sm" | "md" | "lg" | "xl";
 
@@ -12,6 +13,9 @@ export type AvatarRing = "success" | { color: string };
 /** `square` marks an agent or service account; people stay round. */
 export type AvatarShape = "circle" | "square";
 
+/** `person` tints initials and icons by name; `neutral` keeps them gray, such as for someone outside the team. */
+export type AvatarTone = "person" | "neutral";
+
 export type AvatarProps = {
   name: string;
   src?: string | null;
@@ -22,6 +26,7 @@ export type AvatarProps = {
   /** Draws a ring with a small transparent gap inside the avatar's own box, so the avatar keeps its size and no container clips the ring. */
   ring?: AvatarRing;
   shape?: AvatarShape;
+  tone?: AvatarTone;
   loading?: "eager" | "lazy";
   class?: string;
   style?: JSX.CSSProperties | string;
@@ -32,19 +37,6 @@ const initialsFor = (name: string): string => {
   if (parts.length === 0) return "?";
   if (parts.length === 1) return parts[0]?.slice(0, 2).toUpperCase() ?? "?";
   return `${parts[0]?.[0] ?? ""}${parts.at(-1)?.[0] ?? ""}`.toUpperCase();
-};
-
-/** Tints behind initials, as many as `.k2b-avatar[data-tint]` rules in the stylesheet. */
-const TINTS = 10;
-
-/**
- * The tint behind initials and icons, from the name, so the same name has one color wherever an avatar shows it. The
- * hash is the one of `@k2b/stdlib`'s generated avatar.
- */
-const tintFor = (name: string): number => {
-  let hash = 0;
-  for (let index = 0; index < name.length; index++) hash = (hash * 31 + name.charCodeAt(index)) >>> 0;
-  return hash % TINTS;
 };
 
 export function Avatar(props: AvatarProps): JSX.Element {
@@ -80,7 +72,7 @@ export function Avatar(props: AvatarProps): JSX.Element {
           class={className()}
           data-size={props.size ?? "md"}
           data-shape={props.shape === "square" ? "square" : undefined}
-          data-tint={tintFor(props.name.trim())}
+          data-tint={props.tone === "neutral" ? undefined : personTint(props.name)}
           data-ring={ring()}
           style={style()}
           role="img"

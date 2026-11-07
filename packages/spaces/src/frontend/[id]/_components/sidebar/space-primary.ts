@@ -36,19 +36,3 @@ export const syncSpacePrimaryHref = (document: Document, ctx: Parameters<typeof 
     window.removeEventListener("popstate", syncLocation);
   };
 };
-
-/** Preserve native links before hydration, reloads, and modified clicks. */
-export const interceptSpacePrimaryClick = (document: Document, create: () => void) => {
-  const onClick = (event: MouseEvent) => {
-    if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
-    const target = event.target;
-    if (!(target instanceof Element)) return;
-    const anchor = target.closest("a");
-    if (!anchor?.hasAttribute("data-workspace-primary") || anchor.hasAttribute("download") || (anchor.target && anchor.target !== "_self"))
-      return;
-    event.preventDefault();
-    create();
-  };
-  document.addEventListener("click", onClick, true);
-  return () => document.removeEventListener("click", onClick, true);
-};

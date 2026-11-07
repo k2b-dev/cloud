@@ -1,4 +1,4 @@
-import { sql } from "bun";
+import { sql } from "@k2b/cloud";
 import type {
   CommandKind,
   MaintenanceCommandInput,
@@ -10,6 +10,7 @@ import { withShortIdDb } from "../lib/short-id";
 import { isKeptMessage } from "./conversation-keep-rules";
 import { isUnsentOutboundMessage } from "./conversation-timeline";
 import { isInboxFolder, isSentFolder } from "./follow-up-scope";
+import { OPERATOR_RECONCILE_FROM_ATTEMPT } from "./outbound-delivery";
 import { SEARCH_CHUNK_CHARACTERS, SEARCH_CHUNK_OVERLAP_CHARACTERS } from "./search-chunks";
 
 type SqlClient = typeof sql;
@@ -476,11 +477,12 @@ export const executeOperatorAction = async (params: {
     if (params.input.kind === "rebuild_search") return rebuildSearchProjection(tx, params.mailboxId);
     if (params.input.kind === "rebuild_threads") return rebuildThreadProjection(tx, params.mailboxId);
     if (params.input.kind === "reconcile_effect") {
+      // A send keeps its attempt: it fences the outbox worker, and a stale worker must not match again.
       const [command] = await tx<{ kind: CommandKind }[]>`
         UPDATE mail.commands
         SET
           state = 'ambiguous',
-          attempt = 0,
+          attempt = CASE WHEN kind = 'send' THEN attempt ELSE 0 END,
           started_at = NULL,
           finished_at = NULL,
           worker_heartbeat_at = NULL,
@@ -493,6 +495,25 @@ export const executeOperatorAction = async (params: {
         RETURNING kind
       `;
       if (!command) throw Object.assign(new Error("Target command changed state"), { code: "COMMAND_STATE_CHANGED" });
+      if (command.kind === "send") {
+        // The outbox worker checks an unclear send: a recorded SMTP answer or a copy in Sent settles
+        // it, and it never sends again. Its attempts stay as they are, since they fence the worker;
+        // the command records from which attempt the operator's check counts.
+        const [outbox] = await tx<{ attempt: number }[]>`
+          UPDATE mail.outbox_submissions
+          SET state = 'unknown', sent_copy_pending = false, last_error_code = NULL, last_error_message = NULL, updated_at = now()
+          WHERE command_id = ${params.input.commandId}::uuid
+            AND mailbox_id = ${params.mailboxId}::uuid
+            AND state IN ('unknown', 'needs_attention')
+          RETURNING attempt
+        `;
+        if (!outbox) throw Object.assign(new Error("Target send changed state"), { code: "COMMAND_STATE_CHANGED" });
+        await tx`
+          UPDATE mail.commands
+          SET transport_metadata = transport_metadata || ${{ [OPERATOR_RECONCILE_FROM_ATTEMPT]: outbox.attempt }}::jsonb
+          WHERE id = ${params.input.commandId}::uuid
+        `;
+      }
       return { commandId: params.input.commandId, reconciliationQueued: true };
     }
     if (params.input.kind === "retry_command") {

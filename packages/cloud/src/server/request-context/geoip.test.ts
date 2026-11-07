@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Reader } from "mmdb-lib";
@@ -158,6 +158,20 @@ describe("GeoIP", () => {
     expect(info.asn?.databaseType).toContain("ASN");
     expect(info.city?.buildDate.toISOString()).toBe("2026-10-01T00:00:00.000Z");
     expect(info.city?.source).toBe("bundled");
+  });
+  test("bundled snapshots need only read permission for status, country and sign-in lookups", () => {
+    const files = paths();
+    chmodSync(files.cityPath, 0o444);
+    chmodSync(files.asnPath, 0o444);
+    const geo = createGeoIp(files);
+    expect(geo.status().city?.source).toBe("bundled");
+    expect(geo.status().asn?.source).toBe("bundled");
+    expect(geo.country("8.8.8.8")).toMatchObject({ available: true, country: "AT" });
+    expect(geo.lookup("8.8.8.8")).toMatchObject({ city: "Vienna", network: "Example Net GmbH" });
+    geo.install("city", openGeoIpDatabase("city", mmdbFixture("city", { cityName: "Uploaded" }), "uploaded"));
+    expect(geo.lookup("8.8.8.8").city).toBe("Uploaded");
+    geo.install("city", null);
+    expect(geo.lookup("8.8.8.8").city).toBe("Vienna");
   });
   test("cleans and bounds names by UTF-8 bytes and rejects ZZ", () => {
     const result = createGeoIp(paths()).lookup("1.1.1.1");
@@ -516,4 +530,23 @@ test("an unreadable stored upload is read once per version, and the other type s
   citySha = "d".repeat(64);
   await geo.refresh();
   expect(reads).toBe(3);
+});
+
+test("country results admit only ISO country codes and never read private or invalid addresses", () => {
+  const geo = createGeoIp(paths());
+  const city = openGeoIpDatabase("city", mmdbFixture("city"))!;
+  const get = spyOn(city, "get");
+  geo.install("city", city);
+  for (const code of ["ZZ", "AA", "EU", "AUT", ""]) {
+    get.mockReturnValue({ country: { iso_code: code } });
+    expect(geo.country("8.8.8.8").country).toBeNull();
+  }
+  get.mockReturnValue({ country: { iso_code: "at" } });
+  expect(geo.country("8.8.8.8").country).toBe("AT");
+  get.mockClear();
+  for (const input of ["10.0.0.1", "::ffff:127.0.0.1", "invalid", "8".repeat(46), "8.8.8.8 "]) {
+    expect(geo.country(input).country).toBeNull();
+  }
+  expect(get).not.toHaveBeenCalled();
+  get.mockRestore();
 });

@@ -1,0 +1,1 @@
+| A token leaks through structured CLI output | The command redacts text but prints the raw API response in JSON. | Test: Pulse `cli.test.ts` checks text, JSON and JSONL output, exclusive file creation and mode 0600. |

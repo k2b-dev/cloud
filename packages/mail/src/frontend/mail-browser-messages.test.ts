@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { mailComposerMessages } from "./_components/mail-composer-messages";
 import { mailConversationListMessages } from "./_components/mail-conversation-list-messages";
 import { mailConversationUiMessages } from "./_components/mail-conversation-ui-messages";
+import { mailDetailsMessages } from "./_components/mail-details-messages";
 import { mailMailboxDetailsMessages } from "./_components/mail-mailbox-details-messages";
 import { mailMessageMessages } from "./_components/mail-message-messages";
 import { mailRemainingMessages } from "./_components/mail-remaining-messages";
@@ -19,6 +20,7 @@ const catalogs = [
   mailConversationListMessages,
   mailMessageMessages,
   mailConversationUiMessages,
+  mailDetailsMessages,
   mailWorkspaceMessages,
   mailComposerMessages,
   mailSettingsMessages,
@@ -34,7 +36,7 @@ describe("Mail browser message catalogs", () => {
     expect(mailOverviewMessages.resolve(["de-CH"]).t.mailboxes).toBe("Postfächer");
     expect(mailSidebarMessages.resolve(["de-DE"]).t.needsAction).toBe("Handlungsbedarf");
     expect(mailWorkspaceMessages.resolve(["de-CH"]).t.moveToFolder).toBe("In Ordner verschieben");
-    expect(mailConversationUiMessages.resolve(["de-CH"]).t.scheduled).toBe("Geplant");
+    expect(mailConversationUiMessages.resolve(["de-CH"]).t.scheduled).toBe("Postausgang");
     expect(mailComposerMessages.resolve(["de-CH"]).t.send).toBe("Senden");
     expect(mailSettingsMessages.resolve(["de-CH"]).t.retry).toBe("Erneut versuchen");
     expect(mailRemainingMessages.resolve(["de-CH"]).t.overview).toBe("Übersicht");
@@ -42,7 +44,7 @@ describe("Mail browser message catalogs", () => {
 
   test("falls back to English for unsupported locales", () => {
     expect(mailWorkspaceMessages.resolve(["fr"]).t.moveToFolder).toBe("Move to folder");
-    expect(mailConversationUiMessages.resolve(["fr"]).t.scheduled).toBe("Scheduled");
+    expect(mailConversationUiMessages.resolve(["fr"]).t.scheduled).toBe("Outbox");
     expect(mailComposerMessages.resolve(["fr"]).t.send).toBe("Send");
     expect(mailSettingsMessages.resolve(["fr"]).t.retry).toBe("Retry");
     expect(mailRemainingMessages.resolve(["fr"]).t.overview).toBe("Overview");

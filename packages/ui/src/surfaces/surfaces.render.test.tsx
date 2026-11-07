@@ -14,6 +14,7 @@ process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 
 const { Avatar } = await import("./Avatar");
 const { DescriptionList } = await import("./DescriptionList");
+const { DotStrip } = await import("./DotStrip");
 const { LinkCard } = await import("./LinkCard");
 const { NotFoundState } = await import("./NotFoundState");
 const { NoticeCard } = await import("./NoticeCard");
@@ -37,6 +38,20 @@ const ownedSelectors =
 const ownedSelectorFiles = new Set(stylesheets.filter((file) => ownedSelectors.test(readFileSync(resolve(stylesDir, file), "utf8"))));
 
 describe("@k2b/ui Cloud-faithful surfaces", () => {
+  test("NoticeCard icon true shows the tone's dialog icon and names the tone for screen readers", () => {
+    const warning = renderToString(() =>
+      createComponent(NoticeCard, { tone: "warning", icon: true, children: "Anyone with the link sees this." }),
+    );
+    expect(warning).toContain("data-icon");
+    expect(warning).toContain("ti ti-alert-triangle k2b-notice-card__icon");
+    expect(warning).toContain('<span class="k2b-sr-only">Warning: </span>');
+    const danger = renderToString(() => createComponent(NoticeCard, { tone: "danger", icon: true, children: "Gone" }));
+    expect(danger).toContain("ti ti-alert-octagon");
+    const info = renderToString(() => createComponent(NoticeCard, { tone: "info", icon: true, children: "Note" }));
+    expect(info).toContain("ti ti-info-circle");
+    expect(info).not.toContain("k2b-sr-only");
+  });
+
   test("NoticeCard keeps its calm markup without a Markdown callout icon", () => {
     const html = renderToString(() => createComponent(NoticeCard, { tone: "warning", title: "x", children: "Body" }));
     expect(html).toContain('data-tone="warning"');
@@ -363,6 +378,25 @@ describe("@k2b/ui Cloud-faithful surfaces", () => {
     expect(value(icon, "width")).toBe(value(sidebarIcon, "width"));
   });
 
+  test("dot strip keeps its slots, fills from the left and names its counts", () => {
+    const strip = (props: Parameters<typeof DotStrip>[0]) => renderToString(() => createComponent(DotStrip, props));
+    const growing = strip({ dots: ["accent", "warning", "muted"], length: 5, label: "2 of 5 checked", selected: 0 });
+    expect(growing).toContain('role="img"');
+    expect(growing).toContain('aria-label="2 of 5 checked"');
+    expect(growing.match(/class="k2b-dot-strip__dot[ "]/g)).toHaveLength(5);
+    expect(growing.match(/data-state="pending"/g)).toHaveLength(2);
+    expect(growing).toContain('data-state="accent" data-selected=""');
+    expect(growing).toContain("--k2b-dot-strip-columns:5");
+    const waiting = strip({ dots: ["accent"], length: 3, waiting: true, label: "Waiting", columns: 25, size: "lg" });
+    expect(waiting.match(/data-state="waiting"/g)).toHaveLength(3);
+    expect(waiting).toContain('data-size="lg"');
+    expect(waiting).toContain("--k2b-dot-strip-columns:25");
+    const ai = strip({ dots: ["ai", "danger"], length: 1, label: "Two" });
+    expect(ai.match(/class="k2b-dot-strip__dot[ "]/g)).toHaveLength(2);
+    // Only the AI tone uses the AI palette, through its own `-ai` class.
+    expect(ai.match(/k2b-dot-strip__dot-ai/g)).toHaveLength(1);
+  });
+
   test("progress ring draws a rounded, clamped share and marks warning and danger beyond colour", () => {
     const ring = (props: Parameters<typeof ProgressRing>[0]) => renderToString(() => createComponent(ProgressRing, props));
     const quiet = ring({ value: 41.6 });
@@ -375,6 +409,10 @@ describe("@k2b/ui Cloud-faithful surfaces", () => {
     expect(ring({ value: Number.NaN })).toContain('stroke-dasharray="0 100"');
     expect(ring({ value: 90, tone: "warning" })).toContain('<circle class="k2b-progress-ring__mark"');
     expect(ring({ value: 100, tone: "danger" })).toContain('<path class="k2b-progress-ring__mark"');
+    // The app colour carries no state, so it adds no mark.
+    const accent = ring({ value: 60, tone: "accent" });
+    expect(accent).toContain('data-tone="accent"');
+    expect(accent).not.toContain("k2b-progress-ring__mark");
     const named = ring({ value: 35, label: "Storage used" });
     expect(named).toContain('role="progressbar"');
     expect(named).toContain('aria-label="Storage used"');
@@ -414,6 +452,18 @@ describe("@k2b/ui Cloud-faithful surfaces", () => {
     expect(dot).toContain('title="Current state"');
     expect(dot).toContain("k2b-status-badge__label");
     expect(text).not.toContain("ti ti-alert-circle");
+  });
+
+  test("keeps the width of every possible label so the dot holds one place", () => {
+    const html = renderToString(() =>
+      createComponent(StatusBadge, { label: "Running", tone: "ok", variant: "dot", labels: ["Running", "Not started"] }),
+    );
+    expect(html).toContain(`class="k2b-status-badge__label" data-reserve><span>Running</span>`);
+    // The alternatives only take room; screen readers hear the one current word.
+    expect(html).toContain('<span aria-hidden="true">Not started</span>');
+    expect(renderToString(() => createComponent(StatusBadge, { label: "Running", tone: "ok", variant: "dot" }))).not.toContain(
+      "data-reserve",
+    );
   });
 
   test("renders responsive stat grids and prevents nested accent links", () => {
