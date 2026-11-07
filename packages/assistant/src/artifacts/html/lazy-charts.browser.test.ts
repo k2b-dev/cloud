@@ -61,7 +61,7 @@ const draw = `document.querySelector("#draw").addEventListener("click",()=>{
   document.querySelector("#charts").innerHTML=cloud.html\`<section class="card">\${cloud.chart(${histogram})}</section><section class="card">\${cloud.chart({kind:"gauge",title:"On time",value:75})}</section>\`;
   document.querySelector('[data-chart-kind="histogram"]').addEventListener("click",()=>{document.querySelector("#result").textContent="Chart selected";});
 });`;
-async function open(width: number, source = assets.chartModule!, theme: "light" | "dark" = "light", script = draw) {
+async function open(width: number, source = assets.chartModule, theme: "light" | "dark" = "light", script = draw) {
   const context = await browser.newContext({ viewport: { width, height: 1000 } });
   const page = await context.newPage();
   await page.goto(`http://127.0.0.1:${server.port}/`);
@@ -89,7 +89,10 @@ const boxes = (page: Page) =>
 const release = (page: Page) =>
   app(page)
     .locator("body")
-    .evaluate(() => Reflect.get(globalThis, "__releaseCharts")());
+    .evaluate(() => {
+      delete document.documentElement.dataset.chartModuleLoading;
+      Reflect.get(globalThis, "__releaseCharts")();
+    });
 
 for (const width of [1200, 390])
   for (const theme of ["light", "dark"] as const)
@@ -301,6 +304,83 @@ document.querySelector("#result").textContent="PDF ready";`;
       expect(content).toContain("Custom 75");
       expect(content).not.toContain("data-chart-pending");
     }
+    expect(requests).toEqual([]);
+  } finally {
+    await context.close();
+  }
+});
+
+test("rare render errors report their message without an import retry", async () => {
+  const script = `document.querySelector("#draw").addEventListener("click",()=>{
+    document.querySelector("#charts").innerHTML=cloud.chart({kind:"gauge",value:75,format:()=>{throw new Error("Broken formatter");}});
+  });`;
+  const { page, context, requests } = await open(390, counted + assets.chartModule, "light", script);
+  try {
+    await app(page).locator("#draw").click();
+    await app(page).getByRole("alert").waitFor();
+    expect(await app(page).getByRole("alert").textContent()).toBe("cloud.chart: Broken formatter");
+    expect(await app(page).getByRole("button", { name: "Try again" }).count()).toBe(0);
+    expect(await app(page).locator('[aria-busy="true"]').count()).toBe(0);
+    await page.waitForFunction(() =>
+      globalThis.lazyChartHarness.events.some((event) => event.type === "error" && event.text.includes("Broken formatter")),
+    );
+    expect(requests).toEqual([]);
+  } finally {
+    await context.close();
+  }
+});
+
+for (const fails of [false, true])
+  test(`a chart detached during ${fails ? "failed" : "successful"} loading paints when reinserted`, async () => {
+    const failure = fails ? 'if(globalThis.__chartLoads===1)throw new Error("fixture failure");' : "";
+    const { page, context, requests } = await open(390, delayed + failure + assets.chartModule);
+    try {
+      await app(page).locator("#draw").click();
+      await app(page).locator("html[data-chart-module-loading]").waitFor();
+      await app(page)
+        .locator('[data-chart-kind="histogram"]')
+        .evaluate((element) => {
+          Reflect.set(globalThis, "detachedChart", element);
+          element.remove();
+        });
+      await release(page);
+      if (fails) await app(page).getByRole("button", { name: "Try again" }).waitFor();
+      else await app(page).locator('[data-chart-kind="gauge"] svg').waitFor();
+      await app(page)
+        .locator("#charts")
+        .evaluate((element) => element.append(Reflect.get(globalThis, "detachedChart")));
+      // A second attempt also uses the fixture's controllable module gate.
+      if (fails) {
+        await app(page).locator("html[data-chart-module-loading]").waitFor();
+        await release(page);
+      }
+      await app(page).locator('[data-chart-kind="histogram"] svg').waitFor();
+      expect(await app(page).locator('[data-chart-kind="histogram"] [aria-busy="true"]').count()).toBe(0);
+      expect(await app(page).locator('[data-chart-kind="histogram"] [data-chart-pending]').count()).toBe(0);
+      expect(requests).toEqual([]);
+    } finally {
+      await context.close();
+    }
+  });
+
+test("narrow pending charts retain the eager logical width and PDF styles accept whitespace", async () => {
+  const script = `document.querySelector("#draw").addEventListener("click",async()=>{
+    const markup=cloud.chart({kind:"histogram",data:[1,2,3],width:360});
+    document.querySelector("#charts").innerHTML=cloud.html\`<div style="width:80px">\${cloud.chart({kind:"histogram",data:[1,2,3]})}</div>\`;
+    await cloud.pdf.render({html:String(markup).replace("--k2b-chart-width:","--k2b-chart-width: ")});
+    document.querySelector("#result").textContent="PDF ready";
+  });`;
+  const { page, context, requests } = await open(390, delayed + assets.chartModule, "light", script);
+  try {
+    await app(page).locator("#draw").click();
+    await app(page).locator("html[data-chart-module-loading]").waitFor();
+    await release(page);
+    await app(page).getByText("PDF ready", { exact: true }).waitFor();
+    expect(await app(page).locator("#charts svg").getAttribute("viewBox")).toBe("0 0 480 280");
+    const pdf = await page.evaluate(() => globalThis.lazyChartHarness.pdfs[0]);
+    const content = pdf && typeof pdf === "object" && "html" in pdf && typeof pdf.html === "string" ? pdf.html : "";
+    expect(content).toContain('viewBox="0 0 360 280"');
+    expect(content).not.toContain("data-chart-pending");
     expect(requests).toEqual([]);
   } finally {
     await context.close();

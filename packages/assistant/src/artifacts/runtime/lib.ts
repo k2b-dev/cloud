@@ -26,7 +26,7 @@ import {
   stat,
 } from "@k2b/ui/charts/core";
 import type { ChartDrawing } from "./chart-renderer-types";
-import { loadChartRenderer, rareChartSvg } from "./chart-renderers-rare";
+import { deferChartDrawing, loadChartRenderer, rareChartSvg } from "./chart-renderers-rare";
 import { CloudError } from "./errors";
 import { normalizeChartDates } from "./views";
 
@@ -68,13 +68,16 @@ type StoredChart = {
   yFormat?: (value: number) => string;
 };
 const ChartSchema = /* @__PURE__ */ cloudAiAppChartSchema();
+// Derive the kind registry once, including nested layouts and pie/donut enums.
+const appChartKinds = new Set<string>();
+for (const option of ChartSchema.options) {
+  for (const variant of "options" in option ? option.options : [option]) {
+    const kind = variant.shape.kind;
+    for (const value of "options" in kind ? kind.options : kind.values) appChartKinds.add(value);
+  }
+}
 /** Inspection accepts exactly the same kinds as the app's portable chart schema. */
-export const isAppChartKind = (value: string | null): value is CloudAiChartInput["kind"] =>
-  ChartSchema.options.some((option) =>
-    "options" in option
-      ? option.options.some((layout) => layout.shape.kind.safeParse(value).success)
-      : option.shape.kind.safeParse(value).success,
-  );
+export const isAppChartKind = (value: string | null): value is CloudAiChartInput["kind"] => value !== null && appChartKinds.has(value);
 
 function responsive(svg: string): string {
   return svg.replace("<svg ", '<svg preserveAspectRatio="none" ').replace(/<text\b[^>]*>/g, (tag) => {
@@ -222,6 +225,7 @@ export function chart(options: ChartOptions, locale: string, timeZone = "UTC"): 
 export function chartMarkup(prepared: StoredChart, locale: string, width: number, height: number, measure: boolean): Html {
   const { input } = prepared;
   const { svg, table } = drawChart(prepared, locale, width, height);
+  if (svg === undefined && !deferChartDrawing) throw new CloudError("invalid", "cloud.chart: The chart renderer returned no SVG.");
   // Bar rows take the height their labels need; the box reserves it.
   const drawnHeight = Number(/viewBox="0 0 [\d.]+ ([\d.]+)"/.exec(svg ?? "")?.[1]) || height;
   const calendar = input.kind === "heatmap" && input.layout === "calendar";
@@ -277,8 +281,8 @@ export async function resolveChartHtml(content: string, locale: string): Promise
     (markup, id: string) => {
       const options = pendingChartOptions.get(id);
       if (!options) throw new CloudError("unavailable", "The chart expired. Draw it again before creating the PDF.");
-      const width = Number(/--k2b-chart-width:([\d.]+)px/.exec(markup)?.[1]) || 480;
-      const height = Number(/--k2b-chart-height:([\d.]+)px/.exec(markup)?.[1]) || 280;
+      const width = Number(/--k2b-chart-width:\s*([\d.]+)px/.exec(markup)?.[1]) || 480;
+      const height = Number(/--k2b-chart-height:\s*([\d.]+)px/.exec(markup)?.[1]) || 280;
       return String(chartMarkup(options, locale, width, height, false));
     },
   );

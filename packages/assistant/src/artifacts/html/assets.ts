@@ -8,7 +8,7 @@ export type AppFrameAssets = {
   /** @k2b/ui base stylesheet with Plex as data URLs; also the stylesheet of cloud.pdf.render. */
   baseCss: string;
   /** Offline ESM source; separate from the executable prelude. */
-  chartModule?: string;
+  chartModule: string;
 };
 
 let assets: Promise<AppFrameAssets> | undefined;

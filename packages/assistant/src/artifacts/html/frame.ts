@@ -339,19 +339,21 @@ function fillChart(element: HTMLElement): Promise<void> {
 async function paintChart(element: HTMLElement) {
   element.innerHTML = chartLoading(config.context.locale);
   element.setAttribute("aria-busy", "true");
+  let loadFailed = false;
   try {
     const options = pendingChartOptions.get(element.dataset.chartPending ?? "");
     if (!options) throw new Error("The chart expired. Draw it again.");
     const measure = element.hasAttribute("data-chart-measure");
-    const widthAt = () =>
-      (measure &&
-        Math.round(
-          options.input.kind === "heatmap" && options.input.layout === "calendar"
-            ? (element.parentElement?.clientWidth ?? element.getBoundingClientRect().width)
-            : element.getBoundingClientRect().width,
-        )) ||
-      Number.parseFloat(element.style.getPropertyValue("--k2b-chart-width")) ||
-      480;
+    const widthAt = () => {
+      const measured = measure
+        ? Math.round(
+            options.input.kind === "heatmap" && options.input.layout === "calendar"
+              ? (element.parentElement?.clientWidth ?? element.getBoundingClientRect().width)
+              : element.getBoundingClientRect().width,
+          )
+        : 0;
+      return (measured >= 120 ? measured : 0) || Number.parseFloat(element.style.getPropertyValue("--k2b-chart-width")) || 480;
+    };
     const height = Number.parseFloat(element.style.getPropertyValue("--k2b-chart-height")) || 280;
     if (measure && options.input.kind === "heatmap" && options.input.layout === "calendar") {
       const reservedWidth = pendingCalendarWidth(options, config.context.locale, widthAt(), height);
@@ -359,8 +361,14 @@ async function paintChart(element: HTMLElement) {
       element.style.aspectRatio = `${reservedWidth}/${height}`;
       element.style.setProperty("--k2b-chart-width", `${reservedWidth}px`);
     }
-    await loadChartRenderer();
-    if (!element.isConnected) return;
+    await loadChartRenderer().catch((error) => {
+      loadFailed = true;
+      throw error;
+    });
+    if (!element.isConnected) {
+      loadingCharts.delete(element);
+      return;
+    }
     const width = widthAt();
     const markup = chartMarkup(options, config.context.locale, width, height, measure);
     if (markup.includes("data-chart-pending=")) throw new Error("The chart module does not support this chart kind.");
@@ -376,24 +384,37 @@ async function paintChart(element: HTMLElement) {
     chart.remove();
     container?.after(fragment);
   } catch (error) {
-    if (!element.isConnected) return;
+    if (!element.isConnected) {
+      loadingCharts.delete(element);
+      return;
+    }
     const german = config.context.locale.startsWith("de");
     const state = document.createElement("span");
     state.style.cssText = "display:grid;place-content:center;justify-items:center;gap:8px;height:100%;color:var(--k2b-text-muted)";
     const message = document.createElement("span");
     message.setAttribute("role", "alert");
-    message.textContent = german ? "Diagramm konnte nicht geladen werden." : "The chart could not be loaded.";
-    const retry = document.createElement("button");
-    retry.type = "button";
-    retry.textContent = german ? "Erneut versuchen" : "Try again";
-    retry.addEventListener("click", () => {
-      loadingCharts.delete(element);
-      void fillChart(element);
-    });
-    state.append(message, retry);
+    message.textContent = loadFailed
+      ? german
+        ? "Diagramm konnte nicht geladen werden."
+        : "The chart could not be loaded."
+      : error instanceof Error
+        ? error.message
+        : String(error);
+    state.append(message);
+    if (loadFailed) {
+      const retry = document.createElement("button");
+      retry.type = "button";
+      retry.textContent = german ? "Erneut versuchen" : "Try again";
+      retry.addEventListener("click", () => {
+        loadingCharts.delete(element);
+        void fillChart(element);
+      });
+      state.append(retry);
+    }
     element.removeAttribute("aria-busy");
     element.replaceChildren(state);
-    console.error(error);
+    if (loadFailed) console.error(error);
+    else reportError(error);
   }
 }
 // A table that scrolls inside its <figure> must be reachable by keyboard; only then does it get a tab stop.

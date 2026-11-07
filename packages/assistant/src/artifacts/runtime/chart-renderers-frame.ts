@@ -11,7 +11,8 @@ export function configureChartModule(code: string, pending: (task: Promise<void>
   track = pending;
 }
 
-export const rareChartSvg: RareChartRenderer = (mapped, common) => renderer?.(mapped, common);
+export const deferChartDrawing = true;
+export const rareChartSvg = (...args: Parameters<RareChartRenderer>): string | undefined => renderer?.(...args);
 
 /** Parse and execute the separate offline asset once; a failed import can be retried. */
 export function loadChartRenderer(): Promise<void> {

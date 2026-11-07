@@ -278,6 +278,6 @@ export const CheckStart = z.object({
   warnings: z.array(z.string()),
   context: z.object({ locale: z.string(), timeZone: z.string(), user: z.object({ id: z.string(), name: z.string() }).nullable() }),
   theme: z.enum(["light", "dark"]),
-  assets: z.object({ prelude: z.string(), preludeHash: z.string(), baseCss: z.string(), chartModule: z.string().optional() }),
+  assets: z.object({ prelude: z.string(), preludeHash: z.string(), baseCss: z.string(), chartModule: z.string() }),
 });
 export type CheckStart = z.infer<typeof CheckStart>;

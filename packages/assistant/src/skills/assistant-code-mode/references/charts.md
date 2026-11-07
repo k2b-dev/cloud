@@ -19,6 +19,8 @@ stat and sparkline draw immediately. Other kinds initially return a loading
 placeholder; insert the markup into the document and the frame fills it at the
 same size. Their renderer ships with the frame and loads without any network
 request, including offline first use. A load failure shows **Try again**.
+A rendering error (including a throwing format callback) shows its message
+without retry and is reported to the host.
 Formats, tooltips and print value tables work after loading. Frame readiness,
 snapshots and `cloud.pdf.render({html})` wait for pending chart rendering; do
 not extract SVG from the initial placeholder yourself. Scripts and PDF markup

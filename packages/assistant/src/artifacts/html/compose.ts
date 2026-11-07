@@ -15,7 +15,7 @@ export type ComposeOptions = {
   /** CSP source of the prelude, `'sha256-…'`. */
   preludeHash: string;
   baseCss: string;
-  chartModule?: string;
+  chartModule: string;
   theme: "light" | "dark";
   context: RuntimeContext;
   title: string;
@@ -226,7 +226,7 @@ export function composeApp(files: AppFiles, options: ComposeOptions) {
     hash: options.hash ?? "",
     modules,
     entries,
-    chartModule: options.chartModule ?? "",
+    chartModule: options.chartModule,
     readyBudgetMs: options.readyBudgetMs ?? 8000,
   };
   const csp = ["default-src 'none'", `script-src ${options.preludeHash} blob:`, "style-src 'unsafe-inline'", NETWORK].join("; ");

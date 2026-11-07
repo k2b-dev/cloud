@@ -935,7 +935,9 @@ measures in chat, use `cloud.view.group`.
 stat and sparkline render immediately. Other kinds return a loading state
 that the frame fills after the markup enters the document, preserving its box
 size. The renderer is bundled with the frame and needs no network request,
-even on first use offline. A loading failure shows a retry button. Tooltips,
+even on first use offline. A loading failure shows a retry button.
+A rendering error (including a throwing format callback) shows its message
+without retry and is reported to the host. Tooltips,
 format callbacks and the print value table remain available after rendering.
 Frame readiness and snapshots wait for pending drawings; `cloud.pdf.render`
 also finishes pending chart markup before creating the PDF. Insert the returned

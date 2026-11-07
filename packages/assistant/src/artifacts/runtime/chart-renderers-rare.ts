@@ -1,5 +1,6 @@
-// One lazy kind-switch. Script/PDF workers import this synchronously; the frame
-// build replaces this module with chart-renderers-frame and ships this separately.
+// One exhaustive kind-switch. Import this module only from lib.ts: the frame
+// build replaces that exact specifier and ships the real module separately.
+// Scripts and PDF workers get the real renderers synchronously through lib.ts.
 import { barGauge, boxplot, gauge, histogram, renderAreaSvg, renderHeatmapSvg, scatter } from "@k2b/ui/charts/core";
 import type { RareChartRenderer } from "./chart-renderer-types";
 
@@ -19,8 +20,15 @@ export const rareChartSvg: RareChartRenderer = (mapped, common) => {
       return barGauge({ ...mapped, ...common });
     case "heatmap":
       return renderHeatmapSvg({ ...mapped, ...common });
+    default: {
+      const unsupported: never = mapped;
+      throw new Error(`Unsupported chart: ${String(unsupported)}`);
+    }
   }
 };
 
 /** Outside app frames every renderer is already available. */
 export async function loadChartRenderer(): Promise<void> {}
+
+/** Only the frame stub may defer a drawing. */
+export const deferChartDrawing = false;
