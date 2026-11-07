@@ -5,7 +5,7 @@ section: Operations
 order: 585
 description: Inspect event subscriptions and deliveries, diagnose blocked handlers, and redeliver retained work.
 tags: [events, operations, retries, retention]
-updated: 2026-10-27
+updated: 2026-11-07
 ---
 
 # Operate app events
@@ -35,6 +35,15 @@ within the retained window, then inspect backlog and failures. If status reports
 `gap_detected`, run the subscriber's domain reconcile; redelivery cannot restore
 events that have expired. Rolling back code does not remove homes already
 created or reverse completed handler effects.
+
+Core also migrates `events.app_subscriptions.resource_binding` for
+mandate-bound workload subscriptions. Roll out Core before enabling such
+workloads. They use the existing delivery queue and retention budget. Ordinary
+app subscriptions to resource events remain blocked. A resource delivery
+cancelled with `resource_access_revoked` means its mandate or current read
+access no longer permits delivery; redelivery never bypasses those checks.
+Workload pause or revision replacement cancels pending deliveries with
+`workload_changed`. Resuming starts a fresh subscription cutoff.
 
 ## Inspect readiness and failures
 
@@ -223,14 +232,15 @@ The stream budget is shared by **all producers**. The producer fixture tests
 measure compact JSON envelopes at **241 bytes** for `spaces.item.created`,
 **243 bytes** for `spaces.item.completed`, **256 bytes** for either note event,
 and **264 bytes** for either notebook event (six-character public IDs, a UUID
-event ID, fixed ISO timestamp, empty data, no cause). PostgreSQL `jsonb::text`
-adds 21 bytes of whitespace to these fixtures: **262–285 bytes**. Longer refs
-or an optional cause increase the size; the platform maximum remains
+event ID, fixed ISO timestamp, empty data, no cause). Mail's
+`mail.message.received` fixture is **292 bytes**, including its UUID receipt
+reference. PostgreSQL `jsonb::text` adds whitespace: **262–314 bytes** across
+these fixtures. Longer refs or an optional cause increase the size; the platform maximum remains
 **4096 bytes** in PostgreSQL `jsonb::text`.
 
 The shared JetStream has a **256 MiB** byte limit and a **7-day** maximum age.
-Before transport overhead, 264-byte thin envelopes fit at
-`268435456 / (264 × 604800) = 1.68 events/s` for seven days. This is an
+Before transport overhead, 292-byte thin envelopes fit at
+`268435456 / (292 × 604800) = 1.52 events/s` for seven days. This is an
 upper bound, not an operating rate: Sync wrapping, subjects, headers, and NATS
 storage consume bytes too. The fixture test also publishes through Sync:
 notebook events occupy **692 retained bytes/message**, note events **684**,
@@ -239,9 +249,9 @@ and UUID deduplication key). These values vary with namespace and headers;
 692 bytes would allow only `268435456 / (692 × 604800) = 0.64 events/s`.
 Retaining the conservative **1024-byte transport
 allowance** and using the largest measured database representation gives
-`268435456 / ((285 + 1024) × 604800) = 0.339 events/s`.
+`268435456 / ((314 + 1024) × 604800) = 0.332 events/s`.
 Use **0.3 events/s aggregate** (25,920/day) as the thin-envelope planning rate,
-with roughly 12% of stream space left beyond that allowance. At the full
+with roughly 10% of stream space left beyond that allowance. At the full
 4096-byte envelope limit plus the allowance, only 52,428 events fit: about
 two days at 0.3 events/s. Byte pressure can shorten history before seven days.
 JetStream reserves the byte limit on every replica; replication multiplies
@@ -254,14 +264,18 @@ The existing Sync scheduler has minute resolution, so T = 60 s and
 at most `M/T = 4/60 = 0.0667 events/s`, **22.2%** of the shared planning rate
 (with an initial burst of at most four). Q = 30 s merges short editing bursts;
 W = 300 s lets continuous editing become eligible within five minutes. The
-remaining 0.233 events/s is a planning allowance for all other events, not a
+remaining 0.233 events/s is a planning allowance for all other events, including
+discrete Mail receipts at the eligible incoming-message rate, not a
 publisher limit. Sustained discrete writes above it require more capacity or
 a shorter outage target. A missed or expired event requires domain reconciliation.
 
 Core retains unresolved deliveries for **30 days** from creation or the latest
 administrator redelivery, then marks them
 `cancelled` with `retention_expired`. That cancellation remains visible for
-**7 days**. Completed and cancelled deliveries are retained for **7 days**;
+**7 days** for service deliveries, or **30 days** for resource workloads.
+Completed and cancelled service deliveries are retained for **7 days**;
+resource workload deliveries remain for **30 days** to support explicit recovery
+across workload revisions within the event's 30-day recovery window;
 failures are not silently discarded. Events are retained for at least
 **30 days**, and longer while deliveries still reference them. After cleanup
 removes the retained records, `redeliver` cannot recover them.

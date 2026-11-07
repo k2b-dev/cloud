@@ -82,6 +82,15 @@ describe("MailConversationSummaryCard", () => {
     expect(html).not.toContain('aria-label="Neu schreiben"');
   });
 
+  test("prepared automation text names its origin in both locales", () => {
+    const state = summaryState({ summary: "Prepared text", source: "automation", ai: false });
+    const de = render(state);
+    expect(de).toContain("Von einer Automation geschrieben");
+    expect(de).toContain("Von einer Automation vorbereitet.");
+    expect(de).not.toContain("Von einer Person geschrieben");
+    expect(render(state, "en")).toContain("Written by an automation");
+  });
+
   test("new messages since this version offer to continue", () => {
     const html = render(aiSummary({ newMessagesSince: 1 }));
     expect(html).toContain("1 neue Nachricht seit dieser Fassung");

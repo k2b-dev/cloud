@@ -84,7 +84,8 @@ const app = new Hono<AuthContext>()
           .int()
           .positive()
           .max(24 * 31)
-          .optional(),
+          .default(24)
+          .describe("Lookback window in hours; defaults to 24"),
       }),
     ),
     async (c) => {

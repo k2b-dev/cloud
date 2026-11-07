@@ -222,3 +222,11 @@ security evidence.
 
 Topic consumers follow the same failure, retry, and slow-run policy. Fast
 successes contribute to the minute counters without multiplying span writes.
+
+### Bound operator reads
+
+Trace lists and aggregate reads default to a 24-hour window when no time filter
+is supplied. `window`, `sinceHours` or `sinceSeconds` selects another window.
+Abandoned-span counts use at least a 24-hour lookback, including when the activity window is shorter than the one-hour stuck threshold. `trace.summary().total` estimates
+retained rows from PostgreSQL statistics; source and activity counts describe
+the selected window. Operator reads stop after their five-second query budget.

@@ -27,7 +27,7 @@ type SharedEntry = {
   read: () => Promise<{ value: unknown } | undefined>;
   write: () => Promise<unknown>;
   remove: () => Promise<unknown>;
-  prepare: (() => Promise<void>) | undefined;
+  prepare: ((force?: boolean) => Promise<void>) | undefined;
 };
 
 const entryDigest = (value: unknown): string => createHash("sha256").update(JSON.stringify(value)).digest("base64url");
@@ -70,9 +70,9 @@ export const createRegistryMembership = (
   const sharedEntries = new Map<string, SharedEntry>();
 
   // Prepare idempotent dependent data outside the lock to preserve its bounded lease.
-  const prepareShared = async (sharedKey: string): Promise<void> => {
+  const prepareShared = async (sharedKey: string, force = false): Promise<void> => {
     for (const [key, { prepare }] of sharedEntries) {
-      if (key !== sharedKey) await prepare?.();
+      if (force || key !== sharedKey) await prepare?.(force);
     }
   };
 
@@ -127,7 +127,7 @@ export const createRegistryMembership = (
     },
     publish: async (sharedKey: string): Promise<void> => {
       if (left) return;
-      await prepareShared(sharedKey);
+      await prepareShared(sharedKey, true);
       await locked(async () => {
         if (left) return;
         await publishShared();
@@ -158,7 +158,7 @@ export const createRegistryMembership = (
         );
       };
       if (!(await needsRepublish())) return;
-      await prepareShared(sharedKey);
+      await prepareShared(sharedKey, true);
       await locked(async (lock) => {
         if (left) return;
         const stillNeedsRepublish = await needsRepublish();
@@ -206,7 +206,7 @@ export const createRegistryMembership = (
 type HeartbeatOptions<T> = {
   key?: string;
   /** Publish dependent data before advertising or renewing the app. */
-  beforeWrite?: () => Promise<void>;
+  beforeWrite?: (force?: boolean) => Promise<void>;
   intervalMs?: number;
   retryMs?: number;
   staleAfterMs?: number;

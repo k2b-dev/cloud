@@ -86,6 +86,8 @@ export const assignConversations = async (params: {
   conversationIds: readonly string[];
   assigneeUserIds: readonly string[];
   mode: "add" | "remove" | "replace";
+  onlyIfUnassigned?: boolean;
+  expectedRevision?: number;
   /** Locale for the notification; the request locale at a request seam. */
   locale: string;
 }): Promise<Result<ConversationAssignmentResult>> => {
@@ -102,6 +104,8 @@ export const assignConversation = async (params: {
   conversationId: string;
   assigneeUserIds: readonly string[];
   mode: "add" | "remove" | "replace";
+  onlyIfUnassigned?: boolean;
+  expectedRevision?: number;
   locale: string;
 }): Promise<Result<ConversationCollaboration>> => {
   const applied = await applyConversationAssignments({ ...params, conversationIds: [params.conversationId] });

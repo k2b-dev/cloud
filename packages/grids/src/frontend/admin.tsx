@@ -95,7 +95,7 @@ export default ssr<AuthContext>(async (c) => {
           />
         </StatGrid>
 
-        <section class="paper flex flex-col gap-2 p-3" aria-labelledby="grids-operations-title">
+        <section class="flex flex-col gap-2" aria-labelledby="grids-operations-title">
           <div class="flex flex-wrap items-start justify-between gap-2">
             <div class="min-w-0">
               <h2 id="grids-operations-title" class="text-xs font-semibold text-primary">

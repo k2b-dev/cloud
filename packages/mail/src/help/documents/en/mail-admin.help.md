@@ -312,6 +312,6 @@ See [Mail workflow YAML reference](/app/mail/help/mail-workflows) for all suppor
 
 ## Delete and restore a mailbox {icon="point"}
 
-**Danger zone → Move to recently deleted** moves the mailbox into a deleted state that you can recover. Mail does not purge provider mail and kept Cloud data.
+**Danger zone → Delete mailbox** moves the mailbox into a deleted state that you can recover. Mail does not purge provider mail and kept Cloud data.
 
-Deleted mailboxes appear under **Recently deleted** on the Mail overview for people who can restore them. A restored mailbox starts paused. In **… → Mailbox health**, verify the connection, folder discovery, and health. Then choose **Resume mailbox**.
+Deleted mailboxes stay until someone restores them. People who can restore them find them under **Mailboxes → … → Deleted mailboxes** in the sidebar. A restored mailbox starts paused. In **… → Mailbox health**, verify the connection, folder discovery, and health. Then choose **Resume mailbox**.

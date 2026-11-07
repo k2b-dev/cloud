@@ -1186,6 +1186,17 @@ it changes are lost when Mail is updated again. After the rollout, assign two
 people to a test conversation and check that
 `cld --json mail show <conversation-id>` lists both.
 
+### Mail attachment thumbnails
+
+Mail's list shows small thumbnails of image attachments. Its thumbnail endpoint
+uses the isolated Linux image workers that the shared build adds to the Mail
+image, two at once per process, with up to 64 requests waiting; beyond that it
+answers 503 and the list shows a quiet image icon instead. Sources are limited to 25 MiB and
+responses to 96×96 pixels and 48 KiB. Access is checked before reading and again
+before returning the image. Browsers revalidate each thumbnail, so a revoked
+access is never served from their cache. No setting, service, or migration is
+required.
+
 ### Mail draft signatures
 
 Mail adds the column `mail.drafts.signature_template_id` on its next start. No
@@ -2361,6 +2372,15 @@ metadata (`assistant`, `mcp`, or `null`). Application authors must persist and d
 create or change visible content. Existing stored content is not backfilled.
 This adds no permission and needs no operator configuration. See
 [App capabilities](/en/docs/platform/capabilities).
+
+## Chat posting Action after the upgrade
+
+Deploy Chat with `chat.message.post` to let authorized background callers post
+results into existing Chat conversations and channels. It uses current write
+access and the normal Chat rate limits; its explicit policy grants no access.
+No new service, setting, secret or data migration is required. Existing item
+discussions keep `chat.discussion.post`. See [Post a message to a Chat
+conversation](/en/docs/platform/chat-discussions#post-a-message-to-a-chat-conversation).
 
 ## Enroll an application before its first start
 
