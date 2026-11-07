@@ -207,3 +207,50 @@ test("Calendar SSR, calm hover, keyboard, touch, scroll, theme and fixed host st
     await browser.close();
   }
 }, 30000);
+
+test("calendar explicit short date formats preserve SSR text for US, German and French locales", async () => {
+  const specs = ["en-US", "de-DE", "fr-FR"].map((locale, index) => ({
+    id: `locale-${index}`,
+    spec: {
+      ...spec,
+      locale,
+      data: [
+        ["2026-06-01", 2],
+        ["2026-07-31", 3],
+      ] as [string, number][],
+    },
+  }));
+  const build = await Bun.build({
+    entrypoints: ["calendar-locales"],
+    target: "browser",
+    format: "iife",
+    plugins: [
+      {
+        name: "locales",
+        setup(b) {
+          b.onResolve({ filter: /^calendar-locales$/ }, () => ({ path: "entry", namespace: "locales" }));
+          b.onLoad({ filter: /.*/, namespace: "locales" }, () => ({
+            loader: "ts",
+            contents: `import {renderCalendarSvg} from ${JSON.stringify(resolve(import.meta.dir, "core/calendar.ts"))};
+         for(const {id,spec} of ${JSON.stringify(specs)}) document.getElementById(id).innerHTML=renderCalendarSvg(spec);`,
+          }));
+        },
+      },
+    ],
+  });
+  expect(build.success).toBe(true);
+  const browser = await launchBrowser();
+  try {
+    const page = await browser.newPage();
+    const errors = pageErrors(page);
+    await page.setContent(specs.map(({ id, spec }) => `<div class="k2b-chart__svg" id="${id}">${renderCalendarSvg(spec)}</div>`).join(""));
+    await settled(page);
+    const server = await page.locator(".k2b-chart__svg > svg").evaluateAll((nodes) => nodes.map((node) => node.outerHTML));
+    await page.addScriptTag({ content: await build.outputs[0]!.text() });
+    await settled(page);
+    expect(await page.locator(".k2b-chart__svg > svg").evaluateAll((nodes) => nodes.map((node) => node.outerHTML))).toEqual(server);
+    expect(errors).toEqual([]);
+  } finally {
+    await browser.close();
+  }
+});

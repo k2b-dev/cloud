@@ -17365,3 +17365,4 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   .k2b-ui svg[data-calendar] [data-calendar-month] { visibility: visible !important; }
   .k2b-ui .k2b-chart__svg:has(> svg[data-calendar]) { min-width: 0 !important; width: 100%; }
 }
+.k2b-ui .k2b-chart[data-chart-kind="area"] [data-selected] > .k2b-area-inspection-point { opacity: 1; stroke-width: 1.5px; }

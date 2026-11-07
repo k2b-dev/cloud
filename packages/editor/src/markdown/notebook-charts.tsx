@@ -1,7 +1,7 @@
 import { i18n } from "@k2b/stdlib";
 import { CopyButton, IconButton, LocaleProvider, prepareChartSnapshot, toast } from "@k2b/ui";
 import { type ChartTooltip, inspectChart } from "@k2b/ui/chart-inspection";
-import { mountCalendarScroll } from "@k2b/ui/charts";
+import { calendarInspectionNavigation, mountCalendarScroll } from "@k2b/ui/charts";
 import { createSignal, onCleanup, Show } from "solid-js";
 import { render } from "solid-js/web";
 import { type ChartInput, type ChartTable, chartMarkKey, chartReferenceMark, chartRenderOptions, chartRows, chartTooltip } from "../charts";
@@ -44,7 +44,7 @@ const draw = (input: ChartInput, locale: string): Drawn => {
     key: ({ datum }) => chartMarkKey(datum),
     tooltip: ({ datum }) => {
       const row = rows.add(datum);
-      return chartTooltip(rows.columns(), row);
+      return chartTooltip(rows.columns(), row, input.kind);
     },
     reference: ({ datum }) => chartReferenceMark(input, datum),
   });
@@ -125,6 +125,9 @@ export function enhanceNotebookCharts(root: HTMLElement, locale: string, options
     if (input.kind === "heatmap" && input.layout === "calendar") cleanups.push(mountCalendarScroll(chart));
     const inspection = inspectChart(chart, {
       kind: input.kind,
+      nav: input.kind === "heatmap" && input.layout === "calendar" ? calendarInspectionNavigation : undefined,
+      locale,
+      legend: figure,
       format: ({ datum }) => lazy().tooltips.get(chartMarkKey(datum)) ?? { rows: [] },
     });
     const dispose = render(

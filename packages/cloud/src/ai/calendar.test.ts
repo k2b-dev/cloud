@@ -14,6 +14,7 @@ const spec = {
 };
 test("calendar model schema and saved tool view preserve date tuples and layout", () => {
   expect(CloudAiChartInputSchema.safeParse(spec).success).toBe(true);
+  expect(CloudAiChartInputSchema.safeParse({ ...spec, locale: "fr-FR" }).success).toBe(true);
   expect(CloudAiChartInputSchema.safeParse({ ...spec, locale: "de_DE" }).success).toBe(false);
   expect(parseCloudAiChartToolView(spec)).toMatchObject({ ...spec, view: "chart" });
   expect(CloudAiChartInputSchema.safeParse({ ...spec, data: [["2026-11-32", 3]] }).success).toBe(false);

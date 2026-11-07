@@ -6,7 +6,7 @@ import "./no-eval";
 import "./no-hints";
 import { cloudAiChartMarkKey } from "@k2b/cloud/ai/app-frame";
 import { type ChartInspection, type ChartKind, type ChartTooltip, inspectChart, isChartDatum } from "@k2b/ui/chart-inspection";
-import { mountCalendarScroll } from "@k2b/ui/charts";
+import { calendarInspectionNavigation, mountCalendarScroll } from "@k2b/ui/charts";
 import { LIMITS } from "../contracts";
 import { createBridge } from "../runtime/bridge";
 import { createCloud } from "../runtime/cloud";
@@ -250,6 +250,7 @@ addEventListener(
 const inspections = new Map<Element, ChartInspection>();
 const chartTooltips = new WeakMap<Element, Map<string, ChartTooltip>>();
 const chartKinds: readonly ChartKind[] = [
+  "area",
   "bar",
   "line",
   "scatter",
@@ -360,6 +361,8 @@ new MutationObserver((records) => {
     const unmountCalendar = chart.querySelector("svg[data-calendar]") ? mountCalendarScroll(chart) : () => {};
     const inspection = inspectChart(chart, {
       kind,
+      nav: chart.querySelector("svg[data-calendar]") ? calendarInspectionNavigation : undefined,
+      locale: config.context.locale,
       format: ({ datum }) => {
         const key = cloudAiChartMarkKey(datum);
         return chartTooltips.get(chart)?.get(key) ?? readChartTooltips(chart).get(key) ?? { rows: [] };

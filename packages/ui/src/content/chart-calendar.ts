@@ -1,3 +1,12 @@
+import type { ChartInspectionNavigation } from "./chart-inspection-core";
+
+export const calendarInspectionNavigation: ChartInspectionNavigation = {
+  last: true,
+  pointer: false,
+  keepScroll: true,
+  reveal: (element) => element.scrollIntoView({ block: "nearest", inline: "nearest" }),
+};
+
 /** A calendar starts at the newest week. Pointer inspection never resets its scroll position. */
 export function mountCalendarScroll(container: HTMLElement): () => void {
   const drawing = container.querySelector(".k2b-chart__svg");

@@ -9,6 +9,7 @@ import {
 } from "../../content/chart-state-timeline";
 import { responsiveChartSvg, responsiveMapSvg } from "../../content/chart-svg";
 import { type ChartTimeAxis, timeAxisSvg } from "../../content/chart-time-axis";
+import { type AreaOptions, renderAreaSvg } from "./area";
 import { chartRenderers } from "./registry";
 import type { MapViewport } from "./svg";
 import type { ChartKind } from "./types";
@@ -52,6 +53,7 @@ export const renderChartSvg = (
   height: number,
   mapViewport?: MapViewport,
   timelineViewport?: StateTimelineDomain,
+  renderLocale?: string,
 ): string => {
   if (props.kind === "heatmap" && props.layout === "calendar") return chartRenderers.heatmap({ ...props, width, height, inspect: true });
   const {
@@ -76,6 +78,17 @@ export const renderChartSvg = (
       }),
     );
   }
+  if (kind === "area")
+    return responsiveChartSvg(
+      renderAreaSvg({
+        ...(opts as AreaOptions),
+        locale: (opts as AreaOptions).locale ?? renderLocale,
+        legend: false,
+        width,
+        height,
+        inspect: true,
+      }),
+    );
   if (kind === "bar") return responsiveChartSvg(renderBarChartSvg({ ...(opts as BarChartOptions), width, height, inspect: true }));
   // A time axis needs an explicit X domain: it maps its round ticks onto the axis the renderer drew over it.
   const timeAxis = props.kind === "line" ? props.timeAxis : undefined;

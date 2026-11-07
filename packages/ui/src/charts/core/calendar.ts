@@ -20,16 +20,18 @@ export function calendarDay(value: string): number {
   if (!Number.isFinite(date.getTime()) || date.toISOString().slice(0, 10) !== value) throw new RangeError("Invalid calendar date.");
   return date.getTime();
 }
-/** Intl uses 1..7, JS dates use 0..6. Older engines fall back to Monday. */
+/** Intl uses 1..7, JS dates use 0..6. Old engines use an explicit locale fallback. */
 export function calendarWeekStart(locale = "en"): number {
   const info: Intl.Locale & { weekInfo?: { firstDay: number }; getWeekInfo?: () => { firstDay: number } } = new Intl.Locale(locale);
-  return (info.getWeekInfo?.().firstDay ?? info.weekInfo?.firstDay ?? 1) % 7;
+  const fallback: Record<string, number> = { "en-US": 0 };
+  const key = `${info.language}-${info.region ?? info.maximize().region}`;
+  return (info.getWeekInfo?.().firstDay ?? info.weekInfo?.firstDay ?? fallback[key] ?? 1) % 7;
 }
 export const calendarWords = (locale = "en") =>
   locale.split("-")[0] === "de"
     ? { day: "Tag", less: "weniger", more: "mehr", moreIn: "mehr rein", moreOut: "mehr raus" }
     : { day: "Day", less: "less", more: "more", moreIn: "more in", moreOut: "more out" };
-/** Use one fixed, explicit Intl path. DateStyle/short forms differ across browser CLDR versions. */
+/** Explicit fields avoid the engine-dependent dateStyle pattern. */
 const calendarDateParts = (locale: string) => {
   const formatter = new Intl.DateTimeFormat(locale, { weekday: "long", month: "long", day: "numeric", year: "numeric", timeZone: "UTC" });
   return (time: number) => Object.fromEntries(formatter.formatToParts(time).map((part) => [part.type, part.value]));
@@ -98,6 +100,8 @@ export function renderCalendarSvg(spec: CalendarHeatmapOptions): string {
     words = calendarWords(locale);
   const number = spec.format ?? new Intl.NumberFormat(locale, { maximumSignificantDigits: 15 }).format;
   const parts = calendarDateParts(locale);
+  const weekday = new Intl.DateTimeFormat(locale, { weekday: "short", timeZone: "UTC" });
+  const month = new Intl.DateTimeFormat(locale, { month: "short", timeZone: "UTC" });
   // Left aligned direct-core header; interactive hosts keep it at the visible scroll edge.
   const header = renderHeader(s.width, spec.title, spec.subtitle)
     .svg.replace(/x="[^"]*"/g, 'x="0"')
@@ -109,7 +113,7 @@ export function renderCalendarSvg(spec: CalendarHeatmapOptions): string {
   ];
   for (const day of [0, 2, 4])
     days.push(
-      `<text x="0" y="${s.top + day * (s.cell + 3) + s.cell - 2}" fill="var(--k2b-text-muted,#45454e)" font-size="11">${escapeXml(parts(Date.UTC(2026, 0, 4 + s.weekStart + day)).weekday!.slice(0, locale.startsWith("de") ? 2 : 3))}</text>`,
+      `<text x="0" y="${s.top + day * (s.cell + 3) + s.cell - 2}" fill="var(--k2b-text-muted,#45454e)" font-size="11">${escapeXml(weekday.format(Date.UTC(2026, 0, 4 + s.weekStart + day)))}</text>`,
     );
   let lastRight = -Infinity,
     lastMonth = "";
@@ -120,7 +124,7 @@ export function renderCalendarSvg(spec: CalendarHeatmapOptions): string {
       ym = nextDate.toISOString().slice(0, 7);
     if (ym === lastMonth) continue;
     lastMonth = ym;
-    const text = parts(next).month!.slice(0, 3);
+    const text = month.format(next);
     const textWidth = chartTextWidth(text, 11);
     const x = Math.min(s.width - textWidth - 2, Math.max(32 + week * (s.cell + 3), lastRight + 3));
     const visibility = `visibility:var(--k2b-calendar-month-${week},visible)`;

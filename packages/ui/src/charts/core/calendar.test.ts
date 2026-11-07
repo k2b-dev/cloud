@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { calendarDay, calendarLayout, renderCalendarSvg, renderHeatmapSvg } from "./calendar";
+import { calendarDay, calendarLayout, calendarWeekStart, renderCalendarSvg, renderHeatmapSvg } from "./calendar";
 import { heatmap } from "./svg";
 
 const spec = {
@@ -104,4 +104,37 @@ test("month labels retain the month after a partial first month without stretchi
   });
   for (const label of ["Mai", "Jun", "Jul", "2026"]) expect(svg).toContain(label);
   expect(svg).not.toMatch(/textLength|lengthAdjust/);
+});
+
+test("calendar short months distinguish French June and July", () => {
+  const svg = renderCalendarSvg({
+    ...spec,
+    locale: "fr-FR",
+    data: [
+      ["2026-06-01", 1],
+      ["2026-07-31", 2],
+    ],
+  });
+  for (const month of [5, 6]) {
+    const text = new Intl.DateTimeFormat("fr-FR", { month: "short", timeZone: "UTC" }).format(Date.UTC(2026, month, 1));
+    expect(svg).toContain(`>${text}</text>`);
+  }
+  expect(svg).not.toContain(">jui</text>");
+});
+
+test("old engines use the explicit US Sunday and other-locale Monday fallback", () => {
+  const saved = ["weekInfo", "getWeekInfo"].map((key) => [key, Object.getOwnPropertyDescriptor(Intl.Locale.prototype, key)] as const);
+  try {
+    for (const [key] of saved) Object.defineProperty(Intl.Locale.prototype, key, { value: undefined, configurable: true });
+    expect(calendarWeekStart("en-US")).toBe(0);
+    expect(calendarWeekStart("en")).toBe(0);
+    expect(calendarWeekStart("en-GB")).toBe(1);
+    expect(calendarWeekStart("fr-FR")).toBe(1);
+    expect(calendarWeekStart("de-DE")).toBe(1);
+  } finally {
+    for (const [key, descriptor] of saved) {
+      if (descriptor) Object.defineProperty(Intl.Locale.prototype, key, descriptor);
+      else Reflect.deleteProperty(Intl.Locale.prototype, key);
+    }
+  }
 });
