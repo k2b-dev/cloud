@@ -6,6 +6,7 @@ import { registerNotificationDefinitions } from "@k2b/cloud/services/notificatio
 import { useTestAppRegistry } from "../../../scripts/fixtures/app-registry";
 import { compileCapabilities, invokeCompiledCapability } from "../../../scripts/fixtures/code-platform";
 import { suiteFor, useMigratedDatabase } from "../../../scripts/fixtures/test-infra";
+import "../../../scripts/fixtures/authorization-preload";
 import { createAiNotificationService } from "./ai-notifications";
 import { aiCapabilities } from "./capabilities";
 import { app } from "./config";
@@ -71,7 +72,11 @@ const invoke = (text: string, chatId = chat.shortId, ctx = context()) =>
     context: ctx,
   });
 
-suiteFor("database", "valkey")("personal Code chat delivery capability", () => {
+suiteFor(
+  "database",
+  "nats",
+  "valkey",
+)("personal Code chat delivery capability", () => {
   useTestAppRegistry(["core", "assistant"]);
   let database: Awaited<ReturnType<typeof useMigratedDatabase>> | undefined;
   beforeAll(async () => {
