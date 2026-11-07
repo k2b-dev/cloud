@@ -12,6 +12,7 @@ import { financialQueryProfiles } from "../document-profiles/financial";
 import { documentProfileInputMessage } from "../document-profiles/input-diagnostics";
 import { zipDocumentProfile } from "../document-profiles/zip";
 import { validateDocumentArtifactDrafts } from "./document-artifact-drafts";
+import { loadDocumentData } from "./document-data";
 import { reserveDocumentExportClaims } from "./document-export-claims";
 import { normalizeFinancialDocumentOutput } from "./document-financial-output";
 import { persistIssuedDocument } from "./document-issuance-storage";
@@ -36,6 +37,9 @@ import { openProtectedContent } from "./files";
 import { allocateNumberInTransaction } from "./number-series";
 import { insertWithShortIdForDb } from "./short-id";
 import { loadWorkflowQueryData, WorkflowDocumentDataReferenceSchema } from "./workflow-query-store";
+
+const loadIssuanceData = (input: { baseId: string; runId: string | null; id: string; sha256: string; locale?: string }, db: SQL) =>
+  input.runId === null ? loadDocumentData(input, db) : loadWorkflowQueryData({ ...input, runId: input.runId }, db);
 
 const DOCUMENT_HTML_RENDERER_VERSION = "grids-liquid-gotenberg-v2";
 
@@ -76,7 +80,7 @@ const JsonObjectSchema = z.record(z.string(), z.unknown());
 const QueryDocumentRequestSchema = z
   .object({
     baseId: z.uuid(),
-    runId: z.uuid(),
+    runId: z.uuid().nullable(),
     stepKey: z.string().min(1),
     data: WorkflowDocumentDataReferenceSchema,
     associatedData: WorkflowDocumentDataReferenceSchema.optional(),
@@ -107,7 +111,7 @@ const QueryDocumentInputSchema = QueryDocumentRequestSchema.extend({ sourceVersi
 type QueryDocumentConfirmationRequired = { kind: "confirmationRequired"; receiptId: string; sha256: string };
 type QueryDocumentConfirmationInput = {
   baseId: string;
-  runId: string;
+  runId: string | null;
   receiptId: string;
   actor: DocumentIssuanceActor;
   locale?: string;
@@ -118,7 +122,7 @@ type QueryDocumentConfirmationInput = {
 const validateConfirmationInput = (input: QueryDocumentConfirmationInput) => {
   if (
     !z.uuid().safeParse(input.baseId).success ||
-    !z.uuid().safeParse(input.runId).success ||
+    (input.runId !== null && !z.uuid().safeParse(input.runId).success) ||
     !/^[A-Za-z0-9]{6}$/.test(input.receiptId) ||
     !DocumentIssuanceActorSchema.safeParse(input.actor).success
   )
@@ -132,7 +136,8 @@ type QueryIssuanceRow = IssuanceRow & {
 
 /** Pin the manual invocation, revision and authorization snapshot. Current
  * permissions are checked separately by the caller at every boundary. */
-const financialRunBinding = async (baseId: string, runId: string, client: SQL, locale?: string, lock = true) => {
+const financialRunBinding = async (baseId: string, runId: string | null, client: SQL, locale?: string, lock = true) => {
+  if (runId === null) return { baseId, runId: null, origin: "capability" };
   const [run] = await client<Array<{ workflow_version_id: string; authorization_snapshot: unknown; channel: string }>>`
     SELECT run.workflow_version_id::text, run.authorization_snapshot, profile.channel
     FROM workflows.run run
@@ -971,15 +976,17 @@ export const createDocumentIssuanceService = (options: { profiles?: readonly Doc
       authorize: (tableIds: readonly string[], client: SQL) => Promise<void>;
       /** Keeps a long-running issuance's workflow lease alive; throws once the run is canceled. */
       heartbeat?: () => Promise<void>;
+      resumeOperationHash?: string;
     },
   ): Promise<Result<Document | QueryDocumentConfirmationRequired>> => {
     const t = documentServiceText(input.locale);
     const validKey = validateIdempotencyKey(input.idempotencyKey, input.locale);
     if (!validKey.ok) return validKey;
-    const { idempotencyKey, authorize, locale, heartbeat, ...raw } = input;
+    const { idempotencyKey, authorize, locale, heartbeat, resumeOperationHash, ...raw } = input;
     const parsed = QueryDocumentInputSchema.safeParse(raw);
     if (!parsed.success) return fail(err.badInput(t.requestInvalidJson));
     const pendingRequest = parsed.data;
+    if (pendingRequest.runId === null && pendingRequest.associatedData) return fail(err.badInput(t.requestInvalidJson));
     if (pendingRequest.sourceVersions && pendingRequest.output.kind !== "datev-csv" && pendingRequest.output.kind !== "sepa-xml")
       return fail(err.badInput(t.requestInvalidJson));
     const validOutput = validateDocumentQueryOutput(pendingRequest.output, input.locale);
@@ -988,7 +995,7 @@ export const createDocumentIssuanceService = (options: { profiles?: readonly Doc
     if (!profile) return fail(err.badInput(t.unknownProfile({ profile: `grids.${pendingRequest.output.kind}@1` })));
     try {
       await authorize([], db());
-      const captured = await loadWorkflowQueryData(
+      const captured = await loadIssuanceData(
         {
           baseId: pendingRequest.baseId,
           runId: pendingRequest.runId,
@@ -1009,7 +1016,7 @@ export const createDocumentIssuanceService = (options: { profiles?: readonly Doc
       const tableIds = captured.data.payload.tableIds;
       await authorize(tableIds, db());
       if (request.associatedData) {
-        const associated = await loadWorkflowQueryData(
+        const associated = await loadIssuanceData(
           { baseId: request.baseId, runId: request.runId, id: request.associatedData.id, sha256: request.associatedData.sha256, locale },
           db(),
         );
@@ -1019,7 +1026,7 @@ export const createDocumentIssuanceService = (options: { profiles?: readonly Doc
         await authorize(associated.data.payload.tableIds, db());
         if (capturedDocumentRecords(associated.data.payload) === null) return fail(err.badInput(t.associatedDataNotRowQuery));
       }
-      const operationHash = sha256Hex(idempotencyKey);
+      const operationHash = resumeOperationHash ?? sha256Hex(idempotencyKey);
       const requestHash = canonicalJson(request, locale).sha256;
       const receipt = await db().begin(async (tx) => {
         await tx`SELECT pg_advisory_xact_lock(hashtextextended(${`grids:document-issuance:${request.baseId}:${operationHash}`}, 0))`;
@@ -1094,8 +1101,8 @@ export const createDocumentIssuanceService = (options: { profiles?: readonly Doc
           await attempt`UPDATE grids.document_profile_counters SET next_value = ${value + 1}
             WHERE base_id = ${request.baseId}::uuid AND profile_id = ${profile.id}`;
           const [created] = await attempt<QueryIssuanceRow[]>`
-            INSERT INTO grids.document_issuances (base_id, operation_key_hash, request_hash, document_short_id, frozen_request, query_data_id, confirmation_hash)
-            VALUES (${request.baseId}::uuid, ${operationHash}, ${requestHash}, ${shortId}, ${canonicalJson(frozen, locale).value}::jsonb, ${request.data.id}::uuid, ${confirmationHash})
+            INSERT INTO grids.document_issuances (base_id, operation_key_hash, request_hash, document_short_id, frozen_request, query_data_id, domain_data_id, confirmation_hash)
+            VALUES (${request.baseId}::uuid, ${operationHash}, ${requestHash}, ${shortId}, ${canonicalJson(frozen, locale).value}::jsonb, ${request.runId === null ? null : request.data.id}::uuid, ${request.runId === null ? request.data.id : null}::uuid, ${confirmationHash})
             RETURNING id::text, base_id::text, request_hash, request_identity_hash, document_short_id, frozen_request, document_id::text, created_at,
               confirmation_hash, confirmed_actor, confirmed_at
           `;
@@ -1191,7 +1198,7 @@ export const createDocumentIssuanceService = (options: { profiles?: readonly Doc
         await authorize([...tableIds, ...(frozen.archive?.tableIds ?? [])], tx);
         let sources = await resolveCapturedDocumentRecords(captured.data.payload, frozen.baseId, tx);
         if (frozen.associatedData) {
-          const associated = await loadWorkflowQueryData(
+          const associated = await loadIssuanceData(
             { baseId: frozen.baseId, runId: frozen.runId, id: frozen.associatedData.id, sha256: frozen.associatedData.sha256, locale },
             tx,
           );
@@ -1238,12 +1245,13 @@ export const createDocumentIssuanceService = (options: { profiles?: readonly Doc
             receiptId: receipt.id,
             shortId: receipt.document_short_id,
             baseId: frozen.baseId,
-            queryDataId: frozen.data.id,
+            queryDataId: frozen.runId === null ? null : frozen.data.id,
+            ...(frozen.runId === null ? { domainDataId: frozen.data.id } : {}),
             associatedQueryDataId: frozen.associatedData?.id,
             sources,
             record: null,
             workflowRunId: frozen.runId,
-            workflowStepKey: frozen.stepKey,
+            workflowStepKey: frozen.runId === null ? null : frozen.stepKey,
             number: frozen.number,
             tags: frozen.tags,
             templateSnapshot: template,
@@ -1278,7 +1286,7 @@ export const createDocumentIssuanceService = (options: { profiles?: readonly Doc
     }
   };
 
-  const loadQueryDocumentConfirmation = async (input: QueryDocumentConfirmationInput, tx: SQL, lock = true) => {
+  const loadQueryDocumentConfirmation = async (input: QueryDocumentConfirmationInput, tx: SQL, lock = true, allowCompleted = false) => {
     const t = documentServiceText(input.locale);
     validateConfirmationInput(input);
     await input.authorize([], tx);
@@ -1288,12 +1296,13 @@ export const createDocumentIssuanceService = (options: { profiles?: readonly Doc
         receipt.document_short_id, receipt.frozen_request, receipt.document_id::text, receipt.created_at,
         receipt.confirmation_hash, receipt.confirmed_actor, receipt.confirmed_at
       FROM grids.document_issuances receipt
-      JOIN grids.workflow_query_data data ON data.id = receipt.query_data_id
-      WHERE receipt.base_id = ${input.baseId}::uuid AND data.run_id = ${input.runId}::uuid
+      LEFT JOIN grids.workflow_query_data data ON data.id = receipt.query_data_id
+      LEFT JOIN grids.document_data domain ON domain.id = receipt.domain_data_id
+      WHERE receipt.base_id = ${input.baseId}::uuid AND ((data.run_id = ${input.runId}::uuid AND ${input.runId}::uuid IS NOT NULL) OR (${input.runId}::uuid IS NULL AND domain.base_id = ${input.baseId}::uuid))
         AND receipt.document_short_id = ${input.receiptId} AND receipt.confirmation_hash IS NOT NULL
       ${lock ? tx`FOR UPDATE OF receipt` : tx``}
     `;
-    if (!receipt?.confirmation_hash || receipt.document_id) throw err.notFound(t.receiptMissing);
+    if (!receipt?.confirmation_hash || (receipt.document_id && !allowCompleted)) throw err.notFound(t.receiptMissing);
     const parsed = FrozenQueryDocumentSchema.safeParse(receipt.frozen_request);
     if (!parsed.success) throw err.conflict(t.workflowQueryIntegrityFailed);
     const frozen = parsed.data;
@@ -1311,13 +1320,14 @@ export const createDocumentIssuanceService = (options: { profiles?: readonly Doc
     )
       throw err.forbidden(t.financialActorMismatch);
     if (canonicalJson(runBinding, input.locale).sha256 !== frozen.financial.runBindingHash) throw err.conflict(t.financialRunChanged);
-    const capture = await loadWorkflowQueryData(
+    const capture = await loadIssuanceData(
       { baseId: input.baseId, runId: input.runId, id: frozen.data.id, sha256: frozen.data.sha256, locale: input.locale },
       tx,
     );
     if (!capture.ok) throw capture.error;
     await input.authorize(capture.data.payload.tableIds, tx);
-    await requireDocumentSourceVersions({ ...frozen, authorize: input.authorize, locale: input.locale, lock }, tx);
+    if (!receipt.document_id)
+      await requireDocumentSourceVersions({ ...frozen, authorize: input.authorize, locale: input.locale, lock }, tx);
     const normalized = normalizeFinancialDocumentOutput(frozen.output, capture.data.payload, frozen.financial.identifiers, input.locale);
     if (!normalized.ok) throw normalized.error;
     if (normalized.data.sha256 !== frozen.financial.normalizedSha256) throw err.conflict(t.workflowQueryIntegrityFailed);
@@ -1336,7 +1346,12 @@ export const createDocumentIssuanceService = (options: { profiles?: readonly Doc
       return ok(
         await db().begin(async (tx) => {
           await tx`SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY`;
-          const { receipt, confirmationHash, frozen, version, normalized, capture } = await loadQueryDocumentConfirmation(input, tx, false);
+          const { receipt, confirmationHash, frozen, version, normalized, capture } = await loadQueryDocumentConfirmation(
+            input,
+            tx,
+            false,
+            input.runId === null,
+          );
           const preview = {
             receiptId: receipt.document_short_id,
             sha256: confirmationHash,
@@ -1382,13 +1397,14 @@ export const createDocumentIssuanceService = (options: { profiles?: readonly Doc
         await input.authorize([], tx);
         // Same run-before-receipt lock order as the issuing worker, including
         // replay of a completed confirmation whose run is already terminal.
-        await tx`SELECT id FROM workflows.run WHERE id = ${input.runId}::uuid FOR UPDATE`;
+        if (input.runId !== null) await tx`SELECT id FROM workflows.run WHERE id = ${input.runId}::uuid FOR UPDATE`;
         const [completed] = await tx<
           Array<{ document_id: string | null; confirmation_hash: string; confirmed_actor: unknown; query_data_id: string; sha256: string }>
         >`
-          SELECT receipt.document_id::text, receipt.confirmation_hash, receipt.confirmed_actor, receipt.query_data_id::text, data.sha256
-          FROM grids.document_issuances receipt JOIN grids.workflow_query_data data ON data.id = receipt.query_data_id
-          WHERE receipt.base_id = ${input.baseId}::uuid AND data.run_id = ${input.runId}::uuid
+          SELECT receipt.document_id::text, receipt.confirmation_hash, receipt.confirmed_actor, coalesce(receipt.query_data_id, receipt.domain_data_id)::text AS query_data_id, coalesce(data.sha256, domain.sha256) AS sha256
+          FROM grids.document_issuances receipt LEFT JOIN grids.workflow_query_data data ON data.id = receipt.query_data_id
+      LEFT JOIN grids.document_data domain ON domain.id = receipt.domain_data_id
+          WHERE receipt.base_id = ${input.baseId}::uuid AND ((data.run_id = ${input.runId}::uuid AND ${input.runId}::uuid IS NOT NULL) OR (${input.runId}::uuid IS NULL AND domain.base_id = ${input.baseId}::uuid))
             AND receipt.document_short_id = ${input.receiptId}
             AND receipt.confirmation_hash IS NOT NULL
           FOR UPDATE OF receipt
@@ -1401,7 +1417,7 @@ export const createDocumentIssuanceService = (options: { profiles?: readonly Doc
             canonicalJson(confirmedActor.data, input.locale).sha256 !== canonicalJson(input.actor, input.locale).sha256
           )
             throw err.conflict(t.financialConfirmationRequired);
-          const capture = await loadWorkflowQueryData(
+          const capture = await loadIssuanceData(
             { baseId: input.baseId, runId: input.runId, id: completed.query_data_id, sha256: completed.sha256, locale: input.locale },
             tx,
           );
@@ -1418,10 +1434,52 @@ export const createDocumentIssuanceService = (options: { profiles?: readonly Doc
             WHERE id = ${receipt.id}::uuid`;
         }
         // The kernel persists the signal even if confirmation races parking.
-        await wakeWorkflowRunsWaitingOn({ appId: "grids", kind: "grids.document-confirmation", key: input.receiptId }, { db: tx });
+        if (input.runId !== null)
+          await wakeWorkflowRunsWaitingOn({ appId: "grids", kind: "grids.document-confirmation", key: input.receiptId }, { db: tx });
       });
-      notifyWorkflowWorker("grids");
+      if (input.runId !== null) notifyWorkflowWorker("grids");
       return ok();
+    } catch (error) {
+      const known = serviceError(error);
+      if (known) return fail(known);
+      throw error;
+    }
+  };
+
+  /** Resume the exact reserved request after a confirmed financial preview.
+   * The platform already cached the initial pending result; completion therefore
+   * belongs to the confirmation Action rather than replaying that call. */
+  const completeQueryDocument = async (input: QueryDocumentConfirmationInput) => {
+    try {
+      const loaded = await db().begin(async (tx) => {
+        const confirmation = await loadQueryDocumentConfirmation(input, tx, true, input.runId === null);
+        if (!confirmation.receipt.confirmed_at) throw err.conflict(documentServiceText(input.locale).financialConfirmationRequired);
+        const [identity] = await tx<
+          Array<{ operation_key_hash: string }>
+        >`SELECT operation_key_hash FROM grids.document_issuances WHERE id = ${confirmation.receipt.id}::uuid`;
+        if (!identity) throw err.notFound(documentServiceText(input.locale).receiptMissing);
+        const {
+          kind: _kind,
+          issuedAt: _issuedAt,
+          number: _number,
+          financial: _financial,
+          archive: _archive,
+          ...request
+        } = confirmation.frozen;
+        // A generated filename is frozen after hashing the caller's request.
+        const original =
+          canonicalJson(request, input.locale).sha256 === confirmation.receipt.request_hash ? request : { ...request, filename: null };
+        if (canonicalJson(original, input.locale).sha256 !== confirmation.receipt.request_hash)
+          throw err.conflict(documentServiceText(input.locale).idempotencyConflict);
+        return { request: original, operationHash: identity.operation_key_hash };
+      });
+      return issueQueryDocument({
+        ...loaded.request,
+        idempotencyKey: input.receiptId,
+        resumeOperationHash: loaded.operationHash,
+        locale: input.locale,
+        authorize: input.authorize,
+      });
     } catch (error) {
       const known = serviceError(error);
       if (known) return fail(known);
@@ -1491,6 +1549,7 @@ export const createDocumentIssuanceService = (options: { profiles?: readonly Doc
     issueQueryDocument,
     inspectQueryDocumentConfirmation,
     confirmQueryDocument,
+    completeQueryDocument,
     getDocumentArtifact,
   };
 };

@@ -356,3 +356,22 @@ describe("Grids container head", () => {
     );
   });
 });
+
+describe("Base Code navigation", () => {
+  test("shows the shared Code link with attention and marks it active", async () => {
+    const state = workflowState();
+    state.code = { visible: true, attention: true, active: true };
+    state.route = { kind: "overview" };
+    const html = renderToString(() => createComponent(GridsSidebar, { state }));
+    expect(html).toContain("/app/grids/BASE01/code");
+    const link = await selectHtml(html, 'a[href="/app/grids/BASE01/code"]');
+    expect(link).toHaveLength(1);
+    expect(html).toContain('aria-current="page"');
+  });
+  test("does not offer Code when Core and base permissions do not allow it", () => {
+    const state = workflowState();
+    state.code = { visible: false, attention: false, active: false };
+    const html = renderToString(() => createComponent(GridsSidebar, { state }));
+    expect(html).not.toContain("/app/grids/BASE01/code");
+  });
+});

@@ -4,6 +4,7 @@ import { err } from "@k2b/stdlib";
 import { createLocalJWKSet, exportJWK, generateKeyPair, type JWTVerifyGetKey } from "jose";
 import { z } from "zod";
 import { APP_KEY_FIXTURES } from "../../../../scripts/fixtures/app-key-fixtures";
+import { type AcceptanceProvider, AcceptanceProviderSchema } from "../../../../scripts/fixtures/code-acceptance-provider";
 import { suiteFor, useFreshDatabase } from "../../../../scripts/fixtures/test-infra";
 import { aiDecisionQuery } from "../../../core/src/ai-decision-capability";
 import { decisionInputFixture, decisionResultFixture } from "../../../core/src/ai-decision-capability.test-fixture";
@@ -23,9 +24,11 @@ import { migrate as migrateCode } from "../../../core/src/migrate/core/code";
 import { migrate as migratePolicy } from "../../../core/src/migrate/core/code-policy";
 import { migrate as migrateScheduling } from "../../../core/src/migrate/core/code-scheduling";
 import { migrate as migrateVersions } from "../../../core/src/migrate/core/code-versions";
+import { migrate as migrateEvents } from "../../../core/src/migrate/core/events";
 import { migrate as migrateRailPreferences } from "../../../core/src/migrate/core/rail-preferences";
 import { migrate as migrateRailShortcuts } from "../../../core/src/migrate/core/rail-shortcuts";
 import { migrate as migrateSettings } from "../../../core/src/migrate/core/settings";
+import { migrate as migrateWorkflows } from "../../../core/src/migrate/core/workflows";
 import { compileCapabilities, invokeCompiledCapability, serializeCapabilityProviderResult } from "../_internal/capabilities";
 import * as registry from "../_internal/registry";
 import { aiModelFixture, aiSettingsFixture } from "../ai/model-fixture";
@@ -146,6 +149,7 @@ suiteFor("database", "valkey")("C4 signed runner bridge and independent per-call
   let targetAccess: string;
   let fetched = 0;
   let currentEntry = baseEntry;
+  let gridsProvider: AcceptanceProvider | null = null;
   let targetFailure: CapabilityError | null = null;
   let providerRequestsConfirmation = false;
   let callLimit = 200;
@@ -188,6 +192,27 @@ suiteFor("database", "valkey")("C4 signed runner bridge and independent per-call
           { issuer, key, now },
         );
         const authority = verified ? await resolveInvocationAuthority(verified, sql, []) : null;
+        if (currentEntry.appId === "grids" && gridsProvider) {
+          if (!authority) throw new Error("Expected verified Grids Code authority");
+          return gridsProvider.invoke({
+            kind: "action",
+            localId: operation.localId,
+            expectedSchemaHash: operation.schemaHash,
+            input: invocationBody.input,
+            target: invocationBody.target,
+            context: {
+              authority,
+              actor: authority.actor,
+              accessSubject: authority.accessSubject,
+              user: null,
+              locale: "en",
+              requestId: crypto.randomUUID(),
+              origin: "app",
+              idempotencyKey: headers.get("idempotency-key") ?? undefined,
+              signal: new AbortController().signal,
+            },
+          });
+        }
         if (currentEntry.appId === "core") {
           if (!authority) throw new Error("Expected verified Code authority");
           const outcome = await invokeCompiledCapability({
@@ -449,6 +474,7 @@ suiteFor("database", "valkey")("C4 signed runner bridge and independent per-call
   beforeEach(async () => {
     await sql`TRUNCATE code.ai_daily_budget`;
     targetFailure = null;
+    gridsProvider = null;
     providerRequestsConfirmation = false;
     await resetFixture();
   });
@@ -471,6 +497,84 @@ suiteFor("database", "valkey")("C4 signed runner bridge and independent per-call
       body: text,
     });
   }
+  test("a Base Code writes through an ordinary Base share and cannot issue ask-only documents", async () => {
+    await resetFixture({ entry: true });
+    const gridsModule: unknown = await import(new URL("../../../grids/src/code-bridge.test-fixture.ts", import.meta.url).href);
+    const grids = z
+      .object({
+        provider: AcceptanceProviderSchema,
+        prepare: z.function({
+          input: [
+            z.object({
+              baseId: z.string().uuid(),
+              tableId: z.string().uuid(),
+              base: z.string(),
+              table: z.string(),
+              userId: z.string().uuid(),
+            }),
+          ],
+          output: z.promise(z.object({ fieldId: z.string().uuid(), fieldShortId: z.string() })),
+        }),
+      })
+      .parse(gridsModule);
+    gridsProvider = grids.provider;
+    const baseId = crypto.randomUUID(),
+      tableId = crypto.randomUUID();
+    const base = "Code01",
+      table = "Code02";
+    await migrateEvents();
+    await migrateWorkflows();
+    const { fieldId, fieldShortId } = await grids.prepare({ baseId, tableId, base, table, userId });
+    await sql`UPDATE code.codes SET owner_type='grids.base',owner_id=${base} WHERE id=${claims.codeId}`;
+    await sql`UPDATE auth.service_accounts SET name=${`code:grids.base:${base}`} WHERE id=(SELECT service_account_id FROM code.codes WHERE id=${claims.codeId})`;
+    const entry = { ...baseEntry, appId: "grids", manifest: gridsProvider.manifest };
+    const write = () =>
+      send({
+        entry,
+        operation: "grids.record.create",
+        input: {
+          call: {
+            capability: "grids.record.create",
+            target: { type: "grids.table", id: table },
+            refs: {},
+            input: { values: { [fieldShortId]: "By Code" } },
+          },
+          metadata: { idempotencyKey: crypto.randomUUID() },
+        },
+      });
+    // Ownership itself grants no data access.
+    expect(await (await write()).json()).toMatchObject({ ok: false });
+    await sql`INSERT INTO grids.base_access(base_id,access_id) VALUES(${baseId}::uuid,${targetAccess}::uuid)`;
+    const result = await (await write()).json();
+    expect(result).toMatchObject({ ok: true });
+    const [record] = await sql<
+      Array<{ value: string }>
+    >`SELECT data->>${fieldId} AS value FROM grids.records WHERE table_id=${tableId}::uuid`;
+    expect(record?.value).toBe("By Code");
+    const before = fetched;
+    const refused = await send({
+      entry,
+      operation: "grids.document.issue",
+      input: {
+        call: {
+          capability: "grids.document.issue",
+          target: { type: "grids.base", id: base },
+          refs: {},
+          input: {
+            data: { id: "Capt01", sha256: "a".repeat(64), rowCount: 1, capturedAt: "2026-11-06T00:00:00.000Z" },
+            output: { kind: "json" },
+          },
+        },
+        metadata: { idempotencyKey: crypto.randomUUID() },
+      },
+    });
+    expect(await refused.json()).toEqual({ ok: false, error: { code: "code_unattended_forbidden" } });
+    expect(fetched).toBe(before);
+    const [observed] = await sql`SELECT refusal_kind FROM code.calls WHERE run_id=${claims.runId}::uuid ORDER BY ordinal DESC LIMIT 1`;
+    expect(observed?.refusal_kind).toBe("policy");
+    await sql`DELETE FROM grids.base_access WHERE base_id=${baseId}::uuid`;
+    expect(await (await write()).json()).toMatchObject({ ok: false });
+  });
   test("the actual decision call applies the KI policy even without checker AI evidence", async () => {
     await resetFixture({ entry: true, policyRows: ["read"] });
     await sql`UPDATE code.policy_rules SET value='never' WHERE row='ai' AND group_id IS NULL`;

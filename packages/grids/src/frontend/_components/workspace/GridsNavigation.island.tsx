@@ -1,3 +1,4 @@
+import { codeNavAttentionLabel } from "@k2b/cloud/ssr/code-nav-status";
 import { WorkspaceNavigationProvider } from "@k2b/cloud/ssr/islands";
 import { createNavigation, type NavigationItem, prompts, useLocale } from "@k2b/ui";
 import { NavigationResourceTypeSchema, navigationReferenceKey } from "../../../navigation-contracts";
@@ -64,7 +65,27 @@ export default function GridsNavigation(props: { canCreate: boolean; state: Publ
   const navigation = createNavigation({
     switcher,
     items: () => [
-      { id: "overview", href: href(), label: navText().overview, icon: "ti ti-layout-dashboard", active: state.route.kind === "overview" },
+      {
+        id: "overview",
+        href: href(),
+        label: navText().overview,
+        icon: "ti ti-layout-dashboard",
+        active: state.route.kind === "overview" && !state.code?.active,
+      },
+      ...(state.code?.visible
+        ? [
+            {
+              id: "code",
+              href: `/app/grids/${state.base.id}/code`,
+              label: "Code",
+              icon: "ti ti-code",
+              active: state.code.active,
+              status: state.code.attention
+                ? { icon: "ti ti-alert-circle", label: codeNavAttentionLabel(locale()), tone: "warning" as const }
+                : null,
+            },
+          ]
+        : []),
       ...(state.canUseQueryWorkspace
         ? [
             {
