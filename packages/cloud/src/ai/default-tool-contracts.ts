@@ -158,7 +158,16 @@ const flatChartSchema = () => {
         z.union([
           ChartSeries(ChartPoints.min(1)).extend({
             data: z
-              .array(ChartPoints.element.extend({ y: z.number().nullable() }))
+              .array(
+                ChartPoints.element.extend({
+                  y: z
+                    .number()
+                    .nullable()
+                    .describe(
+                      "line: null is a gap only with forecast, zero, threshold, marker or legendValues enabled. Scatter requires a number.",
+                    ),
+                }),
+              )
               .min(1)
               .max(CLOUD_AI_CHART_MAX_VALUES),
             style: z.enum(["solid", "dashed", "dotted"]).optional(),

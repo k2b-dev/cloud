@@ -1,3 +1,4 @@
+import { lineDetailsEnabled } from "@k2b/ui/charts/core";
 import { z } from "zod";
 
 /** Optional caller policy. Rendering itself has no AI input budget. */
@@ -57,13 +58,7 @@ export const chartParts = (limits?: ChartLimits) => {
     .refine((value) => chartDateTime(value) !== undefined, "Not a valid date.");
   const ChartPoint = z.object({
     x: z.union([ChartNumber, ChartDate]).describe("line, scatter: number or YYYY-MM-DD[THH:mm[:ss]], wall-clock time without an offset."),
-    y: (limits
-      ? z
-          .number()
-          .nullable()
-          .transform((value) => value ?? Number.NaN)
-      : ChartNumber
-    ).describe("line, scatter: value; null is a gap."),
+    y: ChartNumber.describe("line, scatter: value."),
   });
   // As many lines as series a reader can tell apart.
   const ChartReferences = list(
@@ -102,13 +97,26 @@ export const chartParts = (limits?: ChartLimits) => {
     }),
     ChartCategory: z.object({ label: ChartLabel, value: ChartNumber }),
     ChartSlice: z.object({ label: ChartLabel, value: limits ? z.number().min(0) : ChartNumber }),
-    ChartSeries: (points: z.ZodArray<typeof ChartPoint>) =>
+    ChartSeries: <T extends z.ZodType>(points: z.ZodArray<T>) =>
       z.object({
         label: ChartLabel.optional(),
         data: points,
         role: z.literal("reference").optional(),
       }),
     ChartPoints: list(ChartPoint, 0, limits?.maxValues),
+    ChartLinePoints: list(
+      ChartPoint.extend({
+        y: (limits
+          ? z
+              .number()
+              .nullable()
+              .transform((value) => value ?? Number.NaN)
+          : ChartNumber
+        ).describe("line: value; null is a gap only with forecast, zero, threshold, marker or legendValues enabled."),
+      }),
+      0,
+      limits?.maxValues,
+    ),
     ChartBins: z
       .union([
         limits ? z.number().int().min(1).max(limits?.maxValues) : z.number().int().min(1),
@@ -145,6 +153,7 @@ export const chartKinds = (limits?: ChartLimits) => {
     ChartLabel,
     ChartCoordinate,
     ChartPoints,
+    ChartLinePoints,
     ChartSeries,
     ChartSlice,
     ChartReferences,
@@ -196,8 +205,8 @@ export const chartKinds = (limits?: ChartLimits) => {
         series: list(
           ChartSeries(
             limits
-              ? ChartPoints.min(2, "A line needs at least two points per series; show single values as a bar or scatter chart.")
-              : ChartPoints,
+              ? ChartLinePoints.min(2, "A line needs at least two points per series; show single values as a bar or scatter chart.")
+              : ChartLinePoints,
           ).extend({ style: z.enum(["solid", "dashed", "dotted"]).optional() }),
           1,
           limits?.maxSeries,
@@ -221,6 +230,17 @@ export const chartKinds = (limits?: ChartLimits) => {
         references: ChartReferences.optional(),
       })
       .superRefine((spec, ctx) => {
+        if (limits && !lineDetailsEnabled(spec))
+          spec.series.forEach((series, seriesIndex) => {
+            series.data.forEach((point, pointIndex) => {
+              if (!Number.isFinite(point.y))
+                ctx.addIssue({
+                  code: "custom",
+                  path: ["series", seriesIndex, "data", pointIndex, "y"],
+                  message: "Null gaps require forecast, zero, threshold, marker or legendValues enabled.",
+                });
+            });
+          });
         const coordinate = (x: number | string) => (typeof x === "number" ? x : chartDateTime(x));
         const at = spec.marker && coordinate(spec.marker.at);
         if (at !== undefined && spec.xAxis?.domain && (at < spec.xAxis.domain[0]! || at > spec.xAxis.domain[1]!))
