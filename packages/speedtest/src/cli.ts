@@ -28,7 +28,9 @@ export async function main(args: string[]) {
   const progress = (event: Progress) => {
     const phase = german ? { ping: "Ping", download: "Download", upload: "Upload", verify: "Prüfung" }[event.phase] : event.phase;
     const seconds = Math.ceil(event.remaining_ms / 1_000);
-    const text = `${phase}: ${event.mbps.toPrecision(3)} Mbit/s · ${german ? `noch ${seconds} s` : `${seconds} s left`}`;
+    const reading =
+      event.phase === "verify" ? "" : event.phase === "ping" ? `${event.ping_ms ?? "—"} ms` : `${event.mbps.toPrecision(3)} Mbit/s`;
+    const text = `${phase}${reading ? `: ${reading}` : ""} · ${german ? `noch ${seconds} s` : `${seconds} s left`}`;
     if (tty) {
       process.stderr.write(`\r\x1b[2K${text}`);
       lineOpen = true;
