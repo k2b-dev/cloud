@@ -12,6 +12,58 @@ export const CodeAutomationTitleSchema = z
   .max(200)
   .regex(/^[^<>\p{Cc}\p{Cf}\p{Zl}\p{Zp}]*$/u);
 
+/** An absolute one-time instant with its display/authoring time zone. Never infer the machine's local zone. */
+export const CodeOnceScheduleSchema = z.strictObject({
+  at: z.iso.datetime({ offset: true }).describe("One-time absolute date-time with Z or a numeric UTC offset."),
+  timeZone: z
+    .string()
+    .min(1)
+    .refine((value) => {
+      try {
+        new Intl.DateTimeFormat("en", { timeZone: value });
+        return true;
+      } catch {
+        return false;
+      }
+    }, "Use a valid IANA time zone")
+    .describe("IANA time zone for displaying the scheduled instant."),
+});
+/** Exact checked resource event registration. It carries no resource grants. */
+export const CodeEventTriggerSchema = z
+  .object({
+    type: CapabilityQualifiedIdSchema.describe("Qualified event type from the capability catalog."),
+    version: z.number().int().positive().describe("Exact declared event version."),
+    place: CloudResourceRefSchema.describe("Exact resource owner whose events this registration accepts."),
+  })
+  .strict();
+
+export const CodeVersionEntrypointSchema = z
+  .strictObject({
+    kind: z.enum(["schedule", "manual", "event", "route"]).describe("Scheduled, manually invoked, event-triggered or HTTP entrypoint."),
+    event: CodeEventTriggerSchema.optional().describe("Exact event version and owner place for an event entrypoint."),
+    route: CodeRouteSchema.optional().describe("Checked method, path and public declaration for a route handler."),
+    entrypoint: z.string().min(1).describe("Named ESM export selected by the runner."),
+    title: CodeAutomationTitleSchema.optional().describe("Optional reviewed display title; entrypoint remains the stable key."),
+    cron: z.string().nullable().describe("Five-field cron expression; null for a one-time or manual entrypoint."),
+    at: CodeOnceScheduleSchema.shape.at.optional().describe("One-time absolute date-time with Z or a numeric UTC offset."),
+    timeZone: CodeOnceScheduleSchema.shape.timeZone.optional().describe("IANA display time zone; required with at, absent for cron."),
+    file: z.string().min(1).describe("Relative source file containing this declaration or operation."),
+    line: z.number().int().positive().describe("One-based source line."),
+  })
+  .superRefine((entry, context) => {
+    if (
+      entry.kind === "event"
+        ? !entry.event || entry.cron !== null || entry.entrypoint !== `event:${entry.event.type}@${entry.event.version}`
+        : !!entry.event
+    )
+      context.addIssue({ code: "custom", message: "Event metadata and stable entrypoint must match the registration kind" });
+    if ((entry.kind === "route") !== (entry.route !== undefined))
+      context.addIssue({ code: "custom", message: "Routes require a route descriptor; other entrypoints forbid it" });
+    const once = entry.at !== undefined || entry.timeZone !== undefined;
+    if (once && (entry.kind !== "schedule" || entry.cron !== null || !entry.at || !entry.timeZone))
+      context.addIssue({ code: "custom", message: "A one-time schedule needs at and timeZone, with cron null" });
+  });
+
 const hash = z
   .string()
   .regex(/^[a-f0-9]{64}$/)
@@ -70,15 +122,6 @@ export const CodeVersionPermissionSchema = z
   .strict();
 /** One permission emitted by the checker, with its source location and, when known, the entrypoints that use it. */
 export type CodeVersionPermission = z.infer<typeof CodeVersionPermissionSchema>;
-/** Exact checked resource event registration. It carries no resource grants. */
-export const CodeEventTriggerSchema = z
-  .object({
-    type: CapabilityQualifiedIdSchema.describe("Qualified event type from the capability catalog."),
-    version: z.number().int().positive().describe("Exact declared event version."),
-    place: CloudResourceRefSchema.describe("Exact resource owner whose events this registration accepts."),
-  })
-  .strict();
-
 /** The checker's immutable manifest plus the host's original check entry and policyRows.
  * Copy version/entrypoints/permissions/ai/hashes unchanged from checkCode's result.
  * entry comes from CodeCheckRequest.entry; policyRows comes from trusted operation metadata.
@@ -87,35 +130,7 @@ export const CodeEventTriggerSchema = z
 export const CodeCheckedVersionManifestSchema = CodePolicyManifestSchema.extend({
   version: z.literal(1).describe("Checker manifest format version, currently 1."),
   entry: z.string().min(1).describe("Original checker entry path, included in the source hash."),
-  entrypoints: z
-    .array(
-      z
-        .object({
-          kind: z
-            .enum(["schedule", "manual", "event", "route"])
-            .describe("Scheduled, manually invoked, event-triggered or HTTP entrypoint."),
-          route: CodeRouteSchema.optional().describe("Checked method, path and public declaration for a route handler."),
-          entrypoint: z.string().min(1).describe("Named ESM export selected by the runner."),
-          title: CodeAutomationTitleSchema.optional().describe("Optional reviewed display title; entrypoint remains the stable key."),
-          event: CodeEventTriggerSchema.optional().describe("Exact event version and owner place for an event entrypoint."),
-          cron: z.string().nullable().describe("Five-field schedule expression, or null for manual execution."),
-          file: z.string().min(1).describe("Relative source file containing this declaration or operation."),
-          line: z.number().int().positive().describe("One-based source line."),
-        })
-        .strict()
-        .refine(
-          (entry) =>
-            entry.kind === "event"
-              ? !!entry.event && entry.cron === null && entry.entrypoint === `event:${entry.event.type}@${entry.event.version}`
-              : !entry.event,
-          "Event metadata and stable entrypoint must match the registration kind",
-        )
-        .refine(
-          (entry) => (entry.kind === "route") === (entry.route !== undefined),
-          "Routes require a route descriptor; other entrypoints forbid it",
-        ),
-    )
-    .describe("All named executable entrypoints detected by the checker."),
+  entrypoints: z.array(CodeVersionEntrypointSchema).describe("All named executable entrypoints detected by the checker."),
   permissions: z.array(CodeVersionPermissionSchema).describe("Every detected operation and target with its source location."),
   secrets: z
     .array(CodeSecretVersionBindingSchema)

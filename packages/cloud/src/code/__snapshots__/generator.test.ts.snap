@@ -98,7 +98,7 @@ export type CodeEvent<Type extends string, Data> = {
 export type CodeEvents = { "work-shop.changed": CodeEvent<"work-shop.changed", ({ "title": (string) })> };
 
 export type CodeApp = {
-  schedule(cron: string, handler: CodeScheduleHandler, options?: { name: string; title?: string }): CodeApp;
+  schedule(when: string | { at: string; timeZone: string }, handler: CodeScheduleHandler, options?: { name: string; title?: string }): CodeApp;
   /** The checked event is scoped to this resource Code owner. */
   on<Event extends keyof CodeEvents>(event: Event, handler: (data: CodeEvents[Event]) => void | Promise<void>): CodeApp;
   on<Event extends keyof CodeEvents>(handle: CodeHandle<string>, event: Event, handler: (data: CodeEvents[Event]) => void | Promise<void>): CodeApp;
@@ -268,15 +268,23 @@ function unavailable(method) {
   diagnostics.push(diagnostic);
   throw Object.assign(new Error(diagnostic.message), { code: diagnostic.code });
 }
-app.schedule = (cron, fn, options) => {
-  if (typeof cron !== "string" || !cron.trim() || typeof fn !== "function") throw new Error("code_sdk_invalid_schedule");
+app.schedule = (when, fn, options) => {
+  const once = when && typeof when === "object" && !Array.isArray(when);
+  if (typeof fn !== "function" || (!once && (typeof when !== "string" || !when.trim()))) throw new Error("code_sdk_invalid_schedule");
+  if (once) {
+    if (Object.keys(when).some(key => key !== "at" && key !== "timeZone") || typeof when.at !== "string" || !/^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d+)?(?:Z|[+-]\\d{2}:\\d{2})$/.test(when.at) || !Number.isFinite(Date.parse(when.at)) || typeof when.timeZone !== "string" || !when.timeZone) throw new Error("code_sdk_invalid_schedule");
+    const date = when.at.slice(0, 10);
+    if (new Date(date + "T00:00:00Z").toISOString().slice(0, 10) !== date || Number(when.at.slice(11, 13)) > 23) throw new Error("code_sdk_invalid_schedule");
+    try { new Intl.DateTimeFormat("en", { timeZone: when.timeZone }); } catch { throw new Error("code_sdk_invalid_schedule"); }
+  }
+  const timing = once ? { cron: null, at: when.at, timeZone: when.timeZone } : { cron: when };
   const name = options?.name;
   if (options !== undefined && (typeof name !== "string" || !/^[a-zA-Z0-9][a-zA-Z0-9_.-]*$/.test(name))) throw new Error("code_sdk_invalid_schedule_name");
-  const entrypoint = name ?? "schedule:" + schedules.length;
+  const entrypoint = name ?? "schedule:" + schedules.filter(value => value.kind === "schedule").length;
   if (schedules.some(value => value.entrypoint === entrypoint)) throw new Error("code_sdk_duplicate_schedule_name");
   const title = typeof options?.title === "string" ? options.title.trim() : options?.title;
   if (options?.title !== undefined && (typeof title !== "string" || !title || title.length > 200 || /[<>\\p{Cc}\\p{Cf}\\p{Zl}\\p{Zp}]/u.test(title))) throw new Error("code_sdk_invalid_schedule_title");
-  schedules.push({ kind: "schedule", entrypoint, cron, ...(title === undefined ? {} : { title }), handler: fn });
+  schedules.push({ kind: "schedule", entrypoint, ...timing, ...(title === undefined ? {} : { title }), handler: fn });
   return app;
 };
 app.on = (...args) => {
@@ -324,7 +332,7 @@ const __codeSdk = Object.freeze({
     if (bridge || !cloud || typeof cloud.call !== "function") throw new Error("code_sdk_invalid_bridge");
     bridge = cloud;
   },
-  entries: () => [...schedules.map(({ kind, entrypoint, cron, title, event }) => ({ kind, entrypoint, cron, ...(event === undefined ? {} : { event }), ...(title === undefined ? {} : { title }) })),
+  entries: () => [...schedules.map(({ kind, entrypoint, cron, at, timeZone, title, event }) => ({ kind, entrypoint, cron, ...(at === undefined ? {} : { at, timeZone }), ...(event === undefined ? {} : { event }), ...(title === undefined ? {} : { title }) })),
     ...routes.map(({ entrypoint, route }) => ({ kind: "route", entrypoint, route, cron: null }))],
   diagnostics: () => diagnostics.map(value => ({ ...value })),
   async run(entrypoint, input) {

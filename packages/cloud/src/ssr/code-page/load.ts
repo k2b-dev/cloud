@@ -443,6 +443,7 @@ const loadReady = async (
       kind: entry.kind,
       ...(entry.route ? { route: entry.route } : {}),
       cron: entry.cron,
+      ...(entry.at === undefined ? {} : { at: entry.at, timeZone: entry.timeZone }),
       isNew: isNew(entry.entrypoint),
       lastRun: lastRunOf(entry.entrypoint),
       nextRunAt: isNew(entry.entrypoint) ? null : (nextRuns.get(entry.entrypoint) ?? null),

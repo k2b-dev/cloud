@@ -35,7 +35,7 @@ export async function readCodeRunLimits(): Promise<CodeRunLimits> {
   };
 }
 
-type ScheduledTick = Omit<CodeScheduleTick, "versionId"> & { versionId?: string; cron?: string };
+type ScheduledTick = Omit<CodeScheduleTick, "versionId"> & { versionId?: string; cron?: string; at?: string; timeZone?: string };
 
 async function enqueue(
   input: { codeId: string; entrypoint: string; requestKey: string; input: unknown; rerunOf?: string; tick?: ScheduledTick },
@@ -71,6 +71,12 @@ async function enqueue(
   }
   if (entry.kind === "event" && !input.tick) throw new CodeDataError("BAD_INPUT", "Event entrypoints only accept platform deliveries.");
   if (input.tick?.cron !== undefined && input.tick.cron !== entry.cron) return null;
+  if (input.tick?.at !== undefined && (input.tick.at !== entry.at || input.tick.timeZone !== entry.timeZone)) return null;
+  if (input.tick && entry.at) {
+    if (input.tick.slot.toISOString() !== new Date(entry.at).toISOString()) return null;
+    const [ready] = await db<{ due: boolean }[]>`SELECT ${input.tick.slot}<=clock_timestamp() AS due`;
+    if (!ready?.due) return null;
+  }
   if (input.rerunOf) {
     const [original] = await db<{ id: string }[]>`SELECT id FROM code.runs WHERE id=${input.rerunOf}::uuid AND code_id=${code.id}
       AND entrypoint=${input.entrypoint} AND state='failed'`;
@@ -83,6 +89,14 @@ async function enqueue(
     if (!input.tick || !(error instanceof CodeVersionError)) throw error;
     refused = true;
   }
+  // A one-time occurrence waits for its predecessor instead of consuming its only tick as skipped.
+  const busy = input.tick
+    ? (
+        await db`SELECT id FROM code.runs WHERE code_id=${code.id} AND schedule_key=${input.entrypoint}
+        AND state IN ('queued','running') LIMIT 1`
+      )[0]
+    : undefined;
+  if (input.tick && entry.at && busy) return null;
   const runId = await insertCodeRun(
     {
       codeId: code.id,
@@ -99,8 +113,6 @@ async function enqueue(
   if (input.tick) {
     // Schedule identity deliberately excludes version: activating a new version cannot overlap the old tick.
     const scheduleKey = input.entrypoint;
-    const [busy] = await db`SELECT id FROM code.runs WHERE code_id=${code.id} AND schedule_key=${scheduleKey}
-      AND state IN ('queued','running') AND id<>${runId}::uuid LIMIT 1`;
     await db`UPDATE code.runs SET schedule_key=${scheduleKey},state=${busy ? "skipped" : "queued"},
       outcome=${busy ? "previous_schedule_running" : null},ended_at=CASE WHEN ${!!busy} THEN clock_timestamp() ELSE NULL END WHERE id=${runId}::uuid`;
     if (busy) await db`DELETE FROM code.run_outbox WHERE run_id=${runId}::uuid`;
@@ -134,12 +146,14 @@ export async function startCodeRun(request: CodeStartRequest, context: CodeConte
   return result;
 }
 /** Retained database tick receipts supplement Sync's at-least-once delivery and finite dedupe window. */
+export const codeScheduleRequestKey = (entrypoint: string, slot: Date) =>
+  `schedule:${new Bun.CryptoHasher("sha256").update(entrypoint).digest("hex")}:${slot.toISOString()}`;
 export async function processCodeScheduleTick(tick: CodeScheduleTick): Promise<CodeStartResult | null> {
   return admitScheduleTick(tick);
 }
 /** Scheduler callbacks bind the current version atomically with admission, including concurrent activation. */
 export async function processCurrentCodeScheduleTick(
-  tick: Omit<CodeScheduleTick, "versionId"> & { cron: string },
+  tick: Omit<CodeScheduleTick, "versionId"> & ({ cron: string } | { at: string; timeZone: string }),
 ): Promise<CodeStartResult | null> {
   return admitScheduleTick(tick);
 }
@@ -148,7 +162,8 @@ async function admitScheduleTick(tick: ScheduledTick): Promise<CodeStartResult |
   return sql.begin(async (db) => {
     const [retained] = await db<
       { retained: boolean }[]
-    >`SELECT ${tick.slot}>clock_timestamp()-${CODE_SCHEDULE_TICK_RETENTION_MS}*interval '1 millisecond' AS retained`;
+    >`SELECT ${tick.slot}>clock_timestamp()-${CODE_SCHEDULE_TICK_RETENTION_MS}*interval '1 millisecond'
+      AND (${tick.at ?? null}::text IS NULL OR ${tick.slot}<=clock_timestamp()) AS retained`;
     if (!retained?.retained) return null;
     return enqueue(
       {
@@ -156,7 +171,7 @@ async function admitScheduleTick(tick: ScheduledTick): Promise<CodeStartResult |
         entrypoint: tick.entrypoint,
         input: null,
         tick,
-        requestKey: `schedule:${new Bun.CryptoHasher("sha256").update(tick.entrypoint).digest("hex")}:${tick.slot.toISOString()}`,
+        requestKey: codeScheduleRequestKey(tick.entrypoint, tick.slot),
       },
       db,
     );

@@ -592,7 +592,7 @@ test("a checked resource event bundle receives the reference envelope as its one
   const manifest = sdkFixture();
   manifest.events![0]!.place = "workshop";
   const result = await check(
-    'import {app,owner} from "@sdk"; app.get("/health", c => c.text("Ready")); app.on("work-shop.changed", async event => {await owner.stock.list({cursor:event.subject.id});}); export default app;',
+    'import {app,owner} from "@sdk"; app.get("/health", c => c.text("Ready")); app.on("work-shop.changed", async event => {await owner.stock.list({cursor:event.subject.id});}); app.schedule({at:"2030-01-02T09:00:00Z",timeZone:"UTC"}, async () => {await owner.stock.list({cursor:"once"});}); export default app;',
     {
       sdk: generateCodeSdk([manifest], {
         mode: "resource",
@@ -609,6 +609,7 @@ test("a checked resource event bundle receives the reference envelope as its one
       entrypoint: "event:work-shop.changed@1",
       event: { type: "work-shop.changed", version: 1, place: { type: "work-shop.workshop", id: "owner-shop" } },
     },
+    { kind: "schedule", entrypoint: "schedule:0", cron: null, at: "2030-01-02T09:00:00Z", timeZone: "UTC" },
   ]);
   const file = join(directory, "event-bundle.mjs");
   await writeFile(file, result.bundle);
@@ -643,6 +644,15 @@ test("a checked resource event bundle receives the reference envelope as its one
     },
   });
   expect(calls).toMatchObject([{ operation: "work-shop.stock.list", value: { call: { input: { cursor: "item-a" } } } }]);
+  const onceModule = await import(`${file}?once`);
+  const onceCalls: unknown[] = [];
+  await onceModule["schedule:0"](null, {
+    call: async (operation: string, value: unknown) => {
+      onceCalls.push({ operation, value });
+      return { rows: [], next: null };
+    },
+  });
+  expect(onceCalls).toMatchObject([{ operation: "work-shop.stock.list", value: { call: { input: { cursor: "once" } } } }]);
 }, 30_000);
 
 test("rejects duplicate event/place subscriptions", async () => {
@@ -789,6 +799,26 @@ test("a titled schedule runs by its stable identifier and a title change changes
   expect(changed.manifest.hashes.source).not.toBe(result.manifest.hashes.source);
   expect(changed.manifest.hashes.bundle).not.toBe(result.manifest.hashes.bundle);
 });
+
+test("one-time schedules coexist with routes through the real checker and bundle registration fence", async () => {
+  const result = await check(
+    `import { app } from "@sdk";
+app.schedule({ at: "2026-12-01T09:15:30+01:00", timeZone: "Europe/Berlin" }, async () => {}, { name: "reminder" });
+app.get("/reminder", c => c.text("Scheduled"));
+export default app;`,
+    { limits: { ...CODE_CHECK_LIMITS, checkMs: 60_000 } },
+  );
+  if (!result.ok) throw new Error(JSON.stringify(result.diagnostics));
+  expect(result.ok).toBeTrue();
+  expect(result.manifest.entrypoints[0]).toMatchObject({ cron: null, at: "2026-12-01T09:15:30+01:00", timeZone: "Europe/Berlin" });
+  expect(result.manifest.entrypoints[1]).toMatchObject({ kind: "route", route: { method: "GET", path: "/reminder", public: false } });
+  const loaded = await import(`data:text/javascript;base64,${Buffer.from(result.bundle).toString("base64")}`);
+  await loaded.reminder(null, {
+    async call() {
+      throw new Error("No call expected");
+    },
+  });
+}, 90_000);
 
 test("checked route bundles execute the selected request handler without a web framework", async () => {
   const result = await check(`import { app } from "@sdk";

@@ -71,17 +71,22 @@ The lease routes return HTTP 409 with `runner_lease_lost`.
 
 ## Understand schedule ticks
 
-Core registers each checked `app.schedule` entrypoint with the Sync scheduler,
-using the installation's `app.timezone`. Runner count does not affect ticks.
+Core registers checked cron `app.schedule` entrypoints with the Sync scheduler,
+using the installation's `app.timezone`. One-time `{ at, timeZone }` schedules
+use the existing Core recovery pass: a due instant is admitted once, normally
+within five seconds, including after downtime of up to seven days. They do not
+create recurring broker schedules. Runner count does not affect ticks.
 The scheduler retains the latest missed tick after Core downtime. A durable
 receipt for Code, entrypoint, and scheduled time prevents duplicate runs even
 if several Core instances receive the same tick. Tick receipts expire after
 seven days, matching broker retention. Core rejects older ticks, so deleting a
 receipt cannot start an expired tick again. Manual receipts remain permanent.
 
-If the previous tick of that entrypoint is queued or running, Core records the
+For cron, if the previous tick of that entrypoint is queued or running, Core records the
 new tick as `skipped` with outcome `previous_schedule_running`: “Skipped,
 previous run is still running” (“Übersprungen, vorheriger Lauf läuft noch”).
+A one-time occurrence instead stays pending until its predecessor ends, within
+the same seven-day recovery window.
 Schedule identity stays the same across version activation. Each tick binds the
 current active version under the Code lock. Activation does not permit overlap
 with the previous version's run of the same schedule. Removed or changed

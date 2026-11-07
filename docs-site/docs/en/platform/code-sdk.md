@@ -188,6 +188,33 @@ Queries are absent from the SDK.
 no schedule registrations, version or owner. The chat execution path still
 asks for writing Actions as required by the normal approval policy.
 
+## Run once at a chosen time
+
+Pass an absolute date-time and an IANA time zone instead of a cron string:
+
+```ts
+app.schedule(
+  { at: "2026-12-01T09:15:30+01:00", timeZone: "Europe/Berlin" },
+  sendSummary,
+  { name: "summary-once", title: "Send summary" },
+);
+```
+
+Both fields must be constants. `at` includes seconds and `Z` or a numeric UTC offset and
+selects the exact instant; `timeZone` controls its displayed local time. Cloud
+never infers the machine's local zone. The handler registers when the module
+loads and runs only when Core admits the due entrypoint. A changed date needs
+a new checked version and activation. Keep the name to retain the automation's
+identity. Manual starts remain available independently of its scheduled run.
+
+Core admits a due one-time schedule on its next recovery pass, normally within
+five seconds. It can recover it after downtime for seven days. Older dates do
+not run automatically. The run has the same retry and approval rules as a cron tick. If its previous
+run is queued or running, the one-time date stays pending until that run ends
+or the recovery window expires. A consumed date does not run again after a restart or version
+activation. The automation list shows its `at`, `timeZone`, and a null
+`nextRunAt` once consumed or expired.
+
 ## Name an automation
 
 Give a schedule a stable name for manual execution and an optional readable
@@ -352,7 +379,7 @@ identity and credentials outside the sandbox. The checker must reserve
 `__codeSdk` for the host and reject imports of it from user code; hiding it
 from declarations alone does not enforce that rule.
 
-`__codeSdk.entries()` returns schedule and route descriptors with `kind`, `cron` and
+`__codeSdk.entries()` returns schedule and route descriptors. Schedules carry `kind`, `cron`, optional `at` and `timeZone`, and
 an `entrypoint` equal to the explicit schedule name, plus `title` when declared. For unnamed schedules,
 entrypoints use registration order (`schedule:0`, `schedule:1`, …); these are
 version-local and change when registrations are reordered.

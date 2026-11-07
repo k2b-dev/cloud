@@ -64,7 +64,8 @@ A second `app.on` for the same event and place also reports
 `code_duplicate_on`, including an explicit owner handle after an implicit owner
 subscription.
 
-Declare schedules as module-level calls with a constant five-field cron expression and an
+Declare schedules as module-level calls with a constant five-field cron expression
+or a constant `{ at, timeZone }` for a [one-time run](/en/docs/platform/code-sdk#run-once-at-a-chosen-time), and an
 optional constant name and human `title` in the declaration options. Titles follow
 the [SDK title contract](/en/docs/platform/code-sdk#name-an-automation);
 invalid or dynamic titles report `code_static_title`. A name in an imported options object needs a literal
@@ -95,7 +96,7 @@ Validate stored manifests with `CodeVersionManifestSchema`. This version-1
 contract, shared with the version service, contains:
 
 - `entrypoints`: schedule/manual kinds, named ESM exports, optional trimmed human `title`, cron expression or
-  null, and declaration file and line;
+  null, optional one-time `at` and `timeZone`, and declaration file and line;
 - `permissions`: `{ operation, target, file, line, entrypoints? }`, with a row
   for each literal target and additional reference. `entrypoints` lists, sorted,
   the schedules whose handler contains the call: an inline function, or a

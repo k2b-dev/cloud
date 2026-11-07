@@ -581,6 +581,30 @@ test("internet lists distinguish running/waiting versions, historical selection,
   expect(text("internet-failed")).toContain("Erneut versuchen");
 });
 
+test("one-time automation rows display the same explicit instant and zone in German and English", () => {
+  for (const locale of ["de", "en"]) {
+    const data = codePageFixture("overview", locale);
+    if (data.state.kind !== "ready" || !data.state.automations?.[0]) throw new Error("Expected automation fixture");
+    const automation = data.state.automations[0];
+    automation.cron = null;
+    automation.at = "2026-12-01T09:15:30+01:00";
+    automation.timeZone = "Europe/Berlin";
+    const rendered = renderToString(() =>
+      createComponent(LocaleProvider, {
+        locale,
+        get children() {
+          return createComponent(CodePage, { data });
+        },
+      }),
+    ).replaceAll(/<!--[^>]*-->/g, "");
+    const expected = new Intl.DateTimeFormat(locale, { timeZone: "Europe/Berlin", dateStyle: "medium", timeStyle: "short" }).format(
+      new Date(automation.at),
+    );
+    expect(rendered).toContain(expected);
+    expect(rendered).toContain("(Europe/Berlin)");
+  }
+});
+
 test("automation rows and the last run use reviewed titles with identifier fallback", () => {
   for (const state of ["overview", "refused", "waiting"] as const) {
     const data = codePageFixture(state, "de");

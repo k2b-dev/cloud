@@ -1,7 +1,6 @@
 import { z } from "zod";
 import { CodeInternetOriginsSchema } from "../contracts/code-internet";
-import { CodeRouteSchema } from "../contracts/code-routes";
-import { CodeAutomationTitleSchema, CodeEventTriggerSchema } from "../contracts/code-version";
+import { CodeVersionEntrypointSchema } from "../contracts/code-version";
 import type { GeneratedCodeSdk } from "./types";
 
 /** Administrator budgets for C22. UTF-8 sizes; checkMs covers all child processes together. No environment overrides. */
@@ -56,31 +55,7 @@ export type CodePermission = z.infer<typeof CodePermissionSchema>;
 export const CodeVersionManifestSchema = z
   .object({
     version: z.literal(1),
-    entrypoints: z.array(
-      z
-        .object({
-          kind: z.enum(["schedule", "manual", "event", "route"]),
-          route: CodeRouteSchema.optional(),
-          entrypoint: z.string().min(1),
-          title: CodeAutomationTitleSchema.optional(),
-          cron: z.string().nullable(),
-          event: CodeEventTriggerSchema.optional(),
-          file: z.string().min(1),
-          line: z.number().int().positive(),
-        })
-        .strict()
-        .refine(
-          (entry) =>
-            entry.kind === "event"
-              ? !!entry.event && entry.cron === null && entry.entrypoint === `event:${entry.event.type}@${entry.event.version}`
-              : !entry.event,
-          "Event metadata and stable entrypoint must match the registration kind",
-        )
-        .refine(
-          (entry) => (entry.kind === "route") === (entry.route !== undefined),
-          "Routes require a route descriptor; other entrypoints forbid it",
-        ),
-    ),
+    entrypoints: z.array(CodeVersionEntrypointSchema),
     permissions: z.array(CodePermissionSchema),
     ai: z.boolean(),
     internet: CodeInternetOriginsSchema.optional(),
