@@ -36,7 +36,22 @@ export type ChartDateFormat = z.output<ReturnType<typeof dateFormatSchema>>;
 export type ChartFormat = ChartNumberFormat | ChartDateFormat;
 
 export const chartKindSchema = () =>
-  z.enum(["bar", "line", "scatter", "pie", "donut", "histogram", "gauge", "sparkline", "boxplot", "heatmap", "barGauge", "stat", "sankey"]);
+  z.enum([
+    "area",
+    "bar",
+    "line",
+    "scatter",
+    "pie",
+    "donut",
+    "histogram",
+    "gauge",
+    "sparkline",
+    "boxplot",
+    "heatmap",
+    "barGauge",
+    "stat",
+    "sankey",
+  ]);
 
 export const chartParts = (limits?: ChartLimits) => {
   const ChartLabel = limits ? z.string().trim().min(1).max(80) : z.union([z.string(), z.number().transform(String)]);
@@ -154,6 +169,27 @@ export const chartKinds = (limits?: ChartLimits) => {
   const ChartKindCommon = { ...ChartCommon, tooltip: ChartTooltip.optional() };
   const numberFormat = chartNumberFormatSchema();
   return z.discriminatedUnion("kind", [
+    z
+      .object({
+        kind: z.literal("area"),
+        ...ChartKindCommon,
+        layout: z.literal("stacked"),
+        normalize: z.boolean().optional(),
+        x: list(z.union([z.number(), ChartLabel]), 1, limits?.maxValues),
+        series: list(z.object({ label: ChartLabel, data: list(z.number().min(0).nullable(), 0, limits?.maxValues) }), 1, limits?.maxSeries),
+        legend: z.boolean().optional(),
+        format: numberFormat.optional(),
+      })
+      .superRefine((spec, ctx) => {
+        spec.series.forEach((s, i) => {
+          if (s.data.length !== spec.x.length)
+            ctx.addIssue({ code: "custom", path: ["series", i, "data"], message: "Area series must match x length." });
+        });
+        spec.x.forEach((_, i) => {
+          const sum = spec.series.reduce((sum, s) => sum + (s.data[i] ?? 0), 0);
+          if (!Number.isFinite(sum)) ctx.addIssue({ code: "custom", path: ["x", i], message: "Area totals must be finite." });
+        });
+      }),
     z.object({
       kind: z.literal("bar"),
       ...ChartKindCommon,

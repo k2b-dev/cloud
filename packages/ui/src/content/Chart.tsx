@@ -138,6 +138,14 @@ export { type ChartRenderOptions, chartRenderHeight, renderChartSvg } from "../c
  *  as-is and the core handles the gaps. */
 const isEmpty = (props: ChartProps): boolean => {
   if (props.kind === "sankey") return !props.nodes.length || !props.links.length;
+  if (props.kind === "area")
+    return (
+      !props.x.length ||
+      !props.series.length ||
+      props.x.every(
+        (_, i) => props.series.some((s) => s.data[i] === null) || (props.normalize && props.series.every((s) => s.data[i] === 0)),
+      )
+    );
   if (props.kind === "line" || props.kind === "scatter") {
     return !props.series?.length || props.series.every((s) => !s.data.length);
   }
@@ -171,8 +179,22 @@ const ChartRoot = (props: ChartProps): JSX.Element => {
     width: 480,
     height: chartRenderHeight(props),
   });
-  const topLegend = () => props.kind === "line" && props.legend === true && props.legendPlacement === "top-start";
-  const legendSeries = () => (props.kind === "line" ? props.series : []);
+  const topLegend = () =>
+    props.kind === "area"
+      ? props.legend !== false
+      : props.kind === "line" && props.legend === true && props.legendPlacement === "top-start";
+  const legendSeries = () => (props.kind === "line" || props.kind === "area" ? props.series : []);
+  const legendValue = (index: number) => {
+    if (props.kind !== "area") return "";
+    const last = props.x.length - 1;
+    const amount = props.series[index]?.data[last];
+    const values = props.series.map((s) => s.data[last]);
+    const total = values.reduce<number>((sum, value) => sum + (value ?? 0), 0);
+    if (amount == null || values.some((v) => v == null) || (props.normalize && total === 0)) return "—";
+    return props.normalize
+      ? new Intl.NumberFormat(locale(), { style: "percent", minimumFractionDigits: 1, maximumFractionDigits: 1 }).format(amount / total)
+      : (props.format?.(amount) ?? new Intl.NumberFormat(locale(), { maximumFractionDigits: 2 }).format(amount));
+  };
   const dimensions = () => containerRef?.getBoundingClientRect() ?? size();
   const initialMapViewport = props.kind === "map" ? normalizeMapViewport(props.viewport) : DEFAULT_MAP_VIEWPORT;
   const [mapViewport, setMapViewport] = createSignal<MapViewport>(initialMapViewport);
@@ -430,6 +452,7 @@ const ChartRoot = (props: ChartProps): JSX.Element => {
 
   const inspection = createChartInspection({
     container: () => containerRef,
+    locale,
     cursor: () => props.cursor,
     tooltip: () => chartTooltipRef,
     anchor: () => lineAnchorRef,
@@ -439,6 +462,16 @@ const ChartRoot = (props: ChartProps): JSX.Element => {
     format: (selection) => {
       if (props.tooltip) return props.tooltip(selection);
       const fields = props.kind === "sankey" ? resolveChartMessages(props.locale ?? locale()).chartFields : chartMessages().chartFields;
+      if (selection.kind === "area" && props.kind === "area") {
+        const amount = selection.datum.values.find((f) => f.key === "value")!;
+        const share = selection.datum.values.find((f) => f.key === "percent");
+        return {
+          title: selection.datum.values.find((f) => f.key === "x")?.formatted ?? "",
+          rows: [
+            { label: selection.datum.label ?? chartMessages().series, value: `${share ? `${share.formatted} · ` : ""}${amount.formatted}` },
+          ],
+        };
+      }
       const format = new Intl.NumberFormat(locale(), { maximumFractionDigits: 6 });
       return {
         title:
@@ -472,6 +505,7 @@ const ChartRoot = (props: ChartProps): JSX.Element => {
       size().height,
       interactiveMap() ? mapViewport() : undefined,
       interactiveTimeline() ? timelineViewport() : undefined,
+      locale(),
     ),
   );
   createEffect(() => {
@@ -562,9 +596,28 @@ const ChartRoot = (props: ChartProps): JSX.Element => {
                     height="10"
                     aria-hidden="true"
                   >
-                    <rect x="1" y="1" width="8" height="8" rx="2" class={`stdlib-chart-series-${index() % 8}`} />
+                    <rect
+                      x="1"
+                      y="1"
+                      width="8"
+                      height="8"
+                      rx="2"
+                      class={`stdlib-chart-series-${index() % 8}`}
+                      fill={`var(--stdlib-chart-c${(index() % 8) + 1}, ${["#2563eb", "#16a34a", "#d97706", "#dc2626", "#a855f7", "#0891b2", "#db2777", "#65a30d"][index() % 8]})`}
+                      stroke="none"
+                    />
                   </svg>
-                  <span>{series.label && series.label.length > 0 ? series.label : `Series ${index() + 1}`}</span>
+                  <span>{series.label && series.label.length > 0 ? series.label : `${chartMessages().series} ${index() + 1}`}</span>
+                  <Show when={props.kind === "area"}>
+                    <b
+                      data-chart-legend-value
+                      data-series-index={index()}
+                      data-field={props.kind === "area" && props.normalize ? "percent" : "value"}
+                      data-default={legendValue(index())}
+                    >
+                      {legendValue(index())}
+                    </b>
+                  </Show>
                 </span>
               )}
             </For>

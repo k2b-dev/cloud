@@ -17360,3 +17360,4 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 .k2b-ui .k2b-chart[data-chart-kind="sankey"] > .k2b-chart__svg { min-width: 620px; }
 .k2b-ui .k2b-chart[data-chart-kind="sankey"] [data-inspected] > .k2b-chart-sankey-link,
 .k2b-ui .k2b-chart[data-chart-kind="sankey"] [data-selected] > .k2b-chart-sankey-link { fill-opacity: 0.6; stroke: none !important; }
+.k2b-ui .k2b-chart[data-chart-kind="area"] [data-selected] > .k2b-area-inspection-point { opacity: 1; stroke-width: 1.5px; }

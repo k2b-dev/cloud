@@ -11,6 +11,8 @@ export function createChartInspection(options: {
   anchor: () => HTMLSpanElement | undefined;
   kind: () => ChartKind;
   enabled: () => boolean;
+  locale?: () => string;
+  legend?: () => ParentNode | undefined;
   format: ChartTooltipFormatter;
   select: (selection: ChartSelection) => void;
 }) {
