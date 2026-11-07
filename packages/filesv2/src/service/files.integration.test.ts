@@ -1191,13 +1191,16 @@ suite("Files service and durable bindings", () => {
     directory("freeipa", "users/other-root-reader");
     await expect(service.entryById(testCall(other), ref)).rejects.toMatchObject({ code: "not_found" });
     directory("freeipa", "users/root-reader", 999, 999, "0700");
-    await expect(service.entryById(testCall(actor), ref)).rejects.toMatchObject({ code: "forbidden" });
+    await expect(service.entryById(testCall(actor), ref)).rejects.toMatchObject({ code: "ownership_mismatch", status: 403 });
+    directory("freeipa", "users/root-reader", 1001, 2001, "0300");
+    await expect(service.entryById(testCall(actor), ref)).rejects.toMatchObject({ code: "forbidden", status: 403 });
   });
 
   test("publication refreshes a replaced parent folder's stable ref before Filegate commits", async () => {
-    const actor = await user("parent-arrival", "local");
-    directory("cloud", "users/parent-arrival");
-    const folder = directory("cloud", "users/parent-arrival/Inbox");
+    const actor = await user("parent-arrival", "local", true);
+    directory("cloud", "users/parent-arrival", 0, 0, "0700");
+    await service.adopt(testCall(actor), { area: "cloud", kind: "users", identityId: id(actor) });
+    const folder = directory("cloud", "users/parent-arrival/Inbox", 0, 0, "0700");
     const firstId = "11111111-1111-4111-8111-111111111111";
     const secondId = "22222222-2222-4222-8222-222222222222";
     nodes.set("cloud:users/parent-arrival/Inbox", { ...folder, id: firstId });
@@ -1216,8 +1219,9 @@ suite("Files service and durable bindings", () => {
   });
 
   test("a completion transaction failure rolls back the event and recovers from Filegate without a second upload", async () => {
-    const actor = await user("rollback-arrival", "local");
-    directory("cloud", "users/rollback-arrival");
+    const actor = await user("rollback-arrival", "local", true);
+    directory("cloud", "users/rollback-arrival", 0, 0, "0700");
+    await service.adopt(testCall(actor), { area: "cloud", kind: "users", identityId: id(actor) });
     const baseId = (await service.bases(testCall(actor))).items[0]!.id;
     const opened = await service.upload(testCall(actor), {
       baseId,
@@ -1245,9 +1249,10 @@ suite("Files service and durable bindings", () => {
   });
 
   test("replacement upload publishes the replacement fact, never its internal revisions", async () => {
-    const actor = await user("replacement", "local");
-    directory("cloud", "users/replacement");
-    directory("cloud", "users/replacement/report.txt", 1001, 2001, "0600", false);
+    const actor = await user("replacement", "local", true);
+    directory("cloud", "users/replacement", 0, 0, "0700");
+    await service.adopt(testCall(actor), { area: "cloud", kind: "users", identityId: id(actor) });
+    directory("cloud", "users/replacement/report.txt", 0, 0, "0600", false);
     const baseId = (await service.bases(testCall(actor))).items[0]!.id;
     const opened = await service.upload(testCall(actor), {
       baseId,
@@ -1268,8 +1273,9 @@ suite("Files service and durable bindings", () => {
   });
 
   test("aborted, incomplete and failed uploads and folder creation publish no arrival", async () => {
-    const actor = await user("cancelled", "local");
-    directory("cloud", "users/cancelled");
+    const actor = await user("cancelled", "local", true);
+    directory("cloud", "users/cancelled", 0, 0, "0700");
+    await service.adopt(testCall(actor), { area: "cloud", kind: "users", identityId: id(actor) });
     const baseId = (await service.bases(testCall(actor))).items[0]!.id;
     const input = { baseId, path: "not-finished.txt", size: 4, onConflict: "error" as const, idempotencyKey: crypto.randomUUID() };
     const opened = await service.upload(testCall(actor), input);
@@ -1277,17 +1283,18 @@ suite("Files service and durable bindings", () => {
     await service.abortUpload(testCall(actor), { baseId, id: opened.id });
     await expect(service.commitUpload(testCall(actor), { baseId, id: opened.id })).rejects.toMatchObject({ code: "upload_closed" });
     const failed = await service.upload(testCall(actor), { ...input, path: "conflict.txt", size: 0, idempotencyKey: crypto.randomUUID() });
-    directory("cloud", "users/cancelled/conflict.txt", 1001, 2001, "0600", false);
+    directory("cloud", "users/cancelled/conflict.txt", 0, 0, "0600", false);
     await expect(service.commitUpload(testCall(actor), { baseId, id: failed.id })).rejects.toMatchObject({ status: 412 });
     await service.mkdir(testCall(actor), { baseId, path: "folder" });
     expect(await uploadEvents()).toEqual([]);
   });
 
   test("folder upload emits one bounded fact per committed file, without traversing existing children", async () => {
-    const actor = await user("bulk-arrival", "local");
-    directory("cloud", "users/bulk-arrival");
-    directory("cloud", "users/bulk-arrival/Inbox");
-    for (let i = 0; i < 50; i++) directory("cloud", `users/bulk-arrival/Inbox/existing-${i}.txt`, 1001, 2001, "0600", false);
+    const actor = await user("bulk-arrival", "local", true);
+    directory("cloud", "users/bulk-arrival", 0, 0, "0700");
+    await service.adopt(testCall(actor), { area: "cloud", kind: "users", identityId: id(actor) });
+    directory("cloud", "users/bulk-arrival/Inbox", 0, 0, "0700");
+    for (let i = 0; i < 50; i++) directory("cloud", `users/bulk-arrival/Inbox/existing-${i}.txt`, 0, 0, "0600", false);
     const baseId = (await service.bases(testCall(actor))).items[0]!.id;
     for (let i = 0; i < 25; i++) {
       const opened = await service.upload(testCall(actor), {
@@ -1309,8 +1316,9 @@ suite("Files service and durable bindings", () => {
   });
 
   test("a lost Filegate commit response recovers exactly one arrival", async () => {
-    const actor = await user("recovered-arrival", "local");
-    directory("cloud", "users/recovered-arrival");
+    const actor = await user("recovered-arrival", "local", true);
+    directory("cloud", "users/recovered-arrival", 0, 0, "0700");
+    await service.adopt(testCall(actor), { area: "cloud", kind: "users", identityId: id(actor) });
     const baseId = (await service.bases(testCall(actor))).items[0]!.id;
     const opened = await service.upload(testCall(actor), {
       baseId,
