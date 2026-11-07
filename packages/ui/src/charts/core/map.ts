@@ -41,7 +41,7 @@ const normalizeMapViewport = (viewport: MapViewport | undefined): MapViewport =>
 };
 
 /** Render geographic point series over a dependency-free world land map. */
-export const map = (opts: MapOptions): string => {
+export function map(opts: MapOptions): string {
   const width = opts.width ?? 640;
   const height = opts.height ?? 340;
   const padding = normalizePadding(opts.padding ?? { top: 12, right: 16, bottom: 12, left: 16 });
@@ -137,4 +137,4 @@ export const map = (opts: MapOptions): string => {
   }
 
   return svgRoot({ width, height, className: opts.className }, body.join(""));
-};
+}
