@@ -152,6 +152,21 @@ test("line tap pins at a coordinate; dark and unscoped paths remain painted", as
   await chart.dispatchEvent("click", { pointerType: "touch", clientX: plot!.x + 40, clientY: plot!.y + 70 });
   expect(await tooltip(page).count()).toBe(0);
   expect(await chart.evaluate((e) => getComputedStyle(e).colorScheme)).toBe("dark");
+  const negative = await chart.locator(".k2b-line-negative-zone").evaluate((mark) => ({
+    fill: getComputedStyle(mark).fill,
+    opacity: Number(getComputedStyle(mark).fillOpacity),
+    height: mark.getBoundingClientRect().height,
+  }));
+  expect(negative.fill).toBe("rgb(239, 68, 68)");
+  expect(negative.opacity).toBeGreaterThan(0);
+  expect(negative.opacity).toBeLessThan(0.2);
+  expect(negative.height).toBeGreaterThan(0);
+  const bandPaint = await chart.locator(".k2b-line-forecast-band").evaluate((mark) => getComputedStyle(mark).fill);
+  const firstStroke = await chart
+    .locator(".stdlib-chart-line")
+    .first()
+    .evaluate((mark) => getComputedStyle(mark).stroke);
+  expect(bandPaint).toBe(firstStroke);
   await page.evaluate(() => document.body.classList.remove("k2b-ui"));
   await settled(page);
   const fills = await chart.locator(".stdlib-chart-line").evaluateAll((nodes) => nodes.map((e) => getComputedStyle(e).stroke));
