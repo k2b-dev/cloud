@@ -177,7 +177,7 @@ test("opted-in snapshot legends keep an all-missing final column as gaps", () =>
     ],
   });
   const html = renderNotebookChartFigure(input, "en")!;
-  expect(html).toContain('data-line-last-x="2"');
+  expect(html).toContain('data-line-default-x="2"');
   expect([...html.matchAll(/data-default="([^"]*)"/g)].map((match) => match[1])).toEqual(["—", "—"]);
 });
 

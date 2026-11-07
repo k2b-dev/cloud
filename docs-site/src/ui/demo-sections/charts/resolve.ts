@@ -151,12 +151,12 @@ export function resolveDrawing(spec: JsonValue, locale = "en"): ShowcaseDrawing 
   if (Array.isArray(spec) && spec.length && spec.every((entry) => object(entry) && entry.type === "flow"))
     return blockComponent("flow")
       ? { mode: "block", block: "flow", spec: { block: "flow", items: spec } }
-      : { mode: "slot", kind: "flow", reason: "This block arrives with its catalog step." };
+      : { mode: "slot", kind: "flow", reason: "This build does not draw this block yet." };
   if (!object(spec)) return { mode: "slot", kind: "unknown", reason: "The description is not an object." };
   if (typeof spec.block === "string")
     return drawableBlock(spec.block)
       ? { mode: "block", block: spec.block, spec }
-      : { mode: "slot", kind: spec.block, reason: "This block arrives with its catalog step." };
+      : { mode: "slot", kind: spec.block, reason: "This build does not draw this block yet." };
   const kind = typeof spec.kind === "string" ? spec.kind : "unknown";
   if (liveKinds.has(kind)) {
     const { title: _title, subtitle: _subtitle, ...props } = spec;
@@ -166,17 +166,18 @@ export function resolveDrawing(spec: JsonValue, locale = "en"): ShowcaseDrawing 
   if (!parsed.success) {
     // The kind exists when the schema complains about fields rather than about the kind itself.
     const known = !parsed.error.issues.some((issue) => issue.path.length === 0 || issue.path[0] === "kind");
-    const fields = [...new Set(parsed.error.issues.map((issue) => issue.path[0]).filter((key): key is string => typeof key === "string"))];
+    // Name the exact paths: a value this build rejects is either a later option or a mistake in the description.
+    const paths = [...new Set(parsed.error.issues.map((issue) => issue.path.join(".")).filter(Boolean))];
     return {
       mode: "slot",
       kind,
       reason: known
-        ? `Its options ${fields.length ? fields.join(", ") : "in this form"} arrive with their catalog step.`
-        : "The kind arrives with its catalog step.",
+        ? `This build does not accept ${paths.length ? paths.slice(0, 3).join(", ") : "this form"} yet.`
+        : "This build does not draw this kind yet.",
     };
   }
   const lost = lostKeys(spec, parsed.data);
-  if (lost.length) return { mode: "slot", kind, reason: `Its options ${lost.join(", ")} arrive with their catalog step.` };
+  if (lost.length) return { mode: "slot", kind, reason: `This build does not know ${lost.join(", ")} yet.` };
   const input: ChartInput = parsed.data;
   const table = chartRows(input, locale);
   const snapshot = prepareChartSnapshot(chartRenderOptions(input, locale, { legend: "outside" }), {

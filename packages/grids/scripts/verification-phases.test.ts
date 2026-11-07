@@ -11,6 +11,11 @@ test("every Grids test file runs in exactly one certification phase, behavior te
   expect(phase("dom").files.length).toBeGreaterThan(0);
   expect(phase("dom").files.every((file) => behavior.test(file))).toBe(true);
   expect(phase("dom").flags).toContain("--conditions=browser");
+  for (const candidate of phases) {
+    expect(candidate.flags.includes("./packages/grids/test/app-events-preload.ts")).toBe(
+      !["workflow-kernel", "browser-bundle", "dom"].includes(candidate.name),
+    );
+  }
   for (const other of phases.filter((candidate) => candidate.name !== "dom")) {
     expect(other.files.filter((file) => behavior.test(file))).toEqual([]);
   }

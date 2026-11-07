@@ -14,8 +14,11 @@ export * from "./calendar";
 export * from "./inspection";
 export { lineBase } from "./line-base";
 export { lineDetailsEnabled, lineForecastLayout } from "./line-options";
+export { map } from "./map";
 export * from "./render";
+export { chartRenderHeight, preservesAspectRatio } from "./render-size";
 export * from "./snapshot";
+export { charts } from "./svg";
 export {
   type AxisOptions,
   arcPathD,
@@ -26,7 +29,6 @@ export {
   boxplot,
   type ChartOptions,
   chartDatumSvg,
-  charts,
   computeBoxStats,
   computeDomain,
   donut,
@@ -35,7 +37,6 @@ export {
   gauge,
   heatmap,
   histogram,
-  type LineOptions,
   type LineStyle,
   line,
   linearRegression,
@@ -45,7 +46,6 @@ export {
   type MapSeries,
   type MapViewport,
   type MarkerShape,
-  map,
   mapLog,
   mapRange,
   markerPath,
@@ -65,7 +65,7 @@ export {
   stateTimeline,
   stepPathD,
   svgRoot,
-} from "./svg";
+} from "./svg-renderers";
 export {
   type ChartDateFormat,
   type ChartDatum,

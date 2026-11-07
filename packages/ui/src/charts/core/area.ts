@@ -1,5 +1,5 @@
 import { coreChartMessages } from "./chart-messages";
-import { chartDatumSvg, escapeXml, niceStep } from "./svg";
+import { chartDatumSvg, escapeXml, niceStep } from "./svg-renderers";
 
 export type AreaOptions = {
   layout: "stacked";
@@ -97,7 +97,7 @@ export function renderAreaSvg(spec: AreaOptions & { width: number; height: numbe
   parts.push(
     `<line class="stdlib-chart-axis" x1="${f(g.left)}" x2="${f(g.right)}" y1="${f(g.bottom)}" y2="${f(g.bottom)}" stroke="none"/><line class="stdlib-chart-axis" x1="${f(g.left)}" x2="${f(g.left)}" y1="${f(g.top)}" y2="${f(g.bottom)}" stroke="none"/>`,
   );
-  const palette = ["#3b82f6", "#10b981", "#f59e0b", "#8b5cf6", "#ec4899", "#06b6d4", "#84cc16", "#f97316"];
+  const palette = ["#2563eb", "#16a34a", "#d97706", "#dc2626", "#a855f7", "#0891b2", "#db2777", "#65a30d"];
   if (spec.legend !== false) {
     const entries = spec.series.slice(0, 4);
     const columns = 2;
