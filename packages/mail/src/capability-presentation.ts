@@ -73,6 +73,7 @@ export const mailCapabilityPresentation: CapabilityPresentationCatalog = {
           title: "Historischen Mail-Empfang auflösen",
           description:
             "Löst eine eingehende Nachrichtenreferenz mit aktuellem Leserecht für das gesamte Postfach in ihren Empfangsumschlag auf.",
+          input: { id: "Öffentliche Nachrichten-ID aus einer Nachrichtenliste oder Suche." },
         },
         "message.catchup": {
           title: "Vorhandene Nachrichten für Code auswählen",
