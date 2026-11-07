@@ -13,6 +13,7 @@ export type ComposeSettingsHarnessOptions = {
   logo: Logo | null | "fail";
   /** A 400 message the next upload answers with, as the server's localized validation error. */
   uploadError?: string;
+  conflict?: boolean;
 };
 
 declare global {
@@ -64,6 +65,7 @@ window.demoLogo = async (width, height, displayWidth) => {
     reader.readAsDataURL(blob);
   });
   return {
+    versionId: "10000000-0000-4000-8000-000000000001",
     contentType: "image/png",
     pixelWidth: width,
     pixelHeight: height,
@@ -83,6 +85,7 @@ window.mountComposeSettings = (options) => {
   const messages = mailSettingsMessages.resolve([options.locale]).t;
   let stored = options.logo === "fail" ? null : options.logo;
   let failLoad = options.logo === "fail";
+  let conflict = options.conflict;
   let answer: () => void = () => undefined;
   const loaded = new Promise<void>((done) => {
     answer = done;
@@ -108,6 +111,11 @@ window.mountComposeSettings = (options) => {
       if (request.method === "DELETE") {
         stored = null;
         return Response.json({ logo: null });
+      }
+      if (conflict && stored) {
+        conflict = false;
+        stored = { ...(await window.demoLogo(600, 160, 240)), versionId: "20000000-0000-4000-8000-000000000002", altText: "New team logo" };
+        return Response.json({ code: "CONFLICT" }, { status: 409 });
       }
       if (options.uploadError) return Response.json({ code: "BAD_INPUT", message: options.uploadError }, { status: 400 });
       const json = body as { content: string; displayWidth?: number; altText?: string };
