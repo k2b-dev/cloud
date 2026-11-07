@@ -1,10 +1,15 @@
 // Test helper: the app frame assets as the /app-assets routes serve them, built once per test process.
-import { buildBaseCss, buildPrelude } from "./build-assets";
+import { buildBaseCss, buildChartModule, buildPrelude } from "./build-assets";
 
 let assets: Promise<string> | undefined;
 export function appAssetsJson(): Promise<string> {
-  assets ??= Promise.all([buildPrelude(), buildBaseCss()]).then(([prelude, baseCss]) =>
-    JSON.stringify({ prelude, preludeHash: `'sha256-${new Bun.CryptoHasher("sha256").update(prelude).digest("base64")}'`, baseCss }),
+  assets ??= Promise.all([buildPrelude(), buildBaseCss(), buildChartModule()]).then(([prelude, baseCss, chartModule]) =>
+    JSON.stringify({
+      prelude,
+      preludeHash: `'sha256-${new Bun.CryptoHasher("sha256").update(prelude).digest("base64")}'`,
+      baseCss,
+      chartModule,
+    }),
   );
   return assets;
 }

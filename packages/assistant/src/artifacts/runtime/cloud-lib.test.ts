@@ -10,7 +10,7 @@ import { escapeXml } from "@k2b/stdlib";
 import { isChartDatum } from "@k2b/ui/chart-inspection";
 import { createCloud } from "./cloud";
 import { CloudError } from "./errors";
-import { boundMoney, chart, chartOptions, chartSvg, html } from "./lib";
+import { boundMoney, chart, chartOptions, chartSvg, html, pendingChartHeight } from "./lib";
 import { parseCsv, toCsv } from "./sheet-lib";
 
 test("cloud.html escapes values, joins arrays and keeps nested markup", () => {
@@ -730,4 +730,20 @@ test("calendar app charts preserve headers, units, square geometry and Date pair
   expect(markup).not.toMatch(/<text[^>]*style="[^"]*"[^>]*style=/);
   expect(markup).toContain("1.234,5 mehr raus");
   expect(markup).toContain("EUR");
+});
+
+test("horizontal rows reserve their final height before the lazy renderer loads", () => {
+  const input: CloudAiChartInput = {
+    kind: "hbar",
+    title: "Regional orders",
+    subtitle: "Fictional",
+    series: ["Current", "Prior"],
+    rows: Array.from({ length: 20 }, (_, i) => ({ group: "Shops", label: `Region ${i + 1}`, values: [i, i + 1] })),
+  };
+  for (const width of [480, 390]) {
+    const prepared = { input, title: input.title };
+    const height = pendingChartHeight(prepared, "en", width, 280);
+    expect(height).toBeGreaterThan(280);
+    expect(chartSvg(prepared, "en", width, 280)).toContain(`viewBox="0 0 ${width} ${height}"`);
+  }
 });

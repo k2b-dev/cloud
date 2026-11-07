@@ -4,6 +4,7 @@ import {
   CHECK_LIMITS,
   CHECK_UNAVAILABLE,
   CheckReport,
+  CheckStart,
   CheckSteps,
   checkGate,
   checkHash,
@@ -236,4 +237,10 @@ test("shown text: code errors in the app's messages fail, quoted errors and brok
     expect(shown(value)).toEqual([expect.objectContaining({ severity: "warning", kind: "shown-value" })]);
   for (const prose of ["This is not a function of the price", "Category is not defined yet", "Nancy and Nandu", "Undefined behaviour"])
     expect(shown(prose)).toEqual([]);
+});
+
+test("frame assets require the offline chart module", () => {
+  const assets = { prelude: "", preludeHash: "", baseCss: "" };
+  expect(CheckStart.shape.assets.safeParse(assets).success).toBe(false);
+  expect(CheckStart.shape.assets.safeParse({ ...assets, chartModule: "bundled source" }).success).toBe(true);
 });
