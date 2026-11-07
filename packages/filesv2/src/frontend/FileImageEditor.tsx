@@ -3,7 +3,7 @@ import { Button, Dropdown, ImageEditor, type ImageEditorSaveActions, Placeholder
 import { createEffect, createSignal, onCleanup, onMount, Show } from "solid-js";
 import type { EntryResult } from "../contracts";
 import { markdownRevision } from "../document-assets";
-import { UploadTransferError } from "../upload-transfer";
+import { isUnresolvedUploadFailure, UploadTransferError } from "../upload-transfer";
 import { filesImageFeatures, imageCopyPath, imageOriginalFormat, loadImageForEditing } from "./image-editing";
 import { useImageMessages } from "./image-messages";
 import { UploadConflict, uploadFile } from "./uploads";
@@ -87,7 +87,7 @@ export default function FileImageEditor(props: {
     const versionFormat = () => {
       const image = loaded();
       const format = image && imageOriginalFormat(image.entry);
-      return image?.base.versioningEnabled && format && actions.formats.includes(format) ? format : undefined;
+      return image?.base.managed && image.base.versioningEnabled && format && actions.formats.includes(format) ? format : undefined;
     };
     const save = (copy: boolean) =>
       actions.save(
@@ -99,6 +99,7 @@ export default function FileImageEditor(props: {
           // A manual check reuses the same Blob, destination, revision and durable upload key.
           await new Promise<void>((resolve, reject) => {
             rejectPending = reject;
+            let unresolved = false;
             const attempt = async () => {
               if (checking() || lifetime.signal.aborted) return;
               setChecking(true);
@@ -134,13 +135,20 @@ export default function FileImageEditor(props: {
                   uncertainNotice = undefined;
                   rejectPending = undefined;
                   reject(new Error(t().copyConflict));
-                } else if (failure instanceof UploadTransferError && failure.kind === "final") {
+                } else if (
+                  failure instanceof UploadTransferError &&
+                  failure.kind === "final" &&
+                  !isUnresolvedUploadFailure(failure) &&
+                  !(unresolved && failure.code === "upload_preflight")
+                ) {
                   setRetryUpload(undefined);
                   uncertainNotice?.dismiss();
                   uncertainNotice = undefined;
                   rejectPending = undefined;
                   reject(new Error(failure.code === "write_conflict" ? t().changed : failure.message));
                 } else {
+                  // A later preflight failure cannot settle an earlier ambiguous publication.
+                  unresolved = true;
                   // Unknown or transient transport outcomes must reconcile before another write.
                   setRetryUpload(() => attempt);
                   uncertainNotice ??= toast(t().uncertain, {

@@ -78,6 +78,7 @@ const setup = async (
     conflict?: boolean;
     copyConflict?: boolean;
     ambiguous?: boolean;
+    receiptUnknown?: boolean;
     corrupt?: boolean;
     etag?: string;
     sourceChanged?: boolean;
@@ -157,6 +158,8 @@ const setup = async (
     if (url.pathname.endsWith("/commit")) {
       commitCalls++;
       if (options.ambiguous && commitCalls === 1) return route.abort("failed");
+      if (options.receiptUnknown && commitCalls === 2)
+        return route.fulfill({ status: 409, json: { code: "receipt_unknown", message: "Receipt unavailable" } });
       if (options.conflict && commitCalls === 1)
         return route.fulfill({ status: 409, json: { code: "write_conflict", message: "File changed" } });
       revision = `revision-${commitCalls + 1}`;
@@ -294,14 +297,116 @@ describe("Files photo editing", () => {
       await page.close();
     }
   });
+  test("a missing receipt keeps a lost copy reserved until the same upload is confirmed", async () => {
+    const { page, errors, uploads, commits } = await setup({ ambiguous: true, receiptUnknown: true, versioned: false });
+    try {
+      await edit(page);
+      await rotate(page);
+      await save(page, true);
+      const check = page.locator(".filesv2-image-save-actions").getByRole("button", { name: "Check upload", exact: true });
+      await check.waitFor();
+      await check.click();
+      await page.waitForFunction(() => !document.querySelector<HTMLButtonElement>(".filesv2-image-save-actions button")?.disabled);
+      expect(commits()).toBe(2);
+      expect(await check.count()).toBe(1);
+      expect(await page.evaluate(() => window.fileImages.saved.length)).toBe(0);
+      expect(await page.getByRole("button", { name: "Save", exact: true }).count()).toBe(0);
+      await page.keyboard.press("Escape");
+      await settled(page);
+      expect(await page.getByRole("dialog").count()).toBe(1);
+      expect(uploads[1]).toEqual(uploads[0]);
+      await check.click();
+      await page.waitForFunction(() => window.fileImages.saved.length === 1);
+      expect(uploads).toEqual([uploads[0]!, uploads[0]!, uploads[0]!]);
+      expect(await page.locator(".k2b-image-editor").getAttribute("data-dirty")).toBe("false");
+      expect(errors).toEqual([]);
+    } finally {
+      await page.close();
+    }
+  });
+  test("storage failure while checking an ambiguous copy never releases its reservation", async () => {
+    const { page, errors, uploads } = await setup({ ambiguous: true, versioned: false });
+    try {
+      await edit(page);
+      await rotate(page);
+      await save(page, true);
+      const check = page.locator(".filesv2-image-save-actions").getByRole("button", { name: "Check upload", exact: true });
+      await check.waitFor();
+      await page.evaluate(() => {
+        const getItem = Storage.prototype.getItem;
+        Object.defineProperty(window, "restoreUploadStorage", {
+          value: () => {
+            Storage.prototype.getItem = getItem;
+          },
+        });
+        Storage.prototype.getItem = () => {
+          throw new DOMException("Storage unavailable", "SecurityError");
+        };
+      });
+      await check.click();
+      await page.waitForFunction(() => !document.querySelector<HTMLButtonElement>(".filesv2-image-save-actions button")?.disabled);
+      expect(uploads).toHaveLength(1);
+      expect(await check.count()).toBe(1);
+      expect(await page.getByRole("button", { name: "Save", exact: true }).count()).toBe(0);
+      await page.keyboard.press("Escape");
+      await settled(page);
+      expect(await page.getByRole("dialog").count()).toBe(1);
+      await page.evaluate("window.restoreUploadStorage()");
+      await check.click();
+      await page.waitForFunction(() => window.fileImages.saved.length === 1);
+      expect(uploads[1]).toEqual(uploads[0]);
+      expect(errors).toEqual([]);
+    } finally {
+      await page.close();
+    }
+  });
+  test("storage preflight failure issues no request and leaves a discardable draft", async () => {
+    const { page, errors, uploads } = await setup();
+    try {
+      await edit(page);
+      await rotate(page);
+      await page.evaluate(() => {
+        Storage.prototype.setItem = () => {
+          throw new DOMException("Storage unavailable", "SecurityError");
+        };
+      });
+      await save(page);
+      await page
+        .locator(".k2b-image-editor")
+        .getByText("The image could not be saved. Your edits are preserved.", { exact: true })
+        .waitFor();
+      expect(uploads).toEqual([]);
+      expect(await page.locator(".k2b-image-editor").getAttribute("data-dirty")).toBe("true");
+      expect(await page.getByRole("button", { name: "Check upload", exact: true }).count()).toBe(0);
+      await page.keyboard.press("Escape");
+      await page.getByText("Discard unsaved changes?", { exact: true }).waitFor();
+      await page.getByRole("dialog").last().getByRole("button", { name: "Confirm", exact: true }).click();
+      await page.waitForFunction(() => !document.querySelector("dialog[open]"));
+      expect(errors).toEqual([]);
+    } finally {
+      await page.close();
+    }
+  });
   test("unversioned and foreign original formats only offer a copy, and read-only entries offer no editing", async () => {
-    for (const options of [{ versioned: false }, { name: "Photo.avif" }, { name: "Photo.webp", noWebp: true }]) {
-      const { page, errors } = await setup(options);
+    for (const options of [
+      { versioned: false },
+      { managed: false, versioned: true },
+      { name: "Photo.avif" },
+      { name: "Photo.webp", noWebp: true },
+    ]) {
+      const { page, errors, uploads } = await setup(options);
       try {
         await edit(page);
         await page.getByRole("button", { name: "Save", exact: true }).click();
         expect(await page.getByRole("menuitem", { name: "Save new version", exact: true }).count()).toBe(0);
         expect(await page.getByRole("menuitem", { name: "Save copy", exact: true }).count()).toBe(1);
+        if ("managed" in options && !options.managed) {
+          await page.getByRole("menuitem", { name: "Save copy", exact: true }).click();
+          await page.waitForFunction(() => window.fileImages.saved.length === 1);
+          expect(uploads.map(({ path, onConflict, expectedRevision }) => ({ path, onConflict, expectedRevision }))).toEqual([
+            { path: "Trips/Photo (edited).jpg", onConflict: "error", expectedRevision: undefined },
+          ]);
+        }
         expect(errors).toEqual([]);
       } finally {
         await page.close();

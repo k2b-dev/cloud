@@ -591,15 +591,24 @@ test("one failure policy keeps transient sessions, ends final ones, and never ab
   expect(action(fail("busy"), {})).toBe("keep");
   expect(action(fail("final", "path_conflict"), {})).toBe("drop");
   expect(action(new Error("unknown"), {})).toBe("keep");
-  // During the transfer: temporary keeps, final aborts, a closed or unknown session only drops the key.
+  // During the transfer: temporary and unresolved keep; definite final failures abort.
   expect(action(fail("busy", "upload_capacity", "filegate"), { session: open })).toBe("keep");
   expect(action(fail("final", undefined, "filegate"), { session: open })).toBe("abort");
-  expect(action(fail("final", "receipt_unknown"), { session: open })).toBe("drop");
+  expect(action(fail("final", "receipt_unknown"), { session: open })).toBe("keep");
   expect(action(new Error("local file changed"), { session: open })).toBe("abort");
   expect(action(fail("busy"), { session: open, cancelled: true })).toBe("abort");
   // After the commit was sent: only a definite publication conflict aborts.
   expect(action(fail("busy"), { session: open, committing: true })).toBe("keep");
   expect(action(new DOMException("lost", "AbortError"), { session: open, committing: true, cancelled: true })).toBe("keep");
   expect(action(fail("final", "write_conflict"), { session: open, committing: true })).toBe("abort");
-  expect(action(fail("final", "upload_changed"), { session: open, committing: true })).toBe("drop");
+  expect(action(fail("final", "upload_changed"), { session: open, committing: true })).toBe("keep");
+});
+
+test("unresolved receipts keep their reservation before start, during transfer, at commit and on cancellation", () => {
+  for (const code of ["receipt_unknown", "upload_changed"]) {
+    const failure = new UploadTransferError("unknown", "final", null, undefined, "cloud", code);
+    for (const session of [undefined, { state: "open" as const }, { state: "committed" as const }])
+      for (const committing of [false, true])
+        for (const cancelled of [false, true]) expect(uploadFailureAction(failure, { session, committing, cancelled })).toBe("keep");
+  }
 });

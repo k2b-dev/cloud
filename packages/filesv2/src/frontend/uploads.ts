@@ -36,7 +36,14 @@ export async function uploadFile(
   },
 ): Promise<EntryResult> {
   options.signal.throwIfAborted();
-  const start = await browserUploadKey(["private", baseId, path, options.onConflict, options.expectedRevision ?? ""], file);
+  let start: Awaited<ReturnType<typeof browserUploadKey>>;
+  try {
+    start = await browserUploadKey(["private", baseId, path, options.onConflict, options.expectedRevision ?? ""], file, options.signal);
+  } catch (error) {
+    options.signal.throwIfAborted();
+    // No request has been issued; callers may safely retry or discard their draft.
+    throw new UploadTransferError(options.fallback, "final", error, undefined, "cloud", "upload_preflight");
+  }
   let session: UploadSession | undefined;
   let committing = false;
   try {
