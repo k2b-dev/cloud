@@ -14,7 +14,7 @@ async function assertFrameworkFreeGraph(entry: string, extension: ".js" | ".d.ts
     const source = await Bun.file(file).text();
     for (const match of source.matchAll(/\b(?:from\s*|import\s*(?:\(\s*)?)["']([^"']+)["']/g)) {
       const specifier = match[1]!;
-      expect(specifier === "solid-js" || specifier.startsWith("solid-js/")).toBe(false);
+      expect(specifier === "solid-js" || specifier.startsWith("solid-js/"), `${file} imports ${specifier}`).toBe(false);
       if (!specifier.startsWith(".")) continue;
       const base = resolve(dirname(file), specifier);
       const candidates = [base + extension, resolve(base, `index${extension}`), base];
