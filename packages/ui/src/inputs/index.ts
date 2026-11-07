@@ -101,6 +101,8 @@ export type { MarkdownEditorProps } from "./markdown/MarkdownEditor";
 export { MarkdownEditor } from "./markdown/MarkdownEditor";
 export type { MarkdownSelectionToolbarProps } from "./markdown/MarkdownSelectionToolbar";
 export { MarkdownSelectionToolbar } from "./markdown/MarkdownSelectionToolbar";
+export type { SlashCommandsProps } from "./markdown/SlashCommands";
+export { SlashCommands } from "./markdown/SlashCommands";
 export type { NumberInputProps } from "./NumberInput";
 export { NumberInput } from "./NumberInput";
 export type { QrScannerError, QrScannerProps } from "./QrScanner";
