@@ -2,8 +2,7 @@ import { chartLocaleSchema } from "./chart-locale";
 
 export { chartAcceptsLocale, chartLocaleSchema } from "./chart-locale";
 
-import { sankeyGraph } from "@k2b/ui/charts/core";
-import { CALENDAR_MAX_DAYS, calendarDay } from "@k2b/ui/charts/core";
+import { CALENDAR_MAX_DAYS, calendarDay, sankeyGraph } from "@k2b/ui/charts/core";
 import { z } from "zod";
 
 /** Optional caller policy. Rendering itself has no AI input budget. */

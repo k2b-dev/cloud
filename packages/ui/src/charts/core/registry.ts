@@ -1,8 +1,8 @@
 import { renderBarChartSvg } from "../../content/chart-bar";
 import { renderStateTimelineSvg } from "../../content/chart-state-timeline";
 import { renderAreaSvg } from "./area";
-import { renderSankeySvg } from "./sankey";
 import { renderHeatmapSvg } from "./calendar";
+import { renderSankeySvg } from "./sankey";
 import { charts } from "./svg";
 
 // Add one renderer here: its key defines the discriminator, ChartKind and the capitalized Chart namespace member.
