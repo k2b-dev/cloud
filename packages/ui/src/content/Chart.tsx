@@ -597,19 +597,10 @@ const ChartRoot = (props: ChartProps): JSX.Element => {
       if (selection.kind === "area" && props.kind === "area") {
         const amount = selection.datum.values.find((f) => f.key === "value")!;
         const share = selection.datum.values.find((f) => f.key === "percent");
-        const total = props.series.reduce((sum, s) => sum + (s.data[selection.datum.index] ?? 0), 0);
         return {
           title: String(selection.datum.values.find((f) => f.key === "x")?.value ?? ""),
           rows: [
             { label: selection.datum.label ?? chartMessages().series, value: `${share ? `${share.formatted} · ` : ""}${amount.formatted}` },
-            ...(selection.datum.seriesIndex === 0
-              ? [
-                  {
-                    label: fields({ key: "total" }),
-                    value: props.format?.(total) ?? new Intl.NumberFormat(locale(), { maximumFractionDigits: 2 }).format(total),
-                  },
-                ]
-              : []),
           ],
         };
       }

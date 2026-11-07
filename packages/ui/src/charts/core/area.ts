@@ -161,6 +161,7 @@ export function renderAreaSvg(spec: AreaOptions & { width: number; height: numbe
             values: [
               { key: "x", value: spec.x[point.index]! },
               { key: "value", value: point.amount, formatted: g.format(point.amount) },
+              { key: "total", value: g.totals[point.index]!, formatted: g.format(g.totals[point.index]!) },
               ...(spec.normalize ? [{ key: "percent", value: point.share * 100, formatted: g.percent(point.share) }] : []),
             ],
           },

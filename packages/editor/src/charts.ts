@@ -569,7 +569,16 @@ export type ChartRow = { key: string; cells: Record<string, string>; values: Rec
 export type ChartTable = { columns: ChartColumn[]; rows: ChartRow[] };
 
 /** The first text column titles the tooltip; the other columns become rows, matching the table in every host. */
-export function chartTooltip(columns: ChartColumn[], row: ChartRow): { title?: string; rows: { label: string; value: string }[] } {
+export function chartTooltip(
+  columns: ChartColumn[],
+  row: ChartRow,
+  kind?: ChartInput["kind"],
+): { title?: string; rows: { label: string; value: string }[] } {
+  if (kind === "area")
+    return {
+      title: row.cells.x,
+      rows: [{ label: row.cells.series ?? "", value: `${row.cells.percent ? `${row.cells.percent} · ` : ""}${row.cells.value ?? "—"}` }],
+    };
   const [first, ...rest] = columns;
   const named = first && !first.numeric;
   return {

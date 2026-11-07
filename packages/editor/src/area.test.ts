@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { prepareChartSnapshot } from "@k2b/ui";
-import { chartKinds, chartMarks, chartRenderOptions, chartTable } from "./charts";
+import { chartKinds, chartMarks, chartRenderOptions, chartTable, chartTooltip } from "./charts";
 import { notebookChartHeight } from "./markdown/lib/chart-blocks";
 
 const spec = {
@@ -39,4 +39,13 @@ test("server snapshots retain the request locale for normalized shares", () => {
     tooltip: () => ({ rows: [] }),
   });
   expect(snapshot.marks[0]?.datum.values.find((field) => field.key === "percent")?.formatted).toBe("30 %");
+});
+
+test("area tooltip has the same category, share and amount in every host", () => {
+  const input = chartKinds().parse(spec),
+    table = chartTable(input, "de");
+  expect(chartTooltip(table.columns, table.rows[0]!, input.kind)).toEqual({
+    title: "Jan",
+    rows: [{ label: "Recurring", value: "30 % · 30" }],
+  });
 });

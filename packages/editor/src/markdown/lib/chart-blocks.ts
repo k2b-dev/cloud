@@ -488,7 +488,7 @@ export const renderNotebookChartFigure = (input: ChartInput, locale: string, opt
       key: ({ datum }) => chartMarkKey(datum),
       tooltip: ({ datum }) => {
         const row = rows.add(datum);
-        return chartTooltip(rows.columns(), row);
+        return chartTooltip(rows.columns(), row, input.kind);
       },
       reference: ({ datum }) => chartReferenceMark(input, datum),
     });

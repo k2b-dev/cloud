@@ -125,6 +125,13 @@ for (const width of [1440, 390])
     await snapshot.focus();
     await page.keyboard.press("Home");
     expect(await page.locator(".snapshot .k2b-chart-legend b").first().textContent()).toBe("35,3 %");
+    await page.keyboard.press("Enter");
+    expect(
+      await snapshot
+        .locator("[data-selected] .k2b-area-inspection-point")
+        .first()
+        .evaluate((e) => getComputedStyle(e).opacity),
+    ).toBe("1");
     await page.keyboard.press("Escape");
   });
 test("area tap pins at a category; dark and unscoped paths remain painted", async () => {
