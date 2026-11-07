@@ -91,12 +91,13 @@ export const renderChartSvg = (
       }),
     );
   if (kind === "bar") return responsiveChartSvg(renderBarChartSvg({ ...(opts as BarChartOptions), width, height, inspect: true }));
-  // A time axis needs an explicit X domain: it maps its round ticks onto the axis the renderer drew over it.
-  const timeAxis = props.kind === "line" ? props.timeAxis : undefined;
+  // Ordinary lines retain their existing time-axis adapter; detailed lines draw calendar ticks directly.
+  const timeAxis = props.kind === "line" && !lineDetailsEnabled(props) ? props.timeAxis : undefined;
   const timeDomain = timeAxis && props.kind === "line" ? lineTimeDomain(props) : undefined;
   let svg = (chartRenderers[kind] as (o: unknown) => string)({
     ...opts,
     ...(kind === "line" ? { locale: (opts as { locale?: string }).locale ?? renderLocale } : {}),
+    ...(props.kind === "line" && lineDetailsEnabled(props) ? { timeAxis: props.timeAxis } : {}),
     ...(timeDomain && props.kind === "line" ? { xAxis: { ...props.xAxis, domain: timeDomain, format: () => "" } } : {}),
     ...(props.kind === "line" && props.legend && (props.legendPlacement === "top-start" || lineDetailsEnabled(props))
       ? { legend: false }

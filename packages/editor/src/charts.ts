@@ -301,8 +301,9 @@ const formats = (input: ChartInput, locale: string): Formats => {
   // An unformatted x axis often counts years or steps, which compact notation would turn into 2.02K.
   const xTick = new Intl.NumberFormat(locale, { maximumSignificantDigits: 15, useGrouping: "min2" });
   const written = chartSeries(input).flatMap((series) => series.data.flatMap((point) => (typeof point.x === "string" ? [point.x] : [])));
-  if (!written.length) return { ...y, x: { tick: xFormat ? x.tick : (v) => xTick.format(v), value: x.value } };
   const dateFormat = xFormat && "date" in xFormat ? xFormat.date : undefined;
+  if (!written.length && !(input.kind === "line" && lineDetailsEnabled(input) && dateFormat))
+    return { ...y, x: { tick: xFormat ? x.tick : (v) => xTick.format(v), value: x.value } };
   const times = dateFormat ? dateFormat !== "day" : written.some((date) => date.length > 10);
   const seconds = dateFormat ? dateFormat === "second" : written.some((date) => date.length > 16);
   const clock: Intl.DateTimeFormatOptions = times ? { hour: "2-digit", minute: "2-digit", ...(seconds ? { second: "2-digit" } : {}) } : {};
@@ -439,7 +440,13 @@ export function chartRenderOptions(
         ...(input.kind === "line" ? { lineStyle: input.series[index]?.style ?? (entry.role === "reference" ? "dashed" : undefined) } : {}),
       }));
       const points = series.flatMap((entry) => entry.data);
-      const xAxis = referencedAxis(input, "x");
+      const calendarLine =
+        input.kind === "line" &&
+        lineDetailsEnabled(input) &&
+        (input.series.some((entry) => entry.data.some((point) => typeof point.x === "string")) ||
+          (input.xAxis?.format && "date" in input.xAxis.format));
+      // The detailed time renderer includes references without rounding their domain to decimal milliseconds.
+      const xAxis = calendarLine ? input.xAxis : referencedAxis(input, "x");
       const yAxis = referencedAxis(input, "y");
       const candidates = tickCandidates([...points.map((point) => point.x), ...chartReferenceValues(input, "x")], xAxis).filter(
         Number.isFinite,
@@ -469,6 +476,7 @@ export function chartRenderOptions(
             forecast: input.forecast ? { ...input.forecast, from: dateTime(input.forecast.from) } : undefined,
             marker: input.marker ? { ...input.marker, at: dateTime(input.marker.at) } : undefined,
             threshold: input.threshold,
+            ...(calendarLine ? { timeAxis: { timeZone: "UTC", locale } } : {}),
           }
         : { kind: "scatter", ...common };
     }

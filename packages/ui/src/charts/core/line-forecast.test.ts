@@ -30,6 +30,43 @@ const spec = {
   threshold: { value: 5, label: "Reserve" },
   zero: true,
 };
+
+test("opted-in time lines keep the exact October range and round Monday ticks in every renderer", () => {
+  const start = Date.UTC(2026, 9, 1);
+  const data = Array.from({ length: 31 }, (_, index) => ({ x: start + index * 86_400_000, y: 15_000 + index * 200 }));
+  const timed = { series: [{ data }], marker: { at: data[14]!.x, label: "Today" }, timeAxis: { timeZone: "UTC" } };
+  for (const svg of [line({ ...timed, width: 480, height: 280, inspect: true }), renderChartSvg({ kind: "line", ...timed }, 480, 280)]) {
+    const ticks = [...svg.matchAll(/class="stdlib-chart-tick-label k2b-line-time-tick"[^>]*>([^<]*)<\/text>/g)];
+    expect(ticks.map((tick) => tick[1])).toEqual(["Oct 5", "Oct 12", "Oct 19", "Oct 26"]);
+    expect(ticks[0]![0]).toContain('text-anchor="start"');
+    const plot = [...svg.matchAll(/<line class="stdlib-chart-axis" x1="([\d.]+)" y1="([\d.]+)" x2="([\d.]+)" y2="([\d.]+)"/g)].find(
+      (axis) => axis[2] === axis[4],
+    )!;
+    const pointXs = [...svg.matchAll(/<circle class="stdlib-chart-inspection-point" cx="([\d.]+)"/g)].map((point) => Number(point[1]));
+    expect(Math.min(...pointXs)).toBe(Number(plot[1]));
+    expect(Math.max(...pointXs)).toBe(Number(plot[3]));
+    expect(svg).not.toContain("Sep 27");
+    expect(svg).not.toContain("Nov 1");
+  }
+  const fixed = line({
+    ...timed,
+    width: 480,
+    height: 280,
+    inspect: true,
+    xAxis: { domain: [start - 86_400_000, data.at(-1)!.x + 86_400_000] },
+  });
+  const firstPoint = Number(fixed.match(/<circle class="stdlib-chart-inspection-point" cx="([\d.]+)"/)?.[1]);
+  const plotLeft = Number(fixed.match(/<line class="stdlib-chart-grid" x1="([\d.]+)"/)?.[1]);
+  expect(firstPoint).toBeGreaterThan(plotLeft);
+});
+
+test("opted-in time ticks choose calendar months for longer ranges", () => {
+  const series = [{ data: [Date.UTC(2026, 8, 17), Date.UTC(2026, 11, 19)].map((x) => ({ x, y: 1 })) }];
+  const svg = line({ series, legendValues: true, timeAxis: { timeZone: "UTC", locale: "de" } });
+  const ticks = [...svg.matchAll(/class="stdlib-chart-tick-label k2b-line-time-tick"[^>]*>([^<]*)<\/text>/g)];
+  expect(ticks.map((tick) => tick[1])).toEqual(["Okt. 2026", "Nov. 2026", "Dez. 2026"]);
+});
+
 test("forecast layout binds ordered bounds to the first series suffix", () => {
   expect(lineForecastLayout(spec).map((p) => [p.x, p.lo, p.hi])).toEqual([
     [2, 4, 12],

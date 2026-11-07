@@ -70,6 +70,30 @@ render(
   () => (
     <LocaleProvider locale="de">
       <main>
+        <section class="time-axis-october">
+          <ShowcaseLocaleProvider locale="en">
+            <ShowcaseFrame
+              title="Daily October balance"
+              state={state()}
+              height={280}
+              spec={{
+                kind: "line",
+                series: [
+                  {
+                    label: "Balance",
+                    data: Array.from({ length: 31 }, (_, index) => ({
+                      x: `2026-10-${String(index + 1).padStart(2, "0")}`,
+                      y: 15_000 + index * 200,
+                    })),
+                  },
+                ],
+                marker: { at: "2026-10-15", label: "Today" },
+                legend: true,
+                yAxis: { format: { style: "currency", currency: "EUR", compact: true } },
+              }}
+            />
+          </ShowcaseLocaleProvider>
+        </section>
         <nav>
           <button type="button" onClick={() => setSelected(!selected())}>
             Select cash observation

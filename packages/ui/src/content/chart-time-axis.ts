@@ -1,4 +1,4 @@
-import { dates } from "@k2b/stdlib";
+import { instantToZonedInput, zonedDateTimeToInstant } from "@k2b/stdlib";
 
 /**
  * A line chart whose X values are instants (Unix milliseconds). Its axis ticks land on round times in `timeZone`:
@@ -32,9 +32,9 @@ const UNIT_MS: Record<ChartTimeUnit, number> = {
 };
 
 // Wall-clock arithmetic runs on a zone-free calendar: the wall time read as if it were UTC.
-const wallOf = (instant: number, timeZone: string) => Date.parse(`${dates.instantToZonedInput(new Date(instant), timeZone)}:00Z`);
+const wallOf = (instant: number, timeZone: string) => Date.parse(`${instantToZonedInput(new Date(instant), timeZone)}:00Z`);
 const instantOf = (wall: number, timeZone: string) =>
-  Date.parse(dates.zonedDateTimeToInstant(new Date(wall).toISOString().slice(0, 16), timeZone, { disambiguation: "compatible" }));
+  Date.parse(zonedDateTimeToInstant(new Date(wall).toISOString().slice(0, 16), timeZone, { disambiguation: "compatible" }));
 
 const floorWall = (wall: number, step: ChartTimeStep): number => {
   const date = new Date(wall);
@@ -83,7 +83,7 @@ export const chartTimeTicks = (domain: readonly [number, number], timeZone: stri
 /** Default label of a tick: the clock time, the day at local midnight, the month or the year. */
 export const chartTimeLabel = (tick: number, step: ChartTimeStep, axis: ChartTimeAxis): string => {
   const locale = axis.locale ?? "en";
-  const midnight = dates.instantToZonedInput(new Date(tick), axis.timeZone).endsWith("T00:00");
+  const midnight = instantToZonedInput(new Date(tick), axis.timeZone).endsWith("T00:00");
   const options: Intl.DateTimeFormatOptions =
     (step.unit === "minute" || step.unit === "hour") && !midnight
       ? { hour: "2-digit", minute: "2-digit", hourCycle: "h23" }

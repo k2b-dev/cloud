@@ -122,6 +122,36 @@ test("the Liquidity dashboard balance is a real dated forecast through the share
   expect(drawChart(options)).toContain("k2b-line-marker");
 });
 
+test("only detailed portable date lines select calendar ticks without a rounded numeric domain", () => {
+  const series = [
+    { data: Array.from({ length: 31 }, (_, index) => ({ x: `2026-10-${String(index + 1).padStart(2, "0")}`, y: 15_000 + index * 200 })) },
+  ];
+  const ordinary = chartKinds().parse({ kind: "line", series });
+  const detailed = chartKinds().parse({ kind: "line", series, marker: { at: "2026-10-15", label: "Today" } });
+  const base = chartRenderOptions(ordinary, "en");
+  const mapped = chartRenderOptions(detailed, "en");
+  if (base.kind !== "line" || mapped.kind !== "line") throw new Error("Expected line");
+  expect(base.timeAxis).toBeUndefined();
+  expect(mapped.timeAxis).toEqual({ timeZone: "UTC", locale: "en" });
+  expect(mapped.xAxis?.domain).toBeUndefined();
+  expect(
+    [...drawChart(mapped).matchAll(/class="stdlib-chart-tick-label k2b-line-time-tick"[^>]*>([^<]*)<\/text>/g)].map((tick) => tick[1]),
+  ).toEqual(["Oct 5", "Oct 12", "Oct 19", "Oct 26"]);
+  const numeric = chartKinds().parse({
+    kind: "line",
+    legendValues: true,
+    series: [
+      {
+        data: [
+          { x: 1, y: 2 },
+          { x: 2, y: 3 },
+        ],
+      },
+    ],
+  });
+  expect("timeAxis" in chartRenderOptions(numeric, "en")).toBe(false);
+});
+
 test("opted-in snapshot legends keep an all-missing final column as gaps", () => {
   const input = chartKinds().parse({
     kind: "line",

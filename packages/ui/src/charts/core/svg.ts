@@ -13,6 +13,7 @@
 // `--stdlib-chart-c8`). Axes and labels use `currentColor` so parent `color`
 // drives theming (dark mode "just works").
 
+import { type ChartTimeAxis, chartTimeLabel, chartTimeStep, chartTimeTicks } from "../../content/chart-time-axis";
 import { WORLD_LAND_PATH, WORLD_MAP_HEIGHT, WORLD_MAP_WIDTH } from "./chart-map-data";
 import { coreChartMessages } from "./chart-messages";
 import { lineBase } from "./line-base";
@@ -196,6 +197,8 @@ export type LineOptions = SeriesChartOptions & {
   zero?: boolean;
   threshold?: { value: number; label: string };
   marker?: { at: number; label: string };
+  /** Opted-in lines use round calendar ticks over the exact instant range. */
+  timeAxis?: ChartTimeAxis;
   maxGap?: number;
   locale?: string;
 };
@@ -354,7 +357,18 @@ export const line = (opts: LineOptions): string => {
   const legendHeight = legendItems.length > 2 ? 40 : legendItems.length ? 20 : 0;
   const finitePoints = opts.series.flatMap((s) => s.data).filter((p) => Number.isFinite(p.x) && Number.isFinite(p.y));
   if (finitePoints.length === 0) return emptyChart(width, height, opts.className);
-  const xAxis = computeAxisScale([...collectAxisValues(opts.series, "x"), ...(opts.marker ? [opts.marker.at] : [])], opts.xAxis);
+  const timeAxis = opts.timeAxis && { ...opts.timeAxis, locale: opts.timeAxis.locale ?? opts.locale };
+  const xValues = [
+    ...collectAxisValues(opts.series, "x"),
+    ...(opts.marker ? [opts.marker.at] : []),
+    ...(timeAxis ? (opts.references?.filter((ref) => ref.axis === "x").map((ref) => ref.value) ?? []) : []),
+  ];
+  const xAxis = computeAxisScale(xValues, timeAxis && !opts.xAxis?.domain ? { ...opts.xAxis, domain: computeDomain(xValues) } : opts.xAxis);
+  const timeStep = timeAxis ? chartTimeStep(xAxis.domain[1] - xAxis.domain[0], (opts.xAxis?.ticks ?? 3) + 2) : undefined;
+  if (timeAxis && timeStep) {
+    xAxis.ticks = chartTimeTicks(xAxis.domain, timeAxis.timeZone, timeStep);
+    xAxis.minorTicks = [];
+  }
   const bandValues = forecast.flatMap((p) => (Number.isFinite(p.y) && p.lo !== undefined && p.hi !== undefined ? [p.lo, p.hi] : []));
   const yAxis = computeAxisScale(
     [...collectAxisValues(opts.series, "y"), ...bandValues, ...(opts.zero ? [0] : []), ...(opts.threshold ? [opts.threshold.value] : [])],
@@ -379,7 +393,26 @@ export const line = (opts: LineOptions): string => {
     );
   }
   body.push(renderYAxis(yAxis, area, opts.yAxis));
-  body.push(renderXAxisNumeric(xAxis, area, height - legendHeight, opts.xAxis));
+  let xLabels = renderXAxisNumeric(
+    xAxis,
+    area,
+    height - legendHeight,
+    timeAxis && timeStep
+      ? { ...opts.xAxis, format: opts.xAxis?.format ?? ((value) => chartTimeLabel(value, timeStep, timeAxis)) }
+      : opts.xAxis,
+  );
+  if (timeAxis) {
+    let index = 0;
+    // Edge labels point into the plot, keeping the first date clear of the Y ticks.
+    xLabels = xLabels.replace(/<text class="stdlib-chart-tick-label"[^>]*>/g, (tag) => {
+      const anchor = index === 0 ? "start" : index === xAxis.ticks.length - 1 ? "end" : "middle";
+      index++;
+      return tag
+        .replace('class="stdlib-chart-tick-label"', 'class="stdlib-chart-tick-label k2b-line-time-tick"')
+        .replace('text-anchor="middle"', `text-anchor="${anchor}"`);
+    });
+  }
+  body.push(xLabels);
   const baselineY = yAxis.scale === "linear" && yAxis.domain[0] <= 0 && yAxis.domain[1] >= 0 ? y(0) : area.y1;
   const pathFn = opts.step
     ? (pts: Array<{ x: number; y: number }>) => stepPathD(pts, opts.step!)

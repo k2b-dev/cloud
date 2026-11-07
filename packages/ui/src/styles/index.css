@@ -1710,7 +1710,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 
 /* The bottom Y label must clear the first centred date label in small cards. */
 @container (max-width: 400px) {
-  .k2b-ui .k2b-chart[data-chart-kind="line"] .k2b-chart__svg[data-stretch] > svg > .stdlib-chart-grid:nth-child(1 of .stdlib-chart-grid) + .stdlib-chart-tick-label {
+  .k2b-ui .k2b-chart[data-chart-kind="line"] .k2b-chart__svg[data-stretch] > svg[data-line-details="true"] > .stdlib-chart-grid:nth-child(1 of .stdlib-chart-grid) + .stdlib-chart-tick-label {
     translate: 0 calc(-6px * var(--k2b-chart-inverse-y));
   }
 }

@@ -96,24 +96,38 @@ const open = async (width: number, dark = false, touch = false) => {
   return page;
 };
 
-test("the bottom Y tick clears the first date label in a phone-sized existing line", async () => {
-  const page = await open(390);
-  pages.push(page);
-  const chart = page.locator('[data-line-example="line-visitors"] .k2b-chart');
-  await chart.scrollIntoViewIfNeeded();
-  await settled(page);
-  const boxes = await chart.locator(".stdlib-chart-tick-label").evaluateAll((nodes) => {
-    const lowest = nodes
-      .filter((node) => node.getAttribute("text-anchor") === "end")
-      .sort((a, b) => Number(b.getAttribute("y")) - Number(a.getAttribute("y")))[0];
-    const first = nodes
-      .filter((node) => node.getAttribute("text-anchor") === "middle")
-      .sort((a, b) => Number(a.getAttribute("x")) - Number(b.getAttribute("x")))[0];
-    if (!lowest || !first) throw new Error("Missing origin tick labels");
-    return { y: lowest.getBoundingClientRect().toJSON(), x: first.getBoundingClientRect().toJSON() };
+for (const width of [390, 1440])
+  test(`opted-in October dates keep round ticks and clear the Y labels at ${width}`, async () => {
+    const page = await open(width);
+    pages.push(page);
+    const chart = page.locator(".time-axis-october .k2b-chart");
+    await chart.scrollIntoViewIfNeeded();
+    await settled(page);
+    const boxes = await chart.locator(".stdlib-chart-tick-label").evaluateAll((nodes) => {
+      const lowest = nodes
+        .filter((node) => node.getAttribute("text-anchor") === "end" && !node.classList.contains("k2b-line-time-tick"))
+        .sort((a, b) => Number(b.getAttribute("y")) - Number(a.getAttribute("y")))[0];
+      const first = nodes.find((node) => node.classList.contains("k2b-line-time-tick"));
+      if (!lowest || !first) throw new Error("Missing origin tick labels");
+      return { y: lowest.getBoundingClientRect().toJSON(), x: first.getBoundingClientRect().toJSON() };
+    });
+    expect(boxes.y.right < boxes.x.left || boxes.y.bottom + 2 <= boxes.x.top).toBe(true);
+    expect(await chart.locator(".k2b-line-time-tick").allTextContents()).toEqual(["Oct 5", "Oct 12", "Oct 19", "Oct 26"]);
+    const extent = await chart.locator(".k2b-chart__svg > svg").evaluate((svg) => {
+      const axis = Array.from(svg.querySelectorAll(".stdlib-chart-axis")).find(
+        (line) => line.getAttribute("y1") === line.getAttribute("y2"),
+      )!;
+      const xs = Array.from(svg.querySelectorAll(".stdlib-chart-inspection-point")).map((point) => Number(point.getAttribute("cx")));
+      return {
+        first: Math.min(...xs),
+        last: Math.max(...xs),
+        left: Number(axis.getAttribute("x1")),
+        right: Number(axis.getAttribute("x2")),
+      };
+    });
+    expect(extent.first).toBe(extent.left);
+    expect(extent.last).toBe(extent.right);
   });
-  expect(boxes.y.bottom + 2).toBeLessThanOrEqual(boxes.x.top);
-});
 for (const width of [1440, 390])
   test(`Liquidity balance at ${width} renders its dated forecast and supports inspection`, async () => {
     const page = await open(width);
