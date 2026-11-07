@@ -51,10 +51,12 @@ export function html(strings: TemplateStringsArray, ...values: unknown[]): Html 
   return new Html(out);
 }
 
-const KEEP_ASPECT = new Set(["pie", "donut", "gauge"]);
+const KEEP_ASPECT = new Set(["pie", "donut", "gauge", "radar"]);
 type ChartOptions = Record<string, unknown> & {
   kind: string;
   format?: CloudAiNumberFormat | ((value: number) => string);
+  xFormat?: CloudAiNumberFormat | ((value: number) => string);
+  yFormat?: CloudAiNumberFormat | ((value: number) => string);
   xAxis?: Record<string, unknown> & { format?: CloudAiFormat | ((value: number) => string) };
   yAxis?: Record<string, unknown> & { format?: CloudAiFormat | ((value: number) => string) };
 };
@@ -192,6 +194,12 @@ export function chart(options: ChartOptions, locale: string, timeZone = "UTC"): 
       if (name === "xAxis") stored.xFormat = format;
       else stored.yFormat = format;
       raw[name] = rest;
+    }
+  }
+  for (const name of ["xFormat", "yFormat"] as const) {
+    if (typeof raw[name] === "function") {
+      stored[name] = raw[name];
+      delete raw[name];
     }
   }
   if (typeof raw.format === "function") {

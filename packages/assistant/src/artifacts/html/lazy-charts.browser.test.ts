@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { mkdir } from "node:fs/promises";
 import type { Browser, Page } from "playwright";
-import { launchBrowser } from "../../../../ui/test/browser";
+import { launchBrowser, pageErrors, settled } from "../../../../ui/test/browser";
 import type { AppFrameAssets } from "./assets";
 import { buildBaseCss, buildChartModule, buildPrelude } from "./build-assets";
 import type { AppFiles } from "./compose";
@@ -391,3 +391,41 @@ test("narrow pending charts retain the eager logical width and PDF styles accept
     await context.close();
   }
 });
+
+// Each added renderer also crosses the real offline first-use boundary.
+const addedSpecs = [
+  {
+    kind: "bubble",
+    groups: ["North"],
+    xLabel: "Visits",
+    yLabel: "Opens",
+    averages: true,
+    data: [{ label: "A", group: "North", x: 42, y: 32, size: 12 }],
+  },
+  { kind: "radar", axes: ["Quality", "Speed", "Cost"], max: 5, series: [{ label: "Now", data: [3, 4, 2] }] },
+];
+for (const width of [1200, 390])
+  test(`added rare charts reserve their real frame boxes, ${width}px`, async () => {
+    const script = `document.querySelector("#draw").addEventListener("click",()=>{
+      const specs=${JSON.stringify(addedSpecs)};
+      document.querySelector("#charts").innerHTML=specs.map(spec=>'<section class="card">'+cloud.chart(spec)+'</section>').join("");
+    });`;
+    const { page, context, requests } = await open(width, delayed + assets.chartModule, "light", script);
+    const errors = pageErrors(page);
+    try {
+      await app(page).locator("#draw").click();
+      await app(page).locator("html[data-chart-module-loading]").waitFor();
+      await settled(page);
+      const loading = await boxes(page);
+      await release(page);
+      for (const spec of addedSpecs) await app(page).locator(`[data-chart-kind="${spec.kind}"] svg`).waitFor();
+      await settled(page);
+      expect(await boxes(page)).toEqual(loading);
+      expect(await app(page).locator("[data-chart-pending]").count()).toBe(0);
+      expect(await app(page).locator(".k2b-chart__table").count()).toBe(addedSpecs.length);
+      expect(requests).toEqual([]);
+      expect(errors).toEqual([]);
+    } finally {
+      await context.close();
+    }
+  });

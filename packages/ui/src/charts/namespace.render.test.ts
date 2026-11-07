@@ -43,6 +43,31 @@ function namespaceTypes() {
 }
 test("namespace props stay narrowed", () => expect(typeof namespaceTypes).toBe("function"));
 
+test("explicit bubble locale wins over the provider in the real Solid SVG", async () => {
+  const { LocaleProvider } = await import("../intl/locale");
+  const draw = (provider: string, locale?: string) =>
+    renderToString(() =>
+      createComponent(LocaleProvider, {
+        locale: provider,
+        get children() {
+          return createComponent(Chart.Bubble, {
+            groups: ["North"],
+            data: [{ label: "A", group: "North", x: 1200, y: 2400, size: 3600 }],
+            xLabel: "X",
+            yLabel: "Y",
+            averages: true,
+            locale,
+          });
+        },
+      }),
+    );
+  expect(draw("en", "de-DE")).toContain("Ungewichteter Durchschnitt");
+  expect(draw("en", "de-DE")).toContain("1.200");
+  expect(draw("de-DE", "en")).toContain("Unweighted average");
+  expect(draw("de-DE", "en")).toContain("1,200");
+  expect(draw("de-DE")).toContain("Ungewichteter Durchschnitt");
+});
+
 test("Calendar is the named calendar heatmap component", () => {
   const props = { scale: "sequential" as const, data: [["2026-11-02", 5]] as [string, number][] };
   expect(renderToString(() => createComponent(Chart.Calendar, props))).toBe(

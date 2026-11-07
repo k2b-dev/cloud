@@ -457,6 +457,7 @@ export const chartBlockFrame = (body: string[], options: Pick<MarkdownChartOptio
  */
 export const notebookChartHeight = (input: ChartInput, locale: string): number | undefined => {
   const options = chartRenderOptions(input, locale, { legend: "outside" });
+  if (options.kind === "bubble" || options.kind === "radar") return 280;
   if (options.kind === "heatmap" && options.layout === "calendar") return 280;
   if (options.kind === "area") return 280;
   if (options.kind !== "bar") return undefined;

@@ -138,6 +138,8 @@ export { type ChartRenderOptions, chartRenderHeight, renderChartSvg } from "../c
  *  block on truly empty inputs; partially-filled series get rendered
  *  as-is and the core handles the gaps. */
 const isEmpty = (props: ChartProps): boolean => {
+  if (props.kind === "bubble") return !props.data.length;
+  if (props.kind === "radar") return !props.series.length;
   if (props.kind === "area")
     return (
       !props.x.length ||
@@ -466,7 +468,7 @@ const ChartRoot = (props: ChartProps): JSX.Element => {
     format: (selection) => {
       if (props.tooltip) return props.tooltip(selection);
       const fields =
-        props.kind === "heatmap" && props.layout === "calendar"
+        props.kind === "bubble" || props.kind === "radar" || (props.kind === "heatmap" && props.layout === "calendar")
           ? resolveChartMessages(props.locale ?? locale()).chartFields
           : chartMessages().chartFields;
       if (selection.kind === "area" && props.kind === "area") {
@@ -488,11 +490,19 @@ const ChartRoot = (props: ChartProps): JSX.Element => {
             : undefined),
         rows: selection.datum.values.map((field) => ({
           label:
-            props.kind === "heatmap" && props.layout === "calendar" && field.key === "value" && props.label
-              ? props.label
-              : selection.kind === "line" && field.key === "y"
-                ? (selection.datum.label ?? labels().series ?? chartMessages().series)
-                : fields({ key: field.key }),
+            props.kind === "bubble" && field.key === "x"
+              ? props.xLabel
+              : props.kind === "bubble" && field.key === "y"
+                ? props.yLabel
+                : props.kind === "bubble" && field.key === "size"
+                  ? (props.sizeLabel ?? fields({ key: "size" }))
+                  : props.kind === "radar" && field.key.startsWith("series:")
+                    ? (props.series[Number(field.key.slice(7))]?.label ?? fields({ key: "series" }))
+                    : props.kind === "heatmap" && props.layout === "calendar" && field.key === "value" && props.label
+                      ? props.label
+                      : selection.kind === "line" && field.key === "y"
+                        ? (selection.datum.label ?? labels().series ?? chartMessages().series)
+                        : fields({ key: field.key }),
           value:
             field.formatted ??
             (field.key === "upperInclusive"
@@ -509,7 +519,9 @@ const ChartRoot = (props: ChartProps): JSX.Element => {
   const closeChartTooltip = () => inspection.close();
   const svgMarkup = createMemo(() =>
     renderChartSvg(
-      props.kind === "heatmap" && props.layout === "calendar" ? { ...props, locale: props.locale ?? locale() } : drawingProps,
+      props.kind === "bubble" || props.kind === "radar" || (props.kind === "heatmap" && props.layout === "calendar")
+        ? { ...props, locale: props.locale ?? locale() }
+        : drawingProps,
       size().width,
       size().height,
       interactiveMap() ? mapViewport() : undefined,

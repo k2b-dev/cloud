@@ -36,7 +36,23 @@ export type ChartDateFormat = z.output<ReturnType<typeof dateFormatSchema>>;
 export type ChartFormat = ChartNumberFormat | ChartDateFormat;
 
 export const chartKindSchema = () =>
-  z.enum(["area", "bar", "line", "scatter", "pie", "donut", "histogram", "gauge", "sparkline", "boxplot", "heatmap", "barGauge", "stat"]);
+  z.enum([
+    "area",
+    "bar",
+    "line",
+    "scatter",
+    "pie",
+    "donut",
+    "histogram",
+    "gauge",
+    "sparkline",
+    "boxplot",
+    "heatmap",
+    "barGauge",
+    "stat",
+    "bubble",
+    "radar",
+  ]);
 
 export const chartParts = (limits?: ChartLimits) => {
   const ChartLabel = limits ? z.string().trim().min(1).max(80) : z.union([z.string(), z.number().transform(String)]);
@@ -319,6 +335,53 @@ export const chartKinds = (limits?: ChartLimits) => {
       better: z.enum(["up", "down"]).optional(),
       sparkline: list(ChartNumber, 2, limits?.maxValues).optional(),
     }),
+
+    z
+      .object({
+        kind: z.literal("bubble"),
+        ...ChartKindCommon,
+        groups: list(ChartLabel, 1, limits?.maxSeries),
+        data: list(
+          z.object({ label: ChartLabel, group: ChartLabel, x: z.number(), y: z.number(), size: z.number().nonnegative().optional() }),
+          1,
+          limits?.maxMarks,
+        ),
+        xLabel: ChartLabel,
+        yLabel: ChartLabel,
+        sizeLabel: ChartLabel.optional(),
+        averages: z.boolean().optional(),
+        legend: z.boolean().optional(),
+        xFormat: numberFormat.optional(),
+        yFormat: numberFormat.optional(),
+        format: numberFormat.optional(),
+        locale: chartLocaleSchema().optional(),
+      })
+      .superRefine((spec, ctx) => {
+        if (spec.data.some((p) => !spec.groups.includes(p.group)))
+          ctx.addIssue({ code: "custom", message: "Bubble groups must contain every point group." });
+        for (const key of ["x", "y"] as const)
+          if (!Number.isFinite(Math.max(0, ...spec.data.map((p) => p[key])) - Math.min(0, ...spec.data.map((p) => p[key]))))
+            ctx.addIssue({ code: "custom", message: "Bubble coordinate ranges must be finite." });
+      }),
+    z
+      .object({
+        kind: z.literal("radar"),
+        ...ChartKindCommon,
+        axes: z.array(ChartLabel).min(3).max(8),
+        max: z.number().positive(),
+        unit: ChartUnit.optional(),
+        series: z
+          .array(z.object({ label: ChartLabel, data: z.array(z.number().nonnegative()).min(3).max(8) }))
+          .min(1)
+          .max(4),
+        format: numberFormat.optional(),
+        legend: z.boolean().optional(),
+        locale: chartLocaleSchema().optional(),
+      })
+      .superRefine((spec, ctx) => {
+        if (spec.series.some((s) => s.data.length !== spec.axes.length || s.data.some((v) => v > spec.max)))
+          ctx.addIssue({ code: "custom", message: "Radar series need one value per axis between zero and the common maximum." });
+      }),
   ]);
 };
 
