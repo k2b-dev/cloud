@@ -71,11 +71,17 @@ export const chartTimeStep = (span: number, maxTicks: number): ChartTimeStep =>
 export const chartTimeTicks = (domain: readonly [number, number], timeZone: string, step: ChartTimeStep): number[] => {
   const [lo, hi] = domain;
   const ticks: number[] = [];
-  // A day that a DST change shortens maps a missing wall time onto the next one; it shows once.
-  for (let wall = floorWall(wallOf(lo, timeZone), step); ticks.length <= 1_000; wall = nextWall(wall, step)) {
+  // Instants outside the Date range have no wall time; Bun reads their "NaN-NaN-…" wall as 2000 and counts from there.
+  if ([lo, hi].some((instant) => Number.isNaN(new Date(instant).getTime()))) return ticks;
+  // A day that a DST change shortens maps a missing wall time onto the next one; it shows once. The budget counts
+  // steps, not ticks, so a step that repeats a tick or does not advance ends too.
+  for (let wall = floorWall(wallOf(lo, timeZone), step), steps = 0; steps <= 1_000; steps++) {
     const instant = instantOf(wall, timeZone);
     if (instant > hi) break;
     if (instant >= lo && instant !== ticks.at(-1)) ticks.push(instant);
+    const next = nextWall(wall, step);
+    if (!(next > wall)) break;
+    wall = next;
   }
   return ticks;
 };

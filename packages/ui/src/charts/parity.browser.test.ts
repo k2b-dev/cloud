@@ -27,7 +27,7 @@ const buildFixture = async (contents: string, legacy = false, hydratable = false
           builder.onLoad({ filter: /.*/, namespace: "chart-parity" }, () => ({ contents, loader: "ts", resolveDir: repoRoot }));
           if (legacy)
             builder.onLoad({ filter: /\/charts\/core\/svg\.js$/ }, () => ({
-              contents: `export * from "@k2b/stdlib"; export { renderHeader } from ${JSON.stringify(resolve(uiRoot, "src/charts/core/svg.ts"))}; export const referenceLineAttributes = () => "";`,
+              contents: `export * from "@k2b/stdlib"; export { MAX_AXIS_TICKS, renderHeader } from ${JSON.stringify(resolve(uiRoot, "src/charts/core/svg.ts"))}; export const referenceLineAttributes = () => "";`,
               loader: "js",
             }));
           builder.onLoad({ filter: /\.tsx$/ }, async ({ path }) => {
