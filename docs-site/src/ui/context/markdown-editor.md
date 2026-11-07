@@ -96,6 +96,29 @@ textarea. `completions` uses the [Completion/Suggestion contract](/en/ui/input/a
 The editor inherits [ValueFieldProps<string>](/en/ui/getting-started#shared-field-props);
 `lines` defaults to 6 and `spellcheck` and `showStats` default to true.
 
+## Formatting selected text
+
+`MarkdownSelectionToolbar` suits composers that should stay calm: give the editor `noToolbar` and place the toolbar
+beside it with the editor's textarea from `textareaRef`. Once a person selects text and lets go of the pointer, a
+small toolbar floats above the selection with bold, italic, inline code, link, bulleted and numbered lists, and
+quote. It is built on the same `SelectionToolbar` that the `@k2b/editor` bubble menu uses, and editors without it
+carry none of its code.
+
+```tsx
+const [textarea, setTextarea] = createSignal<HTMLTextAreaElement>();
+
+<MarkdownEditor aria-label="Message" noToolbar value={text()} onValueChange={setText} textareaRef={setTextarea} />
+<MarkdownSelectionToolbar textarea={textarea()} />
+```
+
+- It follows the selection while the text changes or scrolls, and closes when the selection collapses, the focus
+  leaves both the text and the toolbar, or on <kbd>Esc</kbd>, which keeps the text and the selection.
+- <kbd>Tab</kbd> from the selection moves into it; Left, Right, Home, and End move inside, as in any toolbar. Each
+  format shows whether it applies with `aria-pressed`.
+- Touch devices (a coarse primary pointer) keep their own selection menu, so nothing of it renders there.
+- Every keyboard shortcut works with and without it.
+- It floats in the top layer, so it never moves the editor or the text.
+
 ## Accessibility
 
 Prefer `label`, `description`, and `error`. When surrounding UI already

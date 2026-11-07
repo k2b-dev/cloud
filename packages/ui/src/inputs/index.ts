@@ -99,6 +99,8 @@ export type {
 export { MultiSelectInput } from "./MultiSelectInput";
 export type { MarkdownEditorProps } from "./markdown/MarkdownEditor";
 export { MarkdownEditor } from "./markdown/MarkdownEditor";
+export type { MarkdownSelectionToolbarProps } from "./markdown/MarkdownSelectionToolbar";
+export { MarkdownSelectionToolbar } from "./markdown/MarkdownSelectionToolbar";
 export type { NumberInputProps } from "./NumberInput";
 export { NumberInput } from "./NumberInput";
 export type { QrScannerError, QrScannerProps } from "./QrScanner";
