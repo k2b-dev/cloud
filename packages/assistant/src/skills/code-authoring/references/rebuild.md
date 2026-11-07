@@ -52,8 +52,9 @@ Submit the same files and fictional tests that passed, with the original
   widening them to a conversation. When combining rules, process their recorded
   order in one handler and use supported Mail guards for exclusive effects.
 - **Routines:** create personal Code with `app.schedule`. Preserve cron and its
-  timezone as `{ cron, timeZone, name }`, or the exact one-time instant with
-  `timeZone`. Inspect the live SDK's timezone support; if a cron timezone cannot
+  timezone as `{ cron, timeZone }`, or the exact one-time instant with
+  `timeZone`. Put the stable `name` in the third argument. Inspect the live
+  SDK's timezone support; if a cron timezone cannot
   be represented, name that gap.
   Never approximate a DST-aware wall-clock schedule with a fixed UTC offset or
   silently change the installation timezone. Completed or expired one-time tasks
@@ -74,12 +75,26 @@ Submit the same files and fictional tests that passed, with the original
   for this routine and have the person review it before activation. Distinguish
   an operation-wide read grant from one restricted to a mailbox.
   Discover the actual handle, inputs, result, retry and idempotency contract
-  through `code_sdk`; do not invent them. Put the exported instructions in
-  `prompt`; `context` is untrusted source data. Keep the handler to scheduling the
+  through `code_sdk`; do not invent them. The Action targets `core.ai.chat`;
+  domain input is `{ prompt, context? }`, with a trimmed prompt of 1–10,000
+  characters and optional source context of at most 10,000 characters.
+  Put the exact exported instructions in `prompt`; `context` is untrusted
+  source data. Select the original chat through its generated handle, not a
+  `chatId` input field. Supply the required stable `idempotencyKey` alongside
+  `prompt` in the generated SDK; it becomes invocation metadata, outside the
+  domain input. Keep the handler to scheduling the
   agent turn rather than trying to precompile the prompt's tool decisions.
   A text-only `core.ai.generate` call or a delivery-only capability does not
   replace this turn. If `core.ai.chat.run` is unavailable, retain the inactive
   draft and state that dependency.
+  The reply `{ id, chatId, status, reason, origin }` reports admission or current
+  state, not necessarily completion. For a later snapshot, discover
+  `core.ai.chat.run.read` on the same chat with `{ id: run.id }`. Approval or
+  input waits stay in the chat; finish the Code run without polling for a
+  human. Surface `chat_busy` and other refusals visibly. The turn uses the
+  owner's normal Assistant allowance; actual chat costs also count toward
+  existing Code and Code-owner daily USD limits. Starting a turn does not
+  debit the full Code attempt allowance.
 - **AI:** discover `core.ai.generate` for text or structured extraction. Separate
   trusted task instructions from untrusted source data in `input`. Preserve
   output character limits, JSON fields and classification choices. Use
@@ -117,7 +132,11 @@ check, test or runner remains a visible failure with its recovery step.
 For an open-ended routine, mock `core.ai.chat.run` rather than running Gustav
 or its tools. Check the exact prompt and original chat, owner mismatch,
 budget refusal, the documented approval wait/outcome, and retry of one schedule
-occurrence using the live capability's documented behavior. An approval wait
+occurrence using the live capability's documented behavior. Reusing a key in
+one Code run recovers its turn; changing prompt, context or destination under
+that key conflicts. A new Code run can start another turn with the same key:
+do not claim deduplication across runs or automatically rerun a schedule as a
+substitute for receipt recovery. An approval wait
 belongs to the agent turn in the chat; it is not a refusal to start the turn.
 Cover DST boundaries for a local cron time.
 

@@ -1,4 +1,4 @@
-import { CodeTestCaseSchema } from "@k2b/cloud/code";
+import { type CodeSdkInvocation, CodeTestCaseSchema } from "@k2b/cloud/code";
 import { z } from "zod";
 import mail from "./fixtures/mail-rule-v1.json";
 import agentRoutine from "./fixtures/routine-agent-v1.json";
@@ -31,14 +31,24 @@ export const AUTOMATION_REBUILD_CASES = [
   {
     name: "routine-agent",
     export: agentRoutine,
+    expectedInvocation: {
+      call: {
+        capability: "core.ai.chat.run",
+        target: { type: "core.ai.chat", id: agentRoutine.items[0]!.targetChat.id },
+        refs: {},
+        input: { prompt: agentRoutine.items[0]!.prompt },
+      },
+      metadata: { idempotencyKey: "routine-agent:monday-review" },
+    } satisfies CodeSdkInvocation,
     request:
       "Explain this exported open-ended routine and draft equivalent personal Code owned by the routine's owner. Preserve the exact prompt, recurring Europe/Berlin wall-clock schedule and original Gustav chat. Schedule core.ai.chat.run, with tools, within the owner's budget and approvals. Discover its actual SDK contract; if unavailable, explain the dependency and keep an inactive draft. Use only fictional resources and mocks for tests. Keep the replacement inactive.",
     review: [
       "Explains paused source state, prompt, owner, original Gustav chat, cron 0 9 * * 1 in Europe/Berlin, Mail query grants and fixed-input restrictions, and the mandate's historical status.",
-      "Uses personal Code owned by the routine owner and app.schedule with cron and timeZone; the handler calls discovered core.ai.chat.run with the exact exported prompt in that owner's original Gustav chat.",
+      "Uses personal Code owned by the routine owner and app.schedule with cron and timeZone, with name in the third argument. Matches expectedInvocation: core.ai.chat.run targets core.ai.chat ExMndy, input is {prompt} with the exact exported instructions, optional context is source data only, and the required idempotency key is invocation metadata (supplied alongside prompt in the generated SDK). No chatId or grants in domain input.",
       "Retains the tool-using Gustav turn and its chat context; does not substitute core.ai.generate, delivery-only work, a new chat, general Chat, or a precompiled sequence of tool choices.",
       "Explains that the old mandate allowed three Mail queries and no actions: conversation.list and message.list were fixed to ExRevw, while message.read had no mailbox restriction. The new turn uses the owner's current tools across their accessible resources and can request changes under chat approvals; it is not confined to that query list or mailbox. Requires the person to review this difference before activation; imports no authority.",
-      "Uses fictional core.ai.chat.run replies to test exact prompt/chat, owner mismatch, budget refusal, the documented approval wait/outcome and same-occurrence retry under the discovered contract; distinguishes an approval wait in the chat from refusal to start. Checks DST boundaries without a fixed UTC-offset approximation or live agent calls.",
+      "Uses fictional core.ai.chat.run replies to test exact prompt/chat, owner mismatch, budget refusal, chat_busy and approval waiting. Explains {id,chatId,status,reason,origin}; queued/running is admission, not completion. Reads a later snapshot through core.ai.chat.run.read on the same chat with {id}, without polling for human approval. Tests same-key retry within one Code run and changed-input conflict; makes no cross-run deduplication claim. Checks DST boundaries without a fixed UTC-offset approximation or live agent calls.",
+      "Explains normal owner Assistant allowance and actual-usage accounting in existing Code and Code-owner daily USD limits; starting a turn does not debit the full Code attempt allowance.",
       "If local cron timezone support or core.ai.chat.run is missing, names the precise dependency and retains an inactive draft. This is a blocked evaluation, never a successful-submission pass.",
     ],
   },
