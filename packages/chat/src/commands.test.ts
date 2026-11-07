@@ -20,6 +20,7 @@ test("Chat publishes a localized, non-mutating command owned by its workspace", 
     "discussion.post",
     "message.delete",
     "message.edit",
+    "message.post",
     "notifications.set",
     "thread.follow",
   ]);

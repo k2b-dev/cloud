@@ -523,3 +523,34 @@ export const CountryMapDemo = () => (
     <CountryMap label="Visitors by country" data={visitorsByCountry} />
   </DemoCard>
 );
+
+const referenceStyleExample = {
+  kind: "line",
+  series: [
+    {
+      label: "Orders",
+      data: [
+        { x: 1, y: 12 },
+        { x: 2, y: 16 },
+        { x: 3, y: 14 },
+        { x: 4, y: 21 },
+      ],
+    },
+  ],
+  references: [
+    { value: 14, label: "Target", style: "solid", tone: "success" },
+    { value: 18, label: "Forecast", style: "dashed", tone: "info" },
+    { value: 20, label: "Limit", style: "dotted", tone: "danger" },
+  ],
+} satisfies ChartProps;
+
+export const ReferenceLineStylesDemo = () => (
+  <DemoCard
+    id="charts-reference-styles"
+    chip={{ kind: "component", name: "Chart.Line", from: "@k2b/ui" }}
+    description="Targets, forecasts and limits use independent line styles and semantic tones. Labels keep their meaning visible."
+    code={`<Chart {...${JSON.stringify(referenceStyleExample, null, 2)}} />`}
+  >
+    <Chart {...referenceStyleExample} style={{ height: "16rem" }} />
+  </DemoCard>
+);
