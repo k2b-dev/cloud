@@ -3,7 +3,7 @@ import { resolve } from "node:path";
 import tailwind from "bun-plugin-tailwind";
 import type { Browser, Page } from "playwright";
 import { z } from "zod";
-import { launchBrowser } from "../../../../ui/test/browser";
+import { launchBrowser, settled } from "../../../../ui/test/browser";
 import type { CloudResourceRef } from "../../contracts/capabilities";
 import { cloudAiNumberFormatters } from "../chart-block";
 import type { AiTurnBlock } from "../protocol";
@@ -340,7 +340,21 @@ const referenceExplorer = {
   ],
   views: [{ id: "stock", label: "Stock", kind: "bar", x: "name", y: "stock" }],
 };
+const comparedStats = {
+  view: "stats",
+  title: "Newsletter",
+  items: [
+    {
+      label: "Open rate",
+      value: 0.492,
+      format: { style: "percent", decimals: 1 },
+      delta: { value: 0.031, unit: "points", better: "up" },
+      compare: { label: "Last month", value: 0.461 },
+    },
+  ],
+};
 const files: Record<string, unknown> = {
+  "/views/compared-12345678.view.json": comparedStats,
   "/views/product-references-12345678.view.json": referenceExplorer,
   "/views/offers-at-a-glance-0a1b2c3d.view.json": stats,
   "/views/invoice-re-2026-0412-4d5e6f7a.view.json": invoice,
@@ -599,16 +613,16 @@ for (const view of [
         expect(record.scroll).toBeLessThanOrEqual(record.client);
         // The host colors a change by whether it is better, and the tile names it with a sign.
         const changes = await page.evaluate(() =>
-          Array.from(document.querySelectorAll("[data-view-path] .k2b-stat-cell__accent")).map((node) => [
+          Array.from(document.querySelectorAll("[data-view-path] .k2b-stat-cell__delta")).map((node) => [
             node.getAttribute("data-tone"),
             node.textContent,
           ]),
         );
-        expect(changes.map(([tone]) => tone)).toEqual(["emerald", "red"]);
+        expect(changes.map(([tone]) => tone)).toEqual(["good", "bad"]);
         expect(changes[0]![1]).toStartWith("+");
         expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBe(0);
         if (process.env.VIEW_SHOTS)
-          await page.screenshot({ path: `${process.env.VIEW_SHOTS}/widgets-${view.name}-${theme}.png`, fullPage: true });
+          await page.screenshot({ path: `${process.env.VIEW_SHOTS}/widgets-${theme}-${view.width}.png`, fullPage: true });
       } finally {
         await context.close();
       }
@@ -1235,5 +1249,32 @@ test("explorer references open the original dataset row after table sorting and 
     expect(copied).not.toContain("second");
   } finally {
     await context.close();
+  }
+});
+
+test("stats show the shared change badge and comparison without moving during loading", async () => {
+  const parsed = parseCloudAiView(comparedStats);
+  if (!parsed) throw new Error("Invalid stats");
+  for (const width of [1280, 390]) {
+    const context = await browser.newContext({ viewport: { width, height: 900 }, reducedMotion: "reduce" });
+    try {
+      const page = await context.newPage();
+      await page.goto(`http://127.0.0.1:${server.port}/`);
+      const path = "/views/compared-12345678.view.json";
+      const loaded = hold(path);
+      await page.evaluate((block) => window.show([block]), present(path, cloudAiViewSummary(parsed)));
+      await page.waitForSelector("[data-view-path]");
+      await settled(page);
+      const loading = await boxes(page);
+      loaded();
+      const badge = page.locator('.k2b-stat-cell__delta[role="img"]');
+      await badge.waitFor();
+      expect(await badge.getAttribute("aria-label")).toContain("Last month");
+      expect(await badge.textContent()).toContain("+3.1 pts");
+      expect(await page.locator(".k2b-stat-cell__support").textContent()).toContain("46.1%");
+      expect(await boxes(page)).toEqual(loading);
+    } finally {
+      await context.close();
+    }
   }
 });

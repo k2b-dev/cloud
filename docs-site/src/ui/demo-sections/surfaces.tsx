@@ -940,7 +940,7 @@ const StatsDemo = () => (
 <StatCell label="Unsubscribes" value={182} stale="As of 09:12 · not current" onRetry={reload} />
 
 <StatGrid columns={3} title="Runtime" action={{ label: "Observability", href: "./observability" }}>
-  <StatCell label="Requests" value="42k" sub="last hour" trend={[12, 18, 16, 24, 42]} />
+  <StatCell label="Requests" value="42k" sub="last hour" delta={{ value: 1200, unit: "absolute", better: "up" }} trend={[12, 18, 16, 24, 42]} />
   <StatCell label="Latency" value="83 ms" sub="p95" href="./observability" valueClass="app-latency-warning" />
   <StatCell label="Errors" value={12} sub="last hour" accent={{ tone: "red", icon: "ti ti-alert-circle", text: "inspect" }} />
 </StatGrid>`}
@@ -994,7 +994,13 @@ const StatsDemo = () => (
         />
       </StatGrid>
       <StatGrid columns={3} title="Runtime" action={{ label: "Observability", href: "./observability" }}>
-        <StatCell label="Requests" value="42k" sub="last hour" trend={[12, 18, 16, 24, 42]} />
+        <StatCell
+          label="Requests"
+          value="42k"
+          sub="last hour"
+          delta={{ value: 1200, unit: "absolute", better: "up" }}
+          trend={[12, 18, 16, 24, 42]}
+        />
         <StatCell label="Latency" value="83 ms" sub="p95" href="./observability" valueClass="ui-stat-attention" />
         <StatCell label="Errors" value={12} sub="last hour" accent={{ tone: "red", icon: "ti ti-alert-circle", text: "inspect" }} />
       </StatGrid>
