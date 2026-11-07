@@ -6,7 +6,7 @@ import { renderToString } from "solid-js/web";
 import { launchBrowser, pageErrors, settled } from "../../test/browser";
 import { lineForecastFixture } from "../../test/line-forecast-fixture";
 
-let browser: Browser, bundle: string, hostsBundle: string, css: string;
+let browser: Browser, bundle: string, hostsBundle: string, css: string, baseCss: string;
 const pages: Page[] = [];
 const errorsByPage = new Map<Page, string[]>();
 let ssr: string;
@@ -47,6 +47,7 @@ beforeAll(async () => {
     if (hosts) hostsBundle = await build.outputs[0]!.text();
     else bundle = await build.outputs[0]!.text();
   }
+  baseCss = await Bun.file(resolve(import.meta.dir, "../../dist/base.css")).text();
   css = await Bun.file(resolve(import.meta.dir, "../../dist/styles.css")).text();
   css += `\n${await Bun.file(resolve(import.meta.dir, "../../../editor/src/styles.css")).text()}`;
   browser = await launchBrowser();
@@ -239,4 +240,35 @@ test("line values follow the cursor in Pulse, Core AI, Gateway Ops, Chat and Not
     expect(await legend.allTextContents()).toEqual(initial);
     expect(await documentBox(page, `[data-line-host="${host}"]`)).toEqual(panelBox);
   }
+});
+
+test("framework-free line markup keeps paint and currency labels with base.css alone", async () => {
+  const page = await open(390);
+  pages.push(page);
+  const drawing = await page.locator(".line-forecast-frame .k2b-chart__svg").evaluate((node) => {
+    const clone = node.cloneNode(true) as HTMLElement;
+    for (const style of clone.querySelectorAll("style")) style.remove();
+    return clone.outerHTML;
+  });
+  await page.setContent(
+    `<!doctype html><html><head><style>${baseCss}body{margin:0;padding:20px}.base-frame{height:280px;width:100%}</style></head><body><div class="k2b-chart base-frame" data-chart-kind="line">${drawing}</div></body></html>`,
+  );
+  await settled(page);
+  expect(await page.locator(".k2b-ui").count()).toBe(0);
+  expect(await page.locator("svg style").count()).toBe(0);
+  const paint = await page
+    .locator(".stdlib-chart-line")
+    .first()
+    .evaluate((node) => getComputedStyle(node).stroke);
+  expect(paint).not.toBe("none");
+  expect(paint).not.toBe("rgb(0, 0, 0)");
+  expect(await page.locator(".k2b-line-forecast-band").evaluate((node) => getComputedStyle(node).fill)).toBe(paint);
+  expect(
+    await page.locator(".base-frame").evaluate((node) => {
+      const left = node.getBoundingClientRect().left;
+      return [...node.querySelectorAll(".stdlib-chart-tick-label[text-anchor=end]")].every(
+        (label) => label.getBoundingClientRect().left >= left,
+      );
+    }),
+  ).toBe(true);
 });
