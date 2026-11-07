@@ -25,6 +25,8 @@ const messages = i18n.define({
       failedTitle: (n: number) => `${enFiles(n)} failed`,
       cancelled: "Upload cancelled",
       count: ({ done, count }: { done: number; count: number }) => `${done} of ${enFiles(count)}`,
+      remainingTime: (seconds: number) =>
+        seconds < 60 ? "less than 1 min" : seconds < 3600 ? `about ${Math.ceil(seconds / 60)} min` : `about ${Math.ceil(seconds / 3600)} h`,
       errors: (n: number) => (n === 1 ? "1 error" : `${n} errors`),
       valueText: ({ percent, done, count }: { percent: number; done: number; count: number }) =>
         `${percent}%, ${done} of ${enFiles(count)} uploaded`,
@@ -105,6 +107,8 @@ const messages = i18n.define({
       failedTitle: (n: number) => `${deFiles(n)} fehlgeschlagen`,
       cancelled: "Upload abgebrochen",
       count: ({ done, count }: { done: number; count: number }) => `${done} von ${deFiles(count)}`,
+      remainingTime: (seconds: number) =>
+        seconds < 60 ? "unter 1 Min." : seconds < 3600 ? `ca. ${Math.ceil(seconds / 60)} Min.` : `ca. ${Math.ceil(seconds / 3600)} Std.`,
       errors: (n: number) => `${n} Fehler`,
       valueText: ({ percent, done, count }: { percent: number; done: number; count: number }) =>
         `${percent} %, ${done} von ${deFiles(count)} hochgeladen`,
