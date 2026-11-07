@@ -82,6 +82,7 @@ const setup = async (
     etag?: string;
     sourceChanged?: boolean;
     noWebp?: boolean;
+    large?: boolean;
   } = {},
 ) => {
   const page = await browser.newPage({ viewport: { width: options.width ?? 1440, height: 950 } });
@@ -93,6 +94,31 @@ const setup = async (
         return encode.call(this, callback, type === "image/webp" ? "image/png" : type, quality);
       };
     });
+  const largeImage = options.large
+    ? Buffer.from(
+        await page.evaluate(() => {
+          const canvas = document.createElement("canvas");
+          canvas.width = 5000;
+          canvas.height = 4000;
+          const context = canvas.getContext("2d")!;
+          context.fillStyle = "#487a9b";
+          context.fillRect(0, 0, canvas.width, canvas.height);
+          const data = canvas.toDataURL("image/jpeg").split(",")[1]!;
+          canvas.width = canvas.height = 0;
+          return data;
+        }),
+        "base64",
+      )
+    : undefined;
+  await page.addInitScript(() => {
+    const sizes: number[][] = [];
+    Object.defineProperty(window, "fileExportSizes", { value: sizes });
+    const encode = HTMLCanvasElement.prototype.toBlob;
+    HTMLCanvasElement.prototype.toBlob = function (callback, type, quality) {
+      sizes.push([this.width, this.height]);
+      return encode.call(this, callback, type, quality);
+    };
+  });
   const uploads: Upload[] = [];
   let contentReads = 0;
   let metadataReads = 0;
@@ -144,7 +170,7 @@ const setup = async (
     if (options.sourceChanged && metadataReads > 0) revision = "revision-newer";
     if (options.corrupt) return route.fulfill({ body: "Not an image", contentType: "image/heic", headers: { etag: '"revision-1"' } });
     await route.fulfill({
-      path: resolve(uiRoot, "src/inputs/image-editor/fixtures/photo.jpg"),
+      ...(largeImage ? { body: largeImage } : { path: resolve(uiRoot, "src/inputs/image-editor/fixtures/photo.jpg") }),
       contentType: "image/jpeg",
       headers: { etag: options.etag ?? '"revision-1"' },
     });
@@ -200,6 +226,19 @@ describe("Files photo editing", () => {
       ]);
       expect(reads()).toBe(pinned);
       expect(await page.locator(".k2b-image-editor").getAttribute("data-dirty")).toBe("false");
+      expect(errors).toEqual([]);
+    } finally {
+      await page.close();
+    }
+  });
+  test("Files requests original dimensions above the library default output limit", async () => {
+    const { page, errors } = await setup({ large: true });
+    try {
+      await edit(page);
+      await rotate(page);
+      await save(page);
+      await page.waitForFunction(() => window.fileImages.saved.length === 1);
+      expect(await page.evaluate<number[][]>("window.fileExportSizes")).toContainEqual([4000, 5000]);
       expect(errors).toEqual([]);
     } finally {
       await page.close();

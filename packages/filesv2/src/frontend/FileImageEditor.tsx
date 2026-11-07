@@ -206,6 +206,7 @@ export default function FileImageEditor(props: {
         {(image) => (
           <ImageEditor
             source={image().source}
+            maxOutputMegapixels="device"
             features={filesImageFeatures}
             saveActions={saveActions}
             onDirtyChange={setDirty}

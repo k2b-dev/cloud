@@ -12,7 +12,7 @@ Files opens with **All storage**: one tile for each storage location you can rea
 
 Open an image preview and choose **Edit image**. You must be able to edit the file. Crop, rotate, adjust, annotate, or cover sensitive areas, then open **Save**. A browser that cannot open the format shows an error with **Try again**.
 
-**Save new version** is available in a versioned storage location when the browser can encode the original JPEG, PNG, or WebP format. Otherwise choose **Save copy**; you must be able to create files in that folder to save a copy. Copies are named `Photo (edited).jpg`, with a number when needed. If that name already exists, choose **Save copy** again to use the next name. Output is limited to 16.7 MP by default, and the editor announces any reduction. Saving removes source metadata.
+**Save new version** is available in a versioned storage location when the browser can encode the original JPEG, PNG, or WebP format. Otherwise choose **Save copy**; you must be able to create files in that folder to save a copy. Copies are named `Photo (edited).jpg`, with a number when needed. If that name already exists, choose **Save copy** again to use the next name. Files attempts the original image dimensions. If the browser cannot produce that size, your edits stay open and you can explicitly retry with a smaller output. Saving removes source metadata.
 
 The original stays fixed while you edit. A conflicting change preserves your edits; save a copy instead. A save completes only after storage confirms the upload. If its result is unknown, **Check upload** checks that same upload before you can save again. Closing with unsaved changes asks before discarding them.
 
