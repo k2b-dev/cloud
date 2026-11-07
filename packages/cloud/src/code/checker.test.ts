@@ -862,55 +862,145 @@ app.post("/save", c => c.redirect("/hello/saved"));`);
   expect(result.bundle).not.toContain("hono");
 }, 30_000);
 
-test("TSX and object pages produce identical validated trees without a framework bundle", async () => {
+test("TSX building blocks compose the checked page tree without a framework bundle", async () => {
   const result = await checkCode(
     {
       ...base,
       entry: "code.tsx",
       limits: { ...CODE_CHECK_LIMITS, checkMs: 30000 },
       files: {
-        "code.tsx": `import { app, jsx, Page, Section, Text, Form, Chart } from "@sdk";
-app.get("/", c => c.page(<Page title="Items"><Section title="Today"><Text>Hello {"there"}</Text><Chart.Bar title="Count" data={[{label:"One",value:2}]} /><Form title="Find" action="/find" fields={[{type:"scan",name:"barcode",label:"Barcode"}]} submit="Find" /></Section></Page>));
-app.get("/object", c => c.page({
-  version: 1, kind: "Page", title: "Items", children: [{ kind: "Section", title: "Today", children: [
-    { kind: "Text", text: "Hello there" },
-    { kind: "Chart", description: { kind: "bar", title: "Count", data: [{ label: "One", value: 2 }] } },
-    { kind: "Form", title: "Find", action: "/find", fields: [{ type: "scan", name: "barcode", label: "Barcode" }], submit: "Find" },
-  ] }],
-}));`,
+        "code.tsx": `import { app, jsx, Page, Section, Text, Stats, Stat, Table, Column, Detail, Item, Form, Field, Option, Chart } from "@sdk";
+const statuses = ["open", "done"];
+app.get("/", c => c.page(
+  <Page title="Items">
+    <Stats><Stat label="Open" value={3} delta={{ value: 0.5, better: "down" }} compare={{ label: "Yesterday", value: 2 }} /></Stats>
+    <Section title="Today">
+      <Text>Hello {"there"}</Text>
+      <Chart.Bar width="half" title="Count" data={[{ label: "One", value: 2 }]} />
+      <Chart.Empty width="half" title="Orders" empty="No order yet." />
+      <Table title="Items" rows={[{ name: "One" }]}><Column key="name" label="Name" /></Table>
+      <Detail title="Item"><Item label="Code" value="W-1" /></Detail>
+      <Form title="Find" action="/find" submit="Find">
+        <Field.Scan name="barcode" label="Barcode" required />
+        <Field.Number name="count" label="Count" value={1} />
+        <Field.Select name="status" label="Status" value="open">
+          {statuses.map(status => <Option value={status} label={status} />)}
+        </Field.Select>
+        <Field.Checkbox name="urgent" label="Urgent" />
+      </Form>
+    </Section>
+  </Page>
+));`,
       },
     },
     host,
   );
-  expect(result.ok).toBe(true);
   if (!result.ok) throw new Error(JSON.stringify(result.diagnostics));
   const module = await import(`data:text/javascript;base64,${Buffer.from(result.bundle).toString("base64")}`);
   const response = await module["route:GET:/"](
     { method: "GET", path: "/", query: "", params: {}, contentType: "text/plain", body: "", user: null },
     { call: async () => null },
   );
-  expect(response).toMatchObject({
-    kind: "page",
-    tree: {
-      version: 1,
-      kind: "Page",
-      title: "Items",
-      children: [
-        { kind: "Section", title: "Today", children: [{ kind: "Text", text: "Hello there" }, { kind: "Chart" }, { kind: "Form" }] },
-      ],
-    },
+  // Authors compose blocks; the description below is only the transport Core checks and draws.
+  expect(validateCodePage(response.tree, "c_fixture")).toEqual({
+    version: 1,
+    kind: "Page",
+    title: "Items",
+    children: [
+      {
+        kind: "Stats",
+        items: [{ label: "Open", value: 3, delta: { value: 0.5, better: "down" }, compare: { label: "Yesterday", value: 2 } }],
+      },
+      {
+        kind: "Section",
+        title: "Today",
+        children: [
+          { kind: "Text", text: "Hello there" },
+          { kind: "Chart", width: "half", description: { kind: "bar", title: "Count", data: [{ label: "One", value: 2 }] } },
+          { kind: "Chart", width: "half", title: "Orders", empty: "No order yet." },
+          { kind: "Table", title: "Items", rows: [{ name: "One" }], columns: [{ key: "name", label: "Name" }] },
+          { kind: "Detail", title: "Item", items: [{ label: "Code", value: "W-1" }] },
+          {
+            kind: "Form",
+            title: "Find",
+            action: "/find",
+            submit: "Find",
+            fields: [
+              { type: "scan", name: "barcode", label: "Barcode", required: true },
+              { type: "number", name: "count", label: "Count", value: 1 },
+              {
+                type: "select",
+                name: "status",
+                label: "Status",
+                value: "open",
+                options: [
+                  { value: "open", label: "open" },
+                  { value: "done", label: "done" },
+                ],
+              },
+              { type: "checkbox", name: "urgent", label: "Urgent" },
+            ],
+          },
+        ],
+      },
+    ],
   });
-  const objectPath = join(directory, "object-page.mjs");
-  await writeFile(objectPath, result.bundle);
-  const objectModule = await import(objectPath);
-  const objectResponse = await objectModule["route:GET:/object"](
-    { method: "GET", path: "/object", query: "", params: {}, contentType: "text/plain", body: "", user: null },
-    { call: async () => null },
-  );
-  expect(response).toEqual(objectResponse);
-  expect(validateCodePage(response.tree, "c_fixture")).toEqual(validateCodePage(objectResponse.tree, "c_fixture"));
   for (const runtime of ["solid-js", "hono", "react/jsx-runtime"]) expect(result.bundle).not.toContain(runtime);
 }, 30000);
+test("the page example in the docs and the Code authoring skill checks and builds a valid page", async () => {
+  const docs = await Bun.file(resolve(import.meta.dir, "../../../../docs-site/docs/en/platform/code-sdk.md")).text();
+  const skill = await Bun.file(resolve(import.meta.dir, "../../../assistant/src/skills/code-authoring/SKILL.md")).text();
+  const snippet = (text: string) => text.split("<!-- code-page-example -->")[1]!.split("```tsx\n")[1]!.split("```")[0]!.trim();
+  const source = snippet(docs);
+  expect(snippet(skill)).toBe(source);
+  const result = await checkCode(
+    { ...base, entry: "code.tsx", limits: { ...CODE_CHECK_LIMITS, checkMs: 30000 }, files: { "code.tsx": source } },
+    host,
+  );
+  if (!result.ok) throw new Error(JSON.stringify(result.diagnostics));
+  const module = await import(`data:text/javascript;base64,${Buffer.from(result.bundle).toString("base64")}`);
+  const response = await module["route:GET:/"](
+    { method: "GET", path: "/", query: "", params: {}, contentType: "text/plain", body: "", user: null },
+    { call: async () => null },
+  );
+  expect(validateCodePage(response.tree, "c_fixture").children.map((node) => node.kind)).toEqual(["Stats", "Section"]);
+}, 30000);
+test("each building block types its props: a wrong prop, value or child text is a type error", async () => {
+  // Each block sits in its right place, so only its own props can be wrong.
+  const form = (field: string) => `<Form title="F" action="/x" submit="Go">${field}</Form>`;
+  const wrong = [
+    form('<Field.Number name="n" label="N" value="three" />'),
+    form('<Field.Checkbox name="c" label="C" value="yes" />'),
+    form('<Field.Text name="t" label="T">text</Field.Text>'),
+    form('<Field.Select name="s" label="S"><Option value="v" /></Field.Select>'),
+    '<Stats><Stat label="S" value={1} delta={{ value: 1, better: "sideways" }} /></Stats>',
+    "<Stats items={[]} />",
+    '<Table title="T" rows={[]}><Column key="a" /></Table>',
+    '<Detail title="D"><Item label="L" /></Detail>',
+    '<Form title="F" action="/x" submit="Go" fields={[]} />',
+    '<Chart.Bar title="C" data={[{ label: "A", value: 1 }]} description={{ kind: "bar" }} />',
+    '<Chart.Line title="L" series="none" />',
+    '<Chart description={{ kind: "bar", title: "C", data: [] }} />',
+    '<Chart.Empty title="Orders" />',
+  ];
+  const routes = wrong.map((block, index) => `app.get("/${index}", c => c.page(<Page title="P">${block}</Page>));`);
+  const result = await checkCode(
+    {
+      ...base,
+      entry: "code.tsx",
+      limits: { ...CODE_CHECK_LIMITS, checkMs: 30000 },
+      files: {
+        "code.tsx": `import { app, jsx, Page, Stats, Stat, Table, Column, Detail, Item, Option, Form, Field, Chart } from "@sdk";\n${routes.join("\n")}`,
+      },
+    },
+    host,
+  );
+  expect(result.ok).toBe(false);
+  if (result.ok) return;
+  const lines = new Set(result.diagnostics.filter((diagnostic) => diagnostic.code.startsWith("TS")).map((diagnostic) => diagnostic.line));
+  // Line 1 is the import; block N sits on line N + 2.
+  expect(wrong.filter((_, index) => !lines.has(index + 2))).toEqual([]);
+}, 60000);
 test("TSX refuses intrinsic HTML and handler props", async () => {
   // A chart is either drawn from a description or empty with a reason; a bare title is neither.
   for (const child of ["<div>HTML</div>", "<Text onClick={() => {}}>Handler</Text>", '<Chart title="Orders" />']) {

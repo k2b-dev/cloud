@@ -1,38 +1,69 @@
 import type { CodeChartDescription, CodePageTree } from "./page-contract";
-/** Children are descriptions, never DOM nodes or callback handlers. Core checks that the root is Page. */
+/**
+ * Page building blocks for TSX. Blocks return descriptions, never DOM nodes or callback handlers; Core checks the
+ * page and draws it. A part such as a field or a column belongs inside its block (`cld code check` names a misplaced
+ * one); JSX cannot type which element a child is, so the checker and Core enforce it.
+ */
 export type CodePageNode = CodePageTree["children"][number];
-export type CodePageChild = CodePageNode | CodePageTree | readonly CodePageChild[] | false | null | undefined;
-export type CodePageComponent<P> = (props: P) => CodePageNode | CodePageTree;
+/** A part that only its block reads, such as a form field or a table column. Never a page node of its own. */
+export type CodePagePart = { readonly kind: `#${string}` };
+export type CodePageElement = CodePageNode | CodePageTree | CodePagePart;
+export type CodePageChild = CodePageElement | readonly CodePageChild[] | false | null | undefined;
+export type CodePageComponent<P> = (props: P) => CodePageElement;
 type CodeNodeProps<K extends CodePageNode["kind"]> = Omit<Extract<CodePageNode, { kind: K }>, "kind">;
+type Parts = { children?: CodePageChild };
+type NoChildren = { children?: never };
 type CodeSectionNode = Extract<CodePageNode, { kind: "Section" }>;
-export declare const Page: CodePageComponent<Omit<CodePageTree, "kind" | "version" | "children"> & { children?: CodePageChild }>;
-export declare const Section: CodePageComponent<Omit<CodeSectionNode, "kind" | "children"> & { children?: CodePageChild }>;
-export declare const Stats: CodePageComponent<CodeNodeProps<"Stats">>;
-export declare const Text: CodePageComponent<{ text?: string; children?: string | number | readonly (string | number)[] }>;
-export declare const Heading: CodePageComponent<{
-  text?: string;
-  children?: string | number | readonly (string | number)[];
-  level?: 2 | 3 | 4;
-}>;
-export declare const Table: CodePageComponent<CodeNodeProps<"Table">>;
-export declare const Form: CodePageComponent<CodeNodeProps<"Form">>;
-export declare const Detail: CodePageComponent<CodeNodeProps<"Detail">>;
-export declare const Link: CodePageComponent<CodeNodeProps<"Link">>;
-export declare const Button: CodePageComponent<Omit<Extract<CodePageNode, { kind: "Button" | "Action" }>, "kind">>;
+export declare const Page: CodePageComponent<Omit<CodePageTree, "kind" | "version" | "children"> & Parts>;
+export declare const Section: CodePageComponent<Omit<CodeSectionNode, "kind" | "children"> & Parts>;
+type TextChildren = string | number | readonly (string | number)[];
+export declare const Text: CodePageComponent<{ text?: string; children?: TextChildren }>;
+export declare const Heading: CodePageComponent<{ text?: string; children?: TextChildren; level?: 2 | 3 | 4 }>;
+
+/** One key figure inside `Stats`: value first, then how it changed against what. */
+export declare const Stat: CodePageComponent<CodeNodeProps<"Stats">["items"][number] & NoChildren>;
+/** A row of up to six key figures; its children are `Stat` blocks. */
+export declare const Stats: CodePageComponent<Parts>;
+/** One column inside `Table`; `key` names the row field it shows. */
+export declare const Column: CodePageComponent<CodeNodeProps<"Table">["columns"][number] & NoChildren>;
+/** Rows are data, such as the result of an SDK call; columns are `Column` children. */
+export declare const Table: CodePageComponent<Omit<CodeNodeProps<"Table">, "columns"> & Parts>;
+/** One label and value inside `Detail`. */
+export declare const Item: CodePageComponent<CodeNodeProps<"Detail">["items"][number] & NoChildren>;
+export declare const Detail: CodePageComponent<Omit<CodeNodeProps<"Detail">, "items"> & Parts>;
+
+type CodePageField = CodeNodeProps<"Form">["fields"][number];
+type FieldProps<V> = Omit<CodePageField, "type" | "value" | "options"> & { value?: V } & NoChildren;
+/** One choice inside `Field.Select`. */
+export declare const Option: CodePageComponent<NonNullable<CodePageField["options"]>[number] & NoChildren>;
+/** Form fields, each a block of its own inside `Form`. The submitted value arrives under `name`. */
+export declare const Field: {
+  Text: CodePageComponent<FieldProps<string>>;
+  Email: CodePageComponent<FieldProps<string>>;
+  Number: CodePageComponent<FieldProps<number>>;
+  Textarea: CodePageComponent<FieldProps<string>>;
+  Checkbox: CodePageComponent<FieldProps<boolean>>;
+  /** A text field with a camera button; the read code goes into the field. */
+  Scan: CodePageComponent<FieldProps<string>>;
+  /** Its choices are `Option` children. */
+  Select: CodePageComponent<Omit<FieldProps<string>, "children"> & Parts>;
+};
+/** Sends its fields to an own route with POST; its children are `Field` blocks. */
+export declare const Form: CodePageComponent<Omit<CodeNodeProps<"Form">, "fields"> & Parts>;
+export declare const Link: CodePageComponent<CodeNodeProps<"Link"> & NoChildren>;
+export declare const Button: CodePageComponent<Omit<Extract<CodePageNode, { kind: "Button" | "Action" }>, "kind"> & NoChildren>;
 export declare const Action: typeof Button;
-export declare const Notice: CodePageComponent<CodeNodeProps<"Notice">>;
+export declare const Notice: CodePageComponent<CodeNodeProps<"Notice"> & NoChildren>;
+
 type CodeChartProps<K> = CodeChartDescription extends infer D
   ? D extends { kind: infer Kind }
     ? K extends Kind
-      ? Omit<D, "kind"> & CodeChartLayout
+      ? Omit<D, "kind"> & Pick<CodeNodeProps<"Chart">, "width"> & NoChildren
       : never
     : never
   : never;
-type CodeChartLayout = Pick<CodeNodeProps<"Chart">, "width" | "empty">;
-/** A drawn chart, or, with nothing to draw yet, its title and why it is empty. */
-type CodeChartNodeProps = Pick<CodeNodeProps<"Chart">, "width"> &
-  ({ description: CodeChartDescription; title?: never; empty?: string } | { description?: never; title: string; empty: string });
-export declare const Chart: CodePageComponent<CodeChartNodeProps> & {
+/** Charts with their data as props, like `@k2b/ui/charts`; `Chart.Empty` keeps a chart's place while there is no data. */
+export declare const Chart: {
   Bar: CodePageComponent<CodeChartProps<"bar">>;
   Line: CodePageComponent<CodeChartProps<"line">>;
   Scatter: CodePageComponent<CodeChartProps<"scatter">>;
@@ -45,11 +76,12 @@ export declare const Chart: CodePageComponent<CodeChartNodeProps> & {
   Heatmap: CodePageComponent<CodeChartProps<"heatmap">>;
   BarGauge: CodePageComponent<CodeChartProps<"barGauge">>;
   Stat: CodePageComponent<CodeChartProps<"stat">>;
+  Empty: CodePageComponent<{ title: string; empty: string } & Pick<CodeNodeProps<"Chart">, "width"> & NoChildren>;
 };
-export declare function jsx<P>(component: CodePageComponent<P>, props: P | null, ...children: CodePageChild[]): CodePageNode | CodePageTree;
+export declare function jsx<P>(component: CodePageComponent<P>, props: P | null, ...children: CodePageChild[]): CodePageElement;
 export declare namespace jsx {
   namespace JSX {
-    type Element = CodePageNode | CodePageTree;
+    type Element = CodePageElement;
     interface ElementChildrenAttribute {
       children: {};
     }

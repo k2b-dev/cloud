@@ -221,19 +221,45 @@ test("key figures, grid widths, section symbols and number formats are data on t
   ])
     expect(() => validateCodePage(bad, codeId)).toThrow();
 });
-test("chart builders keep page layout beside the portable description", async () => {
+test("blocks compose their parts and refuse a part in the wrong place before Core sees the page", async () => {
   const sdk = generateCodeSdk([], { mode: "personal" });
-  const runtime = await import(`data:text/javascript;base64,${Buffer.from(sdk.runtime).toString("base64")}`);
-  const chart = runtime.jsx(runtime.Chart.Bar, { width: "half", empty: "None yet.", title: "Items", data: [{ label: "One", value: 2 }] });
-  expect(chart).toEqual({
-    kind: "Chart",
-    width: "half",
-    empty: "None yet.",
-    description: { kind: "bar", title: "Items", data: [{ label: "One", value: 2 }] },
+  const ui = await import(`data:text/javascript;base64,${Buffer.from(sdk.runtime).toString("base64")}`);
+  const { jsx } = ui;
+  const chart = jsx(ui.Chart.Bar, { width: "half", title: "Items", data: [{ label: "One", value: 2 }] });
+  expect(chart).toEqual({ kind: "Chart", width: "half", description: { kind: "bar", title: "Items", data: [{ label: "One", value: 2 }] } });
+  const form = jsx(
+    ui.Form,
+    { title: "Find", action: "/find", submit: "Find" },
+    jsx(ui.Field.Text, { name: "query", label: "Query", required: true }),
+    jsx(ui.Field.Select, { name: "status", label: "Status" }, [jsx(ui.Option, { value: "open", label: "Open" })]),
+  );
+  expect(form).toEqual({
+    kind: "Form",
+    title: "Find",
+    action: "/find",
+    submit: "Find",
+    fields: [
+      { type: "text", name: "query", label: "Query", required: true },
+      { type: "select", name: "status", label: "Status", options: [{ value: "open", label: "Open" }] },
+    ],
   });
-  expect(runtime.jsx(runtime.Stats, { items: [{ label: "Open", value: 3 }] })).toEqual({
-    kind: "Stats",
-    items: [{ label: "Open", value: 3 }],
-  });
-  expect(() => validateCodePage(page([chart]), codeId)).not.toThrow();
+  const stats = jsx(ui.Stats, null, jsx(ui.Stat, { label: "Open", value: 3 }));
+  expect(stats).toEqual({ kind: "Stats", items: [{ label: "Open", value: 3 }] });
+  expect(() =>
+    validateCodePage(page([chart, form, stats, jsx(ui.Chart.Empty, { title: "Orders", empty: "None yet." })]), codeId),
+  ).not.toThrow();
+  for (const misplaced of [
+    () => jsx(ui.Form, { title: "F", action: "/x", submit: "Go" }, jsx(ui.Text, null, "not a field")),
+    () => jsx(ui.Stats, null, jsx(ui.Column, { key: "a", label: "A" })),
+    () => jsx(ui.Table, { title: "T", rows: [] }, "text"),
+    () => jsx(ui.Field.Select, { name: "s", label: "S" }, jsx(ui.Field.Text, { name: "t", label: "T" })),
+    () => jsx(ui.Field.Text, { name: "t", label: "T" }, "child"),
+    () => jsx(ui.Chart.Bar, { title: "C", data: [{ label: "A", value: 1 }] }, jsx(ui.Text, null, "x")),
+  ])
+    expect(misplaced).toThrow("code_page_child");
+  // A part on its own is no page node: Core refuses it like any unknown kind.
+  expect(() => validateCodePage(page([jsx(ui.Field.Text, { name: "t", label: "T" })]), codeId)).toThrow();
+  expect(() => validateCodePage(page([jsx(ui.Stat, { label: "S", value: 1 })]), codeId)).toThrow();
+  // Only SDK blocks build pages; the chart family itself is no block.
+  expect(() => jsx(ui.Chart, { title: "C" })).toThrow("code_page_component");
 });

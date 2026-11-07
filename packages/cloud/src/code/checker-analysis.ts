@@ -199,7 +199,48 @@ export function analyzeCode(request: CodeCheckRequest): CodeAnalysis {
   // Permission calls and schedule handlers, joined after all files are visited: a handler may be declared anywhere.
   const placed: { index: number; node: ts.Node }[] = [];
   const handlers: { handler: ts.Expression; name: string }[] = [];
+  /** The SDK block a JSX tag names, such as `Form` or `Field.Select`, also under an import alias; null otherwise. */
+  const sdkFile = root + "sdk.d.ts";
+  function sdkTag(tag: ts.JsxTagNameExpression): string | null {
+    const exported = (name: ts.Identifier) => {
+      let symbol = checker.getSymbolAtLocation(name);
+      if (symbol && symbol.flags & ts.SymbolFlags.Alias) symbol = checker.getAliasedSymbol(symbol);
+      return symbol?.declarations?.some((declaration) => declaration.getSourceFile().fileName === sdkFile) ? symbol.name : null;
+    };
+    if (ts.isIdentifier(tag)) return exported(tag);
+    if (ts.isPropertyAccessExpression(tag) && ts.isIdentifier(tag.expression)) {
+      const owner = exported(tag.expression);
+      return owner ? `${owner}.${tag.name.text}` : null;
+    }
+    return null;
+  }
+  /** Blocks whose children are parts, with the parts they take. */
+  const blockParts: Record<string, { allows: (child: string) => boolean; names: string }> = {
+    Form: { allows: (child) => child.startsWith("Field."), names: "Field-Bausteine" },
+    "Field.Select": { allows: (child) => child === "Option", names: "<Option>" },
+    Stats: { allows: (child) => child === "Stat", names: "<Stat>" },
+    Table: { allows: (child) => child === "Column", names: "<Column>" },
+    Detail: { allows: (child) => child === "Item", names: "<Item>" },
+  };
+  const partOwners: Record<string, string> = { Option: "Field.Select", Stat: "Stats", Column: "Table", Item: "Detail" };
+  const partBlock = (tag: string) => (tag.startsWith("Field.") ? "Form" : partOwners[tag]);
+  /** Parts sit inside their block and blocks with parts hold nothing else; JSX types cannot say which element a child is. */
+  function checkPageChild(node: ts.JsxElement | ts.JsxSelfClosingElement) {
+    const tag = sdkTag(ts.isJsxElement(node) ? node.openingElement.tagName : node.tagName);
+    if (!tag) return;
+    let parent: ts.Node | undefined = node.parent;
+    while (parent && !ts.isJsxElement(parent)) parent = parent.parent;
+    const parentTag = parent && ts.isJsxElement(parent) ? sdkTag(parent.openingElement.tagName) : null;
+    const owner = partBlock(tag);
+    const block = parentTag ? blockParts[parentTag] : undefined;
+    if (block && !block.allows(tag)) report(node, "code_page_child", `In <${parentTag}> stehen nur ${block.names}, nicht <${tag}>.`);
+    else if (owner && parentTag && parentTag !== owner) report(node, "code_page_child", `<${tag}> gehört in <${owner}>.`);
+    if (ts.isJsxElement(node) && blockParts[tag])
+      for (const child of node.children)
+        if (ts.isJsxText(child) && child.text.trim()) report(child, "code_page_child", `In <${tag}> steht kein Text, nur seine Bausteine.`);
+  }
   function visit(node: ts.Node) {
+    if (ts.isJsxElement(node) || ts.isJsxSelfClosingElement(node)) checkPageChild(node);
     if (ts.isIdentifier(node) && node.text === "__codeSdk") report(node, "code_reserved_sdk", "__codeSdk ist für den Runner reserviert.");
     if (ts.isImportDeclaration(node) || ts.isExportDeclaration(node)) {
       const spec = node.moduleSpecifier;

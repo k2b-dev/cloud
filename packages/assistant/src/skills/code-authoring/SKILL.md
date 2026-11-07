@@ -1,6 +1,6 @@
 ---
 name: code-authoring
-description: Build or edit lasting Cloud Code, including schedules and resource-owned automations. Use for code.ts, checking permissions, fictional tests, simulation and submitting an immutable version for human activation. One-off analysis or CSV exports use assistant-code-mode and code_run.
+description: Build or edit lasting Cloud Code, including schedules, pages and resource-owned automations. Use for code.ts and code.tsx pages, checking permissions, fictional tests, simulation and submitting an immutable version for human activation. One-off analysis or CSV exports use assistant-code-mode and code_run.
 load-tools: [code_init, code_pull, code_sdk, code_write, code_check, code_test, code_simulate, code_submit, code_diff]
 ---
 # Build lasting Code
@@ -41,6 +41,54 @@ interactive chat, not a background task. On a version conflict, pull, reconcile
 the complete comparison and recheck; never replace the base just to force a
 submit. After an uncertain write, pull before trying again. A failed runner
 job is a visible failure; do not claim the source passed.
+
+## Pages
+
+Resource-owned Code starts with `code.tsx`, a page built from SDK blocks
+(`code_init` returns one). Compose blocks as TSX; never write the page as an
+object. Data, such as `rows` or chart `data`, is a prop; a block's parts are its
+children: `Field.*` in `Form`, `Option` in `Field.Select`, `Stat` in `Stats`,
+`Column` in `Table`, `Item` in `Detail`. Charts are `Chart.Bar`, `Chart.Line`
+and the other kinds with their data as props; `Chart.Empty` holds a chart's
+place without data. `code_check` reports a wrong prop as a type error and a
+misplaced part as `code_page_child`. Forms and buttons POST to an own route
+(`app.post`), which answers with `c.page(...)` or `c.redirect(path)`.
+
+<!-- code-page-example -->
+```tsx
+import { app, jsx, Page, Stats, Stat, Section, Chart, Table, Column, Form, Field, Option } from "@sdk";
+
+const items = [{ item: "Chair", status: "In repair", count: 2 }, { item: "Lamp", status: "Ready", count: 5 }];
+
+app.get("/", c => c.page(
+  <Page title="Workshop" subtitle="As of 09:40" icon="ti ti-tool" color="blue">
+    <Stats>
+      <Stat label="Received" value={128} delta={{ value: 0.12, better: "up" }} compare={{ label: "Last week", value: 114 }} />
+      <Stat label="Revenue" value={4610} format={{ style: "currency", currency: "EUR" }} />
+    </Stats>
+    <Section title="Today" icon="ti ti-calendar-event" color="blue">
+      <Chart.Bar width="twoThirds" title="Items per status" data={[{ label: "Received", value: 12 }, { label: "Ready", value: 4 }]} />
+      <Form width="third" title="Find an item" action="/find" submit="Find">
+        <Field.Scan name="barcode" label="Barcode" required />
+        <Field.Select name="status" label="Status" value="open">
+          <Option value="open" label="Open" />
+          <Option value="done" label="Done" />
+        </Field.Select>
+      </Form>
+      <Table title="Items" rows={items}>
+        <Column key="item" label="Item" />
+        <Column key="status" label="Status" />
+        <Column key="count" label="Count" />
+      </Table>
+    </Section>
+  </Page>
+));
+app.post("/find", async c => {
+  const form = await c.req.formData();
+  return c.redirect(`/items/${encodeURIComponent(String(form.get("barcode") ?? ""))}`);
+});
+export default app;
+```
 
 Studio HTML apps retain `code_create` and the existing `code_read/write/check`
 inputs with `id`, revision and screenshots. Load `assistant-code-mode` for them.
