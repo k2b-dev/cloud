@@ -48,7 +48,7 @@ afterAll(async () => {
 const app = (page: Page) => page.frameLocator("iframe.studio-app-frame").frameLocator("iframe");
 const ready = (page: Page) => page.waitForFunction(() => globalThis.lazyChartHarness.events.some((event) => event.type === "ready"));
 const counted = "globalThis.__chartLoads=(globalThis.__chartLoads??0)+1;";
-const delayed = `${counted}await new Promise(resolve=>{globalThis.__releaseCharts=resolve});`;
+const delayed = `${counted}document.documentElement.dataset.chartModuleLoading="true";await new Promise(resolve=>{globalThis.__releaseCharts=resolve});`;
 const files = (script: string): AppFiles => ({
   "index.html":
     '<main><h1>Offline report</h1><button id="draw">Draw distributions</button><div id="charts"></div><p id="after">Report notes</p><output id="result"></output></main>',
@@ -102,15 +102,7 @@ for (const width of [1200, 390])
             .evaluate(() => Reflect.get(globalThis, "__chartLoads") ?? 0),
         ).toBe(0);
         await app(page).locator("#draw").click();
-        await app(page)
-          .locator("body")
-          .evaluate(
-            () =>
-              new Promise<void>((resolve) => {
-                const poll = () => (Reflect.get(globalThis, "__releaseCharts") ? resolve() : requestAnimationFrame(poll));
-                poll();
-              }),
-          );
+        await app(page).locator("html[data-chart-module-loading]").waitFor();
         const loading = await boxes(page);
         expect(await app(page).locator('[aria-busy="true"]').count()).toBe(2);
         expect(await app(page).getByRole("status").first().textContent()).toBe("Loading chart …");
@@ -212,15 +204,7 @@ document.querySelector("#charts").innerHTML=cloud.chart({kind:"heatmap",layout:"
     const { page, context, requests } = await open(390, delayed + assets.chartModule, "light", script);
     try {
       await app(page).locator("#draw").click();
-      await app(page)
-        .locator("body")
-        .evaluate(
-          () =>
-            new Promise<void>((resolve) => {
-              const poll = () => (Reflect.get(globalThis, "__releaseCharts") ? resolve() : requestAnimationFrame(poll));
-              poll();
-            }),
-        );
+      await app(page).locator("html[data-chart-module-loading]").waitFor();
       const loading = await boxes(page);
       await release(page);
       await app(page).locator("svg[data-calendar]").waitFor();
@@ -280,15 +264,7 @@ document.querySelector("#draw").addEventListener("click",()=>{void cloud.ai.text
     await page.evaluate(() => {
       Reflect.set(globalThis, "chartSnapshot", globalThis.lazyChartHarness.snapshot());
     });
-    await app(page)
-      .locator("body")
-      .evaluate(
-        () =>
-          new Promise<void>((resolve) => {
-            const poll = () => (Reflect.get(globalThis, "__releaseCharts") ? resolve() : requestAnimationFrame(poll));
-            poll();
-          }),
-      );
+    await app(page).locator("html[data-chart-module-loading]").waitFor();
     await release(page);
     const snapshot = await page.evaluate(() => Reflect.get(globalThis, "chartSnapshot"));
     expect(snapshot).toContain("Delivery days");
