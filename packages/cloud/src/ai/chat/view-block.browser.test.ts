@@ -13,7 +13,7 @@ import { cloudAiViewSummary, parseCloudAiView } from "../view-block";
 // measures the blocks in a browser.
 const ui = resolve(import.meta.dir, "../../../../ui");
 
-const buildHarness = async (): Promise<Map<string, string>> => {
+const buildHarness = async (): Promise<{ assets: Map<string, string>; statsEntry: string }> => {
   const { transformAsync } = await import(Bun.resolveSync("@babel/core", ui));
   const typescript = (await import(Bun.resolveSync("@babel/preset-typescript", ui))).default;
   const solid = (await import(Bun.resolveSync("babel-preset-solid", ui))).default;
@@ -23,6 +23,7 @@ const buildHarness = async (): Promise<Map<string, string>> => {
     // MapView's lazy worker uses import.meta; keep the shared chat harness a module.
     format: "esm",
     splitting: true,
+    metafile: true,
     naming: { entry: "harness.js", chunk: "chunk-[hash].js" },
     conditions: ["browser"],
     plugins: [
@@ -43,7 +44,14 @@ const buildHarness = async (): Promise<Map<string, string>> => {
     ],
   });
   if (!build.success) throw new AggregateError(build.logs, "View block harness build failed");
-  return new Map(await Promise.all(build.outputs.map(async (output) => [basename(output.path), await output.text()] as const)));
+  const statsEntry = Object.entries(build.metafile?.outputs ?? {}).find(([, output]) =>
+    output.entryPoint?.endsWith("/ai/chat/stats-block.tsx"),
+  )?.[0];
+  if (!statsEntry) throw new Error("Loaded stats must have their own lazy browser entry");
+  return {
+    assets: new Map(await Promise.all(build.outputs.map(async (output) => [basename(output.path), await output.text()] as const))),
+    statsEntry: `/${basename(statsEntry)}`,
+  };
 };
 
 const chart = {
@@ -419,7 +427,7 @@ afterEach(() => {
   for (const path of [...held.keys()]) release(path);
 });
 beforeAll(async () => {
-  const [harness, styles] = await Promise.all([
+  const [{ assets: harness, statsEntry }, styles] = await Promise.all([
     buildHarness(),
     Bun.build({ entrypoints: [resolve(import.meta.dir, "../../../../../styles.css")], plugins: [tailwind] }),
   ]);
@@ -428,9 +436,7 @@ beforeAll(async () => {
   const tableModule = [...harness].find(([name, source]) => name !== "harness.js" && source.includes("/ai/chat/table-block.tsx"));
   if (!tableModule) throw new Error("Table controls must have their own lazy browser module");
   tableModulePath = `/${tableModule[0]}`;
-  const statsModule = [...harness].find(([name, source]) => name !== "harness.js" && source.includes("/ai/chat/stats-block.tsx"));
-  if (!statsModule) throw new Error("Loaded stats must have their own lazy browser module");
-  statsModulePath = `/${statsModule[0]}`;
+  statsModulePath = statsEntry;
   server = Bun.serve({
     port: 0,
     hostname: "127.0.0.1",
