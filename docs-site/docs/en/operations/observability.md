@@ -435,6 +435,35 @@ otherwise returns HTTP 409 `setting_unreadable`. After this response, the
 dialog refreshes the warning and replacement choice while keeping the entered
 period.
 
+## Retention and disk space
+
+Core's log-cleanup job runs every five minutes. `logs.retention_days` defaults
+to 30 days. Log deletes commit at most 10,000 rows per batch, renew the worker
+lease after each batch and yield after 30 seconds; the next tick resumes from
+the remaining rows. The same job then runs trace retention, described in
+[Tracing](/en/docs/platform/tracing). Gateway Ops cleans request telemetry in
+batches of the same size, with a 15-second pass budget per table.
+Telemetry statements have a 10-second server timeout and a one-second lock
+timeout; conflicting rows are skipped and retried on a later tick. No table
+rewrite runs automatically.
+
+In **Observability > Jobs**, inspect source `app:logs:cleanup` for logs and
+traces and `gateway:telemetry:cleanup` for request telemetry. Log progress is
+recorded under source `logging`; `complete: false` means the pass yielded with
+work remaining. Check that successive passes reduce the backlog; failed runs
+retain their error. Actual drain rate depends on storage, row size and
+competing traffic.
+
+Normal deletes and autovacuum make freed space reusable inside PostgreSQL; they
+do not usually shrink table files on disk. After clearing a large historical
+backlog, an operator can plan `VACUUM FULL logging.trace_spans` (and the affected
+event/log tables) during a maintenance window. It rewrites the table, needs
+additional disk space and takes an exclusive table lock that blocks reads and
+writes. `pg_repack` is an optional online alternative with its own prerequisites,
+extra space requirements and brief exclusive-lock phases. Verify those limits,
+backups and the available disk budget before either operation. Cloud never
+starts either operation automatically.
+
 ## Query budgets on large installations
 
 Retained log and trace totals are PostgreSQL row estimates, refreshed by

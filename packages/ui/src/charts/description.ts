@@ -28,6 +28,15 @@ type Series<N> = { label?: string; data: { x: N | string; y: N }[]; role?: "refe
 type Common = { title: string; subtitle?: string; tooltip?: { label?: string; format?: ChartNumberFormat } };
 type Variants<N> =
   | {
+      kind: "area";
+      layout: "stacked";
+      normalize?: boolean;
+      x: (number | string)[];
+      series: { label: string; data: (number | null)[] }[];
+      legend?: boolean;
+      format?: ChartNumberFormat;
+    }
+  | {
       kind: "bar";
       data: { label: string; value: N }[];
       xAxis?: Pick<ChartDescriptionAxis, "label">;
