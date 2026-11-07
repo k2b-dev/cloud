@@ -188,37 +188,57 @@ test("a failed rare import stays in its box and retries offline", async () => {
   }
 });
 
-test("calendar heatmaps load offline with stable phone geometry and their newest week visible", async () => {
-  const script = `document.querySelector("#draw").addEventListener("click",()=>{
-document.querySelector("#charts").innerHTML=cloud.chart({kind:"heatmap",layout:"calendar",title:"Deliveries",scale:"sequential",data:[["2026-01-01",1],["2026-12-31",2]]});
+for (const fixture of [
+  {
+    name: "year",
+    data: [
+      ["2026-01-01", 1],
+      ["2026-12-31", 2],
+    ],
+  },
+  {
+    name: "week",
+    data: [
+      ["2026-11-02", 1],
+      ["2026-11-03", 2],
+    ],
+  },
+  { name: "empty", data: [] },
+])
+  test(`calendar heatmaps load offline with stable phone geometry: ${fixture.name}`, async () => {
+    const script = `document.querySelector("#draw").addEventListener("click",()=>{
+document.querySelector("#charts").innerHTML=cloud.chart({kind:"heatmap",layout:"calendar",title:"Deliveries",scale:"sequential",data:${JSON.stringify(fixture.data)}});
 });`;
-  const { page, context, requests } = await open(390, delayed + assets.chartModule, "light", script);
-  try {
-    await app(page).locator("#draw").click();
-    await app(page)
-      .locator("body")
-      .evaluate(
-        () =>
-          new Promise<void>((resolve) => {
-            const poll = () => (Reflect.get(globalThis, "__releaseCharts") ? resolve() : requestAnimationFrame(poll));
-            poll();
-          }),
-      );
-    const loading = await boxes(page);
-    await release(page);
-    await app(page).locator("svg[data-calendar]").waitFor();
-    expect(await boxes(page)).toEqual(loading);
-    const chart = app(page).locator('[data-chart-kind="heatmap"]');
-    expect(await chart.evaluate((element) => element.scrollLeft)).toBeGreaterThan(0);
-    await chart.focus();
-    await chart.press("End");
-    await chart.locator(".k2b-chart__tooltip").waitFor();
-    expect(await chart.locator(".k2b-chart__tooltip").textContent()).toContain("2026");
-    expect(requests).toEqual([]);
-  } finally {
-    await context.close();
-  }
-});
+    const { page, context, requests } = await open(390, delayed + assets.chartModule, "light", script);
+    try {
+      await app(page).locator("#draw").click();
+      await app(page)
+        .locator("body")
+        .evaluate(
+          () =>
+            new Promise<void>((resolve) => {
+              const poll = () => (Reflect.get(globalThis, "__releaseCharts") ? resolve() : requestAnimationFrame(poll));
+              poll();
+            }),
+        );
+      const loading = await boxes(page);
+      await release(page);
+      await app(page).locator("svg[data-calendar]").waitFor();
+      expect(await boxes(page)).toEqual(loading);
+      const chart = app(page).locator('[data-chart-kind="heatmap"]');
+      if (fixture.name === "year") expect(await chart.evaluate((element) => element.scrollLeft)).toBeGreaterThan(0);
+      else expect(await chart.evaluate((element) => element.scrollLeft)).toBe(0);
+      if (fixture.data.length) {
+        await chart.focus();
+        await chart.press("End");
+        await chart.locator(".k2b-chart__tooltip").waitFor();
+        expect(await chart.locator(".k2b-chart__tooltip").textContent()).toContain("2026");
+      }
+      expect(requests).toEqual([]);
+    } finally {
+      await context.close();
+    }
+  });
 
 test("ready, snapshots and PDFs include rare drawings; stale placeholders are not repainted", async () => {
   const script = `document.querySelector("#charts").innerHTML=cloud.chart(${histogram});

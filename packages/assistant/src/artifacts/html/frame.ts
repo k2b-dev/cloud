@@ -12,7 +12,15 @@ import { createBridge } from "../runtime/bridge";
 import { configureChartModule, loadChartRenderer } from "../runtime/chart-renderers-frame";
 import { createCloud } from "../runtime/cloud";
 import { CloudError } from "../runtime/errors";
-import { chartLoading, chartMarkup, chartOptions, chartSvg, isAppChartKind, pendingChartOptions } from "../runtime/lib";
+import {
+  chartLoading,
+  chartMarkup,
+  chartOptions,
+  chartSvg,
+  isAppChartKind,
+  pendingCalendarWidth,
+  pendingChartOptions,
+} from "../runtime/lib";
 import { ensureRandomUuid } from "../runtime/random-uuid";
 import { moduleSpecifiers } from "./imports";
 import type { FrameConfig, FrameLogLevel, FrameToHost, HostToFrame } from "./protocol";
@@ -332,12 +340,10 @@ async function paintChart(element: HTMLElement) {
   element.innerHTML = chartLoading(config.context.locale);
   element.setAttribute("aria-busy", "true");
   try {
-    await loadChartRenderer();
-    if (!element.isConnected) return;
     const options = pendingChartOptions.get(element.dataset.chartPending ?? "");
     if (!options) throw new Error("The chart expired. Draw it again.");
     const measure = element.hasAttribute("data-chart-measure");
-    const width =
+    const widthAt = () =>
       (measure &&
         Math.round(
           options.input.kind === "heatmap" && options.input.layout === "calendar"
@@ -347,6 +353,15 @@ async function paintChart(element: HTMLElement) {
       Number.parseFloat(element.style.getPropertyValue("--k2b-chart-width")) ||
       480;
     const height = Number.parseFloat(element.style.getPropertyValue("--k2b-chart-height")) || 280;
+    if (measure && options.input.kind === "heatmap" && options.input.layout === "calendar") {
+      const reservedWidth = pendingCalendarWidth(options, config.context.locale, widthAt(), height);
+      element.style.width = element.style.minWidth = `${reservedWidth}px`;
+      element.style.aspectRatio = `${reservedWidth}/${height}`;
+      element.style.setProperty("--k2b-chart-width", `${reservedWidth}px`);
+    }
+    await loadChartRenderer();
+    if (!element.isConnected) return;
+    const width = widthAt();
     const markup = chartMarkup(options, config.context.locale, width, height, measure);
     if (markup.includes("data-chart-pending=")) throw new Error("The chart module does not support this chart kind.");
     const fragment = document.createRange().createContextualFragment(String(markup));

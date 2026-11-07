@@ -227,11 +227,7 @@ export function chartMarkup(prepared: StoredChart, locale: string, width: number
   const calendar = input.kind === "heatmap" && input.layout === "calendar";
   // Only sizing stays eager; the calendar renderer itself belongs to the offline module.
   let calendarWidth = calendar ? Number(/data-chart-min-width="([\d.]+)"/.exec(svg ?? "")?.[1]) || width : width;
-  if (calendar && svg === undefined) {
-    const mapped = cloudAiChartRenderOptions(input, locale, { width });
-    if (mapped.kind === "heatmap" && mapped.layout === "calendar")
-      calendarWidth = calendarLayout({ ...mapped, width, height, title: prepared.title, subtitle: input.subtitle }).width;
-  }
+  if (calendar && svg === undefined) calendarWidth = pendingCalendarWidth(prepared, locale, width, height);
   const stretch = !calendar && !KEEP_ASPECT.has(input.kind);
   const title = prepared.title ?? "";
   const subtitle = input.subtitle ?? "";
@@ -257,6 +253,14 @@ export function chartMarkup(prepared: StoredChart, locale: string, width: number
   return new Html(
     `<div class="k2b-chart" data-chart-kind="${input.kind}"${calendar ? ' style="overflow-x:auto"' : ""}${label}><div class="k2b-chart__svg"${stretch ? " data-stretch" : ""}${id ? ` data-chart-id="${id}"` : ""}${svg === undefined ? ` data-chart-pending="${id}"${(stretch || calendar) && measure ? " data-chart-measure" : ""} aria-busy="true"` : ""} style="${calendar ? `min-width:${calendarWidth}px;width:${calendarWidth}px;` : ""}${svg === undefined ? `aspect-ratio:${calendarWidth}/${drawnHeight};` : ""}--k2b-chart-width:${calendarWidth}px;--k2b-chart-height:${drawnHeight}px">${svg ?? chartLoading(locale)}</div></div>${values}`,
   );
+}
+
+/** Reserve calendar scrolling geometry before its renderer arrives, including at a measured frame width. */
+export function pendingCalendarWidth(prepared: StoredChart, locale: string, width: number, height: number): number {
+  const mapped = cloudAiChartRenderOptions(prepared.input, locale, { width });
+  return mapped.kind === "heatmap" && mapped.layout === "calendar"
+    ? calendarLayout({ ...mapped, width, height, title: prepared.title, subtitle: prepared.input.subtitle }).width
+    : width;
 }
 
 /** Frame loading/error states share the chart's existing fixed content box. */
