@@ -250,6 +250,16 @@ describe("model chooser in the composer", () => {
     await page.close();
   });
 
+  test("a retry that fails again gives the focus back to Try again", async () => {
+    const page = await open(1440, "?state=error&retry=fail");
+    await page.click(".ai-model-chip");
+    await page.keyboard.press("Enter");
+    await page.waitForSelector("body[data-retried=true]");
+    await page.waitForFunction(() => document.activeElement?.textContent?.includes("Erneut versuchen"));
+    expect(await page.locator('.k2b-anchored-popover [data-ai-model-card="error"]').count()).toBe(1);
+    await page.close();
+  });
+
   test("without a host that reloads the models, Try again loads the page again", async () => {
     const page = await open(1440, "?state=error&retry=default");
     await page.click(".ai-model-chip");

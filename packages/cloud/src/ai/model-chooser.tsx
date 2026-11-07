@@ -153,13 +153,23 @@ export function AiModelChooser(props: {
   createEffect(() => {
     if (props.locked) untrack(close);
   });
-  // Models that arrive while the card is open, after "Try again", take the focus the gone retry button had.
+  // After "Try again" the retry button waits or goes away; the focus moves on to the slider, back to the retry button
+  // when the load failed again, or to the card's first control.
   const status = createMemo(() => props.state.status);
   createEffect(
     on(
       status,
       (next) => {
-        if (next === "ready" && untrack(anchor)) queueMicrotask(() => document.getElementById(sliderId)?.focus());
+        if (next === "loading" || !untrack(anchor)) return;
+        queueMicrotask(() => {
+          const card = document.getElementById(cardId);
+          const target =
+            document.getElementById(sliderId) ??
+            document.getElementById(retryId) ??
+            card?.querySelector<HTMLElement>("button:not(:disabled), [tabindex]:not([tabindex='-1'])") ??
+            card;
+          target?.focus();
+        });
       },
       { defer: true },
     ),
@@ -177,6 +187,7 @@ export function AiModelChooser(props: {
   };
   const listId = `${sliderId}-list`;
   const retryId = `${sliderId}-retry`;
+  const cardId = `${sliderId}-card`;
   /** On a phone the card is a bottom sheet: 44 px buttons and the large slider. */
   const cardSize = () => (typeof matchMedia === "function" && matchMedia("(max-width: 47.999rem)").matches ? "lg" : "md");
   /** Without a host that reloads the models, a new page load reads them again; the page owns them. */
@@ -437,7 +448,9 @@ export function AiModelChooser(props: {
           }
         >
           <div
-            class="px-3.5 pt-3 pb-4"
+            id={cardId}
+            tabIndex={-1}
+            class="px-3.5 pt-3 pb-4 outline-none"
             role="group"
             aria-label={t().chooseModel}
             onKeyDown={(event) => {

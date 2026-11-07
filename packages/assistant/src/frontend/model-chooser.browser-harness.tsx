@@ -113,7 +113,11 @@ render(() => {
       ? undefined
       : () => {
           setChooserState({ status: "loading" });
-          setTimeout(() => setChooserState({ status: "ready", models }), 50);
+          // `?retry=fail` fails again, like a server that is still down.
+          setTimeout(() => {
+            setChooserState(params.get("retry") === "fail" ? { status: "error" } : { status: "ready", models });
+            document.body.dataset.retried = "true";
+          }, 50);
         };
   const [value, setValue] = createSignal(initial());
   const [draft, setDraft] = createSignal(params.get("draft") ?? "");
