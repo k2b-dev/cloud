@@ -158,8 +158,8 @@
   --k2b-edge-selected-hover-fill: 14%;
   /* The 1 px border of secondary buttons: light in every state. */
   --k2b-control-border-soft: #c8c8d0;
-  /* The resting rail of a slider: at least 3:1 on the surface, so the track reads as one. */
-  --k2b-rail: #8e8e98;
+  /* The resting rail of a slider: at least 3:1 on every surface, muted included, so the track reads as one. */
+  --k2b-rail: #8a8a94;
   --k2b-rail-hover: var(--k2b-neutral-500);
   /* The grey track of a segmented control, and an option hovered on it. */
   --k2b-tray: #ececef;

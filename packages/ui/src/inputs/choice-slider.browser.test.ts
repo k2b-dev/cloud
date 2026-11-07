@@ -118,7 +118,9 @@ for (const size of ["md", "lg"] as const) {
       );
       expect(thumbFill).not.toBe("rgb(255, 255, 255)");
       // A pointer drag focuses the track without the keyboard focus ring.
-      expect(await track(page, `${size}-normal`).evaluate((element) => element.matches(":focus-visible"))).toBe(false);
+      expect(
+        await track(page, `${size}-normal`).evaluate((element) => [document.activeElement === element, element.matches(":focus-visible")]),
+      ).toEqual([true, false]);
       expect(await boxes(page, `${size}-normal`)).toEqual(before);
       await page.mouse.up();
       expect(await track(page, `${size}-normal`).getAttribute("data-dragging")).toBeNull();
@@ -156,6 +158,14 @@ for (const theme of ["light", "dark"] as const)
         return {
           rail: style(".k2b-choice-slider__rail").backgroundColor,
           surface: getComputedStyle(element.querySelector(".k2b-choice-slider__stop:not([data-on])")!).backgroundColor,
+          // Every surface a slider may sit on, read through a probe so the theme resolves the tokens.
+          surfaces: ["--k2b-surface", "--k2b-surface-muted", "--k2b-surface-elevated", "--k2b-surface-canvas"].map((token) => {
+            const probe = document.body.appendChild(document.createElement("div"));
+            probe.style.background = `var(${token})`;
+            const colour = getComputedStyle(probe).backgroundColor;
+            probe.remove();
+            return colour;
+          }),
           thumb: style(".k2b-choice-slider__thumb").backgroundColor,
           edge: style(".k2b-choice-slider__thumb").boxShadow,
           fill: style(".k2b-choice-slider__fill").backgroundColor,
@@ -170,8 +180,11 @@ for (const theme of ["light", "dark"] as const)
       };
       const channels = (colour: string) => colour.match(/\d+/g)!.slice(0, 3).map(Number);
       const rail = luminance(channels(colours.rail));
-      const surface = luminance(channels(colours.surface));
-      expect((Math.max(rail, surface) + 0.05) / (Math.min(rail, surface) + 0.05)).toBeGreaterThanOrEqual(3);
+      const contrast = (colour: string) => {
+        const surface = luminance(channels(colour));
+        return (Math.max(rail, surface) + 0.05) / (Math.min(rail, surface) + 0.05);
+      };
+      expect(colours.surfaces.map(contrast).every((ratio) => ratio >= 3)).toBe(true);
       // The thumb takes the surface colour (white in light mode), like the stops on the grey rail.
       expect(colours.thumb).toBe(colours.surface);
       if (theme === "light") expect(colours.thumb).toBe("rgb(255, 255, 255)");
