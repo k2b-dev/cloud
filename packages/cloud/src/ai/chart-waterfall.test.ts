@@ -16,6 +16,6 @@ test("the Chat parse path accepts a waterfall and preserves its running balances
   const input = parseCloudAiChartToolView(spec);
   expect(input?.view).toBe("chart");
   if (input?.view !== "chart" || input.kind !== "waterfall") throw new Error("Expected waterfall");
-  expect(cloudAiChartTable(input, "en").rows.map((r) => r.values.to)).toEqual([100, 170, 140, 140]);
+  expect(cloudAiChartTable(input, "en").rows.map((r) => r.values.after ?? r.values.balance)).toEqual([100, 170, 140, 140]);
   expect(parseCloudAiChartToolView({ ...spec, steps: [{ label: "Unknown", value: null }] })).toBeUndefined();
 });
