@@ -75,15 +75,27 @@ test("real shared-engine run preserves slots, shows remaining time, copies JSON 
       await page.clock.runFor(14_000);
       expect(await page.locator(".tools-speedtest").getAttribute("data-state")).toBe("done");
       expect(await geometry(page)).toEqual(initial);
+      const gaugeFonts = await page.locator(".tools-speedtest-gauge").evaluate((element) =>
+        [...element.querySelectorAll<SVGTextElement>("text")].map((text) => ({
+          value: text.classList.contains("stdlib-chart-gauge-value"),
+          pixels: parseFloat(getComputedStyle(text).fontSize) * (text.getScreenCTM()?.a ?? 0),
+        })),
+      );
+      expect(gaugeFonts.every((font) => font.pixels >= (font.value ? 48 : 12))).toBe(true);
+      expect(await page.locator(".stdlib-chart-gauge-unit").first().textContent()).toBe("0");
       await page.getByRole("button", { name: "--json", exact: true }).click();
       expect(await page.locator(".tools-speedtest-terminal").textContent()).toContain('"loaded_latency_ms"');
       expect(await page.getByRole("button", { name: "Ergebnis kopieren", exact: true }).isEnabled()).toBe(true);
+      await page.getByRole("button", { name: "Fortschritt", exact: true }).click();
       await page.getByRole("button", { name: "Erneut testen", exact: true }).click();
       await page.clock.runFor(250);
       await page.getByRole("button", { name: "Stoppen", exact: true }).click();
       await page.clock.runFor(250);
       expect(await page.locator(".tools-speedtest").getAttribute("data-state")).toBe("cancelled");
       expect(await geometry(page)).toEqual(initial);
+      expect(await page.locator(".k2b-stat-cell__value").first().textContent()).toBe("—");
+      expect(await page.locator(".tools-speedtest-terminal").textContent()).toContain("Download: — Mbit/s");
+      expect(await page.locator(".tools-speedtest-gauge").getAttribute("data-empty")).toBe("true");
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
     } finally {
       await page.close();
@@ -103,8 +115,13 @@ test("offline, disabled, network retry and 429 keep feedback visible and control
       if (["offline", "disabled", "429"].includes(scenario)) expect(await button.isDisabled()).toBe(true);
       else expect(await button.isEnabled()).toBe(true);
       if (scenario === "429") {
+        expect(await page.locator(".tools-speedtest-chart .k2b-chart__empty").count()).toBe(1);
+        expect(await page.locator(".k2b-stat-cell__value").first().textContent()).toBe("—");
         await page.clock.runFor(3_000);
         expect(await button.isEnabled()).toBe(true);
+      }
+      if (scenario === "disabled" || scenario === "offline") {
+        expect(await page.locator(".tools-speedtest-terminal").textContent()).not.toContain("Bereit zur Messung");
       }
       if (scenario === "retry") {
         await button.click();

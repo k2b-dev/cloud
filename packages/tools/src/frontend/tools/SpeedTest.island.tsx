@@ -21,6 +21,7 @@ export default function SpeedTest(props: { server?: string; enabled?: boolean })
   const t = () => speedTestMessages.resolve([locale()]).t;
   const server = () => props.server ?? DEFAULT_SERVER;
   const [mode, setMode] = createSignal<Mode>("quick");
+  const [gaugeMax, setGaugeMax] = createSignal(100);
   const [state, setState] = createSignal<State>("idle");
   const [online, setOnline] = createSignal(true);
   const [progress, setProgress] = createSignal<Progress>();
@@ -55,6 +56,7 @@ export default function SpeedTest(props: { server?: string; enabled?: boolean })
     cancelled: t().phaseCancelled,
     error: t().phaseError,
   });
+  const phaseLabel = () => (disabled() ? t().phaseDisabled : !online() ? t().phaseOffline : labels()[state()]);
   const errorMessage = () => {
     const value = error();
     if (value instanceof SpeedtestError) {
@@ -96,14 +98,30 @@ export default function SpeedTest(props: { server?: string; enabled?: boolean })
       `Download: ${formatSpeedTestReading(download(), locale())} Mbit/s`,
       `Upload:   ${formatSpeedTestReading(upload(), locale())} Mbit/s`,
       `${t().loaded}: ${formatSpeedTestReading(p?.loaded_latency_ms ?? null, locale())} ms`,
-      `${labels()[state()]} · ${running() ? t().remaining({ seconds: remaining() }) : status()}`,
+      `${phaseLabel()} · ${running() ? t().remaining({ seconds: remaining() }) : status()}`,
     ].join("\n");
   });
+  const clearIncomplete = () => {
+    if (!completed().includes("download")) {
+      setDownload(null);
+      setDownloadHistory([]);
+      setDownloadRamp([]);
+    }
+    if (!completed().includes("upload")) {
+      setUpload(null);
+      setUploadHistory([]);
+      setUploadRamp([]);
+    }
+  };
   const stop = () => {
     controller?.abort();
-    setState("cancelled");
+    batch(() => {
+      clearIncomplete();
+      setState("cancelled");
+    });
   };
   const update = (event: Progress) => {
+    if (controller?.signal.aborted) return;
     batch(() => {
       setProgress(event);
       setState(event.phase);
@@ -112,7 +130,12 @@ export default function SpeedTest(props: { server?: string; enabled?: boolean })
         phaseStart = event.elapsed_ms;
       }
       if (event.phase_complete) setCompleted((items) => [...items, event.phase]);
-      if (event.phase === "ping") return;
+      const value = event.phase === "ping" ? (event.ping_ms ?? 0) : event.mbps;
+      if (value > gaugeMax()) {
+        const magnitude = 10 ** Math.floor(Math.log10(value));
+        setGaugeMax([1, 2.5, 5, 10].map((step) => magnitude * step).find((limit) => limit >= value) ?? magnitude * 10);
+      }
+      if (event.phase === "ping" || event.bytes === 0) return;
       (event.phase === "download" ? setDownload : setUpload)(event.mbps);
       const sample = { x: event.elapsed_ms / 1_000, y: event.mbps };
       if (!event.phase_complete && event.elapsed_ms - phaseStart < PLANS[mode()].warmup)
@@ -126,6 +149,7 @@ export default function SpeedTest(props: { server?: string; enabled?: boolean })
     const current = controller;
     batch(() => {
       setCopyFailed(false);
+      setGaugeMax(100);
       setError(undefined);
       setRetryAt(0);
       setResult(undefined);
@@ -157,6 +181,7 @@ export default function SpeedTest(props: { server?: string; enabled?: boolean })
       });
     } catch (value) {
       if (controller !== current) return;
+      clearIncomplete();
       if (current.signal.aborted) setState("cancelled");
       else {
         batch(() => {
@@ -195,7 +220,7 @@ export default function SpeedTest(props: { server?: string; enabled?: boolean })
     <div class="tools-speedtest" data-state={disabled() ? "disabled" : !online() ? "offline" : state()}>
       <div class="tools-speedtest-server text-sm text-dimmed">
         <span>
-          {t().server}: <strong class="text-primary break-all">{server()}</strong>
+          {t().server}: <strong class="text-primary inline-block max-w-full break-all">{server()}</strong>
         </span>
         <p>{t().dataNotice}</p>
       </div>
@@ -211,13 +236,13 @@ export default function SpeedTest(props: { server?: string; enabled?: boolean })
               { value: "accurate", label: t().accurate },
             ]}
           />
-          <div class="tools-speedtest-gauge">
+          <div class="tools-speedtest-gauge" data-empty={reading() === null}>
             <Chart
               kind="gauge"
               value={reading() ?? 0}
-              max={Math.max(100, 10 ** Math.ceil(Math.log10(Math.max(1, reading() ?? 0))))}
-              format={(value) => formatSpeedTestReading(reading() === null && value === 0 ? null : value, locale())}
-              label={`${labels()[state()]}${state() === "done" ? " · Download" : ""} · ${state() === "ping" ? "ms" : "Mbit/s"}`}
+              max={gaugeMax()}
+              format={(value) => formatSpeedTestReading(value, locale())}
+              label={reading() === null ? t().pending : state() === "ping" ? "ms" : state() === "done" ? "Download · Mbit/s" : "Mbit/s"}
             />
           </div>
           <ol class="tools-speedtest-phases" aria-label={t().progress}>
@@ -248,7 +273,7 @@ export default function SpeedTest(props: { server?: string; enabled?: boolean })
               valueText={t().remaining({ seconds: remaining() })}
             />
             <div class="flex justify-between text-xs text-dimmed tabular-nums">
-              <span>{labels()[state()]}</span>
+              <span>{phaseLabel()}</span>
               <span>{running() ? t().remaining({ seconds: remaining() }) : `${totalCap() / 1_000} s`}</span>
             </div>
           </div>
