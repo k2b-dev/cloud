@@ -130,6 +130,7 @@ for (const width of [1440, 390]) {
     await page.keyboard.press("End");
     expect(await earlyEnding.locator("[data-chart-legend-value]").nth(1).textContent()).toBe("—");
     await page.keyboard.press("Escape");
+    await settled(page);
     const before = await documentBox(page, ".snapshot");
     const viewportBefore = await documentBox(page, ".snapshot .k2b-chart-explorer__viewport");
     const plot = await chart.locator(".k2b-chart__svg").boundingBox();

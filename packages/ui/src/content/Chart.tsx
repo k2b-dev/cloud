@@ -453,7 +453,7 @@ const ChartRoot = (props: ChartProps): JSX.Element => {
       if (selection.kind === "line" && props.kind === "line") {
         const x = selection.datum.values.find((f) => f.key === "x");
         const value = selection.datum.values.find((f) => f.key === "y");
-        const number = new Intl.NumberFormat(locale(), { maximumFractionDigits: 6 }).format;
+        const number = new Intl.NumberFormat(props.locale ?? locale(), { maximumFractionDigits: 6 }).format;
         return {
           title: x?.formatted ?? (typeof x?.value === "number" ? number(x.value) : x?.value),
           rows: [
@@ -463,7 +463,10 @@ const ChartRoot = (props: ChartProps): JSX.Element => {
             },
             ...selection.datum.values
               .filter((f) => f.key === "forecastLow" || f.key === "forecastHigh")
-              .map((field) => ({ label: fields({ key: field.key }), value: field.formatted ?? String(field.value) })),
+              .map((field) => ({
+                label: fields({ key: field.key }),
+                value: field.formatted ?? (typeof field.value === "number" ? number(field.value) : field.value),
+              })),
           ],
         };
       }

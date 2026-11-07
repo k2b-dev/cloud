@@ -169,3 +169,20 @@ test("an explicit line locale takes precedence over the inherited render locale"
   );
   expect(svg).toContain('data-default="2,5"');
 });
+
+test("log axes reject annotations and forecast bounds outside their positive domain", () => {
+  const series = [
+    {
+      data: [
+        { x: 1, y: 2 },
+        { x: 2, y: 3 },
+      ],
+    },
+  ];
+  expect(() => line({ series, yAxis: { scale: "log" }, threshold: { value: 0, label: "Reserve" } })).toThrow(RangeError);
+  expect(() => line({ series, xAxis: { scale: "log" }, marker: { at: 0, label: "Today" } })).toThrow(RangeError);
+  expect(() => line({ series, yAxis: { scale: "log" }, forecast: { from: 2, band: [[0, 4]] } })).toThrow(RangeError);
+  expect(line({ series, xAxis: { scale: "log" }, yAxis: { scale: "log" }, forecast: { from: 2, band: [[1, 4]] } })).not.toMatch(
+    /NaN|Infinity/,
+  );
+});

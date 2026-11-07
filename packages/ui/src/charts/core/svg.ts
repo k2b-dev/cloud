@@ -1551,13 +1551,16 @@ export const lineForecastLayout = (opts: LineOptions) => {
   if (!opts.forecast) return [];
   const { from, band } = opts.forecast;
   const points = [...(opts.series[0]?.data ?? [])].filter((p) => Number.isFinite(p.x)).sort((a, b) => a.x - b.x);
-  if (!Number.isFinite(from) || !points.some((p) => p.x === from))
+  if (!Number.isFinite(from) || (opts.xAxis?.scale === "log" && from <= 0) || !points.some((p) => p.x === from))
     throw new RangeError("Forecast must start at an X value of the first series");
   const suffix = points.filter((p) => p.x >= from);
   if (band && band.length !== suffix.length) throw new RangeError("Forecast band must match the ordered first series suffix");
   return suffix.map((p, index) => {
     const bounds = band?.[index];
-    if (bounds && (bounds.length !== 2 || !bounds.every(Number.isFinite) || bounds[0] > bounds[1]))
+    if (
+      bounds &&
+      (bounds.length !== 2 || !bounds.every(Number.isFinite) || bounds[0] > bounds[1] || (opts.yAxis?.scale === "log" && bounds[0] <= 0))
+    )
       throw new RangeError("Forecast bounds must be finite and ordered");
     return { ...p, source: p, lo: bounds?.[0], hi: bounds?.[1] };
   });
@@ -1568,8 +1571,10 @@ export const line = (opts: LineOptions): string => {
   if (opts.maxGap !== undefined && (!Number.isFinite(opts.maxGap) || opts.maxGap <= 0))
     throw new RangeError("Chart maxGap must be finite and positive");
   if (opts.maxGap !== undefined && (opts.area || opts.errorBand)) throw new Error("Chart maxGap does not support area or errorBand fills");
-  if (opts.threshold && !Number.isFinite(opts.threshold.value)) throw new RangeError("Line threshold must be finite");
-  if (opts.marker && !Number.isFinite(opts.marker.at)) throw new RangeError("Line marker must be finite");
+  if (opts.threshold && !isOnAxis({ scale: opts.yAxis?.scale ?? "linear" }, opts.threshold.value))
+    throw new RangeError("Line threshold must be finite and positive on a log axis");
+  if (opts.marker && !isOnAxis({ scale: opts.xAxis?.scale ?? "linear" }, opts.marker.at))
+    throw new RangeError("Line marker must be finite and positive on a log axis");
   const width = opts.width ?? DEFAULT_WIDTH;
   const height = opts.height ?? DEFAULT_HEIGHT;
   const padding = normalizePadding(opts.padding);
