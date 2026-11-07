@@ -34,6 +34,7 @@
       "packages/proxy-auth",
       "packages/quotes",
       "packages/spaces",
+      "packages/speedtest",
       "packages/ssr",
       "packages/tools",
       "packages/ui",

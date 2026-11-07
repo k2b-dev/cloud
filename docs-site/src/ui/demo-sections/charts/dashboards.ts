@@ -93,8 +93,8 @@ export const newsletterDashboard: ShowcaseDashboard = {
           empty: "No newsletter was sent in this period.",
           spec: {
             kind: "bar",
-            title: "Opens and clicks per month",
-            subtitle: "Share of recipients · one dot is 5 %",
+            title: "Opens and clicks",
+            subtitle: "Per month · one dot is 5 % of recipients",
             x: months,
             layout: "nested",
             marks: "dots",
@@ -116,7 +116,7 @@ export const newsletterDashboard: ShowcaseDashboard = {
           empty: "No revenue through newsletter links yet.",
           spec: {
             kind: "bar",
-            title: "Revenue from the newsletter",
+            title: "Newsletter revenue",
             subtitle: "October against September",
             x: ["1–7", "8–14", "15–21", "22–28", "29–31"],
             series: [{ label: "October", data: [3120, 4380, 3940, 4610, 2370] }],
@@ -139,7 +139,7 @@ export const newsletterDashboard: ShowcaseDashboard = {
           empty: "No campaign was sent in this period.",
           spec: {
             kind: "funnel",
-            title: "From sending to buying",
+            title: "Sending to buying",
             subtitle: "Weekly letter 44",
             data: [
               { label: "Sent", value: 46900 },
@@ -170,7 +170,7 @@ export const newsletterDashboard: ShowcaseDashboard = {
               { id: "buy", label: "Purchase", tone: "in" },
               { id: "wish", label: "Wish list" },
               { id: "signup", label: "Fair sign-up" },
-              { id: "left", label: "Left", tone: "neutral" },
+              { id: "left", label: "Left", tone: "muted" },
             ],
             links: [
               { source: "weekly", target: "products", value: 2600 },
@@ -444,8 +444,8 @@ export const liquidityDashboard: ShowcaseDashboard = {
           empty: "No bookings in October.",
           spec: {
             kind: "waterfall",
-            title: "From the start to the end of the month",
-            subtitle: "Business account · October 2026",
+            title: "October in steps",
+            subtitle: "Business account · start to end of month",
             start: { label: "1 Oct", value: 18800 },
             steps: [
               { label: "Sales", value: 29260 },
@@ -488,21 +488,21 @@ export const liquidityDashboard: ShowcaseDashboard = {
           empty: "No bookings in October.",
           spec: {
             kind: "sankey",
-            title: "Where from and where to",
-            subtitle: "October 2026 · income, spending, levies",
+            title: "In and out",
+            subtitle: "October 2026 · where from and where to",
             nodes: [
               { id: "shop", label: "Shop", tone: "in" },
               { id: "web", label: "Web shop", tone: "in" },
               { id: "fair", label: "Trade fair", tone: "in" },
-              { id: "reserve", label: "From the balance", tone: "neutral" },
+              { id: "reserve", label: "From the balance", tone: "muted" },
               { id: "month", label: "Money in October" },
               { id: "purchasing", label: "Purchasing", tone: "out" },
               { id: "staff", label: "Staff", tone: "out" },
               { id: "rent", label: "Rent", tone: "out" },
               { id: "other", label: "Other", tone: "out" },
               { id: "wages", label: "Net wages", tone: "out" },
-              { id: "tax", label: "Wage tax", tone: "levy" },
-              { id: "social", label: "Social security", tone: "levy" },
+              { id: "tax", label: "Wage tax", tone: "tax" },
+              { id: "social", label: "Social security", tone: "tax" },
             ],
             links: [
               { source: "shop", target: "month", value: 16090 },

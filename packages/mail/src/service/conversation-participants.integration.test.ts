@@ -208,7 +208,10 @@ suite("Mail conversation participants", () => {
   afterAll(async () => {
     if (mailboxId) await sql`DELETE FROM mail.mailboxes WHERE id = ${mailboxId}::uuid`;
     if (agentId) await sql`DELETE FROM auth.service_accounts WHERE id = ${agentId}::uuid`;
-    for (const id of workflowIds) await sql`DELETE FROM workflows.workflow WHERE id = ${id}::uuid`;
+    for (const id of workflowIds) {
+      await sql`DELETE FROM workflows.workflow WHERE id = ${id}::uuid`;
+      await sql`DELETE FROM mail.workflow_source_names WHERE workflow_id = ${id}::uuid`;
+    }
     for (const id of userIds) await sql`DELETE FROM auth.users WHERE id = ${id}::uuid`;
   });
 
@@ -284,5 +287,23 @@ suite("Mail conversation participants", () => {
     const readerView = await listFor(reader);
     expect(readerView.listItems.map((item) => item.conversationId)).toEqual([conversations.assigned]);
     expect(readerView.listItems[0]?.participants).toEqual([{ name: "Anna Roth" }, { name: "Tom Keller", kind: "user" }]);
+  });
+  test("materialized rule names follow renames and survive definition deletion", async () => {
+    const [workflow] = await sql<{ id: string }[]>`INSERT INTO workflows.workflow (app_id, scope_id, key, name, created_by_kind)
+      VALUES ('mail', ${mailboxId}, ${`historical-${suffix}`}, 'Historical writer', 'system') RETURNING id`;
+    workflowIds.push(workflow!.id);
+    const [version] = await sql<{ id: string }[]>`INSERT INTO workflows.version
+      (workflow_id, revision, source, source_hash, plan, language_id, language_version, manifest_hash, created_by_kind)
+      VALUES (${workflow!.id}::uuid, 1, 'source', ${"a".repeat(64)}, '{}', 'test', 1, ${"b".repeat(64)}, 'system') RETURNING id`;
+    const conversationId = await createConversation("Historical author", 7);
+    await addMessage(conversationId, { email: "team@example.test" }, { kind: "workflow", id: version!.id });
+    await sql`UPDATE workflows.workflow SET name = 'Renamed writer', active_version_id = ${version!.id}::uuid
+      WHERE id = ${workflow!.id}::uuid`;
+    const read = () => listConversationParticipants({ context: contextFor(owner), mailboxId, conversationIds: [conversationId] });
+    expect(unwrap(await read()).get(conversationId)).toEqual({ people: [{ name: "Renamed writer", kind: "workflow" }], count: 1 });
+    await sql`DELETE FROM workflows.workflow WHERE id = ${workflow!.id}::uuid`;
+    expect(unwrap(await read()).get(conversationId)).toEqual({ people: [{ name: "Renamed writer", kind: "workflow" }], count: 1 });
+    const [source] = await sql`SELECT workflow_id, name, active FROM mail.workflow_source_names WHERE version_id = ${version!.id}::uuid`;
+    expect(source).toMatchObject({ workflow_id: workflow!.id, name: "Renamed writer", active: false });
   });
 });
