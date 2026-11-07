@@ -45,6 +45,21 @@ test("money in, out and zero carry an arrow and a spoken direction, never a sign
   expect(zero).toContain(", no amount<");
 });
 
+test("a broken amount shows a dash, never a believable zero", () => {
+  for (const value of [Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY]) {
+    const html = flow({ value });
+    expect(html).toContain('data-direction="none"');
+    expect(html).toContain(">—<");
+    expect(html).not.toContain("0,00");
+    expect(html).toContain(", Betrag unbekannt<");
+  }
+});
+
+test("an explicit locale also sets the spoken words", () => {
+  expect(flow({ value: 12, locale: "en-US" }, "de")).toContain(", incoming<");
+  expect(flow({ value: -12, locale: "de-DE" }, "en")).toContain(", Ausgang<");
+});
+
 test("labels, decimals, locale and size are the host's to choose", () => {
   const html = flow({ value: -1204.8, decimals: 0, labels: { out: "Ausgabe" }, size: "lg", locale: "en-US", currency: "USD" });
   expect(html).toContain("$1,205");

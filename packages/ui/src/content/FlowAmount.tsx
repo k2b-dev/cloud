@@ -19,7 +19,7 @@ export type FlowAmountProps = Omit<JSX.HTMLAttributes<HTMLSpanElement>, "childre
   size?: "md" | "lg";
 };
 
-/** The direction a signed amount moves money; `-0` and non-finite amounts move nothing. */
+/** The direction a signed amount moves money; `-0` and non-finite amounts move nothing (non-finite shows "—"). */
 export const flowDirection = (value: number): FlowAmountDirection =>
   !Number.isFinite(value) || value === 0 ? "none" : value > 0 ? "in" : "out";
 
@@ -33,7 +33,8 @@ const ICONS: Record<FlowAmountDirection, string> = { in: "ti-arrow-down-left", o
 export function FlowAmount(props: FlowAmountProps): JSX.Element {
   const [own, rest] = splitProps(props, ["value", "currency", "locale", "decimals", "labels", "size", "class"]);
   const locale = useLocale();
-  const t = useFlowAmountMessages();
+  const t = useFlowAmountMessages(() => own.locale);
+  const valid = () => Number.isFinite(own.value);
   const direction = () => flowDirection(own.value);
   const amount = () => {
     const decimals = own.decimals === undefined ? undefined : Math.min(20, Math.max(0, Math.trunc(own.decimals) || 0));
@@ -41,9 +42,17 @@ export function FlowAmount(props: FlowAmountProps): JSX.Element {
       style: "currency",
       currency: own.currency,
       ...(decimals === undefined ? {} : { minimumFractionDigits: decimals, maximumFractionDigits: decimals }),
-    }).format(Number.isFinite(own.value) ? Math.abs(own.value) : 0);
+    }).format(Math.abs(own.value));
   };
-  const word = () => (direction() === "in" ? (own.labels?.in ?? t().in) : direction() === "out" ? (own.labels?.out ?? t().out) : t().none);
+  // A missing or broken amount never reads as a believable zero: it shows a dash and says it is unknown.
+  const word = () =>
+    !valid()
+      ? t().invalid
+      : direction() === "in"
+        ? (own.labels?.in ?? t().in)
+        : direction() === "out"
+          ? (own.labels?.out ?? t().out)
+          : t().none;
   return (
     <span
       {...rest}
@@ -55,7 +64,7 @@ export function FlowAmount(props: FlowAmountProps): JSX.Element {
       <span class="k2b-flow-amount__arrow" aria-hidden="true">
         <i class={`ti ${ICONS[direction()]}`} />
       </span>
-      {amount()}
+      {valid() ? amount() : "—"}
       <span class="k2b-sr-only">, {word()}</span>
     </span>
   );

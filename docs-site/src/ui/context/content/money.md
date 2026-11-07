@@ -33,8 +33,10 @@ import { FlowAmount, flowDirection, type FlowAmountProps } from "@k2b/ui";
 | `size` | `"md" \| "lg"` | `"md"` | `lg` is the key figure size (24 px, bold). |
 
 `flowDirection(value)` returns `"in"`, `"out"`, or `"none"` with the same
-rule, for hosts that tint a row or pick a chart color. `-0`, `NaN`, and
-infinite values move nothing.
+rule, for hosts that tint a row or pick a chart color. `-0` moves nothing.
+`NaN` and infinite values are no amount: they show "—" and are spoken as
+"amount unknown", never as a believable zero. `locale` sets the number format
+and the spoken words alike.
 
 ## Look
 
