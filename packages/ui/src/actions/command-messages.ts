@@ -9,12 +9,16 @@ const commandMessages = i18n.define({
       back: ({ label }: { label: string }) => `Back from ${label}`,
       running: ({ label }: { label: string }) => `${label} is running`,
       failed: "That did not work.",
+      loading: "Loading",
+      loadFailed: "The entries could not load.",
     },
     de: {
       commands: "Befehle",
       back: ({ label }: { label: string }) => `Zurück aus ${label}`,
       running: ({ label }: { label: string }) => `${label} läuft`,
       failed: "Das hat nicht geklappt.",
+      loading: "Wird geladen",
+      loadFailed: "Die Einträge konnten nicht geladen werden.",
     },
   },
 });

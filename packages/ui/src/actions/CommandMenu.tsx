@@ -2,7 +2,7 @@ import { createEffect, createSignal, createUniqueId, type JSX, on } from "solid-
 import { replaceTextareaRange } from "../inputs/editor-dom";
 import { CommandList, commandListKey, commandOptionId, createCommandNavigator } from "./CommandList";
 import { dockCommandList, followComposer } from "./command-dock";
-import type { CommandSource } from "./command-items";
+import { type CommandSource, commandPlace } from "./command-items";
 import {
   Dropdown,
   type DropdownAnchor,
@@ -64,17 +64,20 @@ function CommandMenuRoot(props: CommandMenuProps): JSX.Element {
         shell.close(!target);
         insert(text);
       },
-      context: (signal) => {
+      context: () => {
         const target = props.target;
+        const value = target?.value ?? "";
+        const start = target?.selectionStart ?? 0;
         return {
-          text: target?.value ?? "",
-          selection: { start: target?.selectionStart ?? 0, end: target?.selectionEnd ?? 0 },
-          insert,
-          signal,
+          ...commandPlace(value, start, start),
+          selection: { start, end: target?.selectionEnd ?? start },
+          insert: (text: string) => insert(text),
         };
       },
-      // An entry that wrote into the target leaves the focus there.
-      afterRun: () => shell.close(!props.target || document.activeElement !== props.target),
+      active: shell.open,
+      // The focus goes back to the trigger only from inside the menu: an entry that wrote into the target, or moved
+      // the focus elsewhere itself, leaves it there.
+      afterRun: () => shell.close(Boolean(input.closest(".k2b-dropdown__menu")?.contains(document.activeElement))),
       onStep: () => setQuery(""),
     });
     /** Writes into the target at its caret, as typing would, or hands the text to `onInsert`. */
@@ -106,7 +109,7 @@ function CommandMenuRoot(props: CommandMenuProps): JSX.Element {
         if (open) {
           // The width it opened with stays its least, so filtering never narrows it.
           queueMicrotask(() => {
-            if (menu?.matches(":popover-open")) menu.style.minWidth = `${menu.getBoundingClientRect().width}px`;
+            if (menu?.matches(":popover-open")) menu.style.minWidth = `min(${menu.getBoundingClientRect().width}px, 100vw - 2rem)`;
           });
           return;
         }
@@ -142,6 +145,8 @@ function CommandMenuRoot(props: CommandMenuProps): JSX.Element {
           enterkeyhint="go"
           placeholder={nav.step()?.next?.label ?? props.search}
           value={query()}
+          // While a command runs, the list waits for it; the query keeps the running entry in view.
+          readOnly={nav.busy()}
           onInput={(event) => setQuery(event.currentTarget.value)}
           onKeyDown={(event) => {
             if (!commandListKey(nav, event, query())) return;

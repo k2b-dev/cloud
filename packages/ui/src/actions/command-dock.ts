@@ -21,7 +21,8 @@ export const dockCommandList = (list: HTMLElement, composer: Element) => {
   list.dataset.docked = above ? "above" : "below";
   list.style.setProperty("width", `${rect.width}px`, "important");
   list.style.setProperty("left", `${rect.left}px`, "important");
-  list.style.setProperty("max-height", `${Math.max(120, Math.min(MOST, above ? roomAbove : roomBelow))}px`, "important");
+  // Never taller than the visible room, so no part of it, such as a search field, ends outside it.
+  list.style.setProperty("max-height", `${Math.max(0, Math.min(MOST, above ? roomAbove : roomBelow))}px`, "important");
   list.style.setProperty("top", above ? "auto" : `${rect.bottom + GAP}px`, "important");
   list.style.setProperty("bottom", above ? `${window.innerHeight - rect.top + GAP}px` : "auto", "important");
 };

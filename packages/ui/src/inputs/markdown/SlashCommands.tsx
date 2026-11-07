@@ -1,7 +1,7 @@
 import { createEffect, createMemo, createSignal, type JSX, onCleanup, onMount, Show } from "solid-js";
 import { CommandList, commandListKey, commandOptionId, createCommandNavigator } from "../../actions/CommandList";
 import { dockCommandList, followComposer } from "../../actions/command-dock";
-import type { CommandSource } from "../../actions/command-items";
+import { type CommandSource, commandPlace } from "../../actions/command-items";
 import { useCommandMessages } from "../../actions/command-messages";
 import { type Completion, detectQuery, type QueryContext } from "../completion";
 import { isInCodeZone } from "./code-zone";
@@ -76,10 +76,12 @@ function AttachedCommands(props: { textarea: HTMLTextAreaElement; items: Command
     items: () => props.items,
     query: () => context()?.query ?? held()?.query ?? "",
     onText: (item) => {
+      // After a command failed, the held list has no `/query` left; a snippet goes where it stood.
       const current = context();
-      if (!current) return;
+      const start = current?.start ?? held()?.start;
+      if (start === undefined) return;
       close();
-      edit(current.start, current.end, item.text ?? "");
+      edit(start, current?.end ?? start, item.text ?? "");
     },
     beforeRun: () => {
       const current = context();
@@ -89,13 +91,19 @@ function AttachedCommands(props: { textarea: HTMLTextAreaElement; items: Command
       setContext(null);
       edit(current.start, current.end, "");
     },
-    context: (signal) => ({
-      text: textarea.value,
-      selection: { start: textarea.selectionStart, end: textarea.selectionEnd },
-      insert: (text) => edit(textarea.selectionStart, textarea.selectionEnd, text),
-      signal,
-    }),
+    // While the `/query` is in the text, the context leaves it out; once a command removed it, the text is as it is.
+    context: () => {
+      const current = context();
+      const start = current?.start ?? held()?.start ?? textarea.selectionStart;
+      const place = commandPlace(textarea.value, start, current?.end ?? start);
+      return {
+        ...place,
+        selection: current ? { start, end: start } : { start: textarea.selectionStart, end: textarea.selectionEnd },
+        insert: (text: string) => edit(textarea.selectionStart, textarea.selectionEnd, text),
+      };
+    },
     afterRun: () => close(),
+    active: () => context() !== null || held() !== undefined,
     // A second list starts with an empty query: the typed word gives way to the bare `/`.
     onStep: () => {
       const current = context();
@@ -103,7 +111,12 @@ function AttachedCommands(props: { textarea: HTMLTextAreaElement; items: Command
       if (current && current.text !== "/") replace(textarea, current.start, current.end, "/");
     },
   });
-  const open = createMemo(() => held() !== undefined || (context() !== null && (nav.step() !== undefined || nav.entries().length > 0)));
+  // Entries on their way, or a list that could not load, show too, so the person sees what happens.
+  const open = createMemo(
+    () =>
+      held() !== undefined ||
+      (context() !== null && (nav.step() !== undefined || nav.entries().length > 0 || nav.load().state !== "ready")),
+  );
   const close = () => {
     setContext(null);
     setHeld(undefined);

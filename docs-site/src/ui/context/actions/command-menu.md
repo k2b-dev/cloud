@@ -43,26 +43,50 @@ Further fields:
 | `disabled` | A one-line reason. The entry stays in the list, greyed, with the reason in the description's place, and cannot be chosen. |
 | `id` | Stable key, only when two entries share group and label. |
 
-`items` of the menu and of a second list is a list, or a function `(query) => CommandItem[]` for a list the
-application filters itself, such as a person search.
+`items` of the menu and of every further list, as deep as needed, is a list or a function of the
+[context](#context) that decides which entries there are in this place, at once or as a promise. Either way the list
+filters the entries by the query; give server matches the words they matched on as `keywords`.
 
 ## Context
 
-`onSelect` receives one `CommandContext`, in the editor and in the menu:
+One `CommandContext` reaches the entries of every level, when `items` is a function, and every `onSelect`:
 
 | Field | In `SlashCommands` | In `CommandMenu` |
 | --- | --- | --- |
+| `query` | What was typed after `/` | What is in the search field |
 | `text` | The editor's text, without the typed `/query` | The text of its `target`, or empty without one |
-| `selection` | `{ start, end }` in that text; `start === end` is the caret | The same in `target`, or `{ start: 0, end: 0 }` |
+| `before` | The text before the slash | The text before the caret in `target` |
+| `atStart` | The slash is the first character of the text, leading whitespace aside | The caret is, in `target` |
+| `lineStart` | The slash starts a line, leading whitespace aside | The caret does |
+| `selection` | `{ start, end }` in `text`; `start === end` is the caret | The same in `target`, or `{ start: 0, end: 0 }` |
+| `path` | The entries chosen so far, such as `[assign, person]` on the third level | The same |
 | `insert(text)` | Puts text at the caret in place of the selection, as typing would, so undo keeps working | Writes into `target` the same way, or hands the text to `onInsert` |
-| `signal` | Aborts when the person closes the list with <kbd>Esc</kbd> before a returned promise settled | The same, also when the menu closes otherwise |
+| `signal` | Aborts when a new query replaces a pending list, or when <kbd>Esc</kbd> stops a running command | The same, also when the menu closes |
+
+`/` opens the list at the start of a line or after a space anywhere in the text; the application decides from the
+context what it offers where:
+
+```tsx
+// Templates only where the slash starts the text; actions everywhere.
+const commands = ({ atStart }: CommandContext) => (atStart ? [...templates, ...actions] : actions);
+```
+
+### Entries on their way
+
+A function may return a promise, such as people from a server search. While it is pending, the previous entries stay
+in place and one row at the end says that entries are loading. A new query aborts the previous request's `signal`, and
+its late answer is dropped. A rejection shows one row with the error's message and Retry; <kbd>Enter</kbd> retries too.
+Nothing moves the composer, and the list keeps its width.
+
+### Commands that take time
 
 A command that returns a promise runs in place: the list stays open, the entry shows a spinner instead of its icon,
-and other entries wait. The text keeps the focus. When the promise settles, the list closes. When it rejects, the entry
-shows the error's message in its description's place, quiet in the danger color, cut to one line with the full text as
-its title, and an alert reads the message. Choosing the entry again runs it again; typing moves on and closes the list.
-Any other return value counts as done, so `onSelect: () => setKind("call")` keeps working. Keep error messages short:
-"Keine Artikelnummer im Text".
+other entries wait, and the menu's search field waits too. The text keeps the focus. When the promise settles, the list
+closes. When it rejects, the entry shows the error's message in its description's place, quiet in the danger color,
+cut to one line with the full text as its title, and an alert reads the message. Choosing the entry again runs it
+again; typing moves on and closes the list. <kbd>Esc</kbd> stops it, also inside a further list, and a stopped command
+can no longer insert. Any other return value counts as done, so `onSelect: () => setKind("call")` keeps working. Keep
+error messages short: "Keine Artikelnummer im Text".
 
 ## Docking
 
@@ -91,7 +115,7 @@ The focus stays in the search field (in the editor: in the text). The marked ent
 | <kbd>↑</kbd> <kbd>↓</kbd> | Mark the previous or next entry, wrapping. Unavailable entries are passed over. |
 | <kbd>Home</kbd> <kbd>End</kbd> | Mark the first or last entry that can be chosen. |
 | <kbd>Enter</kbd> <kbd>Tab</kbd> | Choose the marked entry. While a command runs, nothing else runs. |
-| <kbd>Esc</kbd> | Stop a running command and close; leave a second list; in the first list, close. |
+| <kbd>Esc</kbd> | Stop a running command and close; leave a further list; in the first list, close. |
 | <kbd>Backspace</kbd> | In an empty field, leave a second list. |
 
 A pointer chooses with a click and marks an entry it moves over; unavailable entries are never marked. The back control
@@ -101,7 +125,7 @@ above a second list returns to the first.
 
 | Property | Type | Purpose |
 | --- | --- | --- |
-| `items` | `CommandItem[] \| (query) => CommandItem[]` | The entries. |
+| `items` | `CommandItem[] \| (context) => CommandItem[] \| Promise<CommandItem[]>` | The entries. |
 | `label` | `string` | Names the menu and its first list, such as "Add to message". |
 | `search` | `string` | Names the search field and is its hint. A second list shows its own label there. |
 | `target` | `HTMLTextAreaElement \| HTMLInputElement` | The field the commands act on, such as the composer's textarea. |
@@ -140,7 +164,7 @@ renders on the server.
 ## Example
 
 ```tsx
-const commands: CommandItem[] = [
+const entries: CommandItem[] = [
   { group: "Art", label: "Telefonat", description: "Anruf festhalten", icon: "ti ti-phone", keywords: ["anruf"], onSelect: () => setKind("call") },
   { group: "Vorlagen", label: "Fotos erbeten", description: "Bittet um Fotos der Rückseite", icon: "ti ti-photo", text: "Könnten Sie uns noch zwei Fotos schicken?" },
   {
@@ -157,19 +181,35 @@ const commands: CommandItem[] = [
   { group: "Aktionen", label: "Termin bestätigen", icon: "ti ti-calendar-check", disabled: "Nur mit einer Ankündigung", onSelect: confirm },
   {
     group: "Aktionen",
-    label: "Kunde zuordnen",
-    description: "Aus der Kundenliste",
+    label: "Zuweisen",
+    description: "Person und Rolle",
     icon: "ti ti-user-plus",
+    keywords: ["assign"],
     next: {
-      label: "Kunden suchen",
-      items: customers.map((customer) => ({
-        label: customer.name,
-        leading: () => <Avatar name={customer.name} size="xs" />,
-        onSelect: () => assign(customer),
-      })),
+      label: "Person suchen",
+      // Level two: people from the server, abortable when the query changes.
+      items: ({ query, signal }) =>
+        searchPeople(query, { signal }).then((people) =>
+          people.map((person) => ({
+            label: person.name,
+            leading: () => <Avatar name={person.name} size="xs" />,
+            keywords: [person.email],
+            // Level three: the role; the path holds the action and the person.
+            next: {
+              label: "Rolle wählen",
+              items: roles.map((role) => ({ label: role, onSelect: ({ path }) => assign(path.at(-1), role) })),
+            },
+          })),
+        ),
     },
   },
 ];
+
+// Templates only where the slash starts the text; markets first while the text names an article.
+const commands = ({ atStart, text }: CommandContext) => {
+  const shown = entries.filter((entry) => atStart || entry.group !== "Vorlagen");
+  return /Art\.\s*\d+/.test(text) ? shown.toSorted((a, b) => Number(b.group === "Marktplätze") - Number(a.group === "Marktplätze")) : shown;
+};
 
 const [textarea, setTextarea] = createSignal<HTMLTextAreaElement>();
 const [composer, setComposer] = createSignal<HTMLDivElement>();

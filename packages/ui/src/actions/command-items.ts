@@ -4,6 +4,17 @@ import type { JSX } from "solid-js";
  * One entry of a command list: the slash menu of `MarkdownEditor` and `CommandMenu` read the same entries, so a
  * composer's `/`, its "+" button, and a chip offer one list.
  */
+/** Where a slash at `start` stands in `value`: the text before it and whether only whitespace precedes it, overall or on its line. */
+export const commandPlace = (value: string, start: number, end: number) => {
+  const before = value.slice(0, start);
+  return {
+    text: before + value.slice(end),
+    before,
+    atStart: before.trim() === "",
+    lineStart: before.slice(before.lastIndexOf("\n") + 1).trim() === "",
+  };
+};
+
 export type CommandItem = {
   label: string;
   /** Heading above the entry. Entries of one group stand together, in the order the groups first appear. */
@@ -56,26 +67,47 @@ export type CommandItem = {
 );
 
 /**
- * What a command acts on. In `SlashCommands` it is the editor's text, without the typed `/query`; in `CommandMenu` it is
- * the text of its `target` field, or empty without one.
+ * Where a command list is and what it acts on: one context for the entries of every level and for `onSelect`. In
+ * `SlashCommands` the text is the editor's, without the typed `/query`; in `CommandMenu` it is the text of its `target`
+ * field, or empty without one.
  */
 export type CommandContext = {
+  /** What the person typed after `/`, or into the menu's search field. */
+  query: string;
+  /** The whole text without the typed `/query`. */
   text: string;
+  /** The text before the slash, or before the caret in `CommandMenu`. */
+  before: string;
+  /** Whether the slash is the first character of the text, leading whitespace aside. */
+  atStart: boolean;
+  /** Whether the slash starts a line, leading whitespace aside. */
+  lineStart: boolean;
   /** The selection in `text`; `start === end` is the caret. */
   selection: { start: number; end: number };
+  /** The entries chosen so far on the way to this level, such as `[assign, person]` on the third. */
+  path: readonly CommandItem[];
   /**
    * Puts text at the caret in place of the selection, as typing would, so undo keeps working. Without a `target`,
-   * `CommandMenu` hands it to `onInsert`.
+   * `CommandMenu` hands it to `onInsert`. Meant for `onSelect`.
    */
   insert: (text: string) => void;
-  /** Aborts when the person closes the list with Escape before a returned promise settled. */
+  /**
+   * Aborts when the result is no longer wanted: a new query replaces a pending list, or the person closes the list
+   * with Escape before a command's promise settled.
+   */
   signal: AbortSignal;
 };
 
-/** The entries of a list, or a function that returns them for a query, for a list the application filters itself. */
-export type CommandSource = readonly CommandItem[] | ((query: string) => readonly CommandItem[]);
+/**
+ * The entries of a list: a list, or a function of the context that decides which entries there are in this place, at
+ * once or as a promise, such as templates only at the start of the text or people from a server search. Either way the
+ * list filters them by the query; give server matches the words they matched on as `keywords`.
+ */
+export type CommandSource =
+  | readonly CommandItem[]
+  | ((context: CommandContext) => readonly CommandItem[] | Promise<readonly CommandItem[]>);
 
-/** A second list in the same popover. Escape, or Backspace on an empty query, goes back. */
+/** A further list in the same place, as deep as needed. Escape, or Backspace on an empty query, goes back. */
 export type CommandStep = {
   /** Names the list and is the search hint, such as "Search person". */
   label: string;
@@ -108,9 +140,16 @@ export const filterCommandItems = (items: readonly CommandItem[], query: string)
   });
 };
 
-/** The entries of a source for a query: a list is filtered here, a function filters itself. */
-export const resolveCommandSource = (source: CommandSource, query: string): readonly CommandItem[] =>
-  typeof source === "function" ? source(query) : filterCommandItems(source, query);
+/** The entries of a source in a context, filtered by its query; a promise resolves to the filtered entries. */
+export const resolveCommandSource = (
+  source: CommandSource,
+  context: CommandContext,
+): readonly CommandItem[] | Promise<readonly CommandItem[]> => {
+  const result = typeof source === "function" ? source(context) : source;
+  return result instanceof Promise
+    ? result.then((items) => filterCommandItems(items, context.query))
+    : filterCommandItems(result, context.query);
+};
 
 /** Groups in the order they first appear; `index` is the entry's place in the order the list shows. */
 export const groupCommandItems = (items: readonly CommandItem[]): CommandGroup[] => {

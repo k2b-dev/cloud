@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { createComponent, createSignal } from "solid-js";
 import { delegateEvents, render } from "solid-js/web";
-import type { CommandContext, CommandItem } from "../src/actions/command-items";
+import type { CommandContext, CommandItem, CommandSource } from "../src/actions/command-items";
 import { createDomTestHarness, type DomTestHarness } from "./dom";
 
 // What a command gets when it runs: the composer's text without the typed `/query`, the selection, `insert` at the
@@ -35,6 +35,28 @@ const deferred = () => {
 };
 
 const mount = async (items: readonly CommandItem[], start = "") => {
+  const { MarkdownEditor } = await import("../src/inputs/markdown/MarkdownEditor");
+  const { SlashCommands } = await import("../src/inputs/markdown/SlashCommands");
+  const [value, setValue] = createSignal(start);
+  const [element, setElement] = createSignal<HTMLTextAreaElement>();
+  dispose = render(
+    () => [
+      createComponent(MarkdownEditor, { label: "Nachricht", value, onValueChange: setValue, textareaRef: setElement }),
+      createComponent(SlashCommands, {
+        get textarea() {
+          return element();
+        },
+        items,
+      }),
+    ],
+    dom.root,
+  );
+  const textarea = dom.root.querySelector("textarea")!;
+  textarea.focus();
+  textarea.setSelectionRange(start.length, start.length);
+  return { textarea, value };
+};
+const mountWith = async (items: CommandSource, start: string) => {
   const { MarkdownEditor } = await import("../src/inputs/markdown/MarkdownEditor");
   const { SlashCommands } = await import("../src/inputs/markdown/SlashCommands");
   const [value, setValue] = createSignal(start);
@@ -179,6 +201,70 @@ describe("slash command context", () => {
     expect(dom.document.querySelector("[role='alert']")).toBeNull();
   });
 
+  test("a command stopped with Escape writes nothing when it finishes later", async () => {
+    const run = deferred();
+    const { textarea, value } = await mount([
+      {
+        label: "Marktpreis prüfen",
+        onSelect: async ({ insert }) => {
+          await run.promise;
+          insert("240 €");
+        },
+      },
+    ]);
+    await type(textarea, "/");
+    key(textarea, "Enter");
+    key(textarea, "Escape");
+    run.resolve();
+    await settle();
+    expect(value()).toBe("");
+  });
+
+  test("after a command failed, a snippet in the same list still goes where the slash stood", async () => {
+    const { textarea, value } = await mount(
+      [
+        { label: "Marktpreis prüfen", onSelect: () => Promise.reject(new Error("Nein")) },
+        { label: "Fotos erbeten", text: "Bitte Fotos." },
+      ],
+      "Hallo ",
+    );
+    await type(textarea, "/");
+    key(textarea, "Enter");
+    await settle();
+    row("Fotos erbeten")!.click();
+    expect(value()).toBe("Hallo Bitte Fotos.");
+    expect(row("Fotos erbeten")).toBeUndefined();
+  });
+
+  test("Escape in a second list stops its running command before it goes back", async () => {
+    const run = deferred();
+    let signal: AbortSignal | undefined;
+    const { textarea } = await mount([
+      {
+        label: "Zuweisen",
+        next: {
+          label: "Person suchen",
+          items: [
+            {
+              label: "Mara Brandt",
+              onSelect: (context) => {
+                signal = context.signal;
+                return run.promise;
+              },
+            },
+          ],
+        },
+      },
+    ]);
+    await type(textarea, "/");
+    key(textarea, "Enter");
+    await Promise.resolve();
+    key(textarea, "Enter");
+    expect(row("Mara Brandt")?.getAttribute("aria-busy")).toBe("true");
+    expect(key(textarea, "Escape")).toBe(true);
+    expect(signal?.aborted).toBe(true);
+  });
+
   test("typing after a failure moves on: the list closes", async () => {
     const { textarea } = await mount([{ label: "Marktpreis prüfen", onSelect: () => Promise.reject(new Error("Nein")) }]);
     await type(textarea, "/");
@@ -247,6 +333,139 @@ describe("slash command context", () => {
   });
 });
 
+describe("dynamic entries", () => {
+  const labels = () =>
+    Array.from(
+      dom.document.querySelectorAll<HTMLElement>(".k2b-command-list [role='option'] .k2b-command-list__text > span:first-child"),
+    ).map((label) => label.textContent);
+  const templates: CommandItem[] = [{ group: "Vorlagen", label: "Fotos erbeten", text: "Bitte Fotos." }];
+  const actions: CommandItem[] = [{ group: "Aktionen", label: "Zuweisen", onSelect: () => {} }];
+
+  test("entries know where the slash stands: templates only at the start, actions everywhere", async () => {
+    const seen: CommandContext[] = [];
+    const items = (context: CommandContext) => {
+      seen.push(context);
+      return context.atStart ? [...templates, ...actions] : actions;
+    };
+    const mounted = await mountWith(items, "");
+    await type(mounted.textarea, "/");
+    expect(labels()).toEqual(["Fotos erbeten", "Zuweisen"]);
+    expect(seen.at(-1)).toMatchObject({ query: "", text: "", before: "", atStart: true, lineStart: true, path: [] });
+    await type(mounted.textarea, "zu");
+    expect(labels()).toEqual(["Zuweisen"]);
+    expect(seen.at(-1)?.query).toBe("zu");
+  });
+
+  test("after text, and on a new line, the context says so", async () => {
+    const seen: CommandContext[] = [];
+    const { textarea } = await mountWith((context) => {
+      seen.push(context);
+      return actions;
+    }, "Guten Tag ");
+    await type(textarea, "/");
+    expect(seen.at(-1)).toMatchObject({ text: "Guten Tag ", before: "Guten Tag ", atStart: false, lineStart: false });
+    await type(textarea, "\n");
+    await type(textarea, "  /");
+    expect(seen.at(-1)).toMatchObject({ before: "Guten Tag /\n  ", atStart: false, lineStart: true });
+  });
+
+  test("each level gets the path chosen so far, down to a command on the third level", async () => {
+    const paths: string[][] = [];
+    let chosen: CommandContext | undefined;
+    const roles = (context: CommandContext) => {
+      paths.push(context.path.map((item) => item.label));
+      return ["Verantwortlich", "Beteiligt"].map((role) => ({
+        label: role,
+        onSelect: (selected: CommandContext) => {
+          chosen = selected;
+        },
+      }));
+    };
+    const people = (context: CommandContext) => {
+      paths.push(context.path.map((item) => item.label));
+      return ["Mara Brandt", "Lea Krüger"].map((name) => ({ label: name, next: { label: "Rolle", items: roles } }));
+    };
+    const { textarea } = await mountWith([{ label: "Zuweisen", next: { label: "Person suchen", items: people } }], "");
+    await type(textarea, "/zuw");
+    key(textarea, "Enter");
+    await Promise.resolve();
+    await type(textarea, "lea");
+    key(textarea, "Enter");
+    await Promise.resolve();
+    expect(labels()).toEqual(["Verantwortlich", "Beteiligt"]);
+    key(textarea, "Enter");
+    expect(paths.at(0)).toEqual(["Zuweisen"]);
+    expect(paths.at(-1)).toEqual(["Zuweisen", "Lea Krüger"]);
+    expect(chosen?.path.map((item) => item.label)).toEqual(["Zuweisen", "Lea Krüger"]);
+  });
+
+  test("entries from a promise show loading in place, then the result; a new query aborts and discards the old one", async () => {
+    const requests: { query: string; signal: AbortSignal; run: ReturnType<typeof deferred> & { items?: CommandItem[] } }[] = [];
+    const { textarea } = await mountWith((context) => {
+      const run = deferred() as ReturnType<typeof deferred> & { items?: CommandItem[] };
+      requests.push({ query: context.query, signal: context.signal, run });
+      return run.promise.then(() => run.items ?? []);
+    }, "");
+    await type(textarea, "/m");
+    expect(dom.document.querySelector(".k2b-command-list__state")?.textContent).toContain("Loading");
+    expect(dom.document.querySelector(".k2b-command-list")?.getAttribute("aria-busy")).toBe("true");
+    await type(textarea, "a");
+    expect(requests.map((request) => [request.query, request.signal.aborted])).toEqual([
+      ["m", true],
+      ["ma", false],
+    ]);
+    // The stale answer arrives late and changes nothing.
+    requests[0]!.run.items = [{ label: "Alt", onSelect: () => {} }];
+    requests[0]!.run.resolve();
+    await settle();
+    expect(labels()).toEqual([]);
+    requests[1]!.run.items = [{ label: "Mara Brandt", onSelect: () => {} }];
+    requests[1]!.run.resolve();
+    await settle();
+    expect(labels()).toEqual(["Mara Brandt"]);
+    expect(dom.document.querySelector(".k2b-command-list__state")).toBeNull();
+  });
+
+  test("a list that could not load says why and loads again on Retry or Enter", async () => {
+    let attempts = 0;
+    const { textarea } = await mountWith(async () => {
+      attempts++;
+      if (attempts < 3) throw new Error("Server nicht erreichbar");
+      return actions;
+    }, "");
+    await type(textarea, "/");
+    await settle();
+    const state = dom.document.querySelector<HTMLElement>(".k2b-command-list__state[data-error]")!;
+    expect(state.textContent).toContain("Server nicht erreichbar");
+    expect(dom.document.querySelector("[role='alert']")?.textContent).toBe("Server nicht erreichbar");
+    state.querySelector("button")!.click();
+    await settle();
+    expect(attempts).toBe(2);
+    expect(key(textarea, "Enter")).toBe(true);
+    await settle();
+    expect(attempts).toBe(3);
+    expect(labels()).toEqual(["Zuweisen"]);
+  });
+
+  test("a command gets the same context: where the slash stood and what was typed", async () => {
+    let chosen: CommandContext | undefined;
+    const { textarea } = await mountWith(
+      [
+        {
+          label: "Zuweisen",
+          onSelect: (context) => {
+            chosen = context;
+          },
+        },
+      ],
+      "Hallo\n",
+    );
+    await type(textarea, "/zuw");
+    key(textarea, "Enter");
+    expect(chosen).toMatchObject({ query: "zuw", text: "Hallo\n", before: "Hallo\n", atStart: false, lineStart: true, path: [] });
+  });
+});
+
 describe("CommandMenu context", () => {
   test("with a target, a command gets its text and selection and inserts into it; snippets go there too", async () => {
     const { CommandMenu } = await import("../src/actions/CommandMenu");
@@ -290,6 +509,50 @@ describe("CommandMenu context", () => {
     open(anchor);
     option("Gruß").click();
     expect(target.value).toBe("Hallo 7.11.Viele Grüße");
+  });
+
+  test("while a command runs, the search field waits, Escape stops it, and a callback's focus stays", async () => {
+    const { CommandMenu } = await import("../src/actions/CommandMenu");
+    const run = deferred();
+    let signal: AbortSignal | undefined;
+    const elsewhere = dom.document.createElement("input") as unknown as HTMLInputElement;
+    dom.root.append(elsewhere);
+    let open!: (anchor: { getBoundingClientRect: () => DOMRect }) => void;
+    dispose = render(
+      () =>
+        createComponent(CommandMenu, {
+          items: [
+            {
+              label: "Marktpreis prüfen",
+              onSelect: (context) => {
+                signal = context.signal;
+                return run.promise;
+              },
+            },
+            { label: "Feld wählen", onSelect: () => elsewhere.focus() },
+          ],
+          label: "Hinzufügen",
+          search: "Suchen",
+          openAt: (fn) => {
+            open = fn;
+          },
+        }),
+      dom.root,
+    );
+    const anchor = { getBoundingClientRect: () => ({ left: 0, top: 0, right: 10, bottom: 10 }) as DOMRect };
+    open(anchor);
+    const option = (label: string) =>
+      Array.from(dom.document.querySelectorAll<HTMLElement>("[role='option']")).find((element) => element.textContent?.includes(label))!;
+    option("Marktpreis").click();
+    const search = dom.document.querySelector<HTMLInputElement>("input[role='combobox']")!;
+    expect(search.readOnly).toBe(true);
+    key(search, "Escape");
+    expect(signal?.aborted).toBe(true);
+    run.resolve();
+    await settle();
+    open(anchor);
+    option("Feld wählen").click();
+    expect(dom.document.activeElement).toBe(elsewhere);
   });
 
   test("without a target, the text is empty and insert hands the text to onInsert", async () => {

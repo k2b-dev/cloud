@@ -84,8 +84,9 @@ inside inline code or fenced code blocks.
 ## Slash commands
 
 `SlashCommands` adds commands behind `/` to an editor. Place it beside the editor and pass the editor's textarea from
-`textareaRef`; it takes the same `CommandItem[]` as [CommandMenu](/en/ui/actions/command-menu): commands that get the
-composer's text, text snippets, and second lists such as people or tags. Editors without it carry none of its code.
+`textareaRef`; it takes the same entries as [CommandMenu](/en/ui/actions/command-menu): commands that get the
+composer's text, text snippets, and further lists such as people or tags, as a list or as a function of the context,
+such as templates only when the slash starts the text. Editors without it carry none of its code.
 
 ```tsx
 const [textarea, setTextarea] = createSignal<HTMLTextAreaElement>();
@@ -102,8 +103,9 @@ it; near the top of the window they dock below it. The typed word filters them b
 keywords, without regard to case or accents. A `/` inside a word or after punctuation, as in `and/or` or
 `https://`, opens nothing.
 
-- An entry with `onSelect` removes the typed `/query` from the text, then runs with a context: the text without the
-  `/query`, the selection, `insert(text)` at the caret as typing would, and an abort `signal`. A returned promise
+- An entry with `onSelect` removes the typed `/query` from the text, then runs with the context: the query, the text
+  without the `/query`, the text before the slash, whether it stands at the start of the text or a line, the path of
+  entries chosen so far, `insert(text)` at the caret as typing would, and an abort `signal`. A returned promise
   keeps the list open with the entry busy; a rejection shows its message on the entry. See
   [Context](/en/ui/actions/command-menu#context).
 - An entry with `text` puts its text in place of `/query`.

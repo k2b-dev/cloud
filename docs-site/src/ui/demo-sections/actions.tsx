@@ -2,6 +2,7 @@ import {
   activeDrag,
   Button,
   ButtonLink,
+  type CommandContext,
   type CommandItem,
   CommandMenu,
   ContextMenu,
@@ -244,7 +245,7 @@ const CommandMenuDemo = () => {
         reject(signal.reason);
       });
     });
-  const commands: CommandItem[] = [
+  const entries: CommandItem[] = [
     {
       group: "Art",
       label: "Telefonat",
@@ -311,16 +312,34 @@ const CommandMenuDemo = () => {
     },
     {
       group: "Aktionen",
-      label: "Kunde zuordnen",
-      description: "Aus der Kundenliste",
+      label: "Zuweisen",
+      description: "Person und Rolle",
       icon: "ti ti-user-plus",
-      keywords: ["zuständig"],
+      keywords: ["zuständig", "assign"],
       next: {
-        label: "Kunden suchen",
-        items: customers.map((name) => ({ label: name, leading: initials(name), onSelect: () => note(`Zugeordnet: ${name}`) })),
+        label: "Person suchen",
+        items: customers.map((name) => ({
+          label: name,
+          leading: initials(name),
+          // The third level knows the way here: the action and the person chosen.
+          next: {
+            label: "Rolle wählen",
+            items: ["Verantwortlich", "Beteiligt"].map((role) => ({
+              label: role,
+              onSelect: ({ path }: CommandContext) => note(`${path.at(-1)?.label} · ${role}`),
+            })),
+          },
+        })),
       },
     },
   ];
+  // Templates only where the slash starts the text; markets first when the text names an article; actions everywhere.
+  const commands = ({ atStart, text }: CommandContext) => {
+    const shown = entries.filter((entry) => atStart || entry.group !== "Vorlagen");
+    return /Art\.\s*\d+/.test(text)
+      ? shown.toSorted((a, b) => Number(b.group === "Marktplätze") - Number(a.group === "Marktplätze"))
+      : shown;
+  };
   return (
     <DemoCard
       id="command-menu"
@@ -328,8 +347,8 @@ const CommandMenuDemo = () => {
         { kind: "component", name: "CommandMenu", from: "@k2b/ui" },
         { kind: "component", name: "SlashCommands", from: "@k2b/ui" },
       ]}
-      description="One list of commands for `/` in the text and the “+” button, docked above the composer at its full width. Entries carry an icon or a logo and a quiet description; a callback gets the composer's text and inserts at its caret, and an asynchronous one shows its progress and a failure on its row. Try “/preis” with and without an article number in the text, or “zustaendig”."
-      code={`const commands: CommandItem[] = [
+      description="One list of commands for `/` in the text and the “+” button, docked above the composer at its full width. Entries carry an icon or a logo and a quiet description; a callback gets the composer's text and inserts at its caret, and an asynchronous one shows its progress and a failure on its row. The entries are a function of the context: templates only at the start of the text, “/zuweisen” everywhere with a person and then a role, and markets first while the text names an article. Try “/preis” with and without an article number, or “zustaendig”."
+      code={`const entries: CommandItem[] = [
   { group: "Vorlagen", label: "Fotos erbeten", icon: "ti ti-photo", text: "Könnten Sie uns noch zwei Fotos schicken?" },
   {
     group: "Marktplätze",
@@ -341,19 +360,35 @@ const CommandMenuDemo = () => {
       insert(await priceHint(article, { signal }));
     },
   },
-  { group: "Aktionen", label: "Termin bestätigen", icon: "ti ti-calendar-check", disabled: "Nur mit einer Ankündigung", onSelect: confirm },
-  { group: "Aktionen", label: "Kunde zuordnen", icon: "ti ti-user-plus",
-    next: { label: "Kunden suchen", items: customers.map((c) => ({ label: c.name, onSelect: () => assign(c) })) } },
+  {
+    group: "Aktionen",
+    label: "Zuweisen",
+    icon: "ti ti-user-plus",
+    next: {
+      label: "Person suchen",
+      // A function of the context, also as a promise: people from the server, abortable.
+      items: ({ query, signal }) => searchPeople(query, { signal }).then((people) =>
+        people.map((person) => ({
+          label: person.name,
+          next: {
+            label: "Rolle wählen",
+            items: roles.map((role) => ({ label: role, onSelect: ({ path }) => assign(path.at(-1), role) })),
+          },
+        })),
+      ),
+    },
+  },
 ];
 
-const [textarea, setTextarea] = createSignal<HTMLTextAreaElement>();
-const [composer, setComposer] = createSignal<HTMLDivElement>();
+// Templates only where the slash starts the text; actions everywhere.
+const commands = ({ atStart }: CommandContext) => entries.filter((entry) => atStart || entry.group !== "Vorlagen");
+
 <div ref={setComposer} class="composer">
-<MarkdownEditor variant="embedded" noToolbar value={text()} onValueChange={setText} textareaRef={setTextarea} />
-<SlashCommands textarea={textarea()} items={commands} composer={composer()} />
-<CommandMenu items={commands} label="Hinzufügen" search="Befehle suchen" target={textarea()} dock={composer()}>
-  <CommandMenu.Trigger iconOnly label="Hinzufügen"><i class="ti ti-plus" aria-hidden="true" /></CommandMenu.Trigger>
-</CommandMenu>
+  <MarkdownEditor variant="embedded" noToolbar value={text()} onValueChange={setText} textareaRef={setTextarea} />
+  <SlashCommands textarea={textarea()} items={commands} composer={composer()} />
+  <CommandMenu items={commands} label="Hinzufügen" search="Befehle suchen" target={textarea()} dock={composer()}>
+    <CommandMenu.Trigger iconOnly label="Hinzufügen"><i class="ti ti-plus" aria-hidden="true" /></CommandMenu.Trigger>
+  </CommandMenu>
 </div>`}
     >
       <div style={{ display: "grid", gap: "0.5rem", "max-width": "36rem" }}>
@@ -379,7 +414,7 @@ const [composer, setComposer] = createSignal<HTMLDivElement>();
                 <i class="ti ti-plus" aria-hidden="true" />
               </CommandMenu.Trigger>
             </CommandMenu>
-            <CommandMenu items={commands.filter((item) => item.group === "Art")} label="Art" search="Art suchen">
+            <CommandMenu items={entries.filter((item) => item.group === "Art")} label="Art" search="Art suchen">
               <CommandMenu.Trigger size="sm" variant="secondary">
                 {kind()} <i class="ti ti-chevron-down" aria-hidden="true" />
               </CommandMenu.Trigger>
