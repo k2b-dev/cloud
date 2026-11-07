@@ -57,7 +57,9 @@ without it, the page explains how to download the CLI.
 
 Set `SPEEDTEST_PUBLIC_URL` to this service's public HTTPS origin, without a
 path, credentials, query or fragment. It controls both the measurement target
-and SEO links. Point HTTPS ingress at the same service for the pages,
+and SEO links. Serve the page only at this origin; redirect alternate hosts
+there so the same-origin security policy permits measurements. Point HTTPS
+ingress at the same service for the pages,
 `/assets/*`, `/_ssr/*` and measurement routes; do not cache HTML. The build
 command `bun packages/speedtest/scripts/build.ts` emits the server, CLI and
 hashed local assets together. Deploy this directory as one unit.
