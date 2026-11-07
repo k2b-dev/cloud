@@ -19,6 +19,19 @@ and `RichSelect` when each option needs more than one line or a preview.
 import { ChoiceSlider } from "@k2b/ui";
 ```
 
+## How it looks
+
+The slider reads as one control to drag. It has one continuous track. The
+track fills in the primary colour up to the centre of the thumb, and the rest
+of the track stays grey with at least 3:1 contrast against the surface. The
+stops sit on the track as small dots. The thumb is surface-coloured, which is
+white in light mode, with the same 2 px primary-colour edge as other controls
+and no shadow. While someone drags, the thumb fills lightly in the primary
+colour.
+
+The fill and the thumb edge use the primary tokens, so the slider follows the
+primary colour of the surrounding scope. Do not override its colours.
+
 ## Stops and the line
 
 Each option has a `value`, a `label`, and an optional one-line `description`.
@@ -26,14 +39,14 @@ The line shows the description of the active stop and keeps its height
 whatever it says, so moving the thumb or showing a reason moves nothing
 around the slider.
 
-An option with `disabledReason` stays visible as a hollow stop. Dragging and
+An option with `disabledReason` stays visible as a hollow ring on the track. Dragging and
 the arrow keys skip it. A press on it, or an arrow key at its edge, shows the
 reason in the line with a warning icon and leaves the value unchanged. When
 the chosen value itself becomes unavailable, the thumb takes the warning
 colour and the line shows the reason.
 
 Pass `value={null}` when the current choice is none of the stops. The slider
-then shows no thumb and the line shows `description`. The next drag or arrow
+then shows no thumb and no fill, and the line shows `description`. The next drag or arrow
 key chooses a stop again.
 
 With one option the slider shows only the line; with none it shows an empty
@@ -57,7 +70,9 @@ The track is `role="slider"` with `aria-valuetext` from the label and the
 description or reason; pass `valueText` on an option to say more, for example
 the model behind a stop. Name it with `aria-label` or `aria-labelledby`.
 Arrow keys, Page Up and Page Down move between available stops; Home and End
-jump to the first and last available stop. Nothing depends on hovering. The
+jump to the first and last available stop. Keyboard focus draws the
+focus ring around the thumb, or around the whole track when there is no thumb.
+A press with the pointer focuses the track without the ring. Nothing depends on hovering. The
 line is a polite live region.
 
 ## Runtime

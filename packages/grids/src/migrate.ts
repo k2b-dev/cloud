@@ -1,5 +1,6 @@
 import { sql as defaultSql } from "@k2b/cloud";
 import type { SQL } from "bun";
+import { installGridsAppEventSchema } from "./app-event-schema";
 
 // Current Grids schema plus explicit, one-way upgrades from the preceding schema.
 // IF NOT EXISTS does not reconcile existing columns or constraints. Schema
@@ -2210,6 +2211,7 @@ export const migrate = async (sql: SQL = defaultSql): Promise<void> => {
     const [existing] = await connection<Array<{ present: boolean }>>`SELECT to_regclass('grids.tables') IS NOT NULL AS present`;
     if (existing?.present) await connection`SELECT id FROM grids.tables ORDER BY id FOR UPDATE`;
     await defineSchema(connection);
+    await installGridsAppEventSchema(connection);
     // One-way population of the current representation; reads never fall back
     // to the old read-time calculation path for missing materializations.
     const { refreshLocalCalculations } = await import("./service/local-calculation-storage");

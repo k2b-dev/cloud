@@ -150,7 +150,8 @@ export function ChoiceSlider(props: ChoiceSliderProps): JSX.Element {
     // One pointer owns a drag; a second finger waits until it ends.
     if (props.disabled || count() < 2 || event.button !== 0 || drag) return;
     event.preventDefault();
-    track?.focus({ preventScroll: true });
+    // A pointer press focuses the track without the keyboard focus ring.
+    track?.focus({ preventScroll: true, focusVisible: false });
     track?.setPointerCapture?.(event.pointerId);
     const near = Math.round(at(event.clientX));
     const pressed = props.options[near];
@@ -209,6 +210,8 @@ export function ChoiceSlider(props: ChoiceSliderProps): JSX.Element {
           aria-valuenow={Math.max(0, shown()) + 1}
           aria-valuetext={valueText()}
           aria-disabled={props.disabled ? "true" : undefined}
+          data-dragging={preview() !== null ? "" : undefined}
+          style={{ "--k2b-choice-slider-at": `${position(Math.max(0, shown()), count())}%` }}
           onKeyDown={onKeyDown}
           onPointerDown={onPointerDown}
           onPointerMove={onPointerMove}
@@ -216,18 +219,8 @@ export function ChoiceSlider(props: ChoiceSliderProps): JSX.Element {
           onPointerCancel={onPointerEnd}
           onLostPointerCapture={onPointerEnd}
         >
-          <For each={props.options.slice(1)}>
-            {(_, index) => (
-              <span
-                class="k2b-choice-slider__segment"
-                data-on={shown() > index() ? "" : undefined}
-                style={{
-                  left: `calc(${position(index(), count())}% + 8px)`,
-                  width: `calc(${position(index() + 1, count()) - position(index(), count())}% - 16px)`,
-                }}
-              />
-            )}
-          </For>
+          <span class="k2b-choice-slider__rail" />
+          <span class="k2b-choice-slider__fill" hidden={shown() < 0} />
           <For each={props.options}>
             {(stop, index) => (
               <span
@@ -243,7 +236,6 @@ export function ChoiceSlider(props: ChoiceSliderProps): JSX.Element {
             class="k2b-choice-slider__thumb"
             data-tone={warning() && preview() === null && option()?.disabledReason ? "warning" : undefined}
             hidden={shown() < 0}
-            style={{ left: `${position(Math.max(0, shown()), count())}%` }}
           />
         </div>
       </Show>
