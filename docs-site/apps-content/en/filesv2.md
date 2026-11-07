@@ -174,6 +174,11 @@ uses Filegate's historical-copy operation and leaves
 the original file, modification time, identity, and history unchanged. Permanent
 version deletion is available only through the administrator file browser and CLI.
 
+After enough bytes have transferred, the upload panel adds an approximate
+remaining time beside the file count. It uses recent byte throughput, so a large
+file still counts for its actual size. The estimate is hidden during connection
+waits and final publication, and restarts after an interrupted transfer.
+
 Uploads report progress in one toast and resolve name conflicts once per
 batch (replace existing or upload only new). Uploads, folder uploads and new
 files open a Filegate upload session per file: Cloud authorizes the target, the browser streams segments to the

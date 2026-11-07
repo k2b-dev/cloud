@@ -60,8 +60,7 @@ const summarySelect = () => sql`SELECT keep.mailbox_id, mailbox.short_id AS mail
   JOIN mail.conversations conversation ON conversation.id = keep.conversation_id AND conversation.mailbox_id = mailbox.id
   LEFT JOIN auth.users actor_user ON keep.kept_by_kind = 'user' AND actor_user.id = keep.kept_by_id
   LEFT JOIN auth.service_accounts actor_service ON keep.kept_by_kind = 'service_account' AND actor_service.id = keep.kept_by_id
-  LEFT JOIN workflows.version actor_version ON keep.kept_by_kind = 'workflow' AND actor_version.id = keep.kept_by_id
-  LEFT JOIN workflows.workflow actor_workflow ON actor_workflow.id = actor_version.workflow_id`;
+  LEFT JOIN mail.workflow_source_names actor_workflow ON keep.kept_by_kind = 'workflow' AND actor_workflow.version_id = keep.kept_by_id`;
 const iso = (value: string | Date) => new Date(value).toISOString();
 const summary = (row: SummaryRow): KeptConversationSummary => ({
   mailboxId: row.mailbox_id,
