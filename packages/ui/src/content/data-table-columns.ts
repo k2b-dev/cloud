@@ -1,4 +1,4 @@
-import { deltaText } from "../surfaces/StatCell";
+import { deltaText } from "../surfaces/delta-badge";
 import type { StatusTone } from "../surfaces/StatusBadge";
 import { resolveStatCellMessages } from "../surfaces/stat-cell-messages";
 

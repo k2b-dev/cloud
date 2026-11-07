@@ -21,9 +21,9 @@ import { suppressTextSelection } from "../internal/text-selection";
 import { useLocale } from "../intl/locale";
 import { useUiMessages } from "../intl/messages";
 import { PanelHeader } from "../layout/PanelHeader";
+import { DeltaBadge } from "../surfaces/delta-badge";
 import { Paper } from "../surfaces/Paper";
 import Placeholder from "../surfaces/Placeholder";
-import { DeltaBadge } from "../surfaces/StatCell";
 import { StatusBadge } from "../surfaces/StatusBadge";
 import type { CollectionSelection } from "./collection-selection";
 import {
