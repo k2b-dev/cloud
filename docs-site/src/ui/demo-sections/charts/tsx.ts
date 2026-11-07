@@ -1,6 +1,7 @@
 import { Chart } from "@k2b/ui";
 import type { JsonValue } from "./examples/types";
 import { formatNumber } from "./format";
+import { blockComponents } from "./resolve";
 
 const identifier = /^[A-Za-z_$][\w$]*$/;
 const WIDTH = 96;
@@ -27,8 +28,8 @@ export function jsLiteral(value: JsonValue, indent = 0): string {
     .join("\n")}\n${close}}`;
 }
 
-const attribute = ([key, value]: [string, JsonValue]) =>
-  typeof value === "string" ? `${key}=${JSON.stringify(value)}` : value === true ? key : `${key}={${jsLiteral(value, 2)}}`;
+const attribute = ([key, value]: [string, JsonValue], indent = 2) =>
+  typeof value === "string" ? `${key}=${JSON.stringify(value)}` : value === true ? key : `${key}={${jsLiteral(value, indent)}}`;
 
 /** The namespace member of a kind, as `Chart.Line` for "line" (F7), when this build has it. */
 const member = (kind: string) => {
@@ -42,21 +43,33 @@ const member = (kind: string) => {
  * draw; key figures read as the tiles they become.
  */
 export function specToTsx(spec: JsonValue): string {
-  if (spec === null || typeof spec !== "object" || Array.isArray(spec)) return "";
+  // A list of amounts with a direction is the flow block: one FlowAmount per amount.
+  if (Array.isArray(spec)) {
+    const amounts = spec.filter((entry): entry is JsonObject => object(entry) && entry.type === "flow");
+    if (!amounts.length) return "";
+    return [
+      'import { FlowAmount } from "@k2b/ui";',
+      "",
+      "<>",
+      ...amounts.map((amount) => element("FlowAmount", without(amount, ["type"]), 2)),
+      "</>",
+    ].join("\n");
+  }
+  if (!object(spec)) return "";
   if (spec.block === "stats") {
     const items = Array.isArray(spec.items) ? spec.items : [];
     const cells = items.map((item) => {
-      if (item === null || typeof item !== "object" || Array.isArray(item)) return "";
+      if (!object(item)) return "";
       const { format, note, ...rest } = item;
-      const props = Object.entries({
+      const props = {
         ...rest,
         ...(typeof item.value === "number" ? { value: formatNumber(item.value, format) } : {}),
-        ...(item.compare && typeof item.compare === "object" && !Array.isArray(item.compare) && typeof item.compare.value === "number"
+        ...(object(item.compare) && typeof item.compare.value === "number"
           ? { compare: { ...item.compare, value: formatNumber(item.compare.value, format) } }
           : {}),
         ...(typeof note === "string" ? { sub: note } : {}),
-      });
-      return [`  <StatCell`, ...props.map((entry) => `    ${attribute(entry as [string, JsonValue])}`), "  />"].join("\n");
+      };
+      return element("StatCell", props, 2);
     });
     return [
       'import { StatCell, StatGrid } from "@k2b/ui";',
@@ -66,10 +79,34 @@ export function specToTsx(spec: JsonValue): string {
       "</StatGrid>",
     ].join("\n");
   }
-  // Other blocks are drawn by their own components; their portable form is the JSON alone.
-  if ("block" in spec) return "";
+  if (spec.block === "table") {
+    // The table's columns read their cells by id; types, formats, states and priorities pass as they are.
+    const columns = (Array.isArray(spec.columns) ? spec.columns : []).filter(object).map((column) => {
+      const { label, ...rest } = column;
+      return { ...rest, header: label ?? "", value: column.id ?? "" };
+    });
+    const props = without({ ...spec, columns, ariaLabel: spec.title ?? "Table" }, ["block", "title", "subtitle", "search", "empty", "groupBy"]);
+    return ['import { DataTable } from "@k2b/ui";', "", element("DataTable", props, 0)].join("\n");
+  }
+  if (typeof spec.block === "string") {
+    const name = blockComponents[spec.block];
+    if (!name) return "";
+    return [`import { ${name} } from "@k2b/ui";`, "", element(name, without(spec, ["block", "title", "subtitle"]), 0)].join("\n");
+  }
   const { kind, ...props } = spec;
   const name = typeof kind === "string" ? member(kind) : undefined;
-  const lines = name ? Object.entries(props).map(attribute) : [`kind=${JSON.stringify(kind)}`, ...Object.entries(props).map(attribute)];
-  return ['import { Chart } from "@k2b/ui";', "", name ? `<Chart.${name}` : "<Chart", ...lines.map((line) => `  ${line}`), "/>"].join("\n");
+  return ['import { Chart } from "@k2b/ui";', "", element(name ? `Chart.${name}` : "Chart", name ? props : { kind: kind ?? null, ...props }, 0)].join(
+    "\n",
+  );
 }
+
+type JsonObject = { [key: string]: JsonValue };
+const object = (value: JsonValue | undefined): value is JsonObject => typeof value === "object" && value !== null && !Array.isArray(value);
+const without = (value: JsonObject, keys: string[]): JsonObject =>
+  Object.fromEntries(Object.entries(value).filter(([key]) => !keys.includes(key)));
+
+/** A self-closing JSX element with one attribute per line, indented by `indent` spaces. */
+const element = (name: string, props: JsonObject, indent: number) => {
+  const pad = " ".repeat(indent);
+  return [`${pad}<${name}`, ...Object.entries(props).map((entry) => `${pad}  ${attribute(entry, indent + 2)}`), `${pad}/>`].join("\n");
+};

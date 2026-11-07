@@ -83,28 +83,26 @@ test("a description with an option this build does not know becomes a slot inste
   expect(resolveDrawing({ block: "notABlock", items: [] })).toMatchObject({ mode: "slot", kind: "notABlock" });
 });
 
-test("TSX is generated from the same description as the JSON", () => {
+test("every showcase page has non-empty TSX and JSON, generated from the same description", () => {
   for (const example of chartShowcaseExamples) {
     const tsx = specToTsx(example.spec);
+    const json = JSON.stringify(example.spec, null, 2);
+    // Both code views of every kind page, blocks included, show real code.
+    expect(tsx.split("\n").length, `${example.id} TSX`).toBeGreaterThan(3);
+    expect(tsx, `${example.id} TSX`).toMatch(/^import \{ [A-Za-z, ]+ \} from "@k2b\/ui";\n\n<([A-Z]|>)/);
+    expect(json.length, `${example.id} JSON`).toBeGreaterThan(2);
     const spec = example.spec as Record<string, unknown>;
-    // Blocks other than key figures are drawn by their own components; their portable form is the JSON alone.
-    if (Array.isArray(example.spec) || (typeof spec.block === "string" && spec.block !== "stats")) {
-      expect(tsx, example.id).toBe("");
-      continue;
-    }
-    if (spec.block === "stats") {
-      expect(tsx, example.id).toContain("<StatGrid");
-      expect(tsx.match(/<StatCell/g)?.length, example.id).toBe((spec.items as unknown[]).length);
-      continue;
-    }
+    if (Array.isArray(example.spec) || typeof spec.block === "string") continue;
     // A kind with a typed component reads as Chart.Kind (F7); otherwise as the dispatcher with kind.
-    expect(tsx).toMatch(
-      new RegExp(`<Chart\\.${String(spec.kind)[0]!.toUpperCase()}${String(spec.kind).slice(1)}\\n|kind=${JSON.stringify(spec.kind)}`),
-    );
-    for (const key of Object.keys(spec).filter((key) => key !== "kind"))
-      expect(tsx, `${example.id}.${key}`).toMatch(new RegExp(`\\n  ${key}(=|\\n)`));
+    expect(tsx).toMatch(new RegExp(`<Chart\\.${String(spec.kind)[0]!.toUpperCase()}${String(spec.kind).slice(1)}\\n|kind=${JSON.stringify(spec.kind)}`));
+    for (const key of Object.keys(spec).filter((key) => key !== "kind")) expect(tsx, `${example.id}.${key}`).toMatch(new RegExp(`\\n  ${key}(=|\\n)`));
   }
   expect(specToTsx({ kind: "line", title: "A", series: [] })).toContain("<Chart.Line");
+  // Blocks read as the components that draw them.
+  expect(specToTsx({ block: "budget", currency: "EUR", items: [] })).toContain("<BudgetList");
+  expect(specToTsx({ block: "balance", start: 1, in: 2, out: 3, currency: "EUR" })).toContain("<BalanceSummary");
+  expect(specToTsx([{ type: "flow", value: 1, currency: "EUR" }])).toContain("<FlowAmount");
+  expect(specToTsx({ block: "table", columns: [{ id: "a", label: "A" }], rows: [] })).toContain("<DataTable");
 });
 
 test("dashboard panels have unique ids and say what each slot stands for", () => {
