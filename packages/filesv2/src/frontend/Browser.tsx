@@ -420,10 +420,10 @@ export default function Browser(props: {
     const known = new Set(props.directory.items.map((item) => item.path));
     const context = locationKey();
     setLoadingMore(true);
-    setMoreError(false);
     try {
       await props.onLoadMore();
       if (locationKey() !== context) return;
+      setMoreError(false);
       const first = props.directory.items.find((item) => !known.has(item.path));
       if (first) requestAnimationFrame(() => selection.focus(first.path));
     } catch {
@@ -1952,7 +1952,7 @@ export default function Browser(props: {
                   </Show>
                   <Show when={props.directory.next}>
                     <div class="filesv2-browser__pagination">
-                      <Button size="sm" variant="text" loading={loadingMore()} onClick={() => void loadMore()}>
+                      <Button size="sm" variant="link" loading={loadingMore()} onClick={() => void loadMore()}>
                         {moreError() ? b().retry : b().loadMore}
                         <i class={moreError() ? "ti ti-refresh" : "ti ti-chevron-down"} aria-hidden="true" />
                       </Button>

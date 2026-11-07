@@ -2073,6 +2073,22 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   background: transparent;
 }
 
+/* Quiet continuation actions share link ink without acquiring a button surface. */
+.k2b-ui .k2b-button[data-variant="link"] {
+  padding-inline: 0;
+  border-inline-width: 0;
+  color: var(--k2b-action);
+  background: transparent;
+  font-weight: 400;
+  text-underline-offset: 0.2em;
+}
+
+.k2b-ui .k2b-button[data-variant="link"]:not(:disabled, [aria-disabled="true"]):hover {
+  color: var(--k2b-action);
+  background: transparent;
+  text-decoration: underline;
+}
+
 /* A destructive text action, such as Remove at the foot of a menu, takes the
    danger ink that destructive menu items use, at rest and on hover. */
 .k2b-ui .k2b-button[data-variant="text"][data-danger="true"],
@@ -3683,8 +3699,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 }
 
 .k2b-ui .k2b-discussion__status button,
-.k2b-ui .k2b-discussion__fold,
-.k2b-ui .k2b-discussion__load-more {
+.k2b-ui .k2b-discussion__fold {
   min-height: 1.75rem;
   padding: 0.25rem 0.5rem;
   border: 0;
@@ -3695,7 +3710,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   cursor: pointer;
 }
 
-.k2b-ui :is(.k2b-discussion__load-more, .k2b-discussion__fold) {
+.k2b-ui .k2b-discussion__fold {
   display: inline-flex;
   align-self: flex-start;
   align-items: center;
@@ -3705,8 +3720,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 }
 
 .k2b-ui .k2b-discussion__status button:hover,
-.k2b-ui .k2b-discussion__fold:hover,
-.k2b-ui .k2b-discussion__load-more:hover {
+.k2b-ui .k2b-discussion__fold:hover {
   background: var(--k2b-surface-muted);
 }
 
@@ -3730,9 +3744,8 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   background: transparent;
 }
 
-.k2b-ui .k2b-discussion__load-more:disabled {
-  cursor: wait;
-  opacity: 0.7;
+.k2b-ui .k2b-discussion__load-more {
+  align-self: flex-start;
 }
 
 .k2b-ui .k2b-discussion__list {

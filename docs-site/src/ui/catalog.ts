@@ -144,7 +144,12 @@ const portableSections = [
     title: "Actions",
     icon: "ti ti-click",
     pages: [
-      page("buttons", "Buttons", "ti ti-hand-click", "Semantic button and icon-button variants with loading behavior."),
+      page(
+        "buttons",
+        "Buttons",
+        "ti ti-hand-click",
+        "Semantic buttons, quiet link actions, and icon buttons with stable loading behavior.",
+      ),
       page("copy-remove", "Copy and remove", "ti ti-copy", "Focused clipboard feedback and destructive icon actions."),
       page("menus", "Menus", "ti ti-menu-2", "Dropdown and context menus with keyboard and viewport behavior."),
       page(

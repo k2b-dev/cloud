@@ -48,6 +48,7 @@ for (const width of [1440, 390])
       await tab.waitForFunction(() => !!document.querySelector('.filesv2-browser__pagination button[aria-busy="true"]'));
       const during = await more.boundingBox();
       expect(during?.height).toBe(before?.height);
+      expect(during?.width).toBe(before?.width);
       expect(during?.y).toBe(before?.y);
       expect(await tab.locator(".filesv2-list__row:not(.filesv2-list__row--virtual)").count()).toBe(3);
       await tab.waitForFunction(() => document.querySelector(".filesv2-browser__pagination button")?.hasAttribute("disabled"));
@@ -58,9 +59,15 @@ for (const width of [1440, 390])
       expect(await tab.locator(".filesv2-list__row:not(.filesv2-list__row--virtual)").count()).toBe(3);
       expect(new URL(tab.url()).searchParams.get("pages")).toBeNull();
       fail = false;
+      const retryBefore = await retry.boundingBox();
       await retry.focus();
       await tab.keyboard.press("Enter");
       await gates[1]!.arrived.promise;
+      await tab.waitForFunction(() => !!document.querySelector('.filesv2-browser__pagination button[aria-busy="true"]'));
+      const retryDuring = await retry.boundingBox();
+      expect(retryDuring?.width).toBe(retryBefore?.width);
+      expect(retryDuring?.height).toBe(retryBefore?.height);
+      expect(retryDuring?.y).toBe(retryBefore?.y);
       gates[1]!.release.resolve();
       await tab.waitForFunction(() => document.querySelectorAll(".filesv2-list__row:not(.filesv2-list__row--virtual)").length === 6);
       await tab.waitForFunction(() => document.activeElement?.textContent?.includes("Fotoliste.csv"));
