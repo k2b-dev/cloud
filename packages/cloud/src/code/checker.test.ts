@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import { chmod, copyFile, cp, mkdir, mkdtemp, readdir, rmdir, unlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
+import { chatCapabilities } from "../../../chat/src/capabilities";
 import { aiDecisionQuery } from "../../../core/src/ai-decision-capability";
 import { aiGenerationQuery } from "../../../core/src/ai-generation-capability";
 import codeCli from "../../../core/src/cli/code";
@@ -22,6 +23,7 @@ import { CODE_CHECK_LIMITS, type CodeCheckRequest, CodeVersionManifestSchema } f
 import { generateCodeSdk } from "./generator";
 import { validateCodePage } from "./page-contract";
 import { sdkFixture } from "./sdk.test-fixture";
+import type { CodeSdkInvocation } from "./types";
 
 let directory: string;
 let host: Extract<CodeCheckHost, { bun: string }>;
@@ -855,3 +857,44 @@ test("TSX refuses intrinsic HTML and handler props", async () => {
     if (!result.ok) expect(result.diagnostics.some((diagnostic) => diagnostic.code.startsWith("TS"))).toBe(true);
   }
 }, 60000);
+
+test("personal scheduled Code generates a summary and posts it into the owner's selected Chat", async () => {
+  const sdk = generateCodeSdk(
+    [
+      compileCapabilityManifest("core", { protocolVersion: 2, queries: { "ai.generate": aiGenerationQuery } }),
+      compileCapabilityManifest("chat", chatCapabilities),
+    ],
+    { mode: "personal" },
+  );
+  const source = `import { app, core, chat } from "@sdk";
+app.schedule({ at: "2026-12-01T09:15:30+01:00", timeZone: "Europe/Berlin" }, async () => {
+  const result = await core.app().ai.generate({ task: "daily.summary", prompt: "Summarize the supplied notes.", input: { notes: "Delivery received." }, output: { type: "text", maxChars: 1200 } });
+  if (typeof result.output !== "object" || result.output === null || !("text" in result.output) || typeof result.output.text !== "string") throw new Error("Unexpected summary output");
+  await chat.app().message.post({ conversation: "Chat01", body: result.output.text, idempotencyKey: "summary-2026-12-01" });
+}, { name: "reminder", title: "Send summary" });
+export default app;`;
+  const checked = await check(source, { sdk, aiOperations: ["core.ai.generate"], limits: { ...CODE_CHECK_LIMITS, checkMs: 60_000 } });
+  if (!checked.ok) throw new Error(JSON.stringify(checked.diagnostics));
+  expect(checked.manifest.ai).toBeTrue();
+  expect(checked.manifest.permissions.map((entry) => entry.operation).sort()).toEqual(["chat.message.post", "core.ai.generate"]);
+  const calls: Array<{ operation: string; invocation: CodeSdkInvocation }> = [];
+  const loaded = await import(`data:text/javascript;base64,${Buffer.from(checked.bundle).toString("base64")}`);
+  await loaded.reminder(null, {
+    async call(operation: string, invocation: CodeSdkInvocation) {
+      calls.push({ operation, invocation });
+      if (operation === "core.ai.generate") return { output: { text: "Summary: delivery received." } };
+      if (operation === "chat.message.post") return { id: "Msg001", conversation: "Chat01", createdAt: "2026-12-01T08:15:30.000Z" };
+      throw new Error("Unexpected operation");
+    },
+  });
+  expect(calls.map((entry) => entry.operation)).toEqual(["core.ai.generate", "chat.message.post"]);
+  expect(calls[1]!.invocation).toEqual({
+    call: {
+      capability: "chat.message.post",
+      target: null,
+      refs: {},
+      input: { conversation: "Chat01", body: "Summary: delivery received." },
+    },
+    metadata: { idempotencyKey: "summary-2026-12-01" },
+  });
+}, 90_000);
