@@ -76,8 +76,8 @@ const islands = (page: Page) =>
                         !declaration.startsWith("--k2b-data-table-scroll") &&
                         !declaration.startsWith("--k2b-calendar-header"),
                     )
-                    // The browser writes 12.000% as 12%.
-                    .map((declaration) => declaration.replace(/(\d+)\.0+(?!\d)/g, "$1"))
+                    // The browser keeps fewer decimals: 12.000% reads 12%, 52.33333% reads 52.3333%.
+                    .map((declaration) => declaration.replace(/\d+\.\d+/g, (number) => String(Number(Number(number).toFixed(3)))))
                     .sort()
                     .join(";")
                 : // stdlib numbers sparkline gradients per process, so a server that rendered earlier pages counts on.
@@ -171,7 +171,7 @@ for (const width of [1280, 390]) {
           expect(before.length, example.id).toBe(1);
           // Charts inspect and turn into tables; blocks such as key figures draw with their own components.
           const block =
-            typeof example.spec === "object" && example.spec !== null && !Array.isArray(example.spec) && "block" in example.spec;
+            Array.isArray(example.spec) || (typeof example.spec === "object" && example.spec !== null && "block" in example.spec);
           if (width === 1280 && !block) {
             // Focus inspects the first value: its tooltip names it, also for the first mark of the chart.
             await page.locator(".ui-charts-stage .k2b-chart[tabindex]").first().focus();
