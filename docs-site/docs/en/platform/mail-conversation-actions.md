@@ -5,7 +5,7 @@ section: Platform services
 order: 1615
 description: Write protected summaries, set work status, claim unassigned conversations, and change one message through Mail capabilities.
 tags: [mail, capabilities, cli, collaboration]
-updated: 2026-11-06
+updated: 2026-11-07
 ---
 
 # Mail conversation actions
@@ -17,10 +17,14 @@ policy and current Mail permissions still apply. Assignment and reference
 allocation require mailbox-wide write access. Status, summaries, and message
 changes also allow writers restricted to their assigned conversations.
 
+Pass the mailbox as the capability call’s `target: { type: "mail.mailbox", id }`.
+The Action input contains the conversation and other fields below; it does not
+repeat `mailboxId`. The CLI resolves `--mailbox` into that target.
+
 ## Save a prepared summary
 
 `mail.conversation.summary.write` saves text you have already prepared. It does
-not call an AI model. Supply `mailboxId`, `conversationId`, `summary` (1–50,000
+not call an AI model. Supply `conversationId`, `summary` (1–50,000
 characters after trimming), `expectedRevision`, and `expectedSummaryRevision`.
 Read both revisions from `mail.conversation.read` before preparing the text.
 A changed conversation or summary returns `CONFLICT` without writing.
@@ -59,8 +63,10 @@ The `mail.conversation.status.set.batch` Action accepts up to 50 unique `convers
 `expectedRevisions` object must supply a revision for every requested ID. Mail
 checks every visible conversation before changing any; one stale revision
 returns `CONFLICT` and leaves the whole batch unchanged. Without that object,
-the batch acts on the current locked state, as before. Missing or invisible
-conversations return `not_found` per item.
+the batch acts on the current locked state, as before. Every conversation ID
+must resolve in the target mailbox before the batch runs; an unknown ID rejects
+the whole call with `NOT_FOUND`. Existing conversations the caller cannot write
+return `not_found` per item.
 
 The shared Mail status service still fences personal changes and records which
 message links a decision covers. Later incoming mail can restore `needs_action`;
@@ -106,7 +112,7 @@ cld mail assign Convo1 --mailbox Mail01 --to ada --only-if-unassigned --revision
 
 ## Ensure a reference
 
-`mail.conversation.reference.ensure` takes `mailboxId` and `conversationId`
+`mail.conversation.reference.ensure` takes `conversationId` in the mailbox target
 and requires an idempotency key. It returns an existing immutable reference or
 allocates one using the mailbox's enabled reference-number configuration.
 Replaying the same key or calling again with a different key for the same

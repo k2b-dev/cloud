@@ -6240,8 +6240,8 @@ test("protected summary CLI invokes the idempotent capability with explicit revi
   ]);
   expect(result.exitCode, result.stderr).toBe(0);
   expect(received).toEqual({
+    target: { type: "mail.mailbox", id: MAILBOX_ID },
     input: {
-      mailboxId: MAILBOX_ID,
       conversationId: CONVERSATION_ID,
       expectedRevision: 4,
       expectedSummaryRevision: 2,

@@ -330,7 +330,7 @@ describe("mail capabilities", () => {
   test("declares mailbox targets separately from domain input and keeps chat/MCP fields flat", () => {
     const manifest = compileCapabilityManifest("mail", mailCapabilities);
     const mailboxActions = manifest.actions.filter((action) => !action.localId.startsWith("code.access."));
-    expect(mailboxActions).toHaveLength(28);
+    expect(mailboxActions).toHaveLength(32);
     for (const action of mailboxActions) {
       expect(action.target).toBe("mailbox");
       expect(action.inputSchema.properties).not.toHaveProperty("mailboxId");
@@ -431,7 +431,7 @@ describe("mail capabilities", () => {
     expect(mutation).not.toHaveBeenCalled();
   });
 
-  test.each(["conversation.assign.batch", "conversation.status.update.batch"] as const)(
+  test.each(["conversation.assign.batch", "conversation.status.update.batch", "conversation.status.set.batch"] as const)(
     "%s checks every member before review or any mutation",
     async (id) => {
       spyOn(mailboxAccess, "requireMailboxPermission").mockResolvedValue({ ok: true, data: "write" });
@@ -460,7 +460,7 @@ describe("mail capabilities", () => {
     },
   );
 
-  test.each(["conversation.assign.batch", "conversation.status.update.batch"] as const)(
+  test.each(["conversation.assign.batch", "conversation.status.update.batch", "conversation.status.set.batch"] as const)(
     "%s checks current access before resolving members",
     async (id) => {
       const denied = fail(err.forbidden("Access denied"));

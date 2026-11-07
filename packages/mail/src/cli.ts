@@ -2110,8 +2110,8 @@ const everydayCommands = (t: Translate) => {
           method: "POST",
           headers: { "content-type": "application/json", "idempotency-key": flags.idempotencyKey! },
           body: JSON.stringify({
+            target: { type: "mail.mailbox", id: mailbox.id },
             input: {
-              mailboxId: mailbox.id,
               conversationId: requireMailResourceId(args.conversation, "Conversation id"),
               expectedRevision: flags.revision,
               expectedSummaryRevision: flags.summaryRevision,

@@ -557,7 +557,7 @@ export const mailCapabilityPresentation: CapabilityPresentationCatalog = {
         "conversation.status.set.batch": {
           title: "Status von Unterhaltungen aktualisieren",
           description:
-            "Setzt needs_action, waiting oder done für bis zu 50 Unterhaltungen; open leitet den Status aus dem Verlauf ab. Meldet ok oder not_found je Unterhaltung.",
+            "Setzt needs_action, waiting oder done für bis zu 50 Unterhaltungen desselben Zielpostfachs; open leitet den Status aus dem Verlauf ab. Unbekannte IDs lehnen den ganzen Stapel ab.",
           input: {
             expectedRevisions: "Optional: Revision jeder angefragten Unterhaltung. Ein Konflikt lässt den gesamten Stapel unverändert.",
             conversationIds: "Exakte mail.conversation IDs desselben Postfachs, höchstens 50.",
@@ -576,7 +576,8 @@ export const mailCapabilityPresentation: CapabilityPresentationCatalog = {
         },
         "conversation.status.update.batch": {
           title: "Status von Unterhaltungen aktualisieren",
-          description: "Markiert bis zu 50 Unterhaltungen als erledigt oder öffnet sie erneut. Meldet ok oder not_found je Unterhaltung.",
+          description:
+            "Markiert bis zu 50 Unterhaltungen desselben Zielpostfachs als erledigt oder öffnet sie erneut. Unbekannte IDs lehnen den ganzen Stapel ab.",
           input: {
             expectedRevisions: "Optional: Revision jeder angefragten Unterhaltung. Ein Konflikt lässt den gesamten Stapel unverändert.",
             conversationIds: "Exakte mail.conversation IDs desselben Postfachs, höchstens 50.",

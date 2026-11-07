@@ -2597,7 +2597,7 @@ const conversationStatusSetActions = {
   "conversation.status.set.batch": {
     title: "Update the status of conversations",
     description:
-      "Set needs_action, waiting, or done on up to 50 conversations, or reopen them from their latest message direction. Optional expectedRevisions fences every item. Reports ok or not_found for each conversation.",
+      "Set needs_action, waiting, or done on up to 50 conversations, or reopen them from their latest message direction. Optional expectedRevisions fences every item. Every ID must belong to the mailbox target; an unknown ID rejects the batch. Reports ok or not_found per existing conversation.",
     target: "mailbox",
     input: c.ConversationStatusSetBatchInputSchema,
     data: c.ConversationStatusSetBatchDataSchema,
@@ -4018,7 +4018,8 @@ const actionDefinitions = {
   ...conversationStatusSetActions,
   "conversation.status.update.batch": {
     ...conversationStatusSetActions["conversation.status.set.batch"],
-    description: "Mark up to 50 conversations done or reopen them. Optional expectedRevisions fences every item.",
+    description:
+      "Mark up to 50 conversations of one mailbox done or reopen them. Every conversation must belong to the mailbox target. Optional expectedRevisions fences every item.",
     input: c.ConversationStatusUpdateBatchInputSchema,
     data: c.ConversationStatusUpdateBatchDataSchema,
   },
@@ -4101,7 +4102,6 @@ const actionDefinitions = {
     target: "mailbox",
     input: c.ConversationReferenceEnsureInputSchema,
     data: c.ConversationReferenceEnsureDataSchema,
-    target: "mailbox",
     destructive: false,
     openWorld: false,
     idempotency: "required",
