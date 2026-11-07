@@ -662,18 +662,9 @@ export function closeChartInspectionOnOutside(options: {
     const container = options.container(),
       tooltip = options.tooltip(),
       anchor = options.anchor?.();
-    if (
-      options.follow?.() &&
-      container &&
-      tooltip &&
-      anchor &&
-      container.contains(container.ownerDocument.activeElement) &&
-      tooltip.matches(":popover-open")
-    ) {
-      positionTooltipSurface(tooltip, anchor);
-      return;
-    }
-    options.close();
+    if (!(options.follow?.() && container?.matches(":focus-within"))) options.close();
+    // A tooltip that stays open, kept by the keyboard or by a linked chart that owns the cursor, moves with its mark.
+    if (tooltip && anchor && tooltip.matches(":popover-open")) positionTooltipSurface(tooltip, anchor);
   };
   window.addEventListener("pointerdown", outside);
   window.addEventListener("scroll", scroll, true);
