@@ -1,3 +1,4 @@
+import { categoryLabels } from "../charts/core/category-labels";
 import {
   type AxisOptions,
   type BarItem,
@@ -13,8 +14,6 @@ import {
   referenceLineAttributes,
   svgRoot,
 } from "../charts/core/svg";
-
-import { categoryLabels } from "../charts/core/category-labels";
 
 /**
  * Bar chart options: stdlib's `charts.bar` options plus a title for the category axis and a separate value format.
@@ -731,9 +730,13 @@ const renderSeriesBars = (opts: BarChartOptions & { width: number; height: numbe
         marks,
         { role: "item", index: column.index, label: column.label, anchor: [column.center, g.top], values: fields },
         opts.inspect ?? false,
-      ).replace(
-        /<title>[\s\S]*?<\/title>/,
-        `<title>${escapeXml([column.label, ...fields.map((field) => `${field.key.startsWith("series:") ? opts.series![Number(field.key.slice(7))]!.label : field.key === "previous" ? opts.compare!.label : field.key === "delta" ? labels.change : labels.total}: ${field.formatted}`)].join(" · "))}</title>`,
+        [
+          column.label,
+          ...fields.map(
+            (field) =>
+              `${field.key.startsWith("series:") ? opts.series![Number(field.key.slice(7))]!.label : field.key === "previous" ? opts.compare!.label : field.key === "delta" ? labels.change : labels.total}: ${field.formatted}`,
+          ),
+        ].join(" · "),
       ),
     );
     if (visibleLabels.has(column.index))

@@ -148,3 +148,23 @@ test("horizontal legend budget is stable when rows grow the reserved height", ()
   expect(rendered.height).toBe(layout.height);
   expect(renderHbarSvg({ ...spec, width: 480, height: layout.height }).match(/viewBox="([^"]+)"/)?.[1]).toBe(`0 0 480 ${layout.height}`);
 });
+
+test("localized inspection titles escape category and series text once", () => {
+  const label = "<title>".repeat(2048);
+  const svg = renderBarChartSvg({
+    x: [label],
+    layout: "stacked",
+    series: [{ label: "A < B", data: [2] }],
+    width: 480,
+    height: 280,
+    inspect: true,
+    locale: "de",
+  });
+  const rows = renderHbarSvg({ series: ["A < B"], rows: [{ label, values: [2] }], width: 480, height: 280, inspect: true, locale: "de" });
+  for (const drawing of [svg, rows]) {
+    expect(drawing.match(/<title>/g)).toHaveLength(1);
+    expect(drawing).toContain("&lt;title&gt;".repeat(2048));
+    expect(drawing).toContain("A &lt; B: 2");
+    expect(drawing).toContain("Gesamt: 2");
+  }
+});

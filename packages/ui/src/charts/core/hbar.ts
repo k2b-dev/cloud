@@ -133,9 +133,14 @@ export function renderHbarSvg(spec: HorizontalBarOptions & { width: number; heig
           ],
         },
         spec.inspect ?? false,
-      ).replace(
-        /<title>[\s\S]*?<\/title>/,
-        `<title>${escapeXml([row.label, row.group, ...row.values.map((v, i) => `${spec.series[i]}: ${v === null ? "–" : g.format(v)}`), `${labels.total}: ${row.total === null ? "–" : g.format(row.total)}`].filter(Boolean).join(" · "))}</title>`,
+        [
+          row.label,
+          row.group,
+          ...row.values.map((v, i) => `${spec.series[i]}: ${v === null ? "–" : g.format(v)}`),
+          `${labels.total}: ${row.total === null ? "–" : g.format(row.total)}`,
+        ]
+          .filter(Boolean)
+          .join(" · "),
       ),
     );
     const label = wrapLabel(row.label, Math.max(8, g.left / g.unit - 8), 2);

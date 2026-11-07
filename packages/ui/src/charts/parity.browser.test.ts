@@ -47,7 +47,7 @@ const buildFixture = async (contents: string, legacy = false, hydratable = false
   return build.outputs[0]!.text();
 };
 
-test("all fourteen kinds match server SVG and geometry on the first client render", async () => {
+test("all registered kinds match server SVG and geometry on the first client render", async () => {
   const ServerChart: typeof ChartComponent = (await import(resolve(uiRoot, "dist/ssr/content/Chart.js"))).default;
   const specs = Object.values(chartFixtures);
   const html = specs
@@ -95,7 +95,7 @@ test("all fourteen kinds match server SVG and geometry on the first client rende
     expect(await page.locator("body").getAttribute("data-mounted")).toBe("true");
     const after = await drawing();
     expect(after).toEqual(before);
-    expect(after).toHaveLength(14);
+    expect(after).toHaveLength(specs.length);
     expect(errors).toEqual([]);
   } finally {
     await browser.close();

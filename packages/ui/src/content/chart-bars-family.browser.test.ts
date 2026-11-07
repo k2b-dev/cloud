@@ -331,7 +331,8 @@ test("old bars keep valid SSR/client selection and inspection outlines inside k2
     const second = chart.locator("[data-chart-datum]").nth(1);
     expect(await first.locator(".stdlib-chart-bar").evaluate((n) => getComputedStyle(n).stroke)).toBe(serverStroke);
     expect(await first.evaluate((n) => CSS.supports("color", n.style.getPropertyValue("--k2b-chart-selection-color")))).toBe(true);
-    await second.locator(".k2b-chart-category-band").hover({ position: { x: 3, y: 3 } });
+    // The center stays inside rounded bands at every SVG stretch factor.
+    await second.locator(".k2b-chart-category-band").hover();
     await chart.locator('[role="tooltip"]:popover-open').waitFor();
     await settled(page);
     expect(await second.locator(".stdlib-chart-bar").evaluate((n) => getComputedStyle(n).stroke)).toBe("none");
@@ -346,7 +347,7 @@ test("old bars keep valid SSR/client selection and inspection outlines inside k2
     expect(await second.evaluate((n) => CSS.supports("color", n.style.getPropertyValue("--k2b-chart-selection-color")))).toBe(true);
     expect(await second.locator(".stdlib-chart-bar").evaluate((n) => parseFloat(getComputedStyle(n).strokeWidth))).toBeGreaterThan(0);
     await chart.press("Escape");
-    await second.locator(".k2b-chart-category-band").hover({ position: { x: 3, y: 3 } });
+    await second.locator(".k2b-chart-category-band").hover();
     await settled(page);
     expect(await second.locator(".stdlib-chart-bar").evaluate((n) => getComputedStyle(n).stroke)).not.toBe("none");
     expect(await second.locator(".k2b-chart-category-band").evaluate((n) => getComputedStyle(n).stroke)).toBe("none");
