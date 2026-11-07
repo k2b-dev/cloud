@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
 import { balanceFixture } from "../../../test/charts/balance-flow-fixture";
 import {
+  BalanceFlowError,
   balanceFlowHeight,
   balanceFlowLayout,
   balanceFlowRows,
@@ -119,4 +120,36 @@ test("custom value labels remain validated inspection metadata", () => {
   const datum = { role: "item", index: 0, anchor: [0, 0], values: [{ key: "value", value: 1, label: "Amount" }] };
   expect(isChartDatum(datum)).toBe(true);
   expect(isChartDatum({ ...datum, values: [{ key: "value", value: 1, label: 123 }] })).toBe(false);
+});
+
+test("desktop captions label every bar without overlap, including clustered small deductions", () => {
+  const scene = balanceFlowLayout(balanceFixture);
+  expect(scene.nodes.filter((n) => n.showLabel)).toHaveLength(scene.nodes.length);
+  for (const stage of [0, 1, 2]) {
+    const labels = scene.nodes
+      .filter((n) => n.stage === stage && n.showLabel)
+      .map((n) => scene.labelY.get(n.index)!)
+      .sort((a, b) => a - b);
+    for (let i = 1; i < labels.length; i++) expect(labels[i]! - labels[i - 1]!).toBeGreaterThanOrEqual(36);
+    for (const y of labels) {
+      expect(y - 15).toBeGreaterThanOrEqual(scene.header.height);
+      expect(y + 14).toBeLessThanOrEqual(scene.height);
+    }
+  }
+  const svg = renderBalanceFlowSvg({ ...balanceFixture, inspect: true });
+  expect(svg.match(/class="k2b-balance-flow-caption"/g)).toHaveLength(scene.nodes.length);
+  expect(svg).toContain(">Refunds</text>");
+  expect(svg).toContain(">Shipping labels</text>");
+});
+
+test("invalid frame names the offending month, even when it is not the active period", () => {
+  const spec = { ...balanceFixture, periods: balanceFixture.periods.map((p, i) => (i === 1 ? { ...p, closing: p.closing + 1 } : p)) };
+  try {
+    validateBalanceFlow(spec.periods);
+    throw new Error("Expected invalid ledger");
+  } catch (error) {
+    expect(error).toBeInstanceOf(BalanceFlowError);
+    expect(error).toMatchObject({ period: 1, periodLabel: spec.periods[1]!.label });
+  }
+  expect(renderBalanceFlowHtml({ ...spec, locale: "de" })).toContain(`${spec.periods[1]!.label}: Die Beträge gehen nicht auf`);
 });

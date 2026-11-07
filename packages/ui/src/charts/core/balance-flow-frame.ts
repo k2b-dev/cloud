@@ -8,7 +8,7 @@ import {
   balanceFlowWords,
   renderBalanceFlowSvg,
 } from "./balance-flow";
-import { balanceFlowHeight } from "./balance-flow-size";
+import { BalanceFlowError, balanceFlowHeight } from "./balance-flow-size";
 import { escapeXml } from "./svg";
 
 export type BalanceFlowState = "data" | "loading" | "empty" | "error" | "stale";
@@ -29,9 +29,9 @@ export function renderBalanceFlowHtml(
     diagrams = spec.periods.map((_, period) =>
       responsiveChartSvg(renderBalanceFlowSvg({ ...spec, title: undefined, subtitle: undefined, period, inspect: true })),
     );
-  } catch {
+  } catch (issue) {
     state = "error";
-    error = t.balanceInvalid;
+    error = issue instanceof BalanceFlowError ? `${issue.periodLabel}: ${t.balanceInvalid}` : t.balanceInvalid;
   }
   const active = diagrams[initial] ? initial : 0;
   if (!spec.periods.length && state !== "loading" && state !== "error") state = "empty";

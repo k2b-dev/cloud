@@ -5,7 +5,13 @@ import { type ChartOptions, chartDatumSvg, escapeXml, renderHeader, svgRoot } fr
 import { fitChartText } from "./text";
 import type { ChartDatum } from "./types";
 
-export { type BalanceFlowItem, type BalanceFlowPeriod, balanceFlowHeight, validateBalanceFlow } from "./balance-flow-size";
+export {
+  BalanceFlowError,
+  type BalanceFlowItem,
+  type BalanceFlowPeriod,
+  balanceFlowHeight,
+  validateBalanceFlow,
+} from "./balance-flow-size";
 export type BalanceFlowOptions = ChartOptions & {
   periods: BalanceFlowPeriod[];
   currency: string;
@@ -117,15 +123,32 @@ export function balanceFlowLayout(spec: BalanceFlowOptions) {
       return { source: source ? n.key : "balance", target: source ? "balance" : n.key, value: Math.abs(n.value) };
     });
   const scene = sankeyLayout({ nodes, links, width, height, title: spec.title, subtitle: spec.subtitle });
-  for (const stage of [0, 1, 2]) {
-    let previous = -Infinity;
-    for (const node of scene.nodes.filter((n) => n.stage === stage).sort((a, b) => a.y - b.y)) {
-      const center = node.y + node.height / 2;
-      node.showLabel = node.value > 0 && center - previous >= 36;
-      if (node.showLabel) previous = center;
+  const labelY = new Map<number, number>();
+  // Zero balances have no link but still belong at their opening/closing end.
+  for (const node of scene.nodes) {
+    const row = rows[node.index]!;
+    node.showLabel = node.value > 0 || row.key === "opening" || row.key === "closing";
+    if (!node.value && node.showLabel) {
+      node.stage = row.key === "opening" ? 0 : 2;
+      node.x = node.stage === 0 ? 0 : scene.width - 160;
+      node.y = scene.height / 2;
+      node.height = 2;
     }
   }
-  return { ...scene, rows: data, index, period: p };
+  for (const stage of [0, 1, 2]) {
+    const labels = scene.nodes.filter((n) => n.stage === stage && n.showLabel).sort((a, b) => a.y - b.y);
+    const top = scene.header.height + 17,
+      bottom = scene.legendTop - 18;
+    // Move labels, never amounts or bars: small adjacent flows keep a full two-line caption.
+    labels.forEach((node, i) =>
+      labelY.set(node.index, Math.max(node.y + node.height / 2, i ? labelY.get(labels[i - 1]!.index)! + 36 : top)),
+    );
+    for (let i = labels.length - 1; i >= 0; i--) {
+      const node = labels[i]!;
+      labelY.set(node.index, Math.min(labelY.get(node.index)!, i + 1 < labels.length ? labelY.get(labels[i + 1]!.index)! - 36 : bottom));
+    }
+  }
+  return { ...scene, rows: data, index, period: p, labelY };
 }
 export function renderBalanceFlowSvg(spec: BalanceFlowOptions): string {
   const scene = balanceFlowLayout(spec),
@@ -147,20 +170,19 @@ export function renderBalanceFlowSvg(spec: BalanceFlowOptions): string {
   for (const node of scene.nodes) {
     const row = scene.rows[node.index]!;
     if (!node.value && row.key !== "opening" && row.key !== "closing") continue;
-    if (!node.value) {
-      node.x = row.key === "opening" ? 0 : scene.width - 160;
-      node.y = scene.height / 2;
-      node.height = 2;
-    }
     const color = balanceFlowColors[row.direction],
       x = node.x + scene.nodeWidth + 7,
       y = node.y + node.height / 2;
+    const captionY = scene.labelY.get(node.index) ?? y;
+    const leader =
+      node.showLabel && Math.abs(captionY - y) > 1
+        ? `<path class="k2b-chart-category-band" d="M${node.x + scene.nodeWidth},${y}L${x - 3},${captionY}" fill="none" stroke="${color}" stroke-width="1"/>`
+        : "";
     const captionWidth = Math.min(154, scene.width - x - 2);
     const amount = balanceFlowDisplayAmount(spec, row);
-    const caption =
-      node.showLabel || (!node.value && (row.key === "opening" || row.key === "closing"))
-        ? `<g class="k2b-balance-flow-caption" fill="var(--k2b-text,#27272a)" font-family="inherit" font-size="12" stroke="var(--k2b-surface,#fff)" stroke-width="4" paint-order="stroke"><text x="${x}" y="${y - 3}">${escapeXml(fitChartText(row.label, captionWidth, 12))}</text><text x="${x}" y="${y + 14}" font-weight="600" style="font-variant-numeric:tabular-nums">${escapeXml(fitChartText(amount, captionWidth, 12))}</text></g>`
-        : "";
+    const caption = node.showLabel
+      ? `<g class="k2b-balance-flow-caption" fill="var(--k2b-text,#27272a)" font-family="inherit" font-size="12" stroke="var(--k2b-surface,#fff)" stroke-width="4" paint-order="stroke">${leader}<text x="${x}" y="${captionY - 3}">${escapeXml(fitChartText(row.label, captionWidth, 12))}</text><text x="${x}" y="${captionY + 14}" font-weight="600" style="font-variant-numeric:tabular-nums">${escapeXml(fitChartText(amount, captionWidth, 12))}</text></g>`
+      : "";
     body.push(
       chartDatumSvg(
         `<rect data-balance-key="${row.key}" x="${node.x}" y="${node.y}" width="${scene.nodeWidth}" height="${node.height}" rx="2" fill="${color}" stroke="none"/>${caption}`,

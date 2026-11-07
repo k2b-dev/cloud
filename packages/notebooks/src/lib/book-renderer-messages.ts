@@ -71,6 +71,8 @@ export const bookRendererMessages = i18n.define({
       "unknown-column": ({ name }: { name?: string }) => `Unknown column ${name}.`,
       "not-a-number": ({ name, row }: { name?: string; row?: number }) => `Column ${name}, row ${row} must contain a number.`,
       "chart-x-type": "Use numbers or ISO dates for x, or use type: bar for text labels.",
+      "chart-balance-period": ({ name }: { name?: string }) =>
+        `Check the amounts for ${name}: opening + inflows − outflows must equal closing, and opening must equal the previous closing.`,
       "chart-one-series": "A bar chart shows one y column. Use one column per bar chart.",
       "chart-unsupported": "These values cannot be drawn as this chart.",
       "unexpected-line": "Unexpected line.",
@@ -155,6 +157,8 @@ export const bookRendererMessages = i18n.define({
       "unknown-column": ({ name }) => `Unbekannte Spalte ${name}.`,
       "not-a-number": ({ name, row }) => `Spalte ${name}, Zeile ${row} muss eine Zahl enthalten.`,
       "chart-x-type": "Verwende Zahlen oder ISO-Daten für x oder type: bar für Textbeschriftungen.",
+      "chart-balance-period": ({ name }: { name?: string }) =>
+        `Beträge für ${name} prüfen: Anfang + Eingänge − Ausgänge muss Schluss ergeben; der Anfang muss dem vorherigen Schluss entsprechen.`,
       "chart-one-series": "Ein Balkendiagramm zeigt eine y-Spalte. Verwende eine Spalte pro Balkendiagramm.",
       "chart-unsupported": "Diese Werte können nicht als dieses Diagramm dargestellt werden.",
       "unexpected-line": "Unerwartete Zeile.",

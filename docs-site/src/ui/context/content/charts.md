@@ -1155,12 +1155,14 @@ balance. Flows are nonnegative; a negative balance is labelled **owed**.
 Opening and closing share blue. Receipts use the turquoise money-in tokens,
 deductions the violet money-out tokens, with direction arrows and unsigned
 currency values. The available node stays neutral. Red and green have no role.
+Every desktop bar keeps a caption; closely spaced flows use staggered captions with leaders.
 Long labels keep their full text in the tooltip and table. Narrow panels show the
 complete name and amount rows below the drawing, with wrapping names and tabular
 numbers; they do not squeeze or cut labels inside the bands.
 
 Previous/Next or Left/Right move one period. The closing bar travels to the next
-opening position; reduced motion removes the animation. Up/Down inspect amounts,
+opening position, timed by `--k2b-motion-base`; either the operating system preference
+or `html[data-k2b-motion="reduced"]` removes the animation. Up/Down inspect amounts,
 Enter pins and Escape dismisses. The buttons disable at the ends. An accessible
 summary reads the period's opening, total inflows, total outflows and closing.
 `period` sets the initial zero-based period; it defaults to 0 on both server and
@@ -1168,7 +1170,8 @@ browser. Diagram/Table changes the representation of the same period.
 
 The drawing and frame reserve space for the largest period, including on phones.
 `state` is a Solid-only prop: `loading`, `empty`, `error`, `stale` or `data`.
-`onRetry` handles retry; `error` can supply a load-failure explanation. A stale
+`onRetry` handles retry; `error` can supply a load-failure explanation. Invalid
+accounting names the offending period in the frame and Notebook diagnostic. A stale
 notice occupies the subtitle line. Changing period, view, hover or state keeps the
 frame height. `view`/`onViewChange` optionally control the Diagram/Table switch.
 The JSON form carries the data, currency, initial period and optional validated

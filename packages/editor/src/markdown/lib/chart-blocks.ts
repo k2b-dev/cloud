@@ -224,7 +224,14 @@ const parseChart = (
       locale: string("locale"),
       ...(top.has("period") ? { period: parseScalar(top.get("period")!.value) } : {}),
     });
-    if (!parsed.success) for (const issue of parsed.error.issues) add("invalid-type", String(issue.path[0] ?? "periods"));
+    if (!parsed.success)
+      for (const issue of parsed.error.issues) {
+        const index = issue.path[0] === "periods" && typeof issue.path[1] === "number" ? issue.path[1] : undefined;
+        const period: unknown = index !== undefined && Array.isArray(periods) ? periods[index] : undefined;
+        if (period && typeof period === "object" && "label" in period && typeof period.label === "string")
+          add("chart-balance-period", issue.path.join("."), top.get("periods")?.line, { name: period.label });
+        else add("invalid-type", String(issue.path[0] ?? "periods"));
+      }
     if (diagnostics.length || !parsed.success) return { diagnostics };
     if (
       parsed.data.kind === "balanceFlow" &&

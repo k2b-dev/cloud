@@ -6,6 +6,7 @@ import {
   isChartDatum,
   sameChartDatum,
 } from "../charts/core/inspection";
+import { prefersReducedMotion } from "../motion";
 import { inspectChart } from "./chart-inspection-core";
 
 export function selectBalanceFlowDatum(root: HTMLElement, selected: ChartDatumRef | null): void {
@@ -80,7 +81,9 @@ export function mountBalanceFlow(
       button.disabled = Number(button.dataset.balanceStep) < 0 ? period === 0 : period === templates.length - 1;
     selectBalanceFlowDatum(root, null);
     inspection.invalidate();
-    if (!root.ownerDocument.defaultView?.matchMedia("(prefers-reduced-motion: reduce)").matches && root.dataset.view !== "table") {
+    const timing = getComputedStyle(root).getPropertyValue("--k2b-motion-base").trim() || "180ms";
+    const duration = Number.parseFloat(timing) * (timing.endsWith("ms") ? 1 : 1000);
+    if (!prefersReducedMotion() && duration > 0 && root.dataset.view !== "table") {
       const incoming = chart.querySelector<SVGGraphicsElement>(`[data-balance-key="${delta > 0 ? "opening" : "closing"}"]`);
       if (incoming && oldBox) {
         const box = incoming.getBoundingClientRect(),
@@ -96,7 +99,7 @@ export function mountBalanceFlow(
               },
               { transform: "none" },
             ],
-            320,
+            duration,
           );
         }
       }
@@ -108,7 +111,7 @@ export function mountBalanceFlow(
             { opacity: 0.45, transform: `translateX(${delta * 16}px)` },
             { opacity: 1, transform: "none" },
           ],
-          320,
+          duration,
         );
     }
   };

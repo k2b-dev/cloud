@@ -93,3 +93,23 @@ test("balance flow tooltip formats and labels survive the portable contract", ()
   expect(table.columns.at(-1)?.label).toBe("Betrag");
   expect(table.rows[1]?.cells.value).toBe("↙ 300 €");
 });
+
+test("Notebook diagnostics identify the bad month instead of hiding the accounting failure", () => {
+  const periods = source.periods.map((p, i) => (i === 1 ? { ...p, closing: 999 } : p));
+  const schema = chartKinds();
+  const parsed = schema.safeParse({ ...source, periods });
+  expect(parsed.success).toBe(false);
+  if (!parsed.success)
+    expect(parsed.error.issues).toContainEqual(
+      expect.objectContaining({ path: ["periods", 1], message: expect.stringContaining("November") }),
+    );
+  const block = `:::chart\ntype: balanceFlow\ntitle: Settlements\ncurrency: EUR\nperiods: ${JSON.stringify(periods)}\n:::`;
+  const result = parseNotebookChartBlocks(block, { maxBlocks: 8, maxSeries: 8, maxValues: 480, schema });
+  expect(result.blocks).toEqual([]);
+  expect(result.diagnostics).toContainEqual({
+    code: "chart-balance-period",
+    line: 5,
+    path: "chart.periods.1",
+    params: { name: "November" },
+  });
+});
