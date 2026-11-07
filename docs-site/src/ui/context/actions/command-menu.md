@@ -1,13 +1,13 @@
 # CommandMenu
 
-`CommandMenu` opens a searchable list of commands from a "+" button, a chip, or an anchor. `MarkdownEditor` shows the
-same list when a person types `/` (see [MarkdownEditor](/en/ui/input/markdown-editor#slash-commands)). Both read one
-`CommandItem[]`, so a composer's `/`, its "+" button, and a chip never disagree.
+`CommandMenu` opens a searchable list of commands from a "+" button, a chip, or an anchor. `SlashCommands` shows the
+same list in a `MarkdownEditor` when a person types `/` (see [MarkdownEditor](/en/ui/input/markdown-editor#slash-commands)).
+Both read one `CommandItem[]`, so a composer's `/`, its "+" button, and a chip never disagree.
 
 ## Use CommandMenu
 
 Use it for a composer or another place where people insert or attach things: switch what they record, insert a text
-snippet, assign a person, or add a tag. Pass the same entries to `MarkdownEditor`'s `commands`.
+snippet, assign a person, or add a tag. Pass the same entries to `SlashCommands` beside the editor.
 
 Use [Dropdown](/en/ui/actions/menus) for the secondary actions of an object, such as Duplicate or Archive. Use a select control to
 choose a form value.
@@ -15,7 +15,7 @@ choose a form value.
 ## Import
 
 ```tsx
-import { CommandMenu, type CommandItem, MarkdownEditor } from "@k2b/ui";
+import { CommandMenu, type CommandItem, MarkdownEditor, SlashCommands } from "@k2b/ui";
 ```
 
 ## Entries
@@ -117,7 +117,9 @@ const commands: CommandItem[] = [
   },
 ];
 
-<MarkdownEditor variant="embedded" noToolbar value={text()} onValueChange={setText} commands={commands} />
+const [textarea, setTextarea] = createSignal<HTMLTextAreaElement>();
+<MarkdownEditor variant="embedded" noToolbar value={text()} onValueChange={setText} textareaRef={setTextarea} />
+<SlashCommands textarea={textarea()} items={commands} />
 
 <CommandMenu items={commands} label="Add to message" search="Search commands" onInsert={insertAtCaret}>
   <CommandMenu.Trigger iconOnly label="Add">

@@ -10,8 +10,9 @@ const ui = resolve(import.meta.dir, "../..");
 const css = readFileSync(resolve(ui, "dist/styles.css"), "utf8");
 const entry = resolve(import.meta.dir, "command-menu.fixture.ts");
 const fixture = `
+import { createSignal } from "solid-js";
 import { createComponent, render } from "solid-js/web";
-import { CommandMenu, MarkdownEditor } from ${JSON.stringify(resolve(ui, "dist/browser/index.js"))};
+import { CommandMenu, MarkdownEditor, SlashCommands } from ${JSON.stringify(resolve(ui, "dist/browser/index.js"))};
 
 globalThis.chosen = [];
 const log = (name) => () => globalThis.chosen.push(name);
@@ -31,9 +32,11 @@ const items = [
     next: { label: "Search tag", items: [{ label: "Urgent", leading: dot("#dc2626"), onSelect: log("tag:urgent") }] } },
 ];
 
+const [textarea, setTextarea] = createSignal();
 render(
   () => [
-    createComponent(MarkdownEditor, { label: "Message", variant: "embedded", noToolbar: true, lines: 4, commands: items, onValueChange: (value) => (globalThis.text = value) }),
+    createComponent(MarkdownEditor, { label: "Message", variant: "embedded", noToolbar: true, lines: 4, textareaRef: setTextarea, onValueChange: (value) => (globalThis.text = value) }),
+    createComponent(SlashCommands, { get textarea() { return textarea(); }, items }),
     createComponent(CommandMenu, {
       items,
       label: "Add to message",

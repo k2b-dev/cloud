@@ -25,12 +25,15 @@ afterEach(() => {
   dom.cleanup();
 });
 
-const mount = async (props: { commands?: readonly CommandItem[]; completions?: readonly Completion[] }) => {
+/** A `MarkdownEditor` with `SlashCommands` beside it, wired through `textareaRef`, as an application composes them. */
+const mount = async (props: { commands?: () => readonly CommandItem[]; completions?: readonly Completion[] }) => {
   const { MarkdownEditor } = await import("../src/inputs/markdown/MarkdownEditor");
+  const { SlashCommands } = await import("../src/inputs/markdown/SlashCommands");
   const changes: string[] = [];
   const [value, setValue] = createSignal("");
+  const [element, setElement] = createSignal<HTMLTextAreaElement>();
   dispose = render(
-    () =>
+    () => [
       createComponent(MarkdownEditor, {
         label: "Message",
         value,
@@ -38,20 +41,25 @@ const mount = async (props: { commands?: readonly CommandItem[]; completions?: r
           changes.push(next);
           setValue(next);
         },
-        ...props,
+        textareaRef: setElement,
+        completions: props.completions,
       }),
+      props.commands
+        ? createComponent(SlashCommands, {
+            get textarea() {
+              return element();
+            },
+            get items() {
+              return props.commands!();
+            },
+          })
+        : null,
+    ],
     dom.root,
   );
   const textarea = dom.root.querySelector("textarea")!;
   textarea.focus();
-  if (props.commands) await commandsLoaded();
   return { textarea, changes, value };
-};
-
-/** The editor loads its slash commands on first use; once the module resolved, the editor attached them. */
-const commandsLoaded = async () => {
-  await import("../src/inputs/markdown/slash-commands");
-  await Promise.resolve();
 };
 
 const type = async (textarea: HTMLTextAreaElement, text: string) => {
@@ -101,7 +109,7 @@ const fixture = () => {
 describe("MarkdownEditor slash commands", () => {
   test("/ opens grouped commands as the field's list box with an active descendant", async () => {
     const { commands } = fixture();
-    const { textarea } = await mount({ commands });
+    const { textarea } = await mount({ commands: () => commands });
     await type(textarea, "/");
     const listbox = dom.document.querySelector<HTMLElement>(".k2b-command-list")!;
     expect(listbox.getAttribute("role")).toBe("listbox");
@@ -126,7 +134,7 @@ describe("MarkdownEditor slash commands", () => {
 
   test("arrows, Home, and End mark entries, unavailable ones included, and wrap", async () => {
     const { commands } = fixture();
-    const { textarea } = await mount({ commands });
+    const { textarea } = await mount({ commands: () => commands });
     await type(textarea, "/");
     expect(key(textarea, "ArrowDown")).toBe(true);
     expect(active(textarea)).toContain("Confirm appointment");
@@ -146,7 +154,7 @@ describe("MarkdownEditor slash commands", () => {
       scrolled.push(this.textContent ?? "");
     };
     const { commands } = fixture();
-    const { textarea } = await mount({ commands });
+    const { textarea } = await mount({ commands: () => commands });
     await type(textarea, "/");
     key(textarea, "End");
     expect(scrolled.at(-1)).toContain("Assign");
@@ -154,7 +162,7 @@ describe("MarkdownEditor slash commands", () => {
 
   test("Enter on an action removes the typed /query and then runs it; keywords and accents match", async () => {
     const { commands, log } = fixture();
-    const { textarea, value } = await mount({ commands });
+    const { textarea, value } = await mount({ commands: () => commands });
     await type(textarea, "Hello /anruf");
     expect(options()).toHaveLength(1);
     expect(key(textarea, "Enter")).toBe(true);
@@ -165,7 +173,7 @@ describe("MarkdownEditor slash commands", () => {
 
   test("an unavailable entry stays open and does nothing", async () => {
     const { commands, log } = fixture();
-    const { textarea, value } = await mount({ commands });
+    const { textarea, value } = await mount({ commands: () => commands });
     await type(textarea, "/termin");
     expect(key(textarea, "Enter")).toBe(true);
     options()[0]!.click();
@@ -176,7 +184,7 @@ describe("MarkdownEditor slash commands", () => {
 
   test("Tab on a snippet puts its text in place of the /query", async () => {
     const { commands } = fixture();
-    const { textarea, value } = await mount({ commands });
+    const { textarea, value } = await mount({ commands: () => commands });
     await type(textarea, "/photos");
     expect(key(textarea, "Tab")).toBe(true);
     expect(value()).toBe("Please send us a few photos.");
@@ -184,7 +192,7 @@ describe("MarkdownEditor slash commands", () => {
 
   test("a second list filters by the typed word and goes back with Backspace or Escape", async () => {
     const { commands, log } = fixture();
-    const { textarea, value } = await mount({ commands });
+    const { textarea, value } = await mount({ commands: () => commands });
     await type(textarea, "/assi");
     key(textarea, "Enter");
     await Promise.resolve();
@@ -217,7 +225,7 @@ describe("MarkdownEditor slash commands", () => {
 
   test("Escape closes the commands, keeps the text, and they stay closed for that word", async () => {
     const { commands } = fixture();
-    const { textarea, value } = await mount({ commands });
+    const { textarea, value } = await mount({ commands: () => commands });
     await type(textarea, "/ph");
     expect(key(textarea, "Escape")).toBe(true);
     expect(options()).toHaveLength(0);
@@ -231,7 +239,7 @@ describe("MarkdownEditor slash commands", () => {
 
   test("a query without matches closes the list and leaves Enter to the text", async () => {
     const { commands } = fixture();
-    const { textarea } = await mount({ commands });
+    const { textarea } = await mount({ commands: () => commands });
     await type(textarea, "/2024");
     expect(dom.document.querySelector(".k2b-command-list")).toBeNull();
     expect(key(textarea, "Enter")).toBe(false);
@@ -240,14 +248,14 @@ describe("MarkdownEditor slash commands", () => {
 
   test("/ inside a word is no command, as in a path or a date", async () => {
     const { commands } = fixture();
-    const { textarea } = await mount({ commands });
+    const { textarea } = await mount({ commands: () => commands });
     await type(textarea, "and/or");
     expect(options()).toHaveLength(0);
   });
 
   test("/ after punctuation is no command either, as in a URL or a bracket", async () => {
     const { commands, log } = fixture();
-    const { textarea, value } = await mount({ commands });
+    const { textarea, value } = await mount({ commands: () => commands });
     await type(textarea, "https://");
     expect(options()).toHaveLength(0);
     expect(key(textarea, "Enter")).toBe(false);
@@ -259,22 +267,8 @@ describe("MarkdownEditor slash commands", () => {
 
   test("entries that arrive while the / waits open the list", async () => {
     const { commands } = fixture();
-    const { MarkdownEditor } = await import("../src/inputs/markdown/MarkdownEditor");
     const [source, setSource] = createSignal<readonly CommandItem[]>([]);
-    dispose = render(
-      () =>
-        createComponent(MarkdownEditor, {
-          label: "Late",
-          value: "",
-          get commands() {
-            return source();
-          },
-        }),
-      dom.root,
-    );
-    const textarea = dom.root.querySelector("textarea")!;
-    textarea.focus();
-    await commandsLoaded();
+    const { textarea } = await mount({ commands: source });
     await type(textarea, "/");
     expect(options()).toHaveLength(0);
     setSource(commands);

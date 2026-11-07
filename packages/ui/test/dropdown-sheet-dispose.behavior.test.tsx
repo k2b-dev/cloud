@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import { createSignal } from "solid-js";
 import { isServer, render } from "solid-js/web";
-import { createDomTestHarness, until } from "./dom";
+import { createDomTestHarness } from "./dom";
 
 /** Opens a phone sheet, ends its owner one way or another, and checks that no sheet outlives it. */
 const sheetEndsWith = async (end: (dispose: () => void, disable: () => void) => void) => {
@@ -29,8 +29,6 @@ const sheetEndsWith = async (end: (dispose: () => void, disable: () => void) => 
   let disposed = false;
   try {
     dom.root.querySelector<HTMLButtonElement>("button")!.click();
-    // The sheet loads its module on first use.
-    await until(() => dialogCore.isOpen());
     expect(dialogCore.isOpen()).toBe(true);
     end(
       () => {

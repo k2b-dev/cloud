@@ -1,19 +1,15 @@
 import { createEffect, createMemo, createSignal, type JSX, onCleanup, onMount, Show } from "solid-js";
 import { CommandList, commandListKey, commandOptionId, createCommandNavigator } from "../../actions/CommandList";
 import type { CommandItem, CommandSource } from "../../actions/command-items";
-import type { UiMessages } from "../../intl/messages";
-import type { QueryContext } from "../completion";
+import { useCommandMessages } from "../../actions/command-messages";
+import { type Completion, detectQuery, type QueryContext } from "../completion";
+import { isInCodeZone } from "./code-zone";
 
 export type SlashCommandsProps = {
-  textarea: HTMLTextAreaElement;
-  /** The editor's presentation layer: the same text as the textarea, laid out the same way. */
-  preview: HTMLElement;
-  commands: () => CommandSource;
-  id: string;
-  /** The `/query` at the caret, as the editor's completion detection finds it outside code. */
-  find: () => QueryContext | null;
-  /** The editor's resolved messages: this module imports no locale of its own, so loading it adds nothing to the page. */
-  messages: () => UiMessages;
+  /** The editor's textarea, from `MarkdownEditor`'s `textareaRef`. The commands attach once it is there. */
+  textarea: HTMLTextAreaElement | undefined;
+  /** The same entries as `CommandMenu`'s `items`. */
+  items: CommandSource;
 };
 
 /** Replaces a range of the text the way typing would, so undo keeps working; an empty text deletes. */
@@ -47,19 +43,30 @@ const offsetBox = (layer: HTMLElement, at: number): DOMRect | undefined => {
   return undefined;
 };
 
+const trigger: Completion = { trigger: "/", suggest: () => [] };
+
 /**
- * The slash commands of `MarkdownEditor`. The editor loads this module only when it gets `commands`, so editors
- * without them, such as the Assistant's, carry none of it. It listens to the editor's textarea itself: native
- * listeners run before the editor's own, and a key it uses is marked handled with `preventDefault`.
+ * Slash commands for a `MarkdownEditor`: `/` at the start of a line or after a space opens the entries at the slash.
+ * Place it beside the editor and pass the editor's textarea. It listens to the textarea itself, so editors without
+ * commands carry none of it: native listeners run before the editor's own, and a key it uses is marked handled with
+ * `preventDefault`, which the editor respects.
  */
 export function SlashCommands(props: SlashCommandsProps): JSX.Element {
+  return <Show when={props.textarea}>{(textarea) => <AttachedCommands textarea={textarea()} items={props.items} />}</Show>;
+}
+
+function AttachedCommands(props: { textarea: HTMLTextAreaElement; items: CommandSource }): JSX.Element {
+  const messages = useCommandMessages();
   const textarea = props.textarea;
+  const id = `${textarea.id || "k2b-markdown"}-commands`;
+  /** The editor's presentation layer: the same text as the textarea, laid out the same way. */
+  const preview = () => textarea.parentElement?.querySelector<HTMLElement>(".k2b-markdown-editor__preview") ?? undefined;
   const [context, setContext] = createSignal<QueryContext | null>(null);
   /** Where Escape closed the commands; they stay closed while the caret stays in that `/query`. */
   let dismissedAt: number | null = null;
   let popover: HTMLDivElement | undefined;
   const nav = createCommandNavigator({
-    items: props.commands,
+    items: () => props.items,
     query: () => context()?.query ?? "",
     onPick: (item) => pick(item),
     // A second list starts with an empty query: the typed word gives way to the bare `/`.
@@ -83,7 +90,7 @@ export function SlashCommands(props: SlashCommandsProps): JSX.Element {
   };
 
   const detect = () => {
-    const found = document.activeElement === textarea ? props.find() : null;
+    const found = document.activeElement === textarea ? detectQuery(textarea, [trigger], { isExcluded: isInCodeZone }) : null;
     // Commands start at the line start or after a space, never inside `https://` or after a bracket.
     const usable = found && (found.start === 0 || /\s/.test(textarea.value[found.start - 1] ?? "")) ? found : null;
     if (usable?.start !== context()?.start) {
@@ -96,7 +103,8 @@ export function SlashCommands(props: SlashCommandsProps): JSX.Element {
   const position = () => {
     if (!popover?.isConnected) return;
     const start = context()?.start ?? 0;
-    const rect = offsetBox(props.preview, start) ?? textarea.getBoundingClientRect();
+    const layer = preview();
+    const rect = (layer && offsetBox(layer, start)) ?? textarea.getBoundingClientRect();
     const below = window.innerHeight - rect.bottom;
     const above = below < 320 && rect.top > below;
     // A long list never reaches past the window edge it opens toward.
@@ -110,11 +118,11 @@ export function SlashCommands(props: SlashCommandsProps): JSX.Element {
 
   // The textarea points at the list while it shows, as a combobox does.
   createEffect(() => {
-    const id = open() && nav.entries().length ? commandOptionId(props.id, nav.active()) : undefined;
-    if (open()) textarea.setAttribute("aria-controls", props.id);
-    else if (textarea.getAttribute("aria-controls") === props.id) textarea.removeAttribute("aria-controls");
-    if (id) textarea.setAttribute("aria-activedescendant", id);
-    else if (textarea.getAttribute("aria-activedescendant")?.startsWith(`${props.id}-`)) textarea.removeAttribute("aria-activedescendant");
+    const active = open() && nav.entries().length ? commandOptionId(id, nav.active()) : undefined;
+    if (open()) textarea.setAttribute("aria-controls", id);
+    else if (textarea.getAttribute("aria-controls") === id) textarea.removeAttribute("aria-controls");
+    if (active) textarea.setAttribute("aria-activedescendant", active);
+    else if (textarea.getAttribute("aria-activedescendant")?.startsWith(`${id}-`)) textarea.removeAttribute("aria-activedescendant");
   });
   // Opening, and entries that arrive while the `/` waits, such as from a reactive source, show the list.
   createEffect(() => {
@@ -165,14 +173,7 @@ export function SlashCommands(props: SlashCommandsProps): JSX.Element {
   return (
     <Show when={open()}>
       <div ref={popover} popover="manual" class="k2b-autocomplete__options" data-commands="" role="presentation">
-        <CommandList
-          navigator={nav}
-          id={props.id}
-          label={props.messages().commands}
-          stepHint
-          query={() => context()?.query ?? ""}
-          messages={props.messages}
-        />
+        <CommandList navigator={nav} id={id} label={messages().commands} stepHint query={() => context()?.query ?? ""} />
       </div>
     </Show>
   );

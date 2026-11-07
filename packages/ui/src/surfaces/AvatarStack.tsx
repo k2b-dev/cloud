@@ -1,6 +1,6 @@
 import { createMemo, createSignal, createUniqueId, For, type JSX, onCleanup, onMount, Show } from "solid-js";
 import { dropdownPosition } from "../actions/Dropdown";
-import { prefersMenuSheet } from "../actions/phone-sheet";
+import { prefersMenuSheet } from "../actions/menu-sheet";
 import { dialogCore } from "../feedback/dialog-core";
 import { LocaleProvider, useLocale } from "../intl/locale";
 import BottomSheet, { bottomSheetOptions } from "../layout/BottomSheet";

@@ -23,6 +23,7 @@ import {
   RemoveButton,
   SegmentedControl,
   SelectionToolbar,
+  SlashCommands,
   SplitButton,
   SpotlightButton,
   type SpotlightSearchResolver,
@@ -203,6 +204,7 @@ const CopyRemoveDemo = () => {
 
 const CommandMenuDemo = () => {
   const [text, setText] = createSignal("");
+  const [textarea, setTextarea] = createSignal<HTMLTextAreaElement>();
   const [kind, setKind] = createSignal("Message");
   const [done, setDone] = createSignal<string[]>([]);
   const note = (entry: string) => setDone((list) => [entry, ...list].slice(0, 3));
@@ -305,7 +307,9 @@ const CommandMenuDemo = () => {
     next: { label: "Search person", items: people.map((p) => ({ label: p.name, leading: () => <Avatar name={p.name} size="xs" />, onSelect: () => assign(p) })) } },
 ];
 
-<MarkdownEditor variant="embedded" noToolbar value={text()} onValueChange={setText} commands={commands} />
+const [textarea, setTextarea] = createSignal<HTMLTextAreaElement>();
+<MarkdownEditor variant="embedded" noToolbar value={text()} onValueChange={setText} textareaRef={setTextarea} />
+<SlashCommands textarea={textarea()} items={commands} />
 
 <CommandMenu items={commands} label="Add to message" search="Search commands" onInsert={insert}>
   <CommandMenu.Trigger iconOnly label="Add"><i class="ti ti-plus" aria-hidden="true" /></CommandMenu.Trigger>
@@ -322,8 +326,9 @@ const CommandMenuDemo = () => {
             placeholder="Write a message, or type / for commands"
             value={text()}
             onValueChange={setText}
-            commands={commands}
+            textareaRef={setTextarea}
           />
+          <SlashCommands textarea={textarea()} items={commands} />
           <div class="ui-demo-row" style={{ padding: "0 0.25rem 0.25rem" }}>
             <CommandMenu items={commands} label="Add to message" search="Search commands" onInsert={insert}>
               <CommandMenu.Trigger iconOnly label="Add">

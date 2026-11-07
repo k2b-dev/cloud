@@ -1,19 +1,5 @@
 import { highlight } from "@k2b/stdlib";
-import {
-  type Component,
-  createComponent,
-  createEffect,
-  createMemo,
-  createSignal,
-  createUniqueId,
-  For,
-  type JSX,
-  onCleanup,
-  onMount,
-  Show,
-  untrack,
-} from "solid-js";
-import type { CommandSource } from "../../actions/command-items";
+import { createEffect, createMemo, createSignal, createUniqueId, For, type JSX, onCleanup, onMount, Show, untrack } from "solid-js";
 import { Tooltip } from "../../feedback/Tooltip";
 import { createFieldMeta, Field, fieldControlAria } from "../../internal/field";
 import { useLocale } from "../../intl/locale";
@@ -38,7 +24,6 @@ import { computeActiveFormats } from "./active-formats";
 import { handleListContinuation, handleShortcut, handleSmartPaste } from "./behaviors";
 import { isInCodeZone } from "./code-zone";
 import { useMarkdownEditorMessages } from "./editor-messages";
-import type { SlashCommandsProps } from "./slash-commands";
 import Toolbar from "./Toolbar";
 
 export type MarkdownEditorProps = ValueFieldProps<string> & {
@@ -52,12 +37,6 @@ export type MarkdownEditorProps = ValueFieldProps<string> & {
   textareaRef?: (element: HTMLTextAreaElement) => void;
   abbreviations?: Record<string, string>;
   completions?: readonly Completion[];
-  /**
-   * Commands behind `/` at the start of a line or after a space: a list of actions, snippets, and second lists. The
-   * typed word filters them by label, hint, and keywords; choosing one replaces the typed `/query`. `CommandMenu`
-   * takes the same entries for a "+" button or a chip.
-   */
-  commands?: CommandSource;
   showStats?: boolean;
   variant?: "default" | "paper" | "embedded";
   fill?: boolean;
@@ -110,17 +89,6 @@ export function MarkdownEditor(props: MarkdownEditorProps): JSX.Element {
     const current = state();
     return current?.suggestions[current.selectedIndex] ?? null;
   };
-
-  // The slash commands load on first use and attach to the textarea themselves, so editors without them carry none.
-  const [slashCommands, setSlashCommands] = createSignal<Component<SlashCommandsProps>>();
-  const slashTrigger: Completion = { trigger: "/", suggest: () => [] };
-  createEffect(() => {
-    if (props.commands)
-      import("./slash-commands").then(
-        (module) => setSlashCommands(() => module.SlashCommands),
-        (error: unknown) => console.error(error),
-      );
-  });
 
   const mergedCompletions = createMemo<readonly Completion[] | undefined>(() => {
     const merged: Completion[] = [];
@@ -633,18 +601,6 @@ export function MarkdownEditor(props: MarkdownEditorProps): JSX.Element {
             <span>{markdownEditorMessages().editorWords({ count: stats().words, value: formatCount(stats().words) })}</span>
             <span>{markdownEditorMessages().editorCharacters({ count: stats().chars, value: formatCount(stats().chars) })}</span>
           </div>
-        </Show>
-        <Show when={props.commands && textarea && preview && slashCommands()}>
-          {(view) =>
-            createComponent(view(), {
-              textarea: textarea!,
-              preview: preview!,
-              commands: () => props.commands ?? [],
-              id: `${listboxId}-commands`,
-              find: () => detectQuery(textarea!, [slashTrigger], { isExcluded: isInCodeZone }),
-              messages,
-            })
-          }
         </Show>
         <Show when={state() || loading() || completionError()}>
           <div

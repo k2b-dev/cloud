@@ -42,7 +42,6 @@ or continues a line.
 | `showStats` | `boolean` | `true` | Shows line, word, and character counts. Suppressed entirely while `disabled`. |
 | `variant` | `"default" \| "paper" \| "embedded"` | `"default"` | Matches the editor surface to its parent. `embedded` removes the outer border, radius, and shadow for an existing workspace surface. |
 | `fill` | `boolean` | `false` | Fills the available parent height instead of using `lines`. |
-| `commands` | `CommandItem[] \| (query) => CommandItem[]` | none | Opens [slash commands](#slash-commands) on `/`. |
 
 Native form and accessibility properties include `name`, `id`, `"aria-label"`,
 `"aria-describedby"`, `required`, plus the shared `label`, `description`, and
@@ -84,10 +83,20 @@ inside inline code or fenced code blocks.
 
 ## Slash commands
 
-`commands` takes the same `CommandItem[]` as [CommandMenu](/en/ui/actions/command-menu): actions, text snippets, and
-second lists such as people or tags. Typing `/` at the start of a line or after a space opens them at the slash; the
-typed word filters them by label, hint, and keywords, without regard to case or accents. A `/` inside a word, as in
-`and/or`, opens nothing.
+`SlashCommands` adds commands behind `/` to an editor. Place it beside the editor and pass the editor's textarea from
+`textareaRef`; it takes the same `CommandItem[]` as [CommandMenu](/en/ui/actions/command-menu): actions, text
+snippets, and second lists such as people or tags. Editors without it carry none of its code.
+
+```tsx
+const [textarea, setTextarea] = createSignal<HTMLTextAreaElement>();
+
+<MarkdownEditor variant="embedded" noToolbar value={text()} onValueChange={setText} textareaRef={setTextarea} />
+<SlashCommands textarea={textarea()} items={commands} />
+```
+
+Typing `/` at the start of a line or after a space opens the entries at the slash; the typed word filters them by
+label, hint, and keywords, without regard to case or accents. A `/` inside a word or after punctuation, as in
+`and/or` or `https://`, opens nothing.
 
 - An entry with `onSelect` removes the typed `/query` from the text, then runs.
 - An entry with `text` puts its text in place of `/query`.
@@ -98,8 +107,9 @@ typed word filters them by label, hint, and keywords, without regard to case or 
   the next `/`.
 - A word without matches closes the list, so <kbd>Enter</kbd> starts a new line as usual.
 
+The editor leaves a key to `SlashCommands` when it marked it handled with `preventDefault`.
 The list hangs at the slash and keeps a fixed width, so typing and second lists move neither the list nor the editor.
-`commands` and `completions` work side by side; give `/` to only one of them.
+`SlashCommands` and `completions` work side by side; give `/` to only one of them.
 
 ## Editing behavior
 
