@@ -1,7 +1,7 @@
 import { LIMITS } from "../contracts";
 import type { RuntimeContext } from "./cloud";
 import { CloudError } from "./errors";
-import { startArtifactRun, timeLimitMessage } from "./host";
+import { type RuntimeHooks, startArtifactRun, timeLimitMessage } from "./host";
 import { APPROVAL_METHODS, createServiceCalls, type RuntimeServices } from "./services";
 import { type ViewRef, ViewRefSchema } from "./views";
 import type { WorkState } from "./work";
@@ -30,9 +30,10 @@ export type SessionOptions = RuntimeServices & {
 
 /** One script run owns its effects and state. Its downloads are captured as output files for `code_export`. */
 export function createArtifactSession(
-  container: HTMLElement,
+  container: HTMLElement | null,
   source: { runtime: string; code: string; context?: RuntimeContext },
   options: SessionOptions,
+  start?: (hooks: RuntimeHooks) => { stop: () => Promise<void> },
 ) {
   let state: RunSnapshot = { status: "starting", logs: [], files: [], views: [] };
   const inputs = options.inputs ?? [];
@@ -60,7 +61,7 @@ export function createArtifactSession(
   // The start watchdog stops a script that neither finishes nor reports progress, but never while it waits on Cloud.
   const arm = () => {
     clearTimeout(watchdog);
-    if (state.status !== "starting" || state.work?.status === "running" || approvals || waits) return;
+    if (state.status !== "starting" || state.work?.status === "running" || state.pendingRequests || approvals || waits) return;
     watchdog = setTimeout(() => {
       emit({ status: "error", error: timeLimitMessage(15000) });
       void run.stop();
@@ -81,10 +82,13 @@ export function createArtifactSession(
       arm();
     }
   };
-  const run = startArtifactRun(container, source, {
+  const hooks: RuntimeHooks = {
     context: source.context ?? options.context,
     files: inputFiles.map(({ name, ...file }) => ({ path: name, ...file })),
-    pending: (pendingRequests) => emit({ pendingRequests }),
+    pending: (pendingRequests) => {
+      emit({ pendingRequests });
+      arm();
+    },
     work: (work) => {
       emit({ work });
       arm();
@@ -154,7 +158,9 @@ export function createArtifactSession(
       if (method === "runtime.chunk") return call(method, args, signal);
       return waiting(APPROVAL_METHODS.has(method), () => call(method, args, signal));
     },
-  });
+  };
+  if (!start && !container) throw new Error("Browser execution requires a container");
+  const run = start ? start(hooks) : startArtifactRun(container!, source, hooks);
   log("info", "Started");
   arm();
   return {

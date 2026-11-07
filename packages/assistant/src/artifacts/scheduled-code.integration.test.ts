@@ -9,6 +9,8 @@ import { artifactDatabase } from "./database";
 import { appChecks } from "./html/check-service";
 import { HttpPrepare } from "./http-contracts";
 import { httpService } from "./http-service";
+import { runChatRunnerFixture } from "./runner-code.test-fixture";
+import * as runnerHost from "./runner-code-host";
 import { artifacts } from "./service";
 import { testIdentity } from "./test-identity";
 
@@ -27,6 +29,10 @@ databaseSuite()("Scheduled Code Mode", () => {
   afterEach(() => policy.mockRestore());
 
   test("runs with a real task mandate alongside a foreground turn and fails closed after revocation", async () => {
+    const createHost = runnerHost.createRunnerCodeHost;
+    const runner = spyOn(runnerHost, "createRunnerCodeHost").mockImplementation((options) =>
+      createHost({ ...options, start: runChatRunnerFixture }),
+    );
     const previousOrigin = process.env.CLOUD_CORE_INTERNAL_ORIGIN;
     process.env.CLOUD_CORE_INTERNAL_ORIGIN = "http://127.0.0.1:1"; // No capability calls in this test.
     const userId = crypto.randomUUID();
@@ -87,6 +93,26 @@ databaseSuite()("Scheduled Code Mode", () => {
         result: { status: "ready", output: '{"answer":42,"process":"undefined","locale":"de-DE","timeZone":"Europe/Berlin"}' },
       });
       expect(interactive).toMatchObject({ status: "done", result: { status: "ready", output: '{"marker":null}' } });
+      const executeHttp = httpService.execute;
+      const http = spyOn(httpService, "execute").mockImplementation((id, approved, identity, signal, _send, authorize) =>
+        executeHttp(
+          id,
+          approved,
+          identity,
+          signal,
+          async () => ({ status: 200, headers: {}, body: new Uint8Array([111, 107]) }),
+          authorize,
+        ),
+      );
+      try {
+        const allowed = await run(
+          delivered.turnId,
+          'export default async()=>await (await cloud.http.fetch("https://api.example.com/data")).text()',
+        );
+        expect(allowed).toMatchObject({ status: "done", result: { status: "ready", output: '"ok"' } });
+      } finally {
+        http.mockRestore();
+      }
       const denied = await run(
         delivered.turnId,
         'export default async()=>{try {await cloud.http.fetch("https://example.com/"); return "unexpected";} catch(e) {return String(e);}}',
@@ -124,6 +150,7 @@ databaseSuite()("Scheduled Code Mode", () => {
       ).rejects.toThrow("access denied");
       expect(sent).toBe(false);
     } finally {
+      runner.mockRestore();
       await agentHost.close();
       if (previousOrigin === undefined) delete process.env.CLOUD_CORE_INTERNAL_ORIGIN;
       else process.env.CLOUD_CORE_INTERNAL_ORIGIN = previousOrigin;

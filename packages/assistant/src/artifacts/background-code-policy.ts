@@ -5,7 +5,8 @@ export function backgroundDatabaseOperation(operation: FlatDatabaseRequest["oper
   return operation === "query" ? "query" : `rows.${operation}`;
 }
 
-/** Every effect retains its service authorization; HTTP and RSQL also check task grants. */
+/** The runner's host RPCs retain turn/service authorization; HTTP also checks task grants.
+ * Remaining Studio checks still use this allowlist and their legacy RSQL grants. */
 export function backgroundCodeRouteAllowed(path: string, method: string): boolean {
   if (method === "POST")
     return (
