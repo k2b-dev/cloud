@@ -71,3 +71,22 @@ CLI: `cld spaces add "Roadmap:Write notes" --request-key <stable-key>`.
 Without that flag, each CLI invocation generates a new key. Web create forms
 keep the key for a retry of unchanged input. The `spaces.task.create` Action
 uses the invocation's required idempotency key; repeat the same key and input.
+
+## Use Actions from background work
+
+`spaces.task.create`, `spaces.event.create`, `spaces.task.update`, and
+`spaces.item.reference.add` declare an explicit `silent: "shared"` policy.
+Background callers still need current write access to the target Space and an
+authorized mandate. The policy grants no access. Interactive callers can
+remember approval for that Space.
+
+Plain task and event creation and linking an existing Cloud resource can run
+under that policy. Creation with a template always asks because the template
+can supply additional fields. Creation with assignees and any task update that
+supplies an assignee replacement, addition, or removal always ask because they
+affect other people. Those calls cannot run unattended, even with a remembered
+Space approval. Template changes and deletion keep their existing approval
+requirements. Task title updates still require `expectedTitle`.
+
+Reviews are available in English and German and retain the complete proposed
+fields, including long descriptions, in the review's content view.

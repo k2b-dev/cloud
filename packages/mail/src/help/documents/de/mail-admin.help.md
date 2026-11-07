@@ -315,4 +315,4 @@ Alle unterstützten Eingaben, Auslöser, Aktionen, Bedingungen, Ausdrücke, Stan
 
 Die Bestätigung nennt, was dauerhaft gelöscht wird: der Code des Postfachs, seine Versionen und Läufe, sein Code-Konto und alle diesem Konto erteilten Zugriffe. Ist eine Ziel-App nicht erreichbar, versucht Cloud die Entfernung weiter. Beim Wiederherstellen des Postfachs kommt sein Code nicht zurück.
 
-Gelöschte Postfächer erscheinen in der Mail-Übersicht unter **Kürzlich gelöscht** für Personen, die sie wiederherstellen können. Ein wiederhergestelltes Postfach startet pausiert. Prüfe unter **… → Postfachstatus** Verbindung, Ordnerermittlung und Zustand. Wähle dann **Postfach fortsetzen**.
+Gelöschte Postfächer bleiben erhalten, bis jemand sie wiederherstellt. Personen, die sie wiederherstellen dürfen, finden sie in der Seitenleiste unter **Postfächer → … → Gelöschte Postfächer**. Ein wiederhergestelltes Postfach startet pausiert. Prüfe unter **… → Postfachstatus** Verbindung, Ordnerermittlung und Zustand. Wähle dann **Postfach fortsetzen**.

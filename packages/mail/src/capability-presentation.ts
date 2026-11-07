@@ -4,6 +4,12 @@ export const mailCapabilityPresentation: CapabilityPresentationCatalog = {
   baseLocale: "en",
   translations: {
     de: {
+      events: {
+        "message.received": {
+          title: "Nachricht empfangen",
+          description: "Eine eingehende Nachricht hat ihre erste geeignete Ablage im Postfach erreicht.",
+        },
+      },
       commands: {
         "draft.calendar": {
           title: "Kalendereinladung an Entwurf anhängen",

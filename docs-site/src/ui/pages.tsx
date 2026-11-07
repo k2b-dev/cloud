@@ -1,11 +1,14 @@
 import { solidPage } from "@k2b/fibel/solid";
 import { fibelHtml } from "../ssr";
+import { ChartDashboardPage, ChartKindPage, ChartsOverviewPage } from "./ChartsShowcase";
 import { uiCatalogEntries } from "./catalog";
 import focusMarkdown from "./context/focus.md" with { type: "text" };
 import gettingStartedMarkdown from "./context/getting-started.md" with { type: "text" };
 import inputModeMarkdown from "./context/input-mode.md" with { type: "text" };
 import motionMarkdown from "./context/motion.md" with { type: "text" };
 import overviewMarkdown from "./context/overview.md" with { type: "text" };
+import { showcaseDashboards } from "./demo-sections/charts/dashboards";
+import { chartShowcaseKinds } from "./demo-sections/charts/examples";
 import { UiCatalogOverview, UiComponentShowcase } from "./UiCatalogPage";
 
 export const uiPages = [
@@ -127,6 +130,52 @@ export const uiPages = [
       </article>
     ),
   }),
+  solidPage({
+    html: fibelHtml,
+    collection: "ui",
+    path: "/charts",
+    title: "Charts",
+    navTitle: "What to show",
+    description: "A showcase of every chart kind, grouped by the question it answers, with live states, code and options.",
+    section: "Charts",
+    order: 50,
+    layout: "full",
+    component: ({ page }) => <ChartsOverviewPage locale={page.locale.code} />,
+  }),
+  ...chartShowcaseKinds.map((kind, index) =>
+    solidPage({
+      html: fibelHtml,
+      collection: "ui",
+      path: `/charts/${kind.slug}`,
+      title: kind.title,
+      description: kind.summary,
+      section: "Charts",
+      order: 51 + index,
+      layout: "full",
+      component: ({ page }) => <ChartKindPage locale={page.locale.code} kind={kind.kind} />,
+    }),
+  ),
+  ...showcaseDashboards.map((dashboard, index) =>
+    solidPage({
+      html: fibelHtml,
+      collection: "ui",
+      path: `/charts/dashboards/${dashboard.slug}`,
+      title: `${dashboard.title} dashboard`,
+      navTitle: `Dashboard: ${dashboard.title}`,
+      description: dashboard.summary,
+      section: "Charts",
+      order: 90 + index,
+      layout: "full",
+      component: ({ page }) => (
+        <ChartDashboardPage
+          locale={page.locale.code}
+          slug={dashboard.slug}
+          title={`${dashboard.title} dashboard`}
+          description={dashboard.summary}
+        />
+      ),
+    }),
+  ),
   ...uiCatalogEntries.map((entry) =>
     solidPage({
       html: fibelHtml,

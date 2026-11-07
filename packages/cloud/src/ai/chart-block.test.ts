@@ -391,7 +391,7 @@ describe("richer chart contracts", () => {
       showValues: true,
     });
     const heat = cloudAiChartRenderOptions(heatmap, "en");
-    if (heat.kind !== "heatmap") throw new Error("Expected heatmap");
+    if (heat.kind !== "heatmap" || heat.layout === "calendar") throw new Error("Expected heatmap");
     expect(heat.format?.(0.21)).toBe("21%");
     expect(heat.showValues).toBe(true);
     expect(cloudAiChartTable(heatmap, "en").rows[0]?.cells).toEqual({ x: "A", y: "B", value: "21%" });
@@ -489,7 +489,7 @@ describe("richer chart contracts", () => {
     expect(barChartLayout(narrow).layout).toBe("rows");
     expect(barChartLayout(wide).layout).toBe("columns");
     const heat = cloudAiChartRenderOptions(parse({ kind: "heatmap", title: "H", data: [{ x: "A", y: "Long row label", value: 1 }] }), "en");
-    if (heat.kind !== "heatmap") throw new Error("Expected heatmap");
+    if (heat.kind !== "heatmap" || heat.layout === "calendar") throw new Error("Expected heatmap");
     expect(typeof heat.padding === "object" && heat.padding.left).toBeGreaterThan(100);
   });
 });

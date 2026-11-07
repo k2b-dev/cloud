@@ -239,7 +239,8 @@ window.mountMailList = (options) => {
                 open
                 defaultSize={options.listSize ?? 430}
                 minSize={300}
-                maxSize={620}
+                // The workspace's wide columns list fills the main area; a listSize above the pane's 620 stands in for it.
+                maxSize={Math.max(620, options.listSize ?? 0)}
               >
                 <MailConversationList
                   mailbox={mailbox}

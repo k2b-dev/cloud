@@ -1,12 +1,18 @@
 import { afterEach, beforeEach, describe, expect, mock, setSystemTime, spyOn, test } from "bun:test";
 import { capabilityReviewRememberScope, capabilityReviewView } from "@k2b/cloud/capabilities";
 import { capabilityCallFromTool } from "@k2b/cloud/capabilities/server";
-import { assertResourceOpenLink, assertResourceView, compileCapabilityManifest } from "@k2b/cloud/capabilities/testing";
+import {
+  assertCapabilityReview,
+  assertResourceOpenLink,
+  assertResourceView,
+  compileCapabilityManifest,
+} from "@k2b/cloud/capabilities/testing";
 import {
   CAPABILITY_MAX_RESULT_BYTES,
+  CapabilityActionCallReviewSchema,
   type CapabilityActionDefinition,
+  CapabilityActionReviewDataSchema,
   type CapabilityActionReviewResult,
-  CapabilityActionReviewSchema,
   type CapabilityExecutionContext,
   type CapabilityInvocationResult,
   capabilityResultSchema,
@@ -49,7 +55,10 @@ const chatReview = async (result: Promise<CapabilityActionReviewResult>): Promis
   const reviewed = await result;
   if (!reviewed.ok) return reviewed;
   const approvalScope = capabilityReviewRememberScope(reviewed.data, "rememberable");
-  return { ok: true, data: { ...capabilityReviewView(reviewed.data, { timeZone: "UTC" }), ...(approvalScope ? { approvalScope } : {}) } };
+  return {
+    ok: true,
+    data: { ...reviewed.data, ...capabilityReviewView(reviewed.data, { timeZone: "UTC" }), ...(approvalScope ? { approvalScope } : {}) },
+  };
 };
 const chatTaskCreate = (...args: Parameters<(typeof spacesCapabilities.actions)["task.create"]["review"]>) =>
   chatReview(spacesCapabilities.actions["task.create"].review(...args));
@@ -87,7 +96,7 @@ test("task progress guards its stored note at the capability input", () => {
 
 test("declares remembered approval for bounded Space changes", () => {
   const rememberable = (Object.entries(spacesCapabilities.actions) as Array<[string, CapabilityActionDefinition]>)
-    .filter(([, action]) => action.approval === "rememberable" || (action.policy && "silent" in action.policy))
+    .filter(([, action]) => action.approval === "rememberable" || ("policy" in action && action.policy && "silent" in action.policy))
     .map(([localId]) => localId)
     .sort();
   expect(rememberable).toEqual([
@@ -1338,7 +1347,7 @@ describe("spaces capabilities", () => {
       const result = await chatTaskUpdate({ itemId, assigneeIds: [serviceAccountId] }, userContext);
       expect(result).toMatchObject({
         ok: true,
-        data: { details: expect.arrayContaining([{ label: "Assignees", value: "Zebra helper" }]) },
+        data: { ask: "involves_people", content: { body: expect.stringContaining("Assignees: Zebra helper") } },
       });
       expect(lookup).toHaveBeenCalledWith({ spaceId: spaceUuid, ids: [serviceAccountId], limit: 100 });
       expect(JSON.stringify(result)).not.toContain(serviceAccountId);
@@ -1353,7 +1362,7 @@ describe("spaces capabilities", () => {
     const result = await chatTaskUpdate({ itemId, assigneeIds: [serviceAccountId] }, userContext);
     expect(result).toMatchObject({
       ok: true,
-      data: { details: expect.arrayContaining([{ label: "Assignees", value: "Unavailable assignee" }]) },
+      data: { ask: "involves_people", content: { body: expect.stringContaining("Assignees: Unavailable assignee") } },
     });
     expect(JSON.stringify(result)).not.toContain(serviceAccountId);
   });
@@ -1373,47 +1382,27 @@ describe("spaces capabilities", () => {
       userContext,
     );
 
+    expect(JSON.stringify(result)).toContain("2026-08-20T15:00:00.000Z");
+    expect(JSON.stringify(result)).toContain("90 minutes");
     expect(result).toMatchObject({
       ok: true,
-      data: {
-        details: [
-          { label: "Task", value: task.title },
-          { label: "Description", value: "First line\n\nSecond line" },
-          { label: "Deadline", value: "2026-08-20T15:00:00.000Z", format: "date-time" },
-          { label: "Estimated duration", value: "90 minutes" },
-        ],
-        approvalScope: `space:${spaceId}`,
-      },
+      data: { scope: `space:${spaceId}`, content: { body: expect.stringContaining("Description: First line\n\nSecond line") } },
     });
-
-    const allDay = await chatTaskUpdate({ itemId, deadline: "2026-10-24" }, userContext);
-    expect(allDay).toMatchObject({
-      ok: true,
-      data: {
-        details: [
-          { label: "Task", value: task.title },
-          { label: "Deadline", value: "2026-10-24", format: "date" },
-        ],
-      },
+    const allDay = await spacesCapabilities.actions["task.update"].review!({ itemId, deadline: "2026-10-24" }, userContext);
+    expect(allDay.ok && CapabilityActionCallReviewSchema.parse(allDay.data).content).toMatchObject({
+      body: expect.stringContaining("Deadline: 2026-10-24"),
     });
-
-    const german = await chatTaskUpdate(
-      {
-        itemId,
-        description: null,
-        estimatedDurationMinutes: 90,
-      },
+    const german = await spacesCapabilities.actions["task.update"].review!(
+      { itemId, description: null, estimatedDurationMinutes: 90 },
       { ...userContext, locale: "de-CH" },
     );
+    expect(JSON.stringify(german)).toContain("90 Minuten");
     expect(german).toMatchObject({
       ok: true,
       data: {
-        message: `Aufgabe „${task.title}“ aktualisieren.`,
-        details: [
-          { label: "Aufgabe", value: task.title },
-          { label: "Beschreibung", value: "Beschreibung entfernen" },
-          { label: "Geschätzte Dauer", value: "90 Minuten" },
-        ],
+        locale: "de",
+        sentence: { action: "Aufgabe {item} ändern" },
+        content: { body: expect.stringContaining("Beschreibung entfernen") },
       },
     });
   });
@@ -1428,7 +1417,7 @@ describe("spaces capabilities", () => {
     spyOn(spacesService.space.permission, "get").mockResolvedValue("write");
     for (const locale of ["en", "de-CH"]) {
       const plain = await spacesCapabilities.actions["task.create"].review({ columnId, title: "Task {title}" }, { ...userContext, locale });
-      expect(plain).toMatchObject({ ok: true, data: { scope: `space:${spaceId}`, slots: { title: { title: "Task {title}" } } } });
+      expect(plain).toMatchObject({ ok: true, data: { scope: `space:${spaceId}`, slots: { item: { title: "Task {title}" } } } });
       if (plain.ok) expect(capabilityReviewRememberScope(plain.data, "rememberable")).toBe(`space:${spaceId}`);
       for (const extra of [{ templateId }, { assigneeIds: [userId] }]) {
         const reviewed = await spacesCapabilities.actions["task.create"].review(
@@ -1481,41 +1470,70 @@ describe("spaces capabilities", () => {
     }
   });
 
-  test("a new task or event can be remembered for its Space only when the card shows everything it does", async () => {
+  test("explicit policies admit plain creation and links but ask for templates and assignees", async () => {
     spyOn(spacesService.space, "get").mockResolvedValue(space);
     spyOn(spacesService.space.permission, "get").mockResolvedValue("write");
-    const create = chatTaskCreate;
+    spyOn(spacesService.item, "get").mockResolvedValue(task);
+    for (const name of ["task.create", "event.create", "task.update", "item.reference.add"] as const) {
+      expect(spacesCapabilities.actions[name].policy).toEqual({ silent: "shared" });
+    }
+    spyOn(spacesService.item, "listAssignableUsers").mockResolvedValue([]);
+    const create = spacesCapabilities.actions["task.create"].review!;
     const plain = await create({ columnId: "Col001", title: "Prepare launch", deadline: "2026-10-20T09:00:00.000Z" }, userContext);
     expect(plain).toMatchObject({
       ok: true,
       data: {
-        message: `Create task “Prepare launch” in “${space.name}”.`,
-        details: [
-          { label: "Space", value: space.name },
-          { label: "Title", value: "Prepare launch" },
-          { label: "Deadline", value: "2026-10-20T09:00:00.000Z", format: "date-time" },
-        ],
-        approvalScope: `space:${spaceId}`,
+        scope: `space:${spaceId}`,
+        sentence: { action: "Create task {item}" },
+        content: { body: expect.stringContaining("Deadline: 2026-10-20T09:00:00.000Z") },
       },
     });
-    // Assignees are notified and a template can add more, so those ask every time.
-    for (const input of [
-      { columnId: "Col001", title: "Prepare launch", assigneeIds: [userId] },
-      { columnId: "Col001", templateId: "Tpl001" },
-    ]) {
-      const reviewed = await create(input, userContext);
-      expect(reviewed.ok && "approvalScope" in reviewed.data).toBe(false);
+    expect(plain.ok && "ask" in plain.data).toBeFalse();
+    for (const [input, ask] of [
+      [{ columnId: "Col001", title: "Prepare launch", assigneeIds: [userId] }, "involves_people"],
+      [{ columnId: "Col001", templateId: "Tpl001" }, "app_asks"],
+    ] as const) {
+      const reviewed = await create({ ...input, ...("assigneeIds" in input ? { assigneeIds: [...input.assigneeIds] } : {}) }, userContext);
+      expect(reviewed).toMatchObject({ ok: true, data: { ask } });
     }
-    const event = await spacesCapabilities.actions["event.create"].review!(
-      { columnId: "Col001", title: "Review", startsAt: "2026-10-20T09:00:00.000Z", endsAt: "2026-10-20T10:00:00.000Z" },
-      { ...userContext, locale: "de" },
-    );
-    expect(event).toMatchObject({
+    for (const assignments of [{ assigneeIds: [] }, { addAssigneeIds: [userId] }, { removeAssigneeIds: [userId] }]) {
+      spyOn(spacesService.item, "listAssignableUsers").mockResolvedValue([]);
+      const review = await spacesCapabilities.actions["task.update"].review!({ itemId, ...assignments }, userContext);
+      expect(review).toMatchObject({ ok: true, data: { ask: "involves_people" } });
+    }
+    const eventInput = {
+      columnId: "Col001",
+      title: "Review",
+      startsAt: "2026-10-20T09:00:00.000Z",
+      endsAt: "2026-10-20T10:00:00.000Z",
+    };
+    const event = await spacesCapabilities.actions["event.create"].review!(eventInput, { ...userContext, locale: "de" });
+    expect(event).toMatchObject({ ok: true, data: { locale: "de", scope: `space:${spaceId}` } });
+    expect(await spacesCapabilities.actions["event.create"].review!({ ...eventInput, assigneeIds: [userId] }, userContext)).toMatchObject({
       ok: true,
-      data: { message: `Termin Review in ${space.name} anlegen.`, approvalScope: `space:${spaceId}` },
+      data: { ask: "involves_people" },
     });
+    const link = await spacesCapabilities.actions["item.reference.add"].review!(
+      { itemId, reference: { ref: { type: "mail.message", id: "Mail01" }, label: "Incoming mail" } },
+      userContext,
+    );
+    expect(link).toMatchObject({
+      ok: true,
+      data: { scope: `space:${spaceId}`, content: { body: expect.stringContaining("Incoming mail") } },
+    });
+    expect(link.ok && "ask" in link.data).toBeFalse();
     spyOn(spacesService.space.permission, "get").mockResolvedValue("read");
-    expect((await create({ columnId: "Col001", title: "Prepare launch" }, userContext)).ok).toBe(false);
+    expect((await create({ columnId: "Col001", title: "Prepare launch" }, userContext)).ok).toBeFalse();
+    expect((await spacesCapabilities.actions["event.create"].review!(eventInput, userContext)).ok).toBeFalse();
+    expect((await spacesCapabilities.actions["task.update"].review!({ itemId, description: "New" }, userContext)).ok).toBeFalse();
+    expect(
+      (
+        await spacesCapabilities.actions["item.reference.add"].review!(
+          { itemId, reference: { ref: { type: "mail.message", id: "Mail01" }, label: "Mail" } },
+          userContext,
+        )
+      ).ok,
+    ).toBeFalse();
   });
 
   test("claiming, releasing, and noting task work can be remembered for the Space, a forced release cannot", async () => {
@@ -1691,14 +1709,15 @@ describe("spaces capabilities", () => {
 
     expect(results).toHaveLength(
       (Object.values(spacesCapabilities.actions) as CapabilityActionDefinition[]).filter(
-        (action) => action.approval === "rememberable" || (action.policy && "silent" in action.policy),
+        (action) => action.approval === "rememberable" || ("policy" in action && action.policy && "silent" in action.policy),
       ).length,
     );
     for (const [index, result] of results.entries()) {
       expect(result.ok).toBeTrue();
       if (result.ok) {
-        expect(typeof CapabilityActionReviewSchema.parse(result.data).approvalScope).toBe("string");
-        const parsed = CapabilityActionReviewSchema.safeParse(result.data);
+        assertCapabilityReview(result.data);
+        const parsed = CapabilityActionReviewDataSchema.safeParse(result.data);
+        expect("sentence" in result.data ? result.data.scope : result.data.approvalScope).toBeString();
         if (!parsed.success) throw new Error(`Review ${index} is invalid: ${JSON.stringify(parsed.error.issues)}`);
       }
     }
@@ -1878,19 +1897,7 @@ describe("spaces capabilities", () => {
 
     const input = TaskCreateInputSchema.parse({ title: task.title });
     const review = await spacesCapabilities.actions["task.create"].review!(input, userContext);
-    expect(review).toMatchObject({
-      ok: true,
-      data: {
-        preview: {
-          kind: "fields",
-          rows: [
-            { label: "Space", value: space.name },
-            { label: "Column", value: "To do" },
-            { label: "Title", value: task.title },
-          ],
-        },
-      },
-    });
+    expect(review).toMatchObject({ ok: true, data: { content: { body: expect.stringContaining("Column: To do") } } });
     const result = await spacesCapabilities.actions["task.create"].run(input, userContext);
 
     expect(result.ok).toBeTrue();
@@ -3058,4 +3065,53 @@ test("task and event create keep separate capability idempotency scopes", async 
   expect(taskCall?.[0].data.requestKey).toBeString();
   expect(eventCall?.[0].data.requestKey).toBeString();
   expect(taskCall?.[0].data.requestKey).not.toBe(eventCall?.[0].data.requestKey);
+});
+
+test("creation reviews preserve every supplied domain field and bound compact previews", async () => {
+  spyOn(spacesService.space, "get").mockResolvedValue(space);
+  spyOn(spacesService.space.permission, "get").mockResolvedValue("write");
+  spyOn(spacesService.space, "getDetail").mockResolvedValue({ ...space, columns: [], virtualColumns: [], tags: [], templates: [] });
+  spyOn(spacesService.item, "listAssignableUsers").mockResolvedValue([
+    { id: userId, kind: "user", uid: "spaces-user", displayName: "Spaces User", avatarHash: null },
+  ]);
+  const taskReview = await spacesCapabilities.actions["task.create"].review!(
+    {
+      columnId: "Col001",
+      title: "Prepare",
+      priority: "high",
+      estimatedDurationMinutes: 90,
+      assigneeIds: [userId],
+      tagIds: [],
+      references: [{ ref: { type: "mail.message", id: "Mail01" }, label: "Source" }],
+    },
+    userContext,
+  );
+  expect(taskReview.ok).toBeTrue();
+  if (taskReview.ok) {
+    assertCapabilityReview(taskReview.data);
+    for (const value of ["high", "90 minutes", "Spaces User", "Source: mail.message:Mail01", "Col001"])
+      expect(taskReview.data.content?.body).toContain(value);
+  }
+  const eventReview = await spacesCapabilities.actions["event.create"].review!(
+    {
+      columnId: "Col001",
+      title: "Review",
+      startsAt: "2026-11-08T10:00:00Z",
+      endsAt: "2026-11-08T11:00:00Z",
+      location: "Office",
+      url: "https://example.test/event",
+      allDay: false,
+      recurrence: { rrule: "FREQ=WEEKLY;COUNT=2", exdate: [] },
+      description: "🦋".repeat(2000),
+    },
+    userContext,
+  );
+  expect(eventReview.ok).toBeTrue();
+  if (eventReview.ok) {
+    assertCapabilityReview(eventReview.data);
+    for (const value of ["Office", "https://example.test/event", "FREQ=WEEKLY;COUNT=2", "All day: No"])
+      expect(eventReview.data.content?.body).toContain(value);
+    const { content: _content, ...compact } = eventReview.data;
+    expect(Buffer.byteLength(JSON.stringify(compact))).toBeLessThan(32 * 1024);
+  }
 });

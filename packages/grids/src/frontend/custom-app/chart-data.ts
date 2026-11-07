@@ -1,4 +1,4 @@
-import type { BarItem, Point, Series, SliceItem } from "@k2b/stdlib";
+import type { BarItem, Point, Series, SliceItem } from "@k2b/ui/charts/core";
 import type { PublicField as Field } from "../../api/public-dto";
 import type { AggregationSpec, GroupBySpec } from "../../contracts";
 import type { CustomAppChartData } from "../../service/custom-app-insights";

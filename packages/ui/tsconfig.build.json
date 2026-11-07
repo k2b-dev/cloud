@@ -14,6 +14,7 @@
     "./src/**/*.test.ts",
     "./src/**/*.test.tsx",
     "./src/**/*.typecheck.ts",
-    "./src/styles/css-contract-test-helpers.ts"
+    "./src/styles/css-contract-test-helpers.ts",
+    "./src/charts/parity.ts"
   ]
 }

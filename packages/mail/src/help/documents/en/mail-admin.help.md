@@ -316,4 +316,4 @@ See [Mail workflow YAML reference](/app/mail/help/mail-workflows) for all suppor
 
 The confirmation names what is permanently deleted: the mailbox’s Code, its versions and runs, its Code account, and every access that account was given. Cloud keeps retrying access removal if a target app is unavailable. Restoring the mailbox does not restore its Code.
 
-Deleted mailboxes appear under **Recently deleted** on the Mail overview for people who can restore them. A restored mailbox starts paused. In **… → Mailbox health**, verify the connection, folder discovery, and health. Then choose **Resume mailbox**.
+Deleted mailboxes stay until someone restores them. People who can restore them find them under **Mailboxes → … → Deleted mailboxes** in the sidebar. A restored mailbox starts paused. In **… → Mailbox health**, verify the connection, folder discovery, and health. Then choose **Resume mailbox**.

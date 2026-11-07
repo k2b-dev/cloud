@@ -110,3 +110,24 @@ messages. A later direct edit preserves an existing mark; an Assistant or MCP
 edit sets its current surface. Existing content has no backfill. Callers cannot
 provide `via` in the input. The mark describes the calling surface and grants
 no permission; a missing mark does not prove human authorship.
+
+## Post a message to a Chat conversation
+
+Use `chat.message.post` with `conversation` (the six-character Chat ID) and
+`body` to publish Markdown in a Chat conversation or channel's general thread.
+The caller needs current write access, including any credential scope or
+resource binding. This Action does not create a chat or start an AI turn.
+For a discussion attached to an application item, use `chat.discussion.post`.
+
+The message has at most 20,000 Unicode characters and must contain more than
+whitespace. Supply a stable idempotency key for each intended message. Retrying
+with the same key and body returns the existing message; changing the body
+with that key returns `IDEMPOTENCY_CONFLICT`. Chat's normal write rate limits
+apply, and `RATE_LIMITED` includes the retry delay.
+
+The explicit `silent: "shared"` policy allows authorized background work to
+post results into a writable chat, including a chat shared with its account.
+It grants no chat access. Interactive approval can be remembered for the
+conversation. Reviews show the complete proposed message in English or German.
+The result contains the message ID, conversation ID, creation time, and an
+`open` link to the posted message.
