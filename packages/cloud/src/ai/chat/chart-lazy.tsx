@@ -17,7 +17,8 @@ const load = () =>
     (module) => (drawing = module),
     () => undefined,
   ));
-const takeServerDrawing = chartHandoff();
+// Register before the island removes its server children. Each document owns its registry.
+chartHandoff();
 
 /** Each chart owns its code wait. The rest of the island mounts immediately. */
 function DrawingBoundary(props: {
@@ -29,8 +30,7 @@ function DrawingBoundary(props: {
   const module = useDrawing();
   const locale = useLocale();
   const key = drawingKey(props.name, props.input);
-  const server = takeServerDrawing(key);
-  const retained = server instanceof HTMLElement ? server : undefined;
+  const retained = chartHandoff()(key);
   const frames = [...(retained?.querySelectorAll<HTMLElement>(".k2b-chart-explorer") ?? [])];
   for (const frame of frames) {
     frame.style.position = "relative";
@@ -45,10 +45,10 @@ function DrawingBoundary(props: {
       control.setAttribute("aria-disabled", "true");
       control.style.opacity = "0.4";
       if (
-        control instanceof HTMLButtonElement ||
-        control instanceof HTMLInputElement ||
-        control instanceof HTMLSelectElement ||
-        control instanceof HTMLTextAreaElement
+        control instanceof window.HTMLButtonElement ||
+        control instanceof window.HTMLInputElement ||
+        control instanceof window.HTMLSelectElement ||
+        control instanceof window.HTMLTextAreaElement
       )
         control.disabled = true;
     }
@@ -77,7 +77,12 @@ function DrawingBoundary(props: {
           {retained}
           <For each={frames}>
             {(frame) => (
-              <Portal mount={frame}>
+              <Portal
+                mount={frame}
+                ref={(host) => {
+                  host.style.display = "contents";
+                }}
+              >
                 <Show
                   when={module() === null}
                   fallback={

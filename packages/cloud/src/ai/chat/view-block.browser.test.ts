@@ -1554,7 +1554,8 @@ for (const width of [1280, 390]) {
       const code = hold(chartModulePath);
       try {
         const page = await context.newPage();
-        await page.goto(`http://127.0.0.1:${server.port}/?history=1&lang=en`, { waitUntil: "domcontentloaded" });
+        // The chart response stays pending: wait for the island itself, not a document/module load event.
+        await page.goto(`http://127.0.0.1:${server.port}/?history=1&lang=en`, { waitUntil: "commit" });
         await page.waitForSelector("solid-island[data-mounted=true]");
         if (arrival === "navigation") await page.evaluate(() => window.restoreChartHistory());
         await settled(page);
@@ -1625,7 +1626,7 @@ for (const width of [1280, 390])
           await held.get(chartModulePath)?.promise;
           await route.abort();
         });
-        await page.goto(`http://127.0.0.1:${server.port}/?history=1&lang=${lang}`, { waitUntil: "domcontentloaded" });
+        await page.goto(`http://127.0.0.1:${server.port}/?history=1&lang=${lang}`, { waitUntil: "commit" });
         await page.waitForSelector("solid-island[data-mounted=true]");
         const svg = await page.locator("solid-island .k2b-chart__svg > svg").evaluate((node) => node.outerHTML);
         await page.getByRole("textbox", { name: "Message" }).fill("Keep my draft");
@@ -1659,7 +1660,7 @@ test("removing a chart while drawing code loads leaves the mounted chat usable",
   const code = hold(chartModulePath);
   try {
     const page = await context.newPage();
-    await page.goto(`http://127.0.0.1:${server.port}/?history=1&lang=en`, { waitUntil: "domcontentloaded" });
+    await page.goto(`http://127.0.0.1:${server.port}/?history=1&lang=en`, { waitUntil: "commit" });
     await page.waitForSelector("solid-island[data-mounted=true]");
     await page.evaluate(() => {
       window.disposeChartHistory();

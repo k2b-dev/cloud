@@ -30,13 +30,13 @@ export const drawingKey = (name: string, props: object): string => {
  */
 const handoff = Symbol.for("@k2b/cloud/chart-handoff");
 export function chartHandoff() {
-  const shared: typeof globalThis & { [handoff]?: (key: string) => HTMLElement | undefined } = globalThis;
+  const shared: typeof window & { [handoff]?: (key: string) => HTMLElement | undefined } = window;
   if (shared[handoff]) return shared[handoff];
   const removed = new Set<HTMLElement>();
   const claimed = new WeakSet<HTMLElement>();
-  customElements.define(
+  shared.customElements.define(
     "cloud-chart-drawing",
-    class extends HTMLElement {
+    class extends shared.HTMLElement {
       disconnectedCallback() {
         if (!this.hasAttribute("data-cloud-chart-server") || claimed.has(this) || !this.querySelector(drawingSvg)) return;
         removed.add(this);
