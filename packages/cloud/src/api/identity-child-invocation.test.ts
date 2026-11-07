@@ -54,6 +54,7 @@ const verify: typeof verifyInvocationToken = (token, expected, options) =>
 async function fixture(
   options: {
     mandate?: boolean;
+    event?: boolean;
     scopes?: string[];
     sourceCurrent?: boolean;
     origin?: NestedInvocationLease["origin"];
@@ -76,10 +77,13 @@ async function fixture(
       principal_type: options.serviceAccount ? "service_account" : "user",
       access_subject_type: options.serviceAccount ? "service_account" : "user",
       access_subject_id: person.id,
-      credential_kind: options.mandate ? "mandate" : options.serviceAccount ? "api_key" : "oauth",
+      credential_kind: options.mandate || options.event ? "mandate" : options.serviceAccount ? "api_key" : "oauth",
       ...(options.serviceAccount ? { credential_id: parentId } : {}),
-      scopes: options.scopes ?? ["read"],
-      ...(options.mandate ? { mandate_id: parentId, mandate_revision: 3, workload_type: "report", workload_id: "one" } : {}),
+      scopes: options.scopes ?? (options.event ? [] : ["read"]),
+      ...(options.mandate || options.event
+        ? { mandate_id: parentId, mandate_revision: 3, workload_type: "report", workload_id: "one" }
+        : {}),
+      ...(options.event ? { workload_event: person.id } : {}),
     },
     requestId: "nested-request",
     issuedAt: now,
@@ -489,4 +493,10 @@ test("a mandate allowing the parent does not implicitly permit its child Query",
   expect((await f.request()).status).toBe(403);
   expect(f.providerCalls()).toBe(0);
   expect(records.at(-1)).toMatchObject({ parentInvocationId: parentId, status: "denied", errorCode: "MANDATE_FORBIDDEN" });
+});
+
+test("an event visibility reader can resolve an ordinary nested Query without a workload operation grant", async () => {
+  const f = await fixture({ event: true });
+  expect((await f.request()).status).toBe(200);
+  expect(f.providerCalls()).toBe(1);
 });

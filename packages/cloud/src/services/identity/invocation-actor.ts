@@ -51,6 +51,7 @@ export type InvocationPrincipalClaims = Pick<
   | "mandate_revision"
   | "workload_type"
   | "workload_id"
+  | "workload_event"
   | "parent_invocation_id"
 >;
 
@@ -67,6 +68,7 @@ const provenance = (claims: InvocationPrincipalClaims): NonNullable<RequestActor
         mandateRevision: claims.mandate_revision,
         workloadType: claims.workload_type,
         workloadId: claims.workload_id,
+        ...(claims.workload_event ? { workloadEvent: claims.workload_event } : {}),
       }
     : {}),
 });
@@ -89,6 +91,34 @@ export const resolveInvocationAuthority = async (
   query: typeof sql = sql,
   groupsAdminOverride?: string[],
 ): Promise<ResolvedInvocationAuthority | null> => {
+  // A visibility proof exists only while this exact mandate's resource delivery is claimed.
+  // It permits the ordinary reader, never a workload execution or an Action.
+  if (claims.workload_event) {
+    if (
+      claims.credential_kind !== "mandate" ||
+      !claims.mandate_id ||
+      !claims.mandate_revision ||
+      !claims.workload_id ||
+      claims.scopes.length
+    )
+      return null;
+    const [delivery] = await query<{ id: string }[]>`SELECT delivery.id FROM events.app_deliveries delivery
+      JOIN events.app_subscriptions subscription ON subscription.id=delivery.subscription_id
+      JOIN auth.mandates mandate ON mandate.id=${claims.mandate_id}::uuid
+      WHERE delivery.event_id=${claims.workload_event}::uuid AND delivery.state IN ('pending','retrying')
+        AND delivery.claimed_until>clock_timestamp() AND subscription.state='active'
+        AND (${claims.act.sub}='app:core' OR subscription.app_id=substring(${claims.act.sub} from 5)
+          OR ${claims.parent_invocation_id ?? null}::text IS NOT NULL)
+        AND subscription.resource_binding->>'mandateId'=mandate.id::text
+        AND (subscription.resource_binding->>'mandateRevision')::int=mandate.revision
+        AND mandate.revision=${claims.mandate_revision} AND mandate.owner_app_id=subscription.resource_binding->>'mandateOwnerAppId'
+        AND mandate.workload_type=${claims.workload_type} AND mandate.workload_id=${claims.workload_id}
+        AND mandate.state='active' AND mandate.confirmed_at IS NOT NULL
+        AND (mandate.expires_at IS NULL OR mandate.expires_at>clock_timestamp())
+        AND mandate.subject_kind=${claims.principal_type}
+        AND COALESCE(mandate.subject_user_id,mandate.subject_service_account_id)=${claims.sub}::uuid LIMIT 1`;
+    if (!delivery) return null;
+  }
   if (claims.parent_invocation_id) {
     const lease = await nestedInvocationLeases.read(claims.parent_invocation_id).catch(() => null);
     if (!lease || `app:${lease.appId}` !== claims.act.sub) return null;
