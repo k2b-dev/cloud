@@ -5,19 +5,18 @@ import type { AiStoredMessage } from "./types";
 export const migrateAiNextMessages = async () => {
   await sql`ALTER TABLE ai.messages
     ADD COLUMN IF NOT EXISTS suggested_next_message JSONB,
-    ADD COLUMN IF NOT EXISTS suggestion_user_id UUID REFERENCES auth.users(id) ON DELETE SET NULL`.simple();
+    DROP COLUMN IF EXISTS suggestion_user_id`.simple();
   // Context history unions the interactive and background tables with SELECT *.
   // Keep their shapes equal; background runs never write these fields.
   await sql`ALTER TABLE ai.task_messages
     ADD COLUMN IF NOT EXISTS suggested_next_message JSONB,
-    ADD COLUMN IF NOT EXISTS suggestion_user_id UUID REFERENCES auth.users(id) ON DELETE SET NULL`.simple();
+    DROP COLUMN IF EXISTS suggestion_user_id`.simple();
   await sql`ALTER TABLE ai.user_prefs ADD COLUMN IF NOT EXISTS suggest_next_message BOOLEAN NOT NULL DEFAULT true`.simple();
 };
 
 export const saveAiNextMessage = async (input: { conversationId: string; turnId: string; userId: string; text: string }) => {
   await sql`
-    UPDATE ai.messages SET suggested_next_message = ${JSON.stringify({ text: input.text, dismissedAt: null })}::jsonb,
-      suggestion_user_id = ${input.userId}::uuid
+    UPDATE ai.messages SET suggested_next_message = ${JSON.stringify({ text: input.text, dismissedAt: null })}::jsonb
     WHERE id = (
       SELECT m.id FROM ai.messages m JOIN ai.turns t ON t.id::text = m.loop_id
       WHERE m.conversation_id = ${input.conversationId}::uuid AND m.loop_id = ${input.turnId}
@@ -42,7 +41,7 @@ export const projectAiNextMessages = async (
   const rows = await sql<{ short_id: string; suggested_next_message: NonNullable<AiStoredMessage["suggestedNextMessage"]> }[]>`
     SELECT m.short_id, m.suggested_next_message FROM ai.messages m JOIN ai.turns t ON t.id::text = m.loop_id
     WHERE m.conversation_id = ${conversationId}::uuid AND m.short_id IN ${sql(messages.map((message) => message.shortId))}
-      AND m.suggestion_user_id = ${viewerUserId}::uuid AND m.suggested_next_message IS NOT NULL
+      AND t.run_config->'actor'->'user'->>'id' = ${viewerUserId} AND m.suggested_next_message IS NOT NULL
       AND t.status = 'completed' AND t.cancel_requested_at IS NULL
       AND t.id = (SELECT id FROM ai.turns WHERE conversation_id = m.conversation_id ORDER BY created_at DESC, id DESC LIMIT 1)
       AND m.seq = (SELECT max(seq) FROM ai.messages WHERE conversation_id = m.conversation_id AND kind = 'message')
@@ -59,11 +58,12 @@ export const projectAiNextMessages = async (
 
 export const dismissAiNextMessage = async (input: { conversationId: string; messageShortId: string; userId: string }) => {
   const rows = await sql`
-    UPDATE ai.messages SET suggested_next_message = jsonb_set(suggested_next_message, '{dismissedAt}',
-      COALESCE(NULLIF(suggested_next_message->'dismissedAt', 'null'::jsonb), to_jsonb(now())))
-    WHERE conversation_id = ${input.conversationId}::uuid AND short_id = ${input.messageShortId}
-      AND suggestion_user_id = ${input.userId}::uuid AND suggested_next_message IS NOT NULL
-    RETURNING id
+    UPDATE ai.messages m SET suggested_next_message = jsonb_set(m.suggested_next_message, '{dismissedAt}',
+      COALESCE(NULLIF(m.suggested_next_message->'dismissedAt', 'null'::jsonb), to_jsonb(now())))
+    FROM ai.turns t
+    WHERE t.id::text = m.loop_id AND m.conversation_id = ${input.conversationId}::uuid AND m.short_id = ${input.messageShortId}
+      AND t.run_config->'actor'->'user'->>'id' = ${input.userId} AND m.suggested_next_message IS NOT NULL
+    RETURNING m.id
   `;
   return rows.length > 0;
 };

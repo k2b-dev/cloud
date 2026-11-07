@@ -51,24 +51,28 @@ try {
     console.log(`${fixture.id}: ${checked.pass ? "pass" : checked.problems.join(", ")} · ${JSON.stringify(checked.raw ?? null)}`);
   }
   const positives = results.filter((result) => result.id.startsWith("J") && result.pass).length;
+  const negativeSuggestions = results.filter((result) => result.id.startsWith("N") && result.text !== null).length;
   const unwanted = results.filter((result) => result.id.startsWith("N") && result.problems.includes("unwanted")).length;
   const privacyOrRepetition = results.filter((result) =>
     result.problems.some((problem) => problem === "repetition" || problem.startsWith("private_data:") || problem.startsWith("name:")),
   ).length;
   const constraints = results.every((result) => result.problems.every((problem) => ["missing", "unwanted", "intent"].includes(problem)));
-  const pass = positives >= 4 && unwanted <= 1 && privacyOrRepetition === 0 && constraints;
+  const pass = positives >= 4 && negativeSuggestions <= 1 && privacyOrRepetition === 0 && constraints;
   const report = {
     class: values.model,
     model: profile.model,
     fixtureTime: "2026-11-07T09:00:00Z",
     positives,
+    negativeSuggestions,
     unwanted,
     privacyOrRepetition,
     pass,
     results,
   };
   if (values.out) await Bun.write(values.out, JSON.stringify(report, null, 2));
-  console.log(JSON.stringify({ class: values.model, model: profile.model, positives, unwanted, privacyOrRepetition, pass }));
+  console.log(
+    JSON.stringify({ class: values.model, model: profile.model, positives, negativeSuggestions, unwanted, privacyOrRepetition, pass }),
+  );
   process.exitCode = pass ? 0 : 1;
 } finally {
   await sql.close();

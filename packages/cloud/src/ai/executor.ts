@@ -1005,7 +1005,6 @@ export class AiTurnExecutor {
       : undefined;
     const nextMessage = createAiNextMessageRuntime(config, prefs, conversationId, turnId);
     const runtimeTools = [
-      ...nextMessage.tools,
       ...material.tools,
       ...(memoryActive ? [createCloudAiMemoryTool(query)] : []),
       ...(skillSubject && availableSkills.length ? [createCloudAiLoadSkillTool(skillSubject, toolAuthority)] : []),
@@ -1016,6 +1015,7 @@ export class AiTurnExecutor {
             createCloudAiReadProjectKnowledgeTool(resolvedProjectId, projectSubject),
           ]
         : []),
+      ...nextMessage.tools,
     ];
     const toolsSupported = resolved.profile.capabilities.includes("tools");
     const allowed = allowedTools === null ? null : new Set(allowedTools);

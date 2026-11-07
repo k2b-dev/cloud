@@ -182,10 +182,11 @@ only the person's messages and the visible answer, never unseen tool data.
 The server rejects multiline text, more than 200 Unicode characters, URLs,
 Markdown, mentions and text equal to the person's last message after Unicode,
 case, punctuation and whitespace normalization. Rejected text means no
-suggestion. The first call wins, including `null` or invalid text. An alone,
+suggestion. The first closing call wins, including `null` or invalid text. An alone,
 last call following answer text in the same model step ends the loop without
 another model request. Other calls receive
-`noted, call only alone after the answer` and the loop continues. The call
+`noted, call only alone after the answer` and the loop continues. Their arguments
+are stored as `{ text: null }` and do not count as a suggestion. The call
 never appears as a tool block.
 
 The latest completed answer can carry the optional field

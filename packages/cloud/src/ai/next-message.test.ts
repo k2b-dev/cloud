@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, setSystemTime, test } from "bun:test";
+import { afterEach, describe, expect, setSystemTime, spyOn, test } from "bun:test";
 import {
   defineTool,
   type Message,
@@ -18,6 +18,7 @@ import {
   createAiNextMessageRuntime,
   validateAiNextMessage,
 } from "./next-message";
+import * as nextMessageStore from "./next-message-store";
 import type { AiUserPrefs } from "./prefs";
 import { userResourceContext } from "./projects.test-fixture";
 import { buildBlocksFromMessages } from "./protocol";
@@ -149,6 +150,23 @@ describe("next message validation", () => {
 describe("next message tool scope", () => {
   test("requires the enabled preference and a person's interactive default chat", () => {
     expect(aiNextMessageEnabled(config, prefs)).toBe(true);
+    expect(
+      aiNextMessageEnabled(
+        {
+          ...config,
+          project: {
+            id: "fixture",
+            name: "Fixture",
+            revision: 1,
+            instructions: "",
+            context: "",
+            references: [],
+            defaultModel: null,
+          },
+        },
+        prefs,
+      ),
+    ).toBe(true);
     const excluded: Partial<AiChatTurnRunConfig>[] = [
       { signedInSession: undefined },
       { actor: undefined },
@@ -177,6 +195,17 @@ describe("closing suggestion in the real nessi loop", () => {
       ],
     });
     expect(runtime.result("completed", controller.signal)).toBe("Ja, antworte Jana");
+  });
+  test("a failed suggestion save is best effort after normal loop completion", async () => {
+    const { runtime, controller, events } = await run([[text(), call(), usage]]);
+    const save = spyOn(nextMessageStore, "saveAiNextMessage").mockRejectedValue(new Error("Frozen storage failure"));
+    try {
+      await expect(runtime.save("completed", controller.signal)).resolves.toBeUndefined();
+      expect(save).toHaveBeenCalledTimes(1);
+      expect(events.at(-1)).toMatchObject({ type: "loop_end", reason: "stop" });
+    } finally {
+      save.mockRestore();
+    }
   });
   test("a failed tool suppresses the suggestion even when the model finishes normally", async () => {
     const { runtime, controller, events } = await run(
@@ -233,14 +262,42 @@ describe("closing suggestion in the real nessi loop", () => {
     expect(events.at(-1)).toMatchObject({ type: "loop_end", reason: "stop", aggregate: { assistantMessageCount: 1, toolCallCount: 0 } });
     expect(events.some((event) => event.type === "tool_execution_start")).toBe(false);
   });
-  test("mixed calls get the note and continue normally", async () => {
+  test.each([true, false])("mixed calls get the note and redact named or initially unnamed arguments: %j", async (named) => {
     const other: ProviderEvent = {
       type: "block_end",
       blockId: "other",
       index: 2,
       block: { type: "tool_call", id: "other", name: "read", args: {} },
     };
-    const { requests, events } = await run([[text(), call(), other, usage], [text("Jetzt fertig.")]]);
+    const { requests, events, runtime, controller } = await run([
+      [
+        text(),
+        {
+          type: "block_start",
+          blockId: "suggestion",
+          index: 1,
+          kind: "tool_call",
+          callId: "suggestion",
+          ...(named ? { name: "suggest_next_message" } : {}),
+        },
+        { type: "block_delta", blockId: "suggestion", delta: '{"text":"Ja, antworte Jana"}' },
+        call(),
+        other,
+        usage,
+      ],
+      [text("Jetzt fertig.")],
+    ]);
+    expect(runtime.result("completed", controller.signal)).toBeNull();
+    expect(JSON.stringify(requests[1]?.messages)).not.toContain("Ja, antworte Jana");
+    expect(events.filter((event) => event.type === "block_delta" && event.blockId === "suggestion")).toEqual([]);
+    expect(requests[1]?.messages).toContainEqual(
+      expect.objectContaining({
+        role: "assistant",
+        content: expect.arrayContaining([
+          expect.objectContaining({ type: "tool_call", name: "suggest_next_message", args: { text: null } }),
+        ]),
+      }),
+    );
     expect(requests).toHaveLength(2);
     expect(requests[1]?.messages).toContainEqual(
       expect.objectContaining({ role: "tool_result", name: "suggest_next_message", result: AI_NEXT_MESSAGE_NOTED }),
@@ -254,7 +311,7 @@ describe("closing suggestion in the real nessi loop", () => {
     const history = requests[1]!.messages.map((message, seq) => ({ seq, message }));
     expect(buildBlocksFromMessages(history).some((block) => block.kind === "tool" && block.name === "suggest_next_message")).toBe(false);
   });
-  test.each([null, "**invalid**", "Ja, antworte Jana"])("retains the first call across mixed rounds: %j", async (first) => {
+  test.each([null, "**invalid**", "Ja, antworte Jana"])("ignores mixed calls and keeps the closing call: %j", async (first) => {
     const other: ProviderEvent = {
       type: "block_end",
       blockId: "other",
@@ -266,10 +323,12 @@ describe("closing suggestion in the real nessi loop", () => {
       [text(), call("Ja, entwirf etwas anderes", "second"), usage],
     ]);
     expect(requests).toHaveLength(2);
-    expect(runtime.result("completed", controller.signal)).toBe(validateAiNextMessage(first, "Was hat Jana gefragt?"));
+    expect(runtime.result("completed", controller.signal)).toBe("Ja, entwirf etwas anderes");
   });
   test("a call without preceding answer text gets the note and another step", async () => {
-    const { requests } = await run([[call(), usage], [text()]]);
+    const { requests, runtime, controller } = await run([[call(), text(), usage], [text()]]);
+    expect(runtime.result("completed", controller.signal)).toBeNull();
+    expect(JSON.stringify(requests[1]?.messages)).not.toContain("Ja, antworte Jana");
     expect(requests).toHaveLength(2);
     expect(requests[1]?.messages).toContainEqual(expect.objectContaining({ result: AI_NEXT_MESSAGE_NOTED }));
   });

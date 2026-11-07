@@ -1,15 +1,21 @@
-import { afterAll, beforeAll, expect, test } from "bun:test";
+import { afterAll, beforeAll, expect, spyOn, test } from "bun:test";
+import type { Provider } from "@k2b/nessi";
 import { databaseSuite } from "../../../../scripts/fixtures/test-infra";
 import { AI_NOTIFICATIONS } from "../../../core/src/ai-notifications";
 import { sql } from "../runtime/clients";
 import { buildEnrichmentTranscript } from "./enrich";
+import { AiTurnExecutor } from "./executor";
 import { migrateCloudAi } from "./migrate";
+import { aiModelFixture, aiSettingsFixture } from "./model-fixture";
+import * as nextMessageStore from "./next-message-store";
 import { dismissAiNextMessage, saveAiNextMessage } from "./next-message-store";
 import { aiUserPrefs } from "./prefs";
 import { userResourceContext } from "./projects.test-fixture";
+import type { AiWireEvent } from "./protocol";
 import { publicAiStoredMessages } from "./public-projection";
 import { createAiShortId } from "./short-id";
 import { aiConversations } from "./store";
+import * as stream from "./stream";
 import { loadAiStreamState } from "./stream";
 import { assistantVisibleTextFromMessage } from "./timeline";
 
@@ -51,6 +57,84 @@ databaseSuite()("next message storage and projections", () => {
       publicAiStoredMessages(await aiConversations.listMessages({ conversationId: conversation.id }), conversation, viewer);
     return { userId, conversation, turnId, messageId, input, complete, read };
   };
+
+  test("migration keeps only the suggestion JSON in the history table shapes", async () => {
+    const rows = await sql<{ table_name: string; column_name: string }[]>`
+      SELECT table_name, column_name FROM information_schema.columns
+      WHERE table_schema = 'ai' AND table_name IN ('messages', 'task_messages')
+        AND column_name IN ('suggested_next_message', 'suggestion_user_id') ORDER BY table_name`;
+    expect(rows).toEqual([
+      { table_name: "messages", column_name: "suggested_next_message" },
+      { table_name: "task_messages", column_name: "suggested_next_message" },
+    ]);
+  });
+
+  test("a suggestion storage error still lets the executor complete the turn", async () => {
+    const userId = await person();
+    await aiUserPrefs.update(userId, { memoryEnabled: false, memoryLearningEnabled: false });
+    const conversation = await aiConversations.createConversation({ ownerUserId: userId });
+    chats.push(conversation.id);
+    const { turn } = await aiConversations.submitChatTurn({
+      conversationId: conversation.id,
+      modelId: "chat",
+      runConfig: {
+        kind: "chat",
+        input: "Was hat Jana gefragt?",
+        signedInSession: true,
+        actor: userResourceContext({ type: "user", userId }).actor,
+        toolSource: { kind: "default" },
+      },
+      userMessage: { role: "user", content: [{ type: "text", text: "Was hat Jana gefragt?" }] },
+    });
+    const claim = await aiConversations.claimTurn({
+      conversationId: conversation.id,
+      turnId: turn.id,
+      leaseOwner: "suggestion-save-test",
+      leaseMs: 30_000,
+      from: "queue",
+      maxAttempts: 1,
+      runBudgetMs: 60_000,
+    });
+    expect(claim).not.toBeNull();
+    const provider: Provider = {
+      name: "frozen",
+      family: "openai-compatible",
+      model: "fixture",
+      capabilities: { streaming: true, tools: true, images: false, thinking: false, usage: true },
+      stream: async function* () {
+        yield { type: "block_end", blockId: "answer", index: 0, block: { type: "text", text: "Soll ich Jana antworten?" } };
+        yield {
+          type: "block_end",
+          blockId: "suggest",
+          index: 1,
+          block: { type: "tool_call", id: "suggest", name: "suggest_next_message", args: { text: suggestion } },
+        };
+        yield { type: "usage", usage: { input: 10, output: 10, total: 20 }, finishReason: "tool_use" };
+      },
+    };
+    const save = spyOn(nextMessageStore, "saveAiNextMessage").mockRejectedValue(new Error("Frozen storage failure"));
+    const events: AiWireEvent[] = [];
+    const publish = spyOn(stream, "publishAiWireEvent").mockImplementation(async (event) => {
+      events.push(event);
+    });
+    try {
+      await new AiTurnExecutor({
+        leaseOwner: "suggestion-save-test",
+        heartbeatMs: 5_000,
+        enqueueContinuation: async () => {},
+        validateTurn: async () => ({
+          settings: aiSettingsFixture(),
+          resolved: { model: { id: "chat" }, profile: aiModelFixture(), provider },
+        }),
+      }).run({ conversationId: conversation.id, turnId: turn.id, claim: claim!, signal: new AbortController().signal });
+      expect(save).toHaveBeenCalledTimes(1);
+      expect(events).toContainEqual(expect.objectContaining({ type: "turn_finished", status: "completed" }));
+      expect((await aiConversations.getTurn({ conversationId: conversation.id, turnId: turn.id }))?.status).toBe("completed");
+    } finally {
+      save.mockRestore();
+      publish.mockRestore();
+    }
+  });
 
   test("stores only the first suggestion and projects it to its trigger person on reload", async () => {
     const f = await fixture();
