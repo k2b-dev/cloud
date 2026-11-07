@@ -56,10 +56,9 @@
 .filesv2-browser__pagination {
   display: flex;
   align-items: center;
-  justify-content: flex-end;
+  justify-content: center;
+  flex-direction: column;
   gap: 0.5rem;
-}
-.filesv2-browser__pagination:has(a) {
   padding: 0.5rem 0.75rem 0.75rem;
 }
 .filesv2-filename {

@@ -120,6 +120,7 @@ export default function Browser(props: {
   error?: string;
   notice?: string;
   issues?: BasesResult["issues"];
+  onLoadMore?: () => Promise<void>;
   onSelectionSource?: (source: string) => void;
   onMarksChanged?: () => void;
   onBranchRefreshReady?: (refresh: ((signal: AbortSignal) => Promise<void>) | null) => void;
@@ -390,7 +391,7 @@ export default function Browser(props: {
         push({ ...item, depth, expanded: !!open, loading: open?.loading });
         if (open) {
           walk(open.items, depth + 1);
-          if (open.next) push({ ...item, path: `${item.path} more`, name: "", more: true, depth: depth + 1 });
+          if (open.next && item.path !== folder()) push({ ...item, path: `${item.path} more`, name: "", more: true, depth: depth + 1 });
         }
       }
     };
@@ -412,13 +413,38 @@ export default function Browser(props: {
   });
   const entries = createMemo(() => rows().filter((row) => !row.more));
   const ids = () => [...new Set([...entries().map((row) => row.path), ...(externalPath() ? [externalPath()!] : [])])];
+  const [loadingMore, setLoadingMore] = createSignal(false);
+  const [moreError, setMoreError] = createSignal(false);
+  const loadMore = async () => {
+    if (loadingMore() || !props.onLoadMore) return;
+    const known = new Set(props.directory.items.map((item) => item.path));
+    const context = locationKey();
+    setLoadingMore(true);
+    setMoreError(false);
+    try {
+      await props.onLoadMore();
+      if (locationKey() !== context) return;
+      const first = props.directory.items.find((item) => !known.has(item.path));
+      if (first) requestAnimationFrame(() => selection.focus(first.path));
+    } catch {
+      if (locationKey() === context) setMoreError(true);
+    } finally {
+      setLoadingMore(false);
+    }
+  };
+  createEffect(on(locationKey, () => setMoreError(false), { defer: true }));
   const selection = createCollectionSelection({
     ids,
     initial: requestedFile() ? [requestedFile()!] : [],
     onChange: (paths) => {
       if (!mounted || syncing || location !== locationKey()) return;
       if (externalPath() && !paths.includes(externalPath()!)) setExternalPath(null);
-      const source = filesUrl(baseId(), folder(), props.after, paths.length === 1 ? paths[0] : null, search(), activeBrowse());
+      const url = new URL(
+        filesUrl(baseId(), folder(), props.after, paths.length === 1 ? paths[0] : null, search(), activeBrowse()),
+        "https://files.invalid",
+      );
+      if ((props.directory.loadedPages ?? 1) > 1) url.searchParams.set("pages", String(props.directory.loadedPages));
+      const source = `${url.pathname}${url.search}`;
       commitHistory(source, { replace: true, scroll: "manual", viewTransition: false });
       props.onSelectionSource?.(source);
     },
@@ -1682,7 +1708,7 @@ export default function Browser(props: {
                 </InlineGuidance>
               )}
             </For>
-            <Show when={props.error}>
+            <Show when={props.error && !loadingMore() && !moreError()}>
               <InlineGuidance tone="danger" role="alert">
                 {props.error}{" "}
                 <Button size="xs" variant="text" onClick={props.onRetry}>
@@ -1924,37 +1950,34 @@ export default function Browser(props: {
                       </Show>
                     </div>
                   </Show>
+                  <Show when={props.directory.next}>
+                    <div class="filesv2-browser__pagination">
+                      <Button size="sm" variant="text" loading={loadingMore()} onClick={() => void loadMore()}>
+                        {moreError() ? b().retry : b().loadMore}
+                        <i class={moreError() ? "ti ti-refresh" : "ti ti-chevron-down"} aria-hidden="true" />
+                      </Button>
+                      <Show when={moreError()}>
+                        <InlineGuidance role="alert">{b().loadMoreFailed}</InlineGuidance>
+                      </Show>
+                    </div>
+                  </Show>
                 </ScrollArea>
               </ContextMenu>
             </Show>
           </Show>
-          <nav class="filesv2-browser__pagination" aria-label={t().files}>
-            <Show when={props.after}>
+          <Show when={props.after}>
+            <div class="filesv2-browser__pagination">
               <ButtonLink
                 href={filesUrl(baseId(), folder(), null, null, search(), activeBrowse())}
                 navigation="enhanced"
                 onNavigate={props.onNavigate}
                 size="sm"
-                variant="secondary"
+                variant="text"
               >
                 {t().first}
               </ButtonLink>
-            </Show>
-            <Show when={props.directory.next}>
-              {(next) => (
-                <ButtonLink
-                  href={filesUrl(baseId(), folder(), next(), null, search(), activeBrowse())}
-                  navigation="enhanced"
-                  onNavigate={props.onNavigate}
-                  size="sm"
-                  variant="secondary"
-                >
-                  {t().next}
-                  <i class="ti ti-chevron-right" aria-hidden="true" />
-                </ButtonLink>
-              )}
-            </Show>
-          </nav>
+            </div>
+          </Show>
         </div>
       </AppWorkspace.Main>
       <AppWorkspace.Detail id="filesv2-inspector" open={detailOpen()} onClose={closeInspector} width="md" phone="page">
