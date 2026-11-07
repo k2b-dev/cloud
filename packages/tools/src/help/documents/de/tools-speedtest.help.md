@@ -32,7 +32,9 @@ Die große Anzeige zeigt den Download, die Kacheln zeigen Upload, Ping, Jitter
 und Latenz unter Last. Das Terminal zeigt dieselben Messwerte. Der Verlauf
 zeichnet den Anlauf als dünne graue Linie; er zählt nicht zur Übertragungsrate. Ping ist der Median; Jitter die mittlere Differenz aufeinanderfolgender
 Pings. **Latenz unter Last** misst die Antwortzeit während der Übertragung.
-Ein Strich bedeutet, dass keine abgeschlossene Messung vorliegt.
+Ein Strich bedeutet, dass keine abgeschlossene Messung vorliegt. Während der Messung bleibt die Zeitachse fest;
+im Ergebnis endet sie bei der tatsächlichen Dauer. Lange Terminalzeilen
+bleiben in einer Zeile und lassen sich seitlich scrollen.
 
 Nach **Fertig** kopiert **Ergebnis kopieren** das JSON. **--json** zeigt es im
 Terminal-Panel und startet keine zweite Messung. **Erneut testen** beginnt neu.

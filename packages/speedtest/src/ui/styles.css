@@ -31,6 +31,7 @@
 .tools-speedtest-gauge[data-empty=true] .stdlib-chart-gauge-value { visibility: hidden; }
 .tools-speedtest-start { width: 100%; justify-content: center; }
 .tools-speedtest-eta { display: flex; flex-direction: column; gap: .5rem; }
+.tools-speedtest-eta[data-finished=true] { visibility: hidden; }
 .tools-speedtest .tools-speedtest-unit { color: var(--k2b-text-muted); font-size: .8125rem; font-weight: 500; }
 /* The dash and a figure with its unit take the same line, so a reading never moves the row of tiles. */
 .tools-speedtest .k2b-stat-cell__main { height: 2rem; }
@@ -53,7 +54,7 @@
 
 .tools-speedtest-cli-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .5rem; }
 .tools-speedtest-cli-actions { display: flex; align-items: center; gap: .5rem; }
-.tools-speedtest-terminal { height: 13rem; overflow: auto; margin: 0; padding: 1rem; border-radius: var(--k2b-radius-control); background: var(--k2b-surface-muted); color: var(--k2b-text); font: .75rem/1.7 var(--font-mono, monospace); white-space: pre-wrap; overflow-wrap: anywhere; tab-size: 2; }
+.tools-speedtest-terminal { height: 14rem; overflow: auto; margin: 0; padding: 1rem; border-radius: var(--k2b-radius-control); background: var(--k2b-surface-muted); color: var(--k2b-text); font: .75rem/1.7 var(--font-mono, monospace); white-space: pre; overflow-wrap: normal; tab-size: 2; }
 .tools-speedtest-runtimes { display: flex; align-items: center; gap: .5rem; }
 .tools-speedtest-runtimes > .k2b-segmented-control { flex: 1; min-width: 0; width: auto; }
 
