@@ -77,7 +77,7 @@ import {
 import { batch, createMemo, createSignal, onCleanup, onMount, Show } from "solid-js";
 import { createStore } from "solid-js/store";
 import { DemoCard } from "../DemoCard";
-import { BarChartStatesDemo, ChartDemo, CountryMapDemo, ReferenceLineStylesDemo } from "./charts";
+import { BarChartStatesDemo, ChartDemo, ChartFrameStatesDemo, CountryMapDemo, ReferenceLineStylesDemo } from "./charts";
 import { FileGridDemo } from "./file-grid";
 import { PaginationDemo } from "./layout";
 import { CalendarDemo } from "./surfaces";
@@ -2056,6 +2056,7 @@ const demos: DemoSection = {
     <DemoGrid columns="one">
       <ChartDemo window={new URLSearchParams(props.search).get("window") === "1h" ? "1h" : "24h"} />
       <BarChartStatesDemo />
+      <ChartFrameStatesDemo />
       <ReferenceLineStylesDemo />
       <CountryMapDemo />
       <DemoCard
