@@ -281,6 +281,13 @@ test("standalone and base-only hosts paint transparent bands and distinct previo
           .locator(".stdlib-chart-bar")
           .evaluate((n) => getComputedStyle(n).fill),
       ).not.toBe("rgb(0, 0, 0)");
+      expect(
+        await page
+          .locator(".k2b-chart")
+          .last()
+          .locator(".stdlib-chart-bar")
+          .evaluate((n) => parseFloat(getComputedStyle(n).strokeWidth)),
+      ).toBe(0);
       if (strip) {
         await page
           .locator(".k2b-chart-category-band")

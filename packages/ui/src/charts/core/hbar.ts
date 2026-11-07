@@ -108,7 +108,7 @@ export function renderHbarSvg(spec: HorizontalBarOptions & { width: number; heig
     for (const segment of row.segments) {
       if (segment.value === null) continue;
       marks.push(
-        `<rect class="stdlib-chart-bar stdlib-chart-series-${segment.seriesIndex % 8}" x="${segment.x}" y="${row.center - height / 2}" width="${Math.max(segment.width / 2, segment.width - 1.5)}" height="${height}" rx="3" stroke="none" style="fill:var(--stdlib-chart-c${(segment.seriesIndex % 8) + 1},#3b82f6);fill-opacity:.18"/>`,
+        `<rect class="stdlib-chart-bar stdlib-chart-series-${segment.seriesIndex % 8}" x="${segment.x}" y="${row.center - height / 2}" width="${Math.max(segment.width / 2, segment.width - 1.5)}" height="${height}" rx="3" stroke="none" stroke-width="0" style="fill:var(--stdlib-chart-c${(segment.seriesIndex % 8) + 1},#3b82f6);fill-opacity:.18"/>`,
       );
       const label = g.format(segment.value);
       if (segment.width / g.unit > chartTextWidth(label) + 10)
