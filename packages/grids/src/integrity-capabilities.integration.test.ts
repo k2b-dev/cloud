@@ -114,11 +114,11 @@ postgresTest("document capabilities capture, issue and read immutable bytes with
   try {
     const capture = gridsCapabilities.actions["document.capture"];
     const captured = await capture.run(
-      capture.input.parse({ baseId: f.base, query: `from table {${f.table}}\nselect {${f.name.shortId}} as name` }),
+      capture.input.parse({ baseId: f.base, query: `from table {${f.table}}\nselect {${f.name.shortId}} as item_name` }),
       f.context,
     );
-    expect(captured.ok).toBeTrue();
     if (!captured.ok) throw captured.error;
+    expect(captured.ok).toBeTrue();
     // Correlation IDs may repeat; only the operation key identifies a capture.
     const independent = await capture.run(
       capture.input.parse({ baseId: f.base, query: `from table {${f.table}}\nselect {${f.name.shortId}} as otherName` }),
@@ -131,7 +131,7 @@ postgresTest("document capabilities capture, issue and read immutable bytes with
     for (const output of [
       { kind: "json" },
       { kind: "csv" },
-      { kind: "xml", body: "<items>{% for row in rows %}<item>{{ row.name }}</item>{% endfor %}</items>" },
+      { kind: "xml", body: "<items>{% for row in rows %}<item>{{ row[columns[0].key] }}</item>{% endfor %}</items>" },
     ]) {
       const issued = await issue.run(issue.input.parse({ baseId: f.base, data: captured.data.data, output }), {
         ...f.context,
@@ -154,7 +154,9 @@ postgresTest("document capabilities capture, issue and read immutable bytes with
       const content = await gridsCapabilities.queries["document.content.read"].run({ id: document.id }, f.context);
       if (!content.ok || !content.data.stream) throw new Error("Missing artifact stream");
       const response = await gridsCapabilities.queries["document.content.read"].stream.read(content.data.stream, f.context);
-      expect((await response.arrayBuffer()).byteLength).toBeGreaterThan(0);
+      const bytes = await response.arrayBuffer();
+      expect(bytes.byteLength).toBeGreaterThan(0);
+      if (output.kind === "xml") expect(new TextDecoder().decode(bytes)).toContain("<item>before</item>");
     }
     const zip = await issue.run(issue.input.parse({ baseId: f.base, data: captured.data.data, output: { kind: "zip", include: ids } }), {
       ...f.context,
@@ -167,7 +169,7 @@ postgresTest("document capabilities capture, issue and read immutable bytes with
         issue.input.parse({
           baseId: f.base,
           data: captured.data.data,
-          output: { kind: "pdf", body: "<h1>Items</h1>{% for row in rows %}<p>{{ row.name }}</p>{% endfor %}" },
+          output: { kind: "pdf", body: "<h1>Items</h1>{% for row in rows %}<p>{{ row[columns[0].key] }}</p>{% endfor %}" },
         }),
         { ...f.context, requestId: uuid(), idempotencyKey: uuid() },
       );
@@ -215,7 +217,8 @@ postgresTest("finalization capability pins versions and correction drafts preser
     const draft = gridsCapabilities.actions["record.correction-draft"];
     const created = await draft.run(
       draft.input.parse({
-        ...input,
+        tableId: input.tableId,
+        recordId: input.recordId,
         ifVersion: original.version,
         typeFieldId: type.data.shortId,
         typeValue: "correction",
@@ -410,8 +413,12 @@ postgresTest("DATEV and SEPA require exact confirmation and complete without wor
       >`SELECT workflow_run_id,domain_data_id::text FROM grids.documents WHERE short_id=${issued.data.data.id}`;
       expect(document?.workflow_run_id).toBeNull();
       expect(document?.domain_data_id).toBeString();
+      const replayReview = await confirm.review!(confirm.input.parse(input), context);
+      if (!replayReview.ok) throw replayReview.error;
+      if ("content" in replayReview.data) expect(replayReview.data.content?.body).toContain("12.30");
       const replay = await confirm.run(confirm.input.parse(input), { ...context, idempotencyKey: uuid() });
-      expect(replay.ok && replay.data.data.id).toBe(issued.data.data.id);
+      if (!replay.ok) throw replay.error;
+      expect(replay.data.data.id).toBe(issued.data.data.id);
     }
     // A preview cannot be confirmed after its explicitly pinned source changes.
     const pending = await issue.run(

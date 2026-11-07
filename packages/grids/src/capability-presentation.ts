@@ -28,6 +28,10 @@ export const gridsCapabilityPresentation: CapabilityPresentationCatalog = {
         "record.finalization.read": {
           title: "Abschlussbereitschaft lesen",
           description: "Aktuelle Pflichtfelder, Vier-Augen-Anfrage und Regelrevision vor dem Abschließen eines Datensatzes lesen.",
+          input: {
+            tableId: "Öffentliche ID der gespeicherten Tabelle.",
+            recordId: "Öffentliche ID des Datensatzes in dieser Tabelle.",
+          },
         },
         "document.templates": {
           title: "Dokumentvorlagen finden",
@@ -210,35 +214,87 @@ export const gridsCapabilityPresentation: CapabilityPresentationCatalog = {
           title: "Datensätze atomar ändern",
           description:
             "Bis zu 50 Datensätze nach aktuellen Bedingungen in einer Transaktion erstellen oder ändern; höchstens 100 gesperrte Datensätze. Bei einem Fehler wird alles zurückgerollt.",
+          input: {
+            baseId: "Öffentliche Base-ID; alle Ziele müssen zu dieser Base gehören.",
+            locks: "Vor den Prüfungen gesperrte Koordinationsdatensätze; insgesamt höchstens 100 verschiedene Sperren.",
+            "locks[].tableId": "Öffentliche Tabellen-ID des gesperrten Datensatzes.",
+            "locks[].recordId": "Öffentliche ID des gesperrten Datensatzes.",
+            checks: "Aktuelle Bedingungen, die nach allen Sperren erfüllt sein müssen.",
+            changes: "Bis zu 50 geordnete Erstellungs- oder Änderungsaufträge; bei einem Fehler wird alles zurückgerollt.",
+          },
         },
         "record.close": {
           title: "Datensatz abschließen",
           description:
             "Nach der direkten Abschlussregel abschließen oder eine Vier-Augen-Anfrage erstellen. Benötigt aktuelle Datensatzversion und Regelrevision; fragt immer nach.",
+          input: {
+            tableId: "Öffentliche Tabellen-ID des Datensatzes.",
+            recordId: "Öffentliche ID des abzuschließenden Datensatzes.",
+            ifVersion: "Aktuelle Datensatzversion; Änderungen führen zur Ablehnung.",
+            expectedPolicyRevision: "Regelrevision aus record.finalization.read.",
+            approvalRequestId: "Vorhandene Vier-Augen-Anfrage; nur eine unabhängige berechtigte Person kann freigeben.",
+          },
         },
         "record.finalize": {
           title: "Datensatz finalisieren",
           description: "Einen versionsgeprüften Datensatz nach den bestehenden Vier-Augen-Regeln finalisieren. Fragt immer nach.",
+          input: {
+            tableId: "Öffentliche Tabellen-ID des Datensatzes.",
+            recordId: "Öffentliche ID des abzuschließenden Datensatzes.",
+            ifVersion: "Aktuelle Datensatzversion; Änderungen führen zur Ablehnung.",
+            expectedPolicyRevision: "Regelrevision aus record.finalization.read.",
+            approvalRequestId: "Vorhandene Vier-Augen-Anfrage; nur eine unabhängige berechtigte Person kann freigeben.",
+          },
         },
         "record.correction-draft": {
           title: "Korrekturentwurf erstellen",
           description:
             "Einen bearbeitbaren Korrektur- oder Stornoentwurf mit Verknüpfung zum abgeschlossenen Original erstellen. Das Original bleibt unverändert.",
+          input: {
+            tableId: "Öffentliche Tabellen-ID des Originals.",
+            recordId: "Öffentliche ID des abgeschlossenen Originals.",
+            ifVersion: "Aktuelle Version des Originals.",
+            typeFieldId: "Öffentliche ID des Auswahlfeldes für Korrektur oder Storno.",
+            typeValue: "Vorhandene Options-ID für Korrektur oder Storno.",
+            originalFieldId: "Öffentliche ID der einfachen Selbstverknüpfung zum Original.",
+            values: "Explizite Entwurfswerte; Typ und Originalverknüpfung können nicht überschrieben werden.",
+          },
         },
         "document.capture": {
           title: "Dokumentdaten festhalten",
           description:
             "Ein vollständiges berechtigungsgeprüftes GQL-Ergebnis unabhängig von Workflows unveränderlich speichern. Abgeschnittene Ergebnisse werden abgelehnt.",
+          input: {
+            baseId: "Öffentliche ID der Base mit Schreibzugriff.",
+            query: "GQL-Abfrage für die vollständige unveränderliche Datenaufnahme.",
+          },
         },
         "document.issue": {
           title: "Dokument ausgeben",
           description:
             "PDF, CSV, JSON, XML oder ZIP aus festgehaltenen Daten ausgeben. DATEV und SEPA benötigen Quellversionen und eine separate Bestätigung der genauen Vorschau; fragt immer nach.",
+          input: {
+            baseId: "Öffentliche ID der Base mit Schreibzugriff.",
+            data: "Unveränderliche Datenaufnahme aus document.capture.",
+            "data.id": "Öffentliche ID der gespeicherten Datenaufnahme.",
+            "data.sha256": "SHA-256-Prüfsumme der Datenaufnahme.",
+            "data.rowCount": "Vollständige Anzahl der aufgenommenen Zeilen.",
+            "data.capturedAt": "Zeitpunkt der Datenaufnahme.",
+            output: "Ausgabeformat und festgelegte Version: PDF, CSV, JSON, XML, ZIP, DATEV oder SEPA.",
+            sourceVersions: "Aktuelle Quelldatensatzversionen; für Finanzexporte erforderlich.",
+            filename: "Optionaler Dateiname der Ausgabe.",
+            tags: "Bis zu 20 Dokument-Tags.",
+          },
         },
         "document.confirm": {
           title: "Finanzdokument bestätigen",
           description:
             "Die genaue DATEV- oder SEPA-Vorschau als ursprünglicher Auftraggeber bestätigen und die Ausgabe nach erneuter Berechtigungs- und Versionsprüfung abschließen. Übermittelt keine Bankzahlung; fragt immer nach.",
+          input: {
+            baseId: "Öffentliche ID der Base mit Schreibzugriff.",
+            receiptId: "Öffentliche ID des offenen Belegs aus document.issue.",
+            sha256: "Genaue Bestätigungsprüfsumme der geprüften Vorschau.",
+          },
         },
         "view.create": {
           title: "Abfrage als Grids-Ansicht speichern",

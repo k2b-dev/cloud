@@ -576,7 +576,7 @@ budget; incomplete results are rejected.
 
 Issuance always asks. DATEV and SEPA also require source record versions and
 return a pending receipt. Review and invoke `document.confirm` with that exact
-receipt and digest as the original caller. It checks permissions and source
+receipt and digest as the original caller. It checks access and source
 versions again and finishes the reserved document. A changed source requires a
 new preview. Confirmation does not submit a bank payment.
 

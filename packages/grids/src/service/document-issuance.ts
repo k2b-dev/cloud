@@ -105,6 +105,16 @@ const FrozenQueryDocumentSchema = QueryDocumentRequestSchema.extend({
     .optional(),
   archive: DocumentZipManifestSchema.optional(),
 });
+const CompletedFinancialDocumentSourceSchema = z
+  .object({
+    data: WorkflowDocumentDataReferenceSchema,
+    associatedData: WorkflowDocumentDataReferenceSchema.optional(),
+    output: DocumentQueryOutputSchema,
+    filename: QueryDocumentRequestSchema.shape.filename,
+    financial: FrozenQueryDocumentSchema.shape.financial.unwrap(),
+    confirmation: z.object({ sha256: z.string(), actor: DocumentIssuanceActorSchema, at: z.iso.datetime() }).strict(),
+  })
+  .strict();
 
 const QueryDocumentInputSchema = QueryDocumentRequestSchema.extend({ sourceVersions: DocumentSourceVersionsInputSchema.optional() });
 
@@ -1303,6 +1313,58 @@ export const createDocumentIssuanceService = (options: { profiles?: readonly Doc
       ${lock ? tx`FOR UPDATE OF receipt` : tx``}
     `;
     if (!receipt?.confirmation_hash || (receipt.document_id && !allowCompleted)) throw err.notFound(t.receiptMissing);
+    if (receipt.document_id) {
+      // Issuance clears frozen_request. Replays read the immutable document's
+      // checked source instead, while still requiring its original actor and
+      // current source access. This branch is only enabled for domain captures.
+      const [document] = await tx<Array<{ profile_snapshot: unknown; snapshot_sha256: string; document_number: string }>>`
+        SELECT profile_snapshot, snapshot_sha256, document_number FROM grids.documents
+        WHERE id = ${receipt.document_id}::uuid AND base_id = ${input.baseId}::uuid
+          AND workflow_run_id IS NULL
+      `;
+      const parsed = CompletedFinancialDocumentSourceSchema.safeParse(document?.profile_snapshot);
+      if (
+        !document ||
+        !parsed.success ||
+        !receipt.confirmed_at ||
+        canonicalJson(parsed.data, input.locale).sha256 !== document.snapshot_sha256 ||
+        parsed.data.confirmation.sha256 !== receipt.confirmation_hash ||
+        parsed.data.confirmation.at !== receipt.confirmed_at.toISOString()
+      )
+        throw err.conflict(t.workflowQueryIntegrityFailed);
+      const source = parsed.data;
+      if (
+        input.actor.kind === "system" ||
+        canonicalJson(input.actor, input.locale).sha256 !== canonicalJson(source.confirmation.actor, input.locale).sha256 ||
+        canonicalJson(input.actor, input.locale).sha256 !== canonicalJson(receipt.confirmed_actor ?? {}, input.locale).sha256
+      )
+        throw err.forbidden(t.financialActorMismatch);
+      if (
+        input.runId !== null ||
+        canonicalJson(runBinding, input.locale).sha256 !== source.financial.runBindingHash ||
+        (source.output.kind !== "datev-csv" && source.output.kind !== "sepa-xml")
+      )
+        throw err.conflict(t.workflowQueryIntegrityFailed);
+      const capture = await loadIssuanceData(
+        { baseId: input.baseId, runId: null, id: source.data.id, sha256: source.data.sha256, locale: input.locale },
+        tx,
+      );
+      if (!capture.ok) throw capture.error;
+      await input.authorize(capture.data.payload.tableIds, tx);
+      const normalized = normalizeFinancialDocumentOutput(source.output, capture.data.payload, source.financial.identifiers, input.locale);
+      if (!normalized.ok) throw normalized.error;
+      if (normalized.data.sha256 !== source.financial.normalizedSha256) throw err.conflict(t.workflowQueryIntegrityFailed);
+      return {
+        receipt,
+        confirmationHash: receipt.confirmation_hash,
+        frozen: null,
+        number: document.document_number,
+        filename: source.filename,
+        version: source.output.version,
+        normalized: normalized.data,
+        capture: capture.data,
+      };
+    }
     const parsed = FrozenQueryDocumentSchema.safeParse(receipt.frozen_request);
     if (!parsed.success) throw err.conflict(t.workflowQueryIntegrityFailed);
     const frozen = parsed.data;
@@ -1335,6 +1397,8 @@ export const createDocumentIssuanceService = (options: { profiles?: readonly Doc
       receipt,
       confirmationHash: receipt.confirmation_hash,
       frozen,
+      number: frozen.number,
+      filename: frozen.filename,
       version: frozen.output.version,
       normalized: normalized.data,
       capture: capture.data,
@@ -1346,7 +1410,7 @@ export const createDocumentIssuanceService = (options: { profiles?: readonly Doc
       return ok(
         await db().begin(async (tx) => {
           await tx`SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY`;
-          const { receipt, confirmationHash, frozen, version, normalized, capture } = await loadQueryDocumentConfirmation(
+          const { receipt, confirmationHash, number, filename, version, normalized, capture } = await loadQueryDocumentConfirmation(
             input,
             tx,
             false,
@@ -1356,8 +1420,8 @@ export const createDocumentIssuanceService = (options: { profiles?: readonly Doc
             receiptId: receipt.document_short_id,
             sha256: confirmationHash,
             confirmedAt: receipt.confirmed_at?.toISOString() ?? null,
-            number: frozen.number,
-            filename: frozen.filename,
+            number,
+            filename,
             version,
             source: {
               capturedAt: capture.reference.capturedAt,
@@ -1454,6 +1518,15 @@ export const createDocumentIssuanceService = (options: { profiles?: readonly Doc
       const loaded = await db().begin(async (tx) => {
         const confirmation = await loadQueryDocumentConfirmation(input, tx, true, input.runId === null);
         if (!confirmation.receipt.confirmed_at) throw err.conflict(documentServiceText(input.locale).financialConfirmationRequired);
+        if (confirmation.receipt.document_id) {
+          const [document] = await hydrateDocuments(
+            await tx<DocumentDbRow[]>`SELECT * FROM grids.documents WHERE id = ${confirmation.receipt.document_id}::uuid`,
+            tx,
+          );
+          if (!document) throw err.internal(documentServiceText(input.locale).receiptReadFailed);
+          return { kind: "completed" as const, document };
+        }
+        if (!confirmation.frozen) throw err.conflict(documentServiceText(input.locale).workflowQueryIntegrityFailed);
         const [identity] = await tx<
           Array<{ operation_key_hash: string }>
         >`SELECT operation_key_hash FROM grids.document_issuances WHERE id = ${confirmation.receipt.id}::uuid`;
@@ -1471,8 +1544,9 @@ export const createDocumentIssuanceService = (options: { profiles?: readonly Doc
           canonicalJson(request, input.locale).sha256 === confirmation.receipt.request_hash ? request : { ...request, filename: null };
         if (canonicalJson(original, input.locale).sha256 !== confirmation.receipt.request_hash)
           throw err.conflict(documentServiceText(input.locale).idempotencyConflict);
-        return { request: original, operationHash: identity.operation_key_hash };
+        return { kind: "reserved" as const, request: original, operationHash: identity.operation_key_hash };
       });
+      if (loaded.kind === "completed") return ok(loaded.document);
       return issueQueryDocument({
         ...loaded.request,
         idempotencyKey: input.receiptId,

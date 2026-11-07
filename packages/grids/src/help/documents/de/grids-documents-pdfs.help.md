@@ -579,7 +579,7 @@ für Dokumente; unvollständige Ergebnisse werden abgelehnt.
 Die Ausgabe fragt immer nach. DATEV und SEPA benötigen zusätzlich die
 Versionen der Quelldatensätze und geben zunächst einen offenen Beleg zurück.
 Prüfe `document.confirm` mit genau diesem Beleg und seiner Prüfsumme und
-bestätige als ursprünglicher Auftraggeber. Die Bestätigung prüft Berechtigungen
+bestätige als ursprünglicher Auftraggeber. Die Bestätigung prüft den Zugriff
 und Quellversionen erneut und stellt das reservierte Dokument fertig. Eine
 geänderte Quelle benötigt eine neue Vorschau. Es wird keine Bankzahlung
 übermittelt.
