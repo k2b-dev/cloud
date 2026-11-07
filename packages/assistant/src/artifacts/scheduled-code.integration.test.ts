@@ -4,13 +4,14 @@ import { aiChatTasks, aiConversations, createAiShortId } from "@k2b/cloud/ai";
 import * as settingsStore from "@k2b/cloud/services/settings/store";
 import { useTestAppRegistry } from "../../../../scripts/fixtures/app-registry";
 import { databaseSuite, requireInfraUrl, testFor, testInfra } from "../../../../scripts/fixtures/test-infra";
+import { agentHost } from "../chat-code/agent-host";
 import { HttpPrepare } from "../chat-code/http-contracts";
+import { httpService } from "../chat-code/http-service";
 import { runChatRunnerFixture } from "../chat-code/runner-code.test-fixture";
 import * as runnerHost from "../chat-code/runner-code-host";
-import { agentHost, hostFetch } from "./agent-host";
+import { hostFetch } from "./agent-host";
 import { artifactDatabase } from "./database";
 import { appChecks } from "./html/check-service";
-import { httpService } from "./http-service";
 import { artifacts } from "./service";
 import { testIdentity } from "./test-identity";
 
@@ -93,6 +94,8 @@ databaseSuite()("Scheduled Code Mode", () => {
         result: { status: "ready", output: '{"answer":42,"process":"undefined","locale":"de-DE","timeZone":"Europe/Berlin"}' },
       });
       expect(interactive).toMatchObject({ status: "done", result: { status: "ready", output: '{"marker":null}' } });
+      // Use the chat runner service, not Studio's separate resource-scoped instance.
+      // Only replace network I/O; execute still validates the real task mandate.
       const executeHttp = httpService.execute;
       const http = spyOn(httpService, "execute").mockImplementation((id, approved, identity, signal, _send, authorize) =>
         executeHttp(
@@ -110,6 +113,7 @@ databaseSuite()("Scheduled Code Mode", () => {
           'export default async()=>await (await cloud.http.fetch("https://api.example.com/data")).text()',
         );
         expect(allowed).toMatchObject({ status: "done", result: { status: "ready", output: '"ok"' } });
+        expect(http).toHaveBeenCalledTimes(1);
       } finally {
         http.mockRestore();
       }
