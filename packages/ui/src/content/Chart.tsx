@@ -214,7 +214,11 @@ export const renderChartSvg = (
   let svg = (charts[kind] as (o: unknown) => string)({
     ...(opts as any),
     ...(timeDomain && props.kind === "line" ? { xAxis: { ...props.xAxis, domain: timeDomain, format: () => "" } } : {}),
-    ...(props.kind === "line" && props.legend && props.legendPlacement === "top-start" ? { legend: false } : {}),
+    ...(props.kind === "line" &&
+    props.legend &&
+    (props.legendPlacement === "top-start" || props.forecast || props.marker || props.threshold || props.zero)
+      ? { legend: false }
+      : {}),
     ...(kind === "map" ? { viewport: DEFAULT_MAP_VIEWPORT } : {}),
     width,
     height,
@@ -280,8 +284,22 @@ const Chart = (props: ChartProps): JSX.Element => {
     width: 480,
     height: chartRenderHeight(props),
   });
-  const topLegend = () => props.kind === "line" && props.legend === true && props.legendPlacement === "top-start";
+  const topLegend = () =>
+    props.kind === "line" &&
+    props.legend === true &&
+    (props.legendPlacement === "top-start" || !!(props.forecast || props.marker || props.threshold || props.zero));
   const legendSeries = () => (props.kind === "line" ? props.series : []);
+  const legendValue = (index: number) => {
+    if (props.kind !== "line") return "";
+    const points = props.series[index]?.data ?? [];
+    const last = points
+      .filter((p) => Number.isFinite(p.x))
+      .toSorted((a, b) => a.x - b.x)
+      .at(-1);
+    return last && Number.isFinite(last.y)
+      ? (props.yAxis?.format?.(last.y) ?? new Intl.NumberFormat(locale(), { maximumFractionDigits: 6 }).format(last.y))
+      : "—";
+  };
   const dimensions = () => containerRef?.getBoundingClientRect() ?? size();
   const initialMapViewport = props.kind === "map" ? normalizeMapViewport(props.viewport) : DEFAULT_MAP_VIEWPORT;
   const [mapViewport, setMapViewport] = createSignal<MapViewport>(initialMapViewport);
@@ -539,6 +557,7 @@ const Chart = (props: ChartProps): JSX.Element => {
 
   const inspection = createChartInspection({
     container: () => containerRef,
+    locale,
     cursor: () => props.cursor,
     tooltip: () => chartTooltipRef,
     anchor: () => lineAnchorRef,
@@ -548,6 +567,23 @@ const Chart = (props: ChartProps): JSX.Element => {
     format: (selection) => {
       if (props.tooltip) return props.tooltip(selection);
       const fields = chartMessages().chartFields;
+      if (selection.kind === "line" && props.kind === "line") {
+        const x = selection.datum.values.find((f) => f.key === "x");
+        const value = selection.datum.values.find((f) => f.key === "y");
+        const number = new Intl.NumberFormat(locale(), { maximumFractionDigits: 6 }).format;
+        return {
+          title: x?.formatted ?? (typeof x?.value === "number" ? number(x.value) : x?.value),
+          rows: [
+            {
+              label: selection.datum.label ?? chartMessages().series,
+              value: value?.formatted ?? (typeof value?.value === "number" ? number(value.value) : (value?.value ?? "—")),
+            },
+            ...selection.datum.values
+              .filter((f) => f.key === "forecastLow" || f.key === "forecastHigh")
+              .map((field) => ({ label: fields({ key: field.key }), value: field.formatted ?? String(field.value) })),
+          ],
+        };
+      }
       const format = new Intl.NumberFormat(locale(), { maximumFractionDigits: 6 });
       return {
         title:
@@ -671,9 +707,21 @@ const Chart = (props: ChartProps): JSX.Element => {
                     height="10"
                     aria-hidden="true"
                   >
-                    <rect x="1" y="1" width="8" height="8" rx="2" class={`stdlib-chart-series-${index() % 8}`} />
+                    <rect
+                      x="1"
+                      y="1"
+                      width="8"
+                      height="8"
+                      rx="2"
+                      class={`stdlib-chart-series-${index() % 8}`}
+                      fill={`var(--stdlib-chart-c${(index() % 8) + 1}, ${["#2563eb", "#16a34a", "#d97706", "#dc2626", "#a855f7", "#0891b2", "#db2777", "#65a30d"][index() % 8]})`}
+                      stroke="none"
+                    />
                   </svg>
-                  <span>{series.label && series.label.length > 0 ? series.label : `Series ${index() + 1}`}</span>
+                  <span>{series.label && series.label.length > 0 ? series.label : `${chartMessages().series} ${index() + 1}`}</span>
+                  <b data-chart-legend-value data-series-index={index()} data-field="y" data-default={legendValue(index())}>
+                    {legendValue(index())}
+                  </b>
                 </span>
               )}
             </For>

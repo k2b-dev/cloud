@@ -57,6 +57,8 @@ const labels = /* @__PURE__ */ i18n.define({
       q3: "Q3",
       whiskerLow: "Whisker low",
       whiskerHigh: "Whisker high",
+      forecastLow: "Lower forecast bound",
+      forecastHigh: "Upper forecast bound",
       delta: "Change",
     },
     de: {
@@ -74,6 +76,8 @@ const labels = /* @__PURE__ */ i18n.define({
       q3: "Q3",
       whiskerLow: "Unterer Whisker",
       whiskerHigh: "Oberer Whisker",
+      forecastLow: "Untere Prognosegrenze",
+      forecastHigh: "Obere Prognosegrenze",
       delta: "Änderung",
     },
   },
@@ -118,8 +122,21 @@ const axis = ({ domain, format: _format, ...value }: ChartAxisInput = {}, format
   format,
 });
 
-export const chartReferenceValues = (input: ChartInput, name: "x" | "y") =>
-  "references" in input ? (input.references ?? []).filter((ref) => (ref.axis ?? "y") === name).map((ref) => dateTime(ref.value)) : [];
+export const chartReferenceValues = (input: ChartInput, name: "x" | "y") => {
+  const values =
+    "references" in input ? (input.references ?? []).filter((ref) => (ref.axis ?? "y") === name).map((ref) => dateTime(ref.value)) : [];
+  if (input.kind === "line") {
+    if (name === "x") {
+      if (input.forecast) values.push(dateTime(input.forecast.from));
+      if (input.marker) values.push(dateTime(input.marker.at));
+    } else {
+      if (input.threshold) values.push(input.threshold.value);
+      if (input.zero) values.push(0);
+      for (const bounds of input.forecast?.band ?? []) values.push(...bounds);
+    }
+  }
+  return values;
+};
 
 /** The value axes of a chart with what they show: the data checks and the label room read them alike. */
 export const chartValueAxes = (input: ChartInput): { values: number[]; axis?: ChartAxisInput; zero?: boolean; name: "x" | "y" }[] => {
@@ -405,7 +422,19 @@ export function chartRenderOptions(
           right: Math.max(16, Math.ceil(((format.x.tick(lastTick).length * CHAR) / 2 + 4) * factor)),
         },
       };
-      return input.kind === "line" ? { kind: "line", ...common, area: input.area, smooth: input.smooth } : { kind: "scatter", ...common };
+      return input.kind === "line"
+        ? {
+            kind: "line",
+            ...common,
+            area: input.area,
+            smooth: input.smooth,
+            step: input.step,
+            zero: input.zero,
+            forecast: input.forecast ? { ...input.forecast, from: dateTime(input.forecast.from) } : undefined,
+            marker: input.marker ? { ...input.marker, at: dateTime(input.marker.at) } : undefined,
+            threshold: input.threshold,
+          }
+        : { kind: "scatter", ...common };
     }
     case "pie":
     case "donut":
@@ -634,6 +663,7 @@ export function chartRows(
           value,
           `${valueFormat(value)}${unit}`,
         );
+      else if (field.key === "forecastLow" || field.key === "forecastHigh") cell(field.key, t[field.key], value, valueFormat(value));
       else if (field.key === "delta") cell("delta", t.delta, value, `${value > 0 ? "+" : ""}${valueFormat(value)}`);
       else if (field.key === "q1" || field.key === "q2" || field.key === "q3" || field.key === "whiskerLow" || field.key === "whiskerHigh")
         cell(field.key, t[field.key], value, valueFormat(value));

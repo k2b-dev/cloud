@@ -353,6 +353,7 @@ new MutationObserver((records) => {
       chart,
       inspectChart(chart, {
         kind,
+        locale: config.context.locale,
         format: ({ datum }) => {
           const key = cloudAiChartMarkKey(datum);
           return chartTooltips.get(chart)?.get(key) ?? readChartTooltips(chart).get(key) ?? { rows: [] };

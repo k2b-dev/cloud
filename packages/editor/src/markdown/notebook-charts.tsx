@@ -123,6 +123,8 @@ export function enhanceNotebookCharts(root: HTMLElement, locale: string, options
     chart.dataset.interactive = "true";
     const inspection = inspectChart(chart, {
       kind: input.kind,
+      locale,
+      legend: figure,
       format: ({ datum }) => lazy().tooltips.get(chartMarkKey(datum)) ?? { rows: [] },
     });
     const dispose = render(

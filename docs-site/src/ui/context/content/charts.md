@@ -956,3 +956,9 @@ every number readable without a pointer. Countries too small for a shape appear
 as dots; Antarctica appears only in the list. Values that are not positive finite numbers and invalid codes are left
 out. With no data the neutral map stays; the host shows its own empty message.
 Use `format` for units and `limit` to change how many countries the list names.
+
+### Line outlooks and reference marks
+
+A line can add `forecast: {from, band?}` without changing existing saved JSON. `from` is an existing X coordinate in the first series; ISO dates are accepted in portable JSON. The line is dashed from that coordinate. Optional `[lower, upper]` bounds belong to the first series, ordered by X from `from`, and have exactly that suffix's length. Lower bounds cannot exceed upper bounds. A missing observation remains a gap in both the line and its forecast band.
+
+Use `zero: true` to include zero and tint the area under zero red. `threshold: {value, label}` draws a labelled dashed warning line, and `marker: {at, label}` marks a coordinate such as Today. Labels come from the application. `step: "before" | "after"` adds steps; existing smooth and area options remain available. The legend reports values at the inspected coordinate, with a dash for a missing observation. Hover, keyboard and tap share the same inspection state.

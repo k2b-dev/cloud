@@ -120,6 +120,12 @@ export function normalizeChartDates(spec: Row, timeZone: string, prefix = "", in
           }),
         }
       : {}),
+    ...(spec.kind === "line" && record(spec.forecast)
+      ? { forecast: { ...record(spec.forecast), from: day(date(record(spec.forecast)?.from, `${prefix}forecast.from`)) } }
+      : {}),
+    ...(spec.kind === "line" && record(spec.marker)
+      ? { marker: { ...record(spec.marker), at: day(date(record(spec.marker)?.at, `${prefix}marker.at`)) } }
+      : {}),
     ...(Array.isArray(spec.references)
       ? {
           references: spec.references.map((raw, index) => {

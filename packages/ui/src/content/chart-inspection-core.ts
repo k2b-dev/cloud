@@ -57,6 +57,8 @@ export function createChartInspector(options: {
   anchor: () => HTMLSpanElement | undefined;
   kind: () => ChartKind;
   enabled: () => boolean;
+  locale?: () => string;
+  legend?: () => ParentNode | undefined;
   format: ChartTooltipFormatter;
   select: (selection: ChartSelection) => void;
 }) {
@@ -151,6 +153,25 @@ export function createChartInspector(options: {
   };
   const rawX = (entry: Entry) => entry.datum.values.find((field) => field.key === "x")?.value;
   const seriesChart = () => options.kind() === "line" || options.kind() === "sparkline";
+  const updateLegend = (items: Entry[] | undefined) => {
+    const root = options.legend?.() ?? options.container();
+    for (const node of root?.querySelectorAll<HTMLElement | SVGElement>("[data-chart-legend-value]") ?? []) {
+      if (!items) {
+        node.textContent = node.getAttribute("data-default") ?? "";
+        continue;
+      }
+      const series = Number(node.getAttribute("data-series-index"));
+      const field = items
+        .find((item) => item.datum.seriesIndex === series)
+        ?.datum.values.find((field) => field.key === node.getAttribute("data-field"));
+      node.textContent = field
+        ? (field.formatted ??
+          (typeof field.value === "number"
+            ? new Intl.NumberFormat(options.locale?.() ?? "en", { maximumFractionDigits: 6 }).format(field.value)
+            : field.value))
+        : "—";
+    }
+  };
   const clearHighlight = () => {
     for (const entry of highlighted) {
       entry.element.removeAttribute("data-inspected");
@@ -166,6 +187,7 @@ export function createChartInspector(options: {
     options.container()?.removeAttribute("data-cursor-source");
     pinned = false;
     active = undefined;
+    updateLegend(undefined);
     clearHighlight();
     const container = options.container(),
       id = options.tooltip()?.id;
@@ -200,7 +222,8 @@ export function createChartInspector(options: {
       anchor = options.anchor(),
       container = options.container();
     if (!tooltip || !anchor || !container || !options.enabled()) return;
-    if (active === entry && tooltip.matches(":popover-open")) return;
+    if ((active === entry || (options.kind() === "line" && active && rawX(active) === rawX(entry))) && tooltip.matches(":popover-open"))
+      return;
     clearHighlight();
     active = entry;
     highlighted = options.kind() === "line" ? records().filter((candidate) => rawX(candidate) === rawX(entry)) : [entry];
@@ -208,6 +231,7 @@ export function createChartInspector(options: {
       item.element.style.setProperty("--k2b-chart-inspection-color", highlightColor(item));
       item.element.setAttribute("data-inspected", "true");
     }
+    updateLegend(highlighted);
     const document = tooltip.ownerDocument;
     const contents = highlighted.map((item) => ({
       item,
@@ -529,6 +553,9 @@ export type InspectChartOptions = {
   format: ChartTooltipFormatter;
   select?: (selection: ChartSelection) => void;
   cursor?: ChartCursor;
+  locale?: string;
+  /** Host for a separately rendered series legend. Defaults to the chart container. */
+  legend?: ParentNode;
 };
 export type ChartInspection = { invalidate(): void; close(): void; destroy(): void };
 
@@ -554,6 +581,8 @@ export function inspectChart(container: HTMLElement, options: InspectChartOption
 
   const inspector = createChartInspector({
     container: () => container,
+    locale: () => options.locale ?? "en",
+    legend: () => options.legend,
     cursor: () => options.cursor,
     tooltip: () => tooltip,
     anchor: () => anchor,

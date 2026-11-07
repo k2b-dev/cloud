@@ -56,7 +56,13 @@ export const chartParts = (limits?: ChartLimits) => {
     .refine((value) => chartDateTime(value) !== undefined, "Not a valid date.");
   const ChartPoint = z.object({
     x: z.union([ChartNumber, ChartDate]).describe("line, scatter: number or YYYY-MM-DD[THH:mm[:ss]], wall-clock time without an offset."),
-    y: ChartNumber.describe("line, scatter: value."),
+    y: (limits
+      ? z
+          .number()
+          .nullable()
+          .transform((value) => value ?? Number.NaN)
+      : ChartNumber
+    ).describe("line, scatter: value; null is a gap."),
   });
   // As many lines as series a reader can tell apart.
   const ChartReferences = list(
@@ -74,6 +80,7 @@ export const chartParts = (limits?: ChartLimits) => {
   );
   return {
     ChartLabel,
+    ChartCoordinate: z.union([z.number(), ChartDate]),
     ChartTooltip,
     ChartNumber,
     list,
@@ -129,6 +136,7 @@ export const chartKinds = (limits?: ChartLimits) => {
     ChartCommon,
     ChartTooltip,
     ChartLabel,
+    ChartCoordinate,
     ChartPoints,
     ChartSeries,
     ChartSlice,
@@ -153,25 +161,63 @@ export const chartKinds = (limits?: ChartLimits) => {
       legend: z.boolean().optional(),
       references: ChartReferences.optional(),
     }),
-    z.object({
-      kind: z.literal("line"),
-      ...ChartKindCommon,
-      series: list(
-        ChartSeries(
-          limits
-            ? ChartPoints.min(2, "A line needs at least two points per series; show single values as a bar or scatter chart.")
-            : ChartPoints,
-        ).extend({ style: z.enum(["solid", "dashed", "dotted"]).optional() }),
-        1,
-        limits?.maxSeries,
-      ),
-      xAxis: ChartAxis.optional(),
-      yAxis: ChartAxis.optional(),
-      legend: z.boolean().optional(),
-      area: z.boolean().optional(),
-      smooth: z.boolean().optional(),
-      references: ChartReferences.optional(),
-    }),
+    z
+      .object({
+        kind: z.literal("line"),
+        ...ChartKindCommon,
+        series: list(
+          ChartSeries(
+            limits
+              ? ChartPoints.min(2, "A line needs at least two points per series; show single values as a bar or scatter chart.")
+              : ChartPoints,
+          ).extend({ style: z.enum(["solid", "dashed", "dotted"]).optional() }),
+          1,
+          limits?.maxSeries,
+        ),
+        xAxis: ChartAxis.optional(),
+        yAxis: ChartAxis.optional(),
+        legend: z.boolean().optional(),
+        area: z.boolean().optional(),
+        smooth: z.boolean().optional(),
+        step: z.enum(["after", "before", "middle"]).optional(),
+        zero: z.boolean().optional(),
+        forecast: z
+          .object({
+            from: ChartCoordinate,
+            band: list(z.tuple([z.number(), z.number()]), 0, limits?.maxValues).optional(),
+          })
+          .optional(),
+        threshold: z.object({ value: z.number(), label: ChartLabel }).optional(),
+        marker: z.object({ at: ChartCoordinate, label: ChartLabel }).optional(),
+        references: ChartReferences.optional(),
+      })
+      .superRefine((spec, ctx) => {
+        if (!spec.forecast) return;
+        const coordinate = (x: number | string) => (typeof x === "number" ? x : chartDateTime(x));
+        const from = coordinate(spec.forecast.from);
+        const points = spec.series[0]?.data ?? [];
+        if (!points.some((point) => coordinate(point.x) === from)) {
+          ctx.addIssue({ code: "custom", path: ["forecast", "from"], message: "Forecast must start at an X value of the first series." });
+        }
+        const count = points.filter((point) => {
+          const x = coordinate(point.x);
+          return x !== undefined && from !== undefined && x >= from;
+        }).length;
+        if (spec.forecast.band && spec.forecast.band.length !== count)
+          ctx.addIssue({
+            code: "custom",
+            path: ["forecast", "band"],
+            message: "Forecast band must match the first series from forecast.from, ordered by X.",
+          });
+        spec.forecast.band?.forEach(([lo, hi], index) => {
+          if (lo > hi)
+            ctx.addIssue({
+              code: "custom",
+              path: ["forecast", "band", index],
+              message: "Forecast lower bound must not exceed its upper bound.",
+            });
+        });
+      }),
     z.object({
       kind: z.literal("scatter"),
       ...ChartKindCommon,

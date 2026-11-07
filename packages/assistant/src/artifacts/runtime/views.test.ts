@@ -809,3 +809,25 @@ test("explorer infers and preserves reference columns shared with table conversi
     rows: [{ item: { type: "spaces.item", id: "item-1", title: "Product" }, name: "Product", stock: 2 }],
   });
 });
+
+test("forecast and today coordinates normalize alongside their series", () => {
+  const instant = new Date("2026-10-02T04:00:00Z");
+  expect(
+    normalizeChartDates(
+      {
+        kind: "line",
+        series: [{ data: [{ x: instant, y: 1 }] }],
+        forecast: { from: instant, band: [[0, 2]] },
+        marker: { at: instant, label: "Today" },
+      },
+      "America/New_York",
+      "",
+      true,
+    ),
+  ).toEqual({
+    kind: "line",
+    series: [{ data: [{ x: "2026-10-02", y: 1 }] }],
+    forecast: { from: "2026-10-02", band: [[0, 2]] },
+    marker: { at: "2026-10-02", label: "Today" },
+  });
+});
