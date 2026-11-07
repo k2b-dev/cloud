@@ -345,6 +345,11 @@ order:
    summaries contain no values. A card's text wraps instead of being cut off. While the call runs, the work
    line names the step and the place stays empty. Table header labels stay on one line and the table
    scrolls sideways, so up to eight rows fit the reserved height on a phone.
+   A table with `search` or `groupBy` shows a search field or a group choice
+   beside its title; the summary reserves them, disabled, while the file loads.
+   Search matches the shown cells and never leaves the browser; Copy data keeps
+   every row. A column's `priority` hides it on a narrow table, and each row's
+   details button shows the hidden values.
    Readers validate the file again; missing or invalid data shows unavailable
    in that frame. A group chart that cannot be drawn shows unavailable in its
    own frame. The CLI fetches and validates views and prints their tables

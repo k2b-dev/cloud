@@ -1098,7 +1098,7 @@
   }
 
   /* The band sits behind the marks without positioning the drawing, which would change what lies on top. */
-  .k2b-chart:is([data-chart-kind="bar"], [data-chart-kind="hbar"], [data-chart-kind="histogram"], [data-chart-kind="boxplot"]) [data-inspected="true"] > :is(rect, path, circle):not(.k2b-chart-category-band) {
+  .k2b-chart:focus-visible:is([data-chart-kind="bar"], [data-chart-kind="hbar"], [data-chart-kind="histogram"], [data-chart-kind="boxplot"]) [data-inspected] > :is(rect, path, circle):not(.k2b-chart-category-band) {
     stroke: var(--k2b-chart-inspection-color);
     stroke-width: 1.5px;
     vector-effect: non-scaling-stroke;
@@ -1121,12 +1121,13 @@
     pointer-events: none;
   }
 
-  .k2b-chart [data-selected] > .k2b-chart-previous > rect { stroke: var(--k2b-chart-selection-color) !important; stroke-width: 2.5px !important; }
-  .k2b-chart [data-inspected="true"]:not([data-selected]) > .k2b-chart-previous > rect { stroke: var(--k2b-chart-inspection-color) !important; stroke-width: 1.5px; }
+  .k2b-chart { --k2b-chart-selection-color: currentColor; }
+  .k2b-chart [data-selected] > .k2b-chart-previous > rect { stroke: var(--k2b-chart-selection-color); stroke-width: 2.5px; }
+  .k2b-chart:focus-visible [data-inspected]:not([data-selected]) > .k2b-chart-previous > rect { stroke: var(--k2b-chart-inspection-color); stroke-width: 1.5px; }
 
   /* Pointer hover paints the band instead of outlining every segment. */
-  .k2b-chart:has(.k2b-chart-category-band) [data-inspected="hover"]:not([data-selected]) > :is(rect,path,circle):not(.k2b-chart-category-band),
-  .k2b-chart:has(.k2b-chart-category-band) [data-inspected="hover"]:not([data-selected]) > .k2b-chart-previous > rect { stroke: none !important; }
+  .k2b-chart:not(:focus-visible):has(.k2b-chart-category-band) [data-inspected]:not([data-selected]) > :is(rect,path,circle):not(.k2b-chart-category-band),
+  .k2b-chart:not(:focus-visible):has(.k2b-chart-category-band) [data-inspected]:not([data-selected]) > .k2b-chart-previous > rect { stroke: none; }
 
   .k2b-chart [data-inspected] > .stdlib-chart-inspection-point {
     fill: var(--k2b-chart-inspection-color);

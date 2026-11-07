@@ -696,7 +696,7 @@ const renderSeriesBars = (opts: BarChartOptions & { width: number; height: numbe
             `<line x1="${x + d + lo}" y1="${Math.max(y0, y1) - lo}" x2="${x + d + hi}" y2="${Math.max(y0, y1) - hi}" stroke="var(--stdlib-chart-c1,#3b82f6)" stroke-width="1.5"/>`,
           );
       }
-      return `<g class="k2b-chart-previous">${rect.replace("/>", ' style="fill:var(--stdlib-chart-c1,#3b82f6);fill-opacity:.14;stroke:var(--stdlib-chart-c1,#3b82f6);stroke-width:1"/>')}${lines.join("")}</g>`;
+      return `<g class="k2b-chart-previous">${rect.replace("/>", ' style="fill:var(--stdlib-chart-c1,#3b82f6);fill-opacity:.14" stroke="var(--stdlib-chart-c1,#3b82f6)" stroke-width="1"/>')}${lines.join("")}</g>`;
     };
     if (opts.compare) {
       const bw = Math.min(g.slot * 0.32, 26);

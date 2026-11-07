@@ -285,7 +285,7 @@ test("standalone and base-only hosts paint transparent bands and distinct previo
         await page
           .locator(".k2b-chart-category-band")
           .first()
-          .evaluate((n) => n.parentElement!.setAttribute("data-inspected", "hover"));
+          .evaluate((n) => n.parentElement!.setAttribute("data-inspected", "true"));
         await settled(page);
         expect(
           await page

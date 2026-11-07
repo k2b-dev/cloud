@@ -1,19 +1,21 @@
 import { z } from "zod";
 import { chartDataIssue, chartDrawingIssue, cloudAiChartMarks } from "./chart-block";
 
-const ToneSchema = z.enum(["neutral", "blue", "teal", "green", "amber", "red"]);
+// Chart-only browser consumers must not initialize unrelated visual tool schemas.
+const ToneSchema = /* @__PURE__ */ (() => z.enum(["neutral", "blue", "teal", "green", "amber", "red"]))();
 
-export const CloudAiCardInputSchema = z.object({
-  title: z.string().min(1),
-  value: z.string().min(1).describe("The figure or status itself, short enough to read at a glance: about 20 characters."),
-  emoji: z.string().max(8).optional().describe("Optional single emoji shown next to the card content. Omit when none fits."),
-  caption: z.string().optional().describe("Optional scope or time range of the value in one short line."),
-  tone: ToneSchema.default("teal"),
-  trendLabel: z.string().min(1).optional(),
-  trendValue: z.string().min(1).optional(),
-  trendDirection: z.enum(["up", "down", "flat"]).default("flat"),
-});
-export const CloudAiCardOutputSchema = z.object({ displayed: z.boolean() });
+export const CloudAiCardInputSchema = /* @__PURE__ */ (() =>
+  z.object({
+    title: z.string().min(1),
+    value: z.string().min(1).describe("The figure or status itself, short enough to read at a glance: about 20 characters."),
+    emoji: z.string().max(8).optional().describe("Optional single emoji shown next to the card content. Omit when none fits."),
+    caption: z.string().optional().describe("Optional scope or time range of the value in one short line."),
+    tone: ToneSchema.default("teal"),
+    trendLabel: z.string().min(1).optional(),
+    trendValue: z.string().min(1).optional(),
+    trendDirection: z.enum(["up", "down", "flat"]).default("flat"),
+  }))();
+export const CloudAiCardOutputSchema = /* @__PURE__ */ (() => z.object({ displayed: z.boolean() }))();
 
 /** The chart palette has eight colors; a ninth series would repeat one. */
 export const CLOUD_AI_CHART_MAX_SERIES = 8;
@@ -290,93 +292,100 @@ const chartInputSchema = () => {
  * fail here instead of in the chat.
  */
 export const CloudAiChartInputSchema = /* @__PURE__ */ chartInputSchema();
-export const CloudAiChartOutputSchema = z.object({ displayed: z.boolean() });
+export const CloudAiChartOutputSchema = /* @__PURE__ */ (() => z.object({ displayed: z.boolean() }))();
 
-const SurveyQuestionSchema = z.discriminatedUnion("type", [
-  z.object({
-    type: z.literal("single"),
-    id: z.string().min(1),
-    label: z.string().min(1),
-    required: z.boolean().default(false),
-    options: z
-      .array(z.object({ value: z.string().min(1), label: z.string().min(1) }))
-      .min(2)
-      .max(8),
-  }),
-  z.object({
-    type: z.literal("multiple"),
-    id: z.string().min(1),
-    label: z.string().min(1),
-    required: z.boolean().default(false),
-    options: z
-      .array(z.object({ value: z.string().min(1), label: z.string().min(1) }))
-      .min(2)
-      .max(8),
-  }),
-  z.object({
-    type: z.literal("text"),
-    id: z.string().min(1),
-    label: z.string().min(1),
-    required: z.boolean().default(false),
-    placeholder: z.string().optional(),
-  }),
-  z.object({
-    type: z.literal("rating"),
-    id: z.string().min(1),
-    label: z.string().min(1),
-    required: z.boolean().default(false),
-    min: z.number().int().min(0).default(1),
-    max: z.number().int().max(10).default(5),
-  }),
-]);
+const SurveyQuestionSchema = /* @__PURE__ */ (() =>
+  z.discriminatedUnion("type", [
+    z.object({
+      type: z.literal("single"),
+      id: z.string().min(1),
+      label: z.string().min(1),
+      required: z.boolean().default(false),
+      options: z
+        .array(z.object({ value: z.string().min(1), label: z.string().min(1) }))
+        .min(2)
+        .max(8),
+    }),
+    z.object({
+      type: z.literal("multiple"),
+      id: z.string().min(1),
+      label: z.string().min(1),
+      required: z.boolean().default(false),
+      options: z
+        .array(z.object({ value: z.string().min(1), label: z.string().min(1) }))
+        .min(2)
+        .max(8),
+    }),
+    z.object({
+      type: z.literal("text"),
+      id: z.string().min(1),
+      label: z.string().min(1),
+      required: z.boolean().default(false),
+      placeholder: z.string().optional(),
+    }),
+    z.object({
+      type: z.literal("rating"),
+      id: z.string().min(1),
+      label: z.string().min(1),
+      required: z.boolean().default(false),
+      min: z.number().int().min(0).default(1),
+      max: z.number().int().max(10).default(5),
+    }),
+  ]))();
 
-export const CloudAiSurveyInputSchema = z.object({
-  title: z.string().min(1),
-  description: z.string().optional(),
-  submitLabel: z.string().default("Submit"),
-  questions: z.array(SurveyQuestionSchema).min(1).max(8),
-});
-export const CloudAiSurveyOutputSchema = z.object({
-  submitted: z.boolean(),
-  answers: z.record(z.string(), z.unknown()).default({}),
-});
+export const CloudAiSurveyInputSchema = /* @__PURE__ */ (() =>
+  z.object({
+    title: z.string().min(1),
+    description: z.string().optional(),
+    submitLabel: z.string().default("Submit"),
+    questions: z.array(SurveyQuestionSchema).min(1).max(8),
+  }))();
+export const CloudAiSurveyOutputSchema = /* @__PURE__ */ (() =>
+  z.object({
+    submitted: z.boolean(),
+    answers: z.record(z.string(), z.unknown()).default({}),
+  }))();
 
 export const CLOUD_AI_TEXT_EDITOR_MAX_CHARS = 20_000;
 export const CLOUD_AI_TEXT_EDITOR_FEEDBACK_MAX_CHARS = 2_000;
 
-export const CloudAiTextEditorInputSchema = z.object({
-  title: z.string().trim().min(1).max(160),
-  description: z.string().trim().min(1).max(1_000).optional(),
-  content: z.string().max(CLOUD_AI_TEXT_EDITOR_MAX_CHARS),
-  format: z.enum(["plain", "markdown"]).default("plain"),
-  submitLabel: z.string().trim().min(1).max(40).default("Continue"),
-});
-
-export const CloudAiTextEditorOutputSchema = z.discriminatedUnion("submitted", [
+export const CloudAiTextEditorInputSchema = /* @__PURE__ */ (() =>
   z.object({
-    submitted: z.literal(true),
+    title: z.string().trim().min(1).max(160),
+    description: z.string().trim().min(1).max(1_000).optional(),
     content: z.string().max(CLOUD_AI_TEXT_EDITOR_MAX_CHARS),
-    format: z.enum(["plain", "markdown"]),
-  }),
+    format: z.enum(["plain", "markdown"]).default("plain"),
+    submitLabel: z.string().trim().min(1).max(40).default("Continue"),
+  }))();
+
+export const CloudAiTextEditorOutputSchema = /* @__PURE__ */ (() =>
+  z.discriminatedUnion("submitted", [
+    z.object({
+      submitted: z.literal(true),
+      content: z.string().max(CLOUD_AI_TEXT_EDITOR_MAX_CHARS),
+      format: z.enum(["plain", "markdown"]),
+    }),
+    z.object({
+      submitted: z.literal(false),
+      feedback: z.string().trim().min(1).max(CLOUD_AI_TEXT_EDITOR_FEEDBACK_MAX_CHARS),
+    }),
+  ]))();
+
+export const CloudAiLocalBashInputSchema = /* @__PURE__ */ (() =>
   z.object({
-    submitted: z.literal(false),
-    feedback: z.string().trim().min(1).max(CLOUD_AI_TEXT_EDITOR_FEEDBACK_MAX_CHARS),
-  }),
-]);
+    command: z.string().trim().min(1).max(20_000),
+  }))();
 
-export const CloudAiLocalBashInputSchema = z.object({
-  command: z.string().trim().min(1).max(20_000),
-});
-
-export const CloudAiLocalBashOutputSchema = z.object({
-  status: z.enum(["completed", "denied", "failed", "timed_out"]),
-  exitCode: z.number().int().nullable(),
-  stdout: z.string().max(512 * 1024),
-  stderr: z.string().max(512 * 1024),
-  truncated: z.boolean(),
-  /** Local file with the complete output when the client returned only its beginning and end. */
-  outputPath: z.string().max(4096).optional(),
-});
+export const CloudAiLocalBashOutputSchema = /* @__PURE__ */ (() =>
+  z.object({
+    status: z.enum(["completed", "denied", "failed", "timed_out"]),
+    exitCode: z.number().int().nullable(),
+    stdout: z.string().max(512 * 1024),
+    stderr: z.string().max(512 * 1024),
+    truncated: z.boolean(),
+    /** Local file with the complete output when the client returned only its beginning and end. */
+    outputPath: z.string().max(4096).optional(),
+  }))();
 
 export type CloudAiCardInput = z.infer<typeof CloudAiCardInputSchema>;
 export type CloudAiCardOutput = z.infer<typeof CloudAiCardOutputSchema>;

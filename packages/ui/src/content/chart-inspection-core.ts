@@ -158,9 +158,9 @@ export function createChartInspector(options: {
         node.textContent = node.getAttribute("data-default") ?? "";
         continue;
       }
-      const series = Number(node.getAttribute("data-series-index"));
+      const series = node.dataset.seriesIndex;
       const field = items
-        .find((item) => !node.hasAttribute("data-series-index") || item.datum.seriesIndex === series)
+        .find((item) => item.datum.seriesIndex?.toString() === series)
         ?.datum.values.find((field) => field.key === node.getAttribute("data-field"));
       node.textContent = field
         ? (field.formatted ??
@@ -218,17 +218,14 @@ export function createChartInspector(options: {
     byElement.clear();
     receive(options.cursor?.()?.read() ?? null);
   };
-  const show = (entry: Entry, broadcast = true, hover = false) => {
+  const show = (entry: Entry, broadcast = true) => {
     const x = rawX(entry);
     if (broadcast && options.kind() === "line" && typeof x === "number") options.cursor?.()?.move(source, x);
     const tooltip = options.tooltip(),
       anchor = options.anchor(),
       container = options.container();
     if (!tooltip || !anchor || !container || !options.enabled()) return;
-    if ((active === entry || (seriesChart() && active && category(active) === category(entry))) && tooltip.matches(":popover-open")) {
-      for (const item of highlighted) item.element.setAttribute("data-inspected", hover ? "hover" : "true");
-      return;
-    }
+    if ((active === entry || (seriesChart() && active && category(active) === category(entry))) && tooltip.matches(":popover-open")) return;
     clearHighlight();
     active = entry;
     highlighted =
@@ -237,7 +234,7 @@ export function createChartInspector(options: {
         : [entry];
     for (const item of highlighted) {
       item.element.style.setProperty("--k2b-chart-inspection-color", highlightColor(item));
-      item.element.setAttribute("data-inspected", hover ? "hover" : "true");
+      item.element.setAttribute("data-inspected", "true");
     }
     updateLegend(highlighted);
     const document = tooltip.ownerDocument;
@@ -507,7 +504,7 @@ export function createChartInspector(options: {
       if (!sample) return;
       const entry = nearest(sample.x, sample.y, sample.target);
       if (entry) {
-        show(entry, true, true);
+        show(entry);
         if (seriesChart()) {
           const container = options.container();
           container?.setAttribute("data-cursor-source", "true");
