@@ -65,7 +65,6 @@ export function DataTableTools(props: DataTableToolsProps): JSX.Element {
         <TextInput
           class="k2b-data-table-tools__search"
           type="search"
-          variant="compact"
           icon="ti ti-search"
           placeholder={t().search}
           aria-label={t().searchTable({ label: props.label })}
