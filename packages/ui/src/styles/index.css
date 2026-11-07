@@ -4150,6 +4150,17 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   flex: 0 0 auto;
 }
 
+/* A row's own checkbox, such as "done": in the icon column on the section's
+   text edge, with the row's usual gap before its title or icon. It always
+   shows, since it carries the row's state. */
+.k2b-ui .k2b-detail-panel__action-row > .k2b-detail-panel__action-check {
+  width: 1.25rem;
+  flex: 0 0 1.25rem;
+  align-items: flex-start;
+  justify-content: center;
+  margin-inline-end: 0.625rem;
+}
+
 .k2b-ui .k2b-button.k2b-detail-panel__action-secondary,
 .k2b-ui .k2b-button.k2b-detail-panel__action-menu-trigger {
   min-width: 2.25rem;

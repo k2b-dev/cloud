@@ -121,6 +121,7 @@ suite("Mail focus API", () => {
     const mailboxId = "33333333-3333-4333-8333-333333333333";
     spyOn(oauthTokens, "verifyAccessToken").mockResolvedValue({ kind: "user", payload: {}, user, scopes: ["read", "write"] });
     spyOn(publicResources, "resolvePublicId").mockResolvedValue(mailboxId);
+    spyOn(mailboxAccess, "requireMailboxAccess").mockResolvedValue(ok({ scope: "mailbox", permission: "admin" }));
     const save = spyOn(mailboxPreferences, "setMailboxPreference").mockResolvedValue(ok({ pinned: false, hidden: true }));
     const request = (body: unknown) =>
       app.request("/mailboxes/Mail01/preference", {
@@ -157,6 +158,7 @@ suite("Mail focus API", () => {
       async (_table, ids) => new Map(ids.flatMap((id) => (typeof id === "string" ? [[id, id] as const] : []))),
     );
     spyOn(publicResources, "resolvePublicId").mockResolvedValue(mailboxId);
+    spyOn(mailboxAccess, "requireMailboxAccess").mockResolvedValue(ok({ scope: "mailbox", permission: "admin" }));
     spyOn(publicResources, "resolveMailboxPublicId").mockResolvedValue(conversationId);
     const loadDetail = spyOn(workspace, "loadMailboxConversationDetail").mockResolvedValue(null);
 
