@@ -146,8 +146,15 @@ export function ChartExplorer<T extends ChartExplorerRow>(props: ChartExplorerPr
           ? "percent"
           : "value"
         : "y";
+    const sourceX = snapshot()?.kind === "line" ? snapshot()?.svg.match(/data-line-last-x="([^"]+)"/)?.[1] : undefined;
     const field = marks
-      .find((mark) => mark.datum.seriesIndex === index && mark.datum.anchor[0] === latest)
+      .find(
+        (mark) =>
+          mark.datum.seriesIndex === index &&
+          (sourceX === undefined
+            ? mark.datum.anchor[0] === latest
+            : mark.datum.values.some((field) => field.key === "x" && field.value === Number(sourceX))),
+      )
       ?.datum.values.find((field) => field.key === valueField);
     return field
       ? (field.formatted ??
@@ -467,8 +474,10 @@ export function ChartExplorer<T extends ChartExplorerRow>(props: ChartExplorerPr
                         style={{ "--k2b-chart-legend-color": `var(--stdlib-chart-c${(Math.abs(Math.trunc(entry.color)) % 8) + 1})` }}
                         aria-hidden="true"
                       />
-                      <span data-chart-legend-label>{entry.label}</span>
-                      <Show when={snapshot()?.kind === "area" || snapshot()?.kind === "line"}>
+                      {entry.label}
+                      <Show
+                        when={snapshot()?.kind === "area" || (snapshot()?.kind === "line" && snapshot()?.svg.includes("data-line-details"))}
+                      >
                         <b
                           data-chart-legend-value
                           data-series-index={index()}

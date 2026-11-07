@@ -16,6 +16,7 @@ import {
   heatmap,
   histogram,
   line,
+  lineDetailsEnabled,
   niceLogTicks,
   niceStep,
   pie,
@@ -455,6 +456,7 @@ export function chartRenderOptions(
             smooth: input.smooth,
             step: input.step,
             zero: input.zero,
+            legendValues: input.legendValues,
             forecast: input.forecast ? { ...input.forecast, from: dateTime(input.forecast.from) } : undefined,
             marker: input.marker ? { ...input.marker, at: dateTime(input.marker.at) } : undefined,
             threshold: input.threshold,
@@ -611,9 +613,11 @@ export type ChartTable = { columns: ChartColumn[]; rows: ChartRow[] };
 export function chartTooltip(
   columns: ChartColumn[],
   row: ChartRow,
-  kind?: ChartInput["kind"],
+  kind?: ChartInput["kind"] | ChartInput,
 ): { title?: string; rows: { label: string; value: string }[] } {
-  if (kind === "line")
+  const input = typeof kind === "object" ? kind : undefined;
+  const chartKind = input?.kind ?? kind;
+  if (input?.kind === "line" && lineDetailsEnabled(input))
     return {
       title: `${columns.find((column) => column.id === "x")?.label ?? "X"}: ${row.cells.x}`,
       rows: [
@@ -624,7 +628,7 @@ export function chartTooltip(
           .map((column) => ({ label: column.label, value: row.cells[column.id]! })),
       ],
     };
-  if (kind === "area")
+  if (chartKind === "area")
     return {
       title: row.cells.x,
       rows: [{ label: row.cells.series ?? "", value: `${row.cells.percent ? `${row.cells.percent} · ` : ""}${row.cells.value ?? "—"}` }],

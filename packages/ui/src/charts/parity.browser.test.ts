@@ -123,7 +123,7 @@ let demos: ReturnType<typeof demoFixture> | undefined;
 
 for (const width of [1440, 390]) {
   for (const theme of ["light", "dark"] as const) {
-    test(`existing non-line chart and explorer demos remain pixel-identical: ${theme} ${width}px`, async () => {
+    test(`existing chart and explorer demos remain pixel-identical: ${theme} ${width}px`, async () => {
       demos ??= demoFixture();
       const { beforeBundle, afterBundle, css, docsCss } = await demos;
       const browser = await launchBrowser();
@@ -141,11 +141,6 @@ for (const width of [1440, 390]) {
             );
             await page.addScriptTag({ content: bundle });
             await page.locator("#chart-static .k2b-chart").first().waitFor();
-            // G3 intentionally adds line legend values and bounds long legends to two rows.
-            // Keep the old pixel oracle for every other kind. Frozen line geometry is
-            // checked in parity.test.ts; line-forecast.browser.test.ts covers the new
-            // line presentation and all five real hosts at desktop/phone widths.
-            await page.addStyleTag({ content: '.k2b-chart[data-chart-kind="line"] { visibility: hidden; }' });
             await settled(page);
             const screenshot = await page.screenshot({ fullPage: true, animations: "disabled" });
             screenshots.push(screenshot);

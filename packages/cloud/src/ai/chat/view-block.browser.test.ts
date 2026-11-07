@@ -975,7 +975,7 @@ for (const view of [
         await shot("-loading");
         loaded();
         await page.waitForSelector('[data-view-path] [data-interactive="true"]');
-        expect(await page.locator(".k2b-chart-legend li [data-chart-legend-label]").allTextContents()).toEqual(regions);
+        expect(await page.locator(".k2b-chart-legend li").allTextContents()).toEqual(regions);
         await stable();
         await fits();
         await shot();
@@ -989,7 +989,7 @@ for (const view of [
         await page.waitForFunction(() => document.querySelector('input[type="range"]')?.getAttribute("aria-valuetext") === "2025");
         await page.waitForSelector('.k2b-chart-legend [data-reference="true"]');
         const expectedLegend = regions.map((region) => `${region} · 2025`).concat(regions.map((region) => `${region} · 2026`));
-        expect(await page.locator(".k2b-chart-legend li [data-chart-legend-label]").allTextContents()).toEqual(expectedLegend);
+        expect(await page.locator(".k2b-chart-legend li").allTextContents()).toEqual(expectedLegend);
         expect(await page.locator('.k2b-chart-legend [data-reference="true"][data-style="dashed"]').count()).toBe(3);
         await stable();
         await fits();
@@ -1020,7 +1020,7 @@ for (const view of [
         await stable();
         await pickExplorerView(page, "Offers", german);
         await page.waitForSelector('[data-chart-kind="line"]');
-        expect(await page.locator(".k2b-chart-legend li [data-chart-legend-label]").allTextContents()).toEqual(
+        expect(await page.locator(".k2b-chart-legend li").allTextContents()).toEqual(
           expectedLegend.filter((label) => !label.startsWith("North")),
         );
         expect(await page.locator('.k2b-chart-legend [data-reference="true"][data-style="dashed"]').count()).toBe(2);

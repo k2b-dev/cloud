@@ -140,7 +140,7 @@ export const chartParity: readonly ChartParityRow[] = [
       file: "packages/ui/src/charts/core/line-forecast.test.ts",
       test: "line legends carry cursor fields, missing final values and bounded names",
     },
-    spec: { ...line, legend: true },
+    spec: { ...line, legend: true, legendValues: true },
     legacySpec: line,
     legacyId: "kind-line",
   },
@@ -250,7 +250,7 @@ export const chartParity: readonly ChartParityRow[] = [
     id: "line-legend",
     feature: "Line: legend",
     proof: { file: "packages/ui/src/charts/parity.test.ts", test: "every parity spec preserves legacy SVG output" },
-    spec: { ...line, legend: true },
+    spec: { ...line, legend: true, legendValues: true },
   },
   {
     id: "line-step",

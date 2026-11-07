@@ -1396,6 +1396,8 @@ export type LineOptions = SeriesChartOptions & {
   errorBand?: boolean;
   /** Dashed from this existing first-series X coordinate; bounds follow its sorted suffix. */
   forecast?: { from: number; band?: [number, number][] };
+  /** Opt in to bounded legends with values at the cursor. Annotations also enable this. */
+  legendValues?: boolean;
   /** Tint the plot below zero. */
   zero?: boolean;
   threshold?: { value: number; label: string };
@@ -1530,8 +1532,8 @@ const collectSeriesLegend = (opts: { series: Series[]; legend?: boolean }): Arra
  * connecting its points (sorted by `x`). Multi-series charts get distinct
  * `stdlib-chart-series-N` classes.
  *
- * Non-finite observations split the line into separate runs. An isolated
- * observation remains visible as a point. An empty/all-non-finite chart renders
+ * Detailed lines split missing observations into runs and show isolated points.
+ * Existing descriptions retain their established filtering and gap behavior. An empty/all-non-finite chart renders
  * an empty-state SVG.
  *
  * @example
@@ -1566,11 +1568,21 @@ export const lineForecastLayout = (opts: LineOptions) => {
   });
 };
 
+export const lineDetailsEnabled = (opts: {
+  forecast?: unknown;
+  zero?: boolean;
+  threshold?: unknown;
+  marker?: unknown;
+  legendValues?: boolean;
+}) => !!(opts.forecast || opts.zero || opts.threshold || opts.marker || opts.legendValues);
+
 export const line = (opts: LineOptions): string => {
+  const details = lineDetailsEnabled(opts);
   const forecast = lineForecastLayout(opts);
-  if (opts.maxGap !== undefined && (!Number.isFinite(opts.maxGap) || opts.maxGap <= 0))
+  if (details && opts.maxGap !== undefined && (!Number.isFinite(opts.maxGap) || opts.maxGap <= 0))
     throw new RangeError("Chart maxGap must be finite and positive");
-  if (opts.maxGap !== undefined && (opts.area || opts.errorBand)) throw new Error("Chart maxGap does not support area or errorBand fills");
+  if (details && opts.maxGap !== undefined && (opts.area || opts.errorBand))
+    throw new Error("Chart maxGap does not support area or errorBand fills");
   if (opts.threshold && !isOnAxis({ scale: opts.yAxis?.scale ?? "linear" }, opts.threshold.value))
     throw new RangeError("Line threshold must be finite and positive on a log axis");
   if (opts.marker && !isOnAxis({ scale: opts.xAxis?.scale ?? "linear" }, opts.marker.at))
@@ -1580,7 +1592,7 @@ export const line = (opts: LineOptions): string => {
   const padding = normalizePadding(opts.padding);
   const header = renderHeader(width, opts.title, opts.subtitle);
   const legendItems = collectSeriesLegend(opts);
-  const legendHeight = legendItems.length > 2 ? 40 : legendItems.length ? 20 : 0;
+  const legendHeight = details && legendItems.length > 2 ? 40 : legendItems.length ? 20 : 0;
   const finitePoints = opts.series.flatMap((s) => s.data).filter((p) => Number.isFinite(p.x) && Number.isFinite(p.y));
   if (finitePoints.length === 0) return emptyChart(width, height, opts.className);
   const xAxis = computeAxisScale([...collectAxisValues(opts.series, "x"), ...(opts.marker ? [opts.marker.at] : [])], opts.xAxis);
@@ -1659,8 +1671,10 @@ export const line = (opts: LineOptions): string => {
     }
   const boundsByPoint = new Map(forecast.map((point) => [point.source, point]));
   opts.series.forEach((s, i) => {
-    const runs = runsOf(s.data);
-    const isolated = new Set(runs.filter((run) => run.length === 1).map((run) => run[0]!));
+    const runs = details
+      ? runsOf(s.data)
+      : [[...s.data].filter((p) => isOnAxis(xAxis, p.x) && isOnAxis(yAxis, p.y)).sort((a, b) => a.x - b.x)];
+    const isolated = new Set((details ? runs : []).filter((run) => run.length === 1).map((run) => run[0]!));
     s.data.forEach((p, index) => {
       if (!isOnAxis(xAxis, p.x) || !isOnAxis(yAxis, p.y)) return;
       if (!opts.inspect && !isolated.has(p)) return;
@@ -1676,7 +1690,7 @@ export const line = (opts: LineOptions): string => {
         ? inspectionPoint(datum, true)
         : `<circle class="stdlib-chart-inspection-point" cx="${fmt(x(p.x))}" cy="${fmt(y(p.y))}" r="3" fill="transparent" stroke="none"/>`;
       if (isolated.has(p)) mark = mark.replace('fill="transparent"', `fill="${paint(i)}"`);
-      inspectionMarks.push(mark);
+      (details ? inspectionMarks : body).push(mark);
     });
     for (const sorted of runs) {
       if (sorted.length < 2) continue;
@@ -1696,20 +1710,20 @@ export const line = (opts: LineOptions): string => {
             `<path class="stdlib-chart-error-band stdlib-chart-series-${i % 8}" d="${pathFn(upper)}${lower
               .reverse()
               .map((p) => ` L ${fmt(p.x)} ${fmt(p.y)}`)
-              .join("")} Z" fill="${paint(i)}" fill-opacity=".15" stroke="none"/>`,
+              .join("")} Z"${details ? ` fill="${paint(i)}" fill-opacity=".15" stroke="none"` : ""}/>`,
           );
       }
       if (opts.area) {
         const first = mapped[0]!,
           last = mapped.at(-1)!;
         body.push(
-          `<path class="stdlib-chart-area stdlib-chart-series-${i % 8}" d="${linePath} L ${fmt(last.x)} ${fmt(baselineY)} L ${fmt(first.x)} ${fmt(baselineY)} Z" fill="${paint(i)}" fill-opacity=".18" stroke="none"/>`,
+          `<path class="stdlib-chart-area stdlib-chart-series-${i % 8}" d="${linePath} L ${fmt(last.x)} ${fmt(baselineY)} L ${fmt(first.x)} ${fmt(baselineY)} Z"${details ? ` fill="${paint(i)}" fill-opacity=".18" stroke="none"` : ""}/>`,
         );
       }
       const dashStyle = s.lineStyle ?? (opts.autoVariant ? DEFAULT_LINE_STYLES[i % DEFAULT_LINE_STYLES.length]! : "solid");
       const dash = LINE_DASH_PATTERNS[dashStyle];
       const path = (forecastDash = false) =>
-        `<path class="stdlib-chart-line stdlib-chart-series-${i % 8}" d="${linePath}" fill="none" stroke="${paint(i)}" stroke-width="2"${forecastDash ? ' stroke-dasharray="5 4"' : dash ? ` stroke-dasharray="${dash}"` : ""}/>`;
+        `<path class="stdlib-chart-line stdlib-chart-series-${i % 8}" d="${linePath}"${details ? ` fill="none" stroke="${paint(i)}" stroke-width="2"` : ""}${forecastDash ? ' stroke-dasharray="5 4"' : dash ? ` stroke-dasharray="${dash}"` : ""}/>`;
       const from = opts.forecast?.from;
       if (from === undefined || sorted.at(-1)!.x <= from) body.push(path());
       else if (sorted[0]!.x >= from) body.push(`<g class="k2b-line-forecast">${path(true)}</g>`);
@@ -1758,12 +1772,12 @@ export const line = (opts: LineOptions): string => {
       ),
     );
   }
+  let latest = -Infinity;
+  for (const series of opts.series) for (const p of series.data) if (Number.isFinite(p.x)) latest = Math.max(latest, p.x);
   const legend: string[] = [];
-  if (legendItems.length) {
+  if (details && legendItems.length) {
     const entries = legendItems.slice(0, 4),
       cell = width / 2;
-    let latest = -Infinity;
-    for (const series of opts.series) for (const p of series.data) if (Number.isFinite(p.x)) latest = Math.max(latest, p.x);
     entries.forEach((entry, i) => {
       const left = (i % 2) * cell + 4,
         baseY = height - legendHeight + 12 + Math.floor(i / 2) * 20;
@@ -1789,15 +1803,21 @@ export const line = (opts: LineOptions): string => {
   }
   const svg = svgRoot(
     { width, height, className: opts.className },
-    header.svg + body.join("") + (legend.length ? `<g class="stdlib-chart-legend">${legend.join("")}</g>` : ""),
+    header.svg +
+      body.join("") +
+      (details
+        ? legend.length
+          ? `<g class="k2b-line-value-legend">${legend.join("")}</g>`
+          : ""
+        : renderLegend(legendItems, width, height - legendHeight).svg),
   );
-  if (!(opts.forecast || opts.zero || opts.threshold || opts.marker)) return svg;
+  if (!details) return svg;
   // CSS adds only the physical room missing in a narrow host. Its SVG transform is
   // visible to the shared inspector, and the server emits the same geometry.
   const fraction = Math.min(0.8, Math.max(0, area.x0 / width));
   return svg.replace(
     "<svg ",
-    `<svg data-line-axis-room style="--k2b-line-label-room:${labelRoom}px;--k2b-line-axis-fraction:${fraction};--k2b-line-axis-expand:${1 / (1 - fraction)}" `,
+    `<svg data-line-details="true" data-line-last-x="${latest}" data-line-axis-room="true" style="--k2b-line-label-room:${labelRoom}px;--k2b-line-axis-fraction:${fraction};--k2b-line-axis-expand:${1 / (1 - fraction)}" `,
   );
 };
 

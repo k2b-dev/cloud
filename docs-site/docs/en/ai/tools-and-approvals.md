@@ -198,7 +198,7 @@ of points.
 | Kind | Data and options |
 | --- | --- |
 | `bar` | `data: [{label, value}]`; `xAxis: {label}` (category title), `yAxis`, `colorByBar`, `showValues`, `legend`, `references` |
-| `line`, `scatter` | `series: [{label?, data: [{x, y}], role?}]`; `xAxis`, `yAxis`, `legend`, `references`. Line also accepts `area`, `smooth`, series `style`, `step: "after" | "before" | "middle"`, `zero`, `forecast: {from, band?: [low, high][]}`, `threshold: {value, label}` and `marker: {at, label}`. Forecast bounds match the first series from `from`, sorted by X, including null gaps; every low must be at most its high. |
+| `line`, `scatter` | `series: [{label?, data: [{x, y}], role?}]`; `xAxis`, `yAxis`, `legend`, `references`. Line also accepts `legendValues` (opt-in cursor values), `area`, `smooth`, series `style`, `step: "after" | "before" | "middle"`, `zero`, `forecast: {from, band?: [low, high][]}`, `threshold: {value, label}` and `marker: {at, label}`. Forecast bounds match the first series from `from`, sorted by X, including null gaps; every low must be at most its high. |
 | `area` | `layout: "stacked"`, ordered `x: (string | number)[]`, `series: [{label, data: (number | null)[]}]`; equal lengths, nonnegative values. `normalize: true` shows 100 %; tooltip retains share and amount. Nulls interrupt the stack; a zero total is a gap only in normalized mode. `legend`, `format`. |
 | `pie`, `donut` | `data: [{label, value}]`; `legend`, `showLabels`, `format` |
 | `histogram` | `data: number[]`; `bins` (count or ascending edges), `references` |

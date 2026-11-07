@@ -1,6 +1,6 @@
-### Line gaps must be owned by the shared renderer
+### Keep detailed line rendering opt-in
 
-- **What happened:** The UI adapter split long gaps while a direct SVG consumer connected the same observations. Filtering missing values also connected points across a missing observation.
-- **Root cause:** Gap handling ran as SVG postprocessing in the UI adapter instead of segmenting the source observations in the shared line renderer.
-- **Error class:** Host-dependent rendering caused by implementing data semantics above the shared renderer.
-- **Guard:** `chart-line-gaps.test.ts` exercises the core and UI paths for straight, smooth and stepped lines. `line-forecast.test.ts` checks missing observations, forecast bands and isolated points; the browser fixture checks the real consumer adapters.
+- **What happened:** Adding forecast legends and portable paint changed existing charts, and normalizing parity assertions hid those regressions.
+- **Root cause:** New rendering behavior ran for every line specification instead of being enabled by an additive option.
+- **Error class:** An additive chart feature silently changing saved descriptions.
+- **Guard:** The original frozen SVG, screenshot digests and application assertions remain unchanged. Forecasts and annotations opt in to detailed rendering; `legendValues: true` enables it without annotations. The core shares layout and path construction, while existing maxGap descriptions retain their established UI adapter. New forecast tests check gap segmentation within the opted-in core path.

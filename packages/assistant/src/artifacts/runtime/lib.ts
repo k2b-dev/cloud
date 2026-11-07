@@ -161,7 +161,7 @@ function drawChart(options: StoredChart, locale: string, width: number, height: 
           opening = opening.replace(/ data-chart-datum="[^"]*"/, () => ` data-chart-datum="${escapeXml(JSON.stringify(datum))}"`);
         }
         const row = rows.add(datum);
-        const tooltip = cloudAiChartTooltip(rows.columns(), row, options.input.kind);
+        const tooltip = cloudAiChartTooltip(rows.columns(), row, options.input);
         const text = [tooltip.title, ...tooltip.rows.map((row) => `${row.label}: ${row.value}`)].filter(Boolean).join(" · ");
         // Single-quoted XML attributes keep compact JSON quotes literal, saving space on dense charts.
         const encodedTooltip = escapeXml(JSON.stringify(tooltip)).replace(/&quot;/g, '"');

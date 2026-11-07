@@ -568,7 +568,7 @@ for (const input of [
         const datum: unknown = JSON.parse(decodeChartAttribute(mark[1]!));
         if (!isChartDatum(datum)) throw new Error("Invalid mark");
         const row = rows.add(datum);
-        const tooltip = cloudAiChartTooltip(rows.columns(), row, input.kind);
+        const tooltip = cloudAiChartTooltip(rows.columns(), row);
         expect(JSON.parse(decodeChartAttribute(mark[2]!))).toEqual(JSON.parse(JSON.stringify(tooltip)));
         expect(mark[3]).toBe(escapeXml([tooltip.title, ...tooltip.rows.map((r) => `${r.label}: ${r.value}`)].filter(Boolean).join(" · ")));
       }

@@ -17,6 +17,7 @@ import { IconButton } from "../actions/Button";
 import type { MapViewport } from "../charts/core";
 import { chartKinds } from "../charts/core/registry";
 import { type ChartDrawingOptions, chartRenderHeight, preservesAspectRatio, renderChartSvg } from "../charts/core/render";
+import { lineDetailsEnabled } from "../charts/core/svg";
 import { suppressTextSelection } from "../internal/text-selection";
 import { useLocale } from "../intl/locale";
 import { useUiMessages } from "../intl/messages";
@@ -180,9 +181,7 @@ const ChartRoot = (props: ChartProps): JSX.Element => {
   const topLegend = () =>
     props.kind === "area"
       ? props.legend !== false
-      : props.kind === "line" &&
-        props.legend === true &&
-        (props.legendPlacement === "top-start" || !!(props.forecast || props.marker || props.threshold || props.zero));
+      : props.kind === "line" && props.legend === true && (props.legendPlacement === "top-start" || lineDetailsEnabled(props));
   const legendSeries = () => (props.kind === "line" || props.kind === "area" ? props.series : []);
   const legendValue = (index: number) => {
     if (props.kind === "line") {
@@ -470,7 +469,7 @@ const ChartRoot = (props: ChartProps): JSX.Element => {
     format: (selection) => {
       if (props.tooltip) return props.tooltip(selection);
       const fields = chartMessages().chartFields;
-      if (selection.kind === "line" && props.kind === "line") {
+      if (selection.kind === "line" && props.kind === "line" && lineDetailsEnabled(props)) {
         const x = selection.datum.values.find((f) => f.key === "x");
         const value = selection.datum.values.find((f) => f.key === "y");
         const number = new Intl.NumberFormat(props.locale ?? locale(), { maximumFractionDigits: 6 }).format;
@@ -636,7 +635,7 @@ const ChartRoot = (props: ChartProps): JSX.Element => {
                     />
                   </svg>
                   <span>{series.label && series.label.length > 0 ? series.label : `${chartMessages().series} ${index() + 1}`}</span>
-                  <Show when={props.kind === "area" || props.kind === "line"}>
+                  <Show when={props.kind === "area" || (props.kind === "line" && lineDetailsEnabled(props))}>
                     <b
                       data-chart-legend-value
                       data-series-index={index()}

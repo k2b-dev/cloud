@@ -36,6 +36,7 @@ export {
   type LineStyle,
   line,
   linearRegression,
+  lineDetailsEnabled,
   lineForecastLayout,
   linePathD,
   type MapOptions,

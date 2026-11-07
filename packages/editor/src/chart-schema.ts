@@ -209,6 +209,7 @@ export const chartKinds = (limits?: ChartLimits) => {
         smooth: z.boolean().optional(),
         step: z.enum(["after", "before", "middle"]).optional(),
         zero: z.boolean().optional(),
+        legendValues: z.boolean().optional(),
         forecast: z
           .object({
             from: ChartCoordinate,

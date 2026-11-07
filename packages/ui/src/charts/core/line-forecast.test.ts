@@ -126,6 +126,7 @@ test("line legends carry cursor fields, missing final values and bounded names",
       ],
     })),
     legend: true,
+    legendValues: true,
     locale: "de",
     width: 480,
     height: 280,
@@ -153,6 +154,7 @@ test("the pure line legend localizes unnamed series", () => {
       },
     ],
     legend: true,
+    legendValues: true,
     locale: "de",
   });
   expect(svg).toContain("Datenreihe 1");
@@ -160,7 +162,7 @@ test("the pure line legend localizes unnamed series", () => {
 
 test("an explicit line locale takes precedence over the inherited render locale", () => {
   const svg = renderChartSvg(
-    { kind: "line", series: [{ data: [{ x: 1, y: 2.5 }] }], legend: true, locale: "de" },
+    { kind: "line", series: [{ data: [{ x: 1, y: 2.5 }] }], legend: true, legendValues: true, locale: "de" },
     480,
     280,
     undefined,

@@ -327,11 +327,7 @@ test("a line panel is a chart explorer with exact values, units and a table of e
     const panel = tab.locator('[data-panel="req"]');
     expect(await panel.locator(".k2b-chart-explorer h3").textContent()).toBe("Anfragen je Dienst");
     expect(await panel.getByRole("button", { name: "So gerechnet: Anfragen je Dienst", exact: true }).count()).toBe(1);
-    expect(await panel.locator(".k2b-chart-legend li [data-chart-legend-label]").allTextContents()).toEqual([
-      "demo-site",
-      "demo-shop",
-      "demo-cloud",
-    ]);
+    expect(await panel.locator(".k2b-chart-legend li").allTextContents()).toEqual(["demo-site", "demo-shop", "demo-cloud"]);
     await panel.getByRole("button", { name: "Diagrammansicht", exact: true }).click();
     await tab.getByRole("menuitemradio", { name: "Tabelle", exact: true }).click();
     const table = panel.getByRole("table");

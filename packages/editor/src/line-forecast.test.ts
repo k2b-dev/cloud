@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
 import { liquidityForecastSpec } from "../../../docs-site/src/ui/demo-sections/charts/liquidity-forecast";
 import { chartKinds, chartRenderOptions, chartSchema, chartTable, drawChart } from "./charts";
+import { renderNotebookChartFigure } from "./markdown/lib/chart-blocks";
 
 const spec = {
   kind: "line",
@@ -119,4 +120,32 @@ test("the Liquidity dashboard balance is a real dated forecast through the share
   expect(drawChart(options)).toContain("k2b-line-forecast-band");
   expect(drawChart(options)).toContain("k2b-line-threshold");
   expect(drawChart(options)).toContain("k2b-line-marker");
+});
+
+test("opted-in snapshot legends keep an all-missing final column as gaps", () => {
+  const input = chartKinds().parse({
+    kind: "line",
+    title: "Missing final observations",
+    legend: true,
+    legendValues: true,
+    series: [
+      {
+        label: "A",
+        data: [
+          { x: 1, y: 4 },
+          { x: 2, y: null },
+        ],
+      },
+      {
+        label: "B",
+        data: [
+          { x: 1, y: 7 },
+          { x: 2, y: null },
+        ],
+      },
+    ],
+  });
+  const html = renderNotebookChartFigure(input, "en")!;
+  expect(html).toContain('data-line-last-x="2"');
+  expect([...html.matchAll(/data-default="([^"]*)"/g)].map((match) => match[1])).toEqual(["—", "—"]);
 });

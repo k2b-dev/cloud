@@ -55,9 +55,8 @@ const baseline: Record<string, string> = {
   // Bar charts draw with @k2b/ui's own renderer since every category keeps its label and printed value; column labels
   // and ticks keep their distance from the axis as a pixel offset (`dy`).
   bar: "435b52bc34ba6166d3205a1ecc5ab8660c1e8d18c4cb5086a2a31eebaa1a454a",
-  // Line paint attributes, isolated points and core-owned gap segmentation are intentional G3 changes.
-  line: "a10712a75535525df4a27b6babe537c406f670742e2baf613df94b0bada990e1",
-  lineWithGap: "2e3f7f71b095568074575725165bd8fc9c4d3170e5a199f7ea5a6af7044607d8",
+  line: "e189323e0c3c48cc5a49be8fb797a6e50b8b3ab51f490c33d4d6b10f995a7047",
+  lineWithGap: "613b883fc561e8dd0e80f5a77e864d0665abaf40eb1f9833372f7b0b0a447ce3",
   stateTimeline: "0f488aed673002ebaf4584d8ed3bdd1d86dc150578786e9a0f90ecf6b9d3627d",
   map: "b96c033465c52175be2931f841db4651607c22dcaf5cf8b7a49e52cd15cab3d7",
   heatmap: "906ba7ad5595af0e22eb493bba013e616223615bc245c8dc37820943fb2801c8",

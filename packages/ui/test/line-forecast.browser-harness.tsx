@@ -1,14 +1,14 @@
+import { LocaleProvider as ShowcaseLocaleProvider } from "@k2b/ui";
 import { createSignal } from "solid-js";
 import { render } from "solid-js/web";
 import { liquidityForecastSpec } from "../../../docs-site/src/ui/demo-sections/charts/liquidity-forecast";
-import { chartKinds, chartRenderOptions } from "../../editor/src/charts";
+import { ShowcaseFrame, type ShowcaseState } from "../../../docs-site/src/ui/demo-sections/charts/ShowcaseFrame";
 import Chart from "../src/content/Chart";
 import { ChartExplorer } from "../src/content/ChartExplorer";
 import { prepareChartSnapshot } from "../src/content/chart-snapshot";
 import { LocaleProvider } from "../src/intl/locale";
 import { lineForecastFixture } from "./line-forecast-fixture";
 
-const liquidityOptions = chartRenderOptions(chartKinds().parse(liquidityForecastSpec), "en", { legend: "outside" });
 const snapshot = prepareChartSnapshot(
   {
     kind: "line",
@@ -31,7 +31,7 @@ const snapshotRows = snapshot.marks.map((mark) => ({
   key: mark.rowKey,
   amount: String(mark.datum.values.find((f) => f.key === "y")?.value),
 }));
-const [state, setState] = createSignal("data");
+const [state, setState] = createSignal<ShowcaseState>("data");
 const [selected, setSelected] = createSignal(false);
 render(
   () => (
@@ -41,7 +41,7 @@ render(
           <button type="button" onClick={() => setSelected(!selected())}>
             Select cash observation
           </button>
-          {["data", "loading", "empty", "error", "stale"].map((s) => (
+          {(["data", "loading", "empty", "error", "stale"] as const).map((s) => (
             <button type="button" onClick={() => setState(s)}>
               {s}
             </button>
@@ -83,15 +83,23 @@ render(
             kind="line"
             legend
             legendPlacement="top-start"
+            legendValues
             series={[
               {
                 label: "Full",
                 data: [
                   { x: 1, y: 10 },
                   { x: 2, y: 20 },
+                  { x: 3, y: Number.NaN },
                 ],
               },
-              { label: "Early", data: [{ x: 1, y: 7 }] },
+              {
+                label: "Early",
+                data: [
+                  { x: 1, y: 7 },
+                  { x: 3, y: Number.NaN },
+                ],
+              },
             ]}
             style={{ height: "230px" }}
           />
@@ -109,12 +117,10 @@ render(
             style={{ height: "280px" }}
           />
         </section>
-        <section class="line-forecast-panel liquidity">
-          <h2>Balance</h2>
-          <p class="meta">Business account · forecast with range from today</p>
-          <LocaleProvider locale="en">
-            <Chart {...liquidityOptions} legend legendPlacement="top-start" style={{ height: "280px" }} />
-          </LocaleProvider>
+        <section class="liquidity">
+          <ShowcaseLocaleProvider locale="en">
+            <ShowcaseFrame spec={liquidityForecastSpec} title="Balance" state={state()} height={280} onRetry={() => setState("data")} />
+          </ShowcaseLocaleProvider>
         </section>
         <div id="line-hosts" />
       </main>

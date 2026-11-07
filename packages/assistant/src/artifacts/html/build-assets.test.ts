@@ -4,7 +4,7 @@ import { buildCheckPrelude, buildPrelude } from "./build-assets";
 
 test("normal mounts omit app checks and stay within the prelude budget", async () => {
   const [normal, check] = await Promise.all([buildPrelude(), buildCheckPrelude()]);
-  // Forecast drawing, cursor legends, stacked area and portable validation measure 323,867 bytes.
+  // Forecast drawing, cursor legends, stacked area and portable validation measure 324,179 bytes.
   // Keep about 3% headroom; pure SVG labels do not import the full UI catalogue.
   expect(Buffer.byteLength(normal)).toBeLessThan(332_000);
   for (const feature of ["k2b-line-forecast-band", "k2b-line-negative-zone", "k2b-line-threshold", "k2b-line-marker"])

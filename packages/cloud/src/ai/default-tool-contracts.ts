@@ -182,6 +182,7 @@ const flatChartSchema = () => {
     showValues: z.boolean().optional().describe("bar: print values, by default when they stay readable. heatmap: print values."),
     area: z.boolean().optional().describe("line, sparkline: fill under the line."),
     step: z.enum(["after", "before", "middle"]).optional().describe("line: hold each observation until the next, or change before it."),
+    legendValues: z.boolean().optional().describe("line: opt in to values at the cursor in bounded legends."),
     zero: z.boolean().optional().describe("line: include zero and tint the negative plot region."),
     forecast: z
       .object({

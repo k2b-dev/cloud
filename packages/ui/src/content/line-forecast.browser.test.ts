@@ -23,7 +23,7 @@ beforeAll(async () => {
         ),
       ],
       target: "browser",
-      format: "iife",
+      format: "esm",
       conditions: ["browser"],
       plugins: [
         {
@@ -50,6 +50,7 @@ beforeAll(async () => {
   baseCss = await Bun.file(resolve(import.meta.dir, "../../dist/base.css")).text();
   css = await Bun.file(resolve(import.meta.dir, "../../dist/styles.css")).text();
   css += `\n${await Bun.file(resolve(import.meta.dir, "../../../editor/src/styles.css")).text()}`;
+  css += `\n${await Bun.file(resolve(import.meta.dir, "../../../../docs-site/assets/ui-catalog.css")).text()}`;
   browser = await launchBrowser();
   const { default: ServerChart } = await import(resolve(import.meta.dir, "../../dist/ssr/content/Chart.js"));
   const { LocaleProvider } = await import(resolve(import.meta.dir, "../../dist/ssr/intl/locale.js"));
@@ -87,8 +88,9 @@ const open = async (width: number, dark = false, touch = false) => {
   await page.setContent(
     `<!doctype html><html ${dark ? 'class="dark"' : ""}><head><meta name="viewport" content="width=device-width,initial-scale=1"><style>${css} body{margin:0;padding:20px} main{max-width:900px;margin:auto}.line-forecast-panel{border:1px solid var(--k2b-border);border-radius:12px;padding:16px;margin-top:20px}h2{font-size:17px;margin:0}.meta{font-size:13px;margin:4px 0 16px}.line-forecast-frame{height:280px}.many{margin-top:20px}</style></head><body class="k2b-ui"><div id="root"></div></body></html>`,
   );
-  await page.addScriptTag({ content: bundle });
-  await page.addScriptTag({ content: hostsBundle });
+  await page.addScriptTag({ type: "module", content: bundle });
+  await page.addScriptTag({ type: "module", content: hostsBundle });
+  await page.locator(".liquidity .k2b-line-forecast-band").waitFor();
   await settled(page);
   return page;
 };
@@ -106,6 +108,7 @@ for (const width of [1440, 390])
     expect(await chart.locator("[data-chart-legend-value]").count()).toBe(1);
     const before = await chart.boundingBox();
     await chart.focus();
+    await settled(page);
     await page.keyboard.press("Home");
     await settled(page);
     expect(await page.locator('[role="tooltip"]:popover-open').textContent()).toContain("Balance");
@@ -113,6 +116,19 @@ for (const width of [1440, 390])
     await settled(page);
     expect(await page.locator('[role="tooltip"]:popover-open').textContent()).toContain("forecast");
     expect(await chart.boundingBox()).toEqual(before);
+    await page.keyboard.press("Escape");
+    await settled(page);
+    const frame = page.locator(".liquidity");
+    const frameBefore = await documentBox(page, ".liquidity");
+    for (const state of ["loading", "empty", "error", "stale", "data"]) {
+      await page.getByRole("button", { name: state, exact: true }).click();
+      await frame.scrollIntoViewIfNeeded();
+      await settled(page);
+      const stateBox = await documentBox(page, ".liquidity");
+      expect(stateBox.height).toBe(frameBefore.height);
+      expect(stateBox.width).toBe(frameBefore.width);
+      expect(await frame.locator(".k2b-line-forecast-band").count()).toBe(state === "data" || state === "stale" ? 1 : 0);
+    }
   });
 
 const documentBox = (page: Page, selector: string) =>
@@ -146,10 +162,13 @@ for (const width of [1440, 390]) {
     });
     expect(labelsFit).toBe(true);
     const earlyEnding = page.locator(".early-ending [data-chart-kind=line]");
-    expect(await earlyEnding.locator("[data-chart-legend-value]").nth(1).textContent()).toBe("—");
+    expect(await earlyEnding.locator("[data-chart-legend-value]").allTextContents()).toEqual(["—", "—"]);
     await page.mouse.move(0, 0);
     await settled(page);
+    await earlyEnding.scrollIntoViewIfNeeded();
+    await settled(page);
     await earlyEnding.focus();
+    await settled(page);
     await page.keyboard.press("Home");
     await settled(page);
     expect(await earlyEnding.locator("[data-chart-legend-value]").nth(1).textContent()).toBe("7");
@@ -157,6 +176,8 @@ for (const width of [1440, 390]) {
     await settled(page);
     expect(await earlyEnding.locator("[data-chart-legend-value]").nth(1).textContent()).toBe("—");
     await page.keyboard.press("Escape");
+    await settled(page);
+    await chart.scrollIntoViewIfNeeded();
     await settled(page);
     const before = await documentBox(page, ".snapshot");
     const viewportBefore = await documentBox(page, ".snapshot .k2b-chart-explorer__viewport");
@@ -166,6 +187,7 @@ for (const width of [1440, 390]) {
     expect(await tooltip(page).textContent()).toContain("Committed");
     expect(await tooltip(page).textContent()).toContain("€");
     await chart.focus();
+    await settled(page);
     await page.keyboard.press("Home");
     await settled(page);
     expect(await tooltip(page).textContent()).toContain("1");
@@ -247,29 +269,39 @@ test("line tap pins at a coordinate; dark and unscoped paths remain painted", as
 });
 
 for (const width of [1440, 390]) {
-  test(`line at ${width}: values follow the cursor in Pulse, Core AI, Gateway Ops, Chat and Notebook`, async () => {
+  test(`line at ${width}: existing host legends stay unchanged; opted-in Chat and Notebook values follow the cursor`, async () => {
     const page = await open(width);
     pages.push(page);
     for (const host of ["pulse", "core", "gateway", "chat", "notebook"]) {
       const charts = page.locator(`[data-line-host="${host}"] [data-chart-kind="line"]`);
       const chart = host === "core" ? charts.nth(1) : charts.first();
       expect(await chart.count()).toBe(1);
+      await chart.scrollIntoViewIfNeeded();
+      await page.mouse.move(0, 0);
       await settled(page);
       const panelBox = await documentBox(page, `[data-line-host="${host}"]`);
       const legend = page.locator(`[data-line-host="${host}"] [data-chart-legend-value]`);
       const initial = await legend.allTextContents();
+      const legacy = host === "pulse" || host === "core" || host === "gateway";
+      const names = page.locator(`[data-line-host="${host}"] :is(.k2b-chart__legend,.k2b-chart-legend,.stdlib-chart-legend)`);
+      const initialNames = await names.allTextContents();
+      if (legacy) expect(initial).toEqual([]);
       expect(initial.every((value) => value.length > 0)).toBe(true);
       if (host === "chat" || host === "notebook") expect(initial.every((value) => value.includes("€"))).toBe(true);
       await page.mouse.move(0, 0);
       await settled(page);
       await chart.focus();
+      await settled(page);
       await page.keyboard.press("Home");
       await settled(page);
       const first = await legend.allTextContents();
-      expect(first.length).toBeGreaterThan(0);
+      if (!legacy) expect(first.length).toBeGreaterThan(0);
       await page.keyboard.press("End");
       await settled(page);
-      expect(await legend.allTextContents()).not.toEqual(first);
+      if (legacy) {
+        expect(await legend.allTextContents()).toEqual([]);
+        expect(await names.allTextContents()).toEqual(initialNames);
+      } else expect(await legend.allTextContents()).not.toEqual(first);
       await page.keyboard.press("Escape");
       await settled(page);
       expect(await legend.allTextContents()).toEqual(initial);

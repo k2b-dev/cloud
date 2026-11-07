@@ -5,6 +5,8 @@
 ## Use Chart
 
 Use it to show a trend, distribution, comparison, geographic series, or state history.
+To pick a kind by what you want to show, start in the [chart showcase](/en/ui/charts): every kind has a live
+example with its states, its description as TSX and JSON, and its options.
 
 Every non-empty chart has tooltips, keyboard inspection, and tap by default; see [How to customize](#how-to-customize).
 
@@ -243,7 +245,7 @@ Solid signal. Boolean options default to `false` unless stated otherwise.
 
 | Kind | Required payload | Additional options and defaults |
 | --- | --- | --- |
-| `line` | `series: Series[]` | `xAxis`, `yAxis`, `references`, `legend`; `smooth=true`, `area=false`, `step?: "before" / "after" / "middle"` (overrides smoothing), `autoVariant=false`, `errorBand=false`; `forecast?: {from, band?: [number, number][]}`, `zero=false`, `threshold?: {value, label}`, `marker?: {at, label}`. |
+| `line` | `series: Series[]` | `xAxis`, `yAxis`, `references`, `legend`; `smooth=true`, `area=false`, `step?: "before" / "after" / "middle"` (overrides smoothing), `autoVariant=false`, `errorBand=false`, `legendValues=false`; `forecast?: {from, band?: [number, number][]}`, `zero=false`, `threshold?: {value, label}`, `marker?: {at, label}`. |
 | `scatter` | `series: Series[]` | `xAxis`, `yAxis`, `references`, `legend`, `autoVariant=false`, `trendline=false`; `sizeRange?: [number, number]`, default `[3, 12]`, applies only if a point has finite `size`. No `pointRadius` prop. UI markers have a fixed visual enlargement independent of plot width. |
 | `bar` | `data: { label: string; value: number }[]` | `xAxis?: { label?: string; ordered?: boolean }` titles the categories, and `ordered` keeps days or steps in columns with sparse labels; `yAxis` (its `label` names the value, its `format` writes ticks and values), `valueFormat?: (number) => string` for printed values and tooltips, `references`, `colorByBar=false`, `showValues` (default: when readable), `legend=false` (used only with `colorByBar` in columns), `displayWidth?: number`. Negative values are supported; baseline includes zero. Items accept `colorIndex?: number` when `colorByBar` is enabled. No grouped/stacked bar mode. See [Bar charts](#bar-charts). |
 | `pie`, `donut` | `data: { label: string; value: number }[]` | `showLabels=false`, `legend=false`, `innerRadius?: number` (outer-radius fraction, clamped to 0–0.95; defaults: pie 0, donut 0.6). Items accept `colorIndex?: number`. Only positive finite values produce slices. Prefer a legend for many small slices. |
@@ -1081,6 +1083,8 @@ out. With no data the neutral map stays; the host shows its own empty message.
 Use `format` for units and `limit` to change how many countries the list names.
 
 ### Line outlooks and reference marks
+
+Line annotations (`forecast`, `zero`, `threshold`, `marker`) opt in to the detailed line presentation, including cursor values. Use `legendValues: true` to enable cursor values alone. Existing line descriptions keep their original drawing, legends and tooltips.
 
 A line can add `forecast: {from, band?}` without changing existing saved JSON. `from` is an existing X coordinate in the first series; ISO dates are accepted in portable JSON. The line is dashed from that coordinate. Optional `[lower, upper]` bounds belong to the first series, ordered by X from `from`, and have exactly that suffix's length. Lower bounds cannot exceed upper bounds. A missing observation remains a gap in both the line and its forecast band. An isolated observation keeps a visible point and a narrow confidence band.
 

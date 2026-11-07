@@ -1,4 +1,5 @@
 import { type BarChartOptions, barChartLayout, renderBarChartSvg } from "../../content/chart-bar";
+import { lineGapsSvg } from "../../content/chart-line-gaps";
 import { DEFAULT_MAP_VIEWPORT, normalizeMapViewport } from "../../content/chart-map-viewport";
 import {
   renderStateTimelineSvg,
@@ -10,7 +11,7 @@ import { responsiveChartSvg, responsiveMapSvg } from "../../content/chart-svg";
 import { type ChartTimeAxis, timeAxisSvg } from "../../content/chart-time-axis";
 import { type AreaOptions, renderAreaSvg } from "./area";
 import { chartRenderers } from "./registry";
-import type { MapViewport } from "./svg";
+import { lineDetailsEnabled, type MapViewport } from "./svg";
 import type { ChartKind } from "./types";
 
 export type ChartDrawingOptions = {
@@ -94,9 +95,7 @@ export const renderChartSvg = (
     ...opts,
     ...(kind === "line" ? { locale: (opts as { locale?: string }).locale ?? renderLocale } : {}),
     ...(timeDomain && props.kind === "line" ? { xAxis: { ...props.xAxis, domain: timeDomain, format: () => "" } } : {}),
-    ...(props.kind === "line" &&
-    props.legend &&
-    (props.legendPlacement === "top-start" || props.forecast || props.marker || props.threshold || props.zero)
+    ...(props.kind === "line" && props.legend && (props.legendPlacement === "top-start" || lineDetailsEnabled(props))
       ? { legend: false }
       : {}),
     ...(kind === "map" ? { viewport: DEFAULT_MAP_VIEWPORT } : {}),
@@ -104,6 +103,10 @@ export const renderChartSvg = (
     height,
     inspect: true,
   });
+  if (props.kind === "line" && props.maxGap !== undefined && !lineDetailsEnabled(props)) {
+    if (props.area || props.errorBand) throw new Error("Chart maxGap does not support area or errorBand fills");
+    svg = lineGapsSvg(svg, props.maxGap, props);
+  }
   if (timeAxis && timeDomain && props.kind === "line")
     svg = timeAxisSvg(svg, timeDomain, timeAxis, (props.xAxis?.ticks ?? 3) + 2, props.xAxis?.format);
   if (props.kind === "map") return responsiveMapSvg(svg, width, height, normalizeMapViewport(mapViewport ?? props.viewport));
