@@ -258,6 +258,7 @@ describe("MarkdownEditor slash commands", () => {
       () =>
         createComponent(MarkdownEditor, {
           label: "Late",
+          value: "",
           get commands() {
             return source();
           },
