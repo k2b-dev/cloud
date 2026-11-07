@@ -1,8 +1,8 @@
 import { renderBarChartSvg } from "../../content/chart-bar";
 import { renderStateTimelineSvg } from "../../content/chart-state-timeline";
 import { renderAreaSvg } from "./area";
-import { renderParetoSvg } from "./pareto";
 import { renderHeatmapSvg } from "./calendar";
+import { renderParetoSvg } from "./pareto";
 import { charts } from "./svg";
 import { renderTreemapSvg } from "./treemap";
 
