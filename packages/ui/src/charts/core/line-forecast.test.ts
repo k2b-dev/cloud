@@ -131,3 +131,25 @@ test("line legends carry cursor fields, missing final values and bounded names",
   expect(svg).toContain('data-field="y" data-default="—"');
   expect(svg).toContain('data-field="y" data-default="2,5"');
 });
+
+test("a single forecast observation keeps a visible confidence band", () => {
+  const svg = line({ series: [{ data: [{ x: 1, y: 3 }] }], forecast: { from: 1, band: [[2, 4]] }, width: 480, height: 280 });
+  expect(svg).toContain('<rect class="k2b-line-forecast-band"');
+  expect(svg).not.toMatch(/NaN|Infinity/);
+});
+
+test("the pure line legend localizes unnamed series", () => {
+  const svg = line({
+    series: [
+      {
+        data: [
+          { x: 1, y: 2 },
+          { x: 2, y: 3 },
+        ],
+      },
+    ],
+    legend: true,
+    locale: "de",
+  });
+  expect(svg).toContain("Datenreihe 1");
+});
