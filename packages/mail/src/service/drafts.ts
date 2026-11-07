@@ -62,6 +62,14 @@ import { mailLive } from "./live";
 import type { AttachmentDownload } from "./messages";
 
 const InternalIdSchema = z.string().uuid();
+/**
+ * An ID field that fails the internal UUID check carries a public ID the API boundary did not resolve, so the
+ * person sees the localized missing-resource message instead of a schema detail such as "Invalid UUID".
+ */
+const draftInputError = (error: z.ZodError, fallback: string) =>
+  error.issues.some((issue) => issue.code === "invalid_format" && issue.format === "uuid" && String(issue.path.at(-1)).endsWith("Id"))
+    ? err.notFound("Mail resource")
+    : err.badInput(error.issues[0]?.message ?? fallback);
 // Every saved body keeps only complete signature segments, so marks left by a hand edit do not pile up.
 const savedDraftBodySchema = draftEditableContentInputSchema.shape.body.transform(removeOrphanComposeSegmentMarks);
 const internalDraftEditableContentSchema = draftEditableContentInputSchema.extend({
@@ -628,7 +636,7 @@ const prepareComposeDraftInTransaction = async (params: {
   input: DraftContentInput;
 }): Promise<Result<PreparedComposeDraft>> => {
   const parsed = internalDraftContentSchema.safeParse(params.input);
-  if (!parsed.success) return fail(err.badInput(parsed.error.issues[0]?.message ?? "Invalid draft"));
+  if (!parsed.success) return fail(draftInputError(parsed.error, "Invalid draft"));
   const [mailbox] = await params.db<{ id: string }[]>`
     SELECT id FROM mail.mailboxes
     WHERE id = ${params.mailboxId}::uuid AND deleted_at IS NULL
@@ -1082,7 +1090,7 @@ export const prepareDraftSeed = async (params: {
   origin: DraftSeedOrigin;
 }): Promise<Result<MailDraftSeed>> => {
   const parsed = internalDraftSeedOriginSchema.safeParse(params.origin);
-  if (!parsed.success) return fail(err.badInput(parsed.error.issues[0]?.message ?? "Invalid compose request"));
+  if (!parsed.success) return fail(draftInputError(parsed.error, "Invalid compose request"));
   if (!mutableActor(params.context)) return fail(err.forbidden("Draft author is invalid"));
   try {
     return await sql.begin(async (tx) => {
@@ -1134,7 +1142,7 @@ export const materializeDraftSeed = async (params: {
   input: MaterializeDraftSeedInput;
 }): Promise<Result<MailDraft>> => {
   const parsed = internalMaterializeDraftSeedInputSchema.safeParse(params.input);
-  if (!parsed.success) return fail(err.badInput(parsed.error.issues[0]?.message ?? "Invalid compose request"));
+  if (!parsed.success) return fail(draftInputError(parsed.error, "Invalid compose request"));
   const actor = mutableActor(params.context);
   if (!actor) return fail(err.forbidden("Draft author is invalid"));
   try {
@@ -1265,7 +1273,7 @@ export const deriveDraftFromMessage = async (params: {
   input: DeriveDraftFromMessageInput;
 }): Promise<Result<MailDraft>> => {
   const parsed = internalDeriveDraftFromMessageInputSchema.safeParse(params.input);
-  if (!parsed.success) return fail(err.badInput(parsed.error.issues[0]?.message ?? "Invalid draft derivation"));
+  if (!parsed.success) return fail(draftInputError(parsed.error, "Invalid draft derivation"));
   const actor = mutableActor(params.context);
   if (!actor) return fail(err.forbidden("Draft author is invalid"));
   try {
@@ -1709,7 +1717,7 @@ export const updateDraft = async (params: {
       message: "The draft update was published but its durable save is pending. Keep the submitted content and retry.",
     });
   const parsed = internalDraftEditableContentSchema.safeParse(params.input);
-  if (!parsed.success) return fail(err.badInput(parsed.error.issues[0]?.message ?? "Invalid draft"));
+  if (!parsed.success) return fail(draftInputError(parsed.error, "Invalid draft"));
   if (!Number.isInteger(params.expectedRevision) || params.expectedRevision < 1) return fail(err.badInput("Invalid draft revision"));
   const actor = mutableActor(params.context);
   if (!actor) return fail(err.forbidden("Draft author is invalid"));
@@ -1930,6 +1938,8 @@ export const listDraftFolder = async (params: {
       to_addresses: MailAddress[] | string;
       cc_addresses: MailAddress[] | string;
       bcc_addresses: MailAddress[] | string;
+      revision: string | number;
+      attachment_count: number;
       updated_at_cursor: string;
     })[]
   >`
@@ -1942,6 +1952,11 @@ export const listDraftFolder = async (params: {
       d.to_addresses,
       d.cc_addresses,
       d.bcc_addresses,
+      d.revision,
+      (
+        SELECT COUNT(*)::int FROM mail.draft_attachments attachment
+        WHERE attachment.draft_id = d.id AND attachment.removed_at IS NULL
+      ) AS attachment_count,
       LEFT(d.body_markdown, ${DRAFT_BODY_PREVIEW_SOURCE_LENGTH}) AS body_preview_source,
       COALESCE(
         NULLIF(author_user.display_name, ''),
@@ -1987,6 +2002,8 @@ export const listDraftFolder = async (params: {
       to: parseArray(row.to_addresses),
       cc: parseArray(row.cc_addresses),
       bcc: parseArray(row.bcc_addresses),
+      revision: Number(row.revision),
+      attachmentCount: row.attachment_count,
       bodyPreview: draftBodyPreview(row.body_preview_source),
       createdByDisplayName: row.created_by_display_name,
       updatedAt: toIso(row.updated_at),

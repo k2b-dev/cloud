@@ -246,6 +246,11 @@ for (const [width, height, form] of [
       expect(rect!.y).toBeGreaterThanOrEqual(0);
       expect(rect!.x + rect!.width).toBeLessThanOrEqual(width);
       expect(rect!.y + rect!.height).toBeLessThanOrEqual(height);
+      if (form === "sheet") {
+        // Help is the phone's way to the panel: it opens at full height below the title row, which has no panel button.
+        expect(rect).toEqual({ x: 0, y: 46, width, height: height - 46 });
+        expect(await page.locator(".layout-header [data-cloud-panel-toggle]").count()).toBe(0);
+      }
       expect(await frame(page)?.locator("[data-help-view]").isVisible()).toBe(true);
     } finally {
       await context.close();

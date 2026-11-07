@@ -1,8 +1,8 @@
 import { formatNumber } from "@k2b/cloud/shared";
-import { navigateTo, refreshCurrentPath } from "@k2b/ssr/nav";
 import { Button, Checkbox, NoticeCard, prompts, useLocale } from "@k2b/ui";
 import { createSignal, Show } from "solid-js";
 import { apiClient } from "@/api/client";
+import { usePageSwap } from "@/frontend/lib/page-swap";
 import { useAccountsMessages } from "../messages";
 
 type SelectionPayload = {
@@ -86,6 +86,7 @@ function FinalizeDialog(props: {
 }
 
 export default function NotificationBatchActions(props: Props) {
+  const { openPage, showChanges } = usePageSwap();
   const messages = useAccountsMessages();
   const [loadingAction, setLoadingAction] = createSignal<"finalize" | "delete" | "retry" | null>(null);
   const isLoading = () => loadingAction() !== null;
@@ -121,7 +122,7 @@ export default function NotificationBatchActions(props: Props) {
                 },
               });
               if (!res.ok) throw new Error(await readError(res, messages().finalizeBatchFailed));
-              refreshCurrentPath();
+              showChanges();
             }}
           />
         ),
@@ -139,7 +140,7 @@ export default function NotificationBatchActions(props: Props) {
     try {
       const res = await apiClient.notifications.batches[":id"]["retry-failed"].$post({ param: { id: props.batchId } });
       if (!res.ok) throw new Error(await readError(res, messages().retryRecipientsFailed));
-      refreshCurrentPath();
+      showChanges();
     } catch (error) {
       prompts.error(error instanceof Error ? error.message : String(error));
     } finally {
@@ -159,7 +160,7 @@ export default function NotificationBatchActions(props: Props) {
     try {
       const res = await apiClient.notifications.batches[":id"].$delete({ param: { id: props.batchId } });
       if (!res.ok) throw new Error(await readError(res, messages().deleteDraftFailed));
-      navigateTo("/app/accounts/notifications");
+      openPage("/app/accounts/notifications");
     } catch (error) {
       prompts.error(error instanceof Error ? error.message : String(error));
     } finally {

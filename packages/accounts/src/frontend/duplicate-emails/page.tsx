@@ -18,7 +18,7 @@ export default ssr<AuthContext>(async (c) => {
   const requestedPage = parseUsersListState({ page: c.req.query("page") }).page;
   const [result, pending, policy, freeIpaEnabled] = await Promise.all([
     accountsAppService.user.listDuplicateEmails({ actor: toAccountsActor(actor), pagination: { page: requestedPage, perPage: 100 } }),
-    accountsAppService.accountRequest.list({ access: { userId: actor.id, isAdmin: true }, filter: { status: "pending" } }),
+    accountsAppService.accountRequest.countPending(),
     readAccountCategoryPolicy(),
     coreSettings.get<boolean>("freeipa.enable"),
   ]);
@@ -39,12 +39,7 @@ export default ssr<AuthContext>(async (c) => {
   ];
   return () => (
     <Layout c={c} fullWidth title={[{ title: t.accounts, href: "/app/accounts" }, { title: t.duplicateEmails }]}>
-      <AccountsWorkspace
-        active="duplicate-emails"
-        isAdmin={true}
-        pendingRequests={pending.total}
-        scrollPreserveKey="accounts-duplicate-emails"
-      >
+      <AccountsWorkspace active="duplicate-emails" isAdmin={true} pendingRequests={pending} scrollPreserveKey="accounts-duplicate-emails">
         <div class="flex flex-col gap-4">
           <div>
             <h1 class="text-base font-semibold text-primary">{t.duplicateEmails}</h1>

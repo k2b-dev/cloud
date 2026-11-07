@@ -7,7 +7,14 @@ import { notebooksYjs } from "../../../../lib/yjs";
 import { presencePeerId } from "../../../lib/presence-peer";
 import { RECONNECT_HEALTHY_AFTER_MS, reconnectDelayMs } from "../../../lib/reconnect";
 import { notebookWorkspaceMessages } from "../../messages";
-import { NOTE_SOFT_NAVIGATED_EVENT, PRESENCE_EVENT, SYNC_STATE_REQUEST_EVENT } from "../detail/events";
+import {
+  NOTE_SOFT_NAVIGATED_EVENT,
+  PRESENCE_EVENT,
+  PRESENCE_RETRY_EVENT,
+  PRESENCE_STATUS_EVENT,
+  type PresenceStatusEventDetail,
+  SYNC_STATE_REQUEST_EVENT,
+} from "../detail/events";
 import { dispatchWorkspaceEvent } from "./workspace-events";
 
 type Props = {
@@ -44,7 +51,12 @@ export default function WorkspaceEventBridge(props: Props) {
     let activeWorkspaceId = props.notebookId;
     let openedNoteId = props.initialNoteId ?? null;
     let participants: NotebookPresenceParticipant[] = [];
-    const emitPresence = () => window.dispatchEvent(new CustomEvent(PRESENCE_EVENT, { detail: participants }));
+    let presenceStatus: PresenceStatusEventDetail["status"] = "connecting";
+    // The status goes first, so the panel knows whether the list that follows is live or an outage's empty list.
+    const emitPresence = () => {
+      window.dispatchEvent(new CustomEvent<PresenceStatusEventDetail>(PRESENCE_STATUS_EVENT, { detail: { status: presenceStatus } }));
+      window.dispatchEvent(new CustomEvent(PRESENCE_EVENT, { detail: participants }));
+    };
     const clearPresence = () => {
       participants = [];
       emitPresence();
@@ -62,6 +74,7 @@ export default function WorkspaceEventBridge(props: Props) {
       const detail = (event as CustomEvent<{ noteId?: string }>).detail;
       if (!props.initialNoteId || !detail?.noteId || detail.noteId === openedNoteId) return;
       openedNoteId = detail.noteId;
+      if (presenceStatus === "live") presenceStatus = "connecting";
       clearPresence();
       watchOpenedNote();
     };
@@ -75,6 +88,7 @@ export default function WorkspaceEventBridge(props: Props) {
     // return here; a manual reload is the one action that can help.
     const terminateAndRefresh = () => {
       if (disposed) return;
+      presenceStatus = "down";
       clearPresence();
       disposed = true;
       if (reconnectTimer) clearTimeout(reconnectTimer);
@@ -123,6 +137,7 @@ export default function WorkspaceEventBridge(props: Props) {
           const parsed = NotebookPresenceParticipantSchema.array().safeParse(value.payload.participants);
           if (!parsed.success) return;
           participants = parsed.data;
+          presenceStatus = "live";
           emitPresence();
           return;
         }
@@ -142,7 +157,11 @@ export default function WorkspaceEventBridge(props: Props) {
             typeof value.payload?.noteId === "string" &&
             (code === "ACCESS_DENIED" || code === "ACCESS_REVOKED" || code === "NOTE_NOT_FOUND")
           ) {
-            if (value.payload.noteId === openedNoteId) clearPresence();
+            if (value.payload.noteId === openedNoteId) {
+              // No list will follow for this note, so the panel must not keep waiting for one.
+              presenceStatus = "down";
+              clearPresence();
+            }
             return;
           }
           if (typeof code === "string" && TERMINAL_CODES.has(code)) terminateAndRefresh();
@@ -181,6 +200,8 @@ export default function WorkspaceEventBridge(props: Props) {
         // generation and still needs this reconnect.
         if (disposed || socket !== ws) return;
         socket = undefined;
+        // One quick reconnect is routine; a connection that fails again is shown as an outage with a retry.
+        presenceStatus = failedConnects > 0 ? "down" : "connecting";
         clearPresence();
         if (event.code === 1008) {
           terminateAndRefresh();
@@ -194,8 +215,32 @@ export default function WorkspaceEventBridge(props: Props) {
       ws.onerror = () => ws.close();
     };
 
+    // "Try again" in the panel: connect now instead of waiting out the backoff.
+    const retryNow = () => {
+      // Live updates stopped for good (see terminateAndRefresh): only a reload can bring them back.
+      if (disposed) {
+        window.location.reload();
+        return;
+      }
+      // A connected socket asks for the note's people again.
+      if (socket?.readyState === WebSocket.OPEN) {
+        presenceStatus = "connecting";
+        emitPresence();
+        watchOpenedNote();
+        return;
+      }
+      if (socket || !reconnectTimer) return;
+      clearTimeout(reconnectTimer);
+      reconnectTimer = undefined;
+      presenceStatus = "connecting";
+      emitPresence();
+      connect();
+    };
+    window.addEventListener(PRESENCE_RETRY_EVENT, retryNow);
+
     connect();
     onCleanup(() => {
+      window.removeEventListener(PRESENCE_RETRY_EVENT, retryNow);
       disposed = true;
       if (reconnectTimer) clearTimeout(reconnectTimer);
       socket?.close();

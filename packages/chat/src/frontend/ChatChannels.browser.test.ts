@@ -22,7 +22,7 @@ const mount = async (page: Page, locale: string, path = "/app/chat") => {
   await page.goto(new URL(path, harness.url).href);
   await page.evaluate(
     async ({ path, locale }) => {
-      window.mountChat(await (await fetch(`/__props?path=${encodeURIComponent(path)}`)).json(), locale);
+      await window.mountChat(await (await fetch(`/__props?path=${encodeURIComponent(path)}`)).json(), locale);
     },
     { path, locale },
   );
@@ -282,7 +282,7 @@ for (const mode of [
         const props = await (await fetch("/__props?path=/app/chat/channels")).json();
         props.channelPage = await (await fetch("/api/chat/channels")).json();
         props.sidebar = { items: [], nextCursor: "later" };
-        window.mountChat(props, locale);
+        await window.mountChat(props, locale);
       }, mode.locale);
       await catalog().getByRole("button", { name: t.subscribed, exact: true }).click();
       await page.waitForURL(`**/app/chat/c/${id}`);
@@ -400,7 +400,7 @@ test("disabled authenticated discovery explains removal without an impossible pr
     await dialog.getByText(t.authenticatedDiscoveryDisabled + " " + t.removeDisabledAudience, { exact: true }).waitFor();
     expect(await dialog.getByRole("button", { name: t.retry, exact: true }).count()).toBe(0);
     expect(await dialog.getByRole("button", { name: t.save, exact: true }).isEnabled()).toBe(false);
-    const remove = dialog.getByRole("button", { name: t.removeName({ name: "All signed-in accounts" }), exact: true });
+    const remove = dialog.getByRole("button", { name: t.removeName({ name: "All signed-in people" }), exact: true });
     await remove.focus();
     await page.keyboard.press("Enter");
     await dialog.getByText(t.discoveryAudience({ count: 0 }), { exact: true }).waitFor();
@@ -521,7 +521,7 @@ for (const { locale, width } of [
       await page.reload();
       await page.evaluate(
         async ({ locale }) => {
-          window.mountChat(await (await fetch("/__props?path=/app/chat")).json(), locale);
+          await window.mountChat(await (await fetch("/__props?path=/app/chat")).json(), locale);
         },
         { locale },
       );

@@ -9,6 +9,7 @@
   },
   "dependencies": {
     "@k2b/cloud": "workspace:*",
+    "@k2b/ssr": "workspace:*",
     "zod": "catalog:"
   },
   "devDependencies": {

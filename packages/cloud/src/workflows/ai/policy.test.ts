@@ -19,7 +19,13 @@ const profile: AiModelProfile = {
 };
 test("canonical inference identity includes the resolved model configuration and full request", () => {
   expect(workflowAiHash({ b: 2, a: 1 })).toBe(workflowAiHash({ a: 1, b: 2 }));
-  for (const change of [{ model: "other" }, { temperature: 0.5 }, { extraBody: { seed: 1 } }, { baseURL: "https://example.test" }]) {
+  for (const change of [
+    { model: "other" },
+    { temperature: 0.5 },
+    { extraBody: { seed: 1 } },
+    { baseURL: "https://example.test" },
+    { dataBoundary: "restricted" as const },
+  ]) {
     expect(workflowAiModelHash({ ...profile, ...change })).not.toBe(workflowAiModelHash(profile));
   }
   const request = { prompt: "Choose", input: { body: "hello" }, choices: ["a", "b"] };

@@ -618,7 +618,9 @@ export default function SqlConsoleView(props: {
                         id: String(index),
                         header: column.name,
                         subtitle: <span class="font-mono! text-[11px] font-normal text-dimmed">{column.type}</span>,
-                        value: (row: unknown[]) => row[index],
+                        // The console shows what the query returned, so numbers keep their raw digits (IDs, years, ports).
+                        value: (row: unknown[]) =>
+                          typeof row[index] === "number" || typeof row[index] === "bigint" ? String(row[index]) : row[index],
                         align: /^(?:U?Int\d+|Float\d+|Decimal(?:\d+)?(?:\([^)]*\))?)$/.test(column.type.replace(/^Nullable\((.*)\)$/, "$1"))
                           ? "right"
                           : "left",

@@ -19,10 +19,24 @@ optionally preceded by `detailIcon`. `trailing` holds short text such as “2 ta
 A person with `onSelect` becomes a button. The list closes before the callback
 runs. Omit it for a person whose row has no destination.
 
+## Use AvatarFaces
+
+`AvatarFaces` draws the same faces and “+n” without the button and the list,
+for a row, link, or table cell that is already interactive. Pass `people` with
+`name`, `src`, `icon`, `shape`, and `tone`, and `total` when `people` names
+only some of them; “+n” then counts everyone else. `size="md"` gives larger
+faces that overlap less beside row text. The faces are decorative, so name the
+people in the surrounding label or a tooltip. `tone="neutral"` keeps a face
+gray, for example for someone outside the team.
+
+Overlapping faces are separated by a small gap that shows the background
+behind them, so they fit any row, hover, selected, or dark state without a
+ring color to keep in sync, and nothing paints outside a face.
+
 ## Import
 
 ```tsx
-import { AvatarStack, type AvatarStackPerson } from "@k2b/ui";
+import { AvatarFaces, AvatarStack, type AvatarStackPerson } from "@k2b/ui";
 ```
 
 ## Example
@@ -57,9 +71,16 @@ type AvatarStackProps = {
   people: readonly AvatarStackPerson[]; title: string; label: string; hint?: JSX.Element;
   max?: number; class?: string;
 };
+
+type AvatarFacesPerson = Pick<AvatarStackPerson, "name" | "src" | "icon" | "shape"> & { tone?: AvatarTone };
+
+type AvatarFacesProps = {
+  people: readonly AvatarFacesPerson[]; max?: number; total?: number; size?: "sm" | "md";
+};
 ```
 
-`AvatarShape` is `"circle" | "square"`; its default is `"circle"`.
+`AvatarShape` is `"circle" | "square"`; its default is `"circle"`. `AvatarTone`
+is `"person" | "neutral"`; its default is `"person"`.
 
 ## Accessibility
 

@@ -70,6 +70,9 @@ const data: MailboxPageData = {
   draftsMode: false,
   draftsPage: null,
   draftsError: null,
+  eventsMode: false,
+  eventsPage: null,
+  eventsError: null,
   activeView: null,
   savedViewId: null,
   savedViews: [],
@@ -84,6 +87,8 @@ const data: MailboxPageData = {
   listCursor: null,
   nextListCursor: null,
   listError: null,
+  hiddenDone: null,
+  assignedGroups: null,
   listTitle: "Needs action",
   conversationRowState: null,
   detailMessages: [],
@@ -226,6 +231,8 @@ describe("Mail workspace search return", () => {
             : data.listItems.map((item) => ({ ...item, unread: false })),
       nextListCursor: activeView === "needs_action" && !params.has("cursor") ? "needs-action-next" : null,
       listError: searching && invalidSearch ? "invalid_search" : null,
+      hiddenDone: null,
+      assignedGroups: null,
       selectedConversationId: conversation,
       selectedMessageId: params.get("message"),
       selectedSubject: conversation ? "one" : "",
@@ -452,7 +459,7 @@ describe("Mail workspace search return", () => {
     const last = new URL(workspaceRequests.at(-1)!, "http://localhost");
     expect(last.pathname + last.search).toBe(`${path}?scheduled=1`);
     expect(dom.root.querySelector("[data-mail-conversation-list]")).toBeNull();
-    expect(dom.root.querySelector("section > h1")?.textContent).toBe("Scheduled");
+    expect(dom.root.querySelector("section > h1")?.textContent).toBe("Outbox");
   });
 
   test("structured search records Needs action and builder clear restores it", async () => {
@@ -463,13 +470,13 @@ describe("Mail workspace search return", () => {
     };
     builderResult = { action: "apply", state, serialized: JSON.stringify(state) };
     if (!input()) dom.root.querySelector<HTMLButtonElement>("[data-mail-search-trigger]")!.click();
-    dom.root.querySelector<HTMLButtonElement>('button[aria-label="Search filters"]')!.click();
+    dom.root.querySelector<HTMLButtonElement>("button.mail-search-advanced")!.click();
     await settle();
     expect(new URL(location.href).searchParams.get("searchFrom")).toBe("view=needs_action&conversation=one");
     expect(title()).toBe("Search results");
     builderResult = { action: "clear" };
     if (!input()) dom.root.querySelector<HTMLButtonElement>("[data-mail-search-trigger]")!.click();
-    dom.root.querySelector<HTMLButtonElement>('button[aria-label="Search filters"]')!.click();
+    dom.root.querySelector<HTMLButtonElement>("button.mail-search-advanced")!.click();
     await settle();
     assertRoute("view=needs_action&conversation=one", "Needs action");
   });

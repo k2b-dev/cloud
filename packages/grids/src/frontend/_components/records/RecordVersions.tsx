@@ -158,6 +158,7 @@ export default function RecordVersions(props: { tableId: string; recordId: strin
     <Show when={status()?.enabled !== false}>
       <DetailPanel.Section
         title={t().durableHistory}
+        icon="ti ti-versions"
         collapsible
         // No count: revisions load page by page, so a count would only be the pages loaded so far.
         meta={enabledStatus() ? <StatusBadge tone="ok" variant="text" label={t().on} /> : undefined}

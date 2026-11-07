@@ -10,6 +10,8 @@ updated: 2026-10-23
 
 # Standalone service accounts and agents
 
+See [Who may do what](/en/docs/identity/access-model) for the access model.
+
 A standalone service account is a principal of its own: it has a name, it is
 not delegated by a user, and it is not bound to one application resource. Grant
 it access exactly like a user, through Space membership, Notebook access, or
@@ -73,9 +75,10 @@ agent CLI creates an OAuth client; administrators can also issue an API key.
 | API key | Static bearer until revoked or expired | Revoke the key or disable the account | `POST /api/admin/identity/service-accounts/<id>/api-keys` |
 
 The OAuth client must be confidential (`isPublic: false`). Its allowed scopes
-cap every token; an agent client created by `cld admin agents create` receives
-the same scopes as a `cld login` device session:
-`openid profile email offline_access read write`. Because the client has no
+cap every token. New agent clients created by `cld admin agents create` receive
+`openid profile email offline_access read write admin`. The `admin` scope does
+not grant an administrator role; the account's grants still decide access.
+Existing clients keep their scopes. Because the client has no
 user, `allowedProfiles`, `accessMode`, and redirect URIs are irrelevant; leave
 them empty. `GET /api/oauth/admin/clients?serviceAccountId=<id>` finds the
 clients of one account.
@@ -87,23 +90,30 @@ The access token carries `principal_type: "service_account"`,
 
 API keys are minted once; the raw token appears only in the creation response.
 Their metadata is listed and revoked like every other service-account key in the
-Accounts app and through `cld accounts service-accounts`.
+Accounts app and through `cld accounts service-accounts`. For one account,
+`GET /api/admin/identity/service-accounts/<id>/api-keys` lists them and
+`DELETE /api/admin/identity/service-accounts/<id>/api-keys/<key-id>` revokes
+one; a key of another account answers `404`. Both routes require an
+administrator.
+The Accounts key list hides automatic app runtime keys by default; **Show**
+includes them, while CLI and administrator API lists always include them.
 
-A key created with **Full access** carries `read`, `write`, and `admin`. The API
-never chooses for you: a general key must name its `scopes`, and a request with
-missing or empty `scopes` is refused with `400`. On existing resources the lower
-of the account's grant and the key's scope applies. Scopes also allow actions
-that need no grant. A key enters applications open to every signed-in account.
-With `write` or `admin`, it can create Pulse bases unless an administrator
-restricts that, and Assistant projects and Skills, and it becomes admin of what
-it creates.
+New **Full access** keys act as their account. Send `access: "full"` and omit
+`scopes`; issuance stores `read`, `write`, and `admin`. The lower of the
+account's grant and the key's scope applies on each resource. A key can also
+enter applications open to every signed-in account and create resources where
+the account is eligible.
 
-A key created earlier through **Full access** has no scopes, and every
-application denies it with `app_access_denied`. Cloud does not widen issued keys:
-revoke such a key and create a new one.
+The API still accepts explicit `scopes` and stores them unchanged; an empty
+list is refused with `400`. This input is deprecated for new keys: omit it. Issuing a key never
+changes an existing key. Older limited keys retain their limits; keys with no
+scopes still receive `app_access_denied`. Create a new key and revoke the old
+one when replacing it. In the Accounts key list, **Replace** on a key marked
+"Legacy, limited" creates a key that acts as the agent, shows it once, and
+revokes the old key only when you choose to; until then both keys work.
 
 For an external model client, choose **AI models only** when creating a key
-in **Accounts → Service accounts → Create API key**. Grant model access to the
+in **Accounts → API keys → Create API key**. Grant model access to the
 machine in AI settings. See the [OpenAI-compatible API](/en/docs/ai/openai-compatible-api#connect-a-machine-account)
 for purpose, model grants, usage limits, and revocation.
 
@@ -200,8 +210,8 @@ mailbox (its settings, access, sender identities, automations, and restoring it
 after deletion), deleting or clearing a Pulse base, changing a venue's
 settings, hours, shift templates, and page sections, listing a venue's API
 keys, and managing access in Pulse and Venue need an `admin` grant and a token
-with the `admin` scope. The client from `cld admin agents create` has only
-`read` and `write`.
+with the `admin` scope. New clients from `cld admin agents create` include
+that scope; existing clients keep their previous limits.
 Resource-bound API keys keep their binding and behave as before.
 
 ## Use an agent from the CLI
@@ -212,6 +222,10 @@ Resource-bound API keys keep their binding and behave as before.
 cld admin agents create "Release agent" --profile release-agent --yes
 cld admin agents ls --json
 cld admin agents rotate-secret "Release agent" --profile release-agent --yes
+cld admin agents keys create "Release agent" --name automation
+cld admin agents keys create "Release agent" --name models --models --expires 2027-01-01T00:00:00Z
+cld admin agents keys list "Release agent"
+cld admin agents keys revoke "Release agent" <key-id> --yes
 cld admin agents revoke "Release agent" --yes
 ```
 
@@ -221,6 +235,14 @@ profile that holds the client ID and the client secret. The secret is never
 printed and never logged; it is stored like a refresh token, in the config file
 with owner-only permissions or, with `--fd0`, in fd0. Pass `--server` when the
 profile should point at another origin than the administrator's own profile.
+
+`keys create` prints the raw API key once; store stdout securely. Omit
+`--models` for a key that acts as the account. There are no scope flags.
+`keys list` shows metadata and access: `full`, `models`, or `legacy, limited`
+when the key does not cover all of `read`, `write`, and `admin`. Use `--page`
+and `--per-page` to page through keys. `keys revoke` revokes the key only when
+it belongs to the named agent. These commands accept an account ID or
+an exact name.
 
 A profile with client credentials obtains an access token through the
 client-credentials grant on first use, caches it in the profile until shortly
@@ -247,7 +269,7 @@ required. See [Machine group management](./machine-group-management.md).
 ## Find names through a directory share
 
 An administrator can share exact people, groups, or accounts under **Accounts →
-Service accounts → Directory access**. A machine credential with `read` can
+API keys → Directory access**. A machine credential with `read` can
 then resolve those entries through `/api/accounts/entities`. Sharing a name
 does not grant resource access or disclose group relationships. See
 [Directory shares](/en/docs/identity/directory-shares).

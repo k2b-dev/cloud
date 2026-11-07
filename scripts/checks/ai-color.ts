@@ -3,7 +3,7 @@ import { join } from "node:path";
 import type { Finding, Rule } from "./rule";
 
 /**
- * Cyan means AI: `--k2b-ai-accent` marks AI surfaces in light and dark. An app color must not be mistaken for it, so
+ * Plum means AI: `--k2b-ai-accent` marks AI surfaces in light and dark. An app color must not be mistaken for it, so
  * every app `appearance` color and every launchpad fallback tile color keeps at least `MIN_HUE_DISTANCE` degrees of
  * OKLCH hue from both AI accents. Near-gray colors (chroma below `MIN_CHROMA`) carry no hue and pass. The Assistant
  * is the AI app and may use the AI colors.
@@ -52,7 +52,7 @@ const lineAt = (source: string, index: number) => source.slice(0, index).split("
 
 export const rule: Rule = {
   name: "ai-color",
-  description: "App colors keep their hue apart from the AI accent (cyan means AI)",
+  description: "App colors keep their hue apart from the AI accent (plum means AI)",
   run: async ({ workspaceRoot }) => {
     const tokens = join(workspaceRoot, TOKENS);
     if (!existsSync(tokens)) return [];
@@ -70,7 +70,7 @@ export const rule: Rule = {
         findings.push({
           file,
           line: lineAt(source, offset + (match.index ?? 0)),
-          message: `${owner} color ${match[0]} sits ${distance.toFixed(1)}° of OKLCH hue from the AI accent (${aiColors.join(", ")}); cyan means AI, so keep app colors at least ${MIN_HUE_DISTANCE}° apart.`,
+          message: `${owner} color ${match[0]} sits ${distance.toFixed(1)}° of OKLCH hue from the AI accent (${aiColors.join(", ")}); plum means AI, so keep app colors at least ${MIN_HUE_DISTANCE}° apart.`,
         });
       }
     };

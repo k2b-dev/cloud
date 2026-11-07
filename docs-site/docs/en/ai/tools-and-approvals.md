@@ -5,7 +5,7 @@ section: AI
 order: 1040
 description: Let models request application actions while keeping authorization and approval explicit.
 tags: [ai, tools, approvals]
-updated: 2026-10-20
+updated: 2026-11-05
 ---
 
 # Tools and approvals
@@ -627,6 +627,12 @@ opens the stored snapshot using the same renderer in the chat and approval
 page. Approval and remembering remain unavailable until that exact snapshot
 loads; a failed load offers retry. Opening the draft separately may show a newer
 version. The compact card, stream and list do not include the full body.
+Without a connection, both answers of an open question wait, decline
+included, and the reason line says so until the connection returns, so no
+answer is lost on the way. When an answer was sent but its arrival is not
+confirmed, the card says "Your answer is not confirmed" and shows the result
+in the same place once it arrives.
+
 The interactive CLI loads complete content before offering approval;
 `cld assistant actions content <chat> <turn> <call>` reads one pending proposal.
 Cloud Login retains its existing restriction on incomplete send questions.
@@ -694,8 +700,9 @@ editor to revoke remembered choices.
 
 The Assistant's **Approvals** row above **Studio** opens a view of waiting
 requests. **My account → Approvals** lists requests across apps.
-A **Pending approvals** notification opens that list for requests from turns
-started outside a signed-in browser session.
+A **Pending approvals** notification and a Cloud Login push point to that
+list for requests that no open chat tab shows, including a chat that keeps
+running after its tab closed.
 An ACP editor bridge can reject `confirm` requests but cannot approve them.
 See [Action approvals](/en/docs/identity/approvals) for the lists, notification
 rules, and decision channels.

@@ -4,6 +4,7 @@ import { parseAiModelChoice } from "../../cloud/src/shared/ai-models";
 import { parseArgs } from "node:util";
 import { sql } from "@k2b/cloud";
 import { initializePlatform } from "@k2b/cloud/start";
+import { complete } from "@k2b/nessi/ai";
 import { resolveAiModel } from "../../cloud/src/ai/settings";
 import type { AiResolvedModel } from "../../cloud/src/ai/types";
 import { STUDIO_EVAL_CASES } from "../src/artifacts/studio-eval-cases";
@@ -65,7 +66,7 @@ const proxy = Bun.serve({
     if (request.headers.get("authorization") !== `Bearer ${token}`) return new Response(null, { status: 403 });
     try {
       const input = await request.json();
-      return Response.json(await provider.complete({ ...input, signal: request.signal }));
+      return Response.json(await complete(provider, { ...input, signal: request.signal }));
     } catch (error) {
       console.error("Evaluation provider request failed", error instanceof Error ? error.message : error);
       return Response.json({ error: "Configured provider request failed" }, { status: 502 });

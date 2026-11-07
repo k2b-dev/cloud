@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, expect, setSystemTime, spyOn, test } from "bun:test";
 import { redis } from "@k2b/cloud";
 import { ServiceAccountSchema, UserSchema } from "@k2b/cloud/contracts";
+import * as platform from "@k2b/cloud/services";
 import { useUnitClients } from "../../../../scripts/fixtures/unit-clients";
 import type { ChatContext } from "./access";
 import { DISCUSSION_BYTE_LIMIT, DISCUSSION_CALL_LIMIT, DiscussionRead } from "./discussion-read";
@@ -59,9 +60,11 @@ const envelope = (permission = "write", contained = false) => ({
 });
 const cache = new Map<string, { value: string; until: number }>();
 let catalog: ReturnType<typeof mockDiscussionCatalog>, get: ReturnType<typeof spyOn>, set: ReturnType<typeof spyOn>;
+let publicUrl: ReturnType<typeof spyOn<typeof platform, "get">>;
 beforeEach(() => {
   setSystemTime(new Date(now));
   process.env.CLOUD_CORE_INTERNAL_ORIGIN = "http://core.test";
+  publicUrl = spyOn(platform, "get").mockResolvedValue("https://cloud.example.test/configured/path");
   cache.clear();
   catalog = mockDiscussionCatalog([providerApp("inventory")]);
   get = spyOn(redis, "get").mockImplementation(async (key) => {
@@ -78,6 +81,8 @@ beforeEach(() => {
   });
 });
 afterEach(() => {
+  expect(publicUrl.mock.calls.every(([key]) => key === "app.url")).toBe(true);
+  publicUrl.mockRestore();
   catalog.mockRestore();
   get.mockRestore();
   set.mockRestore();

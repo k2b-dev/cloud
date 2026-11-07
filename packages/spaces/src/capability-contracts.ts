@@ -9,6 +9,7 @@ import {
 } from "@k2b/cloud/contracts";
 import { z } from "zod";
 import {
+  AssigneeDeltaShape,
   CreateItemTemplateSchema,
   CreateTaskChecklistEntrySchema,
   DeadlineAllDaySchema,
@@ -37,6 +38,7 @@ import {
   TimeOfDaySchema,
   UpdateItemTemplateSchema,
   UpdateTaskChecklistEntrySchema,
+  validAssigneeDelta,
 } from "./contracts";
 import {
   CalendarAddressSchema,
@@ -425,6 +427,7 @@ export const SpaceAssigneeDataSchema = z
 export const SpaceAssigneeListDataSchema = z.array(SpaceAssigneeDataSchema).max(100);
 
 const ItemRelationInputShape = {
+  ...AssigneeDeltaShape,
   assigneeIds: UserIdListSchema.optional().describe(
     "Complete replacement set of person or service account UUIDs returned by List assignable Space members. Dropping the account holding an active claim is refused; release it first with task.release.",
   ),
@@ -433,6 +436,11 @@ const ItemRelationInputShape = {
 
 const TaskFieldsInputShape = {
   title: z.string().trim().min(1).max(200).optional().describe("Optional task title."),
+  expectedTitle: z
+    .string()
+    .max(200)
+    .optional()
+    .describe("Exact previously read title; mismatch returns TITLE_CONFLICT. Required with title."),
   description: markdownInput(z.string().max(5000).nullable().optional().describe("Optional task description; null clears it.")),
   deadline: DeadlineInputSchema.nullable()
     .optional()
@@ -542,6 +550,11 @@ export const TaskCreateInputSchema = z
 export const TaskUpdateInputSchema = z
   .object({ itemId: ItemIdSchema, ...ItemRelationInputShape, ...TaskFieldsInputShape })
   .strict()
+  .refine(validAssigneeDelta, { message: "Do not mix replacement and assignee deltas or add and remove the same assignee" })
+  .refine((data) => data.title === undefined || data.expectedTitle !== undefined, {
+    message: "expectedTitle is required with title",
+    path: ["expectedTitle"],
+  })
   .refine(({ itemId: _itemId, ...changes }) => Object.values(changes).some((value) => value !== undefined), {
     message: "At least one task field must be provided",
   });
@@ -600,6 +613,7 @@ export const EventCreateInputSchema = z
 export const EventUpdateInputSchema = z
   .object({ itemId: ItemIdSchema, ...ItemRelationInputShape, ...EventFieldsInputShape })
   .strict()
+  .refine(validAssigneeDelta, { message: "Do not mix replacement and assignee deltas or add and remove the same assignee" })
   .refine(({ itemId: _itemId, ...changes }) => Object.values(changes).some((value) => value !== undefined), {
     message: "At least one event field must be provided",
   })

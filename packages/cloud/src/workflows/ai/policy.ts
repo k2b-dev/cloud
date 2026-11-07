@@ -45,5 +45,7 @@ export const workflowAiModelHash = (profile: AiModelProfile): string =>
       maxOutputTokens: profile.maxOutputTokens,
       reasoningEffort: profile.reasoningEffort,
       extraBody: profile.extraBody,
+      // Only restricted adds the key, so hashes of admitted private and hosted tasks stay valid.
+      ...(profile.dataBoundary === "restricted" ? { dataBoundary: profile.dataBoundary } : {}),
     },
   });

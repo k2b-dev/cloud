@@ -6,6 +6,7 @@ prepareNoTransformRouterTest();
 const { default: api } = await import("./api/index");
 const { default: pages } = await import("./frontend/index");
 const { adminPages } = await import("./frontend/index");
+const { pwaRoutes } = await import("./pwa/index");
 
 describe("compression boundaries", () => {
   for (const path of [
@@ -54,6 +55,13 @@ describe("compression boundaries", () => {
   for (const path of ["/", "/space"]) {
     test(`pages ${path} opts out`, async () => {
       const response = await pages.request(path);
+      expect(response.status).toBeLessThan(500);
+      expect(response.headers.get("Cache-Control") ?? "").toContain("no-transform");
+    });
+  }
+  for (const path of ["/", "/space", "/space/item"]) {
+    test(`pwa ${path} opts out`, async () => {
+      const response = await pwaRoutes.request(path);
       expect(response.status).toBeLessThan(500);
       expect(response.headers.get("Cache-Control") ?? "").toContain("no-transform");
     });

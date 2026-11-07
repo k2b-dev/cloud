@@ -448,11 +448,20 @@ export function TextEditor(props: TextEditorProps) {
         positionMenu();
       });
   };
-  const unavailable = () => !!props.host?.structure && !props.host.structure.available();
+  const unavailable = createMemo(() => !!props.host?.structure && !props.host.structure.available());
+  // Closed table menus keep their entries until they open again. A host may report another availability on every
+  // edit, and each entry rebuilt or re-enabled in a hidden menu restyles the whole page through the shared `:has()`
+  // rules, so typing would lag.
+  const [tableMenuShown, setTableMenuShown] = createSignal(false);
+  const whileMenuShown = <T,>(read: () => T) => createMemo<T>((last) => (tableMenuShown() ? read() : last), untrack(read));
+  const menuRevision = whileMenuShown(documentRevision);
+  const menuUnavailable = whileMenuShown(unavailable);
   const actionDisabled = (action: MenuAction) => {
-    documentRevision();
+    menuRevision();
+    menuUnavailable();
     const wrap = cell()?.closest<HTMLElement>(".k2b-ste-table");
-    return blocked() || !editor || !wrap || !tableActionEnabled(editor.view, wrap, action);
+    const view = editor?.view;
+    return blocked() || !view || !wrap || untrack(() => !tableActionEnabled(view, wrap, action));
   };
   const isMove = (action: MenuAction) => action.startsWith("move");
   const runAction = (action: MenuAction) => {
@@ -494,11 +503,11 @@ export function TextEditor(props: TextEditorProps) {
     deleteCol: "menuDelete",
   } as const;
   const menuRow = () => {
-    documentRevision();
+    menuRevision();
     return t().menuRow(Number(cell()?.dataset.r ?? 0));
   };
   const menuColumn = () => {
-    documentRevision();
+    menuRevision();
     const column = Number(cell()?.dataset.c ?? 0);
     const header = cell()?.closest(".k2b-ste-table")?.querySelector<HTMLElement>(`.k2b-ste-cell[data-r="0"][data-c="${column}"]`);
     return t().menuColumn(header?.dataset.raw || t().column(column + 1));
@@ -573,7 +582,7 @@ export function TextEditor(props: TextEditorProps) {
   const items = (kind: MenuScope): DropdownItem[] => {
     if (props.readOnly) return copyItems();
     const align = () => {
-      documentRevision();
+      menuRevision();
       return cell()?.parentElement?.style.textAlign || "left";
     };
     const row: DropdownItem[] = [
@@ -623,7 +632,7 @@ export function TextEditor(props: TextEditorProps) {
             choice: "checkbox",
             class: "k2b-ste-header-choice",
             checked: () => {
-              documentRevision();
+              menuRevision();
               return cell()?.closest<HTMLElement>(".k2b-ste-table")?.dataset.header === "true";
             },
           }),
@@ -637,7 +646,7 @@ export function TextEditor(props: TextEditorProps) {
           },
           ...copyItems(),
           actionItem("deleteTable"),
-          ...(unavailable() ? [{ label: t().structureUnavailable, disabled: true as const }] : []),
+          ...(menuUnavailable() ? [{ label: t().structureUnavailable, disabled: true as const }] : []),
         ],
       },
     ];
@@ -652,6 +661,7 @@ export function TextEditor(props: TextEditorProps) {
   const tableMenuChange = (open: boolean) => {
     menuOpen = open;
     tableMenuOpen = open && !phoneMenu();
+    setTableMenuShown(open);
   };
   let swallow: AbortController | undefined;
   const pressBesideMenu = (event: PointerEvent) => {
@@ -683,6 +693,7 @@ export function TextEditor(props: TextEditorProps) {
   const menuClose = () => {
     menuOpen = false;
     tableMenuOpen = false;
+    setTableMenuShown(false);
     setScope("cell");
     grip = undefined;
     schedulePosition();
@@ -879,6 +890,11 @@ export function TextEditor(props: TextEditorProps) {
         EditorView.updateListener.of((update) => {
           schedulePosition();
           if (update.docChanged) queueMicrotask(() => setDocumentRevision((revision) => revision + 1));
+        }),
+        // The caret never moves under a toolbar that stays at the top of a scrolling host.
+        EditorView.scrollMargins.of(() => {
+          const slot = root.querySelector<HTMLElement>(".k2b-ste-toolbar-slot");
+          return slot && getComputedStyle(slot).position === "sticky" ? { top: slot.offsetHeight } : null;
         }),
         props.extensions ?? [],
         props.dictation ? dictationExtension() : [],

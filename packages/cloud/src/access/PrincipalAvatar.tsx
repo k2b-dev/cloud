@@ -1,10 +1,19 @@
+import { Avatar } from "@k2b/ui";
 import { Show } from "solid-js";
 import { CloudAvatar } from "../account/Avatar";
 import type { AccessEntry } from "../contracts/shared";
 
 // One hue per principal kind from the avatar palette, so a group and all signed-in people read apart at a glance.
-// People use a neutral background; a service account shows its robot or photo, never a bare icon.
+// People use a neutral background; a service account shows its robot or photo, and the account of an object its code
+// icon unless it has a photo.
 const hues = { group: "#22c55e", authenticated: "#3b82f6" } as const;
+
+/**
+ * Code's own service accounts show the code icon; they keep their kind `code` where the code lane adds it, so the
+ * dialog can still refuse them Manage. The account behind an object's API keys shows the key icon.
+ */
+const kindIcons: Readonly<Record<string, string>> = { code: "ti ti-code", resource_bound: "ti ti-key" };
+const kindIcon = (kind: string | undefined) => (kind === undefined ? undefined : kindIcons[kind]);
 
 /** The 32px avatar of an access entry in the expanded editor and on the denial page. */
 export default function PrincipalAvatar(props: {
@@ -29,7 +38,10 @@ export default function PrincipalAvatar(props: {
     <Show
       when={props.entry.principal.type === "user" ? props.entry.principal : undefined}
       fallback={
-        props.entry.principal.type === "service_account" ? (
+        // A Code account or an API key shows its icon in the square of service accounts unless it has a picture.
+        props.entry.principal.type === "service_account" && kindIcon(props.entry.serviceAccountKind) && !props.entry.avatarHash ? (
+          <Avatar name={props.label} icon={kindIcon(props.entry.serviceAccountKind)} shape="square" size="sm" class="h-8 w-8" />
+        ) : props.entry.principal.type === "service_account" ? (
           <CloudAvatar
             username={props.label}
             userId={props.entry.principal.serviceAccountId}

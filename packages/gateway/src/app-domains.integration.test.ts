@@ -2,6 +2,10 @@ import { afterAll, beforeAll, expect, test } from "bun:test";
 import { APP_DOMAINS_DDL, readAppDomains } from "@k2b/cloud/contracts/app-domains";
 import { SQL } from "bun";
 import { createDisposableDatabase, suiteFor } from "../../../scripts/fixtures/test-infra";
+import { cloudHostSet } from "./app-domains";
+import { createGatewayHandler } from "./handler";
+import { createProxyStats } from "./proxy";
+import { buildRouteTable } from "./trie";
 
 suiteFor("database")("durable app domain assignments", () => {
   let db: SQL;
@@ -27,5 +31,37 @@ suiteFor("database")("durable app domain assignments", () => {
       { host: "alias.test", appId: "site", redirectTo: "site.test", createdAt: "2026-10-30T00:00:00.000Z" },
       { host: "site.test", appId: "site", redirectTo: null, createdAt: "2026-10-30T00:00:00.000Z" },
     ]);
+  });
+  test("the anonymous Geo internal route is refused before Core's root fallback", async () => {
+    const handle = createGatewayHandler({
+      snapshot: () => ({
+        cloudHosts: cloudHostSet("https://cloud.test", [], false),
+        domainsReady: true,
+        domains: new Map(),
+        apps: new Map(),
+        development: false,
+      }),
+      table: () => buildRouteTable([{ prefix: "/", appId: "core", baseUrl: "http://127.0.0.1:1" }]),
+      stats: createProxyStats(),
+      log: () => {},
+      health: () => new Response(),
+      storage: async () => new Response(),
+    });
+    const response = await handle(
+      new Request("https://cloud.test/api/_internal/geo/v1/autocomplete", {
+        method: "POST",
+        headers: {
+          Host: "cloud.test",
+          "X-Forwarded-Host": "core.internal",
+          "X-Forwarded-Proto": "http",
+          "X-Forwarded-For": "127.0.0.1",
+          Forwarded: "host=core.internal;proto=http",
+        },
+        body: JSON.stringify({ text: "Orle" }),
+      }),
+      { timeout: () => {}, upgrade: () => false },
+      { address: "203.0.113.7", forwardedFor: "203.0.113.7" },
+    );
+    expect(response?.status).toBe(404);
   });
 });

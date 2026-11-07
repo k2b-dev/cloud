@@ -5,7 +5,7 @@ section: Operations
 order: 1141
 description: Replace application infrastructure environment values with an app key file and the Core address, with explicit migration checks and rollback boundaries.
 tags: [deployment, upgrade, configuration, app-keys]
-updated: 2026-10-31
+updated: 2026-11-05
 ---
 
 # Upgrade applications to app keys
@@ -20,6 +20,14 @@ migration and signed background and OAuth requests. Do not apply the new
 Compose template to an earlier release. Third-party applications must also
 use the platform clients; explicitly retain their environment values until
 the application author has migrated them.
+
+Cloud releases 0.56.0–0.65.0 still refuse resource-principal reads signed with an app key
+([#2377](https://github.com/k2b-dev/cloud/issues/2377)). Its advice to leave
+`CLOUD_APP_KEY` and `CLOUD_APP_KEY_FILE` unset still applies to those releases.
+Before enabling keys, upgrade Core and all applications to a release containing
+the resource-principal read fix. After switching, verify Chat readability checks
+or another consumer of `readResourcePrincipals()` as well as startup and
+background calls.
 
 ## Upgrade an existing installation
 

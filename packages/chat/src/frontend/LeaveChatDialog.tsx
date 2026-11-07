@@ -1,30 +1,15 @@
-import { Button, Combobox, InlineGuidance, LocaleProvider, prompts, toast } from "@k2b/ui";
+import { Button, Combobox, InlineGuidance, toast } from "@k2b/ui";
 import { createResource, createSignal, type JSX, Show } from "solid-js";
 import type { z } from "zod";
-import { chatMessages } from "../messages";
 import type { MemberSchema } from "../service/contracts";
 import { type ChatDialogStore, type Conversation, DialogActions, DialogError, errorMessage, useChatMessages } from "./chat-dialog";
 import { ChatRequestError } from "./chat-store";
 import { MemberAvatar } from "./MemberPicker";
 
-type LeaveProps = { store: ChatDialogStore; conversation: Conversation; viewerId: string; locale: string };
+export type LeaveProps = { store: ChatDialogStore; conversation: Conversation; viewerId: string; locale: string };
 type Member = z.infer<typeof MemberSchema>;
 
 /** Resolves true once the viewer has left; their open view then ends in "No access" through the live revoke. */
-export const openLeaveChatDialog = (props: LeaveProps): Promise<boolean | undefined> =>
-  prompts.dialog<boolean>(
-    (close, context) => (
-      // A prompt renders outside the workspace, so its content gets the workspace's locale again.
-      <LocaleProvider locale={props.locale}>
-        <LeaveChatDialog {...props} close={close} setDismissHandler={context.setDismissHandler} />
-      </LocaleProvider>
-    ),
-    {
-      title: chatMessages.resolve([props.locale]).t.leaveChatTitle,
-      icon: "ti ti-logout",
-      size: "medium",
-    },
-  );
 
 /**
  * Leaving ends access to the history, unless a group keeps the person in the chat. The last manager hands the chat

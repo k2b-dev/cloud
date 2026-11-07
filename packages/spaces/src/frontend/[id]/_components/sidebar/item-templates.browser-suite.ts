@@ -8,6 +8,7 @@ import type { Browser, Page } from "playwright";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
 import type { SpaceColumn, SpaceItem, SpaceItemTemplate, SpaceTag } from "@/contracts";
+import { checkFixtureSessionOrigin } from "../../../../../../../scripts/fixtures/session-origin";
 import { browserName, launchBrowser } from "../../../../../../ui/test/browser";
 import { formatTemplateDate, proposeTemplateDates, templateSchedule } from "../../../../presentation/item-templates";
 import { templateDraftSource } from "../shared/item-form/templates";
@@ -118,10 +119,13 @@ beforeAll(async () => {
     hostname: "127.0.0.1",
     port: 0,
     async fetch(request) {
+      const refused = await checkFixtureSessionOrigin(request);
+      if (refused) return refused;
       const url = new URL(request.url);
       if (url.pathname.startsWith("/_ssr/")) return new Response(Bun.file(join(root, url.pathname)));
       if (url.pathname.startsWith("/ui/")) return new Response(Bun.file(join(ui, url.pathname.slice(4))));
       if (url.pathname === "/api/spaces/Space1/items" && request.method === "POST") {
+        expect(request.headers.get("cookie")).toContain("session_token=fixture-session");
         const body = (await request.json()) as Record<string, unknown>;
         created.push(body);
         return Response.json({ id: "New001", spaceId: "Space1", startsAt: null, endsAt: null, ...body });
@@ -145,7 +149,10 @@ beforeAll(async () => {
       if (url.pathname !== "/app/spaces/Space1") return new Response("Not found", { status: 404 });
       const locale = url.searchParams.get("lang") === "de" ? "de" : "en";
       return new Response(pageHtml(locale, url.searchParams.has("many") ? many : templates), {
-        headers: { "content-type": "text/html; charset=utf-8" },
+        headers: {
+          "content-type": "text/html; charset=utf-8",
+          "set-cookie": "session_token=fixture-session; Path=/; HttpOnly; SameSite=Lax",
+        },
       });
     },
   });

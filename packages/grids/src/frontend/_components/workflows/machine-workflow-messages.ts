@@ -4,7 +4,7 @@ export const machineWorkflowMessages = i18n.define({
   messages: {
     en: {
       title: "Automatic execution owner",
-      hint: "Choose an agent or service account with its own base write access. Its mandate applies only to this workflow. Manual human runs keep the caller’s permissions.",
+      hint: "Choose an agent with its own base write access. Its mandate applies only to this workflow. Manual human runs keep the caller’s permissions.",
       loading: "Loading execution authority…",
       loadFailed: "Execution authority could not be loaded.",
       changeFailed: "Execution authority could not be changed. Check the account’s base write grant, refresh, and try again.",
@@ -15,7 +15,7 @@ export const machineWorkflowMessages = i18n.define({
       humanOwner: "Automatic runs use the existing human owner.",
       unavailable: "Account unavailable",
       agent: "Agent",
-      serviceAccount: "Service account",
+      serviceAccount: "Agent (API key only)",
       active: "Active",
       paused: "Paused",
       blocked: "Blocked",
@@ -28,7 +28,7 @@ export const machineWorkflowMessages = i18n.define({
     },
     de: {
       title: "Identität für automatische Ausführung",
-      hint: "Wähle einen Agenten oder ein Dienstkonto mit eigenem Schreibzugriff auf diese Basis. Das Mandat gilt nur für diesen Workflow. Manuelle Aufrufe durch Menschen behalten deren Rechte.",
+      hint: "Wähle einen Agenten mit eigenem Schreibzugriff auf diese Basis. Das Mandat gilt nur für diesen Workflow. Manuelle Aufrufe durch Menschen behalten deren Rechte.",
       loading: "Ausführungsrechte werden geladen…",
       loadFailed: "Die Ausführungsrechte konnten nicht geladen werden.",
       changeFailed:
@@ -41,7 +41,7 @@ export const machineWorkflowMessages = i18n.define({
       humanOwner: "Automatische Läufe verwenden den bisherigen menschlichen Besitzer.",
       unavailable: "Konto nicht verfügbar",
       agent: "Agent",
-      serviceAccount: "Dienstkonto",
+      serviceAccount: "Agent (nur API Key)",
       active: "Aktiv",
       paused: "Pausiert",
       blocked: "Gesperrt",

@@ -106,9 +106,11 @@ suite("notebooks current resource readers", () => {
         if (!grant) throw new Error("Expected wildcard grant");
         grants.push(grant.id);
         await sql`INSERT INTO notebooks.notebook_access (notebook_id, access_id) VALUES (${containerId}::uuid, ${grant.id}::uuid)`;
-        // Expired, disabled and deleted principals stay excluded even for public grants.
-        expect(await check()).toEqual([user, account, delegated]);
-        expect(await checkContainer()).toEqual([user, account, delegated]);
+        // Expired, disabled and deleted principals stay excluded even for public grants. All signed-in people
+        // are people: a personal key counts as its person, an agent needs its own right.
+        const readers = authenticated ? [user, delegated] : [user, account, delegated];
+        expect(await check()).toEqual(readers);
+        expect(await checkContainer()).toEqual(readers);
         await sql`DELETE FROM auth.access WHERE id = ${grant.id}::uuid`;
       }
       await sql`UPDATE auth.service_accounts SET status = 'disabled' WHERE id = ${delegatedId}::uuid`;

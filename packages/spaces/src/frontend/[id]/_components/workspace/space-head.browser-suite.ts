@@ -208,6 +208,7 @@ const overviewWork = {
       endsAt: null,
       deadline: "2026-10-16",
       deadlineAllDay: true,
+      canWrite: true,
     },
     {
       shortId: "Item03",
@@ -220,6 +221,7 @@ const overviewWork = {
       endsAt: null,
       deadline: null,
       deadlineAllDay: false,
+      canWrite: true,
     },
     {
       shortId: "Item21",
@@ -232,6 +234,7 @@ const overviewWork = {
       endsAt: null,
       deadline: "2026-10-21",
       deadlineAllDay: true,
+      canWrite: true,
     },
   ],
 };

@@ -30,16 +30,16 @@ const navFill = [
 // The stacked object chip below 64rem (#1441) is the same selected navigation fill.
 const stackedChip =
   '.k2b-ui .k2b-app-workspace__sidebar[data-mobile="stacked"] > .k2b-app-workspace__sidebar-desktop :is( .k2b-app-workspace__sidebar-body > .k2b-app-workspace__sidebar-item, .k2b-app-workspace__sidebar-section-content > .k2b-app-workspace__sidebar-item ):is(.is-active, [aria-current], :has(> [aria-current]))';
-// The soft tabs, view tabs, segments, and active filter chips (#1493) share the navigation fill.
-const softControls = [
-  '.k2b-ui .k2b-segmented-control__option[data-selected="true"]',
-  '.k2b-ui .k2b-segmented-control__option[aria-checked="true"]',
-  '.k2b-ui .k2b-filter-chip[data-active="true"]',
-  '.k2b-ui .k2b-filter-chip[data-active="true"]:hover',
+// Tabs, view tabs, segments, and a menu's segment row take the selected edge and fill in the app ink, like an
+// active filter chip: no navigation fill.
+const edgeSelected = [
+  '.k2b-ui .k2b-segmented-control__option:is([data-selected="true"], [aria-checked="true"])',
   '.k2b-ui .k2b-tabs__list button[aria-selected="true"]',
   '.k2b-ui .k2b-tabs[data-variant="pill"] .k2b-tabs__item:has([aria-selected="true"])',
   '.k2b-ui .k2b-view-tabs__tab[aria-current="page"]',
 ];
+const selectedEdge = "color-mix(in srgb, var(--k2b-app-workspace-active) var(--k2b-edge-selected-share), var(--k2b-surface))";
+const selectedFill = "color-mix(in srgb, var(--k2b-app-workspace-active) var(--k2b-edge-selected-fill), var(--k2b-surface))";
 const navInk = [
   `${sidebar}.is-active`,
   `${sidebar}[data-variant="object"].is-active:not(.has-action)`,
@@ -49,11 +49,9 @@ const navInk = [
   ".k2b-ui .k2b-navigation__row[data-active] > .k2b-navigation__control",
   '.k2b-ui .k2b-settings__tabs button[data-active="true"]',
 ];
-const rows = [
-  '.k2b-ui .k2b-data-table__row[data-selected="true"]',
-  '.k2b-ui .k2b-file-grid__item[aria-selected="true"]',
-  '.k2b-ui .k2b-content-file-tree__row[data-state="selected"]',
-];
+// A selected table row mixes a stronger fill of its own (see the table test below).
+const tableRow = '.k2b-ui .k2b-data-table__row[data-selected="true"]';
+const rows = ['.k2b-ui .k2b-file-grid__item[aria-selected="true"]', '.k2b-ui .k2b-content-file-tree__row[data-state="selected"]'];
 
 describe("selection hooks", () => {
   test("one navigation fill and one row fill alias platform selection and action without color-mix", () => {
@@ -77,10 +75,28 @@ describe("selection hooks", () => {
     expect(declarations(`${sidebar}.is-active`).get("font-weight")).toEqual(["600"]);
   });
 
-  test("content selection changes paint without weight, padding, or border width", () => {
-    for (const selector of rows) {
+  test("tabs, view tabs, and segments take the selected edge and fill in the host ink", () => {
+    for (const selector of edgeSelected) {
       const selected = declarations(selector);
-      expect(selected.get("background"), selector).toEqual(["var(--k2b-row-selected)"]);
+      expect(selected.get("--k2b-edge-color"), selector).toEqual([selectedEdge]);
+      expect(selected.get("background"), selector).toEqual([selectedFill]);
+      expect(
+        [...selected.keys()].filter((property) => /^(?:font(?:-weight)?|padding(?:-.+)?|border(?:-.+)?)$/.test(property)),
+        selector,
+      ).toEqual([]);
+    }
+    const row = declarations('.k2b-ui .k2b-dropdown__row > .k2b-dropdown__item[data-selected="true"]');
+    expect(row.get("background")).toEqual([selectedFill]);
+    expect(row.get("box-shadow")).toEqual([`inset 0 0 0 var(--k2b-edge-width) ${selectedEdge}`]);
+  });
+
+  test("content selection changes paint without weight, padding, or border width", () => {
+    expect(declarations(tableRow).get("background")).toEqual([
+      "color-mix(in srgb, var(--k2b-app-workspace-active) 16%, var(--k2b-surface))",
+    ]);
+    for (const selector of [tableRow, ...rows]) {
+      const selected = declarations(selector);
+      if (selector !== tableRow) expect(selected.get("background"), selector).toEqual(["var(--k2b-row-selected)"]);
       expect(
         [...selected.keys()].filter((property) => /^(?:font(?:-weight)?|padding(?:-.+)?|border(?:-.+)?-width|border)$/.test(property)),
         selector,
@@ -111,17 +127,14 @@ describe("selection hooks", () => {
       expect(declarations(selector).get("background"), selector).toEqual(["var(--k2b-selected)"]);
   });
 
-  test("other controls retain their existing platform surfaces and solid action fill", () => {
-    expect(declarations('.k2b-ui .k2b-dropdown__row > .k2b-dropdown__item[data-selected="true"]').get("background")).toEqual([
-      "var(--k2b-surface)",
-    ]);
+  test("other controls retain their solid action fill", () => {
     for (const selector of ['.k2b-ui .k2b-date-grid button[aria-selected="true"]', '.k2b-ui .k2b-date-months button[data-selected="true"]'])
       expect(declarations(selector).get("background"), selector).toEqual(["var(--k2b-action-solid)"]);
   });
 
   test("only the listed navigation and content rules consume selection hooks", () => {
     for (const [hook, allowed] of [
-      ["--k2b-app-workspace-selected", [...navFill, stackedChip, ...softControls]],
+      ["--k2b-app-workspace-selected", [...navFill, stackedChip]],
       ["--k2b-row-selected", rows],
     ] as const) {
       const consumers = rules.filter((rule) => [...cssDeclarations(rule.body).values()].flat().some((value) => value.includes(hook)));

@@ -108,13 +108,8 @@ export default ssr<AuthContext>(async (c) => {
     page: null,
   });
 
-  const [pendingRequestsPage, parentGroupIdsPage, managedGroupIdsPage] = await Promise.all([
-    isAdmin
-      ? accountsService.accountRequest.list({
-          access: { userId: user.id, isAdmin: true },
-          filter: { status: "pending" },
-        })
-      : Promise.resolve({ total: 0 }),
+  const [pendingRequests, parentGroupIdsPage, managedGroupIdsPage] = await Promise.all([
+    isAdmin ? accountsService.accountRequest.countPending() : Promise.resolve(0),
     accountsService.group.parent.list({ id: groupId }),
     accountsService.group.managedGroup.list({ id: groupId }),
   ]);
@@ -262,7 +257,7 @@ export default ssr<AuthContext>(async (c) => {
         active="groups"
         ancestor
         isAdmin={isAdmin}
-        pendingRequests={pendingRequestsPage.total}
+        pendingRequests={pendingRequests}
         scrollPreserveKey="accounts-group-detail"
       >
         <div class="flex flex-col gap-3">

@@ -5,10 +5,12 @@ section: Identity and access
 order: 355
 description: Configure OAuth clients and choose authorization code, device authorization, or client credentials.
 tags: [identity, oauth, oidc]
-updated: 2026-10-19
+updated: 2026-10-31
 ---
 
 # OAuth clients and flows
+
+See [Who may do what](/en/docs/identity/access-model) for the access model.
 
 Use authorization code when an integration acts for a person. Use the device
 authorization grant when that person signs in on a machine without a usable
@@ -424,6 +426,10 @@ OAuth client creation supports:
 | `allowedGroupIds` | `[]` | Direct or nested group members allowed in `specific` mode |
 | `isPublic` | `false` | Public client without a secret |
 | `allowDeviceGrant` | `false` | Allow the device authorization grant; public clients only |
+
+Navigating to `GET /oauth/logout` displays a sign-out confirmation and keeps the
+session active. Only its same-origin `POST /oauth/logout` form signs the user out,
+then redirects to the registered `logoutUri` when requested.
 
 Supported scopes:
 

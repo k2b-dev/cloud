@@ -73,9 +73,28 @@ const expectWholeWaysUp = (nodes: Array<{ id: string; parentId: string | null }>
   expect(nodes.filter((node) => node.parentId !== null && !ids.has(node.parentId))).toEqual([]);
 };
 
+/**
+ * What autoanalyze leaves behind when it runs after pages were deleted but has not yet looked at their links: the
+ * planner expects one row in `notes` and still many in `note_links`. Every query here must stay bounded under that
+ * estimate too (#2388).
+ */
+const planWithEmptyNotesAndStaleLinks = async () => {
+  const pages = range(101).map((page): [string, null] => [`N${page}`, null]);
+  const links = range(30).flatMap((source) =>
+    range(101)
+      .filter((target) => target !== source)
+      .map((target): [string, string] => [`N${source}`, `N${target}`]),
+  );
+  await notebook("Removed before planning", pages, links);
+  await sql`ANALYZE notebooks.note_links`.simple();
+  await sql`DELETE FROM notebooks.notebooks WHERE id = ${notebookIds.pop()!}::uuid`;
+  await sql`ANALYZE notebooks.notes`.simple();
+};
+
 beforeAll(async () => {
   if (!testInfra.database) return;
   await migrate();
+  await planWithEmptyNotesAndStaleLinks();
 });
 
 afterAll(async () => {

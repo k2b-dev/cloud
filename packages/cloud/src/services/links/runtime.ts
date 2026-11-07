@@ -3,7 +3,7 @@ import { sql } from "../../runtime/clients";
 import { logger } from "../logging";
 import { cleanupLinksBatch, LINK_CLEANUP_BATCH, setupLinks } from "./store";
 
-// All apps compete for one platform schedule, including replicas and apps sharing a package.
+// Core replicas compete for one platform schedule for the shared links table.
 const scheduler = lazySync((sync) =>
   sync.scheduler({
     id: "cloud-links-retention",
@@ -13,8 +13,11 @@ const scheduler = lazySync((sync) =>
 );
 
 /** Provision before app setup and readiness, then drain this worker before NATS during shutdown. */
-export const startLinksRuntime = async (): Promise<() => Promise<void>> => {
+export const startLinksRuntime = async (applicationId: string): Promise<() => Promise<void>> => {
   await setupLinks(sql);
+  // Every application can create links during setup; only Core owns retention.
+  if (applicationId !== "core") return async () => {};
+
   const stopping = new AbortController();
   await scheduler().create({
     id: "retention",

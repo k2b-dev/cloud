@@ -10,6 +10,8 @@ updated: 2026-10-24
 
 # Machine group management
 
+See [Who may do what](/en/docs/identity/access-model) for the access model.
+
 An administrator can grant an agent or standalone service account management of
 one local group. In **Accounts → Groups → Managers**, add the account by name.
 The picker and manager list show its account type. This is a separate grant:

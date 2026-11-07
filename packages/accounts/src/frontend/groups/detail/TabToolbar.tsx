@@ -45,7 +45,7 @@ export default function TabToolbar(props: Props) {
           active={Boolean(props.showServiceAccounts)}
           class="shrink-0 self-stretch"
           title={props.showServiceAccounts ? messages().hideServiceAccounts : messages().showServiceAccounts}
-          label={messages().serviceAccounts}
+          label={messages().agents}
         />
       )}
       {props.actions}

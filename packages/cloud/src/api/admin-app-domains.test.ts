@@ -123,3 +123,57 @@ test("domain middleware does not change sibling app administration routes", asyn
   expect((await routes.request(request("/apps/site/keys", "POST", { publicKey: APP_KEY_FIXTURES[0].publicKey }))).status).toBe(200);
   expect((await routes.request(request(`/apps/site/keys/${KEY_ID}`, "DELETE"))).status).toBe(200);
 });
+
+test("cookie-backed domain writes require the canonical Origin, including bodyless checks and deletes", async () => {
+  const { sessionOriginGuard } = await import("../server/middleware/session-origin");
+  const calls: string[] = [];
+  const service: typeof appDomains = {
+    ...appDomains,
+    add: async () => {
+      calls.push("add");
+      return ok(domain);
+    },
+    set: async () => {
+      calls.push("set");
+      return ok(domain);
+    },
+    remove: async () => {
+      calls.push("remove");
+      return ok({ deleted: true });
+    },
+    check: async () => {
+      calls.push("check");
+      return ok({ status: null });
+    },
+  };
+  const routes = new Hono<AuthContext>()
+    .use(
+      "*",
+      sessionOriginGuard([], async () => "https://cloud.example.test"),
+    )
+    .route("/", createAdminAppDomainRoutes(authenticate, service));
+  for (const cookie of ["session_token", "pwa_session"]) {
+    for (const [method, path, body] of [
+      ["POST", "/site/domains", { host: domain.host }],
+      ["PATCH", `/site/domains/${domain.host}`, { redirectTo: null }],
+      ["DELETE", `/site/domains/${domain.host}`, undefined],
+      ["POST", `/site/domains/${domain.host}/check`, undefined],
+    ] as const) {
+      for (const origin of [undefined, "null", "https://sibling.example.test", "https://attacker.test", "https://cloud.example.test"]) {
+        const req = request(path, method, body);
+        req.headers.set("cookie", `${cookie}=fixture-session`);
+        if (origin) req.headers.set("origin", origin);
+        calls.length = 0;
+        const response = await routes.request(req);
+        if (origin === "https://cloud.example.test") {
+          expect(response.ok).toBe(true);
+          expect(calls.length).toBeGreaterThan(0);
+        } else {
+          expect(response.status).toBe(403);
+          expect(await response.json()).toMatchObject({ code: "INVALID_ORIGIN" });
+          expect(calls).toEqual([]);
+        }
+      }
+    }
+  }
+});

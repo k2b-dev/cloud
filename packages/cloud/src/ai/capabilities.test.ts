@@ -1652,9 +1652,6 @@ describe("AI capability catalog", () => {
       family: "openai-compatible",
       model: "fixture",
       capabilities: { streaming: true, tools: true, images: false, thinking: false, usage: true },
-      async complete() {
-        throw new Error("Unexpected completion");
-      },
       async *stream(request) {
         requests.push(request);
         if (requests.length === 1) {
@@ -2209,9 +2206,6 @@ describe("AI capability catalog", () => {
         yield { type: "block_start", blockId: "done", index: 0, kind: "text" };
         yield { type: "block_end", blockId: "done", index: 0, block: { type: "text", text: "Done" } };
         yield { type: "usage", usage: { input: 20, output: 2, total: 22 }, finishReason: "stop" };
-      },
-      async complete() {
-        throw new Error("complete should not be used");
       },
     };
     const store = {

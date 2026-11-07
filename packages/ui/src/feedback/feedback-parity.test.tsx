@@ -18,6 +18,7 @@ const { default: InlineGuidance } = await import("./InlineGuidance");
 const { DialogHeader, createFormState } = await import("./prompts");
 const { K2B_TOAST_CONTAINER_ID, toast } = await import("./toast");
 const { Tooltip } = await import("./Tooltip");
+const { default: PanelDialog } = await import("../layout/PanelDialog");
 
 const stylesDir = resolve(import.meta.dir, "../styles");
 const feedbackCss = await Bun.file(resolve(stylesDir, "feedback-parity.css")).text();
@@ -358,6 +359,41 @@ describe("@k2b/ui Cloud feedback parity", () => {
     const untitled = renderToString(() => createComponent(DialogHeader, { close: () => {} }));
     expect(untitled).toContain("k2b-dialog__header-spacer");
     expect(untitled).not.toContain("<h2>");
+  });
+
+  test("a toned header shows the tone's icon instead of its own and names the tone before the title", () => {
+    const prompt = renderToString(() =>
+      createComponent(DialogHeader, { title: "Delete note?", icon: "ti ti-trash", tone: "danger", close: () => {} }),
+    );
+    expect(prompt).toContain('<i class="ti ti-alert-octagon" data-tone="danger" aria-hidden="true">');
+    expect(prompt).not.toContain("ti-trash");
+    // The tone's word describes the dialog; the heading keeps the title alone, so its accessible name does not change.
+    expect(prompt).toContain('<span class="k2b-sr-only" data-dialog-tone-label>Caution</span>');
+    expect(prompt).toContain("<h2>Delete note?</h2>");
+
+    const panel = renderToString(() =>
+      createComponent(PanelDialog, {
+        tone: "success",
+        get children() {
+          return createComponent(PanelDialog.Header, { title: "Invoice created", icon: "ti ti-file-invoice" });
+        },
+      }),
+    );
+    expect(panel).toContain('class="k2b-panel-dialog" data-surface="contained" data-tone="success"');
+    expect(panel).toMatch(/class="k2b-panel-dialog__icon k2b-icon-tile" data-tone="success"[^>]*><i class="ti ti-circle-check">/);
+    expect(panel).toContain('<span class="k2b-sr-only" data-dialog-tone-label>Success</span>');
+    expect(panel).toContain("<h2>Invoice created</h2>");
+
+    const plain = renderToString(() =>
+      createComponent(PanelDialog, {
+        get children() {
+          return createComponent(PanelDialog.Header, { title: "Invoice created", icon: "ti ti-file-invoice" });
+        },
+      }),
+    );
+    expect(plain).not.toContain("data-tone");
+    expect(plain).not.toContain("k2b-sr-only");
+    expect(plain).toContain("ti ti-file-invoice");
   });
 
   test("renders a tooltip surface that is inert until the browser mounts it", () => {

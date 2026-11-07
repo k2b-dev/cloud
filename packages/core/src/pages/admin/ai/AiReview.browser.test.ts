@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, beforeEach, expect, test } from "bun:test";
 import type { Browser, Page, Route } from "playwright";
-import { launchBrowser } from "../../../../../ui/test/browser";
+import { launchBrowser, settled } from "../../../../../ui/test/browser";
 import { aiAreaBrowserFixture } from "./AiArea.browser-fixture";
 import { aiFixtureCatalog } from "./AiArea.fixture-data";
 
@@ -447,4 +447,114 @@ test("model conflict retry retains a locally changed access mode", async () => {
   await page.getByRole("button", { name: "Merge and save" }).click();
   await page.getByRole("button", { name: "Discard my changes" }).waitFor();
   expect(requests[1]).toEqual(expect.objectContaining({ label: "Remote name", access: { expectedRevision: 1, entries: [] } }));
+}, 30_000);
+
+test("the boundary select offers no privacy commitment without moving the form; that boundary stays fixed and apps-only", async () => {
+  await page.route("**/api/admin/core/ai/providers", async (route) => {
+    await json(route, { ...catalog.providers.find((entry) => entry.id === "gemini-api")!, id: "demo", revision: 1 });
+  });
+  await goto("sec=providers");
+  await page.getByRole("button", { name: "Add provider", exact: true }).first().click();
+  const dialog = page.getByRole("dialog");
+  await dialog.getByRole("radio").first().focus();
+  await page.keyboard.press("Home");
+  await page.waitForFunction(() => document.activeElement?.tagName === "INPUT");
+  await dialog.getByRole("textbox", { name: /^Name/ }).fill("Gemini");
+  await dialog.getByRole("textbox", { name: /^Base URL/ }).fill("https://generativelanguage.example/v1beta/openai/");
+  const testButton = dialog.getByRole("button", { name: "Test connection" });
+  await settled(page);
+  const before = await testButton.boundingBox();
+  await dialog.getByRole("radio", { name: "No privacy commitment" }).click();
+  await dialog.getByText(/makes no data-protection commitment/).waitFor({ state: "visible" });
+  expect(await testButton.boundingBox()).toEqual(before);
+  await dialog.getByRole("radio", { name: "Hosted" }).click();
+  await settled(page);
+  expect(await testButton.boundingBox()).toEqual(before);
+  await dialog.getByRole("radio", { name: "No privacy commitment" }).click();
+  const created = page.waitForRequest((request) => request.method() === "POST" && request.url().endsWith("/api/admin/core/ai/providers"));
+  await dialog.getByRole("button", { name: "Save and choose models" }).click();
+  expect((await created).postDataJSON()).toEqual(expect.objectContaining({ dataBoundary: "restricted" }));
+  // Saving reloads the area on the new provider; the next visit waits for that reload, or it aborts it.
+  await page.waitForURL(/[?&]p=demo(&|$)/);
+  await page.waitForSelector('body[data-ready="true"]');
+
+  await goto("sec=providers&p=gemini-api&pane=conn");
+  await page.getByText("This boundary cannot change after creation", { exact: false }).waitFor();
+  expect(await page.getByRole("radio", { name: "Hosted" }).count()).toBe(0);
+  await goto("sec=providers&p=gemini-api&m=gemini-artikel");
+  await page.getByText("Apps only.", { exact: false }).waitFor();
+  expect(await page.getByRole("radio", { name: "All signed-in people" }).count()).toBe(0);
+  await goto("sec=classes&slot=fast");
+  await page.getByRole("combobox").first().click();
+  await page
+    .getByRole("option", { name: /GPT-OSS/ })
+    .first()
+    .waitFor();
+  expect(await page.getByRole("option", { name: /Gemini Artikeltexte/ }).count()).toBe(0);
+}, 30_000);
+
+test("manual decision models require context and retain the draft after a rejected save", async () => {
+  const requests: unknown[] = [];
+  await page.route("**/api/admin/core/ai/providers/cortecs/models", async (route) => {
+    requests.push(route.request().postDataJSON());
+    await json(route, { message: "Synthetic decision rejection" }, 400);
+  });
+  await goto("sec=providers&p=cortecs&state=listempty");
+  await page.getByRole("button", { name: "Add models", exact: true }).filter({ visible: true }).first().click();
+  const dialog = page.getByRole("dialog");
+  await dialog.getByLabel("Enter a model ID manually").fill("cloudflare/clef");
+  await dialog.getByRole("radio", { name: "Decision", exact: true }).click();
+  await dialog.getByRole("button", { name: /Add 1/ }).click();
+  expect(requests).toHaveLength(0);
+  await dialog.getByLabel(/^Context window/).fill("32768");
+  await dialog.getByRole("button", { name: /Add 1/ }).click();
+  await dialog.getByText("Synthetic decision rejection", { exact: true }).waitFor();
+  expect(requests).toEqual([
+    [expect.objectContaining({ kind: "decision", providerModel: "cloudflare/clef", contextWindow: 32768, capabilities: [] })],
+  ]);
+  expect(await dialog.getByLabel("Enter a model ID manually").inputValue()).toBe("cloudflare/clef");
+}, 30_000);
+
+test("editing a decision model preserves vision and token prices while clearing chat parameters", async () => {
+  const model = catalog.models[0]!;
+  const requests: unknown[] = [];
+  await page.route(`**/api/admin/core/ai/models/${model.id}`, async (route) => {
+    requests.push(route.request().postDataJSON());
+    await json(route, { message: "Synthetic decision rejection" }, 400);
+  });
+  await goto(`sec=providers&p=${model.providerId}&m=${model.id}`);
+  await page.getByRole("radio", { name: "Decision", exact: true }).click();
+  const vision = page.getByLabel("Reads images directly", { exact: true });
+  if (!(await vision.isChecked())) await vision.check();
+  expect(await page.getByLabel(/^Context window/).isVisible()).toBe(true);
+  expect(await page.getByLabel("Uses tools", { exact: true }).count()).toBe(0);
+  await save();
+  await page.getByText("Synthetic decision rejection", { exact: true }).waitFor();
+  expect(requests).toEqual([
+    expect.objectContaining({
+      kind: "decision",
+      capabilities: ["vision"],
+      pricing: model.pricing,
+      maxOutputTokens: null,
+      extraBody: null,
+      temperature: null,
+    }),
+  ]);
+}, 30_000);
+
+test("the decision class offers only decision models and preserves its URL and selection after failure", async () => {
+  const requests: unknown[] = [];
+  await page.route("**/api/admin/core/ai/assignments/decision", async (route) => {
+    requests.push(route.request().postDataJSON());
+    await json(route, { message: "Synthetic decision assignment rejection" }, 400);
+  });
+  await goto("sec=classes&slot=decision&state=decision");
+  expect(new URL(page.url()).searchParams.get("slot")).toBe("decision");
+  const select = page.getByRole("combobox", { name: "Choice", exact: true });
+  await select.click();
+  expect(await page.getByRole("option", { name: /gpt|mistral|whisper/i }).count()).toBe(0);
+  await page.getByRole("option", { name: "Clef decision", exact: true }).click();
+  await page.getByText("Synthetic decision assignment rejection", { exact: true }).waitFor();
+  expect(requests).toEqual([expect.objectContaining({ variantId: "clef" })]);
+  expect(await select.textContent()).toContain("Clef decision");
 }, 30_000);

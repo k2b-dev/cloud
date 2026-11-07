@@ -102,7 +102,6 @@
     "@k2b/cloud-app-grids src/styles/overview-icon-tile.browser.test.ts": 2.5,
     "@k2b/cloud-app-grids src/styles/selection-colors.browser.test.ts": 2.8,
     "@k2b/cloud-app-mail scripts/perf-baseline/page-change-network.browser.test.ts": 2.6,
-    "@k2b/cloud-app-mail src/frontend/MailOverview.browser.test.ts": 15.1,
     "@k2b/cloud-app-mail src/frontend/_components/MailAdminKept.browser.test.ts": 4.3,
     "@k2b/cloud-app-mail src/frontend/_components/MailComposeSettings.browser.test.ts": 8.2,
     "@k2b/cloud-app-mail src/frontend/_components/MailComposerEditor.browser.test.ts": 27.2,

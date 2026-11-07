@@ -1,5 +1,141 @@
 # Changelog
 
+## [0.49.0](https://github.com/k2b-dev/cloud/compare/npm-ui-v0.48.0...npm-ui-v0.49.0) (2026-11-06)
+
+
+### Features
+
+* **cloud:** the phone web shell opens the panel full height with a draggable handle and drops the bottom dock ([#2678](https://github.com/k2b-dev/cloud/issues/2678)) ([aa0aecc](https://github.com/k2b-dev/cloud/commit/aa0aecc68f4c1eb9ba5aca35fe5e689064c77906))
+* **spaces:** add a task in the Cloud app from the field above the keyboard ([#2687](https://github.com/k2b-dev/cloud/issues/2687)) ([aae9f03](https://github.com/k2b-dev/cloud/commit/aae9f03b47f8e394daa81dca4c01f07ab2ec36ac))
+* **spaces:** the Cloud app switches Spaces from the title and lists a Space by status ([#2684](https://github.com/k2b-dev/cloud/issues/2684)) ([0c249ce](https://github.com/k2b-dev/cloud/commit/0c249ce4862e6e41bed7c97bf46317ca12962c66))
+* **ui:** confirm prompts can warn without being destructive ([#2691](https://github.com/k2b-dev/cloud/issues/2691)) ([336d901](https://github.com/k2b-dev/cloud/commit/336d90105d9794265caddeb09c30553419d69cdd))
+
+
+### Bug Fixes
+
+* **cloud:** the access dialog marks you in every app and the public link warns and copies as in the mockup ([#2696](https://github.com/k2b-dev/cloud/issues/2696)) ([07b86b1](https://github.com/k2b-dev/cloud/commit/07b86b147996216b59a1edf676409e6025585f5e))
+* **cloud:** the access dialog shows every state of the approved mockup and Remove is red ([#2681](https://github.com/k2b-dev/cloud/issues/2681)) ([9b92493](https://github.com/k2b-dev/cloud/commit/9b92493a958e8ca727d25a4e314b0b1a4b667f58))
+* **ui:** detail pages drop the back row beside a sidebar that marks their ancestor ([#2710](https://github.com/k2b-dev/cloud/issues/2710)) ([3e34b52](https://github.com/k2b-dev/cloud/commit/3e34b524c7480df735a207f95cc1789797a7d641))
+* **ui:** pad committed NumberInput values to their decimal precision ([#2679](https://github.com/k2b-dev/cloud/issues/2679)) ([1c03ca4](https://github.com/k2b-dev/cloud/commit/1c03ca4fb483378a54b3287b2371330f303d73d5))
+
+## [0.48.0](https://github.com/k2b-dev/cloud/compare/npm-ui-v0.47.0...npm-ui-v0.48.0) (2026-11-05)
+
+
+### ⚠ BREAKING CHANGES
+
+* **ui:** `CalendarEvent.dataSpaceItemId` is removed; pass `data: { spaceItemId }` instead, which still renders `data-space-item-id`. Without `onEventActivate`, a click on an entry opens the calendar's own detail instead of following `href` at once. An entry with `checked: false` whose time has passed turns red in every view.
+
+### Features
+
+* **ui:** calendar entries are light with an edge in their color ([#2670](https://github.com/k2b-dev/cloud/issues/2670)) ([dbeac7c](https://github.com/k2b-dev/cloud/commit/dbeac7c865469c23039739088e77c289ad953db9))
+* **ui:** calendar entries draw icons, people, links, and their own detail ([#2672](https://github.com/k2b-dev/cloud/issues/2672)) ([3329ac4](https://github.com/k2b-dev/cloud/commit/3329ac41b2f21699f6b22768c13db538e87f42f2))
+* **ui:** composer attachments show upload progress, and a blocked microphone in an installed app names no browser path ([#2645](https://github.com/k2b-dev/cloud/issues/2645)) ([950166c](https://github.com/k2b-dev/cloud/commit/950166c7c3218021afa9c82a3d6f06688430522d))
+
+
+### Bug Fixes
+
+* **cloud:** the access dialog keeps full level words and marks on a phone ([#2669](https://github.com/k2b-dev/cloud/issues/2669)) ([27e121a](https://github.com/k2b-dev/cloud/commit/27e121a7d24997f7748b8a62c5cd0709dac1d78f))
+* **ui:** overlapping faces show the row behind them and file glyphs stay centred ([#2671](https://github.com/k2b-dev/cloud/issues/2671)) ([c04f100](https://github.com/k2b-dev/cloud/commit/c04f1006c5fb2dac29b8cc1f418c2e45c2340eb3))
+* **ui:** sending from a chat composer creates no stray computations ([#2652](https://github.com/k2b-dev/cloud/issues/2652)) ([63faa5b](https://github.com/k2b-dev/cloud/commit/63faa5b13ee016da6cc6c8424a1f31dbefe8cf2e))
+* **ui:** the chat composer keeps the 2 px field edge and no shadow ([#2655](https://github.com/k2b-dev/cloud/issues/2655)) ([fb16528](https://github.com/k2b-dev/cloud/commit/fb165288fae01af7a70a04f06f2de76d7ccc6275))
+
+## [0.47.0](https://github.com/k2b-dev/cloud/compare/npm-ui-v0.46.0...npm-ui-v0.47.0) (2026-11-05)
+
+
+### Features
+
+* **ui:** a decision can wait for the network, and a phone screen can take the footer's place ([#2643](https://github.com/k2b-dev/cloud/issues/2643)) ([6ded792](https://github.com/k2b-dev/cloud/commit/6ded792a1aa27389e3aea9e2153b36315c492d60))
+* **ui:** detail sections carry link commands, loading states, and access rows ([#2603](https://github.com/k2b-dev/cloud/issues/2603)) ([f8e3586](https://github.com/k2b-dev/cloud/commit/f8e3586ddf48eb76a4bb664f51974fb3ab2f3fae))
+* **ui:** the mobile shell's header, tab bar, and sidebar stand still in view transitions ([#2620](https://github.com/k2b-dev/cloud/issues/2620)) ([5d601eb](https://github.com/k2b-dev/cloud/commit/5d601eb1786003f72aebdbb8598f19925d5b15dc))
+
+
+### Bug Fixes
+
+* **cloud:** the access dialog's states and level menu match the approved mockup ([#2631](https://github.com/k2b-dev/cloud/issues/2631)) ([290f221](https://github.com/k2b-dev/cloud/commit/290f221f1218fe888b9bb2d2a8558cb63562ba76))
+
+
+### Performance Improvements
+
+* **ui:** keep Cloud app counter islands small ([#2622](https://github.com/k2b-dev/cloud/issues/2622)) ([9709b1a](https://github.com/k2b-dev/cloud/commit/9709b1ac0fb657c712907364383acd3c191539df))
+* **ui:** the virtual feed measures before it writes ([#2637](https://github.com/k2b-dev/cloud/issues/2637)) ([ff70a91](https://github.com/k2b-dev/cloud/commit/ff70a9151f159e008dc445943505de029975baae))
+
+## [0.46.0](https://github.com/k2b-dev/cloud/compare/npm-ui-v0.45.0...npm-ui-v0.46.0) (2026-11-03)
+
+
+### Features
+
+* **cloud:** one access dialog collects changes and shows what changes before saving ([#2543](https://github.com/k2b-dev/cloud/issues/2543)) ([f88a68d](https://github.com/k2b-dev/cloud/commit/f88a68dcab732a6cb640b2d4a4c568330cb87dce))
+* **cloud:** the file chooser is a compact file dialog ([#2481](https://github.com/k2b-dev/cloud/issues/2481)) ([f771fd0](https://github.com/k2b-dev/cloud/commit/f771fd01eecfe54ac0e67931237e3274f4891fb7))
+* **cloud:** the profile menu hides the sidebar and the panel button matches search and help ([#2486](https://github.com/k2b-dev/cloud/issues/2486)) ([ed36267](https://github.com/k2b-dev/cloud/commit/ed36267bc4862090cfb5321b67efecfd40bd47e8))
+* **mail:** shared mailboxes show what happened in an events tab ([#2506](https://github.com/k2b-dev/cloud/issues/2506)) ([419acae](https://github.com/k2b-dev/cloud/commit/419acae5c1f22ede57cb331eacf08aeb5f6c070a))
+* **mail:** the wide list shows who took part in a conversation ([#2515](https://github.com/k2b-dev/cloud/issues/2515)) ([78a1b4c](https://github.com/k2b-dev/cloud/commit/78a1b4ce485230cd0cfb797e59f851d29249f8ea))
+* **mail:** wide screens show more of the head and a labelled search filter ([#2521](https://github.com/k2b-dev/cloud/issues/2521)) ([c7043a7](https://github.com/k2b-dev/cloud/commit/c7043a7312ba735556ea16eaf0aef40904a82720))
+* **notebooks:** the detail panel shows who is here and who has access ([#2499](https://github.com/k2b-dev/cloud/issues/2499)) ([5c4b65e](https://github.com/k2b-dev/cloud/commit/5c4b65e1d40fc02fcf1e5fe9382a6963c9988522))
+* **ui:** details toggles use the info icon ([#2497](https://github.com/k2b-dev/cloud/issues/2497)) ([05aaf5e](https://github.com/k2b-dev/cloud/commit/05aaf5e7dbd5995fced3ebae3137717a177fbba7))
+
+
+### Bug Fixes
+
+* **notebooks:** typing in notebooks no longer lags ([#2492](https://github.com/k2b-dev/cloud/issues/2492)) ([5861ced](https://github.com/k2b-dev/cloud/commit/5861cedeca224228618bb4200e536f1cbe6a9c68))
+* **ui:** keyboard hints use normal weight ([#2488](https://github.com/k2b-dev/cloud/issues/2488)) ([1638384](https://github.com/k2b-dev/cloud/commit/163838488167e687e451d1090ccbbd966a95d427))
+* **ui:** pickers are wide enough for names ([#2490](https://github.com/k2b-dev/cloud/issues/2490)) ([8b8d732](https://github.com/k2b-dev/cloud/commit/8b8d73233d2da7e9cfa373c5127ee56336c77c22))
+* **ui:** search results never flash 'nobody found' or trip a ResizeObserver loop ([#2528](https://github.com/k2b-dev/cloud/issues/2528)) ([eed463d](https://github.com/k2b-dev/cloud/commit/eed463d13c46db1b4a7f610de88770a3be7c0c9c))
+* **ui:** table grips show again after a menu closes before it announced itself ([#2523](https://github.com/k2b-dev/cloud/issues/2523)) ([c41ce83](https://github.com/k2b-dev/cloud/commit/c41ce8390ce203ab4d16b3462303d9d83922680c)), closes [#2520](https://github.com/k2b-dev/cloud/issues/2520)
+* **ui:** the shell no longer restyles the whole page when a node changes ([#2495](https://github.com/k2b-dev/cloud/issues/2495)) ([6bb2c9c](https://github.com/k2b-dev/cloud/commit/6bb2c9c40a572ccdb3e567f2b3d4c654e38b70b6))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @k2b/ssr bumped from 0.20.2 to 0.21.0
+  * peerDependencies
+    * @k2b/ssr bumped from ^0.12.0 || ^0.13.0 || ^0.14.0 || ^0.15.0 || ^0.16.0 || ^0.17.0 || ^0.18.0 || ^0.19.0 || ^0.20.0 to ^0.21.0
+
+## [0.45.0](https://github.com/k2b-dev/cloud/compare/npm-ui-v0.44.0...npm-ui-v0.45.0) (2026-11-02)
+
+
+### Features
+
+* **core:** admin settings put name, field and source in one row ([#2452](https://github.com/k2b-dev/cloud/issues/2452)) ([4dc2462](https://github.com/k2b-dev/cloud/commit/4dc246227e42f0e7ea97bb9db23715545afbd58a))
+* **core:** apps open beside a searchable list ([#2461](https://github.com/k2b-dev/cloud/issues/2461)) ([bae395e](https://github.com/k2b-dev/cloud/commit/bae395ea2c0c91e56f3b0248989cf3e46bd0d1cd))
+* **ui:** a list's status dot keeps one place ([#2457](https://github.com/k2b-dev/cloud/issues/2457)) ([e52ac10](https://github.com/k2b-dev/cloud/commit/e52ac105c9d063b359ce6a0e6f8f17f2830b863b))
+* **ui:** buttons, filters and clickable cards follow the edge rule ([#2459](https://github.com/k2b-dev/cloud/issues/2459)) ([ebf8e93](https://github.com/k2b-dev/cloud/commit/ebf8e935b1bb2069256e5e4d4d4a6333026ba1d6))
+* **ui:** choice cards share the 2 px edge in every state ([#2473](https://github.com/k2b-dev/cloud/issues/2473)) ([1979ed0](https://github.com/k2b-dev/cloud/commit/1979ed081f1f6462170ebb598440a91bc4bb3403))
+* **ui:** choice list options can show an icon and be disabled one by one ([#2478](https://github.com/k2b-dev/cloud/issues/2478)) ([8810d1b](https://github.com/k2b-dev/cloud/commit/8810d1b1aa2e3c735834017473802cbcd3ed0966))
+* **ui:** dialogs can carry a success, warning or danger tone ([#2480](https://github.com/k2b-dev/cloud/issues/2480)) ([97d7903](https://github.com/k2b-dev/cloud/commit/97d790320923af01e18f470e36a4fb6d4de2b329))
+* **ui:** fields share one 2 px edge in every state ([#2458](https://github.com/k2b-dev/cloud/issues/2458)) ([534685c](https://github.com/k2b-dev/cloud/commit/534685cd33d221bc1dbae36890655283c8d1f78f))
+* **ui:** segments, tabs and view tabs follow the edge rule ([#2462](https://github.com/k2b-dev/cloud/issues/2462)) ([4feac8b](https://github.com/k2b-dev/cloud/commit/4feac8b834c208a0ec08a94483443567ef1c5240))
+* **ui:** settings rows give every value a fixed place ([#2451](https://github.com/k2b-dev/cloud/issues/2451)) ([18c65b8](https://github.com/k2b-dev/cloud/commit/18c65b87f1973c7450556f2159c88c644d1dbcc0))
+* **ui:** tables show a grey head, row and column lines, and a selected row as a fill ([#2469](https://github.com/k2b-dev/cloud/issues/2469)) ([1f93886](https://github.com/k2b-dev/cloud/commit/1f93886348abb971c33ebcc3790f929face038a1))
+* **ui:** type a date into the date picker and see which day it means ([#2463](https://github.com/k2b-dev/cloud/issues/2463)) ([60cd5cf](https://github.com/k2b-dev/cloud/commit/60cd5cfdfc7b3db41f4d6feb82ce34400895fd80))
+
+
+### Bug Fixes
+
+* **mail:** the composer scrolls long messages again ([#2455](https://github.com/k2b-dev/cloud/issues/2455)) ([85aa816](https://github.com/k2b-dev/cloud/commit/85aa8167860d22dabbcb14b45a1233844cbdd1cb))
+* **ui:** a tab strip keeps its selected tab in view without scrolling the page ([#2465](https://github.com/k2b-dev/cloud/issues/2465)) ([32d93b8](https://github.com/k2b-dev/cloud/commit/32d93b8edd28bcc5f63486d2807b3228f94c385e))
+* **ui:** file grid items that select or open show the pointer ([#2447](https://github.com/k2b-dev/cloud/issues/2447)) ([ac645e6](https://github.com/k2b-dev/cloud/commit/ac645e68e563d4adce615e62550058eacfe4409e))
+
+## [0.44.0](https://github.com/k2b-dev/cloud/compare/npm-ui-v0.43.0...npm-ui-v0.44.0) (2026-11-02)
+
+
+### Features
+
+* **platform:** run on Bun 1.4.4 and Alpine 3.24 so isolated test runs stop segfaulting ([f551aa6](https://github.com/k2b-dev/cloud/commit/f551aa683f43dbf51c709973292649c18e729292))
+
+
+### Bug Fixes
+
+* **ui:** the phone menu no longer rebuilds its navigation for every row ([#2440](https://github.com/k2b-dev/cloud/issues/2440)) ([ce18b0a](https://github.com/k2b-dev/cloud/commit/ce18b0abeee73208bf6da4cbb64d8eeb55ae0224))
+
+## [0.43.0](https://github.com/k2b-dev/cloud/compare/npm-ui-v0.42.0...npm-ui-v0.43.0) (2026-11-02)
+
+
+### Features
+
+* **ui:** add a country map that shades the world by one value per country ([#2373](https://github.com/k2b-dev/cloud/issues/2373)) ([bbcea1d](https://github.com/k2b-dev/cloud/commit/bbcea1d2dd46cbb460420be85e64e14adfa31b14))
+
 ## [0.42.0](https://github.com/k2b-dev/cloud/compare/npm-ui-v0.41.0...npm-ui-v0.42.0) (2026-11-01)
 
 

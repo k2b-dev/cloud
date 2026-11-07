@@ -138,6 +138,7 @@ const measure = () => {
     fieldRules: Array.from(document.querySelectorAll(".k2b-settings-field")).map((element) => getComputedStyle(element).borderTopStyle),
     heading: box(".k2b-settings-section__heading").bottom,
     actions: box(".k2b-settings-section__actions").top,
+    headingBesideFields: box(".k2b-settings-section__header").right <= box(".k2b-settings-section__body").left,
     sectionGap: box(".k2b-settings-section + .k2b-settings-section").top - box(".k2b-settings-section").bottom,
     notice: frame(".k2b-notice-card"),
     noticeDetailSize: style(".k2b-notice-card__description").fontSize,
@@ -210,11 +211,11 @@ describe("@k2b/ui one frame per surface", () => {
 
           expect(result.statLabel).toEqual({ transform: "none", tracking: "normal" });
           expect(result.statHeader).toEqual({ rule: "none", gap: 0, surfaceStep: true });
-          expect(result.sectionGap).toBe(32);
+          expect(result.sectionGap).toBe(24);
 
-          // Actions share the heading row on a desktop and wrap below it on a phone.
-          if (name === "phone") expect(result.actions).toBeGreaterThanOrEqual(result.heading);
-          else expect(result.actions).toBeLessThan(result.heading);
+          // A desktop puts the heading and its actions in a column beside the fields; a phone keeps them above.
+          expect(result.actions).toBeGreaterThanOrEqual(result.heading);
+          expect(result.headingBesideFields).toBe(name !== "phone");
         } finally {
           await page.close();
         }

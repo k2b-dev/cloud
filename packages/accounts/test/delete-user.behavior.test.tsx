@@ -44,7 +44,7 @@ describe("duplicate account deletion", () => {
   let toast: typeof import("@k2b/ui").toast;
   beforeEach(async () => {
     dom = createDomTestHarness();
-    spyOn(navigation, "refreshCurrentPath").mockImplementation(refreshed);
+    spyOn(navigation, "swapPage").mockImplementation(async () => refreshed());
     ({ prompts, toast } = await import("@k2b/ui"));
     cleanup = () => dom.cleanup();
   });

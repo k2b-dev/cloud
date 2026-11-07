@@ -126,6 +126,8 @@ const SpacesWorkspaceStateSchema = z.discriminatedUnion("kind", [
     hasOverride: z.boolean(),
     isAdmin: z.boolean(),
     canWrite: z.boolean(),
+    /** Whether the person may read who has access: only with access of their own, never through public access alone. */
+    accessVisible: z.boolean(),
     query: z.string(),
     icalBaseUrl: z.string(),
     eventCursor: z.string().nullable(),

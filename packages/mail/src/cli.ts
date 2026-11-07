@@ -1895,10 +1895,24 @@ const everydayCommands = (t: Translate) => {
         view: flag.enum(["needs_action", "mine", "unassigned", "waiting", "done", "snoozed", "recently_active", "kept"] as const, {
           description: t({ en: "Built-in collaboration view", de: "Eingebaute Zusammenarbeitsansicht" }),
         }),
+        includeDone: flag.boolean({
+          name: "include-done",
+          description: t({
+            en: "Also list done and snoozed conversations, which mailbox and work-folder lists leave out",
+            de: "Auch erledigte und zurückgestellte Unterhaltungen listen, die Postfach- und Arbeitsordner-Listen auslassen",
+          }),
+        }),
         cursor: flag.string({ description: t({ en: "Cursor from a previous page", de: "Cursor einer vorherigen Seite" }) }),
         limit: flag.int({ min: 1, max: 100, default: 50 }),
       },
-      examples: ["cld mail ls", "cld mail ls Support", 'cld mail ls "Support:Projekte / 2025"', "cld mail ls Support --view mine --json"],
+      examples: [
+        "cld mail ls",
+        "cld mail ls Support",
+        'cld mail ls "Support:Projekte / 2025"',
+        "cld mail ls Support --view mine --json",
+        "cld mail ls Support --status done",
+        "cld mail ls Support --include-done",
+      ],
       run: async ({ ctx, args, flags }) => {
         if (!args.scope) {
           const mailboxes = await listMailboxes(ctx);
@@ -1935,8 +1949,9 @@ const everydayCommands = (t: Translate) => {
         if (folder) query.set("folderId", folder.id);
         if (flags.status) query.set("status", flags.status);
         if (flags.view) query.set("view", flags.view);
+        if (flags.includeDone) query.set("includeDone", "true");
         if (flags.cursor) query.set("cursor", flags.cursor);
-        const page = await readApi<{ items: ConversationSummary[]; nextCursor: string | null }>(
+        const page = await readApi<{ items: ConversationSummary[]; nextCursor: string | null; openOnly: boolean }>(
           ctx,
           `/mailboxes/${mailbox.id}/conversations?${query}`,
         );
@@ -1960,6 +1975,13 @@ const everydayCommands = (t: Translate) => {
             { key: "id", label: "ID" },
           ],
         );
+        if (page.openOnly && ctx.options.output === "text")
+          ctx.error(
+            t({
+              en: "Done and snoozed conversations are hidden; --status done or --include-done shows them.",
+              de: "Erledigte und zurückgestellte Unterhaltungen sind ausgeblendet; --status done oder --include-done zeigt sie.",
+            }),
+          );
       },
     }),
     command("show", {
@@ -3100,7 +3122,7 @@ const specialistCommands = {
     automation: "Create, inspect, and run guided incoming automations",
     "saved-view": "Create and manage saved conversation views",
     view: "Choose how a mailbox looks on large screens and phones",
-    scheduled: "Inspect and cancel scheduled message delivery",
+    scheduled: "Inspect and cancel messages waiting for delivery",
     sender: "Preview and update messages from one sender or domain",
     subscription: "Inspect and manage mailing-list subscriptions",
     workflow: "Create, validate, and activate Mail workflows",
@@ -3969,6 +3991,14 @@ const specialistCommands = {
               `Hydration timing: queue ${queueWaitMs == null ? "not measured" : `${queueWaitMs} ms`}, lease ${leaseWaitMs == null ? "not measured" : `${leaseWaitMs} ms`}, batch ${batchMs == null ? "not measured" : `${batchMs} ms`}${batchFinishedAt ? `, finished ${batchFinishedAt}` : ""}`,
             );
           }
+          ctx.print(
+            `Outbox: ${
+              Object.entries(value.queues.outbox)
+                .sort(([a], [b]) => a.localeCompare(b))
+                .map(([state, count]) => `${count} ${state}`)
+                .join(", ") || "0 waiting"
+            }`,
+          );
           ctx.print(`Attention: ${value.attentionCommands.length} commands; workflows ${value.queues.workflows.needs_attention ?? 0}`);
         }
       },
@@ -7237,7 +7267,7 @@ const specialistCommands = {
       },
     }),
     command("scheduled list", {
-      summary: "List messages waiting for scheduled delivery",
+      summary: "List messages waiting for delivery",
       flags: {
         ...mailboxFlag,
         cursor: flag.string({ description: "Pagination cursor" }),
@@ -7253,6 +7283,7 @@ const specialistCommands = {
         const query = new URLSearchParams({ limit: String(flags.limit) });
         if (flags.cursor) query.set("cursor", flags.cursor);
         const page = await readApi<ScheduledSendPage>(ctx, `/mailboxes/${mailbox.id}/scheduled-sends?${query}`);
+        if (ctx.options.output === "text") ctx.print(`${page.total} waiting`);
         printTable(
           ctx,
           { ...page, items: page.items.map((resource) => withCloudResourcePermalink(ctx, "mail.delivery", resource)) },
@@ -7266,7 +7297,7 @@ const specialistCommands = {
             id: item.id,
           })),
           [
-            { key: "scheduled", label: "SCHEDULED" },
+            { key: "scheduled", label: "REQUESTED" },
             { key: "nextAttempt", label: "NEXT ATTEMPT" },
             { key: "to", label: "TO" },
             { key: "subject", label: "SUBJECT" },

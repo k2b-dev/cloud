@@ -1,12 +1,16 @@
-import { expect, test } from "bun:test";
+import { beforeAll, expect, test } from "bun:test";
 import type { MiddlewareHandler } from "hono";
+import { z } from "zod";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
+import { migrateCloudAi } from "../ai/migrate";
+import { aiProjects } from "../ai/projects";
 import { appAccess } from "../contracts/app-access";
 import { sql } from "../runtime/clients";
 import type { AuthContext, RequestAuthority } from "../server/middleware/auth";
-import { usableAppIds } from "../services/app-access";
+import { canUseApp, usableAppIds } from "../services/app-access";
 import { serviceAccountCredentials } from "../services/service-account-credentials";
 import { serviceAccounts } from "../services/service-accounts";
+import { buildProjectedUser } from "../services/session/user";
 import { createAdminIdentityRoutes } from "./admin-identity";
 
 const suite = suiteFor("database", "nats", "valkey");
@@ -32,14 +36,25 @@ const authorityOf = async (token: string): Promise<RequestAuthority> => {
 };
 
 suite("machine API keys from the administrator route", () => {
+  beforeAll(() => migrateCloudAi());
   for (const kind of ["standalone", "agent"] as const)
-    test(`${kind}: a key stores the named scopes and enters only what its rules allow`, async () => {
+    test(`P15: ${kind}: issued keys never get wider`, async () => {
       const suffix = crypto.randomUUID();
       const [admin] = await sql<{ id: string }[]>`
         INSERT INTO auth.users(uid,provider,profile,admin) VALUES (${`key-admin-${suffix}`},'local','user',true) RETURNING id`;
       const account = await serviceAccounts.createStandalone({ name: `Key worker ${suffix}`, kind, createdBy: admin!.id });
       if (!account.ok) throw new Error("Fixture account failed");
-      const actor = { id: admin!.id, uid: `key-admin-${suffix}`, provider: "local", roles: ["admin"] } as AuthContext["Variables"]["user"];
+      const actor = buildProjectedUser({
+        id: admin!.id,
+        uid: `key-admin-${suffix}`,
+        provider: "local",
+        profile: "user",
+        effective_admin: true,
+      });
+      const owner = { actor: { kind: "user" as const, user: actor }, accessSubject: { type: "user" as const, userId: actor.id } };
+      const projectIds: string[] = [];
+      const app = { ...granted, id: `${granted.id}-${suffix}` };
+      let appGrantId: string | undefined;
       const authenticate: MiddlewareHandler<AuthContext> = async (c, next) => {
         c.set("user", actor);
         await next();
@@ -52,30 +67,112 @@ suite("machine API keys from the administrator route", () => {
           body: JSON.stringify(body),
         });
         expect(response.status).toBe(201);
-        return (await response.json()) as { token: string; credential: { scopes: string[] } };
+        return z
+          .object({ token: z.string(), credential: z.object({ id: z.string(), scopes: z.array(z.string()) }) })
+          .parse(await response.json());
       };
       try {
-        // The browser dialog names these scopes for "Full access".
-        const full = await create({ name: "Full", access: "full", scopes: ["read", "write", "admin"] });
-        expect(full.credential.scopes).toEqual(["read", "write", "admin"]);
-        expect(await usableAppIds(await authorityOf(full.token), [signedIn, granted])).toEqual(new Set([signedIn.id]));
-
-        const narrow = await create({ name: "Narrow", scopes: ["read"] });
-        expect(narrow.credential.scopes).toEqual(["read"]);
-
-        // A key issued before the fix stays without scopes and stays denied.
-        const issued = await serviceAccountCredentials.createStandaloneApiToken({
+        const issued = await serviceAccountCredentials.createApiToken({
           serviceAccountId: account.data.id,
-          actor,
           name: "Issued earlier",
+          scopes: [],
         });
         if (!issued.ok) throw new Error("Fixture key failed");
-        expect(issued.data.credential.scopes).toEqual([]);
-        expect(await usableAppIds(await authorityOf(issued.data.token), [signedIn, granted])).toEqual(new Set());
+        const before = await serviceAccountCredentials.getOverview({ id: issued.data.credential.id });
+        const full = await create({ name: "Full", access: "full" });
+        expect(full.credential.scopes).toEqual(["read", "write", "admin"]);
+        expect(await serviceAccountCredentials.getOverview({ id: issued.data.credential.id })).toEqual(before);
+        const authority = await authorityOf(full.token);
+        expect(await usableAppIds(authority, [signedIn, app])).toEqual(new Set([signedIn.id]));
+        await sql`INSERT INTO auth.app_access_state(app_id,configured_at) VALUES (${app.id}, '2026-11-03T00:00:00Z')`;
+        const [appGrant] = await sql<{ id: string }[]>`
+          INSERT INTO auth.access(service_account_id,permission) VALUES (${account.data.id}::uuid,'read') RETURNING id`;
+        appGrantId = appGrant!.id;
+        await sql`INSERT INTO auth.app_access(app_id,access_id) VALUES (${app.id},${appGrantId}::uuid)`;
+        expect(await canUseApp(authority, app)).toBe(true);
+
+        const project = await aiProjects.create({ subject: owner, name: `Granted ${suffix}` });
+        projectIds.push(project.id);
+        const privateProject = await aiProjects.create({ subject: owner, name: `Private ${suffix}` });
+        projectIds.push(privateProject.id);
+        expect(
+          await aiProjects.grantAccess(project.id, owner, {
+            principal: { type: "service_account", serviceAccountId: account.data.id },
+            permission: "write",
+          }),
+        ).not.toBeNull();
+        expect((await aiProjects.get(project.id, authority))?.permission).toBe("write");
+        expect(await aiProjects.get(project.id, authority, "admin")).toBeNull();
+        expect(await aiProjects.get(privateProject.id, authority)).toBeNull();
+        expect(await aiProjects.update(project.id, authority, { description: "Allowed" })).not.toBeNull();
+
+        const narrow = await create({ name: "Narrow", access: "full", scopes: ["read"] });
+        expect(narrow.credential.scopes).toEqual(["read"]);
+        const reader = await authorityOf(narrow.token);
+        expect((await aiProjects.get(project.id, reader))?.permission).toBe("read");
+        expect(await aiProjects.update(project.id, reader, { description: "Denied" })).toBeNull();
+
+        const empty = await routes.request(`/service-accounts/${account.data.id}/api-keys`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ name: "Explicit empty", access: "full", scopes: [] }),
+        });
+        expect(empty.status).toBe(400);
+        expect(await usableAppIds(await authorityOf(issued.data.token), [signedIn, app])).toEqual(new Set());
+        expect((await serviceAccountCredentials.getOverview({ id: issued.data.credential.id }))?.scopes).toEqual([]);
+        expect((await serviceAccountCredentials.getOverview({ id: narrow.credential.id }))?.scopes).toEqual(["read"]);
+
+        const models = await create({ name: "Models", access: "models" });
+        expect(models.credential.scopes).toEqual(["ai:inference"]);
+        expect(await usableAppIds(await authorityOf(models.token), [signedIn, app])).toEqual(new Set());
       } finally {
+        for (const id of projectIds) await aiProjects.admin.delete(id);
+        await sql`DELETE FROM auth.app_access_state WHERE app_id=${app.id}`;
+        if (appGrantId) await sql`DELETE FROM auth.access WHERE id=${appGrantId}::uuid`;
         await sql`DELETE FROM auth.service_accounts WHERE id=${account.data.id}::uuid`;
         await sql`DELETE FROM audit.events WHERE actor_user_id=${admin!.id}::uuid`;
         await sql`DELETE FROM auth.users WHERE id=${admin!.id}::uuid`;
       }
     });
+
+  test("an agent's key list and revoke reach only that agent's keys", async () => {
+    const suffix = crypto.randomUUID();
+    const [admin] = await sql<{ id: string }[]>`
+      INSERT INTO auth.users(uid,provider,profile,admin) VALUES (${`key-admin-${suffix}`},'local','user',true) RETURNING id`;
+    const actor = buildProjectedUser({
+      id: admin!.id,
+      uid: `key-admin-${suffix}`,
+      provider: "local",
+      profile: "user",
+      effective_admin: true,
+    });
+    const first = await serviceAccounts.createStandalone({ name: `First ${suffix}`, kind: "agent", createdBy: admin!.id });
+    const second = await serviceAccounts.createStandalone({ name: `Second ${suffix}`, kind: "agent", createdBy: admin!.id });
+    if (!first.ok || !second.ok) throw new Error("Fixture accounts failed");
+    const routes = createAdminIdentityRoutes(async (c, next) => {
+      c.set("user", actor);
+      await next();
+    });
+    try {
+      const own = await serviceAccountCredentials.createStandaloneApiToken({ serviceAccountId: first.data.id, actor, name: "Own" });
+      const other = await serviceAccountCredentials.createStandaloneApiToken({ serviceAccountId: second.data.id, actor, name: "Other" });
+      if (!own.ok || !other.ok) throw new Error("Fixture keys failed");
+      const listed = z
+        .object({ items: z.array(z.object({ id: z.string() })), total: z.number() })
+        .parse(await (await routes.request(`/service-accounts/${first.data.id}/api-keys`)).json());
+      expect(listed.items.map((item) => item.id)).toEqual([own.data.credential.id]);
+      expect(listed.total).toBe(1);
+      const crossed = await routes.request(`/service-accounts/${first.data.id}/api-keys/${other.data.credential.id}`, { method: "DELETE" });
+      expect(crossed.status).toBe(404);
+      expect((await serviceAccountCredentials.getOverview({ id: other.data.credential.id }))?.status).toBe("active");
+      expect(await serviceAccountCredentials.authenticateApiToken(other.data.token)).not.toBeNull();
+      const revoked = await routes.request(`/service-accounts/${first.data.id}/api-keys/${own.data.credential.id}`, { method: "DELETE" });
+      expect(revoked.status).toBe(200);
+      expect((await serviceAccountCredentials.getOverview({ id: own.data.credential.id }))?.status).toBe("revoked");
+    } finally {
+      await sql`DELETE FROM auth.service_accounts WHERE id IN (${first.data.id}::uuid, ${second.data.id}::uuid)`;
+      await sql`DELETE FROM audit.events WHERE actor_user_id=${admin!.id}::uuid`;
+      await sql`DELETE FROM auth.users WHERE id=${admin!.id}::uuid`;
+    }
+  });
 });

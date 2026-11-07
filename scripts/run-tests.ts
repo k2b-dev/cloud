@@ -39,6 +39,7 @@
  */
 import { readFileSync } from "node:fs";
 import { join, relative } from "node:path";
+import { describeDatabaseActivity } from "./fixtures/database-activity";
 import { closeMigratedDatabaseTemplate, integrationSchemaHash, retainMigratedDatabaseTemplate } from "./fixtures/test-database-template";
 import { applyTestRuntimeEnv, dotenvLeak, hasIntegrationTarget, noEnvFile, readTestTarget } from "./fixtures/test-infra-env";
 import { runUnderHeavyLock } from "./heavy-lock";
@@ -513,7 +514,11 @@ Example: bun run test --filter packages/core --filter packages/cloud`);
         suite.command[1] === "run" ? { ...env, BUN_OPTIONS: [env.BUN_OPTIONS, preload].filter(Boolean).join(" ") } : env,
         remainingMs(),
       );
-      if (code !== 0) failed.push(suite.name);
+      if (code !== 0) {
+        failed.push(suite.name);
+        // Read it at once: CI Postgres drops a statement of a lost client after client_connection_check_interval.
+        if (options.integration && env.CLOUD_TEST_DATABASE_URL) console.log(await describeDatabaseActivity(env.CLOUD_TEST_DATABASE_URL));
+      }
       console.log(`=== ${suite.name}: ${((performance.now() - started) / 1000).toFixed(1)}s`);
     }
 

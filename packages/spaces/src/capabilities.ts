@@ -203,11 +203,15 @@ const capabilityDateConfig = async (context: CapabilityExecutionContext) => ({
 });
 
 const relationReviewDetails = async (
-  input: { assigneeIds?: string[]; tagIds?: string[] },
+  input: { assigneeIds?: string[]; addAssigneeIds?: string[]; removeAssigneeIds?: string[]; tagIds?: string[] },
   internalSpaceId: string,
   context: CapabilityExecutionContext,
 ): Promise<ReviewDetails> => {
   const t = spacesMessages(context.locale);
+  const [added, removed] = await Promise.all([
+    input.addAssigneeIds !== undefined ? relationReviewDetails({ assigneeIds: input.addAssigneeIds }, internalSpaceId, context) : [],
+    input.removeAssigneeIds !== undefined ? relationReviewDetails({ assigneeIds: input.removeAssigneeIds }, internalSpaceId, context) : [],
+  ]);
   const [users, detail] = await Promise.all([
     input.assigneeIds
       ? spacesService.item.listAssignableUsers({ spaceId: internalSpaceId, ids: input.assigneeIds, limit: 100 })
@@ -218,6 +222,8 @@ const relationReviewDetails = async (
   const publicTags = detail ? await spacesPublicResources.projectTags(detail.tags) : [];
   const tagNames = new Map(publicTags.map((tag) => [tag.id, tag.name]));
   return [
+    ...added.map((detail) => ({ ...detail, label: t.addAssignees })),
+    ...removed.map((detail) => ({ ...detail, label: t.removeAssignees })),
     ...(input.assigneeIds
       ? [
           {
@@ -1261,6 +1267,8 @@ const ITEM_SUMMARY_FIELDS: Record<string, string> = {
   estimatedDurationMinutes: "estimate",
   priority: "priority",
   assigneeIds: "assignees",
+  addAssigneeIds: "assignees",
+  removeAssigneeIds: "assignees",
   tagIds: "tags",
   location: "location",
   url: "link",
@@ -1294,7 +1302,7 @@ const itemUpdateSummary = (
   const fields = [
     ...new Set(
       Object.keys(input)
-        .filter((field) => field !== "itemId")
+        .filter((field) => field !== "itemId" && field !== "expectedTitle")
         .map((field) => ITEM_SUMMARY_FIELDS[field] ?? field),
     ),
   ];
@@ -1309,8 +1317,9 @@ const itemUpdateSummary = (
 };
 
 const mutationError = <T>(result: Exclude<MutationResult<T>, { ok: true }>, context: CapabilityExecutionContext) => {
-  const error =
-    result.status === 403
+  const error = result.code
+    ? { code: result.code, message: result.error, status: result.status }
+    : result.status === 403
       ? err.forbidden(result.error)
       : result.status === 404
         ? { code: "NOT_FOUND" as const, message: result.error, status: 404 as const }
@@ -1405,7 +1414,13 @@ const runItemTagsSet = async (input: z.infer<typeof ItemTagsSetInputSchema>, con
     const tagIds = await spacesPublicResources.resolveSpacePublicIds("tags", resolved.data.internalSpaceId, input.tagIds);
     if (!tagIds) return capabilityFail(context, err.badInput("Unknown Space tag"), "unknownSpaceTag");
     return itemMutationResult(
-      await spacesService.item.update({ id: resolved.data.internalId, data: { tagIds }, actor: spaceActivityActor(context) }),
+      await spacesService.item.update({
+        id: resolved.data.internalId,
+        data: { tagIds },
+        actor: spaceActivityActor(context),
+        access: { actor: context.actor, subject: context.accessSubject },
+        expectedSpaceId: resolved.data.internalSpaceId,
+      }),
       (item) => tagSetSummary(resolved.data.item, item, context),
       context,
     );
@@ -1737,8 +1752,10 @@ const runTaskCreate = async (input: z.infer<typeof TaskCreateInputSchema>, conte
           tagIds: explicit.tagIds ? tagIds : (defaults.tagIds ?? tagIds),
           columnId,
           title,
+          ...(context.idempotencyKey ? { requestKey: stableUuid(`spaces:task.create:${context.idempotencyKey}`) } : {}),
         },
         createdBy: context.user?.id ?? null,
+        access: { actor: context.actor, subject: context.accessSubject },
         actor: spaceActivityActor(context),
       }),
       createdSummary(context, access.data.space.name, filled.data),
@@ -1757,6 +1774,8 @@ const runTaskUpdate = async (input: z.infer<typeof TaskUpdateInputSchema>, conte
     return itemMutationResult(
       await spacesService.item.update({
         id: resolved.data.internalId,
+        access: { actor: context.actor, subject: context.accessSubject },
+        expectedSpaceId: resolved.data.internalSpaceId,
         data: { ...data, ...(data.tagIds ? { tagIds } : {}) },
         actor: spaceActivityActor(context),
       }),
@@ -1820,8 +1839,10 @@ const runEventCreate = async (input: z.infer<typeof EventCreateInputSchema>, con
           ...schedule,
           columnId,
           title,
+          ...(context.idempotencyKey ? { requestKey: stableUuid(`spaces:event.create:${context.idempotencyKey}`) } : {}),
         },
         createdBy: context.user?.id ?? null,
+        access: { actor: context.actor, subject: context.accessSubject },
         actor: spaceActivityActor(context),
       }),
       createdSummary(context, access.data.space.name, filled.data),
@@ -2023,6 +2044,8 @@ const runEventUpdate = async (input: z.infer<typeof EventUpdateInputSchema>, con
     return itemMutationResult(
       await spacesService.item.update({
         id: resolved.data.internalId,
+        access: { actor: context.actor, subject: context.accessSubject },
+        expectedSpaceId: resolved.data.internalSpaceId,
         data: { ...data, ...(data.tagIds ? { tagIds } : {}) },
         actor: spaceActivityActor(context),
       }),
@@ -3044,7 +3067,8 @@ export const spacesCapabilities = defineCapabilities({
     },
     "task.update": {
       title: "Update task",
-      description: "Update selected fields of an existing task without converting its item kind.",
+      description:
+        "Update selected fields of an existing task without converting its item kind. Prefer addAssigneeIds/removeAssigneeIds for individual assignments. With title, carry the exact expectedTitle from item.read; TITLE_CONFLICT requires reading and reviewing again.",
       input: TaskUpdateInputSchema,
       data: TaskDataSchema,
       destructive: false,
@@ -3056,6 +3080,11 @@ export const spacesCapabilities = defineCapabilities({
         const resolved = await requireItem(input.itemId, context, "write");
         if (!resolved.ok) return resolved;
         if (isEvent(resolved.data.item)) return capabilityFail(context, err.badInput("Item is not a task"), "itemNotTask");
+        if (input.expectedTitle !== undefined && resolved.data.item.title !== input.expectedTitle)
+          return mutationError(
+            { ok: false, status: 409, code: "TITLE_CONFLICT", error: "Title changed; reload and review the current title" },
+            context,
+          );
         const relations = await relationReviewDetails(input, resolved.data.internalSpaceId, context);
         return ok({
           message: t.reviewUpdateTask({ title: resolved.data.item.title }),

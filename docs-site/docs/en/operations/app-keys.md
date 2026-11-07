@@ -5,7 +5,7 @@ section: Operations
 order: 1144
 description: Enroll, export, rotate and revoke an application's Ed25519 key without sending its private seed to Core.
 tags: [operations, identity, credentials, cli]
-updated: 2026-10-31
+updated: 2026-11-05
 ---
 
 # App keys
@@ -34,10 +34,12 @@ to be created or distributed for this path. See
 
 The existing `security.rate_limit_per_second` setting bounds aggregate calls
 per application across keys, in addition to signed ingress and per-key limits.
-For Geo, each app shares the existing `geo.person_daily_credits` allowance
-across its keys and remains under `geo.monthly_budget_credits` and its provider
-plan limits. Daily app usage is stored under `app:<appId>` in the existing
-subject ledger. No new deployment setting or provider credentials are needed.
+Geo callers share `geo.monthly_budget_credits` and the installation-wide
+provider-plan request rate. There is no per-person or per-app daily allowance.
+Address autocomplete can also run anonymously from an app server through
+`geoClient.autocomplete(input)`, with only `CLOUD_CORE_INTERNAL_ORIGIN` configured.
+That internal-only entry needs no app key; the gateway refuses its route.
+Other app-authority calls continue to require the enrolled key and declaration.
 
 Capability execution history adds nullable `actor_app_id` and `actor_key_id`
 columns on migration. These identify the application and enrolled key without
@@ -110,7 +112,16 @@ so the application user can read it. Do not supply both key sources: that
 stops startup. The key's app ID must match the built or development app ID.
 Core and Gateway keep their infrastructure environment values and refuse keys.
 
-Key-only operation requires the release containing the complete platform-client
+Cloud releases 0.56.0–0.65.0 refuse resource-principal reads signed with an app key, including
+Chat readability checks. Keep `CLOUD_APP_KEY` and `CLOUD_APP_KEY_FILE` unset on
+those releases. Enable them only after Core and all applications run a release
+containing the resource-principal read fix ([#2377](https://github.com/k2b-dev/cloud/issues/2377)).
+With that fix, these checks accept app keys with the same `resources:readers`
+admission as legacy workload credentials. A key identifies the application;
+it grants no person or resource authority. Revocation and expiry are checked
+again before the provider runs the check.
+
+Key-only operation also requires the release containing the complete platform-client
 and signed-request migration. Retain infrastructure values on older releases
 and for third-party apps with old Bun-global clients. Use the
 [checked upgrade path](/en/docs/operations/app-key-upgrade) to change an

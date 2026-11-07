@@ -234,6 +234,10 @@ export type FilterToggleProps = {
   /** Link to the URL with the filter switched. The link keeps working without JavaScript. */
   href?: string;
   onClick?: (event: MouseEvent) => void;
+  /** The button opens a dialog with more filters, such as a filter builder; it stays pressed while they apply. */
+  opensDialog?: boolean;
+  /** The button is loading what it opens; it stays enabled so it keeps focus for the dialog to return it. */
+  busy?: boolean;
   title?: string;
   disabled?: boolean;
   class?: string;
@@ -260,6 +264,8 @@ export function FilterToggle(props: FilterToggleProps): JSX.Element {
           class={className()}
           data-active={props.active ? "true" : undefined}
           aria-pressed={props.active}
+          aria-haspopup={props.opensDialog ? "dialog" : undefined}
+          aria-busy={props.busy ? "true" : undefined}
           title={props.title}
           disabled={props.disabled}
           onClick={(event) => props.onClick?.(event)}

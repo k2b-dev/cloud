@@ -23,11 +23,15 @@ export const stripCloudCookies = (headers: Headers): void => {
 };
 
 export const rejectPublicOrigin = (req: Request, target: Pick<PublicTarget, "authority" | "scheme">): boolean => {
-  if (req.headers.get("Upgrade")?.toLowerCase() !== "websocket" && ["GET", "HEAD", "OPTIONS"].includes(req.method)) return false;
+  const socket = req.headers.get("Upgrade")?.toLowerCase() === "websocket";
+  if (!socket && ["GET", "HEAD", "OPTIONS"].includes(req.method)) return false;
   const origin = req.headers.get("Origin");
   const site = req.headers.get("Sec-Fetch-Site");
+  // A no-referrer page posts its own forms with `Origin: null`; the browser still marks them same-origin. A WebSocket
+  // handshake always carries the real Origin, so sockets get no exception.
+  const ownNoReferrerForm = !socket && origin === "null" && site === "same-origin";
   return (
-    (origin !== null && origin !== new URL(`${target.scheme}://${target.authority}`).origin) ||
+    (origin !== null && !ownNoReferrerForm && origin !== new URL(`${target.scheme}://${target.authority}`).origin) ||
     site === "cross-site" ||
     site === "same-site"
   );

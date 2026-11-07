@@ -183,4 +183,4 @@ Source-token commands apply only to HTTP ingest sources. For `admin store`,
 [Administration reference](admin.md).
 
 For JSON plus SQL panels, publication, revisions and retry keys, read
-[Dashboards](dashboards.md). Commands: `dashboards list|get|save|panel|publish|unpublish|delete`.
+[Dashboards](dashboards.md). Commands: `dashboards list|get|panels|save|panel|publish|unpublish|delete`.

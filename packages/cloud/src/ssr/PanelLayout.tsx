@@ -1,4 +1,4 @@
-import { LocaleProvider } from "@k2b/ui";
+import { LocaleProvider, PageTrailProvider } from "@k2b/ui";
 import type { JSX } from "solid-js";
 import { canonicalRoute } from "../_internal/app-path";
 import { getLocale } from "../server/locale";
@@ -25,11 +25,28 @@ export default function PanelLayout(props: PanelLayoutProps) {
   props.c.get("page").title = props.title;
   return (
     <LocaleProvider locale={getLocale(props.c)}>
-      <div class="cloud-panel-page" data-cloud-panel-page="" data-panel-provider={app?.id}>
-        <script id="cloud-panel-context" type="application/json" innerHTML={JSON.stringify(context).replace(/</g, "\\u003c")} />
-        <PanelRuntime provider={app?.id} scope={app?.panel ? new URL(app.panel.href, props.c.req.raw.url).pathname : undefined} />
-        {props.children}
-      </div>
+      {(() => {
+        // As in Layout: the page renders first, so the panel page can say whether it shows its own title.
+        let ownTitle = false;
+        const page = (
+          <PageTrailProvider trail={undefined} onOwnTitle={() => (ownTitle = true)}>
+            {props.children}
+          </PageTrailProvider>
+        );
+        return (
+          <div
+            class="cloud-panel-page"
+            data-cloud-panel-page=""
+            data-panel-provider={app?.id}
+            data-k2b-title-host=""
+            data-k2b-own-title={ownTitle ? "" : undefined}
+          >
+            <script id="cloud-panel-context" type="application/json" innerHTML={JSON.stringify(context).replace(/</g, "\\u003c")} />
+            <PanelRuntime provider={app?.id} scope={app?.panel ? new URL(app.panel.href, props.c.req.raw.url).pathname : undefined} />
+            {page}
+          </div>
+        );
+      })()}
     </LocaleProvider>
   );
 }

@@ -184,100 +184,103 @@ export default function MailTextEditor(props: {
   };
   return (
     <div class="relative h-full min-h-72">
-      <TextEditor
-        class="h-full min-h-72"
-        label={t().messageBody}
-        placeholder={t().writeMessage}
-        initialValue={binding ? binding.doc.getText("codemirror").toString() : untrack(props.body)}
-        onTableCheck={props.onTableCheck}
-        status={
-          binding ? (
-            <span class="flex h-6 w-64 max-w-full min-w-0 items-center justify-between gap-2">
-              <span class="min-w-0 truncate" title={sharedStatus()}>
-                {sharedStatus()}
-                {peers().length ? ` · ${peers().join(", ")}` : ""}
-              </span>
-              <Dropdown.Root
-                position="bottom-right"
-                items={[
-                  { label: st().retry, icon: "ti ti-refresh", action: retry },
-                  { label: st().copy, icon: "ti ti-copy", action: () => void copy() },
-                  {
-                    label: props.sharedState?.()?.remembering ? st().forget : st().remember,
-                    icon: "ti ti-device-laptop",
-                    action: () => {
-                      void binding
-                        .setRemembering(!binding.state().remembering)
-                        .catch((error: unknown) => controls?.notify(error instanceof Error ? error.message : st().storageFailed));
+      {/* The message scrolls here, under the editor's toolbar; the notice below stays at the bottom of the pane. */}
+      <div class="h-full min-h-72 overflow-y-auto overscroll-contain">
+        <TextEditor
+          class="min-h-full"
+          label={t().messageBody}
+          placeholder={t().writeMessage}
+          initialValue={binding ? binding.doc.getText("codemirror").toString() : untrack(props.body)}
+          onTableCheck={props.onTableCheck}
+          status={
+            binding ? (
+              <span class="flex h-6 w-64 max-w-full min-w-0 items-center justify-between gap-2">
+                <span class="min-w-0 truncate" title={sharedStatus()}>
+                  {sharedStatus()}
+                  {peers().length ? ` · ${peers().join(", ")}` : ""}
+                </span>
+                <Dropdown.Root
+                  position="bottom-right"
+                  items={[
+                    { label: st().retry, icon: "ti ti-refresh", action: retry },
+                    { label: st().copy, icon: "ti ti-copy", action: () => void copy() },
+                    {
+                      label: props.sharedState?.()?.remembering ? st().forget : st().remember,
+                      icon: "ti ti-device-laptop",
+                      action: () => {
+                        void binding
+                          .setRemembering(!binding.state().remembering)
+                          .catch((error: unknown) => controls?.notify(error instanceof Error ? error.message : st().storageFailed));
+                      },
                     },
-                  },
-                  ...(props.sharedState?.()?.terminal ? [{ label: st().recover, icon: "ti ti-history", action: retry }] : []),
-                  ...(props.sharedState?.()?.terminal && !props.sharedState?.()?.dirty && !props.sharedState?.()?.structuring
-                    ? [{ label: st().reopen, icon: "ti ti-external-link", action: () => window.location.reload() }]
-                    : []),
-                ]}
-              >
-                <Dropdown.Trigger appearance="plain" class="focus-ui shrink-0 rounded px-1" aria-label={t().messageOptions}>
-                  <i class="ti ti-dots" aria-hidden="true" />
-                </Dropdown.Trigger>
-              </Dropdown.Root>
-            </span>
-          ) : undefined
-        }
-        host={
-          binding
-            ? {
-                undo: () => runHistory("undo"),
-                redo: () => runHistory("redo"),
-                boundary: () => binding.undoManager.stopCapturing(),
-                structure,
-                onCellSelection: host,
-              }
-            : undefined
-        }
-        mode={props.format() === "plain" ? "plain" : mode()}
-        onModeChange={(next) => {
-          if (next !== "plain") setMode(next);
-        }}
-        readOnly={!props.editable()}
-        dictation={props.liveDictation ? { source: liveDictationSource } : undefined}
-        maxLength={2_097_152}
-        extensions={[
-          autocompletion({ override: [complete], activateOnTypingDelay: 180 }),
-          ...(binding
-            ? [
-                yCollab(binding.doc.getText("codemirror"), binding.awareness, { undoManager: binding.undoManager }),
-                isolateYjsHistory(binding.undoManager),
-                mailDraftTablePresence(binding.doc.getText("codemirror"), binding.awareness),
-              ]
-            : []),
-        ]}
-        onChange={(value) => {
-          // Yjs projects shared input to the composer. A CodeMirror callback
-          // can run before that projection during remote delivery; feeding it
-          // back as a local edit would insert the peer's text a second time.
-          if (!applying && !binding) props.onBodyInput(value);
-        }}
-        onReady={(value, nextControls) => {
-          controls = nextControls;
-          setEditor(value);
-          if (binding) {
-            const blur = () =>
-              queueMicrotask(() => {
-                if (!value.view.dom.contains(document.activeElement)) binding.awareness.setLocalStateField("cursor", null);
-              });
-            value.view.dom.addEventListener("focusout", blur);
-            onCleanup(() => value.view.dom.removeEventListener("focusout", blur));
+                    ...(props.sharedState?.()?.terminal ? [{ label: st().recover, icon: "ti ti-history", action: retry }] : []),
+                    ...(props.sharedState?.()?.terminal && !props.sharedState?.()?.dirty && !props.sharedState?.()?.structuring
+                      ? [{ label: st().reopen, icon: "ti ti-external-link", action: () => window.location.reload() }]
+                      : []),
+                  ]}
+                >
+                  <Dropdown.Trigger appearance="plain" class="focus-ui shrink-0 rounded px-1" aria-label={t().messageOptions}>
+                    <i class="ti ti-dots" aria-hidden="true" />
+                  </Dropdown.Trigger>
+                </Dropdown.Root>
+              </span>
+            ) : undefined
           }
-          props.onEditorReady(value);
-        }}
-        onAttachImages={props.onAttachImages}
-        onDroppedImages={(_count, files) => {
-          if (!props.onDroppedImages || !files.length) return;
-          props.onDroppedImages(files);
-          return true;
-        }}
-      />
+          host={
+            binding
+              ? {
+                  undo: () => runHistory("undo"),
+                  redo: () => runHistory("redo"),
+                  boundary: () => binding.undoManager.stopCapturing(),
+                  structure,
+                  onCellSelection: host,
+                }
+              : undefined
+          }
+          mode={props.format() === "plain" ? "plain" : mode()}
+          onModeChange={(next) => {
+            if (next !== "plain") setMode(next);
+          }}
+          readOnly={!props.editable()}
+          dictation={props.liveDictation ? { source: liveDictationSource } : undefined}
+          maxLength={2_097_152}
+          extensions={[
+            autocompletion({ override: [complete], activateOnTypingDelay: 180 }),
+            ...(binding
+              ? [
+                  yCollab(binding.doc.getText("codemirror"), binding.awareness, { undoManager: binding.undoManager }),
+                  isolateYjsHistory(binding.undoManager),
+                  mailDraftTablePresence(binding.doc.getText("codemirror"), binding.awareness),
+                ]
+              : []),
+          ]}
+          onChange={(value) => {
+            // Yjs projects shared input to the composer. A CodeMirror callback
+            // can run before that projection during remote delivery; feeding it
+            // back as a local edit would insert the peer's text a second time.
+            if (!applying && !binding) props.onBodyInput(value);
+          }}
+          onReady={(value, nextControls) => {
+            controls = nextControls;
+            setEditor(value);
+            if (binding) {
+              const blur = () =>
+                queueMicrotask(() => {
+                  if (!value.view.dom.contains(document.activeElement)) binding.awareness.setLocalStateField("cursor", null);
+                });
+              value.view.dom.addEventListener("focusout", blur);
+              onCleanup(() => value.view.dom.removeEventListener("focusout", blur));
+            }
+            props.onEditorReady(value);
+          }}
+          onAttachImages={props.onAttachImages}
+          onDroppedImages={(_count, files) => {
+            if (!props.onDroppedImages || !files.length) return;
+            props.onDroppedImages(files);
+            return true;
+          }}
+        />
+      </div>
       <Show when={binding && (!props.sharedState?.()?.remembering || props.sharedState?.()?.error || unknownAction())}>
         <div
           class="absolute inset-x-2 bottom-2 z-20 flex flex-wrap items-center gap-2 rounded-[var(--ui-radius-control)] border border-[var(--ui-border)] bg-[var(--ui-surface)] p-2 text-xs text-primary shadow-sm"

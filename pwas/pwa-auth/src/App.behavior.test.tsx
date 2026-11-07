@@ -105,6 +105,7 @@ mock.module("./authenticator", () => ({
       act: noop,
       decideChange: noop,
       decide: noop,
+      recheck: noop,
       revoke: noop,
       syncPush: noop,
       forget: noop,
@@ -262,7 +263,7 @@ for (const source of ["url", "worker"] as const) {
       }
       await Bun.sleep(30);
       expect(actionReads).toEqual(["action-id"]);
-      expect(document.querySelector("dialog[open] blockquote")?.textContent).toBe("Remove file");
+      expect(document.querySelector("dialog[open] .auth-action-ask")?.textContent).toBe("Remove file");
       expect(location.search).toBe("");
       const { closeDialogs } = await import("./dialog");
       closeDialogs();

@@ -67,7 +67,6 @@ const item = (index: number, overrides: Partial<MailListItem> = {}): MailListIte
   unread: index % 3 === 0,
   activeFolderIds: [],
   flagged: false,
-  hasAttachments: false,
   messageCount: 1,
   workStatus: "needs_action",
   assigneeUserIds: [],
@@ -86,7 +85,7 @@ const items: MailListItem[] = [
     participantLabels: ["Mara Example", "Jonas Sample"],
     assigneeUserIds: ["user-jonas"],
     messageCount: 5,
-    hasAttachments: true,
+    attachmentCount: 2,
     localTags: [tag("Event", "#8b5cf6"), tag("Offer", "#f59e0b"), tag("Accounting", "#0ea5e9"), tag("Members", "#10b981")],
   }),
   item(1, { subject: "Question about invoice 2026-0418", participantLabels: ["Paul Probe"], workStatus: "waiting" }),
@@ -1778,7 +1777,7 @@ describe("scoped flag search builder", () => {
               await trigger.press("Enter");
               await currentPage.locator('input[name="q"]').waitFor({ state: "visible" });
             }
-            await currentPage.getByRole("button", { name: "Search filters", exact: true }).click();
+            await currentPage.getByRole("button", { name: "More filters", exact: true }).click();
             await currentPage.getByRole("dialog").waitFor({ state: "visible" });
           };
           await openBuilder(currentPage);
@@ -1849,7 +1848,7 @@ test("scoped flag folder lookup recovers without losing the filter", async () =>
     );
     if (await page.getByRole("button", { name: "Search (/)", exact: true }).count())
       await page.getByRole("button", { name: "Search (/)", exact: true }).click();
-    await page.getByRole("button", { name: "Search filters", exact: true }).click();
+    await page.getByRole("button", { name: "More filters", exact: true }).click();
     await page.getByRole("alert").waitFor({ state: "visible" });
     expect(await page.getByRole("combobox", { name: "Folder", exact: true }).isDisabled()).toBe(true);
     fail = false;

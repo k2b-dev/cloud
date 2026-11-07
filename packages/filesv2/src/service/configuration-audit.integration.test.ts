@@ -94,7 +94,10 @@ suite("Files configuration security audit", () => {
     // Setup through the supported encrypted store, without fabricating a domain audit event.
     await settings.set(key, JSON.stringify(previous));
     expect(await app.settings.get(key)).toBe(JSON.stringify(previous));
-    expect(await redis.get(cacheKey)).toBe(JSON.stringify(JSON.stringify(previous)));
+    const cached = await redis.get(cacheKey);
+    expect(cached).toStartWith("!cloud:encrypted-setting:v2:");
+    expect(cached).not.toContain(previous.token);
+    expect(cached).not.toContain(JSON.stringify(previous));
   }
   beforeAll(async () => {
     await assertPrivateDatabase();

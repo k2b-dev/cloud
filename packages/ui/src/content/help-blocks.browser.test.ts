@@ -184,12 +184,15 @@ test("a key cap stands out from a surface-coloured panel in dark mode", async ()
         {
           panel: getComputedStyle(panel).backgroundColor,
           cap: getComputedStyle(panel.querySelector(".k2b-kbd__key")!).backgroundColor,
+          weight: getComputedStyle(panel.querySelector(".k2b-kbd__key")!).fontWeight,
           muted: getComputedStyle(panel).getPropertyValue("--k2b-surface-muted").trim(),
         },
       ]),
     ),
   );
   expect(surfaces.light!.cap).toBe(surfaces.light!.panel);
+  // The cap's shape marks the key; its label is not bold.
+  for (const surface of Object.values(surfaces)) expect(surface.weight).toBe("400");
   for (const id of ["theme", "class", "ancestor"]) {
     expect(surfaces[id]!.cap, id).not.toBe(surfaces[id]!.panel);
     expect(surfaces[id]!.cap, id).toBe("rgb(32, 36, 42)");

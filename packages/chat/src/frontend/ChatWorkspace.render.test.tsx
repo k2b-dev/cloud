@@ -15,6 +15,8 @@ process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 
 const { LocaleProvider } = await import("@k2b/ui");
 const { default: ChatWorkspace } = await import("./ChatWorkspace.island");
+const { default: DiscoverChannels } = await import("./DiscoverChannels");
+const { default: ForYou } = await import("./ForYou");
 const now = "2026-10-12T10:30:00.000Z";
 const viewerId = "11111111-1111-4111-8111-111111111111";
 const conversation: NonNullable<ChatWorkspaceProps["open"]>["conversation"] = {
@@ -73,14 +75,19 @@ describe("ChatWorkspace server render", () => {
       expect(html).toContain(t.noChatsTitle);
       expect(html).toContain(t.noChatsDescription);
     });
-    test(`channel discovery renders its authorized initial page and membership in ${locale}`, () => {
+    test(`channel discovery renders its authorized seed after loading in ${locale}`, () => {
       const channel = { ...conversation, channel: true, purpose: "Decisions for the studio" };
-      const html = render(locale, {
-        ...props(),
-        channelsPage: true,
-        channelQuery: "studio",
-        channelPage: { items: [channel], nextCursor: null },
-      });
+      const html = renderChild(locale, () =>
+        createComponent(DiscoverChannels, {
+          initial: { items: [channel], nextCursor: null },
+          query: "studio",
+          revision: 0,
+          onQuery: () => {},
+          onSubscribe: async () => {},
+          onOpen: async () => {},
+          onBack: async () => {},
+        }),
+      );
       expect(html).toContain(t.browseChannels);
       expect(html).toContain(t.discoverSubtitle);
       expect(html).toContain(channel.purpose);
@@ -489,8 +496,32 @@ for (const href of [undefined, "/app/inventory/item"])
   });
 
 test("a partial For you page offers Retry and does not claim the list is empty", () => {
-  const html = render("en", { ...props(), forYouPage: true, forYouInitial: { items: [], nextCursor: "", incomplete: true } });
+  const html = renderChild("en", () =>
+    createComponent(ForYou, {
+      initial: { items: [], nextCursor: "", incomplete: true },
+      basePath: "/app/chat",
+      dateConfig: props().dateConfig,
+      now: () => new Date(now),
+      revision: 0,
+      onOpen: async () => {},
+      onBack: async () => {},
+    }),
+  );
   expect(html).toContain("Some discussions could not be checked.");
   expect(html).toContain(chatMessages.resolve(["en"]).t.retry);
   expect(html).not.toContain(chatMessages.resolve(["en"]).t.forYouEmpty);
+});
+
+test("rare destinations use the same localized loading surface for SSR and their first client render", () => {
+  for (const locale of ["en", "de"]) {
+    const html = render(locale, {
+      ...props(),
+      channelsPage: true,
+      channelQuery: "studio",
+      channelPage: { items: [conversation], nextCursor: null },
+    });
+    expect(html).toContain(chatMessages.resolve([locale]).t.loadingCode);
+    expect(html).toContain('class="chat-deferred-feedback"');
+    expect(html).not.toContain(chatMessages.resolve([locale]).t.discoverSubtitle);
+  }
 });

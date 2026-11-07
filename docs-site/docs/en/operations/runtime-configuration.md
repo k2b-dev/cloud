@@ -5,7 +5,7 @@ section: Operations
 order: 1140
 description: Configure application containers, platform connections, and environment-specific values.
 tags: [configuration, environment, settings]
-updated: 2026-10-31
+updated: 2026-11-05
 ---
 
 # Runtime configuration
@@ -18,6 +18,77 @@ For the services and optional integrations needed by each app, start with
 
 Cloud validates settings when it reads them. Values stored in Postgres are
 encrypted with `APP_SECRET`.
+
+## Anonymous internal Geo autocomplete
+
+Deploy Core and the gateway behind the private application network. Core's
+listener must not be exposed directly; the gateway blocks the reserved
+`/api/_internal/geo/v1/autocomplete` route on every public host. Set
+`CLOUD_CORE_INTERNAL_ORIGIN` to Core's private origin for Core and its calling
+apps. Core checks the configured internal host without trusting forwarding headers.
+This Host check is not authentication: private network placement and the
+gateway path block enforce the boundary. TLS termination may change the scheme
+but must preserve the internal host.
+
+After upgrading Core, app servers can use `geoClient.autocomplete(input)`
+without a session or enrolled app key. Other capability operations retain
+their authentication requirements. All Geo callers share the monthly budget
+and provider-plan rate. Review `geo.monthly_budget_credits` and `geo.plan`
+(`geo.custom_rps` for Custom) before rollout; the former
+`geo.person_daily_credits` setting no longer limits anyone. Stored values are
+ignored, so no data migration or secret rotation is required. Daily usage
+continues to appear in administration. Anonymous executions have no actor or
+access subject. Budget exhaustion returns 429 `GEO_BUDGET_EXHAUSTED` with
+`Retry-After` until the next calendar month in `app.timezone`.
+
+## Upgrade settings and short-lived links
+
+Update every application, including independently deployed third-party apps,
+to a build using the fixed `@k2b/cloud` package before completing this upgrade.
+Older application processes can still write plaintext settings into Valkey.
+Stop those processes before starting updated applications: the first startup
+for the new cache format removes existing `settings:*` entries and records a
+shared completion marker. Later starts skip that scan. Cleanup must succeed
+before continuing; losing the marker safely repeats it.
+Updated processes cache secret-kind settings only in encrypted form. Do not
+leave older application images running or available for automatic restart.
+Every application makes a settings startup attempt, then retries temporary Valkey
+failures using the remainder of its five-minute NATS and settings recovery
+allowance. If Valkey still fails after that allowance, startup stops. The gateway
+keeps HTTP closed while retrying temporary database or Valkey failures within
+its existing five-minute settings startup budget.
+
+Pending email sign-in links, administrator-issued account sign-in links,
+password-reset links and proxy return links issued before the upgrade become
+invalid. Request a fresh link after the rollout. Existing browser sessions and
+stored settings are unchanged. Rolling back restores the old cache and link
+behavior; links issued by this release do not work on the older release.
+
+If untrusted parties could access Valkey, rotate the secret settings whose
+values were stored there. The cleanup removes live cache entries; it does not
+remove plaintext from existing Valkey persistence files, replicas that have
+not applied the deletions, or backups. Handle those copies under the
+installation's incident-response and backup policy before considering the
+upgrade complete.
+
+## Registered App-PWA staff push
+
+Applications may opt in to staff pushes to registered devices with
+`registeredDevices: { push: "staff" }`. The default pairing and takeover
+behavior stays unchanged. See [App-PWA sessions](/en/docs/identity/app-pwa-sessions#send-a-visit-without-a-qr)
+for authorization, request shapes, and the rule for existing uses.
+
+Application `setup()` adds the `visit_only` boolean column to its reserved
+`_cloud_pwa_devices` table, defaulting existing rows to `false`. Run the normal
+application startup migration before serving the new protocol. The existing
+application database backup contract covers the column; no new infrastructure,
+configuration variable, or polling write is needed.
+
+Before enabling the option, update all replicas of that application to this
+package version. Older processes do not enforce visit-only access. To roll back,
+stop the application and revoke its visit-only carriers before starting older
+code; otherwise those rows could resume ordinary device access. Keep the
+column in place and leave the persistent browser registrations intact.
 
 ## Platform connection startup
 
@@ -642,3 +713,11 @@ registered `/api/ai` prefix; the gateway's registry-based WebSocket proxy
 forwards the socket. See [Live dictation](/en/docs/ai/live-dictation) for the
 protocol, cancellation contract, privacy, and recovery behavior. Verify real
 microphones on Safari/iOS before enabling the feature broadly.
+
+### Discover platform retention settings
+
+Use `cld admin settings show logs.trace_retention_days --json` without `--app`
+to inspect the platform setting's presence and readability. The platform catalog
+also includes `logs.retention_days`; list, show and set use that same catalog.
+Neither list nor show prints stored or default values. `--app core` restricts
+the catalog to Core settings; other application IDs select their owning API.

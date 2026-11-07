@@ -1,5 +1,229 @@
 # Changelog
 
+## [0.60.0](https://github.com/k2b-dev/cloud/compare/npm-cloud-v0.59.0...npm-cloud-v0.60.0) (2026-11-06)
+
+
+### Features
+
+* **cloud:** allow anonymous internal geo autocomplete with global limits ([#2693](https://github.com/k2b-dev/cloud/issues/2693)) ([1b79561](https://github.com/k2b-dev/cloud/commit/1b79561a0d0055dcc3944813e0e0f59b439a0bb8))
+* **cloud:** the phone web shell opens the panel full height with a draggable handle and drops the bottom dock ([#2678](https://github.com/k2b-dev/cloud/issues/2678)) ([aa0aecc](https://github.com/k2b-dev/cloud/commit/aa0aecc68f4c1eb9ba5aca35fe5e689064c77906))
+
+
+### Bug Fixes
+
+* **accounts:** reactivate returning FreeIPA guests without changing file ownership ([#2689](https://github.com/k2b-dev/cloud/issues/2689)) ([09c19c5](https://github.com/k2b-dev/cloud/commit/09c19c5ea1c389f2bb03c78aee9decd4787ace5d))
+* **cloud:** the access dialog marks you in every app and the public link warns and copies as in the mockup ([#2696](https://github.com/k2b-dev/cloud/issues/2696)) ([07b86b1](https://github.com/k2b-dev/cloud/commit/07b86b147996216b59a1edf676409e6025585f5e))
+* **cloud:** the access dialog shows every state of the approved mockup and Remove is red ([#2681](https://github.com/k2b-dev/cloud/issues/2681)) ([9b92493](https://github.com/k2b-dev/cloud/commit/9b92493a958e8ca727d25a4e314b0b1a4b667f58))
+* **ui:** detail pages drop the back row beside a sidebar that marks their ancestor ([#2710](https://github.com/k2b-dev/cloud/issues/2710)) ([3e34b52](https://github.com/k2b-dev/cloud/commit/3e34b524c7480df735a207f95cc1789797a7d641))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @k2b/ui bumped from 0.48.0 to 0.49.0
+    * @k2b/editor bumped from 0.6.4 to 0.6.5
+
+## [0.59.0](https://github.com/k2b-dev/cloud/compare/npm-cloud-v0.58.0...npm-cloud-v0.59.0) (2026-11-05)
+
+
+### Features
+
+* **ai:** AI providers run on Nessi 1.1, and read-only Queries run in parallel ([#2600](https://github.com/k2b-dev/cloud/issues/2600)) ([4e178b4](https://github.com/k2b-dev/cloud/commit/4e178b46fd30735825e5e7ccc413462a04bf7fe0))
+* **cloud:** apps decide with typed answers from a decision model ([#2611](https://github.com/k2b-dev/cloud/issues/2611)) ([b294bcb](https://github.com/k2b-dev/cloud/commit/b294bcbafbc12e01c5f25acd0eec8de48ed11980))
+* **cloud:** Cloud app parts can keep a fixed place in the tab bar ([#2642](https://github.com/k2b-dev/cloud/issues/2642)) ([d056cfd](https://github.com/k2b-dev/cloud/commit/d056cfd02d4d4a42342f71c0a74a3076eba0788c))
+* **cloud:** Cloud app parts get offline-safe questions, their own name when refused, and full-screen pages ([#2644](https://github.com/k2b-dev/cloud/issues/2644)) ([09d7971](https://github.com/k2b-dev/cloud/commit/09d7971bb6489fe854f110c7ca77bad43a03932e))
+* **cloud:** each Cloud app part shows its app colour ([#2646](https://github.com/k2b-dev/cloud/issues/2646)) ([b4759d2](https://github.com/k2b-dev/cloud/commit/b4759d2eb3eece4a90043c74251766df81102d74))
+* **cloud:** let staff send visits to registered app devices ([#2667](https://github.com/k2b-dev/cloud/issues/2667)) ([04fc702](https://github.com/k2b-dev/cloud/commit/04fc70271bf6370f451ccf2dee8ffadf6700c300))
+
+
+### Bug Fixes
+
+* **cloud:** allow app keys for resource principal reads ([#2676](https://github.com/k2b-dev/cloud/issues/2676)) ([dbf7a07](https://github.com/k2b-dev/cloud/commit/dbf7a079e516d1c287c92b19ca598c7d9e4a5e92)), closes [#2377](https://github.com/k2b-dev/cloud/issues/2377)
+* **cloud:** shared UI shows one responsive variant next to any app stylesheet ([#2664](https://github.com/k2b-dev/cloud/issues/2664)) ([c11fd5b](https://github.com/k2b-dev/cloud/commit/c11fd5bcb4c4e0cf50f7f4aad8a8c89594f667d4))
+* **cloud:** the access dialog keeps full level words and marks on a phone ([#2669](https://github.com/k2b-dev/cloud/issues/2669)) ([27e121a](https://github.com/k2b-dev/cloud/commit/27e121a7d24997f7748b8a62c5cd0709dac1d78f))
+
+
+### Performance Improvements
+
+* **cloud:** a browser loads KaTeX only for content with math ([#2651](https://github.com/k2b-dev/cloud/issues/2651)) ([6e906bb](https://github.com/k2b-dev/cloud/commit/6e906bb954872c58086655350f3084561cab634b))
+* **cloud:** file providers load when a person chooses files ([#2640](https://github.com/k2b-dev/cloud/issues/2640)) ([61480b8](https://github.com/k2b-dev/cloud/commit/61480b86c7032fba33a1ac1a30fd0cd5b645edde))
+* **cloud:** the icon font is versioned and kept on the device ([#2641](https://github.com/k2b-dev/cloud/issues/2641)) ([779de0a](https://github.com/k2b-dev/cloud/commit/779de0a9ceec05f2536c9ecf3382ab0eaef3dde4))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @k2b/ui bumped from 0.47.0 to 0.48.0
+    * @k2b/editor bumped from 0.6.3 to 0.6.4
+
+## [0.58.0](https://github.com/k2b-dev/cloud/compare/npm-cloud-v0.57.0...npm-cloud-v0.58.0) (2026-11-05)
+
+
+### ⚠ BREAKING CHANGES
+
+* **cloud:** all signed-in people means people, not agents ([#2542](https://github.com/k2b-dev/cloud/issues/2542))
+
+### Features
+
+* **assistant:** editors open a Cloud chat with its recent history ([#2587](https://github.com/k2b-dev/cloud/issues/2587)) ([13bbe76](https://github.com/k2b-dev/cloud/commit/13bbe766157915e57d76488dde2ece0c1bc9d078))
+* **cloud:** access settings sum up who has access, as in the approved mockup ([#2634](https://github.com/k2b-dev/cloud/issues/2634)) ([937460e](https://github.com/k2b-dev/cloud/commit/937460efabfb76ab4c06101b11e26dbd400b6305))
+* **cloud:** AI providers can be marked as without data-protection commitment and stay out of every person-facing use ([#2571](https://github.com/k2b-dev/cloud/issues/2571)) ([5012943](https://github.com/k2b-dev/cloud/commit/50129433211ac88319c8ff5c12503c71cde0414b))
+* **cloud:** all signed-in people means people, not agents ([#2542](https://github.com/k2b-dev/cloud/issues/2542)) ([d00e869](https://github.com/k2b-dev/cloud/commit/d00e86915b76e3e795e146b8a0e806e94929ddfe))
+* **cloud:** the access dialog closes with its owner's signal ([#2556](https://github.com/k2b-dev/cloud/issues/2556)) ([3ed73d0](https://github.com/k2b-dev/cloud/commit/3ed73d089d1945d59b9f52d226cad59a0a38ec7d))
+* **cloud:** the resource picker finds mails by sender and date and lists every match ([#2598](https://github.com/k2b-dev/cloud/issues/2598)) ([a507e08](https://github.com/k2b-dev/cloud/commit/a507e086bb484166390caf7dc30520ac970131d0))
+* **grids:** base, app and admin access are edited in the shared access dialog ([#2569](https://github.com/k2b-dev/cloud/issues/2569)) ([c104fbf](https://github.com/k2b-dev/cloud/commit/c104fbf97340cc9dd44e5bfb5c280b19876b4fdb))
+* **mail:** the conversation details follow the shared convention ([#2614](https://github.com/k2b-dev/cloud/issues/2614)) ([76ec6d3](https://github.com/k2b-dev/cloud/commit/76ec6d333e0b2e25141a71f8a1c226550a38bfb9))
+* **pwa:** keep verified release assets on the device ([#2629](https://github.com/k2b-dev/cloud/issues/2629)) ([0dba927](https://github.com/k2b-dev/cloud/commit/0dba927d90111f7ec15e51c5158ebb788b37a75e))
+* **ui:** detail sections carry link commands, loading states, and access rows ([#2603](https://github.com/k2b-dev/cloud/issues/2603)) ([f8e3586](https://github.com/k2b-dev/cloud/commit/f8e3586ddf48eb76a4bb664f51974fb3ab2f3fae))
+
+
+### Bug Fixes
+
+* **accounts:** automatic app keys no longer flood the key list and audit ([#2534](https://github.com/k2b-dev/cloud/issues/2534)) ([5633d69](https://github.com/k2b-dev/cloud/commit/5633d69cedee25eed3784682d11e20224fc5772c))
+* **assistant:** an editor turn ends as it ended, also after a Stop, offline, or an expired sign-in ([#2550](https://github.com/k2b-dev/cloud/issues/2550)) ([ce1e995](https://github.com/k2b-dev/cloud/commit/ce1e995b106f735a1142295482b4e65d784c466e))
+* **assistant:** local reads and attachments send the checked file, not a later one ([6bf790b](https://github.com/k2b-dev/cloud/commit/6bf790b7ba89ec97e6307865a40993fa43918e24))
+* **cloud:** a no-referrer page's own form posts pass the origin check ([#2588](https://github.com/k2b-dev/cloud/issues/2588)) ([4dc97b6](https://github.com/k2b-dev/cloud/commit/4dc97b66c34f662818e19a4882f97b39421ac007))
+* **cloud:** an empty access dialog no longer claims that only you have access ([#2561](https://github.com/k2b-dev/cloud/issues/2561)) ([759815a](https://github.com/k2b-dev/cloud/commit/759815a9f47071fde8d7c8bbe5ff950faeb1e191))
+* **cloud:** an object's API key account reads as an API key, not a service account ([#2635](https://github.com/k2b-dev/cloud/issues/2635)) ([bea046a](https://github.com/k2b-dev/cloud/commit/bea046a2b6357a57c32c5aa49192a97a6863b7cd))
+* **cloud:** approvals from a chat whose tab closed reach Cloud Login as a push ([#2546](https://github.com/k2b-dev/cloud/issues/2546)) ([ceaa3db](https://github.com/k2b-dev/cloud/commit/ceaa3dbf7035b1b81877900c26143b99a10c17f8))
+* **cloud:** defer app update reloads while actions run ([#2605](https://github.com/k2b-dev/cloud/issues/2605)) ([6bf790b](https://github.com/k2b-dev/cloud/commit/6bf790b7ba89ec97e6307865a40993fa43918e24))
+* **cloud:** requests signed in with a session cookie that change data are accepted only from the public Cloud origin ([4dc97b6](https://github.com/k2b-dev/cloud/commit/4dc97b66c34f662818e19a4882f97b39421ac007))
+* **cloud:** the access dialog keeps a principal's grant and denial apart ([#2566](https://github.com/k2b-dev/cloud/issues/2566)) ([5abc66c](https://github.com/k2b-dev/cloud/commit/5abc66ce64bcc0a65f8c81359b8445712e263528))
+* **cloud:** the access dialog's service accounts read as the approved mockup ([#2595](https://github.com/k2b-dev/cloud/issues/2595)) ([5441b7e](https://github.com/k2b-dev/cloud/commit/5441b7ef9811bce028515c086873ed13a5caf3af))
+* **cloud:** the access dialog's states and level menu match the approved mockup ([#2631](https://github.com/k2b-dev/cloud/issues/2631)) ([290f221](https://github.com/k2b-dev/cloud/commit/290f221f1218fe888b9bb2d2a8558cb63562ba76))
+* **cloud:** the F8 inventory lists grants of every app, also third-party ones ([#2591](https://github.com/k2b-dev/cloud/issues/2591)) ([df5fb77](https://github.com/k2b-dev/cloud/commit/df5fb774ffd3499f585d23cd0bf32634d8c2d496))
+* **deps:** AI tools keep provider credentials on their origin and enforce tool schemas ([#2586](https://github.com/k2b-dev/cloud/issues/2586)) ([187eb45](https://github.com/k2b-dev/cloud/commit/187eb457267abe66cfc6e80cd7cd8437b3af54b2))
+
+
+### Performance Improvements
+
+* **cloud:** unblock first paint with smaller CSS and deferred icons ([#2626](https://github.com/k2b-dev/cloud/issues/2626)) ([ec35e33](https://github.com/k2b-dev/cloud/commit/ec35e3312b08be904a07f5410c57481139df602f))
+* **ui:** keep Cloud app counter islands small ([#2622](https://github.com/k2b-dev/cloud/issues/2622)) ([9709b1a](https://github.com/k2b-dev/cloud/commit/9709b1ac0fb657c712907364383acd3c191539df))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @k2b/ui bumped from 0.46.0 to 0.47.0
+    * @k2b/editor bumped from 0.6.2 to 0.6.3
+
+## [0.57.0](https://github.com/k2b-dev/cloud/compare/npm-cloud-v0.56.0...npm-cloud-v0.57.0) (2026-11-03)
+
+
+### Features
+
+* **accounts:** pages, filters and actions change without a document load ([#2535](https://github.com/k2b-dev/cloud/issues/2535)) ([7753c4b](https://github.com/k2b-dev/cloud/commit/7753c4b15804139486bfd58a01bb6d28e8186283))
+* **cloud:** app PWAs can register a shared device and hand it over without QR codes ([#2496](https://github.com/k2b-dev/cloud/issues/2496)) ([7f87e13](https://github.com/k2b-dev/cloud/commit/7f87e1362e3d3069fa7b1cfa6c5e32ed5d8713b1))
+* **cloud:** new agent API keys act exactly as their agent ([#2533](https://github.com/k2b-dev/cloud/issues/2533)) ([b1d113b](https://github.com/k2b-dev/cloud/commit/b1d113b6c38ca3183117d4a519083e31769f09d5))
+* **cloud:** one access dialog collects changes and shows what changes before saving ([#2543](https://github.com/k2b-dev/cloud/issues/2543)) ([f88a68d](https://github.com/k2b-dev/cloud/commit/f88a68dcab732a6cb640b2d4a4c568330cb87dce))
+* **cloud:** the file chooser is a compact file dialog ([#2481](https://github.com/k2b-dev/cloud/issues/2481)) ([f771fd0](https://github.com/k2b-dev/cloud/commit/f771fd01eecfe54ac0e67931237e3274f4891fb7))
+* **cloud:** the profile menu hides the sidebar and the panel button matches search and help ([#2486](https://github.com/k2b-dev/cloud/issues/2486)) ([ed36267](https://github.com/k2b-dev/cloud/commit/ed36267bc4862090cfb5321b67efecfd40bd47e8))
+* **notebooks:** the detail panel shows who is here and who has access ([#2499](https://github.com/k2b-dev/cloud/issues/2499)) ([5c4b65e](https://github.com/k2b-dev/cloud/commit/5c4b65e1d40fc02fcf1e5fe9382a6963c9988522))
+
+
+### Bug Fixes
+
+* **accounts:** the requests badge counts instead of reading request rows ([#2532](https://github.com/k2b-dev/cloud/issues/2532)) ([afbc7a6](https://github.com/k2b-dev/cloud/commit/afbc7a6dd97e5e9b69f8be88dd50210c7c73dcdd))
+* **cloud:** secret settings stay encrypted in the shared cache and short-lived sign-in links are stored by hash ([9ca76e8](https://github.com/k2b-dev/cloud/commit/9ca76e8145b4323f77d07041a1fc189299f816df))
+* **grids:** avoid idle workflow polling and queue growth ([#2476](https://github.com/k2b-dev/cloud/issues/2476)) ([ee0ead8](https://github.com/k2b-dev/cloud/commit/ee0ead814e61a93de553552533cc8ed196956456))
+* **ui:** the shell no longer restyles the whole page when a node changes ([#2495](https://github.com/k2b-dev/cloud/issues/2495)) ([6bb2c9c](https://github.com/k2b-dev/cloud/commit/6bb2c9c40a572ccdb3e567f2b3d4c654e38b70b6))
+
+
+### Performance Improvements
+
+* **cloud:** guard startup-only Postgres application names ([#2484](https://github.com/k2b-dev/cloud/issues/2484)) ([9ca76e8](https://github.com/k2b-dev/cloud/commit/9ca76e8145b4323f77d07041a1fc189299f816df))
+* **cloud:** recover idle workflow workers every thirty seconds ([#2485](https://github.com/k2b-dev/cloud/issues/2485)) ([c327a3b](https://github.com/k2b-dev/cloud/commit/c327a3b2d88d514b0cb0fd2022942e60fb776409))
+* **cloud:** search and widgets resolve the person once per request ([#2530](https://github.com/k2b-dev/cloud/issues/2530)) ([48f1e59](https://github.com/k2b-dev/cloud/commit/48f1e5952d92946c5dc5c286017b7f5616d122a8))
+* **gateway:** persist app metadata only when it changes ([#2483](https://github.com/k2b-dev/cloud/issues/2483)) ([c0a6e4f](https://github.com/k2b-dev/cloud/commit/c0a6e4fe38f1d503b714a20249ac074a029a0c5a))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @k2b/ssr bumped from 0.20.2 to 0.21.0
+    * @k2b/ui bumped from 0.45.0 to 0.46.0
+    * @k2b/editor bumped from 0.6.1 to 0.6.2
+
+## [0.56.0](https://github.com/k2b-dev/cloud/compare/npm-cloud-v0.55.0...npm-cloud-v0.56.0) (2026-11-02)
+
+
+### Features
+
+* **cloud:** admin bar groups setup and operations and leads to People ([#2453](https://github.com/k2b-dev/cloud/issues/2453)) ([a1f2ea3](https://github.com/k2b-dev/cloud/commit/a1f2ea3e99b2b8c9ef39368c0900dabfd55952d8))
+* **cloud:** retain background traces only for problems ([#2468](https://github.com/k2b-dev/cloud/issues/2468)) ([653500b](https://github.com/k2b-dev/cloud/commit/653500bba31a366058ec34ac5ec1620856796cce))
+* **core:** admin settings put name, field and source in one row ([#2452](https://github.com/k2b-dev/cloud/issues/2452)) ([4dc2462](https://github.com/k2b-dev/cloud/commit/4dc246227e42f0e7ea97bb9db23715545afbd58a))
+* **ui:** fields share one 2 px edge in every state ([#2458](https://github.com/k2b-dev/cloud/issues/2458)) ([534685c](https://github.com/k2b-dev/cloud/commit/534685cd33d221bc1dbae36890655283c8d1f78f))
+* **ui:** tables show a grey head, row and column lines, and a selected row as a fill ([#2469](https://github.com/k2b-dev/cloud/issues/2469)) ([1f93886](https://github.com/k2b-dev/cloud/commit/1f93886348abb971c33ebcc3790f929face038a1))
+
+
+### Bug Fixes
+
+* **assistant:** a new chat no longer reports a draft conflict, and real conflicts show one localized notice ([#2450](https://github.com/k2b-dev/cloud/issues/2450)) ([f4a968f](https://github.com/k2b-dev/cloud/commit/f4a968f7ff8ae7b81ded36b9cab3f27421f908e4))
+
+
+### Performance Improvements
+
+* **cloud:** read registry and capabilities from observed views ([#2467](https://github.com/k2b-dev/cloud/issues/2467)) ([0515f6e](https://github.com/k2b-dev/cloud/commit/0515f6ea6b5d1363692c605a6097d69c704cae45))
+* **cloud:** wake background delivery across instances ([#2466](https://github.com/k2b-dev/cloud/issues/2466)) ([f9798f3](https://github.com/k2b-dev/cloud/commit/f9798f3e8b502e24fe75286f5e2d93ab5a97294c))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @k2b/ui bumped from 0.44.0 to 0.45.0
+    * @k2b/editor bumped from 0.6.0 to 0.6.1
+
+## [0.55.0](https://github.com/k2b-dev/cloud/compare/npm-cloud-v0.54.0...npm-cloud-v0.55.0) (2026-11-02)
+
+
+### Features
+
+* **platform:** run on Bun 1.4.4 and Alpine 3.24 so isolated test runs stop segfaulting ([f551aa6](https://github.com/k2b-dev/cloud/commit/f551aa683f43dbf51c709973292649c18e729292))
+
+
+### Bug Fixes
+
+* **cloud:** keep registry reads local and preserve app discovery ([#2446](https://github.com/k2b-dev/cloud/issues/2446)) ([2f61f5a](https://github.com/k2b-dev/cloud/commit/2f61f5a75efc1b4577ff6281f55e0d087e5a3dfa))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @k2b/ui bumped from 0.43.0 to 0.44.0
+    * @k2b/editor bumped from 0.5.1 to 0.6.0
+
+## [0.54.0](https://github.com/k2b-dev/cloud/compare/npm-cloud-v0.53.0...npm-cloud-v0.54.0) (2026-11-02)
+
+
+### Features
+
+* **cloud:** omit successful idle background lifecycle spans ([#2436](https://github.com/k2b-dev/cloud/issues/2436)) ([edd815a](https://github.com/k2b-dev/cloud/commit/edd815a2315f86f24d29d085430bfbb7bf146c78))
+* **geoip:** let applications look up a country from an IP address ([#2376](https://github.com/k2b-dev/cloud/issues/2376)) ([9030858](https://github.com/k2b-dev/cloud/commit/9030858f884cadd7bfa970dfc462523c9b5bd3c2))
+* **pulse:** build dashboards from reviewed SQL panels ([#1718](https://github.com/k2b-dev/cloud/issues/1718)) ([60368f0](https://github.com/k2b-dev/cloud/commit/60368f01cd3d441eb4b1e60decbc98179c7a308b))
+
+
+### Bug Fixes
+
+* **cli:** admin settings tests print their result instead of saved ([#2397](https://github.com/k2b-dev/cloud/issues/2397)) ([2f9ea4a](https://github.com/k2b-dev/cloud/commit/2f9ea4ac3bc83cc9ce70ab6d7883168d989df3ee))
+* **cloud:** one slow application no longer delays or breaks a page ([#2434](https://github.com/k2b-dev/cloud/issues/2434)) ([1fc908e](https://github.com/k2b-dev/cloud/commit/1fc908e0e3944c23545aa9e1f1bbc0c9098bdcc2))
+* **core:** a fresh boot no longer deadlocks on browser-notification setup ([#2393](https://github.com/k2b-dev/cloud/issues/2393)) ([fc47d68](https://github.com/k2b-dev/cloud/commit/fc47d686cdd0715af2fc388577a683d4d32dd700))
+* **identity:** full-access machine keys name their scopes and work ([#2396](https://github.com/k2b-dev/cloud/issues/2396)) ([07f13e5](https://github.com/k2b-dev/cloud/commit/07f13e5cef415002cd363715f5ee22db77b3447b))
+* **settings:** include platform keys in the default admin catalog ([#2426](https://github.com/k2b-dev/cloud/issues/2426)) ([ef96b11](https://github.com/k2b-dev/cloud/commit/ef96b11b3c924546a544a6cf5d333d1cbfe88097))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @k2b/ui bumped from 0.42.0 to 0.43.0
+    * @k2b/editor bumped from 0.5.0 to 0.5.1
+
 ## [0.53.0](https://github.com/k2b-dev/cloud/compare/npm-cloud-v0.52.0...npm-cloud-v0.53.0) (2026-11-01)
 
 

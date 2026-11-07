@@ -5,7 +5,7 @@ section: AI
 order: 1065
 description: Inspect AI reference costs, configure Assistant budgets and a background emergency stop, and investigate workflow costs.
 tags: [ai, usage, feedback, administration]
-updated: 2026-10-27
+updated: 2026-11-03
 ---
 
 # Usage and feedback
@@ -145,7 +145,7 @@ already-recorded consumption in the current window.
 
 Each rule selects a priced model profile or **All chat models**, a reset interval
 of 1–8,760 hours (new rules default to **24**), and assignments to users, groups,
-service accounts or all signed-in identities. An assignment gives a personal
+service accounts or all signed-in people. An assignment gives a personal
 cost allowance, not a shared group pot. The largest matching allowance applies;
 assignments are never added together. No matching assignment means zero for that
 rule; no applicable rule means no limit.
@@ -273,7 +273,8 @@ is also supported.
 disables the warning. Limits and thresholds accept up to six decimal places.
 
 Rules carry `scope`, `hours`, `anchor` and `grants` with a cost `limit` (`null`
-means unlimited). `authenticated` matches signed-in users and service accounts.
+means unlimited). `authenticated` matches signed-in people, including guests and their delegated
+credentials. Agents and other service accounts need their own grant or a group.
 Use `user`/`userId`, `group`/`groupId`, or `service_account`/`serviceAccountId` for
 specific identities. Group membership follows the normal permission rules.
 Exported grants also carry `displayName` and, for service accounts,

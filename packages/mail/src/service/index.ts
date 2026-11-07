@@ -37,6 +37,7 @@ import * as localTags from "./local-tags";
 import * as mailboxDetails from "./mailbox-details";
 import * as mailboxPreferences from "./mailbox-preferences";
 import * as mailboxes from "./mailboxes";
+import * as messageBodyRequests from "./message-body-request";
 import * as hydration from "./message-hydration";
 import * as messageInspector from "./message-inspector";
 import * as messages from "./messages";
@@ -125,6 +126,7 @@ export {
   mailboxDetails,
   mailboxes,
   mailboxPreferences,
+  messageBodyRequests,
   messageInspector,
   messages,
   notificationTargets,
@@ -179,6 +181,7 @@ export const mailService = {
   folders,
   hydration,
   mailboxes,
+  messageBodyRequests,
   messageInspector,
   messages,
   notificationTargets,

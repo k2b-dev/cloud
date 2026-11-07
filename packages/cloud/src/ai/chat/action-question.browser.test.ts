@@ -308,7 +308,7 @@ describe("answering", () => {
       await page.keyboard.press("Enter");
       await page.locator(".k2b-chat-outcome[data-tone='warning']").waitFor();
       expect(await page.evaluate(() => document.activeElement?.classList.contains("k2b-chat-outcome"))).toBe(true);
-      expect(await page.locator(".k2b-chat-outcome__text[data-current='true']").textContent()).toContain("kam nicht an");
+      expect(await page.locator(".k2b-chat-outcome__text[data-current='true']").textContent()).toContain("ist nicht bestätigt");
       // The thing's chip in the line is a link; the line's own link follows it.
       for (let index = 0; index < 4; index += 1) {
         await page.keyboard.press("Tab");

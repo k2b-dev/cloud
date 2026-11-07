@@ -15,7 +15,6 @@ import { ImageMetadataError } from "../image-metadata";
 import type { SettingEntry } from ".";
 import * as settingsPrimitives from ".";
 import { SETTINGS_MAP, validateSettingValue } from "./defaults";
-import { assertGeoBudgetPair, GeoBudgetSettingError } from "./geo-budget";
 import { invalidateSettingsCache, SettingUnreadableError } from "./store";
 
 /**
@@ -71,7 +70,6 @@ export const settingsService = {
         const auditEvent = config.audit;
         if (auditEvent) {
           await sql.begin(async (tx) => {
-            await assertGeoBudgetPair(tx, { [config.key]: validated.value }, []);
             await settingsPrimitives.set(config.key, validated.value, tx, { replaceUnreadable: config.replaceUnreadable });
             await audit.record(auditEvent, tx);
           });
@@ -80,8 +78,7 @@ export const settingsService = {
         return ok(undefined);
       } catch (error) {
         // Preserve the typed HTTP status and recovery code through Hono.
-        if (error instanceof ImageMetadataError || error instanceof SettingUnreadableError || error instanceof GeoBudgetSettingError)
-          throw error;
+        if (error instanceof ImageMetadataError || error instanceof SettingUnreadableError) throw error;
         const message = error instanceof Error ? error.message : String(error);
         if (message.startsWith("Unknown setting:")) {
           return fail(err.badInput(message));
@@ -97,7 +94,6 @@ export const settingsService = {
         await settingsPrimitives.remove(config.key);
         return ok(undefined);
       } catch (error) {
-        if (error instanceof GeoBudgetSettingError) throw error;
         return fail(err.internal(`Failed to reset setting: ${error instanceof Error ? error.message : String(error)}`));
       }
     },

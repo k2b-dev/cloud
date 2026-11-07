@@ -21,6 +21,7 @@ export type {
   TraceSpan,
   TraceSpanKind,
   TraceStatus,
+  TraceSuccessMinutes,
   TraceSummary,
   TraceWindow,
 } from "./trace";
@@ -41,6 +42,13 @@ registerSettings([
     kind: "number",
     default: 30,
     description: "Automatically delete completed traces older than this many days",
+    group: "logs",
+  },
+  {
+    key: "logs.trace_max_bytes",
+    kind: "number",
+    default: 1024 ** 3,
+    description: "Live trace and background minute row budget in bytes; Core deletes oldest completed records first",
     group: "logs",
   },
 ]);

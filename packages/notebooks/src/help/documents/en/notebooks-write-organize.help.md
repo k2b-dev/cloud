@@ -10,6 +10,12 @@ Write notes as readable Markdown. Then use links, tags, attachments, and the sid
 
 **Collaboration**
 
+## See who is here {icon="users"}
+
+**Here now** is at the top of the note details. It shows who has the note open. A pen shows who writes, an eye who reads. The line below says who writes in which section. Choose a person who writes to jump to their place. **Copy link** copies the note's address, so you can ask someone to join.
+
+Under **Contents**, the people who write under a heading stand next to it. Without a connection, **Here now** shows the last state with its time.
+
 ## Discuss a page {icon="message-circle"}
 
 Use **Comments** in the note details for questions, feedback, and decisions. Comments belong next to the page but do not change its Markdown.
@@ -53,6 +59,25 @@ Open the note details and choose **Version history**. Pick a version to see its 
 You need **Edit** access to restore. A locked note can only be restored as a copy.
 
 **Markdown**
+
+## Start a note from a template {icon="template"}
+
+A template gives a new note its headings, tables, and task lists. Every notebook offers **Meeting notes**, **Project page**, and **Decision**. You can add your own templates.
+
+1. Choose **New note** at the top of the sidebar.
+2. Choose a template in the menu.
+
+Cloud fills in `{{date}}` with today's date and `{{author}}` with your name. The new note keeps no link to its template.
+
+:::reference
+- **Empty note:** A note with only a title shows **Start with a template** below the title. Choose a template there. It replaces the empty note. Press ⌘Z (Windows and Linux: Ctrl+Z) to undo it.
+- **Slash menu:** Type /template in a note and choose a template. In a note with text, the sections of the template go to the cursor.
+- **Own template:** Open the menu of a note and choose **Save as template…**. Give the template a name. The template copies the current text of the note.
+- **Rename or delete:** Open **Settings → Notebook → Templates**. Notes made from a template stay as they are.
+- **Who can do what:** With **View** access, you see the templates. With **Edit** access, you use, save, rename, and delete them. A notebook has at most 100 own templates.
+- **Phone:** Open the menu and choose **New note from template**.
+- **Terminal:** `cld notebooks page-templates` lists, uses, saves, renames, and deletes templates.
+:::
 
 ## Write a useful note {icon="pencil"}
 

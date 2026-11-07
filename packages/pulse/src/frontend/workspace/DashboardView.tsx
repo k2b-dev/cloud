@@ -1,6 +1,6 @@
 import { navigateTo } from "@k2b/ssr/nav";
-import { Avatar, Button, createChartCursor, DateTimePicker, NoticeCard, PanelHeader, RangePicker, useLocale } from "@k2b/ui";
-import { createEffect, createMemo, createSignal, For, Show } from "solid-js";
+import { Button, createChartCursor, DateTimePicker, NoticeCard, PanelHeader, RangePicker, useLocale } from "@k2b/ui";
+import { createEffect, createMemo, createSignal, ErrorBoundary, For, Show } from "solid-js";
 import type { Dashboard, DashboardPanel, DashboardRange } from "../../dashboard-contracts";
 import type { Overview } from "../../overview-contracts";
 import { usePulseMessages } from "../use-messages";
@@ -9,7 +9,7 @@ import { createDashboardActions, type DashboardActions } from "./dashboard-actio
 import type { DashboardTarget, PublicDashboardPanel } from "./dashboard-client";
 import { dashboardRangeSearch } from "./dashboard-client";
 import { createDashboardController } from "./dashboard-controller";
-import { dashboardSections } from "./dashboard-data";
+import { dashboardDateTime, dashboardSections } from "./dashboard-data";
 import { dashboardStyles } from "./dashboard-styles";
 
 export type DashboardViewProps = {
@@ -18,6 +18,8 @@ export type DashboardViewProps = {
   target: DashboardTarget;
   range: DashboardRange;
   path: string;
+  /** The base's time zone: every time on the dashboard and the custom range read in it. */
+  timeZone: string;
   actions?: DashboardActions;
   private?: { dashboard: Dashboard; base: { id: string; name: string }; canWrite: boolean; overview?: Overview | null };
 };
@@ -25,9 +27,8 @@ export default function DashboardView(props: DashboardViewProps) {
   const t = usePulseMessages(),
     locale = useLocale();
   const c = createDashboardController({ target: props.target, panels: props.panels, range: props.range });
-  const cursor = createChartCursor({
-    formatX: (x) => new Intl.DateTimeFormat(locale(), { dateStyle: "medium", timeStyle: "short", timeZone: "UTC" }).format(x) + " UTC",
-  });
+  const clock = () => ({ locale: locale(), timeZone: props.timeZone });
+  const cursor = createChartCursor({ formatX: (x) => dashboardDateTime(clock()).format(x) });
   const sections = createMemo(() => dashboardSections(props.panels));
   const stats = () => props.panels.filter((panel) => panel.kind === "number");
   const [custom, setCustom] = createSignal(!!props.range.from);
@@ -64,21 +65,45 @@ export default function DashboardView(props: DashboardViewProps) {
     results()
       .flatMap((result) => (result.lastGood ? [result.lastGood.at] : []))
       .sort()[0];
-  const timestamp = () =>
-    lastGood()
-      ? new Intl.DateTimeFormat(locale(), { dateStyle: "medium", timeStyle: "short", timeZone: "UTC" }).format(new Date(lastGood()!)) +
-        " UTC"
-      : "";
+  const timestamp = () => (lastGood() ? dashboardDateTime(clock()).format(new Date(lastGood()!)) : "");
+  // A panel that cannot render its result fails alone; the island boundary would blank the whole dashboard.
   const renderPanel = (panel: PublicDashboardPanel | DashboardPanel) => (
-    <DashboardPanelView
-      panel={panel}
-      result={c.results()[panel.id]}
-      pending={c.pending().includes(panel.id)}
-      retryDisabled={c.pending().length > 0}
-      cursor={cursor}
-      retry={() => void c.refresh(panel.id)}
-      private={!!props.private}
-    />
+    <ErrorBoundary
+      fallback={(error: unknown, reset) => {
+        globalThis.reportError(error);
+        return (
+          <article
+            class="pulse-dashboard__panel"
+            data-panel={panel.id}
+            data-kind={panel.kind}
+            data-width={panel.width}
+            aria-label={panel.title}
+          >
+            <div class="pulse-dashboard__panel-head">
+              <h3>{panel.title}</h3>
+            </div>
+            <div class="pulse-dashboard__feedback" role="alert">
+              <strong>{t().dashboardPanelFailed}</strong>
+              <p class="text-sm text-secondary">{t().dashboardInvalidResult}</p>
+              <Button variant="secondary" size="sm" disabled={c.pending().length > 0} onClick={() => void c.refresh(panel.id).then(reset)}>
+                {t().retry}
+              </Button>
+            </div>
+          </article>
+        );
+      }}
+    >
+      <DashboardPanelView
+        panel={panel}
+        result={c.results()[panel.id]}
+        pending={c.pending().includes(panel.id)}
+        retryDisabled={c.pending().length > 0}
+        cursor={cursor}
+        timeZone={props.timeZone}
+        retry={() => void c.refresh(panel.id)}
+        private={!!props.private}
+      />
+    </ErrorBoundary>
   );
   return (
     <div class="pulse-dashboard" data-print-region>
@@ -149,8 +174,9 @@ export default function DashboardView(props: DashboardViewProps) {
               navigateTo(rangeHref({ range: props.range.range, from: new Date(from()!).toISOString(), to: new Date(to()!).toISOString() }));
             }}
           >
-            <DateTimePicker label={t().dashboardFrom} value={from()} onValueChange={setFrom} dateConfig={{ timeZone: "UTC" }} />
-            <DateTimePicker label={t().dashboardTo} value={to()} onValueChange={setTo} dateConfig={{ timeZone: "UTC" }} />
+            {/* Wall-clock time in the base's zone, which the picker panel names; both emit exact instants. */}
+            <DateTimePicker label={t().dashboardFrom} value={from()} onValueChange={setFrom} dateConfig={{ timeZone: props.timeZone }} />
+            <DateTimePicker label={t().dashboardTo} value={to()} onValueChange={setTo} dateConfig={{ timeZone: props.timeZone }} />
             <Button type="submit" variant="secondary">
               {t().dashboardApplyRange}
             </Button>
@@ -231,25 +257,12 @@ export default function DashboardView(props: DashboardViewProps) {
                 <Show when={section.name}>
                   <div class="pulse-dashboard__section-heading">
                     <Show when={section.icon}>
-                      <span aria-hidden="true">
-                        <Avatar
-                          name={section.name}
-                          icon={section.icon}
-                          size="xs"
-                          shape="square"
-                          style={{
-                            width: "26px",
-                            height: "26px",
-                            "border-radius": "8px",
-                            ...(section.color
-                              ? {
-                                  color: `color-mix(in srgb, ${section.color} 72%, var(--k2b-text))`,
-                                  background: `color-mix(in srgb, ${section.color} 16%, var(--k2b-surface))`,
-                                }
-                              : {}),
-                          }}
-                        />
-                      </span>
+                      {/* A plain glyph in the section colour; the heading is not a tile. */}
+                      <i
+                        class={`pulse-dashboard__section-icon ${section.icon}`}
+                        style={section.color ? { color: `color-mix(in srgb, ${section.color} 72%, var(--k2b-text))` } : undefined}
+                        aria-hidden="true"
+                      />
                     </Show>
                     <h2>{section.name}</h2>
                     <Show when={section.description}>

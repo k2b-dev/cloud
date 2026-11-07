@@ -1,7 +1,9 @@
 import { expect, spyOn, test } from "bun:test";
+import { Hono } from "hono";
 import { createComponent } from "solid-js";
 import { isServer, render } from "solid-js/web";
 import { createDomTestHarness, type DomTestHarness } from "../../../ui/test/dom";
+import { createApiClient } from "../server/api-client";
 
 const waitFor = async (condition: () => boolean, label: string) => {
   for (let attempt = 0; attempt < 200; attempt += 1) {
@@ -165,6 +167,91 @@ else {
       page.dispose();
     }
   });
+  test("a pending typed mutation defers the update until the next foreground after it settles", async () => {
+    let settle!: (response: Response) => void;
+    const action = new Promise<Response>((resolve) => {
+      settle = resolve;
+    });
+    const fetch = mockRenew([
+      action,
+      Response.json({ renewed: false, builds: { inventory: "new" } }),
+      Response.json({ renewed: false, builds: { inventory: "new" } }),
+    ]);
+    const page = mount({ url: "/pwa/inventory", renewedThisSession: true });
+    const routes = new Hono().post("/save", (c) => c.json({ saved: true }));
+    try {
+      const pending = createApiClient<typeof routes>().save.$post();
+      await waitFor(() => fetch.calls.length === 1, "mutation started");
+      setVisibility(page.dom, "visible");
+      await waitFor(() => page.dom.document.body.textContent?.includes("New version of Example Cloud") ?? false, "busy update notice");
+      expect(page.reloads).toBe(0);
+      settle(Response.json({ saved: true }));
+      await pending;
+      expect(page.reloads).toBe(0);
+      setVisibility(page.dom, "hidden");
+      setVisibility(page.dom, "visible");
+      await waitFor(() => page.reloads === 1, "reload after action settled");
+    } finally {
+      settle(Response.json({ saved: true }));
+      page.dispose();
+      fetch.restore();
+    }
+  });
+
+  test("a pending GET read does not block an update reload", async () => {
+    let settle!: (response: Response) => void;
+    const read = new Promise<Response>((resolve) => {
+      settle = resolve;
+    });
+    const fetch = mockRenew([read, Response.json({ renewed: false, builds: { inventory: "new" } })]);
+    const page = mount({ url: "/pwa/inventory", renewedThisSession: true });
+    const routes = new Hono().get("/items", (c) => c.json([]));
+    const pending = createApiClient<typeof routes>().items.$get();
+    try {
+      await waitFor(() => fetch.calls.length === 1, "read started");
+      setVisibility(page.dom, "visible");
+      await waitFor(() => page.reloads === 1, "reload during GET");
+    } finally {
+      settle(Response.json([]));
+      await pending;
+      page.dispose();
+      fetch.restore();
+    }
+  });
+
+  test("concurrent mutations release protection individually, including a failed request", async () => {
+    const first = Promise.withResolvers<Response>();
+    const second = Promise.withResolvers<Response>();
+    const changed = () => Response.json({ renewed: false, builds: { inventory: "new" } });
+    const fetch = mockRenew([first.promise, second.promise, changed(), changed()]);
+    const page = mount({ url: "/pwa/inventory", renewedThisSession: true });
+    const routes = new Hono().post("/save", (c) => c.json({ saved: true }));
+    const client = createApiClient<typeof routes>();
+    const pendingFirst = client.save.$post();
+    const pendingSecond = client.save.$post();
+    try {
+      await waitFor(() => fetch.calls.length === 2, "both mutations started");
+      first.resolve(Response.json({ saved: true }));
+      await pendingFirst;
+      setVisibility(page.dom, "visible");
+      await waitFor(
+        () => page.dom.document.body.textContent?.includes("New version of Example Cloud") ?? false,
+        "second mutation blocks reload",
+      );
+      expect(page.reloads).toBe(0);
+      second.reject(new DOMException("Cancelled", "AbortError"));
+      await expect(pendingSecond).rejects.toThrow("Cancelled");
+      setVisibility(page.dom, "visible");
+      await waitFor(() => page.reloads === 1, "reload after rejection");
+    } finally {
+      first.resolve(Response.json({ saved: true }));
+      second.resolve(Response.json({ saved: true }));
+      await Promise.allSettled([pendingFirst, pendingSecond]);
+      page.dispose();
+      fetch.restore();
+    }
+  });
+
   test("reloads the same address on foreground when its owner or Core changed, with no unsaved text", async () => {
     for (const builds of [
       { inventory: "new", core: "core-old" },

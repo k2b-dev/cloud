@@ -2,14 +2,19 @@ import { sql } from "@k2b/cloud";
 import { err, fail, ok, type Result } from "@k2b/stdlib";
 import { convert } from "html-to-text";
 import { z } from "zod";
-import type { ConversationView, ConversationWorkStatus, FolderDisplay } from "../contracts";
-import { isAggregatedListing } from "../folder-display-rules";
+import type { ConversationView, ConversationWorkStatus, FolderDisplay, MailSearchExpression } from "../contracts";
+import { FILING_FOLDER_ROLES, isAggregatedListing, mailListingOpenOnly, mailSearchOpenWorkTerms } from "../folder-display-rules";
 import type { MailSecurityAssessment } from "../security-contracts";
 import { conversationVisibleTo, draftVisibleTo, type MailboxAccess, messageVisibleTo, requireVisibleConversation } from "./access";
 import { attachmentMimeOrder } from "./attachment-order";
 import { type MailRequestContext, personalPrincipal } from "./auth";
 import { isUnassignedConversation, type LapsedAssignee, listLapsedAssignees } from "./collaborators";
-import { type ConversationCursorScope, decodeConversationCursor, encodeConversationCursor } from "./conversation-cursor";
+import {
+  type ConversationCursorGroup,
+  type ConversationCursorScope,
+  decodeConversationCursor,
+  encodeConversationCursor,
+} from "./conversation-cursor";
 import { isKeptConversation, isKeptMessage } from "./conversation-keep-rules";
 import { hasSendProblem, isUnsentOutboundMessage } from "./conversation-timeline";
 import { resolveMailExecution } from "./execution";
@@ -19,14 +24,15 @@ import {
   folderDisplayStates,
   loadAggregatedViewScope,
   staysInAggregatedViews,
-  staysInAggregatedViewsAggregate,
 } from "./folder-display";
-import { FOLLOW_UP_VIEWS, isFollowUpConversation, isFollowUpMessage } from "./follow-up-scope";
+import { FOLLOW_UP_VIEWS, isFollowUpConversation, isOpenConversation } from "./follow-up-scope";
 import { mailingListMetadata } from "./mailing-list-metadata";
 import { parseMessageProtocolFacts } from "./message-protocol";
 import { OUTBOX_MAX_ATTEMPTS } from "./outbound-delivery";
 import { type MessageRemoteContent, resolveMessagesRemoteContent } from "./remote-content";
 import { assessMessages } from "./security";
+import { cachedConversationViewCounts } from "./view-count-cache";
+import { type MailboxConversationCounts, queryConversationViewCounts } from "./view-count-query";
 
 type DateCursor = { version: 1; date: string; id: string };
 
@@ -160,6 +166,17 @@ export const listFolders = async (context: MailRequestContext, mailboxId: string
         AND placement.deleted_at IS NULL
         AND ${messageVisibleTo(visibility, sql`placement.message_id`)}
         AND NOT ('\\Seen' = ANY(placement.flags))
+        -- Like the folder's list, a work folder counts only open conversations; filing folders count everything.
+        AND (
+          COALESCE(role_override.role, f.role) IN (SELECT value FROM jsonb_array_elements_text(${FILING_FOLDER_ROLES}::jsonb))
+          OR NOT EXISTS (
+            SELECT 1
+            FROM mail.conversation_messages closed_cm
+            JOIN mail.conversations closed_c ON closed_c.id = closed_cm.conversation_id
+            WHERE closed_cm.message_id = placement.message_id
+              AND NOT ${isOpenConversation(sql`closed_c`)}
+          )
+        )
     ) unread_counts ON true
     WHERE rr.mailbox_id = ${mailboxId}::uuid
       AND NOT (f.discovery_state = 'missing' AND f.dismissed_at IS NOT NULL)
@@ -241,6 +258,7 @@ export type ConversationSummary = {
   activeFolderIds: string[];
   flagged: boolean;
   hasAttachments: boolean;
+  attachmentCount: number;
   messageCount: number;
   preview: string | null;
   /** The folder in view, or the conversation's only folder in a folderless view; otherwise `null`. */
@@ -265,7 +283,7 @@ type DbConversation = {
   unread: boolean;
   active_folder_ids: string[];
   flagged: boolean;
-  has_attachments: boolean;
+  attachment_count: number;
   message_count: number;
   preview: string | null;
   folder_id: string | null;
@@ -281,6 +299,42 @@ const includedPlacementCondition = (excludedFolderIds: readonly string[]) => (fo
     SELECT value::uuid FROM jsonb_array_elements_text(${excludedFolderIds}::jsonb)
   ))
 `;
+
+/** The roles of these folders of a mailbox, by their configured role or else the provider's, as the folder list shows them. */
+export const folderRoles = async (mailboxId: string, folderIds: readonly string[]): Promise<string[]> => {
+  if (folderIds.length === 0) return [];
+  const rows = await sql<{ role: string }[]>`
+    SELECT COALESCE(role_override.role, f.role) AS role
+    FROM mail.folders f
+    JOIN mail.remote_resources rr ON rr.id = f.remote_resource_id
+    LEFT JOIN mail.folder_role_overrides role_override
+      ON role_override.mailbox_id = rr.mailbox_id
+     AND role_override.folder_id = f.id
+    WHERE rr.mailbox_id = ${mailboxId}::uuid
+      AND f.id IN (SELECT value::uuid FROM jsonb_array_elements_text(${[...new Set(folderIds)]}::jsonb))
+  `;
+  return rows.map((row) => row.role);
+};
+
+/**
+ * Whether this listing shows open conversations only (`mailListingOpenOnly`), with the roles of the folders it is
+ * limited to: the open folder and the folder conditions of its search.
+ */
+export const listingOpenOnly = async (params: {
+  mailboxId: string;
+  view: ConversationView | null;
+  status: ConversationWorkStatus | null;
+  expression: MailSearchExpression | null;
+  folderId: string | null;
+  includeDone?: boolean;
+}): Promise<boolean> => {
+  if (params.includeDone) return false;
+  const terms = params.expression ? mailSearchOpenWorkTerms(params.expression) : { status: false, text: false, folderIds: [] };
+  const scope = { activeView: params.view, explicitStatus: params.status !== null || terms.status, textSearch: terms.text };
+  if (!mailListingOpenOnly({ ...scope, folderRoles: [] })) return false;
+  const folderIds = [...(params.folderId ? [params.folderId] : []), ...terms.folderIds];
+  return mailListingOpenOnly({ ...scope, folderRoles: await folderRoles(params.mailboxId, folderIds) });
+};
 
 /** The indexed column a listing sorts by. A plain column, never a CASE on a parameter, lets PostgreSQL read the index in order and stop at the page. */
 const conversationSortColumn = (view: ConversationView | null) =>
@@ -338,6 +392,8 @@ export const conversationCandidatesQuery = (params: {
   unread: boolean | null;
   lapsedAssignees: LapsedAssignee[];
   aggregatedScope: AggregatedViewScope | null;
+  /** Leave out done and snoozed conversations (`mailListingOpenOnly`). */
+  openOnly?: boolean;
   cursor: { date: string; id: string } | null;
   limit: number;
 }): Bun.SQL.Query<unknown> => {
@@ -353,26 +409,32 @@ export const conversationCandidatesQuery = (params: {
       AND NOT ('\\Seen' = ANY(unread_mp.flags))
       AND ${folderId ? sql`unread_mp.folder_id = ${folderId}::uuid` : sql`true`}
   )`;
+  const folderPlacement = (folder: string) => sql`
+    SELECT 1
+    FROM mail.conversation_messages folder_cm
+    JOIN mail.message_placements folder_mp ON folder_mp.message_id = folder_cm.message_id
+    WHERE folder_cm.conversation_id = c.id
+      AND folder_mp.folder_id = ${folder}::uuid
+      AND folder_mp.deleted_at IS NULL
+  `;
   return sql`
     SELECT c.*
     FROM mail.conversations c
     WHERE c.mailbox_id = ${params.mailboxId}::uuid
       AND ${conversationVisibleTo(params.visibility, sql`c.id`)}
+      AND ${params.openOnly ? isOpenConversation(sql`c`) : sql`true`}
       AND ${params.status ? sql`c.work_status = ${params.status}` : sql`true`}
       AND ${conversationViewCondition(view, params.currentUserId, params.lapsedAssignees)}
       AND ${view && FOLLOW_UP_VIEWS.includes(view) ? isFollowUpConversation(sql`c.id`) : sql`true`}
       AND ${params.aggregatedScope ? staysInAggregatedViews(sql`c.id`, params.aggregatedScope) : sql`true`}
       AND ${
-        folderId
-          ? sql`EXISTS (
-              SELECT 1
-              FROM mail.conversation_messages folder_cm
-              JOIN mail.message_placements folder_mp ON folder_mp.message_id = folder_cm.message_id
-              WHERE folder_cm.conversation_id = c.id
-                AND folder_mp.folder_id = ${folderId}::uuid
-                AND folder_mp.deleted_at IS NULL
-            )`
-          : sql`true`
+        !folderId
+          ? sql`true`
+          : params.openOnly
+            ? // A per-row check, never a join: a reused plan would otherwise start at the folder's placements and read
+              // every done conversation in a large folder, instead of the open ones newest first up to the page.
+              sql`(${folderPlacement(folderId)} LIMIT 1) IS NOT NULL`
+            : sql`EXISTS (${folderPlacement(folderId)})`
       }
       AND ${unread === null ? sql`true` : unread ? hasUnreadPlacement() : sql`NOT ${hasUnreadPlacement()}`}
       AND ${
@@ -417,9 +479,11 @@ export const listConversations = async (params: {
   status?: ConversationWorkStatus | null;
   view?: ConversationView | null;
   unread?: boolean | null;
+  /** Also list done and snoozed conversations where the list would leave them out. */
+  includeDone?: boolean;
   cursor?: string;
   limit?: number;
-}): Promise<Result<{ items: ConversationSummary[]; nextCursor: string | null }>> => {
+}): Promise<Result<{ items: ConversationSummary[]; nextCursor: string | null; openOnly: boolean }>> => {
   const access = await resolveMailExecution({
     mailboxId: params.mailboxId,
     operation: "actorRead",
@@ -435,6 +499,14 @@ export const listConversations = async (params: {
   const folderId = params.folderId ?? null;
   const excludedFolderIds = view === "kept" ? [] : [...new Set(params.excludedFolderIds ?? [])].sort();
   const includedPlacement = includedPlacementCondition(excludedFolderIds);
+  const openOnly = await listingOpenOnly({
+    mailboxId: params.mailboxId,
+    view,
+    status: params.status ?? null,
+    expression: null,
+    folderId,
+    includeDone: params.includeDone,
+  });
   const cursorScope: ConversationCursorScope = {
     mailboxId: params.mailboxId,
     folderId,
@@ -443,26 +515,52 @@ export const listConversations = async (params: {
     view,
     unread: params.unread ?? null,
     userId: currentUserId,
+    openOnly,
   };
   const cursor = decodeConversationCursor(params.cursor, cursorScope);
   if (!cursor.ok) return cursor;
+  // Assigned to me lists the conversations that need action before those waiting for a reply, each newest first.
+  const grouped = view === "mine" && !params.status;
+  if (grouped && cursor.data && !cursor.data.group) return fail(err.badInput("Invalid pagination cursor"));
   const lapsedAssignees = view === "unassigned" ? await listLapsedAssignees({ mailboxIds: [params.mailboxId] }) : [];
   const aggregatedScope = isAggregatedListing(folderId, view) ? await loadAggregatedViewScope([params.mailboxId]) : null;
   // Bound all access, placement, view and cursor filters before enriching the selected page.
-  const candidates = conversationCandidatesQuery({
-    mailboxId: params.mailboxId,
-    visibility,
-    currentUserId,
-    folderId,
-    excludedFolderIds,
-    status: params.status ?? null,
-    view,
-    unread: params.unread ?? null,
-    lapsedAssignees,
-    aggregatedScope,
-    cursor: cursor.data ?? null,
-    limit: limit + 1,
-  });
+  const candidatesFor = (status: ConversationWorkStatus | null, pageCursor: { date: string; id: string } | null) =>
+    conversationCandidatesQuery({
+      mailboxId: params.mailboxId,
+      visibility,
+      currentUserId,
+      folderId,
+      excludedFolderIds,
+      status,
+      view,
+      unread: params.unread ?? null,
+      lapsedAssignees,
+      aggregatedScope,
+      openOnly,
+      cursor: pageCursor,
+      limit: limit + 1,
+    });
+  // Each group reads its own status newest first, so both keep the plain sort column and stop at the page. The waiting
+  // ones are read only when those that need action do not fill the page (a one-time filter: otherwise the plan never
+  // runs them), and a page that ended among the waiting ones continues there.
+  const pageSize = () => sql.unsafe(String(Math.trunc(limit + 1)));
+  const candidates = !grouped
+    ? candidatesFor(params.status ?? null, cursor.data ?? null)
+    : cursor.data?.group === "waiting"
+      ? candidatesFor("waiting", cursor.data)
+      : sql`
+          WITH needs_page AS MATERIALIZED (${candidatesFor("needs_action", cursor.data ?? null)})
+          SELECT c.*
+          FROM (
+            SELECT * FROM needs_page
+            UNION ALL
+            SELECT * FROM (${candidatesFor("waiting", null)}) waiting_page
+            WHERE (SELECT count(*) FROM needs_page) < ${pageSize()}
+          ) c
+          ORDER BY c.work_status = 'waiting', ${conversationSortColumn(view)} DESC, c.id DESC
+          LIMIT ${pageSize()}
+        `;
   const rows = await sql<(DbConversation & { cursor_at: string })[]>`
     WITH candidates AS MATERIALIZED (${candidates})
     SELECT
@@ -484,7 +582,7 @@ export const listConversations = async (params: {
       unread_state.folder_ids AS unread_folder_ids,
       active_state.folder_ids AS active_folder_ids,
       COALESCE(flagged_state.present, false) AS flagged,
-      COALESCE(attachment_state.present, false) AS has_attachments,
+      COALESCE(attachment_state.count, 0) AS attachment_count,
       (
         SELECT COUNT(*)::int FROM mail.conversation_messages count_cm WHERE count_cm.conversation_id = c.id
       ) AS message_count,
@@ -581,13 +679,12 @@ export const listConversations = async (params: {
       LIMIT 1
     ) flagged_state ON true
     LEFT JOIN LATERAL (
-      SELECT true AS present
+      SELECT COUNT(*)::int AS count
       FROM mail.conversation_messages attachment_cm
       JOIN mail.attachments attachment ON attachment.message_id = attachment_cm.message_id
       WHERE attachment_cm.conversation_id = c.id
-      LIMIT 1
     ) attachment_state ON true
-    ORDER BY ${conversationSortColumn(view)} DESC, c.id DESC
+    ORDER BY ${grouped ? sql`c.work_status = 'waiting',` : sql``} ${conversationSortColumn(view)} DESC, c.id DESC
   `;
   const hasMore = rows.length > limit;
   const pageRows = hasMore ? rows.slice(0, limit) : rows;
@@ -607,7 +704,8 @@ export const listConversations = async (params: {
     unread: row.unread,
     activeFolderIds: row.active_folder_ids,
     flagged: row.flagged,
-    hasAttachments: row.has_attachments,
+    hasAttachments: row.attachment_count > 0,
+    attachmentCount: row.attachment_count,
     messageCount: row.message_count,
     preview: row.preview || null,
     folderId: row.folder_id,
@@ -617,7 +715,18 @@ export const listConversations = async (params: {
   const lastRow = pageRows.at(-1);
   return ok({
     items,
-    nextCursor: hasMore && last && lastRow ? encodeConversationCursor({ scope: cursorScope, date: lastRow.cursor_at, id: last.id }) : null,
+    nextCursor:
+      hasMore && last && lastRow
+        ? encodeConversationCursor({
+            scope: cursorScope,
+            date: lastRow.cursor_at,
+            id: last.id,
+            ...(grouped
+              ? { group: (lastRow.work_status === "waiting" ? "waiting" : "needs_action") satisfies ConversationCursorGroup }
+              : {}),
+          })
+        : null,
+    openOnly,
   });
 };
 
@@ -684,7 +793,19 @@ export type ConversationViewCounts = Record<ConversationView, number>;
 export const getConversationViewCounts = async (params: {
   context: MailRequestContext;
   mailboxId: string;
+  /** Workspace snapshots reuse counts; standalone reads stay authoritative. */
+  cached?: boolean;
 }): Promise<Result<ConversationViewCounts>> => {
+  const counts = await getMailboxConversationCounts(params);
+  return counts.ok ? ok(counts.data.views) : counts;
+};
+
+/** The view counts and the done conversations each folder's list leaves out, from one query and one cached snapshot. */
+export const getMailboxConversationCounts = async (params: {
+  context: MailRequestContext;
+  mailboxId: string;
+  cached?: boolean;
+}): Promise<Result<MailboxConversationCounts>> => {
   const access = await resolveMailExecution({
     mailboxId: params.mailboxId,
     operation: "actorRead",
@@ -695,96 +816,22 @@ export const getConversationViewCounts = async (params: {
   const visibility = access.data.access;
   if (!visibility) return fail(err.forbidden("Access denied"));
   const currentUserId = personalPrincipal(params.context).id;
-  const [lapsedAssignees, aggregatedScope] = await Promise.all([
-    listLapsedAssignees({ mailboxIds: [params.mailboxId] }),
-    loadAggregatedViewScope([params.mailboxId]),
+  const load = () =>
+    sql.begin(async (tx) => {
+      // The correlated folder/assignee checks overestimate cost enough to trigger expensive JIT.
+      await tx`SET LOCAL jit = off`;
+      await tx`SET LOCAL statement_timeout = '30s'`;
+      return queryConversationViewCounts({ mailboxId: params.mailboxId, currentUserId, visibility }, tx);
+    });
+  if (!params.cached) return ok(await load());
+  const principal = personalPrincipal(params.context);
+  const reader = JSON.stringify([
+    principal.kind,
+    principal.id,
+    visibility.scope,
+    visibility.scope === "assigned" ? (visibility.userId ?? visibility.serviceAccountId) : null,
   ]);
-  // One pass over the mailbox's messages decides each conversation once. PostgreSQL prices the
-  // per-message folder and send checks so high that it compiled this query with JIT, which took
-  // seconds in a mailbox with a few thousand messages while the counting itself takes milliseconds.
-  const [row] = await sql.begin(async (tx) => {
-    await tx`SET LOCAL jit = off`;
-    return tx<
-      {
-        needs_action: number;
-        mine: number;
-        unassigned: number;
-        waiting: number;
-        done: number;
-        snoozed: number;
-        send_problems: number;
-        recently_active: number;
-        kept: number;
-      }[]
-    >`
-      SELECT
-        COUNT(*) FILTER (
-          WHERE scope.aggregated
-            AND scope.follow_up
-            AND scope.work_status = 'needs_action'
-            AND (scope.snoozed_until IS NULL OR scope.snoozed_until <= now())
-        )::int AS needs_action,
-        COUNT(*) FILTER (
-          WHERE scope.follow_up
-            AND EXISTS (SELECT 1 FROM mail.conversation_assignees a WHERE a.conversation_id = scope.id AND a.principal_id = ${currentUserId}::uuid)
-            AND scope.work_status <> 'done'
-            AND (scope.snoozed_until IS NULL OR scope.snoozed_until <= now())
-        )::int AS mine,
-        COUNT(*) FILTER (
-          WHERE scope.aggregated
-            AND scope.follow_up
-            AND ${isUnassignedConversation(lapsedAssignees, sql`scope`)}
-            AND scope.work_status <> 'done'
-            AND (scope.snoozed_until IS NULL OR scope.snoozed_until <= now())
-        )::int AS unassigned,
-        COUNT(*) FILTER (
-          WHERE scope.aggregated
-            AND scope.follow_up
-            AND scope.work_status = 'waiting'
-            AND (scope.snoozed_until IS NULL OR scope.snoozed_until <= now())
-        )::int AS waiting,
-        COUNT(*) FILTER (WHERE scope.aggregated AND scope.work_status = 'done')::int AS done,
-        COUNT(*) FILTER (WHERE scope.aggregated AND scope.follow_up AND scope.snoozed_until > now())::int AS snoozed,
-        COUNT(*) FILTER (WHERE scope.send_problem)::int AS send_problems,
-        COUNT(*) FILTER (WHERE scope.aggregated)::int AS recently_active,
-        (SELECT COUNT(*)::int FROM mail.conversation_keeps keep
-          WHERE keep.mailbox_id = ${params.mailboxId}::uuid AND ${conversationVisibleTo(visibility, sql`keep.conversation_id`)}) AS kept
-      FROM (
-        SELECT
-          c.id,
-          c.mailbox_id,
-          c.work_status,
-          c.snoozed_until,
-          bool_or(${isFollowUpMessage(sql`placement`, sql`outbox.id IS NOT NULL`)}) AS follow_up,
-          bool_or(${hasSendProblem(sql`link.message_id`)}) AS send_problem,
-          ${staysInAggregatedViewsAggregate(sql`placement.folder_id`, aggregatedScope)} AS aggregated
-        FROM mail.conversations c
-        JOIN mail.conversation_messages link ON link.conversation_id = c.id
-        LEFT JOIN mail.message_placements placement
-          ON placement.message_id = link.message_id
-         AND placement.deleted_at IS NULL
-        LEFT JOIN mail.outbox_submissions outbox
-          ON outbox.message_id = link.message_id
-         AND outbox.state <> 'cancelled'
-        WHERE c.mailbox_id = ${params.mailboxId}::uuid
-      AND ${conversationVisibleTo(visibility, sql`c.id`)}
-        GROUP BY c.id
-        -- A conversation counts while one of its messages is filed somewhere or on its way out.
-        HAVING bool_or(placement.message_id IS NOT NULL OR outbox.id IS NOT NULL)
-      ) scope
-    `;
-  });
-  return ok({
-    needs_action: row?.needs_action ?? 0,
-    mine: row?.mine ?? 0,
-    unassigned: row?.unassigned ?? 0,
-    waiting: row?.waiting ?? 0,
-    done: row?.done ?? 0,
-    snoozed: row?.snoozed ?? 0,
-    send_problems: row?.send_problems ?? 0,
-    recently_active: row?.recently_active ?? 0,
-    kept: row?.kept ?? 0,
-  });
+  return ok(await cachedConversationViewCounts({ mailboxId: params.mailboxId, reader, load }));
 };
 
 export type MessageSummary = {

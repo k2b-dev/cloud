@@ -1,7 +1,9 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { sessionOriginGuard } from "@k2b/cloud/server/middleware/session-origin";
 import tailwind from "bun-plugin-tailwind";
+import { Hono } from "hono";
 import type { Browser, Page } from "playwright";
 import { launchBrowser, settled } from "../../../ui/test/browser";
 import { type AuthorizationState, authorizationStates, renderAuthorizationState } from "./authorization-page.test-fixture";
@@ -68,7 +70,8 @@ const open = async (
   const { promise: styledOnce, resolve: styled } = Promise.withResolvers<void>();
   await page.route(`${origin}/**`, async (route) => {
     const { pathname } = new URL(route.request().url());
-    if (pathname === "/authorization-page") return route.fulfill({ contentType: "text/html", body: html });
+    if (pathname === "/authorization-page")
+      return route.fulfill({ contentType: "text/html", headers: { "referrer-policy": "same-origin" }, body: html });
     const stylesheet = stylesheets[pathname];
     if (stylesheet !== undefined) {
       if (pathname === late) await styledOnce;
@@ -222,6 +225,65 @@ const boxes = (page: Page) =>
   );
 
 describe("OAuth authorization pages in a browser", () => {
+  test("real consent, device and logout forms send the canonical Origin through the platform guard", async () => {
+    const states = ["consent", "confirm", "logout"] as const;
+    const documents = new Map<string, string>(
+      await Promise.all(
+        states.map(
+          async (state) =>
+            [
+              `/fixture/${state}`,
+              new HTMLRewriter()
+                .on("script", { element: (script) => void script.remove() })
+                .transform(await renderAuthorizationState(state, "en")),
+            ] as const,
+        ),
+      ),
+    );
+    let formOrigin = "";
+    const posts: Array<{ origin: string | undefined; cookie: string | undefined }> = [];
+    const target = new Hono()
+      .use(sessionOriginGuard([], async () => formOrigin))
+      .post("*", (c) => {
+        posts.push({ origin: c.req.header("Origin"), cookie: c.req.header("Cookie") });
+        return c.text("Confirmed");
+      })
+      .get("*", (c) => {
+        const path = c.req.path;
+        const html = documents.get(path);
+        if (html !== undefined) return c.html(html, 200, { "Referrer-Policy": "same-origin" });
+        const stylesheet = stylesheets[path];
+        if (stylesheet !== undefined) return new Response(stylesheet, { headers: { "Content-Type": "text/css" } });
+        if (path === "/public/tabler-icons.woff2") return new Response(Bun.file(iconFont));
+        if (path.startsWith("/public/fonts/")) return new Response(Bun.file(resolve(uiDist, "fonts", path.slice("/public/fonts/".length))));
+        return c.notFound();
+      });
+    const server = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: target.fetch });
+    formOrigin = `http://localhost:${server.port}`;
+    try {
+      for (const state of states) {
+        const context = await browser.newContext({ ...viewports.phone, reducedMotion: "reduce" });
+        try {
+          await context.addCookies([{ name: "session_token", value: "web-fixture", url: formOrigin, sameSite: "Lax", httpOnly: true }]);
+          const page = await context.newPage();
+          await page.goto(`${formOrigin}/fixture/${state}`);
+          const before = posts.length;
+          const [response] = await Promise.all([
+            page.waitForResponse((response) => response.request().method() === "POST"),
+            page.getByRole("button", { name: state === "logout" ? "Sign out" : "Allow access", exact: true }).click(),
+          ]);
+          expect(response.status(), state).toBe(200);
+          expect(posts.length, state).toBe(before + 1);
+          expect(posts.at(-1)).toEqual({ origin: formOrigin, cookie: "session_token=web-fixture" });
+        } finally {
+          await context.close();
+        }
+      }
+    } finally {
+      await server.stop(true);
+    }
+  });
+
   for (const viewport of Object.keys(viewports) as Array<keyof typeof viewports>) {
     const { width, height } = viewports[viewport].viewport;
 
