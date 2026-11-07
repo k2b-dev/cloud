@@ -157,6 +157,25 @@ export const dashboardTestKinds: Dashboard = {
     ],
   },
 };
+/** Key figures inside their sections, one left on top, and the two-thirds width next to a third. */
+export const dashboardTestSectioned: Dashboard = {
+  ...dashboardTestDashboard,
+  id: "Dash03",
+  name: "Betrieb nach Abschnitt",
+  definition: {
+    panels: dashboardTestDashboard.definition.panels.map((panel) =>
+      panel.id === "requests-now" || panel.id === "errors-now"
+        ? { ...panel, section: "Traefik" }
+        : panel.id === "hosts-now"
+          ? { ...panel, section: "Server" }
+          : panel.id === "req"
+            ? { ...panel, width: "twoThirds" }
+            : panel.id === "p95"
+              ? { ...panel, width: "full" }
+              : panel,
+    ),
+  },
+};
 export const dashboardTestSnapshot: DashboardSnapshot = {
   items: [dashboardTestDashboard, dashboardTestKinds],
   total: 2,

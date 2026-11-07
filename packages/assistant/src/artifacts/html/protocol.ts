@@ -8,6 +8,8 @@ export type FrameConfig = {
   hash: string;
   /** App JavaScript modules by path; `entries` load in this order. */
   modules: Record<string, string>;
+  /** Bundled renderer source, loaded from a blob without opening the network. */
+  chartModule: string;
   entries: string[];
   /** Upper bound for waiting on pending `cloud.*` calls before `ready`. */
   readyBudgetMs: number;

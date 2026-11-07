@@ -1,3 +1,4 @@
+import { sql } from "@k2b/cloud";
 import type { User } from "@k2b/cloud/contracts";
 import {
   type AccessEntry,
@@ -7,6 +8,7 @@ import {
   err,
   fail,
   getEffectivePermission,
+  getEffectivePermissions,
   hasPermission,
   ok,
   type PermissionLevel,
@@ -30,6 +32,12 @@ export const createItemAccessAdapter = (repository: AccessRepository): ResourceA
   remove: repository.unlink,
   count: repository.count,
 });
+
+export const readPermissionsInTransaction = async (accessIds: string[], subjects: AccessSubject[]) =>
+  sql.begin(async (tx) => {
+    const levels = await getEffectivePermissions({ accessIds, subjects }, tx);
+    return levels;
+  });
 
 const PERMISSION_RANK: Record<PermissionLevel, number> = {
   none: 0,

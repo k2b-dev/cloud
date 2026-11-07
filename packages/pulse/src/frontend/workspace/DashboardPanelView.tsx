@@ -4,7 +4,11 @@ import {
   type ChartCursor,
   ChartExplorer,
   type ChartSnapshot,
+  createDataTableView,
+  DashboardPanel as DashboardFrame,
   DataTable,
+  type DataTableColumn,
+  DataTableTools,
   Disclosure,
   IconButton,
   Skeleton,
@@ -14,6 +18,7 @@ import {
 import { createMemo, createSignal, For, lazy, Show, Suspense } from "solid-js";
 import type { DashboardPanel } from "../../dashboard-contracts";
 import { readOverviewNumber } from "../../overview-number";
+import { sqlTimestamp } from "../../sql-result-values";
 import { usePulseMessages } from "../use-messages";
 import type { DashboardPanelResult, PublicDashboardPanel } from "./dashboard-client";
 import {
@@ -104,19 +109,48 @@ export default function DashboardPanelView(props: {
             : t().dashboardPanelFailureDetail;
   const lastAt = () => props.result?.lastGood?.at;
   const stamp = () => (lastAt() ? dashboardDateTime({ locale: locale(), timeZone: props.timeZone }).format(new Date(lastAt()!)) : "");
+  // A table reads its columns by what they hold: times in the base's zone, numbers right-aligned in the reader's
+  // language, everything else as text that wraps. Search and order work on what the reader sees.
+  const tableColumns = createMemo((): DataTableColumn<unknown[]>[] => {
+    const result = props.panel.kind === "table" ? data() : undefined;
+    return (result?.columns ?? []).map((column, index) => {
+      const first = result!.rows.find((row) => row[index] !== null && row[index] !== undefined)?.[index];
+      const date = /^(?:Nullable\()?Date/.test(column.type);
+      return {
+        id: column.name,
+        header: column.name,
+        sortable: true,
+        type: date ? "date" : typeof first === "number" ? "number" : "text",
+        timeZone: props.timeZone,
+        value: (row: unknown[]) => {
+          const value = row[index];
+          if (!date || value === null || value === undefined || /^\d{4}-\d{2}-\d{2}$/.test(String(value))) return value;
+          const time = sqlTimestamp(value, column.type, props.timeZone);
+          return Number.isFinite(time) ? time : value;
+        },
+      };
+    });
+  });
+  const table = createDataTableView<unknown[]>({
+    rows: () => (props.panel.kind === "table" ? (data()?.rows ?? []) : []),
+    columns: tableColumns,
+  });
+  let tableTools: HTMLDivElement | undefined;
   const Table = () => (
     <DataTable
       ariaLabel={props.panel.title}
       class="pulse-dashboard__table"
       density="compact"
-      surface="paper"
-      rows={data()?.rows ?? []}
-      renderCell={({ value }) => dashboardCell(value, locale())}
-      columns={(data()?.columns ?? []).map((column, index) => ({
-        id: column.name,
-        header: column.name,
-        value: (row: unknown[]) => row[index],
-      }))}
+      surface="plain"
+      rows={table.rows()}
+      columns={tableColumns()}
+      sort={table.sort()}
+      onSortChange={table.setSort}
+      query={table.query()}
+      onClearQuery={() => {
+        table.setQuery("");
+        tableTools?.querySelector("input")?.focus();
+      }}
     />
   );
   // Loading and failure take the place of the panel's content, at its height.
@@ -180,11 +214,11 @@ export default function DashboardPanelView(props: {
     },
   ];
   return (
-    <article
+    <DashboardFrame
       class="pulse-dashboard__panel"
       data-panel={props.panel.id}
       data-kind={props.panel.kind}
-      data-width={props.panel.width}
+      width={props.panel.width}
       aria-label={props.panel.title}
       aria-busy={props.pending}
     >
@@ -220,12 +254,25 @@ export default function DashboardPanelView(props: {
             height="13.5rem"
             tableRows={100}
             renderDetails={false}
+            // The panel's padding: in the table view the table runs to its frame instead of adding a second one.
+            inset="0.875rem 1rem"
           />
         </div>
       </Show>
       <Show when={props.panel.kind !== "number" && props.panel.kind !== "line"}>
         <div class="pulse-dashboard__panel-head">
           <h3>{props.panel.title}</h3>
+          <Show when={props.panel.kind === "table"}>
+            {/* In the head from the first frame, disabled until rows arrive, so nothing below moves. */}
+            <div ref={tableTools} class="pulse-dashboard__table-tools">
+              <DataTableTools
+                label={props.panel.title}
+                query={table.query()}
+                onQueryChange={table.setQuery}
+                disabled={!data()?.rows.length}
+              />
+            </div>
+          </Show>
           <Show when={props.private && "sql" in props.panel}>
             <SqlButton />
           </Show>
@@ -402,6 +449,6 @@ export default function DashboardPanelView(props: {
           </Disclosure>
         </div>
       </Show>
-    </article>
+    </DashboardFrame>
   );
 }

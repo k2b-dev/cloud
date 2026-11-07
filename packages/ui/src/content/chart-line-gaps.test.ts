@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { charts } from "@k2b/stdlib";
+import { charts } from "../charts/core";
 import { lineGapsSvg } from "./chart-line-gaps";
 
 const render = (data: { x: number; y: number }[]) => charts.line({ series: [{ label: "A & B", data }], inspect: true, smooth: false });

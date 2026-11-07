@@ -2135,7 +2135,7 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
         const page = await open(boxPath);
         try {
           const section = sidebar(page).locator(".mail-sidebar-hidden-mailboxes");
-          await section.getByRole("button", { name: /Hidden mailboxes/ }).click();
+          await section.getByRole("button", { name: /^Hidden/ }).click();
           const hidden = section.locator('[data-mailbox="Box005"]');
           expect(await hidden.locator("a").getAttribute("href")).toBe("/app/mail/Box005");
           const saved = page.waitForRequest((request) => request.method() === "PATCH" && request.url().endsWith("/Box005/preference"));
@@ -3752,7 +3752,18 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
                 open: element.classList.contains("mail-list-entry-menu-open"),
                 title: element.querySelector("a.mail-list-row")?.hasAttribute("title"),
               }));
-            expect(await menuState()).toEqual({ open: true, title: false });
+            // The row restores its state after the menu's open or close settles, so wait for it before reading.
+            const settledMenuState = async (expected: { open: boolean; title: boolean }) => {
+              const element = await row.elementHandle();
+              await page.waitForFunction(
+                ({ node, want }) =>
+                  node?.classList.contains("mail-list-entry-menu-open") === want.open &&
+                  node?.querySelector("a.mail-list-row")?.hasAttribute("title") === want.title,
+                { node: element, want: expected },
+              );
+              return menuState();
+            };
+            expect(await settledMenuState({ open: true, title: false })).toEqual({ open: true, title: false });
             // Answers lead; taking the conversation follows, high and visible, then Done.
             expect(rowItems.slice(0, 3)).toEqual(["Reply", "Reply in new window", "Forward"]);
             expect(rowItems[3]).toBe("Assign to meNora Example stays responsible");
@@ -3760,11 +3771,11 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
             expect(rowItems).toContain("Archive");
             expect(rowItems.at(-1)).toBe("Copy conversation Cloud ID");
             await dismiss(page, dropdown);
-            expect(await menuState()).toEqual({ open: false, title: true });
+            expect(await settledMenuState({ open: false, title: true })).toEqual({ open: false, title: true });
 
             await link.click({ button: "right" });
             expect(await menuEntries(page, contextMenu)).toEqual(rowItems);
-            expect(await menuState()).toEqual({ open: true, title: false });
+            expect(await settledMenuState({ open: true, title: false })).toEqual({ open: true, title: false });
             if (screenshots) await page.screenshot({ path: join(screenshots, "row-context-menu-light-1440.png") });
             await dismiss(page, contextMenu);
             expect(await page.locator(".mail-reader [data-mail-reader-heading]").count(), "a right-click opens no conversation").toBe(0);

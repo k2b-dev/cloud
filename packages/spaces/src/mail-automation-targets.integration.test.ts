@@ -169,7 +169,7 @@ suiteFor("database", "nats")("incoming Mail automation target upgrade against Sp
           operation: "capability.action.run:event.create",
           input: requested.input,
           call: requested,
-          capabilityApproval: spacesCapabilities.actions["event.create"].approval,
+          capabilityPolicy: spacesCapabilities.actions["event.create"].policy,
         });
       expect((await admit()).ok).toBe(true);
       expect((await admit({ ...call, target: { type: "spaces.space", id: "Other1" } })).ok).toBe(false);

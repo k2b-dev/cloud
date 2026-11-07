@@ -76,6 +76,15 @@
   --k2b-tint-zinc: var(--k2b-neutral-600);
   --k2b-tint-cyan: #0e7490;
   --k2b-tint-rose: #e11d48;
+  /* Money with a direction (FlowAmount): turquoise comes in, violet goes out. Text keeps 4.5:1 on its surface;
+     `mark` colours bars and areas. */
+  --k2b-flow-in-text: #0e7490;
+  --k2b-flow-in-surface: #ecfeff;
+  --k2b-flow-in-ring: #a5f3fc;
+  --k2b-flow-in-mark: #0891b2;
+  --k2b-flow-out-text: #6d28d9;
+  --k2b-flow-out-surface: #f5f3ff;
+  --k2b-flow-out-mark: #8b5cf6;
   --k2b-app-workspace-active: var(--k2b-action);
   /* `--k2b-app-workspace-selected` is the fill of a selected navigation row
      or object chip, beside the selected ink above; the soft tabs, view tabs,
@@ -294,6 +303,13 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   --k2b-tint-zinc: var(--k2b-neutral-400);
   --k2b-tint-cyan: #22d3ee;
   --k2b-tint-rose: #fb7185;
+  --k2b-flow-in-text: #67e8f9;
+  --k2b-flow-in-surface: rgb(8 51 68 / 0.55);
+  --k2b-flow-in-ring: #155e75;
+  --k2b-flow-in-mark: #22d3ee;
+  --k2b-flow-out-text: #c4b5fd;
+  --k2b-flow-out-surface: rgb(46 16 101 / 0.55);
+  --k2b-flow-out-mark: #a78bfa;
   --k2b-action-solid: var(--k2b-accent-600);
   --k2b-action-solid-hover: var(--k2b-accent-700);
   --k2b-selection: rgb(147 197 253 / 0.35);
@@ -1751,10 +1767,34 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 .k2b-ui .k2b-chart [data-chart-datum] {
   cursor: crosshair;
 }
-.k2b-ui .k2b-chart [data-inspected]:not([data-chart-role="value"]) > :is(rect, path, circle) {
+/* Calm hover: nothing else dims. A single mark gets a thin outline; a column or row
+ * of a category chart gets a light band behind it instead (data-inspecting="category"). */
+.k2b-ui .k2b-chart:not([data-chart-kind="bar"], [data-chart-kind="histogram"], [data-chart-kind="boxplot"]) [data-inspected]:not([data-chart-role="value"]) > :is(rect, path, circle) {
   stroke: var(--k2b-chart-inspection-color) !important;
-  stroke-width: 2px;
   vector-effect: non-scaling-stroke;
+}
+.k2b-ui .k2b-chart:not([data-chart-kind="bar"], [data-chart-kind="histogram"], [data-chart-kind="boxplot"]) [data-inspected]:not([data-chart-role="value"]) > :is(rect, path) {
+  stroke-width: 1.5px;
+}
+/* Points keep a 2 px ring: a tiny point is hit through its stroke, so a thinner ring would let the drawing take the pointer. */
+.k2b-ui .k2b-chart:not([data-chart-kind="bar"], [data-chart-kind="histogram"], [data-chart-kind="boxplot"]) [data-inspected]:not([data-chart-role="value"]) > circle {
+  stroke-width: 2px;
+}
+/* The band sits behind the marks without positioning the drawing, which would change what lies on top. */
+.k2b-ui .k2b-chart[data-inspecting="category"] {
+  isolation: isolate;
+}
+.k2b-ui .k2b-chart[data-inspecting="category"]::before {
+  content: "";
+  position: absolute;
+  left: var(--k2b-chart-band-left);
+  top: var(--k2b-chart-band-top);
+  width: var(--k2b-chart-band-width);
+  height: var(--k2b-chart-band-height);
+  z-index: -1;
+  border-radius: 3px;
+  background: color-mix(in srgb, currentColor 7%, transparent);
+  pointer-events: none;
 }
 .k2b-ui .k2b-chart [data-inspected] > .stdlib-chart-inspection-point {
   fill: var(--k2b-chart-inspection-color);
@@ -10338,6 +10378,259 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   @apply truncate;
 }
 
+/* Text columns break between words inside their cell; every other value keeps one line. */
+.k2b-ui .k2b-data-table td[data-wrap="true"] {
+  min-width: 9ch;
+}
+
+.k2b-ui .k2b-data-table td[data-wrap="true"] > .k2b-data-table__cell-text {
+  overflow: visible;
+  white-space: normal;
+  text-overflow: clip;
+  overflow-wrap: anywhere;
+  line-height: 1.125rem;
+}
+
+/* A bar column: the value, then a short track filled to its share of the column's largest value. */
+.k2b-ui .k2b-data-table__bar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.5rem;
+}
+
+.k2b-ui .k2b-data-table__bar-track {
+  flex: none;
+  width: 3.5rem;
+  height: 0.375rem;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--k2b-surface-muted);
+}
+
+.k2b-ui .k2b-data-table__bar-track > span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--stdlib-chart-c1);
+}
+
+/* Groups: a quiet row with the group's value and count heads each body. */
+.k2b-ui .k2b-data-table__group-row > th {
+  height: 2rem;
+  padding-block: 0;
+  color: var(--k2b-text-secondary);
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-align: left;
+  background: var(--k2b-surface);
+  box-shadow: inset 0 -1px 0 var(--k2b-border);
+}
+
+.k2b-ui .k2b-data-table__group + .k2b-data-table__group > .k2b-data-table__group-row > th {
+  box-shadow:
+    inset 0 1px 0 var(--k2b-border),
+    inset 0 -1px 0 var(--k2b-border);
+}
+
+.k2b-ui .k2b-data-table__group-count {
+  margin-left: 0.375rem;
+  color: var(--k2b-text-muted);
+  font-weight: 500;
+}
+
+/* Nothing matches the host's search: one sentence and the way back, at a fixed height. */
+.k2b-ui .k2b-data-table td.k2b-data-table__no-match {
+  height: 4rem;
+  color: var(--k2b-text-secondary);
+  white-space: normal;
+}
+
+.k2b-ui .k2b-data-table__clear-query {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--k2b-action);
+  font: inherit;
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+
+.k2b-ui .k2b-data-table__clear-query:hover {
+  color: var(--k2b-action-hover);
+}
+
+.k2b-ui .k2b-data-table__clear-query:focus-visible {
+  border-radius: 0.25rem;
+  outline: var(--k2b-focus-width) solid var(--k2b-focus-ring);
+  outline-offset: var(--k2b-focus-offset);
+}
+
+/* Search and group choice sit in the head of the frame that holds the table. */
+.k2b-ui .k2b-data-table-tools {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 0;
+}
+
+.k2b-ui .k2b-data-table-tools__search {
+  width: 11.25rem;
+}
+
+.k2b-ui .k2b-data-table-tools__group {
+  width: auto;
+  min-width: 9rem;
+}
+
+/* Priorities: the table measures its own width. Below 560 px priority 3 leaves, below 420 px priority 2;
+   the row's details toggle then shows exactly the values that left. */
+.k2b-ui .k2b-table-shell[data-priorities] {
+  container: k2b-data-table / inline-size;
+}
+
+.k2b-ui .k2b-data-table :is(th, td).k2b-data-table__details-toggle {
+  display: none;
+  width: 2.75rem;
+  padding-inline: 0.25rem;
+  text-align: center;
+}
+
+.k2b-ui .k2b-data-table__details-button {
+  display: inline-grid;
+  place-items: center;
+  width: 2.25rem;
+  height: 2.25rem;
+  padding: 0;
+  border: 0;
+  border-radius: 0.5rem;
+  background: transparent;
+  color: var(--k2b-text-muted);
+  font-size: 1rem;
+  cursor: pointer;
+}
+
+.k2b-ui .k2b-data-table__details-button:hover {
+  background: var(--k2b-hover);
+  color: var(--k2b-text);
+}
+
+.k2b-ui .k2b-data-table__details-button:focus-visible {
+  outline: var(--k2b-focus-width) solid var(--k2b-focus-ring);
+  outline-offset: calc(-1 * var(--k2b-focus-width));
+}
+
+.k2b-ui .k2b-data-table__details,
+.k2b-ui .k2b-data-table__details dl > div {
+  display: none;
+}
+
+.k2b-ui .k2b-data-table__details > td {
+  height: auto;
+  padding-block: 0.5rem 0.75rem;
+  white-space: normal;
+  box-shadow: inset 0 -1px 0 var(--k2b-border);
+}
+
+.k2b-ui .k2b-data-table__details dl {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 0.25rem 0.75rem;
+  margin: 0;
+}
+
+.k2b-ui .k2b-data-table__details dt {
+  color: var(--k2b-text-muted);
+  font-weight: 500;
+}
+
+.k2b-ui .k2b-data-table__details dd {
+  min-width: 0;
+  margin: 0;
+}
+
+/* The last row ends on the frame although its closed details line follows it. */
+.k2b-ui .k2b-data-table__row[data-last="true"] > td {
+  box-shadow: none;
+}
+
+.k2b-ui .k2b-data-table__row[data-last="true"] > td + td {
+  box-shadow: inset 1px 0 0 color-mix(in srgb, var(--k2b-border) 70%, transparent);
+}
+
+.k2b-ui .k2b-data-table__details:last-child > td {
+  box-shadow: none;
+}
+
+@container k2b-data-table (max-width: 560px) {
+  /* An open row hands its line to its details, only while they show. */
+  .k2b-ui .k2b-table-shell[data-priorities="3"] .k2b-data-table__row[data-details-open="true"]:not([data-last="true"]) > td {
+    box-shadow: none;
+  }
+
+  .k2b-ui .k2b-table-shell[data-priorities="3"] .k2b-data-table__row[data-details-open="true"]:not([data-last="true"]) > td + td {
+    box-shadow: inset 1px 0 0 color-mix(in srgb, var(--k2b-border) 70%, transparent);
+  }
+
+  .k2b-ui .k2b-table-shell[data-priorities="3"] .k2b-data-table__row[data-last="true"][data-details-open="true"] + .k2b-data-table__details > td {
+    box-shadow: none;
+  }
+
+  .k2b-ui .k2b-data-table :is(th, td)[data-priority="3"] {
+    display: none;
+  }
+
+  .k2b-ui .k2b-table-shell[data-priorities="3"] :is(th, td).k2b-data-table__details-toggle {
+    display: table-cell;
+  }
+
+  .k2b-ui .k2b-table-shell[data-priorities="3"] .k2b-data-table__details:not([hidden]) {
+    display: table-row;
+  }
+
+  .k2b-ui .k2b-data-table__details dl > div[data-priority="3"] {
+    display: contents;
+  }
+}
+
+@container k2b-data-table (max-width: 420px) {
+  /* An open row hands its line to its details, only while they show. */
+  .k2b-ui .k2b-table-shell[data-priorities] .k2b-data-table__row[data-details-open="true"]:not([data-last="true"]) > td {
+    box-shadow: none;
+  }
+
+  .k2b-ui .k2b-table-shell[data-priorities] .k2b-data-table__row[data-details-open="true"]:not([data-last="true"]) > td + td {
+    box-shadow: inset 1px 0 0 color-mix(in srgb, var(--k2b-border) 70%, transparent);
+  }
+
+  .k2b-ui .k2b-table-shell[data-priorities] .k2b-data-table__row[data-last="true"][data-details-open="true"] + .k2b-data-table__details > td {
+    box-shadow: none;
+  }
+
+  .k2b-ui .k2b-data-table :is(th, td)[data-priority="2"] {
+    display: none;
+  }
+
+  .k2b-ui .k2b-table-shell[data-priorities] :is(th, td).k2b-data-table__details-toggle {
+    display: table-cell;
+  }
+
+  .k2b-ui .k2b-table-shell[data-priorities] .k2b-data-table__details:not([hidden]) {
+    display: table-row;
+  }
+
+  .k2b-ui .k2b-data-table__details dl > div[data-priority="2"] {
+    display: contents;
+  }
+
+  .k2b-ui .k2b-data-table__bar-track {
+    display: none;
+  }
+}
+
 /* Loading rows keep the real row height; a static bar per cell, so nothing moves while it waits. */
 .k2b-ui .k2b-data-table__skeleton {
   display: block;
@@ -16471,6 +16764,30 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 .k2b-ui .k2b-chart-legend__swatch[data-style] { width: 1rem; height: 0; border-radius: 0; background: none; border-top: 2px var(--k2b-chart-legend-style, dashed) var(--k2b-chart-legend-color); }
 .k2b-ui .k2b-chart-legend__swatch[data-style="dotted"] { --k2b-chart-legend-style: dotted; }
 .k2b-ui .k2b-chart-legend__swatch[data-reference]:not([data-style]) { background: none; box-shadow: inset 0 0 0 1.5px var(--k2b-chart-legend-color); }
+/* Frame states (with a request): the subtitle is one reserved line, and every state fills the viewport's height. */
+.k2b-ui .k2b-chart-explorer[data-state] .k2b-chart-explorer__description { min-height: 1.25rem; overflow: hidden; color: var(--k2b-text-muted); font-size: .8125rem; line-height: 1.25rem; text-overflow: ellipsis; white-space: nowrap; }
+.k2b-ui .k2b-chart-explorer[data-state] .k2b-chart-explorer__description > * { margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.k2b-ui .k2b-chart-explorer__status-line { display: flex; align-items: center; gap: .3125rem; min-width: 0; }
+.k2b-ui .k2b-chart-explorer__status-line > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.k2b-ui .k2b-chart-explorer[data-state] .k2b-chart-explorer__status-line[data-tone="warning"] { color: var(--k2b-warning-text); }
+.k2b-ui .k2b-chart-explorer__status-line > i { flex: none; font-size: .875rem; }
+.k2b-ui .k2b-chart-explorer__status-line > .k2b-button { flex: none; height: 1.25rem; min-height: 0; padding: 0; font-size: inherit; color: var(--k2b-link-accent); text-decoration: underline; text-underline-offset: 2px; }
+.k2b-ui .k2b-chart-explorer__views { display: contents; }
+.k2b-ui .k2b-chart-explorer__views[inert] > * { visibility: hidden; }
+.k2b-ui .k2b-chart-explorer__chart { height: 100%; min-height: 0; }
+.k2b-ui .k2b-chart-explorer__viewport[data-legend] > .k2b-chart-explorer__chart { flex: 1 1 0; min-height: 60%; }
+.k2b-ui .k2b-chart-explorer__chart > .k2b-chart { height: 100%; }
+.k2b-ui .k2b-chart-explorer__state { display: flex; height: 100%; flex-direction: column; align-items: center; justify-content: center; gap: .625rem; padding: 0 1rem; text-align: center; }
+.k2b-ui .k2b-chart-explorer__state > p { max-width: 28rem; margin: 0; color: var(--k2b-text-secondary); font-size: .875rem; line-height: 1.25rem; text-wrap: balance; }
+.k2b-ui .k2b-chart-explorer__state-icon { display: inline-grid; place-items: center; width: 2.5rem; height: 2.5rem; border-radius: 999px; background: var(--k2b-surface-muted); color: var(--k2b-text-muted); font-size: 1.125rem; }
+.k2b-ui .k2b-chart-explorer__state[data-state="error"] .k2b-chart-explorer__state-icon { background: var(--k2b-danger-surface, color-mix(in srgb, var(--k2b-danger-500) 10%, transparent)); color: var(--k2b-danger-text); }
+.k2b-ui .k2b-chart-explorer__skeleton { display: flex; height: 100%; align-items: flex-end; gap: clamp(.25rem, 1.5%, 1rem); padding: .5rem 0 1.5rem 3rem; }
+.k2b-ui .k2b-chart-explorer__skeleton > span { flex: 1 1 0; min-width: 0; border-radius: 3px 3px 0 0; background: var(--k2b-surface-muted); animation: k2b-chart-explorer-pulse 1.6s ease-in-out infinite; }
+@keyframes k2b-chart-explorer-pulse { 50% { opacity: .55; } }
+@media (prefers-reduced-motion: reduce) { .k2b-ui .k2b-chart-explorer__skeleton > span { animation: none; } }
+/* Inside a frame the table reaches its left, right and bottom edges; the viewport grows by the inset it covers. */
+.k2b-ui .k2b-chart-explorer[data-inset] .k2b-chart-explorer__viewport[data-view="table"] { margin: 0 calc(-1 * var(--k2b-chart-explorer-inset)) calc(-1 * var(--k2b-chart-explorer-inset-block, var(--k2b-chart-explorer-inset))); }
+.k2b-ui .k2b-chart-explorer[data-inset] .k2b-chart-explorer__viewport[data-view="table"] .k2b-chart-explorer__note { padding: 0 var(--k2b-chart-explorer-inset) .5rem; }
 .k2b-ui .k2b-chart-explorer__details:empty { display: none; }
 .k2b-ui .k2b-chart-explorer__detail-paper { padding: .75rem 1rem; }
 .k2b-ui .k2b-chart-explorer__detail-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: .5rem; color: var(--k2b-text-muted); font-size: .75rem; }
@@ -16521,7 +16838,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 .k2b-ui .k2b-chart-group-controls__loading[data-loading] { opacity: 1; transition-delay: .2s !important; }
 
 /* Maps use a full-width geographic viewport; headers and legends stay outside its crop. */
-.k2b-ui .k2b-country-map { display: flex; flex-wrap: wrap; gap: var(--k2b-space-4, 1rem) var(--k2b-space-6, 1.5rem); margin: 0; min-width: 0; }
+.k2b-ui .k2b-country-map { container: k2b-country-map / inline-size; display: flex; flex-wrap: wrap; gap: var(--k2b-space-4, 1rem) var(--k2b-space-6, 1.5rem); margin: 0; min-width: 0; }
 .k2b-ui .k2b-country-map__plot { flex: 3 1 20rem; min-width: 0; }
 .k2b-ui .k2b-country-map__svg { display: block; width: 100%; height: auto; aspect-ratio: 1000 / 450; touch-action: pan-y; }
 .k2b-ui .k2b-country-map__svg path { fill: var(--k2b-surface-muted); stroke: var(--k2b-surface); stroke-width: 0.5; }
@@ -16529,6 +16846,8 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 .k2b-ui .k2b-country-map__svg [data-active="true"] { stroke: var(--k2b-text); stroke-width: 1; }
 .k2b-ui .k2b-country-map__caption { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0.25rem 1rem; min-height: 1.5rem; margin-top: 0.5rem; font-size: 0.8125rem; color: var(--k2b-text-muted); font-variant-numeric: tabular-nums; }
 .k2b-ui .k2b-country-map__readout { color: var(--k2b-text); }
+/* On a narrow map the readout always takes its own line, so a long country name on hover or tap never adds one. */
+@container k2b-country-map (max-width: 30rem) { .k2b-ui .k2b-country-map__readout { flex: 1 1 100%; } }
 .k2b-ui .k2b-country-map__legend { display: inline-flex; align-items: center; gap: 0.375rem; }
 .k2b-ui .k2b-country-map__scale { display: inline-block; width: 4rem; height: 0.375rem; border-radius: 999px; }
 .k2b-ui .k2b-country-map__list { flex: 1 1 12rem; min-width: 0; margin: 0; padding: 0; list-style: none; font-size: 0.875rem; font-variant-numeric: tabular-nums; }
@@ -17306,3 +17625,15 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
     transition: none;
   }
 }
+
+/* Calendar coordinates stay square in every host. */
+.k2b-ui .k2b-chart[data-chart-kind="heatmap"]:has(svg[data-calendar]) { overflow-x: auto; }
+.k2b-ui .k2b-chart__svg:has(> svg[data-calendar]) { width: var(--k2b-chart-width); }
+.k2b-ui .k2b-chart[data-chart-kind="heatmap"]:has(svg[data-calendar]) [data-inspected]:not([data-selected]):not([data-chart-role="value"]) > rect { stroke-width: 1.5px; }
+.k2b-ui .k2b-chart[data-chart-kind="heatmap"]:has(svg[data-calendar]) [data-selected] > rect { stroke-width: 2.5px !important; }
+@media print {
+  .k2b-ui .k2b-chart:has(svg[data-calendar]) { --k2b-calendar-header-x: 0px !important; }
+  .k2b-ui svg[data-calendar] [data-calendar-month] { visibility: visible !important; }
+  .k2b-ui .k2b-chart__svg:has(> svg[data-calendar]) { min-width: 0 !important; width: 100%; }
+}
+.k2b-ui .k2b-chart[data-chart-kind="area"] [data-selected] > .k2b-area-inspection-point { opacity: 1; stroke-width: 1.5px; }

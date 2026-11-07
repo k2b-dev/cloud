@@ -295,3 +295,118 @@ test("filter controls omit the comparison pin without steps or opt-in", async ()
     expect(html).not.toContain("k2b-chart-explorer__pin");
   }
 });
+
+describe("frame states", () => {
+  const columns = [
+    { id: "label", label: "Queue", value: (row: (typeof rows)[number]) => row.label },
+    {
+      id: "value",
+      label: "Jobs",
+      value: (row: (typeof rows)[number]) => String(row.value),
+      sortValue: (row: (typeof rows)[number]) => row.value,
+    },
+  ];
+  const frame = (overrides: Partial<ChartExplorerProps<(typeof rows)[number]>>) =>
+    renderToString(() =>
+      createComponent(ChartExplorer, {
+        title: "Opens per month",
+        description: "Share of recipients",
+        height: "15rem",
+        columns,
+        data: { chart: chart(), rows },
+        ...overrides,
+      } as ChartExplorerProps<(typeof rows)[number]>),
+    );
+
+  test("loading without rows keeps the title, says so in the subtitle and holds the height with a skeleton", () => {
+    const html = frame({ data: { rows: [] }, request: { status: "loading" } });
+    expect(html).toContain('data-state="loading"');
+    expect(html).toContain('aria-busy="true"');
+    expect(html).toContain("Opens per month");
+    expect(html).toContain("Loading …");
+    expect(html).not.toContain("Share of recipients");
+    expect(html).toContain('class="k2b-chart-explorer__skeleton" role="status"');
+    expect(html).toContain("height:15rem");
+    // The view controls keep their place but are inert while nothing can be viewed.
+    expect(html).toMatch(/class="k2b-chart-explorer__views"[^>]*inert/);
+  });
+
+  test("empty without a box says the host sentence", () => {
+    const html = frame({ data: { rows: [] }, request: { status: "idle" }, empty: "No newsletter was sent in this period." });
+    expect(html).toContain('data-state="empty"');
+    expect(html).toContain("No newsletter was sent in this period.");
+    expect(html).toContain("Share of recipients");
+    expect(html).not.toContain("k2b-paper");
+  });
+
+  test("a failure without rows offers Try again; without onRetry it has no button", () => {
+    const html = frame({ data: { rows: [] }, request: { status: "error", reason: "The query timed out." }, onRetry: () => {} });
+    expect(html).toContain('role="alert"');
+    expect(html).toContain("The data could not be loaded.");
+    expect(html).toContain("The query timed out.");
+    expect(html).toContain("Try again");
+    expect(frame({ data: { rows: [] }, request: { status: "error" } })).not.toContain("Try again");
+  });
+
+  test("stale rows stay and only the subtitle line names the failed refresh", () => {
+    const html = frame({ request: { status: "error" }, asOf: "09:12", onRetry: () => {} });
+    expect(html).toContain('data-state="stale"');
+    expect(html).toContain("As of 09:12 · Refresh failed");
+    // A polite live region tells screen readers that the shown values are out of date.
+    expect(html).toMatch(/class="k2b-chart-explorer__description k2b-chart-explorer__status-line"[^>]*role="status"/);
+    expect(html).toContain("Try again");
+    expect(html).toContain("k2b-chart__svg");
+    expect(html).not.toContain("Share of recipients");
+  });
+
+  test("a refresh keeps the rows and names a new range only while it differs", () => {
+    expect(frame({ request: { status: "loading", requestedRange: "Last 90 days" }, range: "Last 30 days" })).toContain(
+      "Loading Last 90 days …",
+    );
+    const same = frame({ request: { status: "loading", requestedRange: "Last 30 days" }, range: "Last 30 days" });
+    expect(same).toContain("Share of recipients");
+    expect(same).toContain('data-state="refreshing"');
+  });
+
+  test("German frames use the mockup's words", async () => {
+    const { LocaleProvider } = await import("../intl/locale");
+    const html = renderToString(() =>
+      createComponent(LocaleProvider, {
+        locale: "de-DE",
+        get children() {
+          return createComponent(ChartExplorer, {
+            title: "Öffnungen",
+            columns,
+            data: { chart: chart(), rows },
+            request: { status: "error" as const },
+            asOf: "09:12",
+            onRetry: () => {},
+          });
+        },
+      }),
+    );
+    expect(html).toContain("Stand 09:12 · Aktualisieren fehlgeschlagen");
+    expect(html).toContain("Erneut versuchen");
+  });
+
+  test("a live chart can draw the chart view while the table comes from typed rows", () => {
+    const live = frame({ data: { rows }, children: "LIVE CHART" });
+    expect(live).toContain('class="k2b-chart-explorer__chart">LIVE CHART');
+    const table = frame({ data: { rows }, children: "LIVE CHART", defaultView: "table", inset: "1rem" });
+    expect(table).toContain('data-view="table"');
+    expect(table).toContain("height:calc(15rem + 1rem)");
+    expect(table).toContain('data-surface="plain"');
+    expect(table).toContain("Exports");
+    // Block and inline like CSS padding: the height grows by the block inset, the sides use the inline one.
+    const panel = frame({ data: { rows }, children: "LIVE CHART", defaultView: "table", inset: "0.875rem 1rem" });
+    expect(panel).toContain("height:calc(15rem + 0.875rem)");
+    expect(panel).toContain("--k2b-chart-explorer-inset:1rem;--k2b-chart-explorer-inset-block:0.875rem");
+  });
+
+  test("without a request nothing changes for existing hosts", () => {
+    const html = frame({});
+    expect(html).not.toContain("data-state");
+    expect(html).not.toContain("aria-busy");
+    expect(html).toContain("Share of recipients");
+  });
+});

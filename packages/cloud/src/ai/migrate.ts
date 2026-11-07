@@ -1759,7 +1759,7 @@ export const migrateCloudAi = async (): Promise<void> => {
       created_at timestamptz NOT NULL DEFAULT now(), last_seen_at timestamptz NOT NULL DEFAULT now(),
       PRIMARY KEY (app_id, manifest_hash)
     )`.simple();
-    await tx`CREATE INDEX IF NOT EXISTS idx_ai_app_skill_catalogs_last_seen ON ai.app_skill_catalogs(last_seen_at)`.simple();
+    await tx`ALTER TABLE ai.app_skill_catalogs ADD COLUMN IF NOT EXISTS unregistered_at timestamptz`.simple();
     await tx`CREATE TABLE IF NOT EXISTS ai.app_skills (
       key text PRIMARY KEY, app_id text NOT NULL, app_name text NOT NULL, name text NOT NULL,
       skill_id uuid NULL, source jsonb NULL, source_hash text NULL, applied_hash text NULL,

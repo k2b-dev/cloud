@@ -15,21 +15,27 @@ export const readDashboardRange = (path: string): DashboardRange => {
     return { range, from: new Date(from).toISOString(), to: new Date(to).toISOString() };
   return { range };
 };
+/**
+ * Sections in the order their first panel appears. A number panel joins the key-figure row of its section; one without
+ * a section stays in the top row (`dashboardTopNumbers`). The section's icon, colour and description come from its
+ * first chart panel, because number panels were never checked against them; a section of numbers only takes them from
+ * its first number.
+ */
 export const dashboardSections = <T extends PublicDashboardPanel>(panels: T[]) => {
-  const groups = new Map<string, T[]>();
-  for (const panel of panels.filter((panel) => panel.kind !== "number")) {
-    const group = groups.get(panel.section) ?? [];
-    group.push(panel);
+  const groups = new Map<string, { numbers: T[]; panels: T[] }>();
+  for (const panel of panels) {
+    if (panel.kind === "number" && !panel.section) continue;
+    const group = groups.get(panel.section) ?? { numbers: [], panels: [] };
+    (panel.kind === "number" ? group.numbers : group.panels).push(panel);
     groups.set(panel.section, group);
   }
-  return [...groups].map(([name, panels]) => ({
-    name,
-    panels,
-    icon: panels[0]?.sectionIcon,
-    color: panels[0]?.sectionColor,
-    description: panels[0]?.sectionDescription,
-  }));
+  return [...groups].map(([name, { numbers, panels }]) => {
+    const lead = panels[0] ?? numbers[0];
+    return { name, numbers, panels, icon: lead?.sectionIcon, color: lead?.sectionColor, description: lead?.sectionDescription };
+  });
 };
+export const dashboardTopNumbers = <T extends PublicDashboardPanel>(panels: T[]) =>
+  panels.filter((panel) => panel.kind === "number" && !panel.section);
 /** Every dashboard time reads in the base's time zone, so the server and every viewer show the same clock. */
 export type DashboardClock = { locale: string; timeZone: string };
 export const dashboardDateTime = (clock: DashboardClock) =>
