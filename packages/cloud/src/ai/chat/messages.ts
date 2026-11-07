@@ -1,7 +1,8 @@
 import { i18n } from "@k2b/stdlib";
 import type { AiTurnError } from "../types";
 
-const messages = i18n.define({
+// Hosts which only import view schemas do not need the chat message catalog.
+const messages = /* @__PURE__ */ i18n.define({
   baseLocale: "en",
   messages: {
     en: {
