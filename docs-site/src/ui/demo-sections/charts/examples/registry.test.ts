@@ -136,19 +136,32 @@ test("a dashboard panel draws as soon as an example with its kind, layout and op
   const drawn = chartShowcaseExamples
     .map((example) => fields(example.spec))
     .filter((spec) => resolveDrawing(spec as never).mode !== "slot");
-  for (const dashboard of showcaseDashboards)
-    for (const panel of dashboard.sections.flatMap((section) => section.panels)) {
-      const spec = fields(panel.spec);
-      const covered = drawn.some(
-        (example) =>
-          (example.kind ?? example.block) === (spec.kind ?? spec.block) &&
-          example.layout === spec.layout &&
-          Object.keys(spec).every((key) => key in example),
-      );
-      if (!covered) continue;
-      const drawing = resolveDrawing(panel.spec);
-      expect(drawing.mode === "slot" ? drawing.reason : "draws", `${dashboard.slug} ${panel.id}`).toBe("draws");
-    }
+  // Words around the chart say nothing about what the build can draw.
+  const presentation = new Set(["title", "subtitle", "tooltip"]);
+  const covered = (spec: Record<string, unknown>) =>
+    drawn.some(
+      (example) =>
+        (example.kind ?? example.block) === (spec.kind ?? spec.block) &&
+        example.layout === spec.layout &&
+        Object.keys(spec).every((key) => presentation.has(key) || key in example),
+    );
+  const panels = showcaseDashboards.flatMap((dashboard) =>
+    dashboard.sections.flatMap((section) =>
+      section.panels.map((panel) => ({ id: `${dashboard.slug} ${panel.id}`, spec: fields(panel.spec) })),
+    ),
+  );
+  const checked = panels.filter((panel) => covered(panel.spec));
+  // Kinds and options on main today: at least the calendars and the blocks.
+  expect(checked.length).toBeGreaterThanOrEqual(4);
+  for (const panel of checked) {
+    const drawing = resolveDrawing(panel.spec as never);
+    expect(drawing.mode === "slot" ? drawing.reason : "draws", panel.id).toBe("draws");
+  }
+  // Broken data in a covered panel is caught, not taken for a later option.
+  const calendar = checked.find((panel) => panel.spec.layout === "calendar")!;
+  const broken = { ...calendar.spec, data: [["2026-02-30", 1]] };
+  expect(covered(broken)).toBe(true);
+  expect(resolveDrawing(broken as never).mode).toBe("slot");
 });
 
 test("a kind's page lists each option once, with the values the schema accepts, and short guidance", () => {

@@ -38,6 +38,8 @@ const examples: ChartShowcaseExample[] = [
     options: [
       ...commonOptions,
       { name: "data", type: "{ x, y, value }[]", description: "One cell per pair; x names the column, y the row." },
+      { name: "showValues", type: "boolean", description: "Prints the value in every cell that fits it." },
+      { name: "min, max", type: "number", description: "Fixed ends of the color scale." },
       numberFormatOption,
     ],
   },

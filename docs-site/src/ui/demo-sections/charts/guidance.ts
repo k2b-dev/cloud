@@ -25,16 +25,28 @@ const members = (schema: unknown): Record<string, unknown>[] => {
   return Array.isArray(schema.options) ? schema.options.flatMap(members) : [];
 };
 
-/** The schema fields of a chart kind in this build; undefined for blocks and kinds the schema does not describe. */
-const schemaShape = (kind: string) =>
+/** The literal a branch fixes for a field, such as `layout: "calendar"`; undefined when the field takes several values. */
+const literal = (field: unknown): unknown => {
+  if (!record(field)) return undefined;
+  if ("value" in field) return field.value;
+  return typeof field.unwrap === "function" ? literal(field.unwrap()) : undefined;
+};
+
+/**
+ * The schema fields of a chart kind in this build, for the branch its layout selects (a calendar heatmap has other
+ * fields than a plain one); undefined for blocks and kinds the schema does not describe.
+ */
+const schemaShape = (kind: string, layout?: unknown) =>
   members(chartKinds()).find((member) => {
     const field = member.kind;
-    return record(field) && (field.value === kind || enumValues(field)?.includes(kind));
+    if (!record(field) || (field.value !== kind && !enumValues(field)?.includes(kind))) return false;
+    const fixed = literal(member.layout);
+    return fixed === undefined || fixed === layout;
   });
 
 /** The values an enumerated option of a chart kind accepts, read from the portable description's schema. */
-export const schemaValues = (kind: string, name: string): string[] | undefined => {
-  const shape = schemaShape(kind);
+export const schemaValues = (kind: string, name: string, layout?: unknown): string[] | undefined => {
+  const shape = schemaShape(kind, layout);
   return shape ? enumValues(shape[name]) : undefined;
 };
 
@@ -53,14 +65,15 @@ export const kindGuidance = (kind: ChartShowcaseKind) => {
     .flatMap((example) => example.options)
     .filter((option, index, all) => all.findIndex((other) => other.name === option.name) === index);
   const names = new Set(merged.map((option) => option.name));
-  const shape = chartKind ? schemaShape(chartKind) : undefined;
+  const layout = spec !== null && typeof spec === "object" && !Array.isArray(spec) ? spec.layout : undefined;
+  const shape = chartKind ? schemaShape(chartKind, layout) : undefined;
   const root = (name: string) => name.split(".")[0]!;
   const options = merged
     .filter((option) => !option.name.includes(".") || !names.has(root(option.name)))
     // An option the build does not accept yet appears once its catalog step lands, like its slot.
     .filter((option) => !shape || option.name.split(", ").every((name) => root(name) in shape))
     .map((option) => {
-      const values = chartKind && !option.name.includes(".") ? schemaValues(chartKind, option.name) : undefined;
+      const values = chartKind && !option.name.includes(".") ? schemaValues(chartKind, option.name, layout) : undefined;
       return values ? { ...option, type: values.map((value) => JSON.stringify(value)).join(" | ") } : option;
     });
   const unique = (lists: string[][]) => [...new Set(lists.flat())];
