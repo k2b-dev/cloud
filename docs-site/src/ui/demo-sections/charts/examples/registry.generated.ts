@@ -46,6 +46,6 @@ export const exampleModules: Record<string, unknown>[] = [
   statExamples,
   stateTimelineExamples,
   statsExamples,
-  treemapExamples,
   tableExamples,
+  treemapExamples,
 ];
