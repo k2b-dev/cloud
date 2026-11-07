@@ -2,8 +2,8 @@
 
 The widget family composes compact dashboard blocks from semantic presentation
 data. It does not fetch endpoints or depend on a dashboard registry.
-`DashboardGrid`, `DashboardSection`, and `DashboardPanel` lay out a whole
-dashboard of framed panels on six columns.
+`DashboardGrid`, `DashboardSection`, `DashboardPanel`, and `DashboardFrame`
+lay out a whole dashboard of framed panels on six columns.
 
 ## Use Widget composition
 
@@ -74,12 +74,89 @@ the section where you place it, usually first.
 readable in light and dark, and `headingLevel` (2 by default). `DashboardPanel`
 renders an `article` by default; set `as` to `section`, `div`, or `li`. It
 passes other attributes, such as `aria-label` or `data-*`, to that element.
-The host still owns loading, failure, and the content height of each panel.
+A `DashboardPanel` leaves loading, failure, and the content height to the
+host; a data panel uses `DashboardFrame` instead, which owns them.
+
+## Dashboard frame
+
+`DashboardFrame` is the frame of one data panel. The host passes the
+content; the frame owns everything around it, the same way in every app:
+
+- the title (`headingLevel`, 3 by default) and one subtitle line;
+- `tools` at the right of the head, such as a search field or a grouping
+  chip. A search field there takes up to 14rem and gives way to the title
+  first;
+- the states in place: `state` is `"ready"` (default), `"loading"`,
+  `"empty"`, `"error"` or `"stale"`. Loading and stale take the subtitle's
+  line ("Loading …", "As of 09:12 · Refresh failed · Try again"), so nothing
+  moves. Empty shows the `empty` sentence with `emptyIcon` and an optional
+  `emptyAction`; error shows "The data could not be loaded." and, with
+  `onRetry`, a Try again button. `asOf` is the host's formatted time;
+- a body that keeps its size in every state: `height` for a fixed body, or
+  `reserve`, a hidden copy of the full content (such as every row of a
+  table) that holds the height while the shown content narrows or is
+  missing. A reserved body reaches the frame's left, right and bottom
+  edges;
+- `compact` shows loading, empty and failure as one quiet line, for short
+  content such as an amount.
+
+Without `title` the frame is only the surface, for content with its own head
+and states, such as `ChartExplorer` with `inset="1rem"`; its title,
+subtitle, Copy data, Diagram and Table switch, legend values and the same
+five states then come from the explorer. In a `DashboardSection`, `width`
+places the frame as its own cell of the six columns, like `DashboardPanel`;
+never put a frame inside a `DashboardPanel`. The frame's words follow the
+inherited `@k2b/ui` locale.
+
+```tsx
+<DashboardSection title="November" icon="ti ti-calendar-event">
+  <DashboardFrame
+    width="third"
+    title="Budgets in November"
+    subtitle="Booked and expected"
+    state={state()}
+    asOf="09:12"
+    onRetry={reload}
+    empty="No budget is set for November."
+    height="240px"
+    compact
+  >
+    <BudgetList currency="EUR" items={items()} />
+  </DashboardFrame>
+  <DashboardFrame width="twoThirds">
+    <ChartExplorer title="Balance" inset="1rem" request={request()} data={data()} columns={columns} />
+  </DashboardFrame>
+</DashboardSection>
+```
+
+### Descriptions on a dashboard
+
+In Cloud, `DescriptionPanel` from `@k2b/cloud/descriptions` maps one
+portable description onto these components. Chat, Pulse, Code pages and the
+chart showcase use it, so a page tree maps one to one onto components:
+
+| Node | Drawn as | Props from the node |
+| --- | --- | --- |
+| Page | `DashboardGrid` | the host draws the page head |
+| Section `{ title, description, icon, color }` | `DashboardSection` | `title`, `description`, `icon`, `iconColor` |
+| Chart `{ kind, … }` | `DashboardFrame` without title around `ChartExplorer` | `title`, `subtitle`, legend and table rows from the chart description; panel `width`, content `height` |
+| `{ block: "stats", items }` | `StatGrid` of `StatCell` tiles, always the whole row | per item `label`, `value` in its `format`, `icon`, `tone`, `delta`, `compare`, `trend`; states per tile |
+| `{ block: "table", columns, rows, search?, groupBy? }` | `DashboardFrame` with `reserve`, typed `DataTable` | search field and grouping chip in `tools`, typed columns (`type`, `format`, `states`, `priority`), sortable headers |
+| `{ block: "budget" }` | `DashboardFrame` `compact`, `BudgetList` | the block's fields as `BudgetList` props; 240 px by default |
+| `{ block: "balance" }` | `DashboardFrame` `compact`, `BalanceSummary` | the block's fields as props; 56 px |
+| `[{ type: "flow", … }]` or `{ block: "flow", items }` | `DashboardFrame` `compact`, one `FlowAmount` per entry | each entry as `FlowAmount` props; 72 px |
+| Anything this build cannot draw | `DashboardFrame` with the host's `slot`, or "This view cannot be shown here." | `title`, `subtitle` |
+
+Each panel takes the page's `state`, `asOf` and `onRetry` and its own
+`empty` sentence; `DescriptionPanel` passes them to the frame, the explorer
+or the tiles. Its own words, such as the search label and "Nothing to show
+for this period.", follow the same locale.
 
 ## Import
 
 ```tsx
 import {
+  DashboardFrame,
   DashboardGrid,
   DashboardPanel,
   DashboardSection,
