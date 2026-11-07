@@ -139,13 +139,16 @@ export function ChartExplorer<T extends ChartExplorerRow>(props: ChartExplorerPr
   const legendValue = (index: number) => {
     const marks = snapshot()?.marks ?? [];
     let latest = -Infinity;
-    for (const mark of marks) {
-      const x = mark.datum.values.find((field) => field.key === "x")?.value;
-      if (typeof x === "number") latest = Math.max(latest, x);
-    }
+    for (const mark of marks) latest = Math.max(latest, mark.datum.anchor[0]);
+    const valueField =
+      snapshot()?.kind === "area"
+        ? marks.some((mark) => mark.datum.values.some((field) => field.key === "percent"))
+          ? "percent"
+          : "value"
+        : "y";
     const field = marks
-      .find((mark) => mark.datum.seriesIndex === index && mark.datum.values.some((field) => field.key === "x" && field.value === latest))
-      ?.datum.values.find((field) => field.key === "y");
+      .find((mark) => mark.datum.seriesIndex === index && mark.datum.anchor[0] === latest)
+      ?.datum.values.find((field) => field.key === valueField);
     return field
       ? (field.formatted ??
           (typeof field.value === "number"
@@ -465,8 +468,19 @@ export function ChartExplorer<T extends ChartExplorerRow>(props: ChartExplorerPr
                         aria-hidden="true"
                       />
                       <span data-chart-legend-label>{entry.label}</span>
-                      <Show when={snapshot()?.kind === "line"}>
-                        <b data-chart-legend-value data-series-index={index()} data-field="y" data-default={legendValue(index())}>
+                      <Show when={snapshot()?.kind === "area" || snapshot()?.kind === "line"}>
+                        <b
+                          data-chart-legend-value
+                          data-series-index={index()}
+                          data-field={
+                            snapshot()?.kind === "area"
+                              ? snapshot()?.marks.some((mark) => mark.datum.values.some((field) => field.key === "percent"))
+                                ? "percent"
+                                : "value"
+                              : "y"
+                          }
+                          data-default={legendValue(index())}
+                        >
                           {legendValue(index())}
                         </b>
                       </Show>

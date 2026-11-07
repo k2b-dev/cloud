@@ -1,11 +1,14 @@
 import { createSignal } from "solid-js";
 import { render } from "solid-js/web";
+import { liquidityForecastSpec } from "../../../docs-site/src/ui/demo-sections/charts/liquidity-forecast";
+import { chartKinds, chartRenderOptions } from "../../editor/src/charts";
 import Chart from "../src/content/Chart";
 import { ChartExplorer } from "../src/content/ChartExplorer";
 import { prepareChartSnapshot } from "../src/content/chart-snapshot";
 import { LocaleProvider } from "../src/intl/locale";
 import { lineForecastFixture } from "./line-forecast-fixture";
 
+const liquidityOptions = chartRenderOptions(chartKinds().parse(liquidityForecastSpec), "en", { legend: "outside" });
 const snapshot = prepareChartSnapshot(
   {
     kind: "line",
@@ -105,6 +108,13 @@ render(
             }}
             style={{ height: "280px" }}
           />
+        </section>
+        <section class="line-forecast-panel liquidity">
+          <h2>Balance</h2>
+          <p class="meta">Business account · forecast with range from today</p>
+          <LocaleProvider locale="en">
+            <Chart {...liquidityOptions} legend legendPlacement="top-start" style={{ height: "280px" }} />
+          </LocaleProvider>
         </section>
         <div id="line-hosts" />
       </main>

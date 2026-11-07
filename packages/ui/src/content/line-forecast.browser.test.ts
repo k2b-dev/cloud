@@ -92,6 +92,29 @@ const open = async (width: number, dark = false, touch = false) => {
   await settled(page);
   return page;
 };
+for (const width of [1440, 390])
+  test(`Liquidity balance at ${width} renders its dated forecast and supports inspection`, async () => {
+    const page = await open(width);
+    pages.push(page);
+    const chart = page.locator(".liquidity .k2b-chart");
+    await chart.scrollIntoViewIfNeeded();
+    await page.mouse.move(0, 0);
+    await settled(page);
+    expect(await chart.locator(".k2b-line-forecast-band").count()).toBe(1);
+    expect(await chart.locator(".k2b-line-threshold").count()).toBe(1);
+    expect(await chart.locator(".k2b-line-marker").count()).toBe(1);
+    expect(await chart.locator("[data-chart-legend-value]").count()).toBe(1);
+    const before = await chart.boundingBox();
+    await chart.focus();
+    await page.keyboard.press("Home");
+    await settled(page);
+    expect(await page.locator('[role="tooltip"]:popover-open').textContent()).toContain("Balance");
+    await page.keyboard.press("End");
+    await settled(page);
+    expect(await page.locator('[role="tooltip"]:popover-open').textContent()).toContain("forecast");
+    expect(await chart.boundingBox()).toEqual(before);
+  });
+
 const documentBox = (page: Page, selector: string) =>
   page.locator(selector).evaluate((e) => {
     const r = e.getBoundingClientRect();

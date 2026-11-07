@@ -25,6 +25,7 @@ import {
   isChartDatum,
   line,
   pie,
+  renderAreaSvg,
   renderBarChartSvg,
   scatter,
   sparkline,
@@ -95,6 +96,9 @@ function drawChart(options: StoredChart, locale: string, width: number, height: 
     const common = { width, height, title: options.title, subtitle: options.input.subtitle, inspect: true };
     let svg: string;
     switch (mapped.kind) {
+      case "area":
+        svg = renderAreaSvg({ ...mapped, ...common });
+        break;
       case "bar": {
         // The title and subtitle take height too: lay out exactly what is drawn.
         const layout = barChartLayout({ ...mapped, ...common }, width);

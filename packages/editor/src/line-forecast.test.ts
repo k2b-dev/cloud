@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test";
-import { chartKinds, chartRenderOptions, chartSchema, chartTable } from "./charts";
+import { liquidityForecastSpec } from "../../../docs-site/src/ui/demo-sections/charts/liquidity-forecast";
+import { chartKinds, chartRenderOptions, chartSchema, chartTable, drawChart } from "./charts";
 
 const spec = {
   kind: "line",
@@ -102,4 +103,20 @@ test("ISO coordinates are converted only at the render boundary; domains include
   expect(render.yAxis?.domain?.[0]).toBeLessThanOrEqual(-20);
   expect(render.yAxis?.domain?.[1]).toBeGreaterThanOrEqual(50);
   expect(chartTable(input, "de").rows.map((r) => r.values.y)).toEqual([10, 8]);
+});
+
+test("the Liquidity dashboard balance is a real dated forecast through the shared JSON path", () => {
+  const input = chartKinds().parse(liquidityForecastSpec);
+  const options = chartRenderOptions(input, "en", { width: 942 });
+  expect(options.kind).toBe("line");
+  if (options.kind !== "line") throw new Error("Expected line");
+  expect(options.series[0]!.data).toHaveLength(96);
+  expect(options.forecast?.from).toBe(Date.UTC(2026, 10, 6));
+  expect(options.forecast?.band).toHaveLength(60);
+  expect(options.marker?.at).toBe(options.forecast?.from);
+  const table = chartTable(input, "en");
+  expect(table.rows).toHaveLength(96);
+  expect(drawChart(options)).toContain("k2b-line-forecast-band");
+  expect(drawChart(options)).toContain("k2b-line-threshold");
+  expect(drawChart(options)).toContain("k2b-line-marker");
 });

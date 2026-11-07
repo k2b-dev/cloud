@@ -1,3 +1,5 @@
+import { liquidityForecastSpec } from "../liquidity-forecast";
+
 export const lineExamples = [
   {
     id: "line-forecast",
@@ -72,6 +74,23 @@ export const lineExamples = [
       { name: "threshold", type: "{value:number,label:string}", description: "A labelled dashed warning line." },
       { name: "marker", type: "{at:number|ISO,label:string}", description: "A labelled vertical marker, for example Today." },
       { name: "step", type: '"after"|"before"', description: "Draw horizontal steps rather than interpolated segments." },
+    ],
+  },
+  {
+    id: "line-liquidity",
+    kind: "line",
+    question: "trend" as const,
+    title: "Balance and forecast",
+    summary: "The Liquidity dashboard's invented business account, with booked balances and a widening forecast range.",
+    spec: liquidityForecastSpec,
+    height: 280,
+    width: "full" as const,
+    useFor: ["Compare scheduled payments with the account reserve."],
+    avoidFor: ["Present an uncertain forecast as booked money."],
+    a11y: ["Inspect every day with arrow keys, Home and End; the legend follows the cursor."],
+    options: [
+      { name: "forecast.from", type: "ISO date", description: "The first projected day, also marked as Today." },
+      { name: "step", type: '"after"', description: "A balance changes when its payment is booked." },
     ],
   },
 ];

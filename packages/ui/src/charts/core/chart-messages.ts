@@ -4,7 +4,7 @@ import { i18n } from "@k2b/stdlib";
 export const coreChartMessages = i18n.define({
   baseLocale: "en",
   messages: {
-    en: { series: "Series" },
-    de: { series: "Datenreihe" },
+    en: { series: "Series", areaTotal: "Total" },
+    de: { series: "Datenreihe", areaTotal: "Zusammen" },
   },
 });

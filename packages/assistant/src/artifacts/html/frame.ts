@@ -249,6 +249,7 @@ addEventListener(
 const inspections = new Map<Element, ChartInspection>();
 const chartTooltips = new WeakMap<Element, Map<string, ChartTooltip>>();
 const chartKinds: readonly ChartKind[] = [
+  "area",
   "bar",
   "line",
   "scatter",

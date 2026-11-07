@@ -136,6 +136,14 @@ export { type ChartRenderOptions, chartRenderHeight, renderChartSvg } from "../c
  *  block on truly empty inputs; partially-filled series get rendered
  *  as-is and the core handles the gaps. */
 const isEmpty = (props: ChartProps): boolean => {
+  if (props.kind === "area")
+    return (
+      !props.x.length ||
+      !props.series.length ||
+      props.x.every(
+        (_, i) => props.series.some((s) => s.data[i] === null) || (props.normalize && props.series.every((s) => s.data[i] === 0)),
+      )
+    );
   if (props.kind === "line" || props.kind === "scatter") {
     return !props.series?.length || props.series.every((s) => !s.data.length);
   }
@@ -170,18 +178,30 @@ const ChartRoot = (props: ChartProps): JSX.Element => {
     height: chartRenderHeight(props),
   });
   const topLegend = () =>
-    props.kind === "line" &&
-    props.legend === true &&
-    (props.legendPlacement === "top-start" || !!(props.forecast || props.marker || props.threshold || props.zero));
-  const legendSeries = () => (props.kind === "line" ? props.series : []);
+    props.kind === "area"
+      ? props.legend !== false
+      : props.kind === "line" &&
+        props.legend === true &&
+        (props.legendPlacement === "top-start" || !!(props.forecast || props.marker || props.threshold || props.zero));
+  const legendSeries = () => (props.kind === "line" || props.kind === "area" ? props.series : []);
   const legendValue = (index: number) => {
-    if (props.kind !== "line") return "";
-    let latest = -Infinity;
-    for (const series of props.series) for (const point of series.data) if (Number.isFinite(point.x)) latest = Math.max(latest, point.x);
-    const last = props.series[index]?.data.find((point) => point.x === latest);
-    return last && Number.isFinite(last.y)
-      ? (props.yAxis?.format?.(last.y) ?? new Intl.NumberFormat(props.locale ?? locale(), { maximumFractionDigits: 6 }).format(last.y))
-      : "—";
+    if (props.kind === "line") {
+      let latest = -Infinity;
+      for (const series of props.series) for (const point of series.data) if (Number.isFinite(point.x)) latest = Math.max(latest, point.x);
+      const last = props.series[index]?.data.find((point) => point.x === latest);
+      return last && Number.isFinite(last.y)
+        ? (props.yAxis?.format?.(last.y) ?? new Intl.NumberFormat(props.locale ?? locale(), { maximumFractionDigits: 6 }).format(last.y))
+        : "—";
+    }
+    if (props.kind !== "area") return "";
+    const last = props.x.length - 1;
+    const amount = props.series[index]?.data[last];
+    const values = props.series.map((s) => s.data[last]);
+    const total = values.reduce<number>((sum, value) => sum + (value ?? 0), 0);
+    if (amount == null || values.some((v) => v == null) || (props.normalize && total === 0)) return "—";
+    return props.normalize
+      ? new Intl.NumberFormat(locale(), { style: "percent", minimumFractionDigits: 1, maximumFractionDigits: 1 }).format(amount / total)
+      : (props.format?.(amount) ?? new Intl.NumberFormat(locale(), { maximumFractionDigits: 2 }).format(amount));
   };
   const dimensions = () => containerRef?.getBoundingClientRect() ?? size();
   const initialMapViewport = props.kind === "map" ? normalizeMapViewport(props.viewport) : DEFAULT_MAP_VIEWPORT;
@@ -470,6 +490,16 @@ const ChartRoot = (props: ChartProps): JSX.Element => {
           ],
         };
       }
+      if (selection.kind === "area" && props.kind === "area") {
+        const amount = selection.datum.values.find((f) => f.key === "value")!;
+        const share = selection.datum.values.find((f) => f.key === "percent");
+        return {
+          title: selection.datum.values.find((f) => f.key === "x")?.formatted ?? "",
+          rows: [
+            { label: selection.datum.label ?? chartMessages().series, value: `${share ? `${share.formatted} · ` : ""}${amount.formatted}` },
+          ],
+        };
+      }
       const format = new Intl.NumberFormat(locale(), { maximumFractionDigits: 6 });
       return {
         title:
@@ -606,9 +636,16 @@ const ChartRoot = (props: ChartProps): JSX.Element => {
                     />
                   </svg>
                   <span>{series.label && series.label.length > 0 ? series.label : `${chartMessages().series} ${index() + 1}`}</span>
-                  <b data-chart-legend-value data-series-index={index()} data-field="y" data-default={legendValue(index())}>
-                    {legendValue(index())}
-                  </b>
+                  <Show when={props.kind === "area" || props.kind === "line"}>
+                    <b
+                      data-chart-legend-value
+                      data-series-index={index()}
+                      data-field={props.kind === "area" && props.normalize ? "percent" : props.kind === "line" ? "y" : "value"}
+                      data-default={legendValue(index())}
+                    >
+                      {legendValue(index())}
+                    </b>
+                  </Show>
                 </span>
               )}
             </For>

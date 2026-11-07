@@ -95,7 +95,7 @@ test("all fourteen kinds match server SVG and geometry on the first client rende
     expect(await page.locator("body").getAttribute("data-mounted")).toBe("true");
     const after = await drawing();
     expect(after).toEqual(before);
-    expect(after).toHaveLength(14);
+    expect(after).toHaveLength(specs.length);
     expect(errors).toEqual([]);
   } finally {
     await browser.close();

@@ -1320,3 +1320,7 @@
     }
   }
 }
+
+@layer k2b-base {
+.k2b-chart[data-chart-kind="area"] [data-selected] > .k2b-area-inspection-point { opacity: 1; stroke-width: 1.5px; }
+}

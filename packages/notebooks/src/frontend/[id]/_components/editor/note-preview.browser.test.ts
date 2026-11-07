@@ -567,8 +567,13 @@ for (const [note, width] of [
       await settle(page);
       same(await box(".cm-content .cm-query-block-widget"), reserved, "Drawn widget");
       same(await box(".cm-content .notebook-book-chart"), reservedFrame, "Drawn frame");
-      if (note === "chart") expect(await page.locator(".cm-content .k2b-chart-legend li").allTextContents()).toEqual(["Umsatz", "Kosten"]);
-      else expect(await page.locator(".cm-content .notebook-book-chart svg [data-chart-datum]").count()).toBe(Number(note.slice(4)));
+      if (note === "chart") {
+        expect(await page.locator(".cm-content .k2b-chart-legend [data-chart-legend-label]").allTextContents()).toEqual([
+          "Umsatz",
+          "Kosten",
+        ]);
+        expect(await page.locator(".cm-content .k2b-chart-legend [data-chart-legend-value]").allTextContents()).toEqual(["1.4K", "1K"]);
+      } else expect(await page.locator(".cm-content .notebook-book-chart svg [data-chart-datum]").count()).toBe(Number(note.slice(4)));
       expect(errors).toEqual([]);
     } finally {
       releaseEditor?.();

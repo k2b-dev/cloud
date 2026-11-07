@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test";
+import { liquidityForecastSpec } from "../../../../docs-site/src/ui/demo-sections/charts/liquidity-forecast";
 import { CloudAiChartInputSchema } from "./default-tool-contracts";
 import { parseCloudAiChartToolView } from "./view-block";
 
@@ -49,4 +50,12 @@ test("Chat accepts additive forecast options and preserves missing observations"
       },
     }),
   ).toBeUndefined();
+});
+
+test("the real Chat tool accepts the Liquidity dashboard forecast", () => {
+  const validated = CloudAiChartInputSchema.parse(liquidityForecastSpec);
+  const view = parseCloudAiChartToolView(validated);
+  expect(view?.view).toBe("chart");
+  if (view?.view !== "chart" || view.kind !== "line") throw new Error("Expected line");
+  expect(view.forecast?.band).toHaveLength(60);
 });
