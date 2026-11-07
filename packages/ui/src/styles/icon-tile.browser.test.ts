@@ -186,4 +186,49 @@ describe("standalone icon tiles", () => {
       }
     }, 60_000);
   }
+
+  /** Distance between the glyph's centre and its tile's centre, per sample. */
+  const offsets = (page: Page) =>
+    page.locator("[data-sample]").evaluateAll((samples) =>
+      samples.map((sample) => {
+        const tile = sample.querySelector(".k2b-icon-tile")!.getBoundingClientRect();
+        const glyph = sample.querySelector(".k2b-icon-tile i")!.getBoundingClientRect();
+        return {
+          sample: sample.getAttribute("data-sample"),
+          x: Math.abs(glyph.left + glyph.width / 2 - (tile.left + tile.width / 2)),
+          y: Math.abs(glyph.top + glyph.height / 2 - (tile.top + tile.height / 2)),
+        };
+      }),
+    );
+
+  for (const theme of ["light", "dark"]) {
+    test(`the glyph sits in the middle of every tile in ${theme}`, async () => {
+      const page = await browser.newPage();
+      try {
+        await mount(page, theme);
+        for (const offset of await offsets(page)) {
+          expect(offset.x, `${offset.sample} x`).toBeLessThanOrEqual(1);
+          expect(offset.y, `${offset.sample} y`).toBeLessThanOrEqual(1);
+        }
+      } finally {
+        await page.close();
+      }
+    }, 60_000);
+  }
+
+  // A host heading that styles its spans, like a docs page with an eyebrow and a description, must not move the glyph
+  // of a tile that is a span too (the chart showcase question headers, 07.11.).
+  test("a host rule for spans in a heading leaves the glyph centred", async () => {
+    const page = await browser.newPage();
+    try {
+      await page.setContent(
+        `<!doctype html><html><head><style>${css} .host-heading span { display: block; margin-top: 0.35rem; line-height: 1.55; }</style></head><body><header class="host-heading k2b-ui"><section data-sample="host"><span class="k2b-icon-tile" style="width: 2.25rem; height: 2.25rem; font-size: 1.15rem">${glyph}</span></section><div><span>Lines over time</span></div></header></body></html>`,
+      );
+      const [offset] = await offsets(page);
+      expect(offset!.x).toBeLessThanOrEqual(1);
+      expect(offset!.y).toBeLessThanOrEqual(1);
+    } finally {
+      await page.close();
+    }
+  });
 });

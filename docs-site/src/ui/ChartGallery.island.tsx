@@ -22,8 +22,8 @@ export default function ChartGallery(props: { base: string }) {
           const kinds = () => chartShowcaseKinds.filter((kind) => kind.question === question.id);
           return (
             <section class="ui-charts-group" id={question.id} aria-labelledby={`${question.id}-title`}>
-              <header class="ui-charts-group__header">
-                <span class="ui-charts-group__icon" aria-hidden="true">
+              <header class="ui-charts-group__header k2b-ui">
+                <span class="ui-charts-group__icon k2b-icon-tile" aria-hidden="true">
                   <i class={question.icon} />
                 </span>
                 <div>
