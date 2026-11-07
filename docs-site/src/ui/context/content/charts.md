@@ -5,6 +5,8 @@
 ## Use Chart
 
 Use it to show a trend, distribution, comparison, geographic series, or state history.
+To pick a kind by what you want to show, start in the [chart showcase](/en/ui/charts): every kind has a live
+example with its states, its description as TSX and JSON, and its options.
 
 Every non-empty chart has tooltips, keyboard inspection, and tap by default; see [How to customize](#how-to-customize).
 
@@ -44,6 +46,81 @@ import {
 - `stateTimeline` for intervals with discrete states.
 
 TypeScript narrows the remaining properties from `kind`. `width` and `height` are removed from the accepted chart options: CSS fits the server-rendered SVG to the component’s box.
+
+## Typed components and portable core
+
+Import `Chart` from `@k2b/ui`. The drawing-only `@k2b/ui/charts` entry also works without a DOM. `Chart.Line`, `Chart.Bar`,
+`Chart.Pie`, `Chart.Donut`, `Chart.Scatter`, `Chart.Sparkline`, `Chart.Histogram`,
+`Chart.Boxplot`, `Chart.Gauge`, `Chart.BarGauge`, `Chart.Stat`, `Chart.Heatmap`,
+`Chart.Map`, and `Chart.StateTimeline` accept only their kind's options.
+They render exactly the same markup as `<Chart kind="…" … />`.
+Keep the discriminator form for saved JSON and dynamic chart selection.
+
+```tsx
+import { Chart } from "@k2b/ui";
+
+<Chart.Pie data={[{ label: "Imports", value: 42 }, { label: "Exports", value: 28 }]} />
+<Chart kind="pie" data={[{ label: "Imports", value: 42 }, { label: "Exports", value: 28 }]} />
+```
+
+`@k2b/ui/charts/core` works on the server and in browser code without Solid or
+DOM dependencies. Use `layout(spec, { width, height })` and `toSvg(scene)` for
+a fixed logical scene, or `renderChartSvg(spec, width, height)` for the same SVG
+that `Chart` displays. `chartRenderHeight(spec)` calculates the standard height.
+`prepareChartSnapshot` prepares that drawing and its keyed inspection data for
+`ChartSnapshotView` and `ChartExplorer`. Existing root imports remain supported.
+
+```ts
+import { layout, toSvg } from "@k2b/ui/charts/core";
+
+const scene = layout({ kind: "bar", data: [{ label: "Imports", value: 42 }] },
+  { width: 480, height: 280 });
+const svg = toSvg(scene);
+```
+
+The core owns `ChartKind`, `ChartDatum`, `ChartDatumRole`, `ChartDrawingOptions`,
+`ChartRenderOptions`, `ChartSelection`, and the tooltip types. `isChartDatum`,
+`sameChartDatum`, and `chartDatumRoles` expose the inert inspection protocol.
+The renderer registry and namespace map stay internal.
+
+For code migrating directly from stdlib, the core also exports `charts` and the
+14 named SVG functions, plus their numeric/layout helpers such as `computeDomain`,
+`niceStep`, `autoBin`, and `computeBoxStats`. Those raw functions retain their
+previous signatures and markup; use `renderChartSvg` or scenes for the UI bar
+and timeline layouts. `renderBarChartSvg` and `barChartLayout` remain available
+from `@k2b/ui/charts` too. Raw SVG in a browser needs `inspectChart` from
+`@k2b/ui/chart-inspection`; prefer `Chart` inside an island for an interactive UI.
+
+`ChartNumberFormat`, `ChartDateFormat`, and `ChartFormat` describe portable
+presentation. Number formats use `style: "number" | "percent" | "currency"`,
+with optional `currency`, `unit`, `decimals`, and `compact`. Date formats use
+`{ date: "day" | "minute" | "second" }`. The editor validates these descriptions
+before turning them into formatter callbacks; callbacks are not saved JSON.
+
+To add a chart kind, register its pure renderer in `charts/core/registry.ts`. Its key defines the
+discriminator and capitalized namespace member, including the narrowed props.
+Keep any kind-specific presentation adaptation in `renderChartSvg`. Add a
+fixture to `packages/ui/test/charts/fixtures.ts`; the namespace render test checks both forms.
+
+
+## Reference lines
+
+Give each reference its own `style` (`solid`, `dashed`, or `dotted`) and optional
+semantic `tone` (`neutral`, `info`, `success`, `warning`, or `danger`). Leaving
+both out keeps the existing dashed line. The tone also colors its label; use a
+label and line style so color is not the only distinction. This works for both
+axes of line and scatter charts, and for references on bars, histograms and box plots.
+
+```tsx
+<Chart.Line
+  series={[{ data: [{ x: 1, y: 12 }, { x: 2, y: 21 }] }]}
+  references={[
+    { value: 14, label: "Target", style: "solid", tone: "success" },
+    { value: 18, label: "Forecast", style: "dashed", tone: "info" },
+    { value: 20, label: "Limit", style: "dotted", tone: "danger" },
+  ]}
+/>
+```
 
 ## A legend above a line chart
 
@@ -146,11 +223,11 @@ All kinds accept these wrapper props:
 | `tooltip` | Synchronous `(selection: ChartSelection) => ChartTooltip`. Customizes the always-on tooltip. Omit for the built-in tooltip. Does not accept JSX, HTML, or a promise. |
 | `onSelect` | Optional synchronous `(selection: ChartSelection) => void`. Click, tap, and Enter emit selection; hover and focus do not. Use `selected` for a controlled highlight. |
 
-Do not pass `width`, `height`, or stdlib's `inspect`: the wrapper owns them.
+Do not pass `width`, `height`, or `inspect`: the wrapper owns them.
 Do not invent `dataKey`, `xKey`, `yKey`, `onClick`, or `renderTooltip` props.
 Convert application records into the payload for the selected kind.
 
-Except for `sparkline` and `stateTimeline`, stdlib options also include
+Except for `sparkline` and `stateTimeline`, core renderer options also include
 `className?: string` (on the SVG, distinct from wrapper `class`),
 `title?: string`, `subtitle?: string`, and
 `padding?: number | { top?: number; right?: number; bottom?: number; left?: number }`.
@@ -159,7 +236,7 @@ bottom 32, left 40. Support for header/padding layout varies with the renderer;
 use surrounding HTML for a consistent card title.
 `sparkline` supports `className` but has no title, axes, or padding prop.
 The UI-owned `stateTimeline` contract supports only its options below plus the
-wrapper props; it does not inherit the raw stdlib timeline options.
+wrapper props; it does not inherit the raw core timeline options.
 
 ### Data and options by kind
 
@@ -230,7 +307,7 @@ Set the chart height explicitly with `style={{ height: "14rem" }}` or an applica
 Bar-gauge geometry grows to fit all rows in both direct charts and prepared
 snapshots. Choose a matching CSS height when showing larger rankings.
 
-Empty series render a visible **No data** state. Keep loading and query errors outside the component so they are not confused with an empty result.
+Empty series render a visible **No data** state. Keep loading and query errors outside the component so they are not confused with an empty result: a chart inside a frame gets them from [`ChartExplorer` frame states](#frame-states).
 
 `labels` localizes package-owned text such as the empty state, series fallback,
 interactive region names, zoom controls, and reset controls. Pass labels from
@@ -238,6 +315,11 @@ the host when the application is localized; the component never reads the
 browser locale during SSR.
 
 Every non-empty chart supports inspection across all 14 kinds, without a prop.
+Hover stays calm: no other mark dims. Bar, histogram and box-plot charts lay a
+light band behind the whole column (or row) of the inspected category, and the
+pointer anywhere in that column keeps it, so moving within one column changes
+nothing. A column's tooltip waits at the top of the plot. Single marks such as
+pie slices and heatmap cells get a 1.5 px outline; points keep their 2 px ring.
 Hover or tap a datum to show its values; click or tap pins the tooltip and calls the optional
 `onSelect` callback. Hover and focus never emit selection events. Escape,
 focus leaving the chart, an outside tap, scrolling, resizing, and a data update
@@ -313,8 +395,9 @@ type ChartTooltip = {
 type ChartTooltipFormatter = (selection: ChartSelection) => ChartTooltip;
 ```
 
-`ChartDatum` is exported by `@k2b/stdlib`; `ChartSelection` and the tooltip
-types are exported by `@k2b/ui`. Its shape is:
+`ChartDatum`, `ChartSelection`, and the tooltip types are exported by
+`@k2b/ui/charts/core`; the component types remain available from `@k2b/ui`.
+The datum shape is:
 
 ```ts
 type ChartDatum = {
@@ -441,9 +524,9 @@ Tooltips, keyboard inspection and navigation require browser code. Render charts
 
 ## Inspection without Solid
 
-Use `@k2b/ui/chart-inspection` when your host renders stdlib chart SVG itself,
+Use `@k2b/ui/chart-inspection` when your host renders core chart SVG itself,
 for example in a sandboxed HTML document that cannot load a framework.
-Raw stdlib renderers are allowed only with `inspectChart`; the `chart-rendering` check enforces this with a file allow-list.
+Raw SVG renderers are allowed only with `inspectChart`; the `chart-rendering` check enforces this with a file allow-list.
 The module contains no Solid. The base stylesheet styles chart tooltips in HTML apps.
 It keeps `<table class="k2b-chart__table" hidden>` after a chart hidden on screen
 and prints it below the chart, breaking between rows with the header repeated.
@@ -461,7 +544,7 @@ Optional `select(selection)` receives click, tap, or Enter selections.
 Optional `cursor` links line charts; import `createChartCursor` from the same module.
 
 ```ts
-import { charts } from "@k2b/stdlib";
+import { charts } from "@k2b/ui/charts/core";
 import { inspectChart } from "@k2b/ui/chart-inspection";
 
 const data = [{ label: "Jobs", value: 42 }];
@@ -483,7 +566,7 @@ inspection.invalidate();
 inspection.destroy();
 ```
 
-The markup must come from the stdlib renderer with `inspect: true`.
+The markup must come from a core renderer with `inspect: true`.
 Only valid `data-chart-datum` metadata participates. Tooltip content is inserted
 as text. Inspection uses the same keyboard, pointer, pin, and close behavior as
 `Chart`; see [Accessibility](#accessibility). The host gives the container its
@@ -721,7 +804,9 @@ throw. Disposal aborts work; refresh after disposal does not load.
 
 | `ChartExplorerProps<T>` | Contract |
 | --- | --- |
-| `title`, `data`, `columns` | Required heading, `ChartExplorerData<T>`, and nonempty columns with unique nonempty IDs. |
+| `title`, `data`, `columns` | Required heading, `ChartExplorerData<T>` or `{ rows }`, and nonempty columns with unique nonempty IDs. Without a prepared `chart`, `children` draws the chart view, such as a live `<Chart>`; the table and Copy data still come from the typed rows. |
+| `request`, `asOf`, `range`, `onRetry` | Optional [frame states](#frame-states): the latest read, kept apart from the rows on screen. |
+| `inset` | Optional padding of the frame around the explorer, such as `"1rem"`, or block and inline as in CSS `padding`, such as `"14px 16px"` for a dashboard panel. The table view then reaches the frame's left, right and bottom edges without its own border, and the frame keeps its height. Pair it with `renderDetails={false}`. |
 | `selectedKey`, `onSelectedKeyChange` | Optional controlled row selection. Omit key for local selection. A missing local row never clears a sibling's controlled selection. |
 | `view`, `onViewChange` | Optional controlled `"chart" \| "table"`. Otherwise, `defaultView` initializes local view; default `"chart"`. |
 | `charts`, `chart`, `onChartChange` | Optional `{ id, label }[]` for several charts of the same rows. The switcher then lists each chart and the table instead of Diagram and Table. `chart` names the chart that `data` holds; a pick calls `onChartChange(id)` and switches `view` to `"chart"`, and the owner passes that chart's data. Keep `data.rows` the same rows for every chart so selection, sorting and Copy data stay put while switching. |
@@ -735,7 +820,47 @@ throw. Disposal aborts work; refresh after disposal does not load.
 | `cursor` | Optional shared `ChartCursor` for a line snapshot. Same matching and lifecycle as `Chart.cursor`; table mode does not participate. |
 | `height` | CSS viewport height; default `"18rem"`, shared by chart and scrollable table. |
 | `legend` | Optional `ChartLegendEntry[]` (`{ label, color, style?, reference? }`, `color` is the palette index 0–7). Shows the series names as a wrapping list below the chart, inside the same viewport height, and only in chart view. The chart keeps at least 60% of the height; a longer legend scrolls in the rest. Prepare the snapshot with `legend: false` and pass the names here: the renderer's legend is one SVG row and runs out of a stretched phone-width chart. `style` `"dashed"` or `"dotted"` shows a line swatch; `reference` shows a hollow swatch like the comparison marks. |
-| `empty` | Optional JSX shown in the viewport without rows, such as loading or unavailable text; default **No data**. The header and height stay in place. |
+| `empty` | Optional JSX shown in the viewport without rows; default **No data**. With `request`, write one sentence that says why, such as "No newsletter was sent in this period." The header and height stay in place. |
+
+### Frame states
+
+A dashboard panel shows its title at once and keeps one fixed place while its
+data loads, is empty, fails or goes stale. Pass the host's latest read as
+`request` and keep it apart from the rows on screen:
+
+| What the host has | What the explorer shows |
+| --- | --- |
+| `request.status: "loading"`, no rows | Subtitle **Loading …**, bars of a skeleton in the viewport. |
+| `request.status: "idle"`, no rows | The `empty` sentence with a quiet icon, without a box. |
+| `request.status: "error"`, no rows | **The data could not be loaded.** with `request.reason` or **Range and view stay as they are.**, and **Try again** when `onRetry` is set. No box. |
+| `request.status: "error"`, rows | The rows stay. Only the subtitle line turns into **As of {asOf} · Refresh failed · Try again**. |
+| `request.status: "loading"`, rows | The rows stay; while `request.requestedRange` differs from `range` the subtitle says **Loading {requestedRange} …**. |
+
+With `request` the subtitle (`description`) is one reserved line that never
+wraps, the view controls keep their place while there is nothing to view, and
+the viewport keeps `height` in every state, so nothing moves on desktop or
+phone. `asOf` is text the host formats in its own time zone, such as
+`"09:12"`, so the server and the first browser render agree. Without
+`request` nothing changes.
+
+```tsx
+<Paper class="p-4">
+  <ChartExplorer
+    title="Opens and clicks per month"
+    description="Share of recipients"
+    inset="1rem"
+    renderDetails={false}
+    request={{ status: query.loading ? "loading" : query.error ? "error" : "idle" }}
+    asOf={query.readAt}
+    onRetry={query.refetch}
+    empty="No newsletter was sent in this period."
+    data={{ rows: rows() }}
+    columns={columns}
+  >
+    <Chart kind="bar" style={{ height: "100%" }} data={bars()} />
+  </ChartExplorer>
+</Paper>
+```
 
 ```ts
 type ChartExplorerColumn<T> = {
@@ -956,3 +1081,44 @@ every number readable without a pointer. Countries too small for a shape appear
 as dots; Antarctica appears only in the list. Values that are not positive finite numbers and invalid codes are left
 out. With no data the neutral map stays; the host shows its own empty message.
 Use `format` for units and `limit` to change how many countries the list names.
+
+## Calendar heatmaps
+
+`Chart.Calendar` (or `Chart.Heatmap` with `layout="calendar"`) accepts `data: ["YYYY-MM-DD", number | null][]`
+and `scale="sequential" | "diverging"`. Existing categorical heatmaps keep
+their `{x,y,value}` data unchanged. Dates must be valid and unique; missing
+days and null values remain gaps. The date span is limited to three years. Weeks are columns; the locale sets the first weekday, with Monday as the fallback.
+
+The color scale includes every observation. Diverging values use turquoise
+for positive and violet for negative values, with zero neutral. Phone charts
+scroll to the newest weeks. Month names use a separate year row, so short partial months do not hide the next month. Left/right inspect a week; up/down inspect a day.
+Home/End jump, Enter pins and Escape dismisses. The exact date and value are
+also available in the table. Optional `locale` takes precedence over the UI
+provider, and `format` formats values. `label` names their unit. Diverging values read “more in” or “more out” without a sign. Square cells use the available height. Weekday labels stay visible while the weeks scroll, and partially visible month names are hidden. Month and weekday labels use explicit short Intl formats; full dates use explicit long parts and a shared date pattern. Older engines use the US Sunday and other-locale Monday week-start fallback. Print output scales uniformly to the page. Measured hosts pass `displayWidth`. Plain SVG hosts mount `mountCalendarScroll` from `@k2b/ui/charts`, pass `nav: calendarInspectionNavigation` to `inspectChart`, and dispose both cleanups.
+
+Keep loading, empty, error/retry and stale feedback in the host's fixed-height
+frame. The newsletter example shows daily opens across a complete year.
+## Stacked and 100 % area charts
+
+Use `kind="area" layout="stacked"` for nonnegative parts of a changing total.
+Pass ordered `x: (string | number)[]` and
+`series: { label: string, data: (number | null)[] }[]`.
+Every series must match the length of `x`; negative values and nonfinite
+sums are rejected. A missing observation interrupts the stack at that X
+position. In normalized mode, a zero total is also a gap, so it never becomes an invented share. Absolute stacks keep a complete zero column as a real zero.
+
+Set `normalize` to show each complete stack as 100 %. The tooltip and typed
+data table retain the original amount and its percentage of the total.
+The wrapper places complete series names in a bounded, scrollable top legend;
+`legend={false}` hides it. Hover, tap and keyboard inspection group the actual
+series values at one X position. They do not dim other areas.
+
+`areaLayout(spec, { width, height })` and
+`renderAreaSvg({ ...spec, width, height, inspect: true })` from `@k2b/ui/charts`
+provide the same calculation and SVG without Solid or a browser.
+Portable JSON accepts a named `format`; the component and pure renderer
+accept `format(value)`. The component inherits the UI locale, including the
+percentage axis and tooltips.
+The top legend starts with the final column's amount or share and follows the
+inspected column. A missing column (or a zero-sum normalized column) has no inspected values; the
+legend uses a dash when its final column is a gap.

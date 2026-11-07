@@ -5,7 +5,7 @@ section: Work
 order: 110
 description: Connected mailboxes with search, team context, reliable sending, and automation.
 tags: [mail, email, collaboration]
-updated: 2026-10-22
+updated: 2026-11-06
 ---
 
 # Mail
@@ -516,7 +516,16 @@ Each mailbox can have one logo. In Mail, open the mailbox's **Settings → Writi
 to upload or replace it, change its display width or alt text, or remove it after
 confirmation. These changes require **Manage** access; people with **Edit** access
 see the logo and its values read only. Changing the width or alt text stores a new
-version with the same image. Alternatively, upload it with
+version with the same image. If another administrator changed the logo, saving
+or removing the old version reports a conflict. **Load current logo** shows the
+new image while keeping your width and alt text; review them before saving again.
+
+The API exposes `logo.versionId`. Send it as `expectedVersionId` with a PUT,
+or as a query parameter with DELETE, to reject a stale write with HTTP 409.
+PUT accepts `null` to require that no logo exists. Omitting the precondition
+keeps unconditional replacement available for clients uploading a new file.
+
+Alternatively, upload it with
 `cld mail compose logo set --file logo.png`.
 Use `{{ mailbox.logo }}` in any signature to place it in new messages,
 replies, forwards, and older signatures still marked in the body. Mail sends
@@ -755,6 +764,23 @@ their group names, such as `cld mail admin` and `cld mail provider`. Run
 supported attachments in a traced background job. Attachment matches identify
 the file and show a bounded excerpt; an explicit body search excludes
 attachment text, and `--attachment-name` searches only filenames.
+
+Workspace list rows with image attachments include `imageAttachments` (at most
+three public message and attachment ID pairs) and, only when there are more,
+`imageAttachmentCount`; rows without images leave both out. Conversation rows cover all
+visible messages, newest first, then MIME attachment order, counting repeated
+checksums once. Message rows cover only that message. Qualifying files are JPEG,
+PNG, GIF, or WebP from 4 KiB through 25 MiB; inline parts with a content ID are
+excluded. A failed image lookup leaves the list available without image metadata. The
+columns view shows the thumbnails only where the list itself is at least 52 rem wide.
+
+`GET /api/mail/mailboxes/:mailboxId/messages/:messageId/attachments/:attachmentId/thumbnail`
+uses the same access check as opening the attachment. It validates the declared
+image type against the bytes and returns a JPEG or PNG fitted within 96×96 pixels
+and 48 KiB. The response is private with an `ETag` and `no-cache`: the browser asks again
+every time, and an unchanged image answers 304 after the access check. Invalid images,
+unsupported files, and preparation failures return an error so the client can show
+an image icon instead. GIF and WebP thumbnails use the first frame.
 
 Agents and other Cloud clients can inspect one attachment's current extraction
 status and page through already persisted text with the public Mail Capability:

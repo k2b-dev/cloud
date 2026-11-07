@@ -2,6 +2,7 @@ import { sql } from "@k2b/cloud";
 import { getEffectiveGroupIds } from "@k2b/cloud/server";
 import { type DateContext, err, fail, ok, type Result } from "@k2b/stdlib";
 import type { SQLQuery } from "bun";
+import { publishGridsRecordEvent } from "../app-events";
 import { getRecordWritableFieldType } from "../field-types";
 import { validateObjectList } from "../field-types/object-list";
 import { fieldValidationMessages } from "../field-types/validation-messages";
@@ -861,6 +862,7 @@ export const finalizeInTransaction = async (
     recordId: params.recordId,
     eventType: "record.finalized",
   });
+  await publishGridsRecordEvent(client, "record.finalized", params.tableId, params.recordId);
   await logAudit({ tableId: params.tableId, recordId: params.recordId, userId: params.actorId, action: "finalized" }, client);
   if (params.approvalRequestId) {
     await client`

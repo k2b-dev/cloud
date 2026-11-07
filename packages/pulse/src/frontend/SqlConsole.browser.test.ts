@@ -147,8 +147,9 @@ test("saved selection loads only this base and edited SQL is reloadable without 
     await tab.getByRole("button", { name: "CPU", exact: true }).click();
     await tab.getByRole("button", { name: "Verwerfen", exact: true }).click();
     await tab.getByRole("textbox", { name: "SQL", exact: true }).fill("SELECT 42");
+    // The edited SQL reaches the address after the editor reports the change; wait for it instead of reading at once.
+    await tab.waitForFunction(() => new URL(location.href).searchParams.get("sql") === "SELECT 42");
     expect(new URL(tab.url()).pathname).toBe("/app/pulse/Lad001/sql/Qry001");
-    expect(new URL(tab.url()).searchParams.get("sql")).toBe("SELECT 42");
   } finally {
     await tab.close();
   }

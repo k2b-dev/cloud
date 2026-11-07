@@ -50,6 +50,11 @@ export type FormatCurrencyProps = SpanProps &
     currency: string;
     /** Fixed fraction digits. Defaults to the currency's standard digits. */
     decimals?: number;
+    /**
+     * When the sign shows, as in `Intl.NumberFormat`: `"exceptZero"` writes `+1.234,50 €` and `-80,00 €` for a
+     * balance change or net amount, `"never"` drops it. Defaults to `"auto"` (only negative amounts carry a sign).
+     */
+    signDisplay?: Intl.NumberFormatOptions["signDisplay"];
   };
 
 export type FormatBytesProps = SpanProps &
@@ -157,16 +162,44 @@ const FormatPercent = (props: FormatPercentProps): JSX.Element => {
   );
 };
 
+/** A currency amount with an explicit sign rule; the same digits as `text.pprintCurrency`. */
+const signedCurrency = (
+  value: number | null | undefined,
+  currency: string,
+  options: { locale: string; decimals?: number; fallback?: string; signDisplay: NonNullable<FormatCurrencyProps["signDisplay"]> },
+): string => {
+  if (typeof value !== "number" || !Number.isFinite(value)) return options.fallback ?? FALLBACK;
+  const decimals =
+    options.decimals === undefined
+      ? undefined
+      : Number.isFinite(options.decimals)
+        ? Math.min(20, Math.max(0, Math.trunc(options.decimals)))
+        : 0;
+  return new Intl.NumberFormat(options.locale, {
+    style: "currency",
+    currency,
+    signDisplay: options.signDisplay,
+    ...(decimals === undefined ? {} : { minimumFractionDigits: decimals, maximumFractionDigits: decimals }),
+  }).format(Object.is(value, -0) ? 0 : value);
+};
+
 const FormatCurrency = (props: FormatCurrencyProps): JSX.Element => {
-  const [own, rest] = splitProps(props, ["value", "currency", "locale", "decimals", "fallback"]);
+  const [own, rest] = splitProps(props, ["value", "currency", "locale", "decimals", "fallback", "signDisplay"]);
   const locale = useLocale();
   return (
     <span {...rest}>
-      {text.pprintCurrency(own.value, own.currency, {
-        locale: own.locale ?? locale(),
-        decimals: own.decimals,
-        fallback: own.fallback,
-      })}
+      {own.signDisplay === undefined
+        ? text.pprintCurrency(own.value, own.currency, {
+            locale: own.locale ?? locale(),
+            decimals: own.decimals,
+            fallback: own.fallback,
+          })
+        : signedCurrency(own.value, own.currency, {
+            locale: own.locale ?? locale(),
+            decimals: own.decimals,
+            fallback: own.fallback,
+            signDisplay: own.signDisplay,
+          })}
     </span>
   );
 };

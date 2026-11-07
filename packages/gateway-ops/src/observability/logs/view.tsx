@@ -112,7 +112,7 @@ export function LogsView(props: LogsViewProps) {
           />
           <StatCell
             label={t.retained}
-            value={summary ? summary.total.toLocaleString(locale) : "—"}
+            value={summary ? `≈ ${summary.total.toLocaleString(locale)}` : "—"}
             sub={t.autoPruneDays({ days: retentionDays })}
           />
         </StatGrid>

@@ -1,3 +1,5 @@
+export type { ChartDateFormat, ChartDatum, ChartDatumRole, ChartFormat, ChartNumberFormat } from "../charts/core";
+export { BalanceSummary, type BalanceSummaryProps } from "./BalanceSummary";
 export type {
   CalendarAttendee,
   CalendarCommand,
@@ -21,9 +23,9 @@ export type {
 } from "./Calendar";
 export { default as Calendar } from "./Calendar";
 
-export type { ChartKind, ChartLabels, ChartProps, ChartRenderOptions } from "./Chart";
+export type { ChartKind, ChartKindProps, ChartLabels, ChartProps, ChartRenderOptions } from "./Chart";
 export { default as Chart } from "./Chart";
-export type { ChartExplorerColumn, ChartExplorerProps, ChartLegendEntry } from "./ChartExplorer";
+export type { ChartExplorerColumn, ChartExplorerProps, ChartFrameRequest, ChartLegendEntry } from "./ChartExplorer";
 export { ChartExplorer } from "./ChartExplorer";
 export type { ChartExplorerControlsProps } from "./ChartExplorerControls";
 export { ChartExplorerControls } from "./ChartExplorerControls";
@@ -68,8 +70,17 @@ export type {
   DataTableSort,
 } from "./DataTable";
 export { default as DataTable } from "./DataTable";
+export type { DataTableToolsProps, DataTableView, DataTableViewOptions } from "./DataTableTools";
+export { createDataTableView, DataTableTools } from "./DataTableTools";
 export type { DocCodeHighlighter, DocCodeProps, DocConcept, DocNoteVariant, DocRow } from "./Docs";
 export { DocCode, DocConceptGrid, DocInlineCode, DocLead, DocNote, DocPage, DocRows, DocSection } from "./Docs";
+export type {
+  DataTableColumnType,
+  DataTableNumberFormat,
+  DataTableStatusState,
+  DataTableTypedColumn,
+} from "./data-table-columns";
+export { filterRows, sortRows } from "./data-table-columns";
 export { FileBrowserPanel, type FileBrowserPanelProps, type FileSource, openFileBrowser } from "./FileBrowser";
 export { FileGrid, type FileGridGroup, type FileGridOpenProps, type FileGridProps, type FileGridSelectableProps } from "./FileGrid";
 export { default as FileTree, type FileTreeActions, type FileTreeEntry, type FileTreeProps } from "./FileTree";
@@ -86,6 +97,7 @@ export {
   formatFileViewSize,
   getFileViewPreviewKind,
 } from "./FileView";
+export { FlowAmount, type FlowAmountDirection, type FlowAmountProps, flowDirection } from "./FlowAmount";
 export type { KbdProps } from "./Kbd";
 export { Kbd } from "./Kbd";
 export type { LabelChipProps } from "./LabelChip";
