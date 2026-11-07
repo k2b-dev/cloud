@@ -145,24 +145,38 @@ describe(`ImageEditor shared renderer and export (${browserName})`, () => {
   test("export passes the documented quality default and explicit override to the actual encoder", async () => {
     const page = await open();
     try {
-      const qualities = await run(page, async (api) => {
+      const encodings = await run(page, async (api) => {
         await api.supportedImageEditorFormats();
+        const canvas = document.createElement("canvas");
+        canvas.width = canvas.height = 2;
+        const webp = await new Promise<Blob>((resolve, reject) =>
+          canvas.toBlob((blob) => (blob ? resolve(blob) : reject(new Error("Could not create WebP fixture"))), "image/webp"),
+        );
+        canvas.width = canvas.height = 0;
+        if (webp.type !== "image/webp") throw new Error("WebP encoder required for this guard");
         const original = HTMLCanvasElement.prototype.toBlob;
-        const qualities: (number | undefined)[] = [];
+        const encodings: { type: string | undefined; quality: number | undefined }[] = [];
         HTMLCanvasElement.prototype.toBlob = function (callback, type, quality) {
-          qualities.push(quality);
+          encodings.push({ type, quality });
           return original.call(this, callback, type, quality);
         };
         try {
-          for (const output of [{ format: "image/jpeg" as const }, { format: "image/jpeg" as const, quality: 0 }]) {
-            await api.exportImageEditor({ source: "/photo.jpg", features: {} }, api.initialImageEditorState(), output);
+          for (const source of ["/photo.jpg", webp]) {
+            for (const output of [undefined, { quality: 0 }]) {
+              await api.exportImageEditor({ source, features: {} }, api.initialImageEditorState(), output);
+            }
           }
-          return qualities;
+          return encodings;
         } finally {
           HTMLCanvasElement.prototype.toBlob = original;
         }
       });
-      expect(qualities).toEqual([0.9, 0]);
+      expect(encodings).toEqual([
+        { type: "image/jpeg", quality: 0.9 },
+        { type: "image/jpeg", quality: 0 },
+        { type: "image/webp", quality: 0.9 },
+        { type: "image/webp", quality: 0 },
+      ]);
     } finally {
       await page.close();
     }
