@@ -42,6 +42,25 @@ describe("AI message timeline", () => {
     ]);
   });
 
+  test("keeps consecutive Code deliveries separate from other runs, effects and ordinary answers", () => {
+    const delivered = (id: string, seq: number, runId: string, effectKey: string): AiStoredMessage => ({
+      ...stored({ id, seq, message: { role: "assistant", content: [{ type: "text", text: id }] } }),
+      meta: { codeDelivery: { codeId: "c_report", runId, effectKey } },
+    });
+    const timeline = buildAiMessageTimeline([
+      delivered("first", 1, "run-1", "report"),
+      delivered("second", 2, "run-2", "report"),
+      delivered("third", 3, "run-2", "details"),
+      stored({ id: "ordinary", seq: 4, message: { role: "assistant", content: [{ type: "text", text: "Answer" }] } }),
+    ]);
+    expect(timeline.map((item) => (item.type === "assistant" ? item.entries.map((entry) => entry.id) : []))).toEqual([
+      ["first"],
+      ["second"],
+      ["third"],
+      ["ordinary"],
+    ]);
+  });
+
   test("groups one loop into one assistant response with unified blocks", () => {
     const firstAssistant: Message = {
       role: "assistant",

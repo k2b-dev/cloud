@@ -72,7 +72,8 @@ async function enqueue(
   }
   if (entry.kind === "event" && !input.tick && !input.rerunOf)
     throw new CodeDataError("BAD_INPUT", "Event entrypoints only accept platform deliveries.");
-  if (input.tick?.cron !== undefined && input.tick.cron !== entry.cron) return null;
+  if (input.tick?.cron !== undefined && (input.tick.cron !== entry.cron || (input.tick.timeZone ?? "UTC") !== (entry.timeZone ?? "UTC")))
+    return null;
   if (input.tick?.at !== undefined && (input.tick.at !== entry.at || input.tick.timeZone !== entry.timeZone)) return null;
   if (input.tick && entry.at) {
     if (input.tick.slot.toISOString() !== new Date(entry.at).toISOString()) return null;
@@ -186,7 +187,7 @@ export async function processCodeScheduleTick(tick: CodeScheduleTick): Promise<C
 }
 /** Scheduler callbacks bind the current version atomically with admission, including concurrent activation. */
 export async function processCurrentCodeScheduleTick(
-  tick: Omit<CodeScheduleTick, "versionId"> & ({ cron: string } | { at: string; timeZone: string }),
+  tick: Omit<CodeScheduleTick, "versionId"> & ({ cron: string; timeZone?: string } | { at: string; timeZone: string }),
 ): Promise<CodeStartResult | null> {
   return admitScheduleTick(tick);
 }

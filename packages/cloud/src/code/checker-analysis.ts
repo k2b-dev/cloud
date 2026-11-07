@@ -443,7 +443,7 @@ export function analyzeCode(request: CodeCheckRequest): CodeAnalysis {
           }
           if (method === "schedule" && collecting) {
             const when = node.arguments[0];
-            const cron = when && literals(when);
+            const literalCron = when && literals(when);
             const field = (name: string) => {
               if (!when) return undefined;
               const property = ts.isObjectLiteralExpression(when)
@@ -457,20 +457,35 @@ export function analyzeCode(request: CodeCheckRequest): CodeAnalysis {
               const type = propertyType(checker.getTypeAtLocation(when), name, when);
               return type && strings(type);
             };
+            const cron = literalCron ?? field("cron");
+            const recurring = !literalCron && !!cron;
             const at = field("at"),
               timeZone = field("timeZone");
             const once =
               at?.length === 1 && timeZone?.length === 1 ? CodeOnceScheduleSchema.safeParse({ at: at[0], timeZone: timeZone[0] }) : null;
             const validKeys =
               !when ||
-              !ts.isObjectLiteralExpression(when) ||
-              when.properties.every(
-                (property) =>
-                  ts.isPropertyAssignment(property) &&
-                  (ts.isStringLiteralLike(property.name) || ts.isIdentifier(property.name)) &&
-                  ["at", "timeZone"].includes(property.name.text),
-              );
-            const staticTiming = (cron?.length === 1 && !!cron[0]?.trim()) || (once?.success && validKeys);
+              (!ts.isObjectLiteralExpression(when)
+                ? !!literalCron ||
+                  checker
+                    .getTypeAtLocation(when)
+                    .getProperties()
+                    .every((property) => (recurring ? ["cron", "timeZone", "name"] : ["at", "timeZone"]).includes(property.name))
+                : when.properties.every(
+                    (property) =>
+                      ts.isPropertyAssignment(property) &&
+                      (ts.isStringLiteralLike(property.name) || ts.isIdentifier(property.name)) &&
+                      (recurring ? ["cron", "timeZone", "name"] : ["at", "timeZone"]).includes(property.name.text),
+                  ));
+            const staticTiming =
+              validKeys &&
+              ((cron?.length === 1 &&
+                !!cron[0]?.trim() &&
+                !at &&
+                (!recurring ||
+                  !propertyType(checker.getTypeAtLocation(when!), "timeZone", when!) ||
+                  (timeZone?.length === 1 && CodeOnceScheduleSchema.shape.timeZone.safeParse(timeZone[0]).success))) ||
+                once?.success);
 
             const options = node.arguments[2];
             const nameType = options && propertyType(checker.getTypeAtLocation(options), "name", options);
@@ -480,11 +495,17 @@ export function analyzeCode(request: CodeCheckRequest): CodeAnalysis {
                 : undefined;
             const nameValue = nameProperty && ts.isPropertyAssignment(nameProperty) ? nameProperty.initializer : undefined;
             const names = nameValue && ts.isStringLiteralLike(nameValue) ? [nameValue.text] : nameType && strings(nameType);
-            const name = options
-              ? names?.length === 1
-                ? names[0]
+            const timingNames = recurring ? field("name") : undefined;
+            const hasTimingName = recurring && !!propertyType(checker.getTypeAtLocation(when!), "name", when!);
+            const name = hasTimingName
+              ? timingNames?.length === 1
+                ? timingNames[0]
                 : undefined
-              : `schedule:${result.entrypoints.filter((e) => e.kind === "schedule").length}`;
+              : options
+                ? names?.length === 1
+                  ? names[0]
+                  : undefined
+                : `schedule:${result.entrypoints.filter((e) => e.kind === "schedule").length}`;
             const titleType = options && propertyType(checker.getTypeAtLocation(options), "title", options);
             const titleProperty =
               options && ts.isObjectLiteralExpression(options)
@@ -502,20 +523,24 @@ export function analyzeCode(request: CodeCheckRequest): CodeAnalysis {
             if (
               !staticTiming ||
               !name ||
-              (options && !/^[a-zA-Z0-9][a-zA-Z0-9_.-]*$/.test(name)) ||
+              ((options || hasTimingName) && !/^[a-zA-Z0-9][a-zA-Z0-9_.-]*$/.test(name)) ||
               !ts.isExpressionStatement(node.parent) ||
               !ts.isSourceFile(node.parent.parent)
             )
               report(
                 node,
                 "code_static_schedule",
-                "Deklariere Zeitpläne auf Modulebene mit konstantem Cron oder { at, timeZone } und Namen (name: … as const).",
+                "Deklariere Zeitpläne auf Modulebene mit konstantem Cron, { cron, timeZone, name } oder { at, timeZone } und Namen (name: … as const).",
               );
             else {
               try {
-                if (!once?.success) normalizeCronSchedule({ cron: cron![0]!, timezone: "UTC" });
+                if (!once?.success) normalizeCronSchedule({ cron: cron![0]!, timezone: timeZone?.[0] ?? "UTC" });
               } catch {
-                report(node, "code_invalid_cron", "Der Zeitplan benötigt einen gültigen Cron-Ausdruck mit fünf Feldern.");
+                report(
+                  node,
+                  "code_invalid_cron",
+                  "Der Zeitplan benötigt einen gültigen Cron-Ausdruck mit fünf Feldern und eine IANA-Zeitzone.",
+                );
               }
               if (entryNames.has(name)) report(node, "code_duplicate_schedule", "Der Name des Zeitplans ist bereits vergeben.");
               entryNames.add(name);
@@ -526,7 +551,7 @@ export function analyzeCode(request: CodeCheckRequest): CodeAnalysis {
                 entrypoint: name,
                 ...(title?.success ? { title: title.data } : {}),
                 cron: once?.success ? null : cron![0]!,
-                ...(once?.success ? once.data : {}),
+                ...(once?.success ? once.data : timeZone?.length === 1 ? { timeZone: timeZone[0] } : {}),
                 file: sf.fileName.slice(root.length),
                 line: sf.getLineAndCharacterOfPosition(node.getStart(sf)).line + 1,
               });

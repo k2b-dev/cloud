@@ -17,6 +17,7 @@ import { approvalArgsDigest } from "@k2b/cloud/services/approvals";
 import { err, fail, i18n, ok } from "@k2b/stdlib";
 import type { SQL } from "bun";
 import { z } from "zod";
+import { codeChatDestination, ownedCodeRunChat, personalCodeRun } from "./ai-code-chat";
 import { checkCodeChatRunBudget } from "./code/ai-budget";
 import { codeSettings } from "./code/settings";
 
@@ -68,33 +69,6 @@ export const aiChatRunData = z.strictObject({
   reason: z.string().nullable(),
   origin: originSchema,
 });
-const destination = (context: CapabilityExecutionContext) => (context.target?.type === "core.ai.chat" ? context.target.id : "");
-const personalRun = (context: CapabilityExecutionContext) => {
-  const delegation = context.actor.delegation;
-  return context.actor.kind === "user" &&
-    context.user?.id === context.actor.user.id &&
-    context.accessSubject.type === "user" &&
-    context.accessSubject.userId === context.user.id &&
-    delegation?.credentialKind === "mandate" &&
-    delegation.workloadType === "code.version" &&
-    delegation.workloadId &&
-    delegation.workloadRun &&
-    ["core", "runner"].includes(delegation.callingAppId)
-    ? { userId: context.user.id, versionId: delegation.workloadId, runId: delegation.workloadRun }
-    : null;
-};
-const ownedRunChat = async (context: CapabilityExecutionContext, db: SQL) => {
-  const run = personalRun(context);
-  if (!run) return null;
-  const [chat] = await db<{ id: string; short_id: string; title: string; code_id: string; code_title: string }[]>`
-    SELECT conversation.id,conversation.short_id,conversation.title,code.id AS code_id,code.title AS code_title
-    FROM ai.conversations conversation JOIN code.runs run ON run.id=${run.runId}::uuid
-    JOIN code.codes code ON code.id=run.code_id
-    WHERE run.version_id=${run.versionId}::uuid AND code.owner_kind='person' AND code.owner_user_id=${run.userId}::uuid
-      AND conversation.short_id=${destination(context)} AND conversation.created_by_user_id=${run.userId}::uuid
-      AND conversation.archived_at IS NULL`;
-  return chat ?? null;
-};
 const result = async (conversationId: string, turnId: string, chatId: string) => {
   const turn = await aiConversations.getTurn({ conversationId, turnId });
   if (!turn?.codeOrigin) return fail(err.notFound("Code chat turn"));
@@ -126,8 +100,8 @@ export const aiChatRunAction = {
   idempotency: "required" as const,
   policy: { silent: "you" as const },
   async review(_input: z.infer<typeof aiChatRunInput>, context: CapabilityExecutionContext) {
-    if (!personalRun(context)) return fail(err.forbidden("Chat turns require personal Code"));
-    const chat = await ownedRunChat(context, sql);
+    if (!personalCodeRun(context)) return fail(err.forbidden("Chat turns require personal Code"));
+    const chat = await ownedCodeRunChat(context, sql);
     if (!chat) return fail(err.notFound("Chat"));
     const t = messages.resolve([context.locale]).t;
     return ok({
@@ -137,13 +111,13 @@ export const aiChatRunAction = {
     });
   },
   async run(input: z.infer<typeof aiChatRunInput>, context: CapabilityExecutionContext) {
-    const run = personalRun(context);
+    const run = personalCodeRun(context);
     if (!run) return fail(err.forbidden("Chat turns require personal Code"));
     const key = CapabilityIdempotencyKeySchema.safeParse(context.idempotencyKey);
     const parsed = aiChatRunInput.safeParse(input);
     if (!key.success || !parsed.success) return fail(err.badInput("Supply a prompt and a valid idempotency key"));
-    const hash = approvalArgsDigest({ chatId: destination(context), ...parsed.data });
-    const chat = await ownedRunChat(context, sql);
+    const hash = approvalArgsDigest({ chatId: codeChatDestination(context), ...parsed.data });
+    const chat = await ownedCodeRunChat(context, sql);
     if (!chat) return fail(err.notFound("Chat"));
     const existing = async (db: SQL) => {
       const [receipt] = await db<{ request_hash: string; turn_id: string; conversation_id: string }[]>`
@@ -207,7 +181,7 @@ export const aiChatRunAction = {
         const [lockedChat] = await db<
           { project_id: string | null }[]
         >`SELECT project_id FROM ai.conversations WHERE id=${chat.id}::uuid FOR UPDATE`;
-        const current = await ownedRunChat(context, db);
+        const current = await ownedCodeRunChat(context, db);
         if (!current) return fail(err.notFound("Chat"));
         const receipt = await existing(db);
         if (receipt)
@@ -275,7 +249,7 @@ export const aiChatRunReadQuery = {
       context.user?.id !== context.actor.user.id
     )
       return fail(err.forbidden("Chat turns require their owner"));
-    const chat = await aiConversations.getConversationByShortId({ shortId: destination(context), ownerUserId: context.user.id });
+    const chat = await aiConversations.getConversationByShortId({ shortId: codeChatDestination(context), ownerUserId: context.user.id });
     if (!chat) return fail(err.notFound("Chat"));
     const turn = await aiConversations.getTurnByShortId({ conversationId: chat.id, shortId: input.id });
     return turn ? result(chat.id, turn.id, chat.shortId) : fail(err.notFound("Code chat turn"));

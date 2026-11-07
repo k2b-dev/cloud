@@ -82,17 +82,26 @@ function unavailable(method) {
   throw Object.assign(new Error(diagnostic.message), { code: diagnostic.code });
 }
 app.schedule = (when, fn, options) => {
-  const once = when && typeof when === "object" && !Array.isArray(when);
-  if (typeof fn !== "function" || (!once && (typeof when !== "string" || !when.trim()))) throw new Error("code_sdk_invalid_schedule");
+  const object = when && typeof when === "object" && !Array.isArray(when);
+  const once = object && "at" in when;
+  const recurring = object && !once;
+  if (typeof fn !== "function" || (!object && (typeof when !== "string" || !when.trim()))) throw new Error("code_sdk_invalid_schedule");
   if (once) {
     if (Object.keys(when).some(key => key !== "at" && key !== "timeZone") || typeof when.at !== "string" || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/.test(when.at) || !Number.isFinite(Date.parse(when.at)) || typeof when.timeZone !== "string" || !when.timeZone) throw new Error("code_sdk_invalid_schedule");
     const date = when.at.slice(0, 10);
     if (new Date(date + "T00:00:00Z").toISOString().slice(0, 10) !== date || Number(when.at.slice(11, 13)) > 23) throw new Error("code_sdk_invalid_schedule");
     try { new Intl.DateTimeFormat("en", { timeZone: when.timeZone }); } catch { throw new Error("code_sdk_invalid_schedule"); }
   }
-  const timing = once ? { cron: null, at: when.at, timeZone: when.timeZone } : { cron: when };
-  const name = options?.name;
-  if (options !== undefined && (typeof name !== "string" || !/^[a-zA-Z0-9][a-zA-Z0-9_.-]*$/.test(name))) throw new Error("code_sdk_invalid_schedule_name");
+  if (recurring) {
+    if (Object.keys(when).some(key => !["cron", "timeZone", "name"].includes(key)) || typeof when.cron !== "string" || !when.cron.trim()) throw new Error("code_sdk_invalid_schedule");
+    if (when.timeZone !== undefined) {
+      if (typeof when.timeZone !== "string" || !when.timeZone) throw new Error("code_sdk_invalid_schedule");
+      try { new Intl.DateTimeFormat("en", { timeZone: when.timeZone }); } catch { throw new Error("code_sdk_invalid_schedule"); }
+    }
+  }
+  const timing = once ? { cron: null, at: when.at, timeZone: when.timeZone } : recurring ? { cron: when.cron, ...(when.timeZone === undefined ? {} : { timeZone: when.timeZone }) } : { cron: when };
+  const name = recurring && when.name !== undefined ? when.name : options?.name;
+  if ((options !== undefined || (recurring && when.name !== undefined)) && (typeof name !== "string" || !/^[a-zA-Z0-9][a-zA-Z0-9_.-]*$/.test(name))) throw new Error("code_sdk_invalid_schedule_name");
   const entrypoint = name ?? "schedule:" + schedules.filter(value => value.kind === "schedule").length;
   if (schedules.some(value => value.entrypoint === entrypoint)) throw new Error("code_sdk_duplicate_schedule_name");
   const title = typeof options?.title === "string" ? options.title.trim() : options?.title;
@@ -148,7 +157,7 @@ const __codeSdk = Object.freeze({
     if (bridge || !cloud || typeof cloud.call !== "function") throw new Error("code_sdk_invalid_bridge");
     bridge = cloud;
   },
-  entries: () => [...schedules.map(({ kind, entrypoint, cron, at, timeZone, title, event }) => ({ kind, entrypoint, cron, ...(at === undefined ? {} : { at, timeZone }), ...(event === undefined ? {} : { event }), ...(title === undefined ? {} : { title }) })),
+  entries: () => [...schedules.map(({ kind, entrypoint, cron, at, timeZone, title, event }) => ({ kind, entrypoint, cron, ...(at === undefined ? {} : { at }), ...(timeZone === undefined ? {} : { timeZone }), ...(event === undefined ? {} : { event }), ...(title === undefined ? {} : { title }) })),
     ...routes.map(({ entrypoint, route }) => ({ kind: "route", entrypoint, route, cron: null }))],
   diagnostics: () => diagnostics.map(value => ({ ...value })),
   async run(entrypoint, input) {

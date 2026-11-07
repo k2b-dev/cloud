@@ -338,6 +338,7 @@ describe("Core AI capabilities", () => {
       "route.update",
     ];
     const actions = [
+      "ai.chat.deliver",
       "ai.chat.message",
       "ai.chat.run",
       "ai.skill.access.change",
@@ -418,6 +419,7 @@ describe("Core AI capabilities", () => {
       "code.version.approve": { destructive: false, idempotency: "required" },
       "code.version.reject": { destructive: false, idempotency: "required" },
       "code.version.submit": { destructive: false, idempotency: "required" },
+      "ai.chat.deliver": { destructive: false, idempotency: "required" },
       "ai.chat.message": { destructive: false, idempotency: "required" },
       "ai.chat.run": { destructive: false, idempotency: "required" },
       "ai.skill.access.change": { destructive: true, idempotency: "required" },

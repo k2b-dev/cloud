@@ -605,11 +605,16 @@ test.each([
   expect(result).toMatchObject({ ok: false, diagnostics: expect.arrayContaining([expect.objectContaining({ code })]) });
 });
 
-test("a checked resource event bundle receives the reference envelope as its one run input", async () => {
+test("checked resource events and zoned schedules execute through the bundle registration fence", async () => {
   const manifest = sdkFixture();
   manifest.events![0]!.place = "workshop";
   const result = await check(
-    'import {app,owner} from "@sdk"; app.get("/health", c => c.text("Ready")); app.on("work-shop.changed", async event => {await owner.stock.list({cursor:event.subject.id});}); app.schedule({at:"2030-01-02T09:00:00Z",timeZone:"UTC"}, async () => {await owner.stock.list({cursor:"once"});}); export default app;',
+    `import { app, owner } from "@sdk";
+app.get("/health", c => c.text("Ready"));
+app.on("work-shop.changed", async event => { await owner.stock.list({ cursor: event.subject.id }); });
+app.schedule({ at: "2030-01-02T09:00:00Z", timeZone: "UTC" }, async () => { await owner.stock.list({ cursor: "once" }); });
+app.schedule({ cron: "0 9 * * *", timeZone: "Europe/Berlin" }, async () => { await owner.stock.list({ cursor: "daily" }); });
+export default app;`,
     {
       sdk: generateCodeSdk([manifest], {
         mode: "resource",
@@ -627,6 +632,7 @@ test("a checked resource event bundle receives the reference envelope as its one
       event: { type: "work-shop.changed", version: 1, place: { type: "work-shop.workshop", id: "owner-shop" } },
     },
     { kind: "schedule", entrypoint: "schedule:0", cron: null, at: "2030-01-02T09:00:00Z", timeZone: "UTC" },
+    { kind: "schedule", entrypoint: "schedule:1", cron: "0 9 * * *", timeZone: "Europe/Berlin" },
   ]);
   const file = join(directory, "event-bundle.mjs");
   await writeFile(file, result.bundle);
@@ -670,6 +676,15 @@ test("a checked resource event bundle receives the reference envelope as its one
     },
   });
   expect(onceCalls).toMatchObject([{ operation: "work-shop.stock.list", value: { call: { input: { cursor: "once" } } } }]);
+  const dailyModule = await import(`${file}?daily`);
+  const dailyCalls: unknown[] = [];
+  await dailyModule["schedule:1"](null, {
+    call: async (operation: string, value: unknown) => {
+      dailyCalls.push({ operation, value });
+      return { rows: [], next: null };
+    },
+  });
+  expect(dailyCalls).toMatchObject([{ operation: "work-shop.stock.list", value: { call: { input: { cursor: "daily" } } } }]);
 }, 30_000);
 
 test("rejects duplicate event/place subscriptions", async () => {

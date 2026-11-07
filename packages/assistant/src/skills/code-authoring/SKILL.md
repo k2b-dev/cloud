@@ -99,7 +99,7 @@ For work that needs Gustav to choose and use tools, create personal Code and
 call `core.ai.chat.run` from `app.schedule`; discover the owner's destination
 chat and the generated handle with `code_sdk`. Keep the exported prompt, timing
 and explicit `timeZone` (one-time `{ at, timeZone }`, recurring `{ cron,
-timeZone }` when the installed SDK supports it). Use a stable idempotency key.
+timeZone }`). Use a stable idempotency key.
 The Action returns a turn ID and its current state promptly. Use
 `core.ai.chat.run.read` for a later snapshot; if it says `waiting_for_approval`,
 tell the owner to decide in that chat and finish the Code run. Never poll until
@@ -108,6 +108,24 @@ interactive AI allowance by actual usage, plus the existing daily Code USD
 limits. It never spends a full attempt allowance just to start a turn. It keeps its Code
 origin in chat history. For a bounded summary, prefer `core.ai.generate` and
 result delivery. Do not recreate routines or activate Code from the chat.
+
+## Rebuild an Assistant routine
+
+Ask for or retain the routine's IANA time zone. Declare recurring timing at
+module level as `app.schedule({ cron, timeZone, name }, handler)` with constant
+values; a cron string without a zone runs in UTC. Spring-forward gaps skip the
+missing local minute, and repeated autumn minutes run only once.
+
+For a result in the person's Gustav chat, use personal Code. Discover the owned
+chat and `core.ai.chat.deliver` through the live SDK. The generated call is
+`core.ai.chat(chatId).ai.chat.deliver({ text, idempotencyKey: "result" })`. Keep the
+effect key stable within a run; Core scopes it per run. The result text is
+1–10,000 characters after trimming. Delivery appends an assistant message and
+queues the existing response notification without starting an AI turn. Another
+person's chat, an archived chat, or resource/app Code cannot receive this
+personal delivery. Do not substitute `ai.chat.message`, which requires an
+interactive AI turn. Test the delivery with fictional SDK replies before
+submitting, and retain the original routine until the person accepts its rebuild.
 
 ## Mail triage: category first
 

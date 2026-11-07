@@ -45,13 +45,28 @@ per form. Page inputs, trees and visitor identities are transient; the retained
 run records the outcome and timings. Rendering uses Core's assets and only the
 checked description reaches the browser; no Code source runs there.
 
+## Schedule and result delivery compatibility
+
+Recurring Code schedules now use their checked `timeZone`, defaulting to UTC
+when omitted. Versions with string cron declarations therefore run in UTC;
+operators who previously relied on `app.timezone` for Code schedules should
+have their authors submit an explicit IANA zone before activating the new
+runtime. Workflows and existing Assistant routines retain their own schedules.
+
+Core adds `code.chat_deliveries` as an additive migration. Personal Code chat
+results commit their messages and receipts together. The existing Assistant
+notification recovery worker publishes the response notification, normally
+within one minute, and retries with a stable key after failures. Keep that
+worker running; a failed notification never repeats the chat message. Delivery
+receipts follow Code run retention; the chat message remains ordinary chat
+history. Inspect the run's capability calls to diagnose a refused delivery.
+
 ## Rebuild scheduled Assistant routines
 
 Rebuild an open-ended routine as personal Code with `app.schedule` and
 `core.ai.chat.run`, preserving its prompt, destination and explicit time zone.
-Use `{ at, timeZone }` for one-time work. For recurring work, the installed SDK
-must support `{ cron, timeZone }` before preserving a non-UTC schedule. Review
-and activate the new Code before the cut, then stop the old routine before
+Use `{ at, timeZone }` for one-time work and `{ cron, timeZone }` for recurring
+work. Review and activate the new Code before the cut, then stop the old routine before
 enabling its replacement schedule. Do not run both for the same occurrence.
 Existing routines stay unchanged until that cut.
 
