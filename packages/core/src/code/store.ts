@@ -580,5 +580,8 @@ export const expireCodeRuns = async (options: { now: Date; limit: number; db?: C
   const cutoff = new Date(options.now.getTime() - 30 * 86_400_000);
   const result =
     await db`DELETE FROM code.runs WHERE id IN (SELECT id FROM code.runs WHERE ended_at <= ${cutoff} ORDER BY ended_at,id LIMIT ${options.limit} FOR UPDATE SKIP LOCKED)`;
+  await db`DELETE FROM code.ai_daily_budget WHERE (day,scope_kind,scope_key) IN
+    (SELECT day,scope_kind,scope_key FROM code.ai_daily_budget WHERE day < ${cutoff}::date
+      ORDER BY day,scope_kind,scope_key LIMIT ${options.limit} FOR UPDATE SKIP LOCKED)`;
   return result.count;
 };

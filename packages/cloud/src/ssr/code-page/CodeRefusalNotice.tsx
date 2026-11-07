@@ -56,6 +56,8 @@ export function CodeRefusalNotice(props: {
   );
   const title = (): JSX.Element => {
     if (props.refusal.code === "code_ai_budget_limit") return t().aiBudgetRefused;
+    if (props.refusal.code === "code_ai_daily_budget_limit") return t().aiDailyBudgetRefused;
+    if (props.refusal.code === "code_ai_owner_daily_budget_limit") return t().aiOwnerDailyBudgetRefused;
     if (props.refusal.kind === "policy") return t().policyRefusedTitle;
     if (props.refusal.kind === "approval") return t().approvalRefusedTitle;
     const current = call();
@@ -86,7 +88,7 @@ export function CodeRefusalNotice(props: {
   const why = () =>
     props.account ? t().refusedWhyAccount({ name: props.account }) : props.runsAsOther ? t().refusedWhyOwner : t().refusedWhyYou;
   const detail = (): JSX.Element => {
-    if (props.refusal.code === "code_ai_budget_limit") return what();
+    if (props.refusal.code?.startsWith("code_ai_")) return call() ? what() : null;
     if (!call()) {
       if (props.editor) return t().refusedDetailsFailed;
       return [props.account ? t().refusedReaderAccount({ name: props.account }) : "", t().refusedReaderDetail].filter(Boolean).join(" ");
