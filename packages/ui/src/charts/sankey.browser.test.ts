@@ -10,7 +10,7 @@ const root = resolve(import.meta.dir, "../..");
 const spec = {
   kind: "sankey" as const,
   nodes: [
-    { id: "a", label: "Clicked", tone: "blue" as const },
+    { id: "a", label: "Clicked weekly newsletter subscriber archive", tone: "blue" as const },
     { id: "b", label: "Read", tone: "green" as const },
     { id: "c", label: "Product and blog", tone: "in" as const },
   ],
@@ -80,6 +80,10 @@ test("Sankey SSR, calm hover, keyboard, touch, scroll, theme and fixed host stat
           });
         });
         expect(bounds.every(Boolean)).toBe(true);
+        const sourceLabel = page.locator('#mount [data-chart-datum]').filter({has:page.locator("rect")}).first();
+        expect(await sourceLabel.locator("text").count()).toBe(2);
+        expect(await sourceLabel.locator("title").textContent()).toContain(spec.nodes[0]!.label);
+        expect(await sourceLabel.textContent()).toContain("…");
         const frame = page.locator("#explorer .k2b-chart-explorer__viewport");
         const documentBox = (e: Element) => {
           const b = e.getBoundingClientRect();
@@ -105,6 +109,7 @@ test("Sankey SSR, calm hover, keyboard, touch, scroll, theme and fixed host stat
         await chart.focus();
         await settled(page);
         expect(await chart.locator("[data-inspected]").getAttribute("data-chart-datum")).toContain("Clicked");
+        expect(await chart.locator("[role=tooltip]").textContent()).toContain(spec.nodes[0]!.label);
         await page.keyboard.press("Enter");
         await settled(page);
         expect(await chart.locator("[data-selected]").count()).toBe(1);

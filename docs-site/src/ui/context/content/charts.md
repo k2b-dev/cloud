@@ -1094,7 +1094,7 @@ its source node's color; a muted source uses the target color. An explicit
 `displayWidth` control presentation. Explicit locale takes precedence.
 
 The plot keeps at least 620 px, starts at the sources and scrolls horizontally on narrow screens.
-Small flows stay visible; colliding node labels are available in the tooltip.
+Small flows stay visible; colliding node labels are available in the tooltip. Long node names wrap at word boundaries to two lines when the node has enough height. Names that still do not fit end in an ellipsis; the tooltip and accessible SVG title retain the complete name.
 Hover strengthens one band without dimming others. Arrows inspect nodes and
 links, Home/End jump, Enter pins and Escape dismisses; tap shares this behavior.
 Use the host's fixed-height loading, empty, error/retry and stale-subtitle states.

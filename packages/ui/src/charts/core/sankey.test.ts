@@ -96,7 +96,7 @@ test("headers, explicit wrapping legends and muted-source flow colors", () => {
 });
 
 test("labels truncate by glyph width without deforming their natural metrics", () => {
-  const svg = renderSankeySvg({ ...spec, nodes: spec.nodes.map((n) => ({ ...n, label: "WWW iii WWW iii WWW iii" })) });
+  const svg = renderSankeySvg({ ...spec, nodes: spec.nodes.map((n) => ({ ...n, label: "WWW iii WWW iii WWW iii WWW iii WWW iii" })) });
   expect(svg).not.toMatch(/textLength|lengthAdjust/);
   expect(svg).toContain("…");
 });
@@ -117,4 +117,13 @@ test("eager sizing matches renderer geometry for dense and stage-skipping flows"
     }
   }
   expect(sankeyFrame(spec).height).toBe(sankeyLayout(spec).height);
+});
+
+test("long node names wrap at words while full text remains in inspection metadata", () => {
+  const label = "Weekly letter newsletter subscribers";
+  const svg = renderSankeySvg({ ...spec, inspect: true, nodes: spec.nodes.map((n) => ({ ...n, label })) });
+  expect(svg).toContain(">Weekly letter</text>");
+  expect(svg).toContain(label);
+  expect(svg).toContain("…");
+  expect(svg).not.toMatch(/textLength|lengthAdjust/);
 });

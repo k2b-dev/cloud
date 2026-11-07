@@ -233,10 +233,23 @@ export function renderSankeySvg(spec: SankeyOptions): string {
   for (const node of scene.nodes) {
     const room = Math.min(150, scene.width - node.x - scene.nodeWidth - 10);
     const value = number(node.value);
-    const label = fitChartText(node.label, room - chartTextWidth(value, 12) - 6, 12);
+    const valueRoom = room - chartTextWidth(value, 12) - 6;
+    const words = node.label.split(/\s+/);
+    let first = "";
+    if (node.height >= 48 && chartTextWidth(node.label, 12) > valueRoom && words.length > 1) {
+      while (words.length > 1 && chartTextWidth([first, words[0]].filter(Boolean).join(" "), 12) <= room)
+        first = [first, words.shift()].filter(Boolean).join(" ");
+    }
+    const label = fitChartText(first ? words.join(" ") : node.label, valueRoom, 12);
+    const x = node.x + scene.nodeWidth + 6;
+    const y = node.y + node.height / 2 + 4;
+    const text = `fill="var(--k2b-text,#27272a)" font-size="12" font-family="inherit" stroke="var(--k2b-surface,#fff)" stroke-width="3" paint-order="stroke"`;
+    const caption = first
+      ? `<text x="${x}" y="${y - 8}" ${text}>${escapeXml(first)}</text><text x="${x}" y="${y + 8}" ${text}>${escapeXml(label)} <tspan font-weight="600">${escapeXml(value)}</tspan></text>`
+      : `<text x="${x}" y="${y}" ${text}>${escapeXml(label)} <tspan font-weight="600">${escapeXml(value)}</tspan></text>`;
     body.push(
       chartDatumSvg(
-        `<rect x="${node.x}" y="${node.y}" width="${scene.nodeWidth}" height="${node.height}" rx="2" fill="${sankeyColor(node.tone)}" stroke="none"/>${node.showLabel ? `<text x="${node.x + scene.nodeWidth + 6}" y="${node.y + node.height / 2 + 4}" fill="var(--k2b-text,#27272a)" font-size="12" font-family="inherit" stroke="var(--k2b-surface,#fff)" stroke-width="3" paint-order="stroke">${escapeXml(label)} <tspan font-weight="600">${escapeXml(value)}</tspan></text>` : ""}`,
+        `<rect x="${node.x}" y="${node.y}" width="${scene.nodeWidth}" height="${node.height}" rx="2" fill="${sankeyColor(node.tone)}" stroke="none"/>${node.showLabel ? caption : ""}`,
         {
           role: "item",
           index: node.index,
