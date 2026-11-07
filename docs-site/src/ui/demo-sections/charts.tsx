@@ -1,4 +1,15 @@
-import { Chart, type ChartKind, type ChartProps, type ChartSelection, type ChartTooltipFormatter, RangePicker } from "@k2b/ui";
+import {
+  Chart,
+  ChartExplorer,
+  type ChartFrameRequest,
+  type ChartKind,
+  type ChartProps,
+  type ChartSelection,
+  type ChartTooltipFormatter,
+  Paper,
+  RangePicker,
+  SegmentedControl,
+} from "@k2b/ui";
 import { CountryMap } from "@k2b/ui/country-map";
 import { createSignal, For, Show } from "solid-js";
 import { DemoCard } from "../DemoCard";
@@ -524,6 +535,72 @@ export const CountryMapDemo = () => (
   </DemoCard>
 );
 
+type SignupRow = { key: string; month: string; signups: number };
+const signups: SignupRow[] = [
+  { key: "jun", month: "June", signups: 412 },
+  { key: "jul", month: "July", signups: 468 },
+  { key: "aug", month: "August", signups: 391 },
+  { key: "sep", month: "September", signups: 524 },
+  { key: "oct", month: "October", signups: 610 },
+  { key: "nov", month: "November", signups: 575 },
+];
+const frameStates = {
+  data: { rows: signups, request: { status: "idle" } },
+  loading: { rows: [], request: { status: "loading" } },
+  empty: { rows: [], request: { status: "idle" } },
+  error: { rows: [], request: { status: "error" } },
+  stale: { rows: signups, request: { status: "error" } },
+} satisfies Record<string, { rows: SignupRow[]; request: ChartFrameRequest }>;
+
+export const ChartFrameStatesDemo = () => {
+  const [state, setState] = createSignal<keyof typeof frameStates>("data");
+  return (
+    <DemoCard
+      id="charts-frame-states"
+      chip={{ kind: "component", name: "ChartExplorer", from: "@k2b/ui" }}
+      description="A framed chart keeps its title and its place while it loads, is empty, fails or goes stale. Switch the state; nothing moves."
+      code={`<Paper class="p-4">
+  <ChartExplorer title="Signups per month" description="All sources" inset="1rem" renderDetails={false}
+    request={{ status: "error" }} asOf="09:12" onRetry={refetch}
+    empty="No signups in this period." data={{ rows }} columns={columns}>
+    <Chart kind="bar" style={{ height: "100%" }} data={bars} />
+  </ChartExplorer>
+</Paper>`}
+    >
+      <div class="ui-chart-frame-demo">
+        <SegmentedControl
+          ariaLabel="Frame state"
+          value={state()}
+          onValueChange={setState}
+          options={(Object.keys(frameStates) as (keyof typeof frameStates)[]).map((value) => ({
+            value,
+            label: value[0]!.toUpperCase() + value.slice(1),
+          }))}
+        />
+        <Paper class="ui-chart-frame-demo__frame">
+          <ChartExplorer<SignupRow>
+            title="Signups per month"
+            description="All sources · invented data"
+            height="15rem"
+            inset="1rem"
+            renderDetails={false}
+            request={frameStates[state()].request}
+            asOf="09:12"
+            onRetry={() => setState("data")}
+            empty="No signups in this period."
+            data={{ rows: frameStates[state()].rows }}
+            columns={[
+              { id: "month", label: "Month", value: (row) => row.month, sortValue: (row) => signups.indexOf(row) },
+              { id: "signups", label: "Signups", value: (row) => String(row.signups), sortValue: (row) => row.signups, align: "right" },
+            ]}
+          >
+            <Chart kind="bar" style={{ height: "100%" }} data={signups.map((row) => ({ label: row.month, value: row.signups }))} />
+          </ChartExplorer>
+        </Paper>
+      </div>
+    </DemoCard>
+  );
+};
 const referenceStyleExample = {
   kind: "line",
   series: [

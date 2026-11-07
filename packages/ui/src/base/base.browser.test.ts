@@ -511,6 +511,7 @@ describe("@k2b/ui base stylesheet in a browser", () => {
   // inspected mark and tooltip must look like the Chart component's in both
   // themes, and adding the anchor and tooltip must not move anything.
   for (const theme of ["light", "dark"] as const) {
+    // A single-mark kind keeps its outline; bar categories get a band instead (chart-frame-states.browser.test.ts).
     test(`styles chart inspection and its tooltip like the Chart component (${theme})`, async () => {
       const svg = charts.bar({
         data: [
@@ -527,7 +528,7 @@ describe("@k2b/ui base stylesheet in a browser", () => {
         const tab = await (await browser.newContext({ ...viewports.desktop, reducedMotion: "reduce" })).newPage();
         try {
           await tab.setContent(
-            `<!doctype html><html lang="en" data-theme="${theme}"><head><style>${stylesheet}</style><style>:root, .k2b-ui { --k2b-font-sans: sans-serif; }</style></head><body>${wrap(`<button type="button">Before</button><div class="k2b-chart" data-chart-kind="bar" role="group" aria-label="Revenue" tabindex="0" data-interactive="true"><div class="k2b-chart__svg" data-stretch style="--k2b-chart-width:480px;--k2b-chart-height:280px">${responsiveChartSvg(render(svg))}</div></div>`)}</body></html>`,
+            `<!doctype html><html lang="en" data-theme="${theme}"><head><style>${stylesheet}</style><style>:root, .k2b-ui { --k2b-font-sans: sans-serif; }</style></head><body>${wrap(`<button type="button">Before</button><div class="k2b-chart" data-chart-kind="heatmap" role="group" aria-label="Revenue" tabindex="0" data-interactive="true"><div class="k2b-chart__svg" data-stretch style="--k2b-chart-width:480px;--k2b-chart-height:280px">${responsiveChartSvg(render(svg))}</div></div>`)}</body></html>`,
           );
           const before = await tab.$eval(".k2b-chart", (chart) => JSON.stringify(chart.getBoundingClientRect()));
           await tab.$eval(".k2b-chart", (chart, markup) => chart.insertAdjacentHTML("beforeend", markup), tooltip);
