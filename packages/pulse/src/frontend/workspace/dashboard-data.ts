@@ -3,7 +3,7 @@ import type { DashboardRange } from "../../dashboard-contracts";
 import { dashboardCategoryDescription, dashboardPointDescription } from "../../dashboard-description";
 import type { DashboardPanelData } from "../../dashboard-result";
 
-export { dashboardChartDescription, dashboardChartRenderOptions } from "../../dashboard-description";
+export { dashboardChartDescription, dashboardChartRenderOptions, dashboardMoneyDescription } from "../../dashboard-description";
 
 import { sqlTimestamp } from "../../sql-result-values";
 import type { PublicDashboardPanel } from "./dashboard-client";

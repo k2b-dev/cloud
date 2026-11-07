@@ -213,8 +213,8 @@ it. Public views expose results and presentation only. Read
 `cld pulse reference dashboards.md` before writing a definition.
 
 Choose number, line, bar, table, funnel, map, pie, donut, scatter, histogram,
-boxplot, heatmap, gauge, barGauge, or sparkline. Follow the reference
-for `x`/`series`; map `x` holds ISO 3166-1 alpha-2 country codes. Keep SQL
+boxplot, heatmap, gauge, barGauge, sparkline, area, areaPercent, budget, or balance. Follow the reference
+for `x`/`series` and money aliases; money blocks require a currency in `unit`. Map `x` holds ISO 3166-1 alpha-2 country codes. Keep SQL
 nulls as gaps; never invent zero observations. Aggregate charts to at most eight series and
 480 points per series (3,840 produced marks). A dashboard supplies referenced
 `:from`, `:to` and `:bucket` on a shared grid. Do not silently reduce a requested

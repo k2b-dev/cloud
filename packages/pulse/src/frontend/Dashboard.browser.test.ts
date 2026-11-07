@@ -1408,3 +1408,119 @@ test("catalog SQL charts keep their frame through empty, invalid and recovered r
     }
   }
 }, 30_000);
+
+for (const [width, dark] of [
+  [1440, false],
+  [390, false],
+  [390, true],
+] as const)
+  test(`area and money SQL panels preserve frames and keyboard access at ${width}px, dark=${dark}`, async () => {
+    const source = dashboardTestKinds.definition.panels[1]!;
+    const panels = [
+      {
+        ...source,
+        id: "area",
+        title: "Stacked requests",
+        kind: "area" as const,
+        columns: ["day", "North", "South"],
+        x: "day",
+        series: undefined,
+      },
+      {
+        ...source,
+        id: "areaPercent",
+        title: "Request shares",
+        kind: "areaPercent" as const,
+        columns: ["day", "North", "South"],
+        x: "day",
+        series: undefined,
+      },
+      {
+        ...source,
+        id: "budget",
+        title: "Operating budgets",
+        kind: "budget" as const,
+        columns: ["name", "used", "expected", "limit"],
+        x: "name",
+        series: undefined,
+        unit: "EUR",
+      },
+      {
+        ...source,
+        id: "balance",
+        title: "Cash movement",
+        kind: "balance" as const,
+        columns: ["start", "in", "out"],
+        x: undefined,
+        series: undefined,
+        unit: "EUR",
+      },
+    ];
+    const rows: Record<string, unknown[][]> = {
+      area: [
+        ["Mon", 4, 2],
+        ["Tue", 5, null],
+        ["Wed", 7, 3],
+      ],
+      areaPercent: [
+        ["Mon", 4, 2],
+        ["Tue", 0, 0],
+        ["Wed", 7, 3],
+      ],
+      budget: [
+        ["Office", 80, 30, 100],
+        ["Travel", 30, 10, 100],
+      ],
+      balance: [[18800, 29260, 29520]],
+    };
+    const panelData = Object.fromEntries(
+      panels.map((panel) => [
+        panel.id,
+        {
+          columns: panel.columns.map((name) => ({ name, type: name === "name" || name === "day" ? "String" : "Float64" })),
+          rows: rows[panel.id]!,
+        },
+      ]),
+    );
+    const fixture = { ...dashboardTestKinds, id: "AreaMoney", definition: { panels } };
+    const view = await open({ width, dark, dashboard: fixture, panelData });
+    const errors = pageErrors(view.tab);
+    try {
+      await ready(view.tab);
+      expect(await view.tab.locator(".pulse-dashboard__plot .k2b-chart").count()).toBe(2);
+      expect(await view.tab.locator('[data-panel="budget"] [role="progressbar"]').count()).toBe(2);
+      expect(await view.tab.locator('[data-panel="balance"] .k2b-balance').count()).toBe(1);
+      expect(await view.tab.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBeLessThanOrEqual(0);
+      const chart = view.tab.locator('[data-panel="area"] .k2b-chart');
+      await chart.focus();
+      await chart.press("ArrowRight");
+      await view.tab.locator('[data-panel="area"] [role="tooltip"]:popover-open').waitFor();
+      const budget = view.tab.locator('[data-panel="budget"]');
+      await budget.locator(".k2b-budget__anchor").first().focus();
+      await budget.locator('[role="tooltip"]:popover-open').waitFor();
+      for (const panel of panels) {
+        const target = view.tab.locator(`[data-panel="${panel.id}"]`);
+        const height = (await target.boundingBox())!.height;
+        const good = {
+          ...dashboardTestPanelResult(panel),
+          lastGood: { ...dashboardTestPanelResult(panel).lastGood!, data: panelData[panel.id]! },
+        };
+        view.panels.set(panel.id, { json: { ...good, status: "error", error: "PANEL_RESULT_INVALID", lastGood: null } });
+        await view.tab.reload();
+        await ready(view.tab);
+        await target.getByRole("alert").waitFor();
+        expect((await target.boundingBox())!.height).toBe(height);
+        view.panels.set(panel.id, { json: { ...good, lastGood: { ...good.lastGood!, data: { ...panelData[panel.id]!, rows: [] } } } });
+        await target.getByRole("button", { name: "Erneut versuchen", exact: true }).click();
+        await target.getByText("Keine Werte in diesem Zeitraum").waitFor();
+        expect((await target.boundingBox())!.height).toBe(height);
+        view.panels.set(panel.id, { json: good });
+        await view.tab.reload();
+        await ready(view.tab);
+        expect((await target.boundingBox())!.height).toBe(height);
+      }
+      expect(errors).toEqual([]);
+    } finally {
+      await view.tab.close();
+    }
+  }, 30_000);

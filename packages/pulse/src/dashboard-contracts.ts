@@ -50,6 +50,10 @@ const DashboardPanelFields = z
         "barGauge",
         "boxplot",
         "heatmap",
+        "area",
+        "areaPercent",
+        "budget",
+        "balance",
       ])
       .describe("How to display the selected SQL columns."),
     sql: z.string().describe("Read-only SQL; :from, :to and :bucket follow the dashboard range."),
@@ -69,7 +73,12 @@ export const DashboardPanelSchema = DashboardPanelFields.superRefine((panel, con
   for (const key of ["x", "series"] as const)
     if (panel[key] && !panel.columns.includes(panel[key]))
       context.addIssue({ code: "custom", path: [key], message: "The column must be included in columns" });
-  if (["line", "bar", "funnel", "map", "scatter", "pie", "donut", "barGauge", "boxplot", "heatmap"].includes(panel.kind) && !panel.x)
+  if (
+    ["line", "bar", "funnel", "map", "scatter", "pie", "donut", "barGauge", "boxplot", "heatmap", "area", "areaPercent", "budget"].includes(
+      panel.kind,
+    ) &&
+    !panel.x
+  )
     context.addIssue({ code: "custom", path: ["x"], message: "Choose the time or category column" });
   const values = panel.columns.filter(
     (column) =>
@@ -91,6 +100,19 @@ export const DashboardPanelSchema = DashboardPanelFields.superRefine((panel, con
     context.addIssue({ code: "custom", path: ["columns"], message: "Choose exactly one value column without x or series" });
   if (panel.kind === "heatmap" && (values.length !== 1 || !panel.series || panel.series === panel.x))
     context.addIssue({ code: "custom", path: ["series"], message: "Choose different x and series columns, and one value column" });
+  if (panel.kind === "budget" || panel.kind === "balance") {
+    const required = panel.kind === "budget" ? ["used", "limit"] : ["start", "in", "out"];
+    const allowed = panel.kind === "budget" ? [...required, "expected", panel.x] : required;
+    if (
+      panel.series ||
+      (panel.kind === "balance" && panel.x) ||
+      !required.every((name) => values.includes(name)) ||
+      values.some((name) => !allowed.includes(name))
+    )
+      context.addIssue({ code: "custom", path: ["columns"], message: "Use the documented money block columns without series" });
+    if (!/^[A-Z]{3}$/.test(panel.unit))
+      context.addIssue({ code: "custom", path: ["unit"], message: "Money blocks require an uppercase ISO 4217 currency in unit" });
+  }
   try {
     const params = { ...panel.params };
     for (const name of sqlParameterNames(panel.sql)) {

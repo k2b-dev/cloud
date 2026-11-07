@@ -421,7 +421,8 @@ The Assistant asks before saving. Updates use the revision from
 
 A dashboard groups numbers, charts, tables, funnels, and maps into sections.
 Charts also include pie, donut, scatter, histogram, box plot, heatmap, gauge,
-bar gauge, and sparkline. See [Dashboard chart columns](/en/docs/ai/pulse-dashboard-charts)
+bar gauge, sparkline, stacked area, and 100% area. Budget lists and balance
+rows show money with a currency. See [Dashboard chart columns](/en/docs/ai/pulse-dashboard-charts)
 for each kind's SQL column mapping and limits.
 A named section can include an icon, color, and caption describing its sources
 or cadence; these come from the saved definition.

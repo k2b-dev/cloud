@@ -1,4 +1,6 @@
 import {
+  BalanceSummary,
+  BudgetList,
   Button,
   Chart,
   type ChartCursor,
@@ -24,6 +26,7 @@ import {
   dashboardCountries,
   dashboardDateTime,
   dashboardLineExplorer,
+  dashboardMoneyDescription,
 } from "./dashboard-data";
 
 // A line panel keeps its explorer, header and height while it has no points to draw.
@@ -89,12 +92,20 @@ export default function DashboardPanelView(props: {
     }
   });
   const catalog = createMemo(() => {
-    if (!data()?.rows.length || ["number", "line", "bar", "funnel", "table", "map"].includes(props.panel.kind))
+    if (!data()?.rows.length || ["number", "line", "bar", "funnel", "table", "map", "budget", "balance"].includes(props.panel.kind))
       return { options: null, error: false };
     try {
       return { options: dashboardChartRenderOptions(props.panel, data()!, { locale: locale(), timeZone: props.timeZone }), error: false };
     } catch {
       return { options: null, error: true };
+    }
+  });
+  const money = createMemo(() => {
+    if (!data()?.rows.length || !["budget", "balance"].includes(props.panel.kind)) return { description: null, error: false };
+    try {
+      return { description: dashboardMoneyDescription(props.panel, data()!, locale()), error: false };
+    } catch {
+      return { description: null, error: true };
     }
   });
   const countryResult = createMemo(() => {
@@ -117,6 +128,7 @@ export default function DashboardPanelView(props: {
     lineResult().error ||
     categoryResult().error ||
     catalog().error ||
+    money().error ||
     countryResult().error ||
     (numberResult() !== null && !numberResult()?.ok);
   const failure = () =>
@@ -367,6 +379,16 @@ export default function DashboardPanelView(props: {
             {(options) => (
               <div class="pulse-dashboard__plot">
                 <Chart {...options()} interactive labels={{ interactiveChart: props.panel.title }} />
+              </div>
+            )}
+          </Show>
+          <Show when={money().description}>
+            {(description) => (
+              <div class="pulse-dashboard__money">
+                {(() => {
+                  const block = description();
+                  return block.block === "budget" ? <BudgetList {...block} /> : <BalanceSummary {...block} />;
+                })()}
               </div>
             )}
           </Show>

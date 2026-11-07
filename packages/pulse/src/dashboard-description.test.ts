@@ -1,6 +1,11 @@
 import { expect, test } from "bun:test";
 import { type DashboardPanel, DashboardPanelSchema, DashboardSaveSchema } from "./dashboard-contracts";
-import { dashboardCategoryDescription, dashboardChartDescription, dashboardChartRenderOptions } from "./dashboard-description";
+import {
+  dashboardCategoryDescription,
+  dashboardChartDescription,
+  dashboardChartRenderOptions,
+  dashboardMoneyDescription,
+} from "./dashboard-description";
 import { type DashboardPanelData, projectDashboardPanel } from "./dashboard-result";
 import { dashboardTestKinds } from "./frontend/workspace/dashboard-test-fixtures";
 
@@ -228,4 +233,99 @@ test("host tooltips use the shared rows with the panel unit and reader locale", 
       datum: { index: 0, role: "item", label: "North", anchor: [0, 0], values: [{ key: "value", value: 1234.5 }] },
     }),
   ).toEqual({ title: "North", rows: [{ label: "Wert", value: "1.234,5 visits" }] });
+});
+
+test("area SQL aligns series by category and keeps absent and explicit null cells as gaps", () => {
+  const p = panel("area", ["day", "region", "amount"], { x: "day", series: "region" });
+  const result = data(p.columns, [
+    ["Mon", "North", 4],
+    ["Tue", "North", null],
+    ["Mon", "South", 2],
+    ["Wed", "South", 3],
+  ]);
+  expect(dashboardChartDescription(p, result, clock)).toEqual({
+    kind: "area",
+    title: p.title,
+    layout: "stacked",
+    normalize: false,
+    x: ["Mon", "Tue", "Wed"],
+    series: [
+      { label: "North", data: [4, null, null] },
+      { label: "South", data: [2, null, 3] },
+    ],
+  });
+  expect(() => project(p, result)).not.toThrow();
+  expect(dashboardChartRenderOptions({ ...p, kind: "areaPercent" }, result, clock)).toMatchObject({ kind: "area", normalize: true });
+  expect(() => project(p, { ...result, rows: [...result.rows, ["Mon", "North", 1]] })).toThrow("duplicate");
+  expect(() => project(p, data(p.columns, [["Mon", "North", -1]]))).toThrow();
+  expect(() =>
+    project(
+      p,
+      data(
+        p.columns,
+        Array.from({ length: 9 }, (_, i) => ["Mon", `S${i}`, 1]),
+      ),
+    ),
+  ).toThrow("8 series");
+  expect(() =>
+    project(
+      p,
+      data(
+        p.columns,
+        Array.from({ length: 481 }, (_, i) => [i, "North", 1]),
+      ),
+    ),
+  ).toThrow("480 points");
+});
+
+test("budget and balance SQL become portable money blocks with validated magnitudes", () => {
+  const p = panel("budget", ["name", "used", "expected", "limit"], { x: "name", unit: "EUR" });
+  const result = data(p.columns, [
+    ["Office", "80", 30, 100],
+    ["Travel", 0, 0, 0],
+  ]);
+  expect(dashboardMoneyDescription(p, result, "de")).toEqual({
+    block: "budget",
+    currency: "EUR",
+    items: [
+      { label: "Office", used: 80, expected: 30, limit: 100 },
+      { label: "Travel", used: 0, expected: 0, limit: 0 },
+    ],
+  });
+  expect(() => project(p, result)).not.toThrow();
+  const b = panel("balance", ["start", "in", "out"], { unit: "EUR" });
+  expect(dashboardMoneyDescription(b, data(b.columns, [[-20, "80", 30]]), "en")).toEqual({
+    block: "balance",
+    currency: "EUR",
+    start: -20,
+    in: 80,
+    out: 30,
+  });
+  expect(() =>
+    project(
+      b,
+      data(b.columns, [
+        [0, 1, 2],
+        [1, 2, 3],
+      ]),
+    ),
+  ).toThrow("one aggregate");
+  for (const value of [null, -1, "invalid", Infinity]) expect(() => project(b, data(b.columns, [[0, value, 1]]))).toThrow();
+  expect(() => project(p, data(p.columns, [["A", 1, null, 10]]))).toThrow();
+  expect(() =>
+    project(
+      p,
+      data(
+        p.columns,
+        Array.from({ length: 481 }, () => ["A", 1, 0, 10]),
+      ),
+    ),
+  ).toThrow("480 points");
+  for (const bad of [
+    { kind: "budget", columns: ["name", "used"], x: "name", unit: "EUR" },
+    { kind: "balance", columns: ["start", "in", "out"], unit: "euros" },
+    { kind: "balance", columns: ["start", "in", "out", "extra"], unit: "EUR" },
+    { kind: "budget", columns: ["name", "used", "limit"], x: "name", series: "used", unit: "EUR" },
+  ])
+    expect(DashboardPanelSchema.safeParse({ id: "bad", title: "Bad", sql: "SELECT 1", ...bad }).success).toBe(false);
 });

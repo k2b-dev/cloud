@@ -20,6 +20,9 @@ projection never reach the dashboard or its published link.
 | `number` | One numeric value. Optional DateTime `x` adds a trend; String `unit`, `detail`, `detailTone` add presentation. |
 | `line` | Date, DateTime or DateTime64 `x`, optional `series` group, remaining columns numeric values. |
 | `bar` | Category `x`, optional `series` group, remaining columns numeric values. Existing labels combine category, group and value-column name. |
+| `area`, `areaPercent` | Category `x`, optional `series` group, remaining columns nonnegative numeric values. Aligned stacked amounts or 100% shares. |
+| `budget` | Category `x`, numeric `used` and `limit`, optional numeric `expected`; `unit` is an uppercase ISO 4217 currency such as `EUR`. |
+| `balance` | One row with numeric `start`, `in`, `out`; no `x` or `series`. `unit` is the currency. |
 | `funnel` | Ordered category `x` and one nonnegative numeric value. |
 | `pie`, `donut` | Category `x` and one nonnegative numeric value. |
 | `scatter` | Numeric `x`, optional `series` group, remaining columns numeric y values. |
@@ -37,6 +40,30 @@ it never becomes zero. Funnel stages and map values require numbers, and a
 gauge requires one value. Line times read in the base timezone, including
 local DateTime text. Viewers keep that timezone while formatting labels in
 their own locale.
+
+Area charts align each series to the category order first encountered in SQL.
+A missing category/series pair stays a gap; duplicate pairs produce a panel
+error. A missing observation interrupts the whole stack. `areaPercent` also
+leaves zero-total categories empty. Use `ORDER BY` for chronological categories.
+
+Budget columns are fixed SQL aliases: `used` is booked spending, `expected`
+is additional planned spending, and `limit` is the budget. All three must be
+nonnegative; zero limits show any spending as an overrun. Omit `expected` when
+it is unavailable rather than returning `NULL`. For example:
+
+```sql
+SELECT category AS name, sum(booked) AS used, sum(planned) AS expected,
+       sum(budget) AS limit
+FROM costs
+GROUP BY category
+ORDER BY category
+```
+
+Choose `kind: "budget"`, `columns: ["name", "used", "expected", "limit"]`,
+`x: "name"`, and `unit: "EUR"`. Balance panels use fixed aliases `start`, `in`,
+and `out`. The starting balance may be signed; incoming and outgoing amounts
+are nonnegative magnitudes. The displayed end is `start + in - out`. Each money
+cell must contain a finite number; `NULL` produces an error.
 
 For a heatmap, return one row per cell:
 
@@ -63,6 +90,9 @@ input limits. Excessive, invalid, or truncated results show an error with
 
 The saved SQL panel remains the source of truth. Pulse adapts its result to
 the same plain JSON chart description used by Chat and Notebooks; rendering
-callbacks and interactions stay in the host. Existing dashboards need no
+callbacks and interactions stay in the host. Money descriptions use the
+`CloudMoneyDescription` type from `@k2b/cloud/ai`: `{block: "budget", currency,
+items}` or `{block: "balance", currency, start, in, out}`. Hosts render them
+with `BudgetList` and `BalanceSummary` from `@k2b/ui`. Existing dashboards need no
 migration. See [Pulse](/en/apps/pulse#build-a-dashboard) for saving, ranges,
 refresh and publication.

@@ -1,5 +1,5 @@
 import { DASHBOARD_MAX_MARKS, DASHBOARD_MAX_POINTS, type DashboardPanel, NUMBER_METADATA_COLUMNS } from "./dashboard-contracts";
-import { dashboardChartRenderOptions } from "./dashboard-description";
+import { dashboardChartRenderOptions, dashboardMoneyDescription } from "./dashboard-description";
 import { readOverviewNumber } from "./overview-number";
 import type { SqlRows } from "./store/sql-run";
 
@@ -14,6 +14,10 @@ export const projectDashboardPanel = (panel: DashboardPanel, result: SqlRows): D
   });
   const columns = indexes.map((index) => result.columns[index]!);
   const rows = result.rows.map((row) => indexes.map((index) => row[index]));
+  if (panel.kind === "budget" || panel.kind === "balance") {
+    if (rows.length) dashboardMoneyDescription(panel, { columns, rows }, "en");
+    return { columns, rows };
+  }
   if (!["number", "table", "map"].includes(panel.kind)) {
     const x = columns.findIndex((column) => column.name === panel.x);
     if (panel.kind === "line" && (x < 0 || !/^(?:Nullable\()?Date(?:Time(?:64)?(?:\(|$)|\)?$)/.test(columns[x]!.type)))

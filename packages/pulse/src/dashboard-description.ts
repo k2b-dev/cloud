@@ -1,4 +1,6 @@
+import type { CloudMoneyDescription } from "@k2b/cloud/ai";
 import { type ChartInput, chartKinds, chartRenderOptions, chartRows, chartTooltip, drawChart } from "@k2b/editor/charts";
+import { progressBarParts } from "@k2b/ui";
 import type { ChartTooltipFormatter } from "@k2b/ui/charts/core";
 import { DASHBOARD_MAX_MARKS, DASHBOARD_MAX_POINTS, DASHBOARD_MAX_SERIES, type DashboardPanel } from "./dashboard-contracts";
 import type { DashboardPanelData } from "./dashboard-result";
@@ -85,9 +87,49 @@ export function dashboardCategoryDescription(panel: ChartPanel, data: DashboardP
   return categories;
 }
 
+/** Align categories without turning a missing observation into zero or flattening series into labels. */
+export function dashboardAlignedCategories(panel: Pick<DashboardPanel, "x" | "series">, data: DashboardPanelData, locale: string) {
+  const x = columnIndex(data, panel.x);
+  const group = columnIndex(data, panel.series);
+  const values = data.columns.flatMap((column, index) => (index !== x && index !== group ? [{ index, name: column.name }] : []));
+  if (x < 0 || !values.length) throw new Error("Choose a category and at least one value column");
+  const categories = new Map<string, string>();
+  const series = new Map<string, { label: string; cells: Map<string, number | null> }>();
+  for (const row of data.rows) {
+    const category = JSON.stringify(row[x]) ?? "null";
+    categories.set(category, text(row[x], locale));
+    for (const value of values) {
+      const key = JSON.stringify([group < 0 ? null : row[group], value.name]);
+      const entry = series.get(key) ?? {
+        label: group < 0 ? value.name : `${text(row[group], locale)}${values.length > 1 ? ` · ${value.name}` : ""}`,
+        cells: new Map<string, number | null>(),
+      };
+      if (entry.cells.has(category)) throw new Error("Aggregate duplicate category/series pairs in SQL");
+      entry.cells.set(category, numeric(row[value.index]));
+      series.set(key, entry);
+    }
+  }
+  budget(0, series.size, categories.size);
+  return {
+    x: [...categories.values()],
+    series: [...series.values()].map((entry) => ({
+      label: entry.label,
+      data: [...categories.keys()].map((key) => entry.cells.get(key) ?? null),
+    })),
+  };
+}
+
 /** SQL columns become the same function-free JSON entry read by Chat and Notebooks. */
 export function dashboardChartDescription(panel: ChartPanel, data: DashboardPanelData, clock: DashboardClock) {
   const common = { title: panel.title };
+  if (panel.kind === "area" || panel.kind === "areaPercent")
+    return {
+      kind: "area" as const,
+      ...common,
+      ...dashboardAlignedCategories(panel, data, clock.locale),
+      layout: "stacked" as const,
+      normalize: panel.kind === "areaPercent",
+    };
   if (panel.kind === "line" || panel.kind === "scatter") return dashboardPointDescription(panel, data, clock);
   if (panel.kind === "bar" || panel.kind === "funnel" || panel.kind === "pie" || panel.kind === "donut" || panel.kind === "barGauge") {
     const rows = dashboardCategoryDescription(panel, data, clock.locale);
@@ -161,4 +203,41 @@ export function dashboardChartRenderOptions(panel: ChartPanel, data: DashboardPa
   };
   budget([...drawChart(options).matchAll(/data-chart-datum=/g)].length, 0, 0);
   return { ...options, tooltip };
+}
+
+/** Fixed SQL aliases make money blocks portable without adding fields to saved panels. */
+export function dashboardMoneyDescription(panel: ChartPanel, data: DashboardPanelData, locale: string): CloudMoneyDescription {
+  if (!/^[A-Z]{3}$/.test(panel.unit)) throw new Error("Choose an ISO 4217 currency in unit");
+  const currency = panel.unit;
+  const amount = (row: unknown[], name: string, nonnegative = true) => {
+    const index = columnIndex(data, name);
+    if (index < 0) throw new Error(`Missing money column ${name}`);
+    const value = numeric(row[index]);
+    if (value === null || (nonnegative && value < 0)) throw new Error("Money values must be nonnegative numbers");
+    return value;
+  };
+  if (panel.kind === "budget") {
+    const x = columnIndex(data, panel.x);
+    if (x < 0) throw new Error("Choose a budget label column");
+    const items = data.rows.map((row) => {
+      const used = amount(row, "used"),
+        limit = amount(row, "limit");
+      const expected = columnIndex(data, "expected") < 0 ? undefined : amount(row, "expected");
+      if (!Number.isFinite(used + (expected ?? 0))) throw new Error("Budget totals must be finite");
+      return { label: text(row[x], locale), used, limit, ...(expected === undefined ? {} : { expected }) };
+    });
+    const marks = items.reduce((count, item) => {
+      const bar = progressBarParts([{ value: item.used }, { value: item.expected ?? 0 }], item.limit);
+      return count + bar.parts.length + (bar.mark === null ? 0 : 1);
+    }, 0);
+    budget(marks, columnIndex(data, "expected") < 0 ? 2 : 3, items.length);
+    return { block: "budget", currency, items };
+  }
+  if (panel.kind !== "balance" || data.rows.length !== 1) throw new Error("A balance needs one aggregate row");
+  const row = data.rows[0]!;
+  const start = amount(row, "start", false),
+    incoming = amount(row, "in"),
+    outgoing = amount(row, "out");
+  if (!Number.isFinite(start + incoming) || !Number.isFinite(start + incoming - outgoing)) throw new Error("Balance totals must be finite");
+  return { block: "balance", currency, start, in: incoming, out: outgoing };
 }

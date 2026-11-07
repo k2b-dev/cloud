@@ -976,6 +976,14 @@ read profiles but do not consume the questions quota. Public links are checked
 on every read and can be revoked by a base writer. Clearing measurements keeps
 dashboard definitions and invalidates their cached results.
 
+Before rolling Pulse back, check whether anyone saved dashboards with newly
+introduced panel kinds. Dashboard reads validate the stored definition strictly;
+an older Pulse version cannot read a kind it does not recognize. Rolling back
+after saving those kinds can make the affected base's entire dashboard list
+unavailable. Keep the newer version, or replace those panels with kinds supported
+by the rollback target before downgrading. Include dashboard definitions in the
+pre-upgrade backup.
+
 Back up all `pulse_*` databases with ClickHouse `BACKUP`, together with Cloud
 Postgres and its encryption keys. Restore them as a consistent set.
 

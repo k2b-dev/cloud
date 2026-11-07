@@ -60,6 +60,11 @@ const cellIssue = (
     return type === "date" ? "Expected a valid YYYY-MM-DD date or null." : "Expected a valid wall-clock datetime or null.";
   return undefined;
 };
+/** Function-free money blocks shared by SQL dashboards and declarative Cloud consumers. */
+export type CloudMoneyDescription =
+  | { block: "budget"; currency: string; items: { label: string; used: number; expected?: number; limit: number }[] }
+  | { block: "balance"; currency: string; start: number; in: number; out: number };
+
 const statsViewSchema = () =>
   z.strictObject({
     view: z.literal("stats"),
