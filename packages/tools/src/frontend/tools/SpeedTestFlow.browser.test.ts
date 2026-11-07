@@ -1,23 +1,21 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
-import { readFileSync } from "node:fs";
 import { launchBrowser, pageErrors, settled } from "../../../../ui/test/browser";
-import { buildHarness, uiRoot } from "./image-intake/browser-harness";
+import { buildHarness } from "./image-intake/browser-harness";
 
 const harness = await buildHarness(new URL("./SpeedTestFlow.browser-harness.tsx", import.meta.url));
 const tailwind = (await import(Bun.resolveSync("bun-plugin-tailwind", new URL("../../../../cloud/", import.meta.url).pathname))).default;
-const css = (
-  await Promise.all(
-    ["../../../../../styles.css", "../../styles/app.css"].map(async (path) => {
-      const result = await Bun.build({ entrypoints: [new URL(path, import.meta.url).pathname], plugins: [tailwind] });
-      if (!result.success) throw new AggregateError(result.logs, "Tools CSS failed");
-      return result.outputs[0]!.text();
-    }),
-  )
-).join("\n");
+// Match the Cloud HTML template: the app stylesheet precedes the shared shell stylesheet.
+const [appCss, globalCss] = await Promise.all(
+  ["../../styles/app.css", "../../../../cloud/src/styles/global.css"].map(async (path) => {
+    const result = await Bun.build({ entrypoints: [new URL(path, import.meta.url).pathname], plugins: [tailwind] });
+    if (!result.success) throw new AggregateError(result.logs, "Tools CSS failed");
+    return result.outputs[0]!.text();
+  }),
+);
 const assets: Record<string, [string, string]> = {
   "/harness.js": ["text/javascript", harness],
-  "/app.css": ["text/css", css],
-  "/styles.css": ["text/css", readFileSync(`${uiRoot}dist/styles.css`, "utf8")],
+  "/app.css": ["text/css", appCss!],
+  "/styles.css": ["text/css", globalCss!],
 };
 let browser: Awaited<ReturnType<typeof launchBrowser>>;
 beforeAll(async () => {
@@ -176,7 +174,11 @@ test("real shared-engine run preserves slots, shows remaining time, copies JSON 
       // Ramp-up is excluded from the result and stays neutral, in the plot and in the legend swatch.
       expect(
         await page.locator(".tools-speedtest-chart").evaluate((element) =>
-          [element, element.querySelector(".k2b-chart__svg > svg")!].every((node) => {
+          [
+            element,
+            element.querySelector(".k2b-chart__svg > svg")!,
+            element.querySelector(".k2b-chart__legend .stdlib-chart-series-2")!,
+          ].every((node) => {
             const style = getComputedStyle(node);
             return style.getPropertyValue("--stdlib-chart-c3").trim() === style.getPropertyValue("--k2b-text-muted").trim();
           }),

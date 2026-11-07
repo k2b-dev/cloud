@@ -44,7 +44,10 @@
 .tools-speedtest-chart { flex: 1 0 13rem; min-height: 13rem; }
 .tools-speedtest-chart > * { width: 100%; height: 100%; }
 /* Ramp-up stays a quiet, thin neutral line; only measured windows carry the series colours. */
-.tools-speedtest-chart, .tools-speedtest-chart .stdlib-chart { --stdlib-chart-c3: var(--k2b-text-muted); }
+/* Cloud loads its global chart palette after app CSS. Scope both SVG and legend
+   more specifically so the documented per-chart palette survives that order. */
+.tools-speedtest .tools-speedtest-chart,
+.tools-speedtest .tools-speedtest-chart .stdlib-chart { --stdlib-chart-c3: var(--k2b-text-muted); }
 .tools-speedtest-chart .stdlib-chart-line.stdlib-chart-series-2 { stroke-width: 1.25; }
 .tools-speedtest-chart .stdlib-chart-reference { opacity: .45; }
 
