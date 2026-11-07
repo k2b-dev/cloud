@@ -266,6 +266,7 @@
     "@k2b/ui src/content/calendar-event-fields.browser.test.ts": 5.4,
     "@k2b/ui src/content/calendar-month.browser.test.ts": 25,
     "@k2b/ui src/content/calendar-week-scroll.browser.test.ts": 2.9,
+    "@k2b/ui src/content/chart-focus-scroll.browser.test.ts": 3.8,
     "@k2b/ui src/content/chart-frame-states.browser.test.ts": 4.9,
     "@k2b/ui src/content/chart-tooltips.browser.test.ts": 9.5,
     "@k2b/ui src/content/content-styles.browser.test.ts": 1.3,
