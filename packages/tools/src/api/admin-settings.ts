@@ -4,6 +4,7 @@ import { err, fail, i18n } from "@k2b/stdlib";
 import { Hono } from "hono";
 import { describeRoute } from "hono-openapi";
 import { z } from "zod";
+import { app } from "../config";
 
 const messages = i18n.define({
   baseLocale: "en",
@@ -31,12 +32,14 @@ export default new Hono<AuthContext>().put(
   v("json", z.object({ value: z.unknown(), replaceUnreadable: z.boolean().optional() })),
   async (c) => {
     const key = c.req.param("key") ?? "";
-    if (!key.startsWith("tools.")) return respond(c, fail(err.badInput(messages.resolve([getLocale(c)]).t.unknownSetting)));
+    if (!app.meta.settingKeys?.includes(key)) return respond(c, fail(err.badInput(messages.resolve([getLocale(c)]).t.unknownSetting)));
+    const { value, replaceUnreadable } = c.req.valid("json");
     return respond(
       c,
       await settingsService.entry.update({
         key,
-        ...c.req.valid("json"),
+        value,
+        replaceUnreadable,
         audit: {
           action: "settings.update",
           outcome: "allowed",
