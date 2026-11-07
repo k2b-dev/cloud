@@ -174,6 +174,6 @@ Build the smallest end-to-end behavior through its public seam. Avoid
 speculative paths, one-off abstractions, and unrelated cleanup. Start with the
 fastest relevant check, then verify each affected permission, data,
 registration, and SSR/browser boundary. Integration tests gate on `CLOUD_TEST_*`
-variables and never touch a database whose name does not end in `_test`. Before
+variables and never touch a database whose name does not end in `_test`. For live-trigger tests, use `installLiveOutbox(db)` from `@k2b/cloud/events/testing` before app migrations (see **Live updates**), instead of copying platform DDL. Before
 release, test against the target Cloud version with the production package version. Update the application's docs when observable behavior changes; finish
 when code, focused tests, and documentation describe one contract.

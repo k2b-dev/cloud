@@ -12,6 +12,7 @@ const LIBRARIES = new Set(["ui", "cloud", "ssr", "editor"]);
 /** The browser entries @k2b/ssr discovers (`**\/*.{island,client}.tsx`). */
 const BROWSER_ENTRY = /\.(?:island|client)\.tsx$/;
 const ALLOWED_RENDERERS = new Map([
+  ["packages/ui/src/charts/core/registry.ts", "Pure renderer registry; Chart adds shared inspection and snapshots retain inert metadata."],
   ["packages/ui/src/content/Chart.tsx", "The shared Chart wrapper renders with inspect: true and attaches createChartInspection."],
   [
     "packages/ui/src/content/chart-bar.ts",
@@ -136,7 +137,12 @@ const chartModule = (source: ts.SourceFile): ChartModule => {
   const namespaces = new Set<string>();
   const result: ChartModule = { imports: [] };
   for (const node of source.statements) {
-    if (!ts.isImportDeclaration(node) || moduleName(node.moduleSpecifier) !== "@k2b/ui" || node.importClause?.isTypeOnly) continue;
+    if (
+      !ts.isImportDeclaration(node) ||
+      !["@k2b/ui", "@k2b/ui/charts"].includes(moduleName(node.moduleSpecifier) ?? "") ||
+      node.importClause?.isTypeOnly
+    )
+      continue;
     const bindings = node.importClause?.namedBindings;
     if (bindings && ts.isNamespaceImport(bindings)) namespaces.add(bindings.name.text);
     if (bindings && ts.isNamedImports(bindings)) {
@@ -146,6 +152,13 @@ const chartModule = (source: ts.SourceFile): ChartModule => {
       }
     }
   }
+  const chartName = (tag: ts.Node): string | undefined => {
+    if (ts.isIdentifier(tag)) return components.get(tag.text);
+    if (!ts.isPropertyAccessExpression(tag)) return;
+    if (ts.isIdentifier(tag.expression) && namespaces.has(tag.expression.text)) return tag.name.text;
+    // Chart.Line and aliased/nested namespace members retain the tracked component's island requirement.
+    return chartName(tag.expression);
+  };
   const visit = (node: ts.Node): void => {
     if (ts.isImportDeclaration(node) && valueImport(node.importClause)) {
       const specifier = moduleName(node.moduleSpecifier);
@@ -159,11 +172,7 @@ const chartModule = (source: ts.SourceFile): ChartModule => {
     if (dynamic) result.imports.push({ specifier: dynamic, named: true });
     if (!result.chart && (ts.isJsxOpeningElement(node) || ts.isJsxSelfClosingElement(node))) {
       const tag = node.tagName;
-      const name = ts.isIdentifier(tag)
-        ? components.get(tag.text)
-        : ts.isPropertyAccessExpression(tag) && ts.isIdentifier(tag.expression) && namespaces.has(tag.expression.text)
-          ? tag.name.text
-          : undefined;
+      const name = chartName(tag);
       if (
         name &&
         CHART_COMPONENTS.has(name) &&

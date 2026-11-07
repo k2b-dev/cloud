@@ -363,6 +363,15 @@
         "The webhook validates its own credential and its narrow sessionlessRoutes declaration strips attached Cloud session cookies; publicRoutes alone grants no exception.",
         "Does not disable the guard, substitute Host or Referer, or grant a Bearer request fallback authority from a browser cookie."
       ]
+    },
+    {
+      "id": 30,
+      "prompt": "Prepare a standalone Cloud app test database whose triggers call events.enqueue, without running Core.",
+      "expected_output": "Uses installLiveOutbox(db) from @k2b/cloud/events/testing before app migrations, refuses non-_test databases, and removes copied outbox DDL.",
+      "files": [],
+      "expectations": [
+        "Uses installLiveOutbox(db) from @k2b/cloud/events/testing before app migrations, refuses non-_test databases, and removes copied outbox DDL."
+      ]
     }
   ]
 }

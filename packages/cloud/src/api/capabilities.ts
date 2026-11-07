@@ -531,7 +531,7 @@ const runCapabilityDispatch = async (
   const invocationBody = capabilityInvocationBody(call);
   const boundCall = operation.target !== undefined || operation.refs !== undefined;
   // A mandate-derived nested call must return through the same current-policy check.
-  if (params.parentInvocation?.credential_kind === "mandate" && !params.mandate)
+  if (params.parentInvocation?.credential_kind === "mandate" && !params.parentInvocation.workload_event && !params.mandate)
     return errorResponse("MANDATE_POLICY_DENIED", "A current mandate is required", 403);
 
   if ((params.mandate || params.parentInvocation) && operation.stream)

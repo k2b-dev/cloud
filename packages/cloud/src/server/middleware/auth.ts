@@ -39,6 +39,8 @@ export type InvocationProvenance = {
   workloadType?: string;
   workloadId?: string;
   workloadRun?: string;
+  /** Read-only visibility check for a currently claimed resource event. */
+  workloadEvent?: string;
 };
 
 export type UserRequestActor = {

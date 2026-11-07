@@ -77,6 +77,7 @@ const InvocationPayloadBaseSchema = z
     workload_type: BoundedIdentifierSchema.optional(),
     workload_id: BoundedIdentifierSchema.optional(),
     workload_run: BoundedIdentifierSchema.optional(),
+    workload_event: z.uuid().optional(),
     parent_invocation_id: z.uuid().optional(),
     jti: z.string().uuid(),
     iat: z.number().int().nonnegative(),
@@ -124,6 +125,13 @@ const validateInvocationClaims = (claims: z.infer<typeof InvocationPayloadBaseSc
     context.addIssue({ code: "custom", message: "An API-key invocation requires credential provenance" });
   }
 
+  if (
+    claims.workload_event &&
+    (claims.credential_kind !== "mandate" ||
+      !claims.workload_id ||
+      !(claims.op.startsWith("capability.query:") || (subjectProbe && claims.op === "app-access.check")))
+  )
+    context.addIssue({ code: "custom", message: "Event visibility proofs permit only mandate-bound queries" });
   const mandateFields = [claims.mandate_id, claims.mandate_revision, claims.workload_type, claims.workload_id];
   const mandateFieldCount = mandateFields.filter((value) => value !== undefined).length;
   if (
@@ -166,6 +174,7 @@ export type InvocationAuthority = Pick<
   | "workload_type"
   | "workload_id"
   | "workload_run"
+  | "workload_event"
 >;
 
 type RemoteSetState = { key: JWTVerifyGetKey; lastForcedRefreshAt: number };

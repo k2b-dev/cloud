@@ -1,8 +1,9 @@
-import { describe, expect, test } from "bun:test";
-import type { sql } from "bun";
+import { describe, expect, spyOn, test } from "bun:test";
+import { SQL, type sql } from "bun";
 import { useUnitClients } from "../../../../../scripts/fixtures/unit-clients";
 import { resolveInvocationAuthority } from "./invocation-actor";
 import type { CloudInvocationClaims } from "./invocation-token";
+import { nestedInvocationLeases } from "./nested-invocation";
 
 useUnitClients();
 
@@ -135,5 +136,85 @@ test("the exact access subject is retained for users and Code accounts", async (
       expect(result?.actor.kind === "service_account" && result.actor.scopes).toEqual(["read", "write"]);
     }
     expect(queries).toBe(2);
+  }
+});
+
+test("an event visibility proof must still have a current claimed delivery before resolving the principal", async () => {
+  const proof = {
+    ...claims("service_account"),
+    credential_kind: "mandate" as const,
+    mandate_id: claims("user").sub,
+    mandate_revision: 1,
+    workload_type: "fixture",
+    workload_id: "one",
+    workload_event: claims("user").jti,
+  };
+  let count = 0;
+  const query = (() => {
+    count++;
+    return Promise.resolve([]);
+  }) as unknown as typeof sql;
+  expect(await resolveInvocationAuthority(proof, query, [])).toBeNull();
+  expect(count).toBe(1);
+  count = 0;
+  expect(await resolveInvocationAuthority({ ...proof, mandate_id: undefined }, query, [])).toBeNull();
+  expect(count).toBe(0);
+});
+
+test("a nested visibility proof cannot replace its current parent lease", async () => {
+  const client = new SQL("postgres://localhost/unused_test");
+  const query = new Proxy(client, { apply: () => Promise.resolve([{ id: claims("user").jti }]) });
+  const lease = spyOn(nestedInvocationLeases, "read").mockResolvedValue(null);
+  try {
+    expect(
+      await resolveInvocationAuthority(
+        {
+          ...claims("service_account"),
+          act: { sub: "app:fixture" },
+          credential_kind: "mandate",
+          mandate_id: claims("user").sub,
+          mandate_revision: 1,
+          workload_type: "fixture",
+          workload_id: "one",
+          workload_event: claims("user").jti,
+          parent_invocation_id: claims("user").jti,
+        },
+        query,
+        [],
+      ),
+    ).toBeNull();
+    expect(lease).toHaveBeenCalledWith(claims("user").jti);
+  } finally {
+    lease.mockRestore();
+    await client.close();
+  }
+});
+
+test("a claimed Code event resolves its account without a run and retains event provenance", async () => {
+  const eventClaims = {
+    ...claims("service_account"),
+    credential_kind: "mandate" as const,
+    mandate_id: "33333333-3333-4333-8333-333333333333",
+    mandate_revision: 1,
+    workload_type: "code.version",
+    workload_id: "approved-version",
+    workload_event: claims("user").jti,
+  };
+  for (const currentEntry of [true, false]) {
+    let queries = 0;
+    const query = (() => {
+      queries++;
+      return Promise.resolve(
+        queries === 1 ? [{ id: eventClaims.jti }] : queries === 2 ? (currentEntry ? [{ id: eventClaims.mandate_id }] : []) : [accountRow],
+      );
+    }) as unknown as typeof sql;
+    const result = await resolveInvocationAuthority(eventClaims, query, []);
+    if (!currentEntry) expect(result).toBeNull();
+    else {
+      expect(result?.accessSubject).toEqual({ type: "service_account", serviceAccountId: eventClaims.sub });
+      expect(result?.actor.delegation).toMatchObject({ workloadEvent: eventClaims.workload_event, workloadType: "code.version" });
+      expect(result?.scopes).toEqual([]);
+    }
+    expect(queries).toBe(currentEntry ? 3 : 2);
   }
 });

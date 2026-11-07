@@ -125,7 +125,7 @@ export function createIdentityChildInvocationRoutes(
           input: input.data.input,
           target: input.data.target,
           refs: input.data.refs,
-          ...(parent.credential_kind === "mandate"
+          ...(parent.credential_kind === "mandate" && !parent.workload_event
             ? {
                 mandate: {
                   mandateId: parent.mandate_id!,

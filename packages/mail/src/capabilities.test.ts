@@ -49,6 +49,7 @@ import {
   conversationAssignments,
   conversationContext,
   conversationKeeps,
+  conversationReferences,
   conversationSummaries,
   drafts,
   draftUploads,
@@ -163,6 +164,18 @@ const context = {
   signal: new AbortController().signal,
 } as CapabilityExecutionContext;
 
+const referenceFixture = {
+  id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+  mailboxId: internalMailboxId,
+  conversationId: internalConversationId,
+  configurationRevision: 1,
+  patternSnapshot: "REF-{{ sequence }}",
+  value: "REF-42",
+  sequence: "42",
+  role: "primary" as const,
+  allocatedBy: { kind: "user" as const, id: userId },
+  allocatedAt: "2026-08-20T10:00:00.000Z",
+};
 const timestamp = "2026-08-20T10:00:00.000Z";
 const draftFixture = {
   id: internalDraftId,
@@ -901,11 +914,15 @@ describe("mail capabilities", () => {
       "conversation.keep",
       "conversation.mark",
       "conversation.move",
+      "conversation.reference.ensure",
       "conversation.reminder.cancel",
       "conversation.reminder.set",
       "conversation.snooze",
+      "conversation.status.set",
+      "conversation.status.set.batch",
       "conversation.status.update",
       "conversation.status.update.batch",
+      "conversation.summary.write",
       "conversation.tag.update",
       "draft.attachment.add",
       "draft.create",
@@ -975,11 +992,15 @@ describe("mail capabilities", () => {
       "conversation.keep.release",
       "conversation.mark",
       "conversation.move",
+      "conversation.reference.ensure",
       "conversation.reminder.cancel",
       "conversation.reminder.set",
       "conversation.snooze",
+      "conversation.status.set",
+      "conversation.status.set.batch",
       "conversation.status.update",
       "conversation.status.update.batch",
+      "conversation.summary.write",
       "conversation.tag.update",
       "delivery.cancel",
       "draft.attachment.add",
@@ -1010,11 +1031,15 @@ describe("mail capabilities", () => {
       "conversation.keep.release",
       "conversation.mark",
       "conversation.move",
+      "conversation.reference.ensure",
       "conversation.reminder.cancel",
       "conversation.reminder.set",
       "conversation.snooze",
+      "conversation.status.set",
+      "conversation.status.set.batch",
       "conversation.status.update",
       "conversation.status.update.batch",
+      "conversation.summary.write",
       "conversation.tag.update",
       "delivery.cancel",
       "draft.attachment.add",
@@ -1651,6 +1676,12 @@ describe("mail capabilities", () => {
       ],
     });
     const results = [
+      await mailCapabilities.actions["conversation.summary.write"].review(
+        { conversationId, expectedRevision: 4, expectedSummaryRevision: 2, summary: "Prepared summary" },
+        context,
+      ),
+      await mailCapabilities.actions["conversation.reference.ensure"].review({ conversationId }, context),
+
       await mailCapabilities.actions["draft.patch"].review({ draftId, expectedRevision: 2, patch: { subject: "Changed" } }, context),
       await mailCapabilities.actions["draft.create"].review(
         DraftCreateInputSchema.parse({ senderIdentityId, subject: "Release follow-up" }),
@@ -1690,6 +1721,11 @@ describe("mail capabilities", () => {
         context,
       ),
       await mailCapabilities.actions["conversation.status.update"].review({ conversationId, expectedRevision: 4, status: "done" }, context),
+      await mailCapabilities.actions["conversation.status.set.batch"].review(
+        { conversationIds: [conversationId], status: "waiting" },
+        context,
+      ),
+      await mailCapabilities.actions["conversation.status.set"].review({ conversationId, expectedRevision: 4, status: "waiting" }, context),
       await mailCapabilities.actions["conversation.keep"].review({ conversationId }, context),
       await mailCapabilities.actions["conversation.snooze"].review(
         { conversationId, expectedRevision: 4, snoozedUntil: timestamp },
@@ -1881,8 +1917,31 @@ describe("mail capabilities", () => {
       data: { listKey: "example", status: "unsubscribe_requested", requestedAt: timestamp },
     } as never);
 
+    spyOn(conversationSummaries, "writeAutomatedConversationSummary").mockResolvedValue({
+      ok: true,
+      data: { value: summaryState({ summary: "Prepared summary", summaryRevision: 3, conversationRevision: 5 }), skipped: null },
+    });
+    spyOn(conversationReferences, "ensureConversationReference").mockResolvedValue({
+      ok: true,
+      data: { reference: referenceFixture, conversationRevision: 5, created: true },
+    });
     const idempotentContext = { ...context, idempotencyKey: "mail-summary-test" };
     const results = [
+      {
+        localId: "conversation.summary.write",
+        action: mailCapabilities.actions["conversation.summary.write"],
+        run: () =>
+          mailCapabilities.actions["conversation.summary.write"].run(
+            { conversationId, expectedRevision: 4, expectedSummaryRevision: 2, summary: "Prepared summary" },
+            idempotentContext,
+          ),
+      },
+      {
+        localId: "conversation.reference.ensure",
+        action: mailCapabilities.actions["conversation.reference.ensure"],
+        run: () => mailCapabilities.actions["conversation.reference.ensure"].run({ conversationId }, idempotentContext),
+      },
+
       {
         localId: "draft.create",
         action: mailCapabilities.actions["draft.create"],
@@ -2007,6 +2066,21 @@ describe("mail capabilities", () => {
         action: mailCapabilities.actions["conversation.status.update"],
         run: () =>
           mailCapabilities.actions["conversation.status.update"].run({ conversationId, expectedRevision: 4, status: "done" }, context),
+      },
+      {
+        localId: "conversation.status.set.batch",
+        action: mailCapabilities.actions["conversation.status.set.batch"],
+        run: () =>
+          mailCapabilities.actions["conversation.status.set.batch"].run(
+            { conversationIds: [conversationId, relatedConversationId], status: "done" },
+            context,
+          ),
+      },
+      {
+        localId: "conversation.status.set",
+        action: mailCapabilities.actions["conversation.status.set"],
+        run: () =>
+          mailCapabilities.actions["conversation.status.set"].run({ conversationId, expectedRevision: 4, status: "done" }, context),
       },
       {
         localId: "conversation.keep",
@@ -3636,4 +3710,196 @@ test("panel place refs select the owning app's public resource reader", () => {
   const reader = resolveCapabilityResourceReader(manifest, ref);
   expect(reader?.localId).toBe("mailbox.read");
   expect(mailCapabilities.queries["mailbox.read"].input.parse({ id: ref.id })).toEqual({ id: ref.id });
+});
+
+const automationMessageFixture = {
+  id: internalMessageId,
+  subject: "A message",
+  preview: null,
+  hasAttachments: false,
+  messageId: null,
+  internalDate: timestamp,
+  sentAt: null,
+  from: [],
+  to: [],
+  flags: [],
+  keywords: [],
+  hydrationStatus: "complete",
+  remoteAvailable: true,
+  folderId: internalFolderId,
+};
+
+describe("Mail safe unattended actions", () => {
+  test("automated summary requires an idempotency key and exposes a person-edit skip", async () => {
+    const action = mailCapabilities.actions["conversation.summary.write"];
+    const input = { conversationId, expectedRevision: 4, expectedSummaryRevision: 2, summary: "Prepared text" };
+    const write = spyOn(conversationSummaries, "writeAutomatedConversationSummary").mockResolvedValue({
+      ok: true,
+      data: {
+        value: { ...summaryState(), summary: "Human text", summaryRevision: 2, conversationRevision: 4 },
+        skipped: "edited_by_person",
+      },
+    });
+    expect((await action.run(input, context)).ok).toBeFalse();
+    expect(write).not.toHaveBeenCalled();
+    const result = await action.run(input, { ...context, locale: "de", idempotencyKey: "summary-key" });
+    expect(result).toMatchObject({
+      ok: true,
+      data: { data: { skipped: "edited_by_person" }, summary: "Die Zusammenfassung der Person bleibt unverändert." },
+    });
+    expect(write).toHaveBeenCalledWith(
+      expect.objectContaining({
+        mailboxId: internalMailboxId,
+        conversationId: internalConversationId,
+        input: { expectedRevision: 4, expectedSummaryRevision: 2, summary: "Prepared text" },
+      }),
+    );
+    expect(action.policy).toEqual({ silent: "shared" });
+  });
+  test("summary review preserves the complete proposed text beyond the compact preview budget", async () => {
+    spyOn(messages, "listConversationMessages").mockResolvedValue({
+      ok: true,
+      data: { items: [automationMessageFixture], nextCursor: null },
+    });
+    const summary = `${"Prepared summary 📨\n".repeat(2000)}Final decision`;
+    for (const locale of ["de", "en"]) {
+      const result = await mailCapabilities.actions["conversation.summary.write"].review(
+        {
+          conversationId,
+          expectedRevision: 4,
+          expectedSummaryRevision: 2,
+          summary,
+        },
+        { ...context, locale },
+      );
+      expect(result.ok).toBeTrue();
+      if (result.ok) {
+        expect(CapabilityActionCallReviewSchema.safeParse(result.data).success).toBeTrue();
+        expect(result.data.content).toMatchObject({ kind: "page", body: summary, baseRevision: 2, format: "plain" });
+      }
+    }
+  });
+  test("ensure-reference passes a durable idempotency key to Mail", async () => {
+    const ensure = spyOn(conversationReferences, "ensureConversationReference").mockResolvedValue({
+      ok: true,
+      data: { reference: referenceFixture, conversationRevision: 4, created: false },
+    });
+    const action = mailCapabilities.actions["conversation.reference.ensure"];
+    expect((await action.run({ conversationId }, context)).ok).toBeFalse();
+    expect(ensure).not.toHaveBeenCalled();
+    const result = await action.run({ conversationId }, { ...context, locale: "en", idempotencyKey: "reference-key" });
+    expect(result).toMatchObject({ ok: true, data: { data: { value: "REF-42", created: false } } });
+    expect(ensure).toHaveBeenCalledWith(expect.objectContaining({ input: { idempotencyKey: expect.stringMatching(/^[a-f0-9]{64}$/) } }));
+  });
+  test("exact-message triage passes only that internal message and refuses a different conversation", async () => {
+    spyOn(messages, "listConversationMessages").mockResolvedValue({
+      ok: true,
+      data: { items: [automationMessageFixture], nextCursor: null },
+    });
+    const create = spyOn(triage, "createConversationTriageCommands").mockResolvedValue({
+      ok: true,
+      data: { correlationId: "one-message", commands: [] },
+    });
+    for (const kind of ["mark", "move"] as const) {
+      const target = { conversationId, sourceFolderId: folderId, messageId };
+      const action = mailCapabilities.actions[`conversation.${kind}`];
+      const input = action.input.parse({
+        target,
+        ...(kind === "mark" ? { read: true, answered: true, draft: false } : { destination: { kind: "role", role: "archive" } }),
+      });
+      // The two Actions share the exact target contract; invoke through their declared common seam.
+      const result =
+        kind === "mark"
+          ? await mailCapabilities.actions["conversation.mark"].run(ConversationMarkInputSchema.parse(input), {
+              ...context,
+              idempotencyKey: `message-${kind}`,
+            })
+          : await mailCapabilities.actions["conversation.move"].run(ConversationMoveInputSchema.parse(input), {
+              ...context,
+              idempotencyKey: `message-${kind}`,
+            });
+      expect(result).toMatchObject({ ok: true, data: { data: { messageId } } });
+      expect(create).toHaveBeenLastCalledWith(
+        expect.objectContaining({ input: expect.objectContaining({ messageIds: [internalMessageId] }) }),
+      );
+      if (kind === "mark")
+        expect(create).toHaveBeenLastCalledWith(
+          expect.objectContaining({
+            input: expect.objectContaining({
+              change: { addFlags: ["seen", "answered"], removeFlags: ["draft"], addKeywords: [], removeKeywords: [] },
+            }),
+          }),
+        );
+    }
+    for (const locale of ["en", "de"]) {
+      const input = { target: { conversationId, sourceFolderId: folderId, messageId }, answered: true, draft: false };
+      const review = await mailCapabilities.actions["conversation.mark"].review(input, { ...context, locale });
+      expect(review.ok).toBeTrue();
+      const states = locale === "en" ? "answered and not a draft" : "beantwortet und kein Entwurf";
+      if (review.ok) {
+        expect(review.data.slots.states).toEqual({ kind: "text", value: states });
+        expect(review.data.sentence.action).toContain("{states}");
+      }
+      const marked = await mailCapabilities.actions["conversation.mark"].run(input, {
+        ...context,
+        locale,
+        idempotencyKey: `flags-only-${locale}`,
+      });
+      expect(marked.ok).toBeTrue();
+      if (marked.ok) {
+        expect(marked.data.receipt?.slots?.states).toEqual({ kind: "text", value: states });
+        expect(marked.data.summary).toContain(states);
+        expect(marked.data.summary).toContain(locale === "en" ? "the message" : "Nachricht");
+      }
+    }
+    create.mockClear();
+    spyOn(resourceParents, "messageConversation").mockResolvedValue(internalRelatedConversationId);
+    const result = await mailCapabilities.actions["conversation.mark"].run(
+      { target: { conversationId, sourceFolderId: folderId, messageId }, read: true },
+      { ...context, idempotencyKey: "foreign-message" },
+    );
+    expect(result).toMatchObject({ ok: false, error: { code: "NOT_FOUND" } });
+    expect(create).not.toHaveBeenCalled();
+  });
+  test("unassigned-only capability passes the revision fence and preserves a domain conflict", async () => {
+    spyOn(messages, "listConversationMessages").mockResolvedValue({
+      ok: true,
+      data: { items: [automationMessageFixture], nextCursor: null },
+    });
+    spyOn(mailboxAccess, "requireMailboxPermission").mockResolvedValue({ ok: true, data: "write" });
+    const assign = spyOn(conversationAssignments, "assignConversation").mockResolvedValue(
+      fail(err.conflict("Conversation already has an assignee")),
+    );
+    const input = {
+      conversationId,
+      assigneeUserIds: [userId],
+      mode: "add" as const,
+      onlyIfUnassigned: true,
+      expectedRevision: 4,
+    };
+    const result = await mailCapabilities.actions["conversation.assign"].run(input, context);
+    expect(result).toMatchObject({ ok: false, error: { code: "CONFLICT" } });
+    expect(assign).toHaveBeenCalledWith(expect.objectContaining({ conversationId, onlyIfUnassigned: true, expectedRevision: 4 }));
+  });
+  test("single and batch status preserve the requested work state and revisions", async () => {
+    spyOn(messages, "listConversationMessages").mockResolvedValue({
+      ok: true,
+      data: { items: [automationMessageFixture], nextCursor: null },
+    });
+    const single = spyOn(conversationAssignments, "updateConversationCollaboration").mockResolvedValue({
+      ok: true,
+      data: { conversationId: internalConversationId, assignees: [], workStatus: "waiting", snoozedUntil: null, revision: 5 },
+    });
+    const batch = spyOn(collaboration, "applyConversationCompletions").mockResolvedValue({
+      ok: true,
+      data: { completion: "needs_action", results: [] },
+    });
+    await mailCapabilities.actions["conversation.status.set"].run({ conversationId, expectedRevision: 4, status: "waiting" }, context);
+    expect(single).toHaveBeenCalledWith(expect.objectContaining({ input: { expectedRevision: 4, completion: "waiting" } }));
+    await mailCapabilities.actions["conversation.status.set.batch"].run(
+      { conversationIds: [conversationId], expectedRevisions: { [conversationId]: 4 }, status: "needs_action" },
+      context,
+    );
+    expect(batch).toHaveBeenCalledWith(expect.objectContaining({ completion: "needs_action", expectedRevisions: { [conversationId]: 4 } }));
+  });
 });

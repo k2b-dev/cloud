@@ -59,6 +59,7 @@ export default function MailConversationSummaryCard(props: {
       );
     if (state.source === "workflow" && state.author) parts.push(t().byRule({ name: state.author.name }));
     else if (state.source === "manual_ai" && state.author) parts.push(t().onRequestOf({ name: state.author.name }));
+    else if (state.source === "automation") parts.push(t().byAutomation);
     else if (state.source === "person") parts.push(state.author ? t().byPerson({ name: state.author.name }) : t().editedByPerson);
     const when = ago(state.generatedAt);
     if (when) parts.push(when);
@@ -85,7 +86,11 @@ export default function MailConversationSummaryCard(props: {
       : t().limitMailbox({ limit: limit?.limit ?? 0 });
   };
   const why = () =>
-    props.state.ai ? t().whyAi({ rule: props.state.source === "workflow" ? (props.state.author?.name ?? null) : null }) : t().whyPerson;
+    props.state.source === "automation"
+      ? t().whyAutomation
+      : props.state.ai
+        ? t().whyAi({ rule: props.state.source === "workflow" ? (props.state.author?.name ?? null) : null })
+        : t().whyPerson;
 
   const tool = (label: string, icon: string, onClick: () => void, disabled?: boolean): JSX.Element => (
     <Tooltip.Anchor content={label}>
