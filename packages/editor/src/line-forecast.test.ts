@@ -164,6 +164,7 @@ test("forecast tooltips retain the legacy title and columns, then append bounds"
 test("portable markers reject an explicit domain overflow without requiring a forecast", () => {
   const base = {
     kind: "line",
+    title: "Account balance",
     series: [
       {
         data: [

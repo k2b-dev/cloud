@@ -1,6 +1,7 @@
 import { LocaleProvider as ShowcaseLocaleProvider } from "@k2b/ui";
 import { createSignal } from "solid-js";
 import { render } from "solid-js/web";
+import { lineExamples } from "../../../docs-site/src/ui/demo-sections/charts/examples/line";
 import { liquidityForecastSpec } from "../../../docs-site/src/ui/demo-sections/charts/liquidity-forecast";
 import { ShowcaseFrame, type ShowcaseState } from "../../../docs-site/src/ui/demo-sections/charts/ShowcaseFrame";
 import Chart from "../src/content/Chart";
@@ -152,6 +153,21 @@ render(
         <section class="liquidity">
           <ShowcaseLocaleProvider locale="en">
             <ShowcaseFrame spec={liquidityForecastSpec} title="Balance" state={state()} height={280} onRetry={() => setState("data")} />
+          </ShowcaseLocaleProvider>
+        </section>
+        <section class="line-showcase-examples">
+          <ShowcaseLocaleProvider locale="en">
+            {lineExamples.map((example) => (
+              <div data-line-example={example.id}>
+                <ShowcaseFrame
+                  spec={example.spec}
+                  title={example.title}
+                  state={state()}
+                  height={example.height ?? 280}
+                  onRetry={() => setState("data")}
+                />
+              </div>
+            ))}
           </ShowcaseLocaleProvider>
         </section>
         <section class="reference-series line-forecast-panel">

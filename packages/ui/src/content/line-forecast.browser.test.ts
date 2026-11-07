@@ -3,6 +3,7 @@ import { resolve } from "node:path";
 import type { Browser, Page } from "playwright";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
+import { lineExamples } from "../../../../docs-site/src/ui/demo-sections/charts/examples/line";
 import { launchBrowser, pageErrors, settled } from "../../test/browser";
 import { lineForecastFixture } from "../../test/line-forecast-fixture";
 
@@ -105,16 +106,18 @@ for (const width of [1440, 390])
     expect(await chart.locator(".k2b-line-forecast-band").count()).toBe(1);
     expect(await chart.locator(".k2b-line-threshold").count()).toBe(1);
     expect(await chart.locator(".k2b-line-marker").count()).toBe(1);
-    expect(await chart.locator("[data-chart-legend-value]").count()).toBe(1);
+    expect(await page.locator(".liquidity [data-chart-legend-value]").count()).toBe(1);
     const before = await chart.boundingBox();
     await chart.focus();
     await settled(page);
     await page.keyboard.press("Home");
     await settled(page);
     expect(await page.locator('[role="tooltip"]:popover-open').textContent()).toContain("Balance");
+    expect(await page.locator(".liquidity [data-chart-legend-value]").textContent()).toBe("€19.8K");
     await page.keyboard.press("End");
     await settled(page);
     expect(await page.locator('[role="tooltip"]:popover-open').textContent()).toContain("forecast");
+    expect(await page.locator(".liquidity [data-chart-legend-value]").textContent()).toBe("€11K");
     expect(await chart.boundingBox()).toEqual(before);
     await page.keyboard.press("Escape");
     await settled(page);
@@ -130,6 +133,32 @@ for (const width of [1440, 390])
       expect(await frame.locator(".k2b-line-forecast-band").count()).toBe(state === "data" || state === "stale" ? 1 : 0);
     }
   });
+
+test("every registered line example keeps its frame and viewport in all states at 390 px", async () => {
+  const page = await open(390);
+  pages.push(page);
+  const frames = () =>
+    page.locator("[data-line-example]").evaluateAll((examples) =>
+      examples.map((example) => ({
+        id: example.getAttribute("data-line-example"),
+        boxes: [".ui-charts-frame", ".k2b-chart-explorer__title", ".k2b-chart-explorer__description", ".k2b-chart-explorer__viewport"].map(
+          (selector) => {
+            const element = example.querySelector(selector);
+            const box = element?.getBoundingClientRect();
+            return box ? [Math.round(box.x), Math.round(box.y + scrollY), Math.round(box.width), Math.round(box.height)] : null;
+          },
+        ),
+      })),
+    );
+  await settled(page);
+  const before = await frames();
+  expect(before.map((entry) => entry.id)).toEqual(lineExamples.map((example) => example.id));
+  for (const state of ["loading", "empty", "error", "stale", "data"]) {
+    await page.getByRole("button", { name: state, exact: true }).click();
+    await settled(page);
+    expect({ state, frames: await frames() }).toEqual({ state, frames: before });
+  }
+});
 
 const documentBox = (page: Page, selector: string) =>
   page.locator(selector).evaluate((e) => {

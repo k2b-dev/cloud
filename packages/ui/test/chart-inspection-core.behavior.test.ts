@@ -176,25 +176,28 @@ describe("framework-free chart inspection", () => {
   });
 
   test("another series at the same X becomes active without rebuilding the category tooltip", async () => {
-    const container = mount(
-      charts.line({
-        series: [
-          {
-            data: [
-              { x: 1, y: 10 },
-              { x: 2, y: 20 },
-            ],
-          },
-          {
-            data: [
-              { x: 1, y: 30 },
-              { x: 2, y: 40 },
-            ],
-          },
-        ],
-        inspect: true,
-      }),
-    );
+    const svg = charts.line({
+      width: 480,
+      height: 280,
+      series: [
+        {
+          data: [
+            { x: 1, y: 10 },
+            { x: 2, y: 20 },
+          ],
+        },
+        {
+          data: [
+            { x: 1, y: 30 },
+            { x: 2, y: 40 },
+          ],
+        },
+      ],
+      inspect: true,
+    });
+    expect(svg.match(/data-chart-datum=/g)).toHaveLength(4);
+    // Like the existing line fixtures, omit embedded SVG CSS for Happy DOM's SVG parser.
+    const container = mount(svg.replace(/<style>[\s\S]*?<\/style>/g, ""));
     const selections: ChartSelection[] = [];
     let calls = 0;
     const inspection = inspectChart(container, {
@@ -217,6 +220,7 @@ describe("framework-free chart inspection", () => {
     Object.defineProperty(tooltip, "matches", { value: (selector: string) => (selector === ":popover-open" ? open : matches(selector)) });
     try {
       const marks = container.querySelectorAll("[data-chart-datum]");
+      expect(marks).toHaveLength(4);
       pointer(marks[0]!);
       await nextFrame();
       const previousCalls = calls;
