@@ -435,8 +435,35 @@ const release = (path: string) => {
   held.delete(path);
 };
 const hold = (path: string) => {
-  held.set(path, Promise.withResolvers<void>());
-  return () => release(path);
+  const entry = Promise.withResolvers<void>();
+  held.set(path, entry);
+  return () => {
+    entry.resolve();
+    // A timed-out test's late finally must not release the next test's hold for the same module.
+    if (held.get(path) === entry) held.delete(path);
+  };
+};
+/**
+ * WebKit's FontFaceSet.ready also waits for the document load event. History deliberately holds a module
+ * response across initial load: await the actual font faces and finite animations without waiting for that event.
+ */
+const settledHistory = async (page: Page) => {
+  await page.waitForFunction(() => [...document.fonts].every((face) => face.status !== "loading"));
+  await page.evaluate(async () => {
+    const running = () =>
+      document
+        .getAnimations()
+        .filter(
+          (animation) =>
+            animation.timeline === document.timeline &&
+            animation.playState === "running" &&
+            Number.isFinite(animation.effect?.getComputedTiming().endTime),
+        );
+    await Promise.allSettled(running().map((animation) => animation.finished));
+    await new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
+    if ([...document.fonts].some((face) => face.status === "loading") || running().length)
+      throw new Error("The history fixture started loading fonts or animating while it settled");
+  });
 };
 // A test that fails while holding a file must not leave it held for the next one.
 afterEach(() => {
@@ -1558,7 +1585,7 @@ for (const width of [1280, 390]) {
         await page.goto(`http://127.0.0.1:${server.port}/?history=1&lang=en`, { waitUntil: "commit" });
         await page.waitForSelector("solid-island[data-mounted=true]");
         if (arrival === "navigation") await page.evaluate(() => window.restoreChartHistory());
-        await settled(page);
+        await settledHistory(page);
         const history = page.locator('solid-island[data-id="chart-history"]');
         expect(await history.locator(".k2b-chart__svg > svg").count()).toBe(1);
         const svg = await history.locator(".k2b-chart__svg > svg").evaluate((node) => node.outerHTML);
@@ -1596,7 +1623,7 @@ for (const width of [1280, 390]) {
           await page.screenshot({ path: `${process.env.VIEW_SHOTS}/history-loading-light-${width}.png`, fullPage: true });
         code();
         await page.waitForSelector('solid-island .k2b-chart[data-interactive="true"]');
-        await settled(page);
+        await settledHistory(page);
         expect(await history.locator(".k2b-chart__svg > svg").evaluate((node) => node.outerHTML)).toBe(svg);
         expect(await page.evaluate(() => document.querySelector("solid-island .k2b-chart__svg > svg") === window.historyServerSvg)).toBe(
           true,
@@ -1630,7 +1657,7 @@ for (const width of [1280, 390])
         await page.waitForSelector("solid-island[data-mounted=true]");
         const svg = await page.locator("solid-island .k2b-chart__svg > svg").evaluate((node) => node.outerHTML);
         await page.getByRole("textbox", { name: "Message" }).fill("Keep my draft");
-        await settled(page);
+        await settledHistory(page);
         const frame = await page.locator("solid-island .k2b-chart-explorer").boundingBox();
         code();
         await page
