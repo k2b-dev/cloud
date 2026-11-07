@@ -110,7 +110,13 @@ test.skipIf(isServer)("pin and hide save preferences, reorder rows and roll back
     pending[0]!.resolve(Response.json({ pinned: true, hidden: false }));
     press("Hide Sales");
     const hidden = () => dom.root.querySelector('[data-mailbox="Box002"][data-hidden="true"]');
-    expect(hidden()?.closest(".mail-sidebar-hidden-mailboxes")?.textContent).toContain("Hidden mailboxes");
+    // The hidden row folds into the closed Hidden row; opening it shows the row with its Show action.
+    const toggle = dom.root.querySelector<HTMLButtonElement>(".mail-sidebar-hidden-mailboxes button[aria-expanded]")!;
+    expect(toggle.textContent).toContain("Hidden");
+    expect(toggle.getAttribute("aria-expanded")).toBe("false");
+    expect(hidden()).toBeNull();
+    toggle.click();
+    expect(hidden()?.closest(".mail-sidebar-hidden-mailboxes")).not.toBeNull();
     await waitFor(() => pending.length === 2);
     expect(pending[1]?.json).toEqual({ hidden: true });
     pending[1]!.resolve(Response.json({ pinned: true, hidden: true }));
@@ -233,8 +239,12 @@ test.skipIf(isServer)("hiding the open mailbox opens the closed Hidden section, 
     expect(shown(inbox())).toBe(true);
     // The open row keeps one "…": its pin and hide come first in that menu.
     expect(dom.root.querySelector('[data-mailbox="Box001"] button[aria-label="Hide Support"]')).toBeNull();
-    dom.root.querySelector<HTMLButtonElement>('[data-mailbox="Box001"] button[aria-label="Options for Support"]')!.click();
-    const items = [...dom.document.querySelectorAll<HTMLElement>('[role="menuitem"]')];
+    const options = dom.root.querySelector<HTMLButtonElement>('[data-mailbox="Box001"] button[aria-label="Options for Support"]')!;
+    options.click();
+    // The Mailboxes heading has a menu of its own; read the one this button opened.
+    const items = [
+      ...dom.document.getElementById(options.getAttribute("aria-controls")!)!.querySelectorAll<HTMLElement>('[role="menuitem"]'),
+    ];
     expect(items.slice(0, 2).map((item) => item.textContent?.trim())).toEqual(["Pin Support", "Hide Support"]);
     items[1]!.click();
     expect(dom.root.querySelector('[data-mailbox="Box001"][data-hidden="true"]')).not.toBeNull();
