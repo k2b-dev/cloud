@@ -8,28 +8,40 @@ import { csvQuote, csvTextNeedsProtection } from "./export-csv";
 
 export const DocumentCsvOutputSchema = z
   .object({
-    kind: z.literal("csv"),
-    delimiter: z.enum([",", ";", "\t", "|"]).default(","),
-    nestedValues: z.enum(["reject", "json"]).default("reject"),
-    textProtection: z.enum(["spreadsheet", "raw"]).default("spreadsheet"),
+    kind: z.literal("csv").describe("Output format."),
+    delimiter: z.enum([",", ";", "\t", "|"]).default(",").describe("CSV cell delimiter."),
+    nestedValues: z.enum(["reject", "json"]).default("reject").describe("Reject nested cells or serialize them as JSON."),
+    textProtection: z
+      .enum(["spreadsheet", "raw"])
+      .default("spreadsheet")
+      .describe("Protect spreadsheet formula cells by default; raw disables this protection."),
     columns: z
-      .array(z.object({ source: z.string().min(1), label: z.string().trim().min(1).optional() }).strict())
+      .array(
+        z
+          .object({
+            source: z.string().min(1).describe("Captured column alias."),
+            label: z.string().trim().min(1).optional().describe("Optional output column label."),
+          })
+          .strict(),
+      )
       .min(1)
-      .optional(),
+      .optional()
+      .describe("Optional output column selection and labels."),
   })
   .strict();
 
 export const DocumentJsonOutputSchema = z
   .object({
-    kind: z.literal("json"),
+    kind: z.literal("json").describe("Output format."),
     wrapper: z
       .object({
-        rowsKey: z.string().trim().min(1),
-        values: z.record(z.string(), z.json()).default({}),
+        rowsKey: z.string().trim().min(1).describe("JSON property containing the output rows."),
+        values: z.record(z.string(), z.json()).default({}).describe("Additional fixed JSON properties."),
       })
       .strict()
       .refine((value) => !Object.hasOwn(value.values, value.rowsKey), "Wrapper values must not overwrite the rows key")
-      .optional(),
+      .optional()
+      .describe("Optional JSON wrapper around captured rows."),
   })
   .strict();
 
