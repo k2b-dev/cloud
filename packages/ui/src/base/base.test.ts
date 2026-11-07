@@ -53,7 +53,7 @@ describe("@k2b/ui base stylesheet", () => {
     const defined = new Set(base.flatMap((rule) => [...cssDeclarations(rule.body).keys()].filter((name) => name.startsWith("--"))));
     const used = new Set([...read("base.css").matchAll(/var\((--[\w-]+)/g)].map((match) => match[1]!));
     const missing = [...used].filter(
-      (name) => !defined.has(name) && !/^--k2b-chart-(width|height|inspection-(color|x|y)|plot-(left|right|top|bottom))$/.test(name),
+      (name) => !defined.has(name) && !/^--k2b-chart-(width|height|inspection-(color|x|y)|plot-(left|right|top|bottom)|band-(left|top|width|height))$/.test(name),
     );
     expect(missing).toEqual([]);
   });
