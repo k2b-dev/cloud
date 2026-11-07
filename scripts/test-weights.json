@@ -121,6 +121,7 @@
     "@k2b/cloud-app-filesv2 src/frontend/HomeProvisioning.browser.test.ts": 6.7,
     "@k2b/cloud-app-filesv2 src/frontend/MachineStorage.browser.test.ts": 10.4,
     "@k2b/cloud-app-filesv2 src/frontend/NewFolderDialog.browser.test.ts": 21.5,
+    "@k2b/cloud-app-filesv2 src/frontend/Pagination.browser.test.ts": 10.2,
     "@k2b/cloud-app-filesv2 src/frontend/Search.browser.test.ts": 12.3,
     "@k2b/cloud-app-filesv2 src/frontend/Settings.browser.test.ts": 8.3,
     "@k2b/cloud-app-filesv2 src/frontend/StorageOverview.browser.test.ts": 6.5,
