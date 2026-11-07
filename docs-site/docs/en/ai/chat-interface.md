@@ -163,6 +163,50 @@ Lists, Sources, files, routines, dictations, and Project context refresh through
 [AI live updates](/en/docs/ai/chat-runtime-and-streaming#ai-live-updates)
 on `/api/ai/live`, not through the conversation stream.
 
+## Suggest the next message
+
+Interactive browser chats with the default tool source offer
+`suggest_next_message({ text: string | null })` when the person's
+`suggestNextMessage` preference is on (the default). Project composers,
+local clients, routines, workflows and background runs do not load it. A
+chat inside a Project is still an interactive chat.
+
+The platform prompt includes **Suggestions → Next message** only while the
+tool is loaded. It asks for one plain sentence in the person's language, at
+most 120 characters, only when the answer ends with a question or offers an
+obvious next step. `null` deliberately means no suggestion. Completed requests,
+failures, refusals, blockers, pending question cards or approvals, thanks and
+requests for brevity or no suggestions should produce none. A suggestion uses
+only the person's messages and the visible answer, never unseen tool data.
+
+The server rejects multiline text, more than 200 Unicode characters, URLs,
+Markdown, mentions and text equal to the person's last message after Unicode,
+case, punctuation and whitespace normalization. Rejected text means no
+suggestion. The first closing call wins, including `null` or invalid text. An alone,
+last call following answer text in the same model step ends the loop without
+another model request. Other calls receive
+`noted, call only alone after the answer` and the loop continues. Their arguments
+are stored as `{ text: null }` and do not count as a suggestion. The call
+never appears as a tool block.
+
+The latest completed answer can carry the optional field
+`suggestedNextMessage: { text: string; dismissedAt: string | null }` in the
+conversation detail, message page, initial stream snapshot and completed-turn
+stream event. Only the person who triggered the run receives it. A newer
+message or turn, an error, stop, redirect, queued message, pending approval or
+question hides it. Reloading preserves both the suggestion and its dismissal.
+Model history, exported answer text, title enrichment, search and notifications
+exclude this field.
+
+Dismiss it with
+`DELETE /api/ai/conversations/:conversationId/messages/:messageId/suggested-next-message`,
+using public chat and message IDs. The route checks conversation access and the
+trigger person's identity, sets `dismissedAt` once and returns
+`{ dismissed: true }`. Repeating it is safe. Keep a dismissed suggestion hidden.
+Use `GET /api/ai/prefs` and `PUT /api/ai/prefs` with
+`{ suggestNextMessage: false }` to turn generation off. No additional provider
+or model request is made for a suggestion.
+
 ## Attach Cloud resources
 
 Treat a Cloud resource like another composer attachment: keep its structured
