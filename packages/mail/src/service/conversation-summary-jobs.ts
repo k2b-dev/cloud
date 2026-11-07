@@ -472,8 +472,8 @@ export const executeConversationSummary = async (
         claim_id = NULL, claimed_at = NULL, updated_at = now() WHERE conversation_id = ${scope.conversationId}::uuid`;
       if (unchanged) {
         const [workflow] = row.request.source
-          ? await db<{ id: string }[]>`SELECT active_version_id AS id
-          FROM workflows.workflow WHERE id::text = ${row.request.source.id} AND active_version_id IS NOT NULL`
+          ? await db<{ id: string }[]>`SELECT version_id AS id
+          FROM mail.workflow_source_names WHERE workflow_id::text = ${row.request.source.id} AND active`
           : [];
         await insertActivity({
           db,
