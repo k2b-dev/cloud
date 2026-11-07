@@ -144,6 +144,8 @@ Arrow keys move the focused crop; Shift + arrow resizes it. Each corner also
 accepts arrow keys. Ctrl/Cmd + Z undoes, Shift + Ctrl/Cmd + Z redoes. Shared
 selection controls and sliders keep their keyboard behavior. Pinch zoom and
 zoom buttons operate on the preview; **Fit** restores its position.
+The shared **Tool** select keeps every enabled tool reachable without clipped
+labels on narrow panels. Looks use shared preview tiles.
 
 Give the editor a parent with a defined height (for example a flex workspace).
 It fills that height, with a minimum of 34 rem and a maximum of 58 rem.

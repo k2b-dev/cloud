@@ -1,7 +1,6 @@
 import { navigateTo, onBeforeLeave } from "@k2b/ssr/nav";
 import { createEffect, createMemo, createSignal, createUniqueId, For, type JSX, on, onCleanup, onMount, Show, untrack } from "solid-js";
 import { Button, IconButton } from "../../actions/Button";
-import { SegmentedControl } from "../../actions/SegmentedControl";
 import { prompts } from "../../feedback/prompts";
 import { useLocale } from "../../intl/locale";
 import { NoticeCard } from "../../surfaces/NoticeCard";
@@ -600,7 +599,7 @@ function ImageEditorSession(props: ImageEditorProps): JSX.Element {
             {t().editor}
             <Show when={dirty()}> •</Show>
           </strong>
-          <span>{preview() ? `${preview()!.sourceSize.width} × ${preview()!.sourceSize.height} px` : t().loading}</span>
+          <span>{preview() ? `${preview()!.sourceSize.width} × ${preview()!.sourceSize.height} px` : loadError() ? "" : t().loading}</span>
         </div>
         <IconButton
           variant="ghost"
@@ -774,7 +773,15 @@ function ImageEditorSession(props: ImageEditorProps): JSX.Element {
         </div>
         <aside class="k2b-image-editor__panel">
           <div class="k2b-image-editor__tools">
-            <SegmentedControl options={tools()} value={tool} onValueChange={switchTool} ariaLabel={t().editor} size="sm" />
+            <Select
+              label={t().tool}
+              options={tools().map((option) => ({ id: option.value, label: option.label, icon: option.icon }))}
+              value={tool()}
+              onValueChange={(value) => {
+                const next = tools().find((option) => option.value === value);
+                if (next) switchTool(next.value);
+              }}
+            />
           </div>
           <div class="k2b-image-editor__controls" aria-busy={loading()} inert={loading() || loadError()}>
             <Show when={tool() === "crop"}>

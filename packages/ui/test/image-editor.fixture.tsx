@@ -6,6 +6,7 @@ import type { ImageEditorFeatures, ImageEditorResult } from "../src/inputs/image
 
 const parameters = new URLSearchParams(location.search);
 document.documentElement.lang = parameters.get("locale") === "de" ? "de" : "en";
+document.body.dataset.theme = parameters.has("dark") ? "dark" : "light";
 const features: ImageEditorFeatures = parameters.has("minimal")
   ? { crop: { aspects: ["1:1"], locked: true }, rotate: true }
   : {

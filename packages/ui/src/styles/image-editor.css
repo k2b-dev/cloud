@@ -29,8 +29,7 @@
 .k2b-ui .k2b-image-editor__zoom { display: flex; align-items: center; gap: .125rem; position: absolute; bottom: .5rem; left: 50%; transform: translateX(-50%); background: var(--k2b-surface); border-radius: var(--k2b-radius-control); }
 .k2b-ui .k2b-image-editor__zoom output { min-width: 3.25rem; text-align: center; font-size: .75rem; font-variant-numeric: tabular-nums; }
 .k2b-ui .k2b-image-editor__panel { min-width: 0; min-height: 0; display: grid; grid-template-rows: auto minmax(0,1fr); }
-.k2b-ui .k2b-image-editor__tools { min-width: 0; padding: .5rem; overflow: auto; }
-.k2b-ui .k2b-image-editor__tools .k2b-segmented-control { min-width: max-content; }
+.k2b-ui .k2b-image-editor__tools { min-width: 0; padding: .5rem 1rem; }
 .k2b-ui .k2b-image-editor__controls { display: flex; flex-direction: column; gap: 1rem; min-height: 0; padding: .5rem 1rem 1rem; overflow: auto; scrollbar-gutter: stable; }
 .k2b-ui .k2b-image-editor__controls > * { flex-shrink: 0; }
 .k2b-ui .k2b-image-editor__rotations { display: flex; gap: .5rem; flex-wrap: wrap; }
@@ -55,4 +54,5 @@
   .k2b-ui .k2b-image-editor__status { padding-inline: .5rem; }
   .k2b-ui .k2b-image-editor__feedback { height: 8rem; align-items: stretch; flex-direction: column; gap: .25rem; justify-content: center; }
   .k2b-ui .k2b-image-editor__controls { padding-inline: .75rem; }
+  .k2b-ui .k2b-image-editor__tools { padding-inline: .75rem; }
 }

@@ -6,6 +6,7 @@ const messages = i18n.define({
   messages: {
     en: {
       editor: "Photo editor",
+      tool: "Tool",
       crop: "Crop",
       adjust: "Adjust",
       looks: "Looks",
@@ -93,6 +94,7 @@ const messages = i18n.define({
     },
     de: {
       editor: "Foto bearbeiten",
+      tool: "Werkzeug",
       crop: "Zuschnitt",
       adjust: "Anpassen",
       looks: "Looks",
