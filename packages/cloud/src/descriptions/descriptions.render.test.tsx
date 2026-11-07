@@ -13,6 +13,7 @@ process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 
 const { DescriptionPanel, resolveDescription } = await import("./index");
 const { LocaleProvider } = await import("@k2b/ui");
+type DescriptionJson = import("./json").DescriptionJson;
 type Props = Parameters<typeof DescriptionPanel>[0];
 const panel = (props: Props, locale = "en") =>
   renderToString(() =>
@@ -68,16 +69,12 @@ test("tables of charts only the Solid component draws follow the requested local
   expect(map.rows[0]!.cells.size).toBe("1.200,5");
 });
 
-const details = {
-  block: "details",
-  title: "Invoice 2026-118",
-  subtitle: "Customer payment",
-  items: [
-    { label: "Amount", type: "number", value: 2380, format: { style: "currency", currency: "EUR" } },
-    { label: "Due", type: "date", value: "2026-11-09" },
-    { label: "Note", type: "text", value: null },
-  ],
-};
+const items: DescriptionJson[] = [
+  { label: "Amount", type: "number", value: 2380, format: { style: "currency", currency: "EUR" } },
+  { label: "Due", type: "date", value: "2026-11-09" },
+  { label: "Note", type: "text", value: null },
+];
+const details = { block: "details", title: "Invoice 2026-118", subtitle: "Customer payment", items };
 
 test("a details block draws the record's fields in the dashboard frame, formatted like Chat's details view", () => {
   const html = panel({ spec: details, title: "Details", height: 160, width: "third" });

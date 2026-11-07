@@ -131,30 +131,9 @@ inherited `@k2b/ui` locale.
 
 ### Descriptions on a dashboard
 
-In Cloud, `DescriptionPanel` from `@k2b/cloud/descriptions` maps one
-portable description onto these components. Chat, Pulse, Code pages and the
-chart showcase use it, so a page tree maps one to one onto components:
-
-| Node | Drawn as | Props from the node |
-| --- | --- | --- |
-| Page | `DashboardGrid` | the host draws the page head |
-| Section `{ title, description, icon, color }` | `DashboardSection` | `title`, `description`, `icon`, `iconColor` |
-| Chart `{ kind, … }` | `DashboardFrame` without title around `ChartExplorer` | `title`, `subtitle`, legend and table rows from the chart description; panel `width`, content `height` |
-| `{ block: "stats", items }` | `StatGrid` of `StatCell` tiles, always the whole row | per item `label`, `value` in its `format`, `icon`, `tone`, `delta`, `compare`, `trend`; states per tile |
-| `{ block: "table", columns, rows, search?, groupBy? }` | `DashboardFrame` with `reserve`, typed `DataTable` | search field and grouping chip in `tools`, typed columns (`type`, `format`, `states`, `priority`), sortable headers |
-| Chart without values `{ kind, title, subtitle?, empty? }` | the same `DashboardFrame` and `ChartExplorer` as the chart, in its empty state | `title`, `subtitle`, `empty` as the sentence; only these keys, and a known `kind` |
-| `{ block: "details", title, subtitle?, items }` | `DashboardFrame` with a `DescriptionList` in rows | per item `label`, `type` (`text`, `number`, `date`, `datetime`, `ref`), `value`, `format`, validated like Chat's details view; a missing value is a dash; `height` of the panel, more fields scroll |
-| `{ block: "budget" }` | `DashboardFrame` `compact`, `BudgetList` | the block's fields as `BudgetList` props; 240 px by default |
-| `{ block: "balance" }` | `DashboardFrame` `compact`, `BalanceSummary` | the block's fields as props; 56 px |
-| `[{ type: "flow", … }]` or `{ block: "flow", items }` | `DashboardFrame` `compact`, one `FlowAmount` per entry | each entry as `FlowAmount` props; 72 px |
-| Anything this build cannot draw | `DashboardFrame` with the host's `slot`, or "This view cannot be shown here." | `title`, `subtitle` |
-
-A page that has no values for a chart sends its empty form; every other
-chart description must carry at least one value, as the chart schema
-requires. Each panel takes the page's `state`, `asOf` and `onRetry` and its own
-`empty` sentence; `DescriptionPanel` passes them to the frame, the explorer
-or the tiles. Its own words, such as the search label and "Nothing to show
-for this period.", follow the same locale.
+A Cloud host draws portable chart descriptions and its own blocks through this
+frame; the node-to-component mapping is in
+[Cloud dashboard widgets](/en/ui/cloud/dashboard-widgets#description-panels).
 
 ## Import
 
