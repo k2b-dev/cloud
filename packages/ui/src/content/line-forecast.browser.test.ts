@@ -39,6 +39,7 @@ beforeAll(async () => {
   if (!build.success) throw new AggregateError(build.logs, "Line forecast harness failed");
   bundle = await build.outputs[0]!.text();
   css = await Bun.file(resolve(import.meta.dir, "../../dist/styles.css")).text();
+  css += `\n${await Bun.file(resolve(import.meta.dir, "../../../editor/src/styles.css")).text()}`;
   browser = await launchBrowser();
   const { default: ServerChart } = await import(resolve(import.meta.dir, "../../dist/ssr/content/Chart.js"));
   const { LocaleProvider } = await import(resolve(import.meta.dir, "../../dist/ssr/intl/locale.js"));
