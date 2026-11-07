@@ -180,3 +180,23 @@ test("line tap pins at a coordinate; dark and unscoped paths remain painted", as
   const fills = await chart.locator(".stdlib-chart-line").evaluateAll((nodes) => nodes.map((e) => getComputedStyle(e).stroke));
   expect(fills.every((c) => c !== "rgb(0, 0, 0)" && c !== "none")).toBe(true);
 });
+
+test("line values follow the cursor in Pulse, Core AI, Gateway Ops, Chat and Notebook", async () => {
+  const page = await open(390);
+  pages.push(page);
+  for (const host of ["pulse", "core", "gateway", "chat", "notebook"]) {
+    const charts = page.locator(`[data-line-host="${host}"] [data-chart-kind="line"]`);
+    const chart = host === "core" ? charts.nth(1) : charts.first();
+    expect(await chart.count()).toBe(1);
+    const panelBox = await documentBox(page, `[data-line-host="${host}"]`);
+    await chart.focus();
+    await page.keyboard.press("Home");
+    const legend = page.locator(`[data-line-host="${host}"] [data-chart-legend-value]`);
+    const first = await legend.allTextContents();
+    expect(first.length).toBeGreaterThan(0);
+    await page.keyboard.press("End");
+    expect(await legend.allTextContents()).not.toEqual(first);
+    await page.keyboard.press("Escape");
+    expect(await documentBox(page, `[data-line-host="${host}"]`)).toEqual(panelBox);
+  }
+});
