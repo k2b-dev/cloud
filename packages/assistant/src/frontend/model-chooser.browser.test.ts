@@ -293,6 +293,7 @@ describe("model chooser in the composer", () => {
   test("on a phone the card is a sheet with 44 px buttons and the large slider", async () => {
     const page = await open(390, "?choice=thorough");
     await page.click(".ai-model-chip");
+    await settled(page);
     const popover = page.locator(".k2b-anchored-popover");
     expect(await popover.getAttribute("data-sheet")).toBe("");
     expect(await popover.locator(".k2b-choice-slider").getAttribute("data-size")).toBe("lg");
@@ -307,6 +308,7 @@ describe("model chooser in the composer", () => {
     expect(await size('button[aria-label="Zurück zu „Ausgewogen“"]')).toEqual([44, 44]);
     expect((await size('button[aria-label^="Alle Modelle"]'))[1]).toBe(44);
     await page.click('.k2b-anchored-popover button[aria-label^="Alle Modelle"]');
+    await settled(page);
     expect(await size('button[aria-label="Zurück"]')).toEqual([44, 44]);
     await page.close();
   });
