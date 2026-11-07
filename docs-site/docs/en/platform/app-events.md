@@ -43,10 +43,10 @@ application declared that event type and version.
 
 ## Built-in resource events
 
-Spaces, Notebooks, and Mail publish these version 1 events. The envelope's
+Spaces, Notebooks, Contacts, and Mail publish these version 1 events. The envelope's
 `subject` and `place` carry public resource IDs accepted by the corresponding
 Type readers. Spaces and Notebooks use a strict empty `data` object (`{}`);
-Mail carries only the receipt reference described below.
+Contacts updates carry only changed field-group names; Mail carries only the receipt reference described below.
 
 | Full event type | Subject Type | Place Type | When it is published |
 | --- | --- | --- | --- |
@@ -56,11 +56,13 @@ Mail carries only the receipt reference described below.
 | `notebooks.notebook.updated` | `notebooks.notebook` | `notebooks.notebook` | Notebook metadata or settings change. |
 | `notebooks.note.created` | `notebooks.note` | `notebooks.notebook` | A note is created, including welcome notes, path creation, copies, and restored copies. |
 | `notebooks.note.updated` | `notebooks.note` | `notebooks.notebook` | Persisted Markdown, title, the moved note’s parent or order, lock state, or recovery status changes, coalesced as described below. |
+| `contacts.contact.created` | `contacts.contact` | `contacts.book` | A contact is created, including each committed import entry. Data is `{}`. |
+| `contacts.contact.updated` | `contacts.contact` | `contacts.book` | Stored contact fields change. Data contains only the bounded `changed` group list described below. |
 | `mail.message.received` | `mail.message` | `mail.mailbox` | An incoming message reaches its first eligible provider placement. |
 
 The place Types have permission-aware readers: `spaces.space.read` and
-`notebooks.notebook.read`, plus `mail.mailbox.read` for Mail. Subject readers are `spaces.item.read`,
-`notebooks.notebook.read`, `notebooks.note.read`, and `mail.message.read`. Read content through those
+`notebooks.notebook.read`, `contacts.book.read`, plus `mail.mailbox.read` for Mail. Subject readers are `spaces.item.read`,
+`notebooks.notebook.read`, `notebooks.note.read`, `contacts.contact.read`, and `mail.message.read`. Read content through those
 readers; events contain no titles, text, names, email addresses, content counts,
 parent IDs, or previous-place references. Repeating completion or reopening an
 item does not publish `spaces.item.completed`.
@@ -70,6 +72,26 @@ Its source receives no resource event naming the destination. A note move
 carries only the note and its current notebook refs; it omits parent and position.
 Moving notes between notebooks remains unsupported; copying creates a new note
 and emits `note.created` in the destination notebook.
+
+Contacts update data is `{ changed: [...] }`, with one to ten values from
+`profile`, `emails`, `phones`, `addresses`, `websites`, `bankAccounts`, `tags`,
+`notes`, `parent`, and `book`. The list follows that order and contains no
+field values, names, addresses, note text, or old book references. Equivalent
+normalized values, including rebuilt collection rows, publish no update.
+Profile covers the contact's scalar details; tag changes mean assignments.
+Geocoding cache refreshes, personal favorites, tag metadata changes, and derived
+child-parent maintenance do not fan out contact events. Deleting a tag removes
+its assignments without contact events. A merge announces its
+surviving target. Moving a contact announces an update in its destination book
+only; its source receives no app event naming that destination.
+
+Contact writes and events commit together. Idempotent create and note retries
+produce no duplicate event. Imports keep one creation event per successfully
+committed contact, even when a later entry fails, independently of the import's
+single live refresh. The existing limits are **1,000 contacts per import** and
+**500 contacts per bulk tag or move operation**, enforced at the service seam.
+See the [bulk and shared capacity budget](/en/docs/operations/app-events#plan-retention-and-outage-capacity)
+and [Contacts automation capabilities](/en/docs/reference/contacts-automation).
 
 `notebooks.note.updated` uses trailing coalescing. A changed note records its
 first pending change and latest change in the domain transaction. A minute
