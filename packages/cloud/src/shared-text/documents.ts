@@ -152,7 +152,7 @@ export const bindDocuments = <Saved, Context>(
       // A request cancelled while the callback ran must not publish a write.
       options.signal?.throwIfAborted();
       const beforeEditState = Y.encodeStateVector(doc);
-      const finishHistory = options.actionId ? prepareStructuralHistory(ytext, changes) : undefined;
+      const finishHistory = options.actionId ? prepareStructuralHistory(ytext, changes) : prepareIngressHistory(ytext);
       if (prepared) {
         // Application-prepared transactions preserve exact item identities and
         // may be replayed after a partial publication/persistence failure.
@@ -168,7 +168,7 @@ export const bindDocuments = <Saved, Context>(
       const actor = options.actor;
       const updateBytes = Y.encodeStateAsUpdate(doc, beforeEditState);
       const receipt = options.actionId ? { actionId: options.actionId, update: updateBytes } : undefined;
-      const history: SharedTextStructuralHistory = finishHistory?.() ?? { patches: [], tables: [], ingressBarrier: true };
+      const history: SharedTextStructuralHistory = finishHistory();
       if (history && options.inverseOf) {
         history.inverseOf = options.inverseOf;
         history.retained = options.retained?.() ?? false;

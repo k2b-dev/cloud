@@ -26,7 +26,7 @@ The categories sort the settings by owner and effect:
 - **Sharing** contains access and API keys. It is for people with **Manage** access.
 - **Lifecycle** contains permanent deletion.
 
-When a form has a footer, review its count of changes and choose **Save changes**. Actions on a list, such as adding a status, changing access, or revoking a key, save immediately after you confirm them.
+When a form has a footer, review its count of changes and choose **Save changes**. Actions on a list, such as adding a status or revoking a key, save immediately after you confirm them. Access changes apply when you choose **Save** in **Edit access**.
 
 ## Choose the access level {icon="shield-lock"}
 
@@ -36,11 +36,13 @@ When a form has a footer, review its count of changes and choose **Save changes*
 - **Manage:** Also change wormholes, the GitHub token, access, API keys, the calendar export, and deletion.
 :::
 
+Everyone with access of their own, direct, through a group, or as a signed-in person, sees who has access and with which level under **Access** at the end of an item’s details. People who only open a public Space do not see that list.
+
 ## Give an integration or agent access {icon="key"}
 
-Add its standalone service account or agent under **Sharing → Access**. The entry shows the account name and kind. With **Manage** access and an `admin` token scope, it can manage access through the API. A read-only token cannot change sharing.
+Add its agent under **Sharing → Access**. The entry shows the account name and kind. With **Manage** access and an `admin` token scope, it can manage access through the API. A read-only token cannot change sharing.
 
-To hand management over, give the new account **Manage** access first. Then lower or remove your own entry. An agent or standalone service account can remain as the only manager. You cannot remove the last manager; add another manager before trying again. Resource API keys do not count as managers and stay confined to their own Space.
+To hand management over, give the new account **Manage** access first. Then lower or remove your own entry. An agent can remain as the only manager. You cannot remove the last manager; add another manager before trying again. Resource API keys do not count as managers and stay confined to their own Space.
 
 ## Add a GitHub token {icon="brand-github"}
 

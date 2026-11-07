@@ -22,6 +22,7 @@ import type {
 import type { RequestActor } from "../server";
 import type { AiModelRequest, AiResolvedModelRef } from "../shared/ai-models";
 import type { AiActionCheck, AiStoredActionReview } from "./action-review";
+import type { AiToolUnavailableReason } from "./capabilities";
 import type { AiLocalClient, AiLocalContext, AiLocalToolName } from "./local-tool-contracts";
 import type { AiTurnBlock } from "./protocol";
 
@@ -47,7 +48,7 @@ export type AiRecentSentResourceRef = {
   conversationId: string;
 };
 
-export const AI_MODEL_CAPABILITIES = ["tools", "vision", "transcription"] as const;
+export const AI_MODEL_CAPABILITIES = ["tools", "vision", "transcription", "live-transcription"] as const;
 export type AiModelCapability = (typeof AI_MODEL_CAPABILITIES)[number];
 
 export const AI_IMAGE_MEDIA_TYPES = ["image/png", "image/jpeg", "image/jpg", "image/webp", "image/gif"] as const;
@@ -55,14 +56,25 @@ export type AiImageMediaType = (typeof AI_IMAGE_MEDIA_TYPES)[number];
 export const isAiImageMediaType = (value: string): value is AiImageMediaType =>
   AI_IMAGE_MEDIA_TYPES.some((mediaType) => mediaType === value);
 
-export type AiProviderId = "openai" | "openrouter" | "anthropic" | "mistral" | "gemini" | "ollama" | "vllm" | "openai-compatible";
+export type AiProviderId =
+  | "openai"
+  | "openrouter"
+  | "anthropic"
+  | "mistral"
+  | "gemini"
+  | "ollama"
+  | "vllm"
+  | "vllm-realtime"
+  | "openai-compatible";
 
-export const AI_DATA_BOUNDARIES = ["hosted", "private"] as const;
+export const AI_DATA_BOUNDARIES = ["hosted", "private", "restricted"] as const;
 export type AiDataBoundary = (typeof AI_DATA_BOUNDARIES)[number];
 /** @deprecated Use AiDataBoundary. */
 export type AiDataPolicy = AiDataBoundary;
 
 export type AiModelProfile = {
+  /** Catalog model kind; absent on application-constructed legacy profiles. */
+  kind?: import("../shared/ai-models").AiModel["kind"];
   id: string;
   label: string;
   modelId: string;
@@ -1106,6 +1118,14 @@ export type AiWebsiteReceipt = { index: number; method: string; url: string };
 
 export type AiFrontendToolMode = "client" | "client_view" | "client_interaction";
 
+/** What load_tools reports; `call` is the name to call a loaded tool by. */
+export type AiLoadToolsResult = {
+  loaded: { name: string; call: string }[];
+  alreadyLoaded: { name: string; call: string }[];
+  unavailable: { name: string; reason: AiToolUnavailableReason }[];
+  evicted: string[];
+};
+
 export type AiCapabilityToolPresentation = {
   kind: "capability";
   appId: string;
@@ -1134,6 +1154,8 @@ export type AiToolDefinition<TInput extends z.ZodType = z.ZodType, TOutput exten
   approval: AiToolApprovalPolicy;
   /** Per-tool execution timeout enforced by nessi. */
   timeoutMs?: number;
+  /** The tool only reads, so nessi may run its calls together with the neighbouring read calls of one answer. */
+  readOnly?: true;
   /** One-line "when to use" hint listed in the system prompt's Tools section. Tools without a hint are not listed. */
   promptHint?: string;
   /** Optional compact representation sent to providers in later loops. The full result remains persisted and visible. */
@@ -1168,6 +1190,8 @@ export type AiToolRuntime<TInput extends z.ZodType = z.ZodType, TOutput extends 
           requestRelayedApproval?: (message: string, options: { approvalId?: string; target?: AiApprovalTarget }) => Promise<boolean>;
           /** Shows requests a website approval let through as they go out, so the chat keeps them whatever the outcome. */
           reportWebsiteReceipts?: (receipts: AiWebsiteReceipt[]) => Promise<void>;
+          /** Loads tools for the next model turn under the same rules as load_tools; absent where a turn has no tool discovery. */
+          loadTools?: (names: readonly string[]) => Promise<AiLoadToolsResult>;
         },
       ): Promise<z.infer<TOutput>>;
     }

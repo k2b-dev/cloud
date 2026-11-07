@@ -1,5 +1,5 @@
+import { redis as platformRedis, sql } from "@k2b/cloud";
 import { formatDurationMs, formatNumber, formatPercent } from "@k2b/cloud/shared";
-import { sql } from "bun";
 import { gatewayOpsMessages } from "../../messages";
 
 export type DiagnosticWarning = {
@@ -504,7 +504,7 @@ const parseRedisInfo = (raw: string): Map<string, string> => {
 
 const collectRedis = async (locale: string): Promise<RedisDiagnostics> => {
   const { t } = gatewayOpsMessages.resolve([locale]);
-  const redis = Bun.redis;
+  const redis = platformRedis;
   const [dbSizeRaw, keyspaceInfoRaw, runtimeInfoRaw] = await Promise.all([
     redis.send("DBSIZE", []),
     redis.send("INFO", ["keyspace"]),

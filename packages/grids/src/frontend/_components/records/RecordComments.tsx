@@ -197,6 +197,7 @@ export default function RecordComments(props: Props) {
   return (
     <DetailPanel.Group label={t().recordComments}>
       <Discussion
+        icon="ti ti-message-circle"
         label={props.title ?? t().comments}
         count={comments().length}
         actions={

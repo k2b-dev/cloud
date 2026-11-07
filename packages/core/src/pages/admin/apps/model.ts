@@ -10,12 +10,16 @@ export type AppStatusKind = "ok" | "warn" | "error" | "idle";
 export type AppView = "access" | "keys" | "domains" | "events" | "routes" | "runtime" | "errors";
 export type HintTarget = AppView | "remove";
 
+/** Why Core refused a start whose proof it verified; the reasons of `lastRejectedStart` in the app keys API. */
+export type StartRejection = { at: string; reason: "revoked" | "expired" | "disabled" | "connections_not_permitted" };
+
 export type AppHint =
+  | { kind: "startRejected"; at: string; reason: StartRejection["reason"] }
   | { kind: "notRunning"; since: string | null }
   | { kind: "providerOnly"; provider: string; lastSeenAt: string | null }
   | { kind: "neverStarted"; hasKey: boolean }
   | { kind: "keyRevoked" }
-  | { kind: "envStart" }
+  | { kind: "envStart"; hasKey: boolean }
   | { kind: "rotation" }
   | { kind: "errorRate"; rate: number }
   | { kind: "failedDeliveries"; count: number }
@@ -24,6 +28,7 @@ export type AppHint =
   | { kind: "runtime"; severity: "warn" | "error"; message: string };
 
 export const HINT_PRESENTATION: Record<AppHint["kind"], { tone: "neutral" | "warning" | "danger"; icon: string; target: HintTarget }> = {
+  startRejected: { tone: "danger", icon: "ti ti-key-off", target: "keys" },
   notRunning: { tone: "danger", icon: "ti ti-plug-connected-x", target: "errors" },
   providerOnly: { tone: "warning", icon: "ti ti-git-compare", target: "remove" },
   neverStarted: { tone: "neutral", icon: "ti ti-info-circle", target: "keys" },
@@ -77,6 +82,10 @@ export type AppInput = {
   keysSupported: boolean;
   /** False when Core's facts could not be read: zero counts then mean "unknown", never "no key". */
   keysKnown: boolean;
+  /** Core's last refusal of a start; it stays until the app starts successfully. */
+  startRejected: StartRejection | null;
+  /** Some live instance took its connections from its own environment; null when no instance says how it started. */
+  startsWithEnv: boolean | null;
   failedDeliveries: number;
   /** A rejected registry entry or a runtime incompatibility of this app. */
   runtimeIssues: ReadonlyArray<{ severity: "warn" | "error"; message: string }>;
@@ -113,34 +122,46 @@ export function deriveApp(input: AppInput): AppEntry {
   const neverStarted = !input.live && !lastSeen;
   const providerOnly = !input.live && !input.coreKnows && sighting;
   const rate = input.live ? errorRate(input.numbers) : null;
+  const rejected = input.keysSupported ? input.startRejected : null;
   const hints: AppHint[] = [];
   if (providerOnly) hints.push({ kind: "providerOnly", provider: sighting.provider.name, lastSeenAt: sighting.lastSeenAt });
-  else if (neverStarted) hints.push({ kind: "neverStarted", hasKey: input.keys.active > 0 });
-  else if (!input.live) hints.push({ kind: "notRunning", since: lastSeen });
+  else if (neverStarted) {
+    // A refused first start already says what happened; "create the key first" would be wrong.
+    if (!rejected) hints.push({ kind: "neverStarted", hasKey: input.keys.active > 0 });
+  } else if (!input.live) hints.push({ kind: "notRunning", since: lastSeen });
+  if (rejected) hints.push({ kind: "startRejected", at: rejected.at, reason: rejected.reason });
   for (const issue of input.runtimeIssues) hints.push({ kind: "runtime", severity: issue.severity, message: issue.message });
   if (rate !== null && rate >= ERROR_RATE_WARN) hints.push({ kind: "errorRate", rate });
   if (input.failedDeliveries > 0) hints.push({ kind: "failedDeliveries", count: input.failedDeliveries });
   if (input.live) for (const route of input.missingRoutes) hints.push({ kind: "routeMissing", ...route });
   if (input.keysSupported && input.keysKnown) {
-    if (input.keys.active === 0 && input.keys.revoked + input.keys.expired > 0) hints.push({ kind: "keyRevoked" });
-    // A running app without any key still starts with the connections in its own environment; it should move to a key.
-    if (input.live && input.keys.active + input.keys.revoked + input.keys.expired === 0) hints.push({ kind: "envStart" });
+    // A refused start with a revoked or expired key already names the missing valid key.
+    const refusedForKey = rejected?.reason === "revoked" || rejected?.reason === "expired";
+    if (!refusedForKey && input.keys.active === 0 && input.keys.revoked + input.keys.expired > 0) hints.push({ kind: "keyRevoked" });
     // Two active keys mean a rotation: the old one goes once no instance uses it.
     if (input.keys.active >= 2) hints.push({ kind: "rotation" });
   }
+  // An app that starts with the connections in its own environment should move to a key. Instances say how they
+  // started; without that, an app without any key can only have started from its environment.
+  const keyCount = input.keys.active + input.keys.revoked + input.keys.expired;
+  if (input.keysSupported && input.live && (input.startsWithEnv ?? (input.keysKnown && keyCount === 0)))
+    hints.push({ kind: "envStart", hasKey: input.keys.active > 0 });
   if (input.live && input.accessKind === "grants" && input.access && input.access.managers === 0) hints.push({ kind: "accessUnmanaged" });
-  const status: AppStatusKind = neverStarted
-    ? "idle"
-    : !input.live || input.runtimeIssues.some((issue) => issue.severity === "error")
-      ? "error"
-      : input.heartbeatStale ||
-          input.runtimeIssues.length > 0 ||
-          (rate !== null && rate >= ERROR_RATE_WARN) ||
-          input.missingRoutes.length > 0
-        ? "warn"
-        : "ok";
+  const status: AppStatusKind =
+    neverStarted && !rejected
+      ? "idle"
+      : !input.live || input.runtimeIssues.some((issue) => issue.severity === "error")
+        ? "error"
+        : rejected ||
+            input.heartbeatStale ||
+            input.runtimeIssues.length > 0 ||
+            (rate !== null && rate >= ERROR_RATE_WARN) ||
+            input.missingRoutes.length > 0
+          ? "warn"
+          : "ok";
   // Most severe first: what keeps the app from working, then what fails now, then what to fix next.
   const order: AppHint["kind"][] = [
+    "startRejected",
     "providerOnly",
     "notRunning",
     "neverStarted",
@@ -177,6 +198,10 @@ const VIEWS: readonly AppView[] = ["access", "keys", "domains", "events", "route
 export const WINDOWS = ["1h", "6h", "24h", "7d", "30d"] as const;
 export type AppStatusWindow = (typeof WINDOWS)[number];
 export type MovedFrom = "gateway" | "credentials";
+/** The list's search and filter; they stay in the URL, so an open app, reload and back keep the same rows. */
+export type AppsListState = { q: string; problems: boolean };
+/** A search longer than any app name or ID finds nothing; the URL keeps at most this much of it. */
+const SEARCH_MAX = 80;
 
 /** The page's URL state. `traffic` is the old name of the routes column and opens it. */
 export function parseAppsQuery(query: Record<string, string | undefined>) {
@@ -185,17 +210,41 @@ export function parseAppsQuery(query: Record<string, string | undefined>) {
   const view = app && VIEWS.includes(requested as AppView) ? (requested as AppView) : null;
   const window = WINDOWS.includes(query.window as AppStatusWindow) ? (query.window as AppStatusWindow) : "24h";
   const moved = query.moved === "gateway" || query.moved === "credentials" ? (query.moved as MovedFrom) : null;
-  return { app, invalidApp: Boolean(query.app) && !app, view, window, moved };
+  const list: AppsListState = { q: (query.q ?? "").trim().slice(0, SEARCH_MAX), problems: query.filter === "problems" };
+  return { app, invalidApp: Boolean(query.app) && !app, view, window, moved, list };
 }
 export type AppsQuery = ReturnType<typeof parseAppsQuery>;
 
-/** `create` asks the keys column to open "Create key" once, for a hint whose way out is a new key. */
-export function appsHref(query: { app?: string | null; view?: AppView | null; window?: AppStatusWindow | null; create?: boolean }): string {
+/**
+ * `create` asks the keys column to open "Create key" once, for a hint whose way out is a new key. `list` carries the
+ * list's search and filter, so opening an app or one of its views keeps the rows beside it.
+ */
+export function appsHref(query: {
+  app?: string | null;
+  view?: AppView | null;
+  window?: AppStatusWindow | null;
+  create?: boolean;
+  list?: AppsListState | null;
+}): string {
   const params = new URLSearchParams();
   if (query.app) params.set("app", query.app);
   if (query.app && query.view) params.set("view", query.view);
   if (query.app && query.view === "routes" && query.window && query.window !== "24h") params.set("window", query.window);
   if (query.app && query.view === "keys" && query.create) params.set("create", "1");
+  if (query.list?.q) params.set("q", query.list.q);
+  if (query.list?.problems) params.set("filter", "problems");
   const search = params.toString();
   return search ? `/admin/apps?${search}` : "/admin/apps";
 }
+
+/** The list state of an address, for browser code that leaves the page through its own navigation. */
+export const listStateOf = (search: string): AppsListState => parseAppsQuery(Object.fromEntries(new URLSearchParams(search))).list;
+
+/** Whether a row belongs under "Problems": it is not running cleanly or has something to do. */
+export const hasProblem = (app: Pick<AppEntry, "status" | "hints">): boolean => app.status !== "ok" || app.hints.length > 0;
+
+/** The search matches the name the list shows or the app's ID, regardless of case. */
+export const matchesSearch = (app: { id: string; name: string }, q: string, locale: string): boolean => {
+  const needle = q.trim().toLocaleLowerCase(locale);
+  return !needle || app.name.toLocaleLowerCase(locale).includes(needle) || app.id.includes(needle);
+};

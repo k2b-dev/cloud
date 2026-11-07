@@ -1,8 +1,8 @@
 import type { LinkNavigateEvent } from "@k2b/ssr/nav";
 import { AppWorkspace, Button, InlineGuidance, useLocale } from "@k2b/ui";
-import { type Accessor, createEffect, createSignal, For, type JSX, Match, on, onCleanup, Show, Switch } from "solid-js";
+import { For, type JSX, Match, Show, Switch } from "solid-js";
 import { chatMessages } from "../messages";
-import { createSearchApi, type SearchHit, type SearchResult } from "./search-api";
+import type { SearchHit } from "./search-api";
 import { containerIcon } from "./system-chats";
 import { threadHref } from "./threads";
 
@@ -10,56 +10,9 @@ type ChatHit = Extract<SearchHit, { kind: "chat" }>;
 type ThreadHit = Extract<SearchHit, { kind: "thread" }>;
 type SystemHit = Extract<SearchHit, { kind: "system" }>;
 
-/** Typing pauses this long before the list asks; each new letter cancels the question before it. */
-const SEARCH_DELAY_MS = 200;
+export { type ChatSearchState, createChatSearch } from "./chat-search-state";
 
-/**
- * One search for the whole list, however many places show it (the sidebar and the phone's list page): it asks once
- * per pause in typing, cancels the question before, and keeps the last answer while the next one loads.
- */
-export const createChatSearch = (query: Accessor<string>) => {
-  const api = createSearchApi();
-  const [settled, setSettled] = createSignal("");
-  createEffect(
-    on(query, (next) => {
-      if (!next) return setSettled("");
-      const timer = setTimeout(() => setSettled(next), SEARCH_DELAY_MS);
-      onCleanup(() => clearTimeout(timer));
-    }),
-  );
-  const [attempt, setAttempt] = createSignal(0);
-  const [answer, setAnswer] = createSignal<{ q: string; result: SearchResult } | null>(null);
-  const [status, setStatus] = createSignal<"loading" | "ready" | "failed">("loading");
-  createEffect(
-    on([settled, attempt], ([q]) => {
-      if (!q) {
-        setAnswer(null);
-        setStatus("loading");
-        return;
-      }
-      const request = new AbortController();
-      onCleanup(() => request.abort());
-      setStatus("loading");
-      api.search(q, request.signal).then(
-        (result) => {
-          setAnswer({ q, result });
-          setStatus("ready");
-        },
-        () => {
-          if (!request.signal.aborted) setStatus("failed");
-        },
-      );
-    }),
-  );
-  return {
-    answer,
-    /** "loading" also while the reader is still typing, so a stale "nothing found" never stands for the new text. */
-    status: () => (query() !== settled() ? "loading" : status()),
-    /** Asks again with the same text, after a failure or an action that changed a hit. */
-    retry: () => setAttempt((value) => value + 1),
-  };
-};
-export type ChatSearchState = ReturnType<typeof createChatSearch>;
+import type { ChatSearchState } from "./chat-search-state";
 
 /**
  * What the list's search finds, in place of the list: chats and channels as their ordinary rows, threads with their provider icon and container, and containers whose chat nobody has started yet. The hits of the last

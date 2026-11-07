@@ -84,6 +84,7 @@ async function openSheet(options: {
       const current = inbox().fixture!;
       setInbox({ fixture: { ...current, requests: current.requests.filter((item) => item.requestId !== decided.requestId) } });
     },
+    recheck: noop,
     revoke: noop,
     syncPush: noop,
     forget: noop,
@@ -559,6 +560,7 @@ test("no sheet opens while Cloud Login is still looking for requests; it opens w
     act: noop,
     decideChange: noop,
     decide: noop,
+    recheck: noop,
     revoke: noop,
     syncPush: noop,
     forget: noop,

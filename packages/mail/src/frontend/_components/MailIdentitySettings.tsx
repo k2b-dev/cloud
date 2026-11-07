@@ -26,6 +26,7 @@ import {
   type SenderIdentity,
   type SenderIdentityTransport,
 } from "../../contracts";
+import { mailFolderNames } from "../../folder-names";
 import { mailFolderPaths } from "../../folder-tree";
 import { readApiError } from "./api-response";
 import MailRecipientInput from "./MailRecipientInput";
@@ -91,8 +92,14 @@ export function MailIdentitySettings(props: ProviderSettingsProps & { mailboxSig
     props.admin.folders.filter((folder) => folder.selectable && folder.discoveryState === "active"),
   );
   const folderOptions = createMemo(() => {
-    const paths = mailFolderPaths(props.admin.folders);
-    return selectableFolders().map((folder) => ({ id: folder.id, label: paths.get(folder.id) ?? folder.name, icon: "ti ti-folder" }));
+    // Standard folders show their localized names; the server's path stays beside them.
+    const paths = mailFolderPaths(props.admin.folders, mailFolderNames(locale()));
+    const serverPaths = mailFolderPaths(props.admin.folders);
+    return selectableFolders().map((folder) => {
+      const label = paths.get(folder.id) ?? folder.name;
+      const serverPath = serverPaths.get(folder.id) ?? folder.name;
+      return { id: folder.id, label, ...(serverPath === label ? {} : { description: serverPath }), icon: "ti ti-folder" };
+    });
   });
   const activeBindings = createMemo(() => props.admin.bindings.filter((binding) => binding.state === "active"));
   const mailboxSignatures = createMemo(() =>

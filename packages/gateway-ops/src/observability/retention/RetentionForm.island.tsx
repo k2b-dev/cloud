@@ -1,6 +1,6 @@
 import SettingsSaveOutcome from "@k2b/cloud/ssr/SettingsSaveOutcome";
 import { createSettingsDraft, oneStepFailure, SaveRejected } from "@k2b/cloud/ssr/settings-draft";
-import { Checkbox, NoticeCard, NumberInput, useLocale } from "@k2b/ui";
+import { Checkbox, NoticeCard, NumberInput, SettingsField, useLocale } from "@k2b/ui";
 import { createSignal, For, Show } from "solid-js";
 import { apiClient } from "../../api/client";
 import { gatewayOpsMessages } from "../../messages";
@@ -96,19 +96,23 @@ export default function RetentionForm(props: { values: RetentionValues; unreadab
   });
   const unreadableKeys = () => (Object.keys(unreadable()) as Key[]).filter((key) => unreadable()[key]);
   const field = (key: Key, help: string) => (
-    <NumberInput
-      label={label(key)}
-      description={help}
-      min={1}
-      suffix={t().days}
-      value={() => form.draft()[key]}
-      onValueChange={(days) => form.update({ [key]: days ?? 0 } as Partial<RetentionValues>)}
-      error={() => form.errors()[key]}
-      disabled={form.saving() || (unreadable()[key] === true && !replace()[key])}
-    />
+    <SettingsField label={label(key)} description={help} error={undefined} width="short">
+      {(control) => (
+        <NumberInput
+          aria-label={label(key)}
+          aria-describedby={control.describedBy()}
+          min={1}
+          suffix={t().days}
+          value={() => form.draft()[key]}
+          onValueChange={(days) => form.update({ [key]: days ?? 0 } as Partial<RetentionValues>)}
+          error={() => form.errors()[key]}
+          disabled={form.saving() || (unreadable()[key] === true && !replace()[key])}
+        />
+      )}
+    </SettingsField>
   );
   return (
-    <div class="flex max-w-2xl flex-col gap-4 px-[var(--ui-space-shell)] pb-[var(--ui-space-shell)]">
+    <div class="flex flex-col gap-4 pb-[var(--ui-space-shell)]">
       <SettingsSaveOutcome outcome={form.outcome()} onRetry={() => void form.save()} />
       <Show when={unreadableKeys().length > 0}>
         <NoticeCard tone="warning" title={g().unreadableTitle} detail={g().unreadableDetail}>
@@ -124,9 +128,11 @@ export default function RetentionForm(props: { values: RetentionValues; unreadab
           </For>
         </NoticeCard>
       </Show>
-      {field("logs", t().logRetentionHelp)}
-      {field("events", t().eventRetentionHelp)}
-      {field("rollups", t().rollupRetentionHelp)}
+      <div class="flex flex-col">
+        {field("logs", t().logRetentionHelp)}
+        {field("events", t().eventRetentionHelp)}
+        {field("rollups", t().rollupRetentionHelp)}
+      </div>
     </div>
   );
 }

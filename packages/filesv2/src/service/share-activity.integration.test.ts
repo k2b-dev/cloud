@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, beforeEach, expect, setSystemTime, test } from "bun:test";
+import { sql } from "@k2b/cloud";
 import type { RequestActor } from "@k2b/cloud/server";
 import type { Node } from "@k2b/filegate";
-import { sql } from "bun";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import { migrate as migrateAudit } from "../../../core/src/migrate/core/audit";
 import { testActor, testCall } from "../../test/files-call";

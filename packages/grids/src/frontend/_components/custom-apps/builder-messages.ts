@@ -54,7 +54,7 @@ const deCopy = {
   Lifecycle: "Lebenszyklus",
   "Who can open the published app": "Wer die veröffentlichte App öffnen darf",
   "App grants are separate from base access. Choose users, groups, standalone or agent accounts, all signed-in users, or public access.":
-    "App-Berechtigungen sind unabhängig vom Base-Zugriff. Wähle Nutzer, Gruppen, eigenständige Dienstkonten oder Agentenkonten, alle angemeldeten Nutzer oder öffentlichen Zugriff.",
+    "App-Berechtigungen sind unabhängig vom Base-Zugriff. Wähle Nutzer, Gruppen, Agentenkonten, alle angemeldeten Nutzer oder öffentlichen Zugriff.",
   "App access never opens the raw base, Record API, or GQL. Availability rules can only restrict this access further.":
     "App-Zugriff gewährt keinen Zugriff auf die Base, die Datensatz-API oder GQL. Verfügbarkeitsregeln können diesen Zugriff nur weiter einschränken.",
   "Forms and workflow actions allow only what you publish. Workflow actions require a signed-in user.":

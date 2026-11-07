@@ -81,8 +81,8 @@ Content-Type: application/json
 {"name":"Transcript cleanup","access":"models"}
 ```
 
-`access` is `full` by default. `models` cannot be combined with ordinary
-credential scopes. The returned token appears only in this creation response;
+`access` is `full` by default, and a `full` key must name its `scopes`. `models`
+cannot be combined with ordinary credential scopes. The returned token appears only in this creation response;
 metadata and revocation remain in Accounts. Use the same base URL and model
 IDs as for a personal key. OAuth access tokens cannot call this API.
 

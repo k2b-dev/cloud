@@ -30,7 +30,9 @@ const load = async (
   address: { chat?: string; thread?: string; threadsPage?: boolean; panel?: string; embedded?: boolean } = {},
   setup?: (page: Page) => Promise<void>,
 ) => {
-  const context = await browser.newContext(options);
+  // These flows test behavior, not motion. On phones the back link's touch area covers the initial pointer;
+  // its first hover transition can start after settled() samples the running animations.
+  const context = await browser.newContext({ ...options, reducedMotion: "reduce" });
   const page = await context.newPage();
   page.setDefaultTimeout(5_000);
   // Pin only Date: animation frames, input delays and read reporting keep their real timers.
@@ -59,7 +61,7 @@ const load = async (
     await page.evaluate(
       (props) => {
         document.documentElement.lang = "de";
-        window.mountChat(props, "de");
+        return window.mountChat(props, "de");
       },
       { ...harness.props(address), embedded: address.embedded },
     );
@@ -678,7 +680,7 @@ test("personal Unread and the system directory filter survive reload and Back in
     await page.reload();
     await page.evaluate(async () => {
       const props = await (await fetch(`/__props?path=${encodeURIComponent(location.pathname + location.search)}`)).json();
-      window.mountChat(props, "de");
+      await window.mountChat(props, "de");
     });
     await sidebar.getByRole("button", { name: "Ungelesen", exact: true }).waitFor();
     expect(await sidebar.getByRole("button", { name: "Ungelesen", exact: true }).getAttribute("aria-pressed")).toBe("true");

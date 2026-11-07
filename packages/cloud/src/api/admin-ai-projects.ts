@@ -41,14 +41,14 @@ export const createAdminAiProjectsRoutes = (authenticate: MiddlewareHandler<Auth
     })
     .post("/:projectId/access", v("json", ProjectAccessSchema), async (c) => {
       const project = await aiProjects.admin.getByShortId(c.req.param("projectId")!);
-      const access = project ? await aiProjects.admin.grantAccess(project.id, c.req.valid("json")) : null;
+      const access = project ? await aiProjects.admin.grantAccess(project.id, c.req.valid("json"), c.get("user").id) : null;
       return access ? respond(c, ok({ access }), 201) : notFound(c, "Project");
     })
     .patch("/:projectId/access/:accessId", v("json", ProjectAccessUpdateSchema), async (c) => {
       const project = await aiProjects.admin.getByShortId(c.req.param("projectId")!);
       if (!project) return notFound(c, "Project");
       try {
-        return (await aiProjects.admin.updateAccess(project.id, c.req.param("accessId")!, c.req.valid("json").permission))
+        return (await aiProjects.admin.updateAccess(project.id, c.req.param("accessId")!, c.req.valid("json").permission, c.get("user").id))
           ? respond(c, ok({ updated: true }))
           : notFound(c, "Access entry");
       } catch (error) {
@@ -60,7 +60,7 @@ export const createAdminAiProjectsRoutes = (authenticate: MiddlewareHandler<Auth
       const project = await aiProjects.admin.getByShortId(c.req.param("projectId")!);
       if (!project) return notFound(c, "Project");
       try {
-        return (await aiProjects.admin.revokeAccess(project.id, c.req.param("accessId")!))
+        return (await aiProjects.admin.revokeAccess(project.id, c.req.param("accessId")!, c.get("user").id))
           ? respond(c, ok({ deleted: true }))
           : notFound(c, "Access entry");
       } catch (error) {
@@ -70,7 +70,9 @@ export const createAdminAiProjectsRoutes = (authenticate: MiddlewareHandler<Auth
     })
     .delete("/:projectId", async (c) => {
       const project = await aiProjects.admin.getByShortId(c.req.param("projectId")!);
-      return project && (await aiProjects.admin.delete(project.id)) ? respond(c, ok({ deleted: true })) : notFound(c, "Project");
+      return project && (await aiProjects.admin.delete(project.id, c.get("user").id))
+        ? respond(c, ok({ deleted: true }))
+        : notFound(c, "Project");
     });
 
 export default createAdminAiProjectsRoutes();

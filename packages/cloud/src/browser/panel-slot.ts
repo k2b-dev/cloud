@@ -1,4 +1,4 @@
-import { attachResizeSeparator, LocaleProvider, parkWorkspaceDetailDrawers } from "@k2b/ui";
+import { attachResizeSeparator, attachSheetHandle, LocaleProvider, parkWorkspaceDetailDrawers } from "@k2b/ui";
 import { createComponent, createSignal } from "solid-js";
 import { render } from "solid-js/web";
 import { PANEL_MAX_WIDTH_REM, PANEL_MIN_WIDTH_REM, readPanelCookie, serializePanelCookie } from "../_internal/panel-cookie";
@@ -624,6 +624,9 @@ export function installPanelSlot(): () => void {
     if (!isOpen()) return;
     canvas.removeAttribute(attribute());
     if (!isPhone()) canvas.removeAttribute("data-panel-sheet");
+    // The sheet opens at full height again next time.
+    delete slot.dataset.sheetDetent;
+    grow?.setAttribute("aria-label", t.shrinkPanel);
     disposeResize();
     disposeResize = attachResize();
     unload();
@@ -690,11 +693,6 @@ export function installPanelSlot(): () => void {
         load(true);
         frame?.focus();
       });
-    } else if (event.target.closest("[data-cloud-panel-grow]") && isPhone()) {
-      const full = slot.dataset.panelSize !== "full";
-      if (full) slot.dataset.panelSize = "full";
-      else delete slot.dataset.panelSize;
-      grow?.setAttribute("aria-label", full ? t.shrinkPanel : t.enlargePanel);
     } else {
       const tab = event.target.closest<HTMLElement>("[data-cloud-panel-provider]");
       if (tab?.dataset.cloudPanelProvider) open(tab.dataset.cloudPanelProvider);
@@ -813,6 +811,16 @@ export function installPanelSlot(): () => void {
         })
       : () => {};
   let disposeResize = attachResize();
+  // The sheet's handle drags it between half and full height; a press switches, and a drag far down closes it.
+  const disposeSheetHandle = grow
+    ? attachSheetHandle(grow, {
+        sheet: slot,
+        detents: ["half", "full"],
+        initial: "full",
+        onChange: (detent) => grow.setAttribute("aria-label", detent === "full" ? t.shrinkPanel : t.enlargePanel),
+        onDismiss: close,
+      })
+    : () => {};
   // A column island may already have published its place while it mounted; each page's context goes out once.
   const swapped = () => {
     collectContext();
@@ -883,6 +891,7 @@ export function installPanelSlot(): () => void {
     clearContext();
     clearTimer();
     disposeResize();
+    disposeSheetHandle();
     removeFallbackFocus();
     window.removeEventListener("ssr:nav-swapped", swapped);
     window.removeEventListener(PAGE_CONTEXT_CHANGED, collectContext);

@@ -2,6 +2,16 @@ import { appAccess, defineApp } from "@k2b/cloud";
 
 export const app = defineApp({
   id: "filesv2",
+  // These protocols validate their own credentials and never use Cloud session authority.
+  sessionlessRoutes: [
+    "/api/filesv2/wopi/files/:id",
+    "/api/filesv2/wopi/files/:id/contents",
+    "/share/filesv2/s/:token",
+    "/share/filesv2/s/:token/*",
+    "/share/filesv2/inbox/:token",
+    "/share/filesv2/inbox/:token/*",
+    "/share/filesv2/transfer/:ticket",
+  ],
   access: appAccess.signedIn({
     publicRoutes: [
       "/share/filesv2/transfer/:ticket",
@@ -31,6 +41,7 @@ export const app = defineApp({
   routes: ["/api/filesv2", "/app/filesv2", "/admin/filesv2", "/public/filesv2", "/share/filesv2"],
   settings: {
     "filesv2.configuration": {
+      adminWrite: "application",
       kind: "secret",
       label: "Files configuration",
       default: "",

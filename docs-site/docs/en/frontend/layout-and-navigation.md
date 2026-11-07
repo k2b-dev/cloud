@@ -5,7 +5,7 @@ section: Frontend
 order: 820
 description: Place application pages in the shared Cloud layout and navigation.
 tags: [layout, navigation, breadcrumbs, page trail, back link]
-updated: 2026-10-28
+updated: 2026-11-04
 ---
 
 # Layout and navigation
@@ -23,8 +23,8 @@ Application authors put objects in the sidebar and views of the open object
 in `AppWorkspace.Head` as `ViewTabs` links with `?view=`. Filter chips and
 quiet secondary actions share that row while the workspace width permits;
 filters wrap and the quiet filtered result count disappears first. Put the
-one filled primary action in `Head.primary`; on phones the shell leaves its
-place beside the bottom bar. See [Objects on the left, views in the head](/en/ui/layout/workspace#objects-on-the-left-views-in-the-head)
+one filled primary action in `Head.primary`; on phones it is the round button
+at the end of the head. See [Objects on the left, views in the head](/en/ui/layout/workspace#objects-on-the-left-views-in-the-head)
 for the complete rule and API.
 
 ## Know the shell at each width
@@ -35,7 +35,7 @@ when people navigate.
 
 | Width | Signed-in pages | Anonymous pages |
 | --- | --- | --- |
-| Below 768 px (phones) | App gradient with a title row, search, help, and the app menu; a soft content card and a floating bar with Home and the first apps of the app bar | Flat header with Home, the app name, help, search, the app grid on app pages, theme and language, and sign-in |
+| Below 768 px (phones) | App gradient with a title row, search, help, and the app menu; a soft content card down to the screen's bottom edge | Flat header with Home, the app name, help, search, the app grid on app pages, theme and language, and sign-in |
 | 768 to 1023 px (tablets) | No header. A 60 px app bar in a rounded gradient container sits beside the app card. Both have 20 px corners, 8 px spacing to the window edges, and 8 px between them | The same header controls; header, content, and footer as cards on the app background |
 | From 1024 px | No header. The 56 px app bar sits on the app background. The app area is a card whose spacing grows from 4 px at 1024 px to 8 px at 1440 px and whose radius grows from 10 px to 14 px. Wider windows keep those dimensions | Header with breadcrumbs, theme and language, and sign-in; cards on the app background |
 
@@ -49,9 +49,11 @@ When the sidebar is hidden, also together with the app bar, the work area
 takes its column and rounds its start corners with the card, so nothing in the
 workspace paints past the card's corners.
 
-From 768 px the app bar holds Home, the button that hides the sidebar, the
-apps, the app grid, search, help, and the profile avatar. Its controls are
-44 px targets. From 768 to 1023 px the app bar's container carries the app
+From 768 px the app bar holds Home, the apps, the app grid, the panel button
+when more than one panel is offered, search, help, and the profile avatar. Its
+controls are 44 px targets. The panel button, search, and help are blue; the
+panel button's arrow and name say whether a click opens or closes the panel,
+and an open panel keeps its fill. From 768 to 1023 px the app bar's container carries the app
 gradient on a neutral canvas. The selected app has a surface background, and
 there is no separator between shortcuts and apps. Announcements and account
 notices above the app are cards with the same 8 px spacing.
@@ -65,22 +67,19 @@ above the home indicator.
 
 Below 768 px, including narrow tablet split views, the signed-in canvas
 shows the app gradient. Its title row has no line or surface fill and holds
-the app's name, search, help, and the app menu in that order. **Home** moves
-from the header to the first place of the floating bottom bar. The bar then
-shows the first four links of the person's app bar, shortcuts included, in
-the same order. When the current app comes later, it takes the fourth place,
-so the bar always marks it. The open item is the surface color on the bar's
-app gradient. Home is marked on the start page that `/` opens. When the
-person changes their app bar, the bar follows without a reload.
+the app's name, search, help, and the app menu in that order. There is no
+bottom bar and no panel button: the app menu leads with **Home** (**Start** in
+German) before the shortcuts and apps of the person's app bar and every other
+app, and help opens the panel, whose tabs lead to the other panels.
 
-The phone's content is a soft card with 28 px top corners. A regular signed-in
-page scrolls inside that card (`main`), while the window stays still. Content
-wider than the card scrolls sideways inside it, as from 768 px. The card
-keeps space for the bar at its end and when scrolling to a focused control.
-The bar sits 8 px above the bottom safe area; the title row and canvas keep
-the top and side safe areas. Anonymous phones retain Home in the header, its
-bottom line, a flat surface, and document scrolling. The device app's own flat
-bottom bar is unchanged.
+The phone's content is a soft card with 28 px top corners that reaches the
+screen's bottom edge. A regular signed-in page scrolls inside that card
+(`main`), while the window stays still. Content wider than the card scrolls
+sideways inside it, as from 768 px. The card's content ends above the bottom
+safe area; the title row and canvas keep the top and side safe areas. The
+app's primary action stays the round button at the end of the workspace head.
+Anonymous phones retain Home in the header, its bottom line, a flat surface,
+and document scrolling. The device app's own flat bottom bar is unchanged.
 
 Applications need no changes for any of this. `AppWorkspace` adds its compact
 navigation between 768 and 1023 px on its own; see
@@ -105,15 +104,16 @@ focus, gestures, and the close-action contract.
 
 ### Hide the app bar and navigation
 
-From 768 px, **Hide sidebar** below Home in the app bar or `Cmd+\` (`Ctrl+\`
-on other systems) hides the app bar. From 1024 px, it also hides the outermost
+From 768 px, **Hide sidebar**, the first entry of the profile menu, or `Cmd+\`
+(`Ctrl+\` on other systems) hides the app bar. From 1024 px, it also hides the outermost
 workspace's sidebar; from 768 to 1023 px that sidebar is an overlay behind the
 workspace head's button anyway. The shortcut is listed under keyboard
-shortcuts in Help. The **Show sidebar** button at the bottom start corner
-of the app area, the same shortcut, or a drag from the left edge on a touch
-screen shows them again. The browser remembers the choice in a cookie, so a
+shortcuts in Help. Only the avatar stays: it floats at the bottom
+start corner of the app area, and its menu starts with **Show sidebar**. That
+entry, the same shortcut, or a drag from the left edge on a touch screen shows
+them again. The browser remembers the choice in a cookie, so a
 reload shows the same page. Phones ignore it. On keyboard layouts without a
-direct backslash key, such as German, use the button.
+direct backslash key, such as German, use the profile menu.
 
 Applications need no code. Keep actions people need available outside the
 sidebar too, through the application's own links.
@@ -211,10 +211,7 @@ arrives. Other faces load when the page first uses them and appear with
 Latin. Keep them out of lines whose wrapping decides where the rest of a page
 sits, especially on a vertically centered page.
 
-Every page also preloads the Tabler icon font. It is much larger than the text
-faces, so on a slow connection it can still arrive after the first frame. Until
-then, each icon already has its final width, so buttons and text next to it do
-not grow or move sideways when the font arrives.
+The Tabler icon font loads when a page uses icons, after its stylesheet is read. The template does not preload the full icon font. The icon preset reserves a one-em box before the font arrives, so the label beside an icon keeps its position.
 
 An application preloads the font files of the `@k2b/ui` release that its
 `@k2b/cloud` version depends on, and Core serves the files of its own release.
@@ -279,19 +276,20 @@ import { PageTrail } from "@k2b/cloud/ssr/islands";
 ```
 
 From 1024 px, when a visible, non-collapsed workspace sidebar marks the exact
-current page with `aria-current="page"`, the workspace shows no title row and
-no back link. `AppWorkspace.SidebarItem active` renders that attribute. The
-page title stays the document title, and a visually hidden `h1` on a page
-that has no `h1` of its own in Main. Pages
-deeper than the sidebar lists keep their back link, as do compact layouts
-from 768 to 1023 px and phones. Alt+Up still goes to the parent.
+current page with `aria-current="page"`, or the item a deeper page belongs
+to, the workspace shows no title row and no back link: the marked item names
+the place and links the way up. `AppWorkspace.SidebarItem active` and
+`active="ancestor"` render these marks. The page title stays the document
+title, and a visually hidden `h1` on a page that has no `h1` of its own in
+Main. Compact layouts from 768 to 1023 px and phones keep the back link.
+Alt+Up still goes to the parent.
 
 Name the page in its content: Grids names the table in its search field with
 text such as "Search Devices…"; Spaces names the space above its views in
 the sidebar; a note in Notebooks has its own first heading. The sidebar also
 names the page. Mark the exact current page with `active`; on
 a page deeper than the sidebar lists, mark the containing item with
-`active="ancestor"` so it stays highlighted and the page keeps its back link.
+`active="ancestor"` so it stays highlighted and stands for the way up.
 
 The links keep the parent's `href` from the title array, so a new tab, a
 copied link, and a reload lead to the page itself. A plain click returns to
@@ -458,8 +456,9 @@ The Core sign-in, password, and consent pages use the same class.
 Authenticated users change the theme or language from the profile menu and
 can open `/me` for the remaining profile settings. While the installation runs
 the Cloud app (the `pwa` application), the menu also shows **App**, which
-leads to `/me/app`, where people pair and remove devices. The menu ends with
-**Sign out**. Applications do not add their own link to any of these.
+leads to `/me/app`, where people pair and remove devices. From 768 px the
+menu starts with **Hide sidebar** or **Show sidebar** and its shortcut. It
+ends with **Sign out** in the danger tone, in a section of its own. Applications do not add their own link to any of these.
 Anonymous `Layout` pages expose the same preferences in the header without
 profile actions, and `MinimalLayout` pages show them in their footer.
 Applications must not add a second theme or language control to their own
@@ -467,8 +466,8 @@ content.
 
 The layout places the profile menu with CSS:
 
-- Below 768 px, the app menu in the header holds the profile actions; the
-  title row has no avatar. Home and the apps are in the bottom bar.
+- Below 768 px, the app menu in the header holds Home, the apps, and the
+  profile actions; the title row has no avatar.
 - From 768 px, the avatar is the last control of the app bar, below search and
   help. Its menu opens beside the app bar and grows upward from the avatar.
 
@@ -505,8 +504,8 @@ other Cloud application.
 ## Show a count on the app icon
 
 An application can show how many items wait for the signed-in person, such as
-unread mentions, as a count on its icon in the app bar, the phone bar, and
-the app grid.
+unread mentions, as a count on its icon in the app bar and the app grid,
+which is also the phone's app menu.
 Declare a route the application serves:
 
 ```ts
@@ -692,19 +691,29 @@ scrolling. For a bounded child such as `SettingsPage`, pass `scroll={false}` to
 The default remains `scroll={true}` for ordinary admin pages. Set `contentClass`
 when the page owns its content insets; it replaces the default shell padding.
 
+The admin sidebar shows the overview, then **Set up** (base settings, storage,
+sign-in, outgoing mail, email templates, announcements, AI), then
+**Operations** (apps, app bar, Observability, People), then app-owned groups,
+and last **Settings per app** with one entry per app's `adminHref`.
+
 App-owned admin groups come from `adminNav` in the application declaration.
 A group may declare `section: "ai"` or `section: "observability"` to contribute
 its links to that shared area instead of creating a separate navigation group.
-This placement is available to any application and does not grant access; its
-routes and services still enforce their own permissions. Omit `section` for an
-independent group.
+`section: "people"` places the page of an application that manages accounts
+and groups under Operations; its link may point to the application's own page
+outside `/admin`, so the page stays available to every role the application
+admits. This placement is available to any application and does not grant
+access; its routes and services still enforce their own permissions. Omit
+`section` for an independent group.
 
 ## Build an administration area
 
 An administration area groups related admin pages: its sections form a first
 column, and the open section sits beside it as `AppWorkspace` levels.
 `AdminArea` from `@k2b/cloud/ssr` renders the admin layout, the first column and
-the levels; the owner builds every section's content by hand.
+the levels; the owner builds every section's content by hand. `AdminAreaPane`
+is the page level: its title is the page title, and its content starts at that
+title's edge, so a form inside it adds no side inset of its own.
 
 ```tsx
 <AdminArea

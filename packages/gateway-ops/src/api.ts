@@ -1,6 +1,6 @@
 import { listApps } from "@k2b/cloud";
-import { type AuthContext, auth, getLocale, rateLimit, respond, v } from "@k2b/cloud/server";
-import { latestGatewayRouteSnapshot, settingsDeleteLegacyKeys, settingsListLegacyKeys, settingsService } from "@k2b/cloud/services";
+import { type AuthContext, auth, expectUserBackedActor, getLocale, rateLimit, respond, v } from "@k2b/cloud/server";
+import { audit, latestGatewayRouteSnapshot, settingsDeleteLegacyKeys, settingsListLegacyKeys, settingsService } from "@k2b/cloud/services";
 import { err, fail, ok } from "@k2b/stdlib";
 import { Hono } from "hono";
 import { z } from "zod";
@@ -98,7 +98,15 @@ export const apiRoutes = new Hono<AuthContext>()
   .route("/metrics", metricsApiRoutes)
   .delete("/apps/:id", async (c) => {
     const id = c.req.param("id");
-    return respond(c, removeOfflineRegisteredApp(id, await listApps()));
+    const result = await removeOfflineRegisteredApp(id, await listApps());
+    if (result.ok)
+      await audit.record({
+        action: "gateway.app.remove",
+        outcome: "allowed",
+        actor: { userId: expectUserBackedActor(c).id },
+        target: { type: "app", id },
+      });
+    return respond(c, result);
   })
   .get("/settings", async (c) => {
     const result = await settingsService.entry.list({ filter: { group: GATEWAY_SETTING_GROUP }, locale: getLocale(c) });
@@ -107,12 +115,31 @@ export const apiRoutes = new Hono<AuthContext>()
   // Compatibility shim for older ops clients. Core owns platform settings now;
   // the old Gateway Ops URL still delegates to the same platform service.
   .get("/settings/legacy", async (c) => respond(c, ok(await settingsListLegacyKeys(await liveSettingKeys()))))
-  .delete("/settings/legacy", async (c) => respond(c, ok(await settingsDeleteLegacyKeys(await liveSettingKeys()))))
+  .delete("/settings/legacy", async (c) => {
+    const result = await settingsDeleteLegacyKeys(await liveSettingKeys());
+    await audit.record({
+      action: "settings.legacy.delete",
+      outcome: "allowed",
+      actor: { userId: expectUserBackedActor(c).id },
+      metadata: { keys: result.deleted },
+    });
+    return respond(c, ok(result));
+  })
   .put("/settings/:key{.+}", v("json", UpdateSettingSchema), async (c) => {
     const key = c.req.param("key") ?? "";
     if (!key.startsWith(GATEWAY_SETTING_PREFIX)) return respond(c, fail(err.badInput(`Setting "${key}" is not in the gateway namespace`)));
     const body = c.req.valid("json");
-    const result = await settingsService.entry.update({ key, value: body.value, replaceUnreadable: body.replaceUnreadable });
+    const result = await settingsService.entry.update({
+      key,
+      value: body.value,
+      replaceUnreadable: body.replaceUnreadable,
+      audit: {
+        action: "settings.update",
+        outcome: "allowed",
+        actor: { userId: expectUserBackedActor(c).id },
+        target: { type: "setting", id: key },
+      },
+    });
     if (!result.ok) return respond(c, result);
     if (key === "gateway.health_check_schedule" && typeof body.value === "string") await updateHealthSchedule(body.value);
     return respond(c, ok({ message: gatewayOpsMessages.resolve([getLocale(c)]).t.settingUpdated }));

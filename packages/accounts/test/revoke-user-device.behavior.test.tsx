@@ -36,7 +36,7 @@ describe("revoking another user's sign-in device", () => {
   let prompts: typeof import("@k2b/ui").prompts;
   beforeEach(async () => {
     dom = createDomTestHarness();
-    spyOn(navigation, "refreshCurrentPath").mockImplementation(refreshed);
+    spyOn(navigation, "swapPage").mockImplementation(async () => refreshed());
     ({ prompts } = await import("@k2b/ui"));
     cleanup = () => dom.cleanup();
   });

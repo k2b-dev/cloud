@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
+import { sql } from "@k2b/cloud";
 import type { User } from "@k2b/cloud/contracts";
 import { toPgUuidArray } from "@k2b/cloud/services";
-import { sql } from "bun";
 import { databaseSuite } from "../../../../scripts/fixtures/test-infra";
 import { seedActiveBaseStore } from "./base-store.test-fixture";
 import "../../../../scripts/fixtures/authorization-preload";
@@ -193,6 +193,12 @@ suite("Pulse base access", () => {
         data: { id: sourceId, baseId },
       });
       expect((await resolveIngestSourceForServiceAccount({ ...serviceAccount, resourceId: sourceId })).ok).toBe(false);
+      for (const binding of [{ appId: "other" }, { resourceType: "pulse_base" }, { kind: "standalone" as const }]) {
+        expect(await resolveIngestSourceForServiceAccount({ ...serviceAccount, ...binding })).toMatchObject({
+          ok: false,
+          error: { status: 403, code: "FORBIDDEN" },
+        });
+      }
 
       const [adminAccess] = await sql<{ id: string }[]>`
         INSERT INTO auth.access (user_id, permission) VALUES (${userId}::uuid, 'admin') RETURNING id

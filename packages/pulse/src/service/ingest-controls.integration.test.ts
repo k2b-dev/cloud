@@ -1,5 +1,6 @@
 import { expect, spyOn, test } from "bun:test";
-import { SQL, sql } from "bun";
+import { sql } from "@k2b/cloud";
+import { RedisClient, SQL } from "bun";
 import { requireInfra, requireInfraUrl, suiteFor, testInfra } from "../../../../scripts/fixtures/test-infra";
 import { app } from "../config";
 import { CLICKHOUSE_UUID_CHUNK_SIZE } from "../store/client";
@@ -106,11 +107,11 @@ suiteFor(
       await f.cleanup();
     }
   }, 30000);
-  test("#6 two replicas share both buckets; done keys cost nothing; Valkey down fails closed", async () => {
+  test("#6 two replicas share both buckets; valid completed keys cost nothing; Valkey down fails closed", async () => {
     const f = await writeFixture("quota"),
-      a = createIngestQuota(requireInfraUrl("valkey")),
-      b = createIngestQuota(requireInfraUrl("valkey")),
-      down = createIngestQuota("redis://127.0.0.1:1");
+      a = createIngestQuota(() => new RedisClient(requireInfraUrl("valkey"), { enableOfflineQueue: false, connectionTimeout: 1000 })),
+      b = createIngestQuota(() => new RedisClient(requireInfraUrl("valkey"), { enableOfflineQueue: false, connectionTimeout: 1000 })),
+      down = createIngestQuota(() => new RedisClient("redis://127.0.0.1:1", { enableOfflineQueue: false, connectionTimeout: 1000 }));
     try {
       await sql`UPDATE pulse.base_stores SET values_per_minute=2,bytes_per_minute=100 WHERE base_id=${f.base.id}::uuid`;
       const one = createIngestWriter({ store: f.store, clock: f.clock, quota: a }),
@@ -122,7 +123,7 @@ suiteFor(
         ok: false,
         error: { code: "PULSE_BASE_THROTTLED", status: 429, retryAfter: expect.any(Number) },
       });
-      assertWrite(await two({ ...params, idempotencyKey: "done" }));
+      expect(await two({ ...params, idempotencyKey: "done" })).toEqual({ ok: true, data: { metrics: 1, events: 0, states: 0 } });
       const [source] = await sql`SELECT throttled_at FROM pulse.sources WHERE id=${f.sourceId}::uuid`;
       expect(source?.throttled_at.toISOString()).toBe(f.clock().toISOString());
       const failed = await createIngestWriter({ store: f.store, clock: f.clock, quota: down })(params);
@@ -143,7 +144,9 @@ suiteFor(
 
   for (const budget of ["values", "bytes"] as const)
     test(`a batch larger than the ${budget} minute budget is admitted and repays its debt`, async () => {
-      const quota = createIngestQuota(requireInfraUrl("valkey"));
+      const quota = createIngestQuota(
+        () => new RedisClient(requireInfraUrl("valkey"), { enableOfflineQueue: false, connectionTimeout: 1000 }),
+      );
       const input = {
         baseId: crypto.randomUUID(),
         valuesPerMinute: 2000,

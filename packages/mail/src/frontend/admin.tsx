@@ -1,4 +1,4 @@
-import { type AuthContext, getDateConfig, getLocale } from "@k2b/cloud/server";
+import { type AuthContext, auth, getDateConfig, getLocale } from "@k2b/cloud/server";
 import { AdminLayout } from "@k2b/cloud/ssr";
 import { SearchBar } from "@k2b/cloud/ssr/islands";
 import { dates } from "@k2b/stdlib";
@@ -6,7 +6,7 @@ import { ButtonLink, DataTable, type DataTableColumn, Placeholder, StatCell, Sta
 import { app, ssr } from "../config";
 import { requestContactDirectoryConfig } from "../contact-directory-settings";
 import type { PlatformMailboxOperationSummary } from "../contracts";
-import { contactDirectory, type MailRequestContext, operations, storageObservability } from "../service";
+import { contactDirectory, operations, storageObservability } from "../service";
 import { localizeMailError } from "../service/error-messages";
 import MailAdminContactDirectory from "./_components/MailAdminContactDirectory.island";
 import MailAdminMailboxActions from "./_components/MailAdminMailboxActions.island";
@@ -36,9 +36,11 @@ export default ssr<AuthContext>(async (c) => {
   const locale = getLocale(c);
   const { t } = mailPageMessages.resolve([locale]);
   const dateConfig = getDateConfig(c);
-  const context: MailRequestContext = {
-    actor: c.get("actor"),
-    accessSubject: c.get("accessSubject"),
+  const authority = auth.getAuthority(c);
+  const context = {
+    actor: authority.actor,
+    accessSubject: authority.accessSubject,
+    authority,
     requestId: c.req.header("x-request-id") ?? null,
   };
   const query = (c.req.query("q") ?? "").trim();

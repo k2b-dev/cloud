@@ -14,7 +14,6 @@ packages/chat/src/styles/app-host.browser.test.ts | 2
 packages/cloud/src/ai/chat/live-turn.browser.test.ts | 40
 packages/cloud/src/ai/chat/view-block.browser.test.ts | 22
 packages/cloud/src/browser/CloudResourceSearch.browser.test.ts | 1
-packages/cloud/src/browser/choose-files.browser.test.ts | 2
 packages/cloud/src/ssr/LayoutHeader.browser.test.ts | 2
 packages/cloud/src/ssr/LayoutHelp.browser.test.ts | 3
 packages/cloud/src/ssr/LayoutHelp.hydration.browser.test.ts | 1
@@ -25,11 +24,11 @@ packages/cloud/src/ssr/app-icon-tiles.browser.test.ts | 1
 packages/cloud/src/ssr/compact-shell.browser.test.ts | 15
 packages/cloud/src/ssr/dialog-app-colors.browser.test.ts | 3
 packages/cloud/src/ssr/layout-viewport.browser.test.ts | 2
-packages/cloud/src/ssr/page-trail.browser.test.ts | 24
+packages/cloud/src/ssr/page-trail.browser.test.ts | 23
 packages/cloud/src/ssr/panel-slot.browser.test.ts | 8
 packages/cloud/src/ssr/print.browser.test.ts | 11
-packages/cloud/src/ssr/shell-focus.browser.test.ts | 8
-packages/cloud/src/ssr/soft-shell-frames.browser.test.ts | 5
+packages/cloud/src/ssr/shell-focus.browser.test.ts | 5
+packages/cloud/src/ssr/soft-shell-frames.browser.test.ts | 1
 packages/cloud/src/ssr/theme-cycle.browser.test.ts | 1
 packages/cloud/src/styles/app-canvas.browser.test.ts | 4
 packages/cloud/src/styles/markdown-content.browser.test.ts | 4
@@ -48,7 +47,6 @@ packages/filesv2/src/frontend/StorageOverview.browser.test.ts | 3
 packages/filesv2/src/frontend/UploadPanel.browser.test.ts | 3
 packages/grids/src/frontend/custom-app/chart-tooltips.browser-suite.ts | 1
 packages/grids/src/styles/app-host.browser.test.ts | 2
-packages/mail/src/frontend/MailOverview.browser.test.ts | 5
 packages/mail/src/frontend/_components/MailComposerEditor.browser.test.ts | 8
 packages/mail/src/frontend/_components/MailConversationList.browser.test.ts | 45
 packages/mail/src/frontend/_components/MailFolderSettings.browser.test.ts | 13
@@ -74,7 +72,7 @@ packages/spaces/src/frontend/[id]/_components/calendar/calendar-colors.browser-s
 packages/spaces/src/frontend/[id]/_components/calendar/calendar-days.browser-suite.ts | 1
 packages/spaces/src/frontend/[id]/_components/calendar/calendar-month.browser-suite.ts | 20
 packages/spaces/src/frontend/[id]/_components/calendar/calendar-tray.browser-suite.ts | 1
-packages/spaces/src/frontend/[id]/_components/detail/item-detail.browser-suite.ts | 29
+packages/spaces/src/frontend/[id]/_components/detail/item-detail.browser-suite.ts | 24
 packages/spaces/src/frontend/[id]/_components/kanban/kanban-board.browser-suite.ts | 72
 packages/spaces/src/frontend/[id]/_components/list/item-list.browser-suite.ts | 2
 packages/spaces/src/frontend/[id]/_components/sidebar/item-templates.browser-suite.ts | 6
@@ -91,7 +89,6 @@ packages/ui/src/content/calendar-days.browser.test.ts | 1
 packages/ui/src/content/calendar-month.browser.test.ts | 4
 packages/ui/src/content/content-styles.browser.test.ts | 2
 packages/ui/src/content/data-panel-header.browser.test.ts | 1
-packages/ui/src/content/data-table-minimal.browser.test.ts | 8
 packages/ui/src/content/help-blocks.browser.test.ts | 5
 packages/ui/src/content/markdown-callouts.browser.test.ts | 1
 packages/ui/src/content/markdown-links.browser.test.ts | 4

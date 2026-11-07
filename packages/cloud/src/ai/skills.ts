@@ -29,9 +29,11 @@ import { type AiSkillContent, appSkillStatus, contentHash } from "./skill-conten
 import {
   type AiSkillExtraFrontmatter,
   type AiSkillReferenceInput,
+  aiSkillLoadTools,
   isAiSkillManualOnly,
   mountAiSkillInstructionLinks,
   serializeAiSkillMarkdown,
+  splitAiSkillMarkdown,
   validateAiSkillDescription,
   validateAiSkillExtraFrontmatter,
   validateAiSkillInstructions,
@@ -111,6 +113,8 @@ export type AiLoadedSkillSnapshot = {
   revision: number;
   instructions: string;
   files: { path: string; content: string }[];
+  /** Tools the pinned SKILL.md lists in `load-tools`; load_skill makes them callable with it. */
+  loadTools: string[];
   loadedAt: string;
 };
 
@@ -259,6 +263,8 @@ const subjectRoles = async (subject: AiResourceContext | null, authority: Reques
     logger("ai:skills").warn("App registry unavailable; app Skills are unavailable");
     return [];
   });
+  // Registry Skill summaries are optional. Existing app Skills remain readable
+  // through their persisted ownership and grants even without that summary.
   const usable = [...(await usableAppIds(authority, apps))];
   const resourceActor = subject?.actor;
   // App Skill brokers support independent machines, including resource bindings.
@@ -299,6 +305,14 @@ const effectivePermission = (skillId: SQLQuery, subject: AiResourceContext | nul
     SELECT access.permission, (access.user_id IS NOT NULL OR access.group_id IS NOT NULL OR access.service_account_id IS NOT NULL) AS direct
       FROM ai.skill_access link JOIN auth.access access ON access.id=link.access_id
       WHERE link.skill_id=${skillId} AND ${accessMatch(subject, roles)}
+    UNION ALL
+    -- An installed app Skill's signed-in row is its app's audience (app-skill-store), not a share with people: a
+    -- machine the app's access rule admits keeps reading it. Shared Skills follow the people-only tier.
+    SELECT access.permission, false AS direct FROM ai.skill_access link
+      JOIN auth.access access ON access.id=link.access_id
+      JOIN ai.app_skills app ON app.skill_id=link.skill_id
+      WHERE link.skill_id=${skillId} AND access.authenticated_only AND access.permission <> 'none'
+        AND ${aiResourceAccessSubject(subject)?.type === "service_account"}
     UNION ALL
     SELECT 'read'::auth.permission_level, false AS direct FROM ai.project_skills link
       JOIN ai.project_access project_access ON project_access.project_id=link.project_id
@@ -1206,16 +1220,18 @@ export const aiSkills = {
         FROM ai.turn_skill_snapshots
         WHERE turn_id = ${turnId}::uuid AND skill_id = ${skill.id}::uuid
       `;
-      return snapshot
-        ? {
-            name: snapshot.skill_name,
-            description: snapshot.description,
-            revision: Number(snapshot.revision),
-            instructions: mountAiSkillInstructionLinks(snapshot.skill_name, snapshot.instructions),
-            files: snapshotFiles(snapshot.files).map((file) => ({ ...file, path: mountAiSkillFilePath(file.path) })),
-            loadedAt: iso(snapshot.loaded_at),
-          }
-        : null;
+      if (!snapshot) return null;
+      const pinnedFiles = snapshotFiles(snapshot.files);
+      const skillFile = pinnedFiles.find((file) => file.path === `${snapshot.skill_name}/SKILL.md`);
+      return {
+        name: snapshot.skill_name,
+        description: snapshot.description,
+        revision: Number(snapshot.revision),
+        instructions: mountAiSkillInstructionLinks(snapshot.skill_name, snapshot.instructions),
+        files: pinnedFiles.map((file) => ({ ...file, path: mountAiSkillFilePath(file.path) })),
+        loadTools: skillFile ? aiSkillLoadTools(splitAiSkillMarkdown(skillFile.content).fields) : [],
+        loadedAt: iso(snapshot.loaded_at),
+      };
     });
   },
 

@@ -1,15 +1,16 @@
 // Pins today's reach of real admin routes for each credential kind.
 // Step-up for admin routes will deliberately change the session-less rows
 // when those routes require session-bound proof.
+import { createHash } from "node:crypto";
 import { suiteFor } from "../../../scripts/fixtures/test-infra";
 import "../../../scripts/fixtures/authorization-preload";
 import { afterAll, beforeAll, expect, test } from "bun:test";
-import { redis, sql } from "bun";
 import { createLocalJWKSet, decodeJwt } from "jose";
 import accountsRoutes from "../../../packages/accounts/src/api";
 import coreSettingsRoutes from "../../../packages/cloud/src/api/admin-core-settings";
 import identityRoutes from "../../../packages/cloud/src/api/admin-identity";
 import { AI_INFERENCE_SCOPE } from "../../../packages/cloud/src/contracts/shared";
+import { redis, sql } from "../../../packages/cloud/src/runtime/clients";
 import { resolveInvocationAuthority } from "../../../packages/cloud/src/services/identity/invocation-actor";
 import {
   type InvocationAuthority,
@@ -357,7 +358,7 @@ suite("Admin credential matrix", () => {
   afterAll(async () => {
     const errors: unknown[] = [];
     try {
-      for (const token of loginTokens) await redis.del(`email-login:${token}`);
+      for (const token of loginTokens) await redis.del(`email-login:${createHash("sha256").update(token).digest("hex")}`);
     } catch (error) {
       errors.push(error);
     }

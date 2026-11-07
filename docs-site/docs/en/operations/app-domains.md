@@ -44,8 +44,8 @@ Use a Cloud administrator profile for the target installation:
 
 ```sh
 cld --profile operator admin apps domains ls webseite
-cld --profile operator admin apps domains add webseite www.example.org
-cld --profile operator admin apps domains add webseite example.org --redirect-to www.example.org
+cld --profile operator admin apps domains add webseite www.example.org --yes
+cld --profile operator admin apps domains add webseite example.org --redirect-to www.example.org --yes
 ```
 
 Pass the application ID first and the host second. You can assign a domain
@@ -79,8 +79,8 @@ required.
 To change an alias, turn it into a direct site domain, or remove its assignment:
 
 ```sh
-cld --profile operator admin apps domains set webseite example.org --redirect-to www.example.org
-cld --profile operator admin apps domains set webseite example.org --no-redirect
+cld --profile operator admin apps domains set webseite example.org --redirect-to www.example.org --yes
+cld --profile operator admin apps domains set webseite example.org --no-redirect --yes
 cld --profile operator admin apps domains rm webseite example.org --yes
 ```
 
@@ -129,7 +129,7 @@ Configure an ACME certificate resolver named `le` in Traefik, or change the
 admin setting to your existing resolver:
 
 ```sh
-cld --profile operator admin settings set gateway.ingress_cert_resolver --value '"myresolver"'
+cld --profile operator admin settings set gateway.ingress_cert_resolver --app gateway-ops --value '"myresolver"' --yes
 ```
 
 The setting affects app-domain routers within five seconds. Configure your
@@ -173,7 +173,7 @@ Read the last stored check with `ls`, or run a new check with `check`:
 
 ```sh
 cld --profile operator admin apps domains ls webseite
-cld --profile operator admin apps domains check webseite www.example.org
+cld --profile operator admin apps domains check webseite www.example.org --yes
 ```
 
 The list shows Host, Redirect, Active, DNS, Certificate, and Reachable.
@@ -211,8 +211,10 @@ Site cookies remain. The gateway forwards its trusted client-IP resolution,
 so `clientIp(c)` and application `rateLimit()` use the visitor's address.
 
 For methods other than GET, HEAD, and OPTIONS, an `Origin` must match the
-site's exact origin, including an explicit port. Requests marked `same-site`
-or `cross-site` by `Sec-Fetch-Site` receive `403`. This rule also applies to
+site's exact origin, including an explicit port. `Origin: null` passes only
+with `Sec-Fetch-Site: same-origin`: a page served with
+`Referrer-Policy: no-referrer` sends it with its own form posts. Requests marked
+`same-site` or `cross-site` by `Sec-Fetch-Site` receive `403`. This rule also applies to
 every WebSocket handshake. Server webhooks without either header pass.
 
 Requests have separate budgets per domain and client IP, derived from

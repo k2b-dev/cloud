@@ -485,3 +485,33 @@ test("a row names a meaningful icon and keeps every other icon decorative", asyn
     dom.cleanup();
   }
 });
+
+test("the tree is built once per change, however many rows read it, and not before the first read", async () => {
+  const dom = createDomTestHarness();
+  const { default: Navigation } = await import("../src/layout/Navigation");
+  const [label, setLabel] = createSignal("Inbox");
+  let builds = 0;
+  const dispose = render(() => {
+    const navigation = createNavigation({
+      items: () => {
+        builds += 1;
+        return [
+          { id: "inbox", label: label(), href: "/inbox", children: [{ id: "child", label: "Child", href: "/child" }] },
+          { id: "help", label: "Help", href: "/help" },
+        ];
+      },
+    });
+    expect(builds).toBe(0);
+    return <Navigation navigation={navigation} label="Folders" />;
+  }, dom.root);
+  try {
+    expect(builds).toBe(1);
+    expect(dom.root.textContent).toContain("Inbox");
+    setLabel("Renamed");
+    expect(builds).toBe(2);
+    expect(dom.root.textContent).toContain("Renamed");
+  } finally {
+    dispose();
+    dom.cleanup();
+  }
+});

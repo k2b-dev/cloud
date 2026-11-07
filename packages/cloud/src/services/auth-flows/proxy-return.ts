@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { redis } from "../../runtime/clients";
 
 const KEY_PREFIX = "auth:proxy-return:";
@@ -8,7 +9,7 @@ type ProxyReturnPayload = {
   url: string;
 };
 
-const key = (token: string) => `${KEY_PREFIX}${token}`;
+const key = (token: string) => `${KEY_PREFIX}${createHash("sha256").update(token).digest("hex")}`;
 
 const normalizeReturnUrl = (value: string): string | null => {
   try {

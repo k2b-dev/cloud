@@ -1,4 +1,4 @@
-import { sql } from "bun";
+import { sql } from "@k2b/cloud";
 
 export const migrateAppBootstrap = async (): Promise<void> => {
   // Probe before ALTER so repeated setup does not lock active credential traffic.

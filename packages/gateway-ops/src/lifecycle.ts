@@ -1,4 +1,4 @@
-import { lazySync, listApps, listAppsDetailed, watchAppRegistry } from "@k2b/cloud";
+import { lazySync, listAppsDetailed, watchAppRegistry } from "@k2b/cloud";
 import type { AppLifecycle } from "@k2b/cloud/contracts";
 import { get as getSetting, logger, superviseRuntimeTask, trace } from "@k2b/cloud/services";
 import type { Worker } from "@k2b/sync";
@@ -18,7 +18,7 @@ const TELEMETRY_CLEANUP_CRON = "17 3 * * *";
 const HEALTH_SCHEDULE_ID = "gateway:health-webhook-check";
 const OFFLINE_AUDIT_ID = "gateway:registered-apps:offline-audit";
 const SCHEDULER_ID = "gateway-ops-lifecycle";
-/** Retention ticks heartbeat per delete batch; `trace.cleanup` runs as one statement and must fit in this window. */
+/** Telemetry retention heartbeats between bounded delete batches. Core owns trace retention. */
 const SCHEDULER_ACK_WAIT_MS = 5 * 60 * 1000;
 
 const gatewayOpsScheduler = lazySync((sync) => sync.scheduler({ id: SCHEDULER_ID, delivery: { ackWaitMs: SCHEDULER_ACK_WAIT_MS } }));
@@ -103,7 +103,7 @@ const runOfflineAudit = async (signal: AbortSignal): Promise<void> => {
 };
 
 export const refreshRegisteredApps = async (): Promise<void> => {
-  await upsertRegisteredApps(await listApps());
+  await upsertRegisteredApps(await listAppsDetailed());
 };
 
 // `watchAppRegistry` awaits each change callback, so refreshes never overlap.
@@ -223,14 +223,12 @@ const createTelemetryCleanupSchedule = async (): Promise<void> => {
           category: "schedule",
         },
         async () => {
-          const [eventsDays, rollupsDays, traceDays] = await Promise.all([
+          const [eventsDays, rollupsDays] = await Promise.all([
             getPositiveIntegerSetting("gateway.telemetry_event_retention_days", 14),
             getPositiveIntegerSetting("gateway.telemetry_rollup_retention_days", 90),
-            getPositiveIntegerSetting("logs.trace_retention_days", 30),
           ]);
           const telemetry = await cleanupTelemetry({ eventsDays, rollupsDays, heartbeat: () => context.heartbeat() });
-          const traces = await trace.cleanup({ days: traceDays });
-          const summary = { events: telemetry.events, rollups: telemetry.rollups, traces };
+          const summary = { events: telemetry.events, rollups: telemetry.rollups };
           log.info("Observability retention cleanup completed", summary);
           return summary;
         },

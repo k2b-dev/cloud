@@ -1,3 +1,4 @@
+import type { MutationResult as CloudMutationResult } from "@k2b/cloud/contracts";
 import { CloudResourceRefSchema, ServiceAccountKindSchema } from "@k2b/cloud/contracts";
 import { z } from "zod";
 import { CompletionInputSchema, WorkActorSchema } from "./work-contracts";
@@ -404,11 +405,19 @@ export const TemplateDateRuleSchema = z.discriminatedUnion("type", [
 ]);
 export type TemplateDateRule = z.infer<typeof TemplateDateRuleSchema>;
 
+const ItemTemplateIconSchema = z
+  .string()
+  .max(80)
+  .regex(/^ti ti-[a-z0-9]+(-[a-z0-9]+)*$/)
+  .nullable()
+  .describe("Tabler icon class shown next to the name, for example `ti ti-report`; null uses the kind's default");
+
 export const SpaceItemTemplateSchema = z.object({
   id: ResourceShortIdSchema.describe("Template ID"),
   spaceId: ResourceShortIdSchema.describe("Parent space ID"),
   kind: ItemTemplateKindSchema.describe("Whether the template creates tasks or events"),
   name: z.string().describe("Template name, unique per Space and kind"),
+  icon: ItemTemplateIconSchema,
   title: z.string().describe("Default title; may contain {{date}}, {{weekday}}, and {{week}}"),
   description: z.string().nullable().describe("Default description (markdown); may contain the same placeholders"),
   priority: PrioritySchema.nullable().describe("Default priority"),
@@ -567,6 +576,7 @@ export const MAX_ITEM_TITLE_LENGTH = 200;
 export const MAX_ITEM_DESCRIPTION_LENGTH = 5000;
 
 const ItemTemplateFieldsShape = {
+  icon: ItemTemplateIconSchema.optional(),
   name: z.string().trim().min(1).max(100).describe("Template name, unique per Space and kind"),
   title: z.string().max(MAX_ITEM_TITLE_LENGTH).describe("Default title; may contain {{date}}, {{weekday}}, and {{week}}"),
   description: z.string().max(MAX_ITEM_DESCRIPTION_LENGTH).nullable().describe("Default description (markdown)"),
@@ -639,6 +649,7 @@ export type CreateItemTemplate = z.infer<typeof CreateItemTemplateSchema>;
 export const UpdateItemTemplateSchema = z
   .object({
     name: ItemTemplateFieldsShape.name.optional(),
+    icon: ItemTemplateFieldsShape.icon,
     title: ItemTemplateFieldsShape.title.optional(),
     description: ItemTemplateFieldsShape.description.optional(),
     priority: ItemTemplateFieldsShape.priority.optional(),
@@ -699,6 +710,17 @@ export const ItemTemplateDraftSchema = z.object({
 });
 export type ItemTemplateDraft = z.infer<typeof ItemTemplateDraftSchema>;
 
+export const ItemRequestKeySchema = z.string().trim().min(1).max(200);
+
+export const AssigneeDeltaShape = {
+  addAssigneeIds: z.array(UuidSchema).max(100).optional().describe("Add these assignees without replacing others"),
+  removeAssigneeIds: z.array(UuidSchema).max(100).optional().describe("Remove only these assignees"),
+};
+
+export const validAssigneeDelta = (data: { assigneeIds?: string[]; addAssigneeIds?: string[]; removeAssigneeIds?: string[] }) =>
+  !(data.assigneeIds !== undefined && (data.addAssigneeIds !== undefined || data.removeAssigneeIds !== undefined)) &&
+  !data.addAssigneeIds?.some((id) => data.removeAssigneeIds?.some((removed) => removed.toLowerCase() === id.toLowerCase()));
+
 export const CreateItemSchema = z
   .object({
     columnId: ResourceShortIdSchema.describe("Target column ID"),
@@ -727,6 +749,7 @@ export const CreateItemSchema = z
       .max(MAX_TASK_CHECKLIST_ENTRIES)
       .optional()
       .describe("Checklist entries of the new task, created with it (tasks only)"),
+    requestKey: ItemRequestKeySchema.optional().describe("Reuse the same key and body for a retry within 24 hours"),
     assignCreator: z.boolean().optional().describe("Also assign the person who creates the item; ignored for service accounts"),
   })
   .refine((data) => !data.startsAt || !data.endsAt || new Date(data.endsAt) > new Date(data.startsAt), {
@@ -747,6 +770,8 @@ export const UpdateItemSchema = z
   .object({
     columnId: ResourceShortIdSchema.optional().describe("Target column ID"),
     title: z.string().min(1).max(200).optional().describe("Item title"),
+    expectedTitle: z.string().max(200).optional().describe("Exact title read before editing; mismatch returns TITLE_CONFLICT (409)"),
+    ...AssigneeDeltaShape,
     description: z.string().max(5000).nullable().optional().describe("Item description (markdown)"),
     location: z.string().max(500).nullable().optional().describe("Event location"),
     url: z.string().url().max(2000).nullable().optional().describe("Event URL"),
@@ -765,6 +790,10 @@ export const UpdateItemSchema = z
     ),
     force: z.boolean().optional().describe("Take over another actor's claim given as its exact claimId; any writer may"),
     tagIds: z.array(ResourceShortIdSchema).max(100).optional().describe("Tag IDs"),
+  })
+  .refine(validAssigneeDelta, {
+    message: "Do not mix assignee replacement with deltas or add and remove the same assignee",
+    path: ["assigneeIds"],
   })
   .refine((data) => !data.startsAt || !data.endsAt || new Date(data.endsAt) > new Date(data.startsAt), {
     message: "End time must be after start time",
@@ -984,7 +1013,6 @@ export const ItemFilterResponseSchema = ItemListResultSchema.extend({
 export type {
   AccessEntry,
   MessageResponse,
-  MutationResult,
   PermissionLevel,
   Principal,
   User,
@@ -999,3 +1027,6 @@ export {
   PrincipalSchema,
   UpdateAccessSchema,
 } from "@k2b/cloud/contracts";
+
+/** Item mutation conflicts retain their stable transport code. */
+export type MutationResult<T = void> = CloudMutationResult<T> & { code?: string };

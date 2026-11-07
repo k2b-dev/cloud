@@ -38,6 +38,11 @@ type FileGridBaseProps<T> = {
 export type FileGridSelectableProps<T> = FileGridBaseProps<T> & {
   selection: CollectionSelection;
   onRowClick?: (row: T) => void;
+  /**
+   * Shows a check box before each item that `checks` returns `true` for, or a circle when only one item may be
+   * selected. The check only mirrors the selection; items without one keep its slot, so names stay in line.
+   */
+  checks?: (row: T) => boolean;
   limit?: never;
   expanded?: never;
   onExpandedChange?: never;
@@ -50,6 +55,7 @@ export type FileGridSelectableProps<T> = FileGridBaseProps<T> & {
 export type FileGridOpenProps<T> = FileGridBaseProps<T> & {
   selection?: never;
   onRowClick?: never;
+  checks?: never;
   /** Shows the first `limit` items, then "Show all N", which opens the full list in place. Without it, the list is always full. */
   limit?: number;
   /** Controls whether the full list is open. Without it, the list keeps its own state. */
@@ -98,6 +104,7 @@ function SelectableFileGrid<T>(props: FileGridSelectableProps<T>) {
       data-size={props.size ?? "md"}
       data-layout={props.layout ?? "grid"}
       data-action-visibility={props.actionVisibility ?? "always"}
+      data-checks={props.checks ? "true" : undefined}
       role="grid"
       aria-label={props.label}
       aria-multiselectable={props.selection.multiple}
@@ -136,6 +143,17 @@ function SelectableFileGrid<T>(props: FileGridSelectableProps<T>) {
                   }
                 }}
               >
+                <Show when={props.checks}>
+                  {(checks) => (
+                    <span class="k2b-file-grid__check" aria-hidden="true">
+                      <Show when={checks()(row)}>
+                        <span class="k2b-file-grid__check-box" data-shape={props.selection.multiple ? "box" : "circle"}>
+                          <i class="ti ti-check" />
+                        </span>
+                      </Show>
+                    </span>
+                  )}
+                </Show>
                 <div class="k2b-file-grid__preview">{props.renderPreview(row)}</div>
                 <div class="k2b-file-grid__name">{props.renderLabel(row)}</div>
                 <div class="k2b-file-grid__meta">{props.renderMeta?.(row)}</div>

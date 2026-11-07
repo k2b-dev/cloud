@@ -35,9 +35,6 @@ const learningTestModel: AiResolvedModel = {
     family: "openai-compatible",
     model: "test",
     capabilities: { streaming: false, tools: false, images: false, thinking: false, usage: false },
-    async complete() {
-      throw new Error("Must use the structured fixture");
-    },
     async *stream() {
       throw new Error("Must use the structured fixture");
     },

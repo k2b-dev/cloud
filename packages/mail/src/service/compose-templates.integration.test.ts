@@ -405,6 +405,13 @@ suite("mail compose templates", () => {
       input: { scope: "private", templateId: privateSignature.data.id, expectedRevision: null },
     });
     expect(selected.ok).toBe(true);
+    const repeatedDefault = await setComposeSignatureDefault({
+      context: owner,
+      mailboxId,
+      senderIdentityId,
+      input: { scope: "private", templateId: privateSignature.data.id, expectedRevision: null },
+    });
+    expect(repeatedDefault).toEqual(selected);
 
     const identityDefaults = await updateSenderIdentity({
       context: owner,
@@ -664,6 +671,13 @@ suite("mail compose templates", () => {
       input: { expectedRevision: template.revision, name: `${template.name} updated` },
     });
     expect(updated.ok).toBe(true);
+    const repeated = await updateComposeTemplate({
+      context: owner,
+      mailboxId,
+      templateId: template.id,
+      input: { expectedRevision: template.revision, name: `${template.name} updated` },
+    });
+    expect(repeated).toEqual(updated);
     const stale = await updateComposeTemplate({
       context: owner,
       mailboxId,
@@ -684,6 +698,12 @@ suite("mail compose templates", () => {
       input: { expectedRevision: 1, customCss: ".mail-content { color: #123456; }" },
     });
     expect(safe.ok).toBe(true);
+    const repeatedStyle = await updateMailboxComposeStyle({
+      context: owner,
+      mailboxId,
+      input: { expectedRevision: 1, customCss: ".mail-content { color: #123456; }" },
+    });
+    expect(repeatedStyle).toEqual(safe);
   });
 
   test("serializes concurrent default updates", async () => {
@@ -1331,7 +1351,7 @@ h1 { background: image-set("https://example.test/a.png" 1x); font-size: 30px; }`
       mailboxId,
       draftId: created.data.id,
       expectedRevision: created.data.revision,
-      input: content(created.data),
+      input: { ...content(created.data), subject: "Changed since creation" },
     });
     if (!current.ok) throw new Error(current.error.message);
     const { signatureTemplateId: _, ...oldContent } = content(current.data);
@@ -1341,7 +1361,7 @@ h1 { background: image-set("https://example.test/a.png" 1x); font-size: 30px; }`
         mailboxId,
         draftId: created.data.id,
         expectedRevision: created.data.revision,
-        input: { ...oldContent, ...choice },
+        input: { ...oldContent, subject: "Stale edited subject", ...choice },
       });
       expect(conflict).toMatchObject({ ok: false, error: { status: 409 } });
     }
@@ -1372,6 +1392,13 @@ h1 { background: image-set("https://example.test/a.png" 1x); font-size: 30px; }`
         if (!restored.ok) throw new Error(restored.error.message);
         revision = restored.data.revision;
       }
+      const retained = await listDraftRecoveryCopies({ context: owner, mailboxId, draftId: created.data.id });
+      if (!retained.ok) throw new Error(retained.error.message);
+      expect(
+        retained.data.some(
+          (copy) => !copy.restoredAt && copy.baseRevision === current.data.revision && copy.content.subject === "Changed since creation",
+        ),
+      ).toBe(true);
     } finally {
       await releaseDraftLease({ context: owner, mailboxId, draftId: created.data.id, token: lease.data.token });
     }
@@ -1414,7 +1441,7 @@ h1 { background: image-set("https://example.test/a.png" 1x); font-size: 30px; }`
       mailboxId,
       draftId: created.data.id,
       expectedRevision: created.data.revision,
-      input: content(created.data),
+      input: { ...content(created.data), subject: "Changed since creation" },
     });
     if (!current.ok) throw new Error(current.error.message);
     expect(
@@ -1465,7 +1492,7 @@ h1 { background: image-set("https://example.test/a.png" 1x); font-size: 30px; }`
       mailboxId,
       draftId: created.data.id,
       expectedRevision: created.data.revision,
-      input: content(created.data),
+      input: { ...content(created.data), subject: "Changed since creation" },
     });
     if (!current.ok) throw new Error(current.error.message);
     const { signatureTemplateId: _, ...oldContent } = content(current.data);

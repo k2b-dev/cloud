@@ -1,6 +1,6 @@
+import { sql } from "@k2b/cloud";
 import { listUsersWithAccess } from "@k2b/cloud/server";
 import { settings } from "@k2b/cloud/services";
-import { sql } from "bun";
 import type { AlertSeverity, AlertStateName } from "../alert-contracts";
 
 export type BaseNotice =

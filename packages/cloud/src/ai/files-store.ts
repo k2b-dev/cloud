@@ -3,6 +3,7 @@ import { sql } from "../runtime/clients";
 import { stripImageMetadata } from "../services/image-metadata";
 import { AiFileVersionConflict, AiFileWriteError, aiFileContentVersion } from "./file-content-version";
 import { isAiImage } from "./file-media-type";
+import { AI_FILES_MAX_FILE_BYTES_DEFAULT } from "./limits";
 import {
   CLOUD_AI_VIEW_MAX_BYTES,
   CLOUD_AI_VIEW_SUFFIX,
@@ -15,7 +16,7 @@ import {
 export { guessAiMediaType } from "./file-media-type";
 
 /** Per-file and per-conversation caps — read once per operation from settings by the caller layer if needed. */
-export const AI_FILES_MAX_FILE_BYTES_DEFAULT = 50 * 1024 * 1024;
+export { AI_FILES_MAX_FILE_BYTES_DEFAULT };
 export const AI_FILES_MAX_CONVERSATION_BYTES_DEFAULT = 250 * 1024 * 1024;
 
 export type AiFileStat = {

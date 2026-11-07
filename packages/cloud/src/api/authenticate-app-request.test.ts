@@ -165,6 +165,7 @@ test("signed admission errors retain their envelope and Retry-After through the 
         fingerprint: "fixture",
         status: "active",
         accountStatus: "active",
+        usable: true,
         createdAt: new Date(NOW).toISOString(),
         createdBy: null,
         expiresAt: null,

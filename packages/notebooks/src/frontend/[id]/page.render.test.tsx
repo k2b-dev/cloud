@@ -78,9 +78,12 @@ const renderEmptyNotebook = async (mode: "write" | "book" | "graph" | "graph&fro
   spies.push(spyOn(notebooksService.notebook, "getByShortId").mockResolvedValue(notebook));
   spies.push(spyOn(notebooksService.notebook, "get").mockResolvedValue(notebook));
   spies.push(spyOn(notebooksService.notebook.permission, "get").mockResolvedValue("write"));
+  spies.push(spyOn(notebooksService.notebook.access, "memberPermission").mockResolvedValue("write"));
+  spies.push(spyOn(notebooksService.note.outgoingLinks, "list").mockResolvedValue([]));
   spies.push(spyOn(notebooksService.workspaceEvents, "latestCursor").mockResolvedValue("1-0"));
   spies.push(...mockNoteTree([]));
   spies.push(spyOn(notebooksService.tag, "listForNotebook").mockResolvedValue([]));
+  spies.push(spyOn(notebooksService.pageTemplate, "list").mockResolvedValue({ ok: true, data: [] }));
   spies.push(spyOn(notebooksService.note.favorites, "listIds").mockResolvedValue([]));
   spies.push(spyOn(notebooksService.attachment, "count").mockResolvedValue(0));
   spies.push(spyOn(notebooksService.notebook, "graphView").mockResolvedValue({ nodes: [], edges: [] }));
@@ -203,6 +206,8 @@ const renderBookPage = async (preferences: Record<string, unknown> = {}) => {
   spies.push(spyOn(notebooksService.notebook, "getByShortId").mockResolvedValue(withHome));
   spies.push(spyOn(notebooksService.notebook, "get").mockResolvedValue(withHome));
   spies.push(spyOn(notebooksService.notebook.permission, "get").mockResolvedValue("read"));
+  spies.push(spyOn(notebooksService.notebook.access, "memberPermission").mockResolvedValue("write"));
+  spies.push(spyOn(notebooksService.note.outgoingLinks, "list").mockResolvedValue([]));
   spies.push(spyOn(notebookStore, "canAccess").mockResolvedValue(true));
   spies.push(spyOn(notebooksService.workspaceEvents, "latestCursor").mockResolvedValue("1-0"));
   spies.push(
@@ -215,6 +220,7 @@ const renderBookPage = async (preferences: Record<string, unknown> = {}) => {
   spies.push(spyOn(notebooksService.note, "getByShortId").mockResolvedValue(home));
   spies.push(spyOn(noteStore, "getWithContentByShortId").mockResolvedValue(home));
   spies.push(spyOn(notebooksService.tag, "listForNotebook").mockResolvedValue([]));
+  spies.push(spyOn(notebooksService.pageTemplate, "list").mockResolvedValue({ ok: true, data: [] }));
   spies.push(spyOn(notebooksService.note.favorites, "listIds").mockResolvedValue([]));
   spies.push(spyOn(notebooksService.attachment, "count").mockResolvedValue(0));
   const app = new Hono<AuthContext & { Variables: { runtime: CloudRuntime } }>();
@@ -285,9 +291,12 @@ test.each([
   spies.push(spyOn(notebooksService.notebook, "getByShortId").mockResolvedValue(notebook));
   spies.push(spyOn(notebooksService.notebook, "get").mockResolvedValue(notebook));
   spies.push(spyOn(notebooksService.notebook.permission, "get").mockResolvedValue("write"));
+  spies.push(spyOn(notebooksService.notebook.access, "memberPermission").mockResolvedValue("write"));
+  spies.push(spyOn(notebooksService.note.outgoingLinks, "list").mockResolvedValue([]));
   spies.push(spyOn(notebooksService.workspaceEvents, "latestCursor").mockResolvedValue("1-0"));
   spies.push(...mockNoteTree([]));
   spies.push(spyOn(notebooksService.tag, "listForNotebook").mockResolvedValue([]));
+  spies.push(spyOn(notebooksService.pageTemplate, "list").mockResolvedValue({ ok: true, data: [] }));
   spies.push(spyOn(notebooksService.tag, "listNotesForTag").mockResolvedValue({ items: [], total: 0 }));
   spies.push(spyOn(notebooksService.tag, "countNotesForTag").mockResolvedValue(0));
   spies.push(spyOn(notebooksService.note.favorites, "listIds").mockResolvedValue([]));
@@ -345,6 +354,8 @@ const renderNotebookWithNotes = async (
   spies.push(spyOn(notebooksService.notebook, "getByShortId").mockResolvedValue(notebook));
   spies.push(spyOn(notebooksService.notebook, "get").mockResolvedValue(notebook));
   spies.push(spyOn(notebooksService.notebook.permission, "get").mockResolvedValue("write"));
+  spies.push(spyOn(notebooksService.notebook.access, "memberPermission").mockResolvedValue("write"));
+  spies.push(spyOn(notebooksService.note.outgoingLinks, "list").mockResolvedValue([]));
   spies.push(spyOn(notebooksService.workspaceEvents, "latestCursor").mockResolvedValue("1-0"));
   spies.push(...mockNoteTree([note("note01", "Private folder"), note("note02", "Team notes")]));
   spies.push(
@@ -366,6 +377,7 @@ const renderNotebookWithNotes = async (
   );
   spies.push(spyOn(routeState, "loadSelectedNoteRouteState").mockResolvedValue(null));
   spies.push(spyOn(notebooksService.tag, "listForNotebook").mockResolvedValue([]));
+  spies.push(spyOn(notebooksService.pageTemplate, "list").mockResolvedValue({ ok: true, data: [] }));
   spies.push(spyOn(notebooksService.note.favorites, "listIds").mockResolvedValue([]));
   spies.push(spyOn(notebooksService.attachment, "count").mockResolvedValue(0));
   const app = new Hono<AuthContext & { Variables: { runtime: CloudRuntime } }>();
@@ -397,6 +409,7 @@ const renderNotebookWithNotes = async (
         taskProgress: { done: 0, total: 0 },
         panelAttachments: [],
         backlinks: [],
+        relations: { outgoing: [], tags: [] },
       }),
     );
     spies.push(
@@ -431,10 +444,14 @@ test("a hidden navigation is server-rendered without the note tree", async () =>
   expect(await select(html, "aside.k2b-app-workspace__sidebar *")).toEqual([]);
   expect(await select(html, '[data-app-workspace-resize="sidebar"]')).toEqual([]);
   expect(await select(html, "[data-workspace-main-region=notebook-notes]")).toEqual([]);
-  // The graph's own toolbar offers the show control, so the sidebar adds none in a corner.
-  expect((await select(html, 'button[aria-controls="notebook-navigation"]')).map((button) => button.attributes["aria-label"])).toEqual([
-    "Navigation einblenden",
-  ]);
+  // The graph's own toolbar holds the workspace's navigation button, so neither the sidebar nor a head adds one.
+  expect(await select(html, ".k2b-app-workspace__head")).toEqual([]);
+  expect(
+    (await select(html, 'button[aria-controls="notebook-navigation"]')).map((button) => [
+      button.attributes["aria-label"],
+      button.attributes["data-app-workspace-sidebar-toggle"],
+    ]),
+  ).toEqual([["Navigation", ""]]);
 });
 
 test("a visible navigation is server-rendered with its one sidebar and note tree, also for a former Navigator layout", async () => {
@@ -485,10 +502,13 @@ const renderEditorPage = async (
   spies.push(spyOn(notebooksService.notebook, "getByShortId").mockResolvedValue(notebook));
   spies.push(spyOn(notebooksService.notebook, "get").mockResolvedValue(notebook));
   spies.push(spyOn(notebooksService.notebook.permission, "get").mockResolvedValue("write"));
+  spies.push(spyOn(notebooksService.notebook.access, "memberPermission").mockResolvedValue("write"));
+  spies.push(spyOn(notebooksService.note.outgoingLinks, "list").mockResolvedValue([]));
   spies.push(spyOn(notebooksService.workspaceEvents, "latestCursor").mockResolvedValue("1-0"));
   spies.push(...mockNoteTree([{ ...note, children: [] }]));
   spies.push(spyOn(notebooksService.note, "getByShortId").mockResolvedValue(note));
   spies.push(spyOn(notebooksService.tag, "listForNotebook").mockResolvedValue([]));
+  spies.push(spyOn(notebooksService.pageTemplate, "list").mockResolvedValue({ ok: true, data: [] }));
   spies.push(spyOn(notebooksService.note.favorites, "listIds").mockResolvedValue([]));
   spies.push(spyOn(notebooksService.attachment, "count").mockResolvedValue(0));
   spies.push(spyOn(notebooksService.notebook, "graphView").mockResolvedValue({ nodes: [], edges: [] }));
@@ -505,6 +525,7 @@ const renderEditorPage = async (
       taskProgress: { done: 0, total: 0 },
       namedBlocks: [],
       backlinks: [],
+      relations: { outgoing: [], tags: [] },
       panelAttachments: [],
     }),
   );
@@ -632,6 +653,8 @@ for (const mode of ["write", "readonly"] as const) {
   test(`${mode}: the first HTML renders full width and seeds Ansicht from the cookie`, async () => {
     for (const fullWidth of [false, true]) {
       const html = await renderNotebookWithNotes(fullWidth ? { fullWidth: true } : {}, mode);
+      const [presence] = await select(html, 'solid-island[data-file="WorkspaceEventBridge.island.tsx"]');
+      expect(islandProps(presence?.attributes["data-props"]).initialNoteId).toBe("note01");
       const surfaces = await select(html, ".notebook-document-surface");
       expect(surfaces).toHaveLength(1);
       expect(surfaces[0]?.attributes["data-full-width"]).toBe(fullWidth ? "" : undefined);
@@ -679,12 +702,15 @@ const renderLinkedNotebook = async (
   spies.push(spyOn(notebooksService.notebook, "getByShortId").mockResolvedValue(linkedNotebook));
   spies.push(spyOn(notebooksService.notebook, "get").mockResolvedValue(linkedNotebook));
   spies.push(spyOn(notebooksService.notebook.permission, "get").mockResolvedValue(permission));
+  spies.push(spyOn(notebooksService.notebook.access, "memberPermission").mockResolvedValue("write"));
+  spies.push(spyOn(notebooksService.note.outgoingLinks, "list").mockResolvedValue([]));
   spies.push(spyOn(notebookStore, "canAccess").mockResolvedValue(true));
   spies.push(spyOn(notebooksService.workspaceEvents, "latestCursor").mockResolvedValue("1-0"));
   spies.push(...mockNoteTree([{ ...note, children: [] }]));
   spies.push(spyOn(notebooksService.note, "getByShortId").mockResolvedValue(note));
   spies.push(spyOn(noteStore, "getWithContentByShortId").mockResolvedValue({ ...note, yjsSnapshot: null, yjsRestoreRevision: "0" }));
   spies.push(spyOn(notebooksService.tag, "listForNotebook").mockResolvedValue([]));
+  spies.push(spyOn(notebooksService.pageTemplate, "list").mockResolvedValue({ ok: true, data: [] }));
   spies.push(spyOn(notebooksService.note.favorites, "listIds").mockResolvedValue([]));
   spies.push(spyOn(notebooksService.attachment, "count").mockResolvedValue(0));
   spies.push(
@@ -864,3 +890,15 @@ for (const mode of ["write", "book", "graph", "graph&from=readonly"] as const)
     expect(shell.panel.context.scope).toEqual({ type: "notebooks.notebook", id: notebook.shortId });
     expect(shell.panel.context.scope.id).not.toBe(notebook.id);
   });
+
+// Write and Links draw no workspace head: the toolbar holds the navigation and Details buttons (old head button →
+// toolbar button). Read and version history have no toolbar, so they keep the head's buttons.
+test.each([
+  { mode: "write", head: 0, ownDetails: 0 },
+  { mode: "graph", head: 0, ownDetails: 0 },
+  { mode: "readonly", head: 1, ownDetails: 1 },
+] as const)("$mode: the workspace head and its Details button", async ({ mode, head, ownDetails }) => {
+  const html = await renderNotebookWithNotes({}, mode);
+  expect(await select(html, ".k2b-app-workspace__head")).toHaveLength(head);
+  expect(await select(html, ".k2b-app-workspace__detail-toggle")).toHaveLength(mode === "graph" ? 0 : ownDetails);
+});

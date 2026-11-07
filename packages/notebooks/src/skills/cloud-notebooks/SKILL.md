@@ -1,6 +1,12 @@
 ---
 name: cloud-notebooks
 description: "Use for Cloud Notebooks, Markdown notes and company handbooks: finding, reading, editing, organizing and discussing pages, flexible named data, query filters, tables of contents, charts, table formulas and Book mode. Load it whenever a request involves notebooks, notes, wiki pages, note links, tags, comments, :::data, :::query, :::toc or :::chart."
+load-tools:
+  - notebooks.note.search
+  - notebooks.notebook.browse
+  - notebooks.note.read
+  - notebooks.note.edit
+  - notebooks.note.create
 ---
 
 # Work with Cloud Notebooks
@@ -20,7 +26,7 @@ Load only needed capabilities; reuse typed IDs, original hashes and revisions un
 - Read the exact note first. Prefer the smallest structural `notebooks.note.edit` operation with its returned timestamp or content hash. Set blockLimit to 0 unless you need block handles.
 - Replace complete Markdown only for a whole-note change with complete source. Never replace a complete note with a partial window. On conflict, reread and reconcile; preserve newer work.
 - Block selectors use name, type and hash; retain the handle unless the user intends to change it. The optional zero-based index disambiguates repeated names within that selector.
-- Create with `notebooks.note.create` only after choosing a writable notebook; a parent must be a returned note in it. Use `notebooks.note.move` for later hierarchy changes.
+- Create with `notebooks.note.create` in a writable notebook, under a listed parent; `templateId` from `notebooks.template.list` uses a template. Move: `notebooks.note.move`.
 - Comments on the text are `notebooks.annotation.*` (below; `cld notebooks comments`). The page discussion, not tied to a passage, is `notebooks.comment.*` (`cld notebooks discussion`): start with `notebooks.comment.browse`; read truncated posts with `notebooks.comment.read` before replying or editing. Both are separate from the body. Discussion mutations require a user-backed actor and write access; update/delete only your own posts within ten minutes. Never retry uncertain mutations blindly.
 - To convert highlights like `==MK: question …==` into comments, comment the same passage with the marker's text, then remove only its marker syntax with the smallest edit. Process each marker; report unplaced passages.
 

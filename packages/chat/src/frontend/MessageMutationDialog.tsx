@@ -1,13 +1,12 @@
 import { createApiClient } from "@k2b/cloud/browser";
-import { Button, LocaleProvider, prompts, TextInput } from "@k2b/ui";
+import { Button, TextInput } from "@k2b/ui";
 import { createSignal, type JSX, Show } from "solid-js";
 import { z } from "zod";
 import type { ApiType } from "../api";
-import { chatMessages } from "../messages";
 import { MessageBodySchema } from "../service/contracts";
 import { DialogActions, DialogError, useChatMessages } from "./chat-dialog";
 
-type Props = {
+export type Props = {
   locale: string;
   conversationId: string;
   messageId: string;
@@ -15,21 +14,6 @@ type Props = {
   body: string;
   operation: "edit" | "delete";
   onSaved: () => Promise<void> | undefined;
-};
-export const openMessageMutationDialog = (props: Props) => {
-  const t = chatMessages.resolve([props.locale]).t;
-  return prompts.dialog<void>(
-    (close, context) => (
-      <LocaleProvider locale={props.locale}>
-        <MessageMutationDialog {...props} close={close} setDismissHandler={context.setDismissHandler} />
-      </LocaleProvider>
-    ),
-    {
-      title: props.operation === "edit" ? t.editMessage : t.deleteMessage,
-      icon: props.operation === "edit" ? "ti ti-pencil" : "ti ti-trash",
-      size: "medium",
-    },
-  );
 };
 export function MessageMutationDialog(props: Props & { close: () => void; setDismissHandler: (handler: () => void) => void }): JSX.Element {
   const t = useChatMessages();

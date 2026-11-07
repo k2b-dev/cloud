@@ -29,10 +29,12 @@ export const followVisualViewport = (frame: HTMLElement): (() => void) => {
   let late = 0;
   const keyboard = () => frame.hasAttribute("data-keyboard");
   const apply = () => {
-    tallest = Math.max(tallest, viewport.height);
-    frame.toggleAttribute("data-keyboard", viewport.height < tallest - KEYBOARD_THRESHOLD);
-    frame.style.setProperty("--chat-viewport-top", `${viewport.offsetTop}px`);
-    frame.style.setProperty("--chat-viewport-height", `${viewport.height}px`);
+    const height = viewport.height;
+    const top = viewport.offsetTop;
+    tallest = Math.max(tallest, height);
+    frame.toggleAttribute("data-keyboard", height < tallest - KEYBOARD_THRESHOLD);
+    frame.style.setProperty("--chat-viewport-top", `${top}px`);
+    frame.style.setProperty("--chat-viewport-height", `${height}px`);
   };
   const onViewport = () => {
     // The page itself never scrolls here; a scrolled document is iOS revealing the field.

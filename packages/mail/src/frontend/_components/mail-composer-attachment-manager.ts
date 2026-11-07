@@ -21,7 +21,7 @@ export const createMailComposerAttachmentManager = (options: {
    * them is gone, so the composer shows them for cancelling.
    */
   unfinishedUploads: UnfinishedDraftUpload[];
-  setDraft: Setter<MailDraft | null>;
+  setDraft: (draft: MailDraft) => void;
   editable: Accessor<boolean>;
   persist: () => Promise<MailDraft | null>;
   serializeDraftMutation: <T>(operation: () => Promise<T>) => Promise<T>;

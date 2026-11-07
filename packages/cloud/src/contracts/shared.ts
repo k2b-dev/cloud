@@ -256,6 +256,13 @@ export const AI_INFERENCE_SCOPE = "ai:inference" as const;
 
 export const isModelsOnlyApiKey = (credential: { scopes: readonly string[] }): boolean => credential.scopes.includes(AI_INFERENCE_SCOPE);
 
+/**
+ * An agent's or standalone account's key from before keys acted as their account: its scopes leave out part of
+ * `read write admin`. It keeps that limit; replacing it means issuing a new key and revoking this one.
+ */
+export const isLegacyLimitedApiKey = (credential: { scopes: readonly string[] }): boolean =>
+  !isModelsOnlyApiKey(credential) && !["read", "write", "admin"].every((scope) => credential.scopes.includes(scope));
+
 export const CreateUserApiKeySchema = z.object({
   access: z.enum(["full", "models"]).optional(),
   name: z.string().trim().min(1).max(120),
@@ -345,6 +352,28 @@ export const AccessEntrySchema = z.object({
   scope: z.string().min(1).max(64).optional(),
 });
 export type AccessEntry = z.infer<typeof AccessEntrySchema>;
+
+/**
+ * Who has access to a resource and with which role, as everyone with member access may read it: names and roles
+ * only, without grant IDs, dates, or scopes. Nobody can change a grant from it.
+ */
+export const AccessMemberSchema = AccessEntrySchema.pick({
+  principal: true,
+  permission: true,
+  displayName: true,
+  avatarHash: true,
+  serviceAccountKind: true,
+});
+export type AccessMember = z.infer<typeof AccessMemberSchema>;
+
+/** The read-only member view of a grant. */
+export const toAccessMember = (entry: AccessEntry): AccessMember => ({
+  principal: entry.principal,
+  permission: entry.permission,
+  ...(entry.displayName === undefined ? {} : { displayName: entry.displayName }),
+  ...(entry.avatarHash === undefined ? {} : { avatarHash: entry.avatarHash }),
+  ...(entry.serviceAccountKind === undefined ? {} : { serviceAccountKind: entry.serviceAccountKind }),
+});
 
 export const NotebookPresenceParticipantSchema = z.object({
   userId: z.uuid(),

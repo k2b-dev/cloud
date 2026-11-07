@@ -1,8 +1,11 @@
-import { describe, expect, mock, test } from "bun:test";
+import { describe, expect, mock, spyOn, test } from "bun:test";
 import type { QueueMessage } from "@k2b/sync";
 import type { GridsRecordEvent } from "./record-events";
+import * as recordEvents from "./record-events";
 import { RECORD_EVENT_WORK_MAX_ATTEMPTS, RECORD_EVENT_WORK_TRANSPORT_ATTEMPTS, workflowRecordEventRetryDelayMs } from "./record-events";
+import * as workflowDefinitions from "./workflow-definitions";
 import {
+  createWorkflowRecordEventRuntime,
   isDeletedRecordEventBaseError,
   processWorkflowRecordEventDelivery,
   type WorkflowRecordEventDeliveryPorts,
@@ -25,7 +28,7 @@ const delivery = (overrides: Partial<QueueMessage<GridsRecordEvent>> = {}): Queu
   data: event(),
   messageId: "transport-2",
   attempt: 1,
-  publishedAt: new Date(),
+  publishedAt: new Date("2026-07-15T12:00:00.000Z"),
   tenantId: "workflow-kernel",
   orderingKey: RECORD_ID,
   meta: { baseId: BASE_ID },
@@ -175,4 +178,61 @@ describe("workflow record-event delivery recovery", () => {
     await processWorkflowRecordEventDelivery(message, failingDispatch("boom"), ports());
     expect(message.heartbeat).not.toHaveBeenCalled();
   });
+});
+
+test("idle Grids starts zero partition consumers across repeated reconciliations", async () => {
+  const workflows = spyOn(workflowDefinitions, "getRecordEventActiveSince").mockResolvedValue(null);
+  const queue = spyOn(recordEvents, "recordEventWorkQueue").mockImplementation(() => {
+    throw new Error("Idle Grids must not start partition pollers");
+  });
+  const runtime = createWorkflowRecordEventRuntime(async () => {
+    throw new Error("No workflow should run");
+  });
+  try {
+    await Promise.all([runtime.reconcile(), runtime.reconcile(), runtime.reconcile()]);
+    expect(queue).toHaveBeenCalledTimes(0);
+  } finally {
+    await runtime.stop();
+    queue.mockRestore();
+    workflows.mockRestore();
+  }
+});
+
+test("runtime hints coalesce while reconciliation is blocked and shutdown joins the refresh", async () => {
+  const entered = Promise.withResolvers<void>();
+  const release = Promise.withResolvers<void>();
+  const refreshed = Promise.withResolvers<void>();
+  const finishRefresh = Promise.withResolvers<void>();
+  const workflows = spyOn(workflowDefinitions, "getRecordEventActiveSince")
+    .mockImplementationOnce(async () => {
+      entered.resolve();
+      await release.promise;
+      return null;
+    })
+    .mockImplementation(async () => {
+      refreshed.resolve();
+      await finishRefresh.promise;
+      return null;
+    });
+  const runtime = createWorkflowRecordEventRuntime(async () => {
+    throw new Error("No workflow should run");
+  });
+  try {
+    runtime.wake();
+    await entered.promise;
+    for (let i = 0; i < 1_000; i++) runtime.wake();
+    expect(workflows).toHaveBeenCalledTimes(1);
+    release.resolve();
+    await refreshed.promise;
+    const stopping = runtime.stop();
+    expect(Bun.peek.status(stopping)).toBe("pending");
+    finishRefresh.resolve();
+    await stopping;
+    expect(workflows).toHaveBeenCalledTimes(2);
+  } finally {
+    release.resolve();
+    finishRefresh.resolve();
+    await runtime.stop();
+    workflows.mockRestore();
+  }
 });

@@ -18,6 +18,7 @@ import type { AuthContext, RequestAuthority } from "../server/middleware/auth";
 import * as authMiddleware from "../server/middleware/auth";
 import { buildAccessPrincipalCondition } from "../server/services/access";
 import { discoverableApps } from "./app-discovery";
+import { prepareFanoutIssuance } from "./identity/issue-invocation";
 import * as settings from "./settings";
 
 const suite = databaseSuite();
@@ -149,6 +150,8 @@ suite("resource-derived app entry and discovery", () => {
         withActiveSigner: async (_purpose, callback) => callback(signer, sql),
         signInvocation: async (params) =>
           (await import("./identity/invocation-token")).signInvocationToken({ ...params, signer, issuer: "https://cloud.test" }),
+        // The fixture's principal is the issuing authority; the batch still decides resource entry per target.
+        prepareFanout: (params, options) => prepareFanoutIssuance(params, { ...options, resolve: async () => current }),
         fetch: async () => {
           searchCalls++;
           return Response.json({ data: [] });

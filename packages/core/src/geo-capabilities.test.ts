@@ -48,13 +48,13 @@ test("service accounts retain their access subject and request locale", async ()
 });
 test("stable errors preserve structured details and localize only their message", async () => {
   spyOn(coreGeo, "autocomplete").mockRejectedValue(
-    new GeoError("GEO_BUDGET_EXHAUSTED", { scope: "person", resetsAt: "2026-10-20T22:00:00.000Z" }),
+    new GeoError("GEO_BUDGET_EXHAUSTED", { scope: "cloud", resetsAt: "2026-10-31T23:00:00.000Z" }),
   );
   const en = await aiCapabilities.queries["address.autocomplete"].run({ text: "Orle" }, context);
   const de = await aiCapabilities.queries["address.autocomplete"].run({ text: "Orle" }, { ...context, locale: "de" });
   expect(de).toMatchObject({
     ok: false,
-    error: { code: "GEO_BUDGET_EXHAUSTED", details: { scope: "person", resetsAt: "2026-10-20T22:00:00.000Z" } },
+    error: { code: "GEO_BUDGET_EXHAUSTED", details: { scope: "cloud", resetsAt: "2026-10-31T23:00:00.000Z" } },
   });
   if (!en.ok && !de.ok) expect(en.error.message).not.toBe(de.error.message);
   for (const code of [

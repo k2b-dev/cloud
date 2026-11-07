@@ -1,4 +1,4 @@
-import { sql } from "bun";
+import { sql } from "@k2b/cloud";
 import { testShortId } from "../../../../scripts/fixtures/test-short-id";
 import { buildFixtureTree, type FixtureShape, renderFixtureMarkdown } from "../../scripts/large-notebook-fixture";
 import { deriveNoteTitle } from "../lib/note-title";

@@ -1,5 +1,5 @@
+import { sql } from "@k2b/cloud";
 import { requireConfirmedBrowserSignIn } from "@k2b/cloud/services";
-import { sql } from "bun";
 
 /** A browser confirmation can be renewed without discarding the authorization request. */
 export class BrowserSignInRequiredError extends Error {

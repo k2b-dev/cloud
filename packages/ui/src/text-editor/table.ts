@@ -205,7 +205,7 @@ const resync = (view: EditorView, el: HTMLElement, cell: T.Cell) => {
 
 const escapeHtml = (s: string) => s.replace(/[&<>"]/g, (ch) => `&${{ "&": "amp", "<": "lt", ">": "gt", '"': "quot" }[ch]};`);
 /** Render the same Markdown tokens as prose, keeping code and escaped markers literal. */
-const renderInline = (raw: string) => {
+export const renderInline = (raw: string) => {
   const text = raw;
   const tree = markdownLanguage.parser.parse(text);
   const render = (node: typeof tree.topNode): string => {
@@ -278,14 +278,49 @@ const hasHeader = (t: T.Table) => t.lines[0]!.cells.some((cell) => cell.text.len
 const firstRow = (t: T.Table) => (hasHeader(t) ? 0 : 1);
 const shapeOf = (t: T.Table) => `${T.rowCount(t)}x${width(t)}:${firstRow(t)}`;
 const renderedDocuments = new WeakMap<HTMLElement, Text>();
+/** The height a table was last drawn with, handed from widget to widget while its shape stays. */
+type DrawnHeight = { shape: string; height: number | null };
+const drawnHeights = new WeakMap<HTMLElement, DrawnHeight>();
+/**
+ * How far the grid may reach left of the text: its grip gutter and the first
+ * cell's padding sit there, so cell text lines up with the paragraphs. It
+ * never reaches past the first ancestor that clips, which would cut the grips.
+ */
+const bleed = (view: EditorView, wrap: HTMLElement): number => {
+  const content = view.contentDOM;
+  const line = content.querySelector<HTMLElement>(".cm-line");
+  const cell = wrap.querySelector<HTMLElement>(".k2b-ste-cell");
+  const wanted =
+    Number.parseFloat(getComputedStyle(wrap).paddingLeft) +
+    (cell ? Number.parseFloat(getComputedStyle(cell).paddingLeft) : 0) -
+    (line ? Number.parseFloat(getComputedStyle(line).paddingLeft) : 0);
+  const start = content.getBoundingClientRect().left + Number.parseFloat(getComputedStyle(content).paddingLeft);
+  let limit = 0;
+  for (let element = content.parentElement; element; element = element.parentElement)
+    if (getComputedStyle(element).overflowX !== "visible") {
+      limit = element.getBoundingClientRect().left + element.clientLeft;
+      break;
+    }
+  return Math.max(0, Math.min(wanted, Math.floor(start - limit)));
+};
 const measureScroll = (view: EditorView, wrap: HTMLElement) =>
   view.requestMeasure({
     key: wrap,
-    read: () => ({ left: wrap.scrollLeft, width: wrap.clientWidth, total: wrap.scrollWidth }),
-    write: ({ left, width, total }) => {
+    read: () => ({
+      left: wrap.scrollLeft,
+      width: wrap.clientWidth,
+      total: wrap.scrollWidth,
+      bleed: bleed(view, wrap),
+      height: wrap.getBoundingClientRect().height / view.scaleY,
+    }),
+    write: ({ left, width, total, bleed, height }) => {
       if (!wrap.isConnected) return;
+      const drawn = drawnHeights.get(wrap);
+      // A hidden editor has no height to remember.
+      if (drawn && height > 0) drawn.height = height;
       wrap.toggleAttribute("data-scrolled", left > 0);
       wrap.toggleAttribute("data-more", left + width < total - 1);
+      wrap.style.setProperty("--k2b-ste-bleed", `${bleed}px`);
     },
   });
 
@@ -293,6 +328,7 @@ class GridWidget extends WidgetType {
   constructor(
     readonly table: T.Table,
     readonly readOnly: boolean,
+    readonly drawn: DrawnHeight,
   ) {
     super();
   }
@@ -313,12 +349,14 @@ class GridWidget extends WidgetType {
       wrap.toggleAttribute("data-more", wrap.scrollLeft + wrap.clientWidth < wrap.scrollWidth - 1);
     });
     renderedDocuments.set(wrap, view.state.doc);
+    drawnHeights.set(wrap, this.drawn);
     setEditable(wrap, !this.readOnly, view);
     measureScroll(view, wrap);
     return wrap;
   }
   override updateDOM(dom: HTMLElement, view: EditorView) {
     const act = active.get(view);
+    drawnHeights.set(dom, this.drawn);
     measureScroll(view, dom);
     if (dom.dataset.shape !== shapeOf(this.table)) {
       const focused = dom.contains(document.activeElement) ? (document.activeElement as HTMLElement) : null;
@@ -373,8 +411,10 @@ class GridWidget extends WidgetType {
   override ignoreEvent() {
     return true;
   }
+  // Every rebuild replaces the widget, and CodeMirror then takes this height for tables outside the drawn range too.
+  // A guess there would shift every line below them, so a table that was drawn keeps its real height.
   override get estimatedHeight() {
-    return (T.rowCount(this.table) - firstRow(this.table)) * 41 + 16;
+    return this.drawn.height ?? (T.rowCount(this.table) - firstRow(this.table)) * 41 + 16;
   }
 }
 
@@ -747,6 +787,8 @@ const buildGrid = (view: EditorView, t: T.Table, wrap: HTMLElement) => {
       cell.spellcheck = true;
       cell.tabIndex = -1;
       cell.setAttribute("role", "textbox");
+      // The cell menu has no button; screen readers announce its key.
+      cell.setAttribute("aria-keyshortcuts", "Shift+F10");
       cell.setAttribute(
         "aria-label",
         view.state.facet(tableHost)?.cellLabel(r, c, T.displayCell(grid[0]?.[c] ?? "")) ?? `${r + 1}, ${c + 1}`,
@@ -757,21 +799,29 @@ const buildGrid = (view: EditorView, t: T.Table, wrap: HTMLElement) => {
       wire(view, cell, wrap);
       td.setAttribute("role", r === 0 ? "columnheader" : "gridcell");
       td.append(cell);
+      // Grips sit in the gutters outside the grid and stay out of the Tab order; Shift+F10 is the key path.
       const grip = (kind: "rowMenu" | "columnMenu") => {
         const button = document.createElement("button");
         button.type = "button";
         button.tabIndex = -1;
         button.className = `k2b-ste-grip k2b-ste-${kind}`;
+        button.dataset.c = String(c);
         button.setAttribute(
           "aria-label",
           view.state.facet(tableHost)?.actionLabel?.(kind) ?? (kind === "rowMenu" ? "Row menu" : "Column menu"),
         );
         button.setAttribute("aria-haspopup", "menu");
-        button.innerHTML = '<i class="ti ti-grip-vertical" aria-hidden="true"></i>';
+        // Full icon names: icon subsets keep only the names that appear in the bundle.
+        button.innerHTML = `<i class="ti ${kind === "rowMenu" ? "ti-grip-vertical" : "ti-grip-horizontal"}" aria-hidden="true"></i>`;
         button.onmousedown = (event) => event.preventDefault();
         button.onclick = () => {
           cell.focus({ preventScroll: true });
-          wrap.dispatchEvent(new CustomEvent("k2b-ste-cell-menu", { bubbles: true, detail: { cell, anchor: button } }));
+          wrap.dispatchEvent(
+            new CustomEvent("k2b-ste-cell-menu", {
+              bubbles: true,
+              detail: { cell, anchor: button, scope: kind === "rowMenu" ? "row" : "column" },
+            }),
+          );
         };
         td.append(button);
       };
@@ -793,8 +843,9 @@ const buildGrid = (view: EditorView, t: T.Table, wrap: HTMLElement) => {
     button.type = "button";
     button.className = `k2b-ste-${action}`;
     const label = view.state.facet(tableHost)?.actionLabel?.(action) ?? (action === "addRow" ? "Row" : "Column");
-    button.textContent = action === "addRow" ? `+ ${label}` : "+";
-    if (action === "addColumn") button.setAttribute("aria-label", label);
+    button.innerHTML = '<i class="ti ti-plus" aria-hidden="true"></i>';
+    if (action === "addRow") button.append(label);
+    button.setAttribute("aria-label", action === "addRow" ? `+ ${label}` : label);
     button.onmousedown = (event) => event.preventDefault();
     button.onclick = () => {
       const current = currentTable(view, wrap);
@@ -1347,6 +1398,10 @@ const wire = (view: EditorView, el: HTMLElement, wrap: HTMLElement) => {
     wrap.querySelectorAll<HTMLElement>(".k2b-ste-cell").forEach((cell) => (cell.tabIndex = cell === el ? 0 : -1));
     wrap.dataset.activeR = el.dataset.r;
     wrap.dataset.activeC = el.dataset.c;
+    // Without hover, a phone shows the grips of the focused cell's row and column.
+    wrap
+      .querySelectorAll<HTMLElement>(".k2b-ste-columnMenu")
+      .forEach((grip) => grip.toggleAttribute("data-current", grip.dataset.c === el.dataset.c));
     if (view.state.readOnly) {
       // A read-only cell selects rendered text; it never enters source editing.
       // Keyboard entry may have prepared editable text before focusing it.
@@ -1398,6 +1453,7 @@ const wire = (view: EditorView, el: HTMLElement, wrap: HTMLElement) => {
         renderCell(view, el, el.dataset.raw ?? "", table, Number(el.dataset.r), Number(el.dataset.c));
       if (!wrap.contains(focused)) {
         delete wrap.dataset.activeR;
+        wrap.querySelectorAll<HTMLElement>(".k2b-ste-columnMenu[data-current]").forEach((grip) => delete grip.dataset.current);
         wrap.dispatchEvent(new CustomEvent("k2b-ste-cell-blur", { bubbles: true }));
         if (!(focused instanceof HTMLElement && focused.classList.contains("k2b-ste-cell") && view.dom.contains(focused)))
           view.state.facet(tableHost)?.onCellSelection?.(null);
@@ -1771,11 +1827,22 @@ export const htmlTableGrid = (html: string): string[][] | null => {
   return rows.filter((row) => row.length).length ? rows.filter((row) => row.length) : null;
 };
 
-const decorate = (state: EditorState): DecorationSet =>
-  Decoration.set(
-    tablesIn(state).map((t) => Decoration.replace({ widget: new GridWidget(t, state.readOnly), block: true }).range(t.from, t.to)),
+const decorate = (state: EditorState, previous: DecorationSet = Decoration.none, changes?: ChangeDesc): DecorationSet => {
+  const drawn = new Map<number, DrawnHeight>();
+  for (const cursor = previous.iter(); cursor.value; cursor.next()) {
+    const widget = cursor.value.spec.widget;
+    if (widget instanceof GridWidget) drawn.set(changes ? changes.mapPos(cursor.from, 1) : cursor.from, widget.drawn);
+  }
+  return Decoration.set(
+    tablesIn(state).map((t) => {
+      const shape = shapeOf(t);
+      const known = drawn.get(t.from);
+      const widget = new GridWidget(t, state.readOnly, known?.shape === shape ? known : { shape, height: null });
+      return Decoration.replace({ widget, block: true }).range(t.from, t.to);
+    }),
     true,
   );
+};
 
 export const tableGrid = (): Extension => [
   clipboardLoading((view) => view.state.facet(tableHost), syncCellSelection),
@@ -1791,8 +1858,17 @@ export const tableGrid = (): Extension => [
       if (el) queueCellSelection(view, el);
     };
     view.dom.ownerDocument.addEventListener("selectionchange", selection);
+    // The editor's width decides how far grids may reach beside the text and whether more columns follow.
+    const resize =
+      typeof ResizeObserver === "undefined"
+        ? undefined
+        : new ResizeObserver(() => {
+            for (const wrap of view.contentDOM.querySelectorAll<HTMLElement>(".k2b-ste-table")) measureScroll(view, wrap);
+          });
+    resize?.observe(view.dom);
     return {
       destroy() {
+        resize?.disconnect();
         pendingContextMenus.get(view)?.abort();
         pendingContextMenus.delete(view);
         view.dom.ownerDocument.removeEventListener("selectionchange", selection);
@@ -1804,13 +1880,13 @@ export const tableGrid = (): Extension => [
     };
   }),
   StateField.define<DecorationSet>({
-    create: decorate,
+    create: (state) => decorate(state),
     update: (value, tr) =>
       tr.docChanged ||
       tr.effects.some((e) => e.is(refreshTables)) ||
       tr.startState.readOnly !== tr.state.readOnly ||
       syntaxTree(tr.startState) !== syntaxTree(tr.state)
-        ? decorate(tr.state)
+        ? decorate(tr.state, value, tr.changes)
         : value,
     provide: (field) => [EditorView.decorations.from(field), EditorView.atomicRanges.of((view) => view.state.field(field))],
   }),

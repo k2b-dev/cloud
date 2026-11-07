@@ -1,0 +1,143 @@
+{
+  "warning": "PUBLIC DEVELOPMENT FIXTURES. Never use these private keys outside the isolated Compose dev installation.",
+  "keys": [
+    {
+      "appId": "accounts",
+      "keyId": "5720e84f-3a80-46f7-a58d-3f9bde9d0c30",
+      "seed": "VyDoTzqANveljT-b3p0MMB4Vd5J4CzXpDcJQ5S5XrlY",
+      "grants": []
+    },
+    {
+      "appId": "api-docs",
+      "keyId": "de00ce09-2e14-4d70-a844-f753e41473bb",
+      "seed": "3gDOCS4UzXDoRPdT5BRzux3Z-su_gUApnL8hhK55Fxs",
+      "grants": []
+    },
+    {
+      "appId": "assistant",
+      "keyId": "aeaa3f15-27f2-4a36-a3b7-c5735be79933",
+      "seed": "rqo_FSfyajZzt8VzW-eZM6Gb9PpW7c5N42hufjIbwyo",
+      "grants": []
+    },
+    {
+      "appId": "capabilities",
+      "keyId": "7a7c1fe8-48b0-4eef-ab4b-d4d94f77242e",
+      "seed": "enwf6EiwDu_LS9TZT3ckLv5NkvwD4jW08ZJj9dkrA1g",
+      "grants": []
+    },
+    {
+      "appId": "chat",
+      "keyId": "2e87fb64-eaa2-4164-a390-158e44e00266",
+      "seed": "Lof7ZOqicWSjkBWOROACZuoiZW4DZklVwBp6YRbbq58",
+      "grants": []
+    },
+    {
+      "appId": "contacts",
+      "keyId": "f459c03b-cc41-49ab-afd5-17085d8f7e3b",
+      "seed": "9FnAO8xBCatv1RcIXY9-O8LihogWkqjI--0bO8In2KU",
+      "grants": []
+    },
+    {
+      "appId": "dashboard",
+      "keyId": "19718de2-3aee-4405-a1d7-e9930c846b74",
+      "seed": "GXGN4jruJAVx1-mTDIRrdCWjCZ_lYk21kRYEk4T-e5I",
+      "grants": []
+    },
+    {
+      "appId": "faq",
+      "keyId": "596727af-30e0-48e5-aa89-5a61656e28d6",
+      "seed": "WWcnrzDgCOWKiVphZW4o1hIM0ae3oK31LYwvdvQAigo",
+      "grants": []
+    },
+    {
+      "appId": "filesv2",
+      "keyId": "56398209-6837-48e1-a3a3-5c57b13bb988",
+      "seed": "VjmCCWg3SOEzo1xXsTu5iPjAH8OtmYAjXhjIRREhHbA",
+      "grants": []
+    },
+    {
+      "appId": "gateway-ops",
+      "keyId": "2281bbeb-f8c5-4173-a7f7-be216dacc806",
+      "seed": "IoG76_jFkXMH974hbazIBjmk21A9BF_KUbK4u-kWwcc",
+      "grants": []
+    },
+    {
+      "appId": "grids",
+      "keyId": "210348f7-e5cc-46c3-a0cb-4a39dadd6968",
+      "seed": "IQNI9-XMxsOwy0o52t1paH70o28fTiggQJm0wsRz2N8",
+      "grants": []
+    },
+    {
+      "appId": "ipa-hosts",
+      "keyId": "dcdffa65-ab83-4852-ab50-e6d562c30977",
+      "seed": "3N_6ZauDqFJbUObVYsMJd14PFiCyTvSUJ3R_udvLMwQ",
+      "grants": []
+    },
+    {
+      "appId": "mail",
+      "keyId": "b5932878-af2f-466c-a2dc-2d3cd8aada3f",
+      "seed": "tZMoeK8vtmyC3C082KraP7UJvqi_JG-_eA4xD2DNc2w",
+      "grants": []
+    },
+    {
+      "appId": "notebooks",
+      "keyId": "0eea26e5-cbe7-4d04-a025-a736beb06a35",
+      "seed": "Duom5cvnvQRwJac2vrBqNW601UvVGHFR6kHk7bTetPw",
+      "grants": []
+    },
+    {
+      "appId": "oauth",
+      "keyId": "7777f0c8-7ae5-4232-a085-67226ca8a785",
+      "seed": "d3fwyHrlQjJghWcibKinhVo5_-CasfpqeHxXzZaYXQU",
+      "grants": ["oauth:issue"]
+    },
+    {
+      "appId": "proxy-auth",
+      "keyId": "08f431cd-5ac4-42f0-abac-102a161a00b9",
+      "seed": "CPQxzVrEIvDbrBAqFhoAucbCwN8YszVs8QrbCWaJh4Q",
+      "grants": []
+    },
+    {
+      "appId": "pulse",
+      "keyId": "507c04ec-4118-45c3-a212-19ced9e329ef",
+      "seed": "UHwE7EEYdcOSEhnO2eMp7-oHrEINJ_-uDiyHN1C3fYU",
+      "grants": []
+    },
+    {
+      "appId": "pwa",
+      "keyId": "137e4df5-688d-4b5d-a6d9-1d865cbc1781",
+      "seed": "E35N9WiNe12G2R2GXLwXgVHlSMVEFg6cI3haNzd8do8",
+      "grants": []
+    },
+    {
+      "appId": "quotes",
+      "keyId": "8e735676-5eef-4716-af82-6e111e0c0d2a",
+      "seed": "jnNWdl7vFxZPgm4RHgwNKpBLcNuPTuvbATm371YOjMs",
+      "grants": []
+    },
+    {
+      "appId": "spaces",
+      "keyId": "752bb0c3-bf07-41d7-aa2a-f088ed17b9a2",
+      "seed": "dSuww78HcdfKKvCI7Re5opXaiZ1m5k2rtLH7_9iHYNs",
+      "grants": []
+    },
+    {
+      "appId": "tools",
+      "keyId": "8c6ba41a-6cc3-46f3-ab5d-a9835b5c31e2",
+      "seed": "jGukGmzDxvMrXamDW1wx4j9hUpvAxHoUNWBKf8DysME",
+      "grants": []
+    },
+    {
+      "appId": "venue",
+      "keyId": "20c50230-8db1-430d-aa7a-07b5923d279e",
+      "seed": "IMUCMI2x8w16ege1kj0nnvZI6Zn9AAqQ5458v51vzBE",
+      "grants": []
+    },
+    {
+      "appId": "weather",
+      "keyId": "04bdcd0b-ab88-476a-abda-d88551a61106",
+      "seed": "BL3NC6uIR2or2tiFUaYRBkBsFZl25nG9hu6QIG8AGf4",
+      "grants": []
+    }
+  ]
+}

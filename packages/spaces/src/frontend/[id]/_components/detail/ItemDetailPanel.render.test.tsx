@@ -92,6 +92,7 @@ const renderPanel = (overrides: Partial<Parameters<typeof ItemDetailPanel>[0]> =
           recurringContext: null,
           dateConfig: { locale: "en", timeZone: "Europe/Berlin" },
           canWrite: true,
+          access: null,
           mailIntegrationAvailable: true,
           scrollPreserveKey: `spaces-detail-${spaceId}-${itemId}-series`,
           ...overrides,
@@ -112,21 +113,22 @@ describe("Spaces item detail panel", () => {
     expect(html).toContain("<h2>Planning review</h2>");
     expect(html).toContain('data-scroll-preserve="spaces-detail-Space1-Item01-series"');
     expect(html.match(/k2b-detail-panel__body/g)).toHaveLength(1);
-    // The K1 outline: the kind and state above the title, then properties, the event's own content, linked items,
-    // comments, and "More about this event" with collapsed sections.
+    // The order of use (UI-27): the kind and state above the title, then properties and description, comments, the
+    // event's own content, links, and "More about this event" with collapsed sections.
     expect(html).toContain('class="k2b-detail-panel__kind"><span>Event</span>');
     expect(html).not.toContain("ti-calendar-event");
     expect(html).not.toContain('class="k2b-detail-panel__summary"');
     expect(html).toMatch(
-      />Properties<\/h3>[\s\S]*>Description<\/h3>[\s\S]*>Invitations<\/h3>[\s\S]*>Linked<\/h3>[\s\S]*k2b-discussion[\s\S]*>More about this event<\/div>[\s\S]*>Technical details<\/span>/,
+      />Properties<\/h3>[\s\S]*>Description<\/h3>[\s\S]*k2b-discussion[\s\S]*>Invitations<\/h3>[\s\S]*>Links<\/h3>[\s\S]*>More about this event<\/div>[\s\S]*>Technical details<\/span>/,
     );
     // Schedule, place, and people first; priority and tags stay editable as property rows.
     expect(html).toMatch(
       />Start<\/dt>[\s\S]*>Duration<\/dt>[\s\S]*>Location<\/dt>[\s\S]*>URL<\/dt>[\s\S]*>Assigned<\/dt>[\s\S]*aria-label="Tags"[\s\S]*aria-label="Priority"[\s\S]*>Description<\/h3>/,
     );
-    // Sections in the outline carry no icons; their titles start on the text edge.
-    expect(html).not.toContain("k2b-detail-panel__section-icon");
-    expect(html).not.toContain("k2b-discussion__icon");
+    // Every section carries its icon, so all titles share one column (UI-27).
+    for (const icon of ["ti-list-details", "ti-align-left", "ti-message-circle", "ti-send", "ti-arrows-exchange", "ti-info-square"])
+      expect(html).toContain(`ti ${icon}`);
+    expect(html).toContain("k2b-discussion__icon");
     expect(html).not.toContain(">Priority</label>");
     expect(html).not.toContain("data-spaces-claim-holder");
     expect(html).not.toContain(">Blocked by</dt>");
@@ -300,15 +302,15 @@ describe("Spaces item detail panel", () => {
     );
     // Blockers and dependents are property rows; related tasks lead the one Linked section below.
     expect(html).toMatch(
-      />Properties<\/h3>[\s\S]*>Blocked by<\/dt>[\s\S]*Approve scope[\s\S]*>Blocks<\/dt>[\s\S]*Publish release[\s\S]*>Linked<\/h3>[\s\S]*Prepare launch notes/,
+      />Properties<\/h3>[\s\S]*>Blocked by<\/dt>[\s\S]*Approve scope[\s\S]*>Blocks<\/dt>[\s\S]*Publish release[\s\S]*>Links<\/h3>[\s\S]*Prepare launch notes/,
     );
     expect(html).not.toContain(">Blocked by</h3>");
     expect(html).not.toContain(">Blocks</h3>");
     // Tasks read top to bottom: properties, checklist, linked, attachments, comments, and "More about this task".
     expect(html).toMatch(
-      />Properties<\/h3>[\s\S]*>Checklist<\/h3>[\s\S]*>Linked<\/h3>[\s\S]*>Attachments<\/h3>[\s\S]*k2b-discussion[\s\S]*>More about this task<\/div>/,
+      />Properties<\/h3>[\s\S]*k2b-discussion[\s\S]*>Checklist<\/h3>[\s\S]*>Links<\/h3>[\s\S]*>Attachments<\/h3>[\s\S]*>More about this task<\/div>/,
     );
-    expect(html.match(/>Linked<\/h3>/g)).toHaveLength(1);
+    expect(html.match(/>Links<\/h3>/g)).toHaveLength(1);
   });
 
   test("lists task screenshots as a file list with their kind, size, and row actions", () => {
@@ -403,7 +405,7 @@ describe("Spaces item detail panel", () => {
     });
 
     expect(html).toContain(">Blocked by</dt>");
-    expect(html).toContain(">Linked</h3>");
+    expect(html).toContain(">Links</h3>");
     expect(html).not.toContain(">Blocks</dt>");
     expect(html).toContain("Blocked by 1");
   });
@@ -493,7 +495,7 @@ describe("Spaces item detail panel", () => {
   test("offers the add-link and Cloud resource picker actions before the first link", () => {
     const html = renderPanel({ references: [] });
 
-    expect(html).toContain(">Linked</h3>");
+    expect(html).toContain(">Links</h3>");
     expect(html).toContain("k2b-detail-panel__action");
     expect(html).toContain("ti ti-link-plus text-[var(--k2b-action)]");
     expect(html).toContain(">Add link</span>");
@@ -552,7 +554,7 @@ describe("Spaces item detail panel", () => {
       canWrite: false,
     });
 
-    expect(html).toContain(">Linked</h3>");
+    expect(html).toContain(">Links</h3>");
     expect(html).toContain('href="/app/mail/Box001?conversation=Conv01"');
     expect(html.match(/ti ti-mail/g)).toHaveLength(2);
     expect(html).toContain("Archived discussion");
@@ -910,7 +912,7 @@ describe("Spaces item detail groups", () => {
         { id: "Chk002", label: "Ship", completed: false, createdAt: now, updatedAt: now },
       ],
     });
-    expect(editor).toMatch(/>Properties<\/h3>[\s\S]*>Checklist<\/h3>[\s\S]*>1\/2<[\s\S]*>Linked<\/h3>[\s\S]*>Attachments<\/h3>/);
+    expect(editor).toMatch(/>Properties<\/h3>[\s\S]*>Checklist<\/h3>[\s\S]*>1\/2<[\s\S]*>Links<\/h3>[\s\S]*>Attachments<\/h3>/);
     expect(editor).not.toContain('aria-label="Progress"');
 
     const reader = renderPanel({ item: { ...task, description: "Only the **brief**." }, canWrite: false });
@@ -923,7 +925,7 @@ describe("Spaces item detail groups", () => {
       canWrite: false,
       links: [{ url: "https://example.org/spec", label: "Spec", createdAt: now, preview: null }],
     });
-    expect(linksOnly).toContain(">Linked</h3>");
+    expect(linksOnly).toContain(">Links</h3>");
     expect(linksOnly).not.toContain(">Blocked by</dt>");
     expect(linksOnly).not.toContain(">Assigned</dt>");
   });
@@ -939,7 +941,7 @@ describe("Spaces item detail groups", () => {
     expect(html).toContain('class="k2b-detail-panel__kind"><span>Aufgabe</span>');
     expect(html).toContain(">Eigenschaften</h3>");
     expect(html).toMatch(/>Zugewiesen<\/dt>[\s\S]*>Fällig<\/dt>[\s\S]*>Tags<\/dt>[\s\S]*>Priorität<\/dt>/);
-    expect(html).toContain(">Verknüpft</h3>");
+    expect(html).toContain(">Verknüpfungen</h3>");
     expect(html).toContain(">Anhänge</h3>");
     expect(html).toContain(">Kommentare</h3>");
     expect(html).toContain(">Mehr zu dieser Aufgabe</div>");
@@ -970,7 +972,7 @@ describe("Spaces detail reactions", () => {
   test("writers see all reactions after the preceding groups and before comments", () => {
     const html = renderPanel({ item: { ...task, description: "Current instructions", reactions } });
     expect(html).toMatch(
-      />Properties<\/h3>[\s\S]*>Description<\/h3>[\s\S]*>Linked<\/h3>[\s\S]*>Attachments<\/h3>[\s\S]*spaces-item-reactions[\s\S]*k2b-discussion[\s\S]*>More about this task<\/div>/,
+      />Properties<\/h3>[\s\S]*>Description<\/h3>[\s\S]*spaces-item-reactions[\s\S]*k2b-discussion[\s\S]*>Links<\/h3>[\s\S]*>Attachments<\/h3>[\s\S]*>More about this task<\/div>/,
     );
     const bar = row(html);
     expect(bar).toContain('data-density="default"');
@@ -1022,5 +1024,41 @@ describe("Spaces detail reactions", () => {
     );
     expect(override).toContain('aria-pressed="true"');
     expect(override).toContain('aria-label="Add reaction"');
+  });
+});
+
+describe("Spaces detail access", () => {
+  const members = [
+    { principal: { type: "user" as const, userId }, permission: "admin" as const, displayName: "Mira Stone" },
+    {
+      principal: { type: "group" as const, groupId: "44444444-4444-4444-8444-444444444444" },
+      permission: "write" as const,
+      displayName: "Ops",
+    },
+  ];
+  const more = (html: string) => html.slice(html.indexOf(">More about this task</div>"));
+
+  test("people with access of their own read who has access under More about, closed with the first names", () => {
+    const html = more(renderPanel({ item: task, access: { members, state: "ready", retry: () => undefined } }));
+    expect(html).toMatch(/>Access<\/span>[\s\S]*>You, Ops</);
+    expect(html).toContain("Applies to the whole space.");
+    expect(html).toContain(">Manage<");
+    expect(html).toMatch(/>Access<\/span>[\s\S]*>Technical details<\/span>/);
+  });
+
+  test("public-link readers never get the section; a loading or failed list keeps its place", () => {
+    expect(renderPanel({ item: task, access: null })).not.toContain(">Access</span>");
+    expect(more(renderPanel({ item: task, access: { members: [], state: "loading", retry: () => undefined } }))).toContain(
+      "Loading who has access",
+    );
+    expect(more(renderPanel({ item: task, access: { members: [], state: "error", retry: () => undefined } }))).toMatch(
+      /Could not load who has access[\s\S]*>Try again</,
+    );
+  });
+
+  test("technical details are shared properties with the copy command after them", () => {
+    const html = more(renderPanel({ item: task }));
+    expect(html).toMatch(/>Technical details<\/span>[\s\S]*<dt>Created<\/dt>[\s\S]*<dt>ID<\/dt>[\s\S]*Item01/);
+    expect(html).toContain("k2b-detail-properties");
   });
 });

@@ -88,6 +88,7 @@ export default function WorkspaceStepFixture(props: Props) {
             tags={[]}
             currentUserId={currentUserId}
             canWrite
+            accessVisible={false}
             initialSource={props.source}
             wormholes={[]}
             initialDetail={props.initialDetail}

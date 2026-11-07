@@ -1,4 +1,7 @@
 import { expect, test } from "bun:test";
+import { aiSkillLoadTools } from "@k2b/cloud/ai";
+import { compileCapabilityManifest } from "@k2b/cloud/capabilities/testing";
+import { weatherCapabilities } from "./capabilities";
 import { SKILLS } from "./skills";
 
 test("ships its Skills with every reference linked from the instructions", () => {
@@ -21,4 +24,14 @@ test("Weather skill retains coordinates fallback", () => {
   expect(weather?.instructions).toContain(
     'If city search is unavailable, use known coordinates with `weather.forecast.current` or `weather.forecast.get` and `source.kind = "coordinates"`',
   );
+});
+
+test("Skills load only capabilities the app declares", () => {
+  const manifest = compileCapabilityManifest("weather", weatherCapabilities);
+  const declared = [...manifest.queries, ...manifest.actions].map((operation) => `weather.${operation.localId}`);
+  for (const skill of SKILLS) {
+    const names = aiSkillLoadTools(skill.extraFrontmatter);
+    expect(names.length).toBeGreaterThan(0);
+    for (const name of names) expect(declared).toContain(name);
+  }
 });

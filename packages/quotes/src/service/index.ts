@@ -3,9 +3,9 @@
  * Fetches a new quote every hour.
  */
 
+import { redis } from "@k2b/cloud";
 import { coreSettings, logger } from "@k2b/cloud/services";
 import { err, fail, ok, type Result } from "@k2b/stdlib";
-import { redis } from "bun";
 
 const log = logger("quotes");
 const QUOTE_FETCH_TIMEOUT_MS = 400;

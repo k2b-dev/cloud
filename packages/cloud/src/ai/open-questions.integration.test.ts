@@ -6,7 +6,7 @@ import { sql } from "../runtime/clients";
 import { approvals } from "../services/approvals";
 import { AiInvalidationSchema } from "./live-events";
 import { migrateCloudAi } from "./migrate";
-import { listAiOpenQuestions } from "./open-questions";
+import { countAiOpenQuestions, listAiOpenQuestions } from "./open-questions";
 import type { AiTurnBlock } from "./protocol";
 import { aiConversations } from "./store";
 
@@ -129,8 +129,10 @@ databaseSuite()("open questions", () => {
       event: { type: "approval_response", callId: resolved.callId, approved: false },
     });
     expect(await owner.read()).toMatchObject({ items: [{ id: open.id, conversationId: owner.chat.shortId }], count: 1 });
+    expect(await countAiOpenQuestions(owner.userId)).toBe(1);
     await sql`UPDATE auth.users SET auth_epoch=auth_epoch+1 WHERE id=${owner.userId}::uuid`;
     expect(await owner.read()).toEqual({ items: [], count: 0 });
+    expect(await countAiOpenQuestions(owner.userId)).toBe(0);
   });
 
   test("bounds the newest-first page while counting all questions, including timestamp ties", async () => {

@@ -8,8 +8,10 @@
  * is no dead state, so `events.enqueue` turns anything that would fail forever
  * into something that cannot: an oversized live payload becomes a resync hint.
  */
+
+import { sql } from "@k2b/cloud";
 import { ensureSchema } from "@k2b/cloud/services/postgres";
-import { type SQL, sql } from "bun";
+import type { SQL } from "bun";
 
 export const migrate = async (db: SQL = sql): Promise<void> => {
   await db.begin(async (tx) => {

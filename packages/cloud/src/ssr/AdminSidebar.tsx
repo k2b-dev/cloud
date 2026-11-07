@@ -1,4 +1,4 @@
-import { AppWorkspace, useLocale } from "@k2b/ui";
+import { AppWorkspace, type NavigationItem, useLocale } from "@k2b/ui";
 import { activeAdminLink } from "./admin-active-link";
 import { type AdminLink, buildAdminGroups } from "./admin-navigation";
 import { platformMessages } from "./platform-messages";
@@ -35,22 +35,21 @@ export default function AdminSidebar({ currentPath, apps }: { currentPath: strin
     <>
       <WorkspaceNavigation
         label={t().admin}
-        items={groups().map((group) => ({
-          id: group.label,
-          label: group.label,
-          children: group.links.map((link) => ({
+        items={groups().flatMap((group): NavigationItem[] => {
+          const active = activeAdminLink(
+            currentPath,
+            groups().flatMap((entry) => entry.links),
+          )?.href;
+          const links = group.links.map((link) => ({
             id: link.href,
             label: link.label,
             href: link.href,
             icon: `ti ${link.icon}`,
-            active:
-              link.href ===
-              activeAdminLink(
-                currentPath,
-                groups().flatMap((entry) => entry.links),
-              )?.href,
-          })),
-        }))}
+            active: link.href === active,
+          }));
+          // A group without a heading, such as the overview, stands at the top on its own.
+          return group.label ? [{ id: group.label, label: group.label, children: links }] : links;
+        })}
       />
       <AppWorkspace.Sidebar>
         <AppWorkspace.SidebarDesktop>

@@ -37,7 +37,7 @@ describe("personal Linux groups in Accounts", () => {
   const navigated = mock((_href: string) => {});
   beforeEach(() => {
     dom = createDomTestHarness();
-    spyOn(navigation, "navigateTo").mockImplementation(navigated);
+    spyOn(navigation, "swapPage").mockImplementation(async (href) => navigated(href));
     cleanup = () => dom.cleanup();
   });
   afterEach(() => {

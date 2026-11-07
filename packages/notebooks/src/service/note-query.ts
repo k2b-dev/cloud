@@ -1,5 +1,5 @@
+import { sql } from "@k2b/cloud";
 import type { NamedDataProperties, NamedDataValue } from "@k2b/editor/markdown";
-import { sql } from "bun";
 import {
   isQueryField,
   isQueryFilter,

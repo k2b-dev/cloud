@@ -75,17 +75,6 @@ export const rememberProviderErrors = (provider: Provider, remember: (reason: Ai
     model: provider.model,
     contextWindow: provider.contextWindow,
     capabilities: provider.capabilities,
-    complete: async (request) => {
-      remember(null);
-      try {
-        const result = await provider.complete(request);
-        if (result.finishReason === "error") remember({ error: { code: "provider_stopped" } });
-        return result;
-      } catch (error) {
-        if (!request.signal?.aborted) note(error);
-        throw error;
-      }
-    },
     stream: async function* (request) {
       remember(null);
       try {

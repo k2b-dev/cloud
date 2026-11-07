@@ -83,6 +83,7 @@ function ChartControls(props: { figure: HTMLElement; viewport: HTMLElement; draw
         text={chartTableText(props.drawn().table)}
         label={t().copyData}
         iconOnly
+        class="k2b-icon-button"
         size="sm"
         variant="ghost"
         onCopyError={() => toast.error(t().copyFailed)}

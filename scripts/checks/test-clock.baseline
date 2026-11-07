@@ -64,7 +64,7 @@ packages/ui/src/content/calendar-days.browser.test.ts | 1
 packages/ui/src/content/content-files-docs.render.test.tsx | 1
 packages/ui/src/feedback/hover-preview.browser.test.ts | 1
 packages/ui/src/inputs/date-picker-today.browser.test.ts | 1
-packages/venue/src/frontend/_components/VenueWorkspace.render.test.tsx | 5
+packages/venue/src/frontend/_components/VenueWorkspace.render.test.tsx | 4
 packages/venue/test/admin-setup.behavior.test.tsx | 1
 packages/venue/test/shift-detail.behavior.test.tsx | 1
 pwas/pwa-auth/src/App.behavior.test.tsx | 2

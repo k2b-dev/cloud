@@ -3,8 +3,9 @@ import { confirmDiscardIfDirty, NoticeCard, SettingsGroup, SettingsModal, useLoc
 import { createSignal } from "solid-js";
 import type { PublicBase } from "../../../api/public-dto";
 import { navigationMessages } from "../../../navigation-messages";
+import { ScopedAccessSection } from "../permissions/ScopedAccessSection";
 import type { NavigationResource } from "../workspace/navigation-catalog";
-import { DangerZone, DocumentDefaultsForm, GeneralForm, PermissionsSection, TrashSection } from "./BaseSettingsSections";
+import { DangerZone, DocumentDefaultsForm, GeneralForm, TrashSection } from "./BaseSettingsSections";
 import { ControlledDestructionSection } from "./ControlledDestructionSection";
 import EmailTemplatesSettings from "./EmailTemplatesSettings";
 import { EvidenceExportsSection } from "./EvidenceExportsSection";
@@ -121,10 +122,16 @@ export default function BaseSettingsPanel(props: Props) {
 
         <SettingsModal.Group title={t().sharing}>
           <SettingsModal.Tab id="access" title={t().access} icon="ti ti-shield" description={t().accessDescription}>
-            <SettingsGroup title={t().baseAccess} description={t().immediateChanges}>
+            <ScopedAccessSection
+              scope={{ type: "base", id: props.base.id }}
+              resourceName={props.base.name}
+              title={t().baseAccess}
+              description={t().accessAppliesOnSave}
+              initialEntries={props.accessEntries}
+              canEdit
+            >
               <NoticeCard tone="info">{t().baseGrantExplanation}</NoticeCard>
-              <PermissionsSection baseId={props.base.id} initialEntries={props.accessEntries} />
-            </SettingsGroup>
+            </ScopedAccessSection>
           </SettingsModal.Tab>
         </SettingsModal.Group>
 

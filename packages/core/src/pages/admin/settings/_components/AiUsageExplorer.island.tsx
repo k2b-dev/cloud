@@ -78,7 +78,8 @@ export default function AiUsageExplorer(props: { report: AiUsageReport }) {
     waiting_for_frontend: t().waiting,
   });
   const status = (value: string) => Object.entries(statuses()).find(([key]) => key === value)?.[1] ?? value;
-  const kindLabel = (kind: AiUsageRun["kind"]) => (kind === "chat" ? t().chatRuns : t().backgroundAi);
+  const kindLabel = (kind: AiUsageRun["kind"]) =>
+    kind === "live-transcription" ? t().liveDictation : kind === "chat" ? t().chatRuns : t().backgroundAi;
   const chip = (key: keyof AiUsageQuery, label: string, icon: string, options: { value: string; label: string }[], fallback = "") => (
     <FilterChip
       position="bottom-right"
@@ -264,6 +265,7 @@ export default function AiUsageExplorer(props: { report: AiUsageReport }) {
         : (row.label ?? row.id ?? t().unassigned);
     const columns: DataTableColumn<AiUsageGroup>[] = [
       { id: "name", header: title, value: groupLabel },
+      { id: "dictationMinutes", header: t().dictationMinutes, value: (row) => row.dictationMinutes, align: "right" },
       { id: "runs", header: t().runs, sortable: true, value: (row) => row.runs, align: "right" },
       { id: "tokens", header: t().tokens, sortable: true, value: (row) => row.tokens, align: "right" },
       { id: "cost", header: t().cost, sortable: true, value: (row) => row.cost, align: "right" },
@@ -469,7 +471,7 @@ export default function AiUsageExplorer(props: { report: AiUsageReport }) {
           <Show when={q().view === "runs"}>
             {chip("kind", t().runKind, "ti ti-category", [
               { value: "", label: t().all },
-              ...(["chat", "background"] as const).map((value) => ({ value, label: kindLabel(value) })),
+              ...(["chat", "background", "live-transcription"] as const).map((value) => ({ value, label: kindLabel(value) })),
             ])}
             {chip("status", t().status, "ti ti-activity", [
               { value: "", label: t().all },
@@ -515,6 +517,9 @@ export default function AiUsageExplorer(props: { report: AiUsageReport }) {
       <Show when={q().view === "overview"}>
         <p class="text-xs text-dimmed">{t().totalsHelp}</p>
         {stats(report().overview)}
+        <p class="text-sm text-dimmed">
+          {t().dictationMinutes}: {n(report().overview.dictationMinutes)}
+        </p>
         <div class="grid gap-3 lg:grid-cols-3">
           <For each={["chat", "background"] as const}>
             {(kind) => (

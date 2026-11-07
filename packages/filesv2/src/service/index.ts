@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { sql } from "@k2b/cloud";
 import { type Principal, type RequestActor, resolveDisplayNames } from "@k2b/cloud/server";
 import {
   AccountIdentityError,
@@ -14,7 +15,6 @@ import {
 } from "@k2b/cloud/services";
 import { publicCloudOrigin } from "@k2b/cloud/shared";
 import { type ExecutionContext, type ExecutionIdentity, FilegateError, type Node, type RootInfo } from "@k2b/filegate";
-import { sql } from "bun";
 import { z } from "zod";
 import type { ActivityInput, ActivityPage } from "../activity-contracts";
 import { filegateErrorCode } from "../api/filegate-error";

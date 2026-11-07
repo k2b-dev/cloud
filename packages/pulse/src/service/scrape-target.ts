@@ -1,7 +1,7 @@
+import { sql } from "@k2b/cloud";
 import { fail, ok, type Result } from "@k2b/cloud/server";
 import { isNetworkTargetBlocked, resolveAllowedNetworkAddresses } from "@k2b/cloud/services/network-security";
 import { EMPTY_NETWORK_ALLOWLIST, normalizeNetworkHostname, parseNetworkAllowlist } from "@k2b/cloud/shared";
-import { sql } from "bun";
 import { resolvePulseMessages } from "../messages";
 
 export const baseScrapeAllowlist = async (baseId?: string, db: typeof sql = sql) => {

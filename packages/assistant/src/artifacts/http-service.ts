@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { sql } from "@k2b/cloud";
 import {
   AI_WEBSITE_APPROVAL_TOOL,
   aiConversations,
@@ -8,7 +9,6 @@ import {
   rememberAiToolApproval,
 } from "@k2b/cloud/ai";
 import { requestPublicHttps, secrets } from "@k2b/cloud/services";
-import { sql } from "bun";
 import { z } from "zod";
 import { LIMITS } from "./contracts";
 import {

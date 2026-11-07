@@ -319,6 +319,14 @@ export const notebooksCapabilityPresentation: CapabilityPresentationCatalog = {
             limit: "Maximale Anzahl der zurückzugebenden Ergebnisse.",
           },
         },
+        "template.list": {
+          title: "Seitenvorlagen auflisten",
+          description:
+            "Listen Sie die Seitenvorlagen eines bekannten Notizbuchs auf: zuerst die eigenen nach Namen, dann die eingebauten. Verwenden Sie eine zurückgegebene ID als templateId mit note.create.",
+          input: {
+            notebookId: "Notebook ID zurückgegeben durch Notebook-Suche/-Liste/-Lesen oder ein notebooks.notebook ref.",
+          },
+        },
         "tag.notes": {
           title: "Notizen nach Tags auflisten",
           description:
@@ -517,13 +525,16 @@ export const notebooksCapabilityPresentation: CapabilityPresentationCatalog = {
         },
         "note.create": {
           title: "Notiz erstellen",
-          description: "Erstellen Sie eine Markdown-Notiz in einem explizit ausgewählten beschreibbaren Notizbuch.",
+          description:
+            "Erstellen Sie eine Markdown-Notiz in einem explizit ausgewählten beschreibbaren Notizbuch, aus Inhalt oder aus einer templateId von template.list.",
           input: {
             notebookId: "Beschreibbares Notizbuch ID.",
             parentId: "Optionale Elternnotiz ID im selben Notizbuch.",
             position:
               "Optionale 0-basierte Position; Einordnen nummeriert alle Notizen der Ebene in der gewählten manuellen Reihenfolge. Ohne Position folgt die Notiz dem Ordnungsmodus der Ebene.",
             content: "Ursprüngliche Markdown-Quelle; Ein Titel wird vom Notizbuch abgeleitet oder generiert.",
+            templateId:
+              "Statt content mit dieser Seitenvorlage von template.list beginnen; {{date}} und {{author}} werden für den Aufrufer eingesetzt.",
           },
         },
         "note.edit": {

@@ -46,6 +46,7 @@ export const saveItemFormData = async (params: {
     param: { id: params.spaceId, itemId: params.itemId },
     json: {
       ...params.data,
+      ...(params.data.addAssigneeIds !== undefined || params.data.removeAssigneeIds !== undefined ? { assigneeIds: undefined } : {}),
       description: params.data.description ?? null,
       location: params.data.location ?? null,
       url: params.data.url ?? null,

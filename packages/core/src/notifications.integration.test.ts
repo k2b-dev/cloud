@@ -1,7 +1,7 @@
 import { afterEach, beforeAll, expect, setSystemTime, test } from "bun:test";
+import { sql } from "@k2b/cloud";
 import { registerNotificationDefinitions } from "@k2b/cloud/services/notifications/catalog";
 import * as settings from "@k2b/cloud/services/settings";
-import { sql } from "bun";
 import { databaseSuite, testFor } from "../../../scripts/fixtures/test-infra";
 import "../../../scripts/fixtures/authorization-preload";
 import { userNotifications } from "@k2b/cloud/services/notifications/user";

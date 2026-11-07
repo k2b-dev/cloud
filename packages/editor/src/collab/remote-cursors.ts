@@ -339,12 +339,17 @@ export const remoteCursors = (ytext: Y.Text, awareness: Awareness): Extension =>
             const base = view.scrollDOM.getBoundingClientRect();
             const edge = view.contentDOM.getBoundingClientRect();
             const padding = parseFloat(getComputedStyle(view.contentDOM).paddingLeft);
+            // A rendered block hides the source the other person edits, so no line of it shows the caret's place: the
+            // caret runs along the whole block, which a line-high caret at its top would misstate.
+            // The block as drawn, which a widget may offset from the line the editor gives it.
+            const box = view.coordsAtPos(block.from, 1);
+            if (!box) return [];
             const rect = new RectangleMarker(
-              "cm-remoteCaret",
+              "cm-remoteCaret cm-remoteCaret-block",
               edge.left + padding - base.left + view.scrollDOM.scrollLeft,
-              view.documentTop + block.top - base.top + view.scrollDOM.scrollTop,
+              box.top - base.top + view.scrollDOM.scrollTop,
               null,
-              view.defaultLineHeight,
+              box.bottom - box.top,
             );
             return [new RemoteCaretMarker(rect, color, name, idle)];
           }

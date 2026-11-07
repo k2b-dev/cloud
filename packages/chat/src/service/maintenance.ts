@@ -1,7 +1,6 @@
-import { lazySync } from "@k2b/cloud";
+import { lazySync, sql } from "@k2b/cloud";
 import { createAccess, updateAccess } from "@k2b/cloud/server";
 import { audit, logger, trace } from "@k2b/cloud/services";
-import { sql } from "bun";
 import { type ConversationRow, memberUsers } from "./access";
 import { chatLive } from "./live";
 import { appendMessage, personSnapshots } from "./message-store";

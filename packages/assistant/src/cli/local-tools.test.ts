@@ -23,6 +23,7 @@ let beforeAnswer: (() => Promise<void>) | undefined;
 let beforeUpload: ((signal?: AbortSignal | null) => Promise<void>) | undefined;
 let deadlineMs: number | undefined;
 let uploads: Array<{ name: string; directory: FormDataEntryValue | null }>;
+let uploadedContents: string[];
 let response: () => Response;
 let mode: "ask" | "off";
 let previousConfig: string | undefined;
@@ -41,6 +42,7 @@ const ctx: CloudCliContext = {
       if (!(file instanceof File)) throw new Error("Expected file");
       await beforeUpload?.(init.signal);
       uploads.push({ name: file.name, directory: init.body.get("directory") });
+      uploadedContents.push(await file.text());
       return Response.json({ file: { path: `/returned/${file.name}`, mediaType: file.type, size: file.size, version: 1 } });
     }
     return response();
@@ -61,6 +63,7 @@ beforeEach(async () => {
   approve = true;
   questions = [];
   uploads = [];
+  uploadedContents = [];
   beforeAnswer = undefined;
   beforeUpload = undefined;
   deadlineMs = undefined;
@@ -774,4 +777,145 @@ test("an upload through an outside directory alias goes to the chat root", async
   });
   expect(uploads).toEqual([{ name: "invoice.txt", directory: "/" }]);
   expect(questions).toHaveLength(1);
+});
+
+test.each([
+  { name: "local_read", extension: "txt" },
+  { name: "local_read", extension: "pdf" },
+  { name: "local_upload", extension: "txt" },
+])("$name ($extension) sends the checked file when its symlink changes during the question", async ({ name, extension }) => {
+  const safe = join(root, "safe.txt");
+  const aliasName = `alias.${extension}`;
+  const alias = join(workspace, aliasName);
+  const config = join(workspace, "cld.json");
+  await writeFile(safe, "reviewed data");
+  await writeFile(config, "FAKE-CLOUD-TOKEN");
+  await symlink(safe, alias);
+  beforeAnswer = async () => {
+    await rm(alias);
+    await symlink(config, alias);
+  };
+  const result = await run(name, name === "local_read" ? { path: aliasName } : { paths: [aliasName] });
+  expect(questions).toHaveLength(1);
+  expect(JSON.stringify(result)).not.toContain("FAKE-CLOUD-TOKEN");
+  if (name === "local_read" && extension === "txt") expect(result).toMatchObject({ status: "completed", content: "1\treviewed data\n" });
+  else expect(uploadedContents).toEqual(["reviewed data"]);
+});
+
+test("a Bash child can schedule the symlink swap without another local attacker", async () => {
+  const safe = join(root, "safe.txt");
+  const config = join(workspace, "cld.json");
+  const alias = join(workspace, "alias.txt");
+  const trigger = join(root, "swap-now");
+  const swapped = join(root, "swapped");
+  await writeFile(safe, "reviewed data");
+  await writeFile(config, "FAKE-CLOUD-TOKEN");
+  await symlink(safe, alias);
+  // The child survives its successful parent. Its bounded wait is released by the next approval.
+  const quote = (value: string) => `'${value.replaceAll("'", "'\\''")}'`;
+  const command = `(for ((i=0;i<500;i++)); do if test -e ${quote(trigger)}; then ln -sfn ${quote(config)} ${quote(alias)}; touch ${quote(swapped)}; exit; fi; sleep 0.01; done) </dev/null >/dev/null 2>&1 &`;
+  expect(await run("local_bash", { command })).toMatchObject({ status: "completed", exitCode: 0 });
+  beforeAnswer = async () => {
+    await writeFile(trigger, "go");
+    const until = performance.now() + 5000;
+    while (!(await Bun.file(swapped).exists())) {
+      if (performance.now() > until) throw new Error("Fake swap did not finish");
+      await Bun.sleep(5);
+    }
+  };
+  const result = await run("local_read", { path: "alias.txt" });
+  expect(JSON.stringify(result)).not.toContain("FAKE-CLOUD-TOKEN");
+  expect(result).toMatchObject({ status: "completed", content: "1\treviewed data\n" });
+});
+
+test("an unchanged outside file is read and uploaded through its reviewed target", async () => {
+  const safe = join(root, "safe.txt");
+  await writeFile(safe, "reviewed data");
+  await symlink(safe, join(workspace, "alias.txt"));
+  expect(await run("local_read", { path: "alias.txt" })).toMatchObject({ status: "completed", content: "1\treviewed data\n" });
+  expect(await run("local_upload", { paths: ["alias.txt"] })).toMatchObject({ status: "completed", failed: [] });
+  expect(uploadedContents).toEqual(["reviewed data"]);
+  expect(questions).toHaveLength(2);
+});
+
+test("a hard link to cld's configuration is refused under another name", async () => {
+  const { link } = await import("node:fs/promises");
+  await writeFile(join(workspace, "cld.json"), "FAKE-CLOUD-TOKEN");
+  await link(join(workspace, "cld.json"), join(workspace, "notes.txt"));
+  const read = await run("local_read", { path: "notes.txt" });
+  const uploaded = await run("local_upload", { paths: ["notes.txt"] });
+  expect(JSON.stringify([read, uploaded])).not.toContain("FAKE-CLOUD-TOKEN");
+  expect(read).toMatchObject({ status: "failed", error: "cld's configuration is never available to the assistant." });
+  expect(uploadedContents).toEqual([]);
+});
+
+test.each(["hard link", "parent folder"])("a %s swapped in during the question is refused", async (swap) => {
+  const { link, rename } = await import("node:fs/promises");
+  const outside = join(root, "outside");
+  await mkdir(outside);
+  await writeFile(join(outside, "data.txt"), "reviewed data");
+  const config = join(root, "config");
+  await mkdir(config);
+  await writeFile(join(config, "data.txt"), "FAKE-CLOUD-TOKEN");
+  process.env.CLD_CONFIG = join(config, "data.txt");
+  beforeAnswer = async () => {
+    if (swap === "hard link") {
+      await rm(join(outside, "data.txt"));
+      await link(join(config, "data.txt"), join(outside, "data.txt"));
+    } else {
+      await rename(outside, join(root, "moved"));
+      await symlink(config, outside);
+    }
+  };
+  const result = await run("local_read", { path: join(outside, "data.txt") });
+  expect(questions).toHaveLength(1);
+  expect(JSON.stringify(result)).not.toContain("FAKE-CLOUD-TOKEN");
+  expect(result).toMatchObject({ status: "failed" });
+});
+
+test.each(["linked login file", "login moved during the question"])("cld's login is refused: %s", async (variant) => {
+  const { link, rename } = await import("node:fs/promises");
+  const previousXdg = process.env.XDG_CONFIG_HOME;
+  try {
+    delete process.env.CLD_CONFIG;
+    process.env.XDG_CONFIG_HOME = join(root, "xdg");
+    const cld = join(root, "xdg/cloud/cld");
+    await mkdir(cld, { recursive: true });
+    const outside = join(root, "outside");
+    await mkdir(outside);
+    if (variant === "linked login file") {
+      await writeFile(join(outside, "login.json"), "FAKE-CLOUD-TOKEN");
+      await symlink(join(outside, "login.json"), join(cld, "config.json"));
+    } else {
+      await writeFile(join(cld, "config.json"), "FAKE-CLOUD-TOKEN");
+      await link(join(cld, "config.json"), join(outside, "login.json"));
+      beforeAnswer = () => rename(join(cld, "config.json"), join(root, "moved.json"));
+    }
+    const result = await run("local_read", { path: join(outside, "login.json") });
+    expect(JSON.stringify(result)).not.toContain("FAKE-CLOUD-TOKEN");
+    expect(result).toMatchObject({ status: "failed", error: "cld's configuration is never available to the assistant." });
+  } finally {
+    if (previousXdg === undefined) delete process.env.XDG_CONFIG_HOME;
+    else process.env.XDG_CONFIG_HOME = previousXdg;
+  }
+});
+
+test("a file above Cloud's chat file limit is refused before it is read", async () => {
+  const { truncate } = await import("node:fs/promises");
+  // A sparse 300 MB file: reading it would allocate its full size.
+  await writeFile(join(workspace, "large.bin"), "");
+  await truncate(join(workspace, "large.bin"), 300 * 1024 * 1024);
+  await writeFile(join(workspace, "large.pdf"), "");
+  await truncate(join(workspace, "large.pdf"), 300 * 1024 * 1024);
+  const before = process.memoryUsage().arrayBuffers;
+  const uploaded = await run("local_upload", { paths: ["large.bin"] });
+  const read = await run("local_read", { path: "large.pdf" });
+  expect(process.memoryUsage().arrayBuffers - before).toBeLessThan(16 * 1024 * 1024);
+  expect(uploaded).toMatchObject({
+    status: "completed",
+    files: [],
+    failed: [{ path: "large.bin", error: expect.stringContaining("50 MB limit") }],
+  });
+  expect(read).toMatchObject({ status: "failed", error: expect.stringContaining("50 MB limit") });
+  expect(uploadedContents).toEqual([]);
 });

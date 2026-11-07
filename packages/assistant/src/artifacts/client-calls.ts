@@ -1,6 +1,6 @@
+import { sql } from "@k2b/cloud";
 import { aiConversations, aiToolAudit, CODE_RUNTIME_TOOL_NAMES, CodeRuntimeInput, parseCodeToolInput } from "@k2b/cloud/ai";
 import { userFromActor } from "@k2b/cloud/server";
-import { sql } from "bun";
 import { z } from "zod";
 import { ArtifactError, type ArtifactIdentity } from "./service";
 

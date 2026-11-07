@@ -46,7 +46,7 @@ The base profile sets memory and time limits: small 1 GB / 10 s, normal
 At exactly 10,000 rows, `truncated` is true: **the 10,000-row limit was reached;
 there may be more rows**. A larger byte result fails with `RESULT_TOO_LARGE`.
 
-Pulse runs 3 queries per Cloud and 1 per base. Up to 20 queries wait for at
+Pulse runs 3 queries per Cloud and 1 per base (2 for dashboard panels of a signed-in viewer). Up to 20 queries wait for at
 most 5 seconds. The default hourly base quota is 600 admitted queries and
 resets at the next clock hour. Busy attempts and invalid inputs use no quota.
 `QUOTA` returns HTTP 429; `BUSY` and `QUEUE_FULL` return 503. These responses

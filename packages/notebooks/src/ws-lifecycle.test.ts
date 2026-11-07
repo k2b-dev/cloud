@@ -27,6 +27,11 @@ if (process.env.NOTEBOOKS_WS_LIFECYCLE_CHILD !== "1") {
   const adoptions: unknown[] = [];
   const replayGap = { head: null as string | null, gapBelow: null as string | null, failure: null as Error | null };
   let events: WSEvents | undefined;
+  let missingFirstNote = false;
+  let holdFirstLeave = false;
+  const readerLeaveEntered = Promise.withResolvers<void>();
+  const readerLeaveReleased = Promise.withResolvers<void>();
+  const leftNotes: string[] = [];
   const waitUntilAborted = async function* (config: { signal?: AbortSignal }) {
     if (!config.signal?.aborted)
       await new Promise<void>((resolve) => config.signal?.addEventListener("abort", () => resolve(), { once: true }));
@@ -61,8 +66,8 @@ if (process.env.NOTEBOOKS_WS_LIFECYCLE_CHILD !== "1") {
           const result = await published.promise;
           return { status: "accepted", cursor: result.cursor };
         },
-        getByShortId: async () => note,
-        get: async () => note,
+        getByShortId: async ({ shortId }: { shortId: string }) => ({ ...note, id: shortId === "ghijkl" ? "second-note" : note.id }),
+        get: async ({ id }: { id: string }) => (id === note.id && missingFirstNote ? null : { ...note, id }),
         getYjsStateWithCursor: async () => ({ restoreRevision: "0" }),
         deliverAtRestoreRevision: async (input: { deliver: () => undefined }) => {
           input.deliver();
@@ -79,13 +84,24 @@ if (process.env.NOTEBOOKS_WS_LIFECYCLE_CHILD !== "1") {
           return { cursor: "s6t.fixture.20" };
         },
       },
-      notebook: { permission: { get: async () => "write" } },
+      notebook: {
+        getByShortId: async () => ({ id: note.notebookId }),
+        get: async () => ({ id: note.notebookId }),
+        permission: { get: async () => "write" },
+      },
       workspaceEvents: { live: waitUntilAborted },
       presence: {
         snapshot: async () => ({ participants: [], cursor: "0" }),
         watch: waitUntilAborted,
         join: async () => {},
-        leave: async () => {},
+        leave: async ({ noteId }: { noteId: string }) => {
+          if (holdFirstLeave && noteId === note.id) {
+            holdFirstLeave = false;
+            readerLeaveEntered.resolve();
+            await readerLeaveReleased.promise;
+          }
+          leftNotes.push(noteId);
+        },
       },
     },
   }));
@@ -218,6 +234,55 @@ if (process.env.NOTEBOOKS_WS_LIFECYCLE_CHILD !== "1") {
     ]);
     expect(adoptions).toEqual([]);
   }, 10_000);
+
+  test("reader expiry racing a new watch cannot overwrite that note or leak its lease", async () => {
+    const originalSetTimeout = globalThis.setTimeout;
+    let refreshWorkspace: (() => Promise<void>) | undefined;
+    globalThis.setTimeout = ((callback: () => Promise<void>, delay: number, ...args: unknown[]) => {
+      if (delay === 10_000) refreshWorkspace = callback;
+      return originalSetTimeout(callback, delay, ...args);
+    }) as typeof setTimeout;
+    await app.request("/");
+    const handlers = events!;
+    const sent: Array<{ type: string; payload: { noteId?: string } }> = [];
+    const socket = new WSContext({
+      raw: { send: (data: string) => sent.push(JSON.parse(data)), close() {} },
+      readyState: 1,
+      send() {},
+      close() {},
+    });
+    handlers.onOpen?.(new Event("open"), socket);
+    const send = (type: string, payload: object) =>
+      handlers.onMessage?.(new MessageEvent("message", { data: JSON.stringify({ type, payload }) }), socket);
+    const flush = () => new Promise<void>((resolve) => setImmediate(resolve));
+    const peer = "11111111-1111-4111-8111-111111111111";
+    try {
+      await send("notes.workspace.subscribe", { notebookId: "book01" });
+      await flush();
+      await send("notes.workspace.presence.watch", { noteId: "abcdef", presencePeerId: peer });
+      await flush();
+      expect(sent.some((m) => m.type === "notes.presence.snapshot" && m.payload.noteId === "abcdef")).toBe(true);
+      missingFirstNote = true;
+      holdFirstLeave = true;
+      const expiring = refreshWorkspace!();
+      await readerLeaveEntered.promise;
+      await send("notes.workspace.presence.watch", { noteId: "ghijkl", presencePeerId: peer });
+      // All unblocked mock I/O completes before releasing the old note's removal.
+      await flush();
+      readerLeaveReleased.resolve();
+      await expiring;
+      await flush();
+      expect(sent.some((m) => m.type === "notes.presence.snapshot" && m.payload.noteId === "ghijkl")).toBe(true);
+      await handlers.onClose?.(new CloseEvent("close"), socket);
+      expect(leftNotes).toContain("second-note");
+    } finally {
+      readerLeaveReleased.resolve();
+      missingFirstNote = false;
+      holdFirstLeave = false;
+      globalThis.setTimeout = originalSetTimeout;
+      await handlers.onClose?.(new CloseEvent("close"), socket);
+    }
+  });
 
   test("shutdown waits for accepted edits and unload snapshots even after remote close begins", async () => {
     replayGap.head = null;

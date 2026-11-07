@@ -943,6 +943,13 @@ suite("conversation references and automatic reply policies", () => {
     expect(managedEdit.ok).toBe(false);
     if (!managedEdit.ok) expect(managedEdit.error.code).toBe("CONFLICT");
 
+    const unchangedReply = await updateAutomaticReplyConfiguration({
+      context: ownerContext,
+      mailboxId,
+      configurationId: created.data.id,
+      input: { expectedRevision: created.data.revision, ...input },
+    });
+    expect(unchangedReply.ok && unchangedReply.data.revision).toBe(created.data.revision);
     const updates = await Promise.all([
       updateAutomaticReplyConfiguration({
         context: ownerContext,
@@ -964,6 +971,13 @@ suite("conversation references and automatic reply policies", () => {
     let current = listed.data.find((configuration) => configuration.id === created.data.id);
     if (!current) throw new Error("Updated automatic reply could not be reloaded");
     expect(current.revision).toBe(2);
+    const replayedReply = await updateAutomaticReplyConfiguration({
+      context: ownerContext,
+      mailboxId,
+      configurationId: current.id,
+      input: { ...input, expectedRevision: 1, body: current.body, enabled: current.enabled },
+    });
+    expect(replayedReply.ok && replayedReply.data.revision).toBe(current.revision);
     if (current.enabled) {
       const disabledResult = await updateAutomaticReplyConfiguration({
         context: ownerContext,

@@ -57,6 +57,13 @@ export type CloudCliContext = {
    * link. Absent in hosts without a local browser.
    */
   openUrl?: (url: string) => Promise<boolean>;
+  /**
+   * Read the profile's credentials again, so a long-running command such as
+   * `cld acp` uses a `cld login` that happened after it started. Updates
+   * `options.token` and every later `fetch()`. Rejects when the profile cannot
+   * sign in. Absent in hosts without profiles.
+   */
+  reloadCredentials?: () => Promise<void>;
 };
 
 /** A profile that signs in with the OAuth client-credentials grant. */

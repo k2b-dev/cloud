@@ -50,7 +50,7 @@ Cancellation returns `false`, `null`, or `undefined` according to the method. Ha
 | `title`, `icon` | Name the dialog and add a muted Tabler icon. The header sits flat on the dialog surface like the `PanelDialog` header, and a long title wraps instead of being cut off. |
 | `confirmText`, `cancelText` | Override action labels. `cancelText: false` hides the cancel button in `prompts.form`. |
 | `confirmationPhrase` | Requires an exact typed phrase before `prompts.confirm` can confirm. |
-| `variant` | Selects `primary`, `success`, or `danger` action treatment. |
+| `variant` | Selects `primary`, `success`, `warning`, or `danger` treatment. `success`, `warning`, and `danger` also give the prompt that [dialog tone](/en/ui/layout/panel-dialog#tone): a 2 px edge in its colour and the tone's icon instead of `icon`. `success` and `danger` colour the action button too; `warning` keeps a primary button, because it asks for care, not for a destructive act. `prompts.success` has the success tone and `prompts.error` the danger tone. |
 | `size` | Selects `small`, `medium`, `large`, `wide`, or `full`. `full` fills the viewport minus a small margin and goes edge to edge below 48rem, with safe-area padding. Its frame never scrolls: the header stays at the top and the content fills the rest of the height. |
 | `surface` | Uses the standard panel or a caller-owned `bare` surface. |
 | `header` | Set to `false` when a custom dialog owns its header. |
@@ -58,6 +58,17 @@ Cancellation returns `false`, `null`, or `undefined` according to the method. Ha
 | `history` | Back closes the prompt like Cancel instead of leaving the page; see [Close dialogs with Back](#close-dialogs-with-back). `prompts.form` does not take it. |
 
 Use `surface: "bare"` with `header: false` only when the custom content supplies complete visible panel structure and a close control.
+
+## Warning confirmation
+
+Use `variant: "warning"` when the action is allowed and reversible but probably not what the user meant, for example completing a to-do before it is due. The dialog shows the warning edge and icon; the confirm button stays primary.
+
+```tsx
+const confirmed = await prompts.confirm(
+  "This to-do isn't due for another 2 days (Sat., Nov 7). Do you still want to complete it?",
+  { title: "Complete early?", confirmText: "Complete", variant: "warning" },
+);
+```
 
 ## Typed confirmation
 
@@ -226,7 +237,7 @@ await prompts.dialog<void>(
 ```ts
 interface DialogOptions {
   signal?: AbortSignal; title?: string; ariaLabel?: string; icon?: string; confirmText?: string;
-  cancelText?: string | false; variant?: "danger" | "primary" | "success";
+  cancelText?: string | false; variant?: "danger" | "primary" | "success" | "warning";
   size?: "small" | "medium" | "large" | "wide" | "full"; surface?: "default" | "bare"; header?: false;
   cancelBehavior?: OpenDialogOptions["cancelBehavior"]; history?: boolean;
 }
@@ -311,7 +322,7 @@ type FieldSchema =
 
 type PromptFormOptions<T extends Record<string, FieldSchema>> = {
   signal?: AbortSignal; title?: string; ariaLabel?: string; icon?: string; fields: T; confirmText?: string;
-  cancelText?: string | false; variant?: "danger" | "primary" | "success"; size?: DialogOptions["size"];
+  cancelText?: string | false; variant?: "danger" | "primary" | "success" | "warning"; size?: DialogOptions["size"];
   cancelBehavior?: DialogOptions["cancelBehavior"];
 };
 ```

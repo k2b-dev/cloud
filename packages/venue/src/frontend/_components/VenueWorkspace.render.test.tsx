@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, setSystemTime, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dates } from "@k2b/stdlib";
@@ -844,41 +844,46 @@ describe("Venue shift detail and schedule", () => {
   });
 
   test("links every calendar date to the venue's own day east of UTC", () => {
-    // Berlin is ahead of UTC, so the calendar's day starts at 22:00 or 23:00 UTC of the day before.
-    const hrefOf = (html: string, pattern: RegExp) => html.match(pattern)?.[1]?.replaceAll("&amp;", "&");
-    const week = render("write", [], { calendarDate: "2026-10-05", calendarView: "week" });
-    expect(hrefOf(week, /aria-label="Previous"[^>]*href="([^"]*)"/)).toBe("/app/venue/Cafe01/shifts?cv=week&cd=2026-09-28");
-    expect(hrefOf(week, /aria-label="Next"[^>]*href="([^"]*)"/)).toBe("/app/venue/Cafe01/shifts?cv=week&cd=2026-10-12");
-    // A day header opens that day, not the one before.
-    expect(week).toContain('href="/app/venue/Cafe01/shifts?cv=day&amp;cd=2026-10-07"');
-    expect(week).not.toContain('href="/app/venue/Cafe01/shifts?cv=day&amp;cd=2026-10-04"');
-    // Today is the venue's today.
-    const today = dates.formatDateKey(new Date(), { timeZone: "Europe/Berlin" });
-    expect(hrefOf(week, /k2b-calendar-header__today[^>]*href="([^"]*)"/)).toBe(`/app/venue/Cafe01/shifts?cv=week&cd=${today}`);
-    // The view switch keeps the shown day.
-    expect(week).toContain('href="/app/venue/Cafe01/shifts?cv=day&amp;cd=2026-10-05"');
+    // Berlin is ahead of UTC, so the calendar's day starts at 22:00 or 23:00 UTC of the day before. The clock stands at
+    // a moment when Berlin already has the next day, so "today" is checked on the venue's day, not on the run's (#2300).
+    setSystemTime(new Date("2026-10-31T23:42:52Z"));
+    try {
+      const hrefOf = (html: string, pattern: RegExp) => html.match(pattern)?.[1]?.replaceAll("&amp;", "&");
+      const week = render("write", [], { calendarDate: "2026-10-05", calendarView: "week" });
+      expect(hrefOf(week, /aria-label="Previous"[^>]*href="([^"]*)"/)).toBe("/app/venue/Cafe01/shifts?cv=week&cd=2026-09-28");
+      expect(hrefOf(week, /aria-label="Next"[^>]*href="([^"]*)"/)).toBe("/app/venue/Cafe01/shifts?cv=week&cd=2026-10-12");
+      // A day header opens that day, not the one before.
+      expect(week).toContain('href="/app/venue/Cafe01/shifts?cv=day&amp;cd=2026-10-07"');
+      expect(week).not.toContain('href="/app/venue/Cafe01/shifts?cv=day&amp;cd=2026-10-04"');
+      // Today is the venue's today: 1 November in Berlin while UTC still has 31 October.
+      expect(hrefOf(week, /k2b-calendar-header__today[^>]*href="([^"]*)"/)).toBe("/app/venue/Cafe01/shifts?cv=week&cd=2026-11-01");
+      // The view switch keeps the shown day.
+      expect(week).toContain('href="/app/venue/Cafe01/shifts?cv=day&amp;cd=2026-10-05"');
 
-    // Across the change to winter time, a day forward is still the next day.
-    const day = render("write", [], { calendarDate: "2026-10-24", calendarView: "day" });
-    expect(hrefOf(day, /aria-label="Next"[^>]*href="([^"]*)"/)).toBe("/app/venue/Cafe01/shifts?cv=day&cd=2026-10-25");
-    expect(text(day)).toContain("Saturday, October 24");
-    // Noon UTC is already the next day in Auckland; the calendar still shows the day of the link.
-    const auckland = render("write", [], {
-      calendarDate: "2026-10-24",
-      calendarView: "day",
-      dashboard: { venue: { ...venue("write"), timezone: "Pacific/Auckland" } },
-    });
-    expect(text(auckland)).toContain("Saturday, October 24");
-    expect(hrefOf(auckland, /aria-label="Next"[^>]*href="([^"]*)"/)).toBe("/app/venue/Cafe01/shifts?cv=day&cd=2026-10-25");
+      // Across the change to winter time, a day forward is still the next day.
+      const day = render("write", [], { calendarDate: "2026-10-24", calendarView: "day" });
+      expect(hrefOf(day, /aria-label="Next"[^>]*href="([^"]*)"/)).toBe("/app/venue/Cafe01/shifts?cv=day&cd=2026-10-25");
+      expect(text(day)).toContain("Saturday, October 24");
+      // Noon UTC is already the next day in Auckland; the calendar still shows the day of the link.
+      const auckland = render("write", [], {
+        calendarDate: "2026-10-24",
+        calendarView: "day",
+        dashboard: { venue: { ...venue("write"), timezone: "Pacific/Auckland" } },
+      });
+      expect(text(auckland)).toContain("Saturday, October 24");
+      expect(hrefOf(auckland, /aria-label="Next"[^>]*href="([^"]*)"/)).toBe("/app/venue/Cafe01/shifts?cv=day&cd=2026-10-25");
 
-    // A tapped day in the phone month selects that day and asks for its list; a month step only browses.
-    const month = render("write", [], { calendarDate: "2026-09-29", calendarView: "mobile-month" });
-    expect(month).toContain('href="/app/venue/Cafe01/shifts?cv=mobile-month&amp;cd=2026-09-30&amp;focus=day"');
-    expect(hrefOf(month, /aria-label="Next"[^>]*href="([^"]*)"/)).toBe("/app/venue/Cafe01/shifts?cv=mobile-month&cd=2026-10-29");
-    expect(hrefOf(month, /aria-label="Previous"[^>]*href="([^"]*)"/)).toBe("/app/venue/Cafe01/shifts?cv=mobile-month&cd=2026-08-29");
-    expect(hrefOf(month, /k2b-calendar-header__today[^"]*"[^>]*href="([^"]*)"/)).toMatch(
-      /^\/app\/venue\/Cafe01\/shifts\?cv=mobile-month&cd=\d{4}-\d{2}-\d{2}$/,
-    );
+      // A tapped day in the phone month selects that day and asks for its list; a month step only browses.
+      const month = render("write", [], { calendarDate: "2026-09-29", calendarView: "mobile-month" });
+      expect(month).toContain('href="/app/venue/Cafe01/shifts?cv=mobile-month&amp;cd=2026-09-30&amp;focus=day"');
+      expect(hrefOf(month, /aria-label="Next"[^>]*href="([^"]*)"/)).toBe("/app/venue/Cafe01/shifts?cv=mobile-month&cd=2026-10-29");
+      expect(hrefOf(month, /aria-label="Previous"[^>]*href="([^"]*)"/)).toBe("/app/venue/Cafe01/shifts?cv=mobile-month&cd=2026-08-29");
+      expect(hrefOf(month, /k2b-calendar-header__today[^"]*"[^>]*href="([^"]*)"/)).toMatch(
+        /^\/app\/venue\/Cafe01\/shifts\?cv=mobile-month&cd=\d{4}-\d{2}-\d{2}$/,
+      );
+    } finally {
+      setSystemTime();
+    }
   });
 
   test("the month view draws each shift as one line, with its state as an icon that the accessible name says", () => {

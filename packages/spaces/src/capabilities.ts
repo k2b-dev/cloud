@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { sql } from "@k2b/cloud";
 import {
   CAPABILITY_MAX_RESULT_BYTES,
   CalendarEventsDataSchema,
@@ -25,7 +26,6 @@ import { type AuditActor, audit, isStandaloneServiceAccountKind } from "@k2b/clo
 import { get as settingsGet } from "@k2b/cloud/services/settings";
 import { normalizeTimeZone } from "@k2b/cloud/shared";
 import { type DateContext, dates, err, fail, i18n, ok, type Paginated, type Result, type ServiceError } from "@k2b/stdlib";
-import { sql } from "bun";
 import { z } from "zod";
 import { isDateOnlyDeadline } from "@/presentation/deadline";
 import { spacesEvents } from "./app-events";
@@ -203,11 +203,15 @@ const capabilityDateConfig = async (context: CapabilityExecutionContext) => ({
 });
 
 const relationReviewDetails = async (
-  input: { assigneeIds?: string[]; tagIds?: string[] },
+  input: { assigneeIds?: string[]; addAssigneeIds?: string[]; removeAssigneeIds?: string[]; tagIds?: string[] },
   internalSpaceId: string,
   context: CapabilityExecutionContext,
 ): Promise<ReviewDetails> => {
   const t = spacesMessages(context.locale);
+  const [added, removed] = await Promise.all([
+    input.addAssigneeIds !== undefined ? relationReviewDetails({ assigneeIds: input.addAssigneeIds }, internalSpaceId, context) : [],
+    input.removeAssigneeIds !== undefined ? relationReviewDetails({ assigneeIds: input.removeAssigneeIds }, internalSpaceId, context) : [],
+  ]);
   const [users, detail] = await Promise.all([
     input.assigneeIds
       ? spacesService.item.listAssignableUsers({ spaceId: internalSpaceId, ids: input.assigneeIds, limit: 100 })
@@ -218,6 +222,8 @@ const relationReviewDetails = async (
   const publicTags = detail ? await spacesPublicResources.projectTags(detail.tags) : [];
   const tagNames = new Map(publicTags.map((tag) => [tag.id, tag.name]));
   return [
+    ...added.map((detail) => ({ ...detail, label: t.addAssignees })),
+    ...removed.map((detail) => ({ ...detail, label: t.removeAssignees })),
     ...(input.assigneeIds
       ? [
           {
@@ -431,6 +437,11 @@ const reviewItemCreate = async (
   const t = spacesMessages(context.locale);
   const access = await requireSpace(input.spaceId, context, "write");
   if (!access.ok) return access;
+  // A task without a column lands in the first open one; the person sees which before approving.
+  const defaultColumn =
+    kind === "task" && input.columnId === undefined ? await spacesService.column.firstOpen({ spaceId: access.data.internalId }) : null;
+  if (kind === "task" && input.columnId === undefined && !defaultColumn)
+    return capabilityFail(context, err.badInput("This Space has no open column for new tasks"), "noOpenSpaceColumn");
   const title = input.title ?? t.template;
   const rememberable = input.templateId === undefined && !input.assigneeIds?.length;
   return ok({
@@ -440,6 +451,7 @@ const reviewItemCreate = async (
         : t.reviewCreateEvent({ title, space: access.data.space.name }),
     details: [
       { label: t.space, value: access.data.space.name },
+      ...(defaultColumn ? [{ label: t.column, value: defaultColumn.name }] : []),
       ...(input.title !== undefined ? [{ label: t.title, value: input.title }] : []),
       ...(input.templateId !== undefined ? [{ label: t.fromTemplate, value: input.templateId }] : []),
       ...("startsAt" in input && input.startsAt ? [{ label: t.starts, value: input.startsAt, format: "date-time" as const }] : []),
@@ -1255,6 +1267,8 @@ const ITEM_SUMMARY_FIELDS: Record<string, string> = {
   estimatedDurationMinutes: "estimate",
   priority: "priority",
   assigneeIds: "assignees",
+  addAssigneeIds: "assignees",
+  removeAssigneeIds: "assignees",
   tagIds: "tags",
   location: "location",
   url: "link",
@@ -1288,7 +1302,7 @@ const itemUpdateSummary = (
   const fields = [
     ...new Set(
       Object.keys(input)
-        .filter((field) => field !== "itemId")
+        .filter((field) => field !== "itemId" && field !== "expectedTitle")
         .map((field) => ITEM_SUMMARY_FIELDS[field] ?? field),
     ),
   ];
@@ -1303,8 +1317,9 @@ const itemUpdateSummary = (
 };
 
 const mutationError = <T>(result: Exclude<MutationResult<T>, { ok: true }>, context: CapabilityExecutionContext) => {
-  const error =
-    result.status === 403
+  const error = result.code
+    ? { code: result.code, message: result.error, status: result.status }
+    : result.status === 403
       ? err.forbidden(result.error)
       : result.status === 404
         ? { code: "NOT_FOUND" as const, message: result.error, status: 404 as const }
@@ -1399,7 +1414,13 @@ const runItemTagsSet = async (input: z.infer<typeof ItemTagsSetInputSchema>, con
     const tagIds = await spacesPublicResources.resolveSpacePublicIds("tags", resolved.data.internalSpaceId, input.tagIds);
     if (!tagIds) return capabilityFail(context, err.badInput("Unknown Space tag"), "unknownSpaceTag");
     return itemMutationResult(
-      await spacesService.item.update({ id: resolved.data.internalId, data: { tagIds }, actor: spaceActivityActor(context) }),
+      await spacesService.item.update({
+        id: resolved.data.internalId,
+        data: { tagIds },
+        actor: spaceActivityActor(context),
+        access: { actor: context.actor, subject: context.accessSubject },
+        expectedSpaceId: resolved.data.internalSpaceId,
+      }),
       (item) => tagSetSummary(resolved.data.item, item, context),
       context,
     );
@@ -1700,7 +1721,7 @@ const runTaskCreate = async (input: z.infer<typeof TaskCreateInputSchema>, conte
   audited(actionAudit(context, "task.create", "space", input.spaceId), async () => {
     const access = await requireSpace(input.spaceId, context, "write");
     if (!access.ok) return access;
-    const { spaceId, templateId, date, timeZone, noDate, ...explicit } = input;
+    const { spaceId, templateId, date, timeZone, noDate, columnId: requestedColumnId, ...explicit } = input;
     const filled = await fillFromTemplate(
       { templateId, date, timeZone, noDate, at: explicit.deadline },
       "task",
@@ -1709,10 +1730,14 @@ const runTaskCreate = async (input: z.infer<typeof TaskCreateInputSchema>, conte
     );
     if (!filled.ok) return filled;
     const [columnIds, tagIds] = await Promise.all([
-      spacesPublicResources.resolveSpacePublicIds("columns", access.data.internalId, [explicit.columnId]),
+      requestedColumnId === undefined
+        ? spacesService.column.firstOpen({ spaceId: access.data.internalId }).then((column) => (column ? [column.id] : []))
+        : spacesPublicResources.resolveSpacePublicIds("columns", access.data.internalId, [requestedColumnId]),
       spacesPublicResources.resolveSpacePublicIds("tags", access.data.internalId, explicit.tagIds ?? []),
     ]);
     const columnId = columnIds?.[0];
+    if (requestedColumnId === undefined && !columnId)
+      return capabilityFail(context, err.badInput("This Space has no open column for new tasks"), "noOpenSpaceColumn");
     if (!columnId || !tagIds) return capabilityFail(context, err.badInput("Unknown Space column or tag"), "unknownSpaceColumnOrTag");
     const draft: Partial<TemplateItemDraft> = filled.data?.item ?? {};
     const { location: _location, url: _url, startsAt: _startsAt, endsAt: _endsAt, allDay: _allDay, ...defaults } = draft;
@@ -1727,8 +1752,10 @@ const runTaskCreate = async (input: z.infer<typeof TaskCreateInputSchema>, conte
           tagIds: explicit.tagIds ? tagIds : (defaults.tagIds ?? tagIds),
           columnId,
           title,
+          ...(context.idempotencyKey ? { requestKey: stableUuid(`spaces:task.create:${context.idempotencyKey}`) } : {}),
         },
         createdBy: context.user?.id ?? null,
+        access: { actor: context.actor, subject: context.accessSubject },
         actor: spaceActivityActor(context),
       }),
       createdSummary(context, access.data.space.name, filled.data),
@@ -1747,6 +1774,8 @@ const runTaskUpdate = async (input: z.infer<typeof TaskUpdateInputSchema>, conte
     return itemMutationResult(
       await spacesService.item.update({
         id: resolved.data.internalId,
+        access: { actor: context.actor, subject: context.accessSubject },
+        expectedSpaceId: resolved.data.internalSpaceId,
         data: { ...data, ...(data.tagIds ? { tagIds } : {}) },
         actor: spaceActivityActor(context),
       }),
@@ -1810,8 +1839,10 @@ const runEventCreate = async (input: z.infer<typeof EventCreateInputSchema>, con
           ...schedule,
           columnId,
           title,
+          ...(context.idempotencyKey ? { requestKey: stableUuid(`spaces:event.create:${context.idempotencyKey}`) } : {}),
         },
         createdBy: context.user?.id ?? null,
+        access: { actor: context.actor, subject: context.accessSubject },
         actor: spaceActivityActor(context),
       }),
       createdSummary(context, access.data.space.name, filled.data),
@@ -1824,6 +1855,7 @@ const mapTemplateSummary = (template: SpaceItemTemplate, timeZone: string, conte
   spaceId: template.spaceId,
   kind: template.kind,
   name: template.name,
+  icon: template.icon,
   dateRule: template.dateRule,
   timeOfDay: template.timeOfDay,
   rule: describeTemplateDateRule(template, context.locale),
@@ -1911,7 +1943,7 @@ const templateInputTags = async (internalSpaceId: string, tagIds: string[] | und
 
 const runTemplateCreate = async (input: z.infer<typeof TemplateCreateInputSchema>, context: CapabilityExecutionContext) =>
   audited(actionAudit(context, "template.create", "space", input.spaceId), async () => {
-    const access = await requireSpace(input.spaceId, context, "admin");
+    const access = await requireSpace(input.spaceId, context, "write");
     if (!access.ok) return access;
     const { spaceId, ...data } = input;
     const tagIds = await templateInputTags(access.data.internalId, data.tagIds, context);
@@ -1929,7 +1961,7 @@ const runTemplateCreate = async (input: z.infer<typeof TemplateCreateInputSchema
 
 const runTemplateUpdate = async (input: z.infer<typeof TemplateUpdateInputSchema>, context: CapabilityExecutionContext) =>
   audited(actionAudit(context, "template.update", "space_template", input.templateId), async () => {
-    const resolved = await requireTemplate(input.templateId, context, "admin");
+    const resolved = await requireTemplate(input.templateId, context, "write");
     if (!resolved.ok) return resolved;
     const { templateId, ...data } = input;
     const tagIds = await templateInputTags(resolved.data.internalSpaceId, data.tagIds, context);
@@ -1943,7 +1975,7 @@ const runTemplateUpdate = async (input: z.infer<typeof TemplateUpdateInputSchema
 
 const runTemplateDelete = async (input: z.infer<typeof TemplateDeleteInputSchema>, context: CapabilityExecutionContext) =>
   audited(actionAudit(context, "template.delete", "space_template", input.templateId), async () => {
-    const resolved = await requireTemplate(input.templateId, context, "admin");
+    const resolved = await requireTemplate(input.templateId, context, "write");
     if (!resolved.ok) return resolved;
     const result = await spacesService.template.remove({ id: resolved.data.internal.id });
     if (!result.ok) return mutationError(result, context);
@@ -1962,8 +1994,8 @@ const reviewTemplate = async (
 ) => {
   const t = spacesMessages(context.locale);
   const target = input.templateId
-    ? await requireTemplate(input.templateId, context, "admin")
-    : await requireSpace(input.spaceId ?? "", context, "admin");
+    ? await requireTemplate(input.templateId, context, "write")
+    : await requireSpace(input.spaceId ?? "", context, "write");
   if (!target.ok) return target;
   const space = target.data.space;
   const existing = "template" in target.data ? target.data.template : null;
@@ -2012,6 +2044,8 @@ const runEventUpdate = async (input: z.infer<typeof EventUpdateInputSchema>, con
     return itemMutationResult(
       await spacesService.item.update({
         id: resolved.data.internalId,
+        access: { actor: context.actor, subject: context.accessSubject },
+        expectedSpaceId: resolved.data.internalSpaceId,
         data: { ...data, ...(data.tagIds ? { tagIds } : {}) },
         actor: spaceActivityActor(context),
       }),
@@ -2984,7 +3018,7 @@ export const spacesCapabilities = defineCapabilities({
     "template.create": {
       title: "Create template",
       description:
-        "Create a template for new tasks or events in a Space the actor administers. Names are unique per Space and kind. A weekdays rule proposes the next matching days, an offset rule today plus days.",
+        "Create a template for new tasks or events in a Space the actor can write to. Names are unique per Space and kind. A weekdays rule proposes the next matching days, an offset rule today plus days.",
       input: TemplateCreateInputSchema,
       data: TemplateDataSchema,
       destructive: false,
@@ -2997,7 +3031,7 @@ export const spacesCapabilities = defineCapabilities({
     "template.update": {
       title: "Update template",
       description:
-        "Change selected fields of a template returned by template.list; tag and assignee lists are replaced. Items created earlier stay unchanged. Requires Space admin access.",
+        "Change selected fields of a template returned by template.list; tag and assignee lists are replaced. Items created earlier stay unchanged. Requires Space write access.",
       input: TemplateUpdateInputSchema,
       data: TemplateDataSchema,
       destructive: false,
@@ -3009,7 +3043,7 @@ export const spacesCapabilities = defineCapabilities({
     },
     "template.delete": {
       title: "Delete template",
-      description: "Delete one template. Items created from it stay. Requires Space admin access.",
+      description: "Delete one template. Items created from it stay. Requires Space write access.",
       input: TemplateDeleteInputSchema,
       data: TemplateDeleteDataSchema,
       destructive: true,
@@ -3021,7 +3055,7 @@ export const spacesCapabilities = defineCapabilities({
     "task.create": {
       title: "Create task",
       description:
-        "Create one task in an explicitly selected writable Space and column. With templateId the template fills every field left out, including its checklist, and date picks the due day from template.list proposals.",
+        "Create one task in an explicitly selected writable Space. Without columnId it goes to the Space's first open column, the first one in board order that is not marked done; name a column only when the user asks for one. With templateId the template fills every field left out, including its checklist, and date picks the due day from template.list proposals.",
       input: TaskCreateInputSchema,
       data: TaskDataSchema,
       destructive: false,
@@ -3033,7 +3067,8 @@ export const spacesCapabilities = defineCapabilities({
     },
     "task.update": {
       title: "Update task",
-      description: "Update selected fields of an existing task without converting its item kind.",
+      description:
+        "Update selected fields of an existing task without converting its item kind. Prefer addAssigneeIds/removeAssigneeIds for individual assignments. With title, carry the exact expectedTitle from item.read; TITLE_CONFLICT requires reading and reviewing again.",
       input: TaskUpdateInputSchema,
       data: TaskDataSchema,
       destructive: false,
@@ -3045,6 +3080,11 @@ export const spacesCapabilities = defineCapabilities({
         const resolved = await requireItem(input.itemId, context, "write");
         if (!resolved.ok) return resolved;
         if (isEvent(resolved.data.item)) return capabilityFail(context, err.badInput("Item is not a task"), "itemNotTask");
+        if (input.expectedTitle !== undefined && resolved.data.item.title !== input.expectedTitle)
+          return mutationError(
+            { ok: false, status: 409, code: "TITLE_CONFLICT", error: "Title changed; reload and review the current title" },
+            context,
+          );
         const relations = await relationReviewDetails(input, resolved.data.internalSpaceId, context);
         return ok({
           message: t.reviewUpdateTask({ title: resolved.data.item.title }),

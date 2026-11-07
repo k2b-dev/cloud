@@ -154,6 +154,11 @@ Opening a chat that is gone shows the same reason. Reopening or refreshing the
 chat, or acting in it, subscribes again; the error clears once the new stream
 connects.
 
+For microphone input shared across applications, use the browser
+[Live dictation source](/en/docs/ai/live-dictation). It supplies append-only text
+events; the host owns insertion and draft persistence. Its server availability
+helper lets SSR decide whether to render a microphone.
+
 Lists, Sources, files, routines, dictations, and Project context refresh through
 [AI live updates](/en/docs/ai/chat-runtime-and-streaming#ai-live-updates)
 on `/api/ai/live`, not through the conversation stream.
@@ -203,7 +208,7 @@ attachment rows. Repeated same-named uploads receive distinct durable paths.
 
 To let **Attach files** take files from other Cloud applications as well, pass
 [`chooseFiles`](/en/docs/platform/file-providers) as `fileSelection.choose`
-with `maxBytes: aiComposerChooseMaxBytes(attachments.length)`. Files from an
+with `maxTotalBytes: aiComposerChooseMaxBytes(attachments.length)`. Files from an
 application are read into the browser before `readAiComposerFiles` checks
 them; that budget keeps them within the draft's free slots, at most 50 MiB
 each. It is `0` when the draft is full: say so instead of opening the chooser.

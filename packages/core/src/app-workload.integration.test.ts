@@ -1,7 +1,7 @@
 import "../../../scripts/fixtures/test-infra";
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { createHash } from "node:crypto";
-import { APP_REGISTRY_CONFIG, appRegistry, bindProcessSync, unbindProcessSync } from "@k2b/cloud";
+import { APP_REGISTRY_CONFIG, appRegistry, bindProcessSync, sql, unbindProcessSync } from "@k2b/cloud";
 import type { User } from "@k2b/cloud/contracts/shared";
 import { serviceAccounts } from "@k2b/cloud/services";
 import { authenticateWorkloadCredential } from "@k2b/cloud/services/identity";
@@ -12,7 +12,6 @@ import {
 } from "@k2b/cloud/services/identity/workload-runtime";
 import { serviceAccountCredentials } from "@k2b/cloud/services/service-account-credentials";
 import { createSync } from "@k2b/sync";
-import { sql } from "bun";
 import { connectTestNats, suiteFor, testSyncNamespace, useFreshDatabase } from "../../../scripts/fixtures/test-infra";
 import { migrate as migrateAudit } from "./migrate/core/audit";
 import { migrate as migrateAuth } from "./migrate/core/auth";
