@@ -1,5 +1,5 @@
 import { mergeProps } from "solid-js";
-import { sparkline } from "../charts/core/svg";
+import { sparkline } from "../charts/core/svg-renderers";
 import { type ChartProps, renderChartRoot } from "./ChartRoot";
 import { responsiveChartSvg } from "./chart-svg";
 

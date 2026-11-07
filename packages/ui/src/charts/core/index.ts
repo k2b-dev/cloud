@@ -16,6 +16,7 @@ export { map } from "./map";
 export * from "./render";
 export { chartRenderHeight, preservesAspectRatio } from "./render-size";
 export * from "./snapshot";
+export { charts } from "./svg";
 export {
   type AxisOptions,
   arcPathD,
@@ -26,7 +27,6 @@ export {
   boxplot,
   type ChartOptions,
   chartDatumSvg,
-  charts,
   computeBoxStats,
   computeDomain,
   donut,
@@ -63,7 +63,7 @@ export {
   stateTimeline,
   stepPathD,
   svgRoot,
-} from "./svg";
+} from "./svg-renderers";
 export {
   type ChartDateFormat,
   type ChartDatum,

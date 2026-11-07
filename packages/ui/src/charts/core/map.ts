@@ -14,7 +14,7 @@ import {
   renderHeader,
   renderLegend,
   svgRoot,
-} from "./svg";
+} from "./svg-renderers";
 
 const isMapPoint = (point: MapPoint): boolean =>
   Number.isFinite(point.latitude) &&

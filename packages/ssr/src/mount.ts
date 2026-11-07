@@ -42,7 +42,8 @@ type IslandRegistry = {
   /** The dispose function of each mounted wrapper. */
   mounted: WeakMap<HTMLElement, () => void>;
   roots?: WeakMap<Owner, HTMLElement>;
-  preparing?: WeakSet<HTMLElement>;
+  /** Pending mount disposers double as unique cancellation tokens. */
+  preparing?: WeakSet<() => void>;
   /** Internal navigation listeners called after each wrapper mounted, also when it renders nothing. */
   listeners?: Set<() => void>;
 };
@@ -73,7 +74,6 @@ const mountElement = <Props extends object>(
   shared.preparing ??= new WeakSet();
   const preparing = shared.preparing;
   const start = (): void => {
-    preparing.delete(element);
     try {
       element.innerHTML = "";
       const dispose = render(() => {
@@ -113,16 +113,11 @@ const mountElement = <Props extends object>(
   };
   // A presentation module can keep server HTML visible while its first-use code loads.
   // Disposal cancels a late resume, including a page replaced by progressive navigation.
-  let pending = true;
-  preparing.add(element);
-  mounted.set(element, () => {
-    pending = false;
-    preparing.delete(element);
-  });
+  const cancel = () => preparing.delete(cancel);
+  preparing.add(cancel);
+  mounted.set(element, cancel);
   const resume = () => {
-    if (!pending) return;
-    pending = false;
-    start();
+    if (preparing.delete(cancel)) start();
   };
   const event = new CustomEvent("ssr:before-island-mount", {
     bubbles: true,
@@ -169,7 +164,10 @@ export const onIslandMount = (listener: () => void): (() => void) => {
 /** Initial scroll restoration must wait for regions that only exist after mounting. */
 export const islandsPending = (root: ParentNode): boolean => {
   const { mounted, preparing } = registry();
-  return wrappers(root).some((element) => !mounted.has(element) || preparing?.has(element));
+  return wrappers(root).some((element) => {
+    const dispose = mounted.get(element);
+    return !dispose || preparing?.has(dispose);
+  });
 };
 
 /**

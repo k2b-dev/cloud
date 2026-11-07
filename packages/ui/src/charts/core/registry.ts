@@ -3,7 +3,7 @@ import { renderStateTimelineSvg } from "../../content/chart-state-timeline";
 import { renderAreaSvg } from "./area";
 import { renderHeatmapSvg } from "./calendar";
 import { map } from "./map";
-import { barGauge, boxplot, donut, gauge, histogram, line, pie, scatter, sparkline, stat } from "./svg";
+import { barGauge, boxplot, donut, gauge, histogram, line, pie, scatter, sparkline, stat } from "./svg-renderers";
 
 // Add one renderer here: its key defines the discriminator, ChartKind and the capitalized Chart namespace member.
 // Keep kind-specific adaptations in renderChartSvg and add a fixture to the namespace parity test.

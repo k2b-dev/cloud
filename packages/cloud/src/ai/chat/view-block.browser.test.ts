@@ -1501,7 +1501,7 @@ for (const width of [1280, 390]) {
       expect(await page.getByRole("button", { name: "Reload", exact: true }).count()).toBe(1);
       await settled(page);
       expect(await boxes(page)).toEqual(first);
-      expect(await page.locator("[data-view-path] [role=status]").allTextContents()).toEqual(
+      expect(await page.locator("[data-view-path] .k2b-chart__empty > [role=status]").allTextContents()).toEqual(
         Array(4).fill("This view is no longer available. Its file was changed or deleted."),
       );
     } finally {

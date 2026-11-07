@@ -37,6 +37,7 @@ test("deferred mounts retain server markup and count as pending until a single r
   let renders = 0;
   mount(() => {
     renders++;
+    resume();
     return document.createTextNode("Interactive chart");
   }, 'solid-island[data-id="deferred"]');
   expect(element.innerHTML).toBe(html);
@@ -68,5 +69,27 @@ test("without a deferral islands still mount synchronously", () => {
   const element = wrapper();
   mount(() => document.createTextNode("Mounted"), 'solid-island[data-id="deferred"]');
   expect(element.textContent).toBe("Mounted");
+  expect(islandsPending(document)).toBe(false);
+});
+
+test("an old resume cannot start a new deferred mount of the same wrapper", () => {
+  const element = wrapper();
+  const oldResume = defer();
+  let renders = 0;
+  const component = () => {
+    renders++;
+    return document.createTextNode("Current chart");
+  };
+  mount(component, 'solid-island[data-id="deferred"]');
+  stop?.();
+  disposeIslands(element);
+  const currentResume = defer();
+  mount(component, 'solid-island[data-id="deferred"]');
+  oldResume();
+  expect(renders).toBe(0);
+  expect(islandsPending(document)).toBe(true);
+  currentResume();
+  expect(element.textContent).toBe("Current chart");
+  expect(renders).toBe(1);
   expect(islandsPending(document)).toBe(false);
 });
