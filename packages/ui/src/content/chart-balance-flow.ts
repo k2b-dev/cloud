@@ -65,6 +65,7 @@ export function mountBalanceFlow(
     period = next;
     root.dataset.period = String(period);
     options.periodChange?.(period);
+    for (const [index, month] of months.entries()) month.toggleAttribute("data-balance-active", index === period);
     root.querySelector("[data-balance-label]")!.textContent = months[period]?.dataset.label ?? "";
     root.querySelector("[data-balance-summary]")!.textContent = months[period]?.dataset.summary ?? "";
     for (const list of root.querySelectorAll<HTMLElement>("[data-balance-phone-period]"))
@@ -75,7 +76,13 @@ export function mountBalanceFlow(
   const targetScroll = (index: number) =>
     Math.max(
       viewport.clientWidth - viewport.scrollWidth,
-      Math.min(0, viewport.scrollLeft + months[index]!.getBoundingClientRect().right - viewport.getBoundingClientRect().right),
+      Math.min(
+        0,
+        viewport.scrollLeft +
+          months[index]!.getBoundingClientRect().right -
+          viewport.getBoundingClientRect().right +
+          Number.parseFloat(getComputedStyle(viewport).getPropertyValue("--k2b-balance-peek")),
+      ),
     );
   const scrolled = () => {
     if (!months.length || animation) return;

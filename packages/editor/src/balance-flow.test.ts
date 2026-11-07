@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { balanceFlowRows, balanceFlowTooltip, renderBalanceFlowSvg } from "@k2b/ui/charts/core";
+import { balanceFlowDatums, balanceFlowTooltip, renderBalanceFlowSvg } from "@k2b/ui/charts/core";
 import { chartKinds, chartMarks, chartRenderOptions, chartRows, chartSvgMarks, chartTable, chartTooltip } from "./charts";
 import {
   chartBlockFrame,
@@ -47,7 +47,7 @@ test("every shared tooltip and table field matches Solid including the inherited
     expect(chartTooltip(rows.columns(), row, input.kind)).toEqual(balanceFlowTooltip(datum, source.locale));
   }
   const table = chartTable(input, "en");
-  expect(table.rows.map((r) => r.cells.label)).toEqual(options.periods.flatMap((_, i) => balanceFlowRows(options, i).map((r) => r.label)));
+  expect(table.rows.map((r) => r.cells.label)).toEqual(balanceFlowDatums(options).map((datum) => datum.label));
   expect(table.rows[0]!.cells.value).toBe("100,00 €");
   expect(table.columns.map((c) => c.label)).toEqual(["Detail", "Zeitraum", "Richtung", "Wert"]);
 });

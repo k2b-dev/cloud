@@ -43,8 +43,20 @@ export async function balanceFlowPage() {
   if (!build.success) throw new AggregateError(build.logs, "Balance flow fixture did not bundle");
   const bundle = await build.outputs[0]!.text(),
     css = await Bun.file(resolve(root, "dist/styles.css")).text();
-  const html = `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>${css}
-    body{margin:0;padding:20px;background:var(--k2b-surface-canvas,#fafafa);color:var(--k2b-text,#27272a);font-family:system-ui}main{max-width:1240px;margin:auto}article{padding:20px;border:1px solid var(--k2b-border,#e4e4e7);border-radius:14px;background:var(--k2b-surface,#fff)}h1{font-size:22px;margin:0 0 8px}.intro{margin:0 0 24px;color:var(--k2b-text-muted,#71717a)}.states{display:flex;flex-wrap:wrap;gap:8px;margin-top:20px}.states button{padding:8px}#standalone{margin-top:30px}
+  // Same IBM Plex weights as the docs/showcase host, embedded for offline browser guards.
+  const fonts = (
+    await Promise.all(
+      [400, 500, 600].map(async (weight) => {
+        const bytes = await Bun.file(
+          resolve(root, `node_modules/@fontsource/ibm-plex-sans/files/ibm-plex-sans-latin-${weight}-normal.woff2`),
+        ).arrayBuffer();
+        return `@font-face{font-family:"IBM Plex Sans";font-style:normal;font-weight:${weight};font-display:swap;src:url(data:font/woff2;base64,${Buffer.from(bytes).toString("base64")}) format("woff2")}`;
+      }),
+    )
+  ).join("");
+  const html = `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>${fonts}${css}
+    .k2b-ui{--k2b-font-sans:"IBM Plex Sans",ui-sans-serif,system-ui,sans-serif}
+    body{margin:0;padding:20px;background:var(--k2b-surface-canvas,#fafafa);color:var(--k2b-text,#27272a);font-family:var(--k2b-font-sans, "IBM Plex Sans", sans-serif)}main{max-width:1240px;margin:auto}article{padding:20px;border:1px solid var(--k2b-border,#e4e4e7);border-radius:14px;background:var(--k2b-surface,#fff)}h1{font-size:22px;margin:0 0 8px}.intro{margin:0 0 24px;color:var(--k2b-text-muted,#71717a)}.states{display:flex;flex-wrap:wrap;gap:8px;margin-top:20px}.states button{padding:8px}#standalone{margin-top:30px}
     </style></head><body class="k2b-ui"><main><h1>Liquidity · Marketplace</h1><p class="intro">Invented marketplace data. Each closing balance continues into the next month. Scroll horizontally for earlier months.</p><article><div id="mount">${server}</div></article><div class="states">${["data", "loading", "empty", "error", "stale"].map((s) => `<button data-state-button="${s}">${s}</button>`).join("")}</div></main></body></html>`;
 
   return { html, bundle };

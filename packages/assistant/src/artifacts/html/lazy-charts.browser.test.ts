@@ -465,7 +465,7 @@ for (const width of [1200, 390])
       expect(await app(page).locator('[data-balance-step="1"]').isDisabled()).toBe(true);
       expect(
         await app(page)
-          .locator('[data-balance-period="1"] [data-balance-key="opening"]')
+          .locator('[data-balance-period="1"] [data-balance-key="closing"]')
           .evaluate((e) => getComputedStyle(e).fill),
       ).not.toBe("rgb(0, 0, 0)");
       await app(page).locator('[data-balance-view="table"]').click();

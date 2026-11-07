@@ -54,4 +54,4 @@ export function validateBalanceFlow(periods: readonly BalanceFlowPeriod[]): void
 }
 /** One content height for every period and state, independent of the selected month and measured browser width. */
 export const balanceFlowHeight = (periods: readonly BalanceFlowPeriod[], height = 280): number =>
-  Math.max(height, 72 + Math.max(1, ...periods.map((p) => Math.max(p.inflows.length, p.outflows.length) + 2)) * 52);
+  Math.max(height, 64 + Math.max(1, ...periods.map((p) => Math.max(p.inflows.length, p.outflows.length))) * 36);

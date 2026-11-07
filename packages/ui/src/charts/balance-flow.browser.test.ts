@@ -7,11 +7,12 @@ test("continuous BalanceFlow keeps joined bands, SSR newest origin, scroll inspe
   const { html, bundle } = await balanceFlowPage();
   const browser = await launchBrowser();
   try {
-    for (const width of [1440, 390]) {
+    for (const width of [1440, 1200, 390]) {
       const page = await browser.newPage({ viewport: { width, height: 1100 }, hasTouch: true });
       try {
         const errors = pageErrors(page);
         await page.setContent(html);
+        await page.evaluate(() => document.fonts.ready);
         await settled(page);
         const frame = page.locator("#mount [data-balance-flow]"),
           chart = frame.locator(".k2b-chart"),
@@ -24,7 +25,8 @@ test("continuous BalanceFlow keeps joined bands, SSR newest origin, scroll inspe
         const before = await svg.evaluate((e) => e.outerHTML),
           box = await frame.evaluate(documentBox);
         const newestRight = await frame.locator('[data-balance-month="3"]').evaluate((e) => e.getBoundingClientRect().right);
-        expect(newestRight).toBe(await viewport.evaluate((e) => e.getBoundingClientRect().right));
+        expect(newestRight).toBeCloseTo((await viewport.evaluate((e) => e.getBoundingClientRect().right)) - (width === 390 ? 24 : 0), 2);
+        expect(await frame.evaluate(() => document.fonts.check('12px "IBM Plex Sans"'))).toBe(true);
         expect(await viewport.evaluate((e) => e.scrollLeft)).toBe(0);
         await page.locator("#mount").evaluate((e) => e.replaceChildren());
         await page.addScriptTag({ content: bundle });
@@ -36,12 +38,25 @@ test("continuous BalanceFlow keeps joined bands, SSR newest origin, scroll inspe
         expect(await frame.locator('[data-balance-step="1"]').isDisabled()).toBe(true);
         expect(await chart.locator("[data-balance-period]").count()).toBe(4);
         for (let period = 0; period < 3; period++) {
-          const closing = await chart.locator(`[data-balance-period="${period}"] [data-balance-key="closing"]`).boundingBox();
-          const opening = await chart.locator(`[data-balance-period="${period + 1}"] [data-balance-key="opening"]`).boundingBox();
-          expect(closing!.x + closing!.width).toBeCloseTo(opening!.x, 2);
-          expect(closing!.y).toBeCloseTo(opening!.y, 2);
-          expect(closing!.height).toBeCloseTo(opening!.height, 2);
+          const boundary = chart.locator(`[data-balance-period="${period}"] [data-balance-key="closing"]`);
+          const seam = await boundary.evaluate((e) => {
+            const period = e.closest("[data-balance-period]")!;
+            const index = Number(period.getAttribute("data-balance-period"));
+            const next = period.parentElement!.querySelector(`[data-balance-period="${index + 1}"]`)!;
+            const node = e.getBoundingClientRect();
+            const matrix = (next as SVGGraphicsElement).getScreenCTM()!;
+            const edge = new DOMPoint(0, 0).matrixTransform(matrix);
+            return { center: node.x + node.width / 2, edge: edge.x, width: Number(e.getAttribute("width")) };
+          });
+          expect(seam.center).toBeCloseTo(seam.edge, 2);
+          expect(seam.width).toBe(8);
+          const outgoing = await chart.locator(`[data-balance-period="${period}"] [data-balance-key="out-0"]`).boundingBox();
+          const incoming = await chart.locator(`[data-balance-period="${period + 1}"] [data-balance-key="in-0"]`).boundingBox();
+          expect(incoming!.x - outgoing!.x - outgoing!.width).toBeGreaterThanOrEqual(width === 390 ? 28 : 64);
+          expect(await chart.locator(`[data-balance-period="${period + 1}"] [data-balance-key="opening"]`).count()).toBe(0);
+          expect(await boundary.locator("..").getAttribute("aria-label")).toContain(" = Opening ");
         }
+        expect(await chart.locator("[data-chart-datum] title").count()).toBe(0);
         for (const period of [0, 3]) {
           const anchor = await chart.locator(`[data-balance-period="${period}"] [data-balance-key="closing"]`).evaluate((e) => {
             const mark = e.closest<SVGGraphicsElement>("[data-chart-datum]")!;
@@ -87,7 +102,7 @@ test("continuous BalanceFlow keeps joined bands, SSR newest origin, scroll inspe
             .first()
             .evaluate((e) => getComputedStyle(e).fillOpacity),
         ).toBe(opacity);
-        if (width === 1440) {
+        if (width !== 390) {
           await mark.hover();
           await settled(page);
           expect(
@@ -96,6 +111,37 @@ test("continuous BalanceFlow keeps joined bands, SSR newest origin, scroll inspe
               .first()
               .evaluate((e) => getComputedStyle(e).fillOpacity),
           ).toBe(opacity);
+          // Real text boxes in IBM Plex must not collide within or between periods.
+          const overlaps = await chart.evaluate((e) => {
+            const boxes = Array.from(e.querySelectorAll(".k2b-balance-flow-caption text, .k2b-balance-flow-carry text")).map((text) => ({
+              label: text.textContent,
+              box: text.getBoundingClientRect(),
+            }));
+            return boxes.flatMap((a, i) =>
+              boxes
+                .slice(i + 1)
+                .filter(
+                  (b) =>
+                    Math.min(a.box.right, b.box.right) > Math.max(a.box.left, b.box.left) + 1 &&
+                    Math.min(a.box.bottom, b.box.bottom) > Math.max(a.box.top, b.box.top) + 1,
+                )
+                .map((b) => [a.label, b.label]),
+            );
+          });
+          expect(overlaps).toEqual([]);
+          const clipped = await chart.evaluate((e) => {
+            const viewport = e.querySelector("[data-balance-scroll]")!.getBoundingClientRect();
+            return Array.from(e.querySelectorAll(".k2b-balance-flow-caption text, .k2b-balance-flow-carry text"))
+              .filter((text) => {
+                const b = text.getBoundingClientRect();
+                return b.left < viewport.right && b.right > viewport.left && (b.left < viewport.left || b.right > viewport.right);
+              })
+              .map((text) => text.textContent);
+          });
+          expect(clipped).toEqual([]);
+          expect(await chart.locator('[data-balance-caption="opening"]').count()).toBe(1);
+          expect(await chart.locator('[data-balance-caption="closing"]').count()).toBe(4);
+          expect(await chart.locator('[data-balance-key="opening"]').count()).toBe(1);
           for (const name of ["Refunds", "Shipping labels"])
             expect(
               await chart.locator('[data-balance-period="0"] .k2b-balance-flow-caption text').filter({ hasText: name }).isVisible(),
@@ -104,6 +150,13 @@ test("continuous BalanceFlow keeps joined bands, SSR newest origin, scroll inspe
           expect(await frame.locator("[data-balance-phone]").innerText()).toContain("Shipping labels");
           expect(await frame.locator(".k2b-balance-flow-caption").first().isVisible()).toBe(false);
           expect(await page.locator("html").evaluate((e) => e.scrollWidth)).toBe(width);
+        }
+        await page.keyboard.press("Escape");
+        if (width !== 390) {
+          await chart.locator('[data-balance-period="0"] [data-balance-key="closing"]').hover();
+          await settled(page);
+          expect(await chart.locator('[role="tooltip"]').innerText()).toContain("Closing October 2026 = Opening November 2026");
+          expect(await chart.locator("[data-chart-datum] title").count()).toBe(0);
         }
         await chart.focus();
         await page.keyboard.press("End");
@@ -131,6 +184,16 @@ test("continuous BalanceFlow keeps joined bands, SSR newest origin, scroll inspe
         expect(reduced.moving).toBe(false);
         await settled(page);
         expect(await frame.getAttribute("data-period")).toBe("1");
+        if (width === 390) {
+          const peek = await frame.evaluate((e) => {
+            const view = e.querySelector("[data-balance-scroll]")!.getBoundingClientRect();
+            const month = e.querySelector('[data-balance-month="1"]')!.getBoundingClientRect();
+            return { left: month.left - view.left, right: view.right - month.right };
+          });
+          expect(peek.left).toBeCloseTo(24, 1);
+          expect(peek.right).toBeCloseTo(24, 1);
+        }
+
         await page.locator("html").evaluate((e) => delete e.dataset.k2bMotion);
         await page.emulateMedia({ reducedMotion: "reduce" });
         await page.keyboard.press("ArrowRight");
@@ -156,7 +219,7 @@ test("continuous BalanceFlow keeps joined bands, SSR newest origin, scroll inspe
         }
         await frame.locator('[data-balance-view="chart"]').click();
         await settled(page);
-        const balance = chart.locator('[data-balance-period="3"] [data-balance-key="opening"]');
+        const balance = chart.locator('[data-balance-period="0"] [data-balance-key="opening"]');
         const light = await balance.evaluate((e) => getComputedStyle(e).fill);
         await page.locator("body").evaluate((e) => (e.dataset.theme = "dark"));
         await settled(page);

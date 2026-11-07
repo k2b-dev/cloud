@@ -47,8 +47,8 @@ test("Sankey geometry balances the neutral middle and preserves the balance colo
       opening = right.nodes.find((n) => n.id === "opening")!;
     expect(closing.y).toBe(opening.y);
     expect(closing.height).toBe(opening.height);
-    expect(closing.x + left.nodeWidth).toBe(left.width);
-    expect(opening.x).toBe(0);
+    expect(closing.x + left.nodeWidth / 2).toBe(left.width);
+    expect(opening.x + right.nodeWidth / 2).toBe(0);
     expect(closing.y + closing.height).toBe(left.bottom);
     expect(opening.y + opening.height).toBe(right.bottom);
     expect(left.scale).toBe(right.scale);
@@ -111,8 +111,8 @@ test("server frame contains all months and starts at the newest scroll origin ac
   expect(renderBalanceFlowHtml({ currency: "EUR", periods: [] })).toContain("No periods to show.");
   expect(balanceFlowLayout({ currency: "EUR", periods: [] }).nodes).toEqual([]);
   const zero = renderBalanceFlowSvg({ currency: "EUR", periods: [{ label: "Zero", opening: 0, inflows: [], outflows: [], closing: 0 }] });
-  expect(zero).toContain(">Opening</text>");
-  expect(zero).toContain(">Closing</text>");
+  expect(zero).toContain(">Opening ·");
+  expect(zero).toContain(">Zero ·");
 });
 
 test("balance-flow CSS has no red or green roles and long labels keep full inspection text", async () => {
@@ -131,7 +131,7 @@ test("balance-flow CSS has no red or green roles and long labels keep full inspe
   expect(svg).toContain(label);
   expect(svg).toContain("…");
   for (const match of svg.matchAll(/<text x="([^"]+)"[^>]*>([^<]+)<\/text>/g)) {
-    expect(chartTextWidth(match[2]!, 12)).toBeLessThanOrEqual(180);
+    expect(chartTextWidth(match[2]!, 12)).toBeLessThanOrEqual(220);
     expect(Number(match[1])).toBeLessThanOrEqual(620);
   }
 });
@@ -147,7 +147,7 @@ test("desktop captions label every bar without overlap, including clustered smal
   expect(scene.nodes.filter((n) => n.showLabel)).toHaveLength(scene.nodes.length);
   for (const stage of [0, 1, 2]) {
     const labels = scene.nodes
-      .filter((n) => n.stage === stage && n.showLabel)
+      .filter((n) => n.stage === stage && n.showLabel && scene.rows[n.index]!.direction !== "balance")
       .map((n) => scene.labelY.get(n.index)!)
       .sort((a, b) => a - b);
     for (let i = 1; i < labels.length; i++) expect(labels[i]! - labels[i - 1]!).toBeGreaterThanOrEqual(36);
@@ -159,7 +159,10 @@ test("desktop captions label every bar without overlap, including clustered smal
   const svg = renderBalanceFlowSvg({ ...balanceFixture, inspect: true });
   expect(svg.match(/class="k2b-balance-flow-caption"/g)).toHaveLength(
     balanceFixture.periods.reduce(
-      (total, _, period) => total + balanceFlowLayout({ ...balanceFixture, period }).nodes.filter((n) => n.showLabel).length,
+      (total, _, period) =>
+        total +
+        balanceFlowLayout({ ...balanceFixture, period }).nodes.filter((n) => n.showLabel && n.id !== "opening" && n.id !== "closing")
+          .length,
       0,
     ),
   );
@@ -177,4 +180,32 @@ test("invalid frame names the offending month, even when it is not the active pe
     expect(error).toMatchObject({ period: 1, periodLabel: spec.periods[1]!.label });
   }
   expect(renderBalanceFlowHtml({ ...spec, locale: "de" })).toContain(`${spec.periods[1]!.label}: Die Beträge gehen nicht auf`);
+});
+
+test("carry bands share one normal-width boundary node while all side flows stay inset", () => {
+  const svg = renderBalanceFlowSvg({ ...balanceFixture, inspect: true });
+  expect(svg.match(/class="k2b-balance-flow-carry"/g)).toHaveLength(balanceFixture.periods.length + 1);
+  expect(svg.match(/data-balance-caption="opening"/g)).toHaveLength(1);
+  expect(svg.match(/data-balance-caption="closing"/g)).toHaveLength(balanceFixture.periods.length);
+  expect(svg.match(/data-balance-key="(?:opening|closing)"/g)).toHaveLength(5);
+  expect(svg).not.toContain("<title>");
+  expect(svg).toContain("Closing October 2026 = Opening November 2026");
+  expect(svg).toContain('role="img" aria-label="Closing October 2026 = Opening November 2026');
+  const frame = renderBalanceFlowHtml(balanceFixture);
+  expect(frame).toContain('<th scope="row">Closing October 2026 = Opening November 2026</th>');
+  expect(frame).toContain("<dt>Closing October 2026 = Opening November 2026</dt>");
+  const de = renderBalanceFlowSvg({ ...balanceFixture, locale: "de-DE", inspect: true });
+  expect(de).toContain("Schluss October 2026 = Anfang November 2026");
+  for (const [period] of balanceFixture.periods.entries()) {
+    const scene = balanceFlowLayout({ ...balanceFixture, period });
+    expect(scene.links.find((l) => l.source === "opening")!.x1).toBe(0);
+    expect(scene.links.find((l) => l.target === "closing")!.x2).toBe(scene.width);
+    for (const node of scene.nodes.filter((n) => n.id.startsWith("in-") || n.id.startsWith("out-"))) {
+      expect(node.x).toBeGreaterThanOrEqual(40);
+      expect(node.x + scene.nodeWidth).toBeLessThanOrEqual(scene.width - 40);
+    }
+    expect(Math.min(...scene.nodes.filter((n) => n.id.startsWith("in-") || n.id.startsWith("out-")).map((n) => n.y))).toBe(16);
+    expect(scene.height - scene.bottom).toBe(46);
+  }
+  expect(balanceFlowHeight(balanceFixture.periods)).toBe(280);
 });

@@ -46,7 +46,12 @@ export function balanceFlowRows(spec: BalanceFlowOptions, index = spec.period ??
       direction: "neutral",
     },
     ...p.outflows.map((n, i) => ({ ...n, key: `out-${i}`, direction: "out" as const })),
-    { key: "closing", label: owed(t.balanceClosing, p.closing), value: p.closing, direction: "balance" },
+    {
+      key: "closing",
+      label: index + 1 < spec.periods.length ? balanceFlowBoundaryLabel(spec, index) : owed(t.balanceClosing, p.closing),
+      value: p.closing,
+      direction: "balance",
+    },
   ];
 }
 export const balanceFlowDirection = (direction: string, locale = "en") => {
@@ -79,6 +84,15 @@ export function balanceFlowTooltip(datum: ChartDatum, locale = "en") {
     })),
   };
 }
+/** A shared boundary is described once, in the preceding period's closing datum. */
+const balanceFlowBoundaryLabel = (spec: BalanceFlowOptions, index: number): string => {
+  const t = balanceFlowWords(spec.locale),
+    current = spec.periods[index]!,
+    next = spec.periods[index + 1];
+  return next
+    ? `${t.balanceClosing} ${current.label} = ${t.balanceOpening} ${next.label}${current.closing < 0 ? ` (${t.balanceOwed})` : ""}`
+    : t.balanceClosing;
+};
 /** Full table data includes zero flows, although zero-width links have no inspection target. */
 export function balanceFlowDatums(spec: BalanceFlowOptions): ChartDatum[] {
   return spec.periods.flatMap((_, period) =>
@@ -126,8 +140,8 @@ export function balanceFlowLayout(spec: BalanceFlowOptions) {
     });
   // Reuse the Sankey graph's exact in/out semantics, including balances owed.
   const scene = sankeyLayout({ nodes, links, width, height });
-  const bottom = height - 64,
-    top = 24;
+  const bottom = height - 46,
+    top = 16;
   const largest = Math.max(1, ...spec.periods.map((_, i) => balanceFlowRows(spec, i).find((r) => r.key === "balance")!.value));
   const gaps = Math.max(1, ...spec.periods.map((p) => Math.max(p.inflows.length, p.outflows.length)));
   const scale = Math.max(0, bottom - top - gaps * 12) / largest;
@@ -135,27 +149,43 @@ export function balanceFlowLayout(spec: BalanceFlowOptions) {
   for (const node of scene.nodes) {
     const row = rows[node.index]!;
     node.stage = row.key === "balance" ? 1 : row.direction === "in" || row.key === "opening" ? 0 : 2;
-    node.x = node.stage === 0 ? 0 : node.stage === 1 ? width / 2 - nodeWidth / 2 : width - nodeWidth;
+    node.x =
+      row.key === "opening"
+        ? index > 0
+          ? -nodeWidth / 2
+          : 0
+        : row.key === "closing"
+          ? width - (index + 1 < spec.periods.length ? nodeWidth / 2 : nodeWidth)
+          : node.stage === 0
+            ? 40
+            : node.stage === 1
+              ? width / 2 - nodeWidth / 2
+              : width - 40 - nodeWidth;
     node.height = Math.max(1, Math.abs(row.value) * scale);
     node.y = bottom - node.height;
     node.showLabel = node.value > 0 || row.key === "opening" || row.key === "closing";
   }
   for (const stage of scene.nodes.length ? [0, 2] : []) {
-    let cursor = bottom - scene.nodes.find((n) => n.id === (stage === 0 ? "opening" : "closing"))!.height - 12;
-    for (const node of scene.nodes.filter((n) => n.stage === stage && n.id !== "opening" && n.id !== "closing").reverse()) {
-      node.y = cursor - node.height;
-      cursor = node.y - 12;
+    let cursor = top;
+    for (const node of scene.nodes.filter((n) => n.stage === stage && n.id !== "opening" && n.id !== "closing")) {
+      node.y = cursor;
+      cursor += node.height + 12;
     }
   }
   const labelY = new Map<number, number>();
   for (const stage of [0, 1, 2]) {
-    const labels = scene.nodes.filter((n) => n.stage === stage && n.showLabel).sort((a, b) => a.y - b.y);
+    const labels = scene.nodes
+      .filter((n) => n.stage === stage && n.showLabel && rows[n.index]!.direction !== "balance")
+      .sort((a, b) => a.y - b.y);
     labels.forEach((node, i) =>
-      labelY.set(node.index, Math.max(node.y + node.height / 2, i ? labelY.get(labels[i - 1]!.index)! + 36 : top)),
+      labelY.set(node.index, Math.max(node.y + node.height / 2, i ? labelY.get(labels[i - 1]!.index)! + 36 : top + 12)),
     );
     for (let i = labels.length - 1; i >= 0; i--) {
       const node = labels[i]!;
-      labelY.set(node.index, Math.min(labelY.get(node.index)!, i + 1 < labels.length ? labelY.get(labels[i + 1]!.index)! - 36 : bottom));
+      labelY.set(
+        node.index,
+        Math.min(labelY.get(node.index)!, i + 1 < labels.length ? labelY.get(labels[i + 1]!.index)! - 36 : bottom - 24),
+      );
     }
   }
   const used = new Map<number, number>();
@@ -174,8 +204,9 @@ export function balanceFlowLayout(spec: BalanceFlowOptions) {
     const sy = source.id === "balance" && (target.id === "opening" || target.id === "closing") ? bottom - thickness : edgeY(source, target);
     const ty = target.id === "balance" && (source.id === "opening" || source.id === "closing") ? bottom - thickness : edgeY(target, source);
     const forward = source.x < target.x;
-    const x1 = source.x + (forward ? nodeWidth : 0),
-      x2 = target.x + (forward ? 0 : nodeWidth),
+    const boundaryX = (node: typeof source) => (node.id === "opening" ? 0 : node.id === "closing" ? width : undefined);
+    const x1 = boundaryX(source) ?? source.x + (forward ? nodeWidth : 0),
+      x2 = boundaryX(target) ?? target.x + (forward ? 0 : nodeWidth),
       mid = (x1 + x2) / 2;
     return {
       ...link,
@@ -212,25 +243,41 @@ export function renderBalanceFlowSvg(spec: BalanceFlowOptions): string {
     }
     for (const node of scene.nodes) {
       const row = scene.rows[node.index]!;
-      if (!node.showLabel) continue;
+      if (!node.showLabel || (row.key === "opening" && period > 0)) continue;
       const color = balanceFlowColors[row.direction],
+        balance = row.direction === "balance",
         right = node.stage === 2;
-      const x = node.stage === 1 ? scene.width / 2 : node.x + (right ? -8 : scene.nodeWidth + 8),
+      const x = balance
+          ? right
+            ? scene.width - 20
+            : 20
+          : node.stage === 1
+            ? scene.width / 2
+            : node.x + (right ? -12 : scene.nodeWidth + 12),
         y = node.y + node.height / 2;
-      const captionY = node.stage === 1 ? scene.bottom + 32 : (scene.labelY.get(node.index) ?? y);
+      const captionY = balance || node.stage === 1 ? scene.bottom + 20 : (scene.labelY.get(node.index) ?? y);
       const leader =
-        node.stage !== 1 && Math.abs(captionY - y) > 1
+        !balance && node.stage !== 1 && Math.abs(captionY - y) > 1
           ? `<path class="k2b-chart-category-band" d="M${node.x + (right ? 0 : scene.nodeWidth)},${y}L${x},${captionY}" fill="none" stroke="${color}" stroke-width="1"/>`
           : "";
-      const captionWidth = node.stage === 1 ? 130 : 180;
-      const caption = `<g class="k2b-balance-flow-caption" fill="var(--k2b-text,#27272a)" font-family="inherit" font-size="12" text-anchor="${node.stage === 1 ? "middle" : right ? "end" : "start"}" stroke="var(--k2b-surface,#fff)" stroke-width="4" paint-order="stroke">${leader}<text x="${x}" y="${captionY - 3}">${escapeXml(fitChartText(row.label, captionWidth, 12))}</text><text x="${x}" y="${captionY + 14}" font-weight="600" style="font-variant-numeric:tabular-nums">${escapeXml(fitChartText(balanceFlowDisplayAmount(spec, row), captionWidth, 12))}</text></g>`;
+      const captionWidth = node.stage === 1 ? 130 : balance ? 220 : 180;
+      // One caption and one inspection target represent both sides of each carry.
+      const captionText = balance
+        ? `${right ? spec.periods[period]!.label : row.label} · ${balanceFlowDisplayAmount(spec, row)}${right && row.value < 0 ? ` (${balanceFlowWords(spec.locale).balanceOwed})` : ""}`
+        : row.label;
+      const caption = `<g class="${balance ? "k2b-balance-flow-carry" : "k2b-balance-flow-caption"}" data-balance-caption="${row.key}" fill="var(--k2b-text,#27272a)" font-family="inherit" font-size="12" text-anchor="${node.stage === 1 ? "middle" : right ? "end" : "start"}" stroke="var(--k2b-surface,#fff)" stroke-width="4" paint-order="stroke">${leader}<text x="${x}" y="${captionY - 3}">${escapeXml(fitChartText(captionText, captionWidth, 12))}</text>${balance ? "" : `<text x="${x}" y="${captionY + 14}" font-weight="600" style="font-variant-numeric:tabular-nums">${escapeXml(fitChartText(balanceFlowDisplayAmount(spec, row), captionWidth, 12))}</text>`}</g>`;
       const datum = datums.find((d) => d.seriesIndex === period && d.index === node.index)!;
       body.push(
         chartDatumSvg(
-          `<rect data-balance-key="${row.key}" x="${node.x}" y="${node.y}" width="${scene.nodeWidth}" height="${node.height}" rx="0" fill="${color}" stroke="none"/>${caption}`,
+          `<rect data-balance-key="${row.key}" x="${node.x}" y="${node.y}" width="${scene.nodeWidth}" height="${node.height}" rx="0" fill="${color}" fill-opacity="1" stroke="none"/>${caption}`,
           { ...datum, anchor: [node.x + scene.nodeWidth / 2, y] },
           spec.inspect,
-        ),
+        )
+          .replace(/<title>[\s\S]*?<\/title>/g, "")
+          .replace(
+            "<g ",
+            `<g role="img" aria-label="${escapeXml([datum.label, ...balanceFlowTooltip(datum, spec.locale).rows.map((field) => `${field.label}: ${field.value}`)].join(" · "))}" `,
+          ),
       );
     }
     body.push(

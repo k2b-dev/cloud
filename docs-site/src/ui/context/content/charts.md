@@ -1162,9 +1162,13 @@ numbers; they do not squeeze or cut labels inside the bands.
 
 All periods share one horizontally scrollable canvas and one amount scale. Opening
 and closing stay at the bottom; the blue closing band continues directly into the
-next opening with identical thickness. Month names stay above their part of the
-flow. The newest period is visible in the server frame, before any script runs.
+next opening with identical thickness. The boundary has one balance caption and
+one shared node in normal width; other inflow/outflow nodes sit inside their month with a clear
+gap. The shared tooltip names the closing and following opening together;
+accessible names replace native browser tooltips. Month names stay above their part of the flow. The newest period is visible in the server frame, before any script runs.
 Touch or trackpad scrolls through earlier months with snap points at boundaries.
+On phones, adjacent months peek beside the current month; complete amount rows
+stay below the drawing. Scroll edges fade softly.
 Previous/Next or Left/Right scroll one period, timed by `--k2b-motion-base`;
 either the operating system preference or `html[data-k2b-motion="reduced"]`
 removes animated scrolling. Up/Down inspect amounts, Enter pins and Escape
