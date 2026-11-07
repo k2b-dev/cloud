@@ -6813,3 +6813,10 @@
 @media (forced-colors: active) {
   .k2b-ui .k2b-flow-amount[data-direction="in"] { border: 1px solid CanvasText; box-shadow: none; }
 }
+/* In a key figure tile the amount shrinks with the tile, like the tile's own figure, so it is never cut. */
+.k2b-ui .k2b-stat-grid__body > .k2b-stat-cell .k2b-flow-amount[data-size="lg"] { font-size: clamp(0.75rem, 11.5cqi, 1.5rem); }
+.k2b-ui .k2b-stat-cell__value .k2b-flow-amount { max-width: 100%; }
+@container k2b-stat-cell (max-width: 200px) {
+  .k2b-ui .k2b-stat-cell .k2b-flow-amount[data-size="lg"] { gap: 0.25rem; }
+  .k2b-ui .k2b-stat-cell .k2b-flow-amount[data-size="lg"][data-direction="in"] { padding: 0.125rem 0.375rem 0.125rem 0.125rem; }
+}
