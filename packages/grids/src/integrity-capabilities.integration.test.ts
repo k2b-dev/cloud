@@ -1,6 +1,7 @@
 import { beforeAll, expect } from "bun:test";
 import { sql } from "@k2b/cloud";
 import type { CapabilityExecutionContext, User } from "@k2b/cloud/contracts";
+import { read as readSetting, remove as removeSetting, set as setSetting } from "@k2b/cloud/services/settings";
 import { testInfra } from "../../../scripts/fixtures/test-infra";
 import { documentActor } from "./api/documents-api-shared";
 import { gridsCapabilities } from "./capabilities";
@@ -165,15 +166,26 @@ postgresTest("document capabilities capture, issue and read immutable bytes with
     });
     expect(zip.ok && zip.data.data.state).toBe("issued");
     if (testInfra.gotenberg) {
-      const pdf = await issue.run(
-        issue.input.parse({
-          baseId: f.base,
-          data: captured.data.data,
-          output: { kind: "pdf", body: "<h1>Items</h1>{% for row in rows %}<p>{{ row[columns[0].key] }}</p>{% endfor %}" },
-        }),
-        { ...f.context, requestId: uuid(), idempotencyKey: uuid() },
-      );
-      expect(pdf.ok && pdf.data.data.state).toBe("issued");
+      // GOTENBERG_URL only bootstraps the stored setting during app startup;
+      // this direct capability fixture does not start an application.
+      const previous = await readSetting("gotenberg.url");
+      if (previous.stored === "unreadable") throw new Error("Cannot preserve unreadable Gotenberg test setting");
+      try {
+        await setSetting("gotenberg.url", testInfra.gotenberg);
+        const pdf = await issue.run(
+          issue.input.parse({
+            baseId: f.base,
+            data: captured.data.data,
+            output: { kind: "pdf", body: "<h1>Items</h1>{% for row in rows %}<p>{{ row[columns[0].key] }}</p>{% endfor %}" },
+          }),
+          { ...f.context, requestId: uuid(), idempotencyKey: uuid() },
+        );
+        if (!pdf.ok) throw pdf.error;
+        expect(pdf.data.data.state).toBe("issued");
+      } finally {
+        if (previous.stored === "none") await removeSetting("gotenberg.url");
+        else await setSetting("gotenberg.url", previous.value);
+      }
     }
     const [count] = await sql<
       Array<{ n: number }>
