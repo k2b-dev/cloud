@@ -5,7 +5,7 @@ section: Everyday
 order: 230
 description: Small generators, converters, security helpers, media utilities, and network tests.
 tags: [tools, utilities, generators, network, cli]
-updated: 2026-09-07
+updated: 2026-11-07
 ---
 
 # Tools
@@ -13,6 +13,12 @@ updated: 2026-09-07
 Tools collects small utilities for day-to-day work so they are discoverable in
 one place. Use the workspace for quick generation, conversion, inspection, and
 testing tasks that do not need their own application.
+
+The overview, sidebar, and phone menu use the same five groups: **Images**,
+**Documents**, **Text and codes**, **Security**, and **Network**. **Used often**
+offers four shortcuts. Search by name, format, or task; the search is preserved
+in the URL when you reload or return with Back. Choose **Clear search** if
+nothing matches. Existing tool addresses remain unchanged.
 
 ## Use Tools
 
@@ -35,7 +41,7 @@ endpoints and request history are stored server-side.
 
 | Resource or surface | Responsibility |
 | --- | --- |
-| Tool definition | A named utility grouped by task and category for browsing and search |
+| Tool definition | A named utility in one shared group for browsing, phone navigation, and search |
 | Browser utility | Processes its interactive input in the page and offers copy or download output |
 | Document to Markdown | Converts one signed-in user's document in memory and returns plain Markdown without persisting either side |
 | Markdown to PDF | Renders one signed-in user's Markdown with a bounded print template or custom CSS without persisting either side |

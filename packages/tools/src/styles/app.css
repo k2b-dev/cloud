@@ -5,12 +5,6 @@
 @source "../**/*.{ts,tsx}";
 @custom-variant dark (&:where(.dark, .dark *));
 
-.tools-main :where(.paper) {
-  border-color: transparent;
-  background: var(--ui-surface-subtle);
-  box-shadow: none;
-}
-
 .tools-tool-header {
   padding-block: 0.125rem;
 }

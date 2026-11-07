@@ -16,7 +16,7 @@ import MailtoGenerator from "../tools/MailtoGenerator.island";
 import MarkdownPdf from "../tools/MarkdownPdf.island";
 import PasswordGenerator from "../tools/PasswordGenerator.island";
 import QrCodeGenerator from "../tools/QrCodeGenerator.island";
-import { resolveRegistry } from "../tools/registry";
+import { registryMessages, resolveRegistry } from "../tools/registry";
 import SpeedTest from "../tools/SpeedTest.island";
 import UuidGenerator from "../tools/UuidGenerator.island";
 import WebhookTester, { parseWebhookTesterState, type WebhookTesterInitialState } from "../tools/WebhookTester.island";
@@ -45,44 +45,42 @@ const toolComponents: Record<
 export default ssr<AuthContext>(async (c) => {
   const toolId = c.req.param("toolId");
   if (!toolId) return ssr.error(c, 404);
-  const tool = resolveRegistry(getLocale(c)).toolById(toolId);
+  const locale = getLocale(c);
+  const tool = resolveRegistry(locale).toolById(toolId);
+  const labels = registryMessages.resolve([locale]).t;
 
   if (!tool) return ssr.error(c, 404);
 
   const renderTool = toolComponents[tool.id];
   const speedtestBase = tool.id === "speedtest" ? resolveSpeedtestBase(c) : undefined;
   const webhookState = tool.id === "webhooks" ? parseWebhookTesterState(new URL(c.req.url)) : undefined;
-  const breadcrumbs = [{ title: "Start", href: "/" }, { title: "Tools", href: "/tools" }, { title: tool.name }];
+  const breadcrumbs = [{ title: labels.home, href: "/" }, { title: labels.appName, href: "/tools" }, { title: tool.name }];
+  const regionLayout = tool.id === "image" || tool.id === "image-converter" || tool.id === "webhooks";
 
   return () => (
-    <Layout c={c} fullPage workspaceSidebarCollapsible={tool.id !== "webhooks"} title={breadcrumbs}>
-      {tool.id === "webhooks" ? (
-        renderTool?.({ webhookState, baseHref: `/tools/${tool.id}` })
-      ) : (
-        <ToolsWorkspace activeToolId={tool.id} layout={tool.id === "image" || tool.id === "image-converter" ? "regions" : "main"}>
-          {tool.id === "image" || tool.id === "image-converter" ? (
-            renderTool?.({ speedtestBase, baseHref: `/tools/${tool.id}` })
-          ) : (
-            <div class="mx-auto flex h-full min-h-0 w-full max-w-5xl flex-col gap-4">
-              <ShowToolHeader show icon={tool.icon} name={tool.name} description={tool.description} />
-              {renderTool ? renderTool({ speedtestBase, baseHref: `/tools/${tool.id}` }) : null}
-            </div>
-          )}
-        </ToolsWorkspace>
-      )}
+    <Layout c={c} fullPage workspaceSidebarCollapsible title={breadcrumbs}>
+      <ToolsWorkspace activeToolId={tool.id} layout={regionLayout ? "regions" : "main"}>
+        {regionLayout ? (
+          renderTool?.({ speedtestBase, webhookState, baseHref: `/tools/${tool.id}` })
+        ) : (
+          <div class="mx-auto flex h-full min-h-0 w-full max-w-5xl flex-col gap-4">
+            <ShowToolHeader icon={tool.icon} name={tool.name} description={tool.description} />
+            {renderTool?.({ speedtestBase, baseHref: `/tools/${tool.id}` })}
+          </div>
+        )}
+      </ToolsWorkspace>
     </Layout>
   );
 });
 
-const ShowToolHeader = (props: { show: boolean; icon: string; name: string; description: string }) =>
-  props.show ? (
-    <header class="tools-tool-header flex items-center gap-3" style="view-transition-name: tool-heading">
-      <div class="k2b-icon-tile app-accent-text h-10 w-10">
-        <i class={`${props.icon} text-xl`} />
-      </div>
-      <div class="min-w-0">
-        <h1 class="text-xl font-semibold text-primary">{props.name}</h1>
-        <p class="text-sm text-dimmed">{props.description}</p>
-      </div>
-    </header>
-  ) : null;
+const ShowToolHeader = (props: { icon: string; name: string; description: string }) => (
+  <header class="tools-tool-header flex items-center gap-3" style="view-transition-name: tool-heading">
+    <div class="k2b-icon-tile app-accent-text h-10 w-10">
+      <i class={`${props.icon} text-xl`} />
+    </div>
+    <div class="min-w-0">
+      <h1 class="text-xl font-semibold text-primary">{props.name}</h1>
+      <p class="text-sm text-dimmed">{props.description}</p>
+    </div>
+  </header>
+);
