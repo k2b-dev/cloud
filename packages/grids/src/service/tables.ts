@@ -1,5 +1,6 @@
 import { sql } from "@k2b/cloud";
 import { err, fail, ok, type Result } from "@k2b/stdlib";
+import { publishGridsLifecycleEvent } from "../app-events";
 import { FieldColumnSpecSchema, RecordDisplayConfigSchema, TableAuditPolicySchema, TableMutationPolicySchema } from "../contracts";
 import { normalizeRefKey } from "../ref-syntax";
 import { logAudit, type SqlClient } from "./audit";
@@ -382,9 +383,11 @@ export const remove = async (id: string, actorId: string | null, locale?: string
   if (!existing) return fail(err.notFound(messages.table));
   await sql.begin(async (tx) => {
     await degradeForTableSchemaChange(id, actorId, tx);
-    await tx`UPDATE grids.tables SET deleted_at = now() WHERE id = ${id}::uuid AND deleted_at IS NULL`;
+    const changed = await tx`UPDATE grids.tables SET deleted_at = now() WHERE id = ${id}::uuid AND deleted_at IS NULL`;
+    if (changed.count === 0) return;
     await logAudit({ baseId: existing.baseId, tableId: id, userId: actorId, action: "deleted" }, tx);
     await publishMetadataChange(tx, existing.baseId, "table.deleted");
+    await publishGridsLifecycleEvent(tx, "table.deleted", existing.baseId, id);
   });
   gridsLive.wake();
   await refreshForTableSchemaChange(id, actorId);
@@ -403,7 +406,7 @@ export const restore = async (id: string, actorId: string | null, locale?: strin
         tx.savepoint(async (sp) => {
           const [row] = await sp<DbRow[]>`
             UPDATE grids.tables SET deleted_at = NULL, updated_at = ${NEXT_TABLE_VERSION()}
-            WHERE id = ${id}::uuid
+            WHERE id = ${id}::uuid AND deleted_at IS NOT NULL
             RETURNING ${COLS()}
           `;
           return row;
@@ -412,8 +415,14 @@ export const restore = async (id: string, actorId: string | null, locale?: strin
       messages.tableNameUnique,
     );
     if (!result.ok) return result;
+    if (!result.data) {
+      // Another restore may have committed after the preflight read. Preserve its successful result without a second event.
+      const [current] = await tx<DbRow[]>`SELECT ${COLS()} FROM grids.tables WHERE id = ${id}::uuid`;
+      return ok(current);
+    }
     await logAudit({ baseId: existing.baseId, tableId: id, userId: actorId, action: "restored" }, tx);
     await publishMetadataChange(tx, existing.baseId, "table.restored");
+    await publishGridsLifecycleEvent(tx, "table.restored", existing.baseId, id);
     return result;
   });
   if (!restored.ok) return restored;
