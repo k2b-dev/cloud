@@ -582,6 +582,7 @@
 }
 
 /* ---------------------------------------------------------------- Budget -- */
+.k2b-ui .k2b-budget { min-width: 0; }
 .k2b-ui .k2b-budget__list { display: flex; flex-direction: column; gap: 0.875rem; margin: 0; padding: 0; list-style: none; }
 .k2b-ui .k2b-budget__anchor {
   display: grid;
