@@ -452,6 +452,8 @@ export const migrate = async (): Promise<void> => {
     singleton BOOLEAN PRIMARY KEY DEFAULT true CHECK (singleton),
     last_swept_at TIMESTAMPTZ
   )`.simple();
+  // Initialized by the first successful tick, never advanced by later ticks or restarts.
+  await sql`ALTER TABLE spaces.app_event_sweep ADD COLUMN IF NOT EXISTS started_at TIMESTAMPTZ`.simple();
   await sql`INSERT INTO spaces.app_event_sweep(singleton) VALUES (true) ON CONFLICT DO NOTHING`;
   await sql`CREATE INDEX IF NOT EXISTS idx_items_due_timed_events ON spaces.items(deadline, id)
     WHERE completed_at IS NULL AND (starts_at IS NULL OR ends_at IS NULL) AND deadline IS NOT NULL`.simple();

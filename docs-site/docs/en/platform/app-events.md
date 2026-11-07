@@ -81,20 +81,26 @@ carries only the note and its current notebook refs; it omits parent and positio
 Moving notes between notebooks remains unsupported; copying creates a new note
 and emits `note.created` in the destination notebook.
 
-`spaces.item.due` uses a minute sweep with at most four tasks per tick across
+`spaces.item.due` uses a minute sweep with at most **524 tasks** per tick across
 all replicas per UTC minute. Timed deadlines use their exact instant; all-day deadlines become
 eligible at midnight in the installation's `app.timezone` (UTC when the
 setting is empty or invalid). Only tasks with no
 completion timestamp and outside done columns are eligible; calendar events
-are excluded. The oldest eligible deadlines go first. The sweep includes
-previously overdue tasks on upgrade or restart, so backlog can delay an event.
+are excluded. The event fires when the due time is reached after the installation's
+first successful due sweep, which persists a start watermark. There are no events
+for tasks that were already overdue at that first sweep, or due exactly at that
+watermark. Restarting
+keeps the watermark and catches up deadlines reached after it. The oldest eligible
+deadlines go first; a burst of 500 tasks fits in the next minute tick. Larger
+backlogs take further ticks. See the [burst budget](/en/docs/operations/app-events#plan-retention-and-outage-capacity).
 The event contains no deadline value: read the item's current state through
 `spaces.item.read` before acting.
 
 The sweep saves a durable receipt for each item and due value atomically with
 the outbox event. Moving the deadline allows one event for the new value;
 returning to an already announced value or reopening the task emits no second
-due event for that value. Receipts last until the item is deleted. Tick claims
+due event for that value. A new or changed due time after the watermark fires
+once, on the next tick if it has already passed. Receipts last until the item is deleted. Tick claims
 and row locks keep retries and replicas within the shared batch limit. An
 outbox failure rolls back the whole batch, receipts and tick claim for retry.
 

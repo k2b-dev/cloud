@@ -107,7 +107,9 @@ No-op writes emit no update. Changing assignees through `task.update`, including
 add/remove deltas, uses the same event path as API and CLI writes. The existing
 `involves_people` review still requires confirmation for these calls.
 
-Due events fire once per task and due value, with a global limit of four per
-minute. All-day deadlines use midnight in `app.timezone`. See
+Due events fire once per task and due value, with a global limit of **524 per
+minute**. They fire when the due time is reached after the first successful due
+sweep; there are no events for tasks that were already overdue at that first sweep. All-day deadlines
+use midnight in `app.timezone`. See
 [Built-in resource events](/en/docs/platform/app-events#built-in-resource-events)
 for eligibility, retries, overdue tasks, and delivery authorization.

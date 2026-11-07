@@ -393,20 +393,30 @@ suite("Spaces declared resource event producers", () => {
     ]);
   });
 
-  test("due ticks are bounded across replicas, survive a new process, and emit each due value once", async () => {
+  test("due ticks skip pre-watermark deadlines, drain a 500-task burst, and stay bounded and idempotent after restart", async () => {
     const space = await board();
     const at = new Date("2026-10-27T12:00:00Z");
     const zone = spyOn(settings, "get").mockResolvedValue("Europe/Berlin");
     try {
-      await sql`UPDATE spaces.app_event_sweep SET last_swept_at = NULL`;
+      await sql`UPDATE spaces.app_event_sweep SET started_at = NULL, last_swept_at = NULL`;
       // Keep other producer tests' tasks out of this installation-wide tick.
       await sql`UPDATE spaces.items SET deadline = NULL, deadline_date = NULL WHERE space_id = ANY(${toPgUuidArray(spaceIds.filter((id) => id !== space.id))}::uuid[])`;
-      const due = [];
-      for (let n = 0; n < ITEM_DUE_BATCH + 1; n++) {
-        const item = await create(space);
-        due.push(item);
-        await sql`UPDATE spaces.items SET deadline = ${at} WHERE id = ${item.id}::uuid`;
-      }
+      const oldTimed = await create(space);
+      const oldAllDay = await create(space);
+      const atWatermark = await create(space);
+      const watermark = new Date(at.getTime() - 60_000);
+      await sql`UPDATE spaces.items SET deadline = ${new Date(watermark.getTime() - 1)} WHERE id = ${oldTimed.id}::uuid`;
+      await sql`UPDATE spaces.items SET deadline = ${watermark} WHERE id = ${atWatermark.id}::uuid`;
+      await sql`UPDATE spaces.items SET deadline_date = '2026-10-27'::date WHERE id = ${oldAllDay.id}::uuid`;
+      // Seed more than one full batch in one statement, without hundreds of unrelated create events.
+      const burst = Array.from({ length: ITEM_DUE_BATCH + 1 }, () => ({ short_id: newShortId() }));
+      const due = await sql<{ id: string; short_id: string }[]>`
+        INSERT INTO spaces.items(short_id, space_id, column_id, title, deadline)
+        SELECT input.short_id, ${space.id}::uuid, ${space.open}::uuid, 'Burst task', ${at}::timestamptz
+        FROM jsonb_to_recordset(${JSON.stringify(burst)}::jsonb) AS input(short_id text)
+        RETURNING id, short_id`;
+      expect(ITEM_DUE_BATCH).toBeGreaterThanOrEqual(500);
+      expect(ITEM_DUE_BATCH * (4096 + 1024)).toBeLessThanOrEqual(0.01 * 256 * 1024 ** 2);
       const future = await create(space);
       await sql`UPDATE spaces.items SET deadline = ${new Date(at.getTime() + 60_000)} WHERE id = ${future.id}::uuid`;
       const completed = await create(space);
@@ -417,9 +427,11 @@ suite("Spaces declared resource event producers", () => {
       await sql`UPDATE spaces.items SET deadline = ${at}, starts_at = ${at}, ends_at = ${new Date(at.getTime() + 60_000)} WHERE id = ${calendar.id}::uuid`;
       const allDay = await create(space);
       await sql`UPDATE spaces.items SET deadline_date = '2026-10-28'::date WHERE id = ${allDay.id}::uuid`;
+      expect(await sweepDueItems(watermark)).toBe(0);
+      expect((await pending(space.short_id)).filter((e) => e.type === "spaces.item.due")).toHaveLength(0);
+      const [started] = await sql<{ started_at: Date }[]>`SELECT started_at FROM spaces.app_event_sweep`;
+      expect(started!.started_at).toEqual(watermark);
       expect(await sweepDueItems(new Date(at.getTime() - 1))).toBe(0);
-      // The empty pre-deadline scan also claims its tick.
-      await sql`UPDATE spaces.app_event_sweep SET last_swept_at = NULL`;
       const jittered = new Date(at.getTime() + 25);
       const counts = await Promise.all([sweepDueItems(jittered), sweepDueItems(jittered)]);
       expect(counts.sort()).toEqual([0, ITEM_DUE_BATCH]);
@@ -463,23 +475,31 @@ suite("Spaces declared resource event producers", () => {
       expect(await restarted(at)).toBe(0);
       const next = new Date(at.getTime() + 60_000);
       expect(await restarted(next)).toBe(2); // the remaining task and the newly due future task
-      expect(await sweepDueItems(new Date(at.getTime() + 120_000))).toBe(0);
+      const [resumed] = await sql<{ started_at: Date }[]>`SELECT started_at FROM spaces.app_event_sweep`;
+      expect(resumed!.started_at).toEqual(watermark);
       const moved = due[0]!;
-      await sql`UPDATE spaces.items SET deadline = ${next} WHERE id = ${moved.id}::uuid`;
+      await sql`UPDATE spaces.items SET deadline = ${new Date(at.getTime() + 180_000)} WHERE id = ${moved.id}::uuid`;
+      expect(await sweepDueItems(new Date(at.getTime() + 120_000))).toBe(0);
       expect(await sweepDueItems(new Date(at.getTime() + 180_000))).toBe(1);
       await sql`UPDATE spaces.items SET deadline = ${at} WHERE id = ${moved.id}::uuid`;
-      expect(await sweepDueItems(new Date(at.getTime() + 240_000))).toBe(0);
+      // An old overdue task can fire after its deadline is moved into the future.
+      await sql`UPDATE spaces.items SET deadline = ${new Date(at.getTime() + 240_000)} WHERE id = ${oldTimed.id}::uuid`;
+      expect(await sweepDueItems(new Date(at.getTime() + 240_000))).toBe(1);
       expect(await sweepDueItems(new Date("2026-10-27T22:59:59Z"))).toBe(0);
       expect(await sweepDueItems(new Date("2026-10-27T23:00:59Z"))).toBe(1); // midnight Europe/Berlin
       const events = (await pending(space.short_id)).filter((e) => e.type === "spaces.item.due");
-      expect(events).toHaveLength(ITEM_DUE_BATCH + 4);
+      expect(events).toHaveLength(ITEM_DUE_BATCH + 5);
       for (const event of events) assertThin(event);
-      expect(events.filter((e) => e.subject.id === moved.shortId)).toHaveLength(2);
-      expect(events.some((e) => [completed.shortId, done.shortId, calendar.shortId].includes(e.subject.id))).toBe(false);
+      expect(events.filter((e) => e.subject.id === moved.short_id)).toHaveLength(2);
+      expect(
+        events.some((e) =>
+          [atWatermark.shortId, oldAllDay.shortId, completed.shortId, done.shortId, calendar.shortId].includes(e.subject.id),
+        ),
+      ).toBe(false);
     } finally {
       zone.mockRestore();
     }
-  }, 45_000);
+  }, 90_000);
 
   test("an empty installation timezone uses UTC for all-day due tasks and does not stop timed tasks", async () => {
     const space = await board();
@@ -491,7 +511,7 @@ suite("Spaces declared resource event producers", () => {
       await sql`UPDATE spaces.items SET deadline = NULL, deadline_date = NULL WHERE space_id = ANY(${toPgUuidArray(spaceIds.filter((id) => id !== space.id))}::uuid[])`;
       await sql`UPDATE spaces.items SET deadline = ${at} WHERE id = ${timed.id}::uuid`;
       await sql`UPDATE spaces.items SET deadline_date = '2026-10-28'::date WHERE id = ${allDay.id}::uuid`;
-      await sql`UPDATE spaces.app_event_sweep SET last_swept_at = NULL`;
+      await sql`UPDATE spaces.app_event_sweep SET started_at = NULL, last_swept_at = NULL`;
       expect(await sweepDueItems(new Date(at.getTime() - 1))).toBe(0);
       expect(await sweepDueItems(at)).toBe(2);
       expect((await pending(space.short_id)).filter((e) => e.type === "spaces.item.due")).toHaveLength(2);
@@ -508,7 +528,9 @@ suite("Spaces declared resource event producers", () => {
     const zone = spyOn(settings, "get").mockResolvedValue("UTC");
     await sql`UPDATE spaces.items SET deadline = NULL, deadline_date = NULL WHERE space_id = ANY(${toPgUuidArray(spaceIds.filter((id) => id !== space.id))}::uuid[])`;
     await sql`UPDATE spaces.items SET deadline = ${at} WHERE id IN (${item.id}::uuid, ${second.id}::uuid)`;
-    await sql`UPDATE spaces.app_event_sweep SET last_swept_at = NULL`;
+    await sql`UPDATE spaces.app_event_sweep SET started_at = NULL, last_swept_at = NULL`;
+    const watermark = new Date(at.getTime() - 60_000);
+    expect(await sweepDueItems(watermark)).toBe(0);
     const original = producer.publishSpacesEvent;
     let published = 0;
     const failure = spyOn(producer, "publishSpacesEvent").mockImplementation(async (...args) => {
@@ -521,6 +543,8 @@ suite("Spaces declared resource event producers", () => {
       failure.mockRestore();
     }
     try {
+      const [sweep] = await sql<{ started_at: Date; last_swept_at: Date }[]>`SELECT started_at, last_swept_at FROM spaces.app_event_sweep`;
+      expect(sweep).toEqual({ started_at: watermark, last_swept_at: watermark });
       expect(await sql`SELECT * FROM spaces.item_due_events WHERE item_id IN (${item.id}::uuid, ${second.id}::uuid)`).toHaveLength(0);
       expect((await pending(space.short_id)).filter((e) => e.type === "spaces.item.due")).toHaveLength(0);
       expect(await sweepDueItems(at)).toBe(2);
