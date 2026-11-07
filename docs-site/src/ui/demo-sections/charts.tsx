@@ -414,6 +414,15 @@ export const ChartDemo = (props: { window: "1h" | "24h" }) => (
       const [selection, setSelection] = createSignal<ChartSelection>();
       const distribution = example.chart.kind === "treemap" || example.chart.kind === "pareto";
       const tooltip = distribution ? undefined : createTooltip(tooltipExamples[example.chart.kind]);
+      const detailTooltip: ChartTooltipFormatter =
+        tooltip ??
+        (({ datum }) => ({
+          title: datum.label,
+          rows: datum.values.map((field) => ({
+            label: tooltipExamples[example.chart.kind].fields[field.key]?.label ?? field.key,
+            value: field.formatted ?? String(field.value),
+          })),
+        }));
       return (
         <DemoCard
           id={example.chart.kind === "line" ? "charts" : `charts-${example.chart.kind}`}
@@ -439,7 +448,7 @@ export const ChartDemo = (props: { window: "1h" | "24h" }) => (
             <Chart {...example.chart} tooltip={tooltip} onSelect={setSelection} />
             <output aria-live="polite" style={{ display: "block", "min-height": "2rem" }}>
               {selection()
-                ? `Selected: ${tooltip(selection()!).title} — ${tooltip(selection()!)
+                ? `Selected: ${detailTooltip(selection()!).title} — ${detailTooltip(selection()!)
                     .rows.map((row) => `${row.label}: ${row.value}`)
                     .join(" · ")}`
                 : "Select a data point to see its details here."}
