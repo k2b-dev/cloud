@@ -81,7 +81,7 @@ const looks: Record<ImageEditorState["look"], Partial<ImageEditorAdjustments>> =
   mono: { saturation: 0, contrast: 1.1 },
   warm: { warmth: 0.24, saturation: 1.05 },
   cool: { warmth: -0.2, saturation: 0.95 },
-  monoHard: { saturation: 0, contrast: 1.45, vignette: 0.25 },
+  "mono-hard": { saturation: 0, contrast: 1.45, vignette: 0.25 },
   faded: { contrast: 0.75, saturation: 0.78, brightness: 1.12 },
   vintage: { warmth: 0.45, saturation: 0.75, contrast: 1.12, vignette: 0.6, grain: 0.45 },
 };
