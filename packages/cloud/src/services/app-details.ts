@@ -60,7 +60,7 @@ export function createAppDetailsService(dependencies: Dependencies = {}) {
         SELECT EXISTS (
           SELECT FROM events.app_manifests WHERE app_id = ${appId}
           UNION ALL SELECT FROM events.app_declarations WHERE app_id = ${appId}
-          UNION ALL SELECT FROM events.app_subscriptions WHERE app_id = ${appId}
+          UNION ALL SELECT FROM events.app_subscriptions WHERE resource_binding IS NULL AND app_id = ${appId}
           UNION ALL SELECT FROM notifications.definitions WHERE app_id = ${appId}
           UNION ALL SELECT FROM auth.app_access_state WHERE app_id = ${appId}
           UNION ALL SELECT FROM auth.app_access WHERE app_id = ${appId}
@@ -74,7 +74,7 @@ export function createAppDetailsService(dependencies: Dependencies = {}) {
       db<(StoredDeclaration & { subscriber_count: number; total: number })[]>`
         SELECT declaration.*, count(*) OVER()::int AS total,
           (SELECT count(*)::int FROM events.app_subscriptions subscription
-            WHERE subscription.event_type = declaration.type AND subscription.version = declaration.version
+            WHERE subscription.resource_binding IS NULL AND subscription.event_type = declaration.type AND subscription.version = declaration.version
               AND subscription.state <> 'cancelled') AS subscriber_count
         FROM events.app_declarations declaration
         WHERE declaration.app_id = ${appId} AND declaration.retired_at IS NULL
@@ -89,7 +89,7 @@ export function createAppDetailsService(dependencies: Dependencies = {}) {
         FROM events.app_subscriptions subscription
         LEFT JOIN events.app_declarations declaration
           ON declaration.type = subscription.event_type AND declaration.version = subscription.version
-        WHERE subscription.app_id = ${appId}
+        WHERE subscription.resource_binding IS NULL AND subscription.app_id = ${appId}
         ORDER BY subscription.first_seen_at DESC, subscription.id
         LIMIT ${APP_DETAILS_LIST_LIMIT}
       `,
