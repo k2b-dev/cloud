@@ -111,6 +111,13 @@ describe("@k2b/ui Cloud-faithful surfaces", () => {
       }),
     );
 
+    // The dotted leader is opt-in: without it the list carries no leader attribute at all.
+    expect(list).not.toContain("data-leader");
+    expect(
+      renderToString(() =>
+        createComponent(DescriptionList, { layout: "rows", leader: "dotted", items: [{ term: "Total", description: "€1,475.60" }] }),
+      ),
+    ).toContain('data-leader="dotted"');
     expect(tag).toContain("--k2b-choice-color:#7c3aed");
     expect(tag).toContain('aria-label="Remove UI"');
     const selectedTag = renderToString(() =>

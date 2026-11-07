@@ -16596,26 +16596,27 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 /* Opt-in fallback for a list that must span a very wide container: a dotted leader joins each term to its value,
    which aligns right in tabular figures. Never the default; first keep rows within the row measure. */
 .k2b-ui .k2b-description-list[data-leader="dotted"]:is([data-layout="rows"], [data-layout="compact"]) {
-  grid-template-columns: fit-content(60%) minmax(1.5rem, 1fr) auto auto;
+  grid-template-columns: fit-content(40%) minmax(1.5rem, 1fr) auto auto;
 }
 .k2b-ui .k2b-description-list[data-leader="dotted"]:is([data-layout="rows"], [data-layout="compact"]) .k2b-description-list__item {
   grid-template-areas: "term leader description action";
 }
+/* Term and leader sit on the value's first line, so a wrapped value keeps its term beside where it starts. */
 .k2b-ui .k2b-description-list[data-leader="dotted"]:is([data-layout="rows"], [data-layout="compact"]) .k2b-description-list__item::before {
   content: "";
   grid-area: leader;
-  align-self: center;
+  align-self: start;
   height: 0;
+  margin-block-start: 1.375rem;
   border-bottom: 1px dotted var(--k2b-border-strong);
-  translate: 0 0.3rem;
 }
-.k2b-ui .k2b-description-list[data-leader="dotted"]:is([data-layout="rows"], [data-layout="compact"]) .k2b-description-list__item dt {
-  align-self: center;
-  padding-block-start: 0;
+.k2b-ui .k2b-description-list[data-leader="dotted"]:is([data-layout="rows"], [data-layout="compact"]) .k2b-description-list__item :is(dt, dd) {
+  align-self: start;
+  padding-block-start: 0.5rem;
 }
 .k2b-ui .k2b-description-list[data-leader="dotted"]:is([data-layout="rows"], [data-layout="compact"]) .k2b-description-list__item dd {
   font-variant-numeric: tabular-nums;
-  text-align: right;
+  text-align: end;
 }
 .k2b-ui .k2b-description-list:is([data-layout="rows"], [data-layout="compact"]) .k2b-select-chip {
   max-width: 100%;

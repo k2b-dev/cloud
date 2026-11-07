@@ -76,7 +76,9 @@ right-aligned tabular figures.
 
 Only where a list of terms and right-aligned values must span a very wide
 container, set `leader="dotted"` on a `rows` or `compact` list: a dotted leader
-joins each term to its value, which aligns right in tabular figures. It is the
+joins each term to its value, which aligns to the end in tabular figures. Terms
+keep their 40% limit, and a wrapped value keeps its term and leader on its first
+line. It is the
 fallback, never the default, and has no other look variants.
 
 Use `layout="compact"` for read-mostly metadata in previews and small panels.
