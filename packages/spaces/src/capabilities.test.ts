@@ -50,21 +50,6 @@ import type { SpaceAssignableUser, SpaceComment, SpaceItem, SpaceItemTemplate, S
 import { spacesService } from "./service";
 import { type ResourceTable, spacesPublicResources } from "./service/public-resources";
 
-// Exercise the same projection and remembered scope that chat uses, across both review formats.
-const chatReview = async (result: Promise<CapabilityActionReviewResult>): Promise<CapabilityActionReviewResult> => {
-  const reviewed = await result;
-  if (!reviewed.ok) return reviewed;
-  const approvalScope = capabilityReviewRememberScope(reviewed.data, "rememberable");
-  return {
-    ok: true,
-    data: { ...reviewed.data, ...capabilityReviewView(reviewed.data, { timeZone: "UTC" }), ...(approvalScope ? { approvalScope } : {}) },
-  };
-};
-const chatTaskCreate = (...args: Parameters<(typeof spacesCapabilities.actions)["task.create"]["review"]>) =>
-  chatReview(spacesCapabilities.actions["task.create"].review(...args));
-const chatTaskUpdate = (...args: Parameters<(typeof spacesCapabilities.actions)["task.update"]["review"]>) =>
-  chatReview(spacesCapabilities.actions["task.update"].review(...args));
-
 const userId = "11111111-1111-4111-8111-111111111111";
 const serviceAccountId = "22222222-2222-4222-8222-222222222222";
 const spaceUuid = "33333333-3333-4333-8333-333333333333";
@@ -1344,7 +1329,7 @@ describe("spaces capabilities", () => {
       const lookup = spyOn(spacesService.item, "listAssignableUsers").mockImplementation(async ({ ids, limit = 20 }) =>
         directory.filter((entry) => !ids || ids.includes(entry.id)).slice(0, limit),
       );
-      const result = await chatTaskUpdate({ itemId, assigneeIds: [serviceAccountId] }, userContext);
+      const result = await spacesCapabilities.actions["task.update"].review({ itemId, assigneeIds: [serviceAccountId] }, userContext);
       expect(result).toMatchObject({
         ok: true,
         data: { ask: "involves_people", content: { body: expect.stringContaining("Assignees: Zebra helper") } },
@@ -1359,7 +1344,7 @@ describe("spaces capabilities", () => {
     spyOn(spacesService.space, "get").mockResolvedValue(space);
     spyOn(spacesService.space.permission, "get").mockResolvedValue("write");
     spyOn(spacesService.item, "listAssignableUsers").mockResolvedValue([]);
-    const result = await chatTaskUpdate({ itemId, assigneeIds: [serviceAccountId] }, userContext);
+    const result = await spacesCapabilities.actions["task.update"].review({ itemId, assigneeIds: [serviceAccountId] }, userContext);
     expect(result).toMatchObject({
       ok: true,
       data: { ask: "involves_people", content: { body: expect.stringContaining("Assignees: Unavailable assignee") } },
@@ -1372,7 +1357,7 @@ describe("spaces capabilities", () => {
     spyOn(spacesService.space, "get").mockResolvedValue(space);
     spyOn(spacesService.space.permission, "get").mockResolvedValue("write");
 
-    const result = await chatTaskUpdate(
+    const result = await spacesCapabilities.actions["task.update"].review(
       {
         itemId,
         description: "First line\n\nSecond line",
@@ -1408,6 +1393,7 @@ describe("spaces capabilities", () => {
   });
 
   test("task policies allow unattended shared changes and retain per-call confirmation", async () => {
+    spyOn(spacesService.item, "listAssignableUsers").mockResolvedValue([]);
     const manifest = compileCapabilityManifest("spaces", spacesCapabilities);
     expect(manifest.policies?.["task.create"]).toEqual({ silent: "shared" });
     expect(manifest.policies?.["task.update"]).toEqual({ silent: "shared" });
@@ -1637,10 +1623,10 @@ describe("spaces capabilities", () => {
       await spacesCapabilities.actions["item.tags.set"].review!({ itemId, tagIds: [tagId] }, userContext),
       await spacesCapabilities.actions["task.blocker.add"].review!({ itemId, blockerItemId: itemId }, userContext),
       await spacesCapabilities.actions["task.blocker.remove"].review!({ itemId, blockerItemId: itemId }, userContext),
-      await chatTaskUpdate({ itemId, title: "Updated task" }, userContext),
+      await spacesCapabilities.actions["task.update"].review({ itemId, title: "Updated task" }, userContext),
       await spacesCapabilities.actions["task.set-completed"].review!({ itemId, completed: true }, userContext),
       await spacesCapabilities.actions["comment.create"].review!({ itemId, content: "Ready." }, userContext),
-      await chatTaskCreate({ columnId: "Col001", title: "New task" }, userContext),
+      await spacesCapabilities.actions["task.create"].review({ columnId: "Col001", title: "New task" }, userContext),
       await spacesCapabilities.actions["task.claim"].review!({ itemId, claimId: "99999999-9999-4999-8999-999999999999" }, userContext),
       await spacesCapabilities.actions["task.release"].review!({ itemId, claimId: "99999999-9999-4999-8999-999999999999" }, userContext),
       await spacesCapabilities.actions["task.progress"].review!(
@@ -2988,7 +2974,7 @@ test("task run and review reject an item outside the declared Space despite writ
     ok: false,
     error: { code: "NOT_FOUND" },
   });
-  expect(await chatTaskUpdate(input, userContext)).toMatchObject({
+  expect(await spacesCapabilities.actions["task.update"].review(input, userContext)).toMatchObject({
     ok: false,
     error: { code: "NOT_FOUND" },
   });

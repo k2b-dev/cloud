@@ -97,22 +97,17 @@ export const spacesActionReview = (
     .filter(({ format }) => format === undefined)
     .map(({ label, value }) => `${label}: ${value}`)
     .join("\n\n");
-  const fieldsFit = normalizedBody === completeBody && rows.length <= 12 && rows.every(({ value }) => value.length <= 2000);
   return {
-    ...(fieldsFit
-      ? { preview: { kind: "fields" as const, rows } }
-      : {
-          preview: {
-            kind: "page" as const,
-            title,
-            body: body.slice(0, 10_000).toWellFormed(),
-            format: "plain" as const,
-            truncated: body.length > 10_000 || normalizedBody !== completeBody,
-          },
-          consequences: rows.flatMap(({ label, value, format }) =>
-            format ? [{ text: `${label}: {at}`, slots: { at: { kind: "time" as const, start: value, format } } }] : [],
-          ),
-        }),
+    preview: {
+      kind: "page",
+      title,
+      body: body.slice(0, 10_000).toWellFormed(),
+      format: "plain",
+      truncated: body.length > 10_000 || normalizedBody !== completeBody,
+    },
+    consequences: rows.flatMap(({ label, value, format }) =>
+      format ? [{ text: `${label}: {at}`, slots: { at: { kind: "time" as const, start: value, format } } }] : [],
+    ),
     locale: language,
     sentence: sentences[language][operation],
     slots: { item: { kind: "object", title } },
