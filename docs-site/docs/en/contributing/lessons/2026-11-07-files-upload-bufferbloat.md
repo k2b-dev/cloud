@@ -1,0 +1,6 @@
+### Fast server responses can wait behind the upload itself
+
+- **What happened:** Interactive requests waited about two seconds while an upload filled a shaped 2 Mbit/s shared uplink, despite a 50 ms server response. Independent per-request throttles had missed the failure.
+- **Root cause:** A shared FIFO held up to 500 kB of upload bytes ahead of interactive request headers. Waiting between complete segments left that queue full during each PUT. A throughput-only adaptive prototype also mistook delayed browser timers for a slower link and repeatedly reduced its own limit.
+- **Error class:** Shared transport queue starvation and self-referential throughput feedback.
+- **Guard:** `upload-pacing.browser.test.ts` reproduces the deep FIFO and requires interactive p95 below 300 ms after calibration, checks HTTP/1.1 retry fallback and receipt resume. `upload-pacing.test.ts` guards stable estimates under timer delay, acknowledgement-tail adaptation, cancellation and replayable Blobs. The guards also cover constant fsync latency, the supported throughput floor, origin fallback, hidden tabs and delayed timers. A hidden tab or a delayed timer falls back to unpaced bytes instead of stalling. Initial calibration and unpaced transports remain limitations; many-small-file round trips remain tracked by #1173.
