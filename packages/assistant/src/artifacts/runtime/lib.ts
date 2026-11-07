@@ -27,6 +27,7 @@ import {
   pie,
   renderBarChartSvg,
   renderSankeySvg,
+  sankeyWidth,
   scatter,
   sparkline,
   stat,
@@ -244,7 +245,7 @@ export function chart(options: ChartOptions, locale: string, timeZone = "UTC"): 
     if (chartOptions.size > 200) chartOptions.delete(chartOptions.keys().next().value!);
   }
   return new Html(
-    `<div class="k2b-chart" data-chart-kind="${input.kind}"${input.kind === "sankey" ? ' style="overflow-x:auto;direction:rtl"' : ""}${label}><div class="k2b-chart__svg"${stretch ? " data-stretch" : ""}${id ? ` data-chart-id="${id}"` : ""} style="${input.kind === "sankey" ? "min-width:620px;direction:ltr;" : ""}--k2b-chart-width:${input.kind === "sankey" ? Math.max(620, width) : width}px;--k2b-chart-height:${drawnHeight}px">${svg}</div></div>${values}`,
+    `<div class="k2b-chart" data-chart-kind="${input.kind}"${input.kind === "sankey" ? ' style="overflow-x:auto"' : ""}${label}><div class="k2b-chart__svg"${stretch ? " data-stretch" : ""}${id ? ` data-chart-id="${id}"` : ""} style="${input.kind === "sankey" ? "min-width:620px;" : ""}--k2b-chart-width:${input.kind === "sankey" ? sankeyWidth(input, width) : width}px;--k2b-chart-height:${drawnHeight}px">${svg}</div></div>${values}`,
   );
 }
 

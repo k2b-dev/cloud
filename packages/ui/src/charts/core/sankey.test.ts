@@ -58,3 +58,39 @@ test("source colors have literal standalone fallbacks; escaped labels and raw in
   expect(svg).toContain("&quot;outgoing&quot;");
   expect(renderSankeySvg({ nodes: [], links: [] })).not.toMatch(/NaN|Infinity/);
 });
+
+test("dense nodes, tiny flows and skipped stages keep visible, disjoint slots", () => {
+  const dense = {
+    nodes: [{ id: "root", label: "Root" }, ...Array.from({ length: 30 }, (_, i) => ({ id: String(i), label: "Long label " + i }))],
+    links: Array.from({ length: 30 }, (_, i) => ({ source: "root", target: String(i), value: i === 0 ? 100000 : 1 })),
+  };
+  const scene = sankeyLayout(dense);
+  expect(scene.scale).toBeGreaterThan(0);
+  for (const node of scene.nodes) expect(node.height).toBeGreaterThanOrEqual(2);
+  for (const link of scene.links) expect(link.height).toBeGreaterThanOrEqual(1);
+  const column = scene.nodes.filter((n) => n.stage === 1).sort((a, b) => a.y - b.y);
+  for (let i = 1; i < column.length; i++) expect(column[i]!.y).toBeGreaterThanOrEqual(column[i - 1]!.y + column[i - 1]!.height);
+  expect(column.filter((n) => n.showLabel).length).toBeLessThan(30);
+  const s = sankeyLayout(spec),
+    route = s.links[1]!.route[1]!,
+    node = s.nodes[1]!;
+  expect(route.y >= node.y + node.height || route.y + s.links[1]!.height <= node.y).toBe(true);
+});
+test("headers, explicit wrapping legends and muted-source flow colors", () => {
+  const legend = Array.from({ length: 8 }, (_, i) => ({ tone: "tax" as const, label: "Explicit meaning " + i }));
+  const s = sankeyLayout({ ...spec, title: "Paths", subtitle: "November", legend });
+  expect(s.legend.at(-1)!.row).toBeGreaterThan(0);
+  expect(s.nodes[0]!.y).toBeGreaterThanOrEqual(s.header.height);
+  const svg = renderSankeySvg({
+    ...spec,
+    title: "Paths",
+    subtitle: "November",
+    legend,
+    nodes: spec.nodes.map((n, i) => ({ ...n, tone: i === 0 ? "muted" : "green" })),
+  });
+  expect(svg).toContain("stdlib-chart-title");
+  expect(svg).toContain("November");
+  expect(svg).toContain("Explicit meaning 7");
+  expect(svg).toContain('k2b-chart-sankey-link" fill="var(--stdlib-chart-c2,#10b981)');
+  expect(svg).not.toContain("data-chart-scroll");
+});

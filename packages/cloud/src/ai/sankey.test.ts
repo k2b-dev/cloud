@@ -19,3 +19,10 @@ test("model tool and saved view retain Sankey nodes/links and reject cycles", ()
     false,
   );
 });
+
+test("model input rejects invalid locales and retains a valid BCP 47 locale", () => {
+  expect(CloudAiChartInputSchema.safeParse({ ...spec, locale: "de_DE" }).success).toBe(false);
+  expect(CloudAiChartInputSchema.safeParse({ ...spec, locale: "" }).success).toBe(false);
+  expect(parseCloudAiChartInput({ ...spec, locale: "de-DE" })).toMatchObject({ locale: "de-DE" });
+  expect(CloudAiChartInputSchema.safeParse({ ...spec, legend: [{ tone: "tax", label: "Tax" }] }).success).toBe(true);
+});

@@ -21,6 +21,7 @@ import {
   renderBarChartSvg,
   renderSankeySvg,
   type SankeyOptions,
+  sankeyGraph,
   scatter,
   sparkline,
   stat,
@@ -52,6 +53,7 @@ const labels = /* @__PURE__ */ i18n.define({
   messages: {
     en: {
       category: "Category",
+      flow: "Flow",
       series: "Series",
       incoming: "Incoming",
       outgoing: "Outgoing",
@@ -71,6 +73,7 @@ const labels = /* @__PURE__ */ i18n.define({
     },
     de: {
       category: "Kategorie",
+      flow: "Fluss",
       series: "Datenreihe",
       incoming: "Eingang",
       outgoing: "Ausgang",
@@ -632,7 +635,7 @@ export function chartRows(
         input.kind === "bar" || input.kind === "pie" || input.kind === "donut" || input.kind === "boxplot" || input.kind === "barGauge"
           ? input.data[datum.role === "outlier" ? (datum.seriesIndex ?? 0) : datum.index]?.label
           : datum.label;
-      if (label) cell("label", t.category, label, label);
+      if (label) cell("label", input.kind === "sankey" ? t.flow : t.category, label, label);
     }
     for (const field of datum.values) {
       const value = field.value;
@@ -694,8 +697,16 @@ export function chartTable(input: ChartInput, locale: string): ChartTable {
 /** Input values count against the budget, including observations summarized into boxes or bins. */
 export const chartMarks = (input: ChartInput): number => {
   switch (input.kind) {
-    case "sankey":
-      return input.nodes.length + input.links.length;
+    case "sankey": {
+      const graph = sankeyGraph(input);
+      return (
+        input.nodes.length +
+        input.links.reduce(
+          (sum, link) => sum + graph.nodes[graph.ids.get(link.target)!]!.stage - graph.nodes[graph.ids.get(link.source)!]!.stage,
+          0,
+        )
+      );
+    }
     case "line":
     case "scatter":
       return input.series.reduce((sum, series) => sum + series.data.length, 0);

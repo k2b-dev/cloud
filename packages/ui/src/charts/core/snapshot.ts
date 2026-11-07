@@ -1,5 +1,6 @@
 import { type ChartSelection, type ChartTooltip, type ChartTooltipFormatter, isChartDatum } from "./inspection";
 import { type ChartRenderOptions, chartRenderHeight, renderChartSvg } from "./render";
+import { sankeyWidth } from "./sankey";
 import { escapeXml } from "./svg";
 import type { ChartDatum, ChartKind } from "./types";
 
@@ -33,7 +34,7 @@ export function prepareChartSnapshot(
     reference?: (selection: ChartSelection) => boolean;
   },
 ): ChartSnapshot {
-  const width = options.kind === "sankey" ? Math.max(620, options.displayWidth ?? 480) : 480;
+  const width = options.kind === "sankey" ? sankeyWidth(options, options.displayWidth ?? 480) : 480;
   const height = chartRenderHeight(options);
   const svg = renderChartSvg(options, width, height);
   const marks: ChartSnapshot["marks"][number][] = [];

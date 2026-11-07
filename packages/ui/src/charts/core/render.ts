@@ -10,6 +10,7 @@ import {
 import { responsiveChartSvg, responsiveMapSvg } from "../../content/chart-svg";
 import { type ChartTimeAxis, timeAxisSvg } from "../../content/chart-time-axis";
 import { chartRenderers } from "./registry";
+import { sankeyLayout } from "./sankey";
 import type { MapViewport } from "./svg";
 import type { ChartKind } from "./types";
 
@@ -38,6 +39,7 @@ export type ChartRenderOptions = {
 
 /** Keep the fixed 28-unit bar-gauge rows inside the shared SSR/browser coordinate space. */
 export const chartRenderHeight = (props: ChartRenderOptions): number => {
+  if (props.kind === "sankey") return sankeyLayout(props).height;
   if (props.kind === "stateTimeline") return stateTimelineHeight(props.rows.length, props.legend !== false);
   if (props.kind === "bar") return barChartLayout(props).height;
   if (props.kind === "barGauge") return Math.max(280, (props.title || props.subtitle ? 42 : 16) + props.data.length * 28 + 14);

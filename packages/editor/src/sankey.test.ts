@@ -14,6 +14,8 @@ test("Sankey JSON validates graph semantics and keeps typed table rows and local
   const schema = chartKinds();
   const parsed = schema.parse(input);
   expect(chartMarks(parsed)).toBe(3);
+  expect(chartTable(parsed, "de").columns[0]?.label).toBe("Fluss");
+  expect(schema.safeParse({ ...input, locale: "de_DE" }).success).toBe(false);
   expect(
     schema.safeParse({
       ...input,

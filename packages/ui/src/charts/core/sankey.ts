@@ -1,11 +1,15 @@
-import { type ChartOptions, chartDatumSvg, escapeXml, svgRoot } from "./svg";
+import { type ChartOptions, chartDatumSvg, escapeXml, renderHeader, svgRoot } from "./svg";
 
-export type SankeyNode = { id: string; label: string; tone?: "in" | "out" | "muted" | "blue" | "green" | "amber" | "red" | "violet" };
+export type SankeyNode = {
+  id: string;
+  label: string;
+  tone?: "in" | "out" | "muted" | "blue" | "green" | "amber" | "red" | "violet" | "tax";
+};
 export type SankeyLink = { source: string; target: string; value: number };
 export type SankeyOptions = ChartOptions & {
   nodes: SankeyNode[];
   links: SankeyLink[];
-  legend?: boolean;
+  legend?: { tone: NonNullable<SankeyNode["tone"]>; label: string }[];
   locale?: string;
   format?: (value: number) => string;
   /** Actual host width, when known; defaults to the logical drawing width. */
@@ -45,63 +49,186 @@ export function sankeyGraph(spec: Pick<SankeyOptions, "nodes" | "links">) {
   return { nodes, ids };
 }
 
+/** Physical flow width is shared by SVG and its scroll hosts. */
+export function sankeyWidth(spec: Pick<SankeyOptions, "nodes" | "links">, width = 480) {
+  const { nodes } = sankeyGraph(spec);
+  return Math.max(620, Math.max(0, ...nodes.map((node) => node.stage)) * 190 + 160, width);
+}
+
+/** A skipped stage has a private slot so a long link cannot pass through another node. */
 export function sankeyLayout(spec: SankeyOptions, size = { width: spec.width ?? 480, height: spec.height ?? 280 }) {
   const { nodes, ids } = sankeyGraph(spec);
-  const width = Math.max(620, spec.displayWidth ?? size.width),
-    height = size.height;
-  const columns = Array.from({ length: Math.max(0, ...nodes.map((node) => node.stage)) + 1 }, (_, stage) =>
-    nodes.filter((node) => node.stage === stage),
+  const stages = Math.max(0, ...nodes.map((node) => node.stage)) + 1;
+  const width = sankeyWidth(spec, spec.displayWidth ?? size.width);
+  const header = renderHeader(width, spec.title, spec.subtitle);
+  const legend: { tone: NonNullable<SankeyNode["tone"]>; label: string; x: number; row: number }[] = [];
+  let lx = 0,
+    lr = 0;
+  for (const item of spec.legend ?? []) {
+    const space = Math.min(width, item.label.length * 12 + 30);
+    if (lx && lx + space > width) {
+      lx = 0;
+      lr++;
+    }
+    legend.push({ ...item, x: lx, row: lr });
+    lx += space;
+  }
+  const top = header.height + 4,
+    bottom = legend.length ? (lr + 1) * 20 + 8 : 4;
+  const slots = nodes.map((node) => ({
+    stage: node.stage,
+    index: node.index,
+    value: node.value,
+    y: 0,
+    height: 0,
+    order: node.index,
+    virtual: false,
+    incoming: [] as number[],
+    outgoing: [] as number[],
+  }));
+  const chains = spec.links.map((link, index) => {
+    const source = ids.get(link.source)!,
+      target = ids.get(link.target)!;
+    const chain = [source];
+    for (let stage = nodes[source]!.stage + 1; stage < nodes[target]!.stage; stage++) {
+      chain.push(slots.length);
+      slots.push({ stage, index: -1, value: link.value, y: 0, height: 0, order: slots.length, virtual: true, incoming: [], outgoing: [] });
+    }
+    chain.push(target);
+    for (const position of chain.slice(0, -1)) slots[position]!.outgoing.push(index);
+    for (const position of chain.slice(1)) slots[position]!.incoming.push(index);
+    return chain;
+  });
+  const columns = Array.from({ length: stages }, (_, stage) => slots.filter((slot) => slot.stage === stage));
+  // One stable source-barycenter pass reduces crossings without an iterative layout engine.
+  for (let stage = 1; stage < stages; stage++) {
+    const center = (slot: (typeof slots)[number]) => {
+      const parents = slot.incoming.map((edge) => {
+        const chain = chains[edge]!;
+        return slots[chain[stage - nodes[ids.get(spec.links[edge]!.source)!]!.stage - 1]!]!.order;
+      });
+      return parents.length ? parents.reduce((sum, n) => sum + n, 0) / parents.length : slot.order;
+    };
+    columns[stage]!.sort((a, b) => center(a) - center(b) || a.order - b.order);
+    columns[stage]!.forEach((slot, index) => {
+      slot.order = index;
+    });
+  }
+  const count = Math.max(1, ...columns.map((column) => column.length));
+  const minimum = Math.max(
+    0,
+    ...columns.map((column) => column.reduce((sum, slot) => sum + Math.max(2, slot.incoming.length, slot.outgoing.length), 0)),
   );
-  const bottom = spec.legend ? 28 : 4,
-    top = 4,
-    gap = 10,
+  const height = Math.max(size.height, top + bottom + minimum * 1.5);
+  const available = height - top - bottom,
+    gap = Math.min(10, available / 3 / Math.max(1, count - 1));
+  const thickness = (edge: number, scale: number) => Math.max(1, spec.links[edge]!.value * scale);
+  const slotHeight = (slot: (typeof slots)[number], scale: number) =>
+    Math.max(
+      2,
+      slot.value * scale,
+      slot.incoming.reduce((s, e) => s + thickness(e, scale), 0),
+      slot.outgoing.reduce((s, e) => s + thickness(e, scale), 0),
+    );
+  const fits = (scale: number) =>
+    columns.every(
+      (column) => column.reduce((s, slot) => s + slotHeight(slot, scale), 0) + Math.max(0, column.length - 1) * gap <= available,
+    );
+  let lo = 0,
+    hi = available / Math.max(1, ...nodes.map((node) => node.value));
+  for (let i = 0; i < 48; i++) {
+    const mid = (lo + hi) / 2;
+    if (fits(mid)) lo = mid;
+    else hi = mid;
+  }
+  const ky = lo,
     nodeWidth = 10,
     labelRoom = 150;
-  const scale = Math.min(
-    ...columns
-      .filter((column) => column.some((node) => node.value > 0))
-      .map(
-        (column) =>
-          Math.max(0, height - top - bottom - gap * Math.max(0, column.length - 1)) / column.reduce((sum, node) => sum + node.value, 0),
-      ),
-  );
-  const ky = Number.isFinite(scale) ? scale : 0;
+  const stageX = (stage: number) => (stage * (width - nodeWidth - labelRoom)) / Math.max(1, stages - 1);
+  for (const column of columns) {
+    const used = column.reduce((s, slot) => s + slotHeight(slot, ky), 0) + Math.max(0, column.length - 1) * gap;
+    let y = top + (available - used) / 2;
+    for (const slot of column) {
+      slot.y = y;
+      slot.height = slotHeight(slot, ky);
+      y += slot.height + gap;
+    }
+  }
   const marks = nodes.map((node) => ({
     ...node,
-    x: (node.stage * (width - nodeWidth - labelRoom)) / Math.max(1, columns.length - 1),
-    y: 0,
-    height: node.value * ky,
+    x: stageX(node.stage),
+    y: slots[node.index]!.y,
+    height: slots[node.index]!.height,
+    showLabel: false,
   }));
   for (const column of columns) {
-    const used = column.reduce((sum, node) => sum + node.value * ky, 0) + Math.max(0, column.length - 1) * gap;
-    let y = top + (height - top - bottom - used) / 2;
-    for (const node of column) {
-      marks[node.index]!.y = y;
-      y += marks[node.index]!.height + gap;
+    let last = -Infinity;
+    for (const slot of column) {
+      if (slot.virtual) continue;
+      const mid = slot.y + slot.height / 2;
+      if (mid - last < 15 || column.some((other) => other.virtual && other.y < mid + 8 && other.y + other.height > mid - 8)) continue;
+      marks[slot.index]!.showLabel = true;
+      last = mid;
     }
   }
-  const links = spec.links.map((link, index) => ({
-    ...link,
-    index,
-    sourceNode: marks[ids.get(link.source)!]!,
-    targetNode: marks[ids.get(link.target)!]!,
-    y0: 0,
-    y1: 0,
-    height: link.value * ky,
-  }));
-  for (const node of marks) {
-    let outgoing = node.y,
-      incoming = node.y;
-    for (const link of links.filter((link) => link.sourceNode === node).sort((a, b) => a.targetNode.y - b.targetNode.y)) {
-      link.y0 = outgoing;
-      outgoing += link.height;
+  const starts = new Map<string, number>(),
+    ends = new Map<string, number>();
+  for (const column of columns)
+    for (const slot of column) {
+      const slotIndex = slots.indexOf(slot);
+      let y = slot.y;
+      for (const edge of [...slot.outgoing].sort((a, b) => {
+        const ca = chains[a]!,
+          cb = chains[b]!;
+        return slots[ca[ca.indexOf(slotIndex) + 1]!]!.y - slots[cb[cb.indexOf(slotIndex) + 1]!]!.y;
+      })) {
+        starts.set(`${slotIndex}:${edge}`, y);
+        y += thickness(edge, ky);
+      }
+      y = slot.y;
+      for (const edge of [...slot.incoming].sort((a, b) => {
+        const ca = chains[a]!,
+          cb = chains[b]!;
+        return slots[ca[ca.indexOf(slotIndex) - 1]!]!.y - slots[cb[cb.indexOf(slotIndex) - 1]!]!.y;
+      })) {
+        ends.set(`${slotIndex}:${edge}`, y);
+        y += thickness(edge, ky);
+      }
     }
-    for (const link of links.filter((link) => link.targetNode === node).sort((a, b) => a.sourceNode.y - b.sourceNode.y)) {
-      link.y1 = incoming;
-      incoming += link.height;
+  const links = spec.links.map((link, index) => {
+    const chain = chains[index]!,
+      h = thickness(index, ky);
+    const route = chain.map((slotIndex, i) => ({
+      x: stageX(slots[slotIndex]!.stage) + (i === 0 ? nodeWidth : 0),
+      y: i === chain.length - 1 ? ends.get(`${slotIndex}:${index}`)! : starts.get(`${slotIndex}:${index}`)!,
+    }));
+    let d = `M${route[0]!.x},${route[0]!.y}`;
+    for (let i = 1; i < route.length; i++) {
+      const a = route[i - 1]!,
+        b = route[i]!,
+        mid = (a.x + b.x) / 2;
+      d += `C${mid},${a.y} ${mid},${b.y} ${b.x},${b.y}`;
     }
-  }
-  return { width, height, nodes: marks, links, nodeWidth, scale: ky };
+    d += `L${route.at(-1)!.x},${route.at(-1)!.y + h}`;
+    for (let i = route.length - 2; i >= 0; i--) {
+      const a = route[i + 1]!,
+        b = route[i]!,
+        mid = (a.x + b.x) / 2;
+      d += `C${mid},${a.y + h} ${mid},${b.y + h} ${b.x},${b.y + h}`;
+    }
+    return {
+      ...link,
+      index,
+      sourceNode: marks[ids.get(link.source)!]!,
+      targetNode: marks[ids.get(link.target)!]!,
+      y0: route[0]!.y,
+      y1: route.at(-1)!.y,
+      height: h,
+      route,
+      path: d + "Z",
+    };
+  });
+  return { width, height, nodes: marks, links, nodeWidth, scale: ky, header, legend, legendTop: height - bottom };
 }
 
 const colors = {
@@ -113,6 +240,7 @@ const colors = {
   amber: "var(--stdlib-chart-c3,#f59e0b)",
   violet: "var(--stdlib-chart-c4,#8b5cf6)",
   red: "var(--k2b-danger-text,#b91c1c)",
+  tax: "var(--k2b-warning-text,#92400e)",
 };
 export const sankeyColor = (tone: SankeyNode["tone"]) => colors[tone ?? "blue"];
 
@@ -120,21 +248,29 @@ export function renderSankeySvg(spec: SankeyOptions): string {
   const scene = sankeyLayout(spec);
   const number = spec.format ?? new Intl.NumberFormat(spec.locale ?? "en", { maximumSignificantDigits: 15 }).format;
   const percent = new Intl.NumberFormat(spec.locale ?? "en", { style: "percent", maximumFractionDigits: 1 });
-  const body: string[] = [];
+  const body: string[] = [
+    scene.header.svg
+      .replace(/<text class="stdlib-chart-title"/g, '<text fill="var(--k2b-text,#27272a)" font-size="14" class="stdlib-chart-title"')
+      .replace(
+        /<text class="stdlib-chart-subtitle"/g,
+        '<text fill="var(--k2b-text-muted,#45454e)" font-size="11" class="stdlib-chart-subtitle"',
+      ),
+  ];
   // Links are painted behind nodes but each inspected datum's first shape carries its own real colour.
   for (const link of scene.links) {
-    const x0 = link.sourceNode.x + scene.nodeWidth,
-      x1 = link.targetNode.x,
-      mid = (x0 + x1) / 2;
+    const mid = (link.sourceNode.x + scene.nodeWidth + link.targetNode.x) / 2;
     const { y0, y1, height: h } = link;
     body.push(
       chartDatumSvg(
-        `<path class="k2b-chart-sankey-link" fill="${sankeyColor(link.sourceNode.tone)}" fill-opacity="0.3" stroke="none" d="M${x0},${y0}C${mid},${y0} ${mid},${y1} ${x1},${y1}L${x1},${y1 + h}C${mid},${y1 + h} ${mid},${y0 + h} ${x0},${y0 + h}Z"/>`,
+        `<path class="k2b-chart-sankey-link" fill="${sankeyColor(link.sourceNode.tone === "muted" ? link.targetNode.tone : link.sourceNode.tone)}" fill-opacity="0.3" stroke="none" d="${link.path}"/>`,
         {
           role: "item",
           index: scene.nodes.length + link.index,
           label: `${link.sourceNode.label} → ${link.targetNode.label}`,
-          anchor: [mid, (y0 + y1 + h) / 2],
+          anchor:
+            link.route.length > 2
+              ? [link.route[Math.floor(link.route.length / 2)]!.x, link.route[Math.floor(link.route.length / 2)]!.y + h / 2]
+              : [mid, (y0 + y1 + h) / 2],
           values: [
             { key: "value", value: link.value, formatted: number(link.value) },
             {
@@ -151,29 +287,26 @@ export function renderSankeySvg(spec: SankeyOptions): string {
   for (const node of scene.nodes) {
     body.push(
       chartDatumSvg(
-        `<rect x="${node.x}" y="${node.y}" width="${scene.nodeWidth}" height="${node.height}" rx="2" fill="${sankeyColor(node.tone)}" stroke="none"/><text x="${node.x + scene.nodeWidth + 6}" y="${node.y + node.height / 2 + 4}" fill="var(--k2b-text,#27272a)" font-size="12" font-family="inherit" stroke="var(--k2b-surface,#fff)" stroke-width="3" paint-order="stroke">${escapeXml(node.label)} <tspan font-weight="600">${escapeXml(number(node.value))}</tspan></text>`,
+        `<rect x="${node.x}" y="${node.y}" width="${scene.nodeWidth}" height="${node.height}" rx="2" fill="${sankeyColor(node.tone)}" stroke="none"/>${node.showLabel ? `<text x="${node.x + scene.nodeWidth + 6}" y="${node.y + node.height / 2 + 4}" fill="var(--k2b-text,#27272a)" font-size="12" font-family="inherit" stroke="var(--k2b-surface,#fff)" stroke-width="3" paint-order="stroke">${escapeXml(node.label.length > 16 ? node.label.slice(0, 15) + "…" : node.label)} <tspan font-weight="600">${escapeXml(number(node.value))}</tspan></text>` : ""}`,
         {
           role: "item",
           index: node.index,
           label: node.label,
           anchor: [node.x + scene.nodeWidth, node.y + node.height / 2],
           values: [
-            { key: "incoming", value: node.incoming, formatted: number(node.incoming) },
-            { key: "outgoing", value: node.outgoing, formatted: number(node.outgoing) },
+            ...(node.incoming ? [{ key: "incoming", value: node.incoming, formatted: number(node.incoming) }] : []),
+            ...(node.outgoing ? [{ key: "outgoing", value: node.outgoing, formatted: number(node.outgoing) }] : []),
           ],
         },
         spec.inspect,
       ),
     );
   }
-  if (spec.legend) {
-    let x = 0;
-    for (const node of scene.nodes.filter((node, i, nodes) => nodes.findIndex((other) => other.tone === node.tone) === i)) {
-      body.push(
-        `<rect x="${x}" y="${scene.height - 16}" width="8" height="8" rx="2" fill="${sankeyColor(node.tone)}"/><text x="${x + 13}" y="${scene.height - 8}" fill="var(--k2b-text,#27272a)" font-size="11">${escapeXml(node.label)}</text>`,
-      );
-      x += node.label.length * 6 + 30;
-    }
+  for (const item of scene.legend) {
+    const y = scene.legendTop + item.row * 20 + 8;
+    body.push(
+      `<rect x="${item.x}" y="${y}" width="8" height="8" rx="2" fill="${sankeyColor(item.tone)}"/><text x="${item.x + 13}" y="${y + 8}" fill="var(--k2b-text,#27272a)" font-size="11">${escapeXml(item.label.slice(0, Math.floor((scene.width - 30) / 12)))}</text>`,
+    );
   }
-  return svgRoot({ ...scene, className: spec.className }, body.join("")).replace("<svg ", '<svg data-chart-scroll="end" ');
+  return svgRoot({ ...scene, className: spec.className }, body.join(""));
 }

@@ -17,6 +17,7 @@ import { IconButton } from "../actions/Button";
 import type { MapViewport } from "../charts/core";
 import { chartKinds } from "../charts/core/registry";
 import { type ChartDrawingOptions, chartRenderHeight, preservesAspectRatio, renderChartSvg } from "../charts/core/render";
+import { sankeyWidth } from "../charts/core/sankey";
 import { suppressTextSelection } from "../internal/text-selection";
 import { useLocale } from "../intl/locale";
 import { useUiMessages } from "../intl/messages";
@@ -573,7 +574,7 @@ const ChartRoot = (props: ChartProps): JSX.Element => {
           class="k2b-chart__svg"
           data-stretch={!preservesAspectRatio(props.kind) ? "true" : undefined}
           style={{
-            "--k2b-chart-width": `${props.kind === "sankey" ? Math.max(620, props.displayWidth ?? size().width) : size().width}px`,
+            "--k2b-chart-width": `${props.kind === "sankey" ? sankeyWidth(props, props.displayWidth ?? size().width) : size().width}px`,
             "--k2b-chart-height": `${size().height}px`,
             "aspect-ratio": `${size().width} / ${size().height}`,
           }}

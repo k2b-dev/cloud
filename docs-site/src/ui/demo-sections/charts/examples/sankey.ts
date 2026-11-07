@@ -31,12 +31,12 @@ export const sankeyExamples = [
     avoidFor: ["Cycles or unrelated measures."],
     a11y: [
       "Arrow keys inspect nodes and flows; Home/End jump, Enter pins and Escape dismisses.",
-      "A narrow chart scrolls horizontally to the final stage. The table includes every node and link.",
+      "A narrow chart starts at the sources and scrolls horizontally. The table includes every node and link.",
     ],
     options: [
       { name: "nodes", type: "{id,label,tone?}[]", description: "Unique ids; tone colors outgoing flows." },
       { name: "links", type: "{source,target,value}[]", description: "Positive values and existing endpoints; no cycles." },
-      { name: "legend", type: "boolean", description: "Show the node color legend." },
+      { name: "legend", type: "{tone,label}[]", description: "Explicit color meanings; wraps within the plot width." },
     ],
   },
 ];

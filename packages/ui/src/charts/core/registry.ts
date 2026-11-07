@@ -6,7 +6,6 @@ import { charts } from "./svg";
 // Add one renderer here: its key defines the discriminator, ChartKind and the capitalized Chart namespace member.
 // Keep kind-specific adaptations in renderChartSvg and add a fixture to the namespace parity test.
 export const chartRenderers = {
-  sankey: renderSankeySvg,
   line: charts.line,
   bar: renderBarChartSvg,
   pie: charts.pie,
@@ -21,6 +20,7 @@ export const chartRenderers = {
   heatmap: charts.heatmap,
   map: charts.map,
   stateTimeline: renderStateTimelineSvg,
+  sankey: renderSankeySvg,
 };
 type Kind = keyof typeof chartRenderers;
 type ChartKinds = { [K in Kind as Capitalize<K>]: K };

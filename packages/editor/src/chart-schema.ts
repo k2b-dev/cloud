@@ -31,8 +31,21 @@ export type ChartNumberFormat = z.output<ReturnType<typeof chartNumberFormatSche
 export type ChartDateFormat = z.output<ReturnType<typeof dateFormatSchema>>;
 export type ChartFormat = ChartNumberFormat | ChartDateFormat;
 
+/** BCP 47 locale strings must be accepted by every Intl formatter used during rendering. */
+export const chartLocaleSchema = () =>
+  z
+    .string()
+    .min(1)
+    .refine((value) => {
+      try {
+        return Intl.getCanonicalLocales(value).length === 1;
+      } catch {
+        return false;
+      }
+    }, "Use a valid BCP 47 locale, such as de-DE.");
+
 export const chartKindSchema = () =>
-  z.enum(["sankey", "bar", "line", "scatter", "pie", "donut", "histogram", "gauge", "sparkline", "boxplot", "heatmap", "barGauge", "stat"]);
+  z.enum(["bar", "line", "scatter", "pie", "donut", "histogram", "gauge", "sparkline", "boxplot", "heatmap", "barGauge", "stat", "sankey"]);
 
 export const chartParts = (limits?: ChartLimits) => {
   const ChartLabel = limits ? z.string().trim().min(1).max(80) : z.union([z.string(), z.number().transform(String)]);
@@ -150,31 +163,6 @@ export const chartKinds = (limits?: ChartLimits) => {
   const ChartKindCommon = { ...ChartCommon, tooltip: ChartTooltip.optional() };
   const numberFormat = chartNumberFormatSchema();
   return z.discriminatedUnion("kind", [
-    z
-      .object({
-        kind: z.literal("sankey"),
-        ...ChartKindCommon,
-        nodes: list(
-          z.object({
-            id: z.string().min(1),
-            label: ChartLabel,
-            tone: z.enum(["in", "out", "muted", "blue", "green", "amber", "red", "violet"]).optional(),
-          }),
-          1,
-          limits?.maxValues,
-        ),
-        links: list(z.object({ source: z.string(), target: z.string(), value: z.number().positive() }), 1, limits?.maxMarks),
-        legend: z.boolean().optional(),
-        format: numberFormat.optional(),
-        locale: z.string().optional(),
-      })
-      .superRefine((spec, ctx) => {
-        try {
-          sankeyGraph(spec);
-        } catch (error) {
-          ctx.addIssue({ code: "custom", message: error instanceof Error ? error.message : "Invalid Sankey graph." });
-        }
-      }),
     z.object({
       kind: z.literal("bar"),
       ...ChartKindCommon,
@@ -283,6 +271,35 @@ export const chartKinds = (limits?: ChartLimits) => {
       better: z.enum(["up", "down"]).optional(),
       sparkline: list(ChartNumber, 2, limits?.maxValues).optional(),
     }),
+    z
+      .object({
+        kind: z.literal("sankey"),
+        ...ChartKindCommon,
+        nodes: list(
+          z.object({
+            id: z.string().min(1),
+            label: ChartLabel,
+            tone: z.enum(["in", "out", "muted", "blue", "green", "amber", "red", "violet", "tax"]).optional(),
+          }),
+          1,
+          limits?.maxValues,
+        ),
+        links: list(z.object({ source: z.string(), target: z.string(), value: z.number().positive() }), 1, limits?.maxMarks),
+        legend: list(
+          z.object({ tone: z.enum(["in", "out", "muted", "blue", "green", "amber", "red", "violet", "tax"]), label: ChartLabel }),
+          0,
+          limits?.maxSeries,
+        ).optional(),
+        format: numberFormat.optional(),
+        locale: chartLocaleSchema().optional(),
+      })
+      .superRefine((spec, ctx) => {
+        try {
+          sankeyGraph(spec);
+        } catch (error) {
+          ctx.addIssue({ code: "custom", message: error instanceof Error ? error.message : "Invalid Sankey graph." });
+        }
+      }),
   ]);
 };
 

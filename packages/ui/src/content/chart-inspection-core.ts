@@ -246,10 +246,10 @@ export function createChartInspector(options: {
     }
     const rect = container.getBoundingClientRect(),
       point = screenPoint(entry);
-    anchor.style.left = `${point.x - rect.left}px`;
-    anchor.style.top = `${point.y - rect.top}px`;
+    anchor.style.left = `${point.x - rect.left + container.scrollLeft}px`;
+    anchor.style.top = `${point.y - rect.top + container.scrollTop}px`;
     updatePlotBounds();
-    container.style.setProperty("--k2b-chart-inspection-x", `${point.x - rect.left}px`);
+    container.style.setProperty("--k2b-chart-inspection-x", `${point.x - rect.left + container.scrollLeft}px`);
     container.setAttribute("data-inspecting", seriesChart() ? "series" : "datum");
     describe(container, tooltip.id, true);
     try {
@@ -463,7 +463,9 @@ export function createChartInspector(options: {
         )[0];
       if (next) index = nodes.indexOf(next);
     } else index += event.key === "ArrowLeft" || event.key === "ArrowUp" ? -1 : 1;
-    show(nodes[Math.max(0, Math.min(nodes.length - 1, index))]!);
+    const next = nodes[Math.max(0, Math.min(nodes.length - 1, index))]!;
+    if (options.kind() === "sankey") next.element.scrollIntoView({ block: "nearest", inline: "nearest", behavior: "instant" });
+    show(next);
     return true;
   };
   return {
@@ -495,6 +497,7 @@ export function closeChartInspectionOnOutside(options: {
   };
   const scroll = (event: Event) => {
     if (event.target instanceof Node && options.tooltip()?.contains(event.target)) return;
+    if (event.target === options.container() && options.container()?.dataset.chartKind === "sankey") return;
     options.close();
   };
   window.addEventListener("pointerdown", outside);

@@ -1040,10 +1040,12 @@ Use `format` for units and `limit` to change how many countries the list names.
 positive and the graph has no cycles. Invalid JSON is rejected before drawing.
 Stages follow the longest path from a source. A node's value is the larger of
 incoming and outgoing totals; unused capacity remains visible. Each band uses
-its source node's color. Optional `legend`, `format`, `locale` and
+its source node's color; a muted source uses the target color. An explicit
+`legend: {tone,label}[]` names color meanings and wraps. Optional `format`, `locale` and
 `displayWidth` control presentation. Explicit locale takes precedence.
 
-The plot keeps at least 620 px and scrolls to the final stage on narrow screens.
+The plot keeps at least 620 px, starts at the sources and scrolls horizontally on narrow screens.
+Small flows stay visible; colliding node labels are available in the tooltip.
 Hover strengthens one band without dimming others. Arrows inspect nodes and
 links, Home/End jump, Enter pins and Escape dismisses; tap shares this behavior.
 Use the host's fixed-height loading, empty, error/retry and stale-subtitle states.

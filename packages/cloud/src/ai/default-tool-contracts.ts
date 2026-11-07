@@ -34,6 +34,7 @@ import {
   type ChartFormat as CloudAiFormat,
   type ChartNumberFormat as CloudAiNumberFormat,
   chartKinds,
+  chartLocaleSchema,
   chartParts,
   chartSchema,
   chartKindSchema as cloudAiChartKindSchema,
@@ -126,7 +127,7 @@ const flatChartSchema = () => {
         z.object({
           id: z.string().min(1),
           label: ChartLabel,
-          tone: z.enum(["in", "out", "muted", "blue", "green", "amber", "red", "violet"]).optional(),
+          tone: z.enum(["in", "out", "muted", "blue", "green", "amber", "red", "violet", "tax"]).optional(),
         }),
       )
       .max(CLOUD_AI_CHART_MAX_VALUES)
@@ -137,7 +138,7 @@ const flatChartSchema = () => {
       .max(CLOUD_AI_VIEW_MAX_MARKS)
       .optional()
       .describe("sankey: positive flows between existing node ids, without cycles."),
-    locale: z.string().optional(),
+    locale: chartLocaleSchema().optional().describe("sankey: optional BCP 47 locale, for example de-DE."),
     // One item object preserves every kind's fields before canonical validation; unions would strip overlapping items.
     data: z
       .union([
@@ -170,9 +171,14 @@ const flatChartSchema = () => {
     xAxis: ChartAxis.optional().describe("line, scatter: x axis. bar: only label, the category axis title."),
     yAxis: ChartAxis.optional().describe("bar, line, scatter, boxplot: y axis; label names the value, format sets units."),
     legend: z
-      .boolean()
+      .union([
+        z.boolean(),
+        z
+          .array(z.object({ tone: z.enum(["in", "out", "muted", "blue", "green", "amber", "red", "violet", "tax"]), label: ChartLabel }))
+          .max(CLOUD_AI_CHART_MAX_SERIES),
+      ])
       .optional()
-      .describe("bar (colorByBar), line, scatter, pie, donut: legend; defaults to several series or unlabeled slices."),
+      .describe("sankey: explicit {tone,label}[] color meanings. Other kinds: boolean legend."),
     colorByBar: z.boolean().optional().describe("bar: one palette color per bar."),
     showValues: z.boolean().optional().describe("bar: print values, by default when they stay readable. heatmap: print values."),
     area: z.boolean().optional().describe("line, sparkline: fill under the line."),
