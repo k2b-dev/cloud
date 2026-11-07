@@ -10,7 +10,7 @@ const entry = resolve(import.meta.dir, "detail-float.fixture.ts");
 const fixture = `
 import { createEffect, createSignal } from "solid-js";
 import { createComponent, render } from "solid-js/web";
-import { AppWorkspace, appWorkspaceDetailElementId, DetailPanel, DataTable, MovedHint, PageTrailProvider } from ${JSON.stringify(resolve(ui, "dist/browser/index.js"))};
+import { AppWorkspace, appWorkspaceDetailElementId, DetailPanel, DataTable, MovedHint, PageTrailProvider, parkWorkspaceDetailDrawers } from ${JSON.stringify(resolve(ui, "dist/browser/index.js"))};
 const params = new URLSearchParams(document.body.dataset.params);
 const [open, setOpen] = createSignal(params.has("initial"));
 let selected = 0;
@@ -106,8 +106,14 @@ render(() => createComponent(PageTrailProvider, { trail:{title:"Devices",ancesto
           return document.getElementById("row-" + selected);
         },
         get children() { return createComponent(DetailPanel, { get children() { return [
-          createComponent(DetailPanel.Header, { title:"Selected record", get actions() { const element = document.createElement("button"); element.id="close"; element.textContent="Close"; element.addEventListener("click", close); return element; } }),
-          createComponent(DetailPanel.Body, { get children() { const text = document.createElement("p"); text.id="detail-text"; text.textContent="Text in the selected record"; return text; } }),
+          createComponent(DetailPanel.Header, { title:"Selected record", get actions() { const element = document.createElement("button"); element.id="close"; element.textContent="Close"; if (params.has("close-control")) element.setAttribute("aria-controls", appWorkspaceDetailElementId("record")); element.addEventListener("click", close); return element; } }),
+          createComponent(DetailPanel.Body, { get children() {
+            const text = document.createElement("p"); text.id="detail-text"; text.textContent="Text in the selected record";
+            if (!params.has("park-action")) return text;
+            const leave = document.createElement("button"); leave.id = "leave"; leave.textContent = "Open elsewhere";
+            leave.addEventListener("click", () => parkWorkspaceDetailDrawers(document));
+            return [text, leave];
+          } }),
         ]; } }); },
       }),
     ]; } }),
@@ -290,13 +296,32 @@ describe("floating workspace detail", () => {
     const page = await load(768, 900, "request-control=1&responsive-control=1&reopen=1&initial=1&phone-page=1");
     try {
       await settled(page);
+      // An open drawer stays open as the phone page, with focus on its title before Main becomes inert.
       await page.locator("[data-app-workspace-detail-toggle]").focus();
+      await page.keyboard.press("Enter");
+      await page.waitForFunction(() => document.activeElement?.textContent === "Selected record");
       await page.setViewportSize({ width: 767, height: 900 });
       await settled(page);
       expect(await page.locator("[data-app-workspace-detail-toggle]").isVisible()).toBe(false);
       expect(await page.locator(".k2b-app-workspace__detail h2").evaluate((element) => document.activeElement === element)).toBe(true);
       expect(await page.locator("#reader-toggle").evaluate((element) => Boolean(element.closest("[inert]")))).toBe(true);
+      expect(await page.locator(".k2b-app-workspace__detail").isVisible()).toBe(true);
+    } finally {
+      await page.close();
+    }
+  });
+  test("responsive Details controls hand focus to the visible control while a phone page waits", async () => {
+    const page = await load(768, 900, "request-control=1&responsive-control=1&reopen=1&initial=1&phone-page=1");
+    try {
+      await settled(page);
+      await page.locator("[data-app-workspace-detail-toggle]").focus();
+      await page.setViewportSize({ width: 767, height: 900 });
+      await settled(page);
+      // A parked drawer stays parked: the page waits and focus moves to the application's visible control.
+      expect(await page.locator("#reader-toggle").evaluate((element) => document.activeElement === element)).toBe(true);
+      expect(await page.locator(".k2b-app-workspace__detail").isVisible()).toBe(false);
       expect(await page.locator(".k2b-app-workspace__detail").evaluate((element) => element.hasAttribute("hidden"))).toBe(false);
+      expect(await page.locator("[data-k2b-app-workspace] [inert]").count()).toBe(0);
     } finally {
       await page.close();
     }
@@ -873,6 +898,100 @@ describe("floating workspace detail", () => {
         await page.locator("[data-k2b-app-workspace] [inert]").evaluateAll((regions) => regions.map((region) => region.className)),
       ).toEqual([await page.locator(".k2b-app-workspace__sidebar").getAttribute("class")]);
       expect(await page.evaluate(() => document.activeElement?.id)).toBe("row-0");
+    } finally {
+      await page.close();
+    }
+  });
+  test("390×844: a reopenable phone page that arrives open waits until a control opens it, and parks without closing", async () => {
+    const page = await load(390, 844, "phone-page=1&reopen=1&initial=1&request-control=1&close-control=1");
+    try {
+      await settled(page);
+      const detail = page.locator(".k2b-app-workspace__detail");
+      const reader = page.locator("#reader-toggle");
+      const shared = page.locator("[data-app-workspace-detail-toggle]");
+      const inert = () => page.locator("[data-k2b-app-workspace] [inert]").count();
+      const focusedControl = () =>
+        page.evaluate(
+          () => document.activeElement?.getAttribute("aria-controls") === document.querySelector(".k2b-app-workspace__detail")?.id,
+        );
+      // Open for wider layouts, the page itself waits: nothing covers the workspace and nothing is inert.
+      expect(await detail.getAttribute("hidden")).toBeNull();
+      expect(await detail.isVisible()).toBe(false);
+      expect(await inert()).toBe(0);
+      expect(await reader.getAttribute("aria-expanded")).toBe("false");
+      for (const open of [() => reader.click(), () => shared.click()]) {
+        await open();
+        await settlePanel(page);
+        expect((await geometry(page)).detail).toMatchObject({ top: 0, left: 0, width: 390, height: 844 });
+        await page.waitForFunction(() => document.activeElement?.textContent === "Selected record");
+        expect(await page.locator(".k2b-app-workspace__main").getAttribute("inert")).toBe("");
+        expect(await reader.getAttribute("aria-expanded")).toBe("true");
+        expect(await shared.getAttribute("aria-expanded")).toBe("true");
+        // The close control inside the page and Escape park it; the application's state stays open.
+        for (const park of [() => page.keyboard.press("Escape"), () => page.locator("#close").click()]) {
+          await park();
+          await settlePanel(page);
+          expect(await detail.isVisible()).toBe(false);
+          expect(await detail.getAttribute("hidden")).toBeNull();
+          expect(await inert()).toBe(0);
+          expect(await focusedControl()).toBe(true);
+          if (park === undefined) break;
+          await open();
+          await settlePanel(page);
+          expect(await detail.isVisible()).toBe(true);
+        }
+        await page.keyboard.press("Escape");
+        await settlePanel(page);
+      }
+      expect(await page.locator("body").getAttribute("data-closes")).toBeNull();
+      expect(await page.locator("body").getAttribute("data-toggle-clicks")).toBeNull();
+      // Widening shows the column; narrowing again while working elsewhere waits again.
+      await page.setViewportSize({ width: 1440, height: 900 });
+      await settled(page);
+      expect(await detail.isVisible()).toBe(true);
+      expect(await detail.getAttribute("data-workspace-detail-drawer")).toBeNull();
+      await page.locator("#row-0").focus();
+      await page.setViewportSize({ width: 390, height: 844 });
+      await settled(page);
+      expect(await detail.isVisible()).toBe(false);
+      expect(await inert()).toBe(0);
+      // Focus that left the column on purpose does not open the page.
+      await page.setViewportSize({ width: 1440, height: 900 });
+      await settled(page);
+      await page.locator("#close").focus();
+      await page.locator("#close").evaluate((element) => (element as HTMLElement).blur());
+      await page.setViewportSize({ width: 390, height: 844 });
+      await settled(page);
+      expect(await detail.isVisible()).toBe(false);
+      expect(await inert()).toBe(0);
+      // A column that narrows while focus is in it stays open as the page.
+      await page.setViewportSize({ width: 1440, height: 900 });
+      await settled(page);
+      await page.locator("#close").focus();
+      await page.setViewportSize({ width: 390, height: 844 });
+      await settled(page);
+      expect(await detail.isVisible()).toBe(true);
+      expect(await detail.evaluate((aside) => aside.contains(document.activeElement))).toBe(true);
+      expect(await page.locator(".k2b-app-workspace__main").getAttribute("inert")).toBe("");
+    } finally {
+      await page.close();
+    }
+  });
+  test("390×844: an application action that parks a phone page returns focus to its control", async () => {
+    const page = await load(390, 844, "phone-page=1&reopen=1&initial=1&request-control=1&park-action=1");
+    try {
+      await settled(page);
+      await page.locator("#reader-toggle").click();
+      await settlePanel(page);
+      await page.locator("#leave").click();
+      await settlePanel(page);
+      expect(await page.locator(".k2b-app-workspace__detail").isVisible()).toBe(false);
+      expect(await page.locator("[data-k2b-app-workspace] [inert]").count()).toBe(0);
+      expect(
+        await page.evaluate(
+          () => document.activeElement?.getAttribute("aria-controls") === document.querySelector(".k2b-app-workspace__detail")?.id,
+        ),
+      ).toBe(true);
     } finally {
       await page.close();
     }
