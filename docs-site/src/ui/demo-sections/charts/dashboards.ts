@@ -1,4 +1,5 @@
 import type { JsonValue } from "./examples/types";
+import { liquidityForecastSpec } from "./liquidity-forecast";
 
 export type ShowcasePanel = {
   id: string;
@@ -345,14 +346,6 @@ export const newsletterDashboard: ShowcaseDashboard = {
   ],
 };
 
-// Balance per day from 1 Oct to 4 Jan: booked until today (6 Nov), forecast afterwards.
-const balance = Array.from({ length: 96 }, (_, index) => {
-  const swing = Math.sin(index / 6) * 3800 + Math.sin(index / 2.3) * 1400;
-  const trend = index < 60 ? 0 : -(index - 60) * 220;
-  return Math.round((19800 + swing + trend + (index > 62 && index < 70 ? -6000 : 0)) / 10) * 10;
-});
-const today = 36;
-
 export const liquidityDashboard: ShowcaseDashboard = {
   slug: "liquidity",
   eyebrow: "Code page · from the catalog only",
@@ -413,21 +406,7 @@ export const liquidityDashboard: ShowcaseDashboard = {
           width: "full",
           height: 280,
           empty: "No account is connected yet.",
-          spec: {
-            kind: "line",
-            title: "Balance",
-            subtitle: "Business account · forecast with range from today",
-            series: [{ label: "Balance", data: balance.map((y, index) => ({ x: isoDay("2026-10-01", index), y })) }],
-            step: "after",
-            forecast: {
-              from: isoDay("2026-10-01", today),
-              band: balance.slice(today).map((value, index) => [value - 600 - index * 70, value + 600 + index * 70]),
-            },
-            threshold: { value: 10000, label: "Threshold 10,000 €" },
-            marker: { at: isoDay("2026-10-01", today), label: "Today" },
-            zero: true,
-            yAxis: { format: { style: "currency", currency: "EUR", compact: true } },
-          },
+          spec: liquidityForecastSpec,
         },
       ],
     },

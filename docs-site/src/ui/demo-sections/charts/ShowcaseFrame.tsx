@@ -4,7 +4,6 @@ import {
   Chart,
   ChartExplorer,
   type ChartFrameRequest,
-  ChartSnapshotView,
   DataTable,
   type DataTableColumn,
   type DataTableSort,
@@ -104,20 +103,12 @@ export function ShowcaseFrame(props: ShowcaseFrameProps): JSX.Element {
     <Switch>
       <Match when={drawing().mode === "snapshot" && (drawing() as Extract<ReturnType<typeof resolveDrawing>, { mode: "snapshot" }>)}>
         {(snapshot) =>
-          explorer(
-            snapshot().rows,
-            () => (
-              <ChartSnapshotView
-                snapshot={snapshot().snapshot}
-                selectedKey={null}
-                onSelect={() => {}}
-                style={snapshot().legend.length ? undefined : { height: "100%" }}
-              />
-            ),
-            {
-              legend: snapshot().legend,
+          explorer(snapshot().rows, () => null, {
+            get data() {
+              return withRows(props.state) ? { chart: snapshot().snapshot, rows: snapshot().rows } : { rows: [] };
             },
-          )
+            legend: snapshot().legend,
+          })
         }
       </Match>
       <Match when={drawing().mode === "live" && (drawing() as Extract<ReturnType<typeof resolveDrawing>, { mode: "live" }>)}>

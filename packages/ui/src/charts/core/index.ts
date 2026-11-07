@@ -12,6 +12,8 @@ export { type ChartTimeAxis } from "../../content/chart-time-axis";
 export { type AreaOptions, areaLayout, renderAreaSvg } from "./area";
 export * from "./calendar";
 export * from "./inspection";
+export { lineBase } from "./line-base";
+export { lineDetailsEnabled, lineForecastLayout } from "./line-options";
 export * from "./render";
 export * from "./snapshot";
 export {
@@ -33,6 +35,7 @@ export {
   gauge,
   heatmap,
   histogram,
+  type LineOptions,
   type LineStyle,
   line,
   linearRegression,

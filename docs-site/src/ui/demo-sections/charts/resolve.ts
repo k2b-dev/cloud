@@ -184,7 +184,7 @@ export function resolveDrawing(spec: JsonValue, locale = "en"): ShowcaseDrawing 
     // Add the row first: it may introduce the columns its own tooltip names.
     tooltip: ({ datum }) => {
       const row = table.add(datum);
-      return chartTooltip(table.columns(), row);
+      return chartTooltip(table.columns(), row, input.kind === "line" ? input : undefined);
     },
     reference: ({ datum }) => chartReferenceMark(input, datum),
   });

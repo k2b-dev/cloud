@@ -826,7 +826,7 @@ export function cloudAiExplorerControls(view: CloudAiExplorerView, locale: strin
 type ExplorerChartState = {
   input: CloudAiChartInput;
   marks: number[][];
-  legend: { label: string; color: number; style?: "solid" | "dashed"; reference?: boolean }[];
+  legend: { label: string; color: number; seriesIndex: number; style?: "solid" | "dashed"; reference?: boolean }[];
 };
 
 /** Project current and reference rows into every view, retaining dataset-wide axes and series palette slots. */
@@ -953,6 +953,7 @@ export function cloudAiExplorerState(
           legend.push({
             label: entry.label,
             color: slot % 8,
+            seriesIndex: offset + slot,
             ...(chart.kind === "line" ? { style: reference ? "dashed" : "solid" } : {}),
             ...(reference ? { reference: true } : {}),
           });

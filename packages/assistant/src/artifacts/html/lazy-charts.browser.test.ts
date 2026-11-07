@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { mkdir } from "node:fs/promises";
 import type { Browser, Page } from "playwright";
-import { launchBrowser } from "../../../../ui/test/browser";
+import { launchBrowser, settled } from "../../../../ui/test/browser";
 import type { AppFrameAssets } from "./assets";
 import { buildBaseCss, buildChartModule, buildPrelude } from "./build-assets";
 import type { AppFiles } from "./compose";
@@ -391,3 +391,42 @@ test("narrow pending charts retain the eager logical width and PDF styles accept
     await context.close();
   }
 });
+
+for (const width of [1200, 390])
+  test(`line uses the offline plugin without moving its frame, ${width}px`, async () => {
+    const script = `const plain={kind:"line",title:"History",series:[{data:[{x:1,y:10},{x:2,y:20}]}]};
+    document.querySelector("#draw").addEventListener("click",()=>{
+      document.querySelector("#charts").innerHTML=cloud.chart(plain);
+      document.querySelector("#result").innerHTML='<button id="details">Forecast</button>';
+      document.querySelector("#details").addEventListener("click",()=>{document.querySelector("#charts").innerHTML=cloud.chart({kind:"line",title:"Liquidity",series:[{label:"Cash",data:[{x:1,y:100},{x:2,y:120},{x:3,y:110}]}],forecast:{from:2,band:[[100,140],[90,130]]},threshold:{value:95,label:"Reserve"},legendValues:true});});
+    });`;
+    const { page, context, requests } = await open(width, delayed + assets.chartModule, "light", script);
+    try {
+      // An ordinary line draws eagerly and does not execute the offline plugin.
+      await app(page).locator("#draw").click();
+      await app(page).locator('[data-chart-kind="line"] svg').waitFor();
+      expect(await app(page).locator("[data-chart-pending]").count()).toBe(0);
+      expect(
+        await app(page)
+          .locator("body")
+          .evaluate(() => Reflect.get(globalThis, "__chartLoads") ?? 0),
+      ).toBe(0);
+      await app(page).locator("#details").click();
+      await app(page).locator("html[data-chart-module-loading]").waitFor();
+      await settled(page);
+      const pending = await boxes(page);
+      await release(page);
+      await app(page).locator(".k2b-line-forecast-band").first().waitFor();
+      await settled(page);
+      expect(await boxes(page)).toEqual(pending);
+      expect(await app(page).locator("[data-chart-pending]").count()).toBe(0);
+      expect(
+        await app(page)
+          .locator("body")
+          .evaluate(() => Reflect.get(globalThis, "__chartLoads")),
+      ).toBe(1);
+      expect(requests).toEqual([]);
+    } finally {
+      await context.close();
+    }
+  });

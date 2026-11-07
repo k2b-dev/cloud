@@ -114,3 +114,16 @@ test("dashboard panels have unique ids and say what each slot stands for", () =>
     for (const panel of dashboard.sections.flatMap((section) => section.panels)) expect(panel.intended.length, panel.id).toBeGreaterThan(0);
   }
 });
+
+test("the Liquidity Balance panel draws the full forecast rather than a catalog placeholder", () => {
+  const dashboard = showcaseDashboards.find((entry) => entry.slug === "liquidity")!;
+  const panel = dashboard.sections.flatMap((section) => section.panels).find((entry) => entry.id === "balance-line")!;
+  const drawing = resolveDrawing(panel.spec);
+  expect(drawing.mode).toBe("snapshot");
+  if (drawing.mode !== "snapshot") throw new Error("The balance must be drawable");
+  expect(drawing.snapshot.svg).toContain("k2b-line-forecast-band");
+  expect(drawing.snapshot.svg).toContain("k2b-line-threshold");
+  expect(drawing.snapshot.svg).toContain("k2b-line-marker");
+  expect(drawing.rows).toHaveLength(96);
+  expect(drawing.legend.map((entry) => entry.label)).toEqual(["Balance"]);
+});

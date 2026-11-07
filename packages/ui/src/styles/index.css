@@ -1695,8 +1695,24 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   --k2b-chart-inverse-y: tan(atan2(var(--k2b-chart-height), 100cqh));
 }
 
+/* Preserve readable Y labels without imposing phone margins on wide line plots. */
+.k2b-ui .k2b-chart__svg[data-stretch] > svg[data-line-axis-room] {
+  --k2b-line-inset: max(0px, calc((var(--k2b-line-label-room) - var(--k2b-line-axis-fraction) * 100cqw) * var(--k2b-line-axis-expand)));
+  --k2b-chart-inverse-x: tan(atan2(var(--k2b-chart-width), calc(100cqw - var(--k2b-line-inset))));
+  margin-left: var(--k2b-line-inset);
+  width: calc(100% - var(--k2b-line-inset));
+  overflow: visible;
+}
+
 .k2b-ui .k2b-chart__svg[data-stretch] text {
   scale: var(--k2b-chart-inverse-x) var(--k2b-chart-inverse-y);
+}
+
+/* The bottom Y label must clear the first centred date label in small cards. */
+@container (max-width: 400px) {
+  .k2b-ui .k2b-chart[data-chart-kind="line"] .k2b-chart__svg[data-stretch] > svg[data-line-details="true"] > .stdlib-chart-grid:nth-child(1 of .stdlib-chart-grid) + .stdlib-chart-tick-label {
+    translate: 0 calc(-6px * var(--k2b-chart-inverse-y));
+  }
 }
 
 .k2b-ui .k2b-chart__svg[data-stretch] :is(circle, .stdlib-chart-point, .stdlib-chart-legend) {

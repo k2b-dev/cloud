@@ -9,9 +9,14 @@ test("normal mounts omit app checks and stay within the prelude budget", async (
   expect(Buffer.byteLength(normal)).toBeLessThan(319_900);
   expect(normal).not.toContain("k2b-area-layer");
   const rare = await buildChartModule();
-  // This source travels in every srcdoc too: ~51 KB measured, with 2 KB of headroom.
-  expect(Buffer.byteLength(rare)).toBeLessThan(53_000);
   expect(rare).toContain("k2b-area-layer");
+  expect(normal).not.toContain("k2b-line-forecast");
+  expect(normal).not.toContain("k2b-line-negative-zone");
+  expect(normal).not.toContain("k2b-line-threshold");
+  expect(rare).toContain("k2b-line-forecast-band");
+  // Measured 76,701 B, including shared time-zone arithmetic; retain approximately 1% headroom.
+  // temporary until the last kind PR sets the catalog total, see #2790
+  expect(Buffer.byteLength(rare)).toBeLessThan(77_470);
   expect(normal).not.toContain("data-calendar-weekdays");
   expect(rare).toContain("data-calendar-weekdays");
   // The blob must be self-contained: no module can fetch a dependency on first use.
