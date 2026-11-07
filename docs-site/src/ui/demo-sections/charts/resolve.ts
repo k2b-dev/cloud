@@ -164,13 +164,14 @@ export function resolveDrawing(spec: JsonValue, locale = "en"): ShowcaseDrawing 
   }
   const parsed = chartKinds().safeParse(spec);
   if (!parsed.success) {
-    const known = chartKinds().options.find((option) => option.shape.kind.safeParse(kind).success);
-    const missing = known ? Object.keys(spec).filter((key) => !(key in known.shape)) : [];
+    // The kind exists when the schema complains about fields rather than about the kind itself.
+    const known = !parsed.error.issues.some((issue) => issue.path.length === 0 || issue.path[0] === "kind");
+    const fields = [...new Set(parsed.error.issues.map((issue) => issue.path[0]).filter((key): key is string => typeof key === "string"))];
     return {
       mode: "slot",
       kind,
       reason: known
-        ? `Its options ${missing.length ? missing.join(", ") : "in this form"} arrive with their catalog step.`
+        ? `Its options ${fields.length ? fields.join(", ") : "in this form"} arrive with their catalog step.`
         : "The kind arrives with its catalog step.",
     };
   }
