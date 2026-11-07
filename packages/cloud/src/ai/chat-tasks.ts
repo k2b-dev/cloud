@@ -22,6 +22,7 @@ import {
 import { parsePgJsonValue, toPgUuidArray } from "../services/postgres";
 import { coreSettings } from "../services/settings/api";
 import { canonicalLocale } from "../shared/locale";
+import { appendAiBackgroundMessage } from "./background-message";
 import { chatTaskName } from "./chat-task-contracts";
 import {
   type ChatTaskReason,
@@ -502,7 +503,6 @@ const deliverOccurrenceResult = async (
     SELECT id FROM ai.conversations WHERE id = ${task.conversation_id}::uuid AND archived_at IS NULL FOR UPDATE
   `;
   if (!destination) return;
-  const message: Message = { role: "assistant", content: [{ type: "text", text: resultText }] };
   const meta = {
     scheduledTask: {
       taskId: task.short_id,
@@ -512,17 +512,7 @@ const deliverOccurrenceResult = async (
       ...extra,
     },
   };
-  await withAiShortIdForDb(
-    db,
-    "idx_ai_messages_conversation_short_id",
-    (attempt, shortId) => attempt`
-    INSERT INTO ai.messages(short_id, conversation_id, seq, kind, role, message, search_text, meta)
-    VALUES (${shortId}, ${task.conversation_id}::uuid,
-      (SELECT COALESCE(MAX(seq),0)+1 FROM ai.messages WHERE conversation_id = ${task.conversation_id}::uuid),
-      'message', 'assistant', ${JSON.stringify(message)}::text::jsonb, ${resultText}, ${JSON.stringify(meta)}::text::jsonb)
-  `,
-  );
-  await db`UPDATE ai.conversations SET done = NULL, last_used_at = now(), updated_at = now(), background_received_at = now() WHERE id = ${task.conversation_id}::uuid`;
+  await appendAiBackgroundMessage(db, { conversationId: task.conversation_id, text: resultText, meta });
 };
 
 type StopCause = "paused" | "deleted";

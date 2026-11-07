@@ -2,7 +2,7 @@ import { lazySync, sql } from "@k2b/cloud";
 import type { signCodeRunToken } from "@k2b/cloud/code/run-token";
 import { RunnerConfigSchema, type RunnerFetchRequest, type RunnerFetchResponse } from "@k2b/cloud/code/runner";
 import { CAPABILITY_MAX_REQUEST_BYTES, CodeCheckedVersionManifestSchema } from "@k2b/cloud/contracts";
-import { coreSettings, logger } from "@k2b/cloud/services";
+import { logger } from "@k2b/cloud/services";
 import { createPgOutbox, type OutboxRow } from "@k2b/cloud/services/outbox";
 import type { Queue, Scheduler, Worker } from "@k2b/sync";
 import { claimCodeWork } from "./dispatch";
@@ -127,7 +127,6 @@ export const codeScheduleId = (codeId: string, entrypoint: string) =>
 export function createCodeScheduleReconciler(scheduler: Scheduler) {
   return async () => {
     const registered = await scheduler.list();
-    const timezone = (await coreSettings.get<string>("app.timezone")) || "UTC";
     let cursor = "";
     while (true) {
       const codes = await sql<{ id: string }[]>`SELECT id FROM code.codes WHERE id>${cursor} ORDER BY id LIMIT 50`;
@@ -159,7 +158,7 @@ export function createCodeScheduleReconciler(scheduler: Scheduler) {
                 await scheduler.create({
                   id,
                   cron,
-                  timezone,
+                  timezone: entry.timeZone ?? "UTC",
                   misfire: "latest",
                   meta: { family: "code", codeId: code.id },
                   process: async (ctx) => {
@@ -167,6 +166,7 @@ export function createCodeScheduleReconciler(scheduler: Scheduler) {
                       codeId: code.id,
                       entrypoint: entry.entrypoint,
                       cron,
+                      timeZone: entry.timeZone ?? "UTC",
                       slot: ctx.slot,
                     });
                   },
