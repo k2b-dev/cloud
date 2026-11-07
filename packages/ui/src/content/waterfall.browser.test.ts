@@ -3,13 +3,13 @@ import { resolve } from "node:path";
 import type { Browser, Page } from "playwright";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
-import { launchBrowser, settled } from "../../test/browser";
+import { launchBrowser, pageErrors, settled } from "../../test/browser";
 import { waterfallFixture } from "../../test/waterfall-fixture";
 import { renderWaterfallSvg } from "../charts/core/waterfall";
 
 let browser: Browser, bundle: string, css: string, ssr: string;
 const pages: Page[] = [];
-const pageErrors: string[] = [];
+const errorsByPage = new Map<Page, string[]>();
 beforeAll(async () => {
   const { transformAsync } = await import("@babel/core");
   const typescript = (await import("@babel/preset-typescript")).default;
@@ -71,11 +71,11 @@ beforeAll(async () => {
 afterAll(async () => {
   for (const page of pages) await page.close();
   await browser?.close();
-  expect(pageErrors).toEqual([]);
+  expect([...errorsByPage.values()].flat()).toEqual([]);
 });
 const open = async (width: number, dark = false, touch = false) => {
   const page = await browser.newPage({ viewport: { width, height: 900 }, hasTouch: touch, isMobile: false });
-  page.on("pageerror", (error) => pageErrors.push(error.message));
+  errorsByPage.set(page, pageErrors(page));
   await page.setContent(
     `<!doctype html><html ${dark ? 'class="dark"' : ""}><head><meta name="viewport" content="width=device-width,initial-scale=1"><style>${css} body{margin:0;padding:20px} main{max-width:900px;margin:auto}.waterfall-panel{border:1px solid var(--k2b-border);border-radius:12px;padding:16px;margin-top:20px}h2{font-size:17px;margin:0}.meta{font-size:13px;margin:4px 0 16px}.waterfall-frame{height:280px}</style></head><body class="k2b-ui"><div id="root"></div></body></html>`,
   );
@@ -231,6 +231,7 @@ test("the Solid waterfall uses its drawn width for every desktop label and amoun
 
 test("pure waterfall SVG keeps distinct flow paint with base.css alone", async () => {
   const page = await browser.newPage();
+  errorsByPage.set(page, pageErrors(page));
   pages.push(page);
   const baseCss = await Bun.file(resolve(import.meta.dir, "../../dist/base.css")).text();
   const drawing = renderWaterfallSvg({ ...waterfallFixture, width: 900, height: 280 });
