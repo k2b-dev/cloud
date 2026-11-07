@@ -82,20 +82,6 @@ navigation, Enter acceptance, Escape dismissal, and retryable loading and error
 states. A new query aborts stale asynchronous work. Completions do not expand
 inside inline code or fenced code blocks.
 
-## Formatting selected text
-
-`toolbar="selection"` suits composers that should stay calm: there is no toolbar above the text. Once a person
-selects text and lets go of the pointer, a small toolbar floats above the selection with bold, italic, inline code,
-link, bulleted and numbered lists, and quote. It is the same `SelectionToolbar` that the `@k2b/editor` bubble menu
-uses.
-
-- It follows the selection while the text changes, and closes when the selection collapses, the focus leaves both
-  the text and the toolbar, or on <kbd>Esc</kbd>, which keeps the text and the selection.
-- <kbd>Tab</kbd> from the selection moves into it; Left, Right, Home, and End move inside, as in any toolbar.
-- Touch devices (a coarse primary pointer) keep their own selection menu, so it stays hidden there.
-- Every keyboard shortcut works with and without it.
-- It floats in the top layer, so it never moves the editor or the text.
-
 ## Editing behavior
 
 The editor keeps a native textarea as the input surface. A synchronized presentation layer provides markdown highlighting without replacing browser selection, composition, or undo behavior.
@@ -110,6 +96,20 @@ character statistics.
 textarea. `completions` uses the [Completion/Suggestion contract](/en/ui/input/autocomplete#api-reference).
 The editor inherits [ValueFieldProps<string>](/en/ui/getting-started#shared-field-props);
 `lines` defaults to 6 and `spellcheck` and `showStats` default to true.
+
+## Formatting selected text
+
+`toolbar="selection"` suits composers that should stay calm: there is no toolbar above the text. Once a person
+selects text and lets go of the pointer, a small toolbar floats above the selection with bold, italic, inline code,
+link, bulleted and numbered lists, and quote. It is the same `SelectionToolbar` that the `@k2b/editor` bubble menu
+uses.
+
+- It follows the selection while the text changes, and closes when the selection collapses, the focus leaves both
+  the text and the toolbar, or on <kbd>Esc</kbd>, which keeps the text and the selection.
+- <kbd>Tab</kbd> from the selection moves into it; Left, Right, Home, and End move inside, as in any toolbar.
+- Touch devices (a coarse primary pointer) keep their own selection menu, so it stays hidden there.
+- Every keyboard shortcut works with and without it.
+- It floats in the top layer, so it never moves the editor or the text.
 
 ## Accessibility
 
