@@ -305,11 +305,9 @@ const ChartRoot = (props: ChartProps): JSX.Element => {
   const legendSeries = () => (props.kind === "line" ? props.series : []);
   const legendValue = (index: number) => {
     if (props.kind !== "line") return "";
-    const points = props.series[index]?.data ?? [];
-    const last = points
-      .filter((p) => Number.isFinite(p.x))
-      .toSorted((a, b) => a.x - b.x)
-      .at(-1);
+    let latest = -Infinity;
+    for (const series of props.series) for (const point of series.data) if (Number.isFinite(point.x)) latest = Math.max(latest, point.x);
+    const last = props.series[index]?.data.find((point) => point.x === latest);
     return last && Number.isFinite(last.y)
       ? (props.yAxis?.format?.(last.y) ?? new Intl.NumberFormat(locale(), { maximumFractionDigits: 6 }).format(last.y))
       : "—";

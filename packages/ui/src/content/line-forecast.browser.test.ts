@@ -96,6 +96,14 @@ for (const width of [1440, 390])
         return svg.outerHTML === host.querySelector(".k2b-chart__svg > svg")?.outerHTML;
       }, expected),
     ).toBe(true);
+    const earlyEnding = page.locator(".early-ending [data-chart-kind=line]");
+    expect(await earlyEnding.locator("[data-chart-legend-value]").nth(1).textContent()).toBe("—");
+    await earlyEnding.focus();
+    await page.keyboard.press("Home");
+    expect(await earlyEnding.locator("[data-chart-legend-value]").nth(1).textContent()).toBe("7");
+    await page.keyboard.press("End");
+    expect(await earlyEnding.locator("[data-chart-legend-value]").nth(1).textContent()).toBe("—");
+    await page.keyboard.press("Escape");
     const before = await documentBox(page, ".snapshot");
     const viewportBefore = await documentBox(page, ".snapshot .k2b-chart-explorer__viewport");
     const plot = await chart.locator(".k2b-chart__svg").boundingBox();

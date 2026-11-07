@@ -85,6 +85,24 @@ render(
             height="280px"
           />
         </section>
+        <section class="line-forecast-panel early-ending">
+          <Chart
+            kind="line"
+            legend
+            legendPlacement="top-start"
+            series={[
+              {
+                label: "Full",
+                data: [
+                  { x: 1, y: 10 },
+                  { x: 2, y: 20 },
+                ],
+              },
+              { label: "Early", data: [{ x: 1, y: 7 }] },
+            ]}
+            style={{ height: "230px" }}
+          />
+        </section>
         <section class="line-forecast-panel">
           <h2>Steps at the next observation</h2>
           <Chart
