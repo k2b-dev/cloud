@@ -1,0 +1,6 @@
+### Editing and saving must not move the photo
+
+- **What happened:** Focusing inline text near the right side scrolled the clipped photo viewport. Changing the save button label during loading also changed its width and wrapped the phone title. The phone status region clipped the localized size warning above its retry action.
+- **Root cause:** The text field extended outside its clipping ancestor, and the caller replaced the shared button's size-preserving idle content. The fixed panel could not fit a horizontal list of all six labeled tools.
+- **Error class:** Layout mutation across editing states.
+- **Guard:** The phone ImageEditor browser guard checks that inline text stays inside the stage and focusing it leaves the photo in place. The pending-save guard compares the stage and header before and during saving. The localized size-refusal guard checks the complete warning fits without moving the stage. A dark desktop and phone guard selects every tool and checks its label fits without moving the stage. Inline input is bounded by the stage; Button keeps its idle content and receives a separate loadingLabel. The status region reserves enough space for the warning and retry action. A shared Select makes tool choices fit the fixed panel.

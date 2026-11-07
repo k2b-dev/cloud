@@ -71,6 +71,7 @@ export { FileDropzone, ImageCropper, ImageInput } from "./FileInputs";
 export type { DateContext, FieldProps, MaybeAccessor, ValueFieldProps } from "./field-contract";
 export type { IconChoiceOption, IconChoicesProps } from "./IconChoices";
 export { IconChoices } from "./IconChoices";
+export { ImageEditor } from "./ImageEditor";
 export { DEFAULT_ICON_GROUPS, DEFAULT_ICON_OPTIONS } from "./icon-options";
 export type {
   ImageCropAspect,
@@ -91,6 +92,19 @@ export {
   resizeImageCropAroundCenter,
   rotateImageCropRight,
 } from "./image-crop";
+export type {
+  ImageEditorAnnotationTool,
+  ImageEditorAspect,
+  ImageEditorFeatures,
+  ImageEditorFormat,
+  ImageEditorLook,
+  ImageEditorOutput,
+  ImageEditorPreview,
+  ImageEditorProps,
+  ImageEditorResult,
+  ImageEditorSaveActions,
+  ImageEditorSourceSize,
+} from "./image-editor/types";
 export type {
   MultiSelectFetchDataFn,
   MultiSelectInputProps,

@@ -108,6 +108,12 @@ const portableSections = [
         "ti ti-crop",
         "Direct-manipulation crop, resize, and rotation with free or fixed aspect ratios.",
       ),
+      page(
+        "image-editor",
+        "ImageEditor",
+        "ti ti-photo-edit",
+        "Photo editing with one history, bounded previews, annotations, and an awaited save.",
+      ),
       page("emoji-picker", "EmojiPicker", "ti ti-mood-smile", "Emoji search in English and German, recently used emoji, and skin tones."),
       page("signature", "SignatureInput", "ti ti-signature", "Draw with finger, pen, or mouse, or type the name, as an SVG value."),
       page(
@@ -439,7 +445,7 @@ const cloudEntries = cloudPages.map((page, pageIndex) => entry("cloud", "Cloud c
 export const uiCatalogEntries: UiCatalogEntry[] = [...portableEntries, ...cloudEntries];
 
 /** Runtime component exports from @k2b/ui. Kept honest by check-ui-catalog.ts. */
-export const portableUiComponentCount = 187;
+export const portableUiComponentCount = 188;
 
 export const uiCatalogSections: UiCatalogSection[] = [
   ...portableSections.map((section) => ({

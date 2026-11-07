@@ -64,6 +64,7 @@ import inputIcon from "./input/icon.md" with { type: "text" };
 import inputIconChoices from "./input/icon-choices.md" with { type: "text" };
 import inputImage from "./input/image.md" with { type: "text" };
 import inputImageCropper from "./input/image-cropper.md" with { type: "text" };
+import inputImageEditor from "./input/image-editor.md" with { type: "text" };
 import inputNumber from "./input/number.md" with { type: "text" };
 import inputPin from "./input/pin.md" with { type: "text" };
 import inputQrScanner from "./input/qr-scanner.md" with { type: "text" };
@@ -139,6 +140,7 @@ const catalogContextSources = {
   "input/qr-scanner": { file: "input/qr-scanner.md", content: inputQrScanner },
   "input/signature": { file: "input/signature.md", content: inputSignature },
   "input/image": { file: "input/image.md", content: inputImage },
+  "input/image-editor": { file: "input/image-editor.md", content: inputImageEditor },
   "input/image-cropper": { file: "input/image-cropper.md", content: inputImageCropper },
   "input/file-dropzone": { file: "input/file-dropzone.md", content: inputFileDropzone },
   "input/file-drop-target": { file: "input/file-drop-target.md", content: inputFileDropTarget },

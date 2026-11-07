@@ -29,6 +29,7 @@ import {
   IconInput,
   ImageCropper,
   type ImageCropState,
+  ImageEditor,
   ImageInput,
   MarkdownEditor,
   MultiSelectInput,
@@ -55,7 +56,7 @@ import {
   TextInput,
 } from "@k2b/ui";
 import { TextEditor } from "@k2b/ui/text-editor";
-import { createSignal, createUniqueId } from "solid-js";
+import { createSignal, createUniqueId, Show } from "solid-js";
 import { DemoCard } from "../DemoCard";
 import { DictationDemo, DictationHostDemo } from "./dictation";
 import { QrScannerDemo } from "./mobile-navigation";
@@ -1524,6 +1525,60 @@ const CropDemo = () => {
   );
 };
 
+const ImageEditorDemo = () => {
+  const [minimal, setMinimal] = createSignal(false);
+  const [fail, setFail] = createSignal(false);
+  const [saved, setSaved] = createSignal("");
+  return (
+    <DemoCard
+      id="image-editor"
+      chip={{ kind: "component", name: "ImageEditor", from: "@k2b/ui" }}
+      description="One photo, one undo history. Try the minimal caller and a rejected save: edits survive and retry stays in place."
+      code={`<ImageEditor source={photo} features={{ crop: true, rotate: true, adjust: true }} onSave={upload} />`}
+    >
+      <div class="flex flex-wrap gap-4">
+        <Switch label="Minimal square crop and rotation" value={minimal()} onValueChange={setMinimal} />
+        <Switch label="Reject the next save" value={fail()} onValueChange={setFail} />
+      </div>
+      <div style={{ height: "42rem" }}>
+        <Show
+          when={minimal()}
+          keyed
+          fallback={
+            <ImageEditor
+              source="/assets/image-editor-photo.jpg"
+              features={{
+                crop: true,
+                rotate: true,
+                straighten: true,
+                adjust: true,
+                filters: true,
+                annotate: true,
+                redact: true,
+                export: { formats: ["image/jpeg", "image/png", "image/webp"], quality: true, resize: true },
+              }}
+              onSave={async (result) => {
+                if (fail()) throw new Error("Upload rejected. Turn off the rejected save and retry.");
+                setSaved(`${result.width} × ${result.height} px accepted`);
+              }}
+            />
+          }
+        >
+          <ImageEditor
+            source="/assets/image-editor-photo.jpg"
+            features={{ crop: { aspects: ["1:1"], locked: true }, rotate: true }}
+            onSave={async (result) => {
+              if (fail()) throw new Error("Upload rejected. Turn off the rejected save and retry.");
+              setSaved(`${result.width} × ${result.height} px accepted`);
+            }}
+          />
+        </Show>
+      </div>
+      <p aria-live="polite">{saved()}</p>
+    </DemoCard>
+  );
+};
+
 const SignatureDemo = () => {
   const [signature, setSignature] = createSignal<SignatureValue | null>(null);
   const [png, setPng] = createSignal("");
@@ -2084,6 +2139,11 @@ const demos: DemoSection = {
   signature: () => (
     <DemoGrid columns="one">
       <SignatureDemo />
+    </DemoGrid>
+  ),
+  "image-editor": () => (
+    <DemoGrid columns="one">
+      <ImageEditorDemo />
     </DemoGrid>
   ),
   "image-cropper": () => (
