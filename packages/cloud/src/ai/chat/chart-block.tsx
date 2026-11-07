@@ -20,7 +20,7 @@ import {
   cloudAiChartXValueFormat,
 } from "../chart-block";
 import type { CloudAiChartInput } from "../default-tool-contracts";
-import { type CloudGroupDescription, cloudAiViewDescription, parseCloudAiChartToolView } from "../view-block";
+import { type CloudGroupDescription, parseCloudAiChartToolView } from "../view-block";
 import { aiChatMessages } from "./messages";
 
 type Kind = CloudAiChartInput["kind"];
@@ -188,11 +188,15 @@ export function CloudChartBlock(props: { args: unknown; completed: boolean }) {
   // filled from that drawing.
   const chart = createMemo(() => {
     const value = view();
-    return value?.view === "chart" ? drawChart(cloudAiViewDescription(value), locale()) : null;
+    if (value?.view !== "chart") return null;
+    const { view: _view, ...description } = value;
+    return drawChart(description, locale());
   });
   const group = createMemo(() => {
     const value = view();
-    return value?.view === "group" ? cloudAiViewDescription(value) : undefined;
+    if (value?.view !== "group") return undefined;
+    const { view: _view, ...description } = value;
+    return { block: "group" as const, ...description };
   });
   return (
     <Show

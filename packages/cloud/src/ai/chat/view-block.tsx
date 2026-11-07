@@ -4,19 +4,15 @@ import { importOnDemand } from "../../browser/reload";
 import { cloudAiNumberFormatters } from "../chart-block";
 import {
   CLOUD_AI_DETAILS_VIEWPORT_ITEMS,
-  CLOUD_AI_VIEW_MAX_BYTES,
   type CloudAiView,
   type CloudAiViewSummary,
   type CloudDetailsDescription,
   type CloudExplorerDescription,
   type CloudStatsDescription,
   type CloudTableDescription,
+  type CloudViewDescription,
   cloudAiDetailsRows,
   cloudAiStatsTiles,
-  cloudAiViewDescription,
-  cloudAiViewSummary,
-  isAiViewFile,
-  parseCloudAiView,
 } from "../view-block";
 import { CloudChartGroupView, CloudChartView } from "./chart-block";
 import { CloudExplorerView } from "./explorer-block";
@@ -25,19 +21,6 @@ import { aiChatMessages } from "./messages";
 import { ReferenceText } from "./reference-text";
 import { CloudTablePlaceholder, type TableSummary } from "./table-placeholder";
 import { ViewHeading } from "./view-heading";
-
-/** Loads a view file with the viewer's access and validates it again: a file is untrusted whoever wrote it. */
-async function loadView(url: string, path: string, signal: AbortSignal): Promise<CloudAiView | null> {
-  try {
-    const response = await fetch(url, { signal });
-    if (!response.ok || !isAiViewFile({ path, origin: response.headers.get("X-Cloud-Ai-File-Origin") ?? "" })) return null;
-    const blob = await response.blob();
-    if (blob.size > CLOUD_AI_VIEW_MAX_BYTES) return null;
-    return parseCloudAiView(JSON.parse(await blob.text())) ?? null;
-  } catch {
-    return null;
-  }
-}
 
 type ChartSummary = Extract<CloudAiViewSummary, { view: "chart" }>;
 type GroupSummary = Extract<CloudAiViewSummary, { view: "group" }>;
@@ -227,48 +210,6 @@ function CloudDetailsView(props: { summary: DetailsSummary; input: CloudDetailsD
   );
 }
 
-type Heading = { title: string; subtitle?: string };
-const sameHeading = (a: Heading, b: Heading | undefined) => a.title === b?.title && a.subtitle === b.subtitle;
-
-/**
- * Whether a loaded file still has everything its summary reserved: kinds, headings, layout and the linked cursor. A
- * changed file shows unavailable instead of moving views or linking charts its summary did not.
- */
-const matches = (view: CloudAiView, summary: CloudAiViewSummary) => {
-  if (view.view === "table") return summary.view === "table" && sameHeading(view, summary);
-  const loaded = cloudAiViewSummary(view);
-  // A record must keep the field count and the labels and value lengths that sized its viewport.
-  if (loaded.view === "details")
-    return (
-      summary.view === "details" &&
-      sameHeading(loaded, summary) &&
-      loaded.items === summary.items &&
-      JSON.stringify(loaded.fields) === JSON.stringify(summary.fields)
-    );
-  // A stats file must keep every tile's label and parts, which set the tile heights its summary reserved.
-  if (loaded.view === "stats")
-    return summary.view === "stats" && sameHeading(loaded, summary) && JSON.stringify(loaded.items) === JSON.stringify(summary.items);
-  if (loaded.view === "explorer")
-    return (
-      summary.view === "explorer" &&
-      sameHeading(loaded, summary) &&
-      loaded.step === summary.step &&
-      loaded.filter === summary.filter &&
-      loaded.compare === summary.compare &&
-      JSON.stringify(loaded.views) === JSON.stringify(summary.views)
-    );
-  if (loaded.view === "chart") return summary.view === "chart" && loaded.kind === summary.kind && sameHeading(loaded, summary);
-  return (
-    loaded.view === "group" &&
-    summary.view === "group" &&
-    sameHeading(loaded, summary) &&
-    loaded.linkX === summary.linkX &&
-    loaded.layout === summary.layout &&
-    loaded.charts.length === summary.charts.length &&
-    loaded.charts.every((chart, index) => chart.kind === summary.charts[index]?.kind && sameHeading(chart, summary.charts[index]))
-  );
-};
-
 /**
  * A presented view file. It takes its full size from the `present` summary in the first frame, then loads the file
  * with the viewer's access; a missing file or one that no longer matches its summary shows the unavailable state in
@@ -277,14 +218,16 @@ const matches = (view: CloudAiView, summary: CloudAiViewSummary) => {
 export function CloudViewBlock(props: { path: string; summary: CloudAiViewSummary }) {
   const actions = useAiChatActions();
   // undefined while loading, null when unavailable.
-  const [view, setView] = createSignal<CloudAiView | null | undefined>(undefined);
+  const [view, setView] = createSignal<CloudViewDescription | null | undefined>(undefined);
   onMount(() => {
     const url = actions.fileUrl?.(props.path);
     if (!url) return setView(null);
     const abort = new AbortController();
     onCleanup(() => abort.abort());
-    void loadView(url, props.path, abort.signal).then((loaded) => {
-      if (!abort.signal.aborted) setView(loaded && matches(loaded, props.summary) ? loaded : null);
+    void importOnDemand(() => import("./view-file")).then(async (reader) => {
+      if (abort.signal.aborted) return;
+      const loaded = reader ? await reader.loadView(url, props.path, props.summary, abort.signal) : null;
+      if (!abort.signal.aborted) setView(loaded);
     });
   });
   const chartSummary = (): ChartSummary | undefined => (props.summary.view === "chart" ? props.summary : undefined);
@@ -301,7 +244,7 @@ export function CloudViewBlock(props: { path: string; summary: CloudAiViewSummar
   function loaded(kind: "explorer"): CloudExplorerDescription | null | undefined;
   function loaded(kind: CloudAiView["view"]) {
     const value = view();
-    return value ? (value.view === kind ? cloudAiViewDescription(value) : null) : value;
+    return value ? (("kind" in value ? kind === "chart" : value.block === kind) ? value : null) : value;
   }
   return (
     <div data-view-path={props.path} class="min-w-0">
