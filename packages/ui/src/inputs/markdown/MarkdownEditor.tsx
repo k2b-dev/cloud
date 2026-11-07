@@ -24,6 +24,7 @@ import { computeActiveFormats } from "./active-formats";
 import { handleListContinuation, handleShortcut, handleSmartPaste } from "./behaviors";
 import { isInCodeZone } from "./code-zone";
 import { useMarkdownEditorMessages } from "./editor-messages";
+import { SelectionFormatting } from "./SelectionFormatting";
 import Toolbar from "./Toolbar";
 
 export type MarkdownEditorProps = ValueFieldProps<string> & {
@@ -31,6 +32,11 @@ export type MarkdownEditorProps = ValueFieldProps<string> & {
   placeholder?: string;
   lines?: number;
   noToolbar?: boolean;
+  /**
+   * `selection` replaces the toolbar above the text with a small one that floats above selected text: bold, italic,
+   * code, link, lists, and quote. Touch devices keep their own selection menu instead. Shortcuts work in both.
+   */
+  toolbar?: "fixed" | "selection";
   spellcheck?: boolean;
   name?: string;
   maxLength?: number;
@@ -65,6 +71,11 @@ export function MarkdownEditor(props: MarkdownEditorProps): JSX.Element {
   const meta = createFieldMeta(props.id);
   let textarea: HTMLTextAreaElement | undefined;
   let preview: HTMLDivElement | undefined;
+  let surface: HTMLDivElement | undefined;
+  let selectionHandlers: { blur: (next: Element | null) => void; focus: () => void; escape: () => boolean } | undefined;
+  // Changes with the text, the selection, and each new presentation, so the selection toolbar measures again.
+  const [selectionRevision, setSelectionRevision] = createSignal(0);
+  const bumpSelection = () => setSelectionRevision((value) => value + 1);
   let dropdown: HTMLDivElement | undefined;
   let completionAbort: AbortController | null = null;
   let completionTimer: ReturnType<typeof setTimeout> | null = null;
@@ -131,6 +142,7 @@ export function MarkdownEditor(props: MarkdownEditorProps): JSX.Element {
     renderPendingOverlay = () => {
       if (!preview) return;
       preview.innerHTML = renderWithOverlay(value, (text) => highlight.markdown(text, { knownLabels: labels }), { ghost, anchor });
+      bumpSelection();
       if (textarea) {
         preview.scrollTop = textarea.scrollTop;
         preview.scrollLeft = textarea.scrollLeft;
@@ -367,6 +379,7 @@ export function MarkdownEditor(props: MarkdownEditorProps): JSX.Element {
     updateActiveFormats();
     const selectionChange = (): void => {
       if (document.activeElement === textarea) {
+        bumpSelection();
         updateActiveFormats();
         recomputeCompletion();
       }
@@ -445,6 +458,10 @@ export function MarkdownEditor(props: MarkdownEditorProps): JSX.Element {
       activateSuggestion();
       return;
     }
+    if (event.key === "Escape" && selectionHandlers?.escape()) {
+      event.preventDefault();
+      return;
+    }
     if (event.key === "Escape") {
       if (current) {
         event.preventDefault();
@@ -521,7 +538,7 @@ export function MarkdownEditor(props: MarkdownEditorProps): JSX.Element {
           }
         }}
       >
-        <Show when={!props.noToolbar}>
+        <Show when={!props.noToolbar && props.toolbar !== "selection"}>
           <Toolbar
             textarea={textareaSignal}
             activeFormats={activeFormats}
@@ -546,7 +563,7 @@ export function MarkdownEditor(props: MarkdownEditorProps): JSX.Element {
             }
           />
         </Show>
-        <div class="k2b-markdown-editor__surface">
+        <div ref={surface} class="k2b-markdown-editor__surface">
           <Show when={!localValue() && props.placeholder}>
             <div class="k2b-markdown-editor__placeholder" aria-hidden="true">
               {props.placeholder}
@@ -575,10 +592,12 @@ export function MarkdownEditor(props: MarkdownEditorProps): JSX.Element {
                 preview.scrollLeft = event.currentTarget.scrollLeft;
               }
             }}
+            onFocus={() => selectionHandlers?.focus()}
             onCompositionStart={() => setComposing(true)}
             onCompositionEnd={() => setComposing(false)}
             onBlur={(event) => {
               const next = event.relatedTarget as HTMLElement | null;
+              selectionHandlers?.blur(next);
               if (next && dropdown?.contains(next)) return;
               completionBehavior.reset();
               clearCompletion();
@@ -593,6 +612,22 @@ export function MarkdownEditor(props: MarkdownEditorProps): JSX.Element {
             aria-controls={dropdownOpen() ? listboxId : undefined}
             aria-activedescendant={dropdownOpen() && state() ? optionId(state()!.selectedIndex) : undefined}
           />
+          {/* After the text in the DOM, so Tab from selected text reaches it. */}
+          <Show when={!props.noToolbar && props.toolbar === "selection"}>
+            <SelectionFormatting
+              textarea={() => textarea}
+              layer={() => preview}
+              surface={() => surface}
+              revision={selectionRevision}
+              disabled={props.disabled}
+              bind={(handlers) => {
+                selectionHandlers = handlers;
+                onCleanup(() => {
+                  if (selectionHandlers === handlers) selectionHandlers = undefined;
+                });
+              }}
+            />
+          </Show>
         </div>
         <Show when={(props.showStats ?? true) && !props.disabled}>
           <div class="k2b-markdown-editor__stats" aria-hidden="true" data-empty={stats().chars === 0 ? "true" : undefined}>

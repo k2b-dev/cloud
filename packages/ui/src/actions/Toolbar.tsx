@@ -188,7 +188,12 @@ const rovingFocus = (root: HTMLDivElement, orientation: () => ToolbarOrientation
       (item) => !item.matches(":disabled") && !item.closest('[data-overflow="hidden"]') && item.getClientRects().length > 0,
     );
   const sync = () => {
-    const available = items();
+    // A toolbar that is still hidden, such as a SelectionToolbar about to show, keeps one stop: otherwise Tab right
+    // after it shows would pass it before the next measure.
+    const shown = items();
+    const available = shown.length
+      ? shown
+      : controls().filter((item) => !item.matches(":disabled") && !item.closest('[data-overflow="hidden"]'));
     if (!last || !available.includes(last)) setLast(available[0]);
     for (const item of controls()) item.tabIndex = item === last ? 0 : -1;
   };

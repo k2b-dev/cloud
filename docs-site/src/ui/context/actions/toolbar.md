@@ -84,7 +84,7 @@ The roving group has one Tab stop: the last focused item, or the first item init
 
 Roving items are buttons, links with `href`, checkboxes and other button-like inputs, and controls with `tabindex`. Text fields, textareas, selects, sliders, radio buttons, and editable regions stay their own Tab stops. They keep their arrow, Home, and End keys.
 
-Hidden and natively disabled controls are skipped, as are controls inside menus, listboxes, dialogs, or popovers. The tab stop follows visibility. A toolbar that becomes visible later, or whose tab stop is hidden, picks the first visible control. `aria-disabled="true"` controls remain reachable; their handlers must guard unavailable actions.
+Hidden and natively disabled controls are skipped, as are controls inside menus, listboxes, dialogs, or popovers. The tab stop follows visibility. A toolbar that becomes visible later, or whose tab stop is hidden, picks the first visible control. While a toolbar is entirely hidden, its first enabled control keeps the stop, so Tab right after it shows, as with a `SelectionToolbar`, reaches it. `aria-disabled="true"` controls remain reachable; their handlers must guard unavailable actions.
 
 More is the last roving control. Enter opens its menu; menu arrows navigate its rows. Escape closes the menu and returns focus to More. If a focused action moves into More after a resize, focus follows it to the More trigger.
 
