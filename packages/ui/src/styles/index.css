@@ -14449,13 +14449,21 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   white-space: nowrap;
 }
 
-/* A suggested next message stands where typed text would, wraps like it, and its height grows the field (see
-   `autoResize`); the field caps both at 19.3125rem. Only its hint takes the pointer; the rest reaches the field. */
+/* A suggested next message stands where typed text would and wraps like it. It shares one grid cell with the field,
+   so its height holds the composer open from the first paint, also before the script sizes the field to it (see
+   `autoResize`); both stop at 19.3125rem. Only its hint takes the pointer; the rest reaches the field. */
+.k2b-ui .k2b-chat-composer__input[data-suggestion] {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.k2b-ui .k2b-chat-composer__input[data-suggestion] > :is(textarea:not(.k2b-chat-composer__measure), .k2b-chat-composer__suggestion) {
+  grid-area: 1 / 1;
+}
+
 .k2b-ui .k2b-chat-composer .k2b-chat-composer__input .k2b-chat-composer__suggestion {
-  position: absolute;
-  top: 0;
-  right: 0;
-  left: 0;
+  position: relative;
+  align-self: start;
   overflow: hidden;
   color: var(--k2b-ai-suggestion);
   white-space: pre-wrap;

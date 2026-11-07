@@ -28,8 +28,9 @@ import { Chat, LocaleProvider } from ${JSON.stringify(resolve(ui, "dist/browser/
 const [value, setValue] = createSignal("");
 const [suggestion, setSuggestion] = createSignal(undefined);
 const [running, setRunning] = createSignal(false);
+const [draftKey, setDraftKey] = createSignal("a");
 window.calls = { accept: 0, dismiss: 0, sent: [] };
-window.fx = { setValue, setSuggestion, setRunning, value };
+window.fx = { setValue, setSuggestion, setRunning, setDraftKey, value };
 const conversation = document.createElement("div");
 conversation.className = "conv";
 conversation.innerHTML = '<p class="you">Kannst du mir sagen, was Jana zum Angebot für den Messestand gefragt hat?</p>' +
@@ -49,6 +50,7 @@ render(() => createComponent(LocaleProvider, {
   get children() {
     return createComponent(Chat.Composer, {
       get value() { return value(); },
+      get draftKey() { return draftKey(); },
       onValueChange: setValue,
       onSubmit: ({ text }) => { window.calls.sent.push(text); },
       get state() { return running() ? "running" : "idle"; },
@@ -77,7 +79,12 @@ const build = await Bun.build({
 if (!build.success) throw new AggregateError(build.logs, "Could not bundle the composer suggestion fixture.");
 const script = await build.outputs[0]!.text();
 
-declare const fx: { setValue: (value: string) => void; setSuggestion: (text: string | undefined) => void; setRunning: (on: boolean) => void };
+declare const fx: {
+  setValue: (value: string) => void;
+  setSuggestion: (text: string | undefined) => void;
+  setRunning: (on: boolean) => void;
+  setDraftKey: (key: string) => void;
+};
 declare const calls: { accept: number; dismiss: number; sent: string[] };
 
 const FIELD = ".k2b-chat-composer textarea:not(.k2b-chat-composer__measure)";
@@ -107,7 +114,9 @@ const open = async (width: number, context: BrowserContextOptions = {}): Promise
     .conv p{margin:0}.conv .you{align-self:flex-end;max-width:80%;padding:8px 12px;border-radius:14px;background:var(--k2b-surface-muted)}</style></head>
     <body class="k2b-ui" style="background:var(--k2b-surface)"><div id="app"></div></body></html>`);
   await page.evaluate(async () => {
-    await Promise.all(["400 14px 'IBM Plex Sans'", "500 14px 'IBM Plex Sans'", "16px tabler-icons"].map((font) => document.fonts.load(font)));
+    await Promise.all(
+      ["400 14px 'IBM Plex Sans'", "500 14px 'IBM Plex Sans'", "16px tabler-icons"].map((font) => document.fonts.load(font)),
+    );
   });
   await page.addScriptTag({ content: script });
   await page.locator(FIELD).waitFor();
@@ -145,251 +154,344 @@ describe("Chat.Composer suggestion", () => {
     [1440, {}],
     [390, touch],
   ] as const) {
-    test(`appearing and disappearing keep the conversation at the composer at ${width} px`, async () => {
-      const page = await open(width, context);
-      try {
-        const empty = await layout(page);
-        expect(empty.overlay).toBeNull();
-        for (const text of [SUGGESTION, LONG]) {
-          await suggest(page, text);
-          const shown = await layout(page);
-          // The whole suggestion grows the field like text; the conversation moves up with the composer's top.
-          expect(shown.field).toBe(shown.overlay!);
-          // The short one fits one line on a desktop; the long one wraps.
-          if (text === LONG || width === 390) expect(shown.field).toBeGreaterThan(empty.field);
-          expect(shown.gap).toBe(empty.gap);
-          expect(shown.bottom).toBe(empty.bottom);
-          expect(shown.placeholder).toBe("");
-          await suggest(page, undefined);
-          expect(await layout(page)).toEqual(empty);
+    test(
+      `appearing and disappearing keep the conversation at the composer at ${width} px`,
+      async () => {
+        const page = await open(width, context);
+        try {
+          const empty = await layout(page);
+          expect(empty.overlay).toBeNull();
+          for (const text of [SUGGESTION, LONG]) {
+            await suggest(page, text);
+            const shown = await layout(page);
+            // The whole suggestion grows the field like text; the conversation moves up with the composer's top.
+            expect(shown.field).toBe(shown.overlay!);
+            // The short one fits one line on a desktop; the long one wraps.
+            if (text === LONG || width === 390) expect(shown.field).toBeGreaterThan(empty.field);
+            expect(shown.gap).toBe(empty.gap);
+            expect(shown.bottom).toBe(empty.bottom);
+            expect(shown.placeholder).toBe("");
+            await suggest(page, undefined);
+            expect(await layout(page)).toEqual(empty);
+          }
+          // A phone wraps the long suggestion onto three lines or more; it is read in full, never cut.
+          if (width === 390) {
+            await suggest(page, LONG);
+            const lines = await page.evaluate(() => {
+              const overlay = document.querySelector<HTMLElement>(".k2b-chat-composer__suggestion")!;
+              return overlay.scrollHeight <= overlay.clientHeight && overlay.getBoundingClientRect().height;
+            });
+            expect(lines).toBeGreaterThan(3 * 21);
+          }
+        } finally {
+          await page.context().close();
         }
-        // A phone wraps the long suggestion onto three lines or more; it is read in full, never cut.
-        if (width === 390) {
-          await suggest(page, LONG);
-          const lines = await page.evaluate(() => {
-            const overlay = document.querySelector<HTMLElement>(".k2b-chat-composer__suggestion")!;
-            return overlay.scrollHeight <= overlay.clientHeight && overlay.getBoundingClientRect().height;
-          });
-          expect(lines).toBeGreaterThan(3 * 21);
-        }
-      } finally {
-        await page.context().close();
-      }
-    }, TEST_TIMEOUT);
+      },
+      TEST_TIMEOUT,
+    );
   }
 
-  test("Tab accepts as an undoable edit without changing the height; Escape dismisses", async () => {
-    const page = await open(1440);
-    try {
-      const empty = await layout(page);
-      await suggest(page, LONG);
-      await page.locator(FIELD).focus();
-      const shown = await layout(page);
-      expect(shown.overlay).not.toBeNull();
-      await page.keyboard.press("Tab");
-      await settled(page);
-      const accepted = await layout(page);
-      expect(accepted.value).toBe(LONG);
-      expect(accepted.focused).toBe(true);
-      expect(accepted.field).toBe(shown.field);
-      expect(accepted.gap).toBe(shown.gap);
-      expect(await page.evaluate(() => calls)).toEqual({ accept: 1, dismiss: 0, sent: [] });
-      expect(await page.locator(FIELD).evaluate((field: HTMLTextAreaElement) => field.selectionStart)).toBe(LONG.length);
-      // The edit is the field's own: undo takes it back in one step, and the suggestion stands again.
-      await page.keyboard.press("Control+z");
-      await settled(page);
-      const undone = await layout(page);
-      expect(undone.value).toBe("");
-      expect(undone.overlay).not.toBeNull();
-      expect(undone.field).toBe(shown.field);
-      // Escape sets it aside: the placeholder is back and the field returns to one line.
-      await page.keyboard.press("Escape");
-      await settled(page);
-      const dismissed = await layout(page);
-      expect(dismissed.overlay).toBeNull();
-      expect(dismissed.placeholder).toBe("Assistent etwas fragen");
-      expect(dismissed.field).toBe(empty.field);
-      expect(dismissed.gap).toBe(empty.gap);
-      expect(dismissed.describedBy).toBeNull();
-      expect(await page.evaluate(() => calls.dismiss)).toBe(1);
-      // A new suggestion shows again.
-      await suggest(page, SUGGESTION);
-      expect((await layout(page)).overlay).not.toBeNull();
-    } finally {
-      await page.context().close();
-    }
-  }, TEST_TIMEOUT);
-
-  test("typing replaces the suggestion and keeps its height until the field is empty or sent", async () => {
-    const page = await open(1440);
-    try {
-      const empty = await layout(page);
-      await suggest(page, LONG);
-      await page.locator(FIELD).focus();
-      const shown = await layout(page);
-      await page.keyboard.type("K");
-      await settled(page);
-      const typed = await layout(page);
-      expect(typed.overlay).toBeNull();
-      expect(typed.field).toBe(shown.field);
-      expect(typed.gap).toBe(shown.gap);
-      await page.keyboard.type("annst du vorher noch");
-      await settled(page);
-      expect((await layout(page)).field).toBe(shown.field);
-      // An empty field shows it again.
-      await page.keyboard.press("Control+a");
-      await page.keyboard.press("Backspace");
-      await settled(page);
-      const cleared = await layout(page);
-      expect(cleared.overlay).not.toBeNull();
-      expect(cleared.field).toBe(shown.field);
-      // Sending sets it aside: the field returns to one line with the placeholder.
-      await page.keyboard.type("Kannst du vorher noch");
-      await page.keyboard.press("Enter");
-      await settled(page);
-      const sent = await layout(page);
-      expect(await page.evaluate(() => calls.sent)).toEqual(["Kannst du vorher noch"]);
-      expect(sent.value).toBe("");
-      expect(sent.overlay).toBeNull();
-      expect(sent.field).toBe(empty.field);
-      expect(sent.gap).toBe(empty.gap);
-    } finally {
-      await page.context().close();
-    }
-  }, TEST_TIMEOUT);
-
-  test("Tab moves the focus as before without a suggestion, with a modifier, and during an input method", async () => {
-    const page = await open(1440);
-    try {
-      const field = page.locator(FIELD);
-      // Without a suggestion, Tab leaves the empty field as it always did.
-      await field.focus();
-      await page.keyboard.press("Tab");
-      expect(await field.evaluate((node) => document.activeElement === node)).toBe(false);
-      await suggest(page, SUGGESTION);
-      await field.focus();
-      await page.keyboard.press("Shift+Tab");
-      expect(await field.evaluate((node) => document.activeElement === node)).toBe(false);
-      expect(await field.inputValue()).toBe("");
-      // A key that confirms an input method's composition is not Tab for the suggestion.
-      await field.focus();
-      const prevented = await field.evaluate((node) => {
-        const key = new KeyboardEvent("keydown", { key: "Tab", isComposing: true, bubbles: true, cancelable: true });
-        node.dispatchEvent(key);
-        return key.defaultPrevented;
-      });
-      expect(prevented).toBe(false);
-      for (const modifier of ["Control", "Alt", "Meta"]) {
-        const ignored = await field.evaluate((node, mod) => {
-          const key = new KeyboardEvent("keydown", { key: "Tab", ctrlKey: mod === "Control", altKey: mod === "Alt", metaKey: mod === "Meta", bubbles: true, cancelable: true });
-          node.dispatchEvent(key);
-          return !key.defaultPrevented;
-        }, modifier);
-        expect(ignored).toBe(true);
-      }
-      expect(await field.inputValue()).toBe("");
-      expect(await page.evaluate(() => calls.accept)).toBe(0);
-      // Once accepted, the next Tab moves on.
-      await page.keyboard.press("Tab");
-      expect(await field.inputValue()).toBe(SUGGESTION);
-      await page.keyboard.press("Tab");
-      expect(await field.evaluate((node) => document.activeElement === node)).toBe(false);
-    } finally {
-      await page.context().close();
-    }
-  }, TEST_TIMEOUT);
-
-  test("a click on the hint accepts; screen readers hear it once and the field describes it", async () => {
-    const page = await open(1440);
-    try {
-      await suggest(page, SUGGESTION);
-      const field = page.locator(FIELD);
-      await field.focus();
-      await settled(page);
-      const spoken = `Vorgeschlagene Nachricht: ${SUGGESTION}. Tab übernimmt, Escape verwirft.`;
-      expect(await page.locator('.k2b-sr-only[role="status"]').first().textContent()).toBe(spoken);
-      const describedBy = await field.getAttribute("aria-describedby");
-      expect(await page.locator(`[id="${describedBy}"]`).textContent()).toBe(spoken);
-      // The keyboard hint is no control of its own; the touch button is hidden with a keyboard.
-      expect(await page.locator(".k2b-chat-composer__suggestion-key").getAttribute("aria-hidden")).toBe("true");
-      expect(await page.locator(".k2b-chat-composer__suggestion-accept").isVisible()).toBe(false);
-      const before = await layout(page);
-      await page.locator(".k2b-chat-composer__suggestion-key").click();
-      await settled(page);
-      const after = await layout(page);
-      expect(after.value).toBe(SUGGESTION);
-      expect(after.focused).toBe(true);
-      expect(after.field).toBe(before.field);
-    } finally {
-      await page.context().close();
-    }
-  }, TEST_TIMEOUT);
-
-  test("on a touch-only phone the hint is an Accept button with a 44 px touch area", async () => {
-    const page = await open(390, touch);
-    try {
-      await suggest(page, SUGGESTION);
-      expect(await page.locator(".k2b-chat-composer__suggestion-key").isVisible()).toBe(false);
-      const button = page.getByRole("button", { name: `Vorschlag übernehmen: ${SUGGESTION}` });
-      expect(await button.isVisible()).toBe(true);
-      const target = await button.evaluate((node) => {
-        const box = node.getBoundingClientRect();
-        const x = box.left + box.width / 2;
-        const hit = (y: number) => document.elementFromPoint(x, y)?.closest("button") === node;
-        // 28 px high, and the touch area reaches 8 px above and below it: 44 px.
-        return { height: box.height, above: hit(box.top - 7.5), below: hit(box.bottom + 7.5), outside: hit(box.bottom + 8.5) };
-      });
-      expect(target).toEqual({ height: 28, above: true, below: true, outside: false });
-      const before = await layout(page);
-      await button.tap();
-      await settled(page);
-      const after = await layout(page);
-      expect(after.value).toBe(SUGGESTION);
-      expect(after.field).toBe(before.field);
-      expect(after.gap).toBe(before.gap);
-    } finally {
-      await page.context().close();
-    }
-  }, TEST_TIMEOUT);
-
-  test.if(Boolean(shots))("screenshots of the six states", async () => {
-    mkdirSync(shots!, { recursive: true });
-    for (const [width, context] of [
-      [1440, {}],
-      [390, touch],
-    ] as const) {
-      const page = await open(width, context);
+  test(
+    "Tab accepts as an undoable edit without changing the height; Escape dismisses",
+    async () => {
+      const page = await open(1440);
       try {
-        const field = page.locator(FIELD);
-        const shot = async (name: string) => {
-          await settled(page);
-          // The desktop picture keeps the lower part, where the conversation meets the composer.
-          const clip = width === 1440 ? { x: 0, y: 900 - 360, width, height: 360 } : undefined;
-          await page.screenshot({ path: resolve(shots!, `suggestion-${width}-${name}.png`), clip });
-        };
-        await shot("1-none");
-        await page.evaluate(() => fx.setRunning(true));
-        await shot("2-running");
-        await page.evaluate(() => fx.setRunning(false));
-        await suggest(page, SUGGESTION);
-        await page.locator("#before").focus();
-        await shot("3-shown");
-        await field.focus();
-        await page.keyboard.type("Kannst du vorher noch");
-        await shot("4-typing");
-        await page.evaluate(() => fx.setValue(""));
+        const empty = await layout(page);
+        await suggest(page, LONG);
+        await page.locator(FIELD).focus();
+        const shown = await layout(page);
+        expect(shown.overlay).not.toBeNull();
+        await page.keyboard.press("Tab");
         await settled(page);
-        if (width === 390) await page.locator(".k2b-chat-composer__suggestion-accept").tap();
-        else await page.keyboard.press("Tab");
-        await shot("5-accepted");
-        await page.evaluate(() => fx.setValue(""));
+        const accepted = await layout(page);
+        expect(accepted.value).toBe(LONG);
+        expect(accepted.focused).toBe(true);
+        expect(accepted.field).toBe(shown.field);
+        expect(accepted.gap).toBe(shown.gap);
+        expect(await page.evaluate(() => calls)).toEqual({ accept: 1, dismiss: 0, sent: [] });
+        expect(await page.locator(FIELD).evaluate((field: HTMLTextAreaElement) => field.selectionStart)).toBe(LONG.length);
+        // The edit is the field's own: undo takes it back in one step, and the suggestion stands again.
+        await page.keyboard.press("Control+z");
         await settled(page);
-        await field.focus();
+        const undone = await layout(page);
+        expect(undone.value).toBe("");
+        expect(undone.overlay).not.toBeNull();
+        expect(undone.field).toBe(shown.field);
+        // Escape sets it aside: the placeholder is back and the field returns to one line.
         await page.keyboard.press("Escape");
-        await shot("6-dismissed");
+        await settled(page);
+        const dismissed = await layout(page);
+        expect(dismissed.overlay).toBeNull();
+        expect(dismissed.placeholder).toBe("Assistent etwas fragen");
+        expect(dismissed.field).toBe(empty.field);
+        expect(dismissed.gap).toBe(empty.gap);
+        expect(dismissed.describedBy).toBeNull();
+        expect(await page.evaluate(() => calls.dismiss)).toBe(1);
+        // A new suggestion shows again.
+        await suggest(page, SUGGESTION);
+        expect((await layout(page)).overlay).not.toBeNull();
       } finally {
         await page.context().close();
       }
-    }
-  }, 60_000);
+    },
+    TEST_TIMEOUT,
+  );
+
+  test(
+    "typing replaces the suggestion and keeps its height until the field is empty or sent",
+    async () => {
+      const page = await open(1440);
+      try {
+        const empty = await layout(page);
+        await suggest(page, LONG);
+        await page.locator(FIELD).focus();
+        const shown = await layout(page);
+        await page.keyboard.type("K");
+        await settled(page);
+        const typed = await layout(page);
+        expect(typed.overlay).toBeNull();
+        expect(typed.field).toBe(shown.field);
+        expect(typed.gap).toBe(shown.gap);
+        await page.keyboard.type("annst du vorher noch");
+        await settled(page);
+        expect((await layout(page)).field).toBe(shown.field);
+        // An empty field shows it again.
+        await page.keyboard.press("Control+a");
+        await page.keyboard.press("Backspace");
+        await settled(page);
+        const cleared = await layout(page);
+        expect(cleared.overlay).not.toBeNull();
+        expect(cleared.field).toBe(shown.field);
+        // Sending sets it aside: the field returns to one line with the placeholder.
+        await page.keyboard.type("Kannst du vorher noch");
+        await page.keyboard.press("Enter");
+        await settled(page);
+        const sent = await layout(page);
+        expect(await page.evaluate(() => calls.sent)).toEqual(["Kannst du vorher noch"]);
+        expect(sent.value).toBe("");
+        expect(sent.overlay).toBeNull();
+        expect(sent.field).toBe(empty.field);
+        expect(sent.gap).toBe(empty.gap);
+      } finally {
+        await page.context().close();
+      }
+    },
+    TEST_TIMEOUT,
+  );
+
+  test(
+    "Tab moves the focus as before without a suggestion, with a modifier, and during an input method",
+    async () => {
+      const page = await open(1440);
+      try {
+        const field = page.locator(FIELD);
+        // Without a suggestion, Tab leaves the empty field as it always did.
+        await field.focus();
+        await page.keyboard.press("Tab");
+        expect(await field.evaluate((node) => document.activeElement === node)).toBe(false);
+        await suggest(page, SUGGESTION);
+        await field.focus();
+        await page.keyboard.press("Shift+Tab");
+        expect(await field.evaluate((node) => document.activeElement === node)).toBe(false);
+        expect(await field.inputValue()).toBe("");
+        // A key that confirms an input method's composition is not Tab for the suggestion.
+        await field.focus();
+        const prevented = await field.evaluate((node) => {
+          const key = new KeyboardEvent("keydown", { key: "Tab", isComposing: true, bubbles: true, cancelable: true });
+          node.dispatchEvent(key);
+          return key.defaultPrevented;
+        });
+        expect(prevented).toBe(false);
+        for (const modifier of ["Control", "Alt", "Meta"]) {
+          const ignored = await field.evaluate((node, mod) => {
+            const key = new KeyboardEvent("keydown", {
+              key: "Tab",
+              ctrlKey: mod === "Control",
+              altKey: mod === "Alt",
+              metaKey: mod === "Meta",
+              bubbles: true,
+              cancelable: true,
+            });
+            node.dispatchEvent(key);
+            return !key.defaultPrevented;
+          }, modifier);
+          expect(ignored).toBe(true);
+        }
+        expect(await field.inputValue()).toBe("");
+        expect(await page.evaluate(() => calls.accept)).toBe(0);
+        // Once accepted, the next Tab moves on.
+        await page.keyboard.press("Tab");
+        expect(await field.inputValue()).toBe(SUGGESTION);
+        await page.keyboard.press("Tab");
+        expect(await field.evaluate((node) => document.activeElement === node)).toBe(false);
+      } finally {
+        await page.context().close();
+      }
+    },
+    TEST_TIMEOUT,
+  );
+
+  test(
+    "a click on the hint accepts; screen readers hear it once and the field describes it",
+    async () => {
+      const page = await open(1440);
+      try {
+        await suggest(page, SUGGESTION);
+        const field = page.locator(FIELD);
+        await field.focus();
+        await settled(page);
+        const spoken = `Vorgeschlagene Nachricht: ${SUGGESTION}. Tab übernimmt, Escape verwirft.`;
+        expect(await page.locator('.k2b-sr-only[role="status"]').first().textContent()).toBe(spoken);
+        const describedBy = await field.getAttribute("aria-describedby");
+        expect(await page.locator(`[id="${describedBy}"]`).textContent()).toBe(spoken);
+        // The keyboard hint is no control of its own; the touch button is hidden with a keyboard.
+        expect(await page.locator(".k2b-chat-composer__suggestion-key").getAttribute("aria-hidden")).toBe("true");
+        expect(await page.locator(".k2b-chat-composer__suggestion-accept").isVisible()).toBe(false);
+        const before = await layout(page);
+        await page.locator(".k2b-chat-composer__suggestion-key").click();
+        await settled(page);
+        const after = await layout(page);
+        expect(after.value).toBe(SUGGESTION);
+        expect(after.focused).toBe(true);
+        expect(after.field).toBe(before.field);
+      } finally {
+        await page.context().close();
+      }
+    },
+    TEST_TIMEOUT,
+  );
+
+  test(
+    "the suggestion holds the composer open before the script sizes the field, as rendered on the server",
+    async () => {
+      const page = await open(390, touch);
+      try {
+        await suggest(page, `${LONG}\n\n`);
+        const sized = await layout(page);
+        // As the server renders it: the field without the height the script gives it.
+        const unsized = await page.evaluate((field) => {
+          const textarea = document.querySelector<HTMLTextAreaElement>(field)!;
+          textarea.style.height = "";
+          return {
+            input: document.querySelector(".k2b-chat-composer__input")!.getBoundingClientRect().height,
+            text: document.querySelector(".k2b-chat-composer__suggestion > span")!.textContent,
+          };
+        }, FIELD);
+        expect(unsized.input).toBe(sized.overlay!);
+        // Line breaks and runs of spaces read as one line of text.
+        expect(unsized.text).toBe(LONG);
+      } finally {
+        await page.context().close();
+      }
+    },
+    TEST_TIMEOUT,
+  );
+
+  test(
+    "another draft and a suggestion offered again start over",
+    async () => {
+      const page = await open(1440);
+      try {
+        await suggest(page, SUGGESTION);
+        const field = page.locator(FIELD);
+        await field.focus();
+        await page.keyboard.press("Escape");
+        await settled(page);
+        expect((await layout(page)).overlay).toBeNull();
+        // The same text in another conversation is a new suggestion.
+        await page.evaluate(() => fx.setDraftKey("b"));
+        await settled(page);
+        expect((await layout(page)).overlay).not.toBeNull();
+        // Gone while the next response runs, then offered again with the same text: it is heard again.
+        const spoken = page.locator('.k2b-sr-only[role="status"] > span').first();
+        const first = await spoken.elementHandle();
+        await suggest(page, undefined);
+        await field.blur();
+        await suggest(page, SUGGESTION);
+        await field.focus();
+        await settled(page);
+        expect(await first!.evaluate((node) => node.isConnected)).toBe(false);
+        expect(await spoken.textContent()).toContain(SUGGESTION);
+      } finally {
+        await page.context().close();
+      }
+    },
+    TEST_TIMEOUT,
+  );
+
+  test(
+    "on a touch-only phone the hint is an Accept button with a 44 px touch area",
+    async () => {
+      const page = await open(390, touch);
+      try {
+        await suggest(page, SUGGESTION);
+        expect(await page.locator(".k2b-chat-composer__suggestion-key").isVisible()).toBe(false);
+        const button = page.getByRole("button", { name: `Vorschlag übernehmen: ${SUGGESTION}` });
+        expect(await button.isVisible()).toBe(true);
+        const target = await button.evaluate((node) => {
+          const box = node.getBoundingClientRect();
+          const x = box.left + box.width / 2;
+          const hit = (y: number) => document.elementFromPoint(x, y)?.closest("button") === node;
+          // 28 px high, and the touch area reaches 8 px above and below it: 44 px.
+          return { height: box.height, above: hit(box.top - 7.5), below: hit(box.bottom + 7.5), outside: hit(box.bottom + 8.5) };
+        });
+        expect(target).toEqual({ height: 28, above: true, below: true, outside: false });
+        const before = await layout(page);
+        await button.tap();
+        await settled(page);
+        const after = await layout(page);
+        expect(after.value).toBe(SUGGESTION);
+        expect(after.field).toBe(before.field);
+        expect(after.gap).toBe(before.gap);
+      } finally {
+        await page.context().close();
+      }
+    },
+    TEST_TIMEOUT,
+  );
+
+  test.if(Boolean(shots))(
+    "screenshots of the six states",
+    async () => {
+      mkdirSync(shots!, { recursive: true });
+      for (const [width, context] of [
+        [1440, {}],
+        [390, touch],
+      ] as const) {
+        const page = await open(width, context);
+        try {
+          const field = page.locator(FIELD);
+          const shot = async (name: string) => {
+            await settled(page);
+            // The desktop picture keeps the lower part, where the conversation meets the composer.
+            const clip = width === 1440 ? { x: 0, y: 900 - 360, width, height: 360 } : undefined;
+            await page.screenshot({ path: resolve(shots!, `suggestion-${width}-${name}.png`), clip });
+          };
+          await shot("1-none");
+          await page.evaluate(() => fx.setRunning(true));
+          await shot("2-running");
+          await page.evaluate(() => fx.setRunning(false));
+          await suggest(page, SUGGESTION);
+          await page.locator("#before").focus();
+          await shot("3-shown");
+          await field.focus();
+          await page.keyboard.type("Kannst du vorher noch");
+          await shot("4-typing");
+          await page.evaluate(() => fx.setValue(""));
+          await settled(page);
+          if (width === 390) await page.locator(".k2b-chat-composer__suggestion-accept").tap();
+          else await page.keyboard.press("Tab");
+          await shot("5-accepted");
+          await page.evaluate(() => fx.setValue(""));
+          await settled(page);
+          await field.focus();
+          await page.keyboard.press("Escape");
+          await shot("6-dismissed");
+        } finally {
+          await page.context().close();
+        }
+      }
+    },
+    60_000,
+  );
 });

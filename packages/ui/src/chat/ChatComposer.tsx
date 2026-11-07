@@ -1161,21 +1161,39 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
   const editBlocked = () => (conversation() ? busy() : blocked());
   /** The suggestion Escape or a sent message set aside; a different one shows again. */
   const [setAsideSuggestion, setSetAsideSuggestion] = createSignal<string>();
-  createEffect(() => {
-    if (!props.suggestion) setSetAsideSuggestion(undefined);
-  });
+  /** One line of text: a suggestion is a short next message, read in full. */
+  const suggestionText = () => props.suggestion?.text.replace(/\s+/g, " ").trim();
   /** The suggested text standing in the field: only in an empty field that takes text now. */
   const shownSuggestion = createMemo(() => {
-    const text = props.suggestion?.text;
-    if (!text?.trim() || props.value || text === setAsideSuggestion()) return undefined;
+    const text = suggestionText();
+    if (!text || props.value || text === setAsideSuggestion()) return undefined;
     if (editBlocked() || openingRow() !== undefined || dictation() === "listening" || dictation() === "refining") return undefined;
     return text;
   });
   const suggestionDescriptionId = `${commandListId}-suggestion`;
+  // Known after mount, so the server and the first client render describe it alike.
+  const [touchOnly, setTouchOnly] = createSignal(false);
+  onMount(() => setTouchOnly(isTouchOnly()));
   const suggestionDescription = (text: string) =>
-    isTouchOnly() ? chatMessages().suggestionAnnouncementTouch({ text }) : chatMessages().suggestionAnnouncement({ text });
+    touchOnly() ? chatMessages().suggestionAnnouncementTouch({ text }) : chatMessages().suggestionAnnouncement({ text });
   /** Once per suggestion, when it stands in the focused field. */
   let announcedSuggestion: string | undefined;
+  // A suggestion that went away, or another draft, starts over: the same text may be offered and heard again.
+  createEffect(() => {
+    if (props.suggestion) return;
+    setSetAsideSuggestion(undefined);
+    announcedSuggestion = undefined;
+  });
+  createEffect(
+    on(
+      () => props.draftKey,
+      () => {
+        setSetAsideSuggestion(undefined);
+        announcedSuggestion = undefined;
+      },
+      { defer: true },
+    ),
+  );
   const announceSuggestion = () => {
     const text = shownSuggestion();
     if (!text || text === announcedSuggestion || !textareaRef || textareaRef.ownerDocument.activeElement !== textareaRef) return;
@@ -1474,7 +1492,7 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
       await runChatSubmission({
         clear: () => {
           // A sent message answers the moment the suggestion belonged to.
-          setSetAsideSuggestion(props.suggestion?.text);
+          setSetAsideSuggestion(suggestionText());
           props.onValueChange("");
           props.onMentionsChange?.([]);
           if (intent !== "steer") setAttachments([]);
@@ -2257,7 +2275,12 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
   );
 
   const field = () => (
-    <div class="k2b-chat-composer__input" role="group" aria-label={chatMessages().messageInput}>
+    <div
+      class="k2b-chat-composer__input"
+      role="group"
+      aria-label={chatMessages().messageInput}
+      data-suggestion={shownSuggestion() ? "" : undefined}
+    >
       <Show when={mentions().length > 0 || dictationView()}>
         <div ref={highlightRef} class="k2b-chat-composer__highlight" aria-hidden="true">
           <For
@@ -2290,7 +2313,11 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
           shownSuggestion()
             ? ""
             : (props.placeholder ??
-              (running() ? chatMessages().addGuidance : conversation() ? chatMessages().writeConversationMessage : chatMessages().writeMessage))
+              (running()
+                ? chatMessages().addGuidance
+                : conversation()
+                  ? chatMessages().writeConversationMessage
+                  : chatMessages().writeMessage))
         }
         aria-label={props.inputLabel ?? messages().message}
         aria-describedby={shownSuggestion() ? suggestionDescriptionId : undefined}
