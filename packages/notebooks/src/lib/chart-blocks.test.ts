@@ -129,7 +129,7 @@ format: euro`),
       "de",
     )!;
     const legend = /<ul class="k2b-chart-legend"[^>]*>([\s\S]*?)<\/ul>/.exec(two)?.[1] ?? "";
-    expect([...legend.matchAll(/<\/span>([^<]*)<\/li>/g)].map((match) => match[1])).toEqual(["Äpfel", "Birnen"]);
+    expect([...legend.matchAll(/data-chart-legend-label>([^<]*)<\/span>/g)].map((match) => match[1])).toEqual(["Äpfel", "Birnen"]);
     const one = renderNotebookChartFigure(parseNotebookChartBlocks(series("Äpfel"), notebookChartOptions).blocks[0]!.input, "de")!;
     expect(one).not.toContain("k2b-chart-legend");
     expect([...one.matchAll(/stdlib-chart-axis-label"[^>]*>([^<]*)</g)].map((match) => match[1]).sort()).toEqual(["Tag", "Äpfel"]);

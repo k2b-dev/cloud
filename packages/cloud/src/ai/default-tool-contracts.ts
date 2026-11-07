@@ -173,10 +173,7 @@ const flatChartSchema = () => {
     forecast: z
       .object({
         from: ChartCoordinate,
-        band: z
-          .array(z.tuple([z.number(), z.number()]))
-          .max(CLOUD_AI_CHART_MAX_VALUES)
-          .optional(),
+        band: z.array(z.array(z.number()).length(2)).max(CLOUD_AI_CHART_MAX_VALUES).optional(),
       })
       .optional()
       .describe("line: dashed from this first-series X value; band [low, high] pairs match its sorted suffix, including gaps."),

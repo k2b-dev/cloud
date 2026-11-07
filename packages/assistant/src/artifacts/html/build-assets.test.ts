@@ -4,9 +4,11 @@ import { buildCheckPrelude, buildPrelude } from "./build-assets";
 
 test("normal mounts omit app checks and stay within the prelude budget", async () => {
   const [normal, check] = await Promise.all([buildPrelude(), buildCheckPrelude()]);
-  // Slice 3 measured 248 KB. cloud.chart() drawing through the chat's chart mapping, with four more chart kinds and
-  // its app contract, brought normal mounts to 279 KB: allow 10% growth over that, not the 851 KB app-check bundle.
-  expect(Buffer.byteLength(normal)).toBeLessThan(279_000 * 1.1);
+  // Forecast drawing, cursor legends and portable validation measure 315,402 bytes.
+  // Keep about 3% headroom; pure SVG labels do not import the full UI catalogue.
+  expect(Buffer.byteLength(normal)).toBeLessThan(325_000);
+  for (const feature of ["k2b-line-forecast-band", "k2b-line-negative-zone", "k2b-line-threshold", "k2b-line-marker"])
+    expect(normal).toContain(feature);
   // The frame imports `@k2b/cloud/ai/app-frame`: the `ai/browser` barrel kept its skill parser and YAML (34 KB).
   expect(normal).not.toContain("tag:yaml.org,2002:");
   expect(normal).not.toMatch(/axe\.run|axe-core|axeVersion/);

@@ -455,7 +455,7 @@ const ChartRoot = (props: ChartProps): JSX.Element => {
         const value = selection.datum.values.find((f) => f.key === "y");
         const number = new Intl.NumberFormat(props.locale ?? locale(), { maximumFractionDigits: 6 }).format;
         return {
-          title: x?.formatted ?? (typeof x?.value === "number" ? number(x.value) : x?.value),
+          title: `${props.xAxis?.label ?? fields({ key: "x" })}: ${x?.formatted ?? (typeof x?.value === "number" ? number(x.value) : x?.value)}`,
           rows: [
             {
               label: selection.datum.label ?? chartMessages().series,

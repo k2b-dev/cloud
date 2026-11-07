@@ -13,9 +13,9 @@
 // `--stdlib-chart-c8`). Axes and labels use `currentColor` so parent `color`
 // drives theming (dark mode "just works").
 
-import { chartMessages } from "../../content/chart-message-catalog";
 import type { IntentTone } from "../../semantics";
 import { WORLD_LAND_PATH, WORLD_MAP_HEIGHT, WORLD_MAP_WIDTH } from "./chart-map-data";
+import { coreChartMessages } from "./chart-messages";
 import type { ChartDatum } from "./types";
 
 // ==========================
@@ -1779,15 +1779,18 @@ export const line = (opts: LineOptions): string => {
         point && Number.isFinite(point.y)
           ? (opts.yAxis?.format?.(point.y) ?? new Intl.NumberFormat(opts.locale ?? "en", { maximumFractionDigits: 6 }).format(point.y))
           : "—";
-      const label = series.label || `${chartMessages.resolve([opts.locale ?? "en"]).t.series} ${entry.seriesIndex + 1}`;
+      const label = series.label || `${coreChartMessages.resolve([opts.locale ?? "en"]).t.series} ${entry.seriesIndex + 1}`;
       const room = Math.max(1, Math.floor((cell * 296) / width / 6) - Math.min(14, amount.length) - 4);
       const shortened = label.length > room ? label.slice(0, Math.max(0, room - 1)) + "…" : label;
       legend.push(
-        `<g class="stdlib-chart-legend-item"><title>${escapeXml(label)}</title><rect x="${fmt(left)}" y="${fmt(baseY - 8)}" width="8" height="8" rx="2" fill="${paint(entry.seriesIndex)}" stroke="none"/><text x="${fmt(left + 12)}" y="${fmt(baseY)}" fill="currentColor" stroke="none" font-size="11">${escapeXml(shortened)}</text><text x="${fmt(left + cell - 8)}" y="${fmt(baseY)}" text-anchor="end" fill="currentColor" stroke="none" font-size="11" font-weight="600" data-chart-legend-value data-series-index="${entry.seriesIndex}" data-field="y" data-default="${escapeXml(amount)}">${escapeXml(amount)}</text></g>`,
+        `<g class="stdlib-chart-legend-item"><rect class="stdlib-chart-legend-swatch" x="${fmt(left)}" y="${fmt(baseY - 8)}" width="8" height="8" rx="2" fill="${paint(entry.seriesIndex)}" stroke="none"/><text class="stdlib-chart-legend-label" aria-label="${escapeXml(label)}" x="${fmt(left + 12)}" y="${fmt(baseY)}" fill="currentColor" stroke="none" font-size="11">${escapeXml(shortened)}</text><text x="${fmt(left + cell - 8)}" y="${fmt(baseY)}" text-anchor="end" fill="currentColor" stroke="none" font-size="11" font-weight="600" data-chart-legend-value data-series-index="${entry.seriesIndex}" data-field="y" data-default="${escapeXml(amount)}">${escapeXml(amount)}</text></g>`,
       );
     });
   }
-  const svg = svgRoot({ width, height, className: opts.className }, header.svg + body.join("") + legend.join(""));
+  const svg = svgRoot(
+    { width, height, className: opts.className },
+    header.svg + body.join("") + (legend.length ? `<g class="stdlib-chart-legend">${legend.join("")}</g>` : ""),
+  );
   if (!(opts.forecast || opts.zero || opts.threshold || opts.marker)) return svg;
   // CSS adds only the physical room missing in a narrow host. Its SVG transform is
   // visible to the shared inspector, and the server emits the same geometry.

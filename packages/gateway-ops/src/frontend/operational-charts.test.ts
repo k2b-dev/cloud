@@ -40,7 +40,7 @@ test("snapshots preserve units, missing samples, zero and exact counts", () => {
   );
   expect(charts[0]!.data.rows.map((r) => r.value)).toEqual([12345, 0]);
   expect(charts[0]!.data.rows[0]!.formatted).toBe("12,345");
-  expect(charts[0]!.data.chart.svg).toContain(' d=" "');
+  expect(charts[0]!.data.chart.svg).not.toContain(' d=" "');
   expect(charts[1]!.data.rows).toHaveLength(1);
   expect(charts[1]!.data.chart.marks[0]!.tooltip.rows[0]!.value).toBe("125 ms");
   expect(JSON.parse(JSON.stringify(charts))).toEqual(charts);

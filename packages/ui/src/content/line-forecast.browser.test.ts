@@ -124,10 +124,14 @@ for (const width of [1440, 390]) {
     expect(labelsFit).toBe(true);
     const earlyEnding = page.locator(".early-ending [data-chart-kind=line]");
     expect(await earlyEnding.locator("[data-chart-legend-value]").nth(1).textContent()).toBe("—");
+    await page.mouse.move(0, 0);
+    await settled(page);
     await earlyEnding.focus();
     await page.keyboard.press("Home");
+    await settled(page);
     expect(await earlyEnding.locator("[data-chart-legend-value]").nth(1).textContent()).toBe("7");
     await page.keyboard.press("End");
+    await settled(page);
     expect(await earlyEnding.locator("[data-chart-legend-value]").nth(1).textContent()).toBe("—");
     await page.keyboard.press("Escape");
     await settled(page);
@@ -140,6 +144,7 @@ for (const width of [1440, 390]) {
     expect(await tooltip(page).textContent()).toContain("€");
     await chart.focus();
     await page.keyboard.press("Home");
+    await settled(page);
     expect(await tooltip(page).textContent()).toContain("1");
     expect(await chart.locator("[data-chart-legend-value]").first().textContent()).toBe("32.000 €");
     await page.keyboard.press("ArrowRight");
@@ -147,6 +152,7 @@ for (const width of [1440, 390]) {
     await page.keyboard.press("ArrowLeft");
     expect(await tooltip(page).textContent()).toContain("1");
     await page.keyboard.press("End");
+    await settled(page);
     expect(await tooltip(page).textContent()).toContain("9");
     await page.keyboard.press("Enter");
     await page.mouse.move(0, 0);
@@ -231,11 +237,15 @@ for (const width of [1440, 390]) {
       const initial = await legend.allTextContents();
       expect(initial.every((value) => value.length > 0)).toBe(true);
       if (host === "chat" || host === "notebook") expect(initial.every((value) => value.includes("€"))).toBe(true);
+      await page.mouse.move(0, 0);
+      await settled(page);
       await chart.focus();
       await page.keyboard.press("Home");
+      await settled(page);
       const first = await legend.allTextContents();
       expect(first.length).toBeGreaterThan(0);
       await page.keyboard.press("End");
+      await settled(page);
       expect(await legend.allTextContents()).not.toEqual(first);
       await page.keyboard.press("Escape");
       await settled(page);

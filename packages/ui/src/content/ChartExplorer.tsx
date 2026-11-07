@@ -464,7 +464,7 @@ export function ChartExplorer<T extends ChartExplorerRow>(props: ChartExplorerPr
                         style={{ "--k2b-chart-legend-color": `var(--stdlib-chart-c${(Math.abs(Math.trunc(entry.color)) % 8) + 1})` }}
                         aria-hidden="true"
                       />
-                      {entry.label}
+                      <span data-chart-legend-label>{entry.label}</span>
                       <Show when={snapshot()?.kind === "line"}>
                         <b data-chart-legend-value data-series-index={index()} data-field="y" data-default={legendValue(index())}>
                           {legendValue(index())}

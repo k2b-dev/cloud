@@ -300,9 +300,9 @@ test(`${browserName}: keyboard order has two controls and one drawing stop per c
         await tooltip(figure).waitFor({ state: "hidden" });
         await page.keyboard.press("ArrowRight");
         await tooltip(figure).waitFor({ state: "visible" });
-        expect(normalized(await tooltip(figure).innerText())).toContain(`Monat: 1 Betrag: ${normalized(currency(1200))}`);
+        expect(normalized(await tooltip(figure).innerText())).toContain(`Monat: 1 Umsatz: ${normalized(currency(1200))}`);
         await page.keyboard.press("ArrowRight");
-        expect(normalized(await tooltip(figure).innerText())).toContain(`Monat: 2 Betrag: ${normalized(currency(1500))}`);
+        expect(normalized(await tooltip(figure).innerText())).toContain(`Monat: 2 Umsatz: ${normalized(currency(1500))}`);
         await page.keyboard.press("Home");
         expect(normalized(await tooltip(figure).innerText())).toContain("Monat: 1");
         await page.keyboard.press("End");

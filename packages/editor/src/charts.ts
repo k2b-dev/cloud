@@ -592,7 +592,7 @@ export function chartTooltip(
 ): { title?: string; rows: { label: string; value: string }[] } {
   if (kind === "line")
     return {
-      title: row.cells.x,
+      title: `${columns.find((column) => column.id === "x")?.label ?? "X"}: ${row.cells.x}`,
       rows: [
         { label: row.cells.series ?? columns.find((column) => column.id === "y")?.label ?? "Y", value: row.cells.y ?? "—" },
         ...columns
