@@ -432,6 +432,12 @@ export const coreCapabilityPresentation: CapabilityPresentationCatalog = {
             rerunOf: "Der fehlgeschlagene Lauf dieses Codes und Einstiegs, den dieser Lauf erneut startet.",
           },
         },
+        "code.event.redeliver": {
+          title: "Code-Ereignis erneut zustellen",
+          description:
+            "Stellt eine fehlgeschlagene Ereigniszustellung für aktiven Code erneut zu. Bereits angenommene Ereignisse erzeugen keinen zweiten Lauf.",
+          input: { deliveryId: "UUID der fehlgeschlagenen Zustellung aus code.run.list." },
+        },
         "code.secret.set": {
           title: "Code-Secret speichern",
           description:
