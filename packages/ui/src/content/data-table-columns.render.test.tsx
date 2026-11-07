@@ -37,7 +37,9 @@ const columns = [
   { id: "open", header: "Opened", value: "open" as const, type: "bar" as const, format: { style: "percent" as const }, max: 0.6 },
   { id: "rev", header: "Revenue", value: "rev" as const, type: "amount" as const, format: { currency: "EUR" }, priority: 2 as const },
 ];
-const strip = (html: string) => html.replace(/ data-hk="[^"]*"/g, "").replace(/<!--[^>]*-->/g, "");
+// Hydration keys and Solid's own placeholder comments are not part of the markup contract.
+const solidMarkers = ["<!--$-->", "<!--/-->", "<!--!$-->"];
+const strip = (html: string) => solidMarkers.reduce((text, marker) => text.replaceAll(marker, ""), html.replace(/ data-hk="[^"]*"/g, ""));
 const render = (props: Record<string, unknown>, locale = "en") =>
   strip(
     renderToString(() =>
