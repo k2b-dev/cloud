@@ -67,7 +67,7 @@ const boxes = (page: Page) =>
   page.locator("[data-panel]").evaluateAll((panels) =>
     panels.map((panel) => {
       const box = panel.getBoundingClientRect();
-      return [panel.getAttribute("data-panel"), box.x, box.y, box.width, box.height];
+      return { id: panel.getAttribute("data-panel"), x: box.x, y: box.y, width: box.width, height: box.height };
     }),
   );
 
@@ -162,17 +162,15 @@ test("a state change at the same content height moves no panel, and keyboard ord
       });
       expect(await boxes(page)).toEqual(before);
       // Reading order: top to bottom, then left to right, is the order Tab visits the panels in.
-      const visual = [...before]
-        .sort((a, b) => (a[2] as number) - (b[2] as number) || (a[1] as number) - (b[1] as number))
-        .map((box) => box[0]);
-      expect(visual).toEqual(before.map((box) => box[0]));
+      const visual = [...before].sort((a, b) => a.y - b.y || a.x - b.x).map((box) => box.id);
+      expect(visual).toEqual(before.map((box) => box.id));
       await page.locator('[data-panel="two-thirds"] button').focus();
       const visited: (string | null | undefined)[] = [];
       for (let index = 0; index < before.length; index += 1) {
         visited.push(await page.evaluate(() => document.activeElement?.closest("[data-panel]")?.getAttribute("data-panel")));
         await page.keyboard.press("Tab");
       }
-      expect({ host, visited }).toEqual({ host, visited: before.map((box) => box[0]) });
+      expect({ host, visited }).toEqual({ host, visited: before.map((box) => box.id) });
       expect(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBeLessThanOrEqual(0);
     } finally {
       await page.close();
