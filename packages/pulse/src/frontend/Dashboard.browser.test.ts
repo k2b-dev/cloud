@@ -1592,7 +1592,20 @@ for (const [width, dark] of [
       await chart.press("ArrowRight");
       await view.tab.locator('[data-panel="area"] [role="tooltip"]:popover-open').waitFor();
       const budget = view.tab.locator('[data-panel="budget"]');
-      await budget.locator(".k2b-budget__anchor").first().focus();
+      const budgetAnchor = budget.locator(".k2b-budget__anchor").first();
+      // Scroll before opening: a later scroll dismisses the shared tooltip, particularly in a phone column.
+      await budgetAnchor.scrollIntoViewIfNeeded();
+      await view.tab.clock.runFor(32);
+      // Reach the first row with a real keyboard event so :focus-visible is independent of pointer history.
+      await budget
+        .locator(".k2b-budget__anchor")
+        .last()
+        .evaluate((node) => {
+          if (!(node instanceof HTMLElement)) throw new Error("Expected a budget keyboard anchor");
+          node.focus({ preventScroll: true });
+        });
+      await view.tab.keyboard.press("Shift+Tab");
+      expect(await budgetAnchor.evaluate((node) => node === document.activeElement && node.matches(":focus-visible"))).toBe(true);
       // The fixture pauses timers as well as Date; the shared tooltip opens after its normal focus delay.
       expect(await budget.locator('[role="tooltip"]:popover-open').count()).toBe(0);
       await view.tab.clock.runFor(250);
