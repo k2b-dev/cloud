@@ -186,6 +186,7 @@ export const renderChartSvg = (
   height: number,
   mapViewport?: MapViewport,
   timelineViewport?: StateTimelineDomain,
+  renderLocale?: string,
 ): string => {
   const {
     kind,
@@ -225,6 +226,7 @@ export const renderChartSvg = (
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let svg = (chartRenderers[kind] as (o: unknown) => string)({
     ...(opts as any),
+    ...(kind === "line" && renderLocale ? { locale: renderLocale } : {}),
     ...(timeDomain && props.kind === "line" ? { xAxis: { ...props.xAxis, domain: timeDomain, format: () => "" } } : {}),
     ...(props.kind === "line" &&
     props.legend &&
@@ -629,6 +631,7 @@ const ChartRoot = (props: ChartProps): JSX.Element => {
       size().height,
       interactiveMap() ? mapViewport() : undefined,
       interactiveTimeline() ? timelineViewport() : undefined,
+      locale(),
     ),
   );
   createEffect(() => {

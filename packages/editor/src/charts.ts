@@ -12,7 +12,6 @@ import {
   heatmap,
   histogram,
   i18n,
-  line,
   niceLogTicks,
   niceStep,
   pie,
@@ -21,15 +20,18 @@ import {
   stat,
 } from "@k2b/stdlib";
 import { type BarChartOptions, barChartLayout, renderBarChartSvg } from "@k2b/ui/charts";
+import { line } from "@k2b/ui/charts/core";
 import { z } from "zod";
 import { type ChartFormat, type ChartInput, type ChartNumberFormat, chartDateTime, chartKinds } from "./chart-schema";
 
 export * from "./chart-schema";
 
 type RenderOptions = {
-  [K in ChartInput["kind"]]: { kind: K } & (K extends "bar"
-    ? BarChartOptions
-    : Omit<Parameters<(typeof charts)[K]>[0], "width" | "height" | "inspect">);
+  [K in ChartInput["kind"]]: { kind: K } & (K extends "line"
+    ? Omit<Parameters<typeof line>[0], "width" | "height" | "inspect">
+    : K extends "bar"
+      ? BarChartOptions
+      : Omit<Parameters<(typeof charts)[K]>[0], "width" | "height" | "inspect">);
 }[ChartInput["kind"]];
 
 /**
@@ -581,7 +583,22 @@ export type ChartRow = { key: string; cells: Record<string, string>; values: Rec
 export type ChartTable = { columns: ChartColumn[]; rows: ChartRow[] };
 
 /** The first text column titles the tooltip; the other columns become rows, matching the table in every host. */
-export function chartTooltip(columns: ChartColumn[], row: ChartRow): { title?: string; rows: { label: string; value: string }[] } {
+export function chartTooltip(
+  columns: ChartColumn[],
+  row: ChartRow,
+  kind?: ChartInput["kind"],
+): { title?: string; rows: { label: string; value: string }[] } {
+  if (kind === "line")
+    return {
+      title: row.cells.x,
+      rows: [
+        { label: row.cells.series ?? columns.find((column) => column.id === "y")?.label ?? "Y", value: row.cells.y ?? "—" },
+        ...columns
+          .filter((column) => column.id === "forecastLow" || column.id === "forecastHigh")
+          .filter((column) => column.id in row.cells)
+          .map((column) => ({ label: column.label, value: row.cells[column.id]! })),
+      ],
+    };
   const [first, ...rest] = columns;
   const named = first && !first.numeric;
   return {

@@ -104,3 +104,30 @@ test("old line options still produce a drawing; bounds belong only to the first 
     "stdlib-chart-line",
   );
 });
+
+test("forecast respects maxGap and gives isolated observations a visible portable mark", () => {
+  const svg = line({ ...spec, maxGap: 0.5, inspect: true });
+  expect(svg).not.toContain('class="stdlib-chart-line');
+  expect(svg).toContain('fill="var(--stdlib-chart-c1, #2563eb)"');
+  expect(() => line({ ...spec, maxGap: 0 })).toThrow();
+  expect(() => line({ ...spec, maxGap: 1, area: true })).toThrow();
+});
+test("line legends carry cursor fields, missing final values and bounded names", () => {
+  const svg = line({
+    series: Array.from({ length: 40 }, (_, i) => ({
+      label: `Very long source ${i}`,
+      data: [
+        { x: 1, y: 1.5 },
+        { x: 2, y: i === 0 ? NaN : 2.5 },
+      ],
+    })),
+    legend: true,
+    locale: "de",
+    width: 480,
+    height: 280,
+  });
+  expect(svg.match(/class="stdlib-chart-legend-item"/g)).toHaveLength(3);
+  expect(svg).toContain("+37");
+  expect(svg).toContain('data-field="y" data-default="—"');
+  expect(svg).toContain('data-field="y" data-default="2,5"');
+});
