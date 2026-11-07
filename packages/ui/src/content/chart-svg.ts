@@ -48,7 +48,7 @@ export function responsiveChartSvg(svg: string): string {
     const origin = `transform-origin:${x}px ${y}px${rotation ? `;transform:rotate(${rotation}deg)` : ""}`;
     return tag.includes('style="')
       ? tag.replace(/style="([^"]*)"/, (_match, style: string) => `style="${style};${origin}"`)
-      : tag.replace(">", ` style="${origin}">`);
+      : tag.replace(/>$/, ` style="${origin}">`);
   });
 }
 

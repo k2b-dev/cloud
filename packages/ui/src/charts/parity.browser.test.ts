@@ -181,6 +181,7 @@ test("reference styles and tones remain distinct at desktop and phone widths", a
             `<html lang="en" data-theme="${theme}"><head><meta name="viewport" content="width=device-width,initial-scale=1"><style>${css}\nbody{margin:0;padding:24px}main{max-width:960px;margin:auto}.k2b-content-doc-code{display:none}</style></head><body class="k2b-ui"><main></main></body></html>`,
           );
           await page.addScriptTag({ content: bundle });
+          await settled(page);
           const lines = page.locator(".stdlib-chart-reference");
           expect(await lines.count()).toBe(3);
           expect(await lines.evaluateAll((marks) => marks.map((mark) => getComputedStyle(mark).strokeDasharray))).toEqual([
