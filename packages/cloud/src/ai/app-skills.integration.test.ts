@@ -677,7 +677,7 @@ databaseSuite()("app skills (integration)", () => {
     }
   });
 
-  test("missing catalogs keep pending state; metadata changes reconcile and expired catalogs are cleaned", async () => {
+  test("missing catalogs keep pending state; metadata changes reconcile and live catalogs survive old timestamps", async () => {
     const subject = await user(),
       name = `pending-${crypto.randomUUID()}`,
       source = definition(name);
@@ -693,7 +693,7 @@ databaseSuite()("app skills (integration)", () => {
       await sql`INSERT INTO ai.app_skill_catalogs(app_id, manifest_hash, skills, last_seen_at)
         VALUES (${entry.id}, ${"old"}, '[]'::jsonb, now() - interval '1 day')`;
       await reconcileAppSkills([entry]);
-      expect((await sql`SELECT 1 FROM ai.app_skill_catalogs WHERE app_id=${entry.id} AND manifest_hash='old'`).length).toBe(0);
+      expect((await sql`SELECT 1 FROM ai.app_skill_catalogs WHERE app_id=${entry.id} AND manifest_hash='old'`).length).toBe(1);
     } finally {
       await cleanup([entry.id]);
       await sql`DELETE FROM auth.users WHERE id=${subject.userId}::uuid`;

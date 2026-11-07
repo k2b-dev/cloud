@@ -988,6 +988,24 @@ const navigation = createNavigation({ items, switcher: () => switcher });
 </AppWorkspace.Sidebar>
 ```
 
+### Disclosure rows
+
+A row without `href` that shows or hides the rows after it, such as "More"
+or a folded group of hidden objects, passes `expanded`. The button then
+carries `aria-expanded`, so assistive technology hears whether the rows are
+shown; a chevron icon shows the same state. Link rows ignore `expanded`.
+
+```tsx
+<AppWorkspace.SidebarItem
+  icon={`ti ${open() ? "ti-chevron-down" : "ti-chevron-right"}`}
+  expanded={open()}
+  onClick={() => setOpen((value) => !value)}
+>
+  <AppWorkspace.SidebarItemLabel>Hidden</AppWorkspace.SidebarItemLabel>
+  <AppWorkspace.SidebarItemMeta>15</AppWorkspace.SidebarItemMeta>
+</AppWorkspace.SidebarItem>
+```
+
 ### Row metadata and actions
 
 Use `SidebarItemMeta` for passive trailing information such as counts and
@@ -1276,7 +1294,7 @@ type AppWorkspaceSidebarItemProps = {
   preview?: { label: string; content: JSX.Element | ((close: () => void) => JSX.Element); trigger?: "action" | "row"; align?: "center" | "end"; viewportSize?: "compact"; onOpenChange?: (open: boolean) => void };
   children: JSX.Element; href?: string; navigation?: "enhanced" | "document"; replace?: boolean;
   scroll?: NavigationScrollMode; onNavigate?: (event: LinkNavigateEvent) => void | Promise<void>;
-  onClick?: (event: MouseEvent) => void; active?: boolean | "ancestor"; activeClass?: string; disabled?: boolean;
+  onClick?: (event: MouseEvent) => void; expanded?: boolean; active?: boolean | "ancestor"; activeClass?: string; disabled?: boolean;
   icon?: string; meta?: JSX.Element; metaVisibility?: AppWorkspaceSidebarAccessoryVisibility;
   actions?: JSX.Element; tone?: AppWorkspaceSidebarItemTone; title?: string; viewTransitionName?: string;
   class?: string; depth?: number; actionIcon?: string; actionLabel?: string;

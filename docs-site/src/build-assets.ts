@@ -1,6 +1,7 @@
 import tailwind from "bun-plugin-tailwind";
 import { cp, mkdir, rm } from "fs/promises";
 import { dirname, join, resolve } from "path";
+import { writeExampleRegistry } from "./ui/demo-sections/charts/examples/generate";
 
 const siteRoot = resolve(import.meta.dir, "..");
 const generated = join(siteRoot, "assets", "generated");
@@ -8,6 +9,8 @@ const fibelPublic = join(siteRoot, ".fibel", "public");
 const solidRoot = dirname(Bun.resolveSync("solid-js/package.json", siteRoot));
 
 export async function buildAssets() {
+  // Chart showcase examples of every lane appear without a shared hand-kept list.
+  writeExampleRegistry();
   await rm(generated, { recursive: true, force: true });
   await mkdir(generated, { recursive: true });
   const result = await Bun.build({

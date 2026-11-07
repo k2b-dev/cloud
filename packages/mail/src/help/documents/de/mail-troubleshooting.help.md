@@ -13,7 +13,7 @@ Beginne mit dem Symptom, das du siehst. Können Transport, Ordner oder Suche bet
 :::steps
 1. Leere **Postfächer durchsuchen**.
 2. Prüfe, ob dir jemand mit Zugriff **Verwalten** Zugriff auf das Postfach gegeben hat.
-3. Wurde das Postfach gelöscht, kann eine Person mit Zugriff **Verwalten** es unter **Kürzlich gelöscht** wiederherstellen.
+3. Wurde das Postfach gelöscht, kann eine Person mit Zugriff **Verwalten** es unter **Postfächer → … → Gelöschte Postfächer** wiederherstellen.
 :::
 
 Mail prüft den Zugriff beim Laden der Seite und bei Live-Aktualisierungen. Endet dein Zugriff, schlagen Neuladen und Live-Ansichten fehl und zeigen keine alten Daten des Postfachs weiter an.

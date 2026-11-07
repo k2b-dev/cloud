@@ -272,6 +272,10 @@ Older versions still discover the Actions through derived approval metadata,
 but reject the new response shapes. Existing apps need no migration in this
 release. See [Action contract migration](/en/docs/platform/capabilities#migrate-an-application).
 
+Spaces now uses typed reviews for task and event creation, task updates, and
+resource linking. Upgrade Action callers before Spaces. Plain calls can be
+authorized for background work; template use and assignee changes still ask.
+
 ## Enable addresses and places
 
 Core's [geo Queries](/en/docs/platform/places-and-maps) need outbound HTTPS to
@@ -672,6 +676,13 @@ additional chart kinds need no configuration or data migration. Studio and
 one-off HTML app charts show tooltips on hover, keyboard focus and tap without
 additional configuration. See
 [Code Mode charts](/en/docs/ai/chat-interface#check-an-html-app-before-showing-it).
+
+App-frame builds include `assistant-chart-module.js` alongside the prelude and
+base stylesheet. The app-assets response embeds that module with the frame;
+rare chart kinds parse it on first use through a local blob URL. No additional
+asset endpoint, external origin, CSP exception or operator configuration is
+needed. Include the new file when packaging Assistant outside its standard
+image. Scripts retain synchronous rendering for every kind.
 
 ### Assistant Chromium isolation
 
@@ -1185,6 +1196,17 @@ the earliest assignee and denies people with assigned-only access; assignments
 it changes are lost when Mail is updated again. After the rollout, assign two
 people to a test conversation and check that
 `cld --json mail show <conversation-id>` lists both.
+
+### Mail attachment thumbnails
+
+Mail's list shows small thumbnails of image attachments. Its thumbnail endpoint
+uses the isolated Linux image workers that the shared build adds to the Mail
+image, two at once per process, with up to 64 requests waiting; beyond that it
+answers 503 and the list shows a quiet image icon instead. Sources are limited to 25 MiB and
+responses to 96×96 pixels and 48 KiB. Access is checked before reading and again
+before returning the image. Browsers revalidate each thumbnail, so a revoked
+access is never served from their cache. No setting, service, or migration is
+required.
 
 ### Mail draft signatures
 
@@ -2361,6 +2383,15 @@ metadata (`assistant`, `mcp`, or `null`). Application authors must persist and d
 create or change visible content. Existing stored content is not backfilled.
 This adds no permission and needs no operator configuration. See
 [App capabilities](/en/docs/platform/capabilities).
+
+## Chat posting Action after the upgrade
+
+Deploy Chat with `chat.message.post` to let authorized background callers post
+results into existing Chat conversations and channels. It uses current write
+access and the normal Chat rate limits; its explicit policy grants no access.
+No new service, setting, secret or data migration is required. Existing item
+discussions keep `chat.discussion.post`. See [Post a message to a Chat
+conversation](/en/docs/platform/chat-discussions#post-a-message-to-a-chat-conversation).
 
 ## Enroll an application before its first start
 

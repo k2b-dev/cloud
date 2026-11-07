@@ -28,6 +28,7 @@ import contentMarkdown from "./content/markdown.md" with { type: "text" };
 import contentMatchText from "./content/match-text.md" with { type: "text" };
 import contentMedia from "./content/media.md" with { type: "text" };
 import contentMessageRows from "./content/message-rows.md" with { type: "text" };
+import contentMoney from "./content/money.md" with { type: "text" };
 import contentReactionBar from "./content/reaction-bar.md" with { type: "text" };
 import contentSteps from "./content/steps.md" with { type: "text" };
 import contentStructuredData from "./content/structured-data.md" with { type: "text" };
@@ -201,6 +202,7 @@ const catalogContextSources = {
   "content/steps": { file: "content/steps.md", content: contentSteps },
   "layout/table-of-contents": { file: "layout/table-of-contents.md", content: layoutTableOfContents },
   "content/charts": { file: "content/charts.md", content: contentCharts },
+  "content/money": { file: "content/money.md", content: contentMoney },
   "content/tables": { file: "content/tables.md", content: contentTables },
   "content/calendar": { file: "surfaces/calendar.md", content: contentCalendar },
   "content/timeline": { file: "content/timeline.md", content: contentTimeline },
