@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { charts } from "@k2b/stdlib";
+import { charts } from "../charts/core";
 import { responsiveChartSvg, responsiveMapSvg, selectedChartSvg } from "./chart-svg";
 
 describe("responsive SVG presentation", () => {
@@ -27,6 +27,25 @@ describe("responsive SVG presentation", () => {
     expect(responsive).toContain(";transform:rotate(-90deg)");
     expect(responsive.match(/style="transform-origin:/g)?.length).toBe(original.match(/<text\b/g)?.length);
   });
+});
+
+test("responsive reference labels retain their color and anchor in one style attribute", () => {
+  const svg = responsiveChartSvg(
+    charts.line({
+      series: [
+        {
+          data: [
+            { x: 1, y: 1 },
+            { x: 2, y: 5 },
+          ],
+        },
+      ],
+      references: [{ value: 3, label: "Target", tone: "success" }],
+    }),
+  );
+  const label = svg.match(/<text class="stdlib-chart-reference-label"[^>]*>/)![0];
+  expect(label.match(/style=/g)).toHaveLength(1);
+  expect(label).toContain("color:var(--k2b-success-text,#047857);transform-origin:");
 });
 
 test("SSR selects every mark of an entity without duplicating reference style attributes", () => {
