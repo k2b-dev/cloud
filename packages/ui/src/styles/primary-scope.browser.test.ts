@@ -268,6 +268,10 @@ for (const theme of ["light", "dark"] as const) {
         await settled(page);
         expect(await boxes()).toEqual(scopedBoxes);
         expect(await page.locator("[data-demo-section]").count()).toBe(10);
+        // WebKit can use near-neutral code text as a visible outline's currentColor.
+        await page.locator("#portal-trigger").evaluate((node) => (node.style.outline = "2px solid rgb(230, 237, 243)"));
+        await settled(page);
+        expect(await page.evaluate(auditPrimaryColors, "#portal-trigger")).toEqual([]);
         // Prove the detector rejects a hard-coded, translucent blue focus ring.
         await page.locator("#portal-trigger").focus();
         await settled(page);

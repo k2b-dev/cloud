@@ -48,7 +48,9 @@ export async function auditPrimaryColors(input: string | { selector: string; foc
     const saturation = delta / 255 / (1 - Math.abs(2 * lightness - 1));
     const hue =
       ((max === red ? (green - blue) / delta : max === green ? (blue - red) / delta + 2 : (red - green) / delta + 4) * 60 + 360) % 360;
-    return hue >= 205 && hue <= 245 && saturation >= 0.3;
+    // Near-white code text (#e6edf3) has a blue hue but only 35% HSL
+    // saturation. The accent ramp, including pale #eff6ff, exceeds 50%.
+    return hue >= 205 && hue <= 245 && saturation >= 0.5;
   };
   const exceptions = [
     ".k2b-file-type-icon",
