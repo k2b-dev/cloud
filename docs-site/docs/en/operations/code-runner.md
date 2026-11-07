@@ -514,3 +514,15 @@ Keep Core, checker SDK and runner images on the same release: manifests use
 origin arrays, and a refused request can report a validated `origin` alongside
 its stable error code. See [Code secrets](/en/docs/platform/code-secrets) for
 literal declarations, redirect checks and network protections.
+
+
+## One-time schedules
+
+An `app.schedule` declaration with `{ at, timeZone }` uses Core's existing
+five-second recovery pass and the same durable tick receipt as a cron run.
+It does not require a separate broker schedule or an additional service.
+Several Core replicas may reconcile the due instant; admission still creates
+one run. Dates more than seven days in the past expire without an automatic
+run. Activation, pause, version approval and retries apply as for cron. A one-time
+occurrence waits for a queued or running predecessor within that recovery window.
+The date-time must include a UTC offset; the IANA zone is retained for display.

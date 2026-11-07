@@ -29,6 +29,7 @@ import type { CodeContext } from "./access";
 import { settleCodeAiBudget } from "./ai-budget";
 import { codeAuthoringServices } from "./authoring";
 import { verifyCodeSubmission } from "./authoring-check";
+import { listCodeAutomations } from "./automations";
 import { createCodeBridgeHost, requireCodeRunFence } from "./bridge";
 import { claimCodeWork } from "./dispatch";
 import * as ownerTransport from "./owner-transport";
@@ -46,6 +47,7 @@ import {
   completeCodeRun,
   heartbeatCodeRun,
   processCodeScheduleTick,
+  processCurrentCodeScheduleTick,
   readCodeRunLimits,
   readCodeRunnerMetrics,
   reconcileCodeRuns,
@@ -53,6 +55,7 @@ import {
 } from "./scheduling";
 import {
   type CodeRunWakeup,
+  codeScheduleId,
   createCodeJobOutbox,
   createCodeRunOutbox,
   createCodeScheduleReconciler,
@@ -121,7 +124,13 @@ suiteFor(
     if (!value) throw new Error("Invalid fixture token");
     return value;
   }
-  async function fixture(userId = owner, resource = false, route = false, reply: "json" | "page" | "invalid" = "json") {
+  async function fixture(
+    userId = owner,
+    resource = false,
+    route = false,
+    reply: "json" | "page" | "invalid" = "json",
+    once?: { at: string; timeZone: string },
+  ) {
     const codeId = `c_c13${String(++ordinal).padStart(5, "0")}`;
     const files = { "code.ts": "fixture" },
       bundle = route
@@ -142,7 +151,7 @@ suiteFor(
               line: 1,
             },
           ]
-        : [{ kind: "schedule", entrypoint: "weekly", cron: distantCron, file: "code.ts", line: 1 }],
+        : [{ kind: "schedule", entrypoint: "weekly", cron: once ? null : distantCron, ...once, file: "code.ts", line: 1 }],
       permissions: [],
       ai: false,
       policyRows: ["read"],
@@ -1278,6 +1287,64 @@ suiteFor(
     await take();
     const skipped = await processCodeScheduleTick({ ...code, slot });
     expect(await state(skipped!.runId)).toMatchObject({ state: "skipped", outcome: "previous_schedule_running" });
+  });
+  test("one-time reconciliation admits one run across replicas and keeps the consumed next run empty", async () => {
+    const timing = { at: slot.toISOString(), timeZone: "Europe/Berlin" };
+    const code = await fixture(owner, false, false, "json", timing);
+    const sync = createSync({ connection, namespace: testSyncNamespace("c13-once"), application: "core", defaults: { replicas: 1 } });
+    syncs.push(sync);
+    const scheduler = sync.scheduler({ id: "code" });
+    await scheduler.create({
+      id: codeScheduleId(code.codeId, code.entrypoint),
+      cron: distantCron,
+      timezone: "UTC",
+      meta: { family: "code", codeId: code.codeId },
+      async process() {},
+    });
+    const reconcile = createCodeScheduleReconciler(scheduler);
+    await Promise.all([reconcile(), reconcile(), reconcile()]);
+    expect(await scheduler.list()).toEqual([]);
+    const runs = await sql<{ id: string; state: string }[]>`SELECT id,state FROM code.runs WHERE code_id=${code.codeId}`;
+    expect(runs).toHaveLength(1);
+    expect(runs[0]!.state).toBe("queued");
+    const replay = await processCurrentCodeScheduleTick({ ...code, ...timing, slot });
+    expect(replay).toEqual({ runId: runs[0]!.id, duplicate: true });
+    await sql`UPDATE code.runs SET state='succeeded',ended_at=clock_timestamp() WHERE id=${runs[0]!.id}::uuid`;
+    await reconcile();
+    const listing = await listCodeAutomations({ codeId: code.codeId }, context());
+    expect(listing.items[0]).toMatchObject({ ...timing, nextRunAt: null });
+    const [count] = await sql<{ count: number }[]>`SELECT count(*)::int AS count FROM code.runs WHERE code_id=${code.codeId}`;
+    expect(count?.count).toBe(1);
+  });
+  test("a due one-time occurrence waits for a manual predecessor without consuming its date", async () => {
+    const timing = { at: slot.toISOString(), timeZone: "UTC" };
+    const code = await fixture(owner, false, false, "json", timing);
+    const manual = await startCodeRun({ codeId: code.codeId, entrypoint: code.entrypoint, idempotencyKey: "manual-once" }, context());
+    const tick = { ...code, ...timing, slot };
+    expect(await processCurrentCodeScheduleTick(tick)).toBeNull();
+    const [receipts] = await sql<{ count: number }[]>`SELECT count(*)::int AS count FROM code.run_requests
+      WHERE code_id=${code.codeId} AND tick_at IS NOT NULL`;
+    expect(receipts?.count).toBe(0);
+    await sql`UPDATE code.runs SET state='succeeded',ended_at=clock_timestamp() WHERE id=${manual.runId}::uuid`;
+    const admitted = await processCurrentCodeScheduleTick(tick);
+    if (!admitted) throw new Error("Expected a due one-time run after its predecessor ended");
+    expect(admitted.duplicate).toBeFalse();
+    expect((await state(admitted.runId)).state).toBe("queued");
+    expect(await processCurrentCodeScheduleTick(tick)).toEqual({ ...admitted, duplicate: true });
+  });
+  test("one-time admission rejects future, expired and stale definitions without consuming a receipt", async () => {
+    const future = new Date(slot.getTime() + 86_400_000);
+    const timing = { at: future.toISOString(), timeZone: "UTC" };
+    const code = await fixture(owner, false, false, "json", timing);
+    expect(await processCodeScheduleTick({ ...code, slot: future })).toBeNull();
+    const listing = await listCodeAutomations({ codeId: code.codeId }, context());
+    expect(listing.items[0]?.nextRunAt).toBe(future.toISOString());
+    expect(await processCurrentCodeScheduleTick({ ...code, at: slot.toISOString(), timeZone: "UTC", slot })).toBeNull();
+    const old = new Date(slot.getTime() - 8 * 86_400_000);
+    const expired = await fixture(owner, false, false, "json", { at: old.toISOString(), timeZone: "UTC" });
+    expect(await processCurrentCodeScheduleTick({ ...expired, at: old.toISOString(), timeZone: "UTC", slot: old })).toBeNull();
+    const [count] = await sql<{ count: number }[]>`SELECT count(*)::int AS count FROM code.run_requests`;
+    expect(count?.count).toBe(0);
   });
   test("real Sync scheduler fires once with three Core workers, independently of runner count", async () => {
     const code = await fixture();

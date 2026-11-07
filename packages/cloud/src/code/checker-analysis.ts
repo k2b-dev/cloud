@@ -2,7 +2,7 @@ import { posix } from "node:path";
 import ts from "@typescript/typescript6";
 import { CodeInternetOriginSchema } from "../contracts/code-internet";
 import { CodeRouteSchema } from "../contracts/code-routes";
-import { CodeAutomationTitleSchema } from "../contracts/code-version";
+import { CodeAutomationTitleSchema, CodeOnceScheduleSchema } from "../contracts/code-version";
 import { MANDATE_POLICY_MAX_IDENTIFIERS } from "../services/mandates/policy";
 import { normalizeCronSchedule } from "../shared/cron-schedule";
 import type { CodeCheckDiagnostic, CodeCheckRequest, CodePermission, CodeVersionManifest } from "./checker-contract";
@@ -365,7 +365,36 @@ export function analyzeCode(request: CodeCheckRequest): CodeAnalysis {
             }
           }
           if (method === "schedule" && collecting) {
-            const cron = node.arguments[0] && literals(node.arguments[0]);
+            const when = node.arguments[0];
+            const cron = when && literals(when);
+            const field = (name: string) => {
+              if (!when) return undefined;
+              const property = ts.isObjectLiteralExpression(when)
+                ? when.properties.find(
+                    (p) =>
+                      ts.isPropertyAssignment(p) &&
+                      (ts.isStringLiteralLike(p.name) || ts.isIdentifier(p.name) ? p.name.text : p.name.getText()) === name,
+                  )
+                : undefined;
+              if (property && ts.isPropertyAssignment(property)) return literals(property.initializer);
+              const type = propertyType(checker.getTypeAtLocation(when), name, when);
+              return type && strings(type);
+            };
+            const at = field("at"),
+              timeZone = field("timeZone");
+            const once =
+              at?.length === 1 && timeZone?.length === 1 ? CodeOnceScheduleSchema.safeParse({ at: at[0], timeZone: timeZone[0] }) : null;
+            const validKeys =
+              !when ||
+              !ts.isObjectLiteralExpression(when) ||
+              when.properties.every(
+                (property) =>
+                  ts.isPropertyAssignment(property) &&
+                  (ts.isStringLiteralLike(property.name) || ts.isIdentifier(property.name)) &&
+                  ["at", "timeZone"].includes(property.name.text),
+              );
+            const staticTiming = (cron?.length === 1 && !!cron[0]?.trim()) || (once?.success && validKeys);
+
             const options = node.arguments[2];
             const nameType = options && propertyType(checker.getTypeAtLocation(options), "name", options);
             const nameProperty =
@@ -394,18 +423,20 @@ export function analyzeCode(request: CodeCheckRequest): CodeAnalysis {
                 "Der Titel muss konstanter Klartext mit 1 bis 200 Zeichen sein, ohne Markup, Steuer- oder Formatzeichen.",
               );
             if (
-              !cron ||
-              cron.length !== 1 ||
-              !cron[0]?.trim() ||
+              !staticTiming ||
               !name ||
               (options && !/^[a-zA-Z0-9][a-zA-Z0-9_.-]*$/.test(name)) ||
               !ts.isExpressionStatement(node.parent) ||
               !ts.isSourceFile(node.parent.parent)
             )
-              report(node, "code_static_schedule", "Deklariere Zeitpläne auf Modulebene mit konstantem cron und Namen (name: … as const).");
+              report(
+                node,
+                "code_static_schedule",
+                "Deklariere Zeitpläne auf Modulebene mit konstantem Cron oder { at, timeZone } und Namen (name: … as const).",
+              );
             else {
               try {
-                normalizeCronSchedule({ cron: cron[0]!, timezone: "UTC" });
+                if (!once?.success) normalizeCronSchedule({ cron: cron![0]!, timezone: "UTC" });
               } catch {
                 report(node, "code_invalid_cron", "Der Zeitplan benötigt einen gültigen Cron-Ausdruck mit fünf Feldern.");
               }
@@ -417,7 +448,8 @@ export function analyzeCode(request: CodeCheckRequest): CodeAnalysis {
                 kind: "schedule",
                 entrypoint: name,
                 ...(title?.success ? { title: title.data } : {}),
-                cron: cron[0]!,
+                cron: once?.success ? null : cron![0]!,
+                ...(once?.success ? once.data : {}),
                 file: sf.fileName.slice(root.length),
                 line: sf.getLineAndCharacterOfPosition(node.getStart(sf)).line + 1,
               });

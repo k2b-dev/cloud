@@ -35,6 +35,8 @@ const AutomationListSchema = z.object({
       title: z.string().optional(),
       kind: z.enum(["schedule", "manual"]),
       cron: z.string().nullable(),
+      at: z.string().optional(),
+      timeZone: z.string().optional(),
       nextRunAt: z.string().nullable(),
       lastRun: z
         .object({ state: RunListSchema.shape.items.element.shape.state, createdAt: z.string(), endedAt: z.string().nullable() })

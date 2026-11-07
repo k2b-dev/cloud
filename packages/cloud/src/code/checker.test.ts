@@ -728,6 +728,26 @@ test("a titled schedule runs by its stable identifier and a title change changes
   expect(changed.manifest.hashes.bundle).not.toBe(result.manifest.hashes.bundle);
 });
 
+test("one-time schedules coexist with routes through the real checker and bundle registration fence", async () => {
+  const result = await check(
+    `import { app } from "@sdk";
+app.schedule({ at: "2026-12-01T09:15:30+01:00", timeZone: "Europe/Berlin" }, async () => {}, { name: "reminder" });
+app.get("/reminder", c => c.text("Scheduled"));
+export default app;`,
+    { limits: { ...CODE_CHECK_LIMITS, checkMs: 60_000 } },
+  );
+  if (!result.ok) throw new Error(JSON.stringify(result.diagnostics));
+  expect(result.ok).toBeTrue();
+  expect(result.manifest.entrypoints[0]).toMatchObject({ cron: null, at: "2026-12-01T09:15:30+01:00", timeZone: "Europe/Berlin" });
+  expect(result.manifest.entrypoints[1]).toMatchObject({ kind: "route", route: { method: "GET", path: "/reminder", public: false } });
+  const loaded = await import(`data:text/javascript;base64,${Buffer.from(result.bundle).toString("base64")}`);
+  await loaded.reminder(null, {
+    async call() {
+      throw new Error("No call expected");
+    },
+  });
+}, 90_000);
+
 test("checked route bundles execute the selected request handler without a web framework", async () => {
   const result = await check(`import { app } from "@sdk";
 app.get("/hello/:name", c => c.json({ person: c.user?.id ?? null, name: c.req.param("name") }));
