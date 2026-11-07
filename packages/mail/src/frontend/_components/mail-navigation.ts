@@ -106,7 +106,10 @@ export const buildMailAttachmentDownloadHref = (requestUrl: URL, item: MailListI
 };
 
 /** The small thumbnail of one of a row's image attachments, under the mailbox the list shows. */
-export const buildMailAttachmentThumbnailHref = (requestUrl: URL, image: NonNullable<MailListItem["imageAttachments"]>[number]): string | null => {
+export const buildMailAttachmentThumbnailHref = (
+  requestUrl: URL,
+  image: NonNullable<MailListItem["imageAttachments"]>[number],
+): string | null => {
   const match = /^\/app\/mail\/([^/]+)$/.exec(requestUrl.pathname);
   if (!match?.[1]) return null;
   return `/api/mail/mailboxes/${match[1]}/messages/${encodeURIComponent(image.messageId)}/attachments/${encodeURIComponent(image.attachmentId)}/thumbnail`;
