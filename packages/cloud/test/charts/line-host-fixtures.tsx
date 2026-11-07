@@ -1,13 +1,14 @@
 import { Chart, LocaleProvider } from "@k2b/ui";
 import { onCleanup, onMount } from "solid-js";
-import { CloudChartBlock } from "../../cloud/src/ai/chat/chart-block";
-import AiUsageCharts from "../../core/src/pages/admin/settings/_components/AiUsageCharts";
-import { chartKinds } from "../../editor/src/charts";
-import { renderNotebookChartFigure } from "../../editor/src/markdown/lib/chart-blocks";
-import { enhanceNotebookCharts } from "../../editor/src/markdown/notebook-charts";
-import ObservabilityChart from "../../gateway-ops/src/frontend/ObservabilityChart.island";
-import { sqlResultChart } from "../../pulse/src/frontend/workspace/sql-result-chart";
-import { lineForecastFixture } from "./line-forecast-fixture";
+import { render } from "solid-js/web";
+import AiUsageCharts from "../../../core/src/pages/admin/settings/_components/AiUsageCharts";
+import { chartKinds } from "../../../editor/src/charts";
+import { renderNotebookChartFigure } from "../../../editor/src/markdown/lib/chart-blocks";
+import { enhanceNotebookCharts } from "../../../editor/src/markdown/notebook-charts";
+import ObservabilityChart from "../../../gateway-ops/src/frontend/ObservabilityChart.island";
+import { sqlResultChart } from "../../../pulse/src/frontend/workspace/sql-result-chart";
+import { lineForecastFixture } from "../../../ui/test/line-forecast-fixture";
+import { CloudChartBlock } from "../../src/ai/chat/chart-block";
 
 const portable = {
   ...lineForecastFixture,
@@ -89,3 +90,5 @@ export function LineHostFixtures() {
     </LocaleProvider>
   );
 }
+
+render(LineHostFixtures, document.getElementById("line-hosts")!);

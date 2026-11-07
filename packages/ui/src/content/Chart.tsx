@@ -180,7 +180,7 @@ const ChartRoot = (props: ChartProps): JSX.Element => {
     for (const series of props.series) for (const point of series.data) if (Number.isFinite(point.x)) latest = Math.max(latest, point.x);
     const last = props.series[index]?.data.find((point) => point.x === latest);
     return last && Number.isFinite(last.y)
-      ? (props.yAxis?.format?.(last.y) ?? new Intl.NumberFormat(locale(), { maximumFractionDigits: 6 }).format(last.y))
+      ? (props.yAxis?.format?.(last.y) ?? new Intl.NumberFormat(props.locale ?? locale(), { maximumFractionDigits: 6 }).format(last.y))
       : "—";
   };
   const dimensions = () => containerRef?.getBoundingClientRect() ?? size();

@@ -1,5 +1,4 @@
 import { type BarChartOptions, barChartLayout, renderBarChartSvg } from "../../content/chart-bar";
-import { lineGapsSvg } from "../../content/chart-line-gaps";
 import { DEFAULT_MAP_VIEWPORT, normalizeMapViewport } from "../../content/chart-map-viewport";
 import {
   renderStateTimelineSvg,
@@ -51,6 +50,7 @@ export const renderChartSvg = (
   height: number,
   mapViewport?: MapViewport,
   timelineViewport?: StateTimelineDomain,
+  renderLocale?: string,
 ): string => {
   const {
     kind,
@@ -80,17 +80,18 @@ export const renderChartSvg = (
   const timeDomain = timeAxis && props.kind === "line" ? lineTimeDomain(props) : undefined;
   let svg = (chartRenderers[kind] as (o: unknown) => string)({
     ...opts,
+    ...(kind === "line" ? { locale: (opts as { locale?: string }).locale ?? renderLocale } : {}),
     ...(timeDomain && props.kind === "line" ? { xAxis: { ...props.xAxis, domain: timeDomain, format: () => "" } } : {}),
-    ...(props.kind === "line" && props.legend && props.legendPlacement === "top-start" ? { legend: false } : {}),
+    ...(props.kind === "line" &&
+    props.legend &&
+    (props.legendPlacement === "top-start" || props.forecast || props.marker || props.threshold || props.zero)
+      ? { legend: false }
+      : {}),
     ...(kind === "map" ? { viewport: DEFAULT_MAP_VIEWPORT } : {}),
     width,
     height,
     inspect: true,
   });
-  if (props.kind === "line" && props.maxGap !== undefined) {
-    if (props.area || props.errorBand) throw new Error("Chart maxGap does not support area or errorBand fills");
-    svg = lineGapsSvg(svg, props.maxGap, props);
-  }
   if (timeAxis && timeDomain && props.kind === "line")
     svg = timeAxisSvg(svg, timeDomain, timeAxis, (props.xAxis?.ticks ?? 3) + 2, props.xAxis?.format);
   if (props.kind === "map") return responsiveMapSvg(svg, width, height, normalizeMapViewport(mapViewport ?? props.viewport));
@@ -101,6 +102,7 @@ export const renderChartSvg = (
 const lineTimeDomain = (props: Extract<ChartDrawingOptions, { kind: "line" }>): [number, number] | undefined => {
   if (props.xAxis?.domain) return props.xAxis.domain;
   const xs = props.series.flatMap((series) => series.data.map((point) => point.x)).filter(Number.isFinite);
+  if (props.marker) xs.push(props.marker.at);
   if (!xs.length) return undefined;
   const lo = Math.min(...xs),
     hi = Math.max(...xs);

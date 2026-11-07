@@ -5,7 +5,6 @@ import { ChartExplorer } from "../src/content/ChartExplorer";
 import { prepareChartSnapshot } from "../src/content/chart-snapshot";
 import { LocaleProvider } from "../src/intl/locale";
 import { lineForecastFixture } from "./line-forecast-fixture";
-import { LineHostFixtures } from "./line-host-fixtures";
 
 const snapshot = prepareChartSnapshot(
   {
@@ -117,7 +116,7 @@ render(
             style={{ height: "280px" }}
           />
         </section>
-        <LineHostFixtures />
+        <div id="line-hosts" />
       </main>
     </LocaleProvider>
   ),

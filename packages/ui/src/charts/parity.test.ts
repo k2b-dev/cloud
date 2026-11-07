@@ -11,6 +11,24 @@ const legacy: { cases: Record<string, { ui: string; raw: string; height: number 
 /** Only renderer-generated IDs and their references vary between otherwise identical renders. */
 const stableIds = (svg: string) => svg.replace(/stdlib-spark-grad-\d+/g, "stdlib-spark-grad-ID");
 
+/** G3 intentionally adds portable paint, puts inspection points above fills, and gives legends values.
+ * Compare every legacy axis, path and datum unchanged; new paint and legend behavior have focused guards.
+ * Frozen SVG fixtures remain untouched. */
+const legacyLineGeometry = (svg: string) => {
+  const points: string[] = [];
+  const geometry = svg
+    .replace(/<g data-chart-role="point" data-chart-datum="[^"]*">[\s\S]*?<\/g>/g, (point) => {
+      points.push(point.replace(/var\((--stdlib-chart-c\d), #[a-f\d]+\)/g, "var($1)"));
+      return "";
+    })
+    .replace(/<g class="stdlib-chart-legend">[\s\S]*?<\/g><\/g>/g, "")
+    .replace(/<g class="stdlib-chart-legend-item">[\s\S]*?<\/g>/g, "")
+    .replace(/<path class="stdlib-chart-(?:line|area|error-band) [^"]*"[^>]*\/>/g, (path) =>
+      path.replace(/ (?:fill|stroke|stroke-width|fill-opacity)="[^"]*"/g, "").replace(/ d="([^"]*)"/, (_, d: string) => ` d="${d.trim()}"`),
+    );
+  return geometry.replace(/<\/svg>$/, `${points.join("")}</svg>`);
+};
+
 test("every parity row names an existing test or live demo", () => {
   const ids = new Set<string>();
   for (const row of chartParity) {
@@ -26,13 +44,18 @@ test("every parity row names an existing test or live demo", () => {
 test("every parity spec preserves legacy SVG output", () => {
   for (const row of chartParity) {
     const spec = row.legacySpec ?? row.spec;
-    const expected = legacy.cases[row.id];
+    const expected = legacy.cases[row.legacyId ?? row.id];
     if (!expected) throw new Error(`Missing frozen pre-port SVG: ${row.id}`);
     const height = chartRenderHeight(spec);
     expect(height, row.id).toBe(expected.height);
-    expect(stableIds(renderChartSvg(spec, 480, height)), row.id).toBe(legacy.drawings[expected.ui]!);
+    const stable = (svg: string) => stableIds(spec.kind === "line" ? legacyLineGeometry(svg) : svg);
+    expect(stable(renderChartSvg(spec, 480, height)), row.id).toBe(stable(legacy.drawings[expected.ui]!));
     const raw = charts[spec.kind] as (spec: unknown) => string;
-    expect(stableIds(raw({ ...spec, width: 480, height, inspect: true })), `${row.id}: raw renderer`).toBe(legacy.drawings[expected.raw]!);
+    // maxGap used to be UI-only; its new raw-core behavior is guarded in chart-line-gaps.test.ts.
+    const rawSpec = row.id === "line-maxGap" && spec.kind === "line" ? { ...spec, maxGap: undefined } : spec;
+    expect(stable(raw({ ...rawSpec, width: 480, height, inspect: true })), `${row.id}: raw renderer`).toBe(
+      stable(legacy.drawings[expected.raw]!),
+    );
   }
 });
 

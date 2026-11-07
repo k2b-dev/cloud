@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test";
+import { renderChartSvg } from "./render";
 import { line, lineForecastLayout } from "./svg";
 
 const spec = {
@@ -49,6 +50,9 @@ test("forecast layout binds ordered bounds to the first series suffix", () => {
     }),
   ).toThrow();
   expect(() => lineForecastLayout({ ...spec, forecast: { from: 2.5 } })).toThrow();
+  const overlong: [number, number] = [1, 2];
+  overlong.push(3);
+  expect(() => lineForecastLayout({ ...spec, forecast: { from: 4, band: [overlong] } })).toThrow();
 });
 test("forecast, zero zone, warning threshold and today use portable presentation attributes", () => {
   const svg = line({ ...spec, inspect: true });
@@ -152,4 +156,16 @@ test("the pure line legend localizes unnamed series", () => {
     locale: "de",
   });
   expect(svg).toContain("Datenreihe 1");
+});
+
+test("an explicit line locale takes precedence over the inherited render locale", () => {
+  const svg = renderChartSvg(
+    { kind: "line", series: [{ data: [{ x: 1, y: 2.5 }] }], legend: true, locale: "de" },
+    480,
+    280,
+    undefined,
+    undefined,
+    "en",
+  );
+  expect(svg).toContain('data-default="2,5"');
 });

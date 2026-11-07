@@ -493,9 +493,24 @@ export const renderNotebookChartFigure = (input: ChartInput, locale: string, opt
     });
     if (!snapshot.marks.length) return null;
     const legend = chartLegend(input, locale);
+    const legendValue = (index: number) => {
+      const xs = snapshot.marks
+        .flatMap(({ datum }) => datum.values.filter((field) => field.key === "x").map((field) => field.value))
+        .filter((value): value is number => typeof value === "number");
+      const latest = Math.max(...xs);
+      const field = snapshot.marks
+        .find(({ datum }) => datum.seriesIndex === index && datum.values.some((field) => field.key === "x" && field.value === latest))
+        ?.datum.values.find((field) => field.key === "y");
+      return field
+        ? (field.formatted ??
+            (typeof field.value === "number"
+              ? new Intl.NumberFormat(locale, { maximumFractionDigits: 6 }).format(field.value)
+              : field.value))
+        : "—";
+    };
     const t = chartBlockMessages.resolve([locale]).t;
     const legendHtml = legend.length
-      ? `<ul class="k2b-chart-legend" aria-label="${escape(t.chartLegend)}">${legend.map((entry, index) => `<li><span class="k2b-chart-legend__swatch"${entry.style && entry.style !== "solid" ? ` data-style="${entry.style}"` : ""}${entry.reference ? ' data-reference="true"' : ""} style="--k2b-chart-legend-color:var(--stdlib-chart-c${(entry.color % 8) + 1})" aria-hidden="true"></span>${escape(entry.label)}${input.kind === "line" ? `<b data-chart-legend-value data-series-index="${index}" data-field="y" data-default=""></b>` : ""}</li>`).join("")}</ul>`
+      ? `<ul class="k2b-chart-legend" aria-label="${escape(t.chartLegend)}">${legend.map((entry, index) => `<li><span class="k2b-chart-legend__swatch"${entry.style && entry.style !== "solid" ? ` data-style="${entry.style}"` : ""}${entry.reference ? ' data-reference="true"' : ""} style="--k2b-chart-legend-color:var(--stdlib-chart-c${(entry.color % 8) + 1})" aria-hidden="true"></span>${escape(entry.label)}${input.kind === "line" ? `<b data-chart-legend-value data-series-index="${index}" data-field="y" data-default="${escape(legendValue(index))}">${escape(legendValue(index))}</b>` : ""}</li>`).join("")}</ul>`
       : "";
     const viewport = `<div class="k2b-chart" data-chart-kind="${snapshot.kind}"><div class="k2b-chart__svg"${snapshot.stretch ? ' data-stretch="true"' : ""} style="--k2b-chart-width:${snapshot.width}px;--k2b-chart-height:${snapshot.height}px">${snapshot.svg}</div></div>${legendHtml}`;
     const height = notebookChartHeight(input, locale);

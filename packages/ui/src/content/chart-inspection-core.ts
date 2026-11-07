@@ -1,8 +1,6 @@
-import type { ChartDatum, ChartKind } from "../charts/core";
+import type { ChartDatum, ChartKind } from "../charts/core/types";
 import { positionTooltipSurface } from "../feedback/tooltip-position";
 import type { ChartCursor, ChartCursorState } from "./chart-cursor";
-
-export type { ChartKind } from "../charts/core";
 
 export {
   type ChartDatumRef,
@@ -12,6 +10,7 @@ export {
   isChartDatum,
   sameChartDatum,
 } from "../charts/core/inspection";
+export type { ChartKind } from "../charts/core/types";
 
 import {
   type ChartDatumRef,
