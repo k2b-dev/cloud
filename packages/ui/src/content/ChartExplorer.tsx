@@ -75,8 +75,9 @@ export type ChartExplorerProps<T extends ChartExplorerRow> = {
   /** Try again after a failure. Without it a failure has no button. */
   onRetry?: () => void;
   /**
-   * The padding of the frame around the explorer. The table view then reaches the frame's left, right and bottom
-   * edges without a border of its own, and the frame keeps its height.
+   * The padding of the frame around the explorer, one value or block and inline like CSS `padding` ("14px 16px").
+   * The table view then reaches the frame's left, right and bottom edges without a border of its own, and the frame
+   * keeps its height.
    */
   inset?: string;
   view?: "chart" | "table";
@@ -259,6 +260,9 @@ export function ChartExplorer<T extends ChartExplorerRow>(props: ChartExplorerPr
       )}
     </Show>
   );
+  // "14px 16px" reads like CSS padding: block first, then inline; one value is both.
+  const insetBlock = () => props.inset?.trim().split(/\s+/)[0] ?? "";
+  const insetInline = () => props.inset?.trim().split(/\s+/)[1] ?? insetBlock();
   return (
     <section
       class={`k2b-chart-explorer ${props.class ?? ""}`}
@@ -266,7 +270,7 @@ export function ChartExplorer<T extends ChartExplorerRow>(props: ChartExplorerPr
       aria-busy={state() === "loading" || state() === "refreshing" ? "true" : undefined}
       data-state={state()}
       data-inset={props.inset ? "true" : undefined}
-      style={props.inset ? { "--k2b-chart-explorer-inset": props.inset } : undefined}
+      style={props.inset ? { "--k2b-chart-explorer-inset": insetInline(), "--k2b-chart-explorer-inset-block": insetBlock() } : undefined}
     >
       <header class="k2b-chart-explorer__header">
         <div>
@@ -341,7 +345,7 @@ export function ChartExplorer<T extends ChartExplorerRow>(props: ChartExplorerPr
         data-view={tableView() ? "table" : undefined}
         data-legend={view() === "chart" && props.legend?.length && data().rows.length > 0 ? "true" : undefined}
         data-capped={tableView() && shownRows().length < rows().length ? "true" : undefined}
-        style={{ height: tableView() && props.inset ? `calc(${props.height ?? "18rem"} + ${props.inset})` : (props.height ?? "18rem") }}
+        style={{ height: tableView() && props.inset ? `calc(${props.height ?? "18rem"} + ${insetBlock()})` : (props.height ?? "18rem") }}
       >
         <Show
           when={state() !== "loading" && state() !== "error" && data().rows.length > 0}

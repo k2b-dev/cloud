@@ -636,7 +636,7 @@ const computePlotArea = (
  * SVG. Returns the SVG fragment plus the pixel height it consumed so the
  * caller can shift the plot area down accordingly.
  */
-const renderHeader = (width: number, title: string | undefined, subtitle: string | undefined): { svg: string; height: number } => {
+export const renderHeader = (width: number, title: string | undefined, subtitle: string | undefined): { svg: string; height: number } => {
   if (!title && !subtitle) return { svg: "", height: 0 };
   const cx = width / 2;
   const parts: string[] = [];

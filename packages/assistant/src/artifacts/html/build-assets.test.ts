@@ -4,9 +4,10 @@ import { buildCheckPrelude, buildPrelude } from "./build-assets";
 
 test("normal mounts omit app checks and stay within the prelude budget", async () => {
   const [normal, check] = await Promise.all([buildPrelude(), buildCheckPrelude()]);
-  // Forecast drawing, cursor legends, stacked area and portable validation measure 324,204 bytes.
-  // Keep about 3% headroom; pure SVG labels do not import the full UI catalogue.
-  expect(Buffer.byteLength(normal)).toBeLessThan(332_000);
+  // Slice 3 measured 248 KB. cloud.chart() drawing through the chat's chart mapping, with four more chart kinds and
+  // its app contract, brought normal mounts to 279 KB: allow 10% growth over that, not the 851 KB app-check bundle.
+  // Area plus calendar renderer/schema: measured 328,198 B; offline synchronous drawing keeps a 328.5 KB ceiling.
+  expect(Buffer.byteLength(normal)).toBeLessThan(328_500);
   for (const feature of ["k2b-line-forecast-band", "k2b-line-negative-zone", "k2b-line-threshold", "k2b-line-marker"])
     expect(normal).toContain(feature);
   expect(normal).toContain("k2b-area-layer");

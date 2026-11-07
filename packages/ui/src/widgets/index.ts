@@ -1,3 +1,4 @@
+export * from "./Dashboard";
 export * from "./Widget";
 export * from "./WidgetHero";
 export * from "./WidgetList";

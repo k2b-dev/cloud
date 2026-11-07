@@ -1,5 +1,17 @@
 import { navigateTo } from "@k2b/ssr/nav";
-import { Button, createChartCursor, DateTimePicker, NoticeCard, PanelHeader, RangePicker, useLocale } from "@k2b/ui";
+import {
+  Button,
+  createChartCursor,
+  DashboardPanel as DashboardFrame,
+  DashboardGrid,
+  DashboardSection,
+  DateTimePicker,
+  NoticeCard,
+  PanelHeader,
+  RangePicker,
+  StatGrid,
+  useLocale,
+} from "@k2b/ui";
 import { createEffect, createMemo, createSignal, ErrorBoundary, For, Show } from "solid-js";
 import type { Dashboard, DashboardPanel, DashboardRange } from "../../dashboard-contracts";
 import type { Overview } from "../../overview-contracts";
@@ -9,7 +21,7 @@ import { createDashboardActions, type DashboardActions } from "./dashboard-actio
 import type { DashboardTarget, PublicDashboardPanel } from "./dashboard-client";
 import { dashboardRangeSearch } from "./dashboard-client";
 import { createDashboardController } from "./dashboard-controller";
-import { dashboardDateTime, dashboardSections } from "./dashboard-data";
+import { dashboardDateTime, dashboardSections, dashboardTopNumbers } from "./dashboard-data";
 import { dashboardStyles } from "./dashboard-styles";
 
 export type DashboardViewProps = {
@@ -30,7 +42,7 @@ export default function DashboardView(props: DashboardViewProps) {
   const clock = () => ({ locale: locale(), timeZone: props.timeZone });
   const cursor = createChartCursor({ formatX: (x) => dashboardDateTime(clock()).format(x) });
   const sections = createMemo(() => dashboardSections(props.panels));
-  const stats = () => props.panels.filter((panel) => panel.kind === "number");
+  const stats = createMemo(() => dashboardTopNumbers(props.panels));
   const [custom, setCustom] = createSignal(!!props.range.from);
   const [from, setFrom] = createSignal<string | null>(props.range.from ?? null);
   const [to, setTo] = createSignal<string | null>(props.range.to ?? null);
@@ -72,11 +84,11 @@ export default function DashboardView(props: DashboardViewProps) {
       fallback={(error: unknown, reset) => {
         globalThis.reportError(error);
         return (
-          <article
+          <DashboardFrame
             class="pulse-dashboard__panel"
             data-panel={panel.id}
             data-kind={panel.kind}
-            data-width={panel.width}
+            width={panel.width}
             aria-label={panel.title}
           >
             <div class="pulse-dashboard__panel-head">
@@ -89,7 +101,7 @@ export default function DashboardView(props: DashboardViewProps) {
                 {t().retry}
               </Button>
             </div>
-          </article>
+          </DashboardFrame>
         );
       }}
     >
@@ -104,6 +116,12 @@ export default function DashboardView(props: DashboardViewProps) {
         private={!!props.private}
       />
     </ErrorBoundary>
+  );
+  // Key figures stay one row of tiles, in their section or, without one, above every section.
+  const Tiles = (tiles: { panels: (PublicDashboardPanel | DashboardPanel)[] }) => (
+    <StatGrid columns={4} class="pulse-dashboard__stats">
+      <For each={tiles.panels}>{renderPanel}</For>
+    </StatGrid>
   );
   return (
     <div class="pulse-dashboard" data-print-region>
@@ -246,36 +264,27 @@ export default function DashboardView(props: DashboardViewProps) {
             </div>
           }
         >
-          <Show when={stats().length}>
-            <div class="pulse-dashboard__stats">
-              <For each={stats()}>{renderPanel}</For>
-            </div>
-          </Show>
-          <For each={sections()}>
-            {(section) => (
-              <section class="pulse-dashboard__section" aria-label={section.name || props.name}>
-                <Show when={section.name}>
-                  <div class="pulse-dashboard__section-heading">
-                    <Show when={section.icon}>
-                      {/* A plain glyph in the section colour; the heading is not a tile. */}
-                      <i
-                        class={`pulse-dashboard__section-icon ${section.icon}`}
-                        style={section.color ? { color: `color-mix(in srgb, ${section.color} 72%, var(--k2b-text))` } : undefined}
-                        aria-hidden="true"
-                      />
-                    </Show>
-                    <h2>{section.name}</h2>
-                    <Show when={section.description}>
-                      <p class="pulse-dashboard__section-description">{section.description}</p>
-                    </Show>
-                  </div>
-                </Show>
-                <div class="pulse-dashboard__panels">
+          <DashboardGrid>
+            <Show when={stats().length}>
+              <Tiles panels={stats()} />
+            </Show>
+            <For each={sections()}>
+              {(section) => (
+                <DashboardSection
+                  title={section.name || undefined}
+                  ariaLabel={props.name}
+                  icon={section.icon}
+                  iconColor={section.color}
+                  description={section.description}
+                >
+                  <Show when={section.numbers.length}>
+                    <Tiles panels={section.numbers} />
+                  </Show>
                   <For each={section.panels}>{renderPanel}</For>
-                </div>
-              </section>
-            )}
-          </For>
+                </DashboardSection>
+              )}
+            </For>
+          </DashboardGrid>
         </Show>
       </Show>
     </div>

@@ -65,13 +65,13 @@ export function chartDataIssue(input: CloudAiChartInput): string | undefined {
         return "A log axis shows only values above zero; use a linear axis or leave out the values at or below zero.";
     }
   }
-  if (input.kind === "heatmap") {
+  if (input.kind === "heatmap" && input.layout !== "calendar") {
     if (new Set(input.data.map((cell) => JSON.stringify([cell.x, cell.y]))).size !== input.data.length)
       return "Use each heatmap x/y pair once.";
     if (input.min !== undefined && input.max !== undefined && input.min >= input.max) return "Set heatmap min below max.";
   }
   // These renderers key or place labels by their text, so labels cannot be thinned like bars.
-  if (input.kind === "heatmap") {
+  if (input.kind === "heatmap" && input.layout !== "calendar") {
     const columns = [...new Set(input.data.map((item) => item.x))];
     const rows = [...new Set(input.data.map((item) => item.y))];
     const fit = heatmapLabelFit(columns, rows);
