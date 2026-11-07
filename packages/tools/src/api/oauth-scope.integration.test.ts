@@ -13,6 +13,10 @@ suiteFor(
 )("tools resource OAuth ceiling", () => {
   test("every protected mutation rejects a real read-only user OAuth token", () =>
     withAdminOAuth(async ({ readHeaders }) => {
-      await assertAdminMutationsRejectReadOAuth(routes, readHeaders, (path) => path.startsWith("/webhooks/"));
+      await assertAdminMutationsRejectReadOAuth(
+        routes,
+        readHeaders,
+        (path) => path.startsWith("/webhooks/") || path.startsWith("/admin/settings/"),
+      );
     }));
 });

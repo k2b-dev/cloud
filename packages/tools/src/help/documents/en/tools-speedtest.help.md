@@ -1,6 +1,7 @@
 ---
 id: tools-speedtest
 title: Measure your connection
+kind: task
 icon: ti ti-gauge
 description: Measure download, upload, ping, jitter and latency under load against the named server.
 order: 115
@@ -18,7 +19,7 @@ sends no Cloud credentials or personal files. Other traffic, Wi-Fi and the
 route to the selected server affect the result. It is not a measurement of
 every destination on the internet.
 
-The measurement server also offers its own public page, without a login.
+The measurement server also offers its own public page, without signing in.
 Browser, CLI and scripts share a limit of two test starts per internet
 connection in any rolling 60 seconds. Cancelled starts count. People behind
 the same office connection share the limit; IPv6 uses a /64 network. After
