@@ -39,7 +39,6 @@ or continues a line.
 | `maxLength` | `number` | none | Applies the native textarea limit. |
 | `spellcheck` | `boolean` | `true` | Controls browser spellcheck. |
 | `noToolbar` | `boolean` | `false` | Hides the toolbar without disabling shortcuts. |
-| `toolbar` | `"fixed" \| "selection"` | `"fixed"` | `selection` replaces the toolbar above the text with a [floating one above selected text](#formatting-selected-text). `noToolbar` still hides both. |
 | `showStats` | `boolean` | `true` | Shows line, word, and character counts. Suppressed entirely while `disabled`. |
 | `variant` | `"default" \| "paper" \| "embedded"` | `"default"` | Matches the editor surface to its parent. `embedded` removes the outer border, radius, and shadow for an existing workspace surface. |
 | `fill` | `boolean` | `false` | Fills the available parent height instead of using `lines`. |
@@ -99,15 +98,24 @@ The editor inherits [ValueFieldProps<string>](/en/ui/getting-started#shared-fiel
 
 ## Formatting selected text
 
-`toolbar="selection"` suits composers that should stay calm: there is no toolbar above the text. Once a person
-selects text and lets go of the pointer, a small toolbar floats above the selection with bold, italic, inline code,
-link, bulleted and numbered lists, and quote. It is the same `SelectionToolbar` that the `@k2b/editor` bubble menu
-uses.
+`MarkdownSelectionToolbar` suits composers that should stay calm: give the editor `noToolbar` and place the toolbar
+beside it with the editor's textarea from `textareaRef`. Once a person selects text and lets go of the pointer, a
+small toolbar floats above the selection with bold, italic, inline code, link, bulleted and numbered lists, and
+quote. It is built on the same `SelectionToolbar` that the `@k2b/editor` bubble menu uses, and editors without it
+carry none of its code.
 
-- It follows the selection while the text changes, and closes when the selection collapses, the focus leaves both
-  the text and the toolbar, or on <kbd>Esc</kbd>, which keeps the text and the selection.
-- <kbd>Tab</kbd> from the selection moves into it; Left, Right, Home, and End move inside, as in any toolbar.
-- Touch devices (a coarse primary pointer) keep their own selection menu, so it stays hidden there.
+```tsx
+const [textarea, setTextarea] = createSignal<HTMLTextAreaElement>();
+
+<MarkdownEditor aria-label="Message" noToolbar value={text()} onValueChange={setText} textareaRef={setTextarea} />
+<MarkdownSelectionToolbar textarea={textarea()} />
+```
+
+- It follows the selection while the text changes or scrolls, and closes when the selection collapses, the focus
+  leaves both the text and the toolbar, or on <kbd>Esc</kbd>, which keeps the text and the selection.
+- <kbd>Tab</kbd> from the selection moves into it; Left, Right, Home, and End move inside, as in any toolbar. Each
+  format shows whether it applies with `aria-pressed`.
+- Touch devices (a coarse primary pointer) keep their own selection menu, so nothing of it renders there.
 - Every keyboard shortcut works with and without it.
 - It floats in the top layer, so it never moves the editor or the text.
 

@@ -10,14 +10,23 @@ const ui = resolve(import.meta.dir, "../../..");
 const css = readFileSync(resolve(ui, "dist/styles.css"), "utf8");
 const entry = resolve(import.meta.dir, "selection-toolbar.fixture.ts");
 const fixture = `
+import { createSignal } from "solid-js";
 import { createComponent, render } from "solid-js/web";
-import { MarkdownEditor } from ${JSON.stringify(resolve(ui, "dist/browser/index.js"))};
+import { MarkdownEditor, MarkdownSelectionToolbar } from ${JSON.stringify(resolve(ui, "dist/browser/index.js"))};
+
+const editor = (props) => {
+  const [textarea, setTextarea] = createSignal();
+  return [
+    createComponent(MarkdownEditor, { ...props, noToolbar: true, textareaRef: setTextarea }),
+    createComponent(MarkdownSelectionToolbar, { get textarea() { return textarea(); } }),
+  ];
+};
 
 render(
   () => [
-    createComponent(MarkdownEditor, { label: "Note", toolbar: "selection", lines: 4, value: "Hello world, this is a short note.", onValueChange: (value) => (globalThis.text = value) }),
+    editor({ label: "Note", lines: 4, value: "Hello world, this is a short note.", onValueChange: (value) => (globalThis.text = value) }),
     createComponent(MarkdownEditor, { label: "Fixed", lines: 2, value: "Fixed toolbar" }),
-    createComponent(MarkdownEditor, { label: "Long", toolbar: "selection", lines: 3, value: Array.from({ length: 30 }, (_, index) => "Line " + (index + 1)).join("\\n") }),
+    editor({ label: "Long", lines: 3, value: Array.from({ length: 30 }, (_, index) => "Line " + (index + 1)).join("\\n") }),
   ],
   document.getElementById("app"),
 );
@@ -66,7 +75,7 @@ const hidden = (page: Page) => toolbar(page).waitFor({ state: "hidden" });
 const noteIs = (page: Page, text: string) =>
   page.waitForFunction((text) => document.querySelector<HTMLTextAreaElement>("textarea")?.value === text, text, { timeout: 2000 });
 
-describe("MarkdownEditor toolbar=selection", () => {
+describe("MarkdownSelectionToolbar", () => {
   test("no toolbar above the text; selected text gets a floating one above it without moving the editor", async () => {
     const page = await load();
     try {

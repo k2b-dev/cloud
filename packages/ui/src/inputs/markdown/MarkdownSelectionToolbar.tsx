@@ -1,8 +1,10 @@
 import { i18n } from "@k2b/stdlib";
-import { batch, createEffect, createSignal, type JSX, onCleanup, onMount, Show } from "solid-js";
+import { batch, createEffect, createMemo, createSignal, type JSX, onCleanup, onMount, Show } from "solid-js";
 import { SelectionToolbar } from "../../actions/SelectionToolbar";
 import { Toolbar } from "../../actions/Toolbar";
+import { useLocale } from "../../intl/locale";
 import { insertLink, toggleBold, toggleBulletList, toggleCode, toggleItalic, toggleNumberedList, toggleQuote } from "./actions";
+import { computeActiveFormats } from "./active-formats";
 
 const selectionMessages = i18n.define({
   baseLocale: "en",
@@ -65,28 +67,29 @@ export const textRangeBox = (layer: HTMLElement, surface: HTMLElement, start: nu
   return new DOMRect(first.left, first.top, Math.max(1, right - first.left), first.height);
 };
 
-export type SelectionFormattingProps = {
-  textarea: HTMLTextAreaElement;
-  /** The editor's presentation layer: the same text as the textarea, laid out the same way. */
-  layer: HTMLElement;
-  /** The visible text area; a selection scrolled out of it closes the toolbar. */
-  surface: HTMLElement;
-  disabled: () => boolean;
-  /** The formats at the selection, such as `bold`, shown as each action's pressed state. */
-  activeFormats: () => Set<string>;
-  locale: () => string;
+export type MarkdownSelectionToolbarProps = {
+  /** The editor's textarea, from `MarkdownEditor`'s `textareaRef`. The toolbar attaches once it is there. */
+  textarea: HTMLTextAreaElement | undefined;
 };
 
 /**
- * The formatting toolbar of `toolbar="selection"`: it floats above selected text once the pointer lets go, and closes
- * on Escape, a collapsed selection, or when the focus leaves both text and toolbar. Touch devices keep their own
- * selection menu, so it stays hidden there; the keyboard shortcuts work everywhere. The editor loads this module only
- * for `toolbar="selection"`; it listens to the textarea itself, and a key it uses is marked handled with
- * `preventDefault`.
+ * A small formatting toolbar that floats above selected text in a `MarkdownEditor`: bold, italic, code, link, lists, and
+ * quote. Place it beside an editor with `noToolbar` and pass the editor's textarea. It appears once the pointer lets go
+ * of a selection and closes on Escape, a collapsed selection, or when the focus leaves both text and toolbar. Touch
+ * devices keep their own selection menu, so nothing of it renders there; the keyboard shortcuts work everywhere. It
+ * listens to the textarea itself, so editors without it carry none of its code.
  */
-export function SelectionFormatting(props: SelectionFormattingProps): JSX.Element {
-  const messages = () => selectionMessages.resolve([props.locale()]).t;
+export function MarkdownSelectionToolbar(props: MarkdownSelectionToolbarProps): JSX.Element {
+  return <Show when={props.textarea}>{(textarea) => <SelectionFormatting textarea={textarea()} />}</Show>;
+}
+
+function SelectionFormatting(props: { textarea: HTMLTextAreaElement }): JSX.Element {
+  const locale = useLocale();
+  const messages = () => selectionMessages.resolve([locale()]).t;
   const textarea = props.textarea;
+  // The editor's surface and its presentation layer: the same text as the textarea, laid out the same way.
+  const surface = textarea.parentElement ?? textarea;
+  const layer = surface.querySelector<HTMLElement>(".k2b-markdown-editor__preview") ?? surface;
   const [revision, setRevision] = createSignal(0);
   const bump = () => setRevision((value) => value + 1);
   const [finePointer, setFinePointer] = createSignal(false);
@@ -99,9 +102,9 @@ export function SelectionFormatting(props: SelectionFormattingProps): JSX.Elemen
   const selectionKey = () => `${textarea.selectionStart}:${textarea.selectionEnd}`;
   const anchor = () => {
     revision();
-    if (props.disabled() || !finePointer() || dragging() || !(textFocused() || toolbarFocused())) return null;
+    if (textarea.disabled || !finePointer() || dragging() || !(textFocused() || toolbarFocused())) return null;
     if (textarea.selectionStart === textarea.selectionEnd || dismissed() === selectionKey()) return null;
-    return textRangeBox(props.layer, props.surface, textarea.selectionStart, textarea.selectionEnd);
+    return textRangeBox(layer, surface, textarea.selectionStart, textarea.selectionEnd);
   };
 
   // Escape closes the toolbar for that one selection: a collapsed selection forgets it, so selecting the same words
@@ -147,8 +150,9 @@ export function SelectionFormatting(props: SelectionFormattingProps): JSX.Elemen
       if (document.activeElement === textarea) bump();
     };
     // The presentation layer renders a frame after an edit; the toolbar measures again once it did.
-    const layer = new MutationObserver(bump);
-    layer.observe(props.layer, { childList: true, subtree: true, characterData: true });
+    const layerElement = layer;
+    const layerObserver = new MutationObserver(bump);
+    layerObserver.observe(layerElement, { childList: true, subtree: true, characterData: true });
     query.addEventListener("change", update);
     textarea.addEventListener("pointerdown", press);
     textarea.addEventListener("keydown", key);
@@ -159,7 +163,7 @@ export function SelectionFormatting(props: SelectionFormattingProps): JSX.Elemen
     textarea.addEventListener("scroll", bump);
     document.addEventListener("selectionchange", selection);
     onCleanup(() => {
-      layer.disconnect();
+      layerObserver.disconnect();
       query.removeEventListener("change", update);
       textarea.removeEventListener("pointerdown", press);
       textarea.removeEventListener("keydown", key);
@@ -172,7 +176,11 @@ export function SelectionFormatting(props: SelectionFormattingProps): JSX.Elemen
   });
 
   const run = (format: (textarea: HTMLTextAreaElement) => void) => () => format(textarea);
-  const pressed = (format: string) => props.activeFormats().has(format);
+  const formats = createMemo(() => {
+    revision();
+    return computeActiveFormats(textarea);
+  });
+  const pressed = (format: string) => formats().has(format);
 
   // Touch devices keep their own selection menu: the toolbar is not rendered there at all, so nothing of it mounts
   // or animates.

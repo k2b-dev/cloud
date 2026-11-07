@@ -31,6 +31,7 @@ import {
   type ImageCropState,
   ImageInput,
   MarkdownEditor,
+  MarkdownSelectionToolbar,
   MultiSelectInput,
   NumberInput,
   PinInput,
@@ -475,32 +476,37 @@ const MarkdownDemo = () => {
 
 const MarkdownSelectionDemo = () => {
   const [value, setValue] = createSignal("Thanks for the photos of the oak chest. Select a few words to format them.");
+  const [textarea, setTextarea] = createSignal<HTMLTextAreaElement>();
   return (
     <DemoCard
       id="markdown-editor-selection"
-      chip={{ kind: "component", name: "MarkdownEditor", from: "@k2b/ui" }}
-      description={
-        '`toolbar="selection"` keeps a composer calm: no toolbar above the text, a small one above selected text. Touch devices keep their own selection menu; shortcuts such as Ctrl/Cmd+B work everywhere. Escape closes it, and Tab from the selection moves into it.'
-      }
-      code={`<MarkdownEditor
+      chip={{ kind: "component", name: "MarkdownSelectionToolbar", from: "@k2b/ui" }}
+      description="A calm composer: no toolbar above the text, a small one above selected text. Touch devices keep their own selection menu; shortcuts such as Ctrl/Cmd+B work everywhere. Escape closes it, and Tab from the selection moves into it."
+      code={`const [textarea, setTextarea] = createSignal<HTMLTextAreaElement>();
+
+<MarkdownEditor
   aria-label="Message"
   variant="embedded"
-  toolbar="selection"
+  noToolbar
   showStats={false}
   value={value()}
   onValueChange={setValue}
-/>`}
+  textareaRef={setTextarea}
+/>
+<MarkdownSelectionToolbar textarea={textarea()} />`}
     >
       <div style={{ "max-width": "36rem", border: "2px solid var(--k2b-border-strong)", "border-radius": "var(--k2b-radius-surface)" }}>
         <MarkdownEditor
           aria-label="Message"
           variant="embedded"
-          toolbar="selection"
+          noToolbar
           showStats={false}
           lines={3}
           value={value()}
           onValueChange={setValue}
+          textareaRef={setTextarea}
         />
+        <MarkdownSelectionToolbar textarea={textarea()} />
       </div>
     </DemoCard>
   );

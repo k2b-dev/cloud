@@ -31,11 +31,6 @@ export type MarkdownEditorProps = ValueFieldProps<string> & {
   placeholder?: string;
   lines?: number;
   noToolbar?: boolean;
-  /**
-   * `selection` replaces the toolbar above the text with a small one that floats above selected text: bold, italic,
-   * code, link, lists, and quote. Touch devices keep their own selection menu instead. Shortcuts work in both.
-   */
-  toolbar?: "fixed" | "selection";
   spellcheck?: boolean;
   name?: string;
   maxLength?: number;
@@ -70,7 +65,6 @@ export function MarkdownEditor(props: MarkdownEditorProps): JSX.Element {
   const meta = createFieldMeta(props.id);
   let textarea: HTMLTextAreaElement | undefined;
   let preview: HTMLDivElement | undefined;
-  let surface: HTMLDivElement | undefined;
   let dropdown: HTMLDivElement | undefined;
   let completionAbort: AbortController | null = null;
   let completionTimer: ReturnType<typeof setTimeout> | null = null;
@@ -105,15 +99,6 @@ export function MarkdownEditor(props: MarkdownEditorProps): JSX.Element {
     return merged.length > 0 ? merged : undefined;
   });
   const knownLabels = createMemo(() => collectKnownLabels(mergedCompletions()));
-  // The floating toolbar loads on first use and attaches to the textarea itself, so other editors carry none of it.
-  const [selectionFormatting, setSelectionFormatting] = createSignal<typeof import("./SelectionFormatting")["SelectionFormatting"]>();
-  createEffect(() => {
-    if (props.toolbar === "selection")
-      import("./SelectionFormatting").then(
-        (module) => setSelectionFormatting(() => module.SelectionFormatting),
-        (error: unknown) => console.error(error),
-      );
-  });
 
   createEffect(() => {
     const incoming = resolveMaybeAccessor(props.value);
@@ -537,7 +522,7 @@ export function MarkdownEditor(props: MarkdownEditorProps): JSX.Element {
           }
         }}
       >
-        <Show when={!props.noToolbar && props.toolbar !== "selection"}>
+        <Show when={!props.noToolbar}>
           <Toolbar
             textarea={textareaSignal}
             activeFormats={activeFormats}
@@ -562,7 +547,7 @@ export function MarkdownEditor(props: MarkdownEditorProps): JSX.Element {
             }
           />
         </Show>
-        <div ref={surface} class="k2b-markdown-editor__surface">
+        <div class="k2b-markdown-editor__surface">
           <Show when={!localValue() && props.placeholder}>
             <div class="k2b-markdown-editor__placeholder" aria-hidden="true">
               {props.placeholder}
@@ -609,21 +594,6 @@ export function MarkdownEditor(props: MarkdownEditorProps): JSX.Element {
             aria-controls={dropdownOpen() ? listboxId : undefined}
             aria-activedescendant={dropdownOpen() && state() ? optionId(state()!.selectedIndex) : undefined}
           />
-          {/* After the text in the DOM, so Tab from selected text reaches it. */}
-          <Show when={!props.noToolbar && props.toolbar === "selection" && textarea && preview && surface && selectionFormatting()}>
-            {(view) =>
-              untrack(() =>
-                view()({
-                  textarea: textarea!,
-                  layer: preview!,
-                  surface: surface!,
-                  disabled: () => Boolean(props.disabled),
-                  activeFormats,
-                  locale,
-                }),
-              )
-            }
-          </Show>
         </div>
         <Show when={(props.showStats ?? true) && !props.disabled}>
           <div class="k2b-markdown-editor__stats" aria-hidden="true" data-empty={stats().chars === 0 ? "true" : undefined}>
