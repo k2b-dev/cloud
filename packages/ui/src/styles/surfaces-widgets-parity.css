@@ -743,6 +743,9 @@
     justify-content: flex-end;
     gap: 0.25rem;
   }
+  /* The stacked row keeps the room of figure and badge in every state, so nothing moves when data arrives. */
+  .k2b-ui .k2b-stat-grid__body > .k2b-stat-cell:not([data-wrap]) .k2b-stat-cell__main { min-height: 3.375rem; }
+  .k2b-ui .k2b-stat-grid__body > .k2b-stat-cell[data-size="sm"]:not([data-wrap]) .k2b-stat-cell__main { min-height: 3.125rem; }
   .k2b-ui .k2b-stat-grid__body > .k2b-stat-cell[data-size="lg"]:not([data-wrap]) .k2b-stat-cell__main { min-height: 3.875rem; }
 }
 .k2b-ui .k2b-stat-cell--link { padding-right: 1.75rem; transition: background-color var(--k2b-motion-fast) var(--k2b-ease-out); }
@@ -789,6 +792,7 @@
 /* The figure is never cut: in a tile it shrinks with the tile's width between fixed bounds (cqi of the tile), and a
    text that still does not fit wraps at its spaces instead of ending in an ellipsis. */
 .k2b-ui .k2b-stat-cell__value {
+  min-width: 0;
   max-width: 100%;
   color: var(--k2b-text);
   font-size: 1.25rem;
@@ -867,6 +871,8 @@
     justify-content: flex-end;
     gap: 0.25rem;
   }
+  .k2b-ui .k2b-stat-cell:not([data-wrap]) .k2b-stat-cell__main { min-height: 3.375rem; }
+  .k2b-ui .k2b-stat-cell[data-size="sm"]:not([data-wrap]) .k2b-stat-cell__main { min-height: 3.125rem; }
   .k2b-ui .k2b-stat-cell[data-size="lg"]:not([data-wrap]) .k2b-stat-cell__main { min-height: 3.875rem; }
   .k2b-ui .k2b-stat-cell[data-size="lg"] .k2b-stat-cell__trend { display: none; }
 }

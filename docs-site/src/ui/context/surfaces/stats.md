@@ -81,7 +81,9 @@ in every size, and the `lg` tile grows to at least 164 px.
 The figure is never cut off. In a grid it shrinks with its tile's width within
 fixed bounds (`lg` 18–28 px, `md` 16–20 px, `sm` 14–16 px); a text value that
 still does not fit wraps at its spaces and the tile grows, instead of ending in
-an ellipsis. Below 200 px of tile width an `lg` tile drops its trend. These
+an ellipsis. Where the badge moves under the figure, every size reserves the
+room of both in every state, so loading, error and data keep one height; only a
+text value long enough to wrap makes its tile taller. Below 200 px of tile width an `lg` tile drops its trend. These
 adjustments follow the grid; a `StatCell` on its own keeps its sizes and wraps.
 `md` and `sm` tiles take the height of their content.
 

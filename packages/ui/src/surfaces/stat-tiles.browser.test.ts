@@ -144,6 +144,48 @@ describe("@k2b/ui key figure tiles", () => {
     }
   });
 
+  test("a narrow md or sm tile keeps its height in every state, with the badge under the figure", async () => {
+    const rows = renderToString(() =>
+      createComponent(LocaleProvider, {
+        locale: "de",
+        get children() {
+          return (["md", "sm"] as const).flatMap((size) =>
+            Object.values(states).map((props) =>
+              createComponent(StatGrid, {
+                size,
+                columns: 4,
+                class: `size-${size}`,
+                get children() {
+                  return ["A", "B"].map((label) => createComponent(StatCell, { label, ...props } as never));
+                },
+              }),
+            ),
+          );
+        },
+      }),
+    );
+    const page = await browser.newPage({ viewport: { width: 390, height: 900 } });
+    try {
+      await page.setContent(
+        `<!doctype html><html><head><meta name="viewport" content="width=device-width, initial-scale=1"><style>${css}</style></head>` +
+          `<body class="k2b-ui" style="margin:0;padding:12px"><div style="width:300px">${rows}</div></body></html>`,
+      );
+      await settled(page);
+      const heights = await page.evaluate(() =>
+        ["md", "sm"].map((size) => [
+          ...new Set(
+            Array.from(document.querySelectorAll(`.size-${size} .k2b-stat-cell`)).map((tile) =>
+              Math.round(tile.getBoundingClientRect().height),
+            ),
+          ),
+        ]),
+      );
+      expect(heights.map((list) => list.length)).toEqual([1, 1]);
+    } finally {
+      await page.close();
+    }
+  });
+
   // Regression: at 390 px a dashboard's md tiles ended their figures in "48…" (07.11.). A figure is never cut.
   test("a figure always fits its tile, in every size, down to a 320 px phone", async () => {
     const values = ["48.210", "1.204,80 €", "€2,380.00", "29.260 €", "Action needed", "1,2 Mio. €"];
@@ -189,7 +231,10 @@ describe("@k2b/ui key figure tiles", () => {
             const tile = value.closest(".k2b-stat-cell")!.getBoundingClientRect();
             const box = value.getBoundingClientRect();
             const style = getComputedStyle(value);
-            const fits = value.scrollWidth <= value.clientWidth + 1 && box.left >= tile.left && box.right <= tile.right + 0.5;
+            const badge = value.parentElement!.querySelector(".k2b-stat-cell__delta")?.getBoundingClientRect();
+            const inside = (rect: DOMRect) =>
+              rect.left >= tile.left && rect.right <= tile.right + 0.5 && rect.top >= tile.top && rect.bottom <= tile.bottom + 0.5;
+            const fits = value.scrollWidth <= value.clientWidth + 1 && inside(box) && (!badge || inside(badge));
             return fits && style.textOverflow !== "ellipsis"
               ? []
               : [`${value.textContent} (${Math.round(box.width)} in ${Math.round(tile.width)})`];
