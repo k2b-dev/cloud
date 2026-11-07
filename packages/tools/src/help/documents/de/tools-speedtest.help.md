@@ -9,7 +9,8 @@ order: 115
 ## Test starten {icon="player-play"}
 
 Öffne **Internet-Speedtest**, prüfe den **Messserver** und wähle
-**Schnell · bis 14 s** oder **Genau · bis 29 s**. Drücke **Test starten**.
+**Schnell · 14 s** oder **Genau · 29 s**; länger dauert ein Test nicht.
+Drücke **Test starten**.
 Ping, Download und Upload laufen nacheinander. Die Restzeit sinkt; ein stabiles
 Ergebnis kann den Test früher beenden. **Stoppen** bricht die Übertragungen ab.
 
@@ -27,8 +28,9 @@ wann du erneut messen kannst.
 
 ## Ergebnis lesen und behalten {icon="chart-line"}
 
-Kacheln und Terminal zeigen dieselben Messwerte. Der Anlauf zählt nicht zur
-Übertragungsrate. Ping ist der Median; Jitter die mittlere Differenz aufeinanderfolgender
+Die große Anzeige zeigt den Download, die Kacheln zeigen Upload, Ping, Jitter
+und Latenz unter Last. Das Terminal zeigt dieselben Messwerte. Der Verlauf
+zeichnet den Anlauf als dünne graue Linie; er zählt nicht zur Übertragungsrate. Ping ist der Median; Jitter die mittlere Differenz aufeinanderfolgender
 Pings. **Latenz unter Last** misst die Antwortzeit während der Übertragung.
 Ein Strich bedeutet, dass keine abgeschlossene Messung vorliegt.
 
