@@ -872,6 +872,9 @@ const ConversationTargetSchema = z
   .object({
     conversationId: ConversationIdInputSchema,
     sourceFolderId: ResourceShortIdSchema.describe("Provider folder ID from which the conversation is being changed."),
+    messageId: ResourceShortIdSchema.optional().describe(
+      "Change only this message and all its provider copies in the source folder; omit for the whole conversation.",
+    ),
   })
   .strict();
 export const ConversationMarkInputSchema = z
@@ -879,10 +882,22 @@ export const ConversationMarkInputSchema = z
     mailboxId: MailboxIdInputSchema,
     target: ConversationTargetSchema.describe("Conversation and its current provider folder."),
     read: z.boolean().optional().describe("Set true to mark read or false to mark unread."),
+    answered: z.boolean().optional().describe("Set or clear the provider answered flag; requires target.messageId."),
+    draft: z
+      .boolean()
+      .optional()
+      .describe("Set or clear the provider draft flag; requires target.messageId. This does not create a Cloud draft."),
     flagged: z.boolean().optional().describe("Set true to flag or false to unflag."),
   })
   .strict()
-  .refine((value) => value.read !== undefined || value.flagged !== undefined, "At least one state change is required");
+  .refine(
+    (value) => value.read !== undefined || value.flagged !== undefined || value.answered !== undefined || value.draft !== undefined,
+    "At least one state change is required",
+  )
+  .refine(
+    (value) => value.target.messageId !== undefined || (value.answered === undefined && value.draft === undefined),
+    "Answered and draft flags require an exact message target",
+  );
 export const ConversationMoveInputSchema = z
   .object({
     mailboxId: MailboxIdInputSchema,
@@ -908,6 +923,7 @@ export const ConversationMoveInputSchema = z
 export const ConversationMutationItemDataSchema = z
   .object({
     conversationId: ResourceShortIdSchema,
+    messageId: ResourceShortIdSchema.optional(),
     correlationId: z.string().min(1),
     commands: z.array(z.object({ id: UuidSchema, state: z.string().min(1) }).strict()).max(500),
   })
@@ -1028,9 +1044,19 @@ export const ConversationAssignInputSchema = z
       .array(UuidSchema)
       .max(MAIL_CONVERSATION_ASSIGNEE_LIMIT)
       .describe("User or service-account UUIDs to add, remove, or replace; empty with replace clears all assignees."),
+    onlyIfUnassigned: z
+      .boolean()
+      .optional()
+      .describe("Atomically fail if anybody is already assigned; requires add mode and expectedRevision."),
+    expectedRevision: ExpectedRevisionInputSchema.optional(),
     mode: z.enum(["add", "remove", "replace"]).describe("Add principals, remove principals, or replace the entire assignee set."),
   })
   .strict()
+  .refine(
+    (value) =>
+      !value.onlyIfUnassigned || (value.mode === "add" && value.assigneeUserIds.length > 0 && value.expectedRevision !== undefined),
+    "Unassigned-only assignment requires a revision and a nonempty add",
+  )
   .refine((value) => value.mode === "replace" || value.assigneeUserIds.length > 0, "Add and remove require at least one principal");
 export const ConversationAssignBatchInputSchema = z
   .object({
@@ -1062,21 +1088,43 @@ export const ConversationAssignBatchDataSchema = z
     ),
   })
   .strict();
-export const ConversationStatusUpdateBatchInputSchema = z
+export const ConversationStatusSetBatchInputSchema = z
   .object({
     mailboxId: MailboxIdInputSchema,
     conversationIds: completeConversationsSchema.shape.conversationIds,
-    status: z.enum(["done", "open"]).describe("Mark the conversations done or reopen them."),
+    status: z
+      .enum(["done", "open", "waiting", "needs_action"])
+      .describe("Explicit work status, or open to derive the status from the latest message."),
+    expectedRevisions: z
+      .record(ResourceShortIdSchema, ExpectedRevisionInputSchema)
+      .optional()
+      .describe("Optional revision fence for every requested conversation; any conflict leaves the batch unchanged."),
   })
-  .strict();
-export const ConversationStatusUpdateBatchDataSchema = conversationCompletionResultSchema;
+  .strict()
+  .refine(
+    (value) => !value.expectedRevisions || value.conversationIds.every((id) => value.expectedRevisions?.[id] !== undefined),
+    "Supply a revision for every conversation",
+  );
+export const ConversationStatusSetBatchDataSchema = conversationCompletionResultSchema;
+// Published update contracts retain their original status enums.
+export const ConversationStatusUpdateBatchInputSchema = ConversationStatusSetBatchInputSchema.safeExtend({
+  status: z.enum(["done", "open"]).describe("Mark the conversations done or reopen them."),
+});
+export const ConversationStatusUpdateBatchDataSchema = conversationCompletionResultSchema.extend({
+  completion: z.enum(["done", "open"]),
+});
 
-export const ConversationStatusUpdateInputSchema = z
+export const ConversationStatusSetInputSchema = z
   .object({
     ...CollaborationMutationBaseShape,
-    status: z.enum(["done", "open"]).describe("Mark the conversation done or reopen it."),
+    status: z
+      .enum(["done", "open", "waiting", "needs_action"])
+      .describe("Explicit work status, or open to derive the status from the latest message."),
   })
   .strict();
+export const ConversationStatusUpdateInputSchema = ConversationStatusSetInputSchema.extend({
+  status: z.enum(["done", "open"]).describe("Mark the conversation done or reopen it."),
+});
 export const ConversationKeepInputSchema = z
   .object({ mailboxId: MailboxIdInputSchema, conversationId: ConversationIdInputSchema })
   .strict();
@@ -1303,4 +1351,42 @@ export const SubscriptionUnsubscribeInputSchema = z
   .strict();
 export const SubscriptionUnsubscribeDataSchema = z
   .object({ listKey: z.string().min(1), status: z.literal("unsubscribe_requested"), requestedAt: TimestampSchema })
+  .strict();
+
+export const ConversationSummaryWriteInputSchema = z
+  .object({
+    mailboxId: MailboxIdInputSchema,
+    conversationId: ConversationIdInputSchema,
+    expectedRevision: ExpectedRevisionInputSchema,
+    expectedSummaryRevision: ExpectedRevisionInputSchema.describe("Summary revision read before preparing the text."),
+    summary: z
+      .string()
+      .trim()
+      .min(1)
+      .max(50_000)
+      .describe("Prepared summary text; this Action does not generate text and never replaces a person's summary."),
+  })
+  .strict();
+export const ConversationSummaryWriteDataSchema = z
+  .object({
+    conversationId: ResourceShortIdSchema,
+    summaryRevision: z.number().int().positive(),
+    conversationRevision: z.number().int().positive(),
+    skipped: z.enum(["edited_by_person"]).nullable(),
+  })
+  .strict();
+export const ConversationReferenceEnsureInputSchema = z
+  .object({
+    mailboxId: MailboxIdInputSchema,
+    conversationId: ConversationIdInputSchema,
+  })
+  .strict();
+export const ConversationReferenceEnsureDataSchema = z
+  .object({
+    conversationId: ResourceShortIdSchema,
+    value: z.string(),
+    role: z.enum(["primary", "alias"]),
+    conversationRevision: z.number().int().positive(),
+    created: z.boolean(),
+  })
   .strict();
