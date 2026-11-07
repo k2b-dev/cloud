@@ -44,12 +44,37 @@ const script = await build.outputs[0]!.text();
 
 const desktop = { viewport: { width: 1280, height: 860 } };
 const phone = { viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true };
+// Served over http like an app page: the phone sheet adds a history entry (Back closes it), and WebKit adds none on
+// about:blank, where the sheet would wait for a popstate that never comes.
+const page = (theme: string) =>
+  `<!doctype html><html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">` +
+  `<style>${css}</style></head><body class="k2b-ui" data-theme="${theme === "dark" ? "dark" : "light"}" style="margin:0;background:var(--k2b-surface)">` +
+  `<main style="padding:16px"><header id="head" style="display:flex;align-items:center;gap:12px;max-width:760px;margin-left:auto">` +
+  `<h3 style="flex:1;min-width:0;margin:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">Umsatz nach Kanal</h3>` +
+  `<div id="picker"></div><a id="link" href="#">Alle Auswertungen</a></header></main></body></html>`;
 let browser: Browser;
+let server: ReturnType<typeof Bun.serve> | undefined;
+let origin: string;
 beforeAll(async () => {
   browser = await launchBrowser();
+  server = Bun.serve({
+    hostname: "127.0.0.1",
+    port: 0,
+    fetch(request) {
+      const url = new URL(request.url);
+      if (url.pathname === "/fixture.js")
+        return new Response(script, { headers: { "Content-Type": "application/javascript; charset=utf-8" } });
+      return new Response(page(url.searchParams.get("theme") ?? "light"), { headers: { "Content-Type": "text/html; charset=utf-8" } });
+    },
+  });
+  origin = `http://127.0.0.1:${server.port}`;
 }, 30_000);
 afterAll(async () => {
-  await browser?.close();
+  try {
+    await browser?.close();
+  } finally {
+    server?.stop(true);
+  }
 });
 
 const load = async (
@@ -57,25 +82,19 @@ const load = async (
   options: { value: PeriodValue | null; weekStartsOn?: 0 | 1 } = { value: { preset: "this-month" } },
   theme: "light" | "dark" = "light",
 ): Promise<Page> => {
-  const page = await browser.newPage({ ...viewport, timezoneId: "America/New_York", reducedMotion: "reduce" });
+  const tab = await browser.newPage({ ...viewport, timezoneId: "America/New_York", reducedMotion: "reduce" });
   try {
     // 00:30 on Sunday 8 November 2026 in Berlin, still 18:30 on Saturday in the browser's New York: the picker must use Berlin.
-    await page.clock.install({ time: new Date("2026-11-07T23:30:00Z") });
-    await page.setContent(
-      `<!doctype html><html lang="de"><head><meta name="viewport" content="width=device-width, initial-scale=1">` +
-        `<style>${css}</style></head><body class="k2b-ui" data-theme="${theme}" style="margin:0;background:var(--k2b-surface)">` +
-        `<main style="padding:16px"><header id="head" style="display:flex;align-items:center;gap:12px;max-width:760px;margin-left:auto">` +
-        `<h3 style="flex:1;min-width:0;margin:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">Umsatz nach Kanal</h3>` +
-        `<div id="picker"></div><a id="link" href="#">Alle Auswertungen</a></header></main></body></html>`,
-    );
-    await page.evaluate((options) => {
+    await tab.clock.install({ time: new Date("2026-11-07T23:30:00Z") });
+    await tab.goto(`${origin}/?theme=${theme}`);
+    await tab.evaluate((options) => {
       window.periodFixture = options;
     }, options);
-    await page.addScriptTag({ content: script });
-    await page.locator(".k2b-period-picker__trigger").waitFor();
-    return page;
+    await tab.addScriptTag({ url: `${origin}/fixture.js` });
+    await tab.locator(".k2b-period-picker__trigger").waitFor();
+    return tab;
   } catch (error) {
-    await page.close();
+    await tab.close();
     throw error;
   }
 };
@@ -220,12 +239,14 @@ describe("PeriodPicker", () => {
     await next.click();
     expect(await titles()).toEqual(["April 2027", "Mai 2027"]);
     // Narrow the window: the second month goes; widen it again: it comes back.
+    // WebKit reports the media query change a frame after the resize; wait for the calendars themselves.
+    const calendars = (count: number) =>
+      page.waitForFunction((count) => document.querySelectorAll(".k2b-period-picker__editor .k2b-date-calendar").length === count, count);
     await page.setViewportSize({ width: 700, height: 860 });
-    await settled(page);
-    expect(await editor.locator(".k2b-date-calendar").count()).toBe(1);
+    await calendars(1);
     await page.setViewportSize(desktop.viewport);
-    await settled(page);
-    expect(await editor.locator(".k2b-date-calendar").count()).toBe(2);
+    await calendars(2);
+    expect(await titles()).toEqual(["April 2027", "Mai 2027"]);
     await page.close();
   });
 
@@ -270,8 +291,6 @@ describe("PeriodPicker", () => {
     expect(await sheet.getByRole("listbox").count()).toBe(0);
     await sheet.getByRole("button", { name: "Zurück zu den Vorgaben" }).click();
     await sheet.getByRole("option", { name: /^Letzter Monat/ }).click();
-    // The sheet commits once its close has finished, which WebKit reports after the sheet left the page.
-    await page.waitForFunction(() => window.periodCommits.length > 0);
     expect(await sheet.count()).toBe(0);
     expect(await page.evaluate(() => window.periodCommits)).toEqual([{ preset: "last-month" }]);
     expect(await trigger(page).textContent()).toContain("Letzter Monat · 1.–31. Okt.");

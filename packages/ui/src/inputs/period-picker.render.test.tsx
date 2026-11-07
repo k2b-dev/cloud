@@ -3,6 +3,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import { createConfig } from "@k2b/ssr";
+import { Window } from "happy-dom";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
 
@@ -38,9 +39,14 @@ const render = (props: Partial<Parameters<typeof PeriodPicker>[0]>, locale = "de
       },
     }),
   );
-const visible = (html: string) =>
-  html.match(/<span id="[^"]+-value"[^>]*>([\s\S]*?)<\/span><span aria-hidden/)?.[1]?.replace(/<[^>]+>/g, "");
-const reserved = (html: string) => [...html.matchAll(/<span aria-hidden="true">([^<]*)<\/span>/g)].map((match) => match[1]);
+// Read the server HTML with a real parser: the shown value and the hidden texts that reserve the trigger's width.
+const parse = (html: string) => {
+  const document = new Window().document;
+  document.body.innerHTML = html;
+  return document.querySelector(".k2b-period-picker__value")!;
+};
+const visible = (html: string) => parse(html).querySelector('[id$="-value"]')?.textContent;
+const reserved = (html: string) => [...parse(html).querySelectorAll('[aria-hidden="true"]')].map((span) => span.textContent);
 
 describe("PeriodPicker on the server", () => {
   test("shows the preset with its days and names the control with its value", () => {
