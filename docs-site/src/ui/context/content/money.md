@@ -47,7 +47,7 @@ and the spoken words alike.
 | Zero | `=` | muted text | none |
 
 `--k2b-flow-in-mark` and `--k2b-flow-out-mark` color bars, areas, and dots of
-money in charts. All tokens exist in light and dark; text keeps at least 4.5:1
+money in charts. All tokens exist in light and dark, in the full stylesheet and in the classless `@k2b/ui/base.css`, so charts drawn in a page with only the base stylesheet use the same colors; text keeps at least 4.5:1
 on its surface. Turquoise and violet only mean in and out: plum is reserved
 for AI, green and red for status.
 
