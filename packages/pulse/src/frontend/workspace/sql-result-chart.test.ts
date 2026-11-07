@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { charts } from "@k2b/stdlib";
+import { charts } from "@k2b/ui/charts/core";
 import { sqlResultChart } from "./sql-result-chart";
 
 test("explains absent time/numeric columns and empty results", () => {
