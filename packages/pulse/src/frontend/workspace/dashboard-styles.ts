@@ -55,8 +55,9 @@ export const dashboardStyles = `
 .pulse-dashboard__source a{text-decoration:underline;text-underline-offset:2px}
 .pulse-dashboard__source a:hover{color:var(--k2b-text)}
 /* A table runs to the panel's edges and its last row ends on the frame; the frame is its only edge. */
+.pulse-dashboard__panel[data-kind=table]{display:flex;flex-direction:column}
 .pulse-dashboard__table{min-width:0;max-height:360px;margin:10px -16px 0;border-top:1px solid var(--k2b-border)}
-.pulse-dashboard__table:last-child{margin-bottom:-14px;border-radius:0 0 calc(var(--k2b-radius-surface) - 1px) calc(var(--k2b-radius-surface) - 1px);overflow:hidden}
+.pulse-dashboard__table:last-child{flex:1 1 auto;margin-bottom:-14px;border-radius:0 0 calc(var(--k2b-radius-surface) - 1px) calc(var(--k2b-radius-surface) - 1px);overflow:hidden}
 .pulse-dashboard__public{width:100%;max-width:1600px;margin:0 auto;padding:24px}
 @container pulse-dashboard (max-width:600px){.pulse-dashboard__stats .k2b-stat-cell__value{font-size:24px}.pulse-dashboard__toolbar{align-items:flex-start}.pulse-dashboard__public{padding:16px}}
 @media(max-width:600px){.pulse-dashboard__public{padding:16px}}

@@ -306,15 +306,14 @@ test("dashboard entries, section icons and tables follow the shared frame: plain
       const frame = await tab.locator('[data-panel="hosts"] .k2b-table-shell').evaluate((shell) => {
         const style = getComputedStyle(shell);
         const panel = shell.closest(".k2b-dashboard-panel")!;
-        const lastRow = shell.querySelector("tbody tr:last-child")!.getBoundingClientRect();
         const box = panel.getBoundingClientRect();
         const table = shell.getBoundingClientRect();
         return {
           surface: shell.getAttribute("data-surface"),
           border: style.borderLeftWidth !== "0px" && style.borderLeftStyle !== "none",
           panelBorder: getComputedStyle(panel).borderTopWidth,
-          inset: [table.left - box.left, box.right - table.right],
-          gap: box.bottom - 1 - lastRow.bottom,
+          // Left, right and bottom: the table meets the frame's 1 px edge, also when its row stretches the panel.
+          inset: [table.left - box.left, box.right - table.right, box.bottom - table.bottom],
         };
       });
       expect({ surface: frame.surface, border: frame.border, panelBorder: frame.panelBorder }).toEqual({
@@ -322,9 +321,7 @@ test("dashboard entries, section icons and tables follow the shared frame: plain
         border: false,
         panelBorder: "1px",
       });
-      expect(frame.inset).toEqual([1, 1]);
-      expect(frame.gap).toBeGreaterThanOrEqual(0);
-      expect(frame.gap).toBeLessThanOrEqual(2);
+      expect(frame.inset.map(Math.round)).toEqual([1, 1, 1]);
     } finally {
       await tab.close();
     }
