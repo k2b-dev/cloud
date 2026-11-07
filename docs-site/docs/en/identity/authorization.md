@@ -445,9 +445,19 @@ This order is deliberate:
 3. lower that grant to the credential scope;
 4. compare the effective permission with the operation.
 
-The same helper accepts user and user-delegated actors. They use their user
-grants and are not scope-capped. A standalone or agent account skips the
-binding check, because it has none, but is still lowered to its scopes.
+Personal API keys use the person's current grants without a permission-scope
+cap. An empty scope list or a stored `read` scope does not make a general
+personal key read-only. Models-only keys reach only the model API.
+
+OAuth tokens, including CLI logins, are additionally limited by their scopes:
+mutations require `write` or `admin` as well as the person's current grants.
+Cloud enforces this at the [route policy](/en/docs/identity/route-policies)
+and capability boundaries; the helper above resolves the resource grant.
+
+Machine accounts without a delegated user are also limited by their scopes.
+A read-only machine credential cannot use a write grant to change a resource.
+Standalone and agent accounts skip the resource-binding check because they
+have no binding, but still use the lower of their grants and scopes.
 
 Collection and search endpoints must restrict a resource-bound credential's
 query to its bound resource or reject it. A standalone or agent account lists

@@ -2,7 +2,7 @@ import { afterAll, afterEach, beforeEach, expect, test } from "bun:test";
 import { capabilityReviewRememberScope } from "@k2b/cloud/capabilities";
 import { assertCapabilityReview, compileCapabilityManifest } from "@k2b/cloud/capabilities/testing";
 import type { CapabilityExecutionContext, User } from "@k2b/cloud/contracts";
-import { CapabilityActionReviewDataSchema, capabilityActionPolicy } from "@k2b/cloud/contracts";
+import { CapabilityActionReviewDataSchema, capabilityActionPolicy, ServiceAccountSchema } from "@k2b/cloud/contracts";
 import { chatCapabilities } from "./capabilities";
 import { DiscussionListInputSchema, DiscussionPostInputSchema, MessageReadInputSchema } from "./capability-contracts";
 import { discussionApprovalScope, discussionReview } from "./capability-reviews";
@@ -146,6 +146,32 @@ test("fails closed on unavailable, denied, malformed and moved owner results", a
   ])
     expect((await authorizeDiscussion(item, context(data))).ok).toBe(false);
   expect((await authorizeDiscussion({ ...item, type: container.ref.type }, context())).ok).toBe(false);
+});
+
+test("personal keys use the person's grants for discussion reads and writes regardless of stored scopes", async () => {
+  for (const scopes of [[], ["read"], ["write"]]) {
+    const c = context();
+    c.actor = {
+      kind: "service_account",
+      serviceAccount: ServiceAccountSchema.parse({
+        id: "33333333-3333-4333-8333-333333333333",
+        name: "Personal key",
+        kind: "user_delegated",
+        status: "active",
+        delegatedUserId: user.id,
+        appId: null,
+        resourceType: null,
+        resourceId: null,
+        createdBy: null,
+        createdAt: "2026-11-07T00:00:00Z",
+      }),
+      delegatedUser: user,
+      scopes,
+    };
+    c.authority = { actor: c.actor, accessSubject: c.accessSubject, credentialKind: "api_key", scopes };
+    expect((await authorizeDiscussion(item, c)).ok).toBe(true);
+    expect((await authorizeDiscussion(item, c, true)).ok).toBe(true);
+  }
 });
 
 test("scope ceilings survive user delegation and a reader grant cannot authorize a write", async () => {

@@ -51,8 +51,10 @@ the container type of the provider's `discussions` role. The container reader
 supplies the caller's `view.permission` at that location. Reading needs item
 and container read access. Writing also needs `write` or `admin` on that
 container. No provider needs Chat-specific data or a top-level container
-projection. All account kinds retain their normal credential scopes and
-resource binding. Edit and delete additionally require authorship and an age
+projection. [Personal API keys](/en/docs/identity/authorization#limit-resource-bound-credentials)
+use the person's grants without a scope cap. OAuth and machine credentials
+are additionally limited by their scopes and any resource binding.
+Edit and delete additionally require authorship and an age
 below ten minutes. The database clock decides the window. Use `revision`
 from the last read; reactions do not change this content revision.
 

@@ -19,8 +19,6 @@ export const mutateMessage =
     const parsed = (operation === "edit" ? EditMessageSchema : DeleteMessageSchema).safeParse(input.input);
     const t = catalog(input);
     if (!parsed.success || !MessageIdSchema.safeParse(input.messageId).success) return fail(err.badInput(t.invalidInput));
-    const scopes = input.credentialScopes ?? (input.actor.kind === "service_account" ? input.actor.scopes : undefined);
-    if (scopes && !scopes.some((scope) => scope === "write" || scope === "admin")) return fail(err.forbidden(t.forbidden));
     const allowed = await requireConversation({ ...input, required: "write" });
     if (!allowed.ok) return allowed;
     const limited = await checkWriteRate(input);

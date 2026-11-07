@@ -51,7 +51,9 @@ invalid explicit bearer does not silently fall back to the cookie.
 | OAuth authorization-code token | App acting for a user | User |
 | OAuth client-credentials token | Service integration or agent | Resource-bound or standalone service account |
 
-All branches produce the same `actor` and `accessSubject` contract.
+All branches produce the same `actor` and `accessSubject` contract. Personal API
+keys use the person's grants without a scope cap; OAuth and machine credentials
+are additionally limited by their scopes. See [Resource authorization](/en/docs/identity/authorization#limit-resource-bound-credentials).
 
 Operators can disable Guest, local Login or FreeIPA account access separately
 from login-page visibility. Cloud rechecks the category on user-bound
