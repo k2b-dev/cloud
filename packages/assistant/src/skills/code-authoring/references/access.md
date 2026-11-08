@@ -80,7 +80,9 @@ Public routes never see who is signed in. To recognise visitors, leave out
 `null`, also for signed-in visitors. Public routes need the public-endpoint
 policy and, by default, a Cloud administrator's approval. They share a limit
 of 20 requests per minute per client network and Code, and accept bodies up
-to 4 KiB. Return only what any visitor may see.
+to 4 KiB. Return only what any visitor may see. Add `layout: "plain"`, as in
+`{ public: true, layout: "plain" }`, to draw the page without the Cloud layout
+([Pages](pages.md#where-a-page-appears)).
 
 <!-- check: personal -->
 ```tsx

@@ -82,6 +82,7 @@ Automatic replies remain reference evidence and are not rebuilt as sending Code.
 | Keep data between runs | State in the owning app, read again each run | [Data](references/data.md) |
 | Call an external HTTPS service, with a secret | `http.fetch` with `secrets.NAME` | [Access and secrets](references/access.md) |
 | Decide who sees a page | `c.user` (`id`, `groups`, `kind`, `provider`, `name`), `{ public: true }` | [Access and secrets](references/access.md) |
+| A page without the Cloud layout, such as a public survey | `{ public: true, layout: "plain" }` | [Pages](references/pages.md), [survey](references/template-survey.md) |
 | Pass a file from Mail or Files to another app | `FileRef` from a read stream into an Action's `file` input | [FileRef](references/file-ref.md), [mail invoices](references/template-mail-invoices.md) |
 
 ## Rules that hold everywhere
@@ -115,6 +116,7 @@ the real checker. Adapt names, IDs and texts; keep the structure.
 | --- | --- | --- |
 | [Dashboard page](references/template-dashboard-page.md) | mailbox | Key figures, a chart and a table from live Mail data; follows new mail |
 | [Form app](references/template-form-app.md) | personal | Form with validation that creates a Space task, confirmation page |
+| [Survey](references/template-survey.md) | personal | Public form without the Cloud layout that files each answer as a Space task |
 | [Mail automation](references/template-mail-automation.md) | mailbox | Categorise with AI, tag, assign, set status, summarise, draft a reply |
 | [Weekly report](references/template-weekly-report.md) | personal | Weekly local schedule, AI summary, delivery to a Gustav chat |
 | [Event to chat](references/template-event-to-chat.md) | mailbox | Post a short note into a team chat for each new message |

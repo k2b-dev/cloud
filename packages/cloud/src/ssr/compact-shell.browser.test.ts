@@ -920,7 +920,7 @@ describe("anonymous pages", () => {
       const header = document.querySelector(".layout-header")!;
       return {
         header: getComputedStyle(header).display,
-        signIn: visible(header.querySelector('a[href="/auth/login"]')),
+        signIn: visible(header.querySelector('a[href^="/auth/login"]')),
         help: visible(header.querySelector('[aria-label="Open help"]')),
         breadcrumbs: visible(header.querySelector("nav")),
         rail: document.querySelector(".layout-rail"),

@@ -400,30 +400,38 @@ export function analyzeCode(request: CodeCheckRequest): CodeAnalysis {
           if (["get", "post", "put", "delete", "all"].includes(method) && collecting) {
             const paths = node.arguments[0] && literals(node.arguments[0]);
             const opts = node.arguments[2];
-            // Public exposure must be an explicit literal, never a computed flag or spread.
+            // Public exposure and the layout must be explicit literals, never a computed flag or spread.
             let isPublic = false;
+            let plain = false;
             let validOptions = !opts;
-            if (opts && ts.isObjectLiteralExpression(opts) && opts.properties.length === 1) {
-              const prop = opts.properties[0]!;
-              if (
-                ts.isPropertyAssignment(prop) &&
-                prop.name.getText() === "public" &&
-                (prop.initializer.kind === ts.SyntaxKind.TrueKeyword || prop.initializer.kind === ts.SyntaxKind.FalseKeyword)
-              ) {
-                isPublic = prop.initializer.kind === ts.SyntaxKind.TrueKeyword;
-                validOptions = true;
-              }
+            if (opts && ts.isObjectLiteralExpression(opts) && opts.properties.length > 0) {
+              const seen = new Set<string>();
+              validOptions = opts.properties.every((prop) => {
+                if (!ts.isPropertyAssignment(prop) || !(ts.isIdentifier(prop.name) || ts.isStringLiteral(prop.name))) return false;
+                const name = prop.name.text;
+                if (seen.has(name)) return false;
+                seen.add(name);
+                const value = prop.initializer;
+                if (name === "public" && (value.kind === ts.SyntaxKind.TrueKeyword || value.kind === ts.SyntaxKind.FalseKeyword)) {
+                  isPublic = value.kind === ts.SyntaxKind.TrueKeyword;
+                  return true;
+                }
+                if (name !== "layout" || !ts.isStringLiteral(value) || value.text !== "plain") return false;
+                plain = true;
+                return true;
+              });
             }
             const route = CodeRouteSchema.safeParse({
               method: method.toUpperCase(),
               path: paths?.length === 1 ? paths[0] : null,
               public: isPublic,
+              ...(plain ? { layout: "plain" } : {}),
             });
             if (!route.success || !validOptions || !ts.isExpressionStatement(node.parent) || !ts.isSourceFile(node.parent.parent))
               report(
                 node,
                 "code_static_route",
-                "Deklariere Routen auf Modulebene mit konstantem Pfad und optional { public: true | false }.",
+                'Deklariere Routen auf Modulebene mit konstantem Pfad und optional { public: true | false, layout: "plain" }.',
               );
             else {
               const name = "route:" + route.data.method + ":" + route.data.path;
