@@ -556,6 +556,21 @@ describe("public ImageEditor interactions", () => {
     }
   });
 
+  test("phones keep a fact with an icon as an icon chip and drop the others", async () => {
+    const { page, errors } = await open("facts=1", 390);
+    try {
+      const facts = page.locator(".k2b-image-editor__fact");
+      expect(await facts.locator("visible=true").count()).toBe(1);
+      const lock = facts.filter({ hasText: "Read only" });
+      expect((await lock.boundingBox())!.width).toBe(32);
+      expect(await lock.getAttribute("title")).toBe("You may only view this file");
+      expect(await page.getByText("Read only", { exact: true }).count()).toBe(1);
+      expect(errors).toEqual([]);
+    } finally {
+      await page.close();
+    }
+  });
+
   test("the desktop shows the redaction notice once, above the save actions", async () => {
     const { page, errors } = await open("redactionNotice=1");
     try {

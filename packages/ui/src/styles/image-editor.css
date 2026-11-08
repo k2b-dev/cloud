@@ -318,6 +318,8 @@
 .k2b-ui .k2b-image-editor[data-state="loading"] .k2b-image-editor__chip-thumb,
 .k2b-ui .k2b-image-editor[data-state="error"] .k2b-image-editor__chip-thumb { visibility: hidden; }
 .k2b-ui .k2b-image-editor__chip-name { min-width: 0; max-width: 15rem; overflow: hidden; }
+.k2b-ui .k2b-image-editor__fact { position: relative; }
+.k2b-ui .k2b-image-editor__fact-label { white-space: nowrap; }
 .k2b-ui .k2b-image-editor__dirty { flex: none; width: 7px; height: 7px; border-radius: 50%; background: var(--k2b-action); visibility: hidden; }
 .k2b-ui .k2b-image-editor__dirty[data-on] { visibility: visible; }
 .k2b-ui .k2b-image-editor__muted { color: var(--k2b-text-muted); font-weight: 400; }
@@ -806,7 +808,16 @@
 }
 .k2b-ui .k2b-image-editor[data-phone] .k2b-image-editor__chips { right: calc(var(--k2b-image-editor-save-width, 140px) + var(--k2b-image-editor-gap) * 2); }
 .k2b-ui .k2b-image-editor[data-phone] :is(.k2b-image-editor__chips [data-optional], .k2b-image-editor__chip--size) { display: none; }
-.k2b-ui .k2b-image-editor[data-phone] .k2b-image-editor__chip[data-tone] { width: 32px; padding: 0; justify-content: center; }
+.k2b-ui .k2b-image-editor[data-phone] :is(.k2b-image-editor__chip[data-tone], .k2b-image-editor__fact) { flex: none; width: 32px; padding: 0; justify-content: center; }
+/* The fact's text stays for screen readers; its tooltip tells sighted people on a phone. */
+.k2b-ui .k2b-image-editor[data-phone] .k2b-image-editor__fact-label {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
 .k2b-ui .k2b-image-editor[data-phone] .k2b-image-editor__saved { position: absolute; top: 42px; left: 0; width: auto; padding: 0 12px; }
 .k2b-ui .k2b-image-editor[data-phone] .k2b-image-editor__chip-name { max-width: none; }
 .k2b-ui .k2b-image-editor[data-phone] .k2b-image-editor__pane {

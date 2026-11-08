@@ -1690,11 +1690,16 @@ function ImageEditorSession(props: ImageEditorProps): JSX.Element {
         </Show>
         <For each={props.facts ?? []}>
           {(fact) => (
-            <span class="k2b-image-editor__chip k2b-image-editor__glass" data-optional="" title={fact.tooltip}>
+            // On phones a fact with an icon stays as the icon alone; one without an icon gives way.
+            <span
+              class="k2b-image-editor__chip k2b-image-editor__glass k2b-image-editor__fact"
+              data-optional={fact.icon ? undefined : ""}
+              title={fact.tooltip}
+            >
               <Show when={fact.icon}>
                 <i class={fact.icon} aria-hidden="true" />
               </Show>
-              {fact.label}
+              <span class="k2b-image-editor__fact-label">{fact.label}</span>
             </span>
           )}
         </For>

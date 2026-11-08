@@ -54,6 +54,11 @@ function mount() {
         source={source()}
         title="photo.jpg"
         redactionNotice={parameters.has("redactionNotice") ? "Older versions keep the original." : undefined}
+        facts={
+          parameters.has("facts")
+            ? [{ label: "Read only", icon: "ti ti-lock", tooltip: "You may only view this file" }, { label: "Version 3" }]
+            : undefined
+        }
         items={items}
         currentItem={current()}
         onSelectItem={(id) => {
