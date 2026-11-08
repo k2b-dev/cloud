@@ -42,7 +42,7 @@ test.each(["signal", "code_stop"])(
             assets: {
               prelude,
               baseCss,
-              chartModule: "",
+              chartParts: { shared: { code: "", hash: "" }, kinds: {} },
               preludeHash: `'sha256-${new Bun.CryptoHasher("sha256").update(prelude).digest("base64")}'`,
             },
           });

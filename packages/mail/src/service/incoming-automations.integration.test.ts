@@ -55,6 +55,7 @@ import { loadMailboxTransportFence } from "./mailbox-transport-fence";
 import { createMailbox } from "./mailboxes";
 import { executeMaintenanceCommand } from "./maintenance-runtime";
 import { hydrateMessageFromSource, recordMissingMessageSources } from "./message-hydration";
+import { extractMessageProtocolFacts } from "./message-protocol";
 import { ingestEnvelope } from "./sync-runtime";
 import { loadMailWorkflowCatalog } from "./workflow-catalog-service";
 import { workflowSnapshotQuery } from "./workflow-data";
@@ -2821,6 +2822,7 @@ suite("incoming automations", () => {
         `Message-ID: ${envelope.messageId}`,
         `From: ${envelope.addresses.from[0]!.address}`,
         `To: ${envelope.addresses.to[0]!.address}`,
+        ...(envelope.addresses.cc.length ? [`Cc: ${envelope.addresses.cc.map((address) => address.address).join(", ")}`] : []),
         `Subject: ${envelope.subject}`,
         ...(envelope.inReplyTo ? [`In-Reply-To: ${envelope.inReplyTo}`] : []),
         "Content-Type: text/plain; charset=utf-8",
@@ -2908,11 +2910,128 @@ suite("incoming automations", () => {
     if (!deleted.ok) throw new Error(deleted.error.message);
   };
 
+  for (const status of ["waiting", "needs_action", "done"] as const) {
+    test(`list-only status automation preserves Done and snooze (${status})`, async () => {
+      setSystemTime(new Date("2026-11-06T12:00:00Z"));
+      const key = `list-only-${status}`;
+      const automation = await createStatusAutomation(key, undefined, status);
+      try {
+        const facts = extractMessageProtocolFacts((name) =>
+          name === "list-id" ? "Dev <dev.lists.example.org>" : name === "list-post" ? "<mailto:dev@lists.example.org>" : null,
+        );
+        const root = statusEnvelope(13100 + ["waiting", "needs_action", "done"].indexOf(status) * 2, key, null, "customer");
+        root.protocolFacts = facts;
+        const firstId = await ingestEnvelope({ db: sql, mailboxId, remoteResourceId, folderId: inboxFolderId, message: root });
+        const conversation = await statusConversation(firstId);
+        const snooze = new Date("2026-11-20T12:00:00Z");
+        await sql`UPDATE mail.conversations SET work_status = 'done', snoozed_until = ${snooze} WHERE id = ${conversation.id}::uuid`;
+        const reply = statusEnvelope(13101 + ["waiting", "needs_action", "done"].indexOf(status) * 2, key, root.messageId);
+        reply.protocolFacts = facts;
+        const replyId = await ingestEnvelope({
+          db: sql,
+          mailboxId,
+          remoteResourceId,
+          folderId: inboxFolderId,
+          message: reply,
+          captureWorkflowTriggers: true,
+        });
+        expect((await statusConversation(replyId)).id).toBe(conversation.id);
+        const runId = await dispatchStatusRun(automation.workflowId);
+        expect(await runMailWorkflow(runId)).toMatchObject({ state: "finished", result: { state: "succeeded" } });
+        expect(await statusConversation(replyId)).toMatchObject({ work_status: "done", snoozed_until: snooze });
+        const [step] = await sql<{ output: Record<string, unknown> }[]>`
+          SELECT outcome #> '{outcome,output}' AS output FROM workflows.step_outcome
+          WHERE run_id = ${runId}::uuid AND action = 'setConversationStatus'`;
+        expect(step?.output).toMatchObject({ action: "setConversationStatus", applied: false, skipped: "list_only" });
+        const [event] = await sql<{ list_only: boolean }[]>`SELECT (context #>> '{preconditions,message,listOnly}')::boolean AS list_only
+          FROM workflows.event WHERE id = (SELECT event_id FROM workflows.run WHERE id = ${runId}::uuid)`;
+        expect(event!.list_only).toBe(true);
+        const [audit] = await sql<{ item: { reasons: { kind: string; text?: string }[] } }[]>`
+          SELECT item FROM mail.automation_log WHERE run_id = ${runId}::uuid AND conversation_id = ${conversation.id}::uuid`;
+        expect(audit?.item.reasons).toContainEqual({
+          kind: "condition",
+          text: "Mailing-list-only messages do not change conversation work state.",
+        });
+        await hydrateStatusMessage(replyId, reply);
+        expect(await statusConversation(replyId)).toMatchObject({ work_status: "done", snoozed_until: snooze });
+        expect(await reconciledStatusActivities(replyId)).toEqual([]);
+        const [link] = await sql`SELECT status_covered FROM mail.conversation_messages WHERE message_id = ${replyId}::uuid`;
+        expect(link!.status_covered).toBe(null);
+      } finally {
+        await deleteStatusAutomation(automation.id);
+        setSystemTime();
+      }
+    }, 30_000);
+  }
+
+  test("list-only assignment is skipped while tagging still runs", async () => {
+    setSystemTime(new Date("2026-11-06T12:00:00Z"));
+    const key = "list-only-assignment";
+    const [tag] = await sql<{ short_id: string }[]>`INSERT INTO mail.local_tags
+      (short_id, mailbox_id, name, normalized_name, created_by_actor_kind, created_by_actor_id)
+      VALUES (${newShortId()}, ${mailboxId}::uuid, ${`List label ${suffix}`}, ${`list label ${suffix}`}, 'user', ${userIds[0]}::uuid) RETURNING short_id`;
+    const created = await createIncomingAutomation({
+      context: ownerContext,
+      mailboxId,
+      input: {
+        name: `List assignment ${suffix}`,
+        enabled: true,
+        scope: {
+          mode: "matching",
+          conditions: { mode: "all", items: [{ field: "sender_address", operator: "is", value: `status-${key}-${suffix}@external.test` }] },
+        },
+        steps: [
+          { id: crypto.randomUUID(), kind: "mail_action", action: { kind: "assign_user", userId: userIds[1]! } },
+          { id: crypto.randomUUID(), kind: "mail_action", action: { kind: "add_local_tag", tagId: tag!.short_id } },
+        ],
+      },
+    });
+    if (!created.ok) throw new Error(created.error.message);
+    try {
+      const facts = extractMessageProtocolFacts((name) =>
+        name === "list-id" ? "Dev <dev.lists.example.org>" : name === "list-post" ? "<mailto:dev@lists.example.org>" : null,
+      );
+      const root = statusEnvelope(13120, key, null, "customer");
+      root.protocolFacts = facts;
+      const firstId = await ingestEnvelope({ db: sql, mailboxId, remoteResourceId, folderId: inboxFolderId, message: root });
+      const conversation = await statusConversation(firstId);
+      const snooze = new Date("2026-11-20T12:00:00Z");
+      await sql`UPDATE mail.conversations SET work_status = 'done', snoozed_until = ${snooze} WHERE id = ${conversation.id}::uuid`;
+      const reply = statusEnvelope(13121, key, root.messageId);
+      reply.protocolFacts = facts;
+      const replyId = await ingestEnvelope({
+        db: sql,
+        mailboxId,
+        remoteResourceId,
+        folderId: inboxFolderId,
+        message: reply,
+        captureWorkflowTriggers: true,
+      });
+      expect((await statusConversation(replyId)).id).toBe(conversation.id);
+      const runId = await dispatchStatusRun(created.data.workflowId);
+      expect(await runMailWorkflow(runId)).toMatchObject({ state: "finished", result: { state: "succeeded" } });
+      const assignees = await sql<{ principal_id: string }[]>`
+        SELECT principal_id FROM mail.conversation_assignees WHERE conversation_id = ${conversation.id}::uuid`;
+      expect(assignees).toHaveLength(0);
+      const outputs = await sql<{ action: string; output: Record<string, unknown> }[]>`
+        SELECT action, outcome #> '{outcome,output}' AS output FROM workflows.step_outcome WHERE run_id = ${runId}::uuid AND action IS NOT NULL`;
+      expect(outputs.find((row) => row.action === "assignConversation")?.output).toMatchObject({ applied: false, skipped: "list_only" });
+      expect(outputs.find((row) => row.action === "addLocalTag")?.output).toMatchObject({ applied: true });
+      expect(await statusConversation(replyId)).toMatchObject({ work_status: "done", snoozed_until: snooze });
+      await hydrateStatusMessage(replyId, reply);
+      expect(await statusConversation(replyId)).toMatchObject({ work_status: "done", snoozed_until: snooze });
+    } finally {
+      await deleteStatusAutomation(created.data.id);
+      setSystemTime();
+    }
+  }, 30_000);
+
   // #1142: a workflow status decision covers only its triggering message, even before hydration.
   test("does not cover a reply that joined before the automation's status step", async () => {
     const automation = await createStatusAutomation("joined-before-status");
     try {
       const first = statusEnvelope(13001, "joined-before-status");
+      first.addresses.cc.push({ name: "Other participant", address: `status-other-sender-${suffix}@external.test` });
       const firstId = await ingestEnvelope({
         db: sql,
         mailboxId,

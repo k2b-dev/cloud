@@ -10,8 +10,13 @@ import { escapeXml } from "@k2b/stdlib";
 import { isChartDatum } from "@k2b/ui/chart-inspection";
 import { createCloud } from "./cloud";
 import { CloudError } from "./errors";
-import { boundMoney, chart, chartOptions, chartSvg, html, pendingChartHeight } from "./lib";
+import { boundMoney, chart, chartOptions, chartSvg, html, pendingChartHeight, resolveChartHtml } from "./lib";
 import { parseCsv, toCsv } from "./sheet-lib";
+
+test("PDF preparation only resolves actual chart placeholders", async () => {
+  const content = '<div data-chart-pending="author-id">Report</div>';
+  expect(await resolveChartHtml(content, "en-US")).toBe(content);
+});
 
 test("cloud.html escapes values, joins arrays and keeps nested markup", () => {
   const items = ["<b>", "Müller & Söhne"];

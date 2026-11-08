@@ -3,7 +3,7 @@ import { mkdir } from "node:fs/promises";
 import type { Browser, Page } from "playwright";
 import { launchBrowser, pageErrors, settled } from "../../../../ui/test/browser";
 import type { AppFrameAssets } from "./assets";
-import { buildBaseCss, buildChartModule, buildPrelude } from "./build-assets";
+import { buildBaseCss, buildChartParts, buildPrelude } from "./build-assets";
 import type { AppFiles } from "./compose";
 
 let browser: Browser;
@@ -15,7 +15,7 @@ beforeAll(async () => {
     prelude,
     preludeHash: `'sha256-${new Bun.CryptoHasher("sha256").update(prelude).digest("base64")}'`,
     baseCss: await buildBaseCss(),
-    chartModule: await buildChartModule(),
+    chartParts: await buildChartParts(),
   };
   const built = await Bun.build({
     entrypoints: [new URL("./lazy-charts-browser-harness.ts", import.meta.url).pathname],
@@ -61,7 +61,7 @@ const draw = `document.querySelector("#draw").addEventListener("click",()=>{
   document.querySelector("#charts").innerHTML=cloud.html\`<section class="card">\${cloud.chart(${histogram})}</section><section class="card">\${cloud.chart({kind:"gauge",title:"On time",value:75})}</section>\`;
   document.querySelector('[data-chart-kind="histogram"]').addEventListener("click",()=>{document.querySelector("#result").textContent="Chart selected";});
 });`;
-async function open(width: number, source = assets.chartModule, theme: "light" | "dark" = "light", script = draw) {
+async function open(width: number, source = assets.chartParts.shared.code, theme: "light" | "dark" = "light", script = draw) {
   const context = await browser.newContext({ viewport: { width, height: 1000 } });
   const page = await context.newPage();
   await page.goto(`http://127.0.0.1:${server.port}/`);
@@ -71,7 +71,7 @@ async function open(width: number, source = assets.chartModule, theme: "light" |
   page.on("request", (request) => {
     if (/^https?:/.test(request.url())) requests.push(request.url());
   });
-  await page.evaluate(({ files, source, theme }) => globalThis.lazyChartHarness.mount(files, { chartModule: source, theme }), {
+  await page.evaluate(({ files, source, theme }) => globalThis.lazyChartHarness.mount(files, { sharedSource: source, theme }), {
     files: files(script),
     source,
     theme,
@@ -100,7 +100,7 @@ for (const width of [1200, 390])
   for (const theme of ["light", "dark"] as const)
     test(`rare charts draw offline without moving their boxes, ${width}px ${theme}`, async () => {
       expect.assertions(14);
-      const { page, context, requests } = await open(width, delayed + assets.chartModule, theme);
+      const { page, context, requests } = await open(width, delayed + assets.chartParts.shared.code, theme);
       try {
         const initial = await app(page)
           .locator("body")
@@ -183,8 +183,120 @@ for (const width of [1200, 390])
       }
     });
 
+test("frames receive only drawn kinds and one shared part, never chart source in srcdoc", async () => {
+  const script = `
+    globalThis.receivedParts=[];
+    addEventListener("message", event => {
+      const part=event.data?.type==="result" && event.data.value;
+      if(part && typeof part.code==="string") globalThis.receivedParts.push(part.hash);
+    });
+    document.querySelector("#draw").addEventListener("click",()=>{
+      document.querySelector("#charts").innerHTML=cloud.chart(${histogram});
+    });
+  `;
+  const source = "globalThis.__chartPartSource2790=true;" + assets.chartParts.shared.code;
+  const sharedHash = new Bun.CryptoHasher("sha256").update(source).digest("hex");
+  const { page, context, requests } = await open(390, source, "light", script);
+  try {
+    const initial = await page.evaluate(() => {
+      const outer = document.querySelector<HTMLIFrameElement>("iframe.studio-app-frame")!;
+      return { srcdoc: outer.srcdoc, hostParts: Object.keys(globalThis.lazyChartAssets.chartParts.kinds) };
+    });
+    expect(initial.hostParts.sort()).toEqual(Object.keys(assets.chartParts.kinds).sort());
+    // Styles legitimately name rare chart classes. This marker is executable
+    // module source, so unlike a CSS selector it must never enter srcdoc.
+    expect(initial.srcdoc).not.toContain("__chartPartSource2790");
+    const chartFrame = app(page);
+    expect(await chartFrame.locator("body").evaluate(() => Reflect.get(globalThis, "receivedParts"))).toEqual([]);
+    await chartFrame.locator("#draw").click();
+    await chartFrame.locator('[data-chart-kind="histogram"] svg').waitFor();
+    expect(await chartFrame.locator("body").evaluate(() => Reflect.get(globalThis, "receivedParts").sort())).toEqual(
+      [sharedHash, assets.chartParts.kinds.histogram!.hash].sort(),
+    );
+    await chartFrame.locator("#draw").click();
+    await chartFrame.locator('[data-chart-kind="histogram"] svg').waitFor();
+    expect(await chartFrame.locator("body").evaluate(() => Reflect.get(globalThis, "receivedParts").length)).toBe(2);
+    expect(requests).toEqual([]);
+  } finally {
+    await context.close();
+  }
+});
+
+test("a corrupt host-held kind is rejected before import and offers retry offline", async () => {
+  const { page, context, requests } = await open(
+    390,
+    assets.chartParts.shared.code,
+    "light",
+    `
+    document.querySelector("#draw").addEventListener("click",()=>{
+      document.querySelector("#charts").innerHTML=cloud.chart({kind:"gauge",value:75});
+    });
+  `,
+  );
+  try {
+    await page.evaluate(
+      (files) => globalThis.lazyChartHarness.mount(files, { corruptKind: "gauge" }),
+      files(`
+      document.querySelector("#draw").addEventListener("click",()=>{
+        document.querySelector("#charts").innerHTML=cloud.chart({kind:"gauge",value:75});
+      });
+    `),
+    );
+    await ready(page);
+    await app(page).locator("#draw").click();
+    await app(page).getByRole("button", { name: "Try again" }).waitFor();
+    expect(await app(page).getByRole("alert").textContent()).toBe("The chart could not be loaded.");
+    expect(
+      await app(page)
+        .locator("body")
+        .evaluate(() => Reflect.get(globalThis, "__unverifiedChart") ?? false),
+    ).toBe(false);
+    expect(await app(page).locator("svg").count()).toBe(0);
+    expect(requests).toEqual([]);
+  } finally {
+    await context.close();
+  }
+});
+
+test("a failed kind import clears its cache and recovers on the next draw offline", async () => {
+  const { page, context, requests } = await open(390, counted + assets.chartParts.shared.code);
+  try {
+    await page.evaluate(
+      ({ files, code }) =>
+        globalThis.lazyChartHarness.mount(files, {
+          sharedSource: "globalThis.__chartLoads=(globalThis.__chartLoads??0)+1;" + globalThis.lazyChartAssets.chartParts.shared.code,
+          kindSource: { kind: "histogram", code },
+        }),
+      {
+        files: files(draw),
+        code:
+          'globalThis.__kindLoads=(globalThis.__kindLoads??0)+1;if(globalThis.__kindLoads===1)throw new Error("kind fixture failure");' +
+          assets.chartParts.kinds.histogram!.code,
+      },
+    );
+    await ready(page);
+    await app(page).locator("#draw").click();
+    await app(page).getByRole("button", { name: "Try again" }).waitFor();
+    await app(page).locator('[data-chart-kind="gauge"] svg').waitFor();
+    const failed = await boxes(page);
+    expect(await app(page).getByRole("alert").count()).toBe(1);
+    await app(page).locator("#draw").click();
+    await app(page).locator('[data-chart-kind="histogram"] svg').waitFor();
+    expect(await boxes(page)).toEqual(failed);
+    expect(await app(page).getByRole("alert").count()).toBe(0);
+    expect(
+      await app(page)
+        .locator("body")
+        .evaluate(() => ({ shared: Reflect.get(globalThis, "__chartLoads"), kind: Reflect.get(globalThis, "__kindLoads") })),
+    ).toEqual({ shared: 1, kind: 2 });
+    expect(requests).toEqual([]);
+  } finally {
+    await context.close();
+  }
+});
+
 test("a failed rare import stays in its box and retries offline", async () => {
-  const source = `${counted}if(globalThis.__chartLoads===1)throw new Error("fixture failure");${assets.chartModule}`;
+  const source = `${counted}if(globalThis.__chartLoads===1)throw new Error("fixture failure");${assets.chartParts.shared.code}`;
   const { page, context, requests } = await open(390, source);
   try {
     await app(page).locator("#draw").click();
@@ -232,7 +344,7 @@ for (const fixture of [
     const script = `document.querySelector("#draw").addEventListener("click",()=>{
 document.querySelector("#charts").innerHTML=cloud.chart({kind:"heatmap",layout:"calendar",title:"Deliveries",scale:"sequential",data:${JSON.stringify(fixture.data)}});
 });`;
-    const { page, context, requests } = await open(390, delayed + assets.chartModule, "light", script);
+    const { page, context, requests } = await open(390, delayed + assets.chartParts.shared.code, "light", script);
     try {
       await app(page).locator("#draw").click();
       await app(page).locator("html[data-chart-module-loading]").waitFor();
@@ -272,7 +384,7 @@ removed.remove();
 document.querySelector("#charts").innerHTML=cloud.chart({kind:"heatmap",data:[]});
 await cloud.pdf.render({html:cloud.html\`<h1>Delivery</h1>\${cloud.chart(${histogram})}\`});
 document.querySelector("#result").textContent="PDF ready";`;
-  const { page, context, requests } = await open(390, counted + assets.chartModule, "light", script);
+  const { page, context, requests } = await open(390, counted + assets.chartParts.shared.code, "light", script);
   try {
     expect(await app(page).locator("#result").textContent()).toBe("PDF ready");
     expect(await app(page).locator(".k2b-chart").count()).toBe(1);
@@ -293,7 +405,7 @@ document.querySelector("#result").textContent="PDF ready";`;
 test("snapshots wait for charts without waiting for unrelated cloud calls", async () => {
   const { page, context, requests } = await open(
     390,
-    delayed + assets.chartModule,
+    delayed + assets.chartParts.shared.code,
     "light",
     `${draw}
 document.querySelector("#draw").addEventListener("click",()=>{void cloud.ai.text({prompt:"fixture"});});`,
@@ -328,7 +440,7 @@ await cloud.pdf.render({html:charts});
 document.querySelector("#charts").innerHTML=charts;
 await cloud.pdf.render({html:charts});
 document.querySelector("#result").textContent="PDF ready";`;
-  const { page, context, requests } = await open(390, counted + assets.chartModule, "light", script);
+  const { page, context, requests } = await open(390, counted + assets.chartParts.shared.code, "light", script);
   try {
     expect(await app(page).locator("#result").textContent()).toBe("PDF ready");
     expect(await app(page).locator(".k2b-chart svg").count()).toBe(202);
@@ -352,7 +464,7 @@ test("rare render errors report their message without an import retry", async ()
   const script = `document.querySelector("#draw").addEventListener("click",()=>{
     document.querySelector("#charts").innerHTML=cloud.chart({kind:"gauge",value:75,format:()=>{throw new Error("Broken formatter");}});
   });`;
-  const { page, context, requests } = await open(390, counted + assets.chartModule, "light", script);
+  const { page, context, requests } = await open(390, counted + assets.chartParts.shared.code, "light", script);
   try {
     await app(page).locator("#draw").click();
     await app(page).getByRole("alert").waitFor();
@@ -376,7 +488,7 @@ test("rare render errors report their message without an import retry", async ()
 for (const fails of [false, true])
   test(`a chart detached during ${fails ? "failed" : "successful"} loading paints when reinserted`, async () => {
     const failure = fails ? 'if(globalThis.__chartLoads===1)throw new Error("fixture failure");' : "";
-    const { page, context, requests } = await open(390, delayed + failure + assets.chartModule);
+    const { page, context, requests } = await open(390, delayed + failure + assets.chartParts.shared.code);
     try {
       await app(page).locator("#draw").click();
       await app(page).locator("html[data-chart-module-loading]").waitFor();
@@ -413,7 +525,7 @@ test("narrow pending charts retain the eager logical width and PDF styles accept
     await cloud.pdf.render({html:String(markup).replace("--k2b-chart-width:","--k2b-chart-width: ")});
     document.querySelector("#result").textContent="PDF ready";
   });`;
-  const { page, context, requests } = await open(390, delayed + assets.chartModule, "light", script);
+  const { page, context, requests } = await open(390, delayed + assets.chartParts.shared.code, "light", script);
   try {
     await app(page).locator("#draw").click();
     await app(page).locator("html[data-chart-module-loading]").waitFor();
@@ -433,7 +545,7 @@ test("narrow pending charts retain the eager logical width and PDF styles accept
 for (const width of [1200, 390])
   test(`waterfall uses the offline plugin without moving its frame, ${width}px`, async () => {
     const script = `document.querySelector("#draw").addEventListener("click",()=>{document.querySelector("#charts").innerHTML=cloud.chart({kind:"waterfall",title:"Liquidity",start:{label:"Opening",value:100},steps:[{label:"Sales",value:40},{label:"Rent",value:-20}],end:{label:"Closing"}});});`;
-    const { page, context, requests } = await open(width, delayed + assets.chartModule, "light", script);
+    const { page, context, requests } = await open(width, delayed + assets.chartParts.shared.code, "light", script);
     try {
       await app(page).locator("#draw").click();
       await app(page).locator("html[data-chart-module-loading]").waitFor();
@@ -460,7 +572,7 @@ for (const width of [1200, 390])
     const script = `document.querySelector("#draw").addEventListener("click",()=>{
       document.querySelector("#charts").innerHTML=cloud.chart({kind:"hbar",title:"Regional orders",subtitle:"Fictional",series:["Current","Prior"],rows:Array.from({length:20},(_,i)=>({group:"Shops",label:"Region "+(i+1),values:[i,i+1]}))});
     });`;
-    const { page, context, requests } = await open(width, delayed + assets.chartModule, "light", script);
+    const { page, context, requests } = await open(width, delayed + assets.chartParts.shared.code, "light", script);
     const errors = pageErrors(page);
     try {
       await app(page).locator("#draw").click();
@@ -508,7 +620,7 @@ for (const width of [1200, 390])
       const specs=${JSON.stringify(addedSpecs)};
       document.querySelector("#charts").innerHTML=specs.map(spec=>'<section class="card">'+cloud.chart(spec)+'</section>').join("");
     });`;
-    const { page, context, requests } = await open(width, delayed + assets.chartModule, "light", script);
+    const { page, context, requests } = await open(width, delayed + assets.chartParts.shared.code, "light", script);
     const errors = pageErrors(page);
     try {
       await app(page).locator("#draw").click();
