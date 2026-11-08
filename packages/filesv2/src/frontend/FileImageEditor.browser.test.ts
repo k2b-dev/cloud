@@ -533,6 +533,12 @@ describe("Files photo editing", () => {
       await page.waitForFunction(() => document.querySelectorAll("dialog[open]").length === 1);
       expect(new URL(page.url()).pathname).toBe("/");
       expect(await page.locator('.k2b-image-editor[data-dirty="true"]').count()).toBe(2);
+      await visible()
+        .getByRole("button", { name: /^Photo.jpg, not saved$/ })
+        .waitFor();
+      await visible()
+        .getByRole("button", { name: /^Beach.jpg, open, not saved$/ })
+        .waitFor();
       expect(
         await visible()
           .getByRole("button", { name: /^Photo.jpg, not saved$/ })
