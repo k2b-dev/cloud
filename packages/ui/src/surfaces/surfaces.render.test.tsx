@@ -111,6 +111,13 @@ describe("@k2b/ui Cloud-faithful surfaces", () => {
       }),
     );
 
+    // The dotted leader is opt-in: without it the list carries no leader attribute at all.
+    expect(list).not.toContain("data-leader");
+    expect(
+      renderToString(() =>
+        createComponent(DescriptionList, { layout: "rows", leader: "dotted", items: [{ term: "Total", description: "€1,475.60" }] }),
+      ),
+    ).toContain('data-leader="dotted"');
     expect(tag).toContain("--k2b-choice-color:#7c3aed");
     expect(tag).toContain('aria-label="Remove UI"');
     const selectedTag = renderToString(() =>
@@ -752,4 +759,20 @@ test("Skeleton only renders caller-sized decorative geometry", () => {
   expect(html).toContain('class="k2b-skeleton h-10 w-full"');
   expect(html).toContain('aria-hidden="true"');
   expect(html).not.toMatch(/role=|aria-live|tabindex|button/);
+});
+
+test("absolute changes keep the saved measure's amount and unit in the shared delta badge", () => {
+  const html = renderToString(() =>
+    createComponent(StatCell, {
+      label: "Revenue",
+      value: "€42.00",
+      delta: { value: 12, unit: "absolute", better: "up", format: { style: "currency", currency: "EUR", decimals: 2 } },
+      compare: { label: "Last month", value: "€30.00" },
+    }),
+  );
+  expect(html).toContain("k2b-stat-cell__delta");
+  expect(html).toContain("+€12.00");
+  expect(html).toContain('data-tone="good"');
+  expect(html).toContain("Last month");
+  expect(html).not.toContain("1,200");
 });

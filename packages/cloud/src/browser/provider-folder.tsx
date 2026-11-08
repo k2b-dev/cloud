@@ -77,7 +77,7 @@ export const createProviderFolder = (props: {
       });
     }
     setStatus(more ? "more" : "loading");
-    setError(null);
+    if (!more) setError(null);
     try {
       const context = current.provider.context === true && props.context !== undefined ? await contextFor(pending.signal) : undefined;
       if (pending.signal.aborted) return;
@@ -109,6 +109,7 @@ export const createProviderFolder = (props: {
         if (items().length > 0 || !page.next || ++followed >= EMPTY_PAGES_FOLLOWED) break;
         cursor = page.next;
       }
+      setError(null);
       setStatus("ready");
       if (!more) {
         announce(props.t().folderAnnounced({ folder: folderName(), count: items().length, more: Boolean(next()) }));
@@ -350,7 +351,7 @@ export function FolderContents(props: {
         <div class="cloud-file-dialog__list">
           {props.children}
           <div class="cloud-file-chooser__more">
-            <Show when={folder.error() && folder.status() === "ready"}>
+            <Show when={folder.error()}>
               <Placeholder state="error" variant="inline" align="left" description={folder.errorView()?.title} />
             </Show>
             <Show when={folder.next()}>
@@ -358,8 +359,9 @@ export function FolderContents(props: {
                 when={folder.items().length < FOLDER_ENTRY_LIMIT}
                 fallback={<span class="cloud-file-chooser__limit">{props.t().useFilter({ count: FOLDER_ENTRY_LIMIT })}</span>}
               >
-                <Button variant="secondary" size="sm" loading={folder.status() === "more"} onClick={() => void folder.load(true)}>
+                <Button variant="link" size="sm" loading={folder.status() === "more"} onClick={() => void folder.load(true)}>
                   {folder.error() ? props.t().retry : props.t().loadMore}
+                  <i class={folder.error() ? "ti ti-refresh" : "ti ti-chevron-down"} aria-hidden="true" />
                 </Button>
               </Show>
             </Show>

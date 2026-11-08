@@ -382,8 +382,8 @@ order:
    through the owning app's reader with the viewer's current access. The finished
    `present` summary reserves its height while loading;
    group summaries list each chart's kind and title, so every frame reserves
-   its own height. Stats summaries carry per-item booleans for sparkline, sub
-   and delta to reserve the exact tile height; details summaries carry the
+   its own height. Stats summaries carry per-item booleans for sparkline, sub, delta
+   and comparison to reserve the exact tile height; details summaries carry the
    field count and the label, reference flag and text length of the first
    twelve fields, so wrapped values keep their room on a phone. These
    summaries contain no values. A card's text wraps instead of being cut off. While the call runs, the work
@@ -402,7 +402,8 @@ order:
    A table with `search` or `groupBy` shows a search field or a group choice
    beside its title. The summary reserves their space while the controls load,
    then shows them disabled until the file arrives. If the controls cannot load,
-   a notice offers to reload the page.
+   a notice offers to reload the page. Stats also keep their reserved tiles while
+   loading; if their display cannot download, the same notice offers a reload.
    Search matches the shown cells and never leaves the browser; Copy data keeps
    every row. A column's `priority` hides it on a narrow table, and each row's
    details button shows the hidden values.
