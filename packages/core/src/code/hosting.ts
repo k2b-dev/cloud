@@ -1,6 +1,7 @@
 import { randomBytes } from "node:crypto";
 import { CODE_REQUEST_LIMITS, CodeRouteRequestSchema, codeOwnPath, matchCodeRoute, validateCodePage } from "@k2b/cloud/code";
 import { auth, clientIp, clientIpBucket, getEffectiveGroups, middleware, ratelimit } from "@k2b/cloud/server";
+import { createLoginRedirectUrl } from "@k2b/cloud/shared";
 import { Hono } from "hono";
 import { getCookie, setCookie } from "hono/cookie";
 import { type CodePageHostingContext, codePageHandlers } from "./render-page";
@@ -69,8 +70,12 @@ export function createCodeHostingRoutes(deps = { version: codeRequestVersion, re
         if (
           !isPublic &&
           (c.get("credentialKind") !== "session" || actor?.kind !== "user" || subject?.type !== "user" || subject.userId !== actor.user.id)
-        )
+        ) {
+          // A visitor who opens the page goes to sign-in and comes back to it, as on every Cloud page.
+          if (!actor && c.req.method === "GET" && c.req.header("Accept")?.includes("text/html") && c.req.header("X-Code-Page") !== "tree")
+            return c.redirect(createLoginRedirectUrl(c.req.url));
           return c.json({ code: "code_sign_in_required" }, 401);
+        }
         if (!isPublic && version.personalOwner && actor?.kind === "user" && actor.user.id !== version.personalOwner)
           return c.json({ code: "code_owner_only" }, 403);
         if (isPublic) {
@@ -140,7 +145,7 @@ export function createCodeHostingRoutes(deps = { version: codeRequestVersion, re
           // The page's own island asks for the checked tree alone after a submit or a followed event.
           // Code responses cannot set headers, so this marker tells the island the tree passed validation.
           if (c.req.header("X-Code-Page") === "tree") return c.json({ tree: page.tree, csrf: page.csrf }, 200, { "X-Code-Page": "tree" });
-          c.set("hostedCodePage", page);
+          c.set("hostedCodePage", selected.route.layout === "plain" ? { ...page, layout: "plain" } : page);
           await waitCodeRequest(next(), signal);
           if (c.req.method === "HEAD") c.res = c.newResponse(null, c.res);
           return c.res;

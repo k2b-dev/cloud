@@ -987,6 +987,16 @@ test("the page example in the docs checks and builds a valid page", async () => 
   );
   expect(validateCodePage(response.tree, "c_fixture").children.map((node) => node.kind)).toEqual(["Stats", "Section"]);
 }, 30000);
+test("the survey template is identical in skill and Fibel and declares a public page without the Cloud layout", async () => {
+  const sources = await Promise.all(
+    ["../../../../docs-site/docs/en/platform/code-sdk.md", "../../../assistant/src/skills/code-authoring/templates/survey.md"].map((path) =>
+      Bun.file(resolve(import.meta.dir, path)).text(),
+    ),
+  );
+  const snippet = (text: string) => text.split("<!-- code-survey-example -->")[1]!.split("```tsx\n")[1]!.split("```")[0]!.trim();
+  expect(snippet(sources[1]!)).toBe(snippet(sources[0]!));
+  expect(snippet(sources[0]!).match(/\{ public: true, layout: "plain" \}|public: true,\n\s+layout: "plain",/g)).toHaveLength(2);
+});
 test("the invoice template is identical in skill and Fibel, checks against the live Mail SDK and passes FileRefs", async () => {
   const sources = await Promise.all(
     [

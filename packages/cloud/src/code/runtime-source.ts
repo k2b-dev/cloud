@@ -126,7 +126,7 @@ app.on = (...args) => {
 for (const method of Object.keys(manifest.appMethods).filter(name => manifest.appMethods[name] !== 1)) app[method] = () => unavailable(method);
 for (const method of ["get", "post", "put", "delete", "all"]) app[method] = (path, handler, options) => {
   if (typeof path !== "string" || typeof handler !== "function") throw new Error("code_sdk_invalid_route");
-  const route = { method: method.toUpperCase(), path, public: options?.public === true };
+  const route = { method: method.toUpperCase(), path, public: options?.public === true, ...(options?.layout === "plain" ? { layout: "plain" } : {}) };
   const entrypoint = "route:" + route.method + ":" + path;
   if (routes.some(value => value.entrypoint === entrypoint)) throw new Error("code_sdk_duplicate_route");
   routes.push({ entrypoint, route, handler });

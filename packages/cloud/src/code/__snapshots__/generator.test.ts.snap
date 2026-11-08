@@ -117,16 +117,19 @@ export type CodeEvent<Type extends string, Data> = {
 
 export type CodeEvents = { "work-shop.changed": CodeEvent<"work-shop.changed", ({ "title": (string) })> };
 
+/** \`public: true\` admits visitors who are not signed in. Pages render inside the Cloud layout; \`layout: "plain"\` renders them alone. */
+export type CodeRouteOptions = { public?: boolean; layout?: "plain" };
+
 export type CodeApp = {
   schedule(when: string | { cron: string; timeZone?: string; name?: string } | { at: string; timeZone: string }, handler: CodeScheduleHandler, options?: { name: string; title?: string }): CodeApp;
   /** The checked event is scoped to this resource Code owner. */
   on<Event extends keyof CodeEvents>(event: Event, handler: (data: CodeEvents[Event]) => void | Promise<void>): CodeApp;
   on<Event extends keyof CodeEvents>(handle: CodeHandle<string>, event: Event, handler: (data: CodeEvents[Event]) => void | Promise<void>): CodeApp;
-  get(path: string, handler: (c: CodeContext) => Response | Promise<Response>, options?: { public: boolean }): CodeApp;
-  post(path: string, handler: (c: CodeContext) => Response | Promise<Response>, options?: { public: boolean }): CodeApp;
-  put(path: string, handler: (c: CodeContext) => Response | Promise<Response>, options?: { public: boolean }): CodeApp;
-  delete(path: string, handler: (c: CodeContext) => Response | Promise<Response>, options?: { public: boolean }): CodeApp;
-  all(path: string, handler: (c: CodeContext) => Response | Promise<Response>, options?: { public: boolean }): CodeApp;
+  get(path: string, handler: (c: CodeContext) => Response | Promise<Response>, options?: CodeRouteOptions): CodeApp;
+  post(path: string, handler: (c: CodeContext) => Response | Promise<Response>, options?: CodeRouteOptions): CodeApp;
+  put(path: string, handler: (c: CodeContext) => Response | Promise<Response>, options?: CodeRouteOptions): CodeApp;
+  delete(path: string, handler: (c: CodeContext) => Response | Promise<Response>, options?: CodeRouteOptions): CodeApp;
+  all(path: string, handler: (c: CodeContext) => Response | Promise<Response>, options?: CodeRouteOptions): CodeApp;
   /** Phase 2; check reports code_phase_unavailable. */
   nav(handler: (user: CodeUser) => CodeNavigationItem[] | Promise<CodeNavigationItem[]>): CodeApp;
   /** Phase 3; check reports code_phase_unavailable. */
@@ -361,7 +364,7 @@ app.on = (...args) => {
 for (const method of Object.keys(manifest.appMethods).filter(name => manifest.appMethods[name] !== 1)) app[method] = () => unavailable(method);
 for (const method of ["get", "post", "put", "delete", "all"]) app[method] = (path, handler, options) => {
   if (typeof path !== "string" || typeof handler !== "function") throw new Error("code_sdk_invalid_route");
-  const route = { method: method.toUpperCase(), path, public: options?.public === true };
+  const route = { method: method.toUpperCase(), path, public: options?.public === true, ...(options?.layout === "plain" ? { layout: "plain" } : {}) };
   const entrypoint = "route:" + route.method + ":" + path;
   if (routes.some(value => value.entrypoint === entrypoint)) throw new Error("code_sdk_duplicate_route");
   routes.push({ entrypoint, route, handler });

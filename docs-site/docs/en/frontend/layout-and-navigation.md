@@ -350,7 +350,8 @@ page with a level above.
 
 `Layout` uses the same application shell for authenticated and anonymous
 requests. Anonymous pages keep the header visible at every viewport width,
-show a direct sign-in action, and expose the shared language and theme menu.
+show a direct sign-in action that returns to the page afterwards, and expose
+the shared language and theme menu.
 They do not render the authenticated application rail, app launcher, global
 search, notifications, or profile actions.
 

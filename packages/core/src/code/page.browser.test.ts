@@ -237,7 +237,7 @@ const boxes = (page: Page) =>
         Math.round(rect.height),
       ];
     }),
-    text: document.querySelector("main")?.innerText,
+    text: document.querySelector<HTMLElement>("[data-code-page]")?.innerText,
   }));
 
 describe("Code page in a browser", () => {
@@ -431,14 +431,14 @@ describe("Code page in a browser", () => {
       await page.evaluate(() => {
         for (let i = 0; i < 5; i++) (window as unknown as { emit: () => void }).emit();
       });
-      await page.waitForFunction(() => !document.querySelector("main[aria-busy]"));
+      await page.waitForFunction(() => !document.querySelector("[data-code-page][aria-busy]"));
       expect(state.treeLoads - loads).toBeLessThanOrEqual(2);
 
       // Typing that starts while a load runs keeps its input; the new data waits.
       state.treeDelay = 500;
       state.trees.set("/", table([{ item: "Shelf", status: "Received", count: 1 }]));
       await emit();
-      await page.waitForSelector("main[aria-busy]");
+      await page.waitForSelector("[data-code-page][aria-busy]");
       await page.getByLabel("Title", { exact: true }).fill("Typed");
       await page.getByRole("region", { name: "Notifications" }).getByText("This page has new data.").waitFor();
       state.treeDelay = 0;
@@ -474,7 +474,7 @@ describe("Code page in a browser", () => {
       await page.getByRole("dialog", { name: "Scan code" }).waitFor({ state: "detached" });
       expect(await page.locator('input[name="barcode"]').inputValue()).toBe("W-42");
       // Closing the scanner leaves its history entry at the same address: nothing loads and nothing is sent.
-      await page.waitForFunction(() => !document.querySelector("main[aria-busy]"));
+      await page.waitForFunction(() => !document.querySelector("[data-code-page][aria-busy]"));
       expect(await page.getByLabel("Title", { exact: true }).inputValue()).toBe("Typed");
       expect(state.treeLoads).toBe(0);
       expect(state.posts).toEqual([]);
@@ -483,7 +483,7 @@ describe("Code page in a browser", () => {
       await page.getByRole("dialog", { name: "Scan code" }).waitFor();
       await page.goBack();
       await page.getByRole("dialog", { name: "Scan code" }).waitFor({ state: "detached" });
-      await page.waitForFunction(() => !document.querySelector("main[aria-busy]"));
+      await page.waitForFunction(() => !document.querySelector("[data-code-page][aria-busy]"));
       expect(page.url()).toBe(`${server.url.origin}/code/${codeId}/`);
       expect(await page.getByLabel("Title", { exact: true }).inputValue()).toBe("Typed");
       expect(state.treeLoads).toBe(0);

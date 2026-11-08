@@ -9,6 +9,19 @@ script, event handler or foreign link. `c.html()` does not exist.
 Core hosts the active version at `/code/<code-id>/…`. Routes need a signed-in
 person unless they declare `{ public: true }` ([Access](access.md)).
 
+## Where a page appears
+
+A page appears inside the Cloud layout, like every Cloud page. Signed-in
+people see it in their workspace, with the icon bar and their apps. Visitors
+who are not signed in, on a public route, see the signed-out header with the
+Cloud logo and **Sign in**; signing in returns to the page. Someone who opens a
+non-public page without a session goes to sign-in and comes back to it.
+
+`{ layout: "plain" }` on a route draws its pages alone, without the layout:
+for a page you hand out, such as a public survey
+([survey template](template-survey.md)). There is no setting for the whole
+Code; each route decides.
+
 ## The smallest page
 
 <!-- check: personal -->

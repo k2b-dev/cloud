@@ -50,6 +50,7 @@ const codeVersionSubmissionInput = {
   "manifest.entrypoints[].route.method": "HTTP-Methode oder ALL für jede Methode.",
   "manifest.entrypoints[].route.path": "Code-relativer Pfad mit optionalen benannten Segmenten.",
   "manifest.entrypoints[].route.public": "Ob die Route anonyme Besucher ohne Benutzer annimmt.",
+  "manifest.entrypoints[].route.layout": "Seiten dieser Route erscheinen ohne das Cloud-Layout; ohne Angabe erscheinen sie darin.",
   "manifest.entrypoints[].event": "Geprüfte Ereignisregistrierung für den Ort, dem dieser Code gehört.",
   "manifest.entrypoints[].event.type": "Vollständige Ereignis-ID aus dem Capability-Katalog.",
   "manifest.entrypoints[].event.version": "Deklarierte Formatversion des Ereignisses.",

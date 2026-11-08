@@ -100,6 +100,17 @@ test("signed-in pages receive only the visitor projection; unsigned requests nev
   expect(JSON.stringify(signed.calls)).not.toContain("fixture-session");
   expect(response.headers.get("cache-control")).toContain("no-store");
 });
+test("a browser visitor without a session goes to sign-in and comes back to the page; requests keep the stable code", async () => {
+  const privatePage = hosting();
+  const opened = await privatePage.router.request(`/code/${codeId}/?week=45`, { headers: { Accept: "text/html" } });
+  expect(opened.status).toBe(302);
+  expect(opened.headers.get("location")).toBe(`/auth/login?redirectTo=${encodeURIComponent(`/code/${codeId}/?week=45`)}`);
+  const island = await privatePage.router.request(`/code/${codeId}/`, { headers: { Accept: "text/html", "X-Code-Page": "tree" } });
+  expect(island.status).toBe(401);
+  expect(await island.json()).toEqual({ code: "code_sign_in_required" });
+  expect((await privatePage.router.request(`/code/${codeId}/`, { method: "POST", headers: { Accept: "text/html" } })).status).toBe(401);
+  expect(privatePage.calls).toHaveLength(0);
+});
 test("public handlers are anonymous even for signed-in people and return exactly Code data", async () => {
   const page = hosting(true, true);
   const response = await page.router.request(`/code/${codeId}/`);
