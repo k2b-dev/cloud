@@ -1038,6 +1038,9 @@
   .stdlib-chart .k2b-chart-group-heading { font-size: 11.5px; font-weight: 600; opacity: 1; }
   .stdlib-chart .k2b-chart-segment-value { font-size: 11px; font-weight: 500; fill: currentColor; opacity: 1; }
 
+  .k2b-chart-funnel :is(.stdlib-chart-tick-label, .stdlib-chart-bar-value) { font-size: 12.5px; }
+  .k2b-chart-ranked :is(.stdlib-chart-tick-label, .stdlib-chart-bar-value) { font-size: 13px; }
+
   .stdlib-chart-series-0 { fill: var(--stdlib-chart-c1); stroke: var(--stdlib-chart-c1); }
   .stdlib-chart-series-1 { fill: var(--stdlib-chart-c2); stroke: var(--stdlib-chart-c2); }
   .stdlib-chart-series-2 { fill: var(--stdlib-chart-c3); stroke: var(--stdlib-chart-c3); }

@@ -35,6 +35,7 @@ export const chartKindSchema = () =>
     "area",
     "bar",
     "hbar",
+    "funnel",
     "line",
     "scatter",
     "pie",
@@ -235,6 +236,10 @@ export const chartKinds = (limits?: ChartLimits) => {
         ).optional(),
         layout: z.enum(["columns", "rows", "grouped", "stacked"]).optional(),
         normalize: z.boolean().optional(),
+        share: z.boolean().optional(),
+        limit: z.number().int().positive().optional(),
+        tone: z.enum(["in", "out"]).optional(),
+        format: numberFormat.optional(),
         compare: z.object({ label: ChartLabel, data: list(ChartNumber.nullable(), 0, limits?.maxValues) }).optional(),
         xAxis: ChartAxis.pick({ label: true }).extend({ ordered: z.boolean().optional() }).strict().optional(),
         yAxis: ChartAxis.optional(),
@@ -247,6 +252,10 @@ export const chartKinds = (limits?: ChartLimits) => {
         const issue = (message: string) => ctx.addIssue({ code: "custom", message });
         if (limits && !bar.series && !bar.data.length)
           ctx.addIssue({ code: "custom", path: ["data"], message: "A bar chart needs data or aligned series." });
+        if ((bar.share !== undefined || bar.limit !== undefined || bar.tone !== undefined) && bar.layout !== "rows")
+          issue("Share, limit and tone require rows layout.");
+        if (bar.layout === "rows" && bar.data.some((d) => Number.isFinite(d.value) && d.value < 0))
+          issue("Ranked bar lists require nonnegative values.");
         if (bar.series) {
           if (!bar.x || bar.series.some((s) => s.data.length !== bar.x?.length)) issue("Bar series must have the same length as x.");
           if (bar.data.length) issue("Use data or aligned series, not both.");
@@ -260,6 +269,12 @@ export const chartKinds = (limits?: ChartLimits) => {
         if (bar.compare && (bar.series?.length !== 1 || bar.compare.data.length !== bar.x?.length || bar.layout === "stacked"))
           issue("Comparison needs one current series and aligned previous values.");
       }),
+    z.object({
+      kind: z.literal("funnel"),
+      ...ChartKindCommon,
+      data: list(z.object({ label: ChartLabel, value: z.number().nonnegative().nullable() }), 1, limits?.maxValues),
+      format: numberFormat.optional(),
+    }),
     z
       .object({
         kind: z.literal("hbar"),

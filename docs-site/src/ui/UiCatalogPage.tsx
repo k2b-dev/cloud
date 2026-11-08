@@ -4,10 +4,11 @@ import AiCatalogDemo from "./AiCatalogDemo.island";
 import { ChartExplorerShowcases } from "./ChartExplorerShowcases";
 import CloudCatalogDemo from "./CloudCatalogDemo.island";
 import ContentCatalogDemo from "./ContentCatalogDemo.island";
-import { portableUiComponentCount, type UiCatalogScope, type UiCatalogSectionId, uiCatalogEntries, uiCatalogSections } from "./catalog";
+import { type UiCatalogScope, type UiCatalogSectionId, uiCatalogEntries, uiCatalogSections } from "./catalog";
 import FeedbackCatalogDemo from "./FeedbackCatalogDemo.island";
 import InputCatalogDemo from "./InputCatalogDemo.island";
 import LayoutCatalogDemo from "./LayoutCatalogDemo.island";
+import { portableUiComponentCount } from "./portable-components";
 import SurfacesCatalogDemo from "./SurfacesCatalogDemo.island";
 import WidgetsCatalogDemo from "./WidgetsCatalogDemo.island";
 

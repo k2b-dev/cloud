@@ -1231,3 +1231,11 @@ Deferred drawing hosts can also prepare `waterfallLayout(spec, size)` and pass t
 Stat-tile trends use the same sparkline SVG and interaction host as `Chart`,
 without importing the catalog dispatcher. Adding another chart kind therefore
 does not add its renderer to pages that only show stat trends.
+
+### Funnels and ranked lists
+
+Use `kind="funnel"` with `data: [{ label, value }]` for a sequence of counts. Each step shows its value and share of the start; the tooltip also gives its share of the previous step. Values must be nonnegative, and steps may rise above the starting count. A zero or missing denominator shows `–`; missing steps stay gaps. Geometry fits the largest step, so rising counts stay inside the plot.
+
+Use `kind="bar" layout="rows"` for a ranked list of nonnegative values. Rows sort descending, with stable order for ties. `share` prints each row's share of the entire input. `limit` shows that many rows and a final “n more · total” summary; the data table retains every source row. `tone="in" | "out"` records flow direction and uses the theme’s incoming or outgoing flow color, falling back to the neutral chart palette. Automatic rows in existing data-only bars retain their original layout.
+
+Both descriptions accept `format: NumberFormat` for source values. Percentage calculations keep their own format. The inherited locale formats shares and the remainder label. They use the same category band, keyboard inspection, touch guard and fixed host states as other category charts.
