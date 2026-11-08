@@ -379,9 +379,17 @@ suite("Mail document socket with real SQL, retained topic and WebSockets", () =>
       await proceed.promise;
       return original(params);
     });
+    // Bounded below the test timeout, so a socket that never reaches admission fails here and `finally` restores the spy.
+    let admissionDeadline: ReturnType<typeof setTimeout> | undefined;
     try {
       publish(client, base, Y.encodeStateAsUpdate(local));
-      await reached.promise;
+      await Promise.race([
+        reached.promise,
+        new Promise<never>((_, reject) => {
+          admissionDeadline = setTimeout(() => reject(new Error("The socket update never reached admission")), 10_000);
+        }),
+      ]);
+      clearTimeout(admissionDeadline);
       const command = value(
         await createActorCommand({
           context,
@@ -418,6 +426,7 @@ suite("Mail document socket with real SQL, retained topic and WebSockets", () =>
       expect(outbox?.draft_snapshot.body).toBe("Original");
       expect(await sql`SELECT 1 FROM mail.outbox_submissions WHERE draft_id=${recovered.draft.id}::uuid`).toHaveLength(0);
     } finally {
+      clearTimeout(admissionDeadline);
       proceed.resolve();
       admission.mockRestore();
       local.destroy();
