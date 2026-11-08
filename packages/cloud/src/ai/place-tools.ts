@@ -3,7 +3,7 @@ import type { RequestActor, RequestAuthority } from "../server";
 import { resolveAiCapabilityActor } from "./capability-execution";
 import { type PlaceProviderOptions, runPlaceProvider } from "./place-provider";
 import { aiConversations } from "./store";
-import type { AiConversationService } from "./types";
+import type { AiConversationService, AiStoredMessage } from "./types";
 
 export type AiPlaceToolDependencies = {
   store?: Pick<AiConversationService, "getConversation">;
@@ -44,16 +44,20 @@ export const resolveAiPlaceTools = async (input: {
 
 /** Mark only unresolved historical calls; successful history keeps its original outcome. */
 export const rejectUnavailablePlaceCalls = (
-  messages: readonly { message: import("@k2b/nessi").Message }[],
-  names: readonly string[],
+  messages: readonly (Pick<AiStoredMessage, "message"> & Partial<Pick<AiStoredMessage, "meta">>)[],
+  snapshot: { ref: CloudResourceRef; unavailable: readonly string[]; available: readonly string[] },
   rejected: Set<string>,
 ): void => {
-  const unavailable = new Set(names);
+  const unavailable = new Set(snapshot.unavailable);
+  const available = new Set(snapshot.available);
   const settled = new Set(messages.flatMap(({ message }) => (message.role === "tool_result" ? [message.callId] : [])));
-  for (const { message } of messages) {
+  for (const { message, meta } of messages) {
     if (message.role !== "assistant") continue;
     for (const block of message.content) {
-      if (block.type === "tool_call" && unavailable.has(block.name) && !settled.has(block.id)) rejected.add(block.id);
+      if (block.type !== "tool_call" || settled.has(block.id)) continue;
+      const historicalPlace = meta?.toolPresentations?.[block.id]?.place;
+      const wasAtPlace = historicalPlace?.type === snapshot.ref.type && historicalPlace.id === snapshot.ref.id;
+      if (unavailable.has(block.name) || (wasAtPlace && !available.has(block.name))) rejected.add(block.id);
     }
   }
 };

@@ -1240,7 +1240,7 @@ export class AiTurnExecutor {
               signal: abortController.signal,
             }),
           onRejected: (callId) => rejectedToolCallIds.add(callId),
-          onUnavailablePlaceTools: (names) => rejectUnavailablePlaceCalls(loopMessages, names, rejectedToolCallIds),
+          onUnavailablePlaceTools: (snapshot) => rejectUnavailablePlaceCalls(loopMessages, snapshot, rejectedToolCallIds),
           ...(capabilityAuthority
             ? {
                 execute: async (entry, args, context) => {
@@ -2487,6 +2487,6 @@ function capabilityApprovalArgs(entry: AiCapabilityCatalogEntry | undefined, arg
   // Fresh app-wide approvals keep the existing runtime contract.
   const migrated = storedArgs !== undefined && NormalizedCapabilityCallSchema.safeParse(storedArgs).success;
   return entry && (entry.operation.target !== undefined || entry.operation.refs !== undefined || migrated)
-    ? capabilityCallFromTool(entry.appId, entry.operation, aiCapabilityArguments(entry.operation, args))
+    ? capabilityCallFromTool(entry.appId, entry.operation, aiCapabilityArguments(entry.operation, args), entry.place)
     : args;
 }

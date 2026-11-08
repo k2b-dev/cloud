@@ -942,7 +942,7 @@ export const createAiToolResolver =
     actor: RequestActor;
     place?: () => Promise<{ ref: CloudResourceRef; tools: readonly string[] } | null>;
     onRejected?: (callId: string) => void;
-    onUnavailablePlaceTools?: (names: readonly string[]) => void;
+    onUnavailablePlaceTools?: (snapshot: { ref: CloudResourceRef; unavailable: readonly string[]; available: readonly string[] }) => void;
     authority?: RequestAuthority | null;
     staticTools: AiRuntimeTool[];
     allowedTools?: readonly string[] | null;
@@ -1015,9 +1015,11 @@ export const createAiToolResolver =
         ...persistedLoadedNames.filter((name) => name.startsWith(`${placeApp}.`)),
       ]);
       const missing = [...candidates].filter((name) => !offered.has(name));
-      input.onUnavailablePlaceTools(
-        missing.flatMap((name) => [name, aiCapabilityToolName(placeApp, "action", name.slice(placeApp.length + 1))]),
-      );
+      input.onUnavailablePlaceTools({
+        ref: place.ref,
+        unavailable: missing.flatMap((name) => [name, aiCapabilityToolName(placeApp, "action", name.slice(placeApp.length + 1))]),
+        available: capabilityCatalog.flatMap((entry) => [entry.name, entry.providerName]),
+      });
     }
     // The turn's actor decides which apps' Help exists for the model, like every other Help surface.
     const helpTools = input.help
@@ -1118,6 +1120,7 @@ export const createAiToolResolver =
         appAccent: entry.app.appAccent,
         title: entry.display.title,
         capabilityKind: entry.kind,
+        ...(entry.place ? { place: entry.place } : {}),
         ...(wording?.sentences ? { sentences: wording.sentences } : {}),
         ...(wording?.fields?.length ? { fields: [...wording.fields] } : {}),
         ...(offersApprovalReason(entry) ? { approvalReason: true as const } : {}),

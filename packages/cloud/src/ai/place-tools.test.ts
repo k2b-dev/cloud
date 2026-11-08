@@ -17,6 +17,7 @@ import type { RequestAuthority } from "../server";
 import * as categories from "../services/account-category-policy";
 import { buildAiCapabilityCatalog, createAiToolResolver, createLoadedAiCapabilityTools, createRunToolStore } from "./capabilities";
 import { executeAiCapability, reviewAiCapability } from "./capability-execution";
+import { __aiExecutorTest } from "./executor";
 import { rejectUnavailablePlaceCalls, resolveAiPlaceTools } from "./place-tools";
 import { prepareAiTools } from "./tools";
 import type { AiConversation } from "./types";
@@ -141,6 +142,11 @@ test("place schema hides the target and conversion pins it while keeping explici
   expect(() => capabilityCallFromTool("another", operation, { text: "Hi", related: "jonas" }, ref)).toThrow();
 });
 
+test("approval snapshots use the same fixed target as execution", () => {
+  const h = harness();
+  expect(__aiExecutorTest.capabilityApprovalArgs(h.entry, { text: "Hi" })).toMatchObject({ target: ref, input: { text: "Hi" } });
+});
+
 test("general catalog excludes place actions; only the matching current subset is offered", () => {
   const h = harness();
   expect(buildAiCapabilityCatalog([h.app]).filter((x) => x.kind === "action")).toEqual([]);
@@ -212,7 +218,7 @@ test("approval uses the ordinary policy, then checks again after the person answ
 
 test("resume removes revoked tools and rejects only unresolved historical calls", async () => {
   const h = harness();
-  const missing = mock((names: readonly string[]) => names);
+  const missing = mock((snapshot: { ref: typeof ref; unavailable: readonly string[]; available: readonly string[] }) => snapshot);
   const store = createRunToolStore([]);
   const resolver = createAiToolResolver({
     conversationId: "chat",
@@ -246,4 +252,32 @@ test("resume removes revoked tools and rejects only unresolved historical calls"
   const rejected = new Set<string>();
   rejectUnavailablePlaceCalls(messages, missing.mock.calls.at(-1)![0], rejected);
   expect([...rejected]).toEqual(["pending"]);
+});
+
+test("resume rejects a historical place call when the app and its catalog are gone", () => {
+  const h = harness();
+  const rejected = new Set<string>();
+  rejectUnavailablePlaceCalls(
+    [
+      {
+        message: { role: "assistant", content: [{ type: "tool_call", id: "offline", name: "hashed-provider-name", args: {} }] },
+        meta: {
+          toolPresentations: {
+            offline: {
+              kind: "capability",
+              appId: h.app.appId,
+              appName: "Fixture",
+              appIcon: "ti ti-message",
+              title: "Write",
+              capabilityKind: "action",
+              place: ref,
+            },
+          },
+        },
+      },
+    ],
+    { ref, unavailable: [], available: [] },
+    rejected,
+  );
+  expect([...rejected]).toEqual(["offline"]);
 });
