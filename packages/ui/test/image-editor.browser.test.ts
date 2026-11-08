@@ -714,10 +714,12 @@ describe("public ImageEditor interactions", () => {
       expect(await dirtyStates()).toEqual(["true", "true"]);
       const dialog = page.getByRole("dialog");
       // Each editor asks in turn; the next prompt may open as soon as the previous one closes.
-      const answer = async (button: "Confirm" | "Cancel", prompts: number) => {
+      // An answer that keeps the page settles it; the answer that leaves is followed by the navigation's own
+      // condition, because the page it would settle is being replaced.
+      const answer = async (button: "Confirm" | "Cancel", prompts: number, leaves = false) => {
         await page.waitForFunction((count) => (window as unknown as { prompted: number }).prompted >= count, prompts);
         await dialog.getByRole("button", { name: button, exact: true }).click();
-        await settled(page);
+        if (!leaves) await settled(page);
       };
       await page.evaluate(() => {
         Object.assign(window, { prompted: 0 });
@@ -736,8 +738,9 @@ describe("public ImageEditor interactions", () => {
       // The cancelled navigation used up the first confirmation, so the next attempt asks both again.
       await page.locator("#destination-link").click();
       await answer("Confirm", 3);
-      await answer("Confirm", 4);
+      await answer("Confirm", 4, true);
       await page.waitForFunction(() => document.querySelector("[data-nav-root]")?.getAttribute("data-path") === "/destination");
+      expect(new URL(page.url()).pathname).toBe("/destination");
       expect(errors).toEqual([]);
     } finally {
       await page.close();
