@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { capabilityCallDigest, normalizeCapabilityCall } from "../capabilities/calls";
 import type { CodeHttp } from "./authoring-types";
+import { fileImportManifest } from "./file-ref.test-fixture";
 import { generateCodeSdk } from "./generator";
 import { schemaTypes } from "./schema-types";
 import { sdkFixture } from "./sdk.test-fixture";
@@ -167,7 +168,6 @@ describe("Code SDK generation", () => {
       refs: { destination: "work-shop.workshop" },
     });
     expect(manifest.omitted).toEqual([
-      { capability: "work-shop.stock.export", reason: "stream" },
       { capability: "work-shop.workshop.readable", reason: "app_only" },
       { capability: "work-shop.outside.change", reason: "code_false" },
     ]);
@@ -423,8 +423,12 @@ owner.item.move({ itemId: "i", destination: "one" });
 owner.item.move({ itemId: "i", destination: { type: "work-shop.workshop", id: "one" } });
 // @ts-expect-error code:false is not offered
 owner.outside.change({});
-// @ts-expect-error streams are not offered
-owner.stock.export({});
+const file = await owner.stock.export({});
+const size: number = file.size;
+// @ts-expect-error FileRef has no bytes
+file.arrayBuffer();
+// @ts-expect-error FileRef has no URL
+file.url;
 // @ts-expect-error app-wide operation is not on resource handle
 owner.catalog.list({});
 // @ts-expect-error code_run has no app
@@ -455,6 +459,60 @@ owner.item.create({ title: "Hi", idempotencyKey: "fixed", details: { kind: "coun
     stdout: "pipe",
     stderr: "pipe",
   });
+  const [code, stdout, stderr] = await Promise.all([proc.exited, new Response(proc.stdout).text(), new Response(proc.stderr).text()]);
+  expect({ code, stdout, stderr }).toEqual({ code: 0, stdout: "", stderr: "" });
+});
+
+test("stream SDK inputs use branded FileRefs and pass only references through cloud.call", async () => {
+  const sdk = generateCodeSdk([fixture, fileImportManifest()], options);
+  const dir = await temporaryDirectory("cloud-code-files-");
+  await writeFile(join(dir, "sdk.mjs"), sdk.runtime);
+  const loaded = await import(join(dir, "sdk.mjs"));
+  const calls: CodeSdkInvocation[] = [];
+  const file = { id: "opaque-reference", name: "invoice.pdf", mediaType: "application/pdf", size: 5_000_000 };
+  loaded.__codeSdk.bind({
+    call: async (_operation: string, input: CodeSdkInvocation) => {
+      calls.push(input);
+      return input.call.capability.endsWith("stock.export") ? file : { imported: true };
+    },
+  });
+  const ref = await loaded.owner.stock.export({});
+  expect(await loaded.imports.app().import({ file: ref, idempotencyKey: "invoice-1" })).toEqual({ imported: true });
+  expect(calls[1]).toMatchObject({ call: { input: { file } }, metadata: { idempotencyKey: "invoice-1" } });
+  expect(JSON.stringify(calls).length).toBeLessThan(1024);
+  await writeFile(join(dir, "sdk.d.ts"), sdk.declarations);
+  await writeFile(
+    join(dir, "types.ts"),
+    `import { owner, imports, type FileRef } from "./sdk";
+const file: FileRef = await owner.stock.export({});
+const result = await imports.app().import({ file, idempotencyKey: "invoice-1" });
+const imported: boolean = result.imported;
+// @ts-expect-error metadata alone cannot manufacture a FileRef
+imports.app().import({ file: { id: "forged", mediaType: "application/pdf", size: 1 }, idempotencyKey: "k" });
+// @ts-expect-error a file input cannot be omitted
+imports.app().import({ idempotencyKey: "k" });
+// @ts-expect-error the FileRef has no download URL
+file.url;
+// @ts-expect-error the FileRef has no body
+file.body;
+`,
+  );
+  const proc = Bun.spawn(
+    [
+      resolve(import.meta.dir, "../../../../node_modules/.bin/tsc"),
+      "--checkers",
+      "1",
+      "--ignoreConfig",
+      "--strict",
+      "--noEmit",
+      "--target",
+      "esnext",
+      "--module",
+      "preserve",
+      join(dir, "types.ts"),
+    ],
+    { stdout: "pipe", stderr: "pipe" },
+  );
   const [code, stdout, stderr] = await Promise.all([proc.exited, new Response(proc.stdout).text(), new Response(proc.stderr).text()]);
   expect({ code, stdout, stderr }).toEqual({ code: 0, stdout: "", stderr: "" });
 });
