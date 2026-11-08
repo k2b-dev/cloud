@@ -446,6 +446,7 @@ for execution, model access, and usage accounting.
 
 | Entry point | Status | Use | Guide |
 | --- | --- | --- | --- |
+| `@k2b/cloud/descriptions` | Supported, SolidJS | `DescriptionPanel` draws a portable chart description or a Cloud block (`stats`, `table`, `details`, `budget`, `balance`, `flow`) in the `@k2b/ui` dashboard frame with every state; `DescriptionBlockPreview`, `resolveDescription`, `formatDescriptionNumber` | [Dashboards from descriptions](/en/docs/frontend/dashboards) |
 | `@k2b/cloud/geo/ui` | Supported, SolidJS | `CloudMap`, `CloudMapAttribution` and `CloudMapProps` for budgeted maps and browser snapshots; `AddressAutocomplete` for forms; `geoNavigationHref` and `geoNavigationPlatform` for navigation links | [Places and maps](/en/docs/platform/places-and-maps) |
 | `@k2b/cloud/geo/document` | Supported, browser and server | Validate and serialize saved maps, linked pins and complete routes | [Saved maps](/en/docs/platform/saved-map-documents) |
 | `@k2b/cloud/shared-text` | Supported, server-only | Retained collaborative text logs and application-owned snapshot writes | [Shared text documents](/en/docs/data/shared-text-documents) |
