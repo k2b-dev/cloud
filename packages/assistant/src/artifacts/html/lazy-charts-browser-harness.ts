@@ -5,7 +5,10 @@ import { type Mount, type MountEvent, mountApp } from "./host";
 declare global {
   var lazyChartAssets: AppFrameAssets;
   var lazyChartHarness: {
-    mount(files: AppFiles, options?: { sharedSource?: string; theme?: "light" | "dark"; corruptKind?: string }): Promise<void>;
+    mount(
+      files: AppFiles,
+      options?: { sharedSource?: string; theme?: "light" | "dark"; corruptKind?: string; kindSource?: { kind: string; code: string } },
+    ): Promise<void>;
     events: MountEvent[];
     pdfs: unknown[];
     waiting: boolean;
@@ -29,6 +32,12 @@ globalThis.lazyChartHarness = {
     const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(code));
     const hash = Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
     const chartParts = { ...globalThis.lazyChartAssets.chartParts, shared: { code, hash } };
+    if (options.kindSource) {
+      const { kind, code } = options.kindSource;
+      const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(code));
+      const hash = Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
+      chartParts.kinds = { ...chartParts.kinds, [kind]: { code, hash } };
+    }
     if (options.corruptKind) {
       const kind = options.corruptKind;
       chartParts.kinds = {

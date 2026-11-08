@@ -256,6 +256,43 @@ test("a corrupt host-held kind is rejected before import and offers retry offlin
   }
 });
 
+test("a failed kind import clears its cache and recovers on the next draw offline", async () => {
+  const { page, context, requests } = await open(390, counted + assets.chartParts.shared.code);
+  try {
+    await page.evaluate(
+      ({ files, code }) =>
+        globalThis.lazyChartHarness.mount(files, {
+          sharedSource: "globalThis.__chartLoads=(globalThis.__chartLoads??0)+1;" + globalThis.lazyChartAssets.chartParts.shared.code,
+          kindSource: { kind: "histogram", code },
+        }),
+      {
+        files: files(draw),
+        code:
+          'globalThis.__kindLoads=(globalThis.__kindLoads??0)+1;if(globalThis.__kindLoads===1)throw new Error("kind fixture failure");' +
+          assets.chartParts.kinds.histogram!.code,
+      },
+    );
+    await ready(page);
+    await app(page).locator("#draw").click();
+    await app(page).getByRole("button", { name: "Try again" }).waitFor();
+    await app(page).locator('[data-chart-kind="gauge"] svg').waitFor();
+    const failed = await boxes(page);
+    expect(await app(page).getByRole("alert").count()).toBe(1);
+    await app(page).locator("#draw").click();
+    await app(page).locator('[data-chart-kind="histogram"] svg').waitFor();
+    expect(await boxes(page)).toEqual(failed);
+    expect(await app(page).getByRole("alert").count()).toBe(0);
+    expect(
+      await app(page)
+        .locator("body")
+        .evaluate(() => ({ shared: Reflect.get(globalThis, "__chartLoads"), kind: Reflect.get(globalThis, "__kindLoads") })),
+    ).toEqual({ shared: 1, kind: 2 });
+    expect(requests).toEqual([]);
+  } finally {
+    await context.close();
+  }
+});
+
 test("a failed rare import stays in its box and retries offline", async () => {
   const source = `${counted}if(globalThis.__chartLoads===1)throw new Error("fixture failure");${assets.chartParts.shared.code}`;
   const { page, context, requests } = await open(390, source);

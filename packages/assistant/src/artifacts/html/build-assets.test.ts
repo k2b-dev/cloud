@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test";
-import { appFrameAssets, checkFrameAssets } from "./assets";
+import type { RareChart } from "../runtime/chart-renderer-types";
+import { appFrameAssets, ChartPartsAsset, checkFrameAssets } from "./assets";
 import { buildChartParts, buildCheckPrelude, buildPrelude } from "./build-assets";
 import { CHART_SHARED_IMPORT } from "./chart-parts";
 import { moduleSpecifiers } from "./imports";
@@ -38,8 +39,8 @@ test("normal mounts omit app checks and stay within the prelude budget", async (
   console.info({ prelude: Buffer.byteLength(normal), shared, kinds: sizes, total });
   expect(Buffer.byteLength(normal)).toBeLessThan(319_900);
   // 8,040 B largest kind, 14,846 B shared, 68,040 B total measured.
-  // Each new guard has less than 1% margin; retain the previous host-total ceiling.
-  expect(Math.max(...Object.values(sizes))).toBeLessThanOrEqual(8_100);
+  // Coordinator's per-kind allowance; retain the shared and host-total ceilings.
+  expect(Math.max(...Object.values(sizes))).toBeLessThanOrEqual(14_500);
   expect(shared).toBeLessThanOrEqual(14_950);
   expect(total).toBeLessThan(68_100);
   const markers = {
@@ -57,7 +58,7 @@ test("normal mounts omit app checks and stay within the prelude budget", async (
     barGauge: "stdlib-chart-bar-gauge-track",
     boxplot: "stdlib-chart-box-whisker",
     scatter: "stdlib-chart-trendline",
-  };
+  } satisfies Record<RareChart["kind"], string>;
   expect(Object.keys(parts.kinds).sort()).toEqual(Object.keys(markers).sort());
   for (const [kind, marker] of Object.entries(markers)) {
     expect(normal).not.toContain(marker);
@@ -93,6 +94,23 @@ test("normal mounts omit app checks and stay within the prelude budget", async (
   expect(check).toMatch(/type\s*[!=]==?\s*["']check["']/);
   expect(Buffer.byteLength(check)).toBeGreaterThan(Buffer.byteLength(normal));
 }, 30000);
+
+test("production chart assets validate shared and kind source at the JSON boundary", () => {
+  const part = { code: "export const render=()=>'';", hash: "a".repeat(64) };
+  expect(ChartPartsAsset.parse({ shared: part, kinds: { histogram: part } })).toEqual({ shared: part, kinds: { histogram: part } });
+  for (const value of [
+    null,
+    { kinds: {} },
+    { shared: part },
+    { shared: part, kinds: [] },
+    { shared: { code: 42, hash: part.hash }, kinds: {} },
+    { shared: { code: part.code }, kinds: {} },
+    { shared: part, kinds: { histogram: "unhashed" } },
+    { shared: part, kinds: { histogram: { code: part.code, hash: "invalid" } } },
+  ]) {
+    expect(ChartPartsAsset.safeParse(value).success).toBe(false);
+  }
+});
 
 test("check assets pin their own prelude and share the normal base stylesheet", async () => {
   const [normal, check] = await Promise.all([appFrameAssets(), checkFrameAssets()]);

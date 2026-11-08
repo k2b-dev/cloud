@@ -5,6 +5,7 @@
 import { readFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import type { BunPlugin } from "bun";
+import type { RareChart } from "../runtime/chart-renderer-types";
 import { CHART_SHARED_IMPORT, type ChartPart, type ChartParts } from "./chart-parts";
 
 // App frames strip the embedded SVG stylesheet and use their shared base.css.
@@ -53,7 +54,8 @@ async function buildFrame(entry: string): Promise<string> {
 
 /** Split at renderer exports; Bun deduplicates helpers into one shared asset. */
 export async function buildChartParts(): Promise<ChartParts> {
-  const renderers = await import("../runtime/chart-renderers-rare");
+  // The exhaustive dispatch switch alone cannot catch a forgotten named export.
+  const renderers = (await import("../runtime/chart-renderers-rare")) satisfies Record<RareChart["kind"], unknown>;
   const kinds = Object.keys(renderers).filter((name) => !["rareChartSvg", "loadChartRenderer", "deferChartDrawing"].includes(name));
   const build = await Bun.build({
     entrypoints: kinds.map((kind) => `chart-kind:${kind}.ts`),

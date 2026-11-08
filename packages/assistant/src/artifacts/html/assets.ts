@@ -1,5 +1,9 @@
 import { env } from "@k2b/cloud/config";
+import { z } from "zod";
 import type { ChartParts } from "./chart-parts";
+
+const ChartPartAsset = z.object({ code: z.string().min(1), hash: z.string().regex(/^[a-f0-9]{64}$/) });
+export const ChartPartsAsset = z.object({ shared: ChartPartAsset, kinds: z.record(z.string(), ChartPartAsset) });
 
 export type AppFrameAssets = {
   /** Prelude script text, embedded in every app document. */
@@ -21,7 +25,9 @@ export function appFrameAssets(): Promise<AppFrameAssets> {
         ? await Promise.all([
             Bun.file(new URL("./assistant-app-prelude.js", import.meta.url)).text(),
             Bun.file(new URL("./assistant-app-base.css", import.meta.url)).text(),
-            Bun.file(new URL("./assistant-chart-parts.json", import.meta.url)).json() as Promise<ChartParts>,
+            Bun.file(new URL("./assistant-chart-parts.json", import.meta.url))
+              .json()
+              .then((value: unknown) => ChartPartsAsset.parse(value)),
           ])
         : await import("./build-assets").then(({ buildPrelude, buildBaseCss, buildChartParts }) =>
             Promise.all([buildPrelude(), buildBaseCss(), buildChartParts()]),
