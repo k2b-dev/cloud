@@ -3947,6 +3947,35 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
           }
         });
 
+        test("only the pill shows Reply; a message's right-click and … still reply to that message", async () => {
+          const page = await open(`${boxPath}?conversation=Conv01`);
+          try {
+            await page.waitForFunction(
+              () => !document.querySelector("[data-mail-reply-pill] .k2b-toolbar")?.hasAttribute("data-overflow-pending"),
+            );
+            // Never two Replies side by side: the reader shows Reply, Reply all, and Forward only in the pill.
+            const visible = await page.locator(".mail-reader").evaluate((reader) =>
+              Array.from(reader.querySelectorAll<HTMLElement>("button, a"))
+                .filter((element) => element.getClientRects().length > 0 && !element.closest("[data-mail-reply-pill]"))
+                .map((element) => element.getAttribute("aria-label") ?? element.textContent?.trim() ?? "")
+                .filter((name) => /^(Reply|Reply all|Forward)(,|$)/.test(name)),
+            );
+            expect(visible).toEqual([]);
+            const message = page.locator('[data-mail-message-id="Msg001"]');
+            await message.getByRole("button", { name: "Message actions" }).click();
+            for (const name of ["Reply", "Forward"])
+              expect(await page.locator(dropdown).getByRole("menuitem", { name, exact: true }).count(), `${name} in …`).toBe(1);
+            await dismiss(page, dropdown);
+            // Right-click on the message: Reply starts the reply flow from this message's own menu.
+            const drafts = page.waitForRequest((request) => request.url().includes("/conversations/Conv01/drafts"));
+            await message.locator("[data-mail-message-header]").click({ button: "right" });
+            await page.locator(contextMenu).getByRole("menuitem", { name: "Reply", exact: true }).click();
+            await drafts;
+          } finally {
+            await close(page);
+          }
+        });
+
         test("the pill marks done; Archive stays in the head's …", async () => {
           const page = await open(`${boxPath}?conversation=Conv01`);
           try {
