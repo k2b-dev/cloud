@@ -454,7 +454,7 @@ for (const width of [1920, 390])
       const baseCss = await Bun.file(resolve(import.meta.dir, "../../dist/base.css")).text();
       for (const host of ["scoped", "base"]) {
         await page.setContent(`<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><style>${host === "scoped" ? css : baseCss}
-          body{margin:0;padding:20px;font-size:16px}section{margin-bottom:20px}
+          body{margin:0;padding:20px;font-size:16px;max-width:none}section{margin-bottom:20px}
           </style></head><body class="${host === "scoped" ? "k2b-ui" : ""}" data-theme="light">${drawings}</body></html>`);
         await settled(page);
         const widths = await page
