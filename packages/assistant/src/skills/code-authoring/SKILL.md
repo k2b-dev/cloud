@@ -219,7 +219,7 @@ import { app, mail, owner, imports } from "@sdk";
 const importedTagId = "Tag123";
 
 app.on("mail.message.received", async event => {
-  const message = await mail.app().message.read({ id: event.subject.id });
+  const { data: message } = await mail.app().message.read({ id: event.subject.id });
   if (message.hydrationStatus !== "complete" || message.attachmentsTruncated) {
     throw new Error("Message attachments are not ready or complete");
   }
@@ -233,7 +233,7 @@ app.on("mail.message.received", async event => {
     file,
     idempotencyKey: `invoice:${event.data.receiptId}:${attachment.id}`,
   });
-  const conversation = await mail.app().conversation.read({ id: message.conversationId });
+  const { data: conversation } = await mail.app().conversation.read({ id: message.conversationId });
   await owner.conversation.tag.update({
     conversationId: message.conversationId,
     expectedRevision: conversation.collaboration.revision,

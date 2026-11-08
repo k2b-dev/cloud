@@ -1025,14 +1025,16 @@ test("the invoice template is identical in skill and Fibel, checks against the l
         calls.push(input);
         if (input.call.capability === "mail.message.read")
           return {
-            hydrationStatus: "complete",
-            attachmentsTruncated: false,
-            conversationId: "Cv4g00",
-            attachments: [{ id: "At4g00", contentType: "application/pdf" }],
+            data: {
+              hydrationStatus: "complete",
+              attachmentsTruncated: false,
+              conversationId: "Cv4g00",
+              attachments: [{ id: "At4g00", contentType: "application/pdf" }],
+            },
           };
         if (input.call.capability === "mail.attachment.content.read") return file;
         if (input.call.capability === "imports.import") return { imported: true };
-        if (input.call.capability === "mail.conversation.read") return { collaboration: { revision: 4 } };
+        if (input.call.capability === "mail.conversation.read") return { data: { collaboration: { revision: 4 } } };
         return {};
       },
     },
