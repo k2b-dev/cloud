@@ -78,6 +78,8 @@ import {
   queuedMessageAccepted,
   updateQueuedMessage,
 } from "./message-queue";
+import { createAiNextMessageTool } from "./next-message";
+import { dismissAiNextMessage } from "./next-message-store";
 import { aiActorUser, aiPrefsUserId, aiUserPrefs } from "./prefs";
 import { aiProjects } from "./projects";
 import type { AiResourceContext } from "./projects-authorization";
@@ -207,6 +209,7 @@ const FileRenameSchema = z.object({ from: z.string().min(1), to: z.string().min(
 
 const AiUserPrefsInputSchema = z.object({
   memoryEnabled: z.boolean().optional(),
+  suggestNextMessage: z.boolean().optional(),
   memoryLearningEnabled: z.boolean().optional(),
 });
 
@@ -266,7 +269,7 @@ const rememberLastUsedModel = (actor: RequestActor, model: import("../shared/ai-
 
 const conversationDetail = async (conversation: AiConversation, subject: AiResourceContext) => {
   const [state, timeline, publicView] = await Promise.all([
-    loadAiStreamState(conversation),
+    loadAiStreamState(conversation, subject.actor?.kind === "user" ? subject.actor.user.id : null),
     aiConversations.listConversationTimeline({ conversationId: conversation.id }),
     publicConversationFor(conversation, subject),
   ]);
@@ -466,6 +469,7 @@ export const aiRoutes = (() => {
               })),
               ...(client?.localTools === "ask" ? [createCloudAiLocalBashTool(), ...createCloudAiLocalTools()] : []),
               ...(memoryEnabled ? [createCloudAiMemoryTool()] : []),
+              ...(prefs.suggestNextMessage && ctx.signedInSession && !client ? [createAiNextMessageTool()] : []),
               ...(availableSkills.length ? [createCloudAiLoadSkillTool(resourceContext(c), appAccessAuthority(c))] : []),
               ...(skillCatalog.omitted > 0 ? [createCloudAiSearchSkillsTool(resourceContext(c), [], appAccessAuthority(c))] : []),
             ]
@@ -693,7 +697,13 @@ export const aiRoutes = (() => {
           beforeSeq: query.before,
           limit: query.limit ?? 50,
         });
-        return respond(c, ok({ ...page, messages: await publicAiStoredMessages(page.messages, conversation) }));
+        return respond(
+          c,
+          ok({
+            ...page,
+            messages: await publicAiStoredMessages(page.messages, conversation, ctx.actor.kind === "user" ? ctx.actor.user.id : null),
+          }),
+        );
       })
       .get("/conversations/:conversationId/messages/search", v("query", MessagesSearchQuerySchema), async (c) => {
         const ctx = await resolveContext(c);
@@ -708,6 +718,19 @@ export const aiRoutes = (() => {
           limit: query.limit ?? 50,
         });
         return respond(c, ok({ ...page, messages: await publicAiStoredMessages(page.messages, conversation) }));
+      })
+      .delete("/conversations/:conversationId/messages/:messageId/suggested-next-message", async (c) => {
+        const ctx = await resolveContext(c);
+        if (ctx instanceof Response) return ctx;
+        const conversation = await loadConversation(c, ctx);
+        if (!conversation || ctx.actor.kind !== "user") return notFound(c);
+        return (await dismissAiNextMessage({
+          conversationId: conversation.id,
+          messageShortId: c.req.param("messageId") ?? "",
+          userId: ctx.actor.user.id,
+        }))
+          ? respond(c, ok({ dismissed: true }))
+          : notFound(c);
       })
       .put("/conversations/:conversationId/messages/:messageId/feedback", v("json", AiMessageFeedbackInputSchema), async (c) => {
         const ctx = await resolveContext(c);
@@ -1423,6 +1446,7 @@ export const aiRoutes = (() => {
         const conversation = await loadConversation(c, ctx);
         if (!conversation) return notFound(c);
         return createAiConversationStreamResponse({
+          viewerUserId: ctx.actor.kind === "user" ? ctx.actor.user.id : null,
           conversation,
           signal: c.req.raw.signal,
           // Only a signed-in tab shows approvals in the page; other readers, such as `cld`, leave notices and pushes as they are.

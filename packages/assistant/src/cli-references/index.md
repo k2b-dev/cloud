@@ -8,7 +8,7 @@ Before you configure the Assistant for someone, read
 [How the Assistant works](how-it-works.md) (`cld assistant reference how-it-works.md`).
 It explains whose permissions the Assistant uses, what Projects share and
 whether it is live, which Actions need approval, and when to use instructions, Skills, memories, or knowledge.
-Scheduled chat routines and their task commands are retired.
+Scheduled chat routines and their management commands are retired; `tasks export` reads frozen definitions only.
 
 ## Move Skills between Cloud and folders
 
@@ -526,7 +526,7 @@ asynchronous when the target is busy.
 
 ## Routines became Code
 
-Scheduled chat routines and `cld assistant tasks` are retired. Ask Gustav to rebuild an exported definition as personal Code with `app.schedule`, an explicit `timeZone`, and `core.ai.chat.run`. Review the Code and its grants before activation. Old runs cannot resume.
+Scheduled chat routines and their management commands are retired. `cld assistant tasks export` still reads frozen definitions. Ask Gustav to rebuild an exported definition as personal Code with `app.schedule`, an explicit `timeZone`, and `core.ai.chat.run`. Review the Code and its grants before activation. Old runs cannot resume.
 
 ## Conversation files
 
@@ -753,3 +753,9 @@ Personal disabled-Skill preferences still apply. Linking and unlinking require
 Manage on both resources. A link stays intact if its creator later loses access;
 unlinking or losing membership removes only inherited access. Direct grants
 remain. The same persistence rule applies to `code project-link` for Studio Apps.
+
+`cld assistant tasks export --json` preserves all your routine definitions,
+including prompts, schedules, timezones, grants, mandate summaries, state and
+target chats. Cloud administrators use `--all` to export the installation.
+Exports grant no access. JSON and text output are one JSON document; JSONL
+is one API page per line. Export before an upgrade removes routines.

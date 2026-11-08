@@ -1668,3 +1668,60 @@ test("Studio administration confirms before input and keeps malformed credential
   }
   expect(calls).toBe(0);
 });
+
+for (const output of ["text", "json", "jsonl"] as const) {
+  test(`routine export follows every page and preserves ${output} output`, async () => {
+    const requested: string[] = [];
+    const cursor = "44bc0000-0000-4000-8000-000000000001";
+    const request = createContext(
+      ["tasks", "export"],
+      async (path) => {
+        requested.push(String(path));
+        return json({
+          format: "cloud.chat-tasks",
+          version: 1,
+          authority: "none",
+          scope: "installation",
+          exportedAt: "2026-11-07T00:00:00.000Z",
+          items: [{ id: requested.length === 1 ? "First1" : "Last22" }],
+          nextCursor: requested.length === 1 ? cursor : null,
+        });
+      },
+      output,
+    );
+    request.ctx.flags.all = true;
+    await assistantCli.run(request.ctx);
+    expect(requested).toEqual(["/api/ai/admin/tasks/export", `/api/ai/admin/tasks/export?after=${cursor}`]);
+    const text = request.stdout.join("");
+    if (output === "jsonl")
+      expect(
+        text
+          .trim()
+          .split("\n")
+          .map((line) => JSON.parse(line).items[0].id),
+      ).toEqual(["First1", "Last22"]);
+    else expect(JSON.parse(text)).toMatchObject({ authority: "none", items: [{ id: "First1" }, { id: "Last22" }], nextCursor: null });
+  });
+}
+
+test("routine export stops visibly when a later page fails", async () => {
+  let calls = 0;
+  const request = createContext(
+    ["tasks", "export"],
+    async () =>
+      ++calls === 1
+        ? json({
+            format: "cloud.chat-tasks",
+            version: 1,
+            authority: "none",
+            scope: "person",
+            exportedAt: "2026-11-07T00:00:00.000Z",
+            items: [],
+            nextCursor: "44bc0000-0000-4000-8000-000000000001",
+          })
+        : json({ message: "Export interrupted" }, 503),
+    "json",
+  );
+  await expect(assistantCli.run(request.ctx)).rejects.toThrow("Export interrupted");
+  expect(() => JSON.parse(request.stdout.join(""))).toThrow();
+});

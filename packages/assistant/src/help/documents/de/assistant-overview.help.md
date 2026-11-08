@@ -39,6 +39,8 @@ Mit `cld acp` kannst du Gustav auch in Editoren wie T3 Code und Zed nutzen. Wenn
 - **Nützliche Chats wiederfinden:** Benenne den Chat um oder füge eine Beschreibung hinzu, wenn du ihn später leicht wiederfinden möchtest.
 - **Im Chat suchen:** Nutze `/search`, um sichtbare Nachrichten zu finden oder die strukturierten Cloud-Ressourcen zu prüfen, die in diesem oder anderen aktiven Chats verwendet wurden.
 - **Künftige Arbeit planen:** Bitte Gustav um persönlichen Code mit Zeitplan und Zeitzone. Prüfe Code und Zugriff vor der Aktivierung.
+- **Vorgeschlagene Nachricht:** Nach einer Antwort kann ein kurzer Vorschlag im leeren Eingabefeld stehen, wenn ein nächster Schritt sinnvoll ist. Übernimm ihn mit **Tab** oder **Übernehmen**. Er wird dadurch noch nicht gesendet; du kannst ihn ändern. Eigener Text ersetzt ihn, **Esc** verwirft ihn für diese Antwort, auch nach einem Neuladen. Bei Fehlern, gestoppten Antworten oder offenen Fragen und Freigaben gibt es keinen Vorschlag.
+- **Vorschläge ausschalten:** Unter **Einstellungen → Chat → Nächste Nachricht vorschlagen** schaltest du sie aus. Die Einstellung ist standardmäßig an. Der Vorschlag bleibt beim selben Chat und Modell.
 - **Nächste Schritte:** Wenn ein konkreter nächster Schritt dir Arbeit spart, beendet Gustav seine Antwort manchmal mit einem Angebot, etwa einen Antwortentwurf zu schreiben. Antworte mit Ja, um es anzunehmen. Möchtest du keine solchen Angebote, sag es Gustav.
 - **Arbeitsdateien:** Zwischenstände legt Gustav im Chat-Ordner `temp/` ab, Ergebnisse außerhalb davon, zusammen mit der Markdown- oder HTML-Quelle, aus der ein PDF entstanden ist.
 :::

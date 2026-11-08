@@ -11,15 +11,16 @@ updated: 2026-11-07
 # Routines became Code
 
 Scheduled Assistant chat routines no longer run in this release. Their scheduler,
-capabilities, task REST routes, `cld assistant tasks` commands, scheduled-tasks
+capabilities, execution REST routes, routine-management commands, scheduled-tasks
 Skill and routine controls are removed. Restarting Core or restoring a chat cannot
 resume an old routine. The public `aiChatTasks`, `AiChatTask*`, `ChatTask*` and
-`TaskGrant*` exports are removed too.
+`TaskGrant*` exports are removed too, except the read-only `ChatTaskExport*` contract.
 
 ## Before upgrading
 
-Use the operator export supplied by the previous release to save routine
-definitions before upgrading. Back up the database as well: definition exports
+Use `cld assistant tasks export --json` on the old release to save routine
+definitions before upgrading. The command remains available after upgrading
+for definitions retained in the read-only archive. Back up the database as well: definition exports
 do not include run history or logs. Stop and drain the old Core workers before
 starting the upgraded release. A rolling mix of old and new workers is not the
 cutover procedure; already dispatched external effects cannot be undone by a migration.
@@ -54,7 +55,9 @@ broker timers. It neither drops history tables nor prunes their logs. Archived
 rows retain their original IDs and last recorded state; an `active` definition
 in the archive has no execution authority. Each archived definition includes a `retired_mandate` snapshot of its original
 authority as historical evidence; the surviving mandate API treats them as opaque, revoked
-records. The removed task routes and run browser do not expose this archive.
+records. The removed run browser does not expose this archive. The read-only `/tasks/export` and `/admin/tasks/export` routes and `cld assistant tasks export` remain for frozen definitions, with the same person/admin checks. Fresh installations export an empty list; exports never restore execution authority.
+The exported mandate summary records the state before retirement; it grants no
+current access even when its historical state says `active`.
 
 Deleting a live chat, turn or account no longer cascades into these archive
 rows. Include them in the operator's backup, access and retention procedures.

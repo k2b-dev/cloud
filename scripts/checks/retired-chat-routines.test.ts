@@ -23,6 +23,8 @@ test("retains shared AI tasks, Code scheduling and read-only archive projections
         'import { startCodeScheduling } from "./code/scheduling-runtime";',
         'import { retireChatTaskSchedules } from "./retired-chat-routines";',
         'import { assertInteractiveChatTurn } from "./retired-routines";',
+        'import { exportChatTasks } from "./chat-task-export";',
+        'import { aiChatTaskExportRoutes } from "./ai-chat-task-export-routes";',
       ].join("\n"),
     ),
   ).toEqual([]);

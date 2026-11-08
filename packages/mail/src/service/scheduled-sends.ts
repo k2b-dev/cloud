@@ -116,6 +116,24 @@ const mapRows = (rows: ScheduledRow[]): ScheduledSend[] =>
 const scheduledSendVisibleTo = (access: MailboxAccess) =>
   sql`(${draftVisibleTo(access, sql`draft`)} AND (outbox.message_id IS NULL OR ${messageVisibleTo(access, sql`outbox.message_id`)}))`;
 
+/** Resource visibility is independent of the delivery state and the requested operation. */
+export const requireVisibleScheduledSend = async (
+  access: MailboxAccess,
+  mailboxId: string,
+  scheduledSendId: string,
+): Promise<Result<void>> => {
+  const [row] = await sql<{ visible: boolean }[]>`
+    SELECT EXISTS (
+      SELECT 1 FROM mail.outbox_submissions outbox
+      JOIN mail.drafts draft ON draft.id = outbox.draft_id
+      WHERE outbox.mailbox_id = ${mailboxId}::uuid
+        AND outbox.id = ${scheduledSendId}::uuid
+        AND ${scheduledSendVisibleTo(access)}
+    ) AS visible
+  `;
+  return row?.visible === true ? ok() : fail(err.notFound("Scheduled delivery"));
+};
+
 const scheduledCount = async (mailboxId: string, access: MailboxAccess, db: SqlClient = sql): Promise<number> => {
   const [row] = await db<{ total: number | string }[]>`
     SELECT COUNT(*)::int AS total

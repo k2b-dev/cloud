@@ -215,6 +215,12 @@ an unknown app and requires administrator authority on both paths. See
 [Inspect readiness and failures](/en/docs/operations/app-events#inspect-readiness-and-failures)
 for fields, offline behavior and bounds.
 
+`canReadAppAdministration(authority)` from `@k2b/cloud/services` authorizes
+Core administration metadata with the current person's administrator role and
+OAuth `read` or `admin`. It grants no app use or repair. `canRepairAppAccess`
+retains explicit `admin` scope for OAuth repair operations. Both helpers expect
+request authority from Cloud authentication; do not cache role decisions.
+
 `appAdminFacts(authority, appIds)` and `AppAdminFacts` from `@k2b/cloud/services`
 provide Core's administrator-only batch summary for up to 500 input app IDs.
 Each distinct ID receives persisted grant-entry counts (not expanded group membership) and effective managers,
@@ -714,6 +720,11 @@ and [Upload preflight](/en/docs/platform/pdf-and-templates#upload-browser-map-sn
 `parseAiModelChoice` and `AiPeopleModels`. Use them to request a deployment's
 model class and interpret the resolved variant. See
 [Structured and background AI](/en/docs/ai/structured-and-background-ai#request-a-class).
+
+Core's routine definition export uses the framework-owned `exportChatTasks`,
+`ChatTaskExportPageSchema`, `ChatTaskExportEntrySchema`, `ChatTaskExportQuerySchema`
+and `ChatTaskExportForbiddenError` exports from `@k2b/cloud/ai`. See
+[Export automation definitions](/en/docs/operations/automation-definition-export).
 
 ### Code owners and normal shares
 

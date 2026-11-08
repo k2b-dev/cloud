@@ -5,7 +5,7 @@ section: Work
 order: 120
 description: Markdown handbooks and collaborative notebooks with structured blocks, discussions, links, and files.
 tags: [notebooks, markdown, collaboration]
-updated: 2026-10-29
+updated: 2026-11-07
 ---
 
 # Notebooks
@@ -692,3 +692,18 @@ Note, comment, annotation, reply, parent and placement-anchor IDs remain in
 `input`. Each must belong to the target notebook; a mismatch returns
 `NOT_FOUND` in both review and execution. Moving a note stays within its
 notebook. Search and reader Queries retain their existing inputs.
+
+## Connect automations to a notebook
+
+Automations can react when a page discussion post is added, using
+`notebooks.comment.created`. It identifies the comment and notebook without
+including text, titles or author names. Read the current post through
+`comment.read`; delivery checks current read access to the notebook. Passage
+annotations, discussion edits and deletion do not emit this event.
+
+`comment.create` and `note.create` declare shared silent policies. They keep
+current write checks, required retry keys and notebook-scoped reviews with the
+complete proposed text. In this release, supporting clients ask once and may
+remember that notebook scope; an automation still needs its mandate and grants.
+Deletion and moving notes keep their existing approval behavior. See
+[Notebooks automation capabilities](/en/docs/reference/notebooks-automation).

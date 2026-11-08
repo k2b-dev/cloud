@@ -2643,10 +2643,78 @@ reservations independently. Keep receipts for their domain recovery period.
 
 References require the same caller and credential scope, an unchanged live
 operation schema and current provider access. Possessing a reference alone
-cannot invoke a different operation. This initial stream contract supports
-interactive and service-account authority; mandate-backed background
-invocations of streaming operations fail before execution. Existing operations
-without streams retain their contracts.
+cannot invoke a different operation. Interactive and service-account authority
+use this transport directly. Verified Code runs also use it through run-bound
+FileRefs as described below. Other mandate-backed background invocations of
+streaming operations fail before execution. Existing operations without streams
+retain their contracts.
+
+### Transfer a file from Code
+
+A read stream is offered in the generated Code SDK as `Promise<FileRef>`.
+For an import, declare a write stream and an ordinary input field
+`file: CapabilityFileMetadataSchema`, imported from `@k2b/cloud/contracts`.
+The schema contains optional `name`, `mediaType` and exact `size`. Core replaces
+the FileRef with that metadata before invoking the Action. Its `run` checks
+access and prepares a reservation of that size and media type; its `write`
+handler checks access again, consumes the whole body, validates and publishes
+it, then returns the final result. No app needs to know the source app.
+
+The SDK replaces this input field's type with `FileRef` and returns the write
+receipt's data only after transfer. Code cannot upload sandbox bytes through
+this path. Core bounds transfers at both providers and enforces the exact byte
+count with backpressure. Cancellation and the Code deadline stop the transfer;
+publication already committed by an app remains committed.
+
+References belong to one Code, version, run, generation and mandate, expire at
+the earlier provider/run-token deadline and are consumed once before target
+preparation. Failed attempts also spend them. Inspect the target's domain
+receipt before recovering with a fresh reference and the same business
+idempotency key. Current Code policy, mandate and provider access still apply.
+The ordinary HTTP stream endpoint cannot redeem these references.
+
+For mailbox-owned Code, replace `imports` with the destination app's discovered
+SDK namespace and `Tag123` with a real mailbox tag ID:
+
+<!-- code-file-example -->
+```ts
+import { app, mail, owner, imports } from "@sdk";
+
+const importedTagId = "Tag123";
+
+app.on("mail.message.received", async event => {
+  const message = await mail.app().message.read({ id: event.subject.id });
+  if (message.hydrationStatus !== "complete" || message.attachmentsTruncated) {
+    throw new Error("Message attachments are not ready or complete");
+  }
+  const attachment = message.attachments.find(item =>
+    ["application/pdf", "application/xml", "text/xml"].includes(item.contentType)
+  );
+  if (!attachment || !message.conversationId) return;
+
+  const file = await mail.app().attachment.content.read({ id: attachment.id });
+  await imports.app().import({
+    file,
+    idempotencyKey: `invoice:${event.data.receiptId}:${attachment.id}`,
+  });
+  const conversation = await mail.app().conversation.read({ id: message.conversationId });
+  await owner.conversation.tag.update({
+    conversationId: message.conversationId,
+    expectedRevision: conversation.collaboration.revision,
+    addTagIds: [importedTagId],
+  });
+});
+export default app;
+```
+
+The Mail reader is `mail.attachment.content.read`, bounded to Mail's existing
+100 MiB attachment limit. It resolves current attachment access on issuance and
+again while reading the immutable blob. `attachment.read` remains metadata-only;
+`attachment.read-content` still reads extracted text. The bytes never enter
+Code or its JSON bridge. See [Code SDK](/en/docs/platform/code-sdk#mail-invoices-to-an-app)
+for recovery and permissions.
+
+### Assistant code mode transfers
 
 Assistant code mode exposes `cloud.capabilities.streams.read/write/status/abort`.
 `read` returns a `File`, and `write` accepts a `Blob`, string, `ArrayBuffer` or

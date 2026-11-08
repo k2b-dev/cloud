@@ -90,3 +90,18 @@ follow Code run retention; ordinary chat messages and turns retain their own
 history. Keep the normal AI worker and sweep running so committed queued turns
 recover after a failed wake-up. A waiting turn appears in the chat and remains
 subject to its normal wait and execution limits.
+
+## File transfers
+
+Core now transfers a Code FileRef directly between capability providers.
+The additive `code.file_redemptions` table holds only spent-reference digests,
+scoped to each run and removed by existing run retention. No new service or
+configuration is needed. Each source read at redemption uses the ordinary
+per-run call budget; binary bodies do not use the JSON bridge budget.
+
+A failed import attempt spends its FileRef. Inspect the destination's domain
+receipt and the run's calls before recovery. Read a fresh reference and keep
+the intended import's business idempotency key. Expired references and references
+from another attempt cannot be resumed. Providers remain responsible for
+reclaiming abandoned upload reservations. Cancellation does not undo a
+publication already committed by the receiving application.

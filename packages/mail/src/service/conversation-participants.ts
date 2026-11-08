@@ -52,7 +52,7 @@ export const listConversationParticipants = async (params: {
         SELECT
           command.actor_kind,
           command.actor_id,
-          actor_workflow.id AS workflow_id,
+          actor_workflow.workflow_id AS workflow_id,
           COALESCE(NULLIF(actor_user.display_name, ''), actor_user.uid, actor_service.name, actor_workflow.name) AS name,
           (
             SELECT COALESCE(NULLIF(address.display_name, ''), address.email)
@@ -66,12 +66,11 @@ export const listConversationParticipants = async (params: {
         LEFT JOIN auth.users actor_user ON command.actor_kind = 'user' AND actor_user.id = command.actor_id
         LEFT JOIN auth.service_accounts actor_service
           ON command.actor_kind = 'service_account' AND actor_service.id = command.actor_id
-        LEFT JOIN workflows.version actor_workflow_version
-          ON command.actor_kind = 'workflow' AND actor_workflow_version.id = command.actor_id
-        LEFT JOIN workflows.workflow actor_workflow ON actor_workflow.id = actor_workflow_version.workflow_id
+        LEFT JOIN mail.workflow_source_names actor_workflow
+          ON command.actor_kind = 'workflow' AND actor_workflow.version_id = command.actor_id
         WHERE submission.message_id = mc.id
           AND command.actor_id IS NOT NULL
-          AND (command.actor_kind IN ('user', 'service_account') OR (command.actor_kind = 'workflow' AND actor_workflow.id IS NOT NULL))
+          AND (command.actor_kind IN ('user', 'service_account') OR (command.actor_kind = 'workflow' AND actor_workflow.workflow_id IS NOT NULL))
       ) writer ON true
       -- Without a command, every From address of the message wrote it.
       LEFT JOIN LATERAL (

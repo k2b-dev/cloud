@@ -8,6 +8,7 @@ import { assistantRootCommand } from "./cli/interactive";
 import { assistantPersonalizationCommands } from "./cli/personalization";
 import { assistantProjectCommands, projectAccessContext } from "./cli/projects";
 import { assistantSkillCommands } from "./cli/skills";
+import { assistantTaskCommands } from "./cli/tasks";
 
 const commands = defineCliCommands({
   name: "assistant",
@@ -34,6 +35,7 @@ const commands = defineCliCommands({
     skills: "List Cloud Skills and move them to and from Agent Skills folders",
     "skills access": "Manage Skill access grants",
     turns: "Watch, steer, and stop Assistant turns",
+    tasks: "Export archived routine definitions",
   },
   commands: [
     assistantRootCommand,
@@ -45,6 +47,7 @@ const commands = defineCliCommands({
     ...assistantPersonalizationCommands,
     ...assistantProjectCommands,
     ...assistantSkillCommands,
+    ...assistantTaskCommands,
   ],
 });
 

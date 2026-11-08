@@ -1,9 +1,12 @@
 export type { ButtonAlign, ButtonLinkProps, ButtonProps, ButtonSize, ButtonVariant, IconButtonLinkProps, IconButtonProps } from "./Button";
 export { Button, ButtonLink, IconButton, IconButtonLink } from "./Button";
+export type { CommandMenuProps } from "./CommandMenu";
+export { CommandMenu } from "./CommandMenu";
 export type { ContextMenuProps } from "./ContextMenu";
 export { ContextMenu } from "./ContextMenu";
 export type { CopyButtonProps, CopyButtonValue } from "./CopyButton";
 export { CopyButton } from "./CopyButton";
+export type { CommandContext, CommandItem, CommandSource, CommandStep } from "./command-items";
 export type { DisclosureProps } from "./Disclosure";
 export { Disclosure } from "./Disclosure";
 export type { DragPayload, DragSourceProps, DropTargetProps } from "./DragAndDrop";

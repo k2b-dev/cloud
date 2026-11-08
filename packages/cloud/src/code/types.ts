@@ -44,6 +44,7 @@ export type CodeSdkOperation = {
   dataSchema: Record<string, unknown>;
   schemaHash: string;
   idempotency: "required" | "none";
+  stream?: { direction: "read" | "write"; maxBytes: number };
 };
 
 /** Discovered event contract; resource registrations bind the owner place. */

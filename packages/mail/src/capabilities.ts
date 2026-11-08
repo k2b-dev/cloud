@@ -5,9 +5,11 @@ import {
   CapabilityActionCheckSchema,
   type CapabilityDefinitions,
   type CapabilityExecutionContext,
+  CapabilityFileMetadataSchema,
   type CapabilityInvocationResult,
   type CapabilityResult,
   type CapabilitySemanticLink,
+  type CapabilityStream,
   type CloudResourceView,
   capabilityPage,
   cloudResourceHref,
@@ -21,7 +23,7 @@ import { logger } from "@k2b/cloud/services";
 import { principalLabel } from "@k2b/cloud/shared";
 import { err, fail, i18n, ok, type Result } from "@k2b/stdlib";
 import type { SQL } from "bun";
-import type { z } from "zod";
+import { z } from "zod";
 import { mailEvents } from "./app-events";
 import * as c from "./capability-contracts";
 import { mailCapabilityMessages } from "./capability-messages";
@@ -49,7 +51,14 @@ import {
   sendReceipt,
 } from "./capability-reviews";
 import { MailComposeCommandInputSchema, MailDraftCalendarInputSchema } from "./commands";
-import { type Mailbox, type MailDraft, type MailSearchExpression, type MailSubscriptionSummary, ResourceShortIdSchema } from "./contracts";
+import {
+  MAX_DRAFT_ATTACHMENT_BYTES,
+  type Mailbox,
+  type MailDraft,
+  type MailSearchExpression,
+  type MailSubscriptionSummary,
+  ResourceShortIdSchema,
+} from "./contracts";
 import { mailFolderPaths } from "./folder-tree";
 import {
   MailCodePreviewInputSchema,
@@ -183,9 +192,18 @@ const requireMailboxTarget = (context: CapabilityExecutionContext): Result<strin
     : fail(err.badInput("A mail.mailbox target with a public mailbox ID is required"));
 
 /** Validate every batch member before reviewing or changing any conversation. */
-const requireConversationsInMailbox = async (mailboxId: string, conversationIds: string[]): Promise<Result<void>> => {
+const requireConversationsInMailbox = async (
+  mailboxId: string,
+  conversationIds: string[],
+  access: mailboxAccess.MailboxAccess,
+): Promise<Result<void>> => {
   const ids = await publicResources.resolveMailboxPublicIds("conversations", mailboxId, conversationIds);
-  return ids ? ok(undefined) : fail(err.notFound("Conversation"));
+  if (!ids) return fail(err.notFound("Conversation"));
+  for (const id of ids) {
+    const visible = await mailboxAccess.requireVisibleConversation(access, id);
+    if (!visible.ok) return visible;
+  }
+  return ok(undefined);
 };
 
 const requireDraftFieldsInMailbox = async (
@@ -203,24 +221,80 @@ const requireDraftFieldsInMailbox = async (
   return ok(undefined);
 };
 
-const resolveMailboxScope = async (shortId: string): Promise<Result<{ id: string; shortId: string }>> => {
+/**
+ * Resolves a mailbox the caller can read. A mailbox the caller cannot read answers as an unknown one, so no capability
+ * tells whether the mailbox or an ID inside it exists. Every lookup of a resource inside a mailbox goes through here.
+ */
+const resolveMailboxScope = async (
+  shortId: string,
+  context: CapabilityExecutionContext,
+): Promise<Result<{ id: string; shortId: string }>> => {
   const resolved = await resolvePublicResource("mailboxes", shortId);
-  return resolved.ok ? ok({ id: resolved.data, shortId }) : resolved;
+  if (!resolved.ok) return resolved;
+  const readable = await mailboxAccess.requireMailboxAccess(requestContext(context), resolved.data, "read");
+  return readable.ok ? ok({ id: resolved.data, shortId }) : fail(err.notFound(RESOURCE_LABELS.mailboxes));
 };
 
-const resolveDraftScope = async (mailboxShortId: string, draftShortId: string) => {
-  const mailbox = await resolveMailboxScope(mailboxShortId);
+/** A message reference outside an assigned grant answers exactly like an unknown message. */
+const resolveMailboxMessage = async (mailboxId: string, shortId: string, context: CapabilityExecutionContext): Promise<Result<string>> => {
+  const message = await resolveMailboxResource("messages", mailboxId, shortId);
+  if (!message.ok) return message;
+  const access = await mailboxAccess.requireMailboxAccess(requestContext(context), mailboxId, "read");
+  if (!access.ok) return fail(err.notFound(RESOURCE_LABELS.messages));
+  const visible = await mailboxAccess.requireVisibleMessages(access.data, [message.data]);
+  return visible.ok ? message : missingAs(visible, "messages");
+};
+
+/** A draft the caller cannot see, such as one outside an assigned-only grant, answers like an unknown draft. */
+const resolveDraftScope = async (mailboxShortId: string, draftShortId: string, context: CapabilityExecutionContext) => {
+  const mailbox = await resolveMailboxScope(mailboxShortId, context);
   if (!mailbox.ok) return mailbox;
   const draft = await resolveMailboxResource("drafts", mailbox.data.id, draftShortId);
-  return draft.ok ? ok({ mailbox: mailbox.data, draftId: draft.data, draftShortId }) : draft;
+  if (!draft.ok) return draft;
+  const visible = await mailboxAccess.requireDraftAccess(requestContext(context), mailbox.data.id, draft.data, "read");
+  return visible.ok ? ok({ mailbox: mailbox.data, draftId: draft.data, draftShortId }) : visible;
 };
 
-const resolveConversationScope = async (mailboxShortId: string, conversationShortId: string) => {
-  const mailbox = await resolveMailboxScope(mailboxShortId);
+const resolveConversationScope = async (mailboxShortId: string, conversationShortId: string, context: CapabilityExecutionContext) => {
+  const mailbox = await resolveMailboxScope(mailboxShortId, context);
   if (!mailbox.ok) return mailbox;
   const conversation = await resolveMailboxResource("conversations", mailbox.data.id, conversationShortId);
-  return conversation.ok ? ok({ mailbox: mailbox.data, conversationId: conversation.data, conversationShortId }) : conversation;
+  if (!conversation.ok) return conversation;
+  const access = await mailboxAccess.requireMailboxAccess(requestContext(context), mailbox.data.id, "read");
+  if (!access.ok) return fail(err.notFound(RESOURCE_LABELS.conversations));
+  const visible = await mailboxAccess.requireVisibleConversation(access.data, conversation.data);
+  return visible.ok
+    ? ok({ mailbox: mailbox.data, conversationId: conversation.data, conversationShortId })
+    : missingAs(visible, "conversations");
 };
+
+/**
+ * Releasing a keep does not depend on a mailbox grant. A caller who may not release a keep gets the same refusal for
+ * unknown IDs as the release gives for known ones, so only callers who may release a keep learn whether the IDs exist.
+ */
+const resolveKeptConversationScope = async (
+  mailboxShortId: string,
+  conversationShortId: string,
+  context: CapabilityExecutionContext,
+): Promise<Result<{ mailboxId: string; conversationId: string }>> => {
+  const mailbox = await resolvePublicResource("mailboxes", mailboxShortId);
+  const conversation = mailbox.ok ? await resolveMailboxResource("conversations", mailbox.data, conversationShortId) : mailbox;
+  if (mailbox.ok && conversation.ok) return ok({ mailboxId: mailbox.data, conversationId: conversation.data });
+  return !conversation.ok && (await conversationKeeps.canLiftConversationKeeps(requestContext(context)))
+    ? conversation
+    : fail(err.forbidden(conversationKeeps.LIFT_KEEP_FORBIDDEN));
+};
+
+/**
+ * Whether the caller can read the mailbox of a resource read by its own ID. Reads by ID answer a resource in a mailbox
+ * the caller cannot read like an unknown ID, as `resolveMailboxScope` does for IDs inside a mailbox.
+ */
+const canReadMailbox = async (context: CapabilityExecutionContext, mailboxId: string): Promise<boolean> =>
+  (await mailboxAccess.requireMailboxAccess(requestContext(context), mailboxId, "read")).ok;
+
+/** A read by ID answers a hidden parent, such as a conversation outside an assigned-only grant, like an unknown ID. */
+const missingAs = <Failure extends { ok: false; error: { code: string } }>(failure: Failure, table: PublicTable) =>
+  failure.error.code === "NOT_FOUND" ? fail(err.notFound(RESOURCE_LABELS[table])) : failure;
 
 const requirePublicId = publicResources.requirePublicId;
 
@@ -864,7 +938,7 @@ const runSearch = async (
     // Every mailbox the person may read, most recently active first; the search deadline bounds the work.
     if (!input.scope) return mailboxes.listMailboxes(context, MAILBOX_LIST_LIMIT);
     if (input.scope.type !== "mail.mailbox") return fail(err.badInput("Unsupported mail search context"));
-    const scope = await resolveMailboxScope(input.scope.id);
+    const scope = await resolveMailboxScope(input.scope.id, capabilityContext);
     if (!scope.ok) return scope;
     const mailbox = await mailboxes.getMailbox(context, scope.data.id);
     return mailbox.ok ? ok([mailbox.data]) : mailbox;
@@ -1129,7 +1203,7 @@ const queryDefinitions = {
     run: async (input: z.output<typeof c.MailboxReadInputSchema>, context: CapabilityExecutionContext) => {
       const t = mailCapabilityMessages(context.locale);
       const mailContext = requestContext(context);
-      const scope = await resolveMailboxScope(input.id);
+      const scope = await resolveMailboxScope(input.id, context);
       if (!scope.ok) return scope;
       const mailbox = await mailboxes.getMailbox(mailContext, scope.data.id);
       if (!mailbox.ok) return mailbox;
@@ -1159,7 +1233,7 @@ const queryDefinitions = {
       const target = requireMailboxTarget(context);
       if (!target.ok) return target;
       const mailboxId = target.data;
-      const scope = await resolveMailboxScope(mailboxId);
+      const scope = await resolveMailboxScope(mailboxId, context);
       if (!scope.ok) return scope;
       const result = await senderIdentities.listSenderIdentities(requestContext(context), scope.data.id);
       if (!result.ok) return result;
@@ -1204,7 +1278,7 @@ const queryDefinitions = {
       const target = requireMailboxTarget(context);
       if (!target.ok) return target;
       const mailboxId = target.data;
-      const scope = await resolveMailboxScope(mailboxId);
+      const scope = await resolveMailboxScope(mailboxId, context);
       if (!scope.ok) return scope;
       const result = await collaboration.listAssignableUsers({
         context: requestContext(context),
@@ -1234,7 +1308,7 @@ const queryDefinitions = {
       const target = requireMailboxTarget(context);
       if (!target.ok) return target;
       const mailboxId = target.data;
-      const scope = await resolveMailboxScope(mailboxId);
+      const scope = await resolveMailboxScope(mailboxId, context);
       if (!scope.ok) return scope;
       const result = await messages.listFolders(requestContext(context), scope.data.id);
       if (!result.ok) return result;
@@ -1283,7 +1357,7 @@ const queryDefinitions = {
       const target = requireMailboxTarget(context);
       if (!target.ok) return target;
       const mailboxId = target.data;
-      const scope = await resolveMailboxScope(mailboxId);
+      const scope = await resolveMailboxScope(mailboxId, context);
       if (!scope.ok) return scope;
       const folderId = input.folderId ? await resolveMailboxResource("folders", scope.data.id, input.folderId) : ok(null);
       if (!folderId.ok) return folderId;
@@ -1387,7 +1461,7 @@ const queryDefinitions = {
       const target = requireMailboxTarget(context);
       if (!target.ok) return target;
       const mailboxId = target.data;
-      const scope = await resolveMailboxScope(mailboxId);
+      const scope = await resolveMailboxScope(mailboxId, context);
       if (!scope.ok) return scope;
       const expression = await resolveSearchExpression(scope.data.id, input.expression);
       if (!expression.ok) return expression;
@@ -1470,16 +1544,12 @@ const queryDefinitions = {
       if (!target.ok) return target;
       const mailboxId = target.data;
       const t = mailCapabilityMessages(context.locale);
-      const scope = await resolveMailboxScope(mailboxId);
+      const scope = await resolveConversationScope(mailboxId, input.conversationId, context);
       if (!scope.ok) return scope;
-      const access = await mailboxAccess.requireMailboxPermission(requestContext(context), scope.data.id, "read");
-      if (!access.ok) return access;
-      const conversation = await resolveMailboxResource("conversations", scope.data.id, input.conversationId);
-      if (!conversation.ok) return conversation;
       const result = await conversationContext.listRelatedConversations({
         context: requestContext(context),
-        mailboxId: scope.data.id,
-        conversationId: conversation.data,
+        mailboxId: scope.data.mailbox.id,
+        conversationId: scope.data.conversationId,
         limit: input.limit,
       });
       if (!result.ok) return result;
@@ -1497,7 +1567,7 @@ const queryDefinitions = {
           latestMessageAt: item.latestMessageAt,
           ...(preview ? { preview } : {}),
           reasons: item.reasons.map((reason) => ({ ...reason, value: truncateText(reason.value, 500).text })),
-          links: [openLink(conversationHref(scope.data.shortId, id))],
+          links: [openLink(conversationHref(scope.data.mailbox.shortId, id))],
         };
       });
       return ok({ data });
@@ -1516,7 +1586,7 @@ const queryDefinitions = {
       const conversation = await resolvePublicResource("conversations", input.id);
       if (!conversation.ok) return conversation;
       const mailboxId = await resourceParents.conversation(conversation.data);
-      if (!mailboxId) return fail(err.notFound("Conversation"));
+      if (!mailboxId || !(await canReadMailbox(context, mailboxId))) return fail(err.notFound("Conversation"));
       const [summary, state, tags, page, keep] = await Promise.all([
         conversationSummaries.getConversationSummary({
           context: mailContext,
@@ -1590,7 +1660,7 @@ const queryDefinitions = {
       const target = requireMailboxTarget(context);
       if (!target.ok) return target;
       const mailboxId = target.data;
-      const scope = await resolveMailboxScope(mailboxId);
+      const scope = await resolveMailboxScope(mailboxId, context);
       if (!scope.ok) return scope;
       const conversation = await resolveMailboxResource("conversations", scope.data.id, input.conversationId);
       if (!conversation.ok) return conversation;
@@ -1624,7 +1694,7 @@ const queryDefinitions = {
       const message = await resolvePublicResource("messages", input.id);
       if (!message.ok) return message;
       const mailboxId = await resourceParents.message(message.data);
-      if (!mailboxId) return fail(err.notFound("Message"));
+      if (!mailboxId || !(await canReadMailbox(context, mailboxId))) return fail(err.notFound("Message"));
       const result = await messages.getMessage({ context: requestContext(context), mailboxId, messageId: message.data });
       if (!result.ok) return result;
       const conversationId = await resourceParents.messageConversation(message.data, mailboxId);
@@ -1676,7 +1746,7 @@ const queryDefinitions = {
       const message = await resolvePublicResource("messages", input.id);
       if (!message.ok) return message;
       const mailboxId = await resourceParents.message(message.data);
-      if (!mailboxId) return fail(err.notFound("Message"));
+      if (!mailboxId || !(await canReadMailbox(context, mailboxId))) return fail(err.notFound("Message"));
       const result = await messages.getMessage({
         context: requestContext(context),
         mailboxId,
@@ -1789,13 +1859,13 @@ const queryDefinitions = {
       const attachmentId = await resolvePublicResource("attachments", input.id);
       if (!attachmentId.ok) return attachmentId;
       const parent = await resourceParents.attachment(attachmentId.data);
-      if (!parent) return fail(err.notFound("Attachment"));
+      if (!parent || !(await canReadMailbox(context, parent.mailboxId))) return fail(err.notFound("Attachment"));
       const result = await messages.getMessage({
         context: requestContext(context),
         mailboxId: parent.mailboxId,
         messageId: parent.messageId,
       });
-      if (!result.ok) return result;
+      if (!result.ok) return missingAs(result, "attachments");
       const attachment = result.data.attachments.find((item) => item.id === attachmentId.data);
       if (!attachment) return fail(err.notFound("Attachment"));
       const [mailboxIds, messageIds] = await Promise.all([
@@ -1822,6 +1892,70 @@ const queryDefinitions = {
       });
     },
   },
+  "attachment.content.read": {
+    title: "Read attachment file",
+    description:
+      "Open the original attachment as a bounded binary stream. In Code this returns a FileRef for another app's write capability; use attachment.read-content for extracted text.",
+    input: c.AttachmentReadInputSchema,
+    data: CapabilityFileMetadataSchema,
+    openWorld: false,
+    async run(input: z.output<typeof c.AttachmentReadInputSchema>, context: CapabilityExecutionContext) {
+      context.signal.throwIfAborted();
+      const attachmentId = await resolvePublicResource("attachments", input.id);
+      if (!attachmentId.ok) return attachmentId;
+      const parent = await resourceParents.attachment(attachmentId.data);
+      if (!parent) return fail(err.notFound("Attachment"));
+      const opened = await messages.openAttachment({ context: requestContext(context), ...parent, attachmentId: attachmentId.data });
+      if (!opened.ok) return opened;
+      if (opened.data.total > MAX_DRAFT_ATTACHMENT_BYTES) return fail(err.badInput("Attachment exceeds the 100 MiB file limit"));
+      const file = CapabilityFileMetadataSchema.parse({
+        ...(opened.data.filename ? { name: truncateText(opened.data.filename, 255).text } : {}),
+        mediaType: /^[\x20-\x7e]{1,255}$/.test(opened.data.contentType) ? opened.data.contentType : "application/octet-stream",
+        size: opened.data.total,
+      });
+      return ok({
+        data: file,
+        stream: {
+          ...file,
+          id: JSON.stringify({ id: input.id, blobId: opened.data.blobId }),
+          direction: "read" as const,
+          expiresAt: new Date(Date.now() + 300_000).toISOString(),
+        },
+      });
+    },
+    stream: {
+      direction: "read" as const,
+      maxBytes: MAX_DRAFT_ATTACHMENT_BYTES,
+      async read(stream: CapabilityStream, context: CapabilityExecutionContext) {
+        context.signal.throwIfAborted();
+        const source = z.object({ id: ResourceShortIdSchema, blobId: z.uuid() }).strict().parse(JSON.parse(stream.id));
+        const attachmentId = await resolvePublicResource("attachments", ResourceShortIdSchema.parse(source.id));
+        if (!attachmentId.ok) throw attachmentId.error;
+        const parent = await resourceParents.attachment(attachmentId.data);
+        if (!parent) throw err.notFound("Attachment");
+        const open = () => messages.openAttachment({ context: requestContext(context), ...parent, attachmentId: attachmentId.data });
+        const opened = await open();
+        if (!opened.ok) throw opened.error;
+        if (opened.data.blobId !== source.blobId || opened.data.total !== stream.size) throw err.conflict("Attachment changed");
+        return new Response(
+          messages.createAttachmentStream({
+            blobId: opened.data.blobId,
+            chunkSize: opened.data.chunkSize,
+            chunkCount: opened.data.chunkCount,
+            start: 0,
+            endExclusive: stream.size,
+            async assertCurrentAccess() {
+              context.signal.throwIfAborted();
+              const current = await open();
+              if (!current.ok) throw current.error;
+              if (current.data.blobId !== source.blobId) throw err.conflict("Attachment changed");
+            },
+          }),
+          { headers: { "content-type": stream.mediaType } },
+        );
+      },
+    },
+  },
   "attachment.read-content": {
     title: "Read attachment text",
     description:
@@ -1834,13 +1968,13 @@ const queryDefinitions = {
       const attachmentId = await resolvePublicResource("attachments", input.id);
       if (!attachmentId.ok) return attachmentId;
       const parent = await resourceParents.attachment(attachmentId.data);
-      if (!parent) return fail(err.notFound("Attachment"));
+      if (!parent || !(await canReadMailbox(context, parent.mailboxId))) return fail(err.notFound("Attachment"));
       const message = await messages.getMessage({
         context: requestContext(context),
         mailboxId: parent.mailboxId,
         messageId: parent.messageId,
       });
-      if (!message.ok) return message;
+      if (!message.ok) return missingAs(message, "attachments");
       const attachment = message.data.attachments.find((item) => item.id === attachmentId.data);
       if (!attachment) return fail(err.notFound("Attachment"));
 
@@ -1930,7 +2064,7 @@ const queryDefinitions = {
       const target = requireMailboxTarget(context);
       if (!target.ok) return target;
       const mailboxId = target.data;
-      const scope = await resolveMailboxScope(mailboxId);
+      const scope = await resolveMailboxScope(mailboxId, context);
       if (!scope.ok) return scope;
       const result = await drafts.listDrafts(requestContext(context), scope.data.id, 200);
       if (!result.ok) return result;
@@ -1957,7 +2091,7 @@ const queryDefinitions = {
       const draftId = await resolvePublicResource("drafts", input.id);
       if (!draftId.ok) return draftId;
       const mailboxId = await resourceParents.draft(draftId.data);
-      if (!mailboxId) return fail(err.notFound("Draft"));
+      if (!mailboxId || !(await canReadMailbox(context, mailboxId))) return fail(err.notFound("Draft"));
       const result = await drafts.getDraft(requestContext(context), mailboxId, draftId.data);
       if (!result.ok) return result;
       const access = await mailboxAccess.requireMailboxAccess(requestContext(context), mailboxId, "write");
@@ -1990,7 +2124,7 @@ const queryDefinitions = {
     data: CapabilityActionCheckSchema,
     openWorld: false,
     run: async (input: z.output<typeof c.DraftSendCheckInputSchema>, context: CapabilityExecutionContext) => {
-      const scope = await resolveDraftScope(input.mailboxId, input.draftId);
+      const scope = await resolveDraftScope(input.mailboxId, input.draftId, context);
       if (!scope.ok) return scope;
       const draft = await drafts.getDraft(requestContext(context), scope.data.mailbox.id, scope.data.draftId);
       if (!draft.ok) return draft;
@@ -2025,15 +2159,13 @@ const queryDefinitions = {
       if (!target.ok) return target;
       const mailboxId = target.data;
       const t = mailCapabilityMessages(context.locale);
-      const scope = await resolveMailboxScope(mailboxId);
+      const scope = await resolveDraftScope(mailboxId, input.draftId, context);
       if (!scope.ok) return scope;
-      const draftId = await resolveMailboxResource("drafts", scope.data.id, input.draftId);
-      if (!draftId.ok) return draftId;
       return mapResult(
         await composeSafety.reviewDraftComposeSafety({
           context: requestContext(context),
-          mailboxId: scope.data.id,
-          draftId: draftId.data,
+          mailboxId: scope.data.mailbox.id,
+          draftId: scope.data.draftId,
           expectedRevision: input.expectedRevision,
           locale: context.locale,
         }),
@@ -2057,7 +2189,7 @@ const queryDefinitions = {
       const target = requireMailboxTarget(context);
       if (!target.ok) return target;
       const mailboxId = target.data;
-      const scope = await resolveMailboxScope(mailboxId);
+      const scope = await resolveMailboxScope(mailboxId, context);
       if (!scope.ok) return scope;
       const result = await localTags.listLocalTags(requestContext(context), scope.data.id);
       if (!result.ok) return result;
@@ -2093,7 +2225,7 @@ const queryDefinitions = {
       if (!target.ok) return target;
       const mailboxId = target.data;
       const t = mailCapabilityMessages(context.locale);
-      const scope = await resolveMailboxScope(mailboxId);
+      const scope = await resolveMailboxScope(mailboxId, context);
       if (!scope.ok) return scope;
       const conversation = await resolveMailboxResource("conversations", scope.data.id, input.conversationId);
       if (!conversation.ok) return conversation;
@@ -2146,9 +2278,9 @@ const queryDefinitions = {
       const commentId = await resolvePublicResource("comments", input.id);
       if (!commentId.ok) return commentId;
       const parent = await resourceParents.comment(commentId.data);
-      if (!parent) return fail(err.notFound("Comment"));
+      if (!parent || !(await canReadMailbox(context, parent.mailboxId))) return fail(err.notFound("Comment"));
       const result = await collaboration.getConversationComment({ context: requestContext(context), ...parent, commentId: commentId.data });
-      if (!result.ok) return result;
+      if (!result.ok) return missingAs(result, "comments");
       const [item] = await projectComments([result.data]);
       if (!item) return fail(err.notFound("Comment"));
       const [mailboxes, conversations] = await Promise.all([
@@ -2182,7 +2314,7 @@ const queryDefinitions = {
       const target = requireMailboxTarget(context);
       if (!target.ok) return target;
       const mailboxId = target.data;
-      const scope = await resolveMailboxScope(mailboxId);
+      const scope = await resolveMailboxScope(mailboxId, context);
       if (!scope.ok) return scope;
       const conversation = input.conversationId
         ? await resolveMailboxResource("conversations", scope.data.id, input.conversationId)
@@ -2223,7 +2355,7 @@ const queryDefinitions = {
       if (!target.ok) return target;
       const mailboxId = target.data;
       const t = mailCapabilityMessages(context.locale);
-      const scope = await resolveMailboxScope(mailboxId);
+      const scope = await resolveMailboxScope(mailboxId, context);
       if (!scope.ok) return scope;
       const conversation = await resolveMailboxResource("conversations", scope.data.id, input.conversationId);
       if (!conversation.ok) return conversation;
@@ -2259,9 +2391,9 @@ const queryDefinitions = {
       const reminderId = await resolvePublicResource("reminders", input.id);
       if (!reminderId.ok) return reminderId;
       const parent = await resourceParents.reminder(reminderId.data);
-      if (!parent) return fail(err.notFound("Reminder"));
+      if (!parent || !(await canReadMailbox(context, parent.mailboxId))) return fail(err.notFound("Reminder"));
       const result = await reminders.getConversationReminder({ context: requestContext(context), ...parent });
-      if (!result.ok) return result;
+      if (!result.ok) return missingAs(result, "reminders");
       if (!result.data || result.data.id !== reminderId.data) return fail(err.notFound("Reminder"));
       const data = await projectReminder(result.data);
       const [mailboxes, conversations] = await Promise.all([
@@ -2294,7 +2426,7 @@ const queryDefinitions = {
       if (!target.ok) return target;
       const mailboxId = target.data;
       const t = mailCapabilityMessages(context.locale);
-      const scope = await resolveMailboxScope(mailboxId);
+      const scope = await resolveMailboxScope(mailboxId, context);
       if (!scope.ok) return scope;
       const result = await scheduledSends.listScheduledSends({
         context: requestContext(context),
@@ -2337,13 +2469,13 @@ const queryDefinitions = {
       const deliveryId = await resolvePublicResource("deliveries", input.id);
       if (!deliveryId.ok) return deliveryId;
       const mailboxId = await resourceParents.delivery(deliveryId.data);
-      if (!mailboxId) return fail(err.notFound("Scheduled message"));
+      if (!mailboxId || !(await canReadMailbox(context, mailboxId))) return fail(err.notFound(RESOURCE_LABELS.deliveries));
       const result = await scheduledSends.getScheduledSend({
         context: requestContext(context),
         mailboxId,
         scheduledSendId: deliveryId.data,
       });
-      if (!result.ok) return result;
+      if (!result.ok) return missingAs(result, "deliveries");
       const [item] = await projectDeliveries([result.data]);
       if (!item) return fail(err.notFound("Scheduled message"));
       const mailboxes = await publicResources.publicIds("mailboxes", [mailboxId]);
@@ -2382,7 +2514,7 @@ const queryDefinitions = {
       const target = requireMailboxTarget(context);
       if (!target.ok) return target;
       const mailboxId = target.data;
-      const scope = await resolveMailboxScope(mailboxId);
+      const scope = await resolveMailboxScope(mailboxId, context);
       if (!scope.ok) return scope;
       return mapPage(
         await listSubscriptions.listSubscriptions({
@@ -2424,7 +2556,7 @@ const queryDefinitions = {
       if (!target.ok) return target;
       const mailboxId = target.data;
       const t = mailCapabilityMessages(context.locale);
-      const scope = await resolveMailboxScope(mailboxId);
+      const scope = await resolveMailboxScope(mailboxId, context);
       if (!scope.ok) return scope;
       return mapResult(
         await listSubscriptions.getSubscription(requestContext(context), scope.data.id, input.listKey),
@@ -2446,14 +2578,12 @@ const queryDefinitions = {
 };
 
 const requireDraftForReview = async (mailboxId: string, draftId: string, context: CapabilityExecutionContext) => {
-  const scope = await resolveMailboxScope(mailboxId);
+  const scope = await resolveDraftScope(mailboxId, draftId, context);
   if (!scope.ok) return scope;
-  const resolvedDraft = await resolveMailboxResource("drafts", scope.data.id, draftId);
-  if (!resolvedDraft.ok) return resolvedDraft;
   const mailContext = requestContext(context);
-  const access = await mailboxAccess.requireDraftAccess(mailContext, scope.data.id, resolvedDraft.data, "write");
+  const access = await mailboxAccess.requireDraftAccess(mailContext, scope.data.mailbox.id, scope.data.draftId, "write");
   if (!access.ok) return access;
-  return drafts.getDraft(mailContext, scope.data.id, resolvedDraft.data);
+  return drafts.getDraft(mailContext, scope.data.mailbox.id, scope.data.draftId);
 };
 
 const reviewSubject = (value: string | null | undefined, context?: CapabilityExecutionContext): string =>
@@ -2465,7 +2595,7 @@ const requireConversationForReview = async (
   context: CapabilityExecutionContext,
   permission: "read" | "write" | "admin" = "write",
 ) => {
-  const scope = await resolveMailboxScope(mailboxId);
+  const scope = await resolveMailboxScope(mailboxId, context);
   if (!scope.ok) return scope;
   const mailContext = requestContext(context);
   const access =
@@ -2511,9 +2641,14 @@ const markStates = (input: { read?: boolean; flagged?: boolean; answered?: boole
 const messageMoveReview: (typeof mailActionReviews)["conversation.move"] = (locale, slots, options) =>
   buildMailReview("message.move", locale, slots, options);
 
-const requireTriageMessageTarget = async (mailboxId: string, conversationId: string, messageId: string | undefined) => {
+const requireTriageMessageTarget = async (
+  mailboxId: string,
+  conversationId: string,
+  messageId: string | undefined,
+  context: CapabilityExecutionContext,
+) => {
   if (!messageId) return ok(undefined);
-  const resolved = await resolveMailboxResource("messages", mailboxId, messageId);
+  const resolved = await resolveMailboxMessage(mailboxId, messageId, context);
   if (!resolved.ok) return resolved;
   const owner = await resourceParents.messageConversation(resolved.data, mailboxId);
   return owner === conversationId ? ok(resolved.data) : fail(err.notFound("Message in conversation"));
@@ -2522,17 +2657,17 @@ const requireTriageMessageTarget = async (mailboxId: string, conversationId: str
 const requireKeepReleaseForReview = async (mailboxId: string, conversationId: string, context: CapabilityExecutionContext) => {
   if (!(await conversationKeeps.canLiftConversationKeeps(requestContext(context))))
     return fail(err.forbidden(conversationKeeps.LIFT_KEEP_FORBIDDEN));
-  const scope = await resolveConversationScope(mailboxId, conversationId);
+  const scope = await resolveKeptConversationScope(mailboxId, conversationId, context);
   if (!scope.ok) return scope;
   const row = await conversationKeeps.getConversationKeepReleaseSubject(
     requestContext(context),
-    scope.data.mailbox.id,
+    scope.data.mailboxId,
     scope.data.conversationId,
   );
   if (!row.ok) return row;
   return ok({
     subject: reviewSubject(row.data.subject, context),
-    mailboxInternalId: scope.data.mailbox.id,
+    mailboxInternalId: scope.data.mailboxId,
     conversationInternalId: scope.data.conversationId,
   });
 };
@@ -2651,11 +2786,11 @@ const conversationStatusSetActions = {
       const target = requireMailboxTarget(context);
       if (!target.ok) return target;
       const mailboxId = target.data;
-      const scope = await resolveMailboxScope(mailboxId);
+      const scope = await resolveMailboxScope(mailboxId, context);
       if (!scope.ok) return scope;
       const access = await mailboxAccess.requireMailboxAccess(requestContext(context), scope.data.id, "write");
       if (!access.ok) return access;
-      const members = await requireConversationsInMailbox(scope.data.id, input.conversationIds);
+      const members = await requireConversationsInMailbox(scope.data.id, input.conversationIds, access.data);
       if (!members.ok) return members;
       return ok(
         mailActionReviews["conversation.status.set.batch"](
@@ -2671,11 +2806,11 @@ const conversationStatusSetActions = {
       if (!target.ok) return target;
       const mailboxId = target.data;
       const t = mailCapabilityMessages(context.locale);
-      const scope = await resolveMailboxScope(mailboxId);
+      const scope = await resolveMailboxScope(mailboxId, context);
       if (!scope.ok) return scope;
       const access = await mailboxAccess.requireMailboxAccess(requestContext(context), scope.data.id, "write");
       if (!access.ok) return access;
-      const members = await requireConversationsInMailbox(scope.data.id, input.conversationIds);
+      const members = await requireConversationsInMailbox(scope.data.id, input.conversationIds, access.data);
       if (!members.ok) return members;
       return mapResult(
         await collaboration.applyConversationCompletions({
@@ -2736,7 +2871,7 @@ const conversationStatusSetActions = {
       const t = mailCapabilityMessages(context.locale);
       const conversation = await requireConversationForReview(mailboxId, input.conversationId, context);
       if (!conversation.ok) return conversation;
-      const scope = await resolveConversationScope(mailboxId, input.conversationId);
+      const scope = await resolveConversationScope(mailboxId, input.conversationId, context);
       if (!scope.ok) return scope;
       return mapResult(
         await conversationAssignments.updateConversationCollaboration({
@@ -2804,7 +2939,7 @@ const actionDefinitions = {
       const target = requireMailboxTarget(context);
       if (!target.ok) return target;
       const mailboxId = target.data;
-      const scope = await resolveDraftScope(mailboxId, input.draftId);
+      const scope = await resolveDraftScope(mailboxId, input.draftId, context);
       if (!scope.ok) return scope;
       const current = await drafts.getDraft(requestContext(context), scope.data.mailbox.id, scope.data.draftId);
       if (!current.ok) return current;
@@ -2867,14 +3002,14 @@ const actionDefinitions = {
       const target = requireMailboxTarget(context);
       if (!target.ok) return target;
       const mailboxId = target.data;
-      const scope = await resolveMailboxScope(mailboxId);
+      const scope = await resolveMailboxScope(mailboxId, context);
       if (!scope.ok) return scope;
       const access = await mailboxAccess.requireMailboxPermission(requestContext(context), scope.data.id, "write");
       if (!access.ok) return access;
       const [senderIdentity, conversation, sourceMessage, signature] = await Promise.all([
         resolveMailboxResource("senderIdentities", scope.data.id, input.senderIdentityId),
-        input.conversationId ? resolveMailboxResource("conversations", scope.data.id, input.conversationId) : ok(null),
-        input.sourceMessageId ? resolveMailboxResource("messages", scope.data.id, input.sourceMessageId) : ok(null),
+        input.conversationId ? resolveConversationScope(mailboxId, input.conversationId, context) : ok(null),
+        input.sourceMessageId ? resolveMailboxMessage(scope.data.id, input.sourceMessageId, context) : ok(null),
         input.signatureTemplateId
           ? resolveMailboxResource("composeTemplates", scope.data.id, input.signatureTemplateId)
           : ok(input.signatureTemplateId),
@@ -2902,7 +3037,7 @@ const actionDefinitions = {
             requestReadReceipt: input.requestReadReceipt,
             intent: input.intent,
             includeSourceAttachments: input.includeSourceAttachments,
-            conversationId: conversation.data,
+            conversationId: conversation.data?.conversationId ?? null,
             sourceMessageId: sourceMessage.data,
             signatureTemplateId: signature.data,
           },
@@ -2939,12 +3074,12 @@ const actionDefinitions = {
       const t = mailCapabilityMessages(context.locale);
       const key = requireIdempotencyKey(context, "draft.create");
       if (!key.ok) return key;
-      const scope = await resolveMailboxScope(mailboxId);
+      const scope = await resolveMailboxScope(mailboxId, context);
       if (!scope.ok) return scope;
       const [senderIdentity, conversation, sourceMessage, signature] = await Promise.all([
         resolveMailboxResource("senderIdentities", scope.data.id, input.senderIdentityId),
-        input.conversationId ? resolveMailboxResource("conversations", scope.data.id, input.conversationId) : ok(null),
-        input.sourceMessageId ? resolveMailboxResource("messages", scope.data.id, input.sourceMessageId) : ok(null),
+        input.conversationId ? resolveConversationScope(mailboxId, input.conversationId, context) : ok(null),
+        input.sourceMessageId ? resolveMailboxMessage(scope.data.id, input.sourceMessageId, context) : ok(null),
         input.signatureTemplateId
           ? resolveMailboxResource("composeTemplates", scope.data.id, input.signatureTemplateId)
           : ok(input.signatureTemplateId),
@@ -2973,7 +3108,7 @@ const actionDefinitions = {
         input: {
           ...draftContent,
           intent: input.intent,
-          conversationId: conversation.data,
+          conversationId: conversation.data?.conversationId ?? null,
           sourceMessageId: sourceMessage.data,
           includeSourceAttachments: input.includeSourceAttachments,
         },
@@ -3054,7 +3189,7 @@ const actionDefinitions = {
       if (!target.ok) return target;
       const mailboxId = target.data;
       const t = mailCapabilityMessages(context.locale);
-      const scope = await resolveDraftScope(mailboxId, input.draftId);
+      const scope = await resolveDraftScope(mailboxId, input.draftId, context);
       if (!scope.ok) return scope;
       const senderIdentity = await resolveMailboxResource("senderIdentities", scope.data.mailbox.id, input.draft.senderIdentityId);
       if (!senderIdentity.ok) return senderIdentity;
@@ -3118,7 +3253,7 @@ const actionDefinitions = {
       const t = mailCapabilityMessages(context.locale);
       const draft = await requireDraftForReview(mailboxId, input.draftId, context);
       if (!draft.ok) return draft;
-      const scope = await resolveDraftScope(mailboxId, input.draftId);
+      const scope = await resolveDraftScope(mailboxId, input.draftId, context);
       if (!scope.ok) return scope;
       return mapResult(
         await drafts.discardDraft({
@@ -3187,7 +3322,7 @@ const actionDefinitions = {
       const t = mailCapabilityMessages(context.locale);
       const bytes = Buffer.from(input.attachment.base64, "base64");
       if (bytes.byteLength > 105 * 1024) return fail(err.badInput("Inline attachment exceeds the 105 KiB capability limit"));
-      const scope = await resolveDraftScope(mailboxId, input.draftId);
+      const scope = await resolveDraftScope(mailboxId, input.draftId, context);
       if (!scope.ok) return scope;
       const result = await draftUploads.uploadDraftAttachmentStream({
         context: requestContext(context),
@@ -3259,7 +3394,7 @@ const actionDefinitions = {
       if (!target.ok) return target;
       const mailboxId = target.data;
       const t = mailCapabilityMessages(context.locale);
-      const scope = await resolveDraftScope(mailboxId, input.draftId);
+      const scope = await resolveDraftScope(mailboxId, input.draftId, context);
       if (!scope.ok) return scope;
       const [draft, attachmentId] = await Promise.all([
         requireDraftForReview(mailboxId, input.draftId, context),
@@ -3308,7 +3443,7 @@ const actionDefinitions = {
       const target = requireMailboxTarget(context);
       if (!target.ok) return target;
       const mailboxId = target.data;
-      const scope = await resolveDraftScope(mailboxId, input.draftId);
+      const scope = await resolveDraftScope(mailboxId, input.draftId, context);
       if (!scope.ok) return scope;
       const [draft, identity, safety] = await Promise.all([
         requireDraftForReview(mailboxId, input.draftId, context),
@@ -3356,7 +3491,7 @@ const actionDefinitions = {
       const t = mailCapabilityMessages(context.locale);
       const key = requireIdempotencyKey(context, "draft.send");
       if (!key.ok) return key;
-      const scope = await resolveDraftScope(mailboxId, input.draftId);
+      const scope = await resolveDraftScope(mailboxId, input.draftId, context);
       if (!scope.ok) return scope;
       const senderIdentity = await resolveMailboxResource("senderIdentities", scope.data.mailbox.id, input.senderIdentityId);
       if (!senderIdentity.ok) return senderIdentity;
@@ -3429,18 +3564,18 @@ const actionDefinitions = {
       if (!target.ok) return target;
       const mailboxId = target.data;
       const t = mailCapabilityMessages(context.locale);
-      const scope = await resolveMailboxScope(mailboxId);
+      const scope = await resolveMailboxScope(mailboxId, context);
       if (!scope.ok) return scope;
       const deliveryId = await resolveMailboxResource("deliveries", scope.data.id, input.deliveryId);
       if (!deliveryId.ok) return deliveryId;
-      const access = await mailboxAccess.requireMailboxAccess(requestContext(context), scope.data.id, "write");
-      if (!access.ok) return access;
       const delivery = await scheduledSends.getScheduledSend({
         context: requestContext(context),
         mailboxId: scope.data.id,
         scheduledSendId: deliveryId.data,
       });
-      if (!delivery.ok) return delivery;
+      if (!delivery.ok) return missingAs(delivery, "deliveries");
+      const access = await mailboxAccess.requireMailboxAccess(requestContext(context), scope.data.id, "write");
+      if (!access.ok) return access;
       return ok(
         mailActionReviews["delivery.cancel"](
           context.locale,
@@ -3475,7 +3610,7 @@ const actionDefinitions = {
       if (!target.ok) return target;
       const mailboxId = target.data;
       const t = mailCapabilityMessages(context.locale);
-      const scope = await resolveMailboxScope(mailboxId);
+      const scope = await resolveMailboxScope(mailboxId, context);
       if (!scope.ok) return scope;
       const deliveryId = await resolveMailboxResource("deliveries", scope.data.id, input.deliveryId);
       if (!deliveryId.ok) return deliveryId;
@@ -3484,7 +3619,7 @@ const actionDefinitions = {
         mailboxId: scope.data.id,
         scheduledSendId: deliveryId.data,
       });
-      if (!delivery.ok) return delivery;
+      if (!delivery.ok) return missingAs(delivery, "deliveries");
       const result = await scheduledSends.cancelScheduledSend({
         context: requestContext(context),
         mailboxId: scope.data.id,
@@ -3542,6 +3677,7 @@ const actionDefinitions = {
         conversation.data.mailboxInternalId,
         conversation.data.conversationInternalId,
         input.target.messageId,
+        context,
       );
       if (!messageTarget.ok) return messageTarget;
       const slots = { conversation: triageTargetSlot(input.target, conversation.data.subject) };
@@ -3573,9 +3709,10 @@ const actionDefinitions = {
         conversation.data.mailboxInternalId,
         conversation.data.conversationInternalId,
         input.target.messageId,
+        context,
       );
       if (!messageTarget.ok) return messageTarget;
-      const scope = await resolveConversationScope(mailboxId, input.target.conversationId);
+      const scope = await resolveConversationScope(mailboxId, input.target.conversationId, context);
       if (!scope.ok) return scope;
       const sourceFolder = await resolveMailboxResource("folders", scope.data.mailbox.id, input.target.sourceFolderId);
       if (!sourceFolder.ok) return sourceFolder;
@@ -3639,6 +3776,7 @@ const actionDefinitions = {
         conversation.data.mailboxInternalId,
         conversation.data.conversationInternalId,
         input.target.messageId,
+        context,
       );
       if (!messageTarget.ok) return messageTarget;
       const keep = await conversationKeeps.getConversationKeep({
@@ -3651,7 +3789,7 @@ const actionDefinitions = {
       let destinationRoles: string[] = input.destination.kind === "role" ? [input.destination.role] : [];
       let destination = input.destination.kind === "role" ? input.destination.role : input.destination.folderId;
       if (input.destination.kind === "folder") {
-        const scope = await resolveMailboxScope(mailboxId);
+        const scope = await resolveMailboxScope(mailboxId, context);
         if (!scope.ok) return scope;
         const folderId = await resolveMailboxResource("folders", scope.data.id, input.destination.folderId);
         if (!folderId.ok) return folderId;
@@ -3691,9 +3829,10 @@ const actionDefinitions = {
         conversation.data.mailboxInternalId,
         conversation.data.conversationInternalId,
         input.target.messageId,
+        context,
       );
       if (!messageTarget.ok) return messageTarget;
-      const scope = await resolveConversationScope(mailboxId, input.target.conversationId);
+      const scope = await resolveConversationScope(mailboxId, input.target.conversationId, context);
       if (!scope.ok) return scope;
       const sourceFolder = await resolveMailboxResource("folders", scope.data.mailbox.id, input.target.sourceFolderId);
       if (!sourceFolder.ok) return sourceFolder;
@@ -3904,7 +4043,7 @@ const actionDefinitions = {
       if (!conversation.ok) return conversation;
       const access = await mailboxAccess.requireMailboxPermission(requestContext(context), conversation.data.mailboxInternalId, "write");
       if (!access.ok) return access;
-      const scope = await resolveConversationScope(mailboxId, input.conversationId);
+      const scope = await resolveConversationScope(mailboxId, input.conversationId, context);
       if (!scope.ok) return scope;
       return mapResult(
         await conversationAssignments.assignConversation({
@@ -3958,11 +4097,14 @@ const actionDefinitions = {
       if (!target.ok) return target;
       const mailboxId = target.data;
       const t = mailCapabilityMessages(context.locale);
-      const scope = await resolveMailboxScope(mailboxId);
+      const scope = await resolveMailboxScope(mailboxId, context);
       if (!scope.ok) return scope;
       const access = await mailboxAccess.requireMailboxPermission(requestContext(context), scope.data.id, "write");
       if (!access.ok) return access;
-      const members = await requireConversationsInMailbox(scope.data.id, input.conversationIds);
+      const members = await requireConversationsInMailbox(scope.data.id, input.conversationIds, {
+        scope: "mailbox",
+        permission: "write",
+      });
       if (!members.ok) return members;
       const assignees =
         input.mode === "remove"
@@ -4005,11 +4147,14 @@ const actionDefinitions = {
       if (!target.ok) return target;
       const mailboxId = target.data;
       const t = mailCapabilityMessages(context.locale);
-      const scope = await resolveMailboxScope(mailboxId);
+      const scope = await resolveMailboxScope(mailboxId, context);
       if (!scope.ok) return scope;
       const access = await mailboxAccess.requireMailboxPermission(requestContext(context), scope.data.id, "write");
       if (!access.ok) return access;
-      const members = await requireConversationsInMailbox(scope.data.id, input.conversationIds);
+      const members = await requireConversationsInMailbox(scope.data.id, input.conversationIds, {
+        scope: "mailbox",
+        permission: "write",
+      });
       if (!members.ok) return members;
       return mapResult(
         await conversationAssignments.assignConversations({
@@ -4111,7 +4256,7 @@ const actionDefinitions = {
       const mailboxId = target.data;
       const key = requireIdempotencyKey(context, "conversation.summary.write");
       if (!key.ok) return key;
-      const scope = await resolveConversationScope(mailboxId, input.conversationId);
+      const scope = await resolveConversationScope(mailboxId, input.conversationId, context);
       if (!scope.ok) return scope;
       const result = await conversationSummaries.writeAutomatedConversationSummary({
         context: requestContext(context),
@@ -4168,7 +4313,7 @@ const actionDefinitions = {
       const mailboxId = target.data;
       const key = requireIdempotencyKey(context, "conversation.reference.ensure");
       if (!key.ok) return key;
-      const scope = await resolveConversationScope(mailboxId, input.conversationId);
+      const scope = await resolveConversationScope(mailboxId, input.conversationId, context);
       if (!scope.ok) return scope;
       const result = await conversationReferences.ensureConversationReference({
         context: requestContext(context),
@@ -4273,11 +4418,11 @@ const actionDefinitions = {
       if (!key.ok) return key;
       const mailContext = requestContext(context);
       const canLift = await conversationKeeps.canLiftConversationKeeps(mailContext);
-      const scope = await resolveConversationScope(mailboxId, input.conversationId);
+      const scope = await resolveKeptConversationScope(mailboxId, input.conversationId, context);
       if (!canLift) {
         if (scope.ok)
           await conversationKeeps.recordConversationKeepAudit(
-            { context: mailContext, mailboxId: scope.data.mailbox.id, conversationId: scope.data.conversationId },
+            { context: mailContext, mailboxId: scope.data.mailboxId, conversationId: scope.data.conversationId },
             "mail.conversation.keep.release",
             "denied",
             { reason: input.reason?.trim().slice(0, 500).toWellFormed() || null },
@@ -4287,14 +4432,14 @@ const actionDefinitions = {
       if (!scope.ok) return scope;
       const result = await conversationKeeps.releaseConversationKeep({
         context: requestContext(context),
-        mailboxId: scope.data.mailbox.id,
+        mailboxId: scope.data.mailboxId,
         conversationId: scope.data.conversationId,
         reason: input.reason,
       });
       if (!result.ok) return result;
       const conversation = await conversationKeeps.getConversationKeepReleaseSubject(
         requestContext(context),
-        scope.data.mailbox.id,
+        scope.data.mailboxId,
         scope.data.conversationId,
       );
       if (!conversation.ok) return conversation;
@@ -4345,7 +4490,7 @@ const actionDefinitions = {
       const t = mailCapabilityMessages(context.locale);
       const conversation = await requireConversationForReview(mailboxId, input.conversationId, context);
       if (!conversation.ok) return conversation;
-      const scope = await resolveConversationScope(mailboxId, input.conversationId);
+      const scope = await resolveConversationScope(mailboxId, input.conversationId, context);
       if (!scope.ok) return scope;
       return mapResult(
         await conversationAssignments.updateConversationCollaboration({
@@ -4402,7 +4547,7 @@ const actionDefinitions = {
       const t = mailCapabilityMessages(context.locale);
       const conversation = await requireConversationForReview(mailboxId, input.conversationId, context, "read");
       if (!conversation.ok) return conversation;
-      const scope = await resolveConversationScope(mailboxId, input.conversationId);
+      const scope = await resolveConversationScope(mailboxId, input.conversationId, context);
       if (!scope.ok) return scope;
       const result = await reminders.setConversationReminder({
         context: requestContext(context),
@@ -4455,7 +4600,7 @@ const actionDefinitions = {
       const t = mailCapabilityMessages(context.locale);
       const conversation = await requireConversationForReview(mailboxId, input.conversationId, context, "read");
       if (!conversation.ok) return conversation;
-      const scope = await resolveConversationScope(mailboxId, input.conversationId);
+      const scope = await resolveConversationScope(mailboxId, input.conversationId, context);
       if (!scope.ok) return scope;
       const result = await reminders.cancelConversationReminder({
         context: requestContext(context),
@@ -4493,7 +4638,7 @@ const actionDefinitions = {
       const conversation = await requireConversationForReview(mailboxId, input.conversationId, context, "read");
       if (!conversation.ok) return conversation;
       if (input.referencedMessageId) {
-        const message = await resolveMailboxResource("messages", conversation.data.mailboxInternalId, input.referencedMessageId);
+        const message = await resolveMailboxMessage(conversation.data.mailboxInternalId, input.referencedMessageId, context);
         if (!message.ok) return message;
       }
       return ok(
@@ -4515,10 +4660,10 @@ const actionDefinitions = {
       const t = mailCapabilityMessages(context.locale);
       const conversation = await requireConversationForReview(mailboxId, input.conversationId, context, "read");
       if (!conversation.ok) return conversation;
-      const scope = await resolveConversationScope(mailboxId, input.conversationId);
+      const scope = await resolveConversationScope(mailboxId, input.conversationId, context);
       if (!scope.ok) return scope;
       const referencedMessageId = input.referencedMessageId
-        ? await resolveMailboxResource("messages", scope.data.mailbox.id, input.referencedMessageId)
+        ? await resolveMailboxMessage(scope.data.mailbox.id, input.referencedMessageId, context)
         : ok(null);
       if (!referencedMessageId.ok) return referencedMessageId;
       const result = await collaboration.createConversationComment({
@@ -4579,7 +4724,7 @@ const actionDefinitions = {
       const t = mailCapabilityMessages(context.locale);
       const review = await requireCommentForReview(input, context);
       if (!review.ok) return review;
-      const scope = await resolveConversationScope(mailboxId, input.conversationId);
+      const scope = await resolveConversationScope(mailboxId, input.conversationId, context);
       if (!scope.ok) return scope;
       const commentId = await resolveMailboxResource("comments", scope.data.mailbox.id, input.commentId);
       if (!commentId.ok) return commentId;
@@ -4641,7 +4786,7 @@ const actionDefinitions = {
       const t = mailCapabilityMessages(context.locale);
       const review = await requireCommentForReview(input, context);
       if (!review.ok) return review;
-      const scope = await resolveConversationScope(mailboxId, input.conversationId);
+      const scope = await resolveConversationScope(mailboxId, input.conversationId, context);
       if (!scope.ok) return scope;
       const commentId = await resolveMailboxResource("comments", scope.data.mailbox.id, input.commentId);
       if (!commentId.ok) return commentId;
@@ -4691,7 +4836,7 @@ const actionDefinitions = {
       if (!target.ok) return target;
       const mailboxId = target.data;
       const t = mailCapabilityMessages(context.locale);
-      const scope = await resolveMailboxScope(mailboxId);
+      const scope = await resolveMailboxScope(mailboxId, context);
       if (!scope.ok) return scope;
       const access = await mailboxAccess.requireMailboxPermission(requestContext(context), scope.data.id, "admin");
       if (!access.ok) return access;
@@ -4723,7 +4868,7 @@ const actionDefinitions = {
       if (!target.ok) return target;
       const mailboxId = target.data;
       const t = mailCapabilityMessages(context.locale);
-      const scope = await resolveMailboxScope(mailboxId);
+      const scope = await resolveMailboxScope(mailboxId, context);
       if (!scope.ok) return scope;
       const folder = await describeFolder(scope.data.id, input.folderId, context);
       if (!folder.ok) return folder;
@@ -4784,7 +4929,7 @@ const actionDefinitions = {
       if (!target.ok) return target;
       const mailboxId = target.data;
       const t = mailCapabilityMessages(context.locale);
-      const scope = await resolveMailboxScope(mailboxId);
+      const scope = await resolveMailboxScope(mailboxId, context);
       if (!scope.ok) return scope;
       const access = await mailboxAccess.requireMailboxPermission(requestContext(context), scope.data.id, "write");
       if (!access.ok) return access;
@@ -4805,7 +4950,7 @@ const actionDefinitions = {
       if (!target.ok) return target;
       const mailboxId = target.data;
       const t = mailCapabilityMessages(context.locale);
-      const scope = await resolveMailboxScope(mailboxId);
+      const scope = await resolveMailboxScope(mailboxId, context);
       if (!scope.ok) return scope;
       const result = await localTags.createLocalTag({
         context: requestContext(context),
@@ -4842,7 +4987,7 @@ const actionDefinitions = {
       if (!target.ok) return target;
       const mailboxId = target.data;
       const t = mailCapabilityMessages(context.locale);
-      const scope = await resolveMailboxScope(mailboxId);
+      const scope = await resolveMailboxScope(mailboxId, context);
       if (!scope.ok) return scope;
       const tagId = await resolveMailboxResource("tags", scope.data.id, input.tagId);
       if (!tagId.ok) return tagId;
@@ -4875,7 +5020,7 @@ const actionDefinitions = {
       if (!target.ok) return target;
       const mailboxId = target.data;
       const t = mailCapabilityMessages(context.locale);
-      const scope = await resolveMailboxScope(mailboxId);
+      const scope = await resolveMailboxScope(mailboxId, context);
       if (!scope.ok) return scope;
       const tagId = await resolveMailboxResource("tags", scope.data.id, input.tagId);
       if (!tagId.ok) return tagId;
@@ -4923,7 +5068,7 @@ const actionDefinitions = {
       const target = requireMailboxTarget(context);
       if (!target.ok) return target;
       const mailboxId = target.data;
-      const scope = await resolveMailboxScope(mailboxId);
+      const scope = await resolveMailboxScope(mailboxId, context);
       if (!scope.ok) return scope;
       const tagId = await resolveMailboxResource("tags", scope.data.id, input.tagId);
       if (!tagId.ok) return tagId;
@@ -4946,7 +5091,7 @@ const actionDefinitions = {
       if (!target.ok) return target;
       const mailboxId = target.data;
       const t = mailCapabilityMessages(context.locale);
-      const scope = await resolveMailboxScope(mailboxId);
+      const scope = await resolveMailboxScope(mailboxId, context);
       if (!scope.ok) return scope;
       const tagId = await resolveMailboxResource("tags", scope.data.id, input.tagId);
       if (!tagId.ok) return tagId;
@@ -4984,7 +5129,7 @@ const actionDefinitions = {
       if (!target.ok) return target;
       const mailboxId = target.data;
       const t = mailCapabilityMessages(context.locale);
-      const scope = await resolveMailboxScope(mailboxId);
+      const scope = await resolveMailboxScope(mailboxId, context);
       if (!scope.ok) return scope;
       const access = await mailboxAccess.requireMailboxPermission(requestContext(context), scope.data.id, "write");
       if (!access.ok) return access;
@@ -5012,7 +5157,7 @@ const actionDefinitions = {
       if (!target.ok) return target;
       const mailboxId = target.data;
       const t = mailCapabilityMessages(context.locale);
-      const scope = await resolveMailboxScope(mailboxId);
+      const scope = await resolveMailboxScope(mailboxId, context);
       if (!scope.ok) return scope;
       const subscription = await listSubscriptions.getSubscription(requestContext(context), scope.data.id, input.listKey);
       if (!subscription.ok) return subscription;
@@ -5072,8 +5217,8 @@ export const mailCapabilities = localizeCapabilityErrors(
         reader: "mailbox.read",
         access: {
           readable: async ({ id, principals }) => {
-            const scope = await resolveMailboxScope(id);
-            return scope.ok ? mailboxAccess.readableMailboxPrincipals(scope.data.id, principals) : [];
+            const scope = await resolvePublicResource("mailboxes", id);
+            return scope.ok ? mailboxAccess.readableMailboxPrincipals(scope.data, principals) : [];
           },
         },
         pages: ["/app/mail/:id"],

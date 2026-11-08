@@ -1,18 +1,16 @@
 import { axisOption, commonOptions, inspectA11y } from "./common";
 import type { ChartShowcaseExample } from "./types";
 
-const months = [
-  "2026-01-01",
-  "2026-02-01",
-  "2026-03-01",
-  "2026-04-01",
-  "2026-05-01",
-  "2026-06-01",
-  "2026-07-01",
-  "2026-08-01",
-  "2026-09-01",
-  "2026-10-01",
-];
+// The 31 invented days of October: a slow rise with quieter weekends, the same on server and client.
+const days = Array.from({ length: 31 }, (_, index) => {
+  const date = new Date(Date.UTC(2026, 9, 1 + index));
+  return { x: date.toISOString().slice(0, 10), weekend: date.getUTCDay() % 6 === 0, index };
+});
+const visitors = (base: number, rise: number) =>
+  days.map(({ x, weekend, index }) => ({
+    x,
+    y: Math.round(base + rise * index + (weekend ? -base * 0.16 : Math.sin(index * 1.7) * base * 0.03)),
+  }));
 
 const examples: ChartShowcaseExample[] = [
   {
@@ -20,21 +18,14 @@ const examples: ChartShowcaseExample[] = [
     kind: "line",
     question: "trend",
     title: "Line chart",
-    summary: "One or more values over time. Inspect a month and every series answers at once.",
+    summary: "One or more values over time. Inspect a day and every series answers at once.",
     spec: {
       kind: "line",
-      title: "Visitors per month",
-      subtitle: "Website · invented data",
+      title: "Visitors per day",
+      subtitle: "Website · October · invented data",
       series: [
-        {
-          label: "This year",
-          data: months.map((x, i) => ({ x, y: [18200, 19400, 21900, 21100, 23800, 26500, 25900, 27400, 29800, 31200][i]! })),
-        },
-        {
-          label: "Last year",
-          role: "reference",
-          data: months.map((x, i) => ({ x, y: [16100, 16800, 18300, 18900, 19800, 21200, 21900, 22400, 23900, 24800][i]! })),
-        },
+        { label: "This year", data: visitors(1180, 9) },
+        { label: "Last year", role: "reference", data: visitors(1020, 6) },
       ],
       yAxis: { format: { style: "number", compact: true } },
       xAxis: { format: { date: "day" } },
@@ -51,7 +42,7 @@ const examples: ChartShowcaseExample[] = [
       "Two values with different units; draw two charts instead of a second axis.",
       "A single number; use a key figure.",
     ],
-    a11y: [...inspectA11y, "Arrow keys move along the time axis; the tooltip lists every series at that time."],
+    a11y: [...inspectA11y, "On a time axis the tooltip lists every series at the inspected time."],
     options: [
       ...commonOptions,
       {

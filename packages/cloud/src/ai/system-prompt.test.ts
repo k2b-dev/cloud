@@ -592,3 +592,18 @@ test("keeps every safety rule verbatim in a prompt with all sections", () => {
   });
   for (const rule of SAFETY_RULES) expect(prompt).toContain(rule);
 });
+
+test("offers the verbatim next-message section only with its loaded tool", () => {
+  const input = { globalInstructions: "", now: new Date("2026-11-07T09:00:00Z"), user };
+  const without = composeAiSystemPrompt(input);
+  expect(without).not.toContain("## Next message");
+  expect(without).not.toContain("The only exception is suggest_next_message");
+  const withTool = composeAiSystemPrompt({ ...input, toolHints: [{ name: "suggest_next_message", hint: "closing tool" }] });
+  expect(withTool).toContain("The only exception is suggest_next_message, the closing call described below.");
+  expect(withTool).toContain(
+    "## Next message\nAfter your final message, you may call suggest_next_message once, alone, with the message the user will most likely send next. Write it as the user, in the user's language, as one short sentence of at most 120 characters, in plain text.\nSuggest only when your final message ends with a question to the user or names an obvious next step the user would ask for. When you made an offer, suggest its plain acceptance, for example \"Yes, draft the reply to Jana\".\nCall it with text null when: the request is done and nothing obvious follows; the turn failed, you refused, or a blocker remains; you wait for an approval or for an answer to a question card; the user asked for a short answer or no suggestions; the message was small talk or thanks.\nNever repeat or paraphrase the user's last message. Use only details that appear in the user's messages or in your visible final message; never add names, numbers, addresses, or other data from tool results that you did not show. Never write greetings, thanks, or messages on behalf of other people.",
+  );
+  expect(withTool).toContain("in the user's language, as one short sentence of at most 120 characters, in plain text.");
+  expect(withTool).toContain("never add names, numbers, addresses, or other data from tool results that you did not show.");
+  expect(withTool.indexOf("## Next message")).toBeGreaterThan(withTool.indexOf("# Suggestions"));
+});

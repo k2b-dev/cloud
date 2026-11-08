@@ -14,13 +14,13 @@ import {
   Switch,
   untrack,
 } from "solid-js";
+import { CloudChartBlock } from "#chat-charts";
 import { markdown } from "../../shared";
 import { AI_TURN_LEASE_MS, type AiTurnBlock } from "../protocol";
 import type { AiTurnError } from "../types";
 import { toolSubject, useReaderTimeZone } from "./action-sentences";
 import { CompactionBlockView, CompactToolRow, SurveyToolView, TextEditorToolView } from "./blocks";
 import { CapabilityTablePreview } from "./capability-table";
-import { CloudChartBlock } from "./chart-block";
 import { PresentToolBlock } from "./file-tools";
 import { AiMapToolBlock } from "./map-widget";
 import { useAiChatActions } from "./message-actions";

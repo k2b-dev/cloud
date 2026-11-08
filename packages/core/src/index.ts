@@ -20,6 +20,7 @@ import { type AppContext, type AuthContext, middleware } from "@k2b/cloud/server
 import { createIdentityPublicRoutes } from "@k2b/cloud/services/identity";
 import { Hono } from "hono";
 import { websocket } from "hono/bun";
+import { aiChatTaskExportRoutes } from "./ai-chat-task-export-routes";
 import { createAiNotificationService } from "./ai-notifications";
 import { createAdminAppListingRoutes } from "./api/admin-app-listing";
 import { managesAiPrincipalSearchTarget } from "./api/ai-principal-search-target";
@@ -70,6 +71,7 @@ const coreApi = new Hono()
   .route("/ai/openai/v1", createAiOpenAiRoutes())
   .route("/ai/skills", aiSkillsRoutes)
   .route("/ai/dictation", aiDictationRoutes)
+  .route("/ai", aiChatTaskExportRoutes)
   .route("/", api);
 
 const router = new Hono<AuthContext>()

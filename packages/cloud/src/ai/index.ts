@@ -37,6 +37,14 @@ export { aiCapabilityId, aiCapabilityToolName } from "./capabilities";
 /** Trusted runtime host: refresh the current conversation owner before calling a permission-aware service. */
 export { resolveAiCapabilityActor } from "./capability-execution";
 export { getAiChatQuotas } from "./chat-quotas";
+export {
+  ChatTaskExportEntrySchema,
+  ChatTaskExportForbiddenError,
+  type ChatTaskExportPage,
+  ChatTaskExportPageSchema,
+  ChatTaskExportQuerySchema,
+  exportChatTasks,
+} from "./chat-task-export";
 export { parseAiSse } from "./client/transport";
 // Framework-owned managed execution host transport.
 export { CODE_CAPABILITY_TOKEN_HEADER, createCodeCapabilityTransport } from "./code-capability-transport";

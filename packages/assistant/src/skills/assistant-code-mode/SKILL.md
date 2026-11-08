@@ -9,7 +9,8 @@ Run a short inline JavaScript/TypeScript module with `code_run`. It executes
 on the Code runner (workerd), under the person's permissions and the turn's
 approvals, independently of their browser tab. No saved app is required.
 
-For lasting Code, pages or schedules load `code-authoring`. Studio authoring,
+For lasting Code (schedules, mail automations, Code pages, their tests and
+submitting a version) load `code-authoring`. Studio authoring,
 HTML checking/presentation, app storage and Studio RSQL are unavailable in
 chat. Do not request Studio tools or pass `id`, `version` or `resourceId` to
 `code_run`. The standalone Studio UI remains separate.
@@ -84,9 +85,9 @@ files explicitly; runs do not share variables. Stop unneeded work with
 `code_stop`.
 
 Use `code_secret` for credentials in the trusted web UI. Never ask for their
-values in chat, surveys or source. CLI and unattended turns can use existing
-chat secrets but cannot open secret entry. HTTP and capability grants still
-apply to unattended routine turns; Studio database grants are unavailable.
+values in chat, surveys or source. CLI turns can use existing chat secrets but cannot open secret entry. Scheduled
+chat routines are retired; use reviewed personal Code for scheduled work.
+Studio database grants are unavailable.
 
 ## Reference routing
 
