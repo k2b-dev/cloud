@@ -1,5 +1,6 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import { sql } from "@k2b/cloud";
+import type { CapabilityExecutionContext } from "@k2b/cloud/contracts";
 import { z } from "zod";
 import { RecordAuditContextSchema } from "../contracts";
 import { parseJsonbRow } from "./jsonb";
@@ -9,6 +10,30 @@ import type { AuditAction, AuditEntry } from "./types";
 // AsyncLocalStorage isolates concurrent invocations; background work owns its own context.
 const auditRequest = new AsyncLocalStorage<string>();
 export const withAuditRequest = <T>(requestId: string, run: () => T): T => auditRequest.run(requestId, run);
+
+const capabilityAudit = new AsyncLocalStorage<{
+  requestId: string;
+  origin: string;
+  via: CapabilityExecutionContext["via"];
+  actor: { kind: string; id: string | null };
+  accessSubject: CapabilityExecutionContext["accessSubject"];
+}>();
+export const withCapabilityAudit = <T>(context: CapabilityExecutionContext, run: () => T): T =>
+  withAuditRequest(context.requestId, () =>
+    capabilityAudit.run(
+      {
+        requestId: context.requestId,
+        origin: context.origin,
+        via: context.via,
+        actor:
+          context.actor?.kind === "service_account"
+            ? { kind: "service_account", id: context.actor.serviceAccount.id }
+            : { kind: "user", id: context.actor?.user.id ?? null },
+        accessSubject: context.accessSubject,
+      },
+      run,
+    ),
+  );
 
 type DbRow = Record<string, unknown>;
 
@@ -76,7 +101,7 @@ export const logAudit = async (input: LogAuditInput, client: SqlClient = sql): P
       ${input.recordId ?? null}::uuid,
       ${input.userId ?? null}::uuid,
       ${input.action},
-      ${input.diff ?? null}::jsonb,
+      ${capabilityAudit.getStore() ? { ...input.diff, capability: { old: null, new: capabilityAudit.getStore() } } : (input.diff ?? null)}::jsonb,
       ${input.context ?? null}::jsonb,
       ${input.ip ?? null},
       ${input.userAgent ?? null},

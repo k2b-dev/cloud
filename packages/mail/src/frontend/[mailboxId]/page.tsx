@@ -4,7 +4,7 @@ import { publicCloudOrigin, readThemePreferenceFromCookieHeader } from "@k2b/clo
 import { Layout, requestPath } from "@k2b/cloud/ssr";
 import { ssr } from "../../config";
 import { mailPageHelp } from "../../help";
-import type { MailRequestContext } from "../../service";
+import { type MailRequestContext, mailboxAccess } from "../../service";
 import { getSpacesMailIntegrationAvailability } from "../../service/app-integrations";
 import { startMailboxCodeAttention } from "../../service/code-attention";
 import { requestContactDirectory } from "../../service/contact-directory";
@@ -29,13 +29,15 @@ export default ssr<AuthContext>(async (c) => {
     const actor = c.get("actor");
     const user = actor.kind === "user" ? actor.user : actor.delegatedUser;
     if (!user) return ssr.error(c, 403);
-    const request = await resolveWorkspaceRequest(new URL(c.req.raw.url), mailboxId);
-    if (!request) return c.redirect(`/app/mail/${mailboxShortId}`);
     const context: MailRequestContext = {
       actor,
       accessSubject: c.get("accessSubject"),
       requestId: c.req.header("x-request-id") ?? null,
     };
+    const readable = await mailboxAccess.requireMailboxAccess(context, mailboxId, "read");
+    if (!readable.ok) return ssr.error(c, 404);
+    const request = await resolveWorkspaceRequest(new URL(c.req.raw.url), mailboxId);
+    if (!request) return c.redirect(`/app/mail/${mailboxShortId}`);
     const cookieHeader = c.req.header("cookie");
     const workspacePreferences = readMailWorkspacePreferences(cookieHeader);
     const userPreferences = readMailUserPreferencesFromCookieHeader(cookieHeader, mailboxShortId);

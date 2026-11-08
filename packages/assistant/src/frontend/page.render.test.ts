@@ -1,4 +1,4 @@
-import { afterAll, afterEach, beforeEach, expect, spyOn, test } from "bun:test";
+import { afterAll, afterEach, beforeEach, expect, setSystemTime, spyOn, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -93,6 +93,7 @@ const project = {
 const spies: Array<{ mockRestore(): void }> = [];
 afterEach(() => {
   for (const spy of spies.splice(0)) spy.mockRestore();
+  setSystemTime();
 });
 beforeEach(() => {
   // Core's Code queries answer empty unless a test says otherwise; no test reaches a real Core.
@@ -125,6 +126,7 @@ beforeEach(() => {
       userId: user.id,
       memoryEnabled: true,
       memoryLearningEnabled: false,
+      suggestNextMessage: true,
       selection: null,
       updatedAt: project.updatedAt,
     }),
@@ -253,6 +255,36 @@ const approval = {
   createdAt: "2026-10-08T09:00:00.000Z",
   expiresAt: "2026-10-09T09:00:00.000Z",
 };
+
+test.each(["/app/assistant", "/app/assistant/panel"])(
+  "%s reads personal answer metadata for the signed-in viewer during SSR",
+  async (path) => {
+    setSystemTime(new Date("2026-11-07T09:00:00Z"));
+    spies.push(
+      spyOn(sidebar, "loadAssistantSidebarSnapshot").mockResolvedValue({
+        projects: [],
+        doneCount: 0,
+        questions: { items: [], count: 0 },
+        conversations: [chat],
+      }),
+    );
+    spies.push(spyOn(ai.aiConversations, "getConversationByShortId").mockResolvedValue(chat));
+    spies.push(spyOn(ai.aiConversations, "markConversationViewed").mockResolvedValue(true));
+    spies.push(spyOn(ai.aiConversations, "listConversationTimeline").mockResolvedValue([]));
+    spies.push(spyOn(chatContext, "loadAssistantChatContextSnapshot").mockResolvedValue(null));
+    const state = spyOn(ai, "loadAiStreamState").mockResolvedValue({
+      type: "state",
+      conversation: chat,
+      messages: [],
+      hasMoreMessages: false,
+      activeTurn: null,
+    });
+    spies.push(state);
+    const response = await request(`https://cloud.example.test${path}?conversation=${chat.shortId}`);
+    expect(response.status).toBe(200);
+    expect(state).toHaveBeenCalledWith(expect.objectContaining({ id: chat.id }), user.id);
+  },
+);
 
 test("?approvals=1 renders Waiting for you without selecting a chat, and the row stays when nothing waits", async () => {
   spies.push(

@@ -135,6 +135,11 @@ suite("Mail receipt events at the sync and event-service seams", () => {
     await sql`DELETE FROM mail.mailbox_access WHERE mailbox_id=${mailboxId}::uuid AND access_id=${grant.id}::uuid`;
     const denied = await mailCapabilities.queries["message.event"].run({ id: message!.short_id }, context);
     expect(denied).toMatchObject({ ok: false, error: { code: "FORBIDDEN" } });
+    expect(await mailCapabilities.queries["message.event"].run({ id: newShortId() }, context)).toEqual(denied);
+    expect(await mailCapabilities.queries["message.catchup"].run({ cutoffAt: "9999-01-01T00:00:00Z" }, context)).toMatchObject({
+      ok: false,
+      error: { code: "NOT_FOUND" },
+    });
   });
 
   test("one receipt survives sync retry, labels and moves with public refs and the original placement identity", async () => {

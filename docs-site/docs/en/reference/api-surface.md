@@ -214,6 +214,12 @@ an unknown app and requires administrator authority on both paths. See
 [Inspect readiness and failures](/en/docs/operations/app-events#inspect-readiness-and-failures)
 for fields, offline behavior and bounds.
 
+`canReadAppAdministration(authority)` from `@k2b/cloud/services` authorizes
+Core administration metadata with the current person's administrator role and
+OAuth `read` or `admin`. It grants no app use or repair. `canRepairAppAccess`
+retains explicit `admin` scope for OAuth repair operations. Both helpers expect
+request authority from Cloud authentication; do not cache role decisions.
+
 `appAdminFacts(authority, appIds)` and `AppAdminFacts` from `@k2b/cloud/services`
 provide Core's administrator-only batch summary for up to 500 input app IDs.
 Each distinct ID receives persisted grant-entry counts (not expanded group membership) and effective managers,
@@ -489,7 +495,7 @@ for execution, model access, and usage accounting.
 | `@k2b/cloud/ai/live` | Supported, server-only | `aiLive`: the cursor of AI live updates for server-rendered state; Core mounts its socket | [Chat and streaming](/en/docs/ai/chat-runtime-and-streaming#ai-live-updates) |
 | `@k2b/cloud/ai/live-events` | Supported, browser and server | `AiInvalidationSchema` and `AI_INVALIDATION_DOMAINS`, the data of AI live updates | [Chat and streaming](/en/docs/ai/chat-runtime-and-streaming#ai-live-updates) |
 | `@k2b/cloud/ai/question-text` | Platform-owned, browser and server | The plain-text form of an Assistant question (`approvalCard`, `actionCardText`, `actionQuestionLines`) that `cld`, notifications, and Cloud Login show | [Tools and approvals](/en/docs/ai/tools-and-approvals) |
-| `@k2b/cloud/ai/app-frame` | Platform-owned, browser/runner | Lightweight chart, native-view and text-AI contracts for the chat SDK, without the full `ai/browser` entrypoint | [Chat interface](/en/docs/operations/studio-retirement) |
+| `@k2b/cloud/ai/app-frame` | Platform-owned, browser/runner | Lightweight chart, native-view and text-AI contracts for the chat SDK, without the full `ai/browser` entrypoint | [Studio retirement](/en/docs/operations/studio-retirement) |
 | `@k2b/cloud/ai/runtime` | Platform-owned, server-only | Core-owned conversation runtime, turn submission and transactional background message delivery | [Chat and streaming](/en/docs/ai/chat-runtime-and-streaming) |
 | `@k2b/cloud/ai/admin` | Platform-owned, server-only | AI usage accounting, model access, and masked request-header names for administration | [Models and providers](/en/docs/ai/models-and-providers), [Observability](/en/docs/operations/observability) |
 | `@k2b/cloud/account/ui` | Supported, SolidJS | Cloud account selectors and avatars | [Building blocks](/en/docs/building-blocks) |
@@ -713,6 +719,11 @@ and [Upload preflight](/en/docs/platform/pdf-and-templates#upload-browser-map-sn
 `parseAiModelChoice` and `AiPeopleModels`. Use them to request a deployment's
 model class and interpret the resolved variant. See
 [Structured and background AI](/en/docs/ai/structured-and-background-ai#request-a-class).
+
+Core's routine definition export uses the framework-owned `exportChatTasks`,
+`ChatTaskExportPageSchema`, `ChatTaskExportEntrySchema`, `ChatTaskExportQuerySchema`
+and `ChatTaskExportForbiddenError` exports from `@k2b/cloud/ai`. See
+[Export automation definitions](/en/docs/operations/automation-definition-export).
 
 ### Code owners and normal shares
 

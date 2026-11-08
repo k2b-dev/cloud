@@ -6,6 +6,16 @@ import type { AssistantChatContextSnapshot } from "../chat-context";
 import type { AssistantProjectContextSnapshot } from "../project-context";
 import { emptySidebarSnapshot } from "./AssistantChatSidebar.fixture";
 
+// Load the UI before the test clock starts; cold JSX compilation is setup, not a file operation.
+if (!isServer) {
+  const dom = createDomTestHarness();
+  try {
+    await Promise.all([import("@k2b/ui"), import("./AssistantChatContext"), import("./assistant-live")]);
+  } finally {
+    dom.cleanup();
+  }
+}
+
 const tick = () => new Promise((resolve) => setTimeout(resolve, 25));
 const chatFile = (path: string, origin: AiFileStat["origin"]): AiFileStat => ({
   path,

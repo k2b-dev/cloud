@@ -2368,6 +2368,15 @@ storage is limited to 16 MiB; storage denial or eviction falls back to the netwo
 Pages and API responses remain network-only. See
 [Offline and updates](/en/docs/frontend/mobile-app-pages#offline-and-updates).
 
+### Grids document captures
+
+Grids migrates independent immutable document captures on startup. Include
+`grids.document_data` with the existing document, issuance, artifact and export
+claim tables in the same database backup. These captures and their issued
+artifacts remain domain evidence even when an automation is retired. Existing
+workflow documents keep their original bindings; this upgrade does not rewrite
+or remove their provenance.
+
 ## Code-version role approvals
 
 Core adds the Code-version request kind and Cloud-admin recipient to the

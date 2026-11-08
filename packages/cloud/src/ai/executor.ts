@@ -55,6 +55,7 @@ import { aiMemories } from "./memories";
 import { createCloudAiMemoryTool } from "./memory-tool";
 import { recordAiMemoryWorkflowEvidence } from "./memory-workflow-evidence";
 import { aiModelAccess } from "./model-access";
+import { createAiNextMessageRuntime, isVisibleAiNextMessageOp } from "./next-message";
 import { type AiUserPrefs, aiActorUser, aiUserPrefs } from "./prefs";
 import { createCloudAiReadProjectKnowledgeTool, createCloudAiSearchProjectTool } from "./project-tool";
 import { aiProjects } from "./projects";
@@ -654,7 +655,7 @@ const createEventMapper = (
       : [];
 
   return {
-    translate,
+    translate: (event: OutboundEvent) => translate(event).filter(isVisibleAiNextMessageOp),
     setTool,
     storedMessage,
     compaction,
@@ -993,6 +994,7 @@ export class AiTurnExecutor {
           read: (path: string) => aiSkills.readTurnFile(turnId, path, skillSubject, toolAuthority),
         }
       : undefined;
+    const nextMessage = createAiNextMessageRuntime(config, prefs, conversationId, turnId);
     const runtimeTools = [
       ...material.tools,
       ...(memoryActive ? [createCloudAiMemoryTool(query)] : []),
@@ -1004,6 +1006,7 @@ export class AiTurnExecutor {
             createCloudAiReadProjectKnowledgeTool(resolvedProjectId, projectSubject),
           ]
         : []),
+      ...nextMessage.tools,
     ];
     const toolsSupported = resolved.profile.capabilities.includes("tools");
     const allowed = allowedTools === null ? null : new Set(allowedTools);
@@ -1616,7 +1619,7 @@ export class AiTurnExecutor {
       agentId: "cloud",
       loopId: turnId,
       ...(isFresh ? { input: turnInput } : {}),
-      provider: turnPolicy.provider,
+      provider: nextMessage.wrap(turnPolicy.provider),
       systemPrompt,
       store,
       steering: createChatSteering({
@@ -1627,7 +1630,7 @@ export class AiTurnExecutor {
             turnId,
             leaseOwner: this.config.leaseOwner,
           }),
-        noteSteering: turnPolicy.noteSteering,
+        noteSteering: nextMessage.redirect(turnPolicy.noteSteering),
       }),
       tools: async () => {
         try {
@@ -1723,6 +1726,7 @@ export class AiTurnExecutor {
       outcome.status = "failed";
       outcome.failure = { error: timeout.turnError(), detail: "Run time limit reached." };
     }
+    await nextMessage.save(outcome.status, abortController.signal);
     const finalized = await this.finalize(
       conversationId,
       turnId,

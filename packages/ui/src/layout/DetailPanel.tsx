@@ -1,6 +1,7 @@
 import { children, createEffect, createSignal, createUniqueId, type JSX, Show, splitProps } from "solid-js";
 import { Button, ButtonLink, type ButtonLinkProps, type ButtonProps, IconButton } from "../actions/Button";
 import { Dropdown, type DropdownItem } from "../actions/Dropdown";
+import { Checkbox } from "../inputs/Checkbox";
 import { useDetailPanelMessages } from "./detail-panel-messages";
 import { createScrollFade } from "./scroll-fade";
 
@@ -90,12 +91,25 @@ export type DetailPanelActionSecondary = {
   variant?: "danger";
 };
 
+/**
+ * A checkbox before the row that toggles on its own, such as "done" for a task the row opens. It always shows its
+ * state, unlike a secondary action, which waits for hover.
+ */
+export type DetailPanelActionCheckbox = {
+  checked: boolean;
+  /** Accessible name, after the row, such as "Done: Call Mrs. Weber". */
+  label: string;
+  onChange: (checked: boolean) => void;
+  disabled?: boolean;
+};
+
 type DetailPanelActionBaseProps = {
   title: JSX.Element;
   description?: JSX.Element;
   leading?: JSX.Element;
   trailing?: JSX.Element;
   secondaryAction?: DetailPanelActionSecondary;
+  checkbox?: DetailPanelActionCheckbox;
   /** Marks the row of the current place, such as the section in view, in the panel's accent. */
   current?: boolean;
   /** Lets the title wrap to two lines instead of ending with an ellipsis. */
@@ -350,6 +364,7 @@ const DetailPanelAction = (props: DetailPanelActionProps): JSX.Element => {
     "menuItems",
     "menuLabel",
     "secondaryAction",
+    "checkbox",
     "title",
     "trailing",
     "wrap",
@@ -392,8 +407,19 @@ const DetailPanelAction = (props: DetailPanelActionProps): JSX.Element => {
   );
 
   return (
-    <Show when={local.secondaryAction || local.menuItems?.length} fallback={action()}>
-      <div class="k2b-detail-panel__action-row">
+    <Show when={local.secondaryAction || local.menuItems?.length || local.checkbox} fallback={action()}>
+      <div class="k2b-detail-panel__action-row" data-checkbox={local.checkbox ? "true" : undefined}>
+        <Show when={local.checkbox}>
+          {(checkbox) => (
+            <Checkbox
+              class="k2b-detail-panel__action-check"
+              aria-label={checkbox().label}
+              value={checkbox().checked}
+              disabled={checkbox().disabled}
+              onValueChange={(checked) => checkbox().onChange(checked)}
+            />
+          )}
+        </Show>
         {action()}
         <Show when={local.secondaryAction}>
           {(secondary) => (

@@ -564,3 +564,23 @@ In the folder view, choose **Download folder as ZIP** next to a template, a year
 - Additional artifacts stay individual downloads.
 
 This reads the current folder contents. It is not a frozen backup.
+
+## Export without a workflow
+
+The `document.capture` capability freezes a complete GQL result for one base.
+Use its public ID, digest, row count and timestamp with `document.issue` for
+PDF, CSV, JSON, XML, ZIP, DATEV or SEPA output. ZIP uses public document and
+template IDs and packages stored artifacts. CSV protects spreadsheet formulas
+by default. A capture contains at most 10,000 rows within the document data
+budget; incomplete results are rejected.
+
+Issuance always asks. DATEV and SEPA also require source record versions and
+return a pending receipt. Review and invoke `document.confirm` with that exact
+receipt and digest as the original caller. It checks access and source
+versions again and finishes the reserved document. A changed source requires a
+new preview. Confirmation does not submit a bank payment.
+
+Use `cld grids documents capture|issue|confirm --body-file request.json
+--idempotency-key <key>` or the generic capability commands. Keep the same key
+and input only when retrying the same operation. Read the stored artifact with
+`document.read` and `document.content.read`; no workflow run is needed.

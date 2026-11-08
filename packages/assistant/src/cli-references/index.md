@@ -547,43 +547,12 @@ Project names and short IDs are accepted by management commands. Access grants u
 
 Run `cld assistant <group> help` or `cld assistant <group> <command> --help` for the complete accepted flags.
 
-Resource deletion requires Manage access and removes publications, grants and
-shared and personal server data; remote database cleanup is queued. Running resources without Manage access requires per-call capability
-consent, including reads; personal remembered approvals do not apply.
-
-
 ### PDF generation and Finance in chat code
 
 Chat scripts can use `cloud.pdf.render`, `cloud.pdf.attach`, `cloud.pdf.read`,
 `cloud.sheet` and `cloud.finance`. PDFs are generated through Gotenberg;
 financial calculations and input parsing run in workerd. Export captured files
 through `code_export`, then present the returned chat path.
-
-### Copy files between chats and Projects
-
-Use JSON files or stdin, preserving exact returned IDs and paths:
-
-1. `assistant code files --input-file list.json`, with
-   `{scope:"chat"|"project"|"app",id,after?,limit?}`. Follow `nextAfter`.
-2. `assistant code file-stat --input-file stat.json`, with
-   `{file:{scope,id,path}}`. Save the returned versioned `reference`.
-3. `assistant code file-copy --input-file copy.json --yes`, with
-   `{source:reference,destination:{scope,id,path},expectedVersion:null}` for a
-   new path, or the current destination's opaque version for replacement.
-
-Copies preserve binary bytes and apply both stores' permissions and destination
-limits. App files require Use; Project destinations require Write; chats require
-ownership. Project membership can provide Use for a linked published App.
-Show the exact destination and overwrite before confirming; shared destinations
-may disclose private chat files. Inspect conflicts or uncertain outcomes before
-retrying. No vendor database API or filesystem access is implied by these tools.
-
-Manage-only single-table deletion uses `code database <app-id> --input
-'{"operation":"tables.delete","table":"obsolete"}'`. It removes the table
-and its rows irreversibly; it is not available as a JavaScript database method.
-Use an explicit user instruction for the named table. A full database reset is
-not a substitute. Known file collisions return `CONFLICT`, byte rejections
-`STORAGE_FULL`, and source validation failures `COMPILE_FAILED` with diagnostics.
 
 ### Project Skills
 
@@ -600,3 +569,9 @@ Personal disabled-Skill preferences still apply. Linking and unlinking require
 Manage on both resources. A link stays intact if its creator later loses access;
 unlinking or losing membership removes only inherited access. Direct grants
 remain.
+
+`cld assistant tasks export --json` preserves all your routine definitions,
+including prompts, schedules, timezones, grants, mandate summaries, state and
+target chats. Cloud administrators use `--all` to export the installation.
+Exports grant no access. JSON and text output are one JSON document; JSONL
+is one API page per line. Export before an upgrade removes routines.

@@ -730,6 +730,13 @@
         "typescript": "catalog:",
       },
     },
+    "packages/speedtest": {
+      "name": "@k2b/speedtest",
+      "devDependencies": {
+        "@types/bun": "catalog:",
+        "typescript": "catalog:",
+      },
+    },
     "packages/ssr": {
       "name": "@k2b/ssr",
       "version": "0.21.0",
@@ -1317,6 +1324,9 @@
     "@k2b/notes-site": ["@k2b/notes-site@workspace:pwas/notes"],
 
     "@k2b/pwa-auth": ["@k2b/pwa-auth@workspace:pwas/pwa-auth"],
+
+
+    "@k2b/speedtest": ["@k2b/speedtest@workspace:packages/speedtest"],
 
     "@k2b/ssr": ["@k2b/ssr@workspace:packages/ssr"],
 

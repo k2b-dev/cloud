@@ -881,3 +881,7 @@ credentials. Include it in an operator-maintained cookie notice. The service
 worker still stores no pages, code, or API responses. No database migration or
 new environment variable is required. See
 [Pages in the mobile app](/en/docs/frontend/mobile-app-pages).
+
+## Standalone speedtest image
+
+The release image set includes `cloud-speedtest`, an optional service without Cloud dependencies. It is not part of the application Compose stack. See [Run a speedtest server](/en/docs/operations/speedtest-server) for ingress, anonymous IP budgets, optional UDP, scripts and changed result definitions. Provisioning the default hostname is a separate operator task.

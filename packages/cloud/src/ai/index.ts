@@ -54,6 +54,14 @@ export {
   toAiChatTaskView,
 } from "./chat-task-contracts";
 export {
+  ChatTaskExportEntrySchema,
+  ChatTaskExportForbiddenError,
+  type ChatTaskExportPage,
+  ChatTaskExportPageSchema,
+  ChatTaskExportQuerySchema,
+  exportChatTasks,
+} from "./chat-task-export";
+export {
   CHAT_TASK_REASON_CODES,
   type ChatTaskReason,
   type ChatTaskReasonCode,

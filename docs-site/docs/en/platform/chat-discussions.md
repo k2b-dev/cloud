@@ -4,8 +4,8 @@ navTitle: Item discussions
 section: Platform services
 order: 75
 tags: [chat, capabilities, permissions]
-description: Read and write the Chat discussion of a provider-owned resource.
-updated: 2026-10-30
+description: Read Chat messages and conversation permissions, post results, and work with provider-owned item discussions.
+updated: 2026-11-07
 ---
 
 # Item discussion capabilities
@@ -13,9 +13,9 @@ updated: 2026-10-30
 Chat provides five operations for an item ref whose type is declared by a
 provider's `discussions` role. The type is resolved from the current catalog;
 IDs are opaque strings up to 512 characters. Built-in and third-party providers
-use the same contract. These operations do not expose direct chats, channels,
-general messages, or manually created threads. An application's existing page
-comments remain separate.
+use the same contract. Discussion listing, posting, editing and deletion stay
+limited to provider-owned item threads. `message.read` also reads ordinary Chat
+messages as described below. An application's existing page comments remain separate.
 
 | Operation | Input | Result |
 | --- | --- | --- |
@@ -131,3 +131,30 @@ It grants no chat access. Interactive approval can be remembered for the
 conversation. Reviews show the complete proposed message in English or German.
 The result contains the message ID, conversation ID, creation time, and an
 `open` link to the posted message.
+
+## Read ordinary Chat messages and conversation permissions
+
+`chat.conversation.read` accepts `{ id }` from a `chat.conversation` ref and
+returns `data.view` with the current `title` and `permission` (`read`, `write`
+or `admin`), plus an `open` link. It supports ordinary conversations and
+channels. System conversations remain outside this Type because their item
+threads can have separate permissions.
+
+`chat.message.read` also accepts a message ID from an ordinary conversation,
+channel or manually created thread. It returns the full body, attachments,
+shared refs, author, timestamps, content revision, provenance and reply target,
+plus an `open` link. Ordinary-message results carry `conversation` as a
+`chat.conversation` ref and `thread` as a thread ID or `null`. Item-discussion
+results retain their existing `item` ref and result shape.
+
+Both readers use the caller's current access, credential scopes and resource
+binding. A resource ref alone grants nothing. The item-discussion reader
+continues to check the provider's item and container readers. Edit and delete
+capabilities remain limited to item discussions.
+
+New ordinary messages publish the reference-only
+[`chat.message.posted` event](/en/docs/platform/app-events#chat-posted-messages),
+including posts through `chat.message.post`. A background handler that posts
+results into its input chat must skip messages whose `data.author` matches its
+own account before performing effects. `cause.requestId` joins the event to its
+capability execution; it does not itself prevent a response loop.

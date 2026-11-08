@@ -9,6 +9,7 @@ import { connectTestNats, suiteFor, testInfra, testSyncNamespace } from "../../.
 import * as producer from "../app-events";
 import { notebooksCapabilities } from "../capabilities";
 import { migrate } from "../migrate";
+import * as comments from "./comments";
 import * as notebooks from "./notebooks";
 import * as notes from "./notes";
 
@@ -158,7 +159,46 @@ const marker = async (id: string) =>
   )[0]!.pending;
 
 suite("Notebooks declared resource event producers", () => {
-  test("all four declarations emit thin public refs; readers enforce two users' different rights", async () => {
+  test("page discussion creation is transactional and reference-only; invalid writes, no-op edits and deletion add no creation events", async () => {
+    const book = await notebook();
+    const entry = await note(book.id);
+    const config = {
+      notebookId: book.id,
+      noteId: entry.id,
+      authorUserId: userIds[0]!,
+      authorDisplayName: "Private author",
+      content: "Private comment",
+    };
+    const created = await comments.create(config);
+    expect(created.ok).toBe(true);
+    if (!created.ok) throw new Error("Comment creation failed");
+    const events = (await pending(book.shortId)).filter((event) => event.type === "notebooks.comment.created");
+    expect(events).toHaveLength(1);
+    assertThin(events[0]!);
+    expect(events[0]!.subject).toEqual({ type: "notebooks.comment", id: created.data.shortId });
+    expect(events[0]!.place).toEqual({ type: "notebooks.notebook", id: book.shortId });
+    const reader = notebooksCapabilities.queries["comment.read"];
+    expect((await reader.run(reader.input.parse({ id: created.data.shortId }), owner)).ok).toBe(true);
+    expect((await reader.run(reader.input.parse({ id: created.data.shortId }), other)).ok).toBe(false);
+    expect((await comments.create({ ...config, content: " " })).ok).toBe(false);
+    expect((await comments.update({ ...config, commentId: created.data.shortId })).ok).toBe(true);
+    expect((await comments.remove({ ...config, commentId: created.data.shortId })).ok).toBe(true);
+    expect((await pending(book.shortId)).filter((event) => event.type === "notebooks.comment.created")).toEqual(events);
+    const original = producer.publishNotebooksEvent;
+    const failure = spyOn(producer, "publishNotebooksEvent").mockImplementation(async (...args) => {
+      await original(...args);
+      if (args[1] === "comment.created") throw new Error("comment rollback");
+    });
+    try {
+      await expect(comments.create(config)).rejects.toThrow("comment rollback");
+    } finally {
+      failure.mockRestore();
+    }
+    expect(await sql`SELECT id FROM notebooks.note_comments WHERE note_id = ${entry.id}::uuid`).toHaveLength(0);
+    expect((await pending(book.shortId)).filter((event) => event.type === "notebooks.comment.created")).toEqual(events);
+  });
+
+  test("existing notebook and note declarations emit thin public refs; readers enforce two users' different rights", async () => {
     const book = await notebook();
     const entry = await note(book.id);
     expect((await notebooks.update({ dateConfig, id: book.id, data: { name: "New secret" } })).ok).toBe(true);
@@ -201,7 +241,7 @@ suite("Notebooks declared resource event producers", () => {
         const fixture = appEventFixture(notebooksCapabilities, name, { subject: entry.shortId, place: book.shortId, data: {} });
         const compact = Buffer.byteLength(JSON.stringify(fixture));
         const [stored] = await sql<{ bytes: number }[]>`SELECT octet_length(${JSON.stringify(fixture)}::text::jsonb::text) AS bytes`;
-        expect(compact).toBe(name.startsWith("notebook.") ? 264 : 256);
+        expect(compact).toBe(name === "comment.created" ? 262 : name.startsWith("notebook.") ? 264 : 256);
         expect(stored!.bytes).toBe(compact + 21);
         await measurement.publish({ data: fixture, orderingKey: "0".repeat(64), idempotencyKey: crypto.randomUUID() });
         const inventory = (await Array.fromAsync(sync!.listTopics({ idPrefix: "envelope-measurement" })))[0]!;

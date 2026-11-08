@@ -6,6 +6,7 @@ import { migrateChatTaskReasons } from "./chat-task-reasons-migrate";
 import { migrateAiMaps } from "./map-store";
 import { migrateAiMessageQueue } from "./message-queue";
 import { migrateAiModelAccess } from "./model-access-migrate";
+import { migrateAiNextMessages } from "./next-message-store";
 import { migrateAiQuotas } from "./quotas-migrate";
 import { withAiShortId } from "./short-id";
 
@@ -2642,6 +2643,7 @@ export const migrateCloudAi = async (): Promise<void> => {
   await sql`CREATE INDEX IF NOT EXISTS idx_ai_messages_submitted_draft
     ON ai.messages (conversation_id, (meta->>'submittedDraftRevision')) WHERE role = 'user'`.simple();
   console.log("  ✓ ai conversation tables");
+  await migrateAiNextMessages();
 };
 
 const backfillApprovalRequests = async (): Promise<void> => {

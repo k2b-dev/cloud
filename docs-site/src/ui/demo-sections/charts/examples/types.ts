@@ -22,6 +22,8 @@ export type ChartShowcaseExample = {
   /** Content height in pixels; defaults to 240. */
   height?: number;
   width?: "third" | "half" | "twoThirds" | "full";
+  /** The example a kind's page opens with when several files add examples of that kind; its reasons come first. */
+  lead?: boolean;
   useFor: string[];
   avoidFor: string[];
   /** Keyboard and screen reader behaviour. */
@@ -81,10 +83,12 @@ export const chartShowcaseQuestions: readonly {
 ];
 
 /**
- * Kinds of the approved catalog that have no example yet. The overview shows each as a quiet slot in its group until a
- * file in this folder adds an example of that kind; then the slot disappears by itself.
+ * Kinds of the approved catalog with the title of their page. The overview shows a kind without an example as a quiet
+ * slot in its group until a file in this folder adds one; then the slot disappears by itself. A kind whose examples
+ * come from several files is listed too, so its page keeps its name whichever file sorts first.
  */
 export const plannedChartKinds: readonly { kind: string; title: string; question: ChartShowcaseQuestion }[] = [
+  { kind: "bar", title: "Bar chart", question: "compare" },
   { kind: "area", title: "Area, absolute and 100 %", question: "trend" },
   { kind: "dots", title: "Dot matrix", question: "trend" },
   { kind: "calendar", title: "Calendar heatmap", question: "trend" },

@@ -9,7 +9,8 @@ Run a short inline JavaScript/TypeScript module with `code_run`. It executes
 on the Code runner (workerd), under the person's permissions and the turn's
 approvals, independently of their browser tab. No saved app is required.
 
-For lasting Code, pages or schedules load `code-authoring`. Studio authoring,
+For lasting Code (schedules, mail automations, Code pages, their tests and
+submitting a version) load `code-authoring`. Studio authoring,
 HTML checking/presentation, app storage and Studio RSQL are unavailable in
 chat. Do not request Studio tools or pass `id`, `version` or `resourceId` to
 `code_run`. Studio apps and their data have been retired without transfer.

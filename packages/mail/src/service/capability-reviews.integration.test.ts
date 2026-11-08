@@ -817,6 +817,7 @@ suite("Mail per-call reviews with real grants and draft state", () => {
         }),
       );
       if (standalone.actor.kind !== "service_account") throw new Error("Expected standalone actor");
+      // A credential without Mail scopes cannot read the mailbox, so the review answers as for an unknown one.
       expect(
         await mailCapabilities.actions["draft.send"].review(input, {
           ...context(),
@@ -825,7 +826,7 @@ suite("Mail per-call reviews with real grants and draft state", () => {
           user: null,
           actor: { ...standalone.actor, scopes: [] },
         }),
-      ).toMatchObject({ ok: false, error: { code: "FORBIDDEN" } });
+      ).toMatchObject({ ok: false, error: { code: "NOT_FOUND" } });
       expect(review.content?.body).toContain("Signed by Mail review agent");
       expect(review.content?.body).not.toContain("Signed by Owner");
       expect(await mailCapabilities.actions["draft.send"].review(input, context())).toMatchObject({
