@@ -44,8 +44,7 @@ const examples: ChartShowcaseExample[] = [
       {
         name: "layout",
         type: '"columns" | "rows"',
-        description:
-          'Columns by default, rows for long labels; with several series grouped side by side or stacked to a total; nested draws a dot matrix with marks: "dots".',
+        description: "Columns by default, rows for long labels; with several series grouped side by side or stacked to a total.",
       },
       { name: "xAxis", type: "{ label? }", description: "Names the categories." },
       axisOption("yAxis"),

@@ -74,6 +74,7 @@ export const isMailReceivedSinceSend = (messageId: SqlFragment): SqlFragment => 
   JOIN mail.conversation_messages later_link ON later_link.conversation_id = send_link.conversation_id
   JOIN mail.message_contents later ON later.id = later_link.message_id
   WHERE send_outbox.message_id = ${messageId}
+    AND later_link.added_by <> 'list'
     AND later.created_at > send_outbox.created_at
     AND NOT EXISTS (
       SELECT 1

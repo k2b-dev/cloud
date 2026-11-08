@@ -1,0 +1,6 @@
+### Reuse the typed table rules instead of rebuilding them in an adapter
+
+- **What happened:** The Cloud description adapter drew tables with typed columns, but sorted and searched them by their raw values. A date sorted by the text of its ISO value and could not be found as "Nov 3", a status sorted by its key, a table ignored the panel's `height`, key figures lost the money tones `in` and `out`, and a missing key figure was an unnamed dash.
+- **Root cause:** The adapter kept its own search, sort and tone list next to `@k2b/ui`, which already reads a typed column's shown text and order (`createDataTableView`). `DashboardFrame` dropped `height` as soon as a `reserve` was set.
+- **Error class:** An adapter copies a shared component's rules in a reduced form, and the copy drifts from what the component shows.
+- **Guard:** `packages/cloud/src/descriptions/description-table.behavior.test.tsx` sorts and searches dates and statuses by what they show; `packages/cloud/src/descriptions/descriptions.render.test.tsx` covers tones, the empty figure and table height; `packages/ui/src/widgets/dashboard-frame.browser.test.ts` keeps a height with a reserve in every state; `packages/ui/src/surfaces/stat-cell.render.test.tsx` names the empty figure.

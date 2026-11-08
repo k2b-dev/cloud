@@ -103,7 +103,8 @@ test("copy sides are separate: hidden destination cannot be found through search
 
 test("own snapshots require a current local grant; administrators can read local historical bindings", async () => {
   const f = historyFixture([candidate(1, { actor_user_id: actorId })]);
-  expect((await f.reader.activity(call)).items[0]?.after).toMatchObject({ visibility: "full", source: "snapshot" });
+  expect((await f.reader.activity(call)).items[0]?.before).toMatchObject({ visibility: "full", source: "snapshot" });
+  f.requests.length = 0;
   f.setMember(false);
   expect((await f.reader.activity(call)).items).toEqual([]);
   await expect(f.reader.activityEntry(call, { activityId: candidate().id })).rejects.toMatchObject({ code: "not_found" });
@@ -214,8 +215,8 @@ test("candidate windows round outward in UTC while inclusive exact filters follo
     scope: { admin: false, userId: actorId, bindingIds: [baseId], serverUrl: "http://filegate.test" },
     baseId: undefined,
   });
-  expect(f.requests).toEqual([]);
-  expect(f.authorized).toEqual([]);
+  // Storage is asked only for the projected candidates' navigation targets, never to widen the SQL window.
+  expect(f.requests.every((request) => request.startsWith("/v1/roots/cloud"))).toBe(true);
 });
 
 test("exact-hour and sub-millisecond bounds preserve SQL microseconds after projection", async () => {
@@ -896,15 +897,26 @@ test("display paths are base-relative only on independently approved sides, incl
 test("own snapshots may name a current binding without acquiring current item authority", async () => {
   const f = historyFixture([candidate(1, { actor_user_id: actorId })]);
   const row = (await f.reader.activity(call)).items[0]!;
-  for (const [side, relativePath] of [
-    [row.before, "old"],
-    [row.after, "new"],
-  ] as const) {
-    expect(side).toMatchObject({ visibility: "full", source: "snapshot", publicBaseId, relativePath });
-    expect(side).not.toHaveProperty("observation");
+  // The vanished old place keeps its full own snapshot; only the same live, readable item becomes a target.
+  expect(row.before).toMatchObject({ visibility: "full", source: "snapshot", publicBaseId, relativePath: "old" });
+  expect(row.before).not.toHaveProperty("observation");
+  expect(row.after).toMatchObject({ visibility: "full", source: "current", publicBaseId, relativePath: "new", itemId: "stable-a" });
+  expect(f.authorized).toEqual(["new"]);
+  // A replaced item, a refusal or a storage outage never fails or shrinks the own row; it only stays without a target.
+  for (const change of [
+    (own: typeof f) => own.nodes.set(`${home}/new`, own.node(`${home}/new`, "replacement")),
+    (own: typeof f) => own.nodes.delete(`${home}/new`),
+    (own: typeof f) => own.denied.add("new"),
+    (own: typeof f) => own.statFailures.set(`${home}/new`, 500),
+    (own: typeof f) => own.statFailures.set(`${home}/new`, 403),
+  ]) {
+    const own = historyFixture([candidate(1, { actor_user_id: actorId })]);
+    change(own);
+    const after = (await own.reader.activity(call)).items[0]?.after;
+    expect(after).toMatchObject({ visibility: "full", source: "snapshot", publicBaseId, relativePath: "new", itemId: "stable-a" });
+    expect(after).not.toHaveProperty("observation");
   }
-  expect(f.authorized).toEqual([]);
-  expect(f.requests).toEqual([]);
+  f.requests.length = 0;
   f.setMember(false);
   expect((await f.reader.activity(call)).items).toEqual([]);
   const legacy = historyFixture([candidate(1, { actor_user_id: actorId, metadataUnknown: true })]);

@@ -7,7 +7,11 @@ import { buildIslandClosure } from "./island-closure";
 // The /panel islands reach @k2b/ssr's mount runtime through @k2b/ui's Button and @k2b/ssr/nav, but use none of its
 // code: a change there is dead code for this closure, the case that moved the measured size by tens of bytes (#2875).
 const mount = resolve(import.meta.dir, "../../packages/ssr/src/mount.ts");
-const deadChange = `${await Bun.file(mount).text()}
+const source = await Bun.file(mount).text();
+// Two different unused additions: whether one of them renames anything depends on the code around it (a probe like
+// code already in mount.ts changes nothing), so the test needs only one of them to change the unmeasured build.
+const deadChanges = [
+  `${source}
 export const unusedProbe = (element: HTMLElement) => {
   const all = element.getElementsByTagName("*");
   const focused = [...all].indexOf(document.activeElement!);
@@ -15,7 +19,14 @@ export const unusedProbe = (element: HTMLElement) => {
   if (node instanceof HTMLElement) node.focus();
   return render(() => createComponent(ErrorBoundary, { fallback: () => null, children: null }), element);
 };
-`;
+`,
+  `${source}
+export const unusedProbe = (element: HTMLElement) => {
+${Array.from({ length: 30 }, (_, index) => `  const child${index} = element.children[${index}];`).join("\n")}
+  return [${Array.from({ length: 30 }, (_, index) => `child${index}`).join(", ")}, render(() => createComponent(ErrorBoundary, { fallback: () => null, children: null }), element)];
+};
+`,
+];
 const eagerText = async (files?: Record<string, string>) => {
   const build = await buildIslandClosure(panelIslandEntries, files);
   const outputs = await Promise.all(build.outputs.map(async (output) => `${basename(output.path)}\n${await output.text()}`));
@@ -23,12 +34,17 @@ const eagerText = async (files?: Record<string, string>) => {
 };
 
 test("unused code that only renames the minifier's choices or the chunk hashes does not change the measured size", async () => {
-  // The unmeasured build really differs: other names in the shared chunks, other chunk hashes, or both.
-  expect(await eagerText({ [mount]: deadChange })).not.toBe(await eagerText());
+  // The unmeasured build really differs for at least one of them: other names in the shared chunks, other chunk
+  // hashes, or both.
+  const plain = await eagerText();
+  const differs = await Promise.all(deadChanges.map(async (code) => (await eagerText({ [mount]: code })) !== plain));
+  expect(differs).toContain(true);
   const base = await islandBundleSize(panelIslandEntries);
-  const changed = await islandBundleSize(panelIslandEntries, { [mount]: deadChange });
-  expect(changed.eagerBrotliBytes).toBe(base.eagerBrotliBytes);
-  expect(changed.eagerInputs).toEqual(base.eagerInputs);
+  for (const code of deadChanges) {
+    const changed = await islandBundleSize(panelIslandEntries, { [mount]: code });
+    expect(changed.eagerBrotliBytes).toBe(base.eagerBrotliBytes);
+    expect(changed.eagerInputs).toEqual(base.eagerInputs);
+  }
 }, 300_000);
 
 test("a real change of N compressed bytes stays visible as about N bytes", async () => {

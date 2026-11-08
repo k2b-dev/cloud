@@ -41,7 +41,10 @@ export type DashboardFrameProps = {
    * shows the empty sentence and action while the head keeps its state, so a stale note stays.
    */
   emptyContent?: boolean;
-  /** Height of the body, a CSS length. Every state keeps it. */
+  /**
+   * Height of the body, a CSS length. Every state keeps it. With `reserve`, the content fills it and scrolls inside, so
+   * a table keeps its header in view; without it, the hidden copy sets the height.
+   */
   height?: string;
   /**
    * A hidden copy of the full content that holds the body's height in every state, such as every row of a table. The
@@ -138,7 +141,12 @@ export function DashboardFrame(props: DashboardFrameProps): JSX.Element {
             </div>
           }
         >
-          <div class="k2b-dashboard-frame__stack" aria-busy={busy()}>
+          <div
+            class="k2b-dashboard-frame__stack"
+            data-height={props.height ? "" : undefined}
+            style={props.height ? { height: props.height } : undefined}
+            aria-busy={busy()}
+          >
             {/* The full content, hidden: the body's height in every state. */}
             <div class="k2b-dashboard-frame__reserve" aria-hidden="true" inert>
               {reserve()}
