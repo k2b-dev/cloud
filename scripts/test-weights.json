@@ -256,6 +256,7 @@
     "@k2b/ui src/actions/toolbar.browser.test.ts": 25.2,
     "@k2b/ui src/actions/view-tabs.browser.test.ts": 24.4,
     "@k2b/ui src/base/base.browser.test.ts": 10.5,
+    "@k2b/ui src/charts/bubble-radar.browser.test.ts": 6.7,
     "@k2b/ui src/charts/calendar.browser.test.ts": 18,
     "@k2b/ui src/charts/distribution.browser.test.ts": 6.1,
     "@k2b/ui src/charts/namespace.browser.test.ts": 2.1,
