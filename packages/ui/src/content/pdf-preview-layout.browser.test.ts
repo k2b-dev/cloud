@@ -173,16 +173,19 @@ describe("@k2b/ui PdfPreview viewer", () => {
       }
     });
 
-    test(`shows the missing-viewer hint at once in the same box, without a request, on ${name}`, async () => {
+    test(`shows the missing-viewer hint in the same box when pdf.js cannot draw a document and the browser has no viewer, on ${name}`, async () => {
       const withViewer = await openCases(options, true);
       const loading = await read(withViewer).finally(() => withViewer.close());
       const page = await openCases(options, false);
       try {
-        // An automatic preview could show only the hint, so it fetches nothing and shows the hint where the document
-        // and the loading state would be.
+        // pdf.js draws in every browser, so an automatic preview requests its document. This one is no real PDF: pdf.js
+        // fails, no browser viewer can take over, and the hint takes the place of the document and the loading state.
+        expect(await page.evaluate(() => (globalThis as unknown as Fixture).requestCount())).toBe(11);
+        await page.evaluate(() => (globalThis as unknown as Fixture).settlePreviews());
+        await page.waitForFunction(() => document.querySelectorAll('[data-case$=" ok"] [data-state="empty"]').length === 5);
         const hints = await read(page);
-        expect(await page.evaluate(() => (globalThis as unknown as Fixture).requestCount())).toBe(0);
         for (const [key, { state, box, frame }] of Object.entries(hints)) {
+          if (!key.endsWith(" ok")) continue;
           expect([key, state, box, frame]).toEqual([key, "empty", loading[key]!.box, null]);
         }
         expect(await page.locator('[data-case="shell sized ok"] .k2b-content-pdf-preview__placeholder').textContent()).toBe(

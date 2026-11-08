@@ -166,12 +166,12 @@ export default function Lightbox(props: LightboxProps) {
       <div class="k2b-content-lightbox__bar">
         <div class="k2b-content-lightbox__meta">
           <Show when={isMultiple()}>
-            <span class="k2b-content-lightbox__counter" aria-live="polite">
+            <span class="k2b-content-lightbox__counter k2b-overlay-surface" aria-live="polite">
               {index() + 1} / {props.images.length}
             </span>
           </Show>
           <Show when={current()?.alt}>
-            <div class="k2b-content-lightbox__caption">
+            <div class="k2b-content-lightbox__caption k2b-overlay-surface">
               <div class="k2b-content-lightbox__caption-text">{current()?.alt}</div>
             </div>
           </Show>
@@ -180,19 +180,34 @@ export default function Lightbox(props: LightboxProps) {
         <div class="k2b-content-lightbox__actions">
           <For each={current()?.actions ?? []}>
             {(action) => (
-              <button type="button" onClick={() => action.onClick()} class="k2b-content-lightbox__button" aria-label={action.label}>
+              <button
+                type="button"
+                onClick={() => action.onClick()}
+                class="k2b-content-lightbox__button k2b-overlay-surface"
+                aria-label={action.label}
+              >
                 <i class={action.icon} aria-hidden="true" />
                 <span class="k2b-content-lightbox__button-label">{action.label}</span>
               </button>
             )}
           </For>
           <Show when={current()?.downloadUrl}>
-            <a href={current()!.downloadUrl} download="" class="k2b-content-lightbox__button" aria-label={lightboxMessages().downloadImage}>
+            <a
+              href={current()!.downloadUrl}
+              download=""
+              class="k2b-content-lightbox__button k2b-overlay-surface"
+              aria-label={lightboxMessages().downloadImage}
+            >
               <i class="ti ti-download" aria-hidden="true" />
               <span class="k2b-content-lightbox__button-label">{messages().download}</span>
             </a>
           </Show>
-          <button type="button" onClick={close} class="k2b-content-lightbox__button" aria-label={lightboxMessages().closeLightbox}>
+          <button
+            type="button"
+            onClick={close}
+            class="k2b-content-lightbox__button k2b-overlay-surface"
+            aria-label={lightboxMessages().closeLightbox}
+          >
             <i class="ti ti-x" aria-hidden="true" />
             <span class="k2b-content-lightbox__button-label">{messages().close}</span>
           </button>
@@ -209,7 +224,7 @@ export default function Lightbox(props: LightboxProps) {
         <button
           type="button"
           onClick={prev}
-          class="k2b-content-lightbox__nav"
+          class="k2b-content-lightbox__nav k2b-overlay-surface"
           data-direction="previous"
           aria-label={lightboxMessages().previousImage}
         >
@@ -218,7 +233,7 @@ export default function Lightbox(props: LightboxProps) {
         <button
           type="button"
           onClick={next}
-          class="k2b-content-lightbox__nav"
+          class="k2b-content-lightbox__nav k2b-overlay-surface"
           data-direction="next"
           aria-label={lightboxMessages().nextImage}
         >
@@ -227,7 +242,7 @@ export default function Lightbox(props: LightboxProps) {
       </Show>
 
       <Show when={isMultiple() && props.images.length <= 10}>
-        <div class="k2b-content-lightbox__dots" role="group" aria-label={lightboxMessages().imageNavigation}>
+        <div class="k2b-content-lightbox__dots k2b-overlay-surface" role="group" aria-label={lightboxMessages().imageNavigation}>
           <For each={props.images}>
             {(_, i) => (
               <button

@@ -150,7 +150,8 @@ describe("Notebook attachment preview", () => {
       expect(tab?.getAttribute("href")).toBe("/api/notebooks/nb0001/attachments/Att003/content?v=1&inline=true");
       expect(tab?.getAttribute("aria-label")).toBe("Open in new tab");
       expect(requests).toContain("/api/notebooks/nb0001/attachments/Att003/content?v=1&inline=true");
-      expect(dialog()?.querySelector(".notebooks-attachment-dialog__pdf .k2b-content-pdf-preview__frame")).not.toBeNull();
+      // The document shows in the preview's box: pdf.js draws it, or the browser's viewer takes over in a frame.
+      expect(dialog()?.querySelector(".notebooks-attachment-dialog__pdf .k2b-content-pdf-preview__viewer")).not.toBeNull();
       await closeAll();
 
       // An image opens in the lightbox with its name and a download.
