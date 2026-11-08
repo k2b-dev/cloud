@@ -1115,6 +1115,7 @@ suite("mail provider lease fairness", () => {
       context,
       mailboxId: other.mailboxId,
       input: {
+        quoteSource: false,
         senderIdentityId: other.identityId,
         to: [{ name: "Customer", address: "customer@example.test" }],
         cc: [],

@@ -155,6 +155,7 @@ const initialDraft: MailDraft = {
   sourceMessageId: null,
   derivedFromMessageId: null,
   derivationKind: null,
+  quoteSource: false,
   senderIdentityId: "Send01",
   signatureTemplateId: "Sign02",
   to: [{ name: null, address: "recipient@example.test" }],
@@ -262,6 +263,7 @@ window.mountComposer = (options) => {
     origin: {
       kind: "compose",
       input: {
+        quoteSource: false,
         senderIdentityId: "Send01",
         to: [],
         cc: [],

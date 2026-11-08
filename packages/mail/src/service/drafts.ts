@@ -70,6 +70,10 @@ const draftInputError = (error: z.ZodError, fallback: string) =>
   error.issues.some((issue) => issue.code === "invalid_format" && issue.format === "uuid" && String(issue.path.at(-1)).endsWith("Id"))
     ? err.notFound("Mail resource")
     : err.badInput(error.issues[0]?.message ?? fallback);
+const quoteHashContent = <T extends { quoteSource?: boolean }>(content: T) => {
+  const { quoteSource, ...rest } = content;
+  return quoteSource ? { ...rest, quoteSource: true } : rest;
+};
 // Every saved body keeps only complete signature segments, so marks left by a hand edit do not pile up.
 const savedDraftBodySchema = draftEditableContentInputSchema.shape.body.transform(removeOrphanComposeSegmentMarks);
 const internalDraftEditableContentSchema = draftEditableContentInputSchema.extend({
@@ -136,6 +140,7 @@ type DbDraft = {
   derivation_kind: MailDraft["derivationKind"];
   sender_identity_id: string;
   signature_template_id: string | null;
+  quote_source: boolean;
   author_kind: DraftActor["kind"];
   author_id: string | null;
   last_editor_kind: DraftActor["kind"];
@@ -197,6 +202,7 @@ const draftColumns = () => sql`
   d.derived_from_message_id,
   d.derivation_kind,
   d.sender_identity_id,
+  d.quote_source,
   (SELECT template.id FROM mail.compose_templates template
     WHERE template.id = d.signature_template_id AND template.archived_at IS NULL) AS signature_template_id,
   d.author_kind,
@@ -303,6 +309,7 @@ const mapDraft = (row: DbDraft): MailDraft => ({
   derivationKind: row.derivation_kind,
   senderIdentityId: row.sender_identity_id,
   signatureTemplateId: row.signature_template_id,
+  quoteSource: row.quote_source,
   to: parseArray(row.to_addresses),
   cc: parseArray(row.cc_addresses),
   bcc: parseArray(row.bcc_addresses),
@@ -527,7 +534,7 @@ const storeRecoveryCopy = async (params: {
   actor: MutableActor;
   includeAttachments?: boolean;
 }): Promise<void> => {
-  const contentHash = sha256Json(params.content);
+  const contentHash = sha256Json(quoteHashContent(params.content));
   const [stored] = await params.db<{ id: string }[]>`
     INSERT INTO mail.draft_recovery_copies (
       draft_id, base_revision, content, content_hash, creator_kind, creator_id, has_attachment_snapshot
@@ -725,6 +732,7 @@ const prepareComposeDraftInTransaction = async (params: {
     subject: initialSubject,
     body: parsed.data.body,
     signatureTemplateId,
+    quoteSource: parsed.data.quoteSource,
     format: parsed.data.format ?? identity.data.defaultFormat,
     priority: parsed.data.priority ?? identity.data.defaultPriority,
     requestDeliveryReceipt: parsed.data.requestDeliveryReceipt ?? identity.data.defaultDeliveryReceipt,
@@ -768,7 +776,7 @@ const insertComposeDraftInTransaction = async (params: {
       author_kind, author_id, last_editor_kind, last_editor_id,
       to_addresses, cc_addresses, bcc_addresses, subject, body_markdown, body_format,
       priority, request_delivery_receipt, request_read_receipt,
-      materialization_key, materialization_request_hash, signature_template_id
+      materialization_key, materialization_request_hash, signature_template_id, quote_source
     ) VALUES (
       ${shortId},
       ${params.mailboxId}::uuid,
@@ -791,7 +799,7 @@ const insertComposeDraftInTransaction = async (params: {
       ${params.content.requestReadReceipt},
       ${params.materializationKey ?? null},
       ${params.materializationRequestHash ?? null},
-      ${params.content.signatureTemplateId ?? null}::uuid
+      ${params.content.signatureTemplateId ?? null}::uuid, ${params.content.quoteSource}
     )
     RETURNING ${draftColumns()}
   `,
@@ -982,7 +990,7 @@ const insertDerivedDraftInTransaction = async (params: {
     INSERT INTO mail.drafts AS d (
       short_id, mailbox_id, conversation_id, intent, source_message_id,
       derived_from_message_id, derivation_kind, derivation_key, derivation_request_hash,
-      sender_identity_id, signature_template_id,
+      sender_identity_id, signature_template_id, quote_source,
       author_kind, author_id, last_editor_kind, last_editor_id,
       to_addresses, cc_addresses, bcc_addresses, subject, body_markdown, body_format,
       priority, request_delivery_receipt, request_read_receipt
@@ -990,7 +998,7 @@ const insertDerivedDraftInTransaction = async (params: {
       ${shortId},
       ${params.mailboxId}::uuid, NULL, 'new', NULL,
       ${params.prepared.messageId}::uuid, ${params.prepared.kind}, ${params.idempotencyKey}, ${params.requestHash},
-      ${params.content.senderIdentityId}::uuid, ${params.content.signatureTemplateId ?? null}::uuid,
+      ${params.content.senderIdentityId}::uuid, ${params.content.signatureTemplateId ?? null}::uuid, ${params.content.quoteSource},
       ${params.actor.kind}, ${actorId(params.actor)}::uuid, ${params.actor.kind}, ${actorId(params.actor)}::uuid,
       ${params.content.to}::jsonb, ${params.content.cc}::jsonb, ${params.content.bcc}::jsonb,
       ${params.content.subject}, ${params.content.body}, ${params.content.format},
@@ -1106,6 +1114,7 @@ export const prepareDraftSeed = async (params: {
           ? {
               kind: "compose",
               input: {
+                quoteSource: parsed.data.input.quoteSource,
                 senderIdentityId: parsed.data.input.senderIdentityId,
                 to: [],
                 cc: [],
@@ -1147,7 +1156,11 @@ export const materializeDraftSeed = async (params: {
   if (!actor) return fail(err.forbidden("Draft author is invalid"));
   try {
     const result = await sql.begin(async (tx) => {
-      const requestHash = await sha256Json(parsed.data.origin);
+      const requestHash = await sha256Json(
+        parsed.data.origin.kind === "compose"
+          ? { ...parsed.data.origin, input: quoteHashContent(parsed.data.origin.input) }
+          : parsed.data.origin,
+      );
       const keyColumn = parsed.data.origin.kind === "derive" ? "derivation" : "materialization";
       const lockKey = [params.mailboxId, actor.kind, actorId(actor), keyColumn, parsed.data.idempotencyKey].join(":");
       await tx`SELECT pg_advisory_xact_lock(hashtextextended(${lockKey}, 0))`;
@@ -1800,6 +1813,7 @@ export const updateDraft = async (params: {
         SELECT ${draftColumns()} FROM mail.drafts d
         WHERE d.id = ${draftId}::uuid AND d.revision >= ${params.expectedRevision}
           AND d.sender_identity_id = ${parsed.data.senderIdentityId}::uuid
+          AND d.quote_source = ${parsed.data.quoteSource}
           AND d.signature_template_id IS NOT DISTINCT FROM ${signature.data.signatureTemplateId}::uuid
           AND jsonb_strip_nulls(d.to_addresses) = jsonb_strip_nulls(${parsed.data.to}::jsonb)
           AND jsonb_strip_nulls(d.cc_addresses) = jsonb_strip_nulls(${parsed.data.cc}::jsonb)
@@ -1821,6 +1835,7 @@ export const updateDraft = async (params: {
           subject = ${parsed.data.subject},
           body_markdown = ${signature.data.body},
           signature_template_id = ${signature.data.signatureTemplateId}::uuid,
+          quote_source = ${parsed.data.quoteSource},
           body_format = ${parsed.data.format},
           priority = ${parsed.data.priority},
           request_delivery_receipt = ${parsed.data.requestDeliveryReceipt},
@@ -2255,6 +2270,7 @@ export const restoreDraftRecoveryCopy = async (params: {
           subject = ${content.data.subject},
           body_markdown = ${signature.data.body},
           signature_template_id = ${signature.data.signatureTemplateId}::uuid,
+          quote_source = ${content.data.quoteSource},
           body_format = ${content.data.format},
           priority = ${content.data.priority},
           request_delivery_receipt = ${content.data.requestDeliveryReceipt},

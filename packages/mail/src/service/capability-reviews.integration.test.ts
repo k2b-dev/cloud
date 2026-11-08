@@ -9,18 +9,23 @@ import { unwrap } from "@k2b/stdlib";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import { reviewedDraftContentHash } from "../../test/fixtures/send-content";
 import { mailCapabilities } from "../capabilities";
+import { draftEditableContentInputSchema } from "../contracts";
 import { newShortId } from "../lib/short-id";
 import { draftReviewAudience, grantMailboxAccess } from "./access";
 import type { MailRequestContext } from "./auth";
+import { actorRefFromRequest } from "./auth";
 import { sha256Json } from "./canonical";
 import { loadSendReviewContent } from "./capability-review-readers";
 import { adoptWorkflowSendCommand, createActorCommand } from "./commands";
 import { reviewDraftComposeSafety } from "./compose-safety";
+import { previewComposeDraft } from "./compose-templates";
+import { loadDraftSourceQuote } from "./draft-source-quote";
 import { getDraft } from "./drafts";
 import { createLocalTag } from "./local-tags";
 import { createMailbox } from "./mailboxes";
 import { outboundDraftSnapshotSchema } from "./outbound-mime";
 import { publicIds } from "./public-resources";
+import { loadSendContent } from "./send-content";
 
 const suite = suiteFor("database", "nats", "valkey");
 const at = "2026-10-20T06:00:00.000Z";
@@ -153,6 +158,126 @@ suite("Mail per-call reviews with real grants and draft state", () => {
     if (blobId) await sql`DELETE FROM mail.message_part_blobs WHERE id = ${blobId}::uuid`;
     await sql`DELETE FROM auth.users WHERE id IN (SELECT value::uuid FROM jsonb_array_elements_text(${users}::jsonb))`;
   }, 30_000);
+
+  const addQuoteSource = async () => {
+    const conversationId = conversations[0]!.id;
+    const [message] = await sql<
+      { id: string }[]
+    >`SELECT message_id AS id FROM mail.conversation_messages WHERE conversation_id = ${conversationId}::uuid`;
+    if (!message) throw new Error("Missing quote source");
+    await sql`UPDATE mail.message_contents SET plain_text = 'Quoted original {{ actor.email }}', internal_date = ${at} WHERE id = ${message.id}::uuid`;
+    await sql`INSERT INTO mail.message_addresses (message_id, role, position, display_name, email, normalized_email)
+      VALUES (${message.id}::uuid, 'from', 0, 'Lea', 'lea@outside.test', 'lea@outside.test')`;
+    await sql`UPDATE mail.drafts SET intent = 'reply', conversation_id = ${conversationId}::uuid,
+      source_message_id = ${message.id}::uuid, quote_source = true WHERE id = ${draftId}::uuid`;
+    return message.id;
+  };
+
+  test("opt-in quote is reviewed, hashed and frozen into the send outbox after the signature", async () => {
+    const sourceMessageId = await addQuoteSource();
+    const draft = unwrap(await getDraft(owner, mailboxId, draftId));
+    expect(draft.quoteSource).toBe(true);
+    const content = unwrap(
+      await loadSendContent({ db: sql, mailboxId, draftId, expectedRevision: 7, context: owner, actor: actorRefFromRequest(owner) }),
+    );
+    expect(content.snapshot.quoteSource).toBe(true);
+    const preview = unwrap(
+      await previewComposeDraft({
+        context: owner,
+        mailboxId,
+        input: {
+          draft: {
+            ...draftEditableContentInputSchema.strip().parse({ ...draft, senderIdentityId: identityShortId, signatureTemplateId: null }),
+            senderIdentityId: identityId,
+            signatureTemplateId: draft.signatureTemplateId,
+          },
+          sourceMessageId,
+        },
+      }),
+    );
+    expect(preview.text).toBe(content.snapshot.renderedText!);
+    const safety = unwrap(await reviewDraftComposeSafety({ context: owner, mailboxId, draftId, expectedRevision: 7 }));
+    const command = unwrap(
+      await createActorCommand({
+        context: owner,
+        mailboxId,
+        enqueue: false,
+        input: {
+          kind: "send",
+          draftId,
+          senderIdentityId: identityId,
+          expectedDraftRevision: 7,
+          expectedContentHash: safety.contentHash,
+          undoSeconds: 20,
+          idempotencyKey: "quoted-send",
+          safetyApproval: {
+            revision: safety.revision,
+            fingerprint: safety.fingerprint,
+            warningIds: safety.warnings.map((warning) => warning.id),
+          },
+        },
+      }),
+    );
+    const [outbox] = await sql<
+      { draft_snapshot: unknown }[]
+    >`SELECT draft_snapshot FROM mail.outbox_submissions WHERE command_id = ${command.id}::uuid`;
+    const snapshot = outboundDraftSnapshotSchema.parse(outbox?.draft_snapshot);
+    expect(snapshot.renderedText).toContain("Quoted original {{ actor.email }}");
+    expect(snapshot.renderedText!.indexOf("Quoted original")).toBeGreaterThan(snapshot.renderedText!.indexOf("Regards Team Ops"));
+    expect(sha256Json(snapshot)).toBe(safety.contentHash);
+  });
+
+  test("source quotation returns nothing for missing or unreadable sources without failing preview", async () => {
+    const sourceMessageId = await addQuoteSource();
+    await grant(assignedId, "assigned");
+    const user = await accounts.users.get({ id: assignedId });
+    if (!user) throw new Error("Missing assigned user");
+    const assigned: MailRequestContext = { actor: { kind: "user", user }, accessSubject: { type: "user", userId: assignedId } };
+    const input = { senderIdentityId: identityId, signatureTemplateId: null, body: "Reply", quoteSource: true };
+    expect(
+      await loadDraftSourceQuote({
+        db: sql,
+        mailboxId,
+        sourceMessageId: crypto.randomUUID(),
+        access: { scope: "mailbox", permission: "read" },
+      }),
+    ).toEqual({ ok: true, data: null });
+    const preview = unwrap(await previewComposeDraft({ context: assigned, mailboxId, input: { draft: input, sourceMessageId } }));
+    expect(preview.text).toBe("Reply");
+    const readable = unwrap(await previewComposeDraft({ context: owner, mailboxId, input: { draft: input, sourceMessageId } }));
+    expect(readable.text).toContain("Quoted original");
+  });
+
+  test("changing only quoteSource invalidates an already-reviewed send", async () => {
+    await addQuoteSource();
+    await sql`UPDATE mail.drafts SET quote_source = false WHERE id = ${draftId}::uuid`;
+    const off = unwrap(await reviewDraftComposeSafety({ context: owner, mailboxId, draftId, expectedRevision: 7 }));
+    const snapshot = unwrap(
+      await loadSendContent({ db: sql, mailboxId, draftId, expectedRevision: 7, context: owner, actor: actorRefFromRequest(owner) }),
+    ).snapshot;
+    expect(Object.hasOwn(snapshot, "quoteSource")).toBe(false);
+    await sql`UPDATE mail.drafts SET quote_source = true WHERE id = ${draftId}::uuid`;
+    expect(
+      await createActorCommand({
+        context: owner,
+        mailboxId,
+        enqueue: false,
+        input: {
+          kind: "send",
+          draftId,
+          senderIdentityId: identityId,
+          expectedDraftRevision: 7,
+          expectedContentHash: off.contentHash,
+          undoSeconds: 20,
+          idempotencyKey: "stale-quote-review",
+        },
+      }),
+    ).toMatchObject({ ok: false, error: { code: "SEND_CONTENT_CHANGED" } });
+    const [count] = await sql<
+      { count: number }[]
+    >`SELECT count(*)::int AS count FROM mail.outbox_submissions WHERE draft_id = ${draftId}::uuid`;
+    expect(count?.count).toBe(0);
+  });
 
   const draftReviews = async () => {
     const ctx = context();

@@ -17,6 +17,7 @@ import {
   draftProviderFingerprint,
   draftProviderMessageId,
 } from "./draft-provider-mime";
+import { loadDraftSourceQuote } from "./draft-source-quote";
 import { resolveMailExecution } from "./execution";
 import { resolveRoleFolder } from "./folders";
 import { withLeaseHeartbeat } from "./lease-heartbeat";
@@ -139,6 +140,8 @@ const loadDraftContent = async (
       bcc_addresses: DraftProviderContent["bcc"] | string;
       subject: string;
       body_markdown: string;
+      quote_source: boolean;
+      source_message_id: string | null;
       body_format: DraftProviderContent["format"];
       parent_message_id: string | null;
       reference_ids: string[] | null;
@@ -157,7 +160,7 @@ const loadDraftContent = async (
       draft.cc_addresses,
       draft.bcc_addresses,
       draft.subject,
-      draft.body_markdown,
+      draft.body_markdown, draft.quote_source, draft.source_message_id,
       draft.body_format,
       CASE WHEN draft.intent IN ('reply', 'reply_all') THEN source.message_id ELSE NULL END AS parent_message_id,
       CASE WHEN draft.intent IN ('reply', 'reply_all') THEN source.reference_ids ELSE ARRAY[]::text[] END AS reference_ids,
@@ -187,6 +190,15 @@ const loadDraftContent = async (
   if (!row) return null;
   const revision = Number(row.revision);
   const parentMessageId = row.parent_message_id;
+  const quote = row.quote_source
+    ? await loadDraftSourceQuote({
+        db,
+        mailboxId: row.mailbox_id,
+        sourceMessageId: row.source_message_id,
+        access: { scope: "mailbox", permission: "read" },
+      })
+    : { ok: true as const, data: null };
+  if (!quote.ok) throw Object.assign(new Error(quote.error.message), quote.error);
   const content = draftProviderContentSchema.parse({
     revision,
     senderIdentityId: row.sender_identity_id,
@@ -196,7 +208,7 @@ const loadDraftContent = async (
     cc: parseJson(row.cc_addresses),
     bcc: parseJson(row.bcc_addresses),
     subject: row.subject,
-    body: row.body_markdown,
+    body: [row.body_markdown, quote.data].filter(Boolean).join("\n\n"),
     format: row.body_format,
     inReplyTo: parentMessageId,
     references: [...new Set([...(row.reference_ids ?? []), ...(parentMessageId ? [parentMessageId] : [])])],
@@ -1197,6 +1209,7 @@ const applyImportedDraft = async (params: {
           bcc_addresses = ${params.parsed.bcc}::jsonb,
           subject = ${params.parsed.subject},
           body_markdown = ${body},
+          quote_source = false,
           body_format = ${params.parsed.format},
           last_editor_kind = 'system',
           last_editor_id = NULL,

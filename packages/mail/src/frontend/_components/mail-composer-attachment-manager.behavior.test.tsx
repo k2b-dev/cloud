@@ -17,6 +17,7 @@ const draft: MailDraft = {
   sourceMessageId: null,
   derivedFromMessageId: null,
   derivationKind: null,
+  quoteSource: false,
   senderIdentityId: "Idn001",
   to: [{ name: null, address: "ada@example.test" }],
   cc: [],

@@ -1033,3 +1033,19 @@ available only to their owner. Use `null` for no signature. The filled signature
 uses the same template rules and render budget as sending, with sanitized
 Markdown HTML and plain text. It has no mailbox CSS or images; the mailbox
 logo becomes its alt text. With `format: "plain"`, `html` is `null`.
+
+Draft editable content includes `quoteSource`, defaulting to `false`. Set it to
+`true` to append the readable `sourceMessageId` after the signature. The stored
+body stays editable without that history. Preview accepts `sourceMessageId`
+alongside `draft`; unreadable or missing sources add nothing. Server-generated
+attribution uses the existing reply quotation format in English with UTC dates,
+so preview and send stay identical across callers. Source text never evaluates
+as a template. Oversized quotations fail with the existing compose render errors.
+
+REST, shared editing, recovery copies and draft capabilities retain this choice.
+`draft.patch` preserves it when omitted. Use `cld mail draft create|update --quote`
+or `--no-quote`; compose preview accepts `--source-message`. Send review and
+queued or scheduled delivery include the quote in the frozen content. Turning
+quoting off retains the existing send hash format. IMAP draft copies include the
+chosen history; editing a copy externally makes that history ordinary body text
+and turns automatic quoting off to avoid appending it twice.

@@ -785,6 +785,8 @@ const draftSignatureChoice = (flags: { signature?: string; noSignature?: boolean
 };
 
 const draftEditableContentFlags = {
+  quote: flag.boolean({ description: "Append the source message after the signature" }),
+  noQuote: flag.boolean({ name: "no-quote", description: "Do not append the source message" }),
   signature: flag.string({ description: "Signature template id; omitted keeps the default or current signature" }),
   noSignature: flag.boolean({ name: "no-signature", description: "Use no signature" }),
   identity: flag.string({ required: true, description: "Sender identity id" }),
@@ -882,8 +884,11 @@ const readDraftEditableContent = async (flags: {
   readReceipt?: "on" | "off";
   signature?: string;
   noSignature?: boolean;
+  quote?: boolean;
+  noQuote?: boolean;
 }) => {
   if (!flags.identity) throw new Error("Missing sender identity.");
+  if (flags.quote && flags.noQuote) throw new Error("Use either --quote or --no-quote.");
   const senderIdentityId = requireMailResourceId(flags.identity, "Sender identity id");
   const body = await readCliInput(flags.body, {
     label: "message body",
@@ -892,6 +897,7 @@ const readDraftEditableContent = async (flags: {
   return {
     senderIdentityId,
     ...draftSignatureChoice(flags),
+    ...(flags.quote || flags.noQuote ? { quoteSource: Boolean(flags.quote) } : {}),
     to: parseAddresses(flags.to),
     cc: parseAddresses(flags.cc),
     bcc: parseAddresses(flags.bcc),
@@ -4004,6 +4010,7 @@ const specialistCommands = {
       flags: {
         ...mailboxFlag,
         draft: composeDraftInputFlag,
+        sourceMessage: flag.string({ name: "source-message", description: "Source message to quote when quoteSource is true" }),
         conversation: flag.string({
           description: "Optional conversation id for compose context",
         }),
@@ -4015,6 +4022,7 @@ const specialistCommands = {
           `/mailboxes/${mailbox.id}/compose-preview`,
           jsonRequest("POST", {
             draft: await readComposeDraftInput(flags.draft),
+            sourceMessageId: flags.sourceMessage ? requireMailResourceId(flags.sourceMessage, "Source message id") : null,
             conversationId: flags.conversation ? requireMailResourceId(flags.conversation, "Conversation id") : null,
           }),
         );

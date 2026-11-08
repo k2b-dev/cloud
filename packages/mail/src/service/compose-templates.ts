@@ -8,14 +8,14 @@ import {
   archiveComposeTemplateInputSchema,
   type ComposePreview,
   type ComposePreviewInput,
-  type ComposeSignatureDefault,
   type ComposeSignature,
+  type ComposeSignatureDefault,
   type ComposeSignatureInput,
-  composeSignatureInputSchema,
   type ComposeSuggestion,
   type ComposeSuggestionsInput,
   type ComposeTemplate,
   type CreateComposeTemplateInput,
+  composeSignatureInputSchema,
   composeSuggestionsInputSchema,
   createComposeTemplateInputSchema,
   type DraftEditableContent,
@@ -36,7 +36,7 @@ import {
   updateMailboxComposeStyleInputSchema,
 } from "../contracts";
 import { withShortIdDb } from "../lib/short-id";
-import { draftVisibleTo, requireMailboxAccess, requireMailboxPermission } from "./access";
+import { draftVisibleTo, getMailboxAccess, requireMailboxAccess, requireMailboxPermission } from "./access";
 import { actorRefFromRequest, auditActorFromRequest, type MailRequestContext, userBackedActor } from "./auth";
 import { sha256Text } from "./canonical";
 import {
@@ -52,6 +52,7 @@ import {
   validateComposeTemplateSource,
   withoutSignatureSegments,
 } from "./compose-renderer";
+import { loadDraftSourceQuote } from "./draft-source-quote";
 import { mailboxLogoFailure } from "./mailbox-logo-errors";
 import { validateMailboxLogoImage } from "./mailbox-logo-image";
 import {
@@ -878,6 +879,8 @@ export const renderComposeDraft = async (params: {
   actor: ActorRef;
   renderLiquid: boolean;
   logoSource: "cid" | "data";
+  context?: MailRequestContext;
+  sourceMessageId?: string | null;
 }): Promise<Result<RenderedComposeContent & { inlineLogo: OutboundDraftSnapshot["inlineLogo"] }>> => {
   const db = params.db ?? sql;
   const parsed = internalDraftEditableContentSchema.safeParse(params.draft);
@@ -899,6 +902,15 @@ export const renderComposeDraft = async (params: {
     : [];
   const logo = await currentMailboxLogo(db, params.mailboxId, params.logoSource === "cid");
   const contentId = logo ? mailboxLogoContentId(logo.id, context.data.sender.email) : "";
+  const quote = parsed.data.quoteSource
+    ? await loadDraftSourceQuote({
+        db,
+        mailboxId: params.mailboxId,
+        sourceMessageId: params.sourceMessageId,
+        access: params.context ? await getMailboxAccess(params.context, params.mailboxId, db) : null,
+      })
+    : ok(null);
+  if (!quote.ok) return quote;
   const rendered = renderComposeContent({
     logo: logo
       ? {
@@ -911,6 +923,8 @@ export const renderComposeDraft = async (params: {
         }
       : null,
     signature: signature?.body_template ?? null,
+    quoteSource: parsed.data.quoteSource,
+    sourceQuote: quote.data,
     body: signature ? withoutSignatureSegments(parsed.data.body, signature.body_template) : parsed.data.body,
     format: parsed.data.format,
     customCss: await mailboxStyleSource(db, params.mailboxId),
@@ -1004,6 +1018,8 @@ export const previewComposeDraft = async (params: {
     actor: actorRefFromRequest(params.context),
     renderLiquid: true,
     logoSource: "data",
+    context: params.context,
+    sourceMessageId: params.input.sourceMessageId,
   });
   if (!rendered.ok) return rendered;
   return ok({

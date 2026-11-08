@@ -118,6 +118,7 @@ const createCalendarDraft = async (params: {
   const allowed = await requireMailboxPermission(params.context, params.mailboxId, "write");
   if (!allowed.ok) return allowed;
   const input = {
+    quoteSource: false,
     senderIdentityId: params.senderIdentityId,
     to: params.to,
     cc: [],

@@ -396,3 +396,9 @@ Cancellation succeeds only while the command is still cancelable. Ambiguous prov
 | Coordination | `draft lease get|acquire|heartbeat|release`, `draft recovery list|restore` |
 | Draft attachments | `draft attachment add|remove|download`, `draft attachment upload list|cancel` |
 | Delivery | `send`, `scheduled list|cancel`, `command list|get|wait|cancel` |
+
+Drafts omit the original message by default. Pass `--quote` to `draft create`
+or `draft update` to append its readable source message after the signature;
+`--no-quote` removes that automatic history. The editable body stays unchanged.
+Draft JSON uses `quoteSource`; `compose preview --source-message <id>` selects
+the source for a preview. Send review covers the resulting message.

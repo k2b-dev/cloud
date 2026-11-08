@@ -209,6 +209,7 @@ suite("Mail draft seed public boundary", () => {
         derivedFromMessageId: messageId,
         derivationKind: "edit_as_new",
         content: {
+          quoteSource: false,
           senderIdentityId,
           to: [],
           cc: [],

@@ -3472,6 +3472,7 @@ export const draftSchema = z.object({
   state: z.enum(["draft", "scheduled", "sending", "sent", "discarded"]),
   deliveryClass: draftDeliveryClassSchema,
   signatureTemplateId: ResourceShortIdSchema.nullable(),
+  quoteSource: z.boolean().default(false),
   /** Returned by create and update only. */
   formattingWarnings: composeFormattingWarningsSchema.optional(),
   createdAt: z.string().datetime(),
@@ -3549,6 +3550,7 @@ export const draftEditableContentInputSchema = z
       .describe(
         "Signature template shown after the body, or null for none. On create, omit it to use the sender's default signature; on update, omit it to keep the current choice.",
       ),
+    quoteSource: z.boolean().default(false).describe("Append the readable source message after the signature; off by default."),
     to: z.array(mailAddressSchema).max(200).default([]).describe("Primary recipients."),
     cc: z.array(mailAddressSchema).max(200).default([]).describe("Carbon-copy recipients."),
     bcc: z.array(mailAddressSchema).max(200).default([]).describe("Blind-carbon-copy recipients."),
@@ -3693,6 +3695,7 @@ export const composePreviewInputSchema = z
   .object({
     draft: draftEditableContentInputSchema,
     conversationId: ResourceShortIdSchema.nullable().default(null),
+    sourceMessageId: ResourceShortIdSchema.nullable().optional(),
   })
   .strict();
 export type ComposePreviewInput = z.input<typeof composePreviewInputSchema>;

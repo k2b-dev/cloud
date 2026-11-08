@@ -778,6 +778,8 @@ export const renderComposeContent = (params: {
   context: ComposeRenderContext;
   renderLiquid: boolean;
   signature?: string | null;
+  quoteSource?: boolean;
+  sourceQuote?: string | null;
   logo?: { src: string; altText: string; displayWidth: number; pixelWidth: number; pixelHeight: number; byteLength: number } | null;
 }): Result<RenderedComposeContent> => {
   // Enforce the draft input budget before template parsing, Markdown or CSS work.
@@ -791,6 +793,7 @@ export const renderComposeContent = (params: {
     : ok(params.body.replace(COMPOSE_SEGMENT_MARKS, ""));
   if (!renderedSource.ok) return renderedSource;
   let source = renderedSource.data;
+  const sourceQuote = params.quoteSource ? (params.sourceQuote?.replace(COMPOSE_SEGMENT_MARKS, "") ?? "") : "";
   let parts: { reply: string; signature: string; history: string } | null = null;
   if (params.signature !== null && params.signature !== undefined) {
     const valid = validateComposeTemplateSource(params.signature);
@@ -799,8 +802,15 @@ export const renderComposeContent = (params: {
     const signature = fillComposeTemplate(params.signature, context, params.format, Math.max(0, budget.remainingMs), token);
     budget.remainingMs -= performance.now() - start;
     if (!signature.ok) return "composeRender" in signature.error ? signature : fail(composeRenderFailure("signatureFailed"));
-    parts = { ...splitQuotedHistory(source), signature: signature.data.replace(COMPOSE_SEGMENT_MARKS, "") };
+    const history = splitQuotedHistory(source);
+    parts = {
+      reply: history.reply,
+      signature: signature.data.replace(COMPOSE_SEGMENT_MARKS, ""),
+      history: [history.history, sourceQuote].filter(Boolean).join("\n\n"),
+    };
     source = [parts.reply, parts.signature, parts.history].filter(Boolean).join("\n\n");
+  } else if (sourceQuote) {
+    source = [source, sourceQuote].filter(Boolean).join("\n\n");
   }
   if (sourceBytes(source) > MAX_RENDERED_SOURCE_BYTES) return fail(composeRenderFailure("tooLarge"));
   // Only intact tokens may reach replacement; transformed or truncated markers must never be sent.

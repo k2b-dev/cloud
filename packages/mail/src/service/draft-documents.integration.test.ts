@@ -115,6 +115,7 @@ suite("Mail shared draft transaction store", () => {
     } = {},
   ) => {
     const content = draftEditableContentInputSchema.parse({
+      quoteSource: false,
       senderIdentityId: identity.short_id,
       signatureTemplateId: options.signature ? signature.short_id : null,
       to: [{ address: "to@example.test", name: "To" }],

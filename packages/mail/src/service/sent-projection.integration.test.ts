@@ -793,6 +793,7 @@ suite("mail sent message projection", () => {
       context,
       mailboxId: mailbox.mailboxId,
       input: {
+        quoteSource: false,
         senderIdentityId: mailbox.identityId,
         to: [{ name: "Customer", address: CUSTOMER }],
         cc: [],
@@ -897,6 +898,7 @@ suite("mail sent message projection", () => {
         context,
         mailboxId: mailbox.mailboxId,
         input: {
+          quoteSource: false,
           senderIdentityId: mailbox.identityId,
           to: [{ name: "Customer", address: CUSTOMER }],
           cc: [],
@@ -936,6 +938,7 @@ suite("mail sent message projection", () => {
       context,
       mailboxId: mailbox.mailboxId,
       input: {
+        quoteSource: false,
         senderIdentityId: mailbox.identityId,
         to: [{ name: "Customer", address: CUSTOMER }],
         cc: [],
@@ -1413,6 +1416,7 @@ suite("mail sent message projection", () => {
           context,
           mailboxId: mailbox.mailboxId,
           input: {
+            quoteSource: false,
             senderIdentityId: mailbox.identityId,
             subject: `Inline ${intent}`,
             to: [{ name: "Customer", address: CUSTOMER }],
@@ -1433,6 +1437,7 @@ suite("mail sent message projection", () => {
           input: {
             // Preview accepts editable content, not the full saved-draft response.
             draft: {
+              quoteSource: false,
               senderIdentityId: draft.data.senderIdentityId,
               signatureTemplateId: draft.data.signatureTemplateId,
               to: draft.data.to,
@@ -1678,6 +1683,7 @@ suite("mail sent message projection", () => {
           context,
           mailboxId: mailbox.mailboxId,
           input: {
+            quoteSource: false,
             cc: [],
             bcc: [],
             subject: "Signature test",
@@ -1738,6 +1744,7 @@ suite("mail sent message projection", () => {
         context,
         mailboxId: mailbox.mailboxId,
         input: {
+          quoteSource: false,
           cc: [],
           bcc: [],
           subject: "Signature test",
@@ -1785,6 +1792,7 @@ suite("mail sent message projection", () => {
         context,
         mailboxId: mailbox.mailboxId,
         input: {
+          quoteSource: false,
           cc: [],
           bcc: [],
           subject: "Signature test",
@@ -1940,6 +1948,7 @@ suite("mail sent message projection", () => {
       context,
       mailboxId: mailbox.mailboxId,
       input: {
+        quoteSource: false,
         senderIdentityId: mailbox.identityId,
         to: [
           { name: "Customer", address: CUSTOMER },
@@ -2746,6 +2755,7 @@ suite("mail sent message projection", () => {
         context,
         mailboxId: mailbox.mailboxId,
         input: {
+          quoteSource: false,
           senderIdentityId: mailbox.identityId,
           to: [{ name: "Customer", address: CUSTOMER }],
           cc: [],
@@ -3191,6 +3201,7 @@ suite("mail sent message projection", () => {
         context,
         mailboxId: mailbox.mailboxId,
         input: {
+          quoteSource: false,
           senderIdentityId: mailbox.identityId,
           to: [{ name: "Customer", address: CUSTOMER }],
           cc: [],
@@ -3386,6 +3397,7 @@ suite("mail sent message projection", () => {
         context,
         mailboxId: mailbox.mailboxId,
         input: {
+          quoteSource: false,
           senderIdentityId: mailbox.identityId,
           to: [{ name: "Customer", address: CUSTOMER }],
           cc: [],
@@ -3471,6 +3483,7 @@ suite("mail sent message projection", () => {
       draftId,
       expectedRevision,
       input: {
+        quoteSource: false,
         senderIdentityId: mailbox.identityId,
         to: [{ name: "Customer", address: CUSTOMER }],
         cc: [],
@@ -3643,6 +3656,7 @@ suite("mail sent message projection", () => {
         context,
         mailboxId: mailbox.mailboxId,
         input: {
+          quoteSource: false,
           senderIdentityId: mailbox.identityId,
           to: [{ name: "Customer", address: CUSTOMER }],
           cc: [],

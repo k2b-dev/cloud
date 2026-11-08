@@ -54,6 +54,7 @@ type DraftRow = {
   doc_frozen_revision: string | number | null;
   sender_identity_id: string;
   signature_template_id: string | null;
+  quote_source: boolean;
   sender_short_id: string | null;
   signature_short_id: string | null;
   to_addresses: DraftEditableContent["to"] | string;
@@ -275,6 +276,7 @@ export const lockDraftDocumentInTransaction = async (
       const content = draftEditableContentInputSchema.parse({
         senderIdentityId: row.sender_short_id,
         signatureTemplateId: signatureShortId,
+        quoteSource: row.quote_source,
         to: typeof row.to_addresses === "string" ? JSON.parse(row.to_addresses) : row.to_addresses,
         cc: typeof row.cc_addresses === "string" ? JSON.parse(row.cc_addresses) : row.cc_addresses,
         bcc: typeof row.bcc_addresses === "string" ? JSON.parse(row.bcc_addresses) : row.bcc_addresses,
@@ -357,6 +359,7 @@ export const lockDraftDocumentInTransaction = async (
         UPDATE mail.drafts SET
           sender_identity_id = ${valid.data.senderIdentityId}::uuid,
           signature_template_id = ${valid.data.signatureTemplateId}::uuid,
+          quote_source = ${content.quoteSource},
           to_addresses = ${content.to}::jsonb, cc_addresses = ${content.cc}::jsonb, bcc_addresses = ${content.bcc}::jsonb,
           subject = ${content.subject}, body_markdown = ${content.body}, body_format = ${content.format},
           priority = ${content.priority}, request_delivery_receipt = ${content.requestDeliveryReceipt},
@@ -383,6 +386,7 @@ export const lockDraftDocumentInTransaction = async (
         revision: updated.revision,
         sender_identity_id: valid.data.senderIdentityId,
         signature_template_id: valid.data.signatureTemplateId,
+        quote_source: content.quoteSource,
         body_markdown: content.body,
       };
       return { status: "saved", revision: Number(updated.revision), durable: { state: input.state, cursor: input.cursor, content } };
@@ -510,6 +514,7 @@ export const lockDraftDocumentInTransaction = async (
       const projected = draftEditableContentInputSchema.safeParse({
         senderIdentityId: row.sender_short_id,
         signatureTemplateId: row.signature_template_id === null ? null : row.signature_short_id,
+        quoteSource: row.quote_source,
         to: typeof row.to_addresses === "string" ? JSON.parse(row.to_addresses) : row.to_addresses,
         cc: typeof row.cc_addresses === "string" ? JSON.parse(row.cc_addresses) : row.cc_addresses,
         bcc: typeof row.bcc_addresses === "string" ? JSON.parse(row.bcc_addresses) : row.bcc_addresses,

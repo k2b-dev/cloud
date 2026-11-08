@@ -17,6 +17,7 @@ export const inlineLogoSnapshotSchema = z.object({
 });
 
 const outboundDraftSnapshotBaseSchema = z.object({
+  quoteSource: z.literal(true).optional(),
   inlineLogo: inlineLogoSnapshotSchema.nullable().default(null),
   revision: z.number().int().positive(),
   from: z.object({ name: z.string().max(200), address: z.string().email().max(320) }),

@@ -58,6 +58,7 @@ const initial = (): MailDraft => ({
   sourceMessageId: null,
   derivedFromMessageId: null,
   derivationKind: null,
+  quoteSource: false,
   senderIdentityId: "Send01",
   signatureTemplateId: null,
   to: [],
