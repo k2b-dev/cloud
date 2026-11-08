@@ -31,6 +31,12 @@ sees it.
 There is no third contract field. The search preview calls the reader of the
 active hit, so the reader's permission check applies.
 
+Views are how apps show results. Gustav's own reports stay as they are: in
+code mode, `cloud.view.stats`, `cloud.view.table`, and `cloud.view.chart`
+write views that `present` shows, and the `chart` tool draws charts. A `Chart`
+block uses the same chart renderer as these, and key figures and tables use the
+same `@k2b/ui` parts.
+
 ## Return a view
 
 ```ts

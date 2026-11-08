@@ -1,0 +1,93 @@
+// Bun Snapshot v1, https://bun.sh/docs/test/snapshots
+
+exports[`a code run's presented stats, table and chart and the chart tool render as before, live and after a reload (desktop) 1`] = `
+{
+  "charts": [
+    {
+      "svg": 1,
+      "title": "Umsatz je Monat",
+    },
+    {
+      "svg": 1,
+      "title": "Aufträge je Kanal",
+    },
+  ],
+  "headers": [
+    "Kunde",
+    "Aufträge",
+    "Umsatz",
+  ],
+  "parts": [
+    "k2b-stat-grid",
+    "k2b-stat-cell",
+    "k2b-chart",
+    "k2b-stat-cell",
+    "k2b-stat-cell",
+    "k2b-stat-cell",
+    "k2b-data-table",
+    "k2b-chart-explorer",
+    "k2b-chart",
+    "k2b-chart-explorer",
+    "k2b-chart",
+  ],
+  "rows": [
+    "Galerie Nord 38 24.210,50 €",
+    "Atelier Berg 27 18.990,00 €",
+    "Haus am See 21 12.480,25 €",
+    "Studio Weiß 14 8.120,00 €",
+    "Summe 100 63.800,75 €",
+  ],
+  "tiles": [
+    "Umsatz 184.250,40 €",
+    "Aufträge 412 +38",
+    "Ø Auftrag 447,21 € ohne Stornos",
+    "Quote 27 % −2 %",
+  ],
+}
+`;
+
+exports[`a code run's presented stats, table and chart and the chart tool render as before, live and after a reload (phone) 1`] = `
+{
+  "charts": [
+    {
+      "svg": 1,
+      "title": "Umsatz je Monat",
+    },
+    {
+      "svg": 1,
+      "title": "Aufträge je Kanal",
+    },
+  ],
+  "headers": [
+    "Kunde",
+    "Aufträge",
+    "Umsatz",
+  ],
+  "parts": [
+    "k2b-stat-grid",
+    "k2b-stat-cell",
+    "k2b-chart",
+    "k2b-stat-cell",
+    "k2b-stat-cell",
+    "k2b-stat-cell",
+    "k2b-data-table",
+    "k2b-chart-explorer",
+    "k2b-chart",
+    "k2b-chart-explorer",
+    "k2b-chart",
+  ],
+  "rows": [
+    "Galerie Nord 38 24.210,50 €",
+    "Atelier Berg 27 18.990,00 €",
+    "Haus am See 21 12.480,25 €",
+    "Studio Weiß 14 8.120,00 €",
+    "Summe 100 63.800,75 €",
+  ],
+  "tiles": [
+    "Umsatz 184.250,40 €",
+    "Aufträge 412 +38",
+    "Ø Auftrag 447,21 € ohne Stornos",
+    "Quote 27 % −2 %",
+  ],
+}
+`;
