@@ -1,4 +1,4 @@
-import type { CodePageTree } from "@k2b/cloud/code";
+import type { CodePageNode, CodePageTree } from "@k2b/cloud/code";
 import { FeatCodeMark } from "@k2b/cloud/code/ui";
 import { i18n } from "@k2b/stdlib";
 import { Button } from "@k2b/ui";
@@ -10,10 +10,12 @@ const provenanceMessages = i18n.define({
     en: {
       madeWith: "Made with",
       note: "Someone built this page with feat/code. Never enter passwords or recovery codes here.",
+      noPasswords: "Do not enter passwords here.",
     },
     de: {
       madeWith: "Erstellt mit",
       note: "Diese Seite hat jemand mit feat/code gebaut. Gib hier nie Passwörter oder Wiederherstellungscodes ein.",
+      noPasswords: "Gib hier keine Passwörter ein.",
     },
   },
 });
@@ -27,12 +29,18 @@ const NOTE_ID = "code-page-provenance-note";
  * neither reach, restyle nor cover this label. A press opens a short note through the browser's own popover, which
  * also works before scripts load. It never names the owner.
  */
-function PageProvenance(props: { locale: string }) {
+function PageProvenance(props: { locale: string; form: boolean }) {
   const t = provenanceMessages.resolve([props.locale]).t;
   return (
     <div class="code-page-provenance" data-code-provenance="">
+      {/* Shown without a press while the page has a form. The server decides for the first paint; CSS follows the
+          tree after the island replaces it, so a form that arrives or leaves later brings or takes the line. */}
+      <p class="code-page-provenance__warning k2b-overlay-surface" data-code-provenance-warning="" hidden={!props.form}>
+        <i class="ti ti-lock" aria-hidden="true" />
+        {t.noPasswords}
+      </p>
       <Button
-        class="code-page-provenance__label"
+        class="code-page-provenance__label k2b-overlay-surface"
         variant="secondary"
         size="sm"
         tooltip={false}
@@ -49,6 +57,10 @@ function PageProvenance(props: { locale: string }) {
   );
 }
 
+/** Fields exist only inside a form, so a form anywhere in the page, sections included, means the page asks for input. */
+const hasForm = (nodes: readonly CodePageNode[]): boolean =>
+  nodes.some((node) => node.kind === "Form" || (node.kind === "Section" && hasForm(node.children)));
+
 /**
  * A Code page as Core hosts it in every layout: the tree, in its own stacking context, and the feat/code label after
  * it. Only the tree is an island; the label stays server markup.
@@ -60,7 +72,7 @@ export default function CodePageHost(props: { tree: CodePageTree; codeId: string
       <div class="code-page-host__tree" data-code-page-tree="">
         <CodePageTreeView tree={props.tree} codeId={props.codeId} csrf={props.csrf} locale={props.locale} timeZone={props.timeZone} />
       </div>
-      <PageProvenance locale={props.locale} />
+      <PageProvenance locale={props.locale} form={hasForm(props.tree.children)} />
     </div>
   );
 }

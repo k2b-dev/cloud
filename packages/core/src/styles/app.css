@@ -202,9 +202,12 @@
 }
 
 /* A Code page and its feat/code label. The tree is its own stacking context, so nothing a page draws can rise above
-   the label; the label sticks to the bottom edge of the page's scroll area (the layout's main column, or the window
-   on phones and plain pages) and sits after the page once its end is reached, so it never covers the last block.
-   It is in the flow from the first paint: nothing moves when it appears. */
+   the label. From 48rem the label sticks to the bottom edge of the page's scroll area (the app card, or the window on
+   plain pages) and sits after the page once its end is reached, so it never covers the last block. It is there from
+   the first paint: nothing moves when it appears. */
+.code-page-host {
+  --code-provenance-edge: max(0.75rem, env(safe-area-inset-bottom));
+}
 .code-page-host__tree {
   isolation: isolate;
 }
@@ -213,30 +216,62 @@
   bottom: 0;
   z-index: 10;
   display: flex;
+  flex-wrap: wrap;
+  align-items: center;
   justify-content: flex-end;
-  padding: 0 0.75rem max(0.75rem, env(safe-area-inset-bottom));
+  gap: 0.5rem;
+  padding: 0 0.75rem var(--code-provenance-edge);
   pointer-events: none;
 }
-/* On phones the window or the card may scroll, depending on the layout; there the label holds the window's bottom
-   edge, and the host keeps room for it after the last block. */
+/* Both chips are light glass over the page, like other floating layers. */
+.k2b-ui .code-page-provenance .k2b-button.code-page-provenance__label {
+  pointer-events: auto;
+  gap: 0.375rem;
+  border-color: transparent;
+  background: var(--k2b-overlay-surface);
+}
+/* While the page has a form, a quiet line says not to enter passwords, without a press and without alarm colour.
+   The server decides the first paint (`hidden`); when the island brings or removes a form, CSS follows the tree. */
+.k2b-ui .code-page-provenance__warning {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  min-height: 1.75rem;
+  margin: 0;
+  padding: 0.25rem 0.75rem;
+  border-radius: 999px;
+  color: var(--k2b-text-muted);
+  font-size: 0.8125rem;
+  line-height: 1.3;
+  pointer-events: auto;
+}
+.k2b-ui .code-page-host:has([data-code-block="Form"]) .code-page-provenance__warning[hidden] {
+  display: inline-flex;
+}
+.k2b-ui .code-page-host:not(:has([data-code-block="Form"])) .code-page-provenance__warning {
+  display: none;
+}
+/* On phones the window or the card may scroll, depending on the layout; there the chips hold the window's bottom
+   edge, the warning above the label, and the host keeps their height free after the last block. */
 @media (max-width: 47.999rem) {
   .code-page-provenance {
     position: fixed;
     inset-inline: 0;
+    flex-direction: column;
+    align-items: flex-end;
   }
   .code-page-host {
-    padding-bottom: calc(max(0.75rem, env(safe-area-inset-bottom)) + 2.75rem);
+    padding-bottom: calc(var(--code-provenance-edge) + 2.5rem);
   }
-}
-.k2b-ui .code-page-provenance .k2b-button.code-page-provenance__label {
-  pointer-events: auto;
-  gap: 0.375rem;
-  background: var(--k2b-surface-elevated);
+  .code-page-host:has([data-code-block="Form"]),
+  .code-page-host:has(.code-page-provenance__warning:not([hidden])) {
+    padding-bottom: calc(var(--code-provenance-edge) + 4.75rem);
+  }
 }
 /* The note is the browser's popover in the top layer, at the bottom edge above the label, like a small sheet. */
 .k2b-ui .code-page-provenance__note {
   position: fixed;
-  inset: auto 0.75rem calc(max(0.75rem, env(safe-area-inset-bottom)) + 2.75rem) auto;
+  inset: auto 0.75rem calc(var(--code-provenance-edge, 0.75rem) + 2.5rem) auto;
   width: min(20rem, calc(100vw - 1.5rem));
   margin: 0;
   padding: 0.75rem 1rem;

@@ -246,7 +246,67 @@ const boxes = (page: Page) =>
     })(),
   }));
 
+/** Scrolled to the end, the last block is fully visible: every shown chip of the label sits below it, in view. */
+const expectEndClear = async (page: Page) => {
+  await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
+  await settled(page);
+  const end = await page.evaluate(() => {
+    const chips = Array.from(document.querySelectorAll<HTMLElement>("[data-code-provenance] > :not([popover])"))
+      .filter((chip) => getComputedStyle(chip).display !== "none")
+      .map((chip) => chip.getBoundingClientRect());
+    const blocks = Array.from(
+      document.querySelectorAll("[data-code-page-tree] .k2b-dashboard-frame, [data-code-page-tree] [data-code-block]"),
+    );
+    return {
+      chips: Math.min(...chips.map((chip) => chip.top)),
+      last: Math.max(...blocks.map((block) => block.getBoundingClientRect().bottom)),
+      view: window.innerHeight,
+    };
+  });
+  expect(end.last).toBeLessThanOrEqual(end.view);
+  expect(end.chips).toBeGreaterThanOrEqual(end.last);
+};
+
 describe("Code page in a browser", () => {
+  test("a page with a form says not to enter passwords, readable at the edge, and the line follows the tree", async () => {
+    for (const width of [1280, 390]) {
+      const { page, errors, close } = await open(width);
+      try {
+        await settled(page);
+        const warning = () =>
+          page.evaluate(() => {
+            const line = document.querySelector<HTMLElement>("[data-code-provenance-warning]")!;
+            const rect = line.getBoundingClientRect();
+            const hit = document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2);
+            const style = getComputedStyle(line);
+            return {
+              shown: style.display !== "none",
+              text: line.innerText.trim(),
+              inView: rect.top >= 0 && rect.bottom <= window.innerHeight && rect.left >= 0 && rect.right <= window.innerWidth,
+              onTop: !!hit && line.contains(hit),
+              oneLine: line.scrollWidth <= line.clientWidth,
+              fontPx: Number.parseFloat(style.fontSize),
+            };
+          });
+        const shown = await warning();
+        expect(shown).toMatchObject({ shown: true, text: "Do not enter passwords here.", inView: true, onTop: true, oneLine: true });
+        expect(shown.fontPx).toBeGreaterThanOrEqual(12);
+        await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight / 2));
+        await settled(page);
+        expect(await warning()).toMatchObject({ shown: true, inView: true, onTop: true });
+        await expectEndClear(page);
+        // A tree without a form takes the line away, with no script of the label's own.
+        await page.evaluate(() => {
+          for (const form of document.querySelectorAll('[data-code-block="Form"]')) form.remove();
+        });
+        expect((await warning()).shown).toBe(false);
+        expect(errors).toEqual([]);
+      } finally {
+        await close();
+      }
+    }
+  }, 60_000);
+
   test("the feat/code label stays outside the page, above it at the bottom edge while scrolling, and explains itself", async () => {
     for (const width of [1280, 390]) {
       const { page, errors, close } = await open(width, { path: "/newsletter" });
@@ -284,17 +344,7 @@ describe("Code page in a browser", () => {
         await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight / 2));
         await settled(page);
         expect(await placement()).toMatchObject({ onTop: true, inView: true });
-        // At the end of the page the label sits below the last panel; it covers none.
-        await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
-        await settled(page);
-        const end = await page.evaluate(() => {
-          const label = document.querySelector("[data-code-provenance] button")!.getBoundingClientRect();
-          const panels = Array.from(
-            document.querySelectorAll("[data-code-page-tree] .k2b-dashboard-frame, [data-code-page-tree] [data-code-block]"),
-          );
-          return { label: label.top, last: Math.max(...panels.map((panel) => panel.getBoundingClientRect().bottom)) };
-        });
-        expect(end.label).toBeGreaterThanOrEqual(end.last);
+        await expectEndClear(page);
         await named.click();
         const note = page.locator("#code-page-provenance-note");
         await note.waitFor({ state: "visible" });

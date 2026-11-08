@@ -286,7 +286,10 @@ Every Code page, with or without the layout, carries a small **Made with
 feat/code** label at the bottom edge. Cloud draws it outside the page, so a page
 cannot hide, move or restyle it. A press on it explains that someone built the
 page with feat/code and warns never to enter passwords or recovery codes there.
-The label does not name the owner.
+While a page has a form, a quiet line beside the label says **Do not enter
+passwords here.** without a press. The label does not name the owner. Fields
+have no password or masked type and no credential autocomplete, so a page
+cannot ask for passwords like a sign-in form.
 
 `{ layout: "plain" }` on a route draws its pages alone, without the layout, for
 a page you hand out. There is no setting for the whole Code; each route

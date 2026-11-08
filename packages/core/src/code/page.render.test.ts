@@ -313,7 +313,7 @@ describe("Code pages in the Cloud layout", () => {
   /** The feat/code label: server markup right after the tree's container, never inside it. */
   const expectLabelOutsideTree = (html: string, madeWith = "Made with") => {
     expect(html).toMatch(/<\/solid-island><\/div><div class="code-page-provenance" data-code-provenance>/);
-    expect(html.match(/data-code-provenance\b/g)).toHaveLength(1);
+    expect(html.match(/data-code-provenance(?![-\w])/g)).toHaveLength(1);
     const label = html.slice(html.indexOf("data-code-provenance"));
     expect(label).toContain(madeWith);
     expect(label).toContain('popovertarget="code-page-provenance-note"');
@@ -408,4 +408,43 @@ test("a page cannot reach the feat/code label: no block accepts a class, style o
   visit(codePageFixture, (next) => next);
   expect(attempts.length).toBeGreaterThan(100);
   for (const attempt of attempts) expect(() => validateCodePage(attempt, "c_page")).toThrow();
+});
+
+test("the no-passwords line shows without a press while a page has a form, and is hidden without one", async () => {
+  const { default: CodePageHost } = await import("./PageHost");
+  const render = (page: typeof tree, locale = "en") =>
+    renderToString(() => createComponent(CodePageHost, { tree: page, codeId: "c_page", csrf: "session-bound", locale, timeZone: "UTC" }));
+  const warning = (html: string) => html.match(/<p class="code-page-provenance__warning[^"]*"[^>]*>/)?.[0];
+  // The fixture has a form inside a section; this page's form sits at the top level.
+  for (const page of [validateCodePage(codePageFixture, "c_page"), tree]) {
+    const html = render(page);
+    expect(warning(html)).toBeDefined();
+    expect(warning(html)).not.toContain("hidden");
+    expect(html).toContain("Do not enter passwords here.");
+  }
+  expect(render(tree, "de")).toContain("Gib hier keine Passwörter ein.");
+  const noForm = validateCodePage({ version: 1, kind: "Page", title: "Plain", children: [{ kind: "Text", text: "Hello" }] }, "c_page");
+  expect(warning(render(noForm))).toContain("hidden");
+});
+
+test("no block asks for a secret: no password or masked field type and no credential autocomplete", () => {
+  const form = (field: Record<string, unknown>) => ({
+    version: 1,
+    kind: "Page",
+    title: "Sign in",
+    children: [{ kind: "Form", title: "Sign in", action: "/in", submit: "Send", fields: [{ name: "secret", label: "Secret", ...field }] }],
+  });
+  for (const type of ["password", "secret", "masked", "hidden", "pin", "otp", "one-time-code"])
+    expect(() => validateCodePage(form({ type }), "c_page")).toThrow();
+  for (const key of ["autocomplete", "autoComplete", "inputmode", "inputMode", "masked", "secret", "sensitive"])
+    for (const value of ["current-password", "new-password", "one-time-code", true])
+      expect(() => validateCodePage(form({ type: "text", [key]: value }), "c_page")).toThrow();
+  // Every field the contract allows renders without a password input or a credential autocomplete.
+  const fields = validateCodePage(codePageFixture, "c_page");
+  const html = renderToString(() =>
+    createComponent(Page, { tree: fields, codeId: "c_page", csrf: "session-bound", locale: "en", timeZone: "UTC" }),
+  );
+  expect(html).toContain("<input");
+  expect(html).not.toMatch(/type="password"/);
+  expect(html).not.toMatch(/autocomplete="(current-password|new-password|one-time-code)"/);
 });
