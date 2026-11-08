@@ -37,6 +37,8 @@ export const chartMessages = i18n.define({
         const labels: Record<string, string> = {
           x: "X",
           y: "Y",
+          previous: "Previous",
+          cumulative: "Cumulative",
           balance: "Balance",
           inflow: "In",
           outflow: "Out",
@@ -120,6 +122,8 @@ export const chartMessages = i18n.define({
         const labels: Record<string, string> = {
           x: "X",
           y: "Y",
+          previous: "Vorher",
+          cumulative: "Kumuliert",
           balance: "Stand",
           inflow: "Rein",
           outflow: "Raus",

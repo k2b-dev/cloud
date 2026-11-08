@@ -191,6 +191,7 @@ export type { StepsProps } from "./Steps";
 export { Steps } from "./Steps";
 export type { StructuredDataPreviewMode, StructuredDataPreviewProps, StructuredDataValue } from "./StructuredDataPreview";
 export { default as StructuredDataPreview, isStructuredDataValue } from "./StructuredDataPreview";
+export { ThumbnailStrip, type ThumbnailStripItem, type ThumbnailStripProps } from "./ThumbnailStrip";
 export type { TimelineColor, TimelineController, TimelineItem, TimelineProps } from "./Timeline";
 export { default as Timeline } from "./Timeline";
 export { VideoPlayer, type VideoPlayerProps } from "./VideoPlayer";

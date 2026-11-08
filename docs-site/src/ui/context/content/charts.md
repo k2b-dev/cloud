@@ -1160,6 +1160,29 @@ A line can add `forecast: {from, band?}` without changing existing saved JSON. T
 
 Use `zero: true` to include zero and tint the area under zero red. `threshold: {value, label}` draws a labelled dashed warning line, and `marker: {at, label}` marks a coordinate such as Today. Labels come from the application; a marker must be inside an explicit `xAxis.domain`. Forecast tooltips keep the existing title and value/error rows and append their lower and upper bounds. `step: "before" | "after"` adds steps; existing smooth and area options remain available. The legend starts at `marker.at` when a marker is present; otherwise it starts at the latest X. Inspection replaces that resting value, with a dash for a missing observation. Both forecast bounds follow the line’s interpolation (`smooth`, straight or explicit steps). Detailed portable lines with ISO dates (or an explicit date format) use UTC calendar ticks over the exact data range; supplied `xAxis.domain` bounds are preserved. The pure renderer accepts the existing `timeAxis: {timeZone, locale?}` option for detailed lines too. Edge date labels point into the plot to stay clear of Y ticks. Ordinary lines retain their existing axis rendering. The threshold label sits in the upper plot margin so the line and band stay clear. Hover, keyboard and tap share the same inspection state. Outlooks keep full number labels readable at phone width.
 
+## Treemap and Pareto
+
+`Chart.Treemap` accepts `groups: string[]` and `data: {label,group,value}[]`.
+Every group exists in `groups`; values are finite and nonnegative. Squarified
+cells preserve value proportions. Color identifies the group and the wrapping
+legend names it (`legend={false}` hides it). Labels and values print only when
+both fit; the tooltip and table keep every item, including zero-valued items.
+
+`Chart.Pareto` accepts `labels: [current, previous]` and
+`data: {label,value,prev}[]`. It ranks current values descending and places a
+category named `Rest` last. Solid bars show current values; hatched bars show
+the previous period. The cumulative line uses the percentage axis below;
+the absolute value axis is above. The dashed 80% line marks concentration.
+Both periods must be nonnegative. A zero previous value or zero total shows
+an undefined percentage as an en dash.
+
+Both kinds support portable number `format`, explicit BCP 47 `locale`, and
+measured `displayWidth` for app frames. Locale overrides the inherited provider.
+Arrows inspect items, Enter selects and Escape dismisses; tap uses the same
+inspector. Hover outlines one treemap cell or adds a quiet Pareto row band.
+Keep the host's fixed content height across loading, empty, error/retry and
+stale-subtitle states. The live chart catalog demonstrates both kinds.
+
 ## Waterfall charts
 
 Use `kind="waterfall"` to explain how ordered changes connect an opening
@@ -1226,6 +1249,8 @@ percentage axis and tooltips.
 The top legend starts with the final column's amount or share and follows the
 inspected column. A missing column (or a zero-sum normalized column) has no inspected values; the
 legend uses a dash when its final column is a gap.
+
+Pareto axis endpoints align inward so full formatted values remain visible in small cards. Treemap text uses one name/value block with fixed line spacing; cells without room for both lines leave the text to inspection.
 
 Waterfall labels and printed amounts follow the drawn container width. Amounts appear when bars are at least 46 CSS pixels wide and the text fits its slot; shrinking to a phone hides them without a hydration redraw.
 

@@ -135,7 +135,22 @@ type Variants<N> =
       format?: ChartNumberFormat;
       thresholds?: Threshold[];
     }
-  | { kind: "stat"; value: N; format?: ChartNumberFormat; unit?: string; delta?: N; better?: "up" | "down"; sparkline?: N[] };
+  | { kind: "stat"; value: N; format?: ChartNumberFormat; unit?: string; delta?: N; better?: "up" | "down"; sparkline?: N[] }
+  | {
+      kind: "treemap";
+      groups: string[];
+      data: { label: string; group: string; value: number }[];
+      legend?: boolean;
+      format?: ChartNumberFormat;
+      locale?: string;
+    }
+  | {
+      kind: "pareto";
+      labels: [string, string];
+      data: { label: string; value: number; prev: number }[];
+      format?: ChartNumberFormat;
+      locale?: string;
+    };
 
 /** Portable chart node. Dates are ISO text and missing observations are null, never zero. */
 export type ChartDescription = Common &

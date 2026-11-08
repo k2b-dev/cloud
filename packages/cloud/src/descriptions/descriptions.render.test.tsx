@@ -172,3 +172,32 @@ test("the empty form is explicit and strict: any other field, an unknown kind or
   expect(resolveDescription({ kind: "line", title: " " }).mode).toBe("slot");
   expect(resolveDescription({ kind: "map", title: "Shops", empty: "No shop yet." }).mode).toBe("empty");
 });
+
+test("key figures keep the money tones in and out and drop unknown tones", () => {
+  const spec = {
+    block: "stats",
+    items: [
+      { label: "In, October", value: 29260, icon: "ti ti-arrow-down-left", tone: "in" },
+      { label: "Out, October", value: 29520, icon: "ti ti-arrow-up-right", tone: "out" },
+      { label: "Balance", value: 21140, icon: "ti ti-building-bank", tone: "purple-ish" },
+    ],
+  };
+  const tones = [...panel({ spec, title: "Key figures", height: 0 }).matchAll(/k2b-stat-cell__icon[^"]*" data-tone="([^"]+)"/g)].map(
+    (match) => match[1],
+  );
+  expect(tones).toEqual(["in", "out", "zinc"]);
+});
+
+test("a key figure without a value shows the empty dash with its name, in the reader's language", () => {
+  const spec = { block: "stats", items: [{ label: "Subscribers", value: null }] };
+  const html = panel({ spec, title: "Key figures", height: 0 });
+  expect(html).toMatch(/role="img" aria-label="No value"[^>]*>—</);
+  expect(panel({ spec, title: "Key figures", height: 0 }, "de")).toContain('aria-label="Kein Wert"');
+});
+
+test("a table keeps the panel's height and scrolls inside it; height 0 lets the rows set it", () => {
+  const spec = { block: "table", title: "Payments", columns: [{ id: "due", label: "Due", type: "date" }], rows: [{ due: "2026-11-03" }] };
+  expect(panel({ spec, title: "Payments", height: 260 })).toMatch(/k2b-dashboard-frame__stack" data-height="" style="height:260px"/);
+  expect(panel({ spec, title: "Payments", height: "var(--panel)" })).toContain('style="height:var(--panel)"');
+  expect(panel({ spec, title: "Payments", height: 0 })).not.toContain("data-height");
+});

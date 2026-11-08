@@ -488,27 +488,73 @@ for (const width of [1200, 390])
       // An ordinary line draws eagerly and does not execute the offline plugin.
       await app(page).locator("#draw").click();
       await app(page).locator('[data-chart-kind="line"] svg').waitFor();
-      expect(await app(page).locator("[data-chart-pending]").count()).toBe(0);
-      expect(
-        await app(page)
-          .locator("body")
-          .evaluate(() => Reflect.get(globalThis, "__chartLoads") ?? 0),
-      ).toBe(0);
+      // Read each phase together; remote browser transport counts against the same case deadline.
+      const initial = await app(page)
+        .locator("body")
+        .evaluate(() => ({
+          pending: document.querySelectorAll("[data-chart-pending]").length,
+          loads: Reflect.get(globalThis, "__chartLoads") ?? 0,
+        }));
+      expect(initial.pending).toBe(0);
+      expect(initial.loads).toBe(0);
       await app(page).locator("#details").click();
       await app(page).locator("html[data-chart-module-loading]").waitFor();
       await settled(page);
-      const pending = await boxes(page);
-      await release(page);
+      const pending = await app(page)
+        .locator("#charts")
+        .evaluate((element) => {
+          const box = {
+            height: element.getBoundingClientRect().height,
+            after: document.querySelector("#after")!.getBoundingClientRect().top,
+          };
+          delete document.documentElement.dataset.chartModuleLoading;
+          Reflect.get(globalThis, "__releaseCharts")();
+          return box;
+        });
       await app(page).locator(".k2b-line-forecast-band").first().waitFor();
       await settled(page);
-      expect(await boxes(page)).toEqual(pending);
-      expect(await app(page).locator("[data-chart-pending]").count()).toBe(0);
-      expect(
-        await app(page)
-          .locator("body")
-          .evaluate(() => Reflect.get(globalThis, "__chartLoads")),
-      ).toBe(1);
+      const rendered = await app(page)
+        .locator("#charts")
+        .evaluate((element) => ({
+          box: { height: element.getBoundingClientRect().height, after: document.querySelector("#after")!.getBoundingClientRect().top },
+          pending: element.querySelectorAll("[data-chart-pending]").length,
+          loads: Reflect.get(globalThis, "__chartLoads"),
+        }));
+      expect(rendered.box).toEqual(pending);
+      expect(rendered.pending).toBe(0);
+      expect(rendered.loads).toBe(1);
       expect(requests).toEqual([]);
+    } finally {
+      await context.close();
+    }
+  });
+
+// Each added renderer also crosses the real offline first-use boundary.
+const addedSpecs = [
+  { kind: "treemap", groups: ["North"], data: [{ label: "A", group: "North", value: 42 }] },
+  { kind: "pareto", labels: ["Now", "Before"], data: [{ label: "A", value: 42, prev: 32 }] },
+];
+for (const width of [1200, 390])
+  test(`added rare charts reserve their real frame boxes, ${width}px`, async () => {
+    const script = `document.querySelector("#draw").addEventListener("click",()=>{
+      const specs=${JSON.stringify(addedSpecs)};
+      document.querySelector("#charts").innerHTML=specs.map(spec=>'<section class="card">'+cloud.chart(spec)+'</section>').join("");
+    });`;
+    const { page, context, requests } = await open(width, delayed + assets.chartModule, "light", script);
+    const errors = pageErrors(page);
+    try {
+      await app(page).locator("#draw").click();
+      await app(page).locator("html[data-chart-module-loading]").waitFor();
+      await settled(page);
+      const loading = await boxes(page);
+      await release(page);
+      for (const spec of addedSpecs) await app(page).locator(`[data-chart-kind="${spec.kind}"] svg`).waitFor();
+      await settled(page);
+      expect(await boxes(page)).toEqual(loading);
+      expect(await app(page).locator("[data-chart-pending]").count()).toBe(0);
+      expect(await app(page).locator(".k2b-chart__table").count()).toBe(addedSpecs.length);
+      expect(requests).toEqual([]);
+      expect(errors).toEqual([]);
     } finally {
       await context.close();
     }

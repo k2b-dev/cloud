@@ -204,7 +204,7 @@ export const newsletterDashboard: ShowcaseDashboard = {
           id: "campaign-table",
           intended: "Table",
           width: "full",
-          height: 260,
+          height: 300,
           empty: "No campaign in this period.",
           spec: {
             block: "table",
