@@ -83,6 +83,7 @@ const draft: MailDraft = {
   requestDeliveryReceipt: false,
   requestReadReceipt: false,
   attachments: [],
+  suggestion: false,
   createdBy: { kind: "user", userId: user.id },
   lastEditedBy: { kind: "user", userId: user.id },
   lastEditedByDisplayName: "Test Writer",

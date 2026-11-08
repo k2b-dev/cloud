@@ -13,6 +13,7 @@ import { err, fail, ok, type Result } from "@k2b/stdlib";
 import { ConflictError } from "@k2b/sync";
 import * as Y from "yjs";
 import { actorRefFromRequest, type MailRequestContext } from "./auth";
+import { requireDraftContentWrite } from "./draft-adoption";
 import { type DraftDocumentSave, lockDraftDocumentInTransaction, mailDraftDocumentLog } from "./draft-documents";
 
 export type DraftTableActionResponse = {
@@ -49,6 +50,8 @@ export const applyDraftTableAction = async (params: {
     return await sql.begin(async (db) => {
       const locked = await lockDraftDocumentInTransaction({ ...params, db });
       if (!locked.ok) return locked;
+      const writable = await requireDraftContentWrite({ db, context: params.context, draftId: params.draftId, signal: params.signal });
+      if (!writable.ok) return writable;
       if (locked.data.generation !== params.generation)
         return fail(err.conflict("Draft generation changed; reopen before editing the table"));
       const current = await locked.data.read();

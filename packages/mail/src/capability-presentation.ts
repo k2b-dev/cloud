@@ -667,7 +667,8 @@ export const mailCapabilityPresentation: CapabilityPresentationCatalog = {
         },
         "draft.create": {
           title: "Entwurf erstellen",
-          description: "Erstellen Sie einen idempotenten, bearbeitbaren E-Mail-Entwurf mit einem optionalen kleinen Inline-Anhang.",
+          description:
+            "Erstellen Sie einen idempotenten, bearbeitbaren E-Mail-Entwurf mit einem optionalen kleinen Inline-Anhang. Für Gustav und andere Dienstkonten ist dies ein Vorschlag, den Personen in der Unterhaltung sehen. Nach der ersten Bearbeitung durch eine Person darf Gustav ihn nur noch auf deren Wunsch ändern. Pro Unterhaltung gibt es höchstens einen unberührten Vorschlag; ein weiterer Aufruf gibt ihn zurück.",
           input: {
             mailboxId: "Exaktes mail.mailbox ID, das von Listenpostfächern oder einem eingegebenen Postfach ref zurückgegeben wird.",
             senderIdentityId: "Verifizierte Absenderidentität ID.",

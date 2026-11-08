@@ -28,6 +28,7 @@ const draft: MailDraft = {
   requestDeliveryReceipt: false,
   requestReadReceipt: false,
   attachments: [],
+  suggestion: false,
   createdBy: { kind: "user", userId: "Usr001" },
   lastEditedBy: { kind: "user", userId: "Usr001" },
   lastEditedByDisplayName: "Ada Example",
