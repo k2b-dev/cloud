@@ -1030,6 +1030,8 @@ test("stats accept ratio or points changes with comparison values and reject con
   expect(view?.view).toBe("stats");
   if (view?.view !== "stats") throw new Error("Invalid stats");
   expect(cloudAiStatsTiles(view, "en")[0]?.delta).toEqual({ text: "+3.1 pts", direction: "up", tone: "better" });
+  expect(cloudAiStatsTiles(view, "de-DE")[0]?.delta?.text).toBe("+3,1 Pkt.");
+  expect(cloudAiStatsTiles(view, "fr-FR")[0]?.delta?.text).toBe("+3,1 pts");
   expect(cloudAiViewSummary(view)).toMatchObject({ items: [{ compare: true, delta: true }] });
   expect(parseCloudAiView({ ...fixture, items: [{ ...fixture.items[0], better: "down" }] })).toBeUndefined();
   expect(

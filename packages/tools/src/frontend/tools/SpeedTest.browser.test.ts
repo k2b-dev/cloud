@@ -62,13 +62,13 @@ test("speed test sparklines name the metric and show each sample with its unit",
     const before = await page.locator("main").boundingBox();
     await page.locator(download).focus();
     await page.keyboard.press("Home");
-    expect(await tooltipText(page, download)).toBe("Download: 94 Mbps");
+    expect(await tooltipText(page, download)).toBe("Download: 94,1 Mbps");
     // The tooltip floats over the card; the readings keep their place.
     expect(await page.locator("main").boundingBox()).toEqual(before);
     await page.keyboard.press("Escape");
 
     await page.locator(ping).hover({ position: { x: 1, y: 10 } });
-    expect(await tooltipText(page, ping)).toBe("Ping: 8,3 ms");
+    expect(await tooltipText(page, ping)).toBe("Ping: 8,26 ms");
   } finally {
     await page.close();
   }
@@ -80,7 +80,7 @@ test("a tap on a phone shows the sample in the reader's locale", async () => {
     await open(page, "en");
     const ping = '#ping [data-chart-kind="sparkline"]';
     await page.locator(ping).tap({ position: { x: 1, y: 10 } });
-    expect(await tooltipText(page, ping)).toBe("Ping: 8.3 ms");
+    expect(await tooltipText(page, ping)).toBe("Ping: 8.26 ms");
   } finally {
     await page.close();
   }

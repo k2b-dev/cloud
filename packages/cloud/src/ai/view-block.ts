@@ -10,6 +10,7 @@ import {
   chartSteppingIssue,
   cloudAiNumberFormatters,
 } from "./chart-block";
+import { aiChatMessages } from "./chat/messages";
 import {
   CLOUD_AI_CHART_MAX_SERIES,
   CLOUD_AI_CHART_MAX_VALUES,
@@ -60,6 +61,11 @@ const cellIssue = (
     return type === "date" ? "Expected a valid YYYY-MM-DD date or null." : "Expected a valid wall-clock datetime or null.";
   return undefined;
 };
+/** Function-free money blocks shared by SQL dashboards and declarative Cloud consumers. */
+export type CloudMoneyDescription =
+  | { block: "budget"; currency: string; items: { label: string; used: number; expected?: number; limit: number }[] }
+  | { block: "balance"; currency: string; start: number; in: number; out: number };
+
 const statsViewSchema = () =>
   z.strictObject({
     view: z.literal("stats"),
@@ -742,7 +748,7 @@ export function cloudAiStatsTiles(
                 typeof item.delta === "number" || item.delta.unit === "absolute"
                   ? `${delta! > 0 ? "+" : ""}${format(delta === 0 ? 0 : delta!)}`
                   : item.delta.unit === "points"
-                    ? `${new Intl.NumberFormat(locale, { signDisplay: "exceptZero", minimumFractionDigits: 1, maximumFractionDigits: 1 }).format(delta! * 100)} ${locale.startsWith("de") ? "Pkt." : "pts"}`
+                    ? `${new Intl.NumberFormat(locale, { signDisplay: "exceptZero", minimumFractionDigits: 1, maximumFractionDigits: 1 }).format(delta! * 100)} ${aiChatMessages(locale).statsPoints}`
                     : new Intl.NumberFormat(locale, {
                         style: "percent",
                         signDisplay: "exceptZero",

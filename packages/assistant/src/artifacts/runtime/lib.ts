@@ -25,6 +25,7 @@ import {
   renderBarChartSvg,
   sparkline,
   stat,
+  waterfallLayout,
 } from "@k2b/ui/charts/core";
 import type { ChartDrawing } from "./chart-renderer-types";
 import { deferChartDrawing, loadChartRenderer, rareChartSvg } from "./chart-renderers-rare";
@@ -110,6 +111,7 @@ function drawChart(
       common.hbar = hbarLayout({ ...mapped, ...common }, { width, height });
       common.height = common.hbar.height;
     }
+    if (mapped.kind === "waterfall") common.waterfall = waterfallLayout({ ...mapped, ...common }, common);
     let svg: string | undefined;
     switch (mapped.kind) {
       case "bar": {

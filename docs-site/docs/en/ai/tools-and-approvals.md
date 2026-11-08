@@ -199,6 +199,7 @@ of points.
 | --- | --- |
 | `bar` | `data: [{label, value}]`; `xAxis: {label}` (category title), `yAxis`, `colorByBar`, `showValues`, `legend`, `references` |
 | `line`, `scatter` | `series: [{label?, data: [{x, y}], role?}]`; `xAxis`, `yAxis`, `legend`, `references`. Line also accepts `area`, `smooth` and series `style`. |
+| `waterfall` | `start: {label, value}`, `steps: [{label, value}]`, `end: {label}`. Positive steps are inflows, negative steps outflows; the closing balance is calculated. `format`. |
 | `area` | `layout: "stacked"`, ordered `x: (string | number)[]`, `series: [{label, data: (number | null)[]}]`; equal lengths, nonnegative values. `normalize: true` shows 100 %; tooltip retains share and amount. Nulls interrupt the stack; a zero total is a gap only in normalized mode. `legend`, `format`. |
 | `pie`, `donut` | `data: [{label, value}]`; `legend`, `showLabels`, `format` |
 | `histogram` | `data: number[]`; `bins` (count or ascending edges), `references` |

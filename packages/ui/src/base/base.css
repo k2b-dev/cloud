@@ -1017,7 +1017,7 @@
   }
 
   .k2b-chart-category-band { stroke: none; }
-  .k2b-chart [data-inspected] > .k2b-chart-category-band { fill: color-mix(in srgb, currentColor 5%, transparent); }
+  .k2b-chart [data-inspected] > .k2b-chart-category-band[fill="none"] { fill: color-mix(in srgb, currentColor 5%, transparent); }
   .stdlib-chart .k2b-chart-group-heading { font-size: 11.5px; font-weight: 600; opacity: 1; }
   .stdlib-chart .k2b-chart-segment-value { font-size: 11px; font-weight: 500; fill: currentColor; opacity: 1; }
 
@@ -1128,8 +1128,8 @@
   .k2b-chart:focus-visible [data-inspected]:not([data-selected]) > .k2b-chart-previous > rect { stroke: var(--k2b-chart-inspection-color); stroke-width: 1.5px; }
 
   /* Pointer hover paints the band instead of outlining every segment. */
-  .k2b-chart:not(:focus-visible):has(.k2b-chart-category-band) [data-inspected]:not([data-selected]) > :is(rect,path,circle):not(.k2b-chart-category-band),
-  .k2b-chart:not(:focus-visible):has(.k2b-chart-category-band) [data-inspected]:not([data-selected]) > .k2b-chart-previous > rect { stroke: none; }
+  .k2b-chart:not(:focus-visible):has(svg[data-bar-layout] .k2b-chart-category-band) [data-inspected]:not([data-selected]) > :is(rect,path,circle):not(.k2b-chart-category-band),
+  .k2b-chart:not(:focus-visible):has(svg[data-bar-layout] .k2b-chart-category-band) [data-inspected]:not([data-selected]) > .k2b-chart-previous > rect { stroke: none; }
 
   .k2b-chart [data-inspected] > .stdlib-chart-inspection-point {
     fill: var(--k2b-chart-inspection-color);
@@ -1331,6 +1331,16 @@
       padding-block: 0.25rem;
     }
   }
+}
+
+/* Category hover paints only the band; keyboard and selection outline marks. */
+@layer k2b-base {
+.k2b-chart[data-chart-kind="waterfall"] :is([data-inspected], [data-selected]) > .k2b-chart-category-band { fill-opacity: .05; stroke: none; }
+.k2b-chart[data-chart-kind="waterfall"] [data-inspected="hover"]:not([data-selected]) > .k2b-waterfall-bar { stroke: none; }
+}
+
+@layer k2b-base {
+.k2b-chart[data-chart-kind="waterfall"] .k2b-waterfall-value { font-weight: 600; fill: var(--k2b-text-secondary, #52525b); }
 }
 
 @layer k2b-base {

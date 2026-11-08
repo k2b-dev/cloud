@@ -12,6 +12,10 @@ test("normal mounts omit app checks and stay within the prelude budget", async (
   // Keep main’s offline module budget while adding horizontal bars.
   expect(Buffer.byteLength(rare)).toBeLessThan(53_000);
   expect(rare).toContain("k2b-area-layer");
+  expect(normal).not.toContain("k2b-waterfall-bar");
+  expect(rare).toContain("k2b-waterfall-bar");
+  expect(normal).toContain("Waterfall balances must be finite");
+  expect(rare).not.toContain("Waterfall balances must be finite");
   expect(normal).not.toContain("data-calendar-weekdays");
   expect(rare).toContain("data-calendar-weekdays");
   // The blob must be self-contained: no module can fetch a dependency on first use.

@@ -26,6 +26,21 @@ const examples = {
       ],
     },
   },
+  waterfall: {
+    description: "Waterfall · Follow each inflow and outflow from the opening to the closing balance.",
+    chart: {
+      kind: "waterfall",
+      start: { label: "Opening", value: 18800 },
+      steps: [
+        { label: "Sales", value: 29260 },
+        { label: "Stock", value: -14800 },
+        { label: "Payroll", value: -9600 },
+        { label: "Rent", value: -3200 },
+        { label: "Other", value: -1920 },
+      ],
+      end: { label: "Closing" },
+    },
+  },
   area: {
     description: "Area · Compare recurring and one-off sales as shares of each month's total.",
     chart: {
@@ -279,6 +294,10 @@ type TooltipExample = { title: string; fields: Record<string, TooltipField> };
 
 const tooltipExamples: Record<ChartKind, TooltipExample> = {
   hbar: { title: "Quarterly orders", fields: { Q1: { label: "Q1" }, Q2: { label: "Q2" }, total: { label: "Total" } } },
+  waterfall: {
+    title: "Running balance",
+    fields: { balance: { label: "Balance" }, inflow: { label: "In" }, outflow: { label: "Out" }, after: { label: "Balance after" } },
+  },
   area: { title: "Sales mix", fields: { value: { label: "Sales" }, percent: { label: "Share", unit: "%" } } },
   line: {
     title: "Request rate",

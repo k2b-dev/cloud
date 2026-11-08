@@ -486,3 +486,37 @@ for (const width of [1920, 390])
       await page.close();
     }
   });
+
+test("bar hover styles preserve waterfall band paint in scoped and base hosts", async () => {
+  const page = await browser.newPage();
+  const errors = pageErrors(page);
+  try {
+    const base = await Bun.file(resolve(import.meta.dir, "../base/base.css")).text();
+    const svg = renderChartSvg(
+      { kind: "waterfall", start: { label: "Opening", value: 100 }, steps: [{ label: "Sales", value: 40 }], end: { label: "Closing" } },
+      480,
+      280,
+    );
+    for (const scoped of [true, false]) {
+      await page.setContent(
+        `<style>${scoped ? css : base}</style><main class="${scoped ? "k2b-ui" : ""}"><div class="k2b-chart" data-chart-kind="waterfall" style="color:rgb(18,52,86)">${svg}</div></main>`,
+      );
+      await page
+        .locator("[data-chart-datum]")
+        .first()
+        .evaluate((node) => node.setAttribute("data-inspected", "hover"));
+      await settled(page);
+      const paint = await page
+        .locator(".k2b-chart-category-band")
+        .first()
+        .evaluate((node) => {
+          const style = getComputedStyle(node);
+          return { fill: style.fill, opacity: style.fillOpacity, stroke: style.stroke };
+        });
+      expect(paint).toEqual({ fill: "rgb(18, 52, 86)", opacity: "0.05", stroke: "none" });
+    }
+    expect(errors).toEqual([]);
+  } finally {
+    await page.close();
+  }
+});

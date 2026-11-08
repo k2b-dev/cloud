@@ -26,9 +26,11 @@ import {
   renderBarChartSvg,
   renderHbarSvg,
   renderHeatmapSvg,
+  renderWaterfallSvg,
   scatter,
   sparkline,
   stat,
+  type WaterfallOptions,
 } from "@k2b/ui/charts/core";
 import { z } from "zod";
 import { type ChartFormat, type ChartInput, type ChartNumberFormat, chartDateTime, chartKinds } from "./chart-schema";
@@ -38,15 +40,17 @@ export * from "./chart-schema";
 type RenderOptions = {
   [K in ChartInput["kind"]]: { kind: K } & (K extends "hbar"
     ? HorizontalBarOptions
-    : K extends "area"
-      ? AreaOptions
-      : K extends "heatmap"
-        ? HeatmapChartOptions
-        : K extends "bar"
-          ? BarChartOptions & { data: NonNullable<BarChartOptions["data"]> }
-          : K extends keyof typeof charts
-            ? Omit<Parameters<(typeof charts)[K]>[0], "width" | "height" | "inspect">
-            : never);
+    : K extends "waterfall"
+      ? WaterfallOptions
+      : K extends "area"
+        ? AreaOptions
+        : K extends "heatmap"
+          ? HeatmapChartOptions
+          : K extends "bar"
+            ? BarChartOptions & { data: NonNullable<BarChartOptions["data"]> }
+            : K extends keyof typeof charts
+              ? Omit<Parameters<(typeof charts)[K]>[0], "width" | "height" | "inspect">
+              : never);
 }[ChartInput["kind"]];
 
 /**
@@ -62,6 +66,11 @@ const labels = /* @__PURE__ */ i18n.define({
     en: {
       category: "Category",
       series: "Series",
+      balance: "Balance",
+      before: "Balance before",
+      inflow: "In",
+      outflow: "Out",
+      after: "Balance after",
       value: "Value",
       total: "Total",
       share: "Share",
@@ -81,6 +90,11 @@ const labels = /* @__PURE__ */ i18n.define({
     de: {
       category: "Kategorie",
       series: "Datenreihe",
+      balance: "Stand",
+      before: "Stand davor",
+      inflow: "Rein",
+      outflow: "Raus",
+      after: "Stand danach",
       value: "Wert",
       total: "Gesamt",
       share: "Anteil",
@@ -265,6 +279,8 @@ const numberFormat = (format: ChartFormat | undefined) => (format && !("date" in
 /** The values a chart writes with its value format, for whole-number currency. */
 const formattedValues = (input: ChartInput): number[] => {
   switch (input.kind) {
+    case "waterfall":
+      return [input.start.value, ...input.steps.map((step) => step.value)];
     case "area":
       return input.series.flatMap((s) => s.data.filter((v): v is number => v !== null));
     case "line":
@@ -403,6 +419,16 @@ export function chartRenderOptions(
         rows: input.rows,
         legend: input.legend,
         valueFormat: format.value,
+      };
+    case "waterfall":
+      return {
+        kind: "waterfall",
+        start: input.start,
+        steps: input.steps,
+        end: input.end,
+        displayWidth: options.width ?? 296,
+        locale,
+        format: format.value,
       };
     case "area":
       return {
@@ -590,6 +616,8 @@ export const drawChart = (options: RenderOptions): string => {
   switch (options.kind) {
     case "hbar":
       return renderHbarSvg({ ...options, ...common, height: hbarLayout(options).height });
+    case "waterfall":
+      return renderWaterfallSvg({ ...options, ...common });
     case "area":
       return renderAreaSvg({ ...options, ...common });
     case "bar":
@@ -639,7 +667,12 @@ export const chartMarkKey = (datum: Pick<ChartDatum, "index" | "seriesIndex"> & 
   `${datum.role === "outlier" ? "outlier:" : datum.role === "value" ? "value:" : ""}${datum.seriesIndex ?? 0}:${datum.index}`;
 
 export type ChartColumn = { id: string; label: string; numeric: boolean };
-export type ChartRow = { key: string; cells: Record<string, string>; values: Record<string, string | number> };
+export type ChartRow = {
+  key: string;
+  cells: Record<string, string>;
+  values: Record<string, string | number>;
+  tooltip?: { title?: string; rows: { label: string; value: string }[] };
+};
 export type ChartTable = { columns: ChartColumn[]; rows: ChartRow[] };
 
 /** The first text column titles the tooltip; the other columns become rows, matching the table in every host. */
@@ -648,6 +681,7 @@ export function chartTooltip(
   row: ChartRow,
   kind?: ChartInput["kind"],
 ): { title?: string; rows: { label: string; value: string }[] } {
+  if (row.tooltip) return row.tooltip;
   if (kind === "area")
     return {
       title: row.cells.x,
@@ -689,8 +723,19 @@ export function chartRows(
   const unit = "unit" in input && input.unit ? ` ${input.unit}` : "";
   const columns = new Map<string, ChartColumn>();
   const rows: ChartRow[] = [];
+  if (input.kind === "waterfall") {
+    for (const [id, label, numeric] of [
+      ["label", t.category, false],
+      ["before", t.before, true],
+      ["inflow", t.inflow, true],
+      ["outflow", t.outflow, true],
+      ["after", t.after, true],
+    ] as const)
+      columns.set(id, { id, label, numeric });
+  }
   const named = series.some((entry) => entry.label);
   const add = (datum: ChartDatum): ChartRow => {
+    const tooltip = input.kind === "waterfall" ? { title: datum.label, rows: [] as { label: string; value: string }[] } : undefined;
     const cells: Record<string, string> = {};
     const values: Record<string, string | number> = {};
     const cell = (id: string, label: string, value: string | number, text: string) => {
@@ -743,7 +788,26 @@ export function chartRows(
         continue;
       }
       if (typeof value !== "number" || field.key === "total") continue;
-      if (field.key === "x") {
+      if (input.kind === "waterfall" && ["balance", "before", "inflow", "outflow", "change", "after"].includes(field.key)) {
+        const label =
+          field.key === "balance"
+            ? t.balance
+            : field.key === "before"
+              ? t.before
+              : field.key === "inflow"
+                ? t.inflow
+                : field.key === "outflow"
+                  ? t.outflow
+                  : field.key === "after"
+                    ? t.after
+                    : t.delta;
+        const arrow = field.key === "inflow" ? "↙ " : field.key === "outflow" ? "↗ " : field.key === "change" ? "= " : "";
+        const text = `${arrow}${valueFormat(field.key === "inflow" || field.key === "outflow" ? Math.abs(value) : value)}`;
+        // Totals occupy the ending balance column; zero changes are neutral inflows.
+        const id = field.key === "balance" ? "after" : field.key === "change" ? "inflow" : field.key;
+        cell(id, label, value, text);
+        if (field.key !== "before") tooltip?.rows.push({ label, value: text });
+      } else if (field.key === "x") {
         const header =
           (input.kind === "line" || input.kind === "scatter" ? input.xAxis?.label : undefined) ??
           (input.kind === "area" ? t.position : "X");
@@ -792,7 +856,7 @@ export function chartRows(
         cell(field.key, t[field.key], value, `${fieldFormat(value)}${field.key === "min" || field.key === "max" ? unit : ""}`);
       }
     }
-    const row = { key: chartMarkKey(datum), cells, values };
+    const row = { key: chartMarkKey(datum), cells, values, ...(tooltip ? { tooltip } : {}) };
     rows.push(row);
     return row;
   };
@@ -809,6 +873,8 @@ export function chartTable(input: ChartInput, locale: string): ChartTable {
 /** Input values count against the budget, including observations summarized into boxes or bins. */
 export const chartMarks = (input: ChartInput): number => {
   switch (input.kind) {
+    case "waterfall":
+      return input.steps.length + 2;
     case "area":
       return input.series.reduce((sum, s) => sum + s.data.length, 0);
     case "line":

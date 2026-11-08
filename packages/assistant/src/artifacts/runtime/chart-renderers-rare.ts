@@ -1,7 +1,17 @@
 // One exhaustive kind-switch. Import this module only from lib.ts: the frame
 // build replaces that exact specifier and ships the real module separately.
 // Scripts and PDF workers get the real renderers synchronously through lib.ts.
-import { barGauge, boxplot, gauge, histogram, renderAreaSvg, renderHbarLayoutSvg, renderHeatmapSvg, scatter } from "@k2b/ui/charts/core";
+import {
+  barGauge,
+  boxplot,
+  gauge,
+  histogram,
+  renderAreaSvg,
+  renderHbarLayoutSvg,
+  renderHeatmapSvg,
+  renderWaterfallLayoutSvg,
+  scatter,
+} from "@k2b/ui/charts/core";
 import type { RareChartRenderer } from "./chart-renderer-types";
 
 export const rareChartSvg: RareChartRenderer = (mapped, common) => {
@@ -9,6 +19,9 @@ export const rareChartSvg: RareChartRenderer = (mapped, common) => {
     case "hbar":
       if (!common.hbar) throw new Error("Missing hbar layout");
       return renderHbarLayoutSvg({ ...mapped, ...common }, common.hbar);
+    case "waterfall":
+      if (!common.waterfall) throw new Error("Missing waterfall layout");
+      return renderWaterfallLayoutSvg({ ...mapped, ...common }, common.waterfall);
     case "area":
       return renderAreaSvg({ ...mapped, ...common });
     case "scatter":

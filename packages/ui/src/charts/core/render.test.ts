@@ -3,6 +3,7 @@ import { hbarLayout, renderHbarLayoutSvg, renderHbarSvg } from "./hbar";
 import { type ChartRenderOptions, chartRenderHeight, renderChartSvg } from "./render";
 import { prepareChartSnapshot } from "./snapshot";
 import { barGauge } from "./svg";
+import { renderWaterfallLayoutSvg, renderWaterfallSvg, waterfallLayout } from "./waterfall";
 
 test("bar gauge content height is opt-in and follows rows and headers", () => {
   for (const count of [0, 1, 3, 12]) {
@@ -73,4 +74,35 @@ test("lazy horizontal drawing reuses its reserved geometry without changing SVG"
       }
     }
   }
+});
+
+test("prepared waterfall geometry renders byte-identically across hosts", () => {
+  const digest = new Bun.CryptoHasher("sha256");
+  for (const width of [296, 480, 900]) {
+    for (const responsive of [true, false]) {
+      for (const locale of ["en", "de"]) {
+        const spec = {
+          start: { label: "Opening balance", value: -100 },
+          steps: [
+            { label: "Sales", value: 240 },
+            { label: "Expenses", value: -50 },
+            { label: "No change", value: 0 },
+          ],
+          end: { label: "Closing balance" },
+          title: "Invented cash flow",
+          subtitle: "Fictional values",
+          locale,
+          width,
+          height: 280,
+          inspect: true,
+        };
+        const geometry = waterfallLayout(spec, spec);
+        const svg = renderWaterfallSvg(spec, responsive);
+        expect(renderWaterfallLayoutSvg(spec, geometry, responsive)).toBe(svg);
+        digest.update(svg);
+      }
+    }
+  }
+  // Captured from main before splitting its renderer; keep all SVG bytes unchanged.
+  expect(digest.digest("hex")).toBe("0a019d05056573a8f5caeb65984186d5aa6a5c8b354e8f08f1804bcc37898532");
 });
