@@ -39,6 +39,10 @@ const ALLOWED_RENDERERS = new Map([
   ["packages/editor/src/charts.ts", "Reads SVG marks for validation and tables; the SVG never reaches the DOM."],
 ]);
 
+// These raw parts share the dispatcher's inspection contract: cloud.chart()
+// passes inspect: true and the frame enhances SVG; scripts/PDFs stay inert.
+const APP_CHART_KIND = /^packages\/assistant\/src\/chat-code\/runtime\/chart-kind-[a-z][a-zA-Z0-9-]*\.ts$/;
+
 const skipped = (file: string): boolean =>
   isTestFile(file) || /\.browser-(?:harness|fixture|suite)\.tsx?$/.test(file) || /^packages\/[^/]+\/fixture\//.test(file);
 
@@ -294,7 +298,8 @@ export const rule: Rule = {
       if (skipped(path) || (!pkg && !path.startsWith("docs-site/src/"))) continue;
       const text = readFileSync(file, "utf8");
       if (pkg) apps.get(pkg)?.set(file, text);
-      if (ALLOWED_RENDERERS.has(path) || (!text.includes("@k2b/stdlib") && !text.includes("@k2b/ui/charts"))) continue;
+      if (ALLOWED_RENDERERS.has(path) || APP_CHART_KIND.test(path) || (!text.includes("@k2b/stdlib") && !text.includes("@k2b/ui/charts")))
+        continue;
       const source = parse(file, text);
       rawRenderers(source, (node, name) => {
         findings.push({

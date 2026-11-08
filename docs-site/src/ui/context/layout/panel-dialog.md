@@ -168,6 +168,24 @@ the edge on its own frame.
 </PanelDialog>
 ```
 
+## Picture and video
+
+Set `media` when the body shows one picture or one video, such as a file
+preview. The body then reaches the dialog's edges on the muted canvas, and the
+header floats over it as glass chips (`k2b-overlay-surface`): the title and
+subtitle in one chip, the actions in a group, and the close button. The
+header's `icon` is left out. A long title fades out at its end, and the subtitle
+gives way first; on a phone the chip shows the title only. Leave `media` off for
+documents, text, tables, and forms: text under glass reads as a rendering
+fault.
+
+```tsx
+<PanelDialog media={kind === "image" || kind === "video"}>
+  <PanelDialog.Header title={file.name} subtitle={facts} actions={actions} close={() => close()} />
+  <PanelDialog.Body>{preview}</PanelDialog.Body>
+</PanelDialog>
+```
+
 ## Close ownership
 
 Header and footer sit flat on the dialog surface: no grey band and no divider
@@ -211,7 +229,7 @@ type PanelDialogSurface = "contained" | "floating";
 type DialogTone = "success" | "warning" | "danger";
 
 type PanelDialogProps = {
-  children: JSX.Element; surface?: PanelDialogSurface; tone?: DialogTone;
+  children: JSX.Element; surface?: PanelDialogSurface; tone?: DialogTone; media?: boolean;
 };
 
 type PanelDialogHeaderProps = {

@@ -361,6 +361,9 @@ export const coreCapabilityPresentation: CapabilityPresentationCatalog = {
           description:
             "Direkter Cross-Chat-Eintrag zum Auffinden von Cloud-Ressourcen, die zuvor in aktiven AI-Konversationen verwendet wurden. Zurückgegebene refs können an die jeweiligen App-Reader weitergegeben werden; Verwenden Sie ai.chat.resources, wenn ein Chat bereits bekannt ist.",
           input: {
+            place: "Nur Chats an diesem genauen Ort durchsuchen. Ohne Angabe werden Orts-Chats ausgelassen.",
+            "place.type": "Namespace-Ressourcentyp des Orts.",
+            "place.id": "Stabile App-eigene Kennung des Orts.",
             query: "Optionaler Filter für Titel, Typ oder lesbare Ressource ID.",
             limit: "Maximale Anzahl der zurückzugebenden Ressourcen refs.",
             cursor: "Undurchsichtiger Cursor, der von der vorherigen Ressourcenseite zurückgegeben wurde.",
@@ -371,6 +374,9 @@ export const coreCapabilityPresentation: CapabilityPresentationCatalog = {
           description:
             "Normaler Eintrag zum Suchen der AI-Konversationen des aktuellen Benutzers nach Text oder nach der genauen Cloud-Ressource refs. Verwenden Sie das zurückgegebene core.ai.chat refs mit ai.chat.read, ai.chat.search, ai.chat.resources oder ai.chat.message.",
           input: {
+            place: "Nur Chats an diesem genauen Ort durchsuchen. Ohne Angabe werden Orts-Chats ausgelassen.",
+            "place.type": "Namespace-Ressourcentyp des Orts.",
+            "place.id": "Stabile App-eigene Kennung des Orts.",
             query: "Wörter, die in Chattiteln, Zusammenfassungen oder sichtbaren Nachrichten übereinstimmen.",
             refs: "Erfordern, dass Chats jede genau strukturierte Cloud-Ressource ref enthalten.",
             "refs[].type": "Namespace-Ressourcentyp, der von der besitzenden App deklariert wird.",
