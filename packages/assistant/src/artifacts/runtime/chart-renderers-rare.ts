@@ -1,11 +1,13 @@
 // One exhaustive kind-switch. Import this module only from lib.ts: the frame
 // build replaces that exact specifier and ships the real module separately.
 // Scripts and PDF workers get the real renderers synchronously through lib.ts.
-import { barGauge, boxplot, gauge, histogram, renderAreaSvg, renderHeatmapSvg, scatter } from "@k2b/ui/charts/core";
+import { barGauge, boxplot, gauge, histogram, renderAreaSvg, renderHeatmapSvg, renderWaterfallSvg, scatter } from "@k2b/ui/charts/core";
 import type { RareChartRenderer } from "./chart-renderer-types";
 
 export const rareChartSvg: RareChartRenderer = (mapped, common) => {
   switch (mapped.kind) {
+    case "waterfall":
+      return renderWaterfallSvg({ ...mapped, ...common });
     case "area":
       return renderAreaSvg({ ...mapped, ...common });
     case "scatter":
@@ -20,10 +22,6 @@ export const rareChartSvg: RareChartRenderer = (mapped, common) => {
       return barGauge({ ...mapped, ...common });
     case "heatmap":
       return renderHeatmapSvg({ ...mapped, ...common });
-    default: {
-      const unsupported: never = mapped;
-      throw new Error(`Unsupported chart: ${String(unsupported)}`);
-    }
   }
 };
 

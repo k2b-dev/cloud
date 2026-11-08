@@ -28,6 +28,13 @@ type Series<N> = { label?: string; data: { x: N | string; y: N }[]; role?: "refe
 type Common = { title: string; subtitle?: string; tooltip?: { label?: string; format?: ChartNumberFormat } };
 type Variants<N> =
   | {
+      kind: "waterfall";
+      start: { label: string; value: number };
+      steps: { label: string; value: number }[];
+      end: { label: string };
+      format?: ChartNumberFormat;
+    }
+  | {
       kind: "area";
       layout: "stacked";
       normalize?: boolean;

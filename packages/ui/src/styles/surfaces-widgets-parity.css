@@ -1785,6 +1785,152 @@
   }
 }
 
+/* A DashboardFrame is a grid cell of its own, with the same widths, so a framed panel never sits in a second frame. */
+.k2b-ui .k2b-dashboard-section__grid > .k2b-dashboard-frame { grid-column: span 2; }
+.k2b-ui .k2b-dashboard-section__grid > .k2b-dashboard-frame[data-width="half"] { grid-column: span 3; }
+.k2b-ui .k2b-dashboard-section__grid > .k2b-dashboard-frame[data-width="twoThirds"] { grid-column: span 4; }
+.k2b-ui .k2b-dashboard-section__grid > .k2b-dashboard-frame[data-width="full"] { grid-column: span 6; }
+
+@container k2b-dashboard (max-width: 1000px) {
+  .k2b-ui .k2b-dashboard-section__grid > .k2b-dashboard-frame[data-width="third"] { grid-column: span 3; }
+  .k2b-ui .k2b-dashboard-section__grid > .k2b-dashboard-frame[data-width="twoThirds"] { grid-column: span 6; }
+}
+
+@container k2b-dashboard (max-width: 600px) {
+  .k2b-ui .k2b-dashboard-section__grid > .k2b-dashboard-frame:is([data-width="third"], [data-width="half"], [data-width="twoThirds"]) {
+    grid-column: span 6;
+  }
+}
+
 @media (forced-colors: active) {
   .k2b-ui .k2b-dashboard-panel { border-color: CanvasText; }
 }
+
+/* --------------------------------------------------------- Dashboard frame -- */
+/* One framed panel with title, subtitle, tools and states in place. Scoped with
+   :where(.k2b-ui) so each rule keeps the weight of its class alone: a frame never
+   outranks the controls it holds, such as a search field's own width. */
+:where(.k2b-ui) .k2b-dashboard-frame {
+  box-sizing: border-box;
+  min-width: 0;
+  padding: 1rem;
+  overflow: hidden;
+}
+
+:where(.k2b-ui) .k2b-dashboard-frame .k2b-chart-explorer { gap: 0.75rem; }
+
+:where(.k2b-ui) .k2b-dashboard-frame .k2b-chart-explorer__title,
+:where(.k2b-ui) .k2b-dashboard-frame__header :is(h2, h3, h4, h5, h6) {
+  margin: 0;
+  color: var(--k2b-text);
+  font-size: 0.875rem;
+  font-weight: 600;
+  line-height: 1.25rem;
+}
+
+:where(.k2b-ui) .k2b-dashboard-frame__header {
+  display: flex;
+  min-height: 2.5rem;
+  gap: 0.75rem;
+  align-items: flex-start;
+  justify-content: space-between;
+  margin-bottom: 0.75rem;
+}
+
+:where(.k2b-ui) .k2b-dashboard-frame__header > div { min-width: 0; }
+
+:where(.k2b-ui) .k2b-dashboard-frame__header p {
+  margin: 0;
+  overflow: hidden;
+  color: var(--k2b-text-muted);
+  font-size: 0.8125rem;
+  line-height: 1.25rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+:where(.k2b-ui) .k2b-dashboard-frame__header .k2b-dashboard-frame__stale { color: var(--k2b-warning-text); }
+
+/* Try again inside a line of text: it reads as part of the sentence and never makes the line taller. */
+:where(.k2b-ui) .k2b-dashboard-frame__link {
+  display: inline;
+  position: static;
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0.2rem;
+  background: none;
+  color: inherit;
+  font: inherit;
+  line-height: inherit;
+  cursor: pointer;
+}
+
+:where(.k2b-ui) .k2b-dashboard-frame__link:focus-visible {
+  outline: var(--k2b-focus-width) solid var(--k2b-focus-ring);
+  outline-offset: var(--k2b-focus-offset);
+}
+
+:where(.k2b-ui) .k2b-dashboard-frame__tools {
+  display: flex;
+  flex: 0 1 auto;
+  gap: 0.5rem;
+  align-items: center;
+  min-width: 0;
+}
+
+/* A search field in the tools takes up to 14rem and gives way to the title first; other tools keep their width.
+   The weight stays that of one class, so the field's own rules decide like before. */
+:where(.k2b-ui .k2b-dashboard-frame__tools) > .k2b-field:where(:has(input[type="search"])) {
+  flex: 0 1 14rem;
+  min-width: 7rem;
+}
+
+:where(.k2b-ui) .k2b-dashboard-frame__body {
+  min-width: 0;
+  overflow: auto;
+}
+
+:where(.k2b-ui) .k2b-dashboard-frame__skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+:where(.k2b-ui) .k2b-dashboard-frame__skeleton > span {
+  height: 0.9rem;
+  border-radius: 0.3rem;
+  background: var(--k2b-surface-muted);
+}
+
+:where(.k2b-ui) .k2b-dashboard-frame__skeleton > span:last-child { width: 60%; }
+
+:where(.k2b-ui) .k2b-dashboard-frame__inline-state {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  align-items: center;
+  margin: 0;
+  color: var(--k2b-text-secondary);
+  font-size: 0.875rem;
+}
+
+:where(.k2b-ui) .k2b-dashboard-frame__inline-state > i { color: var(--k2b-text-muted); }
+:where(.k2b-ui) .k2b-dashboard-frame__inline-state[role="alert"] > i { color: var(--k2b-danger-text); }
+
+/* The hidden full content, the shown content and a state share one grid cell: the cell is as high as the content. */
+:where(.k2b-ui) .k2b-dashboard-frame__stack {
+  display: grid;
+  margin: 0 -1rem -1rem;
+  overflow-x: auto;
+}
+
+:where(.k2b-ui) .k2b-dashboard-frame__stack > * {
+  grid-area: 1 / 1;
+  min-width: 0;
+  margin: 0;
+}
+
+:where(.k2b-ui) .k2b-dashboard-frame__reserve { visibility: hidden; }
+:where(.k2b-ui) .k2b-dashboard-frame__content { align-self: start; }

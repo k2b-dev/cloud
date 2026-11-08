@@ -5,7 +5,7 @@ section: Everyday
 order: 230
 description: Small generators, converters, security helpers, media utilities, and network tests.
 tags: [tools, utilities, generators, network, cli]
-updated: 2026-09-07
+updated: 2026-11-07
 ---
 
 # Tools
@@ -13,6 +13,12 @@ updated: 2026-09-07
 Tools collects small utilities for day-to-day work so they are discoverable in
 one place. Use the workspace for quick generation, conversion, inspection, and
 testing tasks that do not need their own application.
+
+The overview, sidebar, and phone menu use the same five groups: **Images**,
+**Documents**, **Text and codes**, **Security**, and **Network**. **Used often**
+offers four shortcuts. Search by name, format, or task; the search is preserved
+in the URL when you reload or return with Back. Choose **Clear search** if
+nothing matches. Existing tool addresses remain unchanged.
 
 ## Use Tools
 
@@ -27,7 +33,8 @@ testing tasks that do not need their own application.
 
 Check where each task runs before entering sensitive data. Most generators,
 converters, security helpers, and image operations are interactive page tools.
-Speed tests, document extraction, and PDF rendering call the Cloud server.
+Document extraction and PDF rendering call the Cloud server. Speed tests use
+the named standalone measurement server without sending Cloud credentials.
 Document conversion holds its input and result only in memory; webhook
 endpoints and request history are stored server-side.
 
@@ -35,11 +42,11 @@ endpoints and request history are stored server-side.
 
 | Resource or surface | Responsibility |
 | --- | --- |
-| Tool definition | A named utility grouped by task and category for browsing and search |
+| Tool definition | A named utility in one shared group for browsing, phone navigation, and search |
 | Browser utility | Processes its interactive input in the page and offers copy or download output |
 | Document to Markdown | Converts one signed-in user's document in memory and returns plain Markdown without persisting either side |
 | Markdown to PDF | Renders one signed-in user's Markdown with a bounded print template or custom CSS without persisting either side |
-| Speed test | Measures ping, download, upload, and jitter against the Cloud server |
+| Speed test | Measures ping, download, upload, jitter and loaded latency against the named standalone server |
 | Webhook endpoint | A user-owned receiving URL with server-side request history |
 
 Webhook logs redact common sensitive headers such as `Authorization` and
@@ -110,9 +117,38 @@ Input support follows the browser. Vector images are rasterized, animated
 images become still images, and converted output does not retain source image
 metadata.
 
+## Measure your connection
+
+Open **Internet Speed Test** and check the named measurement server. Choose
+**Quick · up to 14 s** or **Accurate · up to 29 s**, then start. Ping, download
+and upload share one bounded engine with the CLI and standalone Node/Bun script.
+The page and terminal show the same readings and decreasing remaining time. The chart keeps its time axis fixed while running and fits the completed result to its actual duration. The terminal keeps a fixed height and scrolls long lines horizontally.
+Stop cancels active work; a completed result can be copied as JSON.
+
+The test is anonymous. The measurement server sees the source IP address and
+test traffic, but receives no Cloud credentials or personal files. Throughput
+excludes ramp-up; ping is the median and jitter the mean consecutive difference.
+Loaded latency is measured during transfers. Offline and failed runs show a
+recovery action; HTTP 429 shows the server's retry delay.
+
+Operators can change `tools.speedtest_server` (default
+`https://speedtest.k2b.dev`) or turn off `tools.speedtest_enabled` in application
+settings. The page receives both settings during SSR.
+
+`cld tools speedtest --mode quick --json` reads those settings when the selected
+profile has a Cloud URL. Without one it uses the default server. The command's
+`--server` explicitly selects an independent measurement server. Progress goes
+to stderr; stdout contains the completed result. Only explicit `--udp` selects
+the separate jitter/loss diagnostic. Browser and default CLI tests use HTTP.
+
+Cloud's old measurement and curl-script URLs return HTTP 410 without a redirect.
+Download `/cli` from the selected standalone server for Node or Bun; Python
+scripts are no longer supplied. See [Run a speedtest server](/en/docs/operations/speedtest-server)
+for the operator migration and deployment contract.
+
 ## How Tools fits Cloud
 
-Tools owns the utility catalog, browser interactions, speed-test endpoints, and
+Tools owns the utility catalog, browser interactions, speedtest settings, and
 user-owned webhook records. Cloud supplies the shared application shell,
 identity for stored network tools, settings, lifecycle, and the in-product Help
 surface.
