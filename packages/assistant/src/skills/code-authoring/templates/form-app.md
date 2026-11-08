@@ -15,15 +15,17 @@ const PRIORITIES = ["low", "medium", "high"] as const;
 type Priority = (typeof PRIORITIES)[number];
 type Values = { title: string; details: string; priority: string; due: string };
 type Errors = Partial<Record<keyof Values, string>>;
+// Leave optional props out instead of passing undefined.
+const issue = (message?: string) => (message ? { error: message } : {});
 
 const requestForm = (values: Values, errors: Errors = {}) => (
   <Form width="half" title="New request" action="/request" submit="Send request">
-    <Field.Text name="title" label="What do you need?" value={values.title} error={errors.title} required />
-    <Field.Textarea name="details" label="Details" value={values.details} error={errors.details} />
-    <Field.Select name="priority" label="Priority" value={values.priority} error={errors.priority}>
+    <Field.Text name="title" label="What do you need?" value={values.title} {...issue(errors.title)} required />
+    <Field.Textarea name="details" label="Details" value={values.details} {...issue(errors.details)} />
+    <Field.Select name="priority" label="Priority" value={values.priority} {...issue(errors.priority)}>
       {PRIORITIES.map(priority => <Option value={priority} label={priority[0]!.toUpperCase() + priority.slice(1)} />)}
     </Field.Select>
-    <Field.Text name="due" label="Due date (YYYY-MM-DD)" value={values.due} error={errors.due} />
+    <Field.Text name="due" label="Due date (YYYY-MM-DD)" value={values.due} {...issue(errors.due)} />
   </Form>
 );
 
@@ -58,12 +60,15 @@ app.post("/request", async c => {
   if (values.title.length < 3 || values.title.length > 200) errors.title = "Enter 3 to 200 characters.";
   if (values.details.length > 2000) errors.details = "Keep the details under 2,000 characters.";
   if (!PRIORITIES.includes(values.priority as Priority)) errors.priority = "Choose a priority.";
-  if (values.due && (!/^\d{4}-\d{2}-\d{2}$/.test(values.due) || Number.isNaN(Date.parse(values.due)))) errors.due = "Use the form 2026-12-01.";
+  // Date.parse accepts 2026-02-31; a real calendar date survives the round trip.
+  const realDate = (value: string) => /^\d{4}-\d{2}-\d{2}$/.test(value) && new Date(`${value}T00:00:00Z`).toISOString().startsWith(value);
+  if (values.due && !realDate(values.due)) errors.due = "Use a real date such as 2026-12-01.";
   if (Object.keys(errors).length) return c.page(await page(values, errors));
 
-  // The same request on the same day creates one task, even if the answer was lost and it is sent again.
-  const day = new Date().toISOString().slice(0, 10);
-  const key = `request:${day}:${values.title.toLowerCase().replace(/[^a-z0-9]+/g, "-").slice(0, 120)}`;
+  // The key covers the complete request: sending the same form again after a lost answer creates one task,
+  // while any other input is a different request.
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(JSON.stringify(values)));
+  const key = `request:${[...new Uint8Array(digest)].map(byte => byte.toString(16).padStart(2, "0")).join("").slice(0, 40)}`;
   const task = await space.task.create({
     title: values.title,
     ...(values.details ? { description: values.details } : {}),

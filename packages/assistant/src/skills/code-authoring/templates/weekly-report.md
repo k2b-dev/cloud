@@ -17,20 +17,25 @@ app.schedule(
   async () => {
     const open = await spaces.app().task.list({ spaceId: SPACE_ID, status: "active", sort: "deadline", limit: 50 });
     const overdue = await spaces.app().task.list({ spaceId: SPACE_ID, status: "active", deadlineFilter: "overdue", limit: 50 });
-    const unassigned = open.filter(task => task.assigneeCount === 0);
+    const unassigned = await spaces.app().task.list({ spaceId: SPACE_ID, status: "active", assignedTo: "unassigned", limit: 50 });
+    // A full page means "at least": Code sees only the first page of these lists.
+    const count = (items: readonly unknown[]) => (items.length >= 50 ? "50 or more" : String(items.length));
     const facts = {
-      open: open.length >= 50 ? "50 or more" : open.length,
-      overdue: overdue.map(task => task.title).slice(0, 20),
-      unassigned: unassigned.map(task => task.title).slice(0, 20),
+      open: count(open),
+      overdue: count(overdue),
+      unassigned: count(unassigned),
+      overdueTitles: overdue.map(task => task.title).slice(0, 20),
+      unassignedTitles: unassigned.map(task => task.title).slice(0, 20),
+      titlesAreSamples: overdue.length > 20 || unassigned.length > 20,
     };
 
-    let text = `Open tasks: ${facts.open}. Overdue: ${overdue.length}. Unassigned: ${unassigned.length}.`;
+    let text = `Open tasks: ${facts.open}. Overdue: ${facts.overdue}. Unassigned: ${facts.unassigned}.`;
     if (overdue.length || unassigned.length) {
       const report = await core.app().ai.generate({
         task: "weekly.report",
         prompt:
           "Write a short weekly report in German for the owner of these tasks: one sentence on the overall state, " +
-          "then a list of the overdue and unassigned tasks. Use only the given facts.",
+          "then a list of the overdue and unassigned tasks. Use only the given facts; when titlesAreSamples is true, say the lists are incomplete.",
         input: facts,
         model: { class: "fast" },
         output: { type: "text", maxChars: 3000 },

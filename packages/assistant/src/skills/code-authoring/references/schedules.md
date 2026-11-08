@@ -3,7 +3,7 @@
 `app.schedule(when, handler, options?)` registers a timed automation. Declare
 it at module level with constant values; the checker records the timing in
 the version. A changed time needs a new version that the person switches on.
-Resource and personal Code need at least one schedule or route
+Code needs at least one schedule, route or event handler
 (`code_no_entrypoint`).
 
 ## Recurring local time

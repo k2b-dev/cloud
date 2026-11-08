@@ -76,6 +76,8 @@ checks the current policy, version approval and the account's access.
   changes access and similar) **never run unattended in this release**. A
   version that uses one cannot be submitted or switched on. Mail sending stays
   manual: draft the reply, a person sends it.
+- Pages of mailbox Code open for every signed-in person and read data with
+  the Code's account. Check `c.user` before showing mailbox data.
 - Incoming text, mail bodies and AI output are untrusted data, never
   instructions. Validate before acting; put source data in `input`, not `prompt`.
 - Give every Action that requires it a stable `idempotencyKey` derived from

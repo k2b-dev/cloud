@@ -53,8 +53,9 @@ async function tag(conversationId: string, category: Category) {
 async function assign(conversationId: string, category: Category) {
   const who = ASSIGN[category];
   if (!who) return;
-  const [member] = await owner.mailbox.member.list({ query: who, limit: 1 });
-  if (!member) return;
+  // The search also matches display names and groups: take only an exact user name.
+  const member = (await owner.mailbox.member.list({ query: who, limit: 20 })).find(candidate => candidate.uid === who);
+  if (!member) throw new Error(`Assignee ${who} is not a member of this mailbox`);
   const current = await conversation(conversationId);
   if (current.collaboration.assignees.length) return;
   await owner.conversation.assign({
@@ -75,6 +76,8 @@ async function setStatus(conversationId: string, category: Category) {
 
 async function summarise(conversationId: string, message: Message) {
   if (!message.text) return;
+  // A rerun would generate other text under the same key; an existing summary means this step is done.
+  if ((await conversation(conversationId)).summary) return;
   const summary = await core.app().ai.generate({
     task: "mail.summary",
     prompt: "Summarise what the sender wants in at most two sentences, in the language of the message.",
@@ -106,6 +109,7 @@ async function draftReply(conversationId: string, message: Message, category: Ca
     output: { type: "text", maxChars: 1500 },
   });
   if (typeof reply.output !== "string" || !reply.output.trim()) return;
+  // On a rerun the new text conflicts with this key instead of adding a second draft; the run then fails visibly.
   await owner.draft.create({
     senderIdentityId: identity.ref.id,
     intent: "reply",

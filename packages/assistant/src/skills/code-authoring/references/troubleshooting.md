@@ -16,7 +16,7 @@ errors (`code_type_suppression`).
 | `code_detached_sdk_method` | A method taken off its handle, or `.call`/`.apply`/`.bind` | Call it on the handle |
 | `code_unresolved_ref` | An extra target (`refs`) is not a handle of the declared type | Pass a handle such as `spaces.space(id)` |
 | `code_stream`, `code_app_only`, `code_code_false` | The operation is not available to Code | Choose another operation ([Capabilities](capabilities.md)) |
-| `code_no_entrypoint` | No schedule and no route | Add `app.schedule` or a route at module level |
+| `code_no_entrypoint` | No schedule, route or event handler | Add `app.schedule`, a route or `app.on` at module level |
 | `code_static_schedule`, `code_invalid_cron`, `code_duplicate_schedule` | Timing not constant, invalid cron, a repeated name | Use constants and unique names ([Schedules](schedules.md)) |
 | `code_static_title` | A computed or invalid schedule title | One line of constant plain text, 1–200 characters |
 | `code_static_route`, `code_duplicate_route` | A route declared inside a function, or twice | Declare each route once at module level with a literal path |

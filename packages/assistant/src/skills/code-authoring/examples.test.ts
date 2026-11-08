@@ -129,6 +129,7 @@ afterAll(async () => {
   await checker?.close();
 });
 
+const random = Math.random;
 let fresh = 0;
 /** Each run imports the checked bundle anew: the bundle binds its bridge once per module instance. */
 const load = async (bundle: string): Promise<Record<string, (input: unknown, bridge: unknown) => Promise<unknown>>> =>
@@ -174,6 +175,12 @@ test("every fixture runs against the example above it with the fake bridge and m
     for (const [index, run] of fixture.runs.entries()) {
       bridge.begin();
       setSystemTime(new Date(run.now ?? fixture.now));
+      // The runner's seeded generator, reset for each invocation (packages/runner/src/test-kit.ts).
+      let seed = fixture.seed >>> 0;
+      Math.random = () => {
+        seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;
+        return seed / 4294967296;
+      };
       const module = await load(example.result.bundle);
       let outcome: { ok: boolean; error: string | null; value: unknown };
       try {
@@ -181,13 +188,19 @@ test("every fixture runs against the example above it with the fake bridge and m
         outcome = { ok: true, error: null, value: value ?? null };
       } catch (error) {
         outcome = { ok: false, error: error instanceof Error ? error.message : String(error), value: null };
+      } finally {
+        Math.random = random;
       }
-      // A missing or invalid mock fails the case even when the Code catches it.
-      const fixtureFailure = bridge.failure();
-      if (fixtureFailure) outcome = { ok: false, error: fixtureFailure, value: null };
       const calls = bridge.calls();
       const expected = run.expect ?? {};
       const label = `${where} run ${index + 1}`;
+      // As in the runner's test kit: a missing or invalid mock fails the case even when the Code catches it
+      // or a failure was expected, and an expected failure names its exact error.
+      const fixtureFailure = bridge.failure();
+      if (fixtureFailure) failures.push(`${label}: fixture failure ${fixtureFailure}`);
+      if (expected.ok === false && !expected.error) failures.push(`${label}: an expected failure needs expect.error`);
+      if (!outcome.ok && !(expected.ok === false && expected.error === outcome.error))
+        failures.push(`${label}: failed with ${outcome.error}`);
       if (expected.ok !== undefined && expected.ok !== outcome.ok) failures.push(`${label}: ok ${outcome.ok} (${outcome.error})`);
       if (expected.error !== undefined && expected.error !== outcome.error) failures.push(`${label}: error ${outcome.error}`);
       if (expected.value !== undefined && JSON.stringify(expected.value) !== JSON.stringify(outcome.value))
@@ -268,10 +281,12 @@ test("the capability tables state when each Action runs and list every Action of
   for (const [capability, said] of listed)
     if (words[said] !== unattended(capability))
       wrong.push(`${capability}: the table says "${said}", the SDK and Admin preset give ${unattended(capability)}`);
-  const documented = (capability: string) =>
-    /^(mail|spaces|chat|notebooks|contacts|filesv2)\./.test(capability) || capability.startsWith("core.ai.");
-  for (const op of personal.manifest.operations)
-    if (op.kind === "action" && documented(op.capability) && !listed.has(op.capability))
-      wrong.push(`${op.capability}: Action missing from the capability tables`);
+  // Every Action of the documented apps, including those the SDK omits (streams, code: false).
+  for (const manifest of manifests)
+    for (const action of manifest.actions) {
+      const capability = `${manifest.appId}.${action.localId}`;
+      if ((manifest.appId !== "core" || capability.startsWith("core.ai.")) && !listed.has(capability))
+        wrong.push(`${capability}: Action missing from the capability tables`);
+    }
   expect(wrong).toEqual([]);
 });

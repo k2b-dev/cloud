@@ -104,21 +104,29 @@ Chart budgets: eight series, 200 values per series and 1,600 marks.
 ## Build a page from live data
 
 Read data inside the handler, on each request. Shape it in plain TypeScript,
-then pass it as props. This mailbox page counts open conversations:
+then pass it as props. Pages of resource Code open for **every signed-in
+person**, and their data comes from the Code's account, so check `c.user`
+before showing resource data ([Access](access.md)). This mailbox page counts
+open conversations for one team:
 
 <!-- check: resource mail.mailbox -->
 ```tsx
-import { app, jsx, owner, Page, Stats, Stat, Chart, Table, Column } from "@sdk";
+import { app, jsx, owner, Page, Notice, Stats, Stat, Chart, Table, Column } from "@sdk";
+
+// Fictional ID of the group that may see this mailbox's data.
+const TEAM = "00000000-0000-4000-8000-0000000000aa";
+const count = (items: readonly unknown[]) => (items.length >= 50 ? "50+" : items.length);
 
 app.get("/", async c => {
+  if (!c.user?.groups.includes(TEAM)) return c.page(<Page title="Inbox"><Notice tone="warning" title="Only for the mailbox team" /></Page>);
   const open = await owner.conversation.list({ view: "needs_action", limit: 50 });
   const waiting = await owner.conversation.list({ view: "waiting", limit: 50 });
   const rows = open.map(item => ({ title: item.title, from: item.participants, messages: item.messageCount }));
   return c.page(
     <Page title="Inbox" subtitle="Needs action and waiting" icon="ti ti-mail" color="blue" follow={["mail.message.received"]}>
       <Stats>
-        <Stat label="Needs action" value={open.length} />
-        <Stat label="Waiting" value={waiting.length} />
+        <Stat label="Needs action" value={count(open)} />
+        <Stat label="Waiting" value={count(waiting)} />
       </Stats>
       {open.length + waiting.length > 0
         ? <Chart.Bar width="third" title="Open work" data={[{ label: "Needs action", value: open.length }, { label: "Waiting", value: waiting.length }]} />
@@ -155,11 +163,14 @@ token; `_csrf` is a reserved field name. The handler answers with:
 import { app, jsx, Page, Form, Field, Option, Detail, Item } from "@sdk";
 
 type Quote = { hours: string; rate: string; kind: string };
+// Leave optional props out instead of passing undefined.
+const number = (value: string) => (Number.isFinite(Number(value)) && Number(value) > 0 ? { value: Number(value) } : {});
+const issue = (message?: string) => (message ? { error: message } : {});
 
 const form = (values: Quote, errors: Partial<Record<keyof Quote, string>> = {}) => (
   <Form title="Quote" action="/quote" submit="Calculate">
-    <Field.Number name="hours" label="Hours" value={Number(values.hours) || undefined} error={errors.hours} required />
-    <Field.Number name="rate" label="Rate per hour (EUR)" value={Number(values.rate) || undefined} error={errors.rate} required />
+    <Field.Number name="hours" label="Hours" {...number(values.hours)} {...issue(errors.hours)} required />
+    <Field.Number name="rate" label="Rate per hour (EUR)" {...number(values.rate)} {...issue(errors.rate)} required />
     <Field.Select name="kind" label="Kind" value={values.kind}>
       <Option value="repair" label="Repair" />
       <Option value="service" label="Service" />
@@ -174,8 +185,8 @@ app.post("/quote", async c => {
   const hours = Number(values.hours);
   const rate = Number(values.rate);
   const errors: Partial<Record<keyof Quote, string>> = {};
-  if (!(hours > 0 && hours <= 1000)) errors.hours = "Enter between 0 and 1,000 hours.";
-  if (!(rate > 0)) errors.rate = "Enter a rate above 0.";
+  if (!(Number.isFinite(hours) && hours > 0 && hours <= 1000)) errors.hours = "Enter between 0 and 1,000 hours.";
+  if (!(Number.isFinite(rate) && rate > 0 && rate <= 10000)) errors.rate = "Enter a rate between 0 and 10,000.";
   if (errors.hours || errors.rate) return c.page(<Page title="Quote">{form(values, errors)}</Page>);
   return c.page(
     <Page title="Quote">
@@ -191,6 +202,7 @@ export default app;
 ```
 
 Submitted values are strings; parse and validate every field on the server.
+Leave an optional prop out instead of setting it to `undefined`.
 A failed form keeps its input and names the problem beside its button. When
 the answer is lost, the page says that the step may have run; Cloud never
 repeats a POST. Make POST handlers safe to repeat: use idempotency keys

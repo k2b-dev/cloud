@@ -39,8 +39,10 @@ never reaches a real app. Nothing is sent, saved or charged.
 - Inputs and reply data must match the operation's schemas, otherwise the
   test fails with `code_test_invalid_input` or `code_test_invalid_fixture`.
 - `expect` checks `ok`, `error`, the returned `value` (schedules return
-  `null`) and `calls`: the exact number of calls and the given fields of each,
-  such as `operation`, `idempotencyKey`, `replayed` and `result`.
+  `null`) and `calls`: the exact number of calls and the given fields of
+  each, such as `operation`, `idempotencyKey`, `replayed` and `result`. An expected
+  failure needs both `ok: false` and the exact `error`; a missing or invalid
+  mock always fails the case.
 - Runs in one fixture share idempotency receipts: the same key and input
   returns the first reply with `replayed: true`; the same key with other input
   fails with `idempotency_conflict`. Fixtures share nothing.
@@ -98,9 +100,11 @@ app.on("mail.message.received", async event => {
   const message = await mail.app().message.read({ id: event.subject.id });
   if (message.hydrationStatus !== "complete") throw new Error("Message content is not ready yet");
   if (!/urgent/i.test(message.subject)) return;
+  // The subject is untrusted: post it only as a short code span, never as Markdown.
+  const subject = message.subject.replace(/[\r\n`]/g, " ").slice(0, 120);
   await chat.app().message.post({
     conversation: "Cnv001",
-    body: `Urgent mail from ${message.from[0]?.address ?? "an unknown sender"}: ${message.subject}`,
+    body: `Urgent mail: \`${subject}\``,
     idempotencyKey: `urgent:${message.id}`,
   });
 });
@@ -225,7 +229,7 @@ export default app;
   ],
   "runs": [
     { "entrypoint": "weekly-quote", "expect": { "ok": true, "calls": [{ "operation": "core.ai.generate" }, { "operation": "core.ai.chat.deliver", "replayed": false }] } },
-    { "entrypoint": "weekly-quote", "expect": { "ok": false, "calls": [{ "operation": "core.ai.generate", "result": { "ok": false, "error": "code_ai_daily_budget_limit" } }] } }
+    { "entrypoint": "weekly-quote", "expect": { "ok": false, "error": "code_ai_daily_budget_limit", "calls": [{ "operation": "core.ai.generate", "result": { "ok": false, "error": "code_ai_daily_budget_limit" } }] } }
   ]
 }
 ```

@@ -1,17 +1,22 @@
 # Template: dashboard page
 
-Dashboard page of a mailbox's Code: open work by status and the conversations that need action. The page reads live data on each request and loads again after new mail arrives. It changes nothing.
+Dashboard page of a mailbox's Code: open work by status and the conversations that need action. The page reads live data on each request and changes nothing. Pages of resource Code open for every signed-in person, so it shows mailbox data only to members of one group. `follow` reloads it after new mail once the event service delivers to open pages; until then it reloads when its tab becomes visible again.
 
 Owner: the Code of a mailbox. Copy it into `code.tsx`, replace the fictional IDs and names, then check, test and submit as usual.
 
 <!-- check: resource mail.mailbox -->
 ```tsx
-import { app, Chart, Column, jsx, owner, Page, Section, Stat, Stats, Table } from "@sdk";
+import { app, Chart, Column, jsx, Notice, owner, Page, Section, Stat, Stats, Table } from "@sdk";
+
+// Fictional ID of the group that may see this mailbox's data.
+const TEAM = "00000000-0000-4000-8000-0000000000aa";
 
 const LIMIT = 50;
 const count = (items: readonly unknown[]) => (items.length >= LIMIT ? `${LIMIT}+` : items.length);
 
 app.get("/", async c => {
+  if (!c.user?.groups.includes(TEAM))
+    return c.page(<Page title="Mailbox overview"><Notice tone="warning" title="Only for the mailbox team" /></Page>);
   const [needsAction, waiting, unassigned] = [
     await owner.conversation.list({ view: "needs_action", limit: LIMIT }),
     await owner.conversation.list({ view: "waiting", limit: LIMIT }),

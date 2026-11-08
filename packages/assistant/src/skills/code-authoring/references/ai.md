@@ -50,6 +50,8 @@ app.on("mail.message.received", async event => {
   });
   if (typeof summary.output !== "string" || !summary.output.trim()) return;
   const conversation = await mail.app().conversation.read({ id: message.conversationId });
+  // A rerun generates other text; an existing summary means this step is done.
+  if (conversation.summary) return;
   await owner.conversation.summary.write({
     conversationId: message.conversationId,
     expectedRevision: conversation.collaboration.revision,
@@ -62,7 +64,9 @@ export default app;
 ```
 
 `summary.write` returns `skipped: "edited_by_person"` when a person wrote the
-summary; respect that. Text output is at most 20,000 characters (default
+summary; respect that. AI text differs between runs: an Action keyed by the
+message but called with new text conflicts on a rerun instead of repeating
+the effect. Check whether a step is already done before generating it. Text output is at most 20,000 characters (default
 4,000). The whole request must fit 100,000 bytes; larger input fails with
 `ai_input_too_large` and is never cut silently.
 

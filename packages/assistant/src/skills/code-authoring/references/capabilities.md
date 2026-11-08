@@ -15,7 +15,7 @@ Code always runs without a person present. Each call falls into one class:
 
 | Class | Meaning under the default Admin preset |
 | --- | --- |
-| **automatic** | Runs: every Query, silent Actions for the owner (`silent_you`) and drafts (`silent_draft`). |
+| **automatic** | Runs: Queries (`read`), silent Actions for the owner (`silent_you`) and drafts (`silent_draft`). AI Queries such as `core.ai.generate` count as AI instead. |
 | **admin approval** | Runs after a Cloud administrator approves the version: silent Actions visible to others (`silent_shared`), AI use and internet requests. |
 | **never** | Never runs unattended in this release: Actions that ask (sends, deletes, cannot undo, involves people, changes access, keeps working, sensitive, app asks), Actions without a declared policy, and silent Actions marked not for routines. Submitting such a version fails with `code_unattended_forbidden` or `code_sends_not_yet`. |
 | **not in the SDK** | Streams, app-only Queries and Actions marked `code: false`; `code_check` reports `code_stream`, `code_app_only` or `code_code_false`. |
@@ -25,7 +25,7 @@ stay **never**. The tables below list every Action of each app with its class
 under the default preset. "Key required" means the Action needs an
 `idempotencyKey`; Actions without one reject a key.
 
-Queries read only and always run, limited by the account's access. Resource
+Queries other than AI read only and run by default, limited by the account's access. Resource
 Code reads only what its service account was given; personal Code reads what
 its person can read.
 
@@ -81,8 +81,8 @@ app.on("mail.message.received", async event => {
   const message = await mail.app().message.read({ id: event.subject.id });
   if (message.hydrationStatus !== "complete") throw new Error("Message content is not ready yet");
   if (!message.conversationId || !/invoice/i.test(message.subject)) return;
-  // Fictional user name; read members to resolve the person.
-  const [lead] = await owner.mailbox.member.list({ query: "accounting.lead", limit: 1 });
+  // Fictional user name; the search also matches names and groups, so compare the exact uid.
+  const lead = (await owner.mailbox.member.list({ query: "accounting.lead", limit: 20 })).find(member => member.uid === "accounting.lead");
   const [identity] = await owner.mailbox.identity.list({ limit: 1 });
   const conversation = await mail.app().conversation.read({ id: message.conversationId });
   if (lead) {
@@ -175,7 +175,7 @@ import { app, chat } from "@sdk";
 
 app.schedule({ cron: "0 16 * * 5", timeZone: "Europe/Berlin", name: "weekend-note" }, async () => {
   const day = new Date().toISOString().slice(0, 10);
-  // Fictional conversation ID; find the real one with chat.discussion.list or ask.
+  // Fictional conversation ID; take the real one from the conversation's address in Chat or ask the person.
   await chat.app().message.post({ conversation: "Cnv001", body: "Have a good weekend!", idempotencyKey: `weekend:${day}` });
 }, { name: "weekend-note", title: "Weekend note" });
 export default app;
