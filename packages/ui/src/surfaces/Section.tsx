@@ -273,7 +273,10 @@ const SectionRoot = (props: SectionProps): JSX.Element => {
             aria-expanded={open()}
             aria-controls={bodyId}
             disabled={local.disabled}
-            onClick={toggle}
+            // A native listener, not Solid's delegated `onClick`: delegation is registered once per document when
+            // this module loads, so a section rendered into a later document (a test harness, an iframe) would
+            // never toggle. The shared Button registers its delegation at render time and has no such gap.
+            on:click={toggle}
           >
             {icon()}
             <span class="k2b-section__copy">

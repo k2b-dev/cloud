@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { createSignal } from "solid-js";
-import { delegateEvents, isServer, render } from "solid-js/web";
+import { isServer, render } from "solid-js/web";
 import { createDomTestHarness } from "./dom";
 
 describe("Section disclosure", () => {
@@ -54,8 +54,7 @@ describe("Section disclosure", () => {
     const [open, setOpen] = createSignal(false);
     const [disabled, setDisabled] = createSignal(false);
     const requests: boolean[] = [];
-    // Each harness is a new document; Solid's delegated clicks register per document.
-    delegateEvents(["click"], dom.document);
+    // A fresh harness document without registered delegation: the toggle must still answer clicks.
     const dispose = render(
       () => (
         <Section title="Source" collapsible open={open()} disabled={disabled()} onOpenChange={(next) => requests.push(next)}>
@@ -109,7 +108,6 @@ describe("Section disclosure", () => {
     const { Section } = await import("../src/surfaces/Section");
     const [state, setState] = createSignal<"error" | "ready">("error");
     let retries = 0;
-    delegateEvents(["click"], dom.document);
     const dispose = render(
       () => (
         <Section title="Files" state={state()} onRetry={() => retries++}>

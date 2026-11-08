@@ -84,7 +84,6 @@ describe("Base navigation interactions", () => {
     const { Section } = await import("@k2b/ui");
     const input = document.createElement("input");
     input.value = "Unsaved";
-    delegateEvents(["click"], dom.document);
     const dispose = render(
       () => createComponent(Section, { collapsible: true, title: "Appearance", icon: "ti ti-palette", children: input }),
       dom.root,
