@@ -387,8 +387,8 @@ export const viewedChatImage = (name: string, result: unknown): { path: string; 
 };
 
 /**
- * Tools of feat/code show the feat/code sign where a row can draw one: chat Code runs and Code authoring. Studio's
- * app-management tools (`CODE_SOURCE_TOOLS`) share the `code_` prefix but are not feat/code and keep their icons.
+ * Chat Code runs and lasting Code authoring show the feat/code sign where a row can draw one.
+ * Shared chat/Project file tools keep their semantic icons despite the common `code_` prefix.
  */
 const FEAT_CODE_TOOLS: ReadonlySet<string> = new Set([
   ...CODE_RUNTIME_TOOL_NAMES,
@@ -399,6 +399,9 @@ const FEAT_CODE_TOOLS: ReadonlySet<string> = new Set([
   "code_simulate",
   "code_submit",
   "code_diff",
+  "code_read",
+  "code_write",
+  "code_check",
 ]);
 export const isFeatCodeTool = (name: string): boolean => FEAT_CODE_TOOLS.has(name);
 
