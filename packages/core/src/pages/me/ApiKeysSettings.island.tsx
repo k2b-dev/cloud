@@ -250,10 +250,10 @@ export default function ApiKeysSettings(props: Props) {
       }
     >
       <Show when={keys().length > 0} fallback={<Placeholder icon="ti ti-key" description={<>{t().noApiKeys}</>} />}>
-        <div class="flex flex-col gap-1 rounded-[var(--ui-radius-surface)] bg-[var(--ui-surface-subtle)] p-2">
+        <div class="flex flex-col divide-y divide-(--ui-data-row-divider)">
           <For each={keys()}>
             {(key) => (
-              <div class="flex items-center gap-3 p-3">
+              <div class="flex items-center gap-3 py-3">
                 <div class="min-w-0 flex-1">
                   {/* The name keeps its width; on narrow screens the prefix and access tag move to the next line. */}
                   <div class="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
