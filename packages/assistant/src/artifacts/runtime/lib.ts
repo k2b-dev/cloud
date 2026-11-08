@@ -244,11 +244,13 @@ export function chartMarkup(prepared: StoredChart, locale: string, width: number
   const { svg, table } = drawChart(prepared, locale, width, height);
   if (svg === undefined && !deferChartDrawing) throw new CloudError("invalid", "cloud.chart: The chart renderer returned no SVG.");
   // Bar rows take the height their labels need; the box reserves it.
-  const drawnHeight = Number(/viewBox="0 0 [\d.]+ ([\d.]+)"/.exec(svg ?? "")?.[1]) || pendingChartHeight(prepared, locale, width, height);
   const calendar = input.kind === "heatmap" && input.layout === "calendar";
-  // Only sizing stays eager; the calendar renderer itself belongs to the offline module.
-  let calendarWidth = calendar ? Number(/data-chart-min-width="([\d.]+)"/.exec(svg ?? "")?.[1]) || width : width;
-  if (calendar && svg === undefined) calendarWidth = pendingCalendarWidth(prepared, locale, width, height);
+  // CSS fits identical geometry before and after the lazy renderer arrives.
+  const calendarSize = calendar ? pendingCalendarSize(prepared, locale, width, height) : undefined;
+  const drawnHeight =
+    calendarSize?.height ??
+    (Number(/viewBox="0 0 [\d.]+ ([\d.]+)"/.exec(svg ?? "")?.[1]) || pendingChartHeight(prepared, locale, width, height));
+  const calendarWidth = calendarSize?.width ?? width;
   const stretch = !calendar && !KEEP_ASPECT.has(input.kind);
   const title = prepared.title ?? "";
   const subtitle = input.subtitle ?? "";
@@ -265,14 +267,14 @@ export function chartMarkup(prepared: StoredChart, locale: string, width: number
         .join("")}</tbody></table>`
     : "";
   let id = "";
-  if (((stretch || calendar) && measure) || svg === undefined) {
+  if ((stretch && measure) || svg === undefined) {
     id = `c${++chartSeq}`;
     if (svg === undefined) pendingChartOptions.set(id, prepared);
     else chartOptions.set(id, prepared);
     if (chartOptions.size > 200) chartOptions.delete(chartOptions.keys().next().value!);
   }
   return new Html(
-    `<div class="k2b-chart" data-chart-kind="${input.kind}"${calendar ? ' style="overflow-x:auto"' : ""}${label}><div class="k2b-chart__svg"${stretch ? " data-stretch" : ""}${id ? ` data-chart-id="${id}"` : ""}${svg === undefined ? ` data-chart-pending="${id}"${(stretch || calendar) && measure ? " data-chart-measure" : ""} aria-busy="true"` : ""} style="${calendar ? `min-width:${calendarWidth}px;width:${calendarWidth}px;` : ""}${svg === undefined ? `aspect-ratio:${calendarWidth}/${drawnHeight};` : ""}--k2b-chart-width:${calendarWidth}px;--k2b-chart-height:${drawnHeight}px">${svg ?? chartLoading(locale)}</div></div>${values}`,
+    `<div class="k2b-chart" data-chart-kind="${input.kind}"${calendar ? ' style="overflow-x:auto;display:flex;flex-direction:row-reverse;align-items:flex-start"' : ""}${label}><div class="k2b-chart__svg"${stretch ? " data-stretch" : ""}${id ? ` data-chart-id="${id}"` : ""}${svg === undefined ? ` data-chart-pending="${id}"${stretch && measure ? " data-chart-measure" : ""} aria-busy="true"` : ""} style="${calendarSize ? `min-width:${calendarSize.minWidth}px;max-width:${calendarSize.maxWidth}px;width:100%;flex:0 0 100%;margin-right:auto;` : ""}${svg === undefined || calendar ? `aspect-ratio:${calendarWidth}/${drawnHeight};` : ""}--k2b-chart-width:${calendarWidth}px;--k2b-chart-height:${drawnHeight}px">${svg ?? chartLoading(locale)}</div></div>${values}`,
   );
 }
 
@@ -289,11 +291,11 @@ export function pendingChartHeight(prepared: StoredChart, locale: string, width:
 }
 
 /** Reserve calendar scrolling geometry before its renderer arrives, including at a measured frame width. */
-export function pendingCalendarWidth(prepared: StoredChart, locale: string, width: number, height: number): number {
+function pendingCalendarSize(prepared: StoredChart, locale: string, width: number, height: number) {
   const mapped = cloudAiChartRenderOptions(prepared.input, locale, { width });
   return mapped.kind === "heatmap" && mapped.layout === "calendar"
-    ? calendarLayout({ ...mapped, width, height, title: prepared.title, subtitle: prepared.input.subtitle }).width
-    : width;
+    ? calendarLayout({ ...mapped, width, height, title: prepared.title, subtitle: prepared.input.subtitle })
+    : undefined;
 }
 
 /** Frame loading/error states share the chart's existing fixed content box. */

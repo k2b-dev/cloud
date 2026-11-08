@@ -82,6 +82,10 @@ export function DescriptionPanel(props: DescriptionPanelProps): JSX.Element {
   const locale = useLocale();
   const t = useMessages();
   const drawing = createMemo(() => resolveDescription(props.spec, locale()));
+  const calendar = () => {
+    const current = drawing();
+    return current.mode === "snapshot" && current.snapshot.maxWidth ? current.snapshot : undefined;
+  };
   const state = () => props.state ?? "ready";
   const title = () => descriptionTitle(props.spec, props.title);
   const subtitle = () => descriptionSubtitle(props.spec, props.subtitle);
@@ -99,7 +103,7 @@ export function DescriptionPanel(props: DescriptionPanelProps): JSX.Element {
         title={title()}
         headingLevel={props.headingLevel ?? 3}
         description={subtitle()}
-        height={height()}
+        height={calendar() ? undefined : height()}
         inset="1rem"
         renderDetails={false}
         view={props.view}
@@ -108,7 +112,10 @@ export function DescriptionPanel(props: DescriptionPanelProps): JSX.Element {
         asOf={props.asOf}
         onRetry={props.onRetry}
         empty={empty()}
-        data={{ rows: withContent(state()) ? rows() : [] }}
+        data={{
+          ...(calendar() ? { chart: withContent(state()) ? calendar() : { ...calendar()!, marks: [] } } : {}),
+          rows: withContent(state()) ? rows() : [],
+        }}
         columns={columns()}
         legend={legend?.()}
       >

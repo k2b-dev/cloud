@@ -79,13 +79,15 @@ async function open(width: number, source = assets.chartParts.shared.code, theme
   await ready(page);
   return { page, context, requests };
 }
-const boxes = (page: Page) =>
-  app(page)
+const boxes = async (page: Page) => {
+  await settled(page);
+  return app(page)
     .locator("#charts")
     .evaluate((element) => ({
       height: element.getBoundingClientRect().height,
       after: document.querySelector("#after")!.getBoundingClientRect().top,
     }));
+};
 const release = (page: Page) =>
   app(page)
     .locator("body")
@@ -351,8 +353,18 @@ document.querySelector("#charts").innerHTML=cloud.chart({kind:"heatmap",layout:"
       await app(page).locator("svg[data-calendar]").waitFor();
       expect(await boxes(page)).toEqual(loading);
       const chart = app(page).locator('[data-chart-kind="heatmap"]');
-      if (fixture.name === "year") expect(await chart.evaluate((element) => element.scrollLeft)).toBeGreaterThan(0);
-      else expect(await chart.evaluate((element) => element.scrollLeft)).toBe(0);
+      // The reversed scroll origin starts at zero. Test the visible observation,
+      // rather than assuming the engine's sign for a horizontal scroll offset.
+      expect(await chart.evaluate((element) => element.scrollLeft)).toBe(0);
+      if (fixture.name === "year") {
+        expect(await chart.evaluate((element) => element.scrollWidth - element.clientWidth)).toBeGreaterThan(0);
+        const viewport = (await chart.boundingBox())!,
+          newest = (await chart.locator("[data-chart-datum] rect").last().boundingBox())!,
+          oldest = (await chart.locator("[data-chart-datum] rect").first().boundingBox())!;
+        expect(newest.x).toBeGreaterThanOrEqual(viewport.x);
+        expect(newest.x + newest.width).toBeLessThanOrEqual(viewport.x + viewport.width + 1);
+        expect(oldest.x + oldest.width).toBeLessThan(viewport.x);
+      }
       if (fixture.data.length) {
         await chart.focus();
         await chart.press("End");

@@ -128,6 +128,33 @@ test("the empty form is explicit and strict: any other field, an unknown kind or
   expect(resolveDescription({ kind: "map", title: "Shops", empty: "No shop yet." }).mode).toBe("empty");
 });
 
+test("calendar description panels retain their content-sized reserve in every state and view", () => {
+  const spec = {
+    kind: "heatmap",
+    layout: "calendar",
+    title: "Opens per day",
+    scale: "sequential",
+    data: Array.from({ length: 182 }, (_, day): [string, number] => [
+      new Date(Date.UTC(2026, 4, 11) + day * 86400000).toISOString().slice(0, 10),
+      day,
+    ]),
+  };
+  const reserve = "calc(16px + (0.3414141414141414 * clamp(495px, var(--k2b-calendar-available,100cqw), 1131.43px)))";
+  for (const state of ["ready", "loading", "empty", "error", "stale"] as const) {
+    for (const view of ["chart", "table"] as const) {
+      const html = panel({ spec, title: spec.title, height: 280, state, view, onRetry: () => {} });
+      const viewport = html.match(/<div[^>]*class="k2b-chart-explorer__viewport"[^>]*>/)?.[0];
+      expect(viewport, `${state}/${view}`).toBeDefined();
+      expect(viewport).toContain('data-calendar="true"');
+      expect(viewport).not.toContain("height:280px");
+      const actualReserve = viewport!.match(/--k2b-calendar-height:([^;"}]+)/)?.[1];
+      // A populated inset table extends into the panel padding, preserving the outer box.
+      const insetTable = view === "table" && (state === "ready" || state === "stale");
+      expect(actualReserve, `${state}/${view}`).toBe(insetTable ? `calc(${reserve} + 1rem)` : reserve);
+    }
+  }
+});
+
 test("key figures keep the money tones in and out and drop unknown tones", () => {
   const spec = {
     block: "stats",
