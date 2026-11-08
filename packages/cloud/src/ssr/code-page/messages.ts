@@ -59,7 +59,6 @@ export const codePageMessages = i18n.define({
   messages: {
     en: {
       pageTitle: ({ name }: Name) => `Code of ${name}`,
-      placeTitle: "Code",
       navAttention: "Code needs attention",
       runsAsAccount: ({ name }: Name) => `Runs as service account “${name}”`,
       accountName: ({ name }: Name) => `Code of ${name}`,
@@ -361,7 +360,6 @@ export const codePageMessages = i18n.define({
     },
     de: {
       pageTitle: ({ name }: Name) => `Code von ${name}`,
-      placeTitle: "Code",
       navAttention: "Code braucht Aufmerksamkeit",
       runsAsAccount: ({ name }: Name) => `Läuft als Dienstkonto „${name}“`,
       accountName: ({ name }: Name) => `Code von ${name}`,

@@ -6,7 +6,6 @@ import {
   fileTab,
   openWorkspaceTab,
   sourceTab,
-  taskTab,
   workspaceSelectionFromHref,
   workspaceSelectionHref,
 } from "./workspace-state";
@@ -29,7 +28,6 @@ test("closing selects a neighbor and never changes the resource identity", () =>
 });
 test("URL selection preserves conversation and encodes file identity without execution state", () => {
   for (const tab of [
-    taskTab("task01", "task01"),
     fileTab("chat", "/report name.csv"),
     sourceTab("app", "main.ts"),
     appTab("app", "app"),

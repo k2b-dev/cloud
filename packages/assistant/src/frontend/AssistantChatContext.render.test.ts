@@ -192,10 +192,9 @@ describe("Assistant chat context", () => {
   });
 
   test("uses the shared compact action rows and keeps Project editing out of chats", async () => {
-    const [context, shared, workspace] = await Promise.all([
+    const [context, shared] = await Promise.all([
       Bun.file(resolve(import.meta.dir, "AssistantChatContext.tsx")).text(),
       Bun.file(resolve(import.meta.dir, "AssistantContextContent.tsx")).text(),
-      Bun.file(resolve(import.meta.dir, "AssistantWorkspace.island.tsx")).text(),
     ]);
     expect(context).toContain('title={text("View project")}');
     expect(context).toMatch(/icon="ti ti-eye"\s+title=\{text\("View project"\)\}/);
@@ -204,19 +203,17 @@ describe("Assistant chat context", () => {
   });
 });
 
-test("hides only the current chat and the task already shown in Scheduled", () => {
+test("hides the current chat while retaining historical routine references", () => {
   const refs = [
     { ...source("resource", "self"), ref: { type: "core.ai.chat", id: "cHt234" } },
     { ...source("resource", "other-chat"), ref: { type: "core.ai.chat", id: "cHt999" } },
-    { ...source("resource", "visible-task"), ref: { type: "core.ai.task", id: "tSk234" } },
-    { ...source("resource", "other-task"), ref: { type: "core.ai.task", id: "tSk999" } },
+    { ...source("resource", "old-routine"), ref: { type: "core.ai.task", id: "tSk234" } },
   ];
-  expect(visibleAssistantReferences(refs, "cHt234", "tSk234").map((item) => item.key)).toEqual(["other-chat", "other-task"]);
-  expect(visibleAssistantReferences(refs, "cHt234").map((item) => item.key)).toEqual(["other-chat", "visible-task", "other-task"]);
-  expect(refs).toHaveLength(4);
+  expect(visibleAssistantReferences(refs, "cHt234").map((item) => item.key)).toEqual(["other-chat", "old-routine"]);
+  expect(refs).toHaveLength(3);
 });
 
-test("uses readable AI type labels and preserves authored titles", () => {
+test("uses readable historical AI type labels and preserves authored titles", () => {
   expect(assistantResourceTypeLabel({ type: "core.ai.task", id: "tSk234" })).toBe("Gustav routine");
   expect(assistantResourceTypeLabel({ type: "core.ai.chat", id: "cHt234" })).toBe("AI conversation");
   const item = { ...source("resource", "task"), ref: { type: "core.ai.task", id: "tSk234" }, title: "core.ai.task tSk234" };

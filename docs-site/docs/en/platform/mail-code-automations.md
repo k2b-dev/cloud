@@ -5,7 +5,7 @@ section: Platform services
 order: 971
 description: Handle incoming messages, preview one real message without effects, and catch up a pinned Code version over existing mail.
 tags: [mail, code, events, automations]
-updated: 2026-11-07
+updated: 2026-11-08
 ---
 
 # Automate incoming mail with Code
@@ -23,7 +23,7 @@ Register one handler for `mail.message.received`:
 import { app, mail } from "@sdk";
 
 app.on("mail.message.received", async event => {
-  const message = await mail.app().message.read({ id: event.subject.id });
+  const { data: message } = await mail.app().message.read({ id: event.subject.id });
   if (message.hydrationStatus !== "complete") {
     throw new Error("Message content is not ready; retry after hydration");
   }

@@ -8,7 +8,6 @@ test("ships its Skills with every reference linked from the instructions", () =>
     "assistant-code-mode",
     "assistant-data-analysis",
     "cloud-assistant",
-    "scheduled-tasks",
     "skill-creator",
   ]);
   for (const skill of SKILLS) for (const reference of skill.references) expect(skill.instructions).toContain(`](${reference.path})`);
@@ -61,7 +60,7 @@ test("Assistant skills retain workflow and capability guidance", async () => {
   for (const text of [
     "one lasting fact or preference, such as reports always as PDF: personalization memory",
     "a personalization workflow default",
-    "work that should run at a set time: a routine, which can load the Skill",
+    "work that should run at a set time: reviewed personal Code using `app.schedule` with an explicit `timeZone`, then `core.ai.chat.run`",
     "a Studio App that the Skill references",
     "name the subject, such as the team or the report, not only the output format",
     "the exact capability IDs that worked",
@@ -86,19 +85,12 @@ test("Assistant skills retain workflow and capability guidance", async () => {
   const assistant = inputs.find((candidate) => candidate.name === "cloud-assistant");
   // Phrasings like "like last time" match the user's words, not app names, so the description must name them.
   expect(assistant?.description).toContain('Also use when a request refers to earlier work, such as "like last time"');
-  for (const text of ["runtime Chat ID", "core.ai.chat.search", "core.ai.chat.message", "scheduled-tasks"]) {
+  for (const text of ["runtime Chat ID", "core.ai.chat.search", "core.ai.chat.message"]) {
     expect(assistant?.instructions).toContain(text);
   }
-  const scheduled = inputs.find((candidate) => candidate.name === "scheduled-tasks");
-  expect(scheduled?.description).toContain("Create and manage Assistant routines");
-  expect(scheduled?.description).toContain("one-time reminders");
-  expect(scheduled?.description).toContain("set up a routine");
-  expect(scheduled?.instructions).toContain("In conversation, call these routines");
-  expect(scheduled?.instructions).toContain("fixedInput");
-  expect(scheduled?.instructions).toContain("core.ai.task.run.read");
   const coreSource = await Bun.file(new URL("../../core/src/capabilities.ts", import.meta.url)).text();
   const declaredCoreCapabilities = new Set([...coreSource.matchAll(/^    "([a-z0-9.-]+)": \{/gm)].map((match) => `core.${match[1]!}`));
-  for (const match of [assistant?.instructions, scheduled?.instructions].join("\n").matchAll(/`(core\.[a-z0-9.-]+)`/g) ?? []) {
+  for (const match of [assistant?.instructions].join("\n").matchAll(/`(core\.[a-z0-9.-]+)`/g) ?? []) {
     expect(declaredCoreCapabilities.has(match[1]!)).toBeTrue();
   }
 });
@@ -120,7 +112,7 @@ test("Skills load only Core capabilities that exist", async () => {
     "code_diff",
   ]);
   expect(loaded["assistant-data-analysis"]).toEqual([]);
-  for (const name of ["cloud-assistant", "scheduled-tasks", "skill-creator"]) expect(loaded[name]!.length).toBeGreaterThan(0);
+  for (const name of ["cloud-assistant", "skill-creator"]) expect(loaded[name]!.length).toBeGreaterThan(0);
   for (const name of Object.values(loaded)
     .flat()
     .filter((name) => name.startsWith("core.")))

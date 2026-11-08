@@ -1,4 +1,4 @@
-import type { AiChatTaskView, AiProject, AiRecentResource, AiSkillSummary } from "@k2b/cloud/ai";
+import type { AiProject, AiRecentResource, AiSkillSummary } from "@k2b/cloud/ai";
 import { AI_TURN_ATTACHMENT_MAX_ITEMS, type AiComposerAttachment, aiChatAttachments, aiComposerAttachmentRecords } from "@k2b/cloud/ai/ui";
 import { type CloudSearchTag, cloudInsertMenu } from "@k2b/cloud/browser/composer-insert";
 import type { CloudResourcePickerItem } from "@k2b/cloud/browser/resource-picker";
@@ -14,9 +14,8 @@ import {
   matchesChatCommand,
 } from "@k2b/ui";
 import { type Accessor, createSignal } from "solid-js";
-import { AssistantTaskRunError, assistantApi } from "../api/client";
+import { assistantApi } from "../api/client";
 import { assistantMessages } from "./messages";
-import { assistantTaskTitle, formatAssistantTaskScheduleInline } from "./scheduled-task-format";
 import { type AssistantCopy, assistantCopyFor } from "./ui-copy";
 
 export const assistantCommandSections = (copy: AssistantCopy, pending = false): ChatCommandSection[] => [
@@ -26,7 +25,6 @@ export const assistantCommandSections = (copy: AssistantCopy, pending = false): 
   { id: "skills", label: copy.commandSkills, searched: true },
   { id: "files", label: copy.commandFiles, searched: true, searchOnly: true },
   { id: "chat", label: copy.commandChat },
-  { id: "tasks", label: copy.commandTasks, searched: true },
   { id: "apps", label: copy.commandApps, pending },
 ];
 
@@ -47,7 +45,6 @@ export const assistantCommandScopes = (copy: AssistantCopy, locale: string): Cha
     title: copy.commandModels,
     words: locale.startsWith("de") ? ["modell", "modelle", "model", "models"] : ["model", "models", "modell", "modelle"],
   },
-  { id: "task", title: copy.commandTasks, words: ["routine", "routinen"] },
 ];
 
 /**
@@ -443,89 +440,6 @@ const recentInTagScope = (scope: string, ref: CloudResourceRef) => {
   return ref.type === (OWN_RECENT_TYPES[tagKey] ?? tagKey.replace(":", "."));
 };
 
-/** The menu lists at most three task states of 100 each, so one key per listable task fits. */
-export const MAX_PENDING_RUN_KEYS = 300;
-
-/** Keeps pending task starts across composer remounts and reloads in one tab. */
-export function createAssistantTaskRunKeys(storage?: Pick<Storage, "getItem" | "setItem">) {
-  const storageKey = "k2b.assistant.taskRunKeys";
-  const pendingRunKeys = new Map<string, { key: string; uncertain: boolean }>();
-  let loaded = false;
-  // Oldest first, and keys without an unknown outcome before the ones that guard against a duplicate start.
-  const trim = () => {
-    for (const uncertain of [false, true])
-      for (const [taskId, pending] of pendingRunKeys) {
-        if (pendingRunKeys.size <= MAX_PENDING_RUN_KEYS) return;
-        if (pending.uncertain === uncertain) pendingRunKeys.delete(taskId);
-      }
-  };
-  const load = () => {
-    if (loaded) return;
-    loaded = true;
-    try {
-      storage ??= globalThis.sessionStorage;
-      const entries: unknown = JSON.parse(storage?.getItem(storageKey) ?? "null");
-      if (!Array.isArray(entries)) return;
-      for (const candidate of entries) {
-        const entry: unknown = candidate;
-        if (
-          entry &&
-          typeof entry === "object" &&
-          "taskId" in entry &&
-          typeof entry.taskId === "string" &&
-          "key" in entry &&
-          typeof entry.key === "string" &&
-          /^[a-f0-9]{32}$/.test(entry.key) &&
-          "uncertain" in entry &&
-          typeof entry.uncertain === "boolean"
-        ) {
-          // A key restored after a reload may belong to a request whose answer never arrived.
-          pendingRunKeys.set(entry.taskId, { key: entry.key, uncertain: true });
-          trim();
-        }
-      }
-    } catch {
-      // Storage can be unavailable, or contain invalid JSON; memory still works.
-    }
-  };
-  const save = () => {
-    trim();
-    try {
-      storage?.setItem(storageKey, JSON.stringify([...pendingRunKeys].map(([taskId, pending]) => ({ taskId, ...pending }))));
-    } catch {
-      // Privacy settings and quota failures must not prevent a task start.
-    }
-  };
-  return {
-    runKey(taskId: string) {
-      load();
-      let pending = pendingRunKeys.get(taskId);
-      if (!pending) {
-        pending = { key: crypto.randomUUID().replaceAll("-", ""), uncertain: false };
-        pendingRunKeys.set(taskId, pending);
-        save();
-      }
-      return pending.key;
-    },
-    runUncertain(taskId: string) {
-      load();
-      const pending = pendingRunKeys.get(taskId);
-      if (pending && !pending.uncertain) {
-        pending.uncertain = true;
-        save();
-      }
-    },
-    isUncertain(taskId: string) {
-      load();
-      return pendingRunKeys.get(taskId)?.uncertain === true;
-    },
-    settleRun(taskId: string, { force = false }: { force?: boolean } = {}) {
-      load();
-      if ((force || !pendingRunKeys.get(taskId)?.uncertain) && pendingRunKeys.delete(taskId)) save();
-    },
-  };
-}
-
 /** Owns discovery per opening for one composer. */
 export function createAssistantCommandSession() {
   let latest:
@@ -533,7 +447,7 @@ export function createAssistantCommandSession() {
         session: number;
         abort: AbortController;
         skills: Promise<AiSkillSummary[] | null>;
-        data: Promise<{ skills: AiSkillSummary[] | null; scheduledTaskSkills: AiSkillSummary[] | null; tasks: AiChatTaskView[] | null }>;
+        data: Promise<{ skills: AiSkillSummary[] | null }>;
       }
     | undefined;
   return {
@@ -548,20 +462,7 @@ export function createAssistantCommandSession() {
       const abort = new AbortController();
       // A failed load is `null`: each section offers its own retry row.
       const skills = assistantApi.listSkills(abort.signal).catch(() => null);
-      const scheduledTaskSkills = assistantApi.findSkillsByName("scheduled-tasks", abort.signal).catch(() => null);
-      const tasks = Promise.all(
-        (["active", "paused", "needs_attention"] as const).map((state) =>
-          assistantApi.listChatTasks({ state, limit: 100, signal: abort.signal }),
-        ),
-      ).then(
-        (pages) => pages.flat().sort((a, b) => b.createdAt.localeCompare(a.createdAt)),
-        () => null,
-      );
-      const data = Promise.all([skills, scheduledTaskSkills, tasks]).then(([skills, scheduledTaskSkills, tasks]) => ({
-        skills,
-        scheduledTaskSkills,
-        tasks,
-      }));
+      const data = skills.then((skills) => ({ skills }));
       latest = { session, abort, skills, data };
       return data;
     },
@@ -571,25 +472,11 @@ export function createAssistantCommandSession() {
   };
 }
 
-const taskKeywords = [
-  "routine",
-  "routinen",
-  "regelmäßig",
-  "zeitplan",
-  "erinnern",
-  "erinnerung",
-  "schedule",
-  "reminder",
-  "geplant",
-  "scheduled",
-];
-
 /** Only explicit selection inserts a reference or performs an action. */
 export async function assistantComposerCommands(input: {
   query: string;
   session: number;
   sessionLoader: ReturnType<typeof createAssistantCommandSession>;
-  runKeys: ReturnType<typeof createAssistantTaskRunKeys>;
   models: readonly ChatModelOption[];
   selectedModelId?: string | null;
   chooseModel: (id: string) => void;
@@ -659,7 +546,7 @@ export async function assistantComposerCommands(input: {
   const recentSkills = new Set(recent.filter((item) => item.ref.type === SKILL_TYPE).map((item) => item.ref.id));
   const recentLimit = { partCount: input.partCount ?? (() => 0), locale: input.locale };
   const [sessionData, searchedSkills, chatFiles, project] = await Promise.all([
-    wants("task") ? input.sessionLoader.load(input.session) : null,
+    wants("skill") ? input.sessionLoader.load(input.session) : null,
     wants("skill") && !overview && !fullSkillScope ? assistantApi.listSkills(input.signal, query.slice(0, 200)) : [],
     (category === "file" || (!category && query.length > 0)) && input.conversationId
       ? assistantApi.listChatFiles(input.conversationId, input.signal)
@@ -768,108 +655,5 @@ export async function assistantComposerCommands(input: {
       });
     }
 
-  const taskRows: ChatCommand[] = [];
-  if (sessionData && wants("task")) {
-    // Task discovery and its Skill lookup fail independently of the overview’s full Skill list.
-    if (sessionData.tasks === null || sessionData.scheduledTaskSkills === null) {
-      taskRows.push({
-        id: "tasks-retry",
-        name: "tasks-retry",
-        section: "tasks",
-        label: copy.commandTasksFailed,
-        description: copy.commandTryAgain,
-        icon: "ti ti-alert-circle",
-        searchAgain: true,
-      });
-    } else {
-      // Skill names are unique, so the app-provided result of the exact-name lookup is the scheduled-tasks Skill.
-      const skill = sessionData.scheduledTaskSkills.find((skill) => skill.source !== null);
-      taskRows.push({
-        ...(skill?.enabled
-          ? reference("tasks", skill.name, "", {
-              kind: "resource",
-              id: `skill:${skill.id}`,
-              name: skill.name,
-              ref: { type: "core.ai.skill", id: skill.shortId },
-              icon: "ti ti-sparkles",
-            })
-          : {}),
-        id: "task-new",
-        name: "task-new",
-        section: "tasks",
-        label: copy.commandNewTaskLabel,
-        description: copy.commandNewTaskHint,
-        icon: "ti ti-calendar-plus",
-        keywords: [...taskKeywords, "neu", "new"],
-        reason: !skill ? copy.commandNewTaskSkillUnavailable : !skill.enabled ? copy.commandNewTaskSkillDisabled : undefined,
-      });
-      for (const task of overview ? sessionData.tasks.slice(0, 5) : sessionData.tasks) {
-        const title = assistantTaskTitle(task);
-        taskRows.push({
-          id: `task:${task.id}`,
-          name: title,
-          section: "tasks",
-          label: title,
-          description: copy.commandTaskRunHint({ schedule: formatAssistantTaskScheduleInline(task, input.locale) }),
-          icon: "ti ti-repeat",
-          keywords: taskKeywords,
-          busyLabel: copy.commandTaskStarting({ title }),
-          reason:
-            task.state === "paused"
-              ? copy.commandTaskPaused
-              : task.state === "needs_attention"
-                ? copy.commandTaskNeedsAttention
-                : undefined,
-          action:
-            task.state === "active"
-              ? async () => {
-                  try {
-                    const state = await assistantApi.runChatTask(task.id, { idempotencyKey: input.runKeys.runKey(task.id) });
-                    input.runKeys.settleRun(task.id, { force: true });
-                    return {
-                      done:
-                        state === "completed"
-                          ? copy.commandTaskAlreadyRan({ title })
-                          : state === "failed"
-                            ? copy.commandTaskAlreadyFailed({ title })
-                            : state === "stopped"
-                              ? copy.commandTaskAlreadyStopped({ title })
-                              : copy.commandTaskRunning({ title }),
-                    };
-                  } catch (error) {
-                    const status = error instanceof AssistantTaskRunError ? error.status : undefined;
-                    // A lost answer (network, 5xx) may hide an accepted start: keep its key and mark it uncertain.
-                    // 408 and 429 were not processed but cannot disprove an earlier start, so they keep the key as is.
-                    // Other 4xx settle a key that never had an unknown outcome; 404 always settles.
-                    if (status === undefined || status >= 500) input.runKeys.runUncertain(task.id);
-                    else if (status !== 408 && status !== 429) input.runKeys.settleRun(task.id, { force: status === 404 });
-                    const reason =
-                      status === undefined
-                        ? copy.commandTaskOffline
-                        : status >= 500
-                          ? copy.commandTaskNoAnswer
-                          : status === 409
-                            ? copy.commandTaskAlreadyRunning
-                            : status === 404
-                              ? copy.commandTaskGone
-                              : status === 429
-                                ? copy.commandTaskTooMany
-                                : copy.commandTaskNotAccepted;
-                    // While an earlier or this attempt may have started the task, never claim it did not start.
-                    const message = input.runKeys.isUncertain(task.id)
-                      ? copy.commandTaskRunUnconfirmed({ title, reason })
-                      : copy.commandTaskRunFailed({ title, reason });
-                    throw new Error(message + " " + copy.draftUnchanged);
-                  }
-                }
-              : undefined,
-        });
-      }
-    }
-  }
-  // Tasks have their own overview bound and never lose rows to the reference limit.
-  return [
-    ...(fullSkillScope ? results : results.slice(0, 30)),
-    ...taskRows.filter((row) => row.searchAgain || matchesChatCommand(row, query)),
-  ];
+  return fullSkillScope ? results : results.slice(0, 30);
 }

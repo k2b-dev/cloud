@@ -4,11 +4,14 @@ import { sql } from "../runtime/clients";
 import type { RequestActor } from "../server/middleware/auth";
 import { type AuditActor, type AuditRecordParams, audit } from "../services/audit";
 import { toPgTextArray } from "../services/postgres";
+import { isRetiredRoutineConfig } from "./retired-routines";
 import type { AiToolApprovalPolicy, AiTurnRunConfig } from "./types";
 
-/** Background authority never inherits a user's interactive Always Allow preference. */
-export const aiTurnAllowsRememberedApprovals = (config: AiTurnRunConfig | null | undefined): boolean =>
-  config == null || config.kind === "compact" || config.mandate === undefined;
+/**
+ * Background authority never inherits a user's interactive Always Allow preference: neither a mandate-backed turn
+ * nor any background run, whether or not its configuration carries a mandate.
+ */
+export const aiTurnAllowsRememberedApprovals = (config: AiTurnRunConfig | null | undefined): boolean => !isRetiredRoutineConfig(config);
 
 /**
  * Reserved remembered-approval name for reading one website in one chat or one managed app. No capability or tool can
@@ -32,8 +35,7 @@ export const parseAiWebsiteApprovalScope = (scope: string): { origin: string; re
 export const aiTurnAllowsWebsiteApprovals = (config: AiTurnRunConfig | null | undefined): boolean =>
   config != null &&
   config.kind !== "compact" &&
-  (config.signedInSession === true ||
-    (config.codeOrigin !== undefined && config.actor?.kind === "user" && !config.actor.delegation && config.background === undefined)) &&
+  (config.signedInSession === true || (config.codeOrigin !== undefined && config.actor?.kind === "user" && !config.actor.delegation)) &&
   aiTurnAllowsRememberedApprovals(config);
 
 export type AiToolApprovalContext = {

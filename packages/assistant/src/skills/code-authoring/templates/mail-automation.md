@@ -13,11 +13,11 @@ type Category = "support" | "invoice" | "sales" | "spam" | "other";
 const TAGS: Record<Category, string | null> = { support: "Support", invoice: "Invoice", sales: "Sales", spam: null, other: null };
 const ASSIGN: Partial<Record<Category, string>> = { invoice: "accounting.lead", support: "support.lead" };
 
-type Message = Awaited<ReturnType<ReturnType<typeof mail.app>["message"]["read"]>>;
-const conversation = (id: string) => mail.app().conversation.read({ id });
+type Message = Awaited<ReturnType<ReturnType<typeof mail.app>["message"]["read"]>>["data"];
+const conversation = async (id: string) => (await mail.app().conversation.read({ id })).data;
 
 async function categorise(message: Message): Promise<Category> {
-  const result = await core.app().ai.decide({
+  const { data: result } = await core.app().ai.decide({
     task: "mail.category",
     state: { subject: message.subject, from: message.from[0]?.address ?? "", text: message.text?.slice(0, 4000) ?? "" },
     questions: {
@@ -42,9 +42,12 @@ async function categorise(message: Message): Promise<Category> {
 async function tag(conversationId: string, category: Category) {
   const name = TAGS[category];
   if (!name) return;
-  const tags = await owner.mailbox.tag.list({ limit: 50 });
+  const { data: tags, page } = await owner.mailbox.tag.list({ limit: 50 });
   const match = tags.find(candidate => candidate.name === name);
-  if (!match) return;
+  if (!match) {
+    if (page?.hasMore) throw new Error(`Tag ${name} was not found on the first page; use its verified ID or a bounded lookup`);
+    throw new Error(`Configured tag ${name} does not exist in this mailbox`);
+  }
   const current = await conversation(conversationId);
   if (current.tags.some(existing => existing.id === match.ref.id)) return;
   await owner.conversation.tag.update({ conversationId, expectedRevision: current.collaboration.revision, addTagIds: [match.ref.id] });
@@ -54,7 +57,7 @@ async function assign(conversationId: string, category: Category) {
   const who = ASSIGN[category];
   if (!who) return;
   // The search also matches display names and groups: take only an exact user name.
-  const member = (await owner.mailbox.member.list({ query: who, limit: 20 })).find(candidate => candidate.uid === who);
+  const member = (await owner.mailbox.member.list({ query: who, limit: 20 })).data.find(candidate => candidate.uid === who);
   if (!member) throw new Error(`Assignee ${who} is not a member of this mailbox`);
   const current = await conversation(conversationId);
   if (current.collaboration.assignees.length) return;
@@ -78,7 +81,7 @@ async function summarise(conversationId: string, message: Message) {
   if (!message.text) return;
   // A rerun would generate other text under the same key; an existing summary means this step is done.
   if ((await conversation(conversationId)).summary) return;
-  const summary = await core.app().ai.generate({
+  const { data: summary } = await core.app().ai.generate({
     task: "mail.summary",
     prompt: "Summarise what the sender wants in at most two sentences, in the language of the message.",
     input: { subject: message.subject, body: message.text, truncated: message.bodyTruncated },
@@ -98,9 +101,9 @@ async function summarise(conversationId: string, message: Message) {
 
 async function draftReply(conversationId: string, message: Message, category: Category) {
   if (category !== "support" || !message.text) return;
-  const [identity] = await owner.mailbox.identity.list({ limit: 1 });
+  const { data: [identity] } = await owner.mailbox.identity.list({ limit: 1 });
   if (!identity) return;
-  const reply = await core.app().ai.generate({
+  const { data: reply } = await core.app().ai.generate({
     task: "mail.reply",
     prompt:
       "Draft a short, friendly reply that confirms we received the request and will answer within one working day. " +
@@ -121,7 +124,7 @@ async function draftReply(conversationId: string, message: Message, category: Ca
 }
 
 app.on("mail.message.received", async event => {
-  const message = await mail.app().message.read({ id: event.subject.id });
+  const { data: message } = await mail.app().message.read({ id: event.subject.id });
   // Throwing before the first Action lets Cloud retry; after it, failures stay visible.
   if (message.hydrationStatus !== "complete") throw new Error("Message content is not ready yet");
   if (!message.conversationId) return;

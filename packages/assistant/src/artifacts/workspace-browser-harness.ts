@@ -15,7 +15,7 @@ render(() => {
   return createComponent(AssistantLiveProvider, {
     value: createAssistantLiveHub(),
     get children() {
-      return createComponent(ArtifactWorkspace, { controller, userId: id, refreshKey: "initial", onEditTask: () => {} });
+      return createComponent(ArtifactWorkspace, { controller, userId: id, refreshKey: "initial" });
     },
   });
 }, document.getElementById("root")!);

@@ -12,6 +12,18 @@ Every non-empty chart has tooltips, keyboard inspection, and tap by default; see
 
 Use `StatCell` for one value. Use `DataTable` when readers need exact records rather than a visual summary.
 
+## Save a chart as JSON
+
+`ChartDescription`, `ChartInput`, `ChartNumberFormat`, and `ChartFormat` are
+owned by `@k2b/ui/charts`. A portable node uses `{kind, title, ...}` and named
+formats such as `{style: "currency", currency: "EUR"}`. It contains no
+callbacks. Use ISO text for dates and `null` for missing observations.
+
+The portable Zod validator `chartKinds()` from `@k2b/editor/charts` is checked
+against those types at compile time. It normalizes null gaps to non-finite
+renderer values; stacked area keeps its nullable series. Keep the original JSON when saving. Its optional limits are
+host policy. Each consuming application keeps its own input budget.
+
 ## Import
 
 ```tsx
@@ -271,7 +283,11 @@ over `autoVariant`. Non-finite coordinates are skipped.
 `AxisOptions` supports `label?: string`, `format?: (value: number) => string`,
 `ticks?: number` (suggested count, default 5), `scale?: "linear" | "log"`
 (default linear), `minorTicks?: boolean` (default false), and optional exact
-`domain?: [number, number]` comparison bounds. See the snapshot section for domain validation.
+`domain?: [number, number]` comparison bounds. Existing tick positions and centered
+numeric X labels stay unchanged by default. Opt in with `insetEndpointLabels: true`
+to align numeric X endpoint labels inward and omit nice ticks within one interval
+of exact bounds. This keeps long endpoint units inside compact plots; use it only
+on axes that need this layout. See the snapshot section for domain validation.
 For line and scatter charts, log axes exclude non-positive coordinates. `references` is an array of
 `{ value: number; axis?: "x" | "y"; label?: string }`; the default axis is Y.
 Categorical bars ignore X references. Use the
@@ -1082,6 +1098,31 @@ as dots; Antarctica appears only in the list. Values that are not positive finit
 out. With no data the neutral map stays; the host shows its own empty message.
 Use `format` for units and `limit` to change how many countries the list names.
 
+## Waterfall charts
+
+Use `kind="waterfall"` to explain how ordered changes connect an opening
+balance to a closing balance. Pass `start: { label, value }`,
+`steps: { label, value }[]` and `end: { label }`. The closing balance is
+calculated; callers cannot supply a conflicting total. Negative balances
+and changes that cross zero are supported. All inputs and cumulative balances
+must be finite. A missing change is rejected rather than treated as zero.
+
+Totals rest on zero in a neutral colour. Inflows use `--k2b-flow-in-mark`
+and ↙; outflows use `--k2b-flow-out-mark` and ↗. Without flow tokens,
+the pure renderer retains turquoise and violet fallback colours. Connectors join running balances.
+Tooltips name the direction (In/Out), show the unsigned amount and the balance
+after each step. Opening and closing totals show only Balance, using the inherited locale. Phone labels are thinned, while the closing label always remains visible inside the right plot edge;
+every complete label remains in inspection and the data table.
+
+`renderWaterfallSvg({ ...options, width, height, inspect: true })` and
+`waterfallLayout(options, { width, height })` from `@k2b/ui/charts` expose the
+same pure drawing and calculation; both are also available from `@k2b/ui/charts/core`.
+`Chart.Waterfall` renders the same options as the `kind` discriminator. Measured
+hosts pass `displayWidth` in CSS pixels; other hosts use the phone-safe default.
+Values print when bars have at least 46 CSS pixels and the text fits its slot. SVG marks carry their paint attributes,
+so server, PDF and app-frame hosts do not require `.k2b-ui` to see them.
+Portable JSON accepts `format: { style: "currency", currency: "EUR", decimals: 0 }`;
+the component and renderer accept a `format(value)` function.
 ## Calendar heatmaps
 
 `Chart.Calendar` (or `Chart.Heatmap` with `layout="calendar"`) accepts `data: ["YYYY-MM-DD", number | null][]`
@@ -1123,6 +1164,7 @@ The top legend starts with the final column's amount or share and follows the
 inspected column. A missing column (or a zero-sum normalized column) has no inspected values; the
 legend uses a dash when its final column is a gap.
 
+Waterfall labels and printed amounts follow the drawn container width. Amounts appear when bars are at least 46 CSS pixels wide and the text fits its slot; shrinking to a phone hides them without a hydration redraw.
 Stat-tile trends use the same sparkline SVG and interaction host as `Chart`,
 without importing the catalog dispatcher. Adding another chart kind therefore
 does not add its renderer to pages that only show stat trends.

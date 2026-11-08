@@ -66,9 +66,10 @@ history. Inspect the run's capability calls to diagnose a refused delivery.
 Rebuild an open-ended routine as personal Code with `app.schedule` and
 `core.ai.chat.run`, preserving its prompt, destination and explicit time zone.
 Use `{ at, timeZone }` for one-time work and `{ cron, timeZone }` for recurring
-work. Review and activate the new Code before the cut, then stop the old routine before
-enabling its replacement schedule. Do not run both for the same occurrence.
-Existing routines stay unchanged until that cut.
+work. Export definitions on the old release before upgrading. The upgrade stops
+all old routines; it does not activate replacements. Ask Gustav to rebuild and
+review the new Code, then enable its schedule. See
+[Routines became Code](/en/docs/operations/routines-to-code).
 
 The replacement starts a normal turn in the owner's chat. Required approvals
 wait there and the Code run ends promptly; this differs from routines that

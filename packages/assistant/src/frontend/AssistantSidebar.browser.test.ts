@@ -95,7 +95,7 @@ const busy: AiConversation[] = quiet.map((item) =>
       : item.id === "travel"
         ? { ...item, runStatus: "failed", runError: "Model unavailable" }
         : item.id === "vacation"
-          ? { ...item, unreadCompletion: true, hasActiveSchedule: true }
+          ? { ...item, unreadCompletion: true }
           : item,
 );
 

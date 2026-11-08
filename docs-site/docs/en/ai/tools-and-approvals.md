@@ -199,6 +199,7 @@ of points.
 | --- | --- |
 | `bar` | `data: [{label, value}]`; `xAxis: {label}` (category title), `yAxis`, `colorByBar`, `showValues`, `legend`, `references` |
 | `line`, `scatter` | `series: [{label?, data: [{x, y}], role?}]`; `xAxis`, `yAxis`, `legend`, `references`. Line also accepts `area`, `smooth` and series `style`. |
+| `waterfall` | `start: {label, value}`, `steps: [{label, value}]`, `end: {label}`. Positive steps are inflows, negative steps outflows; the closing balance is calculated. `format`. |
 | `area` | `layout: "stacked"`, ordered `x: (string | number)[]`, `series: [{label, data: (number | null)[]}]`; equal lengths, nonnegative values. `normalize: true` shows 100 %; tooltip retains share and amount. Nulls interrupt the stack; a zero total is a gap only in normalized mode. `legend`, `format`. |
 | `pie`, `donut` | `data: [{label, value}]`; `legend`, `showLabels`, `format` |
 | `histogram` | `data: number[]`; `bins` (count or ascending edges), `references` |
@@ -299,7 +300,12 @@ A saved stats view is `{view: "stats", title, subtitle?, items}`. Each item has
 `label` and `value` (a finite number, or short text for a state such as `"OK"`),
 optional number `format`, `sub`, finite `delta`, `better: "up" | "down"`, and
 `sparkline` (2..480 finite numbers, oldest first). Format and delta require a
-numeric value; better requires delta. Delta is in the value's units. The host
+numeric value; better requires a numeric delta. A numeric delta stays in the
+value's units. Alternatively, use `delta: {value, unit?: "ratio" | "points", better?}`:
+`0.082` is `+8.2 %` as a ratio, and `0.031` is `+3.1 pts` as points.
+`compare: {label, value}` adds the previous numeric value, formatted like the
+figure. Changes use the shared StatCell badge with an arrow and a spoken label.
+The optional comparison flag in summaries reserves its support line before loading. The host
 chooses improvement colors from better; no direction or zero stays neutral. The
 sparkline tooltip names each point after the item label and uses the item
 `format`.
@@ -479,7 +485,7 @@ Tool-capable personal chats keep three bounded discovery tools available:
   `mail.conversation.list`. Its
   optional `appId` searches that app first. If it has no matches, discovery
   returns matching tools from other available apps or built-ins, within the
-  same permissions, chat scope, and task grants. Successful scoped searches
+  same permissions and chat scope. Successful scoped searches
   stay scoped. Search includes operation titles in the request language as
   well as base titles and descriptions. `kind` is returned as metadata and is
   not a search filter. Searching never loads a tool;
@@ -497,7 +503,7 @@ Tool-capable personal chats keep three bounded discovery tools available:
   | `unknown` | No tool has this exact name, or it names an optional built-in that is off, such as `memory` while memory is disabled |
   | `skill` | The name is an Assistant Skill this turn can load; `load_skill` loads it, not `load_tools` |
   | `not_offered_in_turn` | The tool exists, but this turn's client or task does not provide it, or the turn offers no app operations |
-  | `not_allowed` | The conversation's fixed tool scope or routine grants exclude it |
+  | `not_allowed` | The conversation's fixed tool scope excludes it |
   | `app_offline` | The operation was loaded earlier, or the registry cannot be read, and its app is not in the live registry now |
 
   The model looks up an unknown name once with `search_tools`, loads a skill
@@ -506,13 +512,9 @@ Tool-capable personal chats keep three bounded discovery tools available:
 - `list_apps` returns a bounded map of exact app IDs to their live descriptions
   when the owning app is unclear.
 
-A routine (scheduled task) uses its mandate policy and grants for `search_tools`,
-`load_tools`, `list_apps`, and resource readers. Tools outside that scope stay
-unavailable even if the interactive chat loaded them earlier. When the scope
-allows no app operations, `search_tools` says so instead of reporting an outage.
-Fixed inputs are checked per call; a rejected call returns a tool error the
-model can recover from. Broken authority or required interaction still makes
-the routine need attention; see [Background mandates](/en/docs/identity/background-mandates#grant-capabilities-to-an-unattended-assistant-routine).
+Scheduled chat routines are retired. See
+[Routines became Code](/en/docs/operations/routines-to-code) for the export and
+reviewed rebuild path.
 
 A loaded built-in or app operation becomes an ordinary named tool on the next model turn.
 Cloud gives the model the operation's structure, required fields,
@@ -868,3 +870,11 @@ latest checkpoint independently of history pagination. Compaction preserves an
 exact plan checkpoint alongside its summary; fork and retry follow the selected
 history rather than importing a later plan. A plan records intended and completed
 work; it neither executes actions nor grants permission.
+
+## Portable view descriptions
+
+Notebooks and `cloud.chart()` use the same description and validator. Cloud
+owns adjacent `{block: "stats" | "table" | "group" | "details" | "explorer", ...}`
+nodes, including Cloud reference cells. Existing saved `{view, ...}` envelopes
+remain valid; `cloudAiViewDescription()` from `@k2b/cloud/ai` converts validated
+views to nodes without changing their chart or table data.

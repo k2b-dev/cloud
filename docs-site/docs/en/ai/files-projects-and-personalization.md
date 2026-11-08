@@ -345,8 +345,8 @@ The optional `load-tools` frontmatter field lists the tools a Skill needs for
 most requests: 1 to 25 unique capability IDs or built-in tool names.
 `load_skill` loads them together with the instructions, so Assistant can call
 them in its next step without a separate `load_tools` round. They pass the same
-checks as `load_tools`: a tool outside the chat's tool scope, a routine's
-grants, or the live app catalog is reported as unavailable with its reason, and
+checks as `load_tools`: a tool outside the chat's tool scope
+or the live app catalog is reported as unavailable with its reason, and
 the model's tool limit still applies. The list grants nothing; every call is
 authorized as usual. It comes from the pinned `SKILL.md`, like the
 instructions. Skills a person selects with `/` and local Skills load no tools
@@ -372,7 +372,7 @@ while the app runs. The built-in apps ship these Skills:
   lookup, join, and aggregation examples. It guides queries and daily work and
   routes product and administration questions to canonical Grids Help.
 - Assistant ships `cloud-assistant` for conversation history and resources,
-  inter-chat messaging, and routines; `scheduled-tasks`;
+  inter-chat messaging;
   `assistant-code-mode` and `assistant-data-analysis`; and `skill-creator`,
   which explains how to draft a concise Skill and names the `core.ai.skill`
   Capabilities Assistant can use to list, read, create, update, manage
@@ -409,12 +409,11 @@ that applies:
    change only when the user asks for that.
 4. The user says the request recurs ("again", "every week", "like last
    time", "always"), pastes a long reusable instruction, or a personalization
-   workflow default covers it: it offers a Skill or a routine.
+   workflow default covers it: it offers a Skill.
 
 A new Skill is offered only when no listed Skill already covers the approach.
 When Skills are omitted from the bounded catalog, the model also checks
-`search_skills`. A request that a Skill already handles can still lead to a
-routine offer. Cases 1 and 2 and the Skill part of case 4 need
+`search_skills`. Cases 1, 2 and 4 need
 `skill-creator`; if the user disabled it or it was deleted, they are left out,
 even when other Skills remain loadable. Case 3 needs the memory tool. A single
 preference such as tone belongs in memory, not in a Skill. The model claims
@@ -425,8 +424,7 @@ The general suggestion limits apply: at most one offer, in the last sentence
 of the final message, and none after a failure, while asking a clarifying
 question or waiting for approval, after a reply that already ended with an
 offer, or once the user declined or asked for no suggestions. Asking for a
-shorter draft is a correction, not a request for silence. Routine runs
-do not get these rules.
+shorter draft is a correction, not a request for silence.
 
 Cloud does not leave these cases to the model alone. At the start of a new
 followed turn, the server checks the user's message and the latest messages of
@@ -467,14 +465,13 @@ limits: the model skips the offer when it ends with a question, waits for
 approval, or could not finish, when its previous reply already ended with an
 offer, when the user declined one in the chat, or when the user, their
 preferences, or instructions ask for no suggestions or only a short answer.
-Turns that continue after an approval and routine runs get no
-instruction.
+Turns that continue after an approval get no instruction.
 
 After a yes to a Skill offer, the model loads `skill-creator` and drafts from
 the conversation. Its template first picks the lightest place: memory for a
 fact or preference, a workflow default for always using one mailbox or Space,
-Project instructions, a Skill for a recurring procedure or format, a routine
-for a set time, or a Studio App that the Skill references. A Skill draft
+Project instructions, a Skill for a recurring procedure or format, reviewed
+personal Code for a set time, or a Studio App that the Skill references. A Skill draft
 keeps only the procedure, the output format, the capability IDs that worked,
 the user's corrections as positive rules, and inputs named by role and title.
 It leaves out content from attachments, mails, and web pages, names of people
@@ -719,8 +716,7 @@ tool execution boundaries.
 
 ### What the model knows about the chat
 
-Every turn except a routine run (`background` in the turn's run
-configuration) renders two extra platform sections, controlled by the Liquid
+Every chat turn renders two extra platform sections, controlled by the Liquid
 flag `interactive`. `cld assistant` turns count as followed turns; the CLI
 names each delivered file on standard error, such as
 `present: completed /sales-report.pdf`, so the final message need not list it
@@ -734,8 +730,7 @@ there either. The preview in **Assistant settings > System prompt** and
   questions out of status text, and does not list delivered files or visuals
   again.
 - **Suggestions** allows at most one offer, in the last sentence of the final
-  message. Corrections and recurring requests lead to a Skill, preference, or
-  routine offer, as described in
+  message. Corrections and recurring requests lead to a Skill or preference offer, as described in
   [Turn recurring work into a Skill](#turn-recurring-work-into-a-skill);
   otherwise the offer is a concrete next step that saves the user real work.
   The model makes no offer for simple requests or facts, while asking or waiting for

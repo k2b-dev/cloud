@@ -36,7 +36,6 @@ const identifierList = <T extends z.ZodType<string>>(schema: T) =>
 const operationSchema = z.union([
   z.literal("search.query"),
   z.literal("runtime.http"),
-  z.literal("runtime.database"),
   z.literal("workflow.run"),
   z.string().refine((value) => {
     const [prefix, localId, extra] = value.split(":");
@@ -85,11 +84,11 @@ const httpsUrl = z
     const url = new URL(value);
     return url.protocol === "https:" && !url.username && !url.password && !url.hash;
   }, "Use HTTPS without credentials or fragment");
-export const TaskGrantSchema = z.union([
+export const MandateGrantSchema = z.union([
   CapabilityGrantSchema,
   z
     .object({
-      kind: z.literal("http").describe("Authorize unattended runner code_run HTTP requests under this routine mandate."),
+      kind: z.literal("http").describe("Authorize HTTP requests from a reviewed personal Code version."),
       fixedInput: z
         .object({
           origin: httpsUrl
@@ -107,50 +106,9 @@ export const TaskGrantSchema = z.union([
         .describe("Fixed input values. Omitted fields are unrestricted; empty input permits every supported target and operation."),
     })
     .strict(),
-  z
-    .object({
-      kind: z
-        .literal("database")
-        .describe("Legacy Studio RSQL grant. Unavailable in runner code_run; no replacement database is provisioned."),
-      fixedInput: z
-        .object({
-          resourceId: z.string().min(1).max(80).optional().describe("Exact Studio app ID whose database may be used."),
-          operation: z
-            .enum([
-              "connect",
-              "status",
-              "export",
-              "clear",
-              "reset",
-              "tables.list",
-              "tables.create",
-              "tables.update",
-              "tables.delete",
-              "schema.get",
-              "rows.list",
-              "rows.get",
-              "rows.insert",
-              "rows.update",
-              "rows.delete",
-              "query",
-            ])
-            .optional()
-            .describe("Exact database operation; connect needs its own grant when operation is fixed."),
-          table: z
-            .string()
-            .min(1)
-            .max(63)
-            .optional()
-            .describe("Exact table; applies to row and schema operations, not arbitrary SQL queries."),
-        })
-        .strict()
-        .default({})
-        .describe("Fixed input values. Omitted fields are unrestricted; empty input permits every supported target and operation."),
-    })
-    .strict(),
 ]);
-export const TaskGrantsSchema = z.array(TaskGrantSchema).max(MANDATE_POLICY_MAX_IDENTIFIERS / 2);
-export type TaskGrant = z.output<typeof TaskGrantSchema>;
+export const MandateGrantsSchema = z.array(MandateGrantSchema).max(MANDATE_POLICY_MAX_IDENTIFIERS / 2);
+export type MandateGrant = z.output<typeof MandateGrantSchema>;
 
 const equalJson = (a: unknown, b: unknown): boolean => {
   if (a === b) return true;
@@ -207,7 +165,7 @@ export const MandatePolicyV1Schema = z
     apps: z.union([z.literal("*"), identifierList(CapabilityAppIdSchema)]),
     operations: z.union([z.literal("*"), identifierList(operationSchema)]),
     actions: z.enum(["deny", "require_approval", "preapproved"]),
-    grants: TaskGrantsSchema.optional(),
+    grants: MandateGrantsSchema.optional(),
   })
   .strict()
   .superRefine((policy, context) => {
@@ -249,10 +207,7 @@ export const isMandatePolicyNarrowing = (current: MandatePolicyV1, next: Mandate
   setAllows(current.operations, next.operations) &&
   ACTION_AUTHORITY[next.actions] <= ACTION_AUTHORITY[current.actions] &&
   (current.grants === undefined
-    ? !next.grants?.some(
-        (grant) =>
-          grant.kind === "http" || grant.kind === "database" || grant.target !== undefined || Object.keys(grant.refs ?? {}).length > 0,
-      )
+    ? !next.grants?.some((grant) => grant.kind === "http" || grant.target !== undefined || Object.keys(grant.refs ?? {}).length > 0)
     : next.grants !== undefined &&
       next.grants.every((grant) =>
         current.grants!.some((existing) => {
@@ -294,10 +249,11 @@ export const mandatePolicyAllows = (
 ): boolean => {
   if (policy.apps !== "*" && !policy.apps.includes(input.appId)) return false;
   if (policy.operations !== "*" && !policy.operations.includes(input.operation)) return false;
-  if (input.operation === "runtime.http" || input.operation === "runtime.database") {
-    const kind = input.operation === "runtime.http" ? "http" : "database";
+  if (input.operation === "runtime.http") {
+    const kind = "http";
     return (
-      (input.appId === "assistant" || (input.codeVersion === true && input.appId === "core" && kind === "http")) &&
+      input.codeVersion === true &&
+      input.appId === "core" &&
       !!policy.grants?.some(
         (grant) =>
           grant.kind === kind &&

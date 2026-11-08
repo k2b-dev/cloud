@@ -15,8 +15,8 @@ import {
   untrack,
 } from "solid-js";
 import { CloudChartBlock } from "#chat-charts";
+import { FeatCodeMark } from "../../code/FeatCodeMark";
 import { markdown } from "../../shared";
-import { type ChatTaskReason, chatTaskReasonSentence, chatTaskReasonState, chatTaskStopSentence } from "../chat-task-reasons";
 import { AI_TURN_LEASE_MS, type AiTurnBlock } from "../protocol";
 import type { AiTurnError } from "../types";
 import { toolSubject, useReaderTimeZone } from "./action-sentences";
@@ -25,7 +25,7 @@ import { CapabilityTablePreview } from "./capability-table";
 import { PresentToolBlock } from "./file-tools";
 import { AiMapToolBlock } from "./map-widget";
 import { useAiChatActions } from "./message-actions";
-import { aiToolIcon, displayToolName, isCardToolName, isChartToolName, isRecord, isSurveyToolName } from "./message-utils";
+import { aiToolIcon, displayToolName, isCardToolName, isChartToolName, isFeatCodeTool, isRecord, isSurveyToolName } from "./message-utils";
 import { aiChatMessages } from "./messages";
 import { AssistantMarkdownBlock } from "./primitives";
 import { ResultLinks, resultLinks, ToolActionView } from "./tool-action";
@@ -59,7 +59,7 @@ export type AiTurnSegment = {
   scheduledTask?: {
     taskId: string;
     occurrenceId: string;
-    reason?: ChatTaskReason;
+    reason?: { code: string; at: string; action?: string };
     reasonOnly?: true;
     stop?: { cause: "paused" | "deleted"; done: string[] };
   } | null;
@@ -325,6 +325,11 @@ function RepeatedSteps(props: { id: string; target: string; entries: AiWorkEntry
       description={props.target}
       trailing={<span class="ai-turn-work__meta">{aiChatMessages(locale()).repeatCount({ count: tools().length })}</span>}
       icon={aiToolIcon(first().name, first().presentation?.appIcon)}
+      leading={
+        !first().presentation?.appIcon && isFeatCodeTool(first().name) ? (
+          <FeatCodeMark variant="glyph" tone="current" decorative />
+        ) : undefined
+      }
       bodyInset={false}
       busy={props.active && tools().at(-1)?.status === "running"}
       renderBody={() => <WorkEntries entries={props.entries} active={props.active} />}
@@ -521,6 +526,7 @@ function AiTurnActionView(props: { action: Accessor<AiTurnAction | undefined>; t
                   <Chat.Activity
                     label={current().block.presentation?.title ?? displayToolName(current().block.name, locale())}
                     icon={aiToolIcon(current().block.name)}
+                    leading={isFeatCodeTool(current().block.name) ? <FeatCodeMark variant="glyph" tone="current" decorative /> : undefined}
                     busy={current().block.status === "awaiting_client"}
                   />
                 }
@@ -660,8 +666,6 @@ function AiTurnText(props: {
  */
 export function AiTurnView(props: { segment: Accessor<AiTurnSegment>; disclosureState: AiToolDisclosureState }): JSX.Element {
   const locale = useLocale();
-  const timeZone = useReaderTimeZone();
-  const chatActions = useAiChatActions();
   const layout = () => props.segment().layout;
   const results = createMemo(() => new Map(layout().results.map((result) => [result.id, result])));
   const isMapFollowup = (id: string) => {
@@ -695,17 +699,7 @@ export function AiTurnView(props: { segment: Accessor<AiTurnSegment>; disclosure
     <AiToolDisclosureProvider state={props.disclosureState}>
       <div class="ai-turn">
         <Show when={props.segment().scheduledTask}>
-          {(task) => (
-            <Button
-              variant="ghost"
-              size="xs"
-              class="self-start"
-              onClick={() => chatActions.onOpenScheduledTaskRun?.(task().taskId, task().occurrenceId)}
-              disabled={!chatActions.onOpenScheduledTaskRun}
-            >
-              <i class="ti ti-calendar-time" aria-hidden="true" /> {aiChatMessages(locale()).backgroundRun}
-            </Button>
-          )}
+          <Chat.Activity icon="ti ti-calendar-time" label={aiChatMessages(locale()).backgroundRun} />
         </Show>
         <Show when={layout().showWork}>
           {/* The live label and clock change every second; the conversation log must not read them out. */}
@@ -714,17 +708,8 @@ export function AiTurnView(props: { segment: Accessor<AiTurnSegment>; disclosure
           </div>
         </Show>
         <For each={resultIds()}>{(id) => <AiTurnResultView result={() => results().get(id)} receipt={() => actions().has(id)} />}</For>
-        <Show when={props.segment().scheduledTask?.stop}>
-          {(stop) => (
-            <Chat.Activity
-              class="ai-turn__routine-line"
-              wrap
-              icon="ti ti-player-stop"
-              label={chatTaskStopSentence(stop().done, locale())}
-            />
-          )}
-        </Show>
-        <Show when={layout().text.length > 0 && !props.segment().scheduledTask?.stop && !props.segment().scheduledTask?.reasonOnly}>
+
+        <Show when={layout().text.length > 0}>
           <AiTurnText
             blocks={() => layout().text}
             live={live}
@@ -734,14 +719,16 @@ export function AiTurnView(props: { segment: Accessor<AiTurnSegment>; disclosure
           />
         </Show>
         <For each={mapFollowupIds()}>{(id) => <AiTurnResultView result={() => results().get(id)} receipt={() => false} />}</For>
-        <Show when={props.segment().scheduledTask?.stop ? undefined : props.segment().scheduledTask?.reason}>
+
+        <Show
+          when={!props.segment().scheduledTask?.stop && !props.segment().scheduledTask?.reasonOnly && props.segment().scheduledTask?.reason}
+        >
           {(reason) => (
             <Chat.Activity
-              class="ai-turn__routine-line"
+              icon="ti ti-alert-triangle"
+              tone="warning"
               wrap
-              icon={chatTaskReasonState(reason().code) === "paused" ? "ti ti-player-pause" : "ti ti-alert-triangle"}
-              tone={chatTaskReasonState(reason().code) === "paused" ? "neutral" : "warning"}
-              label={chatTaskReasonSentence(reason(), { locale: locale(), timeZone })}
+              label={aiChatMessages(locale()).routineHistoryReason(reason())}
             />
           )}
         </Show>

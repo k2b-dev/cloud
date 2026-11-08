@@ -45,10 +45,7 @@ const secretCall = <T extends z.infer<typeof ClientCall>>(call: T) => {
   return call;
 };
 /** Chat-only services: no resource resolver, app storage, HTML host or database admission. */
-export const createChatCodeServiceRoutes = (
-  caller: (c: Context<AuthContext>) => CapabilityCaller = capabilityCaller,
-  backgroundTurnId?: string,
-) =>
+export const createChatCodeServiceRoutes = (caller: (c: Context<AuthContext>) => CapabilityCaller = capabilityCaller) =>
   new Hono<AuthContext>()
     .use(
       "*",
@@ -123,7 +120,7 @@ export const createChatCodeServiceRoutes = (
     })
     .post("/runtime/ai", async (c) => {
       const input = z.strictObject({ scope: HttpScope, request: AiTaskRequestSchema }).parse(await c.req.json());
-      return c.json({ output: await runCodeAi(input.request, input.scope, identity(c), c.req.raw.signal, backgroundTurnId) });
+      return c.json({ output: await runCodeAi(input.request, input.scope, identity(c), c.req.raw.signal) });
     })
     .post(
       "/runtime/pdf",

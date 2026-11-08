@@ -12,12 +12,12 @@ import { app, Chart, Column, jsx, Notice, owner, Page, Section, Stat, Stats, Tab
 const TEAM = "00000000-0000-4000-8000-0000000000aa";
 
 const LIMIT = 50;
-const count = (items: readonly unknown[]) => (items.length >= LIMIT ? `${LIMIT}+` : items.length);
+const count = (items: readonly unknown[], hasMore: boolean) => (hasMore ? `${items.length}+` : items.length);
 
 app.get("/", async c => {
   if (!c.user?.groups.includes(TEAM))
     return c.page(<Page title="Mailbox overview"><Notice tone="warning" title="Only for the mailbox team" /></Page>);
-  const [needsAction, waiting, unassigned] = [
+  const [{ data: needsAction, page: needsActionPage }, { data: waiting, page: waitingPage }, { data: unassigned, page: unassignedPage }] = [
     await owner.conversation.list({ view: "needs_action", limit: LIMIT }),
     await owner.conversation.list({ view: "waiting", limit: LIMIT }),
     await owner.conversation.list({ view: "unassigned", limit: LIMIT }),
@@ -34,9 +34,9 @@ app.get("/", async c => {
   return c.page(
     <Page title="Mailbox overview" subtitle="Open work right now" icon="ti ti-inbox" color="blue" follow={["mail.message.received"]}>
       <Stats>
-        <Stat label="Needs action" value={count(needsAction)} />
-        <Stat label="Waiting" value={count(waiting)} />
-        <Stat label="Unassigned" value={count(unassigned)} />
+        <Stat label="Needs action" value={count(needsAction, needsActionPage?.hasMore ?? false)} />
+        <Stat label="Waiting" value={count(waiting, waitingPage?.hasMore ?? false)} />
+        <Stat label="Unassigned" value={count(unassigned, unassignedPage?.hasMore ?? false)} />
       </Stats>
       <Section title="Open work" icon="ti ti-list-check" color="blue">
         {open > 0 ? (

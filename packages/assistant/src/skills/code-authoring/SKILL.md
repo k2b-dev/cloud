@@ -1,6 +1,6 @@
 ---
 name: code-authoring
-description: Build or change lasting Cloud Code. Use for automations that react to incoming mail, run on a schedule or once, use AI, deliver results to a Gustav chat, or pass mail attachments and files to another app, and for Code pages with forms, key figures, tables and charts. Covers code.ts and code.tsx, app.on, app.schedule, app.get/post, c.page, checking, fictional tests, simulation and submitting a version that the person switches on. One-off analysis or exports in this chat use assistant-code-mode and code_run.
+description: Build or change lasting Cloud Code. Use for automations that react to incoming mail, run on a schedule or once, use AI, deliver results to a Gustav chat, or pass mail attachments and files to another app, and for Code pages with forms, key figures, tables and charts. Rebuild exported Mail rules or Assistant routines as reviewed candidates. Covers code.ts and code.tsx, app.on, app.schedule, app.get/post, c.page, checking, fictional tests, simulation and submitting a version that the person switches on. One-off analysis or exports in this chat use assistant-code-mode and code_run.
 load-tools: [code_init, code_pull, code_sdk, code_write, code_check, code_test, code_simulate, code_submit, code_diff]
 ---
 # Write Code
@@ -9,7 +9,8 @@ Code is a small TypeScript project that Cloud checks, stores as an immutable
 version and runs in a sandbox. It imports only `@sdk`, which Cloud generates
 from the live capability catalog, and its own relative files. Load the tools
 above through `load_tools` if they are missing. Their JSON results are the
-same contracts as `cld code`; keep them intact.
+same contracts as `cld code`; keep them intact. Cloud shows Code under the
+name **feat/code**: a person who says feat/code means Code.
 
 ## Workflow
 
@@ -22,6 +23,9 @@ same contracts as `cld code`; keep them intact.
 2. **Read the SDK.** `code_sdk({codeId})` returns the generated `sdk.d.ts`.
    Use only operations, inputs, results and events that it declares. Never
    guess a capability, field or resource ID; read IDs through queries or ask.
+   Domain Queries return `{ data, page? }`: read fields from `data` and pass
+   `page.nextCursor` as input `cursor` in bounded loops ([Data](references/data.md)).
+   Streaming reads keep their `FileRef`; Actions return domain data directly.
 3. **Write.** `code_write({project, path, content})` replaces one file and
    returns the complete project. Pass that project to the next write. Drafts
    stay in this chat until submit. Default-export `app` from `code.ts` or `code.tsx`.
@@ -48,6 +52,16 @@ Authoring needs Code editor rights and an interactive chat; background tasks
 cannot edit lasting Code. A passing check or test grants nothing: every call
 checks the current policy, version approval and the account's access.
 
+## Rebuild an exported automation
+
+For a Mail rule or Assistant routine export, read
+[Rebuild exported Mail rules and routines](references/rebuild.md). Explain the
+old behavior, discover its current SDK equivalents, and draft through the same
+check, fictional test and submit tools. The export grants nothing; activation
+stays with a person. Open-ended routines schedule `core.ai.chat.run` in the
+owner's original Gustav chat; deterministic routines keep explicit operations.
+Automatic replies remain reference evidence and are not rebuilt as sending Code.
+
 ## Choose the building block
 
 | Need | Use | Read |
@@ -59,7 +73,7 @@ checks the current policy, version approval and the account's access.
 | Classify with probabilities, such as category and urgency | `core.ai.decide` | [AI](references/ai.md) |
 | Put a result into the owner's Gustav chat | `core.ai.chat.deliver` (personal Code) | [AI](references/ai.md), [weekly report](references/template-weekly-report.md) |
 | Let Gustav do open-ended work with tools | `core.ai.chat.run` (personal Code) | [AI](references/ai.md) |
-| Rebuild an Assistant routine as Code | Personal Code: the routine's schedule and time zone, then `deliver` for a fixed result or `run` for open-ended work | [Schedules](references/schedules.md), [AI](references/ai.md) |
+| Rebuild an Assistant routine as Code | Personal Code: the routine's schedule and time zone, then `deliver` for a fixed result or `run` for open-ended work | [Rebuild](references/rebuild.md), [Schedules](references/schedules.md), [AI](references/ai.md) |
 | Post into a team chat conversation | `chat.message.post` | [Capabilities](references/capabilities.md), [event to chat](references/template-event-to-chat.md) |
 | Create or update a task in a Space | `spaces.task.create`, `spaces.task.update` | [Capabilities](references/capabilities.md), [form app](references/template-form-app.md) |
 | A page with key figures, charts and tables | `app.get` with `c.page(<Page>…)`: `Stats`/`Stat`, `Chart.*`, `Table`/`Column` | [Pages](references/pages.md), [dashboard](references/template-dashboard-page.md) |

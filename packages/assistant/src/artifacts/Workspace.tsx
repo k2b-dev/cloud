@@ -1,13 +1,10 @@
-import type { AiChatTaskView, AiProject } from "@k2b/cloud/ai";
+import type { AiProject } from "@k2b/cloud/ai";
 import { conversationFileSource } from "@k2b/cloud/ai/solid";
 import { Button, Dropdown, FileTree, FileView, NoticeCard, Placeholder, prompts, Tabs, useLocale } from "@k2b/ui";
 import { createEffect, createResource, createSignal, ErrorBoundary, For, onCleanup, Show } from "solid-js";
 import { artifactMessages } from "../chat-code/messages";
-import { openAssistantTaskRun } from "../frontend/AssistantActivitiesDialog";
 import { AssistantChatContextContent, type ContextView } from "../frontend/AssistantChatContext";
 import type { ChatSidebarJump } from "../frontend/AssistantChatSidebar";
-import { AssistantTaskDetail } from "../frontend/AssistantTasksDialog";
-import { useAssistantLive } from "../frontend/assistant-live";
 import { ArtifactPanel } from "./ArtifactPanel";
 import { artifactClient } from "./client";
 import { artifactSourceRenderers, readOnlySourceRenderers } from "./SourceRenderer";
@@ -212,7 +209,6 @@ export function ArtifactWorkspace(props: {
   controller: ArtifactWorkspaceController;
   userId: string;
   refreshKey: string;
-  onEditTask: (task: AiChatTaskView, repair: boolean) => void;
   menuItems?: import("@k2b/ui").DropdownItem[];
   project?: AiProject | null;
   conversationId?: string | null;
@@ -224,7 +220,6 @@ export function ArtifactWorkspace(props: {
   const locale = useLocale(),
     t = () => artifactMessages.resolve([locale()]).t;
   const state = props.controller.state;
-  const live = useAssistantLive();
   const title = (tab: WorkspaceTab) => (tab.kind === "context" ? t()[tab.category] : tab.title);
   async function close(key = state().active) {
     if (!key) return;
@@ -252,7 +247,7 @@ export function ArtifactWorkspace(props: {
           options={state().tabs.map((tab) => ({
             value: tab.key,
             label: title(tab),
-            icon: tab.kind === "task" ? "ti ti-calendar-time" : tab.kind === "app" ? "ti ti-app-window" : "ti ti-file-code",
+            icon: tab.kind === "app" ? "ti ti-app-window" : "ti ti-file-code",
             onClose: () => void close(tab.key),
             closeLabel: `${t().close}: ${title(tab)}`,
           }))}
@@ -284,14 +279,7 @@ export function ArtifactWorkspace(props: {
                   />
                 )}
               >
-                {tab.kind === "task" ? (
-                  <AssistantTaskDetail
-                    taskId={tab.taskId}
-                    onEdit={props.onEditTask}
-                    onTitle={(title) => props.controller.rename(key, title)}
-                    onOpenRun={(taskId, occurrenceId) => void openAssistantTaskRun(taskId, occurrenceId, live)}
-                  />
-                ) : tab.kind === "context" ? (
+                {tab.kind === "context" ? (
                   <AssistantChatContextContent
                     chatId={tab.conversationId}
                     project={

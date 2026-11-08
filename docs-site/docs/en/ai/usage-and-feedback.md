@@ -159,7 +159,7 @@ These budgets cover direct Assistant calls, including personal Code-started
 Gustav turns through `core.ai.chat.run`, API/CLI submissions,
 queued messages and retries, and OpenAI-compatible API calls. Compaction,
 enrichment, image inspection, audio,
-routines and workflows are excluded. Switching chat models does not
+workflows and retired routine history are excluded. Switching chat models does not
 refill the shared wildcard allowance.
 
 Admission reserves estimated input and an affordable maximum output atomically

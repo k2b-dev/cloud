@@ -2998,18 +2998,21 @@ export const spacesCapabilities = defineCapabilities({
       destructive: false,
       openWorld: false,
       idempotency: "none",
-      approval: "rememberable",
+      policy: { silent: "shared" },
       review: async (input, context) => {
         const t = spacesMessages(context.locale);
         const resolved = await requireItem(input.itemId, context, "write");
         if (!resolved.ok) return resolved;
         const details = await relationReviewDetails({ tagIds: input.tagIds }, resolved.data.internalSpaceId, context);
-        return ok({
-          message: t.reviewReplaceTags({ item: resolved.data.item.title }),
-          details: [{ label: t.item, value: resolved.data.item.title }, ...details],
-          links: [{ rel: "open" as const, href: buildSpaceItemHref(resolved.data.item.spaceId, input.itemId) }],
-          approvalScope: spaceApprovalScope(resolved.data.item.spaceId),
-        });
+        return ok(
+          spacesActionReview("item.tags.set", context.locale, {
+            title: resolved.data.item.title,
+            message: t.reviewReplaceTags({ item: resolved.data.item.title }),
+            details: [{ label: t.item, value: resolved.data.item.title }, ...details],
+            links: [{ rel: "open" as const, href: buildSpaceItemHref(resolved.data.item.spaceId, input.itemId) }],
+            scope: spaceApprovalScope(resolved.data.item.spaceId),
+          }),
+        );
       },
       run: runItemTagsSet,
     },
@@ -3504,22 +3507,25 @@ export const spacesCapabilities = defineCapabilities({
       destructive: false,
       openWorld: false,
       idempotency: "required",
-      approval: "rememberable",
+      policy: { silent: "shared" },
       review: async (input, context) => {
         const t = spacesMessages(context.locale);
         if (!commentAuthor(context))
           return capabilityFail(context, err.forbidden("Comments require a user-backed actor"), "commentsNeedUser");
         const resolved = await requireItem(input.itemId, context, "write");
         if (!resolved.ok) return resolved;
-        return ok({
-          message: t.reviewPostComment({ title: resolved.data.item.title }),
-          details: [
-            { label: t.item, value: resolved.data.item.title },
-            { label: t.comment, value: input.content, display: "block" },
-          ],
-          links: [{ rel: "open" as const, href: buildSpaceItemHref(resolved.data.item.spaceId, input.itemId) }],
-          approvalScope: itemApprovalScope(input.itemId),
-        });
+        return ok(
+          spacesActionReview("comment.create", context.locale, {
+            title: resolved.data.item.title,
+            message: t.reviewPostComment({ title: resolved.data.item.title }),
+            details: [
+              { label: t.item, value: resolved.data.item.title },
+              { label: t.comment, value: input.content, display: "block" },
+            ],
+            links: [{ rel: "open" as const, href: buildSpaceItemHref(resolved.data.item.spaceId, input.itemId) }],
+            scope: itemApprovalScope(input.itemId),
+          }),
+        );
       },
       run: runCommentCreate,
     },

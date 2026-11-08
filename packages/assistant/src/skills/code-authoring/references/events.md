@@ -11,6 +11,8 @@ module level with a constant event name; one handler per event.
 | --- | --- | --- | --- |
 | `mail.message.received` | `mail.message` | `mail.mailbox` | Yes, in the mailbox's Code |
 | `spaces.item.created`, `spaces.item.completed` | `spaces.item` | `spaces.space` | No: Spaces offers no Code of a space yet |
+| `spaces.item.updated`, `spaces.item.due` | `spaces.item` | `spaces.space` | No: as above |
+| `spaces.comment.created` | `spaces.comment` | `spaces.space` | No: as above |
 | `notebooks.note.created`, `notebooks.note.updated` | `notebooks.note` | `notebooks.notebook` | No: Notebooks offers no Code of a notebook yet |
 | `notebooks.notebook.created`, `notebooks.notebook.updated` | `notebooks.notebook` | `notebooks.notebook` | No: as above |
 | `core.user.created` | `core.user` | none | No: events without a place start no Code |
@@ -40,7 +42,7 @@ message ID; `event.data.receiptId` identifies the receipt.
 import { app, mail } from "@sdk";
 
 app.on("mail.message.received", async event => {
-  const message = await mail.app().message.read({ id: event.subject.id });
+  const { data: message } = await mail.app().message.read({ id: event.subject.id });
   // Throwing before the first Action lets Cloud retry the run automatically.
   if (message.hydrationStatus !== "complete") throw new Error("Message content is not ready yet");
   if (message.keywordsTruncated) throw new Error("Provider keywords are incomplete");
@@ -64,14 +66,14 @@ remaining rules for that message.
 ```ts
 import { app, mail, owner } from "@sdk";
 
-type Message = Awaited<ReturnType<ReturnType<typeof mail.app>["message"]["read"]>>;
+type Message = Awaited<ReturnType<ReturnType<typeof mail.app>["message"]["read"]>>["data"];
 
 async function tagInvoices(message: Message) {
   if (!message.conversationId || !/invoice/i.test(message.subject)) return;
-  const tags = await owner.mailbox.tag.list({ limit: 50 });
+  const { data: tags } = await owner.mailbox.tag.list({ limit: 50 });
   const tag = tags.find(candidate => candidate.name === "Invoice");
   if (!tag) return;
-  const conversation = await mail.app().conversation.read({ id: message.conversationId });
+  const { data: conversation } = await mail.app().conversation.read({ id: message.conversationId });
   await owner.conversation.tag.update({
     conversationId: message.conversationId,
     expectedRevision: conversation.collaboration.revision,
@@ -81,7 +83,7 @@ async function tagInvoices(message: Message) {
 
 async function markWaiting(message: Message) {
   if (!message.conversationId || !/out of office/i.test(message.subject)) return;
-  const conversation = await mail.app().conversation.read({ id: message.conversationId });
+  const { data: conversation } = await mail.app().conversation.read({ id: message.conversationId });
   await owner.conversation.status.set({
     conversationId: message.conversationId,
     expectedRevision: conversation.collaboration.revision,
@@ -90,7 +92,7 @@ async function markWaiting(message: Message) {
 }
 
 app.on("mail.message.received", async event => {
-  const message = await mail.app().message.read({ id: event.subject.id });
+  const { data: message } = await mail.app().message.read({ id: event.subject.id });
   if (message.hydrationStatus !== "complete") throw new Error("Message content is not ready yet");
   await tagInvoices(message);
   await markWaiting(message);

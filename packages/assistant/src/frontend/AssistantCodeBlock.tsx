@@ -1,4 +1,5 @@
 import { getContext, onContextChange } from "@k2b/cloud/browser/panel";
+import { FeatCodeMark } from "@k2b/cloud/code/ui";
 import type { CloudResourceRef } from "@k2b/cloud/contracts";
 import { Button, ButtonLink, Skeleton, useLocale } from "@k2b/ui";
 import { createEffect, createSignal, For, on, onCleanup, onMount, Show } from "solid-js";
@@ -216,7 +217,7 @@ export default function AssistantCodeBlock(props: {
           aria-label={open() ? t().codeHide : t().codeShow}
           onClick={() => setOpen(!open())}
         >
-          <i class="ti ti-code" aria-hidden="true" />
+          <FeatCodeMark variant="glyph" decorative />
           <span class="font-medium text-primary">{t().codeBlock}</span>
           <span class="min-w-0 truncate text-secondary">{heading()}</span>
           <span class="assistant-code-block__summary text-sm text-secondary">

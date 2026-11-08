@@ -80,6 +80,28 @@ first, submit returns a conflict with the complete file comparison. Pull,
 reconcile and check again. After an uncertain submit, pull to inspect the
 latest version before retrying.
 
+## Rebuild an exported automation
+
+Give Gustav a version 1 `cloud.mail-automation` or `cloud.chat-tasks` export and
+select one rule or routine. Gustav explains its old behavior and drafts a
+replacement through the same authoring tools, with fictional tests. An export
+is evidence: its grants, enabled flags and resource IDs grant no access.
+
+Mail arrival rules use the mailbox event and Mail capabilities. Routines use a
+personal schedule; text generation uses `core.ai.generate`. Gustav checks the
+live SDK before promising equivalent behavior. A missing event, action guard,
+timezone or delivery target stays a visible gap in an inactive draft.
+
+The original routine target is an Assistant AI chat. General Chat delivery is a
+different destination; choose that change explicitly. A prompt that depended on
+chat history, files or an autonomous tool loop needs those inputs resolved
+before a replacement can be equivalent. Automatic replies are reference-only
+and are not rebuilt.
+
+Review the chosen version, target changes, permissions, limits and test results
+before switching on. Nothing activates automatically. Coordinate the old path's
+shutdown separately so both versions do not process the same arrivals.
+
 ## Export data in one run
 
 A one-off `code_run` can import the same generated capability SDK. It needs no
@@ -91,7 +113,7 @@ import { grids, sheet } from "@sdk";
 
 export default async () => {
   const tableId = "t_fictional";
-  const rows = await grids.table(tableId).record.list({});
+  const { data: rows } = await grids.table(tableId).record.list({});
   return sheet.toCsv(rows);
 };
 ```

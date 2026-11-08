@@ -32,27 +32,11 @@ export {
 export { assistantAiSettingsState, listAssistantAiModels, peopleAiModels, selectAssistantAiModel } from "./assistant-models";
 export { type AiAttachmentRef, aiAttachmentMarker, formatAiFileSize, parseAiAttachmentMarkers } from "./attachments";
 export { CloudAiTranscribeAudioInputSchema, CloudAiTranscribeAudioOutputSchema, createCloudAiTranscribeAudioTool } from "./audio-tool";
-export { AiBackgroundApprovalRequiredError, authorizeBackgroundAction } from "./background-review";
 export { CODE_RUNTIME_TOOL_NAMES, CodeResourceId, CodeRuntimeInput, parseCodeToolInput } from "./browser-code-contracts";
 export { aiCapabilityId, aiCapabilityToolName } from "./capabilities";
 /** Trusted runtime host: refresh the current conversation owner before calling a permission-aware service. */
 export { resolveAiCapabilityActor } from "./capability-execution";
 export { getAiChatQuotas } from "./chat-quotas";
-export {
-  type AiChatTaskOccurrenceView,
-  type AiChatTaskView,
-  AiConversationIdSchema,
-  ChatTaskGrantsSchema,
-  ChatTaskIdSchema,
-  ChatTaskOccurrenceIdSchema,
-  ChatTaskScheduleInputSchema,
-  chatTaskCreateFingerprint,
-  chatTaskName,
-  getChatTaskTimezone,
-  normalizeChatTaskSchedule,
-  toAiChatTaskOccurrenceView,
-  toAiChatTaskView,
-} from "./chat-task-contracts";
 export {
   ChatTaskExportEntrySchema,
   ChatTaskExportForbiddenError,
@@ -61,25 +45,6 @@ export {
   ChatTaskExportQuerySchema,
   exportChatTasks,
 } from "./chat-task-export";
-export {
-  CHAT_TASK_REASON_CODES,
-  type ChatTaskReason,
-  type ChatTaskReasonCode,
-  chatTaskLocale,
-  chatTaskNeedsNewTime,
-  chatTaskReasonSentence,
-  chatTaskReasonState,
-  chatTaskStopSentence,
-} from "./chat-task-reasons";
-export {
-  type AiChatTask,
-  AiChatTaskIdempotencyConflictError,
-  type AiChatTaskOccurrence,
-  type AiChatTaskOccurrenceState,
-  type AiChatTaskSchedule,
-  type AiChatTaskState,
-  aiChatTasks,
-} from "./chat-tasks";
 export { parseAiSse } from "./client/transport";
 // Framework-owned managed execution host transport.
 export { CODE_CAPABILITY_TOKEN_HEADER, createCodeCapabilityTransport } from "./code-capability-transport";
@@ -494,12 +459,21 @@ export {
   type CloudAiViewSummary,
   CloudAiViewSummarySchema,
   type CloudAiViewTable,
+  type CloudBlockDescription,
+  type CloudDetailsDescription,
+  type CloudExplorerDescription,
+  type CloudGroupDescription,
+  type CloudMoneyDescription,
+  type CloudStatsDescription,
+  type CloudTableDescription,
+  type CloudViewDescription,
   checkCloudAiView,
   cloudAiDetailsRows,
   cloudAiExplorerControls,
   cloudAiExplorerState,
   cloudAiStatsTiles,
   cloudAiTableTsv,
+  cloudAiViewDescription,
   cloudAiViewSummary,
   cloudAiViewTable,
   isAiViewFile,

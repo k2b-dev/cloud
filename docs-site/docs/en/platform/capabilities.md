@@ -897,11 +897,10 @@ Cloud rejects this policy on `openWorld` Actions, on `destructive` Actions, and
 on Actions without a `review`. It does not weaken app-side authorization, input validation, audit,
 or concurrency checks, all of which still run for every invocation.
 
-Routines check their mandate first, then call the review before every Action
-whose `approval` is not `"none"`, including background Code Mode; they run it
-only when the review returns an `approvalScope`. Omit the scope for consequences
-that need confirmation every time: routines will refuse them, and a review
-can only narrow the mandate.
+Personal Code versions check their mandate and the app's current policy and
+review before running an Action. The review can narrow authority and require a
+person's approval; a version mandate cannot override it. See
+[Code version mandates](/en/docs/identity/background-mandates#code-version-mandates).
 
 People decide [Action approvals](/en/docs/identity/approvals) in the chat,
 an app, or Cloud's approval lists.
@@ -1464,7 +1463,7 @@ A queued message's receipt says “queued” or “scheduled”, never “sent�
 that is known. The check contract lets a later consumer settle an unknown
 outcome; declaring it does not itself run a reconciliation or retry.
 
-#### Mixed versions and routine grants
+#### Mixed versions and Code grants
 
 Manifests publish policies in an optional top-level `policies` map keyed by
 Action local ID, with sorted keys. Action entries carry derived approval:
@@ -1477,13 +1476,6 @@ derived approval or review flag, or declares silent destructive/open-world
 work. A policy for an unknown Action is dropped. Producers remain strict.
 Consumers use `capabilityActionPolicy(manifest, localId)` from
 `@k2b/cloud/contracts` to resolve the policy.
-
-Routine grants accept only silent policy Actions without `routines: false`,
-independently of their derived approval. Each unattended call still runs its
-review. A review with `ask`, or a missing or failed review, prevents
-execution with `NEEDS_APPROVAL`. A cancelled routine stops like any other
-cancelled routine step. Silent reviews need no scope in a routine.
-Legacy Actions retain their existing routine rules.
 
 Code versions require an explicit silent policy that permits routines; legacy
 `approval: "rememberable"` alone is insufficient. Their provider repeats the
@@ -2691,7 +2683,7 @@ import { app, mail, owner, imports } from "@sdk";
 const importedTagId = "Tag123";
 
 app.on("mail.message.received", async event => {
-  const message = await mail.app().message.read({ id: event.subject.id });
+  const { data: message } = await mail.app().message.read({ id: event.subject.id });
   if (message.hydrationStatus !== "complete" || message.attachmentsTruncated) {
     throw new Error("Message attachments are not ready or complete");
   }
@@ -2705,7 +2697,7 @@ app.on("mail.message.received", async event => {
     file,
     idempotencyKey: `invoice:${event.data.receiptId}:${attachment.id}`,
   });
-  const conversation = await mail.app().conversation.read({ id: message.conversationId });
+  const { data: conversation } = await mail.app().conversation.read({ id: message.conversationId });
   await owner.conversation.tag.update({
     conversationId: message.conversationId,
     expectedRevision: conversation.collaboration.revision,

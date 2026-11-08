@@ -785,7 +785,7 @@ jobs:
       - name: Boot standalone speedtest without Cloud infrastructure
         run: |
           set -euo pipefail
-          docker run --detach --name speedtest --publish 127.0.0.1:18080:8080 cloud-speedtest:ci
+          docker run --detach --name speedtest --publish 127.0.0.1:18080:8080 --env SPEEDTEST_PUBLIC_URL=http://127.0.0.1:18080 cloud-speedtest:ci
           trap 'docker logs speedtest; docker rm -f speedtest' EXIT
           for attempt in $(seq 1 30); do
             if curl -fsS http://127.0.0.1:18080/health; then break; fi
@@ -795,6 +795,13 @@ jobs:
           curl -fsS -D /tmp/speedtest-headers http://127.0.0.1:18080/cli -o /tmp/speedtest.mjs
           grep -qi 'content-type: text/javascript' /tmp/speedtest-headers
           node /tmp/speedtest.mjs --help
+          for locale in de en; do
+            curl -fsS -D /tmp/speedtest-page-headers "http://127.0.0.1:18080/$locale" -o /tmp/speedtest-page.html
+            grep -q "<html lang=\"$locale\"" /tmp/speedtest-page.html
+            grep -q 'tools-speedtest-terminal' /tmp/speedtest-page.html
+            ! grep -qi '^set-cookie:' /tmp/speedtest-page-headers
+          done
+          test "$(curl -sS -o /dev/null -w '%{http_code}' 'http://127.0.0.1:18080/download?size=1')" = 401
       - name: Boot core and gateway against fresh infrastructure
         env:
           # Match the release/nightly smoke: both containers recognize the loopback Host immediately.

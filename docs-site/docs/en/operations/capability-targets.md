@@ -25,10 +25,10 @@ foreign-provider contracts retain their published shapes, as described in
 
 Converting an existing Action's resource ID input into a target changes its
 schema hash. Refresh catalogs and generated callers with the provider upgrade.
-Core migrates stored routine grants and pending approvals before AI workers
-start. Stop old Core and Assistant replicas first; do not mix old and new
-workers. Mail rules are retired; follow the
-[Mail cutover guide](/en/docs/operations/mail-automation-upgrade).
+Core migrates pending approvals before AI workers start. Old Assistant routine
+mandates are revoked and their history is frozen at upgrade. Stop old Core and
+Assistant replicas first; do not mix old and new workers. Mail rules are retired;
+follow the [Mail cutover guide](/en/docs/operations/mail-automation-upgrade).
 Follow the [operator migration note](/en/docs/reference/deprecations-and-migrations#capability-targets-major-release-operator-note)
 for backups, restart order, confirmation states and rollback.
 Existing chats and their stored history stay unchanged.
@@ -36,17 +36,15 @@ Existing chats and their stored history stay unchanged.
 Legacy mandates constrain domain input only. They are refused for operations
 that declare targets or refs unless an explicit target grant covers the call.
 Migrate stored work to the [target grant format](/en/docs/identity/background-mandates#bind-operations-to-targets)
-before enabling these operations for background callers. Never discard an old
-fixed target field when migrating a routine; unresolvable restrictions require
-`needs_attention`. Code version invocations use their mandate instead of
+before enabling these operations for background callers. Never discard a fixed target field when rebuilding a workload;
+unresolvable restrictions require a fresh review. Code version invocations use their mandate instead of
 credential scopes and human app-entry rules, while each target still checks
 the Code account's own resource access.
 
 Human app-entry rules, including admin-only roles, guest restrictions and app
 access lists, do not disable confirmed Code version invocations. To stop that
 Code, pause or revoke its mandate, disable its account, or remove its own access
-at the target. People's app-entry checks continue to apply to personal Code
-and person-owned routines.
+at the target. People's app-entry checks continue to apply to ordinary chats.
 
 A resource-bound approval and idempotency claim include the target and every
 additional reference. Reusing a key with a different target returns

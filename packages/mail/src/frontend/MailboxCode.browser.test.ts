@@ -179,13 +179,13 @@ describe("Mailbox Code page in a browser", () => {
             const size = (element: Element) => Number.parseFloat(getComputedStyle(element).fontSize);
             const heading = document.querySelector(".cloud-code__h2");
             return {
-              title: (document.querySelector(".cloud-code h1 [aria-hidden=true]") as HTMLElement | null)?.innerText,
+              title: document.querySelector(".cloud-code h1 .cloud-featcode[aria-hidden=true]")?.getAttribute("data-variant"),
               rowsAboveHeading: heading
                 ? Array.from(document.querySelectorAll(".cloud-code__title")).filter((row) => size(row) > size(heading)).length
                 : 0,
             };
           });
-          expect({ state, width, ...measured }).toEqual({ state, width, title: "Code", rowsAboveHeading: 0 });
+          expect({ state, width, ...measured }).toEqual({ state, width, title: "wordmark", rowsAboveHeading: 0 });
         } finally {
           await page.context().close();
         }

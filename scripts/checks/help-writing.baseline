@@ -22,7 +22,6 @@ packages/assistant/src/help/documents/de/assistant-overview.help.md | term | Anw
 packages/assistant/src/help/documents/de/assistant-overview.help.md | term | Anwendung
 packages/assistant/src/help/documents/de/assistant-overview.help.md | term | Benutzerkonto*
 packages/assistant/src/help/documents/de/assistant-overview.help.md | term | Benutzerkonto*
-packages/assistant/src/help/documents/de/assistant-overview.help.md | term | Zugriffsrecht*
 packages/assistant/src/help/documents/de/assistant-overview.help.md | term | klick*
 packages/assistant/src/help/documents/de/assistant-workflow.help.md | term | Anwendung
 packages/assistant/src/help/documents/de/assistant-workflow.help.md | term | Anwendung
@@ -45,7 +44,6 @@ packages/assistant/src/help/documents/en/assistant-guidance.help.md | term | per
 packages/assistant/src/help/documents/en/assistant-guidance.help.md | term | rights
 packages/assistant/src/help/documents/en/assistant-guidance.help.md | term | rights
 packages/assistant/src/help/documents/en/assistant-overview.help.md | frontmatter | kind
-packages/assistant/src/help/documents/en/assistant-overview.help.md | term | application
 packages/assistant/src/help/documents/en/assistant-overview.help.md | term | application
 packages/assistant/src/help/documents/en/assistant-overview.help.md | term | application
 packages/assistant/src/help/documents/en/assistant-overview.help.md | term | application

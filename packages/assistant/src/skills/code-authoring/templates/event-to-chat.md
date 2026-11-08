@@ -13,7 +13,7 @@ const TEAM_CONVERSATION = "Cnv001";
 const DOMAINS = ["example.com", "example.org"];
 
 app.on("mail.message.received", async event => {
-  const message = await mail.app().message.read({ id: event.subject.id });
+  const { data: message } = await mail.app().message.read({ id: event.subject.id });
   if (message.hydrationStatus !== "complete") throw new Error("Message content is not ready yet");
   const sender = message.from[0];
   const domain = sender?.address.split("@")[1]?.toLowerCase() ?? "";

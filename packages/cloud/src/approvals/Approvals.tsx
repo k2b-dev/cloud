@@ -6,6 +6,7 @@ import { actionMessages } from "../ai/chat/action-messages";
 import { ActionQuestion, ActionReceipt } from "../ai/chat/action-question";
 import { refreshAppBadges } from "../browser/app-badges";
 import { coreClient } from "../clients/core";
+import { FeatCodeMark } from "../code/FeatCodeMark";
 import {
   APPROVALS_PAGE_PATH,
   type ApprovalDecisionInput,
@@ -76,6 +77,9 @@ function Origin(props: { item: PendingApproval; withApp?: boolean }) {
         <span aria-hidden="true"> · </span>
       </Show>
       <a href={props.item.requester.href}>
+        <Show when={props.item.requester.kind === "code_version"}>
+          <FeatCodeMark variant="glyph" decorative class="cloud-approval__origin-mark" />
+        </Show>
         {props.item.requester.kind === "code_version"
           ? props.item.requester.title
             ? t().fromCode({ title: props.item.requester.title })
@@ -389,9 +393,9 @@ export default function Approvals(props: ApprovalsProps) {
     const cursor = page()?.nextCursor;
     if (!cursor || loadingMore()) return;
     setLoadingMore(true);
-    setMoreError(false);
     try {
       const next = await fetchPage(cursor);
+      setMoreError(false);
       const known = new Set(items().map((item) => item.id));
       setItems([...items(), ...next.items.filter((item) => !known.has(item.id))]);
       setPage({ ...next, count: page()?.count ?? next.count });
@@ -558,8 +562,9 @@ export default function Approvals(props: ApprovalsProps) {
                     {t().loadMoreFailed}
                   </p>
                 </Show>
-                <Button size="sm" variant="secondary" loading={loadingMore()} onClick={() => void loadMore()}>
+                <Button size="sm" variant="link" loading={loadingMore()} onClick={() => void loadMore()}>
                   {moreError() ? t().retry : t().showMore}
+                  <i class={moreError() ? "ti ti-refresh" : "ti ti-chevron-down"} aria-hidden="true" />
                 </Button>
               </div>
             </Show>

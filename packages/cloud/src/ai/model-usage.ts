@@ -8,7 +8,7 @@ import { aiQuotas } from "./quotas";
 
 export const aiModelUsage = async (variantIds: string[], modelIds: string[], db = sql): Promise<AiModelUsage> => {
   const ids = toPgTextArray(variantIds);
-  const [assignments, projects, workflows, scheduledTasks, counts, stats, config, people] = await Promise.all([
+  const [assignments, projects, workflows, counts, stats, config, people] = await Promise.all([
     aiModelCatalog.assignments(db),
     db<
       { id: string; name: string }[]
@@ -16,9 +16,6 @@ export const aiModelUsage = async (variantIds: string[], modelIds: string[], db 
     db<
       { id: string; name: string }[]
     >`SELECT w.id,w.name FROM workflows.workflow w JOIN workflows.version v ON v.id=w.active_version_id WHERE EXISTS (SELECT 1 FROM jsonb_path_query(v.plan,'$.**.model.id') ref WHERE ref #>> '{}' = ANY(${ids}::text[])) ORDER BY w.name,w.id`,
-    db<
-      { id: string; name: string }[]
-    >`SELECT task.short_id AS id,left(task.prompt,120) AS name FROM ai.chat_tasks task JOIN ai.conversations c ON c.id=task.conversation_id LEFT JOIN ai.projects p ON p.id=c.project_id WHERE p.default_model->>'id'=ANY(${ids}::text[]) ORDER BY task.id`,
     db<{ chats: number }[]>`SELECT count(DISTINCT conversation_id)::int AS chats FROM ai.turns WHERE model_profile_id=ANY(${ids}::text[])`,
     db<AiModelUsage["stats"][]>`WITH answers AS (
       SELECT COALESCE(turn_id,id) AS answer, CASE WHEN bool_and(cost IS NOT NULL) THEN sum(cost) END AS cost,
@@ -36,7 +33,6 @@ export const aiModelUsage = async (variantIds: string[], modelIds: string[], db 
       .map((assignment) => assignment.slot),
     projects,
     workflows,
-    scheduledTasks,
     chats: counts[0]?.chats ?? 0,
     budgetRules: config.rules.filter((rule) => modelIds.includes(rule.scope)).map((rule) => ({ id: rule.scope, label: rule.scope })),
     peopleAtLimit: new Set(people.filter((rule) => rule.scope === "*" || modelIds.includes(rule.scope)).flatMap((rule) => rule.people))

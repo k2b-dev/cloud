@@ -170,7 +170,6 @@ export type AiConversation = {
   /** null: automatic after seven days without use; false: explicitly active; true: finished. */
   done: boolean | null;
   isDone: boolean;
-  hasActiveSchedule?: boolean;
   lastUsedAt: string;
   runStatus: AiConversationRunStatus;
   /** Error from the latest turn when `runStatus` is `failed`. */
@@ -321,8 +320,8 @@ export type AiStoredMessage = {
     /** A committed personal Code result; deferred from any already-running model turn. */
     codeDelivery?: { codeId: string; runId: string; effectKey: string };
     scheduledTask?: {
-      reason?: import("./chat-task-reasons").ChatTaskReason;
-      /** The message text is only the reason sentence; the chat words the reason itself instead. */
+      reason?: { code: string; at: string; action?: string };
+      /** Historical marker; the original stored text remains the display source. */
       reasonOnly?: true;
       stop?: { cause: "paused" | "deleted"; done: string[] };
       taskId: string;
@@ -658,7 +657,8 @@ export type AiConversationFileSnapshot = {
   total: number;
 };
 
-export type AiBackgroundRunContext = {
+/** Read-only projection of retired routine transcripts. Never accepted for execution. */
+type RetiredRoutineContext = {
   scheduledFor?: string;
   trigger?: "scheduled" | "manual";
   timezone?: string;
@@ -672,7 +672,7 @@ export type AiBackgroundRunContext = {
 export type AiChatTurnRunConfig = {
   /** Trusted host attribution; never grants tool authority. */
   codeOrigin?: AiCodeOrigin;
-  background?: AiBackgroundRunContext;
+  background?: RetiredRoutineContext;
   selectedSkillIds?: string[];
   /** Server-owned marker: model grants apply only to interactive Assistant chat. */
   assistantChat?: true;
@@ -709,7 +709,7 @@ export type AiChatTurnRunConfig = {
   toolApprovalContext?: {
     actorUserId: string;
   };
-  /** Durable Core-owned authority for a scheduled chat task. */
+  /** Historical routine binding; rejected for new execution. */
   mandate?: {
     id: string;
     revision: number;
@@ -1088,7 +1088,6 @@ export type AiConversationService = {
   /** Atomically make pending steers visible to the model and return them in order. */
   takePendingTurnSteers(input: { conversationId: string; turnId: string; leaseOwner: string }): Promise<AiTurnSteer[]>;
   createSessionStore(input: {
-    background?: AiBackgroundRunContext;
     /** Called after a durable append, for incremental usage/history projection. */
     onMessage?: (message: AiStoredMessage) => Promise<void>;
     conversationId: string;

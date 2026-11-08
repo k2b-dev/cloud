@@ -5,7 +5,7 @@ section: Platform services
 order: 682
 description: Test and simulate Code with declarative fixtures in the production sandbox without changing real data.
 tags: [code, testing, fixtures, runner]
-updated: 2026-11-01
+updated: 2026-11-08
 ---
 
 # Test Code
@@ -73,6 +73,20 @@ wins over a general mock; equally specific matches fail with
 `code_test_mock_exhausted`. Input and successful reply data must satisfy the
 operation's manifest schemas. Use `{ "ok": false, "error": "not_ready" }` to
 simulate a domain refusal. Failed replies do not create successful receipts.
+
+For Query replies, keep domain `data` in the fixture and put optional `page`
+beside it, for example:
+
+```json
+{ "ok": true, "data": ["first"], "page": { "hasMore": true, "nextCursor": "opaque:next" } }
+```
+
+The SDK receives `{ data, page }`, matching real Query calls. Match the next
+reply with `input: { "cursor": "opaque:next" }` and use
+`page: { "hasMore": false }` on the final reply. Action replies cannot include
+`page`. See [query pagination](/en/docs/platform/code-sdk#read-query-results-and-follow-cursors)
+for a bounded loop.
+
 AI operations and any future secret operations use the same explicit mocks;
 there is no live AI or secret lookup. Put only fictional values in fixtures.
 

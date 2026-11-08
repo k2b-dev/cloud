@@ -35,6 +35,7 @@ import codeAuthoringData from "./skills/code-authoring/references/data.md" with 
 import codeAuthoringEvents from "./skills/code-authoring/references/events.md" with { type: "text" };
 import codeAuthoringFileRef from "./skills/code-authoring/references/file-ref.md" with { type: "text" };
 import codeAuthoringPages from "./skills/code-authoring/references/pages.md" with { type: "text" };
+import codeAuthoringRebuild from "./skills/code-authoring/references/rebuild.md" with { type: "text" };
 import codeAuthoringSchedules from "./skills/code-authoring/references/schedules.md" with { type: "text" };
 import codeAuthoringTesting from "./skills/code-authoring/references/testing.md" with { type: "text" };
 import codeAuthoringTroubleshooting from "./skills/code-authoring/references/troubleshooting.md" with { type: "text" };
@@ -45,7 +46,6 @@ import codeAuthoringTemplateFormApp from "./skills/code-authoring/templates/form
 import codeAuthoringTemplateMailAutomation from "./skills/code-authoring/templates/mail-automation.md" with { type: "text" };
 import codeAuthoringTemplateMailInvoices from "./skills/code-authoring/templates/mail-invoices.md" with { type: "text" };
 import codeAuthoringTemplateWeeklyReport from "./skills/code-authoring/templates/weekly-report.md" with { type: "text" };
-import scheduledTasks from "./skills/scheduled-tasks/SKILL.md" with { type: "text" };
 import skillCreator from "./skills/skill-creator/SKILL.md" with { type: "text" };
 
 /** Assistant Skills this app ships; Cloud installs and updates them from these files. */
@@ -60,6 +60,7 @@ export const SKILLS = [
       "references/events.md": codeAuthoringEvents,
       "references/file-ref.md": codeAuthoringFileRef,
       "references/pages.md": codeAuthoringPages,
+      "references/rebuild.md": codeAuthoringRebuild,
       "references/schedules.md": codeAuthoringSchedules,
       "references/testing.md": codeAuthoringTesting,
       "references/troubleshooting.md": codeAuthoringTroubleshooting,
@@ -104,6 +105,5 @@ export const SKILLS = [
   }),
   skill({ markdown: assistantDataAnalysis }),
   skill({ markdown: cloudAssistant }),
-  skill({ markdown: scheduledTasks }),
   skill({ markdown: skillCreator }),
 ];
