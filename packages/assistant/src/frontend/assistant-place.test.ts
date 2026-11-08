@@ -91,6 +91,22 @@ describe("Gustav at a place", () => {
     });
   });
 
+  test("after consent the same page loads its place again", async () => {
+    let consented = false;
+    await createRoot(async (dispose) => {
+      const place = createPagePlace({
+        context: context(1, "u_marta"),
+        initial: { state: "consent", ref: ref("u_marta") },
+        load: async (target) => (consented ? available(target.id, "Marta Beispiel") : { state: "consent", ref: target }),
+      });
+      consented = true;
+      place.receive(context(2, "u_marta"));
+      await settle();
+      expect(place.view()?.state).toBe("available");
+      dispose();
+    });
+  });
+
   test("the first paint's place is kept for the same page; leaving the place clears it", async () => {
     let loads = 0;
     await createRoot(async (dispose) => {
@@ -111,8 +127,8 @@ describe("Gustav at a place", () => {
     });
   });
 
-  test("the server's answer: no block and no consent both leave the normal panel", () => {
-    expect(readAssistantPlace(ref("u_marta"), { state: "consent_required" })).toEqual({ state: "none", ref: ref("u_marta") });
+  test("the server's answer: no block, missing consent and lost access stay apart", () => {
+    expect(readAssistantPlace(ref("u_marta"), { state: "consent_required" })).toEqual({ state: "consent", ref: ref("u_marta") });
     expect(readAssistantPlace(ref("u_marta"), { state: "none" })).toEqual({ state: "none", ref: ref("u_marta") });
     expect(
       readAssistantPlace(ref("u_marta"), { state: "unavailable", ref: ref("u_marta"), title: "Marta Beispiel", conversationId: "Pmarta" }),

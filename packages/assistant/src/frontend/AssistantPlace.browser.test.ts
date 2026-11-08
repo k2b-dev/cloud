@@ -344,6 +344,9 @@ const open = async (view: View, scenario: Scenario, options: { theme?: "light" |
       if (hold.has(id)) await new Promise<void>((release) => held.set(id, release));
       const answer = scenario.answers[id];
       if (!answer || answer === "fail") return route.fulfill({ status: 503, json: { message: "unavailable" } });
+      // The server's own shape: no block and missing consent carry no place.
+      if (answer.state === "none") return route.fulfill({ json: { state: "none" } });
+      if (answer.state === "consent") return route.fulfill({ json: { state: "consent_required" } });
       return route.fulfill({ json: answer });
     }
     const chat = /^\/api\/ai\/conversations\/(\w+)(\/.*)?$/.exec(url.pathname);
@@ -418,7 +421,10 @@ const open = async (view: View, scenario: Scenario, options: { theme?: "light" |
       },
       [id ? { v: 1, seq, pageId, app: "kontakt", scope: placeRef(id) } : { v: 1, seq, pageId, app: "kontakt" }] as const,
     );
-  return { page, errors, placeCalls, created, archived, drafts, turns, hold, held, navigateHost, close: () => context.close() };
+  const setAnswer = async (id: string, answer: AssistantPlaceView) => {
+    scenario.answers[id] = answer;
+  };
+  return { page, errors, placeCalls, created, archived, drafts, turns, setAnswer, hold, held, navigateHost, close: () => context.close() };
 };
 
 const poll = async (read: () => unknown, expected: unknown, timeout = 5_000) => {
@@ -629,6 +635,56 @@ describe("Gustav at a place", () => {
       await h.close();
     }
   }, 60_000);
+
+  test("the bar tells no block, missing consent, a place and lost access apart, also for an existing chat there", async () => {
+    const states: { name: string; answer: AssistantPlaceView }[] = [
+      { name: "none", answer: { state: "none", ref: placeRef("u_marta") } },
+      { name: "consent", answer: { state: "consent", ref: placeRef("u_marta") } },
+      { name: "available", answer: available("u_marta", "Pmarta") },
+      {
+        name: "unavailable",
+        answer: { state: "unavailable", ref: placeRef("u_marta"), title: "Marta Beispiel", conversationId: "Pmarta" },
+      },
+    ];
+    for (const { name, answer } of states) {
+      // The existing chat at the place stays readable in every state.
+      const h = await open(panel, { place: "u_marta", initial: true, conversationId: "Pmarta", answers: { u_marta: answer } });
+      try {
+        await h.page.getByText("Erledigt. Die Antwort hat jetzt 2 Sätze").waitFor();
+        const gone = await bar(h.page).getByText("Kein Zugriff mehr", { exact: false }).count();
+        const tools = await bar(h.page).getByText("Antwort setzen").count();
+        const ask = await bar(h.page).getByRole("button", { name: "Kontext teilen …" }).count();
+        const bars = await bar(h.page).count();
+        expect({ name, bars, gone, tools, ask }).toEqual({
+          name,
+          bars: name === "none" ? 0 : 1,
+          gone: name === "unavailable" ? 1 : 0,
+          tools: name === "available" ? 1 : 0,
+          ask: name === "consent" ? 1 : 0,
+        });
+        if (name === "consent") {
+          await shot(h.page, "09-ort-ohne-einwilligung-light-1440");
+          // Once the person allows it in the shell, the shell sends the context again and the place loads.
+          await h.setAnswer("u_marta", available("u_marta", "Pmarta"));
+          await h.navigateHost(2, "u_marta");
+          await bar(h.page).getByText("Antwort setzen").waitFor();
+          expect(await bar(h.page).getByText("Kein Zugriff mehr", { exact: false }).count()).toBe(0);
+        }
+        expect(h.errors).toEqual([]);
+      } finally {
+        await h.close();
+      }
+    }
+    // Without a chat there: missing consent shows the same bar, no block shows the normal empty panel.
+    const consent = await open(panel, { place: "u_marta", initial: true, answers: { u_marta: states[1]!.answer } });
+    try {
+      await bar(consent.page).getByRole("button", { name: "Kontext teilen …" }).waitFor();
+      expect(await consent.page.getByRole("heading", { name: "Woran möchtest du arbeiten?" }).count()).toBe(1);
+      expect(await consent.page.getByRole("button", { name: "Aktuelle Ansicht anhängen" }).count()).toBe(0);
+    } finally {
+      await consent.close();
+    }
+  }, 120_000);
 
   test("a place that fails to load keeps its slot, keeps Attach current view, and recovers on retry", async () => {
     const answers: Scenario["answers"] = { u_marta: "fail" };

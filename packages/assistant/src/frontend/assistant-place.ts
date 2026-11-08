@@ -17,6 +17,8 @@ export type AssistantPlaceTool = { id: string; title: string; icon: string | nul
  */
 export type AssistantPlaceView =
   | { state: "none"; ref: CloudResourceRef }
+  /** The person has not let Gustav see pages: the place is not lost, only not shared. The shell asks again. */
+  | { state: "consent"; ref: CloudResourceRef }
   | { state: "unavailable"; ref: CloudResourceRef; title: string | null; app?: AssistantPlaceApp | null; conversationId: string | null }
   | {
       state: "available";
@@ -38,8 +40,8 @@ const PolicySchema = z.union([
 ]);
 // The panel reads only what it shows; the server validated the provider's answer already (AssistantPlaceSchema).
 const PlaceAnswerSchema = z.discriminatedUnion("state", [
-  // No Gustav place here, or no consent to share it: the panel stays the normal Gustav panel.
-  z.object({ state: z.enum(["none", "consent_required"]) }),
+  z.object({ state: z.literal("none") }),
+  z.object({ state: z.literal("consent_required") }),
   z.object({
     state: z.literal("unavailable"),
     ref: RefSchema,
@@ -60,11 +62,15 @@ const PlaceAnswerSchema = z.discriminatedUnion("state", [
     conversationId: z.string().nullable(),
   }),
 ]);
-/** The server's answer as the panel reads it; `ref` is the place the panel asked for when the answer names none. */
+/**
+ * The server's answer as the panel reads it; `ref` is the place the panel asked for when the answer names none. Only
+ * `unavailable` means the place is gone or no longer readable; missing consent is its own state.
+ */
 export const readAssistantPlace = (ref: CloudResourceRef, answer: unknown): AssistantPlaceView => {
   const parsed = PlaceAnswerSchema.parse(answer);
   // The place's app did not answer this time: a failed load with "Try again", not "No access anymore".
   if (parsed.state === "unavailable" && parsed.retry) throw new Error("The place's app is not reachable right now.");
+  if (parsed.state === "consent_required") return { state: "consent", ref: { ...ref } };
   if (parsed.state === "available") return parsed;
   if (parsed.state === "unavailable") {
     const { retry: _retry, ...view } = parsed;
@@ -145,8 +151,8 @@ export function createPagePlace(options: {
       setState("idle");
       return;
     }
-    // A new seq on the same place (Help ids, a re-publish) keeps what the panel shows.
-    if (samePlace(before?.scope, next.scope) && view() && state() !== "failed") return;
+    // A new seq on the same place (Help ids, a re-publish) keeps what the panel shows; after consent it loads again.
+    if (samePlace(before?.scope, next.scope) && view() && view()?.state !== "consent" && state() !== "failed") return;
     if (!samePlace(view()?.ref, next.scope)) setView(null);
     request(next);
   };

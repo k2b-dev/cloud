@@ -136,7 +136,9 @@ export default ssr<AuthContext>(async (c) => {
   })();
   // The panel at a place opens on the person's chat there, unless the address names another one.
   const placeConversationId =
-    initialPlace && initialPlace.state !== "none" && !approvalsOpen && !codeOpen ? initialPlace.conversationId : null;
+    initialPlace && (initialPlace.state === "available" || initialPlace.state === "unavailable") && !approvalsOpen && !codeOpen
+      ? initialPlace.conversationId
+      : null;
   // The panel names its place from the first paint, and knows whether that place could have Code at all.
   const codePlace = panelScope && codeBlockPage !== undefined ? await loadCodePlace(panelScope, invokeCode, catalog) : undefined;
   // An unknown answer keeps "My apps & automations" in the sidebar, so a failure never hides the person's Code.

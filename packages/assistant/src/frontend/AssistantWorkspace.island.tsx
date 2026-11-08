@@ -40,7 +40,7 @@ import {
 import { consumeCommandLink, registerCommandHandler, registerContextAwareCommand } from "@k2b/cloud/browser/commands";
 import { cloudCommandMenu, createCloudComposerCatalog } from "@k2b/cloud/browser/composer-insert";
 import { chooseFiles } from "@k2b/cloud/browser/files";
-import { closePanel, getContext, onContextChange, onPanelBeforeLeave } from "@k2b/cloud/browser/panel";
+import { askPanelConsent, closePanel, getContext, onContextChange, onPanelBeforeLeave } from "@k2b/cloud/browser/panel";
 import { reloadOnce } from "@k2b/cloud/browser/reload";
 import { cloudResourceClipboard } from "@k2b/cloud/browser/resource-clipboard";
 import { pastedCloudLink, type ResolvedCloudResourceUrl, resolveCloudUrl } from "@k2b/cloud/browser/resource-links";
@@ -2720,7 +2720,7 @@ export default function AssistantWorkspace(props: Props) {
     const loaded = chat.conversation();
     return conversationPlace(loaded?.id === id ? loaded : null) ?? conversationPlace(activeConversation());
   };
-  const followablePlace = (view: AssistantPlaceView | null): view is Exclude<AssistantPlaceView, { state: "none" }> =>
+  const followablePlace = (view: AssistantPlaceView | null): view is Extract<AssistantPlaceView, { state: "available" | "unavailable" }> =>
     Boolean(view && (view.state === "available" || (view.state === "unavailable" && view.conversationId)));
   const panelShowsNothingToLose = () =>
     !mainView() &&
@@ -2751,7 +2751,7 @@ export default function AssistantWorkspace(props: Props) {
   };
   // Each switch has its own number; a newer page ends an older switch before its chat lands.
   let placeSwitch = 0;
-  const switchToPlace = async (view: Exclude<AssistantPlaceView, { state: "none" }>) => {
+  const switchToPlace = async (view: Extract<AssistantPlaceView, { state: "available" | "unavailable" }>) => {
     const target = view.conversationId;
     if (target && target === chat.activeConversationId() && !mainView() && !projectView()) return;
     const token = ++placeSwitch;
@@ -2788,6 +2788,8 @@ export default function AssistantWorkspace(props: Props) {
           navigationRequest++;
         }
         pagePlace.receive(next);
+        // Consent arrives as a new context: the open chat's own place loads again too.
+        if (otherPlace()?.view?.state === "consent") retryOtherPlace();
       }),
     );
   });
@@ -2838,23 +2840,22 @@ export default function AssistantWorkspace(props: Props) {
     if (chatPlace) {
       const view = samePlace(chatPlace.ref, page?.ref) ? page : otherPlace()?.view;
       if (view?.state === "available") return { kind: "place", view };
-      // Gone and no longer a Gustav place look the same: the chat stays, without the place's tools and context (O5).
-      if (view?.state === "unavailable" || view?.state === "none")
+      // Only a place that is gone or no longer readable says so (O5); the chat stays, without the place's tools.
+      if (view?.state === "unavailable")
         return {
           kind: "gone",
-          view: {
-            state: "unavailable",
-            ref: chatPlace.ref,
-            title: (view.state === "unavailable" ? view.title : null) ?? chatPlace.title,
-            app: (view.state === "unavailable" ? view.app : null) ?? chatPlace.app ?? null,
-            conversationId: chat.activeConversationId(),
-          },
+          view: { ...view, title: view.title ?? chatPlace.title, app: view.app ?? chatPlace.app ?? null },
         };
+      // Without consent the place is not lost, only not shared: the shell's own question brings it back.
+      if (view?.state === "consent") return { kind: "consent", title: chatPlace.title, app: chatPlace.app ?? null, onAsk: askPanelConsent };
+      // The app no longer declares a Gustav place: a normal chat, without a bar.
+      if (view?.state === "none") return null;
       if (samePlace(chatPlace.ref, page?.ref) ? pagePlace.state() === "failed" : otherPlace()?.failed)
         return { kind: "failed", onRetry: samePlace(chatPlace.ref, page?.ref) ? pagePlace.retry : retryOtherPlace };
       return { kind: "loading" };
     }
     const followable = panelShowsNothingToLose();
+    if (page?.state === "consent" && followable) return { kind: "consent", title: null, app: null, onAsk: askPanelConsent };
     const here = emptyPlace();
     const offer = followablePlace(page) && !samePlace(page.ref, here?.ref) ? page : null;
     if (pagePlace.state() === "loading" && followable && pagePlace.context()?.scope) return { kind: "loading" };
@@ -2885,7 +2886,7 @@ export default function AssistantWorkspace(props: Props) {
       await assistantApi.archiveConversation(conversationId);
       // Only while the page is still this chat's place: a later page decided on its own.
       const page = pagePlace.view();
-      if (place && page && page.state !== "none" && samePlace(place.ref, page.ref)) {
+      if (place && page && (page.state === "available" || page.state === "unavailable") && samePlace(place.ref, page.ref)) {
         pagePlace.update({ ...page, conversationId: null });
         if (chat.activeConversationId() === conversationId && page.state === "available")
           showEmptyPlaceChat({ ...page, conversationId: null });

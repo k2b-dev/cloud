@@ -13,6 +13,7 @@ type Unavailable = Extract<AssistantPlaceView, { state: "unavailable" }>;
 export type AssistantPlaceBarState =
   | { kind: "place"; view: Available }
   | { kind: "gone"; view: Unavailable }
+  | { kind: "consent"; title: string | null; app: { name: string; icon: string | null } | null; onAsk: () => void }
   | { kind: "switch"; view: Available | Unavailable; onSwitch: () => void; busy?: boolean; disabled?: boolean }
   | { kind: "loading" }
   | { kind: "failed"; onRetry: () => void };
@@ -96,6 +97,26 @@ export default function AssistantPlaceBar(props: { state: AssistantPlaceBarState
                 <span>
                   {state().view.title ? t().gone({ title: state().view.title! }) : t().goneUnnamed} {t().goneHint}
                 </span>
+              </p>
+            </>
+          )}
+        </Match>
+        <Match when={props.state.kind === "consent" && props.state}>
+          {(state) => (
+            <>
+              <div class="assistant-place-bar__row">
+                <Tag size="sm" icon={state().app?.icon ?? "ti ti-map-pin"} class="assistant-place-chip">
+                  <span>{state().title ?? t().thisPlace}</span>
+                </Tag>
+                <Show when={state().app}>{(app) => <span class="assistant-place-bar__app">{app().name}</span>}</Show>
+                <span class="grow" />
+                <Button size="xs" variant="ghost" onClick={() => state().onAsk()}>
+                  {t().shareContext}
+                </Button>
+              </div>
+              <p class="assistant-place-bar__note" role="status">
+                <i class="ti ti-eye-off" aria-hidden="true" />
+                <span>{t().consentHint}</span>
               </p>
             </>
           )}

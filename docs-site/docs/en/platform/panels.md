@@ -357,6 +357,13 @@ change **Share context** in the **⋯** menu, below **Panel from <App>**. A new
 answer applies from the moment Cloud has saved it; it does not recall context
 already seen.
 
+A provider page that needs the page's context it was not given, such as a chat
+bound to a place, can call `askPanelConsent()` from `@k2b/cloud/browser/panel`.
+The slot then shows its question again, also after **Don't share**. The page
+can only ask: the answer still needs the person's click in the slot, and an
+allowed answer arrives as a new context through `onContextChange`. While
+context is already shared, the call changes nothing.
+
 - **Withdrawing** stops sharing at the click, before the save finishes. It also
   removes the context from the provider's current address, so reloading the
   provider page does not bring it back.
