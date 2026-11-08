@@ -20,6 +20,7 @@ import {
 } from "./mail-navigation";
 
 const item: MailListItem = {
+  drafts: { count: 0, editors: [] },
   id: "Msg001",
   conversationId: "Conv01",
   selectionKind: "conversation",

@@ -194,6 +194,29 @@
 /* Cards never move on hover; only the chevron color responds. */
 .k2b-ui .k2b-link-card__chevron { flex: 0 0 auto; color: var(--k2b-text-muted); transition: color 120ms ease; }
 .k2b-ui .k2b-link-card:hover .k2b-link-card__chevron { color: var(--k2b-action); }
+/* `media` replaces the icon tile, for example with a FileTypeIcon. It takes the tile's width, so titles line up
+   whether a card shows a tile or media. */
+.k2b-ui .k2b-link-card__media { display: flex; flex: 0 0 auto; align-items: center; justify-content: center; width: 2.5rem; }
+.k2b-ui .k2b-link-card[data-surface="plain"] .k2b-link-card__media { width: 2.25rem; }
+
+/* Plain LinkCard: a flat entry in a quiet overview. No frame and no surface until hover, the same tile, title and
+   one description line, no chevron. Hover and focus change only the surface and the ring, so nothing moves. */
+.k2b-ui .k2b-link-card[data-surface="plain"] {
+  gap: 0.75rem;
+  min-height: 3.5rem;
+  padding: 0.5rem 0.625rem;
+  border-radius: var(--k2b-radius-surface);
+  transition: background-color var(--k2b-motion-fast) var(--k2b-ease-out);
+}
+.k2b-ui .k2b-link-card[data-surface="plain"]:hover { background: var(--k2b-hover); }
+.k2b-ui .k2b-link-card[data-surface="plain"]:focus-visible {
+  outline: var(--k2b-focus-width) solid var(--k2b-focus-ring);
+  outline-offset: calc(-1 * var(--k2b-focus-width));
+}
+.k2b-ui .k2b-link-card[data-surface="plain"] .k2b-link-card__icon { width: 2.25rem; height: 2.25rem; }
+.k2b-ui .k2b-link-card[data-surface="plain"] .k2b-link-card__glyph { font-size: 1.125rem; }
+.k2b-ui .k2b-link-card[data-surface="plain"] .k2b-link-card__title { font-weight: 500; }
+.k2b-ui .k2b-link-card[data-surface="plain"] .k2b-link-card__description { margin-top: 1px; font-size: 0.78125rem; }
 
 /* Without an explicit color the glyph follows the active application accent
    through the same optional hook as AppOverview's icon; it defaults to the

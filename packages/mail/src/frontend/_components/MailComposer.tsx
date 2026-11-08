@@ -137,6 +137,7 @@ export default function MailComposer(props: {
     ? {
         senderIdentityId: props.initialDraft.senderIdentityId,
         signatureTemplateId: props.initialDraft.signatureTemplateId,
+        quoteSource: props.initialDraft.quoteSource,
         to: props.initialDraft.to,
         cc: props.initialDraft.cc,
         bcc: props.initialDraft.bcc,
@@ -152,6 +153,7 @@ export default function MailComposer(props: {
   const verifiedIdentities = () => props.identities.filter((identity) => identity.status === "verified");
   const preferences = readMailUserPreferences(props.mailboxId);
   const [identityId, setIdentityId] = createSignal(initialContent.senderIdentityId);
+  const [quoteSource, setQuoteSource] = createSignal(initialContent.quoteSource ?? null);
   const [signatureTemplateId, setSignatureTemplateId] = createSignal(initialContent.signatureTemplateId ?? null);
   // Keep the button's presence fixed from the initial snapshot, including an unavailable shared signature.
   const signatureChoiceVisible = () => props.signatures.templates.length > 0 || Boolean(initialContent.signatureTemplateId);
@@ -218,6 +220,7 @@ export default function MailComposer(props: {
   const content = (): DraftEditableContent => ({
     senderIdentityId: identityId(),
     signatureTemplateId: signatureTemplateId(),
+    quoteSource: quoteSource(),
     to: parseMailRecipients(to()),
     cc: parseMailRecipients(cc()),
     bcc: parseMailRecipients(bcc()),
@@ -232,6 +235,7 @@ export default function MailComposer(props: {
   const applyDraftContent = (value: DraftEditableContent, source?: "shared") => {
     setIdentityId(value.senderIdentityId);
     setSignatureTemplateId(value.signatureTemplateId ?? null);
+    setQuoteSource(value.quoteSource);
     const updateRecipients = (current: string[], next: string[], set: (value: string[]) => void) => {
       if (current.length !== next.length || current.some((value, index) => value !== next[index])) set(next);
     };
@@ -399,8 +403,12 @@ export default function MailComposer(props: {
   const [inlinePreview, setInlinePreview] = createSignal(false);
   const [inlineFormatting, setInlineFormatting] = createSignal(false);
   const previewVisible = () => (props.host ? inlinePreview() : isPanesItemVisible(currentComposerPanes(), "preview"));
-  type PreviewInput = { draft: DraftEditableContentInput; conversationId: string | null };
-  const initialPreviewInput: PreviewInput = { draft: content(), conversationId: conversationId() };
+  type PreviewInput = { draft: DraftEditableContentInput; conversationId: string | null; sourceMessageId: string | null };
+  const initialPreviewInput: PreviewInput = {
+    draft: content(),
+    conversationId: conversationId(),
+    sourceMessageId: initial.sourceMessageId,
+  };
   const [previewSource, setPreviewSource] = createSignal(JSON.stringify(initialPreviewInput));
   const previewQuery = query.create<string, ComposePreview>({
     source: previewSource,
@@ -711,7 +719,11 @@ export default function MailComposer(props: {
 
   createEffect(() => {
     if (typeof window === "undefined") return;
-    const serialized = JSON.stringify({ draft: content(), conversationId: conversationId() } satisfies PreviewInput);
+    const serialized = JSON.stringify({
+      draft: content(),
+      conversationId: conversationId(),
+      sourceMessageId: initial.sourceMessageId,
+    } satisfies PreviewInput);
     if (format() !== "markdown" || !identityId()) {
       stopPreview();
       return;

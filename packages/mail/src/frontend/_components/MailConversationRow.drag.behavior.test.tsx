@@ -38,6 +38,7 @@ const folder = (id: string, name: string, role: string): MailFolderView => ({
 // One row of a message list: the question in the Inbox, while its conversation's newer reply has
 // its own row from Sent.
 const question: MailListItem = {
+  drafts: { count: 0, editors: [] },
   id: "Msg002",
   conversationId: "Conv01",
   selectionKind: "message",

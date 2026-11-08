@@ -180,7 +180,7 @@ export const renderChartRoot = (props: ChartProps, renderChartSvg: typeof import
     props.kind === "heatmap" && props.layout === "calendar" ? calendarLayout({ ...props, locale: props.locale ?? locale() }) : undefined;
   const size = () => ({
     width: calendar()?.width ?? 480,
-    height: chartRenderHeight(props),
+    height: calendar()?.height ?? chartRenderHeight(props),
   });
   const topLegend = () =>
     props.kind === "area"
@@ -602,6 +602,7 @@ export const renderChartRoot = (props: ChartProps, renderChartSvg: typeof import
           to chart data/options rebuild the SVG; resizing does not. */}
       <div
         ref={containerRef}
+        id={calendar() ? `${chartTooltipId}-scroll` : undefined}
         class={`k2b-chart ${props.class ?? ""}`}
         data-chart-kind={props.kind}
         data-legend-placement={topLegend() ? "top-start" : undefined}
@@ -669,6 +670,7 @@ export const renderChartRoot = (props: ChartProps, renderChartSvg: typeof import
           data-stretch={!calendar() && !preservesAspectRatio(props.kind) ? "true" : undefined}
           style={{
             "min-width": calendar() ? `${calendar()!.minWidth}px` : undefined,
+            "max-width": calendar() ? `${calendar()!.maxWidth}px` : undefined,
             "--k2b-chart-width": `${size().width}px`,
             "--k2b-chart-height": `${size().height}px`,
             "aspect-ratio": `${size().width} / ${size().height}`,

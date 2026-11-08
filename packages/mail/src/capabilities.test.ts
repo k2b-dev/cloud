@@ -173,6 +173,7 @@ const draftFixture = {
   sourceMessageId: null,
   derivedFromMessageId: null,
   derivationKind: null,
+  quoteSource: null,
   senderIdentityId: internalConversationId,
   signatureTemplateId: null,
   to: [{ name: "Ada", address: "ada@example.test" }],
@@ -359,6 +360,22 @@ describe("mail capabilities", () => {
     for (const [request] of update.mock.calls)
       expect(request.input.signatureTemplateId).toBe(signatureTemplateId ? technicalTargetId : signatureTemplateId);
   });
+
+  test.each([undefined, null, { locale: "de-CH", timeZone: "Europe/Berlin" }])(
+    "draft.patch preserves or replaces quote context %j",
+    async (quoteSource) => {
+      const saved = { locale: "en", timeZone: "UTC" };
+      spyOn(drafts, "getDraft").mockResolvedValue({ ok: true, data: { ...mutableDraftFixture, quoteSource: saved } });
+      const update = spyOn(drafts, "updateDraft").mockResolvedValue({ ok: true, data: mutableDraftFixture });
+      const action = mailCapabilities.actions["draft.patch"];
+      const patch = { subject: "Changed", ...(quoteSource !== undefined ? { quoteSource } : {}) };
+      const input = action.input.parse({ mailboxId, draftId, expectedRevision: 2, patch });
+      expect((await action.run(input, context)).ok).toBeTrue();
+      expect(update.mock.calls[0]?.[0].input.quoteSource).toEqual(
+        quoteSource === undefined ? saved : quoteSource === null ? null : { locale: "de", timeZone: "Europe/Berlin" },
+      );
+    },
+  );
 
   test("draft.read projects the selected signature to a public ID", async () => {
     spyOn(resourceParents, "draft").mockResolvedValue(internalMailboxId);
@@ -970,6 +987,7 @@ describe("mail capabilities", () => {
         sourceMessageId: null,
         derivedFromMessageId: null,
         derivationKind: null,
+        quoteSource: null,
         senderIdentityId: internalConversationId,
         to: [],
         cc: [],
@@ -1030,6 +1048,7 @@ describe("mail capabilities", () => {
         sourceMessageId: null,
         derivedFromMessageId: null,
         derivationKind: null,
+        quoteSource: null,
         senderIdentityId: internalConversationId,
         to: [{ name: "Ada", address: "ada@example.test" }],
         cc: [],
@@ -3306,7 +3325,7 @@ test("every declared Type has a reader open-link case or an explicit reason", as
     selectedHeaders: {},
     sourceAvailable: false,
     mailingList: null,
-    remoteContent: { imageIds: [], allowedByRule: false, sender: null, domain: null },
+    remoteContent: { imageIds: [], allowedByRule: false, allowRules: [], sender: null, domain: null },
     delivery: null,
     attachments: [
       { id: internalAttachmentId, filename: "notes.pdf", contentType: "application/pdf", sizeBytes: 123, contentId: null, checksum: null },

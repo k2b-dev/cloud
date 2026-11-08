@@ -10,6 +10,7 @@ export function draftSeedBodies(senderIdentityId: string, reply: LargeMailboxPla
       origin: {
         kind: "compose",
         input: {
+          quoteSource: null,
           senderIdentityId,
           to: [{ address: "recipient@example.test" }],
           cc: [],
@@ -24,6 +25,7 @@ export function draftSeedBodies(senderIdentityId: string, reply: LargeMailboxPla
       origin: {
         kind: "compose",
         input: {
+          quoteSource: null,
           senderIdentityId,
           to: [{ address: reply.from }],
           cc: [],

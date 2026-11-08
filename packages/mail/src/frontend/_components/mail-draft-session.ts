@@ -68,6 +68,7 @@ const isAbortError = (error: unknown): boolean => error instanceof Error && erro
 const draftEditableContent = (draft: MailDraft): DraftEditableContent => ({
   senderIdentityId: draft.senderIdentityId,
   signatureTemplateId: draft.signatureTemplateId,
+  quoteSource: draft.quoteSource,
   to: draft.to,
   cc: draft.cc,
   bcc: draft.bcc,
