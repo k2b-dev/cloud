@@ -10,12 +10,15 @@ import {
   renderHeatmapSvg,
   renderParetoSvg,
   renderTreemapSvg,
+  renderWaterfallSvg,
   scatter,
 } from "@k2b/ui/charts/core";
 import type { RareChartRenderer } from "./chart-renderer-types";
 
 export const rareChartSvg: RareChartRenderer = (mapped, common) => {
   switch (mapped.kind) {
+    case "waterfall":
+      return renderWaterfallSvg({ ...mapped, ...common });
     case "area":
       return renderAreaSvg({ ...mapped, ...common });
     case "scatter":

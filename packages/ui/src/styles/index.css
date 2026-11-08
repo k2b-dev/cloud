@@ -10234,6 +10234,20 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   text-align: right;
 }
 
+/* A value away from its default shows in the accent color. */
+.k2b-ui .k2b-slider[data-changed="true"] output {
+  color: var(--k2b-action);
+}
+
+/* The reset button keeps its slot, so a change moves nothing; at the default it is invisible and out of reach. */
+.k2b-ui .k2b-slider:not([data-changed="true"]) .k2b-slider__reset {
+  visibility: hidden;
+}
+
+.k2b-ui .k2b-slider .k2b-slider__reset {
+  margin-inline-start: -0.5rem;
+}
+
 .k2b-ui .k2b-color-input {
   position: relative;
 }
@@ -17987,6 +18001,12 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 
 .k2b-ui .k2b-chart[data-chart-kind="pareto"] :is([data-inspected],[data-selected]) > .k2b-chart-pareto-previous { stroke: var(--stdlib-chart-c1,#3b82f6) !important; stroke-width: .8px; }
 .k2b-ui .k2b-chart[data-chart-kind="pareto"] :is([data-inspected],[data-selected]) > .k2b-chart-pareto-hatch { stroke: var(--stdlib-chart-c1,#3b82f6) !important; stroke-width: 1px; }
+
+/* Category hover paints only the band; keyboard and selection outline marks. */
+.k2b-ui .k2b-chart[data-chart-kind="waterfall"] :is([data-inspected], [data-selected]) > .k2b-chart-category-band { fill-opacity: .05; stroke: none !important; }
+.k2b-ui .k2b-chart[data-chart-kind="waterfall"] [data-inspected="hover"]:not([data-selected]) > .k2b-waterfall-bar { stroke: none !important; }
+
+.k2b-ui .k2b-chart[data-chart-kind="waterfall"] .k2b-waterfall-value { font-weight: 600; fill: var(--k2b-text-secondary, #52525b); }
 /* Calendar coordinates stay square in every host. */
 .k2b-ui .k2b-chart[data-chart-kind="heatmap"]:has(svg[data-calendar]) { overflow-x: auto; }
 .k2b-ui .k2b-chart__svg:has(> svg[data-calendar]) { width: var(--k2b-chart-width); }
