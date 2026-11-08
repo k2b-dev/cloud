@@ -215,7 +215,8 @@ suite("Mail service-account suggestions", () => {
     const human = unwrap(await drafts.createDraft({ context: owner, mailboxId, input: input(await conversation()) }));
     expect(human.suggestion).toBeFalse();
     expect(await adoption(human.id)).not.toBeNull();
-    refused(await save(human, gustav, { body: "Automatic replacement" }));
+    // A person's own draft stays open to Gustav, which changes it only on request; only adopted suggestions close.
+    unwrap(await save(human, gustav, { body: "Changed on request" }));
     const draft = await suggest();
     const lease = unwrap(await acquireDraftLease({ context: owner, mailboxId, draftId: draft.id }));
     unwrap(await releaseDraftLease({ context: owner, mailboxId, draftId: draft.id, token: lease.token }));

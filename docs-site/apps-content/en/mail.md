@@ -901,12 +901,12 @@ The draft and conversation draft summary report `suggestion: true` until a
 person changes its content, recipients, sender, signature, format or attachments.
 Opening it, acquiring a lease and sending it do not count as edits.
 
-After that first edit, the draft stays adopted. Autonomous service-account
-updates, patches and attachment changes return `DRAFT_ADOPTED` (409). A person can still change it directly or through an authenticated
-`user_delegated` credential carrying `delegatedUser`. Gustav's own agent
-credential carries no chat-initiator metadata, so it is refused even when a
-person asked in chat. Use a person-backed invocation for that edit.
-Human-authored drafts are adopted from creation.
+After that first edit, the suggestion stays adopted. Service-account updates,
+patches and attachment changes to an adopted suggestion return `DRAFT_ADOPTED`
+(409), so Gustav never replaces what a person took over. A person can still
+change it directly or through a credential that acts for them
+(`delegatedUser`). Drafts that a person wrote are adopted from creation and
+stay open to service accounts as before.
 
 Each conversation has at most one untouched suggestion. Another `draft.create`
 returns the existing suggestion without changing its content or adding the new

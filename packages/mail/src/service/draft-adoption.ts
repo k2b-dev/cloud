@@ -38,10 +38,16 @@ export const refreshDraftAdoption = async ({ db, draftId, signal }: Target): Pro
   return adopted?.adopted_at ?? null;
 };
 
-/** Call after access checks, inside the transaction that owns the content write. */
+/**
+ * Call after access checks, inside the transaction that owns the content write. Gustav never silently replaces a
+ * suggestion a person has taken over. A draft a person wrote stays open to Gustav as before, because Gustav changes
+ * it only when someone asks.
+ */
 export const requireDraftContentWrite = async (params: Target & { context: MailRequestContext }): Promise<Result<void>> => {
   const adopted = await refreshDraftAdoption(params);
-  return adopted !== null && !humanDraftEditor(params.context)
+  if (adopted === null || humanDraftEditor(params.context)) return ok();
+  const [draft] = await params.db<{ author_kind: string }[]>`SELECT author_kind FROM mail.drafts WHERE id = ${params.draftId}::uuid`;
+  return draft?.author_kind === "service_account"
     ? fail({ code: "DRAFT_ADOPTED", status: 409, message: draftAdoptionMessages.resolve(["en"]).t.adopted })
     : ok();
 };
