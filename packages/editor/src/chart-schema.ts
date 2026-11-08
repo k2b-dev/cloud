@@ -31,6 +31,7 @@ export const chartFormatSchema = () => z.union([chartNumberFormatSchema(), dateF
 
 export const chartKindSchema = () =>
   z.enum([
+    "waterfall",
     "area",
     "bar",
     "line",
@@ -164,6 +165,27 @@ export const chartKinds = (limits?: ChartLimits) => {
   const ChartKindCommon = { ...ChartCommon, tooltip: ChartTooltip.optional() };
   const numberFormat = chartNumberFormatSchema();
   return z.discriminatedUnion("kind", [
+    z
+      .object({
+        kind: z.literal("waterfall"),
+        ...ChartKindCommon,
+        start: z.object({ label: ChartLabel, value: z.number() }),
+        steps: list(z.object({ label: ChartLabel, value: z.number() }), 0, limits?.maxValues),
+        end: z.strictObject({ label: ChartLabel }),
+        format: numberFormat.optional(),
+      })
+      .superRefine((spec, ctx) => {
+        let balance = spec.start.value;
+        let lo = Math.min(0, balance),
+          hi = Math.max(0, balance);
+        for (const step of spec.steps) {
+          balance += step.value;
+          lo = Math.min(lo, balance);
+          hi = Math.max(hi, balance);
+        }
+        if (!Number.isFinite(balance) || !Number.isFinite(hi - lo))
+          ctx.addIssue({ code: "custom", message: "Waterfall balances must form a finite range." });
+      }),
     z
       .object({
         kind: z.literal("area"),
@@ -399,7 +421,7 @@ export const chartDateTime = (value: string): number | undefined => {
 // Both directions are checked: a validator change must update the ui-owned description too.
 type Assert<T extends true> = T;
 type Same<A, B> = [A] extends [B] ? ([B] extends [A] ? true : false) : false;
-export type ChartSchemaMatchesDescription = Assert<Same<z.output<ReturnType<typeof chartKinds>>, ChartInput>>;
-export type ChartNumberFormatSchemaMatchesDescription = Assert<
+type _ChartSchemaMatchesDescription = Assert<Same<z.output<ReturnType<typeof chartKinds>>, ChartInput>>;
+type _ChartNumberFormatSchemaMatchesDescription = Assert<
   Same<z.output<ReturnType<typeof chartNumberFormatSchema>>, import("@k2b/ui/charts").ChartNumberFormat>
 >;

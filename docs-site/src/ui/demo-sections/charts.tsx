@@ -15,6 +15,21 @@ import { createSignal, For, Show } from "solid-js";
 import { DemoCard } from "../DemoCard";
 
 const examples = {
+  waterfall: {
+    description: "Waterfall · Follow each inflow and outflow from the opening to the closing balance.",
+    chart: {
+      kind: "waterfall",
+      start: { label: "Opening", value: 18800 },
+      steps: [
+        { label: "Sales", value: 29260 },
+        { label: "Stock", value: -14800 },
+        { label: "Payroll", value: -9600 },
+        { label: "Rent", value: -3200 },
+        { label: "Other", value: -1920 },
+      ],
+      end: { label: "Closing" },
+    },
+  },
   area: {
     description: "Area · Compare recurring and one-off sales as shares of each month's total.",
     chart: {
@@ -301,6 +316,11 @@ const tooltipExamples: Record<ChartKind, TooltipExample> = {
     fields: { group: { label: "Group" }, x: { label: "Visits" }, y: { label: "Opens" }, size: { label: "Audience" } },
   },
   radar: { title: "Axis", fields: { "series:0": { label: "Plan A" }, "series:1": { label: "Plan B" } } },
+
+  waterfall: {
+    title: "Running balance",
+    fields: { balance: { label: "Balance" }, inflow: { label: "In" }, outflow: { label: "Out" }, after: { label: "Balance after" } },
+  },
   area: { title: "Sales mix", fields: { value: { label: "Sales" }, percent: { label: "Share", unit: "%" } } },
   line: {
     title: "Request rate",

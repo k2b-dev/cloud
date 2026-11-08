@@ -490,6 +490,7 @@ export {
   type CloudDetailsDescription,
   type CloudExplorerDescription,
   type CloudGroupDescription,
+  type CloudMoneyDescription,
   type CloudStatsDescription,
   type CloudTableDescription,
   type CloudViewDescription,
