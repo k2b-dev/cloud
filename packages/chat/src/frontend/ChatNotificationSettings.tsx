@@ -1,5 +1,5 @@
 import type { DateContext } from "@k2b/stdlib";
-import { Button, ButtonLink, ChoiceChips, ChoiceList, DetailPanel, InlineGuidance, useLocale } from "@k2b/ui";
+import { Button, ButtonLink, ChoiceChips, ChoiceList, InlineGuidance, Section, useLocale } from "@k2b/ui";
 import { createSignal, type JSX, onMount, Show } from "solid-js";
 import type { z } from "zod";
 import type { NotificationsSchema, NotificationUpdateSchema } from "../service/contracts";
@@ -107,7 +107,7 @@ export default function ChatNotificationSettings(props: {
   };
 
   return (
-    <DetailPanel.Section title={t().notificationsLabel}>
+    <Section title={t().notificationsLabel}>
       <div class="chat-notifications">
         <ChoiceList
           aria-label={t().notificationsLabel}
@@ -185,7 +185,7 @@ export default function ChatNotificationSettings(props: {
           )}
         </Show>
       </div>
-    </DetailPanel.Section>
+    </Section>
   );
 }
 

@@ -4,7 +4,7 @@ import { EditorView } from "@codemirror/view";
 import { runContextAwareCommand } from "@k2b/cloud/browser/commands";
 import { collectContextAwareCommands } from "@k2b/cloud/browser/testing";
 import { fadeScrollMarginsExtension, fadeScrollPadding, listCommandsExtension } from "@k2b/editor/markdown";
-import { AppWorkspace, DetailPanel, LocaleProvider, ScrollArea, useLocale } from "@k2b/ui";
+import { AppWorkspace, DetailPanel, LocaleProvider, ScrollArea, Section, useLocale } from "@k2b/ui";
 import { createSignal, onCleanup, onMount } from "solid-js";
 import { render } from "solid-js/web";
 import { notebookTableOptions } from "../../../lib/table-options";
@@ -96,12 +96,12 @@ function Harness() {
             <DetailPanel.Body>
               <nav>Ansichten</nav>
               <ViewMenu mode="edit" notebookId="book01" noteId="note01" canEdit isRich onToggleRich={() => {}} fullWidth={initial} />
-              <DetailPanel.Section title="Inhalt" icon="ti ti-list">
+              <Section title="Inhalt" icon="ti ti-list">
                 Einleitung und Planung
-              </DetailPanel.Section>
-              <DetailPanel.Section title="Informationen" icon="ti ti-info-circle">
+              </Section>
+              <Section title="Informationen" icon="ti ti-info-circle">
                 Unsere gemeinsame Notiz
-              </DetailPanel.Section>
+              </Section>
             </DetailPanel.Body>
           </DetailPanel>
         </AppWorkspace.Detail>

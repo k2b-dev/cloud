@@ -1,18 +1,6 @@
 import { dates } from "@k2b/stdlib";
 import { mutation as mutations } from "@k2b/stdlib/solid";
-import {
-  Button,
-  CopyButton,
-  DateTimePicker,
-  DetailPanel,
-  NoticeCard,
-  Placeholder,
-  prompts,
-  Select,
-  Tag,
-  TextInput,
-  useLocale,
-} from "@k2b/ui";
+import { Button, CopyButton, DateTimePicker, NoticeCard, Placeholder, prompts, Section, Select, Tag, TextInput, useLocale } from "@k2b/ui";
 import { createEffect, createSignal, For, Show } from "solid-js";
 import type { PermissionLevel, ServiceAccountCredential } from "../contracts/shared";
 import { accessMessages } from "./messages";
@@ -220,7 +208,7 @@ export default function ResourceApiKeys(props: ResourceApiKeysProps) {
   // The heading is a detail panel section heading without an icon: in a details panel the keys line up with the
   // sections around them, and below a settings group title they read as one level down. Keys are flat rows.
   return (
-    <DetailPanel.Section
+    <Section
       title={props.title ?? t().apiKeys}
       description={props.description ?? t().apiKeysDescription}
       actions={
@@ -269,6 +257,6 @@ export default function ResourceApiKeys(props: ResourceApiKeysProps) {
           </For>
         </div>
       </Show>
-    </DetailPanel.Section>
+    </Section>
   );
 }
