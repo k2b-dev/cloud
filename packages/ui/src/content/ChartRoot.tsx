@@ -136,7 +136,12 @@ const isEmpty = (props: ChartProps): boolean => {
   if (props.kind === "line" || props.kind === "scatter") {
     return !props.series?.length || props.series.every((s) => !s.data.length);
   }
-  if (props.kind === "bar" || props.kind === "donut" || props.kind === "pie") {
+  if (props.kind === "hbar") return !props.rows.length;
+  if (props.kind === "bar")
+    return props.series
+      ? !props.x?.length || !props.series.some((s) => s.data.some((v) => v !== null && Number.isFinite(v)))
+      : !props.data?.length;
+  if (props.kind === "donut" || props.kind === "pie") {
     return !props.data?.length;
   }
   if (props.kind === "histogram" || props.kind === "sparkline") {
@@ -473,30 +478,40 @@ export const renderChartRoot = (props: ChartProps, renderChartSvg: typeof import
           (selection.datum.seriesIndex !== undefined
             ? `${labels().series ?? chartMessages().series} ${selection.datum.seriesIndex + 1}`
             : undefined),
-        rows: selection.datum.values.map((field) => ({
-          label:
-            props.kind === "heatmap" && props.layout === "calendar" && field.key === "value" && props.label
-              ? props.label
-              : selection.kind === "line" && field.key === "y"
-                ? (selection.datum.label ?? labels().series ?? chartMessages().series)
-                : fields({ key: field.key }),
-          value:
-            field.formatted ??
-            (field.key === "upperInclusive"
-              ? field.value === "true"
-                ? messages().yes
-                : messages().no
-              : typeof field.value === "number"
-                ? `${format.format(field.value)}${field.key === "percent" ? "%" : ""}`
-                : field.value),
-        })),
+        rows: selection.datum.values
+          .filter((field) => selection.kind !== "waterfall" || field.key !== "before")
+          .map((field) => ({
+            label:
+              props.kind === "heatmap" && props.layout === "calendar" && field.key === "value" && props.label
+                ? props.label
+                : selection.kind === "line" && field.key === "y"
+                  ? (selection.datum.label ?? labels().series ?? chartMessages().series)
+                  : (props.kind === "bar" || props.kind === "hbar") && field.key.startsWith("series:")
+                    ? ((props.kind === "hbar"
+                        ? props.series[Number(field.key.slice(7))]
+                        : props.series?.[Number(field.key.slice(7))]?.label) ?? fields({ key: field.key }))
+                    : props.kind === "bar" && field.key === "previous"
+                      ? (props.compare?.label ?? fields({ key: field.key }))
+                      : fields({ key: field.key }),
+            value:
+              field.formatted ??
+              (field.key === "upperInclusive"
+                ? field.value === "true"
+                  ? messages().yes
+                  : messages().no
+                : typeof field.value === "number"
+                  ? `${format.format(field.value)}${field.key === "percent" ? "%" : ""}`
+                  : field.value),
+          })),
       };
     },
   });
   const closeChartTooltip = () => inspection.close();
   const svgMarkup = createMemo(() =>
     renderChartSvg(
-      props.kind === "heatmap" && props.layout === "calendar" ? { ...props, locale: props.locale ?? locale() } : drawingProps,
+      props.kind === "heatmap" && props.layout === "calendar"
+        ? { ...props, locale: props.locale ?? locale() }
+        : { ...drawingProps, ...(props.kind === "bar" || props.kind === "hbar" ? { locale: locale() } : {}) },
       size().width,
       size().height,
       interactiveMap() ? mapViewport() : undefined,

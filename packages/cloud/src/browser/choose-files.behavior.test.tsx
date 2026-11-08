@@ -669,3 +669,37 @@ domTest("files from this device meet the same limits: the chooser says why and s
     dom.cleanup();
   }
 });
+
+domTest("continuation retry retains the alert and the button's idle label until success", async () => {
+  let calls = 0;
+  let finish!: (response: Response) => void;
+  const pending = new Promise<Response>((resolve) => {
+    finish = resolve;
+  });
+  const view = await chooser({}, () => {
+    calls++;
+    if (calls === 1) return Response.json({ data: { writable: false, items: [entry("a", 1)], next: "next" } });
+    if (calls === 2) return Response.json({ message: "Unavailable" }, { status: 503 });
+    return pending;
+  });
+  try {
+    view.button("Drive")!.click();
+    await waitForChooser(() => !!view.button("Load more"));
+    view.button("Load more")!.click();
+    await waitForChooser(() => !!view.button("Try again"));
+    const retry = view.button("Try again")!;
+    const alert = view.dom.root.querySelector('.cloud-file-chooser__more [role="alert"]');
+    expect(alert).not.toBeNull();
+    retry.click();
+    await settle();
+    expect(retry.disabled).toBe(true);
+    expect(retry.textContent?.trim()).toBe("Try again");
+    expect(view.dom.root.querySelector('.cloud-file-chooser__more [role="alert"]')).toBe(alert);
+    finish(folderPage([entry("b", 1)]));
+    await waitForChooser(() => !!view.row("b.txt"));
+    expect(view.row("a.txt")).toBeDefined();
+    expect(view.dom.root.querySelector('.cloud-file-chooser__more [role="alert"]')).toBeNull();
+  } finally {
+    view.cleanup();
+  }
+});

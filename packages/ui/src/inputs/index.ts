@@ -103,6 +103,20 @@ export type { SlashCommandsProps } from "./markdown/SlashCommands";
 export { SlashCommands } from "./markdown/SlashCommands";
 export type { NumberInputProps } from "./NumberInput";
 export { NumberInput } from "./NumberInput";
+export type { PeriodPickerProps } from "./PeriodPicker";
+export { PeriodPicker } from "./PeriodPicker";
+export type { PeriodClock, PeriodContext, PeriodPreset, PeriodRange, PeriodValue } from "./period";
+export {
+  formatPeriodDays,
+  formatPeriodRange,
+  isPeriodDay,
+  parsePeriodValue,
+  periodContext,
+  periodDayCount,
+  periodInstants,
+  periodPresets,
+  resolvePeriod,
+} from "./period";
 export type { QrScannerError, QrScannerProps } from "./QrScanner";
 export { QrScanner } from "./QrScanner";
 export type {

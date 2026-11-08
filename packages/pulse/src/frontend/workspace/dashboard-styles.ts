@@ -37,6 +37,7 @@ export const dashboardStyles = `
 .pulse-dashboard__table-tools{display:flex;margin-left:auto}
 @container k2b-dashboard-panel (max-width:560px){.pulse-dashboard__panel[data-kind=table] .pulse-dashboard__panel-head{flex-wrap:wrap}.pulse-dashboard__table-tools{order:3;flex:1 1 100%}.pulse-dashboard__table-tools .k2b-data-table-tools{flex:1}.pulse-dashboard__table-tools .k2b-data-table-tools__search{flex:1;width:auto}}
 .pulse-dashboard__description{overflow-wrap:anywhere;color:var(--k2b-text-muted);font-size:12.5px;min-height:18px}
+.pulse-dashboard__money{height:198px;min-width:0;margin-top:6px;overflow:auto}
 .pulse-dashboard__plot{height:198px;min-width:0;margin-top:6px}
 .pulse-dashboard__plot .k2b-chart{height:100%}
 .k2b-dashboard-section__grid>:nth-child(3n+2 of [data-panel]) .pulse-dashboard__explorer[data-single-series=true] .stdlib-chart{--stdlib-chart-c1:var(--stdlib-chart-c2)}

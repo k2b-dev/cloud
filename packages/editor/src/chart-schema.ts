@@ -1,12 +1,10 @@
-import { chartLocaleSchema } from "./chart-locale";
-
-export { chartAcceptsLocale, chartLocaleSchema } from "./chart-locale";
-
+import type { ChartInput, ChartLimits } from "@k2b/ui/charts";
 import { CALENDAR_MAX_DAYS, calendarDay } from "@k2b/ui/charts/core";
 import { z } from "zod";
+import { chartLocaleSchema } from "./chart-locale";
 
-/** Optional caller policy. Rendering itself has no AI input budget. */
-export type ChartLimits = { maxSeries: number; maxValues: number; maxMarks: number };
+export type { ChartDateFormat, ChartDescription, ChartFormat, ChartInput, ChartLimits, ChartNumberFormat } from "@k2b/ui/charts";
+export { chartAcceptsLocale, chartLocaleSchema } from "./chart-locale";
 
 // Every chart schema is built by a function whose call is marked pure, so a bundle that imports neither chart contract
 // leaves them out. App frames include the app contract through `cloud.chart()`.
@@ -31,12 +29,24 @@ export const chartNumberFormatSchema = () =>
 const dateFormatSchema = () => z.strictObject({ date: z.enum(["day", "minute", "second"]) });
 export const chartFormatSchema = () => z.union([chartNumberFormatSchema(), dateFormatSchema()]);
 
-export type ChartNumberFormat = z.output<ReturnType<typeof chartNumberFormatSchema>>;
-export type ChartDateFormat = z.output<ReturnType<typeof dateFormatSchema>>;
-export type ChartFormat = ChartNumberFormat | ChartDateFormat;
-
 export const chartKindSchema = () =>
-  z.enum(["area", "bar", "line", "scatter", "pie", "donut", "histogram", "gauge", "sparkline", "boxplot", "heatmap", "barGauge", "stat"]);
+  z.enum([
+    "waterfall",
+    "area",
+    "bar",
+    "hbar",
+    "line",
+    "scatter",
+    "pie",
+    "donut",
+    "histogram",
+    "gauge",
+    "sparkline",
+    "boxplot",
+    "heatmap",
+    "barGauge",
+    "stat",
+  ]);
 
 export const chartParts = (limits?: ChartLimits) => {
   const ChartLabel = limits ? z.string().trim().min(1).max(80) : z.union([z.string(), z.number().transform(String)]);
@@ -156,6 +166,27 @@ export const chartKinds = (limits?: ChartLimits) => {
   return z.discriminatedUnion("kind", [
     z
       .object({
+        kind: z.literal("waterfall"),
+        ...ChartKindCommon,
+        start: z.object({ label: ChartLabel, value: z.number() }),
+        steps: list(z.object({ label: ChartLabel, value: z.number() }), 0, limits?.maxValues),
+        end: z.strictObject({ label: ChartLabel }),
+        format: numberFormat.optional(),
+      })
+      .superRefine((spec, ctx) => {
+        let balance = spec.start.value;
+        let lo = Math.min(0, balance),
+          hi = Math.max(0, balance);
+        for (const step of spec.steps) {
+          balance += step.value;
+          lo = Math.min(lo, balance);
+          hi = Math.max(hi, balance);
+        }
+        if (!Number.isFinite(balance) || !Number.isFinite(hi - lo))
+          ctx.addIssue({ code: "custom", message: "Waterfall balances must form a finite range." });
+      }),
+    z
+      .object({
         kind: z.literal("area"),
         ...ChartKindCommon,
         layout: z.literal("stacked"),
@@ -175,17 +206,65 @@ export const chartKinds = (limits?: ChartLimits) => {
           if (!Number.isFinite(sum)) ctx.addIssue({ code: "custom", path: ["x", i], message: "Area totals must be finite." });
         });
       }),
-    z.object({
-      kind: z.literal("bar"),
-      ...ChartKindCommon,
-      data: list(ChartCategory, 1, limits?.maxValues),
-      xAxis: ChartAxis.pick({ label: true }).strict().optional(),
-      yAxis: ChartAxis.optional(),
-      colorByBar: z.boolean().optional(),
-      showValues: z.boolean().optional(),
-      legend: z.boolean().optional(),
-      references: ChartReferences.optional(),
-    }),
+    z
+      .object({
+        kind: z.literal("bar"),
+        ...ChartKindCommon,
+        data: list(ChartCategory, 0, limits?.maxValues).default([]),
+        x: list(ChartLabel, 0, limits?.maxValues).optional(),
+        series: list(
+          z.object({ label: ChartLabel, data: list(ChartNumber.nullable(), 0, limits?.maxValues) }),
+          1,
+          limits?.maxSeries,
+        ).optional(),
+        layout: z.enum(["columns", "rows", "grouped", "stacked"]).optional(),
+        normalize: z.boolean().optional(),
+        compare: z.object({ label: ChartLabel, data: list(ChartNumber.nullable(), 0, limits?.maxValues) }).optional(),
+        xAxis: ChartAxis.pick({ label: true }).extend({ ordered: z.boolean().optional() }).strict().optional(),
+        yAxis: ChartAxis.optional(),
+        colorByBar: z.boolean().optional(),
+        showValues: z.boolean().optional(),
+        legend: z.boolean().optional(),
+        references: ChartReferences.optional(),
+      })
+      .superRefine((bar, ctx) => {
+        const issue = (message: string) => ctx.addIssue({ code: "custom", message });
+        if (limits && !bar.series && !bar.data.length)
+          ctx.addIssue({ code: "custom", path: ["data"], message: "A bar chart needs data or aligned series." });
+        if (bar.series) {
+          if (!bar.x || bar.series.some((s) => s.data.length !== bar.x?.length)) issue("Bar series must have the same length as x.");
+          if (bar.data.length) issue("Use data or aligned series, not both.");
+          if (bar.layout === "rows" || bar.layout === "columns") issue("Series bars use grouped or stacked layout.");
+        } else if (bar.x || bar.compare || bar.layout === "grouped" || bar.layout === "stacked")
+          issue("This layout needs aligned x and series.");
+        if (bar.layout === "stacked" && bar.yAxis?.scale === "log") issue("Stacked bars need a linear axis.");
+        if (bar.normalize && bar.layout !== "stacked") issue("Normalized bars must be stacked.");
+        if (bar.layout === "stacked" && bar.series?.some((s) => s.data.some((v) => v !== null && v < 0)))
+          issue("Stacked bars require nonnegative values.");
+        if (bar.compare && (bar.series?.length !== 1 || bar.compare.data.length !== bar.x?.length || bar.layout === "stacked"))
+          issue("Comparison needs one current series and aligned previous values.");
+      }),
+    z
+      .object({
+        kind: z.literal("hbar"),
+        ...ChartKindCommon,
+        series: list(ChartLabel, 1, limits?.maxSeries),
+        rows: list(
+          z.object({
+            group: ChartLabel.optional(),
+            label: ChartLabel,
+            values: list(z.number().nonnegative().nullable(), 0, limits?.maxSeries),
+          }),
+          1,
+          limits?.maxValues,
+        ),
+        legend: z.boolean().optional(),
+        format: numberFormat.optional(),
+      })
+      .superRefine((bar, ctx) => {
+        if (bar.rows.some((r) => r.values.length !== bar.series.length))
+          ctx.addIssue({ code: "custom", message: "Horizontal bar values must match series." });
+      }),
     z.object({
       kind: z.literal("line"),
       ...ChartKindCommon,
@@ -339,5 +418,10 @@ export const chartDateTime = (value: string): number | undefined => {
   return date.toISOString().startsWith(`${year}-${month}-${day}T${hour}:${minute}:${second}`) ? date.getTime() : undefined;
 };
 
-/** One chart as the shared renderers read it. */
-export type ChartInput = z.output<ReturnType<typeof chartKinds>>;
+// Both directions are checked: a validator change must update the ui-owned description too.
+type Assert<T extends true> = T;
+type Same<A, B> = [A] extends [B] ? ([B] extends [A] ? true : false) : false;
+type _ChartSchemaMatchesDescription = Assert<Same<z.output<ReturnType<typeof chartKinds>>, ChartInput>>;
+type _ChartNumberFormatSchemaMatchesDescription = Assert<
+  Same<z.output<ReturnType<typeof chartNumberFormatSchema>>, import("@k2b/ui/charts").ChartNumberFormat>
+>;

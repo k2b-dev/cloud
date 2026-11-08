@@ -490,248 +490,148 @@ export default function WebhookTester(props: { initialState?: WebhookTesterIniti
   const refreshLogs = () => void logsQuery.refresh().catch(() => undefined);
 
   return (
-    <div class="flex min-h-0 min-w-0 flex-1">
-      <AppWorkspace class="min-h-0 flex-1">
-        <div class="flex flex-col gap-2 p-3 @min-[64rem]/k2b-app-area:hidden">
-          <Select
-            label={t().sidebarRequests}
-            options={[
-              { id: "receive", label: t().modeReceive },
-              { id: "send", label: t().modeSend },
-            ]}
-            value={() => routeState().mode}
-            onValueChange={(mode) => {
-              if (mode === "receive" || mode === "send")
-                commitRoute({ mode, endpointId: mode === "send" ? null : routeState().endpointId, requestId: null });
-            }}
-          />
-          <Show when={routeState().mode === "receive"}>
-            <Select
-              label={t().sidebarWebhooks}
-              options={[
-                { id: "all", label: t().allEndpoints },
-                ...(endpointsQuery.data() ?? []).map((endpoint) => ({ id: endpoint.id, label: endpoint.name })),
-              ]}
-              value={() => routeState().endpointId ?? "all"}
-              onValueChange={(id) => {
-                if (id) commitRoute({ mode: "receive", endpointId: id === "all" ? null : id, requestId: null });
-              }}
-            />
-          </Show>
-        </div>
-        <AppWorkspace.Sidebar>
-          <AppWorkspace.SidebarDesktop>
-            <AppWorkspace.SidebarBody scrollPreserveKey="webhook-tester-sidebar">
-              <WebhookSidebarBody
-                mode={routeState().mode}
-                endpoints={endpointsQuery.data() ?? []}
-                activeEndpointId={routeState().endpointId}
-                onMode={(mode) => commitRoute({ mode, endpointId: mode === "send" ? null : routeState().endpointId, requestId: null })}
-                onEndpoint={(endpointId) => commitRoute({ mode: "receive", endpointId, requestId: null })}
-              />
-            </AppWorkspace.SidebarBody>
-          </AppWorkspace.SidebarDesktop>
-        </AppWorkspace.Sidebar>
-
-        <AppWorkspace.Content>
-          <AppWorkspace.Main class="p-[var(--ui-space-shell)]">
-            <div class="flex min-h-0 flex-1 flex-col gap-2">
-              <div class="flex items-center justify-between gap-3" style="view-transition-name: tools-webhook-title">
-                <div class="min-w-0">
-                  <h1 class="min-w-0 text-base font-semibold text-primary">{t().heading}</h1>
-                  <p class="mt-0.5 text-xs text-dimmed">{t().subtitle}</p>
-                </div>
-                <Show when={routeState().mode === "receive"}>
-                  <Button
-                    variant="secondary"
-                    size="xs"
-                    class="shrink-0"
-                    disabled={writesBlocked()}
-                    onClick={() => void openCreateEndpoint()}
-                  >
-                    <i class="ti ti-plus text-sm" />
-                    {t().add}
-                  </Button>
-                </Show>
-              </div>
-
-              <NoticeCard tone="warning">{t().dataNotice}</NoticeCard>
-
-              <Show when={endpointsQuery.error() ?? logsQuery.error()}>
-                {(error) => (
-                  <NoticeCard tone="danger" title={t().refreshFailedTitle} detail={error().message}>
-                    <Button variant="secondary" size="sm" onClick={retryReads}>
-                      {t().retry}
-                    </Button>
-                  </NoticeCard>
-                )}
-              </Show>
-
-              <Show
-                when={routeState().mode === "receive"}
-                fallback={
-                  <SendPanel
-                    blocked={writesBlocked()}
-                    pending={writePending()}
-                    targetUrl={targetUrl}
-                    setTargetUrl={setTargetUrl}
-                    method={sendMethod}
-                    setMethod={setSendMethod}
-                    headers={headers}
-                    setHeaders={setHeaders}
-                    body={body}
-                    setBody={setBody}
-                    onSend={sendRequest}
-                  />
-                }
-              >
-                <section class="flex flex-col gap-2">
-                  <div class="flex items-center justify-between gap-2">
-                    <h2 class="text-sm font-semibold text-primary">{t().endpoints}</h2>
-                    <span class="text-xs text-dimmed">{t().endpointCount({ count: endpointsQuery.data()?.length ?? 0 })}</span>
-                  </div>
-                  <DataTable
-                    rows={endpointsQuery.data() ?? []}
-                    columns={endpointColumns()}
-                    getRowId={(row) => row.id}
-                    selectedRowId={routeState().endpointId}
-                    onRowClick={(row) => commitRoute({ mode: "receive", endpointId: row.id, requestId: null })}
-                    renderCell={renderEndpointCell}
-                    empty={t().noEndpoints}
-                    density="compact"
-                    class="max-h-48 overflow-auto"
-                    scrollPreserveKey="webhook-endpoints-table"
-                  />
-                </section>
-              </Show>
-
-              <section class="flex min-h-0 flex-1 flex-col gap-2">
-                <RequestSearchInput value={routeState().query} onSearch={(query) => commitRoute({ query, requestId: null })} />
-                <div class="flex flex-wrap items-center gap-2">
-                  <FilterChip
-                    label={t().filterMode}
-                    icon="ti ti-arrows-exchange"
-                    options={modeOptions(t())}
-                    value={[routeState().mode]}
-                    onValueChange={(value) => commitRoute({ mode: (value[0] ?? "receive") as Mode, requestId: null })}
-                    defaultValue={["receive"]}
-                  />
-                  <Show when={routeState().mode === "receive"}>
-                    <FilterChip
-                      label={t().filterWebhook}
-                      icon="ti ti-webhook"
-                      options={endpointOptions()}
-                      value={[routeState().endpointId ?? "all"]}
-                      onValueChange={(value) =>
-                        commitRoute({ endpointId: value[0] === "all" ? null : (value[0] ?? null), requestId: null })
-                      }
-                      isActive={Boolean(routeState().endpointId)}
-                      defaultValue={["all"]}
-                    />
-                  </Show>
-                  <FilterChip
-                    label={t().filterMethod}
-                    icon="ti ti-code"
-                    options={METHOD_OPTIONS}
-                    value={selectedMethodFilter()}
-                    onValueChange={(value) => commitRoute({ method: (value[0] as Method | undefined) ?? null, requestId: null })}
-                  />
-                  <Show when={hasActiveFilters()}>
-                    <Button variant="secondary" size="sm" class="text-red-600 dark:text-red-400" onClick={clearFilters}>
-                      <i class="ti ti-x" />
-                      {t().clear}
-                    </Button>
-                  </Show>
-                  <span class="text-xs text-dimmed">{totalLabel()}</span>
-                  <Button variant="secondary" size="sm" class="ml-auto" onClick={refreshLogs}>
-                    <i class="ti ti-refresh" />
-                    {t().refresh}
-                  </Button>
-                </div>
-
-                <DataTable
-                  rows={logsQuery.data() ?? []}
-                  columns={logColumns()}
-                  getRowId={(row) => row.id}
-                  selectedRowId={routeState().requestId}
-                  onRowClick={(row) => commitRoute({ requestId: row.id }, { replace: false })}
-                  renderCell={renderLogCell}
-                  empty={routeState().mode === "receive" ? t().emptyIncoming : t().emptyOutgoing}
-                  density="compact"
-                  fillHeight
-                  class="paper flex-1 min-h-0 overflow-auto"
-                  scrollPreserveKey="webhook-requests-table"
-                />
-              </section>
-            </div>
-          </AppWorkspace.Main>
-
-          <AppWorkspace.Detail
-            id="webhook-request"
-            open={Boolean(selectedLog())}
-            onClose={() => commitRoute({ requestId: null })}
-            width="lg"
-            viewTransitionName="webhook-request-detail"
-          >
-            <Show when={selectedLog()}>
-              {(log) => (
-                <RequestDetail
-                  log={log()}
-                  endpoint={log().endpointId ? endpointsQuery.data()?.find((endpoint) => endpoint.id === log().endpointId) : null}
-                  onClose={() => commitRoute({ requestId: null })}
-                />
-              )}
-            </Show>
-          </AppWorkspace.Detail>
-        </AppWorkspace.Content>
-      </AppWorkspace>
-    </div>
-  );
-}
-
-function WebhookSidebarBody(props: {
-  mode: Mode;
-  endpoints: Endpoint[];
-  activeEndpointId: string | null;
-  onMode: (mode: Mode) => void;
-  onEndpoint: (endpointId: string | null) => void;
-}) {
-  const locale = useLocale();
-  const t = () => webhookMessages.resolve([locale()]).t;
-  return (
     <>
-      <AppWorkspace.SidebarSection title={t().sidebarRequests}>
-        <AppWorkspace.SidebarItem icon="ti ti-inbox" active={props.mode === "receive"} onClick={() => props.onMode("receive")}>
-          {t().modeReceive}
-        </AppWorkspace.SidebarItem>
-        <AppWorkspace.SidebarItem icon="ti ti-send" active={props.mode === "send"} onClick={() => props.onMode("send")}>
-          {t().modeSend}
-        </AppWorkspace.SidebarItem>
-      </AppWorkspace.SidebarSection>
+      <AppWorkspace.Main class="p-[var(--ui-space-shell)]">
+        <div class="flex min-h-0 flex-1 flex-col gap-2">
+          <div class="flex items-center justify-between gap-3" style="view-transition-name: tools-webhook-title">
+            <div class="min-w-0">
+              <h1 class="min-w-0 text-base font-semibold text-primary">{t().heading}</h1>
+              <p class="mt-0.5 text-xs text-dimmed">{t().subtitle}</p>
+            </div>
+            <Show when={routeState().mode === "receive"}>
+              <Button variant="secondary" size="xs" class="shrink-0" disabled={writesBlocked()} onClick={() => void openCreateEndpoint()}>
+                <i class="ti ti-plus text-sm" />
+                {t().add}
+              </Button>
+            </Show>
+          </div>
 
-      <AppWorkspace.SidebarSection title={t().sidebarWebhooks}>
-        <AppWorkspace.SidebarItem
-          icon="ti ti-world"
-          active={props.mode === "receive" && !props.activeEndpointId}
-          onClick={() => props.onEndpoint(null)}
-          meta={props.endpoints.length}
-        >
-          {t().allEndpoints}
-        </AppWorkspace.SidebarItem>
-        <For each={props.endpoints}>
-          {(endpoint) => (
-            <AppWorkspace.SidebarItem
-              icon="ti ti-webhook"
-              active={props.mode === "receive" && props.activeEndpointId === endpoint.id}
-              onClick={() => props.onEndpoint(endpoint.id)}
-              meta={endpoint.requestCount}
-              title={endpoint.name}
-            >
-              {endpoint.name}
-            </AppWorkspace.SidebarItem>
+          <NoticeCard tone="warning">{t().dataNotice}</NoticeCard>
+
+          <Show when={endpointsQuery.error() ?? logsQuery.error()}>
+            {(error) => (
+              <NoticeCard tone="danger" title={t().refreshFailedTitle} detail={error().message}>
+                <Button variant="secondary" size="sm" onClick={retryReads}>
+                  {t().retry}
+                </Button>
+              </NoticeCard>
+            )}
+          </Show>
+
+          <Show
+            when={routeState().mode === "receive"}
+            fallback={
+              <SendPanel
+                blocked={writesBlocked()}
+                pending={writePending()}
+                targetUrl={targetUrl}
+                setTargetUrl={setTargetUrl}
+                method={sendMethod}
+                setMethod={setSendMethod}
+                headers={headers}
+                setHeaders={setHeaders}
+                body={body}
+                setBody={setBody}
+                onSend={sendRequest}
+              />
+            }
+          >
+            <section class="flex flex-col gap-2">
+              <div class="flex items-center justify-between gap-2">
+                <h2 class="text-sm font-semibold text-primary">{t().endpoints}</h2>
+                <span class="text-xs text-dimmed">{t().endpointCount({ count: endpointsQuery.data()?.length ?? 0 })}</span>
+              </div>
+              <DataTable
+                rows={endpointsQuery.data() ?? []}
+                columns={endpointColumns()}
+                getRowId={(row) => row.id}
+                selectedRowId={routeState().endpointId}
+                onRowClick={(row) => commitRoute({ mode: "receive", endpointId: row.id, requestId: null })}
+                renderCell={renderEndpointCell}
+                empty={t().noEndpoints}
+                density="compact"
+                class="max-h-48 overflow-auto"
+                scrollPreserveKey="webhook-endpoints-table"
+              />
+            </section>
+          </Show>
+
+          <section class="flex min-h-0 flex-1 flex-col gap-2">
+            <RequestSearchInput value={routeState().query} onSearch={(query) => commitRoute({ query, requestId: null })} />
+            <div class="flex flex-wrap items-center gap-2">
+              <FilterChip
+                label={t().filterMode}
+                icon="ti ti-arrows-exchange"
+                options={modeOptions(t())}
+                value={[routeState().mode]}
+                onValueChange={(value) => commitRoute({ mode: (value[0] ?? "receive") as Mode, requestId: null })}
+                defaultValue={["receive"]}
+              />
+              <Show when={routeState().mode === "receive"}>
+                <FilterChip
+                  label={t().filterWebhook}
+                  icon="ti ti-webhook"
+                  options={endpointOptions()}
+                  value={[routeState().endpointId ?? "all"]}
+                  onValueChange={(value) => commitRoute({ endpointId: value[0] === "all" ? null : (value[0] ?? null), requestId: null })}
+                  isActive={Boolean(routeState().endpointId)}
+                  defaultValue={["all"]}
+                />
+              </Show>
+              <FilterChip
+                label={t().filterMethod}
+                icon="ti ti-code"
+                options={METHOD_OPTIONS}
+                value={selectedMethodFilter()}
+                onValueChange={(value) => commitRoute({ method: (value[0] as Method | undefined) ?? null, requestId: null })}
+              />
+              <Show when={hasActiveFilters()}>
+                <Button variant="secondary" size="sm" class="text-red-600 dark:text-red-400" onClick={clearFilters}>
+                  <i class="ti ti-x" />
+                  {t().clear}
+                </Button>
+              </Show>
+              <span class="text-xs text-dimmed">{totalLabel()}</span>
+              <Button variant="secondary" size="sm" class="ml-auto" onClick={refreshLogs}>
+                <i class="ti ti-refresh" />
+                {t().refresh}
+              </Button>
+            </div>
+
+            <DataTable
+              rows={logsQuery.data() ?? []}
+              columns={logColumns()}
+              getRowId={(row) => row.id}
+              selectedRowId={routeState().requestId}
+              onRowClick={(row) => commitRoute({ requestId: row.id }, { replace: false })}
+              renderCell={renderLogCell}
+              empty={routeState().mode === "receive" ? t().emptyIncoming : t().emptyOutgoing}
+              density="compact"
+              fillHeight
+              class="paper flex-1 min-h-0 overflow-auto"
+              scrollPreserveKey="webhook-requests-table"
+            />
+          </section>
+        </div>
+      </AppWorkspace.Main>
+
+      <AppWorkspace.Detail
+        id="webhook-request"
+        open={Boolean(selectedLog())}
+        onClose={() => commitRoute({ requestId: null })}
+        width="lg"
+        viewTransitionName="webhook-request-detail"
+      >
+        <Show when={selectedLog()}>
+          {(log) => (
+            <RequestDetail
+              log={log()}
+              endpoint={log().endpointId ? endpointsQuery.data()?.find((endpoint) => endpoint.id === log().endpointId) : null}
+              onClose={() => commitRoute({ requestId: null })}
+            />
           )}
-        </For>
-      </AppWorkspace.SidebarSection>
+        </Show>
+      </AppWorkspace.Detail>
     </>
   );
 }

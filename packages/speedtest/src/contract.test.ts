@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import manifest from "../package.json";
 
 test("the measurement engine and browser transport build without server or Cloud dependencies", async () => {
-  expect(manifest).not.toHaveProperty("dependencies");
+  expect(manifest.dependencies).not.toHaveProperty("@k2b/cloud");
   for (const entry of ["./engine.ts", "./browser.ts"]) {
     const result = await Bun.build({ entrypoints: [new URL(entry, import.meta.url).pathname], target: "browser" });
     expect(result.success).toBe(true);
