@@ -1,5 +1,6 @@
 ---
 title: Assistant place chats
+navTitle: Assistant place chats
 section: Operations
 order: 1275
 description: Understand the chat-list default and database migration for Assistant place context.
