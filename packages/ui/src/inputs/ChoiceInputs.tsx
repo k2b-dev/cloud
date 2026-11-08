@@ -129,6 +129,8 @@ export type SliderProps = FieldProps &
     value: MaybeAccessor<number>;
     formatValue?: (value: number) => string;
     showValue?: boolean;
+    /** Place the value and reset beside the label. Without a label, they stay beside the track. */
+    valuePlacement?: "control" | "label";
     center?: boolean;
     /**
      * The value the setting starts from. With it, a changed value shows in the accent color and a reset button
@@ -152,6 +154,7 @@ export function Slider(props: SliderProps): JSX.Element {
     "onValueCommit",
     "required",
     "showValue",
+    "valuePlacement",
     "value",
     "formatValue",
   ]);
@@ -184,11 +187,38 @@ export function Slider(props: SliderProps): JSX.Element {
     // The button hides once the value is back, so focus returns to the slider it belongs to.
     input?.focus();
   };
+  const inLabel = () => local.valuePlacement === "label" && !!local.label;
+  const ValueControls = () => (
+    <>
+      <Show when={local.showValue ?? true}>
+        <output for={meta.controlId}>{local.formatValue?.(value()) ?? value()}</output>
+      </Show>
+      <Show when={local.defaultValue !== undefined}>
+        <IconButton
+          class="k2b-slider__reset"
+          size="xs"
+          label={resetLabel()}
+          aria-describedby={local.label ? meta.labelId : undefined}
+          disabled={rest.disabled || !changed()}
+          onClick={reset}
+        >
+          <i class="ti ti-arrow-back-up" aria-hidden="true" />
+        </IconButton>
+      </Show>
+    </>
+  );
 
   return (
     <Field
       class={local.class}
       label={local.label}
+      labelEnd={
+        inLabel() ? (
+          <div class="k2b-slider__value" data-changed={changed() ? "true" : undefined}>
+            <ValueControls />
+          </div>
+        ) : undefined
+      }
       description={local.description}
       error={error()}
       meta={meta}
@@ -211,20 +241,8 @@ export function Slider(props: SliderProps): JSX.Element {
             commitFieldValue(local, next);
           }}
         />
-        <Show when={local.showValue ?? true}>
-          <output for={meta.controlId}>{local.formatValue?.(value()) ?? value()}</output>
-        </Show>
-        <Show when={local.defaultValue !== undefined}>
-          <IconButton
-            class="k2b-slider__reset"
-            size="xs"
-            label={resetLabel()}
-            aria-describedby={local.label ? meta.labelId : undefined}
-            disabled={rest.disabled || !changed()}
-            onClick={reset}
-          >
-            <i class="ti ti-arrow-back-up" aria-hidden="true" />
-          </IconButton>
+        <Show when={!inLabel()}>
+          <ValueControls />
         </Show>
       </div>
     </Field>

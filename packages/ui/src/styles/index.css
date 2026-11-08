@@ -2626,6 +2626,13 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   color: var(--k2b-danger-text);
 }
 
+.k2b-ui .k2b-field__label-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
 .k2b-ui .k2b-field__description,
 .k2b-ui .k2b-field__error {
   margin: 0;
@@ -10489,6 +10496,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 }
 
 .k2b-ui .k2b-slider,
+.k2b-ui .k2b-slider__value,
 .k2b-ui .k2b-color-input {
   display: flex;
   align-items: center;
@@ -10711,6 +10719,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 }
 
 .k2b-ui .k2b-slider output,
+.k2b-ui .k2b-slider__value output,
 .k2b-ui .k2b-color-input code {
   min-width: 3.5rem;
   color: var(--k2b-text-muted);
@@ -10720,16 +10729,19 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 }
 
 /* A value away from its default shows in the accent color. */
-.k2b-ui .k2b-slider[data-changed="true"] output {
+.k2b-ui .k2b-slider[data-changed="true"] output,
+.k2b-ui .k2b-slider__value[data-changed="true"] output {
   color: var(--k2b-action);
 }
 
 /* The reset button keeps its slot, so a change moves nothing; at the default it is invisible and out of reach. */
-.k2b-ui .k2b-slider:not([data-changed="true"]) .k2b-slider__reset {
+.k2b-ui .k2b-slider:not([data-changed="true"]) .k2b-slider__reset,
+.k2b-ui .k2b-slider__value:not([data-changed="true"]) .k2b-slider__reset {
   visibility: hidden;
 }
 
-.k2b-ui .k2b-slider .k2b-slider__reset {
+.k2b-ui .k2b-slider .k2b-slider__reset,
+.k2b-ui .k2b-slider__value .k2b-slider__reset {
   margin-inline-start: -0.5rem;
 }
 

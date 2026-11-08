@@ -27,10 +27,36 @@ type FieldLayoutProps = {
   fill?: boolean;
   /** Composite controls use aria-labelledby instead of an HTML label target. */
   labelFor?: string | false;
+  /** Optional controls beside the label, outside its clickable target. */
+  labelEnd?: JSX.Element;
 } & Pick<FieldProps, "class" | "description" | "error" | "label" | "required" | "disabled">;
 
 export function Field(props: FieldLayoutProps): JSX.Element {
   const error = () => resolveMaybeAccessor(props.error);
+  const label = () => (
+    <Show
+      when={props.labelFor !== false}
+      fallback={
+        <span id={props.meta.labelId} class="k2b-field__label">
+          {props.label}
+          <Show when={props.required}>
+            <span class="k2b-field__required" aria-hidden="true">
+              *
+            </span>
+          </Show>
+        </span>
+      }
+    >
+      <label id={props.meta.labelId} class="k2b-field__label" for={props.labelFor || props.meta.controlId}>
+        {props.label}
+        <Show when={props.required}>
+          <span class="k2b-field__required" aria-hidden="true">
+            *
+          </span>
+        </Show>
+      </label>
+    </Show>
+  );
 
   return (
     <div
@@ -40,27 +66,11 @@ export function Field(props: FieldLayoutProps): JSX.Element {
       data-invalid={error() ? "true" : undefined}
     >
       <Show when={props.label}>
-        <Show
-          when={props.labelFor !== false}
-          fallback={
-            <span id={props.meta.labelId} class="k2b-field__label">
-              {props.label}
-              <Show when={props.required}>
-                <span class="k2b-field__required" aria-hidden="true">
-                  *
-                </span>
-              </Show>
-            </span>
-          }
-        >
-          <label id={props.meta.labelId} class="k2b-field__label" for={props.labelFor || props.meta.controlId}>
-            {props.label}
-            <Show when={props.required}>
-              <span class="k2b-field__required" aria-hidden="true">
-                *
-              </span>
-            </Show>
-          </label>
+        <Show when={props.labelEnd} fallback={label()}>
+          <div class="k2b-field__label k2b-field__label-row">
+            {label()}
+            {props.labelEnd}
+          </div>
         </Show>
       </Show>
       <Show when={props.description}>

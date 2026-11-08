@@ -30,6 +30,29 @@ const { TagsInput } = await import("./TagsInput");
 const { TextInput } = await import("./TextInput");
 
 describe("@k2b/ui canonical field contract", () => {
+  test("Slider label placement keeps the label target separate from value and reset", () => {
+    for (const valuePlacement of ["control", "label"] as const) {
+      const html = renderToString(() =>
+        createComponent(Slider, {
+          id: "contrast",
+          label: "Contrast",
+          value: 20,
+          defaultValue: 0,
+          valuePlacement,
+        }),
+      );
+      expect(html).toContain('for="contrast"');
+      expect(html).toContain('aria-labelledby="contrast-label"');
+      expect(html).toContain('<output for="contrast">');
+      expect(html).toContain('aria-label="Reset to 0"');
+      expect(html.includes('class="k2b-field__label k2b-field__label-row"')).toBe(valuePlacement === "label");
+      expect(html).not.toMatch(/<label[^>]*>[^]*<button[^]*<\/label>/);
+    }
+    const unnamed = renderToString(() => createComponent(Slider, { "aria-label": "Contrast", value: 0, valuePlacement: "label" }));
+    expect(unnamed).toContain('aria-label="Contrast"');
+    expect(unnamed).not.toContain("k2b-field__label-row");
+  });
+
   test("reports an atomic edit as both changed and committed", () => {
     const calls: string[] = [];
     commitFieldValue(

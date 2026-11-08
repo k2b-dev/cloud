@@ -1409,15 +1409,27 @@ const SmallChoicesDemo = (props: { kind: "color" | "tags" | "pin" | "icon" | "sl
       );
     }
     return (
-      <Slider
-        label="Capacity"
-        value={slider}
-        onValueChange={setSlider}
-        min={0}
-        max={100}
-        formatValue={(value) => `${value}%`}
-        defaultValue={50}
-      />
+      <>
+        <Slider
+          label="Capacity"
+          value={slider}
+          onValueChange={setSlider}
+          min={0}
+          max={100}
+          formatValue={(value) => `${value}%`}
+          defaultValue={50}
+        />
+        <Slider
+          label="Capacity, value in label row"
+          value={slider}
+          onValueChange={setSlider}
+          min={0}
+          max={100}
+          formatValue={(value) => `${value}%`}
+          defaultValue={50}
+          valuePlacement="label"
+        />
+      </>
     );
   };
   const names = {
@@ -1451,6 +1463,15 @@ const SmallChoicesDemo = (props: { kind: "color" | "tags" | "pin" | "icon" | "sl
   min={0}
   max={100}
   defaultValue={50}
+  formatValue={(value) => \`\${value}%\`}
+/>
+
+<Slider
+  label="Capacity, value in label row"
+  value={slider}
+  onValueChange={setSlider}
+  defaultValue={50}
+  valuePlacement="label"
   formatValue={(value) => \`\${value}%\`}
 />`,
   };
