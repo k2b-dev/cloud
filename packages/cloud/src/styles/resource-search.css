@@ -530,14 +530,17 @@
   pointer-events: none;
   z-index: 0;
   place-items: center;
-  /* Solid: page text lies underneath, and blurred it reads as a fault. */
-  background: var(--ui-dialog-surface);
+  /* A place to drop, flat under the floating search (layers and shadows): a
+     dashed 2 px edge, no shadow. Nearly solid, because page text lies underneath. */
+  background: color-mix(in srgb, var(--ui-dialog-surface) 80%, transparent);
   border-radius: var(--ui-radius-frame);
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--ui-border) 35%, transparent);
+  outline: 2px dashed var(--k2b-border-strong);
+  outline-offset: -2px;
   color: var(--k2b-text-muted);
   transition:
     background-color 120ms ease,
-    color 120ms ease;
+    color 120ms ease,
+    outline-color 120ms ease;
 }
 .cloud-global-search__home > div {
   display: grid;
@@ -548,12 +551,34 @@
 .cloud-global-search__home i {
   font-size: 1.75rem;
 }
+/* Ready (about half the search over the place): the edge turns solid blue with
+   a light tint. The place stays under the search, so the chip above it says
+   what releasing does. */
 .cloud-global-search__home[data-ready="true"] {
-  /* Keep the release cue visible when the dragged search overlaps its target. */
+  background: color-mix(in srgb, var(--k2b-action-solid) 10%, var(--ui-dialog-surface));
+  color: var(--k2b-action);
+  outline: 2px solid var(--k2b-action);
+}
+.cloud-global-search__chip {
+  display: none;
+  position: absolute;
   z-index: 3;
-  background: color-mix(in srgb, var(--k2b-focus-ring) 12%, var(--ui-dialog-surface) 88%);
-  color: var(--k2b-focus-ring);
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--k2b-focus-ring) 45%, transparent);
+  pointer-events: none;
+  align-items: center;
+  gap: 0.3125rem;
+  height: 1.5rem;
+  padding: 0 0.625rem;
+  border-radius: 999px;
+  background: var(--k2b-action-solid);
+  color: #fff;
+  font-size: 0.75rem;
+  font-weight: 500;
+  white-space: nowrap;
+  box-shadow: var(--k2b-shadow-toast);
+  transform: translate(-50%, -50%);
+}
+.cloud-global-search[data-dragging="true"] .cloud-global-search__chip[data-ready="true"] {
+  display: inline-flex;
 }
 .cloud-global-search[data-dragging="true"] .cloud-global-search__home {
   display: grid;
