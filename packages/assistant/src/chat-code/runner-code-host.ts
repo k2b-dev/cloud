@@ -247,7 +247,11 @@ export function createRunnerCodeHost(options: Options) {
             if (streamed.success) return { ...streamed.data, stream: { ...streamed.data.stream, callId } };
             return envelope.data;
           },
-          stream: (ref, verb, body, signal) => runStream(ref, verb, body, signal, options.fetch),
+          stream: async (ref, verb, body, signal) => {
+            signal.throwIfAborted();
+            await assertActive();
+            return runStream(ref, verb, body, signal, options.fetch);
+          },
           http: async (value, signal) => {
             const id = crypto.randomUUID();
             const review = HttpReview.parse(

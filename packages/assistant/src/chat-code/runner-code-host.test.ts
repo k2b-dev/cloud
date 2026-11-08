@@ -3,9 +3,11 @@ import * as codeExecution from "@k2b/cloud/ai";
 import { compileCapabilityManifest } from "@k2b/cloud/capabilities/testing";
 import { generateCodeSdk } from "@k2b/cloud/code";
 import { encodeChatValue } from "@k2b/cloud/code/chat-run";
+import { CapabilityFileMetadataSchema, type CapabilityManifest } from "@k2b/cloud/contracts";
 import { z } from "zod";
 import { useUnitClients } from "../../../../scripts/fixtures/unit-clients";
-import { runtimeCapabilities } from "./capability-runtime";
+import { fileImportManifest } from "../../../cloud/src/code/file-ref.test-fixture";
+import { RuntimeCapabilityRequest, runtimeCapabilities } from "./capability-runtime";
 import { runChatRunnerFixture } from "./runner-code.test-fixture";
 import { createRunnerCodeHost as createManagedCodeHost } from "./runner-code-host";
 import * as sdkProvider from "./runtime/code-run-sdk";
@@ -36,9 +38,11 @@ const manifest = compileCapabilityManifest("demo", {
 
 /** Real Runner job dispatch and script bytes; this engine fixture only replaces Linux privilege isolation.
  * The image tests exercise the same chat-job adapter with the production workerd engine. */
-function fixture(options: { remote?: boolean } = {}) {
+function fixture(
+  options: { remote?: boolean; manifests?: CapabilityManifest[]; fetch?: (path: string, init?: RequestInit) => Promise<Response> } = {},
+) {
   jest.setSystemTime(NOW);
-  const sdk = spyOn(sdkProvider, "codeRunSdk").mockResolvedValue(generateCodeSdk([manifest], { mode: "code_run" }));
+  const sdk = spyOn(sdkProvider, "codeRunSdk").mockResolvedValue(generateCodeSdk(options.manifests ?? [manifest], { mode: "code_run" }));
   const authorization = spyOn(codeExecution, "authorizeCodeExecution").mockResolvedValue({
     config: { kind: "chat", input: "Fixture" },
   } as Awaited<ReturnType<typeof codeExecution.authorizeCodeExecution>>);
@@ -48,6 +52,7 @@ function fixture(options: { remote?: boolean } = {}) {
     return { status: "completed", result: { ok: true, data: { data: [{ name: "Ada", amount: 12.5 }] } } };
   });
   const localPaths: string[] = [];
+  const bridgeCalls: { method: string; args: unknown[]; result: unknown }[] = [];
   const httpRequests: unknown[] = [];
   const approve = jest.fn(async (_request: unknown, _signal?: AbortSignal) => ({ approved: true }));
   const transport = jest.fn(async (_request: Request): Promise<Response> => {
@@ -67,6 +72,7 @@ function fixture(options: { remote?: boolean } = {}) {
     transport,
     fetch: async (path, init) => {
       localPaths.push(path);
+      if (options.fetch && path.includes("/stream/")) return options.fetch(path, init);
       if (path === "/api/assistant/chat-code/runtime/http") {
         const body = JSON.parse(String(init?.body));
         httpRequests.push(body);
@@ -91,7 +97,21 @@ function fixture(options: { remote?: boolean } = {}) {
       throw new Error(`Unexpected request ${path}`);
     },
     approve,
-    start: options.remote ? undefined : runChatRunnerFixture,
+    start: options.remote
+      ? undefined
+      : (input, hooks, signal) =>
+          runChatRunnerFixture(
+            input,
+            {
+              ...hooks,
+              request: async (method, args, signal) => {
+                const result = await hooks.request(method, args, signal);
+                bridgeCalls.push({ method, args, result });
+                return result;
+              },
+            },
+            signal,
+          ),
   });
   const execute = (name: "code_run" | "code_inspect" | "code_stop" | "code_export", args: unknown, callId = "fixture-run") =>
     host.execute({
@@ -107,6 +127,7 @@ function fixture(options: { remote?: boolean } = {}) {
     execute,
     calls,
     localPaths,
+    bridgeCalls,
     capability,
     authorization,
     approve,
@@ -420,3 +441,147 @@ test("signed chat code_run route resolves chat authority and executes through th
     await f.close();
   }
 }, 20_000);
+
+const fileMetadata = { name: "invoice.pdf", mediaType: "application/pdf", size: 5 };
+const mailFileManifest = compileCapabilityManifest("mail", {
+  protocolVersion: 2,
+  queries: {
+    "attachment.content.read": {
+      title: "Read attachment file",
+      description: "Read the original attachment file.",
+      input: z.object({ id: z.string().describe("Attachment ID.") }).strict(),
+      data: CapabilityFileMetadataSchema,
+      openWorld: false,
+      run: () => {
+        throw new Error("No live provider");
+      },
+      stream: {
+        direction: "read",
+        maxBytes: 100 * 1024 * 1024,
+        read: async () => {
+          throw new Error("No live provider");
+        },
+      },
+    },
+  },
+});
+
+test.each([true, false])(
+  "compiled runner SDK composes a Mail FileRef into an independent completed file import outside the worker bridge (approved=%s)",
+  async (approved) => {
+    const bytes = new Uint8Array([0, 255, 37, 80, 10]);
+    const transfers: string[] = [];
+    let uploaded: Uint8Array | undefined;
+    const f = fixture({
+      manifests: [mailFileManifest, fileImportManifest()],
+      fetch: async (path, init) => {
+        transfers.push(path);
+        if (path.endsWith("/read")) return new Response(bytes);
+        if (path.endsWith("/write")) {
+          expect(init?.body).toBeInstanceOf(Blob);
+          uploaded = new Uint8Array(await new Response(init?.body).arrayBuffer());
+          return Response.json({ data: { imported: true } });
+        }
+        throw new Error("Unexpected stream verb");
+      },
+    });
+    f.capability.mockImplementation(async (input) => {
+      const request = RuntimeCapabilityRequest.parse(input);
+      f.calls.push(request);
+      const direction = request.name === "mail.attachment.content.read" ? "read" : "write";
+      if (direction === "write")
+        return {
+          status: "approval",
+          id: request.id,
+          name: request.name,
+          input: request.input,
+          appName: "Imports",
+          appIcon: "file",
+          appId: "imports",
+          localId: "import",
+          kind: "action",
+          schemaHash: "fixture",
+          approval: "rememberable",
+          title: "Import file",
+          review: null,
+          allowAlways: false,
+          scope: null,
+        };
+      return {
+        status: "completed",
+        result: {
+          ok: true,
+          data: {
+            data: fileMetadata,
+            stream: { ...fileMetadata, id: "read-offer", direction, expiresAt: new Date(NOW + 60_000).toISOString() },
+          },
+        },
+      };
+    });
+    const resolve = spyOn(runtimeCapabilities, "resolve").mockImplementation(async (_id, decision) => ({
+      status: "completed",
+      result: decision.approved
+        ? {
+            ok: true,
+            data: {
+              data: { imported: false },
+              stream: {
+                ...fileMetadata,
+                id: "write-offer",
+                direction: "write",
+                expiresAt: new Date(NOW + 60_000).toISOString(),
+              },
+            },
+          }
+        : { ok: false, error: { code: "denied", message: "Import declined" } },
+    }));
+    f.approve.mockResolvedValue({ approved });
+    try {
+      const result = await f.execute("code_run", {
+        code: `import {mail, imports} from "@sdk";
+      export default async () => {
+        const file = await mail.app().attachment.content.read({id:"At4g00"});
+        if (!file.id || "direction" in file || "callId" in file) throw new Error("Expected an opaque FileRef");
+        const result = await imports.app().import({file, idempotencyKey:"invoice-import"});
+        return {file, result};
+      }`,
+      });
+      expect(f.approve).toHaveBeenCalledTimes(1);
+      if (!approved) {
+        expect(result).toMatchObject({ status: "error", error: expect.stringContaining("Import declined") });
+        expect(transfers).toEqual([]);
+        expect(uploaded).toBeUndefined();
+        return;
+      }
+      expect(result).toMatchObject({
+        status: "ready",
+        output: JSON.stringify({ file: { id: "read-offer", ...fileMetadata }, result: { imported: true } }),
+      });
+      expect(uploaded).toEqual(bytes);
+      const prepared = f.calls.map((call) => RuntimeCapabilityRequest.parse(call));
+      expect(transfers).toEqual([
+        `/api/assistant/chat-code/runtime/capabilities/${prepared[0]?.id}/stream/read`,
+        `/api/assistant/chat-code/runtime/capabilities/${prepared[1]?.id}/stream/write`,
+      ]);
+      expect(f.calls).toMatchObject([
+        { name: "mail.attachment.content.read", input: { id: "At4g00" } },
+        { name: "imports.import", input: { file: fileMetadata }, idempotencyKey: "invoice-import" },
+      ]);
+      expect(f.bridgeCalls).toHaveLength(2);
+      expect(f.bridgeCalls.map((call) => call.result)).toEqual([
+        { data: { id: "read-offer", ...fileMetadata } },
+        { data: { imported: true } },
+      ]);
+      // The only worker messages are capability calls carrying JSON metadata, never the binary body.
+      expect(f.bridgeCalls.every((call) => call.method === "capabilities.run")).toBe(true);
+      expect(f.bridgeCalls.map((call) => call.args)).toEqual([
+        ["mail.attachment.content.read", { id: "At4g00" }, { refs: {} }, "read"],
+        ["imports.import", { file: { id: "read-offer", ...fileMetadata } }, { refs: {}, idempotencyKey: "invoice-import" }, "write"],
+      ]);
+    } finally {
+      resolve.mockRestore();
+      await f.close();
+    }
+  },
+  20_000,
+);

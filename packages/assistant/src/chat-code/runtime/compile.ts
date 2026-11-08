@@ -100,9 +100,11 @@ export async function compileScript(input: unknown, sdk?: GeneratedCodeSdk, runn
                          __codeSdk.bind({call: async (name, invocation) => {
                            ${runner ? 'if (name === "http.fetch") return globalThis.__artifactHttp(invocation);' : ""}
                            const {call, metadata} = invocation;
-                           const envelope = await globalThis.cloud.capabilities.run(name, call.input, {
+                           const direction = ${JSON.stringify(Object.fromEntries(sdk.manifest.operations.flatMap((op) => (op.stream ? [[op.capability, op.stream.direction]] : []))))}[name];
+                           const invoke = direction ? globalThis.__artifactSdkStream : globalThis.cloud.capabilities.run;
+                           const envelope = await invoke(name, call.input, {
                              ...(call.target ? {target: call.target} : {}), refs: call.refs, ...metadata
-                           });
+                           }, direction);
                            return ${JSON.stringify(sdk.manifest.operations.filter((op) => op.kind === "query" && op.stream?.direction !== "read").map((op) => op.capability))}.includes(name)
                              ? {data: envelope.data, ...(envelope.page === undefined ? {} : {page: envelope.page})}
                              : envelope.data;
