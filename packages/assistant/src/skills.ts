@@ -2,6 +2,7 @@ import { skill } from "@k2b/cloud";
 import assistantCodeModeAi from "./skills/assistant-code-mode/references/ai.md" with { type: "text" };
 import assistantCodeModeCamt from "./skills/assistant-code-mode/references/camt.md" with { type: "text" };
 import assistantCodeModeCapabilities from "./skills/assistant-code-mode/references/capabilities.md" with { type: "text" };
+import assistantCodeModeChartKinds from "./skills/assistant-code-mode/references/chart-kinds.md" with { type: "text" };
 import assistantCodeModeCharts from "./skills/assistant-code-mode/references/charts.md" with { type: "text" };
 import assistantCodeModeCloud from "./skills/assistant-code-mode/references/cloud.md" with { type: "text" };
 import assistantCodeModeDebugging from "./skills/assistant-code-mode/references/debugging.md" with { type: "text" };
@@ -73,6 +74,7 @@ export const SKILLS = [
       "references/camt.md": assistantCodeModeCamt,
       "references/capabilities.md": assistantCodeModeCapabilities,
       "references/charts.md": assistantCodeModeCharts,
+      "references/chart-kinds.md": assistantCodeModeChartKinds,
       "references/cloud.md": assistantCodeModeCloud,
       "references/debugging.md": assistantCodeModeDebugging,
       "references/documents.md": assistantCodeModeDocuments,
