@@ -720,6 +720,7 @@ describe(`default slash ChatComposer in ${browserName}`, () => {
           await page.locator(".k2b-chat-composer-shell").evaluate((shell, shift) => {
             shell.style.translate = `0 -${shift}px`;
           }, Math.ceil(box.height));
+          await settled(page);
           expect(await row!.evaluate((element) => element.isConnected)).toBe(true);
           expect(await row!.evaluate((element, point) => element.contains(document.elementFromPoint(point.x, point.y)), point)).toBe(false);
           if (gesture === "cancel") {
