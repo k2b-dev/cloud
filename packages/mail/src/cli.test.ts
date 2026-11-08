@@ -491,6 +491,31 @@ test("mailbox configure maps automatic reply access to the mailbox policy", asyn
   expect(requestBody).toEqual({ automaticReplyManagementPermission: "write" });
 });
 
+test("mailbox configure sets how new drafts are edited", async () => {
+  let requestBody: unknown;
+  const server = withMailbox(async (request) => {
+    if (request.method === "PATCH" && new URL(request.url).pathname === `/api/mail/mailboxes/${MAILBOX_ID}`) {
+      requestBody = await request.json();
+      return api({ ...mailbox, draftEditMode: "lock" });
+    }
+    return api({ message: "unexpected" }, { status: 500 });
+  });
+  servers.push(server);
+
+  const result = await runCli(`http://127.0.0.1:${server.port}`, [
+    "--json",
+    "mail",
+    "configure",
+    "--mailbox",
+    MAILBOX_ID,
+    "--drafts",
+    "lock",
+  ]);
+
+  expect(result.exitCode, result.stderr).toBe(0);
+  expect(requestBody).toEqual({ draftEditMode: "lock" });
+});
+
 test("subscription commands expose safe list actions and durable disposition", async () => {
   const listKey = "news.example.org";
   const subscription = {

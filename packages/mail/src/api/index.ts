@@ -66,6 +66,7 @@ import {
   deriveDraftFromMessageInputSchema,
   draftContentInputSchema,
   draftEditableContentInputSchema,
+  draftEditModeSchema,
   draftLeaseSchema,
   draftLeaseTokenSchema,
   draftSchema,
@@ -368,6 +369,8 @@ const updateMailboxSchema = z
     searchBackend: searchBackendSchema.optional(),
     automaticReplyManagementPermission: automaticReplyManagementPermissionSchema.optional(),
     composeSafety: composeSafetyConfigSchema.optional(),
+    /** How new drafts are edited: one person at a time, or together. Existing drafts keep their mode. */
+    draftEditMode: draftEditModeSchema.optional(),
   })
   .refine((value) => Object.keys(value).length > 0, "At least one field is required");
 const calendarDestinationInputSchema = z.object({ spaceId: ResourceShortIdSchema.nullable() }).strict();
