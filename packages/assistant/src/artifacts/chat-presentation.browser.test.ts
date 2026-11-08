@@ -277,7 +277,10 @@ test("an early start joins in-flight preparation before cold offline first use",
     await page.waitForFunction(() => document.querySelector(".studio-app") && !document.querySelector(".studio-app[aria-busy]"));
     await context.setOffline(true);
     const requests: string[] = [];
-    page.on("request", (request) => requests.push(request.url()));
+    // WebKit reports local blob module imports too. The offline contract forbids network access.
+    page.on("request", (request) => {
+      if (/^https?:/.test(request.url())) requests.push(request.url());
+    });
     await app(page)
       .locator("body")
       .evaluate((element) => {
