@@ -175,6 +175,8 @@
   --k2b-radius-control: 0.5rem;
   /* One reading column for long text beside wide space: conversation history and its composer, the mail reader. */
   --k2b-reading-column: 47.5rem;
+  /* One measure for label–value rows (budgets, sums): the value stays within reach of its label on a wide screen. */
+  --k2b-row-measure: 40rem;
   --k2b-radius-surface: 0.75rem;
   --k2b-radius-dialog: 0.875rem;
   /* One motion vocabulary: every time and curve comes from these tokens. */
@@ -2073,6 +2075,22 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   background: transparent;
 }
 
+/* Quiet continuation actions share link ink without acquiring a button surface. */
+.k2b-ui .k2b-button[data-variant="link"] {
+  padding-inline: 0;
+  border-inline-width: 0;
+  color: var(--k2b-action);
+  background: transparent;
+  font-weight: 400;
+  text-underline-offset: 0.2em;
+}
+
+.k2b-ui .k2b-button[data-variant="link"]:not(:disabled, [aria-disabled="true"]):hover {
+  color: var(--k2b-action);
+  background: transparent;
+  text-decoration: underline;
+}
+
 /* A destructive text action, such as Remove at the foot of a menu, takes the
    danger ink that destructive menu items use, at rest and on hover. */
 .k2b-ui .k2b-button[data-variant="text"][data-danger="true"],
@@ -3695,8 +3713,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 }
 
 .k2b-ui .k2b-discussion__status button,
-.k2b-ui .k2b-discussion__fold,
-.k2b-ui .k2b-discussion__load-more {
+.k2b-ui .k2b-discussion__fold {
   min-height: 1.75rem;
   padding: 0.25rem 0.5rem;
   border: 0;
@@ -3707,7 +3724,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   cursor: pointer;
 }
 
-.k2b-ui :is(.k2b-discussion__load-more, .k2b-discussion__fold) {
+.k2b-ui .k2b-discussion__fold {
   display: inline-flex;
   align-self: flex-start;
   align-items: center;
@@ -3717,8 +3734,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 }
 
 .k2b-ui .k2b-discussion__status button:hover,
-.k2b-ui .k2b-discussion__fold:hover,
-.k2b-ui .k2b-discussion__load-more:hover {
+.k2b-ui .k2b-discussion__fold:hover {
   background: var(--k2b-surface-muted);
 }
 
@@ -3742,9 +3758,8 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   background: transparent;
 }
 
-.k2b-ui .k2b-discussion__load-more:disabled {
-  cursor: wait;
-  opacity: 0.7;
+.k2b-ui .k2b-discussion__load-more {
+  align-self: flex-start;
 }
 
 .k2b-ui .k2b-discussion__list {
@@ -16931,6 +16946,31 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   font-weight: 400;
   line-height: 1.25rem;
   letter-spacing: 0;
+}
+/* Opt-in fallback for a list that must span a very wide container: a dotted leader joins each term to its value,
+   which aligns right in tabular figures. Never the default; first keep rows within the row measure. */
+.k2b-ui .k2b-description-list[data-leader="dotted"]:is([data-layout="rows"], [data-layout="compact"]) {
+  grid-template-columns: fit-content(40%) minmax(1.5rem, 1fr) auto auto;
+}
+.k2b-ui .k2b-description-list[data-leader="dotted"]:is([data-layout="rows"], [data-layout="compact"]) .k2b-description-list__item {
+  grid-template-areas: "term leader description action";
+}
+/* Term and leader sit on the value's first line, so a wrapped value keeps its term beside where it starts. */
+.k2b-ui .k2b-description-list[data-leader="dotted"]:is([data-layout="rows"], [data-layout="compact"]) .k2b-description-list__item::before {
+  content: "";
+  grid-area: leader;
+  align-self: start;
+  height: 0;
+  margin-block-start: 1.375rem;
+  border-bottom: 1px dotted var(--k2b-border-strong);
+}
+.k2b-ui .k2b-description-list[data-leader="dotted"]:is([data-layout="rows"], [data-layout="compact"]) .k2b-description-list__item :is(dt, dd) {
+  align-self: start;
+  padding-block-start: 0.5rem;
+}
+.k2b-ui .k2b-description-list[data-leader="dotted"]:is([data-layout="rows"], [data-layout="compact"]) .k2b-description-list__item dd {
+  font-variant-numeric: tabular-nums;
+  text-align: end;
 }
 .k2b-ui .k2b-description-list:is([data-layout="rows"], [data-layout="compact"]) .k2b-select-chip {
   max-width: 100%;

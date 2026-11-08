@@ -13,7 +13,7 @@ import { cloudAiViewSummary, parseCloudAiView } from "../view-block";
 // measures the blocks in a browser.
 const ui = resolve(import.meta.dir, "../../../../ui");
 
-const buildHarness = async (): Promise<{ assets: Map<string, string>; chartEntry: string }> => {
+const buildHarness = async (): Promise<{ assets: Map<string, string>; chartEntry: string; statsEntry: string }> => {
   const { transformAsync } = await import(Bun.resolveSync("@babel/core", ui));
   const typescript = (await import(Bun.resolveSync("@babel/preset-typescript", ui))).default;
   const solid = (await import(Bun.resolveSync("babel-preset-solid", ui))).default;
@@ -62,6 +62,10 @@ const buildHarness = async (): Promise<{ assets: Map<string, string>; chartEntry
     ],
   });
   if (!build.success) throw new AggregateError(build.logs, "View block harness build failed");
+  const statsEntry = Object.entries(build.metafile?.outputs ?? {}).find(([, output]) =>
+    output.entryPoint?.endsWith("/ai/chat/stats-block.tsx"),
+  )?.[0];
+  if (!statsEntry) throw new Error("Loaded stats must have their own lazy browser entry");
   const outputs = new Map(Object.entries(build.metafile?.outputs ?? {}).map(([path, output]) => [basename(path), output]));
   const chartEntry = [...outputs].find(([, output]) => output.entryPoint?.endsWith("/ai/chat/chart-eager.tsx"))?.[0];
   if (!chartEntry) throw new Error("Chart drawing must have its own lazy browser entry");
@@ -79,6 +83,7 @@ const buildHarness = async (): Promise<{ assets: Map<string, string>; chartEntry
   return {
     assets: new Map(await Promise.all(build.outputs.map(async (output) => [basename(output.path), await output.text()] as const))),
     chartEntry: basename(chartEntry),
+    statsEntry: `/${basename(statsEntry)}`,
   };
 };
 
@@ -378,7 +383,21 @@ const referenceExplorer = {
   ],
   views: [{ id: "stock", label: "Stock", kind: "bar", x: "name", y: "stock" }],
 };
+const comparedStats = {
+  view: "stats",
+  title: "Newsletter",
+  items: [
+    {
+      label: "Open rate",
+      value: 0.492,
+      format: { style: "percent", decimals: 1 },
+      delta: { value: 0.031, unit: "points", better: "up" },
+      compare: { label: "Last month", value: 0.461 },
+    },
+  ],
+};
 const files: Record<string, unknown> = {
+  "/views/compared-12345678.view.json": comparedStats,
   "/views/product-references-12345678.view.json": referenceExplorer,
   "/views/offers-at-a-glance-0a1b2c3d.view.json": stats,
   "/views/invoice-re-2026-0412-4d5e6f7a.view.json": invoice,
@@ -425,6 +444,7 @@ const files: Record<string, unknown> = {
 let browser: Browser;
 let server: ReturnType<typeof Bun.serve>;
 let tableModulePath: string;
+let statsModulePath: string;
 let chartModulePath: string;
 let serverChartHtml: string;
 let historyProps: string;
@@ -497,6 +517,7 @@ beforeAll(async () => {
   const tableModule = [...harness].find(([name, source]) => name !== "harness.js" && source.includes("/ai/chat/table-block.tsx"));
   if (!tableModule) throw new Error("Table controls must have their own lazy browser module");
   tableModulePath = `/${tableModule[0]}`;
+  statsModulePath = built.statsEntry;
   server = Bun.serve({
     port: 0,
     hostname: "127.0.0.1",
@@ -710,16 +731,16 @@ for (const view of [
         expect(record.scroll).toBeLessThanOrEqual(record.client);
         // The host colors a change by whether it is better, and the tile names it with a sign.
         const changes = await page.evaluate(() =>
-          Array.from(document.querySelectorAll("[data-view-path] .k2b-stat-cell__accent")).map((node) => [
+          Array.from(document.querySelectorAll("[data-view-path] .k2b-stat-cell__delta")).map((node) => [
             node.getAttribute("data-tone"),
             node.textContent,
           ]),
         );
-        expect(changes.map(([tone]) => tone)).toEqual(["emerald", "red"]);
+        expect(changes.map(([tone]) => tone)).toEqual(["good", "bad"]);
         expect(changes[0]![1]).toStartWith("+");
         expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBe(0);
         if (process.env.VIEW_SHOTS)
-          await page.screenshot({ path: `${process.env.VIEW_SHOTS}/widgets-${view.name}-${theme}.png`, fullPage: true });
+          await page.screenshot({ path: `${process.env.VIEW_SHOTS}/widgets-${theme}-${view.width}.png`, fullPage: true });
       } finally {
         await context.close();
       }
@@ -1428,6 +1449,37 @@ test("explorer references open the original dataset row after table sorting and 
   }
 });
 
+for (const locale of ["en", "de"])
+  for (const width of [1280, 390])
+    test(`stats show the shared change badge and comparison without moving during loading (${locale}, ${width})`, async () => {
+      const parsed = parseCloudAiView(comparedStats);
+      if (!parsed) throw new Error("Invalid stats");
+      const context = await browser.newContext({ viewport: { width, height: 900 }, reducedMotion: "reduce" });
+      try {
+        const page = await context.newPage();
+        await page.goto(`http://127.0.0.1:${server.port}/?lang=${locale}`);
+        const path = "/views/compared-12345678.view.json";
+        const loaded = hold(path);
+        await page.evaluate((block) => window.show([block]), present(path, cloudAiViewSummary(parsed)));
+        await page.waitForSelector("[data-view-path]");
+        await settled(page);
+        const loading = await boxes(page);
+        loaded();
+        const badge = page.locator('.k2b-stat-cell__delta[role="img"]');
+        await badge.waitFor();
+        expect(await badge.getAttribute("aria-label")).toContain("Last month");
+        expect(await badge.textContent()).toContain(locale === "de" ? "+3,1 Pkt." : "+3.1 pts");
+        expect(await page.locator(".k2b-stat-cell__support").textContent()).toContain(
+          cloudAiNumberFormatters({ style: "percent", decimals: 1 }, locale).value(0.461),
+        );
+        expect(await boxes(page)).toEqual(loading);
+        if (process.env.VIEW_SHOTS && locale === "en")
+          await page.screenshot({ path: `${process.env.VIEW_SHOTS}/stats-light-${width}.png`, fullPage: true });
+      } finally {
+        await context.close();
+      }
+    });
+
 // Hold both independent arrivals: downloading table code must not move the frame any more than loading its rows.
 for (const width of [1280, 390])
   test(`a deferred table module preserves the first frame and loads only for a table (${width})`, async () => {
@@ -1490,6 +1542,70 @@ test("a failed table module keeps its frame and offers a reload", async () => {
     );
     expect(await page.locator("[data-view-path]").boundingBox()).not.toBeNull();
   } finally {
+    await context.close();
+  }
+});
+
+for (const width of [1280, 390])
+  test(`a deferred stats module preserves its frame after the file arrives (${width})`, async () => {
+    const context = await browser.newContext({ viewport: { width, height: 900 }, reducedMotion: "reduce" });
+    try {
+      const page = await context.newPage();
+      const requested: string[] = [];
+      page.on("request", (request) => requested.push(new URL(request.url()).pathname));
+      await page.goto(`http://127.0.0.1:${server.port}/?lang=en`);
+      expect(requested).not.toContain(statsModulePath);
+      const code = hold(statsModulePath);
+      const path = "/views/compared-12345678.view.json";
+      const file = hold(path);
+      const parsed = parseCloudAiView(comparedStats);
+      if (!parsed) throw new Error("Invalid stats fixture");
+      await page.evaluate((block) => window.show([block]), present(path, cloudAiViewSummary(parsed)));
+      await page.waitForSelector("[data-view-path] [role=status]");
+      await settled(page);
+      const first = await boxes(page);
+      const response = page.waitForResponse((response) => new URL(response.url()).searchParams.get("path") === path);
+      file();
+      await response;
+      await settled(page);
+      expect(await boxes(page)).toEqual(first);
+      expect(await page.locator("[data-view-path] [role=status]").textContent()).toBe("Loading…");
+      code();
+      await page.locator('.k2b-stat-cell__delta[role="img"]').waitFor();
+      await settled(page);
+      expect(await boxes(page)).toEqual(first);
+      expect(requested).toContain(statsModulePath);
+    } finally {
+      await context.close();
+    }
+  });
+
+test("a failed stats module preserves its frame and offers a reload", async () => {
+  const context = await browser.newContext({ viewport: { width: 390, height: 900 }, reducedMotion: "reduce" });
+  const failure = Promise.withResolvers<void>();
+  try {
+    const page = await context.newPage();
+    await page.route(`**${statsModulePath}`, async (route) => {
+      await failure.promise;
+      await route.abort();
+    });
+    await page.goto(`http://127.0.0.1:${server.port}/?lang=en`);
+    const parsed = parseCloudAiView(comparedStats);
+    if (!parsed) throw new Error("Invalid stats fixture");
+    await page.evaluate((block) => window.show([block]), present("/views/compared-12345678.view.json", cloudAiViewSummary(parsed)));
+    await page.waitForSelector("[data-view-path] [role=status]");
+    await settled(page);
+    const first = await boxes(page);
+    failure.resolve();
+    await page.getByText("Part of this page could not load. Reload the page and try again.").waitFor();
+    expect(await page.getByRole("button", { name: "Reload", exact: true }).count()).toBe(1);
+    expect(await page.locator("[data-view-path] [role=status]").textContent()).toBe(
+      "This view is no longer available. Its file was changed or deleted.",
+    );
+    await settled(page);
+    expect(await boxes(page)).toEqual(first);
+  } finally {
+    failure.resolve();
     await context.close();
   }
 });
