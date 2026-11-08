@@ -6,13 +6,19 @@ import { aiSkills } from "./skills";
 import { aiConversations } from "./store";
 
 /** The durable chat binding is the selector; page navigation never retargets an existing chat. */
-export const loadPlaceAssistantRound = async (input: { conversationId: string; persistedActor?: RequestActor; skillsEnabled: boolean }) => {
+export const loadPlaceAssistantRound = async (input: {
+  conversationId: string;
+  persistedActor?: RequestActor;
+  skillsEnabled: boolean;
+  locale?: string;
+  signal?: AbortSignal;
+}) => {
   const conversation = await aiConversations.getConversation({ conversationId: input.conversationId });
   if (!conversation?.place) return null;
   const authority = await resolveAiCapabilityActor({ ...input, store: aiConversations });
   if (!(await panelContextConsent.get(authority.actor.user.id, "assistant"))?.allowed) return null;
   const ref = conversation.place.ref;
-  const place = await runPlaceProvider(authority.actor, ref);
+  const place = await runPlaceProvider(authority.actor, ref, { locale: input.locale, signal: input.signal });
   if ("unavailable" in place) return null;
   const skills = input.skillsEnabled
     ? (await aiSkills.list({ actor: authority.actor, accessSubject: authority.accessSubject }, { authority }))

@@ -52,8 +52,13 @@ export const createPlaceAssistantLoader =
     if (!(await deps.consent(actor.user.id, "assistant"))?.allowed) return { state: "consent_required" };
     const app = await deps.capability(cloudResourceRefAppId(scope));
     const type = app?.manifest.types.find((entry) => `${app.appId}.${entry.localId}` === scope.type);
-    if (!app || !type?.assistant) return { state: "none" };
-    const place = await deps.provider(actor, scope);
+    if (!app || !type?.assistant) {
+      const conversation = await deps.conversation({ ownerUserId: actor.user.id, ref: scope });
+      return conversation
+        ? { state: "unavailable", ref: scope, title: conversation.place?.title ?? null, conversationId: conversation.shortId }
+        : { state: "none" };
+    }
+    const place = await deps.provider(actor, scope, { locale: getLocale(c), signal: c.req.raw.signal });
     const conversation = await deps.conversation({ ownerUserId: actor.user.id, ref: scope });
     if ("unavailable" in place) {
       return { state: "unavailable", ref: scope, title: conversation?.place?.title ?? null, conversationId: conversation?.shortId ?? null };
