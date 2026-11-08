@@ -62,7 +62,8 @@ const PlaceAnswerSchema = z.discriminatedUnion("state", [
 /** The server's answer as the panel reads it; `ref` is the place the panel asked for when the answer names none. */
 export const readAssistantPlace = (ref: CloudResourceRef, answer: unknown): AssistantPlaceView => {
   const parsed = PlaceAnswerSchema.parse(answer);
-  return parsed.state === "none" || parsed.state === "consent_required" ? { state: "none", ref: { ...ref } } : parsed;
+  if (parsed.state === "available" || parsed.state === "unavailable") return parsed;
+  return { state: "none", ref: { ...ref } };
 };
 
 export const placeKey = (ref: CloudResourceRef | null | undefined): string | null => (ref ? `${ref.type}:${ref.id}` : null);

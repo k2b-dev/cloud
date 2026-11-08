@@ -45,7 +45,7 @@ const dependencies = {
 
 export const createPlaceAssistantLoader =
   (deps: typeof dependencies) =>
-  async (c: Context<AuthContext>, scope: CloudResourceRef | null | undefined): Promise<PlaceAssistantState> => {
+  async <T extends AuthContext>(c: Context<T>, scope: CloudResourceRef | null | undefined): Promise<PlaceAssistantState> => {
     const actor = c.get("actor");
     if (!scope || actor?.kind !== "user") return { state: "none" };
     // Consent gates even registry and chat reads. The selector never grants resource access.

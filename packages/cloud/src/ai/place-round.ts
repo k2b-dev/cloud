@@ -12,7 +12,7 @@ export const loadPlaceAssistantRound = async (input: { conversationId: string; p
   const authority = await resolveAiCapabilityActor({ ...input, store: aiConversations });
   if (!(await panelContextConsent.get(authority.actor.user.id, "assistant"))?.allowed) return null;
   const ref = conversation.place.ref;
-  const place = await runPlaceProvider(authority.actor, ref);
+  const place = await runPlaceProvider(authority, ref);
   if ("unavailable" in place) return null;
   const skills = input.skillsEnabled
     ? (await aiSkills.list({ actor: authority.actor, accessSubject: authority.accessSubject }, { authority }))
