@@ -181,6 +181,7 @@ export default ssr<AuthContext>(async (c) => {
     <AssistantWorkspace
       embedded={embedded}
       initialPanelContext={panelContext}
+      initialPlacesFilter={url.searchParams.get("places") === "1"}
       initialQuotas={initialQuotas}
       userId={user.id}
       cloudUrl={publicCloudOrigin(appUrl)}

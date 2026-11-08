@@ -39,7 +39,7 @@ import {
 import { consumeCommandLink, registerCommandHandler, registerContextAwareCommand } from "@k2b/cloud/browser/commands";
 import { cloudCommandMenu, createCloudComposerCatalog } from "@k2b/cloud/browser/composer-insert";
 import { chooseFiles } from "@k2b/cloud/browser/files";
-import { closePanel, type getContext, onPanelBeforeLeave } from "@k2b/cloud/browser/panel";
+import { closePanel, getContext, onContextChange, onPanelBeforeLeave } from "@k2b/cloud/browser/panel";
 import { reloadOnce } from "@k2b/cloud/browser/reload";
 import { cloudResourceClipboard } from "@k2b/cloud/browser/resource-clipboard";
 import { pastedCloudLink, type ResolvedCloudResourceUrl, resolveCloudUrl } from "@k2b/cloud/browser/resource-links";
@@ -64,6 +64,7 @@ import {
   Placeholder,
   prompts,
   reconcileChatMentions,
+  toast,
   useLocale,
 } from "@k2b/ui";
 import { batch, createEffect, createMemo, createSignal, For, on, onCleanup, onMount, Show } from "solid-js";
@@ -94,6 +95,7 @@ import AssistantCodeVersionCard from "./AssistantCodeVersionCard";
 import { openAssistantCloudReference, resolveAssistantCloudResource } from "./AssistantContextContent";
 import AssistantEmptyChat, { type AssistantStarterAction } from "./AssistantEmptyChat";
 import AssistantPanelContext from "./AssistantPanelContext";
+import AssistantPlaceBar, { type AssistantPlaceBarState } from "./AssistantPlaceBar";
 import { openAssistantCreateProjectDialog } from "./AssistantProjectsDialog";
 import AssistantProjectView from "./AssistantProjectView";
 import AssistantQueuedMessages, { type AssistantQueuedMessage } from "./AssistantQueuedMessages";
@@ -123,6 +125,15 @@ import {
   assistantQuestionAnchorFromHref,
   assistantQuestionHref,
 } from "./assistant-navigation";
+import {
+  type AssistantPlaceView,
+  conversationPlace,
+  createPagePlace,
+  fetchAssistantPlace,
+  type PlaceLoader,
+  panelFollowsPlace,
+  samePlace,
+} from "./assistant-place";
 import { submitAssistantProjectMessage } from "./assistant-project-chat";
 import { assistantSearchOptions } from "./assistant-search";
 import { audioMessages } from "./audio-messages";
@@ -156,6 +167,7 @@ import {
 import { isPlainChat } from "./conversation-view";
 import { assistantMessageAnchorSeq } from "./message-anchor";
 import { assistantMessages } from "./messages";
+import { placeMessages } from "./place-messages";
 import { useAssistantCopy, useAssistantText } from "./ui-copy";
 import { waitingQuestionsView } from "./waiting-questions";
 
@@ -180,6 +192,14 @@ type InitialDetail = {
 type Props = {
   embedded?: boolean;
   initialPanelContext?: ReturnType<typeof getContext>;
+  /** The panel's place at render time, from `loadPlaceAssistant`; null without a place or before it is known. */
+  initialPlace?: AssistantPlaceView | null;
+  /** Reads a place on navigation; tests answer it themselves. */
+  loadPlace?: PlaceLoader;
+  /** The person's chats at places at render time, for the sidebar's "At places (n)"; null when they could not be listed. */
+  initialPlaceChats?: { total: number; items: AiConversation[] } | null;
+  /** The page opened with the "At places" filter on (`?places=1`). */
+  initialPlacesFilter?: boolean;
   initialQuotas?: import("@k2b/cloud/shared").AiChatQuotaSnapshot | null;
   userId: string;
   cloudUrl: string;
@@ -974,7 +994,9 @@ export default function AssistantWorkspace(props: Props) {
       }),
     );
     const selectors = new URLSearchParams(window.location.search);
-    if (!["conversation", "project", "artifact", "approvals", "code"].some((key) => selectors.has(key))) {
+    // At a Gustav place the panel opens on the person's chat there, or on its empty chat; not on the remembered one.
+    const atPlace = props.initialPlace?.state === "available" || props.initialPlace?.state === "unavailable";
+    if (!atPlace && !["conversation", "project", "artifact", "approvals", "code"].some((key) => selectors.has(key))) {
       try {
         const selected = window.sessionStorage.getItem(panelSelectionKey);
         if (selected && /^[23456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz]{6}$/.test(selected)) {
@@ -2631,6 +2653,161 @@ export default function AssistantWorkspace(props: Props) {
     const key = activeProject() ? projectComposerKey(activeProject()!.id) : composerSessionKey();
     return trackComposerPicking(addResolvedComposerResource(key, ref, current));
   };
+  // Gustav at a place (side panel only). The page's place loads on every accepted page context; the bar describes the
+  // open chat's place, or the page's place while the panel waits for the first message there.
+  const placeT = () => placeMessages.resolve([locale()]).t;
+  const loadPlace = props.loadPlace ?? fetchAssistantPlace;
+  const openChatPlace = () => {
+    const id = chat.activeConversationId();
+    if (!id) return null;
+    const loaded = chat.conversation();
+    return conversationPlace(loaded?.id === id ? loaded : null) ?? conversationPlace(activeConversation());
+  };
+  const followablePlace = (view: AssistantPlaceView | null): view is Exclude<AssistantPlaceView, { state: "none" }> =>
+    Boolean(view && (view.state === "available" || (view.state === "unavailable" && view.conversationId)));
+  const panelShowsNothingToLose = () =>
+    !mainView() &&
+    !projectView() &&
+    panelFollowsPlace({
+      conversationId: chat.activeConversationId(),
+      empty: activeChatIsBlank(),
+      atPlace: Boolean(openChatPlace()),
+    });
+  const [switchingPlace, setSwitchingPlace] = createSignal(false);
+  /** The empty chat at the page's place: the next message creates the person's chat there. */
+  const showEmptyPlaceChat = () => {
+    navigationRequest++;
+    setMainView(null);
+    setProjectView(null);
+    if (chat.activeConversationId()) chat.setActiveConversationId(null);
+    const href = assistantConversationHref(window.location.href, null);
+    if (href !== `${window.location.pathname}${window.location.search}${window.location.hash}`)
+      navigate(href, { scroll: "manual", viewTransition: false });
+    focusComposer();
+  };
+  const switchToPlace = async (view: Exclude<AssistantPlaceView, { state: "none" }>) => {
+    const target = view.conversationId;
+    if (target === chat.activeConversationId() && !mainView() && !projectView()) return;
+    setSwitchingPlace(true);
+    try {
+      if (!target) {
+        showEmptyPlaceChat();
+        return;
+      }
+      if (await openAndFocusConversation(target)) commitConversationUrl(target);
+    } catch (error) {
+      chat.setError(error instanceof Error ? error.message : t().openConversationFailed);
+    } finally {
+      setSwitchingPlace(false);
+    }
+  };
+  const pagePlace = createPagePlace({
+    context: props.embedded ? (props.initialPanelContext ?? null) : null,
+    initial: props.initialPlace ?? null,
+    load: (ref, signal) => loadPlace(ref, signal),
+    // O1: a late answer for an earlier page never arrives here (seq and pageId), so this only follows the current page.
+    onPlace: (view) => {
+      if (followablePlace(view) && panelShowsNothingToLose()) void switchToPlace(view);
+    },
+  });
+  onMount(() => {
+    if (!props.embedded) return;
+    pagePlace.receive(getContext());
+    onCleanup(onContextChange((next) => pagePlace.receive(next)));
+  });
+  // A chat whose place is not the page's reads its own place once, for its bar.
+  const [otherPlace, setOtherPlace] = createSignal<{ key: string; view: AssistantPlaceView | null; failed: boolean } | null>(null);
+  createEffect(
+    on(
+      () => {
+        const place = openChatPlace();
+        return place && !samePlace(place.ref, pagePlace.view()?.ref) ? place.ref : null;
+      },
+      (ref) => {
+        if (!props.embedded || !ref) return;
+        const key = `${ref.type}:${ref.id}`;
+        if (otherPlace()?.key === key && !otherPlace()?.failed) return;
+        setOtherPlace({ key, view: null, failed: false });
+        const abort = new AbortController();
+        onCleanup(() => abort.abort());
+        loadPlace({ ...ref }, abort.signal).then(
+          (view) => {
+            if (!abort.signal.aborted) setOtherPlace({ key, view, failed: false });
+          },
+          () => {
+            if (!abort.signal.aborted) setOtherPlace({ key, view: null, failed: true });
+          },
+        );
+      },
+    ),
+  );
+  const retryOtherPlace = () => setOtherPlace(null);
+  /** The page's place when it is the open chat's, or when the empty panel waits for its first message there. */
+  const emptyPlace = () => {
+    const view = pagePlace.view();
+    if (!props.embedded || view?.state !== "available" || mainView() || projectView()) return null;
+    if (chat.activeConversationId() && !samePlace(openChatPlace()?.ref, view.ref)) return null;
+    return emptyChat() ? view : null;
+  };
+  const placeBar = createMemo((): AssistantPlaceBarState | null => {
+    if (!props.embedded || mainView() || projectView()) return null;
+    const page = pagePlace.view();
+    const chatPlace = openChatPlace();
+    if (chatPlace) {
+      const view = samePlace(chatPlace.ref, page?.ref) ? page : otherPlace()?.view;
+      if (view?.state === "available") return { kind: "place", view };
+      // Gone and no longer a Gustav place look the same: the chat stays, without the place's tools and context (O5).
+      if (view?.state === "unavailable" || view?.state === "none")
+        return {
+          kind: "gone",
+          view: {
+            state: "unavailable",
+            ref: chatPlace.ref,
+            title: (view.state === "unavailable" ? view.title : null) ?? chatPlace.title,
+            app: (view.state === "unavailable" ? view.app : null) ?? chatPlace.app ?? null,
+            conversationId: chat.activeConversationId(),
+          },
+        };
+      if (samePlace(chatPlace.ref, page?.ref) ? pagePlace.state() === "failed" : otherPlace()?.failed)
+        return { kind: "failed", onRetry: samePlace(chatPlace.ref, page?.ref) ? pagePlace.retry : retryOtherPlace };
+      return { kind: "loading" };
+    }
+    const followable = panelShowsNothingToLose();
+    if (pagePlace.state() === "loading" && followable && pagePlace.context()?.scope) return { kind: "loading" };
+    if (pagePlace.state() === "failed" && pagePlace.context()?.scope) return { kind: "failed", onRetry: pagePlace.retry };
+    if (!followablePlace(page)) return null;
+    if (followable) return page.state === "available" && !chat.activeConversationId() ? { kind: "place", view: page } : null;
+    return {
+      kind: "switch",
+      view: page,
+      busy: switchingPlace(),
+      disabled: !canUseComposer(),
+      onSwitch: () => void switchToPlace(page),
+    };
+  });
+  // "Attach current view" stays for places whose app declares no Gustav block, and as the way out when a place failed.
+  const showsAttachPlace = () =>
+    Boolean(pagePlace.context()?.scope) && (pagePlace.view()?.state === "none" || pagePlace.state() === "failed");
+  const [startingOver, setStartingOver] = createSignal(false);
+  /** "Start over": archives the person's chat at this place; the next message there starts a new one (O2). */
+  const startOver = async () => {
+    const conversation = chat.conversation();
+    const conversationId = chat.activeConversationId();
+    if (!conversation || conversation.id !== conversationId || startingOver() || chat.activeTurn() || chat.running()) return;
+    setStartingOver(true);
+    try {
+      await assistantApi.archiveConversation(conversationId);
+      const place = openChatPlace();
+      const page = pagePlace.view();
+      if (place && page && page.state !== "none" && samePlace(place.ref, page.ref)) pagePlace.update({ ...page, conversationId: null });
+      showEmptyPlaceChat();
+      archiveConversation(conversation);
+    } catch {
+      toast.error(placeT().startOverFailed);
+    } finally {
+      setStartingOver(false);
+    }
+  };
   const PanelAllChats = () => (
     <ButtonLink
       href={panelFullViewHref()}
@@ -2646,17 +2823,35 @@ export default function AssistantWorkspace(props: Props) {
   );
   // The panel reopens the chat it remembers, so the row also starts a new one whenever the panel holds a chat, even one
   // without messages (a saved draft, or a chat that failed to load).
+  // In a chat at a place, the same slot reads "Start over": a place keeps one chat per person (O2).
   const PanelNewChat = () => (
-    <Button
-      size="xs"
-      variant="ghost"
-      class="assistant-panel-link"
-      disabled={newConversation.loading() || composerPicking() > 0}
-      onClick={() => void createAndFocusConversation()}
+    <Show
+      when={openChatPlace()}
+      fallback={
+        <Button
+          size="xs"
+          variant="ghost"
+          class="assistant-panel-link"
+          disabled={newConversation.loading() || composerPicking() > 0}
+          onClick={() => void createAndFocusConversation()}
+        >
+          <i class="ti ti-plus" aria-hidden="true" />
+          {t().newChat}
+        </Button>
+      }
     >
-      <i class="ti ti-plus" aria-hidden="true" />
-      {t().newChat}
-    </Button>
+      <Button
+        size="xs"
+        variant="ghost"
+        class="assistant-panel-link"
+        title={placeT().startOverHint}
+        disabled={startingOver() || Boolean(chat.activeTurn()) || chat.running() || composerPicking() > 0}
+        onClick={() => void startOver()}
+      >
+        <i class={startingOver() ? "ti ti-loader-2 k2b-spin" : "ti ti-refresh"} aria-hidden="true" />
+        {placeT().startOver}
+      </Button>
+    </Show>
   );
   const PanelRow = () => (
     <div class="assistant-panel-row">
@@ -2703,6 +2898,8 @@ export default function AssistantWorkspace(props: Props) {
           hasPersonalCode={() => Boolean(props.code?.has)}
           onOpenCode={openCode}
           live={liveHub}
+          placeChats={() => (sidebar.data() ? (sidebar.data()!.placeChats ?? null) : (props.initialPlaceChats ?? null))}
+          initialPlacesFilter={props.initialPlacesFilter}
         />
 
         <AppWorkspace.Content>
@@ -2721,11 +2918,14 @@ export default function AssistantWorkspace(props: Props) {
                     focusComposer();
                   }}
                 />
-                <AssistantPanelContext
-                  initial={props.initialPanelContext ?? null}
-                  disabled={panelAttachDisabled()}
-                  attach={attachPanelResource}
-                />
+                <Show when={placeBar()}>{(state) => <AssistantPlaceBar state={state()} />}</Show>
+                <Show when={showsAttachPlace()}>
+                  <AssistantPanelContext
+                    initial={props.initialPanelContext ?? null}
+                    disabled={panelAttachDisabled()}
+                    attach={attachPanelResource}
+                  />
+                </Show>
               </Show>
               <Show
                 when={!mainView()}
@@ -2858,6 +3058,16 @@ export default function AssistantWorkspace(props: Props) {
                                 onChooseProject={() => void chooseEmptyChatProject()}
                                 onStarter={props.embedded ? undefined : useStarter}
                                 rowEnd={props.embedded ? <PanelRowEnd /> : undefined}
+                                place={
+                                  emptyPlace()
+                                    ? {
+                                        title: emptyPlace()!.title,
+                                        appName: emptyPlace()!.app.name,
+                                        starters: emptyPlace()!.starters,
+                                        onStarter: (starter) => void useStarter({ ...starter, icon: "ti ti-sparkles" }),
+                                      }
+                                    : null
+                                }
                               />
                             </Show>
                           </section>

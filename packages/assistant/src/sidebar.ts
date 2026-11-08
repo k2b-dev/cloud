@@ -13,6 +13,8 @@ export type AssistantSidebarSnapshot = {
   projects: AiProject[];
   doneCount: number;
   questions: AiOpenQuestions;
+  /** The person's chats at places, which `conversations` leaves out: their total and newest page. Null: not listed. */
+  placeChats?: { total: number; items: AiConversation[] } | null;
 };
 
 export const loadAssistantSidebarSnapshot = async (

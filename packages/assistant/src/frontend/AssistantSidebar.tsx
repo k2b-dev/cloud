@@ -10,6 +10,7 @@ import {
   createNavigation,
   Dropdown,
   dialogCore,
+  FilterToggle,
   IconButton,
   type IntentTone,
   type NavigationItem,
@@ -27,6 +28,7 @@ import { openAssistantConversationEditor } from "./AssistantConversationEditor";
 import { openAssistantPrefsModal } from "./AssistantPrefsModals";
 import type { AssistantLiveHub } from "./assistant-live";
 import { assistantConversationHref, assistantProjectHref } from "./assistant-navigation";
+import { conversationPlace } from "./assistant-place";
 import { assistantProjectSearchOptions, assistantProjectsSearchOptions, assistantSearchOptions } from "./assistant-search";
 import { ConversationSidebarPreview } from "./ConversationSidebarPreview";
 import {
@@ -36,6 +38,7 @@ import {
   groupConversationsByAge,
 } from "./conversation-view";
 import { assistantMessages } from "./messages";
+import { placeMessages } from "./place-messages";
 import { useAssistantText } from "./ui-copy";
 
 /** List status tones in the shared navigation's intent vocabulary. */
@@ -76,6 +79,13 @@ type AssistantSidebarProps = {
   /** Opens the person's Code list in place; without it, the row is a link to the view. */
   onOpenCode?: () => void;
   live: AssistantLiveHub;
+  /**
+   * The person's chats at places, which the normal list leaves out: their total for the "At places (n)" filter and
+   * the newest page for its list. Null when the snapshot could not list them.
+   */
+  placeChats?: Accessor<{ total: number; items: AiConversation[] } | null>;
+  /** The list opened on "At places" (`?places=1`), so a reload keeps the filter. */
+  initialPlacesFilter?: boolean;
 };
 
 function AssistantSearchButton(props: {
@@ -152,6 +162,8 @@ function ConversationSidebarItem(props: {
   };
 
   const status = () => conversationStatusPresentation(props.conversation, locale(), props.active);
+  // A chat at a place names its app and place, so it reads apart from the person's own chats wherever it shows.
+  const place = () => conversationPlace(props.conversation);
   const marker = () => {
     const current = status();
     if (current) return current;
@@ -164,6 +176,14 @@ function ConversationSidebarItem(props: {
       class={`assistant-chat-sidebar-item${props.donePhase ? ` assistant-chat-sidebar-item--${props.donePhase}` : ""}`}
       onClick={handleClick}
       active={props.active}
+      icon={place() ? (place()!.app?.icon ?? "ti ti-map-pin") : undefined}
+      description={
+        place()
+          ? placeMessages
+              .resolve([locale()])
+              .t.placeOf({ app: place()!.app?.name ?? placeMessages.resolve([locale()]).t.atPlaces, title: place()!.title })
+          : undefined
+      }
       meta={
         <Show when={marker()}>
           {(item) => (
@@ -311,6 +331,20 @@ export default function AssistantSidebar(props: AssistantSidebarProps) {
     onCleanup(() => window.clearInterval(timer));
   });
   const chatGroups = createMemo(() => groupConversationsByAge(chatConversations(), now(), props.timeZone));
+  // Chats at places stay out of the list (O3/O4 in the place model); "At places (n)" shows them instead of it.
+  const placeT = () => placeMessages.resolve([locale()]).t;
+  const [placesFilter, setPlacesFilter] = createSignal(Boolean(props.initialPlacesFilter));
+  const placeChats = () => props.placeChats?.() ?? null;
+  const placeTotal = () => placeChats()?.total ?? 0;
+  const showPlaceFilter = () => placesFilter() || placeTotal() > 0;
+  const choosePlacesFilter = (on: boolean) => {
+    if (placesFilter() === on) return;
+    setPlacesFilter(on);
+    const url = new URL(window.location.href);
+    if (on) url.searchParams.set("places", "1");
+    else url.searchParams.delete("places");
+    window.history.replaceState(window.history.state, "", url);
+  };
   const groupLabel = (group: ConversationAgeGroup) =>
     ({
       pinned: t().pinned,
@@ -566,6 +600,17 @@ export default function AssistantSidebar(props: AssistantSidebarProps) {
           children: entry.conversations.map(chatItem),
         }),
       ),
+      ...(placeTotal() > 0
+        ? [
+            {
+              id: "place-chats",
+              label: placeT().atPlaces,
+              icon: "ti ti-map-pin",
+              badge: placeTotal(),
+              children: (placeChats()?.items ?? []).map(chatItem),
+            } satisfies NavigationItem,
+          ]
+        : []),
       {
         id: "done-chats",
         label: text("Done"),
@@ -655,7 +700,7 @@ export default function AssistantSidebar(props: AssistantSidebarProps) {
         if (project) await openProject(project);
         return;
       }
-      const conversation = props.conversations().find((item) => item.id === id);
+      const conversation = [...props.conversations(), ...(placeChats()?.items ?? [])].find((item) => item.id === id);
       if (!conversation) return;
       if (kind === "chat") {
         try {
@@ -730,12 +775,57 @@ export default function AssistantSidebar(props: AssistantSidebarProps) {
           </AppWorkspace.SidebarIconGrid>
 
           <AppWorkspace.SidebarBody scrollPreserveKey="assistant-sidebar" sidebarMode="expanded">
+            <Show when={showPlaceFilter()}>
+              <div class="assistant-place-filter" role="group" aria-label={placeT().atPlaces}>
+                <FilterToggle
+                  label={placeT().myChats}
+                  icon="ti ti-messages"
+                  active={!placesFilter()}
+                  onClick={() => choosePlacesFilter(false)}
+                />
+                <FilterToggle
+                  label={placeT().atPlacesCount({ count: placeTotal() })}
+                  icon="ti ti-map-pin"
+                  active={placesFilter()}
+                  onClick={() => choosePlacesFilter(true)}
+                />
+              </div>
+            </Show>
+            <Show when={placesFilter()}>
+              <AppWorkspace.SidebarSection title={placeT().atPlacesSection}>
+                <For
+                  each={placeChats()?.items ?? []}
+                  fallback={
+                    <Placeholder
+                      variant="inline"
+                      align="left"
+                      description={placeChats() ? placeT().noPlaceChats : placeT().placeChatsFailed}
+                    />
+                  }
+                >
+                  {(conversation) => (
+                    <ConversationSidebarItem
+                      basePath={props.basePath}
+                      conversation={conversation}
+                      donePhase={doneFeedback().get(conversation.id)?.phase}
+                      toggleDone={toggleDone}
+                      active={conversation.id === activeConversationId()}
+                      open={props.onOpenConversation ? (item) => props.onOpenConversation!(item.id) : undefined}
+                      edit={(item) => void openEditor(item)}
+                      update={(item) => props.onConversationUpdated?.(item)}
+                    />
+                  )}
+                </For>
+              </AppWorkspace.SidebarSection>
+            </Show>
             <Show
-              when={chatConversations().length > 0}
+              when={!placesFilter() && chatConversations().length > 0}
               fallback={
-                <AppWorkspace.SidebarSection>
-                  <Placeholder variant="inline" align="left" description={t().noChats} />
-                </AppWorkspace.SidebarSection>
+                <Show when={!placesFilter()}>
+                  <AppWorkspace.SidebarSection>
+                    <Placeholder variant="inline" align="left" description={t().noChats} />
+                  </AppWorkspace.SidebarSection>
+                </Show>
               }
             >
               {/* Keyed by section name, so a status change re-renders one row, not the whole list. */}
@@ -761,7 +851,9 @@ export default function AssistantSidebar(props: AssistantSidebarProps) {
                 )}
               </For>
             </Show>
-            <DoneSection />
+            <Show when={!placesFilter()}>
+              <DoneSection />
+            </Show>
           </AppWorkspace.SidebarBody>
           <AppWorkspace.SidebarFooter sidebarMode="expanded">
             <ApprovalsItem />
