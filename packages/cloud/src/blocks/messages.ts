@@ -17,6 +17,7 @@ export const blockMessages = i18n.define({
       openLarge: "Open large",
       showData: "Show data",
       fromApp: ({ app }: { app: string }) => `From ${app}`,
+      chosenIn: ({ app }: { app: string }) => `Chosen in ${app}`,
       close: "Close",
     },
     de: {
@@ -32,6 +33,7 @@ export const blockMessages = i18n.define({
       openLarge: "Groß öffnen",
       showData: "Daten zeigen",
       fromApp: ({ app }) => `Von ${app}`,
+      chosenIn: ({ app }) => `Gewählt in ${app}`,
       close: "Schließen",
     },
   },

@@ -437,7 +437,13 @@ function CapabilityResultRow(props: { block: ToolBlock }) {
   );
 }
 
-function AiTurnResultView(props: { result: Accessor<AiTurnResult | undefined>; receipt: Accessor<boolean> }) {
+function AiTurnResultView(props: {
+  result: Accessor<AiTurnResult | undefined>;
+  receipt: Accessor<boolean>;
+  turnId: string;
+  /** The response that produced the result still runs; a choice in it waits until it ends. */
+  live: boolean;
+}) {
   const actions = useAiChatActions();
   const block = () => props.result()?.block;
   return (
@@ -485,7 +491,7 @@ function AiTurnResultView(props: { result: Accessor<AiTurnResult | undefined>; r
                 </Show>
               }
             >
-              <CapabilityViewBlock block={current()} />
+              <CapabilityViewBlock block={current()} turnId={props.turnId} live={props.live} />
             </Show>
           </Match>
         </Switch>
@@ -710,7 +716,16 @@ export function AiTurnView(props: { segment: Accessor<AiTurnSegment>; disclosure
             <AiWorkLine segment={props.segment} />
           </div>
         </Show>
-        <For each={resultIds()}>{(id) => <AiTurnResultView result={() => results().get(id)} receipt={() => actions().has(id)} />}</For>
+        <For each={resultIds()}>
+          {(id) => (
+            <AiTurnResultView
+              result={() => results().get(id)}
+              receipt={() => actions().has(id)}
+              turnId={props.segment().turnId}
+              live={isLive(props.segment().phase)}
+            />
+          )}
+        </For>
 
         <Show when={layout().text.length > 0}>
           <AiTurnText
@@ -721,7 +736,16 @@ export function AiTurnView(props: { segment: Accessor<AiTurnSegment>; disclosure
             earlier={() => props.segment().earlier}
           />
         </Show>
-        <For each={mapFollowupIds()}>{(id) => <AiTurnResultView result={() => results().get(id)} receipt={() => false} />}</For>
+        <For each={mapFollowupIds()}>
+          {(id) => (
+            <AiTurnResultView
+              result={() => results().get(id)}
+              receipt={() => false}
+              turnId={props.segment().turnId}
+              live={isLive(props.segment().phase)}
+            />
+          )}
+        </For>
 
         <Show
           when={!props.segment().scheduledTask?.stop && !props.segment().scheduledTask?.reasonOnly && props.segment().scheduledTask?.reason}

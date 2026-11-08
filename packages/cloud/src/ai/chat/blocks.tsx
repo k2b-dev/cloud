@@ -469,7 +469,7 @@ function ToolBlockView(props: { turnId: string; block: ToolBlock; active?: boole
         <WebsiteReceipts block={props.block} />
       </Show>
       <Show when={hasCapabilityView(props.block)}>
-        <CapabilityViewBlock block={props.block} />
+        <CapabilityViewBlock block={props.block} turnId={props.turnId} live={props.active ?? false} />
       </Show>
     </>
   );

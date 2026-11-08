@@ -6,12 +6,14 @@ import {
   createMemo,
   createRoot,
   createSignal,
+  For,
   getOwner,
   type JSX,
   onCleanup,
   type Setter,
   Show,
 } from "solid-js";
+import { blockWords } from "../../blocks/messages";
 import type { AiActiveTurn } from "../client/projection";
 import { aiModelChooserMessages } from "../model-chooser-messages";
 import { type AiActiveTurnSegment, type AiTurnBlock, splitActiveTurnBlocks } from "../protocol";
@@ -252,13 +254,28 @@ const storedItems = (
         id: item.id,
         role: "user",
         createdAt: item.entry.createdAt,
-        content:
-          text || item.entry.meta?.codeOrigin ? (
-            <>
-              <Show when={item.entry.meta?.codeOrigin}>{(origin) => <p class="text-xs text-dimmed">{origin().label}</p>}</Show>
-              {text ? <p class="whitespace-pre-wrap">{text}</p> : undefined}
-            </>
-          ) : undefined,
+        content: item.entry.meta?.choice ? (
+          // The person's choice in a capability view: Cloud names where it was made and what was chosen.
+          <div class="cloud-choice-message">
+            <p class="cloud-choice-message__where">
+              <i class="ti ti-hand-click" aria-hidden="true" />
+              {blockWords(locale).chosenIn({ app: item.entry.meta.choice.appName })}
+            </p>
+            <For each={item.entry.meta.choice.labels}>
+              {(label) => (
+                <p class="cloud-choice-message__value">
+                  <i class="ti ti-circle-check" aria-hidden="true" />
+                  {label}
+                </p>
+              )}
+            </For>
+          </div>
+        ) : text || item.entry.meta?.codeOrigin ? (
+          <>
+            <Show when={item.entry.meta?.codeOrigin}>{(origin) => <p class="text-xs text-dimmed">{origin().label}</p>}</Show>
+            {text ? <p class="whitespace-pre-wrap">{text}</p> : undefined}
+          </>
+        ) : undefined,
         attachments: aiUserMessageAttachments(item.entry, actions),
         actions: createAiUserMessageActions(item.entry, actions, locale),
         actionDisplay: "menu",

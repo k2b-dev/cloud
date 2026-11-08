@@ -83,6 +83,33 @@
   margin-inline-start: auto;
 }
 
+/* The person's own message for a choice: where it was made, then what was chosen. */
+.k2b-ui .cloud-choice-message {
+  display: grid;
+  gap: 0.125rem;
+}
+
+.k2b-ui .cloud-choice-message__where {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  margin: 0;
+  color: var(--k2b-text-muted);
+  font-size: 0.78125rem;
+}
+
+.k2b-ui .cloud-choice-message__value {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  margin: 0;
+  font-weight: 600;
+}
+
+.k2b-ui .cloud-choice-message__value i {
+  color: var(--k2b-ai-accent);
+}
+
 .k2b-ui .cloud-blocks__title {
   display: flex;
   align-items: center;

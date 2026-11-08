@@ -61,6 +61,11 @@ export type AiChatActions = {
   actionDisabled?: () => boolean;
   onApproval?: ApprovalHandler;
   onEditDraft?: EditDraftHandler;
+  /**
+   * Sends the person's choice in a capability view: the call's turn and id, the choice block and the chosen option ids.
+   * Resolves `false` when Cloud did not take it, such as while a response runs.
+   */
+  onChoice?: (request: { turnId: string; toolCallId: string }, blockId: string, ids: string[]) => Promise<boolean>;
   /** Revoke the approval that lets this chat read `origin` without asking; the next request asks again. */
   onRevokeWebsite?: (origin: string) => Promise<void>;
   onFrontendToolResult?: FrontendToolResultHandler;
