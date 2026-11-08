@@ -266,13 +266,15 @@ Mit Zugriff **Verwalten** erstellst du auch einen öffentlichen Download-Link f�
 
 Mail blockiert Bilder, die eine Nachricht von einem externen Server laden würde. Das Laden eines solchen Bildes kann dem Absender verraten, dass du die Nachricht geöffnet hast. Direkt in der Nachricht enthaltene Bilder bleiben sichtbar.
 
-Enthält eine Nachricht blockierte Bilder, wähle:
+Enthält eine Nachricht blockierte Bilder, steht über ihr die Zeile **Externe Bilder blockiert**. Wähle:
 
 - **Bilder laden**, um sie nur für diese geöffnete Nachricht zu laden.
-- **Für diesen Absender immer laden**, um Bilder in künftigen Nachrichten genau dieser Adresse zu erlauben.
-- **Für diese Domain immer laden**, um Bilder von jeder Adresse dieser Domain zu erlauben. Nutze diese breitere Option nur für eine Domain, der du vertraust.
+- den Pfeil neben **Bilder laden** und dann **Immer von …** mit der Adresse, um Bilder in künftigen Nachrichten genau dieser Adresse zu erlauben. Mail lädt die Bilder dann sofort.
+- den Pfeil und dann **Immer von allen bei …** mit der Domain, um Bilder von jeder Adresse dieser Domain zu erlauben. Nutze diese breitere Option nur für eine Domain, der du vertraust.
 
-Diese Einstellungen gelten nur für dich im aktuellen Postfach. Sie ändern nicht, was andere im Team sehen. Um gespeicherte Einstellungen zu prüfen oder zu entfernen, öffne **… → Externe Bilder**.
+Hat eine Nachricht mehrere Absender, gibt es nur **Bilder laden**. Nach dem Laden zeigt die Zeile **Bilder geladen**; über **Immer laden** kannst du den Absender oder die Domain auch dann noch erlauben. Lädt Mail Bilder durch eine deiner Einstellungen von selbst, sagt die Zeile **… werden immer geladen**. Wähle dort **Ändern → Nicht mehr automatisch laden**, um diese Einstellung wieder zu entfernen. Können Bilder nicht geladen werden, bleibt die Zeile mit **Erneut versuchen** stehen. Ist eine Nachricht größer als das sichere Limit, lädt Mail nur einen Teil der Bilder und sagt das in der Zeile.
+
+Diese Einstellungen gelten nur für dich im aktuellen Postfach. Sie ändern nicht, was andere im Team sehen. Um gespeicherte Einstellungen zu prüfen oder zu entfernen, öffne **… → Externe Bilder** oder in der Zeile **Regeln für externe Bilder …**.
 
 Mail lädt erlaubte Bilder über seinen geschützten Bilddienst, dein Browser bekommt die Bildadresse also nie. Der externe Server kann trotzdem erfahren, dass jemand sein Bild angefordert hat. Lass Bilder bei unbekannten oder verdächtigen Absendern blockiert.
 
