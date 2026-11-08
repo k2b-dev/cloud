@@ -136,6 +136,7 @@ const isEmpty = (props: ChartProps): boolean => {
   if (props.kind === "line" || props.kind === "scatter") {
     return !props.series?.length || props.series.every((s) => !s.data.length);
   }
+  if (props.kind === "funnel") return !props.data.length;
   if (props.kind === "hbar") return !props.rows.length;
   if (props.kind === "bar")
     return props.series
@@ -511,7 +512,7 @@ export const renderChartRoot = (props: ChartProps, renderChartSvg: typeof import
     renderChartSvg(
       props.kind === "heatmap" && props.layout === "calendar"
         ? { ...props, locale: props.locale ?? locale() }
-        : { ...drawingProps, ...(props.kind === "bar" || props.kind === "hbar" ? { locale: locale() } : {}) },
+        : { ...drawingProps, ...(props.kind === "bar" || props.kind === "hbar" || props.kind === "funnel" ? { locale: locale() } : {}) },
       size().width,
       size().height,
       interactiveMap() ? mapViewport() : undefined,
