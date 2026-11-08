@@ -374,6 +374,10 @@ const grid: CodeChartDescription = { kind: "heatmap", title: "Grid", data: [{ x:
 const calendar: CodeChartDescription = { kind: "heatmap", title: "Calendar", layout: "calendar", data: [["2026-11-07", 1]], scale: "sequential" };
 const grouped: CodeChartDescription = { kind: "bar", title: "Orders", x: ["A"], series: [{ label: "Shop", data: [10] }], layout: "grouped" };
 Chart.Bar({ title: "Compared orders", x: ["A"], series: [{ label: "Shop", data: [10] }], compare: { label: "Before", data: [8] } });
+// @ts-expect-error chart builders expose chart props, not the transport description prop
+Chart.Bar({ title: "Orders", data: [{ label: "A", value: 1 }], description: { kind: "bar" } });
+// @ts-expect-error omitting kind from builder props must preserve the named series type
+Chart.Line({ title: "Orders", series: "none" });
 // @ts-expect-error an unrecognized heatmap layout is forbidden
 const invalidChart: CodeChartDescription = { kind: "heatmap", title: "Invalid", layout: "other", data: [{ x: "A", y: "B", value: 1 }] };
 const ids = ["one", "two"] as const;

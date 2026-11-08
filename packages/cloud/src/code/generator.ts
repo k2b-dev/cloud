@@ -327,7 +327,17 @@ export function generateCodeSdk(manifests: readonly CapabilityManifest[], option
   }
   if (!("default" in pageTypes) || typeof pageTypes.default !== "string") throw new Error("Expected page type source");
   const pageType = schemaTypes(z.toJSONSchema(CodePageTreeSchema), "CodePage");
-  const chartType = schemaTypes(z.toJSONSchema(CodeChartDescriptionSchema, { io: "input" }), "CodeChart");
+  const chartType = schemaTypes(
+    z.toJSONSchema(CodeChartDescriptionSchema, {
+      io: "input",
+      override: ({ jsonSchema }) => {
+        // Strip-mode objects accept unknown input keys, but authoring exposes only the retained props.
+        // An open index signature would also erase their named types when Chart props omit `kind`.
+        if (jsonSchema.type === "object" && jsonSchema.additionalProperties === undefined) jsonSchema.additionalProperties = false;
+      },
+    }),
+    "CodeChart",
+  );
   declarations.push(
     ...pageType.declarations,
     `export type CodePageTree = ${pageType.type};`,
