@@ -94,7 +94,9 @@ export function uploadRequestFailure(error: unknown, fallback: string, signal: A
 /** Missing or changed receipts do not prove whether publication happened. Never release their reservation. */
 export function isUnresolvedUploadFailure(error: unknown): boolean {
   return (
-    error instanceof UploadTransferError && error.origin === "cloud" && ["receipt_unknown", "upload_changed"].includes(error.code ?? "")
+    error instanceof UploadTransferError &&
+    error.origin === "cloud" &&
+    ["receipt_unknown", "upload_changed", "upload_uncertain"].includes(error.code ?? "")
   );
 }
 

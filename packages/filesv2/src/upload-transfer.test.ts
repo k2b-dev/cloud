@@ -605,7 +605,7 @@ test("one failure policy keeps transient sessions, ends final ones, and never ab
 });
 
 test("unresolved receipts keep their reservation before start, during transfer, at commit and on cancellation", () => {
-  for (const code of ["receipt_unknown", "upload_changed"]) {
+  for (const code of ["receipt_unknown", "upload_changed", "upload_uncertain"]) {
     const failure = new UploadTransferError("unknown", "final", null, undefined, "cloud", code);
     for (const session of [undefined, { state: "open" as const }, { state: "committed" as const }])
       for (const committing of [false, true])
