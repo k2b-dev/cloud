@@ -166,8 +166,8 @@ suiteFor("database", "nats")("historical Mail Code admission", () => {
     const [folder] = await sql<{ id: string }[]>`INSERT INTO mail.folders(short_id,remote_resource_id,stable_key,name,role)
       VALUES('Fld456',${remote!.id}::uuid,'inbox','Inbox','inbox') RETURNING id`;
     for (const [index, shortId] of ["Msg456", "Msg457"].entries()) {
-      const [message] = await sql<{ id: string }[]>`INSERT INTO mail.message_contents(short_id,mailbox_id,internal_date,hydration_status)
-        VALUES(${shortId},${box!.id}::uuid,'2026-11-01T12:00:00Z','complete') RETURNING id`;
+      const [message] = await sql<{ id: string }[]>`INSERT INTO mail.message_contents(short_id,mailbox_id,internal_date,content_hash,hydration_status)
+        VALUES(${shortId},${box!.id}::uuid,'2026-11-01T12:00:00Z',${String(index).repeat(64)},'complete') RETURNING id`;
       const [receipt] = await sql<
         { id: string }[]
       >`INSERT INTO mail.remote_message_refs(folder_id,message_id,uid_validity,uid,first_seen_at)

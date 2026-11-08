@@ -35,7 +35,7 @@ the receiving app validates it.
 
 Mail’s `message.read({ id, waitForHydration: true })` waits up to 30 seconds.
 Repeat the waiting read while content is pending, within the original run deadline
-and call budget. Terminal hydration returns `MAIL_MESSAGE_HYDRATION_FAILED`;
+and call budget. Terminal hydration returns `mail_message_hydration_failed`;
 retry hydration in Mail before running the handler again. The default read returns
 the current state immediately.
 

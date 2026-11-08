@@ -404,7 +404,7 @@ suiteFor("database", "valkey")("C4 signed runner bridge and independent per-call
     const codeId = `c_${crypto.randomUUID().replaceAll("-", "").slice(0, 12)}`;
     const [account] = await sql<
       { id: string }[]
-    >`INSERT INTO auth.service_accounts(name,kind) VALUES(${`code:example.folder:${codeId}`},'code') RETURNING id`;
+    >`INSERT INTO auth.service_accounts(name,kind) VALUES(${`code:${options.event?.place?.type ?? "example.folder"}:${options.event?.place?.id ?? codeId}`},'code') RETURNING id`;
     if (options.personal)
       await sql`INSERT INTO code.codes(id,owner_kind,owner_user_id,title,state) VALUES(${codeId},'person',${userId}::uuid,'Fixture','active')`;
     else
@@ -1586,7 +1586,7 @@ suiteFor("database", "valkey")("C4 signed runner bridge and independent per-call
     ] satisfies [string, RunnerJsonValue][];
     for (const [operation, input] of mutations) {
       const response = await fixture.call(operation, input, target);
-      expect(await response.json()).toMatchObject({ ok: false, error: { code: "FORBIDDEN", status: 403 } });
+      expect(await response.json()).toMatchObject({ ok: false, error: { code: "forbidden", status: 403 } });
       expect(await snapshot()).toEqual(before);
     }
     expect(await sql`SELECT * FROM mail.conversation_assignees WHERE conversation_id=${conversation!.id}::uuid`).toHaveLength(0);
@@ -1652,7 +1652,7 @@ suiteFor("database", "valkey")("C4 signed runner bridge and independent per-call
     await sql`UPDATE mail.message_contents SET hydration_status='failed',hydration_attempt=5 WHERE id=${fixture.messageId}::uuid`;
     expect(await (await fixture.call("message.read", { id: "Ms4g00", waitForHydration: true })).json()).toMatchObject({
       ok: false,
-      error: { code: "MAIL_MESSAGE_HYDRATION_FAILED", status: 409 },
+      error: { code: "mail_message_hydration_failed", status: 409 },
     });
     expect(fixture.lastInvocation()?.workload_trigger).toBeNull();
     expect(await (await fixture.call("message.read", { id: "Ms4g00" })).json()).toMatchObject({

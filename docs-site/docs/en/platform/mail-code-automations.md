@@ -39,7 +39,7 @@ still pending, repeat the waiting read in the same handler invocation, as above.
 The original run deadline, receipt position and call budget still apply; pending
 content does not need a new run attempt. Without the option, the query returns
 the current hydration state immediately. Retryable hydration failures keep
-waiting. A terminal failure returns `MAIL_MESSAGE_HYDRATION_FAILED`; retry
+waiting. A terminal failure returns `mail_message_hydration_failed`; retry
 hydration in Mail before deliberately running the handler again.
 
 The v1 event contains a message reference, its mailbox place, and a stable
