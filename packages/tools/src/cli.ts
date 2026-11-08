@@ -2,6 +2,7 @@ import { readFile, writeFile } from "node:fs/promises";
 import { arg, type CloudCliContext, type CloudCliFlags, command, defineCliCommands, flag, printStructured } from "@k2b/cloud/cli";
 import { encoding, password, crypto as stdCrypto } from "@k2b/stdlib";
 import { qr } from "@k2b/stdlib/qr";
+import { runCloudSpeedtest } from "./speedtest-cli";
 
 type CorrectionLevel = "L" | "M" | "Q" | "H";
 
@@ -287,98 +288,6 @@ const outputQr = async (ctx: CloudCliContext, payload: string) => {
     return;
   }
   outputValue(ctx, svg, { payload, svg });
-};
-
-const normalizeServer = (server: string): string => server.replace(/\/+$/, "");
-const joinUrl = (server: string, path: string): string => `${normalizeServer(server)}${path.startsWith("/") ? path : `/${path}`}`;
-
-const fillRandom = (buf: Uint8Array): Uint8Array => {
-  const chunk = 64 * 1024;
-  for (let offset = 0; offset < buf.byteLength; offset += chunk) {
-    globalThis.crypto.getRandomValues(buf.subarray(offset, Math.min(offset + chunk, buf.byteLength)));
-  }
-  return buf;
-};
-
-const stddev = (samples: number[]): number => {
-  if (samples.length < 2) return 0;
-  const mean = samples.reduce((sum, value) => sum + value, 0) / samples.length;
-  return Math.sqrt(samples.reduce((sum, value) => sum + (value - mean) ** 2, 0) / samples.length);
-};
-
-const round = (value: number): number => Math.round(value * 100) / 100;
-
-const runSpeedtest = async (ctx: CloudCliContext) => {
-  const server = stringFlag(ctx.flags, "server") ?? ctx.options.server;
-  if (!server) throw new Error("Speedtest needs a Cloud server. Pass global --server <url> or configure a profile.");
-  const base = joinUrl(server, "/tools/api/speedtest");
-  const pingSamples: number[] = [];
-  for (let i = 0; i < 1; i += 1) await fetch(`${base}/ping`, { cache: "no-store" });
-  for (let i = 0; i < 10; i += 1) {
-    const start = performance.now();
-    const response = await fetch(`${base}/ping`, { cache: "no-store" });
-    if (!response.ok) throw new Error(`Ping failed: HTTP ${response.status}`);
-    pingSamples.push(performance.now() - start);
-  }
-
-  const downloadParallel = 4;
-  const downloadPerStream = 25 * 1024 * 1024;
-  let downloaded = 0;
-  const downloadStart = performance.now();
-  await Promise.all(
-    Array.from({ length: downloadParallel }, async () => {
-      const response = await fetch(`${base}/download?size=${downloadPerStream}`, { cache: "no-store" });
-      if (!response.ok || !response.body) throw new Error(`Download failed: HTTP ${response.status}`);
-      const reader = response.body.getReader();
-      try {
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-          downloaded += value?.byteLength ?? 0;
-        }
-      } finally {
-        reader.releaseLock();
-      }
-    }),
-  );
-  const downloadMbps = (downloaded * 8) / ((performance.now() - downloadStart) / 1000) / 1e6;
-
-  const uploadParallel = 4;
-  const uploadPerStream = 12 * 1024 * 1024;
-  const payload = fillRandom(new Uint8Array(uploadPerStream));
-  const uploadStart = performance.now();
-  await Promise.all(
-    Array.from({ length: uploadParallel }, async () => {
-      const response = await fetch(`${base}/upload`, {
-        method: "POST",
-        body: payload as unknown as BodyInit,
-        headers: { "content-type": "application/octet-stream" },
-        cache: "no-store",
-      });
-      if (!response.ok) throw new Error(`Upload failed: HTTP ${response.status}`);
-    }),
-  );
-  const uploadMbps = (uploadPerStream * uploadParallel * 8) / ((performance.now() - uploadStart) / 1000) / 1e6;
-
-  const result = {
-    server: base,
-    timestamp: new Date().toISOString(),
-    ping_ms: round(Math.min(...pingSamples)),
-    jitter_ms: round(stddev(pingSamples)),
-    download_mbps: round(downloadMbps),
-    upload_mbps: round(uploadMbps),
-  };
-  if (!printStructured(ctx, result)) {
-    ctx.print(
-      [
-        `Server:   ${result.server}`,
-        `Ping:     ${result.ping_ms} ms`,
-        `Jitter:   ${result.jitter_ms} ms`,
-        `Download: ${result.download_mbps} Mbps`,
-        `Upload:   ${result.upload_mbps} Mbps`,
-      ].join("\n"),
-    );
-  }
 };
 
 const runPasswordCommand = async (ctx: CloudCliContext, args: string[]) => {
@@ -720,12 +629,15 @@ export default defineCliCommands({
       },
     }),
     command("speedtest", {
-      summary: "Run a Cloud speedtest",
+      summary: "Measure anonymously with the shared speedtest engine (14/29 seconds)",
       flags: {
-        server: flag.string({ description: "Cloud server URL" }),
+        server: flag.string({ description: "Override the anonymous measurement server (HTTPS; no Cloud credentials)" }),
+        mode: flag.string({ description: "quick (up to 14 s) or accurate (up to 29 s)" }),
+        udp: flag.boolean({ description: "Measure UDP jitter and loss only; no throughput test" }),
+        udpPort: flag.int({ name: "udp-port", min: 1, max: 65535, description: "UDP port (default 8080)" }),
       },
       run: async ({ ctx }) => {
-        await runSpeedtest(ctx);
+        await runCloudSpeedtest(ctx);
       },
     }),
   ],

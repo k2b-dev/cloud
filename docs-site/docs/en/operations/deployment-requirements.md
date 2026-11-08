@@ -754,7 +754,7 @@ or mutate real data without approval.
 | --- | --- | --- | --- |
 | [Hosts](/en/apps/ipa-hosts) (`ipa-hosts`) | Baseline; starts the host-sync scheduler | Useful host data and mutations require FreeIPA and host/hostgroup privileges. With FreeIPA disabled, synchronization skips; enabling incomplete configuration causes sync failure. | Run a controlled sync and inspect mirrored hosts and its completion status. |
 | [Assistant](/en/apps/assistant) (`assistant`) | Baseline; can serve its UI with AI disabled | Core owns AI execution. Configure AI profiles and access, then optional Firecrawl/PDF tools. Studio PDF generation/embedding needs Gotenberg with Factur-X and request-directory isolation support (development uses 8.36.0); local Finance APIs and PDF text extraction need no Gotenberg. Resource databases additionally need `assistant.rsql_url` and the secret `assistant.rsql_api_token`, configured in Studio administration. Cross-app tools require their provider apps and current user permissions; the Assistant container does not need the OAuth broker secret. | Send a short test prompt, observe streamed output and durable history; test one permitted read-only tool. Run a database-free script. If databases are configured, explicitly connect a test resource and query it. |
-| [Tools](/en/apps/tools) (`tools`) | Baseline | Browser utilities need no extra backend. Markdown-to-PDF needs Gotenberg. Document extraction uses the native dependency bundled in the app image, not a separate Gotenberg conversion service. Speed tests need sufficient proxy/body/streaming limits; webhook delivery needs approved egress. | Open `/tools`; check a browser utility and, if enabled, convert a small document or Markdown PDF. |
+| [Tools](/en/apps/tools) (`tools`) | Baseline | Browser utilities need no extra backend. Markdown-to-PDF and PDF page operations need Gotenberg; page operations require its PDF-engine and ExifTool metadata routes (8.36.0). Document extraction uses the native dependency bundled in the app image, not a separate Gotenberg conversion service. Speed tests need sufficient proxy/body/streaming limits; webhook delivery needs approved egress. | Open `/tools`; check a browser utility and, if enabled, convert a small document or Markdown PDF. |
 | [Quotes](/en/apps/quotes) (`quotes`) | Baseline | Fresh quotes require outbound HTTPS to `zenquotes.io`; no provider-key setting. This app has API/widget routes, not an `/app/quotes` page. | Read `/api/quotes` or its Dashboard widget and verify quote data. |
 | [Weather](/en/apps/weather) (`weather`) | Baseline; Core owns the weather schema migration | Forecasts need outbound HTTPS to `api.brightsky.dev`. City search additionally needs Core’s secret `geo.api_key` and available geo budget; optional `weather.default_lat` / `weather.default_lon` select a default location. | Search a German city and load its forecast; verify forecast and city-search dependencies separately. |
 
@@ -842,6 +842,28 @@ presigned PUT requests; object identities and paths stay the same. Redirects
 are refused.
 Transient storage failures (5xx, 429, 408, or connection loss) are retried up to
 three times per object.
+
+### PDF page operations
+
+Tools exposes `POST /tools/api/pdf` for authenticated, in-memory merge, extract,
+split, rotate and reorder operations. Use the same configured Gotenberg service;
+it needs the PDF-engine routes and ExifTool metadata support provided by
+Gotenberg 8.36.0. No new service or setting is required.
+
+With the default renderer settings, an operation accepts at most 99 files and
+98 total source pages, 10 MiB of input and 10 MiB of output. Renderer uploads
+and downloads each have a cumulative 20 MiB work budget. Reordering or splitting
+may hit that budget before the final output reaches 10 MiB. Larger operations
+fail with HTTP 413; use fewer pages or smaller files. The limits derive from
+the existing renderer size and timeout settings. See
+[PDF operation budgets](/en/docs/platform/pdf-and-templates#budget-a-whole-operation).
+
+Before enabling the API for users, check a small merge, selected-page extraction,
+split ZIP, rotation and reorder against the installed renderer. Uploaded files
+and results are not persisted by Tools. Each access subject can hold one of
+two local upload places; a second concurrent request from that subject returns
+HTTP 503. Unreadable or password-protected PDFs return HTTP 422. Keep Gotenberg
+private and offline as below.
 
 ### Keep Gotenberg offline
 
@@ -982,6 +1004,14 @@ another calculation in the same interval. Dashboards share SQL admission and
 read profiles but do not consume the questions quota. Public links are checked
 on every read and can be revoked by a base writer. Clearing measurements keeps
 dashboard definitions and invalidates their cached results.
+
+Before rolling Pulse back, check whether anyone saved dashboards with newly
+introduced panel kinds. Dashboard reads validate the stored definition strictly;
+an older Pulse version cannot read a kind it does not recognize. Rolling back
+after saving those kinds can make the affected base's entire dashboard list
+unavailable. Keep the newer version, or replace those panels with kinds supported
+by the rollback target before downgrading. Include dashboard definitions in the
+pre-upgrade backup.
 
 Back up all `pulse_*` databases with ClickHouse `BACKUP`, together with Cloud
 Postgres and its encryption keys. Restore them as a consistent set.

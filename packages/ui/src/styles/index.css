@@ -175,6 +175,8 @@
   --k2b-radius-control: 0.5rem;
   /* One reading column for long text beside wide space: conversation history and its composer, the mail reader. */
   --k2b-reading-column: 47.5rem;
+  /* One measure for label–value rows (budgets, sums): the value stays within reach of its label on a wide screen. */
+  --k2b-row-measure: 40rem;
   --k2b-radius-surface: 0.75rem;
   --k2b-radius-dialog: 0.875rem;
   /* One motion vocabulary: every time and curve comes from these tokens. */
@@ -2120,6 +2122,22 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   background: transparent;
 }
 
+/* Quiet continuation actions share link ink without acquiring a button surface. */
+.k2b-ui .k2b-button[data-variant="link"] {
+  padding-inline: 0;
+  border-inline-width: 0;
+  color: var(--k2b-action);
+  background: transparent;
+  font-weight: 400;
+  text-underline-offset: 0.2em;
+}
+
+.k2b-ui .k2b-button[data-variant="link"]:not(:disabled, [aria-disabled="true"]):hover {
+  color: var(--k2b-action);
+  background: transparent;
+  text-decoration: underline;
+}
+
 /* A destructive text action, such as Remove at the foot of a menu, takes the
    danger ink that destructive menu items use, at rest and on hover. */
 .k2b-ui .k2b-button[data-variant="text"][data-danger="true"],
@@ -2281,7 +2299,12 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   width: 2.5rem;
 }
 
+/* A split button is one body: the segments touch, only the outer corners
+   round, and each segment draws its focus ring inside itself, so a ring
+   never covers the neighbouring segment. */
 .k2b-ui .k2b-dropdown.k2b-split-button {
+  --k2b-focus-offset: calc(-1 * var(--k2b-focus-width));
+  --k2b-focus-on-fill: currentColor;
   gap: 0;
   transition: scale 100ms ease-out;
 }
@@ -2302,11 +2325,18 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 
 .k2b-ui .k2b-split-button__primary-menu { gap: 0; }
 
+/* Filled segments meet at a fine line in their label colour, light on every
+   fill in both themes. Bordered segments overlap by one pixel and share their
+   light border as the divider, so it never darkens. */
 .k2b-ui .k2b-split-button > .k2b-split-button__menu-trigger {
   margin-inline-start: -1px;
-  border-inline-start-color: color-mix(in srgb, currentColor 24%, transparent);
   border-start-start-radius: 0;
   border-end-start-radius: 0;
+  box-shadow: inset 1px 0 0 color-mix(in srgb, currentColor 50%, transparent);
+}
+
+.k2b-ui .k2b-split-button > .k2b-split-button__menu-trigger:is([data-variant="secondary"], [data-variant="subtle"], [data-variant="input"]) {
+  box-shadow: none;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -2604,6 +2634,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 .k2b-ui .k2b-combobox__input,
 .k2b-ui .k2b-tags-input,
 .k2b-ui .k2b-date-trigger,
+.k2b-ui .k2b-period-picker__trigger,
 .k2b-ui .k2b-color-input__value {
   @apply flex min-w-0 items-center;
   --k2b-edge-color: var(--k2b-edge);
@@ -2631,6 +2662,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 .k2b-ui .k2b-combobox__input:hover,
 .k2b-ui .k2b-tags-input:hover,
 .k2b-ui .k2b-date-trigger:hover,
+.k2b-ui .k2b-period-picker__trigger:hover,
 .k2b-ui .k2b-color-input__value:hover {
   background: var(--k2b-edge-hover-bg);
 }
@@ -2641,6 +2673,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 .k2b-ui .k2b-combobox__input:focus-within,
 .k2b-ui .k2b-tags-input:focus-within,
 .k2b-ui .k2b-date-trigger:focus-visible,
+.k2b-ui .k2b-period-picker__trigger:focus-visible,
 .k2b-ui .k2b-color-input__value:focus-visible {
   --k2b-edge-color: var(--k2b-edge-focus);
   background: var(--k2b-surface);
@@ -2653,6 +2686,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 .k2b-ui .k2b-combobox[data-invalid="true"] .k2b-combobox__input:not(:has(> input:disabled)),
 .k2b-ui .k2b-tags-input[data-invalid="true"]:not([data-disabled="true"]),
 .k2b-ui .k2b-date-picker[data-invalid="true"] .k2b-date-trigger:not(:disabled),
+.k2b-ui .k2b-period-picker[data-invalid="true"] .k2b-period-picker__trigger:not(:disabled),
 .k2b-ui .k2b-color-input[data-invalid="true"] .k2b-color-input__value:not(:disabled) {
   --k2b-edge-color: var(--k2b-edge-danger);
 }
@@ -2664,6 +2698,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 .k2b-ui .k2b-combobox[data-invalid="true"] .k2b-combobox__input:not(:has(> input:disabled)):focus-within,
 .k2b-ui .k2b-tags-input[data-invalid="true"]:not([data-disabled="true"]):focus-within,
 .k2b-ui .k2b-date-picker[data-invalid="true"] .k2b-date-trigger:not(:disabled):focus-visible,
+.k2b-ui .k2b-period-picker[data-invalid="true"] .k2b-period-picker__trigger:not(:disabled):focus-visible,
 .k2b-ui .k2b-color-input[data-invalid="true"] .k2b-color-input__value:not(:disabled):focus-visible {
   --k2b-edge-color: var(--k2b-edge-focus);
 }
@@ -2676,6 +2711,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 .k2b-ui .k2b-combobox__input:has(> input:disabled),
 .k2b-ui .k2b-tags-input[data-disabled="true"],
 .k2b-ui .k2b-date-trigger:disabled,
+.k2b-ui .k2b-period-picker__trigger:disabled,
 .k2b-ui .k2b-color-input__value:disabled {
   --k2b-edge-color: transparent;
   background: var(--k2b-surface-muted);
@@ -3730,8 +3766,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 }
 
 .k2b-ui .k2b-discussion__status button,
-.k2b-ui .k2b-discussion__fold,
-.k2b-ui .k2b-discussion__load-more {
+.k2b-ui .k2b-discussion__fold {
   min-height: 1.75rem;
   padding: 0.25rem 0.5rem;
   border: 0;
@@ -3742,7 +3777,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   cursor: pointer;
 }
 
-.k2b-ui :is(.k2b-discussion__load-more, .k2b-discussion__fold) {
+.k2b-ui .k2b-discussion__fold {
   display: inline-flex;
   align-self: flex-start;
   align-items: center;
@@ -3752,8 +3787,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 }
 
 .k2b-ui .k2b-discussion__status button:hover,
-.k2b-ui .k2b-discussion__fold:hover,
-.k2b-ui .k2b-discussion__load-more:hover {
+.k2b-ui .k2b-discussion__fold:hover {
   background: var(--k2b-surface-muted);
 }
 
@@ -3777,9 +3811,8 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   background: transparent;
 }
 
-.k2b-ui .k2b-discussion__load-more:disabled {
-  cursor: wait;
-  opacity: 0.7;
+.k2b-ui .k2b-discussion__load-more {
+  align-self: flex-start;
 }
 
 .k2b-ui .k2b-discussion__list {
@@ -6904,22 +6937,129 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   white-space: nowrap;
 }
 
-.k2b-ui .k2b-command-list .k2b-command-list__error {
-  display: inline-flex;
-  align-items: baseline;
-  gap: 0.25rem;
+/* A command's outcome takes the list's place: the container becomes one status
+   line of the same width, in the status green or red, and settles in calmly. */
+.k2b-ui :is(.k2b-autocomplete__options[data-commands], .k2b-dropdown__menu.k2b-command-menu)[data-outcome] {
+  transition:
+    background-color 160ms ease,
+    border-color 160ms ease;
+}
+
+.k2b-ui :is(.k2b-autocomplete__options[data-commands], .k2b-dropdown__menu.k2b-command-menu)[data-outcome="success"] {
+  border-color: color-mix(in srgb, var(--k2b-success-text) 35%, var(--k2b-surface));
+  background: var(--k2b-success-surface);
+}
+
+.k2b-ui :is(.k2b-autocomplete__options[data-commands], .k2b-dropdown__menu.k2b-command-menu)[data-outcome="error"] {
+  border-color: color-mix(in srgb, var(--k2b-danger-text) 35%, var(--k2b-surface));
+  background: var(--k2b-danger-surface);
+}
+
+.k2b-ui .k2b-command-outcome {
+  display: flex;
+  min-height: 2.25rem;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.25rem 0.625rem;
+  padding: 0.25rem 0.25rem 0.25rem 0.75rem;
+  color: var(--k2b-text-muted);
+  font-size: 0.875rem;
+  font-weight: 500;
+  outline: none;
+  animation: k2b-command-outcome-in 160ms ease-out;
+}
+
+.k2b-ui .k2b-command-outcome[data-state="success"] {
+  color: var(--k2b-success-text);
+}
+
+.k2b-ui .k2b-command-outcome[data-state="error"] {
   color: var(--k2b-danger-text);
 }
 
-.k2b-ui .k2b-command-list .k2b-command-list__error > i {
-  flex: 0 0 auto;
-  align-self: center;
+.k2b-ui .k2b-command-outcome:focus-visible {
+  border-radius: var(--k2b-radius-control);
+  box-shadow: inset 0 0 0 var(--k2b-focus-width) var(--k2b-focus-ring);
 }
 
-.k2b-ui .k2b-command-list .k2b-command-list__error > span {
+.k2b-ui .k2b-command-outcome > i {
+  width: 1.25rem;
+  flex: 0 0 1.25rem;
+  font-size: 1.125rem;
+  text-align: center;
+}
+
+/* A message is read in full: on a narrow composer its buttons move to a line of
+   their own rather than cutting it; it never changes while it shows. */
+.k2b-ui .k2b-command-outcome__text {
+  display: -webkit-box;
   min-width: 0;
+  flex: 1 1 12rem;
   overflow: hidden;
-  text-overflow: ellipsis;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  line-height: 1.25rem;
+  overflow-wrap: anywhere;
+}
+
+.k2b-ui .k2b-command-outcome > button {
+  display: inline-flex;
+  min-height: 1.75rem;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  padding: 0 0.5rem;
+  border: 0;
+  border-radius: var(--k2b-radius-control);
+  color: inherit;
+  background: transparent;
+  font: inherit;
+  cursor: pointer;
+}
+
+.k2b-ui .k2b-command-outcome > .k2b-command-outcome__close {
+  width: 1.75rem;
+  padding: 0;
+}
+
+/* Buttons that moved to their own line stay at its end. */
+.k2b-ui .k2b-command-outcome__text + button {
+  margin-left: auto;
+}
+
+.k2b-ui .k2b-command-outcome > button:hover {
+  background: color-mix(in srgb, currentColor 10%, transparent);
+}
+
+.k2b-ui .k2b-command-outcome > button:focus-visible {
+  outline: var(--k2b-focus-width) solid var(--k2b-focus-ring);
+  outline-offset: calc(-1 * var(--k2b-focus-width));
+}
+
+@keyframes k2b-command-outcome-in {
+  from {
+    opacity: 0;
+    transform: translateY(0.125rem);
+  }
+}
+
+/* Forced colors drop the inset ring; an outline keeps the focused line visible. */
+@media (forced-colors: active) {
+  .k2b-ui .k2b-command-outcome:focus-visible {
+    outline: var(--k2b-focus-width) solid CanvasText;
+    outline-offset: calc(-1 * var(--k2b-focus-width));
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .k2b-ui .k2b-command-outcome {
+    animation: none;
+  }
+
+  .k2b-ui :is(.k2b-autocomplete__options[data-commands], .k2b-dropdown__menu.k2b-command-menu)[data-outcome] {
+    transition: none;
+  }
 }
 
 /* The state of entries on their way: one row, like an entry, at the end. */
@@ -9868,6 +10008,227 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   cursor: not-allowed;
 }
 
+/* PeriodPicker: a compact field-edged trigger (it sits in card headers) and one popover with the preset list and,
+   for a custom range, the calendar beside it. */
+.k2b-ui .k2b-period-picker {
+  @apply min-w-0;
+}
+
+.k2b-ui .k2b-period-picker__trigger {
+  gap: 0.5rem;
+  min-height: 2rem;
+  max-width: 100%;
+  padding: 0.25rem 0.625rem;
+  color: var(--k2b-text);
+  font: inherit;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  line-height: 1.25rem;
+  text-align: left;
+  cursor: pointer;
+}
+
+.k2b-ui .k2b-period-picker__trigger > i {
+  flex: 0 0 auto;
+  color: var(--k2b-text-muted);
+}
+
+.k2b-ui .k2b-period-picker__trigger[aria-busy="true"] {
+  cursor: progress;
+}
+
+/* Every text the trigger can show shares one grid cell; only the current one is visible, so the width never moves. */
+.k2b-ui .k2b-period-picker__value {
+  display: grid;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.k2b-ui .k2b-period-picker__value > span {
+  grid-area: 1 / 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.k2b-ui .k2b-period-picker__value > span[aria-hidden="true"] {
+  visibility: hidden;
+}
+
+.k2b-ui .k2b-period-picker__value[data-placeholder="true"] > span:not([aria-hidden]) {
+  color: var(--k2b-placeholder-color);
+  font-weight: 400;
+}
+
+.k2b-ui .k2b-period-picker__detail {
+  color: var(--k2b-text-muted);
+  font-weight: 400;
+}
+
+.k2b-ui .k2b-period-picker__popover {
+  position: fixed;
+  z-index: 1000;
+  inset: unset;
+  margin: 0;
+  padding: 0;
+  overflow: auto;
+  max-width: calc(100vw - 1rem);
+  max-height: calc(100dvh - 1rem);
+  border: 1px solid var(--k2b-border);
+  border-radius: var(--k2b-radius-surface);
+  color: var(--k2b-text);
+  background: var(--k2b-surface-elevated);
+  box-shadow: var(--k2b-shadow-float);
+}
+
+.k2b-ui .k2b-period-picker__panel {
+  display: flex;
+  align-items: flex-start;
+}
+
+.k2b-ui .k2b-period-picker__panel[data-sheet="true"] {
+  display: block;
+}
+
+.k2b-ui .k2b-period-picker__list {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  gap: 0.125rem;
+  min-width: 15rem;
+  padding: 0.25rem;
+}
+
+.k2b-ui .k2b-period-picker__panel[data-sheet="true"] .k2b-period-picker__list {
+  padding: 0;
+}
+
+.k2b-ui .k2b-period-picker__option {
+  color: var(--k2b-text);
+  white-space: nowrap;
+}
+
+.k2b-ui .k2b-period-picker__option[aria-selected="true"] {
+  background: var(--k2b-selected);
+}
+
+/* "Custom range" stands a little apart from the presets, without a line. */
+.k2b-ui .k2b-period-picker__custom {
+  margin-top: 0.375rem;
+}
+
+.k2b-ui .k2b-period-picker__custom > .k2b-dropdown__check {
+  color: var(--k2b-text-muted);
+}
+
+.k2b-ui .k2b-period-picker__hint {
+  flex: none;
+  color: var(--k2b-text-muted);
+  font-size: 0.6875rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.k2b-ui .k2b-period-picker__editor {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.k2b-ui .k2b-period-picker__back {
+  display: inline-flex;
+  align-items: center;
+  align-self: flex-start;
+  gap: 0.25rem;
+  min-height: 2.25rem;
+  padding: 0 0.5rem 0 0.25rem;
+  border: 0;
+  border-radius: var(--k2b-radius-control);
+  color: var(--k2b-text-secondary);
+  background: transparent;
+  font: inherit;
+  font-size: 0.8125rem;
+  cursor: pointer;
+}
+
+.k2b-ui .k2b-period-picker__back:hover {
+  color: var(--k2b-text);
+  background: var(--k2b-hover);
+}
+
+.k2b-ui .k2b-period-picker__fields {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  padding: 0.625rem 0.625rem 0;
+}
+
+.k2b-ui .k2b-period-picker__panel[data-sheet="true"] .k2b-period-picker__fields {
+  padding: 0.25rem 0 0;
+}
+
+.k2b-ui .k2b-period-picker__field {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+.k2b-ui .k2b-period-picker__field .k2b-input {
+  font-variant-numeric: tabular-nums;
+}
+
+/* The error line keeps its height, so a message never moves the calendar. */
+.k2b-ui .k2b-period-picker__error {
+  min-height: 1rem;
+  margin: 0.25rem 0 0;
+  color: var(--k2b-danger-text);
+  font-size: 0.6875rem;
+  line-height: 1rem;
+}
+
+.k2b-ui .k2b-period-picker__months {
+  display: flex;
+}
+
+.k2b-ui .k2b-period-picker__months > .k2b-date-calendar {
+  flex: none;
+  width: 16.5rem;
+}
+
+.k2b-ui .k2b-period-picker__panel[data-sheet="true"] .k2b-period-picker__months > .k2b-date-calendar {
+  flex: 1 1 auto;
+  width: auto;
+}
+
+/* Hidden, not removed: the slot keeps its size, and hidden elements leave the tab order and the accessibility tree. */
+.k2b-ui .k2b-date-calendar__nav[data-hidden="true"],
+.k2b-ui .k2b-date-grid button[data-hidden="true"],
+.k2b-ui .k2b-date-week[aria-hidden="true"] > button {
+  visibility: hidden;
+}
+
+.k2b-ui .k2b-period-picker__actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.75rem;
+  padding: 0 0.625rem 0.625rem;
+}
+
+.k2b-ui .k2b-period-picker__actions > .k2b-date-duration {
+  margin-right: auto;
+}
+
+.k2b-ui .k2b-period-picker__panel[data-sheet="true"] .k2b-period-picker__actions {
+  flex-direction: column;
+  align-items: stretch;
+  padding: 0.5rem 0 0;
+}
+
+.k2b-ui .k2b-period-picker__panel[data-sheet="true"] .k2b-date-apply {
+  min-height: 2.75rem;
+  font-size: 0.9375rem;
+}
+
 .k2b-ui .k2b-date-durations {
   display: flex;
   min-width: 0;
@@ -10264,6 +10625,20 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   font-family: var(--k2b-font-mono);
   font-size: 0.75rem;
   text-align: right;
+}
+
+/* A value away from its default shows in the accent color. */
+.k2b-ui .k2b-slider[data-changed="true"] output {
+  color: var(--k2b-action);
+}
+
+/* The reset button keeps its slot, so a change moves nothing; at the default it is invisible and out of reach. */
+.k2b-ui .k2b-slider:not([data-changed="true"]) .k2b-slider__reset {
+  visibility: hidden;
+}
+
+.k2b-ui .k2b-slider .k2b-slider__reset {
+  margin-inline-start: -0.5rem;
 }
 
 .k2b-ui .k2b-color-input {
@@ -16967,6 +17342,31 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   line-height: 1.25rem;
   letter-spacing: 0;
 }
+/* Opt-in fallback for a list that must span a very wide container: a dotted leader joins each term to its value,
+   which aligns right in tabular figures. Never the default; first keep rows within the row measure. */
+.k2b-ui .k2b-description-list[data-leader="dotted"]:is([data-layout="rows"], [data-layout="compact"]) {
+  grid-template-columns: fit-content(40%) minmax(1.5rem, 1fr) auto auto;
+}
+.k2b-ui .k2b-description-list[data-leader="dotted"]:is([data-layout="rows"], [data-layout="compact"]) .k2b-description-list__item {
+  grid-template-areas: "term leader description action";
+}
+/* Term and leader sit on the value's first line, so a wrapped value keeps its term beside where it starts. */
+.k2b-ui .k2b-description-list[data-leader="dotted"]:is([data-layout="rows"], [data-layout="compact"]) .k2b-description-list__item::before {
+  content: "";
+  grid-area: leader;
+  align-self: start;
+  height: 0;
+  margin-block-start: 1.375rem;
+  border-bottom: 1px dotted var(--k2b-border-strong);
+}
+.k2b-ui .k2b-description-list[data-leader="dotted"]:is([data-layout="rows"], [data-layout="compact"]) .k2b-description-list__item :is(dt, dd) {
+  align-self: start;
+  padding-block-start: 0.5rem;
+}
+.k2b-ui .k2b-description-list[data-leader="dotted"]:is([data-layout="rows"], [data-layout="compact"]) .k2b-description-list__item dd {
+  font-variant-numeric: tabular-nums;
+  text-align: end;
+}
 .k2b-ui .k2b-description-list:is([data-layout="rows"], [data-layout="compact"]) .k2b-select-chip {
   max-width: 100%;
 }
@@ -17987,6 +18387,11 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   }
 }
 
+/* Category hover paints only the band; keyboard and selection outline marks. */
+.k2b-ui .k2b-chart[data-chart-kind="waterfall"] :is([data-inspected], [data-selected]) > .k2b-chart-category-band { fill-opacity: .05; stroke: none !important; }
+.k2b-ui .k2b-chart[data-chart-kind="waterfall"] [data-inspected="hover"]:not([data-selected]) > .k2b-waterfall-bar { stroke: none !important; }
+
+.k2b-ui .k2b-chart[data-chart-kind="waterfall"] .k2b-waterfall-value { font-weight: 600; fill: var(--k2b-text-secondary, #52525b); }
 /* Calendar coordinates stay square in every host. */
 .k2b-ui .k2b-chart[data-chart-kind="heatmap"]:has(svg[data-calendar]) { overflow-x: auto; }
 .k2b-ui .k2b-chart__svg:has(> svg[data-calendar]) { width: var(--k2b-chart-width); }

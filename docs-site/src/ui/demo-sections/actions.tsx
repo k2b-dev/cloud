@@ -46,11 +46,12 @@ const ButtonsDemo = () => (
       { kind: "component", name: "IconButtonLink", from: "@k2b/ui" },
       { kind: "component", name: "SplitButton", from: "@k2b/ui" },
     ]}
-    description="Package-native buttons share one variant and size contract. Input actions align with adjacent field controls, immediate actions press with a subtle flat scale without layout movement, split-button menu triggers stay still, Button defaults to primary, IconButton defaults to ghost, and text actions stay surface-free and flush with nearby copy."
+    description="Package-native buttons share one variant and size contract. Input actions align with adjacent field controls, immediate actions press with a subtle flat scale without layout movement, split buttons read as one body with a fine divider and a focus ring inside each segment, split-button menu triggers stay still, Button defaults to primary, IconButton defaults to ghost, and text actions stay surface-free and flush with nearby copy. Link actions use regular action-coloured ink for quiet list continuation."
     code={`<Button variant="primary">Save</Button>
 <Button variant="secondary">Preview</Button>
 <Button variant="ghost">Later</Button>
 <Button variant="text" size="xs">More</Button>
+<Button variant="link" size="sm">Load more <i class="ti ti-chevron-down" aria-hidden="true" /></Button>
 <Button variant="warning" size="xs">Undo send · 8s</Button>
 <Button variant="danger" size="sm">Delete</Button>
 <Button variant="subtle" size="xs">
@@ -110,6 +111,20 @@ const ButtonsDemo = () => (
       <Button disabled>Disabled</Button>
     </div>
     <div class="ui-demo-row">
+      <Button variant="link" size="sm">
+        Load more <i class="ti ti-chevron-down" aria-hidden="true" />
+      </Button>
+      <Button variant="link" size="sm" loading loadingLabel="Loading more entries">
+        Load more <i class="ti ti-chevron-down" aria-hidden="true" />
+      </Button>
+      <Button variant="link" size="sm">
+        Retry <i class="ti ti-refresh" aria-hidden="true" />
+      </Button>
+      <Button variant="link" size="sm" disabled>
+        Load more <i class="ti ti-chevron-down" aria-hidden="true" />
+      </Button>
+    </div>
+    <div class="ui-demo-row">
       <IconButton label="Settings">
         <i class="ti ti-settings" aria-hidden="true" />
       </IconButton>
@@ -143,6 +158,14 @@ const ButtonsDemo = () => (
         ]}
       >
         <i class="ti ti-send" aria-hidden="true" /> Send
+      </SplitButton>
+      <SplitButton
+        size="sm"
+        onClick={() => {}}
+        menuLabel="More download options"
+        items={[{ label: "Copy as Base64", icon: "ti ti-copy", action: () => {} }]}
+      >
+        <i class="ti ti-download" aria-hidden="true" /> Download
       </SplitButton>
       <SplitButton
         variant="secondary"
@@ -281,12 +304,13 @@ const CommandMenuDemo = () => {
       description: "Preis zur Artikelnummer im Text",
       image: letterMark("T", "#0f766e"),
       keywords: ["trödelplatz", "preis"],
-      // The callback gets the composer's text and inserts at its caret, like typing.
-      onSelect: async ({ text, insert, signal }) => {
+      // The callback gets the composer's text, inserts at its caret like typing, and says what happened.
+      onSelect: async ({ text, insert, signal, success, error }) => {
         const article = /Art\.\s*(\d+)/.exec(text)?.[1];
+        if (!article) return error("Keine Artikelnummer im Text");
         await wait(signal);
-        if (!article) throw new Error("Keine Artikelnummer im Text");
         insert(`Vergleichbare Stücke erzielen derzeit 240–280 € (Art. ${article}).`);
+        success(`Marktpreis für Art. ${article} eingefügt`);
       },
     },
     {
@@ -294,7 +318,11 @@ const CommandMenuDemo = () => {
       label: "Bei Kunstbörse einstellen",
       description: "Entwurf mit Text und Fotos",
       image: letterMark("K", "#7c3aed"),
-      onSelect: () => note("Entwurf bei Kunstbörse"),
+      // A rejection shows in red with Retry, which runs the command again.
+      onSelect: async ({ signal }) => {
+        await wait(signal);
+        throw new Error("Kunstbörse ist gerade nicht erreichbar");
+      },
     },
     {
       group: "Marktplätze",
@@ -319,7 +347,14 @@ const CommandMenuDemo = () => {
       // "/zuw ⏎ val ⏎": Enter opens the person search, the name finds them, Enter assigns.
       next: {
         label: "Person suchen",
-        items: customers.map((name) => ({ label: name, leading: initials(name), onSelect: () => note(`Zugewiesen: ${name}`) })),
+        items: customers.map((name) => ({
+          label: name,
+          leading: initials(name),
+          onSelect: ({ success }: CommandContext) => {
+            note(`Zugewiesen: ${name}`);
+            success(`${name} zugewiesen`);
+          },
+        })),
       },
     },
     {
@@ -337,7 +372,10 @@ const CommandMenuDemo = () => {
             label: "Rolle wählen",
             items: ["Verantwortlich", "Beteiligt"].map((role) => ({
               label: role,
-              onSelect: ({ path }: CommandContext) => note(`${path.at(-1)?.label} · ${role}`),
+              onSelect: ({ path, success }: CommandContext) => {
+                note(`${path.at(-1)?.label} · ${role}`);
+                success(`${path.at(-1)?.label} ist ${role.toLowerCase()}`);
+              },
             })),
           },
         })),
@@ -358,17 +396,18 @@ const CommandMenuDemo = () => {
         { kind: "component", name: "CommandMenu", from: "@k2b/ui" },
         { kind: "component", name: "SlashCommands", from: "@k2b/ui" },
       ]}
-      description="One list of commands for `/` in the text and the “+” button, docked above the composer at its full width. Entries carry an icon or a logo and a quiet description; a callback gets the composer's text and inserts at its caret, and an asynchronous one shows its progress and a failure on its row. The entries are a function of the context: templates only at the start of the text, actions everywhere, and markets first while the text names an article. Type “/zuw ⏎ val ⏎” to assign Valentin, “/bet” for a person and then a role, or “/preis” with and without an article number."
+      description="One list of commands for `/` in the text and the “+” button, docked above the composer at its full width. Entries carry an icon or a logo and a quiet description; a callback gets the composer's text and inserts at its caret, an asynchronous one shows its progress on its row, and what a command reports takes the list's place as a short green or red line. The entries are a function of the context: templates only at the start of the text, actions everywhere, and markets first while the text names an article. Type “/zuw ⏎ val ⏎” to assign Valentin and see the confirmation, “/bet” for a person and then a role, “/preis” with and without an article number, or “/kunst” for a failure with Retry."
       code={`const entries: CommandItem[] = [
   { group: "Vorlagen", label: "Fotos erbeten", icon: "ti ti-photo", text: "Könnten Sie uns noch zwei Fotos schicken?" },
   {
     group: "Marktplätze",
     label: "Marktpreis prüfen",
     image: "/logos/troedelplatz.svg",
-    onSelect: async ({ text, insert, signal }) => {
+    onSelect: async ({ text, insert, signal, success, error }) => {
       const article = /Art\\.\\s*(\\d+)/.exec(text)?.[1];
-      if (!article) throw new Error("Keine Artikelnummer im Text");
-      insert(await priceHint(article, { signal }));
+      if (!article) return error("Keine Artikelnummer im Text");
+      insert(await priceHint(article, { signal })); // a rejection shows in red with Retry
+      success("Marktpreis eingefügt");
     },
   },
   {
@@ -383,7 +422,13 @@ const CommandMenuDemo = () => {
           label: person.name,
           next: {
             label: "Rolle wählen",
-            items: roles.map((role) => ({ label: role, onSelect: ({ path }) => assign(path.at(-1), role) })),
+            items: roles.map((role) => ({
+              label: role,
+              onSelect: async ({ path, success }) => {
+                await assign(path.at(-1), role);
+                success(\`\${path.at(-1)?.label} zugewiesen\`);
+              },
+            })),
           },
         })),
       ),

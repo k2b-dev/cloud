@@ -21,7 +21,8 @@
     "lean-qr": "catalog:",
     "libheif-js": "catalog:",
     "solid-js": "catalog:",
-    "zod": "catalog:"
+    "zod": "catalog:",
+    "@k2b/speedtest": "workspace:*"
   },
   "devDependencies": {
     "@types/bun": "catalog:",
