@@ -1,9 +1,11 @@
 // Browser half of code_check: composes and mounts through the existing host.
+
+import type { RuntimeContext } from "../../chat-code/runtime/cloud";
+import { CloudError, cloudError } from "../../chat-code/runtime/errors";
+import { fetchChunk } from "../../chat-code/runtime/services";
 import { artifactClient } from "../client";
 import type { ArtifactSource } from "../contracts";
 import { PdfRequest } from "../pdf-contracts";
-import type { RuntimeContext } from "../runtime/cloud";
-import { CloudError, cloudError } from "../runtime/errors";
 import { sharedStorage } from "../runtime/shared-storage";
 import type { AppFrameAssets } from "./assets";
 import { CHECK_LIMITS, CHECK_UNAVAILABLE } from "./check-contracts";
@@ -133,6 +135,7 @@ window.assistantCheckMount = (input) => {
       hash = value;
     },
     services: () => ({
+      chunk: fetchChunk("/api/assistant/artifacts/runtime"),
       ...(input.artifactId
         ? {
             storage: (request) => sharedStorage(input.scopeId, request, input.conversationId),

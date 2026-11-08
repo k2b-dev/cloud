@@ -1,7 +1,7 @@
 import { expect, spyOn, test } from "bun:test";
+import { CloudError } from "../chat-code/runtime/errors";
 import { artifactCodeHandlers } from "./code-tools";
 import { artifactDatabase } from "./database";
-import { CloudError } from "./runtime/errors";
 import { testIdentity } from "./test-identity";
 
 test("code_database returns managed-column errors as invalid results", async () => {

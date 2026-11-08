@@ -5,7 +5,7 @@ section: AI
 order: 1070
 description: Present conversation state, tools, approvals, and failures with the shared chat controller and components.
 tags: [ai, ui, solidjs]
-updated: 2026-10-23
+updated: 2026-11-07
 ---
 
 # Chat interface
@@ -163,6 +163,50 @@ Lists, Sources, files, routines, dictations, and Project context refresh through
 [AI live updates](/en/docs/ai/chat-runtime-and-streaming#ai-live-updates)
 on `/api/ai/live`, not through the conversation stream.
 
+## Suggest the next message
+
+Interactive browser chats with the default tool source offer
+`suggest_next_message({ text: string | null })` when the person's
+`suggestNextMessage` preference is on (the default). Project composers,
+local clients, routines, workflows and background runs do not load it. A
+chat inside a Project is still an interactive chat.
+
+The platform prompt includes **Suggestions → Next message** only while the
+tool is loaded. It asks for one plain sentence in the person's language, at
+most 120 characters, only when the answer ends with a question or offers an
+obvious next step. `null` deliberately means no suggestion. Completed requests,
+failures, refusals, blockers, pending question cards or approvals, thanks and
+requests for brevity or no suggestions should produce none. A suggestion uses
+only the person's messages and the visible answer, never unseen tool data.
+
+The server rejects multiline text, more than 200 Unicode characters, URLs,
+Markdown, mentions and text equal to the person's last message after Unicode,
+case, punctuation and whitespace normalization. Rejected text means no
+suggestion. The first closing call wins, including `null` or invalid text. An alone,
+last call following answer text in the same model step ends the loop without
+another model request. Other calls receive
+`noted, call only alone after the answer` and the loop continues. Their arguments
+are stored as `{ text: null }` and do not count as a suggestion. The call
+never appears as a tool block.
+
+The latest completed answer can carry the optional field
+`suggestedNextMessage: { text: string; dismissedAt: string | null }` in the
+conversation detail, message page, initial stream snapshot and completed-turn
+stream event. Only the person who triggered the run receives it. A newer
+message or turn, an error, stop, redirect, queued message, pending approval or
+question hides it. Reloading preserves both the suggestion and its dismissal.
+Model history, exported answer text, title enrichment, search and notifications
+exclude this field.
+
+Dismiss it with
+`DELETE /api/ai/conversations/:conversationId/messages/:messageId/suggested-next-message`,
+using public chat and message IDs. The route checks conversation access and the
+trigger person's identity, sets `dismissedAt` once and returns
+`{ dismissed: true }`. Repeating it is safe. Keep a dismissed suggestion hidden.
+Use `GET /api/ai/prefs` and `PUT /api/ai/prefs` with
+`{ suggestNextMessage: false }` to turn generation off. No additional provider
+or model request is made for a suggestion.
+
 ## Attach Cloud resources
 
 Treat a Cloud resource like another composer attachment: keep its structured
@@ -302,10 +346,10 @@ order:
    one-off routine keeps its run, but its run history then shows **No run
    history**. A routine older than 90 days without a newer run shows **No runs
    in the last 90 days** instead of **No occurrences yet**.
-2. **Results.** Presented files and code views, `code_present` apps, charts, cards, and
+2. **Results.** Presented files and native code views, charts, cards, and
    capability tables in the order they were made. A later result with the same
-   target, the same file path for `present` or the same title for
-   `code_present`, replaces the earlier one at its place. A running delivery
+   target, such as the same file path for `present`, replaces the earlier one
+   at its place. A running delivery
    takes a place once its arguments have arrived, so a new version never shows
    a frame of its own first. A capability table shows the summary and links of
    its result above it. An approved call or a Cloud action that returns a table
@@ -345,6 +389,23 @@ order:
    summaries contain no values. A card's text wraps instead of being cut off. While the call runs, the work
    line names the step and the place stays empty. Table header labels stay on one line and the table
    scrolls sideways, so up to eight rows fit the reserved height on a phone.
+   Chart, group and explorer drawings load when Chat first shows one. Their
+   headings, controls and plot areas reserve the same space while the code and
+   data arrive. A drawing that came from the server stays visible until its
+   browser code is ready, including when reopening history. Its accessible name
+   remains available, “Loading chart” is announced politely, and its controls
+   look disabled until they can respond. If that code cannot
+   load, that chart shows **The chart could not be loaded** with **Reload**.
+   The composer, sidebar and other chat controls remain usable while charts load
+   and if loading fails.
+
+   A table with `search` or `groupBy` shows a search field or a group choice
+   beside its title. The summary reserves their space while the controls load,
+   then shows them disabled until the file arrives. If the controls cannot load,
+   a notice offers to reload the page.
+   Search matches the shown cells and never leaves the browser; Copy data keeps
+   every row. A column's `priority` hides it on a narrow table, and each row's
+   details button shows the hidden values.
    Readers validate the file again; missing or invalid data shows unavailable
    in that frame. A group chart that cannot be drawn shows unavailable in its
    own frame. The CLI fetches and validates views and prints their tables
@@ -761,31 +822,23 @@ runtime monitoring and production checks.
 
 ## Advertise connected client tools
 
-Every turn with the default tool source offers the server-run code tools
-`code_run`, `code_action`, `code_inspect`, `code_stop`, `code_export`, and
-`code_present`, and `code_check`, whichever client submits it: the web app,
-`cld assistant` with or without `--detach`, an API client, or a routine.
-Cloud runs them in an Assistant-owned host, so they need no client.
+Every turn with the default tool source offers server-run `code_run`,
+`code_inspect`, `code_stop` and `code_export`, including detached CLI and
+routine turns. They use Assistant's runner host and need no connected client.
+Studio authoring, HTML checks, app opening, actions and HTML presentations are
+not advertised in chat. Lasting Code's `code_read`, `code_write` and
+`code_check` accept Code inputs only.
 
-Only tools that a client must run wait for that client. A frontend handler alone
-does not advertise them to the model. Pass `clientToolIds` to
-`createAiChatController` and register matching `frontendTools`. The controller
-forwards only IDs that have a handler. The client-run tools are `code_open` and
-`code_secret`, which need a client with a code host: the web app, or
-`cld assistant` while it watches the turn. Entering a secret through
-`code_secret` still needs the web app; in the CLI the call fails with that
-hint. The local client tools `local_bash`, `local_list`, `local_read`,
-`local_upload`, `local_download`, `local_write`, `local_move`, and
-`load_local_skill` also need a client that declares and handles them.
-See [local client tools](/en/docs/ai/tools-and-approvals#run-an-optional-tool-in-a-local-cli)
-for execution and approval boundaries. Detached CLI
-turns, API clients without a code host, and routines never get `code_open` or
-`code_secret`. The other code tool names are still accepted in `clientToolIds`
-and have no effect. Unknown names are ignored so older clients keep working
-after a tool is retired. Turn and draft submissions accept at most 64 distinct
-names, each 1 to 64 ASCII letters, digits, underscores, or hyphens (the tool-name
-limit model providers share). Duplicates, too many names, and malformed names
-are rejected. Clients without an execution host should omit this option.
+Only tools a client must execute wait for that client. Register matching
+`frontendTools` and `clientToolIds` with `createAiChatController`. Chat
+`code_secret` needs the trusted web UI; CLI and unattended turns can use existing
+chat secrets but do not offer secret entry. Local CLI tools also need a
+client that declares and handles them; see
+[local client tools](/en/docs/ai/tools-and-approvals#run-an-optional-tool-in-a-local-cli).
+
+Unknown client tool names are ignored. Turn and draft submissions accept at
+most 64 distinct names, each 1 to 64 ASCII letters, digits, underscores or
+hyphens. Duplicates, excessive counts and malformed names are rejected.
 
 Handlers receive `name`, `args`, `callId`, `turnId`, and `conversationId`. Capture
 that conversation identity for asynchronous work instead of using whichever
@@ -803,20 +856,28 @@ returns a call that did not complete as `CodeToolFailure`
 (`{failed: true, error, guidance?}`, from `@k2b/cloud/ai/browser`); server-run
 code tools report it to the model as a tool error.
 
-`code_run` accepts a saved script `id` or one-off `code` and optional chat
-`inputPaths`, takes a fixed snapshot of current source, and returns a run ID and
-compact state. There is no required source revision. An app whose interface is
-`index.html` does not run there; `code_open` and `code_present` show it.
+`code_run` accepts inline JavaScript/TypeScript `code` and optional current-chat
+`inputPaths`, and returns a run ID and compact state. Saved Studio `id`,
+`version`, and `resourceId` contexts are unavailable on this chat path.
+Runs execute in the Code runner (workerd), including background turns, with
+the person's turn approvals and routine HTTP grants. Studio RSQL database
+grants and app storage are unavailable; use application capabilities and
+chat/Project file tools. `code_secret` opens trusted secret entry in the chat
+UI; it does not start a browser execution host.
+See [One-off chat jobs](/en/docs/platform/code-runs#one-off-chat-jobs) for limits:
+the runner's deadline includes approval waits and its bridge limits also
+apply to selected files and exports.
 `code_run` and `code_inspect` also return `views`: paths and chart, group, table, stats, details or explorer
 summaries without values. Present each view with `present({path})`.
 `code_inspect` returns status, progress, logs, output and captured files, and can
 wait for background work with `waitMs`.
-Inspection also reports the tested source revision. `code_open` never starts the visible
-app. `code_export` copies a captured file into the originating chat.
+`code_export` copies a captured file into the originating chat.
 
-### Check an HTML app before showing it
+### Legacy Studio HTML checks
 
-Write `index.html`, optional styles/modules, and `steps.json`. Call
+These direct Studio host APIs remain for Studio until its separate removal;
+they are not offered in chat. Write `index.html`, optional styles/modules,
+and `steps.json`. Call
 `code_check({id})` for saved source or `code_check({files})` for a one-off app.
 Fix the findings, call `view_image` with the report's `review.prompt` for every
 path in `review.paths`, and check again. The prompt asks for visible defects:
@@ -931,6 +992,19 @@ axes, declarative formats, references, thresholds, series style/role and limits.
 There is no grouped or stacked bar mode, or second y axis. For related computed
 measures in chat, use `cloud.view.group`.
 
+`cloud.chart()` returns synchronously. In HTML apps, line, bar, pie, donut,
+stat and sparkline render immediately. Other kinds return a loading state
+that the frame fills after the markup enters the document, preserving its box
+size. The renderer is bundled with the frame and needs no network request,
+even on first use offline. A loading failure shows a retry button.
+A rendering error (including a throwing format callback) shows its message
+without retry and is reported to the host. Tooltips,
+format callbacks and the print value table remain available after rendering.
+Frame readiness and snapshots wait for pending drawings; `cloud.pdf.render`
+also finishes pending chart markup before creating the PDF. Insert the returned
+markup rather than extracting its SVG immediately. Scripts and PDF markup
+created by scripts still render every kind synchronously.
+
 Function `format(value)` is also accepted on axes and values. `width` and
 `height` set the logical size: 480 × 280 by default, or 160 × 40 for sparkline.
 Apps redraw stretched charts at their measured width when `width` is omitted;
@@ -1012,26 +1086,26 @@ The host owns isolation, artifact permissions, input file authorization,
 cancellation, and execution deduplication. Assistant persists call ownership
 and results; an uncertain execution is never automatically replayed.
 Its test runs are separate from visible apps and persistent user data. Assistant
-owns an isolated Chromium host for model-driven run/inspect/interact/stop/export
-operations. Closing or freezing the user's tab does not suspend these operations.
+uses the Code runner for one-off run/inspect/stop/export operations. Closing
+or freezing the user's tab does not suspend these operations.
 Calls, results and ordered approvals are persisted; a lost host is not replayed.
-Only `code_open` and `code_secret` require the user interface. The host pool admits
-eight hosts. Foreground chat runs and scheduled turns have separate hosts.
+Secret entry with `code_secret` requires the trusted web interface. Assistant retains
+up to eight turn hosts; runner slots independently bound execution. Foreground
+chat runs and scheduled turns have separate hosts.
 Foreground hosts without an active turn expire after two idle minutes.
 Scheduled hosts live for their turn; finished scheduled turns and cancelled
 runs are closed by the host sweep.
-The Assistant image includes Chromium; other application images do not need it.
-The direct CLI code command retains its own isolated local execution host.
+Chromium starts lazily for remaining Studio operations: HTML `code_check`,
+`code_action`, and Studio presentations. Studio machine execution and the
+direct CLI code command also retain their isolated Chromium hosts. Visible
+Studio apps run in the person's browser. The Assistant image still includes
+Chromium for these paths; managed `code_run` does not require it.
 
 ### Assistant apps and browser work
 
-An app, calculator, converter, timer, form or other tool a person asks for is a
-saved Studio app, even when it keeps no data: the `code_create` prompt hint and
-tool descriptions route it there, so it appears in the Studio catalog. Charts,
-tables, key figures and explorers of a one-off result stay views. A small app
-takes one `code_create` with its first `html` and `steps`, one `code_check` with
-its screenshot review, and `code_open`. `code_present` with `files` shows a
-throwaway card only when the person asks for a preview they do not want to keep.
+Chat offers one-off native views and lasting Code authoring. Studio app
+creation and presentation tools are unavailable in chat. The standalone
+Studio UI and its direct APIs remain available until the separate Studio cut.
 
 The Assistant **Studio** navigation opens its app catalog on hover or click;
 its search button opens global search filtered to Studio apps. Use-level users
@@ -1203,11 +1277,12 @@ of business correctness. Recent one-off runs are a separate compact list (latest
 when the context snapshot is loaded.
 
 Managed execution reports starting, working, and approval phases in the active
-tool row. Startup is bounded to 45 seconds; the server also checks the browser
-event loop with a 10-second heartbeat deadline. A dead host is reported without
-replaying an uncertain operation.
+tool row. Managed chat scripts use the runner deadline described above. Legacy
+Studio browser startup is bounded to 45 seconds, with a 10-second event-loop
+heartbeat deadline. A lost host or runner attempt is reported without replaying
+an uncertain operation.
 
-### Working plan and compact Studio context
+### Working plan and chat context
 
 Assistant shows the current working plan above its composer. The collapsible
 list uses the portable, controlled `Chat.Tasks` component from `@k2b/ui`.
@@ -1218,13 +1293,11 @@ Symbols and text provide the same information without color. Cancelled tasks
 are counted separately. The current step remains visible after stopping; it is
 only described as in progress while its turn is actually running.
 
-Compact context entries use one line and consistent icon alignment. One-off
-runs appear only in the Studio count, not as preview rows. The Studio tab reuses
-the gallery's application cards and permission-aware menus. Start opens the app
-in a workspace tab; the external-link action opens its standalone runner in a
-new browser tab. Opening a context preview still does not start an app. The
-Studio tab also shows the latest 20 one-off runs in a compact log table, with
-the full count stated separately. Exports do not overwrite a known run status.
+Compact context entries use one line and consistent icon alignment. Working
+files include the latest one-off script runs and their full count. The chat
+workspace opens files, sources and knowledge; it does not mount Studio app or
+routine tabs. Routine details remain in dialogs until routine retirement.
+Standalone Studio apps retain their own management and runner pages.
 
 Secrets management uses a list with an empty-state action. Adding or replacing
 a secret opens a separate dialog. Validation errors appear at their fields;

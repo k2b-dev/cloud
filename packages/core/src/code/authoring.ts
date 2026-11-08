@@ -20,12 +20,14 @@ import {
   codeInitialFiles,
 } from "./authoring-contracts";
 import { type Code, codeQueryContracts } from "./contracts";
+import { simulateCodeEvent } from "./event-preview";
+import { listCodeRunsWithEvents } from "./events";
 import { effectiveCodePolicy, previewCodePolicy, readCodePolicy, updateCodePolicy } from "./policy";
 import { type CodePolicyRow, codePolicyRow } from "./policy-contracts";
 import { createRunnerCodeCheckHost, createRunnerCodeTestingHost } from "./runner-jobs";
 import { startCodeRun } from "./scheduling";
 import { checkCodeSecretBinding, currentCodeSecretBindings, deleteCodeSecret, listCodeSecrets, setCodeSecret } from "./secrets";
-import { codeSourceHash, createCode, listCodeRuns, listCodes, readCode, readCodeRun, readCodeVersion } from "./store";
+import { codeSourceHash, createCode, listCodes, readCode, readCodeRun, readCodeVersion } from "./store";
 import { simulateCode, testCode } from "./testing";
 import { diffCodeVersion, listCodeVersions, setCodePaused, submitCodeVersion } from "./versions";
 
@@ -209,7 +211,7 @@ export const codeAuthoringServices = {
     };
   },
   async runs(input: CodeAuthoringInput<"runs">, context: CodeContext): Promise<CodeAuthoringData<"runs">> {
-    return { version: 1, ...(await listCodeRuns(input, context)) };
+    return { version: 1, ...(await listCodeRunsWithEvents(input, context)) };
   },
   async runRead(input: CodeAuthoringInput<"runRead">, context: CodeContext): Promise<CodeAuthoringData<"runRead">> {
     return { version: 1, ...codeQueryContracts.runRead.data.parse(await readCodeRun(input, context)) };
@@ -261,6 +263,7 @@ export const codeAuthoringServices = {
     const code = await createCodeCheckRequest(input.codeId, input.files, input.entry ?? "code.ts", context);
     return testCode({ code, tests: input.tests, trace: input.trace }, await createRunnerCodeTestingHost(context), context.signal);
   },
+  simulateEvent: simulateCodeEvent,
   async simulate(input: CodeAuthoringInput<"simulate">, context: CodeContext) {
     const code = await createCodeCheckRequest(input.codeId, input.files, input.entry ?? "code.ts", context);
     return simulateCode({ code, fixture: input.fixture, trace: input.trace }, await createRunnerCodeTestingHost(context), context.signal);

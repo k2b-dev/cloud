@@ -5,7 +5,7 @@ section: Work
 order: 105
 description: Shared contact books with structured records, tags, notes, hierarchy, and access control.
 tags: [contacts, address-books, cli]
-updated: 2026-10-31
+updated: 2026-11-07
 ---
 
 # Contacts
@@ -151,3 +151,19 @@ Chat and MCP tools keep flat arguments: `book` is the source target and
 
 See [App capabilities](/en/docs/platform/capabilities#name-the-resource-an-operation-acts-on)
 for the invocation and review contract.
+
+## Connect automations to an address book
+
+Automations can react to `contact.created` and `contact.updated`. Each event
+identifies the contact and its book. Updates list which field groups changed,
+without names, email addresses, phone numbers or note text. Read current content
+through authorized capabilities; delivery checks current read access to the
+book. Unchanged edits emit no update. Imports announce each committed contact;
+failed entries produce no creation event.
+
+`tag.change` and `note.create` let automations with write access change tags
+and add notes. In this release, clients ask first and may remember approval
+for tags in a book or notes on a contact. Adding notes requires an automation
+acting for a person; retrying the same request creates no duplicate note.
+Moving and deleting retain their current approval behavior. See
+[Contacts automation capabilities](/en/docs/reference/contacts-automation).

@@ -1,7 +1,6 @@
 import { lazySync, sql } from "@k2b/cloud";
 import { createRuntimeLifecycle, createRuntimeTaskTracker, logger, stopRuntimeJobs, stopRuntimeResources } from "@k2b/cloud/services";
 import { toPgIntArray, toPgTextArray, toPgUuidArray } from "@k2b/cloud/services/postgres";
-import { workflowEffectKey } from "@k2b/cloud/workflows/store";
 import type { JobContext, Worker } from "@k2b/sync";
 import { expBackoff } from "@k2b/sync/retry";
 import { z } from "zod";
@@ -10,6 +9,13 @@ import { remoteMessagePreconditionSchema } from "../contracts";
 import { MAIL_SENT_ACTIVITY_ACTION, mailSentActivityResult } from "./activity-feed";
 import { recordRefusedProviderLogin, rediscoverProviderBinding } from "./bindings";
 import { commandStillAuthorized, commandsStillAuthorized } from "./command-authorization";
+import {
+  authorizeMailWorkflowSend,
+  loadIncomingAutomationSiblingTransitions,
+  publishMailWorkflowDependency,
+  workflowCommandStillWanted,
+} from "./command-legacy-effects";
+import { messageStatePayloadSchema, normalizeMailKeywords, projectMailMessagePrecondition } from "./command-message-state";
 import { resolveUndoRequests } from "./command-undo";
 import { imapSmtpConnector, type RemoteMessageSet, type RemoteMessageState, type RemoteMutationTarget } from "./connectors";
 import type { SmtpConnectionConfig } from "./connectors/contract";
@@ -59,14 +65,6 @@ import { waitForMailProviderSlot } from "./provider-pacer";
 import { notifySendWaitingForLogin } from "./send-login-notifications";
 import { loadSenderIdentityTransportRuntimeById } from "./sender-identity-transports";
 import { enqueueFolderSync } from "./sync-runtime";
-import { normalizeWorkflowKeywords } from "./workflow-data";
-import { publishMailWorkflowDependency } from "./workflow-dependencies";
-import {
-  loadIncomingAutomationSiblingTransitions,
-  messageStatePayloadSchema,
-  projectMailWorkflowMessagePrecondition,
-} from "./workflow-message-preconditions";
-import { authorizeMailWorkflowSend } from "./workflow-send-policy";
 
 const log = logger("mail:commands");
 const STALE_EXECUTION_MINUTES = 10;
@@ -366,45 +364,6 @@ type ClaimedCommand = {
   previousState: string;
   /** An earlier attempt started the provider effect, so the command's outcome must be reconciled, never replayed blindly. */
   earlierEffectStarted: boolean;
-};
-
-/**
- * Whether the workflow run that issued a command still wants its effect.
- *
- * A command belongs to the step whose kernel effect key is its idempotency
- * key. The command is wanted while its run is live and that step still runs or
- * waits for it. A waiting step runs again on every dependency recheck, under a
- * newer execution generation, and adopts the command it already issued, so a
- * generation change alone does not make the command stale. A canceled or ended
- * run, a changed workflow version, or a step that settled without the command
- * does. Stale workers are fenced where the command is created: only the step
- * that runs under the run's current generation and lease may create or adopt it.
- *
- * Locks the run, so a cancel request or a new claim cannot interleave. Call it
- * before locking the command: a step that adopts its command and mailbox
- * deletion take the run first, too. The step row is not locked: a step that
- * settles while the check runs counts as settling just after it. The action
- * adopts an existing command before it could settle without it.
- */
-const workflowCommandStillWanted = async (tx: typeof sql, command: { id: string; correlation_id: string | null }): Promise<boolean> => {
-  const runId = z.uuid().safeParse(command.correlation_id);
-  if (!runId.success) return false;
-  const [run] = await tx<{ id: string }[]>`
-    SELECT run.id
-    FROM mail.commands command
-    JOIN workflows.run run ON run.id = ${runId.data}::uuid
-    JOIN workflows.step_outcome step
-      ON step.run_id = run.id
-     AND command.idempotency_key = ${workflowEffectKey(runId.data, "")} || step.step_key
-    WHERE command.id = ${command.id}::uuid
-      AND command.correlation_id = run.id::text
-      AND run.workflow_version_id = command.actor_id
-      AND run.state IN ('queued', 'running', 'waiting')
-      AND run.cancel_requested_at IS NULL
-      AND step.state IN ('running', 'waiting')
-    FOR UPDATE OF run
-  `;
-  return Boolean(run);
 };
 
 const claimCommand = async (
@@ -944,7 +903,7 @@ const normalizedStandardFlags = (flags: readonly string[]): string[] => {
 };
 
 const normalizedKeywords = (keywords: readonly string[]): string[] =>
-  [...new Set(normalizeWorkflowKeywords(keywords).map((keyword) => keyword.toLowerCase()))].sort();
+  [...new Set(normalizeMailKeywords(keywords).map((keyword) => keyword.toLowerCase()))].sort();
 
 const assertRemoteMessagePrecondition = (current: RemoteMessageState, expected?: RemoteMessagePrecondition): void => {
   if (!expected) return;
@@ -1335,7 +1294,7 @@ const moveMessageSet = async (params: {
       const expected = move.target.expectedRemoteState;
       assertRemoteMessagePrecondition(
         state,
-        expected ? projectMailWorkflowMessagePrecondition(expected, siblingTransitions.get(move.command.id) ?? []) : undefined,
+        expected ? projectMailMessagePrecondition(expected, siblingTransitions.get(move.command.id) ?? []) : undefined,
       );
       checked.push(move);
     } catch (error) {
@@ -1406,10 +1365,7 @@ const executeFreshMutation = async (command: DbCommandExecution, assertLeaseActi
   const target = sourceTargetSchema.parse(parseJsonRecord(command.target));
   const siblingTransitions = await loadIncomingAutomationSiblingTransitions(sql, [command]);
   if (target.expectedRemoteState) {
-    target.expectedRemoteState = projectMailWorkflowMessagePrecondition(
-      target.expectedRemoteState,
-      siblingTransitions.get(command.id) ?? [],
-    );
+    target.expectedRemoteState = projectMailMessagePrecondition(target.expectedRemoteState, siblingTransitions.get(command.id) ?? []);
   }
   const source = await loadRemoteMessage(command, target);
   const remote = remoteTarget(source);

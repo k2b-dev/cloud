@@ -59,7 +59,7 @@ export const ManifestSchema = z.object({
   internet: CodeInternetOriginsSchema.optional(),
   entrypoints: z.array(
     z.object({
-      kind: z.enum(["schedule", "manual", "route"]),
+      kind: z.enum(["schedule", "manual", "event", "route"]),
       route: z.object({ method: z.string(), path: z.string(), public: z.boolean() }).optional(),
       entrypoint: z.string(),
       title: z.string().optional(),
@@ -94,7 +94,20 @@ const RunSchema = z.object({
   /** Who started it again, as the directory shows them to this viewer. */
   rerunByName: z.string().nullable().optional(),
 });
-export const RunListSchema = z.object({ items: z.array(RunSchema), nextCursor: z.string().nullable() });
+export const EventDeliverySchema = z.object({
+  id: z.string(),
+  eventId: z.string(),
+  eventType: z.string(),
+  state: z.enum(["pending", "retrying", "failed"]),
+  code: z.string().nullable(),
+  attempts: z.number(),
+  createdAt: z.string(),
+});
+export const RunListSchema = z.object({
+  items: z.array(RunSchema),
+  nextCursor: z.string().nullable(),
+  eventDeliveries: z.array(EventDeliverySchema).optional(),
+});
 const CallSchema = z.object({
   ordinal: z.number().int(),
   kind: z.enum(["query", "action"]),
@@ -238,7 +251,7 @@ export type CodePageAutomation = {
   entrypoint: string;
   /** Reviewed human title; absent on older versions. */
   title?: string;
-  kind: "schedule" | "manual" | "route";
+  kind: "schedule" | "manual" | "event" | "route";
   route?: { method: string; path: string; public: boolean };
   cron: string | null;
   at?: string;
@@ -329,7 +342,7 @@ export type CodePageReady = {
   refusal: CodePageRefusal | null;
   /** What switching on the waiting version asks for; null without a waiting version or when unreadable. */
   waitingTargets: CodePageActivationRow[] | null;
-  runs: { items: CodePageRun[]; nextCursor: string | null } | null;
+  runs: { items: CodePageRun[]; nextCursor: string | null; eventDeliveries?: z.infer<typeof EventDeliverySchema>[] } | null;
   run: CodePageRunDetail | null;
   /** The selected version and its difference to the previous one. */
   diff: CodePageDiff | null;

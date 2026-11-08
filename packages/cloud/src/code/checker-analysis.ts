@@ -4,7 +4,7 @@ import { CodeInternetOriginSchema } from "../contracts/code-internet";
 import { CodeRouteSchema } from "../contracts/code-routes";
 import { CodeAutomationTitleSchema, CodeOnceScheduleSchema } from "../contracts/code-version";
 import { MANDATE_POLICY_MAX_IDENTIFIERS } from "../services/mandates/policy";
-import { normalizeWorkflowSchedule } from "../workflows/runtime/schedule";
+import { normalizeCronSchedule } from "../shared/cron-schedule";
 import type { CodeCheckDiagnostic, CodeCheckRequest, CodePermission, CodeVersionManifest } from "./checker-contract";
 import { codeSdkPhaseDiagnostic } from "./types";
 
@@ -199,7 +199,62 @@ export function analyzeCode(request: CodeCheckRequest): CodeAnalysis {
   // Permission calls and schedule handlers, joined after all files are visited: a handler may be declared anywhere.
   const placed: { index: number; node: ts.Node }[] = [];
   const handlers: { handler: ts.Expression; name: string }[] = [];
+  /** The SDK block a JSX tag names, such as `Form` or `Field.Select`, also under an import alias; null otherwise. */
+  const sdkFile = root + "sdk.d.ts";
+  function sdkTag(tag: ts.JsxTagNameExpression): string | null {
+    const exported = (name: ts.Identifier) => {
+      let symbol = checker.getSymbolAtLocation(name);
+      if (symbol && symbol.flags & ts.SymbolFlags.Alias) symbol = checker.getAliasedSymbol(symbol);
+      return symbol?.declarations?.some((declaration) => declaration.getSourceFile().fileName === sdkFile) ? symbol.name : null;
+    };
+    if (ts.isIdentifier(tag)) return exported(tag);
+    if (ts.isPropertyAccessExpression(tag) && ts.isIdentifier(tag.expression)) {
+      const owner = exported(tag.expression);
+      return owner ? `${owner}.${tag.name.text}` : null;
+    }
+    return null;
+  }
+  /** Blocks whose children are parts, with the parts they take. A Map, so no tag name reaches inherited properties. */
+  const blockParts = new Map<string, { allows: (child: string) => boolean; names: string }>([
+    ["Form", { allows: (child) => child.startsWith("Field."), names: "Field-Bausteine" }],
+    ["Field.Select", { allows: (child) => child === "Option", names: "<Option>" }],
+    ["Stats", { allows: (child) => child === "Stat", names: "<Stat>" }],
+    ["Table", { allows: (child) => child === "Column", names: "<Column>" }],
+    ["Detail", { allows: (child) => child === "Item", names: "<Item>" }],
+  ]);
+  const partOwners = new Map([
+    ["Option", "Field.Select"],
+    ["Stat", "Stats"],
+    ["Column", "Table"],
+    ["Item", "Detail"],
+  ]);
+  const partBlock = (tag: string) => (tag.startsWith("Field.") ? "Form" : partOwners.get(tag));
+  /** The block whose children hold this element: the enclosing element, or the element of a `children={…}` prop. */
+  function parentBlock(node: ts.Node): string | null {
+    for (let current = node.parent; current; current = current.parent) {
+      if (ts.isJsxElement(current)) return sdkTag(current.openingElement.tagName);
+      if (ts.isJsxAttribute(current)) return current.name.getText() === "children" ? sdkTag(current.parent.parent.tagName) : null;
+    }
+    return null;
+  }
+  /**
+   * Parts sit inside their block and blocks with parts hold nothing else; JSX types cannot say which element a child
+   * is. A part kept in a variable is checked when Core builds the page.
+   */
+  function checkPageChild(node: ts.JsxElement | ts.JsxSelfClosingElement) {
+    const tag = sdkTag(ts.isJsxElement(node) ? node.openingElement.tagName : node.tagName);
+    if (!tag) return;
+    const parentTag = parentBlock(node);
+    const owner = partBlock(tag);
+    const block = parentTag ? blockParts.get(parentTag) : undefined;
+    if (block && !block.allows(tag)) report(node, "code_page_child", `In <${parentTag}> stehen nur ${block.names}, nicht <${tag}>.`);
+    else if (owner && parentTag && parentTag !== owner) report(node, "code_page_child", `<${tag}> gehört in <${owner}>.`);
+    if (ts.isJsxElement(node) && blockParts.has(tag))
+      for (const child of node.children)
+        if (ts.isJsxText(child) && child.text.trim()) report(child, "code_page_child", `In <${tag}> steht kein Text, nur seine Bausteine.`);
+  }
   function visit(node: ts.Node) {
+    if (ts.isJsxElement(node) || ts.isJsxSelfClosingElement(node)) checkPageChild(node);
     if (ts.isIdentifier(node) && node.text === "__codeSdk") report(node, "code_reserved_sdk", "__codeSdk ist für den Runner reserviert.");
     if (ts.isImportDeclaration(node) || ts.isExportDeclaration(node)) {
       const spec = node.moduleSpecifier;
@@ -263,7 +318,7 @@ export function analyzeCode(request: CodeCheckRequest): CodeAnalysis {
             node,
             `code_${omitted.reason}`,
             omitted.reason === "stream"
-              ? "Streams sind für Code gesperrt."
+              ? "Dieser Schreib-Stream deklariert keinen file-Metadateneingang für Code."
               : omitted.reason === "code_false"
                 ? "Diese Action ist mit code: false für diesen Code gesperrt."
                 : "Diese Query ist nur für Apps verfügbar.",
@@ -296,27 +351,51 @@ export function analyzeCode(request: CodeCheckRequest): CodeAnalysis {
         } else if (app && method) {
           const phase = codeSdkPhaseDiagnostic(method);
           if (phase) report(node, phase.code, phase.message);
-          if (method === "on") {
+          if (method === "on" && collecting) {
             const explicit = node.arguments.length === 3;
-            const event = node.arguments[explicit ? 1 : 0];
+            const eventNode = node.arguments[explicit ? 1 : 0];
+            const eventNames = eventNode && literals(eventNode);
+            const owner = request.sdk.manifest.owner;
             const place =
               explicit && node.arguments[0]
                 ? handle(node.arguments[0])
-                : request.sdk.manifest.owner?.kind === "resource"
-                  ? { type: request.sdk.manifest.owner.ref.type, ids: [request.sdk.manifest.owner.ref.id] }
-                  : request.sdk.manifest.owner?.kind === "app"
-                    ? { type: "cloud.app", ids: [request.sdk.manifest.owner.appId] }
-                    : { type: "owner", ids: ["owner"] };
-            const eventNames = event && literals(event);
-            if (!eventNames || !place?.ids) report(node, "code_dynamic_event", "Ereignis und Ort müssen als Konstanten erkennbar sein.");
-            else
-              for (const name of eventNames)
-                for (const id of place.ids) {
-                  const key = JSON.stringify([name, place.type, id]);
-                  if (events.has(key))
-                    report(node, "code_duplicate_on", "Ein zweites app.on für dasselbe Ereignis am selben Ort ist nicht erlaubt.");
-                  events.add(key);
-                }
+                : owner?.kind === "resource"
+                  ? { type: owner.ref.type, ids: [owner.ref.id] }
+                  : undefined;
+            const name = eventNames?.length === 1 ? eventNames[0] : undefined;
+            const spec = request.sdk.manifest.events.find((event) => event.type === name);
+            if (!name || !place?.ids || place.ids.length !== 1)
+              report(node, "code_dynamic_event", "Ereignis und Ort müssen als Konstanten erkennbar sein.");
+            else if (
+              !owner ||
+              owner.kind !== "resource" ||
+              spec?.place !== owner.ref.type ||
+              place.type !== owner.ref.type ||
+              place.ids[0] !== owner.ref.id
+            )
+              report(node, "code_event_owner", "Ereignisse sind nur am eigenen Ressourcen-Ort verfügbar.");
+            else if (!ts.isExpressionStatement(node.parent) || !ts.isSourceFile(node.parent.parent))
+              report(node, "code_static_event", "Deklariere Ereignisse auf Modulebene.");
+            else {
+              const key = JSON.stringify([name, place.type, place.ids[0]]);
+              if (events.has(key))
+                report(node, "code_duplicate_on", "Ein zweites app.on für dasselbe Ereignis am selben Ort ist nicht erlaubt.");
+              events.add(key);
+              const entrypoint = `event:${name}@${spec.version}`;
+              if (entryNames.has(entrypoint)) report(node, "code_duplicate_on", "Der Ereignis-Name ist bereits vergeben.");
+              entryNames.add(entrypoint);
+              const handler = node.arguments[explicit ? 2 : 1];
+              if (handler) handlers.push({ handler, name: entrypoint });
+              const sf = node.getSourceFile();
+              result.entrypoints.push({
+                kind: "event",
+                entrypoint,
+                cron: null,
+                event: { type: name, version: spec.version, place: owner.ref },
+                file: sf.fileName.slice(root.length),
+                line: sf.getLineAndCharacterOfPosition(node.getStart(sf)).line + 1,
+              });
+            }
           }
           if (["get", "post", "put", "delete", "all"].includes(method) && collecting) {
             const paths = node.arguments[0] && literals(node.arguments[0]);
@@ -364,7 +443,7 @@ export function analyzeCode(request: CodeCheckRequest): CodeAnalysis {
           }
           if (method === "schedule" && collecting) {
             const when = node.arguments[0];
-            const cron = when && literals(when);
+            const literalCron = when && literals(when);
             const field = (name: string) => {
               if (!when) return undefined;
               const property = ts.isObjectLiteralExpression(when)
@@ -378,20 +457,35 @@ export function analyzeCode(request: CodeCheckRequest): CodeAnalysis {
               const type = propertyType(checker.getTypeAtLocation(when), name, when);
               return type && strings(type);
             };
+            const cron = literalCron ?? field("cron");
+            const recurring = !literalCron && !!cron;
             const at = field("at"),
               timeZone = field("timeZone");
             const once =
               at?.length === 1 && timeZone?.length === 1 ? CodeOnceScheduleSchema.safeParse({ at: at[0], timeZone: timeZone[0] }) : null;
             const validKeys =
               !when ||
-              !ts.isObjectLiteralExpression(when) ||
-              when.properties.every(
-                (property) =>
-                  ts.isPropertyAssignment(property) &&
-                  (ts.isStringLiteralLike(property.name) || ts.isIdentifier(property.name)) &&
-                  ["at", "timeZone"].includes(property.name.text),
-              );
-            const staticTiming = (cron?.length === 1 && !!cron[0]?.trim()) || (once?.success && validKeys);
+              (!ts.isObjectLiteralExpression(when)
+                ? !!literalCron ||
+                  checker
+                    .getTypeAtLocation(when)
+                    .getProperties()
+                    .every((property) => (recurring ? ["cron", "timeZone", "name"] : ["at", "timeZone"]).includes(property.name))
+                : when.properties.every(
+                    (property) =>
+                      ts.isPropertyAssignment(property) &&
+                      (ts.isStringLiteralLike(property.name) || ts.isIdentifier(property.name)) &&
+                      (recurring ? ["cron", "timeZone", "name"] : ["at", "timeZone"]).includes(property.name.text),
+                  ));
+            const staticTiming =
+              validKeys &&
+              ((cron?.length === 1 &&
+                !!cron[0]?.trim() &&
+                !at &&
+                (!recurring ||
+                  !propertyType(checker.getTypeAtLocation(when!), "timeZone", when!) ||
+                  (timeZone?.length === 1 && CodeOnceScheduleSchema.shape.timeZone.safeParse(timeZone[0]).success))) ||
+                once?.success);
 
             const options = node.arguments[2];
             const nameType = options && propertyType(checker.getTypeAtLocation(options), "name", options);
@@ -401,11 +495,17 @@ export function analyzeCode(request: CodeCheckRequest): CodeAnalysis {
                 : undefined;
             const nameValue = nameProperty && ts.isPropertyAssignment(nameProperty) ? nameProperty.initializer : undefined;
             const names = nameValue && ts.isStringLiteralLike(nameValue) ? [nameValue.text] : nameType && strings(nameType);
-            const name = options
-              ? names?.length === 1
-                ? names[0]
+            const timingNames = recurring ? field("name") : undefined;
+            const hasTimingName = recurring && !!propertyType(checker.getTypeAtLocation(when!), "name", when!);
+            const name = hasTimingName
+              ? timingNames?.length === 1
+                ? timingNames[0]
                 : undefined
-              : `schedule:${result.entrypoints.filter((e) => e.kind === "schedule").length}`;
+              : options
+                ? names?.length === 1
+                  ? names[0]
+                  : undefined
+                : `schedule:${result.entrypoints.filter((e) => e.kind === "schedule").length}`;
             const titleType = options && propertyType(checker.getTypeAtLocation(options), "title", options);
             const titleProperty =
               options && ts.isObjectLiteralExpression(options)
@@ -423,20 +523,24 @@ export function analyzeCode(request: CodeCheckRequest): CodeAnalysis {
             if (
               !staticTiming ||
               !name ||
-              (options && !/^[a-zA-Z0-9][a-zA-Z0-9_.-]*$/.test(name)) ||
+              ((options || hasTimingName) && !/^[a-zA-Z0-9][a-zA-Z0-9_.-]*$/.test(name)) ||
               !ts.isExpressionStatement(node.parent) ||
               !ts.isSourceFile(node.parent.parent)
             )
               report(
                 node,
                 "code_static_schedule",
-                "Deklariere Zeitpläne auf Modulebene mit konstantem Cron oder { at, timeZone } und Namen (name: … as const).",
+                "Deklariere Zeitpläne auf Modulebene mit konstantem Cron, { cron, timeZone, name } oder { at, timeZone } und Namen (name: … as const).",
               );
             else {
               try {
-                if (!once?.success) normalizeWorkflowSchedule({ cron: cron![0]!, timezone: "UTC" });
+                if (!once?.success) normalizeCronSchedule({ cron: cron![0]!, timezone: timeZone?.[0] ?? "UTC" });
               } catch {
-                report(node, "code_invalid_cron", "Der Zeitplan benötigt einen gültigen Cron-Ausdruck mit fünf Feldern.");
+                report(
+                  node,
+                  "code_invalid_cron",
+                  "Der Zeitplan benötigt einen gültigen Cron-Ausdruck mit fünf Feldern und eine IANA-Zeitzone.",
+                );
               }
               if (entryNames.has(name)) report(node, "code_duplicate_schedule", "Der Name des Zeitplans ist bereits vergeben.");
               entryNames.add(name);
@@ -447,7 +551,7 @@ export function analyzeCode(request: CodeCheckRequest): CodeAnalysis {
                 entrypoint: name,
                 ...(title?.success ? { title: title.data } : {}),
                 cron: once?.success ? null : cron![0]!,
-                ...(once?.success ? once.data : {}),
+                ...(once?.success ? once.data : timeZone?.length === 1 ? { timeZone: timeZone[0] } : {}),
                 file: sf.fileName.slice(root.length),
                 line: sf.getLineAndCharacterOfPosition(node.getStart(sf)).line + 1,
               });

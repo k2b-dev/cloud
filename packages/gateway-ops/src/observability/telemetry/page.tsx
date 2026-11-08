@@ -207,7 +207,7 @@ export default ssr<AuthContext>(async (c) => {
         />
 
         {sloWindows.length > 0 ? (
-          <section class="paper p-3" aria-labelledby="request-slo-title">
+          <section class="flex flex-col gap-2" aria-labelledby="request-slo-title">
             <h2 id="request-slo-title" class="text-xs font-semibold text-primary">
               {t.requestAvailability}
             </h2>

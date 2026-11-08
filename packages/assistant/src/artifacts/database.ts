@@ -8,6 +8,7 @@ import { parseNetworkAllowlistEnv } from "@k2b/cloud/shared";
 import { createRsqlClient, type RsqlResult } from "@k2b/rsql";
 import type { SQL } from "bun";
 import { z } from "zod";
+import { CloudError } from "../chat-code/runtime/errors";
 import { app } from "../config";
 import { LIMITS } from "./contracts";
 import { DatabaseRequest, DatabaseSettings } from "./database-contracts";
@@ -26,7 +27,6 @@ import {
 import { safeQuery } from "./database-sql";
 import { CHECK_LIMITS } from "./html/check-contracts";
 import { machineDataRight } from "./machine-authority";
-import { CloudError } from "./runtime/errors";
 import { type ArtifactIdentity, requireArtifact, user } from "./service";
 
 /** The internal rsql targets in use, or a draft list that a connection test or save checks before storing it. */

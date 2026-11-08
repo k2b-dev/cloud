@@ -12,9 +12,9 @@ import * as bun from "bun";
 import { Hono } from "hono";
 import { z } from "zod";
 import { useUnitClients } from "../../../../scripts/fixtures/unit-clients";
+import { requireToolChat } from "../chat-code/chat-access";
 import { createArtifactServiceRoutes } from "./api";
 import { runtimeCapabilities } from "./capability-runtime";
-import { requireToolChat } from "./chat-access";
 import { chatPresentations } from "./chat-presentations";
 import { codeToolRoutes } from "./code-tool-routes";
 import * as frameAssets from "./html/assets";
@@ -126,7 +126,7 @@ function setup() {
   const short = spyOn(ai.aiConversations, "getConversationByShortId").mockResolvedValue(conversation);
   const uuid = spyOn(ai.aiConversations, "getConversation").mockResolvedValue(conversation);
   const project = spyOn(ai.aiProjects, "get").mockResolvedValue(null);
-  const assets = spyOn(frameAssets, "checkFrameAssets").mockResolvedValue({ prelude: "", preludeHash: "", baseCss: "" });
+  const assets = spyOn(frameAssets, "checkFrameAssets").mockResolvedValue({ prelude: "", preludeHash: "", baseCss: "", chartModule: "" });
   const resolved = mock((_operation: string, _conversationId: string) => {});
   const start = spyOn(appChecks, "start").mockImplementation(async (_input, reference, viewer) => {
     const chat = await requireToolChat(reference, viewer, "code_check");

@@ -1,8 +1,8 @@
 import { expect, jest, test } from "bun:test";
 import { buildBaseCss, buildCheckPrelude } from "../artifacts/html/build-assets";
-import { ChunkName, chunkSource } from "../artifacts/runtime/chunks";
 import { cliHostBundle } from "../artifacts/runtime/cli-bundle";
 import { compileArtifact } from "../artifacts/runtime/compile";
+import { ChunkName, chunkSource } from "../chat-code/runtime/chunks";
 import { createCliCodeHost } from "./code-host";
 
 test.each(["signal", "code_stop"])(
@@ -39,7 +39,12 @@ test.each(["signal", "code_stop"])(
             },
             context: { locale: "en", timeZone: "UTC", user: null },
             theme: "light",
-            assets: { prelude, baseCss, preludeHash: `'sha256-${new Bun.CryptoHasher("sha256").update(prelude).digest("base64")}'` },
+            assets: {
+              prelude,
+              baseCss,
+              chartModule: "",
+              preludeHash: `'sha256-${new Bun.CryptoHasher("sha256").update(prelude).digest("base64")}'`,
+            },
           });
         if (new URL(path, "http://localhost").pathname.endsWith("/storage")) {
           entered();

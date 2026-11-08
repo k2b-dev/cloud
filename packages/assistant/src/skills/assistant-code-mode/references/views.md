@@ -5,8 +5,9 @@ Numbers computed in `code_run` stay in the run. Call `await cloud.view.chart(spe
 `await cloud.view.stats(spec)`, `await cloud.view.details(spec)` or
 `await cloud.view.explorer(spec)` there, then call
 the **tool** `present({path})` for each returned view the person should see. Never retype run values into
-`chart` arguments, app data or Markdown; an app's data module is the file the
-run wrote, copied with `code_file_copy` or `code_import` ([File transfers](files.md)). Return only the key figures mentioned
+`chart` arguments or Markdown. Export the file the run wrote and copy its
+exact reference with the chat/Project tools ([File transfers](files.md)).
+For lasting Code or pages load `code-authoring`. Return only the key figures mentioned
 in the answer. If a view is missing, rerun the script with `cloud.view.*`.
 A few values that did not come from a run use the `chart` tool.
 
@@ -107,8 +108,8 @@ Grouped and stacked bars are unsupported
 
 ## Tables
 
-`table({title, subtitle?, rows, columns?, footer?, sort?})` keeps the listed
-columns. A column is a name or `{id, label?, type?, format?}`. Without columns,
+`table({title, subtitle?, rows, columns?, footer?, sort?, search?, groupBy?})` keeps the listed
+columns. A column is a name or `{id, label?, type?, format?, priority?}`. Without columns,
 keys appear in first-seen order. An omitted type becomes `number` when all
 non-null cells, footer included, are numbers, `datetime` when all are Dates,
 `ref` when all are Cloud references, otherwise `text`; a column without any value is `text`.
@@ -118,7 +119,13 @@ an offset. Dates supplied as `Date` become wall-clock strings in `cloud.timeZone
 Missing and undefined cells become null; objects other than Cloud references,
 booleans and non-finite numbers must be converted to text or numbers. The optional footer uses the
 same columns. `sort: {column: "id", direction: "asc" | "desc"}` sets the initial
-order; the reader can sort again.
+order; the reader can sort again. `search: true` adds a search field above the
+table that matches the shown cells. `groupBy: [{id, label?}]` lets the reader
+group the rows by those columns (not `ref` columns), one section per value with
+its count. `priority` (`1` to `3`, default `1`) says how much a narrow screen
+needs a column: `3` hides below a table width of 560 px and `2` below 420 px;
+each row's details button shows the hidden values. Give the first, identifying
+column and the main figure priority `1`.
 
 Only number columns have `format`: `{style?: "number" | "percent" | "currency",
 currency?, unit?, decimals?, compact?}`. Currency requires an uppercase

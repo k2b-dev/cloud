@@ -1,7 +1,9 @@
 import { sql } from "@k2b/cloud";
 import { withAiShortIdForDb } from "@k2b/cloud/ai";
+import { migrateChatCode } from "../chat-code/migrate";
 
 export async function migrateArtifacts() {
+  await migrateChatCode();
   await sql`CREATE SCHEMA IF NOT EXISTS assistant`.simple();
   await sql`CREATE TABLE IF NOT EXISTS assistant.artifacts (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -85,14 +87,7 @@ export async function migrateArtifacts() {
     AND id IN (SELECT access_id FROM assistant.artifact_access)
     AND NOT EXISTS (SELECT 1 FROM auth.service_accounts account
       WHERE account.id=auth.access.service_account_id AND account.kind='code')`.simple();
-  await sql`CREATE TABLE IF NOT EXISTS assistant.artifact_client_calls (
-    user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
-    turn_id UUID NOT NULL, call_id TEXT NOT NULL,
-    client_id UUID NOT NULL, input JSONB NOT NULL, result JSONB,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    PRIMARY KEY(user_id, turn_id, call_id)
-  )`.simple();
-  await sql`ALTER TABLE assistant.artifact_client_calls ADD COLUMN IF NOT EXISTS heartbeat_at TIMESTAMPTZ NOT NULL DEFAULT now()`.simple();
+
   await sql`CREATE TABLE IF NOT EXISTS assistant.artifact_projects (
     artifact_id UUID NOT NULL REFERENCES assistant.artifacts(id) ON DELETE CASCADE,
     project_id UUID NOT NULL,
@@ -122,26 +117,15 @@ export async function migrateArtifacts() {
   await sql`CREATE TABLE IF NOT EXISTS assistant.database_cleanup (
     namespace TEXT PRIMARY KEY, created_at TIMESTAMPTZ NOT NULL DEFAULT now()
   )`.simple();
-  await sql`CREATE TABLE IF NOT EXISTS assistant.capability_calls (
-    id UUID PRIMARY KEY, user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
-    artifact_id UUID REFERENCES assistant.artifacts(id) ON DELETE CASCADE, conversation_id TEXT,
-    request JSONB NOT NULL, prepared JSONB NOT NULL,
-    status TEXT NOT NULL DEFAULT 'pending', result JSONB, created_at TIMESTAMPTZ NOT NULL DEFAULT now()
-  )`.simple();
-  await sql`CREATE TABLE IF NOT EXISTS assistant.http_secrets (
-    user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
-    scope TEXT NOT NULL, name TEXT NOT NULL,
-    resource_id UUID REFERENCES assistant.artifacts(id) ON DELETE CASCADE,
-    origin TEXT NOT NULL, header TEXT NOT NULL, prefix TEXT NOT NULL,
-    encrypted TEXT NOT NULL, revision UUID NOT NULL,
-    PRIMARY KEY(user_id,scope,name)
-  )`.simple();
-  await sql`CREATE TABLE IF NOT EXISTS assistant.http_calls (
-    id UUID NOT NULL, user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
-    hash TEXT NOT NULL, encrypted TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'pending',
-    created_at TIMESTAMPTZ NOT NULL DEFAULT now(), PRIMARY KEY(user_id,id)
-  )`.simple();
-  await sql`CREATE INDEX IF NOT EXISTS assistant_http_calls_created ON assistant.http_calls(created_at)`.simple();
+
+  await sql`DO $$ BEGIN
+   IF NOT EXISTS(SELECT 1 FROM pg_constraint WHERE conrelid='assistant.capability_calls'::regclass AND contype='f' AND confrelid='assistant.artifacts'::regclass) THEN
+    ALTER TABLE assistant.capability_calls ADD CONSTRAINT capability_calls_artifact_id_fkey FOREIGN KEY(artifact_id) REFERENCES assistant.artifacts(id) ON DELETE CASCADE;
+   END IF;
+   IF NOT EXISTS(SELECT 1 FROM pg_constraint WHERE conrelid='assistant.http_secrets'::regclass AND contype='f' AND confrelid='assistant.artifacts'::regclass) THEN
+    ALTER TABLE assistant.http_secrets ADD CONSTRAINT http_secrets_resource_id_fkey FOREIGN KEY(resource_id) REFERENCES assistant.artifacts(id) ON DELETE CASCADE;
+   END IF;
+  END $$`.simple();
   // Rewrite owned secret scopes once; keep the encrypted secret value unchanged.
   await sql`UPDATE assistant.http_secrets s SET scope='resource:' || a.short_id
     FROM assistant.artifacts a WHERE s.resource_id=a.id AND s.scope='resource:' || a.id::text`.simple();
@@ -153,25 +137,10 @@ export async function migrateArtifacts() {
     FROM assistant.artifacts a WHERE r.resource_type='assistant.artifact' AND r.resource_id=a.id::text`.simple();
   // Project membership is checked through the public AI project service.
   // No conversation foreign key owns an artifact. Chat references are ordinary URLs.
-  await sql`CREATE TABLE IF NOT EXISTS assistant.artifact_agent_calls (
-    turn_id UUID NOT NULL REFERENCES ai.turns(id) ON DELETE CASCADE, call_id TEXT NOT NULL, user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
-    conversation_id UUID NOT NULL REFERENCES ai.conversations(id) ON DELETE CASCADE, host_id UUID NOT NULL, input JSONB NOT NULL,
-    status TEXT NOT NULL DEFAULT 'running', result JSONB,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT now(), updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    PRIMARY KEY(turn_id,call_id)
-  )`;
-  await sql`CREATE INDEX IF NOT EXISTS artifact_agent_calls_conversation ON assistant.artifact_agent_calls(conversation_id,created_at DESC)`;
-  await sql`ALTER TABLE assistant.capability_calls ADD COLUMN IF NOT EXISTS approval_id UUID`.simple();
-  await sql`CREATE TABLE IF NOT EXISTS assistant.artifact_agent_approvals (
-    turn_id UUID NOT NULL, call_id TEXT NOT NULL, id UUID NOT NULL,
-    ordinal INTEGER GENERATED ALWAYS AS IDENTITY, message TEXT NOT NULL, decision BOOLEAN,
-    PRIMARY KEY(turn_id,call_id,id),
-    FOREIGN KEY(turn_id,call_id) REFERENCES assistant.artifact_agent_calls(turn_id,call_id) ON DELETE CASCADE
-  )`;
+
   // What the person may remember for this approval, derived on the server; a receipt marks a request a remembered
   // website approval let through without asking.
-  await sql`ALTER TABLE assistant.artifact_agent_approvals ADD COLUMN IF NOT EXISTS remember JSONB`;
-  await sql`ALTER TABLE assistant.artifact_agent_approvals ADD COLUMN IF NOT EXISTS receipt JSONB`;
+
   await sql`ALTER TABLE assistant.artifacts ADD COLUMN IF NOT EXISTS check_scratch BOOLEAN NOT NULL DEFAULT false`;
   await sql`ALTER TABLE assistant.artifacts ADD COLUMN IF NOT EXISTS check_conversation_id UUID`;
   await sql`CREATE TABLE IF NOT EXISTS assistant.artifact_checks (

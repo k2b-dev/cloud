@@ -16,7 +16,7 @@ const findings = async (files: Record<string, string>, packages = ["demo", "ui",
     }
     const found = await rule.run({ workspaceRoot: root, fix: false, flags: new Set() });
     for (const finding of found) {
-      expect(finding.message).toMatch(/Raw stdlib chart renderer|charts need an island for tooltips and keyboard inspection/);
+      expect(finding.message).toMatch(/Raw chart renderer|charts need an island for tooltips and keyboard inspection/);
     }
     return found.map((finding) => `${relative(root, finding.file ?? "")}:${finding.line}`).sort();
   } finally {
@@ -75,7 +75,7 @@ test.each([
 
 test.each([
   "packages/ui/src/content/Chart.tsx",
-  "packages/assistant/src/artifacts/runtime/lib.ts",
+  "packages/assistant/src/chat-code/runtime/lib.ts",
   "packages/editor/src/charts.ts",
   "packages/demo/src/plot.test.ts",
   "packages/demo/src/plot.spec.tsx",
@@ -356,3 +356,28 @@ for (const entry of ["@k2b/ui", "@k2b/ui/charts"]) {
     expect(await findings({ [panelPath]: `import * as UI from '${entry}';\nconst Panel = () => <${tag} />;` })).toEqual([panelFinding]);
   });
 }
+
+// The pure entry is also a raw drawing boundary: server preparation does not attach inspection.
+test.each(["@k2b/ui/charts/core", "@k2b/ui/charts"])("guards raw renderers from %s", async (entry) => {
+  for (const source of [
+    `import { renderChartSvg } from '${entry}';`,
+    `import { toSvg as draw } from '${entry}';`,
+    `import { layout } from '${entry}';`,
+    `import * as core from '${entry}'; core.charts.bar({});`,
+    `const { renderBarChartSvg } = await import('${entry}');`,
+    `import('${entry}').then(({ renderStateTimelineSvg }) => {});`,
+    `export { charts } from '${entry}';`,
+  ])
+    expect(await findings({ "packages/demo/src/plot.ts": source })).toEqual(["packages/demo/src/plot.ts:1"]);
+});
+
+test("accepts pure snapshot preparation and numeric helpers", async () => {
+  expect(
+    await findings({
+      "packages/demo/src/plot.ts": `
+    import { prepareChartSnapshot, computeDomain, niceStep, barChartLayout, type ChartKind } from '@k2b/ui/charts/core';
+    export { Chart } from '@k2b/ui/charts';
+  `,
+    }),
+  ).toEqual([]);
+});

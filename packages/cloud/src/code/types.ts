@@ -44,10 +44,18 @@ export type CodeSdkOperation = {
   dataSchema: Record<string, unknown>;
   schemaHash: string;
   idempotency: "required" | "none";
+  stream?: { direction: "read" | "write"; maxBytes: number };
 };
 
-/** Eligible future event, including its fixed place type. No event handler executes in Phase 1. */
-export type CodeSdkEvent = { type: string; place: string | null; dataSchema: Record<string, unknown>; schemaHash: string };
+/** Discovered event contract; resource registrations bind the owner place. */
+export type CodeSdkEvent = {
+  type: string;
+  version: number;
+  subject: string;
+  place: string | null;
+  dataSchema: Record<string, unknown>;
+  schemaHash: string;
+};
 
 /** Excluded entries remain visible to the checker so it can explain a forbidden call instead of suggesting a spelling fix. */
 export type CodeSdkOmission = { capability: string; reason: "stream" | "code_false" | "app_only" };
@@ -55,7 +63,7 @@ export type CodeSdkOmission = { capability: string; reason: "stream" | "code_fal
 /** Phase marker consumed by the checker. Later methods exist in types, but check and runtime refuse them in Phase 1. */
 export const CODE_SDK_APP_PHASES = {
   schedule: 1,
-  on: 3,
+  on: 1,
   get: 1,
   post: 1,
   put: 1,

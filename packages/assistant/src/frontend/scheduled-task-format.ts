@@ -1,4 +1,4 @@
-import type { AiChatTaskView as AssistantChatTask } from "@k2b/cloud/ai";
+import type { AiChatTaskOccurrenceView, AiChatTaskView as AssistantChatTask } from "@k2b/cloud/ai";
 import { dates } from "@k2b/stdlib";
 
 export const assistantTaskTitle = (task: AssistantChatTask) => task.name;
@@ -54,4 +54,12 @@ export const formatAssistantTaskScheduleInline = (task: AssistantChatTask, local
     if (label) return `${label} ${time}`;
   }
   return de ? "wiederkehrend" : "recurring";
+};
+
+export const occurrencePresentation = (state: AiChatTaskOccurrenceView["state"], text: (value: string) => string) => {
+  if (state === "completed") return { label: text("Completed"), tone: "ok" as const };
+  if (state === "failed") return { label: text("Failed"), tone: "error" as const };
+  if (state === "running") return { label: text("Running"), tone: "running" as const };
+  if (state === "stopped") return { label: text("Stopped"), tone: "neutral" as const };
+  return { label: text("Queued"), tone: "neutral" as const };
 };

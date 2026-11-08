@@ -1,81 +1,14 @@
-import { CODE_CAPABILITY_TOKEN_HEADER, CODE_SOURCE_TOOLS } from "@k2b/cloud/ai";
-import { type AuthContext, auth, getLocale, getTimeZone, requireInvocation } from "@k2b/cloud/server";
-import { appAccessAuthority } from "@k2b/cloud/services";
-import { ImageMetadataError } from "@k2b/cloud/services/image-metadata";
-import { readThemeFromCookieHeader } from "@k2b/cloud/shared";
+import { CODE_SOURCE_TOOLS } from "@k2b/cloud/ai";
 import { ok } from "@k2b/stdlib";
-import { Hono } from "hono";
-import { bodyLimit } from "hono/body-limit";
-import { z } from "zod";
+import { createCodeToolRoutes, registerCodeTool } from "../chat-code/tool-routes";
 import { AgentHostRequest, agentHost } from "./agent-host";
-import { ChatReference, requireToolChat } from "./chat-access";
-import { artifactCodeHandlers, type CodeToolContext } from "./code-tools";
-import { LIMITS } from "./contracts";
-import { ArtifactError } from "./service";
-
-export const codeToolRoutes = new Hono<AuthContext>().use("*", bodyLimit({ maxSize: LIMITS.rpcBytes })).onError((error, c) => {
-  if (error instanceof ImageMetadataError) return c.json({ ok: false, error: { code: error.code, message: error.message } }, 422);
-  if (error instanceof z.ZodError) return c.json({ ok: false, error: { code: "INVALID_INPUT", message: "Invalid code tool input." } }, 400);
-  console.error("Assistant code tool failed", error);
-  return c.json(
-    { ok: false, error: { code: "REQUEST_FAILED", message: "Code tool failed. Inspect resource state before retrying a write." } },
-    500,
-  );
-});
-
-function register<S extends z.ZodType>(name: string, schema: S, run: (input: z.output<S>, context: CodeToolContext) => Promise<unknown>) {
-  codeToolRoutes.post(
-    `/${name}`,
-    [
-      "code_files",
-      "code_file_stat",
-      "code_manage_read",
-      "code_database_read",
-      "code_storage_list",
-      "code_versions",
-      "code_list",
-      "code_read",
-      "code_history",
-    ].includes(name)
-      ? auth.readOnly
-      : auth.requireOAuthScope("write", "admin"),
-    requireInvocation(() => ({ targetAppId: "assistant", operation: `tool:${name}`, schemaHash: null })),
-    async (c) => {
-      const envelope = z
-        .object({ input: z.unknown(), conversationId: ChatReference, review: z.boolean().optional() })
-        .strict()
-        .parse(await c.req.json());
-      const input = schema.parse(envelope.input);
-      const actor = c.get("actor");
-      if (actor.kind !== "user") return c.json({ ok: false, error: { code: "ACCESS_DENIED", message: "A user is required." } }, 403);
-      const conversation = await requireToolChat(envelope.conversationId, { actor, accessSubject: c.get("accessSubject") }, name).catch(
-        (error: unknown) => {
-          if (error instanceof ArtifactError && error.code === "ACCESS_DENIED") return null;
-          throw error;
-        },
-      );
-      if (!conversation) return c.json({ ok: false, error: { code: "ACCESS_DENIED", message: "Conversation access denied." } }, 403);
-      return Response.json(
-        await run(input, {
-          authority: appAccessAuthority(c),
-          actor,
-          accessSubject: c.get("accessSubject"),
-          conversationId: conversation.id,
-          locale: getLocale(c),
-          timeZone: getTimeZone(c),
-          theme: readThemeFromCookieHeader(c.req.header("cookie")),
-          review: envelope.review,
-          signal: c.req.raw.signal,
-          capabilityToken: c.req.header(CODE_CAPABILITY_TOKEN_HEADER),
-        }),
-      );
-    },
-  );
-}
-
-register("code_files", CODE_SOURCE_TOOLS.code_files.input, artifactCodeHandlers.code_files);
-register("code_file_stat", CODE_SOURCE_TOOLS.code_file_stat.input, artifactCodeHandlers.code_file_stat);
-register("code_file_copy", CODE_SOURCE_TOOLS.code_file_copy.input, artifactCodeHandlers.code_file_copy);
+import { artifactCodeHandlers } from "./code-tools";
+export const codeToolRoutes = createCodeToolRoutes();
+const register: <S extends import("zod").z.ZodType>(
+  name: string,
+  schema: S,
+  run: (input: import("zod").z.output<S>, context: import("../chat-code/context").CodeToolContext) => Promise<unknown>,
+) => void = (name, schema, run) => registerCodeTool(codeToolRoutes, name, schema, run);
 register("code_database", CODE_SOURCE_TOOLS.code_database.input, artifactCodeHandlers.code_database);
 register("code_database_export", CODE_SOURCE_TOOLS.code_database_export.input, artifactCodeHandlers.code_database_export);
 register("code_manage_read", CODE_SOURCE_TOOLS.code_manage_read.input, artifactCodeHandlers.code_manage_read);
@@ -103,7 +36,7 @@ register("code_write", CODE_SOURCE_TOOLS.code_write.input, artifactCodeHandlers.
 register("code_import", CODE_SOURCE_TOOLS.code_import.input, artifactCodeHandlers.code_import);
 register("code_remove", CODE_SOURCE_TOOLS.code_remove.input, artifactCodeHandlers.code_remove);
 
-for (const name of ["code_run", "code_action", "code_inspect", "code_stop", "code_export", "code_present", "code_check"] as const) {
+for (const name of ["code_action", "code_present", "code_check"] as const) {
   register(
     name,
     AgentHostRequest.refine((input) => input.name === name),

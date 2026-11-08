@@ -1,11 +1,12 @@
 import { websocket } from "hono/bun";
-import { agentHost } from "./artifacts/agent-host";
+import { agentHost as studioAgentHost } from "./artifacts/agent-host";
 import { artifactDatabase, rsqlAllowlist } from "./artifacts/database";
 import { appChecks } from "./artifacts/html/check-service";
 import { httpService } from "./artifacts/http-service";
 import { closeMachineHosts } from "./artifacts/machine-execution";
 import { migrateArtifacts } from "./artifacts/migrate";
 import { assistantCapabilities } from "./capabilities";
+import { agentHost } from "./chat-code/agent-host";
 import { app } from "./config";
 import { assistantHelp } from "./help";
 import { apiRoutes, router } from "./router";
@@ -31,8 +32,7 @@ const result = await app.start({
     start: async () => {
       await rsqlAllowlist();
       hostTimer = setInterval(() => {
-        hostSweep ??= agentHost
-          .sweep()
+        hostSweep ??= Promise.all([agentHost.sweep(), studioAgentHost.sweep()])
           .catch(() => console.warn("Code host cleanup deferred"))
           .finally(() => {
             hostSweep = undefined;
@@ -46,7 +46,7 @@ const result = await app.start({
     stop: async () => {
       clearInterval(hostTimer);
       await hostSweep;
-      await Promise.all([agentHost.close(), closeMachineHosts()]);
+      await Promise.all([agentHost.close(), studioAgentHost.close(), closeMachineHosts()]);
       clearInterval(databaseTimer);
       await databaseCleanup;
     },

@@ -6,10 +6,15 @@ import { query, timed } from "@k2b/stdlib/solid";
 import { Button, Disclosure, Dropdown, MarkdownView, NoticeCard, Placeholder, prompts, StatusBadge, Tabs, toast, useLocale } from "@k2b/ui";
 import { createEffect, createSignal, For, onCleanup, Show } from "solid-js";
 import { assistantApi } from "../api/client";
-import { taskTab, workspaceSelectionHref } from "../artifacts/workspace-state";
-import { type AssistantLiveInvalidation, matchesAssistantInvalidation, useAssistantLive } from "./assistant-live";
+import {
+  type AssistantLiveHub,
+  type AssistantLiveInvalidation,
+  AssistantLiveProvider,
+  matchesAssistantInvalidation,
+  useAssistantLive,
+} from "./assistant-live";
 import { assistantConversationHref } from "./assistant-navigation";
-import { assistantTaskTitle, formatAssistantTaskSchedule } from "./scheduled-task-format";
+import { assistantTaskTitle, formatAssistantTaskSchedule, occurrencePresentation } from "./scheduled-task-format";
 import { assistantBrowserText, useAssistantCopy, useAssistantText } from "./ui-copy";
 
 const request = async <T,>(path: string, init?: RequestInit): Promise<T> => {
@@ -18,16 +23,26 @@ const request = async <T,>(path: string, init?: RequestInit): Promise<T> => {
   if (!response.ok || !body) throw new Error(body?.message || assistantBrowserText("Routine request failed"));
   return body;
 };
-export const openAssistantTask = (task: AssistantChatTask) =>
-  navigateTo(workspaceSelectionHref(assistantConversationHref("/app/assistant", task.chatId), taskTab(task.id, assistantTaskTitle(task))));
-export const occurrencePresentation = (state: AssistantChatTaskOccurrence["state"], text: (value: string) => string) => {
-  if (state === "completed") return { label: text("Completed"), tone: "ok" as const };
-  if (state === "failed") return { label: text("Failed"), tone: "error" as const };
-  if (state === "running") return { label: text("Running"), tone: "running" as const };
-  if (state === "stopped") return { label: text("Stopped"), tone: "neutral" as const };
-  return { label: text("Queued"), tone: "neutral" as const };
-};
-
+export const openAssistantTask = (
+  task: AssistantChatTask,
+  live: AssistantLiveHub,
+  onOpenRun: (taskId: string, occurrenceId: string) => void,
+  onEdit?: (task: AssistantChatTask, repair: boolean) => void,
+) =>
+  prompts.dialog(
+    () => (
+      <AssistantLiveProvider value={live}>
+        <AssistantTaskDetail
+          taskId={task.id}
+          onOpenRun={onOpenRun}
+          onEdit={(task, repair) =>
+            onEdit ? onEdit(task, repair) : void navigateTo(assistantConversationHref("/app/assistant", task.chatId))
+          }
+        />
+      </AssistantLiveProvider>
+    ),
+    { title: assistantTaskTitle(task), icon: "ti ti-calendar-time", size: "large" },
+  );
 /** The routine's state as its chip says it: who acts next. */
 const taskStateLabel = (task: AssistantChatTask, text: (value: string) => string): string =>
   text(
@@ -83,6 +98,7 @@ export function AssistantTasksView(props: {
   const locale = useLocale(),
     text = useAssistantText();
   const now = useTaskClock();
+  const live = useAssistantLive();
   const tasks = query.create<string, AssistantChatTask[], AssistantLiveInvalidation>({
     source: () => props.chatId,
     load: (chatId, { abortSignal }) => assistantApi.listChatTasks({ chatId, limit: 100, signal: abortSignal }),
@@ -116,7 +132,7 @@ export function AssistantTasksView(props: {
                   variant="ghost"
                   wrap
                   class="assistant-task-row"
-                  onClick={() => (props.onOpenTask ? props.onOpenTask(task) : openAssistantTask(task))}
+                  onClick={() => (props.onOpenTask ? props.onOpenTask(task) : openAssistantTask(task, live, props.onOpenRun))}
                 >
                   <span class="flex w-full items-center gap-3 py-2">
                     <i class="ti ti-calendar-time shrink-0 text-secondary" aria-hidden="true" />

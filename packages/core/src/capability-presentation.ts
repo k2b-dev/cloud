@@ -43,13 +43,19 @@ const codeVersionSubmissionInput = {
   "manifest.secrets[].binding_revision": "Unveränderliche Bindungsrevision.",
   "manifest.internet": "Vollständige Liste der genauen HTTPS-Ursprünge dieser Version, auch ohne Secrets.",
   "manifest.entrypoints": "Alle von der Prüfung erkannten ausführbaren Einstiegspunkte.",
-  "manifest.entrypoints[].kind": "Zeitgesteuerter, manuell gestarteter oder HTTP-Einstiegspunkt.",
+  "manifest.entrypoints[].kind": "Zeitgesteuerter, manuell gestarteter, ereignisgesteuerter oder HTTP-Einstiegspunkt.",
   "manifest.entrypoints[].entrypoint": "Benannter ESM-Export für die Ausführung.",
   "manifest.entrypoints[].title": "Optionaler lesbarer Name der Automation; ohne ihn gilt der Export-Name.",
   "manifest.entrypoints[].route": "Geprüfte HTTP-Methode, Pfad und öffentliche Freigabe eines Route-Handlers.",
   "manifest.entrypoints[].route.method": "HTTP-Methode oder ALL für jede Methode.",
   "manifest.entrypoints[].route.path": "Code-relativer Pfad mit optionalen benannten Segmenten.",
   "manifest.entrypoints[].route.public": "Ob die Route anonyme Besucher ohne Benutzer annimmt.",
+  "manifest.entrypoints[].event": "Geprüfte Ereignisregistrierung für den Ort, dem dieser Code gehört.",
+  "manifest.entrypoints[].event.type": "Vollständige Ereignis-ID aus dem Capability-Katalog.",
+  "manifest.entrypoints[].event.version": "Deklarierte Formatversion des Ereignisses.",
+  "manifest.entrypoints[].event.place": "Genauer Ort der Ereignisregistrierung; muss dem Eigentümer des Codes entsprechen.",
+  "manifest.entrypoints[].event.place.type": "Vollständiger Ressourcentyp des Orts.",
+  "manifest.entrypoints[].event.place.id": "Wörtliche Ressourcen-ID des Orts.",
   "manifest.entrypoints[].cron": "Zeitplan mit fünf Feldern oder null bei manueller oder einmaliger Ausführung.",
   "manifest.entrypoints[].at": "Einmaliger absoluter Zeitpunkt mit Z oder numerischem UTC-Offset.",
   "manifest.entrypoints[].timeZone": "IANA-Zeitzone für die Anzeige des einmaligen Termins; bei Cron nicht gesetzt.",
@@ -97,6 +103,11 @@ export const coreCapabilityPresentation: CapabilityPresentationCatalog = {
         },
       },
       queries: {
+        "code.event.catchup.read": {
+          title: "Fortschritt des Code-Nachholens lesen",
+          description: "Liest den dauerhaften Annahmefortschritt eines Vorgangs. Ausführungsergebnisse stehen unter Läufe.",
+          input: { operationId: "UUID des Nachholvorgangs." },
+        },
         "ai.generate": {
           title: "Text oder strukturierte Daten erzeugen",
           description:
@@ -320,6 +331,11 @@ export const coreCapabilityPresentation: CapabilityPresentationCatalog = {
             "Liest Berechtigungen und deren Revision vor einer Änderung. Erfordert Verwaltungsrechte. Zugriffe auf Skills und Studio-Apps sind unabhängig.",
           input: { skillId: "ID des Skills, dessen Zugriffsrechte gelesen werden." },
         },
+        "ai.chat.run.read": {
+          title: "Gustav-Lauf aus Code lesen",
+          description: "Liest den aktuellen Zustand eines durch Code gestarteten Laufs im eigenen Chat.",
+          input: { id: "Lauf-ID aus ai.chat.run." },
+        },
         "ai.chat.read": {
           title: "KI-Chat lesen",
           description:
@@ -424,6 +440,41 @@ export const coreCapabilityPresentation: CapabilityPresentationCatalog = {
         },
       },
       actions: {
+        "code.event.catchup": {
+          title: "Code für vorhandene Ereignisse nachholen",
+          description:
+            "Bearbeiter wenden die aktive Version ohne KI auf höchstens 100 historische Verweise an. Andere Abonnenten erhalten sie nicht.",
+          input: {
+            operationId: "UUID für diesen Vorgang; bei Wiederholung dieselbe Auswahl verwenden.",
+            versionId: "Aktive unveränderliche Code-Version.",
+            events: "Höchstens 100 historische Ereignisse in Ausführungsreihenfolge.",
+            "events[].id": "Stabile Ereignis-UUID.",
+            "events[].type": "Vollständiger deklarierter Ereignisname.",
+            "events[].version": "Version des Ereignisschemas.",
+            "events[].source": "Veröffentlichende Anwendung.",
+            "events[].time": "Zeit des ursprünglichen Empfangs.",
+            "events[].subject": "Verweis auf das betroffene Objekt.",
+            "events[].subject.type": "Vollständiger Ressourcentyp.",
+            "events[].subject.id": "Öffentliche Objekt-ID.",
+            "events[].place": "Ressource, der der Handler gehört.",
+            "events[].place.type": "Vollständiger Ressourcentyp.",
+            "events[].place.id": "Öffentliche Ressourcen-ID.",
+            "events[].cause": "Optionale Angaben zur ursprünglichen Anfrage.",
+            "events[].cause.requestId": "Identität der ursprünglichen Anfrage.",
+            "events[].data": "Daten gemäß dem deklarierten Ereignisschema.",
+          },
+        },
+        "code.event.catchup.cancel": {
+          title: "Code-Nachholen abbrechen",
+          description: "Stoppt weitere Annahmen. Bereits angenommene Läufe bleiben sichtbar und können enden.",
+          input: { operationId: "UUID des Nachholvorgangs." },
+        },
+        "code.event.catchup.resume": {
+          title: "Code-Nachholen fortsetzen",
+          description:
+            "Setzt eine fehlgeschlagene oder abgebrochene Auswahl mit ihrer gebundenen Version fort. Bereits angenommene Nachrichten werden übersprungen.",
+          input: { operationId: "UUID des gestoppten Vorgangs.", newOperationId: "Neue UUID zum Fortsetzen der gespeicherten Auswahl." },
+        },
         "code.run": {
           title: "Code ausführen",
           description:
@@ -433,6 +484,12 @@ export const coreCapabilityPresentation: CapabilityPresentationCatalog = {
             input: "JSON-Eingabe für den Einstieg; ohne Angabe null.",
             rerunOf: "Der fehlgeschlagene Lauf dieses Codes und Einstiegs, den dieser Lauf erneut startet.",
           },
+        },
+        "code.event.redeliver": {
+          title: "Code-Ereignis erneut zustellen",
+          description:
+            "Stellt eine fehlgeschlagene Ereigniszustellung für aktiven Code erneut zu. Bereits angenommene Ereignisse erzeugen keinen zweiten Lauf.",
+          input: { deliveryId: "UUID der fehlgeschlagenen Zustellung aus code.run.list." },
         },
         "code.secret.set": {
           title: "Code-Secret speichern",
@@ -497,6 +554,21 @@ export const coreCapabilityPresentation: CapabilityPresentationCatalog = {
             principal: "Neuer Empfänger aus entities.search; entweder principal oder accessId angeben.",
             accessId: "Vorhandene Berechtigungs-ID aus ai.skill.access.read; entweder accessId oder principal angeben.",
             permission: "Neue Berechtigungsstufe; null entzieht die vorhandene Berechtigung.",
+          },
+        },
+        "ai.chat.deliver": {
+          title: "Code-Ergebnis im eigenen Chat ablegen",
+          description:
+            "Legt das Ergebnis eines persönlichen Codes in einem Chat seines Eigentümers ab und benachrichtigt ihn, ohne einen KI-Lauf zu starten.",
+          input: { text: "Ergebnistext für den eigenen Chat, höchstens 10.000 Zeichen." },
+        },
+        "ai.chat.run": {
+          title: "Gustav-Lauf aus persönlichem Code starten",
+          description:
+            "Startet einen Lauf mit Werkzeugen im eigenen Chat. Rückfragen warten im Chat; das KI-Kontingent des Eigentümers gilt.",
+          input: {
+            prompt: "Anweisung für einen Chat-Lauf, höchstens 10.000 Zeichen.",
+            context: "Optionaler Quellkontext, höchstens 10.000 Zeichen.",
           },
         },
         "ai.chat.message": {

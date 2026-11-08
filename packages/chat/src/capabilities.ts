@@ -2,33 +2,35 @@ import { defineCapabilities } from "@k2b/cloud";
 import type { CapabilityExecutionContext } from "@k2b/cloud/contracts";
 import { err, fail, ok, type Result } from "@k2b/cloud/server";
 import { z } from "zod";
+import { chatEvents } from "./app-events";
 import {
+  ConversationReadDataSchema,
   DiscussionListDataSchema,
   DiscussionListInputSchema,
   DiscussionMessageDataSchema,
   DiscussionPostInputSchema,
   MessageDeleteInputSchema,
   MessageEditInputSchema,
+  MessageReadDataSchema,
   MessageReadInputSchema,
 } from "./capability-contracts";
 import { discussionApprovalScope, discussionReview } from "./capability-reviews";
 import { ChatComposeInputSchema } from "./commands";
-import { type ChatContext, messages as catalog, subjectPrincipal } from "./service/access";
+import { threadHref } from "./frontend/threads";
+import { type ChatContext, messages as catalog, requireConversation, subjectPrincipal } from "./service/access";
+import { readConversation, readMessage } from "./service/capability-reads";
 import {
   ConversationParamSchema,
   FollowingSchema,
+  MessageBodySchema,
+  MessageIdSchema,
   NotificationsSchema,
   NotificationUpdateSchema,
   withinMessageMutationWindow,
 } from "./service/contracts";
-import { authorizeDiscussion } from "./service/discussion-access";
-import {
-  changeDiscussionMessage,
-  listDiscussion,
-  postDiscussion,
-  readDiscussionMessage,
-  resolveDiscussionMessage,
-} from "./service/discussions";
+import { authorizeDiscussion, checkDiscussionCredentialScope } from "./service/discussion-access";
+import { changeDiscussionMessage, listDiscussion, postDiscussion, resolveDiscussionMessage } from "./service/discussions";
+import { messages } from "./service/messages";
 import { notificationPreferences } from "./service/notification-preferences";
 import { threadFollows } from "./service/thread-follows";
 
@@ -65,6 +67,7 @@ const contextFor = (context: CapabilityExecutionContext): ChatContext => ({
   accessSubject: context.accessSubject,
   locale: context.locale,
   requestId: context.requestId,
+  via: context.via ?? null,
   credentialScopes: context.authority?.credentialKind === "session" ? undefined : context.authority?.scopes,
   capabilityQuery: context.query,
   caller: { authority: context.authority, signal: context.signal, locale: context.locale, requestId: context.requestId },
@@ -83,6 +86,15 @@ const FollowInput = z.strictObject({
   following: z.boolean().describe("True to follow the item discussion; false to stop following it."),
 });
 
+const MessagePostInput = NotificationReadInput.extend({
+  body: MessageBodySchema.describe("Markdown message; at most 20,000 Unicode characters with non-whitespace content."),
+});
+const MessagePostData = z.strictObject({
+  id: MessageIdSchema,
+  conversation: ConversationParamSchema.shape.conversation,
+  createdAt: z.iso.datetime(),
+});
+
 export const chatCapabilities = defineCapabilities({
   protocolVersion: 2,
   types: {
@@ -90,15 +102,27 @@ export const chatCapabilities = defineCapabilities({
       title: "Chat conversation",
       description: "A Chat conversation with current read access and participation.",
       icon: "ti ti-messages",
+      reader: "conversation.read",
     },
     message: {
-      title: "Discussion message",
-      description: "A message in one accessible item discussion.",
+      title: "Chat message",
+      description: "A message in an accessible Chat conversation or item discussion.",
       icon: "ti ti-message",
       reader: "message.read",
     },
   },
+  events: chatEvents,
   queries: {
+    "conversation.read": {
+      title: "Read Chat conversation",
+      description: "Read the title and current permission of an ordinary Chat conversation or channel. Excludes system conversations.",
+      input: z.strictObject({
+        id: ConversationParamSchema.shape.conversation.describe("Six-character ID from a chat.conversation reference."),
+      }),
+      data: ConversationReadDataSchema,
+      openWorld: false,
+      run: readConversation,
+    },
     "discussion.list": {
       title: "List item discussion",
       description:
@@ -109,13 +133,12 @@ export const chatCapabilities = defineCapabilities({
       run: listDiscussion,
     },
     "message.read": {
-      title: "Read discussion message",
-      description:
-        "Read one complete chat.message from an item discussion, with a link to open it. General chats are outside this capability.",
+      title: "Read Chat message",
+      description: "Read one complete chat.message from an accessible conversation or item discussion, with a link to open it.",
       input: MessageReadInputSchema,
-      data: DiscussionMessageDataSchema,
+      data: MessageReadDataSchema,
       openWorld: false,
-      run: readDiscussionMessage,
+      run: readMessage,
     },
 
     "notifications.read": {
@@ -130,6 +153,82 @@ export const chatCapabilities = defineCapabilities({
     },
   },
   actions: {
+    "message.post": {
+      title: "Post a chat message",
+      description:
+        "Post Markdown to the general thread of a Chat conversation or channel the caller may write to. Does not start an AI turn. Reuse the same idempotency key and body when retrying.",
+      input: MessagePostInput,
+      data: MessagePostData,
+      destructive: false,
+      openWorld: false,
+      idempotency: "required",
+      policy: { silent: "shared" },
+      review: async (input, context) => {
+        const scope = checkDiscussionCredentialScope(context, true);
+        if (!scope.ok) return scope;
+        const allowed = await requireConversation({ ...contextFor(context), conversationId: input.conversation, required: "write" });
+        if (!allowed.ok) return allowed;
+        // Item discussions retain their provider-owned authorization and exact-ref Action.
+        if (allowed.data.kind !== "chat") return fail(err.forbidden(catalog(context).forbidden));
+        const review = discussionReview("post", undefined, allowed.data.name || input.conversation, input.body, context.locale);
+        return ok({
+          ...review,
+          sentence: context.locale?.startsWith("de")
+            ? {
+                action: "Nachricht in {item} schreiben",
+                running: "Nachricht wird in {item} geschrieben",
+                done: "Nachricht in {item} geschrieben",
+                confirm: "Schreiben",
+                decline: "Abbrechen",
+              }
+            : {
+                action: "Post a message in {item}",
+                running: "Posting a message in {item}",
+                done: "Posted a message in {item}",
+                confirm: "Post",
+                decline: "Cancel",
+              },
+          scope: `conversation:${input.conversation}`,
+        });
+      },
+      run: async (input, context) => {
+        if (!context.idempotencyKey) return fail({ code: "IDEMPOTENCY_KEY_REQUIRED", status: 400, message: catalog(context).invalidInput });
+        const scope = checkDiscussionCredentialScope(context, true);
+        if (!scope.ok) return scope;
+        const bound = { ...contextFor(context), conversationId: input.conversation };
+        const allowed = await requireConversation({ ...bound, required: "write" });
+        if (!allowed.ok) return allowed;
+        if (allowed.data.kind !== "chat") return fail(err.forbidden(catalog(context).forbidden));
+        const result = await messages.send({
+          ...bound,
+          replayHash: new Bun.CryptoHasher("sha256").update(input.body).digest("hex"),
+          input: {
+            body: input.body,
+            clientId: new Bun.CryptoHasher("sha256")
+              .update(
+                JSON.stringify([
+                  context.actor.kind === "user" ? context.actor.user.id : context.actor.serviceAccount.id,
+                  "message.post",
+                  context.idempotencyKey,
+                ]),
+              )
+              .digest("hex"),
+          },
+        });
+        if (!result.ok) {
+          if ("retryAfter" in result)
+            return {
+              ok: false as const,
+              error: { code: result.code, status: result.status, message: result.error, details: { retryAfter: result.retryAfter } },
+            };
+          return result;
+        }
+        return ok({
+          data: { id: result.data.message.id, conversation: input.conversation, createdAt: result.data.message.createdAt },
+          links: [{ rel: "open" as const, href: threadHref(input.conversation, "general", result.data.message.id) }],
+        });
+      },
+    },
     "discussion.post": {
       code: false,
       title: "Post to item discussion",
@@ -240,17 +339,28 @@ export const chatCapabilities = defineCapabilities({
       de: {
         types: {
           conversation: { title: "Chat-Unterhaltung", description: "Eine Chat-Unterhaltung mit aktuellem Leserecht und Teilnahme." },
-          message: { title: "Diskussionsnachricht", description: "Eine Nachricht in einer zugänglichen Element-Diskussion." },
+          message: { title: "Chatnachricht", description: "Eine Nachricht in einem zugänglichen Chat oder einer Element-Diskussion." },
+        },
+        events: {
+          "message.posted": {
+            title: "Nachricht geschrieben",
+            description: "Eine neue Textnachricht oder Antwort wurde in einem Chat gespeichert.",
+          },
         },
         queries: {
+          "conversation.read": {
+            title: "Chat-Unterhaltung lesen",
+            description:
+              "Titel und aktuelles Recht einer gewöhnlichen Chat-Unterhaltung oder eines Kanals lesen. System-Chats sind ausgeschlossen.",
+          },
           "discussion.list": {
             title: "Element-Diskussion lesen",
             description:
               "Neueste Nachrichtenvorschauen eines Elements lesen. Erstellt keinen Thread; message.read liefert die vollständige Nachricht.",
           },
           "message.read": {
-            title: "Diskussionsnachricht lesen",
-            description: "Eine vollständige chat.message einer Element-Diskussion mit Link öffnen. Allgemeine Chats sind ausgeschlossen.",
+            title: "Chatnachricht lesen",
+            description: "Eine vollständige chat.message eines zugänglichen Chats oder einer Element-Diskussion mit Link öffnen.",
           },
 
           "notifications.read": {
@@ -260,6 +370,15 @@ export const chatCapabilities = defineCapabilities({
           },
         },
         actions: {
+          "message.post": {
+            title: "Chatnachricht schreiben",
+            description:
+              "Markdown in den allgemeinen Thread eines beschreibbaren Chats oder Kanals schreiben. Startet keinen KI-Lauf. Bei Wiederholung denselben Idempotenzschlüssel und Text verwenden.",
+            input: {
+              conversation: "Sechsstellige Chat-ID aus dem Chat-Link.",
+              body: "Markdown-Nachricht mit höchstens 20.000 Unicode-Zeichen und nicht nur Leerraum.",
+            },
+          },
           "discussion.post": {
             title: "In Element-Diskussion schreiben",
             description:

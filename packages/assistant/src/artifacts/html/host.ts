@@ -1,9 +1,10 @@
 // Host side of an HTML app mount in a Cloud page: frames, bridge budgets,
 // reveal on ready, theme, hash mirroring, downloads, external links and the
 // rule that the app goes inert while Cloud asks the person something.
+
+import { CloudError, type CloudErrorCode, cloudError } from "../../chat-code/runtime/errors";
+import { APPROVAL_METHODS, createServiceCalls, fetchChunk, type RuntimeServices } from "../../chat-code/runtime/services";
 import { LIMITS } from "../contracts";
-import { CloudError, type CloudErrorCode, cloudError } from "../runtime/errors";
-import { APPROVAL_METHODS, createServiceCalls, type RuntimeServices } from "../runtime/services";
 import { type AppFiles, type ComposeOptions, composeApp, type LintIssue } from "./compose";
 import { FRAME_METHODS, type FrameLogLevel, type FrameToHost, type HostToFrame } from "./protocol";
 import { sanitizeSnapshot } from "./snapshot";
@@ -115,6 +116,9 @@ export function mountApp(container: HTMLElement, files: AppFiles, options: Mount
   frame.setAttribute("sandbox", "allow-scripts allow-forms");
   frame.className = "studio-app-frame";
   frame.title = options.title;
+  // The scriptless wrapper follows the embedding element's preferred scheme.
+  // A mismatched scheme makes its transparent canvas opaque in the browser.
+  frame.style.colorScheme = theme();
   // Opacity, not visibility: a hidden cross-process frame gets no rendering updates.
   frame.style.opacity = "0";
   frame.srcdoc = composed.wrapper;
@@ -165,7 +169,7 @@ export function mountApp(container: HTMLElement, files: AppFiles, options: Mount
       frame.inert = false;
     }
   };
-  const call = createServiceCalls(options.services(confirm));
+  const call = createServiceCalls({ chunk: fetchChunk("/api/assistant/artifacts/runtime"), ...options.services(confirm) });
 
   const rpc = async (id: number, method: string, args: unknown[]) => {
     const controller = new AbortController();
@@ -292,7 +296,10 @@ export function mountApp(container: HTMLElement, files: AppFiles, options: Mount
     }
   }
 
-  const themes = new MutationObserver(() => post({ type: "theme", value: theme() }));
+  const themes = new MutationObserver(() => {
+    frame.style.colorScheme = theme();
+    post({ type: "theme", value: theme() });
+  });
   themes.observe(document.documentElement, { attributes: true, attributeFilter: ["class"] });
   addEventListener("message", receive);
   container.append(frame);

@@ -7,6 +7,7 @@ import {
   CloudResourceRefSchema,
 } from "../contracts/capabilities";
 import * as authoringTypes from "./authoring-types.ts" with { type: "text" };
+import { hasFileInput } from "./file-ref";
 import * as pageTypes from "./page-authoring-types.ts" with { type: "text" };
 import { CODE_PAGE_LIMITS, CodeChartDescriptionSchema, CodePageTreeSchema } from "./page-contract";
 import { CODE_PAGE_BUILDERS } from "./page-source";
@@ -20,6 +21,7 @@ const path = (value: string): string[] => value.split(".");
 const quote = JSON.stringify;
 const forbiddenProperties = new Set(["__proto__", "prototype", "constructor"]);
 const reservedExports = new Set([
+  "FileRef",
   "Page",
   "Section",
   "Text",
@@ -33,6 +35,11 @@ const reservedExports = new Set([
   "Action",
   "Notice",
   "Stats",
+  "Stat",
+  "Column",
+  "Item",
+  "Field",
+  "Option",
   "jsx",
   "undefined",
   "eval",
@@ -172,13 +179,14 @@ export function generateCodeSdk(manifests: readonly CapabilityManifest[], option
     ] as const) {
       for (const operation of byId(entries)) {
         const capability = `${app.appId}.${operation.localId}`;
-        const reason = operation.stream
-          ? "stream"
-          : "code" in operation && operation.code === false
-            ? "code_false"
-            : "appOnly" in operation && operation.appOnly
-              ? "app_only"
-              : null;
+        const reason =
+          operation.stream?.direction === "write" && !hasFileInput(operation.inputSchema)
+            ? "stream"
+            : "code" in operation && operation.code === false
+              ? "code_false"
+              : "appOnly" in operation && operation.appOnly
+                ? "app_only"
+                : null;
         if (reason) {
           manifest.omitted.push({ capability, reason });
           continue;
@@ -207,6 +215,7 @@ export function generateCodeSdk(manifests: readonly CapabilityManifest[], option
           dataSchema: structuredClone(operation.dataSchema),
           schemaHash: operation.schemaHash,
           idempotency: "idempotency" in operation && operation.idempotency === "required" ? "required" : "none",
+          ...(operation.stream ? { stream: { ...operation.stream } } : {}),
         });
       }
     }
@@ -214,6 +223,8 @@ export function generateCodeSdk(manifests: readonly CapabilityManifest[], option
       if (event.automation === false) continue;
       manifest.events.push({
         type: `${app.appId}.${event.localId}`,
+        version: event.version,
+        subject: `${app.appId}.${event.subject}`,
         place: event.place ? `${app.appId}.${event.place}` : null,
         dataSchema: structuredClone(event.dataSchema),
         schemaHash: event.schemaHash,
@@ -235,7 +246,14 @@ export function generateCodeSdk(manifests: readonly CapabilityManifest[], option
         type: op.idempotency === "required" ? "string" : "never",
         required: op.idempotency === "required",
       });
-    const input = schemaTypes(op.inputSchema, `Input${index}`, fields);
+    const inputSchema = structuredClone(op.inputSchema);
+    if (op.stream?.direction === "write") {
+      const properties = inputSchema.properties;
+      if (properties && typeof properties === "object")
+        inputSchema.properties = Object.fromEntries(Object.entries(properties).filter(([name]) => name !== "file"));
+      fields.push({ name: "file", type: "FileRef", required: true });
+    }
+    const input = schemaTypes(inputSchema, `Input${index}`, fields);
     const output = schemaTypes(op.dataSchema, `Data${index}`);
     declarations.push(
       ...input.declarations,
@@ -243,7 +261,7 @@ export function generateCodeSdk(manifests: readonly CapabilityManifest[], option
       `type Input${index} = ${input.type};`,
       `type Data${index} = ${output.type};`,
     );
-    methods.set(op, `(input: Input${index}) => Promise<Data${index}>`);
+    methods.set(op, `(input: Input${index}) => Promise<${op.stream?.direction === "read" ? "FileRef" : `Data${index}`}>`);
   }
   const handleNames = new Map<string, string>();
   for (const [index, handle] of manifest.handles.entries()) {
@@ -278,13 +296,18 @@ export function generateCodeSdk(manifests: readonly CapabilityManifest[], option
     const events = manifest.events.map((event, index) => {
       const data = schemaTypes(event.dataSchema, `Event${index}`);
       declarations.push(...data.declarations);
-      return `${quote(event.type)}: ${data.type}`;
+      return `${quote(event.type)}: CodeEvent<${quote(event.type)}, ${data.type}>`;
     });
     declarations.push(
+      `export type CodeEvent<Type extends string, Data> = {
+  id: string; type: Type; version: number; source: string; time: string;
+  subject: { type: string; id: string }; place: { type: string; id: string };
+  cause?: { requestId: string }; data: Data;
+};`,
       `export type CodeEvents = { ${events.join("; ")} };`,
       `export type CodeApp = {
-  schedule(when: string | { at: string; timeZone: string }, handler: CodeScheduleHandler, options?: { name: string; title?: string }): CodeApp;
-  /** Phase 3; check reports code_phase_unavailable. */
+  schedule(when: string | { cron: string; timeZone?: string; name?: string } | { at: string; timeZone: string }, handler: CodeScheduleHandler, options?: { name: string; title?: string }): CodeApp;
+  /** The checked event is scoped to this resource Code owner. */
   on<Event extends keyof CodeEvents>(event: Event, handler: (data: CodeEvents[Event]) => void | Promise<void>): CodeApp;
   on<Event extends keyof CodeEvents>(handle: CodeHandle<string>, event: Event, handler: (data: CodeEvents[Event]) => void | Promise<void>): CodeApp;
   get(path: string, handler: (c: CodeContext) => Response | Promise<Response>, options?: { public: boolean }): CodeApp;
@@ -334,6 +357,7 @@ export function generateCodeSdk(manifests: readonly CapabilityManifest[], option
     })),
     ...(manifest.owner ? { owner: manifest.owner } : {}),
     appMethods: manifest.appMethods,
+    events: manifest.events.map(({ type, version, place }) => ({ type, version, place })),
     pageLimits: CODE_PAGE_LIMITS,
   };
   return {

@@ -3,12 +3,12 @@ import { ok } from "@k2b/stdlib";
 import { Hono } from "hono";
 import { etag } from "hono/etag";
 import { z } from "zod";
+import { artifactMessages } from "../chat-code/messages";
+import { ChunkName, chunkSource } from "../chat-code/runtime/chunks";
+import { viewerContext } from "../chat-code/runtime/context";
 import { hasInterface } from "./contracts";
 import { appFrameAssets } from "./html/assets";
-import { artifactMessages } from "./messages";
 import { RunnerMetadata } from "./runner-contracts";
-import { ChunkName, chunkSource } from "./runtime/chunks";
-import { viewerContext } from "./runtime/context";
 import { ArtifactError, artifacts } from "./service";
 
 export const runnerMetadata = (bundle: Awaited<ReturnType<typeof artifacts.runner>>) =>

@@ -1,12 +1,10 @@
 import { CapabilityStreamSchema } from "@k2b/cloud/contracts";
+import type { ApproveCapability } from "../../chat-code/runtime/capabilities";
+import { CloudError, cloudError } from "../../chat-code/runtime/errors";
+import type { RuntimeSdkCallOptions } from "../../chat-code/runtime/services";
 import { artifactClient } from "../client";
-import type { HttpApproval } from "../http-host";
-import { CloudError, cloudError } from "./errors";
-import type { RuntimeSdkCallOptions } from "./services";
-export type CapabilityApproval = Extract<Awaited<ReturnType<typeof artifactClient.capabilityPrepare>>, { status: "approval" }>;
-export type CapabilityDecision = { approved: boolean; remember?: "always" };
-export type ApproveCapability = (request: CapabilityApproval, signal: AbortSignal, conversationId?: string) => Promise<CapabilityDecision>;
 
+export type { ApproveCapability, CapabilityApproval, CapabilityDecision, CodeApproval } from "../../chat-code/runtime/capabilities";
 export async function runCapability(
   name: string,
   input: unknown,
@@ -45,5 +43,3 @@ export async function runCapability(
   }
   return envelope;
 }
-
-export type CodeApproval = CapabilityApproval | HttpApproval;

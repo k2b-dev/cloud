@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.7.0](https://github.com/k2b-dev/cloud/compare/npm-editor-v0.6.5...npm-editor-v0.7.0) (2026-11-07)
+
+
+### Features
+
+* **ui:** calendar heatmaps ([#2774](https://github.com/k2b-dev/cloud/issues/2774)) ([1687e8e](https://github.com/k2b-dev/cloud/commit/1687e8e343693ae14fc4735f41f5b8b1a4ce2e05))
+* **ui:** charts draw with the @k2b/ui core instead of stdlib ([#2734](https://github.com/k2b-dev/cloud/issues/2734)) ([f40d118](https://github.com/k2b-dev/cloud/commit/f40d1181d95b98e368c93b367f4d5d137c03242e))
+* **ui:** stacked and 100 % area charts ([#2763](https://github.com/k2b-dev/cloud/issues/2763)) ([2a1cb51](https://github.com/k2b-dev/cloud/commit/2a1cb5152262132dcb542ad475cb5239144097f2))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @k2b/ui bumped from 0.49.0 to 0.50.0
+
 ## [0.6.5](https://github.com/k2b-dev/cloud/compare/npm-editor-v0.6.4...npm-editor-v0.6.5) (2026-11-06)
 
 

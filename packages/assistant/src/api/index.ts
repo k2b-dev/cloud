@@ -4,6 +4,7 @@ import type { Context } from "hono";
 import { Hono } from "hono";
 import { z } from "zod";
 import { artifactApi } from "../artifacts/api";
+import { chatCodeApi } from "../chat-code/api";
 import { loadAssistantChatContextSnapshot, loadAssistantChatSources } from "../chat-context";
 import { loadAssistantProjectContextSnapshot } from "../project-context";
 import { loadAssistantSidebarSnapshot } from "../sidebar";
@@ -37,6 +38,7 @@ const app = new Hono<AuthContext>()
   .use(rateLimit())
   .use("*", auth.requireRole("authenticated"))
   .use("*", auth.requireUser())
+  .route("/chat-code", chatCodeApi)
   .route("/artifacts", artifactApi)
   .get("/workspace/sidebar", async (c) => {
     const user = actorUser(c);

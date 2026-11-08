@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { capabilityCallDigest, normalizeCapabilityCall } from "../capabilities/calls";
 import type { CodeHttp } from "./authoring-types";
+import { fileImportManifest } from "./file-ref.test-fixture";
 import { generateCodeSdk } from "./generator";
 import { schemaTypes } from "./schema-types";
 import { sdkFixture } from "./sdk.test-fixture";
@@ -38,17 +39,18 @@ type TestModule = {
   owner: TestHandle;
   app: {
     schedule(cron: string, fn: () => void | Promise<void>, options?: { name: string; title?: string }): unknown;
+    on(event: string, fn: (input: unknown) => void | Promise<void>): unknown;
     get(path: string, fn: () => Response): unknown;
   };
   __codeSdk: {
     bind(bridge: CodeSdkBridge): void;
     entries(): Array<{ kind: string; entrypoint: string; cron: string; title?: string }>;
     diagnostics(): Array<{ message: string }>;
-    run(entrypoint: string): Promise<unknown>;
+    run(entrypoint: string, input?: unknown): Promise<unknown>;
   };
 };
-async function runtime(mode: CodeSdkOptions = options): Promise<TestModule> {
-  const sdk = generateCodeSdk([fixture], mode);
+async function runtime(mode: CodeSdkOptions = options, manifest = fixture): Promise<TestModule> {
+  const sdk = generateCodeSdk([manifest], mode);
   const dir = await temporaryDirectory("cloud-code-c15-runtime-");
   const file = join(dir, "sdk.mjs");
   await writeFile(file, sdk.runtime);
@@ -166,7 +168,6 @@ describe("Code SDK generation", () => {
       refs: { destination: "work-shop.workshop" },
     });
     expect(manifest.omitted).toEqual([
-      { capability: "work-shop.stock.export", reason: "stream" },
       { capability: "work-shop.workshop.readable", reason: "app_only" },
       { capability: "work-shop.outside.change", reason: "code_false" },
     ]);
@@ -307,7 +308,7 @@ describe("generated runtime through the canonical call seam", () => {
     await expect(sdk.__codeSdk.run("missing")).rejects.toThrow("missing_entrypoint");
     sdk.app.get("/", () => new Response("ok"));
     expect(sdk.__codeSdk.diagnostics()).toEqual([]);
-    expect(codeSdkPhaseDiagnostic("on")?.message).toBe("app.on kommt in Phase 3");
+    expect(codeSdkPhaseDiagnostic("on")).toBeNull();
     expect(codeSdkPhaseDiagnostic("schedule")).toBeNull();
     expect(codeSdkPhaseDiagnostic("typo")).toBeNull();
   });
@@ -359,7 +360,7 @@ test("generated SDKs compile with tsgo and accept dynamic resource IDs and rejec
     writeFile(join(dir, "ids.ts"), 'export const workshop = "imported-shop";\n'),
     writeFile(
       join(dir, "valid.ts"),
-      `import { app, work_shop, owner } from "@sdk";
+      `import { app, work_shop, owner, type CodeChartDescription } from "@sdk";
 import { work_shop as personal } from "./personal";
 import { work_shop as once } from "./once";
 import { workshop } from "./ids";
@@ -369,6 +370,10 @@ _eval.app(); _arguments.app(); manifest.app();
 callable.app("resource");
 callable.app().branch({ title: "x", idempotencyKey: "key" });
 callable.app().branch.child({ itemId: "i", destination: callable.workshop("one") });
+const grid: CodeChartDescription = { kind: "heatmap", title: "Grid", data: [{ x: "A", y: "B", value: 1 }] };
+const calendar: CodeChartDescription = { kind: "heatmap", title: "Calendar", layout: "calendar", data: [["2026-11-07", 1]], scale: "sequential" };
+// @ts-expect-error an unrecognized heatmap layout is forbidden
+const invalidChart: CodeChartDescription = { kind: "heatmap", title: "Invalid", layout: "other", data: [{ x: "A", y: "B", value: 1 }] };
 const ids = ["one", "two"] as const;
 const target = work_shop.workshop(ids[0]);
 work_shop.workshop(workshop);
@@ -390,7 +395,7 @@ declare const dynamic: string;
 personal.workshop(dynamic);
 once.workshop(dynamic);
 app.schedule("0 8 * * 1", async () => { await owner.item.create({ title: "Hi", idempotencyKey: "fixed" }); });
-app.on("work-shop.changed", async event => { const title: string = event.title; });
+app.on("work-shop.changed", async event => { const title: string = event.data.title; });
 app.get("/", c => c.json({ groups: c.user?.groups }));
 app.post("/", c => c.text(c.req.param("id")));
 app.put("/", c => c.text("ok"));
@@ -418,8 +423,12 @@ owner.item.move({ itemId: "i", destination: "one" });
 owner.item.move({ itemId: "i", destination: { type: "work-shop.workshop", id: "one" } });
 // @ts-expect-error code:false is not offered
 owner.outside.change({});
-// @ts-expect-error streams are not offered
-owner.stock.export({});
+const file = await owner.stock.export({});
+const size: number = file.size;
+// @ts-expect-error FileRef has no bytes
+file.arrayBuffer();
+// @ts-expect-error FileRef has no URL
+file.url;
 // @ts-expect-error app-wide operation is not on resource handle
 owner.catalog.list({});
 // @ts-expect-error code_run has no app
@@ -454,6 +463,60 @@ owner.item.create({ title: "Hi", idempotencyKey: "fixed", details: { kind: "coun
   expect({ code, stdout, stderr }).toEqual({ code: 0, stdout: "", stderr: "" });
 });
 
+test("stream SDK inputs use branded FileRefs and pass only references through cloud.call", async () => {
+  const sdk = generateCodeSdk([fixture, fileImportManifest()], options);
+  const dir = await temporaryDirectory("cloud-code-files-");
+  await writeFile(join(dir, "sdk.mjs"), sdk.runtime);
+  const loaded = await import(join(dir, "sdk.mjs"));
+  const calls: CodeSdkInvocation[] = [];
+  const file = { id: "opaque-reference", name: "invoice.pdf", mediaType: "application/pdf", size: 5_000_000 };
+  loaded.__codeSdk.bind({
+    call: async (_operation: string, input: CodeSdkInvocation) => {
+      calls.push(input);
+      return input.call.capability.endsWith("stock.export") ? file : { imported: true };
+    },
+  });
+  const ref = await loaded.owner.stock.export({});
+  expect(await loaded.imports.app().import({ file: ref, idempotencyKey: "invoice-1" })).toEqual({ imported: true });
+  expect(calls[1]).toMatchObject({ call: { input: { file } }, metadata: { idempotencyKey: "invoice-1" } });
+  expect(JSON.stringify(calls).length).toBeLessThan(1024);
+  await writeFile(join(dir, "sdk.d.ts"), sdk.declarations);
+  await writeFile(
+    join(dir, "types.ts"),
+    `import { owner, imports, type FileRef } from "./sdk";
+const file: FileRef = await owner.stock.export({});
+const result = await imports.app().import({ file, idempotencyKey: "invoice-1" });
+const imported: boolean = result.imported;
+// @ts-expect-error metadata alone cannot manufacture a FileRef
+imports.app().import({ file: { id: "forged", mediaType: "application/pdf", size: 1 }, idempotencyKey: "k" });
+// @ts-expect-error a file input cannot be omitted
+imports.app().import({ idempotencyKey: "k" });
+// @ts-expect-error the FileRef has no download URL
+file.url;
+// @ts-expect-error the FileRef has no body
+file.body;
+`,
+  );
+  const proc = Bun.spawn(
+    [
+      resolve(import.meta.dir, "../../../../node_modules/.bin/tsc"),
+      "--checkers",
+      "1",
+      "--ignoreConfig",
+      "--strict",
+      "--noEmit",
+      "--target",
+      "esnext",
+      "--module",
+      "preserve",
+      join(dir, "types.ts"),
+    ],
+    { stdout: "pipe", stderr: "pipe" },
+  );
+  const [code, stdout, stderr] = await Promise.all([proc.exited, new Response(proc.stdout).text(), new Response(proc.stderr).text()]);
+  expect({ code, stdout, stderr }).toEqual({ code: 0, stdout: "", stderr: "" });
+});
+
 test("SDK secrets contain only placeholders and HTTP dispatches those placeholders unchanged", async () => {
   const sdk = await runtime();
   const calls: unknown[] = [];
@@ -471,4 +534,31 @@ test("SDK secrets contain only placeholders and HTTP dispatches those placeholde
     { operation: "http.fetch", input: { method: "GET", url: "https://api.example/v1", headers: { authorization: "Bearer [secret:API]" } } },
   ]);
   expect(() => sdk.secrets["bad name"]).toThrow("code_sdk_invalid_secret_name");
+});
+
+test("resource app.on registers one checked event and passes its reference envelope", async () => {
+  const manifest = sdkFixture();
+  manifest.events![0]!.place = "workshop";
+  const sdk = await runtime(options, manifest);
+  const seen: unknown[] = [];
+  sdk.app.on("work-shop.changed", (input) => {
+    seen.push(input);
+  });
+  expect(seen).toEqual([]);
+  const input = {
+    id: "11111111-1111-4111-8111-111111111111",
+    type: "work-shop.changed",
+    version: 1,
+    source: "work-shop",
+    time: "2026-01-01T00:00:00Z",
+    subject: { type: "work-shop.workshop", id: "owner-shop" },
+    place: { type: "work-shop.workshop", id: "owner-shop" },
+    data: { title: "fixture" },
+  };
+  await sdk.__codeSdk.run("event:work-shop.changed@1", input);
+  expect(seen).toEqual([input]);
+  await expect(sdk.__codeSdk.run("event:work-shop.changed@1", { ...input, place: { ...input.place, id: "other" } })).rejects.toThrow(
+    "code_event_input",
+  );
+  expect(() => sdk.app.on("work-shop.changed", () => {})).toThrow("code_duplicate_on");
 });

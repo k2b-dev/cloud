@@ -82,22 +82,45 @@ function unavailable(method) {
   throw Object.assign(new Error(diagnostic.message), { code: diagnostic.code });
 }
 app.schedule = (when, fn, options) => {
-  const once = when && typeof when === "object" && !Array.isArray(when);
-  if (typeof fn !== "function" || (!once && (typeof when !== "string" || !when.trim()))) throw new Error("code_sdk_invalid_schedule");
+  const object = when && typeof when === "object" && !Array.isArray(when);
+  const once = object && "at" in when;
+  const recurring = object && !once;
+  if (typeof fn !== "function" || (!object && (typeof when !== "string" || !when.trim()))) throw new Error("code_sdk_invalid_schedule");
   if (once) {
     if (Object.keys(when).some(key => key !== "at" && key !== "timeZone") || typeof when.at !== "string" || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/.test(when.at) || !Number.isFinite(Date.parse(when.at)) || typeof when.timeZone !== "string" || !when.timeZone) throw new Error("code_sdk_invalid_schedule");
     const date = when.at.slice(0, 10);
     if (new Date(date + "T00:00:00Z").toISOString().slice(0, 10) !== date || Number(when.at.slice(11, 13)) > 23) throw new Error("code_sdk_invalid_schedule");
     try { new Intl.DateTimeFormat("en", { timeZone: when.timeZone }); } catch { throw new Error("code_sdk_invalid_schedule"); }
   }
-  const timing = once ? { cron: null, at: when.at, timeZone: when.timeZone } : { cron: when };
-  const name = options?.name;
-  if (options !== undefined && (typeof name !== "string" || !/^[a-zA-Z0-9][a-zA-Z0-9_.-]*$/.test(name))) throw new Error("code_sdk_invalid_schedule_name");
-  const entrypoint = name ?? "schedule:" + schedules.length;
+  if (recurring) {
+    if (Object.keys(when).some(key => !["cron", "timeZone", "name"].includes(key)) || typeof when.cron !== "string" || !when.cron.trim()) throw new Error("code_sdk_invalid_schedule");
+    if (when.timeZone !== undefined) {
+      if (typeof when.timeZone !== "string" || !when.timeZone) throw new Error("code_sdk_invalid_schedule");
+      try { new Intl.DateTimeFormat("en", { timeZone: when.timeZone }); } catch { throw new Error("code_sdk_invalid_schedule"); }
+    }
+  }
+  const timing = once ? { cron: null, at: when.at, timeZone: when.timeZone } : recurring ? { cron: when.cron, ...(when.timeZone === undefined ? {} : { timeZone: when.timeZone }) } : { cron: when };
+  const name = recurring && when.name !== undefined ? when.name : options?.name;
+  if ((options !== undefined || (recurring && when.name !== undefined)) && (typeof name !== "string" || !/^[a-zA-Z0-9][a-zA-Z0-9_.-]*$/.test(name))) throw new Error("code_sdk_invalid_schedule_name");
+  const entrypoint = name ?? "schedule:" + schedules.filter(value => value.kind === "schedule").length;
   if (schedules.some(value => value.entrypoint === entrypoint)) throw new Error("code_sdk_duplicate_schedule_name");
   const title = typeof options?.title === "string" ? options.title.trim() : options?.title;
   if (options?.title !== undefined && (typeof title !== "string" || !title || title.length > 200 || /[<>\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/u.test(title))) throw new Error("code_sdk_invalid_schedule_title");
-  schedules.push({ entrypoint, ...timing, ...(title === undefined ? {} : { title }), handler: fn });
+  schedules.push({ kind: "schedule", entrypoint, ...timing, ...(title === undefined ? {} : { title }), handler: fn });
+  return app;
+};
+app.on = (...args) => {
+  const explicit = args.length === 3;
+  const eventType = args[explicit ? 1 : 0];
+  const fn = args[explicit ? 2 : 1];
+  const place = explicit ? handles.get(args[0]) : manifest.owner?.kind === "resource" ? manifest.owner.ref : undefined;
+  const spec = manifest.events.find(event => event.type === eventType);
+  if (typeof fn !== "function" || !spec || manifest.owner?.kind !== "resource" || !place ||
+      spec.place !== manifest.owner.ref.type || place.type !== manifest.owner.ref.type || place.id !== manifest.owner.ref.id)
+    throw new Error("code_event_owner");
+  const entrypoint = "event:" + eventType + "@" + spec.version;
+  if (schedules.some(value => value.entrypoint === entrypoint)) throw new Error("code_duplicate_on");
+  schedules.push({ kind: "event", entrypoint, cron: null, event: { type: eventType, version: spec.version, place: { type: place.type, id: place.id } }, handler: fn });
   return app;
 };
 for (const method of Object.keys(manifest.appMethods).filter(name => manifest.appMethods[name] !== 1)) app[method] = () => unavailable(method);
@@ -125,13 +148,16 @@ const http = Object.freeze({
     return bridge.call("http.fetch", { method: "GET", headers: {}, ...options, url });
   },
 });
+// Pages that the SDK's blocks built; c.page draws only these, never a hand-written description.
+const builtPages = new WeakSet();
 const __codeSdk = Object.freeze({
+  markPage: page => { builtPages.add(page); return page; },
   namespaces, owner, app, secrets, http,
   bind(cloud) {
     if (bridge || !cloud || typeof cloud.call !== "function") throw new Error("code_sdk_invalid_bridge");
     bridge = cloud;
   },
-  entries: () => [...schedules.map(({ entrypoint, cron, at, timeZone, title }) => ({ kind: "schedule", entrypoint, cron, ...(at === undefined ? {} : { at, timeZone }), ...(title === undefined ? {} : { title }) })),
+  entries: () => [...schedules.map(({ kind, entrypoint, cron, at, timeZone, title, event }) => ({ kind, entrypoint, cron, ...(at === undefined ? {} : { at }), ...(timeZone === undefined ? {} : { timeZone }), ...(event === undefined ? {} : { event }), ...(title === undefined ? {} : { title }) })),
     ...routes.map(({ entrypoint, route }) => ({ kind: "route", entrypoint, route, cron: null }))],
   diagnostics: () => diagnostics.map(value => ({ ...value })),
   async run(entrypoint, input) {
@@ -162,12 +188,15 @@ const __codeSdk = Object.freeze({
               if (Array.isArray(value) && key === "length") continue;
               const descriptor = Object.getOwnPropertyDescriptor(value, key);
               if (typeof key !== "string" || !descriptor.enumerable || !Object.hasOwn(descriptor, "value")) throw new Error("code_page_data_only");
+              // An optional prop set to undefined is absent, as in JSON; a hole in a list stays an error.
+              if (descriptor.value === undefined && !Array.isArray(value)) continue;
               bytes += new TextEncoder().encode(key).byteLength;
               if (bytes > manifest.pageLimits.bytes) throw new Error("code_page_limit");
               visit(descriptor.value, depth + 1);
             }
             ancestors.delete(value);
           };
+          if (!builtPages.has(tree)) throw new Error("code_page_blocks");
           visit(tree, 0);
           if (tree.kind !== "Page" || tree.version !== 1) throw new Error("code_page_root");
           if (new TextEncoder().encode(JSON.stringify(tree)).byteLength > manifest.pageLimits.bytes) throw new Error("code_page_limit");
@@ -182,6 +211,12 @@ const __codeSdk = Object.freeze({
     }
     const schedule = schedules.find(value => value.entrypoint === entrypoint);
     if (!schedule) throw new Error("code_sdk_missing_entrypoint");
+    if (schedule.kind === "event") {
+      if (!input || input.type !== schedule.event.type || input.version !== schedule.event.version ||
+          input.place?.type !== schedule.event.place.type || input.place.id !== schedule.event.place.id || typeof input.id !== "string")
+        throw new Error("code_event_input");
+      return schedule.handler(input);
+    }
     return schedule.handler();
   },
 });

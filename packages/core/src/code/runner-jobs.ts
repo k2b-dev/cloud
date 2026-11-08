@@ -1,4 +1,5 @@
 import { sql } from "@k2b/cloud";
+import { authorizeCodeExecution } from "@k2b/cloud/ai";
 import {
   CODE_CHECK_LIMITS,
   type CodeCheckHost,
@@ -59,38 +60,67 @@ export async function claimCodeJob(instanceId: string, db: SQL): Promise<RunnerJ
       }
     : undefined;
 }
-async function fence(proof: RunnerJobProof, db: SQL) {
+export async function fenceCodeJob(proof: RunnerJobProof, db: SQL, lock = true) {
   const [row] = await db<
-    { kind: RunnerJobLease["kind"]; input: string; input_bytes: number; output_bytes: number; deadline_at: Date }[]
+    {
+      kind: RunnerJobLease["kind"];
+      input: string;
+      input_bytes: number;
+      output_bytes: number;
+      deadline_at: Date;
+      owner_id: string;
+      conversation_id: string;
+      turn_id: string;
+      calls_limit: number;
+      call_bytes: number;
+    }[]
   >`SELECT * FROM code.jobs
     WHERE id=${proof.jobId}::uuid AND generation=${proof.generation} AND lease_key_hash=${digest(proof.leaseKey)}
-      AND state='running' AND lease_expires_at>clock_timestamp() AND deadline_at>clock_timestamp() FOR UPDATE`;
+      AND state='running' AND lease_expires_at>clock_timestamp() AND deadline_at>clock_timestamp() ${lock ? db`FOR UPDATE` : db``}`;
   if (!row) throw new RunnerLeaseLostError();
   return row;
 }
 export async function readCodeJobInput(proof: RunnerJobProof) {
   return sql.begin(async (db) => {
-    const row = await fence(proof, db);
+    const row = await fenceCodeJob(proof, db);
     return row.input;
   });
 }
 export async function heartbeatCodeJob(proof: RunnerJobProof) {
-  return sql.begin(async (db) => {
-    await fence(proof, db);
+  const job = await fenceCodeJob(proof, sql, false);
+  let authorized = true;
+  if (job.kind === "chat") {
+    try {
+      await authorizeCodeExecution(job.conversation_id, job.turn_id, job.owner_id);
+    } catch {
+      authorized = false;
+    }
+  }
+  const heartbeat = await sql.begin(async (db) => {
+    await fenceCodeJob(proof, db);
+    if (!authorized) {
+      await db`UPDATE code.jobs SET state='cancelled',input=NULL,lease_key_hash=NULL,lease_expires_at=NULL WHERE id=${proof.jobId}::uuid`;
+      return null;
+    }
     const [row] = await db<
       { lease_expires_at: Date }[]
     >`UPDATE code.jobs SET lease_expires_at=LEAST(deadline_at,clock_timestamp()+${CODE_RUN_LEASE_MS}*interval '1 millisecond') WHERE id=${proof.jobId}::uuid RETURNING lease_expires_at`;
     await db`UPDATE code.runner_instances SET last_seen_at=clock_timestamp() WHERE instance_id=(SELECT runner_instance_id FROM code.jobs WHERE id=${proof.jobId}::uuid)`;
     return { leaseExpiresAt: row!.lease_expires_at.getTime() };
   });
+  if (!heartbeat) throw new RunnerLeaseLostError();
+  return heartbeat;
 }
 export async function completeCodeJob(proof: RunnerJobProof, result: RunnerJobResult) {
   return sql.begin(async (db) => {
-    const row = await fence(proof, db);
+    const row = await fenceCodeJob(proof, db);
     const validation = RunnerJobResultSchema.safeParse(result);
     let parsed: RunnerJobResult = validation.success ? validation.data : { kind: "error", code: "code_job_failed" };
     if (Buffer.byteLength(JSON.stringify(parsed)) > row.output_bytes) parsed = { kind: "error", code: "code_job_output_limit" };
-    if (parsed.kind !== "error" && (parsed.kind !== row.kind || (parsed.kind !== "check" && parsed.result.mode !== row.kind)))
+    if (
+      parsed.kind !== "error" &&
+      (parsed.kind !== row.kind || ((parsed.kind === "test" || parsed.kind === "simulate") && parsed.result.mode !== row.kind))
+    )
       parsed = { kind: "error", code: "code_job_failed" };
     await db`UPDATE code.jobs SET state=${parsed.kind === "error" ? "failed" : "succeeded"},result=${JSON.stringify(parsed)}::text::jsonb,input=NULL,lease_expires_at=NULL,lease_key_hash=NULL WHERE id=${proof.jobId}::uuid`;
   });
@@ -101,7 +131,11 @@ export async function reconcileCodeJobs() {
   await sql`UPDATE code.jobs SET state=CASE WHEN deadline_at<=clock_timestamp() OR generation>=${attempts} THEN 'failed' ELSE 'queued' END,
     result=CASE WHEN deadline_at<=clock_timestamp() THEN '{"kind":"error","code":"code_job_time_limit"}'::jsonb WHEN generation>=${attempts} THEN '{"kind":"error","code":"code_job_failed"}'::jsonb ELSE NULL END,
     lease_expires_at=NULL,lease_key_hash=NULL
-    WHERE id IN(SELECT id FROM code.jobs WHERE (state='running' AND lease_expires_at<=clock_timestamp()) OR (state='queued' AND deadline_at<=clock_timestamp()) ORDER BY deadline_at,id LIMIT 100 FOR UPDATE SKIP LOCKED)`;
+    WHERE kind<>'chat' AND id IN(SELECT id FROM code.jobs WHERE (state='running' AND lease_expires_at<=clock_timestamp()) OR (state='queued' AND deadline_at<=clock_timestamp()) ORDER BY deadline_at,id LIMIT 100 FOR UPDATE SKIP LOCKED)`;
+  // Chat jobs can have real effects. Expiry is terminal, never a retry of an uncertain execution.
+  await sql`UPDATE code.jobs SET state='failed',result='{"kind":"error","code":"code_job_time_limit"}'::jsonb,
+    input=NULL,lease_expires_at=NULL,lease_key_hash=NULL
+    WHERE id IN(SELECT id FROM code.jobs WHERE kind='chat' AND ((state='running' AND lease_expires_at<=clock_timestamp()) OR (state='queued' AND deadline_at<=clock_timestamp())) ORDER BY deadline_at,id LIMIT 100 FOR UPDATE SKIP LOCKED)`;
   await sql`INSERT INTO code.job_outbox(job_id) SELECT id FROM code.jobs WHERE state='queued' ORDER BY created_at,id LIMIT 100 ON CONFLICT DO NOTHING`;
   await sql`DELETE FROM code.jobs WHERE id IN(SELECT id FROM code.jobs WHERE deadline_at<clock_timestamp()-interval '15 seconds' ORDER BY deadline_at LIMIT 100 FOR UPDATE SKIP LOCKED)`;
 }

@@ -1,4 +1,5 @@
 import actionButtons from "./actions/buttons.md" with { type: "text" };
+import actionCommandMenu from "./actions/command-menu.md" with { type: "text" };
 import actionCopyRemove from "./actions/copy-remove.md" with { type: "text" };
 import actionDisclosure from "./actions/disclosure.md" with { type: "text" };
 import actionDragAndDrop from "./actions/drag-and-drop.md" with { type: "text" };
@@ -28,6 +29,7 @@ import contentMarkdown from "./content/markdown.md" with { type: "text" };
 import contentMatchText from "./content/match-text.md" with { type: "text" };
 import contentMedia from "./content/media.md" with { type: "text" };
 import contentMessageRows from "./content/message-rows.md" with { type: "text" };
+import contentMoney from "./content/money.md" with { type: "text" };
 import contentReactionBar from "./content/reaction-bar.md" with { type: "text" };
 import contentSteps from "./content/steps.md" with { type: "text" };
 import contentStructuredData from "./content/structured-data.md" with { type: "text" };
@@ -148,6 +150,7 @@ const catalogContextSources = {
   "actions/buttons": { file: "actions/buttons.md", content: actionButtons },
   "actions/copy-remove": { file: "actions/copy-remove.md", content: actionCopyRemove },
   "actions/menus": { file: "actions/menus.md", content: actionMenus },
+  "actions/command-menu": { file: "actions/command-menu.md", content: actionCommandMenu },
   "actions/drag-and-drop": { file: "actions/drag-and-drop.md", content: actionDragAndDrop },
   "actions/gestures": { file: "actions/gestures.md", content: actionGestures },
   "actions/filters": { file: "filter-chip.md", content: actionFilters },
@@ -201,6 +204,7 @@ const catalogContextSources = {
   "content/steps": { file: "content/steps.md", content: contentSteps },
   "layout/table-of-contents": { file: "layout/table-of-contents.md", content: layoutTableOfContents },
   "content/charts": { file: "content/charts.md", content: contentCharts },
+  "content/money": { file: "content/money.md", content: contentMoney },
   "content/tables": { file: "content/tables.md", content: contentTables },
   "content/calendar": { file: "surfaces/calendar.md", content: contentCalendar },
   "content/timeline": { file: "content/timeline.md", content: contentTimeline },

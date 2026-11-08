@@ -1,4 +1,14 @@
-import type { CodePageNode, CodePageTree } from "./page-contract";
+import type { CodePageBlock } from "./page-authoring-types";
+
+/** Opaque, expiring, single-use file from this run. Only Core can redeem it; it contains no bytes or URL. */
+declare const __codeFileRef: unique symbol;
+export type FileRef = {
+  readonly [__codeFileRef]: true;
+  readonly id: string;
+  readonly name?: string;
+  readonly mediaType: string;
+  readonly size: number;
+};
 
 /** A target identity created by a generated factory, never an authorization grant. */
 declare const __codeHandle: unique symbol;
@@ -24,7 +34,8 @@ export type CodeContext = {
   user: CodeUser | null;
   json(value: unknown, status?: number): Response;
   text(value: string, status?: number): Response;
-  page(tree: CodePageTree | CodePageNode): Response;
+  /** Draws a page built from SDK blocks; its root is `<Page>`. */
+  page(page: CodePageBlock): Response;
   redirect(location: string, status?: number): Response;
 };
 /** A webhook is anonymous and must verify its request explicitly. */

@@ -15,6 +15,10 @@ The Cloud build creates one self-contained Bun bundle for one application.
 It emits the server, Solid island chunks, application CSS, static assets, and
 optional application-specific build output.
 
+The build and development preload scripts preserve every `color-mix()` value
+in application CSS, including multiple variable-based mixes in one rule.
+See [Mix semantic colors](/en/docs/frontend/styling-and-accessibility#mix-semantic-colors).
+
 ## Roll out app status providers
 
 Deploy Core first. Its additive startup migration creates `core.known_apps`,
@@ -887,3 +891,7 @@ credentials. Include it in an operator-maintained cookie notice. The service
 worker still stores no pages, code, or API responses. No database migration or
 new environment variable is required. See
 [Pages in the mobile app](/en/docs/frontend/mobile-app-pages).
+
+## Standalone speedtest image
+
+The release image set includes `cloud-speedtest`, an optional service without Cloud dependencies. It is not part of the application Compose stack. See [Run a speedtest server](/en/docs/operations/speedtest-server) for ingress, anonymous IP budgets, optional UDP, scripts and changed result definitions. Provisioning the default hostname is a separate operator task.

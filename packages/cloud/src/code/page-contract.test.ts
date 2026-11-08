@@ -109,10 +109,30 @@ test("SDK builders emit only descriptions; c.page rejects handlers before JSON s
   runtime.app.get("/", (c: { page(value: unknown): Response }) => c.page(tree));
   const input = { method: "GET", path: "/", query: "", contentType: "text/plain", body: "", params: {}, user: null };
   expect(await runtime.__codeSdk.run("route:GET:/", input)).toEqual({ kind: "page", status: 200, tree });
-  runtime.app.get("/bad", (c: { page(value: unknown): Response }) => c.page(page([{ kind: "Text", text: "Hi", onClick: () => {} }])));
+  // A handler smuggled in as a prop never reaches JSON: the runtime refuses it before serializing.
+  const handler = runtime.jsx(runtime.Page, { title: "P" }, runtime.jsx(runtime.Text, { onClick: () => {} }, "Hi"));
+  runtime.app.get("/bad", (c: { page(value: unknown): Response }) => c.page(handler));
   await expect(runtime.__codeSdk.run("route:GET:/bad", input)).rejects.toThrow("code_page_data_only");
-  runtime.app.get("/root", (c: { page(value: unknown): Response }) => c.page({ kind: "Text", text: "Hi" }));
-  await expect(runtime.__codeSdk.run("route:GET:/root", input)).rejects.toThrow("code_page_root");
+  // An optional prop passed as undefined, as TSX allows for `error={errors.name}`, counts as absent.
+  const optional = runtime.jsx(
+    runtime.Page,
+    { title: "Form", subtitle: undefined },
+    runtime.jsx(
+      runtime.Form,
+      { title: "F", action: "/save", submit: "Save", width: undefined },
+      runtime.jsx(runtime.Field.Number, { name: "hours", label: "Hours", value: undefined, error: undefined }),
+    ),
+    runtime.jsx(runtime.Stats, null, runtime.jsx(runtime.Stat, { label: "S", value: 1, format: { style: "number", decimals: undefined } })),
+  );
+  runtime.app.get("/optional", (c: { page(value: unknown): Response }) => c.page(optional));
+  const drawn = await runtime.__codeSdk.run("route:GET:/optional", input);
+  expect(validateCodePage(JSON.parse(JSON.stringify(drawn.tree)), codeId).children.map((node) => node.kind)).toEqual(["Form", "Stats"]);
+  runtime.app.get("/holes", (c: { page(value: unknown): Response }) =>
+    c.page(runtime.jsx(runtime.Page, { title: "P" }, runtime.jsx(runtime.Chart.Sparkline, { title: "S", data: [1, undefined, 2] }))),
+  );
+  await expect(runtime.__codeSdk.run("route:GET:/holes", input)).rejects.toThrow("code_page_data_only");
+  runtime.app.get("/root", (c: { page(value: unknown): Response }) => c.page(runtime.jsx(runtime.Text, null, "Hi")));
+  await expect(runtime.__codeSdk.run("route:GET:/root", input)).rejects.toThrow("code_page_blocks");
   expect(runtime.jsx(runtime.Text, null, "Hello ", "Valentin", "!", 2)).toEqual({ kind: "Text", text: "Hello Valentin!2" });
   expect(() => runtime.jsx(runtime.Text, null, () => "bad")).toThrow("code_page_text");
 });
@@ -221,19 +241,73 @@ test("key figures, grid widths, section symbols and number formats are data on t
   ])
     expect(() => validateCodePage(bad, codeId)).toThrow();
 });
-test("chart builders keep page layout beside the portable description", async () => {
+test("blocks compose their parts and refuse a part in the wrong place before Core sees the page", async () => {
+  const sdk = generateCodeSdk([], { mode: "personal" });
+  const ui = await import(`data:text/javascript;base64,${Buffer.from(sdk.runtime).toString("base64")}`);
+  const { jsx } = ui;
+  const chart = jsx(ui.Chart.Bar, { width: "half", title: "Items", data: [{ label: "One", value: 2 }] });
+  expect(chart).toEqual({ kind: "Chart", width: "half", description: { kind: "bar", title: "Items", data: [{ label: "One", value: 2 }] } });
+  const form = jsx(
+    ui.Form,
+    { title: "Find", action: "/find", submit: "Find" },
+    jsx(ui.Field.Text, { name: "query", label: "Query", required: true }),
+    jsx(ui.Field.Select, { name: "status", label: "Status" }, [jsx(ui.Option, { value: "open", label: "Open" })]),
+  );
+  expect(form).toEqual({
+    kind: "Form",
+    title: "Find",
+    action: "/find",
+    submit: "Find",
+    fields: [
+      { type: "text", name: "query", label: "Query", required: true },
+      { type: "select", name: "status", label: "Status", options: [{ value: "open", label: "Open" }] },
+    ],
+  });
+  const stats = jsx(ui.Stats, null, jsx(ui.Stat, { label: "Open", value: 3 }));
+  expect(stats).toEqual({ kind: "Stats", items: [{ label: "Open", value: 3 }] });
+  expect(() =>
+    validateCodePage(page([chart, form, stats, jsx(ui.Chart.Empty, { title: "Orders", empty: "None yet." })]), codeId),
+  ).not.toThrow();
+  for (const misplaced of [
+    () => jsx(ui.Form, { title: "F", action: "/x", submit: "Go" }, jsx(ui.Text, null, "not a field")),
+    () => jsx(ui.Stats, null, jsx(ui.Column, { key: "a", label: "A" })),
+    () => jsx(ui.Table, { title: "T", rows: [] }, "text"),
+    () => jsx(ui.Field.Select, { name: "s", label: "S" }, jsx(ui.Field.Text, { name: "t", label: "T" })),
+    () => jsx(ui.Field.Text, { name: "t", label: "T" }, "child"),
+    () => jsx(ui.Chart.Bar, { title: "C", data: [{ label: "A", value: 1 }] }, jsx(ui.Text, null, "x")),
+  ])
+    expect(misplaced).toThrow("code_page_child");
+  // A part on its own is no page node: Core refuses it like any unknown kind.
+  expect(() => validateCodePage(page([jsx(ui.Field.Text, { name: "t", label: "T" })]), codeId)).toThrow();
+  expect(() => validateCodePage(page([jsx(ui.Stat, { label: "S", value: 1 })]), codeId)).toThrow();
+  // Only SDK blocks build pages; the chart family itself is no block.
+  expect(() => jsx(ui.Chart, { title: "C" })).toThrow("code_page_component");
+  // A hand-written description never enters a page, and a block cannot be changed after it is built.
+  expect(() => jsx(ui.Section, { title: "S" }, { kind: "Text", text: "hand-written" })).toThrow("code_page_blocks");
+  expect(() => jsx(ui.Page, { title: "P" }, jsx(ui.Field.Text, { name: "t", label: "T" }))).toThrow("code_page_child");
+  const built = jsx(ui.Page, { title: "P" }, jsx(ui.Text, null, "Hello"));
+  expect(Object.isFrozen(built) && Object.isFrozen(built.children)).toBe(true);
+  expect(() => built.children.push({ kind: "Text", text: "added" })).toThrow();
+});
+test("routes draw only pages that the SDK's blocks built", async () => {
   const sdk = generateCodeSdk([], { mode: "personal" });
   const runtime = await import(`data:text/javascript;base64,${Buffer.from(sdk.runtime).toString("base64")}`);
-  const chart = runtime.jsx(runtime.Chart.Bar, { width: "half", empty: "None yet.", title: "Items", data: [{ label: "One", value: 2 }] });
-  expect(chart).toEqual({
-    kind: "Chart",
-    width: "half",
-    empty: "None yet.",
-    description: { kind: "bar", title: "Items", data: [{ label: "One", value: 2 }] },
+  type Route = { page(value: unknown): Response };
+  runtime.app.get("/built", (c: Route) => c.page(runtime.jsx(runtime.Page, { title: "Built" }, runtime.jsx(runtime.Text, null, "Hi"))));
+  runtime.app.get("/object", (c: Route) => c.page({ version: 1, kind: "Page", title: "Object", children: [] }));
+  const request = (path: string) => ({
+    method: "GET",
+    path,
+    query: "",
+    contentType: "text/plain",
+    body: "",
+    params: {},
+    user: { id: "v", groups: [] },
   });
-  expect(runtime.jsx(runtime.Stats, { items: [{ label: "Open", value: 3 }] })).toEqual({
-    kind: "Stats",
-    items: [{ label: "Open", value: 3 }],
+  expect(await runtime.__codeSdk.run("route:GET:/built", request("/built"))).toEqual({
+    kind: "page",
+    status: 200,
+    tree: { kind: "Page", version: 1, title: "Built", children: [{ kind: "Text", text: "Hi" }] },
   });
-  expect(() => validateCodePage(page([chart]), codeId)).not.toThrow();
+  await expect(runtime.__codeSdk.run("route:GET:/object", request("/object"))).rejects.toThrow("code_page_blocks");
 });

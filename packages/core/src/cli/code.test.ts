@@ -635,6 +635,27 @@ test.each(["json", "jsonl"] as const)("C18b %s success contracts remain unchange
       key: "status",
     },
     { args: ["runs", directory], flags: {}, data: { version: 1, items: [runMetadata], nextCursor: "next" }, key: "runs" },
+    {
+      args: ["runs", directory],
+      flags: {},
+      data: {
+        version: 1,
+        items: [runMetadata],
+        nextCursor: null,
+        eventDeliveries: [
+          {
+            id: uuid,
+            eventId: uuid,
+            eventType: "fixture.changed",
+            state: "failed",
+            code: "handler_failed",
+            attempts: 8,
+            createdAt: serverCode.createdAt,
+          },
+        ],
+      },
+      key: "runs",
+    },
     { args: ["runs", directory], flags: { run: uuid }, data: { version: 1, run: runMetadata, contents: null }, key: "runRead" },
     { args: ["pause", directory], flags: { yes: true }, data: { version: 1, state: "paused" }, key: "pause" },
     { args: ["resume", directory], flags: { yes: true }, data: { version: 1, state: "active" }, key: "resume" },

@@ -1,9 +1,9 @@
 import { expect, test } from "bun:test";
 import { PDFDocument } from "pdf-lib";
 import { chromium } from "playwright";
+import { ChunkName, chunkSource } from "../../chat-code/runtime/chunks";
 import { decodePdfRequest } from "../pdf-contracts";
 import { invoice } from "../test-invoice";
-import { ChunkName, chunkSource } from "./chunks";
 import { compileArtifact } from "./compile";
 import type {} from "./pdf-browser-harness";
 

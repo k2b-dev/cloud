@@ -18,8 +18,13 @@ export function createCodeCapabilityTransport(
     const context = current();
     if (!context.token) throw new Error("Code capability authority is unavailable");
     const source = new URL(request.url);
-    if (!source.pathname.startsWith("/api/capabilities/v1/")) throw new Error("Invalid code capability route");
-    target.pathname = codeCapabilityPath(context.conversationId, context.turnId) + source.pathname.slice("/api".length);
+    const route = source.pathname.startsWith("/api/capabilities/v1/")
+      ? source.pathname.slice("/api".length)
+      : source.pathname.startsWith("/api/code-runner/")
+        ? "/runner/" + source.pathname.slice("/api/code-runner/".length)
+        : null;
+    if (!route) throw new Error("Invalid code capability route");
+    target.pathname = codeCapabilityPath(context.conversationId, context.turnId) + route;
     target.search = "";
     const headers = new Headers(request.headers);
     headers.delete("cookie");

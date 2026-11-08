@@ -199,6 +199,7 @@ of points.
 | --- | --- |
 | `bar` | `data: [{label, value}]`; `xAxis: {label}` (category title), `yAxis`, `colorByBar`, `showValues`, `legend`, `references` |
 | `line`, `scatter` | `series: [{label?, data: [{x, y}], role?}]`; `xAxis`, `yAxis`, `legend`, `references`. Line also accepts `area`, `smooth` and series `style`. |
+| `area` | `layout: "stacked"`, ordered `x: (string | number)[]`, `series: [{label, data: (number | null)[]}]`; equal lengths, nonnegative values. `normalize: true` shows 100 %; tooltip retains share and amount. Nulls interrupt the stack; a zero total is a gap only in normalized mode. `legend`, `format`. |
 | `pie`, `donut` | `data: [{label, value}]`; `legend`, `showLabels`, `format` |
 | `histogram` | `data: number[]`; `bins` (count or ascending edges), `references` |
 | `gauge` | `value`; `min`, `max`, `label`, `unit`, `format`, `thresholds` |
@@ -779,8 +780,9 @@ asking only if all of these hold:
 - the request has the exact same origin, so scheme, host, and port match;
 - it is GET or HEAD without a body, with only the headers above and no secret
   reference;
-- a person started the turn in a signed-in browser session, not a
-  routine, a mandate, `cld`, an API key, or another delegated credential;
+- a person started the turn in a signed-in browser session, or their personal
+  Code started an owner-authorized turn with `core.ai.chat.run`; routines,
+  mandates, `cld`, API keys and other delegated credentials do not qualify;
 - the code is the chat's own code or a Studio app the person manages, never an
   app they only use or HTML presented in the chat.
 

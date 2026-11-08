@@ -5,6 +5,7 @@ import {
   CAPABILITY_MAX_RESULT_BYTES,
   type CapabilityExecutionContext,
   CloudResourceReaderViewSchema,
+  CodeCheckedVersionManifestSchema,
   type User,
 } from "@k2b/cloud/contracts";
 import { z } from "zod";
@@ -12,6 +13,7 @@ import { aiCapabilities } from "../capabilities";
 import { CodeOwnerUnavailableError, codePerson, readCodeOwner } from "./access";
 import {
   CodeCallRefusalKindSchema,
+  type CodeEventDeliverySchema,
   CodeOwnerSchema,
   type CodeRefusedCall,
   type CodeRun,
@@ -76,6 +78,7 @@ describe("Core Code data contracts", () => {
       "code.attention",
       "code.attention.list",
       "code.automation.list",
+      "code.event.catchup.read",
       "code.list",
       "code.policy.effective",
       "code.policy.preview",
@@ -96,6 +99,10 @@ describe("Core Code data contracts", () => {
       manifest.actions.filter((action) => action.localId.startsWith("code.")).map((action) => ({ id: action.localId, code: action.code })),
     ).toEqual(
       [
+        "code.event.catchup",
+        "code.event.catchup.cancel",
+        "code.event.catchup.resume",
+        "code.event.redeliver",
         "code.pause",
         "code.policy.update",
         "code.resume",
@@ -107,6 +114,28 @@ describe("Core Code data contracts", () => {
         "code.version.submit",
       ].map((id) => ({ id, code: false })),
     );
+  });
+  test("checked event registrations require exact metadata and a matching stable entrypoint", () => {
+    const event = { type: "fixture.changed", version: 1, place: { type: "fixture.collection", id: "one" } };
+    const entry = { kind: "event", entrypoint: "event:fixture.changed@1", event, cron: null, file: "code.ts", line: 1 };
+    const manifest = {
+      version: 1,
+      entry: "code.ts",
+      entrypoints: [entry],
+      permissions: [],
+      policyRows: ["read"],
+      ai: false,
+      hashes: { source: "a".repeat(64), sdk: "b".repeat(64), bundle: "c".repeat(64) },
+    };
+    expect(CodeCheckedVersionManifestSchema.safeParse(manifest).success).toBe(true);
+    for (const invalid of [
+      { ...entry, event: undefined },
+      { ...entry, entrypoint: "event:fixture.changed@2" },
+      { ...entry, cron: "* * * * *" },
+      { ...entry, kind: "manual" },
+      { ...entry, event: { ...event, place: undefined } },
+    ])
+      expect(CodeCheckedVersionManifestSchema.safeParse({ ...manifest, entrypoints: [invalid] }).success).toBe(false);
   });
   test("owner union has exactly one opaque identity; source paths cannot escape the source tree", () => {
     expect(CodeOwnerSchema.parse({ kind: "resource", ref: { type: "example.mailbox", id: "m_1234" } })).toEqual({
@@ -153,6 +182,14 @@ describe("Core Code data contracts", () => {
     expect(() => codePerson({ authority: { ...authority, credentialKind: "oauth", scopes: ["mail:read"] } })).toThrow("Credential");
     expect(() => codePerson({ authority: { ...authority, credentialKind: "oauth", scopes: ["core:read"] } }, true)).toThrow("Credential");
     expect(codePerson({ authority: { ...authority, credentialKind: "oauth", scopes: ["core:read"] } }).id).toBe(user.id);
+  });
+  test("catch-up progress requires editor credentials before reading operation state", async () => {
+    const query = aiCapabilities.queries["code.event.catchup.read"];
+    const input = { operationId: "11111111-1111-4111-8111-111111111111" };
+    expect(await query.run(input, { ...context, authority: undefined })).toMatchObject({ ok: false, error: { code: "FORBIDDEN" } });
+    expect(
+      await query.run(input, { ...context, authority: { ...authority, credentialKind: "oauth", scopes: ["core:read"] } }),
+    ).toMatchObject({ ok: false, error: { code: "FORBIDDEN" } });
   });
 });
 
@@ -277,6 +314,28 @@ test("Code data contracts bundle for browsers without loading the server API", a
   const result = await Bun.build({ entrypoints: [new URL("./contracts.ts", import.meta.url).pathname], target: "browser" });
   expect(result.logs).toEqual([]);
   expect(result.success).toBe(true);
+});
+
+test("run lists retain legacy replies and keep event delivery metadata bounded and payload-free", () => {
+  const legacy = { items: [], nextCursor: null };
+  const delivery = {
+    id: user.id,
+    eventId: user.id,
+    eventType: "fixture.changed",
+    state: "failed",
+    code: "handler_failed",
+    attempts: 8,
+    createdAt: "2026-11-03T12:00:00.000Z",
+  } satisfies z.input<typeof CodeEventDeliverySchema>;
+  expect(codeQueryContracts.runList.data.parse(legacy)).toEqual(legacy);
+  const extended = { ...legacy, eventDeliveries: [delivery] };
+  expect(codeQueryContracts.runList.data.parse(extended)).toEqual(extended);
+  expect(
+    codeQueryContracts.runList.data.safeParse({ ...legacy, eventDeliveries: [{ ...delivery, data: { private: "payload" } }] }).success,
+  ).toBe(false);
+  expect(
+    codeQueryContracts.runList.data.safeParse({ ...legacy, eventDeliveries: Array.from({ length: 21 }, () => delivery) }).success,
+  ).toBe(false);
 });
 
 test("Code CLI run payload keeps version 1 and the additive refused-call summary", async () => {

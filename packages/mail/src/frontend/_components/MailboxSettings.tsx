@@ -800,11 +800,11 @@ export default function MailboxSettings(props: {
             description={messages().dangerZoneDescription}
             tone="danger"
           >
-            <SettingsGroup title={messages().moveToRecentlyDeleted} description={messages().recentlyDeletedGroupDescription}>
+            <SettingsGroup title={messages().deleteMailbox} description={messages().deleteMailboxGroupDescription}>
               <SettingsGroup.Action>
                 <Button variant="danger" size="sm" type="button" onClick={() => void openDeleteDialog()}>
                   <i class="ti ti-trash" aria-hidden="true" />
-                  {messages().moveToRecentlyDeleted}
+                  {messages().deleteMailbox}
                 </Button>
               </SettingsGroup.Action>
             </SettingsGroup>

@@ -5,7 +5,7 @@ section: Reference
 order: 1205
 description: Choose a supported Cloud import and check its runtime and stability.
 tags: [api, imports, boundaries, compatibility]
-updated: 2026-11-05
+updated: 2026-11-07
 ---
 
 # API surface
@@ -33,6 +33,7 @@ and such changes are not treated as breaking until then.
 | `@k2b/cloud/app-key` | Supported, portable | [Ed25519 app-key generation, validation, formatting, and fingerprints](/en/docs/operations/app-keys#use-the-portable-key-format-helpers) |
 | `@k2b/cloud/app-proof` | Advanced, server-only | Sign each private Core transmission with `signAppProof`; [runner bridge contract](/en/docs/operations/code-runner#integrate-the-bridge) |
 | `@k2b/cloud/code/run-token` | Preview, platform-owned | Core-signed attempt tokens; [Code bridge](/en/docs/platform/code-bridge) |
+| `@k2b/cloud/code/chat-run` | Preview, platform-owned | Assistant chat-job payloads and tagged value codec; [Code bridge](/en/docs/platform/code-bridge#one-off-chat-authority) |
 | `@k2b/cloud/code/runner` | Preview, portable | Strict run/job protocol schemas and lease types; [Code runner](/en/docs/operations/code-runner) |
 | `@k2b/cloud/app-pwa` | Supported, server-only | [Paired devices and customer visits](/en/docs/identity/app-pwa-sessions), typed operations, opt-in staff push to registered devices (`registeredDevices`), registration visit summaries and renaming, and their closed router |
 | `@k2b/cloud/app-pwa/browser` | Supported, browser | Strict App-PWA QR parsing and fragment clearing |
@@ -47,6 +48,7 @@ and such changes are not treated as breaking until then.
 | `@k2b/cloud/ssr` | Supported, server-only | Authenticated, anonymous, minimal, panel, and admin layouts; runtime context; request path; URL filters; `hintOpen` and `markHintSeen` for [one-time hints](/en/docs/frontend/ssr-pages-and-routing#one-time-hints-for-moved-paths) |
 | `@k2b/cloud/workflows` | Supported | Workflow definitions and authoring contracts |
 | `@k2b/cloud/ai` | Supported, server-only | AI APIs named by the AI guides |
+| `@k2b/cloud/code/events` | Preview, browser-safe | Catch-up and fake-only preview schemas for [Mail Code controls](/en/docs/platform/mail-code-automations#integrate-these-controls) |
 | `@k2b/cloud/code` | Preview, platform-owned | [Generate the SDK](/en/docs/platform/code-sdk), [check and bundle versions](/en/docs/platform/code-checker), [test and simulate](/en/docs/platform/test-code) |
 | `@k2b/cloud/cli` | Supported | Cloud CLI modules |
 | `@k2b/cloud/config` | Supported, server-only | Typed environment registries |
@@ -213,6 +215,12 @@ an unknown app and requires administrator authority on both paths. See
 [Inspect readiness and failures](/en/docs/operations/app-events#inspect-readiness-and-failures)
 for fields, offline behavior and bounds.
 
+`canReadAppAdministration(authority)` from `@k2b/cloud/services` authorizes
+Core administration metadata with the current person's administrator role and
+OAuth `read` or `admin`. It grants no app use or repair. `canRepairAppAccess`
+retains explicit `admin` scope for OAuth repair operations. Both helpers expect
+request authority from Cloud authentication; do not cache role decisions.
+
 `appAdminFacts(authority, appIds)` and `AppAdminFacts` from `@k2b/cloud/services`
 provide Core's administrator-only batch summary for up to 500 input app IDs.
 Each distinct ID receives persisted grant-entry counts (not expanded group membership) and effective managers,
@@ -349,7 +357,7 @@ inferring support from autocomplete.
 | `@k2b/cloud/services` | Feature services used by capability guides | Raw stores, lifecycle starters, gateway telemetry, and migrations are maintainer APIs |
 | `@k2b/cloud/ai` | `getLiveDictationStatus` with `LiveDictationStatus` for [live dictation availability](/en/docs/ai/live-dictation); [`runAiDecision` with typed probability answers](/en/docs/ai/structured-and-background-ai#ask-typed-decision-questions), structured model calls, durable application tasks through `runApplicationAiTask`, `releaseApplicationAiTask`, `listUnreleasedApplicationAiTaskSources`, and [`deleteApplicationAiTasks`](/en/docs/ai/structured-and-background-ai#reuse-durable-ai-from-an-application-job), local tools, and `listAiOpenQuestions` with `AiOpenQuestion` / `AiOpenQuestions` for [personal chat overviews](/en/docs/ai/chat-runtime-and-streaming#list-the-persons-open-questions) | Conversation stores, migrations, workers, and maintenance helpers are platform-owned |
 | `@k2b/cloud/browser` | Typed Hono client factory | Utility helpers are outside the documented typed-client contract |
-| `@k2b/cloud/shared` | Cloud-specific helpers named by feature guides | Generic utility re-exports are compatibility-only |
+| `@k2b/cloud/shared` | Cloud-specific helpers named by feature guides; `workflowEffectKey(runId, stepKey)` preserves existing durable effect identities without loading the engine | Generic utility re-exports are compatibility-only |
 | `@k2b/cloud/code` | Preview SDK generation, checking and hosting | Generated `@sdk` modules run in Code; the generator and host controls are platform-owned |
 | `@k2b/cloud/cli` | APIs for application CLI modules | Built-in account, application, and admin modules are platform-owned |
 
@@ -489,7 +497,7 @@ for execution, model access, and usage accounting.
 | `@k2b/cloud/ai/live-events` | Supported, browser and server | `AiInvalidationSchema` and `AI_INVALIDATION_DOMAINS`, the data of AI live updates | [Chat and streaming](/en/docs/ai/chat-runtime-and-streaming#ai-live-updates) |
 | `@k2b/cloud/ai/question-text` | Platform-owned, browser and server | The plain-text form of an Assistant question (`approvalCard`, `actionCardText`, `actionQuestionLines`) that `cld`, notifications, and Cloud Login show | [Tools and approvals](/en/docs/ai/tools-and-approvals) |
 | `@k2b/cloud/ai/app-frame` | Platform-owned, browser | The chart, view, and task contracts that an Assistant app frame draws and checks, without the skill parser and schemas of `ai/browser`, because the frame inlines its script in every app | [Chat interface](/en/docs/ai/chat-interface#assistant-apps-and-browser-work) |
-| `@k2b/cloud/ai/runtime` | Platform-owned, server-only | Core-owned conversation runtime and turn submission | [Chat and streaming](/en/docs/ai/chat-runtime-and-streaming) |
+| `@k2b/cloud/ai/runtime` | Platform-owned, server-only | Core-owned conversation runtime, turn submission and transactional background message delivery | [Chat and streaming](/en/docs/ai/chat-runtime-and-streaming) |
 | `@k2b/cloud/ai/admin` | Platform-owned, server-only | AI usage accounting, model access, and masked request-header names for administration | [Models and providers](/en/docs/ai/models-and-providers), [Observability](/en/docs/operations/observability) |
 | `@k2b/cloud/account/ui` | Supported, SolidJS | Cloud account selectors and avatars | [Building blocks](/en/docs/building-blocks) |
 | `@k2b/cloud/services/approvals` | Platform-owned, server-only | `ApprovalKind`, `CodeVersionApprovalRequestInput`, `request`, `decide`, `registerApprovalDecisionHandler`, `ApprovalDecisionConflictError`, and recipient-aware lists for independent Code reviews | [Code-version approvals](/en/docs/identity/approvals#code-version-approvals) |
@@ -522,6 +530,7 @@ for execution, model access, and usage accounting.
 | `@k2b/cloud/workflows/language` | Supported | Workflow compiler, parser, and authoring | [Author workflows](/en/docs/automation/author-and-publish-workflows) |
 | `@k2b/cloud/workflows/runtime` | Supported, server-only | Workflow execution runtime | [Workflow effects](/en/docs/automation/effects-retry-and-reconciliation) |
 | `@k2b/cloud/workflows/store` | Supported, server-only | Durable workflow store, `createWorkflowWorker`, and `notifyWorkflowWorker` | [Start runs](/en/docs/automation/emit-events-and-start-runs) |
+| `@k2b/cloud/ai/tasks` | Supported, server-only | Shared durable application AI task migration, lifecycle and budget; existing `WorkflowAi` names remain stable | [Application AI tasks](/en/docs/operations/application-ai-tasks) |
 | `@k2b/cloud/workflows/ai` | Supported, server-only | Durable AI task migration and lifecycle for opted-in workflow apps; `getWorkflowAiBudget()` reads the administrator budget for new work | [Structured and background AI](/en/docs/ai/structured-and-background-ai) |
 | `@k2b/cloud/workflows/testing` | Supported, tests | Workflow process fixtures | [Test workflows](/en/docs/automation/workflow-observability-and-testing) |
 | `@k2b/cloud/services/image-metadata` | Supported, server-only | Strip metadata from content image uploads without re-encoding | [Image upload privacy](/en/docs/platform/image-upload-privacy) |
@@ -711,6 +720,11 @@ and [Upload preflight](/en/docs/platform/pdf-and-templates#upload-browser-map-sn
 `parseAiModelChoice` and `AiPeopleModels`. Use them to request a deployment's
 model class and interpret the resolved variant. See
 [Structured and background AI](/en/docs/ai/structured-and-background-ai#request-a-class).
+
+Core's routine definition export uses the framework-owned `exportChatTasks`,
+`ChatTaskExportPageSchema`, `ChatTaskExportEntrySchema`, `ChatTaskExportQuerySchema`
+and `ChatTaskExportForbiddenError` exports from `@k2b/cloud/ai`. See
+[Export automation definitions](/en/docs/operations/automation-definition-export).
 
 ### Code owners and normal shares
 

@@ -8,10 +8,10 @@ import {
 } from "@k2b/cloud/ai/browser";
 import { escapeXml } from "@k2b/stdlib";
 import { isChartDatum } from "@k2b/ui/chart-inspection";
-import { createCloud } from "./cloud";
-import { CloudError } from "./errors";
-import { boundMoney, chart, chartOptions, chartSvg, html } from "./lib";
-import { parseCsv, toCsv } from "./sheet-lib";
+import { createCloud } from "../../chat-code/runtime/cloud";
+import { CloudError } from "../../chat-code/runtime/errors";
+import { boundMoney, chart, chartOptions, chartSvg, html } from "../../chat-code/runtime/lib";
+import { parseCsv, toCsv } from "../../chat-code/runtime/sheet-lib";
 
 test("cloud.html escapes values, joins arrays and keeps nested markup", () => {
   const items = ["<b>", "Müller & Söhne"];
@@ -672,4 +672,38 @@ test("a titled bar chart with many rows reserves the height of its title and eve
   const baselines = [...markup.matchAll(/stdlib-chart-category-label"[^>]*y="([\d.]+)"/g)].map((match) => Number(match[1]));
   expect(baselines).toHaveLength(20);
   expect(Math.max(...baselines)).toBeLessThan(height);
+});
+
+test("calendar app charts preserve headers, units, square geometry and Date pairs", () => {
+  const markup = String(
+    chart(
+      {
+        kind: "heatmap",
+        layout: "calendar",
+        title: "Daily balance",
+        subtitle: "Fictional",
+        locale: "de-DE",
+        label: "EUR",
+        scale: "diverging",
+        data: [
+          [new Date("2026-11-02T00:00:00Z"), -1234.5],
+          ["2026-11-03", null],
+        ],
+      },
+      "en",
+      "UTC",
+    ),
+  );
+  expect(markup).toContain("Daily balance</text>");
+  expect(markup).toContain("Fictional</text>");
+  expect(markup).not.toContain("direction:rtl");
+  expect(markup).not.toContain("data-stretch");
+  const cell = markup.match(/<rect[^>]*width="(\d+)" height="(\d+)" rx="2"/);
+  expect(cell).not.toBeNull();
+  expect(cell![1]).toBe(cell![2]);
+  expect(Number(cell![1])).toBeGreaterThan(14);
+  expect(markup).not.toContain('preserveAspectRatio="none"');
+  expect(markup).not.toMatch(/<text[^>]*style="[^"]*"[^>]*style=/);
+  expect(markup).toContain("1.234,5 mehr raus");
+  expect(markup).toContain("EUR");
 });

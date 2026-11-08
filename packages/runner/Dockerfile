@@ -13,9 +13,14 @@ COPY package.json bun.lock bunfig.toml ./
 COPY patches/ patches/
 COPY --parents packages/*/package.json pwas/*/package.json fixtures/*/package.json docs-site/package.json ./
 RUN bun install --frozen-lockfile --ignore-scripts
+# The checker consumes the editor chart schema and its public, browser-free UI core.
+# Build the same public package exports as the application images.
+COPY tsconfig.base.json ./
+COPY packages/ssr/src packages/ssr/src
+COPY packages/ui packages/ui
+RUN bun run --cwd packages/ui build
 COPY packages/cloud/src packages/cloud/src
-# The portable chart contract has no renderer or UI build dependency.
-COPY packages/editor/src/chart-schema.ts packages/editor/src/chart-schema.ts
+COPY packages/editor/src/chart-schema.ts packages/editor/src/chart-locale.ts packages/editor/src/
 COPY packages/cloud/scripts/code-check*.ts packages/cloud/scripts/
 COPY packages/runner/src packages/runner/src
 COPY packages/runner/scripts packages/runner/scripts
@@ -55,8 +60,13 @@ CMD ["bun", "/app/runner.js"]
 # CI exercises every native engine test in the same privilege envelope as production.
 FROM build AS test-build
 COPY packages/runner/test packages/runner/test
+COPY packages/assistant/src/chat-code packages/assistant/src/chat-code
+COPY packages/editor/src/charts.ts packages/editor/src/charts.ts
+COPY packages/ui/src packages/ui/src
 COPY packages/cloud/scripts/code-check-worker.ts packages/cloud/scripts/
-RUN bun packages/runner/test/build-code-fixture.ts /app/test-kit-checked.json \
+RUN bun build packages/ui/src/charts.ts packages/ui/src/chart-inspection.ts --target=browser --outdir=packages/ui/dist/browser \
+    && bun packages/runner/test/build-code-fixture.ts /app/test-kit-checked.json \
+    && bun packages/runner/test/build-chat-fixture.ts /app/chat-fixture.json \
     && bun build packages/runner/test/job-probe.ts --target=bun --outfile=/app/job-probe.js
 COPY scripts/fixtures/app-key-fixtures.ts scripts/fixtures/app-key-fixtures.ts
 RUN cc -O2 -Wall -Wextra -Werror packages/runner/test/isolation-probe.c -o /app/isolation-probe
@@ -66,6 +76,7 @@ FROM runtime AS test
 COPY --from=test-build /app/tests/ /app/
 COPY --from=test-build /app/isolation-probe /app/isolation-probe
 COPY --from=test-build /app/test-kit-checked.json /app/test-kit-checked.json
+COPY --from=test-build /app/chat-fixture.json /app/chat-fixture.json
 COPY --from=test-build /app/job-probe.js /app/job-probe.js
 COPY packages/runner/test/fixed-clock.ts /app/fixed-clock.ts
 

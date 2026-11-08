@@ -60,6 +60,16 @@ test("checks only Assistant presentation code and skips tests", async () => {
     await write("packages/cloud/src/ai/chat/receipt.test.tsx");
     await write("packages/assistant/src/cli/actions.ts");
     await write("packages/mail/src/capabilities.ts");
+    for (const path of [
+      "packages/cloud/src/_internal/capability-sentences.ts",
+      "packages/cloud/src/ai/tool-sentences.ts",
+      "packages/assistant/src/chat-code/CapabilityApproval.tsx",
+      "packages/assistant/src/chat-code/code-approval-message.ts",
+      "packages/assistant/src/frontend/empty.ts",
+    ]) {
+      await mkdir(dirname(join(root, path)), { recursive: true });
+      await writeFile(join(root, path), "export {};");
+    }
     const found = await rule.run({ workspaceRoot: root, fix: false, flags: new Set() });
     expect(found.map((finding) => `${relative(root, finding.file ?? "")}:${finding.line}`)).toEqual([
       "packages/assistant/src/cli/actions.ts:1",
@@ -68,4 +78,11 @@ test("checks only Assistant presentation code and skips tests", async () => {
   } finally {
     await rm(root, { recursive: true, force: true });
   }
+});
+
+test("stale presentation scan roots fail instead of silently losing coverage", async () => {
+  const root = await mkdtemp(join(tmpdir(), "cloud-app-neutral-missing-"));
+  const found = await rule.run({ workspaceRoot: root, fix: false, flags: new Set() });
+  expect(found.length).toBeGreaterThan(0);
+  expect(found.every((finding) => finding.message.includes("scan root is missing"))).toBe(true);
 });

@@ -15,6 +15,7 @@ import {
   codeActivationContracts,
 } from "./activation-contracts";
 import type { Code } from "./contracts";
+import { syncCodeEventSubscriptions } from "./event-subscriptions";
 import { findCode } from "./store";
 import { CodeVersionError, recordCodeVersionBaseline, requireCodeVersionApproval } from "./versions";
 
@@ -401,6 +402,7 @@ export async function processCodeActivation(activationId: string, overrides?: Pa
             WHERE owner_app_id IN ('core','runner') AND workload_type='code.version'
               AND workload_id=${locked.activeVersionId} AND policy IS NOT NULL AND state='active' RETURNING id`
             : [];
+        await syncCodeEventSubscriptions(locked, row.version_id, tx, mandate);
         await recordCodeVersionBaseline(code.id, row.version_id, tx);
         await tx`UPDATE code.codes SET active_version_id=${row.version_id}::uuid,state='active',pause_reason=NULL,pause_rows='{}',pause_policy_revision=NULL WHERE id=${code.id}`;
         await tx`UPDATE code.activations SET state='active',failure=NULL,mandate_id=${mandate.id}::uuid,authority=NULL,updated_at=now() WHERE id=${row.id}::uuid`;

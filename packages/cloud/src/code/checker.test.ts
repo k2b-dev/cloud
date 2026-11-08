@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import { chmod, copyFile, cp, mkdir, mkdtemp, readdir, rmdir, unlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
+import { chatCapabilities } from "../../../chat/src/capabilities";
 import { aiDecisionQuery } from "../../../core/src/ai-decision-capability";
 import { aiGenerationQuery } from "../../../core/src/ai-generation-capability";
 import codeCli from "../../../core/src/cli/code";
@@ -14,14 +15,17 @@ import {
 } from "../../../core/src/code/authoring-contracts";
 import { readCodeCheckLimits } from "../../../core/src/code/runner-jobs";
 import { CODE_SETTINGS, codeSettings } from "../../../core/src/code/settings";
+import { mailCapabilities } from "../../../mail/src/capabilities";
 import { capabilityHash } from "../_internal/capability-schemas";
 import { compileCapabilityManifest } from "../capabilities/testing";
 import type { CloudCliContext } from "../cli";
 import { type CodeCheckHost, checkCode } from "./checker";
 import { CODE_CHECK_LIMITS, type CodeCheckRequest, CodeVersionManifestSchema } from "./checker-contract";
+import { fileImportManifest } from "./file-ref.test-fixture";
 import { generateCodeSdk } from "./generator";
 import { validateCodePage } from "./page-contract";
 import { sdkFixture } from "./sdk.test-fixture";
+import type { CodeSdkInvocation } from "./types";
 
 let directory: string;
 let host: Extract<CodeCheckHost, { bun: string }>;
@@ -213,10 +217,9 @@ test("core.ai.decide is AI in the generated SDK and mail triage checks category 
   const manifests = [compileCapabilityManifest("core", { protocolVersion: 2, queries: { "ai.decide": aiDecisionQuery } })];
   const sdk = generateCodeSdk(manifests, { mode: "code_run" });
   const docs = await Bun.file(resolve(import.meta.dir, "../../../../docs-site/docs/en/platform/code-sdk.md")).text();
-  const skill = await Bun.file(resolve(import.meta.dir, "../../../assistant/src/skills/code-authoring/SKILL.md")).text();
+  // The Code authoring skill's own examples are checked by its examples test in packages/assistant.
   const snippet = (text: string) => text.split("<!-- ai1-mail-triage -->")[1]!.split("```ts\n")[1]!.split("```")[0]!.trim();
   const source = snippet(docs);
-  expect(snippet(skill)).toBe(source);
   const checked = await check(source, {
     sdk,
     aiOperations: sdk.manifest.operations.filter((op) => op.capability.startsWith("core.ai.")).map((op) => op.capability),
@@ -595,28 +598,112 @@ test("accepts dynamic resource targets and records their type as non-binding rev
   expect(result.permissions).toContainEqual(expect.objectContaining({ target: { type: "work-shop.workshop", id: null } }));
 });
 
-test.each([
-  ["outside.change", "code_code_false"],
-  ["stock.export", "code_stream"],
-])("rejects omitted operation %s", async (method, code) => {
+test.each([["outside.change", "code_code_false"]])("rejects omitted operation %s", async (method, code) => {
   const result = await check(schedule(`await owner.${method}({});`));
   expect(result).toMatchObject({ ok: false, diagnostics: expect.arrayContaining([expect.objectContaining({ code })]) });
 });
 
-test("rejects duplicate event/place subscriptions even though events also report Phase 3", async () => {
+test("checked resource events and zoned schedules execute through the bundle registration fence", async () => {
+  const manifest = sdkFixture();
+  manifest.events![0]!.place = "workshop";
+  const result = await check(
+    `import { app, owner } from "@sdk";
+app.get("/health", c => c.text("Ready"));
+app.on("work-shop.changed", async event => { await owner.stock.list({ cursor: event.subject.id }); });
+app.schedule({ at: "2030-01-02T09:00:00Z", timeZone: "UTC" }, async () => { await owner.stock.list({ cursor: "once" }); });
+app.schedule({ cron: "0 9 * * *", timeZone: "Europe/Berlin" }, async () => { await owner.stock.list({ cursor: "daily" }); });
+export default app;`,
+    {
+      sdk: generateCodeSdk([manifest], {
+        mode: "resource",
+        owner: { kind: "resource", ref: { type: "work-shop.workshop", id: "owner-shop" } },
+      }),
+    },
+  );
+  expect(result).toMatchObject({ ok: true });
+  if (!result.ok) return;
+  expect(result.manifest.entrypoints).toMatchObject([
+    { kind: "route", entrypoint: "route:GET:/health", route: { method: "GET", path: "/health", public: false } },
+    {
+      kind: "event",
+      entrypoint: "event:work-shop.changed@1",
+      event: { type: "work-shop.changed", version: 1, place: { type: "work-shop.workshop", id: "owner-shop" } },
+    },
+    { kind: "schedule", entrypoint: "schedule:0", cron: null, at: "2030-01-02T09:00:00Z", timeZone: "UTC" },
+    { kind: "schedule", entrypoint: "schedule:1", cron: "0 9 * * *", timeZone: "Europe/Berlin" },
+  ]);
+  const file = join(directory, "event-bundle.mjs");
+  await writeFile(file, result.bundle);
+  const module = await import(file);
+  const input = {
+    id: "11111111-1111-4111-8111-111111111111",
+    type: "work-shop.changed",
+    version: 1,
+    source: "work-shop",
+    time: "2026-11-06T12:00:00Z",
+    subject: { type: "work-shop.workshop", id: "item-a" },
+    place: { type: "work-shop.workshop", id: "owner-shop" },
+    data: { title: "fixture" },
+  };
+  // Each runner starts a fresh module with its own one-use bridge.
+  const routeModule = await import(`${file}?route`);
+  expect(
+    await routeModule["route:GET:/health"](
+      { method: "GET", path: "/health", query: "", contentType: "", params: {}, user: { id: "visitor", groups: [] } },
+      {
+        call: async () => {
+          throw new Error("unexpected_call");
+        },
+      },
+    ),
+  ).toEqual({ kind: "text", status: 200, body: "Ready" });
+  const calls: unknown[] = [];
+  await module["event:work-shop.changed@1"](input, {
+    call: async (operation: string, value: unknown) => {
+      calls.push({ operation, value });
+      return { rows: [], next: null };
+    },
+  });
+  expect(calls).toMatchObject([{ operation: "work-shop.stock.list", value: { call: { input: { cursor: "item-a" } } } }]);
+  const onceModule = await import(`${file}?once`);
+  const onceCalls: unknown[] = [];
+  await onceModule["schedule:0"](null, {
+    call: async (operation: string, value: unknown) => {
+      onceCalls.push({ operation, value });
+      return { rows: [], next: null };
+    },
+  });
+  expect(onceCalls).toMatchObject([{ operation: "work-shop.stock.list", value: { call: { input: { cursor: "once" } } } }]);
+  const dailyModule = await import(`${file}?daily`);
+  const dailyCalls: unknown[] = [];
+  await dailyModule["schedule:1"](null, {
+    call: async (operation: string, value: unknown) => {
+      dailyCalls.push({ operation, value });
+      return { rows: [], next: null };
+    },
+  });
+  expect(dailyCalls).toMatchObject([{ operation: "work-shop.stock.list", value: { call: { input: { cursor: "daily" } } } }]);
+}, 30_000);
+
+test("rejects duplicate event/place subscriptions", async () => {
+  const manifest = sdkFixture();
+  manifest.events![0]!.place = "workshop";
   const result = await check(
     `import { app, owner, work_shop } from "@sdk";\napp.on("work-shop.changed", () => {});\napp.on(owner, "work-shop.changed", () => {});`,
+    {
+      sdk: generateCodeSdk([manifest], {
+        mode: "resource",
+        owner: { kind: "resource", ref: { type: "work-shop.workshop", id: "owner-shop" } },
+      }),
+    },
   );
   expect(result).toMatchObject({
     ok: false,
-    diagnostics: expect.arrayContaining([
-      expect.objectContaining({ code: "code_phase_unavailable", message: "app.on kommt in Phase 3" }),
-      expect.objectContaining({ code: "code_duplicate_on", line: 3 }),
-    ]),
+    diagnostics: expect.arrayContaining([expect.objectContaining({ code: "code_duplicate_on", line: 3 })]),
   });
 });
 
-test.each(["nav", "webhook", "on", "fetch"])("reports Phase 2/3 for app.%s", async (method) => {
+test.each(["nav", "webhook", "fetch"])("reports Phase 2/3 for app.%s", async (method) => {
   const result = await check(`import { app as application } from "@sdk"; application.${method}("/", () => {});`);
   expect(result).toMatchObject({
     ok: false,
@@ -788,55 +875,214 @@ app.post("/save", c => c.redirect("/hello/saved"));`);
   expect(result.bundle).not.toContain("hono");
 }, 30_000);
 
-test("TSX and object pages produce identical validated trees without a framework bundle", async () => {
+test("TSX building blocks compose the checked page tree without a framework bundle", async () => {
   const result = await checkCode(
     {
       ...base,
       entry: "code.tsx",
       limits: { ...CODE_CHECK_LIMITS, checkMs: 30000 },
       files: {
-        "code.tsx": `import { app, jsx, Page, Section, Text, Form, Chart } from "@sdk";
-app.get("/", c => c.page(<Page title="Items"><Section title="Today"><Text>Hello {"there"}</Text><Chart.Bar title="Count" data={[{label:"One",value:2}]} /><Form title="Find" action="/find" fields={[{type:"scan",name:"barcode",label:"Barcode"}]} submit="Find" /></Section></Page>));
-app.get("/object", c => c.page({
-  version: 1, kind: "Page", title: "Items", children: [{ kind: "Section", title: "Today", children: [
-    { kind: "Text", text: "Hello there" },
-    { kind: "Chart", description: { kind: "bar", title: "Count", data: [{ label: "One", value: 2 }] } },
-    { kind: "Form", title: "Find", action: "/find", fields: [{ type: "scan", name: "barcode", label: "Barcode" }], submit: "Find" },
-  ] }],
-}));`,
+        "code.tsx": `import { app, jsx, Page, Section, Text, Stats, Stat, Table, Column, Detail, Item, Form, Field, Option, Chart } from "@sdk";
+const statuses = ["open", "done"];
+app.get("/", c => c.page(
+  <Page title="Items">
+    <Stats><Stat label="Open" value={3} delta={{ value: 0.5, better: "down" }} compare={{ label: "Yesterday", value: 2 }} /></Stats>
+    <Section title="Today">
+      <Text>Hello {"there"}</Text>
+      <Chart.Bar width="half" title="Count" data={[{ label: "One", value: 2 }]} />
+      <Chart.Empty width="half" title="Orders" empty="No order yet." />
+      <Table title="Items" rows={[{ name: "One" }]}><Column key="name" label="Name" /></Table>
+      <Detail title="Item"><Item label="Code" value="W-1" /></Detail>
+      <Form title="Find" action="/find" submit="Find">
+        <Field.Scan name="barcode" label="Barcode" required />
+        <Field.Number name="count" label="Count" value={1} />
+        <Field.Select name="status" label="Status" value="open">
+          {statuses.map(status => <Option value={status} label={status} />)}
+        </Field.Select>
+        <Field.Checkbox name="urgent" label="Urgent" />
+      </Form>
+    </Section>
+  </Page>
+));`,
       },
     },
     host,
   );
-  expect(result.ok).toBe(true);
   if (!result.ok) throw new Error(JSON.stringify(result.diagnostics));
   const module = await import(`data:text/javascript;base64,${Buffer.from(result.bundle).toString("base64")}`);
   const response = await module["route:GET:/"](
     { method: "GET", path: "/", query: "", params: {}, contentType: "text/plain", body: "", user: null },
     { call: async () => null },
   );
-  expect(response).toMatchObject({
-    kind: "page",
-    tree: {
-      version: 1,
-      kind: "Page",
-      title: "Items",
-      children: [
-        { kind: "Section", title: "Today", children: [{ kind: "Text", text: "Hello there" }, { kind: "Chart" }, { kind: "Form" }] },
-      ],
-    },
+  // Authors compose blocks; the description below is only the transport Core checks and draws.
+  expect(validateCodePage(response.tree, "c_fixture")).toEqual({
+    version: 1,
+    kind: "Page",
+    title: "Items",
+    children: [
+      {
+        kind: "Stats",
+        items: [{ label: "Open", value: 3, delta: { value: 0.5, better: "down" }, compare: { label: "Yesterday", value: 2 } }],
+      },
+      {
+        kind: "Section",
+        title: "Today",
+        children: [
+          { kind: "Text", text: "Hello there" },
+          { kind: "Chart", width: "half", description: { kind: "bar", title: "Count", data: [{ label: "One", value: 2 }] } },
+          { kind: "Chart", width: "half", title: "Orders", empty: "No order yet." },
+          { kind: "Table", title: "Items", rows: [{ name: "One" }], columns: [{ key: "name", label: "Name" }] },
+          { kind: "Detail", title: "Item", items: [{ label: "Code", value: "W-1" }] },
+          {
+            kind: "Form",
+            title: "Find",
+            action: "/find",
+            submit: "Find",
+            fields: [
+              { type: "scan", name: "barcode", label: "Barcode", required: true },
+              { type: "number", name: "count", label: "Count", value: 1 },
+              {
+                type: "select",
+                name: "status",
+                label: "Status",
+                value: "open",
+                options: [
+                  { value: "open", label: "open" },
+                  { value: "done", label: "done" },
+                ],
+              },
+              { type: "checkbox", name: "urgent", label: "Urgent" },
+            ],
+          },
+        ],
+      },
+    ],
   });
-  const objectPath = join(directory, "object-page.mjs");
-  await writeFile(objectPath, result.bundle);
-  const objectModule = await import(objectPath);
-  const objectResponse = await objectModule["route:GET:/object"](
-    { method: "GET", path: "/object", query: "", params: {}, contentType: "text/plain", body: "", user: null },
-    { call: async () => null },
-  );
-  expect(response).toEqual(objectResponse);
-  expect(validateCodePage(response.tree, "c_fixture")).toEqual(validateCodePage(objectResponse.tree, "c_fixture"));
   for (const runtime of ["solid-js", "hono", "react/jsx-runtime"]) expect(result.bundle).not.toContain(runtime);
 }, 30000);
+test("the page example in the docs checks and builds a valid page", async () => {
+  const docs = await Bun.file(resolve(import.meta.dir, "../../../../docs-site/docs/en/platform/code-sdk.md")).text();
+  const snippet = (text: string) => text.split("<!-- code-page-example -->")[1]!.split("```tsx\n")[1]!.split("```")[0]!.trim();
+  const source = snippet(docs);
+  const result = await checkCode(
+    { ...base, entry: "code.tsx", limits: { ...CODE_CHECK_LIMITS, checkMs: 30000 }, files: { "code.tsx": source } },
+    host,
+  );
+  if (!result.ok) throw new Error(JSON.stringify(result.diagnostics));
+  const module = await import(`data:text/javascript;base64,${Buffer.from(result.bundle).toString("base64")}`);
+  const response = await module["route:GET:/"](
+    { method: "GET", path: "/", query: "", params: {}, contentType: "text/plain", body: "", user: null },
+    { call: async () => null },
+  );
+  expect(validateCodePage(response.tree, "c_fixture").children.map((node) => node.kind)).toEqual(["Stats", "Section"]);
+}, 30000);
+test("the invoice template is identical in skill and Fibel, checks against the live Mail SDK and passes FileRefs", async () => {
+  const sources = await Promise.all(
+    [
+      "../../../../docs-site/docs/en/platform/code-sdk.md",
+      "../../../../docs-site/docs/en/platform/capabilities.md",
+      "../../../assistant/src/skills/code-authoring/templates/mail-invoices.md",
+    ].map((path) => Bun.file(resolve(import.meta.dir, path)).text()),
+  );
+  const snippet = (text: string) => text.split("<!-- code-file-example -->")[1]!.split("```ts\n")[1]!.split("```")[0]!.trim();
+  const source = snippet(sources[0]!);
+  for (const text of sources) expect(snippet(text)).toBe(source);
+  const mail = compileCapabilityManifest("mail", mailCapabilities);
+  const sdk = generateCodeSdk([mail, fileImportManifest()], {
+    mode: "resource",
+    owner: { kind: "resource", ref: { type: "mail.mailbox", id: "Mb4g00" } },
+  });
+  const result = await checkCode(
+    { ...base, sdk, files: { "code.ts": source }, entry: "code.ts", limits: { ...CODE_CHECK_LIMITS, checkMs: 30_000 } },
+    host,
+  );
+  if (!result.ok) throw new Error(JSON.stringify(result.diagnostics));
+  const calls: CodeSdkInvocation[] = [];
+  const file = { id: "fake-file-ref", name: "invoice.pdf", mediaType: "application/pdf", size: 5_000_000 };
+  const module = await import(`data:text/javascript;base64,${Buffer.from(result.bundle).toString("base64")}`);
+  await module["event:mail.message.received@1"](
+    {
+      id: "11111111-1111-4111-8111-111111111111",
+      type: "mail.message.received",
+      version: 1,
+      source: "mail",
+      time: "2026-11-07T12:00:00.000Z",
+      subject: { type: "mail.message", id: "Ms4g00" },
+      place: { type: "mail.mailbox", id: "Mb4g00" },
+      data: { receiptId: "22222222-2222-4222-8222-222222222222" },
+    },
+    {
+      call: async (_operation: string, input: CodeSdkInvocation) => {
+        calls.push(input);
+        if (input.call.capability === "mail.message.read")
+          return {
+            hydrationStatus: "complete",
+            attachmentsTruncated: false,
+            conversationId: "Cv4g00",
+            attachments: [{ id: "At4g00", contentType: "application/pdf" }],
+          };
+        if (input.call.capability === "mail.attachment.content.read") return file;
+        if (input.call.capability === "imports.import") return { imported: true };
+        if (input.call.capability === "mail.conversation.read") return { collaboration: { revision: 4 } };
+        return {};
+      },
+    },
+  );
+  expect(calls.map((input) => input.call.capability)).toEqual([
+    "mail.message.read",
+    "mail.attachment.content.read",
+    "imports.import",
+    "mail.conversation.read",
+    "mail.conversation.tag.update",
+  ]);
+  expect(calls[2]).toMatchObject({
+    call: { input: { file } },
+    metadata: { idempotencyKey: "invoice:22222222-2222-4222-8222-222222222222:At4g00" },
+  });
+  expect(calls[4]).toMatchObject({
+    call: { target: { type: "mail.mailbox", id: "Mb4g00" }, input: { expectedRevision: 4, addTagIds: ["Tag123"] } },
+  });
+}, 30_000);
+
+test("each building block types its props: a wrong prop, value or child text is a type error", async () => {
+  // Each block sits in its right place, so only its own props can be wrong.
+  const form = (field: string) => `<Form title="F" action="/x" submit="Go">${field}</Form>`;
+  const wrong = [
+    form('<Field.Number name="n" label="N" value="three" />'),
+    form('<Field.Checkbox name="c" label="C" value="yes" />'),
+    form('<Field.Text name="t" label="T">text</Field.Text>'),
+    form('<Field.Select name="s" label="S"><Option value="v" /></Field.Select>'),
+    '<Stats><Stat label="S" value={1} delta={{ value: 1, better: "sideways" }} /></Stats>',
+    "<Stats items={[]} />",
+    '<Table title="T" rows={[]}><Column key="a" /></Table>',
+    '<Detail title="D"><Item label="L" /></Detail>',
+    '<Form title="F" action="/x" submit="Go" fields={[]} />',
+    '<Chart.Bar title="C" data={[{ label: "A", value: 1 }]} description={{ kind: "bar" }} />',
+    '<Chart.Line title="L" series="none" />',
+    '<Chart description={{ kind: "bar", title: "C", data: [] }} />',
+    '<Chart.Empty title="Orders" />',
+  ];
+  const routes = wrong.map((block, index) => `app.get("/${index}", c => c.page(<Page title="P">${block}</Page>));`);
+  // The description is Cloud's transport, not a way to build pages.
+  wrong.push('c.page({ version: 1, kind: "Page", title: "P", children: [] })');
+  routes.push(`app.get("/object", c => c.page({ version: 1, kind: "Page", title: "P", children: [] }));`);
+  const result = await checkCode(
+    {
+      ...base,
+      entry: "code.tsx",
+      limits: { ...CODE_CHECK_LIMITS, checkMs: 30000 },
+      files: {
+        "code.tsx": `import { app, jsx, Page, Stats, Stat, Table, Column, Detail, Item, Option, Form, Field, Chart } from "@sdk";\n${routes.join("\n")}`,
+      },
+    },
+    host,
+  );
+  expect(result.ok).toBe(false);
+  if (result.ok) return;
+  const lines = new Set(result.diagnostics.filter((diagnostic) => diagnostic.code.startsWith("TS")).map((diagnostic) => diagnostic.line));
+  // Line 1 is the import; block N sits on line N + 2.
+  expect(wrong.filter((_, index) => !lines.has(index + 2))).toEqual([]);
+}, 60000);
 test("TSX refuses intrinsic HTML and handler props", async () => {
   // A chart is either drawn from a description or empty with a reason; a bare title is neither.
   for (const child of ["<div>HTML</div>", "<Text onClick={() => {}}>Handler</Text>", '<Chart title="Orders" />']) {
@@ -855,3 +1101,44 @@ test("TSX refuses intrinsic HTML and handler props", async () => {
     if (!result.ok) expect(result.diagnostics.some((diagnostic) => diagnostic.code.startsWith("TS"))).toBe(true);
   }
 }, 60000);
+
+test("personal scheduled Code generates a summary and posts it into the owner's selected Chat", async () => {
+  const sdk = generateCodeSdk(
+    [
+      compileCapabilityManifest("core", { protocolVersion: 2, queries: { "ai.generate": aiGenerationQuery } }),
+      compileCapabilityManifest("chat", chatCapabilities),
+    ],
+    { mode: "personal" },
+  );
+  const source = `import { app, core, chat } from "@sdk";
+app.schedule({ at: "2026-12-01T09:15:30+01:00", timeZone: "Europe/Berlin" }, async () => {
+  const result = await core.app().ai.generate({ task: "daily.summary", prompt: "Summarize the supplied notes.", input: { notes: "Delivery received." }, output: { type: "text", maxChars: 1200 } });
+  if (typeof result.output !== "object" || result.output === null || !("text" in result.output) || typeof result.output.text !== "string") throw new Error("Unexpected summary output");
+  await chat.app().message.post({ conversation: "Chat01", body: result.output.text, idempotencyKey: "summary-2026-12-01" });
+}, { name: "reminder", title: "Send summary" });
+export default app;`;
+  const checked = await check(source, { sdk, aiOperations: ["core.ai.generate"], limits: { ...CODE_CHECK_LIMITS, checkMs: 60_000 } });
+  if (!checked.ok) throw new Error(JSON.stringify(checked.diagnostics));
+  expect(checked.manifest.ai).toBeTrue();
+  expect(checked.manifest.permissions.map((entry) => entry.operation).sort()).toEqual(["chat.message.post", "core.ai.generate"]);
+  const calls: Array<{ operation: string; invocation: CodeSdkInvocation }> = [];
+  const loaded = await import(`data:text/javascript;base64,${Buffer.from(checked.bundle).toString("base64")}`);
+  await loaded.reminder(null, {
+    async call(operation: string, invocation: CodeSdkInvocation) {
+      calls.push({ operation, invocation });
+      if (operation === "core.ai.generate") return { output: { text: "Summary: delivery received." } };
+      if (operation === "chat.message.post") return { id: "Msg001", conversation: "Chat01", createdAt: "2026-12-01T08:15:30.000Z" };
+      throw new Error("Unexpected operation");
+    },
+  });
+  expect(calls.map((entry) => entry.operation)).toEqual(["core.ai.generate", "chat.message.post"]);
+  expect(calls[1]!.invocation).toEqual({
+    call: {
+      capability: "chat.message.post",
+      target: null,
+      refs: {},
+      input: { conversation: "Chat01", body: "Summary: delivery received." },
+    },
+    metadata: { idempotencyKey: "summary-2026-12-01" },
+  });
+}, 90_000);

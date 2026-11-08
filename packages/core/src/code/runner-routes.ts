@@ -7,15 +7,18 @@ import {
   RunnerBundleRequestSchema,
   RunnerCompleteRequestSchema,
   RunnerFetchRequestSchema,
+  RunnerJobCallSchema,
   RunnerJobCompleteSchema,
   RunnerJobProofSchema,
   RunnerLeaseLostError,
   RunnerLeaseProofSchema,
 } from "@k2b/cloud/code/runner";
+import { CAPABILITY_MAX_REQUEST_BYTES } from "@k2b/cloud/contracts";
 import { REQUEST_IDLE_TIMEOUT_SECONDS, ratelimit, setRequestTimeout } from "@k2b/cloud/server";
 import { coreSettings } from "@k2b/cloud/services";
 import { Hono } from "hono";
 import { requireCodeRunFence } from "./bridge";
+import { callChatJob } from "./chat-runner";
 import { completeCodeJob, heartbeatCodeJob, readCodeJobInput } from "./runner-jobs";
 import { completeCodeRun, heartbeatCodeRun } from "./scheduling";
 import { fetchCodeRuns, readCodeRunnerConfig } from "./scheduling-runtime";
@@ -30,10 +33,16 @@ export function createCodeRunnerRoutes(options: Pick<CodeRunnerDispatchDependenc
     RUNNER_PATHS.heartbeat,
     RUNNER_PATHS.complete,
     RUNNER_PATHS.jobInput,
+    RUNNER_PATHS.jobCall,
   ]) {
     router.post(path, async (c) => {
       const signed = await authenticateSignedAppRequest(c, "identity:invoke", {
-        maxBodyBytes: path === RUNNER_PATHS.complete ? CODE_CHECK_LIMITS.outputBytes + 1024 : undefined,
+        maxBodyBytes:
+          path === RUNNER_PATHS.complete
+            ? CODE_CHECK_LIMITS.outputBytes + 1024
+            : path === RUNNER_PATHS.jobCall
+              ? CAPABILITY_MAX_REQUEST_BYTES
+              : undefined,
         // The enrolled app key is shared by the fleet; per-Code/run limits, not one key's bootstrap rate, own admission.
         admit: async (keyId, appId) =>
           appId === "runner"
@@ -49,6 +58,17 @@ export function createCodeRunnerRoutes(options: Pick<CodeRunnerDispatchDependenc
       try {
         // authenticateSignedAppRequest already verified and bounded the exact body.
         const body: unknown = await c.req.json();
+        if (path === RUNNER_PATHS.jobCall) {
+          const parsed = RunnerJobCallSchema.safeParse(body);
+          if (!parsed.success) return c.json({ code: "code_invalid_call" }, 400);
+          // A person's approval can outlast a transport timeout. The job's fixed deadline still fences it.
+          setRequestTimeout(c, 240);
+          try {
+            return c.json(await callChatJob(parsed.data, c.req.raw.signal));
+          } finally {
+            setRequestTimeout(c, REQUEST_IDLE_TIMEOUT_SECONDS);
+          }
+        }
         if (path === RUNNER_PATHS.config) return c.json(await readCodeRunnerConfig());
         if (path === RUNNER_PATHS.fetch) {
           const parsed = RunnerFetchRequestSchema.safeParse(body);

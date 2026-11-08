@@ -1,5 +1,6 @@
 import { sql } from "@k2b/cloud";
 import { audit } from "@k2b/cloud/services";
+import { cancelResourceEventSubscriptions } from "@k2b/cloud/services/app-events";
 import { createPgOutbox, type OutboxRow } from "@k2b/cloud/services/outbox";
 import { codePolicyCandidates, codePolicyImpact, readCodePolicySnapshot } from "./policy";
 import { StoredCodePolicyDefinitionSchema } from "./policy-contracts";
@@ -23,6 +24,7 @@ export async function processCodePolicyPauseBatch(row: PauseRow): Promise<void> 
       const impact = await codePolicyImpact(candidate, before, current.definition, tx);
       if (!impact) continue;
       pausedCount++;
+      await cancelResourceEventSubscriptions(tx, "core.code", candidate.id);
       await tx`UPDATE code.codes SET state='paused',pause_reason=${impact.reason},pause_rows=${tx.array(impact.rows, "text")},
         pause_policy_revision=${current.revision} WHERE id=${candidate.id} AND state='active' AND active_version_id IS NOT DISTINCT FROM ${candidate.active_version_id}::uuid`;
     }

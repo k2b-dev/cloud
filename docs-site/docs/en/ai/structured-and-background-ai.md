@@ -745,7 +745,7 @@ coverage metadata that actually produced them.
 
 ```ts
 import { runApplicationAiTask } from "@k2b/cloud/ai";
-import { getWorkflowAiBudget } from "@k2b/cloud/workflows/ai";
+import { getWorkflowAiBudget } from "@k2b/cloud/ai/tasks";
 
 const result = await runApplicationAiTask({
   appId: "inventory",
@@ -808,7 +808,7 @@ cleanup with the application's owner locks; retain every live owner's dormant
 result. This catches creation after deletion followed by a worker crash.
 
 Before using this API, run `migrateWorkflowAi()` and start
-`startWorkflowAiRuntime()` from `@k2b/cloud/workflows/ai`, then drain it during
+`startWorkflowAiRuntime()` from `@k2b/cloud/ai/tasks`, then drain it during
 application shutdown. Applications already using workflow AI reuse that
 lifecycle; no workflow definition or run is created for an application task.
 See [Application AI tasks](/en/docs/operations/application-ai-tasks) for the

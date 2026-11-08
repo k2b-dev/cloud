@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { resolve } from "node:path";
 import type { Browser } from "playwright";
-import { launchBrowser, pageErrors } from "../../../../ui/test/browser";
+import { launchBrowser, pageErrors, settled } from "../../../../ui/test/browser";
 
 // Whether the person sees only the preparing state, never a chooser, before the composer opens, and where Back leads
 // from there, is layout and browser history, which only a real engine answers.
@@ -85,6 +85,8 @@ describe("Mail compose link with one mailbox and one sender", () => {
     test(`opens the composer without a chooser and Back returns to the origin at ${width} px`, async () => {
       const context = await browser.newContext({
         viewport: { width, height: width < 600 ? 844 : 900 },
+        // This checks preparation and history; cross-document animation must not race either navigation.
+        reducedMotion: "reduce",
         ...(width < 600 ? { isMobile: true, hasTouch: true, deviceScaleFactor: 2 } : {}),
       });
       const tab = await context.newPage();
@@ -92,11 +94,15 @@ describe("Mail compose link with one mailbox and one sender", () => {
       const errors = pageErrors(tab);
       try {
         await tab.goto(new URL("/origin", server.url).href);
+        await settled(tab);
         await tab.goto(new URL("/app/mail/compose", server.url).href);
+        await settled(tab);
+        expect(await tab.evaluate(() => matchMedia("(prefers-reduced-motion: reduce)").matches)).toBe(true);
         await tab.waitForFunction(() => window.seedRequests.length === 1);
 
         const preparing = tab.getByText("Preparing message...");
         await preparing.waitFor();
+        await settled(tab);
         const box = await preparing.boundingBox();
         expect(box!.x).toBeGreaterThanOrEqual(0);
         expect(box!.x + box!.width).toBeLessThanOrEqual(width);
@@ -108,7 +114,9 @@ describe("Mail compose link with one mailbox and one sender", () => {
         await tab.evaluate(() => window.answerSeed());
         await tab.waitForURL(/\/app\/mail\/mail01\/compose\/local\/20000000-0000-4000-8000-000000000002\?return=%2Forigin$/);
 
+        await settled(tab);
         await tab.goBack();
+        await settled(tab);
         expect(new URL(tab.url()).pathname).toBe("/origin");
         expect(errors).toEqual([]);
       } finally {

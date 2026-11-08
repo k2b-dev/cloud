@@ -355,6 +355,7 @@ export const contactsService = {
     },
   },
   contact: {
+    MAX_BULK_CONTACTS: contacts.MAX_BULK_CONTACTS,
     exportPages: async (config: BookCaller & { bookId: string }) => {
       const access = await authorizeBook(config.bookId, config, "admin");
       if (!access.ok) return access;

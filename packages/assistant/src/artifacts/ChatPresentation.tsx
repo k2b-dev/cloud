@@ -1,6 +1,9 @@
 import { Button, Dropdown, IconButton, InlineGuidance, Placeholder, useLocale } from "@k2b/ui";
 import { createEffect, createResource, createSignal, ErrorBoundary, on, onCleanup, Show } from "solid-js";
-import { approveInModal } from "./CapabilityApproval";
+import { approveInModal } from "../chat-code/CapabilityApproval";
+import { artifactMessages } from "../chat-code/messages";
+import type { RuntimeContext } from "../chat-code/runtime/cloud";
+import type { RuntimeServices } from "../chat-code/runtime/services";
 import { ChatPresentationResult, ChatPresentation as PresentationSchema } from "./chat-presentation-contracts";
 import { artifactClient } from "./client";
 import { AppFrame, loadAppAssets } from "./html/AppFrame";
@@ -8,10 +11,7 @@ import type { AppFrameAssets } from "./html/assets";
 import type { AppFiles } from "./html/compose";
 import { type Confirm, type Mount, saveDownload } from "./html/host";
 import { type HttpHost, runHttp } from "./http-host";
-import { artifactMessages } from "./messages";
 import { runCapability } from "./runtime/capabilities";
-import type { RuntimeContext } from "./runtime/cloud";
-import type { RuntimeServices } from "./runtime/services";
 
 type Running = {
   files: AppFiles;

@@ -5,7 +5,7 @@ section: Platform services
 order: 556
 description: Declare versioned application facts and consume service events with retryable handlers.
 tags: [events, capabilities, subscriptions, automation]
-updated: 2026-10-27
+updated: 2026-11-07
 ---
 
 # App events
@@ -43,9 +43,10 @@ application declared that event type and version.
 
 ## Built-in resource events
 
-Spaces and Notebooks publish these version 1 events. Each `data` schema is a
-strict empty object (`{}`); the envelope's `subject` and `place` carry public
-resource IDs accepted by the corresponding Type readers.
+Spaces, Notebooks, Contacts, and Mail publish these version 1 events. The envelope's
+`subject` and `place` carry public resource IDs accepted by the corresponding
+Type readers. Spaces and Notebooks use a strict empty `data` object (`{}`);
+Contacts updates carry only changed field-group names; Mail carries only the receipt reference described below.
 
 | Full event type | Subject Type | Place Type | When it is published |
 | --- | --- | --- | --- |
@@ -53,12 +54,18 @@ resource IDs accepted by the corresponding Type readers.
 | `spaces.item.completed` | `spaces.item` | `spaces.space` | An existing item changes from open to completed, including a drag, calendar cancellation, or transfer into a done column. |
 | `notebooks.notebook.created` | `notebooks.notebook` | `notebooks.notebook` | A notebook is created. |
 | `notebooks.notebook.updated` | `notebooks.notebook` | `notebooks.notebook` | Notebook metadata or settings change. |
+| `notebooks.comment.created` | `notebooks.comment` | `notebooks.notebook` | A post is added to a note's page discussion; edits, deletions and passage annotations emit no such event. |
 | `notebooks.note.created` | `notebooks.note` | `notebooks.notebook` | A note is created, including welcome notes, path creation, copies, and restored copies. |
 | `notebooks.note.updated` | `notebooks.note` | `notebooks.notebook` | Persisted Markdown, title, the moved note’s parent or order, lock state, or recovery status changes, coalesced as described below. |
+| `contacts.contact.created` | `contacts.contact` | `contacts.book` | A contact is created, including each committed import entry. Data is `{}`. |
+| `contacts.contact.updated` | `contacts.contact` | `contacts.book` | Stored contact fields change. Data contains only the bounded `changed` group list described below. |
+| `mail.message.received` | `mail.message` | `mail.mailbox` | An incoming message reaches its first eligible provider placement. |
 
 The place Types have permission-aware readers: `spaces.space.read` and
-`notebooks.notebook.read`. Subject readers are `spaces.item.read`,
-`notebooks.notebook.read`, and `notebooks.note.read`. Read content through those
+`notebooks.notebook.read`, `contacts.book.read`, plus `mail.mailbox.read` for Mail.
+Subject readers are `spaces.item.read`, `notebooks.notebook.read`,
+`notebooks.note.read`, `notebooks.comment.read`, `contacts.contact.read`, and
+`mail.message.read`. Read content through those
 readers; events contain no titles, text, names, email addresses, content counts,
 parent IDs, or previous-place references. Repeating completion or reopening an
 item does not publish `spaces.item.completed`.
@@ -68,6 +75,26 @@ Its source receives no resource event naming the destination. A note move
 carries only the note and its current notebook refs; it omits parent and position.
 Moving notes between notebooks remains unsupported; copying creates a new note
 and emits `note.created` in the destination notebook.
+
+Contacts update data is `{ changed: [...] }`, with one to ten values from
+`profile`, `emails`, `phones`, `addresses`, `websites`, `bankAccounts`, `tags`,
+`notes`, `parent`, and `book`. The list follows that order and contains no
+field values, names, addresses, note text, or old book references. Equivalent
+normalized values, including rebuilt collection rows, publish no update.
+Profile covers the contact's scalar details; tag changes mean assignments.
+Geocoding cache refreshes, personal favorites, tag metadata changes, and derived
+child-parent maintenance do not fan out contact events. Deleting a tag removes
+its assignments without contact events. A merge announces its
+surviving target. Moving a contact announces an update in its destination book
+only; its source receives no app event naming that destination.
+
+Contact writes and events commit together. Idempotent create and note retries
+produce no duplicate event. Imports keep one creation event per successfully
+committed contact, even when a later entry fails, independently of the import's
+single live refresh. The existing limits are **1,000 contacts per import** and
+**500 contacts per bulk tag or move operation**, enforced at the service seam.
+See the [bulk and shared capacity budget](/en/docs/operations/app-events#plan-retention-and-outage-capacity)
+and [Contacts automation capabilities](/en/docs/reference/contacts-automation).
 
 `notebooks.note.updated` uses trailing coalescing. A changed note records its
 first pending change and latest change in the domain transaction. A minute
@@ -100,6 +127,101 @@ commits. The note sweep owns its transaction and calls `wake()` after commit.
 application subscription to them stays `blocked` with
 `resource_events_unsupported`, and only resource-bound workload subscriptions with a valid mandate
 and current read access receive them (see [Who receives an event](#who-receives-an-event)).
+
+### Grids record changes
+
+Grids also publishes version 1 resource events for record creation, updates,
+deletion, and finalization. See [Grids events](/en/docs/reference/grids-events)
+for mutation boundaries, bulk summaries, and table/base lifecycle events.
+
+### Mail receipts
+
+`mail.message.received` has strict data `{ receiptId: UUID }`. The receipt ID
+is the stable identity of the first eligible provider placement. Keep it as
+an opaque business key; the envelope's event ID remains the delivery deduplication
+key. Use the public `subject.id` with `mail.message.read` or
+`mail.message.read-content` to read authorized content. The event contains no
+headers, addresses, subject text, body, attachment metadata, or conversation data.
+The body may still be loading when the event arrives; readers report its state.
+
+Mail publishes the event in the same transaction as its receipt decision and
+existing workflow emissions, even when no workflow is enabled. An incremental
+provider import can produce one receipt per message. A Gmail copy first seen
+in All Mail waits for the first copy outside All Mail. Later labels, moves,
+repeat syncs, and retries do not produce another receipt. The receipt keeps
+its original placement identity after a move.
+
+Trash and Junk placements do not publish. If the first copy outside All Mail
+is in Trash or Junk, it consumes the pending receipt without publication;
+restoring the message later does not create a receipt. Messages from configured
+sender identities also do not publish, including their delivered self-copies.
+Initial history imports and reconciliation imports do not publish or arrange
+later catch-up. If such an import consumes a pending receipt, a later move
+does not publish it. Provider drafts remain on Mail's existing draft path.
+Mailbox and message access are still checked through capabilities; the receipt
+grants no read or write rights.
+
+## Chat posted messages
+
+`chat.message.posted` version 1 announces a newly stored text message in an
+ordinary Chat conversation or channel. The subject is `chat.message` (ten-character
+message ID); the place is `chat.conversation` (six-character conversation ID).
+Both general and named-thread messages publish, including quoted replies.
+The strict data object contains:
+
+| Field | Meaning |
+| --- | --- |
+| `threadReply` | Whether the message quotes an earlier message through `replyTo`. A named thread alone does not make a message a reply. |
+| `root` | The reply chain's original `{ type: "chat.message", id }` ref for a reply; otherwise `null`. Replies to replies retain the original root. |
+| `author` | The stored author's principal ref: `{ type: "user" \| "service_account", id: UUID }`. |
+| `mentions` | Distinct validated principal refs, in input order, at most Chat's existing 20 mentions. Ineligible mentions are omitted. |
+
+Each new reply stores its root ref, so later replies need one indexed lookup
+regardless of chain depth. Messages stored before event support have no root
+metadata: quoting one anchors the new chain at that legacy message. Historical
+chains are not scanned or backfilled.
+
+No body, names, mention ranges, previews, attachments or shared refs are included.
+Read the message through `chat.message.read`; authorize the place through
+`chat.conversation.read`. These readers check current grants, credential scopes
+and account binding. The event grants no content access.
+
+Publication shares the message transaction; delivery is woken after commit.
+An idempotent retry emits no second event; rollback removes the message and event together. Edits, deletes, reactions,
+system lines and messages in system conversations do not emit this event.
+System conversations can contain item discussions with separate read checks;
+the owning applications publish their domain events. Chat has no public message
+import operation; migrations and direct database imports do not replay events.
+There is no historical backfill.
+
+### Skip messages from your own automation
+
+Before reading content or performing an effect, compare `data.author` with the
+service-account principal used to post the handler's results. Return immediately
+when both type and ID match. This stops the handler from answering its own posts.
+To react only when mentioned, also require that `data.mentions` contains the
+intended principal. These checks need no message text.
+
+```ts
+const ownPrincipal = { type: "service_account", id: ownServiceAccountId };
+const isOwnMessage = event.data.author.type === ownPrincipal.type
+  && event.data.author.id === ownPrincipal.id;
+if (isOwnMessage) return;
+```
+
+The publisher forwards the request's ID as `cause.requestId` when present,
+including calls through `chat.message.post`, so effects can be correlated with
+the originating capability execution. Empty IDs or IDs over the envelope's
+256-character bound are omitted; optional correlation never prevents posting.
+Correlation does not suppress delivery:
+use the author check for self-posts, and durable event-ID receipts for retries.
+The platform does not infer automation ancestry or prevent two different
+handlers from replying to each other. Design their predicates accordingly.
+
+Chat uses one discrete event per new message, without coalescing or aggregate
+throttling. Its existing per-principal send limits remain in force. Include
+all Chat posts and mention payload sizes in the
+[shared capacity budget](/en/docs/operations/app-events#plan-retention-and-outage-capacity).
 
 ## Declare events and subscriptions
 
@@ -454,5 +576,24 @@ The selected local handler controls its own effects. Its output is a count:
 
 Resource visibility checks carry a query-only, mandate-bound event proof. The
 provider revalidates the active subscription and claimed delivery before its
-ordinary Type reader checks the principal's current read access. The proof is usable only while a delivery of that event for that mandate is
-claimed and cannot authorize an Action or a workload run.
+ordinary Type reader checks the principal's current read access. The proof is
+usable only while a delivery of that event for that mandate is claimed and
+cannot authorize an Action or a workload run.
+
+Code's resource-owned `app.on` registrations use these workload subscriptions,
+with their checked owner, event version and execution mandate. Delivery commits
+the event-to-run receipt before acknowledgment. See
+[Code event deliveries](/en/docs/platform/code-runs#understand-event-deliveries).
+
+## Resolve an occurrence for catch-up
+
+An event with one immutable occurrence per subject can declare `catchup` as the
+local ID of a permission-aware query. The query accepts `{ id: subject.id }` and
+returns the canonical event envelope as its capability data. It must check the
+requester's current read permission and derive receipt identity, owner and data
+from the application's own state. Repeating event types must not declare this
+contract. The resolver does not publish an event.
+
+Code catch-up uses that resolver before saving its bounded snapshot, and admits
+only to the selected Code version. It does not notify other subscriptions. See
+[Mail automations](/en/docs/platform/mail-code-automations) for the first consumer.

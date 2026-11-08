@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { createDomTestHarness } from "../../../ui/test/dom";
-import { html } from "../../src/artifacts/runtime/lib";
+import { html } from "../../src/chat-code/runtime/lib";
 
 const page = await Bun.file(new URL("./index.html", import.meta.url)).text();
 const script = await Bun.file(new URL("./app.js", import.meta.url)).text();

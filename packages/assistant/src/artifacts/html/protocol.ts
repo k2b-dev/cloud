@@ -1,5 +1,5 @@
 // Messages between a Cloud page that mounts an HTML app and the app frame's prelude.
-import type { RuntimeContext } from "../runtime/cloud";
+import type { RuntimeContext } from "../../chat-code/runtime/cloud";
 
 /** Embedded by the composer as JSON and read once by the prelude. */
 export type FrameConfig = {
@@ -8,6 +8,8 @@ export type FrameConfig = {
   hash: string;
   /** App JavaScript modules by path; `entries` load in this order. */
   modules: Record<string, string>;
+  /** Bundled renderer source, loaded from a blob without opening the network. */
+  chartModule: string;
   entries: string[];
   /** Upper bound for waiting on pending `cloud.*` calls before `ready`. */
   readyBudgetMs: number;

@@ -5,7 +5,6 @@ import {
   listAiConversationFiles,
   listAssistantAiModels,
 } from "@k2b/cloud/ai";
-import { artifacts } from "./artifacts/service";
 
 /** Bounded, permission-aware details fetched only when a sidebar preview opens. */
 export async function loadAssistantSidebarPreview(identity: AiResourceContext, chatId: string) {
@@ -19,8 +18,6 @@ export async function loadAssistantSidebarPreview(identity: AiResourceContext, c
     aiConversations.getLatestTurn({ conversationId: conversation.id }),
     listAssistantAiModels({ type: "user", userId }),
   ]);
-  const ids = [...new Set(sources.sources.flatMap((source) => (source.ref?.type === "assistant.artifact" ? [source.ref.id] : [])))];
-  const apps = await artifacts.describe(ids, identity, conversation.id);
   return {
     model: turn ? (models.find((model) => model.id === turn.modelId)?.label ?? turn.modelId) : null,
     // Working files below /temp/ come last, so the preview names what the user brought and received.
@@ -29,7 +26,7 @@ export async function loadAssistantSidebarPreview(identity: AiResourceContext, c
         path: file.path,
       }),
     ),
-    apps: apps.map((app) => ({ id: app.id, title: app.title, icon: app.icon })),
+    apps: [] as { id: string; title: string; icon: string | null }[],
     hasMoreSources: Boolean(sources.nextCursor),
   };
 }

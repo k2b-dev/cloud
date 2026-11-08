@@ -1,4 +1,4 @@
-import { computeDomain, extendDomainToNice, niceStep } from "@k2b/stdlib";
+import { computeDomain, extendDomainToNice, niceStep } from "@k2b/ui/charts/core";
 import { z } from "zod";
 import { CloudResourceReferenceSchema } from "../contracts/capabilities";
 import {
@@ -135,18 +135,15 @@ const tableRowSchema = () => {
   });
   return row;
 };
+const tableColumnSchema = () =>
+  z.strictObject({
+    id: z.string().trim().min(1).max(80),
+    label: z.string().min(1).max(80).optional(),
+    type: cellTypeSchema(),
+    format: cloudAiNumberFormatSchema().optional(),
+  });
 const tableColumnsSchema = () => {
-  return z
-    .array(
-      z.strictObject({
-        id: z.string().trim().min(1).max(80),
-        label: z.string().min(1).max(80).optional(),
-        type: cellTypeSchema(),
-        format: cloudAiNumberFormatSchema().optional(),
-      }),
-    )
-    .min(1)
-    .max(CLOUD_AI_TABLE_MAX_COLUMNS);
+  return z.array(tableColumnSchema()).min(1).max(CLOUD_AI_TABLE_MAX_COLUMNS);
 };
 const tableViewSchema = () => {
   const row = tableRowSchema();
@@ -155,15 +152,35 @@ const tableViewSchema = () => {
       view: z.literal("table"),
       title: z.string().trim().min(1).max(160),
       subtitle: z.string().trim().min(1).max(300).optional(),
-      columns: tableColumnsSchema(),
+      // Only a table hides columns on a narrow screen: 3 below 560 px, 2 below 420 px; row details keep them.
+      columns: z
+        .array(tableColumnSchema().safeExtend({ priority: z.union([z.literal(1), z.literal(2), z.literal(3)]).optional() }))
+        .min(1)
+        .max(CLOUD_AI_TABLE_MAX_COLUMNS),
       rows: z.array(row).max(CLOUD_AI_TABLE_MAX_ROWS),
       footer: row.optional(),
       sort: z.strictObject({ column: z.string(), direction: z.enum(["asc", "desc"]) }).optional(),
+      // A search field above the table; the reader's query never leaves the browser.
+      search: z.boolean().optional(),
+      // Columns the reader may group the rows by.
+      groupBy: z
+        .array(z.strictObject({ id: z.string().trim().min(1).max(80), label: z.string().min(1).max(80).optional() }))
+        .min(1)
+        .max(CLOUD_AI_TABLE_MAX_COLUMNS)
+        .optional(),
     })
     .superRefine((value, ctx) => {
       const columns = checkTableData(value, ctx);
       if (value.sort && !columns.has(value.sort.column))
         ctx.addIssue({ code: "custom", path: ["sort", "column"], message: "Unknown column id." });
+      value.groupBy?.forEach((group, index) => {
+        const column = columns.get(group.id);
+        if (!column) ctx.addIssue({ code: "custom", path: ["groupBy", index, "id"], message: "Unknown column id." });
+        else if (column.type === "ref")
+          ctx.addIssue({ code: "custom", path: ["groupBy", index, "id"], message: "Group by a text, number or date column." });
+        if (value.groupBy!.findIndex((entry) => entry.id === group.id) !== index)
+          ctx.addIssue({ code: "custom", path: ["groupBy", index, "id"], message: "Group each column once." });
+      });
     });
 };
 const checkTableData = (
@@ -466,6 +483,9 @@ const summarySchema = () =>
       // The block reserves the totals row from the first frame.
       footer: z.boolean(),
       columns: z.number().int().min(1).max(CLOUD_AI_TABLE_MAX_COLUMNS),
+      // The search field and group choice above the table, reserved from the first frame; older summaries lack them.
+      search: z.boolean().optional(),
+      grouped: z.boolean().optional(),
     }),
     z.object({
       view: z.literal("stats"),
@@ -596,7 +616,15 @@ export const cloudAiViewSummary = (view: CloudAiView): CloudAiViewSummary => {
     };
   return view.view === "chart"
     ? { view: "chart", kind: view.kind, ...common }
-    : { view: "table", rows: view.rows.length, columns: view.columns.length, footer: view.footer !== undefined, ...common };
+    : {
+        view: "table",
+        rows: view.rows.length,
+        columns: view.columns.length,
+        footer: view.footer !== undefined,
+        ...(view.search ? { search: true } : {}),
+        ...(view.groupBy ? { grouped: true } : {}),
+        ...common,
+      };
 };
 /** Tool arguments become the same canonical views as saved code-run files, without drawing on revalidation. */
 export const parseCloudAiChartToolView = (args: unknown): CloudAiChartView | CloudAiGroupView | undefined => {
@@ -608,7 +636,7 @@ export const parseCloudAiChartToolView = (args: unknown): CloudAiChartView | Clo
     const parsed = GroupViewSchema.safeParse({ title, subtitle, charts, linkX, layout, view: "group" });
     return parsed.success ? parsed.data : undefined;
   }
-  if (value.linkX !== undefined || value.layout !== undefined) return undefined;
+  if (value.linkX !== undefined || (value.layout !== undefined && value.kind !== "area" && value.layout !== "calendar")) return undefined;
   const parsed = ChartViewSchema.safeParse({ ...value, view: "chart" });
   return parsed.success ? parsed.data : undefined;
 };

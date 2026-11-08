@@ -9,14 +9,17 @@ export async function migrate(db: SQL = sql): Promise<void> {
     await tx`ALTER TABLE code.runs ADD COLUMN IF NOT EXISTS deadline_at TIMESTAMPTZ,
       ADD COLUMN IF NOT EXISTS runner_instance_id UUID,
       ADD COLUMN IF NOT EXISTS effect_started BOOLEAN NOT NULL DEFAULT FALSE,
-      ADD COLUMN IF NOT EXISTS schedule_key TEXT, ADD COLUMN IF NOT EXISTS wake_at TIMESTAMPTZ`;
+      ADD COLUMN IF NOT EXISTS schedule_key TEXT, ADD COLUMN IF NOT EXISTS wake_at TIMESTAMPTZ,
+      ADD COLUMN IF NOT EXISTS event_subject_key TEXT, ADD COLUMN IF NOT EXISTS event_sequence BIGINT`;
     await tx`ALTER TABLE code.calls DROP CONSTRAINT IF EXISTS calls_state_check`;
     await tx`ALTER TABLE code.calls ADD CONSTRAINT calls_state_check CHECK(state IN ('running','succeeded','failed','uncertain'))`;
     await tx`CREATE INDEX IF NOT EXISTS runs_dispatch ON code.runs(code_id,created_at,id) WHERE state='queued'`;
     await tx`CREATE INDEX IF NOT EXISTS runs_running_code ON code.runs(code_id) WHERE state='running'`;
     await tx`CREATE INDEX IF NOT EXISTS runs_leases ON code.runs(lease_expires_at,id) WHERE state='running'`;
     await tx`CREATE INDEX IF NOT EXISTS runs_schedule ON code.runs(schedule_key) WHERE state IN ('queued','running')`;
-    // Manual receipts outlive run details; schedule receipts expire with broker ticks. Neither stores input or results.
+    await tx`CREATE INDEX IF NOT EXISTS runs_event_order ON code.runs(code_id,event_subject_key,event_sequence)
+      WHERE trigger='event' AND state IN ('queued','running')`;
+    // Manual and event receipts outlive run details; schedule receipts expire with broker ticks. Neither stores input or results.
     await tx`CREATE TABLE IF NOT EXISTS code.run_requests (
       code_id TEXT NOT NULL REFERENCES code.codes(id) ON DELETE CASCADE,
       request_key TEXT NOT NULL CHECK(octet_length(request_key)<=256), run_id UUID NOT NULL,

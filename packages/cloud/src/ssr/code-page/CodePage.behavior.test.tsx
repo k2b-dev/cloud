@@ -19,7 +19,16 @@ const load = async () => {
 };
 const modules = isServer ? undefined : await load();
 
-for (const control of ["pause-menu", "resume-menu", "resume-notice", "run", "rerun"] as const) {
+for (const control of [
+  "pause-menu",
+  "resume-menu",
+  "resume-notice",
+  "run",
+  "rerun",
+  "event-rerun-after",
+  "event-rerun-before",
+  "event-unstarted",
+] as const) {
   test.skipIf(isServer)(`${control} names the Code target and keeps its ID out of input`, async () => {
     const dom = createDomTestHarness();
     const { CodePage, LocaleProvider, toast, client } = modules!;
@@ -29,17 +38,24 @@ for (const control of ["pause-menu", "resume-menu", "resume-notice", "run", "rer
       error: { code: "BAD_INPUT", message: "Fixture refusal", status: 400 },
     });
     const notice = spyOn(toast, "error").mockImplementation(() => ({ dismiss: () => {}, update: () => {} }));
-    const data = codePageFixture(control.startsWith("resume") ? "paused" : control === "rerun" ? "run-failed" : "overview", "en");
+    const isEvent = control.startsWith("event-");
+    const isRerun = control === "rerun" || isEvent;
+    const data = codePageFixture(control.startsWith("resume") ? "paused" : isRerun ? "run-failed" : "overview", "en");
     if (data.state.kind !== "ready") throw new Error("Expected ready fixture");
     if (control === "run") {
       data.state.automations![0]!.kind = "manual";
       data.state.automations![0]!.title = "Review deliveries";
     }
-    if (control === "rerun") data.state.run!.run.title = "Review deliveries";
+    if (isRerun) data.state.run!.run.title = "Review deliveries";
+    if (isEvent) {
+      data.state.run!.run.trigger = "event";
+      if (control !== "event-rerun-after") data.state.run!.calls = [];
+      if (control === "event-unstarted") data.state.run!.run.startedAt = null;
+    }
     const expectedInput =
       control === "run"
         ? { entrypoint: data.state.automations![0]!.entrypoint, input: null }
-        : control === "rerun"
+        : isRerun
           ? { entrypoint: data.state.run!.run.entrypoint, input: data.state.run!.input, rerunOf: data.state.run!.run.id }
           : {};
     delegateEvents(["click"]);
@@ -53,7 +69,7 @@ for (const control of ["pause-menu", "resume-menu", "resume-notice", "run", "rer
         }),
       dom.root,
     );
-    if (control === "run" || control === "rerun") expect(dom.root.textContent).toContain("Review deliveries");
+    if (control === "run" || isRerun) expect(dom.root.textContent).toContain("Review deliveries");
     const button = (label: string) => {
       const match = [...dom.document.querySelectorAll<HTMLElement>("button, [role=menuitem]")].find(
         (element) => element.textContent?.trim() === label || element.getAttribute("aria-label") === label,
@@ -62,6 +78,11 @@ for (const control of ["pause-menu", "resume-menu", "resume-notice", "run", "rer
       return match;
     };
     try {
+      if (control === "event-unstarted") {
+        expect([...dom.document.querySelectorAll("button")].some((element) => element.textContent?.trim() === "Run again")).toBe(false);
+        expect(invoke).not.toHaveBeenCalled();
+        return;
+      }
       if (control.endsWith("menu")) {
         button("More").click();
         await new Promise<void>((resolve) => queueMicrotask(resolve));
@@ -79,13 +100,9 @@ for (const control of ["pause-menu", "resume-menu", "resume-notice", "run", "rer
       });
       expect(invoke.mock.calls[0]?.[0].input).toEqual(expectedInput);
       const returnedData =
-        control === "run" || control === "rerun"
-          ? { runId: "00000000-0000-4000-8000-000000000099", duplicate: false }
-          : { state: "paused" };
+        control === "run" || isRerun ? { runId: "00000000-0000-4000-8000-000000000099", duplicate: false } : { state: "paused" };
       expect(invoke.mock.calls[0]![1].safeParse(returnedData).success).toBe(true);
-      expect(invoke.mock.calls[0]?.[0].idempotencyKey).toEqual(
-        control === "rerun" ? `rerun:${data.state.run!.run.id}` : expect.any(String),
-      );
+      expect(invoke.mock.calls[0]?.[0].idempotencyKey).toEqual(isRerun ? `rerun:${data.state.run!.run.id}` : expect.any(String));
       await new Promise<void>((resolve) => queueMicrotask(resolve));
     } finally {
       dispose();

@@ -891,8 +891,10 @@ export const DslQueryPreviewBodySchema = z.object({
 });
 export type DslQueryPreviewBody = z.infer<typeof DslQueryPreviewBodySchema>;
 
+export const MAX_GQL_RESULT_ROWS = 10_000;
+
 export const DslQueryExecuteBodySchema = DslQueryPreviewBodySchema.extend({
-  limit: z.number().int().min(1).max(10_000).optional(),
+  limit: z.number().int().min(1).max(MAX_GQL_RESULT_ROWS).optional(),
   pageSize: z.number().int().min(1).max(1000).optional(),
   filePreviewFieldIds: z.array(z.string().uuid()).max(3).optional(),
 });
@@ -1105,10 +1107,10 @@ export const UpdateViewSchema = z.object({
 // ── Documents ─────────────────────────────────────────────────────────────
 export const DocumentHtmlContentSchema = z
   .object({
-    body: z.string().trim().min(1).max(200_000),
-    header: z.string().trim().min(1).max(50_000).optional(),
-    footer: z.string().trim().min(1).max(50_000).optional(),
-    css: z.string().trim().min(1).max(50_000).optional(),
+    body: z.string().trim().min(1).max(200_000).describe("Liquid HTML body from frozen rows."),
+    header: z.string().trim().min(1).max(50_000).optional().describe("Optional Liquid HTML header."),
+    footer: z.string().trim().min(1).max(50_000).optional().describe("Optional Liquid HTML footer."),
+    css: z.string().trim().min(1).max(50_000).optional().describe("Optional document CSS."),
   })
   .strict();
 const HtmlDocumentTemplateRendererSchema = DocumentHtmlContentSchema.extend({

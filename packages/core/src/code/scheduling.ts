@@ -3,6 +3,7 @@ import { CODE_REQUEST_LIMITS, type CodeRouteResponse, CodeRouteResponseSchema, v
 import { type CodeRunTokenClaims, signCodeRunToken } from "@k2b/cloud/code/run-token";
 import type { RunnerLease, RunnerOutcome } from "@k2b/cloud/code/runner";
 import { CodeCheckedVersionManifestSchema } from "@k2b/cloud/contracts";
+import { AppEventEnvelopeSchema } from "@k2b/cloud/contracts/app-events";
 import { ratelimit } from "@k2b/cloud/server";
 import { audit, coreSettings } from "@k2b/cloud/services";
 import { approvalArgsDigest } from "@k2b/cloud/services/approvals";
@@ -69,17 +70,46 @@ async function enqueue(
     if (input.tick) return null;
     throw new CodeDataError("BAD_INPUT", "Unknown Code entrypoint.");
   }
-  if (input.tick?.cron !== undefined && input.tick.cron !== entry.cron) return null;
+  if (entry.kind === "event" && !input.tick && !input.rerunOf)
+    throw new CodeDataError("BAD_INPUT", "Event entrypoints only accept platform deliveries.");
+  if (input.tick?.cron !== undefined && (input.tick.cron !== entry.cron || (input.tick.timeZone ?? "UTC") !== (entry.timeZone ?? "UTC")))
+    return null;
   if (input.tick?.at !== undefined && (input.tick.at !== entry.at || input.tick.timeZone !== entry.timeZone)) return null;
   if (input.tick && entry.at) {
     if (input.tick.slot.toISOString() !== new Date(entry.at).toISOString()) return null;
     const [ready] = await db<{ due: boolean }[]>`SELECT ${input.tick.slot}<=clock_timestamp() AS due`;
     if (!ready?.due) return null;
   }
+  let historicalRerun = false;
   if (input.rerunOf) {
-    const [original] = await db<{ id: string }[]>`SELECT id FROM code.runs WHERE id=${input.rerunOf}::uuid AND code_id=${code.id}
+    const [original] = await db<
+      { id: string; input: unknown; historical: boolean }[]
+    >`SELECT id,input,EXISTS(SELECT FROM code.run_requests WHERE run_id=code.runs.id AND request_key LIKE 'historical:%') AS historical
+      FROM code.runs WHERE id=${input.rerunOf}::uuid AND code_id=${code.id}
       AND entrypoint=${input.entrypoint} AND state='failed'`;
     if (!original) throw new CodeDataError("BAD_INPUT", "Only a failed run of this Code and entrypoint can run again.");
+    if (entry.kind === "event" && approvalArgsDigest(original.input) !== approvalArgsDigest(input.input))
+      throw new CodeDataError("BAD_INPUT", "Event reruns must preserve the original envelope.");
+    if (entry.kind === "event") {
+      historicalRerun = original.historical;
+      const event = AppEventEnvelopeSchema.parse(original.input);
+      if (
+        !entry.event ||
+        event.type !== entry.event.type ||
+        event.version !== entry.event.version ||
+        event.place?.type !== entry.event.place.type ||
+        event.place.id !== entry.event.place.id ||
+        (original.historical && manifest.ai)
+      )
+        throw new CodeDataError("BAD_INPUT", "The active version cannot replay this historical event.");
+    }
+  }
+  if (entry.kind === "event") {
+    const backlog = await codeSettings.get("core.code.event_backlog");
+    const [waiting] = await db<{ count: number }[]>`SELECT count(*)::int AS count FROM code.runs
+      WHERE code_id=${code.id} AND trigger='event' AND state IN ('queued','running')`;
+    if ((waiting?.count ?? 0) >= backlog)
+      throw new CodeDataError("CONFLICT", "Event run backlog is full. Wait for runs to finish before replaying.");
   }
   let refused = false;
   try {
@@ -100,12 +130,17 @@ async function enqueue(
     {
       codeId: code.id,
       versionId: code.activeVersionId,
-      trigger: input.tick ? "schedule" : "manual",
+      trigger: input.tick ? "schedule" : entry.kind === "event" ? "event" : "manual",
       entrypoint: input.entrypoint,
       input: CodeStartRequestSchema.shape.input.parse(input.input),
     },
     db,
   );
+  if (entry.kind === "event" && entry.event)
+    await db`UPDATE code.runs SET event_subject_key=${`${entry.event.type}@${entry.event.version}:${entry.event.place.type}:${entry.event.place.id}`},
+      event_sequence=(SELECT sequence FROM code.run_outbox WHERE run_id=${runId}::uuid) WHERE id=${runId}::uuid`;
+  if (historicalRerun)
+    await db`INSERT INTO code.run_requests(code_id,request_key,run_id) VALUES(${code.id},${`historical:rerun:${runId}`},${runId}::uuid)`;
   if (!input.tick && entry.kind === "schedule") await db`UPDATE code.runs SET schedule_key=${input.entrypoint} WHERE id=${runId}::uuid`;
   if (input.rerunOf && context)
     await db`UPDATE code.runs SET rerun_of=${input.rerunOf}::uuid,rerun_by=${codePerson(context, true).id}::uuid WHERE id=${runId}::uuid`;
@@ -152,7 +187,7 @@ export async function processCodeScheduleTick(tick: CodeScheduleTick): Promise<C
 }
 /** Scheduler callbacks bind the current version atomically with admission, including concurrent activation. */
 export async function processCurrentCodeScheduleTick(
-  tick: Omit<CodeScheduleTick, "versionId"> & ({ cron: string } | { at: string; timeZone: string }),
+  tick: Omit<CodeScheduleTick, "versionId"> & ({ cron: string; timeZone?: string } | { at: string; timeZone: string }),
 ): Promise<CodeStartResult | null> {
   return admitScheduleTick(tick);
 }
@@ -211,7 +246,10 @@ export async function claimCodeRuns(
       const [candidate] = await db<{ id: string }[]>`
         SELECT c.id FROM code.codes c WHERE c.state='active'
         AND EXISTS(SELECT 1 FROM code.runs r WHERE r.code_id=c.id AND r.state='queued'
-          AND r.version_id=c.active_version_id AND (r.deadline_at IS NULL OR r.deadline_at>clock_timestamp()))
+          AND r.version_id=c.active_version_id AND (r.deadline_at IS NULL OR r.deadline_at>clock_timestamp())
+          AND (r.event_subject_key IS NULL OR NOT EXISTS(SELECT 1 FROM code.runs earlier WHERE earlier.code_id=r.code_id
+            AND earlier.event_subject_key=r.event_subject_key AND earlier.state IN ('queued','running')
+            AND (earlier.state='running' OR earlier.event_sequence<r.event_sequence))))
         AND (SELECT count(*) FROM code.runs r WHERE r.code_id=c.id AND r.state='running')<${limits.perCode}
         AND (SELECT count(*) FROM code.runs r JOIN code.codes o ON o.id=r.code_id WHERE r.state='running'
           AND ROW(o.owner_kind,o.owner_user_id,o.owner_type,o.owner_id,o.owner_app_id)
@@ -242,8 +280,11 @@ export async function claimCodeRuns(
         continue;
       }
       const [run] = await db<ClaimedRun[]>`WITH next AS (
-        SELECT id FROM code.runs WHERE code_id=${code.id} AND version_id=${code.activeVersionId}::uuid AND state='queued'
-        AND (deadline_at IS NULL OR deadline_at>clock_timestamp()) ORDER BY created_at,id LIMIT 1 FOR NO KEY UPDATE
+        SELECT r.id FROM code.runs r WHERE r.code_id=${code.id} AND r.version_id=${code.activeVersionId}::uuid AND r.state='queued'
+        AND (r.deadline_at IS NULL OR r.deadline_at>clock_timestamp())
+        AND (r.event_subject_key IS NULL OR NOT EXISTS(SELECT 1 FROM code.runs earlier WHERE earlier.code_id=r.code_id
+          AND earlier.event_subject_key=r.event_subject_key AND earlier.state IN ('queued','running')
+          AND (earlier.state='running' OR earlier.event_sequence<r.event_sequence))) ORDER BY r.created_at,r.id LIMIT 1 FOR NO KEY UPDATE
       ), leased AS (
         UPDATE code.runs r SET state='running',generation=generation+1,runner_instance_id=${instanceId ?? null}::uuid,
           ai_reference_cost=0,ai_reserved_cost=0,ai_budget_call=NULL,
@@ -394,7 +435,7 @@ export async function reconcileCodeRuns(): Promise<void> {
     for (const run of expired) await settleRun(run.id, run.timed_out ? "wall_clock_limit" : "lease_lost", limits, db);
     await db`UPDATE code.runs r SET state='failed',outcome=CASE WHEN r.deadline_at<=clock_timestamp() THEN 'wall_clock_limit' ELSE 'code_not_active' END,ended_at=clock_timestamp()
       WHERE r.id IN(SELECT q.id FROM code.runs q JOIN code.codes c ON c.id=q.code_id WHERE q.state='queued'
-        AND (c.state<>'active' OR q.version_id IS DISTINCT FROM c.active_version_id OR q.deadline_at<=clock_timestamp())
+        AND ((c.state<>'active' AND NOT(q.trigger='event' AND q.generation=0)) OR q.version_id IS DISTINCT FROM c.active_version_id OR q.deadline_at<=clock_timestamp())
         ORDER BY q.created_at,q.id LIMIT 100 FOR UPDATE OF q SKIP LOCKED)`;
     // Periodic outbox repair covers queue retention, delivery exhaustion and a ticket consumed while all Codes were busy.
     await db`INSERT INTO code.run_outbox(run_id) SELECT id FROM code.runs WHERE state='queued'

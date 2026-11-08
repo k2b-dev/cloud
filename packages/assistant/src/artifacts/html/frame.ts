@@ -5,13 +5,23 @@
 import "./no-eval";
 import "./no-hints";
 import { cloudAiChartMarkKey } from "@k2b/cloud/ai/app-frame";
-import { type ChartInspection, type ChartKind, type ChartTooltip, inspectChart, isChartDatum } from "@k2b/ui/chart-inspection";
+import { type ChartInspection, type ChartTooltip, inspectChart, isChartDatum } from "@k2b/ui/chart-inspection";
+import { calendarInspectionNavigation, mountCalendarScroll } from "@k2b/ui/charts";
+import { createBridge } from "../../chat-code/runtime/bridge";
+import { createCloud } from "../../chat-code/runtime/cloud";
+import { CloudError } from "../../chat-code/runtime/errors";
+import {
+  chartLoading,
+  chartMarkup,
+  chartOptions,
+  chartSvg,
+  isAppChartKind,
+  pendingCalendarWidth,
+  pendingChartOptions,
+} from "../../chat-code/runtime/lib";
+import { ensureRandomUuid } from "../../chat-code/runtime/random-uuid";
 import { LIMITS } from "../contracts";
-import { createBridge } from "../runtime/bridge";
-import { createCloud } from "../runtime/cloud";
-import { CloudError } from "../runtime/errors";
-import { chartOptions, chartSvg } from "../runtime/lib";
-import { ensureRandomUuid } from "../runtime/random-uuid";
+import { configureChartModule, loadChartRenderer } from "../runtime/chart-renderers-frame";
 import { moduleSpecifiers } from "./imports";
 import type { FrameConfig, FrameLogLevel, FrameToHost, HostToFrame } from "./protocol";
 
@@ -78,10 +88,14 @@ for (const level of ["log", "info", "warn", "error"] as const satisfies FrameLog
     if ((level === "error" ? errors : logs)()) send({ type: "log", level, text: clip(args.map(show).join(" ")) });
   };
 }
+/** Caught render failures use the same bounded host diagnostics as uncaught errors.
+ * Native reportError in the opaque frame does not preserve this message in WebKit. */
+function reportError(error: unknown, where?: string) {
+  if (errors()) send({ type: "error", text: clip(show(error)), where });
+}
 addEventListener("error", (event: ErrorEvent) => {
-  if (!errors()) return;
   const where = event.filename ? `${named(event.filename)}:${event.lineno}:${event.colno}` : undefined;
-  send({ type: "error", text: clip(event.error instanceof Error ? show(event.error) : String(event.message)), where });
+  reportError(event.error instanceof Error ? event.error : String(event.message), where);
 });
 addEventListener("unhandledrejection", (event: PromiseRejectionEvent) => {
   if (!errors()) return;
@@ -114,6 +128,12 @@ document.addEventListener("securitypolicyviolation", (event) => {
 const bridge = createBridge((message) => send(message as FrameToHost));
 let inflight = 0;
 let lastSettled = performance.now();
+configureChartModule(config.chartModule, (task) => {
+  inflight++;
+  return task.finally(() => {
+    if (!--inflight) lastSettled = performance.now();
+  });
+});
 const thenable = (value: unknown, depth = 0): boolean =>
   !!value &&
   typeof value === "object" &&
@@ -151,6 +171,9 @@ const dataUrl = (blob: Blob) =>
  * of a copy, and images from blob URLs, which only this frame can read, are embedded as data URLs.
  */
 async function shown() {
+  // Snapshot only the drawings on this page. Unrelated slow AI/HTTP calls must
+  // not delay copying the current document beyond the host's snapshot deadline.
+  await Promise.all([...document.querySelectorAll<HTMLElement>("[data-chart-pending]")].map(fillChart));
   const copy = document.documentElement.cloneNode(true) as HTMLElement;
   const copies = copy.querySelectorAll("input, textarea, select");
   document.querySelectorAll("input, textarea, select").forEach((element, index) => {
@@ -248,21 +271,6 @@ addEventListener(
 // labels fit phones as well as wide screens. PDFs keep the stretched logical drawing.
 const inspections = new Map<Element, ChartInspection>();
 const chartTooltips = new WeakMap<Element, Map<string, ChartTooltip>>();
-const chartKinds: readonly ChartKind[] = [
-  "bar",
-  "line",
-  "scatter",
-  "histogram",
-  "boxplot",
-  "pie",
-  "donut",
-  "gauge",
-  "barGauge",
-  "stat",
-  "heatmap",
-  "sparkline",
-];
-const isChartKind = (value: string | null): value is ChartKind => chartKinds.some((kind) => kind === value);
 const isObject = (value: unknown): value is Record<string, unknown> => typeof value === "object" && value !== null;
 const isTooltip = (value: unknown): value is ChartTooltip =>
   isObject(value) &&
@@ -297,13 +305,21 @@ const charts = new ResizeObserver((entries) => {
   for (const entry of entries) {
     const element = entry.target as HTMLElement;
     const options = chartOptions.get(element.dataset.chartId ?? "");
-    const width = Math.round(entry.contentRect.width);
+    const calendar = element.querySelector("svg[data-calendar]");
+    const width = Math.round(calendar ? (element.parentElement?.clientWidth ?? entry.contentRect.width) : entry.contentRect.width);
+    if (element.hasAttribute("data-chart-pending")) continue;
     if (!options || width < 120 || Math.abs((drawn.get(element) ?? 0) - width) < 8) continue;
     drawn.set(element, width);
     const height = Number.parseFloat(element.style.getPropertyValue("--k2b-chart-height")) || 280;
     element.style.setProperty("--k2b-chart-width", `${width}px`);
     element.innerHTML = chartSvg(options, config.context.locale, width, height);
     // Bar rows at a new width can wrap their labels differently and take another height.
+    const intrinsicWidth = Number(element.querySelector("svg[data-calendar]")?.getAttribute("data-chart-min-width"));
+    if (intrinsicWidth) {
+      element.style.width = `${intrinsicWidth}px`;
+      element.style.minWidth = `${intrinsicWidth}px`;
+      element.style.setProperty("--k2b-chart-width", `${intrinsicWidth}px`);
+    }
     const drawnHeight = element.querySelector("svg")?.viewBox.baseVal.height;
     if (drawnHeight) element.style.setProperty("--k2b-chart-height", `${drawnHeight}px`);
     const chart = element.closest(".k2b-chart");
@@ -313,6 +329,98 @@ const charts = new ResizeObserver((entries) => {
     }
   }
 });
+// Pending markup also works with explicit width and aspect-ratio charts. Each
+// node owns its load, so a replaced/removed chart is never painted after await.
+const loadingCharts = new WeakMap<HTMLElement, Promise<void>>();
+function fillChart(element: HTMLElement): Promise<void> {
+  let task = loadingCharts.get(element);
+  if (!task) {
+    task = paintChart(element);
+    loadingCharts.set(element, task);
+  }
+  return task;
+}
+async function paintChart(element: HTMLElement) {
+  element.innerHTML = chartLoading(config.context.locale);
+  element.setAttribute("aria-busy", "true");
+  let loadFailed = false;
+  try {
+    const options = pendingChartOptions.get(element.dataset.chartPending ?? "");
+    if (!options) throw new Error("The chart expired. Draw it again.");
+    const measure = element.hasAttribute("data-chart-measure");
+    const widthAt = () => {
+      const measured = measure
+        ? Math.round(
+            options.input.kind === "heatmap" && options.input.layout === "calendar"
+              ? (element.parentElement?.clientWidth ?? element.getBoundingClientRect().width)
+              : element.getBoundingClientRect().width,
+          )
+        : 0;
+      return (measured >= 120 ? measured : 0) || Number.parseFloat(element.style.getPropertyValue("--k2b-chart-width")) || 480;
+    };
+    const height = Number.parseFloat(element.style.getPropertyValue("--k2b-chart-height")) || 280;
+    if (measure && options.input.kind === "heatmap" && options.input.layout === "calendar") {
+      const reservedWidth = pendingCalendarWidth(options, config.context.locale, widthAt(), height);
+      element.style.width = element.style.minWidth = `${reservedWidth}px`;
+      element.style.aspectRatio = `${reservedWidth}/${height}`;
+      element.style.setProperty("--k2b-chart-width", `${reservedWidth}px`);
+    }
+    await loadChartRenderer().catch((error) => {
+      loadFailed = true;
+      throw error;
+    });
+    if (!element.isConnected) {
+      loadingCharts.delete(element);
+      return;
+    }
+    const width = widthAt();
+    const markup = chartMarkup(options, config.context.locale, width, height, measure);
+    if (markup.includes("data-chart-pending=")) throw new Error("The chart module does not support this chart kind.");
+    const fragment = document.createRange().createContextualFragment(String(markup));
+    const chart = fragment.querySelector(".k2b-chart")!;
+    const drawing = chart.firstElementChild!;
+    // Keep author listeners and references on the returned chart and drawing nodes.
+    for (const name of ["data-chart-pending", "data-chart-measure", "aria-busy", "data-chart-id"]) element.removeAttribute(name);
+    for (const attribute of drawing.attributes) element.setAttribute(attribute.name, attribute.value);
+    element.replaceChildren(...drawing.childNodes);
+    const container = element.closest(".k2b-chart");
+    container?.setAttribute("role", chart.getAttribute("role")!);
+    chart.remove();
+    container?.after(fragment);
+  } catch (error) {
+    if (!element.isConnected) {
+      loadingCharts.delete(element);
+      return;
+    }
+    const german = config.context.locale.startsWith("de");
+    const state = document.createElement("span");
+    state.style.cssText = "display:grid;place-content:center;justify-items:center;gap:8px;height:100%;color:var(--k2b-text-muted)";
+    const message = document.createElement("span");
+    message.setAttribute("role", "alert");
+    message.textContent = loadFailed
+      ? german
+        ? "Diagramm konnte nicht geladen werden."
+        : "The chart could not be loaded."
+      : error instanceof Error
+        ? error.message
+        : String(error);
+    state.append(message);
+    if (loadFailed) {
+      const retry = document.createElement("button");
+      retry.type = "button";
+      retry.textContent = german ? "Erneut versuchen" : "Try again";
+      retry.addEventListener("click", () => {
+        loadingCharts.delete(element);
+        void fillChart(element);
+      });
+      state.append(retry);
+    }
+    element.removeAttribute("aria-busy");
+    element.replaceChildren(state);
+    if (loadFailed) console.error(error);
+    else reportError(error);
+  }
+}
 // A table that scrolls inside its <figure> must be reachable by keyboard; only then does it get a tab stop.
 const scrollers = new ResizeObserver((entries) => {
   for (const { target } of entries) {
@@ -338,10 +446,11 @@ new MutationObserver((records) => {
     inspections.delete(element);
     chartTooltips.delete(element);
   }
+  for (const element of document.querySelectorAll<HTMLElement>("[data-chart-pending]")) void fillChart(element);
   for (const chart of document.querySelectorAll<HTMLElement>(".k2b-chart")) {
     if (inspections.has(chart) || !chart.querySelector("[data-chart-datum]")) continue;
     const kind = chart.getAttribute("data-chart-kind");
-    if (!isChartKind(kind)) continue;
+    if (!isAppChartKind(kind)) continue;
     chart.setAttribute("role", "group");
     chart.setAttribute(
       "aria-description",
@@ -349,16 +458,23 @@ new MutationObserver((records) => {
         ? "Interaktives Diagramm. Mit den Pfeiltasten Werte ansehen, mit Escape schließen."
         : "Interactive chart. Use arrow keys to inspect values, Escape to dismiss.",
     );
-    inspections.set(
-      chart,
-      inspectChart(chart, {
-        kind,
-        format: ({ datum }) => {
-          const key = cloudAiChartMarkKey(datum);
-          return chartTooltips.get(chart)?.get(key) ?? readChartTooltips(chart).get(key) ?? { rows: [] };
-        },
-      }),
-    );
+    const unmountCalendar = chart.querySelector("svg[data-calendar]") ? mountCalendarScroll(chart) : () => {};
+    const inspection = inspectChart(chart, {
+      kind,
+      nav: chart.querySelector("svg[data-calendar]") ? calendarInspectionNavigation : undefined,
+      locale: config.context.locale,
+      format: ({ datum }) => {
+        const key = cloudAiChartMarkKey(datum);
+        return chartTooltips.get(chart)?.get(key) ?? readChartTooltips(chart).get(key) ?? { rows: [] };
+      },
+    });
+    inspections.set(chart, {
+      ...inspection,
+      destroy() {
+        unmountCalendar();
+        inspection.destroy();
+      },
+    });
   }
   for (const element of document.querySelectorAll(".k2b-chart__svg[data-chart-id]:not([data-cloud-observed])")) {
     element.setAttribute("data-cloud-observed", "");

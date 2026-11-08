@@ -1006,7 +1006,7 @@ and scripts have no check gate. The self-test is not a security mechanism.
 Desktop and phone run a saved app on separate disposable copies of its data;
 one-off apps have no storage, as in their chat card. AI runs for real; HTTP and
 capability effects are unavailable, and background checks reject all
-capabilities. See [HTML app checks](/en/docs/ai/chat-interface#check-an-html-app-before-showing-it)
+capabilities. See [HTML app checks](/en/docs/ai/chat-interface#legacy-studio-html-checks)
 for step matching, copy/output budgets, cancellation and the report contract.
 
 ## Register host-owned tools
@@ -1027,3 +1027,20 @@ mobile-session limits. It is for the trusted runtime host, not an application
 credential exchange. `createCodeSourceTool` from `@k2b/cloud/ai/tools` exposes
 one existing Studio source tool so an overloaded host tool can preserve that
 tool's authenticated transport and revision behavior.
+
+For a result that starts no model turn, trusted hosts share
+`appendAiBackgroundMessage(db, { conversationId, text, meta? })` from
+`@k2b/cloud/ai/runtime`. Call it only inside an authorized transaction holding
+the destination conversation's row lock. It appends the assistant message and
+marks the conversation unread. The host owns idempotency and notification
+recovery in that same transaction. Core's routine finalizer and personal Code
+[chat delivery Action](/en/docs/platform/capabilities#deliver-personal-code-results-to-a-chat)
+use this seam; applications call the capability instead of this host helper.
+
+Trusted hosts may pass their open database transaction as the second argument
+to `aiConversations.submitChatTurn(input, db)` to commit a turn and a
+host-owned receipt together. Hold the authorized conversation lock first and
+enqueue with `enqueueExistingAiTurn` only after committing. Core uses this seam
+for [Code-started chat turns](/en/docs/platform/capabilities#start-personal-code-chat-turns).
+The optional host-owned `runConfig.codeOrigin` is copied to the user message
+and turn record for attribution; it grants no tool authority.

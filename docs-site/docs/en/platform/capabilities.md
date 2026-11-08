@@ -1535,6 +1535,89 @@ For a multilingual app, resolve `forms` once from the app's catalog using
 `"{amount} {item} an {to} übergeben"`, with matching running, done, confirm,
 and decline forms.
 
+## Deliver personal Code results to a chat
+
+Core's `core.ai.chat.deliver` Action targets `core.ai.chat`. Its closed input is
+`{ text }`, with 1–10,000 characters after trimming; supply the required
+idempotency key as invocation metadata. It returns
+`{ id, status: "delivered", targetChatId }` and an open link to the destination.
+
+The caller must be a delegated personal Code run whose owner owns the active
+target chat. Core checks both identities on review and execution. Resource- and
+app-owned Code and ordinary person calls are refused. Its policy is
+`{ silent: "you" }`, so approved personal versions can deliver unattended.
+The destination is always explicit; no chat is created or selected implicitly.
+
+A committed call appends one assistant message, marks the chat unread and leaves
+a durable receipt for the existing Assistant response notification recovery.
+Messages retain their Code/run provenance, form separate answers, and enter
+model context after an already-running interactive turn finishes.
+Notification delivery follows the person's preferences. The Action starts no
+AI turn. A repeated key in the same run returns the original message; changed
+text or destination returns `IDEMPOTENCY_CONFLICT`. Each call uses the ordinary
+Code call log. See [Code SDK](/en/docs/platform/code-sdk#deliver-a-result-to-your-gustav-chat)
+for the generated handle and an example.
+
+## Start personal Code chat turns
+
+Core's `core.ai.chat.run` Action targets `core.ai.chat` and takes
+`{ prompt, context? }`. The prompt has 1–10,000 characters after trimming;
+source context has at most 10,000 characters. Invocation metadata supplies a
+required idempotency key. The Action uses `silent: "you"` and accepts only a
+delegated personal Code run whose owner owns the active target chat. Review
+and execution both check that binding. It never selects or creates a chat.
+
+It creates one ordinary durable Assistant turn with the owner's current
+permissions, model grants, loop and step limits, and approval rules. Tool requests that need approval
+wait in the chat. Code receives `{ id, chatId, status, reason, origin }` and an
+open link promptly; it does not wait for a human. `core.ai.chat.run.read`, on
+the same chat target with `{ id }`, returns a current snapshot of that turn.
+States are `queued`, `running`, `waiting_for_approval`, `waiting_for_input`,
+`completed` and `failed`. A failed turn includes its reason. A retry of the
+same Action key recovers the original turn; the dispatcher may replay the
+admission reply. Use `ai.chat.run.read` for its current state. Different
+instructions, context or destination under that key return
+`IDEMPOTENCY_CONFLICT`. A chat with another active turn or pending/failed queued
+messages returns `chat_busy`. A Project change during preparation returns
+`chat_changed`; reread the chat before trying again.
+
+Turn admission uses the owner's normal interactive Assistant budget. Each
+provider call reserves only affordable input/output and settles to its actual
+reported usage, exactly as an interactive turn does. An exhausted owner budget
+returns `quota_exhausted`; unknown priced usage returns `quota_usage_unknown`.
+The existing Assistant budget rules determine the amount and reset window
+(including a daily rule when configured). As with interactive chat, disabled
+Assistant budgets or unpriced models have no owner cost ceiling. There is no new turn-count setting
+or flat charge. Normal per-turn loop and step limits bound each invocation.
+
+The existing `core.code.ai_daily_budget_usd` and
+`core.code.ai_owner_daily_budget_usd` limits also include the actual costs of
+Code-started chat calls, alongside text AI usage, per installation calendar day
+in `app.timezone`. Live inference reservations count until they settle; unknown
+priced chat costs block new turn admission. They do not create an extra unknown-usage
+block for text AI calls; those retain the normal owner quota rules. Unknown
+Code chat costs block new turns until the next installation calendar day; an
+Assistant allowance reset does not reset the Code daily check. These limits
+default to 1 each and return
+`code_ai_daily_budget_limit` or `code_ai_owner_daily_budget_limit` when exhausted.
+For example, three turns costing 0.02 each use 0.06 of the daily allowance,
+leaving 0.94 for further turns or `core.ai.generate` / `core.ai.decide`.
+The Code daily checks refuse new invocations once that allowance is spent;
+an already admitted turn can exceed the remaining Code allowance. Its owner
+quota still applies at each provider call. Compaction retains normal background
+accounting and is excluded from these chat costs.
+Turns never allocate the full `core.code.ai_budget_usd` attempt allowance:
+that setting continues to bound the separate text AI calls. A receipt retry
+starts no inference and adds no cost. Model admission can also return
+`ai_disabled`, `ai_no_model` or `model_policy_mismatch` before starting a turn.
+
+Turn creation and its receipt commit together. The
+ordinary AI queue and sweep recover work after a failed queue wake-up. Chat
+history and the turn record retain the Code name, Code run and invocation
+request ID. Code call logging remains the standard bridge log. Read a later
+state once or show the chat link; never keep a Code run polling for approval.
+See the [SDK example](/en/docs/platform/code-sdk#start-a-gustav-turn-in-your-own-chat).
+
 ## Write valid contracts
 
 Cloud validates the declaration at startup:
@@ -2568,10 +2651,78 @@ reservations independently. Keep receipts for their domain recovery period.
 
 References require the same caller and credential scope, an unchanged live
 operation schema and current provider access. Possessing a reference alone
-cannot invoke a different operation. This initial stream contract supports
-interactive and service-account authority; mandate-backed background
-invocations of streaming operations fail before execution. Existing operations
-without streams retain their contracts.
+cannot invoke a different operation. Interactive and service-account authority
+use this transport directly. Verified Code runs also use it through run-bound
+FileRefs as described below. Other mandate-backed background invocations of
+streaming operations fail before execution. Existing operations without streams
+retain their contracts.
+
+### Transfer a file from Code
+
+A read stream is offered in the generated Code SDK as `Promise<FileRef>`.
+For an import, declare a write stream and an ordinary input field
+`file: CapabilityFileMetadataSchema`, imported from `@k2b/cloud/contracts`.
+The schema contains optional `name`, `mediaType` and exact `size`. Core replaces
+the FileRef with that metadata before invoking the Action. Its `run` checks
+access and prepares a reservation of that size and media type; its `write`
+handler checks access again, consumes the whole body, validates and publishes
+it, then returns the final result. No app needs to know the source app.
+
+The SDK replaces this input field's type with `FileRef` and returns the write
+receipt's data only after transfer. Code cannot upload sandbox bytes through
+this path. Core bounds transfers at both providers and enforces the exact byte
+count with backpressure. Cancellation and the Code deadline stop the transfer;
+publication already committed by an app remains committed.
+
+References belong to one Code, version, run, generation and mandate, expire at
+the earlier provider/run-token deadline and are consumed once before target
+preparation. Failed attempts also spend them. Inspect the target's domain
+receipt before recovering with a fresh reference and the same business
+idempotency key. Current Code policy, mandate and provider access still apply.
+The ordinary HTTP stream endpoint cannot redeem these references.
+
+For mailbox-owned Code, replace `imports` with the destination app's discovered
+SDK namespace and `Tag123` with a real mailbox tag ID:
+
+<!-- code-file-example -->
+```ts
+import { app, mail, owner, imports } from "@sdk";
+
+const importedTagId = "Tag123";
+
+app.on("mail.message.received", async event => {
+  const message = await mail.app().message.read({ id: event.subject.id });
+  if (message.hydrationStatus !== "complete" || message.attachmentsTruncated) {
+    throw new Error("Message attachments are not ready or complete");
+  }
+  const attachment = message.attachments.find(item =>
+    ["application/pdf", "application/xml", "text/xml"].includes(item.contentType)
+  );
+  if (!attachment || !message.conversationId) return;
+
+  const file = await mail.app().attachment.content.read({ id: attachment.id });
+  await imports.app().import({
+    file,
+    idempotencyKey: `invoice:${event.data.receiptId}:${attachment.id}`,
+  });
+  const conversation = await mail.app().conversation.read({ id: message.conversationId });
+  await owner.conversation.tag.update({
+    conversationId: message.conversationId,
+    expectedRevision: conversation.collaboration.revision,
+    addTagIds: [importedTagId],
+  });
+});
+export default app;
+```
+
+The Mail reader is `mail.attachment.content.read`, bounded to Mail's existing
+100 MiB attachment limit. It resolves current attachment access on issuance and
+again while reading the immutable blob. `attachment.read` remains metadata-only;
+`attachment.read-content` still reads extracted text. The bytes never enter
+Code or its JSON bridge. See [Code SDK](/en/docs/platform/code-sdk#mail-invoices-to-an-app)
+for recovery and permissions.
+
+### Assistant code mode transfers
 
 Assistant code mode exposes `cloud.capabilities.streams.read/write/status/abort`.
 `read` returns a `File`, and `write` accepts a `Blob`, string, `ArrayBuffer` or

@@ -12,6 +12,16 @@ export async function migrate(db: SQL = sql) {
       lease_expires_at TIMESTAMPTZ)`;
     await tx`CREATE INDEX IF NOT EXISTS jobs_pending ON code.jobs(created_at,id) WHERE state='queued'`;
     await tx`CREATE INDEX IF NOT EXISTS jobs_owner ON code.jobs(owner_id) WHERE state IN('queued','running')`;
+    await tx`ALTER TABLE code.jobs DROP CONSTRAINT IF EXISTS jobs_kind_check`;
+    await tx`ALTER TABLE code.jobs ADD CONSTRAINT jobs_kind_check CHECK(kind IN('check','test','simulate','chat'))`;
+    await tx`ALTER TABLE code.jobs ADD COLUMN IF NOT EXISTS conversation_id UUID, ADD COLUMN IF NOT EXISTS turn_id UUID,
+      ADD COLUMN IF NOT EXISTS calls_limit INTEGER, ADD COLUMN IF NOT EXISTS call_bytes INTEGER`;
+    await tx`CREATE TABLE IF NOT EXISTS code.job_calls(
+      id UUID PRIMARY KEY,job_id UUID NOT NULL REFERENCES code.jobs(id) ON DELETE CASCADE,
+      generation INTEGER NOT NULL,operation TEXT NOT NULL,input TEXT,
+      state TEXT NOT NULL DEFAULT 'pending' CHECK(state IN('pending','delivering','done')),result TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT clock_timestamp())`;
+    await tx`CREATE INDEX IF NOT EXISTS job_calls_job ON code.job_calls(job_id,state)`;
     await tx`CREATE TABLE IF NOT EXISTS code.dispatch_turn(singleton BOOLEAN PRIMARY KEY CHECK(singleton),job_last BOOLEAN NOT NULL DEFAULT FALSE)`;
     await tx`INSERT INTO code.dispatch_turn(singleton) VALUES(TRUE) ON CONFLICT DO NOTHING`;
     await tx`CREATE TABLE IF NOT EXISTS code.job_outbox(

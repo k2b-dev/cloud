@@ -6307,3 +6307,55 @@ test("unassigned-only CLI assignment preserves the caller's revision and rejects
   expect(missing.exitCode).toBe(1);
   expect(inputs).toHaveLength(1);
 });
+
+for (const output of ["text", "json", "jsonl"] as const) {
+  test(`Mail automation export includes every page in ${output} output`, async () => {
+    const requests: string[] = [];
+    const cursor = "44bb0000-0000-4000-8000-000000000001";
+    const server = Bun.serve({
+      port: 0,
+      fetch(request) {
+        const url = new URL(request.url);
+        requests.push(`${url.pathname}${url.search}`);
+        return api({
+          format: "cloud.mail-automation",
+          version: 1,
+          authority: "none",
+          scope: "installation",
+          exportedAt: "2026-11-07T00:00:00.000Z",
+          items: [{ version: { id: requests.length === 1 ? "first" : "last" } }],
+          nextCursor: requests.length === 1 ? cursor : null,
+        });
+      },
+    });
+    servers.push(server);
+    const result = await runCli(server.url.origin, [
+      "mail",
+      "automation",
+      "export",
+      "--all",
+      ...(output === "text" ? [] : [`--${output}`]),
+    ]);
+    expect(result.exitCode, result.stderr).toBe(0);
+    expect(requests).toEqual(["/api/mail/admin/automation-export", `/api/mail/admin/automation-export?after=${cursor}`]);
+    if (output === "jsonl") expect(result.stdout.trim().split("\n")).toHaveLength(2);
+    else
+      expect(JSON.parse(result.stdout)).toMatchObject({
+        items: [{ version: { id: "first" } }, { version: { id: "last" } }],
+        nextCursor: null,
+      });
+  });
+}
+
+test("Mail export rejects --all with an explicit mailbox before calling the server", async () => {
+  const server = Bun.serve({
+    port: 0,
+    fetch() {
+      throw new Error("Unexpected request");
+    },
+  });
+  servers.push(server);
+  const result = await runCli(server.url.origin, ["mail", "automation", "export", "--all", "--mailbox", "Support"]);
+  expect(result.exitCode).not.toBe(0);
+  expect(result.stderr).toContain("Use either --mailbox or --all");
+});

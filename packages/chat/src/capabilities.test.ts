@@ -67,11 +67,17 @@ const context = (data: unknown = owner): CapabilityExecutionContext => ({
 
 test("publishes exactly five item operations and a required-id message reader", () => {
   const manifest = compileCapabilityManifest("chat", chatCapabilities);
-  expect(Object.keys(chatCapabilities.queries).sort()).toEqual(["discussion.list", "message.read", "notifications.read"]);
+  expect(Object.keys(chatCapabilities.queries).sort()).toEqual([
+    "conversation.read",
+    "discussion.list",
+    "message.read",
+    "notifications.read",
+  ]);
   expect(Object.keys(chatCapabilities.actions).sort()).toEqual([
     "discussion.post",
     "message.delete",
     "message.edit",
+    "message.post",
     "notifications.set",
     "thread.follow",
   ]);

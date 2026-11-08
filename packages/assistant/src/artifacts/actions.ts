@@ -26,9 +26,9 @@ export function actionValidator(schema: AppAction["inputSchema"]) {
   return z.fromJSONSchema(structuredClone(schema));
 }
 
-export class ArtifactCompileError extends Error {
-  readonly code = "COMPILE_FAILED";
-}
+export { ScriptCompileError as ArtifactCompileError } from "../chat-code/compile-error";
+
+import { ScriptCompileError as ArtifactCompileError } from "../chat-code/compile-error";
 
 /** A call input that its action's schema rejects; the action did not run. */
 export class ActionInputError extends Error {

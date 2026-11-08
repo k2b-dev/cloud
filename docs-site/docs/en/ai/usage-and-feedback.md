@@ -155,7 +155,8 @@ both a finite wildcard and a finite model budget apply. Model-specific unlimited
 does not override a finite wildcard. Unpriced models are exempt from both.
 Model permissions remain separate, including for administrators.
 
-These budgets cover direct Assistant calls, including API/CLI submissions,
+These budgets cover direct Assistant calls, including personal Code-started
+Gustav turns through `core.ai.chat.run`, API/CLI submissions,
 queued messages and retries, and OpenAI-compatible API calls. Compaction,
 enrichment, image inspection, audio,
 routines and workflows are excluded. Switching chat models does not

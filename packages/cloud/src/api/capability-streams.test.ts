@@ -391,3 +391,14 @@ test("stream continuation rechecks app access before provider execution and reco
   expect(calls).toBe(before);
   expect(records).toMatchObject([{ status: "denied", errorCode: "app_access_denied" }]);
 });
+
+test("Core validates write and completed status data against the capability's current result schema", async () => {
+  const ref = await open("action", "archive.import");
+  for (const verb of ["write", "status"]) {
+    const response = await dispatchCapabilityStream(request(ref, verb === "write" ? payload : undefined), authority, verb, {
+      ...deps,
+      fetch: async () => Response.json(verb === "write" ? { data: { id: 42 } } : { state: "completed", result: { data: { id: 42 } } }),
+    });
+    expect(response.status).toBe(502);
+  }
+});

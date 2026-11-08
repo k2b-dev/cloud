@@ -1,5 +1,5 @@
 // Test page for HTML app mounts: the real composer, prelude and host, with in-memory services.
-import { CloudError } from "../runtime/errors";
+import { CloudError } from "../../chat-code/runtime/errors";
 import type { AppFrameAssets } from "./assets";
 import type { AppFiles } from "./compose";
 import { type Mount, type MountEvent, mountApp } from "./host";

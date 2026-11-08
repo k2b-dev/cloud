@@ -76,6 +76,15 @@
   --k2b-tint-zinc: var(--k2b-neutral-600);
   --k2b-tint-cyan: #0e7490;
   --k2b-tint-rose: #e11d48;
+  /* Money with a direction (FlowAmount): turquoise comes in, violet goes out. Text keeps 4.5:1 on its surface;
+     `mark` colours bars and areas. */
+  --k2b-flow-in-text: #0e7490;
+  --k2b-flow-in-surface: #ecfeff;
+  --k2b-flow-in-ring: #a5f3fc;
+  --k2b-flow-in-mark: #0891b2;
+  --k2b-flow-out-text: #6d28d9;
+  --k2b-flow-out-surface: #f5f3ff;
+  --k2b-flow-out-mark: #8b5cf6;
   --k2b-app-workspace-active: var(--k2b-action);
   /* `--k2b-app-workspace-selected` is the fill of a selected navigation row
      or object chip, beside the selected ink above; the soft tabs, view tabs,
@@ -149,6 +158,9 @@
   --k2b-edge-selected-hover-fill: 14%;
   /* The 1 px border of secondary buttons: light in every state. */
   --k2b-control-border-soft: #c8c8d0;
+  /* The resting rail of a slider: at least 3:1 on every surface, muted included, so the track reads as one. */
+  --k2b-rail: #8a8a94;
+  --k2b-rail-hover: var(--k2b-neutral-500);
   /* The grey track of a segmented control, and an option hovered on it. */
   --k2b-tray: #ececef;
   --k2b-tray-hover: rgb(9 9 11 / 0.06);
@@ -294,6 +306,13 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   --k2b-tint-zinc: var(--k2b-neutral-400);
   --k2b-tint-cyan: #22d3ee;
   --k2b-tint-rose: #fb7185;
+  --k2b-flow-in-text: #67e8f9;
+  --k2b-flow-in-surface: rgb(8 51 68 / 0.55);
+  --k2b-flow-in-ring: #155e75;
+  --k2b-flow-in-mark: #22d3ee;
+  --k2b-flow-out-text: #c4b5fd;
+  --k2b-flow-out-surface: rgb(46 16 101 / 0.55);
+  --k2b-flow-out-mark: #a78bfa;
   --k2b-action-solid: var(--k2b-accent-600);
   --k2b-action-solid-hover: var(--k2b-accent-700);
   --k2b-selection: rgb(147 197 253 / 0.35);
@@ -320,6 +339,8 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   --k2b-edge-warning: var(--k2b-warning-500);
   --k2b-edge-selected-share: 55%;
   --k2b-control-border-soft: #46505c;
+  --k2b-rail: #6b7280;
+  --k2b-rail-hover: #8d8d98;
   --k2b-tray: #1a2028;
   --k2b-tray-hover: rgb(255 255 255 / 0.08);
   --k2b-info-surface: var(--k2b-accent-950);
@@ -1751,10 +1772,34 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 .k2b-ui .k2b-chart [data-chart-datum] {
   cursor: crosshair;
 }
-.k2b-ui .k2b-chart [data-inspected]:not([data-chart-role="value"]) > :is(rect, path, circle) {
+/* Calm hover: nothing else dims. A single mark gets a thin outline; a column or row
+ * of a category chart gets a light band behind it instead (data-inspecting="category"). */
+.k2b-ui .k2b-chart:not([data-chart-kind="bar"], [data-chart-kind="histogram"], [data-chart-kind="boxplot"]) [data-inspected]:not([data-chart-role="value"]) > :is(rect, path, circle) {
   stroke: var(--k2b-chart-inspection-color) !important;
-  stroke-width: 2px;
   vector-effect: non-scaling-stroke;
+}
+.k2b-ui .k2b-chart:not([data-chart-kind="bar"], [data-chart-kind="histogram"], [data-chart-kind="boxplot"]) [data-inspected]:not([data-chart-role="value"]) > :is(rect, path) {
+  stroke-width: 1.5px;
+}
+/* Points keep a 2 px ring: a tiny point is hit through its stroke, so a thinner ring would let the drawing take the pointer. */
+.k2b-ui .k2b-chart:not([data-chart-kind="bar"], [data-chart-kind="histogram"], [data-chart-kind="boxplot"]) [data-inspected]:not([data-chart-role="value"]) > circle {
+  stroke-width: 2px;
+}
+/* The band sits behind the marks without positioning the drawing, which would change what lies on top. */
+.k2b-ui .k2b-chart[data-inspecting="category"] {
+  isolation: isolate;
+}
+.k2b-ui .k2b-chart[data-inspecting="category"]::before {
+  content: "";
+  position: absolute;
+  left: var(--k2b-chart-band-left);
+  top: var(--k2b-chart-band-top);
+  width: var(--k2b-chart-band-width);
+  height: var(--k2b-chart-band-height);
+  z-index: -1;
+  border-radius: 3px;
+  background: color-mix(in srgb, currentColor 7%, transparent);
+  pointer-events: none;
 }
 .k2b-ui .k2b-chart [data-inspected] > .stdlib-chart-inspection-point {
   fill: var(--k2b-chart-inspection-color);
@@ -4114,6 +4159,17 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 
 .k2b-ui .k2b-detail-panel__action-menu {
   flex: 0 0 auto;
+}
+
+/* A row's own checkbox, such as "done": in the icon column on the section's
+   text edge, with the row's usual gap before its title or icon. It always
+   shows, since it carries the row's state. */
+.k2b-ui .k2b-detail-panel__action-row > .k2b-detail-panel__action-check {
+  width: 1.25rem;
+  flex: 0 0 1.25rem;
+  align-items: flex-start;
+  justify-content: center;
+  margin-inline-end: 0.625rem;
 }
 
 .k2b-ui .k2b-button.k2b-detail-panel__action-secondary,
@@ -6707,6 +6763,272 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 /* Phones zoom into fields below 16px. */
 .k2b-ui .k2b-gesture-menu__sheet-menu .k2b-dropdown__search > input {
   font-size: 1rem;
+}
+
+/* Command lists: the slash menu of MarkdownEditor and CommandMenu share these
+   rows. The list scrolls below its back control and keeps a fixed width, so
+   filtering or a second list never resizes the popover. */
+.k2b-ui .k2b-command-list {
+  display: flex;
+  min-height: 0;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 0.125rem;
+  overflow: auto;
+}
+
+/* An unavailable command is greyed: muted label, faint icon or logo, its reason
+   in the description's place. It is never marked, by keys or pointer, and has
+   no hover fill, so nothing suggests it can be chosen. */
+.k2b-ui .k2b-dropdown__item[aria-disabled="true"],
+.k2b-ui .k2b-dropdown__item[aria-disabled="true"]:hover {
+  color: var(--k2b-text-muted);
+  background: transparent;
+  cursor: default;
+}
+
+.k2b-ui .k2b-command-list .k2b-dropdown__item[aria-disabled="true"] > :is(i:first-child, .k2b-command-list__image, .k2b-command-list__leading) {
+  opacity: 0.5;
+}
+
+.k2b-ui .k2b-command-list__leading {
+  display: inline-flex;
+  min-width: 1rem;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+}
+
+/* An entry's image, such as a service's logo: an icon-sized box that keeps its
+   size before the image loads, so the row never moves. With one image per
+   theme, only the matching one shows. */
+.k2b-ui .k2b-command-list__image {
+  display: inline-flex;
+  width: 1rem;
+  height: 1rem;
+  flex: 0 0 1rem;
+  align-items: center;
+  justify-content: center;
+}
+
+.k2b-ui .k2b-command-list__image > img {
+  display: block;
+  width: 1rem;
+  height: 1rem;
+  object-fit: contain;
+}
+
+.k2b-ui .k2b-command-list__image-dark,
+.k2b-ui[data-theme="dark"] .k2b-command-list__image-light,
+.k2b-ui.k2b-dark .k2b-command-list__image-light,
+.dark .k2b-ui .k2b-command-list__image-light {
+  display: none !important;
+}
+
+.k2b-ui[data-theme="dark"] .k2b-command-list__image-dark,
+.k2b-ui.k2b-dark .k2b-command-list__image-dark,
+.dark .k2b-ui .k2b-command-list__image-dark {
+  display: block !important;
+}
+
+/* A running command shows a spinner in its icon's place, at the icon's size. */
+.k2b-ui .k2b-command-list__busy {
+  flex: 0 0 auto;
+  color: var(--k2b-action);
+}
+
+/* One line per entry: the label, then quietly its description, the reason it
+   is unavailable, or why it failed. The description gives way first, then the
+   label; an alert reads a failure in full. */
+.k2b-ui .k2b-command-list .k2b-command-list__text {
+  display: flex;
+  min-width: 0;
+  flex: 1 1 auto;
+  align-items: baseline;
+  gap: 0.5rem;
+}
+
+.k2b-ui .k2b-command-list .k2b-command-list__text > span {
+  min-width: 0;
+  flex: 0 1 auto;
+  overflow: hidden;
+  overflow-wrap: normal;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.k2b-ui .k2b-command-list .k2b-command-list__description {
+  min-width: 0;
+  max-inline-size: none;
+  flex: 1 1000 0%;
+  overflow: hidden;
+  color: var(--k2b-text-muted);
+  font-size: 0.75rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.k2b-ui .k2b-command-list .k2b-command-list__error {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.25rem;
+  color: var(--k2b-danger-text);
+}
+
+.k2b-ui .k2b-command-list .k2b-command-list__error > i {
+  flex: 0 0 auto;
+  align-self: center;
+}
+
+.k2b-ui .k2b-command-list .k2b-command-list__error > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* The state of entries on their way: one row, like an entry, at the end. */
+.k2b-ui .k2b-command-list__state {
+  display: flex;
+  min-height: 2rem;
+  align-items: center;
+  gap: 0.625rem;
+  margin: 0;
+  padding: 0.4375rem 0.75rem;
+  color: var(--k2b-text-muted);
+  font-size: 0.8125rem;
+}
+
+.k2b-ui .k2b-command-list__state > i {
+  width: 1.25rem;
+  flex: 0 0 1.25rem;
+  text-align: center;
+}
+
+.k2b-ui .k2b-command-list__state[data-error] {
+  color: var(--k2b-danger-text);
+}
+
+.k2b-ui .k2b-command-list__state > button {
+  margin-left: auto;
+  padding: 0;
+  border: 0;
+  color: inherit;
+  background: transparent;
+  font: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+/* One leading slot for icons, images, avatars, and the busy spinner, so every
+   label starts on the same line. */
+.k2b-ui .k2b-command-list .k2b-dropdown__item > :is(i:first-child, .k2b-command-list__image, .k2b-command-list__leading) {
+  display: inline-flex;
+  width: 1.25rem;
+  min-width: 1.25rem;
+  flex: 0 0 1.25rem;
+  align-items: center;
+  justify-content: center;
+}
+
+/* The hint gives way before the label: it shrinks first and leaves narrow
+   screens entirely. */
+.k2b-ui .k2b-command-list__hint {
+  min-width: 0;
+  flex: 0 1000 auto;
+  overflow: hidden;
+  color: var(--k2b-text-muted);
+  font-family: var(--k2b-font-mono);
+  font-size: 0.75rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@media (max-width: 30rem) {
+  .k2b-ui .k2b-command-list__hint {
+    display: none;
+  }
+}
+
+.k2b-ui .k2b-command-list__next {
+  flex: 0 0 auto;
+  color: var(--k2b-text-muted);
+  font-size: 0.875rem;
+}
+
+.k2b-ui .k2b-command-list__step {
+  display: flex;
+  min-height: 2rem;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.25rem;
+}
+
+.k2b-ui .k2b-command-list__back {
+  display: inline-flex;
+  min-width: 0;
+  min-height: 2rem;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0 0.5rem;
+  border: 0;
+  border-radius: 0.375rem;
+  color: var(--k2b-text);
+  background: transparent;
+  font: inherit;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.k2b-ui .k2b-command-list__back:hover {
+  background: var(--k2b-hover);
+}
+
+.k2b-ui .k2b-command-list__step-hint {
+  min-width: 0;
+  margin-left: auto;
+  padding-right: 0.5rem;
+  color: var(--k2b-text-muted);
+  font-size: 0.75rem;
+  overflow-wrap: anywhere;
+}
+
+@media (any-pointer: coarse) {
+  .k2b-ui .k2b-command-list__back {
+    min-height: 2.75rem;
+  }
+}
+
+/* The slash menu of MarkdownEditor: the same width as CommandMenu. */
+/* Both command menus: as wide as their longest label, at least 20rem and at
+   most 28rem, and a viewport margin of 1rem as other menus keep. Labels stay
+   on one line; a narrow menu gives the hint up first. Once open, a menu keeps
+   at least the width it opened with, so filtering never narrows it. */
+.k2b-ui .k2b-autocomplete__options[data-commands],
+.k2b-ui .k2b-dropdown__menu.k2b-command-menu {
+  width: max-content;
+  min-width: min(20rem, 100vw - 2rem);
+  max-width: min(28rem, 100vw - 2rem);
+}
+
+.k2b-ui .k2b-autocomplete__options[data-commands] {
+  display: none;
+  max-height: min(24rem, calc(100dvh - 1rem));
+  flex-direction: column;
+}
+
+/* Docked to its composer, a list takes the composer's width instead, and stays
+   flat beside it: its frame alone sets it apart, no shadow falls on the text. */
+.k2b-ui .k2b-autocomplete__options[data-commands][data-docked],
+.k2b-ui .k2b-dropdown__menu.k2b-command-menu[data-docked] {
+  min-width: 0;
+  max-width: none;
+  box-shadow: none;
+}
+
+.k2b-ui .k2b-autocomplete__options[data-commands]:popover-open {
+  display: flex;
 }
 
 .k2b-ui .k2b-dropdown__note {
@@ -9758,6 +10080,12 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 }
 
 .k2b-ui .k2b-choice-slider__track {
+  /* One rail without gaps; the fill ends exactly at the thumb's centre. The
+     rail reaches past the end stops so its round caps sit around them. */
+  --k2b-choice-slider-overhang: 0.1875rem;
+  --k2b-choice-slider-rail-height: 0.375rem;
+  --k2b-choice-slider-stop-size: 0.25rem;
+  --k2b-choice-slider-thumb-size: 1.375rem;
   position: relative;
   height: 1.875rem;
   margin: 0 0.75rem;
@@ -9771,48 +10099,82 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   opacity: 0.55;
 }
 
-.k2b-ui .k2b-choice-slider__segment {
+.k2b-ui .k2b-choice-slider__rail,
+.k2b-ui .k2b-choice-slider__fill {
   position: absolute;
   top: 50%;
-  height: 0.375rem;
-  margin-top: -0.1875rem;
+  left: calc(-1 * var(--k2b-choice-slider-overhang));
+  height: var(--k2b-choice-slider-rail-height);
+  margin-top: calc(var(--k2b-choice-slider-rail-height) / -2);
   border-radius: 999px;
-  background: var(--k2b-surface-muted);
 }
 
-.k2b-ui .k2b-choice-slider__stop {
-  position: absolute;
-  top: 50%;
-  width: 0.4375rem;
-  height: 0.4375rem;
-  margin: -0.21875rem 0 0 -0.21875rem;
-  border-radius: 999px;
-  background: var(--k2b-border-strong);
+.k2b-ui .k2b-choice-slider__rail {
+  right: calc(-1 * var(--k2b-choice-slider-overhang));
+  background: var(--k2b-rail);
 }
 
-.k2b-ui .k2b-choice-slider__segment[data-on],
-.k2b-ui .k2b-choice-slider__stop[data-on] {
+.k2b-ui .k2b-choice-slider__track:hover:not([aria-disabled="true"]) .k2b-choice-slider__rail {
+  background: var(--k2b-rail-hover);
+}
+
+.k2b-ui .k2b-choice-slider__fill {
+  width: calc(var(--k2b-choice-slider-at) + var(--k2b-choice-slider-overhang));
   background: var(--k2b-action-solid);
 }
 
+.k2b-ui .k2b-choice-slider__fill[hidden] {
+  display: none;
+}
+
+/* Stops sit on the rail: surface-coloured on the grey, light on the fill. */
+.k2b-ui .k2b-choice-slider__stop {
+  position: absolute;
+  top: 50%;
+  width: var(--k2b-choice-slider-stop-size);
+  height: var(--k2b-choice-slider-stop-size);
+  margin: calc(var(--k2b-choice-slider-stop-size) / -2) 0 0 calc(var(--k2b-choice-slider-stop-size) / -2);
+  border-radius: 999px;
+  background: var(--k2b-surface-elevated);
+}
+
+.k2b-ui .k2b-choice-slider__stop[data-on] {
+  background: rgb(255 255 255 / 0.8);
+}
+
+/* An unavailable stop stays visible as a hollow ring on the rail. */
 .k2b-ui .k2b-choice-slider__stop[data-unavailable] {
-  background: transparent;
-  box-shadow: inset 0 0 0 1.5px var(--k2b-border-strong);
+  --k2b-choice-slider-stop-size: 0.625rem;
+  background: var(--k2b-surface-elevated);
+  box-shadow: inset 0 0 0 2px var(--k2b-rail);
 }
 
 .k2b-ui .k2b-choice-slider__stop[data-current] {
   visibility: hidden;
 }
 
+/* The thumb is a control like any other: white with the 2 px edge in the
+   primary colour, no shadow. Dragging fills it lightly. */
 .k2b-ui .k2b-choice-slider__thumb {
   position: absolute;
   top: 50%;
-  width: 1.375rem;
-  height: 1.375rem;
-  margin: -0.6875rem 0 0 -0.6875rem;
+  left: var(--k2b-choice-slider-at);
+  width: var(--k2b-choice-slider-thumb-size);
+  height: var(--k2b-choice-slider-thumb-size);
+  margin: calc(var(--k2b-choice-slider-thumb-size) / -2) 0 0 calc(var(--k2b-choice-slider-thumb-size) / -2);
   border-radius: 999px;
-  background: var(--k2b-action-solid);
-  box-shadow: 0 0 0 3px var(--k2b-surface-elevated);
+  background: var(--k2b-surface-elevated);
+  box-shadow: inset 0 0 0 var(--k2b-edge-width) var(--k2b-action-solid);
+  cursor: grab;
+}
+
+.k2b-ui .k2b-choice-slider__track[data-dragging] .k2b-choice-slider__thumb {
+  background: color-mix(in srgb, var(--k2b-action-solid) 12%, var(--k2b-surface-elevated));
+  cursor: grabbing;
+}
+
+.k2b-ui .k2b-choice-slider__track[aria-disabled="true"] .k2b-choice-slider__thumb {
+  cursor: default;
 }
 
 .k2b-ui .k2b-choice-slider__thumb[hidden] {
@@ -9820,7 +10182,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 }
 
 .k2b-ui .k2b-choice-slider__thumb[data-tone="warning"] {
-  background: var(--k2b-warning-text);
+  box-shadow: inset 0 0 0 var(--k2b-edge-width) var(--k2b-warning-text);
 }
 
 /* Without a thumb, for a choice outside the stops, the track carries the focus ring. */
@@ -9836,25 +10198,32 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 }
 
 .k2b-ui .k2b-choice-slider[data-size="lg"] .k2b-choice-slider__track {
+  --k2b-choice-slider-rail-height: 0.5rem;
+  --k2b-choice-slider-stop-size: 0.3125rem;
+  --k2b-choice-slider-thumb-size: 1.75rem;
   height: 2.75rem;
   margin: 0 1rem;
 }
 
-.k2b-ui .k2b-choice-slider[data-size="lg"] .k2b-choice-slider__segment {
-  height: 0.5rem;
-  margin-top: -0.25rem;
+/* The indicator: the same rail, fill and thumb in 24 px for a trigger that
+   opens the slider. It never takes the pointer; the trigger does. */
+.k2b-ui .k2b-choice-slider[data-size="indicator"] {
+  display: inline-block;
+  flex: none;
+  width: 1.5rem;
+  height: 0.875rem;
+  vertical-align: middle;
 }
 
-.k2b-ui .k2b-choice-slider[data-size="lg"] .k2b-choice-slider__stop {
-  width: 0.5625rem;
-  height: 0.5625rem;
-  margin: -0.28125rem 0 0 -0.28125rem;
-}
-
-.k2b-ui .k2b-choice-slider[data-size="lg"] .k2b-choice-slider__thumb {
-  width: 1.75rem;
-  height: 1.75rem;
-  margin: -0.875rem 0 0 -0.875rem;
+.k2b-ui .k2b-choice-slider[data-size="indicator"] .k2b-choice-slider__track {
+  --k2b-choice-slider-overhang: 0rem;
+  --k2b-choice-slider-rail-height: 0.1875rem;
+  --k2b-choice-slider-thumb-size: 0.625rem;
+  display: block;
+  height: 100%;
+  margin: 0 0.125rem;
+  cursor: inherit;
+  pointer-events: none;
 }
 
 .k2b-ui .k2b-slider output,
@@ -10336,6 +10705,259 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 
 .k2b-ui .k2b-data-table__cell-text {
   @apply truncate;
+}
+
+/* Text columns break between words inside their cell; every other value keeps one line. */
+.k2b-ui .k2b-data-table td[data-wrap="true"] {
+  min-width: 9ch;
+}
+
+.k2b-ui .k2b-data-table td[data-wrap="true"] > .k2b-data-table__cell-text {
+  overflow: visible;
+  white-space: normal;
+  text-overflow: clip;
+  overflow-wrap: anywhere;
+  line-height: 1.125rem;
+}
+
+/* A bar column: the value, then a short track filled to its share of the column's largest value. */
+.k2b-ui .k2b-data-table__bar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.5rem;
+}
+
+.k2b-ui .k2b-data-table__bar-track {
+  flex: none;
+  width: 3.5rem;
+  height: 0.375rem;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--k2b-surface-muted);
+}
+
+.k2b-ui .k2b-data-table__bar-track > span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--stdlib-chart-c1);
+}
+
+/* Groups: a quiet row with the group's value and count heads each body. */
+.k2b-ui .k2b-data-table__group-row > th {
+  height: 2rem;
+  padding-block: 0;
+  color: var(--k2b-text-secondary);
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-align: left;
+  background: var(--k2b-surface);
+  box-shadow: inset 0 -1px 0 var(--k2b-border);
+}
+
+.k2b-ui .k2b-data-table__group + .k2b-data-table__group > .k2b-data-table__group-row > th {
+  box-shadow:
+    inset 0 1px 0 var(--k2b-border),
+    inset 0 -1px 0 var(--k2b-border);
+}
+
+.k2b-ui .k2b-data-table__group-count {
+  margin-left: 0.375rem;
+  color: var(--k2b-text-muted);
+  font-weight: 500;
+}
+
+/* Nothing matches the host's search: one sentence and the way back, at a fixed height. */
+.k2b-ui .k2b-data-table td.k2b-data-table__no-match {
+  height: 4rem;
+  color: var(--k2b-text-secondary);
+  white-space: normal;
+}
+
+.k2b-ui .k2b-data-table__clear-query {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--k2b-action);
+  font: inherit;
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+
+.k2b-ui .k2b-data-table__clear-query:hover {
+  color: var(--k2b-action-hover);
+}
+
+.k2b-ui .k2b-data-table__clear-query:focus-visible {
+  border-radius: 0.25rem;
+  outline: var(--k2b-focus-width) solid var(--k2b-focus-ring);
+  outline-offset: var(--k2b-focus-offset);
+}
+
+/* Search and group choice sit in the head of the frame that holds the table. */
+.k2b-ui .k2b-data-table-tools {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 0;
+}
+
+.k2b-ui .k2b-data-table-tools__search {
+  width: 11.25rem;
+}
+
+.k2b-ui .k2b-data-table-tools__group {
+  width: auto;
+  min-width: 9rem;
+}
+
+/* Priorities: the table measures its own width. Below 560 px priority 3 leaves, below 420 px priority 2;
+   the row's details toggle then shows exactly the values that left. */
+.k2b-ui .k2b-table-shell[data-priorities] {
+  container: k2b-data-table / inline-size;
+}
+
+.k2b-ui .k2b-data-table :is(th, td).k2b-data-table__details-toggle {
+  display: none;
+  width: 2.75rem;
+  padding-inline: 0.25rem;
+  text-align: center;
+}
+
+.k2b-ui .k2b-data-table__details-button {
+  display: inline-grid;
+  place-items: center;
+  width: 2.25rem;
+  height: 2.25rem;
+  padding: 0;
+  border: 0;
+  border-radius: 0.5rem;
+  background: transparent;
+  color: var(--k2b-text-muted);
+  font-size: 1rem;
+  cursor: pointer;
+}
+
+.k2b-ui .k2b-data-table__details-button:hover {
+  background: var(--k2b-hover);
+  color: var(--k2b-text);
+}
+
+.k2b-ui .k2b-data-table__details-button:focus-visible {
+  outline: var(--k2b-focus-width) solid var(--k2b-focus-ring);
+  outline-offset: calc(-1 * var(--k2b-focus-width));
+}
+
+.k2b-ui .k2b-data-table__details,
+.k2b-ui .k2b-data-table__details dl > div {
+  display: none;
+}
+
+.k2b-ui .k2b-data-table__details > td {
+  height: auto;
+  padding-block: 0.5rem 0.75rem;
+  white-space: normal;
+  box-shadow: inset 0 -1px 0 var(--k2b-border);
+}
+
+.k2b-ui .k2b-data-table__details dl {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 0.25rem 0.75rem;
+  margin: 0;
+}
+
+.k2b-ui .k2b-data-table__details dt {
+  color: var(--k2b-text-muted);
+  font-weight: 500;
+}
+
+.k2b-ui .k2b-data-table__details dd {
+  min-width: 0;
+  margin: 0;
+}
+
+/* The last row ends on the frame although its closed details line follows it. */
+.k2b-ui .k2b-data-table__row[data-last="true"] > td {
+  box-shadow: none;
+}
+
+.k2b-ui .k2b-data-table__row[data-last="true"] > td + td {
+  box-shadow: inset 1px 0 0 color-mix(in srgb, var(--k2b-border) 70%, transparent);
+}
+
+.k2b-ui .k2b-data-table__details:last-child > td {
+  box-shadow: none;
+}
+
+@container k2b-data-table (max-width: 560px) {
+  /* An open row hands its line to its details, only while they show. */
+  .k2b-ui .k2b-table-shell[data-priorities="3"] .k2b-data-table__row[data-details-open="true"]:not([data-last="true"]) > td {
+    box-shadow: none;
+  }
+
+  .k2b-ui .k2b-table-shell[data-priorities="3"] .k2b-data-table__row[data-details-open="true"]:not([data-last="true"]) > td + td {
+    box-shadow: inset 1px 0 0 color-mix(in srgb, var(--k2b-border) 70%, transparent);
+  }
+
+  .k2b-ui .k2b-table-shell[data-priorities="3"] .k2b-data-table__row[data-last="true"][data-details-open="true"] + .k2b-data-table__details > td {
+    box-shadow: none;
+  }
+
+  .k2b-ui .k2b-data-table :is(th, td)[data-priority="3"] {
+    display: none;
+  }
+
+  .k2b-ui .k2b-table-shell[data-priorities="3"] :is(th, td).k2b-data-table__details-toggle {
+    display: table-cell;
+  }
+
+  .k2b-ui .k2b-table-shell[data-priorities="3"] .k2b-data-table__details:not([hidden]) {
+    display: table-row;
+  }
+
+  .k2b-ui .k2b-data-table__details dl > div[data-priority="3"] {
+    display: contents;
+  }
+}
+
+@container k2b-data-table (max-width: 420px) {
+  /* An open row hands its line to its details, only while they show. */
+  .k2b-ui .k2b-table-shell[data-priorities] .k2b-data-table__row[data-details-open="true"]:not([data-last="true"]) > td {
+    box-shadow: none;
+  }
+
+  .k2b-ui .k2b-table-shell[data-priorities] .k2b-data-table__row[data-details-open="true"]:not([data-last="true"]) > td + td {
+    box-shadow: inset 1px 0 0 color-mix(in srgb, var(--k2b-border) 70%, transparent);
+  }
+
+  .k2b-ui .k2b-table-shell[data-priorities] .k2b-data-table__row[data-last="true"][data-details-open="true"] + .k2b-data-table__details > td {
+    box-shadow: none;
+  }
+
+  .k2b-ui .k2b-data-table :is(th, td)[data-priority="2"] {
+    display: none;
+  }
+
+  .k2b-ui .k2b-table-shell[data-priorities] :is(th, td).k2b-data-table__details-toggle {
+    display: table-cell;
+  }
+
+  .k2b-ui .k2b-table-shell[data-priorities] .k2b-data-table__details:not([hidden]) {
+    display: table-row;
+  }
+
+  .k2b-ui .k2b-data-table__details dl > div[data-priority="2"] {
+    display: contents;
+  }
+
+  .k2b-ui .k2b-data-table__bar-track {
+    display: none;
+  }
 }
 
 /* Loading rows keep the real row height; a static bar per cell, so nothing moves while it waits. */
@@ -16471,6 +17093,30 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 .k2b-ui .k2b-chart-legend__swatch[data-style] { width: 1rem; height: 0; border-radius: 0; background: none; border-top: 2px var(--k2b-chart-legend-style, dashed) var(--k2b-chart-legend-color); }
 .k2b-ui .k2b-chart-legend__swatch[data-style="dotted"] { --k2b-chart-legend-style: dotted; }
 .k2b-ui .k2b-chart-legend__swatch[data-reference]:not([data-style]) { background: none; box-shadow: inset 0 0 0 1.5px var(--k2b-chart-legend-color); }
+/* Frame states (with a request): the subtitle is one reserved line, and every state fills the viewport's height. */
+.k2b-ui .k2b-chart-explorer[data-state] .k2b-chart-explorer__description { min-height: 1.25rem; overflow: hidden; color: var(--k2b-text-muted); font-size: .8125rem; line-height: 1.25rem; text-overflow: ellipsis; white-space: nowrap; }
+.k2b-ui .k2b-chart-explorer[data-state] .k2b-chart-explorer__description > * { margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.k2b-ui .k2b-chart-explorer__status-line { display: flex; align-items: center; gap: .3125rem; min-width: 0; }
+.k2b-ui .k2b-chart-explorer__status-line > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.k2b-ui .k2b-chart-explorer[data-state] .k2b-chart-explorer__status-line[data-tone="warning"] { color: var(--k2b-warning-text); }
+.k2b-ui .k2b-chart-explorer__status-line > i { flex: none; font-size: .875rem; }
+.k2b-ui .k2b-chart-explorer__status-line > .k2b-button { flex: none; height: 1.25rem; min-height: 0; padding: 0; font-size: inherit; color: var(--k2b-link-accent); text-decoration: underline; text-underline-offset: 2px; }
+.k2b-ui .k2b-chart-explorer__views { display: contents; }
+.k2b-ui .k2b-chart-explorer__views[inert] > * { visibility: hidden; }
+.k2b-ui .k2b-chart-explorer__chart { height: 100%; min-height: 0; }
+.k2b-ui .k2b-chart-explorer__viewport[data-legend] > .k2b-chart-explorer__chart { flex: 1 1 0; min-height: 60%; }
+.k2b-ui .k2b-chart-explorer__chart > .k2b-chart { height: 100%; }
+.k2b-ui .k2b-chart-explorer__state { display: flex; height: 100%; flex-direction: column; align-items: center; justify-content: center; gap: .625rem; padding: 0 1rem; text-align: center; }
+.k2b-ui .k2b-chart-explorer__state > p { max-width: 28rem; margin: 0; color: var(--k2b-text-secondary); font-size: .875rem; line-height: 1.25rem; text-wrap: balance; }
+.k2b-ui .k2b-chart-explorer__state-icon { display: inline-grid; place-items: center; width: 2.5rem; height: 2.5rem; border-radius: 999px; background: var(--k2b-surface-muted); color: var(--k2b-text-muted); font-size: 1.125rem; }
+.k2b-ui .k2b-chart-explorer__state[data-state="error"] .k2b-chart-explorer__state-icon { background: var(--k2b-danger-surface, color-mix(in srgb, var(--k2b-danger-500) 10%, transparent)); color: var(--k2b-danger-text); }
+.k2b-ui .k2b-chart-explorer__skeleton { display: flex; height: 100%; align-items: flex-end; gap: clamp(.25rem, 1.5%, 1rem); padding: .5rem 0 1.5rem 3rem; }
+.k2b-ui .k2b-chart-explorer__skeleton > span { flex: 1 1 0; min-width: 0; border-radius: 3px 3px 0 0; background: var(--k2b-surface-muted); animation: k2b-chart-explorer-pulse 1.6s ease-in-out infinite; }
+@keyframes k2b-chart-explorer-pulse { 50% { opacity: .55; } }
+@media (prefers-reduced-motion: reduce) { .k2b-ui .k2b-chart-explorer__skeleton > span { animation: none; } }
+/* Inside a frame the table reaches its left, right and bottom edges; the viewport grows by the inset it covers. */
+.k2b-ui .k2b-chart-explorer[data-inset] .k2b-chart-explorer__viewport[data-view="table"] { margin: 0 calc(-1 * var(--k2b-chart-explorer-inset)) calc(-1 * var(--k2b-chart-explorer-inset-block, var(--k2b-chart-explorer-inset))); }
+.k2b-ui .k2b-chart-explorer[data-inset] .k2b-chart-explorer__viewport[data-view="table"] .k2b-chart-explorer__note { padding: 0 var(--k2b-chart-explorer-inset) .5rem; }
 .k2b-ui .k2b-chart-explorer__details:empty { display: none; }
 .k2b-ui .k2b-chart-explorer__detail-paper { padding: .75rem 1rem; }
 .k2b-ui .k2b-chart-explorer__detail-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: .5rem; color: var(--k2b-text-muted); font-size: .75rem; }
@@ -16521,7 +17167,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 .k2b-ui .k2b-chart-group-controls__loading[data-loading] { opacity: 1; transition-delay: .2s !important; }
 
 /* Maps use a full-width geographic viewport; headers and legends stay outside its crop. */
-.k2b-ui .k2b-country-map { display: flex; flex-wrap: wrap; gap: var(--k2b-space-4, 1rem) var(--k2b-space-6, 1.5rem); margin: 0; min-width: 0; }
+.k2b-ui .k2b-country-map { container: k2b-country-map / inline-size; display: flex; flex-wrap: wrap; gap: var(--k2b-space-4, 1rem) var(--k2b-space-6, 1.5rem); margin: 0; min-width: 0; }
 .k2b-ui .k2b-country-map__plot { flex: 3 1 20rem; min-width: 0; }
 .k2b-ui .k2b-country-map__svg { display: block; width: 100%; height: auto; aspect-ratio: 1000 / 450; touch-action: pan-y; }
 .k2b-ui .k2b-country-map__svg path { fill: var(--k2b-surface-muted); stroke: var(--k2b-surface); stroke-width: 0.5; }
@@ -16529,6 +17175,8 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 .k2b-ui .k2b-country-map__svg [data-active="true"] { stroke: var(--k2b-text); stroke-width: 1; }
 .k2b-ui .k2b-country-map__caption { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0.25rem 1rem; min-height: 1.5rem; margin-top: 0.5rem; font-size: 0.8125rem; color: var(--k2b-text-muted); font-variant-numeric: tabular-nums; }
 .k2b-ui .k2b-country-map__readout { color: var(--k2b-text); }
+/* On a narrow map the readout always takes its own line, so a long country name on hover or tap never adds one. */
+@container k2b-country-map (max-width: 30rem) { .k2b-ui .k2b-country-map__readout { flex: 1 1 100%; } }
 .k2b-ui .k2b-country-map__legend { display: inline-flex; align-items: center; gap: 0.375rem; }
 .k2b-ui .k2b-country-map__scale { display: inline-block; width: 4rem; height: 0.375rem; border-radius: 999px; }
 .k2b-ui .k2b-country-map__list { flex: 1 1 12rem; min-width: 0; margin: 0; padding: 0; list-style: none; font-size: 0.875rem; font-variant-numeric: tabular-nums; }
@@ -17050,6 +17698,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   .k2b-ui .k2b-rich-select__create-input,
   .k2b-ui .k2b-emoji-picker__search > input,
   .k2b-ui .k2b-chat-composer__command-search > input,
+  .k2b-ui .k2b-dropdown__search > input,
   .k2b-ui .k2b-pin-input__digit {
     font-size: max(1rem, 16px);
     line-height: 1.25rem;
@@ -17306,3 +17955,15 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
     transition: none;
   }
 }
+
+/* Calendar coordinates stay square in every host. */
+.k2b-ui .k2b-chart[data-chart-kind="heatmap"]:has(svg[data-calendar]) { overflow-x: auto; }
+.k2b-ui .k2b-chart__svg:has(> svg[data-calendar]) { width: var(--k2b-chart-width); }
+.k2b-ui .k2b-chart[data-chart-kind="heatmap"]:has(svg[data-calendar]) [data-inspected]:not([data-selected]):not([data-chart-role="value"]) > rect { stroke-width: 1.5px; }
+.k2b-ui .k2b-chart[data-chart-kind="heatmap"]:has(svg[data-calendar]) [data-selected] > rect { stroke-width: 2.5px !important; }
+@media print {
+  .k2b-ui .k2b-chart:has(svg[data-calendar]) { --k2b-calendar-header-x: 0px !important; }
+  .k2b-ui svg[data-calendar] [data-calendar-month] { visibility: visible !important; }
+  .k2b-ui .k2b-chart__svg:has(> svg[data-calendar]) { min-width: 0 !important; width: 100%; }
+}
+.k2b-ui .k2b-chart[data-chart-kind="area"] [data-selected] > .k2b-area-inspection-point { opacity: 1; stroke-width: 1.5px; }

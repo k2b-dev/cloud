@@ -632,7 +632,7 @@ cld assistant personalization forget <memory-id> --yes
 
 `--content` also accepts `--content-file` and `--stdin`. Forgetting an entry requires `--yes`.
 
-Personalization use and learning from chats are separate settings. Learning is on for users who have not chosen; a setting stored before learning became the default stays as it was, and `--learning` stores a new choice. Learning considers turns from the user's own chats, Project chats included, that finish while it is on, and only genuine user-authored text, not attached Cloud resources, files, tool results, scheduled prompts, inter-chat deliveries, or Assistant output. It keeps only information about the user, never facts about other people, and leaves Project facts in the Project. It skips sensitive categories such as health, religion, or political views unless the user explicitly asks to remember exactly that. Archived and deleted chats are excluded; after a chat is restored, learning considers only turns that finish later.
+Personalization use and learning from chats are separate settings. Learning is on for users who have not chosen; a setting stored before learning became the default stays as it was, and `--learning` stores a new choice. Learning considers turns from the user's own chats, Project chats included, that finish while it is on, and only genuine user-authored text, not attached Cloud resources, files, tool results, scheduled prompts, Code-started prompts, inter-chat deliveries, or Assistant output. It keeps only information about the user, never facts about other people, and leaves Project facts in the Project. It skips sensitive categories such as health, religion, or political views unless the user explicitly asks to remember exactly that. Archived and deleted chats are excluded; after a chat is restored, learning considers only turns that finish later.
 
 ```bash
 cld assistant personalization status
@@ -810,3 +810,9 @@ Personal disabled-Skill preferences still apply. Linking and unlinking require
 Manage on both resources. A link stays intact if its creator later loses access;
 unlinking or losing membership removes only inherited access. Direct grants
 remain. The same persistence rule applies to `code project-link` for Studio Apps.
+
+`cld assistant tasks export --json` preserves all your routine definitions,
+including prompts, schedules, timezones, grants, mandate summaries, state and
+target chats. Cloud administrators use `--all` to export the installation.
+Exports grant no access. JSON and text output are one JSON document; JSONL
+is one API page per line. Export before an upgrade removes routines.

@@ -16,6 +16,7 @@ import { connectTestNats, suiteFor, testSyncNamespace, useFreshDatabase } from "
 import { Runner } from "../../../runner/src/runner";
 import { aiCapabilities } from "../capabilities";
 import { migrate as migrateAppApproval } from "../migrate/core/app-approval";
+import { migrate as migrateAppEvents } from "../migrate/core/app-events";
 import { migrate as migrateAudit } from "../migrate/core/audit";
 import { migrate as migrateAuth } from "../migrate/core/auth";
 import { migrate as migrateCode } from "../migrate/core/code";
@@ -23,6 +24,7 @@ import { migrate as migrateJobs } from "../migrate/core/code-jobs";
 import { migrate as migratePolicy } from "../migrate/core/code-policy";
 import { migrate as migrateScheduling } from "../migrate/core/code-scheduling";
 import { migrate as migrateVersions } from "../migrate/core/code-versions";
+import { migrate as migrateEvents } from "../migrate/core/events";
 import { migrate as migrateSettings } from "../migrate/core/settings";
 import { FixtureEngine } from "./acceptance.test-fixture";
 import type { CodeContext } from "./access";
@@ -129,7 +131,7 @@ suiteFor(
     resource = false,
     route = false,
     reply: "json" | "page" | "invalid" = "json",
-    once?: { at: string; timeZone: string },
+    once?: { at: string; timeZone: string } | { cron: string; timeZone: string },
   ) {
     const codeId = `c_c13${String(++ordinal).padStart(5, "0")}`;
     const files = { "code.ts": "fixture" },
@@ -151,7 +153,7 @@ suiteFor(
               line: 1,
             },
           ]
-        : [{ kind: "schedule", entrypoint: "weekly", cron: once ? null : distantCron, ...once, file: "code.ts", line: 1 }],
+        : [{ kind: "schedule", entrypoint: "weekly", cron: once && "at" in once ? null : distantCron, ...once, file: "code.ts", line: 1 }],
       permissions: [],
       ai: false,
       policyRows: ["read"],
@@ -212,6 +214,8 @@ suiteFor(
   beforeAll(async () => {
     database = await useFreshDatabase("code_c13");
     await migrateAuth();
+    await migrateEvents();
+    await migrateAppEvents();
     await migrateAudit();
     await migrateSettings();
     await migrateAppApproval();
@@ -1323,6 +1327,31 @@ suiteFor(
     const [count] = await sql<{ count: number }[]>`SELECT count(*)::int AS count FROM code.runs WHERE code_id=${code.codeId}`;
     expect(count?.count).toBe(1);
   });
+  test("recurring zones reach Sync and next runs skip spring gaps and repeat autumn slots only once", async () => {
+    const code = await fixture(owner, false, false, "json", { cron: "30 2 * * *", timeZone: "Europe/Berlin" });
+    const legacy = await fixture();
+    await coreSettings.set("app.timezone", "America/New_York");
+    try {
+      const sync = createSync({ connection, namespace: testSyncNamespace("c13-dst"), application: "core", defaults: { replicas: 1 } });
+      syncs.push(sync);
+      const scheduler = sync.scheduler({ id: "code" });
+      await createCodeScheduleReconciler(scheduler)();
+      const id = codeScheduleId(code.codeId, code.entrypoint);
+      expect((await scheduler.get({ id: codeScheduleId(legacy.codeId, legacy.entrypoint) }))?.timezone).toBe("UTC");
+      setSystemTime(new Date("2026-03-28T01:30:00Z"));
+      expect(await scheduler.get({ id })).toMatchObject({ timezone: "Europe/Berlin", nextRunAt: new Date("2026-03-30T00:30:00Z") });
+      setSystemTime(new Date("2026-10-25T00:30:00Z"));
+      expect((await scheduler.get({ id }))?.nextRunAt).toEqual(new Date("2026-10-26T01:30:00Z"));
+      setSystemTime(slot);
+      // A retained callback from before a zone change must not admit a tick under the newer timing.
+      expect(await processCurrentCodeScheduleTick({ ...code, cron: "30 2 * * *", timeZone: "UTC", slot })).toBeNull();
+      expect(await processCurrentCodeScheduleTick({ ...code, cron: "30 2 * * *", timeZone: "Europe/Berlin", slot })).not.toBeNull();
+    } finally {
+      setSystemTime(slot);
+      await coreSettings.set("app.timezone", "UTC");
+    }
+  });
+
   test("a due one-time occurrence waits for a manual predecessor without consuming its date", async () => {
     const timing = { at: slot.toISOString(), timeZone: "UTC" };
     const code = await fixture(owner, false, false, "json", timing);

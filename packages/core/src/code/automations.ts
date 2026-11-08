@@ -21,7 +21,7 @@ export const CodeAutomationSchema = z
   .object({
     entrypoint: z.string(),
     title: CodeAutomationTitleSchema.optional(),
-    kind: z.enum(["schedule", "manual", "route"]),
+    kind: z.enum(["schedule", "manual", "event", "route"]),
     cron: z.string().nullable(),
     at: z.iso.datetime({ offset: true }).optional(),
     timeZone: z.string().optional(),
@@ -133,7 +133,8 @@ export async function listCodeAutomations(
       ...(entry.title === undefined ? {} : { title: entry.title }),
       kind: entry.kind,
       cron: entry.cron,
-      ...(entry.at === undefined ? {} : { at: entry.at, timeZone: entry.timeZone }),
+      ...(entry.at === undefined ? {} : { at: entry.at }),
+      ...(entry.timeZone === undefined ? {} : { timeZone: entry.timeZone }),
       nextRunAt: nextRuns.get(entry.entrypoint) ?? null,
       lastRun: run ? { state: run.state, createdAt: run.created_at.toISOString(), endedAt: run.ended_at?.toISOString() ?? null } : null,
       missingTargets: run && targetForRun.has(run.id) ? [targetForRun.get(run.id)!] : [],

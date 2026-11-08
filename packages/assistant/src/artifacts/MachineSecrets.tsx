@@ -1,6 +1,6 @@
 import { Button, InlineGuidance, NoticeCard, Placeholder, TextInput, useLocale } from "@k2b/ui";
 import { createResource, createSignal, For, Show } from "solid-js";
-import { SecretSave } from "./http-contracts";
+import { SecretSave } from "../chat-code/http-contracts";
 import { machineClient } from "./machine-client";
 import { machineMessages } from "./machine-messages";
 

@@ -5,7 +5,7 @@ section: Platform services
 order: 970
 description: Build, check, test and submit lasting Code in a Gustav conversation.
 tags: [code, ai, sdk, versions]
-updated: 2026-11-01
+updated: 2026-11-08
 ---
 
 # Build Code in Gustav
@@ -33,6 +33,11 @@ background tasks cannot use these tools to edit lasting Code.
 | `code_simulate` | Checks source and simulates one fixture with exactly one invocation. |
 | `code_submit` | Checks and saves an immutable version against the supplied `baseVersionId`. Pass the fixtures as `tests`: Core runs them and shows the result to reviewers. |
 | `code_diff` | Returns complete file differences and permissions for a submitted version. |
+
+Gustav loads the `code-authoring` Skill with these tools. It holds the
+workflow, the page building blocks, mail events, schedules, AI, what each
+app's Actions allow unattended, tests and common errors, plus complete
+templates. Every example in it passes the real checker in CI.
 
 ## The version card
 
@@ -118,8 +123,10 @@ use its actual result shape and pagination contract. SDK methods return domain
 data directly. `sheet` uses the existing runtime spreadsheet helpers. Writes
 still use the normal capability permissions and approval dialogs.
 
-Studio apps keep their existing `code_read`, `code_write` and `code_check`
-inputs with `id`, revision guards and screenshot review.
+The chat aliases `code_read`, `code_write`, and `code_check` accept lasting
+Code projects only. They do not fall back to Studio source operations.
+Studio's standalone editor and direct app APIs remain available until the
+Studio retirement.
 
 ## Maintainer contract: shared CLI and chat JSON
 

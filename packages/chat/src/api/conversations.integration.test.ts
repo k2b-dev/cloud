@@ -1,5 +1,6 @@
 import { afterEach, beforeAll, expect, setDefaultTimeout, spyOn, test } from "bun:test";
 import { sql } from "@k2b/cloud";
+import { createAppEventTestHarness } from "@k2b/cloud/events/testing";
 import { type AuthContext, createAccess, type PermissionLevel, REQUEST_IDLE_TIMEOUT_SECONDS } from "@k2b/cloud/server";
 import { serviceAccountCredentials, toPgTextArray, toPgUuidArray } from "@k2b/cloud/services";
 import { createTestSession } from "@k2b/cloud/services/session/session.test-fixture";
@@ -7,6 +8,7 @@ import { Hono } from "hono";
 import { uniqueCallerAddress } from "../../../../scripts/fixtures/caller-address";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import { testShortId } from "../../../../scripts/fixtures/test-short-id";
+import { chatCapabilities } from "../capabilities";
 import "../../../../scripts/fixtures/authorization-preload";
 import { UserSchema } from "@k2b/cloud/contracts";
 import { app as chatApp } from "../config";
@@ -162,6 +164,7 @@ suite("chat conversations, people, and directory groups", () => {
     return result.conversation;
   };
   beforeAll(async () => {
+    createAppEventTestHarness("chat", chatCapabilities);
     await migrate();
   });
   const cleanup = async () => {
@@ -195,6 +198,8 @@ suite("chat conversations, people, and directory groups", () => {
     if (conversations.length) {
       const keys = conversations.flatMap((shortId) => ["c:" + shortId, "l:" + shortId]);
       await sql`DELETE FROM events.outbox WHERE app_id = 'chat' AND ordering_key = ANY(${toPgTextArray(keys)}::text[])`;
+      await sql`DELETE FROM events.outbox WHERE app_id = 'chat' AND kind = 'event'
+        AND payload->'place'->>'id' = ANY(${toPgTextArray(conversations)}::text[])`;
       await sql`DELETE FROM audit.events WHERE target_type = 'chat_conversation' AND target_id = ANY(${toPgTextArray(conversations)}::text[])`;
       await sql`DELETE FROM chat.conversations WHERE short_id = ANY(${toPgTextArray(conversations)}::text[])`;
     }

@@ -4,8 +4,8 @@ navTitle: Item discussions
 section: Platform services
 order: 75
 tags: [chat, capabilities, permissions]
-description: Read and write the Chat discussion of a provider-owned resource.
-updated: 2026-10-30
+description: Read Chat messages and conversation permissions, post results, and work with provider-owned item discussions.
+updated: 2026-11-07
 ---
 
 # Item discussion capabilities
@@ -13,9 +13,9 @@ updated: 2026-10-30
 Chat provides five operations for an item ref whose type is declared by a
 provider's `discussions` role. The type is resolved from the current catalog;
 IDs are opaque strings up to 512 characters. Built-in and third-party providers
-use the same contract. These operations do not expose direct chats, channels,
-general messages, or manually created threads. An application's existing page
-comments remain separate.
+use the same contract. Discussion listing, posting, editing and deletion stay
+limited to provider-owned item threads. `message.read` also reads ordinary Chat
+messages as described below. An application's existing page comments remain separate.
 
 | Operation | Input | Result |
 | --- | --- | --- |
@@ -110,3 +110,51 @@ messages. A later direct edit preserves an existing mark; an Assistant or MCP
 edit sets its current surface. Existing content has no backfill. Callers cannot
 provide `via` in the input. The mark describes the calling surface and grants
 no permission; a missing mark does not prove human authorship.
+
+## Post a message to a Chat conversation
+
+Use `chat.message.post` with `conversation` (the six-character Chat ID) and
+`body` to publish Markdown in a Chat conversation or channel's general thread.
+The caller needs current write access, including any credential scope or
+resource binding. This Action does not create a chat or start an AI turn.
+For a discussion attached to an application item, use `chat.discussion.post`.
+
+The message has at most 20,000 Unicode characters and must contain more than
+whitespace. Supply a stable idempotency key for each intended message. Retrying
+with the same key and body returns the existing message; changing the body
+with that key returns `IDEMPOTENCY_CONFLICT`. Chat's normal write rate limits
+apply, and `RATE_LIMITED` includes the retry delay.
+
+The explicit `silent: "shared"` policy allows authorized background work to
+post results into a writable chat, including a chat shared with its account.
+It grants no chat access. Interactive approval can be remembered for the
+conversation. Reviews show the complete proposed message in English or German.
+The result contains the message ID, conversation ID, creation time, and an
+`open` link to the posted message.
+
+## Read ordinary Chat messages and conversation permissions
+
+`chat.conversation.read` accepts `{ id }` from a `chat.conversation` ref and
+returns `data.view` with the current `title` and `permission` (`read`, `write`
+or `admin`), plus an `open` link. It supports ordinary conversations and
+channels. System conversations remain outside this Type because their item
+threads can have separate permissions.
+
+`chat.message.read` also accepts a message ID from an ordinary conversation,
+channel or manually created thread. It returns the full body, attachments,
+shared refs, author, timestamps, content revision, provenance and reply target,
+plus an `open` link. Ordinary-message results carry `conversation` as a
+`chat.conversation` ref and `thread` as a thread ID or `null`. Item-discussion
+results retain their existing `item` ref and result shape.
+
+Both readers use the caller's current access, credential scopes and resource
+binding. A resource ref alone grants nothing. The item-discussion reader
+continues to check the provider's item and container readers. Edit and delete
+capabilities remain limited to item discussions.
+
+New ordinary messages publish the reference-only
+[`chat.message.posted` event](/en/docs/platform/app-events#chat-posted-messages),
+including posts through `chat.message.post`. A background handler that posts
+results into its input chat must skip messages whose `data.author` matches its
+own account before performing effects. `cause.requestId` joins the event to its
+capability execution; it does not itself prevent a response loop.

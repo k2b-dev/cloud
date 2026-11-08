@@ -3,6 +3,7 @@ import { navigateTo } from "@k2b/ssr/nav";
 import { AppWorkspace, Button, Dropdown, Placeholder, useLocale } from "@k2b/ui";
 import { createSignal, Show } from "solid-js";
 import { assistantApi } from "../api/client";
+import { artifactMessages } from "../chat-code/messages";
 import { openAssistantCreateProjectDialog } from "../frontend/AssistantProjectsDialog";
 import AssistantSidebar from "../frontend/AssistantSidebar";
 import { AssistantLiveProvider, createAssistantLiveHub } from "../frontend/assistant-live";
@@ -11,7 +12,6 @@ import { ArtifactPanel } from "./ArtifactPanel";
 import { createArtifactActions } from "./artifact-actions";
 import { artifactClient } from "./client";
 import { ManualEditor } from "./ManualEditor";
-import { artifactMessages } from "./messages";
 import { SqlConsole } from "./SqlConsole";
 import type { ArtifactBundle } from "./service";
 
