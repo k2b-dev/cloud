@@ -34,10 +34,11 @@ const literal = (field: unknown): unknown => {
 
 /**
  * The schema fields of a chart kind in this build, for the branch its layout selects (a calendar heatmap has other
- * fields than a plain one); undefined for blocks and kinds the schema does not describe.
+ * fields than a plain one); undefined for blocks and kinds the schema does not describe. `schema` defaults to the
+ * application schema; the Assistant's chart catalog also reads the chat's, with its limits.
  */
-const schemaShape = (kind: string, layout?: unknown) =>
-  members(chartKinds()).find((member) => {
+export const schemaShape = (kind: string, layout?: unknown, schema: unknown = chartKinds()) =>
+  members(schema).find((member) => {
     const field = member.kind;
     if (!record(field) || (field.value !== kind && !enumValues(field)?.includes(kind))) return false;
     const fixed = literal(member.layout);

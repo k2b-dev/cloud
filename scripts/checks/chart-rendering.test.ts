@@ -76,6 +76,9 @@ test.each([
 test.each([
   "packages/ui/src/content/Chart.tsx",
   "packages/assistant/src/chat-code/runtime/lib.ts",
+  "packages/assistant/src/chat-code/runtime/chart-renderers-rare.ts",
+  "packages/assistant/src/chat-code/runtime/chart-kind-barGauge.ts",
+  "packages/assistant/src/chat-code/runtime/chart-kind-sankey.ts",
   "packages/editor/src/charts.ts",
   "packages/demo/src/plot.test.ts",
   "packages/demo/src/plot.spec.tsx",
@@ -89,12 +92,17 @@ test.each([
   expect(await findings({ [path]: "import { charts } from '@k2b/stdlib';" })).toEqual([]);
 });
 
-test.each(["packages/unlisted/src/plot.ts", "docs-site/src/plot.tsx", "packages/ui/src/content/Other.tsx"])(
-  "guards raw renderers in %s",
-  async (path) => {
-    expect(await findings({ [path]: "import { bar } from '@k2b/stdlib';" })).toEqual([`${path}:1`]);
-  },
-);
+test.each([
+  "packages/unlisted/src/plot.ts",
+  "docs-site/src/plot.tsx",
+  "packages/ui/src/content/Other.tsx",
+  "packages/demo/src/artifacts/runtime/chart-kind-gauge.ts",
+  "packages/assistant/src/frontend/chart-kind-gauge.ts",
+  "packages/assistant/src/chat-code/runtime/other.ts",
+  "packages/assistant/src/chat-code/runtime/chart-kind-gauge/other.ts",
+])("guards raw renderers in %s", async (path) => {
+  expect(await findings({ [path]: "import { bar } from '@k2b/stdlib';" })).toEqual([`${path}:1`]);
+});
 
 const panel = "import { Chart } from '@k2b/ui';\nexport const Panel = () => <Chart kind='bar' data={[]} />;";
 const panelPath = "packages/demo/src/frontend/Panel.tsx";

@@ -384,6 +384,40 @@ failures are not silently discarded. Events are retained for at least
 **30 days**, and longer while deliveries still reference them. After cleanup
 removes the retained records, `redeliver` cannot recover them.
 
+## Files upload volume
+
+Files now publishes `filesv2.entry.created` and `filesv2.entry.replaced`
+(version 1). Both carry public file and containing-folder refs, with strict empty
+data. Inspect them with `cld events ls --app filesv2`. The
+[Files upload contract](/en/docs/platform/app-events#files-uploads) defines
+completion, retries, exact folder matching, and exclusions.
+
+Each completed upload records one event in the same transaction as its Files
+receipt. A folder upload or sync of N files therefore contributes at most N new
+outbox events, one per successfully completed reservation. There is no recursive
+scan, event for a folder, or event per historical revision. Failed and aborted
+files contribute zero. The existing platform outbox drains committed events in
+bounded batches. Repeated receipts do not create extra events; delivery retries
+can repeat an existing event ID.
+
+This bounds work per completion, not the installation's total arrival rate.
+There is no new aggregate event throttle or independent Files stream allocation.
+Plan uploads together with Mail receipts, Spaces, Notebooks, and Core against
+the shared **256 MiB / seven-day** stream. The **0.3 events/s** planning figure
+assumes thin envelopes; it is not a guaranteed Files upload rate. A 500-file
+upload contributes 500 events even when the client calls it one operation.
+
+The Files fixture with two maximum-length 512-character path refs is **1260
+bytes** of compact JSON, or **1281 bytes** with PostgreSQL JSONB spacing (fixed
+UUID and timestamp, no cause). With the documented 1024-byte transport allowance,
+a stream of those envelopes alone fits at most
+`268435456 / ((1281 + 1024) × 604800) = 0.193 events/s` for seven days,
+before operational headroom or other producers. Stable and shorter path refs
+use less space; the full platform envelope limit remains 4096 bytes. Sustained
+bulk traffic needs a lower aggregate rate, more capacity, or a shorter outage
+target. Use the existing gap and delivery diagnostics after an outage, and
+reconcile current folder contents through Files readers when history has expired.
+
 ## Check Files home provisioning
 
 Files consumes `core.user.created` for home provisioning and also reconciles
