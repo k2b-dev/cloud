@@ -715,17 +715,28 @@ function ImageEditorSession(props: ImageEditorProps): JSX.Element {
   onCleanup(() => leavePass?.editors.delete(leaveKey));
   onMount(() => {
     window.addEventListener("beforeunload", beforeUnload);
+    const setVar = (name: string, value: string) => {
+      if (root && root.style.getPropertyValue(name) !== value) root.style.setProperty(name, value);
+    };
     const measure = () => {
       if (!canvasArea || !root) return;
-      setCanvasSize({ width: canvasArea.clientWidth, height: canvasArea.clientHeight });
+      const size = { width: canvasArea.clientWidth, height: canvasArea.clientHeight };
+      if (size.width !== canvasSize().width || size.height !== canvasSize().height) setCanvasSize(size);
       setPhone(root.clientWidth <= PHONE_WIDTH);
-      if (paneEl) root.style.setProperty("--k2b-image-editor-sheet", `${paneEl.offsetHeight}px`);
+      if (paneEl) setVar("--k2b-image-editor-sheet", `${paneEl.offsetHeight}px`);
       if (saveEl) {
-        root.style.setProperty("--k2b-image-editor-save", `${saveEl.offsetHeight}px`);
-        root.style.setProperty("--k2b-image-editor-save-width", `${saveEl.offsetWidth}px`);
+        setVar("--k2b-image-editor-save", `${saveEl.offsetHeight}px`);
+        setVar("--k2b-image-editor-save-width", `${saveEl.offsetWidth}px`);
       }
     };
-    const observer = new ResizeObserver(measure);
+    // The measured sizes feed the layout of the observed pane and save area. Measuring in the next frame, and
+    // writing only changed values, keeps a size change from resizing an observed element inside its own
+    // notification (a ResizeObserver loop).
+    let measureFrame = 0;
+    const observer = new ResizeObserver(() => {
+      cancelAnimationFrame(measureFrame);
+      measureFrame = requestAnimationFrame(measure);
+    });
     for (const el of [root, paneEl, saveEl]) if (el) observer.observe(el);
     measure();
     void supportedImageEditorFormats()
@@ -749,6 +760,7 @@ function ImageEditorSession(props: ImageEditorProps): JSX.Element {
     window.addEventListener("pointerup", blur);
     onCleanup(() => {
       observer.disconnect();
+      cancelAnimationFrame(measureFrame);
       window.removeEventListener("beforeunload", beforeUnload);
       window.removeEventListener("keyup", releaseSpace);
       window.removeEventListener("blur", blur);
