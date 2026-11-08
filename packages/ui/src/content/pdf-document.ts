@@ -24,10 +24,13 @@ const isEngine = (value: unknown): value is PdfEngine =>
 export const openPdfDocument = async (data: Blob | ArrayBuffer, signal: AbortSignal): Promise<PdfDocumentHandle | null> => {
   const size = data instanceof Blob ? data.size : data.byteLength;
   if (size > PDF_LIMITS.maxBytes) throw pdfTooLarge(`PDF is larger than ${PDF_LIMITS.maxBytes} bytes`);
-  const bytes = data instanceof Blob ? await data.arrayBuffer() : data;
+  // pdf.js hands its bytes to the worker, which detaches them: a caller's ArrayBuffer stays theirs as a copy.
+  const bytes = data instanceof Blob ? await data.arrayBuffer() : data.slice(0);
   if (signal.aborted) return null;
   // A relative address resolves against this module, where the bundler put the engine file.
   const engine: unknown = await import(/* @vite-ignore */ engineUrl);
   if (!isEngine(engine)) throw new Error("The PDF engine could not be loaded");
+  // Closed while the engine loaded: parse nothing.
+  if (signal.aborted) return null;
   return engine.openPdf(bytes, signal, workerUrl);
 };

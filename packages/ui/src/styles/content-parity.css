@@ -4796,7 +4796,12 @@
   @apply w-full max-w-2xl;
 }
 
-/* A PDF from loaded bytes or a host's inline address: the preview with its actions above the
+/* Another origin's inline PDF address stays with the browser's viewer. */
+.k2b-ui .k2b-content-file-view__pdf {
+  @apply min-h-0 w-full flex-1 rounded-md;
+}
+
+/* A PDF from loaded bytes or a same-origin inline address: the preview with its actions above the
    document, without the standalone viewer's heading and toolbar line. */
 .k2b-ui .k2b-content-file-view__pdf-viewer {
   @apply flex min-h-0 w-full flex-1 flex-col overflow-hidden rounded-md;
@@ -5611,7 +5616,7 @@
   background: transparent;
 }
 
-.k2b-ui .k2b-pdf-viewer__text .endOfContent {
+.k2b-ui .k2b-pdf-viewer__text-end {
   position: absolute;
   inset: 100% 0 0;
   z-index: 0;
@@ -5621,7 +5626,7 @@
   user-select: none;
 }
 
-.k2b-ui .k2b-pdf-viewer__text.selecting .endOfContent {
+.k2b-ui .k2b-pdf-viewer__text[data-selecting] > .k2b-pdf-viewer__text-end {
   top: 0;
 }
 

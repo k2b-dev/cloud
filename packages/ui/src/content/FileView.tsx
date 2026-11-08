@@ -598,6 +598,15 @@ const pdfBlob = (content: FileViewContent): Blob => {
  * fetched from there and stays the address the open action shows. Without one, the loaded bytes become a local PDF
  * Blob: a download URL is an attachment and would leave a viewer empty.
  */
+const sameOrigin = (href: string): boolean => {
+  if (typeof location === "undefined") return true;
+  try {
+    return new URL(href, location.href).origin === location.origin;
+  } catch {
+    return false;
+  }
+};
+
 function PdfRenderer(props: FileViewRendererProps) {
   const fileViewMessages = useFileViewMessages();
   // A new Blob remounts the preview, so changed bytes show the new file. A revision refetch
@@ -634,21 +643,33 @@ function PdfRenderer(props: FileViewRendererProps) {
       {(href) => (
         // Keyed by the address: a new revision of the file loads the new document.
         <Show keyed when={href()}>
-          {(current) => (
-            <PdfPreview
-              autoLoad
-              title={props.file.path.slice(props.file.path.lastIndexOf("/") + 1)}
-              openHref={current}
-              request={() => fetch(current, { credentials: props.crossOrigin === "use-credentials" ? "include" : "same-origin" })}
-            >
-              {(parts) => (
-                <div class="k2b-content-file-view__pdf-viewer">
-                  {parts.actions}
-                  {parts.content}
-                </div>
-              )}
-            </PdfPreview>
-          )}
+          {(current) => {
+            // Closing the preview or a new revision stops a running download.
+            const abort = new AbortController();
+            onCleanup(() => abort.abort());
+            return (
+              // A page may fetch only its own origin's PDFs without CORS; another origin's address stays with the
+              // browser's viewer, which embeds it as before.
+              <Show
+                when={sameOrigin(current)}
+                fallback={<object data={current} type="application/pdf" class="k2b-content-file-view__pdf" aria-label={props.file.path} />}
+              >
+                <PdfPreview
+                  autoLoad
+                  title={props.file.path.slice(props.file.path.lastIndexOf("/") + 1)}
+                  openHref={current}
+                  request={() => fetch(current, { credentials: "same-origin", signal: abort.signal })}
+                >
+                  {(parts) => (
+                    <div class="k2b-content-file-view__pdf-viewer">
+                      {parts.actions}
+                      {parts.content}
+                    </div>
+                  )}
+                </PdfPreview>
+              </Show>
+            );
+          }}
         </Show>
       )}
     </Show>

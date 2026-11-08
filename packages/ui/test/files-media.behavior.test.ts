@@ -454,6 +454,35 @@ describe("@k2b/ui files and media runtime behavior", () => {
     }
   });
 
+  test("keeps another origin's inline PDF URL with the browser's viewer, without a request", async () => {
+    const dom = createDomTestHarness();
+    const { default: FileView } = await import("../src/content/FileView");
+    const fetched: string[] = [];
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async (input: RequestInfo | URL) => {
+      fetched.push(String(input));
+      return new Response(null, { status: 500 });
+    }) as typeof fetch;
+    const dispose = render(
+      () =>
+        createComponent(FileView, {
+          file: { path: "/invoice.pdf", mediaType: "application/pdf" },
+          load: async () => ({ encoding: "base64" as const, mediaType: "application/pdf", content: "" }),
+          previewHref: "https://files.example.org/invoice.pdf",
+        }),
+      dom.root,
+    );
+    try {
+      await settle();
+      expect(fetched).toEqual([]);
+      expect(dom.root.querySelector("object")?.getAttribute("data")).toBe("https://files.example.org/invoice.pdf?preview-revision=0");
+    } finally {
+      globalThis.fetch = originalFetch;
+      dispose();
+      dom.cleanup();
+    }
+  });
+
   test("revokes a PDF object URL produced after the preview was disposed", async () => {
     const dom = createDomTestHarness();
     const { default: PdfPreview } = await import("../src/content/PdfPreview");

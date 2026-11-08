@@ -36,15 +36,16 @@ export const pdfTooLarge = (message: string): Error => Object.assign(new Error(m
 
 /**
  * Pixel width for a page image shown `displayWidth` CSS pixels wide: display width times the device pixel ratio
- * (at most 2), at least 400 px, at most `PDF_LIMITS.maxImageWidth`, and small enough that the canvas stays under
- * `PDF_LIMITS.maxCanvasPixels` for the page's height-to-width `ratio`. Very deep zoom turns slightly soft, never blank.
+ * (at most 2), at least 400 px where the page allows it, at most `PDF_LIMITS.maxImageWidth`, and always small enough
+ * that the canvas stays under `PDF_LIMITS.maxCanvasPixels` for the page's height-to-width `ratio`, also for a very
+ * tall page. Very deep zoom turns slightly soft, never blank.
  */
 export const pageImageWidth = (displayWidth: number, pixelRatio: number, ratio: number): number =>
-  Math.round(
-    Math.max(
-      400,
+  Math.max(
+    1,
+    Math.floor(
       Math.min(
-        displayWidth * Math.min(Math.max(pixelRatio, 1), 2),
+        Math.max(400, displayWidth * Math.min(Math.max(pixelRatio, 1), 2)),
         PDF_LIMITS.maxImageWidth,
         Math.sqrt(PDF_LIMITS.maxCanvasPixels / Math.max(ratio, 0.1)),
       ),

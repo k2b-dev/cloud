@@ -9,6 +9,7 @@ import { PDF_LIMITS, type PdfDocumentHandle, type PdfPageImage, type PdfPageSize
  * host's bundler put the worker file.
  */
 export async function openPdf(data: ArrayBuffer, signal: AbortSignal, workerUrl: string): Promise<PdfDocumentHandle | null> {
+  if (signal.aborted) return null;
   GlobalWorkerOptions.workerSrc = new URL(workerUrl, import.meta.url).href;
   const task = getDocument({
     data: new Uint8Array(data),

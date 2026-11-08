@@ -134,8 +134,10 @@ editing for compatible text renderers.
 
 `previewHref` is an authenticated URL that answers inline. With it, images,
 audio, and video render natively from that URL and `load` is not called. A PDF
-loads from that URL into [`PdfPreview`](/en/ui/content/media), whose open
-action links to it.
+at a same-origin URL loads from it into [`PdfPreview`](/en/ui/content/media),
+whose open action links to it; closing the preview stops the download. A PDF at
+another origin stays with the browser's own viewer, because fetching it would
+need CORS.
 Video plays in [`VideoPlayer`](/en/ui/content/media#video): the browser fetches
 it by range from `previewHref`, so serve that URL with `206` answers to `Range`
 requests. A video the browser cannot decode shows the player's fallback with a

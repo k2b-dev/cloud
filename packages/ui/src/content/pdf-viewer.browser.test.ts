@@ -19,8 +19,13 @@ const result = await Bun.build({
     import { createComponent, render } from "solid-js/web";
     import { PdfViewer } from ${JSON.stringify(resolve(ui, "dist/browser/index.js"))};
     const data = await (await fetch("/doc.pdf")).arrayBuffer();
+    import { createSignal } from "solid-js";
     window.pdfErrors = [];
-    render(() => createComponent(PdfViewer, { data, title: "Fixture", onError: (error) => window.pdfErrors.push(String(error)) }), document.getElementById("app"));
+    const [shown, setShown] = createSignal(data);
+    // A document of the same shape again, as regenerating a report does; the caller's buffer stays usable.
+    window.pdfReplace = () => setShown(data.slice(0));
+    window.pdfBufferIntact = () => data.byteLength > 0;
+    render(() => createComponent(PdfViewer, { get data() { return shown(); }, title: "Fixture", onError: (error) => window.pdfErrors.push(String(error)) }), document.getElementById("app"));
   `,
   },
   target: "browser",
@@ -97,6 +102,22 @@ describe("@k2b/ui PdfViewer", () => {
       await page.waitForFunction(() =>
         document.querySelector('[data-pdf-page="0"] .k2b-pdf-viewer__text')?.textContent?.includes("Page 1"),
       );
+    } finally {
+      await page.close();
+    }
+  });
+
+  test("a new document of the same shape draws again and leaves the caller's bytes usable", async () => {
+    const page = await load();
+    try {
+      const before = await page.locator('[data-pdf-page="0"] img').getAttribute("src");
+      await page.evaluate(() => (window as unknown as { pdfReplace: () => void }).pdfReplace());
+      await page.waitForFunction((previous) => {
+        const src = document.querySelector('[data-pdf-page="0"] img')?.getAttribute("src");
+        return Boolean(src && src !== previous);
+      }, before);
+      expect(await page.evaluate(() => (window as unknown as { pdfBufferIntact: () => boolean }).pdfBufferIntact())).toBe(true);
+      expect(await page.evaluate(() => (window as unknown as { pdfErrors: string[] }).pdfErrors)).toEqual([]);
     } finally {
       await page.close();
     }

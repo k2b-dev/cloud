@@ -178,6 +178,8 @@ export default function PdfViewer(props: PdfViewerProps): JSX.Element {
   };
   createEffect(on(factor, () => scheduleRedraw(200), { defer: true }));
   createEffect(on(near, () => scheduleRedraw(0), { defer: true }));
+  // A new document of the same shape keeps the page boxes and the near set, so it draws on its own.
+  createEffect(on(doc, () => scheduleRedraw(0), { defer: true }));
   createEffect(
     on(
       () => props.page,
@@ -259,9 +261,18 @@ export default function PdfViewer(props: PdfViewerProps): JSX.Element {
             { root: scroller, rootMargin: NEAR_MARGIN },
           );
     if (!nearPages) createEffect(() => setNear(new Set(shown())));
+    // Page boxes come and go with the document and `page`: new ones are observed, removed ones released, so a detached
+    // page and its image are never kept alive.
+    const observed = new Set<HTMLElement>();
     const watched = new MutationObserver(() => {
-      for (const page of scroller.querySelectorAll<HTMLElement>("[data-pdf-page]:not([data-observed])")) {
-        page.dataset.observed = "";
+      for (const page of observed)
+        if (!page.isConnected) {
+          nearPages?.unobserve(page);
+          observed.delete(page);
+        }
+      for (const page of scroller.querySelectorAll<HTMLElement>("[data-pdf-page]")) {
+        if (observed.has(page)) continue;
+        observed.add(page);
         nearPages?.observe(page);
       }
     });
@@ -324,9 +335,9 @@ export default function PdfViewer(props: PdfViewerProps): JSX.Element {
     const gestureEnd = () => {
       gestureStart = 0;
     };
-    // pdf.js keeps a selection from jumping across gaps only while it knows a drag is selecting.
+    // A selection does not jump across gaps while the layer knows a drag is selecting (its end marker then fills it).
     const selectEnd = () => {
-      for (const layer of scroller.querySelectorAll(".k2b-pdf-viewer__text.selecting")) layer.classList.remove("selecting");
+      for (const layer of scroller.querySelectorAll(".k2b-pdf-viewer__text[data-selecting]")) layer.removeAttribute("data-selecting");
     };
     scroller.addEventListener("scroll", track, { passive: true });
     scroller.addEventListener("wheel", wheel, { passive: false });
@@ -357,7 +368,8 @@ export default function PdfViewer(props: PdfViewerProps): JSX.Element {
   });
 
   return (
-    <div class={`k2b-pdf-viewer ${props.class ?? ""}`} data-drawn={ready() ? "" : undefined}>
+    // Out of keyboard reach until the first page is drawn, so focus never lands on a viewer still being prepared.
+    <div class={`k2b-pdf-viewer ${props.class ?? ""}`} data-drawn={ready() ? "" : undefined} inert={!ready()}>
       {/* One scroll area: fitted to the width it scrolls only down, zoomed the same area also scrolls sideways. */}
       <div
         ref={area}
@@ -449,11 +461,11 @@ function PdfTextLayer(props: { document: PdfDocumentHandle; index: number }): JS
       () => {
         if (abort.signal.aborted) return;
         const end = document.createElement("div");
-        end.className = "endOfContent";
+        end.className = "k2b-pdf-viewer__text-end";
         container.append(end);
       },
       () => undefined,
     );
   });
-  return <div ref={layer} class="k2b-pdf-viewer__text" onPointerDown={() => layer?.classList.add("selecting")} />;
+  return <div ref={layer} class="k2b-pdf-viewer__text" onPointerDown={() => layer?.setAttribute("data-selecting", "")} />;
 }
