@@ -1,8 +1,21 @@
 import { expect, test } from "bun:test";
 import { chartRenderOptions, drawChart } from "@k2b/editor/charts";
 import { liquidityForecastSpec } from "../../../../docs-site/src/ui/demo-sections/charts/liquidity-forecast";
+import { chartCatalog } from "./chart-catalog.generated";
 import { CloudAiChartInputSchema } from "./default-tool-contracts";
 import { parseCloudAiChartToolView } from "./view-block";
+
+test("the generated Gustav and Code catalogs retain every line forecast option", async () => {
+  const line = chartCatalog.find((entry) => entry.example.kind === "line");
+  const code = await Bun.file(
+    new URL("../../../assistant/src/skills/assistant-code-mode/references/chart-kinds.md", import.meta.url),
+  ).text();
+  const section = code.split("\n## line\n")[1]?.split("\n## ")[0];
+  for (const name of ["forecast", "threshold", "marker", "zero", "step", "legendValues"]) {
+    expect(line?.useFor).toContain(name);
+    expect(section).toContain(`- \`${name}\``);
+  }
+});
 
 test("the Assistant Code chart catalog forecast example passes the real model contract", async () => {
   const docs = await Bun.file(new URL("../../../assistant/src/skills/assistant-code-mode/references/charts.md", import.meta.url)).text();

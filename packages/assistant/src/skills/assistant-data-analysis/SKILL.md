@@ -9,7 +9,8 @@ Start with the question the reader needs to answer. Load `assistant-code-mode`
 with `load_skill`, not `load_tools`, for execution, delivery and approval rules.
 Read its `/skills/assistant-code-mode/references/views.md` for computed charts,
 groups, tables, key figures and record details,
-`/skills/assistant-code-mode/references/charts.md` for
+`/skills/assistant-code-mode/references/chart-kinds.md` to choose a chart kind
+(one example each), `/skills/assistant-code-mode/references/charts.md` for
 `cloud.chart()` in apps/PDFs, and `/skills/assistant-code-mode/references/apps.md`
 for interfaces. Loading a skill installs no library and grants no access.
 

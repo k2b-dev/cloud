@@ -986,12 +986,16 @@ margins and text. Visible values such as `NaN`, `undefined`, `Invalid Date` or
 
 `cloud.chart(options)` returns chart markup for apps, scripts and PDFs without
 needing a DOM. It takes the same kinds and options as chat charts and maps them
-through the same path: bar, line, scatter, pie, donut, histogram, gauge,
-sparkline, boxplot, heatmap, barGauge and stat. See
+through the same path: waterfall, area, bar, hbar, funnel, line, scatter, pie,
+donut, histogram, gauge, sparkline, boxplot, heatmap, barGauge, stat, treemap,
+pareto, bubble and radar. Bars take several series side by side or stacked.
+The chart tool and the Code reference `chart-kinds.md` describe each kind with
+when to use it and one small valid example, generated from the chart showcase
+by `bun scripts/generate-chart-catalog.ts`. See
 [Tools and approvals](/en/docs/ai/tools-and-approvals#tool-contracts) for data,
 axes, declarative formats, references, thresholds, series style/role and limits.
-There is no grouped or stacked bar mode, or second y axis. For related computed
-measures in chat, use `cloud.view.group`.
+There is no second y axis. For related computed measures in chat, use
+`cloud.view.group`.
 
 `cloud.chart()` returns synchronously. In HTML apps, line, bar, pie, donut,
 stat and sparkline render immediately. Other kinds return a loading state
@@ -1006,6 +1010,9 @@ Frame readiness and snapshots wait for pending drawings; `cloud.pdf.render`
 also finishes pending chart markup before creating the PDF. Insert the returned
 markup rather than extracting its SVG immediately. Scripts and PDF markup
 created by scripts still render every kind synchronously.
+
+The host prepares chart assets after the page becomes interactive. An app
+started earlier waits for preparation before it becomes ready.
 
 Function `format(value)` is also accepted on axes and values. `width` and
 `height` set the logical size: 480 × 280 by default, or 160 × 40 for sparkline.

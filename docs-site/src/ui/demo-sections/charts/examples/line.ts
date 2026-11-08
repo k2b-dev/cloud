@@ -134,7 +134,7 @@ const examples: ChartShowcaseExample[] = [
       smooth: true,
     },
     useFor: [
-      "A value that changes continuously, such as visitors, revenue or response time.",
+      "A value that changes continuously, such as visitors, revenue or response time. Forecasts add forecast, threshold, marker, zero, step and legendValues.",
       "Up to four series on one scale, such as this year against last year.",
       "Many points: a line stays readable where columns would turn into stripes.",
     ],
@@ -158,6 +158,7 @@ const examples: ChartShowcaseExample[] = [
       { name: "area", type: "boolean", description: "Fills the area under the first series." },
       { name: "references", type: "{ value, axis?, label? }[]", description: "Labelled reference lines, such as a target." },
       { name: "legend", type: "boolean", description: "Names the series; on by default with more than one series." },
+      ...forecastExamples[0]!.options,
     ],
   },
   {

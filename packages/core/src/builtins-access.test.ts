@@ -177,6 +177,7 @@ const publicPaths: Record<string, string[]> = {
     "/_internal/assistant/tools/execute",
     "/app/assistant/apps/studio/run",
     "/api/assistant/runner/app-assets",
+    "/api/assistant/runner/chart-parts",
     "/api/assistant/runner/chunks/bridge.js",
     "/api/assistant/runner/studio",
     "/api/assistant/runner/studio/app",
