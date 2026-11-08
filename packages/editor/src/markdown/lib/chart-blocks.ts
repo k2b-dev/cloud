@@ -1,6 +1,6 @@
 import { highlight, text } from "@k2b/stdlib";
 import { prepareChartSnapshot } from "@k2b/ui";
-import { barChartLayout } from "@k2b/ui/charts";
+import { barChartLayout, hbarLayout } from "@k2b/ui/charts";
 import { Lexer, type Tokens } from "marked";
 import type { z } from "zod";
 import {
@@ -457,6 +457,7 @@ export const chartBlockFrame = (body: string[], options: Pick<MarkdownChartOptio
  */
 export const notebookChartHeight = (input: ChartInput, locale: string): number | undefined => {
   const options = chartRenderOptions(input, locale, { legend: "outside" });
+  if (options.kind === "hbar") return hbarLayout(options).height;
   if (options.kind === "heatmap" && options.layout === "calendar") return 280;
   if (options.kind === "waterfall" || options.kind === "area") return 280;
   if (options.kind !== "bar") return undefined;
