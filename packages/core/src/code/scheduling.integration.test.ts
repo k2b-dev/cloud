@@ -320,7 +320,7 @@ suiteFor(
             contentType: "text/plain",
             body: "",
             params: {},
-            user: { id: other, groups: [] },
+            user: { id: other, groups: [], kind: "user", provider: "local", name: "Visitor" },
           },
         });
         if (reply === "invalid") await expect(response).rejects.toMatchObject({ code: "code_request_failed" });

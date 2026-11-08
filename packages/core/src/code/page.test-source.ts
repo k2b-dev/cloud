@@ -21,7 +21,7 @@ export async function buildCodePage(source: string, codeId: string): Promise<Cod
     contentType: "text/plain",
     body: "",
     params: {},
-    user: { id: "visitor", groups: [] },
+    user: { id: "visitor", groups: [], kind: "user", provider: "local", name: "Visitor" },
   });
   return validateCodePage(response.tree, codeId);
 }

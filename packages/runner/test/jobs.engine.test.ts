@@ -213,7 +213,7 @@ app.get("/hello/:name", c => c.page(<Page title="Hello"><Text>{c.req.param("name
       params: { name: "Valentin" },
       contentType: "text/plain",
       body: "",
-      user: { id: "visitor", groups: [] },
+      user: { id: "visitor", groups: [], kind: "user", provider: "local", name: "Visitor" },
     },
   });
   const engine = new WorkerdEngine();

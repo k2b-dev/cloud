@@ -114,6 +114,9 @@ export function createCodeHostingRoutes(deps = { version: codeRequestVersion, re
             ? {
                 id: actor.user.id,
                 groups: (await waitCodeRequest(getEffectiveGroups({ userId: subject.userId }), signal)).map((group) => group.id),
+                kind: actor.user.profile,
+                provider: actor.user.provider,
+                name: actor.user.displayName,
               }
             : null;
         const response = await waitCodeRequest(

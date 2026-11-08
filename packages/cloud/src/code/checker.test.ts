@@ -660,7 +660,14 @@ export default app;`,
   const routeModule = await import(`${file}?route`);
   expect(
     await routeModule["route:GET:/health"](
-      { method: "GET", path: "/health", query: "", contentType: "", params: {}, user: { id: "visitor", groups: [] } },
+      {
+        method: "GET",
+        path: "/health",
+        query: "",
+        contentType: "",
+        params: {},
+        user: { id: "visitor", groups: [], kind: "user", provider: "local", name: "Visitor" },
+      },
       {
         call: async () => {
           throw new Error("unexpected_call");
@@ -863,7 +870,7 @@ export default app;`,
 
 test("checked route bundles execute the selected request handler without a web framework", async () => {
   const result = await check(`import { app } from "@sdk";
-app.get("/hello/:name", c => c.json({ person: c.user?.id ?? null, name: c.req.param("name") }));
+app.get("/hello/:name", c => c.json({ person: c.user?.id ?? null, kind: c.user?.kind, provider: c.user?.provider, displayName: c.user?.name, name: c.req.param("name") }));
 app.post("/save", c => c.redirect("/hello/saved"));`);
   expect(result.ok).toBe(true);
   if (!result.ok) throw new Error(JSON.stringify(result.diagnostics));
@@ -878,11 +885,15 @@ app.post("/save", c => c.redirect("/hello/saved"));`);
         params: { name: "Valentin" },
         contentType: "text/plain",
         body: "",
-        user: { id: "visitor", groups: [] },
+        user: { id: "visitor", groups: [], kind: "guest", provider: "local", name: "Visitor" },
       },
       { call: async () => null },
     ),
-  ).toEqual({ kind: "json", status: 200, body: JSON.stringify({ person: "visitor", name: "Valentin" }) });
+  ).toEqual({
+    kind: "json",
+    status: 200,
+    body: JSON.stringify({ person: "visitor", kind: "guest", provider: "local", displayName: "Visitor", name: "Valentin" }),
+  });
   expect(result.bundle).not.toContain("hono");
 }, 30_000);
 

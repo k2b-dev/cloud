@@ -239,7 +239,7 @@ test("pages that need no data render a valid page tree", async () => {
         params: {},
         contentType: "text/plain",
         body: "",
-        user: { id: "u1", groups: [] },
+        user: { id: "u1", groups: [], kind: "user", provider: "local", name: "Visitor" },
       };
       try {
         const response = (await module[entry.entrypoint]!(request, bridge)) as { kind: string; tree?: unknown };

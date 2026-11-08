@@ -8,6 +8,10 @@ script, event handler or foreign link. `c.html()` does not exist.
 
 Core hosts the active version at `/code/<code-id>/…`. Routes need a signed-in
 person unless they declare `{ public: true }` ([Access](access.md)).
+The handler gets `c.user` with `id`, effective `groups`, account `kind`
+(`"user"` or `"guest"`), stable `provider` (`"local"` or `"ipa"`) and display
+`name`. Check these fields before reading or returning restricted data. Public
+routes always get `null`, including for signed-in visitors.
 
 ## The smallest page
 

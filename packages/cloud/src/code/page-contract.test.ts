@@ -301,7 +301,7 @@ test("routes draw only pages that the SDK's blocks built", async () => {
     contentType: "text/plain",
     body: "",
     params: {},
-    user: { id: "v", groups: [] },
+    user: { id: "v", groups: [], kind: "user", provider: "local", name: "Visitor" },
   });
   expect(await runtime.__codeSdk.run("route:GET:/built", request("/built"))).toEqual({
     kind: "page",
