@@ -30,6 +30,8 @@ export type ToolbarActionProps = {
   /** 1 is most important. Larger numbers move first; ties move later DOM actions first. Omit to keep fixed. */
   priority?: number;
   disabled?: boolean;
+  /** Makes the action a toggle and exposes its state as `aria-pressed`, such as Bold over bold text. */
+  pressed?: boolean;
   onClick?: () => void;
 };
 export type ToolbarLabelProps = { children: JSX.Element; class?: string };
@@ -128,6 +130,7 @@ const ToolbarAction = (props: ToolbarActionProps): JSX.Element => {
       variant="ghost"
       tooltip={tooltip()}
       aria-keyshortcuts={ariaShortcut(props.keys, platform())}
+      aria-pressed={props.pressed === undefined ? undefined : props.pressed ? "true" : "false"}
       data-priority={props.priority}
       disabled={props.disabled}
       onClick={() => props.onClick?.()}
@@ -188,7 +191,12 @@ const rovingFocus = (root: HTMLDivElement, orientation: () => ToolbarOrientation
       (item) => !item.matches(":disabled") && !item.closest('[data-overflow="hidden"]') && item.getClientRects().length > 0,
     );
   const sync = () => {
-    const available = items();
+    // A toolbar that is still hidden, such as a SelectionToolbar about to show, keeps one stop: otherwise Tab right
+    // after it shows would pass it before the next measure.
+    const shown = items();
+    const available = shown.length
+      ? shown
+      : controls().filter((item) => !item.matches(":disabled") && !item.closest('[data-overflow="hidden"]'));
     if (!last || !available.includes(last)) setLast(available[0]);
     for (const item of controls()) item.tabIndex = item === last ? 0 : -1;
   };
