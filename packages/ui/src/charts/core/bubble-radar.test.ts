@@ -126,3 +126,9 @@ test("bubbles including unweighted points stay within narrow and short plot boun
       }
     }
 });
+
+test("bubble average caption and values reserve separate glyph rows", () => {
+  const svg = renderBubbleSvg({ ...bubble, averages: true });
+  expect(svg).toContain('y="11" class="k2b-chart-bubble-average-label"');
+  expect(svg).toContain('y="29" class="k2b-chart-bubble-average-value"');
+});

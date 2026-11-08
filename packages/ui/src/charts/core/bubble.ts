@@ -132,7 +132,7 @@ export function renderBubbleSvg(spec: BubbleOptions): string {
   if (spec.averages) {
     const label = locale.startsWith("de") ? "Ungewichteter Durchschnitt" : "Unweighted average";
     body.push(
-      `<line class="k2b-chart-average" x1="${s.x(s.meanX)}" x2="${s.x(s.meanX)}" y1="${s.top}" y2="${s.bottom}" stroke="${text}" stroke-dasharray="4 4"/><line class="k2b-chart-average" x1="${s.left}" x2="${s.right}" y1="${s.y(s.meanY)}" y2="${s.y(s.meanY)}" stroke="${text}" stroke-dasharray="4 4"/><text x="${s.left}" y="${s.header.height + 11}" class="k2b-chart-bubble-average-label" font-size="11" fill="${text}">${label}<title>X: ${escapeXml(xf(s.meanX))} · Y: ${escapeXml(yf(s.meanY))}</title></text><text x="${s.left}" y="${s.header.height + 25}" class="k2b-chart-bubble-average-value" font-size="11" fill="${text}">X: ${escapeXml(xf(s.meanX))} · Y: ${escapeXml(yf(s.meanY))}</text>`,
+      `<line class="k2b-chart-average" x1="${s.x(s.meanX)}" x2="${s.x(s.meanX)}" y1="${s.top}" y2="${s.bottom}" stroke="${text}" stroke-dasharray="4 4"/><line class="k2b-chart-average" x1="${s.left}" x2="${s.right}" y1="${s.y(s.meanY)}" y2="${s.y(s.meanY)}" stroke="${text}" stroke-dasharray="4 4"/><text x="${s.left}" y="${s.header.height + 11}" class="k2b-chart-bubble-average-label" font-size="11" fill="${text}">${label}<title>X: ${escapeXml(xf(s.meanX))} · Y: ${escapeXml(yf(s.meanY))}</title></text><text x="${s.left}" y="${s.header.height + 29}" class="k2b-chart-bubble-average-value" font-size="11" fill="${text}">X: ${escapeXml(xf(s.meanX))} · Y: ${escapeXml(yf(s.meanY))}</text>`,
     );
   }
   for (const p of [...s.points].sort((a, b) => b.radius - a.radius || a.index - b.index)) {
