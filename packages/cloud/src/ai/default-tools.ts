@@ -14,6 +14,7 @@ import {
   CodeSecretInput,
   CodeStopInput,
 } from "./browser-code-contracts";
+import { chartCatalog } from "./chart-catalog.generated";
 import { runManagedCodeTool } from "./code-runtime-tools";
 import { CODE_SOURCE_TOOLS } from "./code-source-contracts";
 import { createCodeSourceTools } from "./code-source-tools";
@@ -97,11 +98,29 @@ export const createCloudAiCardTool = () =>
     promptHint: "show one highlight figure already known; several computed figures use cloud.view.stats in code_run.",
   }).clientView();
 
+const sentence = (text: string) => (/[.!?]$/.test(text) ? text : `${text}.`);
+/**
+ * Every chart kind and layout with when to use it (from the chart showcase). The description stays this short because
+ * search_tools returns it and searches its words; the examples live in the input schema, which only a loaded tool has.
+ */
+const chartKindLines = chartCatalog.map((entry) => `- ${entry.name}: ${sentence(entry.useFor)}`).join("\n");
+/** When not to use each kind and one small valid description of it, read once the tool is loaded. */
+const chartExampleLines = chartCatalog
+  .map((entry) => `- ${entry.name}. Avoid: ${sentence(entry.avoidFor)} ${JSON.stringify(entry.example)}`)
+  .join("\n");
+/** The chart tool's input schema, described with one valid example per kind and layout. */
+export const CloudAiChartToolInputSchema = CloudAiChartInputSchema.describe(
+  `One chart (kind) or a group (charts). One small valid description per kind and layout:\n${chartExampleLines}`,
+);
+
 export const createCloudAiChartTool = () =>
   defineAiTool({
     name: "chart",
-    description: `Show one chart in the chat from a few values you already have that did not come from a code run, such as figures from the conversation, a web page or a small capability result: bar, waterfall (start balance, signed steps, end label; closing balance is calculated), line (area: true fills it), area (layout: "stacked", x categories, series with nonnegative number|null data; normalize: true shows 100 %), scatter, pie, donut, histogram, gauge, sparkline, boxplot, heatmap, barGauge or stat. Several related measures go into one call as a group of small charts (charts, at most ${CLOUD_AI_GROUP_MAX_CHARTS}); linkX shares the x cursor between line charts with the same kind of x. There is no second y axis: compare measures with different units as a group. Cloud draws it with the renderer of cloud.chart() and gives the reader a data table and Copy data; no code, sandbox or app check is involved. Values computed in code_run never go here: the script shows them itself with cloud.view.chart, cloud.view.group, cloud.view.table, cloud.view.stats, cloud.view.details or cloud.view.explorer, and you present the returned path. Aggregate first. Say what the chart shows in title and put the unit, period or source in subtitle; formats are data ({ style: "percent" } takes fractions). The chart has no state, filters or actions: filters, steps and comparison over computed rows come from cloud.view.explorer in code_run; anything else the person interacts with, such as a calculator, converter or form, is a Studio app built with code_create. After the chart, state the finding instead of repeating its values.`,
-    inputSchema: CloudAiChartInputSchema,
+    description: `Show one chart in the chat from a few values you already have that did not come from a code run, such as figures from the conversation, a web page or a small capability result. Choose the kind from the list below; the input schema's description has a small valid description of each. Several related measures go into one call as a group of small charts (charts, at most ${CLOUD_AI_GROUP_MAX_CHARTS}); linkX shares the x cursor between line charts with the same kind of x. There is no second y axis: compare measures with different units as a group. Cloud draws it with the renderer of cloud.chart() and gives the reader a data table and Copy data; no code, sandbox or app check is involved. Values computed in code_run never go here: the script shows them itself with cloud.view.chart, cloud.view.group, cloud.view.table, cloud.view.stats, cloud.view.details or cloud.view.explorer, and you present the returned path. Aggregate first. Say what the chart shows in title and put the unit, period or source in subtitle; formats are data ({ style: "percent" } takes fractions). The chart has no state, filters or actions: filters, steps and comparison over computed rows come from cloud.view.explorer in code_run; anything else the person interacts with, such as a calculator, converter or form, is a Studio app built with code_create. After the chart, state the finding instead of repeating its values. Every kind also takes subtitle and tooltip ({ label, format }). line takes area: true to fill it; stacked area and stacked bar take normalize: true for 100 %; a waterfall calculates its closing balance.
+
+Kinds:
+${chartKindLines}`,
+    inputSchema: CloudAiChartToolInputSchema,
     outputSchema: CloudAiChartOutputSchema,
     approval: "never",
     promptHint:

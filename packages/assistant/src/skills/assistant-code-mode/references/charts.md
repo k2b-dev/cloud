@@ -42,20 +42,8 @@ document.querySelector("#refresh").addEventListener("click", () => draw([{ label
 ```
 
 `cloud.chart()` takes the same kinds and options as chat charts and draws them the
-same way:
-
-| Kind | Required options | Optional options |
-| --- | --- | --- |
-| `bar` | `data: [{label, value}]` | `yAxis`, `colorByBar`, `showValues`, `legend`, `references` |
-| `line`, `scatter` | `series: [{label?, data: [{x, y}], role?}]` | `xAxis`, `yAxis`, `legend`, `references`; line also `area`, `smooth`, series `style` |
-| `pie`, `donut` | `data: [{label, value}]` | `legend`, `showLabels`, `format` |
-| `histogram` | `data: number[]` | `bins` (count or ascending edges), `references` |
-| `gauge` | `value` | `min`, `max`, `label`, `unit`, `format`, `thresholds` |
-| `sparkline` | `data: number[]` | `area` |
-| `boxplot` | `data: [{label, values: number[]}]` | `yAxis`, `references` |
-| `heatmap` | `data: [{x, y, value}]`, each pair once | `min`, `max`, `showValues`, `format` |
-| `barGauge` | `data: [{label, value, min?, max?}]` | shared `min`, `max`, `unit`, `format`, `thresholds` |
-| `stat` | `value` | `unit`, `format`, `delta`, `better: "up" | "down"`, `sparkline` |
+same way. [Chart kinds](chart-kinds.md) lists every kind with when to use it,
+its options and one small valid description.
 
 All kinds accept `title` and `subtitle`; together they name the chart for screen
 readers (an image in static markup, an interactive group in apps). An axis
@@ -107,38 +95,7 @@ make a slow and unreadable chart. Unknown kinds, wrong option types, a fixed
 to label an axis (such as `1e17` and `1e17 + 16`) throw `error.code === "invalid"`
 with a path such as `series[0].data[2].x`. Stdlib-only options outside the
 contract are ignored.
-There is no second y axis, group renderer, or grouped/stacked bar mode
-([upstream issue](https://github.com/k2b-dev/stdlib/issues/5)); use
-`cloud.view.group` for related computed measures in chat.
-
-## Follow paths between stages
-
-Choose `sankey` for quantities that branch or merge between stages. Node IDs
-must be unique, every link must name existing IDs, values must be positive and
-the graph must have no cycles. A node shows the larger of its incoming and
-outgoing totals, so a missing or untracked flow remains visible. Use bars for
-unrelated categories.
-
-Pass this object to `cloud.chart()` in an app or PDF, or to `cloud.view.chart()`
-for a computed chat view. For non-run values, the same object is valid for the
-`chart` tool:
-
-```json
-{
-  "kind": "sankey",
-  "title": "Paths after the click",
-  "nodes": [
-    { "id": "click", "label": "Clicked" },
-    { "id": "read", "label": "Read" },
-    { "id": "signup", "label": "Signed up" }
-  ],
-  "links": [
-    { "source": "click", "target": "read", "value": 120 },
-    { "source": "click", "target": "signup", "value": 20 },
-    { "source": "read", "target": "signup", "value": 60 }
-  ]
-}
-```
-
-The drawing starts at its sources and scrolls on narrow screens. Full names
-and values remain available in inspection and the data table.
+There is no second y axis or group renderer; use `cloud.view.group` for
+related computed measures in chat. Bars take several series side by side
+(`layout: "grouped"`) or stacked (`layout: "stacked"`); see
+[Chart kinds](chart-kinds.md).
