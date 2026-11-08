@@ -29,6 +29,8 @@ to `true`; `formatValue` controls its text.
 above the full-width track. The default, `"control"`, keeps them beside the
 track. Without a label, both placements use the track row. `showValue={false}`
 hides only the value; an available reset button stays in the chosen row.
+In the label row the reset comes before the value, so values line up with the
+right edge whether the setting has changed or is at its default.
 
 With `center`, the filled track starts at the range midpoint. Double-click resets to `defaultValue`, or to the midpoint for a centered slider and `min` otherwise.
 

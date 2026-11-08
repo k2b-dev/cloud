@@ -67,7 +67,7 @@ export function Field(props: FieldLayoutProps): JSX.Element {
     >
       <Show when={props.label}>
         <Show when={props.labelEnd} fallback={label()}>
-          <div class="k2b-field__label k2b-field__label-row">
+          <div class="k2b-field__label-row">
             {label()}
             {props.labelEnd}
           </div>

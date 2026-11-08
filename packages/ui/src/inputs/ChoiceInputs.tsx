@@ -188,24 +188,24 @@ export function Slider(props: SliderProps): JSX.Element {
     input?.focus();
   };
   const inLabel = () => local.valuePlacement === "label" && !!local.label;
-  const ValueControls = () => (
-    <>
-      <Show when={local.showValue ?? true}>
-        <output for={meta.controlId}>{local.formatValue?.(value()) ?? value()}</output>
-      </Show>
-      <Show when={local.defaultValue !== undefined}>
-        <IconButton
-          class="k2b-slider__reset"
-          size="xs"
-          label={resetLabel()}
-          aria-describedby={local.label ? meta.labelId : undefined}
-          disabled={rest.disabled || !changed()}
-          onClick={reset}
-        >
-          <i class="ti ti-arrow-back-up" aria-hidden="true" />
-        </IconButton>
-      </Show>
-    </>
+  const Value = () => (
+    <Show when={local.showValue ?? true}>
+      <output for={meta.controlId}>{local.formatValue?.(value()) ?? value()}</output>
+    </Show>
+  );
+  const Reset = () => (
+    <Show when={local.defaultValue !== undefined}>
+      <IconButton
+        class="k2b-slider__reset"
+        size="xs"
+        label={resetLabel()}
+        aria-describedby={local.label ? meta.labelId : undefined}
+        disabled={rest.disabled || !changed()}
+        onClick={reset}
+      >
+        <i class="ti ti-arrow-back-up" aria-hidden="true" />
+      </IconButton>
+    </Show>
   );
 
   return (
@@ -215,7 +215,8 @@ export function Slider(props: SliderProps): JSX.Element {
       labelEnd={
         inLabel() ? (
           <div class="k2b-slider__value" data-changed={changed() ? "true" : undefined}>
-            <ValueControls />
+            <Reset />
+            <Value />
           </div>
         ) : undefined
       }
@@ -225,7 +226,7 @@ export function Slider(props: SliderProps): JSX.Element {
       required={local.required}
       disabled={rest.disabled}
     >
-      <div class="k2b-slider" data-changed={changed() ? "true" : undefined}>
+      <div class="k2b-slider" data-changed={changed() ? "true" : undefined} data-value-placement={inLabel() ? "label" : undefined}>
         <input
           {...rest}
           ref={input}
@@ -242,7 +243,8 @@ export function Slider(props: SliderProps): JSX.Element {
           }}
         />
         <Show when={!inLabel()}>
-          <ValueControls />
+          <Value />
+          <Reset />
         </Show>
       </div>
     </Field>

@@ -57,9 +57,20 @@ for (const width of [1440, 390]) {
               const box = root.querySelector(selector)!.getBoundingClientRect();
               return { x: box.x, y: box.y, width: box.width, height: box.height };
             };
-            return { label: rect("label"), track: rect("input"), field: rect(".k2b-field") };
+            const value = rect("output");
+            return { label: rect("label"), track: rect("input"), field: rect(".k2b-field"), valueRight: value.x + value.width };
           });
         const original = await boxes();
+        if (placement === "label") {
+          expect(original.valueRight).toBe(original.field.x + original.field.width);
+          const labelRow = await field.locator(".k2b-field__label-row").boundingBox();
+          expect(labelRow!.height).toBe(original.label.height);
+          expect(
+            await field
+              .locator(".k2b-slider__value")
+              .evaluate((element) => Array.from(element.querySelectorAll("button, output"), (child) => child.tagName)),
+          ).toEqual(["BUTTON", "OUTPUT"]);
+        }
         const reset = field.getByRole("button", { name: "Reset to 0", includeHidden: true });
         expect(await reset.isVisible()).toBe(false);
         await slider.focus();
@@ -67,6 +78,7 @@ for (const width of [1440, 390]) {
         await settled(page);
         expect(await slider.inputValue()).toBe("1");
         expect(await boxes()).toEqual(original);
+        expect((await boxes()).valueRight).toBe(original.valueRight);
         expect(await reset.isVisible()).toBe(true);
         const aligned = await field.evaluate((root) => {
           const label = root.querySelector("label")!.getBoundingClientRect();
@@ -87,7 +99,27 @@ for (const width of [1440, 390]) {
         await settled(page);
         expect(await slider.inputValue()).toBe("0");
         expect(await boxes()).toEqual(original);
+        expect((await boxes()).valueRight).toBe(original.valueRight);
         expect(await slider.evaluate((input) => input === document.activeElement)).toBe(true);
+      }
+      if (width === 1440) {
+        // The label row takes the same subgrid slot as a plain label in a mixed field group.
+        await page.evaluate(() => {
+          const main = document.querySelector("main")!;
+          for (const wrapper of Array.from(main.children)) {
+            main.appendChild(wrapper.firstElementChild!);
+            wrapper.remove();
+          }
+        });
+        await settled(page);
+        const fields = await page.locator("main > .k2b-field").evaluateAll((fields) =>
+          fields.map((field) => ({
+            controlTop: field.querySelector("input")!.getBoundingClientRect().top,
+            labelTop: field.querySelector("label")!.getBoundingClientRect().top,
+            descriptionTop: field.querySelector(".k2b-field__description")!.getBoundingClientRect().top,
+          })),
+        );
+        expect(fields[1]).toEqual(fields[0]);
       }
     } finally {
       await page.close();

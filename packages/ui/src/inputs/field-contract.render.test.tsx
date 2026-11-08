@@ -45,7 +45,8 @@ describe("@k2b/ui canonical field contract", () => {
       expect(html).toContain('aria-labelledby="contrast-label"');
       expect(html).toContain('<output for="contrast">');
       expect(html).toContain('aria-label="Reset to 0"');
-      expect(html.includes('class="k2b-field__label k2b-field__label-row"')).toBe(valuePlacement === "label");
+      expect(html.includes('class="k2b-field__label-row"')).toBe(valuePlacement === "label");
+      expect(html).not.toContain('class="k2b-field__label k2b-field__label-row"');
       expect(html).not.toMatch(/<label[^>]*>[^]*<button[^]*<\/label>/);
     }
     const unnamed = renderToString(() => createComponent(Slider, { "aria-label": "Contrast", value: 0, valuePlacement: "label" }));
