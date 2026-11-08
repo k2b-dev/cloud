@@ -678,14 +678,16 @@ additional configuration. See
 [Code Mode charts](/en/docs/ai/chat-interface#check-an-html-app-before-showing-it).
 
 App-frame builds include `assistant-chart-parts.json` alongside the prelude and
-base stylesheet. The host obtains all parts with its other app assets before
-starting frames, preserving first use offline. A frame receives only the kinds
-it draws plus one shared helper part over its existing host channel; renderer
+base stylesheet. After the host becomes interactive, it prepares chart parts
+at low priority through the runtime or runner's `/chart-parts` endpoint, with
+the same origin and access policy as `/app-assets`. An early app start waits
+for that preparation, preserving first use offline. A frame receives only the
+kinds it draws plus one shared helper part over its existing host channel; renderer
 source is absent from srcdoc. The host verifies each part's SHA-256 before
-delivery, and the frame pins its parts to that build's hashes. No additional
-asset endpoint, external origin, CSP exception or operator configuration is
-needed. Include the new file when packaging Assistant outside its standard
-image. Scripts retain synchronous rendering for every kind.
+delivery, and the frame pins its parts to that build's hashes. No external
+origin, CSP exception or operator configuration is needed. Include the file
+when packaging Assistant outside its standard image. Scripts retain synchronous
+rendering for every kind.
 
 ### Assistant Chromium isolation
 

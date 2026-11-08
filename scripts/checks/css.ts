@@ -229,8 +229,11 @@ export const rule: Rule = {
       ),
     );
 
+    // The UI workspace controller owns these at runtime: it writes the saved and resized widths inline on each
+    // workspace. Applications may each give their own workspace a different starting width below that.
+    const uiRuntimeProperties = new Set(["--k2b-workspace-sidebar-width"]);
     for (const [property, owners] of customPropertyOwners) {
-      if (owners.size < 2 || uiCustomProperties.has(property)) continue;
+      if (owners.size < 2 || uiCustomProperties.has(property) || uiRuntimeProperties.has(property)) continue;
       report(
         [...owners][0]!,
         `${property} has multiple owner files: ${[...owners].map((file) => relative(workspaceRoot, file)).join(", ")}`,

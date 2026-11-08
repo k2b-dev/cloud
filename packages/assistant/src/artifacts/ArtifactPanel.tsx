@@ -18,6 +18,7 @@ import { AppFrame, loadAppAssets } from "./html/AppFrame";
 import type { AppFrameAssets } from "./html/assets";
 import type { AppFiles } from "./html/compose";
 import type { Confirm, Mount, MountEvent } from "./html/host";
+import { scheduleChartPreparation } from "./html/prepare-assets";
 import { registerLocalRun } from "./local-runs";
 import { artifactMessages } from "./messages";
 import { runnerClient } from "./runner-client";
@@ -71,6 +72,7 @@ export function ArtifactPanel(props: {
   browseVersions?: () => void;
   onTitle?: (title: string) => void;
 }) {
+  onMount(() => onCleanup(scheduleChartPreparation(props.runner ? RUNNER : RUNTIME)));
   const locale = useLocale(),
     t = () => artifactMessages.resolve([locale()]).t;
   const loadMetadata = async () =>
