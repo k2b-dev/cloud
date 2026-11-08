@@ -7,6 +7,7 @@ import {
   type CapabilityQueryManifest,
   type CapabilityTargetDefinition,
   CLOUD_RESOURCE_ID_MAX_LENGTH,
+  type CloudResourceRef,
   CloudResourceRefSchema,
   type NormalizedCapabilityCall,
   NormalizedCapabilityCallSchema,
@@ -34,7 +35,10 @@ export const capabilityValueDigest = (value: unknown): string => createHash("sha
 export const capabilityCallDigest = (call: NormalizedCapabilityCall): string => capabilityValueDigest(call);
 
 /** Checks transport-field collisions, including reserved Action metadata, before offering a tool. */
-export const capabilityToolInputSchema = (operation: CapabilityQueryManifest | CapabilityActionManifest): Record<string, unknown> => {
+export const capabilityToolInputSchema = (
+  operation: CapabilityQueryManifest | CapabilityActionManifest,
+  pinnedTarget?: CloudResourceRef,
+): Record<string, unknown> => {
   const schema = structuredClone(operation.inputSchema);
   const properties = z.record(z.string(), z.unknown()).parse(schema.properties ?? {});
   const required = new Set(z.array(z.string()).parse(schema.required ?? []));
@@ -48,7 +52,9 @@ export const capabilityToolInputSchema = (operation: CapabilityQueryManifest | C
     properties[field] = { type: "string", minLength: 1, maxLength: CLOUD_RESOURCE_ID_MAX_LENGTH, description: `Resource ID of ${type}.` };
     required.add(field);
   };
-  if (operation.target) add(operation.target, operation.target);
+  if (pinnedTarget && (!operation.target || pinnedTarget.type.slice(pinnedTarget.type.indexOf(".") + 1) !== operation.target))
+    throw new Error(`Capability ${operation.localId}: pinned target has the wrong Type`);
+  if (operation.target && !pinnedTarget) add(operation.target, operation.target);
   for (const [field, type] of Object.entries(operation.refs ?? {})) add(field, type);
   return { ...schema, properties, ...(required.size ? { required: [...required] } : {}) };
 };
@@ -87,8 +93,9 @@ export const capabilityCallFromTool = (
   appId: string,
   operation: CapabilityQueryManifest | CapabilityActionManifest,
   args: unknown,
+  pinnedTarget?: CloudResourceRef,
 ): NormalizedCapabilityCall => {
-  capabilityToolInputSchema(operation);
+  capabilityToolInputSchema(operation, pinnedTarget);
   const input = z.record(z.string(), z.unknown()).parse(args);
   const resourceId = (field: string, type: string): string => {
     const id = CloudResourceRefSchema.shape.id.safeParse(input[field]);
@@ -104,7 +111,7 @@ export const capabilityCallFromTool = (
   );
   let target: NormalizedCapabilityCall["target"] = null;
   if (operation.target) {
-    target = { type: `${appId}.${operation.target}`, id: resourceId(operation.target, operation.target) };
+    target = pinnedTarget ?? { type: `${appId}.${operation.target}`, id: resourceId(operation.target, operation.target) };
     delete input[operation.target];
   }
   return normalizeCapabilityCall(appId, operation, { input, ...(target ? { target } : {}), refs });

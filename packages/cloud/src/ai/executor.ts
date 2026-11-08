@@ -46,6 +46,7 @@ import { createCloudAiMemoryTool } from "./memory-tool";
 import { recordAiMemoryWorkflowEvidence } from "./memory-workflow-evidence";
 import { aiModelAccess } from "./model-access";
 import { createAiNextMessageRuntime, isVisibleAiNextMessageOp } from "./next-message";
+import { rejectUnavailablePlaceCalls, resolveAiPlaceTools } from "./place-tools";
 import { type AiUserPrefs, aiActorUser, aiUserPrefs } from "./prefs";
 import { createCloudAiReadProjectKnowledgeTool, createCloudAiSearchProjectTool } from "./project-tool";
 import { aiProjects } from "./projects";
@@ -1231,6 +1232,15 @@ export class AiTurnExecutor {
               }
             : {}),
           onReview: onCapabilityReview,
+          place: () =>
+            resolveAiPlaceTools({
+              conversationId,
+              actor: toolAuthority?.actor ?? toolActor,
+              locale: promptLocale,
+              signal: abortController.signal,
+            }),
+          onRejected: (callId) => rejectedToolCallIds.add(callId),
+          onUnavailablePlaceTools: (names) => rejectUnavailablePlaceCalls(loopMessages, names, rejectedToolCallIds),
           ...(capabilityAuthority
             ? {
                 execute: async (entry, args, context) => {
@@ -1589,6 +1599,7 @@ export class AiTurnExecutor {
       noteToolRound: turnPolicy.noteToolRound,
       noteToolCall: turnPolicy.noteToolCall,
       failureReason,
+      rejectedToolCallIds,
     });
     signal.removeEventListener("abort", onSignal);
 
@@ -1636,6 +1647,7 @@ export class AiTurnExecutor {
     loop: NessiLoop;
     pipeline: StreamPipeline;
     initialRoundFailed: boolean;
+    rejectedToolCallIds: ReadonlySet<string>;
     conversationId: string;
     turnId: string;
     abortController: AbortController;
@@ -1736,7 +1748,12 @@ export class AiTurnExecutor {
               );
         } else if (event.type === "tool_execution_end") {
           await aiToolAudit
-            .noteToolCompleted({ turnId, callId: event.callId, isError: event.isError })
+            .noteToolCompleted({
+              turnId,
+              callId: event.callId,
+              isError: event.isError,
+              rejected: input.rejectedToolCallIds.has(event.callId),
+            })
             .catch(() => log.warn("AI tool audit write failed", { code: "tool_audit_complete_failed", turnId, callId: event.callId }));
           const toolBlock = pipeline.blocks.find((block) => block.kind === "tool" && block.callId === event.callId);
           if (toolBlock?.kind === "tool" && isFailedTool(toolBlock)) roundFailed = true;

@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import type { ToolContext } from "@k2b/nessi";
 import { capabilityActionReceiptIssues, capabilityQueryChecksActionOutcome } from "../_internal/capability-reviews";
+import { getCapability } from "../_internal/registry";
 import { type CapabilityDispatchDependencies, dispatchCapability } from "../api/capabilities";
 import { capabilityCallFromTool, capabilityInvocationBody } from "../capabilities/calls";
 import { capabilityValueMeta, recordCapabilityExecution } from "../capabilities/executions";
@@ -20,6 +21,9 @@ import { LOCALE_HEADER } from "../shared/locale";
 import type { AiActionCheck } from "./action-review";
 import type { AiCapabilityCatalogEntry } from "./capabilities";
 import { AiCapabilityExecutionError } from "./capability-result";
+import { runPlaceProvider } from "./place-provider";
+import type { AiPlaceToolDependencies } from "./place-tools";
+import { aiConversations } from "./store";
 import { aiToolAudit } from "./tool-audit";
 import type { AiConversationService } from "./types";
 
@@ -103,6 +107,7 @@ type AiCapabilityCall = {
   traceToolCall?: boolean;
   dependencies?: CapabilityDispatchDependencies & {
     dispatch?: typeof dispatchCapability;
+    place?: AiPlaceToolDependencies;
   };
 };
 
@@ -113,9 +118,37 @@ const dispatchAiCapability = async (
   if (input.authority.accessSubject.type !== "user" || input.authority.accessSubject.userId !== input.authority.actor.user.id) {
     throw new Error("Cloud capability authority is inconsistent.");
   }
+  if (input.entry.place) {
+    try {
+      const dependencies = input.dependencies?.place;
+      const store = dependencies?.store ?? aiConversations;
+      input.authority = await resolveAiCapabilityActor({
+        conversationId: input.conversationId,
+        persistedActor: input.authority.actor,
+        store,
+        getUser: dependencies?.getUser,
+      });
+      const conversation = await store.getConversation({ conversationId: input.conversationId });
+      const ref = conversation?.place?.ref;
+      if (!ref || ref.type !== input.entry.place.type || ref.id !== input.entry.place.id) throw new Error("Place binding changed");
+      const place = await (dependencies?.provider ?? runPlaceProvider)(input.authority, ref, {
+        ...dependencies?.providerOptions,
+        locale: input.locale,
+        signal: input.context.signal,
+      });
+      if ("unavailable" in place || !place.tools.includes(input.entry.operation.localId)) throw new Error("Place tool no longer available");
+    } catch (error) {
+      if (input.context.signal.aborted) throw error;
+      throw new AiCapabilityExecutionError("PLACE_REJECTED", 403, "This place tool is no longer available for the person.");
+    }
+  } else if (input.entry.kind === "action" && input.entry.operation.target) {
+    const current = await (input.dependencies?.getCapability ?? getCapability)(input.entry.appId);
+    if (current?.manifest.types.some((type) => type.assistant?.tools.includes(input.entry.operation.localId)))
+      throw new AiCapabilityExecutionError("PLACE_REJECTED", 403, "Place tools require the chat's fixed place.");
+  }
   const body =
     input.entry.operation.target !== undefined || input.entry.operation.refs !== undefined
-      ? capabilityInvocationBody(capabilityCallFromTool(input.entry.appId, input.entry.operation, input.args))
+      ? capabilityInvocationBody(capabilityCallFromTool(input.entry.appId, input.entry.operation, input.args, input.entry.place))
       : { input: input.args };
   const dispatch = input.dependencies?.dispatch ?? dispatchCapability;
   const headers = new Headers();

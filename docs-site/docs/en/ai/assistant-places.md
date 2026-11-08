@@ -138,3 +138,19 @@ Cancellation propagates to the caller.
 This helper neither checks panel consent nor creates a chat. Panel hosts must
 check consent before invoking it. Applications declare the provider and enforce
 resource permissions in their domain service.
+
+## Fixed targets and current access
+
+Cloud removes Actions declared in `assistant.tools` from the general Assistant
+catalog. In a place chat, only the current provider selection is available.
+Their tool schemas omit the target field: Cloud supplies the resource stored on
+the chat. Other explicit resource references remain ordinary Action inputs.
+
+Before each place Action, including execution after an approval or a resumed
+turn, Cloud reloads the person and the provider. An inactive person, unavailable
+place, or Action absent from the current selection ends the call as `rejected`.
+A previous approval grants no continued resource access. Action policies and
+remembered approvals otherwise follow the normal Assistant flow.
+
+The chat stays readable after place access is lost. Tool audit rows retain their
+conversation link, which supplies the person and immutable place coordinates.
