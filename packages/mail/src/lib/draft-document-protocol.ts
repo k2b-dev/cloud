@@ -85,6 +85,7 @@ export const MAIL_DRAFT_DOCUMENT_TERMINAL_CODES = [
   "DOCUMENT_NOT_FOUND",
   "INVALID_PAYLOAD",
   "BACKPRESSURE",
+  "DRAFT_DOCUMENT_STREAM_FULL",
 ] as const;
 
 export const mailDraftDocumentMessages = i18n.define({
@@ -99,6 +100,7 @@ export const mailDraftDocumentMessages = i18n.define({
       reopen: "This draft changed or is no longer editable. Copy unsent text before reopening it.",
       invalid: "The editing update could not be read. Copy unsent text before reopening the draft.",
       network: "The editing connection was interrupted. Reconnecting…",
+      streamFull: "Document storage is full. Your unsent changes remain on this device. Keep the draft open and retry saving.",
       pending: "Your changes could not yet be saved. Keep this draft open and retry saving.",
       busy: "The editing connection could not keep up. Copy unsent text before reopening the draft.",
     },
@@ -111,6 +113,8 @@ export const mailDraftDocumentMessages = i18n.define({
       reopen: "Dieser Entwurf hat sich geändert oder ist nicht mehr bearbeitbar. Kopiere ungesendeten Text, bevor du ihn erneut öffnest.",
       invalid: "Die Änderung konnte nicht gelesen werden. Kopiere ungesendeten Text, bevor du den Entwurf erneut öffnest.",
       network: "Die Verbindung zum Bearbeiten wurde unterbrochen. Sie wird wiederhergestellt…",
+      streamFull:
+        "Der Entwurfsspeicher ist voll. Deine ungesendeten Änderungen bleiben auf diesem Gerät. Lass den Entwurf geöffnet und versuche das Speichern erneut.",
       pending: "Deine Änderungen konnten noch nicht gespeichert werden. Lass den Entwurf geöffnet und versuche das Speichern erneut.",
       busy: "Die Verbindung konnte mit den Änderungen nicht Schritt halten. Kopiere ungesendeten Text, bevor du den Entwurf erneut öffnest.",
     },
