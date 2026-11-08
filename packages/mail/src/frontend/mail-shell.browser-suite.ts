@@ -4489,7 +4489,8 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
           derivedFromMessageId: null,
           derivationKind: null,
           senderIdentityId: "00000000-0000-4000-8000-0000000000a1",
-          signatureTemplateId: null,
+          signatureTemplateId: "Sig001",
+          quoteSource: null,
           to: [{ name: "Example sender", address: "sender@example.test" }],
           cc: [],
           bcc: [],
@@ -4548,7 +4549,8 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
                 derivationKind: null,
                 content: {
                   senderIdentityId: input.senderIdentityId,
-                  signatureTemplateId: null,
+                  signatureTemplateId: "Sig001",
+                  quoteSource: null,
                   to: [{ name: "Example sender", address: "sender@example.test" }],
                   cc: [],
                   bcc: [],
@@ -4567,11 +4569,17 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
           }
           if (method === "POST" && path === "/draft-seeds/materialize") {
             const body = request.postDataJSON();
-            const created = makeDraft("DrfNew", body.draft, { intent: body.origin.input.intent });
+            const created = makeDraft("DrfNew", body.draft, {
+              intent: body.origin.input.intent,
+              sourceMessageId: body.origin.input.sourceMessageId,
+            });
             drafts.set("DrfNew", created);
             return route.fulfill({ json: created });
           }
-          if (path === "/compose-templates" || path === "/compose-signature-defaults") return route.fulfill({ json: [] });
+          if (path === "/compose-templates") return route.fulfill({ json: [{ id: "Sig001", kind: "signature", name: "Support" }] });
+          if (path === "/compose-signature-defaults") return route.fulfill({ json: [] });
+          if (method === "POST" && path === "/compose-signature")
+            return route.fulfill({ json: { html: null, text: "Kind regards\nAda Example\nExample support · Hall A" } });
           if (method === "POST" && path === "/compose-preview")
             return route.fulfill({ json: { html: "<p>Preview of the mail as it arrives.</p>", text: "", formattingWarnings: [] } });
           if (draftPath) {
@@ -4710,6 +4718,34 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
           await page.locator("[data-mail-reply-pill]").waitFor();
           expect(api.calls).not.toContain("POST /drafts/DrfNew/discard");
           expect(api.calls).toContain("DELETE /drafts/DrfNew/lease");
+        } finally {
+          await close(page);
+        }
+      });
+
+      test("the signature follows the text as a fixed block, and the quote line attaches the quote with the person's locale", async () => {
+        let api!: Awaited<ReturnType<typeof draftApi>>;
+        const page = await open(`${boxPath}?conversation=Conv01&identity=1`, 1440, undefined, "reduce", async (next) => {
+          api = await draftApi(next);
+        });
+        try {
+          await page.locator("[data-mail-reply-pill] .mail-reader-pill-reply").click();
+          await readyDraft(page);
+          const signature = page.locator("[data-mail-draft-signature]");
+          await page.waitForFunction(() => document.querySelector("[data-mail-draft-signature]")?.textContent?.includes("Ada Example"));
+          // Fixed: the block is not part of the editable text.
+          expect(await signature.evaluate((element) => element.closest(".cm-content"))).toBeNull();
+          const quote = page.locator("[data-mail-draft-quote]");
+          expect(await quote.textContent()).toContain("Attach quote: Example sender");
+          await quote.getByRole("button", { name: "Attach" }).click();
+          await eventually(
+            () => JSON.stringify(api.drafts.get("DrfNew")?.quoteSource ?? null),
+            JSON.stringify({ locale: "en", timeZone: "UTC" }),
+            "quote saved with locale and time zone",
+          );
+          expect(await quote.textContent()).toContain("Quote attached");
+          await quote.getByRole("button", { name: "Remove" }).click();
+          await eventually(() => api.drafts.get("DrfNew")?.quoteSource ?? null, null, "quote removed");
         } finally {
           await close(page);
         }

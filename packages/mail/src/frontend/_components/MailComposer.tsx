@@ -54,6 +54,7 @@ import MailComposerHistory from "./MailComposerHistory";
 import MailComposerLifecycleNotice from "./MailComposerLifecycleNotice";
 import MailComposerSignature from "./MailComposerSignature";
 import { mailDraftCollaborationCopy, openMailDraftCollaborationDialog } from "./MailDraftCollaborationDialog";
+import MailInlineSignature from "./MailInlineSignature";
 import MailRecipientInput from "./MailRecipientInput";
 import { chooseScheduledSendTime } from "./MailScheduleDialog";
 import MailSenderUnavailableNotice from "./MailSenderUnavailableNotice";
@@ -101,6 +102,8 @@ export type MailComposerHost = {
   toggleFullscreen: () => void;
   /** The composer hands the host its safe close, so Esc and the host's own controls take the same path. */
   register: (controls: { collapse: () => Promise<void> }) => void;
+  /** Who wrote a message of the conversation and when, for the quote line ("Marlene Hofbauer, today 09:12"). */
+  messageLabel: (messageId: string) => string | null;
 };
 
 export default function MailComposer(props: {
@@ -451,7 +454,16 @@ export default function MailComposer(props: {
       (isShared() ? Boolean(shared() && !sharedState()?.terminal) : Boolean(lease()) || !draft() || materializedLeasePending()),
   );
   const editable = createMemo(() => canEditDraft() && composerTransition.active() === null);
+  let editorController: TextEditorController | undefined;
+  /** A click into the draft's empty room below the text puts the caret at the end of the text. */
+  const focusEditorAtEnd = () => {
+    const view = editorController?.view;
+    if (!view || !editable()) return;
+    view.dispatch({ selection: { anchor: view.state.doc.length } });
+    view.focus();
+  };
   const focusFreshEditorAtStart = (element: TextEditorController) => {
+    editorController = element;
     // A new draft, and a draft someone opened inside its conversation, start with the caret in the text.
     if ((!props.initialSeed && !props.host) || initialEditorFocusApplied) return;
     queueMicrotask(() => {
@@ -1464,6 +1476,13 @@ export default function MailComposer(props: {
             ? t().inlineForward
             : t().inlineNew;
     };
+    // F4: a reply offers to attach the quoted message it answers; a forward already carries it.
+    const quoteLabel = () => {
+      const intent = composerIntent();
+      const sourceMessageId = draft()?.sourceMessageId ?? initial.sourceMessageId;
+      if ((intent !== "reply" && intent !== "reply_all") || !sourceMessageId) return null;
+      return host.messageLabel(sourceMessageId);
+    };
     const saveState = () => {
       if (status() === "saving" || status() === "preparing") return t().savingDraft;
       if (status() === "saved" && draft()) return t().draftSaved;
@@ -1744,6 +1763,40 @@ export default function MailComposer(props: {
           onCancelUpload={(upload) => void attachments.cancelUpload(upload).catch((error) => prompts.error(error.message))}
         />
 
+        {/* The preview already shows the signature and the quote as the mail arrives. */}
+        <Show when={!inlinePreview()}>
+          <MailInlineSignature
+            mailboxId={props.mailboxId}
+            senderIdentityId={identityId}
+            signatureTemplateId={signatureTemplateId}
+            format={format}
+          />
+        </Show>
+        {/* The empty room below the text belongs to the text: a click there continues writing at its end. */}
+        <div class="mail-inline-draft-space" aria-hidden="true" onClick={focusEditorAtEnd} />
+        <Show when={!inlinePreview() && quoteLabel()}>
+          {(label) => (
+            <div class="mail-inline-draft-quote" data-mail-draft-quote>
+              <i class="ti ti-quote" aria-hidden="true" />
+              <span class="min-w-0 flex-1 truncate">
+                {quoteSource() ? t().quoteAttached({ label: label() }) : t().quoteOffer({ label: label() })}
+              </span>
+              <Button
+                variant="ghost"
+                size="sm"
+                type="button"
+                disabled={!editable()}
+                aria-pressed={Boolean(quoteSource())}
+                onClick={() =>
+                  setQuoteSource((current) => (current ? null : { locale: locale(), timeZone: props.dateConfig.timeZone ?? "UTC" }))
+                }
+              >
+                {quoteSource() ? t().removeQuote : t().attachQuote}
+              </Button>
+            </div>
+          )}
+        </Show>
+
         <footer class="mail-inline-draft-foot">
           <span class="mail-inline-draft-tools">
             <Show when={format() === "markdown"}>
@@ -1767,6 +1820,7 @@ export default function MailComposer(props: {
             </Tooltip.Anchor>
             <Show when={signatureChoiceVisible()}>
               <MailComposerSignature
+                quiet
                 signatures={props.signatures}
                 value={signatureTemplateId()}
                 senderDefaultId={senderDefaultSignatureId()}
@@ -1803,7 +1857,7 @@ export default function MailComposer(props: {
                 onClick={() => setInlinePreview((value) => !value)}
               >
                 <i class={`ti ${inlinePreview() ? "ti-pencil" : "ti-eye"}`} aria-hidden="true" />
-                {inlinePreview() ? t().write : t().preview}
+                <span class="mail-inline-draft-preview-label">{inlinePreview() ? t().write : t().preview}</span>
               </Button>
             </Show>
           </span>

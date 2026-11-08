@@ -1871,6 +1871,13 @@ export default function MailConversationReader(props: {
                           register: (controls) => {
                             inlineDraftControls = controls;
                           },
+                          messageLabel: (messageId) => {
+                            const message = props.messages.find((candidate) => candidate.id === messageId);
+                            if (!message) return null;
+                            const sender = message.from[0];
+                            const name = sender?.name || sender?.address || "";
+                            return `${name}, ${dates.formatDateTimeRelative(message.internalDate, props.dateConfig)}`;
+                          },
                           leave: (outcome) => {
                             closeInlineDraft(open.draftId);
                             // The sent message, the returned draft, or the removed one shows from the server's state.
