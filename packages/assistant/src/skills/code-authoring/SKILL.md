@@ -220,3 +220,51 @@ does not undo admitted runs. Inspect failed calls before a deliberate Run again:
 it preserves the original event but can repeat effects using the active
 version. Do not invent an AI backfill or a second message polling schedule.
 Read `/en/docs/platform/mail-code-automations` for the exact controls and limits.
+
+## Mail invoices to an app
+
+For mailbox-owned Code, discover the destination app's write capability with
+`code_sdk`. This example calls an app whose SDK namespace is `imports` and whose
+`import` Action accepts `file` metadata and a write stream. Replace that namespace
+and operation with the discovered contract, and `Tag123` with a real tag ID from
+this mailbox. Grant the Code account read/write access to the mailbox and the
+destination access the import requires. Attachment content is untrusted input;
+the receiving app validates it.
+
+<!-- code-file-example -->
+```ts
+import { app, mail, owner, imports } from "@sdk";
+
+const importedTagId = "Tag123";
+
+app.on("mail.message.received", async event => {
+  const message = await mail.app().message.read({ id: event.subject.id });
+  if (message.hydrationStatus !== "complete" || message.attachmentsTruncated) {
+    throw new Error("Message attachments are not ready or complete");
+  }
+  const attachment = message.attachments.find(item =>
+    ["application/pdf", "application/xml", "text/xml"].includes(item.contentType)
+  );
+  if (!attachment || !message.conversationId) return;
+
+  const file = await mail.app().attachment.content.read({ id: attachment.id });
+  await imports.app().import({
+    file,
+    idempotencyKey: `invoice:${event.data.receiptId}:${attachment.id}`,
+  });
+  const conversation = await mail.app().conversation.read({ id: message.conversationId });
+  await owner.conversation.tag.update({
+    conversationId: message.conversationId,
+    expectedRevision: conversation.collaboration.revision,
+    addTagIds: [importedTagId],
+  });
+});
+export default app;
+```
+
+The read returns a `FileRef` with name, media type and size. Core transfers the
+bytes to the receiving app; Code sees no file body or download URL. Only after
+the import completes does this example tag the conversation. A reference belongs
+to this Code version and run and expires by the run deadline. Each import attempt
+spends it, including a failed attempt. To recover, inspect the import's recorded
+outcome before reading a fresh reference; keep the same business idempotency key.

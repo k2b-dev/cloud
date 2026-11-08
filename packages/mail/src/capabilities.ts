@@ -5,9 +5,11 @@ import {
   CapabilityActionCheckSchema,
   type CapabilityDefinitions,
   type CapabilityExecutionContext,
+  CapabilityFileMetadataSchema,
   type CapabilityInvocationResult,
   type CapabilityResult,
   type CapabilitySemanticLink,
+  type CapabilityStream,
   type CloudResourceView,
   capabilityPage,
   cloudResourceHref,
@@ -21,7 +23,7 @@ import { logger } from "@k2b/cloud/services";
 import { principalLabel } from "@k2b/cloud/shared";
 import { err, fail, i18n, ok, type Result } from "@k2b/stdlib";
 import type { SQL } from "bun";
-import type { z } from "zod";
+import { z } from "zod";
 import { mailEvents } from "./app-events";
 import * as c from "./capability-contracts";
 import { mailCapabilityMessages } from "./capability-messages";
@@ -49,7 +51,14 @@ import {
   sendReceipt,
 } from "./capability-reviews";
 import { MailComposeCommandInputSchema, MailDraftCalendarInputSchema } from "./commands";
-import { type Mailbox, type MailDraft, type MailSearchExpression, type MailSubscriptionSummary, ResourceShortIdSchema } from "./contracts";
+import {
+  MAX_DRAFT_ATTACHMENT_BYTES,
+  type Mailbox,
+  type MailDraft,
+  type MailSearchExpression,
+  type MailSubscriptionSummary,
+  ResourceShortIdSchema,
+} from "./contracts";
 import { mailFolderPaths } from "./folder-tree";
 import {
   MailCodePreviewInputSchema,
@@ -1820,6 +1829,70 @@ const queryDefinitions = {
           { rel: "download" as const, href: data.downloadHref, title: data.filename?.trim() || t.downloadAttachment },
         ],
       });
+    },
+  },
+  "attachment.content.read": {
+    title: "Read attachment file",
+    description:
+      "Open the original attachment as a bounded binary stream. In Code this returns a FileRef for another app's write capability; use attachment.read-content for extracted text.",
+    input: c.AttachmentReadInputSchema,
+    data: CapabilityFileMetadataSchema,
+    openWorld: false,
+    async run(input: z.output<typeof c.AttachmentReadInputSchema>, context: CapabilityExecutionContext) {
+      context.signal.throwIfAborted();
+      const attachmentId = await resolvePublicResource("attachments", input.id);
+      if (!attachmentId.ok) return attachmentId;
+      const parent = await resourceParents.attachment(attachmentId.data);
+      if (!parent) return fail(err.notFound("Attachment"));
+      const opened = await messages.openAttachment({ context: requestContext(context), ...parent, attachmentId: attachmentId.data });
+      if (!opened.ok) return opened;
+      if (opened.data.total > MAX_DRAFT_ATTACHMENT_BYTES) return fail(err.badInput("Attachment exceeds the 100 MiB file limit"));
+      const file = CapabilityFileMetadataSchema.parse({
+        ...(opened.data.filename ? { name: truncateText(opened.data.filename, 255).text } : {}),
+        mediaType: /^[\x20-\x7e]{1,255}$/.test(opened.data.contentType) ? opened.data.contentType : "application/octet-stream",
+        size: opened.data.total,
+      });
+      return ok({
+        data: file,
+        stream: {
+          ...file,
+          id: JSON.stringify({ id: input.id, blobId: opened.data.blobId }),
+          direction: "read" as const,
+          expiresAt: new Date(Date.now() + 300_000).toISOString(),
+        },
+      });
+    },
+    stream: {
+      direction: "read" as const,
+      maxBytes: MAX_DRAFT_ATTACHMENT_BYTES,
+      async read(stream: CapabilityStream, context: CapabilityExecutionContext) {
+        context.signal.throwIfAborted();
+        const source = z.object({ id: ResourceShortIdSchema, blobId: z.uuid() }).strict().parse(JSON.parse(stream.id));
+        const attachmentId = await resolvePublicResource("attachments", ResourceShortIdSchema.parse(source.id));
+        if (!attachmentId.ok) throw attachmentId.error;
+        const parent = await resourceParents.attachment(attachmentId.data);
+        if (!parent) throw err.notFound("Attachment");
+        const open = () => messages.openAttachment({ context: requestContext(context), ...parent, attachmentId: attachmentId.data });
+        const opened = await open();
+        if (!opened.ok) throw opened.error;
+        if (opened.data.blobId !== source.blobId || opened.data.total !== stream.size) throw err.conflict("Attachment changed");
+        return new Response(
+          messages.createAttachmentStream({
+            blobId: opened.data.blobId,
+            chunkSize: opened.data.chunkSize,
+            chunkCount: opened.data.chunkCount,
+            start: 0,
+            endExclusive: stream.size,
+            async assertCurrentAccess() {
+              context.signal.throwIfAborted();
+              const current = await open();
+              if (!current.ok) throw current.error;
+              if (current.data.blobId !== source.blobId) throw err.conflict("Attachment changed");
+            },
+          }),
+          { headers: { "content-type": stream.mediaType } },
+        );
+      },
     },
   },
   "attachment.read-content": {

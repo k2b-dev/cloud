@@ -188,6 +188,8 @@ const __codeSdk = Object.freeze({
               if (Array.isArray(value) && key === "length") continue;
               const descriptor = Object.getOwnPropertyDescriptor(value, key);
               if (typeof key !== "string" || !descriptor.enumerable || !Object.hasOwn(descriptor, "value")) throw new Error("code_page_data_only");
+              // An optional prop set to undefined is absent, as in JSON; a hole in a list stays an error.
+              if (descriptor.value === undefined && !Array.isArray(value)) continue;
               bytes += new TextEncoder().encode(key).byteLength;
               if (bytes > manifest.pageLimits.bytes) throw new Error("code_page_limit");
               visit(descriptor.value, depth + 1);

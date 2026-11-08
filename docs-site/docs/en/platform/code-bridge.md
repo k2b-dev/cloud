@@ -116,7 +116,7 @@ Core performs these checks for each call:
 4. Apply the shared Valkey rate limit per Code, using the installation's
    `core.code.calls_per_second` budget (default 60, maximum 1,000).
    Recorded refusals consume the calls-per-run budget, bounding retry loops.
-5. Refuse streams, Actions with `code: false`, app-only Queries,
+5. Refuse write streams without a `file` metadata input, Actions with `code: false`, app-only Queries,
    `unattended: false`, asking Actions and every `code.access.*` operation.
 6. Classify the actual operation from live capability metadata and resolve
    [current policy](/en/docs/platform/code-policy) with current groups. A Never
@@ -221,3 +221,8 @@ Code: show the kind of work from the Type's title and no name, because the
 owner's name is not theirs to learn. An account that no longer exists means the
 work was deleted. `actorWorkload` grants nothing. Spaces shows its item history
 this way, without knowing Code.
+
+Code read streams return run-bound, expiring FileRefs. For a write stream with a
+`file` metadata input, Core consumes the reference once and pipes source bytes
+to the target under freshly fenced mandate authority. No binary body crosses
+the runner bridge. See [Code SDK](/en/docs/platform/code-sdk#mail-invoices-to-an-app).

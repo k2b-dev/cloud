@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test";
+import { fileImportManifest } from "./file-ref.test-fixture";
 import { generateCodeSdk } from "./generator";
 import { sdkFixture } from "./sdk.test-fixture";
 import { createCodeTestBridge } from "./test-bridge";
@@ -76,4 +77,30 @@ test("test cases and stable machine output have versioned JSON schemas", () => {
   const value: CodeTestResult = { version: 1, mode: "test", ok: true, error: null, diagnostics: [], cases: [] };
   expect(CodeTestResultSchema.parse(value)).toEqual(value);
   expect(CODE_TEST_RESULT_JSON_SCHEMA).toMatchObject({ type: "object", properties: { version: { const: 1 } } });
+});
+
+test("file mocks pass only checked references and keep the business receipt stable across fresh references", async () => {
+  const manifest = generateCodeSdk([sdkFixture(), fileImportManifest()], { mode: "personal" }).manifest;
+  const file = { id: "fake-file-1", name: "invoice.pdf", mediaType: "application/pdf", size: 5 };
+  const read = "work-shop.stock.export";
+  const write = "imports.import";
+  const bridge = createCodeTestBridge(manifest, [
+    { operation: read, target, replies: [{ ok: true, data: file }] },
+    { operation: write, target: null, replies: [{ ok: true, data: { imported: true } }] },
+  ]);
+  const received = await bridge.call(read, { call: { capability: read, target, refs: {}, input: {} }, metadata: {} });
+  expect(received).toEqual(file);
+  const invoke = (file: typeof received) => ({
+    call: { capability: write, target: null, refs: {}, input: { file } },
+    metadata: { idempotencyKey: "invoice:fixed" },
+  });
+  expect(await bridge.call(write, invoke(received))).toEqual({ imported: true });
+  bridge.begin();
+  expect(await bridge.call(write, invoke({ ...file, id: "fake-file-2" }))).toEqual({ imported: true });
+  expect(bridge.calls()[0]?.replayed).toBe(true);
+  await expect(bridge.call(write, invoke({ ...file, bytes: "body" }))).rejects.toThrow("code_test_invalid_input");
+  const invalid = createCodeTestBridge(manifest, [{ operation: read, target, replies: [{ ok: true, data: { ...file, size: 101 } }] }]);
+  await expect(invalid.call(read, { call: { capability: read, target, refs: {}, input: {} }, metadata: {} })).rejects.toThrow(
+    "code_test_invalid_fixture",
+  );
 });
