@@ -666,7 +666,7 @@ Compose these rows and scopes with your own commands. Pass their scope words as
 `reservedWords` so a catalog tag cannot claim them. `reason` disables the insert,
 tag, and fallback rows with a visible explanation, such as a full message.
 Use `ownReaders` only for a resource type your composer reads itself, for
-example `{ "assistant:studio-app": "assistant.app" }`, and add that tag to
+example `{ "inventory:item": "inventory.item" }`, and add that tag to
 `tags` yourself when its app has no reader. That tag's picker then lists only
 this type, also without a Cloud reader, even after the person removes the scope
 chip. A word that two tags share narrows to neither, so it

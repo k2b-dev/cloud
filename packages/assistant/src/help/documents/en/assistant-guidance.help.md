@@ -38,7 +38,7 @@ Gustav works best when the request states the outcome, the relevant context, and
 
 Open **Gustav settings > Skills** to create, import, edit, export, or share reusable Gustav workflows. A Skill keeps its instructions in `SKILL.md` and may include Markdown reference files.
 
-You can also ask Gustav to create or improve a Skill. Cloud initially provides **Skill Creator** to every signed-in user. It guides the draft and uses reviewed Skill-management capabilities with your current permissions. Like any shared Skill, it can be disabled for yourself; administrators can grant access, edit it, or delete it.
+You can also ask Gustav to create or improve a Skill. Cloud initially provides **Skill Creator** to every signed-in user. It guides the draft and uses reviewed Skill-management capabilities with your current access. Like any shared Skill, it can be disabled for yourself; administrators can give access, edit it, or delete it.
 
 When a request looks like it will come back, for example because you say "again" or correct the format of a result a second time, Gustav may offer once to save the approach as a Skill. If you agree, it drafts the Skill from the chat: the steps, your corrections, and the output format, without names, amounts, or content from your attachments. The usual review shows the Skill before it is saved. If you decline, Gustav does not ask again in that chat. The offer needs Skill Creator; if you disabled it, Gustav does not offer.
 

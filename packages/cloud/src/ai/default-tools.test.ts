@@ -64,7 +64,7 @@ const hasAudio = async (
 };
 
 describe("turn Code Mode and client tools", () => {
-  const clientToolIds = ["code_open", "code_secret", "local_bash"] as const;
+  const clientToolIds = ["code_secret", "local_bash"] as const;
   const mandate = { id: "00000000-0000-4000-8000-000000000001", revision: 1 };
 
   test("includes declared client tools without a mandate", () => {
@@ -73,7 +73,7 @@ describe("turn Code Mode and client tools", () => {
     expect(names).not.toContain("code_open");
   });
 
-  test("a mandate excludes app opening and secret entry even when declared by the client", () => {
+  test("a mandate excludes secret entry even when declared by the client", () => {
     const names = createAiTurnCodeAndClientTools({ mandate, clientToolIds: [...clientToolIds] }).map((tool) => tool.def.name);
     expect(names).not.toContain("code_open");
     expect(names).not.toContain("code_secret");

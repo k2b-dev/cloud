@@ -83,9 +83,8 @@ files explicitly; runs do not share variables. Stop unneeded work with
 
 Use `code_secret` for credentials in the trusted web UI. Never ask for their
 values in chat, surveys or source. CLI and unattended turns can use existing
-chat secrets but cannot open secret entry. HTTP and capability calls use the current turn’s authority. Studio database
-grants are unavailable. Scheduled routines have been retired; lasting Code uses
-`app.schedule` and `core.ai.chat.run` or `core.ai.chat.deliver`.
+chat secrets but cannot open secret entry. HTTP and capability calls use the current turn’s authority; unattended routine
+turns still require their current mandate. Studio database grants are unavailable.
 
 ## Reference routing
 

@@ -37,7 +37,7 @@ test("accepts tests that start their browser through the shared launcher", async
       "packages/demo/src/flow.behavior.test.ts": `import type { Page } from "playwright";\nimport { launchBrowser } from "${launcher}";\n`,
       // Integration tests need CLOUD_TEST_* targets and stay in Chromium.
       "packages/demo/src/consent.integration.test.ts": `import "${testInfra}";\nimport { launchBrowser } from "${launcher}";\n`,
-      "packages/assistant/src/chat-code/chrome.browser.test.ts": `import { chromium } from "playwright";\nawait chromium.launch({ channel: "chrome" });\n`,
+      "packages/assistant/src/chat-code/shared.browser.test.ts": `import { launchBrowser } from "${launcher}";\nawait launchBrowser();\n`,
     }),
   ).toEqual([]);
 });
@@ -45,12 +45,15 @@ test("accepts tests that start their browser through the shared launcher", async
 test("reports direct launches and Playwright tests that the WebKit run would not find", async () => {
   expect(
     await findings({
+      "packages/assistant/src/chat-code/direct.browser.test.ts": `import { chromium } from "playwright";\nawait chromium.launch({ channel: "chrome" });\n`,
       "packages/demo/src/direct.browser.test.ts": `import { chromium } from "playwright";\nconst context = await chromium.launchPersistentContext("/tmp/profile");\n`,
       "packages/demo/src/cdp.browser-suite.ts": `import { webkit } from "playwright";\n\nawait webkit.connectOverCDP("ws://127.0.0.1:9222");\n`,
       "packages/demo/src/extension.browser.test.ts": `import { launchBrowser } from "${launcher}.ts";\n`,
       "packages/demo/src/helper.browser.test.ts": `import type { Page } from "playwright";\nimport { openPage } from "./open-page";\n`,
     }),
   ).toEqual([
+    "packages/assistant/src/chat-code/direct.browser.test.ts:2",
+    "packages/assistant/src/chat-code/direct.browser.test.ts:-",
     "packages/demo/src/cdp.browser-suite.ts:3",
     "packages/demo/src/direct.browser.test.ts:2",
     "packages/demo/src/direct.browser.test.ts:-",

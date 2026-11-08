@@ -57,8 +57,8 @@ Core settings include AI execution limits and network allowlists. For app
 settings, select the owner with `--app`. Gateway Ops, Notebooks, Grids and
 Chat use their owning setting APIs. Environment-backed app settings use the
 authenticated owner process. Settings that require a custom write path use
-the owner’s named command; for example, Assistant’s rsql allowlist uses
-`assistant studio-admin configure` with connection preflight. NATS server changes still discard saved broker
+the owner’s named command and its connection preflight. The former Assistant
+Studio settings and administration commands have been retired. NATS server changes still discard saved broker
 access; configure the matching access again afterward.
 
 Use `admin settings apply --from <file|-> --yes` for a validated Core bulk
