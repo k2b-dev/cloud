@@ -151,7 +151,17 @@ export type AiConversationTitleSource = AiConversationFieldSource;
 export type AiConversationRunStatus = "idle" | "queued" | "running" | "needs_attention" | "waiting_for_browser" | "failed";
 export type AiConversationStatusFilter = Exclude<AiConversationRunStatus, "idle" | "queued" | "waiting_for_browser"> | "unread";
 
+export type AiConversationPlace = { ref: CloudResourceRef; title: string };
+export type AiConversationCounts = {
+  unread: number;
+  needsAttention: number;
+  places: { total: number; unread: number; needsAttention: number };
+};
+export type AiConversationPlaceFilter = "none" | "any" | `${string}:${string}`;
+
 export type AiConversation = {
+  /** The owner’s place binding; absent or null for ordinary chats. */
+  place?: AiConversationPlace | null;
   activity?: { completed: number; total: number; step: string | null; tool: string | null };
   todoPlan?: { seq: number; todos: import("./todo-contracts").AiTodoPlan["todos"] };
   id: string;
@@ -755,6 +765,16 @@ export type AiConversationService = {
     allowedTools?: string[];
     launchedByAppId?: string;
   }): Promise<AiConversation>;
+  /** Read only: opening a place never creates a chat. */
+  findPlaceConversation(input: { ownerUserId: string; ref: CloudResourceRef }): Promise<AiConversation | null>;
+  /** Called only for the first sent message. Concurrent calls reuse the active chat. */
+  createPlaceConversation(input: {
+    requestId?: string;
+    ownerUserId: string;
+    place: AiConversationPlace;
+    draft: AiDraftContentPart[];
+  }): Promise<AiConversation>;
+  archivePlaceConversation(input: { ownerUserId: string; conversationId: string; ref: CloudResourceRef }): Promise<boolean>;
   forkConversation(input: {
     sourceConversationId: string;
     throughSeq: number;
@@ -764,6 +784,7 @@ export type AiConversationService = {
   listConversations(input: {
     ownerUserId: string;
     search?: string;
+    place?: AiConversationPlaceFilter;
     refs?: CloudResourceRef[];
     archived?: boolean;
     done?: boolean;
@@ -772,9 +793,10 @@ export type AiConversationService = {
     unassigned?: boolean;
     limit?: number;
   }): Promise<AiConversation[]>;
-  listSidebarConversations(input: { ownerUserId: string }): Promise<AiConversation[]>;
+  listSidebarConversations(input: { ownerUserId: string; place?: AiConversationPlaceFilter }): Promise<AiConversation[]>;
   listConversationsPage(input: {
     ownerUserId: string;
+    place?: AiConversationPlaceFilter;
     search?: string;
     archived?: boolean;
     done?: boolean;
@@ -784,6 +806,7 @@ export type AiConversationService = {
     page: number;
     perPage: number;
   }): Promise<AiConversationPage>;
+  getConversationCounts(input: { ownerUserId: string }): Promise<AiConversationCounts>;
   getConversation(input: { conversationId: string; ownerUserId?: string }): Promise<AiConversation | null>;
   getConversationByShortId(input: { shortId: string; ownerUserId?: string; archived?: boolean }): Promise<AiConversation | null>;
   saveDraft(input: {

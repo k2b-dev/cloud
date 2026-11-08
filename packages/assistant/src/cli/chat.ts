@@ -74,6 +74,7 @@ export const assistantChatCommands = [
   command("chats list", {
     summary: "List chats",
     flags: {
+      place: flag.string({ description: "Place chats: none (default), any, or namespaced type:id" }),
       search: flag.string({ aliases: ["q"], description: "Search title, description, and keywords" }),
       limit: flag.int({ default: 50, min: 1, max: 50 }),
       archived: flag.boolean(),
@@ -83,7 +84,7 @@ export const assistantChatCommands = [
     async run({ ctx, flags }) {
       const chats = await readApi<AiConversation[]>(
         ctx,
-        `/conversations${queryString({ q: flags.search, limit: flags.limit, archived: flags.archived || undefined, done: flags.lifecycle === "all" ? undefined : flags.lifecycle === "done", status: flags.status })}`,
+        `/conversations${queryString({ q: flags.search, place: flags.place, limit: flags.limit, archived: flags.archived || undefined, done: flags.lifecycle === "all" ? undefined : flags.lifecycle === "done", status: flags.status })}`,
       );
       printRows(
         ctx,
@@ -94,10 +95,11 @@ export const assistantChatCommands = [
           title: chat.title,
           status: chat.isDone ? "done" : chat.runStatus,
           unread: chat.unreadCompletion ? "yes" : "",
+          place: chat.place ? `${chat.place.ref.type}:${chat.place.ref.id}` : "",
           pinned: chat.pinnedAt ? "yes" : "",
           updated: chat.updatedAt,
         })),
-        [{ key: "id" }, { key: "title" }, { key: "status" }, { key: "unread" }, { key: "pinned" }, { key: "updated" }],
+        [{ key: "id" }, { key: "title" }, { key: "place" }, { key: "status" }, { key: "unread" }, { key: "pinned" }, { key: "updated" }],
       );
     },
   }),

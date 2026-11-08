@@ -10,6 +10,7 @@ import {
 
 export type AssistantSidebarSnapshot = {
   conversations: AiConversation[];
+  counts: import("@k2b/cloud/ai").AiConversationCounts;
   projects: AiProject[];
   doneCount: number;
   questions: AiOpenQuestions;
@@ -21,11 +22,12 @@ export const loadAssistantSidebarSnapshot = async (
 ): Promise<AssistantSidebarSnapshot> => {
   if (identity.accessSubject.type !== "user") throw new Error("A user-backed identity is required.");
   const userId = identity.accessSubject.userId;
-  const [questions, projects, activeConversations, donePage] = await Promise.all([
+  const [questions, projects, activeConversations, donePage, counts] = await Promise.all([
     listAiOpenQuestions({ ownerUserId: userId, ...context }),
     aiProjects.list(identity),
     aiConversations.listSidebarConversations({ ownerUserId: userId }),
     aiConversations.listConversationsPage({ ownerUserId: userId, done: true, page: 1, perPage: 15 }),
+    aiConversations.getConversationCounts({ ownerUserId: userId }),
   ]);
   const conversations = [...activeConversations, ...donePage.items];
   const projectShortIds = await aiProjects.resolveShortIds(
@@ -34,6 +36,7 @@ export const loadAssistantSidebarSnapshot = async (
   );
   return {
     questions,
+    counts,
     doneCount: donePage.total,
     projects: projects.map((project) => ({ ...project, id: project.shortId })),
     conversations: conversations.map((conversation) => ({

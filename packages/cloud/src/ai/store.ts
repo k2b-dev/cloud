@@ -161,6 +161,9 @@ type ConversationRow = {
   short_id: string;
   title: string;
   title_source: string | null;
+  place_type: string | null;
+  place_id: string | null;
+  place_title: string | null;
   description: string | null;
   description_source: string | null;
   keywords: string[] | null;
@@ -612,6 +615,7 @@ const visibleToTurn = (turnId?: string) => sql`(
 )`;
 
 const rowToConversation = (row: ConversationRow): AiConversation => ({
+  place: row.place_type && row.place_id ? { ref: { type: row.place_type, id: row.place_id }, title: row.place_title ?? "" } : null,
   ...(row.activity ? { activity: row.activity } : {}),
   id: row.id,
   shortId: row.short_id,
@@ -1384,6 +1388,14 @@ export class AiConversationCreationError extends Error {
   }
 }
 
+const conversationPlaceFilter = (place: import("./types").AiConversationPlaceFilter = "none") => {
+  if (place === "any") return sql`conversation.place_type IS NOT NULL`;
+  if (place === "none") return sql`conversation.place_type IS NULL`;
+  const separator = place.indexOf(":");
+  if (separator <= 0 || separator === place.length - 1) throw new Error("Invalid place reference.");
+  return sql`conversation.place_type = ${place.slice(0, separator)} AND conversation.place_id = ${place.slice(separator + 1)}`;
+};
+
 export const aiConversations: AiConversationService = {
   getDraftSubmission: async ({ conversationId, ownerUserId, revision }) => {
     const [row] = await sql<{ message_id: string; turn_id: string | null }[]>`
@@ -1475,6 +1487,69 @@ export const aiConversations: AiConversationService = {
     });
   },
 
+  findPlaceConversation: async ({ ownerUserId, ref }) => {
+    const [row] = await sql<ConversationRow[]>`
+      SELECT * FROM ai.conversations
+      WHERE created_by_user_id = ${ownerUserId}::uuid AND archived_at IS NULL
+        AND place_type = ${ref.type} AND place_id = ${ref.id}
+    `;
+    return row ? loadConversationSummary({ conversationId: row.id, ownerUserId }) : null;
+  },
+
+  createPlaceConversation: async ({ requestId, ownerUserId, place, draft }) => {
+    if (!draft.length) throw new Error("A place chat is created with its first message.");
+    return sql.begin(async (tx) => {
+      if (requestId) {
+        const hash = capabilityRequestHash({ ref: place.ref, draft });
+        const reserved = await tx<{ request_id: string }[]>`
+          INSERT INTO ai.conversation_creations(owner_user_id, request_id, input_hash)
+          VALUES (${ownerUserId}::uuid, ${requestId}::uuid, ${hash})
+          ON CONFLICT (owner_user_id, request_id) DO NOTHING RETURNING request_id`;
+        const [claim] = await tx<{ input_hash: string; conversation_id: string | null }[]>`
+          SELECT input_hash, conversation_id FROM ai.conversation_creations
+          WHERE owner_user_id = ${ownerUserId}::uuid AND request_id = ${requestId}::uuid FOR UPDATE`;
+        if (!claim || claim.input_hash !== hash) throw new AiConversationCreationError("conflict");
+        if (!reserved.length) {
+          const [existing] = await tx<ConversationRow[]>`SELECT * FROM ai.conversations
+            WHERE id = ${claim.conversation_id}::uuid AND created_by_user_id = ${ownerUserId}::uuid AND archived_at IS NULL`;
+          if (!existing) throw new AiConversationCreationError("unavailable");
+          return rowToConversation(existing);
+        }
+      }
+      const [row] = await withAiShortIdForDb(
+        tx,
+        "idx_ai_conversations_short_id",
+        (db, shortId) => db<ConversationRow[]>`
+        INSERT INTO ai.conversations (short_id, created_by_user_id, title, place_type, place_id, place_title,
+          draft_content, draft_revision, draft_updated_at)
+        VALUES (${shortId}, ${ownerUserId}::uuid, ${place.title}, ${place.ref.type}, ${place.ref.id}, ${place.title},
+          ${JSON.stringify(draft)}::text::jsonb, 1, now())
+        ON CONFLICT (created_by_user_id, place_type, place_id) WHERE archived_at IS NULL AND place_type IS NOT NULL
+          DO UPDATE SET place_title = EXCLUDED.place_title
+        RETURNING *
+      `,
+      );
+      if (!row) throw new Error("Could not create the place chat.");
+      // A second first-send request must never silently submit the other tab's draft.
+      if (capabilityRequestHash(parseJsonValue<AiConversationDraft["content"]>(row.draft_content)) !== capabilityRequestHash(draft)) {
+        throw new AiConversationCreationError("conflict");
+      }
+      await tx`INSERT INTO ai.conversation_resource_refs (conversation_id, resource_type, resource_id, title)
+        VALUES (${row.id}::uuid, ${place.ref.type}, ${place.ref.id}, ${place.title})
+        ON CONFLICT (conversation_id, resource_type, resource_id) DO UPDATE SET title = EXCLUDED.title`;
+      if (requestId)
+        await tx`UPDATE ai.conversation_creations SET conversation_id = ${row.id}::uuid
+        WHERE owner_user_id = ${ownerUserId}::uuid AND request_id = ${requestId}::uuid`;
+      return rowToConversation(row);
+    });
+  },
+
+  archivePlaceConversation: async ({ ownerUserId, conversationId, ref }) => {
+    const conversation = await aiConversations.getConversation({ conversationId, ownerUserId });
+    if (conversation?.place?.ref.type !== ref.type || conversation.place.ref.id !== ref.id) return false;
+    return aiConversations.archiveConversation({ conversationId, ownerUserId });
+  },
+
   forkConversation: async (input) => {
     return sql.begin(async (tx) => {
       const source = await tx<ConversationRow[]>`
@@ -1562,7 +1637,8 @@ export const aiConversations: AiConversationService = {
         ORDER BY created_at DESC, id DESC
         LIMIT 1
       ) latest ON TRUE
-      WHERE conversation.created_by_user_id = ${input.ownerUserId}
+      WHERE (${conversationPlaceFilter(input.place)})
+        AND conversation.created_by_user_id = ${input.ownerUserId}
         AND (${archived}::boolean = (conversation.archived_at IS NOT NULL))
         AND (${input.done ?? null}::boolean IS NULL OR ${input.done ?? null}::boolean = ${effectiveDone()})
         AND (${input.projectId ?? null}::uuid IS NULL OR conversation.project_id = ${input.projectId ?? null}::uuid)
@@ -1628,7 +1704,8 @@ export const aiConversations: AiConversationService = {
           max(task->>'content') FILTER (WHERE task->>'status' = 'in_progress') AS step
         FROM jsonb_array_elements(CASE WHEN jsonb_typeof(working.plan->'todos') = 'array' THEN working.plan->'todos' ELSE '[]'::jsonb END) task
       ) progress ON TRUE
-      WHERE conversation.created_by_user_id = ${input.ownerUserId}::uuid
+      WHERE (${conversationPlaceFilter(input.place)})
+        AND conversation.created_by_user_id = ${input.ownerUserId}::uuid
         AND conversation.archived_at IS NULL AND NOT ${effectiveDone()}
       ORDER BY conversation.pinned_at DESC NULLS LAST, conversation.last_used_at DESC, conversation.id
     `;
@@ -1663,7 +1740,8 @@ export const aiConversations: AiConversationService = {
         ORDER BY created_at DESC, id DESC
         LIMIT 1
       ) latest ON TRUE
-      WHERE conversation.created_by_user_id = ${input.ownerUserId}
+      WHERE (${conversationPlaceFilter(input.place)})
+        AND conversation.created_by_user_id = ${input.ownerUserId}
         AND (${archived}::boolean = (conversation.archived_at IS NOT NULL))
         AND (${input.done ?? null}::boolean IS NULL OR ${input.done ?? null}::boolean = ${effectiveDone()})
         AND (${input.projectId ?? null}::uuid IS NULL OR conversation.project_id = ${input.projectId ?? null}::uuid)
@@ -1702,7 +1780,8 @@ export const aiConversations: AiConversationService = {
         ORDER BY created_at DESC, id DESC
         LIMIT 1
       ) latest ON TRUE
-      WHERE conversation.created_by_user_id = ${input.ownerUserId}
+      WHERE (${conversationPlaceFilter(input.place)})
+        AND conversation.created_by_user_id = ${input.ownerUserId}
         AND (${archived}::boolean = (conversation.archived_at IS NOT NULL))
         AND (${input.done ?? null}::boolean IS NULL OR ${input.done ?? null}::boolean = ${effectiveDone()})
         AND (${input.projectId ?? null}::uuid IS NULL OR conversation.project_id = ${input.projectId ?? null}::uuid)
@@ -1734,6 +1813,31 @@ export const aiConversations: AiConversationService = {
       page,
       perPage,
       hasNext: page * perPage < total,
+    };
+  },
+
+  getConversationCounts: async ({ ownerUserId }) => {
+    const [row] = await sql<{ unread: number; attention: number; places: number; place_unread: number; place_attention: number }[]>`
+      WITH owned AS (
+        SELECT conversation.place_type IS NOT NULL AS place,
+          ((latest.status = 'completed' AND latest.completed_at > COALESCE(conversation.last_viewed_at, '-infinity'))
+            OR conversation.background_received_at > COALESCE(conversation.last_viewed_at, '-infinity')) IS TRUE AS unread,
+          (latest.status = 'waiting_for_action' AND NOT ${browserWorkPending()}) IS TRUE AS attention
+        FROM ai.conversations conversation
+        LEFT JOIN LATERAL (SELECT status, completed_at, live_blocks FROM ai.turns
+          WHERE conversation_id = conversation.id AND NOT COALESCE(run_config ? 'background', false)
+          ORDER BY created_at DESC, id DESC LIMIT 1) latest ON TRUE
+        WHERE conversation.created_by_user_id = ${ownerUserId}::uuid AND conversation.archived_at IS NULL
+      ) SELECT count(*) FILTER (WHERE unread)::int AS unread,
+        count(*) FILTER (WHERE attention)::int AS attention,
+        count(*) FILTER (WHERE place)::int AS places,
+        count(*) FILTER (WHERE place AND unread)::int AS place_unread,
+        count(*) FILTER (WHERE place AND attention)::int AS place_attention FROM owned
+    `;
+    return {
+      unread: row?.unread ?? 0,
+      needsAttention: row?.attention ?? 0,
+      places: { total: row?.places ?? 0, unread: row?.place_unread ?? 0, needsAttention: row?.place_attention ?? 0 },
     };
   },
 
@@ -2355,6 +2459,10 @@ export const aiConversations: AiConversationService = {
         WHERE id = ${input.conversationId}
           AND (${input.ownerUserId ?? null}::uuid IS NULL OR created_by_user_id = ${input.ownerUserId ?? null})
           AND archived_at IS NOT NULL
+          AND NOT EXISTS (SELECT 1 FROM ai.conversations current_place
+            WHERE current_place.created_by_user_id = ai.conversations.created_by_user_id
+              AND current_place.place_type = ai.conversations.place_type AND current_place.place_id = ai.conversations.place_id
+              AND current_place.archived_at IS NULL)
         RETURNING id
       ), considered_turns AS (
         UPDATE ai.turns
@@ -2371,7 +2479,18 @@ export const aiConversations: AiConversationService = {
           AND reviewed_at IS NULL
       )
       SELECT id FROM restored
-    `;
+    `.catch((error: unknown) => {
+      if (
+        typeof error === "object" &&
+        error !== null &&
+        "code" in error &&
+        error.code === "23505" &&
+        "constraint" in error &&
+        error.constraint === "idx_ai_conversations_active_place"
+      )
+        return [];
+      throw error;
+    });
     return rows[0] ? loadConversationSummary(input) : null;
   },
 
