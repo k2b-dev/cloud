@@ -150,6 +150,11 @@ route builds the page. Parts may come from data, such as
 `{statuses.map(status => <Option value={status} label={status} />)}`. Only
 pages built from blocks reach `c.page`; a hand-written object does not.
 
+Code pages share these blocks, their limits, and their renderer with
+[capability views](/en/docs/platform/capability-views), the results, approval
+details, and search previews of applications. Choices, drafts, cards, and images
+belong to those views; forms and buttons belong to Code pages.
+
 | Block | Props | Children |
 | --- | --- | --- |
 | `Page` | `title`, optional `eyebrow`, `subtitle`, `asOf`, `icon`, `color`, `follow`; the root of every page | blocks |

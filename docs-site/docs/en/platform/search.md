@@ -341,6 +341,14 @@ Desktop search shows a preview beside the
 input and result list, with a hint while no result is chosen. The centered dialog keeps its width, top position, and
 height from the first search character until the input is cleared, so arriving
 results never resize it.
+When the hit's Type has a `reader` that returns a
+[view](/en/docs/platform/capability-views#search-previews), the preview shows
+its blocks, such as a contact's fields or a file's picture and facts. The
+browser asks for it 150 ms after the person rests on a hit, cancels the request
+before, keeps answers while the dialog is open, and holds the room with a
+placeholder while it loads. Without a reader view, on an error, or without
+access, the preview shows the search facts. Every preview ends with
+**Open in App**; the search window has no maximize control.
 On small screens, **Details** opens the preview and
 **Back to results** returns to the list. Escape first leaves filter discovery
 or mobile details, then closes the dialog. Scroll fades indicate more content.

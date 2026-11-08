@@ -714,11 +714,38 @@ The stream exposes pending actions. The shared controller provides:
 - `submitFrontendToolResult({ turnId, callId }, result)`;
 - `checkAction({ turnId, callId })`, returning the latest outcome check.
 
-Use the shared question card for the sentence, reason, preview, two answers,
-and outcome. Where remembering for this chat is allowed, show the quiet
-**Yes, and don't ask again in this chat** link (`remember: "chat"`). A chat
-choice ends when the chat is deleted. The API still accepts `remember: "always"`
-and applies earlier choices, but the browser no longer offers it. A pending
+### One approval card
+
+Approvals look the same in every place, so a person always recognises one.
+`ApprovalCard` from `@k2b/cloud/approvals/ui` draws every approval: in the
+Assistant chat, the side panel, the **Approvals** list, Code pages, other apps,
+and on phones. Only its width follows the place.
+
+- Cloud draws the head "Approval · App" with the app's icon, the state at the
+  end of the head, the sentence with its chips, the reason, the expiry, and the
+  answers. The app supplies only its sentence templates and the details as
+  [`review.view`](/en/docs/platform/capability-views#approvals), shown under
+  "Details from App" on the surface colour.
+- The card has a tinted ground in the AI colour (`--k2b-ai-surface`) in every
+  place, with no rules and no shadow, and sets its own AI primary scope. The
+  approve answer is the only filled button.
+- The states are one component: waiting, running, done, declined, expired,
+  failed, and unclear. After an answer the card keeps its ground and head, shows
+  the state as a word with its icon, and collapses to one outcome line with at
+  most one button.
+- Where remembering for this chat is allowed, the answer row shows the checkbox
+  **Don't ask again in this chat** (`remember: "chat"`); otherwise it says
+  **Asks every time**. A chat choice ends when the chat is deleted.
+- A place passes data and answers, never a class, a style, or a variant. The
+  `approval-card-calls` rule fails on look props, on `Chat.Decision` outside
+  `ApprovalCard`, and on other stylesheets that style the card.
+
+The **Approvals** list no longer has a band layout. A list scoped to one
+resource with `link` shows nothing until a request for it waits, then the same
+card.
+
+The API still accepts `remember: "always"` and applies earlier choices, but the
+browser no longer offers it. A pending
 approval retains `allowChat` and `allowAlways`; a website request also carries
 `website`, its exact origin.
 

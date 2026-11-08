@@ -558,11 +558,12 @@ tool, show a name in the reader's language, such as "App check" or
 "App-Prüfung"; a test fails when a built-in tool has no English or German name.
 Other tools without a presentation show their tool name in words.
 
-A successful result with valid `presentation.kind: "table"` renders inline,
-outside tool summaries. Rendering depends on the result itself, including in
-restored history without optional application branding. Live updates replace
-the previous block content without duplicating its table. Results without table
-presentation remain compact; errors and approval requests retain their own UI.
+A successful result with a valid [`view`](/en/docs/platform/capability-views)
+renders inline, outside tool summaries, under Cloud's origin line "App · Title"
+with **Open large** and the data toggle. The server binds the view when it reads
+the conversation, so restored history and live updates show the same blocks
+without optional application branding and without duplicating them. Results
+without a view remain compact; errors and approval requests retain their own UI.
 
 Hosts can supply `AiChatActions.resolveFileLink(href)` to resolve a Markdown link
 against the current conversation file manifest. Return `{path, href}` with a

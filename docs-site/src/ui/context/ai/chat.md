@@ -107,15 +107,27 @@ runtime-locale text, which keeps the server HTML and the browser render identica
 Use `Chat.Decision` for one question in a conversation. The host owns the answer,
 execution, expiry, and any policy change. Use verb-and-target answers such as
 "Send to Lea" and "Keep draft"; never offer "Approve all". Answers are at
-least 44 px high; on phones they share the row, and a long label wraps
-inside its button.
+least 44 px high and a long label wraps inside its button. In Cloud, approvals
+use `ApprovalCard` from `@k2b/cloud/approvals/ui`, which draws this component;
+see [Cloud approvals](/en/ui/cloud/approvals).
 
-The sentence, preview title, header rows, and answers share one left edge, with
-no separate column or card surface. Reason, preview line, outcome, and activity
-text start 24 px from that edge, after their icon. The sentence uses
-`--k2b-chat-decision-size`: 18 px, or 17 px when the chat timeline is narrower
-than 48 rem, at weight 400. Outside a timeline, the window sets this breakpoint.
-On narrow surfaces the answers grow to share the row.
+A decision has one look in every place: a tinted ground in the AI colour
+(`--k2b-ai-surface`), 14 px corners, no rules, no shadow, and its own AI primary
+scope (`data-k2b-primary="ai"`). The head names the `kind` ("Approval") and the
+`source` with its icon tile; once answered, it ends with the `status` word and
+icon. The sentence (16 px, weight 400) and the reason follow. `details` lie on
+the surface colour under their label, such as "Details from Mail". The answer
+row ends the card: quiet `meta` facts such as the expiry and the `remember`
+checkbox on the left, then `back`, decline, and the one filled `confirm` answer
+on the right. The decision follows its own width: below 32.5 rem the answers
+take the full row first and the facts sit under them, as in a side panel or on
+a phone.
+
+`mode="edit"` is the same card while the person still changes its details: a
+raised island instead of the tint, a ghost decline ("Discard"), and a secondary
+`confirm` that moves on ("Send …"). Both modes have the same size; switching
+changes only ground, edge, and shadow in 200 ms, without a transition under
+`prefers-reduced-motion`.
 
 Use [ReferenceChip](/en/ui/content/label-chip#referencechip) for objects, places,
 people, and times inside the sentence. Chips show at most 40 user-perceived
@@ -126,7 +138,8 @@ has no link.
 
 Set `state` synchronously in each answer's `onSelect`, before awaiting work, so
 the question collapses immediately. `open` shows the question;
-`sending`, `decided`, and `expired` show the `outcome` slot. An answer given here focuses `Chat.Outcome` and
+`sending`, `decided`, and `expired` keep the head and show the `outcome` slot
+under it, with the outcome's own icon hidden because the head carries the state. An answer given here focuses `Chat.Outcome` and
 announces its current sentence. An outcome action that reopens the question
 returns focus to the sentence and briefly highlights it. A host that cannot
 take an answer returns the question from `sending` to `open`; focus then goes
@@ -162,9 +175,9 @@ Its reason replaces the original reason in the same described element. Use
 `waiting` when no answer can arrive right now, such as without a connection:
 it disables every answer, decline included, and its reason replaces both
 others in the same element until the host clears it. The
-optional quiet `remember` answer is host policy: the component neither stores
-consent nor widens permissions. On touch screens it is a full 44 px row, so a
-low tap on either answer never reaches it.
+optional `remember` checkbox is host policy: when it is checked, `confirm` calls
+`remember.onSelect` instead of its own. The component neither stores consent nor
+widens permissions, and a draft in `edit` mode never offers it.
 
 Compose the actual content with `Chat.Preview`: header fields stand immediately
 before their values; `emphasis` identifies a Bcc label; `note` can say when a mail
@@ -201,9 +214,13 @@ export function MailQuestion() {
   const [current, setCurrent] = createSignal("running");
   return <Chat.Decision
     state={state()}
+    kind={{ label: "Approval", icon: "ti ti-shield-check" }}
+    source={{ name: "Mail", icon: "ti ti-mail" }}
+    status={current() === "declined" ? { label: "Declined", icon: "ti ti-circle-x", tone: "off" } : undefined}
     sentence={<>Send the draft to <ReferenceChip kind="person" name="Lea Berg" />?</>}
     reason={{ text: "You asked to check mail before sending." }}
-    preview={<Chat.Preview><Chat.Preview.Title>Workshop delivery</Chat.Preview.Title></Chat.Preview>}
+    details={{ label: "Details from Mail", content: <Chat.Preview><Chat.Preview.Title>Workshop delivery</Chat.Preview.Title></Chat.Preview> }}
+    meta={[{ text: "Expires in 9 min", icon: "ti ti-clock" }]}
     confirm={{ label: "Send to Lea", onSelect: () => {
       setCurrent("running");
       setState("sending");
@@ -276,10 +293,14 @@ type ChatDecisionReason = {
   text: JSX.Element; icon?: string; tone?: "neutral" | "danger" | "warning";
 };
 type ChatDecisionProps = {
-  state: ChatDecisionState; sentence: JSX.Element; reason: ChatDecisionReason;
-  preview?: JSX.Element;
-  confirm: ChatDecisionAnswer & { variant?: "ai" | "primary" | "danger" };
-  decline: ChatDecisionAnswer; remember?: ChatDecisionAnswer;
+  state: ChatDecisionState; mode?: "approve" | "edit";
+  kind: { label: string; icon: string }; source: { name: string; icon: string; accent?: string };
+  status?: { label: string; icon: string; tone: ChatOutcomeTone };
+  sentence: JSX.Element; reason: ChatDecisionReason;
+  details?: { label: string; content: JSX.Element };
+  meta?: readonly { text: string; icon: string }[];
+  confirm: ChatDecisionAnswer; decline: ChatDecisionAnswer; back?: ChatDecisionAnswer;
+  remember?: ChatDecisionAnswer;
   unavailable?: ChatDecisionReason; waiting?: ChatDecisionReason; outcome?: JSX.Element;
   onAnswerError?: (error: unknown) => void; anchorId?: string | number; class?: string;
 };
@@ -313,7 +334,7 @@ type ChatMarkProps = { change: "added" | "removed"; children: JSX.Element };
 
 | Member | Props / behavior |
 | --- | --- |
-| `Chat.Decision` | `ChatDecisionProps`; confirm defaults to `ai`, decline to `subtle`, remember to `text`. Reason defaults to `neutral` and an info icon. |
+| `Chat.Decision` | `ChatDecisionProps`; confirm is the filled `ai` answer (`secondary` in `edit` mode), decline and back are `secondary` on the tint (decline `ghost` in `edit` mode), remember is a checkbox. Reason defaults to `neutral` and an info icon. |
 | `Chat.Outcome` | `ChatOutcomeProps`; tone chooses the default icon, `icon` overrides it. The root accepts programmatic focus with `tabindex=-1`. |
 | `Chat.Preview` | `ChatPreviewProps`; groups preview parts without a surface. |
 | `Chat.Preview.Header` | `ChatPreviewHeaderProps`; semantic description list with optional note. |

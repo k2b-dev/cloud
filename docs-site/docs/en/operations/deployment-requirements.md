@@ -1417,10 +1417,18 @@ runs without asking and shows its full URL with **Revoke**.
 
 ### Store complete Action review content
 
-Update Core and capability callers before providers return complete review
-content. Cloud now accepts up to 16 MiB of serialized JSON content per review,
-in addition to the 32 KiB compact card. Ordinary capability results remain
-limited to 256 KiB. Old readers cannot present this contract safely.
+An Action review describes what it changes as a
+[view](/en/docs/platform/capability-views#approvals) of up to 16 MiB of
+serialized JSON, in addition to the 32 KiB compact review. Views up to 32 KiB
+travel inline; larger ones load through the same content reference as before.
+Ordinary capability results, views included, remain limited to 256 KiB.
+
+Upgrade Core and every application that returns reviews or table presentations
+together: Cloud rejects the removed `preview`, `content`, and `presentation`
+fields from an application, and converts stored reviews and results that still
+carry them into blocks when it reads them. Open approvals stay valid and their
+digests do not change. See
+[capability views](/en/docs/reference/deprecations-and-migrations#capability-views-replace-table-presentations-and-review-previews).
 
 The existing `approvals.requests.details`, `ai.pending_actions.review`, and
 chat or task message review snapshots hold the content. Assistant script calls

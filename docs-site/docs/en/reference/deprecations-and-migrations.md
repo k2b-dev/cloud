@@ -13,6 +13,39 @@ updated: 2026-11-05
 Studio entries below describe older releases. Studio apps, their APIs and app data
 are now retired without transfer; follow [Studio retirement](/en/docs/operations/studio-retirement).
 
+## Capability views replace table presentations and review previews
+
+A capability now shows people a [view](/en/docs/platform/capability-views): the
+same declarative blocks as Code pages. This is a major cut; there is no
+compatibility path for writers.
+
+**App authors:**
+
+- Replace `CapabilityResult.presentation` (`kind: "table"`) with
+  `view: { version: 1, blocks: [{ kind: "Table", rows: { from: rowsPath }, columns }] }`.
+  A column names a `path` relative to each row; `rowLinksPath` becomes a
+  `rowHref` path or a `Link` block. `CapabilityTablePresentationSchema` is gone.
+- Replace the review fields `preview` and `content` with `review.view`. Use the
+  table in [Approvals](/en/docs/platform/capability-views#approvals): a message
+  or page becomes a `Draft`, an event, task, file, or field change becomes a
+  `Detail` (with `before` for old values), a rule becomes `Text` and `Detail`.
+  Draft field names must be top-level keys of the Action's input.
+- Remove `receipt.preview`; a receipt keeps its sentence and slots.
+- Serve images through your app's own route; a view never loads a picture from
+  another server.
+- `Approvals` no longer accepts `layout="band"`; a list with `link` shows the
+  same card as every other place. `ActionQuestion` is removed; Cloud draws every
+  approval with `ApprovalCard`.
+- `Chat.Decision` in `@k2b/ui` requires `kind` and `source`, takes `details`
+  instead of `preview`, and no longer accepts `confirm.variant`.
+
+**Operators:** open approvals and stored conversations stay valid. Cloud converts
+stored reviews with `preview` or `content` and stored table presentations into
+blocks when it reads them; their digests do not change, and converted drafts are
+not editable. Upgrade every application that returns reviews or table
+presentations together with Core: an older app that still sends `preview`,
+`content`, or `presentation` gets an invalid-response error after the upgrade.
+
 ## Mail rules and automatic replies are retired
 
 Guided incoming automations, YAML workflows, their timers, backfills and try

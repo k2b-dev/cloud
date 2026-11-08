@@ -1781,54 +1781,36 @@ fields has the same hash as before.
 
 ## Return structured results
 
-### Optional table previews
+### Show the result to people
 
-`CapabilityResult<T>` accepts optional `presentation` metadata:
-
-```ts
-type TablePresentation = {
-  kind: "table";
-  rowsPath: string[];
-  columns: Array<{ path: string[]; label: string; format?: "text" | "number" | "date" | "datetime" }>;
-  rowLinksPath?: string[];
-};
-```
-
-Metadata describes existing data, not a second result. `rowsPath` selects an array
-relative to `data`; `[]` selects `data` itself. Column paths and `rowLinksPath` are
-relative to each row. Segments are literal own JSON property names, not dotted
-expressions, templates or executable code. Missing cells display as absent.
-Row links use the existing semantic-link contract.
-
-Assistant opens capability navigation links in a new browser tab so users keep
-their conversation. This is client behavior, not a provider `target` setting.
+`CapabilityResult<T>` accepts an optional `view = { version: 1, blocks }`: the
+same declarative blocks as Code pages, with values that point into `data` by
+path. The person sees the view; the model keeps reading `data`. Read
+[Capability views](/en/docs/platform/capability-views) for the blocks, the
+limits, links and images, and choices.
 
 ```ts
 return ok({
-  data: [{ name: "Cable", stock: "42.0000" }],
-  presentation: {
-    kind: "table", rowsPath: [],
-    columns: [{ path: ["name"], label: "Item" }, { path: ["stock"], label: "Stock", format: "number" }],
+  data: { rows: [{ name: "Cable", stock: "42.0000" }] },
+  view: {
+    version: 1,
+    blocks: [
+      {
+        kind: "Table",
+        title: "Stock",
+        rows: { from: ["rows"] },
+        columns: [{ path: ["name"], label: "Item" }, { path: ["stock"], label: "Stock", type: "number" }],
+      },
+    ],
   },
 });
 ```
 
-For Grids-shaped data, use `rowsPath: ["rows"]`, column paths such as
-`["values", column.key]`, and `rowLinksPath: ["links"]`. Derive columns from the
-authorized result; never reread hidden fields to improve a preview. Exact decimal
-strings stay intact; format hints do not authorize lossy numeric conversion.
-
-Metadata is bounded to 100 columns, 16 path segments, and 500 characters per segment
-or label. It counts toward the existing result byte budget. Providers validate the
-supported shape. Generic clients can ignore presentation entirely; the typed
-client ignores unknown or invalid presentation while still validating canonical
-data. An unknown future kind is not a data failure.
-
-Assistant renders up to 100 returned rows with scrolling and a notice when the
-preview is capped. The full result remains in tool details. Existing `page`
-metadata indicates additional server pages; do not duplicate pagination or invent
-totals in presentation. No endpoint, widget, HTML, callback or mutation authority
-is added.
+Derive the view from the authorized result; never reread hidden fields to
+improve it. Exact decimal strings stay intact; a column type does not authorize
+lossy numeric conversion. Existing `page` metadata indicates more server pages;
+do not invent totals in the view. Assistant opens capability navigation links in
+a new browser tab so users keep their conversation.
 
 ### Result envelope
 
