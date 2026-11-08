@@ -53,6 +53,7 @@ function mount() {
       <ImageEditor
         source={source()}
         title="photo.jpg"
+        redactionNotice={parameters.has("redactionNotice") ? "Older versions keep the original." : undefined}
         items={items}
         currentItem={current()}
         onSelectItem={(id) => {

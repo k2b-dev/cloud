@@ -483,7 +483,8 @@
 .k2b-ui .k2b-image-editor__inline-action.k2b-button { height: 24px; padding: 0 6px; }
 .k2b-ui .k2b-image-editor__hint { margin: 0; color: var(--k2b-text-muted); font-size: 0.75rem; line-height: 1.5; }
 .k2b-ui .k2b-image-editor__reset { padding-top: 8px; }
-.k2b-ui .k2b-image-editor__phone-only { display: none; }
+/* Outranks every element's own display rule, so a phone-only line never shows on a desktop. */
+.k2b-ui .k2b-image-editor:not([data-phone]) .k2b-image-editor__phone-only { display: none; }
 
 /* Choices follow the shared edge contract: 2 px edge at rest, selected light edge and fill. */
 .k2b-ui .k2b-image-editor__choice {

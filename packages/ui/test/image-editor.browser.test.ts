@@ -380,6 +380,8 @@ describe("public ImageEditor interactions", () => {
   test("arrow keys move the look selection and focus together", async () => {
     const { page, errors } = await open();
     try {
+      // Without other images the name is a plain label, not a dimmed control.
+      expect(await page.locator(".k2b-image-editor__name").evaluate((element) => element.tagName)).toBe("SPAN");
       await page.getByRole("radio", { name: "Natural", exact: true }).focus();
       await page.keyboard.press("ArrowRight");
       await settled(page);
@@ -554,6 +556,21 @@ describe("public ImageEditor interactions", () => {
     }
   });
 
+  test("the desktop shows the redaction notice once, above the save actions", async () => {
+    const { page, errors } = await open("redactionNotice=1");
+    try {
+      await selectTool(page, "Mark up");
+      await markTool(page, /^Redact/).click();
+      await settled(page);
+      await drag(page, [0.6, 0.2], [0.8, 0.3]);
+      // The phone copy inside the layer list stays hidden on a desktop.
+      expect(await page.getByText("Older versions keep the original.", { exact: true }).locator("visible=true").count()).toBe(1);
+      expect(errors).toEqual([]);
+    } finally {
+      await page.close();
+    }
+  });
+
   test("layers select, reorder inside their group, hide from export and keep redactions on top", async () => {
     const { page, errors } = await open();
     try {
@@ -614,6 +631,13 @@ describe("public ImageEditor interactions", () => {
       await page.waitForFunction("window.editorFixture.selected.length === 1");
       expect(await fixture(page, "selected")).toEqual(["d"]);
       expect(await page.locator(".k2b-image-editor__name").innerText()).toContain("4/4");
+      // With a strip the name is a button and still shows the photo's thumbnail.
+      expect(
+        await page.locator(".k2b-image-editor__name").evaluate((element) => ({
+          tag: element.tagName,
+          thumb: element.querySelector("canvas")?.width,
+        })),
+      ).toEqual({ tag: "BUTTON", thumb: 40 });
       expect(errors).toEqual([]);
     } finally {
       await page.close();

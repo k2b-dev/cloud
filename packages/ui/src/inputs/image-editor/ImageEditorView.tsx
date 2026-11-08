@@ -1,5 +1,6 @@
 import { onBeforeLeave, swapPage } from "@k2b/ssr/nav";
 import { createEffect, createMemo, createSignal, createUniqueId, For, type JSX, on, onCleanup, onMount, Show, untrack } from "solid-js";
+import { Dynamic } from "solid-js/web";
 import { Button, IconButton } from "../../actions/Button";
 import { Dropdown } from "../../actions/Dropdown";
 import { Kbd } from "../../content/Kbd";
@@ -268,7 +269,8 @@ function ImageEditorSession(props: ImageEditorProps): JSX.Element {
   let canvas: HTMLCanvasElement | undefined;
   let beforeCanvas: HTMLCanvasElement | undefined;
   let scratch: HTMLCanvasElement | undefined;
-  let chipThumb: HTMLCanvasElement | undefined;
+  // A signal, because the name chip switches between label and button when the image strip appears.
+  const [chipThumb, setChipThumb] = createSignal<HTMLCanvasElement>();
   let frame = 0;
   let animation = 0;
   let autoAnimation = 0;
@@ -615,10 +617,11 @@ function ImageEditorSession(props: ImageEditorProps): JSX.Element {
   });
   createEffect(() => {
     const image = preview();
-    if (!image || !chipThumb) return;
+    const thumb = chipThumb();
+    if (!image || !thumb) return;
     const side = Math.min(image.image.width, image.image.height);
-    chipThumb.width = chipThumb.height = 40;
-    chipThumb
+    thumb.width = thumb.height = 40;
+    thumb
       .getContext("2d")
       ?.drawImage(image.image, (image.image.width - side) / 2, (image.image.height - side) / 2, side, side, 0, 0, 40, 40);
   });
@@ -692,7 +695,7 @@ function ImageEditorSession(props: ImageEditorProps): JSX.Element {
     cancelAnimationFrame(frame);
     cancelAnimationFrame(animation);
     cancelAnimationFrame(autoAnimation);
-    for (const target of [canvas, beforeCanvas, scratch, chipThumb]) if (target) target.width = target.height = 0;
+    for (const target of [canvas, beforeCanvas, scratch, chipThumb()]) if (target) target.width = target.height = 0;
     pointers.clear();
   });
 
@@ -1643,18 +1646,28 @@ function ImageEditorSession(props: ImageEditorProps): JSX.Element {
             <i class="ti ti-x" aria-hidden="true" />
           </IconButton>
         </Show>
-        <button
-          type="button"
+        {/* With one image the name is a plain label; with a strip it opens or focuses the strip. */}
+        <Dynamic
+          component={itemCount() > 1 ? "button" : "span"}
+          type={itemCount() > 1 ? "button" : undefined}
           class="k2b-image-editor__chip k2b-image-editor__glass k2b-image-editor__name"
-          disabled={itemCount() < 2}
           aria-expanded={phone() && itemCount() > 1 ? stripOpen() : undefined}
           title={itemCount() > 1 ? (phone() ? t().showImages : t().toStrip) : undefined}
           onClick={() => {
+            if (itemCount() < 2) return;
             if (phone()) setStripOpen((open) => !open);
             else stripList?.querySelector<HTMLElement>('[aria-current="true"]')?.focus();
           }}
         >
-          <canvas ref={chipThumb} class="k2b-image-editor__chip-thumb" aria-hidden="true" />
+          <canvas
+            ref={(element) => {
+              const previous = chipThumb();
+              if (previous && previous !== element) previous.width = previous.height = 0;
+              setChipThumb(element);
+            }}
+            class="k2b-image-editor__chip-thumb"
+            aria-hidden="true"
+          />
           <span class="k2b-image-editor__chip-name">{title()}</span>
           <span class="k2b-image-editor__dirty" data-on={dirty() ? "" : undefined} title={t().imageUnsaved} />
           <Show when={position()}>
@@ -1663,7 +1676,7 @@ function ImageEditorSession(props: ImageEditorProps): JSX.Element {
           <Show when={phone() && itemCount() > 1}>
             <i class="ti ti-chevron-down" aria-hidden="true" />
           </Show>
-        </button>
+        </Dynamic>
         <span class="k2b-image-editor__chip k2b-image-editor__glass k2b-image-editor__chip--size" data-optional="">
           {preview() ? px(rotated().width * state().crop.width, rotated().height * state().crop.height) : "… × … px"}
         </span>
