@@ -70,15 +70,17 @@ const height = z.enum(["sm", "md", "lg"]).optional();
 const panelTitle = z.string().min(1).max(160).regex(/\S/);
 const shortLabel = z.string().min(1).max(80).regex(/\S/);
 /** A table's number format; units belong in the column label, as the shared tables show them. */
-const tableFormat = z.strictObject({
-  style: z.enum(["number", "percent", "currency"]).optional(),
-  currency: z
-    .string()
-    .regex(/^[A-Z]{3}$/)
-    .optional(),
-  decimals: z.number().int().min(0).max(10).optional(),
-  compact: z.boolean().optional(),
-});
+const tableFormat = z
+  .strictObject({
+    style: z.enum(["number", "percent", "currency"]).optional(),
+    currency: z
+      .string()
+      .regex(/^[A-Z]{3}$/)
+      .optional(),
+    decimals: z.number().int().min(0).max(10).optional(),
+    compact: z.boolean().optional(),
+  })
+  .refine((format) => (format.style === "currency") === (format.currency !== undefined), "A currency format names its currency.");
 const numberFormat = chartNumberFormatSchema();
 /** One key figure: its value, how it changed and what it compares with, as the shared key-figure tiles show it. */
 const stat = z.strictObject({

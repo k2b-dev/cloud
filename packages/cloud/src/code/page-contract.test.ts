@@ -341,6 +341,7 @@ test("pages carry their place and read time, panels their height, and data block
     { ...full, eyebrow: "x".repeat(81) },
     page([{ ...table, height: "md" }]),
     page([{ ...table, columns: [{ key: "a", label: "A", format: { unit: "kg" } }] }]),
+    page([{ ...table, columns: [{ key: "a", label: "A", format: { style: "currency" } }] }]),
     page([{ ...detail, items: [] }]),
     page([{ ...detail, title: "   " }]),
     page([{ ...table, columns: [{ key: "a", label: "A", type: "html" }] }]),
