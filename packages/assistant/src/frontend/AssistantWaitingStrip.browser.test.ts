@@ -585,6 +585,7 @@ describe("Waiting for you", () => {
         // View leads back to the question.
         await viewButton(page).click();
         await until(page, async () => (await focusedSentence(page)) === "tool-mail-1", "sentence focused");
+        await settled(page);
         // On a narrow column the approval is taller than the view below its sentence; once its answers are in view, the
         // row hides again.
         await scrollTimeline(page, "end");

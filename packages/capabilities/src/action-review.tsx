@@ -1,10 +1,10 @@
 import { approvalCard } from "@k2b/cloud/ai/question-text";
+import { ApprovalDetails } from "@k2b/cloud/approvals/ui";
 import type { CapabilityClientError, CapabilityReviewClientResult } from "@k2b/cloud/capabilities";
 import { capabilityReviewView } from "@k2b/cloud/capabilities";
 import type { CapabilityActionManifest, CapabilityActionReviewData, CapabilitySemanticLink } from "@k2b/cloud/contracts";
 import { useLocale } from "@k2b/ui";
 import { For, type JSX, Show } from "solid-js";
-import { ActionDetails } from "../../cloud/src/ai/chat/action-question";
 import { capabilityUiMessages } from "./frontend/messages";
 import { capabilityRuntimeMessages } from "./messages";
 
@@ -122,7 +122,7 @@ export function ActionReviewContent(props: { review: CapabilityActionReviewData 
           </>
         }
       >
-        <ActionDetails card={card()} />
+        <ApprovalDetails card={card()} />
       </Show>
     </div>
   );
