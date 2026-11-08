@@ -1,3 +1,4 @@
+import { FeatCodeMark } from "@k2b/cloud/code/ui";
 import { type DateContext, dates } from "@k2b/stdlib";
 import { query } from "@k2b/stdlib/solid";
 import { Button, DetailPanel, Skeleton } from "@k2b/ui";
@@ -85,7 +86,10 @@ export default function ItemHistorySection(props: Props) {
           <For each={visible()}>
             {(row) => (
               <li class="flex items-start gap-2 text-sm">
-                <i class={`${row.icon} mt-0.5 text-dimmed`} aria-hidden="true" />
+                {/* Rows that durable work wrote (today: Code) carry the feat/code sign instead of a generic icon. */}
+                <Show when={row.origin} fallback={<i class={`${row.icon} mt-0.5 text-dimmed`} aria-hidden="true" />}>
+                  <FeatCodeMark variant="glyph" decorative class="mt-0.5 text-dimmed" />
+                </Show>
                 <span class="min-w-0">
                   {withOriginLink(row.sentence, row.origin)}
                   <span class="block text-xs text-dimmed">

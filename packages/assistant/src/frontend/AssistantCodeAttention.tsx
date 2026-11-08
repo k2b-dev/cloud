@@ -1,3 +1,4 @@
+import { FeatCodeMark } from "@k2b/cloud/code/ui";
 import { Button, ButtonLink, useLocale } from "@k2b/ui";
 import { createSignal, For, onMount, Show } from "solid-js";
 import { type CodeAttentionItem, type CodeAttentionReason, type CodePlace, loadCodeAttention } from "../code-summary";
@@ -97,8 +98,8 @@ export default function AssistantCodeAttention(props: { initial?: CodeAttentionV
                 <For each={current().items}>
                   {(item) => (
                     <li class="assistant-code-attention__row">
-                      <span class="assistant-code-attention__tile" aria-hidden="true">
-                        <i class="ti ti-code" />
+                      <span class="assistant-code__mark" aria-hidden="true">
+                        <FeatCodeMark variant="glyph" size="title" decorative />
                       </span>
                       <span class="flex min-w-0 flex-col">
                         <span class="text-primary">

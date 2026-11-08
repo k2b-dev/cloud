@@ -1,3 +1,4 @@
+import { FeatCodeMark } from "@k2b/cloud/code/ui";
 import { formatDateTime, formatRelative } from "@k2b/cloud/shared";
 import type { DateContext } from "@k2b/stdlib";
 import {
@@ -273,7 +274,7 @@ export function CodeAreaView(props: Props) {
   if (props.noPermission || !props.data)
     return (
       <AppWorkspace.Main level="area">
-        <AppWorkspace.MainPane id="area" label={t.area}>
+        <AppWorkspace.MainPane id="area" label={t.area} lead={<FeatCodeMark variant="glyph" decorative />}>
           <Placeholder
             state="no-access"
             icon="ti ti-lock"
@@ -1131,6 +1132,7 @@ export function CodeAreaView(props: Props) {
       <AppWorkspace.MainPane
         id="area"
         label={t.area}
+        lead={<FeatCodeMark variant="glyph" decorative />}
         description={t.areaSub}
         href={codeAreaHref({})}
         defaultSize={264}

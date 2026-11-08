@@ -1,0 +1,53 @@
+/*
+ * The feat/code brand mark. The sign stands in for the slash: its ring sits on the baseline, its dot reaches just
+ * above the ascenders, and "code" tucks under the dot (-0.12em) so the sign reads as part of the word. Green marks
+ * only the new commit; the rest takes the text colour. The mark never wraps and has the same size in every state.
+ */
+.cloud-featcode {
+  display: inline-block;
+  white-space: nowrap;
+  line-height: 1;
+  font-family: var(--font-sans, "IBM Plex Sans", system-ui, sans-serif);
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  color: inherit;
+}
+
+.cloud-featcode__sign {
+  display: inline-block;
+  height: 0.86em;
+  width: 0.72em;
+  margin: 0 -0.12em 0 0.04em;
+  vertical-align: -0.06em;
+  overflow: visible;
+}
+
+.cloud-featcode[data-variant="glyph"] {
+  width: 1em;
+  height: 1em;
+  vertical-align: -0.125em;
+}
+
+.cloud-featcode[data-variant="glyph"] .cloud-featcode__sign {
+  width: 1em;
+  height: 1em;
+  margin: 0;
+  vertical-align: top;
+}
+
+.cloud-featcode__base {
+  fill: none;
+  stroke: currentColor;
+}
+
+.cloud-featcode__new {
+  stroke: var(--cloud-featcode-new);
+}
+
+.cloud-featcode__head {
+  fill: var(--cloud-featcode-new);
+}
+
+.cloud-featcode[data-tone="current"] {
+  --cloud-featcode-new: currentColor;
+}

@@ -19,6 +19,7 @@ import {
 import { createMemo, createSignal, For, type JSX, Match, onCleanup, Show, Switch } from "solid-js";
 import { z } from "zod";
 import { openPanel } from "../../browser/panel";
+import { FeatCodeMark } from "../../code/FeatCodeMark";
 import { invokeCapabilityWithDataSchema } from "../../capabilities/client";
 import { CodeAccountHandle } from "./CodeAccountHandle";
 import { CodeRefusalNotice } from "./CodeRefusalNotice";
@@ -248,18 +249,18 @@ export default function CodePage(props: { data: CodePageData }) {
   const t = text.t;
   return (
     <div class="cloud-code" data-tab={props.data.tab}>
-      {/* Personal Code is titled by its own name; a place's Code is "Code", and the lead names the place. */}
+      {/* Personal Code is titled by its own name; a place's Code shows the feat/code wordmark, and the lead names the place. */}
       <Show
         when={personal(props.data)}
         fallback={
           <h1 class="cloud-code__page-title">
-            <span aria-hidden="true">{t().placeTitle}</span>
+            <FeatCodeMark size="title" decorative />
             <span class="sr-only">{t().pageTitle({ name: props.data.owner.title })}</span>
           </h1>
         }
       >
         <h1 class="cloud-code__page-title">
-          <i class="ti ti-bolt" aria-hidden="true" />
+          <FeatCodeMark variant="glyph" size="title" decorative />
           {props.data.owner.title || t().personalErrorTitle}
         </h1>
       </Show>

@@ -385,6 +385,9 @@ export const viewedChatImage = (name: string, result: unknown): { path: string; 
   return { path, description: typeof description === "string" ? description.trim() : "" };
 };
 
+/** Tools of feat/code (Code and the apps Gustav writes) show the feat/code sign where a row can draw one. */
+export const isFeatCodeTool = (name: string): boolean => name.startsWith("code_");
+
 export const aiToolIcon = (name: string, appIcon?: string | null): string => {
   if (appIcon) return appIcon;
   return BUILT_IN_TOOL_ICONS.get(name) ?? (/__(?:query|action)__/.test(name) ? "ti ti-ai-gateway" : "ti ti-tool");
