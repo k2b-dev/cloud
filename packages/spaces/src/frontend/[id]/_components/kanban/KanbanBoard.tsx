@@ -1370,7 +1370,7 @@ export default function KanbanBoard(props: Props) {
             }
           });
         }}
-        class="k2b-detail-trail relative min-h-0 flex-1 overflow-x-auto overflow-y-hidden"
+        class="k2b-detail-trail k2b-quiet-scrollbar relative min-h-0 flex-1 overflow-x-auto overflow-y-hidden"
         data-scroll-preserve={`spaces-kanban-board-${props.spaceId}`}
       >
         <div class="spaces-kanban-columns flex h-full min-w-max items-stretch">
@@ -1582,7 +1582,7 @@ export default function KanbanBoard(props: Props) {
                         }}
                         // 6 px hold the cards' touch hit areas, which reach past a card's edge; less would let the column
                         // scroll sideways by the difference.
-                        class={`flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto rounded-[var(--ui-radius-control)] p-1.5 transition-[background-color] ${
+                        class={`k2b-quiet-scrollbar flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto rounded-[var(--ui-radius-control)] p-1.5 transition-[background-color] ${
                           isColumnTargetActive(key) ? "bg-[var(--ui-selected)]" : "bg-transparent"
                         }`}
                         data-scroll-preserve={`spaces-kanban-column-${props.spaceId}-${key}`}
@@ -1913,7 +1913,7 @@ export default function KanbanBoard(props: Props) {
                 </Tooltip.Anchor>
               </header>
 
-              <div class="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto rounded-[var(--ui-radius-control)] p-1.5">
+              <div class="k2b-quiet-scrollbar flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto rounded-[var(--ui-radius-control)] p-1.5">
                 <For each={props.wormholes}>
                   {(wormhole) => (
                     <Show when={wormhole.target} keyed>

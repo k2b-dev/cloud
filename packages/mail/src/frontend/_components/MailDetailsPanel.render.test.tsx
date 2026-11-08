@@ -158,6 +158,7 @@ const message: MessageDetail = {
   remoteContent: {
     imageIds: [],
     allowedByRule: false,
+    allowRules: [],
     sender: "ada@example.com",
     domain: "example.com",
   },
