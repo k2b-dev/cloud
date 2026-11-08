@@ -1400,14 +1400,15 @@ const assertUsableOperation = (operation: CapabilityQueryManifest | CapabilityAc
 };
 
 /**
- * The Universal Search data schemas a live manifest may declare: the current one, the one before metadata gained
- * `format`, and the one before results gained `context` and `status`, so an app built by an earlier release keeps its
- * search while Core is already newer. Its results still parse, because the newer fields are optional.
+ * Accept the current search schema and the earlier versions before `group`, metadata `format`, and result
+ * `context`/`status`. Project each historical shape without newer fields, preserving the app's original hashes.
+ * Results still parse, because the newer fields are optional.
  */
 let searchDataHashes: string[] | undefined;
 const universalSearchDataHashes = () => {
   if (searchDataHashes) return searchDataHashes;
-  const untypedMetadata = CloudResourceViewSchema.extend({
+  const withoutGroup = CloudResourceViewSchema.omit({ group: true });
+  const untypedMetadata = withoutGroup.extend({
     metadata: z
       .array(z.object({ label: z.string().min(1).max(120), value: z.string().max(1000) }).strict())
       .max(20)
@@ -1416,6 +1417,7 @@ const universalSearchDataHashes = () => {
   });
   searchDataHashes = [
     UniversalSearchDataSchema,
+    z.array(withoutGroup).max(100),
     z.array(untypedMetadata).max(100),
     z.array(untypedMetadata.omit({ context: true, status: true })).max(100),
   ].map((schema) => capabilityHash(projectSchema(schema, "Universal Search data", "output")));
