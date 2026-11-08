@@ -7,7 +7,7 @@ export const migrateKnownApps = async (db: SQL = sql): Promise<void> => {
     id TEXT PRIMARY KEY,
     name TEXT NOT NULL,
     description TEXT NOT NULL DEFAULT '',
-    icon TEXT NOT NULL DEFAULT 'ti ti-app',
+    icon TEXT NOT NULL DEFAULT 'ti ti-app-window',
     accent TEXT,
     release TEXT,
     routes JSONB NOT NULL DEFAULT '[]'::jsonb,

@@ -406,7 +406,7 @@ const draftRef = (id: string, subject?: string | null, locale?: string) => ({
   type: "mail.draft" as const,
   id,
   ...(subject !== undefined ? { title: mailSubject(subject, locale) } : {}),
-  icon: "ti ti-mail-pencil",
+  icon: "ti ti-file-pencil",
 });
 const conversationRef = (id: string, subject?: string | null, preview?: string | null, locale?: string) => ({
   type: "mail.conversation" as const,
@@ -447,7 +447,7 @@ const deliveryRef = (id: string, subject: string | null | undefined, state?: str
   id,
   title: mailSubject(subject, locale),
   ...(state ? { preview: localizedState(state, locale) } : {}),
-  icon: "ti ti-clock-send",
+  icon: "ti ti-calendar-time",
 });
 const draftMetadata = (mailboxId: string, draftId: string, subject?: string | null, locale?: string) => ({
   refs: [draftRef(draftId, subject, locale)],
@@ -3281,7 +3281,7 @@ const actionDefinitions = {
             delivery: reviewObject(
               reviewSubject(delivery.data.subject, context),
               deliveryRef(input.deliveryId, delivery.data.subject),
-              "ti ti-clock-send",
+              "ti ti-calendar-time",
             ),
           },
           {
@@ -3334,7 +3334,7 @@ const actionDefinitions = {
             delivery: reviewObject(
               reviewSubject(delivery.data.subject, context),
               deliveryRef(input.deliveryId, delivery.data.subject),
-              "ti ti-clock-send",
+              "ti ti-calendar-time",
             ),
           },
           "delivery",
@@ -4742,7 +4742,7 @@ export const mailCapabilities = localizeCapabilityErrors(
         reader: "mailbox.read",
         pages: ["/app/mail/:id"],
       },
-      "sender-identity": { title: "Sender identity", description: "A From identity configured for a mailbox.", icon: "ti ti-user-send" },
+      "sender-identity": { title: "Sender identity", description: "A From identity configured for a mailbox.", icon: "ti ti-user-share" },
       folder: { title: "Mail folder", description: "A selectable provider mail folder.", icon: "ti ti-folder" },
       conversation: {
         title: "Mail conversation",
@@ -4767,7 +4767,7 @@ export const mailCapabilities = localizeCapabilityErrors(
       draft: {
         title: "Mail draft",
         description: "An editable outgoing message.",
-        icon: "ti ti-mail-pencil",
+        icon: "ti ti-file-pencil",
         reader: "draft.read",
         pages: ["/app/mail/:mailbox/compose/:id", "/app/mail/:mailbox/drafts/:id"],
       },
@@ -4782,7 +4782,7 @@ export const mailCapabilities = localizeCapabilityErrors(
       delivery: {
         title: "Mail delivery",
         description: "A queued, undo-window, or scheduled delivery.",
-        icon: "ti ti-clock-send",
+        icon: "ti ti-calendar-time",
         reader: "delivery.read",
       },
       "mailing-list": {

@@ -194,7 +194,7 @@ export const venueTodayWidgetHandler = async (c: Context<AuthContext>) => {
       tone: status?.open ? "ok" : "info",
       title: status?.statusLabel ?? t.widgetStatusUnavailable,
       message: size === "medium" ? undefined : (status?.todayLabel ?? t.widgetNoStatus),
-      icon: status?.open ? "ti ti-door-gate-open" : "ti ti-door",
+      icon: status?.open ? "ti ti-door-enter" : "ti ti-door",
       grow: size === "small",
     },
   ];

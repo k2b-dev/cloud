@@ -187,7 +187,7 @@ function UnavailablePage(props: RefreshDiagnostics) {
     >
       <PublicRefreshNotice {...props} />
       <div class="mx-auto flex min-h-dvh max-w-xl flex-col items-center justify-center p-6 text-center">
-        <i class="ti ti-building-store-off mb-4 text-5xl text-dimmed" aria-hidden="true" />
+        <i class="ti ti-building-off mb-4 text-5xl text-dimmed" aria-hidden="true" />
         <h1 class="text-2xl font-semibold">{t().publicUnavailable}</h1>
         <p class="mt-2 text-sm text-secondary">{t().publicUnavailableDescription}</p>
         {/* The same link for every visitor and every unknown or switched-off venue, so the page reveals nothing. */}

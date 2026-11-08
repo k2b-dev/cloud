@@ -48,7 +48,7 @@ const legacyTelemetryAppIcons: Record<string, string> = {
 };
 
 const normalizeIcon = (icon: string | undefined) => {
-  if (!icon) return "ti ti-app";
+  if (!icon) return "ti ti-app-window";
   return icon.startsWith("ti ") ? icon : `ti ${icon}`;
 };
 

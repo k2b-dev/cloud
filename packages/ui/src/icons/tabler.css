@@ -12,3 +12,49 @@
   display: inline-block;
   width: 1em;
 }
+
+/*
+ * Since Tabler 3 the filled glyphs live in a second font of their own. The
+ * preset adds the few that Cloud uses under their Tabler 2 class names, each
+ * drawn from Tabler's filled SVG, instead of loading that whole font. The
+ * pseudo-element holds a Tabler glyph (that of `ti-code`) with transparent ink,
+ * so its box is that of every Tabler icon in each size, engine, and font state;
+ * a mask paints the drawing on that box in the text colour. Forced colours and
+ * print keep the text colour: both would otherwise drop the background the mask
+ * cuts out. `bun scripts/check.ts icon-names` fails on an icon name the preset
+ * does not ship.
+ */
+:is(.ti-circle-filled, .ti-cloud-filled, .ti-pin-filled, .ti-player-play-filled, .ti-point-filled, .ti-star-filled)::before {
+  content: "\ea77";
+  -webkit-text-fill-color: transparent;
+  background-color: currentColor;
+  forced-color-adjust: none;
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
+  -webkit-mask: var(--k2b-ti-glyph) center / contain no-repeat;
+  mask: var(--k2b-ti-glyph) center / contain no-repeat;
+}
+
+.ti-circle-filled::before {
+  --k2b-ti-glyph: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M7 3.34a10 10 0 1 1 -4.995 8.984l-.005 -.324l.005 -.324a10 10 0 0 1 4.995 -8.336z' /%3E%3C/svg%3E");
+}
+
+.ti-cloud-filled::before {
+  --k2b-ti-glyph: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M10.04 4.305c2.195 -.667 4.615 -.224 6.36 1.176c1.386 1.108 2.188 2.686 2.252 4.34l.003 .212l.091 .003c2.3 .107 4.143 1.961 4.25 4.27l.004 .211c0 2.407 -1.885 4.372 -4.255 4.482l-.21 .005h-11.878l-.222 -.008c-2.94 -.11 -5.317 -2.399 -5.43 -5.263l-.005 -.216c0 -2.747 2.08 -5.01 4.784 -5.417l.114 -.016l.07 -.181c.663 -1.62 2.056 -2.906 3.829 -3.518l.244 -.08z' /%3E%3C/svg%3E");
+}
+
+.ti-pin-filled::before {
+  --k2b-ti-glyph: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M15.113 3.21l.094 .083l5.5 5.5a1 1 0 0 1 -1.175 1.59l-3.172 3.171l-1.424 3.797a1 1 0 0 1 -.158 .277l-.07 .08l-1.5 1.5a1 1 0 0 1 -1.32 .082l-.095 -.083l-2.793 -2.792l-3.793 3.792a1 1 0 0 1 -1.497 -1.32l.083 -.094l3.792 -3.793l-2.792 -2.793a1 1 0 0 1 -.083 -1.32l.083 -.094l1.5 -1.5a1 1 0 0 1 .258 -.187l.098 -.042l3.796 -1.425l3.171 -3.17a1 1 0 0 1 1.497 -1.26z' /%3E%3C/svg%3E");
+}
+
+.ti-player-play-filled::before {
+  --k2b-ti-glyph: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M6 4v16a1 1 0 0 0 1.524 .852l13 -8a1 1 0 0 0 0 -1.704l-13 -8a1 1 0 0 0 -1.524 .852z' /%3E%3C/svg%3E");
+}
+
+.ti-point-filled::before {
+  --k2b-ti-glyph: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M12 7a5 5 0 1 1 -4.995 5.217l-.005 -.217l.005 -.217a5 5 0 0 1 4.995 -4.783z' /%3E%3C/svg%3E");
+}
+
+.ti-star-filled::before {
+  --k2b-ti-glyph: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M8.243 7.34l-6.38 .925l-.113 .023a1 1 0 0 0 -.44 1.684l4.622 4.499l-1.09 6.355l-.013 .11a1 1 0 0 0 1.464 .944l5.706 -3l5.693 3l.1 .046a1 1 0 0 0 1.352 -1.1l-1.091 -6.355l4.624 -4.5l.078 -.085a1 1 0 0 0 -.633 -1.62l-6.38 -.926l-2.852 -5.78a1 1 0 0 0 -1.794 0l-2.853 5.78z' /%3E%3C/svg%3E");
+}

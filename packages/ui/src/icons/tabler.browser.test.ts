@@ -1,8 +1,8 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import { readFileSync } from "node:fs";
+import { mkdirSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import type { Browser } from "playwright";
-import { launchBrowser } from "../../test/browser";
+import { browserName, launchBrowser } from "../../test/browser";
 
 // Which width a browser gives a glyph before its font has loaded is a question of
 // layout, which happy-dom does not model, so a real engine loads the shipped preset.
@@ -67,6 +67,101 @@ describe("Tabler icon preset", () => {
       expect(before.boxes).toEqual(after.boxes);
     } finally {
       firstFrame.resolve();
+      await tab.close();
+    }
+  }, 30_000);
+});
+
+// The filled glyphs are masks, not font glyphs: each must paint, fill more than its outline counterpart, and sit on
+// the same box and centre as that Tabler glyph.
+const filled = ["circle", "cloud", "pin", "player-play", "point", "star"] as const;
+const sizes = [16, 20, 24] as const;
+const filledPage = `<!doctype html><html><head><meta charset="utf-8"><style>${preset}</style></head>
+<body style="margin:0;background:#fff;color:#000"><section id="measure" style="display:grid;gap:12px;width:max-content;padding:8px">
+${sizes
+  .map(
+    (px) =>
+      `<div style="display:flex;align-items:flex-start;gap:${px / 2}px;font-size:${px}px;line-height:1">${filled.map((name) => `<i class="ti ti-${name}" data-size="${px}"></i><i class="ti ti-${name}-filled" data-size="${px}"></i>`).join("")}</div>`,
+  )
+  .join("")}
+</section></body></html>`;
+
+describe("filled glyphs", () => {
+  test("paint inside the box and centre of their Tabler outline glyph", async () => {
+    const tab = await browser.newPage({ deviceScaleFactor: 2 });
+    try {
+      await tab.route("http://icons.test/**", async (route) => {
+        const { pathname } = new URL(route.request().url());
+        if (pathname === "/") return route.fulfill({ contentType: "text/html; charset=utf-8", body: filledPage });
+        if (pathname === `/${fontFile}`) return route.fulfill({ contentType: "font/woff2", path: resolve(dist, fontFile) });
+        return route.fulfill({ status: 404, body: "" });
+      });
+      await tab.goto("http://icons.test/");
+      // The font and the mask images arrive after layout: wait for each before reading pixels.
+      await tab.evaluate(async () => {
+        await document.fonts.load("16px tabler-icons");
+        await document.fonts.ready;
+        const masks = [...document.querySelectorAll("[class*='-filled']")].map((icon) => getComputedStyle(icon, "::before").maskImage);
+        await Promise.all(
+          masks.map((mask) => {
+            const image = new Image();
+            image.src = /^url\("(.+)"\)$/.exec(mask)![1]!;
+            return image.decode();
+          }),
+        );
+        await new Promise(requestAnimationFrame);
+      });
+      const area = tab.locator("#measure");
+      const origin = (await area.boundingBox())!;
+      const png = (await area.screenshot()).toString("base64");
+      const icons = await tab.evaluate(
+        async ({ png, origin }) => {
+          const bitmap = await createImageBitmap(await (await fetch(`data:image/png;base64,${png}`)).blob());
+          const context = new OffscreenCanvas(bitmap.width, bitmap.height).getContext("2d")!;
+          context.drawImage(bitmap, 0, 0);
+          const scale = bitmap.width / origin.width;
+          return [...document.querySelectorAll<HTMLElement>("#measure i")].map((icon) => {
+            const box = icon.getBoundingClientRect();
+            const image = context.getImageData(
+              Math.round((box.x - origin.x) * scale),
+              Math.round((box.y - origin.y) * scale),
+              Math.round(box.width * scale),
+              Math.round(box.height * scale),
+            );
+            // Ink bounds of pixels darker than half, and the total ink, in CSS px relative to the box.
+            const ink = { top: Infinity, left: Infinity, bottom: -Infinity, right: -Infinity, weight: 0 };
+            for (let index = 0; index < image.data.length; index += 4) {
+              const darkness = 255 - image.data[index]!;
+              ink.weight += darkness / 255 / scale / scale;
+              if (darkness < 128) continue;
+              const x = (index / 4) % image.width;
+              const y = Math.floor(index / 4 / image.width);
+              ink.top = Math.min(ink.top, y / scale);
+              ink.left = Math.min(ink.left, x / scale);
+              ink.bottom = Math.max(ink.bottom, (y + 1) / scale);
+              ink.right = Math.max(ink.right, (x + 1) / scale);
+            }
+            return { name: icon.className, size: icon.dataset.size, width: box.width, height: box.height, ...ink };
+          });
+        },
+        { png, origin },
+      );
+
+      for (let index = 0; index < icons.length; index += 2) {
+        const [outline, fill] = [icons[index]!, icons[index + 1]!];
+        const label = `${fill.name} at ${fill.size}px`;
+        expect([label, fill.width, fill.height]).toEqual([label, outline.width, outline.height]);
+        expect([label, fill.weight > outline.weight]).toEqual([label, true]);
+        expect([label, Math.abs(fill.left + fill.right - outline.left - outline.right) / 2 <= 1]).toEqual([label, true]);
+        expect([label, Math.abs(fill.top + fill.bottom - outline.top - outline.bottom) / 2 <= 1]).toEqual([label, true]);
+      }
+
+      const output = process.env.FILLED_ICON_SHOTS;
+      if (output) {
+        mkdirSync(resolve(output, browserName), { recursive: true });
+        await area.screenshot({ path: resolve(output, browserName, "filled-icons.png") });
+      }
+    } finally {
       await tab.close();
     }
   }, 30_000);
