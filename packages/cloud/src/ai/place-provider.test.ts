@@ -1,4 +1,4 @@
-import { afterEach, expect, mock, spyOn, test } from "bun:test";
+import { afterEach, beforeEach, expect, mock, spyOn, test } from "bun:test";
 import { adminAuthority } from "../../../../scripts/fixtures/app-status";
 import {
   createAssistantPlaceFixture,
@@ -8,16 +8,25 @@ import {
 } from "../../../../scripts/fixtures/assistant-place";
 import { useUnitClients } from "../../../../scripts/fixtures/unit-clients";
 import { compileCapabilities, invokeCompiledCapability } from "../_internal/capabilities";
-import type { RequestActor } from "../server";
+import * as executionStore from "../capabilities/executions";
+import type { RequestAuthority } from "../server";
 import * as logging from "../services/logging";
 import { type PlaceProviderOptions, runPlaceProvider } from "./place-provider";
 
 useUnitClients();
+const fixtureLog = logging.logger("fixture-place");
+beforeEach(() => {
+  spyOn(logging, "logger").mockReturnValue({ ...fixtureLog, warn: mock(() => {}) });
+});
 afterEach(() => mock.restore());
-const actor = (id = PLACE_FIXTURE_PEOPLE.lea): RequestActor => {
+const actor = (id = PLACE_FIXTURE_PEOPLE.lea): RequestAuthority => {
   const authority = adminAuthority();
   if (authority.actor.kind !== "user") throw new Error("Fixture user missing");
-  return { ...authority.actor, user: { ...authority.actor.user, id } };
+  return {
+    ...authority,
+    actor: { ...authority.actor, user: { ...authority.actor.user, id } },
+    accessSubject: { type: "user", userId: id },
+  };
 };
 const harness = () => {
   const fixture = createAssistantPlaceFixture();
@@ -106,37 +115,39 @@ test("invalid, oversized and unavailable provider results all become unavailable
     h.dispatch.mockImplementation(async () =>
       Response.json({ data: { title: "Marta", context: "Customer", tools: [], skills: [], ...patch } }),
     );
-    expect(await runPlaceProvider(actor(), ref, h)).toEqual({ unavailable: true });
+    expect(await runPlaceProvider(actor(), ref, h)).toEqual({ unavailable: true, retry: true });
   }
   h.dispatch.mockImplementation(async () => Response.json({ code: "FORBIDDEN", message: "No" }, { status: 403 }));
   expect(await runPlaceProvider(actor(), ref, h)).toEqual({ unavailable: true });
 });
 
-test("does not dispatch for types without a valid declaration or for non-person actors", async () => {
+test("does not dispatch for types without a valid declaration", async () => {
   const h = harness();
-  expect(
-    await runPlaceProvider(
-      {
-        kind: "service_account",
-        delegatedUser: null,
-        scopes: [],
-        serviceAccount: {
-          id: "00000000-0000-4000-8000-000000000003",
-          name: "Fixture account",
-          kind: "standalone",
-          status: "active",
-          delegatedUserId: null,
-          appId: null,
-          resourceType: null,
-          resourceId: null,
-          createdBy: null,
-          createdAt: "2026-11-01T00:00:00Z",
-        },
-      },
-      ref,
-      h,
-    ),
-  ).toEqual({ unavailable: true });
   expect(await runPlaceProvider(actor(), { ...ref, type: "place-fixture.missing" }, h)).toEqual({ unavailable: true });
   expect(h.dispatch).not.toHaveBeenCalled();
+});
+
+test("keeps OAuth ceilings through the real dispatcher without querying the provider", async () => {
+  const h = harness();
+  const authority = { ...actor(), credentialKind: "oauth" as const, scopes: ["write"] };
+  spyOn(executionStore, "recordCapabilityExecution").mockResolvedValue();
+  expect(await runPlaceProvider(authority, ref, { dependencies: { getCapability: h.dependencies.getCapability } })).toEqual({
+    unavailable: true,
+  });
+  expect(h.providerCalls).toEqual([]);
+});
+
+test("preserves complete request authority and distinguishes retryable provider failures", async () => {
+  const h = harness();
+  const authority = { ...actor(), credentialKind: "oauth" as const, scopes: ["read"] };
+  await runPlaceProvider(authority, ref, h);
+  expect(h.dispatch.mock.calls[0]![0].authority).toBe(authority);
+  h.dispatch.mockImplementation(async () => Response.json({ code: "APP_UNAVAILABLE", message: "Try again" }, { status: 503 }));
+  expect(await runPlaceProvider(authority, ref, h)).toEqual({ unavailable: true, retry: true });
+});
+
+test("runtime contract matching accepts harmless manifest annotations", async () => {
+  const h = harness();
+  h.compiled.manifest.queries.find((query) => query.localId === "conversation.assistant")!.dataSchema.title = "Provider result";
+  expect(await runPlaceProvider(actor(), ref, h)).toMatchObject({ title: "Marta Example" });
 });

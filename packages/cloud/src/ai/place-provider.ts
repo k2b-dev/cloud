@@ -1,12 +1,7 @@
 import { getCapability } from "../_internal/registry";
 import { type CapabilityDispatchDependencies, dispatchCapability } from "../api/capabilities";
 import { readCapabilityResponse } from "../capabilities/response";
-import {
-  ASSISTANT_PLACE_CONTEXT_MAX_BYTES,
-  type AssistantPlaceResult,
-  AssistantPlaceSchema,
-  assistantPlaceIssues,
-} from "../contracts/assistant-place";
+import { type AssistantPlaceResult, AssistantPlaceSchema, assistantPlaceIssues } from "../contracts/assistant-place";
 import {
   CAPABILITY_MAX_RESULT_BYTES,
   type CloudResourceRef,
@@ -14,9 +9,8 @@ import {
   capabilityResultSchema,
   cloudResourceRefAppId,
 } from "../contracts/capabilities";
-import type { RequestActor, RequestAuthority } from "../server";
+import type { RequestAuthority } from "../server";
 import { logger } from "../services/logging";
-import { withoutAdminRole } from "../services/session/user";
 import { LOCALE_HEADER } from "../shared/locale";
 
 export type PlaceProviderOptions = {
@@ -27,25 +21,32 @@ export type PlaceProviderOptions = {
 
 /** Trusted host only: dispatch the current provider as the person. Never cache this answer as authority. */
 export const runPlaceProvider = async (
-  actor: RequestActor,
+  authority: RequestAuthority,
   placeRef: CloudResourceRef,
   options: PlaceProviderOptions = {},
 ): Promise<AssistantPlaceResult> => {
   const unavailable = { unavailable: true } as const;
   const ref = CloudResourceRefSchema.safeParse(placeRef);
-  if (actor.kind !== "user" || !ref.success) return unavailable;
+  if (
+    authority.actor.kind !== "user" ||
+    authority.accessSubject.type !== "user" ||
+    authority.accessSubject.userId !== authority.actor.user.id ||
+    !ref.success
+  )
+    return unavailable;
   const appId = cloudResourceRefAppId(ref.data);
   try {
     options.signal?.throwIfAborted();
     const app = await (options.dependencies?.getCapability ?? getCapability)(appId);
     const type = app?.manifest.types.find((type) => `${appId}.${type.localId}` === ref.data.type);
-    if (!app || !type?.assistant || assistantPlaceIssues(app.manifest, type.localId).length) return unavailable;
-    const authority: RequestAuthority = {
-      actor: actor.sessionKind === "app" ? { ...actor, user: withoutAdminRole(actor.user) } : actor,
-      accessSubject: { type: "user", userId: actor.user.id },
-      credentialKind: "session",
-      scopes: [],
-    };
+    if (!app) return { unavailable: true, retry: true };
+    if (!type?.assistant) return unavailable;
+    const log = logger("ai:place");
+    const issues = assistantPlaceIssues(app.manifest, type.localId);
+    if (issues.length) {
+      log.warn("Assistant place contract unavailable", { appId, type: type.localId, reason: "manifest" });
+      return { unavailable: true, retry: true };
+    }
     const headers = new Headers();
     if (options.locale) headers.set(LOCALE_HEADER, options.locale);
     const response = await (options.dependencies?.dispatch ?? dispatchCapability)({
@@ -60,10 +61,18 @@ export const runPlaceProvider = async (
       dependencies: options.dependencies,
     });
     const result = await readCapabilityResponse(response, capabilityResultSchema(AssistantPlaceSchema), CAPABILITY_MAX_RESULT_BYTES);
-    if (!result.ok) return unavailable;
+    if (!result.ok) {
+      if (result.error.status === 403 || result.error.status === 404) return unavailable;
+      log.warn("Assistant place provider unavailable", {
+        appId,
+        type: type.localId,
+        reason: result.error.code === "INVALID_APP_RESPONSE" ? "schema" : "provider",
+        code: result.error.code,
+      });
+      return { unavailable: true, retry: true };
+    }
+    options.signal?.throwIfAborted();
     const place = result.data.data;
-    if (new TextEncoder().encode(place.context).byteLength > ASSISTANT_PLACE_CONTEXT_MAX_BYTES) return unavailable;
-    const log = logger("ai:place");
     const subset = (ids: readonly string[], allowed: readonly string[], field: "tools" | "skills") => {
       const outside = [...new Set(ids.filter((id) => !allowed.includes(id)))];
       if (outside.length)
@@ -77,7 +86,11 @@ export const runPlaceProvider = async (
     };
   } catch (error) {
     if (options.signal?.aborted) throw error;
-    logger("ai:place").warn("Assistant place provider unavailable", { appId });
-    return unavailable;
+    logger("ai:place").warn("Assistant place provider unavailable", {
+      appId,
+      reason: "provider",
+      error: error instanceof Error ? error.name : "unknown",
+    });
+    return { unavailable: true, retry: true };
   }
 };

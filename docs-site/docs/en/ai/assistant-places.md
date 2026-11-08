@@ -30,7 +30,9 @@ The Type must also declare a reader. The provider is a closed-world,
 person-readable Query; it needs no additional resource references. Cloud checks
 these contracts at application startup. Skills shipped by the starting
 application are checked against its `skills` catalog; other names must already
-exist in a registered application Skill catalog.
+exist in a published application Skill catalog. Publish those catalogs before
+starting applications that depend on their names. Catalogs persist across app
+restarts; this check does not depend on live Skill reconciliation.
 
 ```ts
 import { AssistantPlaceSchema, type CapabilityExecutionContext, defineCapabilities } from "@k2b/cloud/contracts";
@@ -120,11 +122,18 @@ include data the person cannot read.
 
 ## Platform provider dispatch
 
-The trusted Cloud host uses `runPlaceProvider(actor, placeRef, { locale?, signal? })`
+The trusted Cloud host uses `runPlaceProvider(authority, placeRef, { locale?, signal? })`
 from `@k2b/cloud/ai`. It invokes the current provider through the existing
 capability dispatcher with the person's authority and the exact resource target.
-A result is `AssistantPlace` or `{ unavailable: true }`. A missing place and
-refused access have the same result. Cancellation propagates to the caller.
+Pass the current request authority from `getAuthority(c)`; executor hosts use
+`resolveAiCapabilityActor` to refresh the conversation owner first. The helper
+preserves credential limits and delegation metadata.
+
+A result is `AssistantPlace` or `{ unavailable: true, retry?: true }`. A missing
+place and refused access both return `{ unavailable: true }`. Temporary provider
+failures and invalid contracts include `retry: true`; show a retry state instead
+of claiming access was lost. Contract failures are logged without context content.
+Cancellation propagates to the caller.
 
 This helper neither checks panel consent nor creates a chat. Panel hosts must
 check consent before invoking it. Applications declare the provider and enforce

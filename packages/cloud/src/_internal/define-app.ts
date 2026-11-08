@@ -795,7 +795,9 @@ export const defineApp = <
         const available = new Set(appSkills?.map((skill) => skill.name) ?? []);
         for (const name of requiredSkills) {
           if (available.has(name)) continue;
-          const rows = await sql`SELECT 1 FROM ai.app_skills WHERE name = ${name} AND available = true AND conflict IS NULL LIMIT 1`;
+          // Published catalogs outlive deployments and do not depend on Core's asynchronous reconciliation.
+          const rows = await sql`SELECT 1 FROM ai.app_skill_catalogs catalog
+            WHERE EXISTS (SELECT 1 FROM jsonb_array_elements(catalog.skills) skill WHERE skill->>'name' = ${name}) LIMIT 1`;
           if (rows.length) available.add(name);
         }
         assertAssistantPlaceSkills(compiledCapabilities.manifest, available);
