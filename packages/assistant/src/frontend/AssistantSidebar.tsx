@@ -776,18 +776,16 @@ export default function AssistantSidebar(props: AssistantSidebarProps) {
 
           <AppWorkspace.SidebarBody scrollPreserveKey="assistant-sidebar" sidebarMode="expanded">
             <Show when={showPlaceFilter()}>
-              <div class="assistant-place-filter" role="group" aria-label={placeT().atPlaces}>
+              <div class="assistant-place-filter">
                 <FilterToggle
-                  label={placeT().myChats}
-                  icon="ti ti-messages"
-                  active={!placesFilter()}
-                  onClick={() => choosePlacesFilter(false)}
-                />
-                <FilterToggle
-                  label={placeT().atPlacesCount({ count: placeTotal() })}
+                  label={
+                    <>
+                      {placeT().atPlaces} <span class="assistant-place-filter__count">{placeTotal()}</span>
+                    </>
+                  }
                   icon="ti ti-map-pin"
                   active={placesFilter()}
-                  onClick={() => choosePlacesFilter(true)}
+                  onClick={() => choosePlacesFilter(!placesFilter())}
                 />
               </div>
             </Show>

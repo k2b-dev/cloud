@@ -54,7 +54,7 @@ export default function AssistantPlaceBar(props: { state: AssistantPlaceBarState
         <i class="ti ti-info-circle" aria-hidden="true" />
       </IconButton>
       <AnchoredPopover anchor={infoAnchor()} onClose={() => setInfoAnchor(null)} label={t().whatHereTitle} width="22rem">
-        <WhatHere view={info.view} />
+        <WhatHere view={info.view} onClose={() => setInfoAnchor(null)} />
       </AnchoredPopover>
     </>
   );
@@ -172,7 +172,7 @@ function PlaceChips(props: { view: Available }) {
 }
 
 /** "What Gustav can also do here": every extra tool with when it asks, the place's knowledge, and the normal rest. */
-function WhatHere(props: { view: Available }) {
+function WhatHere(props: { view: Available; onClose: () => void }) {
   const locale = useLocale();
   const t = () => placeMessages.resolve([locale()]).t;
   const policyLine = (policy: Available["tools"][number]["policy"]): string => {
@@ -190,7 +190,12 @@ function WhatHere(props: { view: Available }) {
   );
   return (
     <div class="assistant-place-what">
-      <h2 class="assistant-place-what__title">{t().whatHereTitle}</h2>
+      <div class="assistant-place-what__head">
+        <h2 class="assistant-place-what__title">{t().whatHereTitle}</h2>
+        <IconButton size="xs" label={t().close} onClick={() => props.onClose()}>
+          <i class="ti ti-x" aria-hidden="true" />
+        </IconButton>
+      </div>
       <Section title={t().whatHereFrom({ app: props.view.app.name })}>
         <For each={props.view.tools} fallback={<li class="assistant-place-what__muted">{t().noTools}</li>}>
           {(tool) => (

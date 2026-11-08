@@ -349,6 +349,7 @@ export default function AssistantWorkspace(props: Props) {
         projects: props.projects,
         doneCount: props.initialDoneCount,
         questions: props.initialQuestions,
+        placeChats: props.initialPlaceChats ?? null,
       },
     },
     load: (_source, { abortSignal }) => assistantApi.loadSidebar(abortSignal),
@@ -2936,7 +2937,7 @@ export default function AssistantWorkspace(props: Props) {
           hasPersonalCode={() => Boolean(props.code?.has)}
           onOpenCode={openCode}
           live={liveHub}
-          placeChats={() => (sidebar.data() ? (sidebar.data()!.placeChats ?? null) : (props.initialPlaceChats ?? null))}
+          placeChats={() => sidebar.data()?.placeChats ?? null}
           initialPlacesFilter={props.initialPlacesFilter}
         />
 
@@ -2944,6 +2945,7 @@ export default function AssistantWorkspace(props: Props) {
           <AppWorkspace.Main scroll={false} mobilePane={artifactWorkspace.mobile()}>
             <AppWorkspace.MainPane id="chat" label={artifactCopy().chat} scroll={false} class="assistant-chat-pane flex min-h-0 flex-col">
               <Show when={props.embedded && !mainView()}>
+                <Show when={placeBar()}>{(state) => <AssistantPlaceBar state={state()} />}</Show>
                 <AssistantCodeBlock
                   initial={props.initialCodeBlock}
                   timeZone={props.timeZone}
@@ -2956,7 +2958,6 @@ export default function AssistantWorkspace(props: Props) {
                     focusComposer();
                   }}
                 />
-                <Show when={placeBar()}>{(state) => <AssistantPlaceBar state={state()} />}</Show>
                 <Show when={showsAttachPlace()}>
                   <AssistantPanelContext
                     initial={props.initialPanelContext ?? null}
