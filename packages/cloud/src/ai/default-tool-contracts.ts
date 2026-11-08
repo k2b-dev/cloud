@@ -188,7 +188,13 @@ const flatChartSchema = () => {
       .enum(["bars", "dots"])
       .optional()
       .describe('Bar: "dots" with layout "nested" draws counts where each series is a subset of the previous one.'),
-    total: z.number().positive().optional().describe("Nested dots: capacity per category; defaults to the largest count, at least one."),
+    total: z
+      .number()
+      .positive()
+      .optional()
+      .describe(
+        "Nested dots: capacity per category; defaults to the largest count, at least one. For share fractions use 1; the legend shows latest/cursor values, never summed rates.",
+      ),
     dots: z
       .number()
       .int()

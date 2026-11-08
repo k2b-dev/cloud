@@ -25,6 +25,7 @@ source). Without `rows`, use these payloads:
 | `heatmap` | `data: [{x, y, value}]`, text categories, each pair once; at most 17 rows (y), column labels that fit a phone |
 | `barGauge` | 1..8 `data` items `{label, value, min?, max?}`; labels at most 10 characters |
 | `gauge`, `stat` | `value` |
+| every other kind | as in [Chart kinds](chart-kinds.md), which has one example per kind |
 
 For counts inside a capacity, such as clicks inside opens, use nested dots.
 The drawing is two dots wide per category; unused capacity stays grey and
