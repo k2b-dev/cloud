@@ -1,5 +1,26 @@
 # Changelog
 
+## [0.8.0](https://github.com/k2b-dev/cloud/compare/npm-editor-v0.7.0...npm-editor-v0.8.0) (2026-11-08)
+
+
+### Features
+
+* **cloud:** Chat and Notebooks share one chart description owned by @k2b/ui ([#2778](https://github.com/k2b-dev/cloud/issues/2778)) ([05299cb](https://github.com/k2b-dev/cloud/commit/05299cb9d7451df2c91e712407614a267435b589))
+* **ui:** stacked, grouped, compared and horizontal bars ([#2729](https://github.com/k2b-dev/cloud/issues/2729)) ([cbfea20](https://github.com/k2b-dev/cloud/commit/cbfea2061617aa5f24bef50aefd01f41d7d316e3))
+* **ui:** waterfall charts ([#2758](https://github.com/k2b-dev/cloud/issues/2758)) ([3b05ef2](https://github.com/k2b-dev/cloud/commit/3b05ef22952c7cb3b883f1d688ada671344db2c2))
+
+
+### Bug Fixes
+
+* **cloud:** localize chart points and keep schema assertions internal ([#2783](https://github.com/k2b-dev/cloud/issues/2783)) ([b2e4a1a](https://github.com/k2b-dev/cloud/commit/b2e4a1a6a396b733dbb5778abecf210febf54228))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @k2b/ui bumped from 0.50.0 to 0.51.0
+
 ## [0.7.0](https://github.com/k2b-dev/cloud/compare/npm-editor-v0.6.5...npm-editor-v0.7.0) (2026-11-07)
 
 
