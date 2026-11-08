@@ -848,6 +848,9 @@ export default function AssistantWorkspace(props: Props) {
           else migrateNewComposer(conversation);
           const targetKey = projectId ? key : conversation.id;
           const local = session(targetKey);
+          // A place chat is created with this composer's own first message as its draft: that revision is ours, not a
+          // remote change, so the send right after builds on it instead of stopping at a draft conflict.
+          if (request.place) local.baseRevision = Math.max(local.baseRevision, conversation.draft.revision);
           setServerDrafts((all) => ({ ...all, [targetKey]: conversation.draft }));
           if (!local.dirty || observeComposerRevision(local, conversation.draft.revision) === "hydrate")
             hydrateComposer(targetKey, conversation.draft);
@@ -980,7 +983,8 @@ export default function AssistantWorkspace(props: Props) {
       }
       for (const key of [...rejectedCreations()]) {
         const projectId = key.startsWith("project:") ? key.slice(8) : undefined;
-        if (!(await createConversation(false, projectId, !projectId && composerSessionKey() === key))) return;
+        const place = projectId ? undefined : newChatPlace();
+        if (!(await createConversation(false, projectId, !projectId && composerSessionKey() === key, place))) return;
       }
       for (const request of [...creationRequests.values()]) {
         if (!(await createConversation(false, request.projectId, false))) return;
@@ -991,7 +995,7 @@ export default function AssistantWorkspace(props: Props) {
         let target = key.startsWith("project:") ? pendingProjectChats()[key.slice(8)]?.id : key === "__new__" ? undefined : key;
         if (!target) {
           const projectId = key.startsWith("project:") ? key.slice(8) : undefined;
-          const created = await createConversation(false, projectId, !projectId);
+          const created = await createConversation(false, projectId, !projectId, projectId ? undefined : newChatPlace());
           if (!created) return;
           target = created.id;
           if (!projectId) key = target;
@@ -1048,8 +1052,9 @@ export default function AssistantWorkspace(props: Props) {
     mentionsFor(key);
     if (!session(key).dirty || session(key).conflict) return;
     if (!chat.activeConversationId() && !text && !files.length) return;
-    // At a place, typing creates nothing: the first sent message creates the chat (O2). The draft stays local until then.
-    if (!chat.activeConversationId() && emptyPlace()) return;
+    // At a place, typing creates nothing: the first sent message creates the chat (O2). The draft stays local until then,
+    // also while the panel still learns whether the page is a place.
+    if (!chat.activeConversationId() && (emptyPlace() || placeResolving())) return;
     const target = chat.activeConversationId();
     const timer = window.setTimeout(async () => {
       if (composerSessionKey() !== key || session(key).conflict) return;
@@ -1350,6 +1355,7 @@ export default function AssistantWorkspace(props: Props) {
     setComposerSubmitting(true);
     try {
       if (!chat.activeConversationId()) {
+        if (placeResolving()) return false;
         // At a place, the first message creates the person's chat there; a chat another tab created meanwhile is reused
         // with its history.
         const place = emptyPlace();
@@ -1357,8 +1363,12 @@ export default function AssistantWorkspace(props: Props) {
           ? await createConversation(false, undefined, true, { ref: place.ref, draft: placeDraft(input) })
           : await createConversation(false);
         if (!conversation || chat.activeConversationId() !== conversation.id) return false;
-        if (place) await chat.refreshActiveConversation();
-        if (place) pagePlace.update({ ...place, conversationId: conversation.id });
+        if (place) {
+          await chat.refreshActiveConversation();
+          pagePlace.update({ ...place, conversationId: conversation.id });
+          // The panel may have followed the page to another place meanwhile; this message belongs to the new chat only.
+          if (chat.activeConversationId() !== conversation.id) return false;
+        }
       }
       const target = chat.activeConversationId()!;
       const sent = await serializeComposer(target, async () => {
@@ -1876,7 +1886,9 @@ export default function AssistantWorkspace(props: Props) {
   const dictationTarget = () => (activeProject() ? (pendingProjectChats()[activeProject()!.id]?.id ?? null) : chat.activeConversationId());
   const liveDictationSource = createLiveDictationSource({ app: "assistant" });
   const dictation = createAssistantDictation({
-    configured: () => Boolean(props.status.audioModelConfigured) && canUseComposer(),
+    // At a place the first sent message creates the chat (O2); dictation needs a chat to upload to, so it starts there
+    // once the chat exists.
+    configured: () => Boolean(props.status.audioModelConfigured) && canUseComposer() && !(emptyPlace() && !chat.activeConversationId()),
     key: dictationKey,
     target: dictationTarget,
     generation: (key) => {
@@ -2689,6 +2701,12 @@ export default function AssistantWorkspace(props: Props) {
   // Gustav at a place (side panel only). The page's place loads on every accepted page context; the bar describes the
   // open chat's place, or the page's place while the panel waits for the first message there.
   const placeT = () => placeMessages.resolve([locale()]).t;
+  /** A saved draft at an empty place creates the chat there with that draft, never a chat without the place. */
+  const newChatPlace = () => {
+    const place = emptyPlace();
+    const text = composerDraft("__new__").trim();
+    return place && text ? { ref: place.ref, draft: [{ type: "text" as const, text }] } : undefined;
+  };
   /** The first message as the place chat's initial draft: its text and references; files follow with the normal send. */
   const placeDraft = (input: AiComposerSendInput): AiDraftContentPart[] => {
     const parts = (input.draftContent ?? []).filter((part) => part.type === "text" || part.type === "resource");
@@ -2707,14 +2725,21 @@ export default function AssistantWorkspace(props: Props) {
   const panelShowsNothingToLose = () =>
     !mainView() &&
     !projectView() &&
-    panelFollowsPlace({
-      conversationId: chat.activeConversationId(),
-      empty: activeChatIsBlank(),
-      atPlace: Boolean(openChatPlace()),
-    });
+    (switchingPlace() ||
+      (chat.activeConversationId()
+        ? panelFollowsPlace({ conversationId: chat.activeConversationId(), empty: activeChatIsBlank(), atPlace: Boolean(openChatPlace()) })
+        : // Text typed into the empty chat is something to lose; the bar then offers the switch instead.
+          !composerDraft("__new__").trim() && composerAttachmentsFor("__new__").length === 0));
+  /** The page names a place whose answer is still out: no chat is created until the panel knows which kind. */
+  const placeResolving = () => Boolean(props.embedded && pagePlace.context()?.scope && pagePlace.state() === "loading");
   const [switchingPlace, setSwitchingPlace] = createSignal(false);
-  /** The empty chat at the page's place: the next message creates the person's chat there. */
-  const showEmptyPlaceChat = () => {
+  /** The place the empty chat belongs to: its next message creates the person's chat there. */
+  const [emptyAt, setEmptyAt] = createSignal<Extract<AssistantPlaceView, { state: "available" }> | null>(
+    props.initialPlace?.state === "available" && !props.initialConversationId ? props.initialPlace : null,
+  );
+  /** The empty chat at a place: the next message creates the person's chat there. */
+  const showEmptyPlaceChat = (view: Extract<AssistantPlaceView, { state: "available" }>) => {
+    setEmptyAt(view);
     navigationRequest++;
     setMainView(null);
     setProjectView(null);
@@ -2724,20 +2749,23 @@ export default function AssistantWorkspace(props: Props) {
       navigate(href, { scroll: "manual", viewTransition: false });
     focusComposer();
   };
+  // Each switch has its own number; a newer page ends an older switch before its chat lands.
+  let placeSwitch = 0;
   const switchToPlace = async (view: Exclude<AssistantPlaceView, { state: "none" }>) => {
     const target = view.conversationId;
-    if (target === chat.activeConversationId() && !mainView() && !projectView()) return;
+    if (target && target === chat.activeConversationId() && !mainView() && !projectView()) return;
+    const token = ++placeSwitch;
     setSwitchingPlace(true);
     try {
       if (!target) {
-        showEmptyPlaceChat();
+        if (view.state === "available") showEmptyPlaceChat(view);
         return;
       }
-      if (await openAndFocusConversation(target)) commitConversationUrl(target);
+      if ((await openAndFocusConversation(target)) && token === placeSwitch) commitConversationUrl(target);
     } catch (error) {
-      chat.setError(error instanceof Error ? error.message : t().openConversationFailed);
+      if (token === placeSwitch) chat.setError(error instanceof Error ? error.message : t().openConversationFailed);
     } finally {
-      setSwitchingPlace(false);
+      if (token === placeSwitch) setSwitchingPlace(false);
     }
   };
   const pagePlace = createPagePlace({
@@ -2752,14 +2780,25 @@ export default function AssistantWorkspace(props: Props) {
   onMount(() => {
     if (!props.embedded) return;
     pagePlace.receive(getContext());
-    onCleanup(onContextChange((next) => pagePlace.receive(next)));
+    onCleanup(
+      onContextChange((next) => {
+        // A switch still opening the previous page's chat ends here; the new page decides again.
+        if (switchingPlace()) {
+          placeSwitch++;
+          navigationRequest++;
+        }
+        pagePlace.receive(next);
+      }),
+    );
   });
   // A chat whose place is not the page's reads its own place once, for its bar.
   const [otherPlace, setOtherPlace] = createSignal<{ key: string; view: AssistantPlaceView | null; failed: boolean } | null>(null);
+  const [otherRetry, setOtherRetry] = createSignal(0);
   createEffect(
     on(
       () => {
         const place = openChatPlace();
+        otherRetry();
         return place && !samePlace(place.ref, pagePlace.view()?.ref) ? place.ref : null;
       },
       (ref) => {
@@ -2780,13 +2819,17 @@ export default function AssistantWorkspace(props: Props) {
       },
     ),
   );
-  const retryOtherPlace = () => setOtherPlace(null);
+  const retryOtherPlace = () => {
+    setOtherPlace(null);
+    setOtherRetry((count) => count + 1);
+  };
   /** The page's place when it is the open chat's, or when the empty panel waits for its first message there. */
   const emptyPlace = () => {
-    const view = pagePlace.view();
-    if (!props.embedded || view?.state !== "available" || mainView() || projectView()) return null;
-    if (chat.activeConversationId() && !samePlace(openChatPlace()?.ref, view.ref)) return null;
-    return emptyChat() ? view : null;
+    const at = emptyAt();
+    if (!props.embedded || !at || chat.activeConversationId() || mainView() || projectView() || !emptyChat()) return null;
+    // The page's fresher answer for the same place wins; after leaving it, the empty chat keeps its own place.
+    const page = pagePlace.view();
+    return page?.state === "available" && samePlace(page.ref, at.ref) ? page : at;
   };
   const placeBar = createMemo((): AssistantPlaceBarState | null => {
     if (!props.embedded || mainView() || projectView()) return null;
@@ -2812,17 +2855,20 @@ export default function AssistantWorkspace(props: Props) {
       return { kind: "loading" };
     }
     const followable = panelShowsNothingToLose();
+    const here = emptyPlace();
+    const offer = followablePlace(page) && !samePlace(page.ref, here?.ref) ? page : null;
     if (pagePlace.state() === "loading" && followable && pagePlace.context()?.scope) return { kind: "loading" };
     if (pagePlace.state() === "failed" && pagePlace.context()?.scope) return { kind: "failed", onRetry: pagePlace.retry };
-    if (!followablePlace(page)) return null;
-    if (followable) return page.state === "available" && !chat.activeConversationId() ? { kind: "place", view: page } : null;
-    return {
-      kind: "switch",
-      view: page,
-      busy: switchingPlace(),
-      disabled: !canUseComposer(),
-      onSwitch: () => void switchToPlace(page),
-    };
+    if (offer && !followable)
+      return {
+        kind: "switch",
+        view: offer,
+        busy: switchingPlace(),
+        disabled: !canUseComposer(),
+        onSwitch: () => void switchToPlace(offer),
+      };
+    if (here) return { kind: "place", view: here };
+    return null;
   });
   // "Attach current view" stays for places whose app declares no Gustav block, and as the way out when a place failed.
   const showsAttachPlace = () =>
@@ -2834,12 +2880,16 @@ export default function AssistantWorkspace(props: Props) {
     const conversationId = chat.activeConversationId();
     if (!conversation || conversation.id !== conversationId || startingOver() || chat.activeTurn() || chat.running()) return;
     setStartingOver(true);
+    const place = openChatPlace();
     try {
       await assistantApi.archiveConversation(conversationId);
-      const place = openChatPlace();
+      // Only while the page is still this chat's place: a later page decided on its own.
       const page = pagePlace.view();
-      if (place && page && page.state !== "none" && samePlace(place.ref, page.ref)) pagePlace.update({ ...page, conversationId: null });
-      showEmptyPlaceChat();
+      if (place && page && page.state !== "none" && samePlace(place.ref, page.ref)) {
+        pagePlace.update({ ...page, conversationId: null });
+        if (chat.activeConversationId() === conversationId && page.state === "available")
+          showEmptyPlaceChat({ ...page, conversationId: null });
+      }
       archiveConversation(conversation);
     } catch {
       toast.error(placeT().startOverFailed);

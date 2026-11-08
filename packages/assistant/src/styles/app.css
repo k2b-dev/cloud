@@ -735,6 +735,7 @@
 .k2b-ui .assistant-place-bar__switch { min-width: 0; max-width: 70%; flex-shrink: 1; }
 .k2b-ui .assistant-place-bar__switch > .k2b-button__label { min-width: 0; }
 .assistant-place-bar__skeleton { width: 9rem; height: 1.25rem; border-radius: 999px; }
+.assistant-place-bar__skeleton-chip { width: 5.5rem; height: 1.25rem; border-radius: 999px; }
 
 .assistant-place-what { display: flex; flex-direction: column; gap: .75rem; padding: .25rem; font-size: .8125rem; }
 .assistant-place-what__head { display: flex; align-items: center; justify-content: space-between; gap: .5rem; }

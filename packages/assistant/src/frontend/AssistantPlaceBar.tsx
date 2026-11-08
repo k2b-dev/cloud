@@ -127,6 +127,12 @@ export default function AssistantPlaceBar(props: { state: AssistantPlaceBarState
               {t().loading}
             </span>
           </div>
+          {/* The chip row's place, so the loaded place moves nothing below in the usual one-line case. */}
+          <div class="assistant-place-bar__chips" aria-hidden="true">
+            <Skeleton class="assistant-place-bar__skeleton-chip" />
+            <Skeleton class="assistant-place-bar__skeleton-chip" />
+            <Skeleton class="assistant-place-bar__skeleton-chip" />
+          </div>
         </Match>
         <Match when={props.state.kind === "failed" && props.state}>
           {(state) => (

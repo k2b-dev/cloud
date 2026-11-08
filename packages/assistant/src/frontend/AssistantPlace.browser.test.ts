@@ -309,6 +309,9 @@ const open = async (view: View, scenario: Scenario, options: { theme?: "light" |
   const placeCalls: string[] = [];
   const created: unknown[] = [];
   const archived: string[] = [];
+  const drafts: { id: string; expectedRevision: number }[] = [];
+  const createdChats = new Map<string, AiConversation>();
+  const turns: string[] = [];
   /** Answers held back until the test releases them, by place id. */
   const held = new Map<string, () => void>();
   const hold = new Set<string>();
@@ -352,14 +355,30 @@ const open = async (view: View, scenario: Scenario, options: { theme?: "light" |
         return route.fulfill({ status: 204 });
       }
       if (suffix === "" && method === "GET" && allChats.some((item) => item.id === id)) return route.fulfill({ json: detailOf(id!) });
+      const fresh = createdChats.get(id!);
+      if (suffix === "" && method === "GET" && fresh)
+        return route.fulfill({ json: { conversation: fresh, messages: [], hasMoreMessages: false, activeTurn: null, timeline: [] } });
       if (suffix === "/viewed") return route.fulfill({ json: {} });
+      if (suffix === "/draft" && method === "PUT") {
+        const body = route.request().postDataJSON();
+        drafts.push({ id: id!, expectedRevision: body.expectedRevision });
+        // The created place chat holds its first message at revision 1, as the server stores it.
+        if (body.expectedRevision !== 1) return route.fulfill({ status: 409, json: { message: "Draft conflict" } });
+        return route.fulfill({ json: { content: body.content, revision: 2, updatedAt: at(0) } });
+      }
+      if (suffix === "/turns" && method === "POST") {
+        turns.push(id!);
+        return route.fulfill({ status: 503, json: { message: "unavailable" } });
+      }
       if (suffix === "/dictations") return route.fulfill({ json: { items: [], nextCursor: null } });
       return route.fulfill({ json: [] });
     }
     if (url.pathname === "/api/ai/conversations" && method === "POST") {
       const body = route.request().postDataJSON();
       created.push(body);
-      return route.fulfill({ status: 201, json: { ...conversation("Pnew01", people[body.place?.id] ?? "Neu", 0, body.place?.id) } });
+      const fresh = { ...conversation("Pnew01", people[body.place?.id] ?? "Neu", 0, body.place?.id) };
+      createdChats.set(fresh.id, fresh);
+      return route.fulfill({ status: 201, json: fresh });
     }
     if (url.pathname === "/api/assistant/workspace/sidebar")
       return route.fulfill({
@@ -399,7 +418,7 @@ const open = async (view: View, scenario: Scenario, options: { theme?: "light" |
       },
       [id ? { v: 1, seq, pageId, app: "kontakt", scope: placeRef(id) } : { v: 1, seq, pageId, app: "kontakt" }] as const,
     );
-  return { page, errors, placeCalls, created, archived, hold, held, navigateHost, close: () => context.close() };
+  return { page, errors, placeCalls, created, archived, drafts, turns, hold, held, navigateHost, close: () => context.close() };
 };
 
 const poll = async (read: () => unknown, expected: unknown, timeout = 5_000) => {
@@ -455,6 +474,10 @@ describe("Gustav at a place", () => {
           await poll(() => h.created.length, 1);
           expect(h.created[0]).toMatchObject({ place: placeRef("u_marta"), draft: { content: [{ type: "text" }] } });
           expect(h.created[0]).not.toHaveProperty("title");
+          // The message then goes out in the new chat, building on the draft its creation stored.
+          await poll(() => h.turns.length, 1);
+          expect(h.turns).toEqual(["Pnew01"]);
+          expect(h.drafts).toEqual([{ id: "Pnew01", expectedRevision: 1 }]);
         }
         expect(h.errors).toEqual([]);
       } finally {
@@ -541,6 +564,26 @@ describe("Gustav at a place", () => {
     try {
       await bar(h.page).getByText("Antwort setzen").waitFor();
       await shot(h.page, "02-panel-ort-chat-dark-1440");
+      expect(h.errors).toEqual([]);
+    } finally {
+      await h.close();
+    }
+  }, 60_000);
+
+  test("text typed at an empty place is kept: the panel stays and offers the switch", async () => {
+    const h = await open(panel, {
+      place: "u_marta",
+      initial: true,
+      answers: { u_marta: available("u_marta", null), u_jonas: available("u_jonas", "Pjonas") },
+    });
+    try {
+      await h.page.getByRole("heading", { name: "Frag Gustav zu Marta Beispiel" }).waitFor();
+      await h.page.getByRole("textbox").last().click();
+      await h.page.keyboard.type("Bitte noch");
+      await h.navigateHost(2, "u_jonas");
+      await bar(h.page).getByRole("button", { name: "Zu Jonas Probe wechseln" }).waitFor();
+      expect(await h.page.getByRole("heading", { name: "Frag Gustav zu Marta Beispiel" }).count()).toBe(1);
+      expect(h.created).toEqual([]);
       expect(h.errors).toEqual([]);
     } finally {
       await h.close();

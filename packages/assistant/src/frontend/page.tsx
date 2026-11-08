@@ -205,7 +205,8 @@ export default ssr<AuthContext>(async (c) => {
       initialPanelContext={panelContext}
       initialPlace={initialPlace}
       initialPlaceChats={sidebar.placeChats ?? null}
-      initialPlacesFilter={url.searchParams.get("places") === "1"}
+      // A chat at a place opens with the list that holds it, so a reload keeps the person where they were.
+      initialPlacesFilter={url.searchParams.get("places") === "1" || (!embedded && Boolean(activeConversation?.place))}
       initialQuotas={initialQuotas}
       userId={user.id}
       cloudUrl={publicCloudOrigin(appUrl)}
