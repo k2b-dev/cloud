@@ -900,7 +900,7 @@ const messageSearchText = (message: Message): string => {
 
 /**
  * An ended turn uses no further approval: cancel its open questions and the turn's own approvals that no call used.
- * A Studio request linked from the turn stays as decided, because the code run uses it when the call runs there.
+ * Linked chat-code decisions follow the same lifecycle; consumed approvals remain execution evidence.
  */
 const cancelTurnApprovals = async (db: typeof sql, turnId: string): Promise<void> => {
   await db`

@@ -283,7 +283,7 @@ suite("AI conversation store integration", () => {
       await cleanupFixture({ userId, conversationIds: [chat.id] });
     }
   });
-  test("ending a turn cancels its open and unused approvals but keeps used ones and a linked Studio decision", async () => {
+  test("ending a turn cancels open and unused approvals, including linked chat code, but keeps consumed decisions", async () => {
     const userId = await insertUser();
     const chat = await aiConversations.createConversation({ ownerUserId: userId, title: "Approvals" });
     try {
@@ -333,12 +333,22 @@ suite("AI conversation store integration", () => {
         }),
       ).toEqual({ ok: true });
       const linked = await ask("linked", { kind: "assistant_turn", ref: `${chat.id}/code/${crypto.randomUUID()}` }, true);
+      const linkedUsedRef = `${chat.id}/code/${crypto.randomUUID()}`;
+      const linkedUsed = await ask("linked-used", { kind: "assistant_turn", ref: linkedUsedRef }, true);
+      expect(
+        await approvals.consume(linkedUsed, {
+          input: { callId: "linked-used" },
+          review: null,
+          requester: { kind: "assistant_turn", ref: linkedUsedRef },
+        }),
+      ).toEqual({ ok: true });
       expect(await aiConversations.completeTurn({ conversationId: chat.id, turnId: turn.id, status: "aborted" })).not.toBe("lost");
-      expect(await Promise.all([open, unused, used, linked].map(async (id) => (await approvals.get(id))?.status))).toEqual([
+      expect(await Promise.all([open, unused, used, linked, linkedUsed].map(async (id) => (await approvals.get(id))?.status))).toEqual([
         "cancelled",
         "cancelled",
         "consumed",
-        "approved",
+        "cancelled",
+        "consumed",
       ]);
     } finally {
       await sql`DELETE FROM audit.events WHERE actor_user_id=${userId}::uuid AND target_type='approval_request'`;
