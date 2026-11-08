@@ -221,6 +221,35 @@ const rotate = async (page: Page) => {
 };
 
 describe("Files photo editing", () => {
+  for (const width of [1440, 390]) {
+    test(`the real media preview host keeps a visible editor close path at ${width}px`, async () => {
+      const { page, errors } = await setup({ width });
+      try {
+        await page.setViewportSize({ width, height: width === 390 ? 844 : 900 });
+        await edit(page);
+        await page.getByRole("tab", { name: "Crop", exact: true }).click();
+        await settled(page);
+        const close = page.locator(".k2b-image-editor__chips").getByRole("button", { name: "Close", exact: true });
+        expect(await close.isVisible()).toBe(true);
+        expect(await close.locator(".ti-x").count()).toBe(1);
+        const box = await close.boundingBox();
+        expect(box!.x).toBeGreaterThanOrEqual(0);
+        expect(box!.y).toBeGreaterThanOrEqual(0);
+        expect(box!.x + box!.width).toBeLessThanOrEqual(width);
+        if (process.env.SHOTS) await page.screenshot({ path: `${process.env.SHOTS}/files-host-crop-light-${width}.png` });
+        await close.click();
+        await page.getByRole("button", { name: "Edit image", exact: true }).waitFor();
+        expect(await page.locator(".k2b-image-editor").count()).toBe(0);
+        expect(await page.getByRole("dialog").isVisible()).toBe(true);
+        await page.getByRole("button", { name: "close dialog", exact: true }).click();
+        await page.getByRole("dialog").waitFor({ state: "hidden" });
+        expect(errors).toEqual([]);
+      } finally {
+        await page.close();
+      }
+    });
+  }
+
   test("pins source bytes and advances the expected revision after each new version", async () => {
     const { page, errors, uploads, reads } = await setup();
     try {
