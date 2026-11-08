@@ -108,6 +108,10 @@ const server = Bun.serve({
     if (pathname === "/plex.css") return new Response(plexCss, { headers: { "Content-Type": "text/css; charset=utf-8" } });
     const font = /^\/fonts\/([\w.-]+\.woff2)$/u.exec(pathname)?.[1];
     if (font) return new Response(Bun.file(resolve(dirname(plexPath), "fonts", font)), { headers: { "Content-Type": "font/woff2" } });
+    // A second message on the page always answers with small images.
+    if (pathname.startsWith("/api/mail/mailboxes/Box001/messages/Msg002/remote-images/")) {
+      return new Response(PNG, { headers: { "Content-Type": "image/png" } });
+    }
     if (pathname.startsWith("/api/mail/mailboxes/Box001/messages/Msg001/remote-images/")) {
       imageRequests += 1;
       if (imageDelay) await Bun.sleep(imageDelay);
@@ -443,6 +447,40 @@ describe("Mail external images row", () => {
       await page.context().close();
     }
   }, 30_000);
+
+  test("removing another message's rule does not start a new load in a message that stays allowed", async () => {
+    imageMode = "large";
+    imageDelay = 0;
+    const page = await open(desktop, { allowRules: [RULE] });
+    try {
+      await waitKind(page, "limited");
+      const requests = imageRequests;
+      const other: RemoteContentAllowRule = { id: "00000000-0000-4000-8000-0000000000dd", scope: "sender", value: "team@verein.example" };
+      await page.evaluate(
+        ({ html, imageIds, other }) =>
+          window.mountMailMessageBody({
+            mailboxId: "Box001",
+            messageId: "Msg002",
+            format: "html",
+            html,
+            plainText: null,
+            attachments: [],
+            remoteContent: { imageIds, allowedByRule: true, allowRules: [other], sender: other.value, domain: "verein.example" },
+          }),
+        { html: newsletter, imageIds, other },
+      );
+      const second = page.locator("section[data-remote-images]").nth(1);
+      await page.locator('section[data-remote-images="always"]').waitFor();
+      await second.getByRole("button", { name: "Ändern" }).click();
+      await page.getByRole("menuitem", { name: "Nicht mehr automatisch laden" }).click();
+      await page.locator('section[data-remote-images="once"]').waitFor();
+      await Bun.sleep(500);
+      expect(imageRequests).toBe(requests);
+    } finally {
+      imageMode = "ok";
+      await page.context().close();
+    }
+  }, 60_000);
 
   test("a snapshot that no longer lists a rule saved here ends the always line", async () => {
     imageMode = "ok";

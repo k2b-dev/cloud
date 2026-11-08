@@ -401,17 +401,18 @@ export default function MailMessageBody(props: {
     }),
   );
   // A sender or domain rule saved elsewhere reaches this message as a live update. A rule removed on this page no longer
-  // loads anything, even while the snapshot still lists it.
+  // loads anything, even while the snapshot still lists it. The memo loads only when the answer turns true, not each time
+  // another message's rule is removed.
+  const autoLoadAllowed = createMemo(
+    () =>
+      imagesAllowed() &&
+      props.remoteContent.allowedByRule &&
+      props.remoteContent.allowRules.every((rule) => !revokedRuleIds().has(rule.id)),
+  );
   createEffect(
-    on(
-      () =>
-        imagesAllowed() &&
-        props.remoteContent.allowedByRule &&
-        props.remoteContent.allowRules.every((rule) => !revokedRuleIds().has(rule.id)),
-      (autoLoad) => {
-        if (autoLoad) void loadRemoteImages(false);
-      },
-    ),
+    on(autoLoadAllowed, (autoLoad) => {
+      if (autoLoad) void loadRemoteImages(false);
+    }),
   );
 
   onMount(() => {
