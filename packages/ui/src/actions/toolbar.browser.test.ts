@@ -335,8 +335,11 @@ test("ToolbarDock keeps two pills at the edges and brings moved actions back whe
       .getByRole("toolbar", { name })
       .locator('.k2b-toolbar__action[data-overflow="hidden"]')
       .evaluateAll((buttons) => buttons.map((button) => button.getAttribute("aria-label")!));
-  // A ResizeObserver cycle decides each pill's layout; settled waits for fonts and two frames.
-  const frame = () => settled(page);
+  // A ResizeObserver cycle decides each pill's layout: wait until no pill is pending, then two frames.
+  const frame = async () => {
+    await page.waitForFunction(() => !document.querySelector(".k2b-toolbar[data-overflow-pending]"));
+    await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
+  };
   try {
     await page.evaluate(() => window.toolbarFixture.mountDock(720));
     await frame();

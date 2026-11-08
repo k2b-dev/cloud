@@ -28,7 +28,7 @@ export type BarChartOptions = {
   series?: { label: string; data: (number | null)[] }[];
   layout?: "columns" | "rows" | "grouped" | "stacked";
   normalize?: boolean;
-  /** Explicit rows form a ranked list; shares include every source item, including the remainder. */
+  /** Unordered nonnegative rows without legacy drawing options form a ranked list. */
   share?: boolean;
   limit?: number;
   tone?: "in" | "out";
@@ -88,6 +88,21 @@ const LEGEND_ROW = 20;
 const MIN_PLOT_SHARE = 0.3;
 
 const narrow = (opts: BarChartOptions) => opts.displayWidth ?? NARROW_PX;
+const signedRows = (opts: BarChartOptions) => opts.data?.some((d) => Number.isFinite(d.value) && d.value < 0);
+/** Ranking cannot replace the 0.69 row drawing when it would discard ordering, marks or axes. */
+const rankedRows = (opts: BarChartOptions) =>
+  opts.layout === "rows" &&
+  !opts.series &&
+  !signedRows(opts) &&
+  !opts.xAxis?.ordered &&
+  opts.xAxis?.label === undefined &&
+  opts.references === undefined &&
+  opts.colorByBar === undefined &&
+  opts.showValues === undefined &&
+  opts.yAxis?.label === undefined &&
+  opts.yAxis?.domain === undefined &&
+  opts.yAxis?.scale === undefined &&
+  opts.yAxis?.ticks === undefined;
 const fmt = (value: number) => (Number.isFinite(value) ? `${Math.round(value * 100) / 100}` : "0");
 
 /** Estimated width of `text` at `size` pixels in the UI sans font with tabular figures; a little wide on purpose. */
@@ -197,7 +212,7 @@ const columnsFit = (opts: BarChartOptions, finite: Plan["finite"], width: number
 /** The renderer's plan for a chart: its layout and logical height at `width`, derived from the data alone. */
 const barChartPlan = (opts: BarChartOptions, width = 480): Plan => {
   const finite = finiteItems(opts.data ?? []);
-  if (opts.layout === "rows" && !opts.series)
+  if (rankedRows(opts))
     return { layout: "rows", height: rankedBarLayout(opts, { width, height: 280 }).height, finite, header: headerHeight(opts) };
   if (opts.series) return { layout: "columns", height: 280, finite, header: headerHeight(opts) };
   const header = headerHeight(opts);
@@ -500,7 +515,7 @@ const renderRows = (opts: BarChartOptions, plan: Plan, width: number, inspect: b
  */
 export const renderBarChartSvg = (opts: BarChartOptions & { width: number; height: number; inspect?: boolean }): string => {
   if (opts.series) return renderSeriesBars(opts);
-  if (opts.layout === "rows") return renderRankedBars(opts);
+  if (rankedRows(opts)) return renderRankedBars(opts);
   const plan = barChartPlan(opts, opts.width);
   // The empty drawing of stdlib's bar chart, written here so bundles leave out stdlib's whole bar renderer.
   if (!plan.finite.length)

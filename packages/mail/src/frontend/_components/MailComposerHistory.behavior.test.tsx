@@ -40,7 +40,7 @@ const detail = (message: MessageSummary, dangerous: boolean): MessageDetail => (
   selectedHeaders: {},
   sourceAvailable: true,
   mailingList: null,
-  remoteContent: { imageIds: [], allowedByRule: false, sender: null, domain: null },
+  remoteContent: { imageIds: [], allowedByRule: false, allowRules: [], sender: null, domain: null },
   security: dangerous
     ? {
         risk: "danger",

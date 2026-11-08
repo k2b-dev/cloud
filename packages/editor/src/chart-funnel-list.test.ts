@@ -45,5 +45,14 @@ test("portable ranked rows validate options and keep every source row in the tab
   expect(drawChart(chartRenderOptions(input, "de"))).toContain("2 weitere");
   expect(schema.safeParse({ ...spec, layout: "columns" }).success).toBe(false);
   expect(schema.safeParse({ ...spec, limit: 0 }).success).toBe(false);
-  expect(schema.safeParse({ ...spec, data: [{ label: "bad", value: -2 }] }).success).toBe(false);
+  // The ranked-only options did not exist in 0.69 and require nonnegative input.
+  expect(() =>
+    schema.parse({
+      ...spec,
+      data: [
+        { label: "Return", value: -2 },
+        { label: "Sale", value: 8 },
+      ],
+    }),
+  ).toThrow("Share, limit and tone need nonnegative values.");
 });
