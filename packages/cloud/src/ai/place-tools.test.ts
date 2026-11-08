@@ -281,3 +281,12 @@ test("resume rejects a historical place call when the app and its catalog are go
   );
   expect([...rejected]).toEqual(["offline"]);
 });
+
+test("a stale general tool cannot execute an Action now reserved for places", async () => {
+  const h = harness();
+  const { place: _place, ...entry } = h.entry;
+  await expect(
+    executeAiCapability({ ...h.call, entry, dependencies: { ...h.call.dependencies, getCapability: async () => h.app } }),
+  ).rejects.toMatchObject({ code: "PLACE_REJECTED" });
+  expect(h.dispatch).not.toHaveBeenCalled();
+});
