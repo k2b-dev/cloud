@@ -42,7 +42,7 @@ export const app = defineApp({
   panel: { href: "/app/assistant/panel", label: "Gustav", icon: "ti ti-moustache", order: 0, code: true },
   pwa: { requiresRoles: ["user"], badge: "/api/assistant/pwa/badge", order: 1 },
   openapi: "/api/assistant/openapi.json",
-  routes: ["/api/assistant", "/app/assistant"],
+  routes: ["/api/assistant", "/app/assistant", "/public/assistant"],
 });
 
 export const { ssr, plugin } = app;

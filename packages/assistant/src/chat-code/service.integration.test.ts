@@ -921,7 +921,7 @@ databaseSuite()("Assistant chat runner persistence", () => {
         });
       }
       for (const reference of [conversationId, chat.shortId]) {
-        await sql`UPDATE assistant.code_capability_calls SET request=jsonb_set(request, '{conversationId}', ${JSON.stringify(reference)}::jsonb)
+        await sql`UPDATE assistant.code_capability_calls SET request=jsonb_set(request, '{conversationId}', ${JSON.stringify(reference)}::text::jsonb)
           WHERE id IN (${readId}::uuid,${pendingId}::uuid)`;
         const cases = [
           {
