@@ -1,0 +1,6 @@
+### Keep a restored workspace layout from overwriting live sizes
+
+- **What happened:** In Files, the storage sidebar shrank for one or two frames on every folder change and on every full load, then snapped back to the width the person had saved.
+- **Root cause:** `AppWorkspace` set the restored layout as its root `style` inside the root's render effect. Solid writes a string style on every run of that effect, so any rerun (Files' root class follows the snapshot) wrote back the first frame's widths over the widths the controller had set. Files also passed a fixed `layoutState` (248 px sidebar, 400 px inspector), which replaced the saved Cloud layout in server markup.
+- **Error class:** First-frame layout state applied reactively or by the application, so it overwrites geometry that the workspace controller owns after mount.
+- **Guard:** `packages/ui/src/layout/workspace-restored-layout.browser.test.ts` resizes the sidebar, reruns the workspace root and requires the same sidebar width and main column edge on every frame; `packages/filesv2/src/frontend/SidebarFrames.browser.test.ts` requires the saved width on every frame of full loads and of folder changes through the tree and the list. Applications give their workspace a starting width in CSS on its class, which a saved inline width overrides, never through `layoutState`.

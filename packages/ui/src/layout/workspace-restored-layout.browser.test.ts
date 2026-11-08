@@ -2,7 +2,7 @@ import { afterAll, beforeAll, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import type { Browser } from "playwright";
-import { launchBrowser } from "../../test/browser";
+import { launchBrowser, settled } from "../../test/browser";
 
 // The restored layout is the workspace's first frame. Afterwards the controller owns the sizes, so an
 // unrelated rerender of the root, such as a class that follows the current view, must not restore the
@@ -85,15 +85,18 @@ test("a resized sidebar keeps its width on every frame while the workspace root 
     await page.addScriptTag({ content: script });
     const handle = page.getByRole("separator", { name: "Resize navigation" });
     await handle.waitFor();
+    await settled(page);
     expect(Math.round((await page.locator("#navigation").boundingBox())!.width)).toBe(248);
     // The person widens the sidebar: the controller now owns 280 px.
     await handle.focus();
     for (let step = 0; step < 4; step++) await page.keyboard.press("ArrowRight");
+    await settled(page);
     const resized = await page.evaluate(() => ({
       sidebar: document.querySelector("#navigation")!.getBoundingClientRect().width,
       content: document.querySelector(".k2b-app-workspace__content")!.getBoundingClientRect().left,
     }));
     expect(resized.sidebar).toBe(280);
+    // settled: the frames right after each rerender are the subject.
     const frames = await page.evaluate(async () => {
       const box = (selector: string) => document.querySelector(selector)!.getBoundingClientRect();
       const host = window as unknown as { setView: (view: string) => void };

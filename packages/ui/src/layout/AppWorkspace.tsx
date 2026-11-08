@@ -2542,6 +2542,10 @@ const AppWorkspace = ((props: AppWorkspaceProps) => {
   const [sidebarId, setSidebarId] = createSignal(`k2b-workspace-sidebar-${createUniqueId()}`);
   const initialLayoutState = () => props.layoutState?.() ?? serverLayoutState;
   const workspace = { sidebarId: sidebarId(), setSidebarId, initialLayoutState };
+  // Read once in the untracked component body and written once: the controller owns the sizes after the first
+  // frame. In the root's effect, every rerun (a class that follows the view) rewrote the inline style and showed
+  // the restored widths for a frame.
+  const restoredStyle = appWorkspaceLayoutStyle(initialLayoutState());
 
   // The resize handles are inert markup until the controller is attached, so
   // the workspace attaches it itself and scopes it to this root. `onMount`
@@ -2594,9 +2598,7 @@ const AppWorkspace = ((props: AppWorkspaceProps) => {
             initialLayoutState()?.sidebarCollapsed === undefined ? undefined : String(initialLayoutState()?.sidebarCollapsed)
           }
           data-workspace-resizable={props.resizable === false ? "false" : "true"}
-          // Written once: the controller owns the sizes after the first frame. In the root's effect, every rerun
-          // (a class that follows the view) rewrote the inline style and showed the restored widths for a frame.
-          style={/* @once */ appWorkspaceLayoutStyle(initialLayoutState())}
+          style={/* @once */ restoredStyle}
         >
           {contents()}
         </div>
