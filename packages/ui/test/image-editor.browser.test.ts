@@ -221,8 +221,10 @@ describe("public ImageEditor interactions", () => {
         });
       const before = await edges();
       expect(before.photo).toBeLessThanOrEqual(before.overlay);
-      // The sheet grows without any tool, canvas, or frame change, as when its content arrives late.
-      await page.addStyleTag({ content: ".k2b-ui .k2b-image-editor[data-phone] .k2b-image-editor__pane { padding-bottom: 120px; }" });
+      // Grow its observed content box by 260px; padding alone would not notify ResizeObserver.
+      // No tool, canvas, or frame changes, as when the sheet content arrives late.
+      await page.addStyleTag({ content: ".k2b-ui .k2b-image-editor[data-phone] .k2b-image-editor__body { height: 418px; }" });
+      await settled(page);
       await page.waitForFunction(
         (overlay) =>
           [
@@ -230,12 +232,12 @@ describe("public ImageEditor interactions", () => {
             ...document.querySelectorAll(".k2b-image-editor__bottom .k2b-image-editor__group"),
           ]
             .filter((element) => (element as HTMLElement).offsetParent !== null)
-            .some((element) => element.getBoundingClientRect().top < overlay - 100),
+            .some((element) => element.getBoundingClientRect().top < overlay - 240),
         before.overlay,
       );
       await settled(page);
       const after = await edges();
-      expect(after.overlay).toBeLessThan(before.overlay - 100);
+      expect(after.overlay).toBeLessThan(before.overlay - 240);
       expect(after.photo).toBeLessThanOrEqual(after.overlay);
       expect(errors).toEqual([]);
     } finally {
