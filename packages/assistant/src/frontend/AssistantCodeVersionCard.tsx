@@ -1,3 +1,4 @@
+import { FeatCodeMark } from "@k2b/cloud/code/ui";
 import { Button, ButtonLink, Skeleton, useLocale } from "@k2b/ui";
 import { createMemo, createSignal, Match, onCleanup, onMount, Show, Switch } from "solid-js";
 import {
@@ -224,7 +225,10 @@ export default function AssistantCodeVersionCard(props: {
       <Match when={preview()}>
         {(current) => (
           <div class="assistant-code-version" data-state="ready">
-            <p class="assistant-code-version__title">{t().codeVersionReady({ version: props.number, title: current().title })}</p>
+            <p class="assistant-code-version__title">
+              <FeatCodeMark variant="glyph" decorative class="assistant-code-version__mark" />
+              {t().codeVersionReady({ version: props.number, title: current().title })}
+            </p>
             <Show when={current().automations?.length}>
               <p class="assistant-code-version__note">
                 {current()

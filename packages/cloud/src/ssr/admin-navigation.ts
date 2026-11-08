@@ -3,8 +3,18 @@ import { normalizeRedirectTo } from "../shared";
 import { platformMessages } from "./platform-messages";
 import type { RuntimeContext } from "./runtime";
 
-/** `match` lists further paths the link stands for, such as the pages of an area. */
-export type AdminLink = { href: string; icon: string; label: string; match?: string[]; waiting?: { count: number; label: string } };
+/**
+ * `match` lists further paths the link stands for, such as the pages of an area. `brand` draws a brand sign instead
+ * of `icon` where the bar can render one; `icon` stays the fallback for icon-only menus.
+ */
+export type AdminLink = {
+  href: string;
+  icon: string;
+  brand?: "feat-code";
+  label: string;
+  match?: string[];
+  waiting?: { count: number; label: string };
+};
 /** A group without `label` stands at the top without a heading, such as the overview. */
 export type AdminGroup = { label?: string; links: AdminLink[] };
 
@@ -77,6 +87,7 @@ export const buildAdminGroups = (
         {
           href: "/admin/code",
           icon: "ti-code",
+          brand: "feat-code",
           label: t.code,
           ...(codeApprovals
             ? { waiting: { count: codeApprovals, label: approvalMessages.resolve([locale]).t.waiting({ count: codeApprovals }) } }

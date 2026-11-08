@@ -79,7 +79,7 @@ export function buildCodeCli(locale?: string) {
   const outFlag = { out: flag.string({ default: "code", description: t("New checkout root", "Neues Zielverzeichnis") }) };
   return defineCliCommands({
     name: "code",
-    summary: t("Develop, check and submit Code", "Code entwickeln, prüfen und einreichen"),
+    summary: t("feat/code: develop, check and submit Code", "feat/code: Code entwickeln, prüfen und einreichen"),
     requiresCloud: true,
     groupSummaries: { sdk: t("Download the generated SDK", "Erzeugtes SDK herunterladen") },
     commands: [
