@@ -27,8 +27,9 @@ testing tasks that do not need their own application.
 
 Check where each task runs before entering sensitive data. Most generators,
 converters, security helpers, and image operations are interactive page tools.
-Document extraction, PDF rendering, and PDF page operations call the Cloud server. Speed tests use
-the named standalone measurement server without sending Cloud credentials.
+Document extraction, PDF rendering, and PDF page operations call the Cloud
+server. Speed tests use the named standalone measurement server without
+sending Cloud credentials.
 Document conversion holds its input and result only in memory; webhook
 endpoints and request history are stored server-side.
 

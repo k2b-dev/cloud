@@ -273,11 +273,12 @@ from `@k2b/cloud/services/pdf`.
   uploads together have a budget of twice `maxPdfBytes`. Intermediate PDF
   downloads and the final output together have the same budget; retained
   intermediate PDFs must fit `maxPdfBytes`.
-- File count is limited by the smaller of `floor(maxHtmlBytes / 8192)` and
-  `maxOperations - 1`. Total source pages use `maxOperations - 2`, with a
-  minimum of one, reserving inspection and the final merge even when each
-  page needs a separate extraction. The 8 KiB metadata envelope bounds both
-  counts. These are count bounds, not renderer speed estimates.
+- The metadata allowance is `max(1, floor(maxHtmlBytes / 8192))` slots.
+  File count is limited by the smaller of that allowance and
+  `maxOperations - 1`. Total source pages use `max(1, maxOperations - 2)`
+  instead, reserving inspection and the final merge even when each page
+  needs a separate extraction. These are count bounds, not renderer speed
+  estimates.
 - All renderer calls together are limited to `floor(timeoutMs / 100)` (at
   least two). Inspection and the final merge count too. Metadata fits
   `maxHtmlBytes`. Configuration values use the existing registry ranges.
@@ -295,10 +296,10 @@ Applications must authenticate and authorize app access before reading an
 upload. Bound the actual request stream before parsing multipart data, including
 requests without `Content-Length`. Reserve local memory admission before
 reading, and allow at most one active upload per access subject so one caller
-cannot occupy both local places; forward the original request's abort signal and raise its idle timeout
-while waiting for the result. Return a private, non-cacheable PDF or ZIP with
-an attachment filename. The helpers retain no files and accept no user-chosen
-renderer URL or path.
+cannot occupy both local places. Forward the original request's abort signal
+and raise its idle timeout while waiting for the result. Return a private,
+non-cacheable PDF or ZIP with an attachment filename. The helpers retain no
+files and accept no user-chosen renderer URL or path.
 
 ## Handle renderer errors
 

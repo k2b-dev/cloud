@@ -862,8 +862,8 @@ Before enabling the API for users, check a small merge, selected-page extraction
 split ZIP, rotation and reorder against the installed renderer. Uploaded files
 and results are not persisted by Tools. Each access subject can hold one of
 two local upload places; a second concurrent request from that subject returns
-HTTP 503. Unreadable or password-protected PDFs return HTTP 422. Keep Gotenberg private and offline as
-below.
+HTTP 503. Unreadable or password-protected PDFs return HTTP 422. Keep Gotenberg
+private and offline as below.
 
 ### Keep Gotenberg offline
 
