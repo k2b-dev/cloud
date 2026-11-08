@@ -5,24 +5,20 @@ import type { CreateFieldSuggestion, FieldSuggestionControl, FieldSuggestionOpti
 export const FieldSuggestionContext = createContext<CreateFieldSuggestion>();
 
 const none = () => undefined;
+const same = <T>(value: T) => value;
 const inert: FieldSuggestionControl<never> = {
   enabled: false,
   view: () => "none",
   value: none,
   placeholder: none,
-  state: none,
-  describedBy: none,
-  edited: none,
+  describe: same,
   inline: none,
+  field: same,
+  status: undefined,
+  under: same,
 };
-
-let warned = false;
 
 export function useFieldSuggestion<T>(options: FieldSuggestionOptions<T>): FieldSuggestionControl<T> {
   const create = useContext(FieldSuggestionContext);
-  if (options.enabled && !create && !warned) {
-    warned = true;
-    console.warn("@k2b/ui: a suggestion needs a SuggestionGroup");
-  }
-  return options.enabled && create ? create(options) : inert;
+  return create && options.enabled !== false && "suggestion" in options.props ? create(options) : inert;
 }

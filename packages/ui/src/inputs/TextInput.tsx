@@ -1,6 +1,6 @@
 import { createSignal, type JSX, Show, splitProps } from "solid-js";
 import { isServer } from "solid-js/web";
-import { createFieldMeta, Field, fieldControlAria } from "../internal/field";
+import { createFieldMeta, Field, fieldControlAria, fieldDescribedBy } from "../internal/field";
 import { useUiMessages } from "../intl/messages";
 import type { Completion } from "./completion";
 import type { FieldSuggestionProps, ValueFieldProps } from "./field-contract";
@@ -83,17 +83,7 @@ export function TextInput(props: TextInputProps): JSX.Element {
   const meta = createFieldMeta(local.id);
   const value = () => resolveMaybeAccessor(local.value) ?? "";
   const error = () => resolveMaybeAccessor(local.error);
-  const suggestion = useFieldSuggestion({
-    props: local,
-    enabled: "suggestion" in props && !props.markdown,
-    meta,
-    value,
-    blank: () => value() === "",
-    format: (text) => text,
-    locked: () => Boolean(rest.disabled || rest.readOnly),
-    invalid: () => Boolean(error()),
-    apply: (next) => commitFieldValue(local, next),
-  });
+  const suggestion = useFieldSuggestion({ props, enabled: !props.markdown, meta, value });
   // HTML IDs are single nonempty tokens; numeric starts and punctuation are valid.
   const externalErrorId = () => {
     const id = local.externalErrorId;
@@ -115,10 +105,7 @@ export function TextInput(props: TextInputProps): JSX.Element {
   // Names, addresses and passwords are typed exactly: phone keyboards must not capitalize or "correct" them.
   const verbatim = () =>
     local.password || local.type === "email" || local.type === "url" || /\b(username|email|url)\b/.test(String(rest.autocomplete ?? ""));
-  const input = (next: string) => {
-    suggestion.edited();
-    local.onValueChange?.(next);
-  };
+  const input = (next: string) => local.onValueChange?.(next);
   const commit = (next: string) => local.onValueCommit?.(next);
   const submitOnEnter = (event: KeyboardEvent) => {
     if (local.onSubmit && event.key === "Enter" && !event.shiftKey && !event.metaKey) {
@@ -137,7 +124,6 @@ export function TextInput(props: TextInputProps): JSX.Element {
     // Clearing removes the button. Return to the field before notifying the caller, whose handler
     // may deliberately navigate or move focus somewhere else.
     event.currentTarget.ownerDocument.getElementById(meta.controlId)?.focus();
-    suggestion.edited();
     if (local.onClear) {
       local.onClear();
       return;
@@ -150,107 +136,110 @@ export function TextInput(props: TextInputProps): JSX.Element {
       when={local.markdown}
       fallback={
         <Field
-          class={local.class}
+          class={suggestion.field(local.class)}
           label={local.label}
           description={local.description}
           error={externalErrorId() ? undefined : error()}
           meta={meta}
           required={local.required}
           disabled={rest.disabled}
-          suggestion={suggestion.status}
+          labelEnd={suggestion.status}
         >
-          <div
-            class="k2b-input-shell k2b-text-input"
-            data-variant={compact() ? "compact" : undefined}
-            data-invalid={error() ? "true" : undefined}
-            data-suggestion={suggestion.state()}
-            data-ai={local.variant === "ai" ? "true" : undefined}
-            data-multiline={multiline() ? "true" : undefined}
-            data-monospace={local.monospace ? "true" : undefined}
-            style={multiline() ? { "--k2b-editor-lines": String(local.lines ?? 3) } : undefined}
-          >
-            <Show when={!compact() && icon()}>
-              <span class="k2b-input-shell__icon k2b-text-input__icon" aria-hidden="true">
-                <i class={icon()} />
-                <i class={activeIcon()} />
-              </span>
-            </Show>
-            <Show when={local.prefix}>
-              <span class="k2b-input-shell__affix">{local.prefix}</span>
-            </Show>
-            <Show
-              when={multiline()}
-              fallback={
-                <input
-                  autocapitalize={verbatim() ? "none" : undefined}
-                  autocorrect={verbatim() ? "off" : undefined}
-                  spellcheck={verbatim() ? false : undefined}
-                  {...rest}
+          {suggestion.under(
+            <div
+              class="k2b-input-shell k2b-text-input"
+              data-variant={compact() ? "compact" : undefined}
+              data-invalid={error() ? "true" : undefined}
+              data-ai={local.variant === "ai" ? "true" : undefined}
+              data-multiline={multiline() ? "true" : undefined}
+              data-monospace={local.monospace ? "true" : undefined}
+              style={multiline() ? { "--k2b-editor-lines": String(local.lines ?? 3) } : undefined}
+            >
+              <Show when={!compact() && icon()}>
+                <span class="k2b-input-shell__icon k2b-text-input__icon" aria-hidden="true">
+                  <i class={icon()} />
+                  <i class={activeIcon()} />
+                </span>
+              </Show>
+              <Show when={local.prefix}>
+                <span class="k2b-input-shell__affix">{local.prefix}</span>
+              </Show>
+              <Show
+                when={multiline()}
+                fallback={
+                  <input
+                    autocapitalize={verbatim() ? "none" : undefined}
+                    autocorrect={verbatim() ? "off" : undefined}
+                    spellcheck={verbatim() ? false : undefined}
+                    {...rest}
+                    id={meta.controlId}
+                    class="k2b-input"
+                    size={rest.size ?? (compact() ? 9 : undefined)}
+                    type={local.password && !passwordVisible() ? "password" : (local.type ?? "text")}
+                    value={value()}
+                    placeholder={suggestion.placeholder() ?? rest.placeholder}
+                    minlength={local.minLength}
+                    maxlength={local.maxLength}
+                    required={local.required}
+                    {...fieldControlAria(controlMeta, local)}
+                    aria-describedby={suggestion.describe(fieldDescribedBy(controlMeta, local))}
+                    onInput={(event) => {
+                      input(event.currentTarget.value);
+                    }}
+                    onChange={(event) => commit(event.currentTarget.value)}
+                    onKeyDown={keyDown}
+                  />
+                }
+              >
+                <textarea
+                  {...(rest as unknown as JSX.TextareaHTMLAttributes<HTMLTextAreaElement>)}
                   id={meta.controlId}
-                  class="k2b-input"
-                  size={rest.size ?? (compact() ? 9 : undefined)}
-                  type={local.password && !passwordVisible() ? "password" : (local.type ?? "text")}
+                  class="k2b-input k2b-text-input__textarea"
                   value={value()}
                   placeholder={suggestion.placeholder() ?? rest.placeholder}
+                  rows={local.lines ?? 3}
+                  required={local.required}
                   minlength={local.minLength}
                   maxlength={local.maxLength}
-                  required={local.required}
-                  {...fieldControlAria(controlMeta, local, suggestion)}
+                  {...fieldControlAria(controlMeta, local)}
+                  aria-describedby={suggestion.describe(fieldDescribedBy(controlMeta, local))}
                   onInput={(event) => {
                     input(event.currentTarget.value);
                   }}
                   onChange={(event) => commit(event.currentTarget.value)}
                   onKeyDown={keyDown}
-                />
-              }
-            >
-              <textarea
-                {...(rest as unknown as JSX.TextareaHTMLAttributes<HTMLTextAreaElement>)}
-                id={meta.controlId}
-                class="k2b-input k2b-text-input__textarea"
-                value={value()}
-                placeholder={suggestion.placeholder() ?? rest.placeholder}
-                rows={local.lines ?? 3}
-                required={local.required}
-                minlength={local.minLength}
-                maxlength={local.maxLength}
-                {...fieldControlAria(controlMeta, local, suggestion)}
-                onInput={(event) => {
-                  input(event.currentTarget.value);
-                }}
-                onChange={(event) => commit(event.currentTarget.value)}
-                onKeyDown={keyDown}
-              >
-                {/* HTML consumes one leading newline in textarea content. */}
-                {isServer ? `\n${value()}` : undefined}
-              </textarea>
-            </Show>
-            <Show when={local.suffix}>
-              <span class="k2b-input-shell__affix">{local.suffix}</span>
-            </Show>
-            <Show when={local.clearable && value() && !multiline() && !local.password && !rest.disabled && !rest.readOnly}>
-              <button
-                type="button"
-                class="k2b-input-shell__clear k2b-input-clear-action"
-                aria-label={local.clearLabel ?? messages().clear}
-                onClick={clear}
-              >
-                <i class="ti ti-x" aria-hidden="true" />
-              </button>
-            </Show>
-            <Show when={local.password && !multiline()}>
-              <button
-                type="button"
-                class="k2b-input-shell__clear"
-                aria-label={passwordVisible() ? inputMessages().hidePassword : inputMessages().showPassword}
-                aria-pressed={passwordVisible()}
-                disabled={rest.disabled}
-                onClick={() => setPasswordVisible((visible) => !visible)}
-              >
-                <i class={passwordVisible() ? "ti ti-eye-off" : "ti ti-eye"} aria-hidden="true" />
-              </button>
-            </Show>
-          </div>
+                >
+                  {/* HTML consumes one leading newline in textarea content. */}
+                  {isServer ? `\n${value()}` : undefined}
+                </textarea>
+              </Show>
+              <Show when={local.suffix}>
+                <span class="k2b-input-shell__affix">{local.suffix}</span>
+              </Show>
+              <Show when={local.clearable && value() && !multiline() && !local.password && !rest.disabled && !rest.readOnly}>
+                <button
+                  type="button"
+                  class="k2b-input-shell__clear k2b-input-clear-action"
+                  aria-label={local.clearLabel ?? messages().clear}
+                  onClick={clear}
+                >
+                  <i class="ti ti-x" aria-hidden="true" />
+                </button>
+              </Show>
+              <Show when={local.password && !multiline()}>
+                <button
+                  type="button"
+                  class="k2b-input-shell__clear"
+                  aria-label={passwordVisible() ? inputMessages().hidePassword : inputMessages().showPassword}
+                  aria-pressed={passwordVisible()}
+                  disabled={rest.disabled}
+                  onClick={() => setPasswordVisible((visible) => !visible)}
+                >
+                  <i class={passwordVisible() ? "ti ti-eye-off" : "ti ti-eye"} aria-hidden="true" />
+                </button>
+              </Show>
+            </div>,
+          )}
         </Field>
       }
     >

@@ -1,5 +1,5 @@
 import { createMemo, createSignal, For, type JSX, Show } from "solid-js";
-import { createFieldMeta, Field, fieldControlAria } from "../internal/field";
+import { createFieldMeta, Field, fieldControlAria, fieldDescribedBy } from "../internal/field";
 import { useUiMessages } from "../intl/messages";
 import { ChoiceGroups } from "./ChoiceGroups";
 import { type ChoiceOption, createChoiceLoader, createChoicePopover, filterChoiceOptions, nextEnabledChoiceIndex } from "./choice";
@@ -161,13 +161,9 @@ export function Select(props: SelectProps): JSX.Element {
   });
   const suggestion = useFieldSuggestion({
     props,
-    enabled: "suggestion" in props,
     meta,
     value,
-    blank: () => value() === null,
     format: (option) => sourceOptions().find((item) => item.value === option)?.label ?? cache()[option]?.label ?? option,
-    locked: () => Boolean(props.disabled),
-    invalid: () => Boolean(error()),
     spokenValue: true,
     apply: (option, named) => {
       // A suggested option from a remote list keeps its name once it is the value.
@@ -217,7 +213,6 @@ export function Select(props: SelectProps): JSX.Element {
   const select = (option: NormalizedOption) => {
     if (option.disabled) return;
     close(true);
-    suggestion.edited();
     if (option.value === CLEAR_VALUE) {
       commitFieldValue(props, null);
       return;
@@ -247,214 +242,211 @@ export function Select(props: SelectProps): JSX.Element {
   };
   const clear = (event: MouseEvent) => {
     event.stopPropagation();
-    suggestion.edited();
     commitFieldValue(props, null);
     popover.trigger()?.focus();
   };
 
   return (
     <Field
-      class={props.class}
+      class={suggestion.field(props.class)}
       label={props.label}
       description={props.description}
       error={error()}
       meta={meta}
       required={props.required}
       disabled={props.disabled}
-      suggestion={suggestion.status}
+      labelEnd={suggestion.status}
     >
-      <div class="k2b-choice-control" data-appearance={props.appearance ?? "field"} data-invalid={error() ? "true" : undefined}>
-        <button
-          ref={popover.setTrigger}
-          id={meta.controlId}
-          type="button"
-          class="k2b-choice-trigger"
-          role="combobox"
-          aria-haspopup="listbox"
-          aria-expanded={popover.open()}
-          aria-controls={listboxId}
-          aria-activedescendant={focusedOption() ? `${listboxId}-${focusedIndex()}` : undefined}
-          data-clearable={hasClearAction() ? "true" : undefined}
-          data-suggestion={suggestion.state()}
-          {...fieldControlAria(
-            meta,
-            {
+      {suggestion.under(
+        <div class="k2b-choice-control" data-appearance={props.appearance ?? "field"} data-invalid={error() ? "true" : undefined}>
+          <button
+            ref={popover.setTrigger}
+            id={meta.controlId}
+            type="button"
+            class="k2b-choice-trigger"
+            role="combobox"
+            aria-haspopup="listbox"
+            aria-expanded={popover.open()}
+            aria-controls={listboxId}
+            aria-activedescendant={focusedOption() ? `${listboxId}-${focusedIndex()}` : undefined}
+            data-clearable={hasClearAction() ? "true" : undefined}
+            {...fieldControlAria(meta, {
               ...props,
               "aria-label": accessibleLabel(),
-            },
-            suggestion,
-          )}
-          disabled={props.disabled}
-          onClick={() => (popover.open() ? close() : open())}
-          onKeyDown={onKeyDown}
-        >
-          <Show
-            when={selected()}
-            fallback={
-              <Show
-                when={props.placeholderIcon}
-                fallback={<Show when={emptyDot()}>{<span class="k2b-choice-dot" data-empty="true" aria-hidden="true" />}</Show>}
-              >
-                {(icon) => <i class={`${icon()} k2b-choice-trigger__placeholder-icon`} aria-hidden="true" />}
-              </Show>
-            }
+            })}
+            aria-describedby={suggestion.describe(fieldDescribedBy(meta, props))}
+            disabled={props.disabled}
+            onClick={() => (popover.open() ? close() : open())}
+            onKeyDown={onKeyDown}
           >
             <Show
-              when={selected()?.color}
-              fallback={<Show when={selected()?.icon}>{(icon) => <i class={icon()} aria-hidden="true" />}</Show>}
-            >
-              {(color) => <span class="k2b-choice-dot" style={{ "background-color": color() }} aria-hidden="true" />}
-            </Show>
-          </Show>
-          <span class="k2b-choice-trigger__value" data-placeholder={selected() ? undefined : "true"}>
-            {selected()?.label ?? suggestion.placeholder() ?? props.placeholder ?? messages().select}
-          </span>
-          <i
-            class={`${popover.open() ? (props.activeIcon ?? "ti ti-chevron-up") : (props.icon ?? "ti ti-chevron-down")} k2b-choice-trigger__chevron`}
-            aria-hidden="true"
-          />
-        </button>
-        <Show when={props.name}>{(name) => <input type="hidden" name={name()} value={value() ?? ""} />}</Show>
-        <Show when={hasClearAction()}>
-          <button
-            type="button"
-            class="k2b-choice-control__clear k2b-input-clear-action"
-            aria-label={messages().clearSelection}
-            onClick={clear}
-          >
-            <i class="ti ti-x" aria-hidden="true" />
-          </button>
-        </Show>
-        <div
-          ref={popover.setPopover}
-          popover="manual"
-          class="k2b-choice-popover"
-          data-toolbar={(props.groups?.length ?? 0) > 0 || props.viewToggle ? "true" : undefined}
-          role="group"
-          onKeyDown={onKeyDown}
-          aria-label={typeof props.label === "string" ? props.label : (props["aria-label"] ?? messages().options)}
-        >
-          <Show when={isSearchable()}>
-            <div class="k2b-choice-search">
-              <i class="ti ti-search" aria-hidden="true" />
-              <input
-                ref={searchRef}
-                type="search"
-                value={query()}
-                placeholder={props.searchPlaceholder ?? messages().search}
-                aria-label={props.searchPlaceholder ?? selectMessages().searchOptions}
-                aria-controls={listboxId}
-                aria-activedescendant={focusedOption() ? `${listboxId}-${focusedIndex()}` : undefined}
-                onInput={(event) => {
-                  // A default group, such as "Recommended", is a starting view,
-                  // not a filter: a static search leaves it for "All". A group
-                  // the person chose keeps narrowing the results.
-                  if (!isAsync() && !groupChosen && event.currentTarget.value) setSelectedGroup(null);
-                  setQuery(event.currentTarget.value);
-                  if (isAsync()) loader.load(event.currentTarget.value);
-                  focus(isAsync() ? -1 : nextEnabledChoiceIndex(options(), -1, 1));
-                }}
-              />
-            </div>
-          </Show>
-          <Show when={(props.groups?.length ?? 0) > 0 || props.viewToggle}>
-            <div class="k2b-choice-toolbar">
-              <Show when={(props.groups?.length ?? 0) > 0}>
-                <ChoiceGroups
-                  choices={groupChoices()}
-                  value={activeGroup()}
-                  onValueChange={chooseGroup}
-                  ariaLabel={props.groupsAriaLabel ?? selectMessages().filterOptions}
-                  controls={listboxId}
-                />
-              </Show>
-              <Show when={props.viewToggle}>
-                <button
-                  type="button"
-                  class="k2b-choice-view-toggle"
-                  aria-label={activeView() === "list" ? selectMessages().showGridView : selectMessages().showListView}
-                  aria-controls={listboxId}
-                  onClick={() => setSelectedView(activeView() === "list" ? "grid" : "list")}
-                >
-                  <i class={activeView() === "list" ? "ti ti-category-2" : "ti ti-list-details"} aria-hidden="true" />
-                </button>
-              </Show>
-            </div>
-          </Show>
-          <div
-            id={listboxId}
-            class="k2b-choice-options"
-            role="listbox"
-            data-view={activeView()}
-            data-grid-size={activeView() === "grid" ? (props.gridSize ?? "md") : undefined}
-          >
-            <Show when={loader.error()}>
-              {(message) => (
-                <div class="k2b-choice-status" data-tone="danger">
-                  <span>{message()}</span>
-                  <button type="button" onClick={loader.retry}>
-                    {messages().retry}
-                  </button>
-                </div>
-              )}
-            </Show>
-            <Show when={loader.loading() && options().length === 0}>
-              <div class="k2b-choice-status">
-                <i class="ti ti-loader-2 k2b-spin" aria-hidden="true" />
-                <span>{messages().loading}</span>
-              </div>
-            </Show>
-            <For
-              each={loader.error() ? [] : listOptions()}
+              when={selected()}
               fallback={
-                <Show when={!loader.loading() && !loader.error()}>
-                  <div class="k2b-choice-status">{isSearchable() ? messages().noResults : selectMessages().noOptions}</div>
+                <Show
+                  when={props.placeholderIcon}
+                  fallback={<Show when={emptyDot()}>{<span class="k2b-choice-dot" data-empty="true" aria-hidden="true" />}</Show>}
+                >
+                  {(icon) => <i class={`${icon()} k2b-choice-trigger__placeholder-icon`} aria-hidden="true" />}
                 </Show>
               }
             >
-              {(option, index) => (
-                <button
-                  ref={(element) => (optionRefs[index()] = element)}
-                  type="button"
-                  id={`${listboxId}-${index()}`}
-                  class="k2b-choice-option"
-                  role="option"
-                  aria-label={option.label}
-                  aria-selected={option.value === (value() ?? CLEAR_VALUE)}
-                  data-focused={index() === focusedIndex() ? "true" : undefined}
-                  data-clear={option.value === CLEAR_VALUE ? "true" : undefined}
-                  disabled={option.disabled}
-                  onPointerMove={() => focus(index())}
-                  onClick={() => select(option)}
-                >
-                  <Show
-                    when={option.value === CLEAR_VALUE}
-                    fallback={
-                      <Show
-                        when={option.color}
-                        fallback={<Show when={option.icon}>{(icon) => <i class={icon()} aria-hidden="true" />}</Show>}
-                      >
-                        {(color) => <span class="k2b-choice-dot" style={{ "background-color": color() }} aria-hidden="true" />}
-                      </Show>
-                    }
+              <Show
+                when={selected()?.color}
+                fallback={<Show when={selected()?.icon}>{(icon) => <i class={icon()} aria-hidden="true" />}</Show>}
+              >
+                {(color) => <span class="k2b-choice-dot" style={{ "background-color": color() }} aria-hidden="true" />}
+              </Show>
+            </Show>
+            <span class="k2b-choice-trigger__value" data-placeholder={selected() ? undefined : "true"}>
+              {selected()?.label ?? suggestion.placeholder() ?? props.placeholder ?? messages().select}
+            </span>
+            <i
+              class={`${popover.open() ? (props.activeIcon ?? "ti ti-chevron-up") : (props.icon ?? "ti ti-chevron-down")} k2b-choice-trigger__chevron`}
+              aria-hidden="true"
+            />
+          </button>
+          <Show when={props.name}>{(name) => <input type="hidden" name={name()} value={value() ?? ""} />}</Show>
+          <Show when={hasClearAction()}>
+            <button
+              type="button"
+              class="k2b-choice-control__clear k2b-input-clear-action"
+              aria-label={messages().clearSelection}
+              onClick={clear}
+            >
+              <i class="ti ti-x" aria-hidden="true" />
+            </button>
+          </Show>
+          <div
+            ref={popover.setPopover}
+            popover="manual"
+            class="k2b-choice-popover"
+            data-toolbar={(props.groups?.length ?? 0) > 0 || props.viewToggle ? "true" : undefined}
+            role="group"
+            onKeyDown={onKeyDown}
+            aria-label={typeof props.label === "string" ? props.label : (props["aria-label"] ?? messages().options)}
+          >
+            <Show when={isSearchable()}>
+              <div class="k2b-choice-search">
+                <i class="ti ti-search" aria-hidden="true" />
+                <input
+                  ref={searchRef}
+                  type="search"
+                  value={query()}
+                  placeholder={props.searchPlaceholder ?? messages().search}
+                  aria-label={props.searchPlaceholder ?? selectMessages().searchOptions}
+                  aria-controls={listboxId}
+                  aria-activedescendant={focusedOption() ? `${listboxId}-${focusedIndex()}` : undefined}
+                  onInput={(event) => {
+                    // A default group, such as "Recommended", is a starting view,
+                    // not a filter: a static search leaves it for "All". A group
+                    // the person chose keeps narrowing the results.
+                    if (!isAsync() && !groupChosen && event.currentTarget.value) setSelectedGroup(null);
+                    setQuery(event.currentTarget.value);
+                    if (isAsync()) loader.load(event.currentTarget.value);
+                    focus(isAsync() ? -1 : nextEnabledChoiceIndex(options(), -1, 1));
+                  }}
+                />
+              </div>
+            </Show>
+            <Show when={(props.groups?.length ?? 0) > 0 || props.viewToggle}>
+              <div class="k2b-choice-toolbar">
+                <Show when={(props.groups?.length ?? 0) > 0}>
+                  <ChoiceGroups
+                    choices={groupChoices()}
+                    value={activeGroup()}
+                    onValueChange={chooseGroup}
+                    ariaLabel={props.groupsAriaLabel ?? selectMessages().filterOptions}
+                    controls={listboxId}
+                  />
+                </Show>
+                <Show when={props.viewToggle}>
+                  <button
+                    type="button"
+                    class="k2b-choice-view-toggle"
+                    aria-label={activeView() === "list" ? selectMessages().showGridView : selectMessages().showListView}
+                    aria-controls={listboxId}
+                    onClick={() => setSelectedView(activeView() === "list" ? "grid" : "list")}
+                  >
+                    <i class={activeView() === "list" ? "ti ti-category-2" : "ti ti-list-details"} aria-hidden="true" />
+                  </button>
+                </Show>
+              </div>
+            </Show>
+            <div
+              id={listboxId}
+              class="k2b-choice-options"
+              role="listbox"
+              data-view={activeView()}
+              data-grid-size={activeView() === "grid" ? (props.gridSize ?? "md") : undefined}
+            >
+              <Show when={loader.error()}>
+                {(message) => (
+                  <div class="k2b-choice-status" data-tone="danger">
+                    <span>{message()}</span>
+                    <button type="button" onClick={loader.retry}>
+                      {messages().retry}
+                    </button>
+                  </div>
+                )}
+              </Show>
+              <Show when={loader.loading() && options().length === 0}>
+                <div class="k2b-choice-status">
+                  <i class="ti ti-loader-2 k2b-spin" aria-hidden="true" />
+                  <span>{messages().loading}</span>
+                </div>
+              </Show>
+              <For
+                each={loader.error() ? [] : listOptions()}
+                fallback={
+                  <Show when={!loader.loading() && !loader.error()}>
+                    <div class="k2b-choice-status">{isSearchable() ? messages().noResults : selectMessages().noOptions}</div>
+                  </Show>
+                }
+              >
+                {(option, index) => (
+                  <button
+                    ref={(element) => (optionRefs[index()] = element)}
+                    type="button"
+                    id={`${listboxId}-${index()}`}
+                    class="k2b-choice-option"
+                    role="option"
+                    aria-label={option.label}
+                    aria-selected={option.value === (value() ?? CLEAR_VALUE)}
+                    data-focused={index() === focusedIndex() ? "true" : undefined}
+                    data-clear={option.value === CLEAR_VALUE ? "true" : undefined}
+                    disabled={option.disabled}
+                    onPointerMove={() => focus(index())}
+                    onClick={() => select(option)}
                   >
                     <Show
-                      when={props.placeholderIcon}
-                      fallback={<Show when={emptyDot()}>{<span class="k2b-choice-dot" data-empty="true" aria-hidden="true" />}</Show>}
+                      when={option.value === CLEAR_VALUE}
+                      fallback={
+                        <Show
+                          when={option.color}
+                          fallback={<Show when={option.icon}>{(icon) => <i class={icon()} aria-hidden="true" />}</Show>}
+                        >
+                          {(color) => <span class="k2b-choice-dot" style={{ "background-color": color() }} aria-hidden="true" />}
+                        </Show>
+                      }
                     >
-                      {(icon) => <i class={icon()} aria-hidden="true" />}
+                      <Show
+                        when={props.placeholderIcon}
+                        fallback={<Show when={emptyDot()}>{<span class="k2b-choice-dot" data-empty="true" aria-hidden="true" />}</Show>}
+                      >
+                        {(icon) => <i class={icon()} aria-hidden="true" />}
+                      </Show>
                     </Show>
-                  </Show>
-                  <span>
-                    <strong>{option.label}</strong>
-                    <Show when={option.description}>{(description) => <small>{description()}</small>}</Show>
-                  </span>
-                </button>
-              )}
-            </For>
+                    <span>
+                      <strong>{option.label}</strong>
+                      <Show when={option.description}>{(description) => <small>{description()}</small>}</Show>
+                    </span>
+                  </button>
+                )}
+              </For>
+            </div>
           </div>
-        </div>
-      </div>
+        </div>,
+      )}
     </Field>
   );
 }

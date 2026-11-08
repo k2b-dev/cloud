@@ -48,7 +48,7 @@ export type FieldSuggestionProps<T> = {
  */
 export type FieldSuggestionView = "none" | "loading" | "error" | "open" | "differs" | "matches" | "accepted";
 
-/** What a field wires into its control. Without a `SuggestionGroup` around it, every part is empty. */
+/** What a field wires into its control. Without a `SuggestionGroup` around it, every part is empty or unchanged. */
 export type FieldSuggestionControl<T> = {
   /** True when the field was given a `suggestion` prop inside a group; the status line is reserved from the first render. */
   enabled: boolean;
@@ -57,33 +57,46 @@ export type FieldSuggestionControl<T> = {
   value: () => T | undefined;
   /** The suggestion's text while the field shows it in place of a value. */
   placeholder: () => string | undefined;
-  /** `data-suggestion` for the field's edge: only the states that tint the control. */
-  state: () => "open" | "open-unsure" | "loading" | undefined;
-  /** The status line's description id, for the control's `aria-describedby`. */
-  describedBy: () => string | undefined;
-  /** Call from the control's own input path: from then on an empty field is the person's choice. */
-  edited: () => void;
+  /** The control's `aria-describedby` with the status line's description added. */
+  describe: (describedBy: string | undefined) => string | undefined;
   /** The suggested position a switch names beside itself. */
   inline: () => string | undefined;
-  /** Renders the status line; `Field` places it. */
-  status?: () => JSX.Element;
+  /** The field's class with the suggestion marker and its state (open, unsure, loading) added. */
+  field: (className: string | undefined) => string | undefined;
+  /** The status line beside a visible label, for `Field`'s `labelEnd`. */
+  status: JSX.Element;
+  /** The control, followed by the status line when the field has no visible label. */
+  under: (control: JSX.Element) => JSX.Element;
 };
 
+type SuggestionOwner<T> = FieldSuggestionProps<T> &
+  Pick<FieldProps, "label" | "aria-label" | "disabled" | "error"> & {
+    readOnly?: boolean;
+    /** Bounds a number or a date key must keep to be offered. */
+    min?: unknown;
+    max?: unknown;
+    onValueChange?: (value: T) => void;
+    onValueCommit?: (value: T) => void;
+  };
+
 export type FieldSuggestionOptions<T> = {
-  props: FieldSuggestionProps<T> & Pick<FieldProps, "label" | "aria-label">;
-  enabled: boolean;
+  /** The field's props; disabled, read-only, error, and the value callbacks come from here unless overridden. */
+  props: SuggestionOwner<T>;
+  /** `false` turns suggestions off for a mode that cannot show them. */
+  enabled?: boolean;
   meta: FieldMeta;
   value: () => T | null | undefined;
-  /** Whether the field counts as empty, so an untouched field can show the suggestion in place. */
-  blank: () => boolean;
+  /** Whether the field counts as empty; defaults to `null`, `undefined`, or `""`. */
+  blank?: () => boolean;
   same?: (left: T, right: T) => boolean;
-  /** How a value reads; booleans read as yes and no when omitted. */
+  /** How a value reads; strings read as they are, booleans as yes and no. */
   format?: (value: T) => string;
-  locked: () => boolean;
-  invalid: () => boolean;
-  /** Sets the value through the field's normal change and commit path; `label` is how the suggestion named it. */
-  apply: (value: T, label: string | undefined) => void;
-  /** Whether the field would take this value as it is (limits, step, enabled option); otherwise it offers no Accept. */
+  /** Sets the value; defaults to the normal change and commit callbacks. `label` is how the suggestion named it. */
+  apply?: (value: T, label: string | undefined) => void;
+  /**
+   * Whether the field would take this value as it is (step, enabled option); otherwise it offers no Accept. Values
+   * outside the field's `min` and `max` are never offered.
+   */
   acceptable?: (value: T) => boolean;
   /** The control does not speak its placeholder (a button or a switch), so the description names the value. */
   spokenValue?: boolean;

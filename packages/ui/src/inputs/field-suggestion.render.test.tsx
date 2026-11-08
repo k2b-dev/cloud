@@ -81,8 +81,7 @@ describe("@k2b/ui field suggestions on the server", () => {
     );
     expect(attribute(html, "input", "value")).toBe("");
     expect(attribute(html, "input", "placeholder")).toBe("RE-2026-4471");
-    expect(html).toContain('data-suggestion="open"');
-    expect(html).toContain("k2b-ai-suggestion-field");
+    expect(html).toContain("k2b-ai-suggestion-field k2b-ai-suggestion-open");
     expect(html).toContain('aria-label="Vorschlag für Rechnungsnummer übernehmen"');
     expect(html).toContain(">Übernehmen<");
     // The control is described by the status line, which says the value is not taken yet.
@@ -104,7 +103,7 @@ describe("@k2b/ui field suggestions on the server", () => {
     );
     expect(attribute(html, "input", "value")).toBe("321,40");
     expect(attribute(html, "input", "placeholder")).toBeUndefined();
-    expect(html).not.toContain('data-suggestion="open"');
+    expect(html).not.toContain("k2b-ai-suggestion-open");
     expect(html).toContain("Gustav: 312,40 €");
     expect(html).toContain(">Übernehmen<");
   });
@@ -120,7 +119,7 @@ describe("@k2b/ui field suggestions on the server", () => {
     expect(html).toContain('data-view="accepted"');
     expect(html).toContain("von Gustav");
     expect(html).not.toContain(">Übernehmen<");
-    expect(html).not.toContain('data-suggestion="open"');
+    expect(html).not.toContain("k2b-ai-suggestion-open");
   });
 
   test("an unsure value keeps Accept and explains why", () => {
@@ -136,7 +135,7 @@ describe("@k2b/ui field suggestions on the server", () => {
         suggestion: ready("19", { confidence: "low", reason: "Die Rechnung weist keine Umsatzsteuer aus." }),
       }),
     );
-    expect(html).toContain('data-suggestion="open-unsure"');
+    expect(html).toContain("k2b-ai-suggestion-open k2b-ai-suggestion-unsure");
     expect(html).toContain(">unsicher<");
     expect(html).toContain(">19 %<");
     expect(html).toContain("Vorschlag von Gustav: 19 %, nicht übernommen. Unsicher: Die Rechnung weist keine Umsatzsteuer aus.");
@@ -158,7 +157,7 @@ describe("@k2b/ui field suggestions on the server", () => {
     const loading = german(() =>
       createComponent(TextInput, { label: "Rechnungsnummer", value: "", suggestion: { id: "a", state: "loading", source: "Gustav" } }),
     );
-    expect(loading).toContain('data-suggestion="loading"');
+    expect(loading).toContain("k2b-ai-suggestion-loading");
     expect(loading).toContain("Gustav liest …");
     const failed = german(() =>
       createComponent(TextInput, { label: "Rechnungsnummer", value: "", suggestion: { id: "a", state: "error", onRetry: () => {} } }),
@@ -212,19 +211,11 @@ describe("@k2b/ui field suggestions on the server", () => {
   });
 
   test("outside a group a suggestion is ignored, and the field renders as without one", () => {
-    const warn = console.warn;
-    const warnings: unknown[] = [];
-    console.warn = (...args: unknown[]) => warnings.push(args[0]);
-    try {
-      const html = german(
-        () => createComponent(TextInput, { id: "n", label: "Rechnungsnummer", value: "", suggestion: ready("RE-2026-4471") }),
-        true,
-      );
-      expect(html).toBe(german(() => createComponent(TextInput, { id: "n", label: "Rechnungsnummer", value: "" }), true));
-      expect(warnings).toEqual(["@k2b/ui: a suggestion needs a SuggestionGroup"]);
-    } finally {
-      console.warn = warn;
-    }
+    const html = german(
+      () => createComponent(TextInput, { id: "n", label: "Rechnungsnummer", value: "", suggestion: ready("RE-2026-4471") }),
+      true,
+    );
+    expect(html).toBe(german(() => createComponent(TextInput, { id: "n", label: "Rechnungsnummer", value: "" }), true));
   });
 
   test("a field without a visible label shows the status under the control", () => {
@@ -232,7 +223,7 @@ describe("@k2b/ui field suggestions on the server", () => {
       createComponent(TextInput, { "aria-label": "Rechnungsnummer", value: "", suggestion: ready("RE-2026-4471") }),
     );
     expect(html).toMatch(
-      /<div class="k2b-field k2b-ai-suggestion-field "><div class="k2b-input-shell k2b-text-input".*<\/div><span class="k2b-ai-suggestion"/,
+      /<div class="k2b-field k2b-ai-suggestion-field k2b-ai-suggestion-open "><div class="k2b-input-shell k2b-text-input".*<\/div><span class="k2b-ai-suggestion"/,
     );
     expect(html).toContain('aria-label="Vorschlag für Rechnungsnummer übernehmen"');
   });
@@ -242,7 +233,7 @@ describe("@k2b/ui field suggestions on the server", () => {
       createComponent(DatePicker, { label: "Rechnungsdatum", value: null, dateConfig: { locale: "de" }, suggestion: ready("2026-10-28") }),
     );
     expect(attribute(date, "input", "placeholder")).toBe("28.10.2026");
-    expect(date).toContain('data-suggestion="open"');
+    expect(date).toContain("k2b-ai-suggestion-open");
 
     const select = german(() =>
       createComponent(Select, {

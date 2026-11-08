@@ -810,15 +810,9 @@ function DateTextField(props: { owner: DatePickerProps; value: () => string | nu
   const invalid = () => Boolean(failure() || externalError());
   const suggestion = useFieldSuggestion({
     props: props.owner,
-    enabled: "suggestion" in props.owner,
     meta,
     value: props.value,
-    blank: () => !props.value(),
     format,
-    locked: () => !interactive(),
-    invalid,
-    apply: (key) => pick(key),
-    acceptable: (key) => isDateKey(key) && !limitErrorText(key, limits(), locale(), t()),
   });
   const status = createMemo((): { tone: DateStatusTone; text: JSX.Element } => {
     const failed = failure();
@@ -874,10 +868,6 @@ function DateTextField(props: { owner: DatePickerProps; value: () => string | nu
     save(key);
     calendar.close();
   };
-  const choose = (key: string | null) => {
-    suggestion.edited();
-    pick(key);
-  };
 
   const openSheet = async () => {
     setSheetOpen(true);
@@ -897,7 +887,7 @@ function DateTextField(props: { owner: DatePickerProps; value: () => string | nu
           focusDate={draftKey}
           onSelect={(key) => {
             // Saved at once: the sheet's promise settles only after its history entry has gone.
-            choose(key);
+            pick(key);
             close(key);
           }}
           dateConfig={props.dateConfig()}
@@ -966,13 +956,13 @@ function DateTextField(props: { owner: DatePickerProps; value: () => string | nu
 
   return (
     <Field
-      class={props.owner.class}
+      class={suggestion.field(props.owner.class)}
       label={props.owner.label}
       description={props.owner.description}
       required={props.owner.required}
       disabled={props.owner.disabled}
       meta={meta}
-      suggestion={suggestion.status}
+      labelEnd={suggestion.status}
     >
       <div
         class="k2b-date-picker k2b-date-field"
@@ -980,13 +970,7 @@ function DateTextField(props: { owner: DatePickerProps; value: () => string | nu
         data-readonly={props.owner.readOnly ? "true" : undefined}
         onFocusOut={onFocusOut}
       >
-        <div
-          ref={shell}
-          class="k2b-input-shell"
-          data-invalid={invalid() ? "true" : undefined}
-          data-suggestion={suggestion.state()}
-          onPointerDown={onPointerDown}
-        >
+        <div ref={shell} class="k2b-input-shell" data-invalid={invalid() ? "true" : undefined} onPointerDown={onPointerDown}>
           <span class="k2b-input-shell__icon k2b-date-field__icon" aria-hidden="true">
             <i class="ti ti-calendar" />
           </span>
@@ -1003,21 +987,17 @@ function DateTextField(props: { owner: DatePickerProps; value: () => string | nu
             aria-haspopup="dialog"
             aria-expanded={calendar.open() || sheetOpen()}
             aria-controls={sheetOpen() ? sheetId : popoverId}
-            aria-describedby={[
-              props.owner["aria-describedby"],
-              props.owner.description ? meta.descriptionId : undefined,
-              suggestion.describedBy(),
-              statusId,
-            ]
-              .filter(Boolean)
-              .join(" ")}
+            aria-describedby={suggestion.describe(
+              [props.owner["aria-describedby"], props.owner.description ? meta.descriptionId : undefined, statusId]
+                .filter(Boolean)
+                .join(" "),
+            )}
             aria-invalid={invalid() ? "true" : undefined}
             placeholder={suggestion.placeholder() ?? props.owner.placeholder ?? datePattern(locale(), t())}
             value={text()}
             disabled={props.owner.disabled}
             readOnly={props.owner.readOnly}
             onInput={(event) => {
-              suggestion.edited();
               setText(event.currentTarget.value);
               setDirty(true);
               clearTimeout(announceTimer);
@@ -1035,7 +1015,7 @@ function DateTextField(props: { owner: DatePickerProps; value: () => string | nu
               data-hidden={text() ? undefined : "true"}
               aria-label={uiMessages().clearDate}
               onClick={() => {
-                choose(null);
+                pick(null);
                 input?.focus();
               }}
             >
@@ -1089,7 +1069,7 @@ function DateTextField(props: { owner: DatePickerProps; value: () => string | nu
                 <PresetRail
                   presets={props.owner.presets}
                   onSelect={(value) => {
-                    choose(value);
+                    pick(value);
                     caretToEnd(input);
                   }}
                 />
@@ -1099,7 +1079,7 @@ function DateTextField(props: { owner: DatePickerProps; value: () => string | nu
                   selected={draftKey}
                   focusDate={draftKey}
                   onSelect={(key) => {
-                    choose(key);
+                    pick(key);
                     caretToEnd(input);
                   }}
                   dateConfig={props.dateConfig()}

@@ -257,7 +257,9 @@ describe("field suggestions in a browser", () => {
         expect(await number.inputValue()).toBe("RE-2026-4470");
         expect(await page.getByRole("spinbutton", { name: "Betrag brutto" }).inputValue()).toBe("321,40");
         expect(await page.getByRole("combobox", { name: "Umsatzsteuer" }).textContent()).toContain("19 %");
-        expect(await page.getByRole("combobox", { name: "Umsatzsteuer" }).getAttribute("data-suggestion")).toBe("open-unsure");
+        expect(
+          await page.locator(".k2b-field", { has: page.getByRole("combobox", { name: "Umsatzsteuer" }) }).getAttribute("class"),
+        ).toContain("k2b-ai-suggestion-open k2b-ai-suggestion-unsure");
         expect(await page.getByRole("switch", { name: "Vorsteuer abziehen" }).isChecked()).toBe(true);
         expect(await live(page)).toContain("4 Vorschläge übernommen. 1 unsicherer Wert bleibt offen: Umsatzsteuer.");
         // The button keeps focus and says there is nothing left to take.

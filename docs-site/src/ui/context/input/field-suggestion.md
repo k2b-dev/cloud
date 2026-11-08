@@ -8,7 +8,7 @@ fetches, saves, or submits anything, and it never becomes the value on its own.
 Fields show suggestions only inside a `SuggestionGroup`. The group brings the
 suggestion code and puts its fields under one line with counts and **Accept
 all**, so forms without suggestions load none of it. Outside a group a field
-ignores `suggestion` and warns once in the console.
+ignores `suggestion` and renders exactly as without it.
 
 ## Use field suggestions
 

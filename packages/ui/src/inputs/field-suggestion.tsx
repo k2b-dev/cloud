@@ -47,6 +47,11 @@ type FieldSuggestionStatusModel = {
   retry: (() => void) | undefined;
 };
 
+/** Numbers compare as numbers and date keys as text; a bound of another kind never blocks. */
+const below = (left: unknown, right: unknown): boolean =>
+  (typeof left === "number" && typeof right === "number" && left < right) ||
+  (typeof left === "string" && typeof right === "string" && left < right);
+
 const formatter =
   <T,>(options: FieldSuggestionOptions<T>, messages: () => SuggestionMessages) =>
   (value: T): string =>
@@ -56,22 +61,49 @@ const formatter =
 function createFieldSuggestion<T>(options: FieldSuggestionOptions<T>, group: Group): FieldSuggestionControl<T> {
   const messages = useSuggestionMessages();
   const format = formatter(options, messages);
+  const owner = options.props;
   const [edited, setEdited] = createSignal(false);
   const [announcement, setAnnouncement] = createSignal("");
   const same = options.same ?? Object.is;
-  const suggestion = () => (options.enabled ? resolveMaybeAccessor(options.props.suggestion) : undefined);
+  const blank =
+    options.blank ??
+    (() => {
+      const current = options.value();
+      return current === null || current === undefined || current === "";
+    });
+  const locked = () => Boolean(owner.disabled || owner.readOnly);
+  const invalid = () => Boolean(resolveMaybeAccessor(owner.error));
+  const apply =
+    options.apply ??
+    ((value: T) => {
+      owner.onValueChange?.(value);
+      owner.onValueCommit?.(value);
+    });
+  const suggestion = () => resolveMaybeAccessor(owner.suggestion);
   const ready = () => {
     const current = suggestion();
     return current?.state === "ready" ? current : undefined;
   };
-  const view = createMemo(() => deriveSuggestionView(suggestion(), options.value(), { blank: options.blank(), edited: edited(), same }));
+  // Any change of the value that Accept did not make is the person's (or the owner's) own: from then on an empty field
+  // stays empty. The first render never counts, so server and browser agree.
+  let applying = false;
+  createEffect(
+    on(
+      options.value,
+      () => {
+        if (!applying) setEdited(true);
+      },
+      { defer: true },
+    ),
+  );
+  const view = createMemo(() => deriveSuggestionView(suggestion(), options.value(), { blank: blank(), edited: edited(), same }));
   const source = () => suggestion()?.source ?? group.source();
   const text = () => {
     const current = ready();
     return current ? (current.label ?? format(current.value)) : "";
   };
   const low = () => ready()?.confidence === "low";
-  const label = () => (typeof options.props.label === "string" ? options.props.label : options.props["aria-label"]);
+  const label = () => (typeof owner.label === "string" ? owner.label : owner["aria-label"]);
   const statusId = `${options.meta.controlId}-suggestion`;
   const description = () => {
     const unsure = low() ? ` ${messages().describeUnsure({ reason: ready()?.reason })}` : "";
@@ -93,7 +125,10 @@ function createFieldSuggestion<T>(options: FieldSuggestionOptions<T>, group: Gro
   // A value the field would not take as it is (outside its limits, off its step, a disabled option) offers no Accept.
   const blocked = () => {
     const current = ready();
-    return options.locked() || (current !== undefined && options.acceptable?.(current.value) === false);
+    if (locked()) return true;
+    if (current === undefined) return false;
+    const { value } = current;
+    return below(value, owner.min) || below(owner.max, value) || options.acceptable?.(value) === false;
   };
   const accept = () => {
     const current = ready();
@@ -101,8 +136,13 @@ function createFieldSuggestion<T>(options: FieldSuggestionOptions<T>, group: Gro
     // The owner's callbacks may replace the suggestion, so what was accepted is read first.
     const { id, value, label: named } = current;
     const said = messages().announceAccepted({ label: label(), value: text() });
-    options.props.onSuggestionAccept?.(id);
-    options.apply(value, named);
+    owner.onSuggestionAccept?.(id);
+    applying = true;
+    try {
+      apply(value, named);
+    } finally {
+      applying = false;
+    }
     setAnnouncement(said);
     // The accept button goes away with the open suggestion, so focus continues in the field.
     if (!isServer) document.getElementById(options.meta.controlId)?.focus();
@@ -126,7 +166,7 @@ function createFieldSuggestion<T>(options: FieldSuggestionOptions<T>, group: Gro
       id: () => suggestion()?.id,
       view,
       low,
-      eligible: () => view() === "open" && !low() && !blocked() && !options.invalid(),
+      eligible: () => view() === "open" && !low() && !blocked() && !invalid(),
       label,
     }),
   );
@@ -149,20 +189,33 @@ function createFieldSuggestion<T>(options: FieldSuggestionOptions<T>, group: Gro
     },
   };
 
+  // Created once, here, on the server and in the browser alike. A visible label carries it in its row; without
+  // one it follows the control.
+  const status = <FieldSuggestionStatus model={model} />;
+  const labelled = () => Boolean(owner.label);
+
   return {
     enabled: true,
     view,
     value: () => ready()?.value,
     placeholder: () => (view() === "open" ? text() : undefined),
-    state: () => {
-      const current = view();
-      if (current === "open") return low() ? "open-unsure" : "open";
-      return current === "loading" && options.blank() && !edited() ? current : undefined;
-    },
-    describedBy: () => (description() ? statusId : undefined),
-    edited: () => setEdited(true),
+    describe: (describedBy) => (description() ? [describedBy, statusId].filter(Boolean).join(" ") : describedBy),
     inline: () => (view() === "open" ? messages().switchValue({ value: text() }) : undefined),
-    status: () => <FieldSuggestionStatus model={model} />,
+    // The field's classes carry the state that tints its control: open (and unsure), or loading into an empty field.
+    field: (className) => {
+      const current = view();
+      const state =
+        current === "open"
+          ? low()
+            ? "k2b-ai-suggestion-open k2b-ai-suggestion-unsure "
+            : "k2b-ai-suggestion-open "
+          : current === "loading" && blank() && !edited()
+            ? "k2b-ai-suggestion-loading "
+            : "";
+      return `k2b-ai-suggestion-field ${state}${className ?? ""}`;
+    },
+    status: labelled() ? status : undefined,
+    under: (control) => (labelled() ? control : [control, status]),
   };
 }
 

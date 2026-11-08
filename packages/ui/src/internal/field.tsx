@@ -29,13 +29,10 @@ type FieldLayoutProps = {
   labelFor?: string | false;
   /** Optional controls beside the label, outside its clickable target. */
   labelEnd?: JSX.Element;
-  /** A suggestion's status line: beside the label, or under an unlabeled control. */
-  suggestion?: () => JSX.Element;
 } & Pick<FieldProps, "class" | "description" | "error" | "label" | "required" | "disabled">;
 
 export function Field(props: FieldLayoutProps): JSX.Element {
   const error = () => resolveMaybeAccessor(props.error);
-  const status = () => props.suggestion?.();
   const label = () => (
     <Show
       when={props.labelFor !== false}
@@ -63,17 +60,16 @@ export function Field(props: FieldLayoutProps): JSX.Element {
 
   return (
     <div
-      class={`k2b-field ${props.suggestion ? "k2b-ai-suggestion-field " : ""}${props.class ?? ""}`}
+      class={`k2b-field ${props.class ?? ""}`}
       data-disabled={props.disabled ? "true" : undefined}
       data-fill={props.fill ? "true" : undefined}
       data-invalid={error() ? "true" : undefined}
     >
       <Show when={props.label}>
-        <Show when={props.labelEnd || props.suggestion} fallback={label()}>
+        <Show when={props.labelEnd} fallback={label()}>
           <div class="k2b-field__label-row">
             {label()}
             {props.labelEnd}
-            {status()}
           </div>
         </Show>
       </Show>
@@ -83,7 +79,6 @@ export function Field(props: FieldLayoutProps): JSX.Element {
         </p>
       </Show>
       {props.children}
-      {props.label ? undefined : status()}
       <Show when={error()}>
         <p class="k2b-field__error" id={props.meta.errorId} role="alert" aria-live="polite">
           {error()}
@@ -95,19 +90,16 @@ export function Field(props: FieldLayoutProps): JSX.Element {
 
 type FieldAriaOwner = Pick<FieldProps, "aria-describedby" | "aria-label" | "description" | "error" | "label" | "required">;
 
-type DescribedSuggestion = { describedBy: () => string | undefined };
-
-export const fieldDescribedBy = (meta: FieldMeta, owner: FieldAriaOwner, suggestion?: DescribedSuggestion): string | undefined =>
+export const fieldDescribedBy = (meta: FieldMeta, owner: FieldAriaOwner): string | undefined =>
   [
     owner["aria-describedby"],
     owner.description ? meta.descriptionId : undefined,
-    suggestion?.describedBy(),
     resolveMaybeAccessor(owner.error) ? meta.errorId : undefined,
   ]
     .filter(Boolean)
     .join(" ") || undefined;
 
-export const fieldControlAria = (meta: FieldMeta, owner: FieldAriaOwner, suggestion?: DescribedSuggestion) => ({
+export const fieldControlAria = (meta: FieldMeta, owner: FieldAriaOwner) => ({
   get "aria-label"() {
     return owner.label ? undefined : owner["aria-label"];
   },
@@ -115,7 +107,7 @@ export const fieldControlAria = (meta: FieldMeta, owner: FieldAriaOwner, suggest
     return owner.label ? meta.labelId : undefined;
   },
   get "aria-describedby"() {
-    return fieldDescribedBy(meta, owner, suggestion);
+    return fieldDescribedBy(meta, owner);
   },
   get "aria-invalid"() {
     return resolveMaybeAccessor(owner.error) ? ("true" as const) : undefined;
