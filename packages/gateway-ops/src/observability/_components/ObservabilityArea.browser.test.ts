@@ -75,6 +75,12 @@ test("an open log entry pushes the first column aside at 1440 px and keeps it on
       .count(),
   ).toBe(1);
   expect(await page.getByText("mbx_info", { exact: true }).isVisible()).toBe(true);
+  // The metadata keys are flat text in the open entry, not a grey box.
+  expect(
+    await page
+      .getByText("mbx_info", { exact: true })
+      .evaluate((element) => getComputedStyle(element.closest(".grid")!.parentElement!).backgroundColor),
+  ).toBe("rgba(0, 0, 0, 0)");
 
   await goto("/admin/observability/logs?entry=9000", 390);
   expect(await page.getByText("mbx_info", { exact: true }).isVisible()).toBe(true);
