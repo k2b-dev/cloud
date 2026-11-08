@@ -5,7 +5,7 @@ section: Operations
 order: 1195
 description: Export old Mail rules, drain their effects, and rebuild reviewed mailbox Code before activation.
 tags: [operations, upgrades, mail, code]
-updated: 2026-11-07
+updated: 2026-11-08
 ---
 
 # Replace Mail rules with mailbox Code
@@ -44,13 +44,17 @@ pre-upgrade backup and compatible image for recovery.
 
 Ask Gustav to rebuild an exported rule as mailbox Code. Review the source,
 capability grants, effects and ordering. No old definition automatically becomes
-active Code. Several old rules may become several handlers in one mailbox
-Code; their declared order determines which handler runs first for a message.
+active Code. Combine several old rules for incoming mail into one
+`app.on("mail.message.received", …)` handler that awaits their steps in the old
+order. Only one handler per event is allowed.
 
-Preview a chosen real message before activation. The preview reports capability
-calls without performing their effects. Record the final receipt covered by old
-rules and the first receipt covered by Code. Use a deliberate, bounded catch-up
-selection for any gap, and inspect its progress and runs before continuing.
+Before switching on, test with fictional fixtures using Gustav's `code_test` or
+`cld code test`. Nothing real is called. After switching on, use **Preview without
+effects** on a chosen real message against the active version. The preview
+reports capability calls without performing their effects. Record the final
+receipt covered by old rules and the first receipt covered by Code. Use a
+deliberate, bounded catch-up selection for any gap, and inspect its progress and
+runs before continuing.
 
 ## Read earlier history
 
