@@ -318,6 +318,9 @@ describe("Code pages in the Cloud layout", () => {
     expect(label).toContain(madeWith);
     expect(label).toContain('popovertarget="code-page-provenance-note"');
     expect(label).toContain('popover="auto"');
+    // Printing keeps the label: the print region is the host around tree and label.
+    expect(html.match(/data-print-region/g)).toHaveLength(1);
+    expect(html).toMatch(/<div class="code-page-host" data-code-page-host[^>]*data-print-region/);
   };
 
   test("every variant carries the feat/code label outside the page tree, in the reader's language", () =>

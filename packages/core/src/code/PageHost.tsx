@@ -55,7 +55,8 @@ function PageProvenance(props: { locale: string }) {
  */
 export default function CodePageHost(props: { tree: CodePageTree; codeId: string; csrf: string; locale: string; timeZone: string }) {
   return (
-    <div class="code-page-host" data-code-page-host="">
+    // The host is the print region, so a printed or saved page keeps its label.
+    <div class="code-page-host" data-code-page-host="" data-print-region="">
       <div class="code-page-host__tree" data-code-page-tree="">
         <CodePageTreeView tree={props.tree} codeId={props.codeId} csrf={props.csrf} locale={props.locale} timeZone={props.timeZone} />
       </div>

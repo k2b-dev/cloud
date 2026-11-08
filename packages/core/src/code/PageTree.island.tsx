@@ -615,7 +615,6 @@ function CodePageContent(props: PageProps) {
       ref={main}
       class="mx-auto grid w-full min-w-0 max-w-6xl gap-8 px-4 py-6 sm:px-8 sm:py-8"
       data-code-page=""
-      data-print-region=""
       data-code-page-version={page().tree.version}
       aria-busy={loading() || undefined}
     >

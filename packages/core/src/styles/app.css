@@ -240,3 +240,8 @@
 .k2b-ui .code-page-provenance__note:not(:popover-open) {
   display: none;
 }
+@media print {
+  .code-page-provenance {
+    position: static;
+  }
+}
