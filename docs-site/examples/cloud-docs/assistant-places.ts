@@ -61,7 +61,7 @@ export const createPlaceCapabilities = (conversations: {
 export const renderPlacePage = (c: Parameters<typeof Layout>[0]["c"], conversation: { id: string; title: string }) =>
   Layout({
     c,
-    title: [{ label: conversation.title }],
+    title: [{ title: conversation.title }],
     context: { scope: { type: "example.conversation", id: conversation.id } },
     children: null,
   });

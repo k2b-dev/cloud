@@ -139,14 +139,12 @@ SolidJS library remains independent of Cloud and application domains.
   persisted locale and theme, no Cloud header or navigation, and a shared legal and preferences footer. A custom
   root using none of these layouts must install one provider around its returned tree.
 - Pass each page's `Layout` title array; the shell derives the way up from it (**Layout and navigation**).
-  Build no back buttons for it; an app with its own header places `PageTrail` there.
+  Build no back buttons for it; an app with its own header places `PageTrail` there. For resource-specific Assistant context, declare the Type's `assistant` provider and publish its ref through `Layout.context.scope`; read **Assistant at a place** (`/en/docs/ai/assistant-places`) for consent, chat ownership and lifecycle, fixed targets, and checks of current access.
 ## Ship CLI commands and Assistant Skills with the app
 Read **Application CLI modules** (`/en/docs/platform/cli-modules`) and its *Design commands* section before adding `cld` commands.
 Declare modules as `defineApp({ cli: { <name>: { module, references } } })`: `module` exports `defineCliCommands()` named
 `<name>`, `references` holds agent Markdown with `index.md`. The app image serves both at `/cli/plugins/<name>/` to signed-in
 callers `cli.plugins.access` allows; `cld` installs them per profile and writes the references into the agent skill per version. The server authorizes.
-
-For resource-specific Assistant context, declare the Type's `assistant` provider and publish its ref through `Layout.context.scope`; read **Assistant at a place** (`/en/docs/ai/assistant-places`) for consent, personal-chat lifecycle, fixed targets, and current-access checks.
 
 Read **Ship Assistant Skills** (`/en/docs/platform/assistant-skills`) first: keep each Skill in `src/skills/<name>/SKILL.md` (+ `references/*.md`), import the files `with { type: "text" }` in `src/skills.ts`, export `SKILLS = [skill({ markdown, references })]` from `@k2b/cloud`, and pass `skills: SKILLS` to `defineApp()`.
 Cloud validates Skills at start, updates them by content hash, and offers them only while their app runs and its access rule (legacy: Help audience) permits use. Skills grant nothing; never seed or rewrite Skill rows from code.

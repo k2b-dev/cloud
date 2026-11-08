@@ -24,7 +24,7 @@ import { Layout } from "@k2b/cloud/ssr";
 
 <Layout
   c={c}
-  title={[{ label: conversation.title }]}
+  title={[{ title: conversation.title }]}
   context={{ scope: { type: "example.conversation", id: conversation.id } }}
 >
   {children}
