@@ -1,0 +1,68 @@
+// check: resource mail.mailbox
+// Dashboard page of a mailbox's Code: open work by status and the conversations
+// that need action. The page reads live data on each request and loads again
+// after new mail arrives. It changes nothing.
+import { app, Chart, Column, jsx, owner, Page, Section, Stat, Stats, Table } from "@sdk";
+
+const LIMIT = 50;
+const count = (items: readonly unknown[]) => (items.length >= LIMIT ? `${LIMIT}+` : items.length);
+
+app.get("/", async c => {
+  const [needsAction, waiting, unassigned] = [
+    await owner.conversation.list({ view: "needs_action", limit: LIMIT }),
+    await owner.conversation.list({ view: "waiting", limit: LIMIT }),
+    await owner.conversation.list({ view: "unassigned", limit: LIMIT }),
+  ];
+  const withAttachments = needsAction.filter(item => item.hasAttachments).length;
+  const rows = needsAction.slice(0, 20).map(item => ({
+    subject: item.title,
+    people: item.participants,
+    messages: item.messageCount,
+    unread: item.unread ? "Unread" : "",
+  }));
+  const open = needsAction.length + waiting.length;
+
+  return c.page(
+    <Page title="Mailbox overview" subtitle="Open work right now" icon="ti ti-inbox" color="blue" follow={["mail.message.received"]}>
+      <Stats>
+        <Stat label="Needs action" value={count(needsAction)} />
+        <Stat label="Waiting" value={count(waiting)} />
+        <Stat label="Unassigned" value={count(unassigned)} />
+      </Stats>
+      <Section title="Open work" icon="ti ti-list-check" color="blue">
+        {open > 0 ? (
+          <Chart.Bar
+            width="third"
+            title="By status"
+            data={[
+              { label: "Needs action", value: needsAction.length },
+              { label: "Waiting", value: waiting.length },
+            ]}
+          />
+        ) : (
+          <Chart.Empty width="third" title="By status" empty="No open conversations." />
+        )}
+        {needsAction.length > 0 ? (
+          <Chart.Pie
+            width="third"
+            title="Attachments"
+            data={[
+              { label: "With attachments", value: withAttachments },
+              { label: "Without", value: needsAction.length - withAttachments },
+            ]}
+          />
+        ) : (
+          <Chart.Empty width="third" title="Attachments" empty="Nothing needs action." />
+        )}
+        <Table title="Needs action" rows={rows} empty="Nothing needs action.">
+          <Column key="subject" label="Subject" />
+          <Column key="people" label="People" />
+          <Column key="messages" label="Messages" />
+          <Column key="unread" label="Unread" />
+        </Table>
+      </Section>
+    </Page>,
+  );
+});
+
+export default app;
