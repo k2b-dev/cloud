@@ -166,7 +166,6 @@ describe("Mailbox settings dialog query lifecycle", () => {
       expect(patch?.body).toEqual({
         name: "Sales North",
         description: "Customer conversations",
-        draftEditMode: "lock",
         composeSafety: { internalDomains: ["example.test"], largeRecipientThreshold: 20 },
       });
       expect(input.value).toBe("Sales North");
