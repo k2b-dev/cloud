@@ -19,6 +19,7 @@ import { requireDraftAccess, requireMailboxAccess, requireMailboxPermission, req
 import { enqueueAttachmentExtractionsForMessage, logAttachmentExtractionEnqueueFailure } from "./attachment-extraction";
 import { actorRefFromRequest, auditActorFromRequest, durableCredentialSnapshot, type MailRequestContext } from "./auth";
 import { sha256Json } from "./canonical";
+import { requireCodeWorkStateEligibility } from "./code-work-state";
 import { commandTargetVisibleTo, commandVisibleTo, conversationCommandKinds } from "./command-authorization";
 import { enqueueMailCommand } from "./command-runtime";
 import { validateDraftComposeSafety } from "./compose-safety";
@@ -481,6 +482,20 @@ const createSendOutbox = async (params: {
     throw Object.assign(new Error(changed.message), changed);
   }
   const draft = send.data.source;
+  // A confirmed reply also changes conversation work state. Validate that
+  // decision while its conversation is locked, before queuing external work.
+  if (draft.conversation_id && (draft.intent === "reply" || draft.intent === "reply_all")) {
+    await params.db`SELECT id FROM mail.conversations WHERE id=${draft.conversation_id}::uuid FOR UPDATE`;
+    if (params.context) {
+      const eligible = await requireCodeWorkStateEligibility({
+        context: params.context,
+        mailboxId: params.mailboxId,
+        conversationIds: [draft.conversation_id],
+        db: params.db,
+      });
+      if (!eligible.ok) throw Object.assign(new Error(eligible.error.message), eligible.error);
+    }
+  }
   const safety = await validateDraftComposeSafety({
     db: params.db,
     mailboxId: params.mailboxId,

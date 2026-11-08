@@ -32,6 +32,7 @@ import { migrate as migrateWorkflows } from "../../../core/src/migrate/core/work
 import { mailCapabilities } from "../../../mail/src/capabilities";
 import { migrate as migrateMail } from "../../../mail/src/migrate";
 import { storeReadableBlob } from "../../../mail/src/service/message-blobs";
+import * as mailMessages from "../../../mail/src/service/messages";
 import { compileCapabilities, invokeCompiledCapability, serializeCapabilityProviderResult } from "../_internal/capabilities";
 import { invokeCapabilityStream } from "../_internal/capability-streams";
 import * as registry from "../_internal/registry";
@@ -49,9 +50,15 @@ import { signAppProof } from "../app-proof";
 import { migrateCloudCapabilities } from "../capabilities/migrate";
 import { compileCapabilityManifest } from "../capabilities/testing";
 import type { CapabilityError, CodeCheckedVersionManifest } from "../contracts";
-import { type CapabilityExecutionContext, CapabilityFileMetadataSchema, capabilityResultSchema } from "../contracts/capabilities";
+import type { AppEventEnvelope } from "../contracts/app-events";
+import {
+  type CapabilityExecutionContext,
+  CapabilityFileMetadataSchema,
+  CapabilityInvocationBodySchema,
+  capabilityResultSchema,
+} from "../contracts/capabilities";
 import type { CapabilityRegistryEntry } from "../contracts/registry";
-import { installLiveOutbox } from "../events/testing";
+import { appEventFixture, installLiveOutbox } from "../events/testing";
 import { sql } from "../runtime/clients";
 import { getEffectivePermission, hasPermission } from "../server";
 import { AppAccessDeniedError } from "../server/middleware/app-access";
@@ -60,7 +67,7 @@ import { coreSettings } from "../services";
 import { appKeys } from "../services/app-keys";
 import { approvalArgsDigest } from "../services/approvals";
 import { resolveInvocationAuthority } from "../services/identity/invocation-actor";
-import { verifyInvocationToken } from "../services/identity/invocation-token";
+import { type CloudInvocationClaims, verifyInvocationToken } from "../services/identity/invocation-token";
 import { issueInvocationToken } from "../services/identity/issue-invocation";
 import { mandates } from "../services/mandates";
 import { loadCodeRunCalls } from "../ssr/code-page/calls";
@@ -382,6 +389,7 @@ suiteFor("database", "valkey")("C4 signed runner bridge and independent per-call
       invalidEntrypoint?: boolean;
       entry?: boolean;
       policyRows?: CodeCheckedVersionManifest["policyRows"];
+      event?: AppEventEnvelope;
     } = {},
   ) {
     currentEntry = structuredClone(baseEntry);
@@ -396,18 +404,32 @@ suiteFor("database", "valkey")("C4 signed runner bridge and independent per-call
     const codeId = `c_${crypto.randomUUID().replaceAll("-", "").slice(0, 12)}`;
     const [account] = await sql<
       { id: string }[]
-    >`INSERT INTO auth.service_accounts(name,kind) VALUES(${`code:example.folder:${codeId}`},'code') RETURNING id`;
+    >`INSERT INTO auth.service_accounts(name,kind) VALUES(${`code:${options.event?.place?.type ?? "example.folder"}:${options.event?.place?.id ?? codeId}`},'code') RETURNING id`;
     if (options.personal)
       await sql`INSERT INTO code.codes(id,owner_kind,owner_user_id,title,state) VALUES(${codeId},'person',${userId}::uuid,'Fixture','active')`;
     else
-      await sql`INSERT INTO code.codes(id,owner_kind,owner_type,owner_id,title,service_account_id,state) VALUES(${codeId},'resource','example.folder',${codeId},'Fixture',${account!.id}::uuid,'active')`;
+      await sql`INSERT INTO code.codes(id,owner_kind,owner_type,owner_id,title,service_account_id,state) VALUES(${codeId},'resource',${options.event?.place?.type ?? "example.folder"},${options.event?.place?.id ?? codeId},'Fixture',${account!.id}::uuid,'active')`;
     const files = { "code.ts": "fixture" },
       bundle = "fixture";
+    const entrypoint = options.event
+      ? `event:${options.event.type}@${options.event.version}`
+      : options.invalidEntrypoint
+        ? "different"
+        : "weekly";
     const checked: CodeCheckedVersionManifest = {
       version: 1,
       entry: "code.ts",
       entrypoints: [
-        { kind: "manual", entrypoint: options.invalidEntrypoint ? "different" : "weekly", cron: null, file: "code.ts", line: 1 },
+        options.event
+          ? {
+              kind: "event",
+              entrypoint,
+              cron: null,
+              file: "code.ts",
+              line: 1,
+              event: { type: options.event.type, version: options.event.version, place: options.event.place! },
+            }
+          : { kind: "manual", entrypoint, cron: null, file: "code.ts", line: 1 },
       ],
       hashes: { source: codeSourceHash(files, "code.ts"), bundle: codeBundleHash(bundle), sdk: "a".repeat(64) },
       permissions: [{ operation: "example.write", target: item, file: "code.ts", line: 1 }],
@@ -435,7 +457,7 @@ suiteFor("database", "valkey")("C4 signed runner bridge and independent per-call
     expect(stored).toMatchObject({ source_kind: "object", manifest_kind: "object", binding_kind: "object" });
     const [run] = await sql<
       { id: string }[]
-    >`INSERT INTO code.runs(code_id,version_id,trigger,entrypoint,state,started_at,lease_expires_at,generation,payload_bytes,calls_limit) VALUES(${codeId},${version!.id}::uuid,'manual','weekly','running',clock_timestamp(),clock_timestamp()+interval '10 minutes',1,32768,200) RETURNING id`;
+    >`INSERT INTO code.runs(code_id,version_id,trigger,entrypoint,input,state,started_at,lease_expires_at,generation,payload_bytes,calls_limit) VALUES(${codeId},${version!.id}::uuid,${options.event ? "event" : "manual"},${options.event ? entrypoint : "weekly"},${JSON.stringify(options.event ?? null)}::text::jsonb,'running',clock_timestamp(),clock_timestamp()+interval '10 minutes',1,32768,200) RETURNING id`;
     const created = await mandates.create({
       authority: { kind: "admin", userId },
       subject: { type: "service_account", id: account!.id },
@@ -460,7 +482,7 @@ suiteFor("database", "valkey")("C4 signed runner bridge and independent per-call
       codeId,
       versionId: version!.id,
       runId: run!.id,
-      entrypoint: "weekly",
+      entrypoint: options.event ? entrypoint : "weekly",
       generation: 1,
       mandateId: created.data.id,
       mandateRevision: created.data.revision,
@@ -1250,8 +1272,8 @@ suiteFor("database", "valkey")("C4 signed runner bridge and independent per-call
     expect(await (await send()).json()).toEqual({ ok: true, data: { value: "a" } });
     await error({}, "code_call_limit", 200);
   });
-  async function fileFixture(sourceAction = false) {
-    await resetFixture({ entry: true, policyRows: ["read", "silent_shared"] });
+  async function fileFixture(sourceAction = false, event?: AppEventEnvelope) {
+    await resetFixture({ entry: true, policyRows: ["read", "silent_shared"], event });
     if (!mailMigrated) {
       await installLiveOutbox(sql);
       await migrateLogging();
@@ -1278,10 +1300,11 @@ suiteFor("database", "valkey")("C4 signed runner bridge and independent per-call
       VALUES(${message!.id}::uuid,'1','application/pdf','attachment','invoice.pdf',${payload.length},${blob.id}::uuid,'complete') RETURNING id`;
     await sql`INSERT INTO mail.attachments(short_id,message_id,part_id,filename,content_type,size_bytes,blob_id)
       VALUES('At4g00',${message!.id}::uuid,${part!.id}::uuid,'invoice.pdf','application/pdf',${payload.length},${blob.id}::uuid)`;
-    const source = compileCapabilities("mail", {
-      protocolVersion: 2,
-      ...(sourceAction
+    const source = compileCapabilities(
+      "mail",
+      sourceAction
         ? {
+            protocolVersion: 2,
             actions: {
               "attachment.content.read": {
                 ...actionOp,
@@ -1292,8 +1315,8 @@ suiteFor("database", "valkey")("C4 signed runner bridge and independent per-call
               },
             },
           }
-        : { queries: { "attachment.content.read": mailCapabilities.queries["attachment.content.read"] } }),
-    });
+        : mailCapabilities,
+    );
     let received: Uint8Array | undefined;
     let targetWritable = true;
     let writes = 0;
@@ -1370,6 +1393,7 @@ suiteFor("database", "valkey")("C4 signed runner bridge and independent per-call
         manifest: compiled.manifest,
         endpoint: `http://${compiled.manifest.appId}.test/api/_internal/capabilities/v1`,
       });
+    let lastInvocation: CloudInvocationClaims | null = null;
     fileTransport = async (url, init) => {
       const request = new Request(url, init);
       const appId = new URL(request.url).hostname.split(".")[0]!;
@@ -1388,6 +1412,7 @@ suiteFor("database", "valkey")("C4 signed runner bridge and independent per-call
         },
         { issuer, key, now },
       );
+      lastInvocation = verified;
       const authority = verified ? await resolveInvocationAuthority(verified, sql, []) : null;
       if (!authority) throw new Error("File transfer lacks current Code authority");
       const context: CapabilityExecutionContext = {
@@ -1428,12 +1453,14 @@ suiteFor("database", "valkey")("C4 signed runner bridge and independent per-call
         if (appId === "imports") targetBytes = received?.length ?? 0;
         return response;
       }
-      const body = z.object({ input: z.unknown() }).parse(await request.json());
+      const body = CapabilityInvocationBodySchema.parse(await request.json());
       const outcome = await invokeCompiledCapability({
         compiled,
         kind,
         localId,
         input: body.input,
+        target: body.target,
+        refs: body.refs,
         expectedSchemaHash: operation.manifest.schemaHash,
         context: {
           ...context,
@@ -1478,6 +1505,13 @@ suiteFor("database", "valkey")("C4 signed runner bridge and independent per-call
     return {
       read,
       write,
+      lastInvocation: () => lastInvocation,
+      messageId: message!.id,
+      call: (operation: string, input: RunnerJsonValue, target: { type: string; id: string } | null = null) =>
+        send({
+          operation: `mail.${operation}`,
+          input: { call: { capability: `mail.${operation}`, target, refs: {}, input }, metadata: {} },
+        }),
       payload,
       source,
       target,
@@ -1504,6 +1538,125 @@ suiteFor("database", "valkey")("C4 signed runner bridge and independent per-call
       },
     };
   }
+  test("Mail event work changes use the stored trigger across the real signed bridge and provider", async () => {
+    const event = appEventFixture(
+      mailCapabilities,
+      "message.received",
+      {
+        subject: "Ms4g00",
+        place: "Mb4g00",
+        data: { receiptId: "44444444-4444-4444-8444-444444444444" },
+      },
+      { appId: "mail", id: "55555555-5555-4555-8555-555555555555", time: now.toISOString() },
+    );
+    const fixture = await fileFixture(false, event);
+    await sql`UPDATE auth.access SET permission='write' WHERE id=${fixture.accessId}::uuid`;
+    const [conversation] = await sql<{ id: string }[]>`INSERT INTO mail.conversations(short_id,mailbox_id,subject,latest_message_at)
+      VALUES('Cv4g00',${fixture.mailboxId}::uuid,'Linked message',${now}) RETURNING id`;
+    await sql`INSERT INTO mail.conversation_messages(conversation_id,message_id,position,added_by)
+      VALUES(${conversation!.id}::uuid,${fixture.messageId}::uuid,0,'list')`;
+    const target = { type: "mail.mailbox", id: "Mb4g00" };
+    expect(await (await fixture.call("message.read", { id: "Ms4g00" })).json()).toMatchObject({
+      ok: true,
+      data: { data: { conversationId: "Cv4g00" } },
+    });
+    expect(fixture.lastInvocation()).toMatchObject({
+      workload_run: claims.runId,
+      workload_trigger: {
+        type: event.type,
+        subject: event.subject,
+        place: event.place,
+      },
+    });
+    await sql`INSERT INTO mail.conversations(short_id,mailbox_id,subject,latest_message_at)
+      VALUES('Cv4g01',${fixture.mailboxId}::uuid,'Other message',${now})`;
+    const snapshot = () => sql`SELECT short_id,work_status,revision,snoozed_until FROM mail.conversations
+      WHERE mailbox_id=${fixture.mailboxId}::uuid ORDER BY short_id`;
+    const before = await snapshot();
+    const mutations = [
+      ["conversation.status.set", { conversationId: "Cv4g00", expectedRevision: 1, status: "done" }],
+      ["conversation.status.set.batch", { conversationIds: ["Cv4g01", "Cv4g00"], status: "done" }],
+      ["conversation.assign", { conversationId: "Cv4g00", mode: "replace", assigneeUserIds: [] }],
+      ["conversation.assign.batch", { conversationIds: ["Cv4g01", "Cv4g00"], mode: "replace", assigneeUserIds: [] }],
+      ["conversation.snooze", { conversationId: "Cv4g00", expectedRevision: 1, snoozedUntil: "2026-11-10T12:00:00Z" }],
+    ] satisfies [string, RunnerJsonValue][];
+    for (const [operation, input] of mutations) {
+      const response = await fixture.call(operation, input, target);
+      expect(await response.json()).toMatchObject({ ok: false, error: { code: "forbidden", status: 403 } });
+      expect(await snapshot()).toEqual(before);
+    }
+    expect(await sql`SELECT * FROM mail.conversation_assignees WHERE conversation_id=${conversation!.id}::uuid`).toHaveLength(0);
+    // A regular link keeps the same granted workload useful.
+    await sql`UPDATE mail.conversation_messages SET added_by='headers' WHERE message_id=${fixture.messageId}::uuid`;
+    expect(
+      await (
+        await fixture.call(
+          "conversation.status.set",
+          {
+            conversationId: "Cv4g00",
+            expectedRevision: 1,
+            status: "done",
+          },
+          target,
+        )
+      ).json(),
+    ).toMatchObject({ ok: true });
+    expect((await snapshot())[0]).toMatchObject({ short_id: "Cv4g00", work_status: "done" });
+    // Current grants remain independently necessary after the signed projection succeeds.
+    await sql`DELETE FROM auth.access WHERE id=${fixture.accessId}::uuid`;
+    expect(await (await fixture.call("message.read", { id: "Ms4g00" })).json()).toMatchObject({ ok: false });
+    expect(
+      await (
+        await fixture.call(
+          "conversation.status.set.batch",
+          {
+            conversationIds: ["Cv4g00"],
+            status: "needs_action",
+          },
+          target,
+        )
+      ).json(),
+    ).toMatchObject({ ok: false });
+    expect((await snapshot())[0]).toMatchObject({ short_id: "Cv4g00", work_status: "done" });
+  });
+
+  test("Mail waiting reads keep pending content in one bridge call and report terminal hydration explicitly", async () => {
+    const fixture = await fileFixture();
+    await sql`UPDATE mail.message_contents SET hydration_status='envelope' WHERE id=${fixture.messageId}::uuid`;
+    const read = mailMessages.getMessage;
+    let polls = 0;
+    const barrier = spyOn(mailMessages, "getMessage").mockImplementation(async (input) => {
+      const result = await read(input);
+      if (++polls === 5) await sql`UPDATE mail.message_contents SET hydration_status='complete' WHERE id=${fixture.messageId}::uuid`;
+      return result;
+    });
+    try {
+      expect(await (await fixture.call("message.read", { id: "Ms4g00", waitForHydration: true })).json()).toMatchObject({
+        ok: true,
+        data: { data: { hydrationStatus: "complete" } },
+      });
+      expect(polls).toBe(6);
+      expect(
+        await sql<
+          { generation: number; effect_started: boolean }[]
+        >`SELECT generation,effect_started FROM code.runs WHERE id=${claims.runId}::uuid`,
+      ).toEqual([{ generation: 1, effect_started: false }]);
+      expect(await sql`SELECT * FROM code.calls WHERE run_id=${claims.runId}::uuid`).toHaveLength(1);
+    } finally {
+      barrier.mockRestore();
+    }
+    await sql`UPDATE mail.message_contents SET hydration_status='failed',hydration_attempt=5 WHERE id=${fixture.messageId}::uuid`;
+    expect(await (await fixture.call("message.read", { id: "Ms4g00", waitForHydration: true })).json()).toMatchObject({
+      ok: false,
+      error: { code: "mail_message_hydration_failed", status: 409 },
+    });
+    expect(fixture.lastInvocation()?.workload_trigger).toBeNull();
+    expect(await (await fixture.call("message.read", { id: "Ms4g00" })).json()).toMatchObject({
+      ok: true,
+      data: { data: { hydrationStatus: "failed" } },
+    });
+  }, 20000);
+
   test("4g Mail attachment passes through Core to a third-party import, with metadata only at the sandbox seam", async () => {
     const fixture = await fileFixture();
     const opened = await fixture.read();

@@ -37,6 +37,8 @@ const genericGermanMessage = (error: HumanFacingError): string => {
     return "Dieser Ordner enthält aufbewahrte Unterhaltungen und kann nicht gelöscht werden. Verschiebe sie zuerst in einen anderen Ordner.";
   if (error.code === "KEPT_COPY_ONLY")
     return "Von diesen Nachrichten ist nur noch die in Cloud aufbewahrte Kopie vorhanden. Sie können auf dem Mailserver nicht geändert werden.";
+  if (error.code === "MAIL_MESSAGE_HYDRATION_FAILED")
+    return "Der Nachrichteninhalt konnte nicht geladen werden. Lade ihn in Mail erneut, bevor du die Verarbeitung wiederholst.";
   if (error.code === "BAD_INPUT") {
     const detail = safeErrorDetail(error.message);
     return detail ? `Die Eingabe ist ungültig: ${detail}` : "Die Eingabe ist ungültig";

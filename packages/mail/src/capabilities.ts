@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { Readable } from "node:stream";
+import { sql } from "@k2b/cloud";
 import {
   CAPABILITY_MAX_RESULT_BYTES,
   CapabilityActionCheckSchema,
@@ -99,6 +100,8 @@ import * as reviewReaders from "./service/capability-review-readers";
 import { previewMailCodeMessage, resolveMailCodeEvent, selectMailCodeMessages } from "./service/code-messages";
 import { keepError } from "./service/conversation-keep-rules";
 import { localizeMailError } from "./service/error-messages";
+import { isTerminalHydrationFailure } from "./service/message-hydration";
+import { waitForMessageHydration } from "./service/message-readiness";
 import type { ConversationSummary, MessageSummary } from "./service/messages";
 import { sendContentChanged } from "./service/send-content";
 
@@ -1737,7 +1740,7 @@ const queryDefinitions = {
   "message.read": {
     title: "Read message",
     description:
-      "Read message addresses, attachment refs and bounded plain text. When bodyTruncated is true, use message.read-content from offset 0 and follow nextOffset for the complete text. Use attachment.read-content for attachments. Raw source and HTML are excluded.",
+      "Read message addresses, attachment refs and bounded plain text. Set waitForHydration to wait up to 30 seconds for content; repeat while pending within your deadline. Terminal hydration failure returns MAIL_MESSAGE_HYDRATION_FAILED. When bodyTruncated is true, use message.read-content from offset 0 and follow nextOffset for the complete text. Use attachment.read-content for attachments. Raw source and HTML are excluded.",
     input: c.MessageReadInputSchema,
     data: c.MessageDataSchema,
     openWorld: true,
@@ -1747,11 +1750,20 @@ const queryDefinitions = {
       if (!message.ok) return message;
       const mailboxId = await resourceParents.message(message.data);
       if (!mailboxId || !(await canReadMailbox(context, mailboxId))) return fail(err.notFound("Message"));
-      const result = await messages.getMessage({
-        context: requestContext(context),
-        mailboxId,
-        messageId: message.data,
-      });
+      const read = () => messages.getMessage({ context: requestContext(context), mailboxId, messageId: message.data });
+      const result = input.waitForHydration
+        ? await waitForMessageHydration({
+            read,
+            signal: context.signal,
+            terminal: async () => {
+              const [row] = await sql<{ terminal: boolean }[]>`SELECT ${isTerminalHydrationFailure({
+                hydrationStatus: sql`hydration_status`,
+                hydrationAttempt: sql`hydration_attempt`,
+              })} AS terminal FROM mail.message_contents WHERE id=${message.data}::uuid AND mailbox_id=${mailboxId}::uuid`;
+              return row?.terminal === true;
+            },
+          })
+        : await read();
       if (!result.ok) return result;
       const item = result.data;
       const body = boundedText(item.plainText ?? item.forwardText, 96 * 1024);

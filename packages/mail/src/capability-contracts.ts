@@ -188,17 +188,26 @@ const resourceReadInputSchema = (type: string, source: string) =>
   z.object({ id: ResourceShortIdSchema.describe(`Exact ${type} ID returned by ${source} or a typed resource ref.`) }).strict();
 export const MailboxReadInputSchema = resourceReadInputSchema("mail.mailbox", "List mailboxes");
 export const ConversationReadInputSchema = resourceReadInputSchema("mail.conversation", "a conversation list, search, or focus result");
-export const MessageReadInputSchema = resourceReadInputSchema("mail.message", "List conversation messages or Search mail");
-export const MessageContentReadInputSchema = MessageReadInputSchema.extend({
-  offset: z.number().int().nonnegative().default(0).describe("UTF-8 byte offset; continue with nextOffset."),
-  length: z
-    .number()
-    .int()
-    .min(256)
-    .max(64 * 1024)
-    .default(16 * 1024)
-    .describe("Maximum UTF-8 bytes of plain text."),
-}).strict();
+export const MessageReadInputSchema = resourceReadInputSchema("mail.message", "List conversation messages or Search mail").extend({
+  waitForHydration: z
+    .boolean()
+    .optional()
+    .describe(
+      "Wait up to 30 seconds for message content. Repeat while pending within your original deadline. Terminal hydration failure returns MAIL_MESSAGE_HYDRATION_FAILED.",
+    ),
+});
+export const MessageContentReadInputSchema = MessageReadInputSchema.omit({ waitForHydration: true })
+  .extend({
+    offset: z.number().int().nonnegative().default(0).describe("UTF-8 byte offset; continue with nextOffset."),
+    length: z
+      .number()
+      .int()
+      .min(256)
+      .max(64 * 1024)
+      .default(16 * 1024)
+      .describe("Maximum UTF-8 bytes of plain text."),
+  })
+  .strict();
 export const MessageContentReadDataSchema = z
   .object({
     id: ResourceShortIdSchema,
