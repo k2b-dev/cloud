@@ -171,6 +171,7 @@ and checked cards.
 | Current page | `Pagination` | `k2b-pagination` |
 | Selected date, month, or duration | `DatePicker` | `k2b-date-grid`, `k2b-date-months`, `k2b-date-durations` |
 | Selected range | `RangePicker` | `k2b-range-picker` |
+| Selected period preset | `PeriodPicker` | `k2b-period-picker` |
 | Selected tone or emoji group | `EmojiPicker` | `k2b-emoji-picker` |
 | Pressed toolbar button | `Toolbar` | `k2b-toolbar` |
 | Pressed image editor toolbar button | `ImageEditor` | `k2b-image-editor` |
