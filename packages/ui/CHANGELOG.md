@@ -1,5 +1,43 @@
 # Changelog
 
+## [0.51.0](https://github.com/k2b-dev/cloud/compare/npm-ui-v0.50.0...npm-ui-v0.51.0) (2026-11-08)
+
+
+### ⚠ BREAKING CHANGES
+
+* **tools:** Cloud no longer serves speedtest transfer data, JavaScript or Python measurement scripts. Download the shared Node/Bun CLI from the standalone speedtest server; see its operator guide.
+
+### Features
+
+* **cloud:** Chat and Notebooks share one chart description owned by @k2b/ui ([#2778](https://github.com/k2b-dev/cloud/issues/2778)) ([05299cb](https://github.com/k2b-dev/cloud/commit/05299cb9d7451df2c91e712407614a267435b589))
+* **cloud:** the model trigger shows its level ([#2837](https://github.com/k2b-dev/cloud/issues/2837)) ([b11c3f6](https://github.com/k2b-dev/cloud/commit/b11c3f6c41167bb788bfb6b93a3a7ad86db100a4))
+* **tools:** move speedtests to the shared standalone engine ([#2834](https://github.com/k2b-dev/cloud/issues/2834)) ([fc5b1e2](https://github.com/k2b-dev/cloud/commit/fc5b1e2836f75da65477e6a4ca3f400288271274))
+* **ui:** a leading checkbox on DetailPanel actions ([#2799](https://github.com/k2b-dev/cloud/issues/2799)) ([50e866e](https://github.com/k2b-dev/cloud/commit/50e866e2381db2bd36ed538f4f98afcb0bb6b8bf))
+* **ui:** a slider's reset names the value it returns to ([#2888](https://github.com/k2b-dev/cloud/issues/2888)) ([13a3d9a](https://github.com/k2b-dev/cloud/commit/13a3d9ad8f8a3ebf465bc33aee33250f104f470b))
+* **ui:** a wide split button gives its room to the main action ([#2889](https://github.com/k2b-dev/cloud/issues/2889)) ([5a4167a](https://github.com/k2b-dev/cloud/commit/5a4167a243fd747776a54aa7b36b84887a4b3ae4))
+* **ui:** commands confirm success and errors where their list was ([#2867](https://github.com/k2b-dev/cloud/issues/2867)) ([57b6f9b](https://github.com/k2b-dev/cloud/commit/57b6f9be4fefa55f169eb200829669785b19a169))
+* **ui:** dashboard panels as one shared component family ([#2813](https://github.com/k2b-dev/cloud/issues/2813)) ([1f0f47a](https://github.com/k2b-dev/cloud/commit/1f0f47a07a4639470a107873f2a93c99a09ea00b))
+* **ui:** MarkdownEditor can write in the sans font ([#2887](https://github.com/k2b-dev/cloud/issues/2887)) ([bab5b04](https://github.com/k2b-dev/cloud/commit/bab5b0409b985583618b8280328152159026d59c))
+* **ui:** one glass surface for layers over pictures and maps ([#2870](https://github.com/k2b-dev/cloud/issues/2870)) ([d31c85d](https://github.com/k2b-dev/cloud/commit/d31c85d542b4aa25f48545ece445f802af672a13))
+* **ui:** one period picker with presets and a custom range ([#2845](https://github.com/k2b-dev/cloud/issues/2845)) ([234c799](https://github.com/k2b-dev/cloud/commit/234c799b6486c1bedcbeeb91d0d94b2ca564fb15))
+* **ui:** PDFs draw with pdf.js in every browser ([#2880](https://github.com/k2b-dev/cloud/issues/2880)) ([a74d849](https://github.com/k2b-dev/cloud/commit/a74d849ddd68444eed2c8d2199331180dc8c38d5))
+* **ui:** slash commands dock above the composer and run with its text ([#2848](https://github.com/k2b-dev/cloud/issues/2848)) ([fd7d090](https://github.com/k2b-dev/cloud/commit/fd7d0904c580a5e40f95b52887151ea080cfe7a8))
+* **ui:** slash commands in MarkdownEditor and a shared CommandMenu ([#2797](https://github.com/k2b-dev/cloud/issues/2797)) ([a0a5047](https://github.com/k2b-dev/cloud/commit/a0a50472a6d42e374b7a84a885dbba8cb64145bd))
+* **ui:** sliders show a changed value and reset in place ([#2873](https://github.com/k2b-dev/cloud/issues/2873)) ([fb6f152](https://github.com/k2b-dev/cloud/commit/fb6f152bbf681106658fe23461b5ddf2d65cb724))
+* **ui:** split buttons read as one body with a light divider ([#2860](https://github.com/k2b-dev/cloud/issues/2860)) ([69c9faa](https://github.com/k2b-dev/cloud/commit/69c9faa8d5c5e87d98a1772000d374311de91eb9))
+* **ui:** stacked, grouped, compared and horizontal bars ([#2729](https://github.com/k2b-dev/cloud/issues/2729)) ([cbfea20](https://github.com/k2b-dev/cloud/commit/cbfea2061617aa5f24bef50aefd01f41d7d316e3))
+* **ui:** the choice slider reads as a slider ([#2811](https://github.com/k2b-dev/cloud/issues/2811)) ([8ea2260](https://github.com/k2b-dev/cloud/commit/8ea226095b4076fab7c90ca48977316788302bca))
+* **ui:** waterfall charts ([#2758](https://github.com/k2b-dev/cloud/issues/2758)) ([3b05ef2](https://github.com/k2b-dev/cloud/commit/3b05ef22952c7cb3b883f1d688ada671344db2c2))
+* **ui:** wide label–value rows stay readable ([#2819](https://github.com/k2b-dev/cloud/issues/2819)) ([3e751ef](https://github.com/k2b-dev/cloud/commit/3e751efb428682cad31f3b12e891d3f3001eecc8))
+
+
+### Bug Fixes
+
+* **cloud:** Chat loads chart drawing on first use ([#2791](https://github.com/k2b-dev/cloud/issues/2791)) ([da1b8f5](https://github.com/k2b-dev/cloud/commit/da1b8f5b7e1c1cc6b408e0650a37dc6c82d979ee))
+* **docs:** chart showcase draws its Sankeys, sizes cards by kind and lists each option once ([#2793](https://github.com/k2b-dev/cloud/issues/2793)) ([24cf0ba](https://github.com/k2b-dev/cloud/commit/24cf0baec56fdc9015176c74c723527f8231c909))
+* **filesv2:** append entries with quiet load-more actions ([#2829](https://github.com/k2b-dev/cloud/issues/2829)) ([851797f](https://github.com/k2b-dev/cloud/commit/851797f888b8492813d4c84493c6df8dd903740c))
+* **ui:** status-line retry links are underlined and the chart showcase uses the dashboard grid ([#2883](https://github.com/k2b-dev/cloud/issues/2883)) ([c270f4d](https://github.com/k2b-dev/cloud/commit/c270f4d1ed5e42df293726a7f4b6e2ca6eb92fdb))
+
 ## [0.50.0](https://github.com/k2b-dev/cloud/compare/npm-ui-v0.49.0...npm-ui-v0.50.0) (2026-11-07)
 
 

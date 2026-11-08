@@ -1075,6 +1075,12 @@
   min-height: 10rem;
 }
 
+.ui-pdf-viewer-demo {
+  display: flex;
+  height: 26rem;
+  flex-direction: column;
+}
+
 .ui-video-demo {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));

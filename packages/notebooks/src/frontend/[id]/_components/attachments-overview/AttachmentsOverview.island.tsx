@@ -157,21 +157,21 @@ const AttachmentsOverview = (props: Props) => {
 
                 {/* Hover overlay: download / copy / delete. Sits on the
                       preview so meta row stays clean (filename + size). */}
-                <div class="k2b-progressive-action absolute right-1 top-1 flex items-center gap-1">
+                <div class="k2b-progressive-action k2b-overlay-surface absolute right-1 top-1 flex items-center gap-0.5 rounded-md p-0.5">
                   <Tooltip.Anchor content={t().downloadAttachment}>
                     <IconButton
                       label={t().downloadNamedAttachment({ filename: att.filename })}
                       tooltip={false}
                       size="xs"
                       onClick={() => onDownload(att)}
-                      class="bg-white/90 text-dimmed backdrop-blur-sm dark:bg-zinc-950/80"
+                      class="text-dimmed"
                     >
                       <i class="ti ti-download text-xs" />
                     </IconButton>
                   </Tooltip.Anchor>
                   <SaveFilesButton
                     size="xs"
-                    class="bg-white/90 text-dimmed backdrop-blur-sm dark:bg-zinc-950/80 [&_i]:text-xs"
+                    class="text-dimmed [&_i]:text-xs"
                     files={() => [
                       {
                         name: att.filename,
@@ -187,7 +187,7 @@ const AttachmentsOverview = (props: Props) => {
                       tooltip={false}
                       size="xs"
                       onClick={() => void onCopy(att)}
-                      class="bg-white/90 text-dimmed backdrop-blur-sm dark:bg-zinc-950/80"
+                      class="text-dimmed"
                     >
                       <i class="ti ti-copy text-xs" />
                     </IconButton>
@@ -199,7 +199,6 @@ const AttachmentsOverview = (props: Props) => {
                       size="xs"
                       variant="danger"
                       onClick={() => void onDelete(att)}
-                      class="bg-white/90 backdrop-blur-sm dark:bg-zinc-950/80"
                     >
                       <i class="ti ti-trash text-xs" />
                     </IconButton>
