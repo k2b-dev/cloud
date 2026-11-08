@@ -4679,22 +4679,36 @@
   @apply absolute right-2 top-2 z-10 flex items-center gap-1;
 }
 
-/* Cloud's `[box-shadow:var(--ui-control-bevel)]` is `0 0 0 transparent`, so the
-   floating action reads as a bordered chip, not a lifted one. Border drawn as
-   an inset ring — the preview panel clips outer shadows. */
+/* Over text, tables, and documents the floating action is a solid bordered
+   chip, not a lifted one: blurred text under it would read as a fault. Border
+   drawn as an inset ring — the preview panel clips outer shadows. */
 .k2b-ui .k2b-content-file-view__action {
   @apply inline-flex h-7 w-7 items-center justify-center rounded-md text-sm transition-colors;
   border: 0;
   color: var(--k2b-text-secondary);
-  background: color-mix(in srgb, var(--k2b-surface) 85%, transparent);
+  background: var(--k2b-surface);
   box-shadow: inset 0 0 0 1px var(--k2b-border);
-  backdrop-filter: blur(4px);
   text-decoration: none;
   cursor: pointer;
 }
 
 .k2b-ui .k2b-content-file-view__action:hover {
   color: var(--k2b-text);
+}
+
+/* Over a picture or a video the cluster itself is the glass layer; its actions sit on it without a chip of their own. */
+.k2b-ui .k2b-content-file-view__overlay.k2b-overlay-surface {
+  padding: 0.125rem;
+  border-radius: 0.5rem;
+}
+
+.k2b-ui .k2b-content-file-view__overlay.k2b-overlay-surface .k2b-content-file-view__action {
+  background: transparent;
+  box-shadow: none;
+}
+
+.k2b-ui .k2b-content-file-view__overlay.k2b-overlay-surface .k2b-content-file-view__action:hover {
+  background: var(--k2b-overlay-surface-hover);
 }
 
 /* Editors: markdown files use the real MarkdownEditor, source files a plain
@@ -4875,6 +4889,13 @@
   border: 0;
   color: #fff;
   background: rgb(0 0 0 / 0.92);
+  /* The stage is always dark, so its floating layers take dark glass in both themes. */
+  --k2b-overlay-surface: rgb(39 39 42 / 0.78);
+  --k2b-overlay-surface-hover: rgb(63 63 70 / 0.9);
+  --k2b-overlay-edge: rgb(255 255 255 / 0.16);
+  --k2b-overlay-ring: rgb(0 0 0 / 0.5);
+  --k2b-overlay-lift: none;
+  --k2b-overlay-solid: #27272a;
 }
 
 .k2b-ui .k2b-content-lightbox::backdrop {
@@ -4891,18 +4912,12 @@
 
 .k2b-ui .k2b-content-lightbox__counter {
   @apply inline-flex w-fit items-center rounded-full px-3 py-1 text-xs;
-  border: 1px solid rgb(255 255 255 / 0.12);
-  color: rgb(255 255 255 / 0.8);
-  background: rgb(255 255 255 / 0.08);
-  backdrop-filter: blur(8px);
+  color: rgb(255 255 255 / 0.85);
 }
 
 .k2b-ui .k2b-content-lightbox__caption {
   @apply rounded-2xl px-4 py-2;
   max-width: min(70vw, 42rem);
-  border: 1px solid rgb(255 255 255 / 0.1);
-  background: rgb(0 0 0 / 0.3);
-  backdrop-filter: blur(4px);
 }
 
 .k2b-ui .k2b-content-lightbox__caption-text {
@@ -4916,15 +4931,14 @@
 
 .k2b-ui .k2b-content-lightbox__button {
   @apply inline-flex h-11 items-center gap-2 rounded-full px-4 text-sm transition-colors;
-  border: 1px solid rgb(255 255 255 / 0.12);
+  border: 0;
   color: #fff;
-  background: rgb(255 255 255 / 0.08);
   text-decoration: none;
   cursor: pointer;
 }
 
-.k2b-ui .k2b-content-lightbox__button:hover {
-  background: rgb(255 255 255 / 0.14);
+.k2b-ui :is(.k2b-content-lightbox__button, .k2b-content-lightbox__nav):hover {
+  background: var(--k2b-overlay-surface-hover);
 }
 
 .k2b-ui .k2b-content-lightbox__button-label {
@@ -4943,15 +4957,10 @@
 
 .k2b-ui .k2b-content-lightbox__nav {
   @apply absolute top-1/2 z-10 flex h-12 w-12 items-center justify-center rounded-full text-2xl transition-colors;
-  border: 1px solid rgb(255 255 255 / 0.12);
+  border: 0;
   color: #fff;
-  background: rgb(255 255 255 / 0.08);
   transform: translateY(-50%);
   cursor: pointer;
-}
-
-.k2b-ui .k2b-content-lightbox__nav:hover {
-  background: rgb(255 255 255 / 0.14);
 }
 
 .k2b-ui .k2b-content-lightbox__nav[data-direction="previous"] {
@@ -4964,9 +4973,6 @@
 
 .k2b-ui .k2b-content-lightbox__dots {
   @apply absolute bottom-5 left-1/2 flex gap-2 rounded-full px-3 py-2;
-  border: 1px solid rgb(255 255 255 / 0.1);
-  background: rgb(0 0 0 / 0.3);
-  backdrop-filter: blur(8px);
   transform: translateX(-50%);
 }
 
@@ -6891,16 +6897,17 @@
 .k2b-ui button.k2b-map-view__pin:hover { filter: brightness(.94); }
 .k2b-ui span.k2b-map-view__pin { cursor: default; pointer-events: none; }
 .k2b-ui .k2b-map-view__pin:focus-visible { outline: var(--k2b-focus-width) solid var(--k2b-focus-ring); outline-offset: var(--k2b-focus-offset); }
-.k2b-ui :is(.k2b-map-view__zoom, .k2b-map-view__locate, .k2b-map-view__notice, .k2b-map-view__status, .k2b-map-view__info:not(:empty)) { background: var(--k2b-map-surface); box-shadow: 0 1px 4px rgb(0 0 0 / .14); border: 0; }
+/* Messages and the selected place carry text to read, so they stay solid. The zoom and locate groups are glass (`k2b-overlay-surface`). */
+.k2b-ui :is(.k2b-map-view__notice, .k2b-map-view__status, .k2b-map-view__info:not(:empty)) { background: var(--k2b-map-surface); box-shadow: 0 1px 4px rgb(0 0 0 / .14); border: 0; }
 /* Dark floating surfaces sit on a dark map: an inset ring gives them their edge instead of a shadow nobody sees. */
-:where(.dark, .k2b-dark, [data-theme="dark"]) .k2b-ui :is(.k2b-map-view__zoom, .k2b-map-view__locate, .k2b-map-view__notice, .k2b-map-view__status, .k2b-map-view__info:not(:empty)),
-.k2b-ui:where(.dark, .k2b-dark, [data-theme="dark"]) :is(.k2b-map-view__zoom, .k2b-map-view__locate, .k2b-map-view__notice, .k2b-map-view__status, .k2b-map-view__info:not(:empty)),
+:where(.dark, .k2b-dark, [data-theme="dark"]) .k2b-ui :is(.k2b-map-view__notice, .k2b-map-view__status, .k2b-map-view__info:not(:empty)),
+.k2b-ui:where(.dark, .k2b-dark, [data-theme="dark"]) :is(.k2b-map-view__notice, .k2b-map-view__status, .k2b-map-view__info:not(:empty)),
 :where(.dark, .k2b-dark, [data-theme="dark"]) .k2b-ui .k2b-map-view__empty > span,
 .k2b-ui:where(.dark, .k2b-dark, [data-theme="dark"]) .k2b-map-view__empty > span {
   box-shadow: inset 0 0 0 1px rgb(255 255 255 / .08), 0 1px 4px rgb(0 0 0 / .4);
 }
 .k2b-ui .k2b-map-view__controls { position: absolute; top: 10px; right: 10px; display: flex; flex-direction: column; gap: 8px; }
-.k2b-ui .k2b-map-view__zoom { display: flex; flex-direction: column; border-radius: 9px; }
+.k2b-ui :is(.k2b-map-view__zoom, .k2b-map-view__locate-group) { display: flex; flex-direction: column; border-radius: 9px; }
 .k2b-ui .k2b-map-view__controls .k2b-icon-button { width: 32px; height: 32px; min-height: 32px; padding: 0; border: 0; border-radius: 9px; }
 .k2b-ui .k2b-map-view__controls .k2b-icon-button:hover { transform: none; }
 .k2b-ui .k2b-map-view__messages { position: absolute; top: 10px; left: 10px; max-width: calc(100% - 64px); display: flex; flex-direction: column; align-items: flex-start; gap: 6px; pointer-events: none; }

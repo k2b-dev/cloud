@@ -178,13 +178,16 @@ function OverlayAction(props: { icon: string; title: string; onClick?: () => voi
   );
 }
 
-/** Scrollable preview panel with the floating action cluster overlaid top-right. */
-function OverlayPanel(props: { actions?: JSX.Element; children: JSX.Element }) {
+/**
+ * Scrollable preview panel with the floating action cluster overlaid top-right. Over a picture or a video the
+ * cluster is glass; over text, tables, and documents it stays solid, because blurred text reads as a fault.
+ */
+function OverlayPanel(props: { actions?: JSX.Element; overMedia?: boolean; children: JSX.Element }) {
   return (
     <div class="k2b-content-file-view__panel">
       <div class="k2b-content-file-view__preview">{props.children}</div>
       <Show when={props.actions}>
-        <div class="k2b-content-file-view__overlay">{props.actions}</div>
+        <div class={`k2b-content-file-view__overlay${props.overMedia ? " k2b-overlay-surface" : ""}`}>{props.actions}</div>
       </Show>
     </div>
   );
@@ -577,7 +580,7 @@ const mediaSource = (props: FileViewRendererProps): string =>
 
 function ImageRenderer(props: FileViewRendererProps) {
   return (
-    <OverlayPanel actions={<DownloadAction {...props} />}>
+    <OverlayPanel overMedia actions={<DownloadAction {...props} />}>
       <div class="k2b-content-file-view__media">
         <img crossOrigin={props.crossOrigin} onError={props.onPreviewError} src={mediaSource(props)} alt={props.file.path} />
       </div>
@@ -700,7 +703,7 @@ function VideoRenderer(props: FileViewRendererProps) {
   const messages = useUiMessages();
   const name = () => props.file.path.slice(props.file.path.lastIndexOf("/") + 1);
   return (
-    <OverlayPanel actions={<DownloadAction {...props} />}>
+    <OverlayPanel overMedia actions={<DownloadAction {...props} />}>
       <div class="k2b-content-file-view__media" data-kind="video">
         <VideoPlayer
           src={mediaSource(props)}
