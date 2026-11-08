@@ -7,7 +7,7 @@ import { createSettingsOpsRoutes, settingsInvocationOperation } from "../api/set
 import { type AppAccessDeclaration, compileAppAccess } from "../contracts/app-access";
 import { startAppEventDelivery } from "../events/app-event-delivery";
 import { bindAppEvents } from "../events/app-events";
-import { startLiveOutbox } from "../events/live";
+import { startLiveOutbox, stopLiveEngines } from "../events/live";
 import { appCatalogExists, usesLegacyCatalogRenewal } from "../services/app-catalog-store";
 import { registerHelp } from "../services/help";
 import { preloadLayoutHelp } from "../ssr/help";
@@ -1318,10 +1318,14 @@ export const defineApp = <
       let shutdownPromise: Promise<void> | undefined;
       const shutdown = () =>
         (shutdownPromise ??= (async () => {
-          const drained = http.stop();
           log.info(`Stopping: ${meta.id}`);
           try {
-            await drained;
+            // Bun's graceful HTTP stop waits for WebSockets. Close live
+            // admission and sockets first, leaving delivery and dependencies
+            // available to accepted HTTP producers until their drain finishes.
+            stopLiveEngines();
+            stopAppAccessConnections();
+            await http.stop();
           } finally {
             await stopStartedResources();
           }
