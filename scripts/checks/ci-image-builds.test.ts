@@ -2,17 +2,30 @@ import { expect, test } from "bun:test";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { workspaceRoot } from "../workspace";
 import { rule } from "./ci-image-builds";
 
 const build = (file?: string) =>
   `      - uses: docker/build-push-action@0000000000000000000000000000000000000000\n        with:\n          context: .\n${file ? `          file: ${file}\n` : ""}`;
 
-const messages = async (steps: string) => {
+const messages = async (steps: string, cacheTo?: string) => {
   const root = await mkdtemp(join(tmpdir(), "cloud-check-ci-image-builds-"));
   try {
     const directory = join(root, ".github", "workflows");
     await mkdir(directory, { recursive: true });
     await writeFile(join(directory, "ci.yml"), `jobs:\n  images:\n    runs-on: ubuntu-24.04\n    steps:\n${steps}`);
+    if (cacheTo !== undefined) {
+      await writeFile(
+        join(directory, "build-images.yaml"),
+        Bun.YAML.stringify({
+          jobs: {
+            images: {
+              steps: [{ uses: "docker/build-push-action@0000000000000000000000000000000000000000", with: { "cache-to": cacheTo } }],
+            },
+          },
+        }),
+      );
+    }
     return (await rule.run({ workspaceRoot: root, fix: false, flags: new Set() })).map((finding) => finding.message);
   } finally {
     await rm(root, { recursive: true, force: true });
@@ -38,4 +51,29 @@ test("flags the website Dockerfile when no job builds it", async () => {
         .join(""),
     ),
   ).toEqual(["docs-site/Dockerfile builds a release image but no ci.yml job builds it; add a docker/build-push-action step"]);
+});
+
+test("current workflows tolerate cache export failures", async () => {
+  expect(await rule.run({ workspaceRoot, fix: false, flags: new Set() })).toEqual([]);
+});
+
+test.each([
+  "type=gha,mode=max,scope=ci-website",
+  "${{ inputs.push && format('type=registry,mode=max,ref=ghcr.io/{0}/cache', needs.list.outputs.owner) || '' }}",
+  "type=gha,ignore-error=false",
+  "type=gha,ignore-error=trueish",
+  "type=gha,ignore-error=true\ntype=registry,ref=example/cache",
+])("rejects a cache export without ignore-error=true: %s", async (cacheTo) => {
+  expect(await messages(all.map(build).join(""), cacheTo)).toEqual([
+    "images: every cache-to export must set ignore-error=true so a cache failure cannot fail the image build",
+  ]);
+});
+
+test.each([
+  "type=gha,mode=max,scope=ci-website,ignore-error=true",
+  "${{ inputs.push && format('type=registry,mode=max,ignore-error=true,ref=ghcr.io/{0}/cache', needs.list.outputs.owner) || '' }}",
+  "type=gha,ignore-error=true\ntype=registry,ignore-error=true,ref=example/cache\n",
+  "",
+])("accepts optional cache exports: %s", async (cacheTo) => {
+  expect(await messages(all.map(build).join(""), cacheTo)).toEqual([]);
 });
