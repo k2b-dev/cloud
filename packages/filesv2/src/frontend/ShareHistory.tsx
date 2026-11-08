@@ -158,10 +158,10 @@ function ShareFacts(props: {
     if (!cursor || moreLoading()) return;
     const key = source();
     setMoreLoading(true);
-    setMoreFailed(false);
     try {
       const page = await props.load({ shareId: props.share.id, networkAfter: cursor }, new AbortController().signal);
       if (key !== source()) return;
+      setMoreFailed(false);
       setMore({ source: key, items: [...(extra()?.items ?? []), ...page.networks.items], next: page.networks.next });
     } catch {
       if (key === source()) setMoreFailed(true);
@@ -263,8 +263,9 @@ function ShareFacts(props: {
                   </Button>
                 </Show>
                 <Show when={expanded() && (next() || moreFailed())}>
-                  <Button size="xs" variant="text" class="filesv2-history-link" loading={moreLoading()} onClick={() => void loadMore()}>
+                  <Button size="xs" variant="link" loading={moreLoading()} onClick={() => void loadMore()}>
                     {moreFailed() ? h().retry : h().loadMoreNetworks}
+                    <i class={moreFailed() ? "ti ti-refresh" : "ti ti-chevron-down"} aria-hidden="true" />
                   </Button>
                 </Show>
                 <Show when={moreFailed()}>
