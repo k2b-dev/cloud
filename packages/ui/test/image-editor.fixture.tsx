@@ -34,6 +34,7 @@ const control = {
     return !!restore;
   },
   results: [] as ImageEditorResult[],
+  selected: [] as string[],
   formats: (): readonly ImageEditorFormat[] => [],
   accept: () => {},
   source: (_source: string) => {},
@@ -43,10 +44,21 @@ Object.assign(window, { editorFixture: control });
 function mount() {
   control.dispose = render(() => {
     const [source, setSource] = createSignal(parameters.has("broken") ? "/not-an-image.jpg" : "/photo.jpg");
+    const [current, setCurrent] = createSignal("b");
     control.source = setSource;
+    const items = parameters.has("items")
+      ? ["a", "b", "c", "d"].map((id) => ({ id, name: `${id}.jpg`, thumbnail: id === "c" ? undefined : "/photo.jpg", dirty: id === "a" }))
+      : undefined;
     return (
       <ImageEditor
         source={source()}
+        title="photo.jpg"
+        items={items}
+        currentItem={current()}
+        onSelectItem={(id) => {
+          control.selected.push(id);
+          setCurrent(id);
+        }}
         features={features}
         saveActions={
           parameters.has("actions")

@@ -294,8 +294,9 @@ function ImageEditorSession(props: ImageEditorProps): JSX.Element {
     setDraft(update(state()));
     setSaved(false);
   };
+  // Editing continues while a save runs: the save captured its own history entry, and an unresolved upload may wait
+  // for a manual check indefinitely.
   const undo = () => {
-    if (busy()) return;
     cancelAnimationFrame(autoAnimation);
     setInlineText(undefined);
     setDraft(undefined);
@@ -303,14 +304,13 @@ function ImageEditorSession(props: ImageEditorProps): JSX.Element {
     setSaved(false);
   };
   const redo = () => {
-    if (busy()) return;
     setInlineText(undefined);
     setDraft(undefined);
     setHistory(redoImageEditor);
     setSaved(false);
   };
-  const canUndo = () => !busy() && (history().index > 0 || !!draft());
-  const canRedo = () => !busy() && history().index < history().entries.length - 1;
+  const canUndo = () => history().index > 0 || !!draft();
+  const canRedo = () => history().index < history().entries.length - 1;
 
   // ---------- geometry ----------
   const marks = () => state().annotations;
@@ -789,7 +789,7 @@ function ImageEditorSession(props: ImageEditorProps): JSX.Element {
   const anyAuto = () => autoKeys.some(isAuto);
   const runAuto = () => {
     const image = preview();
-    if (!image || busy()) return;
+    if (!image) return;
     finishText();
     finishDraft();
     cancelAnimationFrame(autoAnimation);
@@ -952,9 +952,9 @@ function ImageEditorSession(props: ImageEditorProps): JSX.Element {
   const hasRedactions = () => marks().some(isRedaction);
 
   // ---------- canvas pointers ----------
-  const annotating = () => tool() === "annotate" && !!preview() && !busy();
+  const annotating = () => tool() === "annotate" && !!preview();
   const startPointer = (event: PointerEvent) => {
-    if (!preview() || loadError() || busy() || (event.target as HTMLElement).closest("button,input,textarea,[role=slider]")) return;
+    if (!preview() || loadError() || (event.target as HTMLElement).closest("button,input,textarea,[role=slider]")) return;
     const p = local(event);
     pointers.set(event.pointerId, p);
     canvasArea!.setPointerCapture(event.pointerId);
@@ -1103,6 +1103,14 @@ function ImageEditorSession(props: ImageEditorProps): JSX.Element {
     const p = local(event);
     pointers.set(event.pointerId, p);
     canvasArea!.setPointerCapture(event.pointerId);
+    // A second finger on the crop turns the gesture into a pinch of the view, as anywhere on the canvas.
+    if (pointers.size === 2) {
+      setDraft(undefined);
+      setCropDragging(false);
+      const [a, b] = [...pointers.values()];
+      if (a && b) gesture = { kind: "pinch", distance: Math.hypot(a.x - b.x, a.y - b.y), mid: { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }, view: view() };
+      return;
+    }
     (event.currentTarget as HTMLElement).focus({ preventScroll: true });
     setCropDragging(true);
     gesture = { kind: "crop", id: event.pointerId, handle, x: event.clientX, y: event.clientY, rect: state().crop };
@@ -1681,7 +1689,7 @@ function ImageEditorSession(props: ImageEditorProps): JSX.Element {
           id={`${ids.help}-panel`}
           role="tabpanel"
           aria-labelledby={`${ids.help}-tab-${tool()}`}
-          inert={loading() || loadError() || busy()}
+          inert={loading() || loadError()}
           aria-busy={loading()}
         >
           <Show when={tool() === "crop"}>{cropPanel()}</Show>

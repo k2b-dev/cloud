@@ -60,22 +60,34 @@ export function ImageProcessorView(props: ImageProcessorViewProps = {}) {
   const [archiving, setArchiving] = createSignal(false);
   const [dirtyIds, setDirtyIds] = createSignal(new Set<number>());
   const [thumbnails, setThumbnails] = createSignal(new Map<number, string>());
-  // Small strip thumbnails, so 36 px tiles never decode whole photos; released with their photo.
-  createEffect(() => {
-    for (const photo of photos()) {
-      if (thumbnails().has(photo.id)) continue;
-      setThumbnails((all) => new Map(all).set(photo.id, ""));
-      void createImageBitmap(photo.source, { resizeWidth: 96, resizeQuality: "medium" })
-        .then(async (bitmap) => {
-          const canvas = new OffscreenCanvas(bitmap.width, bitmap.height);
-          canvas.getContext("2d")?.drawImage(bitmap, 0, 0);
-          bitmap.close();
-          const url = URL.createObjectURL(await canvas.convertToBlob({ type: "image/jpeg", quality: 0.8 }));
-          if (!alive || !photos().some((item) => item.id === photo.id)) return URL.revokeObjectURL(url);
-          setThumbnails((all) => new Map(all).set(photo.id, url));
-        })
-        .catch(() => {});
+  // Small strip thumbnails, made one at a time once intake is idle, so they never compete with the editor's preview
+  // or run several codec jobs at once. A photo removed before its turn is skipped; its URL is released with it.
+  let thumbnailing = false;
+  const nextThumbnail = async () => {
+    if (thumbnailing || !alive || loading()) return;
+    const photo = photos().find((item) => !thumbnails().has(item.id));
+    if (!photo) return;
+    thumbnailing = true;
+    setThumbnails((all) => new Map(all).set(photo.id, ""));
+    let bitmap: ImageBitmap | undefined;
+    try {
+      bitmap = await createImageBitmap(photo.source, { resizeWidth: 96, resizeQuality: "medium" });
+      const canvas = new OffscreenCanvas(bitmap.width, bitmap.height);
+      canvas.getContext("2d")?.drawImage(bitmap, 0, 0);
+      const url = URL.createObjectURL(await canvas.convertToBlob({ type: "image/jpeg", quality: 0.8 }));
+      if (alive && photos().some((item) => item.id === photo.id)) setThumbnails((all) => new Map(all).set(photo.id, url));
+      else URL.revokeObjectURL(url);
+    } catch {
+      // The strip keeps its neutral tile; the editor reports a photo that cannot be decoded.
+    } finally {
+      bitmap?.close();
+      thumbnailing = false;
+      if (alive) queueMicrotask(() => void nextThumbnail());
     }
+  };
+  createEffect(() => {
+    photos();
+    if (!loading()) void nextThumbnail();
   });
   const controls = new Map<number, ImageEditorSaveActions>();
   const ready = new Map<number, (actions: ImageEditorSaveActions | undefined) => void>();

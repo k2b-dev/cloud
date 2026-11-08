@@ -404,6 +404,32 @@ describe(`ImageEditor shared renderer and export (${browserName})`, () => {
     }
   });
 
+  test("hidden marks are left out of the export while a redaction stays opaque even if marked hidden", async () => {
+    const page = await open();
+    try {
+      const result = await run(page, async (api) => {
+        const mark = { tool: "rect" as const, points: [{ x: 0.1, y: 0.1 }, { x: 0.3, y: 0.3 }], color: "#ff0000", width: 100 };
+        const redaction = { tool: "redact" as const, points: [{ x: 0.6, y: 0.6 }, { x: 0.8, y: 0.8 }], color: "#000", width: 1, hidden: true };
+        const sample = async (annotations: ReturnType<typeof api.initialImageEditorState>["annotations"]) => {
+          const state = { ...api.initialImageEditorState(), annotations };
+          const output = await api.exportImageEditor({ source: "/logo.png", features: {} }, state, { format: "image/png" });
+          const preview = await api.loadImageEditorPreview({ source: output.blob, features: {} }, new AbortController().signal);
+          const ctx = preview.image.getContext("2d")!;
+          const { width, height } = preview.image;
+          const pixels = { edge: [...ctx.getImageData(Math.round(width * 0.1), Math.round(height * 0.2), 1, 1).data], redaction: [...ctx.getImageData(Math.round(width * 0.7), Math.round(height * 0.7), 1, 1).data] };
+          preview.dispose();
+          return pixels;
+        };
+        return { plain: await sample([]), shown: await sample([mark]), hidden: await sample([{ ...mark, hidden: true }, redaction]) };
+      });
+      expect(result.shown.edge).not.toEqual(result.plain.edge);
+      expect(result.hidden.edge).toEqual(result.plain.edge);
+      expect(result.hidden.redaction).toEqual([0, 0, 0, 255]);
+    } finally {
+      await page.close();
+    }
+  });
+
   test("unsupported same-type inputs choose PNG for alpha and JPEG for opaque pixels", async () => {
     const page = await open();
     try {

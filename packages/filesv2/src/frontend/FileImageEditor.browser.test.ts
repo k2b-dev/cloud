@@ -84,6 +84,7 @@ const setup = async (
     sourceChanged?: boolean;
     noWebp?: boolean;
     large?: boolean;
+    images?: boolean;
   } = {},
 ) => {
   const page = await browser.newPage({ viewport: { width: options.width ?? 1440, height: 950 }, reducedMotion: "reduce" });
@@ -142,7 +143,7 @@ const setup = async (
     const url = new URL(request.url());
     if (url.pathname.endsWith("/entry")) {
       metadataReads++;
-      return route.fulfill({ json: { base, entry: entry() } });
+      return route.fulfill({ json: { base, entry: entry(url.searchParams.get("path") ?? undefined) } });
     }
     if (url.pathname.endsWith("/download"))
       return route.fulfill({ json: { url: new URL("/original", server.url).href, method: "GET", expires: "2099-01-01T00:00:00Z" } });
@@ -179,10 +180,11 @@ const setup = async (
     });
   });
   await page.goto(`${server.url}?${options.query ?? ""}`);
-  await page.evaluate(({ name, write, canCreate }) => window.fileImages.open(name, { write, canCreate }), {
+  await page.evaluate(({ name, write, canCreate, images }) => window.fileImages.open(name, { write, canCreate, images }), {
     name,
     write: options.write,
     canCreate: options.canCreate,
+    images: options.images,
   });
   await page.getByRole("dialog").waitFor();
   return { page, errors, uploads, reads: () => contentReads, commits: () => commitCalls };
@@ -194,7 +196,7 @@ const edit = async (page: Page, de = false) => {
       (document.querySelector(".k2b-image-editor canvas")?.getAttribute("width") ?? "0") !== "0" &&
       !!document.querySelector(".k2b-image-editor canvas"),
   );
-  await page.getByRole("button", { name: de ? "Speichern" : "Save", exact: true }).waitFor();
+  await page.locator(".filesv2-image-save-actions button").first().waitFor();
   await page.waitForFunction(() => !document.querySelector<HTMLButtonElement>(".filesv2-image-save-actions button")?.disabled);
   await settled(page);
   await page.evaluate(() => document.fonts.ready.then(() => undefined));
@@ -202,12 +204,18 @@ const edit = async (page: Page, de = false) => {
     await page.evaluate(() => Array.from(document.fonts).some((face) => face.family === "tabler-icons" && face.status === "loaded")),
   ).toBe(true);
 };
+/** The main button saves a new version where that is possible, else a copy; other ways wait in its menu. */
 const save = async (page: Page, copy = false) => {
-  await page.getByRole("button", { name: "Save", exact: true }).click();
-  await page.getByRole("menuitem", { name: copy ? "Save copy" : "Save new version", exact: true }).click();
+  const main = page.locator(".filesv2-image-save-actions button").first();
+  const label = copy ? "Save copy" : "Save";
+  if ((await main.innerText()).trim() === label) return main.click();
+  await page.getByRole("button", { name: "More saving options", exact: true }).click();
+  await page.getByRole("menuitem", { name: new RegExp(`^${copy ? "Save copy" : "Save new version"}`) }).click();
 };
 const rotate = async (page: Page) => {
-  await page.getByRole("button", { name: "Rotate right 90°", exact: true }).click();
+  const crop = page.getByRole("tab", { name: "Crop", exact: true });
+  if ((await crop.getAttribute("aria-selected")) !== "true") await crop.click();
+  await page.getByRole("button", { name: "Rotate right", exact: true }).click();
   await settled(page);
 };
 
@@ -253,7 +261,7 @@ describe("Files photo editing", () => {
       await edit(page);
       await rotate(page);
       await save(page);
-      await page.getByText("The file changed. Your edits are preserved. Save a copy instead.", { exact: true }).waitFor();
+      await page.getByText("The file changed. Your edits are preserved. Save a copy instead.").first().waitFor();
       expect(await page.locator(".k2b-image-editor").getAttribute("data-dirty")).toBe("true");
       expect(await page.evaluate(() => window.fileImages.saved.length)).toBe(0);
       await save(page, true);
@@ -373,7 +381,8 @@ describe("Files photo editing", () => {
       await save(page);
       await page
         .locator(".k2b-image-editor")
-        .getByText("The image could not be saved. Your edits are preserved.", { exact: true })
+        .getByText("The image could not be saved. Your edits are preserved.")
+        .first()
         .waitFor();
       expect(uploads).toEqual([]);
       expect(await page.locator(".k2b-image-editor").getAttribute("data-dirty")).toBe("true");
@@ -387,7 +396,7 @@ describe("Files photo editing", () => {
       await page.close();
     }
   });
-  test("unversioned and foreign original formats only offer a copy, and read-only entries offer no editing", async () => {
+  test("unversioned and foreign original formats only offer a copy, and read-only entries edit and download", async () => {
     for (const options of [
       { versioned: false },
       { managed: false, versioned: true },
@@ -397,11 +406,14 @@ describe("Files photo editing", () => {
       const { page, errors, uploads } = await setup(options);
       try {
         await edit(page);
-        await page.getByRole("button", { name: "Save", exact: true }).click();
-        expect(await page.getByRole("menuitem", { name: "Save new version", exact: true }).count()).toBe(0);
-        expect(await page.getByRole("menuitem", { name: "Save copy", exact: true }).count()).toBe(1);
+        const main = page.locator(".filesv2-image-save-actions button").first();
+        expect((await main.innerText()).trim()).toBe("Save copy");
+        await page.getByRole("button", { name: "More saving options", exact: true }).click();
+        expect(await page.getByRole("menuitem", { name: /^Save new version/ }).count()).toBe(0);
+        expect(await page.getByRole("menuitem", { name: /^Download/ }).count()).toBe(1);
+        await page.getByRole("button", { name: "More saving options", exact: true }).click();
         if ("managed" in options && !options.managed) {
-          await page.getByRole("menuitem", { name: "Save copy", exact: true }).click();
+          await main.click();
           await page.waitForFunction(() => window.fileImages.saved.length === 1);
           expect(uploads.map(({ path, onConflict, expectedRevision }) => ({ path, onConflict, expectedRevision }))).toEqual([
             { path: "Trips/Photo (edited).jpg", onConflict: "error", expectedRevision: undefined },
@@ -412,9 +424,17 @@ describe("Files photo editing", () => {
         await page.close();
       }
     }
-    const { page } = await setup({ write: false });
+    // Read only: editing and downloading work; a new version is visible but locked with its reason.
+    const { page, errors } = await setup({ write: false, canCreate: false });
     try {
-      expect(await page.getByRole("button", { name: "Edit image", exact: true }).count()).toBe(0);
+      await edit(page);
+      await page.getByText("You may only view this file. Editing and downloading work.", { exact: true }).waitFor();
+      expect((await page.locator(".filesv2-image-save-actions button").first().innerText()).trim()).toBe("Download");
+      await page.getByRole("button", { name: "More saving options", exact: true }).click();
+      const locked = page.getByRole("menuitem", { name: /^Save new version/ });
+      expect(await locked.innerText()).toContain("You may not change this file");
+      expect(await locked.isDisabled()).toBe(true);
+      expect(errors).toEqual([]);
     } finally {
       await page.close();
     }
@@ -444,13 +464,51 @@ describe("Files photo editing", () => {
       }
     }
   });
+  test("each image in the strip keeps its edits, and an unresolved save of one keeps the dialog open from another", async () => {
+    const { page, errors, uploads } = await setup({ images: true, ambiguous: true });
+    try {
+      const visible = () => page.locator(".filesv2-image-session:not([hidden]) .k2b-image-editor");
+      const open = async (name: string) => {
+        await visible().getByRole("navigation", { name: "Images" }).getByRole("button", { name: new RegExp(`^${name}`) }).click();
+        await page.waitForFunction(
+          (target) =>
+            document.querySelector(".filesv2-image-session:not([hidden]) .k2b-image-editor__name")?.textContent?.includes(target) &&
+            (document.querySelector<HTMLCanvasElement>(".filesv2-image-session:not([hidden]) .k2b-image-editor__image > canvas")?.width ?? 0) > 1,
+          name,
+        );
+        await settled(page);
+      };
+      await edit(page);
+      await rotate(page);
+      await open("Beach.jpg");
+      expect(await visible().getAttribute("data-dirty")).toBe("false");
+      expect(await visible().getByRole("button", { name: "Photo.jpg, not saved" }).count()).toBe(1);
+      await open("Photo.jpg");
+      expect(await visible().getAttribute("data-dirty")).toBe("true");
+      // Photo's upload stays unresolved; closing from Beach must not drop it, and asks nothing while it runs.
+      await save(page);
+      await visible().locator(".filesv2-image-save-actions").getByRole("button", { name: "Check upload", exact: true }).waitFor();
+      await open("Beach.jpg");
+      await page.keyboard.press("Escape");
+      await settled(page);
+      expect(await page.getByRole("dialog").count()).toBe(1);
+      expect(await page.getByText("Discard unsaved changes?", { exact: true }).count()).toBe(0);
+      await open("Photo.jpg");
+      await visible().locator(".filesv2-image-save-actions").getByRole("button", { name: "Check upload", exact: true }).click();
+      await page.waitForFunction(() => window.fileImages.saved.length === 1);
+      expect(uploads.every((upload) => upload.path === "Trips/Photo.jpg")).toBe(true);
+      expect(errors).toEqual([]);
+    } finally {
+      await page.close();
+    }
+  });
   test("an existing copy keeps edits and explicit retry uses a different name", async () => {
     const { page, errors, uploads } = await setup({ versioned: false, copyConflict: true });
     try {
       await edit(page);
       await rotate(page);
       await save(page, true);
-      await page.getByText("That copy already exists. Save a copy again to use the next name.", { exact: true }).waitFor();
+      await page.getByText("That copy already exists. Save a copy again to use the next name.").first().waitFor();
       expect(await page.locator(".k2b-image-editor").getAttribute("data-dirty")).toBe("true");
       await save(page, true);
       await page.waitForFunction(() => window.fileImages.saved.length === 1);
@@ -479,8 +537,8 @@ describe("Files photo editing", () => {
     const { page, errors } = await setup({ corrupt: true, name: "Camera.heic" });
     try {
       await page.getByRole("button", { name: "Edit image", exact: true }).click();
-      await page.locator(".k2b-image-editor__stage").getByRole("button", { name: "Try again", exact: true }).waitFor();
-      expect(await page.locator(".k2b-image-editor__stage").textContent()).toContain("could not be opened");
+      await page.locator(".k2b-image-editor__center").getByRole("button", { name: "Try again", exact: true }).waitFor();
+      expect(await page.locator(".k2b-image-editor__center").textContent()).toContain("cannot be opened");
       expect(errors).toEqual([]);
     } finally {
       await page.close();

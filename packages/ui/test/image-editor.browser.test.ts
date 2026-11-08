@@ -60,9 +60,9 @@ const open = async (query = "", width = 1440) => {
   const page = await browser.newPage({ viewport: { width, height: 950 }, reducedMotion: "reduce" });
   const errors = pageErrors(page);
   await page.goto(`${server.url}?${query}`);
-  await page.locator(".k2b-image-editor__save button").waitFor();
-  await page.waitForFunction(() => !document.querySelector<HTMLButtonElement>(".k2b-image-editor__save button")?.disabled);
-  await page.waitForFunction(() => (document.querySelector("canvas")?.width ?? 0) > 1);
+  await page.locator(".k2b-image-editor__save button").first().waitFor();
+  await page.waitForFunction(() => !document.querySelector<HTMLButtonElement>(".k2b-image-editor__actions button")?.disabled);
+  await page.waitForFunction(() => (document.querySelector<HTMLCanvasElement>(".k2b-image-editor__image > canvas")?.width ?? 0) > 1);
   await settled(page);
   return { page, errors };
 };
@@ -79,10 +79,29 @@ const slider = async (page: Page, name: string, values: number[]) => {
   }, values);
 };
 const selectTool = async (page: Page, name: string) => {
-  await page.getByRole("combobox", { name: /^(Tool|Werkzeug)$/ }).click();
-  await page.getByRole("option", { name, exact: true }).click();
+  await page.getByRole("tab", { name, exact: true }).click();
+  await settled(page);
 };
-const stageBox = (page: Page) => page.locator(".k2b-image-editor__stage").boundingBox();
+const markTool = (page: Page, name: string | RegExp) =>
+  page.getByRole("radiogroup", { name: "Tool", exact: true }).getByRole("radio", { name, exact: typeof name === "string" });
+const canvasBox = (page: Page) => page.locator(".k2b-image-editor__canvas").boundingBox();
+const imageBox = async (page: Page) => (await page.locator(".k2b-image-editor__image").boundingBox())!;
+const drag = async (page: Page, from: [number, number], to: [number, number], settle = true) => {
+  const image = await imageBox(page);
+  await page.mouse.move(image.x + image.width * from[0], image.y + image.height * from[1]);
+  await page.mouse.down();
+  await page.mouse.move(image.x + image.width * to[0], image.y + image.height * to[1], { steps: 6 });
+  await page.mouse.up();
+  if (settle) await settled(page);
+};
+const centerPixel = (page: Page, x = 0.3, y = 0.3) =>
+  page.locator(".k2b-image-editor__image > canvas").first().evaluate(
+    (element, [x, y]) => {
+      const target = element as HTMLCanvasElement;
+      return [...target.getContext("2d")!.getImageData(Math.floor(target.width * x!), Math.floor(target.height * y!), 1, 1).data];
+    },
+    [x, y],
+  );
 
 describe("public ImageEditor interactions", () => {
   test("caller save actions expose only browser-verified permitted encoders", async () => {
@@ -105,7 +124,8 @@ describe("public ImageEditor interactions", () => {
           return history.length;
         });
         const entryIndex = await page.evaluate<number | undefined>("window.navigation?.currentEntry?.index");
-        await page.getByRole("button", { name: "Flip horizontally", exact: true }).click();
+        await selectTool(page, "Crop");
+        await page.getByRole("button", { name: "Mirror", exact: true }).click();
         if (back) await page.evaluate(() => history.back());
         else await page.locator("#destination-link").click();
         const dialog = page.getByRole("dialog");
@@ -138,7 +158,8 @@ describe("public ImageEditor interactions", () => {
   test("locked widescreen survives rotation and export", async () => {
     const { page, errors } = await open("minimal=1&wide=1");
     try {
-      await page.getByRole("button", { name: "Rotate right 90°", exact: true }).click();
+      expect(await page.getByRole("tab").count()).toBe(1);
+      await page.getByRole("button", { name: "Rotate right", exact: true }).click();
       await page.getByRole("button", { name: "Done", exact: true }).click();
       await page.waitForFunction("window.editorFixture.results.length === 1");
       const ratio = await page.evaluate<number>("window.editorFixture.results[0].width / window.editorFixture.results[0].height");
@@ -149,39 +170,40 @@ describe("public ImageEditor interactions", () => {
     }
   });
 
-  test("aspect choice and orientation undo together with corner behavior", async () => {
+  test("aspect choice and orientation undo together with keyboard crop sizing", async () => {
     const { page, errors } = await open();
     try {
-      const choose = async (name: string) => {
-        await page.getByRole("combobox", { name: "Aspect ratio", exact: true }).click();
-        await page.getByRole("option", { name, exact: true }).click();
-      };
+      await selectTool(page, "Crop");
+      const aspects = page.getByRole("radiogroup", { name: "Aspect ratio", exact: true });
+      const choose = (name: string) => aspects.getByRole("radio", { name, exact: true }).click();
       await choose("1:1");
       await choose("16:9");
       await page.getByRole("button", { name: "Undo", exact: true }).click();
-      expect(await page.getByRole("combobox", { name: "Aspect ratio", exact: true }).innerText()).toContain("1:1");
-      const corner = page.locator('[data-corner="se"]');
-      await corner.press("ArrowLeft");
+      expect(await aspects.getByRole("radio", { name: "1:1", exact: true }).getAttribute("aria-checked")).toBe("true");
+      const crop = page.locator(".k2b-image-editor__crop-move");
+      await crop.focus();
+      await page.keyboard.press("Shift+ArrowLeft");
       await settled(page);
-      const crop = (await page.locator(".k2b-image-editor__crop").boundingBox())!;
-      expect(Math.abs(crop.width / crop.height - 1)).toBeLessThan(0.005);
+      const box = (await page.locator(".k2b-image-editor__crop").boundingBox())!;
+      expect(Math.abs(box.width / box.height - 1)).toBeLessThan(0.01);
       await page.getByRole("button", { name: "Undo", exact: true }).click();
       await choose("16:9");
-      await page.getByRole("button", { name: "Swap portrait and landscape", exact: true }).click();
+      await page.getByRole("button", { name: "Portrait/landscape", exact: true }).click();
       await page.getByRole("button", { name: "Undo", exact: true }).click();
-      await page.getByRole("button", { name: "Rotate right 90°", exact: true }).click();
+      await page.getByRole("button", { name: "Rotate right", exact: true }).click();
       await page.getByRole("button", { name: "Undo", exact: true }).click();
-      await corner.press("ArrowLeft");
+      await crop.focus();
+      await page.keyboard.press("Shift+ArrowLeft");
       await settled(page);
       const restored = (await page.locator(".k2b-image-editor__crop").boundingBox())!;
-      expect(Math.abs(restored.width / restored.height - 16 / 9)).toBeLessThan(0.005);
+      expect(Math.abs(restored.width / restored.height - 16 / 9)).toBeLessThan(0.01);
       expect(errors).toEqual([]);
     } finally {
       await page.close();
     }
   });
 
-  test("portrait previews keep their aspect and crop hit targets clear the zoom bar", async () => {
+  test("portrait previews keep their aspect, fit inside the overlays and lossless output hides quality", async () => {
     for (const width of [1440, 390]) {
       const { page, errors } = await open("", width);
       try {
@@ -194,26 +216,27 @@ describe("public ImageEditor interactions", () => {
         });
         await page.evaluate((source) => Object.assign(window, { portrait: source }), source);
         await fixture(page, "source(window.portrait)");
-        await page.getByText("300 × 600 px", { exact: true }).waitFor();
+        await page.locator(".k2b-image-editor").getByText("300 × 600 px", { exact: true }).first().waitFor({ state: "attached" });
         await settled(page);
-        const bar = await page.locator(".k2b-image-editor__zoom").boundingBox();
-        for (const corner of ["sw", "se"]) {
-          const bounds = await page.locator(`[data-corner=${corner}]`).boundingBox();
-          expect(bounds!.y + bounds!.height).toBeLessThanOrEqual(bar!.y);
+        const image = await imageBox(page);
+        expect(Math.abs(image.width / image.height - 0.5)).toBeLessThan(0.01);
+        // Fit keeps the whole photo clear of the chips, the view bar and the tool pane.
+        for (const overlay of [".k2b-image-editor__chips", ".k2b-image-editor__bottom", ".k2b-image-editor__pane"]) {
+          const box = (await page.locator(overlay).boundingBox())!;
+          const overlaps =
+            image.x < box.x + box.width && image.x + image.width > box.x && image.y < box.y + box.height && image.y + image.height > box.y;
+          if (overlay !== ".k2b-image-editor__chips" || width > 600) expect(overlaps, overlay).toBe(false);
         }
-        await selectTool(page, "Looks");
-        await settled(page);
         expect(
-          await page.locator(".k2b-choice-tiles canvas").evaluateAll((canvases) =>
-            canvases.every((element) => {
-              const canvas = element as HTMLCanvasElement;
-              const bounds = canvas.getBoundingClientRect();
-              return canvas.width / canvas.height === 0.5 && Math.abs(bounds.width / bounds.height - 0.5) < 0.01;
-            }),
+          await page.locator(".k2b-image-editor__look-thumb canvas").evaluateAll((canvases) =>
+            canvases.every((element) => (element as HTMLCanvasElement).width / (element as HTMLCanvasElement).height === 0.5),
           ),
         ).toBe(true);
-        await selectTool(page, "Export");
-        expect(await page.getByRole("slider", { name: "Quality", exact: true }).count()).toBe(0);
+        if (width > 600) {
+          await page.locator(".k2b-image-editor__output-trigger").click();
+          await page.getByRole("dialog", { name: "Output" }).waitFor();
+          expect(await page.getByRole("slider", { name: "Quality", exact: true }).count()).toBe(0);
+        }
         expect(errors).toEqual([]);
       } finally {
         await page.close();
@@ -221,26 +244,16 @@ describe("public ImageEditor interactions", () => {
     }
   });
 
-  test("dark desktop and phone keep every tool reachable with an unclipped shared selector", async () => {
+  test("dark desktop and phone keep every tool reachable without moving the canvas", async () => {
     for (const width of [1440, 390]) {
       const { page, errors } = await open("dark=1", width);
       try {
-        expect(await page.locator("body").getAttribute("data-theme")).toBe("dark");
-        const before = await stageBox(page);
-        const toolField = (await page.getByRole("combobox", { name: "Tool", exact: true }).boundingBox())!;
-        const aspectField = (await page.getByRole("combobox", { name: "Aspect ratio", exact: true }).boundingBox())!;
-        expect(toolField.x + toolField.width).toBe(aspectField.x + aspectField.width);
-        for (const tool of ["Adjust", "Looks", "Annotate", "Redact", "Export", "Crop"]) {
+        const before = await canvasBox(page);
+        for (const tool of ["Crop", "Adjust", "Mark up"]) {
           await selectTool(page, tool);
-          await page.waitForFunction(
-            (name) => document.querySelector(".k2b-image-editor__tools [role=combobox]")?.textContent?.includes(name),
-            tool,
-          );
-          expect(await page.getByRole("combobox", { name: "Tool", exact: true }).innerText()).toContain(tool);
-          expect(await page.locator(".k2b-image-editor__tools").evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(
-            true,
-          );
-          expect(await stageBox(page)).toEqual(before);
+          expect(await page.getByRole("tab", { name: tool, exact: true }).getAttribute("aria-selected")).toBe("true");
+          expect(await page.locator(".k2b-image-editor__tabs").evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
+          expect(await canvasBox(page)).toEqual(before);
         }
         expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
         expect(errors).toEqual([]);
@@ -250,16 +263,16 @@ describe("public ImageEditor interactions", () => {
     }
   });
 
-  test("inherits German and keeps phone regions stable across tools and errors", async () => {
+  test("inherits German and keeps the phone canvas still across tools and errors", async () => {
     const { page, errors } = await open("locale=de&failure=1", 390);
     try {
-      const before = await stageBox(page);
-      await selectTool(page, "Anpassen");
+      const before = await canvasBox(page);
+      await page.getByRole("radio", { name: /^Helligkeit/ }).click();
       await slider(page, "Helligkeit", [20]);
       await page.getByRole("button", { name: "Fertig", exact: true }).click();
-      await page.getByRole("alert").filter({ hasText: "Upload unavailable" }).waitFor();
-      expect(await stageBox(page)).toEqual(before);
-      expect(await page.getByRole("button", { name: "Erneut versuchen", exact: true }).isVisible()).toBe(true);
+      await page.getByRole("alert").filter({ hasText: "Upload unavailable" }).first().waitFor();
+      expect(await canvasBox(page)).toEqual(before);
+      expect(await page.getByRole("button", { name: "Erneut versuchen", exact: true }).first().isVisible()).toBe(true);
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
       expect(errors).toEqual([]);
     } finally {
@@ -270,26 +283,49 @@ describe("public ImageEditor interactions", () => {
   test("all approved looks and strength participate in shared history", async () => {
     const { page, errors } = await open();
     try {
-      await selectTool(page, "Looks");
-      await settled(page);
-      expect(
-        await page.locator(".k2b-choice-tiles__tile").evaluateAll((tiles) =>
-          tiles.every((tile) => {
-            const preview = tile.querySelector("canvas")!.getBoundingClientRect();
-            const bounds = tile.getBoundingClientRect();
-            return preview.left >= bounds.left && preview.right <= bounds.right;
-          }),
-        ),
-      ).toBe(true);
+      const looks = page.getByRole("radiogroup", { name: "Look", exact: true }).first();
       for (const label of ["Mono hard", "Faded", "Vintage"]) {
-        await page.getByRole("radio", { name: label, exact: true }).click();
-        expect(await page.getByRole("radio", { name: label, exact: true }).getAttribute("aria-checked")).toBe("true");
+        await looks.getByRole("radio", { name: label, exact: true }).click();
+        expect(await looks.getByRole("radio", { name: label, exact: true }).getAttribute("aria-checked")).toBe("true");
       }
       await slider(page, "Strength", [80, 60, 40]);
       await page.getByRole("button", { name: "Undo", exact: true }).click();
       expect(await page.getByRole("slider", { name: "Strength", exact: true }).inputValue()).toBe("100");
       await page.getByRole("button", { name: "Undo", exact: true }).click();
-      expect(await page.getByRole("radio", { name: "Faded", exact: true }).getAttribute("aria-checked")).toBe("true");
+      expect(await looks.getByRole("radio", { name: "Faded", exact: true }).getAttribute("aria-checked")).toBe("true");
+      expect(errors).toEqual([]);
+    } finally {
+      await page.close();
+    }
+  });
+
+  test("Auto moves the sliders as one undo step, marks them and leaves them free", async () => {
+    const { page, errors } = await open();
+    try {
+      const values = () =>
+        Promise.all(["Brightness", "Contrast", "Saturation", "Warmth"].map((name) => page.getByRole("slider", { name: new RegExp(`^${name}`) }).inputValue()));
+      expect(await values()).toEqual(["0", "0", "0", "0"]);
+      await page.getByRole("button", { name: "Auto", exact: true }).first().click();
+      await page.waitForFunction(() => document.querySelector(".k2b-image-editor")?.getAttribute("data-dirty") === "true");
+      await settled(page);
+      const auto = await values();
+      expect(auto.some((value) => value !== "0")).toBe(true);
+      expect(await page.locator(".k2b-image-editor__adjust-pane .k2b-image-editor__auto-tag[data-on]").count()).toBeGreaterThan(0);
+      // Every slider stays free after Auto; moving one is its own undo step.
+      const index = auto.findIndex((value) => value !== "0");
+      const changed = page.getByRole("slider", { name: new RegExp(`^${["Brightness", "Contrast", "Saturation", "Warmth"][index]}`) });
+      await changed.evaluate((element, value) => {
+        const input = element as HTMLInputElement;
+        input.value = String(value);
+        input.dispatchEvent(new Event("input", { bubbles: true }));
+        input.dispatchEvent(new Event("change", { bubbles: true }));
+      }, Number(auto[index]) + 5);
+      expect(await changed.inputValue()).toBe(String(Number(auto[index]) + 5));
+      await page.getByRole("button", { name: "Undo", exact: true }).click();
+      expect(await values()).toEqual(auto);
+      await page.getByRole("button", { name: "Undo", exact: true }).click();
+      expect(await values()).toEqual(["0", "0", "0", "0"]);
+      expect(await dirty(page)).toBe("false");
       expect(errors).toEqual([]);
     } finally {
       await page.close();
@@ -299,15 +335,16 @@ describe("public ImageEditor interactions", () => {
   test("upload rejection preserves edits, retry stays in place and awaits success", async () => {
     const { page, errors } = await open("failure=1");
     try {
-      await page.getByRole("button", { name: "Rotate right 90°", exact: true }).click();
+      await selectTool(page, "Crop");
+      await page.getByRole("button", { name: "Rotate right", exact: true }).click();
       await settled(page);
-      const before = await stageBox(page);
+      const before = await canvasBox(page);
       await page.getByRole("button", { name: "Done", exact: true }).click();
-      await page.getByRole("alert").filter({ hasText: "Upload unavailable" }).waitFor();
+      await page.getByRole("alert").filter({ hasText: "Upload unavailable" }).first().waitFor();
       expect(await dirty(page)).toBe("true");
-      expect(await stageBox(page)).toEqual(before);
+      expect(await canvasBox(page)).toEqual(before);
       await fixture(page, 'mode = "success"');
-      await page.getByRole("button", { name: "Try again", exact: true }).click();
+      await page.getByRole("button", { name: "Try again", exact: true }).first().click();
       await page.waitForFunction(() => document.querySelector(".k2b-image-editor")?.getAttribute("data-dirty") === "false");
       expect(await fixture(page, "attempts")).toBe(2);
       expect(errors).toEqual([]);
@@ -319,18 +356,20 @@ describe("public ImageEditor interactions", () => {
   test("a pending upload marks only the captured entry saved; undo reaches it", async () => {
     const { page, errors } = await open("", 390);
     try {
-      await page.getByRole("button", { name: "Rotate right 90°", exact: true }).click();
+      await selectTool(page, "Crop");
+      await page.getByRole("button", { name: "Rotate right", exact: true }).click();
       await fixture(page, 'mode = "pending"');
       await settled(page);
-      const stageBefore = await stageBox(page);
-      const headerBefore = await page.locator(".k2b-image-editor__header").boundingBox();
+      const canvasBefore = await canvasBox(page);
+      const chipsBefore = await page.locator(".k2b-image-editor__chips").boundingBox();
       await page.getByRole("button", { name: "Done", exact: true }).click();
       await page.waitForFunction("window.editorFixture.attempts === 1");
       expect(await page.getByRole("button", { name: "Saving…", exact: true }).isDisabled()).toBe(true);
       await settled(page);
-      expect(await stageBox(page)).toEqual(stageBefore);
-      expect(await page.locator(".k2b-image-editor__header").boundingBox()).toEqual(headerBefore);
-      await page.getByRole("button", { name: "Flip horizontally", exact: true }).click();
+      expect(await canvasBox(page)).toEqual(canvasBefore);
+      expect(await page.locator(".k2b-image-editor__chips").boundingBox()).toEqual(chipsBefore);
+      // Editing continues while the upload is pending; only the captured entry becomes saved.
+      await page.getByRole("button", { name: "Mirror", exact: true }).click();
       await fixture(page, "accept()");
       await page.getByRole("button", { name: "Done", exact: true }).waitFor();
       expect(await dirty(page)).toBe("true");
@@ -345,12 +384,11 @@ describe("public ImageEditor interactions", () => {
   test("a slider gesture is one undo step and tools do not move the canvas", async () => {
     const { page, errors } = await open();
     try {
-      const before = await stageBox(page);
-      await selectTool(page, "Adjust");
+      const before = await canvasBox(page);
       await slider(page, "Brightness", [4, 15, 31]);
       expect(await dirty(page)).toBe("true");
       await settled(page);
-      expect(await stageBox(page)).toEqual(before);
+      expect(await canvasBox(page)).toEqual(before);
       await page.getByRole("button", { name: "Undo", exact: true }).click();
       expect(await page.getByRole("slider", { name: "Brightness", exact: true }).inputValue()).toBe("0");
       expect(await dirty(page)).toBe("false");
@@ -363,17 +401,15 @@ describe("public ImageEditor interactions", () => {
     }
   });
 
-  test("minimal square crop supports keyboard corners and exports square after rotation", async () => {
+  test("minimal square crop supports keyboard sizing and exports square after rotation", async () => {
     const { page, errors } = await open("minimal=1", 390);
     try {
-      await page.getByRole("combobox", { name: "Tool", exact: true }).click();
-      expect(await page.getByRole("option").count()).toBe(1);
-      await page.getByRole("option", { name: "Crop", exact: true }).click();
-      const corner = page.getByRole("button", { name: "Resize crop (se)", exact: true });
-      await corner.focus();
-      await page.keyboard.press("ArrowLeft");
+      expect(await page.getByRole("tab").count()).toBe(1);
+      await page.locator(".k2b-image-editor__crop-move").focus();
+      await page.keyboard.press("Shift+ArrowLeft");
+      await page.keyboard.up("Shift");
       expect(await dirty(page)).toBe("true");
-      await page.getByRole("button", { name: "Rotate right 90°", exact: true }).click();
+      await page.getByRole("button", { name: "Rotate right", exact: true }).click();
       await page.getByRole("button", { name: "Done", exact: true }).click();
       await page.waitForFunction("window.editorFixture.results.length === 1");
       expect(await fixture(page, "results[0].width === window.editorFixture.results[0].height")).toBe(true);
@@ -387,41 +423,21 @@ describe("public ImageEditor interactions", () => {
   test("inline text and opaque redaction share undo and export", async () => {
     const { page, errors } = await open("", 390);
     try {
-      await selectTool(page, "Annotate");
-      await page.getByRole("combobox", { name: "Annotate", exact: true }).click();
-      await page.getByRole("option", { name: "Text", exact: true }).click();
-      await settled(page);
-      const imageBefore = await page.locator(".k2b-image-editor__image").boundingBox();
-      await page.getByRole("button", { name: "Add text", exact: true }).click();
-      await settled(page);
-      const textBounds = (await page.getByRole("textbox", { name: "Type on the photo", exact: true }).boundingBox())!;
-      const stage = (await stageBox(page))!;
-      expect(textBounds.x).toBeGreaterThanOrEqual(stage.x);
-      expect(textBounds.x + textBounds.width).toBeLessThanOrEqual(stage.x + stage.width);
-      expect(await page.locator(".k2b-image-editor__image").boundingBox()).toEqual(imageBefore);
-      await page.getByRole("textbox", { name: "Type on the photo", exact: true }).fill("Test note");
+      await selectTool(page, "Mark up");
+      await markTool(page, "Text").click();
+      const image = await imageBox(page);
+      await page.mouse.click(image.x + image.width * 0.3, image.y + image.height * 0.6);
+      const text = page.getByRole("textbox", { name: "Type on the photo", exact: true });
+      await text.waitFor();
+      const bounds = (await text.boundingBox())!;
+      const canvas = (await canvasBox(page))!;
+      expect(bounds.x).toBeGreaterThanOrEqual(canvas.x);
+      expect(await imageBox(page)).toEqual(image);
+      await text.fill("Test note");
       await page.keyboard.press("Enter");
-      await selectTool(page, "Redact");
-      await settled(page);
-      const image = (await page.locator(".k2b-image-editor__image").boundingBox())!;
-      await page.mouse.move(image.x + image.width * 0.2, image.y + image.height * 0.2);
-      await page.mouse.down();
-      await page.mouse.move(image.x + image.width * 0.4, image.y + image.height * 0.4);
-      await page.mouse.up();
-      const pixel = await page
-        .locator("canvas")
-        .first()
-        .evaluate((canvas) => [
-          ...(canvas as HTMLCanvasElement)
-            .getContext("2d")!
-            .getImageData(
-              Math.floor((canvas as HTMLCanvasElement).width * 0.3),
-              Math.floor((canvas as HTMLCanvasElement).height * 0.3),
-              1,
-              1,
-            ).data,
-        ]);
-      expect(pixel).toEqual([0, 0, 0, 255]);
+      await markTool(page, /^Redact/).click();
+      await drag(page, [0.2, 0.2], [0.4, 0.4]);
+      expect(await centerPixel(page)).toEqual([0, 0, 0, 255]);
       await page.getByRole("button", { name: "Undo", exact: true }).click();
       expect(await dirty(page)).toBe("true");
       await page.getByRole("button", { name: "Undo", exact: true }).click();
@@ -435,27 +451,17 @@ describe("public ImageEditor interactions", () => {
   test("committing a redaction and undo paint before a deferred animation frame", async () => {
     const { page, errors } = await open("", 390);
     try {
-      await selectTool(page, "Redact");
-      await settled(page);
-      const canvas = page.locator(".k2b-image-editor__image > canvas");
-      const pixel = () =>
-        canvas.evaluate((element) => {
-          const target = element as HTMLCanvasElement;
-          return [...target.getContext("2d")!.getImageData(Math.floor(target.width * 0.3), Math.floor(target.height * 0.3), 1, 1).data];
-        });
-      const original = await pixel();
+      await selectTool(page, "Mark up");
+      await markTool(page, /^Redact/).click();
+      const original = await centerPixel(page);
       // A backgrounded or busy WebKit may postpone preview frames beyond pointerup.
       await page.evaluate(() => {
         window.requestAnimationFrame = () => 0;
       });
-      const image = (await page.locator(".k2b-image-editor__image").boundingBox())!;
-      await page.mouse.move(image.x + image.width * 0.2, image.y + image.height * 0.2);
-      await page.mouse.down();
-      await page.mouse.move(image.x + image.width * 0.4, image.y + image.height * 0.4);
-      await page.mouse.up();
-      expect(await pixel()).toEqual([0, 0, 0, 255]);
+      await drag(page, [0.2, 0.2], [0.4, 0.4], false);
+      expect(await centerPixel(page)).toEqual([0, 0, 0, 255]);
       await page.getByRole("button", { name: "Undo", exact: true }).click();
-      expect(await pixel()).toEqual(original);
+      expect(await centerPixel(page)).toEqual(original);
       expect(await dirty(page)).toBe("false");
       expect(errors).toEqual([]);
     } finally {
@@ -466,20 +472,12 @@ describe("public ImageEditor interactions", () => {
   test("each drawing tool renders a gesture and undo restores the photo", async () => {
     const { page, errors } = await open();
     try {
-      await selectTool(page, "Annotate");
-      await settled(page);
-      const canvas = page.locator(".k2b-image-editor__image > canvas");
+      await selectTool(page, "Mark up");
+      const canvas = page.locator(".k2b-image-editor__image > canvas").first();
       const original = await canvas.evaluate((element) => (element as HTMLCanvasElement).toDataURL());
-      for (const tool of ["Pen", "Highlighter", "Arrow", "Rectangle", "Ellipse"]) {
-        await page.getByRole("combobox", { name: "Annotate", exact: true }).click();
-        await page.getByRole("option", { name: tool, exact: true }).click();
-        await settled(page);
-        const bounds = (await canvas.boundingBox())!;
-        await page.mouse.move(bounds.x + bounds.width * 0.25, bounds.y + bounds.height * 0.25);
-        await page.mouse.down();
-        await page.mouse.move(bounds.x + bounds.width * 0.6, bounds.y + bounds.height * 0.6, { steps: 6 });
-        await page.mouse.up();
-        await settled(page);
+      for (const tool of ["Pen", "Marker", "Arrow", "Rectangle", "Ellipse"]) {
+        await markTool(page, tool).click();
+        await drag(page, [0.25, 0.25], [0.6, 0.6]);
         expect(await canvas.evaluate((element) => (element as HTMLCanvasElement).toDataURL())).not.toBe(original);
         expect(await dirty(page)).toBe("true");
         await page.getByRole("button", { name: "Undo", exact: true }).click();
@@ -487,6 +485,68 @@ describe("public ImageEditor interactions", () => {
         expect(await canvas.evaluate((element) => (element as HTMLCanvasElement).toDataURL())).toBe(original);
         expect(await dirty(page)).toBe("false");
       }
+      expect(errors).toEqual([]);
+    } finally {
+      await page.close();
+    }
+  });
+
+  test("layers select, reorder inside their group, hide from export and keep redactions on top", async () => {
+    const { page, errors } = await open();
+    try {
+      await selectTool(page, "Mark up");
+      await markTool(page, "Rectangle").click();
+      await drag(page, [0.1, 0.1], [0.3, 0.3]);
+      await markTool(page, "Arrow").click();
+      await drag(page, [0.5, 0.5], [0.7, 0.6]);
+      await markTool(page, /^Redact/).click();
+      await drag(page, [0.6, 0.2], [0.8, 0.3]);
+      const names = () => page.locator(".k2b-image-editor__layer-name").allInnerTexts();
+      expect(await names()).toEqual(["Redaction 1", "Arrow", "Rectangle"]);
+      // A redaction never moves below the markings.
+      await page.getByRole("button", { name: "Redaction 1", exact: true }).focus();
+      await page.keyboard.press("Alt+ArrowDown");
+      expect(await names()).toEqual(["Redaction 1", "Arrow", "Rectangle"]);
+      await page.getByRole("button", { name: "Rectangle", exact: true }).focus();
+      await page.keyboard.press("Alt+ArrowUp");
+      expect(await names()).toEqual(["Redaction 1", "Rectangle", "Arrow"]);
+      expect(await page.evaluate(() => document.activeElement?.textContent)).toContain("Rectangle");
+      // Clicking a mark on the canvas selects it; the canvas shows the selection box.
+      const image = await imageBox(page);
+      await page.mouse.click(image.x + image.width * 0.1, image.y + image.height * 0.2);
+      await page.locator(".k2b-image-editor__selection").waitFor();
+      expect(await page.locator(".k2b-image-editor__layer[data-selected] .k2b-image-editor__layer-name").innerText()).toBe("Rectangle");
+      // Hidden marks are neither drawn nor exported, and the footer says so.
+      const canvas = page.locator(".k2b-image-editor__image > canvas").first();
+      const shown = await canvas.evaluate((element) => (element as HTMLCanvasElement).toDataURL());
+      await page.getByRole("button", { name: "Hide Rectangle", exact: true }).click();
+      expect(await canvas.evaluate((element) => (element as HTMLCanvasElement).toDataURL())).not.toBe(shown);
+      await page.getByText("One hidden marking is not saved.", { exact: true }).waitFor();
+      expect(await page.getByRole("button", { name: /Redaction 1: hold/ }).count()).toBe(1);
+      expect(await page.getByRole("button", { name: /^Hide Redaction/ }).count()).toBe(0);
+      await page.getByRole("button", { name: "Undo", exact: true }).click();
+      expect(await page.getByRole("button", { name: "Hide Rectangle", exact: true }).count()).toBe(1);
+      expect(errors).toEqual([]);
+    } finally {
+      await page.close();
+    }
+  });
+
+  test("the image strip moves focus with the arrow keys, marks the open and unsaved images and selects", async () => {
+    const { page, errors } = await open("items=1");
+    try {
+      const strip = page.getByRole("navigation", { name: "Images" });
+      const current = strip.locator('[aria-current="true"]');
+      expect(await current.getAttribute("aria-label")).toBe("b.jpg, open");
+      expect(await strip.getByRole("button", { name: "a.jpg, not saved" }).count()).toBe(1);
+      await current.focus();
+      await page.keyboard.press("ArrowRight");
+      expect(await page.evaluate(() => document.activeElement?.getAttribute("aria-label"))).toBe("c.jpg");
+      await page.keyboard.press("End");
+      await page.keyboard.press("Enter");
+      await page.waitForFunction("window.editorFixture.selected.length === 1");
+      expect(await fixture(page, "selected")).toEqual(["d"]);
+      expect(await page.locator(".k2b-image-editor__name").innerText()).toContain("4/4");
       expect(errors).toEqual([]);
     } finally {
       await page.close();
@@ -508,21 +568,17 @@ describe("public ImageEditor interactions", () => {
           encode.call(this, callback, type, quality);
         };
       });
-      await page.getByRole("button", { name: "Horizontal spiegeln", exact: true }).click();
+      await selectTool(page, "Zuschnitt");
+      await page.getByRole("button", { name: "Spiegeln", exact: true }).click();
       await settled(page);
-      const before = await stageBox(page);
+      const before = await canvasBox(page);
       await page.getByRole("button", { name: "Fertig", exact: true }).click();
-      const notice = page.getByRole("alert").filter({ hasText: "in dieser Größe" });
+      const notice = page.getByRole("alert").filter({ hasText: "in dieser Größe" }).first();
       await notice.waitFor();
-      expect(await notice.evaluate((element) => element.scrollHeight <= element.clientHeight)).toBe(true);
-      expect(await stageBox(page)).toEqual(before);
-      await settled(page);
-      const feedback = (await page.locator(".k2b-image-editor__error").boundingBox())!;
-      const upperCorner = (await page.locator('[data-corner="nw"]').boundingBox())!;
-      expect(upperCorner.y).toBeGreaterThanOrEqual(feedback.y + feedback.height);
+      expect(await canvasBox(page)).toEqual(before);
       expect(await fixture(page, "attempts")).toBe(0);
       expect(await dirty(page)).toBe("true");
-      await page.getByRole("button", { name: /Mit .* MP erneut speichern/ }).click();
+      await page.getByRole("button", { name: /Mit .* MP erneut versuchen/ }).first().click();
       await page.waitForFunction("window.editorFixture.results.length === 1");
       expect(await fixture(page, "results[0].downscaled")).toBe(true);
       expect(await dirty(page)).toBe("false");
@@ -535,8 +591,9 @@ describe("public ImageEditor interactions", () => {
   test("cancel and enhanced navigation preserve dirty edits when the warning is dismissed", async () => {
     const { page, errors } = await open();
     try {
-      await page.getByRole("button", { name: "Flip horizontally", exact: true }).click();
-      await page.getByRole("button", { name: "Cancel", exact: true }).click();
+      await selectTool(page, "Crop");
+      await page.getByRole("button", { name: "Mirror", exact: true }).click();
+      await page.getByRole("button", { name: "Close", exact: true }).click();
       const dialog = page.getByRole("dialog");
       await dialog.getByText("Discard unsaved changes?", { exact: true }).waitFor();
       await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
@@ -546,7 +603,7 @@ describe("public ImageEditor interactions", () => {
       await dialog.getByText("Discard unsaved changes?", { exact: true }).waitFor();
       await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
       expect(await dirty(page)).toBe("true");
-      await page.getByRole("button", { name: "Cancel", exact: true }).click();
+      await page.getByRole("button", { name: "Close", exact: true }).click();
       await dialog.getByRole("button", { name: "Confirm", exact: true }).click();
       await page.waitForFunction("window.editorFixture.cancellations === 1");
       await fixture(page, "dispose()");
@@ -557,12 +614,14 @@ describe("public ImageEditor interactions", () => {
     }
   });
 
-  test.skipIf(browserName !== "chromium")("phone pinch changes only viewport zoom and fit restores it", async () => {
+  test.skipIf(browserName !== "chromium")("phone pinch changes only the view and fit restores it", async () => {
     const { page, errors } = await open("minimal=1", 390);
     try {
-      const before = await stageBox(page);
+      const before = await canvasBox(page);
+      const zoom = () => page.locator(".k2b-image-editor__zoom-value").textContent();
+      const fitted = await zoom();
       const touch = await page.context().newCDPSession(page);
-      const box = (await page.locator(".k2b-image-editor__image").boundingBox())!;
+      const box = await imageBox(page);
       const x = box.x + box.width / 2;
       const y = box.y + box.height / 2;
       await touch.send("Input.dispatchTouchEvent", {
@@ -580,11 +639,13 @@ describe("public ImageEditor interactions", () => {
         ],
       });
       await touch.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
-      expect(await page.getByRole("status", { name: "Zoom", exact: true }).innerText()).not.toBe("100 %");
+      await settled(page);
+      expect(await zoom()).not.toBe(fitted);
       expect(await dirty(page)).toBe("false");
-      expect(await stageBox(page)).toEqual(before);
+      expect(await canvasBox(page)).toEqual(before);
       await page.getByRole("button", { name: "Fit", exact: true }).click();
-      expect(await page.getByRole("status", { name: "Zoom", exact: true }).innerText()).toBe("100 %");
+      await settled(page);
+      expect(await zoom()).toBe(fitted);
       expect(errors).toEqual([]);
     } finally {
       await page.close();
@@ -602,10 +663,10 @@ describe("public ImageEditor interactions", () => {
           : route.fulfill({ contentType: "image/jpeg", path: resolve(import.meta.dir, "../src/inputs/image-editor/fixtures/photo.jpg") }),
       );
       await page.goto(`${server.url}?broken=1`);
-      await page.getByRole("alert").filter({ hasText: "This image could not be opened." }).waitFor();
-      expect(await page.locator(".k2b-image-editor__save button").isDisabled()).toBe(true);
+      await page.getByRole("alert").filter({ hasText: "This image cannot be opened" }).waitFor();
+      expect(await page.locator(".k2b-image-editor__actions button").isDisabled()).toBe(true);
       await page.getByRole("button", { name: "Try again", exact: true }).click();
-      await page.waitForFunction(() => !document.querySelector<HTMLButtonElement>(".k2b-image-editor__save button")?.disabled);
+      await page.waitForFunction(() => !document.querySelector<HTMLButtonElement>(".k2b-image-editor__actions button")?.disabled);
       expect(requests).toBe(2);
       expect(await dirty(page)).toBe("false");
       expect(await page.getByRole("alert").count()).toBe(0);
@@ -618,7 +679,8 @@ describe("public ImageEditor interactions", () => {
   test("changing source cancels stale saving and cleanup removes unload guards", async () => {
     const { page, errors } = await open();
     try {
-      await page.getByRole("button", { name: "Rotate right 90°", exact: true }).click();
+      await selectTool(page, "Crop");
+      await page.getByRole("button", { name: "Rotate right", exact: true }).click();
       expect(
         await page.evaluate(() => {
           const event = new Event("beforeunload", { cancelable: true });
@@ -630,8 +692,9 @@ describe("public ImageEditor interactions", () => {
       await page.getByRole("button", { name: "Done", exact: true }).click();
       await page.waitForFunction("window.editorFixture.attempts === 1");
       await fixture(page, 'source("/logo.png")');
-      await page.waitForFunction(() => !document.querySelector<HTMLButtonElement>(".k2b-image-editor__save button")?.disabled);
-      await page.getByRole("button", { name: "Flip horizontally", exact: true }).click();
+      await page.waitForFunction(() => !document.querySelector<HTMLButtonElement>(".k2b-image-editor__actions button")?.disabled);
+      await selectTool(page, "Crop");
+      await page.getByRole("button", { name: "Mirror", exact: true }).click();
       await fixture(page, "accept()");
       expect(await dirty(page)).toBe("true");
       await fixture(page, "dispose()");

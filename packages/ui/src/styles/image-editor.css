@@ -465,8 +465,7 @@
   scrollbar-width: thin;
   scrollbar-gutter: stable;
 }
-.k2b-ui .k2b-image-editor[data-state="loading"] .k2b-image-editor__body,
-.k2b-ui .k2b-image-editor[data-state="saving"] .k2b-image-editor__body { opacity: 0.5; }
+.k2b-ui .k2b-image-editor[data-state="loading"] .k2b-image-editor__body { opacity: 0.5; }
 .k2b-ui .k2b-image-editor__section { display: grid; gap: 10px; padding: 12px 0 10px; }
 .k2b-ui .k2b-image-editor__section h3,
 .k2b-ui .k2b-image-editor__layers-head h3 {

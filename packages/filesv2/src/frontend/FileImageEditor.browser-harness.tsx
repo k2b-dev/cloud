@@ -6,7 +6,7 @@ import { openFilePreview } from "./FilePreviewDialog";
 declare global {
   interface Window {
     fileImages: {
-      open: (name?: string, options?: { write?: boolean; canCreate?: boolean }) => void;
+      open: (name?: string, options?: { write?: boolean; canCreate?: boolean; images?: boolean }) => void;
       saved: EntryResult[];
     };
   }
@@ -20,17 +20,19 @@ render(
         window.fileImages = {
           saved: [],
           open: (name = "Photo.jpg", options = {}) => {
+            const file = (fileName: string) => ({
+              path: `Trips/${fileName}`,
+              name: fileName,
+              size: 10_000,
+              directory: false,
+              modified: "2026-11-07T10:00:00Z",
+              revision: "revision-1",
+              actions: { write: options.write ?? true, move: true, share: true },
+            });
             void openFilePreview({
               baseId: "photos",
-              entry: {
-                path: `Trips/${name}`,
-                name,
-                size: 10_000,
-                directory: false,
-                modified: "2026-11-07T10:00:00Z",
-                revision: "revision-1",
-                actions: { write: options.write ?? true, move: true, share: true },
-              },
+              entry: file(name),
+              images: options.images ? [file(name), file("Beach.jpg")] : undefined,
               onDownload: () => {},
               imageEditing: {
                 canCreate: options.canCreate ?? true,

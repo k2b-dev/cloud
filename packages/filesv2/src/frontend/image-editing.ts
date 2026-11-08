@@ -38,7 +38,7 @@ export async function loadImageForEditing(
   const metadata = await apiClient.bases[":baseId"].entry.$get({ param: { baseId }, query: { path } }, { init: { signal } });
   if (!metadata.ok) await apiFailure(metadata, messages.failed);
   const initial = await metadata.json();
-  if (initial.entry.actions?.write !== true) throw new Error(messages.failed);
+  // Read-only files open too: editing and downloading work, and the server still refuses any write.
   if (initial.entry.size > CONTENT_STREAM_LIMIT) throw new Error(messages.tooLarge);
   const lease = await contentLease(baseId, path, signal, messages.failed);
   const response = await fetch(lease.url, { signal, credentials: "omit", redirect: "error" });
