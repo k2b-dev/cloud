@@ -17,6 +17,14 @@ import type { IntentTone } from "../../semantics";
 import { DEFAULT_STYLES } from "./default-styles";
 import type { ChartDatum } from "./types";
 
+export { barGauge } from "./svg-barGauge";
+export { boxplot } from "./svg-boxplot";
+export { gauge } from "./svg-gauge";
+export { heatmap } from "./svg-heatmap";
+export { histogram } from "./svg-histogram";
+// Preserve the portable exports while allowing bundlers to load each renderer independently.
+export { scatter } from "./svg-scatter";
+
 // ==========================
 // PUBLIC TYPES
 // ==========================
@@ -154,7 +162,7 @@ const inspectionPoint = (datum: ChartDatum, inspect?: boolean): string =>
       )
     : "";
 
-const pointValues = (p: Point, xAxis?: AxisOptions, yAxis?: AxisOptions): ChartDatum["values"] => [
+export const pointValues = (p: Point, xAxis?: AxisOptions, yAxis?: AxisOptions): ChartDatum["values"] => [
   { key: "x", value: p.x, formatted: xAxis?.format?.(p.x) },
   { key: "y", value: p.y, formatted: yAxis?.format?.(p.y) },
   ...Object.entries(p)
@@ -227,12 +235,12 @@ export const referenceLineAttributes = (ref: ReferenceLine, label = false): stri
 // CONSTANTS
 // ==========================
 
-const DEFAULT_WIDTH = 400;
-const DEFAULT_HEIGHT = 240;
+export const DEFAULT_WIDTH = 400;
+export const DEFAULT_HEIGHT = 240;
 const DEFAULT_PADDING: Padding = { top: 16, right: 16, bottom: 32, left: 40 };
 const DEFAULT_TICKS = 5;
 
-const DEFAULT_MARKERS: readonly MarkerShape[] = ["circle", "square", "triangle", "diamond", "plus", "cross"];
+export const DEFAULT_MARKERS: readonly MarkerShape[] = ["circle", "square", "triangle", "diamond", "plus", "cross"];
 
 const DEFAULT_LINE_STYLES: readonly LineStyle[] = ["solid", "dashed", "dotted", "dashdot"];
 
@@ -586,7 +594,7 @@ export const renderHeader = (width: number, title: string | undefined, subtitle:
  * area. Out-of-domain values are silently skipped. Honors per-axis scale
  * (linear or log).
  */
-const renderReferenceLines = (
+export const renderReferenceLines = (
   refs: ReadonlyArray<ReferenceLine>,
   xAxis: { domain: [number, number]; scale: "linear" | "log" },
   yAxis: { domain: [number, number]; scale: "linear" | "log" },
@@ -645,7 +653,7 @@ const resolveErrorX = (p: Point): [number, number] | null => {
 };
 
 /** Build the SVG fragment for the per-point error bars across all series. */
-const renderErrorBars = (series: ReadonlyArray<Series>, xAxis: AxisScale, yAxis: AxisScale, area: PlotArea): string => {
+export const renderErrorBars = (series: ReadonlyArray<Series>, xAxis: AxisScale, yAxis: AxisScale, area: PlotArea): string => {
   const xMap = pickMapper(xAxis.scale);
   const yMap = pickMapper(yAxis.scale);
   const CAP = 4; // half-width of error bar caps in pixels
@@ -684,7 +692,7 @@ const renderErrorBars = (series: ReadonlyArray<Series>, xAxis: AxisScale, yAxis:
 
 /** Collect all values relevant for axis-domain computation, including error
  *  extents so error bars don't get clipped. */
-const collectAxisValues = (series: ReadonlyArray<Series>, axis: "x" | "y"): number[] => {
+export const collectAxisValues = (series: ReadonlyArray<Series>, axis: "x" | "y"): number[] => {
   const out: number[] = [];
   for (const s of series) {
     for (const p of s.data) {
@@ -990,126 +998,22 @@ export const fmt = (n: number): string => {
 
 export const clamp = (value: number, min: number, max: number): number => Math.max(min, Math.min(max, value));
 
-const normalizeMinMax = (min: number | undefined, max: number | undefined): [number, number] => {
+export const normalizeMinMax = (min: number | undefined, max: number | undefined): [number, number] => {
   const lo = Number.isFinite(min) ? min! : 0;
   const hi = Number.isFinite(max) ? max! : 100;
   return lo === hi ? [lo, lo + 1] : lo < hi ? [lo, hi] : [hi, lo];
 };
 
-const formatNumberValue = (value: number, format: ((value: number) => string) | undefined, unit = ""): string => {
+export const formatNumberValue = (value: number, format: ((value: number) => string) | undefined, unit = ""): string => {
   if (!Number.isFinite(value)) return "";
   return `${format ? format(value) : fmt(value)}${unit}`;
 };
 
-const thresholdFillAttr = (color: string | undefined): string => (color ? ` fill="${escapeXml(color)}"` : "");
+export const thresholdFillAttr = (color: string | undefined): string => (color ? ` fill="${escapeXml(color)}"` : "");
 
-const thresholdStrokeAttr = (color: string | undefined): string => (color ? ` stroke="${escapeXml(color)}"` : "");
-
-const polarPoint = (cx: number, cy: number, r: number, angleRad: number) => ({
-  x: cx + r * Math.cos(angleRad),
-  y: cy + r * Math.sin(angleRad),
-});
-
-const arcLinePathD = (cx: number, cy: number, r: number, a0: number, a1: number): string => {
-  const start = polarPoint(cx, cy, r, a0);
-  const end = polarPoint(cx, cy, r, a1);
-  const large = Math.abs(a1 - a0) > Math.PI ? 1 : 0;
-  const sweep = a1 >= a0 ? 1 : 0;
-  return `M ${fmt(start.x)} ${fmt(start.y)} A ${fmt(r)} ${fmt(r)} 0 ${large} ${sweep} ${fmt(end.x)} ${fmt(end.y)}`;
-};
+export const thresholdStrokeAttr = (color: string | undefined): string => (color ? ` stroke="${escapeXml(color)}"` : "");
 
 export type RgbColor = { r: number; g: number; b: number };
-
-const parseHexColor = (color: string): RgbColor | null => {
-  const short = /^#([0-9a-f]{3})$/i.exec(color);
-  if (short) {
-    const [r, g, b] = short[1]!.split("").map((c) => Number.parseInt(c + c, 16));
-    return { r: r!, g: g!, b: b! };
-  }
-  const long = /^#([0-9a-f]{6})$/i.exec(color);
-  if (!long) return null;
-  const value = long[1]!;
-  return {
-    r: Number.parseInt(value.slice(0, 2), 16),
-    g: Number.parseInt(value.slice(2, 4), 16),
-    b: Number.parseInt(value.slice(4, 6), 16),
-  };
-};
-
-const hexColor = (color: RgbColor): string =>
-  `#${[color.r, color.g, color.b].map((value) => clamp(Math.round(value), 0, 255).toString(16).padStart(2, "0")).join("")}`;
-
-const interpolateColor = (from: string, to: string, t: number): string => {
-  const a = parseHexColor(from);
-  const b = parseHexColor(to);
-  if (!a || !b) return t < 0.5 ? from : to;
-  return hexColor({
-    r: a.r + (b.r - a.r) * t,
-    g: a.g + (b.g - a.g) * t,
-    b: a.b + (b.b - a.b) * t,
-  });
-};
-
-const gaugeThresholdStops = (
-  thresholds: readonly Threshold[] | undefined,
-  min: number,
-  max: number,
-): Array<{ value: number; color: string }> => {
-  if (!thresholds || thresholds.length === 0) return [];
-  const sorted = [...thresholds].filter((t) => Number.isFinite(t.value)).sort((a, b) => a.value - b.value);
-  if (sorted.length === 0) return [];
-  const colorFor = (threshold: Threshold, index: number) => threshold.color ?? `var(--stdlib-chart-c${(index % 8) + 1})`;
-  return [
-    { value: min, color: colorFor(sorted[0]!, 0) },
-    ...sorted.map((threshold, index) => ({
-      value: clamp(threshold.value, min, max),
-      color: colorFor(threshold, index),
-    })),
-  ];
-};
-
-const gaugeColorAt = (stops: readonly { value: number; color: string }[], value: number): string => {
-  if (stops.length === 0) return "currentColor";
-  for (let i = 1; i < stops.length; i++) {
-    const prev = stops[i - 1]!;
-    const next = stops[i]!;
-    if (value <= next.value) {
-      const t = next.value === prev.value ? 1 : clamp((value - prev.value) / (next.value - prev.value), 0, 1);
-      return interpolateColor(prev.color, next.color, t);
-    }
-  }
-  return stops[stops.length - 1]!.color;
-};
-
-const renderGaugeGradientSegments = (opts: {
-  stops: readonly { value: number; color: string }[];
-  min: number;
-  max: number;
-  cx: number;
-  cy: number;
-  radius: number;
-  startAngle: number;
-  endAngle: number;
-  progress?: number;
-  className: string;
-}): string => {
-  if (opts.stops.length === 0) return "";
-  const segments = 72;
-  const maxProgress = opts.progress ?? 100;
-  const parts: string[] = [];
-  for (let i = 0; i < segments; i++) {
-    const p0 = (i / segments) * 100;
-    const p1 = Math.min(((i + 1) / segments) * 100, maxProgress);
-    if (p0 >= maxProgress || p1 <= p0) break;
-    const v0 = mapRange(p0, [0, 100], [opts.min, opts.max]);
-    const v1 = mapRange(p1, [0, 100], [opts.min, opts.max]);
-    const color = gaugeColorAt(opts.stops, (v0 + v1) / 2);
-    const a0 = mapRange(p0, [0, 100], [opts.startAngle, opts.endAngle]);
-    const a1 = mapRange(p1, [0, 100], [opts.startAngle, opts.endAngle]);
-    parts.push(`<path class="${opts.className}" stroke="${escapeXml(color)}" d="${arcLinePathD(opts.cx, opts.cy, opts.radius, a0, a1)}"/>`);
-  }
-  return parts.join("");
-};
 
 // ==========================
 // AXIS RENDERERS
@@ -1122,21 +1026,25 @@ export type AxisScale = {
   scale: "linear" | "log";
 };
 
-const pickMapper = (scale: "linear" | "log") => (scale === "log" ? mapLog : mapRange);
+export const pickMapper = (scale: "linear" | "log") => (scale === "log" ? mapLog : mapRange);
 
 /**
  * Whether a value is renderable on the given axis. Log axes reject zero and
  * negative values (since `log(<=0)` is undefined). Used to filter data
  * points before rendering so we don't emit huge off-plot SVG coordinates.
  */
-const isOnAxis = (axis: { scale: "linear" | "log" }, v: number): boolean => Number.isFinite(v) && (axis.scale !== "log" || v > 0);
+export const isOnAxis = (axis: { scale: "linear" | "log" }, v: number): boolean => Number.isFinite(v) && (axis.scale !== "log" || v > 0);
 
 /**
  * Compute the domain, major ticks, and (optional) minor ticks for an axis,
  * choosing linear or log scale per `axisOpts`. Filters non-positive values
  * out under log scale and falls back to `[1, 10]` if none remain.
  */
-const computeAxisScale = (values: readonly number[], axisOpts: AxisOptions | undefined, fallbackTicks = DEFAULT_TICKS): AxisScale => {
+export const computeAxisScale = (
+  values: readonly number[],
+  axisOpts: AxisOptions | undefined,
+  fallbackTicks = DEFAULT_TICKS,
+): AxisScale => {
   const scale: "linear" | "log" = axisOpts?.scale === "log" ? "log" : "linear";
 
   if (axisOpts?.domain) {
@@ -1203,7 +1111,7 @@ const computeAxisScale = (values: readonly number[], axisOpts: AxisOptions | und
   return { domain: r.domain, ticks: r.ticks, minorTicks, scale };
 };
 
-const renderYAxis = (axis: AxisScale, area: PlotArea, opts: AxisOptions | undefined): string => {
+export const renderYAxis = (axis: AxisScale, area: PlotArea, opts: AxisOptions | undefined): string => {
   const format = opts?.format ?? ((v: number) => String(v));
   const map = pickMapper(axis.scale);
   const parts: string[] = [];
@@ -1229,7 +1137,7 @@ const renderYAxis = (axis: AxisScale, area: PlotArea, opts: AxisOptions | undefi
   return parts.join("");
 };
 
-const renderXAxisNumeric = (axis: AxisScale, area: PlotArea, height: number, opts: AxisOptions | undefined): string => {
+export const renderXAxisNumeric = (axis: AxisScale, area: PlotArea, height: number, opts: AxisOptions | undefined): string => {
   const format = opts?.format ?? ((v: number) => String(v));
   const map = pickMapper(axis.scale);
   const parts: string[] = [];
@@ -1254,7 +1162,7 @@ const renderXAxisNumeric = (axis: AxisScale, area: PlotArea, height: number, opt
   return parts.join("");
 };
 
-const renderXAxisCategorical = (labels: readonly string[], area: PlotArea, height: number, axisLabel?: string): string => {
+export const renderXAxisCategorical = (labels: readonly string[], area: PlotArea, height: number, axisLabel?: string): string => {
   const parts: string[] = [];
   if (labels.length > 0) {
     const step = (area.x1 - area.x0) / labels.length;
@@ -1274,7 +1182,7 @@ const renderXAxisCategorical = (labels: readonly string[], area: PlotArea, heigh
   return parts.join("");
 };
 
-const emptyChart = (width: number, height: number, className: string | undefined, message = "no data"): string =>
+export const emptyChart = (width: number, height: number, className: string | undefined, message = "no data"): string =>
   svgRoot(
     { width, height, className },
     `<text class="stdlib-chart-empty-text" x="${fmt(width / 2)}" y="${fmt(height / 2)}" text-anchor="middle" dominant-baseline="middle">${escapeXml(message)}</text>`,
@@ -1328,120 +1236,7 @@ export type LineOptions = SeriesChartOptions & {
   errorBand?: boolean;
 };
 
-/**
- * Render a scatter plot. Each series produces a group of circles, one per
- * data point, classed `stdlib-chart-series-N` so series colors stay
- * consistent across charts.
- *
- * Non-finite x or y values are filtered out. An empty `series` (or one with
- * no finite points) renders an empty-state SVG with a "no data" label.
- *
- * @example
- * charts.scatter({ series: [{ data: [{x:1,y:2},{x:2,y:5},{x:3,y:3}] }] });
- *
- * @example
- * charts.scatter({
- *   series: [
- *     { label: "Group A", data: [...] },
- *     { label: "Group B", data: [...] },
- *   ],
- *   xAxis: { label: "Time (s)" },
- *   yAxis: { label: "Value", format: v => `${v}k` },
- * });
- */
-export const scatter = (opts: ScatterOptions): string => {
-  const width = opts.width ?? DEFAULT_WIDTH;
-  const height = opts.height ?? DEFAULT_HEIGHT;
-  const padding = normalizePadding(opts.padding);
-  const header = renderHeader(width, opts.title, opts.subtitle);
-  const legendItems = collectSeriesLegend(opts);
-  const legendHeight = legendItems.length > 0 ? 20 : 0;
-
-  const finitePoints = opts.series.flatMap((s) => s.data).filter((p) => Number.isFinite(p.x) && Number.isFinite(p.y));
-  if (finitePoints.length === 0) return emptyChart(width, height, opts.className);
-
-  const area = computePlotArea(width, height, padding, !!opts.xAxis?.label, !!opts.yAxis?.label, header.height, legendHeight);
-
-  const xAxis = computeAxisScale(collectAxisValues(opts.series, "x"), opts.xAxis);
-  const yAxis = computeAxisScale(collectAxisValues(opts.series, "y"), opts.yAxis);
-  const xMap = pickMapper(xAxis.scale);
-  const yMap = pickMapper(yAxis.scale);
-
-  // Size dimension: if any point has a finite `size`, normalize across all
-  // points to the configured pixel range; points without size fall back to
-  // the midpoint so they remain visible.
-  const sizes = finitePoints.map((p) => p.size).filter((s): s is number => typeof s === "number" && Number.isFinite(s));
-  const sizeRange = opts.sizeRange ?? [3, 12];
-  const useSizes = sizes.length > 0;
-  const sizeDomain = useSizes ? computeDomain(sizes) : ([0, 1] as [number, number]);
-  const fallbackR = (sizeRange[0] + sizeRange[1]) / 2;
-
-  const body: string[] = [];
-  body.push(renderYAxis(yAxis, area, opts.yAxis));
-  body.push(renderXAxisNumeric(xAxis, area, height - legendHeight, opts.xAxis));
-
-  // Error bars render under the points so the points sit on top of the bar
-  // intersections — easier to read.
-  body.push(renderErrorBars(opts.series, xAxis, yAxis, area));
-
-  opts.series.forEach((s, i) => {
-    const cls = `stdlib-chart-series-${i % 8}`;
-    const shape = s.marker ?? (opts.autoVariant ? DEFAULT_MARKERS[i % DEFAULT_MARKERS.length]! : "circle");
-    const elements = s.data
-      .map((p, index) => ({ p, index }))
-      .filter(({ p }) => isOnAxis(xAxis, p.x) && isOnAxis(yAxis, p.y))
-      .map(({ p, index }) => {
-        const cx = xMap(p.x, xAxis.domain, [area.x0, area.x1]);
-        const cy = yMap(p.y, yAxis.domain, [area.y1, area.y0]);
-        const r = useSizes
-          ? typeof p.size === "number" && Number.isFinite(p.size)
-            ? mapRange(p.size, sizeDomain, sizeRange)
-            : fallbackR
-          : 3;
-        const datum: ChartDatum = {
-          index,
-          seriesIndex: i,
-          role: "point",
-          label: s.label,
-          anchor: [cx, cy],
-          values: pointValues(p, opts.xAxis, opts.yAxis),
-        };
-        if (shape === "circle") {
-          return chartDatumSvg(`<circle class="stdlib-chart-point" cx="${fmt(cx)}" cy="${fmt(cy)}" r="${fmt(r)}"/>`, datum, opts.inspect);
-        }
-        return chartDatumSvg(`<path class="stdlib-chart-point" d="${markerPath(shape, cx, cy, r)}"/>`, datum, opts.inspect);
-      })
-      .join("");
-    if (elements) body.push(`<g class="${cls}">${elements}</g>`);
-  });
-
-  // Optional trend line (across all series). Renders after data so it's visible.
-  if (opts.trendline) {
-    const reg = linearRegression(finitePoints);
-    if (reg !== null) {
-      const x0 = xAxis.domain[0];
-      const x1 = xAxis.domain[1];
-      const y0 = reg.slope * x0 + reg.intercept;
-      const y1 = reg.slope * x1 + reg.intercept;
-      // Clip to plot area in pixel space (visible portion of the regression).
-      const px0 = xMap(x0, xAxis.domain, [area.x0, area.x1]);
-      const px1 = xMap(x1, xAxis.domain, [area.x0, area.x1]);
-      const py0 = yMap(y0, yAxis.domain, [area.y1, area.y0]);
-      const py1 = yMap(y1, yAxis.domain, [area.y1, area.y0]);
-      body.push(`<line class="stdlib-chart-trendline" x1="${fmt(px0)}" y1="${fmt(py0)}" x2="${fmt(px1)}" y2="${fmt(py1)}"/>`);
-    }
-  }
-
-  // References render AFTER data so labels stay on top (z-order matters in SVG).
-  if (opts.references && opts.references.length > 0) {
-    body.push(renderReferenceLines(opts.references, xAxis, yAxis, area));
-  }
-
-  const legend = renderLegend(legendItems, width, height - legendHeight);
-  return svgRoot({ width, height, className: opts.className }, header.svg + body.join("") + legend.svg);
-};
-
-const collectSeriesLegend = (opts: { series: Series[]; legend?: boolean }): Array<{ label: string; seriesIndex: number }> => {
+export const collectSeriesLegend = (opts: { series: Series[]; legend?: boolean }): Array<{ label: string; seriesIndex: number }> => {
   if (!opts.legend) return [];
   return opts.series.map((s, i) => ({
     label: s.label && s.label.length > 0 ? s.label : `Series ${i + 1}`,
@@ -1872,74 +1667,6 @@ export type HistogramOptions = ChartOptions & {
   references?: ReferenceLine[];
 };
 
-/**
- * Render a histogram (frequency distribution) of the given observations.
- * Uses Sturges' formula by default for bin count, or accepts an explicit
- * count or list of bin edges.
- *
- * Bars are adjacent (no inter-bar gap) since a histogram represents a
- * continuous distribution. The x-axis is numeric (bin edges as ticks).
- *
- * @example
- * charts.histogram({ data: observations, title: "Reaction times (ms)" });
- *
- * @example
- * charts.histogram({ data: scores, bins: 20, yAxis: { label: "Count" } });
- */
-export const histogram = (opts: HistogramOptions): string => {
-  const width = opts.width ?? DEFAULT_WIDTH;
-  const height = opts.height ?? DEFAULT_HEIGHT;
-  const padding = normalizePadding(opts.padding);
-  const header = renderHeader(width, opts.title, opts.subtitle);
-
-  const finite = opts.data.filter((v) => Number.isFinite(v));
-  if (finite.length === 0) return emptyChart(width, height, opts.className);
-
-  const { edges, counts } = autoBin(finite, opts.bins);
-  const area = computePlotArea(width, height, padding, !!opts.xAxis?.label, !!opts.yAxis?.label, header.height, 0);
-
-  const xAxis = computeAxisScale(edges, opts.xAxis);
-  const yAxis = computeAxisScale([0, ...counts], opts.yAxis);
-  const xMap = pickMapper(xAxis.scale);
-  const yMap = pickMapper(yAxis.scale);
-
-  const body: string[] = [];
-  body.push(renderYAxis(yAxis, area, opts.yAxis));
-  body.push(renderXAxisNumeric(xAxis, area, height, opts.xAxis));
-
-  const zeroPx = yAxis.scale === "log" ? area.y1 : yMap(0, yAxis.domain, [area.y1, area.y0]);
-  for (let i = 0; i < counts.length; i++) {
-    const left = xMap(edges[i]!, xAxis.domain, [area.x0, area.x1]);
-    const right = xMap(edges[i + 1]!, xAxis.domain, [area.x0, area.x1]);
-    const c = counts[i]!;
-    if (yAxis.scale === "log" && c <= 0) continue;
-    const top = yMap(c, yAxis.domain, [area.y1, area.y0]);
-    body.push(
-      chartDatumSvg(
-        `<rect class="stdlib-chart-bar stdlib-chart-series-0" x="${fmt(left)}" y="${fmt(top)}" width="${fmt(right - left)}" height="${fmt(zeroPx - top)}"/>`,
-        {
-          index: i,
-          role: "bin",
-          anchor: [(left + right) / 2, (top + zeroPx) / 2],
-          values: [
-            { key: "from", value: edges[i]!, formatted: opts.xAxis?.format?.(edges[i]!) },
-            { key: "to", value: edges[i + 1]!, formatted: opts.xAxis?.format?.(edges[i + 1]!) },
-            { key: "upperInclusive", value: i === counts.length - 1 ? "true" : "false" },
-            { key: "count", value: c },
-          ],
-        },
-        opts.inspect,
-      ),
-    );
-  }
-
-  if (opts.references && opts.references.length > 0) {
-    body.push(renderReferenceLines(opts.references, xAxis, yAxis, area));
-  }
-
-  return svgRoot({ width, height, className: opts.className }, header.svg + body.join(""));
-};
-
 // ==========================
 // BOX PLOT
 // ==========================
@@ -1957,155 +1684,6 @@ export type BoxPlotOptions = ChartOptions & {
   /** When true, each box gets its own series color. Default false (all use
    *  series-0). */
   colorByBox?: boolean;
-};
-
-/**
- * Render a box plot (Tukey style): box for the IQR (Q1-Q3), median line,
- * whiskers extending to 1.5×IQR fences, and individual outlier dots.
- *
- * Useful for comparing distributions across categorical groups (e.g. test
- * scores per class, reaction times per condition).
- *
- * @example
- * charts.boxplot({
- *   groups: [
- *     { label: "Class A", values: scoresA },
- *     { label: "Class B", values: scoresB },
- *   ],
- *   yAxis: { label: "Score" },
- * });
- */
-export const boxplot = (opts: BoxPlotOptions): string => {
-  const width = opts.width ?? DEFAULT_WIDTH;
-  const height = opts.height ?? DEFAULT_HEIGHT;
-  const padding = normalizePadding(opts.padding);
-  const header = renderHeader(width, opts.title, opts.subtitle);
-
-  const showOutliers = opts.showOutliers ?? true;
-
-  const stats = opts.groups.map((g, index) => ({
-    index,
-    count: g.values.filter(Number.isFinite).length,
-    label: g.label,
-    s: computeBoxStats(g.values),
-  }));
-  const valid = stats.filter((g) => g.s !== null) as Array<{
-    label: string;
-    index: number;
-    count: number;
-    s: NonNullable<ReturnType<typeof computeBoxStats>>;
-  }>;
-  if (valid.length === 0) return emptyChart(width, height, opts.className);
-
-  const area = computePlotArea(width, height, padding, false, !!opts.yAxis?.label, header.height, 0);
-
-  // Collect all values relevant for the y-domain: whisker extremes + outliers.
-  const axisValues: number[] = [];
-  for (const g of valid) {
-    axisValues.push(g.s.whiskerLow, g.s.whiskerHigh);
-    if (showOutliers) axisValues.push(...g.s.outliers);
-  }
-  const yAxis = computeAxisScale(axisValues, opts.yAxis);
-  const yMap = pickMapper(yAxis.scale);
-
-  const body: string[] = [];
-  body.push(renderYAxis(yAxis, area, opts.yAxis));
-  body.push(
-    renderXAxisCategorical(
-      valid.map((g) => g.label),
-      area,
-      height,
-      undefined,
-    ),
-  );
-
-  const slot = (area.x1 - area.x0) / valid.length;
-  const boxWidth = slot * 0.6;
-  const boxOffset = slot * 0.2;
-
-  for (let i = 0; i < valid.length; i++) {
-    const g = valid[i]!;
-    const cx = area.x0 + slot * i + slot / 2;
-    const x = area.x0 + slot * i + boxOffset;
-    const seriesIdx = opts.colorByBox ? i % 8 : 0;
-    const seriesCls = `stdlib-chart-series-${seriesIdx}`;
-    const yQ1 = yMap(g.s.q1, yAxis.domain, [area.y1, area.y0]);
-    const yQ2 = yMap(g.s.q2, yAxis.domain, [area.y1, area.y0]);
-    const yQ3 = yMap(g.s.q3, yAxis.domain, [area.y1, area.y0]);
-    const yWhiskerLow = yMap(g.s.whiskerLow, yAxis.domain, [area.y1, area.y0]);
-    const yWhiskerHigh = yMap(g.s.whiskerHigh, yAxis.domain, [area.y1, area.y0]);
-
-    // Whisker line (vertical) from low whisker to high whisker, behind the box.
-    body.push(
-      `<line class="stdlib-chart-box-whisker" x1="${fmt(cx)}" y1="${fmt(yWhiskerHigh)}" x2="${fmt(cx)}" y2="${fmt(yWhiskerLow)}"/>`,
-    );
-    // Whisker caps.
-    const capW = boxWidth * 0.4;
-    body.push(
-      `<line class="stdlib-chart-box-cap" x1="${fmt(cx - capW / 2)}" y1="${fmt(yWhiskerHigh)}" x2="${fmt(cx + capW / 2)}" y2="${fmt(yWhiskerHigh)}"/>`,
-    );
-    body.push(
-      `<line class="stdlib-chart-box-cap" x1="${fmt(cx - capW / 2)}" y1="${fmt(yWhiskerLow)}" x2="${fmt(cx + capW / 2)}" y2="${fmt(yWhiskerLow)}"/>`,
-    );
-    // Box (Q1 to Q3).
-    body.push(
-      chartDatumSvg(
-        `<rect class="stdlib-chart-box ${seriesCls}" x="${fmt(x)}" y="${fmt(yQ3)}" width="${fmt(boxWidth)}" height="${fmt(yQ1 - yQ3)}"/>`,
-        {
-          index: g.index,
-          role: "box",
-          label: g.label,
-          anchor: [cx, yQ2],
-          values: [
-            { key: "count", value: g.count },
-            ...(["q1", "q2", "q3", "whiskerLow", "whiskerHigh"] as const)
-              .map((key) => ({ key, value: g.s[key] }))
-              .map((field) => ({ ...field, formatted: opts.yAxis?.format?.(field.value) })),
-          ],
-        },
-        opts.inspect,
-      ),
-    );
-    // Median line.
-    body.push(`<line class="stdlib-chart-box-median" x1="${fmt(x)}" y1="${fmt(yQ2)}" x2="${fmt(x + boxWidth)}" y2="${fmt(yQ2)}"/>`);
-    // Outliers.
-    if (showOutliers) {
-      const sourceIndices = new Map<number, number[]>();
-      if (opts.inspect)
-        opts.groups[g.index]!.values.forEach((value, index) => {
-          const indices = sourceIndices.get(value) ?? [];
-          indices.push(index);
-          sourceIndices.set(value, indices);
-        });
-      for (const v of g.s.outliers) {
-        const sourceIndex = sourceIndices.get(v)?.shift() ?? 0;
-        const oy = yMap(v, yAxis.domain, [area.y1, area.y0]);
-        body.push(
-          chartDatumSvg(
-            `<circle class="stdlib-chart-box-outlier ${seriesCls}" cx="${fmt(cx)}" cy="${fmt(oy)}" r="2.5"/>`,
-            {
-              index: sourceIndex,
-              seriesIndex: g.index,
-              role: "outlier",
-              label: g.label,
-              anchor: [cx, oy],
-              values: [{ key: "value", value: v, formatted: opts.yAxis?.format?.(v) }],
-            },
-            opts.inspect,
-          ),
-        );
-      }
-    }
-  }
-
-  if (opts.references && opts.references.length > 0) {
-    const yRefs = opts.references.filter((r) => (r.axis ?? "y") === "y");
-    if (yRefs.length > 0) {
-      body.push(renderReferenceLines(yRefs, { domain: [0, 1], scale: "linear" }, yAxis, area));
-    }
-  }
-
-  return svgRoot({ width, height, className: opts.className }, header.svg + body.join(""));
 };
 
 // ==========================
@@ -2197,7 +1775,7 @@ export type StateTimelineOptions = ChartOptions & {
   legend?: boolean;
 };
 
-const thresholdIndexForValue = (value: number, thresholds: readonly Threshold[] | undefined, min: number, max: number): number => {
+export const thresholdIndexForValue = (value: number, thresholds: readonly Threshold[] | undefined, min: number, max: number): number => {
   if (!thresholds || thresholds.length === 0) return 0;
   const sorted = [...thresholds].filter((t) => Number.isFinite(t.value)).sort((a, b) => a.value - b.value);
   const clamped = clamp(value, min, max);
@@ -2205,188 +1783,10 @@ const thresholdIndexForValue = (value: number, thresholds: readonly Threshold[] 
   return idx >= 0 ? idx : Math.max(0, sorted.length - 1);
 };
 
-const thresholdForIndex = (thresholds: readonly Threshold[] | undefined, index: number): Threshold | undefined => {
+export const thresholdForIndex = (thresholds: readonly Threshold[] | undefined, index: number): Threshold | undefined => {
   if (!thresholds || thresholds.length === 0) return undefined;
   const sorted = [...thresholds].filter((t) => Number.isFinite(t.value)).sort((a, b) => a.value - b.value);
   return sorted[index];
-};
-
-/**
- * Render a radial single-value gauge for KPI, quota, saturation, or SLO style
- * dashboard panels.
- */
-export const gauge = (opts: GaugeOptions): string => {
-  const width = opts.width ?? 260;
-  const height = opts.height ?? 180;
-  const [min, max] = normalizeMinMax(opts.min, opts.max);
-  const value = Number.isFinite(opts.value) ? opts.value : min;
-  const clamped = clamp(value, min, max);
-  const startAngle = (Math.PI * 5) / 6;
-  const endAngle = (Math.PI * 13) / 6;
-  const valueAngle = mapRange(clamped, [min, max], [startAngle, endAngle]);
-  const cx = width / 2;
-  const cy = height * 0.64;
-  const radius = Math.min(width * 0.34, height * 0.43);
-  const startPoint = polarPoint(cx, cy, radius, startAngle);
-  const endPoint = polarPoint(cx, cy, radius, endAngle);
-  const endpointLabelY = Math.min(height - 10, Math.max(cy + 32, startPoint.y + 16));
-  const progress = clamp(mapRange(clamped, [min, max], [0, 100]), 0, 100);
-  const gaugePath = arcLinePathD(cx, cy, radius, startAngle, endAngle);
-  const gradientStops = gaugeThresholdStops(opts.thresholds, min, max);
-  const thresholdIdx = thresholdIndexForValue(clamped, opts.thresholds, min, max);
-  const threshold = thresholdForIndex(opts.thresholds, thresholdIdx);
-  const thresholdColor = threshold?.color;
-  const valueText = formatNumberValue(value, opts.format, opts.unit);
-  const label = opts.label ?? opts.title;
-  const fillStroke =
-    gradientStops.length > 0 ? ` stroke="${escapeXml(gaugeColorAt(gradientStops, clamped))}"` : thresholdStrokeAttr(thresholdColor);
-  const fillClass =
-    gradientStops.length > 0 || thresholdColor
-      ? "stdlib-chart-gauge-fill"
-      : `stdlib-chart-gauge-fill stdlib-chart-series-${thresholdIdx % 8}`;
-  const body: string[] = [];
-
-  if (gradientStops.length > 0) {
-    body.push(
-      renderGaugeGradientSegments({
-        stops: gradientStops,
-        min,
-        max,
-        cx,
-        cy,
-        radius,
-        startAngle,
-        endAngle,
-        className: "stdlib-chart-gauge-gradient-segment stdlib-chart-gauge-gradient-scale",
-      }),
-    );
-    body.push(
-      renderGaugeGradientSegments({
-        stops: gradientStops,
-        min,
-        max,
-        cx,
-        cy,
-        radius,
-        startAngle,
-        endAngle,
-        progress,
-        className: "stdlib-chart-gauge-gradient-segment",
-      }),
-    );
-  } else {
-    body.push(`<path class="stdlib-chart-gauge-track" d="${gaugePath}"/>`);
-    if (progress > 0) {
-      body.push(`<path class="${fillClass}"${fillStroke} pathLength="100" stroke-dasharray="${fmt(progress)} 100" d="${gaugePath}"/>`);
-    }
-  }
-
-  if (opts.showNeedle) {
-    const tip = polarPoint(cx, cy, radius - 8, valueAngle);
-    const needleClass =
-      thresholdColor || gradientStops.length > 0
-        ? "stdlib-chart-gauge-needle"
-        : `stdlib-chart-gauge-needle stdlib-chart-series-${thresholdIdx % 8}`;
-    body.push(`<line class="${needleClass}"${fillStroke} x1="${fmt(cx)}" y1="${fmt(cy)}" x2="${fmt(tip.x)}" y2="${fmt(tip.y)}"/>`);
-    body.push(`<circle class="stdlib-chart-gauge-hub" cx="${fmt(cx)}" cy="${fmt(cy)}" r="3"/>`);
-  }
-
-  body.push(`<text class="stdlib-chart-gauge-value" x="${fmt(cx)}" y="${fmt(cy - 2)}" text-anchor="middle">${escapeXml(valueText)}</text>`);
-  if (label) {
-    body.push(`<text class="stdlib-chart-gauge-label" x="${fmt(cx)}" y="${fmt(cy + 20)}" text-anchor="middle">${escapeXml(label)}</text>`);
-  }
-  body.push(
-    `<text class="stdlib-chart-gauge-unit" x="${fmt(startPoint.x)}" y="${fmt(endpointLabelY)}" text-anchor="middle">${escapeXml(formatNumberValue(min, opts.format, opts.unit))}</text>`,
-  );
-  body.push(
-    `<text class="stdlib-chart-gauge-unit" x="${fmt(endPoint.x)}" y="${fmt(endpointLabelY)}" text-anchor="middle">${escapeXml(formatNumberValue(max, opts.format, opts.unit))}</text>`,
-  );
-
-  return svgRoot(
-    { width, height, className: opts.className },
-    chartDatumSvg(
-      body.join(""),
-      {
-        index: 0,
-        role: "value",
-        label,
-        anchor: [cx, cy],
-        values: [
-          { key: "value", value, formatted: valueText },
-          { key: "min", value: min },
-          { key: "max", value: max },
-          ...(threshold ? [{ key: "threshold", value: threshold.label ?? threshold.value }] : []),
-        ],
-      },
-      opts.inspect,
-    ),
-  );
-};
-
-/** Render compact horizontal bar gauges for multiple reduced metrics. */
-export const barGauge = (opts: BarGaugeOptions): string => {
-  const width = opts.width ?? 420;
-  const rowHeight = 28;
-  const top = opts.title || opts.subtitle ? 42 : 16;
-  const height = opts.height ?? Math.max(80, top + opts.data.length * rowHeight + 14);
-  const header = renderHeader(width, opts.title, opts.subtitle);
-  const body: string[] = [header.svg];
-  const labelW = Math.min(140, Math.max(74, width * 0.34));
-  const valueW = 56;
-  const trackX = labelW + 14;
-  const trackW = Math.max(24, width - trackX - valueW - 14);
-  const trackH = 10;
-  const sourceIndices = opts.data.flatMap((d, index) => (Number.isFinite(d.value) ? [index] : []));
-  const data = opts.data.filter((d) => Number.isFinite(d.value));
-
-  if (data.length === 0) {
-    body.push(`<text class="stdlib-chart-empty-text" x="${fmt(width / 2)}" y="${fmt(height / 2)}" text-anchor="middle">No data</text>`);
-    return svgRoot({ width, height, className: opts.className }, body.join(""));
-  }
-
-  data.forEach((d, i) => {
-    const [min, max] = normalizeMinMax(d.min ?? opts.min, d.max ?? opts.max);
-    const pct = clamp((d.value - min) / (max - min), 0, 1);
-    const y = top + i * rowHeight;
-    const thresholdIdx = thresholdIndexForValue(d.value, opts.thresholds, min, max);
-    const threshold = thresholdForIndex(opts.thresholds, thresholdIdx);
-    const thresholdColor = threshold?.color;
-    const unit = d.unit ?? opts.unit ?? "";
-    const start = body.length;
-    body.push(
-      `<text class="stdlib-chart-bar-gauge-label" x="12" y="${fmt(y + 12)}" dominant-baseline="middle">${escapeXml(d.label)}</text>`,
-    );
-    body.push(
-      `<rect class="stdlib-chart-bar-gauge-track" x="${fmt(trackX)}" y="${fmt(y + 7)}" width="${fmt(trackW)}" height="${fmt(trackH)}" rx="2"/>`,
-    );
-    body.push(
-      `<rect class="stdlib-chart-bar-gauge-fill stdlib-chart-series-${thresholdIdx % 8}"${thresholdFillAttr(thresholdColor)} x="${fmt(trackX)}" y="${fmt(y + 7)}" width="${fmt(trackW * pct)}" height="${fmt(trackH)}" rx="2"/>`,
-    );
-    body.push(
-      `<text class="stdlib-chart-bar-gauge-value" x="${fmt(width - 12)}" y="${fmt(y + 12)}" text-anchor="end" dominant-baseline="middle">${escapeXml(formatNumberValue(d.value, opts.format, unit))}</text>`,
-    );
-    const shapes = body.splice(start).join("");
-    body.push(
-      chartDatumSvg(
-        shapes,
-        {
-          index: sourceIndices[i]!,
-          role: "item",
-          label: d.label,
-          anchor: [trackX + trackW / 2, y + 12],
-          values: [
-            { key: "value", value: d.value, formatted: formatNumberValue(d.value, opts.format, unit) },
-            { key: "min", value: min },
-            { key: "max", value: max },
-            ...(threshold ? [{ key: "threshold", value: threshold.label ?? threshold.value }] : []),
-          ],
-        },
-        opts.inspect,
-      ),
-    );
-  });
-
-  return svgRoot({ width, height, className: opts.className }, body.join(""));
 };
 
 const renderInlineSparkline = (
@@ -2471,83 +1871,6 @@ export const stat = (opts: StatOptions): string => {
     { width, height, className: opts.className },
     summary + renderInlineSparkline(opts.sparkline, 16, height - 42, width - 32, 26, opts.inspect),
   );
-};
-
-/**
- * Render a categorical two-dimensional heatmap. Cell opacity represents value
- * intensity; labels are derived from first occurrence order unless provided.
- */
-export const heatmap = (opts: HeatmapOptions): string => {
-  const width = opts.width ?? 460;
-  const height = opts.height ?? 260;
-  const padding = normalizePadding(opts.padding ?? { top: 36, right: 16, bottom: 32, left: 54 });
-  const header = renderHeader(width, opts.title, opts.subtitle);
-  const xLabels = opts.xLabels ?? [...new Set(opts.data.map((d) => d.x))];
-  const yLabels = opts.yLabels ?? [...new Set(opts.data.map((d) => d.y))];
-  if (xLabels.length === 0 || yLabels.length === 0) {
-    return svgRoot(
-      { width, height, className: opts.className },
-      header.svg + `<text class="stdlib-chart-empty-text" x="${fmt(width / 2)}" y="${fmt(height / 2)}" text-anchor="middle">No data</text>`,
-    );
-  }
-  const area = computePlotArea(width, height, padding, false, false, header.height, 0);
-  const values = opts.data.map((d) => d.value).filter(Number.isFinite);
-  const [autoMin, autoMax] = computeDomain(values);
-  const min = Number.isFinite(opts.min) ? opts.min! : autoMin;
-  const max = Number.isFinite(opts.max) ? opts.max! : autoMax;
-  const indexMap = new Map(opts.data.map((d, index) => [`${d.x}\u0000${d.y}`, index]));
-  const valueMap = new Map(opts.data.map((d) => [`${d.x}\u0000${d.y}`, d.value]));
-  const cellW = (area.x1 - area.x0) / xLabels.length;
-  const cellH = (area.y1 - area.y0) / yLabels.length;
-  const body: string[] = [header.svg];
-  const format = opts.format ?? ((v: number) => fmt(v));
-
-  xLabels.forEach((label, i) => {
-    const x = area.x0 + cellW * (i + 0.5);
-    body.push(
-      `<text class="stdlib-chart-heatmap-label" x="${fmt(x)}" y="${fmt(area.y1 + 14)}" text-anchor="middle">${escapeXml(label)}</text>`,
-    );
-  });
-  yLabels.forEach((label, i) => {
-    const y = area.y0 + cellH * (i + 0.5);
-    body.push(
-      `<text class="stdlib-chart-heatmap-label" x="${fmt(area.x0 - 8)}" y="${fmt(y)}" text-anchor="end" dominant-baseline="middle">${escapeXml(label)}</text>`,
-    );
-  });
-
-  for (let yi = 0; yi < yLabels.length; yi++) {
-    for (let xi = 0; xi < xLabels.length; xi++) {
-      const valueAtCell = valueMap.get(`${xLabels[xi]}\u0000${yLabels[yi]}`);
-      if (!Number.isFinite(valueAtCell)) continue;
-      const intensity = clamp(mapRange(valueAtCell!, [min, max], [0.12, 1]), 0.12, 1);
-      const x = area.x0 + xi * cellW;
-      const y = area.y0 + yi * cellH;
-      body.push(
-        chartDatumSvg(
-          `<rect class="stdlib-chart-heatmap-cell stdlib-chart-series-0" x="${fmt(x)}" y="${fmt(y)}" width="${fmt(Math.max(0, cellW - 1))}" height="${fmt(Math.max(0, cellH - 1))}" opacity="${fmt(intensity)}"/>`,
-          {
-            index: indexMap.get(`${xLabels[xi]}\u0000${yLabels[yi]}`)!,
-            role: "cell",
-            anchor: [x + cellW / 2, y + cellH / 2],
-            grid: [xi, yi],
-            values: [
-              { key: "x", value: xLabels[xi]! },
-              { key: "y", value: yLabels[yi]! },
-              { key: "value", value: valueAtCell!, formatted: format(valueAtCell!) },
-            ],
-          },
-          opts.inspect,
-        ),
-      );
-      if (opts.showValues) {
-        body.push(
-          `<text class="stdlib-chart-heatmap-label" x="${fmt(x + cellW / 2)}" y="${fmt(y + cellH / 2)}" text-anchor="middle" dominant-baseline="middle">${escapeXml(format(valueAtCell!))}</text>`,
-        );
-      }
-    }
-  }
-
-  return svgRoot({ width, height, className: opts.className }, body.join(""));
 };
 
 // ==========================

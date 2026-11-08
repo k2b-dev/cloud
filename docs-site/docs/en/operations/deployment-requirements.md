@@ -677,9 +677,12 @@ one-off HTML app charts show tooltips on hover, keyboard focus and tap without
 additional configuration. See
 [Code Mode charts](/en/docs/ai/chat-interface#check-an-html-app-before-showing-it).
 
-App-frame builds include `assistant-chart-module.js` alongside the prelude and
-base stylesheet. The app-assets response embeds that module with the frame;
-rare chart kinds parse it on first use through a local blob URL. No additional
+App-frame builds include `assistant-chart-parts.json` alongside the prelude and
+base stylesheet. The host obtains all parts with its other app assets before
+starting frames, preserving first use offline. A frame receives only the kinds
+it draws plus one shared helper part over its existing host channel; renderer
+source is absent from srcdoc. The host verifies each part's SHA-256 before
+delivery, and the frame pins its parts to that build's hashes. No additional
 asset endpoint, external origin, CSP exception or operator configuration is
 needed. Include the new file when packaging Assistant outside its standard
 image. Scripts retain synchronous rendering for every kind.
