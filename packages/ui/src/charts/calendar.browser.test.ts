@@ -84,6 +84,7 @@ test("Calendar SSR, calm hover, keyboard, touch, scroll, theme and fixed host st
         await page.locator("#mount").evaluate((e) => e.replaceChildren());
         await page.addScriptTag({ content: bundle });
         await settled(page);
+        expect(errors).toEqual([]);
         expect(await page.locator("#mount .k2b-chart__svg > svg").evaluate((e) => e.outerHTML)).toBe(before);
         expect(await page.locator("#mount .k2b-chart").evaluate((e) => (e as HTMLElement).style.cssText)).toBe(serverStyle);
         const titled = page.locator("#titled .k2b-chart");
@@ -356,3 +357,66 @@ test("calendar explicit short date formats preserve SSR text for US, German and 
     await browser.close();
   }
 });
+
+for (const width of [280.375, 284.625])
+  test(`calendar native scroll correction preserves exact SSR markup and cleans up at ${width}px`, async () => {
+    const ServerChart = (await import(resolve(root, "dist/ssr/content/Chart.js"))).default;
+    const server = renderToString(() => createComponent(ServerChart, spec));
+    const build = await Bun.build({
+      entrypoints: ["calendar-scroll-mount"],
+      target: "browser",
+      format: "iife",
+      plugins: [
+        {
+          name: "mount",
+          setup(b) {
+            b.onResolve({ filter: /^calendar-scroll-mount$/ }, () => ({ path: "entry", namespace: "mount" }));
+            b.onLoad({ filter: /.*/, namespace: "mount" }, () => ({
+              loader: "ts",
+              contents: `import {mountCalendarScroll} from ${JSON.stringify(resolve(root, "dist/browser/content/chart-calendar.js"))};
+              document.getElementById('cleanup').onclick=mountCalendarScroll(document.querySelector('.k2b-chart'));`,
+            }));
+          },
+        },
+      ],
+    });
+    expect(build.success).toBe(true);
+    const script = await build.outputs[0]!.text();
+    const browser = await launchBrowser();
+    try {
+      const page = await browser.newPage({ reducedMotion: "reduce" });
+      try {
+        const errors = pageErrors(page);
+        await page.setContent(`<style>${await Bun.file(resolve(root, "dist/styles.css")).text()}</style>
+          <section class="k2b-ui" style="width:${width}px">${server}</section><button id="cleanup">Unmount</button>`);
+        await settled(page);
+        const chart = page.locator(".k2b-chart");
+        const before = await chart.evaluate((e) => e.outerHTML);
+        const sheets = await page.evaluate(() => document.adoptedStyleSheets.length);
+        // Native clientWidth rounds to a whole pixel; CSS query lengths do not.
+        const estimate = await chart.evaluate(scrollRange);
+        expect(estimate.css).not.toBe(estimate.dom);
+        await page.addScriptTag({ content: script });
+        await settled(page);
+        expect(errors).toEqual([]);
+        expect(await chart.evaluate((e) => e.outerHTML)).toBe(before);
+        expect(await page.evaluate(() => document.adoptedStyleSheets.length)).toBe(sheets + 1);
+        const newest = await chart.evaluate(scrollRange);
+        expect(newest.css).toBe(newest.dom);
+        await chart.evaluate((e) => (e.scrollLeft = -e.scrollWidth));
+        await settled(page);
+        const oldest = await chart.evaluate(scrollRange);
+        expect(oldest.css).toBe(oldest.dom);
+        expect(await chart.evaluate((e) => e.outerHTML)).toBe(before);
+        await page.locator("#cleanup").click();
+        await settled(page);
+        expect(await page.evaluate(() => document.adoptedStyleSheets.length)).toBe(sheets);
+        expect(await chart.evaluate((e) => e.outerHTML)).toBe(before);
+        expect(errors).toEqual([]);
+      } finally {
+        await page.close();
+      }
+    } finally {
+      await browser.close();
+    }
+  });

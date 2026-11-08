@@ -584,6 +584,7 @@ export const renderChartRoot = (props: ChartProps, renderChartSvg: typeof import
           to chart data/options rebuild the SVG; resizing does not. */}
       <div
         ref={containerRef}
+        id={calendar() ? `${chartTooltipId}-scroll` : undefined}
         class={`k2b-chart ${props.class ?? ""}`}
         data-chart-kind={props.kind}
         data-legend-placement={topLegend() ? "top-start" : undefined}

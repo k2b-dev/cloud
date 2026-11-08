@@ -7,32 +7,33 @@ export const calendarInspectionNavigation: ChartInspectionNavigation = {
   reveal: (element) => element.scrollIntoView({ block: "nearest", inline: "nearest" }),
 };
 
+let calendarId = 0;
+
 /** A calendar starts at the newest week. Pointer inspection never resets its scroll position. */
 export function mountCalendarScroll(container: HTMLElement): () => void {
   const drawing = container.querySelector(".k2b-chart__svg");
   if (!drawing) return () => {};
-  // row-reverse makes zero the newest end in the server frame too. Older weeks
-  // use negative scrollLeft. Pinning must use this same DOM scroll range:
-  // container query widths can differ from the scrollport (gutter/rounding).
-  const measure = () => {
-    const svg = drawing.querySelector("svg[data-calendar]");
-    if (!svg) return;
-    // Resolve the server's fallback in the SVG's query-container context. Do
-    // not mutate first-render markup when CSS already uses the native range.
-    const probe = document.createElementNS("http://www.w3.org/2000/svg", "rect");
-    probe.style.width = "max(0px, calc(var(--k2b-calendar-width) - 100cqw))";
-    probe.style.height = "0px";
-    svg.append(probe);
-    const estimated = Number.parseFloat(getComputedStyle(probe).width);
-    probe.remove();
-    const overflow = Math.max(0, container.scrollWidth - container.clientWidth);
-    if (estimated === overflow) container.style.removeProperty("--k2b-calendar-measured-overflow");
-    else container.style.setProperty("--k2b-calendar-measured-overflow", `${overflow}px`);
-  };
+  const root = container.getRootNode();
+  if (!(root instanceof Document || root instanceof ShadowRoot)) return () => {};
+  const originalId = container.id;
+  let id = originalId;
+  if (!id) {
+    do id = `k2b-calendar-scroll-${++calendarId}`;
+    while (root.getElementById(id));
+    container.id = id;
+  }
+  // CSSOM measurements are enhancements, not serialized first-render markup.
+  // Each calendar has its own rule, including in notebook and app-frame hosts.
+  const sheet = new CSSStyleSheet();
+  sheet.insertRule(`.k2b-ui #${CSS.escape(id)} {}`);
+  const rule = sheet.cssRules[0];
+  if (!(rule instanceof CSSStyleRule)) throw new Error("Missing calendar scroll rule.");
+  root.adoptedStyleSheets = [...root.adoptedStyleSheets, sheet];
+  // row-reverse starts at the newest end on the server too. Use the native
+  // range once mounted: CSS query lengths can differ by subpixel rounding.
   const header = () => {
-    measure();
-    if (container.scrollLeft) container.style.setProperty("--k2b-calendar-scroll", `${container.scrollLeft}px`);
-    else container.style.removeProperty("--k2b-calendar-scroll");
+    rule.style.setProperty("--k2b-calendar-measured-overflow", `${Math.max(0, container.scrollWidth - container.clientWidth)}px`);
+    rule.style.setProperty("--k2b-calendar-scroll", `${container.scrollLeft}px`);
   };
   const observer = new MutationObserver(() => {
     container.scrollLeft = 0;
@@ -48,7 +49,7 @@ export function mountCalendarScroll(container: HTMLElement): () => void {
     observer.disconnect();
     resize.disconnect();
     container.removeEventListener("scroll", header);
-    container.style.removeProperty("--k2b-calendar-measured-overflow");
-    container.style.removeProperty("--k2b-calendar-scroll");
+    root.adoptedStyleSheets = root.adoptedStyleSheets.filter((candidate) => candidate !== sheet);
+    if (!originalId && container.id === id) container.removeAttribute("id");
   };
 }
