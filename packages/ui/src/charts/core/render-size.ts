@@ -1,6 +1,7 @@
 import { barChartLayout } from "../../content/chart-bar";
 import { stateTimelineHeight } from "../../content/chart-state-timeline";
-import { hbarLayout } from "./hbar";
+// Import the layout leaf: sharing its renderer module can promote drawing into an eager island chunk.
+import { hbarLayout } from "./hbar-layout";
 import type { ChartRenderOptions } from "./render";
 import { sankeyFrame } from "./sankey-size";
 import { renderHeader } from "./svg-renderers";
