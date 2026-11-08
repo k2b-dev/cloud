@@ -91,21 +91,12 @@ export default function SharesOverview(props: {
     );
   return (
     <AppWorkspace.Main scroll class="filesv2-browser">
+      {/* The sidebar marks the place, so no visible title and no way back here: the sidebar and Back lead back. */}
       <header class="filesv2-browser__header">
         <div class="min-w-0">
-          <h1 class="truncate text-base font-semibold text-primary">{b().sharesTitle}</h1>
-          <p class="mt-0.5 text-xs text-dimmed">{b().sharesDescription}</p>
+          <h1 class="sr-only">{b().sharesTitle}</h1>
+          <p class="filesv2-shares__lead">{b().sharesDescription}</p>
         </div>
-        <ButtonLink
-          size="sm"
-          variant="ghost"
-          href={filesUrl(props.baseId ?? undefined)}
-          navigation="enhanced"
-          onNavigate={props.onNavigate}
-        >
-          <i class="ti ti-arrow-left" aria-hidden="true" />
-          {b().backToFiles}
-        </ButtonLink>
       </header>
       <Show
         when={shares().length}
