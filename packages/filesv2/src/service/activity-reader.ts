@@ -278,48 +278,60 @@ export function createActivityReader(deps: ActivityReaderDependencies) {
         }
         if (!allowed.has(base.id) || base.lifecycle !== "active" || relative === null || row.server_url !== config.url || config.unreadable)
           return invisible;
-        if (row.actor_kind === "user" && row.actor_user_id === userId)
-          return { value: row.metadataUnknown ? minimal(basePublicId) : full("snapshot"), base: basePublicId, relative };
-        // Storage refines current identity only. Cloud grants already authorize the retained
-        // local snapshot; a failed stat must never remove a row after SQL pagination.
-        const key = JSON.stringify([row.server_url, root, base.id, path]);
-        let stat = statCache.get(key);
-        if (!stat) {
-          stat = budget
-            .run(() => deps.connect(config, budget.signal).root(root).stat(path))
-            .catch((error: unknown) => {
-              if (error instanceof FilegateError && error.status === 404) return null;
-              if (error instanceof FilegateError && error.status === 403) return "denied" as const;
-              throw error;
-            });
-          statCache.set(key, stat);
-        }
-        const node = await stat;
-        if (node === "denied")
-          return { value: row.metadataUnknown ? minimal(basePublicId) : full("snapshot"), base: basePublicId, relative };
-        let stable = identityCache.get(root);
-        if (!stable) {
-          stable = budget.run(() => deps.connect(config, budget.signal).root(root).info()).then((info) => info.stableIds === true);
-          identityCache.set(root, stable);
-        }
-        const stableIds = await stable;
-        if (node && (!stableIds || !itemId || !node.id || node.id === itemId)) {
+        const snapshot = { value: row.metadataUnknown ? minimal(basePublicId) : full("snapshot"), base: basePublicId, relative };
+        const own = row.actor_kind === "user" && row.actor_user_id === userId;
+        if (own && row.metadataUnknown) return snapshot;
+        /*
+         * Storage refines current identity only: "current" when the same item is still there and readable now,
+         * "snapshot" when a refusal leaves only the Cloud grant, "minimal" when the item is gone or replaced.
+         */
+        const live = async (): Promise<"current" | "snapshot" | "minimal"> => {
+          const key = JSON.stringify([row.server_url, root, base.id, path]);
+          let stat = statCache.get(key);
+          if (!stat) {
+            stat = budget
+              .run(() => deps.connect(config, budget.signal).root(root).stat(path))
+              .catch((error: unknown) => {
+                if (error instanceof FilegateError && error.status === 404) return null;
+                if (error instanceof FilegateError && error.status === 403) return "denied" as const;
+                throw error;
+              });
+            statCache.set(key, stat);
+          }
+          const node = await stat;
+          if (node === "denied") return "snapshot";
+          let stable = identityCache.get(root);
+          if (!stable) {
+            stable = budget.run(() => deps.connect(config, budget.signal).root(root).info()).then((info) => info.stableIds === true);
+            identityCache.set(root, stable);
+          }
+          const stableIds = await stable;
+          if (!node || !(!stableIds || !itemId || !node.id || node.id === itemId)) return "minimal";
           const current = await access(base, relative);
-          if (!matches(current, base, path))
-            return { value: row.metadataUnknown ? minimal(basePublicId) : full("snapshot"), base: basePublicId, relative };
-          if (
-            stableIds &&
+          if (!matches(current, base, path)) return "snapshot";
+          return stableIds &&
             itemId &&
             current?.info.stableIds === true &&
             current.node.id === itemId &&
             node.directory === row.directory &&
             !row.metadataUnknown
-          )
-            return { value: full("current"), base: basePublicId, relative };
-          // No stable identity promise means only the disappearance-level fields, even on a readable live leaf.
-          return { value: minimal(basePublicId), base: basePublicId, relative };
+            ? "current"
+            : // No stable identity promise means only the disappearance-level fields, even on a readable live leaf.
+              "minimal";
+        };
+        if (own) {
+          // The Cloud grant already authorizes the own snapshot. Storage only adds the navigation target; when it
+          // cannot confirm the same item now, or fails, the row keeps its full snapshot instead of failing the page.
+          const state = await live().catch((error: unknown) => {
+            if (budget.signal.aborted) throw error;
+            return "snapshot" as const;
+          });
+          return state === "current" ? { value: full("current"), base: basePublicId, relative } : snapshot;
         }
-        return { value: minimal(basePublicId), base: basePublicId, relative };
+        // A failed stat must never remove a row after SQL pagination; an outage stays a visible failure.
+        const state = await live();
+        if (state === "current") return { value: full("current"), base: basePublicId, relative };
+        return state === "snapshot" ? snapshot : { value: minimal(basePublicId), base: basePublicId, relative };
       }
       const before = await side(false);
       const after = await side(true);

@@ -3,7 +3,7 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import type { Browser, Page } from "playwright";
 import { launchBrowser } from "../../../ui/test/browser";
-import { appAssetsJson } from "./html/test-assets";
+import { appAssetResponse, appAssetsJson } from "./html/test-assets";
 
 let browser: Browser;
 let code: string;
@@ -67,7 +67,8 @@ function serve(files: Record<string, string>, state = { serverAccess: true, revo
       if (path === "/bundle.js") return new Response(code, { headers: { "content-type": "application/javascript" } });
       if (path === "/app.css") return new Response(appCss, { headers: { "content-type": "text/css" } });
       if (path === "/ui.css") return new Response(Bun.file(new URL("../../../ui/dist/styles.css", import.meta.url)));
-      if (path === "/api/assistant/runner/app-assets") return new Response(assets, { headers: { "content-type": "application/json" } });
+      if (path === "/api/assistant/runner/app-assets" || path === "/api/assistant/runner/chart-parts")
+        return appAssetResponse(assets, path);
       if (path === "/api/assistant/artifacts/Run001/storage") {
         if (!state.serverAccess) return Response.json({ message: "No access" }, { status: 403 });
         const input = await request.json();
