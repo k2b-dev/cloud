@@ -79,6 +79,7 @@ type VerifiedConversationProjection = {
   loaded: boolean;
   is_latest_verified: boolean;
   status_decided: boolean;
+  list_only: boolean;
   received_since_send: boolean;
   message_count: number;
 };
@@ -530,6 +531,7 @@ const applyVerifiedConversationTransition = async (params: { db: typeof sql; mes
       conversation.work_status,
       conversation.snoozed_until,
       link.status_covered IS TRUE AS status_decided,
+      link.added_by = 'list' AS list_only,
       message.in_reply_to,
       message.reference_ids,
       message.protocol_facts,
@@ -547,6 +549,7 @@ const applyVerifiedConversationTransition = async (params: { db: typeof sql; mes
         FROM mail.conversation_messages newer_link
         JOIN mail.message_contents newer_message ON newer_message.id = newer_link.message_id
         WHERE newer_link.conversation_id = conversation.id
+          AND newer_link.added_by <> 'list'
           AND (
             ${isTimelineMessage({ id: sql`newer_message.id`, hydrationStatus: sql`newer_message.hydration_status` })}
             OR ${isTerminalHydrationFailure({
@@ -586,7 +589,10 @@ const applyVerifiedConversationTransition = async (params: { db: typeof sql; mes
   // when the status or snooze changes. A no-op release is not a decision because it does not move
   // the revision that fences older automation steps.
   const transition =
-    projection.is_latest_verified && !projection.status_decided && !(projection.outbound && projection.received_since_send)
+    projection.is_latest_verified &&
+    !projection.list_only &&
+    !projection.status_decided &&
+    !(projection.outbound && projection.received_since_send)
       ? deriveConversationWorkState(projection.work_status, {
           direction: projection.outbound ? "outbound" : "inbound",
           intent:
