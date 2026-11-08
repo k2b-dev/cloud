@@ -3444,12 +3444,12 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
           }
         });
 
-        test("phone: Reply, Reply all, Forward and Done wait at the bottom, work by touch and keyboard, and cover nothing", async () => {
+        test("phone: the reply pill above the newest message offers Reply, Reply all, Forward, Archive and Done by touch and keyboard", async () => {
           const page = await open(`${boxPath}?conversation=Conv01`, 390, 844);
           try {
-            const bar = page.locator("[data-mail-phone-actions] .k2b-toolbar");
+            const bar = page.locator("[data-mail-reply-pill] .k2b-toolbar");
             await page.waitForFunction(
-              () => !document.querySelector("[data-mail-phone-actions] .k2b-toolbar")?.hasAttribute("data-overflow-pending"),
+              () => !document.querySelector("[data-mail-reply-pill] .k2b-toolbar")?.hasAttribute("data-overflow-pending"),
             );
             expect(await bar.isVisible()).toBe(true);
             const names = await bar
@@ -3459,12 +3459,15 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
                   .filter((element) => element.getClientRects().length > 0 && !element.closest("[data-overflow]"))
                   .map((element) => element.getAttribute("aria-label") ?? element.textContent?.trim()),
               );
-            expect(names).toEqual(["Reply", "Reply all", "Forward", "Mark as done"]);
-            // The bar is the reader's last row: the scrolled messages end above it.
+            expect(names).toEqual(["Reply", "Reply all", "Forward", "Archive", "Mark as done"]);
+            // The pill sits inside the reader, above the newest message, and never below the screen.
             const scroller = (await page.locator(".mail-reader-scroll").boundingBox())!;
             const strip = (await bar.boundingBox())!;
-            expect(scroller.y + scroller.height).toBeLessThanOrEqual(strip.y + 0.5);
-            expect(strip.y + strip.height).toBeLessThanOrEqual(844 + 0.5);
+            const newest = (await page.locator("[data-mail-conversation-messages] [data-mail-message-id]").first().boundingBox())!;
+            expect(strip.y).toBeGreaterThanOrEqual(scroller.y - 0.5);
+            expect(strip.y + strip.height).toBeLessThanOrEqual(newest.y + 0.5);
+            // A floating pill on layer 3 carries the toolbar shadow.
+            expect(await bar.evaluate((element) => getComputedStyle(element).boxShadow)).not.toBe("none");
             // The top row keeps the way back, … and the details; the actions live below.
             expect(
               await page
@@ -3472,8 +3475,7 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
                 .evaluateAll((elements) => elements.filter((element) => element.getClientRects().length > 0).length),
             ).toBe(0);
             expect(await page.locator(".mail-reader-toolbar [data-mail-details-trigger]").isVisible()).toBe(true);
-            expect(await page.locator("[data-mail-reply-box]").isVisible()).toBe(false);
-            // Keyboard: the bar is one tab stop with arrow keys inside.
+            // Keyboard: the pill is one tab stop with arrow keys inside.
             await bar.getByRole("button", { name: "Reply", exact: true }).focus();
             await page.keyboard.press("ArrowRight");
             expect(await page.evaluate(() => document.activeElement?.getAttribute("aria-label"))).toBe("Reply all");
@@ -4322,6 +4324,7 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
             if (theme === "dark" && width !== 1440 && width !== 390) continue;
             for (const [name, state, path] of [
               ["mailbox", "tabs", boxPath],
+              ["mailbox", "reader", `${boxPath}?conversation=Conv01`],
               ["mailbox", "focus-notice", `${boxPath}?notice=1`],
               ...(theme === "light"
                 ? [

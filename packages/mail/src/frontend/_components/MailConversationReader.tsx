@@ -1624,17 +1624,73 @@ export default function MailConversationReader(props: {
                     />
                   )}
                 </Show>
-                <Show when={canRespondToLatest()}>
-                  <button
-                    type="button"
-                    class="mail-reader-reply-box"
-                    data-mail-reply-box
-                    disabled={composerBusy()}
-                    onClick={() => respondToLatest("reply")}
-                  >
-                    <i class="ti ti-arrow-back-up" aria-hidden="true" />
-                    <span class="min-w-0 truncate">{t().replyTo({ name: latestReplyNames() })}</span>
-                  </button>
+                {/* One floating pill above the newest message, at every width: it sticks to the top of the reader
+                    while the messages scroll. It runs the reader's existing actions and changes no compose logic. */}
+                <Show when={canRespondToLatest() || (props.canWrite && props.workStatus)}>
+                  <div class="mail-reader-reply-pill" data-mail-reply-pill>
+                    <Toolbar label={t().conversationActions} variant="floating">
+                      <Show when={canRespondToLatest()}>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          class="mail-reader-pill-reply"
+                          title={t().replyTo({ name: latestReplyNames() })}
+                          disabled={composerBusy()}
+                          onClick={() => respondToLatest("reply")}
+                        >
+                          <i class="ti ti-arrow-back-up" aria-hidden="true" />
+                          {t().reply}
+                        </Button>
+                        <Show when={canReplyAllToLatest()}>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            aria-label={t().replyAll}
+                            disabled={composerBusy()}
+                            onClick={() => respondToLatest("reply_all")}
+                          >
+                            <i class="ti ti-arrow-back-up-double" aria-hidden="true" />
+                            <span class="mail-reader-pill-text">{t().replyAll}</span>
+                          </Button>
+                        </Show>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          aria-label={t().forward}
+                          disabled={composerBusy()}
+                          onClick={() => respondToLatest("forward")}
+                        >
+                          <i class="ti ti-arrow-forward-up" aria-hidden="true" />
+                          <span class="mail-reader-pill-text">{t().forward}</span>
+                        </Button>
+                      </Show>
+                      <Show when={props.canWrite && props.workStatus}>
+                        {(status) => (
+                          <>
+                            <Toolbar.Separator />
+                            <Show when={directToolbarAction("archive")}>
+                              {(archive) => (
+                                <Toolbar.Action
+                                  label={archive().label}
+                                  icon={archive().icon}
+                                  priority={2}
+                                  disabled={archive().disabled}
+                                  onClick={archive().action}
+                                />
+                              )}
+                            </Show>
+                            <Toolbar.Action
+                              label={status() === "done" ? t().reopen : t().markDone}
+                              icon={status() === "done" ? "ti ti-arrow-back-up" : "ti ti-check"}
+                              priority={1}
+                              disabled={props.completionPending}
+                              onClick={toggleCompletion}
+                            />
+                          </>
+                        )}
+                      </Show>
+                    </Toolbar>
+                  </div>
                 </Show>
                 <div class="flex w-full flex-col gap-2" data-mail-conversation-messages>
                   <For each={visibleTimelineIds()}>
@@ -1773,47 +1829,6 @@ export default function MailConversationReader(props: {
             </Show>
           </div>
         </ContextMenu>
-        {/* Phones: Reply, Reply all, Forward and Done wait at the bottom, within thumb reach. As the reader's last
-            row the bar takes its own height, so it never covers the last line or a focused control. */}
-        <Show when={canRespondToLatest() || props.canWrite}>
-          <div class="mail-reader-phone-bar" data-mail-phone-actions>
-            <Toolbar label={t().conversationActions} variant="floating">
-              <Show when={canRespondToLatest()}>
-                <Button type="button" class="mail-reader-phone-reply" disabled={composerBusy()} onClick={() => respondToLatest("reply")}>
-                  <i class="ti ti-arrow-back-up" aria-hidden="true" />
-                  {t().reply}
-                </Button>
-                <Show when={canReplyAllToLatest()}>
-                  <Toolbar.Action
-                    label={t().replyAll}
-                    icon="ti ti-arrow-back-up-double"
-                    priority={2}
-                    disabled={composerBusy()}
-                    onClick={() => respondToLatest("reply_all")}
-                  />
-                </Show>
-                <Toolbar.Action
-                  label={t().forward}
-                  icon="ti ti-arrow-forward-up"
-                  priority={2}
-                  disabled={composerBusy()}
-                  onClick={() => respondToLatest("forward")}
-                />
-              </Show>
-              <Show when={props.canWrite && props.workStatus}>
-                {(status) => (
-                  <Toolbar.Action
-                    label={status() === "done" ? t().reopen : t().markDone}
-                    icon={status() === "done" ? "ti ti-arrow-back-up" : "ti ti-check"}
-                    priority={1}
-                    disabled={props.completionPending}
-                    onClick={toggleCompletion}
-                  />
-                )}
-              </Show>
-            </Toolbar>
-          </div>
-        </Show>
       </Show>
     </div>
   );
