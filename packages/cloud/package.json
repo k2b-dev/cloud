@@ -70,6 +70,8 @@
     "./code": "./src/code/index.ts",
     "./code/events": "./src/code/event-tools.ts",
     "./code/chat-run": "./src/code/chat-run.ts",
+    "./code/ui": "./src/code/ui.ts",
+    "./code/feat-code.svg": "./src/code/feat-code.svg",
     "./capabilities": "./src/capabilities/client.ts",
     "./capabilities/server": "./src/capabilities/server.ts",
     "./capabilities/store": "./src/capabilities/executions.ts",

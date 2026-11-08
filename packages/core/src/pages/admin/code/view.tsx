@@ -1,3 +1,4 @@
+import { FeatCodeMark } from "@k2b/cloud/code/ui";
 import { formatDateTime, formatRelative } from "@k2b/cloud/shared";
 import type { DateContext } from "@k2b/stdlib";
 import {
@@ -273,7 +274,7 @@ export function CodeAreaView(props: Props) {
   if (props.noPermission || !props.data)
     return (
       <AppWorkspace.Main level="area">
-        <AppWorkspace.MainPane id="area" label={t.area}>
+        <AppWorkspace.MainPane id="area" label={t.area} lead={<FeatCodeMark variant="glyph" decorative />}>
           <Placeholder
             state="no-access"
             icon="ti ti-lock"
@@ -293,14 +294,16 @@ export function CodeAreaView(props: Props) {
 
   // ---------- Column 1: the area ----------
   const item = (section: CodeAreaSection, label: string, extra: { meta?: JSX.Element; title?: string } = {}) => (
-    <AppWorkspace.SidebarItem
-      href={codeAreaHref({ sec: section })}
-      active={query.sec === section}
-      icon={sectionIcon[section]}
-      meta={extra.meta}
-      title={extra.title}
-    >
-      {label}
+    <AppWorkspace.SidebarItem href={codeAreaHref({ sec: section })} active={query.sec === section} meta={extra.meta} title={extra.title}>
+      {/* The list of all Code carries the feat/code sign; the other sections keep their own icons. */}
+      {section === "code" ? (
+        <AppWorkspace.SidebarItemIcon>
+          <FeatCodeMark variant="glyph" tone="current" decorative />
+        </AppWorkspace.SidebarItemIcon>
+      ) : (
+        <AppWorkspace.SidebarItemIcon icon={sectionIcon[section]} />
+      )}
+      <AppWorkspace.SidebarItemLabel>{label}</AppWorkspace.SidebarItemLabel>
     </AppWorkspace.SidebarItem>
   );
   const count = (n: number | undefined) => (n ? <span class="text-xs text-(--k2b-text-muted) tabular-nums">{n}</span> : undefined);
@@ -1131,6 +1134,7 @@ export function CodeAreaView(props: Props) {
       <AppWorkspace.MainPane
         id="area"
         label={t.area}
+        lead={<FeatCodeMark variant="glyph" decorative />}
         description={t.areaSub}
         href={codeAreaHref({})}
         defaultSize={264}

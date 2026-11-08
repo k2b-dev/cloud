@@ -80,6 +80,8 @@
   --ui-progress-primary: var(--color-blue-500);
   --ui-progress-success: var(--color-green-500);
   --ui-progress-danger: var(--color-red-500);
+  /* feat/code brand: the new commit of the sign, exactly as approved; never a surface colour. */
+  --cloud-featcode-new: #16a34a;
   --ui-tooltip-surface: var(--color-zinc-900);
   --ui-tooltip-border: var(--color-zinc-800);
   --ui-tooltip-text: var(--color-white);
@@ -183,6 +185,7 @@
   --ui-progress-primary: var(--color-blue-400);
   --ui-progress-success: var(--color-green-400);
   --ui-progress-danger: var(--color-red-400);
+  --cloud-featcode-new: #4ade80;
   --ui-tooltip-surface: var(--ui-surface-muted);
   --ui-tooltip-border: var(--ui-border-strong);
   --ui-tooltip-text: var(--color-zinc-100);

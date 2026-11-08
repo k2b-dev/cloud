@@ -1,6 +1,6 @@
 # Code
 
-Develop Code in local files, check it on Cloud's runner, and save an immutable
+Code is called feat/code in Cloud. Develop Code in local files, check it on Cloud's runner, and save an immutable
 version. Use `cld code help` for the current command flags. Every command supports
 `--json` and `--jsonl`; exit code 0 means the requested operation succeeded,
 and 1 means failure, including a failed check, test, or simulation.

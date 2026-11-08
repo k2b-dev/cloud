@@ -6,6 +6,7 @@ import { actionMessages } from "../ai/chat/action-messages";
 import { ActionQuestion, ActionReceipt } from "../ai/chat/action-question";
 import { refreshAppBadges } from "../browser/app-badges";
 import { coreClient } from "../clients/core";
+import { FeatCodeMark } from "../code/FeatCodeMark";
 import {
   APPROVALS_PAGE_PATH,
   type ApprovalDecisionInput,
@@ -76,6 +77,9 @@ function Origin(props: { item: PendingApproval; withApp?: boolean }) {
         <span aria-hidden="true"> · </span>
       </Show>
       <a href={props.item.requester.href}>
+        <Show when={props.item.requester.kind === "code_version"}>
+          <FeatCodeMark variant="glyph" decorative class="cloud-approval__origin-mark" />
+        </Show>
         {props.item.requester.kind === "code_version"
           ? props.item.requester.title
             ? t().fromCode({ title: props.item.requester.title })
