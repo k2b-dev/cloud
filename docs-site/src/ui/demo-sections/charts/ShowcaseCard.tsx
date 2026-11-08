@@ -1,4 +1,5 @@
 import { Chart, type ChartSnapshot, ChartSnapshotView } from "@k2b/ui";
+import { calendarViewportHeight } from "@k2b/ui/charts";
 import { createMemo, For, type JSX, Match, onMount, Show, Switch } from "solid-js";
 import type { ChartShowcaseExample, JsonValue } from "./examples/types";
 import { resolveDrawing } from "./resolve";
@@ -14,14 +15,15 @@ const BAR_GAUGE_ROW = 28;
 /**
  * How a card holds a drawing without clipping it: a stretching chart takes a calm fixed height; rows (bar lists,
  * horizontal bars, funnels) keep the height their rows need; a drawing that scales as a whole (pie, donut, gauge)
- * keeps its proportions; a drawing wider than the card (calendar, sankey) keeps its size and scrolls sideways,
- * calendar newest end first; Sankey sources first.
+ * keeps its proportions. Calendars own their square-cell size and scroll viewport; other wide drawings keep
+ * their logical width in the card. Sankey starts at its sources.
  */
 export const cardFit = (
   snapshot: ChartSnapshot,
   /** A two-column card keeps the drawing's own height, so guides and labels keep their room. */
   span: 1 | 2 = 1,
-): { mode: "stretch" | "rows" | "whole" | "wide"; style: JSX.CSSProperties; drawing?: JSX.CSSProperties } => {
+): { mode: "stretch" | "rows" | "whole" | "wide" | "calendar"; style: JSX.CSSProperties; drawing?: JSX.CSSProperties } => {
+  if (snapshot.maxWidth) return { mode: "calendar", style: { "container-type": "inline-size" } };
   if (snapshot.width > DRAWING_WIDTH) return { mode: "wide", style: { height: `${snapshot.height}px` } };
   if (!snapshot.stretch) return { mode: "whole", style: { "aspect-ratio": `${snapshot.width} / ${snapshot.height}` } };
   // A bar gauge draws its rows at the top of a fixed minimum height; the card shows the rows at the same scale and
@@ -68,9 +70,9 @@ export function ShowcaseCardChart(props: { example: ChartShowcaseExample; height
         {(snapshot) => {
           const fit = () => cardFit(snapshot().snapshot, cardSpan(props.example));
           let scroller: HTMLDivElement | undefined;
-          // Calendars open at their newest end; flows start at their sources.
+          // Keep the existing wide-drawing origin; Sankey starts at its sources.
           onMount(() => {
-            if (scroller && fit().mode === "wide" && snapshot().snapshot.kind === "heatmap") scroller.scrollLeft = scroller.scrollWidth;
+            if (scroller && fit().mode === "wide" && snapshot().snapshot.kind !== "sankey") scroller.scrollLeft = scroller.scrollWidth;
           });
           // Slices name themselves in a legend under the card's drawing; the drawing's own legend is too small there.
           const slices = () =>
@@ -80,7 +82,19 @@ export function ShowcaseCardChart(props: { example: ChartShowcaseExample; height
               <div ref={scroller} class="ui-charts-card__chart" data-fit={fit().mode} style={fit().style}>
                 <div
                   class="ui-charts-card__drawing"
-                  style={fit().mode === "wide" ? { width: `${snapshot().snapshot.width}px` } : fit().drawing}
+                  style={
+                    fit().mode === "calendar"
+                      ? {
+                          height: calendarViewportHeight({
+                            ...snapshot().snapshot,
+                            minWidth: snapshot().snapshot.minWidth!,
+                            maxWidth: snapshot().snapshot.maxWidth!,
+                          }),
+                        }
+                      : fit().mode === "wide"
+                        ? { width: `${snapshot().snapshot.width}px` }
+                        : fit().drawing
+                  }
                 >
                   <ChartSnapshotView snapshot={snapshot().snapshot} selectedKey={null} onSelect={() => {}} style={{ height: "100%" }} />
                 </div>

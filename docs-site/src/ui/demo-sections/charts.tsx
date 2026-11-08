@@ -803,12 +803,11 @@ export function CalendarHeatmapDemo() {
     <DemoCard
       id="charts-calendar-heatmap"
       chip={{ kind: "component", name: "Chart.Calendar", from: "@k2b/ui" }}
-      description="Weeks as columns; scroll to the newest observations on a phone."
+      description="Square cells fill the available width up to 32px; the height follows the seven rows. Scroll only when 14px cells cannot fit."
       code={'<Chart.Calendar scale="sequential" data={observations} />'}
     >
       <Chart.Calendar
         scale="sequential"
-        style={{ height: "14rem" }}
         data={Array.from({ length: 365 }, (_, i): [string, number] => [
           new Date(Date.UTC(2025, 0, 1) + i * 86400000).toISOString().slice(0, 10),
           (i * 17) % 211,

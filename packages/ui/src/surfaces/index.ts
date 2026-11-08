@@ -15,6 +15,8 @@ export type { NotFoundStateAction, NotFoundStateProps } from "./NotFoundState";
 export { NotFoundState } from "./NotFoundState";
 export type { NoticeCardProps, NoticeGridProps, NoticeTone } from "./NoticeCard";
 export { NOTICE_CARD_CLASSES, NoticeCard } from "./NoticeCard";
+export type { NoticeRowProps } from "./NoticeRow";
+export { NoticeRow } from "./NoticeRow";
 export type { PaperProps, PaperTag } from "./Paper";
 export { Paper } from "./Paper";
 export type {

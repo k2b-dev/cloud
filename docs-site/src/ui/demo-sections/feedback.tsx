@@ -8,7 +8,9 @@ import {
   InlineGuidance,
   MovedHint,
   NoticeCard,
+  NoticeRow,
   prompts,
+  SplitButton,
   StatusBadge,
   TextInput,
   Tooltip,
@@ -83,6 +85,90 @@ const BlocksDemo = () => (
           Open settings
         </ButtonLink>
       </InlineGuidance>
+    </div>
+  </DemoCard>
+);
+
+const imageRuleItems = [
+  {
+    sectionLabel: "Load automatically",
+    items: [
+      { label: "Always from news@example.test", icon: "ti ti-user", action: () => {} },
+      { label: "Always from everyone at example.test", icon: "ti ti-world", action: () => {} },
+    ],
+  },
+  { label: "Rules for external images…", icon: "ti ti-settings", action: () => {} },
+];
+
+const NoticeRowDemo = () => (
+  <DemoCard
+    id="notice-row"
+    chip={[
+      { kind: "component", name: "NoticeRow", from: "@k2b/ui" },
+      { kind: "component", name: "SplitButton", from: "@k2b/ui" },
+    ]}
+    description="A notice as one 48 px row: a subject tile, one short line, and its next step at the end. The action never wraps; phones open the split button's menu as a sheet."
+    code={`<NoticeRow
+  aria-label="External images"
+  tile="ti ti-photo-shield"
+  tileColor="var(--k2b-reference-image)"
+  action={
+    <SplitButton
+      variant="secondary"
+      size="sm"
+      phone="sheet"
+      onClick={loadImages}
+      menuLabel="More options for external images"
+      menuNote="External images can tell the sender when you open the message."
+      items={rules}
+    >
+      Load images
+    </SplitButton>
+  }
+>
+  <p class="truncate"><strong>External images blocked</strong> · Protects against tracking</p>
+</NoticeRow>
+
+<NoticeRow tone="danger" tile="ti ti-photo-x" action={<Button variant="secondary" size="sm">Retry</Button>}>
+  <p class="truncate" role="alert"><strong>Images could not be loaded</strong></p>
+</NoticeRow>`}
+  >
+    <div class="flex flex-col gap-3">
+      <NoticeRow
+        aria-label="External images"
+        tile="ti ti-photo-shield"
+        tileColor="var(--k2b-reference-image)"
+        action={
+          <SplitButton
+            variant="secondary"
+            size="sm"
+            phone="sheet"
+            onClick={() => toast("Images loaded")}
+            menuLabel="More options for external images"
+            menuNote="External images can tell the sender when you open the message."
+            items={imageRuleItems}
+          >
+            Load images
+          </SplitButton>
+        }
+      >
+        <p class="truncate">
+          <strong>External images blocked</strong> · Protects against tracking
+        </p>
+      </NoticeRow>
+      <NoticeRow
+        tone="danger"
+        tile="ti ti-photo-x"
+        action={
+          <Button variant="secondary" size="sm">
+            Retry
+          </Button>
+        }
+      >
+        <p class="truncate">
+          <strong>Images could not be loaded</strong>
+        </p>
+      </NoticeRow>
     </div>
   </DemoCard>
 );
@@ -663,6 +749,7 @@ const demos: DemoSection = {
   blocks: () => (
     <DemoGrid columns="one">
       <BlocksDemo />
+      <NoticeRowDemo />
     </DemoGrid>
   ),
   badges: () => (

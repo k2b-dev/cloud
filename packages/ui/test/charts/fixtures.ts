@@ -52,14 +52,6 @@ export const chartFixtures = {
   treemap: { kind: "treemap", groups: ["Products"], data: [{ label: "Chairs", group: "Products", value: 40 }] },
   pareto: { kind: "pareto", labels: ["Current", "Previous"], data: [{ label: "Chairs", value: 40, prev: 30 }] },
 
-  sankey: {
-    kind: "sankey",
-    nodes: [
-      { id: "a", label: "Click" },
-      { id: "b", label: "Read" },
-    ],
-    links: [{ source: "a", target: "b", value: 42 }],
-  },
   bubble: {
     kind: "bubble",
     groups: ["North"],
@@ -69,4 +61,12 @@ export const chartFixtures = {
     data: [{ label: "Campaign A", group: "North", x: 20, y: 40, size: 25 }],
   },
   radar: { kind: "radar", axes: ["Quality", "Speed", "Cost"], max: 5, series: [{ label: "Plan A", data: [4, 3, 2] }] },
+  sankey: {
+    kind: "sankey",
+    nodes: [
+      { id: "a", label: "Click" },
+      { id: "b", label: "Read" },
+    ],
+    links: [{ source: "a", target: "b", value: 42 }],
+  },
 } satisfies { [K in ChartProps["kind"]]: Extract<ChartProps, { kind: K }> };

@@ -16,7 +16,7 @@ render(
           {(spec, i) => (
             <section class="sample" data-example={i()}>
               <Widget
-                title={["Purchase journey", "Costs by category", "Growing steps and gaps"][i()]!}
+                title={"title" in spec ? spec.title : ["Purchase journey", "Costs by category", "Growing steps and gaps"][i()]!}
                 meta={state() === "stale" ? "Updated 09:12 · Refresh failed" : "Invented quarterly data"}
                 size="content"
               >
@@ -39,7 +39,10 @@ render(
                   >
                     <Chart
                       {...spec}
-                      labels={{ interactiveChart: ["Purchase journey", "Costs by category", "Growing steps and gaps"][i()] }}
+                      labels={{
+                        interactiveChart:
+                          "title" in spec ? spec.title : ["Purchase journey", "Costs by category", "Growing steps and gaps"][i()],
+                      }}
                       style={{ height: "100%" }}
                     />
                   </Show>

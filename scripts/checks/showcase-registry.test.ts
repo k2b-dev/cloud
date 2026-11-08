@@ -2,10 +2,35 @@ import { expect, test } from "bun:test";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, relative } from "node:path";
+import ts from "@typescript/typescript6";
 import { exampleRegistrySource } from "../../docs-site/src/ui/demo-sections/charts/examples/generate";
 import { rule } from "./showcase-registry";
 
 const folder = "docs-site/src/ui/demo-sections/charts/examples";
+
+test("default-budget showcase geometry tests use the server-only loader", async () => {
+  const source = await readFile(new URL("../../docs-site/src/ui/charts-showcase.browser.test.ts", import.meta.url), "utf8");
+  const ast = ts.createSourceFile("charts-showcase.browser.test.ts", source, ts.ScriptTarget.Latest, true);
+  let guarded = 0;
+  const visit = (node: ts.Node): void => {
+    if (ts.isCallExpression(node) && ts.isIdentifier(node.expression) && node.expression.text === "test" && node.arguments.length === 2) {
+      const callback = node.arguments[1]!;
+      const calls: string[] = [];
+      const collect = (child: ts.Node): void => {
+        if (ts.isCallExpression(child)) calls.push(child.expression.getText(ast));
+        ts.forEachChild(child, collect);
+      };
+      collect(callback);
+      expect(calls, node.arguments[0]!.getText(ast)).not.toContain("page.goto");
+      expect(calls, node.arguments[0]!.getText(ast)).not.toContain("open");
+      expect(calls, node.arguments[0]!.getText(ast)).toContain("openServerGeometry");
+      guarded++;
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(ast);
+  expect(guarded).toBeGreaterThan(0);
+});
 
 /** A repository with the given example files and committed registry; returns the findings and the registry after. */
 const check = async (files: string[], registry: string | undefined, fix = false) => {

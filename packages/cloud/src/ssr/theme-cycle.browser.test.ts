@@ -2,7 +2,7 @@ import { afterAll, beforeAll, expect, test } from "bun:test";
 import { resolve } from "node:path";
 import tailwind from "bun-plugin-tailwind";
 import type { Browser, Page } from "playwright";
-import { launchBrowser } from "../../../ui/test/browser";
+import { launchBrowser, pageErrors } from "../../../ui/test/browser";
 
 let browser: Browser;
 let script: string;
@@ -18,11 +18,13 @@ import { LocaleProvider } from "@k2b/ui";
 import { render } from "solid-js/web";
 import ProfilePreferences from "./ProfilePreferences";
 import MinimalLayoutPreferences from "./MinimalLayoutPreferences.island";
+import LayoutPreferences from "./LayoutPreferences";
 import { MobileProfileActions } from "./MobileProfileActions";
 const params = new URLSearchParams(location.search);
 render(() => <LocaleProvider locale={params.get("locale") ?? "en"}>
   {params.get("surface") === "profile" || params.get("surface") === "panel" ? <ProfilePreferences name="Test user" initialTheme="system" /> :
    params.get("surface") === "minimal" ? <footer class="minimal-layout-footer"><MinimalLayoutPreferences initialTheme="system" /></footer> :
+   params.get("surface") === "header" ? <header class="layout-header paper flex items-center px-2 py-1.5"><span class="flex-1" /><LayoutPreferences initialTheme="system" /></header> :
    <MobileProfileActions profile={{ name: "Test user", theme: "system" }} beforeSelect={async () => true} />}
 </LocaleProvider>, document.getElementById("app"));
 `;
@@ -89,6 +91,13 @@ const surfaces = {
     container: ".minimal-layout-footer",
     css: dropdownOnly,
   },
+  // The signed-out header: language first, then the appearance as an icon.
+  header: {
+    control: ".cloud-theme-cycle",
+    neighbor: ".layout-header .k2b-dropdown",
+    container: ".layout-header",
+    css: "",
+  },
   mobile: {
     control: ".cloud-theme-cycle",
     neighbor: '.cloud-mobile-profile > a[href="/me"]',
@@ -144,12 +153,15 @@ ${selectors.css}
             expect(grid.announcementPosition).toBe("absolute");
           }
           const node = await control.elementHandle();
-          expect(await control.textContent()).toBe(locale === "de" ? "Automatisch" : "Automatic");
+          // The header shows the icon alone; its accessible name and tooltip name the mode.
+          const mode = async () =>
+            surface === "header" ? (await control.getAttribute("aria-label"))?.split(": ")[1]?.split(".")[0] : await control.textContent();
+          expect(await mode()).toBe(locale === "de" ? "Automatisch" : "Automatic");
           for (const label of labels) {
             await control.click();
             await settle(page);
             expect(await rects()).toEqual(before);
-            expect(await control.textContent()).toBe(label);
+            expect(await mode()).toBe(label);
             expect(await control.evaluate((element, original) => element === original, node)).toBe(true);
             if (surface === "profile") {
               expect(await page.locator(".k2b-dropdown__trigger").getAttribute("aria-expanded")).toBe("true");
@@ -163,4 +175,60 @@ ${selectors.css}
       }
     }, 30_000);
   }
+}
+
+for (const viewport of [
+  { width: 1280, height: 800 },
+  { width: 390, height: 844 },
+]) {
+  test(`signed-out header: the appearance tooltip names the mode and the next one, and the language menu moves nothing (${viewport.width}px)`, async () => {
+    const page = await browser.newPage({ viewport });
+    const errors = pageErrors(page);
+    try {
+      const html = `<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><style>${css}
+*, *::before, *::after { animation: none !important; transition: none !important; }
+#app { padding: 8px; }
+</style></head><body class="k2b-ui"><main id="app"></main></body></html>`;
+      await page.route("http://localhost/theme-cycle**", (route) => route.fulfill({ contentType: "text/html", body: html }));
+      await page.goto("http://localhost/theme-cycle?locale=de&surface=header");
+      await page.addScriptTag({ content: script });
+      const theme = page.locator(".cloud-theme-cycle");
+      await theme.waitFor({ state: "visible" });
+      await theme.click();
+      await settle(page);
+      // A click hides the hint until the pointer leaves, as on every icon button.
+      await page.mouse.move(0, 0);
+      await theme.hover();
+      await page
+        .locator('[role="tooltip"]', { hasText: "Darstellung: Hell. Wechselt zu Dunkel." })
+        .waitFor({ state: "visible", timeout: 5_000 });
+
+      const rects = () =>
+        page.evaluate(() =>
+          [".layout-header", ".layout-header .k2b-dropdown__trigger", ".cloud-theme-cycle"].map((selector) => {
+            const rect = document.querySelector(selector)!.getBoundingClientRect();
+            return { x: rect.x, y: rect.y, width: rect.width, height: rect.height };
+          }),
+        );
+      const before = await rects();
+      const language = page.getByRole("button", { name: "Sprache: Deutsch" });
+      expect(await language.innerText()).toBe(viewport.width >= 768 ? "Deutsch" : "DE");
+      await language.click();
+      const menu = page.getByRole("menu", { name: "Sprache" });
+      await menu.waitFor({ state: "visible" });
+      await settle(page);
+      expect(await rects()).toEqual(before);
+      expect(await language.getAttribute("aria-expanded")).toBe("true");
+      expect(await menu.getByRole("menuitemradio").allInnerTexts()).toEqual(["Deutsch", "English"]);
+      expect(await menu.getByRole("menuitemradio", { name: "Deutsch" }).getAttribute("aria-checked")).toBe("true");
+      // The menu opens below its trigger and stays on screen.
+      const [trigger, box] = await Promise.all([language.boundingBox(), menu.boundingBox()]);
+      expect(box!.y).toBeGreaterThanOrEqual(trigger!.y + trigger!.height);
+      expect(box!.x).toBeGreaterThanOrEqual(0);
+      expect(box!.x + box!.width).toBeLessThanOrEqual(viewport.width);
+      expect(errors).toEqual([]);
+    } finally {
+      await page.close();
+    }
+  }, 30_000);
 }

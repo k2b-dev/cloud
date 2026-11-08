@@ -12,6 +12,7 @@ import { gauge } from "./chart-kind-gauge";
 import { hbar } from "./chart-kind-hbar";
 import { heatmap } from "./chart-kind-heatmap";
 import { histogram } from "./chart-kind-histogram";
+import { line } from "./chart-kind-line";
 import { pareto } from "./chart-kind-pareto";
 import { radar } from "./chart-kind-radar";
 import { sankey } from "./chart-kind-sankey";
@@ -20,10 +21,29 @@ import { treemap } from "./chart-kind-treemap";
 import { waterfall } from "./chart-kind-waterfall";
 import type { RareChartRenderer } from "./chart-renderer-types";
 
-export { area, barGauge, boxplot, bubble, funnel, gauge, hbar, heatmap, histogram, pareto, radar, sankey, scatter, treemap, waterfall };
+export {
+  area,
+  barGauge,
+  boxplot,
+  bubble,
+  funnel,
+  gauge,
+  hbar,
+  heatmap,
+  histogram,
+  line,
+  pareto,
+  radar,
+  sankey,
+  scatter,
+  treemap,
+  waterfall,
+};
 
-export const rareChartSvg: RareChartRenderer = (mapped, common) => {
+export const rareChartSvg: RareChartRenderer = (mapped, common, locale) => {
   switch (mapped.kind) {
+    case "line":
+      return line(mapped, common, locale);
     case "funnel":
       return funnel(mapped, common);
     case "hbar":

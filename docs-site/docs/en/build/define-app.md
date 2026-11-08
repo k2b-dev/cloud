@@ -59,6 +59,11 @@ Cloud generates a transparent favicon with a theme-adaptive Cloud gradient for
 rendered application pages from `icon`: blue in light mode and blue-white in
 dark mode. Core pages keep the operator-configured Cloud favicon.
 
+`icon` also accepts the glyphs that `@k2b/ui` adds to the Tabler set, such as
+`ti ti-feat-code`, the sign of feat/code. The rail, app grid, navigation, and
+favicon show it like any other icon. Headers and labels that name feat/code
+use its wordmark, `FeatCodeMark`, instead of the icon.
+
 Declare only prefixes the application serves. See
 [Routes and discovery](/en/docs/build/routing).
 

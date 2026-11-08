@@ -72,10 +72,11 @@ Avoid for: Unaligned observations
 
 ## bar (layout "rows")
 
-Use for: Category values with readable row labels
+Use for: Signed or positive category values
 
 Avoid for: A continuous time axis
 
+- `layout` ("columns" | "rows" | "grouped" | "stacked"): Signed rows diverge around zero. Ordered categories, references, colorByBar, showValues and axis settings keep the original row drawing; otherwise nonnegative rows rank descending. Share, limit and tone require nonnegative values.
 
 ```json
 {"kind":"bar","title":"Orders by collection","layout":"rows","data":[{"label":"Furniture","value":84},{"label":"Lighting","value":62},{"label":"Pictures","value":39}]}
@@ -119,7 +120,7 @@ Avoid for: Negative values
 
 ## line
 
-Use for: A value that changes continuously, such as visitors, revenue or response time. Up to four series on one scale, such as this year against last year. Many points: a line stays readable where columns would turn into stripes.
+Use for: A value that changes continuously, such as visitors, revenue or response time. Forecasts add forecast, threshold, marker, zero, step and legendValues. Up to four series on one scale, such as this year against last year. Many points: a line stays readable where columns would turn into stripes.
 
 Avoid for: Categories without an order, such as products or countries; use a bar chart. Two values with different units; draw two charts instead of a second axis. A single number; use a key figure.
 
@@ -130,6 +131,12 @@ Avoid for: Categories without an order, such as products or countries; use a bar
 - `area` (boolean): Fills the area under the first series.
 - `references` ({ value, axis?, label? }[]): Labelled reference lines, such as a target.
 - `legend` (boolean): Names the series; on by default with more than one series.
+- `legendValues` (boolean): Opt in to cursor values without annotations; existing specs retain their legends.
+- `forecast` ({from:number|ISO,band?:[number,number][]}): Dash from an existing X. Bounds match the first series suffix ordered by X, with lower ≤ upper.
+- `zero` (boolean): Include zero and tint the area below it red.
+- `threshold` ({value:number,label:string}): A labelled dashed warning line.
+- `marker` ({at:number|ISO,label:string}): A labelled vertical marker, for example Today.
+- `step` ("after" | "before" | "middle"): Draw horizontal steps rather than interpolated segments.
 
 ```json
 {"kind":"line","title":"Visitors per day","subtitle":"Website · October · invented data","series":[{"label":"This year","data":[{"x":"2026-10-01","y":1180},{"x":"2026-10-02","y":1224},{"x":"2026-10-03","y":1009}]},{"label":"Last year","role":"reference","data":[{"x":"2026-10-01","y":1020},{"x":"2026-10-02","y":1056},{"x":"2026-10-03","y":869}]}],"yAxis":{"format":{"style":"number","compact":true}},"xAxis":{"format":{"date":"day"}},"legend":true,"smooth":true}
@@ -317,7 +324,7 @@ Use for: Finding the few categories that account for most of a total.
 Avoid for: Signed values or a time trend.
 
 - `labels` ([string,string]): Current and previous period names.
-- `data` ({label,value,prev}[]): Nonnegative values; sorted descending, with Rest last.
+- `data` ({label,value,prev,rest?}[]): Nonnegative values; sorted descending, with rest: true categories last.
 
 ```json
 {"kind":"pareto","title":"Revenue by region","labels":["2026","2025"],"data":[{"label":"North","value":140000,"prev":120000},{"label":"East","value":105000,"prev":97000},{"label":"South","value":86000,"prev":90000}]}

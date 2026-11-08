@@ -114,6 +114,7 @@ const flatChartSchema = () => {
     ChartBins,
     ChartCommon,
     ChartLabel,
+    ChartCoordinate,
     ChartPoints,
     ChartSeries,
     ChartReferences,
@@ -167,6 +168,7 @@ const flatChartSchema = () => {
               value: z.number().nullable().optional(),
               group: ChartLabel.optional(),
               prev: z.number().optional(),
+              rest: z.boolean().optional().describe("pareto: place this remainder category last; the label is free text."),
               values: z.array(z.number()).min(1).optional(),
               size: z.number().nonnegative().optional(),
               x: z.union([ChartLabel, z.number()]).optional(),
@@ -200,9 +202,9 @@ const flatChartSchema = () => {
       .optional()
       .describe("bar, area: aligned category labels or numeric X values."),
     compare: z.object({ label: ChartLabel, data: z.array(z.number().nullable()).max(CLOUD_AI_CHART_MAX_VALUES) }).optional(),
-    share: z.boolean().optional(),
-    limit: z.number().int().positive().optional(),
-    tone: z.enum(["in", "out"]).optional(),
+    share: z.boolean().optional().describe("bar rows ranked list: show shares; requires nonnegative values."),
+    limit: z.number().int().positive().optional().describe("bar rows ranked list: number of visible rows; requires nonnegative values."),
+    tone: z.enum(["in", "out"]).optional().describe("bar rows ranked list: flow direction; requires nonnegative values."),
     normalize: z.boolean().optional().describe("stacked bar, area: normalize positive totals to 100 percent."),
     rows: z
       .array(
@@ -220,7 +222,22 @@ const flatChartSchema = () => {
         z.union([
           ChartLabel,
           ChartSeries(ChartPoints.min(1)).extend({
-            data: z.union([ChartPoints.min(1), z.array(z.number()).min(3).max(8)]),
+            data: z.union([
+              z
+                .array(
+                  ChartPoints.element.extend({
+                    y: z
+                      .number()
+                      .nullable()
+                      .describe(
+                        "line: null is a gap only with forecast, zero, threshold, marker or legendValues enabled. Scatter requires a number.",
+                      ),
+                  }),
+                )
+                .min(1)
+                .max(CLOUD_AI_CHART_MAX_VALUES),
+              z.array(z.number()).min(3).max(8),
+            ]),
             style: z.enum(["solid", "dashed", "dotted"]).optional(),
           }),
           z.object({ label: ChartLabel, data: z.array(z.number().nullable()).max(CLOUD_AI_CHART_MAX_VALUES) }),
@@ -248,6 +265,18 @@ const flatChartSchema = () => {
     colorByBar: z.boolean().optional().describe("bar: one palette color per bar."),
     showValues: z.boolean().optional().describe("bar: print values, by default when they stay readable. heatmap: print values."),
     area: z.boolean().optional().describe("line, sparkline: fill under the line."),
+    step: z.enum(["after", "before", "middle"]).optional().describe("line: hold each observation until the next, or change before it."),
+    legendValues: z.boolean().optional().describe("line: opt in to values at the cursor in bounded legends."),
+    zero: z.boolean().optional().describe("line: include zero and tint the negative plot region."),
+    forecast: z
+      .object({
+        from: ChartCoordinate,
+        band: z.array(z.array(z.number()).length(2)).max(CLOUD_AI_CHART_MAX_VALUES).optional(),
+      })
+      .optional()
+      .describe("line: dashed from this first-series X value; band [low, high] pairs match its sorted suffix, including gaps."),
+    threshold: z.object({ value: z.number(), label: ChartLabel }).optional().describe("line: labelled warning threshold."),
+    marker: z.object({ at: ChartCoordinate, label: ChartLabel }).optional().describe("line: labelled vertical marker, for example Today."),
     smooth: z.boolean().optional().describe("line: smooth curves."),
     showLabels: z.boolean().optional().describe("pie, donut: name slices next to them."),
     bins: ChartBins.optional(),
