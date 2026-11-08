@@ -1,3 +1,4 @@
+import { installPageSwap, swapPage } from "@k2b/ssr/nav";
 import { LocaleProvider } from "@k2b/ui";
 import { render } from "solid-js/web";
 import type { EntryResult } from "../contracts";
@@ -8,9 +9,11 @@ declare global {
     fileImages: {
       open: (name?: string, options?: { write?: boolean; canCreate?: boolean; images?: boolean }) => void;
       saved: EntryResult[];
+      leave: () => Promise<void>;
     };
   }
 }
+if (new URLSearchParams(location.search).has("nav")) installPageSwap();
 const root = document.getElementById("root");
 if (!root) throw new Error("Missing root");
 render(
@@ -19,6 +22,7 @@ render(
       {(() => {
         window.fileImages = {
           saved: [],
+          leave: () => swapPage("/destination"),
           open: (name = "Photo.jpg", options = {}) => {
             const file = (fileName: string) => ({
               path: `Trips/${fileName}`,

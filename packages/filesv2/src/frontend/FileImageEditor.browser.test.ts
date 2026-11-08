@@ -53,7 +53,7 @@ beforeAll(async () => {
       if (url.pathname === "/harness.js") return new Response(script, { headers: { "content-type": "text/javascript" } });
       if (url.pathname === "/styles.css") return new Response(css, { headers: { "content-type": "text/css" } });
       return new Response(
-        `<!doctype html><html lang="${url.searchParams.has("de") ? "de" : "en"}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="stylesheet" href="/styles.css"></head><body class="k2b-ui" data-theme="${url.searchParams.has("dark") ? "dark" : "light"}" style="margin:0"><div id="root"></div><script src="/harness.js"></script></body></html>`,
+        `<!doctype html><html lang="${url.searchParams.has("de") ? "de" : "en"}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="stylesheet" href="/styles.css"></head><body class="k2b-ui" data-theme="${url.searchParams.has("dark") ? "dark" : "light"}" style="margin:0"><div data-nav-shell="files-image-test" data-nav-scope="/"><main id="root" data-nav-root data-path="/"></main></div><script src="/harness.js"></script></body></html>`,
         { headers: { "content-type": "text/html" } },
       );
     },
@@ -505,6 +505,47 @@ describe("Files photo editing", () => {
       await visible().locator(".filesv2-image-save-actions").getByRole("button", { name: "Check upload", exact: true }).click();
       await page.waitForFunction(() => window.fileImages.saved.length === 1);
       expect(uploads.every((upload) => upload.path === "Trips/Photo.jpg")).toBe(true);
+      expect(errors).toEqual([]);
+    } finally {
+      await page.close();
+    }
+  });
+  test("cancelling a later image leave prompt preserves every unsaved session", async () => {
+    const { page, errors, uploads, commits } = await setup({ images: true, query: "nav=1" });
+    try {
+      const visible = () => page.locator(".filesv2-image-session:not([hidden]) .k2b-image-editor");
+      await edit(page);
+      await rotate(page);
+      await visible()
+        .getByRole("navigation", { name: "Images" })
+        .getByRole("button", { name: /^Beach.jpg/ })
+        .click();
+      await page.waitForFunction(
+        () =>
+          document.querySelector(".filesv2-image-session:not([hidden]) .k2b-image-editor__name")?.textContent?.includes("Beach.jpg") &&
+          !document.querySelector<HTMLButtonElement>(".filesv2-image-session:not([hidden]) .filesv2-image-save-actions button")?.disabled,
+      );
+      await rotate(page);
+      await page.evaluate(() => void window.fileImages.leave());
+      const prompt = page.getByRole("dialog").filter({ hasText: "Discard unsaved changes?" });
+      await prompt.getByRole("button", { name: "Confirm", exact: true }).click();
+      await prompt.getByRole("button", { name: "Cancel", exact: true }).click();
+      await page.waitForFunction(() => document.querySelectorAll("dialog[open]").length === 1);
+      expect(new URL(page.url()).pathname).toBe("/");
+      expect(await page.locator('.k2b-image-editor[data-dirty="true"]').count()).toBe(2);
+      expect(
+        await visible()
+          .getByRole("button", { name: /^Photo.jpg, not saved$/ })
+          .count(),
+      ).toBe(1);
+      expect(
+        await visible()
+          .getByRole("button", { name: /^Beach.jpg, open, not saved$/ })
+          .count(),
+      ).toBe(1);
+      expect(uploads).toEqual([]);
+      expect(commits()).toBe(0);
+      expect(await page.evaluate(() => window.fileImages.saved)).toEqual([]);
       expect(errors).toEqual([]);
     } finally {
       await page.close();
