@@ -78,3 +78,17 @@ test("development key generation rejects unknown or duplicate fixture grants", a
       ),
     ).rejects.toThrow("Invalid development key grants for acme");
 });
+
+test("production Mail waits for application readiness before the next upgrade stage", async () => {
+  const source = await Bun.file(new URL("./templates/compose.prod.yml", import.meta.url)).text();
+  const parsed = Bun.YAML.parse(renderAppDeployment(source, false)) as {
+    services: Record<string, { healthcheck?: { test: string[]; interval: string; timeout: string; retries: number } }>;
+  };
+  expect(parsed.services["app-mail"]?.healthcheck).toEqual(parsed.services["app-core"]?.healthcheck);
+  expect(parsed.services["app-mail"]?.healthcheck?.test).toEqual([
+    "CMD",
+    "bun",
+    "-e",
+    'const response = await fetch("http://127.0.0.1:3000/_cloud/ready"); if (!response.ok) process.exit(1)',
+  ]);
+});

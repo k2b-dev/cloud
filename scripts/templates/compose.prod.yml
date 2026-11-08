@@ -177,6 +177,16 @@ services:
   app-mail:
     <<: *app-defaults
     image: ghcr.io/k2b-dev/cloud-app-mail:${CLOUD_IMAGE_TAG:?CLOUD_IMAGE_TAG is required}
+    healthcheck:
+      test:
+        - CMD
+        - bun
+        - -e
+        - const response = await fetch("http://127.0.0.1:3000/_cloud/ready"); if (!response.ok) process.exit(1)
+      interval: 2s
+      timeout: 2s
+      retries: 90
+      start_period: 2s
 
   app-notebooks:
     <<: *app-defaults

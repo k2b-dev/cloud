@@ -359,5 +359,13 @@ test("every kind of the chart schema is a Chart block, so a new kind needs no Co
   const sdk = generateCodeSdk([], { mode: "personal" });
   const ui = await import(`data:text/javascript;base64,${Buffer.from(sdk.runtime).toString("base64")}`);
   for (const kind of chartKindSchema().options) expect(typeof ui.Chart[kind[0]!.toUpperCase() + kind.slice(1)], kind).toBe("function");
-  for (const kind of chartKindSchema().options) expect(sdk.declarations).toContain("Capitalize<K>");
+  expect(sdk.declarations).toContain("Capitalize<K>");
+  const skill = await Bun.file(new URL("../../../assistant/src/skills/code-authoring/references/pages.md", import.meta.url)).text();
+  const table = skill.split("| Block | Props | Children |")[1]!.split("\n\n")[0]!;
+  const documented = [...table.matchAll(/`Chart\.([A-Za-z]+)`/g)].map((match) => match[1]!).filter((name) => name !== "Empty");
+  expect(documented.sort()).toEqual(
+    chartKindSchema()
+      .options.map((kind) => kind[0]!.toUpperCase() + kind.slice(1))
+      .sort(),
+  );
 });
