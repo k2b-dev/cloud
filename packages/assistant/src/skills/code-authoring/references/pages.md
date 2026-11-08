@@ -16,6 +16,9 @@ people see it in their workspace, with the icon bar and their apps. Visitors
 who are not signed in, on a public route, see the signed-out header with the
 Cloud logo and **Sign in**; signing in returns to the page. Someone who opens a
 non-public page without a session goes to sign-in and comes back to it.
+Every page also carries a **Made with feat/code** label at the bottom edge,
+outside the page; it warns visitors never to enter passwords there. Do not ask
+visitors for passwords, recovery codes or other credentials.
 
 `{ layout: "plain" }` on a route draws its pages alone, without the layout:
 for a page you hand out, such as a public survey

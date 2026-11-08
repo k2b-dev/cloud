@@ -310,6 +310,32 @@ describe("Code pages in the Cloud layout", () => {
     }
   };
 
+  /** The feat/code label: server markup right after the tree's container, never inside it. */
+  const expectLabelOutsideTree = (html: string, madeWith = "Made with") => {
+    expect(html).toMatch(/<\/solid-island><\/div><div class="code-page-provenance" data-code-provenance>/);
+    expect(html.match(/data-code-provenance\b/g)).toHaveLength(1);
+    const label = html.slice(html.indexOf("data-code-provenance"));
+    expect(label).toContain(madeWith);
+    expect(label).toContain('popovertarget="code-page-provenance-note"');
+    expect(label).toContain('popover="auto"');
+  };
+
+  test("every variant carries the feat/code label outside the page tree, in the reader's language", () =>
+    withRateLimit(async () => {
+      for (const [signedIn, layout] of [
+        [true, undefined],
+        [false, undefined],
+        [false, "plain"],
+        [true, "plain"],
+      ] as const) {
+        const html = await (await host(signedIn, layout).request("https://cloud.test/code/c_page/")).text();
+        expectLabelOutsideTree(html);
+      }
+      const german = await (await host(false).request("https://cloud.test/code/c_page/", { headers: { "Accept-Language": "de" } })).text();
+      expectLabelOutsideTree(german, "Erstellt mit");
+      expect(german).toContain("Gib hier nie Passwörter oder Wiederherstellungscodes ein.");
+    }));
+
   test("signed-in people see the page in the workspace with their rail and profile", () =>
     withRateLimit(async () => {
       const html = await (await host(true).request("https://cloud.test/code/c_page/")).text();
@@ -361,4 +387,22 @@ describe("Code pages in the Cloud layout", () => {
         expect(html.match(/<main\b/g)).toHaveLength(1);
       }
     }));
+});
+
+test("a page cannot reach the feat/code label: no block accepts a class, style or markup", () => {
+  // Every object in a page with every block, with each way a page could name or style an element added once.
+  const attempts: unknown[] = [];
+  const visit = (value: unknown, replace: (next: unknown) => unknown) => {
+    if (Array.isArray(value))
+      value.forEach((item, index) => visit(item, (next) => replace(value.map((old, i) => (i === index ? next : old)))));
+    else if (value && typeof value === "object") {
+      for (const key of ["class", "className", "style", "css", "html", "id"])
+        attempts.push(replace({ ...value, [key]: key === "style" ? "position:fixed;inset:0;z-index:99999" : "code-page-provenance" }));
+      // A button's `values` are form data it sends back to the Code (hidden fields), never attributes on the page.
+      for (const [key, child] of Object.entries(value)) if (key !== "values") visit(child, (next) => replace({ ...value, [key]: next }));
+    }
+  };
+  visit(codePageFixture, (next) => next);
+  expect(attempts.length).toBeGreaterThan(100);
+  for (const attempt of attempts) expect(() => validateCodePage(attempt, "c_page")).toThrow();
 });

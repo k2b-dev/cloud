@@ -281,6 +281,12 @@ Cloud logo and **Sign in**, as on the legal pages; signing in returns to the
 page. Someone who opens a non-public page in a browser without a session goes
 to sign-in and comes back to it.
 
+Every Code page, with or without the layout, carries a small **Made with
+feat/code** label at the bottom edge. Cloud draws it outside the page, so a page
+cannot hide, move or restyle it. A press on it explains that someone built the
+page with feat/code and warns never to enter passwords or recovery codes there.
+The label does not name the owner.
+
 `{ layout: "plain" }` on a route draws its pages alone, without the layout, for
 a page you hand out. There is no setting for the whole Code; each route
 decides. This public survey in personal Code files each answer as a Space task.
