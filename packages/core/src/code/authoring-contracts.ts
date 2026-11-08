@@ -16,33 +16,55 @@ export const CODE_INITIAL_SOURCE =
 export const CODE_INITIAL_PAGE_SOURCE = `import { app, jsx, Page, Stats, Stat, Section, Chart, Table, Column, Form, Field } from "@sdk";
 
 // Example figures: replace them with data from your SDK calls.
-const latest = [{ title: "Order chairs", status: "Open" }, { title: "Fix the lamp", status: "Done" }];
+const months = ["2026-06-01", "2026-07-01", "2026-08-01", "2026-09-01", "2026-10-01", "2026-11-01"];
+const placed = [96, 104, 99, 118, 126, 131];
+const shipped = [90, 101, 97, 109, 121, 128];
+const orders = [
+  { order: "A-1042", customer: "Lindner GmbH", status: "open", placed: "2026-11-06", total: 1290 },
+  { order: "A-1041", customer: "Café Morgen", status: "shipped", placed: "2026-11-05", total: 342.5 },
+  { order: "A-1040", customer: "Studio Weiss", status: "shipped", placed: "2026-11-04", total: 860 },
+  { order: "A-1039", customer: "Lindner GmbH", status: "late", placed: "2026-10-30", total: 2140 },
+];
 
 app.get("/", c => c.page(
-  <Page title="Overview" subtitle="Example data" icon="ti ti-layout-dashboard">
+  <Page eyebrow="Example data" title="Orders" asOf={new Date().toISOString()} icon="ti ti-shopping-cart">
     <Stats>
-      <Stat label="Open" value={12} delta={{ value: 0.2, better: "down" }} compare={{ label: "Last week", value: 10 }} />
-      <Stat label="Done this week" value={34} delta={{ value: 0.133, better: "up" }} compare={{ label: "Last week", value: 30 }} />
-      <Stat label="On time" value={0.92} format={{ style: "percent" }}
+      <Stat icon="ti ti-inbox" label="Open orders" value={12} delta={{ value: -0.2, better: "down" }} compare={{ label: "Last week", value: 15 }} />
+      <Stat icon="ti ti-truck-delivery" label="Shipped this week" value={34} delta={{ value: 0.133, better: "up" }}
+        compare={{ label: "Last week", value: 30 }} trend={[21, 26, 24, 30, 34]} />
+      <Stat icon="ti ti-clock-check" label="On time" value={0.92} format={{ style: "percent" }}
         delta={{ value: 0.04, unit: "points", better: "up" }} compare={{ label: "Last week", value: 0.88 }} />
+      <Stat icon="ti ti-coin-euro" tone="in" label="Revenue" value={18420} format={{ style: "currency", currency: "EUR" }}
+        delta={{ value: 0.071, better: "up" }} compare={{ label: "Last week", value: 17190 }} />
     </Stats>
-    <Section title="This week" icon="ti ti-calendar-week" color="blue">
-      <Chart.Bar width="twoThirds" title="Done per day" data={[
-        { label: "Mon", value: 6 }, { label: "Tue", value: 8 }, { label: "Wed", value: 5 },
-        { label: "Thu", value: 9 }, { label: "Fri", value: 6 },
+    <Section title="Trend" icon="ti ti-chart-line" color="blue">
+      <Chart.Line width="twoThirds" title="Orders per month" subtitle="Placed and shipped" series={[
+        { label: "Placed", data: months.map((x, i) => ({ x, y: placed[i] ?? 0 })) },
+        { label: "Shipped", data: months.map((x, i) => ({ x, y: shipped[i] ?? 0 })) },
       ]} />
-      <Form width="third" title="Add an item" action="/items" submit="Add">
-        <Field.Text name="title" label="Title" required />
-      </Form>
-      <Table title="Latest" rows={latest} empty="Nothing yet.">
-        <Column key="title" label="Title" />
-        <Column key="status" label="Status" />
+      <Chart.Bar width="third" title="Orders by channel" subtitle="This month" data={[
+        { label: "Shop", value: 74 }, { label: "Phone", value: 31 }, { label: "Market", value: 26 },
+      ]} />
+    </Section>
+    <Section title="Orders" icon="ti ti-list-details" color="emerald">
+      <Table width="twoThirds" title="Latest orders" rows={orders} search empty="No order yet.">
+        <Column key="order" label="Order" />
+        <Column key="customer" label="Customer" />
+        <Column key="status" label="Status" type="status" states={{
+          open: { label: "Open", tone: "running" }, shipped: { label: "Shipped", tone: "ok" }, late: { label: "Late", tone: "error" },
+        }} />
+        <Column key="placed" label="Placed" type="date" priority={3} />
+        <Column key="total" label="Total" type="amount" format={{ style: "currency", currency: "EUR" }} />
       </Table>
+      <Form width="third" title="Add an order" action="/orders" submit="Add">
+        <Field.Text name="customer" label="Customer" required />
+        <Field.Number name="total" label="Total" />
+      </Form>
     </Section>
   </Page>
 ));
-app.post("/items", c => {
-  // Save the item with an SDK call here, then show the page again.
+app.post("/orders", c => {
+  // Save the order with an SDK call here, then show the page again.
   return c.redirect("/");
 });
 export default app;

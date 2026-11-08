@@ -1,23 +1,13 @@
-import type { CodeChartDescription, CodePageField, CodePageNode, CodePageTree } from "@k2b/cloud/code";
+import type { CodePageField, CodePageNode, CodePageTree } from "@k2b/cloud/code";
 import { codeOwnPath } from "@k2b/cloud/contracts";
-import {
-  type ChartRow,
-  chartLegend,
-  chartMarkKey,
-  chartNumberFormatters,
-  chartReferenceMark,
-  chartRenderOptions,
-  chartRows,
-  chartTooltip,
-} from "@k2b/editor/charts";
+import { type DescriptionJson, DescriptionPanel } from "@k2b/cloud/descriptions";
 import {
   Button,
-  ChartExplorer,
-  type ChartSnapshot,
   Checkbox,
-  DataTable,
-  type DataTableSort,
-  DescriptionList,
+  DashboardFrame,
+  type DashboardFrameState,
+  DashboardGrid,
+  DashboardSection,
   dialogCore,
   IconButton,
   InlineGuidance,
@@ -25,19 +15,15 @@ import {
   NoticeCard,
   NumberInput,
   PanelDialog,
-  Paper,
-  prepareChartSnapshot,
   QrScanner,
   type QrScannerError,
   Select,
-  StatCell,
-  StatGrid,
   TextInput,
   type ToastHandle,
   toast,
   useLocale,
 } from "@k2b/ui";
-import { createEffect, createMemo, createSignal, createUniqueId, For, type JSX, on, onCleanup, onMount, Show } from "solid-js";
+import { createEffect, createMemo, createSignal, For, type JSX, on, onCleanup, onMount, Show } from "solid-js";
 import { codePageFailure, codePageMessages } from "./page-messages";
 import { type CodePageEventSource, codePageFormBody, requestCodePage } from "./page-request";
 
@@ -51,6 +37,8 @@ type PageProps = {
   codeId: string;
   csrf: string;
   locale: string;
+  /** The reader's time zone, so the server and the browser show the same time. */
+  timeZone: string;
   /** Followed events. Without one, a following page loads again when its tab returns. */
   events?: CodePageEventSource;
 };
@@ -80,247 +68,75 @@ function Title(props: { level: HeadingLevel; id?: string; children: string }) {
   );
 }
 
-type Width = "third" | "half" | "twoThirds" | "full";
-/**
- * A panel's columns of the six-column grid, measured on the grid's own width as the shared dashboard grid measures
- * it: up to 600 px every panel takes the row, up to 1000 px a third takes half and two thirds the whole row.
- */
-const span: Record<Width, string> = {
-  full: "col-span-6",
-  twoThirds: "col-span-6 @[62.5rem]:col-span-4",
-  half: "col-span-6 @[37.5rem]:col-span-3",
-  third: "col-span-6 @[37.5rem]:col-span-3 @[62.5rem]:col-span-2",
-};
 /** Meaningful colours as text colour, mixed with the text so they stay readable in light and dark. */
 const tint = (color: CodePageTree["color"]) =>
   `color-mix(in srgb, var(--color-${color === "zinc" ? "zinc-500" : `${color ?? "blue"}-600`}) 78%, var(--k2b-text))`;
 
-/** One framed topic on the grid (Line B): a light frame, its title inside, nothing framed again within. */
-function Panel(props: {
-  kind: string;
-  width?: Width;
-  title: string;
-  subtitle?: string;
-  level: HeadingLevel;
-  /** A count right at the title, such as the rows of a table. */
-  count?: string;
-  flush?: boolean;
-  children: JSX.Element;
-}) {
-  const id = `code-panel-${createUniqueId()}`;
-  return (
-    <Paper
-      as="section"
-      class={`${span[props.width ?? "full"]} grid min-w-0 content-start gap-3 ${props.flush ? "overflow-hidden pt-4" : "p-4"}`}
-      aria-labelledby={id}
-      data-code-block={props.kind}
-    >
-      <header class={`min-w-0 ${props.flush ? "px-4" : ""}`}>
-        <div class="flex min-w-0 items-baseline gap-2">
-          <Title level={props.level} id={id}>
-            {props.title}
-          </Title>
-          <Show when={props.count}>
-            <span class="text-sm text-secondary tabular-nums">{props.count}</span>
-          </Show>
-        </div>
-        <Show when={props.subtitle}>
-          <p class="text-sm text-secondary">{props.subtitle}</p>
-        </Show>
-      </header>
-      {props.children}
-    </Paper>
-  );
-}
+/** Content heights of a panel; panels in one row line up when they share one. */
+const heights = { sm: 200, md: 300, lg: 400 } as const;
+type Panel = Extract<CodePageNode, { kind: "Chart" | "Table" | "Detail" }>;
+const chartHeight = (item: Extract<CodePageNode, { kind: "Chart" }>) => {
+  if (item.height) return heights[item.height];
+  // Single values and trends need less room than a plot with axes, as in chat charts.
+  const kind = item.description?.kind;
+  return kind === "sparkline" ? 128 : kind === "stat" ? 160 : kind === "barGauge" ? 192 : heights.md;
+};
+// A detail row is 2.25 rem high; up to eight rows show without scrolling.
+const detailHeight = (item: Extract<CodePageNode, { kind: "Detail" }>) =>
+  item.height ? heights[item.height] : `${Math.max(1, Math.min(8, item.items.length)) * 2.25}rem`;
 
-type Scalar = string | number | boolean | null;
-const compare = (left: Scalar | undefined, right: Scalar | undefined, locale: string) => {
-  if (left === right) return 0;
-  // Empty cells stay last in both directions, as the shared tables order missing values.
-  if (left === null || left === undefined) return 1;
-  if (right === null || right === undefined) return -1;
-  if (typeof left === "number" && typeof right === "number") return left - right;
-  return String(left).localeCompare(String(right), locale, { numeric: true });
+/** Checked page data as JSON: optional fields that are absent leave no key behind. */
+const json = (value: unknown): DescriptionJson => {
+  if (value === null || typeof value === "string" || typeof value === "boolean" || typeof value === "number") return value;
+  if (Array.isArray(value)) return value.map(json);
+  if (typeof value === "object")
+    return Object.fromEntries(Object.entries(value).flatMap(([key, entry]) => (entry === undefined ? [] : [[key, json(entry)]])));
+  return null;
 };
 
-function CodeTable(props: { item: Extract<CodePageNode, { kind: "Table" }>; level: HeadingLevel }) {
-  const locale = useLocale();
-  const [sort, setSort] = createSignal<DataTableSort | null>(null);
-  const rows = createMemo(() => {
-    const order = sort();
-    if (!order) return props.item.rows;
-    const sign = order.direction === "asc" ? 1 : -1;
-    return [...props.item.rows].sort((a, b) => {
-      const result = compare(a[order.key], b[order.key], locale());
-      return a[order.key] === null || b[order.key] === null || a[order.key] === undefined || b[order.key] === undefined
-        ? result
-        : sign * result;
-    });
-  });
-  const count = () => props.item.rows.length;
-  return (
-    <Panel
-      kind="Table"
-      width={props.item.width}
-      title={props.item.title}
-      count={count() ? new Intl.NumberFormat(locale()).format(count()) : undefined}
-      level={props.level}
-      flush
-    >
-      {/* The frame is the panel's; the table draws only its head, row and column lines inside it. */}
-      <DataTable<(typeof props.item.rows)[number]>
-        ariaLabel={props.item.title}
-        surface="plain"
-        rows={rows()}
-        sort={sort()}
-        onSortChange={setSort}
-        empty={props.item.empty}
-        columns={props.item.columns.map((column) => {
-          const format = column.format ? chartNumberFormatters(column.format, locale()).value : undefined;
-          return {
-            id: column.key,
-            header: column.label,
-            sortable: true,
-            align: format ? ("right" as const) : undefined,
-            nowrap: format ? true : undefined,
-            value: (row: (typeof props.item.rows)[number]) => {
-              const value = row[column.key] ?? null;
-              return format && typeof value === "number" ? format(value) : value;
-            },
-          };
-        })}
-      />
-    </Panel>
-  );
-}
-
-/** Single values and trends need less room than a plot with axes, as in chat charts. */
-const chartHeight = (kind: CodeChartDescription["kind"]) =>
-  kind === "sparkline" ? "8rem" : kind === "stat" ? "10rem" : kind === "barGauge" ? "12rem" : "16rem";
-const emptySnapshot = (kind: CodeChartDescription["kind"]): ChartSnapshot => ({
-  kind,
-  svg: "",
-  width: 480,
-  height: 280,
-  stretch: true,
-  marks: [],
-});
-
-function CodeChart(props: { item: Extract<CodePageNode, { kind: "Chart" }>; level: HeadingLevel }) {
-  const locale = useLocale();
-  const t = () => codePageMessages.resolve([locale()]).t;
-  // A description that passed validation can still fail to draw, such as all values missing; the frame then stays.
-  const drawn = createMemo(() => {
-    const input = props.item.description;
-    if (!input) return null;
-    try {
-      const rows = chartRows(input, locale());
-      const snapshot = prepareChartSnapshot(chartRenderOptions(input, locale(), { legend: "outside" }), {
-        key: ({ datum }) => chartMarkKey(datum),
-        tooltip: ({ datum }) => chartTooltip(rows.columns(), rows.add(datum)),
-        reference: ({ datum }) => chartReferenceMark(input, datum),
-      });
-      return snapshot.marks.length > 0 ? { snapshot, table: rows.table(), legend: chartLegend(input, locale()) } : null;
-    } catch {
-      return null;
-    }
-  });
-  const kind = () => props.item.description?.kind ?? "bar";
-  return (
-    <Paper as="div" class={`${span[props.item.width ?? "full"]} min-w-0 p-4`} data-code-block="Chart">
-      <ChartExplorer<ChartRow>
-        title={props.item.description?.title ?? props.item.title ?? ""}
-        headingLevel={props.level}
-        description={
-          props.item.description?.subtitle ? <span class="text-sm text-secondary">{props.item.description.subtitle}</span> : undefined
-        }
-        height={chartHeight(kind())}
-        data={drawn() ? { chart: drawn()!.snapshot, rows: drawn()!.table.rows } : { chart: emptySnapshot(kind()), rows: [] }}
-        columns={
-          drawn()
-            ? drawn()!.table.columns.map((column) => ({
-                id: column.id,
-                label: column.label,
-                value: (row: ChartRow) => row.cells[column.id] ?? "",
-                sortValue: (row: ChartRow) => row.values[column.id] ?? null,
-                align: column.numeric ? "right" : "left",
-              }))
-            : // A frame without a drawing keeps the explorer's head and height; its one column is never shown.
-              [{ id: "value", label: props.item.empty ?? t().chartEmpty, value: () => "" }]
-        }
-        legend={drawn()?.legend.length ? drawn()!.legend : undefined}
-        empty={<span class="text-sm text-secondary">{props.item.empty ?? t().chartEmpty}</span>}
-        renderDetails={false}
-      />
-    </Paper>
-  );
-}
-
-function CodeDetail(props: { item: Extract<CodePageNode, { kind: "Detail" }>; level: HeadingLevel }) {
-  const locale = useLocale();
-  const t = () => codePageMessages.resolve([locale()]).t;
-  const value = (item: Scalar) =>
-    item === null
-      ? "—"
-      : typeof item === "boolean"
-        ? item
-          ? t().yes
-          : t().no
-        : typeof item === "number"
-          ? item.toLocaleString(locale())
-          : item;
-  return (
-    <Panel kind="Detail" width={props.item.width} title={props.item.title} level={props.level}>
-      <DescriptionList layout="rows" items={props.item.items.map((row) => ({ term: row.label, description: value(row.value) }))} />
-    </Panel>
-  );
-}
-
-type Stat = Extract<CodePageNode, { kind: "Stats" }>["items"][number];
-/** One tile per figure in a row; the contract allows one to six. */
-const statColumns = (count: number) => (count <= 1 ? 1 : count === 2 ? 2 : count === 3 ? 3 : count === 4 ? 4 : count === 5 ? 5 : 6);
-/** Key figures in one row of tiles: value first, then how it changed against what. */
-function CodeStats(props: { item: Extract<CodePageNode, { kind: "Stats" }> }) {
-  const locale = useLocale();
-  const t = () => codePageMessages.resolve([locale()]).t;
-  const format = (stat: Stat, value: number | string) =>
-    typeof value === "number" ? chartNumberFormatters(stat.format, locale()).value(value) : value;
-  const change = (stat: Stat) => {
-    const delta = stat.delta;
-    if (!delta) return undefined;
-    const good = delta.better === undefined || delta.value === 0 ? null : delta.value > 0 === (delta.better === "up");
-    const number =
-      delta.unit === "points"
-        ? `${new Intl.NumberFormat(locale(), { maximumFractionDigits: 1, signDisplay: "exceptZero" }).format(delta.value * 100)} ${t().points}`
-        : new Intl.NumberFormat(locale(), { style: "percent", maximumFractionDigits: 1, signDisplay: "exceptZero" }).format(delta.value);
-    return {
-      tone: good === null ? ("zinc" as const) : good ? ("emerald" as const) : ("red" as const),
-      icon: delta.value > 0 ? "ti ti-trending-up" : delta.value < 0 ? "ti ti-trending-down" : "ti ti-equal",
-      text: number,
-    };
-  };
-  return (
-    <div class="col-span-6 min-w-0" data-code-block="Stats">
-      <StatGrid columns={statColumns(props.item.items.length)}>
-        <For each={props.item.items}>
-          {(stat) => (
-            <StatCell
-              label={stat.label}
-              value={stat.value === null ? "—" : format(stat, stat.value)}
-              sub={stat.compare ? `${stat.compare.label} ${format(stat, stat.compare.value)}` : undefined}
-              accent={change(stat)}
-              trend={stat.trend}
-              // The trend speaks the figure's own format: 92 %, not 0.92.
-              trendTooltip={({ datum }) => {
-                const y = datum.values.find((field) => field.key === "y")?.value;
-                return { rows: [{ label: stat.label, value: typeof y === "number" ? format(stat, y) : String(y ?? "") }] };
-              }}
-            />
-          )}
-        </For>
-      </StatGrid>
-    </div>
-  );
+/**
+ * The portable description of a data block, the same JSON Chat, Pulse and Notebooks draw: Code pages add no drawing
+ * of their own. Yes and No are words of the page's language.
+ */
+function description(item: Panel | Extract<CodePageNode, { kind: "Stats" }>, words: { yes: string; no: string }) {
+  switch (item.kind) {
+    case "Chart":
+      // Without values a chart keeps its frame and title and says why: the description's empty form.
+      return item.description ?? { kind: "bar", title: item.title ?? "", empty: item.empty };
+    case "Stats":
+      return {
+        block: "stats",
+        items: item.items.map(({ value, ...stat }) => ({ ...stat, value: value ?? "—" })),
+      };
+    case "Table":
+      return {
+        block: "table",
+        title: item.title,
+        ...(item.subtitle ? { subtitle: item.subtitle } : {}),
+        ...(item.search ? { search: true } : {}),
+        columns: item.columns.map(({ key, ...column }) => {
+          // A column without a type that holds only numbers reads as numbers: right-aligned, in the reader's language.
+          const values = item.rows.map((row) => row[key]).filter((value) => value !== null && value !== undefined);
+          const numeric = column.format !== undefined || (values.length > 0 && values.every((value) => typeof value === "number"));
+          return { id: key, ...column, ...(column.type || !numeric ? {} : { type: "number" }) };
+        }),
+        rows: item.rows,
+      };
+    case "Detail":
+      return {
+        block: "details",
+        title: item.title,
+        items: item.items.map((row) =>
+          typeof row.value === "number"
+            ? { label: row.label, type: "number", value: row.value, ...(row.format ? { format: row.format } : {}) }
+            : {
+                label: row.label,
+                type: "text",
+                value: typeof row.value === "boolean" ? (row.value ? words.yes : words.no) : row.value,
+              },
+        ),
+      };
+  }
 }
 
 type ScanResult = { text: string } | { error: QrScannerError };
@@ -454,6 +270,15 @@ function CodePageContent(props: PageProps) {
   const [edited, setEdited] = createSignal(false);
   let waiting: ToastHandle | undefined;
   const [loading, setLoading] = createSignal(false);
+  /** A reload failed: every panel keeps its data and says it is not current, with Try again. */
+  const [stale, setStale] = createSignal(false);
+  const panelState = (): DashboardFrameState => (stale() ? "stale" : "ready");
+  const read = (options: Intl.DateTimeFormatOptions) => {
+    const asOf = page().tree.asOf;
+    return asOf ? new Intl.DateTimeFormat(props.locale, { ...options, timeZone: props.timeZone }).format(new Date(asOf)) : undefined;
+  };
+  const readDate = () => read({ dateStyle: "medium", timeStyle: "short" });
+  const readTime = () => read({ timeStyle: "short" });
   const href = (path: string) => codeOwnPath(props.codeId, path);
   const notices = new Set<ToastHandle>();
   let disposed = false;
@@ -480,6 +305,7 @@ function CodePageContent(props: PageProps) {
     const key = focusKey(document.activeElement);
     const previous = page().tree.title;
     setPage({ tree, csrf });
+    setStale(false);
     setEdited(false);
     waiting?.dismiss();
     waiting = undefined;
@@ -543,6 +369,7 @@ function CodePageContent(props: PageProps) {
         }
         if (answer.kind === "navigate") return location.assign(answer.url);
         if (answer.kind === "failed") {
+          setStale(true);
           const notice = toast.error(codePageFailure(t(), answer.code, t().refreshFailed), {
             action: {
               label: t().retry,
@@ -648,25 +475,19 @@ function CodePageContent(props: PageProps) {
   const node = (item: CodePageNode, level: HeadingLevel): JSX.Element => {
     switch (item.kind) {
       case "Section": {
-        const id = `code-section-${createUniqueId()}`;
-        return (
-          <section class="col-span-6 grid min-w-0 gap-3" aria-labelledby={id} data-code-block="Section">
-            <header class="flex min-w-0 flex-wrap items-baseline gap-x-3 gap-y-0.5">
-              <span class="flex min-w-0 items-center gap-2">
-                <Show when={item.icon}>
-                  <i class={`${item.icon} text-lg`} style={{ color: tint(item.color) }} aria-hidden="true" />
-                </Show>
-                <Title level={level} id={id}>
-                  {item.title}
-                </Title>
-              </span>
-              <Show when={item.description}>
-                <p class="text-sm text-secondary">{item.description}</p>
-              </Show>
-            </header>
-            {grid(item.children, deeper(level))}
-          </section>
+        const section = (
+          <DashboardSection
+            title={item.title}
+            icon={item.icon}
+            iconColor={item.icon ? tint(item.color) : undefined}
+            description={item.description}
+            headingLevel={level}
+          >
+            {cells(item.children, deeper(level))}
+          </DashboardSection>
         );
+        // A section inside a section takes the whole row of its parent's grid.
+        return level > 2 ? <div class="col-span-6 min-w-0">{section}</div> : section;
       }
       case "Text":
         return (
@@ -681,17 +502,42 @@ function CodePageContent(props: PageProps) {
           </div>
         );
       case "Stats":
-        return <CodeStats item={item} />;
       case "Table":
-        return <CodeTable item={item} level={level} />;
       case "Detail":
-        return <CodeDetail item={item} level={level} />;
       case "Chart":
-        return <CodeChart item={item} level={level} />;
+        return (
+          <DescriptionPanel
+            spec={json(description(item, t()))}
+            title={
+              item.kind === "Chart" ? (item.title ?? item.description?.title ?? "") : item.kind === "Stats" ? page().tree.title : item.title
+            }
+            width={item.kind === "Stats" ? undefined : (item.width ?? "full")}
+            height={
+              item.kind === "Chart"
+                ? chartHeight(item)
+                : item.kind === "Detail"
+                  ? detailHeight(item)
+                  : item.kind === "Table" && item.height
+                    ? heights[item.height]
+                    : heights.md
+            }
+            headingLevel={deeper(level)}
+            empty={item.kind === "Table" || item.kind === "Chart" ? item.empty : undefined}
+            state={panelState()}
+            asOf={readTime()}
+            onRetry={() => void reload(true)}
+          />
+        );
       case "Form":
         return (
-          <Panel kind="Form" width={item.width} title={item.title} level={level}>
-            <form action={href(item.action)} method="post" class="grid min-w-0 gap-4" onSubmit={(event) => void send(event, item, "form")}>
+          <DashboardFrame title={item.title} headingLevel={deeper(level)} width={item.width ?? "full"}>
+            <form
+              action={href(item.action)}
+              method="post"
+              class="grid min-w-0 gap-4"
+              data-code-block="Form"
+              onSubmit={(event) => void send(event, item, "form")}
+            >
               {csrfField()}
               <div class="grid max-w-xl gap-4">
                 <For each={item.fields}>
@@ -713,7 +559,7 @@ function CodePageContent(props: PageProps) {
                 </Show>
               </div>
             </form>
-          </Panel>
+          </DashboardFrame>
         );
       case "Link":
         return (
@@ -733,11 +579,8 @@ function CodePageContent(props: PageProps) {
     }
   };
 
-  /**
-   * Blocks on the six-column grid of their section, measured on the grid's own width. Neighbouring buttons share one
-   * row that wraps, rather than stacking as separate forms.
-   */
-  const grid = (items: readonly CodePageNode[], level: HeadingLevel) => {
+  /** Neighbouring buttons share one row that wraps, rather than stacking as separate forms. */
+  const cells = (items: readonly CodePageNode[], level: HeadingLevel) => {
     const groups = createMemo(() => {
       const result: (CodePageNode | Extract<CodePageNode, { kind: "Button" | "Action" }>[])[] = [];
       for (const item of items) {
@@ -748,23 +591,30 @@ function CodePageContent(props: PageProps) {
       return result;
     });
     return (
-      <div class="@container min-w-0">
-        <div class="grid min-w-0 grid-cols-6 gap-4">
-          <For each={groups()}>
-            {(group) =>
-              Array.isArray(group) ? (
-                <div class="col-span-6 flex flex-wrap items-center gap-2" data-code-block="Actions">
-                  <For each={group}>{action}</For>
-                </div>
-              ) : (
-                node(group, level)
-              )
-            }
-          </For>
-        </div>
-      </div>
+      <For each={groups()}>
+        {(group) =>
+          Array.isArray(group) ? (
+            <div class="col-span-6 flex flex-wrap items-center gap-2" data-code-block="Actions">
+              <For each={group}>{action}</For>
+            </div>
+          ) : (
+            node(group, level)
+          )
+        }
+      </For>
     );
   };
+  /** Blocks outside a section sit in sections of their own, without a title, so every block is a cell of one grid. */
+  const sections = createMemo(() => {
+    const result: (Extract<CodePageNode, { kind: "Section" }> | CodePageNode[])[] = [];
+    for (const item of page().tree.children) {
+      const last = result.at(-1);
+      if (item.kind === "Section") result.push(item);
+      else if (Array.isArray(last)) last.push(item);
+      else result.push([item]);
+    }
+    return result;
+  });
 
   return (
     <main
@@ -789,15 +639,30 @@ function CodePageContent(props: PageProps) {
           </span>
         </Show>
         <div class="min-w-0">
+          <Show when={page().tree.eyebrow}>
+            <p class="text-xs font-medium text-secondary">{page().tree.eyebrow}</p>
+          </Show>
           <h1 ref={heading} tabindex="-1" class="text-2xl font-semibold tracking-tight text-primary outline-none sm:text-[1.75rem]">
             {page().tree.title}
           </h1>
-          <Show when={page().tree.subtitle}>
-            <p class="text-sm text-secondary">{page().tree.subtitle}</p>
+          <Show when={page().tree.subtitle || readDate()}>
+            <p class="text-sm text-secondary">
+              {[page().tree.subtitle, readDate() ? t().asOf({ time: readDate()! }) : undefined].filter(Boolean).join(" · ")}
+            </p>
           </Show>
         </div>
       </header>
-      {grid(page().tree.children, 2)}
+      <DashboardGrid>
+        <For each={sections()}>
+          {(section) =>
+            Array.isArray(section) ? (
+              <DashboardSection ariaLabel={page().tree.title}>{cells(section, 2)}</DashboardSection>
+            ) : (
+              node(section, 2)
+            )
+          }
+        </For>
+      </DashboardGrid>
     </main>
   );
 }

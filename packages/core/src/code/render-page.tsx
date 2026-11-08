@@ -1,5 +1,5 @@
 import type { CodePageTree } from "@k2b/cloud/code";
-import { type AuthContext, getLocale } from "@k2b/cloud/server";
+import { type AuthContext, getLocale, getTimeZone } from "@k2b/cloud/server";
 import { MinimalLayout } from "@k2b/cloud/ssr";
 import { ssr } from "../config";
 import CodePageTreeView from "./PageTree.island";
@@ -11,7 +11,7 @@ export const codePageHandlers = ssr<CodePageHostingContext>((context) => {
   context.get("page").title = page.tree.title;
   return () => (
     <MinimalLayout c={context} preferences={false}>
-      <CodePageTreeView {...page} locale={getLocale(context)} />
+      <CodePageTreeView {...page} locale={getLocale(context)} timeZone={getTimeZone(context)} />
     </MinimalLayout>
   );
 });

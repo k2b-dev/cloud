@@ -3,6 +3,10 @@
  * Each block returns a frozen description that only these blocks can make: Core checks and draws it, and authors
  * compose blocks without ever writing a description.
  */
+import { chartKindSchema } from "@k2b/editor/chart-schema";
+
+/** Every kind the chart schema knows is a `Chart.<Kind>` block; a new kind there needs no change here. */
+const chartKinds = JSON.stringify(chartKindSchema().options);
 export const CODE_PAGE_BUILDERS = String.raw`
 const __codePage = (() => {
   const components = new Set();
@@ -50,9 +54,10 @@ const __codePage = (() => {
     Field[type[0].toUpperCase() + type.slice(1)] = part("Field", props => ({ type, ...noChildren(props) }));
   Field.Select = part("Field", ({ children, ...props }) => ({ type: "select", ...props, options: parts(children, "Option") }));
   const Chart = {};
-  for (const kind of ["bar", "line", "scatter", "pie", "donut", "histogram", "gauge", "sparkline", "boxplot", "heatmap", "barGauge", "stat"])
-    Chart[kind[0].toUpperCase() + kind.slice(1)] = block("Chart", ({ width, ...props }) => ({
-      kind: "Chart", ...(width === undefined ? {} : { width }), description: { kind, ...noChildren(props) },
+  for (const kind of ${chartKinds})
+    Chart[kind[0].toUpperCase() + kind.slice(1)] = block("Chart", ({ width, height, ...props }) => ({
+      kind: "Chart", ...(width === undefined ? {} : { width }), ...(height === undefined ? {} : { height }),
+      description: { kind, ...noChildren(props) },
     }));
   Chart.Empty = block("Chart", props => ({ kind: "Chart", ...noChildren(props) }));
   function jsx(component, props, ...children) {

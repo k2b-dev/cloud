@@ -58,25 +58,15 @@ export declare const Notice: CodePageComponent<CodeNodeProps<"Notice"> & NoChild
 type CodeChartProps<K> = CodeChartDescription extends infer D
   ? D extends { kind: infer Kind }
     ? K extends Kind
-      ? Omit<D, "kind"> & Pick<CodeNodeProps<"Chart">, "width"> & NoChildren
+      ? Omit<D, "kind"> & Pick<CodeNodeProps<"Chart">, "width" | "height"> & NoChildren
       : never
     : never
   : never;
 /** Charts with their data as props, like `@k2b/ui/charts`; `Chart.Empty` keeps a chart's place while there is no data. */
 export declare const Chart: {
-  Bar: CodePageComponent<CodeChartProps<"bar">>;
-  Line: CodePageComponent<CodeChartProps<"line">>;
-  Scatter: CodePageComponent<CodeChartProps<"scatter">>;
-  Pie: CodePageComponent<CodeChartProps<"pie">>;
-  Donut: CodePageComponent<CodeChartProps<"donut">>;
-  Histogram: CodePageComponent<CodeChartProps<"histogram">>;
-  Gauge: CodePageComponent<CodeChartProps<"gauge">>;
-  Sparkline: CodePageComponent<CodeChartProps<"sparkline">>;
-  Boxplot: CodePageComponent<CodeChartProps<"boxplot">>;
-  Heatmap: CodePageComponent<CodeChartProps<"heatmap">>;
-  BarGauge: CodePageComponent<CodeChartProps<"barGauge">>;
-  Stat: CodePageComponent<CodeChartProps<"stat">>;
-  Empty: CodePageComponent<{ title: string; empty: string } & Pick<CodeNodeProps<"Chart">, "width"> & NoChildren>;
+  [K in CodeChartDescription["kind"] as Capitalize<K>]: CodePageComponent<CodeChartProps<K>>;
+} & {
+  Empty: CodePageComponent<{ title: string; empty: string } & Pick<CodeNodeProps<"Chart">, "width" | "height"> & NoChildren>;
 };
 export declare function jsx<P>(component: CodePageComponent<P>, props: P | null, ...children: CodePageChild[]): CodePageBlock;
 export declare namespace jsx {

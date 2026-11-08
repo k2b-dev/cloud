@@ -152,24 +152,24 @@ pages built from blocks reach `c.page`; a hand-written object does not.
 
 | Block | Props | Children |
 | --- | --- | --- |
-| `Page` | `title`, optional `subtitle`, `icon`, `color`, `follow`; the root of every page | blocks |
+| `Page` | `title`, optional `eyebrow`, `subtitle`, `asOf`, `icon`, `color`, `follow`; the root of every page | blocks |
 | `Section` | `title`, optional `description`, `icon`, `color` | blocks |
 | `Stats` | none | 1–6 `Stat` |
-| `Stat` | `label`, `value` (number, text or `null`), optional `format`, `delta`, `compare`, `trend` | none |
+| `Stat` | `label`, `value` (number, text or `null`), optional `format`, `icon`, `tone`, `delta`, `compare`, `trend` | none |
 | `Text` | none | text |
 | `Heading` | optional `level: 2 \| 3 \| 4` | text |
-| `Table` | `title`, `rows` of scalar values, optional `empty` text and `width` | 1–20 `Column` |
-| `Column` | `key` (the row field), `label`, optional number `format` | none |
-| `Detail` | `title`, optional `width` | `Item` |
-| `Item` | `label`, `value` | none |
+| `Table` | `title`, `rows` of scalar values, optional `subtitle`, `search`, `empty` text, `width` and `height` | 1–20 `Column` |
+| `Column` | `key` (the row field), `label`, optional `type`, `format`, `states`, `priority` | none |
+| `Detail` | `title`, optional `width` and `height` | up to 100 `Item` |
+| `Item` | `label`, `value`, optional number `format` | none |
 | `Form` | `title`, `action`, `submit`, optional `width`; always POST | 1–40 `Field.*` |
 | `Field.Text`, `Field.Email`, `Field.Textarea`, `Field.Scan` | `name`, `label`, optional text `value`, `required`, `error` | none |
 | `Field.Number` | as above, number `value` | none |
 | `Field.Checkbox` | as above, boolean `value` | none |
 | `Field.Select` | as above, text `value` | `Option` |
 | `Option` | `value`, `label` | none |
-| `Chart.Bar`, `Chart.Line`, … | the chart's own props, such as `title`, `data` or `series`, optional `width` | none |
-| `Chart.Empty` | `title`, `empty`, optional `width` | none |
+| `Chart.Bar`, `Chart.Line`, … | the chart's own props, such as `title`, `data` or `series`, optional `width` and `height` | none |
+| `Chart.Empty` | `title`, `empty`, optional `width` and `height` | none |
 | `Link` | `label`, `href` | none |
 | `Button`, `Action` | `label`, `action`, optional string `values`; always POST | none |
 | `Notice` | `title`, optional `text`, `tone: info \| success \| warning \| danger` | none |
@@ -185,13 +185,17 @@ anything not built from these blocks are rejected. `c.html()` is unavailable.
 ### Lay out a page
 
 A page reads like a Cloud dashboard: the head with the page's `icon` in a soft
-chip of its `color`, the `title` and a quiet `subtitle`; then key figures, then
-sections. A `Section` names a topic with an optional `icon`, `color` and
+chip of its `color`, a short `eyebrow` that places the page (such as its
+source), the `title`, and a quiet line with the `subtitle` and when the data
+was read; then key figures, then sections. `asOf` is that read time as an ISO
+date-time, such as `new Date().toISOString()`; Cloud shows it in the reader's
+language and time zone. A `Section` names a topic with an optional `icon`, `color` and
 `description` beside its title.
 
 Blocks sit on a grid of six columns. Charts, `Table`, `Detail` and `Form`
 are framed panels; `width` gives a panel `third`, `half`, `twoThirds` or
-`full` (the default) of its row. Panels in one row share its height. The grid
+`full` (the default) of its row, and `height` gives its content `sm` (200 px),
+`md` (300 px) or `lg` (400 px). Panels in one row share its height. The grid
 measures its own width: up to 1,000 px a third takes half a row and two thirds
 the whole row, up to 600 px every panel takes the row. All other blocks take
 the whole row.
@@ -202,8 +206,17 @@ the whole row.
 a `delta` with the change since the comparison (`value` is a share,
 `0.082` for 8.2 %; with `unit: "points"` it is percentage points), its
 `better` direction (`up` or `down`, which colours the change), a `compare`
-with `label` and `value`, and a `trend` of up to 60 numbers. A column
-`format` formats a table's numbers the same way.
+with `label` and `value`, and a `trend` of up to 60 numbers. `icon` sits in a
+chip of `tone`: a colour, or `in` and `out` for money coming in and going out.
+
+A `Column`'s `type` says what it holds: `text`, `number`, `date`, `status`,
+`bar`, `amount`, `flow` or `delta`. It decides alignment, the shown text and
+sorting. A `status` column shows a badge from `states`, such as
+`{ sending: { label: "Sending", tone: "running" } }` (tones `info`, `ok`,
+`warning`, `error`, `degraded`, `running`, `neutral`); `amount` and `flow` show
+money in the column's `format` currency. A column of numbers without a `type`
+reads as numbers. `priority` 2 or 3 lets a column give way on a narrow screen,
+and `search` puts a search field in the table's head.
 
 `icon` is a Tabler class such as `ti ti-package`. `color` is one of `zinc`,
 `blue`, `emerald`, `amber` and `red`; the AI colour is reserved. A chart needs
@@ -212,12 +225,14 @@ at least one value, so a chart with nothing to draw yet is
 frame keeps its title and place and says why it is empty.
 
 Cloud draws every block with its shared components, on the server and again in
-the browser with the same result, in light and dark and at phone width. A chart
-draws its description with the shared chart renderer and can switch to its data
-table. The chart blocks are `Chart.Bar`, `Chart.Line`, `Chart.Scatter`,
-`Chart.Pie`, `Chart.Donut`, `Chart.Histogram`, `Chart.Gauge`, `Chart.Sparkline`,
-`Chart.Boxplot`, `Chart.Heatmap`, `Chart.BarGauge` and `Chart.Stat`; their props
-are the portable chart data of `@k2b/editor/chart-schema`. A table sorts by any column
+the browser with the same result, in light and dark and at phone width. Key
+figures, charts, tables and details are the same panels Chat, Pulse and the
+chart catalog draw, with the same loading, empty and stale states: when a live
+reload fails, every panel keeps its data and says when it was read, with
+**Try again**. A chart can switch to its data table. There is one chart block
+per kind of the portable chart data of `@k2b/editor/chart-schema`, such as
+`Chart.Bar`, `Chart.Line`, `Chart.Area`, `Chart.Heatmap` or `Chart.Waterfall`;
+a kind the chart data gains becomes a block of its own. A table sorts by any column
 and shows `empty`, or a default text, when it has no rows. Neighbouring
 `Button` and `Action` blocks share one row.
 

@@ -9,7 +9,9 @@ import type { Browser, Page } from "playwright";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
 import { launchBrowser, pageErrors, settled } from "../../../ui/test/browser";
+import { CODE_NEWSLETTER_DEMO_SOURCE } from "./page.newsletter-demo";
 import { codePageFixture } from "./page.test-fixture";
+import { buildCodePage } from "./page.test-source";
 
 // The real renderer with the real stylesheet: the server's page, the island that replaces it, and every request it
 // sends. A fake event source stands in for platform events.
@@ -53,8 +55,8 @@ let server: ReturnType<typeof Bun.serve>;
 let browser: Browser;
 
 const documentFor = (tree: CodePageTree) => {
-  const body = renderToString(() => createComponent(PageTree, { tree, codeId, csrf, locale: "en" }));
-  const props = JSON.stringify({ tree, codeId, csrf, locale: "en" }).replaceAll("<", "\\u003c");
+  const body = renderToString(() => createComponent(PageTree, { tree, codeId, csrf, locale: "en", timeZone: "UTC" }));
+  const props = JSON.stringify({ tree, codeId, csrf, locale: "en", timeZone: "UTC" }).replaceAll("<", "\\u003c");
   return (
     `<!doctype html><html lang="en" class="light"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">` +
     `<title>${tree.title} · Cloud</title><link rel="stylesheet" href="/public/fonts.css"><link rel="stylesheet" href="/public/tabler-icons.css">` +
@@ -150,9 +152,12 @@ afterAll(async () => {
   await server?.stop(true);
 });
 
+/** The Newsletter dashboard of the chart showcase, built from Code source. */
+const newsletter = await buildCodePage(CODE_NEWSLETTER_DEMO_SOURCE, codeId);
 const reset = () => {
   state.trees = new Map([
     ["/", home],
+    ["/newsletter", newsletter],
     ["/items/W-1", itemPage],
   ]);
   state.posts = [];
@@ -162,7 +167,7 @@ const reset = () => {
 };
 
 type Camera = "code" | "denied" | null;
-async function open(width: number, options: { hold?: boolean; camera?: Camera } = {}) {
+async function open(width: number, options: { hold?: boolean; camera?: Camera; path?: string } = {}) {
   reset();
   const phone = width < 600;
   const context = await browser.newContext({ viewport: { width, height: 900 }, deviceScaleFactor: 1, isMobile: phone, hasTouch: phone });
@@ -211,7 +216,7 @@ async function open(width: number, options: { hold?: boolean; camera?: Camera } 
   const page = await context.newPage();
   page.setDefaultTimeout(8000);
   const errors = pageErrors(page);
-  await page.goto(`${server.url.origin}/code/${codeId}/${options.hold ? "?hold" : ""}`);
+  await page.goto(`${server.url.origin}/code/${codeId}${options.path ?? "/"}${options.hold ? "?hold" : ""}`);
   await page.evaluate(() => document.fonts.ready);
   return { page, errors, close: () => context.close() };
 }
@@ -219,10 +224,13 @@ async function open(width: number, options: { hold?: boolean; camera?: Camera } 
 const boxes = (page: Page) =>
   page.evaluate(() => ({
     overflow: document.documentElement.scrollWidth - window.innerWidth,
-    blocks: Array.from(document.querySelectorAll("[data-code-block]")).map((element) => {
+    // Code's own blocks, and the shared panels that draw its data: sections, frames and key-figure tiles.
+    blocks: Array.from(
+      document.querySelectorAll("[data-code-block], .k2b-dashboard-section, .k2b-dashboard-frame, .k2b-stat-cell, .k2b-chart-explorer"),
+    ).map((element) => {
       const rect = element.getBoundingClientRect();
       return [
-        element.getAttribute("data-code-block"),
+        element.getAttribute("data-code-block") ?? element.classList[0],
         Math.round(rect.left + window.scrollX),
         Math.round(rect.top + window.scrollY),
         Math.round(rect.width),
@@ -233,6 +241,25 @@ const boxes = (page: Page) =>
   }));
 
 describe("Code page in a browser", () => {
+  test("the Newsletter demo from Code data fits at 1280 and 390 px and keeps every panel from server to browser", async () => {
+    for (const width of [1280, 390]) {
+      const { page, errors, close } = await open(width, { hold: true, path: "/newsletter" });
+      try {
+        await settled(page);
+        const server = await boxes(page);
+        expect(server.overflow).toBeLessThanOrEqual(0);
+        expect(server.blocks.filter(([kind]) => kind === "k2b-stat-cell")).toHaveLength(4);
+        if (shots) await page.screenshot({ path: join(shots, `newsletter-${width}-light.png`), fullPage: true });
+        await page.evaluate(() => (window as unknown as { mount: () => void }).mount());
+        await settled(page);
+        expect(await boxes(page)).toEqual(server);
+        expect(errors).toEqual([]);
+      } finally {
+        await close();
+      }
+    }
+  }, 60_000);
+
   for (const width of [1280, 390]) {
     test(`${width}px: every block fits, and the first client render shows the server's page in place`, async () => {
       const { page, errors, close } = await open(width, { hold: true });
@@ -240,7 +267,7 @@ describe("Code page in a browser", () => {
         await settled(page);
         const server = await boxes(page);
         expect(server.overflow).toBeLessThanOrEqual(0);
-        expect(server.blocks.map(([kind]) => kind)).toContain("Chart");
+        expect(server.blocks.map(([kind]) => kind)).toContain("k2b-chart-explorer");
         if (shots) {
           mkdirSync(shots, { recursive: true });
           await page.screenshot({ path: join(shots, `code-page-${width}-light.png`), fullPage: true });
@@ -419,6 +446,11 @@ describe("Code page in a browser", () => {
       expect(await page.getByLabel("Title", { exact: true }).inputValue()).toBe("Typed");
       await page.getByRole("button", { name: "Refresh", exact: true }).click();
       await page.getByRole("cell", { name: "Shelf" }).waitFor();
+      // A reload that fails leaves every panel's data in place and says when it was read, with Try again.
+      state.trees.delete("/");
+      await emit();
+      await page.getByText("Refresh failed").first().waitFor();
+      expect(await page.getByRole("cell", { name: "Shelf" }).count()).toBe(1);
       expect(errors).toEqual([]);
     } finally {
       await close();
@@ -428,12 +460,15 @@ describe("Code page in a browser", () => {
   test("tables sort on their headers; the scanner writes into its field and sends nothing", async () => {
     const { page, errors, close } = await open(390, { camera: "code" });
     try {
-      const items = page.locator('[data-code-block="Table"]').first();
+      const items = page
+        .locator(".k2b-dashboard-frame")
+        .filter({ has: page.locator("table") })
+        .first();
       // Like every shared table, the first click sorts descending and the second ascending.
       await items.getByRole("button", { name: "Count" }).click();
-      expect(await items.locator("tbody tr").first().innerText()).toContain("Lamp");
+      expect(await items.getByRole("row").nth(1).innerText()).toContain("Lamp");
       await items.getByRole("button", { name: "Count" }).click();
-      expect(await items.locator("tbody tr").first().innerText()).toContain("Bicycle");
+      expect(await items.getByRole("row").nth(1).innerText()).toContain("Bicycle");
       await page.getByLabel("Title", { exact: true }).fill("Typed");
       await page.getByRole("button", { name: "Scan", exact: true }).click();
       await page.getByRole("dialog", { name: "Scan code" }).waitFor({ state: "detached" });

@@ -161,7 +161,7 @@ test("cld code init's TSX page passes cld code check and its generated editor ts
       if (!result.ok) throw new Error(JSON.stringify(result.diagnostics));
       expect(result.manifest.entrypoints).toMatchObject([
         { kind: "route", route: { method: "GET", path: "/", public: false } },
-        { kind: "route", route: { method: "POST", path: "/items", public: false } },
+        { kind: "route", route: { method: "POST", path: "/orders", public: false } },
       ]);
       bundle = result.bundle;
       return Response.json({ version: 1, result, manifest: { ...result.manifest, entry: input.entry, policyRows: [] }, permissions: [] });
@@ -208,9 +208,12 @@ test("cld code init's TSX page passes cld code check and its generated editor ts
     { call: async () => null },
   );
   const tree = validateCodePage(response.tree, config.codeId);
-  expect(tree.children.map((node) => node.kind)).toEqual(["Stats", "Section"]);
-  const section = tree.children[1];
-  expect(section?.kind === "Section" && section.children.map((node) => node.kind)).toEqual(["Chart", "Form", "Table"]);
+  expect(tree.children.map((node) => node.kind)).toEqual(["Stats", "Section", "Section"]);
+  const sections = tree.children.flatMap((node) => (node.kind === "Section" ? [node.children.map((child) => child.kind)] : []));
+  expect(sections).toEqual([
+    ["Chart", "Chart"],
+    ["Table", "Form"],
+  ]);
 }, 60_000);
 
 test("core.ai.decide is AI in the generated SDK and mail triage checks category before urgency", async () => {
