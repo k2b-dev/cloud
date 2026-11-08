@@ -208,7 +208,7 @@ test("both dashboards keep every panel in place in every state", async () => {
     for (const width of [1440, 390]) {
       const { page, errors } = await open(`/en/ui/charts/dashboards/${dashboard.slug}`, width);
       try {
-        const before = await frames(page, ".ui-charts-grid__cell > *, .k2b-stat-cell");
+        const before = await frames(page, ".k2b-dashboard-section__grid > .k2b-dashboard-frame, .k2b-stat-cell");
         expect(before.length, dashboard.slug).toBeGreaterThan(4);
         // Every panel keeps its title and its controls on one row, also in a third of the grid and on a phone.
         const wrapped = await page.$$eval(".k2b-chart-explorer > .k2b-chart-explorer__header", (headers) =>
@@ -226,7 +226,7 @@ test("both dashboards keep every panel in place in every state", async () => {
             dashboard: dashboard.slug,
             width,
             state,
-            frames: await frames(page, ".ui-charts-grid__cell > *, .k2b-stat-cell"),
+            frames: await frames(page, ".k2b-dashboard-section__grid > .k2b-dashboard-frame, .k2b-stat-cell"),
           }).toEqual({
             dashboard: dashboard.slug,
             width,

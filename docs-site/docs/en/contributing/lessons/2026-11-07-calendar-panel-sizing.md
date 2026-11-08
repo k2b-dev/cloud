@@ -15,3 +15,5 @@ Scaling geometry and inverse-scaling individual labels can separate words from t
 Use a reversed flex scroll origin for newest-first server output, while preserving the tooltip’s text direction. Size containment belongs to the calendar viewport, not the complete explorer: a contained explorer loses its intrinsic width in a shrink-to-fit host. The first frame’s known calendar reserve survives an omitted snapshot; without initial geometry, keep the standard frame after data arrives. Tests cover `{rows: []}`, intrinsic width, and a real 15px classic horizontal scrollbar inside the reserved gutter.
 
 When chart frames move between layers, carry responsive sizing into the current owner. The calendar reserve now belongs to `DescriptionPanel`; its render guard checks all states and both diagram and table views.
+
+Keep repeated browser compilation and launch in file setup, outside each viewport case. A five-second viewport timeout exposed duplicated setup cost; sharing the fixture keeps all geometry, state, tap and SSR assertions within the unchanged timeout.

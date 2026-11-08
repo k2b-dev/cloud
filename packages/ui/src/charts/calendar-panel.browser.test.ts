@@ -1,4 +1,4 @@
-import { expect, test } from "bun:test";
+import { afterAll, beforeAll, expect, test } from "bun:test";
 import { resolve } from "node:path";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
@@ -20,57 +20,70 @@ const snapshot = prepareChartSnapshot(spec, { key: (s) => String(s.datum.index),
 const rows = snapshot.marks.map((m) => ({ key: m.key }));
 const columns = [{ id: "day", label: "Day", value: (r: { key: string }) => r.key }];
 
+let panelBrowser: Awaited<ReturnType<typeof launchBrowser>>;
+let panelServer: string;
+let panelScript: string;
+beforeAll(async () => {
+  const { ChartExplorer: ServerExplorer } = await import(resolve(root, "dist/ssr/content/ChartExplorer.js"));
+  const server = renderToString(() =>
+    createComponent(ServerExplorer, {
+      title: "Opens per day",
+      description: "Last 26 weeks",
+      inset: "1rem",
+      data: { chart: snapshot, rows },
+      columns,
+      renderDetails: false,
+      request: { status: "idle" },
+    }),
+  );
+  const build = await Bun.build({
+    entrypoints: ["calendar-panel"],
+    target: "browser",
+    conditions: ["browser"],
+    format: "iife",
+    plugins: [
+      {
+        name: "panel",
+        setup(b) {
+          b.onResolve({ filter: /^calendar-panel$/ }, () => ({ path: "entry", namespace: "panel" }));
+          b.onLoad({ filter: /.*/, namespace: "panel" }, () => ({
+            loader: "ts",
+            resolveDir: import.meta.dir,
+            contents: `
+    import {createComponent,createSignal} from 'solid-js';import {render} from 'solid-js/web';
+    import {ChartExplorer} from ${JSON.stringify(resolve(root, "dist/browser/content/ChartExplorer.js"))};
+    const snapshot=${JSON.stringify(snapshot)}, rows=${JSON.stringify(rows)};
+    const [state,setState]=createSignal('data'),[view,setView]=createSignal('chart');
+    const data=()=>['data','stale'].includes(state());
+    render(()=>createComponent(ChartExplorer,{title:'Opens per day',description:'Last 26 weeks',inset:'1rem',renderDetails:false,
+    get data(){return data()?{chart:snapshot,rows}:{rows:[]}},
+    columns:[{id:'day',label:'Day',value:r=>r.key}],
+    get view(){return view()},onViewChange:setView,
+    get request(){return {status:state()==='loading'?'loading':['error','stale'].includes(state())?'error':'idle',reason:'Could not load observations.'}},
+    onRetry:()=>setState('data')
+    }),document.getElementById('mount'));
+    document.querySelectorAll('button[data-state]').forEach(b=>b.onclick=()=>setState(b.dataset.state));
+    document.getElementById('table').onclick=()=>setView(view()==='table'?'chart':'table');
+  `,
+          }));
+        },
+      },
+    ],
+  });
+  expect(build.success).toBe(true);
+  panelServer = server;
+  panelScript = await build.outputs[0]!.text();
+  panelBrowser = await launchBrowser();
+});
+afterAll(async () => {
+  await panelBrowser?.close();
+});
+
 for (const width of [390, 800, 1440, 1920])
   test(`26-week calendar fills its real panel and reserves all states at ${width}px`, async () => {
-    const { ChartExplorer: ServerExplorer } = await import(resolve(root, "dist/ssr/content/ChartExplorer.js"));
-    const server = renderToString(() =>
-      createComponent(ServerExplorer, {
-        title: "Opens per day",
-        description: "Last 26 weeks",
-        inset: "1rem",
-        data: { chart: snapshot, rows },
-        columns,
-        renderDetails: false,
-        request: { status: "idle" },
-      }),
-    );
-    const build = await Bun.build({
-      entrypoints: ["calendar-panel"],
-      target: "browser",
-      conditions: ["browser"],
-      format: "iife",
-      plugins: [
-        {
-          name: "panel",
-          setup(b) {
-            b.onResolve({ filter: /^calendar-panel$/ }, () => ({ path: "entry", namespace: "panel" }));
-            b.onLoad({ filter: /.*/, namespace: "panel" }, () => ({
-              loader: "ts",
-              resolveDir: import.meta.dir,
-              contents: `
-      import {createComponent,createSignal} from 'solid-js';import {render} from 'solid-js/web';
-      import {ChartExplorer} from ${JSON.stringify(resolve(root, "dist/browser/content/ChartExplorer.js"))};
-      const snapshot=${JSON.stringify(snapshot)}, rows=${JSON.stringify(rows)};
-      const [state,setState]=createSignal('data'),[view,setView]=createSignal('chart');
-      const data=()=>['data','stale'].includes(state());
-      render(()=>createComponent(ChartExplorer,{title:'Opens per day',description:'Last 26 weeks',inset:'1rem',renderDetails:false,
-        get data(){return data()?{chart:snapshot,rows}:{rows:[]}},
-        columns:[{id:'day',label:'Day',value:r=>r.key}],
-        get view(){return view()},onViewChange:setView,
-        get request(){return {status:state()==='loading'?'loading':['error','stale'].includes(state())?'error':'idle',reason:'Could not load observations.'}},
-        onRetry:()=>setState('data')
-      }),document.getElementById('mount'));
-      document.querySelectorAll('button[data-state]').forEach(b=>b.onclick=()=>setState(b.dataset.state));
-      document.getElementById('table').onclick=()=>setView(view()==='table'?'chart':'table');
-    `,
-            }));
-          },
-        },
-      ],
-    });
-    expect(build.success).toBe(true);
-    const browser = await launchBrowser();
-    try {
+    const browser = panelBrowser;
+    const server = panelServer;
+    {
       const page = await browser.newPage({ viewport: { width, height: 900 }, hasTouch: true, reducedMotion: "reduce" });
       try {
         const errors = pageErrors(page);
@@ -113,7 +126,7 @@ for (const width of [390, 800, 1440, 1920])
         const initial = await panel.evaluate(box),
           initialViewport = await viewport.evaluate(box);
         await page.locator("#mount").evaluate((e) => e.replaceChildren());
-        await page.addScriptTag({ content: await build.outputs[0]!.text() });
+        await page.addScriptTag({ content: panelScript });
         await settled(page);
         expect(await page.locator(".k2b-chart__svg > svg").evaluate((e) => e.outerHTML)).toBe(svg);
         expect(await panel.evaluate(box)).toEqual(initial);
@@ -188,8 +201,6 @@ for (const width of [390, 800, 1440, 1920])
       } finally {
         await page.close();
       }
-    } finally {
-      await browser.close();
     }
   });
 

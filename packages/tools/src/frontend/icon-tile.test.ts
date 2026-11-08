@@ -17,7 +17,7 @@ test("catalog quick tools and task rows render shared icon tiles with app ink", 
   const html = renderToString(() => createComponent(ToolCatalog, {}));
   const icons = [...html.matchAll(/<span\b[^>]*class="[^"]*\btools-tool-icon\b[^"]*"[^>]*>/g)];
   expect(icons.length).toBeGreaterThan(0);
-  expect(html).toContain("group/quick");
+  expect(html).toContain("k2b-link-card__icon k2b-icon-tile");
   expect(html).toContain("group/tool");
   for (const [icon] of icons) {
     const classes = icon.match(/\bclass="([^"]*)"/)?.[1]?.split(/\s+/);

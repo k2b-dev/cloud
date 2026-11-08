@@ -15,6 +15,17 @@ import { createSignal, For, Show } from "solid-js";
 import { DemoCard } from "../DemoCard";
 
 const examples = {
+  hbar: {
+    description: "Horizontal bars · Quarterly orders by channel, with group headings and totals.",
+    chart: {
+      kind: "hbar",
+      series: ["Q1", "Q2"],
+      rows: [
+        { group: "Store", label: "Furniture", values: [35, 46] },
+        { group: "Web", label: "Lighting", values: [49, 34] },
+      ],
+    },
+  },
   waterfall: {
     description: "Waterfall · Follow each inflow and outflow from the opening to the closing balance.",
     chart: {
@@ -282,6 +293,7 @@ type TooltipField = { label: string; unit?: string; names?: Record<string, strin
 type TooltipExample = { title: string; fields: Record<string, TooltipField> };
 
 const tooltipExamples: Record<ChartKind, TooltipExample> = {
+  hbar: { title: "Quarterly orders", fields: { Q1: { label: "Q1" }, Q2: { label: "Q2" }, total: { label: "Total" } } },
   waterfall: {
     title: "Running balance",
     fields: { balance: { label: "Balance" }, inflow: { label: "In" }, outflow: { label: "Out" }, after: { label: "Balance after" } },
