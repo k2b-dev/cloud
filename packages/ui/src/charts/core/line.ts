@@ -4,7 +4,6 @@ import { coreChartMessages } from "./chart-messages";
 import { lineBase } from "./line-base";
 import { lineDetailsEnabled, lineForecastLayout, lineLegendX } from "./line-options";
 import type { LineOptions } from "./svg-renderers";
-import type { ChartDatum } from "./types";
 import {
   collectAxisValues,
   collectSeriesLegend,
@@ -35,6 +34,7 @@ import {
   stepPathD,
   svgRoot,
 } from "./svg-shared";
+import type { ChartDatum } from "./types";
 
 /**
  * Render a line chart. Each series becomes a `<path class="stdlib-chart-line">`
