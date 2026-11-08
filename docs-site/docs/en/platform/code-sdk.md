@@ -722,8 +722,10 @@ with `mode: "code_run"` and executes it in the Code runner's isolated workerd
 runtime. It binds normalized targets, refs and idempotency metadata to the
 current person's Assistant turn, preserving capability access checks and
 approvals. It does not create a lasting Code, version or version mandate.
-SDK methods return domain data; the older `cloud.capabilities.run`
-keeps returning its capability envelope. This mode has no `app` or `owner`,
+SDK Queries return `{data, page?}`; read fields from `data` and follow the
+returned cursor when `page.hasMore`. Streaming reads return `FileRef`, and
+Actions return domain data directly. The older `cloud.capabilities.run` keeps
+returning its capability envelope. This mode has no `app` or `owner`,
 and accepts dynamic IDs. The host also exports its existing `cloud.sheet`
 helpers as `sheet` from `@sdk`. Other package imports remain unavailable.
 `http` and `secrets` use the person's existing chat HTTP approvals and secret
@@ -748,7 +750,7 @@ The existing `cloud.capabilities.run(name, input, options?)` also accepts explic
 normalized `target`, `refs` and `idempotencyKey` in its optional third argument.
 A key is allowed only for an Action declaring required idempotency; retain it
 for retries of the same effect. Omitting it preserves the existing per-call
-key. Scripts and Studio apps keep the same permissions and approvals.
+key. Scripts keep the same permissions and approvals.
 
 
 ## Mail triage: category first

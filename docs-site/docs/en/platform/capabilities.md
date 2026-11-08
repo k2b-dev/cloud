@@ -286,7 +286,7 @@ base fallback (`de-CH` → `de` → `en`) and return final localized strings, so
 consumers never import another application's message keys.
 
 People see this presentation in the Assistant's tool rows, approval cards,
-and remembered approvals; in Studio app approvals; in search; and in the
+and remembered approvals; in chat-code approvals; in search; and in the
 capability catalog. Each surface resolves it for the reader's request locale,
 together with the localized app name from the app's own `presentation`. An
 entry without a translation shows its base text, so a missing locale never

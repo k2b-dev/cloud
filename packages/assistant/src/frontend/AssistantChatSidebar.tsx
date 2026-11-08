@@ -71,9 +71,7 @@ export type ChatSidebarJump = { messageSeq: number; callId: string | null; prese
 
 export type ChatSidebarActions = {
   onOpenFile: (file: { path: string; title: string }) => void;
-  onOpenApp: (id: string, title: string) => void;
   onJump: (target: ChatSidebarJump) => void;
-  onOpenStudio?: () => void;
   onOpenSecrets?: () => void;
   onOpenKnowledge?: () => void;
   onOpenReferences?: () => void;
@@ -296,13 +294,6 @@ function ResultMeta(props: { result: AssistantChatResult }) {
   const text = () => {
     const result = props.result;
     if (result.file) return [extension(result.file.path), formatFileViewSize(result.file.size)].filter(Boolean).join(" · ");
-    if (result.app)
-      return [
-        copy().studioApp,
-        result.app.lastRun === "error" ? copy().runFailed : result.app.lastRun === "running" ? copy().runRunning : null,
-      ]
-        .filter(Boolean)
-        .join(" · ");
     return copy().visualization;
   };
   return <span class="assistant-result__meta">{text()}</span>;
@@ -368,14 +359,6 @@ function ResultCard(props: {
 
 function ResultButtons(props: { result: AssistantChatResult; actions: ChatSidebarActions; files: ConversationFileSource }) {
   const copy = useSidebarCopy();
-  const copyLink = async (href: string) => {
-    try {
-      await navigator.clipboard.writeText(new URL(href, window.location.href).href);
-      toast.success(copy().linkCopied);
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : String(error));
-    }
-  };
   return (
     <>
       <Show when={props.result.file}>
@@ -404,26 +387,7 @@ function ResultButtons(props: { result: AssistantChatResult; actions: ChatSideba
           </>
         )}
       </Show>
-      <Show when={props.result.app}>
-        {(app) => (
-          <>
-            <Button
-              size="xs"
-              variant="ghost"
-              aria-label={copy().openNamed({ title: props.result.title })}
-              onClick={() => props.actions.onOpenApp(app().id, props.result.title)}
-            >
-              <i class="ti ti-external-link" aria-hidden="true" />
-              {copy().open}
-            </Button>
-            <Button size="xs" variant="ghost" onClick={() => void copyLink(app().href)}>
-              <i class="ti ti-link" aria-hidden="true" />
-              {copy().copyLink}
-            </Button>
-          </>
-        )}
-      </Show>
-      <Show when={!props.result.file && !props.result.app && resultJump(props.result)}>
+      <Show when={!props.result.file && resultJump(props.result)}>
         {(target) => (
           <Button size="xs" variant="ghost" onClick={() => props.actions.onJump(target())}>
             <i class="ti ti-arrow-back-up" aria-hidden="true" />
@@ -449,7 +413,6 @@ function ResultRow(props: {
   const open = () => {
     const result = props.result;
     if (result.file) props.actions.onOpenFile({ path: result.file.path, title: result.title });
-    else if (result.app) props.actions.onOpenApp(result.app.id, result.title);
     else {
       const target = resultJump(result);
       if (target) props.actions.onJump(target);
@@ -459,7 +422,7 @@ function ResultRow(props: {
     const result = props.result;
     const target = resultJump(result);
     return [
-      ...(result.file || result.app ? [{ label: copy().open, icon: "ti ti-external-link", action: open }] : []),
+      ...(result.file ? [{ label: copy().open, icon: "ti ti-external-link", action: open }] : []),
       ...(result.file
         ? [
             {
@@ -496,9 +459,7 @@ function ResultRow(props: {
     [
       props.result.file
         ? [extension(props.result.file.path), formatFileViewSize(props.result.file.size)].filter(Boolean).join(" · ")
-        : props.result.app
-          ? copy().studioApp
-          : copy().visualization,
+        : copy().visualization,
       props.when,
     ]
       .filter(Boolean)
@@ -727,38 +688,11 @@ export function AssistantChatSidebarContent(props: {
           );
         };
 
-        // Needs attention: things that stopped and wait for the person, at the very top.
-        const attention = () => [
-          ...snapshot()
-            .results.filter((result) => result.app?.lastRun === "error")
-            .map((result) => ({
-              key: `app:${result.key}`,
-              label: copy().appRunFailed({ title: result.title }),
-              action: () => props.actions.onOpenApp(result.app!.id, result.title),
-            })),
-        ];
-
         return (
           <Show
             when={!props.search.active()}
             fallback={<SidebarSearchResults snapshot={snapshot()} search={props.search} actions={props.actions} files={files()} />}
           >
-            <Show when={attention().length}>
-              <DetailPanel.Section title={copy().attention}>
-                <For each={attention()}>
-                  {(item) => (
-                    <DetailPanel.Action
-                      class="assistant-sidebar-row"
-                      leading={<i class="ti ti-alert-circle" aria-hidden="true" />}
-                      title={item.label}
-                      disabled={!item.action}
-                      onClick={() => item.action?.()}
-                    />
-                  )}
-                </For>
-              </DetailPanel.Section>
-            </Show>
-
             <DetailPanel.Section
               title={copy().results}
               class="assistant-sidebar-results"
@@ -940,14 +874,6 @@ export function AssistantChatSidebarContent(props: {
                   </For>
                   <Show when={working().hiddenGroups}>
                     {(count) => <p class="assistant-sidebar-hint">{copy().hiddenGroups({ count: count() })}</p>}
-                  </Show>
-                  <Show when={props.runCount && props.actions.onOpenStudio}>
-                    <DetailPanel.Action
-                      class="assistant-sidebar-row"
-                      leading={<i class="ti ti-terminal-2" aria-hidden="true" />}
-                      title={`${copy().scriptRuns} · ${props.runCount}`}
-                      onClick={() => props.actions.onOpenStudio?.()}
-                    />
                   </Show>
                 </Show>
               </DetailPanel.Section>
@@ -1652,9 +1578,8 @@ export const openAssistantChatSidebarSheet = async (props: {
       const actions: ChatSidebarActions = {
         ...props.actions,
         onOpenFile: leave(() => close(), props.actions.onOpenFile),
-        onOpenApp: leave(() => close(), props.actions.onOpenApp),
         onJump: leave(() => close(), props.actions.onJump),
-        onOpenStudio: props.actions.onOpenStudio && leave(() => close(), props.actions.onOpenStudio),
+
         onOpenKnowledge: props.actions.onOpenKnowledge && leave(() => close(), props.actions.onOpenKnowledge),
         onOpenReferences: props.actions.onOpenReferences && leave(() => close(), props.actions.onOpenReferences),
         onOpenProjectFile: props.actions.onOpenProjectFile && leave(() => close(), props.actions.onOpenProjectFile),

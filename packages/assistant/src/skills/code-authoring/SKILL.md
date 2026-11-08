@@ -103,6 +103,9 @@ Automatic replies remain reference evidence and are not rebuilt as sending Code.
 - Write examples, fixtures and names without real people, mailboxes or IDs
   from this chat.
 
+Studio apps and their data have been retired without transfer. For a one-off
+chat computation, load `assistant-code-mode` and use inline `code_run`.
+
 ## Templates
 
 Each template is complete Code for the owner named in the table and passes

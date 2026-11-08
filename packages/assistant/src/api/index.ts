@@ -3,7 +3,6 @@ import { type AuthContext, auth, err, fail, getLocale, getTimeZone, ok, rateLimi
 import type { Context } from "hono";
 import { Hono } from "hono";
 import { z } from "zod";
-import { artifactApi } from "../artifacts/api";
 import { chatCodeApi } from "../chat-code/api";
 import { loadAssistantChatContextSnapshot, loadAssistantChatSources } from "../chat-context";
 import { loadAssistantProjectContextSnapshot } from "../project-context";
@@ -39,7 +38,6 @@ const app = new Hono<AuthContext>()
   .use("*", auth.requireRole("authenticated"))
   .use("*", auth.requireUser())
   .route("/chat-code", chatCodeApi)
-  .route("/artifacts", artifactApi)
   .get("/workspace/sidebar", async (c) => {
     const user = actorUser(c);
     if (!user) return respond(c, fail(err.forbidden("Assistant requires a user-backed actor")));

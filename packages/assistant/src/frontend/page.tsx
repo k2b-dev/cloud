@@ -103,7 +103,7 @@ export default ssr<AuthContext>(async (c) => {
     loadAssistantSidebarSnapshot({ actor: c.get("actor"), accessSubject: c.get("accessSubject") }, { locale, timeZone }),
     coreSettings.get<string>("app.url"),
     getAiChatQuotas(subject).catch(() => null),
-    // Also without the view: the sidebar shows its Approvals row from the first paint, so it never pushes Studio away.
+    // Also without the view: the sidebar shows its Approvals row from the first paint, so it never shifts the workspace.
     loadPendingApprovals(c, { app: "assistant" }),
     // The list's first page when the page opens on it; otherwise only whether the person has any Code. Null: unknown.
     codeOpen && !detailCodeId ? loadCodeSummaries(invokeCode, owner).catch(() => null) : undefined,

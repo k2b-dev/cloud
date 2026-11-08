@@ -216,11 +216,14 @@ schemas are deferred. These built-ins provide no arbitrary code execution,
 host access, or network access beyond the explicit web tools. See
 [Tools and approvals](/en/docs/ai/tools-and-approvals).
 
-The default tool source offers server-run `code_run`, `code_inspect`,
-`code_stop` and `code_export` in every turn, including API and detached CLI
-clients. They load on demand. One-off chat code runs on the Code runner with
-the person's current capabilities and normal turn approvals. Scheduled chat
-routines are retired; see [Routines became Code](/en/docs/operations/routines-to-code).
+The default tool source offers `code_run`, `code_inspect`, `code_stop` and
+`code_export` on the server, including API and detached CLI clients. Scripts
+execute on the Code runner under the turn's authority and approvals. `code_secret`
+uses the trusted web UI. Native views and chat files remain available; Studio
+app tools and app databases have been retired. See
+[Chat code execution](/en/docs/ai/chat-interface#chat-code-execution). Scheduled
+chat routines are retired; see [Routines became Code](/en/docs/operations/routines-to-code).
+
 
 The `text_editor` frontend interaction lets the model provide one complete
 plain-text or Markdown draft for the user to revise. The browser presents both
@@ -440,7 +443,7 @@ interval (1.5 seconds in production). A result within that window continues in
 the same lease, without another claim or rebuilding the turn, and does not
 count as a resumed attempt. Otherwise the turn suspends and enqueues a
 continuation as before, including when the result arrives as the wait ends.
-Other client tools such as `code_open` and `code_secret`, human interactions
+Other client tools such as `code_secret`, human interactions
 such as `survey` and `text_editor`, and all approvals suspend immediately.
 
 `POST /conversations/:id/turns/:turnId/actions/:callId` validates results of
@@ -649,11 +652,9 @@ Hiding the browser tab does not close the visible conversation's SSE stream,
 so a turn keeps streaming and its frontend tools keep running. The live socket
 closes while the tab is hidden and replays the missed updates when it returns.
 This does not override browser suspension, operating-system sleep, reload, or
-closing the tab. Agent Code Mode execution uses an Assistant-owned isolated Chromium host,
-so changing or closing the user tab does not pause code or simulated UI actions.
-The interactive Studio preview remains browser-owned. Opening an app, selecting
-local files, entering secrets and answering approval prompts still need a user
-client.
+closing the tab. Agent code execution uses the Code runner, so changing or
+closing the tab does not stop it. Entering secrets and answering approval
+prompts still require a client.
 
 When code in that host calls a capability Action or sends an external HTTP
 request, the chat approval names the app and Action, repeats the owning app's
@@ -941,21 +942,6 @@ The feature is disabled by default and does not limit generic application AI,
 workflow or background inference. See [Assistant limits](/en/docs/ai/usage-and-feedback#set-assistant-budgets)
 for accounting, wildcard precedence and reset behavior.
 
-### HTML app self-tests
-
-`code_check` is a server-managed tool available to web, CLI, API and background
-turns. Write main-flow steps in the app's `steps.json`, check, inspect every
-screenshot with `view_image`, and fix before showing or publishing. The agent's
-open/present/publish operations require a passing check for the current source,
-steps and table definitions in that user/conversation. Human Studio publication
-and scripts have no check gate. The self-test is not a security mechanism.
-
-Desktop and phone run a saved app on separate disposable copies of its data;
-one-off apps have no storage, as in their chat card. AI runs for real; HTTP and
-capability effects are unavailable, and background checks reject all
-capabilities. See [HTML app checks](/en/docs/ai/chat-interface#legacy-studio-html-checks)
-for step matching, copy/output budgets, cancellation and the report contract.
-
 ## Register host-owned tools
 
 The process that owns the AI worker can pass `tools: readonly AiRuntimeTool[]`
@@ -971,9 +957,8 @@ recheck its own authority. `resolveAiCapabilityActor` from `@k2b/cloud/ai`
 resolves the current conversation owner's user-backed session authority from
 a persisted actor and the conversation store, including account status and
 mobile-session limits. It is for the trusted runtime host, not an application
-credential exchange. `createCodeSourceTool` from `@k2b/cloud/ai/tools` exposes
-one existing Studio source tool so an overloaded host tool can preserve that
-tool's authenticated transport and revision behavior.
+credential exchange. `createCodeSourceTool` from `@k2b/cloud/ai/tools` exposes a retained chat/Project
+file tool through its authenticated transport.
 
 For a result that starts no model turn, trusted hosts share
 `appendAiBackgroundMessage(db, { conversationId, text, meta? })` from

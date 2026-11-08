@@ -36,14 +36,6 @@ const structured: Readonly<Record<string, { file: string; command: string }>> = 
     "core.code.runner_bridge_concurrency",
     "core.code.runner_process_memory_bytes",
   ].map((key) => [key, { file: "packages/cloud/src/cli/admin/administration.ts", command: "settings apply" }]),
-  ...["assistant.storage_file_mib", "assistant.storage_total_mib"].map((key) => [
-    key,
-    { file: "packages/assistant/src/cli/code.ts", command: "studio-admin storage-configure" },
-  ]),
-  ...["assistant.rsql_url", "assistant.rsql_api_token", "assistant.rsql_allowed_targets"].map((key) => [
-    key,
-    { file: "packages/assistant/src/cli/code.ts", command: "studio-admin configure" },
-  ]),
   ...[
     "max_bases",
     "max_raw_retention_days",

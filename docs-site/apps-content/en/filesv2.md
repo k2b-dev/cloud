@@ -1120,7 +1120,7 @@ are the same `filesv2.entry` refs as everywhere else; see
 
 ## Compose private file lists and downloads
 
-Studio Apps can combine Files entries and stored Grids documents without
+Code and chat scripts can combine Files entries and stored Grids documents without
 copying their bytes or creating public shares. Discover the installed
 capabilities, list accessible bases with `filesv2.bases.list`, and browse with
 `filesv2.entry.list` or search a known base with `filesv2.entry.search-in-base`,

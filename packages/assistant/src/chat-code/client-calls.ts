@@ -50,20 +50,20 @@ export const clientCalls = {
       { user, turnId, conversationId, toolName } = await authorize(call, identity);
     const result = await sql.begin(async (db) => {
       // Closed turns cannot pass authorize again. Keep completed-call payloads short-lived.
-      await db`DELETE FROM assistant.artifact_client_calls WHERE user_id=${user.id}::uuid AND created_at < now() - interval '1 day'`;
-      const inserted = await db`INSERT INTO assistant.artifact_client_calls(user_id,turn_id,call_id,client_id,input)
+      await db`DELETE FROM assistant.code_client_calls WHERE user_id=${user.id}::uuid AND created_at < now() - interval '1 day'`;
+      const inserted = await db`INSERT INTO assistant.code_client_calls(user_id,turn_id,call_id,client_id,input)
         VALUES(${user.id}::uuid,${turnId}::uuid,${call.callId},${call.clientId}::uuid,(${JSON.stringify(call.input)}::text)::jsonb)
         ON CONFLICT DO NOTHING RETURNING call_id`;
       if (inserted.length) return { status: "execute" as const };
       // Only the original host can renew ownership. A waiting tab never extends it.
-      await db`UPDATE assistant.artifact_client_calls SET heartbeat_at=now()
+      await db`UPDATE assistant.code_client_calls SET heartbeat_at=now()
         WHERE user_id=${user.id}::uuid AND turn_id=${turnId}::uuid AND call_id=${call.callId}
         AND client_id=${call.clientId}::uuid AND result IS NULL
         AND heartbeat_at >= now() - interval '2 minutes'`;
       const [row] = await db<
         { result: unknown; completed: boolean; expired: boolean }[]
       >`SELECT result, result IS NOT NULL AS completed, heartbeat_at < now() - interval '2 minutes' AS expired
-        FROM assistant.artifact_client_calls WHERE user_id=${user.id}::uuid AND turn_id=${turnId}::uuid AND call_id=${call.callId}`;
+        FROM assistant.code_client_calls WHERE user_id=${user.id}::uuid AND turn_id=${turnId}::uuid AND call_id=${call.callId}`;
       if (row?.completed) return { status: "done" as const, result: Output.parse(row.result) };
       // Never replay an execution with an uncertain outcome, including after reload.
       return { status: row?.expired ? ("interrupted" as const) : ("pending" as const) };
@@ -74,7 +74,7 @@ export const clientCalls = {
   async complete(input: unknown, identity: ArtifactIdentity) {
     const call = ClientCallResult.parse(input),
       { user, turnId } = await authorize(call, identity);
-    const rows = await sql`UPDATE assistant.artifact_client_calls SET result=(${JSON.stringify(call.result)}::text)::jsonb
+    const rows = await sql`UPDATE assistant.code_client_calls SET result=(${JSON.stringify(call.result)}::text)::jsonb
       WHERE user_id=${user.id}::uuid AND turn_id=${turnId}::uuid AND call_id=${call.callId}
       AND client_id=${call.clientId}::uuid AND input=(${JSON.stringify(call.input)}::text)::jsonb AND result IS NULL
       AND heartbeat_at >= now() - interval '2 minutes' RETURNING call_id`;

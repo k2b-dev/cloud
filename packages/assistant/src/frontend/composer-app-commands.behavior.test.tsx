@@ -253,7 +253,6 @@ const mount = async (
                   files: [],
                   references: [],
                   skills: { items: [], page: 1, hasNext: false },
-                  apps: { items: [], page: 1, hasNext: false },
                 }
               : null
           }

@@ -941,10 +941,10 @@ REST document routes and a workflow run's generated documents. `document.read`
 also returns a semantic `download` link. Use the returned paths verbatim in
 ordinary authenticated Cloud UI. They do not grant access or create a public
 share; the endpoint checks current permissions again and returns the stored
-bytes in their original format (PDF, CSV, JSON, XML or a renderer artifact). Studio's isolated runtime
-should obtain a file through its capability stream API instead of fetching app
-routes directly. A shared Studio list can normalize each provider's file name,
-resource ref and download action while keeping provider-specific transfer logic.
+bytes in their original format (PDF, CSV, JSON, XML or a renderer artifact). Code and chat scripts
+should obtain a file through the capability stream API instead of fetching app
+routes directly. Keep each provider's resource ref and download operation when
+combining file lists.
 
 Use `document.content.read` to retrieve one stored artifact as an authenticated
 binary stream. Supply the public document `id` and optionally an `artifactKey`

@@ -492,7 +492,7 @@ segment has its own places, and only the last one shows the duration.
 The work time is wall time minus time spent waiting for approvals and other
 user actions. History uses the loop's durable timing; the live clock stands
 while the turn waits for an approval or an answer and continues from the same
-value afterwards. A tool the browser runs by itself, such as a Studio code run,
+value afterwards. A tool the browser runs by itself, such as a Chat code run,
 counts as work, live and in history.
 
 Screen readers do not hear the work line's ticking clock or a status while it
@@ -508,7 +508,7 @@ item ids, `ai-turn:<turn id>:<segment>`. A segment is named by what opened it:
 messages open one segment, and loading older history renames none. Results and
 actions are keyed by their call. When the turn ends, the work line changes its
 text and the message actions appear; nothing else moves, and host views such as
-a running Studio session keep their state. Copy copies only the final message.
+a running code job keep their state. Copy copies only the final message.
 
 Turns with a work line, results, actions, or a failure notice span the full
 message column, so disclosure chevrons share one right edge. Plain prose keeps
@@ -553,7 +553,7 @@ Capability titles and application icons come from the saved presentation.
 Approval prompts retain their application identity and explicit decision
 controls. Surveys, charts, cards, presented files, editors, and capability
 tables remain visible results. The saved presentation remains readable when an application
-is temporarily unavailable. Cloud's built-in tools, including every Studio
+is temporarily unavailable. Cloud's built-in tools, including every code
 tool, show a name in the reader's language, such as "App check" or
 "App-Prüfung"; a test fails when a built-in tool has no English or German name.
 Other tools without a presentation show their tool name in words.
@@ -563,18 +563,6 @@ outside tool summaries. Rendering depends on the result itself, including in
 restored history without optional application branding. Live updates replace
 the previous block content without duplicating its table. Results without table
 presentation remain compact; errors and approval requests retain their own UI.
-
-`AiChatActions.renderCodePresentation(result)` lets the application render a
-`code_present` result inline. Cloud calls it once per call, from the call's
-first event, with an accessor: `result()` is `undefined` while the call runs and
-the saved result once it completed. Hosts written for the earlier contract,
-which passed the completed result as a value, read `result()` instead. Reserve the preview's final frame while the
-result is pending, so the preview does not grow twice, and keep the view's
-state when the result arrives; the same view stays mounted when the turn
-becomes history. The host owns validation, authorized loading, durable storage,
-and sandbox lifecycle. It must not execute saved code automatically when
-rendering the preview: Assistant's card starts its HTML app only on a click. Without this action, `code_present` calls stay in the
-work line.
 
 Hosts can supply `AiChatActions.resolveFileLink(href)` to resolve a Markdown link
 against the current conversation file manifest. Return `{path, href}` with a
@@ -586,7 +574,7 @@ counts but does not list; the workspace reports such a file if it is gone.
 Conversation file paths are not website URLs; agents deliver files with `present`.
 
 Assistant shows what a chat holds in the sidebar **In this chat**, in this
-order: what needs attention, **Results** (files, Studio apps, and
+order: what needs attention, **Results** (files and
 visualizations the assistant delivered, each with the sentence it gave),
 **Your files** (uploads and voice recordings; an upload the assistant hands
 over with `present` stays here), **Sources** (read web pages,
@@ -636,8 +624,7 @@ to the row that takes its place. A file that another tab or the CLI already
 deleted counts as deleted; other failures keep the file and show the server
 message. Shared Project files stay read-only under Context. A working folder
 can be deleted as a whole after confirmation; the confirmation names the
-results stored in it, because they go with it. The Studio overview lists up to
-500 apps the chat referenced, not only the ones in its newest sources.
+results stored in it, because they go with it.
 Deletion never rewrites the chat history. Earlier messages keep their text; a
 Markdown link to the file becomes an ordinary link, opening a presented file
 reports `File not found`, and an image attachment shows its icon instead of the
@@ -867,274 +854,17 @@ summaries without values. Present each view with `present({path})`.
 wait for background work with `waitMs`.
 `code_export` copies a captured file into the originating chat.
 
-### Legacy Studio HTML checks
+### Chat code execution
 
-These direct Studio host APIs remain for Studio until its separate removal;
-they are not offered in chat. Write `index.html`, optional styles/modules,
-and `steps.json`. Call
-`code_check({id})` for saved source or `code_check({files})` for a one-off app.
-Fix the findings, call `view_image` with the report's `review.prompt` for every
-path in `review.paths`, and check again. The prompt asks for visible defects:
-rows at different heights, cut-off, overlapping or doubled content, error
-messages, raw values and wrong plurals. It leaves contrast to the measured axe
-findings, so a vision model does not push apps away from the flat base style.
-The paths are the three screenshots and every PDF the desktop run downloaded.
-The phone run repeats the steps, so its PDFs add a path only under a file name
-the desktop run did not download. `passed` means the app passed the automated
-checks; it does not judge the design or business logic. The report includes
-desktop before steps, desktop after steps, phone after steps, captured
-downloads, call counts and an accessibility tree. Each screenshot shows the
-whole page up to 2000 px tall. The check grows the viewport to the page and
-measures again, because content sized in viewport units grows with it;
-`cropped: true` marks a page that still continues below. All app-derived report
-text is untrusted content, never agent instructions.
+Assistant owns the chat host and persists call ownership, results and ordered
+approvals. One-off scripts execute on the Code runner. Closing the browser tab
+does not stop a run; a lost host is never replayed. `code_secret` opens trusted
+secret entry in the web interface. Native views and exported files remain chat
+files. For lasting Code, use the Code tools and [Code authoring](/en/docs/platform/gustav-code-tools).
 
-`code_open`, `code_present`, and the agent's `code_publish` refuse HTML apps
-without a passing check for the current files and table definitions, bound to
-that user and conversation. Changing `steps.json` also invalidates the check.
-One-off presentation requires exactly the checked files. Scripts have no gate.
-The human Studio publish flow is not gated: the self-test is an agent workflow
-guard, not a security mechanism, and grants no access. The gate applies when the
-tool is called: a presented or opened saved app keeps loading its current source,
-so the agent checks again after every edit before asking the person to reload.
-`code_restore` is a rollback to an earlier publication and is not gated.
+Studio apps, HTML checks and presentations, machine execution, and the direct
+`cld assistant code` commands are retired. See [Studio retirement](/en/docs/operations/studio-retirement).
 
-`code_write` reports an invalid `steps.json` as a diagnostic with the step,
-the field and the valid forms; `code_check` refuses it with the same message.
-The screenshots show the state after the last step, so steps should end in the
-typical, filled main state.
-
-`steps.json` is an array of at most 20 steps. Actions are `click`, `check`,
-`uncheck`, `fill`, `select`, `press`, `upload`, and `reload`. Targets use
-`{role,name?}`, `{label}`, or `{text}`. Matching tries exact, then
-case-insensitive, then substring; multiple matches fail and list candidates.
-Names match the accessibility tree and exclude placeholders. `press` may omit
-its target to use focus. `fill`, `select`, and `press` take a string `value`;
-fill decimal numbers with a dot. `upload.file` names a chat file/path or an
-app-relative source file. `reload` keeps the run's disposable data and the
-app's URL hash. Disabled controls cannot be clicked, filled, selected, uploaded
-to, or focused for `press`.
-
-```json
-[
-  {"action":"fill","target":{"label":"New task"},"value":"Send invoice"},
-  {"action":"press","value":"Enter"},
-  {"action":"reload"},
-  {"action":"check","target":{"role":"checkbox","name":"Send invoice"}}
-]
-```
-
-Both desktop (1280×800) and phone (390×844, touch) replay the steps, in opposite
-themes with the viewer's locale/time zone.
-CLI checks use a light desktop theme and the service locale/time zone.
-For a saved app, each run uses a separate disposable copy
-of the app database, shared KV/files and only the checking user's personal KV.
-Reads and writes use the normal services; real app data stays unchanged. A
-database above 1000 rows or 16 MiB uses schema only and reports a warning.
-Storage copies are limited to 250 MiB.
-One-off apps have no storage or database, as in their chat card: `cloud.kv`,
-`cloud.files` and `cloud.db` reject with `unavailable`.
-
-AI runs for real. HTTP, capability actions and anything needing approval reject
-with `unavailable` (“not executed during code_check”). Uncaught errors and
-`console.error` output that contain this message warn instead of failing.
-Read-only capability queries run for one-off apps and apps the checking user
-manages. For apps the user can only use, where the normal runner would ask
-first, every capability rejects. Downloads from
-`cloud.download` and download links become readable chat files alongside
-screenshots.
-
-The check fails on runtime errors, including errors thrown in event handlers
-and unhandled rejections, `console.error`, sandbox violations, missing
-readiness after 10 seconds, an empty page, failed steps, serious/critical axe
-findings, static lint errors, phone horizontal overflow or clipped controls in
-sideways scrolling containers, at startup and after the steps. A JavaScript
-engine message for a code bug, such as “Cannot read properties of null”, also
-fails when the app shows it as its own message: in an element with
-`role="alert"`, `role="status"` or `aria-live`, or in `<output>`. The check
-looks for it after every step. The same text elsewhere, such as in a log table,
-and engine messages for input errors, such as `SyntaxError: …` from parsing an
-import, warn. Findings name elements by tag, id and accessible name. Fields or
-buttons without main-flow steps also fail; links alone need no steps. More than
-200 findings end with one error saying later findings were dropped.
-Other accessibility findings, password fields, several untyped form buttons,
-layout loops and fields still `:user-invalid` warn. So do misaligned rows:
-children of one flex or grid row whose boxes sit at least 6 px apart because
-of a margin, usually the base stylesheet's flow spacing, and field captions in
-one row that do not line up. In a row aligned at the bottom, such as `.row`,
-captions line up by their last line, so a caption that wraps does not warn. The
-warning names the row and the CSS that fixes it, once per row pattern; a row
-without its own class is asked to get one, because a selector such as
-`main > div` would also reset the spacing of other blocks. Baseline alignment,
-wrapped rows, items spanning rows, auto margins and a margin that lines an item
-up with a field or button beside it are intentional and do not warn. The check
-lays out the HTML of every `cloud.pdf.render` call at its printed width with the
-base stylesheet and print media, as the renderer prints it, and reports the same
-findings for the PDF. It loads no images from `assets`; the findings rest on
-margins and text. Visible values such as `NaN`, `undefined`, `Invalid Date` or
-`[object Object]` warn in the page and in PDFs.
-
-`cloud.chart(options)` returns chart markup for apps, scripts and PDFs without
-needing a DOM. It takes the same kinds and options as chat charts and maps them
-through the same path: bar, line, scatter, pie, donut, histogram, gauge,
-sparkline, boxplot, heatmap, barGauge and stat. See
-[Tools and approvals](/en/docs/ai/tools-and-approvals#tool-contracts) for data,
-axes, declarative formats, references, thresholds, series style/role and limits.
-There is no grouped or stacked bar mode, or second y axis. For related computed
-measures in chat, use `cloud.view.group`.
-
-`cloud.chart()` returns synchronously. In HTML apps, line, bar, pie, donut,
-stat and sparkline render immediately. Other kinds return a loading state
-that the frame fills after the markup enters the document, preserving its box
-size. The renderer is bundled with the frame and needs no network request,
-even on first use offline. A loading failure shows a retry button.
-A rendering error (including a throwing format callback) shows its message
-without retry and is reported to the host. Tooltips,
-format callbacks and the print value table remain available after rendering.
-Frame readiness and snapshots wait for pending drawings; `cloud.pdf.render`
-also finishes pending chart markup before creating the PDF. Insert the returned
-markup rather than extracting its SVG immediately. Scripts and PDF markup
-created by scripts still render every kind synchronously.
-
-Function `format(value)` is also accepted on axes and values. `width` and
-`height` set the logical size: 480 × 280 by default, or 160 × 40 for sparkline.
-Apps redraw stretched charts at their measured width when `width` is omitted;
-pie, donut and gauge keep their aspect ratio. Date and ISO-with-offset x values
-become the viewer's wall-clock time; ISO strings without an offset, including
-`YYYY-MM` and date-times with a space or fractions, stay as written. When every
-x is at midnight, the axis shows days. Date references become wall-clock
-date-time strings. Labels may be numbers. Category labels remain complete; some
-are skipped when they do not fit.
-
-An app redraws with whatever its data or filters leave, so `cloud.chart()`
-does not apply the chat's size and fit limits: empty data, a one-point line,
-more than 8 series or 480 points, empty titles and long labels draw, and
-missing or non-finite values are left out. It throws `invalid` with a path such
-as `series[0].data[2].x` for unknown kinds and wrong option types, and for
-input the renderer cannot draw: a fixed domain that does not contain every
-value, or values too close for their size to label an axis. Options supported
-only by stdlib and outside this contract are ignored.
-Pie and donut slices show shares, so a value `format` only changes the values
-in chat tooltips and tables. A scatter comparison series (`role: "reference"`)
-draws hollow points in chat; `cloud.chart()` draws them filled.
-
-Checks use the existing host admission and a 45-second deadline. Each user can
-hold at most 16 disposable check copies at a time, two for each of the eight
-admitted code hosts; another start fails with `limit` until a check finishes or
-the sweep removes copies of crashed checks. Output is at
-most three screenshots, each up to 2000 px tall, and 64 downloads, 50 MiB per
-file and 250 MiB total.
-The accessibility tree is limited to 4 KiB. Cancellation closes pages and removes
-copies; crashed hosts leave a durable cleanup marker for the service sweep
-and bounded, best-effort cleanup before each new check.
-
-CLI users run `cld assistant code check ID --chat CHAT`. CHAT is the chat ID
-shown in Assistant (the public short ID). For one-off files, omit
-ID and pass `{files}` through `--input-file` or stdin. Local Chromium runs the
-same check and saves screenshots/downloads as local files. Use `--out DIR` to
-choose the output directory; otherwise the command creates and prints a new
-temporary directory. Text and JSON output
-include each local path alongside its chat path. Existing local files are not
-overwritten.
-
-Assistant exposes direct server tools: `code_create`, `code_read`, `code_write`,
-`code_import`, `code_remove`, `code_list`, `code_history`, `code_update`,
-`code_fork`, `code_publish`, `code_versions`, `code_restore`, and `code_sql`.
-These are deferred built-ins with flat inputs, not application capabilities.
-`CODE_SOURCE_TOOLS` from `@k2b/cloud/ai` supplies their shared input contracts.
-Core forwards each operation to Assistant using an operation-bound invocation.
-The server derives the chat context and checks current user, conversation,
-Project and resource permissions. GUI and CLI use the same resource services.
-Writes reuse the platform replay guard; uncertain calls are not repeated.
-`cloud.capabilities.run` remains available for other applications, not these tools.
-`code_create` accepts optional top-level `html` and `steps` strings for the initial
-`index.html` and `steps.json`, so a small single-file app can be created in one call.
-Without `html`, it starts with a minimal page; supplied source returns diagnostics
-without rejecting incomplete code.
-`code_write` saves one complete file per call with top-level `path` and `content`.
-Source text travels only in top-level strings because some providers corrupt
-strings nested in array arguments. Other files stay unchanged. Pass the revision
-from `code_read`, `code_create` or the previous write as `expectedRevision`, then
-chain each returned revision into the next call. A stale revision returns
-`CONFLICT` without saving. Re-read and reconcile before retrying. The tool
-description tells the model to send one write at a time: calls sent together in
-one model response share a revision, so every call after the first conflicts.
-Results list `lines` and `length` (UTF-16 units) for every file, so a model
-can see when content arrived cut, plus compiler diagnostics for the saved state.
-A trailing newline adds no extra line. Diagnostics do not reject incomplete
-source: a missing import remains a finding until its file is saved. A normal
-multi-file build is one call per file with no approval.
-
-`code_import` atomically copies exact chat, Project or App `fromFile` references
-as UTF-8 source without printing their bytes. Use `code_file_stat` first. Imports
-carry references only and receive one fresh review for the whole batch, because
-source may be shared or published. Source file and bundle byte limits apply;
-stale destination revisions, source versions or duplicate paths reject the batch.
-Relative JSON imports expose data; CSV/TSV/TXT imports expose text. Execution
-requires a compilable entry exporting one function.
-
-The host owns isolation, artifact permissions, input file authorization,
-cancellation, and execution deduplication. Assistant persists call ownership
-and results; an uncertain execution is never automatically replayed.
-Its test runs are separate from visible apps and persistent user data. Assistant
-uses the Code runner for one-off run/inspect/stop/export operations. Closing
-or freezing the user's tab does not suspend these operations.
-Calls, results and ordered approvals are persisted; a lost host is not replayed.
-Secret entry with `code_secret` requires the trusted web interface. Assistant retains
-up to eight turn hosts; runner slots independently bound execution. Foreground
-chat runs and scheduled turns have separate hosts.
-Foreground hosts without an active turn expire after two idle minutes.
-Scheduled hosts live for their turn; finished scheduled turns and cancelled
-runs are closed by the host sweep.
-Chromium starts lazily for remaining Studio operations: HTML `code_check`,
-`code_action`, and Studio presentations. Studio machine execution and the
-direct CLI code command also retain their isolated Chromium hosts. Visible
-Studio apps run in the person's browser. The Assistant image still includes
-Chromium for these paths; managed `code_run` does not require it.
-
-### Assistant apps and browser work
-
-Chat offers one-off native views and lasting Code authoring. Studio app
-creation and presentation tools are unavailable in chat. The standalone
-Studio UI and its direct APIs remain available until the separate Studio cut.
-
-The Assistant **Studio** navigation opens its app catalog on hover or click;
-its search button opens global search filtered to Studio apps. Use-level users
-enter the standalone runner; managers enter Studio management. Management actions
-include editing, publication, and access. The runner retains personal actions for copying an app,
-viewing and clearing their own server-side **Personal data** (`cloud.kv.user`).
-Secrets are available in management only.
-Copying asks for confirmation, then opens a new chat with the copy attached
-and an unsent customization prompt. Only published code is copied, not data,
-secrets, or sharing settings. Anonymous public visitors have no personal-data
-control; `cloud.kv.user` and database writes reject with `denied`. Permissions
-use the Cloud editor in a dialog.
-Artifacts are independent of chats. Cloud `auth.access` grants are linked
-through `assistant.artifact_access`: `read` is presented as **Use**, `admin` as
-**Manage**. Existing artifact `write` grants migrate to `admin`. Person, nested
-group, and authenticated-user grants use the shared Cloud principal resolver.
-
-Admins see the working draft and can publish a specific source revision. Users
-only see published source and metadata; history and unpublished revisions require
-admin permission even through direct API calls. Saving never publishes. Publishing
-checks compilation and the expected draft revision, then atomically selects the
-publication. A concurrent save causes a conflict. Unpublishing removes the app
-from user discovery; code already loaded into a browser cannot be recalled.
-
-Edit creates an unsent chat draft with the artifact resource reference. Forking
-copies only the current publication into a new private artifact, preserving its
-source provenance but not grants, chat history, or local data. All admins share
-one working draft. Source-editor saves reject stale revisions; agent file writes
-replace that file, so coordinate overlapping edits instead of assuming branches.
-
-Assistant displays executable app references in a dedicated Apps context section,
-with current permission-checked titles. Selecting an app opens it beside the chat
-without starting it. Generic references do not repeat these apps.
-
-Automatic frontend tool work uses the `waiting_for_browser` conversation status.
-It does not show the human-attention hand. A selected chat shows running progress;
-another chat can indicate that browser execution is waiting. Approval and human
-input still use `needs_attention`. Running-list filters include browser work.
 
 ### Historical routine results
 
@@ -1142,131 +872,12 @@ Old routine messages remain readable in the chat. They have no run, resume or re
 
 ### Open chat content beside the conversation
 
-The context panel is the entry point for apps, files, images, sources, project
-knowledge. Compact sections show a preview; View all opens
-a searchable overview beside the conversation. Apps appear as cards with their
-name and optional description. The overview includes apps referenced by that
-conversation, rather than a global library.
+The context panel opens files, images, native views, sources and Project
+knowledge beside the conversation. Tabs keep their state when switching.
+External references open separately. On small screens, the chat header's Open
+menu provides the same entries. Closing a dirty text editor asks before
+discarding edits.
 
-The workspace uses rounded, horizontally scrolling tabs. Each tab has its own
-close control. The plus menu opens chat content overviews; it does not create
-or start an app. Opening the same resource selects its existing tab. Switching
-tabs preserves running apps and unsaved source edits. Closing an unsaved editor
-still asks for confirmation. On small screens, Chat returns to the conversation;
-content can be reopened through its context entry.
-
-File and source-code browsing happens in the workspace. External references
-continue to open their destination separately. Confirmations remain dialogs.
-
-The context column responds to the available width of the chat pane, including
-when a neighboring workspace is resized. Below 56rem it is hidden and the chat
-header exposes an Open (+) menu, even with no workspace tabs open. This menu and
-the workspace tab menu offer the same chat apps, files (including images and
-voice inputs), sources and references, project knowledge
-when available. Hiding the column preserves its loaded context and the composer
-draft; it does not unmount the chat.
-
-App consoles start collapsed. The Console button toggles the output without
-stopping the app; a new runtime or startup error opens it automatically. Source,
-Restart, and Stop remain available in the footer. During restart, the reload icon
-spins and the button is disabled; Stop can cancel a pending start.
-
-Running Assistant apps keep their inputs when code is saved. After tool activity,
-a source-editor save, or window focus, the workspace checks for a newer version
-and offers an explicit restart. Starting or restarting fetches current code;
-agent test runs are separate from the user’s app. Status errors display the
-description supplied by the app and clear it when the app returns to ready.
-
-
-### Standalone apps and public links
-
-Studio opens the standalone runner for users with **Use** access. App managers
-enter the management view and select **Open fullscreen** in the header or action menu. The
-runner offers **Manage** and a personal action menu beside **Restart** and **Stop**
-in the bottom toolbar. Its content scrolls within the available viewport with
-scroll-edge fades. Restarting shows progress in the button without adding a status row. This distinction uses app permissions,
-not the global Cloud administrator role.
-
-App managers see a **Draft** or **Published** badge beside the runtime controls.
-Select it for a short explanation and a **Publish** button for saved drafts.
-Publishing selects a runnable version; it does not grant public access.
-**Open fullscreen** stays visible for drafts and offers publishing first.
-
-**Copy app link** copies `/app/assistant/apps/ID/run`. This URL always runs the
-latest publication, even for managers. It loads no Assistant sidebar, chat list,
-chat updates, code editor or database console. Apps require sign-in and app
-access. The app starts on its own for people who manage it; everyone else
-selects **Start**.
-
-Public links are switched off for now: **Manage access** does not offer
-**Public**, and an existing public entry opens nothing until public sharing
-returns. See [Assistant](/en/apps/assistant#standalone-apps-and-public-links).
-
-Cloud administrators can add this URL as a **Link** in the navigation settings,
-with a title, icon and audience. The shortcut's audience controls visibility,
-not permission to run the app. CLI users can obtain the path with
-`cld assistant code url ID` and use the existing grant/change-grant commands.
-
-### Studio publication versions
-
-Sharing and publication are independent. Publishing a personal application never
-adds access grants. **Start** runs the current publication; before the first
-publication, administrators can start their working application normally.
-Use-level users only receive the latest publication, never working source or
-historical versions. There is no preview mode.
-
-Each publication receives a sequential number, author, date, and required change
-note. The agent can use `code_publish`, `code_versions`, and `code_restore`.
-Restoring copies published code, title, description, and icon into a new working
-revision and a new latest publication in one transaction. Its automatic note is
-"Restore version X". Historical publications and user data remain intact. Source save revisions and publication
-numbers are separate. Expected working revisions prevent stale publish/restore.
-
-Administrators can select a historical publication in Studio management's **Versions**
-dialog and start it for themselves without changing the version other users get.
-Starting a different version restarts that local session. **Restore**
-atomically appends a new latest publication and updates the working source, with
-an automatic "Restore version X" note. It preserves history and user data.
-The compact Versions dialog sits in the bottom console toolbar. Before the first
-publication, it offers a Publish action.
-`code_update` changes working title, description, or Tabler icon. The code-mode
-skill includes a short icon list. The compact Studio cards expose publication
-status and put their action menu at the top right.
-
-Visible running sessions check for updates every 30 seconds and on window focus,
-with at most one background check in flight. Updates offer a restart instead of
-discarding current inputs. Historical selections stay on their selected version.
-
-Code source edits use `code_write({id, expectedRevision, path, content, entry?})`
-to save one file per revision. File imports use
-`code_import({id, expectedRevision, files: [{path, fromFile}], entry?})` with exact
-versioned references from `code_file_stat`. One review covers the import batch.
-JSON and CSV/TSV/text imports are supported. Stale destination revisions or source
-versions fail before saving any files. Both tools return `lines` and `length` for
-every file, the new revision, and diagnostics.
-CSV previews expose encoding, delimiter and raw-text choices; Assistant remembers
-those choices in browser-local preferences, without modifying uploaded files.
-
-Studio resource URLs, tool inputs and references use six-character Cloud short
-IDs. UUIDs remain internal database keys and are rejected as public resource IDs.
-Existing resources receive short IDs during migration; no UUID URL alias exists.
-Assistant endpoints that take a chat also accept its short ID and check the same
-chat permissions for both forms.
-
-
-The chat's Studio section uses the canonical conversation resource index. Direct
-code tools index their returned refs immediately. Rows show current authorized
-metadata, source revision, publication state and the last matching run result.
-A newer source revision is explicitly untested; a successful run is not a claim
-of business correctness. Recent one-off runs are a separate compact list (latest
-20), and exported files remain in Files. Forbidden resources are filtered again
-when the context snapshot is loaded.
-
-Managed execution reports starting, working, and approval phases in the active
-tool row. Managed chat scripts use the runner deadline described above. Legacy
-Studio browser startup is bounded to 45 seconds, with a 10-second event-loop
-heartbeat deadline. A lost host or runner attempt is reported without replaying
-an uncertain operation.
 
 ### Working plan and chat context
 
@@ -1283,7 +894,8 @@ Compact context entries use one line and consistent icon alignment. Working
 files include the latest one-off script runs and their full count. The chat
 workspace opens files, sources and knowledge; it does not mount Studio app or
 routine tabs. Scheduled chat routines are retired; historical results remain readable.
-Standalone Studio apps retain their own management and runner pages.
+
+
 
 Secrets management uses a list with an empty-state action. Adding or replacing
 a secret opens a separate dialog. Validation errors appear at their fields;
@@ -1292,14 +904,6 @@ the exact `Bearer ` prefix. API-key and custom-header modes remain available.
 The target is an HTTPS origin: URL paths and query parameters do not narrow the
 secret's destination. Only metadata is returned when listing or replacing;
 existing secret values are never loaded into the browser.
-
-The Studio console aligns timestamps, readable severity labels, and messages in
-compact columns. Info, warning, and error labels use themed color badges; long
-messages wrap within their column. The header identifies the executed revision.
-
-The Studio app preview scrolls independently of its bottom console controls.
-Expanded console output scrolls within its own bounded area, keeping controls
-visible while browsing a long app.
 
 Completed working plans hide automatically once every task is completed or cancelled.
 A checklist action beside context usage reopens or hides the saved plan. New open
@@ -1320,7 +924,6 @@ typing one of these words followed by a space:
 | Skills | `skill`, `skills` |
 | Files in this chat | `datei`, `dateien`, `file`, `files` |
 | Projects | `projekt`, `projekte`, `project`, `projects` |
-| Studio apps | `app`, `apps`, `studio` |
 | Models | `model`, `models`, `modell`, `modelle` |
 
 **Open in apps** lists Commands that accept an empty input from other apps in
@@ -1360,8 +963,7 @@ attachment from the **+** menu; the model receives the same resource.
 A space separates the reference from a preceding word. Search tags such as
 Notes appear here only while typing. In German, `/notiz q3` narrows
 the list to **Notizen aus Notebooks**; Enter opens Notes in the resource picker
-with `q3` already entered. `/app q` narrows to Studio apps from Assistant, even
-before the catalog loads.
+with `q3` already entered. The retired Studio `/app` scope is no longer offered.
 
 Cloud searches end with **Search Cloud for “…”**, or the corresponding search
 row for a tag scope. An unmatched `/xylo` shows **Nothing found for “xylo”** and
@@ -1422,7 +1024,7 @@ a reason. While a response runs, they remain visible with a waiting reason. An u
 it leaves the menu open. Cancelling a command keeps `/…` in your unchanged
 draft; failures restore it too and show a message above the composer until the
 next edit or command.
-Commands preserve the surrounding draft. Skills, Studio apps, and files insert
+Commands preserve the surrounding draft. Skills and files insert
 highlighted references. Editing a reference's
 label turns it into ordinary text; undo restores its identity. Saving and
 reopening a draft preserves references, including versioned conversation files.

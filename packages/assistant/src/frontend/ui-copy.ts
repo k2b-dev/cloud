@@ -2,6 +2,7 @@ import { i18n } from "@k2b/stdlib";
 import { useLocale } from "@k2b/ui";
 
 const germanText: Record<string, string> = {
+  Unavailable: "Nicht verfügbar",
   Finished: "Beendet",
   "Routine instructions": "Auftrag",
   "Run queued. The result will appear here and in the chat when it is ready.":
@@ -73,13 +74,7 @@ const germanText: Record<string, string> = {
   "Access for project members": "Zugriff für Projektmitglieder",
   "Members can use linked, published apps and their shared app data. Editing permissions stay unchanged.":
     "Mitglieder können verknüpfte, veröffentlichte Apps und ihre geteilten App-Daten nutzen. Bearbeitungsrechte bleiben unverändert.",
-  "Show more Studio Apps": "Weitere Studio Apps anzeigen",
-  "Search Studio Apps…": "Studio Apps suchen…",
-  "Loading Studio Apps…": "Studio Apps werden geladen…",
-  "Could not load Studio Apps.": "Studio Apps konnten nicht geladen werden.",
   Back: "Zurück",
-  "Studio Apps": "Studio Apps",
-  "Link a Studio App": "Studio App verknüpfen",
   "Could not update Project apps.": "Projekt-Apps konnten nicht aktualisiert werden.",
   "No matching apps that you manage.": "Keine passenden Apps mit Verwaltungsrechten gefunden.",
   "No linked apps yet.": "Noch keine Apps verknüpft.",
@@ -278,7 +273,7 @@ const germanText: Record<string, string> = {
   "Relevant personal facts, preferences, and workflow defaults are added to new turns.":
     "Relevante persönliche Tatsachen, Präferenzen und Abläufe werden neuen Anfragen hinzugefügt.",
   "Remembered approvals": "Gespeicherte Freigaben",
-  "Website for one Studio app": "Website für eine Studio-App",
+  "Website approval": "Website-Freigabe",
   "Remove reference": "Referenz entfernen",
   Retired: "Entfernt",
   "Review background runs and the personalization they changed.": "Hintergrundläufe und ihre Änderungen an der Personalisierung prüfen.",
@@ -590,7 +585,6 @@ const copy = i18n.define({
       commandAllSkills: ({ count }: { count: number }) => `All ${count} Skills`,
       commandSkills: "Skills",
       commandFiles: "Files in this chat",
-      commandStudioApps: "Studio apps",
       commandInsert: "Insert",
       commandRecent: "Recent",
       commandAttachFile: "Attach file",
@@ -673,7 +667,6 @@ const copy = i18n.define({
       commandAllSkills: ({ count }: { count: number }) => `Alle ${count} Skills`,
       commandSkills: "Skills",
       commandFiles: "Dateien in diesem Chat",
-      commandStudioApps: "Studio-Apps",
       commandInsert: "Einfügen",
       commandRecent: "Zuletzt",
       commandAttachFile: "Datei anhängen",

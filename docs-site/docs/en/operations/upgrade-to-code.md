@@ -38,10 +38,10 @@ These stay as they are:
 The exact list of removed routes, commands, capabilities and settings is in
 [Removed in the Gustav release](/en/docs/reference/code-release-removals).
 
-> **Status on `feat/code`:** routines are retired and Gustav rebuilds
-> exported definitions (both merged). The Studio and Mail rule retirements
-> are still in review and ship with this release. This page describes the
-> release as a whole.
+> **Status on `feat/code`:** routines, Mail rules and automatic replies are
+> retired, Gustav rebuilds exported definitions, and Studio is retired as
+> described in [Studio retirement](/en/docs/operations/studio-retirement).
+> This page describes the release as a whole.
 
 ## 1. Freeze
 

@@ -146,11 +146,26 @@ describe("AI tool icons", () => {
 });
 
 describe("feat/code tools", () => {
-  test("chat Code runs and Code authoring carry the brand; Studio's app management does not", () => {
-    for (const name of ["code_run", "code_check", "code_present", "code_test", "code_submit", "code_diff"])
+  test("chat Code runs and Code authoring carry the brand", () => {
+    for (const name of [
+      "code_run",
+      "code_inspect",
+      "code_stop",
+      "code_export",
+      "code_secret",
+      "code_init",
+      "code_pull",
+      "code_sdk",
+      "code_test",
+      "code_simulate",
+      "code_submit",
+      "code_diff",
+      "code_read",
+      "code_write",
+      "code_check",
+    ])
       expect(isFeatCodeTool(name)).toBe(true);
-    for (const name of ["code_database", "code_files", "code_storage_list", "code_access_change", "code_delete", "web_search"])
-      expect(isFeatCodeTool(name)).toBe(false);
+    for (const name of ["code_files", "code_file_stat", "code_file_copy", "web_search"]) expect(isFeatCodeTool(name)).toBe(false);
   });
 });
 

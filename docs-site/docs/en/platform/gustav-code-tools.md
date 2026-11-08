@@ -125,8 +125,8 @@ still use the normal capability permissions and approval dialogs.
 
 The chat aliases `code_read`, `code_write`, and `code_check` accept lasting
 Code projects only. They do not fall back to Studio source operations.
-Studio's standalone editor and direct app APIs remain available until the
-Studio retirement.
+
+Studio apps and direct app APIs have been retired.
 
 ## Maintainer contract: shared CLI and chat JSON
 

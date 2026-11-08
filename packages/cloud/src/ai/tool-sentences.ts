@@ -1,6 +1,5 @@
 import { actionReview } from "../capabilities/reviews";
 import type { CapabilityActionCallReview } from "../contracts/capabilities";
-import { CodeActionInput } from "./browser-code-contracts";
 
 // Like the catalog these forms replace, code runs name no "not run" form: code asks about what it does inside the run,
 // so a declined or stopped question does not mean the code did not run. No tool names a "rejected" form, so a declined
@@ -109,11 +108,6 @@ export const cloudToolReview = (name: string, args: unknown, locale: string): Ca
   try {
     if (name === "code_run") {
       return actionReview({ locale: language, sentence: sentence.code_run }, {});
-    }
-    if (name === "code_action") {
-      const parsed = CodeActionInput.shape.action.safeParse(input.action);
-      if (!parsed.success) return null;
-      return actionReview({ locale: language, sentence: sentence.code_action }, { action: { kind: "text", value: parsed.data } });
     }
     if (name === "web_extract" || name === "fetch_file") {
       if (typeof input.url !== "string" || !input.url.trim()) return null;

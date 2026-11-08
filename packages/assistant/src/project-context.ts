@@ -7,11 +7,6 @@ export type AssistantProjectContextSnapshot = {
   files: AiProjectFile[];
   references: AiProjectReference[];
   skills: NonNullable<Awaited<ReturnType<typeof aiSkills.projectSkills>>>;
-  apps: {
-    items: { id: string; title: string; icon: string; published: boolean; canManage: boolean; linked: boolean }[];
-    page: number;
-    hasNext: boolean;
-  };
 };
 
 export const loadAssistantProjectContextSnapshot = async (
@@ -28,7 +23,6 @@ export const loadAssistantProjectContextSnapshot = async (
   ]);
   return {
     projectId,
-    apps: { items: [], page: 1, hasNext: false },
     skills: skills
       ? { ...skills, items: skills.items.map((skill) => ({ ...skill, id: skill.shortId })) }
       : { items: [], page: 1, hasNext: false },

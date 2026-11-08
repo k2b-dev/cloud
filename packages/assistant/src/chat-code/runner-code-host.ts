@@ -162,8 +162,7 @@ export function createRunnerCodeHost(options: Options) {
         if (runs.size >= LIMITS.pendingRequests)
           throw new Error("Stop an existing test run before starting another; remaining runs hold active work or retained resources");
       }
-      if (input.id || input.resourceId || input.version || input.code === undefined)
-        throw new CloudError("unavailable", "Chat code_run requires inline code. Saved Studio apps and storage are unavailable here.");
+
       const source = { entry: "main.ts", files: [{ path: "main.ts", content: input.code }] };
       const sdk = usesCodeRunSdk(source.files) ? await codeRunSdk(context.authority ?? null, context.locale, lifetime.signal) : undefined;
       const compiled = await compileRunnerScript(source, sdk);
@@ -287,15 +286,6 @@ export function createRunnerCodeHost(options: Options) {
                 }),
               )
             ).blob(),
-          database: async () => {
-            throw new CloudError(
-              "unavailable",
-              "Studio RSQL database grants are unavailable in runner code_run. Use application capabilities.",
-            );
-          },
-          storage: async () => {
-            throw new CloudError("unavailable", "Studio app storage is unavailable in chat code_run. Use chat or Project files.");
-          },
           view: async (view, index, signal) =>
             ViewRefSchema.parse(
               await (
@@ -346,7 +336,7 @@ export function createRunnerCodeHost(options: Options) {
       }
       return inspectCodeRun(call.callId, entry);
     }
-    if (!("runId" in input)) throw new Error("This operation requires the Studio host");
+    if (!("runId" in input)) throw new Error("This operation requires a run ID");
     const entry = runs.get(input.runId);
     if (!entry) throw new Error("Test run is no longer available. Inspect saved effects before starting a new run.");
     if (input.operation === "stop") {

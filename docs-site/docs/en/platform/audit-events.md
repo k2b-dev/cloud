@@ -161,7 +161,7 @@ both fields. System revocations have no actor and record the owner as
 The event includes the request ID when known.
 
 No chat content, tool input, or model reason is stored. Deleting a chat or a
-Studio app ends its approvals without separate audit events.
+Studio retirement cancels its pending approvals; historical records remain.
 
 ## Geo service transitions
 

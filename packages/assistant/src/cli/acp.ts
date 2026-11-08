@@ -924,7 +924,6 @@ export const createAcpAgent = (host: CloudCliContext, options: { sessions?: AcpS
         ...streamOptions(),
         path: conversationPath(s.chat, "/turns"),
         watch: true,
-        codeHost: false,
         detail: current,
         body: {
           message: text,

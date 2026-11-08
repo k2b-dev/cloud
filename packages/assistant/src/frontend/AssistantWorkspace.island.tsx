@@ -69,7 +69,6 @@ import {
 import { batch, createEffect, createMemo, createSignal, For, on, onCleanup, onMount, Show } from "solid-js";
 import { assistantApi } from "../api/client";
 import { revokeChatWebsite } from "../chat-code/approval-preferences";
-import { createCodeApprovals } from "../chat-code/CapabilityApproval";
 import { artifactMessages } from "../chat-code/messages";
 import { openSecretsDialog } from "../chat-code/SecretsDialog";
 import { createChatSecretRuntime } from "../chat-code/secret-runtime";
@@ -267,7 +266,6 @@ export default function AssistantWorkspace(props: Props) {
           project={project}
           category={category}
           onOpenView={openContextView}
-          onOpenApp={(id, title, start) => window.location.assign(`/app/assistant/apps/${encodeURIComponent(id)}`)}
           onJump={(target) => void jumpTo(target)}
           onOpenSecrets={openChatSecrets}
         />
@@ -299,7 +297,6 @@ export default function AssistantWorkspace(props: Props) {
   const [liveError, setLiveError] = createSignal<string | null>(null);
   const liveHub = createAssistantLiveHub();
 
-  const codeApprovals = createCodeApprovals();
   const chat = createAiChatController({
     baseUrl: "/api/ai",
     initialConversationId: props.initialConversationId,
@@ -1517,12 +1514,10 @@ export default function AssistantWorkspace(props: Props) {
       project: activeConversationProject(),
       copy: {
         files: artifactCopy().files,
-        apps: artifactCopy().apps,
         knowledge: contextText("Project knowledge"),
         sources: contextText("Sources"),
       },
       onOpenView: openContextView,
-      onOpenApp: (id, title) => window.location.assign(`/app/assistant/apps/${encodeURIComponent(id)}`),
       onJump: (target) => void jumpTo(target),
       onOpenSecrets: openChatSecrets,
       onFileDeleted: (file) => artifactWorkspace.closeFile(file.conversationId, file.path),
@@ -2865,9 +2860,6 @@ export default function AssistantWorkspace(props: Props) {
                                 rowEnd={props.embedded ? <PanelRowEnd /> : undefined}
                               />
                             </Show>
-                            <codeApprovals.View
-                              conversationTitle={(id) => conversations().find((c) => c.id === id || c.shortId === id)?.title}
-                            />
                           </section>
 
                           <Show when={!emptyChat()}>

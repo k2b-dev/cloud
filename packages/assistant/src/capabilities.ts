@@ -1,49 +1,14 @@
 import { defineCapabilities, UniversalSearchDataSchema, UniversalSearchInputSchema } from "@k2b/cloud/contracts";
 import { ChatComposeInputSchema } from "./commands";
-import {
-  AppReadDataSchema,
-  AppReadInputSchema,
-  readAssistantApp,
-  searchAssistant,
-  searchAssistantApps,
-  searchAssistantProjects,
-} from "./search";
+import { searchAssistant, searchAssistantProjects } from "./search";
 export const assistantCapabilities = defineCapabilities({
   protocolVersion: 2,
   types: {
-    app: { title: "Studio app", description: "An accessible reusable Studio app.", icon: "ti ti-app-window", reader: "app.read" },
     project: { title: "Project", description: "An accessible Assistant project with shared context and chats.", icon: "ti ti-folders" },
     chat: { title: "Chat", description: "An Assistant conversation owned by the current user.", icon: "ti ti-messages" },
     message: { title: "Chat message", description: "A message in an accessible Assistant chat.", icon: "ti ti-message" },
   },
   queries: {
-    "app.search": {
-      title: "Search Studio apps",
-      description: "Find accessible Studio apps by title or description.",
-      input: UniversalSearchInputSchema,
-      data: UniversalSearchDataSchema,
-      openWorld: false,
-      universalSearch: {
-        tags: [
-          { tag: "studio-app", title: "Studio apps", description: "Find accessible Studio apps.", aliases: ["studio-apps", "studio"] },
-        ],
-      },
-      run: async (input, context) => {
-        const { artifacts } = await import("./artifacts/service");
-        return searchAssistantApps(input, context, artifacts);
-      },
-    },
-    "app.read": {
-      title: "Read a Studio app",
-      description: "Read the title of one assistant.app ref and your own level on it. Nothing for apps you cannot open.",
-      input: AppReadInputSchema,
-      data: AppReadDataSchema,
-      openWorld: false,
-      run: async (input, context) => {
-        const { artifacts } = await import("./artifacts/service");
-        return readAssistantApp(input, context, artifacts);
-      },
-    },
     "project.search": {
       title: "Search projects",
       description: "Find accessible Assistant projects by name or description. Returns projects, not their chats.",
@@ -95,22 +60,11 @@ export const assistantCapabilities = defineCapabilities({
     translations: {
       de: {
         types: {
-          app: { title: "Studio-App", description: "Eine zugängliche, wiederverwendbare Studio-App." },
           project: { title: "Projekt", description: "Ein zugängliches Assistenten-Projekt mit gemeinsamem Kontext und Chats." },
           chat: { title: "Chat", description: "Eine Unterhaltung mit dem Assistenten, die dir gehört." },
           message: { title: "Chat-Nachricht", description: "Eine Nachricht in einem zugänglichen Assistenten-Chat." },
         },
         queries: {
-          "app.search": {
-            title: "Studio-Apps durchsuchen",
-            description: "Zugängliche Studio-Apps nach Titel oder Beschreibung finden.",
-            searchTags: { "studio-app": { title: "Studio-Apps", description: "Zugängliche Studio-Apps finden." } },
-          },
-          "app.read": {
-            title: "Studio-App lesen",
-            description:
-              "Den Titel einer assistant.app-Referenz und deine eigene Stufe lesen. Nichts für Apps, die du nicht öffnen kannst.",
-          },
           "project.search": {
             title: "Projekte durchsuchen",
             description: "Zugängliche Assistenten-Projekte nach Name oder Beschreibung finden. Liefert Projekte, nicht deren Chats.",

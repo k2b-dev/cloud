@@ -28,7 +28,6 @@ import { httpApprovalNotice } from "../chat-code/code-approval-message";
 import type { CapabilityDecision, CodeApproval } from "../chat-code/runtime/capabilities";
 import { pendingActionQuestion, printPendingActionContent, printReviewContent } from "./action-question";
 import { readApprovalPreferences, revokeApprovalPreference } from "./approvals";
-import { closeCliCodeHost } from "./code-host";
 import { createLineReader, type LineReader } from "./line-reader";
 import { createLocalContextReader, type LocalContext, type LocalSkill, localSkillCatalog, readLocalSkill } from "./local-context";
 import { type LocalFileReview, reviewLocalFile } from "./local-file";
@@ -376,10 +375,6 @@ export async function collectCapabilityApproval(
     return { approved: (await readApproval(reader, "Send request?")) === "once" };
   }
 
-  if (request.resource) {
-    ctx.print(terminalSafeText(`App: ${request.resource.title}`));
-    ctx.print("Returned Cloud data may be stored in this app and read by others with access. Personal remembered approvals do not apply.");
-  }
   ctx.print(
     terminalSafeText(
       (request.review
@@ -887,7 +882,6 @@ They go to the model with every message and can steer what it does with your Clo
               mode,
               ...(model ? { model: parseAiModelChoice(model) } : {}),
               ...clientInput,
-              clientToolIds: [...clientInput.clientToolIds, "code_open"],
             },
           });
         }
@@ -1161,7 +1155,6 @@ They go to the model with every message and can steer what it does with your Clo
     return 0;
   } finally {
     try {
-      await closeCliCodeHost(ctx);
     } finally {
       try {
         await sessionFolder.close();

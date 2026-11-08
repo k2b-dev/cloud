@@ -13,18 +13,18 @@ For lasting Code (schedules, mail automations, Code pages, their tests and
 submitting a version) load `code-authoring`. Studio authoring,
 HTML checking/presentation, app storage and Studio RSQL are unavailable in
 chat. Do not request Studio tools or pass `id`, `version` or `resourceId` to
-`code_run`. The standalone Studio UI remains separate.
+`code_run`. Studio apps and their data have been retired without transfer.
 
 ## Start from the contract
 
 Read [Runtime and files](references/runtime.md) for limits and
-[cloud contract](references/cloud.md) for helpers. The latter also documents
-legacy Studio APIs: `cloud.db`, `cloud.kv` and shared `cloud.files` are
-unavailable in chat runs. Use application capabilities and chat/Project files.
+[cloud contract](references/cloud.md) for helpers. Use application capabilities and chat/Project files; app databases and app storage are unavailable.
 
 One-off scripts may import the generated `@sdk` and default-export a function.
-SDK methods return domain data directly. `cloud.capabilities.run(name,input)`
-returns capability envelopes. Discover the capability before calling it;
+SDK Queries return `{data, page?}`: read fields from `data` and follow the
+returned cursor when `page.hasMore`. Streaming reads return `FileRef`; Actions
+return domain data directly. `cloud.capabilities.run(name,input)` returns
+capability envelopes. Discover the capability before calling it;
 normal authorization and action approvals still apply. There is no native
 network access. For external HTTPS and personal secrets read
 [HTTP](references/http.md).
@@ -107,17 +107,7 @@ Studio database grants are unavailable.
 | Cross-app investigation | [Investigation](references/investigation.md) |
 | Run errors, cancellation and retained results | [Debugging](references/debugging.md) |
 | Chat and Project file references and reviewed transfers | [Files](references/files.md) |
-| Worked scripts and legacy Studio examples | [Examples](references/examples.md) |
-
-The following references describe legacy standalone Studio behavior. They do
-not enable Studio authoring, storage, database or HTML tools in chat. Use
-`code-authoring` for lasting Code instead:
-
-- [Studio apps](references/apps.md), [published actions](references/app-actions.md) and
-  [legacy chat presentations](references/chat.md).
-- [Studio access](references/access.md) and [management](references/management.md).
-- [Studio source workflow](references/source-workflow.md) and [publishing](references/publishing.md).
-- [Studio database](references/database.md) and [storage](references/storage.md).
+| Worked scripts | [Examples](references/examples.md) |
 
 For analytical reports also load `assistant-data-analysis` for metrics and
 source validation.

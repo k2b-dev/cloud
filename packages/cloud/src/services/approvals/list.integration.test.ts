@@ -133,7 +133,7 @@ databaseSuite()("pending approval lists", () => {
       approvalScope: "draft",
       resolvedEvent: null,
     });
-    const requester = await ask({ appId: "contacts", requester: { kind: "studio_app", appId: "mail", ref: crypto.randomUUID() } });
+    const requester = await ask({ appId: "contacts", requester: { kind: "assistant_turn", appId: "mail", ref: crypto.randomUUID() } });
     const sameApp = await ask({ appId: "mail", requester: { kind: "assistant_turn", appId: "mail", ref: crypto.randomUUID() } });
     const elsewhere = await ask({ appId: "spaces", review: null });
     expect((await approvals.get(elsewhere, undefined, true))?.details).toBeNull();
@@ -141,7 +141,7 @@ databaseSuite()("pending approval lists", () => {
     await sql`UPDATE approvals.requests SET expires_at=now()-interval '1 second' WHERE id=${expired}::uuid`;
     const cancelled = await ask();
     await approvals.cancel([cancelled]);
-    await ask({ requester: { kind: "studio_app", appId: "assistant", ref: crypto.randomUUID() } }, false);
+    await ask({ requester: { kind: "assistant_turn", appId: "assistant", ref: crypto.randomUUID() } }, false);
     const resolved = await ask();
     await sql`UPDATE ai.pending_actions SET status='resolved' WHERE approval_id=${resolved}::uuid`;
     const other = await fixture();

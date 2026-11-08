@@ -1,9 +1,9 @@
-The `cloud` contract of HTML apps, scripts and actions is self-contained; read it before writing code.
+The `cloud` contract of one-off chat scripts is self-contained; read it before writing code.
 
 ```ts
-// The one global a Studio app or script gets: `cloud`.
+// The one global a chat script gets: `cloud`.
 // Agent-facing reference, self-contained (no imports).
-// The same cloud global is available in HTML apps (index.html), scripts and app actions.
+// Run an inline module through code_run.
 //
 // Rules for agents
 // - Await every cloud.* call. cloud.money.*, cloud.chart(), cloud.html`` and
@@ -23,7 +23,7 @@ type CloudErrorCode =
   | "invalid" // wrong arguments; the message names the fix
   | "conflict"
   | "limit" // a size or row limit; the message says how to page or shrink
-  | "unavailable" // not possible here (no network, service down, not executed during code_check)
+  | "unavailable" // not possible here (no network, service down, service unavailable)
   | "cancelled";
 interface CloudError extends Error {
   name: "CloudError";
@@ -87,7 +87,7 @@ interface CloudHttp {
       signal?: AbortSignal;
     },
   ): Promise<Response>;
-  /** Header value for a secret the user stored for this app, e.g. `{ Authorization: cloud.http.secret("api", { prefix: "Bearer " }) }`. */
+  /** Header value for a secret the user stored for this chat, e.g. `{ Authorization: cloud.http.secret("api", { prefix: "Bearer " }) }`. */
   secret(name: string, options?: { prefix?: string }): SecretRef;
 }
 
@@ -115,199 +115,6 @@ interface CloudCapabilities {
     /** Cancels an open stream. */
     abort(stream: StreamRef): Promise<void>;
   };
-}
-
-// ---------------------------------------------------------------- db
-
-/**
- * Every row carries id, created_at, updated_at, created_by and updated_by;
- * Cloud sets them (created_by/updated_by are user ids, see cloud.user).
- */
-type Row = {
-  id: number;
-  created_at: string;
-  updated_at: string;
-  created_by: string | null;
-  updated_by: string | null;
-  [column: string]: Json;
-};
-
-/**
- * The app's database, shared by everyone who uses the app. Tables and columns
- * are created while building with the database tools, never from app code.
- * Column types: text, integer, real, boolean, json, date, datetime.
- */
-// Table definitions carry write: "everyone" (default), "own", or "managers".
-// Schema is managed through code_database. own allows inserts by every signed-in
-// viewer with Use; updates/deletes require created_by === the requester. managers
-// requires Manage for every write. Anonymous public-share visitors cannot write.
-// created_by/updated_by are nullable user ids, set by Cloud. Existing tables gain
-// these columns on first access without backfill. Do not declare or send them.
-interface CloudDb {
-  /** Rows of `table` matching every `where` column exactly (null matches NULL). At most 1,000 rows; more without an explicit `limit` rejects with "limit". */
-  list(
-    table: string,
-    where?: Record<string, Scalar>,
-    options?: { order?: string /* "name", "-updated_at" or "name desc" */; limit?: number; offset?: number },
-  ): Promise<Row[]>;
-  /** One row, or null. */
-  get(table: string, id: number): Promise<Row | null>;
-  /** Inserts one row (returns it) or many (returns them), with ids and timestamps. */
-  insert(table: string, row: Record<string, Json>): Promise<Row>;
-  insert(table: string, rows: Record<string, Json>[]): Promise<Row[]>;
-  /** Changes the given columns of one row; returns the updated row, or null when it does not exist. */
-  update(table: string, id: number, values: Record<string, Json>): Promise<Row | null>;
-  /** Deletes one row; true when it existed. */
-  delete(table: string, id: number): Promise<boolean>;
-  /** One read-only SELECT with positional `?` parameters; returns raw rows (booleans as 0/1), at most 1,000. */
-  query<R = Record<string, Scalar>>(sql: string, params?: Scalar[]): Promise<R[]>;
-}
-
-// ---------------------------------------------------------------- kv and files
-
-/**
- * Pick the store by who owns the data:
- * - per person (my todos, my settings)        → cloud.kv.user
- * - small app-wide settings                   → cloud.kv
- * - records several people add or edit        → cloud.db, one row each
- * Each store allows 1,000 keys, 1 MiB per value, and 16 MiB in total.
- */
-interface KvStore {
-  /** Value or `null`. */
-  get<T = Json>(key: string): Promise<T | null>;
-  /** Stores JSON, at most 1 MiB per value (last writer wins). */
-  set(key: string, value: Json): Promise<void>;
-  /** Removes a key. */
-  delete(key: string): Promise<void>;
-  /** Keys in sorted order; `limit` 1-1000 (default 100). */
-  keys(page?: { after?: string; limit?: number }): Promise<string[]>;
-}
-
-/** App file storage on the server, shared by everyone who uses the app. */
-interface CloudFiles {
-  /** File or `null`. */
-  read(path: string): Promise<File | null>;
-  /** Creates or replaces a file (at most 16 MiB). */
-  write(path: string, data: Blob | string): Promise<void>;
-  /** Removes a file. */
-  delete(path: string): Promise<void>;
-  /** Paths in sorted order. */
-  list(): Promise<string[]>;
-}
-
-// ---------------------------------------------------------------- chart
-
-type AxisOptions = {
-  /** Label under/next to the axis. */
-  label?: string;
-  /** Tick text; the default is the user's number format (dates for date x values). */
-  format?: (value: number) => string;
-  /** Exact bounds; must contain every value. */
-  domain?: [number, number];
-  ticks?: number;
-  scale?: "linear" | "log";
-};
-type ChartBase = {
-  title?: string;
-  subtitle?: string;
-  /** Logical drawing size. Cartesian charts stretch to the container width; text keeps its pixel size. */
-  width?: number;
-  height?: number;
-};
-type ChartPoint = { x: number | Date | string /* ISO date */; y: number };
-type ChartSeries = { label?: string; data: ChartPoint[] };
-type ChartItem = { label: string; value: number };
-type ChartOptions =
-  | (ChartBase & { kind: "bar"; data: ChartItem[]; yAxis?: AxisOptions; colorByBar?: boolean; showValues?: boolean; legend?: boolean })
-  | (ChartBase & {
-      kind: "line";
-      series: ChartSeries[];
-      xAxis?: AxisOptions;
-      yAxis?: AxisOptions;
-      area?: boolean;
-      smooth?: boolean;
-      legend?: boolean;
-    })
-  | (ChartBase & { kind: "scatter"; series: ChartSeries[]; xAxis?: AxisOptions; yAxis?: AxisOptions; legend?: boolean })
-  | (ChartBase & { kind: "pie" | "donut"; data: ChartItem[]; legend?: boolean; showLabels?: boolean })
-  | (ChartBase & { kind: "histogram"; data: number[]; bins?: number; xAxis?: AxisOptions; yAxis?: AxisOptions })
-  | (ChartBase & { kind: "gauge"; value: number; min?: number; max?: number; label?: string; unit?: string })
-  | (ChartBase & { kind: "sparkline"; data: number[]; area?: boolean });
-// boxplot, heatmap, barGauge, stat, declarative formats, references and thresholds: charts.md.
-
-// ---------------------------------------------------------------- views (script runs only)
-
-type ChartKind = "bar" | "line" | "scatter" | "pie" | "donut" | "histogram" | "gauge" | "sparkline" | "boxplot" | "heatmap" | "barGauge" | "stat";
-type ViewRef = { path: string; title: string; subtitle?: string } & (
-  | { view: "chart"; kind: ChartKind }
-  | { view: "group"; linkX: boolean; layout: "stack" | "grid"; charts: { kind: ChartKind; title: string; subtitle?: string }[] }
-  | { view: "table"; rows: number; columns: number; footer: boolean }
-  | { view: "explorer"; rows: number; columns: number; views: { id: string; label: string; kind: "bar" | "line" | "scatter" | "heatmap" }[]; step: boolean; filter: boolean; compare: boolean }
-  | { view: "stats"; items: { label: string; sparkline: boolean; sub: boolean; delta: boolean }[] }
-  | { view: "details"; items: number; fields: { label: string; ref: boolean; chars: number }[] }
-);
-type ViewBase = { title: string; subtitle?: string };
-type ViewAxis = { label?: string; domain?: [number, number]; ticks?: number; scale?: "linear" | "log" };
-type ViewPoint = { x: number | string; y: number };
-type ViewRows = Record<string, unknown>[];
-type ViewBar = ViewBase & { kind: "bar"; yAxis?: ViewAxis; colorByBar?: boolean; showValues?: boolean; legend?: boolean };
-type ViewSlices = ViewBase & { kind: "pie" | "donut"; legend?: boolean; showLabels?: boolean };
-type ViewLines = ViewBase & { kind: "line"; xAxis?: ViewAxis; yAxis?: ViewAxis; legend?: boolean; area?: boolean; smooth?: boolean };
-type ViewScatter = ViewBase & { kind: "scatter"; xAxis?: ViewAxis; yAxis?: ViewAxis; legend?: boolean };
-type ViewSparkline = ViewBase & { kind: "sparkline"; area?: boolean };
-type ViewHistogram = ViewBase & { kind: "histogram"; bins?: number | number[] };
-type ViewChartSpec =
-  | ((ViewBar | ViewSlices) & ({ data: ChartItem[] } | { rows: ViewRows; x: string; y: string }))
-  | ((ViewLines | ViewScatter) & (
-      | { series: { label?: string; data: ViewPoint[] }[] }
-      | { rows: ViewRows; x: string; y: string | string[]; series?: string }
-    ))
-  | (ViewSparkline & ({ data: number[] } | { rows: ViewRows; y: string }))
-  | (ViewHistogram & ({ data: number[] } | { rows: ViewRows; value: string }))
-  | (ViewBase & { kind: "gauge"; value: number; min?: number; max?: number; label?: string; unit?: string });
-// boxplot, heatmap, barGauge, stat, formats, references, thresholds and series style/role: views.md.
-type ViewGroupSpec = ViewBase & { charts: ViewChartSpec[]; linkX?: boolean; layout?: "stack" | "grid" };
-type ViewFormat = { unit?: string; decimals?: number; compact?: boolean } & (
-  | { style: "currency"; currency: string }
-  | { style?: "number" | "percent"; currency?: never }
-);
-type ViewColumn = { id: string; label?: string; type?: "text" | "number" | "date" | "datetime" | "ref"; format?: ViewFormat };
-type ViewTableSpec = ViewBase & {
-  rows: ViewRows;
-  columns?: (string | ViewColumn)[];
-  footer?: Record<string, unknown>;
-  sort?: { column: string; direction: "asc" | "desc" };
-};
-type ViewExplorerChart = { id: string; label: string } & (
-  | { kind: "bar"; x: string; y: string }
-  | { kind: "line" | "scatter"; x: string; y: string | string[]; series?: string }
-  | { kind: "heatmap"; x: string; y: string; value: string }
-);
-type ViewExplorerSpec = ViewBase & {
-  rows: ViewRows;
-  columns?: (string | ViewColumn)[];
-  views: ViewExplorerChart[];
-  controls?: { filter?: string; step?: string; compare?: boolean };
-};
-type ViewReference = { type: string; id: string; title?: string };
-type ViewStatsSpec = ViewBase & { items: {
-  label: string; value: number | string; format?: ViewFormat; sub?: string;
-  delta?: number; better?: "up" | "down"; sparkline?: number[];
-}[] };
-type ViewDetailsSpec = ViewBase & { items: {
-  label: string; value?: string | number | Date | null | ViewReference;
-  type?: "text" | "number" | "date" | "datetime" | "ref"; format?: ViewFormat;
-}[] };
-/** Script runs only; HTML apps draw with cloud.chart(). Server validates every saved spec. */
-interface CloudView {
-  chart(spec: ViewChartSpec): Promise<ViewRef>;
-  /** 2..6 related charts under one heading. */
-  group(spec: ViewGroupSpec): Promise<ViewRef>;
-  table(spec: ViewTableSpec): Promise<ViewRef>;
-  stats(spec: ViewStatsSpec): Promise<ViewRef>;
-  details(spec: ViewDetailsSpec): Promise<ViewRef>;
-  /** One dataset with local filtering, steps and comparison; see views.md. */
-  explorer(spec: ViewExplorerSpec): Promise<ViewRef>;
 }
 
 // ---------------------------------------------------------------- money
@@ -441,13 +248,6 @@ interface Cloud {
   ai: CloudAi;
   http: CloudHttp;
   capabilities: CloudCapabilities;
-  db: CloudDb;
-  /** Small JSON state shared by everyone who uses the app (1,000 keys, 1 MiB per value, 16 MiB total). */
-  kv: KvStore & {
-    /** The same, private to the signed-in viewer, on every device. Rejects with "denied" in public shares. */
-    user: KvStore;
-  };
-  files: CloudFiles;
   /** Hands a file to the user as a download (in script runs: an output file). Name first. */
   download(name: string, data: Blob | string): Promise<void>;
   /** Tagged template: escapes every ${value}, joins arrays, keeps nested cloud.html and cloud.chart markup. */
@@ -470,14 +270,14 @@ declare const cloud: Cloud;
 type RunFile = { path: string; size: number; type: string; file(): Promise<File> };
 
 /**
- * Script mode (one-off scripts and app actions): a JS module whose default
+ * Script mode (one-off chat scripts): a JS module whose default
  * export receives the JSON input and returns JSON. Logs come from `console.*`,
  * files from `cloud.download`, view references from `cloud.view.*`.
  */
 type Script = (
   input: Json | null,
   context: {
-    /** Input files of this run; empty for app actions. */
+    /** Input files of this run; selected with inputPaths. */
     files: RunFile[];
     /** Aborted when the run is stopped. */
     signal: AbortSignal;

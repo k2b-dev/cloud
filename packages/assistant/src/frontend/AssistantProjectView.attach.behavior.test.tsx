@@ -21,7 +21,7 @@ mock.module("@k2b/cloud/browser/files", () => ({
 }));
 
 const emptyPage = { items: [], page: 1, hasNext: false };
-const snapshot = { projectId: "Proj01", knowledge: [], files: [], references: [], skills: emptyPage, apps: emptyPage };
+const snapshot = { projectId: "Proj01", knowledge: [], files: [], references: [], skills: emptyPage };
 
 /** The test DOM has no FileReader; the Project upload reads files as data URLs. */
 class DataUrlReader {

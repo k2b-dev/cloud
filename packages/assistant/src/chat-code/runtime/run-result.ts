@@ -6,9 +6,7 @@ export function inspectCodeRun(
   runId: string,
   entry: {
     session: Pick<ArtifactSession, "snapshot">;
-    artifactId?: string;
     revision: number;
-    resourceId?: string;
     outputSchema?: z.ZodType;
   },
 ) {
@@ -22,11 +20,8 @@ export function inspectCodeRun(
   return {
     userVisible: false,
     delivery:
-      "Show views from cloud.view.* with present({path}); never retype their values. Return key figures, use code_export then present for files, or show an HTML app with code_present or code_open.",
+      "Show views from cloud.view.* with present({path}); never retype their values. Return key figures, or use code_export then present for files.",
     runId,
-    id: entry.artifactId,
-    revision: entry.artifactId ? entry.revision : undefined,
-    resourceId: entry.resourceId,
     status: invalidOutput ? "error" : state.status,
     work: state.work,
     error: invalidOutput

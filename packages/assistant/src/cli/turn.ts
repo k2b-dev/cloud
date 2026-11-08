@@ -120,7 +120,6 @@ const submitDraftBody = async (
   ctx: CloudCliContext,
   conversationId: string,
   body: unknown,
-  codeHost: boolean,
   signal?: AbortSignal,
   known?: ConversationDetail,
 ): Promise<{ body: unknown; clear?: () => Promise<unknown> }> => {
@@ -176,7 +175,7 @@ const submitDraftBody = async (
       model: input.model,
       ...(input.client ? { client: input.client } : {}),
       ...(input.localContext ? { localContext: input.localContext } : {}),
-      clientToolIds: [...new Set([...(input.clientToolIds ?? []), ...(codeHost ? ["code_open"] : [])])],
+      clientToolIds: [...new Set(input.clientToolIds ?? [])],
     },
   };
 };
@@ -187,7 +186,6 @@ export const submitAssistantTurn = async (input: {
   path: string;
   body: unknown;
   watch: boolean;
-  codeHost?: boolean;
   approveTools?: readonly string[];
   onCapabilityApproval?: (request: CodeApproval) => Promise<CapabilityDecision>;
   signal?: AbortSignal;
@@ -211,7 +209,7 @@ export const submitAssistantTurn = async (input: {
   let submitted: TurnSubmission;
   try {
     const { body, clear } = input.path.endsWith("/turns")
-      ? await submitDraftBody(input.ctx, input.conversationId, input.body, input.codeHost ?? input.watch, input.signal, input.detail)
+      ? await submitDraftBody(input.ctx, input.conversationId, input.body, input.signal, input.detail)
       : { body: input.body };
     // A stop before the turn starts empties the draft again instead of leaving the message in the composer. Once
     // sent, the request completes, so a stop can abort the turn it started.

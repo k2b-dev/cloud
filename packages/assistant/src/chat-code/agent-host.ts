@@ -23,7 +23,7 @@ export const AgentHostRequest = z
   .object({
     turnId: z.uuid(),
     callId: z.string().min(1).max(180),
-    name: z.enum(["code_run", "code_action", "code_inspect", "code_stop", "code_export", "code_present", "code_check"]),
+    name: z.enum(["code_run", "code_inspect", "code_stop", "code_export"]),
     args: z.unknown(),
     decision: z.object({ id: z.uuid(), approved: z.boolean() }).optional(),
     /** How many receipts of this call the caller already has; the answer continues after them. */
@@ -54,8 +54,6 @@ export type Session = {
   host: Promise<Host>;
   lastUsed: number;
   busy: Set<string>;
-  checks: Map<string, { controller: AbortController; operation: Promise<void> }>;
-  checkScopes: Set<string>;
   lastCall?: { turnId: string; callId: string };
   capabilityTransport: ReturnType<typeof createCodeCapabilityTransport>;
   capabilityContext?: { conversationId: string; turnId: string; token: string };
@@ -66,12 +64,10 @@ export function createAgentHost(
     createHost?: (options: Parameters<typeof createRunnerCodeHost>[0]) => Host;
     fetch?: (context: CodeToolContext, session: Session, path: string, init?: RequestInit) => Promise<Response>;
     website?: typeof httpService.website;
-    discard?: (id: string, context: CodeToolContext) => Promise<unknown>;
   } = {},
 ) {
   const createHost = options.createHost ?? ((hostOptions: Parameters<typeof createRunnerCodeHost>[0]) => createRunnerCodeHost(hostOptions));
   const fetch = options.fetch ?? hostFetch;
-  const discard = options.discard ?? (async () => {});
   const sessions = new Map<string, Session>();
   const IDLE_MS = 120_000;
   const keyOf = (turnId: string, callId: string) => `${turnId}:${callId}`;
@@ -81,21 +77,18 @@ export function createAgentHost(
     try {
       // Fence persistence before resolving approvals or draining the host: a
       // stopped runner call can return normally while close() is still waiting.
-      await sql`UPDATE assistant.artifact_agent_calls SET status='lost',updated_at=now()
+      await sql`UPDATE assistant.code_agent_calls SET status='lost',updated_at=now()
       WHERE host_id=${session.id}::uuid AND status='running'`;
     } finally {
       // Even a failed persistence fence must stop the host. Its missing local
       // ownership prevents late completion; a later poll marks the row lost.
       for (const resolve of session.decisions.values()) resolve(false);
       session.decisions.clear();
-      for (const check of session.checks.values()) check.controller.abort();
       await session.host.then(
         (host) => host.close(),
         () => {},
       );
       // Also recover a start response lost when its caller disconnected.
-      for (const id of session.checkScopes) await discard(id, session.context);
-      session.checkScopes.clear();
     }
   }
 
@@ -126,8 +119,6 @@ export function createAgentHost(
       context,
       lastUsed: Date.now(),
       busy: new Set(),
-      checks: new Map(),
-      checkScopes: new Set(),
       decisions: new Map(),
       capabilityTransport: createCodeCapabilityTransport(() => {
         if (!session.capabilityContext) throw new Error("Code capability authority expired");
@@ -168,7 +159,7 @@ export function createAgentHost(
                     },
                   ))
                 ) {
-                  await sql`INSERT INTO assistant.artifact_agent_approvals(turn_id,call_id,id,message,decision,receipt)
+                  await sql`INSERT INTO assistant.code_agent_approvals(turn_id,call_id,id,message,decision,receipt)
       VALUES(${turnId}::uuid,${callId},${id}::uuid,${`${website.method} ${website.url}`},true,
         (${JSON.stringify({ method: website.method, url: website.url })}::text)::jsonb) ON CONFLICT DO NOTHING`;
                   return { approved: true };
@@ -177,10 +168,10 @@ export function createAgentHost(
             } else {
               const [call] = await sql<{ name: string; allow_always: boolean | null; scope: string | null }[]>`
       SELECT request->>'name' AS name,(prepared->>'allowAlways')::boolean AS allow_always,prepared->>'scope' AS scope
-      FROM assistant.capability_calls WHERE id=${id}::uuid AND user_id=${actorUserId}::uuid AND status='pending'`;
+      FROM assistant.code_capability_calls WHERE id=${id}::uuid AND user_id=${actorUserId}::uuid AND status='pending'`;
               if (call?.allow_always && call.scope) target = { toolName: call.name, approvalScope: call.scope, always: true };
             }
-            await sql`INSERT INTO assistant.artifact_agent_approvals(turn_id,call_id,id,message,remember)
+            await sql`INSERT INTO assistant.code_agent_approvals(turn_id,call_id,id,message,remember)
       VALUES(${turnId}::uuid,${callId},${id}::uuid,${codeApprovalMessage(approval, context.locale)},
         (${target ? JSON.stringify(target) : null}::text)::jsonb) ON CONFLICT DO NOTHING`;
             const approved = await new Promise<boolean>((resolve) => {
@@ -216,20 +207,20 @@ export function createAgentHost(
       const key = keyOf(call.turnId, call.callId);
       let [row] = await sql<
         { host_id: string; input: unknown; status: string; result: unknown }[]
-      >`SELECT host_id,input,status,result FROM assistant.artifact_agent_calls
+      >`SELECT host_id,input,status,result FROM assistant.code_agent_calls
       WHERE turn_id=${call.turnId}::uuid AND call_id=${call.callId} AND user_id=${user.id}::uuid`;
       if (row && !isDeepStrictEqual(row.input, input)) throw new Error("Code call input changed; no replay performed");
       let session = sessions.get(sessionKey);
       if (row?.status === "running" && (!session || session.id !== row.host_id || !session.busy.has(key))) {
         const changed =
-          await sql`UPDATE assistant.artifact_agent_calls SET status='lost',updated_at=now() WHERE turn_id=${call.turnId}::uuid AND call_id=${call.callId} AND status='running' RETURNING call_id`;
+          await sql`UPDATE assistant.code_agent_calls SET status='lost',updated_at=now() WHERE turn_id=${call.turnId}::uuid AND call_id=${call.callId} AND status='running' RETURNING call_id`;
         if (changed.length) row.status = "lost";
         else {
           // The SELECT can precede completion while the ownership check follows
           // it. Never overwrite a result committed in that interval.
           [row] = await sql<
             { host_id: string; input: unknown; status: string; result: unknown }[]
-          >`SELECT host_id,input,status,result FROM assistant.artifact_agent_calls
+          >`SELECT host_id,input,status,result FROM assistant.code_agent_calls
           WHERE turn_id=${call.turnId}::uuid AND call_id=${call.callId} AND user_id=${user.id}::uuid`;
           if (!row) throw new Error("Code call disappeared; no replay performed");
         }
@@ -238,20 +229,12 @@ export function createAgentHost(
         session = await createSession(context, call.turnId);
         if (context.capabilityToken)
           session.capabilityContext = { conversationId: context.conversationId!, turnId: call.turnId, token: context.capabilityToken };
-        if (input.operation === "stop") {
-          const check = session.checks.get(keyOf(call.turnId, input.runId));
-          if (check) {
-            check.controller.abort();
-            await check.operation;
-            return { status: "done", result: { stopped: true }, approvals: [] };
-          }
-        }
         if (session.busy.size) return { status: "busy", phase: "busy", approvals: [] };
         session.busy.add(key);
         session.lastCall = { turnId: call.turnId, callId: call.callId };
         let inserted: unknown[];
         try {
-          inserted = await sql`INSERT INTO assistant.artifact_agent_calls(turn_id,call_id,user_id,conversation_id,host_id,input)
+          inserted = await sql`INSERT INTO assistant.code_agent_calls(turn_id,call_id,user_id,conversation_id,host_id,input)
         VALUES(${call.turnId}::uuid,${call.callId},${user.id}::uuid,${context.conversationId}::uuid,${session.id}::uuid,(${JSON.stringify(input)}::text)::jsonb)
         ON CONFLICT DO NOTHING RETURNING call_id`;
         } catch (error) {
@@ -260,59 +243,32 @@ export function createAgentHost(
         }
         if (inserted.length) {
           const owned = session;
-          const controller = call.name === "code_check" ? new AbortController() : undefined;
           const operation = owned.host
             .then((host) =>
-              host.execute(
-                {
-                  name: call.name,
-                  args: call.args,
-                  callId: call.callId,
-                  turnId: call.turnId,
-                  conversationId: context.conversationId!,
-                },
-                controller ? AbortSignal.any([context.signal, controller.signal]) : undefined,
-              ),
+              host.execute({
+                name: call.name,
+                args: call.args,
+                callId: call.callId,
+                turnId: call.turnId,
+                conversationId: context.conversationId!,
+              }),
             )
             .then(async (result) => {
               if (sessions.get(owned.key) !== owned) return;
-              await sql`UPDATE assistant.artifact_agent_calls SET status='done',result=(${JSON.stringify(result)}::text)::jsonb,updated_at=now() WHERE turn_id=${call.turnId}::uuid AND call_id=${call.callId} AND host_id=${owned.id}::uuid AND status='running'`;
+              await sql`UPDATE assistant.code_agent_calls SET status='done',result=(${JSON.stringify(result)}::text)::jsonb,updated_at=now() WHERE turn_id=${call.turnId}::uuid AND call_id=${call.callId} AND host_id=${owned.id}::uuid AND status='running'`;
             })
             .catch(async () => {
               // If persistence is unavailable, retain the durable running guard.
               // A later poll sees that no local call owns it and reports lost;
               // execution is never retried after an uncertain write.
-              await sql`UPDATE assistant.artifact_agent_calls SET status='lost',updated_at=now() WHERE turn_id=${call.turnId}::uuid AND call_id=${call.callId} AND status='running'`.catch(
+              await sql`UPDATE assistant.code_agent_calls SET status='lost',updated_at=now() WHERE turn_id=${call.turnId}::uuid AND call_id=${call.callId} AND status='running'`.catch(
                 () => {},
               );
             })
-            .finally(async () => {
-              try {
-                if (controller) {
-                  // Discard IDs the child could not receive, and retry teardown
-                  // whose transport was interrupted by turn cancellation.
-                  for (const id of owned.checkScopes) {
-                    await discard(id, context);
-                    owned.checkScopes.delete(id);
-                  }
-                }
-              } finally {
-                owned.busy.delete(key);
-                owned.checks.delete(key);
-                owned.lastUsed = Date.now();
-              }
+            .finally(() => {
+              owned.busy.delete(key);
+              owned.lastUsed = Date.now();
             });
-          if (controller) {
-            owned.checks.set(key, { controller, operation });
-            // Keep the originating HTTP request open: its signal must still
-            // observe a cancelled tool or detached caller between polls.
-            await operation;
-            context.signal.throwIfAborted();
-            const [completed] = await sql<{ status: string; result: unknown }[]>`SELECT status,result FROM assistant.artifact_agent_calls
-            WHERE turn_id=${call.turnId}::uuid AND call_id=${call.callId} AND host_id=${owned.id}::uuid`;
-            if (!completed) throw new Error("Code call disappeared; no replay performed");
-            return { ...completed, approvals: [] };
-          }
           void operation.catch(() => {});
         } else session.busy.delete(key);
         return { status: "running", phase: session.phase, approvals: [] };
@@ -320,24 +276,24 @@ export function createAgentHost(
       if (session && context.capabilityToken)
         session.capabilityContext = { conversationId: context.conversationId!, turnId: call.turnId, token: context.capabilityToken };
       if (session)
-        await sql`INSERT INTO assistant.artifact_agent_approvals(turn_id,call_id,id,message,remember)
-      SELECT ${call.turnId}::uuid,${call.callId},a.id,a.message,a.remember FROM assistant.artifact_agent_approvals a
-      JOIN assistant.artifact_agent_calls c USING(turn_id,call_id)
+        await sql`INSERT INTO assistant.code_agent_approvals(turn_id,call_id,id,message,remember)
+      SELECT ${call.turnId}::uuid,${call.callId},a.id,a.message,a.remember FROM assistant.code_agent_approvals a
+      JOIN assistant.code_agent_calls c USING(turn_id,call_id)
       WHERE c.host_id=${session.id}::uuid AND a.decision IS NULL ORDER BY a.ordinal
       ON CONFLICT DO NOTHING`;
       if (call.decision) {
-        const changed = await sql`UPDATE assistant.artifact_agent_approvals a SET decision=${call.decision.approved}
-        FROM assistant.artifact_agent_calls c WHERE c.turn_id=a.turn_id AND c.call_id=a.call_id
+        const changed = await sql`UPDATE assistant.code_agent_approvals a SET decision=${call.decision.approved}
+        FROM assistant.code_agent_calls c WHERE c.turn_id=a.turn_id AND c.call_id=a.call_id
         AND c.user_id=${user.id}::uuid AND c.host_id=${row.host_id}::uuid AND a.id=${call.decision.id}::uuid AND a.decision IS NULL
-        AND EXISTS(SELECT 1 FROM assistant.artifact_agent_approvals current WHERE current.turn_id=${call.turnId}::uuid AND current.call_id=${call.callId} AND current.id=a.id)
+        AND EXISTS(SELECT 1 FROM assistant.code_agent_approvals current WHERE current.turn_id=${call.turnId}::uuid AND current.call_id=${call.callId} AND current.id=a.id)
         RETURNING a.id`;
         if (changed.length) session?.decisions.get(call.decision.id)?.(call.decision.approved);
       }
       if (session) session.lastUsed = Date.now();
       const rows = await sql<
         { id: string; approval_id: string | null; message: string; decision: boolean | null; remember: unknown }[]
-      >`SELECT a.id,a.message,a.decision,a.remember,c.approval_id FROM assistant.artifact_agent_approvals a
-      LEFT JOIN assistant.capability_calls c ON c.id=a.id
+      >`SELECT a.id,a.message,a.decision,a.remember,c.approval_id FROM assistant.code_agent_approvals a
+      LEFT JOIN assistant.code_capability_calls c ON c.id=a.id
       WHERE a.turn_id=${call.turnId}::uuid AND a.call_id=${call.callId} AND a.receipt IS NULL ORDER BY a.ordinal`;
       const approvals = rows.map(({ id, approval_id, message, decision, remember }) => ({
         approvalId: approval_id ?? undefined,
@@ -347,7 +303,7 @@ export function createAgentHost(
         remember: remember ? ApprovalTarget.parse(remember) : undefined,
       }));
       // Receipts can grow with every request a run makes, so each answer carries only the next page of them.
-      const page = await sql<{ receipt: unknown }[]>`SELECT receipt FROM assistant.artifact_agent_approvals
+      const page = await sql<{ receipt: unknown }[]>`SELECT receipt FROM assistant.code_agent_approvals
       WHERE turn_id=${call.turnId}::uuid AND call_id=${call.callId} AND receipt IS NOT NULL
       ORDER BY ordinal OFFSET ${call.receiptsAfter ?? 0} LIMIT ${RECEIPTS_PER_POLL + 1}`;
       const receipts = page.slice(0, RECEIPTS_PER_POLL).map((entry) => Receipt.parse(entry.receipt));

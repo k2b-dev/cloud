@@ -181,17 +181,16 @@ run, followed by `present({path})`.
 
 The built-in `chart` tool is a `clientView()` for a few values the model already
 has that did not come from a code run. It shares the chart contract of
-`cloud.chart()` in Studio code, without `width`, `height`, or format functions.
+`cloud.chart()` in Chat code, without `width`, `height`, or format functions.
 Set exactly one of `kind` or `charts` at the tool's flat root, with `title` and
 optional `subtitle` (unit, period or source).
 
-In Studio and one-off HTML apps, `cloud.chart()` shows tooltips by default on
+In chat code, `cloud.chart()` shows tooltips by default on
 hover, keyboard focus and tap, using the same text as chat charts and their data
 tables. Function formats also apply to tooltip values when `tooltip.format` is
 absent.
 
-Printed pages and PDFs (`cloud.pdf.render`, presentation PDF download and
-browser print) list the chart's values in a table below it, hidden on screen.
+Printed pages and PDFs (`cloud.pdf.render` and browser print) list the chart's values in a table below it, hidden on screen.
 The table is complete with no extra row limit; PDF size grows with the number
 of points.
 
@@ -271,8 +270,7 @@ Cloud answers chart calls without a browser, also in background and scheduled
 runs. The transcript shows them later. Readers can switch each chart to its
 data table and use Copy data. Filters, steps and comparison over computed rows
 use `cloud.view.explorer` in `code_run`. Anything else the person interacts
-with, such as a calculator, converter, timer or form, is a saved Studio App
-created with `code_create`, even when it keeps no data.
+with, such as a calculator, converter, timer or form, belongs in a Code page.
 
 Computed results stay in `code_run`: the script calls `cloud.view.chart`,
 `cloud.view.group`, `cloud.view.table`, `cloud.view.stats`,
@@ -701,7 +699,7 @@ editor to revoke remembered choices.
 
 ## Handle approval in the UI
 
-The Assistant's **Approvals** row above **Studio** opens a view of waiting
+The Assistant's **Approvals** row in the sidebar opens a view of waiting
 requests. **My account → Approvals** lists requests across apps.
 A **Pending approvals** notification and a Cloud Login push point to that
 list for requests that no open chat tab shows, including a chat that keeps
@@ -769,7 +767,7 @@ what the code can send beside the URL small.
 
 Every other request asks every time, and its card keeps the warning that it may
 change data or incur charges. That includes a secret reference, a header that
-one of the person's secrets in this chat or app is bound to, `Authorization`,
+one of the person's secrets in this chat is bound to, `Authorization`,
 an API key header, a method override, `Content-Type` or `Content-Language` (a
 read has no body to describe), a longer value, and every other header. The HTTP
 service never accepts `Cookie`, `Proxy-*`, or the other headers it controls, so
@@ -785,8 +783,7 @@ asking only if all of these hold:
 - a person started the turn in a signed-in browser session, or their personal
   Code started an owner-authorized turn with `core.ai.chat.run`; routines,
   mandates, `cld`, API keys and other delegated credentials do not qualify;
-- the code is the chat's own code or a Studio app the person manages, never an
-  app they only use or HTML presented in the chat.
+- the code runs in that chat's own context.
 
 Website approvals are never offered as **Always**. `cld`, an API key, or
 another delegated credential may approve the single request, but cannot
@@ -796,13 +793,6 @@ run or read that fails afterwards keeps it. The receipt and the chat's
 **Secrets & approvals** dialog both revoke it with one click. The
 remembered-approval name is the reserved `website:read`, which no tool or
 Capability can use.
-
-A Studio app the person manages gets the same choice in its request dialog as
-**Allow this website for this app**, under the same rules. An app that sends
-`Accept` and `User-Agent` with every read therefore asks once, not on every
-open or view. That approval lasts until it is revoked or the app is deleted.
-Each request it lets through shows a notice with the full URL and a **Revoke**
-action. The app's **Secrets & approvals** dialog lists these approvals.
 
 The operator of an allowed website still sees every full address the code
 requests, including the query, and the headers above, which may carry data from

@@ -33,7 +33,6 @@ export function codeApprovalMessage(approval: CodeApproval, locale: string): str
   if ("type" in approval) {
     return [
       `${artifact.httpRequest}: ${approval.method} ${approval.url}`,
-      ...(approval.resourceTitle ? [`${t.appResource}: ${approval.resourceTitle}`] : []),
       httpApprovalNotice(approval, locale),
       ...Object.entries(approval.headers).map(
         ([name, value]) => `${name}: ${typeof value === "string" ? value : `${value.prefix}[${t.secret({ name: value.secret })}]`}`,
@@ -54,9 +53,5 @@ export function codeApprovalMessage(approval: CodeApproval, locale: string): str
       Object.entries(isRecord(approval.input) ? approval.input : {}).map(
         ([key, value]) => `${key}: ${typeof value === "string" ? value : JSON.stringify(value)}`,
       );
-  return [
-    `${approval.appName}: ${approval.title}`,
-    ...(approval.resource ? [`${t.appResource}: ${approval.resource.title}`, artifact.sharedCodeHelp] : []),
-    ...reviewed,
-  ].join("\n");
+  return [`${approval.appName}: ${approval.title}`, ...reviewed].join("\n");
 }

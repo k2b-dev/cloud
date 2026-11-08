@@ -41,7 +41,7 @@ const identity = (c: Context<AuthContext>) => ({
   locale: getLocale(c),
 });
 const secretCall = <T extends z.infer<typeof ClientCall>>(call: T) => {
-  if (call.input.operation !== "secret" || call.input.resourceId) throw new ArtifactError("ACCESS_DENIED");
+  if (call.input.operation !== "secret") throw new ArtifactError("ACCESS_DENIED");
   return call;
 };
 /** Chat-only services: no resource resolver, app storage, HTML host or database admission. */
@@ -126,7 +126,7 @@ export const createChatCodeServiceRoutes = (caller: (c: Context<AuthContext>) =>
       "/runtime/pdf",
       auth.readOnly,
       async (c, next) => {
-        await chatPdf.authorize({ conversationId: c.req.query("conversationId"), resourceId: c.req.query("resourceId") }, identity(c));
+        await chatPdf.authorize({ conversationId: c.req.query("conversationId") }, identity(c));
         await next();
       },
       bodyLimit({ maxSize: LIMITS.rpcBytes * 6 + 4096 }),

@@ -1,7 +1,7 @@
 import { i18n } from "@k2b/stdlib";
 
 /**
- * What a person approves for Studio code tools and for requests from managed code, in the reader's language. Each
+ * What a person approves for chat code tools and requests from runner code, in the reader's language. Each
  * review is plain text: a first sentence with the consequence, then "Label: value" lines the approval card shows as
  * rows. Identifiers, paths, and keys stay verbatim.
  */

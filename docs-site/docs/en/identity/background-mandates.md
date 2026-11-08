@@ -350,6 +350,7 @@ ordinary effect-time permission checks.
 An app workload credential cannot use the ordinary interactive capability
 route to bypass the mandate.
 
+
 ## Handle lifecycle and retries
 
 Persist the mandate ID and revision with the workload. A policy update,

@@ -1,6 +1,5 @@
 import type { AiConversation, AiProject } from "@k2b/cloud/ai";
 import type { GlobalSearchOptions } from "@k2b/cloud/browser/search";
-import { artifactMessages } from "../chat-code/messages";
 import { assistantCommandMessages } from "../commands";
 import { assistantMessages } from "./messages";
 
@@ -20,9 +19,4 @@ export const assistantProjectSearchOptions = (project: Pick<AiProject, "id" | "n
 export const assistantProjectsSearchOptions = (locale: string): GlobalSearchOptions => ({
   query: "",
   scope: { appId: "assistant", tag: "assistant-project", label: assistantMessages.resolve([locale]).t.projects, icon: "ti ti-folders" },
-});
-
-export const assistantAppsSearchOptions = (locale: string): GlobalSearchOptions => ({
-  query: "",
-  scope: { appId: "assistant", tag: "studio-app", label: artifactMessages.resolve([locale]).t.apps, icon: "ti ti-app-window" },
 });

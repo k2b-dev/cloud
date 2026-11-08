@@ -30,7 +30,7 @@ Gustav works best when the request states the outcome, the relevant context, and
 - **Personalization** stores facts, preferences, and Cloud workflow defaults you can review, edit, pin, or forget. Manually added entries start pinned, and Gustav keeps a small relevant set in context instead of loading an unbounded history. Gustav uses an entry only when it changes the answer, and the current message wins over an older entry.
 - **Learn from chats** is on for anyone who has not chosen. If you used Gustav before learning became the default, your earlier setting stays, usually off. Learning considers turns from your own chats, including Project chats, that finish while it is on, each once, and switching it off takes effect right away. It learns only about you, never facts or opinions about other people; a person may appear only in a rule you state, such as "send invoices to Anna". It skips sensitive details such as health, religion, or political views unless you explicitly ask to remember exactly that; Project knowledge stays in the Project. Explicit user text can update durable facts and preferences; three successful uses of the same Cloud capability and resource can establish a workflow default. Attached content and raw tool output are excluded, while Gustav's final message is context only. Background learning may merge, replace, or retire only its own unpinned entries. Archived and deleted chats are excluded; archiving stops pending learning, and restoring a chat allows learning only from turns that finish after restore.
 - **System prompt** shows the complete prompt a new chat would receive, including active personalization and organization rules.
-- **Approvals** lists earlier **Always approve** choices, which still apply, and websites you allowed for a Studio app. Revoke an entry there whenever Gustav should ask again. Approvals for one chat are listed under **Secrets & approvals** in that chat.
+- **Approvals** lists earlier **Always approve** choices, which still apply. Revoke an entry there whenever Gustav should ask again. Approvals for one chat are listed under **Secrets & approvals** in that chat.
 - **API access** appears when your administrator offers the OpenAI-compatible API. It shows the base URL and the model IDs for apps such as a dictation app. Such an app uses only the models and your usage limits. It gets no chats, files, or personalization. Create its key in your profile with the access **AI models only**.
 - **Chat context** is still the best place for project-specific facts, source material, and one-off constraints.
 
@@ -38,7 +38,7 @@ Gustav works best when the request states the outcome, the relevant context, and
 
 Open **Gustav settings > Skills** to create, import, edit, export, or share reusable Gustav workflows. A Skill keeps its instructions in `SKILL.md` and may include Markdown reference files.
 
-You can also ask Gustav to create or improve a Skill. Cloud initially provides **Skill Creator** to every signed-in user. It guides the draft and uses reviewed Skill-management capabilities with your current permissions. Like any shared Skill, it can be disabled for yourself; administrators can grant access, edit it, or delete it.
+You can also ask Gustav to create or improve a Skill. Cloud initially provides **Skill Creator** to every signed-in user. It guides the draft and uses reviewed Skill-management capabilities with your current access. Like any shared Skill, it can be disabled for yourself; administrators can give access, edit it, or delete it.
 
 When a request looks like it will come back, for example because you say "again" or correct the format of a result a second time, Gustav may offer once to save the approach as a Skill. If you agree, it drafts the Skill from the chat: the steps, your corrections, and the output format, without names, amounts, or content from your attachments. The usual review shows the Skill before it is saved. If you decline, Gustav does not ask again in that chat. The offer needs Skill Creator; if you disabled it, Gustav does not offer.
 
@@ -74,27 +74,6 @@ Treat generated facts, calculations, external actions, and changes to important 
 - Check the selected model and the status shown by the composer when no response starts.
 - Split a large request into a small first result and a follow-up instead of repeating an overloaded prompt.
 
-## Open or share a Studio app {icon="share"}
+## Code
 
-App users open the standalone view without the Gustav sidebar. App managers
-can select **Open fullscreen** in the header or **Copy app link** from the action menu. The link always
-runs the latest published version. Private apps still require sign-in and access.
-
-In **Manage access**, Public allows execution only, never administration. The
-warning explains that public visitors cannot use databases, server files/KV,
-secrets or protected Cloud actions. Local calculations, file selection and
-downloads work. Server-dependent apps may need to remain private. Published code
-and embedded data become public. Remove Public or unpublish to stop new loads.
-Cloud administrators can add the app link to the navigation as a URL shortcut;
-this does not grant access.
-
-App managers see a **Draft** or **Published** badge beside the runtime controls.
-Select the badge to learn what it means and publish a saved draft.
-**Open fullscreen** also offers publishing when needed. Publishing does not
-change access grants or automatically make an app public.
-
-In a Project, use **+** beside **Studio Apps** or **Skills**. Search the list and select a resource you manage. The notice explains what is shared. You must manage both resources to link or unlink them.
-
-Project members can use published linked apps and their shared app data in Studio and fullscreen. They can read and use linked Skills. Editing rights remain separate, and app drafts stay private to app managers. Permission dialogs show which Projects grant access.
-
-Links remain if their creator later loses access or management rights. Removing a link or leaving a Project removes only inherited access; direct grants remain. Linked Skills are loaded when needed and still respect **Enabled for me**.
+Studio apps have been retired without transfer. Ask Gustav to build lasting Code when you need a new reusable program. Chat files and native views remain available.

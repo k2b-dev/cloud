@@ -1,5 +1,6 @@
 import type { AssistantMessage, CompactEvent, LoopAggregate, Message, NessiLoop, OutboundEvent } from "@k2b/nessi";
 import { compact, nessi } from "@k2b/nessi";
+import { z } from "zod";
 import { capabilityReviewRememberScope } from "../_internal/capability-reviews";
 import { getCapability, listCapabilities } from "../_internal/registry";
 import { capabilityCallFromTool } from "../capabilities/calls";
@@ -224,28 +225,6 @@ const indexConversationToolSource = async (input: {
         title: text(args.title) || path.slice(path.lastIndexOf("/") + 1),
         preview: text(args.description) || undefined,
         icon: "ti ti-file",
-      };
-    } else if (
-      input.name === "code_open" &&
-      text(args.id) &&
-      typeof input.result === "object" &&
-      input.result !== null &&
-      !("error" in input.result)
-    ) {
-      // The browser reports a failure as a result with an error, which reaches this point without isError.
-      source = {
-        kind: "result",
-        key: `assistant.artifact:${text(args.id)}`,
-        title: "Studio app",
-        icon: "ti ti-app-window",
-        ref: { type: "assistant.artifact", id: text(args.id) },
-      };
-    } else if (input.name === "code_present" && text(result.presentationId)) {
-      source = {
-        kind: "result",
-        key: `code_present:${input.callId}`,
-        title: text(args.title) || text(result.title) || "Visualization",
-        icon: "ti ti-chart-dots",
       };
     } else if (input.name === "web_extract" && typeof input.result === "object" && input.result !== null) {
       const result = input.result as Record<string, unknown>;
@@ -1926,8 +1905,16 @@ export class AiTurnExecutor {
       const linked = input.linkedApprovals.get(event.callId);
       if (linked) {
         const record = await approvals.get(linked);
-        if (!record || record.status !== "pending" || record.requesterKind !== "studio_app" || record.approverUserId !== owner)
-          throw new Error("Approval does not belong to an open Studio request of the conversation owner");
+        if (
+          !record ||
+          record.status !== "pending" ||
+          record.requesterKind !== "assistant_turn" ||
+          record.requesterAppId !== "assistant" ||
+          record.approverUserId !== owner ||
+          !record.requesterRef.startsWith(`${conversationId}/code/`) ||
+          !z.uuid().safeParse(record.requesterRef.slice(`${conversationId}/code/`.length)).success
+        )
+          throw new Error("Approval does not belong to an open chat code request of the conversation owner");
         approvalId = linked;
         // The card shows the question the effect's own record holds, never the text the relay sent.
         presented = { ...event, message: record.sentence };

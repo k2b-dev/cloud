@@ -21,7 +21,7 @@ const resourceTypeLabel = (type: string): string =>
     .join(" ");
 
 export const assistantResourceTypeLabel = (ref: CloudResourceRef, text: (value: string) => string = (value) => value): string => {
-  if (ref.type === "assistant.artifact") return text("Gustav app");
+  if (ref.type === "assistant.artifact" || ref.type === "assistant.app") return text("Unavailable");
   if (ref.type === "core.ai.task") return text("Gustav routine");
   if (ref.type === "core.ai.chat") return text("AI conversation");
   return resourceTypeLabel(ref.type) || text("Cloud resource");

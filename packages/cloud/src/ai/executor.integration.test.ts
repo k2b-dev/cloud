@@ -1080,7 +1080,7 @@ suite("AI executor integration", () => {
     }
   });
 
-  test.each([false, true])("a linked Studio approval retains its stored question and content (full=%s)", async (fullContent) => {
+  test.each([false, true])("a linked chat code approval retains its stored question and content (full=%s)", async (fullContent) => {
     const userId = await insertUser();
     const chat = await aiConversations.createConversation({ ownerUserId: userId });
     try {
@@ -1126,11 +1126,15 @@ suite("AI executor integration", () => {
       pipeline.setApprovalReviews(reviews, new Map());
       const session = aiConversations.createSessionStore({ conversationId: chat.id, turnId: turn.id, leaseOwner: "linked-approval-test" });
       await session.append({ role: "assistant", content: [{ type: "tool_call", id: "run", name: "code_run", args: {} }] });
-      const studio = async (kind: "studio_app" | "assistant_turn", review?: CapabilityActionReviewData) => {
+      const codeApproval = async (scope: "code" | "other", review?: CapabilityActionReviewData) => {
         const record = await approvals.request({
           appId: "demo",
           action: "write",
-          requester: { kind, ref: kind === "studio_app" ? crypto.randomUUID() : `${turn.id}/other`, appId: "assistant" },
+          requester: {
+            kind: "assistant_turn",
+            ref: scope === "code" ? `${chat.id}/code/${crypto.randomUUID()}` : `${turn.id}/other`,
+            appId: "assistant",
+          },
           subjectId: userId,
           approverUserId: userId,
           assurance: "standard",
@@ -1169,7 +1173,7 @@ suite("AI executor integration", () => {
           approvalTargets: new Map(),
           linkedApprovals: new Map([[callId, approvalId]]),
         });
-      const linked = await studio("studio_app", fullContent ? fullReview : undefined);
+      const linked = await codeApproval("code", fullContent ? fullReview : undefined);
       await ask("run-approval-0", linked);
       expect(
         await aiConversations.getPendingTurnAction({ conversationId: chat.id, turnId: turn.id, callId: "run-approval-0" }),
@@ -1198,18 +1202,18 @@ suite("AI executor integration", () => {
           await approvals.consume(linked, {
             input: { value: "one" },
             review: fullReview,
-            requester: { kind: "studio_app", ref: request!.requesterRef },
+            requester: { kind: "assistant_turn", ref: request!.requesterRef },
           }),
         ).toMatchObject({ ok: true });
         expect(await readReviewContent({ conversationId: chat.id, turnId: turn.id, callId: "run" }, digest, userId)).toEqual(content);
       }
-      const decided = await studio("studio_app");
+      const decided = await codeApproval("code");
       await approvals.decide(decided, { approved: false }, { userId, via: "web_session" });
       for (const [callId, approvalId] of [
         ["run-approval-1", decided],
-        ["run-approval-2", await studio("assistant_turn")],
+        ["run-approval-2", await codeApproval("other")],
       ] as const) {
-        await expect(ask(callId, approvalId)).rejects.toThrow("open Studio request");
+        await expect(ask(callId, approvalId)).rejects.toThrow("open chat code request");
         expect(await aiConversations.getPendingTurnAction({ conversationId: chat.id, turnId: turn.id, callId })).toBeNull();
       }
     } finally {
@@ -2015,7 +2019,7 @@ suite("AI executor integration", () => {
       expect(loadResult).toMatchObject({
         loaded: [{ name: "code_run", call: "code_run" }],
         unavailable: [
-          { name: "code_open", reason: "not_offered_in_turn" },
+          { name: "code_open", reason: "unknown" },
           { name: "local_bash", reason: "not_offered_in_turn" },
         ],
       });
@@ -2076,7 +2080,7 @@ suite("AI executor integration", () => {
         unavailable: [
           { name: "write_file", reason: "not_allowed" },
           { name: "code_run", reason: "not_allowed" },
-          { name: "code_open", reason: "not_allowed" },
+          { name: "code_open", reason: "unknown" },
           { name: "made_up", reason: "unknown" },
         ],
       });

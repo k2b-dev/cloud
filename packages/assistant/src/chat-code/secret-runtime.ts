@@ -18,8 +18,7 @@ export function createChatSecretRuntime() {
   const code_secret: AiFrontendToolHandler = async ({ name, args, callId, turnId, conversationId }) => {
     try {
       const input = parseCodeToolInput(name, args);
-      if (input.operation !== "secret" || input.resourceId)
-        throw new Error("Chat secrets require the current conversation, without a Studio resource.");
+      if (input.operation !== "secret") throw new Error("Chat secrets require the current conversation, without a Studio resource.");
       const call = { input, callId, turnId, conversationId, clientId };
       const request = (path: string, body: unknown) =>
         chatCodeRequest(path, body, AbortSignal.any([abort.signal, AbortSignal.timeout(10000)]));

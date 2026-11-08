@@ -876,7 +876,7 @@ test.each(["retry", "details", "concise"])("/retry %s posts to the last stored u
       mode,
       model: { id: "model" },
       client: { kind: "cli", cwd: process.cwd(), localTools: "ask" },
-      clientToolIds: expect.arrayContaining(["local_bash", "local_list", "code_open"]),
+      clientToolIds: expect.arrayContaining(["local_bash", "local_list"]),
       localContext: { instructions: expect.any(Array), skills: expect.any(Array) },
     },
   });
@@ -914,7 +914,7 @@ test.each(["ask", "off"] as const)("/retry after /resume refreshes workspace con
     expect(body).toMatchObject({
       mode: "concise",
       client: { kind: "cli", cwd: directory, localTools: mode },
-      clientToolIds: mode === "ask" ? ["local_bash", ...AI_LOCAL_TOOL_NAMES, "code_open"] : ["code_open"],
+      clientToolIds: mode === "ask" ? ["local_bash", ...AI_LOCAL_TOOL_NAMES] : [],
       localContext: {
         instructions: [{ path: instructionsPath, content: "Current rules." }],
         skills: mode === "ask" ? expect.arrayContaining([expect.objectContaining({ name: "invoice", scope: "project" })]) : [],

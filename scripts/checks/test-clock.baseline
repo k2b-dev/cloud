@@ -1,14 +1,6 @@
 # Known test-clock findings, one per file: <file> | <count>.
 # Migrations lower counts and remove entries; the rule never raises counts or adds lines.
 # `bun scripts/check.ts test-clock --fix` lowers counts whose findings are gone.
-packages/assistant/src/artifacts/advanced-browser-harness.tsx | 1
-packages/assistant/src/artifacts/advanced.browser.test.ts | 2
-packages/assistant/src/artifacts/apps-browser-harness.tsx | 1
-packages/assistant/src/artifacts/apps.browser.test.ts | 2
-packages/assistant/src/artifacts/html/html-app.browser.test.ts | 2
-packages/assistant/src/artifacts/runtime/browser-harness.ts | 2
-packages/assistant/src/artifacts/runtime/streams-browser-harness.ts | 1
-packages/assistant/src/artifacts/secrets.browser.test.ts | 1
 packages/assistant/src/frontend/AssistantQuota.behavior.test.tsx | 1
 packages/assistant/src/frontend/AssistantSidebar.browser.test.ts | 2
 packages/assistant/src/frontend/assistant-live.behavior.test.tsx | 2

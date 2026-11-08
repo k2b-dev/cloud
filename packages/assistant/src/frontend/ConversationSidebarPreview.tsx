@@ -78,22 +78,6 @@ export function ConversationSidebarPreview(props: {
       <Show when={details()}>
         {(value) => (
           <>
-            <Show when={value().apps.length > 0}>
-              <div class="flex flex-col gap-1">
-                <span class="text-xs text-dimmed">{text("Apps")}</span>
-                <For each={value().apps}>
-                  {(app) => (
-                    <a
-                      class="assistant-sidebar-preview-resource inline-flex items-center gap-2"
-                      href={`/app/assistant/apps/${encodeURIComponent(app.id)}`}
-                    >
-                      <i class={app.icon || "ti ti-app-window"} aria-hidden="true" />
-                      {app.title}
-                    </a>
-                  )}
-                </For>
-              </div>
-            </Show>
             <Show when={value().files.length > 0}>
               <div class="flex flex-col gap-1">
                 <span class="text-xs text-dimmed">{text("Files")}</span>

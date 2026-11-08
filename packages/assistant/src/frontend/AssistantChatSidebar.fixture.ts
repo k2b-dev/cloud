@@ -74,7 +74,6 @@ export const emptySidebarSnapshot = (overrides: Partial<AssistantChatContextSnap
   sourceCursor: null,
   skills: [],
   memories: [],
-  apps: [],
   runCount: 0,
   runs: [],
   ...overrides,
@@ -91,8 +90,8 @@ export const sidebarSnapshot = (overrides: Partial<AssistantChatContextSnapshot>
         seq: 9,
       }),
       {
-        key: "assistant.artifact:App001",
-        kind: "app",
+        key: "view:dashboard",
+        kind: "visualization",
         title: "Umsatz-Dashboard",
         description: "Interaktives Dashboard zum Filtern nach Quartal, Region und Kunde.",
         icon: "ti ti-chart-bar",
@@ -100,7 +99,6 @@ export const sidebarSnapshot = (overrides: Partial<AssistantChatContextSnapshot>
         turnId: "turn-3",
         callId: "call-app",
         messageSeq: 9,
-        app: { id: "App001", href: "/app/assistant/apps/App001", published: true, lastRun: "ready" },
       },
       fileResult("/bestellungen-verknuepft.csv", {
         description: "Alle Bestellungen aus Q1–Q3 mit Kundendaten verknüpft, die Grundlage für Bericht und Dashboard.",

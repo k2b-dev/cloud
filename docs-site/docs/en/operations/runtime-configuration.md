@@ -665,7 +665,6 @@ reported problems, then remove the legacy environment entries. Follow the
 | `OUTGOING_MAIL_ALLOWED_TARGETS` | `outgoing_mail.allowed_targets` |
 | `GATEWAY_TRUSTED_PROXIES` | `gateway.trusted_proxies` |
 | `GATEWAY_OPS_WEBHOOK_ALLOWED_TARGETS` | `gateway.webhook_allowed_targets` |
-| `ASSISTANT_RSQL_ALLOWED_TARGETS` | `assistant.rsql_allowed_targets` |
 | `NOTEBOOKS_SNAPSHOT_ALLOWED_TARGETS` | `notebooks.snapshot_allowed_targets` |
 | `WORKFLOW_AI_BUDGET` | `ai.workflow_budget` |
 | `WORKFLOW_AI_ATTEMPT_TIMEOUT_MS` | `ai.workflow_attempt_timeout_ms` |

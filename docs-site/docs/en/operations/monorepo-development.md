@@ -510,7 +510,7 @@ role needs permission to create databases. See
 [Run integration tests](/en/docs/contributing/testing#run-integration-tests)
 for the database name token rules.
 
-Files (`filesv2`), Grids PDF rendering, and Assistant Studio suites additionally read
+Files (`filesv2`), Grids PDF rendering, and Assistant chat suites additionally read
 `CLOUD_TEST_FILEGATE_URL`, `CLOUD_TEST_GOTENBERG_URL`, and `CLOUD_TEST_RSQL_URL`.
 [Testing](/en/docs/contributing/testing) lists every variable and what the pull
 request gate and the nightly run execute.

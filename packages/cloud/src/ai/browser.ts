@@ -2,8 +2,6 @@ import { fetchAppAction } from "../browser/app-actions";
 
 export {
   CODE_RUNTIME_TOOL_NAMES,
-  CodeActionInput,
-  CodeCheckInput,
   CodeResourceId,
   CodeRuntimeInput,
   CodeToolFailure,

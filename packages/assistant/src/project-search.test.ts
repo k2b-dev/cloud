@@ -1,8 +1,8 @@
 import { expect, test } from "bun:test";
 import type { AiProject } from "@k2b/cloud/ai";
 import { UniversalSearchDataSchema } from "@k2b/cloud/contracts";
-import { testIdentity } from "./artifacts/test-identity";
 import { assistantCapabilities } from "./capabilities";
+import { testIdentity } from "./chat-code/test-identity";
 import { assistantProjectsSearchOptions } from "./frontend/assistant-search";
 import { searchAssistantProjects } from "./search";
 

@@ -1,13 +1,6 @@
 import { createHash } from "node:crypto";
 import { sql } from "@k2b/cloud";
-import {
-  AI_WEBSITE_APPROVAL_TOOL,
-  aiConversations,
-  aiProjects,
-  aiWebsiteApprovalScope,
-  findRememberedAiToolApproval,
-  rememberAiToolApproval,
-} from "@k2b/cloud/ai";
+import { aiConversations, aiProjects } from "@k2b/cloud/ai";
 import { requestPublicHttps, secrets } from "@k2b/cloud/services";
 import { z } from "zod";
 import { LIMITS } from "./contracts";
@@ -35,8 +28,7 @@ export class HttpError extends Error {
   }
 }
 
-import { noRuntimeResource, type ResolveRuntimeResource } from "./resource-context";
-export function createHttpService(resolveResource: ResolveRuntimeResource = noRuntimeResource) {
+export function createHttpService() {
   const digest = (value: unknown) => createHash("sha256").update(JSON.stringify(value)).digest("hex");
 
   async function context(input: HttpScope, identity: ArtifactIdentity) {
@@ -52,10 +44,7 @@ export function createHttpService(resolveResource: ResolveRuntimeResource = noRu
       if (conversation.projectId && !(await aiProjects.get(conversation.projectId, identity, "read"))) throw new HttpError("HTTP_DENIED");
       conversationId = conversation.id;
     }
-    const resource = scope.resourceId
-      ? await resolveResource(scope.resourceId, { ...identity, conversationId: conversationId ?? undefined })
-      : undefined;
-    return { userId: actor.id, key: resource ? `resource:${resource.id}` : `chat:${conversationId}`, resource, conversationId };
+    return { userId: actor.id, key: `chat:${conversationId}`, conversationId };
   }
 
   type SecretRow = { name: string; origin: string; header: string; prefix: string; encrypted: string; revision: string };
@@ -89,7 +78,7 @@ export function createHttpService(resolveResource: ResolveRuntimeResource = noRu
   async function pendingCall(id: string, userId: string) {
     const [row] = await sql<
       { encrypted: string; status: string }[]
-    >`SELECT encrypted,status FROM assistant.http_calls WHERE id=${z.uuid().parse(id)}::uuid AND user_id=${userId}::uuid AND created_at > now() - interval '1 day'`;
+    >`SELECT encrypted,status FROM assistant.code_http_calls WHERE id=${z.uuid().parse(id)}::uuid AND user_id=${userId}::uuid AND created_at > now() - interval '1 day'`;
     if (!row || row.status !== "pending") throw new HttpError("HTTP_UNKNOWN");
     return StoredCall.parse(await secrets.decrypt(row.encrypted));
   }
@@ -100,46 +89,26 @@ export function createHttpService(resolveResource: ResolveRuntimeResource = noRu
     method: "GET" | "HEAD";
     url: string;
     conversationId: string | null;
-    /** The Studio app the request runs for, which the person manages. */
-    resourceId: string | null;
   };
 
   const httpService = {
     /**
      * Derives the website a stored, still pending request reads, from the request itself and never from its caller:
      * only a request that `isWebsiteRead` (GET or HEAD without a body, with only short plain `WEBSITE_READ_HEADERS`)
-     * qualifies, never with a header one of the person's secrets in this chat or app is bound to; and only from a chat
-     * or from a Studio app the person manages. Returns null for every other request; such a request always asks.
+     * qualifies, never with a header one of the person's secrets in this chat is bound to.
+     * Returns null for every other request; such a request always asks.
      */
     async website(id: string, identity: ArtifactIdentity): Promise<HttpWebsiteRead | null> {
       const stored = await pendingCall(id, user(identity).id);
       const { method, body, headers, url } = stored.request;
       if ((method !== "GET" && method !== "HEAD") || body !== undefined || !isWebsiteRead(stored.request)) return null;
       const ctx = await context(stored.scope, identity);
-      if (ctx.resource && ctx.resource.permission !== "admin") return null;
       if ((await rows(ctx.userId, ctx.key)).some((secret) => Object.hasOwn(headers, secret.header))) return null;
-      return { origin: new URL(url).origin, method, url, conversationId: ctx.conversationId, resourceId: ctx.resource?.id ?? null };
-    },
-    /**
-     * The website approval of a Studio app the person manages, for one pending request: whether its card may offer
-     * "allow this website for this app", whether a remembered approval already allows it, and with `remember`, records
-     * that approval first. A request from a chat or from an app the person does not manage gets neither.
-     */
-    async appWebsite(id: string, remember: boolean, identity: ArtifactIdentity) {
-      const website = await this.website(id, identity);
-      if (!website?.resourceId) {
-        if (remember) throw new HttpError("HTTP_DENIED");
-        return { offer: false, allowed: false, approvalId: null };
-      }
-      const context = { actorUserId: user(identity).id, actor: identity.actor };
-      const approval = { toolName: AI_WEBSITE_APPROVAL_TOOL, approvalScope: aiWebsiteApprovalScope(website.origin, website.resourceId) };
-      if (remember) await rememberAiToolApproval(context, approval);
-      const approvalId = await findRememberedAiToolApproval(context, approval);
-      return { offer: true, allowed: approvalId !== null, approvalId };
+      return { origin: new URL(url).origin, method, url, conversationId: ctx.conversationId };
     },
     async cleanup() {
-      await sql`UPDATE assistant.http_calls SET status='expired',encrypted='' WHERE status='pending' AND created_at < now() - interval '1 day'`;
-      await sql`DELETE FROM assistant.http_calls WHERE created_at < now() - interval '2 days'`;
+      await sql`UPDATE assistant.code_http_calls SET status='expired',encrypted='' WHERE status='pending' AND created_at < now() - interval '1 day'`;
+      await sql`DELETE FROM assistant.code_http_calls WHERE created_at < now() - interval '2 days'`;
     },
     async list(scope: HttpScope, identity: ArtifactIdentity) {
       const ctx = await context(scope, identity);
@@ -160,8 +129,8 @@ export function createHttpService(resolveResource: ResolveRuntimeResource = noRu
         >`SELECT count(*)::int AS count FROM assistant.http_secrets WHERE user_id=${ctx.userId}::uuid AND scope=${ctx.key}`;
         if (!current && count!.count >= LIMITS.files) throw new HttpError("HTTP_LIMIT");
         const revision = crypto.randomUUID();
-        await db`INSERT INTO assistant.http_secrets(user_id,scope,name,resource_id,origin,header,prefix,encrypted,revision)
-        VALUES(${ctx.userId}::uuid,${ctx.key},${value.name},${ctx.resource?.internalId ?? null}::uuid,${value.origin},${value.header},${value.prefix},${encrypted},${revision}::uuid)
+        await db`INSERT INTO assistant.http_secrets(user_id,scope,name,origin,header,prefix,encrypted,revision)
+        VALUES(${ctx.userId}::uuid,${ctx.key},${value.name},${value.origin},${value.header},${value.prefix},${encrypted},${revision}::uuid)
         ON CONFLICT(user_id,scope,name) DO UPDATE SET origin=EXCLUDED.origin,header=EXCLUDED.header,prefix=EXCLUDED.prefix,encrypted=EXCLUDED.encrypted,revision=EXCLUDED.revision`;
         return SecretView.parse({ ...value, revision, configured: true });
       });
@@ -189,24 +158,23 @@ export function createHttpService(resolveResource: ResolveRuntimeResource = noRu
         bodyBytes: bytes.length,
         bodyPreview: bytes.toString("utf8").slice(0, LIMITS.text),
         bodyTruncated: bytes.length > LIMITS.text,
-        resourceTitle: ctx.resource?.title,
       });
       await sql.begin(async (db) => {
         await db`SELECT pg_advisory_xact_lock(hashtext(${ctx.userId + ":http"}))`;
         // The request timestamp prevents replay after bounded claim retention.
-        await db`DELETE FROM assistant.http_calls WHERE user_id=${ctx.userId}::uuid AND created_at < now() - interval '2 days'`;
+        await db`DELETE FROM assistant.code_http_calls WHERE user_id=${ctx.userId}::uuid AND created_at < now() - interval '2 days'`;
         const [existing] = await db<
           { hash: string; status: string }[]
-        >`SELECT hash,status FROM assistant.http_calls WHERE user_id=${ctx.userId}::uuid AND id=${call.id}::uuid`;
+        >`SELECT hash,status FROM assistant.code_http_calls WHERE user_id=${ctx.userId}::uuid AND id=${call.id}::uuid`;
         if (existing) {
           if (existing.hash !== hash || existing.status !== "pending") throw new HttpError("HTTP_UNKNOWN");
           return;
         }
         const [active] = await db<
           { count: number }[]
-        >`SELECT count(*)::int AS count FROM assistant.http_calls WHERE user_id=${ctx.userId}::uuid AND status IN ('pending','running') AND created_at > now() - interval '1 day'`;
+        >`SELECT count(*)::int AS count FROM assistant.code_http_calls WHERE user_id=${ctx.userId}::uuid AND status IN ('pending','running') AND created_at > now() - interval '1 day'`;
         if (active!.count >= LIMITS.pendingRequests) throw new HttpError("HTTP_LIMIT");
-        await db`INSERT INTO assistant.http_calls(id,user_id,hash,encrypted) VALUES(${call.id}::uuid,${ctx.userId}::uuid,${hash},${encrypted})`;
+        await db`INSERT INTO assistant.code_http_calls(id,user_id,hash,encrypted) VALUES(${call.id}::uuid,${ctx.userId}::uuid,${hash},${encrypted})`;
       });
       return review;
     },
@@ -214,7 +182,7 @@ export function createHttpService(resolveResource: ResolveRuntimeResource = noRu
       const userId = user(identity).id;
       const stored = await pendingCall(id, userId);
       if (!approved) {
-        await sql`UPDATE assistant.http_calls SET status='denied',encrypted='' WHERE id=${id}::uuid AND user_id=${userId}::uuid AND status='pending'`;
+        await sql`UPDATE assistant.code_http_calls SET status='denied',encrypted='' WHERE id=${id}::uuid AND user_id=${userId}::uuid AND status='pending'`;
         throw new HttpError("HTTP_DENIED");
       }
       const { available, used } = await bindings(stored.request, stored.scope, identity);
@@ -236,7 +204,7 @@ export function createHttpService(resolveResource: ResolveRuntimeResource = noRu
       if (Buffer.byteLength(JSON.stringify(headers)) > LIMITS.text) throw new HttpError("HTTP_LIMIT");
       signal.throwIfAborted();
       const claimed =
-        await sql`UPDATE assistant.http_calls SET status='running',encrypted='' WHERE id=${id}::uuid AND user_id=${userId}::uuid AND status='pending' RETURNING id`;
+        await sql`UPDATE assistant.code_http_calls SET status='running',encrypted='' WHERE id=${id}::uuid AND user_id=${userId}::uuid AND status='pending' RETURNING id`;
       if (!claimed.length) throw new HttpError("HTTP_UNKNOWN");
       try {
         const response = await send({
@@ -247,12 +215,12 @@ export function createHttpService(resolveResource: ResolveRuntimeResource = noRu
           maxBytes: HTTP_BYTES,
           signal: AbortSignal.any([signal, AbortSignal.timeout(HTTP_TIMEOUT_MS)]),
         });
-        await sql`UPDATE assistant.http_calls SET status='completed' WHERE id=${id}::uuid AND user_id=${userId}::uuid`;
+        await sql`UPDATE assistant.code_http_calls SET status='completed' WHERE id=${id}::uuid AND user_id=${userId}::uuid`;
         const redacted = redactSecrets(response, inserted);
         if (redacted.body.length > HTTP_BYTES) throw new HttpError("HTTP_LIMIT");
         return { status: response.status, headers: redacted.headers, body: Buffer.from(redacted.body).toString("base64") };
       } catch (error) {
-        await sql`UPDATE assistant.http_calls SET status='unknown' WHERE id=${id}::uuid AND user_id=${userId}::uuid`.catch(() => {});
+        await sql`UPDATE assistant.code_http_calls SET status='unknown' WHERE id=${id}::uuid AND user_id=${userId}::uuid`.catch(() => {});
         if (error instanceof HttpError || error instanceof CloudError) throw error;
         if (signal.aborted) throw signal.reason;
         throw new HttpError("HTTP_UNKNOWN");

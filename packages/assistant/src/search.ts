@@ -1,14 +1,6 @@
 import type { AiConversationService, AiStoredMessage, aiProjects } from "@k2b/cloud/ai";
-import { CodeResourceId } from "@k2b/cloud/ai/browser";
-import {
-  type CapabilityExecutionContext,
-  CloudResourceReaderViewSchema,
-  type CloudResourceView,
-  type UniversalSearchInput,
-} from "@k2b/cloud/contracts";
+import type { CapabilityExecutionContext, CloudResourceView, UniversalSearchInput } from "@k2b/cloud/contracts";
 import { err, fail, ok } from "@k2b/stdlib";
-import { z } from "zod";
-import type { artifacts } from "./artifacts/service";
 import { assistantCommandMessages } from "./commands";
 
 type SearchStore = Pick<AiConversationService, "listConversations" | "getConversationByShortId" | "searchConversationMessages">;
@@ -93,47 +85,4 @@ export const searchAssistantProjects = async (
       links: [{ rel: "open", href: `/app/assistant?project=${encodeURIComponent(project.shortId)}` }],
     }));
   return ok({ data });
-};
-
-/** Studio search uses the same permission-aware published/draft projection as its catalog. */
-export const searchAssistantApps = async (
-  input: UniversalSearchInput,
-  context: Pick<CapabilityExecutionContext, "actor" | "actor" | "accessSubject" | "locale">,
-  store: Pick<typeof artifacts, "list">,
-) => {
-  const t = assistantCommandMessages.resolve([context.locale]).t;
-  if (input.scope) return fail(err.badInput(t.invalidSearchScope));
-  if (context.accessSubject.type !== "user") return fail(err.forbidden(t.userRequired));
-  const page = await store.list(context, 1, input.query, input.limit);
-  const data: CloudResourceView[] = page.items.map((app) => ({
-    ref: { type: "assistant.app", id: app.id },
-    title: app.title.slice(0, 500),
-    preview: (app.description || "").slice(0, 2000),
-    icon: app.icon || "ti ti-app-window",
-    priority: 7,
-    links: [{ rel: "open", href: `/app/assistant/apps/${encodeURIComponent(app.id)}` }],
-  }));
-  return ok({ data });
-};
-
-export const AppReadInputSchema = z.object({ id: CodeResourceId.describe("Studio app ID from an assistant.app ref.") }).strict();
-export const AppReadDataSchema = z.object({ view: CloudResourceReaderViewSchema }).strict();
-
-/**
- * The Studio app reader: title and the person's own level, from the same projection as search. Apps the person cannot
- * open, and callers other than a person, find nothing. A target search for service accounts asks it for Manage.
- */
-export const readAssistantApp = async (
-  input: z.infer<typeof AppReadInputSchema>,
-  context: Pick<CapabilityExecutionContext, "actor" | "accessSubject" | "locale">,
-  store: Pick<typeof artifacts, "describe">,
-) => {
-  const t = assistantCommandMessages.resolve([context.locale]).t;
-  const [app] = context.accessSubject.type === "user" ? await store.describe([input.id], context) : [];
-  if (!app) return fail(err.notFound(t.studioApp));
-  return ok({
-    data: { view: { title: app.title.slice(0, 500), permission: app.permission === "admin" ? ("admin" as const) : ("read" as const) } },
-    refs: [{ type: "assistant.app", id: app.id }],
-    links: [{ rel: "open" as const, href: `/app/assistant/apps/${encodeURIComponent(app.id)}` }],
-  });
 };

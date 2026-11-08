@@ -332,32 +332,13 @@ describe("AI tools", () => {
       expect(defaults.tools.some((entry) => entry.def.name === tool.def.name)).toBe(false);
       expect(CLOUD_AI_DEFERRED_BUILTIN_TOOL_NAMES.has(tool.def.name)).toBe(true);
     }
-    expect(browser.tools.map((tool) => tool.def.name)).toEqual([
-      "code_secret",
-      "code_action",
-      "code_run",
-      "code_inspect",
-      "code_stop",
-      "code_open",
-      "code_check",
-      "code_present",
-      "code_export",
-    ]);
-    const check = browser.tools.find((tool) => tool.def.name === "code_check");
-    expect(check?.kind).toBe("server");
-    expect(browser.frontendModes.get("code_check")).toBeUndefined();
-    expect(browser.approvalPolicies.get("code_check")).toBe("never");
-    expect(check?.def.description).toContain("for EVERY path in review.paths");
-    const presentation = browser.tools.find((tool) => tool.def.name === "code_present");
-    expect(presentation?.kind).toBe("server");
-    expect(browser.frontendModes.get("code_present")).toBeUndefined();
-    expect(browser.approvalPolicies.get("code_present")).toBe("never");
+    expect(browser.tools.map((tool) => tool.def.name)).toEqual(["code_secret", "code_run", "code_inspect", "code_stop", "code_export"]);
+    for (const name of ["code_action", "code_open", "code_present", "code_check"])
+      expect(browser.tools.some((tool) => tool.def.name === name)).toBe(false);
     expect(browser.frontendModes.get("code_secret")).toBe("client");
     expect(browser.approvalPolicies.get("code_secret")).toBe("never");
     expect(browser.frontendModes.get("code_run")).toBeUndefined();
     expect(browser.tools.find((tool) => tool.def.name === "code_run")?.kind).toBe("server");
-    expect(browser.tools.find((tool) => tool.def.name === "code_action")?.kind).toBe("server");
-    expect(browser.frontendModes.get("code_open")).toBe("client");
     expect(browser.approvalPolicies.get("code_run")).toBe("never");
   });
 

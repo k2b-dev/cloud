@@ -517,8 +517,7 @@ describe("Gustav", () => {
           const footer = await h.page
             .locator('footer[data-sidebar-mode="expanded"] .k2b-app-workspace__sidebar-item-label-text')
             .allTextContents();
-          // The routine-only run history entry is retired; personal Code stays in its own list.
-          expect(footer).toEqual(["Wartet auf dich", "Meine Apps & Automationen", "Studio", "Projekte", "Personalisieren"]);
+          expect(footer).toEqual(["Wartet auf dich", "Meine Apps & Automationen", "Projekte", "Personalisieren"]);
         }
         await shot(h.page, `a-meine-apps-${view.name}-${theme}`);
         expect(h.errors).toEqual([]);

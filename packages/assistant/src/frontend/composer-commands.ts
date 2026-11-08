@@ -49,10 +49,10 @@ export const assistantCommandScopes = (copy: AssistantCopy, locale: string): Cha
 
 /**
  * The reference a chosen resource becomes in the text, with the id the saved draft rebuilds it with, so it keeps its
- * identity across saving and reopening. Studio apps are read by the Assistant as `assistant.artifact`.
+ * identity across saving and reopening. References keep their declared Cloud reader.
  */
 export const assistantResourceMention = (item: CloudResourcePickerItem): ChatAttachment => {
-  const ref = item.ref.type === "assistant.app" ? { type: "assistant.artifact", id: item.ref.id } : item.ref;
+  const ref = item.ref;
   return aiChatAttachments([
     {
       kind: "resource",
@@ -73,8 +73,7 @@ export const assistantDraftRefs = (attachments: readonly AiComposerAttachment[],
 
 /** Resources the draft already holds; the picker leaves them out. */
 export const assistantExcludedRefs = (attachments: readonly AiComposerAttachment[], mentions: readonly ChatMention[]): CloudResourceRef[] =>
-  // The picker lists Studio apps by their search type.
-  assistantDraftRefs(attachments, mentions).map((ref) => (ref.type === "assistant.artifact" ? { type: "assistant.app", id: ref.id } : ref));
+  assistantDraftRefs(attachments, mentions);
 
 /**
  * Cloud insert rows share the draft's reference identity and the server's limit on non-text parts. Counts, not the
@@ -92,26 +91,12 @@ export function assistantInsertCommands(input: {
   track?: <T>(picking: Promise<T>) => Promise<T>;
 }) {
   const t = assistantMessages.resolve([input.locale]).t;
-  // Studio apps have no Cloud reader, so the catalog leaves their tag out; the Assistant adds it and reads them itself.
-  const ownTag: CloudSearchTag = {
-    appId: "assistant",
-    appName: t.assistant,
-    appIcon: "ti ti-sparkles",
-    tag: "studio-app",
-    title: input.copy.commandStudioApps,
-    description: "",
-    aliases: ["studio-apps", "studio"],
-  };
-  const tags = [...new Map([ownTag, ...input.tags].map((tag) => [`${tag.appId}:${tag.tag}`, tag])).values()];
   const limit = t.attachmentLimit({ count: AI_TURN_ATTACHMENT_MAX_ITEMS });
   const menu = cloudInsertMenu({
     locale: input.locale,
-    tags,
+    tags: input.tags,
     section: "insert",
     reservedWords: assistantCommandScopes(input.copy, input.locale).flatMap((scope) => scope.words),
-    scopeWords: { "assistant:studio-app": ["app", "apps"] },
-    // Studio apps have no Cloud reader; the Assistant reads them as `assistant.artifact`, as it did before.
-    ownReaders: { "assistant:studio-app": "assistant.app" },
     reason: input.partCount() >= AI_TURN_ATTACHMENT_MAX_ITEMS ? limit : undefined,
     excludeRefs: input.excludeRefs,
     mention: assistantResourceMention,
@@ -427,9 +412,6 @@ const recentLimitReason = (partCount: number, locale: string) =>
     ? assistantMessages.resolve([locale]).t.attachmentLimit({ count: AI_TURN_ATTACHMENT_MAX_ITEMS })
     : undefined;
 
-/** Tags whose references the Assistant reads itself under another type: Studio apps are sent as `assistant.artifact`. */
-const OWN_RECENT_TYPES: Readonly<Record<string, string>> = { "assistant:studio-app": "assistant.artifact" };
-
 /**
  * A tag scope such as "/notiz" lists recent references of its kind: those whose type is the tag's app and whose local
  * type id equals the tag (`notebooks:note` ↔ `notebooks.note`). Other references appear only in unscoped search.
@@ -437,7 +419,7 @@ const OWN_RECENT_TYPES: Readonly<Record<string, string>> = { "assistant:studio-a
 const recentInTagScope = (scope: string, ref: CloudResourceRef) => {
   if (!scope.startsWith("cloud-tag:")) return false;
   const tagKey = scope.slice("cloud-tag:".length);
-  return ref.type === (OWN_RECENT_TYPES[tagKey] ?? tagKey.replace(":", "."));
+  return ref.type === tagKey.replace(":", ".");
 };
 
 /** Owns discovery per opening for one composer. */

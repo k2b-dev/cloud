@@ -42,8 +42,8 @@ Scheduled chat routines are retired. Rebuild timed work as reviewed personal
 Code using `app.schedule` with `timeZone`, then `core.ai.chat.run` for an AI turn
 or `core.ai.chat.deliver` for a prepared result. Old routine grants do not transfer.
 Studio RSQL `database` grants are unavailable; use application capabilities.
-No replacement database is created. The remaining
-Studio HTML checks, actions and presentations retain their legacy browser host.
+No replacement database is created. Studio HTML checks, actions, presentations
+and standalone apps have been retired.
 
 Return JSON or nothing; do not return functions or class instances.
 Logs appear in diagnostics. A script download is captured for `code_export`;

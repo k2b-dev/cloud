@@ -87,7 +87,6 @@ test("Project scope selection assigns once and explains an existing assignment",
 });
 
 test.each(["project", "projekt"])("legacy /%s lists projects without searching other categories", async (query) => {
-  const { artifactClient } = await import("../artifacts/client");
   const listSkills = spyOn(assistantApi, "listSkills").mockResolvedValue([
     {
       id: "matching-skill",
@@ -104,7 +103,6 @@ test.each(["project", "projekt"])("legacy /%s lists projects without searching o
       updatedAt: "",
     },
   ]);
-  const apps = spyOn(artifactClient, "list").mockResolvedValue({ items: [], page: 1, hasNext: false });
   const files = spyOn(assistantApi, "listChatFiles").mockResolvedValue([]);
   const assigned: string[] = [];
   const commands = await assistantComposerCommands({
@@ -121,7 +119,6 @@ test.each(["project", "projekt"])("legacy /%s lists projects without searching o
   expect(commands.map((command) => command.id)).toEqual([`project:${project.id}`]);
   expect(commands[0]?.label).toBe(project.name);
   expect(listSkills).not.toHaveBeenCalled();
-  expect(apps).not.toHaveBeenCalled();
   expect(files).not.toHaveBeenCalled();
   await commands[0]!.action?.(context);
   expect(assigned).toEqual([project.id]);
@@ -524,7 +521,17 @@ test("references in the text count toward the limit for inserting and attaching 
   const input = {
     copy: assistantCopyFor("de"),
     locale: "de",
-    tags: [],
+    tags: [
+      {
+        appId: "notebooks",
+        appName: "Notebooks",
+        appIcon: "ti ti-notebook",
+        tag: "note",
+        title: "Notizen",
+        description: "",
+        aliases: ["notes"],
+      },
+    ],
     partCount: () => 16,
     excludeRefs: () => [],
     fileSelectionDisabled: false,
@@ -538,7 +545,7 @@ test("references in the text count toward the limit for inserting and attaching 
   const running = assistantInsertCommands({ ...input, partCount: () => 0, fileSelectionDisabled: true });
   expect(running.commands[0]!.reason).toBeUndefined();
   expect(running.commands[1]!.reason).toBe(input.copy.commandNeedsIdle);
-  expect(running.scopes.find((scope) => scope.words.includes("app"))?.title).toBe("Studio-Apps aus Gustav");
+  expect(running.scopes.find((scope) => scope.words.includes("app"))).toBeUndefined();
 });
 
 for (const withTrack of [false, true]) {
@@ -552,12 +559,12 @@ for (const withTrack of [false, true]) {
       const picking = Promise.withResolvers<CloudResourcePickerItem | undefined>();
       spyOn(picker, "openCloudResourcePicker").mockReturnValueOnce(picking.promise);
       const item: CloudResourcePickerItem = {
-        ref: { type: "assistant.app", id: "App1" },
+        ref: { type: "notebooks.note", id: "Note1" },
         title: "Plan",
         appId: "assistant",
         appName: "Assistant",
         appIcon: "ti ti-sparkles",
-        href: "/assistant/apps/App1",
+        href: "/notebooks/notes/Note1",
         readable: true,
       };
       let partCount = 14;
@@ -565,7 +572,17 @@ for (const withTrack of [false, true]) {
       const rows = assistantInsertCommands({
         copy: assistantCopyFor("de"),
         locale: "de",
-        tags: [],
+        tags: [
+          {
+            appId: "notebooks",
+            appName: "Notebooks",
+            appIcon: "ti ti-notebook",
+            tag: "note",
+            title: "Notizen",
+            description: "",
+            aliases: ["notes"],
+          },
+        ],
         partCount: () => partCount,
         excludeRefs: () => [],
         fileSelectionDisabled: false,

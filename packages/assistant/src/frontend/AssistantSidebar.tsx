@@ -21,8 +21,6 @@ import {
 } from "@k2b/ui";
 import { type Accessor, createEffect, createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import { assistantApi } from "../api/client";
-import { openStudioDialog, StudioSidebarItem } from "../artifacts/StudioSidebarItem";
-import { artifactMessages } from "../chat-code/messages";
 import { assistantCommandMessages } from "../commands";
 import { openAssistantAllChatsDialog } from "./AssistantAllChatsDialog";
 import { openAssistantConversationEditor } from "./AssistantConversationEditor";
@@ -58,8 +56,7 @@ type AssistantSidebarProps = {
   renderedAt: string;
   doneCount?: number;
   activeConversationId?: Accessor<string | null>;
-  activeView?: "chat" | "all" | "apps" | "approvals" | "code";
-  activeAppId?: string;
+  activeView?: "chat" | "all" | "approvals" | "code";
   projects?: AiProject[];
   activeProjectId?: string | null;
   creatingConversation?: Accessor<boolean>;
@@ -548,25 +545,6 @@ export default function AssistantSidebar(props: AssistantSidebarProps) {
       ],
     };
   };
-  const studioLifetime = new AbortController();
-  onCleanup(() => studioLifetime.abort());
-  let studioOpen = false;
-  const openStudio = async () => {
-    if (studioOpen) return;
-    studioOpen = true;
-    try {
-      await openStudioDialog({ activeAppId: props.activeAppId, signal: studioLifetime.signal });
-    } finally {
-      studioOpen = false;
-    }
-  };
-  onMount(() => {
-    const url = new URL(window.location.href);
-    if (url.searchParams.get("studio") !== "1") return;
-    url.searchParams.delete("studio");
-    window.history.replaceState(window.history.state, "", url);
-    void openStudio();
-  });
   // A Skill's Cloud link (`?skill=<id>`) opens that Skill once; reload and Back do not reopen it.
   onMount(() => {
     const url = new URL(window.location.href);
@@ -616,13 +594,6 @@ export default function AssistantSidebar(props: AssistantSidebarProps) {
           ]
         : []),
       {
-        id: "apps",
-        action: "apps",
-        label: artifactMessages.resolve([locale()]).t.apps,
-        icon: "ti ti-app-window",
-        active: activeView() === "apps",
-      },
-      {
         id: "projects",
         label: t().projects,
         defaultExpanded: false,
@@ -650,10 +621,6 @@ export default function AssistantSidebar(props: AssistantSidebarProps) {
       }
       if (action === "new-project") {
         await props.onCreateProject?.();
-        return;
-      }
-      if (action === "apps") {
-        void openStudio();
         return;
       }
       if (action === "approvals") {
@@ -799,7 +766,6 @@ export default function AssistantSidebar(props: AssistantSidebarProps) {
           <AppWorkspace.SidebarFooter sidebarMode="expanded">
             <ApprovalsItem />
             <CodeItem />
-            <StudioSidebarItem active={activeView() === "apps"} activeAppId={props.activeAppId} />
             <ProjectsItem />
 
             <AppWorkspace.SidebarItem icon="ti ti-user-cog" onClick={() => void openAssistantPrefsModal()}>
@@ -812,7 +778,6 @@ export default function AssistantSidebar(props: AssistantSidebarProps) {
             </AppWorkspace.SidebarItem>
             <ApprovalsItem />
             <CodeItem />
-            <StudioSidebarItem active={activeView() === "apps"} activeAppId={props.activeAppId} />
             <ProjectsItem />
 
             <AppWorkspace.SidebarItem icon="ti ti-user-cog" title={t().personalize} onClick={() => void openAssistantPrefsModal()}>

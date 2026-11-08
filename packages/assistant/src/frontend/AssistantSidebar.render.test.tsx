@@ -88,8 +88,8 @@ describe("Assistant sidebar", () => {
     expect(html).not.toContain("k2b-app-workspace__sidebar-item-description");
   });
 
-  test("selects only the visible project or Studio despite a retained chat", () => {
-    for (const activeView of ["chat", "apps"] as const) {
+  test("selects only the visible Project or Code despite a retained chat", async () => {
+    for (const activeView of ["chat", "code"] as const) {
       const html = renderToString(() =>
         createComponent(AssistantSidebar, {
           timeZone: "UTC",
@@ -99,14 +99,15 @@ describe("Assistant sidebar", () => {
           activeConversationId: () => "retained",
           activeProjectId: project.id,
           activeView,
+          hasPersonalCode: () => true,
           live,
         }),
       );
-      const selectedRows = html.match(/<(?:a|button|div)\b[^>]*class="[^"]*\bis-active\b[^"]*"[^>]*>/g) ?? [];
+      const selectedRows = await selectHtml(html, "a.is-active, button.is-active, div.is-active");
       expect(selectedRows.length).toBeGreaterThan(0);
-      const selectedTitle = activeView === "apps" ? "Studio" : "Projects";
-      expect(selectedRows.some((row) => row.includes(`title="${selectedTitle}"`))).toBe(true);
-      expect(selectedRows.some((row) => row.includes("conversation=retained"))).toBe(false);
+      const selectedTitle = activeView === "code" ? "My apps &amp; automations" : "Projects";
+      expect(selectedRows.some((row) => row.attributes.title === selectedTitle)).toBe(true);
+      expect(selectedRows.some((row) => row.attributes.href?.includes("conversation=retained"))).toBe(false);
     }
   });
 
@@ -186,25 +187,17 @@ describe("Assistant sidebar", () => {
     expect(html).not.toContain("k2b-app-workspace__sidebar-item-description");
   });
 
-  test("shows empty chat, Done, Studio, and Project lists as inline lines where their first rows would be", async () => {
+  test("shows empty chat, Done, and Project lists as inline lines where their first rows would be", async () => {
     const html = renderToString(() =>
       createComponent(AssistantSidebar, { timeZone: "UTC", renderedAt, conversations: () => [], projects: [], live }),
     );
     const inline = await selectHtml(html, '.k2b-placeholder[data-variant="inline"][data-align="left"]');
     const icons = await selectHtml(html, '.k2b-placeholder[data-variant="inline"] .k2b-placeholder__icon > i');
 
-    // Both footers (expanded and collapsed sidebar) carry the Studio and Project menus.
-    const studio = "No apps yet. Ask Gustav to build one.";
-    expect(inline.map((placeholder) => placeholder.text)).toEqual([
-      "No chats yet",
-      "No done chats.",
-      studio,
-      "No Projects yet",
-      studio,
-      "No Projects yet",
-    ]);
-    // Chat rows are cards without a leading icon; Studio and Project lines carry their rows' icons.
-    expect(icons.map((icon) => icon.attributes.class)).toEqual(["ti ti-app-window", "ti ti-folder", "ti ti-app-window", "ti ti-folder"]);
+    // Both footers (expanded and collapsed sidebar) carry the Project menu.
+    expect(inline.map((placeholder) => placeholder.text)).toEqual(["No chats yet", "No done chats.", "No Projects yet", "No Projects yet"]);
+    // Chat rows are cards without a leading icon; Project lines carry their rows' icons.
+    expect(icons.map((icon) => icon.attributes.class)).toEqual(["ti ti-folder", "ti ti-folder"]);
     expect(await selectHtml(html, ".k2b-app-workspace__sidebar-section-content > .k2b-placeholder:first-child")).toHaveLength(2);
   });
 

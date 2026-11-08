@@ -318,7 +318,7 @@ suite("global AI conversation boundaries", () => {
           kind: "chat",
           input: "Retry me",
           toolSource: { kind: "default" },
-          clientToolIds: ["local_bash", ...AI_LOCAL_TOOL_NAMES, "code_open"],
+          clientToolIds: ["local_bash", ...AI_LOCAL_TOOL_NAMES],
           client: { ...client, cwd: "/original" },
           localContext: { instructions: [{ path: "/original/AGENTS.md", content: "Old rules." }], skills: [], selectedSkills },
         },
@@ -336,7 +336,7 @@ suite("global AI conversation boundaries", () => {
       if (!active) throw new Error("Missing retry turn");
       const config = await aiConversations.getTurnRunConfig({ conversationId: chat.id, turnId: active.turn.id });
       if (!config || config.kind !== "chat") throw new Error("Missing retry run config");
-      expect(config.clientToolIds).toEqual(local ? ["local_read", "code_secret"] : ["code_open"]);
+      expect(config.clientToolIds).toEqual(local ? ["local_read", "code_secret"] : []);
       expect(config.client).toEqual(local ? client : undefined);
       expect(config.localContext).toEqual(local ? { ...localContext, selectedSkills } : undefined);
     } finally {

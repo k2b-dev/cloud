@@ -14,11 +14,11 @@ See [Who may do what](/en/docs/identity/access-model) for the access model.
 
 When Cloud asks a person to approve an Action, it records the question as one
 approval request owned by the platform. The Assistant chat, `cld`, and code in
-Assistant Studio ask through the same record, so one decision answers the
+Assistant chat code asks through the same record, so one decision answers the
 question wherever the person gives it.
 
 An application does not opt in. When the Assistant, in a chat or in
-`cld assistant`, or code in Assistant Studio calls a Capability Action without
+`cld assistant`, or code in an Assistant chat calls a Capability Action without
 `approval: "none"`, Cloud asks first, as described in
 [Approve Capability Actions](/en/docs/ai/tools-and-approvals#approve-capability-actions).
 The application declares its Actions, an optional
@@ -33,8 +33,8 @@ credential, such as `cld capabilities action` or a request to
 | --- | --- |
 | Scope | The application that owns the effect and the Action, taken from the capability ID, never from the caller |
 | Approval scope | The app-owned scope from the review, used for remembered approvals |
-| Requester | Who asked: an Assistant turn and its tool call, or a Studio capability call |
-| Approver | The person who may decide: the owner of the chat, or the person running the Studio code |
+| Requester | Who asked: an Assistant turn and its tool call, or a chat-code capability call |
+| Approver | The person who may decide: the owner of the chat, or the person running the Chat code |
 | Level | `standard` when the person may remember the approval of this call, otherwise `confirm` |
 | Sentence and review | What the person read, as a snapshot in their language |
 | Input and review digests | SHA-256 over the canonical Action input and over the review snapshot |
@@ -60,7 +60,7 @@ A person can decide the same request in these places:
 - The owning app's list or band, rendered with the shared `Approvals` component.
   Mail shows a band on the draft that the Assistant wants to send.
 - The Assistant's **Approvals** view at `/app/assistant?approvals=1`.
-  Its navigation row sits above **Studio** while a request waits.
+  Its navigation row sits in the sidebar while a request waits.
   The row appears or disappears only on navigation. It stays while the view
   is open. If its count reaches zero before navigation, it shows a muted `0`.
 - [Cloud Login](/en/docs/operations/cloud-login), on a paired device.
@@ -84,8 +84,8 @@ the complete proposed content available at that link. A saved resource that
 does not yet contain the proposed edits cannot serve as that complete review.
 
 For Action consent, the lists contain only open, unexpired requests that a chat still waits for.
-They include Assistant chats and Studio code that asked through a chat.
-A Studio request answered in an open Studio page is not listed.
+They include Assistant chats and Chat code that asked through a chat.
+Studio requests are retained only as cancelled historical records.
 Each page holds up to 20 requests, newest first. An app filter includes
 requests whose effect belongs to that app or that the app asked for.
 
@@ -94,7 +94,7 @@ The rail and app grid add each app's open approvals to its icon count.
 ## Code-version approvals
 
 `code_version` requests address the **Cloud-admin role**, independently of a
-chat or Studio call. Current Cloud admins see them in the shared list and
+chat or chat-code call. Current Cloud admins see them in the shared list and
 counts and can read the complete review. Other people cannot read or decide
 them, including the author when that person is not a Cloud admin. Cloud checks
 current local or FreeIPA administrator membership, account category, and
@@ -243,12 +243,12 @@ against a client that holds the person's `cld` token and leaves the header out.
   first. A decision on it never applies to a changed effect; that effect asks
   again, as described below.
 - **Requests expire.** A chat request accepts a decision for 24 hours, like the
-  turn that waits for it. A Studio capability call waits up to one day.
+  turn that waits for it. A chat-code capability call waits up to one day.
   Code-version requests use the expiry chosen by their owner.
 - **Signing out everywhere ends open requests.** They leave lists, counts,
   and Cloud Login. A decision on such a request answers as expired.
 - **Ending the wait cancels the request.** When a turn ends, its open requests
-  and the approvals no call used are cancelled. A Studio capability call that is
+  and the approvals no call used are cancelled. A chat-code capability call that is
   still open after one day is abandoned, and its request with it.
 
 Rejecting is always possible while the request is open, also when the owning
@@ -304,7 +304,7 @@ again and runs the Action's review again. Both must match the snapshot the
 person saw. Then the request changes from `approved` to `consumed` in one step,
 so no other call can use it.
 
-| Situation | Assistant chat | Studio code |
+| Situation | Assistant chat | Chat code |
 | --- | --- | --- |
 | Review and input unchanged | The Action runs | The Action runs |
 | The review changed, for example a draft got another recipient | Cloud asks again with the current review; nothing runs | The call fails with `CONFLICT`; the person can still decline |
@@ -320,8 +320,8 @@ from its start again, and that run uses the call's earlier approvals again. It
 is the same call, not a second one.
 
 Where an approval is used depends on who runs the effect. A chat uses it right
-before the tool or Action runs. When code in Assistant Studio asks through the
-chat, the Studio capability call uses its own request as it runs. A website
+before the tool or Action runs. When code in an Assistant chat asks through the
+chat, the chat-code capability call uses its own request as it runs. A website
 request from code uses the chat's request when the chat hands the decision to
 it; Assistant sends each such request at most once.
 
@@ -474,7 +474,7 @@ through the shared component and Core route. They load initial data through
 For the initial platform-request upgrade, Core creates `approvals.requests`
 on start and gives every chat
 approval that is still open a request, with the same digests the running
-Assistant computes. A Studio capability call that was waiting during the
+Assistant computes. A chat-code capability call that was waiting during the
 upgrade receives its request when the person decides, and keeps the one day it
 had to wait. A chat Action whose review changed since the question asks
 again instead of running. See

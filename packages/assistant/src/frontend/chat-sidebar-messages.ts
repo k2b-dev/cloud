@@ -24,9 +24,6 @@ export const chatSidebarMessages = i18n.define({
       couldNotLoad: "Could not load this chat’s content",
       retry: "Retry",
 
-      attention: "Needs attention",
-      appRunFailed: ({ title }: { title: string }) => `The last run of “${title}” failed`,
-
       results: "Results",
       resultsEmpty: "Files, apps, and visualizations that Gustav creates for you appear here.",
       newResults: ({ count }: { count: number }) => `New · ${count}`,
@@ -42,7 +39,6 @@ export const chatSidebarMessages = i18n.define({
       downloadNamed: ({ title }: { title: string }) => `Download ${title}`,
       copyLink: "Copy link",
       linkCopied: "Link copied",
-      studioApp: "Studio app",
       visualization: "Visualization",
       runFailed: "last run failed",
       runRunning: "running",
@@ -116,9 +112,6 @@ export const chatSidebarMessages = i18n.define({
       couldNotLoad: "Inhalte dieses Chats konnten nicht geladen werden",
       retry: "Erneut versuchen",
 
-      attention: "Braucht Aufmerksamkeit",
-      appRunFailed: ({ title }: { title: string }) => `Der letzte Lauf von „${title}“ ist fehlgeschlagen`,
-
       results: "Ergebnisse",
       resultsEmpty: "Dateien, Apps und Visualisierungen, die Gustav für dich erstellt, erscheinen hier.",
       newResults: ({ count }: { count: number }) => `Neu · ${count}`,
@@ -134,7 +127,6 @@ export const chatSidebarMessages = i18n.define({
       downloadNamed: ({ title }: { title: string }) => `${title} herunterladen`,
       copyLink: "Link kopieren",
       linkCopied: "Link kopiert",
-      studioApp: "Studio-App",
       visualization: "Visualisierung",
       runFailed: "letzter Lauf fehlgeschlagen",
       runRunning: "läuft",

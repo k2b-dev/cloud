@@ -680,22 +680,12 @@ setting container values.
 
 ### Assistant runtime assets
 
-Assistant script and action workers use the `cloud` runtime contract. Deploy its
-eager worker, content-hashed CSV/sheet/finance/PDF-reader chunks, and chunk manifest
-from the same image. Existing app source needs the migration described in
-[Studio library migration](/en/docs/reference/deprecations-and-migrations#studio-script-and-action-library).
-Startup adds personal server-side KV storage through Assistant migrations. App
-database tables gain nullable audit user columns on first access, without backfill.
+Assistant packages its chat runner worker, prelude and lazy CSV, sheet, finance
+and PDF-reader chunks. The document stylesheet and fonts support PDF generation
+through Gotenberg. Studio frames and local browser hosts have been retired; the
+Assistant image needs no Chromium or production Playwright package.
 
-Studio apps are HTML pages in a locked frame. The image ships their prelude
-(`assistant-app-prelude.js`, pinned by hash in every app document) and the
-`@k2b/ui` base stylesheet with IBM Plex as data URLs (`assistant-app-base.css`,
-also used by `cloud.pdf.render`). Both come from the same build as the worker;
-nothing is fetched from the network at runtime. The first start after the update
-clears chat presentations saved in the old format once; see
-[Studio apps are plain HTML](/en/docs/reference/deprecations-and-migrations#studio-apps-are-plain-html).
-Public links to Studio apps are switched off in this release: existing public
-grants stay listed but open nothing.
+Before upgrading an existing installation, follow [Studio retirement](/en/docs/operations/studio-retirement).
 
 ## Update theme preferences
 

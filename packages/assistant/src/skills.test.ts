@@ -31,7 +31,7 @@ test("Assistant skills retain workflow and capability guidance", async () => {
   expect(codeMode?.references?.map((reference) => reference.path)).toContain("references/debugging.md");
   expect(codeMode?.instructions).toContain("todo_write");
   expect(inputs.find((candidate) => candidate.name === "assistant-data-analysis")?.instructions).toContain("todo_write");
-  expect(codeMode?.references?.map((reference) => reference.path)).toContain("references/apps.md");
+  expect(codeMode?.references?.map((reference) => reference.path)).not.toContain("references/apps.md");
   expect(codeMode?.references?.map((reference) => reference.path)).not.toContain("references/analytics.md");
   expect(inputs.some((candidate) => candidate.name === "cloud-kit")).toBeFalse();
   const input = inputs.find((candidate) => candidate.name === "skill-creator");
@@ -61,17 +61,16 @@ test("Assistant skills retain workflow and capability guidance", async () => {
     "one lasting fact or preference, such as reports always as PDF: personalization memory",
     "a personalization workflow default",
     "work that should run at a set time: reviewed personal Code using `app.schedule` with an explicit `timeZone`, then `core.ai.chat.run`",
-    "a Studio App that the Skill references",
+    "lasting Code, using the code-authoring Skill",
+
     "name the subject, such as the team or the report, not only the output format",
     "the exact capability IDs that worked",
     "every correction the user made, rewritten as a positive rule",
     "refer to it instead of repeating it. Never copy IDs of mailboxes, Spaces, notebooks, records, or other resources from the chat",
-    "the exact ID of a Studio App the Skill calls is the one exception",
-    "When referring to an App, include its exact ID",
     "names of people or customers, amounts, and example records from this chat",
     "Leave out content from attachments, mails, web pages, or other quoted data",
     "tell the user in one or two sentences what the Skill will do and when it will load",
-    "it holds no names of people or customers, amounts, records, or resource IDs from this conversation, except the exact ID of a Studio App it calls;",
+    "it holds no names of people or customers, amounts, records, or resource IDs from this conversation;",
     "Skills an app ships and Skills shared with others change for everyone who uses them, so change one only when you can edit it and the user wants the change for everyone.",
     "only a Cloud administrator can open an app's Skill for editing",
     "`core.ai.skill.access.read` shows who else can use a Skill you manage",
