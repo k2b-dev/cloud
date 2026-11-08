@@ -44,7 +44,7 @@ const draw = (input: ChartInput, locale: string): Drawn => {
     key: ({ datum }) => chartMarkKey(datum),
     tooltip: ({ datum }) => {
       const row = rows.add(datum);
-      return chartTooltip(rows.columns(), row, input.kind);
+      return chartTooltip(rows.columns(), row, input);
     },
     reference: ({ datum }) => chartReferenceMark(input, datum),
   });

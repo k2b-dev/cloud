@@ -180,6 +180,29 @@
 /* Cards never move on hover; only the chevron color responds. */
 .k2b-ui .k2b-link-card__chevron { flex: 0 0 auto; color: var(--k2b-text-muted); transition: color 120ms ease; }
 .k2b-ui .k2b-link-card:hover .k2b-link-card__chevron { color: var(--k2b-action); }
+/* `media` replaces the icon tile, for example with a FileTypeIcon. It takes the tile's width, so titles line up
+   whether a card shows a tile or media. */
+.k2b-ui .k2b-link-card__media { display: flex; flex: 0 0 auto; align-items: center; justify-content: center; width: 2.5rem; }
+.k2b-ui .k2b-link-card[data-surface="plain"] .k2b-link-card__media { width: 2.25rem; }
+
+/* Plain LinkCard: a flat entry in a quiet overview. No frame and no surface until hover, the same tile, title and
+   one description line, no chevron. Hover and focus change only the surface and the ring, so nothing moves. */
+.k2b-ui .k2b-link-card[data-surface="plain"] {
+  gap: 0.75rem;
+  min-height: 3.5rem;
+  padding: 0.5rem 0.625rem;
+  border-radius: var(--k2b-radius-surface);
+  transition: background-color var(--k2b-motion-fast) var(--k2b-ease-out);
+}
+.k2b-ui .k2b-link-card[data-surface="plain"]:hover { background: var(--k2b-hover); }
+.k2b-ui .k2b-link-card[data-surface="plain"]:focus-visible {
+  outline: var(--k2b-focus-width) solid var(--k2b-focus-ring);
+  outline-offset: calc(-1 * var(--k2b-focus-width));
+}
+.k2b-ui .k2b-link-card[data-surface="plain"] .k2b-link-card__icon { width: 2.25rem; height: 2.25rem; }
+.k2b-ui .k2b-link-card[data-surface="plain"] .k2b-link-card__glyph { font-size: 1.125rem; }
+.k2b-ui .k2b-link-card[data-surface="plain"] .k2b-link-card__title { font-weight: 500; }
+.k2b-ui .k2b-link-card[data-surface="plain"] .k2b-link-card__description { margin-top: 1px; font-size: 0.78125rem; }
 
 /* Without an explicit color the glyph follows the active application accent
    through the same optional hook as AppOverview's icon; it defaults to the
@@ -453,6 +476,27 @@
 }
 .k2b-ui .k2b-notice-card[data-icon] .k2b-notice-card__title { color: inherit; }
 .k2b-ui .k2b-notice-card__icon { display: flex; height: 1.375rem; align-items: center; color: var(--k2b-notice-ink); font-size: 1.125rem; }
+/* `NoticeRow`: a notice as one row of at least 48px: the 32px tile, the text,
+   then the action, all centred. The action never wraps below the text; the
+   text takes what is left. Phones get a 28px tile. The padding gives way to
+   the transparent forced-colours border, so a small button (32px) makes the
+   row exactly 48px. */
+.k2b-ui .k2b-notice-card[data-row] {
+  display: flex;
+  min-height: 3rem;
+  align-items: center;
+  gap: 0.75rem;
+  padding: calc(0.5rem - 1px) calc(0.5rem - 1px) calc(0.5rem - 1px) calc(0.875rem - 1px);
+  border-radius: var(--k2b-radius-control);
+}
+.k2b-ui .k2b-notice-card[data-row]:has(> .k2b-notice-card__tile) { padding-left: calc(0.5rem - 1px); }
+.k2b-ui .k2b-notice-card[data-row] > .k2b-notice-card__content { flex: 1 1 auto; }
+.k2b-ui .k2b-notice-card__tile { width: 2rem; height: 2rem; color: var(--k2b-notice-ink); font-size: 1.125rem; }
+.k2b-ui .k2b-notice-card__action { display: flex; flex: 0 0 auto; align-items: center; gap: 0.5rem; }
+@media not all and (min-width: 48rem) {
+  .k2b-ui .k2b-notice-card[data-row] { gap: 0.625rem; }
+  .k2b-ui .k2b-notice-card__tile { width: 1.75rem; height: 1.75rem; font-size: 1rem; }
+}
 /* Markdown callouts add a decorative type icon and a title in the tone colour.
    The icon scales with the reading size and sits centred on the first text
    line, so it adds no height. */

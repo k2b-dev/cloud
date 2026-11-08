@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test";
 import { z } from "zod";
+import { parseRows069, signedRows069Json } from "../../../ui/test/chart-rows-069-fixture";
 import { chartDrawingIssue } from "./chart-block";
 import { CloudAiChartInputSchema, cloudAiAppChartSchema, parseCloudAiChartInput } from "./default-tool-contracts";
 import { createCloudAiChartTool } from "./default-tools";
@@ -48,4 +49,22 @@ test("Chat and cloud.chart preserve dot matrix options and budget every dot", ()
       ],
     }).success,
   ).toBe(false);
+});
+
+test("model and app schemas explain why signed rows cannot use dots", () => {
+  const signed = parseRows069(signedRows069Json);
+  for (const schema of [CloudAiChartInputSchema, cloudAiAppChartSchema()]) {
+    expect(schema.parse(signed)).toEqual(signed);
+    expect(() => schema.parse({ ...signed, marks: "dots" })).toThrow("Dot matrices require nonnegative nested counts");
+    expect(() =>
+      schema.parse({
+        kind: "bar",
+        title: "Adjustments",
+        marks: "dots",
+        layout: "nested",
+        x: ["Returns"],
+        series: [{ label: "Count", data: [-12] }],
+      }),
+    ).toThrow("Nested counts must be nonnegative");
+  }
 });

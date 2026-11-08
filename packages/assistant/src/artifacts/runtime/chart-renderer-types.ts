@@ -14,5 +14,5 @@ export type ChartDrawing = {
   waterfall?: WaterfallLayout;
 };
 type DotChart = Omit<Extract<MappedChart, { kind: "bar" }>, "kind"> & { kind: "dots" };
-export type RareChart = Exclude<MappedChart, { kind: "bar" | "line" | "pie" | "donut" | "stat" | "sparkline" }> | DotChart;
-export type RareChartRenderer = (mapped: RareChart, common: ChartDrawing) => string;
+export type RareChart = Exclude<MappedChart, { kind: "bar" | "pie" | "donut" | "stat" | "sparkline" }> | DotChart;
+export type RareChartRenderer = (mapped: RareChart, common: ChartDrawing, locale?: string) => string;

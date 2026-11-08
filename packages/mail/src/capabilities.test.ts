@@ -3306,7 +3306,7 @@ test("every declared Type has a reader open-link case or an explicit reason", as
     selectedHeaders: {},
     sourceAvailable: false,
     mailingList: null,
-    remoteContent: { imageIds: [], allowedByRule: false, sender: null, domain: null },
+    remoteContent: { imageIds: [], allowedByRule: false, allowRules: [], sender: null, domain: null },
     delivery: null,
     attachments: [
       { id: internalAttachmentId, filename: "notes.pdf", contentType: "application/pdf", sizeBytes: 123, contentId: null, checksum: null },

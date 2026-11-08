@@ -31,6 +31,10 @@ test("normal mounts omit app checks and stay within the prelude budget", async (
       .join("\n");
   // Only requested kind assets and shared helpers enter a frame over its host channel.
   expect(rare).toContain("k2b-area-layer");
+  expect(normal).not.toContain("k2b-line-forecast");
+  expect(normal).not.toContain("k2b-line-negative-zone");
+  expect(normal).not.toContain("k2b-line-threshold");
+  expect(rare).toContain("k2b-line-forecast-band");
   expect(normal).not.toContain("k2b-waterfall-bar");
   expect(rare).toContain("k2b-waterfall-bar");
   expect(normal).toContain("Waterfall balances must be finite");
@@ -51,15 +55,16 @@ test("normal mounts omit app checks and stay within the prelude budget", async (
   const total = shared + Object.values(sizes).reduce((sum, size) => sum + size, 0);
   console.info({ prelude: Buffer.byteLength(normal), shared, kinds: sizes, total });
   expect(Buffer.byteLength(normal)).toBeLessThan(319_900);
-  // New dots part: 7,329 B; host total: 75,365 B (+7,329).
+  // New dots part: 7,329 B; host total: 88,553 B (+7,329).
   // Coordinator's per-kind allowance; retain the shared and host-total ceilings.
   expect(Math.max(...Object.values(sizes))).toBeLessThanOrEqual(14_500);
   expect(shared).toBeLessThanOrEqual(14_950);
-  expect(total).toBeLessThan(75_429); // Main's 68,100 B ceiling + exactly the new dots part.
+  expect(total).toBeLessThan(88_593); // Main's 81,264 B ceiling + exactly the new dots part.
   expect(parts.kinds.dots!.code).not.toContain("k2b-chart-ranked");
   expect(parts.kinds.dots!.code).not.toContain("Bar series must have the same length as x");
   expect(parts.kinds.dots!.code).not.toContain("stdlib-chart-empty-text");
   const markers = {
+    line: "k2b-line-forecast-band",
     area: "k2b-area-layer",
     dots: "k2b-chart-dot",
     waterfall: "k2b-waterfall-bar",

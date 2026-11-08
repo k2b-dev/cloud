@@ -349,9 +349,17 @@ page with a level above.
 ## Render anonymous application pages
 
 `Layout` uses the same application shell for authenticated and anonymous
-requests. Anonymous pages keep the header visible at every viewport width,
-show a direct sign-in action, and expose the shared language and theme menu.
-They do not render the authenticated application rail, app launcher, global
+requests. Anonymous pages keep the header at every viewport width as the same
+floating card, with the same controls at every width: Home, help, the app grid
+on a page that belongs to an application, a language menu, an appearance
+button, and **Sign in**. Only the labels shorten: the language reads "English"
+from `md` and "EN" below. The language menu reloads the page in the chosen
+language. Each click on the appearance button switches to the next mode (light,
+dark, automatic); its tooltip and accessible name state the current and the
+next mode. **Sign in** returns the person to the page afterwards through
+`redirectTo`. The header shows the application name from `md` and the
+breadcrumbs from `lg`; on a phone the page's own heading names the page.
+Anonymous pages do not render the authenticated application rail, global
 search, notifications, or profile actions.
 
 Use this default for public pages that should still look and navigate like a

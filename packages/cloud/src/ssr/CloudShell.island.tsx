@@ -64,7 +64,11 @@ function RailNavigation(props: { currentPath: string; panelOpen?: boolean }) {
   );
 }
 
-/** The header's title and controls, between the server-rendered Home and Sign in. */
+/**
+ * The header's title and controls, between the server-rendered Home and Sign in. Signed-out pages show the same
+ * controls at every width; only the labels shorten. Their title needs the room from `md` and becomes the breadcrumbs
+ * from `lg`; on a phone the page's own heading names the page.
+ */
 function HeaderControls(props: {
   authenticated: boolean;
   title?: string;
@@ -84,7 +88,11 @@ function HeaderControls(props: {
             <LayoutBreadcrumbs breadcrumbs={props.breadcrumbs ?? []} />
           </div>
         )}
-        <div class="min-w-0 items-center max-lg:flex lg:hidden">
+        <div
+          class={
+            props.authenticated ? "min-w-0 items-center max-lg:flex lg:hidden" : "min-w-0 items-center max-md:hidden md:flex lg:hidden"
+          }
+        >
           <span class="layout-header-title truncate font-semibold">{props.title}</span>
           {props.launchpad && (
             <AppLaunchpadButton
@@ -107,7 +115,7 @@ function HeaderControls(props: {
         </div>
       </div>
       <div class="flex shrink-0 items-center gap-1">
-        <div class="items-center gap-1 max-lg:flex lg:hidden">
+        <div class="flex items-center gap-1">
           {props.authenticated && <GlobalSearchTrigger variant="header" />}
           <LayoutHelpTrigger
             variant="header"
@@ -133,7 +141,7 @@ function HeaderControls(props: {
             />
           )}
         </div>
-        {!props.authenticated && <LayoutPreferences initialTheme={data.theme} position="bottom-left" />}
+        {!props.authenticated && <LayoutPreferences initialTheme={data.theme} />}
       </div>
     </>
   );

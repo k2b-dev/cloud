@@ -48,6 +48,7 @@ type Variants<N> =
       data: { label: string; value: N }[];
       x?: string[];
       series?: { label: string; data: (number | null)[] }[];
+      /** Rows accept signed values. Ordered categories and legacy drawing options retain the original row renderer. */
       layout?: "columns" | "rows" | "grouped" | "stacked" | "nested";
       marks?: "bars" | "dots";
       total?: number;
@@ -81,6 +82,12 @@ type Variants<N> =
       legend?: boolean;
       area?: boolean;
       smooth?: boolean;
+      step?: "after" | "before" | "middle";
+      zero?: boolean;
+      legendValues?: boolean;
+      forecast?: { from: number | string; band?: [number, number][] };
+      threshold?: { value: number; label: string };
+      marker?: { at: number | string; label: string };
       references?: Reference[];
     }
   | {
@@ -144,7 +151,7 @@ type Variants<N> =
   | {
       kind: "pareto";
       labels: [string, string];
-      data: { label: string; value: number; prev: number }[];
+      data: { label: string; value: number; prev: number; rest?: boolean }[];
       format?: ChartNumberFormat;
       locale?: string;
     }

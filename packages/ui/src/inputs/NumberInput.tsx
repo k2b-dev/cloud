@@ -1,9 +1,10 @@
 import { createEffect, createMemo, createSignal, type JSX, Show, splitProps } from "solid-js";
-import { createFieldMeta, Field, fieldControlAria } from "../internal/field";
+import { createFieldMeta, Field, fieldControlAria, fieldDescribedBy } from "../internal/field";
 import { decimalSeparator, useLocale } from "../intl/locale";
 import { useUiMessages } from "../intl/messages";
-import type { ValueFieldProps } from "./field-contract";
+import type { FieldSuggestionProps, ValueFieldProps } from "./field-contract";
 import { resolveMaybeAccessor } from "./field-contract";
+import { useFieldSuggestion } from "./field-suggestion-slot";
 import { useInputMessages } from "./input-messages";
 import type { ChoiceAppearance } from "./Select";
 
@@ -11,7 +12,8 @@ export type NumberInputProps = Omit<
   JSX.InputHTMLAttributes<HTMLInputElement>,
   "max" | "min" | "onChange" | "onInput" | "prefix" | "step" | "type" | "value" | keyof ValueFieldProps<number | null>
 > &
-  ValueFieldProps<number | null> & {
+  ValueFieldProps<number | null> &
+  FieldSuggestionProps<number> & {
     max?: number;
     min?: number;
     /** Stepper increment and commit grid; defaults to `1`. A fractional step also sets the default `decimalPlaces`. */
@@ -80,12 +82,14 @@ export function NumberInput(props: NumberInputProps): JSX.Element {
     "onClear",
     "onKeyDown",
     "onValueCommit",
+    "onSuggestionAccept",
     "onValueChange",
     "prefix",
     "required",
     "showSteppers",
     "step",
     "suffix",
+    "suggestion",
     "value",
   ]);
   const meta = createFieldMeta(local.id);
@@ -160,6 +164,22 @@ export function NumberInput(props: NumberInputProps): JSX.Element {
     if (!changeAlreadyEmitted || !Object.is(next, value)) emit(next);
     local.onValueCommit?.(next);
   };
+  const affix = (part: JSX.Element) => (typeof part === "string" ? part : "");
+  const suggestion = useFieldSuggestion({
+    props,
+    meta,
+    value,
+    format: (number) =>
+      local.formatValue ? local.formatValue(number) : [affix(local.prefix), display(number), affix(local.suffix)].filter(Boolean).join(" "),
+    apply: (number) => commit(number),
+    // Accept takes the value exactly, so one off the step or outside the bounds is not offered.
+    acceptable: (number) => Object.is(normalize(number), number),
+  });
+  /** An open suggestion reads as the number alone; prefix and suffix stay where they are. */
+  const suggested = () => {
+    const number = suggestion.value();
+    return suggestion.view() === "open" && number !== undefined ? display(number) : undefined;
+  };
   const stepBy = (direction: number) => {
     if (rest.disabled || local.disableSteppers) return;
     const seed = value() ?? (Number.isFinite(min()) ? min() : 0);
@@ -191,7 +211,7 @@ export function NumberInput(props: NumberInputProps): JSX.Element {
       setRaw(display(value()));
     }
   };
-  const placeholderText = () => (typeof rest.placeholder === "string" ? rest.placeholder : "");
+  const placeholderText = () => suggested() ?? (typeof rest.placeholder === "string" ? rest.placeholder : "");
   /** What a plain field shows: the formatted value at rest, the text being edited while focused. */
   const shownText = () => {
     const current = value();
@@ -217,8 +237,10 @@ export function NumberInput(props: NumberInputProps): JSX.Element {
       role="spinbutton"
       inputmode={places() === 0 ? "numeric" : "decimal"}
       value={raw()}
+      placeholder={suggested() ?? rest.placeholder}
       required={local.required}
       {...fieldControlAria(meta, local)}
+      aria-describedby={suggestion.describe(fieldDescribedBy(meta, local))}
       aria-valuemin={Number.isFinite(min()) ? min() : undefined}
       aria-valuemax={Number.isFinite(max()) ? max() : undefined}
       aria-valuenow={(focused() ? parse(raw()) : value()) ?? undefined}
@@ -255,83 +277,86 @@ export function NumberInput(props: NumberInputProps): JSX.Element {
 
   return (
     <Field
-      class={local.class}
+      class={suggestion.field(local.class)}
       label={local.label}
       description={local.description}
       error={error()}
       meta={meta}
       required={local.required}
       disabled={rest.disabled}
+      labelEnd={suggestion.status}
     >
-      {/* biome-ignore lint/a11y/noStaticElementInteractions lint/a11y/useKeyWithClickEvents: the input inside is the keyboard target; a plain field's row only forwards a pointer click beside the text to it. */}
-      <div
-        class="k2b-input-shell k2b-number-input"
-        data-appearance={local.appearance ?? "field"}
-        data-disabled={rest.disabled ? "true" : undefined}
-        data-invalid={error() ? "true" : undefined}
-        onClick={(event) => {
-          if (plain() && event.target !== input && !rest.disabled) input?.focus();
-        }}
-      >
-        <Show when={local.showSteppers ?? !plain()}>
-          <button
-            type="button"
-            class="k2b-number-input__step"
-            aria-label={local.decreaseLabel ?? inputMessages().decreaseValue}
-            disabled={rest.disabled || local.disableSteppers || (value() !== null && value() !== undefined && value()! <= min())}
-            onClick={() => stepBy(-1)}
-          >
-            <i class="ti ti-minus" aria-hidden="true" />
-          </button>
-        </Show>
-        <div class="k2b-number-input__value">
-          <Show when={local.icon}>
-            <span class="k2b-input-shell__icon k2b-text-input__icon" aria-hidden="true">
-              <i class={local.icon} />
-              <i class={local.activeIcon ?? local.icon} />
-            </span>
-          </Show>
-          <Show when={local.prefix}>
-            <span class="k2b-input-shell__affix">{local.prefix}</span>
-          </Show>
-          <Show when={plain()} fallback={control()}>
-            {/* The sizer shows the text in the input's grid cell, so the field is as wide as what it shows. At rest it is
-                the visible value; while editing the input takes over. */}
-            <span
-              class="k2b-number-input__sizer"
-              data-value={shownText()}
-              data-placeholder={raw() ? undefined : "true"}
-              data-editing={focused() ? "true" : undefined}
-            >
-              {control()}
-            </span>
-          </Show>
-          <Show when={local.suffix && (!plain() || (raw() && (focused() || !local.formatValue)))}>
-            <span class="k2b-input-shell__affix">{local.suffix}</span>
-          </Show>
-          <Show when={local.clearable && raw() && !rest.disabled && !rest.readOnly && !plain()}>
+      {suggestion.under(
+        // biome-ignore lint/a11y/noStaticElementInteractions lint/a11y/useKeyWithClickEvents: the input inside is the keyboard target; a plain field's row only forwards a pointer click beside the text to it.
+        <div
+          class="k2b-input-shell k2b-number-input"
+          data-appearance={local.appearance ?? "field"}
+          data-disabled={rest.disabled ? "true" : undefined}
+          data-invalid={error() ? "true" : undefined}
+          onClick={(event) => {
+            if (plain() && event.target !== input && !rest.disabled) input?.focus();
+          }}
+        >
+          <Show when={local.showSteppers ?? !plain()}>
             <button
               type="button"
-              class="k2b-input-shell__clear k2b-input-clear-action"
-              aria-label={local.clearLabel ?? messages().clear}
-              onClick={() => (local.onClear ? local.onClear() : commit(null))}
+              class="k2b-number-input__step"
+              aria-label={local.decreaseLabel ?? inputMessages().decreaseValue}
+              disabled={rest.disabled || local.disableSteppers || (value() !== null && value() !== undefined && value()! <= min())}
+              onClick={() => stepBy(-1)}
             >
-              <i class="ti ti-x" aria-hidden="true" />
+              <i class="ti ti-minus" aria-hidden="true" />
             </button>
           </Show>
-        </div>
-        <Show when={local.showSteppers ?? !plain()}>
-          <button
-            type="button"
-            class="k2b-number-input__step"
-            aria-label={local.increaseLabel ?? inputMessages().increaseValue}
-            disabled={rest.disabled || local.disableSteppers || (value() !== null && value() !== undefined && value()! >= max())}
-            onClick={() => stepBy(1)}
-          >
-            <i class="ti ti-plus" aria-hidden="true" />
-          </button>
-        </Show>
-      </div>
+          <div class="k2b-number-input__value">
+            <Show when={local.icon}>
+              <span class="k2b-input-shell__icon k2b-text-input__icon" aria-hidden="true">
+                <i class={local.icon} />
+                <i class={local.activeIcon ?? local.icon} />
+              </span>
+            </Show>
+            <Show when={local.prefix}>
+              <span class="k2b-input-shell__affix">{local.prefix}</span>
+            </Show>
+            <Show when={plain()} fallback={control()}>
+              {/* The sizer shows the text in the input's grid cell, so the field is as wide as what it shows. At rest it is
+                the visible value; while editing the input takes over. */}
+              <span
+                class="k2b-number-input__sizer"
+                data-value={shownText()}
+                data-placeholder={raw() ? undefined : "true"}
+                data-editing={focused() ? "true" : undefined}
+              >
+                {control()}
+              </span>
+            </Show>
+            <Show when={local.suffix && (!plain() || (raw() && (focused() || !local.formatValue)))}>
+              <span class="k2b-input-shell__affix">{local.suffix}</span>
+            </Show>
+            <Show when={local.clearable && raw() && !rest.disabled && !rest.readOnly && !plain()}>
+              <button
+                type="button"
+                class="k2b-input-shell__clear k2b-input-clear-action"
+                aria-label={local.clearLabel ?? messages().clear}
+                onClick={() => (local.onClear ? local.onClear() : commit(null))}
+              >
+                <i class="ti ti-x" aria-hidden="true" />
+              </button>
+            </Show>
+          </div>
+          <Show when={local.showSteppers ?? !plain()}>
+            <button
+              type="button"
+              class="k2b-number-input__step"
+              aria-label={local.increaseLabel ?? inputMessages().increaseValue}
+              disabled={rest.disabled || local.disableSteppers || (value() !== null && value() !== undefined && value()! >= max())}
+              onClick={() => stepBy(1)}
+            >
+              <i class="ti ti-plus" aria-hidden="true" />
+            </button>
+          </Show>
+        </div>,
+      )}
     </Field>
   );
 }

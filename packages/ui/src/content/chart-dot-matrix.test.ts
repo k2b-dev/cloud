@@ -41,6 +41,7 @@ test("nested validation rejects stacks disguised as subsets, over-capacity and o
   expect(() => seriesBarLayout({ ...spec, dots: 3 })).toThrow("even");
   expect(() => seriesBarLayout({ ...spec, compare: { label: "Before", data: [10] } })).toThrow("comparison");
   expect(() => seriesBarLayout({ ...spec, marks: "bars" })).toThrow("dot marks");
+  expect(() => seriesBarLayout({ ...spec, series: [{ label: "Returns", data: [-12] }] })).toThrow("nonnegative");
 });
 test("missing categories are gaps, zero counts leave grey dots and capacity can be inferred", () => {
   expect(

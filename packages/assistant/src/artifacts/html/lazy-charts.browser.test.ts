@@ -79,13 +79,15 @@ async function open(width: number, source = assets.chartParts.shared.code, theme
   await ready(page);
   return { page, context, requests };
 }
-const boxes = (page: Page) =>
-  app(page)
+const boxes = async (page: Page) => {
+  await settled(page);
+  return app(page)
     .locator("#charts")
     .evaluate((element) => ({
       height: element.getBoundingClientRect().height,
       after: document.querySelector("#after")!.getBoundingClientRect().top,
     }));
+};
 const release = (page: Page) =>
   app(page)
     .locator("body")
@@ -408,8 +410,18 @@ document.querySelector("#charts").innerHTML=cloud.chart({kind:"heatmap",layout:"
       await app(page).locator("svg[data-calendar]").waitFor();
       expect(await boxes(page)).toEqual(loading);
       const chart = app(page).locator('[data-chart-kind="heatmap"]');
-      if (fixture.name === "year") expect(await chart.evaluate((element) => element.scrollLeft)).toBeGreaterThan(0);
-      else expect(await chart.evaluate((element) => element.scrollLeft)).toBe(0);
+      // The reversed scroll origin starts at zero. Test the visible observation,
+      // rather than assuming the engine's sign for a horizontal scroll offset.
+      expect(await chart.evaluate((element) => element.scrollLeft)).toBe(0);
+      if (fixture.name === "year") {
+        expect(await chart.evaluate((element) => element.scrollWidth - element.clientWidth)).toBeGreaterThan(0);
+        const viewport = (await chart.boundingBox())!,
+          newest = (await chart.locator("[data-chart-datum] rect").last().boundingBox())!,
+          oldest = (await chart.locator("[data-chart-datum] rect").first().boundingBox())!;
+        expect(newest.x).toBeGreaterThanOrEqual(viewport.x);
+        expect(newest.x + newest.width).toBeLessThanOrEqual(viewport.x + viewport.width + 1);
+        expect(oldest.x + oldest.width).toBeLessThan(viewport.x);
+      }
       if (fixture.data.length) {
         await chart.focus();
         await chart.press("End");
@@ -639,6 +651,60 @@ for (const width of [1200, 390])
           globalThis.lazyChartHarness.events.filter((event) => event.type === "error" || (event.type === "log" && event.level === "error")),
         ),
       ).toEqual([]);
+    } finally {
+      await context.close();
+    }
+  });
+
+for (const width of [1200, 390])
+  test(`line uses the offline plugin without moving its frame, ${width}px`, async () => {
+    const script = `const plain={kind:"line",title:"History",series:[{data:[{x:1,y:10},{x:2,y:20}]}]};
+    document.querySelector("#draw").addEventListener("click",()=>{
+      document.querySelector("#charts").innerHTML=cloud.chart(plain);
+      document.querySelector("#result").innerHTML='<button id="details">Forecast</button>';
+      document.querySelector("#details").addEventListener("click",()=>{document.querySelector("#charts").innerHTML=cloud.chart({kind:"line",title:"Liquidity",series:[{label:"Cash",data:[{x:1,y:100},{x:2,y:120},{x:3,y:110}]}],forecast:{from:2,band:[[100,140],[90,130]]},threshold:{value:95,label:"Reserve"},legendValues:true});});
+    });`;
+    const { page, context, requests } = await open(width, delayed + assets.chartParts.shared.code, "light", script);
+    try {
+      // An ordinary line draws eagerly and does not execute the offline plugin.
+      await app(page).locator("#draw").click();
+      await app(page).locator('[data-chart-kind="line"] svg').waitFor();
+      // Read each phase together; remote browser transport counts against the same case deadline.
+      const initial = await app(page)
+        .locator("body")
+        .evaluate(() => ({
+          pending: document.querySelectorAll("[data-chart-pending]").length,
+          loads: Reflect.get(globalThis, "__chartLoads") ?? 0,
+        }));
+      expect(initial.pending).toBe(0);
+      expect(initial.loads).toBe(0);
+      await app(page).locator("#details").click();
+      await app(page).locator("html[data-chart-module-loading]").waitFor();
+      await settled(page);
+      const pending = await app(page)
+        .locator("#charts")
+        .evaluate((element) => {
+          const box = {
+            height: element.getBoundingClientRect().height,
+            after: document.querySelector("#after")!.getBoundingClientRect().top,
+          };
+          delete document.documentElement.dataset.chartModuleLoading;
+          Reflect.get(globalThis, "__releaseCharts")();
+          return box;
+        });
+      await app(page).locator(".k2b-line-forecast-band").first().waitFor();
+      await settled(page);
+      const rendered = await app(page)
+        .locator("#charts")
+        .evaluate((element) => ({
+          box: { height: element.getBoundingClientRect().height, after: document.querySelector("#after")!.getBoundingClientRect().top },
+          pending: element.querySelectorAll("[data-chart-pending]").length,
+          loads: Reflect.get(globalThis, "__chartLoads"),
+        }));
+      expect(rendered.box).toEqual(pending);
+      expect(rendered.pending).toBe(0);
+      expect(rendered.loads).toBe(1);
+      expect(requests).toEqual([]);
     } finally {
       await context.close();
     }

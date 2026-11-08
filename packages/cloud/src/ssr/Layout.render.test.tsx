@@ -347,27 +347,41 @@ describe("Cloud layouts SSR", () => {
     expect(response.status).toBe(200);
     expect(html).toContain('<html lang="de-CH" class="dark"');
     expect(html).toContain("layout-header");
-    expect(html).toContain('href="/auth/login"');
     expect(html).toContain("Anmelden");
-    expect(html).toContain("Darstellung und Sprache");
+    // Language and appearance are two controls that name their value, not one menu behind a sliders icon.
+    expect(html).toContain('aria-label="Sprache: Deutsch"');
+    expect(html.match(/role="menuitemradio"/g)).toHaveLength(2);
     expect(html).toContain('aria-label="Darstellung: Dunkel. Wechselt zu Automatisch."');
+    expect(html).toContain('<i class="ti ti-moon" aria-hidden="true"></i>');
+    expect(html).not.toContain("ti-adjustments-horizontal");
     expect(html).toContain("English");
     expect(html).not.toContain("layout-rail-navigation");
     expect(html).not.toContain('data-layout-authenticated="true"');
     expect(html).not.toContain('href="/me"');
   });
 
-  test("anonymous pages keep their header, with the app name and controls up to lg and breadcrumbs from lg", async () => {
-    const html = await (await server.request("/layout")).text();
+  test("anonymous pages keep their header with the same controls at every width, the app name from md, and breadcrumbs from lg", async () => {
+    const html = await (await server.request("/layout?mode=fullWidth&view=list", { headers: { "Accept-Language": "en" } })).text();
     const header = html.match(/<header[^>]*class="(layout-header[^"]*)"/)?.[1];
     expect(header).toBeDefined();
     expect(header).not.toContain("md:hidden");
     expect(html).toContain('<div class="min-w-0 items-center max-lg:hidden lg:flex">');
-    expect(html).toContain('<div class="items-center gap-1 max-lg:flex lg:hidden">');
-    // Home and Sign in stay server markup, so focus on them survives the shell's mount.
+    expect(html).toContain('<div class="min-w-0 items-center max-md:hidden md:flex lg:hidden">');
+    // No breakpoint hides the controls: help, language, appearance, and Sign in stay at every width (#2921). The
+    // browser test measures it at 390, 900, and 1280 px.
+    const controls = html.match(/<header[\s\S]*?<\/header>/)?.[0] ?? "";
+    expect(controls).toContain('<div class="flex shrink-0 items-center gap-1"><div class="flex items-center gap-1">');
+    for (const name of [
+      'aria-label="Open help"',
+      'aria-label="Language: English"',
+      'aria-label="Appearance: Automatic. Switches to Light."',
+    ])
+      expect(controls).toContain(name);
+    // Home and Sign in stay server markup, so focus on them survives the shell's mount. Sign in returns to this page.
     const chrome = withoutIslands(html).match(/<header[\s\S]*?<\/header>/)?.[0] ?? "";
     expect(chrome).toContain('href="/"');
-    expect(chrome).toContain('href="/auth/login"');
+    expect(chrome).toContain(`href="/auth/login?redirectTo=${encodeURIComponent("/layout?mode=fullWidth&view=list")}"`);
+    expect(chrome).toContain(">Sign in</span></a>");
     expect(html).not.toContain('class="cloud-tab-bar"');
   });
 

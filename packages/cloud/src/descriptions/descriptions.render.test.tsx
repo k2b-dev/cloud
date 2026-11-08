@@ -25,6 +25,51 @@ const panel = (props: Props, locale = "en") =>
     }),
   );
 
+test("detailed lines keep marker legend values through the shared description panel", () => {
+  const spec = {
+    kind: "line",
+    title: "Liquidity",
+    legend: true,
+    series: [
+      {
+        label: "Balance",
+        data: [
+          { x: 1, y: 19800 },
+          { x: 2, y: 21140 },
+          { x: 3, y: 11000 },
+        ],
+      },
+    ],
+    yAxis: { format: { style: "currency", currency: "EUR", decimals: 0 } },
+  };
+  const ordinary = panel({ spec, title: "Liquidity", height: 280 });
+  expect(ordinary).not.toContain("data-chart-legend-value");
+  for (const state of ["ready", "stale"] as const) {
+    const detailed = panel({
+      spec: {
+        ...spec,
+        marker: { at: 2, label: "Today" },
+        forecast: {
+          from: 2,
+          band: [
+            [20000, 23000],
+            [10000, 12000],
+          ],
+        },
+      },
+      title: "Liquidity",
+      height: 280,
+      state,
+      asOf: "09:12",
+    });
+    const values = detailed.match(/<b data-chart-legend-value[^>]*>[^<]*<\/b>/g);
+    expect(values).toHaveLength(1);
+    expect(values?.[0]).toContain("21,140");
+    expect(values?.[0]).not.toContain("11,000");
+    expect(detailed).toContain("k2b-line-forecast-band");
+  }
+});
+
 test("a table block draws in the dashboard frame with search in its head and every row reserved", () => {
   const html = panel({
     spec: { block: "table", title: "Campaigns", search: true, columns: [{ id: "name", label: "Campaign" }], rows: [{ name: "Weekly" }] },
@@ -126,6 +171,33 @@ test("the empty form is explicit and strict: any other field, an unknown kind or
   expect(resolveDescription({ kind: "notAKind", title: "Revenue" }).mode).toBe("slot");
   expect(resolveDescription({ kind: "line", title: " " }).mode).toBe("slot");
   expect(resolveDescription({ kind: "map", title: "Shops", empty: "No shop yet." }).mode).toBe("empty");
+});
+
+test("calendar description panels retain their content-sized reserve in every state and view", () => {
+  const spec = {
+    kind: "heatmap",
+    layout: "calendar",
+    title: "Opens per day",
+    scale: "sequential",
+    data: Array.from({ length: 182 }, (_, day): [string, number] => [
+      new Date(Date.UTC(2026, 4, 11) + day * 86400000).toISOString().slice(0, 10),
+      day,
+    ]),
+  };
+  const reserve = "calc(16px + (0.3414141414141414 * clamp(495px, var(--k2b-calendar-available,100cqw), 1131.43px)))";
+  for (const state of ["ready", "loading", "empty", "error", "stale"] as const) {
+    for (const view of ["chart", "table"] as const) {
+      const html = panel({ spec, title: spec.title, height: 280, state, view, onRetry: () => {} });
+      const viewport = html.match(/<div[^>]*class="k2b-chart-explorer__viewport"[^>]*>/)?.[0];
+      expect(viewport, `${state}/${view}`).toBeDefined();
+      expect(viewport).toContain('data-calendar="true"');
+      expect(viewport).not.toContain("height:280px");
+      const actualReserve = viewport!.match(/--k2b-calendar-height:([^;"}]+)/)?.[1];
+      // A populated inset table extends into the panel padding, preserving the outer box.
+      const insetTable = view === "table" && (state === "ready" || state === "stale");
+      expect(actualReserve, `${state}/${view}`).toBe(insetTable ? `calc(${reserve} + 1rem)` : reserve);
+    }
+  }
 });
 
 test("key figures keep the money tones in and out and drop unknown tones", () => {

@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test";
+import { parseRows069, signedRows069Json } from "../../ui/test/chart-rows-069-fixture";
 import { chartKinds, chartMarks, chartRenderOptions, chartTable } from "./charts";
 
 const spec = {
@@ -55,4 +56,16 @@ test("portable percentage matrices use latest values in the legend instead of su
   expect(chartRenderOptions(input, "en")).toMatchObject({ legendValues: "latest" });
   const axisInput = chartKinds().parse({ ...input, format: undefined, yAxis: { format: { style: "percent" } } });
   expect(chartRenderOptions(axisInput, "en")).toMatchObject({ legendValues: "latest" });
+});
+
+test("signed 0.69 rows stay valid but cannot opt into dot marks", () => {
+  const signed = parseRows069(signedRows069Json);
+  for (const limits of [undefined, { maxSeries: 8, maxValues: 480, maxMarks: 3840 }]) {
+    const schema = chartKinds(limits);
+    expect(schema.parse(signed)).toEqual(signed);
+    expect(() => schema.parse({ ...signed, marks: "dots" })).toThrow("Dot matrices require nonnegative nested counts");
+    expect(() => schema.parse({ ...spec, series: [{ label: "Adjustments", data: [-12, 30] }] })).toThrow(
+      "Nested counts must be nonnegative",
+    );
+  }
 });
