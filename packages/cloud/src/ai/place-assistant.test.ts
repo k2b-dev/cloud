@@ -128,9 +128,34 @@ test("an unavailable place retains the person's chat and title snapshot without 
   expect(deps.skills).not.toHaveBeenCalled();
 });
 
-test("removing the app or assistant declaration preserves an existing chat without calling the provider", async () => {
+test("a missing app is retryable for existing and not-yet-created place chats", async () => {
   const { deps, server } = fixture();
   deps.capability.mockResolvedValue(null);
+  expect(await (await server().request("/")).json()).toEqual({
+    state: "unavailable",
+    ref,
+    title: "Marta snapshot",
+    conversationId: "aBc234",
+    retry: true,
+  });
+  expect(await (await server(PLACE_FIXTURE_PEOPLE.ben).request("/")).json()).toEqual({
+    state: "unavailable",
+    ref,
+    title: null,
+    conversationId: null,
+    retry: true,
+  });
+  expect(deps.provider).not.toHaveBeenCalled();
+});
+
+test("removing the assistant declaration retains only the existing chat", async () => {
+  const { deps, server } = fixture();
+  const app = await deps.capability("place-fixture");
+  if (!app) throw new Error("Fixture app missing");
+  deps.capability.mockResolvedValue({
+    ...app,
+    manifest: { ...app.manifest, types: app.manifest.types.map((type) => ({ ...type, assistant: undefined })) },
+  });
   expect(await (await server().request("/")).json()).toEqual({
     state: "unavailable",
     ref,

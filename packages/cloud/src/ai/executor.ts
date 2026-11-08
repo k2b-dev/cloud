@@ -1518,7 +1518,7 @@ export class AiTurnExecutor {
               loadPlaceAssistantRound({
                 conversationId,
                 persistedActor: material.actor,
-                skillsEnabled: skillCatalogOffered,
+                skillsEnabled: activeTools.some((tool) => tool.def.name === "load_skill"),
                 locale: promptLocale,
                 signal,
               }),

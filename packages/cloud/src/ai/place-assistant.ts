@@ -55,6 +55,15 @@ export const createPlaceAssistantLoader =
     const type = app?.manifest.types.find((entry) => `${app.appId}.${entry.localId}` === scope.type);
     if (!app || !type?.assistant) {
       const conversation = await deps.conversation({ ownerUserId: actor.user.id, ref: scope });
+      if (!app) {
+        return {
+          state: "unavailable",
+          ref: scope,
+          title: conversation?.place?.title ?? null,
+          conversationId: conversation?.shortId ?? null,
+          retry: true,
+        };
+      }
       return conversation
         ? { state: "unavailable", ref: scope, title: conversation.place?.title ?? null, conversationId: conversation.shortId }
         : { state: "none" };

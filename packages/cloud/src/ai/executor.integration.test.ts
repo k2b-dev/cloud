@@ -38,6 +38,7 @@ import { aiMemories } from "./memories";
 import { migrateCloudAi } from "./migrate";
 import { aiModelAccess } from "./model-access";
 import { visionPdfFixture } from "./pdf-render.fixture";
+import * as placeRound from "./place-round";
 import { aiProjects } from "./projects";
 import { type AiTurnBlock, type AiWireEvent, buildBlocksFromMessages } from "./protocol";
 import { createAiProvider } from "./provider";
@@ -719,6 +720,78 @@ suite("AI executor integration", () => {
       await sql`DELETE FROM auth.users WHERE id=${userId}::uuid`;
     }
   });
+  test("the executor adds place data only for a bound chat using the default Assistant tools", async () => {
+    const userId = await insertUser();
+    const actor: RequestActor = { kind: "user", user: actorUser(userId) };
+    const ref = { type: "place-fixture.conversation", id: "marta" };
+    const ordinary = await aiConversations.createConversation({ ownerUserId: userId });
+    const bound = await aiConversations.createPlaceConversation({
+      ownerUserId: userId,
+      place: { ref, title: "Marta" },
+      draft: [{ type: "text", text: "Help here" }],
+    });
+    const load = spyOn(placeRound, "loadPlaceAssistantRound").mockResolvedValue({
+      ref,
+      place: { title: "Marta", context: "Fresh place data", tools: [], skills: [] },
+      skills: [],
+    });
+    try {
+      for (const scenario of [
+        { label: "ordinary", conversation: ordinary, toolSource: { kind: "default" as const }, expected: false },
+        { label: "place", conversation: bound, toolSource: { kind: "default" as const }, expected: true },
+        { label: "custom", conversation: bound, toolSource: { kind: "none" as const }, expected: false },
+      ]) {
+        load.mockClear();
+        const prompts: string[] = [];
+        const provider = syntheticProvider(async function* (request) {
+          prompts.push(request.systemPrompt ?? "");
+          yield { type: "block_start", blockId: "answer", index: 0, kind: "text" };
+          yield { type: "block_end", blockId: "answer", index: 0, block: { type: "text", text: "Done" } };
+          yield { type: "usage", usage: { input: 1, output: 1, total: 2 }, finishReason: "stop" };
+        });
+        const { turn } = await aiConversations.submitChatTurn({
+          conversationId: scenario.conversation.id,
+          modelId: MODEL_ID,
+          runConfig: { kind: "chat", input: "Help here", actor, toolSource: scenario.toolSource },
+          userMessage: userMessage("Help here"),
+        });
+        const leaseOwner = `place-prompt-${scenario.label}`;
+        const claim = await aiConversations.claimTurn({
+          conversationId: scenario.conversation.id,
+          turnId: turn.id,
+          leaseOwner,
+          leaseMs: 30_000,
+          from: "queue",
+          maxAttempts: 5,
+          runBudgetMs: 60_000,
+        });
+        if (!claim) throw new Error("Expected turn claim");
+        await createExecutor(leaseOwner, undefined, fakeValidateWithProvider(provider)).run({
+          conversationId: scenario.conversation.id,
+          turnId: turn.id,
+          claim,
+          signal: new AbortController().signal,
+        });
+        expect((await aiConversations.getTurn({ conversationId: scenario.conversation.id, turnId: turn.id }))?.status).toBe("completed");
+        expect(prompts).toHaveLength(1);
+        expect(prompts[0]!.includes("<place_data>")).toBe(scenario.expected);
+        expect(load).toHaveBeenCalledTimes(scenario.expected ? 1 : 0);
+        if (scenario.expected) {
+          expect(load.mock.calls[0]![0]).toMatchObject({
+            conversationId: bound.id,
+            persistedActor: actor,
+            skillsEnabled: false,
+          });
+          expect(prompts[0]).toContain("Fresh place data");
+        }
+      }
+    } finally {
+      load.mockRestore();
+      await sql`DELETE FROM ai.conversations WHERE id IN (${ordinary.id}::uuid, ${bound.id}::uuid)`;
+      await sql`DELETE FROM auth.users WHERE id=${userId}::uuid`;
+    }
+  });
+
   test("offers recurring work as a Skill in interactive chats only while skill-creator is enabled", async () => {
     const userId = await insertUser();
     const owner = { type: "user" as const, userId };
