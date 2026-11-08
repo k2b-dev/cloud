@@ -17188,11 +17188,14 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   z-index: 1;
   flex-shrink: 0;
 }
-/* Each strip grows with the row, so widening it resizes the strip and its
-   toolbar measures again: moved actions come back from More. */
+/* Each strip takes an equal share of the row, whatever its pill shows, so
+   widening the row resizes every strip and its toolbar measures again: moved
+   actions and labels come back. A share that followed the pill's content would
+   keep a compact pill compact. */
 .k2b-ui .k2b-toolbar-dock > .k2b-toolbar-float {
   position: static;
-  flex: 1 1 auto;
+  flex: 1 1 0;
+  min-width: 0;
   margin: 0;
   padding: 0;
   justify-content: flex-start;
