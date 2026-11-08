@@ -113,10 +113,48 @@ export const barExamples = [
     },
     width: "full",
     height: 220,
-    useFor: ["Category values with readable row labels"],
+    useFor: ["Signed or positive category values"],
     avoidFor: ["A continuous time axis"],
     a11y: ["Arrow keys inspect each row; the value stays alongside its category."],
-    options: [{ name: "--k2b-row-measure", type: "CSS length", description: "Maximum drawing width for rows; defaults to 40rem." }],
+    options: [
+      {
+        name: "layout",
+        type: "rows",
+        description:
+          "Signed rows diverge around zero. Ordered categories, references, colorByBar, showValues and axis settings keep the original row drawing; otherwise nonnegative rows rank descending. Share, limit and tone require nonnegative values.",
+      },
+      { name: "--k2b-row-measure", type: "CSS length", description: "Maximum drawing width for rows; defaults to 40rem." },
+    ],
+  },
+  {
+    id: "bar-rows-signed",
+    kind: "bar",
+    question: "compare",
+    title: "Inventory adjustments",
+    summary: "Signed rows retain source order and diverge around zero, including saved charts from Cloud 0.69.",
+    spec: {
+      kind: "bar",
+      title: "Inventory adjustments",
+      layout: "rows",
+      data: [
+        { label: "Returns", value: -12 },
+        { label: "Sales", value: 30 },
+        { label: "Correction", value: -4 },
+        { label: "Unchanged", value: 0 },
+      ],
+    },
+    width: "half",
+    height: 240,
+    useFor: ["Positive and negative category amounts"],
+    avoidFor: ["Shares of a nonnegative total"],
+    a11y: ["Arrow keys inspect rows in source order; the table retains signed values and zero."],
+    options: [
+      {
+        name: "layout",
+        type: "rows",
+        description: "Negative values use source order. Ranked-list share, limit and tone require nonnegative values.",
+      },
+    ],
   },
   {
     id: "bar-ranked",

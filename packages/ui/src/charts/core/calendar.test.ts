@@ -88,6 +88,7 @@ test("calendar gaps, square cells, locale weeks, months and complete scale legen
 test("calendar squares fill the panel and reserve a visible weekday rail", () => {
   const s = calendarLayout(spec);
   expect(s.cell).toBeGreaterThan(14);
+  expect((s.maxWidth / s.width) * s.cell).toBe(32);
   expect(s.top + 7 * (s.cell + 3) + 12).toBeGreaterThan(s.height - 16);
   expect(s.top + 7 * (s.cell + 3) + 12).toBeLessThanOrEqual(s.height);
   expect(renderCalendarSvg(spec)).toContain('data-calendar-weekdays="true"');
@@ -137,4 +138,55 @@ test("old engines use the explicit US Sunday and other-locale Monday fallback", 
       else Reflect.deleteProperty(Intl.Locale.prototype, key);
     }
   }
+});
+
+test("calendar bounds and content height depend on weeks, not the old fixed host height", () => {
+  const data = Array.from({ length: 182 }, (_, i): [string, number] => [
+    new Date(Date.UTC(2026, 4, 11) + i * 86400000).toISOString().slice(0, 10),
+    i,
+  ]);
+  const sizes = [100, 280, 600].map((height) => calendarLayout({ ...spec, data }, { width: 480, height }));
+  for (const size of sizes) {
+    expect(size.weeks).toBe(26);
+    expect(size.minWidth).toBe(478);
+    expect(size.height).toBe(169);
+    expect(size.maxWidth).toBe((478 * 32) / 14);
+    expect(size.cells.at(-1)!.y + size.cell).toBeLessThan(size.height);
+  }
+  expect(sizes[0]).toEqual(sizes[2]);
+});
+
+test("explicit core widths size square cells without a browser, bounded at 32px", () => {
+  const data: [string, number][] = [
+    ["2026-05-11", 1],
+    ["2026-11-08", 2],
+  ];
+  const normal = calendarLayout({ ...spec, data }, { width: 480, height: 999 });
+  const wider = calendarLayout({ ...spec, data }, { width: 900, height: 100 });
+  const capped = calendarLayout({ ...spec, data }, { width: 1920, height: 100 });
+  expect(normal.cell).toBe(14);
+  expect(wider.cell).toBe(30);
+  expect(wider.width).toBe(894);
+  expect(capped.cell).toBe(32);
+  expect(capped.height).toBe(capped.top + 7 * (32 + 3) + 18);
+});
+
+test("the final partial week does not invent a month or year beyond the observations", () => {
+  const svg = renderCalendarSvg({
+    ...spec,
+    locale: "en-GB",
+    data: [
+      ["2025-01-01", 1],
+      ["2025-12-31", 2],
+    ],
+  });
+  expect(svg).toContain(">Dec</text>");
+  expect(svg).not.toContain(">2026</text>");
+  expect(svg.match(/>Jan<\/text>/g)).toHaveLength(1);
+});
+
+test("weekday text uses a grid anchor and a fixed pixel gap, independent of glyph bounds", () => {
+  const svg = renderCalendarSvg(spec);
+  expect(svg).toContain('<g transform="translate(32 ');
+  expect(svg.match(/data-calendar-fixed=""><text x="-3" y="0" text-anchor="end"/g)).toHaveLength(3);
 });

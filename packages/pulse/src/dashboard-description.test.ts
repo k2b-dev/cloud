@@ -1,4 +1,6 @@
 import { expect, test } from "bun:test";
+import { drawChart } from "@k2b/editor/charts";
+import { parseRows069, signedRows069Json } from "../../ui/test/chart-rows-069-fixture";
 import { type DashboardPanel, DashboardPanelSchema, DashboardSaveSchema } from "./dashboard-contracts";
 import {
   dashboardCategoryDescription,
@@ -23,6 +25,20 @@ const project = (panel: DashboardPanel, value: DashboardPanelData) =>
     rowCount: value.rows.length,
     stats: { elapsedMs: 1, readRows: value.rows.length, readBytes: 1 },
   });
+
+test("saved Pulse bar data retains the signed values accepted in 0.69", () => {
+  const signedRows069 = parseRows069(signedRows069Json);
+  const p = panel("bar", ["category", "value"], { x: "category" });
+  const result = data(
+    p.columns,
+    signedRows069.data.map(({ label, value }) => [label, value]),
+  );
+  expect(dashboardChartDescription(p, result, clock)).toMatchObject({ kind: "bar", data: signedRows069.data });
+  const options = dashboardChartRenderOptions(p, result, clock);
+  if (options.kind !== "bar") throw new Error("Expected the saved bar renderer");
+  expect(() => drawChart(options)).not.toThrow();
+  expect(drawChart({ ...options, layout: "rows" })).toContain('data-bar-layout="rows"');
+});
 
 test("SQL descriptions preserve named series, time-zone instants and JSON null gaps", () => {
   const p = panel("line", ["host", "at", "amount"], { x: "at", series: "host" });
