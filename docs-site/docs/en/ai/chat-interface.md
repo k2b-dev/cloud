@@ -1011,6 +1011,9 @@ also finishes pending chart markup before creating the PDF. Insert the returned
 markup rather than extracting its SVG immediately. Scripts and PDF markup
 created by scripts still render every kind synchronously.
 
+The host prepares chart assets after the page becomes interactive. An app
+started earlier waits for preparation before it becomes ready.
+
 Function `format(value)` is also accepted on axes and values. `width` and
 `height` set the logical size: 480 × 280 by default, or 160 × 40 for sparkline.
 Apps redraw stretched charts at their measured width when `width` is omitted;

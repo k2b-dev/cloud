@@ -1,9 +1,22 @@
 import { expect, test } from "bun:test";
 import type { RareChart } from "../runtime/chart-renderer-types";
-import { appFrameAssets, ChartPartsAsset, checkFrameAssets } from "./assets";
+import { appFrameAssets, ChartPartsAsset, checkFrameAssets, frameAssetPayload } from "./assets";
 import { buildChartParts, buildCheckPrelude, buildPrelude } from "./build-assets";
-import { CHART_SHARED_IMPORT } from "./chart-parts";
+import { CHART_SHARED_IMPORT, chartHashes } from "./chart-parts";
 import { moduleSpecifiers } from "./imports";
+
+test("interactive frame assets carry chart hashes without chart source", async () => {
+  const assets = await appFrameAssets();
+  const payload = frameAssetPayload(assets);
+  expect(payload).toEqual({
+    prelude: assets.prelude,
+    preludeHash: assets.preludeHash,
+    baseCss: assets.baseCss,
+    chartHashes: chartHashes(assets.chartParts),
+  });
+  expect(JSON.stringify(payload)).not.toContain('"chartParts"');
+  expect(JSON.stringify(payload)).not.toContain("k2b-area-layer");
+});
 
 test("normal mounts omit app checks and stay within the prelude budget", async () => {
   const [normal, check] = await Promise.all([buildPrelude(), buildCheckPrelude()]);
