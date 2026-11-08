@@ -1,5 +1,7 @@
 import type { PanelPageContext } from "../contracts/panel-context";
 
+// Its own module, so the eager bundles of providers that never ask (Help) carry none of it.
+export { askPanelConsent } from "./panel-consent";
 export { onPanelBeforeLeave } from "./panel-leave";
 
 import {
@@ -38,16 +40,6 @@ export function closePanel(): void {
     return;
   }
   window.dispatchEvent(new CustomEvent<PanelRequest>("cloud.panel.request", { detail: { action: "close" } }));
-}
-
-/**
- * Asks the shell to show its consent question for this provider again, such as when a provider page needs the page's
- * context it was not given. The person answers in the shell; the page only learns the result through
- * `onContextChange`. Does nothing outside an open panel or for a provider that needs no consent.
- */
-export function askPanelConsent(): void {
-  if (window.parent !== window && document.querySelector("[data-cloud-panel-page]"))
-    window.parent.postMessage({ type: "cloud.panel.consent.ask", v: 1 }, location.origin);
 }
 
 /** Publish in a reactive effect; dispose the previous call when that source changes or unmounts. */
