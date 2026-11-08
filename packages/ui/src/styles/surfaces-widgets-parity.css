@@ -453,11 +453,11 @@
 }
 .k2b-ui .k2b-notice-card[data-icon] .k2b-notice-card__title { color: inherit; }
 .k2b-ui .k2b-notice-card__icon { display: flex; height: 1.375rem; align-items: center; color: var(--k2b-notice-ink); font-size: 1.125rem; }
-/* A tile or an end action turns a notice into one row of at least 48px: the
-   32px tile, the text, then the action, all centred. The action never wraps
-   below the text; the text takes what is left. Phones get a 28px tile. The
-   padding gives way to the transparent forced-colours border, so a small
-   button (32px) makes the row exactly 48px. */
+/* `NoticeRow`: a notice as one row of at least 48px: the 32px tile, the text,
+   then the action, all centred. The action never wraps below the text; the
+   text takes what is left. Phones get a 28px tile. The padding gives way to
+   the transparent forced-colours border, so a small button (32px) makes the
+   row exactly 48px. */
 .k2b-ui .k2b-notice-card[data-row] {
   display: flex;
   min-height: 3rem;

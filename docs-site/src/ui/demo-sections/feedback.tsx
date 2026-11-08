@@ -8,6 +8,7 @@ import {
   InlineGuidance,
   MovedHint,
   NoticeCard,
+  NoticeRow,
   prompts,
   SplitButton,
   StatusBadge,
@@ -103,11 +104,11 @@ const NoticeRowDemo = () => (
   <DemoCard
     id="notice-row"
     chip={[
-      { kind: "component", name: "NoticeCard", from: "@k2b/ui" },
+      { kind: "component", name: "NoticeRow", from: "@k2b/ui" },
       { kind: "component", name: "SplitButton", from: "@k2b/ui" },
     ]}
     description="A notice as one 48 px row: a subject tile, one short line, and its next step at the end. The action never wraps; phones open the split button's menu as a sheet."
-    code={`<NoticeCard
+    code={`<NoticeRow
   aria-label="External images"
   tile="ti ti-photo-shield"
   tileColor="var(--k2b-reference-image)"
@@ -126,14 +127,14 @@ const NoticeRowDemo = () => (
   }
 >
   <p class="truncate"><strong>External images blocked</strong> · Protects against tracking</p>
-</NoticeCard>
+</NoticeRow>
 
-<NoticeCard tone="danger" tile="ti ti-photo-x" action={<Button variant="secondary" size="sm">Retry</Button>}>
+<NoticeRow tone="danger" tile="ti ti-photo-x" action={<Button variant="secondary" size="sm">Retry</Button>}>
   <p class="truncate" role="alert"><strong>Images could not be loaded</strong></p>
-</NoticeCard>`}
+</NoticeRow>`}
   >
     <div class="flex flex-col gap-3">
-      <NoticeCard
+      <NoticeRow
         aria-label="External images"
         tile="ti ti-photo-shield"
         tileColor="var(--k2b-reference-image)"
@@ -154,8 +155,8 @@ const NoticeRowDemo = () => (
         <p class="truncate">
           <strong>External images blocked</strong> · Protects against tracking
         </p>
-      </NoticeCard>
-      <NoticeCard
+      </NoticeRow>
+      <NoticeRow
         tone="danger"
         tile="ti ti-photo-x"
         action={
@@ -167,7 +168,7 @@ const NoticeRowDemo = () => (
         <p class="truncate">
           <strong>Images could not be loaded</strong>
         </p>
-      </NoticeCard>
+      </NoticeRow>
     </div>
   </DemoCard>
 );

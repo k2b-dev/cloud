@@ -11,7 +11,7 @@ const css = readFileSync(resolve(ui, "dist/styles.css"), "utf8");
 const entry = resolve(import.meta.dir, "notice-row.fixture.ts");
 const fixture = `
 import { createComponent, render } from "solid-js/web";
-import { Button, NoticeCard, SplitButton } from ${JSON.stringify(resolve(ui, "dist/browser/index.js"))};
+import { Button, NoticeCard, NoticeRow, SplitButton } from ${JSON.stringify(resolve(ui, "dist/browser/index.js"))};
 
 globalThis.chosen = [];
 const items = [
@@ -46,7 +46,7 @@ const app = document.getElementById("app");
 for (const [id, props] of notices) {
   const host = document.createElement("div");
   host.id = id;
-  render(() => createComponent(NoticeCard, props), host);
+  render(() => createComponent(id === "calm" ? NoticeCard : NoticeRow, props), host);
   app.append(host);
 }
 `;
@@ -96,7 +96,7 @@ const measure = (page: Awaited<ReturnType<typeof load>>, id: string) =>
     };
   }, id);
 
-describe("@k2b/ui NoticeCard row", () => {
+describe("@k2b/ui NoticeRow", () => {
   for (const [width, tile, textLeft] of [
     [1440, 32, 52],
     [390, 28, 46],
@@ -111,7 +111,7 @@ describe("@k2b/ui NoticeCard row", () => {
         expect(await measure(page, "danger")).toMatchObject({ height: 48, tile, textLeft, sameLine: true });
         // Without a tile the text starts at the notice's own inset.
         expect(await measure(page, "plain")).toMatchObject({ height: 48, tile: null, textLeft: 14, sameLine: true });
-        // A notice without a tile or an action keeps its calm block layout.
+        // NoticeCard keeps its calm block layout; only NoticeRow is a row.
         expect(await page.locator("#calm .k2b-notice-card").getAttribute("data-row")).toBeNull();
         expect(await page.evaluate(() => getComputedStyle(document.querySelector("#calm .k2b-notice-card")!).display)).toBe("block");
       } finally {
