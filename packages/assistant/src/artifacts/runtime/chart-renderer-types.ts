@@ -12,5 +12,5 @@ export type ChartDrawing = {
   hbar?: HorizontalBarLayout;
   waterfall?: WaterfallLayout;
 };
-export type RareChart = Exclude<MappedChart, { kind: "bar" | "line" | "pie" | "donut" | "stat" | "sparkline" }>;
-export type RareChartRenderer = (mapped: RareChart, common: ChartDrawing) => string;
+export type RareChart = Exclude<MappedChart, { kind: "bar" | "pie" | "donut" | "stat" | "sparkline" }>;
+export type RareChartRenderer = (mapped: RareChart, common: ChartDrawing, locale?: string) => string;

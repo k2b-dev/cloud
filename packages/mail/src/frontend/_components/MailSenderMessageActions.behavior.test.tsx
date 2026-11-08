@@ -37,7 +37,7 @@ const message: MessageDetail = {
   selectedHeaders: {},
   sourceAvailable: true,
   mailingList: null,
-  remoteContent: { imageIds: [], allowedByRule: false, sender: null, domain: null },
+  remoteContent: { imageIds: [], allowedByRule: false, allowRules: [], sender: null, domain: null },
   delivery: null,
   attachments: [],
 };
