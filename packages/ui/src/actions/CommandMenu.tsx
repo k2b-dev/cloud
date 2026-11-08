@@ -1,6 +1,8 @@
 import { createEffect, createSignal, createUniqueId, type JSX, on } from "solid-js";
+import { replaceTextareaRange } from "../inputs/editor-dom";
 import { CommandList, commandListKey, commandOptionId, createCommandNavigator } from "./CommandList";
-import type { CommandSource } from "./command-items";
+import { dockCommandList, followComposer } from "./command-dock";
+import { type CommandSource, commandPlace } from "./command-items";
 import {
   Dropdown,
   type DropdownAnchor,
@@ -17,7 +19,17 @@ export type CommandMenuProps = {
   label: string;
   /** Names the search field and is its hint, such as "Search commands". A second list shows its own label there. */
   search: string;
-  /** Receives the `text` of a chosen entry, such as a snippet the host inserts at its caret. */
+  /**
+   * The field the commands act on, such as the composer's textarea beside a "+" button. Its text and selection are the
+   * `context` of an `onSelect`, and `context.insert` and entries with `text` write into it as typing would.
+   */
+  target?: HTMLTextAreaElement | HTMLInputElement;
+  /**
+   * The composer box the menu docks to, as the slash list does: as wide as the box, just above it, or below it when
+   * there is more room there. Without it, the menu opens beside its trigger.
+   */
+  dock?: HTMLElement;
+  /** Receives inserted text when there is no `target`, such as a snippet the host places itself. */
   onInsert?: (text: string) => void;
   /** The `CommandMenu.Trigger`; leave it out for a menu opened through `openAt` or `attach`. */
   children?: JSX.Element;
@@ -45,18 +57,65 @@ function CommandMenuRoot(props: CommandMenuProps): JSX.Element {
     const nav = createCommandNavigator({
       items: () => props.items,
       query,
-      onPick: (item) => {
+      onText: (item) => {
         // Read before closing: closing resets the list.
-        const { text, onSelect } = item;
-        shell.close();
-        if (text !== undefined) props.onInsert?.(text);
-        else onSelect?.();
+        const text = item.text ?? "";
+        const target = props.target;
+        shell.close(!target);
+        insert(text);
       },
+      context: () => {
+        const target = props.target;
+        const value = target?.value ?? "";
+        const start = target?.selectionStart ?? 0;
+        return {
+          ...commandPlace(value, start, start),
+          selection: { start, end: target?.selectionEnd ?? start },
+          insert: (text: string) => insert(text),
+        };
+      },
+      active: shell.open,
+      // The focus goes back to the trigger only from inside the menu: an entry that wrote into the target, or moved
+      // the focus elsewhere itself, leaves it there.
+      afterRun: () => shell.close(Boolean(input.closest(".k2b-dropdown__menu")?.contains(document.activeElement))),
       onStep: () => setQuery(""),
     });
+    /** Writes into the target at its caret, as typing would, or hands the text to `onInsert`. */
+    const insert = (text: string) => {
+      const target = props.target;
+      if (!target) return props.onInsert?.(text);
+      replaceTextareaRange(target as HTMLTextAreaElement, target.selectionStart ?? 0, target.selectionEnd ?? 0, text);
+    };
     createEffect(
       on(shell.open, (open) => {
-        if (open) return;
+        const menu = input.closest<HTMLElement>(".k2b-dropdown__menu");
+        const dock = props.dock;
+        if (open && dock && menu) {
+          // A phone's keyboard moves the visible viewport, which the menu follows like the slash list.
+          const follow = () => {
+            if (menu.matches(":popover-open")) dockCommandList(menu, dock);
+          };
+          follow();
+          const stop = followComposer(dock, follow);
+          const closed = () => {
+            if (!menu.matches(":popover-open")) {
+              stop();
+              menu.removeEventListener("toggle", closed);
+            }
+          };
+          menu.addEventListener("toggle", closed);
+          return;
+        }
+        if (open) {
+          // The width it opened with stays its least, so filtering never narrows it.
+          queueMicrotask(() => {
+            if (menu?.matches(":popover-open")) menu.style.minWidth = `min(${menu.getBoundingClientRect().width}px, 100vw - 2rem)`;
+          });
+          return;
+        }
+        if (menu) menu.style.minWidth = "";
+        // Closing the menu, with Escape or a press outside, stops a running command.
+        nav.abort();
         nav.reset();
         setQuery("");
       }),
@@ -78,12 +137,16 @@ function CommandMenuRoot(props: CommandMenuProps): JSX.Element {
           aria-expanded="true"
           aria-controls={listId}
           aria-autocomplete="list"
-          aria-activedescendant={nav.entries().length ? commandOptionId(listId, nav.active()) : undefined}
+          aria-activedescendant={
+            nav.entries()[nav.active()] && !nav.entries()[nav.active()]!.disabled ? commandOptionId(listId, nav.active()) : undefined
+          }
           autocomplete="off"
           spellcheck={false}
           enterkeyhint="go"
           placeholder={nav.step()?.next?.label ?? props.search}
           value={query()}
+          // While a command runs, the list waits for it; the query keeps the running entry in view.
+          readOnly={nav.busy()}
           onInput={(event) => setQuery(event.currentTarget.value)}
           onKeyDown={(event) => {
             if (!commandListKey(nav, event, query())) return;
@@ -102,7 +165,8 @@ function CommandMenuRoot(props: CommandMenuProps): JSX.Element {
       items={[]}
       body={body}
       label={props.label}
-      width="20rem"
+      menuClass="k2b-command-menu"
+      placeMenu={props.dock ? (menu) => dockCommandList(menu, props.dock!) : undefined}
       position={props.position}
       align={props.align}
       openAt={props.openAt}

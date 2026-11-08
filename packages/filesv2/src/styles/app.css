@@ -56,10 +56,9 @@
 .filesv2-browser__pagination {
   display: flex;
   align-items: center;
-  justify-content: flex-end;
+  justify-content: center;
+  flex-direction: column;
   gap: 0.5rem;
-}
-.filesv2-browser__pagination:has(a) {
   padding: 0.5rem 0.75rem 0.75rem;
 }
 .filesv2-filename {
@@ -415,11 +414,6 @@
   .filesv2-list__cell--size {
     display: none;
   }
-}
-.filesv2-list__more {
-  padding: 0.25rem 0;
-  font-size: 0.75rem;
-  color: var(--k2b-action);
 }
 .filesv2-list__row--more:hover {
   background: transparent;

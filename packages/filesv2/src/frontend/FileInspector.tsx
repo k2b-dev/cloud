@@ -733,6 +733,20 @@ function EntryHistory(props: {
       loadItemShares({ baseId: props.base.id, path: props.entry.path }, cursor ?? null, abortSignal, h().accessFailed),
     getNextCursor: (page: SharePage) => page.next,
   });
+  // The query clears its error as soon as a retry starts; keep this action's label and alert in place until it settles.
+  const [shareRetrySource, setShareRetrySource] = createSignal<string | null>(null);
+  const shareRetrying = () => shareRetrySource() === shareSource();
+  const shareFailed = () => !!shares.error() || shareRetrying();
+  const loadMoreShares = async () => {
+    if (shares.loading() || shares.loadingMore() || shareRetrying()) return;
+    const key = shareSource();
+    if (shares.error()) setShareRetrySource(key);
+    try {
+      await (shares.hasMore() ? shares.loadMore() : shares.refresh());
+    } finally {
+      if (shareRetrySource() === key) setShareRetrySource(null);
+    }
+  };
   const [revoked, setRevoked] = createSignal<{ source: string; items: Map<string, ShareView> } | null>(null);
   const itemShares = createMemo(() => {
     const unique = new Map(
@@ -751,7 +765,7 @@ function EntryHistory(props: {
   // One access query per loaded link feeds both its facts and the item's history.
   const links = createShareAccess({ shares: itemShares, period, load: loadAccess });
   const linksState = () =>
-    shares.pages().length === 0 && !shares.error() ? "loading" : shares.hasMore() || shares.error() ? "partial" : "complete";
+    shares.pages().length === 0 && !shareFailed() ? "loading" : shares.hasMore() || shareFailed() ? "partial" : "complete";
   const revoke = async (share: ShareView) => {
     const source = shareSource();
     const result = await revokeShare(share, t().revokeFailed);
@@ -767,24 +781,25 @@ function EntryHistory(props: {
         {(history) => (
           <>
             <ShareHistory env={history().env} shares={links()} period={period()} load={loadAccess} onRevoke={revoke} />
-            <Show when={shares.loading() || shares.error() || shares.hasMore()}>
+            <Show when={shares.loading() || shareFailed() || shares.hasMore()}>
               <div role="group" aria-label={h().publicLink}>
-                <Show when={shares.loading() && itemShares().length === 0}>
+                <Show when={shares.loading() && !shareRetrying() && itemShares().length === 0}>
                   <p role="status">{t().loadingDetails}</p>
                 </Show>
-                <Show when={shares.error()}>
+                <Show when={shareFailed()}>
                   <p class="filesv2-item-history__line" role="alert">
                     {h().accessFailed}
                   </p>
                 </Show>
-                <Show when={shares.hasMore() || shares.error()}>
+                <Show when={shares.hasMore() || shareFailed()}>
                   <Button
                     size="xs"
-                    variant="text"
-                    loading={shares.loadingMore() || shares.loading()}
-                    onClick={() => void (shares.hasMore() ? shares.loadMore() : shares.refresh())}
+                    variant="link"
+                    loading={shares.loadingMore() || shares.loading() || shareRetrying()}
+                    onClick={() => void loadMoreShares()}
                   >
-                    {shares.error() ? h().retry : t().moreShares}
+                    {shareFailed() ? h().retry : t().moreShares}
+                    <i class={shareFailed() ? "ti ti-refresh" : "ti ti-chevron-down"} aria-hidden="true" />
                   </Button>
                 </Show>
               </div>

@@ -12,6 +12,18 @@ Every non-empty chart has tooltips, keyboard inspection, and tap by default; see
 
 Use `StatCell` for one value. Use `DataTable` when readers need exact records rather than a visual summary.
 
+## Save a chart as JSON
+
+`ChartDescription`, `ChartInput`, `ChartNumberFormat`, and `ChartFormat` are
+owned by `@k2b/ui/charts`. A portable node uses `{kind, title, ...}` and named
+formats such as `{style: "currency", currency: "EUR"}`. It contains no
+callbacks. Use ISO text for dates and `null` for missing observations.
+
+The portable Zod validator `chartKinds()` from `@k2b/editor/charts` is checked
+against those types at compile time. It normalizes null gaps to non-finite
+renderer values; stacked area keeps its nullable series. Keep the original JSON when saving. Its optional limits are
+host policy. Each consuming application keeps its own input budget.
+
 ## Import
 
 ```tsx
@@ -271,7 +283,11 @@ over `autoVariant`. Non-finite coordinates are skipped.
 `AxisOptions` supports `label?: string`, `format?: (value: number) => string`,
 `ticks?: number` (suggested count, default 5), `scale?: "linear" | "log"`
 (default linear), `minorTicks?: boolean` (default false), and optional exact
-`domain?: [number, number]` comparison bounds. See the snapshot section for domain validation.
+`domain?: [number, number]` comparison bounds. Existing tick positions and centered
+numeric X labels stay unchanged by default. Opt in with `insetEndpointLabels: true`
+to align numeric X endpoint labels inward and omit nice ticks within one interval
+of exact bounds. This keeps long endpoint units inside compact plots; use it only
+on axes that need this layout. See the snapshot section for domain validation.
 For line and scatter charts, log axes exclude non-positive coordinates. `references` is an array of
 `{ value: number; axis?: "x" | "y"; label?: string }`; the default axis is Y.
 Categorical bars ignore X references. Use the

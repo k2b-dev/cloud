@@ -663,7 +663,7 @@ export type DropdownBody = (props: {
 }) => JSX.Element;
 
 /** Accessible top-layer menu with explicit trigger ownership. */
-function DropdownRoot(props: DropdownProps & { body?: DropdownBody }): JSX.Element {
+function DropdownRoot(props: DropdownProps & { body?: DropdownBody; placeMenu?: (menu: HTMLElement) => void }): JSX.Element {
   const messages = useUiMessages();
   const locale = useLocale();
   /** The open phone sheet's cancel switch: it closes when the menu goes or is disabled, as the popover does. */
@@ -697,6 +697,8 @@ function DropdownRoot(props: DropdownProps & { body?: DropdownBody }): JSX.Eleme
     typeof props.position === "function" ? props.position() : (props.position ?? (props.align === "end" ? "bottom-left" : "bottom-right"));
 
   const place = () => {
+    // Internal: `CommandMenu` docks its menu to a composer instead of its trigger.
+    if (props.placeMenu && menuRef) return props.placeMenu(menuRef);
     const at = anchor ?? triggerRef;
     if (!at || !menuRef) return;
     const rect = dropdownPosition(at.getBoundingClientRect(), menuRef.getBoundingClientRect(), position(), {

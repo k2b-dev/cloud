@@ -5,6 +5,7 @@ import imageConverterDe from "./documents/de/tools-image-converter.help.md" with
 import markdownPdfDe from "./documents/de/tools-markdown-pdf.help.md" with { type: "text" };
 import photoEditorDe from "./documents/de/tools-photo-editor.help.md" with { type: "text" };
 import safetyDe from "./documents/de/tools-safety.help.md" with { type: "text" };
+import speedtestDe from "./documents/de/tools-speedtest.help.md" with { type: "text" };
 import startDe from "./documents/de/tools-start.help.md" with { type: "text" };
 import choose from "./documents/en/tools-choose.help.md" with { type: "text" };
 import documentMarkdown from "./documents/en/tools-document-markdown.help.md" with { type: "text" };
@@ -12,12 +13,13 @@ import imageConverter from "./documents/en/tools-image-converter.help.md" with {
 import markdownPdf from "./documents/en/tools-markdown-pdf.help.md" with { type: "text" };
 import photoEditor from "./documents/en/tools-photo-editor.help.md" with { type: "text" };
 import safety from "./documents/en/tools-safety.help.md" with { type: "text" };
+import speedtest from "./documents/en/tools-speedtest.help.md" with { type: "text" };
 import start from "./documents/en/tools-start.help.md" with { type: "text" };
 
 export const toolsHelp = defineHelp({
   baseLocale: "en",
   documents: {
-    en: [start, choose, documentMarkdown, markdownPdf, imageConverter, photoEditor, safety],
-    de: [startDe, chooseDe, documentMarkdownDe, markdownPdfDe, imageConverterDe, photoEditorDe, safetyDe],
+    en: [start, choose, documentMarkdown, markdownPdf, imageConverter, speedtest, photoEditor, safety],
+    de: [startDe, chooseDe, documentMarkdownDe, markdownPdfDe, imageConverterDe, speedtestDe, photoEditorDe, safetyDe],
   },
 });

@@ -9,6 +9,7 @@ import {
   uploadResponseFailure,
 } from "../upload-transfer";
 import { browserUploadKey } from "./upload-key";
+import { createPacedUploadRequest } from "./upload-pacing";
 
 export const requestSignal = (signal: AbortSignal) => AbortSignal.any([signal, AbortSignal.timeout(60_000)]);
 /** Carries Cloud's localized conflict message for callers that show it instead of asking to replace. */
@@ -65,6 +66,7 @@ export async function uploadFile(
     session = await opened.json();
     if (session.state === "aborted" || session.state === "expired") start.finish();
     await transferUpload(file, session, {
+      request: createPacedUploadRequest(),
       signal: options.signal,
       failure: options.fallback,
       onProgress: options.onProgress,

@@ -65,6 +65,22 @@ with a mouse or trackpad, including a tablet with a mouse, they stay hidden
 until their row is hovered, keyboard-focused, or has its menu open. Touch-only
 screens always show them.
 
+### Wide rows
+
+Keep a label and its value visually connected. `rows` and `compact` keep the
+value next to its term, so they stay readable on any width. Where a label sits
+on one side and its amount on the other, as in budgets, keep the list within the
+row measure (`--k2b-row-measure`, 40rem) instead of letting it span a wide
+panel; table-like lists add hairline separators, the table's hover tint and
+right-aligned tabular figures.
+
+Only where a list of terms and right-aligned values must span a very wide
+container, set `leader="dotted"` on a `rows` or `compact` list: a dotted leader
+joins each term to its value, which aligns to the end in tabular figures. Terms
+keep their 40% limit, and a wrapped value keeps its term and leader on its first
+line. It is the
+fallback, never the default, and has no other look variants.
+
 Use `layout="compact"` for read-mostly metadata in previews and small panels.
 Labels size to their content (up to 40% of the available width), with a smaller
 horizontal gap than the space between rows. Unlike inspector rows, compact rows
@@ -80,11 +96,11 @@ type DescriptionListItem = {
 
 type DescriptionListProps = {
   items: readonly DescriptionListItem[]; columns?: 1 | 2 | 3; layout?: "grid" | "rows" | "compact"; size?: "sm" | "md";
-  actionVisibility?: "always" | "progressive"; class?: string;
+  actionVisibility?: "always" | "progressive"; leader?: "dotted"; class?: string;
 };
 ```
 
-`columns` defaults to `1`, `layout` to `"grid"`, and `actionVisibility` to `"always"`; `size` defaults to `"md"`. Item content accepts Solid JSX. Only a plain control that is the direct value of a `rows` item takes over the row; nested deeper, such as an add action below a list of entries, it covers only itself.
+`columns` defaults to `1`, `layout` to `"grid"`, and `actionVisibility` to `"always"`; `size` defaults to `"md"`; `leader` is unset (no leader) and only applies to `rows` and `compact`. Item content accepts Solid JSX. Only a plain control that is the direct value of a `rows` item takes over the row; nested deeper, such as an add action below a list of entries, it covers only itself.
 
 ## Accessibility
 

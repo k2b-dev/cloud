@@ -652,7 +652,9 @@ const DetailsDemo = () => {
     { term: "Priority", description: <Select aria-label="Priority" appearance="plain" placeholder="No priority" clearable options={priorities} value={priority} onValueChange={setPriority} /> },
     { term: "Labels", description: <MultiSelectInput aria-label="Labels" appearance="plain" placeholder="Label" placeholderIcon="ti ti-plus" options={labelOptions} value={labels} onValueChange={setLabels} /> },
   ]}
-/>`}
+/>
+{/* Fallback only: a wide sum list joins term and value with a dotted leader */}
+<DescriptionList layout="rows" size="sm" leader="dotted" items={sums} />`}
     >
       <div class="ui-demo-form-grid">
         <article class="ui-detail-panel-pattern">
@@ -776,6 +778,22 @@ const DetailsDemo = () => {
                 ),
               },
               { term: "Created", description: "31 July 2026, 14:32" },
+            ]}
+          />
+        </article>
+        <article class="ui-detail-panel-pattern" style={{ "grid-column": "1 / -1" }}>
+          <header>
+            <strong>Wide sums with a dotted leader (fallback)</strong>
+            <span>Only for a list that must span a very wide container: the leader joins each term to its right-aligned value.</span>
+          </header>
+          <DescriptionList
+            layout="rows"
+            size="sm"
+            leader="dotted"
+            items={[
+              { term: "Net amount", description: "€1,240.00" },
+              { term: "VAT 19 %", description: "€235.60" },
+              { term: "Total", description: "€1,475.60" },
             ]}
           />
         </article>
@@ -940,7 +958,7 @@ const StatsDemo = () => (
 <StatCell label="Unsubscribes" value={182} stale="As of 09:12 · not current" onRetry={reload} />
 
 <StatGrid columns={3} title="Runtime" action={{ label: "Observability", href: "./observability" }}>
-  <StatCell label="Requests" value="42k" sub="last hour" trend={[12, 18, 16, 24, 42]} />
+  <StatCell label="Requests" value="42k" sub="last hour" deltaPlacement="below" delta={{ value: 1200, unit: "absolute", better: "up" }} trend={[12, 18, 16, 24, 42]} />
   <StatCell label="Latency" value="83 ms" sub="p95" href="./observability" valueClass="app-latency-warning" />
   <StatCell label="Errors" value={12} sub="last hour" accent={{ tone: "red", icon: "ti ti-alert-circle", text: "inspect" }} />
 </StatGrid>`}
@@ -994,7 +1012,14 @@ const StatsDemo = () => (
         />
       </StatGrid>
       <StatGrid columns={3} title="Runtime" action={{ label: "Observability", href: "./observability" }}>
-        <StatCell label="Requests" value="42k" sub="last hour" trend={[12, 18, 16, 24, 42]} />
+        <StatCell
+          label="Requests"
+          value="42k"
+          sub="last hour"
+          deltaPlacement="below"
+          delta={{ value: 1200, unit: "absolute", better: "up" }}
+          trend={[12, 18, 16, 24, 42]}
+        />
         <StatCell label="Latency" value="83 ms" sub="p95" href="./observability" valueClass="ui-stat-attention" />
         <StatCell label="Errors" value={12} sub="last hour" accent={{ tone: "red", icon: "ti ti-alert-circle", text: "inspect" }} />
       </StatGrid>
