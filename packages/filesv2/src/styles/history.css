@@ -792,7 +792,10 @@
   align-items: center;
   justify-content: flex-end;
   gap: 0.5rem;
-  min-height: 1.25rem;
+  /* One line box of fixed height: a tag, an icon or the count chip centre in it and never make a row taller, whatever
+     line height a browser gives mixed text (WebKit's "normal" is a pixel taller than Chromium's). */
+  height: 1.25rem;
+  line-height: 1.25rem;
   font-size: 0.78125rem;
   color: var(--k2b-text-muted);
   white-space: nowrap;
@@ -889,7 +892,10 @@
   display: inline-flex;
   align-items: center;
   gap: 0.125rem;
-  padding: 0.125rem 0.375rem;
+  /* As tall as the facts' line, with its content centred: no padding or line height can grow it. */
+  height: 1.25rem;
+  padding: 0 0.375rem;
+  line-height: 1;
   border-radius: var(--k2b-radius-control);
   font-variant-numeric: tabular-nums;
 }
@@ -973,6 +979,9 @@
   }
   .filesv2-history-row[data-variant="compact"] .filesv2-history-row__facts {
     grid-area: facts;
+    /* On a phone the facts may wrap onto a second line. */
+    height: auto;
+    min-height: 1.25rem;
     flex-wrap: wrap;
     justify-content: flex-start;
     gap: 0.125rem 0.5rem;
