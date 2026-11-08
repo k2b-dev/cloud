@@ -151,16 +151,10 @@ services:
     command: bun run --preload=/app/packages/cloud/scripts/preload.ts packages/accounts/src/index.ts
 
   app-assistant:
-    environment:
-      CLOUD_CLI_CHROMIUM: /usr/bin/chromium
     <<: *app
     user: bun
     cap_drop: [ALL]
     security_opt: [no-new-privileges:true]
-    build:
-      context: .
-      dockerfile: Dockerfile.dev
-      args: { INSTALL_CHROMIUM: "true" }
     container_name: app-assistant
     volumes:
       - ./packages/cloud/src:/app/packages/cloud/src

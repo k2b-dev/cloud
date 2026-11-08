@@ -15,22 +15,7 @@ import {
   toAiChatTaskView,
 } from "@k2b/cloud/ai";
 
-type ArtifactSummary = {
-  kind: "app";
-  icon?: string;
-  publishedVersion?: number | null;
-  id: string;
-  title: string;
-  description?: string;
-  revision: number;
-  permission: "read" | "write" | "admin";
-  updatedAt: string;
-  publishedRevision: number | null;
-  forkedFromId: string | null;
-  forkedFromRevision: number | null;
-};
-
-/** Snapshot limits: results, files, and apps come from people and stay small; sources and working files can grow. */
+/** Snapshot limits: results and files come from people and stay small; sources and working files can grow. */
 const RESULT_LIMIT = 500;
 const FILE_LIMIT = 500;
 const WORKING_GROUP_LIMIT = 200;
@@ -40,7 +25,7 @@ const SOURCE_PAGE = 100;
 /** Something the assistant delivered in this chat. */
 export type AssistantChatResult = {
   key: string;
-  kind: "file" | "app" | "visualization";
+  kind: "file" | "visualization";
   title: string;
   /** The one-sentence description the assistant gave when delivering it. */
   description: string | null;
@@ -52,8 +37,6 @@ export type AssistantChatResult = {
   /** Chat position of the delivery, for `?message=`; null when its turn is gone. */
   messageSeq: number | null;
   file?: { path: string; mediaType: string; size: number };
-  /** `href` opens the app on its own page: the editor for admins, the runner otherwise. */
-  app?: { id: string; href: string; published: boolean; lastRun: "ready" | "error" | "running" | null };
   presentationId?: string;
 };
 
@@ -80,15 +63,14 @@ export type AssistantChatContextSnapshot = {
   tasks: AssistantChatTask[];
   skills: AiConversationSkillUse[];
   memories: Array<{ id: string; content: string }>;
-  /** Studio overview: apps this chat referenced, and its one-off runs. */
-  apps: ArtifactSummary[];
   runCount: number;
   runs: Array<{ id: string; status: string; createdAt: string }>;
 };
 
-const readableSources = (sources: readonly AiConversationSource[]) => sources.filter((source) => source.ref?.type !== "assistant.artifact");
+const readableSources = (sources: readonly AiConversationSource[]) =>
+  sources.filter((source) => !["assistant.artifact", "assistant.app"].includes(source.ref?.type ?? ""));
 /**
- * One page of the chat's sources for the sidebar's "Load more" and its search, with apps as the viewer may see them.
+ * One page of the chat's sources for the sidebar's "Load more" and its search, excluding retired resources.
  * `null` when the chat does not exist for the viewer.
  */
 export const loadAssistantChatSources = async (
@@ -177,13 +159,13 @@ export const loadAssistantChatContextSnapshot = async (
   });
   const runs = await sql<{ id: string; status: string; createdAt: string }[]>`SELECT run.call_id AS id,
     CASE WHEN latest.status='done' THEN CASE WHEN latest.result->>'busy'='true' OR latest.result->'work'->>'status'='running' THEN 'running' ELSE COALESCE(latest.result->>'status','unknown') END ELSE COALESCE(latest.status,run.status) END AS status,
-    run.created_at::text AS "createdAt" FROM assistant.artifact_agent_calls run
-    LEFT JOIN LATERAL(SELECT state.status,state.result FROM assistant.artifact_agent_calls state
+    run.created_at::text AS "createdAt" FROM assistant.code_agent_calls run
+    LEFT JOIN LATERAL(SELECT state.status,state.result FROM assistant.code_agent_calls state
       WHERE state.conversation_id=run.conversation_id AND (state.result->>'runId'=run.call_id OR state.input->>'runId'=run.call_id) AND (state.result ? 'status' OR state.status != 'done')
       ORDER BY state.updated_at DESC LIMIT 1) latest ON true
     WHERE run.conversation_id=${conversation.id}::uuid AND run.user_id=${userId}::uuid
       AND run.input->>'operation'='run' AND run.input->>'id' IS NULL ORDER BY run.created_at DESC LIMIT 20`;
-  const [count] = await sql<{ count: number }[]>`SELECT count(*)::int AS count FROM assistant.artifact_agent_calls
+  const [count] = await sql<{ count: number }[]>`SELECT count(*)::int AS count FROM assistant.code_agent_calls
     WHERE conversation_id=${conversation.id}::uuid AND user_id=${userId}::uuid
       AND input->>'operation'='run' AND input->>'id' IS NULL`;
   return {
@@ -209,7 +191,6 @@ export const loadAssistantChatContextSnapshot = async (
     tasks: tasks.map(toAiChatTaskView),
     skills,
     memories: memories.map((memory) => ({ id: memory.shortId, content: memory.content })),
-    apps: [],
     runCount: count?.count ?? 0,
     runs,
   };

@@ -1083,7 +1083,7 @@ test("web search sources retain the query above the activity description", async
   }
 });
 
-test("an app is a result only when the browser opened it", async () => {
+test("retired Studio opens never create executable app results", async () => {
   const index = spyOn(aiConversations, "indexConversationSource").mockResolvedValue(undefined);
   const call = {
     conversationId: "conversation",
@@ -1099,32 +1099,21 @@ test("an app is a result only when the browser opened it", async () => {
       await __aiExecutorTest.indexConversationToolSource({ ...call, result });
     expect(index).not.toHaveBeenCalled();
     await __aiExecutorTest.indexConversationToolSource({ ...call, result: { opened: "App002", started: false } });
-    expect(index).toHaveBeenCalledWith({
-      conversationId: "conversation",
-      turnId: "turn",
-      callId: "open",
-      source: {
-        kind: "result",
-        key: "assistant.artifact:App002",
-        title: "Studio app",
-        icon: "ti ti-app-window",
-        ref: { type: "assistant.artifact", id: "App002" },
-      },
-    });
+    expect(index).not.toHaveBeenCalled();
   } finally {
     index.mockRestore();
   }
 });
 
-test("direct code tools index returned Studio references without a capability wrapper", async () => {
+test("direct code tools index returned resource references without a capability wrapper", async () => {
   const index = spyOn(aiConversations, "indexConversationResources").mockResolvedValue(undefined);
   const call = {
     conversationId: "conversation",
     turnId: "turn",
     callId: "create",
-    name: "code_create",
+    name: "code_init",
     args: {},
-    result: { refs: [{ type: "assistant.artifact", id: "app-id", title: "Dashboard" }] },
+    result: { refs: [{ type: "core.code", id: "code-id", title: "Dashboard" }] },
     isError: false,
   };
   try {
@@ -1133,7 +1122,7 @@ test("direct code tools index returned Studio references without a capability wr
       conversationId: "conversation",
       turnId: "turn",
       callId: "create",
-      resources: [{ ref: { type: "assistant.artifact", id: "app-id" }, title: "Dashboard" }],
+      resources: [{ ref: { type: "core.code", id: "code-id" }, title: "Dashboard" }],
     });
     index.mockClear();
     await __aiExecutorTest.indexConversationToolSource({ ...call, isError: true });

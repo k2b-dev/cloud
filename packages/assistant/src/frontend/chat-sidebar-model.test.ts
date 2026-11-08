@@ -150,11 +150,11 @@ describe("chat sidebar files, working files, and sources", () => {
     ]);
   });
 
-  test("search finds a result by its file name, an app by its current title, and shows a delivered file once", () => {
+  test("search finds a result by its file name, a view by its current title, and shows a delivered file once", () => {
     const report = fileResult("/final-report.pdf", { title: "Sales summary", at: minutesAgo(5), turn: "t1", seq: 3 });
     const app: AssistantChatResult = {
-      key: "assistant.artifact:App001",
-      kind: "app",
+      key: "view:dashboard",
+      kind: "visualization",
       title: "Revenue dashboard",
       description: null,
       icon: "ti ti-app-window",
@@ -162,7 +162,6 @@ describe("chat sidebar files, working files, and sources", () => {
       turnId: "t1",
       callId: "open",
       messageSeq: 3,
-      app: { id: "App001", href: "/app/assistant/apps/App001", published: false, lastRun: null },
     };
     // The server matched the result's path and the file itself; the local title search knows nothing of the path.
     const byPath = matchChatSearch(
@@ -180,8 +179,8 @@ describe("chat sidebar files, working files, and sources", () => {
     );
     expect(byPath.results.map((result) => result.key)).toEqual(["/final-report.pdf"]);
     expect(byPath.files.map((file) => file.path)).toEqual(["/data.csv"]);
-    // The server stores an app under "Studio app"; its current title matches only here.
-    expect(matchChatSearch([report, app], [], "dashboard").results.map((result) => result.key)).toEqual(["assistant.artifact:App001"]);
+    // The result title is searchable even without a source hit.
+    expect(matchChatSearch([report, app], [], "dashboard").results.map((result) => result.key)).toEqual(["view:dashboard"]);
     expect(matchChatSearch([report, app], [], "final-report.pdf").results).toEqual([report]);
   });
 

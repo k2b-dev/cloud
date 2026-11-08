@@ -56,7 +56,7 @@ export function createSecretsDialog(artifactClient: typeof chatCodeClient) {
     return (
       <div class="flex flex-col gap-3">
         <p class="text-sm text-secondary">{copy().help}</p>
-        <span class="text-xs text-secondary">{props.scope.resourceId ? copy().scopeApp : copy().scopeChat}</span>
+        <span class="text-xs text-secondary">{copy().scopeChat}</span>
         <Show when={error()}>
           <NoticeCard tone="danger" title={error()} />
         </Show>
@@ -135,8 +135,6 @@ export function createSecretsDialog(artifactClient: typeof chatCodeClient) {
       t = () => artifactMessages.resolve([locale()]).t,
       copy = () => secretDialogMessages.resolve([locale()]).t;
     const [approvals, { refetch }] = createResource(async () => {
-      if (props.scope.resourceId)
-        return (await listApprovalPreferences()).filter((approval) => approval.website?.resourceId === props.scope.resourceId);
       return props.scope.conversationId ? listApprovalPreferences(props.scope.conversationId) : [];
     });
     const [revoking, setRevoking] = createSignal<string | null>(null),
@@ -159,7 +157,7 @@ export function createSecretsDialog(artifactClient: typeof chatCodeClient) {
         <h3 id="secrets-dialog-approvals" class="text-sm font-semibold">
           {copy().approvals}
         </h3>
-        <p class="text-xs text-secondary">{props.scope.resourceId ? copy().approvalsAppHelp : copy().approvalsChatHelp}</p>
+        <p class="text-xs text-secondary">{copy().approvalsChatHelp}</p>
         <Show when={error()}>
           <NoticeCard tone="danger" title={error()} />
         </Show>

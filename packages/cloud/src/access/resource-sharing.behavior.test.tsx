@@ -65,7 +65,6 @@ const entries = [
   ["Pulse", "pulse/src/frontend/workspace/base-settings-dialog.tsx", "pulse.base", {}],
   ["Venue", "venue/src/frontend/_components/venue-workspace/settings.tsx", "venue.venue", {}],
   ["Files", "filesv2/src/frontend/Templates.tsx", "filesv2.template", {}],
-  ["Studio", "assistant/src/artifacts/StudioPermissions.tsx", "assistant.app", {}],
   ["AI skill", "core/src/pages/admin/settings/_components/AiSkillAdminActions.island.tsx", "core.ai.skill", { skillId: "Targ01" }],
   ["AI project", "core/src/pages/admin/settings/_components/AiProjectAdminActions.island.tsx", "core.ai.project", { projectId: "Targ01" }],
   ["Assistant skill", "assistant/src/frontend/AssistantSkillsSettings.tsx", "core.ai.skill", {}],

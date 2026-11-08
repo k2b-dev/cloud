@@ -2,8 +2,6 @@ import { type CloudCliModule, defineCliCommands } from "@k2b/cloud/cli";
 import { assistantAcpCommand } from "./cli/acp";
 import { assistantApprovalCommands } from "./cli/approvals";
 import { assistantChatCommands, assistantManagementCommands } from "./cli/chat";
-import { assistantCodeCommands } from "./cli/code";
-import { CODE_HOST_COMMAND } from "./cli/code-host";
 import { assistantRootCommand } from "./cli/interactive";
 import { assistantPersonalizationCommands } from "./cli/personalization";
 import { assistantProjectCommands, projectAccessContext } from "./cli/projects";
@@ -16,8 +14,6 @@ const commands = defineCliCommands({
   shortcuts: { acp: "acp" },
   summary: "Chat with the Cloud Assistant and manage chats, routines, files, personalization, and Projects.",
   groupSummaries: {
-    code: "Build and manage Studio Apps and actions",
-    "studio-admin": "Administer Studio resources, data and database settings",
     approvals: "List and revoke remembered Cloud approvals",
     actions: "Review and resolve pending turn actions",
     chats: "Create, inspect, and manage Assistant chats",
@@ -41,7 +37,6 @@ const commands = defineCliCommands({
     assistantRootCommand,
     assistantAcpCommand,
     ...assistantApprovalCommands,
-    ...assistantCodeCommands,
     ...assistantChatCommands,
     ...assistantManagementCommands,
     ...assistantPersonalizationCommands,
@@ -51,20 +46,4 @@ const commands = defineCliCommands({
   ],
 });
 
-/**
- * `cld assistant code-host` is the browser code host that `createCliCodeHost`
- * spawns as a child of the same `cld`; it needs the parent's IPC channel and
- * never appears in help.
- */
-const module: CloudCliModule = {
-  ...commands,
-  requiresCloudFor: (args, flags) => args[0] !== CODE_HOST_COMMAND && (commands.requiresCloudFor?.(args, flags) ?? true),
-  run: async (ctx) => {
-    if (ctx.args[0] !== CODE_HOST_COMMAND) return commands.run(projectAccessContext(ctx));
-    if (!process.send) throw new Error("Code host requires a parent CLI connection");
-    (await import("./cli/code-host-process")).startCliCodeHostProcess();
-    return 0;
-  },
-};
-
-export default module;
+export default { ...commands, run: (ctx) => commands.run(projectAccessContext(ctx)) } satisfies CloudCliModule;

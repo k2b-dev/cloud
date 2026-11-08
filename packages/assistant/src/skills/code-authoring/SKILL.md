@@ -90,8 +90,8 @@ app.post("/find", async c => {
 export default app;
 ```
 
-Studio HTML apps retain `code_create` and the existing `code_read/write/check`
-inputs with `id`, revision and screenshots. Load `assistant-code-mode` for them.
+Studio apps and their data have been retired without transfer. For a one-off
+chat computation, load `assistant-code-mode` and use inline `code_run`.
 
 ## Rebuild an open-ended routine
 

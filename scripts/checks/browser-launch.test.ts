@@ -37,7 +37,7 @@ test("accepts tests that start their browser through the shared launcher", async
       "packages/demo/src/flow.behavior.test.ts": `import type { Page } from "playwright";\nimport { launchBrowser } from "${launcher}";\n`,
       // Integration tests need CLOUD_TEST_* targets and stay in Chromium.
       "packages/demo/src/consent.integration.test.ts": `import "${testInfra}";\nimport { launchBrowser } from "${launcher}";\n`,
-      "packages/assistant/src/artifacts/chrome.browser.test.ts": `import { chromium } from "playwright";\nawait chromium.launch({ channel: "chrome" });\n`,
+      "packages/assistant/src/chat-code/chrome.browser.test.ts": `import { chromium } from "playwright";\nawait chromium.launch({ channel: "chrome" });\n`,
     }),
   ).toEqual([]);
 });

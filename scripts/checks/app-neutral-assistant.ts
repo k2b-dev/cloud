@@ -15,7 +15,6 @@ const PRESENTATION_ROOTS = [
   "packages/cloud/src/ai/tool-sentences.ts",
   "packages/assistant/src/frontend",
   "packages/assistant/src/cli",
-  "packages/assistant/src/chat-code/CapabilityApproval.tsx",
   "packages/assistant/src/chat-code/code-approval-message.ts",
 ];
 

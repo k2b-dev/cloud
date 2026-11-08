@@ -292,7 +292,7 @@ location or grant access to a source file.
 
 The server helpers accept application-owned HTML and render it offline.
 Applications exposing them to untrusted input must still enforce authentication
-and input budgets. Assistant Studio's worker API does not expose arbitrary
+and input budgets. Assistant's chat worker API does not expose arbitrary
 Gotenberg endpoints or connection settings. Operators must keep Gotenberg's
 file access limited to its working directory, `/tmp`, and should keep
 Gotenberg itself offline; see

@@ -169,7 +169,6 @@ export async function aiAreaBrowserFixture(options: { port?: number } = {}) {
           description: "AI",
           icon: "ti ti-sparkles",
           routes: ["/app/assistant"],
-          adminNav: [{ section: "ai", label: "KI", links: [{ href: "/admin/assistant/apps", icon: "ti-apps", label: "Studio-Apps" }] }],
         },
       ],
     });
@@ -239,7 +238,6 @@ export async function aiAreaBrowserFixture(options: { port?: number } = {}) {
             overview: state === "loadfail" ? null : overview,
             index: state === "loadfail" ? null : { models: catalog.models, variants: catalog.variants, assignments: overview.assignments },
             loadFailed: state === "loadfail",
-            studioLinks: [{ href: "/admin/assistant/apps", label: "Studio-Apps", icon: "ti-apps", app: t.fromApp({ p: "Assistent" }) }],
             provider,
             providerDetail: state === "detailfail" ? null : providerDetail,
             model: state === "detailfail" || state === "detailempty" ? null : model,

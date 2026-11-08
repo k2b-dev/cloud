@@ -56,7 +56,7 @@ let browser: Browser;
 let server: ReturnType<typeof Bun.serve>;
 beforeAll(async () => {
   const build = Bun.spawn(
-    ["bun", new URL("../artifacts/workspace-browser-build.ts", import.meta.url).pathname, "../frontend/activity-run-browser-harness.tsx"],
+    ["bun", new URL("./workspace-browser-build.ts", import.meta.url).pathname, "../frontend/activity-run-browser-harness.tsx"],
     { stdout: "pipe", stderr: "pipe" },
   );
   const [bundle, buildError] = await Promise.all([new Response(build.stdout).text(), new Response(build.stderr).text()]);

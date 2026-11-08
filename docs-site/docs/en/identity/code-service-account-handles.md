@@ -26,9 +26,7 @@ never replaces a principal ID in a stored grant.
 `GET /api/accounts/entities` accepts `target_type` and `target_id` together.
 A Code account matches only its complete, case-sensitive handle in `search`.
 The server checks Manage through the target's own resource reader before
-including that account, so the target type needs a `reader`. Studio apps
-(`assistant.app`) answer through `app.read`, which returns the person's own
-level and nothing for apps they cannot open. No target, no Manage, a name, a UUID, or a partial
+including that account, so the target type needs a `reader`. No target, no Manage, a name, a UUID, or a partial
 handle never finds a Code account. Other directory results retain their
 existing visibility rules.
 

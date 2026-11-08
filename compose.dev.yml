@@ -207,15 +207,10 @@ services:
       APP_ID: assistant
       CLOUD_APP_KEY_FILE: /run/secrets/assistant.key
       CLOUD_CORE_INTERNAL_ORIGIN: http://app-core:3000
-      CLOUD_CLI_CHROMIUM: /usr/bin/chromium
     <<: *app
     user: bun
     cap_drop: [ALL]
     security_opt: [no-new-privileges:true]
-    build:
-      context: .
-      dockerfile: Dockerfile.dev
-      args: { INSTALL_CHROMIUM: "true" }
     container_name: app-assistant
     volumes:
       - ./packages/cloud/src:/app/packages/cloud/src

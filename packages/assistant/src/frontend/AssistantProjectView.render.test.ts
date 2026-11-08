@@ -52,15 +52,7 @@ const page = {
   hasNext: false,
 } as AiConversationPage;
 
-const initialApps = {
-  items: [
-    { id: "appSSR1", title: "Project bank reconciliation", icon: "ti ti-app-window", published: true, canManage: true, linked: true },
-  ],
-  page: 1,
-  hasNext: false,
-};
 const projectContext = {
-  apps: initialApps,
   skills: {
     items: [
       {
@@ -136,7 +128,6 @@ describe("Assistant Project view", () => {
             project,
             initialPage: page,
             initialContext: {
-              apps: initialApps,
               skills: {
                 items: [
                   {

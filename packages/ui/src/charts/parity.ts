@@ -710,7 +710,7 @@ export const chartParity: readonly ChartParityRow[] = [
     id: "cloud-chart",
     feature: "cloud.chart()",
     proof: {
-      file: "packages/assistant/src/artifacts/runtime/cloud-lib.test.ts",
+      file: "packages/assistant/src/chat-code/runtime/cloud-lib.test.ts",
       test: "chart function formats survive validation and measured redraws",
     },
     spec: line,

@@ -1,8 +1,6 @@
 # Known test-waits findings, one per file: <file> | <count>.
 # Migrations lower counts and remove entries; the rule never raises counts or adds lines.
 # `bun scripts/check.ts test-waits --fix` lowers counts whose findings are gone.
-packages/assistant/src/artifacts/runtime/ai.browser.test.ts | 1
-packages/assistant/src/cli/code-host.test.ts | 4
 packages/assistant/src/frontend/AssistantWorkspace.approvals.behavior.test.tsx | 1
 packages/assistant/src/frontend/assistant-live.behavior.test.tsx | 1
 packages/cloud/src/ai/client/controller.behavior.test.ts | 2

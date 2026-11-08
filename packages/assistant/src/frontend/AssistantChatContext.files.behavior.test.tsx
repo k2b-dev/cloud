@@ -44,7 +44,6 @@ const projectSnapshot: AssistantProjectContextSnapshot = {
   files: [projectFile],
   references: [],
   skills: { items: [], page: 1, hasNext: false },
-  apps: { items: [], page: 1, hasNext: false },
 };
 
 describe("Assistant chat files", () => {
@@ -196,8 +195,8 @@ describe("Assistant chat files", () => {
   test("deleting from the workspace Files tab closes the open tab of that file", async () => {
     const dom = createDomTestHarness();
     const { prompts } = await import("@k2b/ui");
-    const { ArtifactWorkspace, createArtifactWorkspace } = await import("../artifacts/Workspace");
-    const { contextTab, fileTab } = await import("../artifacts/workspace-state");
+    const { ChatWorkspace, createChatWorkspace } = await import("../chat-code/Workspace");
+    const { contextTab, fileTab } = await import("../chat-code/workspace-state");
     const { AssistantLiveProvider, createAssistantLiveHub } = await import("./assistant-live");
     const live = createAssistantLiveHub();
     let files = [chatFile("/report.pdf", "user"), chatFile("/upload.pdf", "user")];
@@ -216,17 +215,11 @@ describe("Assistant chat files", () => {
       ),
     );
     const confirm = spyOn(prompts, "confirm").mockResolvedValue(true);
-    const controller = createArtifactWorkspace();
+    const controller = createChatWorkspace();
     const dispose = render(
       () => (
         <AssistantLiveProvider value={live}>
-          <ArtifactWorkspace
-            controller={controller}
-            userId="user-1"
-            refreshKey="initial"
-            onEditTask={() => undefined}
-            onOpenView={() => undefined}
-          />
+          <ChatWorkspace controller={controller} userId="user-1" refreshKey="initial" onOpenView={() => undefined} />
         </AssistantLiveProvider>
       ),
       dom.root,

@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import type { AiConversation, AiConversationService, AiStoredMessage } from "@k2b/cloud/ai";
 import { UniversalSearchDataSchema } from "@k2b/cloud/contracts";
-import { testIdentity } from "./artifacts/test-identity";
+import { testIdentity } from "./chat-code/test-identity";
 import { searchAssistant } from "./search";
 
 const chat: AiConversation = {

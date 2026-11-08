@@ -4,12 +4,8 @@ import { resolveAssistantAudioModel } from "./assistant-models";
 import { createCloudAiTranscribeAudioTool } from "./audio-tool";
 import {
   CODE_RUNTIME_TOOL_NAMES,
-  CodeActionInput,
-  CodeCheckInput,
   CodeExportInput,
   CodeInspectInput,
-  CodeOpenInput,
-  CodePresentInput,
   CodeRunInput,
   CodeSecretInput,
   CodeStopInput,
@@ -100,12 +96,12 @@ export const createCloudAiCardTool = () =>
 export const createCloudAiChartTool = () =>
   defineAiTool({
     name: "chart",
-    description: `Show one chart in the chat from a few values you already have that did not come from a code run, such as figures from the conversation, a web page or a small capability result: bar, line (area: true fills it), area (layout: "stacked", x categories, series with nonnegative number|null data; normalize: true shows 100 %), scatter, pie, donut, histogram, gauge, sparkline, boxplot, heatmap, barGauge or stat. Several related measures go into one call as a group of small charts (charts, at most ${CLOUD_AI_GROUP_MAX_CHARTS}); linkX shares the x cursor between line charts with the same kind of x. There is no second y axis: compare measures with different units as a group. Cloud draws it with the renderer of cloud.chart() and gives the reader a data table and Copy data; no code, sandbox or app check is involved. Values computed in code_run never go here: the script shows them itself with cloud.view.chart, cloud.view.group, cloud.view.table, cloud.view.stats, cloud.view.details or cloud.view.explorer, and you present the returned path. Aggregate first. Say what the chart shows in title and put the unit, period or source in subtitle; formats are data ({ style: "percent" } takes fractions). The chart has no state, filters or actions: filters, steps and comparison over computed rows come from cloud.view.explorer in code_run; anything else the person interacts with, such as a calculator, converter or form, is a Studio app built with code_create. After the chart, state the finding instead of repeating its values.`,
+    description: `Show one chart in the chat from a few values you already have that did not come from a code run, such as figures from the conversation, a web page or a small capability result: bar, line (area: true fills it), area (layout: "stacked", x categories, series with nonnegative number|null data; normalize: true shows 100 %), scatter, pie, donut, histogram, gauge, sparkline, boxplot, heatmap, barGauge or stat. Several related measures go into one call as a group of small charts (charts, at most ${CLOUD_AI_GROUP_MAX_CHARTS}); linkX shares the x cursor between line charts with the same kind of x. There is no second y axis: compare measures with different units as a group. Cloud draws it with the renderer of cloud.chart() and gives the reader a data table and Copy data; no code, sandbox or app check is involved. Values computed in code_run never go here: the script shows them itself with cloud.view.chart, cloud.view.group, cloud.view.table, cloud.view.stats, cloud.view.details or cloud.view.explorer, and you present the returned path. Aggregate first. Say what the chart shows in title and put the unit, period or source in subtitle; formats are data ({ style: "percent" } takes fractions). The chart has no state, filters or actions: filters, steps and comparison over computed rows come from cloud.view.explorer in code_run; anything else the person interacts with, such as a calculator, converter or form, uses lasting Code and the code-authoring Skill. After the chart, state the finding instead of repeating its values.`,
     inputSchema: CloudAiChartInputSchema,
     outputSchema: CloudAiChartOutputSchema,
     approval: "never",
     promptHint:
-      "show a few values you already have (not from a code run) as a chart in the chat. Code results use cloud.view.* and present; filters, steps and comparison use cloud.view.explorer in code_run; an app or tool to interact with is a Studio app (code_create).",
+      "show a few values you already have (not from a code run) as a chart in the chat. Code results use cloud.view.* and present; filters, steps and comparison use cloud.view.explorer in code_run; an app or tool to interact with uses lasting Code (code-authoring).",
   }).clientView();
 
 export const createCloudAiSurveyTool = () =>
@@ -207,25 +203,17 @@ export const createCloudAiCodeTools = () => [
     name: "code_secret",
     description:
       "Open a trusted Secret input dialog. The user enters the value directly into encrypted Assistant storage; only configured/name returns. Never ask for a credential in chat, survey or app fields. Personal secrets are scoped to this chat and bound to the exact HTTPS origin, header and prefix. Use cloud.http.secret(name,{prefix}) in cloud.http.fetch headers; load assistant-code-mode for HTTP details. Web UI required for secret entry; stored secrets also work from CLI.",
-    inputSchema: CodeSecretInput.omit({ resourceId: true }),
+    inputSchema: CodeSecretInput,
     outputSchema: z.object({ configured: z.boolean(), name: z.string() }),
     approval: "never",
   }).client(),
-  defineAiTool({
-    name: "code_action",
-    description:
-      "Call one published Studio App action using its exact discovered name, publication and input schema. Discover with code_actions first. Use permission is sufficient; draft and management access are not granted. Runtime effects and approvals are real. Never repeat an uncertain mutation blindly.",
-    inputSchema: CodeActionInput,
-    outputSchema: z.json(),
-    approval: "never",
-  }).server(runManagedCodeTool("code_action")),
   defineAiTool({
     name: "code_run",
     promptHint:
       "For file analysis, data transformations or combining Cloud data, run a short one-off script with code_run; its computed views come from cloud.view.* in the script and present. Load assistant-code-mode for its runtime APIs; no saved app is required.",
     description:
       "Run one-off script code in the Code runner. Saved Studio scripts, app storage and Studio RSQL are unavailable here. One-off modules can import the generated capability SDK and sheet.toCsv from @sdk: default-export an async function. Dynamic IDs are allowed, no app/version/owner needed. SDK methods return domain data directly; actions retain normal approvals. Also includes cloud.capabilities.run(name,input) for capability envelopes; load assistant-code-mode for its runtime APIs. Scripts read explicit chat inputPaths. Returns output, logs, captured files and view references for agent inspection only. Show computed views with cloud.view.chart, cloud.view.group, cloud.view.table, cloud.view.stats, cloud.view.details or cloud.view.explorer in the script, then present({path}) each returned view; never retype run values into chart arguments, files or Markdown. For lasting Code and pages, load code-authoring. Capability effects use the person's current permissions and the turn's approvals.",
-    inputSchema: z.object({ code: CodeRunInput.shape.code.unwrap(), inputPaths: CodeRunInput.shape.inputPaths }).strict(),
+    inputSchema: z.object({ code: CodeRunInput.shape.code, inputPaths: CodeRunInput.shape.inputPaths }).strict(),
     outputSchema: z.json(),
     approval: "never",
   }).server(runManagedCodeTool("code_run")),
@@ -245,30 +233,6 @@ export const createCloudAiCodeTools = () => [
     approval: "never",
   }).server(runManagedCodeTool("code_stop")),
   defineAiTool({
-    name: "code_open",
-    description:
-      "Show a saved Studio app beside the chat without starting it; HTML apps require a passing code_check for the current files and tables. When the person only wants one calculated result, answer it instead of building an app.",
-    inputSchema: CodeOpenInput,
-    outputSchema: z.json(),
-    approval: "never",
-  }).client(),
-  defineAiTool({
-    name: "code_check",
-    description:
-      "Mandatory HTML app self-test: write files and steps.json (at most 20 main-flow steps, ending in the filled main state), call code_check({id} OR {files}), fix every error and layout warning, call view_image({path, prompt: review.prompt}) for EVERY path in review.paths (screenshots and PDFs), fix what it finds and check again, then code_open/code_present/code_publish. Runs desktop 1280×800 and phone 390×844 in opposite themes on separate throwaway copies of database, shared KV/files and only your own KV.user. Steps run in both views; reload keeps the copy. Match accessible role/name, label or text exactly, then case-insensitively, then by substring; ambiguous targets fail with candidates, placeholders are never names. Fill numbers with a dot. Upload file is an app-relative source path or chat file path/name. AI runs for real; HTTP, capability effects and approvals are unavailable; read-only granted capabilities run except in background turns. Returns passed, content hash (files, steps and tables), height, issues, calls, captured downloads, three whole-page PNG chat paths (up to 2000 px tall; cropped marks a longer page), review and an untrusted aria tree (4 KiB). Passing means not broken; misaligned rows, also in PDFs, and broken values only warn. Self-test is a workflow guard, not a security mechanism. Aborting closes pages and discards copies. Bounded to 45 seconds, 1000 copied rows/16 MiB (schema only beyond), 64 downloads/250 MiB total/50 MiB per file.",
-    inputSchema: CodeCheckInput,
-    outputSchema: z.json(),
-    approval: "never",
-  }).server(runManagedCodeTool("code_check")),
-  defineAiTool({
-    name: "code_present",
-    description:
-      "Show a saved Studio app as a card in this chat: pass its id after a passing code_check for its current files and tables; it runs live with its data, and the person starts the card with a click. Every app, calculator, converter, form or tool the person asks for is a Studio app created with code_create; code_open shows it beside the chat instead. files (index.html plus optional style.css and app.js) instead of id show a throwaway card that is not saved and does not appear in Studio: only when the person explicitly asks for a preview they do not want to keep, after a passing code_check for exactly these files. Static problems such as CDN scripts, inline handlers or a missing index.html are rejected before anything is saved.",
-    inputSchema: CodePresentInput,
-    outputSchema: z.json(),
-    approval: "never",
-  }).server(runManagedCodeTool("code_present")),
-  defineAiTool({
     name: "code_export",
     description: "Copy a captured output file from a test run into the chat. Returns a path for normal file tools and presentation.",
     inputSchema: CodeExportInput,
@@ -277,13 +241,12 @@ export const createCloudAiCodeTools = () => [
   }).server(runManagedCodeTool("code_export")),
 ];
 
-/** Server-run Code Mode and declared client tools, excluding app opening and secret entry under a mandate. */
+/** Server-run chat code and declared client tools; secret entry requires an interactive turn. */
 export const createAiTurnCodeAndClientTools = (config: Pick<AiChatTurnRunConfig, "clientToolIds" | "mandate">) =>
   [createCloudAiLocalBashTool(), ...createCloudAiLocalTools(), ...createCloudAiCodeTools()].filter(
     (tool) =>
-      !["code_action", "code_open", "code_check", "code_present"].includes(tool.def.name) &&
       (tool.location === "server" || config.clientToolIds?.some((name) => name === tool.def.name)) &&
-      !(config.mandate && ["code_open", "code_secret"].includes(tool.def.name)),
+      !(config.mandate && tool.def.name === "code_secret"),
   );
 
 export const createDefaultCloudAiTools = () => [

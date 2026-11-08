@@ -5,7 +5,6 @@ import { generateCodeSdk } from "@k2b/cloud/code";
 import { encodeChatValue } from "@k2b/cloud/code/chat-run";
 import { z } from "zod";
 import { useUnitClients } from "../../../../scripts/fixtures/unit-clients";
-import * as browserHost from "../cli/code-host";
 import { runtimeCapabilities } from "./capability-runtime";
 import { runChatRunnerFixture } from "./runner-code.test-fixture";
 import { createRunnerCodeHost as createManagedCodeHost } from "./runner-code-host";
@@ -39,9 +38,6 @@ const manifest = compileCapabilityManifest("demo", {
  * The image tests exercise the same chat-job adapter with the production workerd engine. */
 function fixture(options: { remote?: boolean } = {}) {
   jest.setSystemTime(NOW);
-  const browser = spyOn(browserHost, "createCliCodeHost").mockImplementation(async () => {
-    throw new Error("Chromium must not start for code_run");
-  });
   const sdk = spyOn(sdkProvider, "codeRunSdk").mockResolvedValue(generateCodeSdk([manifest], { mode: "code_run" }));
   const authorization = spyOn(codeExecution, "authorizeCodeExecution").mockResolvedValue({
     config: { kind: "chat", input: "Fixture" },
@@ -117,7 +113,6 @@ function fixture(options: { remote?: boolean } = {}) {
     httpRequests,
     close: async () => {
       await host.close();
-      browser.mockRestore();
       sdk.mockRestore();
       capability.mockRestore();
       authorization.mockRestore();
@@ -364,7 +359,14 @@ test("signed chat code_run route resolves chat authority and executes through th
     expect(context.actor).toEqual(identity.actor);
     expect(context.accessSubject).toEqual(identity.accessSubject);
     expect(context.conversationId).toBe("11111111-1111-4111-8111-111111111111");
-    return { status: "done", result: await f.execute("code_run", input.args, input.callId), approvals: [] };
+    return {
+      status: "done",
+      result: await f.execute("code_run", input.args, input.callId),
+      approvals: [],
+      phase: undefined,
+      receipts: [],
+      moreReceipts: false,
+    };
   });
   const router = new Hono<import("@k2b/cloud/server").AuthContext>()
     .use("*", async (c, next) => {

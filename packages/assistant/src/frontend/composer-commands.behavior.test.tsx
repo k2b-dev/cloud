@@ -826,42 +826,18 @@ test("sixteen attachments disable Attach file and every resource insert row", as
   expect(picker).not.toHaveBeenCalled();
 });
 
-test("an unmatched query offers Cloud search and /app narrows to the Assistant's Studio tag", async () => {
+test("an unmatched query offers Cloud search and the retired /app scope is absent", async () => {
   const h = await mount({ value: "/xylo", skills: [], tasks: [] });
   expect(h.root.textContent).toContain("Nichts gefunden für „xylo“");
-  expect(h.row("„xylo“ in Cloud suchen")).toBeDefined();
   h.key("Enter");
   await flush();
   expect(picker).toHaveBeenLastCalledWith(expect.objectContaining({ scope: undefined, query: "xylo", requireReader: true }));
   h.type("/app q");
   await settled();
-  expect(h.root.textContent).toContain("Studio-Apps aus Gustav");
-});
-
-test("a Studio app chosen through /app becomes the artifact reference the Assistant reads", async () => {
-  picker.mockResolvedValueOnce({
-    ref: { type: "assistant.app", id: "App1" },
-    title: "Angebotsrechner",
-    appId: "assistant",
-    appName: "Assistent",
-    appIcon: "ti ti-sparkles",
-    readable: false,
-    href: "/app/assistant/apps/App1",
-  });
-  const h = await mount({ value: "/app rech", skills: [], tasks: [] });
+  expect(h.root.textContent).not.toContain("Studio-Apps aus Gustav");
   h.key("Enter");
   await flush();
-  // Studio apps have no Cloud reader, so this one picker lists only them, also after the chip is removed.
-  expect(picker).toHaveBeenLastCalledWith(
-    expect.objectContaining({
-      scope: expect.objectContaining({ appId: "assistant", tag: "studio-app" }),
-      query: "rech",
-      resourceType: "assistant.app",
-    }),
-  );
-  expect(picker.mock.calls.at(-1)?.[0]?.requireReader).toBeUndefined();
-  await settled();
-  expect(h.mentions()[0]?.attachment.data).toMatchObject({ kind: "resource", ref: { type: "assistant.artifact", id: "App1" } });
+  expect(picker).toHaveBeenLastCalledWith(expect.objectContaining({ scope: undefined, requireReader: true }));
 });
 
 test("an open picker is tracked until it settles, so the workspace holds back saving a new chat meanwhile", async () => {
@@ -944,11 +920,11 @@ test("one successful catalog fetch serves two composers, keystrokes and later op
   expect([...first.requests, ...second.requests].filter(({ url }) => url.pathname === "/api/capabilities/v1/catalog")).toHaveLength(1);
 });
 
-test("a failed catalog retries at the next opening and Studio narrowing works before success", async () => {
+test("a failed catalog retries at the next opening", async () => {
   let failed = true;
-  const h = await mount({ locale: "de-CH", value: "/app q", catalogFail: () => failed });
-  expect(h.root.textContent).toContain("Studio-Apps aus Gustav");
-  h.type("/app qt");
+  const h = await mount({ locale: "de-CH", value: "/notiz q", catalogFail: () => failed });
+  expect(h.root.textContent).not.toContain("Studio-Apps aus Gustav");
+  h.type("/notiz qt");
   await settled();
   expect(h.requests.filter(({ url }) => url.pathname === "/api/capabilities/v1/catalog")).toHaveLength(1);
   failed = false;
@@ -1104,13 +1080,11 @@ test("/notiz q3 lists the matching recent notes above the search row; other kind
   expect(h.labels()).toEqual(["Q3-Planung", "Retro Q3", "Projekt Notizen", "Notizen durchsuchen"]);
 });
 
-test("/studio lists recent Studio apps, which the Assistant sends as assistant.artifact", async () => {
-  const app = recentItem("assistant.artifact", "A1", "Umsatz Q3", { kind: "Studio-App", preview: undefined, appName: "Assistent" });
-  const h = await mountWithRecent({ recent: [app, ...recentItems] });
+test("the retired /studio scope is absent", async () => {
+  const h = await mountWithRecent();
   h.type("/studio q3");
   await settled();
-  expect(h.labels()[0]).toBe("Umsatz Q3");
-  expect(h.labels()).not.toContain("Q3-Planung");
+  expect(h.headings()).not.toContain("Studio-Apps aus Gustav");
 });
 
 test("a late answer never inserts Recent into the open list; the next opening shows it", async () => {

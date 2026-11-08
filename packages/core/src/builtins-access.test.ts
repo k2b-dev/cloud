@@ -305,7 +305,7 @@ const protectedPaths: Record<string, string[]> = {
     "/api/resources/resolve/private",
   ],
   "api-docs": ["/api/api-docs/private"],
-  assistant: ["/api/assistant/artifacts", "/app/assistant/apps/studio/edit", "/admin/assistant"],
+  assistant: ["/api/assistant/chat-code", "/app/assistant"],
   faq: ["/admin/faq", "/api/faq"],
   filesv2: [
     "/api/filesv2/bases",

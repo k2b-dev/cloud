@@ -1,10 +1,9 @@
 import type { AiStoredMessage, AiStreamSseEvent, AiTurnBlock } from "@k2b/cloud/ai";
-import { type CodeToolFailure, parseAiSse, parseAiTodoPlan } from "@k2b/cloud/ai/browser";
+import { parseAiSse, parseAiTodoPlan } from "@k2b/cloud/ai/browser";
 import type { CloudCliContext } from "@k2b/cloud/cli";
 import type { CapabilityDecision, CodeApproval } from "../chat-code/runtime/capabilities";
 import { printCapabilityTable } from "./capability-table";
 import { createCloudLinkRewriter } from "./cloud-links";
-import { cliCodeHost, closeCliCodeHost } from "./code-host";
 import { printDeliveredBlock } from "./delivered-blocks";
 import { localToolTarget } from "./local-tool-target";
 import { AI_API, jsonRequest } from "./shared";
@@ -127,7 +126,6 @@ export const streamAssistantTurn = async (input: {
   const { ctx, conversationId } = input;
   const approvedTools = new Set(input.approveTools ?? []);
   const approvedCalls = new Set<string>();
-  const executedCalls = new Set<string>();
   const abort = new AbortController();
   const onInterrupt = () => abort.abort();
   const onExternalAbort = () => abort.abort(input.signal?.reason);
@@ -406,32 +404,6 @@ export const streamAssistantTurn = async (input: {
       keepClientCallReceipt(receipts, key, { state: "delivered" });
       return null;
     }
-    if (block.status === "awaiting_client" && block.name === "code_open") {
-      if (executedCalls.has(block.callId)) return null;
-      executedCalls.add(block.callId);
-      let result: unknown;
-      try {
-        result = await (
-          await cliCodeHost(
-            ctx,
-            input.onCapabilityApproval ??
-              (async (request) => {
-                if (approvedTools.has(request.name)) return { approved: true };
-                throw new Error(`Capability ${request.name} requires approval; use interactive mode or --approve.`);
-              }),
-          )
-        ).call({ name: block.name, args: block.args, callId: block.callId, turnId: targetTurnId!, conversationId });
-      } catch (error) {
-        result = { failed: true, error: error instanceof Error ? error.message : String(error) } satisfies CodeToolFailure;
-      }
-      await ctx.readJson(
-        await ctx.fetch(
-          `${AI_API}/conversations/${encodeURIComponent(conversationId)}/turns/${encodeURIComponent(targetTurnId!)}/actions/${encodeURIComponent(block.callId)}`,
-          jsonRequest("POST", { type: "tool_result", result }),
-        ),
-      );
-      return null;
-    }
     if (block.status === "awaiting_client") {
       emitJsonLine({ type: "needs_attention", reason: "client_tool", callId: block.callId, name: block.name });
       return {
@@ -606,7 +578,6 @@ export const streamAssistantTurn = async (input: {
           if (result) {
             if (result.status !== "needs_attention") {
               abort.abort();
-              await closeCliCodeHost(ctx);
             }
             return finish(result);
           }
@@ -619,10 +590,8 @@ export const streamAssistantTurn = async (input: {
       reconnectDelayMs = Math.min(reconnectDelayMs * 2, 4_000);
     }
   } catch (error) {
-    await closeCliCodeHost(ctx);
     throw error;
   } finally {
-    if (abort.signal.aborted) await closeCliCodeHost(ctx);
     if (input.signal) input.signal.removeEventListener("abort", onExternalAbort);
     else process.removeListener("SIGINT", onInterrupt);
   }

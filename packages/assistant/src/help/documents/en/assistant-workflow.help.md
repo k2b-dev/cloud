@@ -21,7 +21,7 @@ The sidebar lists your active chats as plain rows: pinned chats first, then by t
 - **Search all chats:** Use the sidebar search button to search all saved chats.
 - **All Chats:** Project badges identify Project chats in the paginated history. Search titles and messages, and filter with one menu: all chats, new responses, running, waiting for you, failed, done, or archived.
 - **In this chat:** The sidebar at the right of a chat shows what the chat holds. On large screens it is open; close it with the button in its header and it stays closed until you open it again with the button at the upper right of the chat. On narrower windows that button opens it over the edge of the chat, and on a phone as a sheet that Back closes.
-- **Results first:** Files, Studio apps, and visualizations Gustav created for you are listed first, the newest with the sentence Gustav gave them. Open or download them directly, or select a title to jump to the place in the chat where it was delivered. Older results are grouped by day and, after a week, by month.
+- **Results first:** Files and visualizations Gustav created for you are listed first, the newest with the sentence Gustav gave them. Open or download them directly, or select a title to jump to the place in the chat where it was delivered. Older results are grouped by day and, after a week, by month.
 - **Nothing moves while you read:** While the pointer or focus is in the sidebar, new results only raise **New · N** in the heading, and other changes show **Update**. They appear when you leave the sidebar or select the control. On a touch screen, the sidebar holds still until you touch outside it.
 - **Your files:** Your uploads and voice recordings. Images open in the image viewer, other files in the workspace.
 - **Sources:** Web pages Gustav read, every web search with what it searched for, and the Cloud items a tool read, one row per request. Select a source to review its destination before opening it in a new tab.
@@ -50,7 +50,7 @@ Chats automatically move to **Done** after seven days without use. Sending a mes
 :::
 
 :::info Approvals and client actions
-Decide an approval in its chat card or open **Approvals** above **Studio** for the waiting requests. You can also use **My account → Approvals**. For turns started outside a signed-in browser session, the **Pending approvals** notification opens that account list.
+Decide an approval in its chat card or open **Approvals** in the sidebar for the waiting requests. You can also use **My account → Approvals**. For turns started outside a signed-in browser session, the **Pending approvals** notification opens that account list.
 
 Each question shows a sentence with chips for people and objects, Cloud's reason
 for asking, and a preview of what will change. Two buttons name the deed and

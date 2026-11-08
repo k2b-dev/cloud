@@ -1,6 +1,4 @@
 # Existing non-Code callers before #2336. Do not raise counts; migrate separately.
-packages/assistant/src/artifacts/machine-service.ts | 1
-packages/assistant/src/artifacts/service.integration.test.ts | 1
 packages/chat/src/service/threads.ts | 2
 packages/cloud/src/ai/memory-learning.integration.test.ts | 14
 packages/cloud/src/ai/memory-workflow-evidence.integration.test.ts | 1

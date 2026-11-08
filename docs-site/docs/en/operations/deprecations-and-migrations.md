@@ -15,25 +15,11 @@ settings at startup. An existing stored row always wins. Import runs only when
 no row exists; it never replaces an unreadable or invalid row. Invalid
 environment values produce a startup warning and are ignored. For trusted proxies, an invalid bootstrap value with no stored row stops gateway startup; correct or remove it before restarting.
 
-## Chat runner and Studio separation
+## Studio apps give way to Code
 
-One-off chat `code_run` now accepts inline scripts only. Remove saved Studio
-`id`, `version`, or `resourceId` arguments from chat integrations. Use the
-application's capabilities for data and the chat/Project file tools for files;
-App file scope, app KV storage, and Studio RSQL database grants are unavailable
-on this path. There is no replacement database or grant conversion.
-
-Chat secret entry, approvals, native views, and runner execution use the
-Assistant's chat-code services. Existing encrypted chat secrets, pending
-approvals, client claims, and durable call outcomes keep their table names and
-contents. This separation does not delete Studio data or run RSQL cleanup.
-
-Studio still owns saved apps/actions, app storage and RSQL, machine execution,
-the standalone editor, and HTML checks/presentations. Those paths still need
-Assistant's Chromium image. The chat runner and secret-entry UI do not.
-Upgrade Assistant, Core, and the platform packages together so signed file
-and runtime routes agree. Runner prerequisites and limits remain in
-[Code runs](/en/docs/platform/code-runs#one-off-chat-jobs).
+Studio apps and their data are removed without transfer. Chat runner scripts,
+chat secrets, approvals, files and native views remain available. Complete the
+[one-way retirement steps](/en/docs/operations/studio-retirement) before upgrading.
 
 ## Upgrade an installation
 
@@ -78,7 +64,6 @@ replicas must ensure the same environment reaches every replica.
 | `OUTGOING_MAIL_ALLOWED_TARGETS` | `outgoing_mail.allowed_targets` | Platform / Core | New SMTP and IMAP connections |
 | `GATEWAY_TRUSTED_PROXIES` | `gateway.trusted_proxies` | Platform / Core | After gateway restart |
 | `GATEWAY_OPS_WEBHOOK_ALLOWED_TARGETS` | `gateway.webhook_allowed_targets` | `gateway-ops` | New webhook deliveries |
-| `ASSISTANT_RSQL_ALLOWED_TARGETS` | `assistant.rsql_allowed_targets` | `assistant` | New rsql requests |
 | `NOTEBOOKS_SNAPSHOT_ALLOWED_TARGETS` | `notebooks.snapshot_allowed_targets` | `notebooks` | New snapshot requests |
 | `WORKFLOW_AI_BUDGET` | `ai.workflow_budget` | Platform / Core | New work; restart all AI workers for `globalConcurrent` |
 | `WORKFLOW_AI_ATTEMPT_TIMEOUT_MS` | `ai.workflow_attempt_timeout_ms` | Platform / Core | New attempts |
@@ -88,8 +73,7 @@ replicas must ensure the same environment reaches every replica.
 
 Administrators edit the application-owned settings in Administration:
 `gateway.webhook_allowed_targets` under **Observability → Health check**,
-`assistant.rsql_allowed_targets` in **Database settings** on the Studio
-administration page (`/admin/assistant`), `notebooks.snapshot_allowed_targets`
+the remaining application network settings (`/admin/assistant`), `notebooks.snapshot_allowed_targets`
 under **Settings** on `/admin/notebooks`, and `mail.workflow_ai_body_max_chars`
 on `/admin/mail`. A refused value shows its reason at the field. With `cld`, use
 `settings set --app <app>` for these keys.

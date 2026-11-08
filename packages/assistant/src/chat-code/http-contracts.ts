@@ -36,16 +36,7 @@ export const HeaderValue = z
   .regex(/^[\x20-\x7e\x80-\xff]*$/);
 export const SecretReference = z.object({ secret: SecretName, prefix: HeaderValue.default("") }).strict();
 export type SecretReference = z.infer<typeof SecretReference>;
-export const HttpScope = z
-  .object({
-    resourceId: z
-      .string()
-      .regex(/^[23456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz]{6}$/)
-      .optional(),
-    conversationId: z.string().min(1).max(80).optional(),
-  })
-  .strict()
-  .refine((v) => v.resourceId || v.conversationId, "A resource or conversation is required");
+export const HttpScope = z.object({ conversationId: z.string().min(1).max(80) }).strict();
 export type HttpScope = z.infer<typeof HttpScope>;
 export const HttpsUrl = z
   .string()
@@ -143,7 +134,6 @@ export const HttpReview = z.object({
   headers: z.record(z.string(), z.union([z.string(), SecretReference])),
   bodyPreview: z.string(),
   bodyTruncated: z.boolean(),
-  resourceTitle: z.string().optional(),
 });
 export type HttpReview = z.infer<typeof HttpReview>;
 export const HttpResult = z.object({

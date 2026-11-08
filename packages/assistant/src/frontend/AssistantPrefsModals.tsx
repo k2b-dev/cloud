@@ -92,7 +92,7 @@ function ApprovalPreferences() {
             {(approval) => (
               <SettingsCollection.Item
                 title={approval.title}
-                description={approval.website ? text("Website for one Studio app") : (approval.app?.name ?? text("Cloud AI tool"))}
+                description={approval.website ? text("Website approval") : (approval.app?.name ?? text("Cloud AI tool"))}
                 icon={
                   <i
                     class={approval.website ? "ti ti-world" : (approval.app?.icon ?? "ti ti-tool")}

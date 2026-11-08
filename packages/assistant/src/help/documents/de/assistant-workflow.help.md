@@ -21,7 +21,7 @@ Die Seitenleiste zeigt deine aktiven Chats als schlichte Zeilen: angeheftete Cha
 - **Alle Chats durchsuchen:** Nutze die Suchschaltfläche in der Seitenleiste, um alle gespeicherten Chats zu durchsuchen.
 - **Alle Chats:** Projekt-Badges kennzeichnen Projekt-Chats im seitenweise geladenen Verlauf. Durchsuche Titel und Nachrichten und filtere über ein Menü: alle Chats, neue Antworten, läuft, wartet auf dich, fehlgeschlagen, fertig oder archiviert.
 - **In diesem Chat:** Die Seitenleiste rechts neben einem Chat zeigt, was der Chat enthält. Auf großen Bildschirmen ist sie offen. Schließt du sie über die Schaltfläche in ihrem Kopf, bleibt sie geschlossen, bis du sie mit der Schaltfläche oben rechts im Chat wieder öffnest. In schmaleren Fenstern öffnet diese Schaltfläche sie über dem Rand des Chats, auf dem Telefon als Sheet, das du mit Zurück schließt.
-- **Ergebnisse zuerst:** Dateien, Studio-Apps und Visualisierungen, die Gustav für dich erstellt hat, stehen oben, die neuesten mit dem Satz, den Gustav dazu geschrieben hat. Öffne oder lade sie direkt herunter, oder wähle einen Titel, um zur Stelle im Chat zu springen, an der sie übergeben wurden. Ältere Ergebnisse sind nach Tagen und nach einer Woche nach Monaten gruppiert.
+- **Ergebnisse zuerst:** Dateien und Visualisierungen, die Gustav für dich erstellt hat, stehen oben, die neuesten mit dem Satz, den Gustav dazu geschrieben hat. Öffne oder lade sie direkt herunter, oder wähle einen Titel, um zur Stelle im Chat zu springen, an der sie übergeben wurden. Ältere Ergebnisse sind nach Tagen und nach einer Woche nach Monaten gruppiert.
 - **Nichts verschiebt sich beim Lesen:** Solange Zeiger oder Fokus in der Seitenleiste sind, zeigen neue Ergebnisse nur **Neu · N** in der Überschrift, andere Änderungen **Aktualisieren**. Sie erscheinen, wenn du die Seitenleiste verlässt oder die Schaltfläche wählst. Auf einem Touchscreen bleibt die Seitenleiste ruhig, bis du außerhalb von ihr tippst.
 - **Deine Dateien:** Deine Uploads und Sprachaufnahmen. Bilder öffnen sich in der Bildansicht, andere Dateien im Arbeitsbereich.
 - **Quellen:** Webseiten, die Gustav gelesen hat, jede Websuche mit dem, wonach er gesucht hat, und die Cloud-Inhalte, die ein Werkzeug gelesen hat, eine Zeile pro Anfrage. Wähle eine Quelle aus, um ihr Ziel zu prüfen, bevor du es in einem neuen Tab öffnest.
@@ -50,7 +50,7 @@ Nach sieben Tagen ohne Nutzung erscheinen Chats automatisch unter **Fertig**. Al
 :::
 
 :::info Freigaben und Client-Aktionen
-Entscheide über eine Freigabe in der Karte im Chat oder öffne **Freigaben** oberhalb von **Studio**, um alle wartenden Anfragen zu sehen. Du findest sie auch unter **Mein Konto → Freigaben**. Für Anfragen, die außerhalb einer angemeldeten Browsersitzung gestartet wurden, öffnet die Benachrichtigung **Wartende Freigaben** diese Kontoliste.
+Entscheide über eine Freigabe in der Karte im Chat oder öffne **Freigaben** in der Seitenleiste, um alle wartenden Anfragen zu sehen. Du findest sie auch unter **Mein Konto → Freigaben**. Für Anfragen, die außerhalb einer angemeldeten Browsersitzung gestartet wurden, öffnet die Benachrichtigung **Wartende Freigaben** diese Kontoliste.
 
 Jede Frage zeigt einen Satz mit Chips für Personen und Dinge, Clouds Grund für
 die Rückfrage und eine Vorschau der Änderung. Zwei Schaltflächen nennen die

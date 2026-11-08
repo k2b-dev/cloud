@@ -671,56 +671,18 @@ or capability transfer, including base64 overhead. See
 limits. View files remain ordinary chat files under `/views` and count toward
 the per-chat file budget.
 
-The remaining Studio host validates `CLOUD_CORE_INTERNAL_ORIGIN` before
-launching Chromium. Its authenticated loopback listener stays private to the
-Assistant service. Size memory for the legacy 50 MiB per-file and 250 MiB
-per-run budgets plus Chromium when enabling Studio operations.
+Assistant packages the runner prelude, worker and lazy CSV, sheet, finance and
+PDF-reader chunks. Preserve these outputs when packaging a custom image.
+`cloud.chart()` remains available for script-generated PDF markup, while native
+chat views use the shared chart renderer.
 
-Assistant's `cloud.chart()` draws Studio app, chat app, script and PDF charts
-through the same options mapping as chat charts. Existing charts keep drawing:
-the chat's limits on series, points, labels and phone-width fit do not apply to
-apps, and empty, one-point or partly missing data still draws. Visible changes
-are a default logical width of 480 instead of 640 (height 280; sparkline remains
-160 × 40, and apps without explicit width redraw at their measured width), date
-axes in the viewer's wall-clock time, and stdlib-only options outside the chart
-contract, such as `padding`, being ignored. Renderer errors, such as a fixed
-domain that does not contain every value, now throw `invalid` instead of a plain
-error, and x strings must be ISO dates as documented. Chart groups and the
-additional chart kinds need no configuration or data migration. Studio and
-one-off HTML app charts show tooltips on hover, keyboard focus and tap without
-additional configuration. See
-[Code Mode charts](/en/docs/ai/chat-interface#legacy-studio-html-checks).
+### Assistant execution host
 
-App-frame builds include `assistant-chart-module.js` alongside the prelude and
-base stylesheet. The app-assets response embeds that module with the frame;
-rare chart kinds parse it on first use through a local blob URL. No additional
-asset endpoint, external origin, CSP exception or operator configuration is
-needed. Include the new file when packaging Assistant outside its standard
-image. Scripts retain synchronous rendering for every kind.
-
-### Assistant Chromium isolation
-
-Assistant runs headless Chromium in its own container as the unprivileged
-`bun` user with `--no-sandbox`. Both Compose configurations set `user: bun`,
-drop all Linux capabilities and enable `no-new-privileges`; the container keeps
-the runtime-default seccomp profile. Chromium's inner sandbox stays off, so no
-custom seccomp profile, unprivileged user namespaces or node preparation is
-needed, and the service needs neither privileged mode, root, `SYS_ADMIN`, a
-Docker socket nor nested containers. Existing custom Assistant deployments must
-adopt these settings before using the remaining Studio host. The equivalent Kubernetes
-`securityContext` is `runAsNonRoot: true` with a non-root `runAsUser`,
-`capabilities.drop: [ALL]`, `allowPrivilegeEscalation: false` and
-`seccompProfile.type: RuntimeDefault`.
-
-Each legacy Studio host has a separate browser process and ephemeral host
-credential. Managed chat scripts and routine code runs use workerd instead. This is process isolation within one
-capability-free application container, not a separate VM per user; the
-residual risk of an unsandboxed renderer inside that container is accepted and
-tracked in [#47](https://github.com/k2b-dev/cloud/issues/47), which moves
-Chromium into a dedicated sidecar. Keep one Assistant replica for now: Code
-Mode approval waits and Studio hosts live in the Assistant process, so a poll or
-an approval that reaches another replica marks the call lost. Lost hosts are not
-replayed. Studio previews continue running in the user's browser.
+The Assistant image contains no Chromium or Playwright runtime. Chat scripts
+run on workerd in the Code runner; PDF generation uses Gotenberg. Keep one
+Assistant replica: host ownership and pending approvals live in that process,
+with durable records for deduplication. A call whose host is lost fails visibly
+and is never replayed.
 
 ## Select applications and feature dependencies
 
@@ -767,7 +729,7 @@ or mutate real data without approval.
 | App ID | Startup requirements | Feature dependencies and configuration | Functional check |
 | --- | --- | --- | --- |
 | [Hosts](/en/apps/ipa-hosts) (`ipa-hosts`) | Baseline; starts the host-sync scheduler | Useful host data and mutations require FreeIPA and host/hostgroup privileges. With FreeIPA disabled, synchronization skips; enabling incomplete configuration causes sync failure. | Run a controlled sync and inspect mirrored hosts and its completion status. |
-| [Assistant](/en/apps/assistant) (`assistant`) | Baseline; can serve its UI with AI disabled | Core owns AI execution. Configure AI profiles and access, then optional Firecrawl/PDF tools. Studio PDF generation/embedding needs Gotenberg with Factur-X and request-directory isolation support (development uses 8.36.0); local Finance APIs and PDF text extraction need no Gotenberg. Resource databases additionally need `assistant.rsql_url` and the secret `assistant.rsql_api_token`, configured in Studio administration. Cross-app tools require their provider apps and current user permissions; the Assistant container does not need the OAuth broker secret. | Send a short test prompt, observe streamed output and durable history; test one permitted read-only tool. Run a database-free script. If databases are configured, explicitly connect a test resource and query it. |
+| [Assistant](/en/apps/assistant) (`assistant`) | Baseline; can serve its UI with AI disabled | Core owns AI execution. Configure AI profiles and access, then optional Firecrawl/PDF tools. Chat PDF generation/embedding needs Gotenberg with Factur-X and request-directory isolation support (development uses 8.36.0); local Finance APIs and PDF text extraction need no Gotenberg. Cross-app tools require their provider apps and current user permissions; the Assistant container does not need the OAuth broker secret. | Send a short test prompt, observe streamed output and durable history; test one permitted read-only tool. Run a database-free script. |
 | [Tools](/en/apps/tools) (`tools`) | Baseline | Browser utilities need no extra backend. Markdown-to-PDF needs Gotenberg. Document extraction uses the native dependency bundled in the app image, not a separate Gotenberg conversion service. Speed tests need sufficient proxy/body/streaming limits; webhook delivery needs approved egress. | Open `/tools`; check a browser utility and, if enabled, convert a small document or Markdown PDF. |
 | [Quotes](/en/apps/quotes) (`quotes`) | Baseline | Fresh quotes require outbound HTTPS to `zenquotes.io`; no provider-key setting. This app has API/widget routes, not an `/app/quotes` page. | Read `/api/quotes` or its Dashboard widget and verify quote data. |
 | [Weather](/en/apps/weather) (`weather`) | Baseline; Core owns the weather schema migration | Forecasts need outbound HTTPS to `api.brightsky.dev`. City search additionally needs Core’s secret `geo.api_key` and available geo budget; optional `weather.default_lat` / `weather.default_lon` select a default location. | Search a German city and load its forecast; verify forecast and city-search dependencies separately. |
@@ -807,10 +769,10 @@ server.
 Administrators can allow internal administrator-configured endpoints with the settings
 `gateway.webhook_allowed_targets` owned by Gateway operations (default empty,
 public targets only),
-`assistant.rsql_allowed_targets` owned by Assistant (default `rsql`), and
+and
 `outgoing_mail.allowed_targets` owned by the platform (default empty, covering both SMTP
 and bounce IMAP). Administrators edit them under **Observability → Health
-check**, in **Database settings** on the Studio administration page, and under
+check** and under
 **Base settings**. Each accepts exact host names, IP addresses and CIDRs.
 `host:port` and `[ipv6]:port` restrict a host or IP to one port (1–65535, no
 leading zeros); bare hosts, IPs and CIDRs still cover every port. CIDRs cannot
@@ -1392,13 +1354,13 @@ interrupted build is replaced on the next start.
 ### Update Assistant approvals for chats and websites
 
 This release lets people remember an approval for one chat and allow a website
-for one chat or one Studio app. It needs no configuration change. The first
+for one chat. It needs no configuration change. The first
 Core start adds `conversation_id` to `ai.tool_approval_preferences`, replaces
 the unique constraint `ai_tool_approval_preferences_unique` with the index
 `ai_tool_approval_preferences_reach`, adds two columns to
 `ai.pending_actions`, and creates `ai.web_addresses` for the addresses a
 chat's searches returned and its read pages link to. Assistant adds two
-columns to `assistant.artifact_agent_approvals`. A chat approval and a chat's
+columns to `assistant.code_agent_approvals`. A chat approval and a chat's
 addresses are deleted with the chat, and an app's website approvals with the
 app.
 
@@ -1426,29 +1388,6 @@ After the rollout, ask Assistant in a chat to run code that reads one public
 JSON URL twice. The first request asks and offers
 **Allow this website for this chat**. After you choose it, the second request
 runs without asking and shows its full URL with **Revoke**.
-
-### Update Studio source writes
-
-`code_write` now saves one file per call with top-level `path` and `content`.
-File imports moved to the new `code_import` tool. Results report `lines` next to
-`length`. No configuration change or database migration is required. Stored
-source, revisions and chats are unchanged; older chat blocks keep their recorded
-arguments.
-
-Roll Core and Assistant over together. A mixed version rejects the other side's
-`code_write` input as invalid, and an older Assistant has no `code_import` route.
-Rollback is replacing both images; nothing needs undoing in the database. A turn
-running during the rollout may get one invalid-input error and then follows the
-new tool description.
-
-An app build now takes one tool round per source file instead of one round for
-all files. If a model profile sets a positive `maxToolRounds`, check that it
-still covers a typical multi-file build; otherwise the turn stops using tools
-earlier and answers with the files it saved so far.
-
-After rollout, ask Assistant to build a small app with `index.html` and `app.js`.
-The turn should show one `code_write` per file, no approval, and each result
-should list line counts that match the files.
 
 ### Store complete Action review content
 
@@ -1486,7 +1425,7 @@ the table `approvals.requests`, adds `approval_id` to `ai.pending_actions` and
 is still open a request. Assistant adds `approval_id` to
 `assistant.capability_calls`. Core deletes a request 90 days after it expired.
 
-Update Core before Assistant. Until Core has created the table, Studio code
+Update Core before Assistant. Until Core has created the table, Chat code
 that calls an Action which asks for approval fails. One behavior changes for
 people: when an Action's review changes between the question and the run, for
 example because a draft got another recipient, the chat asks again instead of
@@ -2336,18 +2275,6 @@ Dropping Mail's index does not remove the need for the preloaded library while
 the other BM25 indexes exist; to stop using `pg_textsearch` entirely, follow
 [Return to native search](#return-to-native-search). See [Mail search in large mailboxes](/en/apps/mail#search-in-large-mailboxes)
 for how search bounds its work.
-
-### Studio HTML self-test runtime
-
-Assistant's existing Chromium host also runs `code_check`. Chromium launches
-with site isolation and isolated sandboxed iframes so an app loop cannot freeze
-the host. Only check mounts use the bundled inspection prelude with axe-core and
-its own pinned CSP hash; normal app mounts omit inspection code. No separate
-network asset or service is needed. Existing host admission and execution budgets
-apply, and each user holds at most 16 disposable check copies at a time. Disposable scopes are removed after checks; the service sweep reclaims
-scopes left by crashed hosts and queues unreachable database namespaces for deletion.
-See [HTML app checks](/en/docs/ai/chat-interface#legacy-studio-html-checks)
-for data-copy and output limits. No new configuration is required.
 
 ### Browser map images in PDF
 

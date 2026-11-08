@@ -89,7 +89,6 @@ test("Project scope selection assigns once and explains an existing assignment",
 });
 
 test.each(["project", "projekt"])("legacy /%s lists projects without searching other categories", async (query) => {
-  const { artifactClient } = await import("../artifacts/client");
   const listSkills = spyOn(assistantApi, "listSkills").mockResolvedValue([
     {
       id: "matching-skill",
@@ -106,7 +105,6 @@ test.each(["project", "projekt"])("legacy /%s lists projects without searching o
       updatedAt: "",
     },
   ]);
-  const apps = spyOn(artifactClient, "list").mockResolvedValue({ items: [], page: 1, hasNext: false });
   const files = spyOn(assistantApi, "listChatFiles").mockResolvedValue([]);
   const assigned: string[] = [];
   const commands = await assistantComposerCommands({
@@ -123,7 +121,6 @@ test.each(["project", "projekt"])("legacy /%s lists projects without searching o
   expect(commands.map((command) => command.id)).toEqual([`project:${project.id}`]);
   expect(commands[0]?.label).toBe(project.name);
   expect(listSkills).not.toHaveBeenCalled();
-  expect(apps).not.toHaveBeenCalled();
   expect(files).not.toHaveBeenCalled();
   await commands[0]!.action?.(context);
   expect(assigned).toEqual([project.id]);
@@ -805,8 +802,6 @@ test("task start reuses an uncertain key after disposing and remounting the comp
 });
 
 test("task matches append after thirty references; overview limits tasks independently", async () => {
-  const { artifactClient } = await import("../artifacts/client");
-  spyOn(artifactClient, "list").mockResolvedValue({ items: [], page: 1, hasNext: false });
   spyOn(assistantApi, "listSkills").mockResolvedValue(Array.from({ length: 40 }, (_, i) => skillFixture(i)));
   spyOn(assistantApi, "listChatTasks").mockImplementation(async ({ state }) =>
     state === "active" ? Array.from({ length: 7 }, (_, i) => taskFixture(i)) : [],
@@ -848,8 +843,6 @@ test("task matches append after thirty references; overview limits tasks indepen
 });
 
 test.each(["en", "de"])("All Skills lists every enabled Skill from the opening's full catalog (%s)", async (locale) => {
-  const { artifactClient } = await import("../artifacts/client");
-  spyOn(artifactClient, "list").mockResolvedValue({ items: [], page: 1, hasNext: false });
   const skills = Array.from({ length: 41 }, (_, i) => ({ ...skillFixture(i), enabled: i !== 1 }));
   const listSkills = spyOn(assistantApi, "listSkills").mockResolvedValue(skills);
   const loader = createAssistantCommandSession();
@@ -988,8 +981,6 @@ test("model scope shares forgiving matching and runs the injected setter", async
 });
 
 test.each(["model", "project", "skill", "file"])("%s scope does not await session discovery for search", async (scope) => {
-  const { artifactClient } = await import("../artifacts/client");
-  spyOn(artifactClient, "list").mockResolvedValue({ items: [], page: 1, hasNext: false });
   spyOn(assistantApi, "listChatFiles").mockResolvedValue([]);
   const loader = createAssistantCommandSession();
   const load = spyOn(loader, "load").mockReturnValue(new Promise(() => {}));
@@ -1110,7 +1101,7 @@ test("references in the text count toward the limit for inserting and attaching 
   const running = assistantInsertCommands({ ...input, partCount: () => 0, fileSelectionDisabled: true });
   expect(running.commands[0]!.reason).toBeUndefined();
   expect(running.commands[1]!.reason).toBe(input.copy.commandNeedsIdle);
-  expect(running.scopes.find((scope) => scope.words.includes("app"))?.title).toBe("Studio-Apps aus Gustav");
+  expect(running.scopes.find((scope) => scope.words.includes("app"))).toBeUndefined();
 });
 
 for (const withTrack of [false, true]) {
@@ -1124,12 +1115,12 @@ for (const withTrack of [false, true]) {
       const picking = Promise.withResolvers<CloudResourcePickerItem | undefined>();
       spyOn(picker, "openCloudResourcePicker").mockReturnValueOnce(picking.promise);
       const item: CloudResourcePickerItem = {
-        ref: { type: "assistant.app", id: "App1" },
+        ref: { type: "notebooks.note", id: "Note1" },
         title: "Plan",
         appId: "assistant",
         appName: "Assistant",
         appIcon: "ti ti-sparkles",
-        href: "/assistant/apps/App1",
+        href: "/notebooks/notes/Note1",
         readable: true,
       };
       let partCount = 14;

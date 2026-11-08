@@ -2,14 +2,11 @@ import { describe, expect, spyOn, test } from "bun:test";
 import { mkdtemp, realpath, rm } from "node:fs/promises";
 import * as os from "node:os";
 import { tmpdir } from "node:os";
-import { basename, join } from "node:path";
+import { join } from "node:path";
 import { AI_LOCAL_TOOL_NAMES } from "@k2b/cloud/ai/browser";
 import type { CloudCliContext } from "@k2b/cloud/cli";
-import { z } from "zod";
-import { CheckReport } from "./artifacts/html/check-contracts";
 import assistantCli from "./cli";
 import { printCapabilityTable } from "./cli/capability-table";
-import * as codeHost from "./cli/code-host";
 import { collectCapabilityApproval, collectSurveyResult, collectTextEditorResult, runInteractiveAssistant } from "./cli/interactive";
 import { streamAssistantTurn } from "./cli/stream";
 
@@ -158,7 +155,7 @@ const createContext = (
 };
 
 /** Ask mode offers Bash, file tools and Studio opening; secret entry belongs to the trusted web UI. */
-const LOCAL_CLIENT_TOOL_IDS = ["local_bash", ...AI_LOCAL_TOOL_NAMES.filter((name) => name !== "load_local_skill"), "code_open"];
+const LOCAL_CLIENT_TOOL_IDS = ["local_bash", ...AI_LOCAL_TOOL_NAMES.filter((name) => name !== "load_local_skill")];
 
 /** Interactive sessions read AGENTS.md and Skills from the working and home folders; run them where both are empty. */
 const inEmptyFolders = async <T>(run: () => Promise<T>): Promise<T> => {
@@ -351,28 +348,6 @@ describe("assistant CLI", () => {
     expect(tables).toBe(1);
   });
 
-  test("Studio list and create use the mounted API path without a trailing slash", async () => {
-    const requests: { path: string; method: string }[] = [];
-    const fetcher: CloudCliContext["fetch"] = async (input, init) => {
-      requests.push({ path: String(input), method: init?.method ?? "GET" });
-      if (String(input).split("?")[0] !== "/api/assistant/artifacts") return json({ message: "Not found" }, 404);
-      if (init?.method === "POST")
-        expect(await new Response(init.body).json()).toMatchObject({
-          source: { entry: "main.ts", files: [{ path: "main.ts", content: "export default () => {};\n" }] },
-        });
-      return json(init?.method === "POST" ? { id: "created", kind: "app" } : { items: [], page: 1, hasNext: false });
-    };
-    const list = createContext(["code", "list"], fetcher, "json");
-    await assistantCli.run(list.ctx);
-    const create = createContext(["code", "create", "Reusable calculation"], fetcher, "json");
-    await assistantCli.run(create.ctx);
-    expect(requests).toEqual([
-      { path: "/api/assistant/artifacts", method: "GET" },
-      { path: "/api/assistant/artifacts", method: "POST" },
-    ]);
-    expect(JSON.parse(create.stdout.join(""))).toMatchObject({ kind: "app" });
-  });
-
   test("documents the one-shot and management surface", () => {
     const help = assistantCli.help?.() ?? "";
     expect(help).toContain("cld assistant -p");
@@ -402,25 +377,6 @@ describe("assistant CLI", () => {
       });
       await assistantCli.run(ctx);
     }
-  });
-
-  test("Studio reset requires confirmation and sends the inspected connection generation", async () => {
-    const id = "aBc234",
-      generation = "a".repeat(64),
-      requests: string[] = [];
-    const fetcher: CloudCliContext["fetch"] = async (path, init) => {
-      requests.push(String(path));
-      if (String(path).endsWith("/status")) return json({ generation, connected: true });
-      expect(await new Response(init?.body).json()).toEqual({ confirmed: true, expectedGeneration: generation });
-      return json({ connected: false });
-    };
-    const denied = createContext(["code", "database-reset", id], fetcher);
-    await expect(assistantCli.run(denied.ctx)).rejects.toThrow("--yes");
-    expect(requests).toHaveLength(0);
-    const confirmed = createContext(["code", "database-reset", id], fetcher);
-    confirmed.ctx.flags = { yes: true };
-    await assistantCli.run(confirmed.ctx);
-    expect(requests).toEqual([`/api/assistant/artifacts/${id}/database/status`, `/api/assistant/artifacts/${id}/database/reset`]);
   });
 
   test("creates and manually runs chat-bound routines", async () => {
@@ -1578,149 +1534,4 @@ test("Project Skill CLI searches available Skills and confirms link changes", as
     { path: "/api/ai/skills/skill1/projects/proj12", body: { linked: true } },
     { path: "/api/ai/skills/skill1/projects/proj12", body: { linked: false } },
   ]);
-});
-
-test("Studio database routes flat runtime operations and dotted maintenance separately", async () => {
-  for (const operation of ["list", "get", "insert", "update", "delete", "query", "tables.delete", "schema.get", "rows.insert"]) {
-    const { ctx } = createContext(["code", "database", "AbC234"], async (path, init) => {
-      expect(String(path)).toBe(`/api/assistant/artifacts/AbC234/database${operation.includes(".") ? "/maintenance" : ""}`);
-      expect(await new Response(init?.body).json()).toEqual({ operation, table: "invoices" });
-      return json({});
-    });
-    ctx.flags = { input: JSON.stringify({ operation, table: "invoices" }) };
-    await assistantCli.run(ctx);
-  }
-});
-
-test("Studio storage clear defaults to shared and forwards personal scope", async () => {
-  for (const scope of [undefined, "shared", "user"]) {
-    const { ctx } = createContext(["code", "storage-clear", "AbC234"], async (_path, init) => {
-      expect(await new Response(init?.body).json()).toEqual({ area: "kv", scope: scope ?? "shared", confirmed: true });
-      return json({});
-    });
-    ctx.flags = { area: "kv", yes: true, ...(scope ? { scope } : {}) };
-    await assistantCli.run(ctx);
-  }
-});
-
-test.each(["explicit", "temporary"])("code check saves every chat output locally with %s --out", async (directory) => {
-  const files = ["desktop-start-light.png", "desktop-light.png", "mobile-dark.png", "mobile-1-export.csv"];
-  const report = CheckReport.parse({
-    passed: true,
-    hash: "a".repeat(64),
-    height: 800,
-    issues: [],
-    calls: [],
-    aria: "",
-    screenshots: [
-      { view: "desktop-start", theme: "light", path: `/files/hash/${files[0]}`, cropped: false },
-      { view: "desktop", theme: "light", path: `/files/hash/${files[1]}`, cropped: false },
-      { view: "mobile", theme: "dark", path: `/files/hash/${files[2]}`, cropped: false },
-    ],
-    downloads: [{ name: "../export.csv", type: "text/csv", size: 3, path: `/files/hash/${files[3]}`, view: "mobile" }],
-  });
-  const requests: string[] = [];
-  const { ctx, stdout } = createContext(
-    ["code", "check", "abc234"],
-    async (path) => {
-      const url = new URL(String(path), "https://cloud.example");
-      if (url.pathname.endsWith("/files/content")) {
-        const file = url.searchParams.get("path")!;
-        requests.push(file);
-        return new Response(new Uint8Array([0, 128, 255]));
-      }
-      return json({}, 404);
-    },
-    directory === "explicit" ? "json" : "text",
-  );
-  ctx.flags.chat = "chat-1";
-  const chosen = directory === "explicit" ? await mkdtemp(join(tmpdir(), "check-cli-test-")) : undefined;
-  if (chosen) ctx.flags.out = chosen;
-  let input: unknown,
-    closed = false;
-  const host = spyOn(codeHost, "createCliCodeHost").mockResolvedValue({
-    machine: async () => null,
-    health: async () => {},
-    execute: async (call) => {
-      input = call.args;
-      return report;
-    },
-    call: async () => report,
-    close: async () => {
-      closed = true;
-    },
-  });
-  let out: string | undefined = chosen;
-  try {
-    await assistantCli.run(ctx);
-    const output = stdout.join("");
-    if (directory === "explicit") {
-      const saved = z.object({ out: z.string(), screenshots: z.array(z.object({ localPath: z.string() })) }).parse(JSON.parse(output));
-      out = saved.out;
-      expect(saved.screenshots).toHaveLength(3);
-    } else {
-      out = /^Output directory: (.+)$/m.exec(output)?.[1];
-      expect(out).toStartWith(join(tmpdir(), "cloud-code-check-"));
-    }
-    expect(out).toBeDefined();
-    expect(input).toEqual({ id: "abc234" });
-    expect(requests).toEqual(files.map((file) => `/files/hash/${file}`));
-    for (const file of files) {
-      const localPath = join(out!, basename(file));
-      expect([...new Uint8Array(await Bun.file(localPath).arrayBuffer())]).toEqual([0, 128, 255]);
-      expect(output).toContain(localPath);
-      expect(output).toContain(`/files/hash/${file}`);
-    }
-    expect(closed).toBe(true);
-  } finally {
-    host.mockRestore();
-    if (out) await rm(out, { recursive: true, force: true });
-  }
-});
-
-test("code check rejects an empty --out and documents the temporary directory default", async () => {
-  const { ctx } = createContext(["code", "check", "abc234"], async () => {
-    throw new Error("Unexpected request");
-  });
-  ctx.flags.chat = "chat-1";
-  ctx.flags.out = "";
-  await expect(assistantCli.run(ctx)).rejects.toThrow("non-empty directory for --out");
-  const help = createContext(["code", "check", "help"], async () => {
-    throw new Error("Unexpected request");
-  });
-  await assistantCli.run(help.ctx);
-  expect(help.stdout.join("")).toContain("--out");
-  expect(help.stdout.join("")).toContain("new printed temp directory");
-});
-
-test("Studio administration confirms before input and keeps malformed credential input out of errors", async () => {
-  let calls = 0;
-  const fetcher: CloudCliContext["fetch"] = async () => {
-    calls++;
-    return json({ saved: true });
-  };
-  for (const command of ["configure", "storage-configure", "grant", "change-grant"]) {
-    const context = createContext(
-      [
-        "studio-admin",
-        command,
-        ...(["grant", "change-grant"].includes(command) ? ["Abc234"] : []),
-        ...(command === "change-grant" ? ["entry"] : []),
-      ],
-      fetcher,
-    );
-    context.ctx.flags = { input: "{}" };
-    await expect(assistantCli.run(context.ctx)).rejects.toThrow("--yes");
-  }
-  const context = createContext(["studio-admin", "configure"], fetcher);
-  context.ctx.flags = { input: '{"token":"private"}', yes: true };
-  await expect(assistantCli.run(context.ctx)).rejects.toThrow("--input-file or --stdin");
-  context.ctx.flags = { stdin: true, yes: true };
-  const stdin = spyOn(Bun.stdin, "text").mockResolvedValue('{"token":"private"oops}');
-  try {
-    await expect(assistantCli.run(context.ctx)).rejects.toThrow("Input must be valid JSON.");
-  } finally {
-    stdin.mockRestore();
-  }
-  expect(calls).toBe(0);
 });

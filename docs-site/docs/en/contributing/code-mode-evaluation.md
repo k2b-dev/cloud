@@ -187,15 +187,8 @@ a case whose requested main state it does not show as unverified. Runs with
 different models, reasoning efforts or commits are not a controlled comparison;
 a commit ending in `-dirty` had uncommitted changes.
 
-## Evaluate HTML app checks
+## Retired Studio evaluations
 
-For an HTML interface, write its main flow into `steps.json` and run
-`code_check` before presenting or publishing. The gate binds files, steps and
-table definitions to the checking user/conversation. Inspect every path in the
-report's `review.paths` with `view_image` and its `review.prompt`; a passing
-report does not establish visual quality.
-
-The [HTML app check contract](/en/docs/ai/chat-interface#legacy-studio-html-checks)
-describes desktop/phone runs, disposable data, schema-only copies above the
-budget, restricted effects and cancellation. Browser regressions use the
-repository launcher and support Chromium or `TEST_BROWSER=webkit`.
+Studio HTML checks and browser-host evaluations have been removed. One-off
+chat code is tested through the real workerd runner fixture, including SDK
+calls, approvals, files, native views and lost-host fencing.

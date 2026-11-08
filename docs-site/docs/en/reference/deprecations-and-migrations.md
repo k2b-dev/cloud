@@ -10,6 +10,10 @@ updated: 2026-11-05
 
 # Deprecations and migrations
 
+Studio entries below describe older releases. Studio apps, their APIs and app data
+are now retired without transfer; follow [Studio retirement](/en/docs/operations/studio-retirement).
+
+
 ## Geo uses a global budget
 
 `geo.person_daily_credits` and the admin budget field `personDailyCredits`
@@ -830,7 +834,7 @@ Move `fromFile` imports to
 Imports remain atomic and require one fresh review for the batch. Ordinary
 source writes require no approval. Stored source and recorded chat arguments
 are unchanged. Operators must update Core and Assistant together; see
-[Update Studio source writes](/en/docs/operations/deployment-requirements#update-studio-source-writes).
+[Update Studio source writes](/en/docs/operations/studio-retirement).
 
 ## The dashboard becomes one board of widgets in three sizes
 

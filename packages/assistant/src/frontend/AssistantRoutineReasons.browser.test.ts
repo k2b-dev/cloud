@@ -71,11 +71,7 @@ let activeRoutines: AiChatTaskView[] | null = [];
 const archivePosts: string[] = [];
 beforeAll(async () => {
   const build = Bun.spawn(
-    [
-      "bun",
-      new URL("../artifacts/workspace-browser-build.ts", import.meta.url).pathname,
-      "../frontend/routine-reasons-browser-harness.tsx",
-    ],
+    ["bun", new URL("./workspace-browser-build.ts", import.meta.url).pathname, "../frontend/routine-reasons-browser-harness.tsx"],
     { stdout: "pipe", stderr: "pipe" },
   );
   const [bundle, buildError] = await Promise.all([new Response(build.stdout).text(), new Response(build.stderr).text()]);

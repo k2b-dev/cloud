@@ -222,23 +222,6 @@ jobs:
           name: shared-text-fuzz
           path: shared-text-fuzz.jsonl
 
-  browser:
-    runs-on: ubuntu-24.04
-    timeout-minutes: 40
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
-        with:
-          bun-version: ${{ env.BUN_VERSION }}
-      - uses: ./.github/actions/install
-      - run: bun run --cwd packages/ui build
-      - run: ./packages/assistant/node_modules/.bin/playwright install chromium
-      # Only the Playwright suites; the DOM suites of this directory run in the unit job with browser conditions.
-      # globstar includes the suites in subdirectories such as runtime/.
-      - run: |
-          shopt -s globstar
-          bun test --timeout 30000 --preload ./scripts/fixtures/test-infra.ts packages/assistant/src/artifacts/**/*.browser.test.ts
-
   browser-smoke:
     # The Grids, Mail and Chat smokes drive a running Cloud, so this job boots one from this commit's images.
     # It is separate from the browser job so that an Assistant failure cannot hide whether the stack boots.

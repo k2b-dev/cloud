@@ -292,7 +292,6 @@ function AssistantChatContextView(
           project={context.project}
           category={category}
           onOpenView={props.onOpenView}
-          onOpenApp={props.onOpenApp}
         />
       ),
     });
@@ -393,7 +392,8 @@ function AssistantChatContextView(
           })),
         ];
         const refOf = (item: ReturnType<typeof allReferences>[number]) => (item.kind === "source" ? item.source.ref : item.reference.ref);
-        const references = () => allReferences().filter((item) => refOf(item)?.type !== "assistant.artifact");
+        const references = () =>
+          allReferences().filter((item) => !["assistant.artifact", "assistant.app"].includes(refOf(item)?.type ?? ""));
         const openReferences = async () => {
           const items = references();
           const selected = await prompts.search<(typeof items)[number]>(
@@ -706,9 +706,8 @@ function AssistantChatContextView(
 export const assistantChatSidebarActions = (input: {
   chatId: string;
   project: AiProject | null;
-  copy: { files: string; apps: string; knowledge: string; sources: string };
+  copy: { files: string; knowledge: string; sources: string };
   onOpenView: (view: ContextView) => void;
-  onOpenApp: (id: string, title: string) => void;
   onOpenTask?: (task: AssistantChatTask) => void;
   onJump: (target: ChatSidebarJump) => void;
   onOpenSecrets?: () => void;
@@ -729,9 +728,7 @@ export const assistantChatSidebarActions = (input: {
         title: file.title,
         render: () => null,
       }),
-    onOpenApp: input.onOpenApp,
     onJump: input.onJump,
-    onOpenStudio: () => window.location.assign("/app/assistant/apps"),
     onOpenKnowledge: () => overview("knowledge", input.copy.knowledge),
     onOpenReferences: () => overview("sources", input.copy.sources),
     onOpenTask: input.onOpenTask,
@@ -777,7 +774,6 @@ export function AssistantChatContextContent(
       fallback={
         <AssistantChatContextView
           state={state}
-          onOpenApp={props.onOpenApp}
           category={props.category}
           onOpenView={props.onOpenView}
           onFileDeleted={props.onFileDeleted}
@@ -792,9 +788,8 @@ export function AssistantChatContextContent(
           actions={assistantChatSidebarActions({
             chatId: props.chatId,
             project: props.project ?? null,
-            copy: { files: text("Files"), apps: "Studio", knowledge: text("Project knowledge"), sources: text("Sources") },
+            copy: { files: text("Files"), knowledge: text("Project knowledge"), sources: text("Sources") },
             onOpenView: onOpenView(),
-            onOpenApp: (id, title) => props.onOpenApp?.(id, title),
             onJump: (target) => props.onJump?.(target),
             onOpenSecrets: props.onOpenSecrets,
             onFileDeleted: props.onFileDeleted,

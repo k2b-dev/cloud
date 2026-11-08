@@ -636,7 +636,7 @@ The existing `cloud.capabilities.run(name, input, options?)` also accepts explic
 normalized `target`, `refs` and `idempotencyKey` in its optional third argument.
 A key is allowed only for an Action declaring required idempotency; retain it
 for retries of the same effect. Omitting it preserves the existing per-call
-key. Scripts and Studio apps keep the same permissions and approvals.
+key. Scripts keep the same permissions and approvals.
 
 
 ## Mail triage: category first

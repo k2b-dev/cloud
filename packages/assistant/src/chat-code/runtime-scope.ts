@@ -19,6 +19,6 @@ export async function authorizeRuntimeScope(input: unknown, identity: ArtifactId
       throw new ArtifactError("ACCESS_DENIED");
     scope.conversationId = chat.id;
   }
-  if (scope.resourceId || !scope.conversationId) throw new ArtifactError("ACCESS_DENIED");
+  if (!scope.conversationId) throw new ArtifactError("ACCESS_DENIED");
   return { scope, actor };
 }

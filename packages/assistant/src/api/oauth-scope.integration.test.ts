@@ -2,7 +2,7 @@ import { test } from "bun:test";
 import { assertAdminMutationsRejectReadOAuth, withAdminOAuth } from "../../../../scripts/fixtures/admin-oauth";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import "../../../../scripts/fixtures/authorization-preload";
-import { artifactApi as routes } from "../artifacts/api";
+import { chatCodeApi as routes } from "../chat-code/api";
 
 suiteFor(
   "database",

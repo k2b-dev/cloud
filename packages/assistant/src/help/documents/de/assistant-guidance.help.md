@@ -30,7 +30,7 @@ Gustav erzielt die besten Ergebnisse, wenn deine Anfrage das gewünschte Ergebni
 - **Personalisierung** speichert Tatsachen, Präferenzen und Standards für Cloud-Abläufe, die du prüfen, bearbeiten, anheften oder vergessen kannst. Manuell hinzugefügte Einträge sind zunächst angeheftet. Gustav verwendet eine kleine relevante Auswahl im Kontext, statt einen unbegrenzten Verlauf zu laden. Er verwendet einen Eintrag nur, wenn dieser die Antwort verändert; deine aktuelle Nachricht hat Vorrang vor einem älteren Eintrag.
 - **Aus Chats lernen** ist eingeschaltet, solange du nichts anderes gewählt hast. Hast du Gustav schon genutzt, bevor Lernen zum Standard wurde, bleibt deine bisherige Einstellung erhalten, meist ausgeschaltet. Es berücksichtigt Anfragen in deinen eigenen Chats einschließlich Projekt-Chats, die abgeschlossen werden, während es eingeschaltet ist, jede einmal; das Ausschalten wirkt sofort. Es lernt nur über dich, nie Tatsachen oder Meinungen über andere Personen; eine Person darf nur in einer von dir formulierten Regel vorkommen, etwa „Rechnungen an Anna schicken“. Sensible Angaben wie Gesundheit, Religion oder politische Ansichten lässt es aus, außer du bittest ausdrücklich darum, sich genau das zu merken; Projektwissen bleibt im Projekt. Ausdrückliche Angaben von dir können dauerhafte Tatsachen und Präferenzen aktualisieren. Drei erfolgreiche Verwendungen derselben Cloud-Capability und Ressource können einen Standardablauf begründen. Anhänge und unverarbeitete Tool-Ausgaben sind ausgeschlossen; die abschließende Antwort von Gustav dient nur als Kontext. Beim Lernen im Hintergrund dürfen nur eigene, nicht angeheftete Einträge zusammengeführt, ersetzt oder entfernt werden. Archivierte und gelöschte Chats sind ausgeschlossen; Archivieren stoppt ausstehendes Lernen, und nach dem Wiederherstellen werden nur Anfragen berücksichtigt, die danach abgeschlossen werden.
 - **System-Prompt** zeigt den vollständigen Prompt für einen neuen Chat einschließlich aktiver Personalisierung und Organisationsregeln.
-- **Freigaben** listet frühere, weiterhin geltende Entscheidungen für **Immer freigeben** und Websites, die du für eine Studio-App erlaubt hast. Widerrufe dort einen Eintrag, sobald Gustav wieder nachfragen soll. Freigaben für einen Chat stehen unter **Secrets & Freigaben** in diesem Chat.
+- **Freigaben** listet frühere, weiterhin geltende Entscheidungen für **Immer freigeben**. Widerrufe dort einen Eintrag, sobald Gustav wieder nachfragen soll. Freigaben für einen Chat stehen unter **Secrets & Freigaben** in diesem Chat.
 - **API-Zugang** erscheint, wenn deine Administration die OpenAI-kompatible API anbietet. Dort stehen die Base-URL und die Modell-IDs für Apps wie eine Diktier-App. So eine App nutzt nur die Modelle und deine Nutzungslimits. Sie bekommt keine Chats, keine Dateien und keine Personalisierung. Den Schlüssel dafür erstellst du in deinem Profil mit dem Zugriff **Nur KI-Modelle**.
 - **Chat-Kontext** eignet sich weiterhin am besten für projektspezifische Tatsachen, Ausgangsmaterial und einmalige Vorgaben.
 
@@ -74,31 +74,6 @@ Behandle erzeugte Tatsachen, Berechnungen, externe Aktionen und Änderungen an w
 - Prüfe das ausgewählte Modell und den Status am Eingabefeld, wenn keine Antwort beginnt.
 - Teile eine große Anfrage in ein kleines erstes Ergebnis und eine Folgeanfrage auf, statt einen überladenen Prompt zu wiederholen.
 
-## Studio-App öffnen oder teilen {icon="share"}
+## Code
 
-App-Nutzer öffnen die eigenständige Ansicht ohne Gustav-Seitenleiste. App-Verwalter
-wählen oben **Vollbild öffnen** oder im Aktionsmenü **App-Link kopieren**. Der Link startet
-immer die zuletzt veröffentlichte Version. Private Apps benötigen weiterhin eine
-Anmeldung und eine App-Berechtigung.
-
-Unter **Zugriff verwalten** erlaubt Öffentlich ausschließlich Ausführen, niemals
-Verwalten. Die Warnung erklärt: Öffentliche Besucher haben keinen Zugriff auf
-Datenbanken, Server-Dateien/KV, Zugangsdaten oder geschützte Cloud-Aktionen.
-Lokale Berechnungen, Dateiauswahl und Downloads funktionieren. Apps mit
-Serverfunktionen sollten gegebenenfalls privat bleiben. Veröffentlichter Code
-und eingebettete Daten werden öffentlich. Entferne Öffentlich oder ziehe die
-Veröffentlichung zurück, um neue Aufrufe zu verhindern. Cloud-Administratoren
-können den App-Link als URL-Verknüpfung zur Navigation hinzufügen. Das vergibt
-keine App-Berechtigung.
-
-App-Admins sehen neben den Laufzeit-Aktionen die Badge **Entwurf** oder
-**Veröffentlicht**. Ein Klick erklärt den Status und bietet für gespeicherte
-Entwürfe **Veröffentlichen** an. **Vollbild öffnen** bietet diesen Schritt bei
-Bedarf ebenfalls an. Eine Veröffentlichung verändert die Freigaben nicht und
-macht die App nicht automatisch öffentlich.
-
-Im Projekt öffnet **+** neben **Studio Apps** oder **Skills** einen Dialog mit Suche und Liste. Wähle einen Inhalt, den du verwaltest. Der Hinweis erklärt, was freigegeben wird. Zum Verknüpfen oder Lösen musst du beide Ressourcen verwalten dürfen.
-
-Projektmitglieder können veröffentlichte Apps und ihre geteilten App-Daten im Studio und Vollbild nutzen. Verknüpfte Skills können sie lesen und nutzen. Bearbeitungsrechte bleiben separat; App-Entwürfe bleiben App-Admins vorbehalten. Im Freigabedialog steht, welche Projekte Zugriff vermitteln.
-
-Verknüpfungen bleiben bestehen, wenn ihr Ersteller später Zugriffs- oder Verwaltungsrechte verliert. Beim Entfernen einer Verknüpfung oder Verlassen eines Projekts entfällt nur der geerbte Zugriff; direkte Freigaben bleiben erhalten. Skills werden bei Bedarf geladen und beachten weiterhin **Für mich aktiviert**.
+Studio-Apps sind ohne Übernahme ihrer Daten entfallen. Bitte Gustav um neuen Code, wenn du ein wiederverwendbares Programm brauchst. Chat-Dateien und native Ansichten bleiben verfügbar.

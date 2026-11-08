@@ -76,7 +76,6 @@ export function SidebarHarness(props: {
             }}
             actions={{
               onOpenFile: () => undefined,
-              onOpenApp: () => undefined,
               onJump: (target) => props.onJump?.(target),
               onOpenSecrets: () => undefined,
             }}

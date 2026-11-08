@@ -12,14 +12,12 @@ approvals, independently of their browser tab. No saved app is required.
 For lasting Code, pages or schedules load `code-authoring`. Studio authoring,
 HTML checking/presentation, app storage and Studio RSQL are unavailable in
 chat. Do not request Studio tools or pass `id`, `version` or `resourceId` to
-`code_run`. The standalone Studio UI remains separate.
+`code_run`. Studio apps and their data have been retired without transfer.
 
 ## Start from the contract
 
 Read [Runtime and files](references/runtime.md) for limits and
-[cloud contract](references/cloud.md) for helpers. The latter also documents
-legacy Studio APIs: `cloud.db`, `cloud.kv` and shared `cloud.files` are
-unavailable in chat runs. Use application capabilities and chat/Project files.
+[cloud contract](references/cloud.md) for helpers. Use application capabilities and chat/Project files; app databases and app storage are unavailable.
 
 One-off scripts may import the generated `@sdk` and default-export a function.
 SDK methods return domain data directly. `cloud.capabilities.run(name,input)`
@@ -85,8 +83,9 @@ files explicitly; runs do not share variables. Stop unneeded work with
 
 Use `code_secret` for credentials in the trusted web UI. Never ask for their
 values in chat, surveys or source. CLI and unattended turns can use existing
-chat secrets but cannot open secret entry. HTTP and capability grants still
-apply to unattended routine turns; Studio database grants are unavailable.
+chat secrets but cannot open secret entry. HTTP and capability calls use the current turn’s authority. Studio database
+grants are unavailable. Scheduled routines have been retired; lasting Code uses
+`app.schedule` and `core.ai.chat.run` or `core.ai.chat.deliver`.
 
 ## Reference routing
 
@@ -106,17 +105,7 @@ apply to unattended routine turns; Studio database grants are unavailable.
 | Cross-app investigation | [Investigation](references/investigation.md) |
 | Run errors, cancellation and retained results | [Debugging](references/debugging.md) |
 | Chat and Project file references and reviewed transfers | [Files](references/files.md) |
-| Worked scripts and legacy Studio examples | [Examples](references/examples.md) |
-
-The following references describe legacy standalone Studio behavior. They do
-not enable Studio authoring, storage, database or HTML tools in chat. Use
-`code-authoring` for lasting Code instead:
-
-- [Studio apps](references/apps.md), [published actions](references/app-actions.md) and
-  [legacy chat presentations](references/chat.md).
-- [Studio access](references/access.md) and [management](references/management.md).
-- [Studio source workflow](references/source-workflow.md) and [publishing](references/publishing.md).
-- [Studio database](references/database.md) and [storage](references/storage.md).
+| Worked scripts | [Examples](references/examples.md) |
 
 For analytical reports also load `assistant-data-analysis` for metrics and
 source validation.

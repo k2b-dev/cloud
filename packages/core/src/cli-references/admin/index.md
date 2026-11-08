@@ -813,13 +813,11 @@ filters or pagination are needed.
 | Weather settings | `admin settings list --app weather`, `admin weather config set\|reset` |
 | Files configuration | `filesv2 admin configuration get\|set\|reset` |
 | Files machine storage and grants | `admin files machines list\|create`, `machines grants list\|grant\|revoke` |
-| Studio machine access and secret metadata | `admin studio machines access list\|set`, `machines secrets list\|set\|delete` |
 | Contacts administration and recovery | `admin contacts list`, `contacts access list\|grant\|set\|revoke` |
 | Spaces administration and recovery | `admin spaces list`, `spaces access list\|grant\|set\|revoke`, `spaces delete` |
 | Chat health | `admin chat status` |
 | Proxy authentication policy | `admin proxy-auth list\|show\|add\|set\|delete` |
 | Pulse policy, limits and internal targets | `pulse admin policy set`, `bases limits`, `targets add\|remove` |
-| Assistant Studio storage/database | `assistant studio-admin storage-configure\|configure --yes` (database JSON through `--input-file` or `--stdin`) |
 
 `admin settings apply --from <file|-> --yes` applies Core updates and resets
 atomically. `settings reset <key> --yes` restores one Core default. Saved

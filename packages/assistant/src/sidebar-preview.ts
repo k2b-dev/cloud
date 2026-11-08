@@ -26,7 +26,6 @@ export async function loadAssistantSidebarPreview(identity: AiResourceContext, c
         path: file.path,
       }),
     ),
-    apps: [] as { id: string; title: string; icon: string | null }[],
     hasMoreSources: Boolean(sources.nextCursor),
   };
 }

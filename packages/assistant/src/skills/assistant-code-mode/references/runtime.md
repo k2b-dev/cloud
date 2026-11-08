@@ -42,7 +42,7 @@ Unattended turns use their current routine mandate on the same runner path.
 Capability grants and HTTP grants still apply. Studio RSQL `database` grants
 are unavailable in runner `code_run`, saved scripts and `resourceId` are rejected;
 use application capabilities. No replacement database is created. The remaining
-Studio HTML checks, actions and presentations retain their legacy browser host.
+Studio HTML checks, actions, presentations and standalone apps have been retired.
 
 Return JSON or nothing; do not return functions or class instances.
 Logs appear in diagnostics. A script download is captured for `code_export`;

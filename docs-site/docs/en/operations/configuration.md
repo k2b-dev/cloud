@@ -5,7 +5,7 @@ section: Operations
 order: 1142
 description: Every environment variable Cloud processes read, generated from the configuration registries.
 tags: [configuration, environment, reference]
-updated: 2026-10-31
+updated: 2026-11-08
 ---
 
 # Configuration reference
@@ -55,15 +55,6 @@ Declared in `packages/cloud/src/config/env.ts`.
 | `CLOUD_OAUTH_JWKS_ORIGIN` | string | runtime | unset | no | Deprecated: explicit legacy OAuth JWKS origin, honored for this release. Unset uses Core internal OAuth JWKS through CLOUD_CORE_INTERNAL_ORIGIN, then the public issuer origin. |
 | `APP_DIR` | string | development | unset | no | Application directory for standalone consumers running `@k2b/cloud/scripts/build.ts` or the SSR dev server outside the monorepo; defaults to the package directory. |
 | `CLOUD_DESKTOP_SQLITE_PATH` | string | development | unset | no | SQLite file used by `desktop.sql` in the Bun desktop process; defaults to `.local/desktop.sqlite` in the working directory. |
-
-## Application: assistant
-
-Declared in `packages/assistant/src/env.ts`.
-
-| Variable | Type | Scope | Default | Required | Description |
-| --- | --- | --- | --- | --- | --- |
-| `ASSISTANT_RSQL_ALLOWED_TARGETS` | list | runtime | `rsql` | no | Deprecated: bootstraps `assistant.rsql_allowed_targets` once when no stored value exists; remove after `cld admin settings status --env` succeeds. Comma-separated host names, IP addresses and CIDR ranges on internal networks allowed for Assistant rsql requests; unset allows public targets and `rsql`, an explicit value replaces this default, and invalid entries including `/0` are ignored with a bootstrap warning. |
-| `CLOUD_CLI_CHROMIUM` | string | runtime | unset | no | Path to a Chromium executable for Assistant code mode when Playwright's bundled browser is unavailable; the assistant image sets `/usr/bin/chromium`. |
 
 ## Application: gateway-ops
 

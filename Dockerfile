@@ -91,13 +91,10 @@ WORKDIR /app
 ARG APP_ID
 ARG CLOUD_VERSION=0.0.0-local
 ARG CLOUD_RELEASE=local
-# Only Assistant needs the server-owned code execution browser.
-RUN if [ "$APP_ID" = "assistant" ]; then apk add --no-cache chromium; fi
 ENV NODE_ENV=production \
     HOME=/home/bun \
     CLOUD_VERSION=${CLOUD_VERSION} \
-    CLOUD_RELEASE=${CLOUD_RELEASE} \
-    CLOUD_CLI_CHROMIUM=/usr/bin/chromium
+    CLOUD_RELEASE=${CLOUD_RELEASE}
 COPY --from=build --chown=bun:bun /app/dist ./
 COPY --from=geoip /geoip /app/geoip
 USER bun

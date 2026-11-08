@@ -130,8 +130,6 @@ test("managed runner host reaches the view route as the user's actor", async () 
     context,
     lastUsed: Date.now(),
     busy: new Set(),
-    checks: new Map(),
-    checkScopes: new Set(),
     decisions: new Map(),
     capabilityTransport: async () => {
       throw new Error("Unexpected capability");

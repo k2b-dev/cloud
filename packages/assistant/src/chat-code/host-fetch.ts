@@ -71,7 +71,7 @@ export async function hostFetch(context: CodeToolContext, session: Session, path
       if (!config.background) return next();
       if (!config.mandate) throw new Error("Background capability mandate is missing");
       const input = RuntimeCapabilityRequest.parse(await c.req.json());
-      if (input.conversationId !== context.conversationId || input.artifactId) throw new Error("Code capability conversation mismatch");
+      if (input.conversationId !== context.conversationId) throw new Error("Code capability conversation mismatch");
       return c.json(
         await runtimeCapabilities.prepare(
           input,
@@ -87,8 +87,7 @@ export async function hostFetch(context: CodeToolContext, session: Session, path
       const { approved } = z.strictObject({ approved: z.boolean() }).parse(await c.req.json());
       return c.json(
         await httpService.execute(c.req.param("id"), approved, context, c.req.raw.signal, undefined, async (stored) => {
-          if (stored.scope.conversationId !== context.conversationId || stored.scope.resourceId)
-            throw new Error("HTTP conversation mismatch");
+          if (stored.scope.conversationId !== context.conversationId) throw new Error("HTTP conversation mismatch");
           await aiChatTasks.authorizeRuntime({
             mandate: config.mandate!,
             kind: "http",

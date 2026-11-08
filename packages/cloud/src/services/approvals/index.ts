@@ -77,7 +77,7 @@ type ApprovalRequestBase = {
 export type ActionApprovalRequestInput = ApprovalRequestBase & {
   kind?: "action";
   subjectId: string;
-  requester: { kind: "assistant_turn" | "studio_app"; ref: string; appId: string; title?: string | null };
+  requester: { kind: "assistant_turn"; ref: string; appId: string; title?: string | null };
   approverUserId: string;
   assurance: ApprovalAssurance;
 };
@@ -171,6 +171,7 @@ export type ApprovalRequestResult = { ok: true; id: string } | { ok: false; code
  */
 export const request = async (input: ApprovalRequestInput, db?: SQL): Promise<ApprovalRequestResult> => {
   const role = input.kind === "code_version";
+  if (!role && input.requester.kind !== "assistant_turn") throw new TypeError("Studio approval admission is retired.");
   if (role && !CloudResourceHrefSchema.safeParse(input.requester.href).success)
     throw new TypeError("Approval requester href must be a same-origin path.");
   const recipient = role ? null : input.approverUserId;

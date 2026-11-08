@@ -27,7 +27,7 @@ Recommend the lightest place that does the job:
 - rules for one Project's shared work: Project instructions;
 - a recurring procedure, judgment, or output format used across chats: a Skill;
 - work that should run at a set time: a routine, which can load the Skill;
-- a repeated calculation or an interactive tool: a Studio App that the Skill references.
+- a repeated calculation or an interactive tool: lasting Code, using the code-authoring Skill.
 
 ## Draft from the conversation
 
@@ -37,7 +37,7 @@ When the Skill comes from work in this conversation, capture what made it succee
 - the steps and the exact capability IDs that worked, so later runs can call load_tools without searching;
 - every correction the user made, rewritten as a positive rule; corrections are the most valuable content;
 - the output shape, as a compact template when layout matters;
-- inputs by role and title, such as "the Space Sales"; when a personalization workflow default already routes this kind of request, refer to it instead of repeating it. Never copy IDs of mailboxes, Spaces, notebooks, records, or other resources from the chat; the exact ID of a Studio App the Skill calls is the one exception.
+- inputs by role and title, such as "the Space Sales"; when a personalization workflow default already routes this kind of request, refer to it instead of repeating it. Never copy IDs of mailboxes, Spaces, notebooks, records, or other resources from the chat.
 
 Keep only procedure, format, and stable references. Leave out content from attachments, mails, web pages, or other quoted data; names of people or customers, amounts, and example records from this chat; one-off values; and failed attempts. Before the create review, tell the user in one or two sentences what the Skill will do and when it will load.
 
@@ -86,7 +86,7 @@ Read the draft once as if you were a different Assistant receiving it later. Che
 - the workflow can run without private conversation context;
 - instructions are direct, non-repetitive, and compatible with available capabilities;
 - examples generalize beyond the original case;
-- it holds no names of people or customers, amounts, records, or resource IDs from this conversation, except the exact ID of a Studio App it calls;
+- it holds no names of people or customers, amounts, records, or resource IDs from this conversation;
 - no surprising mutation, permission expansion, or external side effect is implied.
 
 For an existing Skill, read it first and preserve fields the user did not ask to change. Prefer a narrow correction over accumulating rules for every observed example. Skills an app ships and Skills shared with others change for everyone who uses them, so change one only when you can edit it and the user wants the change for everyone. `core.ai.skill.read` shows your permission and, as `source`, the app a Skill comes from; only a Cloud administrator can open an app's Skill for editing. `core.ai.skill.access.read` shows who else can use a Skill you manage. Otherwise leave the Skill unchanged. When personalization memory is on, a correction meant only for the user can become a preference; memory saves only the user's own words, so ask the user to state the rule, such as "always write mails formally".
@@ -114,12 +114,10 @@ Creating, changing, and deleting Skills are reviewed mutations. Prepare the conc
 
 Say that the Skill now loads for matching requests and can also be selected with /skill. When a later run needs a correction, update the Skill narrowly instead of creating another one. Share it only when the user asks.
 
-## Optional App-backed workflows
+## Optional Code workflows
 
-A Skill can reference a reusable Studio App and its published actions instead of duplicating code. Load `assistant-code-mode` only when building, changing, or discovering such an App is useful. Apps may be stateless scripts, agent-only services with shared data, dashboards, or a combination. Many Skills need no code and many Apps need no Skill.
+A Skill can refer to lasting Code by its discovered title and supported Code tools. Use Code when the workflow needs a scheduled program, shared data or a dashboard. Many Skills need no code.
 
-When referring to an App, include its exact ID, action names, input/output meaning, and a concrete workflow example. Read the action schemas instead of guessing APIs. Skill access and App access are independent: warn when intended recipients can use only one; never grant access implicitly.
-
-For requested sharing, discover `core.entities.search` to resolve a recipient, then `core.ai.skill.access.read` and `core.ai.skill.access.change`. Read current grants and pass their exact accessRevision as expectedAccessRevision. Supply either a returned principal and permission (read/write/admin), or an existing accessId and permission (null revokes). Every mutation receives fresh review and preserves the last administrator. After a conflict, re-read and prepare a new review. For App permissions, read the Code Mode access reference; App Use/Manage is separate from Skill Read/Edit/Manage.
+For requested sharing, discover `core.entities.search` to resolve a recipient, then `core.ai.skill.access.read` and `core.ai.skill.access.change`. Read current grants and pass their exact accessRevision as expectedAccessRevision. Supply either a returned principal and permission (read/write/admin), or an existing accessId and permission (null revokes). Every mutation receives fresh review and preserves the last administrator. After a conflict, re-read and prepare a new review.
 
 Imports and exports are not available through these capabilities. Do not invent a tool or bypass Cloud permissions.

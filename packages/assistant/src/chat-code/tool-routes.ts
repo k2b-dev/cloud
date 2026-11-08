@@ -30,19 +30,7 @@ export function registerCodeTool<S extends z.ZodType>(
 ) {
   codeToolRoutes.post(
     `/${name}`,
-    [
-      "code_files",
-      "code_file_stat",
-      "code_manage_read",
-      "code_database_read",
-      "code_storage_list",
-      "code_versions",
-      "code_list",
-      "code_read",
-      "code_history",
-    ].includes(name)
-      ? auth.readOnly
-      : auth.requireOAuthScope("write", "admin"),
+    ["code_files", "code_file_stat"].includes(name) ? auth.readOnly : auth.requireOAuthScope("write", "admin"),
     requireInvocation(() => ({ targetAppId: "assistant", operation: `tool:${name}`, schemaHash: null })),
     async (c) => {
       const envelope = z

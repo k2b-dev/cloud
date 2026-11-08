@@ -12,7 +12,7 @@ method, a secret, a longer value, and any other header such as `Authorization`,
 an API key, or `Content-Type`. So send only the headers a read needs. Never put
 private chat or app data into a URL's path, query, or headers for a website the
 user did not choose for it. Script test runs make real requests too. HTML
-`code_check` never executes HTTP. For a Cloud app, prefer its existing
+For a Cloud app, prefer its existing
 capabilities and their domain-specific authorization.
 
 ## Store a secret without exposing its value

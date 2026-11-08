@@ -1,6 +1,5 @@
 import { sql } from "@k2b/cloud";
 import { authorizeBackgroundAction, hasRememberedAiToolApproval, rememberAiToolApproval } from "@k2b/cloud/ai";
-import { CodeResourceId } from "@k2b/cloud/ai/browser";
 import {
   type CapabilityCaller,
   capabilityCallFromTool,
@@ -35,10 +34,7 @@ import { requireToolChat } from "./chat-access";
 import { codeApprovalMessage } from "./code-approval-message";
 import { LIMITS } from "./contracts";
 
-const CHECK_UNAVAILABLE = "not executed during code_check";
-
 import { ArtifactError, type ArtifactIdentity, user } from "./identity";
-import { CloudError } from "./runtime/errors";
 
 export const RuntimeCapabilityRequest = z
   .object({
@@ -51,11 +47,9 @@ export const RuntimeCapabilityRequest = z
     target: CapabilityInvocationBodySchema.shape.target,
     refs: CapabilityInvocationBodySchema.shape.refs,
     idempotencyKey: CapabilityIdempotencyKeySchema.optional(),
-    artifactId: CodeResourceId.optional(),
-    conversationId: z.string().min(1).max(80).optional(),
+    conversationId: z.string().min(1).max(80),
   })
-  .strict()
-  .refine((value) => value.artifactId || value.conversationId, "A resource or current conversation is required");
+  .strict();
 const Prepared = z.object({
   appId: z.string(),
   localId: z.string(),
@@ -63,7 +57,6 @@ const Prepared = z.object({
   schemaHash: z.string(),
   call: NormalizedCapabilityCallSchema.optional(),
   approval: z.enum(["none", "rememberable"]).nullable(),
-  resource: z.object({ id: CodeResourceId, title: z.string() }).optional(),
   title: z.string(),
   review: z.preprocess((value) => decoded(value), CapabilityActionReviewDataSchema.nullable()),
   allowAlways: z.boolean(),
@@ -84,23 +77,20 @@ type Row = {
 };
 const decoded = (value: unknown): unknown => (typeof value === "string" ? JSON.parse(value) : value);
 
-import { noRuntimeResource, type ResolveRuntimeResource } from "./resource-context";
-export function createRuntimeCapabilities(resolveResource: ResolveRuntimeResource = noRuntimeResource) {
+export function createRuntimeCapabilities() {
   // Nested Assistant capabilities retain the authorized script's chat context.
   // A request ID alone grants nothing: it must belong to this user, exact target,
   // and a currently executing call; resource access is still checked by the target.
   async function authorizeWithChat(request: Request, identity: ArtifactIdentity, tool: string) {
     user(identity);
-    const resource = request.artifactId
-      ? await resolveResource(request.artifactId, { ...identity, conversationId: request.conversationId })
-      : undefined;
     let conversationId: string | null = null;
     if (request.conversationId) {
       const conversation = await requireToolChat(request.conversationId, identity, tool);
       if (conversation.allowedTools && !conversation.allowedTools.includes(request.name)) throw new ArtifactError("ACCESS_DENIED");
       conversationId = conversation.id;
+      request.conversationId = conversation.id;
     }
-    return { resource, conversationId };
+    return { conversationId };
   }
   async function operation(name: string, locale: string | null | undefined, authority: RequestAuthority | null) {
     const split = name.indexOf("."),
@@ -125,31 +115,6 @@ export function createRuntimeCapabilities(resolveResource: ResolveRuntimeResourc
   }
 
   const runtimeCapabilities = {
-    async check(
-      input: { name: string; input: z.infer<ReturnType<typeof z.json>>; conversationId: string; artifactId?: string },
-      identity: RuntimeCapabilityIdentity,
-      caller: CapabilityCaller,
-    ) {
-      const request = RuntimeCapabilityRequest.parse({ ...input, id: crypto.randomUUID() });
-      const { resource } = await authorizeWithChat(request, identity, "code_check");
-      if (resource && resource.permission !== "admin") throw new CloudError("unavailable", CHECK_UNAVAILABLE);
-      // Discover first. Never prepare an action: even a review may have effects.
-      const target = await operation(input.name, caller.locale, identity.authority ?? null);
-      if (target.kind !== "query") throw new CloudError("unavailable", CHECK_UNAVAILABLE);
-      const response = await this.prepare(request, identity, caller);
-      if (response.status !== "completed") throw new CloudError("unavailable", CHECK_UNAVAILABLE);
-      const result = z
-        .object({ ok: z.boolean(), data: z.unknown().optional(), error: z.object({ message: z.string() }).optional() })
-        .parse(response.result);
-      if (!result.ok) throw new Error(result.error?.message ?? "Read-only capability failed");
-      const envelope = result.data;
-      if (envelope && typeof envelope === "object" && "stream" in envelope && envelope.stream) {
-        const stream = CapabilityStreamSchema.parse(envelope.stream);
-        if (stream.direction !== "read") throw new CloudError("unavailable", CHECK_UNAVAILABLE);
-        return { ...envelope, stream: { ...stream, callId: request.id } };
-      }
-      return envelope;
-    },
     async stream(
       id: string,
       verb: "read" | "write" | "status" | "abort",
@@ -160,7 +125,7 @@ export function createRuntimeCapabilities(resolveResource: ResolveRuntimeResourc
       const actor = user(identity);
       const [row] = await sql<
         Row[]
-      >`SELECT * FROM assistant.capability_calls WHERE id=${z.uuid().parse(id)}::uuid AND user_id=${actor.id}::uuid AND status='completed'`;
+      >`SELECT * FROM assistant.code_capability_calls WHERE id=${z.uuid().parse(id)}::uuid AND user_id=${actor.id}::uuid AND status='completed'`;
       if (!row) throw new ArtifactError("ACCESS_DENIED");
       const request = RuntimeCapabilityRequest.parse(decoded(row.request));
       await authorizeWithChat(request, identity, request.name);
@@ -177,8 +142,8 @@ export function createRuntimeCapabilities(resolveResource: ResolveRuntimeResourc
     ) {
       const request = RuntimeCapabilityRequest.parse(input),
         actor = user(identity);
-      const { resource, conversationId } = await authorizeWithChat(request, identity, request.name);
-      const untrusted = resource && resource.permission !== "admin";
+      const { conversationId } = await authorizeWithChat(request, identity, request.name);
+      request.conversationId = conversationId!;
       const target = await operation(request.name, caller.locale, identity.authority ?? null);
       if (request.idempotencyKey !== undefined && target.action?.idempotency !== "required") throw new ArtifactError("INVALID_INPUT");
       const boundCall = target.operation.target !== undefined || target.operation.refs !== undefined;
@@ -227,18 +192,16 @@ export function createRuntimeCapabilities(resolveResource: ResolveRuntimeResourc
         approval: target.action?.approval ?? null,
         title: target.operation.title,
         review,
-        allowAlways: !untrusted && scope !== null,
+        allowAlways: scope !== null,
         scope,
         locale: caller.locale ?? undefined,
-        ...(untrusted ? { resource: { id: resource.id, title: resource.title } } : {}),
       });
       const remembered =
         !task &&
-        !untrusted &&
         scope !== null &&
         (await hasRememberedAiToolApproval({ actorUserId: actor.id }, { toolName: request.name, approvalScope: scope, conversationId }));
       // Only the managed host supplies task context; Core also checks the mandate on every dispatch.
-      const automatic = Boolean(task) || (!untrusted && (!target.action || target.action.approval === "none" || remembered));
+      const automatic = Boolean(task) || !target.action || target.action.approval === "none" || remembered;
       const wording =
         !automatic && target.action
           ? await getCapabilityActionWording(target.appId, target.localId, caller.locale ?? undefined, identity.authority ?? null)
@@ -261,7 +224,7 @@ export function createRuntimeCapabilities(resolveResource: ResolveRuntimeResourc
       };
       await sql.begin(async (db) => {
         await db`SELECT pg_advisory_xact_lock(hashtext(${"assistant-capabilities:" + actor.id}))`;
-        const abandoned = await db<{ approval_id: string | null }[]>`UPDATE assistant.capability_calls SET status='abandoned'
+        const abandoned = await db<{ approval_id: string | null }[]>`UPDATE assistant.code_capability_calls SET status='abandoned'
         WHERE user_id=${actor.id}::uuid AND status IN ('pending','running') AND created_at < now()-interval '1 day'
         RETURNING approval_id`;
         await approvals.cancel(
@@ -270,23 +233,23 @@ export function createRuntimeCapabilities(resolveResource: ResolveRuntimeResourc
         );
         const [pending] = await db<
           { count: number }[]
-        >`SELECT count(*)::int AS count FROM assistant.capability_calls WHERE user_id=${actor.id}::uuid AND status IN ('pending','running')`;
+        >`SELECT count(*)::int AS count FROM assistant.code_capability_calls WHERE user_id=${actor.id}::uuid AND status IN ('pending','running')`;
         if (pending!.count >= LIMITS.pendingRequests) throw new ArtifactError("TOO_MANY_REQUESTS");
-        await db`INSERT INTO assistant.capability_calls(id,user_id,artifact_id,conversation_id,request,prepared)
-        VALUES(${request.id}::uuid,${actor.id}::uuid,${resource?.internalId ?? null}::uuid,${conversationId},(${JSON.stringify(request)}::text)::jsonb,(${JSON.stringify({ ...prepared, review: JSON.stringify(prepared.review) })}::text)::jsonb)`;
+        await db`INSERT INTO assistant.code_capability_calls(id,user_id,conversation_id,request,prepared)
+        VALUES(${request.id}::uuid,${actor.id}::uuid,${conversationId},(${JSON.stringify(request)}::text)::jsonb,(${JSON.stringify({ ...prepared, review: JSON.stringify(prepared.review) })}::text)::jsonb)`;
         if (!automatic) {
           const approval = await requestApprovalRecord(request, prepared, actor.id, db, {
             sentence: codeApprovalMessage(response, caller.locale ?? "en"),
-            title: resource?.title ?? null,
+            title: null,
             expiresInMs: APPROVAL_MAX_WAIT_MS,
           });
           // An approval request already holds this call ID, so the ID is reused; it never inherits that decision.
           if (!approval.ok) throw new ArtifactError("CONFLICT");
-          await db`UPDATE assistant.capability_calls SET approval_id=${approval.id}::uuid WHERE id=${request.id}::uuid`;
+          await db`UPDATE assistant.code_capability_calls SET approval_id=${approval.id}::uuid WHERE id=${request.id}::uuid`;
         }
         // Only recent completed transport results are needed; canonical execution
         // history remains in the platform's capabilities.executions table.
-        await db`DELETE FROM assistant.capability_calls WHERE id IN (SELECT id FROM assistant.capability_calls
+        await db`DELETE FROM assistant.code_capability_calls WHERE id IN (SELECT id FROM assistant.code_capability_calls
         WHERE user_id=${actor.id}::uuid AND status IN ('completed','denied','abandoned') ORDER BY created_at DESC OFFSET ${LIMITS.logs})`;
       });
       if (automatic) return resolveCapability(request.id, { approved: true }, identity, caller, true, Boolean(task));
@@ -312,19 +275,25 @@ export function createRuntimeCapabilities(resolveResource: ResolveRuntimeResourc
   ) {
     z.uuid().parse(id);
     const actor = user(identity);
-    const [row] = await sql<Row[]>`SELECT * FROM assistant.capability_calls WHERE id=${id}::uuid AND user_id=${actor.id}::uuid`;
+    const [row] = await sql<Row[]>`SELECT * FROM assistant.code_capability_calls WHERE id=${id}::uuid AND user_id=${actor.id}::uuid`;
     if (!row) throw new ArtifactError("NOT_FOUND");
     // Declining has no effect to authorize or review. It must still work when
     // access was revoked or the target application is temporarily unavailable.
     if (!decision.approved && row.status === "pending") {
-      const denied = await claimExecution(row, decision, identity, null, false);
+      const denied = await claimExecution(
+        row,
+        decision,
+        identity,
+        null,
+        false,
+        RuntimeCapabilityRequest.parse(decoded(row.request)).conversationId,
+      );
       if (!denied) throw new ArtifactError("CONFLICT");
       return { status: "denied" as const };
     }
     const request = RuntimeCapabilityRequest.parse(decoded(row.request)),
       prepared = Prepared.parse(decoded(row.prepared));
-    const { resource } = await authorizeWithChat(request, identity, request.name);
-    if (resource && resource.permission !== "admin" && !prepared.resource) throw new ArtifactError("CONFLICT");
+    await authorizeWithChat(request, identity, request.name);
     if (row.status === "completed") return { status: "completed" as const, result: decoded(row.result) };
     if (row.status !== "pending") throw new ArtifactError("CONFLICT");
     const target = await operation(request.name, caller.locale, identity.authority ?? null);
@@ -347,9 +316,8 @@ export function createRuntimeCapabilities(resolveResource: ResolveRuntimeResourc
       currentReview = CapabilityActionReviewDataSchema.parse(response.data);
     }
     if (approvalReviewDigest(currentReview) !== approvalReviewDigest(prepared.review)) throw new ArtifactError("CONFLICT");
-    if (decision.remember && (!prepared.allowAlways || (resource && resource.permission !== "admin")))
-      throw new ArtifactError("INVALID_INPUT");
-    const updated = await claimExecution(row, decision, identity, currentReview, automatic);
+    if (decision.remember && !prepared.allowAlways) throw new ArtifactError("INVALID_INPUT");
+    const updated = await claimExecution(row, decision, identity, currentReview, automatic, request.conversationId);
     if (!updated) throw new ArtifactError("CONFLICT");
     if (!decision.approved) return { status: "denied" as const };
     // The capability call ID is the request ID of the execution that follows, so both audit trails join.
@@ -369,7 +337,7 @@ export function createRuntimeCapabilities(resolveResource: ResolveRuntimeResourc
       },
       { ...caller, requestId: id },
     );
-    await sql`UPDATE assistant.capability_calls SET status='completed',result=(${JSON.stringify(result)}::text)::jsonb WHERE id=${id}::uuid`;
+    await sql`UPDATE assistant.code_capability_calls SET status='completed',result=(${JSON.stringify(result)}::text)::jsonb WHERE id=${id}::uuid`;
     return { status: "completed" as const, result };
   }
 
@@ -386,10 +354,10 @@ export function createRuntimeCapabilities(resolveResource: ResolveRuntimeResourc
         action: prepared.localId,
         approvalScope: prepared.scope,
         requester: {
-          kind: request.artifactId ? "studio_app" : "assistant_turn",
-          ref: request.id,
+          kind: "assistant_turn",
+          ref: `${request.conversationId}/code/${request.id}`,
           appId: "assistant",
-          title: options.title ?? prepared.resource?.title ?? null,
+          title: options.title ?? null,
         },
         subjectId: userId,
         approverUserId: userId,
@@ -424,17 +392,20 @@ export function createRuntimeCapabilities(resolveResource: ResolveRuntimeResourc
     identity: ArtifactIdentity,
     review: z.infer<typeof CapabilityActionReviewDataSchema> | null,
     automatic: boolean,
+    conversationId: string,
   ): Promise<boolean> {
     const actor = user(identity);
     return sql.begin(async (db) => {
-      const [current] = await db<Row[]>`SELECT * FROM assistant.capability_calls
+      const [current] = await db<Row[]>`SELECT * FROM assistant.code_capability_calls
       WHERE id=${row.id}::uuid AND user_id=${actor.id}::uuid FOR UPDATE`;
       if (!current || current.status !== "pending") return false;
       if (!automatic) {
+        const request = RuntimeCapabilityRequest.parse(decoded(current.request));
+        request.conversationId = conversationId;
         let approvalId = current.approval_id;
         if (!approvalId) {
           const approval = await requestApprovalRecord(
-            RuntimeCapabilityRequest.parse(decoded(current.request)),
+            request,
             Prepared.parse(decoded(current.prepared)),
             actor.id,
             db,
@@ -443,7 +414,7 @@ export function createRuntimeCapabilities(resolveResource: ResolveRuntimeResourc
           );
           if (!approval.ok) return false;
           approvalId = approval.id;
-          await db`UPDATE assistant.capability_calls SET approval_id=${approvalId}::uuid WHERE id=${row.id}::uuid AND approval_id IS NULL`;
+          await db`UPDATE assistant.code_capability_calls SET approval_id=${approvalId}::uuid WHERE id=${row.id}::uuid AND approval_id IS NULL`;
         }
         const via = approvalDecisionChannel({ credentialKind: identity.credentialKind, actor: identity.actor, client: identity.client });
         // A relay may reject, but only the person can approve a pending request in the chat.
@@ -455,20 +426,19 @@ export function createRuntimeCapabilities(resolveResource: ResolveRuntimeResourc
         )
           return false;
         if (decision.approved) {
-          const request = RuntimeCapabilityRequest.parse(decoded(current.request));
           const consumed = await approvals.consume(
             approvalId,
             {
               input: Prepared.parse(decoded(current.prepared)).call ?? request.input,
               review,
-              requester: { kind: (await approvals.get(approvalId, db))!.requesterKind, ref: row.id },
+              requester: { kind: (await approvals.get(approvalId, db))!.requesterKind, ref: `${request.conversationId}/code/${row.id}` },
             },
             db,
           );
           if (!consumed.ok) return false;
         }
       }
-      const updated = await db`UPDATE assistant.capability_calls SET status=${decision.approved ? "running" : "denied"}
+      const updated = await db`UPDATE assistant.code_capability_calls SET status=${decision.approved ? "running" : "denied"}
       WHERE id=${row.id}::uuid AND user_id=${actor.id}::uuid AND status='pending' RETURNING id`;
       return updated.length > 0;
     });

@@ -1,6 +1,6 @@
 ---
 name: assistant-data-analysis
-description: Analyze source data, explain metrics and comparisons, and build evidence-backed reports or dashboards in Assistant Code Mode. Use for multi-step analysis, data exploration, and dashboards; computed charts, tables and one-off dashboards use cloud.view.* in the run, a dashboard to keep, reload or share is a Studio App, and a few non-run values use the chart tool.
+description: Analyze source data, explain metrics and comparisons, and build evidence-backed reports or dashboards in Assistant Code Mode. Use for multi-step analysis, data exploration, and dashboards; computed charts, tables and one-off dashboards use cloud.view.* in the run, a dashboard to keep, reload or share uses lasting Code, and a few non-run values use the chart tool.
 ---
 
 # Analyze data and deliver an inspectable result
@@ -10,17 +10,16 @@ with `load_skill`, not `load_tools`, for execution, delivery and approval rules.
 Read its `/skills/assistant-code-mode/references/views.md` for computed charts,
 groups, tables, key figures and record details,
 `/skills/assistant-code-mode/references/charts.md` for
-`cloud.chart()` in apps/PDFs, and `/skills/assistant-code-mode/references/apps.md`
-for interfaces. Loading a skill installs no library and grants no access.
+`cloud.chart()` in PDFs. Load `code-authoring` for lasting programs and pages. Loading a skill installs no library and grants no access.
 
-Choose a direct answer, views, an exported file or a Studio App by the
+Choose a direct answer, views, an exported file or lasting Code by the
 question. Computed values stay in `code_run` and reach the reader
 through `cloud.view.*` and `present({path})`. Never retype run values into tool
 arguments, app data or Markdown. Return only key figures the answer mentions.
 If a view is missing, rerun with `cloud.view.*`. A few non-run values use the
 `chart` tool. Filters, steps and comparison over a computed dataset use
 `cloud.view.explorer`. Interaction an explorer cannot express, and kept data,
-reuse, sharing, live loading or actions, need a Studio App.
+reuse, sharing, live loading or actions, need lasting Code.
 For categorical CSV or spreadsheet analyses where the reader will compare or
 filter (status per category, price against stock), deliver `cloud.view.stats`
 key figures plus an explorer over the rows instead of isolated
@@ -117,15 +116,9 @@ For targets, state the grain (for example month × region) and aggregate each
 target once; multiple selected regions sum distinct targets. Test reset,
 one/multiple/all selections, empty results, failed loads, and complete versus
 partial periods. Check that filters describe the data actually displayed.
-Use `code_check` on desktop and phone; inspect every screenshot, fix visible
-defects and check again before delivery.
-
-For a Studio App snapshot, export the validated dataset through `cloud.download`
-and `code_export`, then transfer its exact path/version with `code_file_copy`
-(see the Code Mode file transfers reference). Private imports receive fresh
-review. Read it with `JSON.parse(await (await cloud.files.read("data.json")).text())`;
-never reconstruct a truncated dataset from tool output. Retain transformations
-and source identity with the snapshot.
+Use `code-authoring` to check and test lasting Code before review and activation.
+Keep snapshots in authorized chat or Project files; preserve their exact paths
+and versions, and never reconstruct a truncated dataset from tool output.
 
 Follow Code Mode's HTTP approval and uncertain-outcome contract. Never replay
 an external mutation to refresh a chart. Keep filtering separate from external
@@ -137,15 +130,13 @@ repeat actions.
 
 Present views or exported files; a successful run alone is not visible. A
 one-off overview of an upload, even when called a dashboard, is
-`cloud.view.stats` plus groups or an explorer. A dashboard the person wants to
-keep, reload, share or give to a team is a Studio App, opened with `code_open`
-or shown with `code_present({id})` after checking numbers and rendering. The
-user can download its current view as PDF or static HTML. The answer carries findings, caveats and decisions, not values
+`cloud.view.stats` plus groups or an explorer. A dashboard the person wants to keep, reload or share uses lasting Code and the
+`code-authoring` workflow. The answer carries findings, caveats and decisions, not values
 already shown in views. Include the result link/path, data timestamp and material
 coverage limits; say whether it is a snapshot or reloads from sources.
 
 Reuse one Cloud resource for revisions of a reusable report or dashboard.
-Save and test its source, and follow Code Mode publication when requested.
+Save and test its source, and follow the Code review and activation workflow when requested.
 Publishing a version and granting readers access are separate operations;
 preserve existing access. A dashboard request does not authorize broader
 sharing, and personal secrets never go to readers.

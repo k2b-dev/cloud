@@ -47,7 +47,7 @@ export type AiRecentResourceDependencies = {
 };
 
 const german = (locale: string) => locale.toLowerCase().split("-")[0] === "de";
-/** Skills and Studio apps belong to the Assistant, which has no capability presentation to read its name from. */
+/** Skills belong to the Assistant, which has no capability presentation to read its name from. */
 const assistantName = (locale: string) => (german(locale) ? "Assistent" : "Assistant");
 
 /** First line only; reserve one character for the ellipsis and avoid splitting words. */
@@ -97,7 +97,9 @@ export const listAiRecentResources = async (input: {
         () => [],
       )
     : Promise.resolve([]);
-  const registry = candidates.some(({ ref }) => ref.type !== "core.ai.skill" && ref.type !== "assistant.artifact")
+  const registry = candidates.some(
+    ({ ref }) => ref.type !== "core.ai.skill" && ref.type !== "assistant.artifact" && ref.type !== "assistant.app",
+  )
     ? withinBudget(signal, async () =>
         discoverableAppEntries(input.authority, await (deps.listRegistry ?? listCapabilities)(), deps.listApps),
       ).catch(() => [])
@@ -120,7 +122,7 @@ export const listAiRecentResources = async (input: {
             appName: assistantName(input.locale),
           };
         }
-        if (ref.type === "assistant.artifact") return null;
+        if (ref.type === "assistant.artifact" || ref.type === "assistant.app") return null;
         const apps = await registry;
         signal.throwIfAborted();
         const appId = cloudResourceRefAppId(ref);

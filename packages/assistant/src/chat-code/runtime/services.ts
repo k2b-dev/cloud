@@ -2,7 +2,6 @@ import { CapabilityIdempotencyKeySchema, CapabilityInvocationBodySchema } from "
 import { z } from "zod";
 import { LIMITS } from "../contracts";
 import { CloudError } from "./errors";
-import { RuntimeStorage } from "./storage";
 import { RuntimeStream, runStream } from "./streams";
 
 /** Normalized coordinates and retry metadata; validated again at the authenticated capability endpoint. */
@@ -15,7 +14,7 @@ export const RuntimeSdkCallOptions = z
   .strict();
 export type RuntimeSdkCallOptions = z.infer<typeof RuntimeSdkCallOptions>;
 
-/** Host services behind `cloud.*`, shared by script runs and HTML app frames. Each one rechecks access on the server. */
+/** Host services behind `cloud.*`, for runner script runs. Each one rechecks access on the server. */
 export type RuntimeServices = {
   stream?: typeof runStream;
   /** Loads a lazy runtime chunk from the owning host. */
@@ -24,8 +23,6 @@ export type RuntimeServices = {
   http?: (request: unknown, signal: AbortSignal) => Promise<unknown>;
   ai?: (request: unknown, signal: AbortSignal) => Promise<unknown>;
   pdf?: (request: unknown, signal: AbortSignal) => Promise<Blob>;
-  database?: (request: unknown, signal: AbortSignal) => Promise<unknown>;
-  storage?: (request: z.infer<typeof RuntimeStorage>) => Promise<unknown>;
 };
 
 /** Calls that wait for a person to confirm something in Cloud. */
@@ -96,11 +93,12 @@ export function createServiceCalls(services: RuntimeServices) {
         if (!services.pdf) throw new CloudError("unavailable", "PDF service unavailable");
         return services.pdf(args[0], signal);
       case "database":
-        if (!services.database) throw new CloudError("unavailable", "Database access requires a saved app or script");
-        return services.database(args[0], signal);
+        throw new CloudError(
+          "unavailable",
+          "Studio RSQL database grants are unavailable in runner code_run. Use application capabilities.",
+        );
       case "storage":
-        if (!services.storage) throw new CloudError("unavailable", "Storage requires a saved app or script");
-        return services.storage(RuntimeStorage.parse(args[0]));
+        throw new CloudError("unavailable", "Studio app storage is unavailable in chat code_run. Use chat or Project files.");
       default:
         throw new CloudError("invalid", "Unsupported host operation");
     }

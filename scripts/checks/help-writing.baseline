@@ -10,12 +10,9 @@ packages/api-docs/src/help/documents/en/api-docs-start.help.md | term | grant
 packages/assistant/src/help/documents/de/assistant-guidance.help.md | step | Ergebnis benennen: Beschreibe, was du erhalten möchtest, etwa
 packages/assistant/src/help/documents/de/assistant-guidance.help.md | term | Administratorrecht*
 packages/assistant/src/help/documents/de/assistant-guidance.help.md | term | Administratorrecht*
-packages/assistant/src/help/documents/de/assistant-guidance.help.md | term | Bearbeitungsrecht*
 packages/assistant/src/help/documents/de/assistant-guidance.help.md | term | Berechtigung*
 packages/assistant/src/help/documents/de/assistant-guidance.help.md | term | Lesezugriff
 packages/assistant/src/help/documents/de/assistant-guidance.help.md | term | Schreibzugriff
-packages/assistant/src/help/documents/de/assistant-guidance.help.md | term | Verwaltungsrecht*
-packages/assistant/src/help/documents/de/assistant-guidance.help.md | term | klick*
 packages/assistant/src/help/documents/de/assistant-overview.help.md | term | Anwendung
 packages/assistant/src/help/documents/de/assistant-overview.help.md | term | Anwendung
 packages/assistant/src/help/documents/de/assistant-overview.help.md | term | Anwendung
@@ -35,15 +32,6 @@ packages/assistant/src/help/documents/de/assistant-workflow.help.md | term | kli
 packages/assistant/src/help/documents/en/assistant-guidance.help.md | frontmatter | kind
 packages/assistant/src/help/documents/en/assistant-guidance.help.md | step | Ask for a check: For important work, ask
 packages/assistant/src/help/documents/en/assistant-guidance.help.md | term | admins
-packages/assistant/src/help/documents/en/assistant-guidance.help.md | term | grant
-packages/assistant/src/help/documents/en/assistant-guidance.help.md | term | grant
-packages/assistant/src/help/documents/en/assistant-guidance.help.md | term | grant
-packages/assistant/src/help/documents/en/assistant-guidance.help.md | term | grants
-packages/assistant/src/help/documents/en/assistant-guidance.help.md | term | grants
-packages/assistant/src/help/documents/en/assistant-guidance.help.md | term | permission
-packages/assistant/src/help/documents/en/assistant-guidance.help.md | term | permissions
-packages/assistant/src/help/documents/en/assistant-guidance.help.md | term | rights
-packages/assistant/src/help/documents/en/assistant-guidance.help.md | term | rights
 packages/assistant/src/help/documents/en/assistant-overview.help.md | frontmatter | kind
 packages/assistant/src/help/documents/en/assistant-overview.help.md | term | application
 packages/assistant/src/help/documents/en/assistant-overview.help.md | term | application

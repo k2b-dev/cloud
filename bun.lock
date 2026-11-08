@@ -100,19 +100,15 @@
       "dependencies": {
         "@agentclientprotocol/sdk": "1.7.0",
         "@k2b/cloud": "workspace:*",
-        "@k2b/rsql": "1.0.0",
         "@k2b/ssr": "workspace:*",
         "@k2b/stdlib": "catalog:",
         "@k2b/ui": "workspace:*",
-        "@typescript/typescript6": "catalog:",
-        "axe-core": "catalog:",
         "hono": "catalog:",
         "hucre": "1.1.0",
         "ibantools": "4.5.4",
         "papaparse": "5.7.0",
         "pdf-lib": "1.17.1",
         "pdfjs-dist": "6.3.289",
-        "playwright": "catalog:",
         "read-excel-file": "9.3.10",
         "saxes": "6.0.0",
         "solid-js": "catalog:",
@@ -122,6 +118,7 @@
         "@k2b/nessi": "catalog:",
         "@types/bun": "catalog:",
         "@types/papaparse": "5.5.2",
+        "playwright": "catalog:",
         "typescript": "catalog:",
       },
     },
@@ -1320,8 +1317,6 @@
     "@k2b/notes-site": ["@k2b/notes-site@workspace:pwas/notes"],
 
     "@k2b/pwa-auth": ["@k2b/pwa-auth@workspace:pwas/pwa-auth"],
-
-    "@k2b/rsql": ["@k2b/rsql@1.0.0", "", {}, "sha512-PQe40kFEaAqTpqcRa/LzmexuVPaIXAsjaAdy5F46973FqV7AavS7sjbLF66VBF7vIyYF/uMCSbsrWGOilRic2g=="],
 
     "@k2b/ssr": ["@k2b/ssr@workspace:packages/ssr"],
 

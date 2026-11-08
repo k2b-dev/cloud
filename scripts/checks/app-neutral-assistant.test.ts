@@ -63,7 +63,6 @@ test("checks only Assistant presentation code and skips tests", async () => {
     for (const path of [
       "packages/cloud/src/_internal/capability-sentences.ts",
       "packages/cloud/src/ai/tool-sentences.ts",
-      "packages/assistant/src/chat-code/CapabilityApproval.tsx",
       "packages/assistant/src/chat-code/code-approval-message.ts",
       "packages/assistant/src/frontend/empty.ts",
     ]) {

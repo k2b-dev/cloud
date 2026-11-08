@@ -12,8 +12,7 @@ and turns images into links. Use `html_to_pdf` for a chat `.html` file whose
 layout needs HTML and CSS, images, or fonts. It takes optional CSS (file or
 inline), header and footer files, chat files as named assets, and the `page`
 options below, then writes a sibling `.pdf` for `present`. Use `cloud.pdf.render` when
-code builds the document from data, for Factur-X or attachments, and in Studio
-Apps.
+code builds the document from data, for Factur-X or attachments.
 
 ## HTML and CSS
 
@@ -47,11 +46,7 @@ defaulting to 15. Use `page` for paper dimensions and margins; avoid conflicting
 CSS `@page` rules. `tagged` defaults to true, which requests a tagged PDF but does
 not certify accessibility.
 
-In Studio Apps the document gets the base stylesheet of [HTML apps](apps.md)
-first, so a custom flex or grid row, such as two signature columns, needs
-`> * { margin: 0 }`. `code_check` lays out the HTML of every PDF the steps create
-as it prints, with print media, and warns when siblings of one row sit at
-different heights.
+Documents receive the shared PDF stylesheet before custom CSS.
 
 Charts render in Cloud light colors through a shared chart stylesheet. Your HTML may include `<style>`; header and footer are separate documents with their own CSS. Scripts, redirects, frames and outbound
 resources are blocked. MathML (`math`) and the SVG elements `foreignObject` and
@@ -70,12 +65,11 @@ const result = await cloud.pdf.attach({
     relationship: "Data",
   }],
 });
-await cloud.files.write("reports/with-details.pdf", result);
+await cloud.download("with-details.pdf", result);
 ```
 
 The source PDF and attachments are ordinary `Blob`s. Their origin does not
-matter: files a person selects in an app, authorized chat inputs, or app storage use
-the same API. `relationship` defaults to `Unspecified`; alternatives are
+matter: authorized chat input files and generated documents use the same API. `relationship` defaults to `Unspecified`; alternatives are
 `Source`, `Data`, `Alternative`, and `Supplement`. MIME type comes from the Blob
 and defaults to `application/octet-stream` if empty. Provide at least one attachment. Names within the request
 must be unique. All asset/attachment names are 1–180 characters, with no slash,

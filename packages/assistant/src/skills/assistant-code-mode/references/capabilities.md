@@ -45,7 +45,7 @@ contains `target: {type,id}`, `refs: {field: {type,id}}` and an optional
 `idempotencyKey`. Use the exact discovered target and ref types. Explicit keys
 are accepted only for Actions declaring required idempotency; retain the key
 for the same effect on a retry. Omitting it keeps the existing per-call key.
-This transport option applies to script runs and Studio apps; it grants no
+This transport option applies to script runs; it grants no
 additional permission and does not answer approval dialogs. The generated SDK
 sets these coordinates from its handles.
 
@@ -118,7 +118,7 @@ null when an analysis needs every entry. Trash remains recoverable; no permanent
 delete capability is exposed.
 
 
-For a user download from a Studio list, Filesv2 also provides an on-demand
+For a file download, Filesv2 also provides an on-demand
 `content.download` lease. Keep resource refs in lists and request the URL only
 when selected; follow [Filesv2 and Grids downloads](files.md#list-filesv2-files-beside-grids-documents)
 for expiry, permissions and error recovery.

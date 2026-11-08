@@ -309,9 +309,7 @@ Project, knowledge, file, and reference commands do not accept database UUIDs.
 Turn and message IDs are scoped to their chat. Access, knowledge, file, and
 reference IDs are scoped to their Project.
 
-Studio app and saved-script commands use the resource UUID returned by
-`assistant code list` or `assistant code create`. These are separate from the
-short chat and Project IDs above. Remembered approval IDs are also UUIDs;
+Remembered approval IDs are also UUIDs;
 use the exact ID from `assistant approvals list` when revoking one.
 
 Useful options:
@@ -378,126 +376,12 @@ Without `--chat`, the list contains approvals that apply everywhere; with it,
 only approvals limited to that chat. Lists support `--json` and `--jsonl`.
 Revoking needs no `--yes`: the Assistant asks again on the next matching call.
 
-## Code Mode and Studio
+## Chat code
 
-Resource managers can use `assistant code database-status ID` without creating
-a database, `database-export ID --out backup.sqlite` for a streamed backup,
-and `database-reset ID --yes` to detach the current database and queue its
-deletion. Reset preserves source, publications and shared files/KV. The next
-connection creates a new empty database; retries cannot delete a replacement
-created after the confirmed generation.
-
-`assistant code storage-manage ID --input-file request.json` uses the existing
-`area`, `operation`, `key`, `after`, `limit` storage contract with Manage access.
-Use `assistant code storage-clear ID --area files|kv|all --scope shared|user --yes` for bulk cleanup. Scope defaults to `shared`; `user` clears only the current user’s personal JSON (`--area kv`).
-These commands share the Studio Advanced menu's permission-aware services.
-Personal JSON uses scope:"user" and always belongs to the signed-in viewer across devices.
-
-In an Assistant chat, Cloud runs Code Mode on the server; of its tools, only
-`code_open` and `code_secret` still wait for the CLI. `code run` and
-`code action` run in an isolated browser worker hosted by the CLI. It does not
-need an open Assistant browser tab. The served plugin includes Playwright and its browser metadata. Install Playwright Chromium, or set
-`CLOUD_CLI_CHROMIUM` to an existing Chromium executable. A host that does not
-start within 45 seconds fails without running code, and the error names the
-startup step that stalled.
-Streaming reconnects after transport interruptions and periodically reconciles
-the saved turn state. This keeps a missed completion event from leaving the CLI
-waiting indefinitely; it does not restart completed tool calls.
-Code has no Node/Bun environment, shell access, credentials, or unrestricted
-network access. This is separate from local tools in `ask` mode.
-
-```bash
-cld assistant code list --json
-cld assistant code list --search "sales totals" --json
-cld assistant code create "CSV totals" --description "Sum uploaded sales rows"
-cld assistant code write <resource-id> main.ts --content-file main.ts
-cld assistant code get <resource-id> --json
-cld assistant code run --chat <chat-id> --input-file run.json --json
-cld assistant code actions <resource-id> --json
-cld assistant code actions <resource-id> --draft --json
-cld assistant code action --chat <chat-id> --input-file action.json --json
-cld assistant code publish <resource-id>
-cld assistant code versions <resource-id>
-cld assistant code restore <resource-id> 1
-cld assistant code fork <resource-id>
-cld assistant code delete <resource-id> --yes
-cld assistant code project-link <resource-id> <project-id>
-cld assistant code access <resource-id>
-cld assistant studio-admin list --json
-```
-
-All reusable programs are Apps: an `index.html` interface, agent actions, or
-both, with optional persistent data. One-off code belongs to its chat and
-cannot be shared. Interfaces run in the browser; `code run` and `code action`
-run scripts and refuse an `index.html` entry.
-`code actions` reads the published `app.actions.json` contract without running
-code. `action.json` contains `{id,action,publishedVersion,input}`; copy the exact
-name and version from discovery and follow its JSON input schema. Use access
-suffices for published handlers. `--draft` discovery and `{id,action,revision,input}`
-require Manage and test the exact current draft. Supply one version selector.
-A changed version rejects execution; rediscover before retrying. Action errors,
-including invalid output, do not undo effects. The `code action` command uses
-the same isolated host, approval flags, and optional steps as `code run`.
-
-`run.json` contains either `{"code":"export default () => 42"}` for a one-off,
-or `{"id":"<resource-id>"}` for a saved script. Add `inputPaths` for explicitly
-selected files of the current chat; the script reads them on demand from its
-context `files`. Actions and HTML apps receive no chat files. One-offs create no
-Studio resource. Optional `--steps-file` accepts an array of `{name,args}` steps
-using `code_inspect` or `code_export`; the CLI supplies the run ID. An export returns
-an absolute chat-file path for `assistant files download` or a later run's
-`inputPaths`. Snapshot output includes `outputTruncated`; export full results
-instead of parsing a shortened preview. Pending input downloads pause startup
-and readiness watchdogs, but still count toward the tool call's 45-second outer
-budget. Capability approval waits pause that outer budget. At host capacity,
-finished one-offs without exports, pending requests, or running jobs are
-reclaimed automatically. Invalid tool arguments fail the command before source
-execution. A started call that does not complete fails the command with
-`{failed: true, error, guidance?}`.
-
-For long work, use the script context signal and progress; yield between batches.
-`code_inspect` accepts `waitMs` up to 30000. After explicit steps, the CLI keeps
-its host alive until active background work finishes. Closing the CLI interrupts
-the worker.
-
-Lazy `cloud.pdf.read` reads PDF pages/text/positions; `cloud.sheet.read` detects
-XLSX/ODS bytes and reads cached formula values. `cloud.sheet.toOds` exports
-workbooks. No package imports are needed. Process selected files sequentially
-and close PDF readers after use. Parser budgets are 64 MiB per document and
-128 MiB expanded workbook XML. Selected chat inputs and captured exports retain
-64 paths, 50 MiB per file, and 250 MiB total; use Blob for large exports.
-Those are separate from persistent shared storage quotas.
-
-Agent/CLI runs use the same personal and shared server stores. Storage changes are real
-and persist across runs and publications. Forks start with empty data. Use
-`code storage` with JSON input for file list/delete and KV operations. Use
-`code sql` with `{"sql":"SELECT title FROM todos LIMIT 20","params":[]}` for
-a direct read-only query. It never creates a database. `code database-connect`
-explicitly provisions one when the instance has rsql configured;
-`code database` sends flat `list/get/insert/update/delete/query` operations to the Use runtime and dotted `tables.*`, `schema.get`, and `rows.*` operations to Manage-only maintenance. Project membership grants Use on linked published Apps, including
-read/run/storage/database commands and copying published source. A Project chat
-is not required; editing and management rights remain separate.
-
-Normal capability approvals also apply inside scripts. Interactive Assistant
-sessions show the review and numbered approval choices when approval can be
-remembered; one-time approvals ask `Approve? [y/N]`. An HTTP request from Code
-Mode shows its method, URL, headers, and body preview in that review. For a
-direct run or print-mode turn, repeat `--approve <exact-capability-name>` only for operations
-the user authorized. There is no approve-all option.
-
-Sharing and publication are separate. First publication uses `Initial release`;
-subsequent `code publish` calls require `--note` or `--note-file`. Restore creates
-a new publication and preserves user data. `code grant` and `code change-grant`
-take the same permission payloads as the resource API. `studio-admin` provides
-the corresponding administrator access/grant/change-grant commands and
-`delete <resource-id> --yes` for confirmed deletion.
-
-Read redacted connection state with `studio-admin settings`. Configure using
-`studio-admin configure --input-file <private-json-file> --yes` with `url` and `token`;
-omit `token` to preserve it, or add `--test` to test without saving. Never put
-the token directly in command arguments. Settings cannot replace a server that
-still owns databases or pending cleanup. Central inventory covers shared data
-and Project associations, not personal JSON storage.
+One-off `code_run` tool calls in chat execute on the Code runner with the turn's
+approvals. Read returned results through the chat. Use `cld code` for lasting
+Code. The former `cld assistant code`, `studio-admin` and `code-host` commands
+have been retired, including HTML checks and Studio app storage.
 
 ## Chats and turns
 
@@ -668,76 +552,14 @@ shared and personal server data; remote database cleanup is queued. Running reso
 consent, including reads; personal remembered approvals do not apply.
 
 
-### Shared Studio files and limits
+### PDF generation and Finance in chat code
 
-Use binary commands for file contents (Use access; `--manage` explicitly requires
-Manage). Project members inherit Use on linked published Apps:
+Chat scripts can use `cloud.pdf.render`, `cloud.pdf.attach`, `cloud.pdf.read`,
+`cloud.sheet` and `cloud.finance`. PDFs are generated through Gotenberg;
+financial calculations and input parsing run in workerd. Export captured files
+through `code_export`, then present the returned chat path.
 
-```bash
-cld assistant code file-upload APP --file invoice.pdf --key invoices/invoice.pdf
-cld assistant code file-download APP --key invoices/invoice.pdf --out invoice.pdf
-cld assistant studio-admin storage-settings --json
-cld assistant studio-admin storage-configure --input-file limits.json --yes
-```
-
-The administrator input is `{"fileMiB":50,"totalMiB":250}`. Omit fields you do
-not intend to change. Reads also report `unreadable` by setting name. Replacing
-an unreadable value requires its name in `replaceUnreadable`, for example
-`{"fileMiB":50,"replaceUnreadable":["assistant.storage_file_mib"]}`. Database
-configuration accepts the same replacement list for `assistant.rsql_url` and
-`assistant.rsql_api_token`; omitted values stay untouched. Ordinary writes over
-unreadable values return HTTP 409 `setting_unreadable`.
-
-Those are also the
-default byte budgets in MiB. There is no shared file count limit. File size can
-be configured up to 64 MiB, total storage up to 1 TiB per resource. Shared KV
-retains its separate 16 MiB/1,000-entry budget. Lists use `after`/`limit` pages.
-An upload replaces the named key; use another key to keep both originals.
-Lowering budgets preserves files and permits reads/deletes or non-growing
-replacements. Storage settings do not raise chat or processing limits.
-Direct JSON file read/write is no longer accepted; use the binary commands.
-
-
-### PDF generation and Finance in Code Mode
-
-Code run through the CLI uses the same Studio APIs: `cloud.pdf.render`, `cloud.pdf.attach`
-and `cloud.pdf.render({html,facturX:{xml,profile}})` return Blobs through the configured Gotenberg service.
-`cloud.download(name,data)` captures the result for an explicit export step. PDF calls use
-binary multipart, preserve cancellation across the browser subprocess, and do
-not need `--approve` for the internal conversion. App Use access or an accessible
-unrestricted chat is required; source editing and resource maintenance retain
-their existing Manage requirement.
-
-`cloud.finance.camt.parse` and `cloud.finance.einvoice` methods are awaited,
-alongside `cloud.finance.datev` and `cloud.finance.sepa`. `cloud.money` handles
-exact arithmetic synchronously. No WASM/XSD checker is included.
-CAMT supports camt.052.001.08; invoice generation supports EUR ZUGFeRD CII EN16931.
-PDF invoice reading extracts embedded XML, not OCR. See the Code Mode Finance
-and PDF references for full options and examples. Generating SEPA or invoice
-files does not submit a payment or certify accounting compliance.
-
-### Agent sharing and CLI parity
-
-Assistant's `code_access_read` and `code_access_change` tools use the same App
-permission service as Studio and the existing code-access CLI commands. Agent
-changes require a freshly reviewed `accessRevision`; they cannot be pre-approved
-with a model-supplied flag. App Use is `read`, Manage is `admin`. App recipients
-are users, groups, authenticated users, or public. Public only accepts `read`;
-public `admin` and service-account grants are rejected.
-
-For Skills, discover `core.ai.skill.access.read` and
-`core.ai.skill.access.change` through the CLI capability catalog and use the
-normal capability review/execute flow. Read grants first and forward the exact
-`accessRevision` as `expectedAccessRevision`. Resolve recipients through
-`core.entities.search`. Skill and App grants remain independent.
-
-`assistant code database-clear ID --yes` removes rows while retaining tables
-and schema. It reads the current database generation and data revision before
-execution. Inspect `completed` and `clearedTables`; a partial failure reports
-`failedTable` and requires inspection before retrying. This differs from
-`database-reset`, which discards schema too. Both preserve source and files/KV.
-
-### Copy files between chats, Projects, and Apps
+### Copy files between chats and Projects
 
 Use JSON files or stdin, preserving exact returned IDs and paths:
 
@@ -763,38 +585,6 @@ Use an explicit user instruction for the named table. A full database reset is
 not a substitute. Known file collisions return `CONFLICT`, byte rejections
 `STORAGE_FULL`, and source validation failures `COMPILE_FAILED` with diagnostics.
 
-### Standalone and public Studio apps
-
-`cld assistant code url ID` returns the relative standalone `href`:
-`/app/assistant/apps/ID/run`. Resolve it against the selected Cloud instance.
-This URL runs the latest publication without the Assistant sidebar. Managers
-keep the Studio management view as their default entry; Use-level users enter
-the runner directly. Private links require sign-in and app access.
-
-Publish with `cld assistant code publish ID`, then share explicitly if requested:
-
-```bash
-cld assistant code grant ID --input '{"principal":{"type":"public"},"permission":"read"}'
-cld assistant code access ID
-```
-
-Remove the public entry using its returned access ID:
-
-```bash
-cld assistant code change-grant ID ACCESS_ID --input '{"permission":null}'
-```
-
-Public execution supports local computation, selected files, downloads and
-personal JSON storage. It never grants app database, server files/KV, secrets,
-server HTTP/PDF or protected Cloud actions. Signed-in visitors need a separate
-explicit app grant for these features. Warn before sharing an app that requires
-them. Published code and embedded data become public, never its draft or history.
-Unpublishing also prevents public loads. Already downloaded code cannot be recalled.
-Operator `studio-admin grant` and `change-grant` enforce the same rules.
-
-Cloud administrators can use this runner URL as a Link shortcut in the existing
-navigation settings. Shortcut visibility and app access remain separate.
-
 ### Project Skills
 
 ```bash
@@ -809,4 +599,4 @@ Skills, including the normal searchable catalog and lazy instruction loading.
 Personal disabled-Skill preferences still apply. Linking and unlinking require
 Manage on both resources. A link stays intact if its creator later loses access;
 unlinking or losing membership removes only inherited access. Direct grants
-remain. The same persistence rule applies to `code project-link` for Studio Apps.
+remain.

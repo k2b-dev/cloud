@@ -18,6 +18,6 @@ export async function buildBaseCss(): Promise<string> {
     const data = (await readFile(join(ui, "fonts", file))).toString("base64");
     faces.push(face.replace(/url\([^)]+\)/, `url(data:font/woff2;base64,${data})`));
   }
-  if (faces.length !== 10) throw new Error(`Expected 10 Plex faces for app frames, found ${faces.length}`);
+  if (faces.length !== 10) throw new Error(`Expected 10 Plex faces for PDF documents, found ${faces.length}`);
   return faces.join("") + base.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\n\s*\n/g, "\n");
 }

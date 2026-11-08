@@ -1,14 +1,10 @@
 import { websocket } from "hono/bun";
-import { agentHost as studioAgentHost } from "./artifacts/agent-host";
-import { artifactDatabase, rsqlAllowlist } from "./artifacts/database";
-import { appChecks } from "./artifacts/html/check-service";
-import { httpService } from "./artifacts/http-service";
-import { closeMachineHosts } from "./artifacts/machine-execution";
-import { migrateArtifacts } from "./artifacts/migrate";
 import { assistantCapabilities } from "./capabilities";
 import { agentHost } from "./chat-code/agent-host";
+import { httpService } from "./chat-code/http-service";
 import { app } from "./config";
 import { assistantHelp } from "./help";
+import { migrateAssistant } from "./migrate";
 import { apiRoutes, router } from "./router";
 
 let hostTimer: ReturnType<typeof setInterval> | undefined;
@@ -16,7 +12,8 @@ let hostSweep: Promise<unknown> | undefined;
 let databaseTimer: ReturnType<typeof setInterval> | undefined;
 let databaseCleanup: Promise<unknown> | undefined;
 const sweep = () =>
-  (databaseCleanup ??= Promise.all([artifactDatabase.cleanup(), httpService.cleanup(), appChecks.cleanup()])
+  (databaseCleanup ??= httpService
+    .cleanup()
     .catch(() => console.warn("Assistant storage cleanup deferred"))
     .finally(() => {
       databaseCleanup = undefined;
@@ -28,11 +25,11 @@ const result = await app.start({
   capabilities: assistantCapabilities,
   openapi: apiRoutes,
   lifecycle: {
-    setup: migrateArtifacts,
+    setup: migrateAssistant,
     start: async () => {
-      await rsqlAllowlist();
       hostTimer = setInterval(() => {
-        hostSweep ??= Promise.all([agentHost.sweep(), studioAgentHost.sweep()])
+        hostSweep ??= agentHost
+          .sweep()
           .catch(() => console.warn("Code host cleanup deferred"))
           .finally(() => {
             hostSweep = undefined;
@@ -46,7 +43,7 @@ const result = await app.start({
     stop: async () => {
       clearInterval(hostTimer);
       await hostSweep;
-      await Promise.all([agentHost.close(), studioAgentHost.close(), closeMachineHosts()]);
+      await agentHost.close();
       clearInterval(databaseTimer);
       await databaseCleanup;
     },

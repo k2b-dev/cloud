@@ -417,15 +417,12 @@ route to bypass the mandate.
 
 ## Assistant routine runtime grants
 
-Routines keep capability, HTTP, and RSQL access in the same mandate
-`grants` list. Capability entries use `appId`, `capabilityId`, `kind`, and
-`fixedInput`. Code Mode entries use `kind: "http"` or `kind: "database"` and
-`fixedInput`: HTTP can fix an HTTPS origin, exact URL, and method; database
-access can fix a Studio app ID, operation, and table. Omitted fields are free
-for the routine to choose. An empty object explicitly grants unrestricted inputs
-for that kind, within the runtime's existing limits and current resource access.
-
-Flat `cloud.db` operations `list`, `get`, `insert`, `update`, and `delete` match grants `rows.list`, `rows.get`, `rows.insert`, `rows.update`, and `rows.delete`; `query` matches `query`.
+Routines keep capability and HTTP access in the same mandate `grants` list.
+Capability entries use `appId`, `capabilityId`, `kind`, and `fixedInput`.
+Code Mode HTTP entries use `kind: "http"` and `fixedInput` to fix an HTTPS
+origin, exact URL and method. Omitted fields are free for the routine to choose,
+within the runtime's existing limits and current access. Studio RSQL database
+grants no longer authorize an executable database service.
 
 The ordinary routine approval describes these grants before they are saved.
 Runtime calls check the stored mandate revision and exact fixed values; HTTP

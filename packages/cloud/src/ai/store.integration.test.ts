@@ -293,7 +293,7 @@ suite("AI conversation store integration", () => {
         runConfig,
         userMessage: userMessage("Run"),
       });
-      const ask = async (callId: string, requester: { kind: "assistant_turn" | "studio_app"; ref: string }, decided: boolean) => {
+      const ask = async (callId: string, requester: { kind: "assistant_turn"; ref: string }, decided: boolean) => {
         const record = await approvals.request({
           appId: "demo",
           action: "write",
@@ -332,7 +332,7 @@ suite("AI conversation store integration", () => {
           requester: { kind: "assistant_turn", ref: `${turn.id}/used` },
         }),
       ).toEqual({ ok: true });
-      const linked = await ask("linked", { kind: "studio_app", ref: crypto.randomUUID() }, true);
+      const linked = await ask("linked", { kind: "assistant_turn", ref: `${chat.id}/code/${crypto.randomUUID()}` }, true);
       expect(await aiConversations.completeTurn({ conversationId: chat.id, turnId: turn.id, status: "aborted" })).not.toBe("lost");
       expect(await Promise.all([open, unused, used, linked].map(async (id) => (await approvals.get(id))?.status))).toEqual([
         "cancelled",

@@ -877,8 +877,8 @@ export const createAiResourceReaderTool = (input: {
     outputSchema: z.unknown(),
     approval: "never",
   }).server(async (ref, context) => {
-    if (ref.type === "assistant.artifact")
-      throw new Error("Studio resources are unavailable in chat. Open Studio to inspect this saved app.");
+    if (ref.type === "assistant.artifact" || ref.type === "assistant.app")
+      throw new Error("Studio apps have been retired and are unavailable. They were not transferred to Code.");
     const appId = cloudResourceRefAppId(ref);
     const app = input.apps.find((candidate) => candidate.appId === appId);
     const reader = app ? resolveCapabilityResourceReader(app.manifest, ref) : null;
