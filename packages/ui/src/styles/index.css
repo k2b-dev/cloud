@@ -5035,21 +5035,6 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   border-radius: 0.625rem;
 }
 
-.k2b-ui .k2b-panel-dialog[data-media] .k2b-dialog__close {
-  margin-inline-start: 0;
-  border-radius: 999px;
-  background: var(--k2b-overlay-surface);
-}
-
-.k2b-ui .k2b-panel-dialog[data-media] .k2b-dialog__close:hover {
-  background: var(--k2b-overlay-surface-hover);
-}
-
-/* Without actions the close chip moves to the end on its own. */
-.k2b-ui .k2b-panel-dialog[data-media] .k2b-panel-dialog__heading + .k2b-dialog__close {
-  margin-inline-start: auto;
-}
-
 .k2b-ui .k2b-panel-dialog[data-media] > .k2b-panel-dialog__body {
   padding: 0;
 }
