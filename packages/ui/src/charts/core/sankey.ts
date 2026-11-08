@@ -1,5 +1,33 @@
 import { type ChartOptions, chartDatumSvg, escapeXml, svgRoot } from "./svg";
-import { chartTextWidth, fitChartText } from "./text";
+
+// Fitting stays in this leaf so it cannot create a calendar/Sankey-only shared chunk.
+function chartTextWidth(text: string, size: number): number {
+  return (
+    Array.from(text).reduce(
+      (width, glyph) =>
+        width +
+        (/\s/.test(glyph)
+          ? 0.34
+          : /[ilI.,:;!|'`]/.test(glyph)
+            ? 0.32
+            : /[MW@%&]/.test(glyph)
+              ? 1
+              : /[A-Z0-9]/.test(glyph)
+                ? 0.74
+                : /[a-zäöüßéèáàóúñç()-]/i.test(glyph)
+                  ? 0.64
+                  : 1),
+      0,
+    ) * size
+  );
+}
+
+function fitChartText(text: string, width: number, size: number): string {
+  if (chartTextWidth(text, size) <= width) return text;
+  const glyphs = Array.from(text);
+  while (glyphs.length && chartTextWidth(glyphs.join("") + "…", size) > width) glyphs.pop();
+  return chartTextWidth("…", size) <= width ? glyphs.join("") + "…" : "";
+}
 
 export type SankeyNode = {
   id: string;

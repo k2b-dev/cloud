@@ -321,6 +321,35 @@ const examples = {
       ],
     },
   },
+  bubble: {
+    description: "Named bubbles compare reach, opens and audience area. Guides show the unweighted average.",
+    chart: {
+      kind: "bubble",
+      groups: ["North", "South"],
+      xLabel: "Visits",
+      yLabel: "Opens",
+      sizeLabel: "Audience",
+      averages: true,
+      data: [
+        { label: "Letter A", group: "North", x: 1, y: 2, size: 4 },
+        { label: "Letter B", group: "North", x: 4, y: 8, size: 16 },
+        { label: "Letter C", group: "South", x: 8, y: 4, size: 8 },
+      ],
+    },
+  },
+  radar: {
+    description: "Two plans use the same five-point scale on every axis. Inspect one axis to compare both plans.",
+    chart: {
+      kind: "radar",
+      axes: ["Quality", "Speed", "Cost", "Access"],
+      max: 5,
+      unit: "points",
+      series: [
+        { label: "Plan A", data: [4, 3, 2, 5] },
+        { label: "Plan B", data: [2, 4, 4, 3] },
+      ],
+    },
+  },
   sankey: {
     description: "Sankey · Follow converging paths after a newsletter click; losses stay visible.",
     chart: {
@@ -343,6 +372,12 @@ type TooltipField = { label: string; unit?: string; names?: Record<string, strin
 type TooltipExample = { title: string; fields: Record<string, TooltipField> };
 
 const tooltipExamples: Record<ChartKind, TooltipExample> = {
+  bubble: {
+    title: "Campaign",
+    fields: { group: { label: "Group" }, x: { label: "Visits" }, y: { label: "Opens" }, size: { label: "Audience" } },
+  },
+  radar: { title: "Axis", fields: { "series:0": { label: "Plan A" }, "series:1": { label: "Plan B" } } },
+
   funnel: {
     title: "Conversion",
     fields: { value: { label: "Count" }, startPercent: { label: "Share of start" }, previousPercent: { label: "Share of previous step" } },
@@ -509,8 +544,12 @@ export const ChartDemo = (props: { window: "1h" | "24h" }) => (
   <For each={gallery}>
     {(example) => {
       const [selection, setSelection] = createSignal<ChartSelection>();
-      const distribution = example.chart.kind === "treemap" || example.chart.kind === "pareto";
-      const tooltip = distribution ? undefined : createTooltip(tooltipExamples[example.chart.kind]);
+      const native =
+        example.chart.kind === "bubble" ||
+        example.chart.kind === "radar" ||
+        example.chart.kind === "treemap" ||
+        example.chart.kind === "pareto";
+      const tooltip = native ? undefined : createTooltip(tooltipExamples[example.chart.kind]);
       const detailTooltip: ChartTooltipFormatter =
         tooltip ??
         (({ datum }) => ({
@@ -526,7 +565,7 @@ export const ChartDemo = (props: { window: "1h" | "24h" }) => (
           chip={{ kind: "component", name: `Chart · ${example.chart.kind}`, from: "@k2b/ui" }}
           description={example.description}
           code={
-            distribution
+            native
               ? `import { Chart } from "@k2b/ui";\n\n<Chart {...${JSON.stringify(example.chart, null, 2)}} />`
               : `import { Chart, type ChartTooltipFormatter } from "@k2b/ui";\n\n${tooltipCode(tooltipExamples[example.chart.kind])}\n\n<Chart\n  {...${JSON.stringify(example.chart, null, 2).replaceAll("\n", "\n  ")}}\n  tooltip={tooltip}\n  onSelect={(selection) => console.log(selection)}\n/>`
           }

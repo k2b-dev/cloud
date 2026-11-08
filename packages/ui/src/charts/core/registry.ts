@@ -1,12 +1,14 @@
 import { renderBarChartSvg } from "../../content/chart-bar";
 import { renderStateTimelineSvg } from "../../content/chart-state-timeline";
 import { renderAreaSvg } from "./area";
+import { renderBubbleSvg } from "./bubble";
 import { renderHeatmapSvg } from "./calendar";
 import { renderFunnelSvg } from "./funnel";
 import { renderHbarSvg } from "./hbar";
 import { map } from "./map";
 import { renderParetoSvg } from "./pareto";
 
+import { renderRadarSvg } from "./radar";
 import { renderSankeySvg } from "./sankey";
 import { barGauge, boxplot, donut, gauge, histogram, line, pie, scatter, sparkline, stat } from "./svg-renderers";
 import { renderTreemapSvg } from "./treemap";
@@ -36,6 +38,8 @@ const createChartRenderers = () => ({
   treemap: renderTreemapSvg,
   pareto: renderParetoSvg,
 
+  bubble: renderBubbleSvg,
+  radar: renderRadarSvg,
   sankey: renderSankeySvg,
 });
 export const chartRenderers = /* @__PURE__ */ createChartRenderers();

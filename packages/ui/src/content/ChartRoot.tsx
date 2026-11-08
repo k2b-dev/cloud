@@ -129,6 +129,8 @@ export type ChartProps = {
 const isEmpty = (props: ChartProps): boolean => {
   if (props.kind === "treemap" || props.kind === "pareto") return !props.data.length;
   if (props.kind === "sankey") return !props.nodes.length || !props.links.length;
+  if (props.kind === "bubble") return !props.data.length;
+  if (props.kind === "radar") return !props.series.length;
   if (props.kind === "area")
     return (
       !props.x.length ||
@@ -474,6 +476,8 @@ export const renderChartRoot = (props: ChartProps, renderChartSvg: typeof import
       if (props.tooltip) return props.tooltip(selection);
       const fields =
         props.kind === "sankey" ||
+        props.kind === "bubble" ||
+        props.kind === "radar" ||
         props.kind === "treemap" ||
         props.kind === "pareto" ||
         (props.kind === "heatmap" && props.layout === "calendar")
@@ -500,19 +504,27 @@ export const renderChartRoot = (props: ChartProps, renderChartSvg: typeof import
           .filter((field) => selection.kind !== "waterfall" || field.key !== "before")
           .map((field) => ({
             label:
-              props.kind === "pareto" && (field.key === "value" || field.key === "previous")
-                ? props.labels[field.key === "value" ? 0 : 1]
-                : props.kind === "heatmap" && props.layout === "calendar" && field.key === "value" && props.label
-                  ? props.label
-                  : selection.kind === "line" && field.key === "y"
-                    ? (selection.datum.label ?? labels().series ?? chartMessages().series)
-                    : (props.kind === "bar" || props.kind === "hbar") && field.key.startsWith("series:")
-                      ? ((props.kind === "hbar"
-                          ? props.series[Number(field.key.slice(7))]
-                          : props.series?.[Number(field.key.slice(7))]?.label) ?? fields({ key: field.key }))
-                      : props.kind === "bar" && field.key === "previous"
-                        ? (props.compare?.label ?? fields({ key: field.key }))
-                        : fields({ key: field.key }),
+              props.kind === "bubble" && field.key === "x"
+                ? props.xLabel
+                : props.kind === "bubble" && field.key === "y"
+                  ? props.yLabel
+                  : props.kind === "bubble" && field.key === "size"
+                    ? (props.sizeLabel ?? fields({ key: "size" }))
+                    : props.kind === "radar" && field.key.startsWith("series:")
+                      ? (props.series[Number(field.key.slice(7))]?.label ?? fields({ key: "series" }))
+                      : props.kind === "pareto" && (field.key === "value" || field.key === "previous")
+                        ? props.labels[field.key === "value" ? 0 : 1]
+                        : props.kind === "heatmap" && props.layout === "calendar" && field.key === "value" && props.label
+                          ? props.label
+                          : selection.kind === "line" && field.key === "y"
+                            ? (selection.datum.label ?? labels().series ?? chartMessages().series)
+                            : (props.kind === "bar" || props.kind === "hbar") && field.key.startsWith("series:")
+                              ? ((props.kind === "hbar"
+                                  ? props.series[Number(field.key.slice(7))]
+                                  : props.series?.[Number(field.key.slice(7))]?.label) ?? fields({ key: field.key }))
+                              : props.kind === "bar" && field.key === "previous"
+                                ? (props.compare?.label ?? fields({ key: field.key }))
+                                : fields({ key: field.key }),
             value:
               field.formatted ??
               (field.key === "upperInclusive"
@@ -530,6 +542,8 @@ export const renderChartRoot = (props: ChartProps, renderChartSvg: typeof import
   const svgMarkup = createMemo(() =>
     renderChartSvg(
       props.kind === "sankey" ||
+        props.kind === "bubble" ||
+        props.kind === "radar" ||
         props.kind === "treemap" ||
         props.kind === "pareto" ||
         (props.kind === "heatmap" && props.layout === "calendar")

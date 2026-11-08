@@ -461,6 +461,7 @@ export const notebookChartHeight = (input: ChartInput, locale: string): number |
   if (options.kind === "treemap") return 280;
   if (options.kind === "pareto") return paretoLayout(options).height;
   if (options.kind === "sankey") return sankeyFrame(options).height;
+  if (options.kind === "bubble" || options.kind === "radar") return 280;
   if (options.kind === "hbar") return hbarLayout(options).height;
   if (options.kind === "heatmap" && options.layout === "calendar") return 280;
   if (options.kind === "waterfall" || options.kind === "area") return 280;

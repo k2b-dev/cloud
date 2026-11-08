@@ -9,12 +9,15 @@ const fixture = `
 import { createSignal } from "solid-js";
 import { createComponent, render } from "solid-js/web";
 import { Slider } from ${JSON.stringify(resolve(ui, "dist/browser/index.js"))};
+const [disabled, setDisabled] = createSignal(false);
+Object.assign(window, { setSlidersDisabled: setDisabled });
 for (const placement of ["control", "label"]) {
   const [value, setValue] = createSignal(0);
   render(() => createComponent(Slider, {
     label: "Contrast", description: "Adjust the difference between light and dark.",
     get value() { return value(); }, onValueChange: setValue,
     min: -100, max: 100, center: true, defaultValue: 0, valuePlacement: placement,
+    get disabled() { return disabled(); },
   }), document.getElementById(placement));
 }
 `;
@@ -39,6 +42,80 @@ afterAll(async () => {
 });
 
 for (const width of [1440, 390]) {
+  test(`both Slider layouts mute disabled labels, values and fills without moving at ${width}px`, async () => {
+    const page = await browser.newPage({ viewport: { width, height: 900 } });
+    try {
+      await page.setContent(
+        `<!doctype html><html><head><style>${css}</style></head><body class="k2b-ui" style="padding:24px"><div id="control"></div><div id="label"></div></body></html>`,
+      );
+      await page.addScriptTag({ content: script });
+      await page.getByRole("slider").last().waitFor();
+      for (const theme of ["light", "dark"]) {
+        await page.locator("body").evaluate((body, theme) => {
+          body.dataset.theme = theme;
+        }, theme);
+        for (const placement of ["control", "label"]) {
+          const slider = page.locator(`#${placement}`).getByRole("slider");
+          await slider.focus();
+          await page.keyboard.press("ArrowRight");
+        }
+        await settled(page);
+        const boxes = () =>
+          page.getByRole("slider").evaluateAll((inputs) =>
+            inputs.map((input) => {
+              const rect = input.getBoundingClientRect();
+              return { x: rect.x, y: rect.y, width: rect.width, height: rect.height };
+            }),
+          );
+        const before = await boxes();
+        await page.evaluate("window.setSlidersDisabled(true)");
+        await settled(page);
+        for (const placement of ["control", "label"]) {
+          const field = page.locator(`#${placement}`);
+          expect(await field.getByRole("slider").isDisabled()).toBe(true);
+          expect(await field.getByRole("button", { name: "Reset to 0" }).isDisabled()).toBe(true);
+          const colours = await field.evaluate((root) => {
+            const input = root.querySelector("input")!;
+            const style = getComputedStyle(input);
+            const probe = document.createElement("span");
+            probe.style.color = "var(--k2b-text-muted)";
+            root.append(probe);
+            const muted = getComputedStyle(probe).color;
+            probe.remove();
+            return {
+              mutedFill: style.backgroundImage.includes(muted),
+              blueFill: style.backgroundImage.includes(style.accentColor),
+              label: getComputedStyle(root.querySelector("label")!).color,
+              output: getComputedStyle(root.querySelector("output")!).color,
+              muted,
+            };
+          });
+          expect(colours.mutedFill).toBe(true);
+          expect(colours.blueFill).toBe(false);
+          expect(colours.label).toBe(colours.muted);
+          expect(colours.output).toBe(colours.muted);
+        }
+        expect(await boxes()).toEqual(before);
+        await page.evaluate("window.setSlidersDisabled(false)");
+        await settled(page);
+        expect(await boxes()).toEqual(before);
+        for (const placement of ["control", "label"]) {
+          expect(await page.locator(`#${placement}`).getByRole("slider").isEnabled()).toBe(true);
+          expect(
+            await page
+              .locator(`#${placement} output`)
+              .evaluate(
+                (output) =>
+                  getComputedStyle(output).color === getComputedStyle(output.closest(".k2b-field")!.querySelector("input")!).accentColor,
+              ),
+          ).toBe(true);
+        }
+      }
+    } finally {
+      await page.close();
+    }
+  }, 30_000);
+
   test(`both Slider layouts keep their label and track still when changed and reset at ${width}px`, async () => {
     const page = await browser.newPage({ viewport: { width, height: 900 } });
     try {

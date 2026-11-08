@@ -18,4 +18,5 @@ export const chartRenderHeight = (props: ChartRenderOptions, sizing: { contentHe
   return 280;
 };
 
-export const preservesAspectRatio = (kind: ChartKind) => kind === "map" || kind === "pie" || kind === "donut" || kind === "gauge";
+export const preservesAspectRatio = (kind: ChartKind) =>
+  kind === "map" || kind === "pie" || kind === "donut" || kind === "gauge" || kind === "radar";

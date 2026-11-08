@@ -4,6 +4,7 @@
 //   Cloud page → wrapper iframe (no script; network CSP that its srcdoc child
 //   inherits) → app iframe (hash-pinned prelude, app modules as blob URLs).
 import type { RuntimeContext } from "../runtime/cloud";
+import { type ChartParts, chartHashes } from "./chart-parts";
 import { moduleSpecifiers } from "./imports";
 import type { FrameConfig } from "./protocol";
 
@@ -15,7 +16,7 @@ export type ComposeOptions = {
   /** CSP source of the prelude, `'sha256-…'`. */
   preludeHash: string;
   baseCss: string;
-  chartModule: string;
+  chartParts: ChartParts;
   theme: "light" | "dark";
   context: RuntimeContext;
   title: string;
@@ -226,7 +227,7 @@ export function composeApp(files: AppFiles, options: ComposeOptions) {
     hash: options.hash ?? "",
     modules,
     entries,
-    chartModule: options.chartModule,
+    chartHashes: chartHashes(options.chartParts),
     readyBudgetMs: options.readyBudgetMs ?? 8000,
   };
   const csp = ["default-src 'none'", `script-src ${options.preludeHash} blob:`, "style-src 'unsafe-inline'", NETWORK].join("; ");

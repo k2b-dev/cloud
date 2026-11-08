@@ -29,3 +29,15 @@ test("model input rejects invalid locales and retains a valid BCP 47 locale", ()
   expect(parseCloudAiChartInput({ ...spec, locale: "de-DE" })).toMatchObject({ locale: "de-DE" });
   expect(CloudAiChartInputSchema.safeParse({ ...spec, legend: [{ tone: "tax", label: "Tax" }] }).success).toBe(true);
 });
+
+test("Gustav's Code building-block Sankey example passes the model and saved-view boundaries", async () => {
+  const guide = await Bun.file(new URL("../../../assistant/src/skills/assistant-code-mode/references/charts.md", import.meta.url)).text();
+  const example = guide.split("## Follow paths between stages")[1]?.match(/```json\n([\s\S]*?)\n```/)?.[1];
+  expect(example).toBeDefined();
+  const input: unknown = JSON.parse(example!);
+  expect(CloudAiChartInputSchema.safeParse(input).success).toBe(true);
+  expect(parseCloudAiChartToolView(input)).toMatchObject({ view: "chart", kind: "sankey" });
+  const modelExample = CloudAiChartInputSchema.shape.kind.description?.split("Sankey example: ")[1];
+  expect(modelExample).toBeDefined();
+  expect(CloudAiChartInputSchema.safeParse(JSON.parse(modelExample!)).success).toBe(true);
+});

@@ -152,6 +152,30 @@ type Variants<N> =
       legend?: { tone: "in" | "out" | "muted" | "blue" | "green" | "amber" | "red" | "violet" | "tax"; label: string }[];
       format?: ChartNumberFormat;
       locale?: string;
+    }
+  | {
+      kind: "bubble";
+      groups: string[];
+      data: { label: string; group: string; x: number; y: number; size?: number }[];
+      xLabel: string;
+      yLabel: string;
+      sizeLabel?: string;
+      averages?: boolean;
+      legend?: boolean;
+      xFormat?: ChartNumberFormat;
+      yFormat?: ChartNumberFormat;
+      format?: ChartNumberFormat;
+      locale?: string;
+    }
+  | {
+      kind: "radar";
+      axes: string[];
+      max: number;
+      unit?: string;
+      series: { label: string; data: number[] }[];
+      format?: ChartNumberFormat;
+      legend?: boolean;
+      locale?: string;
     };
 
 /** Portable chart node. Dates are ISO text and missing observations are null, never zero. */

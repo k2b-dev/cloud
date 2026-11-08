@@ -60,4 +60,13 @@ export const chartFixtures = {
     ],
     links: [{ source: "a", target: "b", value: 42 }],
   },
+  bubble: {
+    kind: "bubble",
+    groups: ["North"],
+    xLabel: "Visits",
+    yLabel: "Opens",
+    averages: true,
+    data: [{ label: "Campaign A", group: "North", x: 20, y: 40, size: 25 }],
+  },
+  radar: { kind: "radar", axes: ["Quality", "Speed", "Cost"], max: 5, series: [{ label: "Plan A", data: [4, 3, 2] }] },
 } satisfies { [K in ChartProps["kind"]]: Extract<ChartProps, { kind: K }> };
