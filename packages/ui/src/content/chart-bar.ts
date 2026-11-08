@@ -1,3 +1,4 @@
+import { barPercent } from "../charts/core/bar-labels";
 import {
   type AxisOptions,
   type BarItem,
@@ -5,17 +6,16 @@ import {
   computeDomain,
   escapeXml,
   extendDomainToNice,
+  MAX_AXIS_TICKS,
   mapLog,
   mapRange,
   niceLogTicks,
   niceStep,
   type ReferenceLine,
+  referenceLineAttributes,
   svgRoot,
-} from "@k2b/stdlib";
-
-import { barLabels, barPercent } from "../charts/core/bar-labels";
-
-import { categoryLabels } from "../charts/core/category-labels";
+} from "../charts/core/svg-renderers";
+import { chartMessages } from "./chart-message-catalog";
 
 /**
  * Bar chart options: stdlib's `charts.bar` options plus a title for the category axis and a separate value format.
@@ -150,7 +150,7 @@ const valueScale = (values: number[], axis: AxisOptions | undefined, nice: boole
     if (log) return { domain: [lo, hi], ticks: niceLogTicks(lo, hi).ticks.filter((tick) => tick >= lo && tick <= hi), log };
     const step = niceStep(hi - lo, axis.ticks ?? 5);
     const ticks = [lo];
-    if (step > 0 && Number.isFinite(step))
+    if (step > 0 && Number.isFinite(step) && (hi - lo) / step <= MAX_AXIS_TICKS)
       for (let value = Math.ceil(lo / step) * step; value < hi; ) {
         if (value > lo) ticks.push(value);
         const next = value + step;
@@ -373,8 +373,8 @@ const renderColumns = (opts: BarChartOptions, plan: Plan, width: number, height:
     const series = opts.colorByBar ? colorIndex(item, position) : 0;
     parts.push(
       chartDatumSvg(
-        `<rect class="k2b-chart-category-band" fill="none" pointer-events="all" x="${fmt(center - slot / 2)}" y="${fmt(g.y0)}" width="${fmt(slot)}" height="${fmt(g.plotBottom - g.y0)}" rx="6"/><rect class="stdlib-chart-bar stdlib-chart-series-${series}" x="${fmt(x)}" y="${fmt(top)}" width="${fmt(barWidth)}" height="${fmt(barHeight)}"/>`,
-        datum(item, index, [center, g.y0], format),
+        `<rect class="stdlib-chart-bar stdlib-chart-series-${series}" x="${fmt(x)}" y="${fmt(top)}" width="${fmt(barWidth)}" height="${fmt(barHeight)}"/>`,
+        datum(item, index, [center, top + barHeight / 2], format),
         inspect,
       ),
     );
@@ -387,10 +387,12 @@ const renderColumns = (opts: BarChartOptions, plan: Plan, width: number, height:
     if ((ref.axis ?? "y") !== "y" || !Number.isFinite(ref.value) || ref.value < g.scale.domain[0] || ref.value > g.scale.domain[1])
       continue;
     const ry = y(ref.value);
-    parts.push(`<line class="stdlib-chart-reference" x1="${fmt(g.x0)}" y1="${fmt(ry)}" x2="${fmt(g.x1)}" y2="${fmt(ry)}"/>`);
+    parts.push(
+      `<line class="stdlib-chart-reference"${referenceLineAttributes(ref)} x1="${fmt(g.x0)}" y1="${fmt(ry)}" x2="${fmt(g.x1)}" y2="${fmt(ry)}"/>`,
+    );
     if (ref.label)
       parts.push(
-        `<text class="stdlib-chart-reference-label" x="${fmt(g.x1 - 4)}" y="${fmt(ry - 4)}" text-anchor="end">${escapeXml(ref.label)}</text>`,
+        `<text class="stdlib-chart-reference-label"${referenceLineAttributes(ref, true)} x="${fmt(g.x1 - 4)}" y="${fmt(ry - 4)}" text-anchor="end">${escapeXml(ref.label)}</text>`,
       );
   }
   if (opts.xAxis?.label)
@@ -464,7 +466,7 @@ const renderRows = (opts: BarChartOptions, plan: Plan, width: number, inspect: b
     const series = opts.colorByBar ? colorIndex(item, position) : 0;
     parts.push(
       chartDatumSvg(
-        `<rect class="k2b-chart-category-band" fill="none" pointer-events="all" x="0" y="${fmt(rowTop)}" width="${width}" height="${fmt(g.pitch)}" rx="6"/><rect class="stdlib-chart-bar stdlib-chart-series-${series}" x="${fmt(left)}" y="${fmt(middle - thickness / 2)}" width="${fmt(barWidth)}" height="${fmt(thickness)}"/>`,
+        `<rect class="stdlib-chart-bar stdlib-chart-series-${series}" x="${fmt(left)}" y="${fmt(middle - thickness / 2)}" width="${fmt(barWidth)}" height="${fmt(thickness)}"/>`,
         datum(item, index, [left + barWidth / 2, middle], format),
         inspect,
       ),
@@ -480,10 +482,12 @@ const renderRows = (opts: BarChartOptions, plan: Plan, width: number, inspect: b
   for (const ref of opts.references ?? []) {
     if ((ref.axis ?? "y") !== "y" || !Number.isFinite(ref.value) || ref.value < scale.domain[0] || ref.value > scale.domain[1]) continue;
     const rx = x(ref.value);
-    parts.push(`<line class="stdlib-chart-reference" x1="${fmt(rx)}" y1="${fmt(g.top)}" x2="${fmt(rx)}" y2="${fmt(plotBottom)}"/>`);
+    parts.push(
+      `<line class="stdlib-chart-reference"${referenceLineAttributes(ref)} x1="${fmt(rx)}" y1="${fmt(g.top)}" x2="${fmt(rx)}" y2="${fmt(plotBottom)}"/>`,
+    );
     if (ref.label)
       parts.push(
-        `<text class="stdlib-chart-reference-label" x="${fmt(rx)}" y="${fmt(g.top - 8)}" text-anchor="middle">${escapeXml(ref.label)}</text>`,
+        `<text class="stdlib-chart-reference-label"${referenceLineAttributes(ref, true)} x="${fmt(rx)}" y="${fmt(g.top - 8)}" text-anchor="middle">${escapeXml(ref.label)}</text>`,
       );
   }
   return parts.join("");
@@ -616,7 +620,7 @@ export function seriesBarLayout(opts: BarChartOptions, size = { width: 480, heig
 const renderSeriesBars = (opts: BarChartOptions & { width: number; height: number; inspect?: boolean }) => {
   const g = seriesBarLayout(opts, opts);
   const parts = [renderHeader(opts, opts.width)];
-  const labels = categoryLabels(opts.locale);
+  const labels = chartMessages.resolve([opts.locale ?? "en"]).t;
   const change = new Intl.NumberFormat(opts.locale ?? "en", { style: "percent", maximumFractionDigits: 1, signDisplay: "exceptZero" });
   const text = (x: number, y: number, value: string, cls = "stdlib-chart-tick-label", anchor = "start", extra = "") =>
     `<text class="${cls}" x="${fmt(x)}" y="${fmt(y)}" text-anchor="${anchor}" ${extra}>${escapeXml(value)}</text>`;
@@ -632,16 +636,10 @@ const renderSeriesBars = (opts: BarChartOptions & { width: number; height: numbe
           `<path d="M ${x} ${y - 4} l ${4 * g.units} -4 M ${x + 2 * g.units} ${y} l ${6 * g.units} -6 M ${x + 6 * g.units} ${y} l ${2 * g.units} -2" fill="none" stroke="var(--stdlib-chart-c1,#3b82f6)" stroke-width="1"/>`,
         );
       const label = wrapLabel(entry.label, Math.max(8, entry.labelWidth), 1).lines[0] ?? entry.label;
+      const value = escapeXml(entry.total === null ? "–" : g.format(entry.total));
+      // One text run keeps the value six CSS pixels after its label even when the SVG stretches.
       parts.push(
-        text(x + 14 * g.units, y, label),
-        text(
-          entry.valueX,
-          y,
-          entry.total === null ? "–" : g.format(entry.total),
-          "stdlib-chart-bar-value",
-          "end",
-          `data-bar-legend="${i < (opts.series?.length ?? 0) ? `series:${i}` : "previous"}" data-bar-total="${escapeXml(entry.total === null ? "–" : g.format(entry.total))}"`,
-        ),
+        `<text x="${fmt(x + 14 * g.units)}" y="${fmt(y)}"><tspan class="stdlib-chart-tick-label">${escapeXml(label)}</tspan><tspan class="stdlib-chart-bar-value" dx="6" data-chart-legend-value data-field="${i < (opts.series?.length ?? 0) ? `series:${i}` : "previous"}" data-default="${value}">${value}</tspan></text>`,
       );
     });
   if (g.legend && g.legendLayout.hidden)
@@ -702,7 +700,7 @@ const renderSeriesBars = (opts: BarChartOptions & { width: number; height: numbe
             `<line x1="${x + d + lo}" y1="${Math.max(y0, y1) - lo}" x2="${x + d + hi}" y2="${Math.max(y0, y1) - hi}" stroke="var(--stdlib-chart-c1,#3b82f6)" stroke-width="1.5"/>`,
           );
       }
-      return `<g class="k2b-chart-previous">${rect.replace("/>", ' style="fill:var(--stdlib-chart-c1,#3b82f6);fill-opacity:.14;stroke:var(--stdlib-chart-c1,#3b82f6);stroke-width:1"/>')}${lines.join("")}</g>`;
+      return `<g class="k2b-chart-previous">${rect.replace("/>", ' style="fill:var(--stdlib-chart-c1,#3b82f6);fill-opacity:.14" stroke="var(--stdlib-chart-c1,#3b82f6)" stroke-width="1"/>')}${lines.join("")}</g>`;
     };
     if (opts.compare) {
       const bw = Math.min(g.slot * 0.32, 26);
@@ -736,9 +734,13 @@ const renderSeriesBars = (opts: BarChartOptions & { width: number; height: numbe
         marks,
         { role: "item", index: column.index, label: column.label, anchor: [column.center, g.top], values: fields },
         opts.inspect ?? false,
-      ).replace(
-        /<title>[\s\S]*?<\/title>/,
-        `<title>${escapeXml([column.label, ...fields.map((field) => `${field.key.startsWith("series:") ? opts.series![Number(field.key.slice(7))]!.label : field.key === "previous" ? opts.compare!.label : field.key === "delta" ? labels.change : labels.total}: ${field.formatted}`)].join(" · "))}</title>`,
+        [
+          column.label,
+          ...fields.map(
+            (field) =>
+              `${field.key.startsWith("series:") ? opts.series![Number(field.key.slice(7))]!.label : field.key === "previous" ? opts.compare!.label : field.key === "delta" ? labels.chartFields({ key: "delta" }) : labels.chartFields({ key: "total" })}: ${field.formatted}`,
+          ),
+        ].join(" · "),
       ),
     );
     if (visibleLabels.has(column.index))
@@ -800,7 +802,9 @@ export function rankedBarLayout(opts: BarChartOptions, size = { width: 480, heig
     rows,
     total,
     rest,
-    restValue: rest.reduce((sum, d) => sum + (Number.isFinite(d.value) ? d.value : 0), 0),
+    restValue: rest.some((d) => Number.isFinite(d.value))
+      ? rest.reduce((sum, d) => sum + (Number.isFinite(d.value) ? d.value : 0), 0)
+      : null,
     top,
     unit,
     format,
@@ -812,9 +816,9 @@ export function rankedBarLayout(opts: BarChartOptions, size = { width: 480, heig
 
 const renderRankedBars = (opts: BarChartOptions & { width: number; height: number; inspect?: boolean }) => {
   const g = rankedBarLayout(opts, opts),
-    labels = barLabels(opts.locale);
+    labels = chartMessages.resolve([opts.locale ?? "en"]).t;
   const parts = [renderHeader(opts, opts.width)];
-  const color = opts.tone ? `var(--k2b-flow-${opts.tone},var(--stdlib-chart-c1,#3b82f6))` : "var(--stdlib-chart-c1,#3b82f6)";
+  const color = opts.tone ? `var(--k2b-flow-${opts.tone}-mark,var(--stdlib-chart-c1,#3b82f6))` : "var(--stdlib-chart-c1,#3b82f6)";
   const text = (x: number, y: number, value: string, anchor = "start", cls = "stdlib-chart-tick-label") =>
     `<text class="${cls}" x="${x}" y="${y}" text-anchor="${anchor}">${escapeXml(value)}</text>`;
   for (const row of g.rows) {
@@ -838,14 +842,18 @@ const renderRankedBars = (opts: BarChartOptions & { width: number; height: numbe
           ],
         },
         opts.inspect ?? false,
-      ).replace(
-        /<title>[\s\S]*?<\/title>/,
-        `<title>${escapeXml(`${row.label} · ${written} · ${share} · ${labels.rank}: ${row.rank}`)}</title>`,
+        `${row.label} · ${written} · ${share} · ${labels.chartFields({ key: "rank" })}: ${row.rank}`,
       ),
     );
   }
   if (g.rest.length)
-    parts.push(text(10 * g.unit, g.top + g.rows.length * 36 + 16, `${labels.more({ n: g.rest.length })} · ${g.format(g.restValue)}`));
+    parts.push(
+      text(
+        10 * g.unit,
+        g.top + g.rows.length * 36 + 16,
+        `${labels.chartBarMore({ n: g.rest.length })} · ${g.restValue === null ? "–" : g.format(g.restValue)}`,
+      ),
+    );
   return svgRoot({ ...opts, height: g.height, className: [opts.className, "k2b-chart-ranked"].filter(Boolean).join(" ") }, parts.join(""))
     .replace("</style>", ".k2b-chart-ranked :is(.stdlib-chart-tick-label,.stdlib-chart-bar-value){font-size:13px}</style>")
     .replace("<svg ", '<svg data-bar-layout="rows" ');

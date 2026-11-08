@@ -1,5 +1,6 @@
-export type WorkflowJsonPrimitive = string | number | boolean | null;
-export type WorkflowJsonValue = WorkflowJsonPrimitive | WorkflowJsonValue[] | { [key: string]: WorkflowJsonValue };
+import type { JsonValue as WorkflowJsonValue } from "../shared/canonical-json";
+
+export type { JsonPrimitive as WorkflowJsonPrimitive, JsonValue as WorkflowJsonValue } from "../shared/canonical-json";
 export type WorkflowRevision = string;
 
 export type WorkflowSourceLocation = {

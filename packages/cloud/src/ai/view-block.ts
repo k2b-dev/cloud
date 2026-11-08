@@ -1,6 +1,6 @@
-import { computeDomain, extendDomainToNice, niceStep } from "@k2b/stdlib";
+import { computeDomain, extendDomainToNice, niceStep } from "@k2b/ui/charts/core";
 import { z } from "zod";
-import { CloudResourceReferenceSchema } from "../contracts/capabilities";
+import { CloudResourceReferenceSchema } from "../contracts/resource-reference";
 import {
   type CloudAiChartRow,
   type CloudAiChartTable,
@@ -10,6 +10,7 @@ import {
   chartSteppingIssue,
   cloudAiNumberFormatters,
 } from "./chart-block";
+import { aiChatMessages } from "./chat/messages";
 import {
   CLOUD_AI_CHART_MAX_SERIES,
   CLOUD_AI_CHART_MAX_VALUES,
@@ -60,6 +61,11 @@ const cellIssue = (
     return type === "date" ? "Expected a valid YYYY-MM-DD date or null." : "Expected a valid wall-clock datetime or null.";
   return undefined;
 };
+/** Function-free money blocks shared by SQL dashboards and declarative Cloud consumers. */
+export type CloudMoneyDescription =
+  | { block: "budget"; currency: string; items: { label: string; used: number; expected?: number; limit: number }[] }
+  | { block: "balance"; currency: string; start: number; in: number; out: number };
+
 const statsViewSchema = () =>
   z.strictObject({
     view: z.literal("stats"),
@@ -73,7 +79,17 @@ const statsViewSchema = () =>
             value: z.union([z.number(), z.string().trim().min(1).max(80)]),
             format: cloudAiNumberFormatSchema().optional(),
             sub: z.string().trim().min(1).max(80).optional(),
-            delta: z.number().optional(),
+            delta: z
+              .union([
+                z.number(),
+                z.strictObject({
+                  value: z.number(),
+                  unit: z.enum(["ratio", "points"]).optional(),
+                  better: z.enum(["up", "down"]).optional(),
+                }),
+              ])
+              .optional(),
+            compare: z.strictObject({ label: z.string().trim().min(1).max(80), value: z.number() }).optional(),
             better: z.enum(["up", "down"]).optional(),
             sparkline: z.array(z.number()).min(2).max(CLOUD_AI_CHART_MAX_VALUES).optional(),
           })
@@ -83,8 +99,10 @@ const statsViewSchema = () =>
                 ctx.addIssue({ code: "custom", path: ["format"], message: "Only number values may have a format." });
               if (item.delta !== undefined)
                 ctx.addIssue({ code: "custom", path: ["delta"], message: "Only number values may have a delta." });
+              if (item.compare !== undefined)
+                ctx.addIssue({ code: "custom", path: ["compare"], message: "Only number values may have a comparison." });
             }
-            if (item.better !== undefined && item.delta === undefined)
+            if (item.better !== undefined && (item.delta === undefined || typeof item.delta !== "number"))
               ctx.addIssue({ code: "custom", path: ["better"], message: "A better direction requires a delta." });
           }),
       )
@@ -135,18 +153,15 @@ const tableRowSchema = () => {
   });
   return row;
 };
+const tableColumnSchema = () =>
+  z.strictObject({
+    id: z.string().trim().min(1).max(80),
+    label: z.string().min(1).max(80).optional(),
+    type: cellTypeSchema(),
+    format: cloudAiNumberFormatSchema().optional(),
+  });
 const tableColumnsSchema = () => {
-  return z
-    .array(
-      z.strictObject({
-        id: z.string().trim().min(1).max(80),
-        label: z.string().min(1).max(80).optional(),
-        type: cellTypeSchema(),
-        format: cloudAiNumberFormatSchema().optional(),
-      }),
-    )
-    .min(1)
-    .max(CLOUD_AI_TABLE_MAX_COLUMNS);
+  return z.array(tableColumnSchema()).min(1).max(CLOUD_AI_TABLE_MAX_COLUMNS);
 };
 const tableViewSchema = () => {
   const row = tableRowSchema();
@@ -155,15 +170,35 @@ const tableViewSchema = () => {
       view: z.literal("table"),
       title: z.string().trim().min(1).max(160),
       subtitle: z.string().trim().min(1).max(300).optional(),
-      columns: tableColumnsSchema(),
+      // Only a table hides columns on a narrow screen: 3 below 560 px, 2 below 420 px; row details keep them.
+      columns: z
+        .array(tableColumnSchema().safeExtend({ priority: z.union([z.literal(1), z.literal(2), z.literal(3)]).optional() }))
+        .min(1)
+        .max(CLOUD_AI_TABLE_MAX_COLUMNS),
       rows: z.array(row).max(CLOUD_AI_TABLE_MAX_ROWS),
       footer: row.optional(),
       sort: z.strictObject({ column: z.string(), direction: z.enum(["asc", "desc"]) }).optional(),
+      // A search field above the table; the reader's query never leaves the browser.
+      search: z.boolean().optional(),
+      // Columns the reader may group the rows by.
+      groupBy: z
+        .array(z.strictObject({ id: z.string().trim().min(1).max(80), label: z.string().min(1).max(80).optional() }))
+        .min(1)
+        .max(CLOUD_AI_TABLE_MAX_COLUMNS)
+        .optional(),
     })
     .superRefine((value, ctx) => {
       const columns = checkTableData(value, ctx);
       if (value.sort && !columns.has(value.sort.column))
         ctx.addIssue({ code: "custom", path: ["sort", "column"], message: "Unknown column id." });
+      value.groupBy?.forEach((group, index) => {
+        const column = columns.get(group.id);
+        if (!column) ctx.addIssue({ code: "custom", path: ["groupBy", index, "id"], message: "Unknown column id." });
+        else if (column.type === "ref")
+          ctx.addIssue({ code: "custom", path: ["groupBy", index, "id"], message: "Group by a text, number or date column." });
+        if (value.groupBy!.findIndex((entry) => entry.id === group.id) !== index)
+          ctx.addIssue({ code: "custom", path: ["groupBy", index, "id"], message: "Group each column once." });
+      });
     });
 };
 const checkTableData = (
@@ -210,6 +245,27 @@ export type CloudAiView =
   | CloudAiStatsView
   | CloudAiDetailsView
   | CloudAiExplorerView;
+
+/** Cloud owns non-chart nodes; chart nodes themselves belong to @k2b/ui/charts. */
+type BlockOf<V extends { view: string }> = V extends V ? Omit<V, "view"> & { block: V["view"] } : never;
+export type CloudStatsDescription = Omit<BlockOf<CloudAiStatsView>, "items"> & {
+  items: (Omit<CloudAiStatsView["items"][number], "delta" | "better"> & {
+    delta?: {
+      value: number;
+      unit?: "ratio" | "points" | "absolute";
+      better?: "up" | "down";
+      format?: import("@k2b/ui/charts").ChartNumberFormat;
+    };
+  })[];
+};
+export type CloudTableDescription = BlockOf<CloudAiTableView>;
+export type CloudDetailsDescription = BlockOf<CloudAiDetailsView>;
+export type CloudGroupDescription = BlockOf<CloudAiGroupView>;
+export type CloudExplorerDescription = BlockOf<CloudAiExplorerView>;
+export type CloudBlockDescription = BlockOf<Exclude<CloudAiView, CloudAiChartView | CloudAiStatsView>> | CloudStatsDescription;
+export type CloudViewDescription = import("@k2b/ui/charts").ChartInput | CloudBlockDescription;
+
+export { cloudAiViewDescription } from "./view-description";
 
 const explorerViewSchema = () => {
   const common = { id: z.string().trim().min(1).max(40), label: z.string().trim().min(1).max(80), x: z.string() };
@@ -466,13 +522,18 @@ const summarySchema = () =>
       // The block reserves the totals row from the first frame.
       footer: z.boolean(),
       columns: z.number().int().min(1).max(CLOUD_AI_TABLE_MAX_COLUMNS),
+      // The search field and group choice above the table, reserved from the first frame; older summaries lack them.
+      search: z.boolean().optional(),
+      grouped: z.boolean().optional(),
     }),
     z.object({
       view: z.literal("stats"),
       title: z.string(),
       subtitle: z.string().optional(),
       items: z
-        .array(z.object({ label: z.string(), sparkline: z.boolean(), sub: z.boolean(), delta: z.boolean() }))
+        .array(
+          z.object({ label: z.string(), sparkline: z.boolean(), sub: z.boolean(), compare: z.boolean().optional(), delta: z.boolean() }),
+        )
         .min(1)
         .max(CLOUD_AI_STATS_MAX_ITEMS),
     }),
@@ -579,6 +640,7 @@ export const cloudAiViewSummary = (view: CloudAiView): CloudAiViewSummary => {
         label: item.label,
         sparkline: item.sparkline !== undefined,
         sub: item.sub !== undefined,
+        ...(item.compare ? { compare: true } : {}),
         delta: item.delta !== undefined,
       })),
     };
@@ -596,7 +658,15 @@ export const cloudAiViewSummary = (view: CloudAiView): CloudAiViewSummary => {
     };
   return view.view === "chart"
     ? { view: "chart", kind: view.kind, ...common }
-    : { view: "table", rows: view.rows.length, columns: view.columns.length, footer: view.footer !== undefined, ...common };
+    : {
+        view: "table",
+        rows: view.rows.length,
+        columns: view.columns.length,
+        footer: view.footer !== undefined,
+        ...(view.search ? { search: true } : {}),
+        ...(view.groupBy ? { grouped: true } : {}),
+        ...common,
+      };
 };
 /** Tool arguments become the same canonical views as saved code-run files, without drawing on revalidation. */
 export const parseCloudAiChartToolView = (args: unknown): CloudAiChartView | CloudAiGroupView | undefined => {
@@ -608,7 +678,11 @@ export const parseCloudAiChartToolView = (args: unknown): CloudAiChartView | Clo
     const parsed = GroupViewSchema.safeParse({ title, subtitle, charts, linkX, layout, view: "group" });
     return parsed.success ? parsed.data : undefined;
   }
-  if (value.linkX !== undefined || (value.layout !== undefined && value.kind !== "bar")) return undefined;
+  if (
+    value.linkX !== undefined ||
+    (value.layout !== undefined && value.kind !== "bar" && value.kind !== "area" && value.layout !== "calendar")
+  )
+    return undefined;
   const parsed = ChartViewSchema.safeParse({ ...value, view: "chart" });
   return parsed.success ? parsed.data : undefined;
 };
@@ -640,7 +714,7 @@ const viewDateFormatter = (locale: string) => {
  * host colors: better or worse only when the view says which direction improves the measure.
  */
 export function cloudAiStatsTiles(
-  view: CloudAiStatsView,
+  view: Pick<CloudAiStatsView, "items"> | Pick<CloudStatsDescription, "items">,
   locale: string,
 ): {
   label: string;
@@ -651,7 +725,16 @@ export function cloudAiStatsTiles(
 }[] {
   return view.items.map((item) => {
     const format = cloudAiNumberFormatters(item.format, locale).value;
-    const direction = item.delta === undefined || item.delta === 0 ? "flat" : item.delta > 0 ? "up" : "down";
+    const delta =
+      typeof item.delta === "number"
+        ? item.delta
+        : item.delta === undefined
+          ? undefined
+          : item.delta.unit === "absolute"
+            ? item.delta.value
+            : Math.round(item.delta.value * 1000) / 1000 || 0;
+    const better = typeof item.delta === "number" ? ("better" in item ? item.better : undefined) : item.delta?.better;
+    const direction = delta === undefined || delta === 0 ? "flat" : delta > 0 ? "up" : "down";
     return {
       label: item.label,
       value: typeof item.value === "number" ? format(item.value) : item.value,
@@ -661,9 +744,19 @@ export function cloudAiStatsTiles(
         ? {
             delta: {
               // -0 shows as 0, without a sign.
-              text: `${item.delta > 0 ? "+" : ""}${format(item.delta === 0 ? 0 : item.delta)}`,
+              text:
+                typeof item.delta === "number" || item.delta.unit === "absolute"
+                  ? `${delta! > 0 ? "+" : ""}${format(delta === 0 ? 0 : delta!)}`
+                  : item.delta.unit === "points"
+                    ? `${new Intl.NumberFormat(locale, { signDisplay: "exceptZero", minimumFractionDigits: 1, maximumFractionDigits: 1 }).format(delta! * 100)} ${aiChatMessages(locale).statsPoints}`
+                    : new Intl.NumberFormat(locale, {
+                        style: "percent",
+                        signDisplay: "exceptZero",
+                        minimumFractionDigits: 1,
+                        maximumFractionDigits: 1,
+                      }).format(delta!),
               direction,
-              tone: !item.better || item.delta === 0 ? "neutral" : direction === item.better ? "better" : "worse",
+              tone: !better || delta === 0 ? "neutral" : direction === better ? "better" : "worse",
             },
           }
         : {}),
@@ -673,7 +766,7 @@ export function cloudAiStatsTiles(
 
 /** The label and display text of every field of a record; a reference keeps its object so the host can open it. */
 export function cloudAiDetailsRows(
-  view: CloudAiDetailsView,
+  view: Omit<CloudAiDetailsView, "view">,
   locale: string,
 ): { label: string; text: string; ref?: CloudAiViewReference }[] {
   const date = viewDateFormatter(locale);
@@ -727,7 +820,10 @@ export function cloudAiViewCellFormatter(columns: CloudAiTableView["columns"], l
   };
 }
 /** Row keys are original row indices, so hosts resolve refs through view.rows[Number(row.key)][column.id] even after sorting. */
-export function cloudAiViewTable(view: CloudAiTableView | CloudAiExplorerView, locale: string): CloudAiViewTable {
+export function cloudAiViewTable(
+  view: Omit<CloudAiTableView, "view"> | Omit<CloudAiExplorerView, "view">,
+  locale: string,
+): CloudAiViewTable {
   const cellOf = cloudAiViewCellOf;
   const formatCell = cloudAiViewCellFormatter(view.columns, locale);
   const row = (cells: CloudAiTableView["rows"][number], key: string): CloudAiChartRow => ({
@@ -782,10 +878,12 @@ export function cloudAiTableTsv(table: CloudAiViewTable): string {
 
 export type CloudAiExplorerRequest = { step?: string; visibleKeys?: readonly string[]; referenceStep?: string };
 type Cell = string | number | null;
-const distinct = (view: CloudAiExplorerView, id: string) => [...new Set(view.rows.map((row) => cloudAiViewScalarCellOf(row, id)))];
+const distinct = (view: Omit<CloudAiExplorerView, "view">, id: string) => [
+  ...new Set(view.rows.map((row) => cloudAiViewScalarCellOf(row, id))),
+];
 
 /** Localized step and filter choices in dataset order, initially showing the last step. */
-export function cloudAiExplorerControls(view: CloudAiExplorerView, locale: string) {
+export function cloudAiExplorerControls(view: Omit<CloudAiExplorerView, "view">, locale: string) {
   const format = cloudAiViewCellFormatter(view.columns, locale);
   const entries = (id: string | undefined) =>
     id === undefined ? [] : distinct(view, id).map((cell, position) => ({ key: String(position), label: format(id, { [id]: cell }) }));
@@ -803,7 +901,7 @@ type ExplorerChartState = {
 
 /** Project current and reference rows into every view, retaining dataset-wide axes and series palette slots. */
 export function cloudAiExplorerState(
-  view: CloudAiExplorerView,
+  view: Omit<CloudAiExplorerView, "view">,
   request: CloudAiExplorerRequest,
   locale: string,
 ): {

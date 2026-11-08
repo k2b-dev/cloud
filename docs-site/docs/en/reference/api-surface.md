@@ -322,7 +322,7 @@ inferring support from autocomplete.
 | `@k2b/cloud/services` | Feature services used by capability guides | Raw stores, lifecycle starters, gateway telemetry, and migrations are maintainer APIs |
 | `@k2b/cloud/ai` | `getLiveDictationStatus` with `LiveDictationStatus` for [live dictation availability](/en/docs/ai/live-dictation); [`runAiDecision` with typed probability answers](/en/docs/ai/structured-and-background-ai#ask-typed-decision-questions), structured model calls, durable application tasks through `runApplicationAiTask`, `releaseApplicationAiTask`, `listUnreleasedApplicationAiTaskSources`, and [`deleteApplicationAiTasks`](/en/docs/ai/structured-and-background-ai#reuse-durable-ai-from-an-application-job), local tools, and `listAiOpenQuestions` with `AiOpenQuestion` / `AiOpenQuestions` for [personal chat overviews](/en/docs/ai/chat-runtime-and-streaming#list-the-persons-open-questions) | Conversation stores, migrations, workers, and maintenance helpers are platform-owned |
 | `@k2b/cloud/browser` | Typed Hono client factory | Utility helpers are outside the documented typed-client contract |
-| `@k2b/cloud/shared` | Cloud-specific helpers named by feature guides | Generic utility re-exports are compatibility-only |
+| `@k2b/cloud/shared` | Cloud-specific helpers named by feature guides; `workflowEffectKey(runId, stepKey)` preserves existing durable effect identities without loading the engine | Generic utility re-exports are compatibility-only |
 | `@k2b/cloud/cli` | APIs for application CLI modules | Built-in account, application, and admin modules are platform-owned |
 
 For theme-aware server work, `readThemeFromCookieHeader()` returns a resolved
@@ -446,6 +446,7 @@ for execution, model access, and usage accounting.
 
 | Entry point | Status | Use | Guide |
 | --- | --- | --- | --- |
+| `@k2b/cloud/descriptions` | Supported, SolidJS | `DescriptionPanel` draws a portable chart description or a Cloud block (`stats`, `table`, `details`, `budget`, `balance`, `flow`) in the `@k2b/ui` dashboard frame with every state; `DescriptionBlockPreview`, `resolveDescription`, `formatDescriptionNumber` | [Dashboards from descriptions](/en/docs/frontend/dashboards) |
 | `@k2b/cloud/geo/ui` | Supported, SolidJS | `CloudMap`, `CloudMapAttribution` and `CloudMapProps` for budgeted maps and browser snapshots; `AddressAutocomplete` for forms; `geoNavigationHref` and `geoNavigationPlatform` for navigation links | [Places and maps](/en/docs/platform/places-and-maps) |
 | `@k2b/cloud/geo/document` | Supported, browser and server | Validate and serialize saved maps, linked pins and complete routes | [Saved maps](/en/docs/platform/saved-map-documents) |
 | `@k2b/cloud/shared-text` | Supported, server-only | Retained collaborative text logs and application-owned snapshot writes | [Shared text documents](/en/docs/data/shared-text-documents) |
@@ -468,7 +469,7 @@ for execution, model access, and usage accounting.
 | `@k2b/cloud/access/ui` | Supported, SolidJS | Cloud permission and resource-key controls; `principalLabel` for localized principal names (also in `@k2b/cloud/shared`); `isManagerEntry` and `ManagerCandidate` for paged grant lists | [Resource API keys](/en/docs/identity/resource-api-keys), [Last manager](/en/docs/identity/authorization#show-the-last-manager) |
 | `@k2b/cloud/browser/live` | Supported, browser | `liveConnection` for an application's live channels; `createLiveWebSocket` transport for other sockets | [Realtime UI](/en/docs/frontend/realtime-ui) |
 | `@k2b/cloud/events` | Supported, server-only | `appEvents`: publish declared app events in a transaction; `defineLive`: transactional live updates; `routes(channels)` serves them over one socket per application with access checked at delivery | [App events](/en/docs/platform/app-events), [Live updates](/en/docs/automation/live-updates) |
-| `@k2b/cloud/events/testing` | Supported, tests only | `appEventFixture` and `deliverAppEvent` validate event fixtures and subscriber handlers; real live engine, memory topic controls and integration outbox startup | [Test app events](/en/docs/platform/app-events#test-a-handler-locally), [Test channels](/en/docs/automation/live-updates#test-channels) |
+| `@k2b/cloud/events/testing` | Supported, tests only | `appEventFixture` and `deliverAppEvent` validate event fixtures and subscriber handlers; `installLiveOutbox(db)` installs Core’s events schema in `*_test` databases; real live engine, memory topic controls and integration outbox startup | [Test app events](/en/docs/platform/app-events#test-a-handler-locally), [Test channels](/en/docs/automation/live-updates#test-channels) |
 | `@k2b/cloud/browser/app-badges` | Supported, browser | `refreshAppBadges` reads the app bar's badge counts again after a change | [Layout and navigation](/en/docs/frontend/layout-and-navigation#show-a-count-on-the-app-icon) |
 | `@k2b/cloud/browser/app-approval` | Supported, browser | Authenticator namespace for pairing links, device keys and signed API calls | [App approval](/en/docs/operations/app-approval) |
 | `@k2b/cloud/browser/mermaid` | Supported, browser | Mermaid configuration that follows Cloud's light and dark colors | [Styling and accessibility](/en/docs/frontend/styling-and-accessibility#render-mermaid-diagrams-with-cloud-colors) |
@@ -492,11 +493,12 @@ for execution, model access, and usage accounting.
 | `@k2b/cloud/workflows/language` | Supported | Workflow compiler, parser, and authoring | [Author workflows](/en/docs/automation/author-and-publish-workflows) |
 | `@k2b/cloud/workflows/runtime` | Supported, server-only | Workflow execution runtime | [Workflow effects](/en/docs/automation/effects-retry-and-reconciliation) |
 | `@k2b/cloud/workflows/store` | Supported, server-only | Durable workflow store, `createWorkflowWorker`, and `notifyWorkflowWorker` | [Start runs](/en/docs/automation/emit-events-and-start-runs) |
+| `@k2b/cloud/ai/tasks` | Supported, server-only | Shared durable application AI task migration, lifecycle and budget; existing `WorkflowAi` names remain stable | [Application AI tasks](/en/docs/operations/application-ai-tasks) |
 | `@k2b/cloud/workflows/ai` | Supported, server-only | Durable AI task migration and lifecycle for opted-in workflow apps; `getWorkflowAiBudget()` reads the administrator budget for new work | [Structured and background AI](/en/docs/ai/structured-and-background-ai) |
 | `@k2b/cloud/workflows/testing` | Supported, tests | Workflow process fixtures | [Test workflows](/en/docs/automation/workflow-observability-and-testing) |
 | `@k2b/cloud/services/image-metadata` | Supported, server-only | Strip metadata from content image uploads without re-encoding | [Image upload privacy](/en/docs/platform/image-upload-privacy) |
 | `@k2b/cloud/services/document-extraction` | Supported, server-only | Convert authorized document bytes to bounded untrusted Markdown | [Document extraction](/en/docs/platform/document-extraction) |
-| `@k2b/cloud/services/pdf` | Supported, server-only | Prepare bounded map images for PDF and print exports | [Saved maps](/en/docs/platform/saved-map-documents) |
+| `@k2b/cloud/services/pdf` | Supported, server-only | Render PDFs; merge, extract, split, rotate and reorder pages; prepare print images | [PDF and templates](/en/docs/platform/pdf-and-templates), [Saved maps](/en/docs/platform/saved-map-documents) |
 | `@k2b/cloud/services/outbox` | Supported, server-only | `createPgOutbox`: deliver the rows of an application's own outbox table after commit, in order per key | [Migrations and transactions](/en/docs/data/migrations-and-transactions#deliver-an-outbox) |
 | `@k2b/cloud/ssr/islands` | Supported, server-only | Shared SSR island helpers | [In-product help](/en/docs/platform/help) |
 | `@k2b/cloud/ssr/WorkspaceNavigation.island` | Supported | SSR-first workspace links for the Cloud mobile menu | [Application shells](/en/docs/frontend/application-shells) |
@@ -678,3 +680,26 @@ and [Upload preflight](/en/docs/platform/pdf-and-templates#upload-browser-map-sn
 `parseAiModelChoice` and `AiPeopleModels`. Use them to request a deployment's
 model class and interpret the resolved variant. See
 [Structured and background AI](/en/docs/ai/structured-and-background-ai#request-a-class).
+
+
+## Workspace speedtest consumers
+
+The private `@k2b/speedtest` workspace shares one measurement contract between
+Tools, Cloud CLI and the standalone server's script. It has no Cloud dependency.
+Use its supported entries rather than importing source files:
+
+| Entry | Runtime and purpose |
+| --- | --- |
+| `@k2b/speedtest` | Browser/server: plans, engine, progress and result types |
+| `@k2b/speedtest/browser` | Browser: anonymous fetch and XHR upload progress |
+| `@k2b/speedtest/node` | Node/Bun: anonymous HTTP transport with socket backpressure |
+| `@k2b/speedtest/http` | Browser/server: shared HTTP response checks |
+| `@k2b/speedtest/udp-client` | Node/Bun: explicit UDP jitter/loss diagnostic |
+
+See [Run a speedtest server](/en/docs/operations/speedtest-server) for duration,
+statistics, anonymous budgets and migration from Cloud's legacy script URLs.
+
+Core's routine definition export uses the framework-owned `exportChatTasks`,
+`ChatTaskExportPageSchema`, `ChatTaskExportEntrySchema`, `ChatTaskExportQuerySchema`
+and `ChatTaskExportForbiddenError` exports from `@k2b/cloud/ai`. See
+[Export automation definitions](/en/docs/operations/automation-definition-export).

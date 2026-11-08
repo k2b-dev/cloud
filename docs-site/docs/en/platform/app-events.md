@@ -5,7 +5,7 @@ section: Platform services
 order: 556
 description: Declare versioned application facts and consume service events with retryable handlers.
 tags: [events, capabilities, subscriptions, automation]
-updated: 2026-10-27
+updated: 2026-11-07
 ---
 
 # App events
@@ -25,13 +25,16 @@ when a caller needs an immediate answer or asks another application to do work.
   on that person's behalf. Before every delivery Cloud checks, through the
   reader of the place's Type, that this person may still read the place. An
   event never carries the rights of its publisher or of whoever caused it.
-- Applications receive service events only. An application subscription to a
-  resource event stays `blocked` with `resource_events_unsupported`. This is the
-  rule, not a missing feature: applications are not readers of places.
+- Ordinary application subscriptions receive service events only. An application subscription to a
+  resource event stays `blocked` with `resource_events_unsupported`. Applications are not readers of places.
 
-Person-mandated subscriptions are not available yet, so resource events are
-stored and listed in the catalog but not delivered. `automation` metadata does
-not grant authority or install a Routine.
+Core-owned workloads can install resource subscriptions in their activation
+transaction. Each subscription binds an exact place, immutable workload
+revision, and confirmed mandate. Cloud matches the place and activation cutoff
+before creating a delivery and rechecks the current mandate and place Type
+reader before invoking the workload. A denied read cancels delivery with
+`resource_access_revoked`; an unavailable reader retries. `automation` metadata
+does not grant authority or install a workload.
 
 Deployed applications are trusted parts of the installation and share the
 platform database and NATS credentials. Deploying an application is approval
@@ -40,31 +43,93 @@ application declared that event type and version.
 
 ## Built-in resource events
 
-Spaces and Notebooks publish these version 1 events. Each `data` schema is a
-strict empty object (`{}`); the envelope's `subject` and `place` carry public
-resource IDs accepted by the corresponding Type readers.
+Spaces, Notebooks, Contacts, and Mail publish these version 1 events. The envelope's
+`subject` and `place` carry public resource IDs accepted by the corresponding
+Type readers. Notebooks and most Spaces events use a strict empty `data`
+object (`{}`). `spaces.item.updated` carries only change categories; Contacts
+updates carry only changed field-group names. Mail carries only the receipt
+reference described below.
 
 | Full event type | Subject Type | Place Type | When it is published |
 | --- | --- | --- | --- |
 | `spaces.item.created` | `spaces.item` | `spaces.space` | A task, calendar event, stored occurrence override, or split series is created. |
+| `spaces.comment.created` | `spaces.comment` | `spaces.space` | A comment is created on an item or recurring occurrence; a retried comment request emits no second event. |
+| `spaces.item.updated` | `spaces.item` | `spaces.space` | An existing item's assignees, deadline or status changes. Data is `{ changed: [...] }`, with one to three values from `assignees`, `due`, `status`. |
+| `spaces.item.due` | `spaces.item` | `spaces.space` | An open task reaches its deadline, once per item and due value. |
 | `spaces.item.completed` | `spaces.item` | `spaces.space` | An existing item changes from open to completed, including a drag, calendar cancellation, or transfer into a done column. |
 | `notebooks.notebook.created` | `notebooks.notebook` | `notebooks.notebook` | A notebook is created. |
 | `notebooks.notebook.updated` | `notebooks.notebook` | `notebooks.notebook` | Notebook metadata or settings change. |
+| `notebooks.comment.created` | `notebooks.comment` | `notebooks.notebook` | A post is added to a note's page discussion; edits, deletions and passage annotations emit no such event. |
 | `notebooks.note.created` | `notebooks.note` | `notebooks.notebook` | A note is created, including welcome notes, path creation, copies, and restored copies. |
 | `notebooks.note.updated` | `notebooks.note` | `notebooks.notebook` | Persisted Markdown, title, the moved note’s parent or order, lock state, or recovery status changes, coalesced as described below. |
+| `contacts.contact.created` | `contacts.contact` | `contacts.book` | A contact is created, including each committed import entry. Data is `{}`. |
+| `contacts.contact.updated` | `contacts.contact` | `contacts.book` | Stored contact fields change. Data contains only the bounded `changed` group list described below. |
+| `mail.message.received` | `mail.message` | `mail.mailbox` | An incoming message reaches its first eligible provider placement. |
 
 The place Types have permission-aware readers: `spaces.space.read` and
-`notebooks.notebook.read`. Subject readers are `spaces.item.read`,
-`notebooks.notebook.read`, and `notebooks.note.read`. Read content through those
+`notebooks.notebook.read`, `contacts.book.read`, plus `mail.mailbox.read` for Mail.
+Subject readers are `spaces.item.read`, `spaces.comment.read`,
+`notebooks.notebook.read`, `notebooks.note.read`, `notebooks.comment.read`,
+`contacts.contact.read`, and
+`mail.message.read`. Read content through those
 readers; events contain no titles, text, names, email addresses, content counts,
 parent IDs, or previous-place references. Repeating completion or reopening an
-item does not publish `spaces.item.completed`.
+item does not publish `spaces.item.completed`. A completion or reopening does
+publish `spaces.item.updated` with `status`; repeated or otherwise unchanged
+updates emit nothing. Status includes moving between columns and changing
+completion state. Assignee order and equivalent timestamp offsets do not count
+as changes. Title, description, priority, tags, progress, and rank alone do
+not emit `item.updated`. Claims that add or remove assignees do.
 
-A Spaces transfer that completes an item publishes under its **new place only**.
+A Spaces transfer publishes its assignee or status changes, and any completion,
+under its **new place only**.
 Its source receives no resource event naming the destination. A note move
 carries only the note and its current notebook refs; it omits parent and position.
 Moving notes between notebooks remains unsupported; copying creates a new note
 and emits `note.created` in the destination notebook.
+
+`spaces.item.due` uses a minute sweep with at most **524 tasks** per tick across
+all replicas per UTC minute. Timed deadlines use their exact instant; all-day deadlines become
+eligible at midnight in the installation's `app.timezone` (UTC when the
+setting is empty or invalid). Only tasks with no
+completion timestamp and outside done columns are eligible; calendar events
+are excluded. The event fires when the due time is reached after the installation's
+first successful due sweep, which persists a start watermark. There are no events
+for tasks that were already overdue at that first sweep, or due exactly at that
+watermark. Restarting
+keeps the watermark and catches up deadlines reached after it. The oldest eligible
+deadlines go first; a burst of 500 tasks fits in the next minute tick. Larger
+backlogs take further ticks. See the [burst budget](/en/docs/operations/app-events#plan-retention-and-outage-capacity).
+The event contains no deadline value: read the item's current state through
+`spaces.item.read` before acting.
+
+The sweep saves a durable receipt for each item and due value atomically with
+the outbox event. Moving the deadline allows one event for the new value;
+returning to an already announced value or reopening the task emits no second
+due event for that value. A new or changed due time after the watermark fires
+once, on the next tick if it has already passed. Receipts last until the item is deleted. Tick claims
+and row locks keep retries and replicas within the shared batch limit. An
+outbox failure rolls back the whole batch, receipts and tick claim for retry.
+
+Contacts update data is `{ changed: [...] }`, with one to ten values from
+`profile`, `emails`, `phones`, `addresses`, `websites`, `bankAccounts`, `tags`,
+`notes`, `parent`, and `book`. The list follows that order and contains no
+field values, names, addresses, note text, or old book references. Equivalent
+normalized values, including rebuilt collection rows, publish no update.
+Profile covers the contact's scalar details; tag changes mean assignments.
+Geocoding cache refreshes, personal favorites, tag metadata changes, and derived
+child-parent maintenance do not fan out contact events. Deleting a tag removes
+its assignments without contact events. A merge announces its
+surviving target. Moving a contact announces an update in its destination book
+only; its source receives no app event naming that destination.
+
+Contact writes and events commit together. Idempotent create and note retries
+produce no duplicate event. Imports keep one creation event per successfully
+committed contact, even when a later entry fails, independently of the import's
+single live refresh. The existing limits are **1,000 contacts per import** and
+**500 contacts per bulk tag or move operation**, enforced at the service seam.
+See the [bulk and shared capacity budget](/en/docs/operations/app-events#plan-retention-and-outage-capacity)
+and [Contacts automation capabilities](/en/docs/reference/contacts-automation).
 
 `notebooks.note.updated` uses trailing coalescing. A changed note records its
 first pending change and latest change in the domain transaction. A minute
@@ -85,18 +150,114 @@ Collaborative edits mark the note when persisted to its snapshot, including
 shared-log snapshot workers and server-side edits, rather than on each Yjs
 update. Existing workspace and collaborative text streams retain their own behavior.
 
-Creates and completions remain transactional discrete facts. Notebook metadata
+Creates, comments, item changes and completions remain transactional discrete facts. Notebook metadata
 updates also remain transactional: one update affects one notebook and does
-not fan out to its notes. These event rates equal the corresponding domain
-write rates; they have no aggregate event throttle. The domain helpers can
+not fan out to its notes. Their rates follow domain
+writes; they have no aggregate event throttle. A completion can emit both
+`item.updated` and `item.completed`. The domain helpers can
 participate in a caller-owned transaction, so they rely on the platform's
 one-second outbox reconciliation instead of waking before that transaction
-commits. The note sweep owns its transaction and calls `wake()` after commit.
+commits. The note and due sweeps own their transactions and call `wake()` after commit.
 
 **Applications do not receive these events.** They are resource events: an
 application subscription to them stays `blocked` with
-`resource_events_unsupported`, and only subscriptions a person stands behind
-with a mandate will receive them (see [Who receives an event](#who-receives-an-event)).
+`resource_events_unsupported`, and only resource-bound workload subscriptions with a valid mandate
+and current read access receive them (see [Who receives an event](#who-receives-an-event)).
+
+### Grids record changes
+
+Grids also publishes version 1 resource events for record creation, updates,
+deletion, and finalization. See [Grids events](/en/docs/reference/grids-events)
+for mutation boundaries, bulk summaries, and table/base lifecycle events.
+
+### Mail receipts
+
+`mail.message.received` has strict data `{ receiptId: UUID }`. The receipt ID
+is the stable identity of the first eligible provider placement. Keep it as
+an opaque business key; the envelope's event ID remains the delivery deduplication
+key. Use the public `subject.id` with `mail.message.read` or
+`mail.message.read-content` to read authorized content. The event contains no
+headers, addresses, subject text, body, attachment metadata, or conversation data.
+The body may still be loading when the event arrives; readers report its state.
+
+Mail publishes the event in the same transaction as its receipt decision and
+existing workflow emissions, even when no workflow is enabled. An incremental
+provider import can produce one receipt per message. A Gmail copy first seen
+in All Mail waits for the first copy outside All Mail. Later labels, moves,
+repeat syncs, and retries do not produce another receipt. The receipt keeps
+its original placement identity after a move.
+
+Trash and Junk placements do not publish. If the first copy outside All Mail
+is in Trash or Junk, it consumes the pending receipt without publication;
+restoring the message later does not create a receipt. Messages from configured
+sender identities also do not publish, including their delivered self-copies.
+Initial history imports and reconciliation imports do not publish or arrange
+later catch-up. If such an import consumes a pending receipt, a later move
+does not publish it. Provider drafts remain on Mail's existing draft path.
+Mailbox and message access are still checked through capabilities; the receipt
+grants no read or write rights.
+
+## Chat posted messages
+
+`chat.message.posted` version 1 announces a newly stored text message in an
+ordinary Chat conversation or channel. The subject is `chat.message` (ten-character
+message ID); the place is `chat.conversation` (six-character conversation ID).
+Both general and named-thread messages publish, including quoted replies.
+The strict data object contains:
+
+| Field | Meaning |
+| --- | --- |
+| `threadReply` | Whether the message quotes an earlier message through `replyTo`. A named thread alone does not make a message a reply. |
+| `root` | The reply chain's original `{ type: "chat.message", id }` ref for a reply; otherwise `null`. Replies to replies retain the original root. |
+| `author` | The stored author's principal ref: `{ type: "user" \| "service_account", id: UUID }`. |
+| `mentions` | Distinct validated principal refs, in input order, at most Chat's existing 20 mentions. Ineligible mentions are omitted. |
+
+Each new reply stores its root ref, so later replies need one indexed lookup
+regardless of chain depth. Messages stored before event support have no root
+metadata: quoting one anchors the new chain at that legacy message. Historical
+chains are not scanned or backfilled.
+
+No body, names, mention ranges, previews, attachments or shared refs are included.
+Read the message through `chat.message.read`; authorize the place through
+`chat.conversation.read`. These readers check current grants, credential scopes
+and account binding. The event grants no content access.
+
+Publication shares the message transaction; delivery is woken after commit.
+An idempotent retry emits no second event; rollback removes the message and event together. Edits, deletes, reactions,
+system lines and messages in system conversations do not emit this event.
+System conversations can contain item discussions with separate read checks;
+the owning applications publish their domain events. Chat has no public message
+import operation; migrations and direct database imports do not replay events.
+There is no historical backfill.
+
+### Skip messages from your own automation
+
+Before reading content or performing an effect, compare `data.author` with the
+service-account principal used to post the handler's results. Return immediately
+when both type and ID match. This stops the handler from answering its own posts.
+To react only when mentioned, also require that `data.mentions` contains the
+intended principal. These checks need no message text.
+
+```ts
+const ownPrincipal = { type: "service_account", id: ownServiceAccountId };
+const isOwnMessage = event.data.author.type === ownPrincipal.type
+  && event.data.author.id === ownPrincipal.id;
+if (isOwnMessage) return;
+```
+
+The publisher forwards the request's ID as `cause.requestId` when present,
+including calls through `chat.message.post`, so effects can be correlated with
+the originating capability execution. Empty IDs or IDs over the envelope's
+256-character bound are omitted; optional correlation never prevents posting.
+Correlation does not suppress delivery:
+use the author check for self-posts, and durable event-ID receipts for retries.
+The platform does not infer automation ancestry or prevent two different
+handlers from replying to each other. Design their predicates accordingly.
+
+Chat uses one discrete event per new message, without coalescing or aggregate
+throttling. Its existing per-principal send limits remain in force. Include
+all Chat posts and mention payload sizes in the
+[shared capacity budget](/en/docs/operations/app-events#plan-retention-and-outage-capacity).
 
 ## Declare events and subscriptions
 
@@ -227,8 +388,7 @@ it is absent. A read whose schema and subscriber list exceed the result budget r
 
 These tools discover declarations only. They do not watch events, create
 subscriptions, or install Assistant Routines. A declared place and
-`automation: true` remain catalog metadata; they do not enable resource-event
-delivery or grant authority.
+`automation: true` remain catalog metadata; they do not install a resource subscription or grant authority.
 
 ## Read the envelope
 
@@ -344,6 +504,54 @@ newer events; there is no global or event-time ordering guarantee.
 For the retry schedule, retention budget, and recovery commands, see
 [Operate app events](/en/docs/operations/app-events).
 
+## Platform-owned resource consumers
+
+The server module `@k2b/cloud/services/app-events` exposes the Core host hooks
+`subscribeResourceEvent`, `cancelResourceEventSubscriptions`, `replayResourceEventDelivery`, and
+`registerResourceEventConsumer`. These are platform-owned hooks, not an
+application subscription API. Ordinary application authors continue to use
+`subscribes` for service events.
+
+Install a consumer once at startup and unregister it after draining the event
+broker. In the workload activation transaction, call `subscribeResourceEvent`
+with the subscriber `appId`, full event `type`, `version`, and a `binding`:
+`consumer`, stable workload `key`, immutable `revision`, `mandateId`,
+`mandateRevision`, and exact `place: { type, id }`. Registration is idempotent
+for an active complete binding. Reusing a cancelled binding fails; resuming
+creates a fresh registration revision. Mandate revision changes also require
+cancelling and registering again. Events published before registration are excluded, including
+older events still in the publisher outbox. Registration and event acceptance serialize the activation boundary. No implicit catch-up occurs.
+Publication timestamps come from the transaction's PostgreSQL clock with
+microsecond precision, matching subscription cutoffs regardless of the publisher process clock.
+
+The consumer receives the binding, original reference envelope and standard
+delivery context. It must recheck its current workload revision and enabled
+state under its workload lock, then commit its durable receipt and admission
+in one transaction before returning. If the workload has changed before
+admission, return `{ cancelled: true }` to record `workload_changed` instead
+of acknowledging an admission. It must honor the abort signal and make
+admission idempotent by event ID. Cloud does not turn event visibility into
+permission to read content or perform an effect: subsequent capability calls
+still enforce the workload's policy and current grants. Keep resource event
+data reference-only; read content through authorized capabilities.
+
+Use transaction handles, never a pool, for both registration and cancellation.
+Cancel subscriptions in the same transaction that disables or replaces the
+workload. Cancellation fences outstanding delivery claims; an admission that
+committed first is already separate workload work. Offline consumer code leaves
+work retrying without spending handler attempts. Resource consumers share the
+existing broker, delivery table, eight-attempt retry policy, retention and
+per-subscription subject ordering; no second transport is installed.
+
+For deliberate recovery after a workload change, the host can call
+`replayResourceEventDelivery` in its authorized workload transaction. It moves
+a retained delivery to the current subscription for the same consumer, key,
+event version and place. This explicit operation bypasses the registration
+cutoff, then repeats ordinary visibility and admission checks. It does not
+repeat effects already admitted by the consumer's receipt. Recovery is limited
+to 30 days after the event was received. Resource delivery records remain for
+30 days to support this recovery; ordinary service delivery retention is unchanged.
+
 ## Test a handler locally
 
 Use `appEventFixture` and `deliverAppEvent` from `@k2b/cloud/events/testing`
@@ -401,3 +609,8 @@ failure stops replay and reports how many finished.
 Replay sends no fixture to Cloud and does not invoke a production subscriber.
 The selected local handler controls its own effects. Its output is a count:
 `{ "delivered": 3 }`.
+
+Resource visibility checks carry a query-only, mandate-bound event proof. The
+provider revalidates the active subscription and claimed delivery before its
+ordinary Type reader checks the principal's current read access. The proof is usable only while a delivery of that event for that mandate is
+claimed and cannot authorize an Action or a workload run.

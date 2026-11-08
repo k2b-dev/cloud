@@ -5,7 +5,7 @@ section: Operations
 order: 585
 description: Inspect event subscriptions and deliveries, diagnose blocked handlers, and redeliver retained work.
 tags: [events, operations, retries, retention]
-updated: 2026-10-27
+updated: 2026-11-07
 ---
 
 # Operate app events
@@ -35,6 +35,15 @@ within the retained window, then inspect backlog and failures. If status reports
 `gap_detected`, run the subscriber's domain reconcile; redelivery cannot restore
 events that have expired. Rolling back code does not remove homes already
 created or reverse completed handler effects.
+
+Core also migrates `events.app_subscriptions.resource_binding` for
+mandate-bound workload subscriptions. Roll out Core before enabling such
+workloads. They use the existing delivery queue and retention budget. Ordinary
+app subscriptions to resource events remain blocked. A resource delivery
+cancelled with `resource_access_revoked` means its mandate or current read
+access no longer permits delivery; redelivery never bypasses those checks.
+Workload pause or revision replacement cancels pending deliveries with
+`workload_changed`. Resuming starts a fresh subscription cutoff.
 
 ## Inspect readiness and failures
 
@@ -113,12 +122,39 @@ These commands call the matching administrative endpoints:
 | `redeliver <id>` | `POST /api/app-events/deliveries/:id/redeliver` |
 | `record <type> --shape-only` | `GET /api/app-events/record/:eventType` |
 
-Spaces now publishes `spaces.item.created` and `spaces.item.completed`.
+Spaces publishes `spaces.item.created`, `spaces.item.completed`,
+`spaces.comment.created`, `spaces.item.updated`, and `spaces.item.due`.
 Notebooks publishes `notebooks.notebook.created`, `notebooks.notebook.updated`,
-`notebooks.note.created`, and `notebooks.note.updated`. All are version 1
-resource events with public refs and empty data. They are retained through the
+`notebooks.note.created`, `notebooks.note.updated`, and `notebooks.comment.created`.
+All are version 1 resource events with public refs. Only `spaces.item.updated`
+carries data: `changed` lists `assignees`, `due`, or `status`, with no old or new
+values. They are retained through the
 normal event pipeline, but **are not delivered to app subscribers**. Retrying,
 redelivering, or restarting does not remove the authorization block.
+
+Spaces due events use the existing maintenance scheduler, once per minute, with
+at most **524 tasks** across all replicas per UTC minute. The durable tick claim and
+per-item, per-due-value receipt commit with the outbox. Retrying a failed batch
+is safe; restarting does not forget receipts or pending deadlines. All-day
+deadlines use midnight in `app.timezone` (UTC if empty or invalid); timed
+deadlines use their instant.
+Completed tasks, done columns, and calendar events are excluded. The first
+successful sweep persists a start watermark: due events fire only for due times
+reached after it. There are no events for tasks that were already overdue when
+the first sweep ran, or due exactly at that watermark. Restarts retain the watermark and catch up later
+deadlines. A burst of 500 tasks fits in one tick; larger backlogs need further
+ticks. Moving a deadline into the future can emit again when that new due time
+is reached; reverting to an announced value cannot. A new or changed due time
+after the watermark fires once, on the next tick if it has already passed. Receipts are removed with their item. The scheduler's existing job
+status and retry handling expose failures.
+
+Contacts publishes `contacts.contact.created` and `contacts.contact.updated`,
+with a public contact subject and book place. Creation data is empty; update
+data contains only the changed field-group names. Content stays behind the
+permission-aware capability readers. Normalized no-op writes emit no update.
+Imports publish once for every committed entry, including when the import stops
+early; idempotent replays add none. Moves publish only in the destination book.
+See [Contacts event groups](/en/docs/platform/app-events#built-in-resource-events).
 
 Note updates are trailing, bounded batches: Q = **30 seconds** quiet time,
 W = **five minutes** until eligibility despite continuous edits, T = **one minute**
@@ -130,8 +166,9 @@ each marker. Locked notes remain eligible. An outbox failure rolls back the
 batch and tick claim, leaving markers for retry. Backlog and skipped row locks
 can delay delivery beyond W; W bounds coalescing, not queueing time.
 
-Creates and completions are discrete facts retained in their domain
-transactions. Their rate equals the domain write rate. Both APIs install the
+Creates, comments, item changes and completions are discrete facts retained in their domain
+transactions. Their rates follow domain writes; one completion can emit both
+`item.updated` and `item.completed`. Both APIs install the
 shared `rateLimit()` middleware: by default 60 requests/s per session user or
 client IP, configurable through `security.rate_limit_per_second`. That is not
 an installation-wide event bound, and direct services and capability Actions
@@ -143,6 +180,17 @@ agent calls and multiple callers remain unbounded in aggregate. Notebook
 metadata updates affect one notebook without note fan-out, so they remain
 transactional too. Operators must budget all these writes together with Core
 and other producers; the note sweep does not enforce the overall stream budget.
+
+Chat also publishes `chat.message.posted` version 1 at an ordinary
+`chat.conversation` place. It emits one transactional event per new text
+message, including replies and capability posts. System lines and system
+conversations, edits, deletes and retries are excluded; imports do not replay
+old messages. Its readers and author/mention predicates are documented in
+[Chat posted messages](/en/docs/platform/app-events#chat-posted-messages).
+There is no aggregate publisher throttle. The existing limits of ten sends per
+principal per conversation per ten seconds and 60 per principal per minute
+bound individual writers, not installation throughput. Include Chat in the
+same shared outage allocation as other producers.
 
 ## Recover a delivery
 
@@ -217,20 +265,42 @@ events. Core ingests serially under normal operation; deliveries are ordered
 by acceptance within each subscription and subject. Replaying ingestion dead
 letters can accept older events later, so handlers must tolerate that order.
 
+New page discussion posts publish one transactional event per post, without
+comment text. Edits and deletions publish none. This discrete write rate shares
+the aggregate capacity below; it does not use the coalesced note-update quota.
+
 ## Plan retention and outage capacity
 
 The stream budget is shared by **all producers**. The producer fixture tests
 measure compact JSON envelopes at **241 bytes** for `spaces.item.created`,
-**243 bytes** for `spaces.item.completed`, **256 bytes** for either note event,
-and **264 bytes** for either notebook event (six-character public IDs, a UUID
-event ID, fixed ISO timestamp, empty data, no cause). PostgreSQL `jsonb::text`
-adds 21 bytes of whitespace to these fixtures: **262–285 bytes**. Longer refs
-or an optional cause increase the size; the platform maximum remains
+**243 bytes** for `spaces.item.completed`, **247 bytes** for
+`spaces.comment.created`, **237 bytes** for `spaces.item.due`, **279 bytes** for
+`spaces.item.updated` with all three change categories, **256 bytes** for either
+note event, **254 bytes** for `contacts.contact.created`, **362 bytes** for
+`contacts.contact.updated` with all ten groups, **262 bytes** for
+`notebooks.comment.created`, and **264 bytes** for either notebook event
+(six-character public IDs, a UUID event ID, fixed ISO timestamp, empty data
+except the Spaces and Contacts changed-group lists, no cause). Mail's
+`mail.message.received` fixture is **292 bytes**, including its UUID receipt
+reference. PostgreSQL `jsonb::text` adds whitespace: **258–393 bytes** across
+these fixtures. Longer refs or an optional cause increase the size; the platform maximum remains
 **4096 bytes** in PostgreSQL `jsonb::text`.
 
+Chat's `chat.message.posted` fixture is **374 compact / 405 jsonb-text bytes**
+with a service-account author and no mentions, root or cause. A reply with 20
+service-account mentions is **1829 compact / 1942 jsonb-text bytes**, before
+an optional cause. The maximum-mention fixture stays below the 4096-byte limit
+even with a 256-character request ID requiring JSON escapes. Longer PostgreSQL
+publication timestamps also consume a few extra bytes. Budget these larger
+payloads explicitly: with the same 1024-byte transport allowance, seven days
+of maximum-mention replies fit at only
+`268435456 / ((1942 + 1024) × 604800) = 0.150 events/s` before other producers.
+The 0.3 events/s thin-envelope planning rate below does not provide seven days
+of outage capacity for a mention-heavy Chat workload.
+
 The shared JetStream has a **256 MiB** byte limit and a **7-day** maximum age.
-Before transport overhead, 264-byte thin envelopes fit at
-`268435456 / (264 × 604800) = 1.68 events/s` for seven days. This is an
+Before transport overhead, 362-byte thin envelopes fit at
+`268435456 / (362 × 604800) = 1.23 events/s` for seven days. This is an
 upper bound, not an operating rate: Sync wrapping, subjects, headers, and NATS
 storage consume bytes too. The fixture test also publishes through Sync:
 notebook events occupy **692 retained bytes/message**, note events **684**,
@@ -239,9 +309,9 @@ and UUID deduplication key). These values vary with namespace and headers;
 692 bytes would allow only `268435456 / (692 × 604800) = 0.64 events/s`.
 Retaining the conservative **1024-byte transport
 allowance** and using the largest measured database representation gives
-`268435456 / ((285 + 1024) × 604800) = 0.339 events/s`.
+`268435456 / ((393 + 1024) × 604800) = 0.313 events/s`.
 Use **0.3 events/s aggregate** (25,920/day) as the thin-envelope planning rate,
-with roughly 12% of stream space left beyond that allowance. At the full
+with roughly 4% of stream space left beyond that allowance. At the full
 4096-byte envelope limit plus the allowance, only 52,428 events fit: about
 two days at 0.3 events/s. Byte pressure can shorten history before seven days.
 JetStream reserves the byte limit on every replica; replication multiplies
@@ -253,15 +323,59 @@ The existing Sync scheduler has minute resolution, so T = 60 s and
 `M = floor(0.25 × 0.3 × 60) = 4`. Thus sustained `note.updated` throughput is
 at most `M/T = 4/60 = 0.0667 events/s`, **22.2%** of the shared planning rate
 (with an initial burst of at most four). Q = 30 s merges short editing bursts;
-W = 300 s lets continuous editing become eligible within five minutes. The
-remaining 0.233 events/s is a planning allowance for all other events, not a
-publisher limit. Sustained discrete writes above it require more capacity or
-a shorter outage target. A missed or expired event requires domain reconciliation.
+W = 300 s lets continuous editing become eligible within five minutes.
+
+Spaces due events use a **burst byte budget** rather than dividing the sustained
+planning rate into minute quotas. Allocate **1% of the 256 MiB stream per tick**
+(about one quarter of the roughly 4% retention headroom), using the maximum 4096-byte
+envelope plus the conservative 1024-byte transport allowance:
+`M = floor(0.01 × 268435456 / (4096 + 1024)) = 524 tasks`.
+That bounds a tick to **2,682,880 bytes** under this allowance, even at the
+maximum envelope size; 500 simultaneously due tasks fit in one minute tick.
+The actual thin due envelopes consume less. The allowance covers transport
+planning, not a hard upper bound on broker accounting.
+
+The 524-task limit is a burst bound, not a sustainable per-minute operating
+rate. Repeated full batches during an ingestion outage can exhaust the shared
+stream and shorten history. The **0.3 events/s aggregate** seven-day planning
+rate still includes due events and all other producers. After sustained note
+updates, the remaining **0.2333 events/s** is shared by due events, discrete Mail
+receipts, Chat posts at the new-message rate, and other events. This allowance
+is a planning rate, not a publisher limit. Sustained writes above it require more
+capacity or a shorter outage target. Subscriber fan-out and handler duration
+can delay delivery after publication. A missed or expired event requires domain
+reconciliation.
+
+Contacts bulk operations are bounded discrete writes, outside the coalesced
+note-update quota. An import commits at most **1,000 contacts** one at a time,
+with one event in each domain transaction. At the maximum 4096-byte envelope
+plus 1024-byte transport allowance, one import plans for at most **5,120,000
+bytes**, less than **2% of the 256 MiB stream**; the measured creation fixtures
+need 1,299,000 bytes with that allowance. Bulk tag and move operations select
+at most **500 contacts**, so even a changed event for each uses at most
+**2,560,000 bytes** under the maximum-envelope allowance, less than **1%**.
+No event is emitted for unchanged assignments. These are burst bounds; repeated
+imports and bulk edits still share the **0.3 events/s aggregate** seven-day
+outage planning rate. Higher sustained volume needs more capacity or a shorter
+outage target. The normal outbox and subscriber retries can add delivery delay.
+
+Grids record events are discrete transactional facts with empty data and public
+record/base refs. Each base transaction publishes up to 10,000 individual record
+events, then one bounded overflow summary per affected table. The event budget
+never rejects a domain write. Table/base deletion and restoration emit one
+parent event each, without record fan-out. There is no cross-transaction throttle. Include
+imports and bulk edits when planning peak ingestion, delivery fan-out, and
+outage retention. See [Grids events](/en/docs/reference/grids-events) for the
+mutation and rollback contract. This producer uses the existing platform outbox
+and broker; it needs no additional service or configuration.
 
 Core retains unresolved deliveries for **30 days** from creation or the latest
 administrator redelivery, then marks them
 `cancelled` with `retention_expired`. That cancellation remains visible for
-**7 days**. Completed and cancelled deliveries are retained for **7 days**;
+**7 days** for service deliveries, or **30 days** for resource workloads.
+Completed and cancelled service deliveries are retained for **7 days**;
+resource workload deliveries remain for **30 days** to support explicit recovery
+across workload revisions within the event's 30-day recovery window;
 failures are not silently discarded. Events are retained for at least
 **30 days**, and longer while deliveries still reference them. After cleanup
 removes the retained records, `redeliver` cannot recover them.

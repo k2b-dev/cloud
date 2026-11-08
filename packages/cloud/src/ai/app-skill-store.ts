@@ -1,7 +1,6 @@
 import type { SQL, TransactionSQL } from "bun";
 import { z } from "zod";
 import { appAudienceRoles } from "../_internal/app-roles";
-import { APP_REGISTRY_TTL_MS } from "../_internal/registry";
 import type { AppRegistryEntry } from "../contracts/registry";
 import { sql } from "../runtime/clients";
 import { logger } from "../services/logging";
@@ -171,7 +170,6 @@ export const reconcileAppSkills = async (apps: readonly AppRegistryEntry[], db: 
     await lock(tx);
     await tx`UPDATE ai.app_skills SET available=false, updated_at=now()
       WHERE available AND NOT (app_id=ANY(${liveIds}::text[]))`;
-    await tx`DELETE FROM ai.app_skill_catalogs WHERE last_seen_at < now() - ${APP_REGISTRY_TTL_MS * 2} * interval '1 millisecond'`;
   });
   let complete = true;
   for (const app of apps) {

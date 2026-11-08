@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
-import { type ChartDatum, charts } from "@k2b/stdlib";
 import { isChartDatum } from "@k2b/ui/chart-inspection";
 import { barChartLayout, renderBarChartSvg } from "@k2b/ui/charts";
+import { type ChartDatum, charts } from "@k2b/ui/charts/core";
 import {
   type ChartInput,
   chartKinds,
@@ -225,6 +225,29 @@ describe("chart render options", () => {
   });
 });
 
+test("saved references preserve their individual style and tone through schema and rendering", () => {
+  const spec = {
+    kind: "line",
+    title: "Flow",
+    series: [
+      {
+        data: [
+          { x: 1, y: 1 },
+          { x: 2, y: 5 },
+        ],
+      },
+    ],
+    references: [{ value: 3, label: "Target", style: "dotted", tone: "success" }],
+  } satisfies ChartInput;
+  const input = parse(spec);
+  const options = chartRenderOptions(input, "en");
+  if (options.kind !== "line") throw new Error("Expected line");
+  expect(options.references).toEqual(spec.references);
+  expect(charts.line(options)).toContain('style="stroke-dasharray:1 3;stroke-linecap:round;color:var(--k2b-success-text,#047857)"');
+  expect(schema.safeParse({ ...spec, references: [{ value: 3, style: "unknown" }] }).success).toBe(false);
+  expect(schema.safeParse({ ...spec, references: [{ value: 3, tone: "unknown" }] }).success).toBe(false);
+});
+
 describe("chart axes", () => {
   const ticks = (input: unknown, anchor: "end" | "middle") => {
     const svg = drawChart(chartRenderOptions(parse(input), "en"));
@@ -288,6 +311,7 @@ describe("shared chart tooltip", () => {
     for (const input of [
       { kind: "bar", title: "B", data: [{ label: "Jan", value: 1200 }], yAxis: { label: "Axis", format: { decimals: 0 } } },
       { kind: "pie", title: "P", data: [{ label: "Jan", value: 1200 }] },
+      { kind: "donut", title: "D", data: [{ label: "Jan", value: 1200 }] },
       { kind: "stat", title: "S", value: 1200, sparkline: [1200, 1500] },
       ...["line", "scatter"].map((kind) => ({
         kind,
@@ -378,7 +402,7 @@ describe("shared chart tooltip", () => {
       const comparable = (options: typeof before) =>
         JSON.parse(JSON.stringify(options, (_key, value) => (typeof value === "function" ? [0, 1.5, 1200].map(value) : value)));
       expect(comparable(after)).toEqual(comparable(before));
-      if (before.kind === "bar" && after.kind === "bar") expect(drawChart(after)).toEqual(drawChart(before));
+      if (before.kind === "bar" && after.kind === "bar") expect(charts.bar(after)).toEqual(charts.bar(before));
       else if (before.kind === "line" && after.kind === "line") expect(charts.line(after)).toEqual(charts.line(before));
       else throw new Error("Expected matching chart kinds");
     }
@@ -548,4 +572,49 @@ describe("function formats in chart rows", () => {
     // A sparkline's x is its position, never a formatted axis value.
     expect(chartRows(spark, "de", { formats: { x } }).add(datum).cells.x).toBe("2");
   });
+});
+
+test("saved Notebook and cloud.chart JSON retain null gaps and every existing chart kind", () => {
+  const fixtures = [
+    {
+      kind: "bar",
+      title: "Saved",
+      data: [
+        { label: "A", value: 2 },
+        { label: "Gap", value: null },
+      ],
+    },
+    {
+      kind: "line",
+      title: "Saved",
+      series: [
+        {
+          data: [
+            { x: "2026-11-01", y: 2 },
+            { x: "2026-11-02", y: null },
+            { x: "2026-11-03", y: 4 },
+          ],
+        },
+      ],
+    },
+    { kind: "scatter", title: "Saved", series: [{ data: [{ x: 1, y: 2 }] }] },
+    ...["pie", "donut"].map((kind) => ({ kind, title: "Saved", data: [{ label: "A", value: 2 }] })),
+    { kind: "histogram", title: "Saved", data: [1, 2, 3] },
+    { kind: "gauge", title: "Saved", value: 2 },
+    { kind: "sparkline", title: "Saved", data: [1, null, 3] },
+    { kind: "boxplot", title: "Saved", data: [{ label: "A", values: [1, 2, 3] }] },
+    { kind: "heatmap", title: "Saved", data: [{ x: "A", y: "B", value: 2 }] },
+    { kind: "barGauge", title: "Saved", data: [{ label: "A", value: 2 }] },
+    { kind: "stat", title: "Saved", value: 2, delta: 1 },
+  ];
+  for (const fixture of fixtures) {
+    const saved = JSON.stringify(fixture);
+    const input = chartKinds().parse(JSON.parse(saved));
+    expect(String(input.kind)).toBe(fixture.kind);
+    const options = chartRenderOptions(input, "en");
+    expect(String(options.kind)).toBe(fixture.kind);
+    expect(chartTable(input, "en")).toBeDefined();
+    expect(JSON.stringify(fixture)).toBe(saved);
+    if (input.kind === "line") expect(Number.isNaN(input.series[0]?.data[1]?.y)).toBe(true);
+  }
 });

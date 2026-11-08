@@ -160,6 +160,20 @@ describe("ContextMenu keepNativeMenu", () => {
     }
   });
 
+  test("an entry chosen from the keyboard returns focus to where the menu opened", async () => {
+    const page = await load();
+    try {
+      await page.locator(".row-button").focus();
+      await page.keyboard.press("Shift+F10");
+      expect((await outcome(page)).items).toEqual(["Row item"]);
+      await page.keyboard.press("Enter");
+      await page.locator(".k2b-context-menu").waitFor({ state: "detached" });
+      expect(await page.evaluate(() => document.activeElement?.className)).toBe("row-button");
+    } finally {
+      await page.close();
+    }
+  });
+
   test("without keepNativeMenu, every target opens the app menu as before", async () => {
     const page = await load();
     try {

@@ -1,3 +1,5 @@
+import type { ChartShowcaseExample } from "./types";
+
 /** Portable examples; the showcase registry renders these same descriptions and generates TSX from them. */
 export const barExamples = [
   {
@@ -94,6 +96,29 @@ export const barExamples = [
     options: [{ name: "compare", type: "{ label, data }", description: "One aligned previous-period series." }],
   },
   {
+    id: "bar-rows-wide",
+    kind: "bar",
+    question: "compare",
+    title: "Orders by collection",
+    summary: "Rows keep labels and values within the shared measure in a wide frame.",
+    spec: {
+      kind: "bar",
+      title: "Orders by collection",
+      layout: "rows",
+      data: [
+        { label: "Furniture", value: 84 },
+        { label: "Lighting", value: 62 },
+        { label: "Pictures", value: 39 },
+      ],
+    },
+    width: "full",
+    height: 220,
+    useFor: ["Category values with readable row labels"],
+    avoidFor: ["A continuous time axis"],
+    a11y: ["Arrow keys inspect each row; the value stays alongside its category."],
+    options: [{ name: "--k2b-row-measure", type: "CSS length", description: "Maximum drawing width for rows; defaults to 40rem." }],
+  },
+  {
     id: "bar-ranked",
     kind: "bar",
     question: "compare",
@@ -126,4 +151,4 @@ export const barExamples = [
       { name: "tone", type: "in | out", description: "Use flow colors where the theme defines them, otherwise the neutral chart palette." },
     ],
   },
-];
+] satisfies ChartShowcaseExample[];

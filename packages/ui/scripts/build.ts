@@ -24,7 +24,10 @@ for (const [dependency, name] of [
 }
 
 const ignoredSource = (path: string): boolean =>
-  /\.(?:test|typecheck)\.[cm]?[jt]sx?$/.test(path) || path.endsWith("styles/css-contract-test-helpers.ts") || path.endsWith(".d.ts");
+  /\.(?:test|typecheck)\.[cm]?[jt]sx?$/.test(path) ||
+  path.endsWith("styles/css-contract-test-helpers.ts") ||
+  path.endsWith("charts/parity.ts") ||
+  path.endsWith(".d.ts");
 
 const sourceFiles = async (directory: string): Promise<string[]> => {
   const files: string[] = [];
@@ -52,6 +55,8 @@ const compileModules = async (mode: "dom" | "ssr", outputRoot: string): Promise<
       await writeFile(outputPath, 'export function createMap() { throw new Error("MapView live rendering requires a browser"); }\n');
       continue;
     }
+    // The PDF engine is no module of the package graph: it is bundled on its own below and loaded by address.
+    if (sourceName === "content/pdf-engine.ts") continue;
     const result = await transformAsync(source, {
       filename: sourcePath,
       sourceFileName: sourceName,
@@ -71,6 +76,25 @@ const compileModules = async (mode: "dom" | "ssr", outputRoot: string): Promise<
       if (!code.includes(worker)) throw new Error("@k2b/ui could not find the MapLibre worker import in map-view-live");
       code = code.replace(worker, '"./map-view-worker.js"');
     }
+    // The PDF loader imports the engine and the pdf.js worker as files. The browser build points them at the bundled
+    // engine and the .js worker copy below, which a host's bundler copies next to its chunks. On the server nothing
+    // opens a document, so both addresses stay empty there.
+    if (sourceName === "content/pdf-document.ts") {
+      for (const [specifier, browserFile] of [
+        ["./pdf-engine.ts", "./pdf-viewer-engine.js"],
+        ["pdfjs-dist/legacy/build/pdf.worker.min.mjs", "./pdf-viewer-worker.js"],
+      ] as const) {
+        const fileImport = new RegExp(
+          `import (\\w+) from "${specifier.replace(/[.*+?^${}()|[\]\\/]/g, "\\$&")}" with \\{\\s*type: "file"\\s*\\};`,
+        );
+        const match = code.match(fileImport);
+        if (!match) throw new Error(`@k2b/ui could not find the file import of ${specifier} in pdf-document`);
+        code = code.replace(
+          match[0],
+          mode === "dom" ? `import ${match[1]} from "${browserFile}" with { type: "file" };` : `const ${match[1]} = "";`,
+        );
+      }
+    }
     await mkdir(dirname(outputPath), { recursive: true });
     await writeFile(outputPath, `${code}\n//# sourceMappingURL=${basename(outputPath)}.map\n`);
     await writeFile(`${outputPath}.map`, JSON.stringify(result.map));
@@ -82,6 +106,22 @@ await compileModules("dom", resolve(dist, "browser"));
 
 await copyFile(resolve(root, "node_modules/maplibre-gl/dist/maplibre-gl-worker.mjs"), resolve(dist, "browser/content/map-view-worker.js"));
 await copyFile(resolve(root, "node_modules/maplibre-gl/LICENSE.txt"), resolve(dist, "licenses/maplibre-gl.txt"));
+await copyFile(
+  resolve(root, "node_modules/pdfjs-dist/legacy/build/pdf.worker.min.mjs"),
+  resolve(dist, "browser/content/pdf-viewer-worker.js"),
+);
+await copyFile(resolve(root, "node_modules/pdfjs-dist/LICENSE"), resolve(dist, "licenses/pdfjs-dist.txt"));
+// pdf.js and its glue as one self-contained module. Hosts load it by address, so it never enters their bundles,
+// not even a classic script that could not parse pdf.js's module syntax.
+const engine = await Bun.build({
+  entrypoints: [resolve(sourceRoot, "content/pdf-engine.ts")],
+  outdir: resolve(dist, "browser/content"),
+  naming: { entry: "pdf-viewer-engine.js" },
+  target: "browser",
+  format: "esm",
+  minify: true,
+});
+if (!engine.success) throw new AggregateError(engine.logs, "@k2b/ui could not bundle the PDF engine");
 
 const builds = [
   {

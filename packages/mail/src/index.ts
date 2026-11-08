@@ -18,6 +18,7 @@ import { createMailNotificationService } from "./notifications";
 import { router } from "./router";
 import { commandRuntime, mailRuntime, workflowRuntime } from "./service";
 
+import { applicationAiRuntime } from "./service/application-ai-runtime";
 import { startConversationSummaryRuntime, stopConversationSummaryRuntime } from "./service/conversation-summary-jobs";
 import { stopConversationViewCountCache } from "./service/view-count-cache";
 
@@ -30,6 +31,7 @@ const stopMailRuntimes = (): Promise<void> =>
     () => stopConversationSummaryRuntime(),
     () => mailRuntime.stop(),
     () => workflowRuntime.stop(),
+    applicationAiRuntime.stop,
     () => commandRuntime.stop(),
     () => mailNotifications.stop(),
   ]);
@@ -58,6 +60,7 @@ const result = await app.start({
         await mailNotifications.start();
         await mailRuntime.start();
         await commandRuntime.start();
+        await applicationAiRuntime.start();
         await workflowRuntime.start();
         await startConversationSummaryRuntime();
       } catch (startError) {

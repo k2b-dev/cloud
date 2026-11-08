@@ -41,6 +41,7 @@ test("portable ranked rows validate options and keep every source row in the tab
   expect(chartMarks(input)).toBe(3);
   expect(chartRenderOptions(input, "de")).toMatchObject({ share: true, limit: 1, tone: "out" });
   expect(chartTable(input, "de").rows).toHaveLength(3);
+  expect(chartTable(input, "de")).toEqual(chartTable(schema.parse({ ...spec, limit: undefined }), "de"));
   expect(drawChart(chartRenderOptions(input, "de"))).toContain("2 weitere");
   expect(schema.safeParse({ ...spec, layout: "columns" }).success).toBe(false);
   expect(schema.safeParse({ ...spec, limit: 0 }).success).toBe(false);

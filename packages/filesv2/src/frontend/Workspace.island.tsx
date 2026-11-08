@@ -14,6 +14,7 @@ import Browser from "./Browser";
 import { baseLabel } from "./base-label";
 import { useBrowserMessages } from "./browser-messages";
 import { browseOptions, browseQuery, parsePreferences, type ViewPreference, viewFor } from "./browser-preferences";
+import { directoryContext, directoryPageCount, directoryPages } from "./directory-pages";
 import Editor from "./Editor";
 import { historyExecutionHref } from "./execution-url";
 import { IssueMessage } from "./feedback";
@@ -78,9 +79,14 @@ export default function Workspace(props: {
     new URL(props.initial.source, "https://files.invalid").searchParams.get("refreshed") === "true",
   );
   const preference = (baseId: string) => viewFor(parsePreferences(typeof document === "undefined" ? undefined : document.cookie), baseId);
+  let previousSnapshot: WorkspaceSnapshot = props.initial;
+  // A successful poll hands its authorized directory to the canonical loader once.
+  let polledDirectory: { source: string; value: NonNullable<WorkspaceSnapshot["directory"]> } | null = null;
   const workspace = createWorkspaceState<WorkspaceSnapshot>({
     initial: props.initial,
     load: async (source, signal) => {
+      const polled = polledDirectory;
+      polledDirectory = null;
       const url = new URL(source, window.location.origin);
       const basesResponse = await apiClient.bases.$get({}, { init: { signal } });
       if (!basesResponse.ok) throw await apiError(basesResponse);
@@ -123,44 +129,69 @@ export default function Workspace(props: {
         if (!response.ok) throw await apiError(response);
         editor = await response.json();
       } else if (!filters && selected?.status === "existing" && view !== "trash") {
+        // Bound cumulative replay by the existing visible-refresh budget, including its API requests.
+        signal = AbortSignal.any([signal, AbortSignal.timeout(LIVE_REFRESH_MS)]);
         // Activity loads and pages its own entries, so its filters can change without leaving the view.
         const page = { path: url.searchParams.get("path") ?? "", after: url.searchParams.get("after") ?? undefined };
         const search = searchState(url.searchParams);
-        const response = search
-          ? await apiClient.bases[":baseId"].search.$get(
-              { param: { baseId: selected.id }, query: { ...page, ...searchRequest(search) } },
-              { init: { signal } },
-            )
-          : await apiClient.bases[":baseId"].entries.$get(
-              {
-                param: { baseId: selected.id },
-                query: { ...page, ...browseQuery(browseOptions(url.searchParams, preference(selected.id))) },
-              },
-              { init: { signal } },
-            );
-        if (!response.ok) {
-          const error = ErrorSchema.safeParse(await response.json().catch(() => null));
-          const code = error.success ? error.data.code : "unavailable";
-          if (page.after && !signal.aborted && code === "cursor_invalid") invalidCursors.add(source);
-          // A failed search stays a search, so its field and filters can narrow it.
-          if (search && code !== "cursor_invalid" && !signal.aborted)
-            directory = {
-              base: selected,
-              path: page.path,
-              items: [],
-              next: null,
-              query: search.q,
-              scope: search.scope,
-              total: null,
-              failure: code,
-            };
-          else {
-            // An old folder address: the same lookup as SSR; without visible history it stays an error.
-            if (Number(response.status) === 404 && !search && page.path && !page.after)
-              moved = await movedLookup(selected.id, page.path, signal).catch(() => null);
-            if (!moved) throw new Error(error.success ? error.data.message : t().unavailable);
-          }
-        } else directory = await response.json();
+        const count = directoryPageCount(url.searchParams);
+        const previous = previousSnapshot;
+        const reuse =
+          directoryContext(previous.source) === directoryContext(source) &&
+          previous.directory?.base.locationKey === selected.locationKey &&
+          (previous.directory?.loadedPages ?? 1) < count
+            ? (previous.directory ?? undefined)
+            : undefined;
+        directory =
+          polled?.source === source && polled.value.base.locationKey === selected.locationKey
+            ? polled.value
+            : await directoryPages(
+                count,
+                page.after,
+                async (after) => {
+                  const response = search
+                    ? await apiClient.bases[":baseId"].search.$get(
+                        { param: { baseId: selected.id }, query: { ...page, after, ...searchRequest(search) } },
+                        { init: { signal } },
+                      )
+                    : await apiClient.bases[":baseId"].entries.$get(
+                        {
+                          param: { baseId: selected.id },
+                          query: { ...page, after, ...browseQuery(browseOptions(url.searchParams, preference(selected.id))) },
+                        },
+                        { init: { signal } },
+                      );
+                  if (!response.ok) {
+                    const error = ErrorSchema.safeParse(await response.json().catch(() => null));
+                    const code = error.success ? error.data.code : "unavailable";
+                    if ((after || count > 1) && !signal.aborted && code === "cursor_invalid") invalidCursors.add(source);
+                    // A failed search stays a search, so its field and filters can narrow it.
+                    if (search && code !== "cursor_invalid" && !signal.aborted)
+                      directory = {
+                        base: selected,
+                        path: page.path,
+                        items: [],
+                        next: null,
+                        query: search.q,
+                        scope: search.scope,
+                        total: null,
+                        failure: code,
+                      };
+                    else {
+                      // An old folder address: the same lookup as SSR; without visible history it stays an error.
+                      if (Number(response.status) === 404 && !search && page.path && !page.after)
+                        moved = await movedLookup(selected.id, page.path, signal).catch(() => null);
+                      if (!moved) throw new Error(error.success ? error.data.message : t().unavailable);
+                    }
+                  } else return await response.json();
+                  if (!directory && moved) return { base: selected, path: page.path, items: [], next: null };
+                  if (!directory) throw new Error(t().unavailable);
+                  return directory;
+                },
+                signal,
+                reuse ? { ...reuse, loadedPages: reuse.loadedPages ?? 1 } : undefined,
+              );
+        if (moved) directory = null;
       }
       return {
         source,
@@ -183,6 +214,9 @@ export default function Workspace(props: {
     return { baseId, path, entry, chain: await loadChain(entry, signal, t().unavailable, path) };
   }
   const snapshot = workspace.snapshot;
+  createEffect(() => {
+    previousSnapshot = snapshot();
+  });
   const overview = () => showsOverview(new URL(snapshot().source, "https://files.invalid").searchParams, snapshot().bases.items.length);
   const hasOverview = () => snapshot().bases.items.length > 1;
   // Uploads belong to the workspace, not to a folder view: navigating or opening the editor keeps them running.
@@ -295,6 +329,7 @@ export default function Workspace(props: {
     if (!invalidCursors.delete(target)) return;
     const url = new URL(target, window.location.origin);
     url.searchParams.delete("after");
+    url.searchParams.delete("pages");
     const first = `${url.pathname}${url.search}`;
     setCursorNotice(true);
     await workspace.navigate(first, () => commitHistory(first, { replace: true, scroll: "manual" }));
@@ -330,7 +365,11 @@ export default function Workspace(props: {
   /** A search is on its way: the results area waits for it instead of showing the previous page. */
   const pendingSearch = () => {
     const target = workspace.pendingSource();
-    return !!target && !!searchState(new URL(target, "https://files.invalid").searchParams);
+    return (
+      !!target &&
+      directoryContext(target) !== directoryContext(snapshot().source) &&
+      !!searchState(new URL(target, "https://files.invalid").searchParams)
+    );
   };
   const [marksRevision, setMarksRevision] = createSignal(0);
   const dialogLifetime = new AbortController();
@@ -557,22 +596,29 @@ export default function Workspace(props: {
       const timeout = setTimeout(() => request.abort(), LIVE_REFRESH_MS);
       try {
         const after = new URL(workspace.committedSource(), window.location.origin).searchParams.get("after") ?? undefined;
-        const response = await apiClient.bases[":baseId"].entries
-          .$get(
-            { param: { baseId: directory.base.id }, query: { path: directory.path, after, ...browseQuery(currentBrowse()) } },
-            { init: { signal: request.signal } },
-          )
-          .catch(() => null);
-        if (!response?.ok) {
-          const error = response ? ErrorSchema.safeParse(await response.json()) : null;
-          if (after && error?.success && error.data.code === "cursor_invalid") {
-            invalidCursors.add(workspace.committedSource());
-            await resetCursor(workspace.committedSource());
-          }
-          return;
-        }
+        const page = await directoryPages(
+          directory.loadedPages ?? 1,
+          after,
+          async (cursor) => {
+            const response = await apiClient.bases[":baseId"].entries
+              .$get(
+                { param: { baseId: directory.base.id }, query: { path: directory.path, after: cursor, ...browseQuery(currentBrowse()) } },
+                { init: { signal: request.signal } },
+              )
+              .catch(() => null);
+            if (!response?.ok) {
+              const error = response ? ErrorSchema.safeParse(await response.json()) : null;
+              if ((cursor || (directory.loadedPages ?? 1) > 1) && error?.success && error.data.code === "cursor_invalid") {
+                invalidCursors.add(workspace.committedSource());
+                await resetCursor(workspace.committedSource());
+              }
+              throw new Error(t().unavailable);
+            }
+            return await response.json();
+          },
+          request.signal,
+        );
         if (snapshot().directory !== directory) return;
-        const page = await response.json();
         if (request.signal.aborted || workspace.pending() || snapshot().directory !== directory) return;
         const unchanged =
           fingerprint(page.items) === fingerprint(directory.items) &&
@@ -606,9 +652,11 @@ export default function Workspace(props: {
         await refreshBrowserBranches?.(request.signal);
         if (unchanged || request.signal.aborted || workspace.pending() || snapshot().directory !== directory) return;
         setPreserveSelection(true);
+        polledDirectory = { source: workspace.committedSource(), value: page };
         try {
           await go(workspace.committedSource(), true);
         } finally {
+          polledDirectory = null;
           setPreserveSelection(false);
         }
       } catch {
@@ -1032,6 +1080,17 @@ export default function Workspace(props: {
                             bases={snapshot().bases.items}
                             after={after()}
                             source={snapshot().source}
+                            onLoadMore={async () => {
+                              const url = new URL(workspace.committedSource(), window.location.origin);
+                              url.searchParams.set("pages", String((snapshot().directory?.loadedPages ?? 1) + 1));
+                              setPreserveSelection(true);
+                              try {
+                                await go(`${url.pathname}${url.search}`, true);
+                              } finally {
+                                setPreserveSelection(false);
+                              }
+                              if (workspace.failure()) throw new Error(workspace.failure()!.message);
+                            }}
                             detail={snapshot().detail}
                             preferences={props.preferences}
                             issues={snapshot().bases.issues}

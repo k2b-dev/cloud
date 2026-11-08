@@ -1,6 +1,10 @@
 import { type ChartLegendEntry, type ChartProps, prepareChartSnapshot } from "@k2b/ui";
 import type { DashboardRange } from "../../dashboard-contracts";
+import { dashboardCategoryDescription, dashboardPointDescription } from "../../dashboard-description";
 import type { DashboardPanelData } from "../../dashboard-result";
+
+export { dashboardChartDescription, dashboardChartRenderOptions, dashboardMoneyDescription } from "../../dashboard-description";
+
 import { sqlTimestamp } from "../../sql-result-values";
 import type { PublicDashboardPanel } from "./dashboard-client";
 import { dashboardMessages } from "./dashboard-messages";
@@ -15,21 +19,27 @@ export const readDashboardRange = (path: string): DashboardRange => {
     return { range, from: new Date(from).toISOString(), to: new Date(to).toISOString() };
   return { range };
 };
+/**
+ * Sections in the order their first panel appears. A number panel joins the key-figure row of its section; one without
+ * a section stays in the top row (`dashboardTopNumbers`). The section's icon, colour and description come from its
+ * first chart panel, because number panels were never checked against them; a section of numbers only takes them from
+ * its first number.
+ */
 export const dashboardSections = <T extends PublicDashboardPanel>(panels: T[]) => {
-  const groups = new Map<string, T[]>();
-  for (const panel of panels.filter((panel) => panel.kind !== "number")) {
-    const group = groups.get(panel.section) ?? [];
-    group.push(panel);
+  const groups = new Map<string, { numbers: T[]; panels: T[] }>();
+  for (const panel of panels) {
+    if (panel.kind === "number" && !panel.section) continue;
+    const group = groups.get(panel.section) ?? { numbers: [], panels: [] };
+    (panel.kind === "number" ? group.numbers : group.panels).push(panel);
     groups.set(panel.section, group);
   }
-  return [...groups].map(([name, panels]) => ({
-    name,
-    panels,
-    icon: panels[0]?.sectionIcon,
-    color: panels[0]?.sectionColor,
-    description: panels[0]?.sectionDescription,
-  }));
+  return [...groups].map(([name, { numbers, panels }]) => {
+    const lead = panels[0] ?? numbers[0];
+    return { name, numbers, panels, icon: lead?.sectionIcon, color: lead?.sectionColor, description: lead?.sectionDescription };
+  });
 };
+export const dashboardTopNumbers = <T extends PublicDashboardPanel>(panels: T[]) =>
+  panels.filter((panel) => panel.kind === "number" && !panel.section);
 /** Every dashboard time reads in the base's time zone, so the server and every viewer show the same clock. */
 export type DashboardClock = { locale: string; timeZone: string };
 export const dashboardDateTime = (clock: DashboardClock) =>
@@ -42,10 +52,6 @@ export const dashboardCell = (value: unknown, locale: string): string =>
       : typeof value === "object"
         ? JSON.stringify(value)
         : String(value);
-const number = (value: unknown): number | null =>
-  value !== null && value !== "" && (typeof value === "number" || typeof value === "string") && Number.isFinite(Number(value))
-    ? Number(value)
-    : null;
 export const dashboardLine = (
   panel: PublicDashboardPanel,
   data: DashboardPanelData,
@@ -54,21 +60,12 @@ export const dashboardLine = (
 ) => {
   const { locale, timeZone } = clock;
   const x = data.columns.findIndex((column) => column.name === panel.x);
-  const group = data.columns.findIndex((column) => column.name === panel.series);
-  // `id` names the series by its source group and column, independent of its position in the result.
-  const series = new Map<string, { id: string; label: string; data: { x: number; y: number }[] }>();
-  for (const row of data.rows) {
-    const time = sqlTimestamp(row[x], data.columns[x]?.type ?? "", timeZone);
-    for (const [index, column] of data.columns.entries()) {
-      if (index === x || index === group) continue;
-      const label = group < 0 ? column.name : `${dashboardCell(row[group], locale)}${data.columns.length > 3 ? ` · ${column.name}` : ""}`;
-      const key = JSON.stringify([group < 0 ? null : row[group], column.name]);
-      const value = series.get(key) ?? { id: key, label, data: [] };
-      const y = number(row[index]);
-      if (Number.isFinite(time) && y !== null) value.data.push({ x: time, y });
-      series.set(key, value);
-    }
-  }
+  // The JSON description keeps null gaps; the host line path retains its stable IDs and explorer rows.
+  const description = dashboardPointDescription(panel, data, clock);
+  const series = description.series.map((series) => ({
+    ...series,
+    data: series.data.flatMap((point) => (point.y === null ? [] : [{ x: point.x, y: point.y }])),
+  }));
   const times = [...new Set(data.rows.map((row) => sqlTimestamp(row[x], data.columns[x]?.type ?? "", timeZone)))]
     .filter(Number.isFinite)
     .sort((a, b) => a - b);
@@ -86,7 +83,7 @@ export const dashboardLine = (
       : undefined;
   return {
     kind: "line",
-    series: [...series.values()],
+    series,
     smooth: false,
     // ChartExplorer lists the series below the plot, where long names wrap.
     legend: false,
@@ -153,22 +150,11 @@ export const dashboardLineExplorer = (
   };
 };
 export const dashboardCategories = (panel: PublicDashboardPanel, data: DashboardPanelData, locale: string) => {
-  const x = data.columns.findIndex((column) => column.name === panel.x);
-  const group = data.columns.findIndex((column) => column.name === panel.series);
-  const values = data.columns.flatMap((column, index) => (index !== x && index !== group ? [{ index, name: column.name }] : []));
-  if (x < 0 || !values.length || (panel.kind === "funnel" && values.length !== 1)) throw new Error("PANEL_RESULT_INVALID");
-  return data.rows.flatMap((row) =>
-    values.map((column) => {
-      const value = number(row[column.index]);
-      if (value === null || (panel.kind === "funnel" && value < 0)) throw new Error("PANEL_RESULT_INVALID");
-      const label = [
-        dashboardCell(row[x], locale),
-        ...(group < 0 ? [] : [dashboardCell(row[group], locale)]),
-        ...(values.length === 1 ? [] : [column.name]),
-      ].join(" · ");
-      return { label, value };
-    }),
-  );
+  try {
+    return dashboardCategoryDescription(panel, data, locale).map((row) => ({ label: row.label, value: row.value ?? Number.NaN }));
+  } catch {
+    throw new Error("PANEL_RESULT_INVALID");
+  }
 };
 /** The projection already checked codes and values; rows without a country stay off the map. */
 export const dashboardCountries = (panel: PublicDashboardPanel, data: DashboardPanelData) => {

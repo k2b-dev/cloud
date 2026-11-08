@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test";
+import type { ChartDescription, ChartInput } from "@k2b/ui/charts";
 import { chartKinds } from "./chart-schema";
 import { chartMarks, chartRenderOptions, chartTable } from "./charts";
 import { notebookChartHeight } from "./markdown/lib/chart-blocks";
@@ -66,4 +67,22 @@ test("unlimited editor bars support an empty state while AI-limited bars require
   const limited = chartKinds({ maxSeries: 8, maxValues: 480, maxMarks: 1000 }).safeParse(empty);
   expect(limited.success).toBe(false);
   if (!limited.success) expect(limited.error.issues.some((issue) => issue.path[0] === "data")).toBe(true);
+});
+
+test("shared portable descriptions accept aligned bars and horizontal null gaps", () => {
+  const descriptions = [
+    {
+      kind: "bar",
+      title: "Opens",
+      x: ["Jan", "Feb"],
+      series: [{ label: "Current", data: [12, null] }],
+      layout: "grouped",
+      compare: { label: "Previous", data: [null, 8] },
+      xAxis: { ordered: true },
+    },
+    { kind: "hbar", title: "Orders", series: ["Online", "Shop"], rows: [{ group: "Furniture", label: "Desks", values: [12, null] }] },
+  ] satisfies ChartDescription[];
+  const inputs: ChartInput[] = descriptions.map((description) => schema.parse(description));
+  expect(inputs[0]).toMatchObject({ data: [], compare: { data: [null, 8] } });
+  expect(inputs[1]).toMatchObject({ rows: [{ values: [12, null] }] });
 });

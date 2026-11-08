@@ -1,2 +1,2 @@
 [test]
-preload = ["./src/frontend/_components/ssr-test-plugin.ts"]
+preload = ["./test/app-events-preload.ts", "./src/frontend/_components/ssr-test-plugin.ts"]

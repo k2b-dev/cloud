@@ -3,6 +3,7 @@ import {
   Avatar,
   AvatarFaces,
   AvatarStack,
+  BudgetList,
   Button,
   Calendar,
   type CalendarEvent,
@@ -651,7 +652,9 @@ const DetailsDemo = () => {
     { term: "Priority", description: <Select aria-label="Priority" appearance="plain" placeholder="No priority" clearable options={priorities} value={priority} onValueChange={setPriority} /> },
     { term: "Labels", description: <MultiSelectInput aria-label="Labels" appearance="plain" placeholder="Label" placeholderIcon="ti ti-plus" options={labelOptions} value={labels} onValueChange={setLabels} /> },
   ]}
-/>`}
+/>
+{/* Fallback only: a wide sum list joins term and value with a dotted leader */}
+<DescriptionList layout="rows" size="sm" leader="dotted" items={sums} />`}
     >
       <div class="ui-demo-form-grid">
         <article class="ui-detail-panel-pattern">
@@ -778,6 +781,22 @@ const DetailsDemo = () => {
             ]}
           />
         </article>
+        <article class="ui-detail-panel-pattern" style={{ "grid-column": "1 / -1" }}>
+          <header>
+            <strong>Wide sums with a dotted leader (fallback)</strong>
+            <span>Only for a list that must span a very wide container: the leader joins each term to its right-aligned value.</span>
+          </header>
+          <DescriptionList
+            layout="rows"
+            size="sm"
+            leader="dotted"
+            items={[
+              { term: "Net amount", description: "€1,240.00" },
+              { term: "VAT 19 %", description: "€235.60" },
+              { term: "Total", description: "€1,475.60" },
+            ]}
+          />
+        </article>
       </div>
     </DemoCard>
   );
@@ -817,6 +836,38 @@ const ProgressDemo = () => (
       </div>
       <DotStrip dots={dotStripOutcomes} length={50} label="Last 50 mails: 17 matched, 6 skipped, 27 not" />
       <DotStrip dots={dotStripOutcomes.slice(0, 23)} length={50} size="lg" label="23 of 50 checked" />
+    </div>
+  </DemoCard>
+);
+
+const BudgetDemo = () => (
+  <DemoCard
+    id="budget"
+    chip={[
+      { kind: "component", name: "BudgetList", from: "@k2b/ui" },
+      { kind: "component", name: "ProgressBar", from: "@k2b/ui" },
+    ]}
+    description="Budgets as rows: booked solid, expected hatched, over the budget red with a mark at the limit. The hint turns amber from 80 % and red beyond the budget; hover or focus a row for the breakdown."
+    code={`<BudgetList
+  currency="EUR"
+  items={[
+    { label: "Wareneinkauf", used: 9200, expected: 1800, limit: 15000 },
+    { label: "Marketing", used: 1400, expected: 300, limit: 2000 },
+    { label: "Reisen", used: 900, expected: 300, limit: 1000 },
+    { label: "Software", used: 380, limit: 600 },
+  ]}
+/>`}
+  >
+    <div style={{ "max-width": "32rem" }}>
+      <BudgetList
+        currency="EUR"
+        items={[
+          { label: "Wareneinkauf", used: 9200, expected: 1800, limit: 15000 },
+          { label: "Marketing", used: 1400, expected: 300, limit: 2000 },
+          { label: "Reisen", used: 900, expected: 300, limit: 1000 },
+          { label: "Software", used: 380, limit: 600 },
+        ]}
+      />
     </div>
   </DemoCard>
 );
@@ -878,6 +929,8 @@ const ChangeListDemo = () => (
   </DemoCard>
 );
 
+const subscribers = [38900, 39800, 40500, 41400, 42200, 42800, 43300, 43700, 44000, 44300, 44560, 48210];
+
 const StatsDemo = () => (
   <DemoCard
     id="stats"
@@ -885,20 +938,92 @@ const StatsDemo = () => (
       { kind: "component", name: "StatGrid", from: "@k2b/ui" },
       { kind: "component", name: "StatCell", from: "@k2b/ui" },
     ]}
-    description="This example pins three columns for its three cells; omitting columns uses the six-column responsive ladder. Cells can link, show contextual accents, and render compact trends."
+    description="Each key figure is a framed tile: icon and label, the figure with its change, and a support line with the comparison and the trend. Four tiles share a row, two at 600 px or less, where the badge moves under the figure. The second row shows loading, error, empty and stale in the same place."
     code={`import { StatCell, StatGrid } from "@k2b/ui";
 
+<StatGrid size="lg" columns={4}>
+  <StatCell label="Subscribers" icon="ti ti-users" tone="blue" value="48,210"
+    delta={{ value: 0.082, better: "up" }} compare={{ label: "Last month", value: 44560 }} trend={subscribers} />
+  <StatCell label="Open rate" icon="ti ti-mail-opened" tone="emerald" value="49.2 %"
+    delta={{ value: 0.031, unit: "points", better: "up" }} compare={{ label: "Last month", value: "46.1 %" }} />
+  <StatCell label="Click rate" icon="ti ti-click" tone="amber" value="19.8 %"
+    delta={{ value: -0.006, unit: "points", better: "up" }} compare={{ label: "Last month", value: "20.4 %" }} />
+  <StatCell label="Unsubscribes" icon="ti ti-user-minus" value={182}
+    delta={{ value: -0.125, better: "down" }} compare={{ label: "Last month", value: 208 }} />
+</StatGrid>
+
+<StatCell label="Subscribers" value={null} status="loading" />
+<StatCell label="Open rate" value={null} status="error" onRetry={reload} />
+<StatCell label="Bounces" value={null} sub="Nothing counted in this period" />
+<StatCell label="Unsubscribes" value={182} stale="As of 09:12 · not current" onRetry={reload} />
+
 <StatGrid columns={3} title="Runtime" action={{ label: "Observability", href: "./observability" }}>
-  <StatCell label="Requests" value="42k" sub="last hour" trend={[12, 18, 16, 24, 42]} />
+  <StatCell label="Requests" value="42k" sub="last hour" deltaPlacement="below" delta={{ value: 1200, unit: "absolute", better: "up" }} trend={[12, 18, 16, 24, 42]} />
   <StatCell label="Latency" value="83 ms" sub="p95" href="./observability" valueClass="app-latency-warning" />
   <StatCell label="Errors" value={12} sub="last hour" accent={{ tone: "red", icon: "ti ti-alert-circle", text: "inspect" }} />
 </StatGrid>`}
   >
-    <StatGrid columns={3} title="Runtime" action={{ label: "Observability", href: "./observability" }}>
-      <StatCell label="Requests" value="42k" sub="last hour" trend={[12, 18, 16, 24, 42]} />
-      <StatCell label="Latency" value="83 ms" sub="p95" href="./observability" valueClass="ui-stat-attention" />
-      <StatCell label="Errors" value={12} sub="last hour" accent={{ tone: "red", icon: "ti ti-alert-circle", text: "inspect" }} />
-    </StatGrid>
+    <div style={{ display: "grid", gap: "1.5rem" }}>
+      <StatGrid size="lg" columns={4}>
+        <StatCell
+          label="Subscribers"
+          icon="ti ti-users"
+          tone="blue"
+          value="48,210"
+          delta={{ value: 0.082, better: "up" }}
+          compare={{ label: "Last month", value: 44560 }}
+          trend={subscribers}
+        />
+        <StatCell
+          label="Open rate"
+          icon="ti ti-mail-opened"
+          tone="emerald"
+          value="49.2 %"
+          delta={{ value: 0.031, unit: "points", better: "up" }}
+          compare={{ label: "Last month", value: "46.1 %" }}
+        />
+        <StatCell
+          label="Click rate"
+          icon="ti ti-click"
+          tone="amber"
+          value="19.8 %"
+          delta={{ value: -0.006, unit: "points", better: "up" }}
+          compare={{ label: "Last month", value: "20.4 %" }}
+        />
+        <StatCell
+          label="Unsubscribes"
+          icon="ti ti-user-minus"
+          value={182}
+          delta={{ value: -0.125, better: "down" }}
+          compare={{ label: "Last month", value: 208 }}
+        />
+      </StatGrid>
+      <StatGrid size="lg" columns={4}>
+        <StatCell label="Subscribers" icon="ti ti-users" tone="blue" value={null} status="loading" />
+        <StatCell label="Open rate" icon="ti ti-mail-opened" tone="emerald" value={null} status="error" onRetry={() => undefined} />
+        <StatCell label="Bounces" icon="ti ti-mail-off" tone="amber" value={null} sub="Nothing counted in this period" />
+        <StatCell
+          label="Unsubscribes"
+          icon="ti ti-user-minus"
+          value={182}
+          delta={{ value: -0.125, better: "down" }}
+          stale="As of 09:12 · not current"
+          onRetry={() => undefined}
+        />
+      </StatGrid>
+      <StatGrid columns={3} title="Runtime" action={{ label: "Observability", href: "./observability" }}>
+        <StatCell
+          label="Requests"
+          value="42k"
+          sub="last hour"
+          deltaPlacement="below"
+          delta={{ value: 1200, unit: "absolute", better: "up" }}
+          trend={[12, 18, 16, 24, 42]}
+        />
+        <StatCell label="Latency" value="83 ms" sub="p95" href="./observability" valueClass="ui-stat-attention" />
+        <StatCell label="Errors" value={12} sub="last hour" accent={{ tone: "red", icon: "ti ti-alert-circle", text: "inspect" }} />
+      </StatGrid>
+    </div>
   </DemoCard>
 );
 
@@ -1347,6 +1472,7 @@ const demos: DemoSection = {
   progress: () => (
     <DemoGrid columns="one">
       <ProgressDemo />
+      <BudgetDemo />
     </DemoGrid>
   ),
   "change-list": () => (

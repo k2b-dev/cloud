@@ -278,6 +278,57 @@
   gap: 0.75rem;
 }
 
+.ui-dashboard-demo__title {
+  margin: 0;
+  font-size: 0.875rem;
+  font-weight: 600;
+  line-height: 1.25rem;
+}
+
+.ui-dashboard-demo__meta {
+  margin: 0 0 0.625rem;
+  color: var(--k2b-text-muted);
+  font-size: 0.8125rem;
+  line-height: 1.125rem;
+}
+
+.ui-typed-table-demo {
+  container: ui-typed-table / inline-size;
+  resize: horizontal;
+  overflow: hidden;
+  min-width: 18rem;
+  max-width: 100%;
+  padding: 0.875rem 0 0;
+}
+
+.ui-typed-table-demo__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0 1rem 0.625rem;
+}
+
+.ui-typed-table-demo__head h3 {
+  margin: 0;
+  font-size: 0.875rem;
+  font-weight: 600;
+  line-height: 1.25rem;
+}
+
+.ui-typed-table-demo__head p {
+  margin: 0;
+  color: var(--k2b-text-muted);
+  font-size: 0.8125rem;
+  line-height: 1.125rem;
+}
+
+@container ui-typed-table (max-width: 560px) {
+  .ui-typed-table-demo__head { flex-wrap: wrap; }
+  .ui-typed-table-demo__head .k2b-data-table-tools { flex: 1 1 100%; }
+  .ui-typed-table-demo__head .k2b-data-table-tools__search { flex: 1; width: auto; }
+}
+
 .ui-settings-demo {
   height: min(40rem, 80vh);
   min-height: 32rem;
@@ -1000,6 +1051,20 @@
   gap: 0.85rem;
 }
 
+.ui-chart-frame-demo {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.85rem;
+}
+
+.ui-chart-frame-demo__frame {
+  box-sizing: border-box;
+  width: 100%;
+  padding: 1rem;
+  overflow: hidden;
+}
+
 .ui-crop-demo {
   display: grid;
   max-width: 34rem;
@@ -1008,6 +1073,12 @@
 
 .ui-pdf-demo {
   min-height: 10rem;
+}
+
+.ui-pdf-viewer-demo {
+  display: flex;
+  height: 26rem;
+  flex-direction: column;
 }
 
 .ui-video-demo {
@@ -1510,4 +1581,744 @@
   line-height: 1.25rem;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* ------------------------------------------------------------------ Chart showcase -- */
+/* Overview, kind pages and example dashboards (docs-site/src/ui/ChartsShowcase.tsx). Frames follow the catalog
+ * mockup: one light frame per panel (F4), 1rem inside, title 14 px and one subtitle line, no shadows. */
+.ui-charts-page {
+  gap: clamp(2.5rem, 5vw, 4rem);
+}
+
+.ui-charts-hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(18rem, 28rem);
+  gap: clamp(2rem, 6vw, 6rem);
+  align-items: end;
+}
+
+.ui-charts-hero .ui-page-heading {
+  margin: 0;
+}
+
+.ui-charts-hero .ui-page-heading h1 {
+  max-width: 14ch;
+}
+
+.ui-charts-hero__intro > p,
+.ui-charts-kind-heading__summary {
+  max-width: 52ch;
+  margin: 0;
+  color: var(--c-muted);
+  font-size: 1rem;
+  line-height: 1.65;
+}
+
+.ui-charts-hero__intro dl {
+  display: flex;
+  gap: 2rem;
+  margin: 1.4rem 0 0;
+}
+
+.ui-charts-hero__intro dl > div {
+  display: flex;
+  gap: 0.55rem;
+  align-items: baseline;
+}
+
+.ui-charts-hero__intro dt,
+.ui-charts-hero__intro dd {
+  margin: 0;
+  font-family: var(--c-mono);
+  font-size: 0.76rem;
+}
+
+.ui-charts-hero__intro dt {
+  color: var(--c-faint);
+}
+
+.ui-charts-hero__intro dd {
+  color: var(--c-ink);
+}
+
+/* Question chips: one row of anchors that scrolls sideways on a phone instead of wrapping. */
+.ui-charts-questions {
+  display: flex;
+  gap: 0.5rem;
+  margin: 0 0 clamp(2rem, 4vw, 3rem);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.ui-charts-questions a {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 0.45rem;
+  min-height: 2.25rem;
+  padding: 0 0.85rem;
+  border: 2px solid var(--c-line);
+  border-radius: 999px;
+  color: var(--c-ink);
+  font-size: 0.875rem;
+  text-decoration: none;
+}
+
+.ui-charts-questions a:hover {
+  background: var(--c-sunken);
+}
+
+.ui-charts-questions a:focus-visible {
+  outline: 2px solid var(--c-accent);
+  outline-offset: 2px;
+}
+
+.ui-charts-questions i {
+  color: var(--c-accent-ink);
+}
+
+.ui-charts-questions small {
+  color: var(--c-faint);
+  font-family: var(--c-mono);
+  font-size: 0.72rem;
+}
+
+.ui-charts-gallery {
+  display: flex;
+  flex-direction: column;
+}
+
+.ui-charts-group {
+  padding-block: clamp(2rem, 4vw, 3rem);
+  border-top: 1px solid var(--c-line);
+  scroll-margin-top: 5rem;
+}
+
+.ui-charts-group__header {
+  display: flex;
+  gap: 0.9rem;
+  align-items: flex-start;
+  margin-bottom: 1.5rem;
+}
+
+/* The shared k2b-icon-tile owns shape, fill and centring; the showcase sets only its size and accent. */
+.ui-charts-group__icon {
+  width: 2.25rem;
+  height: 2.25rem;
+  color: var(--c-accent-ink);
+  font-size: 1.15rem;
+}
+
+.ui-charts-group__header p,
+.ui-charts-group__header h2,
+.ui-charts-group__header div > span {
+  margin: 0;
+}
+
+.ui-charts-group__header p {
+  color: var(--c-accent-ink);
+  font-family: var(--c-mono);
+  font-size: 0.74rem;
+}
+
+.ui-charts-group__header h2 {
+  margin-top: 0.2rem;
+  color: var(--c-ink);
+  font-family: var(--c-display);
+  font-size: clamp(1.3rem, 2.4vw, 1.65rem);
+  font-weight: 560;
+  letter-spacing: -0.015em;
+}
+
+/* Only the description line; the icon tile is a span too and keeps its own layout. */
+.ui-charts-group__header div > span {
+  display: block;
+  margin-top: 0.35rem;
+  color: var(--c-muted);
+  line-height: 1.55;
+}
+
+.ui-charts-cards {
+  container: ui-charts-cards / inline-size;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 19rem), 1fr));
+  grid-auto-flow: row dense;
+  gap: 1rem;
+}
+
+/* A kind that needs more width than one column takes two once the overview has two; a smaller card fills the gap. */
+@container ui-charts-cards (min-width: 39rem) {
+  .ui-charts-card[data-span="2"] {
+    grid-column: span 2;
+  }
+}
+
+.ui-charts-card {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding: 1rem;
+  border: 1px solid var(--k2b-border);
+  border-radius: 0.75rem;
+  background: var(--k2b-surface);
+}
+
+.ui-charts-card header h3 {
+  margin: 0;
+  font-size: 0.95rem;
+  font-weight: 600;
+  line-height: 1.35;
+}
+
+.ui-charts-card header h3 a {
+  color: var(--k2b-text);
+  text-decoration: none;
+}
+
+.ui-charts-card header h3 a:hover {
+  color: var(--c-accent-ink);
+}
+
+.ui-charts-card header h3 a:focus-visible {
+  border-radius: 0.2rem;
+  outline: 2px solid var(--c-accent);
+  outline-offset: 2px;
+}
+
+.ui-charts-card header p {
+  margin: 0.3rem 0 0;
+  color: var(--k2b-text-muted);
+  font-size: 0.8125rem;
+  line-height: 1.45;
+}
+
+.ui-charts-card__chart {
+  min-width: 0;
+  margin-top: auto;
+}
+
+/* A block in a card: its own height, read from the top right under the summary. */
+.ui-charts-card__chart.ui-charts-card__block {
+  margin-top: 0;
+  overflow: hidden;
+}
+
+.ui-charts-card__drawing {
+  height: 100%;
+}
+
+/* A drawing wider than the card scrolls sideways instead of shrinking. */
+.ui-charts-card__chart[data-fit="wide"] {
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+}
+
+/* Pie, donut and gauge scale as a whole with the card, so their labels would shrink to a few pixels; the card sets them
+   back to a readable size (about 11 px on screen for cards 300 to 480 px wide). */
+.ui-charts-card__chart[data-fit="whole"] {
+  container-type: inline-size;
+}
+
+.ui-charts-card__chart[data-fit="whole"] .stdlib-chart-legend {
+  display: none;
+}
+
+.k2b-ui .ui-charts-card__legend.stdlib-chart {
+  justify-content: center;
+  color: var(--k2b-text-muted);
+}
+
+.ui-charts-card__chart[data-fit="whole"] svg text:not(.stdlib-chart-gauge-value, .stdlib-chart-stat-value) {
+  font-size: max(11px, calc(32px - 5cqw));
+}
+
+.ui-charts-card__open {
+  margin-top: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  color: var(--c-accent-ink);
+  font-size: 0.8125rem;
+  font-weight: 500;
+  text-decoration: none;
+}
+
+.ui-charts-card__open:hover {
+  text-decoration: underline;
+}
+
+.ui-charts-group__planned {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  align-items: center;
+  margin: 1.1rem 0 0;
+  color: var(--c-faint);
+  font-size: 0.8125rem;
+}
+
+.ui-charts-group__planned > span:first-child {
+  margin-right: 0.25rem;
+}
+
+.ui-charts-chip {
+  padding: 0.15rem 0.6rem;
+  border: 1px dashed var(--c-line);
+  border-radius: 999px;
+  color: var(--c-muted);
+}
+
+.ui-charts-group__none {
+  margin: 0;
+  color: var(--c-muted);
+}
+
+.ui-charts-more {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.ui-charts-more h2 {
+  margin: 0;
+  color: var(--c-ink);
+  font-family: var(--c-display);
+  font-size: clamp(1.3rem, 2.4vw, 1.65rem);
+  font-weight: 560;
+}
+
+.ui-charts-more > p {
+  max-width: 62ch;
+  margin: 0;
+  color: var(--c-muted);
+  line-height: 1.6;
+}
+
+.ui-charts-more__reference a {
+  color: var(--c-accent-ink);
+}
+
+.ui-charts-dashboards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 22rem), 1fr));
+  gap: 1rem;
+}
+
+.ui-charts-dashboards a {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  padding: 1rem 2.75rem 1rem 1rem;
+  border: 1px solid var(--c-line);
+  border-radius: 0.75rem;
+  color: var(--c-ink);
+  text-decoration: none;
+}
+
+.ui-charts-dashboards a:hover {
+  background: var(--c-sunken);
+}
+
+.ui-charts-dashboards a:focus-visible {
+  outline: 2px solid var(--c-accent);
+  outline-offset: 2px;
+}
+
+.ui-charts-dashboards span {
+  color: var(--c-accent-ink);
+  font-family: var(--c-mono);
+  font-size: 0.72rem;
+}
+
+.ui-charts-dashboards small {
+  color: var(--c-muted);
+  font-size: 0.8125rem;
+  line-height: 1.5;
+}
+
+.ui-charts-dashboards i {
+  position: absolute;
+  top: 1rem;
+  right: 1rem;
+  color: var(--c-faint);
+}
+
+/* Kind pages ---------------------------------------------------------------------- */
+.ui-charts-kind-heading {
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+}
+
+.ui-charts-kind-heading .ui-page-heading {
+  margin: 0;
+}
+
+.ui-charts-trail {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  align-items: center;
+  color: var(--c-faint);
+  font-size: 0.8125rem;
+}
+
+.ui-charts-trail a {
+  color: var(--c-muted);
+  text-decoration: none;
+}
+
+.ui-charts-trail a:hover {
+  color: var(--c-accent-ink);
+  text-decoration: underline;
+}
+
+.ui-charts-playground {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+.ui-charts-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem 1.5rem;
+  align-items: flex-end;
+}
+
+.ui-charts-control {
+  display: flex;
+  min-width: 0;
+  max-width: 100%;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.ui-charts-control > span {
+  color: var(--k2b-text-muted);
+  font-size: 0.75rem;
+  font-weight: 500;
+}
+
+.ui-charts-control > .k2b-segmented-control {
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+.ui-charts-stage {
+  padding: clamp(1rem, 3vw, 2rem);
+  border-radius: 0.9rem;
+  background: var(--k2b-surface-muted);
+}
+
+/* "Phone" shows the frame at 390 px less the page margins, as on a phone. */
+.ui-charts-stage > :is(.k2b-dashboard-frame, .k2b-stat-grid) {
+  max-width: 100%;
+  margin-inline: auto;
+}
+
+.ui-charts-stage[data-width="phone"] > :is(.k2b-dashboard-frame, .k2b-stat-grid) {
+  max-width: 358px;
+}
+
+.ui-charts-stage__note {
+  max-width: 62ch;
+  margin: 0.9rem auto 0;
+  color: var(--k2b-text-muted);
+  font-size: 0.8125rem;
+  text-align: center;
+}
+
+.ui-charts-code {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.ui-charts-code__head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.ui-charts-code__head h2,
+.ui-charts-section h2,
+.ui-charts-guidance h2 {
+  margin: 0;
+  color: var(--c-ink);
+  font-size: 1.1rem;
+  font-weight: 600;
+}
+
+.ui-charts-code > p {
+  max-width: 70ch;
+  margin: 0;
+  color: var(--k2b-text-muted);
+  font-size: 0.875rem;
+  line-height: 1.55;
+}
+
+.ui-charts-guidance {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+}
+
+.ui-charts-guidance > div {
+  padding: 1.1rem 1.25rem;
+  border: 1px solid var(--c-line);
+  border-radius: 0.75rem;
+}
+
+.ui-charts-guidance h2 {
+  display: flex;
+  gap: 0.45rem;
+  align-items: center;
+}
+
+.ui-charts-guidance > div:first-child h2 i {
+  color: var(--c-live);
+}
+
+.ui-charts-guidance > div:last-child h2 i {
+  color: var(--c-faint);
+}
+
+.ui-charts-guidance ul,
+.ui-charts-a11y {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin: 0.8rem 0 0;
+  padding-left: 1.1rem;
+  color: var(--c-muted);
+  line-height: 1.55;
+}
+
+.ui-charts-section {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.ui-charts-options {
+  overflow-x: auto;
+  border: 1px solid var(--c-line);
+  border-radius: 0.75rem;
+}
+
+.ui-charts-options table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.875rem;
+}
+
+.ui-charts-options th,
+.ui-charts-options td {
+  padding: 0.65rem 0.9rem;
+  border-bottom: 1px solid var(--c-line);
+  text-align: left;
+  vertical-align: top;
+}
+
+.ui-charts-options thead th {
+  background: var(--c-sunken);
+  color: var(--c-muted);
+  font-size: 0.8125rem;
+  font-weight: 600;
+}
+
+.ui-charts-options tbody tr:last-child > * {
+  border-bottom: 0;
+}
+
+.ui-charts-options code {
+  font-family: var(--c-mono);
+  font-size: 0.78rem;
+  white-space: nowrap;
+}
+
+.ui-charts-options td {
+  color: var(--c-muted);
+  line-height: 1.5;
+}
+
+.ui-charts-related {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 15rem), 1fr));
+  gap: 0.75rem;
+}
+
+.ui-charts-related a {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  padding: 0.9rem 1rem;
+  border: 1px solid var(--c-line);
+  border-radius: 0.75rem;
+  color: var(--c-ink);
+  text-decoration: none;
+}
+
+.ui-charts-related a:hover {
+  background: var(--c-sunken);
+}
+
+.ui-charts-related a:focus-visible {
+  outline: 2px solid var(--c-accent);
+  outline-offset: 2px;
+}
+
+.ui-charts-related span {
+  color: var(--c-muted);
+  font-size: 0.8125rem;
+  line-height: 1.45;
+}
+
+/* Frames -------------------------------------------------------------------------- */
+/* A slot keeps the frame and its height for a kind this build cannot draw yet; it never shows another chart. */
+.ui-charts-slot {
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  padding: 1rem;
+  border: 2px dashed var(--k2b-border);
+  border-radius: 0.6rem;
+  color: var(--k2b-text-muted);
+  text-align: center;
+}
+
+.ui-charts-slot strong {
+  color: var(--k2b-text-secondary);
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+
+.ui-charts-slot p {
+  max-width: 42ch;
+  margin: 0;
+  font-size: 0.8125rem;
+  line-height: 1.45;
+}
+
+.ui-charts-slot__kind,
+.ui-charts-card__planned-kind {
+  padding: 0.1rem 0.5rem;
+  border-radius: 0.35rem;
+  background: var(--k2b-surface-muted);
+  font-family: var(--c-mono);
+  font-size: 0.72rem;
+}
+
+/* Dashboards: the box around DashboardGrid; the grid, sections and frames come from @k2b/ui. */
+/* The dashboard grid measures its own width (folding at 1000 and 600 px), so the box keeps its padding small and the
+   grid gets the room of the text column. */
+.ui-charts-dashboard {
+  container: ui-charts-dashboard / inline-size;
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 1.5rem;
+  padding: 1rem;
+  border-radius: 1rem;
+  background: var(--k2b-surface-muted);
+}
+
+.ui-charts-dashboard__bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  align-items: flex-end;
+  justify-content: space-between;
+}
+
+.ui-charts-dashboard__heading p,
+.ui-charts-dashboard__heading h2 {
+  margin: 0;
+}
+
+.ui-charts-dashboard__heading p {
+  color: var(--k2b-text-muted);
+  font-size: 0.8125rem;
+}
+
+.ui-charts-dashboard__heading h2 {
+  color: var(--k2b-text);
+  font-size: 1.4rem;
+  font-weight: 700;
+  line-height: 1.3;
+}
+
+.ui-charts-dashboard__heading span {
+  color: var(--k2b-text-muted);
+  font-size: 0.8125rem;
+}
+
+.ui-charts-dashboard__json summary {
+  color: var(--c-accent-ink);
+  font-size: 0.875rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.ui-charts-dashboard__json[open] summary {
+  margin-bottom: 0.75rem;
+}
+
+@media (max-width: 760px) {
+  .ui-charts-hero,
+  .ui-charts-guidance {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .ui-charts-stage[data-width="phone"] > :is(.k2b-dashboard-frame, .k2b-stat-grid) {
+    max-width: 100%;
+  }
+
+  /* On a phone the frame already has phone width. */
+  .ui-charts-control[data-control="width"] {
+    display: none;
+  }
+
+  .ui-charts-stage {
+    margin-inline: -0.25rem;
+    padding: 0.75rem;
+  }
+}
+
+.k2b-ui.ui-charts-playground .ui-charts-code__head .k2b-segmented-control,
+.k2b-ui .ui-charts-control > .k2b-segmented-control {
+  width: auto;
+  max-width: 100%;
+}
+
+.ui-charts-code .k2b-content-doc-code__body {
+  max-height: 30rem;
+  overflow: auto;
+}
+
+.ui-charts-guidance ul,
+.ui-charts-a11y {
+  list-style: disc;
+}
+
+.ui-charts-guidance li::marker,
+.ui-charts-a11y li::marker {
+  color: var(--c-faint);
+}
+
+.ui-charts-card__open:focus-visible {
+  border-radius: 0.2rem;
+  outline: 2px solid var(--c-accent);
+  outline-offset: 2px;
 }

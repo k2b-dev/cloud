@@ -1,16 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { createHash } from "node:crypto";
-import { mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { resolve } from "node:path";
-import { createConfig } from "@k2b/ssr";
-import type { ChartRenderOptions } from "./Chart";
-
-const root = mkdtempSync(resolve(tmpdir(), "cloud-chart-snapshot-tests-"));
-const { plugin } = createConfig({ dev: true, rootDir: root });
-Bun.plugin(plugin());
-process.once("exit", () => rmSync(root, { recursive: true, force: true }));
-const { prepareChartSnapshot } = await import("./chart-snapshot");
+import type { ChartRenderOptions } from "../charts/core";
+import { prepareChartSnapshot } from "./chart-snapshot";
 
 const series = [
   {
@@ -62,9 +53,8 @@ const fixtures = {
 // (6c7205814c51a932a1c0f5a1ac09318986699729), before changing Chart's default inspection. Fixed numeric inputs, no clock or random data.
 const baseline: Record<string, string> = {
   // Bar charts draw with @k2b/ui's own renderer since every category keeps its label and printed value; column labels
-  // and ticks keep their distance from the axis as a pixel offset (`dy`). Category hit bands now carry
-  // fill="none" and pointer-events="all", preserving the drawing in standalone hosts.
-  bar: "12fe1d9c51754daaf32a91323c1aa671d036f2d62c5ab254c3e8722671bdaa01",
+  // and ticks keep their distance from the axis as a pixel offset (`dy`).
+  bar: "435b52bc34ba6166d3205a1ecc5ab8660c1e8d18c4cb5086a2a31eebaa1a454a",
   line: "e189323e0c3c48cc5a49be8fb797a6e50b8b3ab51f490c33d4d6b10f995a7047",
   lineWithGap: "613b883fc561e8dd0e80f5a77e864d0665abaf40eb1f9833372f7b0b0a447ce3",
   stateTimeline: "0f488aed673002ebaf4584d8ed3bdd1d86dc150578786e9a0f90ecf6b9d3627d",

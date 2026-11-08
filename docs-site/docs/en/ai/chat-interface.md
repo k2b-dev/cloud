@@ -163,6 +163,50 @@ Lists, Sources, files, routines, dictations, and Project context refresh through
 [AI live updates](/en/docs/ai/chat-runtime-and-streaming#ai-live-updates)
 on `/api/ai/live`, not through the conversation stream.
 
+## Suggest the next message
+
+Interactive browser chats with the default tool source offer
+`suggest_next_message({ text: string | null })` when the person's
+`suggestNextMessage` preference is on (the default). Project composers,
+local clients, routines, workflows and background runs do not load it. A
+chat inside a Project is still an interactive chat.
+
+The platform prompt includes **Suggestions → Next message** only while the
+tool is loaded. It asks for one plain sentence in the person's language, at
+most 120 characters, only when the answer ends with a question or offers an
+obvious next step. `null` deliberately means no suggestion. Completed requests,
+failures, refusals, blockers, pending question cards or approvals, thanks and
+requests for brevity or no suggestions should produce none. A suggestion uses
+only the person's messages and the visible answer, never unseen tool data.
+
+The server rejects multiline text, more than 200 Unicode characters, URLs,
+Markdown, mentions and text equal to the person's last message after Unicode,
+case, punctuation and whitespace normalization. Rejected text means no
+suggestion. The first closing call wins, including `null` or invalid text. An alone,
+last call following answer text in the same model step ends the loop without
+another model request. Other calls receive
+`noted, call only alone after the answer` and the loop continues. Their arguments
+are stored as `{ text: null }` and do not count as a suggestion. The call
+never appears as a tool block.
+
+The latest completed answer can carry the optional field
+`suggestedNextMessage: { text: string; dismissedAt: string | null }` in the
+conversation detail, message page, initial stream snapshot and completed-turn
+stream event. Only the person who triggered the run receives it. A newer
+message or turn, an error, stop, redirect, queued message, pending approval or
+question hides it. Reloading preserves both the suggestion and its dismissal.
+Model history, exported answer text, title enrichment, search and notifications
+exclude this field.
+
+Dismiss it with
+`DELETE /api/ai/conversations/:conversationId/messages/:messageId/suggested-next-message`,
+using public chat and message IDs. The route checks conversation access and the
+trigger person's identity, sets `dismissedAt` once and returns
+`{ dismissed: true }`. Repeating it is safe. Keep a dismissed suggestion hidden.
+Use `GET /api/ai/prefs` and `PUT /api/ai/prefs` with
+`{ suggestNextMessage: false }` to turn generation off. No additional provider
+or model request is made for a suggestion.
+
 ## Attach Cloud resources
 
 Treat a Cloud resource like another composer attachment: keep its structured
@@ -338,13 +382,31 @@ order:
    through the owning app's reader with the viewer's current access. The finished
    `present` summary reserves its height while loading;
    group summaries list each chart's kind and title, so every frame reserves
-   its own height. Stats summaries carry per-item booleans for sparkline, sub
-   and delta to reserve the exact tile height; details summaries carry the
+   its own height. Stats summaries carry per-item booleans for sparkline, sub, delta
+   and comparison to reserve the exact tile height; details summaries carry the
    field count and the label, reference flag and text length of the first
    twelve fields, so wrapped values keep their room on a phone. These
    summaries contain no values. A card's text wraps instead of being cut off. While the call runs, the work
    line names the step and the place stays empty. Table header labels stay on one line and the table
    scrolls sideways, so up to eight rows fit the reserved height on a phone.
+   Chart, group and explorer drawings load when Chat first shows one. Their
+   headings, controls and plot areas reserve the same space while the code and
+   data arrive. A drawing that came from the server stays visible until its
+   browser code is ready, including when reopening history. Its accessible name
+   remains available, “Loading chart” is announced politely, and its controls
+   look disabled until they can respond. If that code cannot
+   load, that chart shows **The chart could not be loaded** with **Reload**.
+   The composer, sidebar and other chat controls remain usable while charts load
+   and if loading fails.
+
+   A table with `search` or `groupBy` shows a search field or a group choice
+   beside its title. The summary reserves their space while the controls load,
+   then shows them disabled until the file arrives. If the controls cannot load,
+   a notice offers to reload the page. Stats also keep their reserved tiles while
+   loading; if their display cannot download, the same notice offers a reload.
+   Search matches the shown cells and never leaves the browser; Copy data keeps
+   every row. A column's `priority` hides it on a narrow table, and each row's
+   details button shows the hidden values.
    Readers validate the file again; missing or invalid data shows unavailable
    in that frame. A group chart that cannot be drawn shows unavailable in its
    own frame. The CLI fetches and validates views and prints their tables
@@ -930,6 +992,19 @@ sparkline, boxplot, heatmap, barGauge and stat. See
 axes, declarative formats, references, thresholds, series style/role and limits.
 There is no grouped or stacked bar mode, or second y axis. For related computed
 measures in chat, use `cloud.view.group`.
+
+`cloud.chart()` returns synchronously. In HTML apps, line, bar, pie, donut,
+stat and sparkline render immediately. Other kinds return a loading state
+that the frame fills after the markup enters the document, preserving its box
+size. The renderer is bundled with the frame and needs no network request,
+even on first use offline. A loading failure shows a retry button.
+A rendering error (including a throwing format callback) shows its message
+without retry and is reported to the host. Tooltips,
+format callbacks and the print value table remain available after rendering.
+Frame readiness and snapshots wait for pending drawings; `cloud.pdf.render`
+also finishes pending chart markup before creating the PDF. Insert the returned
+markup rather than extracting its SVG immediately. Scripts and PDF markup
+created by scripts still render every kind synchronously.
 
 Function `format(value)` is also accepted on axes and values. `width` and
 `height` set the logical size: 480 × 280 by default, or 160 × 40 for sparkline.

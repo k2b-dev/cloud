@@ -12,7 +12,7 @@ export const showsConversationSummary = (state: ConversationContentSummary | nul
 const formatTime = (iso: string, locale: string) => new Date(iso).toLocaleTimeString(locale, { hour: "2-digit", minute: "2-digit" });
 
 /**
- * The conversation summary. An AI text sits on the cyan AI surface with ✦; a text a person wrote stays neutral.
+ * The conversation summary. An AI text sits on the plum AI surface with ✦; a text a person wrote stays neutral.
  * Writing, failure and the daily limit replace the text in the same place, so the messages below never jump.
  */
 export default function MailConversationSummaryCard(props: {
@@ -35,7 +35,7 @@ export default function MailConversationSummaryCard(props: {
 
   const busy = () => props.generating || props.state.status === "writing" || props.state.status === "pending";
   const hasText = () => !!props.state.summary;
-  /** Cyan only for what the AI wrote, and for AI work in progress. */
+  /** Plum only for what the AI wrote, and for AI work in progress. */
   const ai = () => (hasText() ? props.state.ai : true);
   const view = (): "writing" | "failed" | "limited" | "text" => {
     if (busy()) return "writing";
@@ -59,6 +59,7 @@ export default function MailConversationSummaryCard(props: {
       );
     if (state.source === "workflow" && state.author) parts.push(t().byRule({ name: state.author.name }));
     else if (state.source === "manual_ai" && state.author) parts.push(t().onRequestOf({ name: state.author.name }));
+    else if (state.source === "automation") parts.push(t().byAutomation);
     else if (state.source === "person") parts.push(state.author ? t().byPerson({ name: state.author.name }) : t().editedByPerson);
     const when = ago(state.generatedAt);
     if (when) parts.push(when);
@@ -85,7 +86,11 @@ export default function MailConversationSummaryCard(props: {
       : t().limitMailbox({ limit: limit?.limit ?? 0 });
   };
   const why = () =>
-    props.state.ai ? t().whyAi({ rule: props.state.source === "workflow" ? (props.state.author?.name ?? null) : null }) : t().whyPerson;
+    props.state.source === "automation"
+      ? t().whyAutomation
+      : props.state.ai
+        ? t().whyAi({ rule: props.state.source === "workflow" ? (props.state.author?.name ?? null) : null })
+        : t().whyPerson;
 
   const tool = (label: string, icon: string, onClick: () => void, disabled?: boolean): JSX.Element => (
     <Tooltip.Anchor content={label}>
@@ -100,7 +105,7 @@ export default function MailConversationSummaryCard(props: {
       class="mx-auto my-3 flex w-full max-w-4xl flex-col rounded-[0.875rem] px-[1.125rem] pt-3.5 pb-3 text-sm"
       classList={{
         "min-h-[12.25rem]": ai(),
-        "bg-[var(--k2b-ai-surface)] text-cyan-950 dark:text-cyan-50": ai(),
+        "bg-[var(--k2b-ai-surface)] text-primary": ai(),
         "bg-[var(--ui-surface-subtle)] text-primary": !ai(),
       }}
       aria-labelledby="mail-conversation-summary-title"

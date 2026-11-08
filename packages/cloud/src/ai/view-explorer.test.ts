@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { drawChart } from "@k2b/editor/charts";
+import { charts, renderHeatmapSvg } from "@k2b/ui/charts/core";
 import { z } from "zod";
 import { cloudAiChartRenderOptions } from "./chart-block";
 import { type CloudAiExplorerView, cloudAiExplorerControls, cloudAiExplorerState, cloudAiViewTable, parseCloudAiView } from "./view-block";
@@ -88,7 +88,8 @@ test("domains and formats use the whole dataset across steps and filters", () =>
       expect(a.xAxis?.format).toEqual({ style: "currency", currency: "EUR" });
     }
     if (a.kind === "bar") expect(a.yAxis?.domain?.[0]).toBe(0);
-    if (a.kind === "heatmap" && b.kind === "heatmap") expect([a.min, a.max]).toEqual([b.min, b.max]);
+    if (a.kind === "heatmap" && a.layout !== "calendar" && b.kind === "heatmap" && b.layout !== "calendar")
+      expect([a.min, a.max]).toEqual([b.min, b.max]);
   }
 });
 
@@ -133,7 +134,16 @@ test.each(["bar", "line", "scatter", "heatmap"])("every drawn %s mark resolves t
   const state = cloudAiExplorerState(single, { step: "1", ...(point ? { referenceStep: "0", visibleKeys: ["1"] } : {}) }, "en");
   const chart = state.charts[id]!;
   const options = cloudAiChartRenderOptions(chart.input, "en", { legend: "outside" });
-  const svg = drawChart(options);
+  const svg =
+    options.kind === "bar"
+      ? charts.bar({ ...options, inspect: true })
+      : options.kind === "line"
+        ? charts.line({ ...options, inspect: true })
+        : options.kind === "scatter"
+          ? charts.scatter({ ...options, inspect: true })
+          : options.kind === "heatmap"
+            ? renderHeatmapSvg({ ...options, inspect: true })
+            : "";
   const marks = [...svg.matchAll(/data-chart-datum="([^"]*)"/g)].map((match) =>
     DatumSchema.parse(
       JSON.parse(

@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
-import { launchBrowser } from "../../../ui/test/browser";
+import { launchBrowser, pageErrors } from "../../../ui/test/browser";
 import type { Dashboard } from "../dashboard-contracts";
+import type { DashboardPanelData } from "../dashboard-result";
 import {
   baseOverviewFixture,
   buildWorkspaceHarness,
@@ -15,6 +16,7 @@ import {
   dashboardTestKinds,
   dashboardTestNow,
   dashboardTestPanelResult,
+  dashboardTestSectioned,
   dashboardTestSnapshot,
 } from "./workspace/dashboard-test-fixtures";
 import { buildPulseWorkspaceHref, readWorkspacePathState } from "./workspace/routes";
@@ -46,6 +48,7 @@ const open = async (
     width?: number;
     dark?: boolean;
     dashboard?: Dashboard;
+    panelData?: Record<string, DashboardPanelData>;
     public?: boolean;
     empty?: boolean;
     deferred?: Promise<void>;
@@ -100,7 +103,9 @@ const open = async (
       const id = decodeURIComponent(path.split("/").at(-1)!);
       const panel = dashboard.definition.panels.find((panel) => panel.id === id);
       if (!panel) return route.fulfill({ status: 404, json: { code: "NOT_FOUND" } });
-      const reply = panels.get(id) ?? { json: dashboardTestPanelResult(panel) };
+      const fixture = dashboardTestPanelResult(panel);
+      if (fixture.lastGood && options.panelData?.[id]) fixture.lastGood.data = options.panelData[id]!;
+      const reply = panels.get(id) ?? { json: fixture };
       if (reply.wait) await reply.wait;
       if (reply.abort) return route.abort("failed");
       return route.fulfill({ status: reply.status, json: reply.json });
@@ -225,22 +230,23 @@ test("approved 3-column layout, stat tiles, linked keyboard tooltips, phone/tabl
       expect(await server.locator(".ti-server-2").count()).toBe(1);
       // Section icons are plain glyphs in their section colour, never a tinted tile.
       const sectionIcon = (section: typeof traefik) =>
-        section.locator(".pulse-dashboard__section-icon").evaluate((el) => {
+        section.locator(".k2b-dashboard-section__icon").evaluate((el) => {
           const style = getComputedStyle(el);
           return { color: style.color, background: style.backgroundColor };
         });
       const [traefikIcon, serverIcon] = await Promise.all([sectionIcon(traefik), sectionIcon(server)]);
       expect(traefikIcon.color).not.toBe(serverIcon.color);
       expect([traefikIcon.background, serverIcon.background]).toEqual(["rgba(0, 0, 0, 0)", "rgba(0, 0, 0, 0)"]);
-      expect(await traefik.getByText("Quelle Traefik · Raster 5 Min.", { exact: true }).isVisible()).toBe(width !== 390);
-      expect(await server.getByText("2 Quellen · Raster 5 Min.", { exact: true }).isVisible()).toBe(width !== 390);
+      // The description stays readable on a phone; it wraps under the title instead of disappearing.
+      expect(await traefik.getByText("Quelle Traefik · Raster 5 Min.", { exact: true }).isVisible()).toBe(true);
+      expect(await server.getByText("2 Quellen · Raster 5 Min.", { exact: true }).isVisible()).toBe(true);
       expect(await tab.locator("[data-panel]").count()).toBe(10);
       expect(await tab.locator(".pulse-dashboard__stats [data-panel]").count()).toBe(4);
       const panels = await Promise.all(["req", "e5", "p95"].map((id) => tab.locator(`[data-panel="${id}"]`).boundingBox()));
       if (width === 1440) {
         expect(panels[0]!.y).toBe(panels[1]!.y);
         expect(panels[1]!.y).toBe(panels[2]!.y);
-        expect(Math.abs(panels[1]!.x - panels[0]!.x - panels[0]!.width - 32)).toBeLessThan(1);
+        expect(Math.abs(panels[1]!.x - panels[0]!.x - panels[0]!.width - 16)).toBeLessThan(1);
       } else if (width === 390) expect(panels[0]!.y).toBeLessThan(panels[1]!.y);
       expect(
         await tab.locator('[data-panel="req"] .k2b-chart-explorer__viewport').evaluate((el) => el.getBoundingClientRect().height),
@@ -300,25 +306,107 @@ test("dashboard entries, section icons and tables follow the shared frame: plain
         expect({ tiles: icon.tiles, background: icon.background }).toEqual({ tiles: 0, background: "rgba(0, 0, 0, 0)" });
         expect(Math.abs(icon.start - icon.block)).toBeLessThanOrEqual(1);
       }
-      // A table panel is one framed table: the frame draws the edge, and the last row ends on it.
+      // A table runs to the edges of its panel: the panel draws the only frame, and the last row ends on it.
       const frame = await tab.locator('[data-panel="hosts"] .k2b-table-shell').evaluate((shell) => {
         const style = getComputedStyle(shell);
-        const lastRow = shell.querySelector("tbody tr:last-child")!.getBoundingClientRect();
-        const box = shell.getBoundingClientRect();
+        const panel = shell.closest(".k2b-dashboard-panel")!;
+        const box = panel.getBoundingClientRect();
+        const table = shell.getBoundingClientRect();
         return {
           surface: shell.getAttribute("data-surface"),
-          border: style.borderTopWidth !== "0px" && style.borderTopStyle !== "none",
-          gap: box.bottom - lastRow.bottom,
+          border: style.borderLeftWidth !== "0px" && style.borderLeftStyle !== "none",
+          panelBorder: getComputedStyle(panel).borderTopWidth,
+          // Left, right and bottom: the table meets the frame's 1 px edge, also when its row stretches the panel.
+          inset: [table.left - box.left, box.right - table.right, box.bottom - table.bottom],
         };
       });
-      expect({ surface: frame.surface, border: frame.border }).toEqual({ surface: "paper", border: true });
-      expect(frame.gap).toBeGreaterThanOrEqual(0);
-      expect(frame.gap).toBeLessThanOrEqual(2);
+      expect({ surface: frame.surface, border: frame.border, panelBorder: frame.panelBorder }).toEqual({
+        surface: "plain",
+        border: false,
+        panelBorder: "1px",
+      });
+      expect(frame.inset.map(Math.round)).toEqual([1, 1, 1]);
     } finally {
       await tab.close();
     }
   }
 }, 30_000);
+
+test("a table panel searches and sorts its rows in the head, and an empty search offers the way back", async () => {
+  const { tab } = await open({ width: 1440 });
+  try {
+    await ready(tab);
+    const panel = tab.locator('[data-panel="hosts"]');
+    const search = panel.getByRole("searchbox", { name: "Hosts jetzt durchsuchen" });
+    await search.fill("db");
+    expect(await panel.locator("tbody tr.k2b-data-table__row").count()).toBe(1);
+    await search.fill("zebra");
+    expect(await panel.locator("td.k2b-data-table__no-match").textContent()).toContain("Keine Zeile passt zu „zebra“.");
+    await panel.locator("td.k2b-data-table__no-match").getByRole("button", { name: "Suche löschen", exact: true }).click();
+    expect(await panel.locator("tbody tr.k2b-data-table__row").count()).toBe(2);
+    expect(await search.evaluate((input) => input === document.activeElement)).toBe(true);
+    // Numbers sort by value and read right-aligned in the reader's language.
+    const cpu = panel.getByRole("button", { name: "CPU", exact: true });
+    await cpu.click();
+    // The workspace clock is paused, so wait for the sorted head itself rather than for the page to settle.
+    await cpu.locator("xpath=ancestor::th[@aria-sort='descending']").waitFor();
+    expect(
+      await panel
+        .locator("tbody tr.k2b-data-table__row td:nth-child(2)")
+        .evaluateAll((cells) => cells.map((cell) => getComputedStyle(cell).textAlign)),
+    ).toEqual(["right", "right"]);
+  } finally {
+    await tab.close();
+  }
+}, 30_000);
+test("key figures sit in their section, two thirds take four of six columns and every panel and tile is framed", async () => {
+  for (const width of [1440, 820, 390]) {
+    const { tab } = await open({ dashboard: dashboardTestSectioned, width });
+    try {
+      await ready(tab);
+      // Numbers without a section stay in the top row; numbers with one open their section.
+      expect(
+        await tab
+          .locator(".k2b-dashboard-grid > .pulse-dashboard__stats [data-panel]")
+          .evaluateAll((all) => all.map((el) => el.getAttribute("data-panel"))),
+      ).toEqual(["latency-now"]);
+      const traefik = tab.getByRole("region", { name: "Traefik", exact: true });
+      const server = tab.getByRole("region", { name: "Server", exact: true });
+      expect(
+        await traefik.locator(".pulse-dashboard__stats [data-panel]").evaluateAll((all) => all.map((el) => el.getAttribute("data-panel"))),
+      ).toEqual(["requests-now", "errors-now"]);
+      expect(await server.locator(".pulse-dashboard__stats [data-panel]").count()).toBe(1);
+      const layout = await traefik.evaluate((section) => {
+        const grid = section.querySelector(".k2b-dashboard-section__grid")!.getBoundingClientRect();
+        const box = (id: string) => section.querySelector(`[data-panel="${id}"]`)!.getBoundingClientRect();
+        const tiles = section.querySelector(".pulse-dashboard__stats")!.getBoundingClientRect();
+        const framed = [...section.querySelectorAll("[data-panel]")].map((panel) => {
+          const style = getComputedStyle(panel);
+          return `${style.borderTopWidth} ${style.borderTopStyle} ${style.borderTopLeftRadius}`;
+        });
+        // Columns a panel spans, read from its width on the six-column grid with 16 px gaps.
+        const span = (id: string) => Math.round(((box(id).width + 16) / (grid.width + 16)) * 6);
+        return {
+          grid: grid.width,
+          tilesFirst: tiles.top < box("req").top,
+          tilesFull: Math.abs(tiles.width - grid.width) < 1,
+          tileColumns: Math.round(grid.width / box("requests-now").width),
+          spans: ["req", "e5", "p95"].map(span),
+          framed: [...new Set(framed)],
+        };
+      });
+      expect(layout.tilesFirst).toBe(true);
+      expect(layout.tilesFull).toBe(true);
+      // Four tiles to a row, two on a phone.
+      expect(layout.tileColumns).toBe(layout.grid <= 600 ? 2 : 4);
+      expect(layout.spans).toEqual(layout.grid <= 600 ? [6, 6, 6] : layout.grid <= 1000 ? [6, 3, 6] : [4, 2, 6]);
+      expect(layout.framed).toEqual(["1px solid 12px"]);
+      expect(await tab.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBeLessThanOrEqual(0);
+    } finally {
+      await tab.close();
+    }
+  }
+}, 60_000);
 
 test("a line panel is a chart explorer with exact values, units and a table of every point", async () => {
   const { tab } = await open();
@@ -328,6 +416,7 @@ test("a line panel is a chart explorer with exact values, units and a table of e
     expect(await panel.locator(".k2b-chart-explorer h3").textContent()).toBe("Anfragen je Dienst");
     expect(await panel.getByRole("button", { name: "So gerechnet: Anfragen je Dienst", exact: true }).count()).toBe(1);
     expect(await panel.locator(".k2b-chart-legend li").allTextContents()).toEqual(["demo-site", "demo-shop", "demo-cloud"]);
+    const frameHeight = await panel.evaluate((element) => element.getBoundingClientRect().height);
     await panel.getByRole("button", { name: "Diagrammansicht", exact: true }).click();
     await tab.getByRole("menuitemradio", { name: "Tabelle", exact: true }).click();
     const table = panel.getByRole("table");
@@ -335,8 +424,19 @@ test("a line panel is a chart explorer with exact values, units and a table of e
     expect(await table.locator("thead th").allTextContents()).toEqual(["Zeit (Europe/Berlin)", "Reihe", "Wert (/s)"]);
     // Each time carries its offset, so the two instants of a repeated hour stay apart in copied rows.
     expect(await table.locator("tbody tr").first().locator("td").first().textContent()).toMatch(/GMT[+-]\d/);
-    // The table takes the chart's place at the same viewport height.
-    expect(await panel.locator(".k2b-chart-explorer__viewport").evaluate((el) => el.getBoundingClientRect().height)).toBe(216);
+    // The table takes the chart's place and runs to the panel's frame: one edge, and the panel keeps its height.
+    const edges = await panel.locator(".k2b-table-shell").evaluate((shell) => {
+      const frame = shell.closest(".k2b-dashboard-panel")!.getBoundingClientRect();
+      const box = shell.getBoundingClientRect();
+      return {
+        surface: shell.getAttribute("data-surface"),
+        // Left and right on the frame; the bottom where the viewport ends, which a taller neighbour may push down.
+        inset: [box.left - frame.left, frame.right - box.right].map(Math.round),
+        fills: Math.round(shell.closest(".k2b-chart-explorer__viewport")!.getBoundingClientRect().bottom - box.bottom),
+        height: frame.height,
+      };
+    });
+    expect(edges).toEqual({ surface: "plain", inset: [1, 1], fills: 0, height: frameHeight });
   } finally {
     await tab.close();
   }
@@ -1318,5 +1418,247 @@ test("a dashboard-change 404 clears old values and reloads without claiming acce
     expect(await tab.locator('[data-panel="req"] .k2b-chart').count()).toBe(1);
   } finally {
     await tab.close();
+  }
+}, 30_000);
+
+test("catalog SQL charts keep their frame through empty, invalid and recovered results", async () => {
+  const source = dashboardTestKinds.definition.panels[1]!;
+  const panels = (["pie", "donut", "scatter", "histogram", "boxplot", "heatmap", "gauge", "barGauge", "sparkline"] as const).map(
+    (kind) => ({
+      ...source,
+      id: kind,
+      title: kind,
+      kind,
+      columns: kind === "heatmap" ? ["x", "row", "value"] : ["histogram", "gauge", "sparkline"].includes(kind) ? ["value"] : ["x", "value"],
+      x: ["histogram", "gauge", "sparkline"].includes(kind) ? undefined : "x",
+      series: kind === "heatmap" ? "row" : undefined,
+    }),
+  );
+  const fixture = { ...dashboardTestKinds, id: "Catalog", definition: { panels } };
+  const panelData = Object.fromEntries(
+    panels.map((panel) => [
+      panel.id,
+      {
+        columns: panel.columns.map((name) => ({ name, type: "Float64" })),
+        rows:
+          panel.kind === "heatmap"
+            ? [
+                ["A", "North", 4],
+                ["B", "North", null],
+                ["A", "South", 8],
+              ]
+            : panel.kind === "gauge"
+              ? [[42]]
+              : panel.columns.length === 1
+                ? [[1], [2], [3]]
+                : panel.kind === "scatter"
+                  ? [
+                      [1, 2],
+                      [2, null],
+                      [3, 4],
+                    ]
+                  : [
+                      ["A", 4],
+                      ["B", 8],
+                    ],
+      },
+    ]),
+  );
+  for (const [width, dark] of [
+    [1440, false],
+    [390, false],
+    [390, true],
+  ] as const) {
+    const view = await open({ width, dark, dashboard: fixture, panelData });
+    const errors = pageErrors(view.tab);
+    try {
+      await ready(view.tab);
+      expect(await view.tab.locator(".pulse-dashboard__plot .k2b-chart").count()).toBe(panels.length);
+      expect(await view.tab.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBeLessThanOrEqual(0);
+      const target = view.tab.locator('[data-panel="pie"]');
+      await target.scrollIntoViewIfNeeded();
+      const readyBox = await target.boundingBox();
+      const chart = target.locator(".k2b-chart");
+      await chart.focus();
+      await chart.press("ArrowRight");
+      await target.locator('[role="tooltip"]:popover-open').waitFor();
+      const good = {
+        ...dashboardTestPanelResult(panels[0]!),
+        lastGood: { ...dashboardTestPanelResult(panels[0]!).lastGood!, data: panelData.pie! },
+      };
+      view.panels.set("pie", { json: { ...good, status: "error", error: "PANEL_RESULT_INVALID", lastGood: null } });
+      await view.tab.reload();
+      await target.getByRole("alert").waitFor();
+      expect((await target.boundingBox())!.height).toBe(readyBox!.height);
+      view.panels.set("pie", { json: { ...good, lastGood: { ...good.lastGood!, data: { ...panelData.pie!, rows: [] } } } });
+      await target.getByRole("button", { name: "Erneut versuchen", exact: true }).click();
+      await target.getByText("Keine Werte in diesem Zeitraum").waitFor();
+      expect((await target.boundingBox())!.height).toBe(readyBox!.height);
+      view.panels.set("pie", { json: good });
+      await view.tab.reload();
+      await target.locator(".k2b-chart").waitFor();
+      expect((await target.boundingBox())!.height).toBe(readyBox!.height);
+      expect(errors).toEqual([]);
+    } finally {
+      await view.tab.close();
+    }
+  }
+}, 30_000);
+
+test("area and money SQL panels preserve frames and keyboard access across desktop, phone and dark", async () => {
+  const source = dashboardTestKinds.definition.panels[1]!;
+  const panels = [
+    {
+      ...source,
+      id: "area",
+      title: "Stacked requests",
+      kind: "area" as const,
+      columns: ["day", "North", "South"],
+      x: "day",
+      series: undefined,
+    },
+    {
+      ...source,
+      id: "areaPercent",
+      title: "Request shares",
+      kind: "areaPercent" as const,
+      columns: ["day", "North", "South"],
+      x: "day",
+      series: undefined,
+    },
+    {
+      ...source,
+      id: "budget",
+      title: "Operating budgets",
+      kind: "budget" as const,
+      columns: ["name", "used", "expected", "limit"],
+      x: "name",
+      series: undefined,
+      unit: "EUR",
+    },
+    {
+      ...source,
+      id: "balance",
+      title: "Cash movement",
+      kind: "balance" as const,
+      columns: ["start", "in", "out"],
+      x: undefined,
+      series: undefined,
+      unit: "EUR",
+    },
+  ];
+  const rows: Record<string, unknown[][]> = {
+    area: [
+      ["Mon", 4, 2],
+      ["Tue", 5, null],
+      ["Wed", 7, 3],
+    ],
+    areaPercent: [
+      ["Mon", 4, 2],
+      ["Tue", 0, 0],
+      ["Wed", 7, 3],
+    ],
+    budget: [
+      ["Office", 80, 30, 100],
+      ["Travel", 30, 10, 100],
+    ],
+    balance: [[18800, 29260, 29520]],
+  };
+  const panelData = Object.fromEntries(
+    panels.map((panel) => [
+      panel.id,
+      {
+        columns: panel.columns.map((name) => ({ name, type: name === "name" || name === "day" ? "String" : "Float64" })),
+        rows: rows[panel.id]!,
+      },
+    ]),
+  );
+  const fixture = { ...dashboardTestKinds, id: "AreaMoney", definition: { panels } };
+  const options = { dashboard: fixture, panelData, dark: false };
+  const view = await open(options);
+  const errors = pageErrors(view.tab);
+  try {
+    for (const [width, dark] of [
+      [1440, false],
+      [390, false],
+      [390, true],
+    ] as const) {
+      options.dark = dark;
+      await view.tab.setViewportSize({ width, height: 1000 });
+      await view.tab.evaluate((dark) => {
+        document.documentElement.classList.toggle("dark", dark);
+        document.documentElement.classList.toggle("light", !dark);
+      }, dark);
+      await ready(view.tab);
+      expect(await view.tab.locator(".pulse-dashboard__plot .k2b-chart").count()).toBe(2);
+      expect(await view.tab.locator('[data-panel="budget"] [role="progressbar"]').count()).toBe(2);
+      expect(await view.tab.locator('[data-panel="balance"] .k2b-balance').count()).toBe(1);
+      expect(await view.tab.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBeLessThanOrEqual(0);
+      const chart = view.tab.locator('[data-panel="area"] .k2b-chart');
+      await chart.scrollIntoViewIfNeeded();
+      await view.tab.clock.runFor(32);
+      await chart.focus();
+      await chart.press("ArrowRight");
+      await view.tab.locator('[data-panel="area"] [role="tooltip"]:popover-open').waitFor();
+      const budget = view.tab.locator('[data-panel="budget"]');
+      const budgetAnchor = budget.locator(".k2b-budget__anchor").first();
+      // Scroll before opening: a later scroll dismisses the shared tooltip, particularly in a phone column.
+      await budgetAnchor.scrollIntoViewIfNeeded();
+      await view.tab.clock.runFor(32);
+      // Reach the first row with a real keyboard event so :focus-visible is independent of pointer history.
+      await budget
+        .locator(".k2b-budget__anchor")
+        .last()
+        .evaluate((node) => {
+          if (!(node instanceof HTMLElement)) throw new Error("Expected a budget keyboard anchor");
+          node.focus({ preventScroll: true });
+        });
+      await view.tab.keyboard.press("Shift+Tab");
+      expect(await budgetAnchor.evaluate((node) => node === document.activeElement && node.matches(":focus-visible"))).toBe(true);
+      // The fixture pauses timers as well as Date; the shared tooltip opens after its normal focus delay.
+      expect(await budget.locator('[role="tooltip"]:popover-open').count()).toBe(0);
+      await view.tab.clock.runFor(250);
+      await budget.locator('[role="tooltip"]:popover-open').waitFor();
+      expect(await budget.locator('[role="tooltip"]:popover-open').textContent()).toContain("Office");
+      const heights = new Map<string, number>();
+      const goodResults = new Map<string, DashboardPanelResult>();
+      for (const panel of panels) {
+        const target = view.tab.locator(`[data-panel="${panel.id}"]`);
+        heights.set(panel.id, (await target.boundingBox())!.height);
+        const good = {
+          ...dashboardTestPanelResult(panel),
+          lastGood: { ...dashboardTestPanelResult(panel).lastGood!, data: panelData[panel.id]! },
+        };
+        goodResults.set(panel.id, good);
+        view.panels.set(panel.id, { json: { ...good, status: "error", error: "PANEL_RESULT_INVALID", lastGood: null } });
+      }
+      // One cold load tests every panel's error frame; retry still runs through each panel's own control.
+      await view.tab.reload();
+      await ready(view.tab);
+      for (const panel of panels) {
+        const target = view.tab.locator(`[data-panel="${panel.id}"]`);
+        await target.getByRole("alert").waitFor();
+        expect((await target.boundingBox())!.height).toBe(heights.get(panel.id)!);
+        const good = goodResults.get(panel.id)!;
+        view.panels.set(panel.id, { json: { ...good, lastGood: { ...good.lastGood!, data: { ...panelData[panel.id]!, rows: [] } } } });
+        await target.getByRole("button", { name: "Erneut versuchen", exact: true }).click();
+        await target.getByText("Keine Werte in diesem Zeitraum").waitFor();
+        expect((await target.boundingBox())!.height).toBe(heights.get(panel.id)!);
+        view.panels.set(panel.id, { json: good });
+      }
+      await view.tab.reload();
+      await ready(view.tab);
+      for (const panel of panels) {
+        const target = view.tab.locator(`[data-panel="${panel.id}"]`);
+        await target
+          .locator(panel.id === "budget" ? '[role="progressbar"]' : panel.id === "balance" ? ".k2b-balance" : ".k2b-chart")
+          .first()
+          .waitFor();
+        expect((await target.boundingBox())!.height).toBe(heights.get(panel.id)!);
+      }
+    }
+    expect(errors).toEqual([]);
+  } finally {
+    await view.tab.close();
   }
 }, 30_000);

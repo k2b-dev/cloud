@@ -99,7 +99,8 @@
 .k2b-ui .k2b-markdown-editor__input,
 .k2b-ui .k2b-markdown-editor__preview,
 .k2b-ui .k2b-markdown-editor__placeholder {
-  font-family: var(--k2b-font-mono) !important;
+  /* A Markdown editor sets the variable on its root; every other field stays mono. */
+  font-family: var(--k2b-markdown-editor-font, var(--k2b-font-mono)) !important;
   font-size: 0.875rem !important;
   line-height: 1.55 !important;
   font-weight: 400 !important;
@@ -125,6 +126,17 @@
   word-break: normal !important;
   overflow-wrap: break-word !important;
   tab-size: 2 !important;
+}
+
+/* A Markdown editor's three layers read one font from its root, so the caret
+   stays on the highlighted text whichever font it is: Markdown source in mono
+   by default, a message composer's text in sans with `font="sans"`. */
+.k2b-ui .k2b-markdown-editor {
+  --k2b-markdown-editor-font: var(--k2b-font-mono);
+}
+
+.k2b-ui .k2b-markdown-editor[data-font="sans"] {
+  --k2b-markdown-editor-font: var(--k2b-font-sans);
 }
 
 /* 16px keeps iOS Safari from zooming on focus. The input, its highlighted

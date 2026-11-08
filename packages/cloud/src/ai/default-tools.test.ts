@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, mock, spyOn, test } from "bun:test";
+import { resolve } from "node:path";
 import { z } from "zod";
 import { coreSettings } from "../services";
 import * as credentials from "./credentials";
@@ -289,4 +290,30 @@ describe("flat chart tool schema", () => {
     expect(text).toContain('"charts"');
     expect(text).not.toContain('"items":[');
   });
+});
+
+test("chart view parser bundles omit unrelated visual tool schemas", async () => {
+  const built = await Bun.build({
+    entrypoints: ["chart-view-parser"],
+    plugins: [
+      {
+        name: "chart-view-parser",
+        setup(builder) {
+          builder.onResolve({ filter: /^chart-view-parser$/ }, () => ({ path: "entry", namespace: "chart-parser" }));
+          builder.onLoad({ filter: /.*/, namespace: "chart-parser" }, () => ({
+            contents: `export { parseCloudAiChartToolView } from ${JSON.stringify(resolve(import.meta.dir, "view-block.ts"))};`,
+            loader: "ts",
+          }));
+        },
+      },
+    ],
+    target: "browser",
+    minify: true,
+  });
+  expect(built.success).toBe(true);
+  const code = await built.outputs[0]!.text();
+  expect(code).toContain("parseCloudAiChartToolView");
+  expect(code).not.toContain("The figure or status itself");
+  expect(code).not.toContain("timed_out");
+  expect(code).not.toContain("outputPath");
 });

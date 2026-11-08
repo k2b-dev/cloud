@@ -232,7 +232,7 @@ describe("Notebook attachment preview layout", () => {
     }, 30_000);
   }
 
-  test("on a phone without an inline PDF viewer, the hint takes the document's place and the PDF is not fetched", async () => {
+  test("on a phone without an inline PDF viewer, a PDF pdf.js cannot draw shows the hint in the document's place", async () => {
     reads.length = 0;
     const page = await open(phone, 1, '.k2b-content-pdf-preview__placeholder[data-state="empty"]', false);
     try {
@@ -257,8 +257,9 @@ describe("Notebook attachment preview layout", () => {
       expect(hint.height).toBeGreaterThan(shown.frame.height / 2);
       expect(hint.overflow).toBe(0);
       expect(shown.overflow).toBeFalse();
-      // The preview could show only the hint, so it fetches nothing; the header's open action is the way to the PDF.
-      expect(reads).not.toContain("Att002");
+      // pdf.js draws in every browser, so the preview fetched the document; this one has no pages, so the hint stays,
+      // and the header's open action is the way to the PDF.
+      expect(reads).toContain("Att002");
       expect(await page.locator('.k2b-dialog[open] a[target="_blank"][href*="/attachments/Att002/content"]').count()).toBe(1);
     } finally {
       await page.context().close();

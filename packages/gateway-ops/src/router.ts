@@ -1,4 +1,5 @@
 import { type AuthContext, auth, getLocale, middleware } from "@k2b/cloud/server";
+import { withObservabilityRead } from "@k2b/cloud/services";
 import { routes } from "@k2b/ssr/hono";
 import { type Context, Hono } from "hono";
 import { serveStatic } from "hono/bun";
@@ -53,6 +54,7 @@ const localizeApiError = async (c: Context, next: () => Promise<void>) => {
 };
 
 export const router = new Hono<AuthContext>()
+  .use("*", (c, next) => (c.req.method === "GET" || c.req.method === "HEAD" ? withObservabilityRead(c.req.raw.signal, next) : next()))
   .use("/admin/observability/jobs", middleware.noTransform())
   .use("/admin/observability/jobs/*", middleware.noTransform())
   .use("/admin/observability/nats/sync", middleware.noTransform())

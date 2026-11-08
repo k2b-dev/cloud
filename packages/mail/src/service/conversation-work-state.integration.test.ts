@@ -167,6 +167,56 @@ suite("mail conversation work-state projection", () => {
     return body;
   };
 
+  test("explicit waiting covers known messages while later ingress needs action and invalidates stale writes", async () => {
+    const sender = `explicit-waiting-${suffix}@example.test`;
+    const first = envelope({
+      uid: 991,
+      messageId: `<explicit-waiting-first-${suffix}@example.test>`,
+      inReplyTo: null,
+      from: sender,
+      to: "support@example.test",
+      date: new Date("2026-10-01T09:00:00.000Z"),
+    });
+    const firstId = await ingestEnvelope({ db: sql, mailboxId, remoteResourceId, folderId, message: first });
+    const conversation = await conversationForMessage(firstId);
+    const waiting = await updateConversationCollaboration({
+      context,
+      mailboxId,
+      conversationId: conversation.id,
+      locale: "en",
+      input: { expectedRevision: conversation.revision, completion: "waiting" },
+    });
+    expect(waiting.ok).toBeTrue();
+    if (!waiting.ok) return;
+    await hydrate(firstId, [`Message-ID: ${first.messageId}`, `From: ${sender}`, "To: support@example.test", `Subject: ${first.subject}`]);
+    expect((await conversationForMessage(firstId)).work_status).toBe("waiting");
+    const second = envelope({
+      uid: 992,
+      messageId: `<explicit-waiting-second-${suffix}@example.test>`,
+      inReplyTo: first.messageId,
+      from: sender,
+      to: "support@example.test",
+      date: new Date("2026-10-01T09:01:00.000Z"),
+    });
+    const secondId = await ingestEnvelope({ db: sql, mailboxId, remoteResourceId, folderId, message: second });
+    await hydrate(secondId, [
+      `Message-ID: ${second.messageId}`,
+      `In-Reply-To: ${first.messageId}`,
+      `From: ${sender}`,
+      "To: support@example.test",
+      `Subject: ${second.subject}`,
+    ]);
+    expect((await conversationForMessage(secondId)).work_status).toBe("needs_action");
+    const stale = await updateConversationCollaboration({
+      context,
+      mailboxId,
+      conversationId: conversation.id,
+      locale: "en",
+      input: { expectedRevision: waiting.data.revision, completion: "waiting" },
+    });
+    expect(!stale.ok && stale.error.code).toBe("CONFLICT");
+  });
+
   test("a split gives the moved link a new transaction and link order and clears its status decision", async () => {
     const first = envelope({
       uid: 151,

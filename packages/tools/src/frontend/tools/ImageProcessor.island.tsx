@@ -1522,6 +1522,7 @@ export function ImageProcessorView(props: ImageProcessorViewProps = {}) {
                           label={t().rotation}
                           value={() => adj().freeRotation}
                           onValueChange={(v) => setAdj("freeRotation", v)}
+                          defaultValue={DEFAULT_ADJ.freeRotation}
                           min={-180}
                           max={180}
                           step={0.5}
@@ -1552,6 +1553,7 @@ export function ImageProcessorView(props: ImageProcessorViewProps = {}) {
                           label={t().brightness}
                           value={() => adj().brightness}
                           onValueChange={(v) => setAdj("brightness", v)}
+                          defaultValue={DEFAULT_ADJ.brightness}
                           min={0.5}
                           max={1.5}
                           step={0.01}
@@ -1563,6 +1565,7 @@ export function ImageProcessorView(props: ImageProcessorViewProps = {}) {
                           label={t().contrast}
                           value={() => adj().contrast}
                           onValueChange={(v) => setAdj("contrast", v)}
+                          defaultValue={DEFAULT_ADJ.contrast}
                           min={0.5}
                           max={2}
                           step={0.01}
@@ -1574,6 +1577,7 @@ export function ImageProcessorView(props: ImageProcessorViewProps = {}) {
                           label={t().saturation}
                           value={() => adj().saturation}
                           onValueChange={(v) => setAdj("saturation", v)}
+                          defaultValue={DEFAULT_ADJ.saturation}
                           min={0}
                           max={2}
                           step={0.01}
@@ -1585,6 +1589,7 @@ export function ImageProcessorView(props: ImageProcessorViewProps = {}) {
                           label={t().hue}
                           value={() => adj().hueRotate}
                           onValueChange={(v) => setAdj("hueRotate", v)}
+                          defaultValue={DEFAULT_ADJ.hueRotate}
                           min={0}
                           max={360}
                           step={1}
@@ -1595,6 +1600,7 @@ export function ImageProcessorView(props: ImageProcessorViewProps = {}) {
                           label={t().blur}
                           value={() => adj().blur}
                           onValueChange={(v) => setAdj("blur", v)}
+                          defaultValue={DEFAULT_ADJ.blur}
                           min={0}
                           max={10}
                           step={0.1}
@@ -1605,6 +1611,7 @@ export function ImageProcessorView(props: ImageProcessorViewProps = {}) {
                           label={t().sepia}
                           value={() => adj().sepia}
                           onValueChange={(v) => setAdj("sepia", v)}
+                          defaultValue={DEFAULT_ADJ.sepia}
                           min={0}
                           max={1}
                           step={0.01}
@@ -1615,6 +1622,7 @@ export function ImageProcessorView(props: ImageProcessorViewProps = {}) {
                           label={t().vignette}
                           value={() => adj().vignette}
                           onValueChange={(v) => setAdj("vignette", v)}
+                          defaultValue={DEFAULT_ADJ.vignette}
                           min={0}
                           max={1}
                           step={0.01}
@@ -1625,6 +1633,7 @@ export function ImageProcessorView(props: ImageProcessorViewProps = {}) {
                           label={t().grain}
                           value={() => adj().grain}
                           onValueChange={(v) => setAdj("grain", v)}
+                          defaultValue={DEFAULT_ADJ.grain}
                           min={0}
                           max={0.5}
                           step={0.01}

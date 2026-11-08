@@ -52,7 +52,14 @@ storage areas that apply to your account provider are listed or reported:
 a local account never sees FreeIPA storage and a FreeIPA account never sees
 local Cloud storage. With more than one storage location, the sidebar and the phone
 navigation menu start with **All storage**, followed by the same storage choices.
-Switching storage, opening folders, and changing pages update the workspace
+At the end of a folder or search result, **Load more** adds the next entries below
+those already shown. Keyboard focus moves to the first new entry. While loading,
+the action keeps its place; a failure keeps the entries and offers **Try again**.
+The loaded window stays in the address, so reload and Back restore the same entries.
+Loading more replaces the current history entry; Back leaves the folder in one step.
+Nested folders in tree view keep their existing explicit continuation actions.
+
+Switching storage, opening folders, and loading more entries update the workspace
 without reloading the whole page. Navigation and pagination stay in the URL,
 so reloads and browser Back and Forward preserve your location.
 Missing or inaccessible storage appears with its status rather than as an
@@ -167,6 +174,11 @@ uses Filegate's historical-copy operation and leaves
 the original file, modification time, identity, and history unchanged. Permanent
 version deletion is available only through the administrator file browser and CLI.
 
+After enough bytes have transferred, the upload panel adds an approximate
+remaining time beside the file count. It uses recent byte throughput, so a large
+file still counts for its actual size. The estimate is hidden during connection
+waits and final publication, and restarts after an interrupted transfer.
+
 Uploads report progress in one toast and resolve name conflicts once per
 batch (replace existing or upload only new). Uploads, folder uploads and new
 files open a Filegate upload session per file: Cloud authorizes the target, the browser streams segments to the
@@ -188,6 +200,20 @@ Only a definite name or write conflict at commit can abort that unpublished
 session. Filegate retains terminal receipts for seven days. Browser upload IDs
 expire locally 24 hours plus seven days after their last attempt and are pruned
 at the next upload.
+
+Browser uploads leave headroom for interactive requests on slow uplinks. After
+the first PUT lasting at least one second measures throughput, subsequent PUTs
+use a token bucket at 85% of that estimate. A growing acknowledgement tail relative to the preceding paced PUT lowers
+the estimate, bounded by the supported 64 KiB/s minimum; constant server
+acknowledgement latency does not repeatedly lower it. Each new file measures again. The
+initial measurement can still fill an upstream router's queue. Browsers without
+streaming request support and HTTP/1.1 connections retain Blob uploads through
+the SDK's existing retry budget; an unsupported origin is remembered for the page
+lifetime. Hidden tabs use Blobs. If a pacing timer is delayed by more than 200 ms,
+the current PUT finishes without pacing to preserve progress and deadlines. These
+background paths do not guarantee headroom for interactive requests. Filegate's segment sizes, receipts, verification,
+and resumability are unchanged; CLI transfers retain their transport. This does
+not remove the per-file round trips that make many small files slow.
 
 The working row in the upload panel shows the transferred bytes on its second
 line. After transfer, a commit still pending after one second shows

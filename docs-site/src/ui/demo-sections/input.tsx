@@ -10,6 +10,7 @@ import {
   ChoiceChips,
   ChoiceList,
   ChoiceSlider,
+  ChoiceSliderIndicator,
   ChoiceTiles,
   ColorChoices,
   ColorInput,
@@ -33,7 +34,11 @@ import {
   MarkdownEditor,
   MultiSelectInput,
   NumberInput,
+  PeriodPicker,
+  type PeriodPreset,
+  type PeriodValue,
   PinInput,
+  periodPresets,
   RichSelect,
   type RichSelectFact,
   RichSelectFacts,
@@ -55,7 +60,7 @@ import {
   TextInput,
 } from "@k2b/ui";
 import { TextEditor } from "@k2b/ui/text-editor";
-import { createSignal, createUniqueId } from "solid-js";
+import { createSignal, createUniqueId, type JSX } from "solid-js";
 import { DemoCard } from "../DemoCard";
 import { DictationDemo, DictationHostDemo } from "./dictation";
 import { QrScannerDemo } from "./mobile-navigation";
@@ -814,6 +819,78 @@ const DateDemo = () => {
   );
 };
 
+const PeriodDemo = () => {
+  const presets = [
+    periodPresets.today,
+    periodPresets.thisWeek,
+    periodPresets.thisMonth,
+    periodPresets.lastMonth,
+    periodPresets.thisYear,
+    periodPresets.all({ since: "2019-03-14" }),
+  ];
+  const fiscalYear: PeriodPreset = {
+    key: "fiscal-year",
+    label: "Fiscal year",
+    resolve: ({ today }) => {
+      const year = Number(today.slice(0, 4)) - (Number(today.slice(5, 7)) < 4 ? 1 : 0);
+      return { start: `${year}-04-01`, end: `${year + 1}-03-31` };
+    },
+  };
+  const [period, setPeriod] = createSignal<PeriodValue | null>({ preset: "this-month" });
+  const [custom, setCustom] = createSignal<PeriodValue | null>({ start: "2026-11-01", end: "2026-11-07" });
+  const [finance, setFinance] = createSignal<PeriodValue | null>({ preset: "fiscal-year" });
+  const dateConfig = { timeZone: "Europe/Berlin", weekStartsOn: 1 as const };
+  const header = (title: string, picker: JSX.Element) => (
+    <div style={{ display: "flex", "align-items": "center", gap: "0.75rem", "min-width": "0" }}>
+      <strong style={{ flex: "1", "min-width": "0", overflow: "hidden", "text-overflow": "ellipsis", "white-space": "nowrap" }}>
+        {title}
+      </strong>
+      {picker}
+    </div>
+  );
+  return (
+    <DemoCard
+      id="period-picker"
+      chip={[{ kind: "component", name: "PeriodPicker", from: "@k2b/ui" }]}
+      description="One control for the period a view shows. Presets cover their whole calendar period in the data's time zone, and the trigger shows them with their days. Custom range opens two months in the same popover; a phone gets a bottom sheet. The trigger keeps its widest width, so nothing beside it moves."
+      code={`const presets = [periodPresets.today, periodPresets.thisWeek, periodPresets.thisMonth,
+  periodPresets.lastMonth, periodPresets.thisYear, periodPresets.all({ since: "2019-03-14" })];
+
+<PeriodPicker aria-label="Period" value={period()} onValueChange={setPeriod} presets={presets}
+  dateConfig={{ timeZone: "Europe/Berlin", weekStartsOn: 1 }} />
+<PeriodPicker aria-label="Period" value={finance()} onValueChange={setFinance}
+  presets={[periodPresets.thisMonth, periodPresets.thisQuarter, fiscalYear]} custom={false} />
+<PeriodPicker aria-label="Period" value={period()} presets={presets} loading />`}
+    >
+      <div style={{ display: "grid", gap: "1rem", "max-width": "40rem" }}>
+        {header(
+          "Revenue by channel",
+          <PeriodPicker aria-label="Period" value={period()} onValueChange={setPeriod} presets={presets} dateConfig={dateConfig} />,
+        )}
+        {header(
+          "Receipts",
+          <PeriodPicker aria-label="Period" value={custom()} onValueChange={setCustom} presets={presets} dateConfig={dateConfig} />,
+        )}
+        {header(
+          "Result",
+          <PeriodPicker
+            aria-label="Period"
+            value={finance()}
+            onValueChange={setFinance}
+            presets={[periodPresets.thisMonth, periodPresets.thisQuarter, fiscalYear]}
+            custom={false}
+            dateConfig={dateConfig}
+          />,
+        )}
+        {header(
+          "Saving",
+          <PeriodPicker aria-label="Period" value={{ preset: "last-month" }} presets={presets} dateConfig={dateConfig} loading />,
+        )}
+      </div>
+    </DemoCard>
+  );
+};
+
 const SelectDemo = () => {
   const [value, setValue] = createSignal("platform");
   const [many, setMany] = createSignal(["platform"]);
@@ -1262,7 +1339,9 @@ const ChoiceSliderDemo = () => {
   value={value}
   onValueChange={setValue}
   onActiveChange={setActive}
-/>`}
+/>
+
+<ChoiceSliderIndicator count={4} index={1} />`}
     >
       <div class="mx-auto grid w-full max-w-80 gap-1">
         <p class="text-center text-base font-semibold text-(--k2b-action)">{label()}</p>
@@ -1273,6 +1352,13 @@ const ChoiceSliderDemo = () => {
           onValueChange={setValue}
           onActiveChange={setActive}
         />
+        <p class="flex items-center justify-center gap-2 text-sm text-(--k2b-text-secondary)">
+          <ChoiceSliderIndicator
+            count={choiceSliderOptions.length}
+            index={choiceSliderOptions.findIndex((option) => option.value === value())}
+          />
+          Indicator for a trigger
+        </p>
       </div>
     </DemoCard>
   );
@@ -2008,6 +2094,11 @@ const demos: DemoSection = {
   "date-picker": () => (
     <DemoGrid columns="one">
       <DateDemo />
+    </DemoGrid>
+  ),
+  "period-picker": () => (
+    <DemoGrid columns="one">
+      <PeriodDemo />
     </DemoGrid>
   ),
   "rich-select": () => <RichSelectDemo />,

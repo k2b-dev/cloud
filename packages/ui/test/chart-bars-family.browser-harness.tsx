@@ -17,9 +17,10 @@ render(
       <div class="states">
         <For each={["data", "loading", "empty", "error", "stale"]}>{(s) => <button onClick={() => setState(s)}>{s}</button>}</For>
       </div>
-      <div id="old-bar-outline">
+      <div id="old-bar-outline" style={{ height: "240px" }}>
         <Chart
           kind="bar"
+          style={{ height: "100%" }}
           data={[
             { label: "Old A", value: 10 },
             { label: "Old B", value: 20 },

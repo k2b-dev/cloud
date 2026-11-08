@@ -5,6 +5,7 @@ import { migrateChatTaskReasons } from "./chat-task-reasons-migrate";
 import { migrateAiMaps } from "./map-store";
 import { migrateAiMessageQueue } from "./message-queue";
 import { migrateAiModelAccess } from "./model-access-migrate";
+import { migrateAiNextMessages } from "./next-message-store";
 import { migrateAiQuotas } from "./quotas-migrate";
 import { withAiShortId } from "./short-id";
 
@@ -1758,7 +1759,7 @@ export const migrateCloudAi = async (): Promise<void> => {
       created_at timestamptz NOT NULL DEFAULT now(), last_seen_at timestamptz NOT NULL DEFAULT now(),
       PRIMARY KEY (app_id, manifest_hash)
     )`.simple();
-    await tx`CREATE INDEX IF NOT EXISTS idx_ai_app_skill_catalogs_last_seen ON ai.app_skill_catalogs(last_seen_at)`.simple();
+    await tx`ALTER TABLE ai.app_skill_catalogs ADD COLUMN IF NOT EXISTS unregistered_at timestamptz`.simple();
     await tx`CREATE TABLE IF NOT EXISTS ai.app_skills (
       key text PRIMARY KEY, app_id text NOT NULL, app_name text NOT NULL, name text NOT NULL,
       skill_id uuid NULL, source jsonb NULL, source_hash text NULL, applied_hash text NULL,
@@ -2640,6 +2641,7 @@ export const migrateCloudAi = async (): Promise<void> => {
   await sql`CREATE INDEX IF NOT EXISTS idx_ai_messages_submitted_draft
     ON ai.messages (conversation_id, (meta->>'submittedDraftRevision')) WHERE role = 'user'`.simple();
   console.log("  ✓ ai conversation tables");
+  await migrateAiNextMessages();
 };
 
 const backfillApprovalRequests = async (): Promise<void> => {

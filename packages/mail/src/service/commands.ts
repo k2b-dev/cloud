@@ -1,7 +1,6 @@
 import { sql } from "@k2b/cloud";
 import { capabilityIdempotencyConflict } from "@k2b/cloud/contracts";
 import { audit, logger, toPgTextArray, toPgUuidArray } from "@k2b/cloud/services";
-import { workflowEffectKey } from "@k2b/cloud/workflows/store";
 import { err, fail, isServiceError, ok, type Result } from "@k2b/stdlib";
 import { z } from "zod";
 import {
@@ -19,9 +18,9 @@ import { withShortIdDb } from "../lib/short-id";
 import { requireDraftAccess, requireMailboxAccess, requireMailboxPermission, requireVisibleMessages } from "./access";
 import { enqueueAttachmentExtractionsForMessage, logAttachmentExtractionEnqueueFailure } from "./attachment-extraction";
 import { actorRefFromRequest, auditActorFromRequest, durableCredentialSnapshot, type MailRequestContext } from "./auth";
-import { invalidateAutomationEffects } from "./automation-effect-state";
 import { sha256Json } from "./canonical";
 import { commandTargetVisibleTo, commandVisibleTo, conversationCommandKinds } from "./command-authorization";
+import { authorizeMailWorkflowSend, invalidateAutomationEffects, workflowEffectKey } from "./command-legacy-effects";
 import { enqueueMailCommand } from "./command-runtime";
 import { validateDraftComposeSafety } from "./compose-safety";
 import { checkCommandKeepProtection, isKeptMessage, keepError } from "./conversation-keep-rules";
@@ -42,7 +41,6 @@ import {
   queuedSenderVerificationTargetSchema,
   type SenderVerificationRequest,
 } from "./sender-verification";
-import { authorizeMailWorkflowSend } from "./workflow-send-policy";
 
 const log = logger("mail:commands");
 

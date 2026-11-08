@@ -6202,3 +6202,160 @@ test("workflow try follows cursors, merges AI ranges and supports unsaved YAML f
   const invalid = await runCli(server.url.origin, ["mail", "workflow", "try", WORKFLOW_ID, "--file", path, "--mailbox", MAILBOX_ID]);
   expect(invalid.exitCode).not.toBe(0);
 });
+
+test("protected summary CLI invokes the idempotent capability with explicit revision fences", async () => {
+  let received: unknown;
+  const retry = { key: "" };
+  const server = withMailbox(async (request) => {
+    const path = new URL(request.url).pathname;
+    if (path === `/api/mail/mailboxes/${MAILBOX_ID}`) return api(mailbox);
+    if (path === "/api/capabilities/v1/actions/mail/conversation.summary.write") {
+      received = await request.json();
+      retry.key = request.headers.get("idempotency-key") ?? "";
+      return api({
+        data: { conversationId: CONVERSATION_ID, summaryRevision: 3, conversationRevision: 5, skipped: null },
+        summary: "Saved the automated summary.",
+      });
+    }
+    return new Response(path, { status: 404 });
+  });
+  servers.push(server);
+  const result = await runCli(`http://127.0.0.1:${server.port}`, [
+    "--json",
+    "mail",
+    "conversation",
+    "summary",
+    "write",
+    CONVERSATION_ID,
+    "--mailbox",
+    MAILBOX_ID,
+    "--revision",
+    "4",
+    "--summary-revision",
+    "2",
+    "--body",
+    "My summary",
+    "--idempotency-key",
+    "summary-retry",
+  ]);
+  expect(result.exitCode, result.stderr).toBe(0);
+  expect(received).toEqual({
+    input: {
+      mailboxId: MAILBOX_ID,
+      conversationId: CONVERSATION_ID,
+      expectedRevision: 4,
+      expectedSummaryRevision: 2,
+      summary: "My summary",
+    },
+  });
+  expect(retry.key).toBe("summary-retry");
+  expect(JSON.parse(result.stdout).summaryRevision).toBe(3);
+});
+
+test("conversation update exposes explicit waiting and needs_action statuses", async () => {
+  const inputs: unknown[] = [];
+  const server = withMailbox(async (request) => {
+    if (new URL(request.url).pathname === `/api/mail/mailboxes/${MAILBOX_ID}`) return api(mailbox);
+    inputs.push(await request.json());
+    return api({ conversationId: CONVERSATION_ID, assignees: [], workStatus: "waiting", snoozedUntil: null, revision: 5 });
+  });
+  servers.push(server);
+  for (const status of ["waiting", "needs_action"]) {
+    const result = await runCli(`http://127.0.0.1:${server.port}`, [
+      "--json",
+      "mail",
+      "conversation",
+      "update",
+      CONVERSATION_ID,
+      "--mailbox",
+      MAILBOX_ID,
+      "--revision",
+      "4",
+      "--status",
+      status,
+    ]);
+    expect(result.exitCode, result.stderr).toBe(0);
+  }
+  expect(inputs).toEqual([
+    { expectedRevision: 4, completion: "waiting" },
+    { expectedRevision: 4, completion: "needs_action" },
+  ]);
+});
+
+test("unassigned-only CLI assignment preserves the caller's revision and rejects ambiguous guards", async () => {
+  const inputs: unknown[] = [];
+  const server = withMailbox(async (request) => {
+    const path = new URL(request.url).pathname;
+    if (path.endsWith("/assignable-users"))
+      return api([
+        { id: USER_ID, uid: "ada", displayName: "Ada", avatarHash: null, scope: "mailbox", permission: "write", description: "" },
+      ]);
+    if (path.endsWith("/conversations/assign")) {
+      inputs.push(await request.json());
+      return api({ assignees: [], results: [{ conversationId: CONVERSATION_ID, status: "ok" }] });
+    }
+    return new Response(path, { status: 404 });
+  });
+  servers.push(server);
+  const args = ["--json", "mail", "assign", CONVERSATION_ID, "--mailbox", MAILBOX_ID, "--to", USER_ID, "--only-if-unassigned"];
+  const result = await runCli(server.url.origin, [...args, "--revision", "4"]);
+  expect(result.exitCode, result.stderr).toBe(0);
+  expect(inputs).toEqual([
+    { conversationIds: [CONVERSATION_ID], assigneeUserIds: [USER_ID], mode: "add", onlyIfUnassigned: true, expectedRevision: 4 },
+  ]);
+  const missing = await runCli(server.url.origin, args);
+  expect(missing.exitCode).toBe(1);
+  expect(inputs).toHaveLength(1);
+});
+
+for (const output of ["text", "json", "jsonl"] as const) {
+  test(`Mail automation export includes every page in ${output} output`, async () => {
+    const requests: string[] = [];
+    const cursor = "44bb0000-0000-4000-8000-000000000001";
+    const server = Bun.serve({
+      port: 0,
+      fetch(request) {
+        const url = new URL(request.url);
+        requests.push(`${url.pathname}${url.search}`);
+        return api({
+          format: "cloud.mail-automation",
+          version: 1,
+          authority: "none",
+          scope: "installation",
+          exportedAt: "2026-11-07T00:00:00.000Z",
+          items: [{ version: { id: requests.length === 1 ? "first" : "last" } }],
+          nextCursor: requests.length === 1 ? cursor : null,
+        });
+      },
+    });
+    servers.push(server);
+    const result = await runCli(server.url.origin, [
+      "mail",
+      "automation",
+      "export",
+      "--all",
+      ...(output === "text" ? [] : [`--${output}`]),
+    ]);
+    expect(result.exitCode, result.stderr).toBe(0);
+    expect(requests).toEqual(["/api/mail/admin/automation-export", `/api/mail/admin/automation-export?after=${cursor}`]);
+    if (output === "jsonl") expect(result.stdout.trim().split("\n")).toHaveLength(2);
+    else
+      expect(JSON.parse(result.stdout)).toMatchObject({
+        items: [{ version: { id: "first" } }, { version: { id: "last" } }],
+        nextCursor: null,
+      });
+  });
+}
+
+test("Mail export rejects --all with an explicit mailbox before calling the server", async () => {
+  const server = Bun.serve({
+    port: 0,
+    fetch() {
+      throw new Error("Unexpected request");
+    },
+  });
+  servers.push(server);
+  const result = await runCli(server.url.origin, ["mail", "automation", "export", "--all", "--mailbox", "Support"]);
+  expect(result.exitCode).not.toBe(0);
+  expect(result.stderr).toContain("Use either --mailbox or --all");
+});

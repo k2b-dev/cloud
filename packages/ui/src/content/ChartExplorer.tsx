@@ -34,6 +34,17 @@ export type ChartLegendEntry = {
   /** A comparison series, drawn hollow like its marks. */
   reference?: boolean;
 };
+/**
+ * The latest read of an explorer's rows, kept apart from the rows on screen. Loading and a failure keep shown rows;
+ * without rows they take the viewport's place at its height.
+ */
+export type ChartFrameRequest = {
+  status: "idle" | "loading" | "error";
+  /** A host sentence for a failure, such as "The query timed out." */
+  reason?: string;
+  /** The range being read, such as "Last 90 days"; while it differs from `range` the subtitle names it. */
+  requestedRange?: string;
+};
 export type ChartExplorerProps<T extends ChartExplorerRow> = {
   cursor?: ChartCursor;
   title: string;
@@ -42,8 +53,31 @@ export type ChartExplorerProps<T extends ChartExplorerRow> = {
   description?: JSX.Element;
   /** Owner actions in the header before Copy data, such as showing the query behind the chart. */
   actions?: JSX.Element;
-  data: ChartExplorerData<T>;
+  /**
+   * Rows and the prepared chart. Without `chart`, `children` draws the chart view, such as a live `<Chart>`; the
+   * table and Copy data still come from the typed rows.
+   */
+  data: ChartExplorerData<T> | { rows: readonly T[] };
+  /** The chart view when `data` has no prepared chart. */
+  children?: JSX.Element;
   columns: readonly ChartExplorerColumn<T>[];
+  /**
+   * The read in flight or the last one that failed. With it the explorer shows loading, empty, failure and stale
+   * data in place: the title and subtitle stay, the viewport keeps its height, and nothing moves between states.
+   */
+  request?: ChartFrameRequest;
+  /** When the shown rows were read, formatted by the host ("09:12"); named only when a newer read failed. */
+  asOf?: string;
+  /** The range the shown rows cover, such as "Last 30 days". */
+  range?: string;
+  /** Try again after a failure. Without it a failure has no button. */
+  onRetry?: () => void;
+  /**
+   * The padding of the frame around the explorer, one value or block and inline like CSS `padding` ("14px 16px").
+   * The table view then reaches the frame's left, right and bottom edges without a border of its own, and the frame
+   * keeps its height.
+   */
+  inset?: string;
   view?: "chart" | "table";
   defaultView?: "chart" | "table";
   onViewChange?: (view: "chart" | "table") => void;
@@ -71,7 +105,10 @@ export type ChartExplorerProps<T extends ChartExplorerRow> = {
    * which draws in one row and runs out of narrow columns.
    */
   legend?: readonly ChartLegendEntry[];
-  /** What the viewport shows without rows, for example while they load; defaults to "No data". */
+  /**
+   * What the viewport shows without rows; defaults to "No data". With `request`, write one sentence that says why,
+   * such as "No newsletter was sent in this period."
+   */
   empty?: JSX.Element;
   class?: string;
 };
@@ -87,8 +124,40 @@ export function ChartExplorer<T extends ChartExplorerRow>(props: ChartExplorerPr
   const messages = useUiMessages();
   const chartMessages = useChartMessages();
   const locale = useLocale();
+  let legendHost: HTMLDivElement | undefined;
   const id = `k2b-chart-explorer-${createUniqueId()}`;
   const data = () => props.data;
+  const snapshot = () => ("chart" in props.data ? props.data.chart : undefined);
+  /** Without `request` the explorer behaves as before: rows or the empty slot. */
+  const state = () => {
+    if (!props.request) return undefined;
+    const status = props.request.status;
+    if (data().rows.length) return status === "error" ? "stale" : status === "loading" ? "refreshing" : "data";
+    return status === "idle" ? "empty" : status;
+  };
+  const switching = () =>
+    state() === "refreshing" && props.request?.requestedRange !== undefined && props.request.requestedRange !== props.range;
+  const legendValue = (index: number) => {
+    const marks = snapshot()?.marks ?? [];
+    let latest = -Infinity;
+    for (const mark of marks) latest = Math.max(latest, mark.datum.anchor[0]);
+    const valueField =
+      snapshot()?.kind === "area"
+        ? marks.some((mark) => mark.datum.values.some((field) => field.key === "percent"))
+          ? "percent"
+          : "value"
+        : "y";
+    const field = marks
+      .find((mark) => mark.datum.seriesIndex === index && mark.datum.anchor[0] === latest)
+      ?.datum.values.find((field) => field.key === valueField);
+    return field
+      ? (field.formatted ??
+          (typeof field.value === "number"
+            ? new Intl.NumberFormat(locale(), { maximumFractionDigits: 6 }).format(field.value)
+            : field.value))
+      : "—";
+  };
+
   const [copyFailed, setCopyFailed] = createSignal(false);
   const [localSelection, setLocalSelection] = createSignal<string | null>(null);
   const [localView, setLocalView] = createSignal(props.defaultView ?? "chart");
@@ -119,8 +188,14 @@ export function ChartExplorer<T extends ChartExplorerRow>(props: ChartExplorerPr
   ) {
     throw new Error("Chart columns require unique nonempty IDs and at least one column");
   }
-  validateChartExplorerData(data());
-  createEffect(() => validateChartExplorerData(data()));
+  const validate = () => {
+    const chart = snapshot();
+    if (chart) validateChartExplorerData({ chart, rows: data().rows });
+    else if (new Set(data().rows.map((row) => row.key)).size !== data().rows.length || data().rows.some((row) => !row.key))
+      throw new Error("Chart data requires unique row/mark keys and a row for every mark.rowKey");
+  };
+  validate();
+  createEffect(validate);
   createEffect(() => {
     if (props.selectedKey === undefined && rawSelected() !== null && selected() === null) select(null);
   });
@@ -163,37 +238,92 @@ export function ChartExplorer<T extends ChartExplorerRow>(props: ChartExplorerPr
       props.columns.map((c) => tsvCell(c.label)).join("\t"),
       ...rows().map((row) => props.columns.map((c) => tsvCell(c.value(row))).join("\t")),
     ].join("\n");
+  const tableView = () => view() === "table" && data().rows.length > 0 && state() !== "loading" && state() !== "error";
+  const retryButton = (variant: "secondary" | "text") => (
+    <Show when={props.onRetry}>
+      {(retry) => (
+        <Button variant={variant} size="sm" onClick={() => retry()()}>
+          <Show when={variant === "secondary"}>
+            <i class="ti ti-refresh" aria-hidden="true" />
+          </Show>
+          {messages().tryAgain}
+        </Button>
+      )}
+    </Show>
+  );
+  // "14px 16px" reads like CSS padding: block first, then inline; one value is both.
+  const insetBlock = () => props.inset?.trim().split(/\s+/)[0] ?? "";
+  const insetInline = () => props.inset?.trim().split(/\s+/)[1] ?? insetBlock();
   return (
-    <section class={`k2b-chart-explorer ${props.class ?? ""}`} aria-labelledby={id}>
+    <section
+      class={`k2b-chart-explorer ${props.class ?? ""}`}
+      aria-labelledby={id}
+      aria-busy={state() === "loading" || state() === "refreshing" ? "true" : undefined}
+      data-state={state()}
+      data-inset={props.inset ? "true" : undefined}
+      style={props.inset ? { "--k2b-chart-explorer-inset": insetInline(), "--k2b-chart-explorer-inset-block": insetBlock() } : undefined}
+    >
       <header class="k2b-chart-explorer__header">
         <div>
           <Dynamic component={`h${props.headingLevel ?? 3}`} id={id} class="k2b-chart-explorer__title">
             {props.title}
           </Dynamic>
-          <Show when={props.description}>
-            <div class="k2b-chart-explorer__description">{props.description}</div>
+          {/* With a request the subtitle is one reserved line and a polite live region: stale and loading replace its
+              text without moving anything, and a screen reader hears that the shown values are out of date. */}
+          <Show when={props.description || state()}>
+            <div
+              class="k2b-chart-explorer__description"
+              classList={{ "k2b-chart-explorer__status-line": state() === "stale" || state() === "loading" || switching() }}
+              data-tone={state() === "stale" ? "warning" : undefined}
+              role={state() ? "status" : undefined}
+            >
+              <Show when={state() === "stale" || state() === "loading" || switching()} fallback={props.description}>
+                <Show
+                  when={state() === "stale"}
+                  fallback={
+                    <span>
+                      {switching()
+                        ? chartMessages().chartLoadingRange({ range: props.request!.requestedRange! })
+                        : chartMessages().chartLoading}
+                    </span>
+                  }
+                >
+                  <i class="ti ti-clock-exclamation" aria-hidden="true" />
+                  <span>
+                    {[props.asOf ? chartMessages().chartAsOf({ time: props.asOf }) : undefined, chartMessages().chartRefreshFailed]
+                      .filter(Boolean)
+                      .join(" · ")}
+                    {props.onRetry ? " · " : ""}
+                  </span>
+                  {retryButton("text")}
+                </Show>
+              </Show>
+            </div>
           </Show>
         </div>
         <div class="k2b-chart-explorer__actions">
           {props.actions}
-          <CopyButton
-            text={copyText()}
-            label={chartMessages().chartCopyData}
-            iconOnly
-            size="sm"
-            variant="ghost"
-            disabled={!rows().length}
-            onCopyError={() => setCopyFailed(true)}
-            onCopied={() => setCopyFailed(false)}
-          />
-          {/* The switcher keeps the width of its longest view, so picking one never rewraps the header. */}
-          <SelectChip<string>
-            stableWidth
-            value={switcherValue()}
-            onValueChange={pick}
-            aria-label={chartMessages().chartView}
-            options={switcherOptions()}
-          />
+          {/* Without rows the view controls keep their place but are hidden, so the header never rewraps. */}
+          <span class="k2b-chart-explorer__views" inert={state() && !data().rows.length ? true : undefined}>
+            <CopyButton
+              text={copyText()}
+              label={chartMessages().chartCopyData}
+              iconOnly
+              size="sm"
+              variant="ghost"
+              disabled={!rows().length}
+              onCopyError={() => setCopyFailed(true)}
+              onCopied={() => setCopyFailed(false)}
+            />
+            {/* The switcher keeps the width of its longest view, so picking one never rewraps the header. */}
+            <SelectChip<string>
+              stableWidth
+              value={switcherValue()}
+              onValueChange={pick}
+              aria-label={chartMessages().chartView}
+              options={switcherOptions()}
+            />
+          </span>
         </div>
       </header>
       <Show when={copyFailed()}>
@@ -201,12 +331,54 @@ export function ChartExplorer<T extends ChartExplorerRow>(props: ChartExplorerPr
       </Show>
       {props.controls}
       <div
+        ref={legendHost}
         class="k2b-chart-explorer__viewport"
+        data-view={tableView() ? "table" : undefined}
         data-legend={view() === "chart" && props.legend?.length && data().rows.length > 0 ? "true" : undefined}
-        data-capped={view() === "table" && shownRows().length < rows().length ? "true" : undefined}
-        style={{ height: props.height ?? "18rem" }}
+        data-capped={tableView() && shownRows().length < rows().length ? "true" : undefined}
+        style={{ height: tableView() && props.inset ? `calc(${props.height ?? "18rem"} + ${insetBlock()})` : (props.height ?? "18rem") }}
       >
-        <Show when={data().rows.length > 0} fallback={<div class="k2b-chart__empty">{props.empty ?? messages().noData}</div>}>
+        <Show
+          when={state() !== "loading" && state() !== "error" && data().rows.length > 0}
+          fallback={
+            <Show
+              when={state() === "loading"}
+              fallback={
+                <Show
+                  when={state() === "error"}
+                  fallback={
+                    <Show when={state() === "empty"} fallback={<div class="k2b-chart__empty">{props.empty ?? messages().noData}</div>}>
+                      <div class="k2b-chart-explorer__state" data-state="empty">
+                        <span class="k2b-chart-explorer__state-icon" aria-hidden="true">
+                          <i class="ti ti-chart-bar-off" />
+                        </span>
+                        <p>{props.empty ?? messages().noData}</p>
+                      </div>
+                    </Show>
+                  }
+                >
+                  <div class="k2b-chart-explorer__state" data-state="error" role="alert">
+                    <span class="k2b-chart-explorer__state-icon" aria-hidden="true">
+                      <i class="ti ti-alert-circle" />
+                    </span>
+                    <p>
+                      {chartMessages().chartLoadFailed}
+                      <br />
+                      {props.request?.reason ?? chartMessages().chartLoadFailedKept}
+                    </p>
+                    {retryButton("secondary")}
+                  </div>
+                </Show>
+              }
+            >
+              <div class="k2b-chart-explorer__skeleton" role="status" aria-label={chartMessages().chartLoading}>
+                <For each={[0.45, 0.62, 0.55, 0.72, 0.6, 0.8, 0.66, 0.88, 0.63, 0.78, 0.7, 0.95]}>
+                  {(height) => <span style={{ height: `${height * 100}%` }} />}
+                </For>
+              </div>
+            </Show>
+          }
+        >
           <Show
             when={view() === "chart"}
             fallback={
@@ -225,7 +397,7 @@ export function ChartExplorer<T extends ChartExplorerRow>(props: ChartExplorerPr
                   selectedRowId={selected()}
                   sort={sort()}
                   fillHeight
-                  surface="paper"
+                  surface={props.inset ? "plain" : "paper"}
                   onRowClick={(row) => select(row.key)}
                   renderCell={({ row, col, value, render }) => {
                     const custom = props.columns.find((column) => column.id === col.id)?.render;
@@ -274,17 +446,23 @@ export function ChartExplorer<T extends ChartExplorerRow>(props: ChartExplorerPr
               </>
             }
           >
-            <ChartSnapshotView
-              cursor={props.cursor}
-              snapshot={data().chart}
-              selectedKey={selected()}
-              onSelect={select}
-              style={props.legend?.length ? undefined : { height: "100%" }}
-            />
+            <Show when={snapshot()} fallback={<div class="k2b-chart-explorer__chart">{props.children}</div>}>
+              {(chart) => (
+                <ChartSnapshotView
+                  cursor={props.cursor}
+                  legend={() => legendHost}
+                  snapshot={chart()}
+                  selectedKey={selected()}
+                  onSelect={select}
+                  style={props.legend?.length ? undefined : { height: "100%" }}
+                />
+              )}
+            </Show>
+
             <Show when={props.legend?.length}>
               <ul class="k2b-chart-legend" aria-label={chartMessages().chartLegend}>
                 <For each={props.legend}>
-                  {(entry) => (
+                  {(entry, index) => (
                     <li>
                       <span
                         class="k2b-chart-legend__swatch"
@@ -294,6 +472,22 @@ export function ChartExplorer<T extends ChartExplorerRow>(props: ChartExplorerPr
                         aria-hidden="true"
                       />
                       {entry.label}
+                      <Show when={snapshot()?.kind === "area"}>
+                        <b
+                          data-chart-legend-value
+                          data-series-index={index()}
+                          data-field={
+                            snapshot()?.kind === "area"
+                              ? snapshot()?.marks.some((mark) => mark.datum.values.some((field) => field.key === "percent"))
+                                ? "percent"
+                                : "value"
+                              : "y"
+                          }
+                          data-default={legendValue(index())}
+                        >
+                          {legendValue(index())}
+                        </b>
+                      </Show>
                     </li>
                   )}
                 </For>

@@ -624,7 +624,7 @@ const applyConversationCollaborationInTransaction = async (params: {
   }
 
   let nextStatus = "workStatus" in params.input && params.input.workStatus ? params.input.workStatus : current.work_status;
-  if ("completion" in params.input && params.input.completion === "done") nextStatus = "done";
+  if ("completion" in params.input && params.input.completion && params.input.completion !== "open") nextStatus = params.input.completion;
   if ("completion" in params.input && params.input.completion === "open") {
     const [latest] = await params.db<
       {
@@ -695,7 +695,7 @@ const applyConversationCollaborationInTransaction = async (params: {
 
   const covers =
     ("workStatus" in params.input && (params.input.workStatus === "done" || params.input.workStatus === "waiting")) ||
-    ("completion" in params.input && params.input.completion === "done") ||
+    ("completion" in params.input && (params.input.completion === "done" || params.input.completion === "waiting")) ||
     Boolean(requestedSnooze);
   const assigneesChanged =
     nextAssigneeIds.length !== currentAssigneeIds.length || nextAssigneeIds.some((id) => !currentAssigneeIds.includes(id));
@@ -907,6 +907,8 @@ export const applyConversationAssignments = async (params: {
   conversationIds: readonly string[];
   assigneeUserIds: readonly string[];
   mode: "add" | "remove" | "replace";
+  onlyIfUnassigned?: boolean;
+  expectedRevision?: number;
 }): Promise<
   Result<{
     result: ConversationAssignmentResult;
@@ -918,6 +920,14 @@ export const applyConversationAssignments = async (params: {
     return fail(err.badInput(`Pass 1 to ${MAIL_CONVERSATION_BATCH_LIMIT} conversations`));
   if (params.assigneeUserIds.length > MAIL_CONVERSATION_ASSIGNEE_LIMIT)
     return fail(err.badInput(`A conversation can have at most ${MAIL_CONVERSATION_ASSIGNEE_LIMIT} assignees`));
+  if (
+    params.onlyIfUnassigned &&
+    (params.mode !== "add" ||
+      params.assigneeUserIds.length === 0 ||
+      params.conversationIds.length !== 1 ||
+      params.expectedRevision === undefined)
+  )
+    return fail(err.badInput("Unassigned-only assignment requires one conversation, a revision, and a nonempty add"));
   const userIds = [...new Set(params.assigneeUserIds)];
   if (params.mode !== "replace" && userIds.length === 0) return fail(err.badInput("Add and remove require at least one user"));
   const requestedIds = [...new Set(params.conversationIds)];
@@ -952,6 +962,9 @@ export const applyConversationAssignments = async (params: {
       const addedIds = new Set<string>();
       for (const row of rows) {
         const current = await loadConversationAssigneeIds(tx, row.id);
+        if (params.expectedRevision !== undefined && Number(row.revision) !== params.expectedRevision)
+          return fail(err.conflict("Conversation was changed by another collaborator"));
+        if (params.onlyIfUnassigned && current.length > 0) return fail(err.conflict("Conversation already has an assignee"));
         const ids =
           params.mode === "replace"
             ? userIds
@@ -1032,7 +1045,8 @@ export const applyConversationCompletions = async (params: {
   context: MailRequestContext;
   mailboxId: string;
   conversationIds: readonly string[];
-  completion: "done" | "open";
+  completion: "done" | "open" | "waiting" | "needs_action";
+  expectedRevisions?: Record<string, number>;
 }): Promise<Result<ConversationCompletionResult>> => {
   if (params.conversationIds.length === 0 || params.conversationIds.length > MAIL_CONVERSATION_BATCH_LIMIT)
     return fail(err.badInput(`Pass 1 to ${MAIL_CONVERSATION_BATCH_LIMIT} conversations`));
@@ -1080,6 +1094,9 @@ export const applyConversationCompletions = async (params: {
               ).map((row) => row.id),
             );
       const rows = visibleIds ? locked.filter((row) => visibleIds.has(row.id)) : locked;
+      // Check every requested fence before any write, so a conflict leaves the batch unchanged.
+      if (params.expectedRevisions && rows.some((row) => params.expectedRevisions?.[row.short_id] !== Number(row.revision)))
+        return fail(err.conflict("Conversation was changed by another collaborator"));
       const collaborations = new Map<string, ConversationCollaboration>();
       let changed = false;
       for (const row of rows) {
@@ -1739,10 +1756,8 @@ export const listActivity = async (params: {
     LEFT JOIN auth.users actor_user ON activity.actor_kind = 'user' AND actor_user.id = activity.actor_id
     LEFT JOIN auth.service_accounts actor_service
       ON activity.actor_kind = 'service_account' AND actor_service.id = activity.actor_id
-    LEFT JOIN workflows.version actor_workflow_version
-      ON activity.actor_kind = 'workflow' AND actor_workflow_version.id = activity.actor_id
-    LEFT JOIN workflows.workflow actor_workflow
-      ON actor_workflow.id = actor_workflow_version.workflow_id
+    LEFT JOIN mail.workflow_source_names actor_workflow
+      ON activity.actor_kind = 'workflow' AND actor_workflow.version_id = activity.actor_id
     WHERE activity.mailbox_id = ${params.mailboxId}::uuid
       AND (${params.conversationId ?? null}::uuid IS NULL OR activity.conversation_id = ${params.conversationId ?? null}::uuid)
       AND (${visibility.scope === "mailbox"} OR (

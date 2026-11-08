@@ -125,3 +125,10 @@ To log failed HTTP requests, add `middleware.logger()`. See
 Use [Tracing](/en/docs/platform/tracing) when several events belong to one
 operation. Use [Audit events](/en/docs/platform/audit-events) when a record must
 show who performed a security-relevant action.
+
+### Read large histories
+
+Log lists and grouped counts default to the last 24 hours; pass `sinceHours`
+to select another period. Source selectors show sources active in the last 24 hours.
+`logging.summary().total` is a PostgreSQL row estimate. Other summary fields
+retain their 24-hour meaning. Operator reads use a five-second query budget.
