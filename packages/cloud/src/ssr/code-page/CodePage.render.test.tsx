@@ -133,10 +133,15 @@ describe("Code page states", () => {
     expect(page).toContain("Ob er darf, entscheidet, wer das Ziel verwaltet.");
     expect(page).toContain("Keine. Darum hat dieser Code keine Adresse, nur Automationen.");
     expect(page).toContain("Mit Gustav bearbeiten");
-    // A place's Code is titled "Code" (mockup v17); screen readers hear whose Code it is.
-    expect(html("overview")).toContain(
-      '<h1 class="cloud-code__page-title"><span aria-hidden="true">Code</span><span class="sr-only">Code von info@moebel-beispiel.de</span></h1>',
-    );
+    // A place's Code is titled with the feat/code wordmark (slim drawing); screen readers hear whose Code it is.
+    const title = html("overview").match(/<h1 class="cloud-code__page-title">.*?<\/h1>/)?.[0] ?? "";
+    // The mark itself (not only its inner sign) is hidden, so screen readers hear the title once.
+    const mark = title.match(/<span class="cloud-featcode"[^>]*>/)?.[0] ?? "";
+    expect(mark).toContain('data-variant="wordmark"');
+    expect(mark).toContain('aria-hidden="true"');
+    expect(mark).not.toContain("aria-label");
+    expect(title).toContain('data-drawing="large"');
+    expect(title).toContain('<span class="sr-only">Code von info@moebel-beispiel.de</span>');
   });
 
   test("a finished version that is still off offers switching on, names its new access and keeps the running version", () => {

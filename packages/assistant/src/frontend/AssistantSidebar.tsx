@@ -2,6 +2,7 @@ import type { AiConversation, AiProject } from "@k2b/cloud/ai";
 import { ApprovalsNavStatus, approvalNavCount } from "@k2b/cloud/approvals/ui";
 import { registerContextAwareCommand } from "@k2b/cloud/browser/commands";
 import { openGlobalSearch } from "@k2b/cloud/browser/search";
+import { FeatCodeMark } from "@k2b/cloud/code/ui";
 import { WorkspaceNavigationProvider } from "@k2b/cloud/ssr/islands";
 import { navigate, navigateTo } from "@k2b/ssr/nav";
 import {
@@ -361,13 +362,15 @@ export default function AssistantSidebar(props: AssistantSidebarProps) {
   const CodeItem = () => (
     <Show when={codeShown()}>
       <AppWorkspace.SidebarItem
-        icon="ti ti-stack-2"
         title={t().myCode}
         href={`${props.basePath ?? "/app/assistant"}?code=1`}
         active={codeActive()}
         onClick={openInPlace(props.onOpenCode)}
       >
-        {t().myCode}
+        <AppWorkspace.SidebarItemIcon>
+          <FeatCodeMark variant="glyph" tone="current" decorative />
+        </AppWorkspace.SidebarItemIcon>
+        <AppWorkspace.SidebarItemLabel>{t().myCode}</AppWorkspace.SidebarItemLabel>
       </AppWorkspace.SidebarItem>
     </Show>
   );

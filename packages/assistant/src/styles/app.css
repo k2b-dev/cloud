@@ -504,14 +504,14 @@
   font-weight: 600;
   color: var(--k2b-text-muted);
 }
-.assistant-code__kind {
+/* The feat/code sign of a Code row stands on the surface, never on a chip. */
+.assistant-code__mark {
   display: grid;
   place-items: center;
   width: 1.75rem;
   height: 1.75rem;
-  border-radius: var(--k2b-radius-control);
-  background: var(--ui-app-selected);
-  color: var(--ui-app-accent-text);
+  font-size: 1.25rem;
+  color: var(--k2b-text);
 }
 .assistant-code__narrow {
   display: none;
@@ -601,6 +601,9 @@
 .assistant-code-version__title {
   margin: 0;
   font-weight: 600;
+}
+.assistant-code-version__mark {
+  margin-right: 0.375em;
 }
 .assistant-code-version__note {
   display: flex;

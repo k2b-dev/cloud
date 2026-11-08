@@ -5,6 +5,7 @@ import { createSignal, createUniqueId, For, type JSX, Match, Show, Switch, untra
 import { CloudChartBlock } from "#chat-charts";
 import { capabilityApprovalReason, capabilityApprovalReasonLabel } from "../../_internal/capability-sentences";
 import { capabilityReviewView } from "../../capabilities/reviews";
+import { FeatCodeMark } from "../../code/FeatCodeMark";
 import type { CapabilityActionReview } from "../../contracts/capabilities";
 import { markdown } from "../../shared";
 import type { AiTurnBlock } from "../protocol";
@@ -23,6 +24,7 @@ import {
   formatToolDetailText,
   isCardToolName,
   isChartToolName,
+  isFeatCodeTool,
   isRecord,
   isSurveyToolName,
   isTextEditorToolName,
@@ -38,6 +40,10 @@ import { isFailedTool } from "./tool-groups";
 import type { AiTurnActionState } from "./turn-layout";
 import { CloudCardBlock, CloudSurveyBlock, CloudSurveyResultBlock, CloudTextEditorBlock, CloudTextEditorResultBlock } from "./visual-tools";
 import { FetchFileToolBlock, WebExtractToolBlock, WebSearchToolBlock, WebsiteReceipts, websiteReceipts } from "./web-tools";
+
+/** feat/code tools draw the feat/code sign in the row's colour; an app's own icon still wins. */
+const featCodeLeading = (name: string, appIcon?: string | null): JSX.Element | undefined =>
+  !appIcon && isFeatCodeTool(name) ? <FeatCodeMark variant="glyph" tone="current" decorative /> : undefined;
 
 type ToolBlock = Extract<AiTurnBlock, { kind: "tool" }>;
 type ReviewDetail = NonNullable<CapabilityActionReview["details"]>[number];
@@ -162,6 +168,7 @@ function ToolResultDisclosure(props: {
   result: unknown;
   isError: boolean;
   icon?: string;
+  leading?: JSX.Element;
   accent?: string;
   labelOnError?: string;
   errorLabel?: string;
@@ -173,6 +180,7 @@ function ToolResultDisclosure(props: {
     <AiToolActivity
       blockId={props.blockId}
       icon={props.icon ?? (props.isError ? "ti ti-alert-circle" : aiToolIcon(props.toolName))}
+      leading={props.leading}
       label={props.isError ? (props.errorLabel ?? t().toolFailed({ title: props.labelOnError ?? props.name })) : props.name}
       description={props.isError ? props.errorDescription : undefined}
       tone={props.isError ? "danger" : "neutral"}
@@ -272,7 +280,14 @@ export function ApprovalBlockView(props: { turnId: string; block: ToolBlock; onD
   return (
     <section class="ai-approval" aria-label={t().approvalRequired({ title: title() })}>
       <div class="ai-approval__head">
-        <i class={`ai-approval__icon ${aiToolIcon(props.block.name, props.block.presentation?.appIcon)}`} aria-hidden="true" />
+        <Show
+          when={!props.block.presentation?.appIcon && isFeatCodeTool(props.block.name)}
+          fallback={<i class={`ai-approval__icon ${aiToolIcon(props.block.name, props.block.presentation?.appIcon)}`} aria-hidden="true" />}
+        >
+          <span class="ai-approval__icon" aria-hidden="true">
+            <FeatCodeMark variant="glyph" decorative />
+          </span>
+        </Show>
         <div class="min-w-0">
           <h3 class="ai-approval__title">{title()}</h3>
           <p class="ai-approval__sub">
@@ -475,6 +490,7 @@ function CapabilityToolView(props: { block: ToolBlock }) {
         fallback={
           <Chat.Activity
             icon={aiToolIcon(props.block.name, presentation().appIcon)}
+            leading={featCodeLeading(props.block.name, presentation().appIcon)}
             label={label()}
             tone="ai"
             accent={presentation().appAccent}
@@ -487,6 +503,7 @@ function CapabilityToolView(props: { block: ToolBlock }) {
           fallback={
             <Chat.Activity
               icon={aiToolIcon(props.block.name, presentation().appIcon)}
+              leading={featCodeLeading(props.block.name, presentation().appIcon)}
               label={t().toolFailed({ title: label() })}
               description={capabilityErrorDescription(props.block.result) || t().actionNotCompleted}
               tone="danger"
@@ -502,6 +519,7 @@ function CapabilityToolView(props: { block: ToolBlock }) {
                 name={label()}
                 labelOnError={label()}
                 icon={aiToolIcon(props.block.name, presentation().appIcon)}
+                leading={featCodeLeading(props.block.name, presentation().appIcon)}
                 accent={presentation().appAccent}
                 toolName={props.block.name}
                 args={props.block.args}
@@ -512,6 +530,7 @@ function CapabilityToolView(props: { block: ToolBlock }) {
           >
             <Chat.Activity
               icon={aiToolIcon(props.block.name, presentation().appIcon)}
+              leading={featCodeLeading(props.block.name, presentation().appIcon)}
               label={summary()}
               accent={presentation().appAccent}
               trailing={
@@ -681,6 +700,7 @@ function ToolBlockView(props: { turnId: string; block: ToolBlock; active?: boole
             args={props.block.args}
             result={props.block.result}
             isError={Boolean(props.block.isError)}
+            leading={featCodeLeading(props.block.name, props.block.presentation?.appIcon)}
             errorLabel={fetchError()?.label}
             errorDescription={fetchError()?.description}
           />
@@ -729,7 +749,12 @@ function ToolBlockView(props: { turnId: string; block: ToolBlock; active?: boole
           <TextEditorToolView turnId={props.turnId} block={props.block} active={props.active} />
         </Match>
         <Match when={status() === "running" || status() === "awaiting_client"}>
-          <Chat.Activity label={displayToolName(props.block.name, locale())} icon={aiToolIcon(props.block.name)} busy />
+          <Chat.Activity
+            label={displayToolName(props.block.name, locale())}
+            icon={aiToolIcon(props.block.name)}
+            leading={featCodeLeading(props.block.name)}
+            busy
+          />
         </Match>
       </Switch>
       <Show when={websiteReceipts(props.block).length > 0}>
@@ -877,6 +902,7 @@ export function CompactToolRow(props: { block: ToolBlock; busy?: boolean }) {
           .filter(Boolean)
           .join(" · ")}
         icon={icon()}
+        leading={waiting() || check() ? undefined : featCodeLeading(props.block.name, props.block.presentation?.appIcon)}
         busy={props.busy && props.block.status === "running"}
         bodyInset={false}
         renderBody={() => (
