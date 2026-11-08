@@ -292,7 +292,8 @@ describe("filled glyphs", () => {
       await tab.route("http://icons.test/**", async (route) => {
         const { pathname } = new URL(route.request().url());
         if (pathname === "/") return route.fulfill({ contentType: "text/html; charset=utf-8", body: filledPage });
-        if (pathname === `/${fontFile}`) return route.fulfill({ contentType: "font/woff2", path: resolve(dist, fontFile) });
+        // Every font file the preset names: from Tabler 3.50 the font is split into unicode-range faces.
+        if (pathname.endsWith(".woff2")) return route.fulfill({ contentType: "font/woff2", path: resolve(dist, pathname.slice(1)) });
         return route.fulfill({ status: 404, body: "" });
       });
       await tab.goto("http://icons.test/");
