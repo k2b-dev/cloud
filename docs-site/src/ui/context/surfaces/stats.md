@@ -16,8 +16,15 @@ Use `DataPanel` for records. Use ordinary prose for one isolated value that does
 Assistant stats views compose a read-only `StatGrid` of 1..6 `StatCell`s for
 comparable figures above charts. Shared formatters supply values, scope text,
 sparklines and deltas; the host maps better/worse/neutral tones to colors.
+Chat places change badges below their figures so a formatted amount and its
+change do not compete for width when a saved view finishes loading.
 The Assistant's card tool shows one figure as a single-cell grid with a
 neutral trend accent and `wrap`, so a long value or caption stays whole.
+
+For an existing measure whose change is an amount or count, use
+`delta={{value: 12, unit: "absolute", format: {style: "currency", currency: "EUR"}}}`.
+The badge retains that unit. Assistant stats use this mode for saved numeric
+deltas; new ratio and points deltas use the same badge and comparison line.
 
 ## Import
 
@@ -60,31 +67,45 @@ or less (one at 280 px or less). Tiles in a row share one height. Tiles keep
 | `icon` | `string` | Shows a Tabler icon in a chip before the label. |
 | `tone` | `"zinc" \| "blue" \| "emerald" \| "amber" \| "red" \| "in" \| "out"` | Colors the icon chip. Defaults to zinc. `in` and `out` are the money colors of `FlowAmount` for tiles such as "In in October"; pass a `FlowAmount` as `value` there. |
 | `delta` | `StatCellDelta` | Shows the change as a badge beside the figure. |
+| `deltaPlacement` | `"below"` | Reserves a separate row for the change, including while loading. Omit it for the default responsive placement. |
 | `compare` | `StatCellCompare` | Names the comparison value in the support line, such as "Last month 44,560". |
 | `sub` | `string` | Qualifies the value with scope, unit, or time range. |
 | `href` | `string` | Makes the complete tile a link. |
 | `accent` | `StatCellAccent` | Adds a semantic icon or short status pill to the support line. |
 | `valueClass` | `string` | Overrides the value color. |
-| `title` | `string` | Adds a native title to a truncated value. |
+| `title` | `string` | Adds a native title to the value, such as its unrounded form. |
 | `trend` | `readonly number[]` | Adds a sparkline at the end of the support line, from oldest to newest, with tooltips and keyboard inspection. |
 | `trendTooltip` | `ChartTooltipFormatter` | Customizes the trend tooltip, for example with a period title or a unit. |
 | `size` | `"lg" \| "md" \| "sm"` | Overrides the inherited size for one tile. |
-| `wrap` | `boolean` | Wraps label, value, `sub` and accent instead of truncating them. |
+| `wrap` | `boolean` | Wraps label, `sub` and accent instead of truncating them (the value always wraps rather than being cut). |
 | `status` | `"loading" \| "error"` | Shows placeholders, or "Not loaded", in the tile's place. |
 | `onRetry` | `() => void` | Offers "Try again" after an error and "Reload" beside `stale`. |
 | `stale` | `string` | Replaces the support line with a warning such as "As of 09:12 · not current". |
 
-`size="lg"` is the dashboard tile: a 28 px figure in a tile of 136 px. When
-the grid is 600 px wide or less, the tile grows to 164 px and the change badge
-moves under the figure. A tile narrower than 230 px shrinks the figure to
-22 px, and below 200 px the trend steps back, so the figure stays whole on a
-phone. These adjustments follow the grid; a `StatCell` on its own keeps one
-layout. `md` and `sm` tiles take the height of their content.
+`size="lg"` is the dashboard tile: a 28 px figure in a tile of at least 136 px.
+When the grid is 600 px wide or less, or a tile is narrower than 200 px, the
+change badge moves under the figure in every size and its slot is kept free in
+every state; the `lg` tile is then at least 172 px.
+
+In a grid the figure follows the head directly, and every head keeps the icon
+chip's height when any tile in the grid has an icon, so figures in one row sit
+on one line whether or not a tile has a change badge, an icon, a link or a
+longer support line. The support line sits at the bottom of the tile.
+
+The figure and the support texts (comparison, note) are never cut off. The
+figure shrinks with its tile's width within fixed bounds (`lg` 18–28 px, `md`
+16–20 px, `sm` 14–16 px), and support texts wrap instead of ending in an
+ellipsis. A tile narrower than 240 px gives the comparison its own line and the
+trend the next, and keeps that room in every state, so loading, error and data
+have one height; a support text longer than two lines still makes its tile
+taller when it arrives. Below 200 px an `lg` tile drops its trend. These
+adjustments follow the grid; a `StatCell` on its own keeps its sizes and
+wraps. `md` and `sm` tiles take the height of their content.
 
 ### Change and comparison
 
 ```ts
-type StatCellDelta = { value: number; unit?: "ratio" | "points"; better?: "up" | "down" };
+type StatCellDelta = { value: number; unit?: "ratio" | "points" | "absolute"; format?: ChartNumberFormat; better?: "up" | "down" };
 type StatCellCompare = { label: string; value: string | number };
 ```
 
@@ -107,7 +128,7 @@ arrives or fails:
   support line; the tile is `aria-busy` and not a link.
 - **Error** (`status="error"`): "Not loaded" in place of the figure, and
   "Try again" when `onRetry` is set.
-- **Empty** (`value={null}`): a dash and the reason in `sub`.
+- **Empty** (`value={null}`): a dash and the reason in `sub`; the trend is not drawn.
 - **Stale** (`stale`): the figure stays; the support line shows the warning
   and "Reload" when `onRetry` is set.
 
@@ -134,7 +155,7 @@ focusable link. Keep its combined text useful at the destination.
 
 Icons, the change arrow, and sparklines supplement the text; they do not
 replace a status label or numeric value. The change badge has its own spoken
-label. Truncated values can expose their complete wording through `title`.
+label. A label may end in an ellipsis; figures, comparisons and notes in a grid are never cut.
 
 A trend sparkline uses the tile's label as its accessible name. Its tooltip
 names each value after the tile label and formats it in the inherited locale.

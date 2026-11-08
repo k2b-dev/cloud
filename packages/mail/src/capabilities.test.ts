@@ -554,6 +554,10 @@ describe("mail capabilities", () => {
       data: { subject: "Evidence" },
     });
     const access = spyOn(mailboxAccess, "requireMailboxPermission");
+    const read = spyOn(mailboxAccess, "requireMailboxAccess").mockResolvedValue({
+      ok: false,
+      error: { code: "FORBIDDEN", message: "Access denied", status: 403 },
+    });
     const release = mailCapabilities.actions["conversation.keep.release"];
     expect(await release.review({ mailboxId, conversationId }, context)).toMatchObject({
       ok: false,
@@ -567,6 +571,7 @@ describe("mail capabilities", () => {
     const review = await release.review({ mailboxId, conversationId, reason: "Policy reviewed" }, context);
     expect(review).toMatchObject({ ok: true });
     expect(access).not.toHaveBeenCalled();
+    expect(read).not.toHaveBeenCalled();
     if (!review.ok) throw new Error(review.error.message);
     expect(review.data.sentence.action).toBe("Stop keeping the conversation {conversation}");
     expect(review.data.consequences?.map((c) => c.text).join(" ")).toContain("Cloud administrator");
@@ -830,10 +835,39 @@ describe("mail capabilities", () => {
   test("aligns action reviews with their run permissions", async () => {
     const denied = { ok: false as const, error: { code: "FORBIDDEN", message: "Denied", status: 403 as const } };
     const requirePermission = spyOn(mailboxAccess, "requireMailboxPermission").mockResolvedValue(denied);
-    const requireAccess = spyOn(mailboxAccess, "requireMailboxAccess").mockResolvedValue(denied);
+    // A reader without write: every review resolves the readable mailbox first, then asks for its own permission.
+    const requireAccess = spyOn(mailboxAccess, "requireMailboxAccess").mockImplementation(async (_context, _mailboxId, required) =>
+      required === "read" ? { ok: true, data: { scope: "mailbox", permission: "read" } } : denied,
+    );
+    spyOn(messages, "listConversationMessages").mockResolvedValue({ ok: true, data: { items: [], nextCursor: null } });
+    spyOn(scheduledSends, "getScheduledSend").mockResolvedValue({
+      ok: true,
+      data: {
+        id: internalConversationId,
+        commandId: technicalTargetId,
+        draftId: internalDraftId,
+        conversationId: internalConversationId,
+        intent: "new",
+        to: [],
+        cc: [],
+        bcc: [],
+        subject: "Visible delivery",
+        bodyPreview: "Body",
+        scheduledAt: timestamp,
+        nextAttemptAt: null,
+        state: "scheduled",
+        attempt: 0,
+        lastErrorCode: null,
+        lastError: null,
+        scheduledBy: { kind: "user", displayName: "Test user" },
+        createdAt: timestamp,
+      },
+    });
 
     await mailCapabilities.actions["draft.create"].review(DraftCreateInputSchema.parse({ mailboxId, senderIdentityId }), context);
-    await mailCapabilities.actions["delivery.cancel"].review({ mailboxId, deliveryId, disposition: "draft" }, context);
+    expect(await mailCapabilities.actions["delivery.cancel"].review({ mailboxId, deliveryId, disposition: "draft" }, context)).toEqual(
+      denied,
+    );
     await mailCapabilities.actions["mailbox.tag.update"].review({ mailboxId, tagId, expectedRevision: 1, name: "Updated" }, context);
     await mailCapabilities.actions["mailbox.tag.delete"].review({ mailboxId, tagId, expectedRevision: 1 }, context);
     await mailCapabilities.actions["mailing-list.unsubscribe"].review(
@@ -846,7 +880,8 @@ describe("mail capabilities", () => {
     );
 
     expect(requirePermission.mock.calls.map((call) => call[2])).toEqual(["write", "write", "write", "write"]);
-    expect(requireAccess.mock.calls.map((call) => call[2])).toEqual(["write", "read"]);
+    // The mailbox read precedes each review's own permission: delivery.cancel asks for write, the reminder for read.
+    expect(requireAccess.mock.calls.map((call) => call[2])).toEqual(["read", "read", "write", "read", "read", "read", "read", "read"]);
   });
 
   test("reviews a new draft with its user-visible envelope", async () => {
@@ -3411,7 +3446,8 @@ test("a draft reader without write access opens the read view", async () => {
   );
   const result = await mailCapabilities.queries["draft.read"].run({ id: draftId }, context);
   if (!result.ok) throw new Error(result.error.message);
-  expect(access.mock.calls[0]?.[2]).toBe("write");
+  // The mailbox read comes first; the write check only decides whether the edit link is offered.
+  expect(access.mock.calls.map((call) => call[2])).toEqual(["read", "write"]);
   expect(assertResourceOpenLink(result.data).href).toBe(`/app/mail/${mailboxId}/drafts/${draftId}`);
   expect(result.data.links).toHaveLength(1);
   expect(result.data.links.filter((link) => link.rel === "edit")).toEqual([]);

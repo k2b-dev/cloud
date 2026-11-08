@@ -677,6 +677,13 @@ one-off HTML app charts show tooltips on hover, keyboard focus and tap without
 additional configuration. See
 [Code Mode charts](/en/docs/ai/chat-interface#check-an-html-app-before-showing-it).
 
+App-frame builds include `assistant-chart-module.js` alongside the prelude and
+base stylesheet. The app-assets response embeds that module with the frame;
+rare chart kinds parse it on first use through a local blob URL. No additional
+asset endpoint, external origin, CSP exception or operator configuration is
+needed. Include the new file when packaging Assistant outside its standard
+image. Scripts retain synchronous rendering for every kind.
+
 ### Assistant Chromium isolation
 
 Assistant runs headless Chromium in its own container as the unprivileged
@@ -2409,3 +2416,12 @@ update; its files then load from the network. Worker updates remove entries abse
 storage is limited to 16 MiB; storage denial or eviction falls back to the network.
 Pages and API responses remain network-only. See
 [Offline and updates](/en/docs/frontend/mobile-app-pages#offline-and-updates).
+
+### Grids document captures
+
+Grids migrates independent immutable document captures on startup. Include
+`grids.document_data` with the existing document, issuance, artifact and export
+claim tables in the same database backup. These captures and their issued
+artifacts remain domain evidence even when an automation is retired. Existing
+workflow documents keep their original bindings; this upgrade does not rewrite
+or remove their provenance.

@@ -12,6 +12,18 @@ Every non-empty chart has tooltips, keyboard inspection, and tap by default; see
 
 Use `StatCell` for one value. Use `DataTable` when readers need exact records rather than a visual summary.
 
+## Save a chart as JSON
+
+`ChartDescription`, `ChartInput`, `ChartNumberFormat`, and `ChartFormat` are
+owned by `@k2b/ui/charts`. A portable node uses `{kind, title, ...}` and named
+formats such as `{style: "currency", currency: "EUR"}`. It contains no
+callbacks. Use ISO text for dates and `null` for missing observations.
+
+The portable Zod validator `chartKinds()` from `@k2b/editor/charts` is checked
+against those types at compile time. It normalizes null gaps to non-finite
+renderer values; keep the original JSON when saving. Its optional limits are
+host policy. Each consuming application keeps its own input budget.
+
 ## Import
 
 ```tsx
@@ -271,7 +283,11 @@ over `autoVariant`. Non-finite coordinates are skipped.
 `AxisOptions` supports `label?: string`, `format?: (value: number) => string`,
 `ticks?: number` (suggested count, default 5), `scale?: "linear" | "log"`
 (default linear), `minorTicks?: boolean` (default false), and optional exact
-`domain?: [number, number]` comparison bounds. See the snapshot section for domain validation.
+`domain?: [number, number]` comparison bounds. Existing tick positions and centered
+numeric X labels stay unchanged by default. Opt in with `insetEndpointLabels: true`
+to align numeric X endpoint labels inward and omit nice ticks within one interval
+of exact bounds. This keeps long endpoint units inside compact plots; use it only
+on axes that need this layout. See the snapshot section for domain validation.
 For line and scatter charts, log axes exclude non-positive coordinates. `references` is an array of
 `{ value: number; axis?: "x" | "y"; label?: string }`; the default axis is Y.
 Categorical bars ignore X references. Use the
@@ -806,7 +822,7 @@ throw. Disposal aborts work; refresh after disposal does not load.
 | --- | --- |
 | `title`, `data`, `columns` | Required heading, `ChartExplorerData<T>` or `{ rows }`, and nonempty columns with unique nonempty IDs. Without a prepared `chart`, `children` draws the chart view, such as a live `<Chart>`; the table and Copy data still come from the typed rows. |
 | `request`, `asOf`, `range`, `onRetry` | Optional [frame states](#frame-states): the latest read, kept apart from the rows on screen. |
-| `inset` | Optional padding of the frame around the explorer, such as `"1rem"`. The table view then reaches the frame's left, right and bottom edges without its own border, and the frame keeps its height. Pair it with `renderDetails={false}`. |
+| `inset` | Optional padding of the frame around the explorer, such as `"1rem"`, or block and inline as in CSS `padding`, such as `"14px 16px"` for a dashboard panel. The table view then reaches the frame's left, right and bottom edges without its own border, and the frame keeps its height. Pair it with `renderDetails={false}`. |
 | `selectedKey`, `onSelectedKeyChange` | Optional controlled row selection. Omit key for local selection. A missing local row never clears a sibling's controlled selection. |
 | `view`, `onViewChange` | Optional controlled `"chart" \| "table"`. Otherwise, `defaultView` initializes local view; default `"chart"`. |
 | `charts`, `chart`, `onChartChange` | Optional `{ id, label }[]` for several charts of the same rows. The switcher then lists each chart and the table instead of Diagram and Table. `chart` names the chart that `data` holds; a pick calls `onChartChange(id)` and switches `view` to `"chart"`, and the owner passes that chart's data. Keep `data.rows` the same rows for every chart so selection, sorting and Copy data stay put while switching. |
@@ -1082,6 +1098,22 @@ as dots; Antarctica appears only in the list. Values that are not positive finit
 out. With no data the neutral map stays; the host shows its own empty message.
 Use `format` for units and `limit` to change how many countries the list names.
 
+## Calendar heatmaps
+
+`Chart.Calendar` (or `Chart.Heatmap` with `layout="calendar"`) accepts `data: ["YYYY-MM-DD", number | null][]`
+and `scale="sequential" | "diverging"`. Existing categorical heatmaps keep
+their `{x,y,value}` data unchanged. Dates must be valid and unique; missing
+days and null values remain gaps. The date span is limited to three years. Weeks are columns; the locale sets the first weekday, with Monday as the fallback.
+
+The color scale includes every observation. Diverging values use turquoise
+for positive and violet for negative values, with zero neutral. Phone charts
+scroll to the newest weeks. Month names use a separate year row, so short partial months do not hide the next month. Left/right inspect a week; up/down inspect a day.
+Home/End jump, Enter pins and Escape dismisses. The exact date and value are
+also available in the table. Optional `locale` takes precedence over the UI
+provider, and `format` formats values. `label` names their unit. Diverging values read “more in” or “more out” without a sign. Square cells use the available height. Weekday labels stay visible while the weeks scroll, and partially visible month names are hidden. Month and weekday labels use explicit short Intl formats; full dates use explicit long parts and a shared date pattern. Older engines use the US Sunday and other-locale Monday week-start fallback. Print output scales uniformly to the page. Measured hosts pass `displayWidth`. Plain SVG hosts mount `mountCalendarScroll` from `@k2b/ui/charts`, pass `nav: calendarInspectionNavigation` to `inspectChart`, and dispose both cleanups.
+
+Keep loading, empty, error/retry and stale feedback in the host's fixed-height
+frame. The newsletter example shows daily opens across a complete year.
 ## Stacked and 100 % area charts
 
 Use `kind="area" layout="stacked"` for nonnegative parts of a changing total.
@@ -1106,3 +1138,7 @@ percentage axis and tooltips.
 The top legend starts with the final column's amount or share and follows the
 inspected column. A missing column (or a zero-sum normalized column) has no inspected values; the
 legend uses a dash when its final column is a gap.
+
+Stat-tile trends use the same sparkline SVG and interaction host as `Chart`,
+without importing the catalog dispatcher. Adding another chart kind therefore
+does not add its renderer to pages that only show stat trends.

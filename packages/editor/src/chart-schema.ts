@@ -1,7 +1,10 @@
+import type { ChartInput, ChartLimits } from "@k2b/ui/charts";
+import { CALENDAR_MAX_DAYS, calendarDay } from "@k2b/ui/charts/core";
 import { z } from "zod";
+import { chartLocaleSchema } from "./chart-locale";
 
-/** Optional caller policy. Rendering itself has no AI input budget. */
-export type ChartLimits = { maxSeries: number; maxValues: number; maxMarks: number };
+export type { ChartDateFormat, ChartDescription, ChartFormat, ChartInput, ChartLimits, ChartNumberFormat } from "@k2b/ui/charts";
+export { chartAcceptsLocale, chartLocaleSchema } from "./chart-locale";
 
 // Every chart schema is built by a function whose call is marked pure, so a bundle that imports neither chart contract
 // leaves them out. App frames include the app contract through `cloud.chart()`.
@@ -25,10 +28,6 @@ export const chartNumberFormatSchema = () =>
     });
 const dateFormatSchema = () => z.strictObject({ date: z.enum(["day", "minute", "second"]) });
 export const chartFormatSchema = () => z.union([chartNumberFormatSchema(), dateFormatSchema()]);
-
-export type ChartNumberFormat = z.output<ReturnType<typeof chartNumberFormatSchema>>;
-export type ChartDateFormat = z.output<ReturnType<typeof dateFormatSchema>>;
-export type ChartFormat = ChartNumberFormat | ChartDateFormat;
 
 export const chartKindSchema = () =>
   z.enum(["area", "bar", "line", "scatter", "pie", "donut", "histogram", "gauge", "sparkline", "boxplot", "heatmap", "barGauge", "stat"]);
@@ -248,15 +247,51 @@ export const chartKinds = (limits?: ChartLimits) => {
       yAxis: ChartAxis.optional(),
       references: ChartReferences.optional(),
     }),
-    z.object({
-      kind: z.literal("heatmap"),
-      ...ChartKindCommon,
-      data: list(ChartCell, 1, limits?.maxMarks),
-      format: numberFormat.optional(),
-      showValues: z.boolean().optional(),
-      min: z.number().optional(),
-      max: z.number().optional(),
-    }),
+    z.discriminatedUnion("layout", [
+      z
+        .object({
+          kind: z.literal("heatmap"),
+          ...ChartKindCommon,
+          layout: z.literal("calendar"),
+          data: list(
+            z.tuple([
+              z.string().refine((day) => {
+                try {
+                  calendarDay(day);
+                  return true;
+                } catch {
+                  return false;
+                }
+              }, "Invalid ISO calendar day."),
+              ChartNumber.nullable(),
+            ]),
+            1,
+            limits?.maxMarks,
+          ),
+          scale: z.enum(["sequential", "diverging"]),
+          label: ChartLabel.optional(),
+          format: numberFormat.optional(),
+          locale: chartLocaleSchema().optional(),
+        })
+        .superRefine((spec, ctx) => {
+          if (ctx.issues.length) return;
+          const times = spec.data.map(([day]) => calendarDay(day));
+          if (times.length && (Math.max(...times) - Math.min(...times)) / 86400000 >= CALENDAR_MAX_DAYS)
+            ctx.addIssue({ code: "custom", message: "Calendar span must not exceed three years." });
+          if (new Set(spec.data.map(([day]) => day)).size !== spec.data.length)
+            ctx.addIssue({ code: "custom", message: "Calendar dates must be unique." });
+        }),
+      z.object({
+        kind: z.literal("heatmap"),
+        ...ChartKindCommon,
+        layout: z.undefined().optional(),
+        data: list(ChartCell, 1, limits?.maxMarks),
+        format: numberFormat.optional(),
+        showValues: z.boolean().optional(),
+        min: z.number().optional(),
+        max: z.number().optional(),
+      }),
+    ]),
     z.object({
       kind: z.literal("barGauge"),
       ...ChartKindCommon,
@@ -298,5 +333,10 @@ export const chartDateTime = (value: string): number | undefined => {
   return date.toISOString().startsWith(`${year}-${month}-${day}T${hour}:${minute}:${second}`) ? date.getTime() : undefined;
 };
 
-/** One chart as the shared renderers read it. */
-export type ChartInput = z.output<ReturnType<typeof chartKinds>>;
+// Both directions are checked: a validator change must update the ui-owned description too.
+type Assert<T extends true> = T;
+type Same<A, B> = [A] extends [B] ? ([B] extends [A] ? true : false) : false;
+export type ChartSchemaMatchesDescription = Assert<Same<z.output<ReturnType<typeof chartKinds>>, ChartInput>>;
+export type ChartNumberFormatSchemaMatchesDescription = Assert<
+  Same<z.output<ReturnType<typeof chartNumberFormatSchema>>, import("@k2b/ui/charts").ChartNumberFormat>
+>;
