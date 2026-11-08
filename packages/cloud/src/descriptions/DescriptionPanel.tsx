@@ -4,12 +4,12 @@ import {
   ChartExplorer,
   type ChartFrameRequest,
   ChartSnapshotView,
+  createDataTableView,
   DashboardFrame,
   type DashboardFrameState,
   type DashboardWidth,
   DataTable,
   type DataTableColumn,
-  type DataTableSort,
   DescriptionList,
   SelectChip,
   StatCell,
@@ -17,7 +17,7 @@ import {
   TextInput,
   useLocale,
 } from "@k2b/ui";
-import { createMemo, createSignal, For, type JSX, Match, Show, Switch } from "solid-js";
+import { createMemo, For, type JSX, Match, Show, Switch } from "solid-js";
 import { Dynamic } from "solid-js/web";
 import { cloudAiDetailsRows, parseCloudAiView } from "../ai/view-block";
 import { formatDescriptionNumber } from "./format";
@@ -54,7 +54,10 @@ export type DescriptionPanelProps = {
   subtitle?: string;
   /** Defaults to `ready`. */
   state?: DashboardFrameState;
-  /** Content height: pixels, or a CSS length such as a variable the dashboard grid sets per width. */
+  /**
+   * Content height: pixels, or a CSS length such as a variable the dashboard grid sets per width. A table scrolls
+   * inside it; `0` gives a table the height of its rows.
+   */
   height: number | string;
   view?: "chart" | "table";
   onViewChange?: (view: "chart" | "table") => void;
@@ -214,7 +217,9 @@ function StatsBlock(props: { spec: JsonObject; state: DashboardFrameState; asOf?
   const locale = useLocale();
   const t = useMessages();
   const items = () => list(props.spec.items).filter(object);
-  const tones = new Set(["blue", "emerald", "amber", "red", "zinc"]);
+  // The icon tones of a key figure, and the money tones `in` and `out` of `FlowAmount`.
+  const tones = ["blue", "emerald", "amber", "red", "zinc", "in", "out"] as const;
+  const tone = (value: JsonValue | undefined) => tones.find((entry) => entry === value);
   return (
     <StatGrid columns={Math.min(6, Math.max(1, items().length)) as 1 | 2 | 3 | 4 | 5 | 6}>
       <For each={items()}>
@@ -238,7 +243,7 @@ function StatsBlock(props: { spec: JsonObject; state: DashboardFrameState; asOf?
             <StatCell
               label={text(item.label)}
               icon={typeof item.icon === "string" ? item.icon : undefined}
-              tone={typeof item.tone === "string" && tones.has(item.tone) ? (item.tone as "blue") : undefined}
+              tone={tone(item.tone)}
               value={empty() ? null : typeof item.value === "number" ? format(item.value) : text(item.value)}
               sub={empty() ? t().nothingCounted : compare() ? undefined : text(item.note) || undefined}
               delta={empty() ? undefined : delta()}
@@ -393,47 +398,26 @@ const typedColumnKeys = ["type", "format", "states", "max", "priority", "delta",
 
 /**
  * `{ block: "table", columns, rows, search?, groupBy? }`: search and grouping sit in the frame's head, headers sort,
- * and the table reaches the frame's edges below. A hidden copy of the full table keeps the frame's height, so loading,
- * empty, failure and a narrowing search never move anything and never cut a row.
+ * and the table reaches the frame's edges below. Search and order read what a typed column shows: a date by its time
+ * and its shown text, a status by its label. A hidden copy of the full table keeps the frame's height, so loading,
+ * empty, failure and a narrowing search never move anything and never cut a row; with a `height` the table scrolls
+ * inside it instead.
  */
 function TableBlock(props: Omit<DescriptionPanelProps, "spec" | "state"> & { state: DashboardFrameState; spec: JsonObject }): JSX.Element {
   const locale = useLocale();
   const t = useMessages();
-  const [query, setQuery] = createSignal("");
-  const [sort, setSort] = createSignal<DataTableSort | null>(null);
-  const [group, setGroup] = createSignal("");
   const columns = () => list(props.spec.columns).filter(object);
   const groups = () => list(props.spec.groupBy).filter(object);
-  /** A cell as text: a number in the column's format, a status by its label, a missing value as a dash. */
-  const cell = (column: JsonObject, row: TableRow): string => {
-    const value = row.cells[text(column.id)];
-    if (value === null || value === undefined) return "–";
-    if (typeof value === "number") return formatDescriptionNumber(value, column.format, locale());
-    const state = object(column.states) ? column.states[text(value)] : undefined;
-    return object(state) && typeof state.label === "string" ? state.label : text(value);
-  };
   const allRows = (): TableRow[] =>
     list(props.spec.rows)
       .filter(object)
       .map((cells, index) => ({ key: String(index), cells }));
-  const rows = createMemo((): TableRow[] => {
-    const needle = query().trim().toLocaleLowerCase(locale());
-    const found = needle
-      ? allRows().filter((row) => columns().some((column) => cell(column, row).toLocaleLowerCase(locale()).includes(needle)))
-      : allRows();
-    const order = sort();
-    if (!order) return found;
-    const collator = new Intl.Collator(locale(), { numeric: true });
-    return [...found].sort((a, b) => {
-      const left = a.cells[order.key],
-        right = b.cells[order.key];
-      if (left === null || left === undefined) return right === null || right === undefined ? 0 : 1;
-      if (right === null || right === undefined) return -1;
-      const comparison = typeof left === "number" && typeof right === "number" ? left - right : collator.compare(text(left), text(right));
-      return order.direction === "asc" ? comparison : -comparison;
-    });
-  });
-  const tableColumns = () => tableColumnsOf(columns());
+  const tableColumns = createMemo(() => tableColumnsOf(columns()));
+  const view = createDataTableView<TableRow>({ rows: allRows, columns: tableColumns });
+  const query = view.query,
+    setQuery = view.setQuery,
+    rows = view.rows;
+  const group = () => view.groupBy() ?? "";
   const grouping = (): { groupBy?: string } => (group() ? { groupBy: group() } : {});
   // A search without a match is the empty state with its own sentence and a way back.
   const noMatch = () => withContent(props.state) && query() !== "" && rows().length === 0;
@@ -451,6 +435,7 @@ function TableBlock(props: Omit<DescriptionPanelProps, "spec" | "state"> & { sta
       onRetry={props.onRetry}
       empty={noMatch() ? t().noRowContains({ query: query() }) : (props.empty ?? t().nothingToShow)}
       emptyIcon="ti ti-table-off"
+      height={props.height === 0 ? undefined : cssLength(props.height)}
       emptyAction={
         <Show when={noMatch()}>
           <Button variant="secondary" size="sm" onClick={() => setQuery("")}>
@@ -476,7 +461,7 @@ function TableBlock(props: Omit<DescriptionPanelProps, "spec" | "state"> & { sta
               stableWidth
               aria-label={t().groupIn({ title: props.title })}
               value={group()}
-              onValueChange={setGroup}
+              onValueChange={(id) => view.setGroupBy(id || null)}
               disabled={!withContent(props.state)}
               options={[
                 { value: "", label: t().notGrouped },
@@ -496,8 +481,8 @@ function TableBlock(props: Omit<DescriptionPanelProps, "spec" | "state"> & { sta
         surface="plain"
         rows={rows()}
         getRowId={(row) => row.key}
-        sort={sort()}
-        onSortChange={setSort}
+        sort={view.sort()}
+        onSortChange={view.setSort}
         columns={tableColumns()}
         {...grouping()}
       />

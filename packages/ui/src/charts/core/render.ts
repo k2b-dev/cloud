@@ -53,6 +53,12 @@ export const renderChartSvg = (
   timelineViewport?: StateTimelineDomain,
   renderLocale?: string,
 ): string => {
+  if (props.kind === "treemap" || props.kind === "pareto")
+    return responsiveChartSvg(
+      props.kind === "treemap"
+        ? chartRenderers.treemap({ ...props, width, height, inspect: true })
+        : chartRenderers.pareto({ ...props, width, height, inspect: true }),
+    );
   if (props.kind === "heatmap" && props.layout === "calendar") return chartRenderers.heatmap({ ...props, width, height, inspect: true });
   const {
     kind,
