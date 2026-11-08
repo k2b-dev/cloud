@@ -1,12 +1,10 @@
-import { chartLocaleSchema } from "./chart-locale";
-
-export { chartAcceptsLocale, chartLocaleSchema } from "./chart-locale";
-
+import type { ChartInput, ChartLimits } from "@k2b/ui/charts";
 import { CALENDAR_MAX_DAYS, calendarDay } from "@k2b/ui/charts/core";
 import { z } from "zod";
+import { chartLocaleSchema } from "./chart-locale";
 
-/** Optional caller policy. Rendering itself has no AI input budget. */
-export type ChartLimits = { maxSeries: number; maxValues: number; maxMarks: number };
+export type { ChartDateFormat, ChartDescription, ChartFormat, ChartInput, ChartLimits, ChartNumberFormat } from "@k2b/ui/charts";
+export { chartAcceptsLocale, chartLocaleSchema } from "./chart-locale";
 
 // Every chart schema is built by a function whose call is marked pure, so a bundle that imports neither chart contract
 // leaves them out. App frames include the app contract through `cloud.chart()`.
@@ -31,12 +29,23 @@ export const chartNumberFormatSchema = () =>
 const dateFormatSchema = () => z.strictObject({ date: z.enum(["day", "minute", "second"]) });
 export const chartFormatSchema = () => z.union([chartNumberFormatSchema(), dateFormatSchema()]);
 
-export type ChartNumberFormat = z.output<ReturnType<typeof chartNumberFormatSchema>>;
-export type ChartDateFormat = z.output<ReturnType<typeof dateFormatSchema>>;
-export type ChartFormat = ChartNumberFormat | ChartDateFormat;
-
 export const chartKindSchema = () =>
-  z.enum(["area", "bar", "line", "scatter", "pie", "donut", "histogram", "gauge", "sparkline", "boxplot", "heatmap", "barGauge", "stat"]);
+  z.enum([
+    "waterfall",
+    "area",
+    "bar",
+    "line",
+    "scatter",
+    "pie",
+    "donut",
+    "histogram",
+    "gauge",
+    "sparkline",
+    "boxplot",
+    "heatmap",
+    "barGauge",
+    "stat",
+  ]);
 
 export const chartParts = (limits?: ChartLimits) => {
   const ChartLabel = limits ? z.string().trim().min(1).max(80) : z.union([z.string(), z.number().transform(String)]);
@@ -154,6 +163,27 @@ export const chartKinds = (limits?: ChartLimits) => {
   const ChartKindCommon = { ...ChartCommon, tooltip: ChartTooltip.optional() };
   const numberFormat = chartNumberFormatSchema();
   return z.discriminatedUnion("kind", [
+    z
+      .object({
+        kind: z.literal("waterfall"),
+        ...ChartKindCommon,
+        start: z.object({ label: ChartLabel, value: z.number() }),
+        steps: list(z.object({ label: ChartLabel, value: z.number() }), 0, limits?.maxValues),
+        end: z.strictObject({ label: ChartLabel }),
+        format: numberFormat.optional(),
+      })
+      .superRefine((spec, ctx) => {
+        let balance = spec.start.value;
+        let lo = Math.min(0, balance),
+          hi = Math.max(0, balance);
+        for (const step of spec.steps) {
+          balance += step.value;
+          lo = Math.min(lo, balance);
+          hi = Math.max(hi, balance);
+        }
+        if (!Number.isFinite(balance) || !Number.isFinite(hi - lo))
+          ctx.addIssue({ code: "custom", message: "Waterfall balances must form a finite range." });
+      }),
     z
       .object({
         kind: z.literal("area"),
@@ -339,5 +369,10 @@ export const chartDateTime = (value: string): number | undefined => {
   return date.toISOString().startsWith(`${year}-${month}-${day}T${hour}:${minute}:${second}`) ? date.getTime() : undefined;
 };
 
-/** One chart as the shared renderers read it. */
-export type ChartInput = z.output<ReturnType<typeof chartKinds>>;
+// Both directions are checked: a validator change must update the ui-owned description too.
+type Assert<T extends true> = T;
+type Same<A, B> = [A] extends [B] ? ([B] extends [A] ? true : false) : false;
+type _ChartSchemaMatchesDescription = Assert<Same<z.output<ReturnType<typeof chartKinds>>, ChartInput>>;
+type _ChartNumberFormatSchemaMatchesDescription = Assert<
+  Same<z.output<ReturnType<typeof chartNumberFormatSchema>>, import("@k2b/ui/charts").ChartNumberFormat>
+>;
