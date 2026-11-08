@@ -39,6 +39,8 @@ function TimelineWidthFixture() {
               content: (
                 <Chat.Decision
                   state="open"
+                  kind={{ label: "Approval", icon: "ti ti-shield-check" }}
+                  source={{ name: "Tasks", icon: "ti ti-checklist" }}
                   sentence="Create these tasks?"
                   reason={{ text: "You asked to review them first." }}
                   confirm={{ label: "Create tasks", onSelect: () => {} }}
@@ -170,6 +172,9 @@ function Fixture() {
     <main>
       <Chat.Decision
         state={state()}
+        kind={{ label: "Approval", icon: "ti ti-shield-check" }}
+        source={{ name: "Mail", icon: "ti ti-mail" }}
+        status={{ label: current() === "declined" ? "Declined" : "Running", icon: "ti ti-circle", tone: "running" }}
         sentence={
           <>
             Send <ReferenceChip kind="object" title={fullTitle} icon="ti ti-file-type-pdf" href="#file" accent="var(--k2b-reference-pdf)" />{" "}
@@ -177,40 +182,45 @@ function Fixture() {
           </>
         }
         reason={{ text: "You asked to check the draft before sending.", icon: "ti ti-info-circle" }}
-        preview={
-          <Chat.Preview>
-            <Chat.Preview.Header
-              rows={[
-                { label: "From", people: [{ name: "Robin Example", address: `${"long.sender.".repeat(9)}@example.test` }] },
-                { label: "To", people: [{ name: "Lea Berg", address: `${"long.recipient.".repeat(9)}@example.test` }] },
-                { label: "Cc", people: [{ address: "team@example.test" }] },
-                { label: "Bcc", emphasis: true, people: [{ name: "Tom Weber", address: "tom@example.test" }] },
-              ]}
-              note="Sends immediately after your answer."
-            />
-            <Chat.Preview.Title meta="Draft · version 3">Workshop delivery</Chat.Preview.Title>
-            <Chat.Preview.Excerpt>
-              {"Hello Lea,\nThe delivery is ready for Friday.\nPlease find the full report attached.\nThank you for checking the details."}
-            </Chat.Preview.Excerpt>
-            <Chat.Preview.Line icon="ti ti-file-type-pdf" accent="var(--k2b-reference-pdf)" meta="PDF · 240 KB">
-              Delivery report.pdf
-            </Chat.Preview.Line>
-            <Chat.Preview.Line icon="ti ti-alert-triangle" tone="warning">
-              The draft contains outside content.
-            </Chat.Preview.Line>
-            <Chat.Preview.ReadMore href="#draft" title="Open this version of the draft">
-              Read full draft
-            </Chat.Preview.ReadMore>
-            <Chat.Preview.Lines label="Consequences">
-              <Chat.Preview.Line icon="ti ti-send" mark="added">
-                Lea receives the report.
+        details={{
+          label: "Details from Mail",
+          content: (
+            <Chat.Preview>
+              <Chat.Preview.Header
+                rows={[
+                  { label: "From", people: [{ name: "Robin Example", address: `${"long.sender.".repeat(9)}@example.test` }] },
+                  { label: "To", people: [{ name: "Lea Berg", address: `${"long.recipient.".repeat(9)}@example.test` }] },
+                  { label: "Cc", people: [{ address: "team@example.test" }] },
+                  { label: "Bcc", emphasis: true, people: [{ name: "Tom Weber", address: "tom@example.test" }] },
+                ]}
+                note="Sends immediately after your answer."
+              />
+              <Chat.Preview.Title meta="Draft · version 3">Workshop delivery</Chat.Preview.Title>
+              <Chat.Preview.Excerpt>
+                {
+                  "Hello Lea,\nThe delivery is ready for Friday.\nPlease find the full report attached.\nThank you for checking the details."
+                }
+              </Chat.Preview.Excerpt>
+              <Chat.Preview.Line icon="ti ti-file-type-pdf" accent="var(--k2b-reference-pdf)" meta="PDF · 240 KB">
+                Delivery report.pdf
               </Chat.Preview.Line>
-              <Chat.Preview.Line icon="ti ti-x" mark="removed" tone="muted">
-                The previous attachment is removed.
+              <Chat.Preview.Line icon="ti ti-alert-triangle" tone="warning">
+                The draft contains outside content.
               </Chat.Preview.Line>
-            </Chat.Preview.Lines>
-          </Chat.Preview>
-        }
+              <Chat.Preview.ReadMore href="#draft" title="Open this version of the draft">
+                Read full draft
+              </Chat.Preview.ReadMore>
+              <Chat.Preview.Lines label="Consequences">
+                <Chat.Preview.Line icon="ti ti-send" mark="added">
+                  Lea receives the report.
+                </Chat.Preview.Line>
+                <Chat.Preview.Line icon="ti ti-x" mark="removed" tone="muted">
+                  The previous attachment is removed.
+                </Chat.Preview.Line>
+              </Chat.Preview.Lines>
+            </Chat.Preview>
+          ),
+        }}
         confirm={{
           label: "Send to Lea",
           icon: "ti ti-send",
@@ -235,6 +245,8 @@ function Fixture() {
       </Chat.Preview>
       <Chat.Decision
         state="open"
+        kind={{ label: "Approval", icon: "ti ti-shield-check" }}
+        source={{ name: "Files", icon: "ti ti-folder" }}
         sentence={
           <>
             Share <ReferenceChip kind="object" title="四半期報告書の最終版と全ての添付資料" icon="ti ti-folder" href="#cjk" /> and{" "}

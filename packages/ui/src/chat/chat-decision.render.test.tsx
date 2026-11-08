@@ -23,6 +23,8 @@ const noop = () => undefined;
 const decision = (extra: Partial<ChatDecisionProps> = {}) =>
   createComponent(Chat.Decision, {
     state: "open",
+    kind: { label: "Approval", icon: "ti ti-shield-check" },
+    source: { name: "Mail", icon: "ti ti-mail" },
     sentence: "Send the mail?",
     reason: { text: "You asked to review it." },
     confirm: { label: "Send", icon: "ti ti-send", onSelect: noop },
@@ -31,42 +33,56 @@ const decision = (extra: Partial<ChatDecisionProps> = {}) =>
   });
 
 describe("Chat.Decision SSR", () => {
-  test("names and describes its section, orders sentence, reason, preview and answers on the sentence class", () => {
-    const body = render(() => decision({ preview: createComponent(Chat.Preview, { children: "Mail preview" }) }));
+  test("names and describes itself, orders head, sentence, reason, details and answers, in its own AI scope", () => {
+    const body = render(() => decision({ details: { label: "Details from Mail", content: "Mail preview" } }));
     const section = body.querySelector("section")!;
     const sentence = body.querySelector(".k2b-chat-decision__sentence")!;
     const reason = body.querySelector(".k2b-chat-decision__reason")!;
     expect(section.getAttribute("aria-labelledby")).toBe(sentence.id);
     expect(section.getAttribute("aria-describedby")).toBe(reason.id);
+    expect(section.getAttribute("data-k2b-primary")).toBe("ai");
+    expect(section.getAttribute("data-mode")).toBe("approve");
     expect(sentence.getAttribute("tabindex")).toBe("-1");
-    expect(sentence.className).toBe("k2b-chat-decision__sentence");
     expect(Array.from(section.children).map((e) => e.className)).toEqual([
+      "k2b-chat-decision__head",
       "k2b-chat-decision__sentence",
       "k2b-chat-line k2b-chat-decision__reason",
-      "k2b-chat-preview ",
+      "k2b-chat-decision__details",
       "k2b-chat-decision__answers",
     ]);
+    expect(body.querySelector(".k2b-chat-decision__head")!.textContent).toBe("Approval·Mail");
+    expect(body.querySelector(".k2b-chat-decision__details")!.textContent).toBe("Details from MailMail preview");
     expect(reason.getAttribute("data-tone")).toBe("neutral");
     expect(reason.querySelector("i")!.className).toContain("ti-info-circle");
     const buttons = body.querySelectorAll("button");
-    expect(buttons.length).toBe(2);
-    expect(buttons[0]!.textContent).toBe("Send");
-    expect(buttons[0]!.getAttribute("data-variant")).toBe("ai");
-    expect(buttons[0]!.querySelector(".ti-send")).not.toBeNull();
-    expect(buttons[1]!.textContent).toBe("Keep draft");
-    expect(buttons[1]!.querySelector(".ti-x")).not.toBeNull();
+    expect(Array.from(buttons).map((b) => [b.textContent, b.getAttribute("data-variant")])).toEqual([
+      ["Keep draft", "secondary"],
+      ["Send", "primary"],
+    ]);
+    expect(buttons[1]!.querySelector(".ti-send")).not.toBeNull();
     expect(body.querySelector(".k2b-chat-decision__remember")).toBeNull();
+  });
+  test("edit mode keeps the box and offers to move on instead of approving", () => {
+    const body = render(() =>
+      decision({ mode: "edit", kind: { label: "Draft", icon: "ti ti-pencil" }, remember: { label: "Remember", onSelect: noop } }),
+    );
+    expect(body.querySelector("section")!.getAttribute("data-mode")).toBe("edit");
+    expect(Array.from(body.querySelectorAll("button")).map((b) => b.getAttribute("data-variant"))).toEqual(["ghost", "secondary"]);
+    // Remembering belongs to the approval, never to a draft.
+    expect(body.querySelector(".k2b-chat-decision__remember")).toBeNull();
+  });
+  test("back and the facts of the answer row", () => {
+    const body = render(() =>
+      decision({ back: { label: "Change", onSelect: noop }, meta: [{ text: "Expires in 9 min", icon: "ti ti-clock" }] }),
+    );
+    expect(Array.from(body.querySelectorAll("button")).map((b) => b.textContent)).toEqual(["Change", "Keep draft", "Send"]);
+    expect(body.querySelector(".k2b-chat-decision__meta")!.textContent).toBe("Expires in 9 min");
   });
   for (const tone of ["neutral", "danger", "warning"] as const)
     test(`reason supports ${tone} and an icon override`, () => {
       const body = render(() => decision({ reason: { text: "Reason", tone, icon: "ti ti-shield" } }));
-      expect(body.querySelector("[data-tone]")!.getAttribute("data-tone")).toBe(tone);
+      expect(body.querySelector(".k2b-chat-decision__reason")!.getAttribute("data-tone")).toBe(tone);
       expect(body.querySelector(".k2b-chat-decision__reason i")!.className).toContain("ti-shield");
-    });
-  for (const variant of ["danger", "primary"] as const)
-    test(`confirm supports ${variant}`, () => {
-      const body = render(() => decision({ confirm: { label: "Confirm", variant, onSelect: noop } }));
-      expect(body.querySelector("button")!.getAttribute("data-variant")).toBe(variant);
     });
   test("unavailable replaces the described reason and disables only confirm and remember", () => {
     const body = render(() =>
@@ -81,8 +97,8 @@ describe("Chat.Decision SSR", () => {
     expect(body.textContent).not.toContain("You asked to review it.");
     expect(reason.getAttribute("data-tone")).toBe("warning");
     expect(reason.querySelector(".ti-alert-triangle")).not.toBeNull();
-    expect(Array.from(body.querySelectorAll("button")).map((b) => b.disabled)).toEqual([true, false, true]);
-    expect(body.querySelector(".k2b-chat-decision__remember")!.getAttribute("data-variant")).toBe("text");
+    expect(Array.from(body.querySelectorAll("button")).map((b) => b.disabled)).toEqual([false, true]);
+    expect(body.querySelector<HTMLInputElement>(".k2b-chat-decision__remember input")!.disabled).toBe(true);
   });
   test("waiting replaces every reason and disables every answer until it clears", () => {
     const body = render(() =>
@@ -95,21 +111,28 @@ describe("Chat.Decision SSR", () => {
     const reason = body.querySelector(".k2b-chat-decision__reason")!;
     expect(reason.textContent).toBe("Offline. You can answer again once connected.");
     expect(reason.querySelector(".ti-wifi-off")).not.toBeNull();
-    expect(Array.from(body.querySelectorAll("button")).map((b) => b.disabled)).toEqual([true, true, true]);
+    expect(Array.from(body.querySelectorAll("button")).map((b) => b.disabled)).toEqual([true, true]);
   });
-  test("remember is an optional enabled quiet answer", () => {
+  test("remember is an optional checkbox in the answer row", () => {
     const body = render(() => decision({ remember: { label: "Remember", onSelect: noop } }));
-    expect(body.querySelectorAll("button").length).toBe(3);
-    expect(body.querySelector(".k2b-chat-decision__remember")!.hasAttribute("disabled")).toBe(false);
+    expect(body.querySelectorAll("button").length).toBe(2);
+    const box = body.querySelector<HTMLInputElement>(".k2b-chat-decision__meta .k2b-chat-decision__remember input")!;
+    expect(box.type).toBe("checkbox");
+    expect(box.disabled).toBe(false);
   });
   for (const state of ["sending", "decided", "expired"] as const)
-    test(`${state} replaces the question with its outcome`, () => {
-      const body = render(() => decision({ state, outcome: "Outcome slot" }));
-      expect(body.firstElementChild!.getAttribute("data-state")).toBe(state);
+    test(`${state} keeps the head with its state and replaces the question with its outcome`, () => {
+      const body = render(() =>
+        decision({ state, outcome: "Outcome slot", status: { label: "Done", icon: "ti ti-circle-check", tone: "done" } }),
+      );
+      const section = body.firstElementChild!;
+      expect(section.getAttribute("data-state")).toBe(state);
+      expect(section.getAttribute("aria-label")).toBe("Approval · Mail: Done");
       // Busy belongs to the outcome's words; a busy ancestor would hold back its live region.
-      expect(body.firstElementChild!.hasAttribute("aria-busy")).toBe(false);
-      expect(body.textContent).toBe("Outcome slot");
-      expect(body.querySelector("button, section")).toBeNull();
+      expect(section.hasAttribute("aria-busy")).toBe(false);
+      expect(body.querySelector(".k2b-chat-decision__status")!.textContent).toBe("Done");
+      expect(body.textContent).toBe("Approval·MailDoneOutcome slot");
+      expect(body.querySelector("button")).toBeNull();
     });
 });
 

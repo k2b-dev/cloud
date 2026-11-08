@@ -14,6 +14,7 @@ import {
   useContext,
 } from "solid-js";
 import { Button } from "../actions/Button";
+import { Checkbox } from "../inputs/Checkbox";
 import { Avatar } from "../surfaces/Avatar";
 import { useChatMessages } from "./chat-messages";
 import type {
@@ -31,19 +32,38 @@ import type {
 // ---------------------------------------------------------------------------
 
 export type ChatDecisionProps = {
-  /** `open` shows the question; every other state shows `outcome` in its place. */
+  /** `open` shows the question; every other state shows the head and `outcome` in its place. */
   state: ChatDecisionState;
+  /**
+   * `approve` asks for the answer. `edit` is the same card while the person still changes its details: a raised
+   * island instead of the tinted ground, the details editable, and `confirm` moves on to `approve`. Both have the same
+   * size, so switching moves nothing.
+   */
+  mode?: "approve" | "edit";
+  /** What the card is, such as "Approval" with `ti ti-shield-check`, or "Draft" with `ti ti-pencil`. */
+  kind: { label: string; icon: string };
+  /** Who asks: the app's name and icon, its icon tile in `accent`. */
+  source: { name: string; icon: string; accent?: string };
+  /** The state as a word with its icon at the end of the head, for every state but an open question. */
+  status?: { label: string; icon: string; tone: ChatOutcomeTone };
   /** The question as one sentence, usually with `ReferenceChip`s. */
   sentence: JSX.Element;
   /** Why this question is asked, in the platform's words. */
   reason: ChatDecisionReason;
-  /** The thing itself, usually `Chat.Preview`. */
-  preview?: JSX.Element;
-  /** The main answer, named by verb and target ("Send to Lea"). `danger` for deletions, `primary` for requests. */
-  confirm: ChatDecisionAnswer & { variant?: "ai" | "primary" | "danger" };
+  /** The thing itself on the surface colour, under its own label such as "Details from Mail". */
+  details?: { label: string; content: JSX.Element };
+  /** Quiet facts at the start of the answer row, such as when the question expires. */
+  meta?: readonly { text: string; icon: string }[];
+  /** The main answer, named by verb and target ("Send to Lea"); the only filled button. */
+  confirm: ChatDecisionAnswer;
   /** The other answer ("Don't send"). */
   decline: ChatDecisionAnswer;
-  /** An optional quiet third answer after the buttons, such as "Yes, and don't ask again in this chat". */
+  /** A quiet answer before the others, such as "Change" back to `edit`. It turns off with `waiting` only. */
+  back?: ChatDecisionAnswer;
+  /**
+   * A checkbox in the answer row, such as "Don't ask again here". Checked, `confirm` calls this answer's `onSelect`
+   * instead of its own.
+   */
   remember?: ChatDecisionAnswer;
   /** Turns `confirm` and `remember` off; this reason replaces `reason` in the same place. */
   unavailable?: ChatDecisionReason;
@@ -66,14 +86,17 @@ const DecisionScope = createContext<{ answered: () => boolean; pressed: () => vo
 const reasonIcon = (reason: ChatDecisionReason) => reason.icon ?? "ti ti-info-circle";
 
 /**
- * A question the person answers in the conversation: one sentence, why it is asked, the thing itself, and two answers.
- * An answer collapses it at once to its outcome line, which takes the focus and is announced.
+ * A question the person answers: what it is and who asks, one sentence, why it is asked, the thing itself, and the
+ * answers. It has one look in every place: a tinted ground in the AI colour, its own AI primary colour, no rules. An
+ * answer collapses it at once to its head and one outcome line, which takes the focus and is announced.
  */
 export function ChatDecision(props: ChatDecisionProps): JSX.Element {
   const id = createUniqueId();
   const sentenceId = `k2b-chat-decision-${id}-sentence`;
   const reasonId = `k2b-chat-decision-${id}-reason`;
-  let root: HTMLDivElement | undefined;
+  const [remembered, setRemembered] = createSignal(false);
+  const editing = () => (props.mode ?? "approve") === "edit";
+  let root: HTMLElement | undefined;
   let sentence: HTMLParagraphElement | undefined;
   // An answer given here moves the focus to the outcome; a click in the outcome that reopens the question moves it
   // back to the sentence. A state change from elsewhere moves no focus.
@@ -146,15 +169,55 @@ export function ChatDecision(props: ChatDecisionProps): JSX.Element {
     ),
   );
 
+  // A switch between editing and approving made here keeps the person on the question, now with its new words.
+  createEffect(
+    on(
+      editing,
+      () => {
+        if (root?.contains(document.activeElement) && document.activeElement !== sentence) sentence?.focus({ preventScroll: true });
+      },
+      { defer: true },
+    ),
+  );
+
+  const confirm = () => {
+    const chosen = props.remember && remembered() && !editing() ? props.remember : props.confirm;
+    answer(chosen, !confirmOff());
+  };
+
   return (
-    <div
+    <section
       ref={root}
       class={`k2b-chat-decision ${props.class ?? ""}`}
       data-state={props.state}
+      data-mode={open() && editing() ? "edit" : "approve"}
+      data-k2b-primary="ai"
       data-chat-anchor={props.anchorId !== undefined ? String(props.anchorId) : undefined}
+      aria-labelledby={open() ? sentenceId : undefined}
+      aria-describedby={open() ? reasonId : undefined}
+      aria-label={open() ? undefined : `${props.kind.label} · ${props.source.name}${props.status ? `: ${props.status.label}` : ""}`}
     >
+      <div class="k2b-chat-decision__head">
+        <i class={`k2b-chat-decision__kind-icon ${props.kind.icon}`} aria-hidden="true" />
+        <span class="k2b-chat-decision__kind">{props.kind.label}</span>
+        <span aria-hidden="true">·</span>
+        <span class="k2b-chat-decision__source">
+          <span class="k2b-chat-decision__tile k2b-icon-tile" style={props.source.accent ? { color: props.source.accent } : undefined}>
+            <i class={props.source.icon} aria-hidden="true" />
+          </span>
+          {props.source.name}
+        </span>
+        <Show when={!open() && props.status}>
+          {(status) => (
+            <span class="k2b-chat-decision__status" data-tone={status().tone}>
+              <i class={status().icon} aria-hidden="true" />
+              {status().label}
+            </span>
+          )}
+        </Show>
+      </div>
       <Show when={open()} fallback={<DecisionScope.Provider value={scope}>{props.outcome}</DecisionScope.Provider>}>
-        <section class="k2b-chat-decision__card" aria-labelledby={sentenceId} aria-describedby={reasonId}>
+        <>
           <p
             ref={sentence}
             id={sentenceId}
@@ -183,45 +246,88 @@ export function ChatDecision(props: ChatDecisionProps): JSX.Element {
             <i class={`k2b-chat-line__icon ${reasonIcon(reason())}`} aria-hidden="true" />
             <span class="k2b-chat-line__text">{reason().text}</span>
           </p>
-          {props.preview}
+          <Show when={props.details}>
+            {(details) => (
+              <div class="k2b-chat-decision__details">
+                <p class="k2b-chat-decision__details-label">
+                  <span
+                    class="k2b-chat-decision__tile k2b-icon-tile"
+                    style={props.source.accent ? { color: props.source.accent } : undefined}
+                  >
+                    <i class={props.source.icon} aria-hidden="true" />
+                  </span>
+                  {details().label}
+                </p>
+                {details().content}
+              </div>
+            )}
+          </Show>
           <div class="k2b-chat-decision__answers">
-            <Button
-              class="k2b-chat-decision__answer"
-              wrap
-              variant={props.confirm.variant ?? "ai"}
-              disabled={confirmOff()}
-              onClick={() => answer(props.confirm, !confirmOff())}
-            >
-              <Show when={props.confirm.icon}>{(icon) => <i class={icon()} aria-hidden="true" />}</Show>
-              {props.confirm.label}
-            </Button>
-            <Button
-              class="k2b-chat-decision__answer"
-              wrap
-              variant="subtle"
-              disabled={Boolean(props.waiting)}
-              onClick={() => answer(props.decline, !props.waiting)}
-            >
-              <Show when={props.decline.icon}>{(icon) => <i class={icon()} aria-hidden="true" />}</Show>
-              {props.decline.label}
-            </Button>
-            <Show when={props.remember}>
-              {(remember) => (
-                <Button
-                  class="k2b-chat-decision__remember"
-                  wrap
-                  variant="text"
-                  disabled={confirmOff()}
-                  onClick={() => answer(remember(), !confirmOff())}
-                >
-                  {remember().label}
-                </Button>
-              )}
+            <Show when={(props.meta?.length ?? 0) > 0 || (props.remember && !editing())}>
+              <span class="k2b-chat-decision__meta">
+                <For each={props.meta ?? []}>
+                  {(item) => (
+                    <span class="k2b-chat-decision__fact">
+                      <i class={item.icon} aria-hidden="true" />
+                      {item.text}
+                    </span>
+                  )}
+                </For>
+                <Show when={!editing() ? props.remember : undefined}>
+                  {(remember) => (
+                    <Checkbox
+                      class="k2b-chat-decision__remember"
+                      label={remember().label}
+                      value={remembered()}
+                      disabled={confirmOff()}
+                      onValueChange={(value) => setRemembered(value)}
+                    />
+                  )}
+                </Show>
+              </span>
             </Show>
+            <span class="k2b-chat-decision__buttons">
+              <Show when={props.back}>
+                {(back) => (
+                  <Button
+                    class="k2b-chat-decision__answer"
+                    wrap
+                    variant="secondary"
+                    disabled={Boolean(props.waiting)}
+                    onClick={() => {
+                      if (!props.waiting) void back().onSelect();
+                    }}
+                  >
+                    <Show when={back().icon}>{(icon) => <i class={icon()} aria-hidden="true" />}</Show>
+                    {back().label}
+                  </Button>
+                )}
+              </Show>
+              <Button
+                class="k2b-chat-decision__answer"
+                wrap
+                variant={editing() ? "ghost" : "secondary"}
+                disabled={Boolean(props.waiting)}
+                onClick={() => answer(props.decline, !props.waiting)}
+              >
+                <Show when={props.decline.icon}>{(icon) => <i class={icon()} aria-hidden="true" />}</Show>
+                {props.decline.label}
+              </Button>
+              <Button
+                class="k2b-chat-decision__answer"
+                wrap
+                variant={editing() ? "secondary" : "primary"}
+                disabled={confirmOff()}
+                onClick={confirm}
+              >
+                <Show when={props.confirm.icon}>{(icon) => <i class={icon()} aria-hidden="true" />}</Show>
+                {props.confirm.label}
+              </Button>
+            </span>
           </div>
-        </section>
+        </>
       </Show>
-    </div>
+    </section>
   );
 }
 

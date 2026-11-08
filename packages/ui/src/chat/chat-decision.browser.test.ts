@@ -96,11 +96,11 @@ test("confirm collapses immediately, focuses and announces the outcome, and fini
   }
 });
 
-test("Tab to decline and Enter transfers focus to the declined outcome", async () => {
+test("Shift+Tab to decline, which comes before the filled answer, and Enter transfers focus to the declined outcome", async () => {
   const page = await open();
   try {
     await page.getByRole("button", { name: "Send to Lea", exact: true }).focus();
-    await page.keyboard.press("Tab");
+    await page.keyboard.press("Shift+Tab");
     expect(await page.getByRole("button", { name: "Keep draft", exact: true }).evaluate((e) => e === document.activeElement)).toBe(true);
     await page.keyboard.press("Enter");
     expect(await focusedOutcome(page)).toBe(true);
@@ -135,44 +135,46 @@ for (const width of [1440, 390])
     try {
       const metrics = await page.evaluate(() => {
         const box = (selector: string) => document.querySelector(selector)!.getBoundingClientRect();
-        const left = box(".k2b-chat-decision").left;
+        // The content edge: 1px edge (transparent on the tint) and 16px padding.
+        const left = box(".k2b-chat-decision").left + 17;
         const sentence = box(".k2b-chat-decision__sentence");
         const reason = box(".k2b-chat-decision__reason");
-        const preview = box(".k2b-chat-preview");
+        const details = box(".k2b-chat-decision__details");
         const answers = box(".k2b-chat-decision__answers");
         const style = getComputedStyle(document.querySelector(".k2b-chat-decision__sentence")!);
         return {
-          indent: Array.from(document.querySelectorAll(".k2b-chat-line__text, .k2b-chat-activity__copy strong")).map(
-            (e) => e.getBoundingClientRect().left - left,
+          indent: Array.from(document.querySelectorAll(".k2b-chat-decision__reason .k2b-chat-line__text")).map(
+            (e) => e.getBoundingClientRect().left - box(".k2b-chat-decision").left - 17,
           ),
           flush: [
+            ".k2b-chat-decision__head",
             ".k2b-chat-decision__sentence",
-            ".k2b-chat-preview__title-line",
+            ".k2b-chat-decision__details",
             ".k2b-chat-decision__answers",
-            ".k2b-chat-decision__answer",
-            ...Array.from(document.querySelectorAll(".k2b-chat-preview__header dl > div")).map(
-              (_, i) => `.k2b-chat-preview__header dl > div:nth-child(${i + 1})`,
-            ),
           ].map((selector) => box(selector).left - left),
-          gaps: [reason.top - sentence.bottom, preview.top - reason.bottom, answers.top - preview.bottom],
+          gaps: [reason.top - sentence.bottom, details.top - reason.bottom, answers.top - details.bottom],
           heights: Array.from(document.querySelectorAll(".k2b-chat-decision__answer")).map((e) => e.getBoundingClientRect().height),
           size: style.fontSize,
           weight: style.fontWeight,
+          ground: getComputedStyle(document.querySelector(".k2b-chat-decision")!).backgroundColor,
+          detailsGround: getComputedStyle(document.querySelector(".k2b-chat-decision__details")!).backgroundColor,
         };
       });
-      expect(metrics.indent.length).toBe(8); // two reasons, four decision preview lines, the later-marked line, activity
+      expect(metrics.indent.length).toBe(2);
       for (const indent of metrics.indent) expect(Math.abs(indent - 24)).toBeLessThanOrEqual(0.5);
       for (const left of metrics.flush) expect(Math.abs(left)).toBeLessThanOrEqual(0.5);
-      for (const [index, expected] of [4, 20, 20].entries()) expect(Math.abs(metrics.gaps[index]! - expected)).toBeLessThanOrEqual(0.5);
+      for (const [index, expected] of [2, 14, 14].entries()) expect(Math.abs(metrics.gaps[index]! - expected)).toBeLessThanOrEqual(0.5);
       for (const height of metrics.heights) expect(height).toBeGreaterThanOrEqual(44);
-      expect(metrics.size).toBe(width === 1440 ? "18px" : "17px");
+      expect(metrics.size).toBe("16px");
       expect(metrics.weight).toBe("400");
+      // The AI tint carries the question; the details lie on the surface colour.
+      expect(metrics.ground).not.toBe(metrics.detailsGround);
       await page.getByRole("button", { name: "Send to Lea", exact: true }).click();
       expect(
         await activeOutcome(page).evaluate(
           (e) => e.getBoundingClientRect().left - document.querySelector(".k2b-chat-decision")!.getBoundingClientRect().left,
         ),
-      ).toBe(24);
+      ).toBe(17);
     } finally {
       await page.close();
     }
@@ -372,7 +374,8 @@ for (const timelineWidth of ["narrow", "wide"] as const)
       }));
       expect(metrics.window).toBe(1440);
       expect(metrics.timeline).toBe((timelineWidth === "narrow" ? 22 : 60) * 16);
-      expect(metrics.sentence).toBe(timelineWidth === "narrow" ? "17px" : "18px");
+      expect(metrics.sentence).toBe("16px");
+      // The decision follows its own width: narrow, the answers share the row.
       expect(metrics.answers).toEqual(timelineWidth === "narrow" ? ["1", "1"] : ["0", "0"]);
     } finally {
       await page.close();

@@ -777,15 +777,17 @@ describe("@k2b/ui touch hit areas on a phone", () => {
     }
   });
 
-  test("keep both answers' edges above a wrapped remember link, and an outcome link's edge above its buttons", async () => {
+  test("keep the answers' edges apart from the remember checkbox, and an outcome link's edge above its buttons", async () => {
     const question = html(() =>
       createComponent(Chat.Decision, {
         state: "open",
+        kind: { label: "Approval", icon: "ti ti-shield-check" },
+        source: { name: "Mail", icon: "ti ti-mail" },
         sentence: "Send the draft to Lea?",
         reason: { text: "You asked to check it first." },
         confirm: { label: "Send to Lea", onSelect: () => {} },
         decline: { label: "Don't send", onSelect: () => {} },
-        remember: { label: "Yes, and don't ask again in this chat", onSelect: () => {} },
+        remember: { label: "Don't ask again in this chat", onSelect: () => {} },
       }),
     );
     const outcome = html(() =>
