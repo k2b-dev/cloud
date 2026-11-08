@@ -1,5 +1,5 @@
-import { afterEach, expect, mock, spyOn, test } from "bun:test";
-import type { Message, ToolContext } from "@k2b/nessi";
+import { afterEach, expect, mock, setSystemTime, spyOn, test } from "bun:test";
+import { type Message, memoryStore, nessi, type OutboundEvent, type Provider, type ToolContext } from "@k2b/nessi";
 import { z } from "zod";
 import { adminAuthority } from "../../../../scripts/fixtures/app-status";
 import {
@@ -23,7 +23,10 @@ import { prepareAiTools } from "./tools";
 import type { AiConversation } from "./types";
 
 useUnitClients();
-afterEach(() => mock.restore());
+afterEach(() => {
+  mock.restore();
+  setSystemTime();
+});
 const ref = { type: PLACE_FIXTURE_TYPE, id: "marta" };
 const harness = () => {
   const fixture = createAssistantPlaceFixture();
@@ -221,42 +224,80 @@ test("approval uses the ordinary policy, then checks again after the person answ
   expect(h.calls).toEqual([]);
 });
 
-test("resume removes revoked tools and rejects only unresolved historical calls", async () => {
+test.each(["access", "consent"] as const)("resume after approval rejects pending calls after %s is revoked", async (revoked) => {
+  setSystemTime(new Date("2026-11-08T00:00:00Z"));
   const h = harness();
-  const missing = mock((snapshot: { ref: typeof ref; unavailable: readonly string[]; available: readonly string[] }) => snapshot);
-  const store = createRunToolStore([]);
+  const entry = buildAiCapabilityCatalog([h.app], "en", { ref, tools: ["note.add"] }).find(
+    (entry) => entry.operation.localId === "note.add",
+  )!;
+  const history: { message: Message }[] = [
+    { message: { role: "user", content: [{ type: "text", text: "Write at Marta" }] } },
+    {
+      message: {
+        role: "assistant",
+        stopReason: "tool_use",
+        content: [
+          { type: "tool_call", id: "settled", name: entry.providerName, args: { text: "Done" } },
+          { type: "tool_call", id: "pending", name: entry.providerName, args: { text: "Hi" } },
+        ],
+      },
+    },
+    { message: { role: "tool_result", callId: "settled", name: entry.providerName, result: "ok" } },
+  ];
+  const rejected = new Set<string>();
   const resolver = createAiToolResolver({
     conversationId: "chat",
     actor: h.authority.actor,
     staticTools: [],
-    store,
+    store: createRunToolStore([]),
     authority: h.authority,
     listRegistry: async () => [h.app],
     listApps: async () => [
       { id: h.app.appId, name: h.app.appName, description: "", icon: h.app.appIcon, routes: [], baseUrl: "http://test.invalid" },
     ],
     place: () => resolveAiPlaceTools({ conversationId: "chat", actor: h.authority.actor, dependencies: h.place }),
-    onUnavailablePlaceTools: missing,
-    execute: async () => ({}),
+    onUnavailablePlaceTools: (snapshot) => rejectUnavailablePlaceCalls(history, snapshot, rejected),
+    review: (entry, args, context) => reviewAiCapability({ ...h.call, entry, args, context }),
+    execute: (entry, args, context) => executeAiCapability({ ...h.call, entry, args, context }),
+    onRejected: (callId) => rejected.add(callId),
   });
-  expect((await resolver()).some((x) => x.def.name === h.entry.providerName)).toBe(true);
-  h.permissions.delete(`${PLACE_FIXTURE_PEOPLE.lea}:marta`);
-  expect((await resolver()).some((x) => x.def.name === h.entry.providerName)).toBe(false);
-  const messages: { message: Message }[] = [
-    {
-      message: {
-        role: "assistant",
-        content: [
-          { type: "tool_call", id: "settled", name: h.entry.providerName, args: {} },
-          { type: "tool_call", id: "pending", name: h.entry.providerName, args: {} },
-        ],
-      },
+  expect((await resolver()).some((tool) => tool.def.name === entry.providerName)).toBe(true);
+  // Review was already shown before the worker suspended for the person's answer.
+  expect(await reviewAiCapability({ ...h.call, entry, args: { text: "Hi" } })).not.toBeNull();
+  if (revoked === "consent") h.revokeConsent();
+  else h.permissions.delete(`${PLACE_FIXTURE_PEOPLE.lea}:marta`);
+  const provider: Provider = {
+    name: "fixture",
+    family: "openai-compatible",
+    model: "fixture",
+    capabilities: { streaming: true, tools: true, images: false, thinking: false, usage: true },
+    async *stream(request) {
+      expect(request.tools?.some((tool) => tool.name === entry.providerName)).toBe(false);
+      yield { type: "block_start", blockId: "answer", index: 0, kind: "text" };
+      yield { type: "block_end", blockId: "answer", index: 0, block: { type: "text", text: "Cannot write here now." } };
+      yield { type: "usage", usage: { input: 1, output: 1, total: 2 }, finishReason: "stop" };
     },
-    { message: { role: "tool_result", callId: "settled", name: h.entry.providerName, result: "ok" } },
-  ];
-  const rejected = new Set<string>();
-  rejectUnavailablePlaceCalls(messages, missing.mock.calls.at(-1)![0], rejected);
+  };
+  const store = memoryStore();
+  for (const { message } of history) await store.append(message);
+  const loop = nessi({ agentId: "cloud", loopId: "resumed-turn", systemPrompt: "", store, provider, tools: resolver, maxTurns: 1 });
+  // A saved approval answer is replayed on continuation, as in the Cloud executor.
+  loop.push({ type: "approval_response", callId: "pending", approved: true });
+  const events: OutboundEvent[] = [];
+  for await (const event of loop) events.push(event);
+  expect(events).toContainEqual(expect.objectContaining({ type: "turn_start", resumed: true }));
+  expect(events).toContainEqual(expect.objectContaining({ type: "tool_execution_end", callId: "pending", isError: true }));
   expect([...rejected]).toEqual(["pending"]);
+  expect(h.calls).toEqual([]);
+  if (revoked === "consent") expect(h.providerCalls).toEqual(["marta", "marta"]);
+  expect((await store.load()).find(({ message }) => message.role === "tool_result" && message.callId === "pending")?.message).toMatchObject(
+    {
+      role: "tool_result",
+      callId: "pending",
+      isError: true,
+      reason: "unknown_tool",
+    },
+  );
 });
 
 test("resume rejects a historical place call when the app and its catalog are gone", () => {
