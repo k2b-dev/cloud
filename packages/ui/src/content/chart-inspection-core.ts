@@ -41,7 +41,7 @@ const describe = (container: HTMLElement, id: string, on: boolean) => {
 
 /** Mark roles that stand for a whole category: hovering anywhere in its column (or row) inspects it. */
 const rowLayout = (container: HTMLElement | undefined) => Boolean(container?.querySelector('svg[data-bar-layout="rows"]'));
-const categoryRoles: Partial<Record<ChartKind, string>> = { bar: "item", histogram: "bin", boxplot: "box" };
+const categoryRoles: Partial<Record<ChartKind, string>> = { bar: "item", waterfall: "item", histogram: "bin", boxplot: "box" };
 type CategoryBand = { entry: Entry; left: number; right: number; top: number; bottom: number };
 
 /** Enhances existing SVG nodes. Pointer/focus changes never rebuild the chart. */
@@ -152,7 +152,8 @@ export function createChartInspector(options: {
   };
   const rawX = (entry: Entry) => entry.datum.values.find((field) => field.key === "x")?.value;
   const category = (entry: Entry) => (options.kind() === "area" ? entry.datum.index : rawX(entry));
-  const seriesChart = () => options.kind() === "line" || options.kind() === "area" || options.kind() === "sparkline";
+  const groupedSeriesChart = () => options.kind() === "line" || options.kind() === "area";
+  const seriesChart = () => groupedSeriesChart() || options.kind() === "sparkline";
   const updateLegend = (items: Entry[] | undefined) => {
     const root = options.legend?.() ?? options.container();
     for (const node of root?.querySelectorAll<HTMLElement | SVGElement>("[data-chart-legend-value]") ?? []) {
@@ -220,23 +221,23 @@ export function createChartInspector(options: {
     byElement.clear();
     receive(options.cursor?.()?.read() ?? null);
   };
-  const show = (entry: Entry, broadcast = true) => {
+  const show = (entry: Entry, broadcast = true, hover = false) => {
     const x = rawX(entry);
     if (broadcast && options.kind() === "line" && typeof x === "number") options.cursor?.()?.move(source, x);
     const tooltip = options.tooltip(),
       anchor = options.anchor(),
       container = options.container();
     if (!tooltip || !anchor || !container || !options.enabled()) return;
-    if ((active === entry || (seriesChart() && active && category(active) === category(entry))) && tooltip.matches(":popover-open")) return;
+    if ((active === entry || (seriesChart() && active && category(active) === category(entry))) && tooltip.matches(":popover-open")) {
+      for (const item of highlighted) item.element.setAttribute("data-inspected", hover ? "hover" : "true");
+      return;
+    }
     clearHighlight();
     active = entry;
-    highlighted =
-      options.kind() === "line" || options.kind() === "area"
-        ? records().filter((candidate) => category(candidate) === category(entry))
-        : [entry];
+    highlighted = groupedSeriesChart() ? records().filter((candidate) => category(candidate) === category(entry)) : [entry];
     for (const item of highlighted) {
       item.element.style.setProperty("--k2b-chart-inspection-color", highlightColor(item));
-      item.element.setAttribute("data-inspected", "true");
+      item.element.setAttribute("data-inspected", hover ? "hover" : "true");
     }
     updateLegend(highlighted);
     const document = tooltip.ownerDocument;
@@ -260,23 +261,19 @@ export function createChartInspector(options: {
     const commonTitle =
       sharedTitle ??
       (contents.every(({ content }) => content.title === contents[0]?.content.title) ? contents[0]?.content.title : undefined);
-    if (commonTitle) {
+    const appendTitle = (text: string) => {
       const title = document.createElement("strong");
       title.className = "k2b-chart__tooltip-title";
-      title.textContent = commonTitle;
+      title.textContent = text;
       tooltip.append(title);
-    }
+    };
+    if (commonTitle) appendTitle(commonTitle);
     for (const { item, content, missing } of contents) {
-      if (content.title && !commonTitle) {
-        const title = document.createElement("strong");
-        title.className = "k2b-chart__tooltip-title";
-        title.textContent = content.title;
-        tooltip.append(title);
-      }
+      if (content.title && !commonTitle) appendTitle(content.title);
       for (const row of content.rows) {
         const line = document.createElement("span");
         line.className = "k2b-chart__tooltip-row";
-        if (options.kind() === "line" || options.kind() === "area") {
+        if (groupedSeriesChart()) {
           const swatch = document.createElement("i");
           swatch.setAttribute("aria-hidden", "true");
           const series = container.querySelector(
@@ -504,7 +501,7 @@ export function createChartInspector(options: {
       if (!sample) return;
       const entry = nearest(sample.x, sample.y, sample.target);
       if (entry) {
-        show(entry);
+        show(entry, true, true);
         if (seriesChart()) {
           const container = options.container();
           container?.setAttribute("data-cursor-source", "true");
@@ -567,7 +564,7 @@ export function createChartInspector(options: {
     if (!["Home", "End", "ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(event.key)) return false;
     let nodes = visibleRecords();
     if (seriesChart()) nodes = [...nodes].sort((a, b) => a.datum.anchor[0] - b.datum.anchor[0]);
-    if (options.kind() === "line" || options.kind() === "area") {
+    if (groupedSeriesChart()) {
       const seen = new Set<string | number | undefined>();
       nodes = nodes.filter((entry) => {
         const x = category(entry);
@@ -580,7 +577,7 @@ export function createChartInspector(options: {
     event.preventDefault();
     pinned = false;
     let index = active
-      ? options.kind() === "line" || options.kind() === "area"
+      ? groupedSeriesChart()
         ? nodes.findIndex((entry) => category(entry) === category(active!))
         : nodes.indexOf(active)
       : -1;

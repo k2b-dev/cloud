@@ -460,7 +460,7 @@ export const notebookChartHeight = (input: ChartInput, locale: string): number |
   const options = chartRenderOptions(input, locale, { legend: "outside" });
   if (options.kind === "sankey") return sankeyLayout(options).height;
   if (options.kind === "heatmap" && options.layout === "calendar") return 280;
-  if (options.kind === "area") return 280;
+  if (options.kind === "waterfall" || options.kind === "area") return 280;
   if (options.kind !== "bar") return undefined;
   const layout = barChartLayout(options);
   return layout.layout === "rows" ? layout.height : undefined;

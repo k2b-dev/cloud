@@ -25,7 +25,8 @@ Build the dedicated image from the repository root:
 
 ```bash
 docker build -f packages/speedtest/Dockerfile -t speedtest .
-docker run --rm -p 127.0.0.1:8080:8080 speedtest
+docker run --rm -p 127.0.0.1:8080:8080 \
+  -e SPEEDTEST_PUBLIC_URL=https://speedtest.example.com speedtest
 ```
 
 In another terminal, request `http://127.0.0.1:8080/health`; a ready server
@@ -45,6 +46,30 @@ HTTPS is required except on loopback. No Cloud credentials are sent.
 29 seconds. Both use four transfer streams and at most one concurrent loaded
 ping. stderr shows phase and remaining time; `--locale de` selects German.
 `--json` keeps stdout as one JSON result. Ctrl+C cancels active requests.
+
+## Public website and privacy
+
+`/de` and `/en` serve the same measurement UI as Cloud Tools, including the
+fixed-height terminal and result charts. `/` serves German. The heading,
+explanation, server identity and controls render on the server, with canonical
+and language-alternate links for search engines. JavaScript runs measurements;
+without it, the page explains how to download the CLI.
+
+Set `SPEEDTEST_PUBLIC_URL` to this service's public HTTPS origin, without a
+path, credentials, query or fragment. It controls both the measurement target
+and SEO links. Serve the page only at this origin; redirect alternate hosts
+there so the same-origin security policy permits measurements. Point HTTPS
+ingress at the same service for the pages,
+`/assets/*`, `/_ssr/*` and measurement routes; do not cache HTML. The build
+command `bun packages/speedtest/scripts/build.ts` emits the server, CLI and
+hashed local assets together. Deploy this directory as one unit.
+
+The page loads fonts, icons and scripts locally. It sets no cookies, uses no
+tracking, follows the device's color preference and links to Cloud in a short
+footer. Results stay in the current page unless the visitor copies them. The
+service briefly keeps source-network budget records in process memory. Review
+your ingress access-log retention separately before publishing a privacy notice.
+DNS, certificates, ingress limits and deployment belong to the operator.
 
 ## Preserve measurement traffic
 
@@ -70,6 +95,7 @@ aggregate IP budget at ingress. No durable user data is stored.
 | --- | --- | --- |
 | `SPEEDTEST_HOST` | `0.0.0.0` | Listen address |
 | `SPEEDTEST_PORT` | `8080` | HTTP port |
+| `SPEEDTEST_PUBLIC_URL` | required | This server's public origin for page measurements and SEO links |
 | `SPEEDTEST_UDP_PORT` | unset | UDP stays disabled until explicitly configured |
 | `SPEEDTEST_CAPACITY_MBPS` | `1000` | Sustainable aggregate measurement budget, combined download and upload |
 | `SPEEDTEST_TEST_MBPS` | `1000` | Capacity reserved per admitted test |
@@ -185,3 +211,53 @@ which used minimum ping, standard-deviation jitter and throughput including
 warmup. JSON retains the existing numeric field names and adds server, mode,
 duration, byte totals and stability flags. Do not compare the old and new
 values as if the method were unchanged.
+
+
+## Migrate Cloud Tools clients (breaking)
+
+Cloud no longer serves transfer data or measurement scripts. The legacy
+`/tools/api/speedtest/ping`, `/download`, `/upload`, `/cli` and `/cli.py` URLs
+return bounded HTTP 410 migration responses with `Cache-Control: no-store`.
+They remain declared public routes and do not redirect, forward credentials,
+or consume uploaded bodies. Replace automation that uses these URLs.
+
+In Tools application settings, set `tools.speedtest_server` to the standalone
+HTTPS base URL (default `https://speedtest.k2b.dev`). HTTP is accepted only on
+loopback. Credentials, query strings and fragments are rejected. Set
+`tools.speedtest_enabled` to false to disable the Cloud page and CLI using this
+installation's settings. The separate server has its own lifecycle; disabling
+Tools does not stop that service or independently targeted CLI commands.
+
+Administrators can also change these settings through the owning Tools API:
+
+```sh
+cld --profile example admin settings set tools.speedtest_server --app tools --value '"https://speedtest.example.com"' --yes
+cld --profile example admin settings set tools.speedtest_enabled --app tools --value false --yes
+```
+
+The CLI sends `PUT /tools/api/admin/settings/:key`. This endpoint requires a
+current Cloud administrator and write scope, validates the registered setting,
+and records the administrator in the audit trail. An unreadable saved value
+requires an explicit `--replace-unreadable` whole-value replacement.
+
+The public `GET /tools/api/speedtest/config` returns only `{server, enabled}`
+with no-store caching. SSR uses the same settings before rendering the island.
+Cloud CLI reads this endpoint from its Cloud profile (at most two seconds for
+the lookup); errors fail visibly instead of silently selecting another target.
+Without a Cloud profile URL it uses the default measurement server. An explicit
+`cld tools speedtest --server https://speedtest.example.com` chooses an
+independent measurement target. The global `cld --server …` still selects Cloud.
+No Cloud credentials enter either HTTP or UDP measurement transports.
+
+Download `https://speedtest.example.com/cli` to `speedtest.mjs`, then run it with
+Node or Bun using `--server https://speedtest.example.com`. Python measurement
+scripts have been removed. Check your automation's HTTP status handling:
+`curl -f` fails on 410 rather than executing the comment-only migration notice.
+
+The supported workspace entries are `@k2b/speedtest` (engine, plans, progress
+and result types), `/browser` (fetch/XHR), `/node` (anonymous HTTP transport),
+`/http` (shared HTTP response checks) and `/udp-client` (explicit Node/Bun UDP
+diagnostic). Applications import these entries instead of copying transfer loops.
+The `/ui` entry exports the shared ordinary Solid component; import `/styles.css`
+and include the UI source in the consumer's Tailwind scan. `/messages` and
+`/format` supply its localized text and numeric formatting.
