@@ -100,7 +100,10 @@ export async function compileScript(input: unknown, sdk?: GeneratedCodeSdk, runn
                          __codeSdk.bind({call: async (name, invocation) => {
                            ${runner ? 'if (name === "http.fetch") return globalThis.__artifactHttp(invocation);' : ""}
                            const {call, metadata} = invocation;
-                           const direction = ${JSON.stringify(Object.fromEntries(sdk.manifest.operations.flatMap((op) => (op.stream ? [[op.capability, op.stream.direction]] : []))))}[name];
+                           const stream = ${JSON.stringify(Object.fromEntries(sdk.manifest.operations.flatMap((op) => (op.stream ? [[op.capability, op.stream]] : []))))}[name];
+                           if (stream?.direction === "write" && call.input?.file?.size > stream.maxBytes)
+                             throw new Error("File exceeds the destination's stream limit.");
+                           const direction = stream?.direction;
                            const invoke = direction ? globalThis.__artifactSdkStream : globalThis.cloud.capabilities.run;
                            const envelope = await invoke(name, call.input, {
                              ...(call.target ? {target: call.target} : {}), refs: call.refs, ...metadata

@@ -863,9 +863,11 @@ logs, return values and script errors keep their chat result format.
 
 Pass a streaming read's `FileRef` to the `file` argument of a file-input write
 Action in the same run. The host transfers the bytes and returns the completed
-Action data. Each reference can be used
-for one write attempt. The usual Action review and approval still apply. File bytes stay
-outside the script bridge. One-off runs allow 50 MiB per file and 250 MiB of
+Action data. A destination may choose its own upload name. Files above the
+destination's declared byte limit are refused before preparation or approval.
+Each reference can be used for one write attempt. The usual Action review and
+approval still apply. File bytes stay outside the script bridge.
+One-off runs allow 50 MiB per file and 250 MiB of
 stream transfers in total, counting both the read and the upload. After an
 interrupted write, inspect its status before attempting another import.
 

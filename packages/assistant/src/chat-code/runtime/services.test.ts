@@ -82,14 +82,13 @@ test("SDK write refs cannot serve as file inputs, and expired reads cannot be re
   expect(f.stream).not.toHaveBeenCalled();
 });
 
-test.each(["direction", "size", "mediaType", "name", "expiresAt"])("a mismatched write offer (%s) never transfers", async (field) => {
+test.each(["direction", "size", "mediaType", "expiresAt"])("a mismatched write offer (%s) never transfers", async (field) => {
   const f = fixture();
   await f.sdkRead();
   const patches: Record<string, Partial<RuntimeStream>> = {
     direction: { direction: "read" },
     size: { size: 4 },
     mediaType: { mediaType: "text/plain" },
-    name: { name: "other.pdf" },
     expiresAt: { expiresAt: new Date(NOW).toISOString() },
   };
   f.setWrite(patches[field]!);
@@ -164,4 +163,13 @@ test("a short source cannot start the write, and missing offers do not return pr
   expect(f.stream).toHaveBeenCalledTimes(1);
   const missing = createServiceCalls({ capability: async () => ({ data: { imported: false } }) });
   await expect(missing("capabilities.run", ["read", {}, undefined, "read"], signal())).rejects.toMatchObject({ code: "unavailable" });
+});
+
+test("a destination may choose a different upload name without changing the source ref", async () => {
+  const f = fixture();
+  await f.sdkRead();
+  f.setWrite({ name: "stored-invoice.pdf" });
+  expect(await f.sdkWrite(f.file())).toEqual({ data: { imported: true } });
+  expect(f.stream.mock.calls[0]?.[0].name).toBe("invoice.pdf");
+  expect(f.stream.mock.calls[1]?.[0].name).toBe("stored-invoice.pdf");
 });

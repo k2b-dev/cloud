@@ -121,7 +121,7 @@ export function createServiceCalls(services: RuntimeServices) {
             };
           }
           if (direction === "write" && source) {
-            if (ref.name !== source.name || ref.size !== source.size || ref.mediaType !== source.mediaType)
+            if (ref.size !== source.size || ref.mediaType !== source.mediaType)
               throw new CloudError("invalid", "Write stream differs from the source file.");
             const body = await transfer(source, "read", undefined, signal);
             if (!(body instanceof Blob) || body.size !== source.size) throw new CloudError("invalid", "Incomplete source file.");

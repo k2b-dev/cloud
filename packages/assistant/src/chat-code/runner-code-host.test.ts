@@ -6,7 +6,6 @@ import { encodeChatValue } from "@k2b/cloud/code/chat-run";
 import { CapabilityFileMetadataSchema, type CapabilityManifest } from "@k2b/cloud/contracts";
 import { z } from "zod";
 import { useUnitClients } from "../../../../scripts/fixtures/unit-clients";
-import { fileImportManifest } from "../../../cloud/src/code/file-ref.test-fixture";
 import { RuntimeCapabilityRequest, runtimeCapabilities } from "./capability-runtime";
 import { runChatRunnerFixture } from "./runner-code.test-fixture";
 import { createRunnerCodeHost as createManagedCodeHost } from "./runner-code-host";
@@ -443,6 +442,43 @@ test("signed chat code_run route resolves chat authority and executes through th
 }, 20_000);
 
 const fileMetadata = { name: "invoice.pdf", mediaType: "application/pdf", size: 5 };
+// App-local fictional provider: this test uses only the public capability contract.
+const fileImportManifest = (maxBytes: number) =>
+  compileCapabilityManifest("imports", {
+    protocolVersion: 2,
+    actions: {
+      import: {
+        title: "Import file",
+        description: "Import a fictional file.",
+        input: z.object({ file: CapabilityFileMetadataSchema }).strict(),
+        data: z.object({ imported: z.boolean() }).strict(),
+        destructive: false,
+        openWorld: false,
+        idempotency: "required",
+        policy: { silent: "shared" },
+        review: () => ({
+          ok: true,
+          data: {
+            locale: "en",
+            sentence: { action: "Import file", running: "Importing file", done: "Imported file", confirm: "Import", decline: "Cancel" },
+            slots: {},
+            scope: "import",
+          },
+        }),
+        run: () => {
+          throw new Error("No live provider");
+        },
+        stream: {
+          direction: "write",
+          maxBytes,
+          write: async () => ({ data: { imported: true } }),
+          status: async () => ({ state: "open" }),
+          abort: async () => {},
+        },
+      },
+    },
+  });
+
 const mailFileManifest = compileCapabilityManifest("mail", {
   protocolVersion: 2,
   queries: {
@@ -466,14 +502,18 @@ const mailFileManifest = compileCapabilityManifest("mail", {
   },
 });
 
-test.each([true, false])(
-  "compiled runner SDK composes a Mail FileRef into an independent completed file import outside the worker bridge (approved=%s)",
-  async (approved) => {
+test.each([
+  { approved: true, maxBytes: 100 * 1024 * 1024 },
+  { approved: false, maxBytes: 100 * 1024 * 1024 },
+  { approved: true, maxBytes: 4 },
+])(
+  "compiled runner SDK composes files outside the worker bridge (approved=$approved, maxBytes=$maxBytes)",
+  async ({ approved, maxBytes }) => {
     const bytes = new Uint8Array([0, 255, 37, 80, 10]);
     const transfers: string[] = [];
     let uploaded: Uint8Array | undefined;
     const f = fixture({
-      manifests: [mailFileManifest, fileImportManifest()],
+      manifests: [mailFileManifest, fileImportManifest(maxBytes)],
       fetch: async (path, init) => {
         transfers.push(path);
         if (path.endsWith("/read")) return new Response(bytes);
@@ -527,6 +567,7 @@ test.each([true, false])(
               data: { imported: false },
               stream: {
                 ...fileMetadata,
+                name: "stored-invoice.pdf",
                 id: "write-offer",
                 direction: "write",
                 expiresAt: new Date(NOW + 60_000).toISOString(),
@@ -546,6 +587,14 @@ test.each([true, false])(
         return {file, result};
       }`,
       });
+      if (maxBytes < fileMetadata.size) {
+        expect(result).toMatchObject({ status: "error", error: expect.stringContaining("destination's stream limit") });
+        expect(f.calls).toMatchObject([{ name: "mail.attachment.content.read" }]);
+        expect(f.calls).toHaveLength(1);
+        expect(f.approve).not.toHaveBeenCalled();
+        expect(transfers).toEqual([]);
+        return;
+      }
       expect(f.approve).toHaveBeenCalledTimes(1);
       if (!approved) {
         expect(result).toMatchObject({ status: "error", error: expect.stringContaining("Import declined") });
