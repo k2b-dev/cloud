@@ -248,6 +248,26 @@ for (const width of [1440, 390]) {
       await page.waitForFunction(() => document.documentElement.dataset.fixtureReady === "true");
       expect(await page.locator('textarea:not([aria-hidden="true"])').inputValue()).toBe("Next unsent draft");
       expect(fixture.assistant.submitted()).toBe(1);
+      // After the way from the panel to the full chat, focus lands on the page's main region, the card on a phone.
+      // A landing point is not a control: no ink edge, no browser ring along the card.
+      await settled(page);
+      expect(
+        await page.locator("main.layout-content-main").evaluate((main: HTMLElement) => {
+          if (!main.hasAttribute("tabindex")) main.tabIndex = -1;
+          main.focus();
+          const probe = document.body.appendChild(document.createElement("i"));
+          probe.style.color = "var(--k2b-text)";
+          const ink = getComputedStyle(probe).color;
+          probe.remove();
+          const style = getComputedStyle(main);
+          const edge = Number.parseFloat(style.borderTopWidth);
+          return {
+            focused: document.activeElement === main,
+            edge: edge <= 1 && (edge === 0 || style.borderTopColor !== ink),
+            ring: style.outlineStyle === "none" || Number.parseFloat(style.outlineWidth) === 0,
+          };
+        }),
+      ).toEqual({ focused: true, edge: true, ring: true });
     } catch (error) {
       await page.screenshot({ path: resolve(tmpdir(), `assistant-panel-failure-${width}.png`) });
       console.error(JSON.stringify({ requests: fixture.assistant.requests, conversations: [...fixture.assistant.conversations.values()] }));
