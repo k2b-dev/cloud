@@ -198,7 +198,7 @@ pixels.
 `"image/jpeg"`, `"image/png"`, `"image/webp"`; the actual encoded MIME type is
 checked. The caller owns file names, persistence, permissions, and revisions.
 
-## View, keyboard, and phone layout
+## Accessibility, view, and phone layout
 
 Fit places the whole photo inside the overlays; small photos stay at 100 %.
 Drag the empty canvas, hold Space and drag, or scroll with a trackpad to pan.
