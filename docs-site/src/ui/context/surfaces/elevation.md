@@ -123,6 +123,8 @@ inner shadow as a fade is never used. `HoverPreview` floats on layer 3 with
   `DashboardFrame`, `DataTable.Panel`, and the widgets are islands in the main
   content and flat everywhere else. `DetailPanel`, `AppWorkspace` columns,
   sheets, dialogs, popovers, menus, and toolbars make their inside flat.
+  A Markdown table in a chat or Assistant answer is an island like the view
+  table beside it; Markdown tables in documents stay flat hairlines.
 - **Mark a dense collection.** Put `data-k2b-layer="flat"` on the element that
   holds a grid or a list of cards that must stay flat.
 - **An app-owned card** that no component expresses, such as a Kanban card,
