@@ -50,12 +50,15 @@ const layers = (value: string): string[] => {
 };
 
 const length = /^-?(?:\d+\.?\d*|\.\d+)(?:px|rem|em)?$/;
+const colorFunction = /\b(?:rgba?|hsla?|color-mix|oklch|oklab|lab|lch|hwb)\([^()]*(?:\([^()]*\)[^()]*)*\)/gi;
 
 /** A layer with a blur radius above zero casts depth; a ring or hairline (blur 0) is an edge. */
 export const castsDepth = (value: string): boolean =>
   layers(stripVars(value.replace(/!important/gi, ""))).some((layer) => {
     const lengths = layer
-      .replace(/\b(?:rgba?|hsla?|color-mix|oklch|oklab|lab|lch|hwb)\([^()]*(?:\([^()]*\)[^()]*)*\)/gi, " ")
+      .replace(colorFunction, " ")
+      // A computed length such as `calc(8px)` counts as a non-zero length.
+      .replace(/\b(?:calc|min|max|clamp)\([^()]*(?:\([^()]*\)[^()]*)*\)/gi, " 1px ")
       .split(/\s+/)
       .filter((token) => length.test(token));
     const blur = lengths[2];
@@ -67,7 +70,11 @@ export const castsDepth = (value: string): boolean =>
  * do not match; an arbitrary value counts only when it casts depth (`shadow-[var(--k2b-shadow-float)]` and rings pass).
  */
 const shadowUtility =
-  /(?<![\w-])(?:[\w-]+(?:\/[\w-]+)?:)*!?(?:drop-)?shadow(?:-(?:2xs|xs|sm|md|lg|xl|2xl|inner)|-\[([^\]\s]*)\])?(?![\w[-])/g;
+  /(?<![\w-])(?:[\w-]+(?:\/[\w-]+)?:)*!?(?:drop-)?shadow(?:-(?:2xs|xs|sm|md|lg|xl|2xl|inner)|-\[([^\]\s]*)\])?(?![\w[(-])/g;
+
+/** The shadow of each `drop-shadow(...)` in a filter value. */
+const dropShadows = (value: string): string[] =>
+  [...value.matchAll(/drop-shadow\(((?:[^()]|\([^()]*(?:\([^()]*\)[^()]*)*\))*)\)/gi)].map((match) => match[1] ?? "");
 
 const utilityCastsDepth = (match: RegExpMatchArray): boolean => {
   const arbitrary = match[1];
@@ -87,6 +94,13 @@ const allowedAbove = (source: string, index: number): boolean => {
 const checkCss = (original: string, isTokenFile: boolean, report: (index: number, detail: string) => void) => {
   // Comments become blanks of the same length, so offsets stay true; allow markers are read from the original.
   const source = original.replace(/\/\*[\s\S]*?\*\//g, (comment) => comment.replace(/[^\n]/g, " "));
+  // A custom property that a box-shadow or filter reads as a whole layer is a shadow, whatever its name; one that
+  // fills a colour function, such as `rgb(var(--glow) / 0.2)`, is a colour.
+  const readAsShadow = new Set(
+    [...source.matchAll(/(?:box-shadow|filter)\s*:[^;{}]*/gi)].flatMap((match) =>
+      [...match[0].replace(colorFunction, " ").matchAll(/var\(\s*(--[\w-]+)/g)].map((use) => use[1]),
+    ),
+  );
   // Every declaration, also inside nested rules and at-rules: it starts after `{` or `;`.
   for (const declaration of source.matchAll(/(?<=[{;]\s*)(@apply\s+|[\w-]+\s*:\s*)([^;{}]*)/g)) {
     const head = declaration[1] ?? "";
@@ -105,12 +119,12 @@ const checkCss = (original: string, isTokenFile: boolean, report: (index: number
     const property = head.replace(/\s*:\s*$/, "");
     if (property.startsWith("--")) {
       if (isTokenFile && tokenName.test(property)) continue;
-      if (/shadow|depth|lift|elevation/i.test(property) && castsDepth(value))
+      if ((/shadow|depth|lift|elevation/i.test(property) || readAsShadow.has(property)) && castsDepth(value))
         report(at, `${selector} defines ${property}: ${value.trim()}`);
       continue;
     }
     if (/^(?:-webkit-)?box-shadow$/i.test(property) && castsDepth(value)) report(at, `${selector} sets box-shadow: ${value.trim()}`);
-    if (/^(?:-webkit-)?filter$/i.test(property) && /drop-shadow\((?!\s*var\()/i.test(value))
+    if (/^(?:-webkit-)?filter$/i.test(property) && dropShadows(value).some(castsDepth))
       report(at, `${selector} sets filter: ${value.trim()}`);
   }
 };
@@ -128,9 +142,11 @@ const checkSource = (original: string, report: (index: number, detail: string) =
   for (const literal of source.matchAll(/(["'])((?:(?!\1)[^\\\n]|\\.)*)\1|`((?:[^\\`]|\\.)*)`/g)) {
     const text = literal[2] ?? literal[3] ?? "";
     const start = (literal.index ?? 0) + 1;
+    // A literal right after `class=` or `className=` is a class list even with one class.
+    const isClassAttribute = /\bclass(?:Name)?\s*=\s*\{?\s*$/.test(source.slice(Math.max(0, start - 24), start - 1));
     for (const match of text.matchAll(shadowUtility)) {
       // A bare `shadow` counts only in a class list, never as a word in prose, an SVG filter id, or keywords.
-      if (match[0] === "shadow" && !isClassList(text)) continue;
+      if (match[0] === "shadow" && !isClassAttribute && !isClassList(text)) continue;
       const index = start + (match.index ?? 0);
       if (utilityCastsDepth(match) && !allowedAbove(original, index)) report(index, match[0]);
     }
@@ -140,9 +156,13 @@ const checkSource = (original: string, report: (index: number, detail: string) =
       if (castsDepth(match[1] ?? "") && !allowedAbove(original, index)) report(index, `box-shadow: ${match[1]}`);
     }
   }
-  for (const match of source.matchAll(/(?:boxShadow|"box-shadow")\s*:\s*(["'`])([^"'`]*)\1/g)) {
+  for (const match of source.matchAll(/(?:boxShadow|"box-shadow"|'box-shadow')\s*:\s*(["'`])([^"'`]*)\1/g)) {
     const index = match.index ?? 0;
     if (castsDepth(match[2] ?? "") && !allowedAbove(original, index)) report(index, `boxShadow: ${match[2]}`);
+  }
+  for (const match of source.matchAll(/filter\s*:\s*(["'`])([^"'`]*drop-shadow[^"'`]*)\1/g)) {
+    const index = match.index ?? 0;
+    if (dropShadows(match[2] ?? "").some(castsDepth) && !allowedAbove(original, index)) report(index, `filter: ${match[2]}`);
   }
 };
 

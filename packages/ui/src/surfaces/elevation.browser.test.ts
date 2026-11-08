@@ -6,7 +6,7 @@ import { createConfig } from "@k2b/ssr";
 import type { Browser } from "playwright";
 import { createComponent, type JSX } from "solid-js";
 import { renderToString } from "solid-js/web";
-import { launchBrowser } from "../../test/browser";
+import { launchBrowser, settled } from "../../test/browser";
 
 // The layer model is a cascade of custom properties, so a real engine resolves the shipped stylesheet.
 const root = mkdtempSync(resolve(tmpdir(), "k2b-ui-elevation-"));
@@ -76,7 +76,9 @@ const open = async (theme: "light" | "dark") => {
       `<main>${markup()}</main>` +
       `<aside class="k2b-app-workspace__sidebar"><div class="k2b-paper" id="sidebar-paper">Sidebar</div></aside>` +
       `<section data-k2b-layer="flat"><div class="k2b-paper" id="grid-paper">Grid</div></section>` +
-      `<dialog open><div class="k2b-paper" id="dialog-paper">Dialog</div></dialog>` +
+      `<dialog open><div class="k2b-paper" id="dialog-paper">Dialog</div>` +
+      // A nested `.k2b-ui` scope inside a flat layer must not bring the main-content default back.
+      `<div class="k2b-ui"><div class="k2b-paper" id="scoped-dialog-paper">Scoped</div></div></dialog>` +
       `</body></html>`,
   );
   return page;
@@ -110,19 +112,33 @@ const read = () => {
     sidebarPaper: look("#sidebar-paper"),
     gridPaper: look("#grid-paper"),
     dialogPaper: look("#dialog-paper"),
+    scopedDialogPaper: look("#scoped-dialog-paper"),
     toolbar: getComputedStyle(document.querySelector('.k2b-toolbar[data-variant="floating"]')!).boxShadow,
   };
 };
 
+// "No shadow" is a transparent no-op layer, so a ring may list it: `ring, var(--k2b-island-shadow)` stays valid.
+const noShadow = "rgba(0, 0, 0, 0) 0px 0px 0px 0px";
+
 describe("@k2b/ui layers and shadows", () => {
   test("light: islands in the main content carry the island shadow; columns, panels, dialogs, dense collections, and islands inside islands are flat", async () => {
     const page = await open("light");
+    await settled(page);
     try {
       const r = await page.evaluate(read);
-      expect(r.raised).not.toBe("none");
+      expect(r.raised).not.toBe(noShadow);
       for (const island of [r.mainPaper, r.mainResource, r.frame]) expect(island.shadow).toBe(r.raised);
-      for (const flat of [r.nestedPaper, r.framePaper, r.panelPaper, r.panelResource, r.sidebarPaper, r.gridPaper, r.dialogPaper])
-        expect(flat.shadow).toBe("none");
+      for (const flat of [
+        r.nestedPaper,
+        r.framePaper,
+        r.panelPaper,
+        r.panelResource,
+        r.sidebarPaper,
+        r.gridPaper,
+        r.dialogPaper,
+        r.scopedDialogPaper,
+      ])
+        expect(flat.shadow).toBe(noShadow);
       expect(r.mainPaper.background).toBe(r.surface);
       // A floating pill uses the toolbar shadow, softer than a menu's.
       expect(r.toolbar).toBe(r.toolbarToken);
@@ -133,13 +149,15 @@ describe("@k2b/ui layers and shadows", () => {
 
   test("dark: a lighter surface replaces the island shadow, and flat layers keep the page surface", async () => {
     const page = await open("dark");
+    await settled(page);
     try {
       const r = await page.evaluate(read);
-      expect(r.raised).toBe("none");
+      expect(r.raised).toBe(noShadow);
       expect(r.raisedSurface).not.toBe(r.surface);
-      for (const island of [r.mainPaper, r.mainResource]) expect(island).toEqual({ shadow: "none", background: r.raisedSurface });
+      for (const island of [r.mainPaper, r.mainResource]) expect(island).toEqual({ shadow: noShadow, background: r.raisedSurface });
+      expect(r.scopedDialogPaper.shadow).toBe(noShadow);
       for (const flat of [r.panelPaper, r.sidebarPaper, r.gridPaper, r.dialogPaper])
-        expect(flat).toEqual({ shadow: "none", background: r.surface });
+        expect(flat).toEqual({ shadow: noShadow, background: r.surface });
       // An island inside an island takes the same surface, so it reads as one plane.
       expect(r.nestedPaper.background).toBe(r.raisedSurface);
       expect(r.toolbar).toBe(r.toolbarToken);

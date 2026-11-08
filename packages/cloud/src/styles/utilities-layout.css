@@ -25,7 +25,7 @@
   background: var(--k2b-island-surface, var(--ui-surface));
   box-shadow: var(--k2b-island-shadow, var(--ui-shadow-surface));
   & > * {
-    --k2b-island-shadow: none;
+    --k2b-island-shadow: 0 0 #0000;
   }
   /* A paper card inside a dialog section group paints its own surface, so its
      fields return to the muted well instead of the group's white one. */

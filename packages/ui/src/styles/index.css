@@ -391,7 +391,8 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   --k2b-shadow-toast: 0 10px 28px -14px rgb(0 0 0 / 0.58);
   --k2b-shadow-side: -16px 0 40px rgb(0 0 0 / 0.5);
   --k2b-shadow-sheet: 0 -16px 40px rgb(0 0 0 / 0.5);
-  --k2b-shadow-raised: none;
+  /* No shadow, as a transparent no-op layer so lists such as `ring, var(--k2b-shadow-raised)` stay valid. */
+  --k2b-shadow-raised: 0 0 #0000;
   --k2b-surface-raised: var(--k2b-surface-elevated);
   --k2b-shadow-toolbar: 0 1px 2px rgb(0 0 0 / 0.4), 0 8px 22px -10px rgb(0 0 0 / 0.5);
   color-scheme: dark;
@@ -433,8 +434,24 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
     .k2b-floating-window,
     .k2b-context-menu,
     .k2b-toolbar
-  ) {
-  --k2b-island-shadow: none;
+  ),
+/* A nested `.k2b-ui` scope inside a flat layer stays flat; it would otherwise
+   declare the main-content default again. */
+:is(
+    [data-k2b-layer="flat"],
+    dialog,
+    [popover],
+    .k2b-app-workspace__sidebar,
+    .k2b-app-workspace__detail,
+    .k2b-detail-panel,
+    .k2b-bottom-sheet,
+    .k2b-floating-window,
+    .k2b-context-menu,
+    .k2b-toolbar
+  )
+  .k2b-ui {
+  /* A transparent no-op layer, not `none`, so an island may list it after a ring. */
+  --k2b-island-shadow: 0 0 #0000;
   --k2b-island-surface: var(--k2b-surface);
 }
 
@@ -17171,9 +17188,11 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   z-index: 1;
   flex-shrink: 0;
 }
+/* Each strip grows with the row, so widening it resizes the strip and its
+   toolbar measures again: moved actions come back from More. */
 .k2b-ui .k2b-toolbar-dock > .k2b-toolbar-float {
   position: static;
-  flex: 0 1 auto;
+  flex: 1 1 auto;
   margin: 0;
   padding: 0;
   justify-content: flex-start;

@@ -382,7 +382,7 @@
   min-height: 0;
   flex-direction: column;
   background: var(--k2b-surface);
-  --k2b-island-shadow: none;
+  --k2b-island-shadow: 0 0 #0000;
   --k2b-island-surface: var(--k2b-surface);
 }
 

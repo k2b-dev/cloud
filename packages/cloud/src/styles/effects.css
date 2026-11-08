@@ -1738,7 +1738,6 @@ dialog:has(.launchpad-panel)::backdrop {
   --rim-bottom-hover: color-mix(in oklab, var(--app-icon-color), white 6%);
   --glyph: var(--app-icon-color);
   --glyph-hover: color-mix(in oklab, var(--app-icon-color), white 32%);
-  --drop: 0 10px 20px -12px rgb(0 0 0 / 0.7);
 }
 
 @supports (color: oklch(from red l c h)) {

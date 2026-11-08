@@ -35,6 +35,9 @@ test("reports raw shadows in CSS and class lists, and allows tokens, rings, and 
         "/* shadow-tokens: allow a halo keeps the handle visible on any photo */",
         ".handle { box-shadow: 0 1px 2px rgb(0 0 0 / 0.4); }",
         ".ghost { filter: drop-shadow(0 2px 4px rgb(0 0 0 / 0.2)); }",
+        ".fx { --fx: 0 2px 8px black; box-shadow: var(--fx); }",
+        ".calc { box-shadow: 0 2px calc(8px) black; }",
+        ".line { filter: drop-shadow(0 1px 0 black); }",
       ].join("\n"),
       "packages/demo/src/page.tsx": [
         'const a = <div class="rounded-md border shadow-[var(--k2b-shadow-float)]" />;',
@@ -45,6 +48,9 @@ test("reports raw shadows in CSS and class lists, and allows tokens, rings, and 
         "// a denial can shadow other rows",
         'const f = <div style="box-shadow: 0 2px 6px rgb(0 0 0 / 0.1)" />;',
         'const g = <div class="flex shadow-none" />;',
+        'const h = <div class="shadow" />;',
+        "const i = <div style={{ 'box-shadow': '0 2px 8px black' }} />;",
+        'const j = <div style={{ filter: "drop-shadow(var(--k2b-shadow-float))" }} />;',
       ].join("\n"),
       "packages/demo/src/page.test.tsx": '<div class="shadow-lg" />',
     };
@@ -55,13 +61,17 @@ test("reports raw shadows in CSS and class lists, and allows tokens, rings, and 
     const findings = await rule.run({ workspaceRoot: root, fix: false, flags: new Set() });
     expect(findings.map((finding) => `${relative(root, finding.file ?? "")}:${finding.line}`).sort()).toEqual([
       "packages/demo/src/app.css:10",
+      "packages/demo/src/app.css:11",
+      "packages/demo/src/app.css:12",
       "packages/demo/src/app.css:3",
       "packages/demo/src/app.css:4",
       "packages/demo/src/app.css:5",
       "packages/demo/src/app.css:6",
+      "packages/demo/src/page.tsx:10",
       "packages/demo/src/page.tsx:2",
       "packages/demo/src/page.tsx:4",
       "packages/demo/src/page.tsx:7",
+      "packages/demo/src/page.tsx:9",
       "packages/ui/src/styles/index.css:1",
     ]);
   } finally {

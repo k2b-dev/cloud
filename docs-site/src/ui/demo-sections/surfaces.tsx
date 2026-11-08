@@ -579,7 +579,12 @@ const ElevationDemo = () => (
           </Paper>
           <div class="ui-elevation-demo__cards">
             <LinkCard href="#elevation" icon="ti ti-folder" title="Team Logistik" description="128 files" />
-            <ResourceCard title="Lieferung Spedition Nord" context="Task in Team Logistik · due Thu" icon="ti ti-checkbox" href="#elevation" />
+            <ResourceCard
+              title="Lieferung Spedition Nord"
+              context="Task in Team Logistik · due Thu"
+              icon="ti ti-checkbox"
+              href="#elevation"
+            />
           </div>
           <div class="ui-elevation-demo__grid" data-k2b-layer="flat">
             <For each={elevationTiles}>
