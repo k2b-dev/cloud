@@ -1,5 +1,6 @@
 ---
 title: Assistant place chats
+navTitle: Assistant place chats
 section: Operations
 order: 1275
 description: Understand the chat-list default and database migration for Assistant place context.
@@ -21,7 +22,8 @@ ordinary chats; no manual backfill is needed. A place is also entered in the
 existing conversation resource index when its chat is created.
 
 Starting over archives the current chat. An archived place chat cannot be
-restored while its replacement is active. Unread and attention counts include
+restored while its replacement is active; the restore API returns `409 CONFLICT`
+with a message to archive the current chat first. Unread and attention counts include
 place chats. Listing uses the stored place title without querying the owning
 application; opening the place checks its current availability.
 

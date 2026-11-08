@@ -836,6 +836,7 @@ export type AiConversationService = {
   listRecentSentResourceRefs(input: { ownerUserId: string }): Promise<AiRecentSentResourceRef[]>;
   listUserConversationResources(input: {
     ownerUserId: string;
+    place?: AiConversationPlaceFilter;
     search?: string;
     before?: string;
     limit?: number;

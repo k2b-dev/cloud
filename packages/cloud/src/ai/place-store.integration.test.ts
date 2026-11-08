@@ -28,6 +28,13 @@ suite("personal place conversations", () => {
       const chat = chats[0]!;
       expect(new Set(chats.map((item) => item.id)).size).toBe(1);
       expect(chat.place).toEqual(place);
+      expect((await aiConversations.listUserConversationResources({ ownerUserId: lea })).resources).toEqual([]);
+      expect(
+        (await aiConversations.listUserConversationResources({ ownerUserId: lea, place: "fixture.conversation:Marta1" })).resources,
+      ).toMatchObject([{ ref: place.ref, chat: { shortId: chat.shortId } }]);
+      expect(
+        (await aiConversations.listUserConversationResources({ ownerUserId: ben, place: "fixture.conversation:Marta1" })).resources,
+      ).toEqual([]);
       const requestId = crypto.randomUUID();
       expect((await aiConversations.createPlaceConversation({ requestId, ownerUserId: lea, place, draft })).id).toBe(chat.id);
       await expect(
@@ -51,7 +58,7 @@ suite("personal place conversations", () => {
         await aiConversations.listConversationsPage({ ownerUserId: lea, place: "fixture.conversation:Marta1", page: 1, perPage: 10 }),
       ).toMatchObject({ total: 1, items: [{ place }] });
       expect(await aiConversations.getConversationCounts({ ownerUserId: lea })).toMatchObject({ places: { total: 1 } });
-      await sql`UPDATE ai.conversations SET background_received_at = '2026-11-08T00:00:00Z' WHERE id = ${chat.id}::uuid`;
+      await sql`UPDATE ai.conversations SET last_viewed_at = '2026-11-07T00:00:00Z', background_received_at = '2026-11-08T00:00:00Z' WHERE id = ${chat.id}::uuid`;
       expect(await aiConversations.getConversationCounts({ ownerUserId: lea })).toMatchObject({ unread: 1, places: { unread: 1 } });
       expect(await aiConversations.getConversationCounts({ ownerUserId: ben })).toEqual({
         unread: 0,
@@ -89,8 +96,15 @@ suite("personal place conversations", () => {
       );
       const replacement = await aiConversations.createPlaceConversation({ ownerUserId: lea, place, draft });
       expect(replacement.id).not.toBe(chat.id);
-      expect(await aiConversations.restoreConversation({ ownerUserId: lea, conversationId: chat.id })).toBeNull();
-      expect((await aiConversations.listConversations({ ownerUserId: lea, place: "any", archived: true }))[0]?.id).toBe(chat.id);
+      await expect(aiConversations.restoreConversation({ ownerUserId: lea, conversationId: chat.id })).rejects.toThrow(
+        "Archive the current chat",
+      );
+      await aiConversations.archivePlaceConversation({ ownerUserId: lea, conversationId: replacement.id, ref: place.ref });
+      expect(await aiConversations.restoreConversation({ ownerUserId: lea, conversationId: chat.id })).toMatchObject({ id: chat.id });
+      await aiConversations.archivePlaceConversation({ ownerUserId: lea, conversationId: chat.id, ref: place.ref });
+      expect((await aiConversations.listConversations({ ownerUserId: lea, place: "any", archived: true })).map((item) => item.id)).toEqual(
+        expect.arrayContaining([chat.id, replacement.id]),
+      );
     } finally {
       for (const user of users) {
         await sql`DELETE FROM ai.conversations WHERE created_by_user_id = ${user}::uuid`;

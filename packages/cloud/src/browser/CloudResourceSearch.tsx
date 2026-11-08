@@ -261,7 +261,12 @@ export default function CloudResourceSearch(props: CloudResourceSearchProps) {
   /** Rows of the run for the current input; anything older is visible but cannot be chosen. */
   const freshResults = () => current() && shownRun();
   const results = createMemo(() =>
-    canSearch() ? [...navigation(), ...shownBlocks().flatMap((block) => filterCloudResourceSearchItems(block.items, props))] : [],
+    canSearch()
+      ? [
+          ...navigation(),
+          ...shownBlocks().flatMap((block) => groupCloudResourceSearchItems(filterCloudResourceSearchItems(block.items, props))),
+        ]
+      : [],
   );
   const searchContext = () => JSON.stringify([desiredUrl(), commandMode(), commandQuery()]);
   /**
@@ -279,7 +284,7 @@ export default function CloudResourceSearch(props: CloudResourceSearchProps) {
       commandSearchItem(command, command.context ? t().contextActions : t().actions),
     );
     // Instant rows come first: streamed app sections are appended below them and never push them down.
-    return [...commands, ...groupCloudResourceSearchItems(results())];
+    return [...commands, ...results()];
   });
   const itemsByKey = createMemo(() => new Map(items().map((item) => [itemKey(item), item])));
   const selectable = (item: SearchItem) =>

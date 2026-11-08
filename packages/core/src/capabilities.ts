@@ -255,7 +255,10 @@ const ChatResourcesInputSchema = z
   .strict();
 
 const ChatsResourcesInputSchema = ChatResourcesInputSchema.omit({ chatId: true, cursor: true })
-  .extend({ cursor: resourceCursorSchema("user") })
+  .extend({
+    cursor: resourceCursorSchema("user"),
+    place: CloudResourceRefSchema.optional().describe("Search only resources from chats at this exact place. Omit to exclude place chats."),
+  })
   .strict();
 
 const ChatSummarySchema = z
@@ -1094,6 +1097,7 @@ export const aiCapabilities = defineCapabilities({
         if (!context.user) return fail(err.forbidden("AI conversations require a user-backed actor"));
         const page = await aiConversations.listUserConversationResources({
           ownerUserId: context.user.id,
+          place: input.place ? `${input.place.type}:${input.place.id}` : "none",
           search: input.query,
           before: input.cursor,
           limit: input.limit,

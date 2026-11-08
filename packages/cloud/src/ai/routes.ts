@@ -109,6 +109,7 @@ import { aiSkills } from "./skills";
 import {
   AI_TOOL_CHECK_STALE_MS,
   AiConversationCreationError,
+  AiConversationRestoreConflict,
   aiConversations,
   claimAiToolCheck,
   readAiToolCheck,
@@ -917,11 +918,17 @@ export const aiRoutes = (() => {
         if (ctx instanceof Response) return ctx;
         const conversation = await loadConversation(c, ctx, true);
         if (!conversation) return notFound(c);
-        const restored = await aiConversations.restoreConversation({
-          conversationId: conversation.id,
-          ownerUserId: ctx.ownerUserId,
-        });
-        return restored ? respond(c, ok(await publicConversationFor(restored, resourceContext(c)))) : notFound(c);
+        try {
+          const restored = await aiConversations.restoreConversation({
+            conversationId: conversation.id,
+            ownerUserId: ctx.ownerUserId,
+          });
+          return restored ? respond(c, ok(await publicConversationFor(restored, resourceContext(c)))) : notFound(c);
+        } catch (error) {
+          if (error instanceof AiConversationRestoreConflict)
+            return respond(c, fail({ ...err.conflict("Place chat"), message: error.message }));
+          throw error;
+        }
       })
       .post("/conversations/:conversationId/viewed", async (c) => {
         const ctx = await resolveContext(c);
