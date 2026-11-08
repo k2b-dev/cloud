@@ -1,5 +1,6 @@
 import { registerContextAwareCommand } from "@k2b/cloud/browser/commands";
 import { importOnDemand } from "@k2b/cloud/browser/reload";
+import { FeatCodeMark } from "@k2b/cloud/code/ui";
 // Its own entry: the mailbox island must not load the Code page.
 import { CodeNavStatus, codeNavAttentionLabel } from "@k2b/cloud/ssr/code-nav-status";
 import { WorkspaceNavigationProvider } from "@k2b/cloud/ssr/islands";
@@ -473,12 +474,14 @@ export default function MailSidebar(
         {(code) => (
           <AppWorkspace.SidebarItem
             href={`/app/mail/${open().mailboxId}/code`}
-            icon="ti ti-code"
             active={code().active}
             meta={code().attention ? <CodeNavStatus attention /> : undefined}
             viewTransitionName="mail-code"
           >
-            {messages().code}
+            <AppWorkspace.SidebarItemIcon>
+              <FeatCodeMark variant="glyph" tone="current" decorative />
+            </AppWorkspace.SidebarItemIcon>
+            <AppWorkspace.SidebarItemLabel>{messages().code}</AppWorkspace.SidebarItemLabel>
           </AppWorkspace.SidebarItem>
         )}
       </Show>

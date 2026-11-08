@@ -7,7 +7,10 @@ import { toPgTextArray } from "../services/postgres";
 import { isRetiredRoutineConfig } from "./retired-routines";
 import type { AiToolApprovalPolicy, AiTurnRunConfig } from "./types";
 
-/** Background authority never inherits a user's interactive Always Allow preference. */
+/**
+ * Background authority never inherits a user's interactive Always Allow preference: neither a mandate-backed turn
+ * nor any background run, whether or not its configuration carries a mandate.
+ */
 export const aiTurnAllowsRememberedApprovals = (config: AiTurnRunConfig | null | undefined): boolean => !isRetiredRoutineConfig(config);
 
 /**
@@ -32,8 +35,7 @@ export const parseAiWebsiteApprovalScope = (scope: string): { origin: string; re
 export const aiTurnAllowsWebsiteApprovals = (config: AiTurnRunConfig | null | undefined): boolean =>
   config != null &&
   config.kind !== "compact" &&
-  (config.signedInSession === true ||
-    (config.codeOrigin !== undefined && config.actor?.kind === "user" && !config.actor.delegation && config.background === undefined)) &&
+  (config.signedInSession === true || (config.codeOrigin !== undefined && config.actor?.kind === "user" && !config.actor.delegation)) &&
   aiTurnAllowsRememberedApprovals(config);
 
 export type AiToolApprovalContext = {

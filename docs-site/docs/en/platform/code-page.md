@@ -19,7 +19,8 @@ registry, by type and ID.
 
 ## What people see
 
-The page is titled **Code**; screen readers hear whose Code it is.
+The page is titled with the feat/code wordmark; screen readers hear whose Code
+it is.
 
 - **Overview:** the service account the Code runs as and its handle ("Runs as
   service account “Code of info@example.com” · Handle code-7k2q9m4xwt") with
@@ -164,11 +165,17 @@ it much longer than for them, so a slow Core only leaves the dot out.
   needs attention, such as a failed latest run or a version waiting for
   approval.
 
+- Use the feat/code sign as the entry's icon, in the text colour of the row.
+
 ```tsx
+import { FeatCodeMark } from "@k2b/cloud/code/ui";
 import { CodeNavStatus } from "@k2b/cloud/ssr/code-nav-status";
 
-<AppWorkspace.SidebarItem href={`/app/inventory/${store.id}/code`} icon="ti ti-code" meta={<CodeNavStatus attention={attention?.attention ?? false} />}>
-  Code
+<AppWorkspace.SidebarItem href={`/app/inventory/${store.id}/code`} meta={<CodeNavStatus attention={attention?.attention ?? false} />}>
+  <AppWorkspace.SidebarItemIcon>
+    <FeatCodeMark variant="glyph" tone="current" decorative />
+  </AppWorkspace.SidebarItemIcon>
+  <AppWorkspace.SidebarItemLabel>Code</AppWorkspace.SidebarItemLabel>
 </AppWorkspace.SidebarItem>;
 ```
 
@@ -193,3 +200,30 @@ The account handle has one source in the shared page data:
 `Code.serviceAccountHandle` for both the account line and refusal notices.
 Administration reads the same handle for app Code. An unavailable handle hides
 the copy action; personal Code has no service-account handle.
+
+## Show the feat/code brand
+
+feat/code is the name of Code in Cloud. Its sign is the slash of the name: a
+small commit graph with an origin commit (ring) and a new commit (dot). Show it
+wherever people meet Code, with `FeatCodeMark` from `@k2b/cloud/code/ui`:
+
+| Place | Use |
+| --- | --- |
+| Head of a Code area | `<FeatCodeMark size={30} />` |
+| Navigation entry, tab, menu | `<FeatCodeMark variant="glyph" tone="current" decorative />` next to the label "Code" |
+| What Code did to an object | `moved by <FeatCodeMark /> “File invoices”` in the row's text size, only when the origin is known to be Code; other work keeps its own name |
+| Favicon or app icon | `@k2b/cloud/code/feat-code.svg` |
+
+- `variant` is `wordmark` (default) or `glyph`, the square sign for icon slots.
+- `size` is the font size of the wordmark or the edge of the glyph in pixels.
+  At 16 px and below, and without `size`, the mark uses a drawing for small
+  sizes: ring and dot of the same size and a shorter stroke, so it does not
+  read as a needle.
+- `tone="brand"` (default) colours only the new commit green, never a
+  surface. `tone="current"` draws the whole sign in the text colour, as the
+  icons of tabs and menus.
+- The mark is an image named "feat/code" for screen readers. Pass
+  `decorative` when visible text next to it already names Code.
+
+The mark never wraps and keeps its size in every state. The name stays
+"feat/code" in every language.

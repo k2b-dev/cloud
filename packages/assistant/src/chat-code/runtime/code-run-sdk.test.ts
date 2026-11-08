@@ -18,7 +18,7 @@ const manifest = compileCapabilityManifest("grids", {
       description: "List fictional records.",
       target: "table",
       openWorld: false,
-      input: z.object({}).strict(),
+      input: z.object({ cursor: z.string().optional().describe("Page cursor.") }).strict(),
       data: z.array(z.object({ name: z.string(), amount: z.number() })),
       run: () => {
         throw new Error("Never call a real provider in this acceptance test");
@@ -27,14 +27,21 @@ const manifest = compileCapabilityManifest("grids", {
   },
 });
 
-test("one code_run input imports the shared SDK and converts dynamic table records directly to CSV", async () => {
+test("one code_run input walks all query pages through the shared SDK and exports every record once to CSV", async () => {
   const input = CodeRuntimeInput.parse({
     operation: "run",
     code: `import {grids, sheet} from "@sdk";
     const tableId = ["t", "fictional"].join("_");
     export default async () => {
-      const rows = await grids.table(tableId).record.list({});
-      return sheet.toCsv(rows, {bom: false});
+      const rows = [];
+      let cursor;
+      for (let pageNumber = 0; pageNumber < 3; pageNumber++) {
+        const {data, page} = await grids.table(tableId).record.list({cursor});
+        rows.push(...data);
+        if (!page?.hasMore) return sheet.toCsv(rows, {bom: false});
+        cursor = page.nextCursor;
+      }
+      throw new Error("Page budget exceeded");
     };`,
   });
   if (input.operation !== "run") throw new Error("Expected code_run input");
@@ -53,12 +60,9 @@ test("one code_run input imports the shared SDK and converts dynamic table recor
     },
     capability: async (name, input, _signal, options) => {
       calls.push({ name, input, options });
-      return {
-        data: [
-          { name: "Ada", amount: 12.5 },
-          { name: "=formula", amount: 4 },
-        ],
-      };
+      return calls.length === 1
+        ? { data: [{ name: "Ada", amount: 12.5 }], page: { hasMore: true, nextCursor: "opaque:two" } }
+        : { data: [{ name: "=formula", amount: 4 }], page: { hasMore: false } };
     },
   });
   const signal = new AbortController().signal;
@@ -101,6 +105,11 @@ test("one code_run input imports the shared SDK and converts dynamic table recor
   expect(await output.promise).toBe("name;amount\r\nAda;12.5\r\n'=formula;4\r\n");
   expect(calls).toEqual([
     { name: "grids.record.list", input: {}, options: { target: { type: "grids.table", id: "t_fictional" }, refs: {} } },
+    {
+      name: "grids.record.list",
+      input: { cursor: "opaque:two" },
+      options: { target: { type: "grids.table", id: "t_fictional" }, refs: {} },
+    },
   ]);
   expect(chunks).toEqual(["csv"]);
 });

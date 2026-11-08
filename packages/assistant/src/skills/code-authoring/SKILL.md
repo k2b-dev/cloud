@@ -22,6 +22,9 @@ same contracts as `cld code`; keep them intact.
 2. **Read the SDK.** `code_sdk({codeId})` returns the generated `sdk.d.ts`.
    Use only operations, inputs, results and events that it declares. Never
    guess a capability, field or resource ID; read IDs through queries or ask.
+   Domain Queries return `{ data, page? }`: read fields from `data` and pass
+   `page.nextCursor` as input `cursor` in bounded loops ([Data](references/data.md)).
+   Streaming reads keep their `FileRef`; Actions return domain data directly.
 3. **Write.** `code_write({project, path, content})` replaces one file and
    returns the complete project. Pass that project to the next write. Drafts
    stay in this chat until submit. Default-export `app` from `code.ts` or `code.tsx`.

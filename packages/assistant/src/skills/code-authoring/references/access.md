@@ -44,11 +44,11 @@ const TEAM = "00000000-0000-4000-8000-0000000000aa";
 app.get("/", async c => {
   if (!c.user?.groups.includes(TEAM))
     return c.page(<Page title="Team inbox"><Notice tone="warning" title="Only for the support team" /></Page>);
-  const open = await owner.conversation.list({ view: "needs_action", limit: 50 });
+  const { data: open, page } = await owner.conversation.list({ view: "needs_action", limit: 50 });
   return c.page(
     <Page title="Team inbox">
       <Stats>
-        <Stat label="Needs action" value={open.length >= 50 ? "50+" : open.length} />
+        <Stat label="Needs action" value={page?.hasMore ? `${open.length}+` : open.length} />
       </Stats>
     </Page>
   );

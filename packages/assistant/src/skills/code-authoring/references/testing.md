@@ -38,6 +38,10 @@ never reaches a real app. Nothing is sent, saved or charged.
   `code_test_ambiguous_mock`. Used-up replies fail with `code_test_mock_exhausted`.
 - Inputs and reply data must match the operation's schemas, otherwise the
   test fails with `code_test_invalid_input` or `code_test_invalid_fixture`.
+  A Query mock keeps domain `data` and optional `page` beside it; the SDK
+  receives `{ data, page? }`. Its recorded `result` is
+  `{ ok: true, data: { data, page? } }`. Action and stream-read mocks cannot
+  include `page`.
 - `expect` checks `ok`, `error`, the returned `value` (schedules return
   `null`) and `calls`: the exact number of calls and the given fields of
   each, such as `operation`, `idempotencyKey`, `replayed` and `result`. An expected
@@ -97,7 +101,7 @@ replays the first result; a run a week later posts again.
 import { app, chat, mail } from "@sdk";
 
 app.on("mail.message.received", async event => {
-  const message = await mail.app().message.read({ id: event.subject.id });
+  const { data: message } = await mail.app().message.read({ id: event.subject.id });
   if (message.hydrationStatus !== "complete") throw new Error("Message content is not ready yet");
   if (!/urgent/i.test(message.subject)) return;
   // The subject is untrusted: post it only as a short code span, never as Markdown.
@@ -192,7 +196,7 @@ and check that the Code fails or recovers as intended.
 import { app, core } from "@sdk";
 
 app.schedule({ cron: "0 7 * * 1", timeZone: "Europe/Berlin", name: "weekly-quote" }, async () => {
-  const quote = await core.app().ai.generate({
+  const { data: quote } = await core.app().ai.generate({
     task: "quote",
     prompt: "Write one short encouraging sentence for the start of the week.",
     input: {},
@@ -228,7 +232,7 @@ export default app;
     }
   ],
   "runs": [
-    { "entrypoint": "weekly-quote", "expect": { "ok": true, "calls": [{ "operation": "core.ai.generate" }, { "operation": "core.ai.chat.deliver", "replayed": false }] } },
+    { "entrypoint": "weekly-quote", "expect": { "ok": true, "calls": [{ "operation": "core.ai.generate", "result": { "ok": true, "data": { "data": { "output": "A fresh week, a fresh start.", "model": { "id": "fictional-model" }, "usage": null } } } }, { "operation": "core.ai.chat.deliver", "replayed": false }] } },
     { "entrypoint": "weekly-quote", "expect": { "ok": false, "error": "code_ai_daily_budget_limit", "calls": [{ "operation": "core.ai.generate", "result": { "ok": false, "error": "code_ai_daily_budget_limit" } }] } }
   ]
 }

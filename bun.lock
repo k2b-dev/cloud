@@ -650,6 +650,7 @@
       "version": "0.0.0",
       "dependencies": {
         "@k2b/cloud": "workspace:*",
+        "@k2b/editor": "workspace:*",
         "@k2b/ssr": "workspace:*",
         "@k2b/stdlib": "catalog:",
         "@k2b/sync": "catalog:",
@@ -735,8 +736,15 @@
     },
     "packages/speedtest": {
       "name": "@k2b/speedtest",
+      "dependencies": {
+        "@k2b/ssr": "workspace:*",
+        "@k2b/stdlib": "catalog:",
+        "@k2b/ui": "workspace:*",
+        "solid-js": "catalog:",
+      },
       "devDependencies": {
         "@types/bun": "catalog:",
+        "bun-plugin-tailwind": "catalog:",
         "typescript": "catalog:",
       },
     },
@@ -776,6 +784,7 @@
       "dependencies": {
         "@k2b/cloud": "workspace:*",
         "@k2b/ssr": "workspace:*",
+        "@k2b/speedtest": "workspace:*",
         "@k2b/stdlib": "catalog:",
         "@k2b/ui": "workspace:*",
         "hono": "catalog:",

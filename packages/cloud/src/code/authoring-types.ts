@@ -17,6 +17,11 @@ export type CodeHandle<Type extends string, Id extends string = string> = {
   readonly type: Type;
   readonly id: Id;
 };
+/** Query data and the capability envelope's optional pagination, shared by queries returning domain data. */
+export type CodeQueryResult<Data> = {
+  data: Data;
+  page?: { hasMore: true; nextCursor: string } | { hasMore: false };
+};
 /** Visitor identity is presentation and handler input, never the authority for SDK data calls. */
 export type CodeUser = { id: string; groups: string[] };
 /** Request helpers for hosted routes. No middleware system is part of Code. */

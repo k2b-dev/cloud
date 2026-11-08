@@ -1,4 +1,5 @@
 import { AppWorkspace, type NavigationItem, useLocale } from "@k2b/ui";
+import { FeatCodeMark } from "../code/FeatCodeMark";
 import { activeAdminLink } from "./admin-active-link";
 import { type AdminLink, buildAdminGroups } from "./admin-navigation";
 import { platformMessages } from "./platform-messages";
@@ -22,7 +23,13 @@ const AdminNavigation = (props: { currentPath: string; groups: ReturnType<typeof
               title={link.label}
               meta={link.waiting ? <AppWorkspace.SidebarItemStatus waiting={link.waiting} /> : undefined}
             >
-              <AppWorkspace.SidebarItemIcon icon={`ti ${link.icon}`} />
+              {link.brand === "feat-code" ? (
+                <AppWorkspace.SidebarItemIcon>
+                  <FeatCodeMark variant="glyph" tone="current" decorative />
+                </AppWorkspace.SidebarItemIcon>
+              ) : (
+                <AppWorkspace.SidebarItemIcon icon={`ti ${link.icon}`} />
+              )}
               <AppWorkspace.SidebarItemLabel>{link.label}</AppWorkspace.SidebarItemLabel>
             </AppWorkspace.SidebarItem>
           ))}

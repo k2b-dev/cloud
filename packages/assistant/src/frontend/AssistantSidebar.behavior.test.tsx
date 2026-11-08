@@ -455,7 +455,8 @@ test("My apps & automations appears only for a person with Code and opens its vi
     expect(mobileIds()).not.toContain("code");
     setHasCode(true);
     expect(row()?.textContent).toContain("My apps & automations");
-    expect(row()!.querySelector("i")?.className).toContain("ti-stack-2");
+    // The entry carries the feat/code sign in the row's colour.
+    expect(row()!.querySelector('.cloud-featcode[data-variant="glyph"][data-tone="current"]')).not.toBeNull();
     const labels = Array.from(footer().querySelectorAll(".k2b-app-workspace__sidebar-item-label-text")).map((label) => label.textContent);
     expect(labels.slice(0, 3)).toEqual(["Waiting for you", "My apps & automations", "Studio"]);
     expect(mobileIds()).toContain("code");

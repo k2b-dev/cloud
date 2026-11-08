@@ -13,6 +13,7 @@ import {
   cloudAiDetailsRows,
   cloudAiStatsTiles,
   cloudAiTableTsv,
+  cloudAiViewDescription,
   cloudAiViewSummary,
   cloudAiViewTable,
   isAiViewFile,
@@ -957,4 +958,100 @@ test("table reference cells retain optional card facts", () => {
     rows: [{ item: ref }],
   });
   expect(parsed).toMatchObject({ rows: [{ item: ref }] });
+});
+
+test("portable nodes keep saved view envelopes and Cloud-only cells intact", () => {
+  const legacy = [
+    { view: "chart", kind: "bar", title: "Saved", data: [{ label: "A", value: 4 }] },
+    {
+      view: "group",
+      title: "Saved",
+      charts: [
+        { kind: "bar", title: "A", data: [{ label: "A", value: 4 }] },
+        { kind: "bar", title: "B", data: [{ label: "B", value: 2 }] },
+      ],
+    },
+    {
+      view: "table",
+      title: "Saved",
+      columns: [
+        { id: "at", type: "datetime" },
+        { id: "ref", type: "ref" },
+      ],
+      rows: [{ at: "2026-11-01T12:00", ref: { type: "spaces.item", id: "one", title: "Item" } }],
+      footer: { at: null },
+    },
+    {
+      view: "stats",
+      title: "Saved",
+      items: [{ label: "Revenue", value: 42, delta: 12, better: "up", format: { style: "currency", currency: "EUR" } }],
+    },
+    { view: "details", title: "Saved", items: [{ label: "At", type: "date", value: "2026-11-01" }] },
+    {
+      view: "explorer",
+      title: "Saved",
+      columns: [
+        { id: "x", type: "number" },
+        { id: "y", type: "number" },
+      ],
+      rows: [{ x: 1, y: 4 }],
+      views: [{ id: "bar", label: "Bars", kind: "bar", x: "x", y: "y" }],
+    },
+  ];
+  for (const fixture of legacy) {
+    const saved = JSON.stringify(fixture);
+    const view = parseCloudAiView(JSON.parse(saved));
+    expect(view, fixture.view).toBeDefined();
+    if (!view) throw new Error("Invalid legacy fixture");
+    const node = cloudAiViewDescription(view);
+    expect("view" in node).toBe(false);
+    expect(String("kind" in node ? node.kind : node.block)).toBe(fixture.view === "chart" ? "bar" : fixture.view);
+    expect(JSON.stringify(fixture)).toBe(saved);
+    if ("block" in node && node.block === "stats")
+      expect(node.items[0]?.delta).toEqual({ value: 12, unit: "absolute", better: "up", format: { style: "currency", currency: "EUR" } });
+  }
+});
+
+test("stats accept ratio or points changes with comparison values and reject contradictory legacy rating", () => {
+  const fixture = {
+    view: "stats",
+    title: "Newsletter",
+    items: [
+      {
+        label: "Open rate",
+        value: 0.492,
+        format: { style: "percent" },
+        delta: { value: 0.031, unit: "points", better: "up" },
+        compare: { label: "Last month", value: 0.461 },
+      },
+    ],
+  };
+  const view = parseCloudAiView(fixture);
+  expect(view?.view).toBe("stats");
+  if (view?.view !== "stats") throw new Error("Invalid stats");
+  expect(cloudAiStatsTiles(view, "en")[0]?.delta).toEqual({ text: "+3.1 pts", direction: "up", tone: "better" });
+  expect(cloudAiStatsTiles(view, "de-DE")[0]?.delta?.text).toBe("+3,1 Pkt.");
+  expect(cloudAiStatsTiles(view, "fr-FR")[0]?.delta?.text).toBe("+3,1 pts");
+  expect(cloudAiViewSummary(view)).toMatchObject({ items: [{ compare: true, delta: true }] });
+  expect(parseCloudAiView({ ...fixture, items: [{ ...fixture.items[0], better: "down" }] })).toBeUndefined();
+  expect(
+    parseCloudAiView({ ...fixture, items: [{ label: "State", value: "OK", compare: { label: "Previous", value: 1 } }] }),
+  ).toBeUndefined();
+});
+
+test("portable table descriptions retain search, groups and column priorities", () => {
+  const fixture: CloudAiTableView = {
+    ...table,
+    search: true,
+    groupBy: [{ id: "name", label: "Name" }],
+    columns: [
+      { id: "price", type: "number", priority: 3 },
+      { id: "name", type: "text" },
+    ],
+  };
+  const parsed = parseCloudAiView(JSON.parse(JSON.stringify(fixture)));
+  if (parsed?.view !== "table") throw new Error("Invalid table fixture");
+  const { view: _view, ...data } = fixture;
+  expect(cloudAiViewDescription(parsed)).toEqual({ block: "table", ...data });
+  expect(cloudAiViewTable(cloudAiViewDescription(parsed), "en")).toEqual(cloudAiViewTable(parsed, "en"));
 });
