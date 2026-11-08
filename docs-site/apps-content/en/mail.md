@@ -107,6 +107,42 @@ automatic marking as read.
 Provider folders and message flags can appear in other mail clients. Cloud-only
 collaboration fields stay in Mail.
 
+## How messages join conversations
+
+Mail uses reply headers and provider threads to find conversations in the same
+mailbox. A new message joins only when its sender already appears in From, To,
+Cc, or Reply-To of an earlier message, belongs to the same mailing list, or is
+the mailbox itself or a configured sender alias. Bcc recipients of the mailbox's
+own sent messages count too. Mailing-list replies need a matching list identity
+and the same `List-Post` email address on both messages. The posting address must
+be outside this mailbox and its aliases; To and Cc do not establish this match.
+Mailing-list replies from people not yet in a conversation are grouped but do not
+reopen it. They keep its current status and Show later time, including later
+replies grouped only through the list.
+Mailbox automations also skip changes to status, Show later and assignment for
+these replies. The automation log explains the skipped steps. Reading and
+tagging steps can still run.
+
+This rule also applies when replies synchronize before the original; Mail uses
+the participants of the messages already stored. An original arriving later can
+also join when a stored reply sent by this mailbox directly replies to its
+Message-ID and has a matching, nonempty subject.
+
+A reply from a known participant can keep its conversation when its subject
+changes or is empty, if it refers to a stored message. Grouping by subject alone
+needs a matching, nonempty subject. Common reply and forward prefixes and leading
+list or gateway tags do not change that match. Tags containing a digit or `#`
+remain part of the subject comparison.
+
+Previously stored subjects are not recalculated during the upgrade. Replies that
+only match by subject may therefore start a new conversation with older threads.
+Replies quoting a stored message are unaffected.
+
+Replies from new people, such as a colleague who received a forward, start a
+separate conversation. Other mail that refers to a conversation no longer reopens
+or unsnoozes it. Use manual merge when the conversations belong together.
+Existing conversations are not regrouped, including when threads are rebuilt.
+
 ## Understand the Mail model
 
 | Resource | Responsibility |
@@ -125,7 +161,7 @@ secrets.
 ## Understand the working model
 
 We recommend **Needs action** as your inbox: the work status (**Needs action**, **Waiting for reply**, **Done**) is your queue; folders are filing.
-Every incoming message sets **Needs action** and clears **Show later** once Mail loads it or gives up loading it, whatever its folder. A confirmed human reply sets **Waiting for reply**.
+Incoming mail normally sets **Needs action** and clears **Show later** once Mail loads it or gives up loading it, whatever its folder. Mailing-list replies grouped from people not yet in the conversation keep its status and Show later time. A confirmed human reply sets **Waiting for reply**.
 Moving, archiving, filing, and marking read change no work status. Follow-up and assignment views span folders; see [Choose where a folder's mail appears](#choose-where-a-folders-mail-appears) for folder visibility.
 **Assigned to me** and **Unassigned** leave out **Done** and **Later** conversations.
 

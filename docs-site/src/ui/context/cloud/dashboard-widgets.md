@@ -27,8 +27,8 @@ chart showcase use it, so a page tree maps one to one onto components:
 | Page | `DashboardGrid` | the host draws the page head |
 | Section `{ title, description, icon, color }` | `DashboardSection` | `title`, `description`, `icon`, `iconColor` |
 | Chart `{ kind, … }` | `DashboardFrame` without title around `ChartExplorer` | `title`, `subtitle`, legend and table rows from the chart description; panel `width`, content `height` |
-| `{ block: "stats", items }` | `StatGrid` of `StatCell` tiles, always the whole row | per item `label`, `value` in its `format`, `icon`, `tone`, `delta`, `compare`, `trend`; states per tile |
-| `{ block: "table", columns, rows, search?, groupBy? }` | `DashboardFrame` with `reserve`, typed `DataTable` | search field and grouping chip in `tools`, typed columns (`type`, `format`, `states`, `priority`), sortable headers |
+| `{ block: "stats", items }` | `StatGrid` of `StatCell` tiles, always the whole row | per item `label`, `value` in its `format` (`null` is the empty dash), `icon`, `tone` (an icon tone, or the money tones `in` and `out`), `delta`, `compare`, `trend`; states per tile |
+| `{ block: "table", columns, rows, search?, groupBy? }` | `DashboardFrame` with `reserve`, typed `DataTable` | search field and grouping chip in `tools`, typed columns (`type`, `format`, `states`, `priority`); search and sort read what a column shows (a date by its time, a status by its label); the panel's `height`, the table scrolling inside it, or `0` for the height of its rows |
 | Chart without values `{ kind, title, subtitle?, empty? }` | the same `DashboardFrame` and `ChartExplorer` as the chart, in its empty state | `title`, `subtitle`, `empty` as the sentence; only these keys, and a known `kind` |
 | `{ block: "details", title, subtitle?, items }` | `DashboardFrame` with a `DescriptionList` in rows | per item `label`, `type` (`text`, `number`, `date`, `datetime`, `ref`), `value`, `format`, validated like Chat's details view; a missing value is a dash; `height` of the panel, more fields scroll |
 | `{ block: "budget" }` | `DashboardFrame` `compact`, `BudgetList` | the block's fields as `BudgetList` props; 240 px by default |

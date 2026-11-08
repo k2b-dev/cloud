@@ -3,10 +3,19 @@ import { Button, Dropdown, FilterChip, Placeholder, Skeleton, TextInput, useLoca
 import { createEffect, createMemo, createSignal, For, type JSX, Match, on, Show, Switch } from "solid-js";
 import type { ActivityBatchContext, ActivityChain, ActivityEntry, ActivityPage, HistoryAction } from "../activity-contracts";
 import HistoryUnavailable, { isHistoryUnavailable } from "./HistoryUnavailable";
-import { dayGroups, type HistoryActions, type HistoryEnvironment, historyRows } from "./history-actions";
+import {
+  dayGroups,
+  type HistoryActions,
+  type HistoryEnvironment,
+  type HistoryRowModel,
+  type HistoryRun,
+  historyRows,
+  historyRuns,
+  sameActor,
+} from "./history-actions";
 import { useHistoryMessages } from "./history-messages";
 import { type ActivityFilters, type ActivityRequest, type ActivityWhen, activityRequest } from "./history-requests";
-import { HistoryRow, MoreFooter, SkeletonRows } from "./history-rows";
+import { HistoryRow, HistoryRunRow, MoreFooter, SkeletonRows } from "./history-rows";
 import MissingItemView from "./MissingItemView";
 
 /* ------------------------------------------------------------------ activity view */
@@ -38,6 +47,21 @@ const filterKey = (filters: ActivityFilters) =>
     filters.when ?? null,
     filters.q ?? null,
   ]);
+
+/**
+ * Runs this tab has opened. They stay open when the person comes back from a file they opened from the history;
+ * opening is presentation only, so a reload starts closed.
+ */
+const openedRuns = new Set<string>();
+
+/** Day lines: rows and runs, each knowing whether the line above names the same actor. */
+export function compactLines(rows: readonly HistoryRowModel[]): { item: HistoryRun; repeat: boolean }[] {
+  const lead = (item: HistoryRun) => (item.kind === "run" ? item.rows[0]!.lead : item.row.lead);
+  return historyRuns(rows).map((item, index, all) => ({
+    item,
+    repeat: index > 0 && sameActor(lead(all[index - 1]!), lead(item)),
+  }));
+}
 
 export type ActivityViewProps = {
   env: HistoryEnvironment;
@@ -82,8 +106,16 @@ export default function ActivityView(props: ActivityViewProps) {
       .map((result) => result.page),
   );
   const entries = createMemo(() => visiblePages().flatMap((page) => page.items));
-  const rows = createMemo(() => historyRows(entries(), { batches: true }));
-  const groups = createMemo(() => dayGroups(rows(), locale(), h(), props.env));
+  const rows = createMemo(() => historyRows(entries(), { batches: true, merge: true }));
+  const [opened, setOpened] = createSignal<ReadonlySet<string>>(new Set(openedRuns));
+  const toggleRun = (key: string, open: boolean) => {
+    if (open) openedRuns.add(key);
+    else openedRuns.delete(key);
+    setOpened(new Set(openedRuns));
+  };
+  const groups = createMemo(() =>
+    dayGroups(rows(), locale(), h(), props.env).map((group) => ({ ...group, items: compactLines(group.rows) })),
+  );
   const limited = () => visiblePages().some((page) => page.searchLimitReached);
   const [text, setText] = createSignal(props.filters.q ?? "");
   // Back and forward change the URL; the field follows it.
@@ -279,7 +311,7 @@ export default function ActivityView(props: ActivityViewProps) {
             />
           }
         >
-          <div class="filesv2-history-list">
+          <div class="filesv2-history-list filesv2-history-list--compact">
             <Switch>
               <Match when={props.filters.baseId?.startsWith("freeipa:") || isHistoryUnavailable(pages.error())}>
                 <HistoryUnavailable />
@@ -304,9 +336,9 @@ export default function ActivityView(props: ActivityViewProps) {
                   {h().loading}
                 </p>
                 <Skeleton class="filesv2-history-skeleton__day" />
-                <SkeletonRows count={4} variant="list" />
+                <SkeletonRows count={4} variant="compact" />
                 <Skeleton class="filesv2-history-skeleton__day" />
-                <SkeletonRows count={3} variant="list" />
+                <SkeletonRows count={3} variant="compact" />
               </Match>
               <Match when={rows().length === 0 && (pages.hasMore() || pages.error())}>
                 <p class="filesv2-history-scanned">{h().nothingVisibleYet}</p>
@@ -346,18 +378,40 @@ export default function ActivityView(props: ActivityViewProps) {
                         </Show>
                       </h2>
                       <ul class="filesv2-history-rows">
-                        <For each={group.rows}>
-                          {(row) => (
+                        <For each={group.items}>
+                          {(line) => (
                             <li>
-                              <HistoryRow
-                                row={row}
-                                env={props.env}
-                                actions={props.actions}
-                                context="activity"
-                                dated
-                                variant="list"
-                                onChanged={() => void pages.refresh()}
-                              />
+                              <Switch>
+                                <Match when={line.item.kind === "row" && line.item}>
+                                  {(single) => (
+                                    <HistoryRow
+                                      row={single().row}
+                                      env={props.env}
+                                      actions={props.actions}
+                                      context="activity"
+                                      dated
+                                      variant="compact"
+                                      links
+                                      repeat={line.repeat}
+                                      onChanged={() => void pages.refresh()}
+                                    />
+                                  )}
+                                </Match>
+                                <Match when={line.item.kind === "run" && line.item}>
+                                  {(run) => (
+                                    <HistoryRunRow
+                                      rows={run().rows}
+                                      env={props.env}
+                                      actions={props.actions}
+                                      links
+                                      repeat={line.repeat}
+                                      expanded={opened().has(run().key)}
+                                      onToggle={(open) => toggleRun(run().key, open)}
+                                      onChanged={() => void pages.refresh()}
+                                    />
+                                  )}
+                                </Match>
+                              </Switch>
                             </li>
                           )}
                         </For>

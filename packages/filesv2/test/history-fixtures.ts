@@ -13,7 +13,7 @@ export const env: HistoryEnvironment = {
 };
 
 export const hidden: ActivitySide = { visibility: "hidden" };
-export const current = (path: string, options: { directory?: boolean; itemId?: string } = {}): ActivitySide => ({
+export const current = (path: string, options: { directory?: boolean; itemId?: string; relativePath?: string } = {}): ActivitySide => ({
   visibility: "full",
   source: "current",
   name: path.split("/").at(-1)!,
@@ -21,11 +21,15 @@ export const current = (path: string, options: { directory?: boolean; itemId?: s
   root: "groups",
   baseId: "binding-1",
   publicBaseId: "cloud:groups:vertrieb",
+  ...(options.relativePath !== undefined ? { relativePath: options.relativePath } : {}),
   itemId: options.itemId ?? null,
   directory: options.directory ?? true,
   size: null,
   revision: null,
 });
+/** A current side as the reader returns it, with its base-relative path below `vertrieb/`. */
+export const live = (path: string, options: { directory?: boolean; itemId?: string } = {}): ActivitySide =>
+  current(path, { ...options, relativePath: path.split("/").slice(1).join("/") });
 export const snapshot = (path: string, options: { directory?: boolean; itemId?: string } = {}): ActivitySide => ({
   ...(current(path, options) as Extract<ActivitySide, { visibility: "full" }>),
   source: "snapshot",

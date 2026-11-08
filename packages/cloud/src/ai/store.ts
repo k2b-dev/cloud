@@ -6,7 +6,7 @@ import { restoreReviewSnapshot, serializeReviewSnapshot } from "../capabilities/
 import { type CapabilityActionReviewPresentation, CapabilityActionReviewPresentationSchema } from "../contracts/capabilities";
 import { sql } from "../runtime/clients";
 import { logger } from "../services/logging";
-import { toPgTextArray } from "../services/postgres";
+import { isUniqueViolation, toPgTextArray } from "../services/postgres";
 import { AI_TOOL_CHECK_STALE_MS, type AiActionCheck, type AiStoredActionReview } from "./action-review";
 import { AiMapSchema } from "./map-contracts";
 import { assertInteractiveChatTurn } from "./retired-routines";
@@ -2483,15 +2483,7 @@ export const aiConversations: AiConversationService = {
       )
       SELECT id FROM restored
     `.catch((error: unknown) => {
-      if (
-        typeof error === "object" &&
-        error !== null &&
-        "code" in error &&
-        error.code === "23505" &&
-        "constraint" in error &&
-        error.constraint === "idx_ai_conversations_active_place"
-      )
-        throw new AiConversationRestoreConflict();
+      if (isUniqueViolation(error, "idx_ai_conversations_active_place")) throw new AiConversationRestoreConflict();
       throw error;
     });
     return rows[0] ? loadConversationSummary(input) : null;

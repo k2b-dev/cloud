@@ -382,9 +382,10 @@ export const mailCapabilityPresentation: CapabilityPresentationCatalog = {
         "message.read": {
           title: "Nachricht lesen",
           description:
-            "Liest Adressen, Anhangverweise und begrenzten Klartext. Bei bodyTruncated den vollständigen Text mit message.read-content ab offset 0 lesen und nextOffset folgen. Rohquelle und HTML bleiben ausgeschlossen.",
+            "Liest Adressen, Anhangverweise und begrenzten Klartext. Mit waitForHydration bis zu 30 Sekunden auf den Inhalt warten; solange er aussteht, innerhalb der Laufzeit erneut lesen. Bei bodyTruncated den vollständigen Text mit message.read-content ab offset 0 lesen und nextOffset folgen. Rohquelle und HTML bleiben ausgeschlossen.",
           input: {
             id: "Exaktes mail.message ID, zurückgegeben von Konversationsnachrichten auflisten oder E-Mail durchsuchen oder einer eingegebenen Ressource ref.",
+            waitForHydration: "Bis zu 30 Sekunden auf den vollständigen Nachrichteninhalt warten.",
           },
         },
         "reminder.read": {
