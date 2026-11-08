@@ -4,9 +4,11 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Browser, Locator, Page } from "playwright";
 import { launchBrowser, pageErrors, settled } from "../../../ui/test/browser";
+import type { ActivityPage } from "../activity-contracts";
 import {
   historyActivity,
   historyBase,
+  historyBulk,
   historyChain,
   historyDirectory,
   historyFile,
@@ -125,6 +127,7 @@ async function open(
   inspector: boolean | "history" | "paged-history" = false,
   touch = false,
   historySize = 6,
+  activity: ActivityPage = historyActivity,
 ) {
   const context = await browser.newContext({ viewport: { width, height: 844 }, reducedMotion: "reduce", hasTouch: touch });
   const tab = await context.newPage();
@@ -182,7 +185,7 @@ async function open(
           contentType: "application/json",
           body: JSON.stringify({ message: "Temporarily unavailable", code: "unavailable" }),
         });
-      return json(url.searchParams.has("q") ? historySearch : historyActivity);
+      return json(url.searchParams.has("q") ? historySearch : activity);
     }
     if (url.pathname.endsWith("/move-back")) {
       recoveryRequests.push({ method: route.request().method(), path: url.pathname, failed: recoveryFails });
@@ -203,7 +206,7 @@ async function open(
     if (url.pathname.endsWith("/recovery"))
       return json({ oldLocation: { baseId: historyBase.id, path: "" }, trash: null, canMoveBack: true });
     if (url.pathname === "/api/filesv2/bases") return json({ items: [historyBase], issues: [], editor: null });
-    if (inspector) {
+    if (inspector || activity !== historyActivity) {
       if (url.pathname.endsWith("/entries")) return json(historyDirectory);
       if (url.pathname.endsWith("/entry")) return json({ base: historyBase, entry: historyFile });
       if (url.pathname.endsWith("/versions")) return json(historyVersions);
@@ -597,7 +600,8 @@ for (const width of [1440, 768, 390])
         if (width === 1440) {
           expect(Math.round((await metrics(tab)).search.width)).toBe(340);
           expect(Math.round((await metrics(tab)).sidebar.width)).toBe(248);
-          expect((await metrics(tab)).list.width).toBeLessThanOrEqual(920);
+          // One-line activity rows take a wider list than the former two-line rows.
+          expect((await metrics(tab)).list.width).toBeLessThanOrEqual(1040);
         }
         const search = tab.getByPlaceholder("Name oder alter Pfad suchen");
         await search.fill("Angebote 2025");
@@ -690,6 +694,71 @@ for (const width of [1440, 390])
     }
   }, 30_000);
 
+test("a bulk API job reads as one line per change, opens by keyboard in place, and its file link returns to the history", async () => {
+  const { context, tab, errors } = await open(1440, "light", "", "de", true, false, false, 6, historyBulk);
+  try {
+    await tab.goto("http://files-history.test/app/filesv2?view=activity&bulk=1");
+    await tab.waitForFunction(() => document.body.dataset.ready === "true");
+    const toggle = tab.locator("button.filesv2-history-run__toggle");
+    await toggle.waitFor();
+    await tab.evaluate(() => document.fonts.ready);
+    await settled(tab);
+    expect(await toggle.innerText()).toContain("Jonas Berger hat 12 Dateien umbenannt und verschoben");
+    const lines = async () =>
+      tab.evaluate(() =>
+        [...document.querySelectorAll<HTMLElement>("article.filesv2-history-row, button.filesv2-history-run__toggle")]
+          .filter((row) => row.offsetParent !== null)
+          .map((row) => {
+            const time = row.querySelector("time")!.getBoundingClientRect();
+            const own = row.getBoundingClientRect();
+            return { height: own.height, timeRight: Math.round(time.right), timeMiddle: time.top + time.height / 2 - own.top };
+          }),
+      );
+    const collapsed = await lines();
+    // Mia's overwrite, the run, and Mia's vanished upload: three lines of one height, times flush right.
+    expect(collapsed).toHaveLength(3);
+    expect(new Set(collapsed.map((line) => line.height))).toEqual(new Set([36]));
+    expect(new Set(collapsed.map((line) => line.timeRight)).size).toBe(1);
+    const vanished = tab.locator("article.filesv2-history-row").filter({ hasText: "Angebot-alt.pdf" });
+    expect(await vanished.innerText()).toContain("Angebot-alt.pdf (nicht mehr verfügbar)");
+    expect(await vanished.locator("a").count()).toBe(0);
+
+    const box = await toggle.boundingBox();
+    await tabTo(tab, toggle);
+    await tab.keyboard.press("Enter");
+    expect(await toggle.getAttribute("aria-expanded")).toBe("true");
+    await focused(tab, toggle);
+    await settled(tab);
+    // Opening adds rows below; the line itself keeps its place and size.
+    expect(await toggle.boundingBox()).toEqual(box);
+    const expanded = await lines();
+    expect(expanded).toHaveLength(15);
+    expect(new Set(expanded.map((line) => line.height))).toEqual(new Set([36]));
+    // A moved-away result keeps its name plain; every other row leads to its file.
+    const rows = tab.locator(".filesv2-history-run__rows article");
+    // Inside the run each line names only the change; the run names the actor.
+    expect(await rows.first().innerText()).toContain(
+      "scan_4810.pdf → Beleg-01.pdf, nach Team Vertrieb › Buchhaltung › Belege › 2026 verschoben",
+    );
+    expect(await rows.nth(1).innerText()).toContain("Beleg-02.pdf (nicht mehr verfügbar)");
+    expect(await rows.nth(1).locator("a.filesv2-history-target--name").count()).toBe(0);
+    await tab.keyboard.press(" ");
+    expect(await toggle.getAttribute("aria-expanded")).toBe("false");
+    await tab.keyboard.press("Enter");
+
+    const link = rows.first().locator("a.filesv2-history-target--name");
+    expect(await link.innerText()).toBe("Beleg-01.pdf");
+    await link.click();
+    await tab.waitForURL((url) => url.searchParams.get("file") === "Buchhaltung/Belege/2026/Beleg-01.pdf");
+    await tab.goBack();
+    await tab.waitForURL((url) => url.searchParams.get("view") === "activity");
+    await tab.locator("button.filesv2-history-run__toggle[aria-expanded='true']").waitFor();
+    expect(errors).toEqual([]);
+  } finally {
+    await context.close();
+  }
+}, 30_000);
+
 test("phone activity keeps the menu beside the search and never leaves a dot at a line edge", async () => {
   const { context, tab, errors } = await open(390, "light");
   try {
@@ -739,17 +808,28 @@ test("phone activity keeps the menu beside the search and never leaves a dot at 
     expect(await title.evaluate((element) => element.getBoundingClientRect().bottom)).toBeLessThanOrEqual(
       await tab.locator(".filesv2-history-search").evaluate((element) => element.getBoundingClientRect().top),
     );
+    // On a phone the compact facts sit under the sentence and stay inside the row.
+    const facts = await tab.locator("article.filesv2-history-row .filesv2-history-row__facts").evaluateAll((all) =>
+      all.map((element) => {
+        const own = element.getBoundingClientRect();
+        const sentence = element.parentElement!.querySelector(".filesv2-history-row__sentence")!.getBoundingClientRect();
+        return { below: own.top >= sentence.bottom - 1, inside: own.right <= element.parentElement!.getBoundingClientRect().right + 0.5 };
+      }),
+    );
+    expect(facts.length).toBeGreaterThanOrEqual(3);
+    expect(facts.every((fact) => fact.below && fact.inside)).toBe(true);
     // A status badge is followed by a dot like every other fact.
-    expect(await tab.locator(".filesv2-history-row__lead .filesv2-history-row__dot").count()).toBeGreaterThanOrEqual(1);
+    expect(
+      await tab.locator(".filesv2-history-row__facts-text .k2b-status-badge + .filesv2-history-row__dot").count(),
+    ).toBeGreaterThanOrEqual(1);
     const lines = await tab.evaluate(() => {
-      // A narrow text column forces the facts to wrap.
-      for (const text of document.querySelectorAll<HTMLElement>(".filesv2-history-row__text")) text.style.width = "110px";
-      const facts =
-        "time, a, .k2b-status-badge, .filesv2-history-row__meta > span:not(.filesv2-history-row__dot, .filesv2-history-row__lead)";
+      // A narrow facts column forces the facts to wrap.
+      for (const text of document.querySelectorAll<HTMLElement>(".filesv2-history-row__facts")) text.style.width = "110px";
+      const facts = "a, .k2b-status-badge, .filesv2-history-row__facts-text > span:not(.filesv2-history-row__dot)";
       const sameLine = (a: DOMRect, b: DOMRect) => a.bottom > b.top + 1 && a.top < b.bottom - 1;
       const misplaced: string[] = [];
       let wrapped = 0;
-      for (const meta of document.querySelectorAll<HTMLElement>(".filesv2-history-row__meta")) {
+      for (const meta of document.querySelectorAll<HTMLElement>(".filesv2-history-row__facts-text")) {
         if (meta.getBoundingClientRect().height > 30) wrapped++;
         const all = [...meta.querySelectorAll<HTMLElement>(facts)];
         for (const dot of meta.querySelectorAll<HTMLElement>(".filesv2-history-row__dot")) {

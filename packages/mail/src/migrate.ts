@@ -214,6 +214,8 @@ const applyAdditions = async (tx: SqlClient): Promise<void> => {
 
   await tx`CREATE INDEX IF NOT EXISTS outbox_submissions_draft_idx ON mail.outbox_submissions (draft_id, created_at DESC)`.simple();
 
+  await addMailingListConversationLinks(tx);
+
   // NULL = no status decision since Mail linked the message; true = a decision covers it and its
   // hydration keeps the status; false = a later decision released it. Moving the message to another
   // conversation resets it to NULL.
@@ -367,6 +369,21 @@ const applyAdditions = async (tx: SqlClient): Promise<void> => {
       WHERE state <> 'completed'
     `.simple();
   }
+};
+
+/** List-only membership keeps its provenance across copies, hydration and restarts. */
+const addMailingListConversationLinks = async (tx: SqlClient): Promise<void> => {
+  const [current] = await tx<{ allows: boolean }[]>`
+    SELECT pg_get_constraintdef(oid) LIKE '%''list''%' AS allows
+    FROM pg_constraint
+    WHERE conrelid = 'mail.conversation_messages'::regclass AND conname = 'conversation_messages_added_by_check'
+  `;
+  if (current?.allows) return;
+  await tx`ALTER TABLE mail.conversation_messages DROP CONSTRAINT IF EXISTS conversation_messages_added_by_check`.simple();
+  await tx`
+    ALTER TABLE mail.conversation_messages ADD CONSTRAINT conversation_messages_added_by_check
+    CHECK (added_by = ANY (ARRAY['provider', 'headers', 'heuristic', 'manual', 'outbox', 'list'])) NOT VALID
+  `.simple();
 };
 
 /** Accepted Undo requests survive the client and wait for the original move's destination copy. */

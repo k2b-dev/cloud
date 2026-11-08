@@ -144,3 +144,27 @@ test("project search authorizes the project and filters owned chats before limit
   );
   expect(calls).toEqual([]);
 });
+
+test("place search groups ordinary chat refs and uses the current person's place filter", async () => {
+  const place = { ref: { type: "fixture.conversation", id: "Marta1" }, title: "Marta" };
+  const calls: unknown[] = [];
+  const result = await searchAssistant(
+    input,
+    context,
+    {
+      ...store,
+      listConversations: async (request) => {
+        calls.push(request);
+        return [{ ...chat, place }];
+      },
+    },
+    projects,
+    true,
+  );
+  expect(calls).toEqual([{ ownerUserId: "owner", search: "launch", place: "any", limit: 1 }]);
+  expect(result).toMatchObject({
+    ok: true,
+    data: { data: [{ ref: { type: "assistant.chat", id: "Chat01" }, group: "An Orten", context: "Marta" }] },
+  });
+  if (result.ok) expect(UniversalSearchDataSchema.safeParse(result.data.data).success).toBe(true);
+});

@@ -1,10 +1,16 @@
 import { renderBarChartSvg } from "../../content/chart-bar";
 import { renderStateTimelineSvg } from "../../content/chart-state-timeline";
 import { renderAreaSvg } from "./area";
+import { renderBubbleSvg } from "./bubble";
 import { renderHeatmapSvg } from "./calendar";
+import { renderFunnelSvg } from "./funnel";
 import { renderHbarSvg } from "./hbar";
 import { map } from "./map";
+import { renderParetoSvg } from "./pareto";
+
+import { renderRadarSvg } from "./radar";
 import { barGauge, boxplot, donut, gauge, histogram, line, pie, scatter, sparkline, stat } from "./svg-renderers";
+import { renderTreemapSvg } from "./treemap";
 import { renderWaterfallSvg } from "./waterfall";
 
 // Add one renderer here: its key defines the discriminator, ChartKind and the capitalized Chart namespace member.
@@ -15,6 +21,7 @@ const createChartRenderers = () => ({
   line: line,
   bar: renderBarChartSvg,
   hbar: renderHbarSvg,
+  funnel: renderFunnelSvg,
   pie: pie,
   donut: donut,
   scatter: scatter,
@@ -27,6 +34,11 @@ const createChartRenderers = () => ({
   heatmap: renderHeatmapSvg,
   map: map,
   stateTimeline: renderStateTimelineSvg,
+  treemap: renderTreemapSvg,
+  pareto: renderParetoSvg,
+
+  bubble: renderBubbleSvg,
+  radar: renderRadarSvg,
 });
 export const chartRenderers = /* @__PURE__ */ createChartRenderers();
 type Kind = keyof typeof chartRenderers;

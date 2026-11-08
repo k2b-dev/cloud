@@ -64,6 +64,10 @@ const mountElement = <Props extends object>(
   if (mounted.has(element)) return;
   const start = (): void => {
     try {
+      // The browser renders the island again over its server markup. Focus taken before that (a keyboard user, or a
+      // test that is faster than the island's script) moves to the same element of the new markup instead of the body.
+      const all = element.getElementsByTagName("*");
+      const focused = [...all].indexOf(document.activeElement!);
       element.innerHTML = "";
       const dispose = render(() => {
         const owner = getOwner();
@@ -93,6 +97,9 @@ const mountElement = <Props extends object>(
         });
       }, element);
       mounted.set(element, dispose);
+      // The same markup puts the same element at that place, so focusing it scrolls nothing; -1 finds none.
+      const node = all[focused];
+      if (node instanceof HTMLElement) node.focus();
     } catch (error) {
       report(element, error, start);
       element.replaceChildren(defaultFallback(start));
