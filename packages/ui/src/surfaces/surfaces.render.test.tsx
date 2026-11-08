@@ -65,8 +65,8 @@ describe("@k2b/ui Cloud-faithful surfaces", () => {
       }),
     );
     expect(html).toMatch(/^<article aria-label="External images" class="k2b-notice-card\s*" data-tone="danger" data-row="">/);
-    expect(html).toMatch(
-      /<span class="k2b-notice-card__tile k2b-icon-tile" style="color:\s?var\(--k2b-reference-image\)" aria-hidden="true"><i class="ti ti-photo-shield"><\/i><\/span>(<!--.*?-->)*<div class="k2b-notice-card__content">External images blocked<\/div>(<!--.*?-->)*<div class="k2b-notice-card__action">Load images<\/div>/,
+    expect(html).toContain(
+      '<span class="k2b-notice-card__tile k2b-icon-tile" style="color:var(--k2b-reference-image)" aria-hidden="true"><i class="ti ti-photo-shield"></i></span><div class="k2b-notice-card__content">External images blocked</div><div class="k2b-notice-card__action">Load images</div></article>',
     );
     // Without a tile or an action the row keeps only its text, on the neutral tint.
     const plain = renderToString(() => createComponent(NoticeRow, { children: "Release note" }));
