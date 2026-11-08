@@ -46,11 +46,12 @@ const ButtonsDemo = () => (
       { kind: "component", name: "IconButtonLink", from: "@k2b/ui" },
       { kind: "component", name: "SplitButton", from: "@k2b/ui" },
     ]}
-    description="Package-native buttons share one variant and size contract. Input actions align with adjacent field controls, immediate actions press with a subtle flat scale without layout movement, split-button menu triggers stay still, Button defaults to primary, IconButton defaults to ghost, and text actions stay surface-free and flush with nearby copy."
+    description="Package-native buttons share one variant and size contract. Input actions align with adjacent field controls, immediate actions press with a subtle flat scale without layout movement, split-button menu triggers stay still, Button defaults to primary, IconButton defaults to ghost, and text actions stay surface-free and flush with nearby copy. Link actions use regular action-coloured ink for quiet list continuation."
     code={`<Button variant="primary">Save</Button>
 <Button variant="secondary">Preview</Button>
 <Button variant="ghost">Later</Button>
 <Button variant="text" size="xs">More</Button>
+<Button variant="link" size="sm">Load more <i class="ti ti-chevron-down" aria-hidden="true" /></Button>
 <Button variant="warning" size="xs">Undo send · 8s</Button>
 <Button variant="danger" size="sm">Delete</Button>
 <Button variant="subtle" size="xs">
@@ -108,6 +109,20 @@ const ButtonsDemo = () => (
         Save
       </Button>
       <Button disabled>Disabled</Button>
+    </div>
+    <div class="ui-demo-row">
+      <Button variant="link" size="sm">
+        Load more <i class="ti ti-chevron-down" aria-hidden="true" />
+      </Button>
+      <Button variant="link" size="sm" loading loadingLabel="Loading more entries">
+        Load more <i class="ti ti-chevron-down" aria-hidden="true" />
+      </Button>
+      <Button variant="link" size="sm">
+        Retry <i class="ti ti-refresh" aria-hidden="true" />
+      </Button>
+      <Button variant="link" size="sm" disabled>
+        Load more <i class="ti ti-chevron-down" aria-hidden="true" />
+      </Button>
     </div>
     <div class="ui-demo-row">
       <IconButton label="Settings">
