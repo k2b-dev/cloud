@@ -64,8 +64,28 @@ Panels in a named section share optional `sectionIcon` (for example
 `ti ti-router`), `sectionDescription` (source and cadence), and `sectionColor`
 (a six-digit hex color). Use identical section presentation on its panels.
 
+Additional chart kinds use these selected SQL columns:
+
+| Kind | Columns |
+| --- | --- |
+| `pie`, `donut`, `barGauge` | Category `x` and one nonnegative value. |
+| `scatter` | Numeric `x`, optional `series` group, remaining numeric y columns. |
+| `histogram`, `sparkline` | One numeric observation column, no `x` or `series`; SQL order is retained. |
+| `gauge` | One aggregate value between 0 and 100, no `x` or `series`. |
+| `boxplot` | Category `x` and one observation value; repeat categories for samples. |
+| `area`, `areaPercent` | Category `x`, optional `series`, remaining nonnegative values; duplicate category/series pairs are errors. |
+| `budget` | Category `x`, `used`, optional `expected`, `limit`; currency in `unit`. |
+| `balance` | One row: `start`, `in`, `out`; no `x`/`series`, currency in `unit`. |
+| `heatmap` | Category `x`, row category in `series`, one numeric value; aggregate each x/row pair once. |
+
+SQL `NULL` stays missing instead of becoming zero. Use `unit` for value labels
+and tooltips. A heatmap allows eight row categories and 480 column categories;
+a box plot allows eight groups with 480 observations each. Budget amounts and
+balance `in`/`out` are nonnegative; `start` may be signed. Money cells cannot
+be null. See the [SQL column reference](/en/docs/ai/pulse-dashboard-charts).
+
 There are at most 36 panels, eight series and 480 points per series, and
-3,840 marks per panel. Truncated SQL results and excessive output produce a
+3,840 produced marks per panel. Truncated SQL results and excessive output produce a
 panel error; Pulse never silently trims them. Aggregate in SQL first.
 
 `:from`, `:to`, and `:bucket` follow the selected range on a shared grid.

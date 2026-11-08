@@ -386,10 +386,17 @@ work_shop.item("item").item.inspect({ idempotencyKey: "forbidden" });
 const literal: "owner-shop" = owner.id;
 async function typedResult() {
   const result = await target.stock.list({});
-  const state: "ready" | "empty" = result.rows[0]!.state;
-  const next: string | null = result.next;
+  const state: "ready" | "empty" = result.data.rows[0]!.state;
+  if (result.page?.hasMore) {
+    const cursor: string = result.page.nextCursor;
+    await target.stock.list({ cursor });
+  }
+  // @ts-expect-error a final page has no cursor
+  if (result.page && !result.page.hasMore) result.page.nextCursor;
+  // @ts-expect-error pagination is outside domain data
+  result.data.page;
   // @ts-expect-error result state is not an arbitrary number
-  const invalid: number = result.rows[0]!.state;
+  const invalid: number = result.data.rows[0]!.state;
 }
 declare const dynamic: string;
 personal.workshop(dynamic);

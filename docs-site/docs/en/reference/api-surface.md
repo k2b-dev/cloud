@@ -483,6 +483,7 @@ for execution, model access, and usage accounting.
 
 | Entry point | Status | Use | Guide |
 | --- | --- | --- | --- |
+| `@k2b/cloud/descriptions` | Supported, SolidJS | `DescriptionPanel` draws a portable chart description or a Cloud block (`stats`, `table`, `details`, `budget`, `balance`, `flow`) in the `@k2b/ui` dashboard frame with every state; `DescriptionBlockPreview`, `resolveDescription`, `formatDescriptionNumber` | [Dashboards from descriptions](/en/docs/frontend/dashboards) |
 | `@k2b/cloud/geo/ui` | Supported, SolidJS | `CloudMap`, `CloudMapAttribution` and `CloudMapProps` for budgeted maps and browser snapshots; `AddressAutocomplete` for forms; `geoNavigationHref` and `geoNavigationPlatform` for navigation links | [Places and maps](/en/docs/platform/places-and-maps) |
 | `@k2b/cloud/geo/document` | Supported, browser and server | Validate and serialize saved maps, linked pins and complete routes | [Saved maps](/en/docs/platform/saved-map-documents) |
 | `@k2b/cloud/shared-text` | Supported, server-only | Retained collaborative text logs and application-owned snapshot writes | [Shared text documents](/en/docs/data/shared-text-documents) |
@@ -502,6 +503,8 @@ for execution, model access, and usage accounting.
 | `@k2b/cloud/account/ui` | Supported, SolidJS | Cloud account selectors and avatars | [Building blocks](/en/docs/building-blocks) |
 | `@k2b/cloud/services/approvals` | Platform-owned, server-only | `ApprovalKind`, `CodeVersionApprovalRequestInput`, `request`, `decide`, `registerApprovalDecisionHandler`, `ApprovalDecisionConflictError`, and recipient-aware lists for independent Code reviews | [Code-version approvals](/en/docs/identity/approvals#code-version-approvals) |
 | `@k2b/cloud/approvals/ui` | Supported, SolidJS | `Approvals`, `ApprovalsNavStatus`, and `approvalNavCount` for open Action requests | [Action approvals](/en/docs/identity/approvals#show-approvals-in-your-app) |
+| `@k2b/cloud/code/ui` | Supported, SolidJS | `FeatCodeMark` and `FEAT_CODE_NAME`, the feat/code brand for every place that shows Code | [Code page](/en/docs/platform/code-page#show-the-featcode-brand) |
+| `@k2b/cloud/code/feat-code.svg` | Supported, asset | The feat/code sign as a favicon or app icon that follows the light or dark color scheme | [Code page](/en/docs/platform/code-page#show-the-featcode-brand) |
 | `@k2b/cloud/access/members` | Supported | `accessMemberEntries` turns a resource's `AccessMember` list into `DetailAccess` rows in the words of the access dialog, without loading the access dialog's controls | [Detail panels](/en/docs/frontend/detail-panels) |
 | `@k2b/cloud/access/ui` | Supported, SolidJS | Cloud permission and resource-key controls; `principalLabel` for localized principal names (also in `@k2b/cloud/shared`); `isManagerEntry` and `ManagerCandidate` for paged grant lists; `codeSharing` for a Code's editors and readers; `ServiceAccountSection` with `AccessRowFrame`, `AccessRowControls`, `AccessLevelMenu`, `serviceAccountLine` and `serviceAccountLevels` for the access dialog's Service accounts section beside additional grant fields; `ServiceAccountLookup` for the add button and handle field alone | [Resource API keys](/en/docs/identity/resource-api-keys), [Last manager](/en/docs/identity/authorization#show-the-last-manager), [Code with access](/en/docs/identity/authorization#code-with-access) |
 | `@k2b/cloud/browser/live` | Supported, browser | `liveConnection` for an application's live channels; `createLiveWebSocket` transport for other sockets | [Realtime UI](/en/docs/frontend/realtime-ui) |
@@ -720,6 +723,24 @@ and [Upload preflight](/en/docs/platform/pdf-and-templates#upload-browser-map-sn
 `parseAiModelChoice` and `AiPeopleModels`. Use them to request a deployment's
 model class and interpret the resolved variant. See
 [Structured and background AI](/en/docs/ai/structured-and-background-ai#request-a-class).
+
+
+## Workspace speedtest consumers
+
+The private `@k2b/speedtest` workspace shares one measurement contract between
+Tools, Cloud CLI and the standalone server's script. It has no Cloud dependency.
+Use its supported entries rather than importing source files:
+
+| Entry | Runtime and purpose |
+| --- | --- |
+| `@k2b/speedtest` | Browser/server: plans, engine, progress and result types |
+| `@k2b/speedtest/browser` | Browser: anonymous fetch and XHR upload progress |
+| `@k2b/speedtest/node` | Node/Bun: anonymous HTTP transport with socket backpressure |
+| `@k2b/speedtest/http` | Browser/server: shared HTTP response checks |
+| `@k2b/speedtest/udp-client` | Node/Bun: explicit UDP jitter/loss diagnostic |
+
+See [Run a speedtest server](/en/docs/operations/speedtest-server) for duration,
+statistics, anonymous budgets and migration from Cloud's legacy script URLs.
 
 Core's routine definition export uses the framework-owned `exportChatTasks`,
 `ChatTaskExportPageSchema`, `ChatTaskExportEntrySchema`, `ChatTaskExportQuerySchema`

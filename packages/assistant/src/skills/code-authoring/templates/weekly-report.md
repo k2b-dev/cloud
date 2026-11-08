@@ -15,23 +15,23 @@ const CHAT_ID = "Chat23";
 app.schedule(
   { cron: "0 8 * * 1", timeZone: "Europe/Berlin", name: "weekly-report" },
   async () => {
-    const open = await spaces.app().task.list({ spaceId: SPACE_ID, status: "active", sort: "deadline", limit: 50 });
-    const overdue = await spaces.app().task.list({ spaceId: SPACE_ID, status: "active", deadlineFilter: "overdue", limit: 50 });
-    const unassigned = await spaces.app().task.list({ spaceId: SPACE_ID, status: "active", assignedTo: "unassigned", limit: 50 });
-    // A full page means "at least": Code sees only the first page of these lists.
-    const count = (items: readonly unknown[]) => (items.length >= 50 ? "50 or more" : String(items.length));
+    const { data: open, page: openPage } = await spaces.app().task.list({ spaceId: SPACE_ID, status: "active", sort: "deadline", limit: 50 });
+    const { data: overdue, page: overduePage } = await spaces.app().task.list({ spaceId: SPACE_ID, status: "active", deadlineFilter: "overdue", limit: 50 });
+    const { data: unassigned, page: unassignedPage } = await spaces.app().task.list({ spaceId: SPACE_ID, status: "active", assignedTo: "unassigned", limit: 50 });
+    // This report deliberately reads one page per view; page.hasMore marks a capped count.
+    const count = (items: readonly unknown[], hasMore: boolean) => (hasMore ? `${items.length} or more` : String(items.length));
     const facts = {
-      open: count(open),
-      overdue: count(overdue),
-      unassigned: count(unassigned),
+      open: count(open, openPage?.hasMore ?? false),
+      overdue: count(overdue, overduePage?.hasMore ?? false),
+      unassigned: count(unassigned, unassignedPage?.hasMore ?? false),
       overdueTitles: overdue.map(task => task.title).slice(0, 20),
       unassignedTitles: unassigned.map(task => task.title).slice(0, 20),
-      titlesAreSamples: overdue.length > 20 || unassigned.length > 20,
+      titlesAreSamples: overdue.length > 20 || unassigned.length > 20 || (overduePage?.hasMore ?? false) || (unassignedPage?.hasMore ?? false),
     };
 
     let text = `Open tasks: ${facts.open}. Overdue: ${facts.overdue}. Unassigned: ${facts.unassigned}.`;
     if (overdue.length || unassigned.length) {
-      const report = await core.app().ai.generate({
+      const { data: report } = await core.app().ai.generate({
         task: "weekly.report",
         prompt:
           "Write a short weekly report in German for the owner of these tasks: one sentence on the overall state, " +

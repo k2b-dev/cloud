@@ -413,6 +413,15 @@ test("remembered approvals reject mandate-backed chats even when kind is omitted
   expect(aiTurnAllowsRememberedApprovals({ kind: "compact" })).toBe(true);
 });
 
+test("remembered approvals reject background runs with or without a mandate", () => {
+  const mandate = { id: crypto.randomUUID(), revision: 1 };
+  const background = { taskId: crypto.randomUUID(), occurrenceId: crypto.randomUUID(), context: [] };
+  expect(aiTurnAllowsRememberedApprovals({ input: "Run", background })).toBe(false);
+  expect(aiTurnAllowsRememberedApprovals({ kind: "chat", input: "Run", background, mandate })).toBe(false);
+  expect(aiTurnAllowsWebsiteApprovals({ input: "Run", background, signedInSession: true })).toBe(false);
+  expect(aiTurnAllowsRememberedApprovals({ input: "Run", signedInSession: true })).toBe(true);
+});
+
 describe("nessi block event mapping", () => {
   test.each(["completed", "failed", "rejected"] as const)("timestamps the %s outcome, not running or waiting", (status) => {
     const mapper = createEventMapper(1, []);

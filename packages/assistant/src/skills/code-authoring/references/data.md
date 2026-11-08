@@ -43,14 +43,41 @@ Default budgets per run, set by a Cloud administrator:
 | Concurrent attempts | 1 per Code, 10 per owner |
 | Page request | 8 seconds, 8 KiB body, 128 KiB response |
 
-List queries return one page; `limit` is often at most 50. The SDK returns
-only an operation's domain data. Most list queries, such as
-`mail.conversation.list` or `spaces.task.list`, hand their next cursor beside
-the data, so **Code sees only their first page**. Narrow the query (a view,
-a status, a search) instead of paging, and say "50 or more" when a page is
-full. Operations that return the cursor inside their data can be paged, such
-as `filesv2.entry.list` with `next` and its `after` input. Loop only with a
-fixed maximum of pages:
+Domain Queries return `{ data, page? }`: read the operation's fields from
+`data`, including for non-list reads and AI. A page with
+`{ hasMore: true, nextCursor }` continues with that exact value as the next
+input's `cursor`; absent `page` or `{ hasMore: false }` means stop. Streaming
+reads return `FileRef` directly, and Actions return their domain data directly.
+
+List queries return one page; `limit` is often at most 50. Narrow the query
+and choose a fixed maximum of pages or items. Every page spends one ordinary
+call; pagination never resets `code_call_limit`. Report a deliberately capped
+read as incomplete:
+
+<!-- check: personal -->
+```ts
+import { app, spaces } from "@sdk";
+
+const MAX_PAGES = 5;
+
+app.schedule({ cron: "0 6 * * 1", timeZone: "Europe/Berlin", name: "count-tasks" }, async () => {
+  let cursor: string | undefined;
+  let tasks = 0;
+  let complete = false;
+  for (let pageNumber = 0; pageNumber < MAX_PAGES; pageNumber++) {
+    const { data, page } = await spaces.app().task.list({ spaceId: "Spc001", status: "active", limit: 50, cursor });
+    tasks += data.length;
+    if (!page?.hasMore) { complete = true; break; }
+    cursor = page.nextCursor;
+  }
+  console.log(`Open tasks: ${complete ? tasks : `${tasks} or more`}`);
+}, { name: "count-tasks", title: "Count tasks" });
+export default app;
+```
+
+Some providers retain a continuation in their domain data. For example,
+`filesv2.entry.list` uses `data.next` and the `after` input; follow that
+declared contract with the same fixed page maximum:
 
 <!-- check: personal -->
 ```ts
@@ -59,18 +86,19 @@ import { app, filesv2 } from "@sdk";
 const MAX_PAGES = 5;
 
 app.schedule({ cron: "0 6 * * 1", timeZone: "Europe/Berlin", name: "count-files" }, async () => {
-  const [base] = (await filesv2.app().bases.list({})).items;
+  const [base] = (await filesv2.app().bases.list({})).data.items;
   if (!base) return;
   const folder = filesv2.entry(base.ref.id);
   let after: string | undefined;
   let files = 0;
+  let complete = false;
   for (let page = 0; page < MAX_PAGES; page++) {
-    const result = await folder.entry.list({ type: "files", ...(after ? { after } : {}) });
+    const { data: result } = await folder.entry.list({ type: "files", ...(after ? { after } : {}) });
     files += result.items.length;
-    if (!result.next) break;
+    if (!result.next) { complete = true; break; }
     after = result.next;
   }
-  console.log(`Files in the first folder: ${files}`);
+  console.log(`Files in the first folder: ${complete ? files : `${files} or more`}`);
 }, { name: "count-files", title: "Count files" });
 export default app;
 ```

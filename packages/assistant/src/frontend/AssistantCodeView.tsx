@@ -1,3 +1,4 @@
+import { FeatCodeMark } from "@k2b/cloud/code/ui";
 import { describeCodeSchedule } from "@k2b/cloud/ssr/code-schedule";
 import { Button, Placeholder, ScrollArea, Skeleton, useLocale } from "@k2b/ui";
 import { createSignal, For, onMount, Show } from "solid-js";
@@ -179,8 +180,8 @@ export default function AssistantCodeView(props: {
                     <For each={current().items}>
                       {(code) => (
                         <li class="assistant-code__row">
-                          <span class="assistant-code__kind" aria-hidden="true">
-                            <i class="ti ti-bolt" />
+                          <span class="assistant-code__mark" aria-hidden="true">
+                            <FeatCodeMark variant="glyph" size="title" decorative />
                           </span>
                           <span class="flex min-w-0 flex-col">
                             <a class="assistant-code__name truncate font-medium text-primary" href={`/app/assistant/code/${code.id}`}>

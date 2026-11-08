@@ -15,6 +15,7 @@ import {
   untrack,
 } from "solid-js";
 import { CloudChartBlock } from "#chat-charts";
+import { FeatCodeMark } from "../../code/FeatCodeMark";
 import { markdown } from "../../shared";
 import { type ChatTaskReason, chatTaskReasonSentence, chatTaskReasonState, chatTaskStopSentence } from "../chat-task-reasons";
 import { AI_TURN_LEASE_MS, type AiTurnBlock } from "../protocol";
@@ -25,7 +26,7 @@ import { CapabilityTablePreview } from "./capability-table";
 import { PresentToolBlock } from "./file-tools";
 import { AiMapToolBlock } from "./map-widget";
 import { useAiChatActions } from "./message-actions";
-import { aiToolIcon, displayToolName, isCardToolName, isChartToolName, isRecord, isSurveyToolName } from "./message-utils";
+import { aiToolIcon, displayToolName, isCardToolName, isChartToolName, isFeatCodeTool, isRecord, isSurveyToolName } from "./message-utils";
 import { aiChatMessages } from "./messages";
 import { AssistantMarkdownBlock } from "./primitives";
 import { ResultLinks, resultLinks, ToolActionView } from "./tool-action";
@@ -325,6 +326,11 @@ function RepeatedSteps(props: { id: string; target: string; entries: AiWorkEntry
       description={props.target}
       trailing={<span class="ai-turn-work__meta">{aiChatMessages(locale()).repeatCount({ count: tools().length })}</span>}
       icon={aiToolIcon(first().name, first().presentation?.appIcon)}
+      leading={
+        !first().presentation?.appIcon && isFeatCodeTool(first().name) ? (
+          <FeatCodeMark variant="glyph" tone="current" decorative />
+        ) : undefined
+      }
       bodyInset={false}
       busy={props.active && tools().at(-1)?.status === "running"}
       renderBody={() => <WorkEntries entries={props.entries} active={props.active} />}
@@ -521,6 +527,7 @@ function AiTurnActionView(props: { action: Accessor<AiTurnAction | undefined>; t
                   <Chat.Activity
                     label={current().block.presentation?.title ?? displayToolName(current().block.name, locale())}
                     icon={aiToolIcon(current().block.name)}
+                    leading={isFeatCodeTool(current().block.name) ? <FeatCodeMark variant="glyph" tone="current" decorative /> : undefined}
                     busy={current().block.status === "awaiting_client"}
                   />
                 }
