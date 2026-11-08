@@ -302,6 +302,100 @@ describe("public ImageEditor interactions", () => {
     }
   });
 
+  /** Whether the open image lies wholly inside the strip and outside any edge fade (44 px where it scrolls on). */
+  const openThumbVisible = (page: Page) =>
+    page.evaluate(() => {
+      const list = document.querySelector<HTMLElement>(".k2b-image-editor__strip ul")!;
+      const open = list.querySelector('[aria-current="true"]')!.getBoundingClientRect();
+      const box = list.getBoundingClientRect();
+      const fade = (edge: string) => ((list.dataset.fade ?? "").split(" ").includes(edge) ? 44 : 0);
+      return open.left >= box.left + fade("start") - 0.5 && open.right <= box.right - fade("end") + 0.5;
+    });
+
+  test("the open image stays wholly visible in a long strip at the first, a middle and the last place", async () => {
+    for (const current of ["p1", "p14", "p28"]) {
+      const { page, errors } = await open(`count=28&current=${current}`);
+      try {
+        expect(await openThumbVisible(page)).toBe(true);
+        // Late thumbnails arrive as fresh items; they neither hide the open image nor move the strip.
+        const scroll = await page.locator(".k2b-image-editor__strip ul").evaluate((list) => list.scrollLeft);
+        await fixture(page, "lateThumbnails()");
+        await page.locator(".k2b-image-editor__strip img").first().waitFor();
+        await settled(page);
+        expect(await page.locator(".k2b-image-editor__strip ul").evaluate((list) => list.scrollLeft)).toBe(scroll);
+        expect(await openThumbVisible(page)).toBe(true);
+        expect(errors).toEqual([]);
+      } finally {
+        await page.close();
+      }
+    }
+  });
+
+  test("choosing another image in the strip and a strip laid out late reveal the open image", async () => {
+    const { page, errors } = await open("count=28&current=p1");
+    try {
+      await page.locator('.k2b-image-editor__strip [aria-current="true"]').focus();
+      await page.keyboard.press("End");
+      await page.keyboard.press("Enter");
+      await page.waitForFunction("window.editorFixture.selected.length === 1");
+      await settled(page);
+      expect(await fixture(page, "selected")).toEqual(["p28"]);
+      expect(await openThumbVisible(page)).toBe(true);
+      expect(errors).toEqual([]);
+    } finally {
+      await page.close();
+    }
+    // A strip that gets its width only after the editor is laid out (a host still sizing it) reveals the open
+    // image at its first real size; nothing else about the editor changes meanwhile.
+    const late = await open("count=28&current=p20&stripLate=1");
+    try {
+      expect(await late.page.locator(".k2b-image-editor__strip ul").evaluate((list) => list.clientWidth)).toBe(0);
+      await fixture(late.page, "showStrip()");
+      await settled(late.page);
+      expect(await openThumbVisible(late.page)).toBe(true);
+      expect(late.errors).toEqual([]);
+    } finally {
+      await late.page.close();
+    }
+  });
+
+  test("markings show how to reorder them and their order menu moves them, below the anchored redactions", async () => {
+    const { page, errors } = await open();
+    try {
+      await selectTool(page, "Mark up");
+      await markTool(page, "Rectangle").click();
+      await settled(page);
+      await drag(page, [0.1, 0.1], [0.3, 0.3]);
+      await markTool(page, "Arrow").click();
+      await settled(page);
+      await drag(page, [0.5, 0.5], [0.7, 0.6]);
+      await markTool(page, /^Redact/).click();
+      await settled(page);
+      await drag(page, [0.6, 0.2], [0.8, 0.3]);
+      const names = () => page.locator(".k2b-image-editor__layer-name").allInnerTexts();
+      expect(await names()).toEqual(["Redaction 1", "Arrow", "Rectangle"]);
+      // Two markings can move: their grips show without hovering, and a visible hint says how.
+      const grips = await page
+        .locator(".k2b-image-editor__layer")
+        .evaluateAll((rows) => rows.map((row) => getComputedStyle(row.querySelector(".k2b-image-editor__layer-grip")!).visibility));
+      expect(grips).toEqual(["hidden", "visible", "visible"]);
+      await page.getByText("To change the order, drag a row by its grip or use its ⋮ menu.", { exact: true }).waitFor();
+      // A lone redaction has nowhere to go; the markings' menus move them within their own group only.
+      expect(await page.getByRole("button", { name: "Order of Redaction 1", exact: true }).isDisabled()).toBe(true);
+      await page.getByRole("button", { name: "Order of Rectangle", exact: true }).click();
+      expect(await page.getByRole("menuitem", { name: "Move down" }).isDisabled()).toBe(true);
+      await page.getByRole("menuitem", { name: "Move up" }).click();
+      await settled(page);
+      expect(await names()).toEqual(["Redaction 1", "Rectangle", "Arrow"]);
+      await page.getByRole("button", { name: "Order of Rectangle", exact: true }).click();
+      expect(await page.getByRole("menuitem", { name: "Move up" }).isDisabled()).toBe(true);
+      await page.keyboard.press("Escape");
+      expect(errors).toEqual([]);
+    } finally {
+      await page.close();
+    }
+  });
+
   test("phone crop buttons show their glyphs while their text stays hidden", async () => {
     const { page, errors } = await open("", 390);
     try {

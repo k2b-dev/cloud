@@ -96,9 +96,11 @@ The pane has up to three tools: **Crop**, **Adjust**, and **Mark up**.
 ### Layers
 
 Mark up lists every mark as a layer, the topmost first. A row shows the kind in
-the mark's colour, a name, an eye, and delete. Clicking a row or a mark on the
-canvas selects it: drag moves it, its corners resize it, and colour and size
-apply to it. Drag a row's grip or press Alt + arrow keys to reorder.
+the mark's colour, a name, an eye, delete, and an order menu (⋮). Clicking a
+row or a mark on the canvas selects it: drag moves it, its corners resize it,
+and colour and size apply to it. To reorder, drag a row by its grip, choose
+Move up or Move down in its order menu, or press Alt + arrow keys. Once a group
+has two rows, their grips show and a hint under the list says how to reorder.
 Redactions form a fixed group at the top and only reorder among themselves, so
 nothing ever covers a redaction.
 

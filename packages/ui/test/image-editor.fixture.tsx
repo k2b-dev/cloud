@@ -44,6 +44,9 @@ const control = {
   selected: [] as string[],
   formats: (): readonly ImageEditorFormat[] => [],
   refreshItems: () => {},
+  lateThumbnails: () => {},
+  /** With `stripLate`, the strip list has no width until this runs (a host still sizing it). */
+  showStrip: () => document.getElementById("strip-without-width")?.remove(),
   accept: () => {},
   source: (_source: string) => {},
   dispose: () => {},
@@ -59,13 +62,23 @@ Object.assign(window, { editorFixture: control });
 function mount() {
   control.dispose = render(() => {
     const [source, setSource] = createSignal(parameters.has("broken") ? "/not-an-image.jpg" : "/photo.jpg");
-    const [current, setCurrent] = createSignal("b");
+    const [current, setCurrent] = createSignal(parameters.get("current") ?? "b");
     control.source = setSource;
-    const initialItems = parameters.has("items")
-      ? ["a", "b", "c", "d"].map((id) => ({ id, name: `${id}.jpg`, thumbnail: id === "c" ? undefined : "/photo.jpg", dirty: id === "a" }))
-      : undefined;
+    // `count=N` gives a long strip (ids p1…pN) whose thumbnails arrive later, as a host's previews do.
+    const count = Number(parameters.get("count") ?? 0);
+    const initialItems = count
+      ? Array.from({ length: count }, (_, k) => ({
+          id: `p${k + 1}`,
+          name: `photo-${k + 1}.jpg`,
+          thumbnail: undefined as string | undefined,
+          dirty: false,
+        }))
+      : parameters.has("items")
+        ? ["a", "b", "c", "d"].map((id) => ({ id, name: `${id}.jpg`, thumbnail: id === "c" ? undefined : "/photo.jpg", dirty: id === "a" }))
+        : undefined;
     const [items, setItems] = createSignal(initialItems);
     control.refreshItems = () => setItems((current) => current?.map((item) => ({ ...item, dirty: !item.dirty })));
+    control.lateThumbnails = () => setItems((current) => current?.map((item) => ({ ...item, thumbnail: "/photo.jpg" })));
     const first = (
       <ImageEditor
         source={source()}
@@ -126,6 +139,12 @@ function mount() {
       first
     );
   }, document.getElementById("editor")!);
+}
+if (parameters.has("stripLate")) {
+  const style = document.createElement("style");
+  style.id = "strip-without-width";
+  style.textContent = ".k2b-ui .k2b-image-editor__strip ul { display: none !important; }";
+  document.head.append(style);
 }
 if (parameters.has("nav")) void swapPage("/editing?nav=1").then(mount);
 else mount();

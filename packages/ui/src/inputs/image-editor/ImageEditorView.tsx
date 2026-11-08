@@ -1479,21 +1479,51 @@ function ImageEditorSession(props: ImageEditorProps): JSX.Element {
     const index = props.items?.findIndex((item) => item.id === props.currentItem) ?? -1;
     return itemCount() > 1 && index >= 0 ? `${index + 1}/${itemCount()}` : "";
   };
+  /**
+   * Centres the open image in the strip; the clamp keeps the first and last against their edge, where no fade
+   * covers them. A strip without width yet (not laid out, or in a hidden session) cannot place anything, so the
+   * reveal waits for its first size instead of scrolling the open image under a fade.
+   */
+  let revealPending = false;
+  const revealCurrent = () => {
+    const list = stripList;
+    const current = list?.querySelector<HTMLElement>('[aria-current="true"]');
+    if (!list || !current) return;
+    if (!list.clientWidth) {
+      revealPending = true;
+      return;
+    }
+    revealPending = false;
+    const centred = current.offsetLeft - (list.clientWidth - current.offsetWidth) / 2;
+    list.style.scrollBehavior = "auto";
+    list.scrollLeft = clamp(centred, 0, list.scrollWidth - list.clientWidth);
+    list.style.scrollBehavior = "";
+    stripFade();
+  };
+  // Opening, choosing another image and a changed set of images reveal the open one; a late thumbnail or a
+  // refreshed item keeps the person's own scroll position.
   createEffect(
     on(
-      () => [props.currentItem, stripOpen(), itemCount()] as const,
+      () => [props.currentItem, stripOpen(), itemCount(), phone()] as const,
+      () => queueMicrotask(revealCurrent),
+    ),
+  );
+  const stripSized = new ResizeObserver(() => {
+    if (revealPending) revealCurrent();
+    else stripFade();
+  });
+  createEffect(
+    // The strip list is rebuilt when it appears and when the phone layout moves it below the chips.
+    on(
+      () => [showStrip(), stripOpen(), phone()] as const,
       () =>
         queueMicrotask(() => {
-          const list = stripList;
-          const current = list?.querySelector<HTMLElement>('[aria-current="true"]');
-          if (!list || !current) return;
-          list.style.scrollBehavior = "auto";
-          list.scrollLeft = current.offsetLeft - (list.clientWidth - current.offsetWidth) / 2;
-          list.style.scrollBehavior = "";
-          stripFade();
+          stripSized.disconnect();
+          if (stripList) stripSized.observe(stripList);
         }),
     ),
   );
+  onCleanup(() => stripSized.disconnect());
   const stripFade = () => {
     const list = stripList;
     if (!list) return;
@@ -1800,7 +1830,9 @@ function ImageEditorSession(props: ImageEditorProps): JSX.Element {
             class="k2b-image-editor__chip-thumb"
             aria-hidden="true"
           />
-          <span class="k2b-image-editor__chip-name">{title()}</span>
+          <span class="k2b-image-editor__chip-name" title={title()}>
+            {title()}
+          </span>
           <span class="k2b-image-editor__dirty" data-on={dirty() ? "" : undefined} title={t().imageUnsaved} />
           <Show when={position()}>
             <span class="k2b-image-editor__muted">{position()}</span>
@@ -2485,11 +2517,16 @@ function ImageEditorSession(props: ImageEditorProps): JSX.Element {
       const mark = () => marks()[index]!;
       const name = () => nameOf(mark());
       const red = () => isRedaction(mark());
+      // Rows reorder only inside their group (redactions stay above every marking); the top row is first.
+      const group = () => (red() ? redactions() : others());
+      const place = () => group().indexOf(index);
+      const movable = () => group().length > 1;
       return (
         <li
           class="k2b-image-editor__layer"
           data-layer={mark().id}
           data-group={red() ? "redact" : "mark"}
+          data-movable={movable() ? "" : undefined}
           data-selected={selected() === mark().id ? "" : undefined}
           data-hidden={mark().hidden ? "" : undefined}
           onPointerEnter={() => setHot(mark().id)}
@@ -2568,6 +2605,30 @@ function ImageEditorSession(props: ImageEditorProps): JSX.Element {
           >
             <i class="ti ti-trash" aria-hidden="true" />
           </IconButton>
+          {/* The order menu is the visible, pointer-free way to reorder; the grip and Alt + arrows do the same. */}
+          <Dropdown.Root
+            items={[
+              { label: t().moveUp, icon: "ti ti-arrow-up", disabled: place() <= 0, action: () => moveLayer(index, 1) },
+              {
+                label: t().moveDown,
+                icon: "ti ti-arrow-down",
+                disabled: place() >= group().length - 1,
+                action: () => moveLayer(index, -1),
+              },
+            ]}
+            position="bottom-right"
+          >
+            <Dropdown.Trigger
+              iconOnly
+              size="sm"
+              variant="ghost"
+              class="k2b-image-editor__layer-action"
+              label={t().layerMenu({ name: name() })}
+              disabled={!movable()}
+            >
+              <i class="ti ti-dots-vertical" aria-hidden="true" />
+            </Dropdown.Trigger>
+          </Dropdown.Root>
         </li>
       );
     };
@@ -2688,6 +2749,9 @@ function ImageEditorSession(props: ImageEditorProps): JSX.Element {
           <p id={ids.layersHelp} class="k2b-sr-only">
             {t().layersHelp}
           </p>
+          <Show when={redactions().length > 1 || others().length > 1}>
+            <p class="k2b-image-editor__hint">{t().reorderHint}</p>
+          </Show>
           <Show when={props.redactionNotice && hasRedactions()}>
             <p class="k2b-image-editor__note-line k2b-image-editor__phone-only" data-tone="warning">
               <i class="ti ti-alert-triangle" aria-hidden="true" />
