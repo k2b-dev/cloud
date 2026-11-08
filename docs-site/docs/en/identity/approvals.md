@@ -5,7 +5,7 @@ section: Identity and access
 order: 357
 description: How Cloud records, decides, and uses one approval for exactly the Action a person saw.
 tags: [identity, approvals, capabilities, audit]
-updated: 2026-10-31
+updated: 2026-11-08
 ---
 
 # Action approvals
@@ -260,7 +260,7 @@ Core sends **Pending approvals** when a request waits and no signed-in
 browser tab shows its chat. While a tab streams the chat, the request appears
 there and Core sends nothing. When the last such tab closes while the turn
 keeps running, Core checks the chat's waiting requests again, as for a new
-request. Turns from `cld`, an editor bridge, or a routine have no such tab.
+request. Turns from `cld`, an editor bridge, or Code have no such tab.
 A notice names the newest request that no tab shows.
 A person gets at most one notice every 15 minutes. One notice covers all
 their waiting requests. A request that arrives within 15 minutes of the last

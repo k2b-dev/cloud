@@ -5,7 +5,7 @@ section: Reference
 order: 1250
 description: Find removed or superseded APIs and the supported migration path.
 tags: [deprecations, migrations, compatibility]
-updated: 2026-11-05
+updated: 2026-11-08
 ---
 
 # Deprecations and migrations
@@ -100,9 +100,8 @@ for issuance and the `cld admin agents keys` commands.
 Code replaces Studio, Mail rules, automatic replies and scheduled Assistant
 routines. The upgrade is a one-way, coordinated cut; follow
 [Upgrade to Code](/en/docs/operations/upgrade-to-code) step by step.
-Routine retirement and Gustav's rebuild from export files are merged; the
-Studio and Mail rule retirements ship with this release and are still in
-review.
+Studio, Mail rule and routine retirement ship together with Gustav's rebuild
+from exported definitions.
 
 - **Before the upgrade:** on the old release, run
   `cld mail automation export --all --json` and
@@ -147,53 +146,29 @@ checks. `code: false` marks effects that reach another application; it does
 not replace a local target. Shared foreign-provider contracts keep their
 published shapes. See [App capabilities](/en/docs/platform/capabilities#name-the-resource-an-operation-acts-on).
 
-Stop all old Core, Assistant and Mail replicas and workers. Start upgraded
-Core first, then deploy converted providers and their callers together before
-starting Assistant and Mail workers. Core and Mail run the migrations below
-before starting their own workers. Refresh cached catalogs, schema hashes and
+Stop all old Core, Assistant and Mail replicas and workers. Deploy converted
+providers and callers in the same upgrade window. Start Core, then Mail, then
+Assistant using the staged [upgrade commands](/en/docs/operations/upgrade-to-code#4-upgrade).
+Core and Mail run their migrations before their workers. Refresh cached catalogs, schema hashes and
 generated clients. Do not run mixed old and new writers. A rollback requires
 the matching pre-upgrade database backup and previous application images.
 
-After startup, verify a target-bound Action, review routines marked
-`needs_attention`, re-request aborted approvals, and inspect Mail's incoming
-automations for **Needs attention**. Do not re-enable background work until its
-intended destinations are confirmed. Chats and saved definitions are retained.
-The following sections describe recovery and application-specific input changes.
+After startup, verify a target-bound Action and re-request aborted interactive
+approvals. Old routines and Mail rules stay retired. Rebuild only the needed
+definitions as reviewed Code, following [Upgrade to Code](/en/docs/operations/upgrade-to-code).
+The following sections describe retained application-specific input changes.
 
 ## Existing Assistant routines and approvals adopt capability targets
 
 The previous routine migration is superseded by [Routines became Code](/en/docs/operations/routines-to-code). Pending interactive approvals still adopt capability targets; proposals whose authority cannot be preserved require a new request.
 
-## Incoming Mail automations keep their Spaces targets
+## Incoming Mail automations become mailbox Code
 
-Upgrade Mail together with the target-bound Spaces capabilities. Stop older Mail
-replicas and workers before starting the new image; do not mix writers from the
-two versions. Back up the database before this coordinated upgrade. Rollback
-requires restoring that backup together with the previous application images.
-
-Mail migrates existing incoming-automation mandates before starting workers.
-The Space configured on each event step becomes its grant target; the column
-remains fixed. The migration retains existing grant restrictions. Later definition edits remain explicit reauthorization by the original person. Definitions, Mail-only
-steps, the authorizing person, and enabled/paused choices remain in place when
-the target can be mapped. This migration and its audit commit in the same
-transaction and are applied once.
-
-An old **Link Spaces item** step stores only the item ID, so its Space cannot
-be inferred safely. Missing or conflicting coordinates or an unavailable mandate
-also require confirmation. Mail disables that automation and its workflow,
-pauses its active mandate, and shows **Needs attention** under
-**Automations → Incoming mail**. The saved definition is retained. If an old policy is unreadable, confirmation revokes its old binding without changing the stored policy, then creates the replacement in the same transaction. The original
-author chooses **Edit automation**, selects the intended Spaces destinations
-again, saves, and enables it. If the authorization is missing, an interactive
-mailbox administrator can create a new one by saving. A toggle alone cannot
-bypass confirmation. Pending runs cannot use an automation in this state.
-
-New and edited **Link Spaces item** steps include `spaceId` as well as `itemId`;
-the item picker obtains the Space through the authorized Spaces reader. Its
-mandate binds both coordinates. Background links need no additional reader
-authority. Event steps bind `spaceId` and `columnId`. Neither step grants access
-to another Space. These automations continue to act as their author; replacement
-by resource-owned Code is a later phase.
+The earlier Mail target migration is superseded by Mail rule retirement.
+Export the old definitions before upgrading; the old editor and executable
+rules are removed. Gustav drafts mailbox Code from the export. Managers grant
+its service account direct access to the intended destinations before activation.
+Follow [Replace Mail rules with mailbox Code](/en/docs/operations/mail-automation-upgrade).
 
 ## Spaces and Contacts Actions name their container
 

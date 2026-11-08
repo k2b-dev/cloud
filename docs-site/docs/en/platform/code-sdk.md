@@ -485,14 +485,15 @@ other Actions retain their cross-run business-key deduplication.
 
 Methods resolve the operation's domain `data`, typed from `dataSchema`.
 Bridge refusals reject the promise; catch a failure only when the Code can
-recover. Streaming operations, Actions marked `code: false`, and app-only
-Queries are absent from the SDK.
+recover. Read streams return opaque `FileRef` values; write streams need a `file` input.
+Other write streams, Actions marked `code: false`, and app-only Queries are
+absent from the SDK.
 
 ## Choose the execution mode
 
 | Mode | Handle IDs | `app` | `owner` |
 | --- | --- | --- | --- |
-| `resource` | Literal types | Available | Required fixed resource or app |
+| `resource` | Dynamic strings allowed | Available | Required fixed resource or app |
 | `personal` | Dynamic strings allowed | Available | Absent |
 | `code_run` | Dynamic strings allowed | Absent | Absent |
 

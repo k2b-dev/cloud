@@ -2,7 +2,7 @@
 title: Upgrade Grids and Files capability callers
 navTitle: Grids and Files targets
 order: 421
-updated: 2026-11-01
+updated: 2026-11-08
 description: Send explicit base, table, and storage-root targets to Grids and Files.
 section: Operations
 tags: [capabilities, grids, files, upgrades]
@@ -32,7 +32,7 @@ chooser saves continue to work, and explicit uploads use `content.create` with a
 root target. Mandate-backed background streams remain unavailable. Grids Custom
 Apps, workflows, and the regular app-specific CLI retain their existing contracts.
 
-Core migrates stored routine mandates and pending approvals at startup.
-Literal Files base IDs become root entry refs; copy destinations remain fixed.
-Unresolvable targets need confirmation before background work can resume.
-Follow the [operator migration note](/en/docs/reference/deprecations-and-migrations#existing-assistant-routines-and-approvals-adopt-capability-targets).
+Core migrates pending interactive approvals at startup. Literal Files base IDs
+become root entry refs; copy destinations remain fixed. Unresolvable targets
+require a new request. Old Assistant routines are retired; follow
+[Upgrade to Code](/en/docs/operations/upgrade-to-code) to rebuild their definitions.

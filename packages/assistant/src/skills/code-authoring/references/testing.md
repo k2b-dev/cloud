@@ -31,6 +31,9 @@ never reaches a real app. Nothing is sent, saved or charged.
 - Entrypoints are schedule names (`weekly-review`, or `schedule:0` without a
   name) and `event:<type>@<version>` for events, such as
   `event:mail.message.received@1`. An event run takes the envelope as `input`.
+  Page handlers use `route:<METHOD>:<path>`, such as `route:POST:/save`;
+  pass their request (method, path, query, params, contentType, body and user)
+  as `input`.
 - A mock names `operation` and the exact `target` (`null` for app-wide
   operations) and lists `replies` in order: `{ "ok": true, "data": … }` or
   `{ "ok": false, "error": "not_ready" }`. Optional `input` or `refs` make a

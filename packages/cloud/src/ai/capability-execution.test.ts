@@ -625,6 +625,7 @@ test("chat tools expose flat coordinates and normalize both review and execution
       },
     },
     dependencies: {
+      getCapability: async () => registered,
       dispatch: async (params: Parameters<typeof dispatchCapability>[0]) => {
         seen.push({ target: params.target, refs: params.refs, input: params.input });
         return params.review ? Response.json({ message: "Create Ada." }) : Response.json({ data: { id: "created" } });

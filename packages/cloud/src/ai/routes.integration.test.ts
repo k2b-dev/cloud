@@ -1280,6 +1280,16 @@ suiteFor(
       const userId = await insertUser();
       const conversation = await aiConversations.createConversation({ ownerUserId: userId });
       const compiled = compileReviewFixture();
+      // The aborted case also covers read-only recovery after a place Action is no longer offered.
+      if (status === "aborted")
+        compiled.manifest.types = [
+          {
+            localId: "item",
+            title: "Item",
+            description: "Original place",
+            assistant: { provider: "place", tools: ["send"], skills: [] },
+          },
+        ];
       const registrySpy = spyOn(registry, "listCapabilities").mockResolvedValue([
         {
           appId: "demo",
