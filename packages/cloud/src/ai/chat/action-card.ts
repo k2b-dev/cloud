@@ -11,6 +11,7 @@ import {
 } from "../../_internal/capability-sentences";
 import { boundBlocks, findDraft } from "../../blocks/bound";
 import type { Block } from "../../blocks/schema";
+import { boundReviewView } from "../../capabilities/reviews";
 import type {
   CapabilityActionCallReview,
   CapabilityActionReceipt,
@@ -240,6 +241,15 @@ const slotValues = (slots: CapabilitySlot[], context: { locale: string; timeZone
   unlisted: slots.some((slot) => slot.kind === "person" && (slot.total ?? slot.people.length) > slot.people.length),
 });
 
+/** The blocks of a review whose view still points into the review; nothing when the paths do not resolve. */
+const freshBlocks = (review: CapabilityActionCallReview): Block[] | undefined => {
+  try {
+    return boundReviewView(review)?.blocks;
+  } catch {
+    return undefined;
+  }
+};
+
 export const reviewActionCard = (
   review: CapabilityActionCallReview & {
     contentRef?: CapabilityReviewContentRef;
@@ -266,9 +276,10 @@ export const reviewActionCard = (
   });
   const code = review.ask ?? "app_asks";
   const subjectSlot = Object.entries(review.slots).find(([, slot]) => slot.kind === "object" || slot.kind === "place");
-  // Cloud binds and checks a review's view when it reads the review; the card shows those blocks as they are and never
-  // binds again, so the browser needs no block schemas and a reactive store's proxies never meet the data guard.
-  const blocks = review.view ? boundBlocks(review.view.blocks) : undefined;
+  // Cloud binds and checks a review's view when it reads a stored review; the card shows those blocks as they are, so
+  // the server's render and the first browser frame agree. A review fresh from its app, such as a runner's confirmation,
+  // still has data paths; they resolve here against the review itself.
+  const blocks = review.view ? (boundBlocks(review.view.blocks) ?? freshBlocks(review)) : undefined;
   const view = blocks ? { version: 1 as const, blocks } : undefined;
   const draft = findDraft(view?.blocks);
   return {

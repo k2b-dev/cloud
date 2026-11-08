@@ -5,7 +5,8 @@ import type { Block, BlockInput } from "./schema";
  * Servers bind a view once when they read it (`bindView`); a browser only tells a bound view from a raw one.
  */
 
-const isBinding = (value: unknown): boolean =>
+/** A `{ from: [...] }` data path in place of a list. */
+export const isBlockBinding = (value: unknown): boolean =>
   value !== null &&
   typeof value === "object" &&
   !Array.isArray(value) &&
@@ -14,7 +15,7 @@ const isBinding = (value: unknown): boolean =>
 
 const hasBinding = (value: unknown, depth = 0): boolean => {
   if (depth > 40 || value === null || typeof value !== "object") return false;
-  if (isBinding(value)) return true;
+  if (isBlockBinding(value)) return true;
   return Object.values(value).some((entry) => hasBinding(entry, depth + 1));
 };
 

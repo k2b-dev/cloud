@@ -483,7 +483,13 @@ function TableLeaf(props: { block: Leaf<"Table">; spec: DescriptionObject; local
   const words = () => blockWords(props.locale);
   const [code, load] = useTableCode();
   const height = () => (items(props.block.rows).length > 8 ? BLOCK_PANEL_HEIGHTS.md : 0);
-  const table = createMemo(() => descriptionTable(props.spec));
+  // The contract checked every row target: a path of the answering app, a Cloud open link, or https.
+  const links = createMemo(() => ({
+    hrefs: items(props.block.rows).map((row) => (props.block.rowHref ? text(at(row, props.block.rowHref)) || undefined : undefined)),
+    header: words().link,
+    label: words().open,
+  }));
+  const table = createMemo(() => descriptionTable(props.spec, links()));
   return (
     <Show
       when={code()}
@@ -500,7 +506,15 @@ function TableLeaf(props: { block: Leaf<"Table">; spec: DescriptionObject; local
               <TextInput type="search" icon="ti ti-search" aria-label={props.block.title} placeholder={words().search} value="" disabled />
             </Show>
           }
-          reserve={<DataTable ariaLabel={props.block.title} surface="plain" rows={table().rows} columns={table().columns} />}
+          reserve={
+            <DataTable
+              ariaLabel={props.block.title}
+              surface="plain"
+              rows={table().rows}
+              columns={table().columns}
+              renderCell={table().renderCell}
+            />
+          }
         />
       }
     >
@@ -515,6 +529,7 @@ function TableLeaf(props: { block: Leaf<"Table">; spec: DescriptionObject; local
             height={height()}
             headingLevel={4}
             empty={props.block.empty}
+            rowLinks={links()}
           />
         );
       }}

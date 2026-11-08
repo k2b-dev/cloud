@@ -172,6 +172,17 @@ describe("BlockTree", () => {
               [],
             );
           if (scene.name === "03-reise-gewaehlt") expect(facts.selected).toEqual(["Trattoria Lucia"]);
+          if (scene.name === "07-tabelle-grids") {
+            // A row with a target leads there: one Open link per row, in the app, in the same tab.
+            const links = await tab
+              .getByRole("link", { name: "Öffnen" })
+              .evaluateAll((nodes) => nodes.map((node) => [node.getAttribute("href"), node.getAttribute("target")]));
+            expect(links).toEqual([
+              ["/grids/lager-nord/r/12", null],
+              ["/grids/lager-nord/r/31", null],
+              ["/grids/lager-nord/r/7", null],
+            ]);
+          }
           if (scene.name === "04-finanzen-uebersicht") {
             // Key figures span the row; chart and table share it on a wide column and stack on a phone.
             const [, chart, table] = facts.cells;

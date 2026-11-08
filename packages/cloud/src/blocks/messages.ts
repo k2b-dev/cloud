@@ -20,6 +20,8 @@ export const blockMessages = i18n.define({
       chosenIn: ({ app }: { app: string }) => `Chosen in ${app}`,
       close: "Close",
       search: "Search",
+      link: "Link",
+      open: "Open",
     },
     de: {
       yes: "Ja",
@@ -37,6 +39,8 @@ export const blockMessages = i18n.define({
       chosenIn: ({ app }) => `Gewählt in ${app}`,
       close: "Schließen",
       search: "Suchen",
+      link: "Link",
+      open: "Öffnen",
     },
   },
 });

@@ -12,6 +12,7 @@ import {
 import { createMemo, For, type JSX, Show } from "solid-js";
 import {
   type DescriptionObject,
+  type DescriptionRowLinks,
   type DescriptionTableRow,
   descriptionList,
   descriptionObject,
@@ -54,6 +55,8 @@ export type TableBlockProps = {
   asOf?: string;
   onRetry?: () => void;
   empty?: string;
+  /** Where each row leads; a last column then holds each row's Open link. */
+  rowLinks?: DescriptionRowLinks;
 };
 
 /**
@@ -66,7 +69,7 @@ export type TableBlockProps = {
 export function TableBlock(props: TableBlockProps): JSX.Element {
   const locale = useLocale();
   const t = useMessages();
-  const table = createMemo(() => descriptionTable(props.spec));
+  const table = createMemo(() => descriptionTable(props.spec, props.rowLinks));
   const groups = () => descriptionList(props.spec.groupBy).filter(descriptionObject);
   const allRows = () => table().rows;
   const tableColumns = () => table().columns;
@@ -132,7 +135,14 @@ export function TableBlock(props: TableBlockProps): JSX.Element {
         </>
       }
       reserve={
-        <DataTable<DescriptionTableRow> ariaLabel={props.title} surface="plain" rows={allRows()} columns={tableColumns()} {...grouping()} />
+        <DataTable<DescriptionTableRow>
+          ariaLabel={props.title}
+          surface="plain"
+          rows={allRows()}
+          columns={tableColumns()}
+          renderCell={table().renderCell}
+          {...grouping()}
+        />
       }
     >
       <DataTable<DescriptionTableRow>
@@ -143,6 +153,7 @@ export function TableBlock(props: TableBlockProps): JSX.Element {
         sort={view.sort()}
         onSortChange={view.setSort}
         columns={tableColumns()}
+        renderCell={table().renderCell}
         {...grouping()}
       />
     </DashboardFrame>

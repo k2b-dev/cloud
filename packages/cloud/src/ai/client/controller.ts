@@ -1,7 +1,6 @@
 import { type Accessor, createEffect, createMemo, createSignal, onCleanup } from "solid-js";
 import { createStore, reconcile } from "solid-js/store";
 import { z } from "zod";
-import { editApprovalDraft } from "../../approvals/draft";
 import { beginAppAction, fetchAppAction } from "../../browser/app-actions";
 import type { ApprovalDraftResult } from "../../contracts/approvals";
 import { CapabilityActionReceiptSchema } from "../../contracts/capabilities";
@@ -1524,7 +1523,10 @@ export const createAiChatController = (options: CreateAiChatControllerOptions) =
   ): Promise<ApprovalDraftResult> => {
     const conversationId = activeConversationId();
     if (!conversationId) throw new Error("No active conversation.");
-    const result = await editApprovalDraft(requestInput.requestId, values, digest);
+    // Only sending an edited draft needs this code, so it loads when a person sends one; a failed load fails the send,
+    // which the card shows with its own way to try again.
+    const draft = await import("../../approvals/draft");
+    const result = await draft.editApprovalDraft(requestInput.requestId, values, digest);
     const projection = isActiveConversation(conversationId) ? state : cache.get(conversationId);
     if (projection && "sentence" in result.review) {
       const review = result.review;

@@ -1,4 +1,4 @@
-import type { DataTableColumn } from "@k2b/ui";
+import { ButtonLink, type DataTableColumn, type DataTableRenderCell } from "@k2b/ui";
 import type { DescriptionJson as JsonValue } from "./json";
 
 /**
@@ -33,10 +33,39 @@ export const descriptionTableColumns = (columns: DescriptionObject[]): DataTable
     ),
   );
 
-/** A description table's columns and rows as the typed table reads them. */
-export const descriptionTable = (spec: DescriptionObject) => ({
-  columns: descriptionTableColumns(descriptionList(spec.columns).filter(descriptionObject)),
-  rows: descriptionList(spec.rows)
-    .filter(descriptionObject)
-    .map((cells, index): DescriptionTableRow => ({ key: String(index), cells })),
-});
+/** Where each row leads, by row position, with Cloud's words for the column and its links. */
+export type DescriptionRowLinks = { hrefs: readonly (string | undefined)[]; header: string; label: string };
+
+const ROW_LINK_COLUMN = "__open";
+
+/**
+ * A description table's columns and rows as the typed table reads them. With row links a last column holds each row's
+ * Open link; the link opens a new tab only for an address outside Cloud.
+ */
+export const descriptionTable = (spec: DescriptionObject, links?: DescriptionRowLinks) => {
+  const columns = descriptionTableColumns(descriptionList(spec.columns).filter(descriptionObject));
+  const linked = links?.hrefs.some(Boolean) ? links : undefined;
+  const renderCell: DataTableRenderCell<DescriptionTableRow> = ({ row, col, value, render }) => {
+    if (col.id !== ROW_LINK_COLUMN) return render(value);
+    const href = linked?.hrefs[Number(row.key)];
+    const external = href?.startsWith("https://");
+    return href ? (
+      <ButtonLink
+        href={href}
+        target={external ? "_blank" : undefined}
+        rel={external ? "noopener noreferrer" : undefined}
+        variant="ghost"
+        size="xs"
+      >
+        {linked?.label}
+      </ButtonLink>
+    ) : null;
+  };
+  return {
+    columns: linked ? [...columns, { id: ROW_LINK_COLUMN, header: linked.header, sortable: false, value: () => null }] : columns,
+    rows: descriptionList(spec.rows)
+      .filter(descriptionObject)
+      .map((cells, index): DescriptionTableRow => ({ key: String(index), cells })),
+    ...(linked ? { renderCell } : {}),
+  };
+};

@@ -228,10 +228,11 @@ export const gridsView: Block[] = [
       },
     ],
     rows: [
-      { sku: "Vitrinenglas 40 × 60", place: "N-02", stock: 3, state: "low" },
-      { sku: "Samtkissen, grün", place: "N-04", stock: 0, state: "out" },
-      { sku: "Messingständer klein", place: "N-02", stock: 2, state: "low" },
+      { sku: "Vitrinenglas 40 × 60", place: "N-02", stock: 3, state: "low", href: "/grids/lager-nord/r/12" },
+      { sku: "Samtkissen, grün", place: "N-04", stock: 0, state: "out", href: "/grids/lager-nord/r/31" },
+      { sku: "Messingständer klein", place: "N-02", stock: 2, state: "low", href: "/grids/lager-nord/r/7" },
     ],
+    rowHref: ["href"],
   },
 ];
 
