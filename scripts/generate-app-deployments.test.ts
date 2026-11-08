@@ -41,9 +41,11 @@ test("production and dev templates wire only app key and Core origin into every 
 test("app-owned development environment survives generation", async () => {
   const source = await Bun.file(new URL("./templates/compose.dev.yml", import.meta.url)).text();
   const rendered = renderAppDeployment(source, true);
-  expect(rendered).toContain("      CLOUD_CLI_CHROMIUM: /usr/bin/chromium");
+  expect(rendered).not.toContain("CLOUD_CLI_CHROMIUM");
   expect(rendered).toContain("      NATS_ADMIN_NKEY_SEED_FILE: /run/secrets/nats-admin.seed");
-  expect(() => renderAppDeployment(source.replace("      CLOUD_CLI_CHROMIUM:", "      CLOUD_APP_KEY:"), true)).toThrow("generator-owned");
+  expect(() => renderAppDeployment(source.replace("      NATS_ADMIN_NKEY_SEED_FILE:", "      CLOUD_APP_KEY:"), true)).toThrow(
+    "generator-owned",
+  );
 });
 
 test("development key generation preserves explicit grants independently of app names", async () => {
