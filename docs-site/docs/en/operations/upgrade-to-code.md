@@ -86,10 +86,13 @@ Then back up what the exports leave out:
 - A **database backup** of the whole installation. It keeps Mail run
   history, rule logs, commands and outbox evidence, and routine occurrences
   and messages.
-- **Studio has no export.** Back up anything your retention contract needs
-  before the upgrade, including the **external RSQL databases**: a Postgres
-  backup holds only the namespace mappings, not their contents. This is the
-  last chance; the upgrade deletes Studio data.
+- **Studio has no migration export**: nothing moves into Code. Back up
+  anything your retention contract needs before the upgrade, including the
+  **external RSQL databases**: a Postgres backup holds only the namespace
+  mappings, not their contents. A person with **Manage** access can download
+  one Studio app's database as SQLite with
+  `cld assistant code database-export <app> --out <file>` on the old release.
+  This is the last chance; the upgrade deletes Studio data.
 
 If people kept editing during the export, export again. Pages are live reads,
 not one transaction.
@@ -114,7 +117,9 @@ release removes them, but only once the old one is down.
 ## 4. Upgrade
 
 Upgrade Core, the gateway, Assistant, Mail, the Code runner, all other
-applications and the CLI plugins together, then start them. Keep the existing
+applications and the CLI plugins together. Start Core first, then Mail, and
+start Assistant only once Mail is ready: Mail's drain check then runs before
+Studio's destructive cleanup. Keep the existing
 `APP_SECRET`, and the stored Studio RSQL URL, API token and network allowlist,
 valid and reachable until startup has finished.
 
@@ -137,7 +142,7 @@ Startup stops, with a message, instead of continuing unsafely:
 
 | Stop | Cause | What to do |
 | --- | --- | --- |
-| Mail does not start | Old Mail commands or sends are still unresolved | Go back to the old release, reconcile them there (step 3), then upgrade again |
+| Mail does not start | Old Mail commands or sends are still unresolved | If Assistant has not started yet, return to the old release, reconcile them there (step 3) and upgrade again. If Studio cleanup has begun, never start the old Assistant again: restore the pre-upgrade backups, including RSQL, before returning to the old release |
 | Mail reports a lock timeout | Shared workflow transactions, for example Grids writes, are still settling | Let them finish and restart Mail; this is safe to retry |
 | Assistant: "Unreadable pending HTTP scope" | A pending chat HTTP request cannot be decrypted or read, for example after `APP_SECRET` changed | Restore the previous `APP_SECRET`, or settle the pending request on the old release, then start again |
 | Assistant: RSQL cleanup fails | The RSQL service is unreachable or answers with an error other than "namespace missing" | Make RSQL reachable with the stored URL, token and allowlist, then start again. Local changes roll back for the retry; remote deletions that already happened stay deleted |
@@ -194,9 +199,12 @@ For each new version:
    never run unattended in this release.
 3. For mailbox Code, a manager of each target shares it with the Code's
    service account by its handle, **View** or **Edit**.
-4. Preview one real message without effects on the mailbox's Code page.
+4. Before switching on, run the version's tests: fictional fixtures with
+   `cld code test` or Gustav's `code_test`. Nothing real is called.
 5. The owner chooses **Switch on**.
-6. For Mail, record the last receipt the old rules handled and the first one
+6. For mailbox Code, use **Preview without effects** on the mailbox's Code
+   page to replay one real message against the active version; it performs no
+   effects. Record the last receipt the old rules handled and the first one
    Code handles. Close any gap with a deliberate, bounded **Catch up** of up
    to 100 messages; catch-up refuses versions that use AI.
 
@@ -218,9 +226,9 @@ or data must never run old rules or routines beside active Code.
 - Ordinary Mail works: send a test message from a test mailbox, add a tag,
   write a summary.
 - A Grids workflow still runs.
-- A first rebuilt Code version passes **Preview without effects**, switches
-  on, and handles one new test message or one manual schedule start as
-  expected. Its run list shows the calls in order.
+- A first rebuilt Code version passes its tests, switches on, passes
+  **Preview without effects** for a real message, and handles one new test
+  message or one manual schedule start as expected. Its run list shows the calls in order.
 
 ## Related pages
 

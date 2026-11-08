@@ -27,7 +27,7 @@ affected.
 
 | Removed | Replacement |
 | --- | --- |
-| `GET`, `POST /api/ai/tasks`; `GET /api/ai/tasks/status`; `GET`, `PATCH`, `DELETE /api/ai/tasks/:taskId`; `POST /api/ai/tasks/:taskId/pause`, `/resume`, `/run`; `GET /api/ai/tasks/:taskId/occurrences/:occurrenceId` | Personal Code with `app.schedule`; see [Routines became Code](/en/docs/operations/routines-to-code) |
+| `GET`, `POST /api/ai/tasks`; `GET /api/ai/tasks/status`; `GET`, `PATCH`, `DELETE /api/ai/tasks/:taskId`; `POST /api/ai/tasks/:taskId/pause`, `/resume`, `/run`; `GET /api/ai/tasks/:taskId/occurrences/:occurrenceId`; `GET /api/ai/tasks/activities` | Personal Code with `app.schedule`; see [Routines became Code](/en/docs/operations/routines-to-code) |
 | `/api/assistant/artifacts/*` (Studio apps, revisions, access, storage, databases, presentations, admin resources and settings) | None |
 | `/api/assistant/artifacts/machine/*` (Studio machine execution, source, storage, grants and secrets) | None |
 | `/api/assistant/runner/*` (hosted Studio apps) | None |
@@ -56,14 +56,15 @@ Retained:
 
 | Removed | Replacement |
 | --- | --- |
-| `cld assistant tasks list`, `get`, `create`, `update`, `delete`, `run`, `run-get`, `status`, `activities` | `cld code` for personal Code; Gustav builds it |
+| `cld assistant tasks list`, `get`, `create`, `update`, `delete`, `pause`, `resume`, `run`, `run-get`, `status`, `activities` | `cld code` for personal Code; Gustav builds it |
 | `cld assistant code …` (Studio apps and actions) | `cld code` for lasting Code; chat `code_run` for one-off scripts |
 | `cld assistant studio-admin …` | None |
 | `cld admin studio machines access list`, `set`; `cld admin studio machines secrets list`, `set`, `delete` | None; Code secrets use `cld code secret` |
-| `cld mail workflow …` (list, get, source, create, update, activate, deactivate, validate, try, export, version …) | `cld code` for mailbox Code; `cld mail automation export` for old definitions |
+| `cld mail workflow …` (list, get, create, update, activate, deactivate, validate, try, export, version …) | `cld code` for mailbox Code; `cld mail automation export` for old definitions |
 | `cld mail automation list`, `get`, `create`, `update`, `delete`, `catalog`, `backfill start`, `backfill status`, `backfill cancel` | Mailbox Code; catch-up on the mailbox's Code page |
 | `cld mail automation log`, `log show`, `log undo` | **Retired rule history** in the mailbox menu; no Undo |
 | `cld mail automatic-reply list`, `create`, `update`, and the `--automatic-replies` option of the mailbox settings command | None |
+| The `--automation` option of `cld mail identity add` and `cld mail identity configure` (automatic replies from a sender identity) | None |
 
 Retained: `cld assistant tasks export` and `cld mail automation export`, for
 the definitions saved before the upgrade.
@@ -92,14 +93,17 @@ Mail removes no capability: rules and automatic replies had none.
 | `assistant.rsql_url`, `assistant.rsql_api_token`, `assistant.rsql_allowed_targets` | None. Keep the stored values readable until the upgrade's RSQL cleanup has finished. |
 | `assistant.storage_file_mib`, `assistant.storage_total_mib` | None |
 | `ASSISTANT_RSQL_ALLOWED_TARGETS`, `CLOUD_CLI_CHROMIUM` | None; the Assistant image no longer installs Chromium |
-| `mail.workflow_ai_body_max_chars` and its bootstrap variable `MAIL_WORKFLOW_AI_BODY_MAX_CHARS` | None |
 | Mailbox setting for who manages automatic replies (`automaticReplyManagementPermission`) | None |
+| Sender identity input `authenticationPolicy.automation` | None |
+
+Retained: `mail.workflow_ai_body_max_chars` and `MAIL_WORKFLOW_AI_BODY_MAX_CHARS`
+now bound the Mail body that conversation summaries read.
 
 ## Package exports
 
 | Removed | Replacement |
 | --- | --- |
-| `@k2b/cloud/ai`: `aiChatTasks`, `AiChatTask*`, `ChatTask*` | None. The read-only `ChatTaskExport*` contract stays. |
+| `@k2b/cloud/ai`: `aiChatTasks`, `AiChatTask*`, `ChatTask*`, `CHAT_TASK_REASON_CODES`, `AiConversationIdSchema`, `AiBackgroundApprovalRequiredError`, `authorizeBackgroundAction`, and the routine helpers `chatTaskCreateFingerprint`, `chatTaskName`, `getChatTaskTimezone`, `normalizeChatTaskSchedule`, `toAiChatTaskOccurrenceView`, `toAiChatTaskView`, `chatTaskLocale`, `chatTaskNeedsNewTime`, `chatTaskReasonSentence`, `chatTaskReasonState`, `chatTaskStopSentence` | None. The read-only `ChatTaskExport*` contract stays. |
 | `@k2b/cloud/services`: `TaskGrant*` | `MandateGrant*`, the retained grant contract |
 | `@k2b/cloud/ai/browser`: `CodeActionInput`, `CodeCheckInput` (Studio inputs of the code tools) | The Code authoring contracts of `cld code` and Gustav's Code tools |
 

@@ -81,13 +81,17 @@ for issuance and the `cld admin agents keys` commands.
 Code replaces Studio, Mail rules, automatic replies and scheduled Assistant
 routines. The upgrade is a one-way, coordinated cut; follow
 [Upgrade to Code](/en/docs/operations/upgrade-to-code) step by step.
+Routine retirement is merged; the Studio and Mail rule retirements and
+Gustav's guided rebuild from export files ship with this release and are
+still in review.
 
 - **Before the upgrade:** on the old release, run
   `cld mail automation export --all --json` and
   `cld assistant tasks export --all --json` with an explicit administrator
-  profile, validate both files, and back up the database. Studio has no
-  export: back up Studio data and the external RSQL databases now, or lose
-  them.
+  profile, validate both files, and back up the database. Nothing in Studio
+  moves into Code: back up Studio data and the external RSQL databases now
+  (one app's database: `cld assistant code database-export <app> --out
+  <file>`), or lose them.
 - **Gone without replacement:** Studio apps with their revisions, sharing,
   storage, files and RSQL databases; out-of-office, office-hours and
   reference automatic replies.
@@ -99,7 +103,8 @@ routines. The upgrade is a one-way, coordinated cut; follow
 - **Upgrade order:** freeze, export, stop and drain the old release
   (reconcile accepted or unknown Mail sends there), stop every old Core,
   Assistant and Mail replica, upgrade all applications, the Code runner and
-  the CLI plugins together. Never run old and new versions side by side.
+  the CLI plugins together, and start Mail before Assistant. Never run old
+  and new versions side by side.
 - **The upgrade stops** while old Mail commands or sends are unresolved, when
   a pending chat HTTP request cannot be read (keep `APP_SECRET`), or when the
   Studio RSQL cleanup cannot reach RSQL. Fix the cause and start again.
