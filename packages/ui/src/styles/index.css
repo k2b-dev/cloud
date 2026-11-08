@@ -1752,6 +1752,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 .k2b-ui .k2b-chart__svg:has(> svg[data-bar-layout="rows"]) {
   flex: none;
   height: var(--k2b-chart-height);
+  max-width: var(--k2b-row-measure, 40rem);
 }
 
 /* Labels and guide strokes leave hit testing to the data geometry below. */
@@ -1765,7 +1766,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 }
 /* Calm hover: nothing else dims. A single mark gets a thin outline; a column or row
  * of a category chart gets a light band behind it instead (data-inspecting="category"). */
-.k2b-ui .k2b-chart:not([data-chart-kind="bar"], [data-chart-kind="histogram"], [data-chart-kind="boxplot"]) [data-inspected]:not([data-chart-role="value"]) > :is(rect, path, circle) {
+.k2b-ui .k2b-chart:not([data-chart-kind="bar"], [data-chart-kind="histogram"], [data-chart-kind="boxplot"]) [data-inspected]:not([data-chart-role="value"]) > :is(rect, path, circle):not(.k2b-chart-category-band) {
   stroke: var(--k2b-chart-inspection-color) !important;
   vector-effect: non-scaling-stroke;
 }
@@ -1775,6 +1776,12 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 /* Points keep a 2 px ring: a tiny point is hit through its stroke, so a thinner ring would let the drawing take the pointer. */
 .k2b-ui .k2b-chart:not([data-chart-kind="bar"], [data-chart-kind="histogram"], [data-chart-kind="boxplot"]) [data-inspected]:not([data-chart-role="value"]) > circle {
   stroke-width: 2px;
+}
+/* Keyboard inspection outlines category marks; pointer hover keeps their resting paint. */
+.k2b-ui .k2b-chart:focus-visible:is([data-chart-kind="bar"], [data-chart-kind="hbar"], [data-chart-kind="histogram"], [data-chart-kind="boxplot"]) [data-inspected] > :is(rect, path, circle):not(.k2b-chart-category-band) {
+  stroke: var(--k2b-chart-inspection-color) !important;
+  stroke-width: 1.5px;
+  vector-effect: non-scaling-stroke;
 }
 /* The band sits behind the marks without positioning the drawing, which would change what lies on top. */
 .k2b-ui .k2b-chart[data-inspecting="category"] {
@@ -17504,7 +17511,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 .k2b-ui .k2b-chart-explorer__details:empty { display: none; }
 .k2b-ui .k2b-chart-explorer__detail-paper { padding: .75rem 1rem; }
 .k2b-ui .k2b-chart-explorer__detail-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: .5rem; color: var(--k2b-text-muted); font-size: .75rem; }
-.k2b-ui .k2b-chart [data-selected] > :is(rect, path, circle) {
+.k2b-ui .k2b-chart [data-selected] > :is(rect, path, circle):not(.k2b-chart-category-band) {
   stroke: var(--k2b-chart-selection-color, var(--k2b-chart-selection-fallback-color)) !important;
   stroke-width: 3px;
   vector-effect: non-scaling-stroke;
@@ -18340,6 +18347,13 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   }
 }
 
+/* Pointer hover paints only the band; keyboard inspection and selection outline the marks. */
+.k2b-ui .k2b-chart-category-band { stroke: none; }
+.k2b-ui .k2b-chart [data-inspected] > .k2b-chart-category-band[fill="none"] { fill: color-mix(in srgb, currentColor 5%, transparent); }
+.k2b-ui .k2b-chart:not(:focus-visible):has(svg[data-bar-layout] .k2b-chart-category-band) [data-inspected]:not([data-selected]) > :is(rect,path,circle):not(.k2b-chart-category-band),
+.k2b-ui .k2b-chart:not(:focus-visible):has(svg[data-bar-layout] .k2b-chart-category-band) [data-inspected]:not([data-selected]) > .k2b-chart-previous > rect { stroke: none !important; }
+.k2b-ui .stdlib-chart .k2b-chart-group-heading { font-size: 11.5px; font-weight: 600; opacity: 1; }
+.k2b-ui .stdlib-chart .k2b-chart-segment-value { font-size: 11px; font-weight: 500; fill: currentColor; opacity: 1; }
 /* Category hover paints only the band; keyboard and selection outline marks. */
 .k2b-ui .k2b-chart[data-chart-kind="waterfall"] :is([data-inspected], [data-selected]) > .k2b-chart-category-band { fill-opacity: .05; stroke: none !important; }
 .k2b-ui .k2b-chart[data-chart-kind="waterfall"] [data-inspected="hover"]:not([data-selected]) > .k2b-waterfall-bar { stroke: none !important; }
@@ -18356,3 +18370,6 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   .k2b-ui .k2b-chart__svg:has(> svg[data-calendar]) { min-width: 0 !important; width: 100%; }
 }
 .k2b-ui .k2b-chart[data-chart-kind="area"] [data-selected] > .k2b-area-inspection-point { opacity: 1; stroke-width: 1.5px; }
+
+.k2b-ui .k2b-chart [data-selected] > .k2b-chart-previous > rect { stroke: var(--k2b-chart-selection-color) !important; stroke-width: 2.5px !important; }
+.k2b-ui .k2b-chart:focus-visible [data-inspected]:not([data-selected]) > .k2b-chart-previous > rect { stroke: var(--k2b-chart-inspection-color) !important; stroke-width: 1.5px; }
