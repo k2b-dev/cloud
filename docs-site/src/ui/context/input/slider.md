@@ -36,7 +36,11 @@ With `center`, the filled track starts at the range midpoint. Double-click reset
 
 ## Default value and reset
 
-Pass `defaultValue` when the setting has a value it starts from, such as `1` for brightness or `0` for rotation. While the value differs from it, the shown value takes the accent color and a reset button appears after it. The button names the value it returns to, formatted by `formatValue`, such as "Reset to 100%". The button keeps its slot at the default too, invisible and out of the tab order, so changing the value moves nothing. Reset reports through both callbacks and returns focus to the slider. Without `defaultValue` there is no reset button and no changed color.
+Pass `defaultValue` when the setting has a value it starts from, such as `1` for brightness or `0` for rotation. While the value differs from it, the shown value takes the accent color and a reset button appears in the chosen row. The button names the value it returns to, formatted by `formatValue`, such as "Reset to 100%". The button keeps its slot at the default too, invisible and out of the tab order, so changing the value moves nothing. Reset reports through both callbacks and returns focus to the slider. Without `defaultValue` there is no reset button and no changed color.
+
+`disabled` mutes the label, displayed value, thumb and filled track in both
+placements. A changed value stays muted until the slider is enabled again;
+the reset button is disabled too. The layout keeps the same dimensions.
 
 See [shared field props](/en/ui/getting-started#shared-field-props) for labels, errors, disabled state and value accessors.
 
