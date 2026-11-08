@@ -13,6 +13,24 @@ The handler gets `c.user` with `id`, effective `groups`, account `kind`
 `name`. Check these fields before reading or returning restricted data. Public
 routes always get `null`, including for signed-in visitors.
 
+## Where a page appears
+
+A page appears inside the Cloud layout, like every Cloud page, in the app card
+every app has from 768 px, without a sidebar. Signed-in people see it in their
+workspace, with the icon bar and their apps. Visitors
+who are not signed in, on a public route, see the signed-out header with the
+Cloud logo and **Sign in**; signing in returns to the page. Someone who opens a
+non-public page without a session goes to sign-in and comes back to it.
+Every page also carries a **Made with feat/code** label at the bottom edge,
+outside the page; it warns visitors never to enter passwords there, and pages
+with a form show that line without a press. There is no password field. Do not
+ask visitors for passwords, recovery codes or other credentials.
+
+`{ layout: "plain" }` on a route draws its pages alone, without the layout:
+for a page you hand out, such as a public survey
+([survey template](template-survey.md)). There is no setting for the whole
+Code; each route decides.
+
 ## The smallest page
 
 <!-- check: personal -->

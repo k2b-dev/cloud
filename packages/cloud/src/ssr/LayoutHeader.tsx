@@ -9,6 +9,8 @@ type LayoutHeaderProps = {
   title?: string;
   launchpad: boolean;
   breadcrumbs?: LayoutBreadcrumb[];
+  /** Sign in for anonymous pages; it returns to the page afterwards. */
+  signInHref: string;
 };
 
 /**
@@ -49,7 +51,7 @@ export default function LayoutHeader(props: LayoutHeaderProps) {
       />
       {!props.authenticated && (
         <div class="ml-1 flex shrink-0">
-          <ButtonLink href="/auth/login" size="sm" variant="primary">
+          <ButtonLink href={props.signInHref} size="sm" variant="primary">
             <i class="ti ti-login" aria-hidden="true" />
             {t().signIn}
           </ButtonLink>

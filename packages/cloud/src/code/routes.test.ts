@@ -21,6 +21,41 @@ app.post("/items", c => c.redirect("/"));`);
   ]);
   expect(result.permissions[0]?.entrypoints).toEqual(["route:GET:/items/:id"]);
 });
+test("a route renders its pages without the Cloud layout only when it says layout plain, checked and at runtime alike", async () => {
+  const source = `import { app } from "@sdk";
+app.get("/survey", c => c.text("x"), { public: true, layout: "plain" });
+app.get("/alone", c => c.text("x"), { layout: "plain" });
+app.get("/", c => c.text("x"));`;
+  const result = analyze(source);
+  expect(result.diagnostics).toEqual([]);
+  expect(result.entrypoints.map((e) => e.route)).toEqual([
+    { method: "GET", path: "/survey", public: true, layout: "plain" },
+    { method: "GET", path: "/alone", public: false, layout: "plain" },
+    { method: "GET", path: "/", public: false },
+  ]);
+  const runtime = await import(`data:text/javascript;base64,${Buffer.from(sdk.runtime).toString("base64")}`);
+  runtime.app.get("/survey", () => new Response(), { public: true, layout: "plain" });
+  runtime.app.get("/", () => new Response());
+  expect(runtime.__codeSdk.entries().map((entry: { route: unknown }) => entry.route)).toEqual([
+    { method: "GET", path: "/survey", public: true, layout: "plain" },
+    { method: "GET", path: "/", public: false },
+  ]);
+});
+test("route options other than literal public and layout plain fail closed", () => {
+  const options = [
+    '{ layout: "full" }',
+    "{ layout: kind }",
+    "{ public: true, public: false }",
+    '{ public: true, title: "x" }',
+    "{ ...more }",
+  ];
+  const result = analyze(`import { app } from "@sdk";
+const kind = "plain";
+const more = { public: true };
+${options.map((option, index) => `app.get("/r${index}", c => c.text("x"), ${option});`).join("\n")}`);
+  expect(result.diagnostics.filter((diagnostic) => diagnostic.code === "code_static_route")).toHaveLength(options.length);
+  expect(result.entrypoints).toEqual([]);
+});
 test("computed exposure, unsafe paths, nested and duplicate registrations fail closed", () => {
   for (const registration of [
     'app.get("/", c => c.text("x"), { public: Boolean(1) });',

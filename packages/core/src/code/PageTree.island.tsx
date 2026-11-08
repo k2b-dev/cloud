@@ -287,7 +287,7 @@ function CodePageContent(props: PageProps) {
 
   /** The address of the shown tree. Dialogs add history entries at the same address; only a new address loads. */
   let shownAt: string | undefined;
-  let main: HTMLElement | undefined;
+  let main: HTMLDivElement | undefined;
   let heading: HTMLHeadingElement | undefined;
   /** Finds the control that has focus again in the new tree: the same field or submit button of the same form. */
   const focusKey = (element: Element | null): string | undefined => {
@@ -611,10 +611,10 @@ function CodePageContent(props: PageProps) {
   });
 
   return (
-    <main
+    <div
       ref={main}
       class="mx-auto grid w-full min-w-0 max-w-6xl gap-8 px-4 py-6 sm:px-8 sm:py-8"
-      data-print-region=""
+      data-code-page=""
       data-code-page-version={page().tree.version}
       aria-busy={loading() || undefined}
     >
@@ -657,6 +657,6 @@ function CodePageContent(props: PageProps) {
           }
         </For>
       </DashboardGrid>
-    </main>
+    </div>
   );
 }

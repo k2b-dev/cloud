@@ -25,44 +25,53 @@ const orders = [
   { order: "A-1040", customer: "Studio Weiss", status: "shipped", placed: "2026-11-04", total: 860 },
   { order: "A-1039", customer: "Lindner GmbH", status: "late", placed: "2026-10-30", total: 2140 },
 ];
+// Group IDs that may open the page; empty lets every signed-in person in.
+const allowedGroups: string[] = [];
 
-app.get("/", c => c.page(
-  <Page eyebrow="Example data" title="Orders" asOf={new Date().toISOString()} icon="ti ti-shopping-cart">
-    <Stats>
-      <Stat icon="ti ti-inbox" label="Open orders" value={12} delta={{ value: -0.2, better: "down" }} compare={{ label: "Last week", value: 15 }} />
-      <Stat icon="ti ti-truck-delivery" label="Shipped this week" value={34} delta={{ value: 0.133, better: "up" }}
-        compare={{ label: "Last week", value: 30 }} trend={[21, 26, 24, 30, 34]} />
-      <Stat icon="ti ti-clock-check" label="On time" value={0.92} format={{ style: "percent" }}
-        delta={{ value: 0.04, unit: "points", better: "up" }} compare={{ label: "Last week", value: 0.88 }} />
-      <Stat icon="ti ti-coin-euro" label="Revenue" value={18420} format={{ style: "currency", currency: "EUR" }}
-        delta={{ value: 0.071, better: "up" }} compare={{ label: "Last week", value: 17190 }} />
-    </Stats>
-    <Section title="Trend" icon="ti ti-chart-line" color="blue">
-      <Chart.Line width="twoThirds" title="Orders per month" subtitle="Placed and shipped" series={[
-        { label: "Placed", data: months.map((x, i) => ({ x, y: placed[i] ?? 0 })) },
-        { label: "Shipped", data: months.map((x, i) => ({ x, y: shipped[i] ?? 0 })) },
-      ]} />
-      <Chart.Bar width="third" title="Orders by channel" subtitle="This month" data={[
-        { label: "Shop", value: 74 }, { label: "Phone", value: 31 }, { label: "Market", value: 26 },
-      ]} />
-    </Section>
-    <Section title="Orders" icon="ti ti-list-details" color="emerald">
-      <Table width="twoThirds" title="Latest orders" rows={orders} search empty="No order yet.">
-        <Column key="order" label="Order" />
-        <Column key="customer" label="Customer" />
-        <Column key="status" label="Status" type="status" states={{
-          open: { label: "Open", tone: "running" }, shipped: { label: "Shipped", tone: "ok" }, late: { label: "Late", tone: "error" },
-        }} />
-        <Column key="placed" label="Placed" type="date" priority={3} />
-        <Column key="total" label="Total" type="amount" format={{ style: "currency", currency: "EUR" }} />
-      </Table>
-      <Form width="third" title="Add an order" action="/orders" submit="Add">
-        <Field.Text name="customer" label="Customer" required />
-        <Field.Number name="total" label="Total" />
-      </Form>
-    </Section>
-  </Page>
-));
+// Default: the Cloud layout. Every signed-in person may open this page, and it reads with this Code's rights,
+// not the visitor's: check the visitor here when only some people may see the data. c.user names the visitor only
+// on routes without public: true; a public route always gets null.
+app.get("/", c => {
+  if (allowedGroups.length && !c.user?.groups.some(group => allowedGroups.includes(group)))
+    return c.text("Only some teams see these orders.", 403);
+  return c.page(
+    <Page eyebrow="Example data" title="Orders" asOf={new Date().toISOString()} icon="ti ti-shopping-cart">
+      <Stats>
+        <Stat icon="ti ti-inbox" label="Open orders" value={12} delta={{ value: -0.2, better: "down" }} compare={{ label: "Last week", value: 15 }} />
+        <Stat icon="ti ti-truck-delivery" label="Shipped this week" value={34} delta={{ value: 0.133, better: "up" }}
+          compare={{ label: "Last week", value: 30 }} trend={[21, 26, 24, 30, 34]} />
+        <Stat icon="ti ti-clock-check" label="On time" value={0.92} format={{ style: "percent" }}
+          delta={{ value: 0.04, unit: "points", better: "up" }} compare={{ label: "Last week", value: 0.88 }} />
+        <Stat icon="ti ti-coin-euro" label="Revenue" value={18420} format={{ style: "currency", currency: "EUR" }}
+          delta={{ value: 0.071, better: "up" }} compare={{ label: "Last week", value: 17190 }} />
+      </Stats>
+      <Section title="Trend" icon="ti ti-chart-line" color="blue">
+        <Chart.Line width="twoThirds" title="Orders per month" subtitle="Placed and shipped" series={[
+          { label: "Placed", data: months.map((x, i) => ({ x, y: placed[i] ?? 0 })) },
+          { label: "Shipped", data: months.map((x, i) => ({ x, y: shipped[i] ?? 0 })) },
+        ]} />
+        <Chart.Bar width="third" title="Orders by channel" subtitle="This month" data={[
+          { label: "Shop", value: 74 }, { label: "Phone", value: 31 }, { label: "Market", value: 26 },
+        ]} />
+      </Section>
+      <Section title="Orders" icon="ti ti-list-details" color="emerald">
+        <Table width="twoThirds" title="Latest orders" rows={orders} search empty="No order yet.">
+          <Column key="order" label="Order" />
+          <Column key="customer" label="Customer" />
+          <Column key="status" label="Status" type="status" states={{
+            open: { label: "Open", tone: "running" }, shipped: { label: "Shipped", tone: "ok" }, late: { label: "Late", tone: "error" },
+          }} />
+          <Column key="placed" label="Placed" type="date" priority={3} />
+          <Column key="total" label="Total" type="amount" format={{ style: "currency", currency: "EUR" }} />
+        </Table>
+        <Form width="third" title="Add an order" action="/orders" submit="Add">
+          <Field.Text name="customer" label="Customer" required />
+          <Field.Number name="total" label="Total" />
+        </Form>
+      </Section>
+    </Page>
+  );
+});
 app.post("/orders", c => {
   // Save the order with an SDK call here, then show the page again.
   return c.redirect("/");

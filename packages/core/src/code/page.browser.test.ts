@@ -18,7 +18,7 @@ import { buildCodePage } from "./page.test-source";
 const root = mkdtempSync(join(tmpdir(), "core-code-page-browser-"));
 Bun.plugin(createConfig({ dev: true, rootDir: root }).plugin());
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
-const { default: PageTree } = await import("./PageTree.island");
+const { default: CodePageHost } = await import("./PageHost");
 const { buildFontAssets } = await import("../../scripts/font-assets");
 const { buildTablerIconAssets } = await import("../../scripts/tabler-assets");
 const publicDir = join(root, "public");
@@ -55,12 +55,13 @@ let server: ReturnType<typeof Bun.serve>;
 let browser: Browser;
 
 const documentFor = (tree: CodePageTree) => {
-  const body = renderToString(() => createComponent(PageTree, { tree, codeId, csrf, locale: "en", timeZone: "UTC" }));
+  // As Core hosts it: the tree in its host, with the feat/code label beside it.
+  const body = renderToString(() => createComponent(CodePageHost, { tree, codeId, csrf, locale: "en", timeZone: "UTC" }));
   const props = JSON.stringify({ tree, codeId, csrf, locale: "en", timeZone: "UTC" }).replaceAll("<", "\\u003c");
   return (
     `<!doctype html><html lang="en" class="light"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">` +
     `<title>${tree.title} · Cloud</title><link rel="stylesheet" href="/public/fonts.css"><link rel="stylesheet" href="/public/tabler-icons.css">` +
-    `<style>${css}</style></head><body class="k2b-ui"><div id="app">${body}</div>` +
+    `<style>${css}</style></head><body class="k2b-ui"><main id="app">${body}</main>` +
     `<script type="application/json" id="props">${props}</script><script src="/client.js"></script></body></html>`
   );
 };
@@ -79,7 +80,8 @@ const listeners = new Set();
 const events = { subscribe(types, onEvent) { window.followed = types; listeners.add(onEvent); return () => listeners.delete(onEvent); } };
 window.emit = () => listeners.forEach((listener) => listener());
 window.mount = () => {
-  const app = document.getElementById("app");
+  // The island replaces only the tree; the label beside it is server markup.
+  const app = document.querySelector("[data-code-page-tree]");
   const props = JSON.parse(document.getElementById("props").textContent);
   app.textContent = "";
   render(() => createComponent(Page, { ...props, events }), app);
@@ -237,10 +239,125 @@ const boxes = (page: Page) =>
         Math.round(rect.height),
       ];
     }),
-    text: document.querySelector("main")?.innerText,
+    text: document.querySelector<HTMLElement>("[data-code-page]")?.innerText,
+    label: (() => {
+      const rect = document.querySelector("[data-code-provenance] button")?.getBoundingClientRect();
+      return rect ? [Math.round(rect.left), Math.round(rect.top), Math.round(rect.width), Math.round(rect.height)] : null;
+    })(),
   }));
 
+/** Scrolled to the end, the last block is fully visible: every shown chip of the label sits below it, in view. */
+const expectEndClear = async (page: Page) => {
+  await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
+  await settled(page);
+  const end = await page.evaluate(() => {
+    const chips = Array.from(document.querySelectorAll<HTMLElement>("[data-code-provenance] > :not([popover])"))
+      .filter((chip) => getComputedStyle(chip).display !== "none")
+      .map((chip) => chip.getBoundingClientRect());
+    const blocks = Array.from(
+      document.querySelectorAll("[data-code-page-tree] .k2b-dashboard-frame, [data-code-page-tree] [data-code-block]"),
+    );
+    return {
+      chips: Math.min(...chips.map((chip) => chip.top)),
+      last: Math.max(...blocks.map((block) => block.getBoundingClientRect().bottom)),
+      view: window.innerHeight,
+    };
+  });
+  expect(end.last).toBeLessThanOrEqual(end.view);
+  expect(end.chips).toBeGreaterThanOrEqual(end.last);
+};
+
 describe("Code page in a browser", () => {
+  test("a page with a form says not to enter passwords, readable at the edge, and the line follows the tree", async () => {
+    for (const width of [1280, 390]) {
+      const { page, errors, close } = await open(width);
+      try {
+        await settled(page);
+        const warning = () =>
+          page.evaluate(() => {
+            const line = document.querySelector<HTMLElement>("[data-code-provenance-warning]")!;
+            const rect = line.getBoundingClientRect();
+            const hit = document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2);
+            const style = getComputedStyle(line);
+            return {
+              shown: style.display !== "none",
+              text: line.innerText.trim(),
+              inView: rect.top >= 0 && rect.bottom <= window.innerHeight && rect.left >= 0 && rect.right <= window.innerWidth,
+              onTop: !!hit && line.contains(hit),
+              oneLine: line.scrollWidth <= line.clientWidth,
+              fontPx: Number.parseFloat(style.fontSize),
+            };
+          });
+        const shown = await warning();
+        expect(shown).toMatchObject({ shown: true, text: "Do not enter passwords here.", inView: true, onTop: true, oneLine: true });
+        expect(shown.fontPx).toBeGreaterThanOrEqual(12);
+        await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight / 2));
+        await settled(page);
+        expect(await warning()).toMatchObject({ shown: true, inView: true, onTop: true });
+        await expectEndClear(page);
+        // A tree without a form takes the line away, with no script of the label's own.
+        await page.evaluate(() => {
+          for (const form of document.querySelectorAll('[data-code-block="Form"]')) form.remove();
+        });
+        expect((await warning()).shown).toBe(false);
+        expect(errors).toEqual([]);
+      } finally {
+        await close();
+      }
+    }
+  }, 60_000);
+
+  test("the feat/code label stays outside the page, above it at the bottom edge while scrolling, and explains itself", async () => {
+    for (const width of [1280, 390]) {
+      const { page, errors, close } = await open(width, { path: "/newsletter" });
+      try {
+        await settled(page);
+        const placement = () =>
+          page.evaluate(() => {
+            const button = document.querySelector<HTMLElement>("[data-code-provenance] button")!;
+            const rect = button.getBoundingClientRect();
+            const hit = document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2);
+            return {
+              inTree: !!button.closest("[data-code-page-tree]"),
+              treeIsolation: getComputedStyle(document.querySelector("[data-code-page-tree]")!).isolation,
+              position: getComputedStyle(button.closest("[data-code-provenance]")!).position,
+              zIndex: getComputedStyle(button.closest("[data-code-provenance]")!).zIndex,
+              onTop: !!hit && button.contains(hit),
+              inView: rect.top >= 0 && rect.bottom <= window.innerHeight && rect.left >= 0 && rect.right <= window.innerWidth,
+            };
+          });
+        const top = await placement();
+        expect(top).toEqual({
+          inTree: false,
+          treeIsolation: "isolate",
+          // In the scroll area from 48rem; on phones at the window's edge, whichever element scrolls there.
+          position: width < 768 ? "fixed" : "sticky",
+          zIndex: "10",
+          onTop: true,
+          inView: true,
+        });
+        // The mark reads as its name; the note describes the button before it is opened.
+        const named = page.getByRole("button", { name: "Made with feat/code", exact: true });
+        expect(await named.count()).toBe(1);
+        expect(await named.getAttribute("aria-describedby")).toBe("code-page-provenance-note");
+        // Halfway down, the page's panels pass under the label; it stays on top and in view.
+        await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight / 2));
+        await settled(page);
+        expect(await placement()).toMatchObject({ onTop: true, inView: true });
+        await expectEndClear(page);
+        await named.click();
+        const note = page.locator("#code-page-provenance-note");
+        await note.waitFor({ state: "visible" });
+        expect(await note.innerText()).toBe("Someone built this page with feat/code. Never enter passwords or recovery codes here.");
+        await page.keyboard.press("Escape");
+        await note.waitFor({ state: "hidden" });
+        expect(errors).toEqual([]);
+      } finally {
+        await close();
+      }
+    }
+  }, 60_000);
+
   test("the Newsletter demo from Code data fits at 1280 and 390 px and keeps every panel from server to browser", async () => {
     for (const width of [1280, 390]) {
       const { page, errors, close } = await open(width, { hold: true, path: "/newsletter" });
@@ -431,14 +548,14 @@ describe("Code page in a browser", () => {
       await page.evaluate(() => {
         for (let i = 0; i < 5; i++) (window as unknown as { emit: () => void }).emit();
       });
-      await page.waitForFunction(() => !document.querySelector("main[aria-busy]"));
+      await page.waitForFunction(() => !document.querySelector("[data-code-page][aria-busy]"));
       expect(state.treeLoads - loads).toBeLessThanOrEqual(2);
 
       // Typing that starts while a load runs keeps its input; the new data waits.
       state.treeDelay = 500;
       state.trees.set("/", table([{ item: "Shelf", status: "Received", count: 1 }]));
       await emit();
-      await page.waitForSelector("main[aria-busy]");
+      await page.waitForSelector("[data-code-page][aria-busy]");
       await page.getByLabel("Title", { exact: true }).fill("Typed");
       await page.getByRole("region", { name: "Notifications" }).getByText("This page has new data.").waitFor();
       state.treeDelay = 0;
@@ -474,7 +591,7 @@ describe("Code page in a browser", () => {
       await page.getByRole("dialog", { name: "Scan code" }).waitFor({ state: "detached" });
       expect(await page.locator('input[name="barcode"]').inputValue()).toBe("W-42");
       // Closing the scanner leaves its history entry at the same address: nothing loads and nothing is sent.
-      await page.waitForFunction(() => !document.querySelector("main[aria-busy]"));
+      await page.waitForFunction(() => !document.querySelector("[data-code-page][aria-busy]"));
       expect(await page.getByLabel("Title", { exact: true }).inputValue()).toBe("Typed");
       expect(state.treeLoads).toBe(0);
       expect(state.posts).toEqual([]);
@@ -483,7 +600,7 @@ describe("Code page in a browser", () => {
       await page.getByRole("dialog", { name: "Scan code" }).waitFor();
       await page.goBack();
       await page.getByRole("dialog", { name: "Scan code" }).waitFor({ state: "detached" });
-      await page.waitForFunction(() => !document.querySelector("main[aria-busy]"));
+      await page.waitForFunction(() => !document.querySelector("[data-code-page][aria-busy]"));
       expect(page.url()).toBe(`${server.url.origin}/code/${codeId}/`);
       expect(await page.getByLabel("Title", { exact: true }).inputValue()).toBe("Typed");
       expect(state.treeLoads).toBe(0);
