@@ -89,11 +89,11 @@ export async function selectMailCodeMessages(
 /** Source-owned resolver: the caller needs live mailbox read permission; caller-supplied receipt data is never used. */
 export async function resolveMailCodeEvent(messageId: string, context: CapabilityExecutionContext) {
   const message = await resolvePublicId("messages", messageId);
-  if (!message) return fail(err.notFound("Message"));
+  if (!message) return fail(err.forbidden("Access denied"));
   const mailbox = await messageMailbox(message);
-  if (!mailbox) return fail(err.notFound("Message"));
+  if (!mailbox) return fail(err.forbidden("Access denied"));
   const allowed = await requireMailboxAccess(requestContext(context), mailbox, "read");
-  if (!allowed.ok || allowed.data.scope !== "mailbox") return fail(err.notFound("Message"));
+  if (!allowed.ok || allowed.data.scope !== "mailbox") return fail(err.forbidden("Access denied"));
   const [row] = await sql<Row[]>`SELECT message.id,message.short_id,message.mailbox_id,box.short_id AS mailbox,
     message.subject,message.internal_date,receipt.id AS receipt_id,receipt.first_seen_at
     FROM mail.message_contents message JOIN mail.mailboxes box ON box.id=message.mailbox_id

@@ -3977,10 +3977,13 @@ test("Code message selection and preview answer unreadable mailboxes like unknow
 });
 
 test("Code event lookup authorizes before classifying the message", async () => {
-  spyOn(resourceParents, "message").mockResolvedValue(internalMailboxId);
+  const parent = spyOn(resourceParents, "message").mockResolvedValue(internalMailboxId);
   const access = spyOn(mailboxAccess, "requireMailboxAccess").mockResolvedValue(fail(err.forbidden("Access denied")));
   const unknown = await resolveMailCodeEvent("Unknow", context);
+  expect(unknown).toEqual(fail(err.forbidden("Access denied")));
   expect(await resolveMailCodeEvent(messageId, context)).toEqual(unknown);
   access.mockResolvedValue({ ok: true, data: { scope: "assigned", permission: "read", userId } });
+  expect(await resolveMailCodeEvent(messageId, context)).toEqual(unknown);
+  parent.mockResolvedValue(null);
   expect(await resolveMailCodeEvent(messageId, context)).toEqual(unknown);
 });
