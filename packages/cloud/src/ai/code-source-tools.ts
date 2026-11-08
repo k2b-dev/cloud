@@ -128,33 +128,9 @@ export function createCodeSourceTool(name: CodeSourceToolName) {
   });
 }
 
+/** Implicit chat discovery exposes only chat/Project files; Studio uses explicit direct tools. */
 export const createCodeSourceTools = () => [
   createCodeSourceTool("code_files"),
   createCodeSourceTool("code_file_stat"),
   createCodeSourceTool("code_file_copy"),
-  createCodeSourceTool("code_database_export"),
-  createCodeSourceTool("code_database"),
-  createCodeSourceTool("code_manage_read"),
-  createCodeSourceTool("code_delete"),
-  createCodeSourceTool("code_database_read"),
-  createCodeSourceTool("code_database_clear"),
-  createCodeSourceTool("code_database_reset"),
-  createCodeSourceTool("code_storage_list"),
-  createCodeSourceTool("code_storage_delete"),
-  createCodeSourceTool("code_access_read"),
-  createCodeSourceTool("code_access_change"),
-  createCodeSourceTool("code_actions"),
-  createCodeSourceTool("code_sql"),
-  createCodeSourceTool("code_versions"),
-  createCodeSourceTool("code_list"),
-  createCodeSourceTool("code_read"),
-  createCodeSourceTool("code_history"),
-  createCodeSourceTool("code_fork"),
-  createCodeSourceTool("code_publish"),
-  createCodeSourceTool("code_restore"),
-  createCodeSourceTool("code_update"),
-  createCodeSourceTool("code_create"),
-  createCodeSourceTool("code_write"),
-  createCodeSourceTool("code_import"),
-  createCodeSourceTool("code_remove"),
 ];

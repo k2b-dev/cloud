@@ -20,8 +20,8 @@ import {
 } from "@k2b/ui";
 import { type Accessor, createEffect, createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import { assistantApi } from "../api/client";
-import { artifactMessages } from "../artifacts/messages";
 import { openStudioDialog, StudioSidebarItem } from "../artifacts/StudioSidebarItem";
+import { artifactMessages } from "../chat-code/messages";
 import { assistantCommandMessages } from "../commands";
 import { openAssistantAllChatsDialog } from "./AssistantAllChatsDialog";
 import { openAssistantConversationEditor } from "./AssistantConversationEditor";

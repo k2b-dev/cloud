@@ -1,4 +1,4 @@
-import { checkPdfBytes, type PdfAttachInput, type PdfFacturXInput, type PdfRenderInput, PdfRequest } from "../pdf-contracts";
+import { checkPdfBytes, type PdfAttachInput, type PdfFacturXInput, type PdfRenderInput, PdfRequest } from "../../chat-code/pdf-contracts";
 import { type Html, html as markup, resolveChartHtml } from "./lib";
 
 export function createPdf(rpc: (method: string, args: unknown[], signal?: AbortSignal) => Promise<unknown>, locale = "en-US") {

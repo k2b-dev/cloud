@@ -1,10 +1,10 @@
 import { AppWorkspace, Dropdown } from "@k2b/ui";
 import { render } from "solid-js/web";
+import { ChatWorkspace as ArtifactWorkspace, createChatWorkspace as createArtifactWorkspace } from "../chat-code/Workspace";
+import { contextTab, fileTab } from "../chat-code/workspace-state";
 import { assistantChatSidebarActions, type ContextView, createAssistantChatContextState } from "../frontend/AssistantChatContext";
 import { AssistantChatSidebarPanel } from "../frontend/AssistantChatSidebar";
 import { AssistantLiveProvider, createAssistantLiveHub } from "../frontend/assistant-live";
-import { ArtifactWorkspace, createArtifactWorkspace } from "./Workspace";
-import { appTab, contextTab, fileTab } from "./workspace-state";
 
 const live = createAssistantLiveHub();
 
@@ -38,7 +38,7 @@ render(() => {
           : { ...view, kind: "view" },
     );
   const menuItems = [
-    { label: "Studio", action: () => controller.open(contextTab("chat-one", "apps", "Studio")) },
+    { label: "Sources", action: () => controller.open(contextTab("chat-one", "sources", "Sources")) },
     { label: "Files", action: () => controller.open(contextTab("chat-one", "files", "Files")) },
   ];
   return (
@@ -62,7 +62,7 @@ render(() => {
                   <div class="assistant-chat-composer">
                     <input aria-label="Message" />
                   </div>
-                  <ChatSidebar open={open} openApp={(id, title) => controller.open(appTab(id, title))} />
+                  <ChatSidebar open={open} openApp={() => {}} />
                 </div>
               </div>
             </AppWorkspace.MainPane>

@@ -1,6 +1,4 @@
-import { type AiRuntimeTool, aiConversations, CODE_SOURCE_TOOLS, defineAiTool, resolveAiCapabilityActor } from "@k2b/cloud/ai";
-import { CodeCheckInput } from "@k2b/cloud/ai/browser";
-import { createCloudAiCodeTools, createCodeSourceTool } from "@k2b/cloud/ai/tools";
+import { type AiRuntimeTool, aiConversations, defineAiTool, resolveAiCapabilityActor } from "@k2b/cloud/ai";
 import { REQUEST_IDLE_TIMEOUT_MAX_SECONDS } from "@k2b/cloud/server";
 import { logger } from "@k2b/cloud/services";
 import { z } from "zod";
@@ -74,13 +72,6 @@ export function createCodeAuthoringChatTools() {
       timeoutMs: REQUEST_IDLE_TIMEOUT_MAX_SECONDS * 1000,
     }).server((input, context) => safe(() => call(service, input, context), context, command));
   }
-  function server(tool: AiRuntimeTool | undefined): ServerTool {
-    if (!tool || !("location" in tool) || tool.location !== "server") throw new Error("Platform Code tool unavailable");
-    return tool;
-  }
-  const legacyRead = server(createCodeSourceTool("code_read"));
-  const legacyWrite = server(createCodeSourceTool("code_write"));
-  const legacyCheck = server(createCloudAiCodeTools().find((item) => item.def.name === "code_check"));
   const write = z
     .object({
       project: codeAuthoringContracts.pull.data.describe("Complete project returned by code_init, code_pull or the previous Code write."),
@@ -93,7 +84,7 @@ export function createCodeAuthoringChatTools() {
       "init",
       codeAuthoringContracts.init,
       codeAuthoringServices.init,
-      "Create lasting personal Code or Code for an owner you administer. Returns code.json metadata and initial code.ts. Nothing runs. Use code_create for a Studio HTML app.",
+      "Create lasting personal Code or Code for an owner you administer. Returns code.json metadata and initial code.ts. Nothing runs.",
     ),
     tool(
       "pull",
@@ -131,56 +122,21 @@ export function createCodeAuthoringChatTools() {
       codeAuthoringServices.diff,
       "Read complete file rows and permissions for a submitted Code version, identical to cld code diff. Requires editor rights in the chat.",
     ),
-    defineAiTool({
-      name: "code_read",
-      promptHint: legacyRead.def.promptHint,
-      description:
-        legacyRead.def.description +
-        "\n\nLasting Code: " +
-        "Read lasting Code with {codeId}, returning the same project as code_pull (editor rights required). Read a Studio source file with {id,path}; its existing revision and paging contract applies.",
-      inputSchema: CODE_SOURCE_TOOLS.code_read.input
-        .partial()
-        .extend({ codeId: codeAuthoringContracts.pull.input.shape.codeId.optional() })
-        .refine(
-          (input) =>
-            input.codeId !== undefined
-              ? input.id === undefined && input.path === undefined && input.revision === undefined
-              : CODE_SOURCE_TOOLS.code_read.input.safeParse(input).success,
-          "Provide codeId for Code or id for Studio",
-        ),
-      outputSchema: z.unknown(),
-      approval: "never",
-    }).server((input, context) => {
-      const parsed = codeAuthoringContracts.pull.input.safeParse(input.codeId === undefined ? input : { codeId: input.codeId });
-      return parsed.success
-        ? safe(() => call(codeAuthoringServices.pull, parsed.data, context), context, "pull")
-        : legacyRead.run(input, context);
-    }),
+    tool(
+      "read",
+      codeAuthoringContracts.pull,
+      codeAuthoringServices.pull,
+      "Read lasting Code with {codeId}, returning the complete editable project, as code_pull. Editor rights required.",
+    ),
     defineAiTool({
       name: "code_write",
-      promptHint: legacyWrite.def.promptHint,
       description:
-        legacyWrite.def.description +
-        "\n\nLasting Code: " +
-        "Edit one lasting Code file with {project,path,content}; pass the full project from init/pull/previous write. Returns a replacement project; retain it for later writes and send its files/config entry/codeId to check/test/submit. This draft is only in the chat until submit saves an immutable version. Studio writes use {id,path,content,expectedRevision} as before.",
-      inputSchema: CODE_SOURCE_TOOLS.code_write.input
-        .partial()
-        .extend({
-          project: write.shape.project.optional(),
-          path: write.shape.path.optional(),
-          content: write.shape.content.optional(),
-        })
-        .refine(
-          (input) => write.safeParse(input).success || CODE_SOURCE_TOOLS.code_write.input.safeParse(input).success,
-          "Provide a Code project or Studio id/revision with path and content",
-        ),
+        "Edit one lasting Code file with {project,path,content}. Pass the complete project from init/pull/previous write. Returns a replacement project; retain it for check/test/submit. This draft is only in the chat until submit saves an immutable version.",
+      inputSchema: write,
       outputSchema: z.unknown(),
       approval: "never",
-    }).server((input, context) => {
-      const parsed = write.safeParse(input);
-      if (!parsed.success) return legacyWrite.run(input, context);
-      const draft = parsed.data;
-      return safe(
+    }).server((draft, context) =>
+      safe(
         async () => {
           await contextFor(context, draft.project.config.codeId);
           const project = { ...draft.project, files: { ...draft.project.files, [draft.path]: draft.content } };
@@ -190,35 +146,13 @@ export function createCodeAuthoringChatTools() {
         },
         context,
         "write",
-      );
-    }),
-    defineAiTool({
-      name: "code_check",
-      promptHint: legacyCheck.def.promptHint,
-      description:
-        legacyCheck.def.description +
-        "\n\nLasting Code: " +
-        "Check lasting Code with {codeId,files,entry}; returns the exact cld code check JSON with diagnostics and operation/target permissions at file/line locations, marked new/existing. Fix errors before test and submit. Studio HTML checks use {id} or {files} without codeId and retain their screenshot review workflow.",
-      inputSchema: z
-        .object({
-          codeId: codeAuthoringContracts.check.input.shape.codeId.optional(),
-          entry: z.string().optional(),
-          id: CodeCheckInput.shape.id,
-          files: z.union([CodeSourceFilesSchema, CodeCheckInput.shape.files]).optional(),
-        })
-        .strict()
-        .refine(
-          (input) => codeAuthoringContracts.check.input.safeParse(input).success || CodeCheckInput.safeParse(input).success,
-          "Provide Code codeId/files/entry or Studio id/files",
-        ),
-      outputSchema: z.unknown(),
-      approval: "never",
-      timeoutMs: REQUEST_IDLE_TIMEOUT_MAX_SECONDS * 1000,
-    }).server((input, context) => {
-      const parsed = codeAuthoringContracts.check.input.safeParse(input);
-      return parsed.success
-        ? safe(() => call(codeAuthoringServices.check, parsed.data, context), context, "check")
-        : legacyCheck.run(input, context);
-    }),
+      ),
+    ),
+    tool(
+      "check",
+      codeAuthoringContracts.check,
+      codeAuthoringServices.check,
+      "Check lasting Code with {codeId,files,entry}. Returns diagnostics and operation/target permissions at file/line locations. Fix errors before test and submit.",
+    ),
   ];
 }

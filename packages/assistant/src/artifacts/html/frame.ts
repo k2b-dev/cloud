@@ -7,11 +7,9 @@ import "./no-hints";
 import { cloudAiChartMarkKey } from "@k2b/cloud/ai/app-frame";
 import { type ChartInspection, type ChartTooltip, inspectChart, isChartDatum } from "@k2b/ui/chart-inspection";
 import { calendarInspectionNavigation, mountCalendarScroll } from "@k2b/ui/charts";
-import { LIMITS } from "../contracts";
-import { createBridge } from "../runtime/bridge";
-import { configureChartModule, loadChartRenderer } from "../runtime/chart-renderers-frame";
-import { createCloud } from "../runtime/cloud";
-import { CloudError } from "../runtime/errors";
+import { createBridge } from "../../chat-code/runtime/bridge";
+import { createCloud } from "../../chat-code/runtime/cloud";
+import { CloudError } from "../../chat-code/runtime/errors";
 import {
   chartLoading,
   chartMarkup,
@@ -20,8 +18,10 @@ import {
   isAppChartKind,
   pendingCalendarWidth,
   pendingChartOptions,
-} from "../runtime/lib";
-import { ensureRandomUuid } from "../runtime/random-uuid";
+} from "../../chat-code/runtime/lib";
+import { ensureRandomUuid } from "../../chat-code/runtime/random-uuid";
+import { LIMITS } from "../contracts";
+import { configureChartModule, loadChartRenderer } from "../runtime/chart-renderers-frame";
 import { moduleSpecifiers } from "./imports";
 import type { FrameConfig, FrameLogLevel, FrameToHost, HostToFrame } from "./protocol";
 

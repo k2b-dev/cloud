@@ -29,6 +29,7 @@ export {
   CodePermissionSchema,
   CodeVersionManifestSchema,
 } from "./checker-contract";
+export * from "./event-tools";
 export { generateCodeSdk } from "./generator";
 export {
   assertCodePageData,

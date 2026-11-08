@@ -59,8 +59,7 @@ export function workspaceSelectionFromHref(href: string): WorkspaceTab | null {
     if (typeof id !== "string" || !id || id.length > 80) return null;
     if (kind === "app" && value.length === 2) return appTab(id, id);
     if (typeof path !== "string" || !path || path.length > 500 || value.length !== 3) return null;
-    if (kind === "context" && (path === "apps" || path === "files" || path === "sources" || path === "knowledge"))
-      return contextTab(id, path, path);
+    if (kind === "context" && (path === "files" || path === "sources" || path === "knowledge")) return contextTab(id, path, path);
     if (kind === "file") return fileTab(id, path);
     if (kind === "source") return sourceTab(id, path);
   } catch {

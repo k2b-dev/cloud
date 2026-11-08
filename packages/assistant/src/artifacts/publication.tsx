@@ -1,8 +1,8 @@
 import { Button, NoticeCard, prompts } from "@k2b/ui";
 import { createSignal, Show } from "solid-js";
+import { artifactMessages } from "../chat-code/messages";
 import { advancedMessages } from "./advanced-messages";
 import { artifactClient } from "./client";
-import { artifactMessages } from "./messages";
 import type { ArtifactSummary } from "./service";
 
 /** Both the menu and preview publish the exact reviewed saved revision. */

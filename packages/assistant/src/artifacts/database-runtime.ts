@@ -1,6 +1,6 @@
 import { z } from "zod";
+import { CloudError } from "../chat-code/runtime/errors";
 import { DatabaseSql, DbName, DbRow } from "./database-contracts";
-import { CloudError } from "./runtime/errors";
 
 const Id = z.number().int().positive();
 const Table = z.object({ table: DbName });

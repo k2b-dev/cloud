@@ -21,7 +21,13 @@ export function retiredRoutineImports(file: string, source: string): Finding[] {
   const visit = (node: ts.Node) => {
     // Include build entrypoints and Bun.file/new URL readers: stale paths fail
     // even when they do not use an import declaration.
-    if (ts.isStringLiteralLike(node) && retiredModule.test(node.text)) report(node);
+    if (
+      ts.isStringLiteralLike(node) &&
+      (retiredModule.test(node.text) ||
+        /(?:^|\/)chat-code\/host-policy(?:\.[cm]?[jt]sx?)?$/.test(node.text) ||
+        (/(?:^|\/)chat-code\//.test(file) && /^\.\/host-policy(?:\.[cm]?[jt]sx?)?$/.test(node.text)))
+    )
+      report(node);
     ts.forEachChild(node, visit);
   };
   visit(parsed);

@@ -20,11 +20,17 @@ import { type Context, Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { etag } from "hono/etag";
 import { z } from "zod";
+import { ChatReference, requireToolChat } from "../chat-code/chat-access";
+import { HttpPrepare, HttpScope, SecretSave } from "../chat-code/http-contracts";
+import { artifactMessages } from "../chat-code/messages";
+import { ChunkName, chunkSource } from "../chat-code/runtime/chunks";
+import { codeRunSdk, usesCodeRunSdk } from "../chat-code/runtime/code-run-sdk";
+import { viewerContext } from "../chat-code/runtime/context";
+import { CloudError } from "../chat-code/runtime/errors";
 import { ActionInputError, ArtifactCompileError, parseActionInput, sourceActions } from "./actions";
 import { adminIdentity, artifactAdmin } from "./admin";
 import { runCodeAi } from "./ai-service";
 import { RuntimeCapabilityRequest, runtimeCapabilities } from "./capability-runtime";
-import { ChatReference, requireToolChat } from "./chat-access";
 import { ChatPresentationInput } from "./chat-presentation-contracts";
 import { chatPresentations } from "./chat-presentations";
 import { ClientCall, ClientCallResult, clientCalls } from "./client-calls";
@@ -33,22 +39,16 @@ import { artifactDatabase, DatabaseError } from "./database";
 import { DatabaseRequest, DatabaseSettings } from "./database-contracts";
 import { databaseConfigLock } from "./database-lock";
 import { FlatDatabaseRequest } from "./database-runtime";
-import { studioFiles } from "./file-transfer";
+import { StudioFileLocation, StudioFileReference, studioFiles } from "./file-transfer";
 import { appFrameAssets, checkFrameAssets } from "./html/assets";
 import { CheckReport } from "./html/check-contracts";
 import { appChecks } from "./html/check-service";
-import { HttpPrepare, HttpScope, SecretSave } from "./http-contracts";
 import { HttpError, httpService } from "./http-service";
-import { artifactMessages } from "./messages";
 import { decodePdfRequest } from "./pdf-contracts";
 import { studioPdf } from "./pdf-service";
 import { renameSource } from "./rename-source";
-import { ChunkName, chunkSource } from "./runtime/chunks";
 import { cliHostBundle } from "./runtime/cli-bundle";
-import { codeRunSdk, usesCodeRunSdk } from "./runtime/code-run-sdk";
 import { compilationDiagnostic, compileArtifact } from "./runtime/compile";
-import { viewerContext } from "./runtime/context";
-import { CloudError } from "./runtime/errors";
 import { ArtifactError, artifacts, readArtifactRevision, requireArtifact } from "./service";
 import { STORAGE_TRANSPORT_BYTES, StorageFileQuery, StorageJsonRequest } from "./storage-contracts";
 import { StorageSettings, storageSettings } from "./storage-settings";
@@ -417,21 +417,47 @@ export const createArtifactServiceRoutes = (caller: (context: Context<AuthContex
       respond(c, ok(await artifactDatabase.call(id(c), c.req.valid("json"), identity(c), c.req.raw.signal, "maintenance"))),
     )
     .post("/:id/database/connect", async (c) => respond(c, ok(await artifactDatabase.connect(id(c), identity(c), c.req.raw.signal))))
-    .post("/files/list", auth.readOnly, v("json", CODE_SOURCE_TOOLS.code_files.input), async (c) => {
-      const input = c.req.valid("json");
-      return respond(c, ok(await studioFiles.list(input, identity(c), input.after, input.limit)));
-    })
-    .post("/files/stat", auth.readOnly, v("json", CODE_SOURCE_TOOLS.code_file_stat.input), async (c) => {
-      const file = await studioFiles.read(c.req.valid("json").file, identity(c));
-      return respond(
-        c,
-        ok(file ? { exists: true, reference: file.reference, size: file.bytes.byteLength, mediaType: file.mediaType } : { exists: false }),
-      );
-    })
-    .post("/files/copy", v("json", CODE_SOURCE_TOOLS.code_file_copy.input.extend({ confirmed: z.literal(true) })), async (c) => {
-      const input = c.req.valid("json");
-      return respond(c, ok(await studioFiles.copy(input.source, input.destination, input.expectedVersion, identity(c), c.req.raw.signal)));
-    })
+    .post(
+      "/files/list",
+      auth.readOnly,
+      v("json", CODE_SOURCE_TOOLS.code_files.input.extend({ scope: StudioFileLocation.shape.scope })),
+      async (c) => {
+        const input = c.req.valid("json");
+        return respond(c, ok(await studioFiles.list(input, identity(c), input.after, input.limit)));
+      },
+    )
+    .post(
+      "/files/stat",
+      auth.readOnly,
+      v("json", CODE_SOURCE_TOOLS.code_file_stat.input.extend({ file: StudioFileLocation })),
+      async (c) => {
+        const file = await studioFiles.read(c.req.valid("json").file, identity(c));
+        return respond(
+          c,
+          ok(
+            file ? { exists: true, reference: file.reference, size: file.bytes.byteLength, mediaType: file.mediaType } : { exists: false },
+          ),
+        );
+      },
+    )
+    .post(
+      "/files/copy",
+      v(
+        "json",
+        CODE_SOURCE_TOOLS.code_file_copy.input.extend({
+          source: StudioFileReference,
+          destination: StudioFileLocation,
+          confirmed: z.literal(true),
+        }),
+      ),
+      async (c) => {
+        const input = c.req.valid("json");
+        return respond(
+          c,
+          ok(await studioFiles.copy(input.source, input.destination, input.expectedVersion, identity(c), c.req.raw.signal)),
+        );
+      },
+    )
     .get("/:id/database/status", async (c) => respond(c, ok(await artifactDatabase.status(id(c), identity(c), c.req.raw.signal))))
     .post(
       "/:id/database/clear",

@@ -2,17 +2,17 @@ import { CODE_RUNTIME_TOOL_NAMES, type CodeRuntimeInput, type CodeToolFailure, p
 import { type AiFrontendToolHandler, conversationFileSource } from "@k2b/cloud/ai/solid";
 import { onCleanup } from "solid-js";
 import { z } from "zod";
+import { CloudError, cloudError } from "../chat-code/runtime/errors";
+import { inspectCodeRun as inspect } from "../chat-code/runtime/run-result";
+import { ViewRefSchema } from "../chat-code/runtime/views";
 import { ChatPresentationResult } from "./chat-presentation-contracts";
 import { artifactClient } from "./client";
 import { hasInterface, LIMITS } from "./contracts";
 import { lintApp } from "./html/compose";
 import { type HttpHost, runHttp } from "./http-host";
 import { type ApproveCapability, runCapability } from "./runtime/capabilities";
-import { CloudError, cloudError } from "./runtime/errors";
-import { inspectCodeRun as inspect } from "./runtime/run-result";
 import { type ArtifactSession, createArtifactSession } from "./runtime/session";
 import { sharedStorage } from "./runtime/shared-storage";
-import { ViewRefSchema } from "./runtime/views";
 import { appTab, type WorkspaceTab } from "./workspace-state";
 
 const Claim = z.discriminatedUnion("status", [

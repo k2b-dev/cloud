@@ -953,7 +953,7 @@ and scripts have no check gate. The self-test is not a security mechanism.
 Desktop and phone run a saved app on separate disposable copies of its data;
 one-off apps have no storage, as in their chat card. AI runs for real; HTTP and
 capability effects are unavailable, and background checks reject all
-capabilities. See [HTML app checks](/en/docs/ai/chat-interface#check-an-html-app-before-showing-it)
+capabilities. See [HTML app checks](/en/docs/ai/chat-interface#legacy-studio-html-checks)
 for step matching, copy/output budgets, cancellation and the report contract.
 
 ## Register host-owned tools
@@ -980,9 +980,9 @@ For a result that starts no model turn, trusted hosts share
 `@k2b/cloud/ai/runtime`. Call it only inside an authorized transaction holding
 the destination conversation's row lock. It appends the assistant message and
 marks the conversation unread. The host owns idempotency and notification
-recovery in that same transaction. Core's routine finalizer and personal Code
+recovery in that same transaction. Personal Code's
 [chat delivery Action](/en/docs/platform/capabilities#deliver-personal-code-results-to-a-chat)
-use this seam; applications call the capability instead of this host helper.
+uses this seam; applications call the capability instead of this host helper.
 
 Trusted hosts may pass their open database transaction as the second argument
 to `aiConversations.submitChatTurn(input, db)` to commit a turn and a

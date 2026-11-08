@@ -27,3 +27,9 @@ test("retains shared AI tasks, Code scheduling and read-only archive projections
     ),
   ).toEqual([]);
 });
+
+test("blocks the retired chat host policy without banning other host policies", () => {
+  expect(retiredRoutineImports("packages/assistant/src/chat-code/host-fetch.ts", 'import "./host-policy";')).toHaveLength(1);
+  expect(retiredRoutineImports("fixture.ts", 'import "./chat-code/host-policy";')).toHaveLength(1);
+  expect(retiredRoutineImports("fixture.ts", 'import "./host-policy";')).toEqual([]);
+});

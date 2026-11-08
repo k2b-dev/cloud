@@ -2,10 +2,10 @@ import { type AccessDialogProps, openAccessDialog } from "@k2b/cloud/access/ui";
 import type { AccessEntry, Principal } from "@k2b/cloud/contracts";
 import { Button, InlineGuidance, NoticeCard } from "@k2b/ui";
 import { createResource, For, Show } from "solid-js";
+import { artifactMessages } from "../chat-code/messages";
 import type { artifactClient } from "./client";
 import { PUBLIC_APP_SHARING } from "./contracts";
 import { MachinePermissions } from "./MachinePermissions";
-import { artifactMessages } from "./messages";
 import { runnerHref } from "./runner-contracts";
 
 type StudioProjects = Awaited<ReturnType<typeof artifactClient.projects>>;

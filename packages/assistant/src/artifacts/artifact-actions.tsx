@@ -1,10 +1,10 @@
 import { navigateTo } from "@k2b/ssr/nav";
 import { Button, NoticeCard, Placeholder, prompts, useLocale } from "@k2b/ui";
 import { type Accessor, createResource, createSignal, For, onCleanup, Show } from "solid-js";
+import { artifactMessages } from "../chat-code/messages";
 import { advancedMessages } from "./advanced-messages";
 import { artifactClient } from "./client";
 import { openDatabaseDialog, openDataDialog } from "./DataDialogs";
-import { artifactMessages } from "./messages";
 import { openPublicationInfo, publishArtifact } from "./publication";
 import { runnerHref } from "./runner-contracts";
 import { openSecretsDialog } from "./SecretsDialog";

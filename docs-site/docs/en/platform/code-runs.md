@@ -27,9 +27,9 @@ in the chat.
 
 The Assistant host authorizes selected chat files, capability calls, HTTP,
 views and exports for the originating turn. The sandbox has no direct network
-or credentials. Unattended turns use the same path with their current routine
-mandate; HTTP grants still apply. Studio RSQL database grants do not authorize
-a runner database and are unavailable in `code_run`.
+or credentials. Scheduled chat routines are retired; rebuild timed work as
+reviewed personal Code. Studio RSQL database grants do not authorize a runner
+database and are unavailable in `code_run`.
 
 The following limits apply:
 
@@ -154,9 +154,10 @@ The receipt is keyed by Code and event ID, survives run-detail retention and
 version switches, and is deleted with the Code. Receipts are permanent deduplication
 state: deleting one while the publisher can repeat that event ID could admit it twice.
 Its input is the event reference
-envelope. Runs for one event registration and subject start in delivery order without overlapping,
-even when the operator raises per-Code concurrency. Other subjects can run in
-parallel within the ordinary limits.
+envelope. Runs for one event registration and resource place start in admission
+order without overlapping, including different message subjects, even when the
+operator raises per-Code concurrency. Different resource Codes retain their
+ordinary concurrency limits.
 
 Pause and deletion cancel subscriptions and pending deliveries, including
 claimed deliveries that have not committed admission. Resume creates fresh
@@ -171,7 +172,11 @@ accounts and lost read access cannot admit a new run.
 `core.code.event_backlog` bounds queued and running event runs per Code
 (default 100). When full, admission retries through the platform's existing
 delivery queue and then becomes a visible failed delivery. Failed deliveries
-hold later events for the same subject until replay or retention releases them.
+stay visible for deliberate replay. After bounded admission attempts, a failed
+resource delivery allows different subjects at that place to proceed. Successors
+of its own subject stay held until explicit replay of the predecessor succeeds.
+Mail uses a separate subject for each message, so a failed message does not
+hold other messages indefinitely.
 The platform event retention and retry budgets also apply; there is no second
 broker or event archive.
 
@@ -187,8 +192,14 @@ event and place. The `core.code.event.redeliver` Action takes
 platform delivery, transferring it to the current registration when needed.
 Retrying delivery only retries admission or recovers the same never-started
 run; its permanent receipt prevents another run if admission already completed. Event entrypoints
-cannot be started manually or through **Run again**. Ordinary run attempt
-retries remain subject to the effect and deadline rules above.
+cannot be started as arbitrary manual invocations. **Run again** is available
+for a failed event run and requires its unchanged original envelope. It creates
+a new run of the active version, joins the current admission queue, and can
+repeat effects; inspect calls before choosing it. Ordinary run attempt retries
+remain subject to the effect and deadline rules above.
+
+For bounded historical runs and fake-only real-message previews, see
+[Mail automations with Code](/en/docs/platform/mail-code-automations).
 
 ## Read runs and calls
 

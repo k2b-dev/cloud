@@ -10,6 +10,7 @@ export const mailEvents = {
     description: "An incoming message reached its first eligible placement in a mailbox.",
     subject: "message",
     place: "mailbox",
+    catchup: "message.event",
     schema: z.strictObject({ receiptId: z.uuid() }),
   },
 } as const;

@@ -35,8 +35,6 @@ import type { HelpReader, HelpReaderFactory } from "../services/help";
 import { resolveAppIdentityPresentation } from "../shared/app-presentation";
 import { DEFAULT_LOCALE } from "../shared/locale";
 import { recordRejectedAiCapability } from "./capability-execution";
-import { CODE_SOURCE_TOOLS } from "./code-source-contracts";
-import { createCodeSourceTool } from "./code-source-tools";
 import { CLOUD_AI_DEFERRED_BUILTIN_TOOL_NAMES } from "./default-tools";
 import { addCloudResourceHrefs } from "./resource-refs";
 import { type AiToolPreparationContext, defineAiTool, type PreparedAiTools, prepareAiTools } from "./tools";
@@ -875,11 +873,8 @@ export const createAiResourceReaderTool = (input: {
     outputSchema: z.unknown(),
     approval: "never",
   }).server(async (ref, context) => {
-    if (ref.type === "assistant.artifact") {
-      const tool = createCodeSourceTool("code_read");
-      if (tool.location !== "server") throw new Error("Code reader must execute on the server.");
-      return addCloudResourceHrefs(await tool.run(CODE_SOURCE_TOOLS.code_read.input.parse({ id: ref.id }), context), input.apps);
-    }
+    if (ref.type === "assistant.artifact")
+      throw new Error("Studio resources are unavailable in chat. Open Studio to inspect this saved app.");
     const appId = cloudResourceRefAppId(ref);
     const app = input.apps.find((candidate) => candidate.appId === appId);
     const reader = app ? resolveCapabilityResourceReader(app.manifest, ref) : null;

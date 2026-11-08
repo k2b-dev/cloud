@@ -28,6 +28,12 @@ import { z } from "zod";
 import { tinyJpeg, withCameraMetadata } from "../../../../scripts/fixtures/image-metadata";
 import { databaseSuite, requireInfraUrl, testFor, testInfra } from "../../../../scripts/fixtures/test-infra";
 import { importRows } from "../../examples/accounting/import-rows";
+import { createAgentHost } from "../chat-code/agent-host";
+import * as chatAccess from "../chat-code/chat-access";
+import { HttpPrepare } from "../chat-code/http-contracts";
+import { httpService as chatHttpService } from "../chat-code/http-service";
+import { runChatRunnerFixture } from "../chat-code/runner-code.test-fixture";
+import * as runnerHost from "../chat-code/runner-code-host";
 import { loadAssistantChatContextSnapshot } from "../chat-context";
 import { app } from "../config";
 import { readAssistantApp } from "../search";
@@ -35,7 +41,6 @@ import { adminIdentity, artifactAdmin } from "./admin";
 import { agentHost } from "./agent-host";
 import { createArtifactServiceRoutes } from "./api";
 import { runtimeCapabilities } from "./capability-runtime";
-import * as chatAccess from "./chat-access";
 import { chatPresentations } from "./chat-presentations";
 import { clientCalls } from "./client-calls";
 import { evaluateStudioCase, type StudioEvalResult, studioEvalFailure, studioEvalSummary } from "./code-mode.eval";
@@ -45,13 +50,10 @@ import { artifactDatabase } from "./database";
 import { studioFiles } from "./file-transfer";
 import { CHECK_LIMITS, type CheckReport, checkHash } from "./html/check-contracts";
 import { appChecks } from "./html/check-service";
-import { HttpPrepare } from "./http-contracts";
 import { HttpError, httpService } from "./http-service";
 import { machineFixtureSchema, machineIntegrationCases } from "./machine.integration-cases";
 import { machineAccess } from "./machine-service";
 import { migrateArtifacts } from "./migrate";
-import { runChatRunnerFixture } from "./runner-code.test-fixture";
-import * as runnerHost from "./runner-code-host";
 import { type ArtifactIdentity, artifacts } from "./service";
 import { STUDIO_EVAL_CASE_MS, STUDIO_EVAL_CASES } from "./studio-eval-cases";
 import { testIdentity } from "./test-identity";
@@ -1933,7 +1935,7 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
             entry.tool,
           );
         }
-        // Managed/background callers use this same service entry, with no HTTP middleware to rely on.
+        // Managed callers use this same service entry, with no HTTP middleware to rely on.
         await expect(runtimeCapabilities.prepare(request(crypto.randomUUID(), "access.write", reference), owner, {})).rejects.toMatchObject(
           { code: "ACCESS_DENIED" },
         );
@@ -3552,6 +3554,20 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
     const createHost = runnerHost.createRunnerCodeHost;
     const start = spyOn({ run: runChatRunnerFixture }, "run");
     const runner = spyOn(runnerHost, "createRunnerCodeHost").mockImplementation((options) => createHost({ ...options, start }));
+    const chatHost = createAgentHost({ createHost: (options) => createHost({ ...options, start }) });
+    const studioHost = agentHost;
+    const host = {
+      call: (input: Parameters<typeof agentHost.call>[0], context: Parameters<typeof agentHost.call>[1]) =>
+        (["code_run", "code_inspect", "code_stop", "code_export"].includes(input.name) ? chatHost : studioHost).call(input, context),
+      sweep: async () => {
+        await chatHost.sweep();
+        await studioHost.sweep();
+      },
+      close: async () => {
+        await chatHost.close();
+        await studioHost.close();
+      },
+    };
     const conversationId = crypto.randomUUID(),
       turnId = crypto.randomUUID();
     await sql`INSERT INTO ai.conversations(id,created_by_user_id) VALUES(${conversationId}::uuid,${owner.user.id}::uuid)`;
@@ -3621,21 +3637,18 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
     };
     // Polls the durable call record until it settles; the bound is wall-clock,
     // not an iteration count, so slow polls do not shorten it (#37).
-    const wait = async (
-      input: Parameters<typeof agentHost.call>[0],
-      ready?: (state: Awaited<ReturnType<typeof agentHost.call>>) => boolean,
-    ) => {
+    const wait = async (input: Parameters<typeof host.call>[0], ready?: (state: Awaited<ReturnType<typeof host.call>>) => boolean) => {
       const deadline = Date.now() + 10_000;
-      let last: Awaited<ReturnType<typeof agentHost.call>> | undefined;
+      let last: Awaited<ReturnType<typeof host.call>> | undefined;
       while (Date.now() < deadline) {
-        last = await agentHost.call(input, { ...context, signal: new AbortController().signal });
+        last = await host.call(input, { ...context, signal: new AbortController().signal });
         if (ready?.(last) || (last.status !== "running" && last.status !== "busy")) return last;
         await Bun.sleep(25);
       }
       throw new Error(`Managed host call ${input.callId} did not settle: ${JSON.stringify(last)}`);
     };
     try {
-      const starts = await Promise.all([agentHost.call(call, context), agentHost.call(call, context)]);
+      const starts = await Promise.all([host.call(call, context), host.call(call, context)]);
       expect(starts.every((result) => ["running", "busy"].includes(result.status))).toBe(true);
       abort.abort(); // Detaching the HTTP caller must not terminate the owned execution.
       const observers = await Promise.all(Array.from({ length: 8 }, () => wait(call)));
@@ -3671,8 +3684,8 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
       const syntax = await wait({ ...call, callId: "syntax-error", args: { code: "export default () => { const broken = ; }" } });
       expect(syntax).toMatchObject({ status: "done", result: { failed: true, error: expect.stringContaining("Unexpected") } });
       expect(JSON.stringify(syntax)).not.toContain("artifact request failed");
-      await expect(agentHost.call({ ...call, args: { code: "export default ()=>43" } }, context)).rejects.toThrow("input changed");
-      await expect(agentHost.call(call, { ...context, ...stranger })).rejects.toThrow();
+      await expect(host.call({ ...call, args: { code: "export default ()=>43" } }, context)).rejects.toThrow("input changed");
+      await expect(host.call(call, { ...context, ...stranger })).rejects.toThrow();
       const inspect = { ...call, name: "code_inspect" as const, callId: "server-inspect", args: { runId: call.callId } };
       expect(await wait(inspect)).toMatchObject({ status: "done", result: { runId: call.callId, status: "ready" } });
       const exampleSettings = spyOn(settingsStore, "readKey").mockImplementation(
@@ -3808,12 +3821,7 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
       );
       expect(await wait({ ...call, callId: "run-import", args: { id: resource.id } })).toMatchObject({
         status: "done",
-        result: {
-          status: "ready",
-          id: resource.id,
-          revision: 3,
-          output: JSON.stringify({ rows: 1000, first: generated[0], last: generated.at(-1) }),
-        },
+        result: { failed: true, error: expect.stringContaining("unavailable") },
       });
       const stale = await artifactCodeHandlers.code_import(
         {
@@ -3902,19 +3910,14 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
       try {
         const options = { timeZone: "Europe/Berlin" };
         const snapshot = await loadAssistantChatContextSnapshot(owner, "abc234", options);
-        expect(snapshot?.results.map((result) => result.key)).toEqual([`assistant.artifact:${resource.id}`]);
-        // The result shows the app under its current title, with the state of its last run of this revision.
-        expect(snapshot?.results[0]).toMatchObject({ kind: "app", title: resource.title, messageSeq: 3 });
-        expect(snapshot?.results[0]?.app).toMatchObject({ id: resource.id, href: `/app/assistant/apps/${resource.id}`, lastRun: "ready" });
+        expect(snapshot?.results).toEqual([]);
+        expect(snapshot?.apps).toEqual([]);
         expect(snapshot?.runs.some((run) => run.id === call.callId && run.status === "ready")).toBe(true);
-        await artifacts.writeFile(resource.id, "main.ts", "export default()=>43", owner);
-        expect((await loadAssistantChatContextSnapshot(owner, "abc234", options))?.results[0]?.app?.lastRun).toBeNull();
         expect(await loadAssistantChatContextSnapshot(stranger, "abc234", options)).toBeNull();
-        // An app the chat built but never opened is no result, and the Studio overview still lists it.
         delivered = false;
         const built = await loadAssistantChatContextSnapshot(owner, "abc234", options);
         expect(built?.results).toEqual([]);
-        expect(built?.apps.map((app) => app.id)).toEqual([resource.id]);
+        expect(built?.apps).toEqual([]);
       } finally {
         lookup.mockRestore();
         sources.mockRestore();
@@ -3924,7 +3927,7 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
         memories.mockRestore();
       }
       let sent = 0;
-      const http = spyOn(httpService, "execute").mockImplementation(async (id, approved) => {
+      const http = spyOn(chatHttpService, "execute").mockImplementation(async (id, approved) => {
         // Settle the stored call like the service does, so a run with many requests stays within the pending budget.
         await sql`UPDATE assistant.http_calls SET status=${approved ? "completed" : "denied"},encrypted='' WHERE id=${id}::uuid`;
         // A declined request never goes out.
@@ -3940,13 +3943,13 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
         };
         let approval: { id: string } | undefined;
         for (let i = 0; i < 200 && !approval; i++) {
-          const state = await agentHost.call(network, context);
+          const state = await host.call(network, context);
           approval = state.approvals[0];
           if (!approval) await Bun.sleep(25);
         }
         expect(approval).toBeDefined();
         expect(sent).toBe(0);
-        await agentHost.call({ ...network, decision: { id: approval!.id, approved: true } }, context);
+        await host.call({ ...network, decision: { id: approval!.id, approved: true } }, context);
         expect(await wait(network)).toMatchObject({ status: "done", result: { output: '{"ok":true}' } });
         expect(await wait(network)).toMatchObject({ status: "done" });
         expect(sent).toBe(1);
@@ -3954,7 +3957,7 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
         const runCode = async (callId: string, code: string) => {
           const input = { ...call, callId, args: { code } };
           for (let i = 0; i < 400; i++) {
-            const state = await agentHost.call(input, context);
+            const state = await host.call(input, context);
             const pending = state.approvals.find((approval) => approval.decision === null);
             if (pending || state.status === "done") return { input, state, pending };
             await Bun.sleep(25);
@@ -3962,7 +3965,7 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
           throw new Error(`Code call ${callId} neither asked nor finished`);
         };
         const decline = async (run: Awaited<ReturnType<typeof runCode>>) => {
-          await agentHost.call({ ...run.input, decision: { id: run.pending!.id, approved: false } }, context);
+          await host.call({ ...run.input, decision: { id: run.pending!.id, approved: false } }, context);
           return wait(run.input);
         };
         const fetchCode = (url: string, init = "{}") =>
@@ -3975,7 +3978,7 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
         expect(first.pending?.message).toContain("This request reads data from example.com.");
         expect(first.pending?.message).not.toContain("may change data");
         await rememberAiToolApproval({ actorUserId: owner.user.id }, { ...website, conversationId });
-        await agentHost.call({ ...first.input, decision: { id: first.pending!.id, approved: true } }, context);
+        await host.call({ ...first.input, decision: { id: first.pending!.id, approved: true } }, context);
         expect(await wait(first.input)).toMatchObject({ status: "done", receipts: [] });
         const allowed = await runCode("website-allowed", fetchCode("https://example.com/data?symbols=NVDA,AAPL"));
         expect(allowed.pending).toBeUndefined();
@@ -3993,7 +3996,7 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
         expect(many.state).toMatchObject({ status: "done", moreReceipts: true });
         expect("receipts" in many.state && many.state.receipts).toHaveLength(50);
         expect("result" in many.state && many.state.result).toBeUndefined();
-        const rest = await agentHost.call({ ...many.input, receiptsAfter: 50 }, context);
+        const rest = await host.call({ ...many.input, receiptsAfter: 50 }, context);
         expect(rest).toMatchObject({
           status: "done",
           moreReceipts: false,
@@ -4046,7 +4049,7 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
       } finally {
         http.mockRestore();
       }
-      await agentHost.sweep(); // Includes a browser event-loop heartbeat.
+      await host.sweep(); // Includes a browser event-loop heartbeat.
       const cancelled = {
         ...call,
         callId: "cancelled-run",
@@ -4062,14 +4065,14 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
       const active = await aiConversations.getActiveTurn({ conversationId });
       if (!active) throw new Error("Missing test turn");
       turn.mockResolvedValue({ ...active, turn: { ...active.turn, cancelRequestedAt: new Date().toISOString() } });
-      await expect(agentHost.call(cancelled, context)).rejects.toThrow("no longer authorized");
-      await agentHost.sweep();
+      await expect(host.call(cancelled, context)).rejects.toThrow("no longer authorized");
+      await host.sweep();
       const [cancelledCall] = await sql<{ status: string; result: unknown }[]>`
         SELECT status,result FROM assistant.artifact_agent_calls WHERE turn_id=${turnId}::uuid AND call_id='cancelled-run'`;
       expect(cancelledCall?.status).toBe("lost");
       expect(cancelledCall?.result).toBeNull();
       turn.mockResolvedValue(active);
-      await agentHost.close();
+      await host.close();
       const executions = start.mock.calls.length;
       // Simulate losing the host after execution but before its result committed.
       await sql`UPDATE assistant.artifact_agent_calls SET status='running',result=NULL WHERE turn_id=${turnId}::uuid AND call_id=${call.callId}`;
@@ -4077,7 +4080,7 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
       expect(await wait(call)).toMatchObject({ status: "lost" });
       expect(start).toHaveBeenCalledTimes(executions);
     } finally {
-      await agentHost.close();
+      await host.close();
       runner.mockRestore();
       start.mockRestore();
       conversation.mockRestore();

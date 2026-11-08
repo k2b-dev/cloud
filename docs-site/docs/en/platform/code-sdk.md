@@ -286,8 +286,7 @@ app.schedule({ cron: "0 9 * * 1", timeZone: "Europe/Berlin", name: "weekly-repor
 
 A string cron and an object without `timeZone` use UTC. The optional third
 argument still supplies a readable `title` and may supply the stable `name`;
-an inline `name` takes precedence. Cron uses the same normalizer and scheduler
-as workflows and Assistant routines: a local minute skipped by the spring clock
+an inline `name` takes precedence. A local minute skipped by the spring clock
 change does not run, and a repeated autumn minute runs once, at its first
 occurrence. The checked manifest retains the declared `timeZone`.
 
@@ -465,6 +464,9 @@ execution mandate. The stable entrypoint is `event:<event-type>@<version>`.
 See [Code runs](/en/docs/platform/code-runs#understand-event-deliveries) for
 pause, replay, deduplication and queue behavior.
 
+For an incoming-mail pattern, ordered helper functions, catch-up and real-message
+preview, see [Mail automations with Code](/en/docs/platform/mail-code-automations).
+
 ## Serve routes
 
 Resource-, app-owned and personal Code can register routes. Register routes at
@@ -617,10 +619,12 @@ logs, return values and script errors keep their chat result format.
 
 One-off runs share runner capacity and use its fixed wall-clock, memory and
 bridge budgets; see [One-off chat jobs](/en/docs/platform/code-runs#one-off-chat-jobs).
-Background turns use the same runner path. Their capability and HTTP calls
-still require the routine's current mandate and exact grants; they cannot ask
-for interactive approval. Studio RSQL `database` grants are unavailable in
-runner `code_run`, including when `resourceId` or a saved script is supplied.
+Scheduled chat routines are retired. Rebuild timed work as reviewed personal
+Code with `app.schedule` and `core.ai.chat.run` or `core.ai.chat.deliver`.
+Routine grants do not transfer. Studio RSQL `database` grants are unavailable in
+runner `code_run`. Chat accepts inline `code` and optional `inputPaths` only;
+saved script `id`, published `version`, and Studio `resourceId` contexts are
+rejected. App KV/files storage is also unavailable; use chat or Project files.
 Use an application's permission-aware capabilities for application data.
 There is no automatic replacement database or grant migration.
 

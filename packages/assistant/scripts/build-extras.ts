@@ -5,7 +5,7 @@ const output = process.env.DIST_DIR;
 if (!output) throw new Error("DIST_DIR is required");
 for (const runner of [false, true]) {
   const build = await Bun.build({
-    entrypoints: [resolve(import.meta.dir, "../src/artifacts/runtime/worker.ts")],
+    entrypoints: [resolve(import.meta.dir, "../src/chat-code/runtime/worker.ts")],
     target: "browser",
     format: "iife",
     minify: true,
@@ -20,7 +20,7 @@ for (const runner of [false, true]) {
 
 const chunks: Record<string, string> = {};
 const prelude = await Bun.build({
-  entrypoints: [resolve(import.meta.dir, "../src/artifacts/runtime/runner-worker.ts")],
+  entrypoints: [resolve(import.meta.dir, "../src/chat-code/runtime/runner-worker.ts")],
   target: "browser",
   format: "esm",
   minify: true,
@@ -34,7 +34,7 @@ for (const [name, entry] of Object.entries({
   "pdf-read": "pdf-reader.ts",
 })) {
   const build = await Bun.build({
-    entrypoints: [resolve(import.meta.dir, `../src/artifacts/runtime/${entry}`)],
+    entrypoints: [resolve(import.meta.dir, `../src/chat-code/runtime/${entry}`)],
     target: "browser",
     format: "esm",
     minify: true,

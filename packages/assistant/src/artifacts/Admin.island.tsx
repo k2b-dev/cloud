@@ -1,10 +1,10 @@
 import { navigateTo, refreshCurrentPath } from "@k2b/ssr/nav";
 import { Button, DataTable, NoticeCard, Placeholder, prompts, TextInput, toast, useLocale } from "@k2b/ui";
 import { createSignal, For, onCleanup, Show } from "solid-js";
+import { artifactMessages } from "../chat-code/messages";
 import { DatabaseSettingsForm, StorageSettingsForm } from "./AdminSettings";
 import type { artifactAdmin } from "./admin";
 import { artifactClient } from "./client";
-import { artifactMessages } from "./messages";
 import { openStudioAccess } from "./StudioPermissions";
 
 export default function Admin(props: { initial: Awaited<ReturnType<typeof artifactAdmin.list>>; search: string }) {

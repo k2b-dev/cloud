@@ -656,8 +656,8 @@ See [Identity key operations](/en/docs/operations/identity-key-operations) for
 signing-key rotation, KEK recovery and revocation. Keep these secrets independent;
 `APP_SECRET` is not a signing key or an OAuth broker credential.
 
-Managed chat `code_run`, including API clients, `cld assistant --detach` and
-routine background turns, executes on the Code runner pool. Deploy Core,
+Managed chat `code_run`, including API clients and `cld assistant --detach`,
+executes on the Code runner pool. Deploy Core,
 Assistant and the runner together with the current schema. An unavailable or
 saturated runner produces a visible tool error; the Assistant never falls back
 to Chromium. Scheduled chat routines are retired, and Studio RSQL
@@ -689,7 +689,7 @@ error, and x strings must be ISO dates as documented. Chart groups and the
 additional chart kinds need no configuration or data migration. Studio and
 one-off HTML app charts show tooltips on hover, keyboard focus and tap without
 additional configuration. See
-[Code Mode charts](/en/docs/ai/chat-interface#check-an-html-app-before-showing-it).
+[Code Mode charts](/en/docs/ai/chat-interface#legacy-studio-html-checks).
 
 App-frame builds include `assistant-chart-module.js` alongside the prelude and
 base stylesheet. The app-assets response embeds that module with the frame;
@@ -713,7 +713,7 @@ adopt these settings before using the remaining Studio host. The equivalent Kube
 `seccompProfile.type: RuntimeDefault`.
 
 Each legacy Studio host has a separate browser process and ephemeral host
-credential. Managed chat scripts and routine code runs use workerd instead. This is process isolation within one
+credential. Managed chat scripts use workerd instead. This is process isolation within one
 capability-free application container, not a separate VM per user; the
 residual risk of an unsandboxed renderer inside that container is accepted and
 tracked in [#47](https://github.com/k2b-dev/cloud/issues/47), which moves
@@ -1407,9 +1407,8 @@ Two behaviors change for people. More built-in Actions can be remembered, and
 chat did not supply, which means an address that is not in the person's
 message, a search result, or a link of a page read earlier. Search results and
 pages read before the update are not recorded, so reading one of their links
-in an existing chat asks once. A routine cannot ask, so a routine that
-reads such an address now fails with a message to run it in the normal chat;
-give it the address in its prompt instead.
+in an existing chat asks once. Scheduled chat routines are retired; see
+[Routines became Code](/en/docs/operations/routines-to-code).
 
 Roll Core and Assistant over together. Before rolling Core back to an earlier
 release, run the following in the Cloud database. An earlier Core expects the
@@ -2295,7 +2294,7 @@ its own pinned CSP hash; normal app mounts omit inspection code. No separate
 network asset or service is needed. Existing host admission and execution budgets
 apply, and each user holds at most 16 disposable check copies at a time. Disposable scopes are removed after checks; the service sweep reclaims
 scopes left by crashed hosts and queues unreachable database namespaces for deletion.
-See [HTML app checks](/en/docs/ai/chat-interface#check-an-html-app-before-showing-it)
+See [HTML app checks](/en/docs/ai/chat-interface#legacy-studio-html-checks)
 for data-copy and output limits. No new configuration is required.
 
 ### Browser map images in PDF

@@ -3,7 +3,7 @@
 //
 //   Cloud page → wrapper iframe (no script; network CSP that its srcdoc child
 //   inherits) → app iframe (hash-pinned prelude, app modules as blob URLs).
-import type { RuntimeContext } from "../runtime/cloud";
+import type { RuntimeContext } from "../../chat-code/runtime/cloud";
 import { moduleSpecifiers } from "./imports";
 import type { FrameConfig } from "./protocol";
 

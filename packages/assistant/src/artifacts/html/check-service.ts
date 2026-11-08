@@ -1,10 +1,10 @@
 import { sql } from "@k2b/cloud";
 import { CodeCheckInput } from "@k2b/cloud/ai/browser";
-import { requireToolChat } from "../chat-access";
+import { requireToolChat } from "../../chat-code/chat-access";
+import { CloudError } from "../../chat-code/runtime/errors";
 import { ArtifactSource, hasInterface, LIMITS } from "../contracts";
 import { artifactDatabase } from "../database";
 import { databaseConfigLock } from "../database-lock";
-import { CloudError } from "../runtime/errors";
 import { ArtifactError, type ArtifactIdentity, artifacts, readArtifactRevision, requireArtifact, user } from "../service";
 import { CHECK_LIMITS, CheckReport, checkGate, checkHash, readCheckSteps, stepsProblem } from "./check-contracts";
 

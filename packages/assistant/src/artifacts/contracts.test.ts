@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
+import { WorkerMessage } from "../chat-code/runtime/protocol";
 import { ArtifactPath, ArtifactSource, LIMITS } from "./contracts";
-import { WorkerMessage } from "./runtime/protocol";
 
 describe("Assistant artifact boundaries", () => {
   test("accepts explicit TypeScript entry and ordinary document files", () => {

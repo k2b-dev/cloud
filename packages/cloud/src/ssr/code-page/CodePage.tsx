@@ -1066,9 +1066,8 @@ function RunDetail(props: { data: CodePageData; state: CodePageReady; detail: Co
   /** Only the complete call list proves that a failed run never reached an action. */
   const beforeFirstAction = () => calls() !== null && !afterAction() && next() === null;
   const canRerun = () =>
-    run().trigger !== "event" &&
     run().state === "failed" &&
-    afterAction() &&
+    (run().trigger === "event" ? run().startedAt !== null : afterAction()) &&
     props.state.permission === "editor" &&
     props.state.code.state === "active";
   const loadMore = async () => {
@@ -1120,9 +1119,20 @@ function RunDetail(props: { data: CodePageData; state: CodePageReady; detail: Co
       )}
     </Show>
   );
-  const viewWithPanel = () => (
-    <Show when={canViewWithPanel()}>
-      <div class="cloud-code__note-actions">{viewWithPanelButton()}</div>
+  const rerunButton = () => (
+    <Show when={canRerun()}>
+      <Button type="button" size="sm" variant="secondary" loading={rerunning()} onClick={() => void rerun()}>
+        <i class="ti ti-repeat" aria-hidden="true" />
+        {t().rerun}
+      </Button>
+    </Show>
+  );
+  const failureActions = () => (
+    <Show when={canRerun() || canViewWithPanel()}>
+      <div class="cloud-code__note-actions">
+        {rerunButton()}
+        {viewWithPanelButton()}
+      </div>
     </Show>
   );
   const target = (call: CodePageCall) => {
@@ -1164,12 +1174,7 @@ function RunDetail(props: { data: CodePageData; state: CodePageReady; detail: Co
             cloudAdmin={props.data.cloudAdmin}
             actions={canRerun() || canViewWithPanel()}
           >
-            <Show when={canRerun()}>
-              <Button type="button" size="sm" variant="secondary" loading={rerunning()} onClick={() => void rerun()}>
-                <i class="ti ti-repeat" aria-hidden="true" />
-                {t().rerun}
-              </Button>
-            </Show>
+            {rerunButton()}
             {viewWithPanelButton()}
           </CodeRefusalNotice>
         )}
@@ -1182,7 +1187,7 @@ function RunDetail(props: { data: CodePageData; state: CodePageReady; detail: Co
               when={beforeFirstAction()}
               fallback={
                 <NoticeCard tone="danger" icon="ti ti-circle-x" title={t().stateFailed} detail={outcomeText() ?? undefined}>
-                  {viewWithPanel()}
+                  {failureActions()}
                 </NoticeCard>
               }
             >
@@ -1192,7 +1197,7 @@ function RunDetail(props: { data: CodePageData; state: CodePageReady; detail: Co
                 title={t().failedBeforeFirstTitle}
                 detail={[outcomeText(), t().failedBeforeFirst].filter(Boolean).join(". ")}
               >
-                {viewWithPanel()}
+                {failureActions()}
               </NoticeCard>
             </Show>
           }
@@ -1203,17 +1208,7 @@ function RunDetail(props: { data: CodePageData; state: CodePageReady; detail: Co
             title={t().failedAfterFirstTitle}
             detail={[outcomeText(), t().failedAfterFirst].filter(Boolean).join(". ")}
           >
-            <Show when={canRerun() || canViewWithPanel()}>
-              <div class="cloud-code__note-actions">
-                <Show when={canRerun()}>
-                  <Button type="button" size="sm" variant="secondary" loading={rerunning()} onClick={() => void rerun()}>
-                    <i class="ti ti-repeat" aria-hidden="true" />
-                    {t().rerun}
-                  </Button>
-                </Show>
-                {viewWithPanelButton()}
-              </div>
-            </Show>
+            {failureActions()}
           </NoticeCard>
         </Show>
       </Show>

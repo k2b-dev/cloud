@@ -496,6 +496,8 @@ const HeaderDataSchema = z
     value: z.string().max(2048),
   })
   .strict();
+/** Provider-state snapshots accept at most 1,024 keywords; keep rule matching at that same bound. */
+export const MESSAGE_KEYWORD_LIMIT = 1024;
 export const MessageSummaryDataSchema = z
   .object({
     id: ResourceShortIdSchema,
@@ -511,7 +513,7 @@ export const MessageSummaryDataSchema = z
     addressesTruncated: z.boolean(),
     flags: z.array(z.string().max(128)).max(10),
     flagsTruncated: z.boolean(),
-    keywords: z.array(z.string().max(128)).max(10),
+    keywords: z.array(z.string().max(128)).max(MESSAGE_KEYWORD_LIMIT),
     keywordsTruncated: z.boolean(),
     hydrationStatus: z.string().min(1).max(100),
     remoteAvailable: z.boolean(),

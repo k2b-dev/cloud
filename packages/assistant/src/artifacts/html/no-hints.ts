@@ -7,7 +7,7 @@
 // are frozen. A mutation observer removes links that arrive any other way, after the fact.
 // This narrows the gap; it is no boundary. Code that reaches an entry point not covered here wins
 // the race, and only a separate app origin closes it.
-import { CloudError } from "../runtime/errors";
+import { CloudError } from "../../chat-code/runtime/errors";
 
 type Method = (this: unknown, ...args: unknown[]) => unknown;
 

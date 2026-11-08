@@ -14,10 +14,10 @@ experiment. Do not turn this workflow into a checklist to show the user.
 Write a fresh one-off for the next question when that is simpler. Runs do not
 share JavaScript variables; pass selected inputs again or explicitly export a
 useful intermediate file. Do not create a Studio resource, title, icon, helper
-framework, or interface just to explore. Save only when reuse/sharing requires it or
-the operation needs its own resource-owned storage. Existing app data can be
-used with an explicit `resourceId` and Manage access; see [Database](database.md). Finished one-offs without retained
-resources are reclaimed under slot pressure.
+framework, or interface just to explore. For reusable Code, load
+`code-authoring`. Saved Studio storage and resource contexts are unavailable
+in chat runs. Finished one-offs without retained resources are reclaimed under
+slot pressure.
 
 Prefer read-only probes. Temporary local test storage does not make shared
 writes or capability actions hypothetical. Respect normal authorization and
@@ -91,20 +91,10 @@ missing because it determines Z. An anonymized sample is enough; if originals
 must stay local, you can run this small inspection script instead." Do not ask
 users to solve API or implementation questions you can investigate yourself.
 
-## Combine apps and scripts freely
+## Combine Cloud data and scripts
 
-A script can investigate one part of an app workflow without becoming part of
-its saved source. Prefer a fresh short experiment over a reusable framework:
-
-- Inspect representative PDF/Excel files, test mappings, then put the verified
-  processing logic into an app with a file input.
-- Read app records with `code_sql`; use a resource-scoped script for distributions,
-  duplicate analysis, imports, structured migrations or DATEV/SEPA exports.
-- Inventory an app's shared files/KV, inspect formats or propose cleanup before
-  making authorized changes. Personal JSON is visible only to its owner; `scope:"user"` shows the current user’s data.
-- Compare discovered capability results with uploaded files or app records;
-  normalize keys, summarize mismatches, then add a reusable interface only if useful.
-- Reproduce a parsing or calculation bug in a tiny script, correct the app and
-  test the failing case. Explicitly export intermediate files for later runs.
-
-Neither a new script nor resourceId grants extra capabilities or bypasses approvals.
+Discover application capabilities and read small representative results before
+combining them with uploaded files. Normalize keys, retain source references
+and explicitly export intermediate files for later runs. A fresh script never
+grants extra capabilities or bypasses approvals. For reusable interfaces use
+`code-authoring`; Studio app records cannot be selected as script contexts.
