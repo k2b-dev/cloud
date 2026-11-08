@@ -625,7 +625,8 @@ function Leaf(props: { block: Block; host: Host; locale: string; timeZone: strin
     case "Table":
       return <TableLeaf block={block} spec={descriptionSpec(blockDescription(block, words(), props.timeZone))} locale={props.locale} />;
     case "Chart":
-      // A chart draws as Gustav's charts do: its code loads on demand, and the server's drawing holds its place.
+      // A chart draws as Gustav's charts do: its code loads on demand, and the server's drawing holds its place. Like a
+      // table it stands in a frame, so the islands of one view match.
       return (
         <Show
           when={block.description}
@@ -639,7 +640,11 @@ function Leaf(props: { block: Block; host: Host; locale: string; timeZone: strin
             />
           }
         >
-          {(description) => <CloudChartBlock args={description()} completed />}
+          {(description) => (
+            <DashboardFrame>
+              <CloudChartBlock args={description()} completed />
+            </DashboardFrame>
+          )}
         </Show>
       );
     default:
