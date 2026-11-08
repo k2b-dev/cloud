@@ -7,6 +7,7 @@ export {
   rankedBarLayout,
   renderBarBaseSvg,
   renderBarChartSvg,
+  type SeriesBarLayout,
   seriesBarLayout,
 } from "../../content/chart-bar";
 export {
@@ -20,6 +21,7 @@ export { type ChartTimeAxis } from "../../content/chart-time-axis";
 export { type AreaOptions, areaLayout, renderAreaSvg } from "./area";
 export * from "./bubble";
 export * from "./calendar";
+export { renderDotMatrixLayoutSvg } from "./dots";
 export { type FunnelLayout, type FunnelOptions, funnelLayout, renderFunnelLayoutSvg, renderFunnelSvg } from "./funnel";
 export { type HorizontalBarLayout, type HorizontalBarOptions, hbarLayout, renderHbarLayoutSvg, renderHbarSvg } from "./hbar";
 export * from "./inspection";

@@ -10,8 +10,13 @@ import { escapeXml } from "@k2b/stdlib";
 import { isChartDatum } from "@k2b/ui/chart-inspection";
 import { createCloud } from "./cloud";
 import { CloudError } from "./errors";
-import { boundMoney, chart, chartOptions, chartSvg, html, pendingChartHeight } from "./lib";
+import { boundMoney, chart, chartOptions, chartRendererKind, chartSvg, html, pendingChartHeight, resolveChartHtml } from "./lib";
 import { parseCsv, toCsv } from "./sheet-lib";
+
+test("PDF preparation only resolves actual chart placeholders", async () => {
+  const content = '<div data-chart-pending="author-id">Report</div>';
+  expect(await resolveChartHtml(content, "en-US")).toBe(content);
+});
 
 test("cloud.html escapes values, joins arrays and keeps nested markup", () => {
   const items = ["<b>", "Müller & Söhne"];
@@ -871,6 +876,12 @@ test("cloud.chart preserves nested dot counts and grey capacity in app frames", 
   expect(markup).toContain('data-dot-series="remainder"');
   expect(markup).toContain("Gesamt");
   expect(markup).not.toContain("<style>");
+});
+
+test("only dot matrices load the dots part while ordinary bars retain the immediate renderer", () => {
+  expect(chartRendererKind({ kind: "bar", title: "Counts", marks: "dots", layout: "nested", data: [] })).toBe("dots");
+  expect(chartRendererKind({ kind: "bar", title: "Counts", data: [] })).toBe("bar");
+  expect(chartRendererKind({ kind: "histogram", title: "Counts", data: [1, 2] })).toBe("histogram");
 });
 
 test("app-frame share legends keep the latest month instead of summing percentages", () => {

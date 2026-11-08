@@ -78,6 +78,8 @@ export type FrozenMailWorkflowPreconditions = {
     id: string;
     remoteMessageRefId: string;
     folderId: string;
+    /** Frozen automatic list admission; not a workflow-language field. */
+    listOnly?: boolean;
   };
   remoteState: {
     modseq: string | null;
@@ -108,6 +110,7 @@ type WorkflowSnapshotRow = {
   message_id: string;
   message_short_id: string;
   conversation_id: string | null;
+  list_only: boolean;
   conversation_short_id: string | null;
   mailbox_short_id: string;
   subject: string;
@@ -156,6 +159,7 @@ const snapshotColumns = () => sql`
   mc.id AS message_id,
   mc.short_id AS message_short_id,
   cm.conversation_id,
+  COALESCE(cm.added_by = 'list', false) AS list_only,
   conversation.short_id AS conversation_short_id,
   mailbox.short_id AS mailbox_short_id,
   mc.subject,
@@ -300,6 +304,7 @@ const mapSnapshot = (row: WorkflowSnapshotRow): MailWorkflowTargetSnapshot => {
         id: row.message_id,
         remoteMessageRefId: row.remote_message_ref_id,
         folderId: row.folder_id,
+        listOnly: row.list_only === true,
       },
       remoteState: {
         modseq: row.modseq == null ? null : String(row.modseq),

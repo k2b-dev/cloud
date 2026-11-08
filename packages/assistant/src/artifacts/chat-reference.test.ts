@@ -126,7 +126,12 @@ function setup() {
   const short = spyOn(ai.aiConversations, "getConversationByShortId").mockResolvedValue(conversation);
   const uuid = spyOn(ai.aiConversations, "getConversation").mockResolvedValue(conversation);
   const project = spyOn(ai.aiProjects, "get").mockResolvedValue(null);
-  const assets = spyOn(frameAssets, "checkFrameAssets").mockResolvedValue({ prelude: "", preludeHash: "", baseCss: "", chartModule: "" });
+  const assets = spyOn(frameAssets, "checkFrameAssets").mockResolvedValue({
+    prelude: "",
+    preludeHash: "",
+    baseCss: "",
+    chartParts: { shared: { code: "", hash: "" }, kinds: {} },
+  });
   const resolved = mock((_operation: string, _conversationId: string) => {});
   const start = spyOn(appChecks, "start").mockImplementation(async (_input, reference, viewer) => {
     const chat = await requireToolChat(reference, viewer, "code_check");

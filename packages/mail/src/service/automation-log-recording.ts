@@ -210,6 +210,8 @@ export const projectAutomationAudit = async (
     } else if (output.skipped) {
       skipped = true;
       if (output.skipped === "order_expired") reasons.push({ kind: "condition", text: "automation_order = expired" });
+      if (output.skipped === "list_only")
+        reasons.push({ kind: "condition", text: "Mailing-list-only messages do not change conversation work state." });
     }
     if (output.applied !== true) continue;
     const action = row.action;

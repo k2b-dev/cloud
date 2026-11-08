@@ -47,6 +47,7 @@ same way:
 | Kind | Required options | Optional options |
 | --- | --- | --- |
 | `bar` | `data: [{label, value}]` | `yAxis`, `colorByBar`, `showValues`, `legend`, `references` |
+| `bar` with `marks: "dots"`, `layout: "nested"` | `x: string[]`, `series: [{label, data: (number \| null)[]}]` | positive `total`, even `dots` count (default 100), `format`, `legend` |
 | `line`, `scatter` | `series: [{label?, data: [{x, y}], role?}]` | `xAxis`, `yAxis`, `legend`, `references`; line also `area`, `smooth`, series `style` |
 | `pie`, `donut` | `data: [{label, value}]` | `legend`, `showLabels`, `format` |
 | `histogram` | `data: number[]` | `bins` (count or ascending edges), `references` |
@@ -56,6 +57,28 @@ same way:
 | `heatmap` | `data: [{x, y, value}]`, each pair once | `min`, `max`, `showValues`, `format` |
 | `barGauge` | `data: [{label, value, min?, max?}]` | shared `min`, `max`, `unit`, `format`, `thresholds` |
 | `stat` | `value` | `unit`, `format`, `delta`, `better: "up" | "down"`, `sparkline` |
+
+Use a nested dot matrix for counts inside one capacity, such as clicks inside
+opens. Each category is two dots wide; later series must be subsets of earlier
+ones, and unused capacity stays grey. Counts must be nonnegative and at most
+`total` (default: the largest observed count, at least one). A missing count
+leaves that category as a gap. Exact values remain in the tooltip and table;
+dots round visually. Each dot counts toward the chart's mark limit. Aggregate
+categories or use fewer dots if they would be too small on a phone.
+
+```js
+const engagement = cloud.chart({
+  kind: "bar", title: "Campaign engagement", marks: "dots", layout: "nested",
+  total: 100, dots: 20, x: ["May", "Jun"],
+  series: [{ label: "Opened", data: [80, 90] }, { label: "Clicked", data: [30, 40] }],
+});
+```
+
+Dot matrices load their drawing when inserted into an HTML app, including
+offline first use. Scripts draw them synchronously. For percentage data, use
+fractions with `format: {style: "percent"}` and `total: 1`; the legend shows
+the latest category or the category at the cursor, never a sum of percentages.
+Comparison, normalization and logarithmic scales do not apply to nested dots.
 
 All kinds accept `title` and `subtitle`; together they name the chart for screen
 readers (an image in static markup, an interactive group in apps). An axis

@@ -18,12 +18,22 @@ source). Without `rows`, use these payloads:
 | Kind | Payload |
 | --- | --- |
 | `bar`, `pie`, `donut` | `data: [{label, value}]` |
+| `bar`, `marks: "dots"`, `layout: "nested"` | `x: string[]`, aligned `series: [{label, data: (number \| null)[]}]`; each series is a subset of the previous one; positive `total`, even `dots` (default 100) |
 | `line`, `scatter` | `series: [{label?, data: [{x, y}], role?}]` |
 | `histogram`, `sparkline` | `data: number[]` |
 | `boxplot` | `data: [{label, values: number[]}]` |
 | `heatmap` | `data: [{x, y, value}]`, text categories, each pair once; at most 17 rows (y), column labels that fit a phone |
 | `barGauge` | 1..8 `data` items `{label, value, min?, max?}`; labels at most 10 characters |
 | `gauge`, `stat` | `value` |
+
+For counts inside a capacity, such as clicks inside opens, use nested dots.
+The drawing is two dots wide per category; unused capacity stays grey and
+missing counts leave a gap. Tooltips and the table keep exact values. Dot
+marks round visually and each counts toward the host's mark limit. Use
+`format: {style: "percent"}` with fractions and `total: 1` for shares; the
+legend shows the latest category or the category at the cursor.
+
+Use the [nested dot example](charts.md) as the spec for `cloud.view.chart`.
 
 Canonical x values are finite numbers or `YYYY-MM-DD[THH:mm[:ss]]`, wall-clock
 time without an offset. All series use the same x type. No markup, functions,

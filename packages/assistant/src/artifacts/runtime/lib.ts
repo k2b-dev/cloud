@@ -24,6 +24,7 @@ import {
   line,
   pie,
   renderBarBaseSvg,
+  seriesBarLayout,
   sparkline,
   stat,
   waterfallLayout,
@@ -81,6 +82,10 @@ for (const option of ChartSchema.options) {
     for (const value of "options" in kind ? kind.options : kind.values) appChartKinds.add(value);
   }
 }
+/** Dot matrices share the portable bar kind but load only their own drawing part. */
+export const chartRendererKind = (input: CloudAiChartInput): string =>
+  input.kind === "bar" && input.marks === "dots" ? "dots" : input.kind;
+
 /** Inspection accepts exactly the same kinds as the app's portable chart schema. */
 export const isAppChartKind = (value: string | null): value is CloudAiChartInput["kind"] => value !== null && appChartKinds.has(value);
 
@@ -122,7 +127,10 @@ function drawChart(
         // The title and subtitle take height too: lay out exactly what is drawn.
         const layout = barChartLayout({ ...mapped, ...common }, width);
         const drawing = { ...common, height: layout.layout === "rows" ? layout.height : (options.height ?? height) };
-        svg = mapped.series || mapped.layout === "rows" ? rareChartSvg(mapped, drawing) : renderBarBaseSvg({ ...mapped, ...drawing });
+        svg =
+          mapped.marks === "dots"
+            ? rareChartSvg({ ...mapped, kind: "dots" }, { ...drawing, dotLayout: seriesBarLayout({ ...mapped, ...drawing }, drawing) })
+            : renderBarBaseSvg({ ...mapped, ...drawing });
         break;
       }
       case "line":
@@ -309,17 +317,23 @@ export function chartLoading(locale: string): string {
 /** Finish chart markup before app-authored HTML crosses the asynchronous PDF boundary. */
 export async function resolveChartHtml(content: string, locale: string): Promise<string> {
   if (!content.includes("data-chart-pending=")) return content;
-  await loadChartRenderer();
-  return content.replace(
-    /<div class="k2b-chart"[^>]*><div class="k2b-chart__svg"[^>]* data-chart-pending="([^"]+)"[^>]*>[\s\S]*?<\/div><\/div>/g,
-    (markup, id: string) => {
+  const pendingMarkup =
+    /<div class="k2b-chart"[^>]*><div class="k2b-chart__svg"[^>]* data-chart-pending="([^"]+)"[^>]*>[\s\S]*?<\/div><\/div>/g;
+  const ids = [...content.matchAll(pendingMarkup)].map((match) => match[1]!);
+  await Promise.all(
+    ids.map((id) => {
       const options = pendingChartOptions.get(id);
       if (!options) throw new CloudError("unavailable", "The chart expired. Draw it again before creating the PDF.");
-      const width = Number(/--k2b-chart-width:\s*([\d.]+)px/.exec(markup)?.[1]) || 480;
-      const height = Number(/--k2b-chart-height:\s*([\d.]+)px/.exec(markup)?.[1]) || 280;
-      return String(chartMarkup(options, locale, width, height, false));
-    },
+      return loadChartRenderer(chartRendererKind(options.input));
+    }),
   );
+  return content.replace(pendingMarkup, (markup, id: string) => {
+    const options = pendingChartOptions.get(id);
+    if (!options) throw new CloudError("unavailable", "The chart expired. Draw it again before creating the PDF.");
+    const width = Number(/--k2b-chart-width:\s*([\d.]+)px/.exec(markup)?.[1]) || 480;
+    const height = Number(/--k2b-chart-height:\s*([\d.]+)px/.exec(markup)?.[1]) || 280;
+    return String(chartMarkup(options, locale, width, height, false));
+  });
 }
 
 /** stdlib money with the user's locale as the default for format and parse. */

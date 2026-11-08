@@ -184,9 +184,17 @@ const flatChartSchema = () => {
       .optional()
       .describe("bar, area: aligned category labels or numeric X values."),
     compare: z.object({ label: ChartLabel, data: z.array(z.number().nullable()).max(CLOUD_AI_CHART_MAX_VALUES) }).optional(),
-    marks: z.enum(["bars", "dots"]).optional(),
-    total: z.number().positive().optional(),
-    dots: z.number().int().min(2).optional(),
+    marks: z
+      .enum(["bars", "dots"])
+      .optional()
+      .describe('Bar: "dots" with layout "nested" draws counts where each series is a subset of the previous one.'),
+    total: z.number().positive().optional().describe("Nested dots: capacity per category; defaults to the largest count, at least one."),
+    dots: z
+      .number()
+      .int()
+      .min(2)
+      .optional()
+      .describe("Nested dots: even number of dots per category (default 100); each dot counts toward the mark limit."),
     share: z.boolean().optional(),
     limit: z.number().int().positive().optional(),
     tone: z.enum(["in", "out"]).optional(),

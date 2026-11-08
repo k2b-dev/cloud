@@ -1,7 +1,18 @@
 import { expect, test } from "bun:test";
 import { chartDrawingIssue } from "./chart-block";
 import { CloudAiChartInputSchema, cloudAiAppChartSchema, parseCloudAiChartInput } from "./default-tool-contracts";
+import { createCloudAiChartTool } from "./default-tools";
 import { parseCloudAiChartToolView } from "./view-block";
+
+test("the model-facing chart catalog includes a valid nested dots example", () => {
+  const description = createCloudAiChartTool().def.description;
+  const example = description.match(/For example: (\{[^\n]+?\})\./)?.[1];
+  expect(example).toBeDefined();
+  const input = CloudAiChartInputSchema.parse(JSON.parse(example!));
+  expect(parseCloudAiChartInput(input)).toMatchObject({ kind: "bar", marks: "dots", layout: "nested" });
+  expect(description).toContain("subset");
+  expect(description).toContain("never summed rates");
+});
 
 test("Chat and cloud.chart preserve dot matrix options and budget every dot", () => {
   const spec = {
