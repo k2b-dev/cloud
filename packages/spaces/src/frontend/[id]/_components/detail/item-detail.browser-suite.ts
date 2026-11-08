@@ -425,7 +425,7 @@ const boxes = (page: Page) =>
       }),
   );
 /** The Properties section, the first in the panel body. */
-const PROPERTY_ROWS = ".k2b-detail-panel__body > section.k2b-detail-panel__section:first-of-type .k2b-description-list__item";
+const PROPERTY_ROWS = ".k2b-detail-panel__body > section.k2b-section:first-of-type .k2b-description-list__item";
 const planningRow = (page: Page, term: string) =>
   page.locator(PROPERTY_ROWS, { has: page.locator("dt", { hasText: new RegExp(`^${term}$`) }) });
 const clickLabel = async (page: Page, term: string) => {
@@ -737,13 +737,11 @@ describe("Spaces item detail in a browser", () => {
           const outline = await page.evaluate(() => {
             const visible = (selector: string) =>
               Array.from(window.document.querySelectorAll(selector)).filter((element) => !element.closest("[hidden]"));
-            const headings = visible(
-              ".k2b-detail-panel__section-header h3, .k2b-detail-panel__section-summary .k2b-detail-panel__section-title, .k2b-discussion h3",
-            );
+            const headings = visible(".k2b-section__title");
             return {
               edges: headings.map((element) => Math.round(element.getBoundingClientRect().left)),
-              sections: visible(".k2b-detail-panel__section, .k2b-discussion").length,
-              icons: visible(".k2b-detail-panel__section-icon i, .k2b-discussion__icon i").length,
+              sections: visible(".k2b-section").length,
+              icons: visible(".k2b-section__icon i").length,
             };
           });
           expect(outline.edges.length).toBeGreaterThan(4);

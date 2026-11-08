@@ -483,14 +483,14 @@
    already frames it, the placeholder keeps its layout but draws no second box.
    The workspace's Main is one flat surface: empty and error states there stand
    on it without a box (decision 16.10.2026). */
-.k2b-ui :is(.k2b-paper, .k2b-settings-section, .k2b-panel-dialog, .k2b-dialog, .k2b-detail-panel, .k2b-app-workspace__main) .k2b-placeholder[data-surface="paper"] {
+.k2b-ui :is(.k2b-paper, .k2b-settings-section, .k2b-panel-dialog, .k2b-dialog, .k2b-detail-panel, .k2b-section, .k2b-app-workspace__main) .k2b-placeholder[data-surface="paper"] {
   border-color: transparent;
   background: transparent;
   box-shadow: none;
 }
-/* A left-aligned placeholder in a detail panel section is one more row of that
-   section, so its text starts where the heading and the rows start. */
-.k2b-ui .k2b-detail-panel__section-body .k2b-placeholder[data-align="left"] { padding-inline: 0; }
+/* A left-aligned placeholder in a section is one more row of that section, so
+   its text starts where the heading and the rows start. */
+.k2b-ui .k2b-section__body .k2b-placeholder[data-align="left"] { padding-inline: 0; }
 .k2b-ui .k2b-placeholder[data-align="center"] { align-items: center; text-align: center; }
 .k2b-ui .k2b-placeholder[data-align="left"] { align-items: flex-start; text-align: left; }
 /* Cloud's unlayered `.state-placeholder[data-variant="panel"]` wins over the

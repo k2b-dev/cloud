@@ -32,6 +32,16 @@ export { ProgressRing } from "./ProgressRing";
 export { PERSON_COLORS, personColor } from "./person-color";
 export type { ResourceCardColor, ResourceCardProps, ResourceCardState } from "./ResourceCard";
 export { ResourceCard } from "./ResourceCard";
+export type {
+  FieldRowProps,
+  SectionFrame,
+  SectionPartProps,
+  SectionProps,
+  SectionSize,
+  SectionState,
+  SectionTone,
+} from "./Section";
+export { Field, Section } from "./Section";
 export { Skeleton, type SkeletonProps } from "./Skeleton";
 export type { StatCellAccent, StatCellCompare, StatCellDelta, StatCellProps, StatCellSize, StatCellTone } from "./StatCell";
 export { StatCell } from "./StatCell";

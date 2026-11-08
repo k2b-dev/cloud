@@ -1,14 +1,14 @@
-import { DetailPanel } from "@k2b/ui";
+import { Section } from "@k2b/ui";
 import { createSignal, For, type JSX, Show } from "solid-js";
 import type { FormSection } from "../../../contracts";
 import { formLayoutClass } from "./field-layout";
 import type { UserInputEntry } from "./form-fields";
 
-type Section = { firstFieldId: string; config?: FormSection; entries: UserInputEntry[] };
+type FieldGroup = { firstFieldId: string; config?: FormSection; entries: UserInputEntry[] };
 
 /** Sections change presentation only. All controls remain mounted in one form. */
 export function createFormSections(entries: UserInputEntry[], initialValues: Readonly<Record<string, unknown>> = {}) {
-  const groups: Section[] = [];
+  const groups: FieldGroup[] = [];
   for (const entry of entries) {
     if (entry.section || groups.length === 0) groups.push({ firstFieldId: entry.fieldId, config: entry.section, entries: [] });
     groups.at(-1)!.entries.push(entry);
@@ -61,12 +61,12 @@ export function FormSections(props: { state: ReturnType<typeof createFormSection
                 <Show
                   when={section().collapsible}
                   fallback={
-                    <DetailPanel.Section title={section().title} description={section().description}>
+                    <Section title={section().title} description={section().description}>
                       {fields()}
-                    </DetailPanel.Section>
+                    </Section>
                   }
                 >
-                  <DetailPanel.Section
+                  <Section
                     title={section().title}
                     description={section().description}
                     collapsible
@@ -74,7 +74,7 @@ export function FormSections(props: { state: ReturnType<typeof createFormSection
                     onOpenChange={(value) => props.state.setOpen((current) => ({ ...current, [group.firstFieldId]: value }))}
                   >
                     {fields()}
-                  </DetailPanel.Section>
+                  </Section>
                 </Show>
               )}
             </Show>

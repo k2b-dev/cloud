@@ -255,7 +255,7 @@ describe("Contacts detail panels", () => {
     expect(html).not.toContain("k2b-detail-panel__header-leading");
     for (const icon of ["ti-list-details", "ti-address-book", "ti-message-circle", "ti-sitemap", "ti-user", "ti-briefcase"])
       expect(html).toContain(`ti ${icon}`);
-    expect(html).toContain("k2b-discussion__icon");
+    expect(html).toMatch(/class="k2b-section k2b-discussion[^"]*"[^>]*data-icon="true"/);
     expect(html).toMatch(
       />Properties<\/h3>[\s\S]*>Reach<\/h3>[\s\S]*k2b-discussion[\s\S]*>Organization<\/h3>[\s\S]*More about this contact/,
     );
@@ -266,7 +266,7 @@ describe("Contacts detail panels", () => {
     expect(html).toContain(">Properties</h3>");
     expect(html).toContain(">Reach</h3>");
     expect(html).toContain("More about this contact");
-    expect(html.match(/<section class="k2b-detail-panel__section"[^>]*data-open="true"/g)).toBeNull();
+    expect(html.match(/<section class="k2b-section[^"]*"[^>]*data-open="true"/g)).toBeNull();
     for (const summary of ["Office", "Birthday, Pronouns, Language", "Company, Department, Job title, VAT ID"])
       expect(html).toContain(summary);
     expect(html).toContain('data-scroll-preserve="contacts-detail"');

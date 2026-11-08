@@ -3339,8 +3339,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 }
 
 .k2b-ui .k2b-detail-panel__heading h2,
-.k2b-ui .k2b-detail-panel__heading p,
-.k2b-ui .k2b-detail-panel__section h3 {
+.k2b-ui .k2b-detail-panel__heading p {
   margin: 0;
 }
 
@@ -3408,8 +3407,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 .k2b-ui .k2b-detail-panel__meta,
 .k2b-ui .k2b-detail-panel__actions,
 .k2b-ui .k2b-detail-panel__primary-actions,
-.k2b-ui .k2b-detail-panel__summary-actions,
-.k2b-ui .k2b-detail-panel__section-actions {
+.k2b-ui .k2b-detail-panel__summary-actions {
   display: flex;
   flex: 0 0 auto;
   align-items: center;
@@ -3443,10 +3441,6 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 
 .k2b-ui .k2b-detail-panel__body > * {
   flex-shrink: 0;
-}
-
-.k2b-ui .k2b-detail-panel__section {
-  min-width: 0;
 }
 
 .k2b-ui .k2b-detail-panel__summary {
@@ -3483,109 +3477,129 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   min-width: 0;
 }
 
-/* A group is one quiet surface like the summary. Its sections are separated
-   by space and their headings, not by rules or a border. A section placed
-   directly in the body and a discussion inside the panel are a group of one:
-   the same surface, and their heading and content start where a grouped
-   section's do. */
-.k2b-ui .k2b-detail-panel__group {
+/* Section: one topic, in a panel or on a page (Section.tsx). Every section is
+   a card with Paper's light 1 px frame on white ground, no shadow; inside
+   another frame (a section, a group, a summary, Paper, a dialog, a settings
+   section) it stands flat, so cards never nest. `sm` suits panels and narrow
+   columns, `md` the topics of a full page. */
+.k2b-ui .k2b-section {
   display: flex;
   min-width: 0;
   flex-direction: column;
-  padding-block: 0.25rem;
+  gap: 0.375rem;
 }
 
-.k2b-ui
-  :is(
-    .k2b-detail-panel__group,
-    .k2b-detail-panel__body > .k2b-detail-panel__section,
-    .k2b-detail-panel .k2b-discussion[data-surface="default"]
-  ) {
-  border: 0;
+.k2b-ui .k2b-section[data-frame="line"] {
+  padding: 0.75rem 0.875rem;
+  border: 1px solid color-mix(in srgb, var(--k2b-border) 72%, transparent);
   border-radius: var(--k2b-radius-surface);
   background: var(--k2b-surface);
 }
 
-.k2b-ui :is(.k2b-detail-panel__body > .k2b-detail-panel__section, .k2b-detail-panel .k2b-discussion[data-surface="default"]) {
-  padding: 0.75rem 0.875rem 1rem;
+.k2b-ui .k2b-section[data-size="md"] {
+  gap: 0.5rem;
 }
 
-.k2b-ui .k2b-detail-panel .k2b-discussion[data-surface="default"] {
-  gap: 0.375rem;
-}
-
-/* Placed in a group, a discussion is one of its sections; deeper in a
-   section or summary, that host already frames it. */
-.k2b-ui .k2b-detail-panel__group > .k2b-discussion[data-surface="default"] {
-  padding: 0.5rem 0.875rem 0.75rem;
-  border-radius: 0;
-  background: transparent;
+.k2b-ui .k2b-section[data-size="md"][data-frame="line"] {
+  padding: 1rem 1.125rem;
 }
 
 .k2b-ui
-  :is(.k2b-detail-panel__section, .k2b-detail-panel__summary)
-  .k2b-discussion[data-surface="default"] {
+  :is(
+    .k2b-section,
+    .k2b-detail-panel__group,
+    .k2b-detail-panel__summary,
+    .k2b-paper,
+    .k2b-panel-dialog,
+    .k2b-settings-section
+  )
+  .k2b-section[data-frame="line"] {
   padding: 0;
+  border: 0;
   border-radius: 0;
   background: transparent;
 }
 
-.k2b-ui .k2b-detail-panel__group > .k2b-detail-panel__section {
-  padding: 0.5rem 0.875rem 0.75rem;
+/* Named tones follow the status tokens. A tone colours the frame, the title,
+   the icon, and the restricted marker, never the fill, and always comes with
+   words in the heading. */
+.k2b-ui .k2b-section[data-tone="success"] {
+  --k2b-section-tone: var(--k2b-success-text);
+}
+
+.k2b-ui .k2b-section[data-tone="warning"] {
+  --k2b-section-tone: var(--k2b-warning-text);
+}
+
+.k2b-ui .k2b-section[data-tone="danger"] {
+  --k2b-section-tone: var(--k2b-danger-text);
+}
+
+.k2b-ui .k2b-section[data-tone="info"] {
+  --k2b-section-tone: var(--k2b-info-text);
+}
+
+.k2b-ui .k2b-section[data-tone="ai"] {
+  --k2b-section-tone: var(--k2b-ai-accent);
+}
+
+.k2b-ui .k2b-section[data-tone][data-frame="line"] {
+  border-color: color-mix(in srgb, var(--k2b-section-tone) 45%, var(--k2b-surface));
 }
 
 .k2b-ui
-  .k2b-detail-panel__group
-  > :is(.k2b-detail-panel__section, .k2b-discussion)
-  + :is(.k2b-detail-panel__section, .k2b-discussion[data-surface="default"]) {
-  padding-top: 0.75rem;
-}
-
-.k2b-ui section.k2b-detail-panel__section {
-  display: flex;
-  flex-direction: column;
-  gap: 0.375rem;
+  .k2b-section[data-tone]
+  > .k2b-section__header
+  :is(.k2b-section__title, .k2b-section__icon, .k2b-section__restricted) {
+  color: var(--k2b-section-tone);
 }
 
 /* One header rhythm for every section and discussion: a 20 px icon column,
    10 px to the title, the count or state right after the title, and at most
    one trailing control (an action or the chevron) at the end. Row text below
    starts on the same edge as the title. */
-.k2b-ui .k2b-detail-panel__section-header,
-.k2b-ui .k2b-detail-panel__section-summary {
-  width: 100%;
-  height: auto;
-  justify-content: flex-start;
-  text-align: start;
-  white-space: normal;
+.k2b-ui .k2b-section__header,
+.k2b-ui .k2b-section__toggle {
   display: flex;
+  width: 100%;
   min-width: 0;
   min-height: 1.75rem;
+  margin: 0;
   align-items: center;
   gap: 0.625rem;
+  text-align: start;
 }
 
-.k2b-ui .k2b-detail-panel__section-copy {
+.k2b-ui .k2b-section__copy {
+  display: flex;
   min-width: 0;
   flex: 1;
+  flex-direction: column;
 }
 
-.k2b-ui .k2b-detail-panel__section-heading {
+.k2b-ui .k2b-section__heading {
   display: flex;
   min-width: 0;
   align-items: center;
   gap: 0.5rem;
 }
 
-.k2b-ui .k2b-detail-panel__section-heading > :is(h3, .k2b-detail-panel__section-title) {
+.k2b-ui .k2b-section__title {
   min-width: 0;
+  margin: 0;
   overflow: hidden;
+  color: var(--k2b-text-secondary);
+  font-family: inherit;
+  font-size: 0.75rem;
+  font-weight: 600;
+  line-height: 1rem;
+  letter-spacing: normal;
   text-overflow: ellipsis;
+  text-transform: none;
   white-space: nowrap;
 }
 
-.k2b-ui .k2b-detail-panel__section-icon,
-.k2b-ui .k2b-discussion__icon {
+.k2b-ui .k2b-section__icon {
   display: grid;
   width: 1.25rem;
   height: 1.25rem;
@@ -3593,6 +3607,33 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   place-items: center;
   color: var(--k2b-text-muted);
   font-size: 0.875rem;
+}
+
+/* On a page the title reads as the topic of a card, and its icon sits in a
+   neutral tile; only a tone colours the tile. */
+.k2b-ui .k2b-section[data-size="md"] > .k2b-section__header,
+.k2b-ui .k2b-section[data-size="md"] > .k2b-section__header > .k2b-section__toggle {
+  min-height: 2rem;
+  gap: 0.75rem;
+}
+
+.k2b-ui .k2b-section[data-size="md"] > .k2b-section__header .k2b-section__title {
+  color: var(--k2b-text);
+  font-size: 0.9375rem;
+  line-height: 1.25rem;
+}
+
+.k2b-ui .k2b-section[data-size="md"] > .k2b-section__header .k2b-section__icon {
+  width: 1.75rem;
+  height: 1.75rem;
+  flex-basis: 1.75rem;
+  border-radius: var(--k2b-radius-control);
+  background: var(--k2b-surface-muted);
+  font-size: 1rem;
+}
+
+.k2b-ui .k2b-section[data-size="md"][data-tone] > .k2b-section__header .k2b-section__icon {
+  background: color-mix(in srgb, var(--k2b-section-tone) 12%, var(--k2b-surface));
 }
 
 /* A count is a quiet chip right after its title; zero reads as words. */
@@ -3612,7 +3653,9 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   line-height: 1;
 }
 
-.k2b-ui .k2b-detail-panel__none {
+.k2b-ui .k2b-section__none,
+.k2b-ui .k2b-section__meta,
+.k2b-ui .k2b-section__restricted {
   flex: 0 0 auto;
   color: var(--k2b-text-muted);
   font-size: 0.6875rem;
@@ -3621,68 +3664,378 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   white-space: nowrap;
 }
 
-.k2b-ui .k2b-detail-panel__section-icon[data-tone="accent"] {
-  color: var(--k2b-detail-panel-accent, var(--k2b-accent-600));
+/* Restricted visibility is a marker, not a colour: a lock and the app's words. */
+.k2b-ui .k2b-section__restricted {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
 }
 
-.k2b-ui .k2b-detail-panel__section-icon[data-tone="success"] {
-  color: var(--k2b-success-text);
+.k2b-ui .k2b-section__description {
+  margin: 0.125rem 0 0;
+  color: var(--k2b-text-muted);
+  font-size: 0.6875rem;
+  font-weight: 400;
+  line-height: 1rem;
 }
 
-.k2b-ui .k2b-detail-panel__section-icon[data-tone="warning"] {
-  color: var(--k2b-warning-text);
-}
-
-.k2b-ui .k2b-detail-panel__section-icon[data-tone="danger"] {
-  color: var(--k2b-danger-text);
-}
-
-.k2b-ui .k2b-discussion {
+.k2b-ui .k2b-section__actions {
   display: flex;
-  min-width: 0;
-  padding: 0.75rem;
-  flex-direction: column;
-  gap: 0.875rem;
-  border: 1px solid var(--k2b-border);
-  border-radius: var(--k2b-radius-surface);
-  background: var(--k2b-surface);
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 0.25rem;
+  /* A text action in a heading ends on the trailing edge, like a count or a time. */
+  margin-inline-end: -0.375rem;
 }
 
-.k2b-ui .k2b-discussion[data-surface="bare"] {
+/* A collapsible section's whole heading row is one disclosure button. Flat,
+   hover only colours its text, and the row starts where the other headings
+   start. In a card it fills the card's top on hover and focus. The chevron
+   and the summary keep their places in both states, so opening moves only
+   what lies below. */
+.k2b-ui .k2b-section__toggle {
   padding: 0;
   border: 0;
-  border-radius: 0;
+  border-radius: var(--k2b-radius-control);
+  color: inherit;
   background: transparent;
+  font: inherit;
+  cursor: pointer;
+  user-select: none;
+  transition: background-color var(--k2b-motion-fast) var(--k2b-ease-out);
 }
 
-/* The header is a detail panel section heading: the same icon slot, title
-   type, count and action columns, wherever the discussion is placed. */
-.k2b-ui .k2b-discussion__header {
+.k2b-ui .k2b-section__toggle:disabled {
+  cursor: default;
+}
+
+.k2b-ui .k2b-section__toggle:not(:disabled):hover :is(.k2b-section__title, .k2b-section__chevron) {
+  color: var(--k2b-text);
+}
+
+.k2b-ui .k2b-section__toggle:focus-visible {
+  outline: var(--k2b-focus-width) solid var(--k2b-focus-ring);
+  outline-offset: var(--k2b-focus-offset);
+}
+
+/* A closed section that says what it holds keeps a 2.75rem row in both states. */
+.k2b-ui .k2b-section[data-summary="true"] > .k2b-section__header,
+.k2b-ui .k2b-section[data-summary="true"] > .k2b-section__header > .k2b-section__toggle {
+  min-height: 2.75rem;
+}
+
+.k2b-ui .k2b-section[data-frame="line"] > .k2b-section__header > .k2b-section__toggle {
+  width: calc(100% + 1.75rem);
+  margin: -0.75rem -0.875rem;
+  padding: 0.75rem 0.875rem;
+  border-radius: calc(var(--k2b-radius-surface) - 1px);
+}
+
+.k2b-ui .k2b-section[data-size="md"][data-frame="line"] > .k2b-section__header > .k2b-section__toggle {
+  width: calc(100% + 2.25rem);
+  margin: -1rem -1.125rem;
+  padding: 1rem 1.125rem;
+}
+
+.k2b-ui .k2b-section[data-frame="line"][data-open="true"] > .k2b-section__header > .k2b-section__toggle {
+  margin-bottom: -0.375rem;
+  padding-bottom: 0.375rem;
+  border-end-start-radius: 0;
+  border-end-end-radius: 0;
+}
+
+.k2b-ui .k2b-section[data-frame="line"] > .k2b-section__header > .k2b-section__toggle:not(:disabled):hover {
+  background: var(--k2b-hover);
+}
+
+.k2b-ui .k2b-section[data-frame="line"] > .k2b-section__header > .k2b-section__toggle:focus-visible {
+  outline-offset: calc(-1 * var(--k2b-focus-width));
+}
+
+/* A card that stands flat inside another frame is a flat row again. */
+.k2b-ui
+  :is(.k2b-section, .k2b-detail-panel__group, .k2b-detail-panel__summary, .k2b-paper, .k2b-panel-dialog, .k2b-settings-section)
+  .k2b-section[data-frame="line"]
+  > .k2b-section__header
+  > .k2b-section__toggle {
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  border-radius: var(--k2b-radius-control);
+  background: transparent;
+  outline-offset: var(--k2b-focus-offset);
+}
+
+.k2b-ui .k2b-section__chevron {
+  display: grid;
+  width: 1.75rem;
+  height: 1.75rem;
+  flex: 0 0 1.75rem;
+  place-items: center;
+  /* The chevron itself ends on the trailing edge, like a count or a time. */
+  margin-inline-end: -0.5rem;
+  color: var(--k2b-text-muted);
+  font-size: 0.75rem;
+}
+
+.k2b-ui .k2b-section__chevron > i {
+  transition: transform var(--k2b-motion-fast) var(--k2b-ease-out);
+}
+
+/* Closed it points down, open up, as before. */
+.k2b-ui .k2b-section[data-open="true"] > .k2b-section__header .k2b-section__chevron > i {
+  transform: rotate(180deg);
+}
+
+/* A closed section can say in one line what it holds. The line takes the room
+   the title leaves and fades at its end; open, it keeps its room but is not
+   shown or read. */
+.k2b-ui .k2b-section__summary {
+  min-width: 0;
+  flex: 1 1 0;
+  color: var(--k2b-text-secondary);
+  font-size: 0.75rem;
+  font-weight: 400;
+  line-height: 1rem;
+  white-space: nowrap;
+}
+
+.k2b-ui .k2b-section[data-open="true"] > .k2b-section__header .k2b-section__summary {
+  visibility: hidden;
+}
+
+.k2b-ui .k2b-section__toggle .k2b-section__heading > .k2b-section__title {
+  flex: 0 1 auto;
+}
+
+.k2b-ui .k2b-section__body {
+  min-width: 0;
+}
+
+.k2b-ui .k2b-section__body[hidden] {
+  display: none;
+}
+
+/* One edge per section (03.11.): in a panel section with an icon, everything
+   below its heading starts where the title text does. Hover fills may reach
+   past the edge; text and icons never do. A page section's content starts on
+   the card's edge; sections outside a panel or page, such as the form
+   sections of an editor dialog, keep their full width. */
+.k2b-ui .k2b-detail-panel .k2b-section[data-size="sm"][data-icon="true"] > .k2b-section__body {
+  padding-inline-start: 1.875rem;
+}
+
+.k2b-ui .k2b-section__footer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.375rem;
+  padding-top: 0.5rem;
+}
+
+/* A part is a sub-topic with a small heading and no frame of its own. */
+.k2b-ui .k2b-section__part {
   display: flex;
   min-width: 0;
-  min-height: 1.75rem;
+  flex-direction: column;
+}
+
+.k2b-ui .k2b-section__part + .k2b-section__part {
+  margin-top: 0.75rem;
+}
+
+.k2b-ui .k2b-section__part-title {
+  margin: 0;
+  padding-bottom: 0.125rem;
+  color: var(--k2b-text-muted);
+  font-size: 0.75rem;
+  font-weight: 600;
+  line-height: 1rem;
+  letter-spacing: normal;
+  text-transform: none;
+}
+
+/* Loading and error take the body's place at the height of its rows. */
+.k2b-ui .k2b-section__skeleton-row {
+  display: flex;
+  height: 2.25rem;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.k2b-ui .k2b-section__skeleton-row > span {
+  height: 0.75rem;
+  border-radius: 999px;
+  background: var(--k2b-surface-muted);
+}
+
+.k2b-ui .k2b-section__error {
+  display: flex;
+  min-height: 2.25rem;
   align-items: center;
   gap: 0.5rem;
+  color: var(--k2b-text-secondary);
+  font-size: 0.8125rem;
+  line-height: 1.25rem;
 }
 
-.k2b-ui .k2b-discussion__header > :is(.k2b-discussion__icon) {
-  margin-inline-end: 0.125rem;
+.k2b-ui .k2b-section__error > i {
+  color: var(--k2b-danger-text);
+  font-size: 1rem;
 }
 
-.k2b-ui .k2b-discussion__header > :is(h2, h3) {
+.k2b-ui .k2b-section__error + .k2b-section__footer {
+  padding-top: 0;
+}
+
+/* Field: a label on the left and its value on the right. A value that does
+   not fit beside its label moves below it; an address breaks only after its
+   `@`; a long identifier ends with an ellipsis and shows in full in its hint
+   and when copied. The copy button always keeps its place and shows on hover
+   and focus, always on touch. */
+.k2b-ui .k2b-field-row {
+  display: flex;
   min-width: 0;
-  margin: 0;
+  min-height: 2.25rem;
+  flex-wrap: wrap;
+  align-items: baseline;
+  column-gap: 0.75rem;
+  padding: 0.5rem 0;
+  font-size: 0.8125rem;
+  line-height: 1.25rem;
+}
+
+.k2b-ui .k2b-field-row__label {
+  flex: 1 0 auto;
+  color: var(--k2b-text-secondary);
+}
+
+.k2b-ui .k2b-field-row__value {
+  display: inline-flex;
+  min-width: 0;
+  max-width: 100%;
   flex: 0 1 auto;
+  align-items: baseline;
+  gap: 0.125rem;
+  color: var(--k2b-text);
+}
+
+.k2b-ui .k2b-field-row__text {
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.k2b-ui .k2b-discussion__actions {
-  margin-inline-start: auto;
+.k2b-ui .k2b-field-row[data-kind="email"] .k2b-field-row__text {
+  white-space: normal;
 }
 
-.k2b-ui .k2b-discussion[data-surface="bare"] .k2b-discussion__header :is(h2, h3) {
+.k2b-ui .k2b-field-row__nowrap {
+  white-space: nowrap;
+}
+
+.k2b-ui .k2b-field-row__text a {
+  color: inherit;
+  text-decoration: underline;
+  text-decoration-color: color-mix(in srgb, var(--k2b-detail-panel-accent, var(--k2b-action)) 70%, transparent);
+  text-decoration-thickness: 1.5px;
+  text-underline-offset: 3px;
+}
+
+.k2b-ui .k2b-field-row[data-layout="stack"] {
+  flex-direction: column;
+  align-items: stretch;
+}
+
+.k2b-ui .k2b-field-row[data-layout="stack"] .k2b-field-row__text {
+  overflow: visible;
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
+.k2b-ui .k2b-button.k2b-field-row__copy,
+.k2b-ui .k2b-field-row__slot {
+  width: 1.5rem;
+  min-width: 1.5rem;
+  flex: 0 0 1.5rem;
+  align-self: center;
+}
+
+.k2b-ui .k2b-button.k2b-field-row__copy {
+  margin-block: -0.25rem;
+  padding: 0;
+  color: var(--k2b-text-muted);
+}
+
+.k2b-ui .k2b-field-row[data-layout="stack"] .k2b-field-row__slot {
+  display: none;
+}
+
+@media (any-hover: hover) {
+  :where(html:not([data-k2b-input="touch"])) .k2b-ui .k2b-field-row__copy {
+    opacity: 0;
+    transition: opacity var(--k2b-motion-fast) var(--k2b-ease-out);
+  }
+}
+:where(html[data-k2b-input="trackpad"]) .k2b-ui .k2b-field-row__copy {
+  opacity: 0;
+  transition: opacity var(--k2b-motion-fast) var(--k2b-ease-out);
+}
+
+.k2b-ui .k2b-field-row:hover .k2b-field-row__copy,
+.k2b-ui .k2b-field-row:focus-within .k2b-field-row__copy,
+.k2b-ui .k2b-field-row__copy:has(.ti-check) {
+  opacity: 1;
+}
+
+.k2b-ui .k2b-field-row__copy:has(.ti-check) {
+  color: var(--k2b-success-text);
+}
+
+/* A detail panel frames its topics itself, so its sections stand flat
+   (`DetailPanel` sets `frame="none"`). A group is one quiet surface like the
+   summary; its sections are separated by space and their headings, not by
+   rules or a border. A section placed directly in the body, a discussion
+   included, is a group of one: the same surface, and its heading and content
+   start where a grouped section's do. */
+.k2b-ui .k2b-detail-panel__group {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  padding-block: 0.25rem;
+}
+
+.k2b-ui :is(.k2b-detail-panel__group, .k2b-detail-panel__body > .k2b-section) {
+  border: 0;
+  border-radius: var(--k2b-radius-surface);
+  background: var(--k2b-surface);
+}
+
+.k2b-ui .k2b-detail-panel__body > .k2b-section {
+  padding: 0.75rem 0.875rem 1rem;
+}
+
+/* Deeper in a section or summary, that host already frames it. */
+.k2b-ui :is(.k2b-section, .k2b-detail-panel__summary) .k2b-section[data-frame="none"] {
+  padding: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+.k2b-ui .k2b-detail-panel__group > .k2b-section {
+  padding: 0.5rem 0.875rem 0.75rem;
+}
+
+.k2b-ui .k2b-detail-panel__group > .k2b-section + .k2b-section {
+  padding-top: 0.75rem;
+}
+
+/* A discussion is a Section (Discussion.tsx): its frame, heading, count, and
+   action come from there. A bare discussion stands flat with a larger title,
+   as the main topic of a page. */
+.k2b-ui .k2b-discussion[data-surface="bare"] > .k2b-section__header .k2b-section__title {
   color: var(--k2b-text);
   font-size: 1rem;
   font-weight: 600;
@@ -3691,7 +4044,6 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   text-transform: none;
 }
 
-.k2b-ui .k2b-discussion__count,
 .k2b-ui .k2b-discussion__timestamp,
 .k2b-ui .k2b-discussion__meta {
   color: var(--k2b-text-muted);
@@ -3700,7 +4052,6 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   line-height: 1rem;
 }
 
-.k2b-ui .k2b-discussion__actions,
 .k2b-ui .k2b-discussion__item-actions,
 .k2b-ui .k2b-discussion__composer footer {
   display: flex;
@@ -3953,149 +4304,18 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   opacity: 1;
 }
 
-.k2b-ui .k2b-detail-panel__section-header .k2b-detail-panel__section-copy,
-.k2b-ui .k2b-detail-panel__section-summary .k2b-detail-panel__section-copy {
-  display: flex;
-  flex-direction: column;
-}
-
-.k2b-ui .k2b-detail-panel__section-header h3,
-.k2b-ui .k2b-detail-panel__section-title,
-.k2b-ui .k2b-discussion__header :is(h2, h3) {
-  margin: 0;
-  color: var(--k2b-text-secondary);
-  font-size: 0.75rem;
-  font-family: inherit;
-  font-weight: 600;
-  line-height: 1rem;
-  letter-spacing: normal;
-  text-transform: none;
-}
-
 .k2b-ui .k2b-detail-panel__summary-actions .k2b-button[data-variant="ghost"],
 .k2b-ui .k2b-detail-panel__summary-actions .k2b-button[data-variant="text"],
-.k2b-ui .k2b-detail-panel__section-actions .k2b-button[data-variant="ghost"],
-.k2b-ui .k2b-detail-panel__section-actions .k2b-button[data-variant="text"],
-.k2b-ui .k2b-discussion__actions .k2b-button[data-variant="ghost"],
-.k2b-ui .k2b-discussion__actions .k2b-button[data-variant="text"] {
+.k2b-ui .k2b-section__actions .k2b-button[data-variant="ghost"],
+.k2b-ui .k2b-section__actions .k2b-button[data-variant="text"] {
   /* Text, so the fallback is the theme-aware action colour, not the fixed accent the icons use. */
   color: var(--k2b-detail-panel-accent, var(--k2b-action));
 }
 
 .k2b-ui .k2b-detail-panel__summary-actions .k2b-button[data-variant="ghost"]:not(:disabled, [aria-disabled="true"]):hover,
-.k2b-ui .k2b-detail-panel__section-actions .k2b-button[data-variant="ghost"]:not(:disabled, [aria-disabled="true"]):hover,
-.k2b-ui .k2b-discussion__actions .k2b-button[data-variant="ghost"]:not(:disabled, [aria-disabled="true"]):hover {
+.k2b-ui .k2b-section__actions .k2b-button[data-variant="ghost"]:not(:disabled, [aria-disabled="true"]):hover {
   color: var(--k2b-detail-panel-accent, var(--k2b-action));
   background: color-mix(in srgb, var(--k2b-detail-panel-accent, var(--k2b-action)) 9%, transparent);
-}
-
-.k2b-ui .k2b-detail-panel__section-description {
-  margin: 0.125rem 0 0;
-  color: var(--k2b-text-muted);
-  font-size: 0.6875rem;
-  font-weight: 400;
-  line-height: 1rem;
-}
-
-.k2b-ui .k2b-detail-panel__section-meta {
-  flex: 0 0 auto;
-  color: var(--k2b-text-muted);
-  font-size: 0.6875rem;
-  line-height: 1rem;
-}
-
-/* The closed row and the open header share one geometry: the icon, title,
-   meta, and chevron columns stay put when the section opens, and hover only
-   colours the text. The row keeps no padding or fill of its own, so it starts
-   where the other section headings start. */
-.k2b-ui .k2b-button.k2b-detail-panel__section-summary {
-  min-height: 1.75rem;
-  padding: 0;
-  border: 0;
-  border-radius: var(--k2b-radius-control);
-  color: var(--k2b-text-secondary);
-  background: transparent;
-  cursor: pointer;
-  list-style: none;
-  user-select: none;
-}
-
-.k2b-ui .k2b-detail-panel__section-summary > .k2b-button__label {
-  min-width: 0;
-  flex: 1;
-  justify-content: flex-start;
-  gap: 0.625rem;
-}
-
-.k2b-ui .k2b-button.k2b-detail-panel__section-summary:not(:disabled, [aria-disabled="true"]):hover {
-  background: transparent;
-}
-
-.k2b-ui .k2b-detail-panel__section-summary:not(:disabled):hover .k2b-detail-panel__section-title,
-.k2b-ui .k2b-detail-panel__section-summary:not(:disabled):hover .k2b-detail-panel__section-toggle,
-.k2b-ui .k2b-button.k2b-detail-panel__section-toggle:not(:disabled, [aria-disabled="true"]):hover {
-  color: var(--k2b-text);
-}
-
-.k2b-ui .k2b-detail-panel__section-summary:focus-visible {
-  outline: var(--k2b-focus-width) solid var(--k2b-focus-ring);
-  outline-offset: var(--k2b-focus-offset);
-}
-
-/* One trailing column for both chevrons: the closed row's icon and the open
-   header's collapse button. */
-.k2b-ui .k2b-detail-panel__section-toggle,
-.k2b-ui .k2b-button.k2b-detail-panel__section-toggle {
-  display: grid;
-  width: 1.75rem;
-  min-width: 1.75rem;
-  height: 1.75rem;
-  min-height: 1.75rem;
-  flex: 0 0 1.75rem;
-  place-items: center;
-  padding: 0;
-  border: 0;
-  color: var(--k2b-text-muted);
-  background: transparent;
-  font-size: 0.75rem;
-}
-
-.k2b-ui .k2b-button.k2b-detail-panel__section-toggle:not(:disabled, [aria-disabled="true"]):hover {
-  background: transparent;
-}
-
-/* The chevron itself ends on the trailing edge, like a count or a time. */
-.k2b-ui .k2b-detail-panel__section-toggle,
-.k2b-ui .k2b-button.k2b-detail-panel__section-toggle {
-  margin-inline-end: -0.5rem;
-}
-
-.k2b-ui .k2b-detail-panel__section-body {
-  min-width: 0;
-}
-
-/* A closed secondary section can say in one line what it holds. The line
-   takes the room the title leaves and fades at its end; it is gone while the
-   section is open. Such rows are 2.75rem tall in both states, so opening
-   moves nothing. */
-.k2b-ui .k2b-detail-panel__section-preview {
-  min-width: 0;
-  flex: 1 1 0;
-  color: var(--k2b-text-secondary);
-  font-size: 0.75rem;
-  font-weight: 400;
-  line-height: 1rem;
-  white-space: nowrap;
-}
-
-.k2b-ui .k2b-detail-panel__section-summary .k2b-detail-panel__section-heading > .k2b-detail-panel__section-title {
-  flex: 0 1 auto;
-}
-
-.k2b-ui
-  .k2b-detail-panel__section[data-summary="true"]
-  :is(.k2b-detail-panel__section-header, .k2b-button.k2b-detail-panel__section-summary) {
-  min-height: 2.75rem;
 }
 
 /* A titled group: a quiet title over secondary sections that stand flush as
@@ -4116,25 +4336,8 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   margin-bottom: 0.25rem;
 }
 
-.k2b-ui .k2b-detail-panel__group[data-titled="true"] > .k2b-detail-panel__section[data-open="true"] {
+.k2b-ui .k2b-detail-panel__group[data-titled="true"] > .k2b-section[data-open="true"] {
   padding-bottom: 0.5rem;
-}
-
-/* One edge per section (03.11.): in a panel section or discussion with an
-   icon, everything below its heading starts where the title text does —
-   chips, sub-labels, rows with their icons and avatars, comments,
-   properties. Nothing sits under the section icon. Hover fills may reach past
-   the edge; text and icons never do. Only a real sub-level, such as an H3 in
-   an outline, indents further. Sections outside a panel, such as the form
-   sections of an editor dialog, keep their full width. */
-.k2b-ui .k2b-detail-panel .k2b-detail-panel__section[data-icon="true"] > .k2b-detail-panel__section-body,
-.k2b-ui .k2b-detail-panel .k2b-discussion[data-icon="true"] > .k2b-discussion__body {
-  padding-inline-start: 1.875rem;
-}
-
-/* A text action in a heading ends on the trailing edge, like a count or a time. */
-.k2b-ui :is(.k2b-detail-panel__section-actions, .k2b-discussion__actions) {
-  margin-inline-end: -0.375rem;
 }
 
 .k2b-ui .k2b-detail-panel__action {
@@ -4374,11 +4577,6 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   font-size: 0.6875rem;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
-}
-
-/* Open or not collapsible, a section's body sits the same gap below its heading. */
-.k2b-ui .k2b-detail-panel__section[data-open="true"] > .k2b-detail-panel__section-body {
-  margin-top: 0;
 }
 
 /* A row that only shows something, such as a person and their role: the
@@ -5129,7 +5327,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   :is(
     .k2b-detail-panel__summary,
     .k2b-detail-panel__group,
-    .k2b-detail-panel__body > .k2b-detail-panel__section,
+    .k2b-detail-panel__body > .k2b-section,
     .k2b-detail-panel .k2b-discussion[data-surface="default"],
     .k2b-disclosure,
     .k2b-choice-popover,

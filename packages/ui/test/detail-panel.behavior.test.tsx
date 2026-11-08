@@ -1,41 +1,46 @@
 import { describe, expect, test } from "bun:test";
 import { createSignal } from "solid-js";
-import { isServer, render } from "solid-js/web";
+import { delegateEvents, isServer, render } from "solid-js/web";
 import { createDomTestHarness } from "./dom";
 
-describe("DetailPanel section disclosure", () => {
+describe("Section disclosure", () => {
   if (isServer) {
     test.skip("requires browser conditions", () => {});
     return;
   }
-  test("preserves controls and focus across uncontrolled toggles", async () => {
+  test("is one heading button that keeps focus and the body's controls across uncontrolled toggles", async () => {
     const dom = createDomTestHarness();
-    const { default: DetailPanel } = await import("../src/layout/DetailPanel");
+    const { Section } = await import("../src/surfaces/Section");
     const dispose = render(
       () => (
-        <DetailPanel.Section title="Settings" collapsible>
+        <Section title="Settings" collapsible>
           <input value="Draft" />
-        </DetailPanel.Section>
+        </Section>
       ),
       dom.root,
     );
     try {
-      const expand = dom.root.querySelector<HTMLButtonElement>('button[aria-expanded="false"]')!;
-      const collapse = dom.root.querySelector<HTMLButtonElement>('button[aria-expanded="true"]')!;
-      const body = document.getElementById(expand.getAttribute("aria-controls")!)!;
+      const toggles = dom.root.querySelectorAll<HTMLButtonElement>("button[aria-expanded]");
+      expect(toggles).toHaveLength(1);
+      const toggle = toggles[0]!;
+      // The button sits inside the heading, so the region keeps its name and heading navigation finds it.
+      expect(toggle.parentElement?.tagName).toBe("H3");
+      const body = document.getElementById(toggle.getAttribute("aria-controls")!)!;
       const input = body.querySelector("input")!;
       expect(body.hidden).toBe(true);
-      expand.focus();
-      expand.click();
+      toggle.focus();
+      toggle.click();
       await Promise.resolve();
+      expect(toggle.getAttribute("aria-expanded")).toBe("true");
       expect(body.hidden).toBe(false);
-      expect(document.activeElement).toBe(collapse);
+      expect(document.activeElement).toBe(toggle);
       input.value = "Unsaved changes";
-      collapse.click();
+      input.focus();
+      toggle.click();
       await Promise.resolve();
       expect(body.hidden).toBe(true);
-      expect(document.activeElement).toBe(expand);
-      expand.click();
+      expect(document.activeElement).toBe(toggle);
+      toggle.click();
       expect(body.querySelector("input")).toBe(input);
       expect(input.value).toBe("Unsaved changes");
     } finally {
@@ -45,30 +50,81 @@ describe("DetailPanel section disclosure", () => {
   });
   test("respects controlled state, refusal and disabled toggles", async () => {
     const dom = createDomTestHarness();
-    const { default: DetailPanel } = await import("../src/layout/DetailPanel");
+    const { Section } = await import("../src/surfaces/Section");
     const [open, setOpen] = createSignal(false);
     const [disabled, setDisabled] = createSignal(false);
     const requests: boolean[] = [];
+    // Each harness is a new document; Solid's delegated clicks register per document.
+    delegateEvents(["click"], dom.document);
     const dispose = render(
       () => (
-        <DetailPanel.Section title="Source" collapsible open={open()} disabled={disabled()} onOpenChange={(next) => requests.push(next)}>
+        <Section title="Source" collapsible open={open()} disabled={disabled()} onOpenChange={(next) => requests.push(next)}>
           <input />
-        </DetailPanel.Section>
+        </Section>
       ),
       dom.root,
     );
     try {
-      const expand = dom.root.querySelector<HTMLButtonElement>('button[aria-expanded="false"]')!;
-      const body = document.getElementById(expand.getAttribute("aria-controls")!)!;
-      expand.click();
+      const toggle = dom.root.querySelector<HTMLButtonElement>("button[aria-expanded]")!;
+      const body = document.getElementById(toggle.getAttribute("aria-controls")!)!;
+      toggle.click();
       expect(requests).toEqual([true]);
       expect(body.hidden).toBe(true);
       setOpen(true);
       expect(body.hidden).toBe(false);
       setDisabled(true);
-      dom.root.querySelector<HTMLButtonElement>('button[aria-expanded="true"]')!.click();
+      toggle.click();
       expect(requests).toEqual([true]);
       expect(body.hidden).toBe(false);
+    } finally {
+      dispose();
+      dom.cleanup();
+    }
+  });
+  test("returns focus to the toggle when the parent closes it while focus is inside", async () => {
+    const dom = createDomTestHarness();
+    const { Section } = await import("../src/surfaces/Section");
+    const [open, setOpen] = createSignal(true);
+    const dispose = render(
+      () => (
+        <Section title="Editor" collapsible open={open()}>
+          <input />
+        </Section>
+      ),
+      dom.root,
+    );
+    try {
+      dom.root.querySelector("input")!.focus();
+      setOpen(false);
+      await Promise.resolve();
+      await Promise.resolve();
+      expect(document.activeElement).toBe(dom.root.querySelector("button[aria-expanded]"));
+    } finally {
+      dispose();
+      dom.cleanup();
+    }
+  });
+  test("a retry in the error state calls back, and the ready state shows the body again", async () => {
+    const dom = createDomTestHarness();
+    const { Section } = await import("../src/surfaces/Section");
+    const [state, setState] = createSignal<"error" | "ready">("error");
+    let retries = 0;
+    delegateEvents(["click"], dom.document);
+    const dispose = render(
+      () => (
+        <Section title="Files" state={state()} onRetry={() => retries++}>
+          <span class="loaded">Offer.pdf</span>
+        </Section>
+      ),
+      dom.root,
+    );
+    try {
+      expect(dom.root.querySelector(".loaded")).toBeNull();
+      dom.root.querySelector<HTMLButtonElement>(".k2b-section__footer button")!.click();
+      expect(retries).toBe(1);
+      setState("ready");
+      expect(dom.root.querySelector(".loaded")?.textContent).toBe("Offer.pdf");
+      expect(dom.root.querySelector('[role="alert"]')).toBeNull();
     } finally {
       dispose();
       dom.cleanup();
@@ -109,26 +165,26 @@ test("a secondary action runs its own command without activating the row", async
 
 test("a section instantiates its body once even though it renders the body conditionally", async () => {
   const dom = createDomTestHarness();
-  const { DetailPanel } = await import("../src");
+  const { DetailPanel, Section } = await import("../src");
   let created = 0;
   const dispose = render(
     () => (
       <DetailPanel>
         <DetailPanel.Body>
-          <DetailPanel.Section title="Preview">
+          <Section title="Preview">
             {(() => {
               created++;
               return <span>body</span>;
             })()}
-          </DetailPanel.Section>
-          <DetailPanel.Section title="Empty" />
+          </Section>
+          <Section title="Empty" />
         </DetailPanel.Body>
       </DetailPanel>
     ),
     dom.root,
   );
   expect(created).toBe(1);
-  expect(dom.root.querySelectorAll(".k2b-detail-panel__section-body")).toHaveLength(1);
+  expect(dom.root.querySelectorAll(".k2b-section__body")).toHaveLength(1);
   dispose();
   dom.cleanup();
 });

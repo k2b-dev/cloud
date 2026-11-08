@@ -81,29 +81,31 @@ describe("Base navigation interactions", () => {
 
   test("field option sections collapse through the header without remounting inputs", async () => {
     const dom = createDomTestHarness();
-    const { DetailPanel } = await import("@k2b/ui");
+    const { Section } = await import("@k2b/ui");
     const input = document.createElement("input");
     input.value = "Unsaved";
+    delegateEvents(["click"], dom.document);
     const dispose = render(
-      () => createComponent(DetailPanel.Section, { collapsible: true, title: "Appearance", icon: "ti ti-palette", children: input }),
+      () => createComponent(Section, { collapsible: true, title: "Appearance", icon: "ti ti-palette", children: input }),
       dom.root,
     );
     try {
-      const expand = dom.root.querySelector<HTMLButtonElement>('button[aria-expanded="false"]')!;
-      const collapse = dom.root.querySelector<HTMLButtonElement>('button[aria-expanded="true"]')!;
-      const panel = document.getElementById(expand.getAttribute("aria-controls")!)!;
+      // The whole heading row is one disclosure button, so focus stays on it in both states.
+      const toggle = dom.root.querySelector<HTMLButtonElement>("button[aria-expanded]")!;
+      const panel = document.getElementById(toggle.getAttribute("aria-controls")!)!;
       expect(panel.hidden).toBe(true);
-      expand.focus();
-      expand.click();
+      toggle.focus();
+      toggle.click();
       await Promise.resolve();
       expect(panel.hidden).toBe(false);
-      expect(document.activeElement).toBe(collapse);
-      expect(collapse.closest("header")?.textContent).toContain("Appearance");
-      collapse.click();
+      expect(toggle.getAttribute("aria-expanded")).toBe("true");
+      expect(document.activeElement).toBe(toggle);
+      expect(toggle.closest(".k2b-section__header")?.textContent).toContain("Appearance");
+      toggle.click();
       await Promise.resolve();
       expect(panel.hidden).toBe(true);
-      expect(document.activeElement).toBe(expand);
-      expand.click();
+      expect(document.activeElement).toBe(toggle);
+      toggle.click();
       expect(panel.querySelector("input")).toBe(input);
       expect(input.value).toBe("Unsaved");
     } finally {
