@@ -21,7 +21,7 @@ callbacks. Use ISO text for dates and `null` for missing observations.
 
 The portable Zod validator `chartKinds()` from `@k2b/editor/charts` is checked
 against those types at compile time. It normalizes null gaps to non-finite
-renderer values; keep the original JSON when saving. Its optional limits are
+renderer values; stacked area keeps its nullable series. Keep the original JSON when saving. Its optional limits are
 host policy. Each consuming application keeps its own input budget.
 
 ## Import
