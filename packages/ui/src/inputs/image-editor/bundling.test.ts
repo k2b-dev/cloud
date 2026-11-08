@@ -2,8 +2,11 @@ import { expect, test } from "bun:test";
 import { basename } from "node:path";
 
 test("the public ImageEditor wrapper defers the heavy view and engine", async () => {
+  const entry = new URL("./consumer.ts", import.meta.url).pathname;
+  const ui = new URL("../../../dist/browser/index.js", import.meta.url).pathname;
   const build = await Bun.build({
-    entrypoints: [new URL("../ImageEditor.tsx", import.meta.url).pathname],
+    entrypoints: [entry],
+    files: { [entry]: `import { ImageEditor } from ${JSON.stringify(ui)}; globalThis.component = ImageEditor;` },
     target: "browser",
     conditions: ["browser"],
     format: "esm",
@@ -26,7 +29,7 @@ test("the public ImageEditor wrapper defers the heavy view and engine", async ()
   };
   for (const output of build.outputs) if (output.kind === "entry-point") visit(output.path);
   expect(initial.size).toBeGreaterThan(0);
-  for (const file of ["ImageEditorView.tsx", "image.ts", "render.ts", "geometry.ts", "model.ts"]) {
+  for (const file of ["ImageEditorView.js", "image.js", "render.js", "geometry.js", "model.js"]) {
     expect([...inputs].some((input) => input.endsWith(`/image-editor/${file}`))).toBe(false);
     expect(Object.keys(build.metafile.inputs).some((input) => input.endsWith(`/image-editor/${file}`))).toBe(true);
   }
