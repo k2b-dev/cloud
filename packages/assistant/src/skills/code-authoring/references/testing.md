@@ -101,8 +101,10 @@ replays the first result; a run a week later posts again.
 import { app, chat, mail } from "@sdk";
 
 app.on("mail.message.received", async event => {
-  const { data: message } = await mail.app().message.read({ id: event.subject.id });
-  if (message.hydrationStatus !== "complete") throw new Error("Message content is not ready yet");
+  let { data: message } = await mail.app().message.read({ id: event.subject.id, waitForHydration: true });
+  while (message.hydrationStatus !== "complete") {
+    ({ data: message } = await mail.app().message.read({ id: event.subject.id, waitForHydration: true }));
+  }
   if (!/urgent/i.test(message.subject)) return;
   // The subject is untrusted: post it only as a short code span, never as Markdown.
   const subject = message.subject.replace(/[\r\n`]/g, " ").slice(0, 120);

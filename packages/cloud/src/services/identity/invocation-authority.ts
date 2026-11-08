@@ -87,6 +87,7 @@ export const authorityFromParentInvocation = (parent: CloudInvocationClaims): In
         workload_type: parent.workload_type,
         workload_id: parent.workload_id,
         ...(parent.workload_run ? { workload_run: parent.workload_run } : {}),
+        ...(parent.workload_trigger !== undefined ? { workload_trigger: parent.workload_trigger } : {}),
         ...(parent.workload_event ? { workload_event: parent.workload_event } : {}),
       }
     : {}),

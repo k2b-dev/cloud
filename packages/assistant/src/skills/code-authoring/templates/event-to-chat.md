@@ -13,8 +13,10 @@ const TEAM_CONVERSATION = "Cnv001";
 const DOMAINS = ["example.com", "example.org"];
 
 app.on("mail.message.received", async event => {
-  const { data: message } = await mail.app().message.read({ id: event.subject.id });
-  if (message.hydrationStatus !== "complete") throw new Error("Message content is not ready yet");
+  let { data: message } = await mail.app().message.read({ id: event.subject.id, waitForHydration: true });
+  while (message.hydrationStatus !== "complete") {
+    ({ data: message } = await mail.app().message.read({ id: event.subject.id, waitForHydration: true }));
+  }
   const sender = message.from[0];
   const domain = sender?.address.split("@")[1]?.toLowerCase() ?? "";
   if (!DOMAINS.includes(domain)) return;

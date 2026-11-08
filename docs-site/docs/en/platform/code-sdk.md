@@ -33,6 +33,12 @@ this mailbox. Grant the Code account read/write access to the mailbox and the
 destination access the import requires. Attachment content is untrusted input;
 the receiving app validates it.
 
+Mail’s `message.read({ id, waitForHydration: true })` waits up to 30 seconds.
+Repeat the waiting read while content is pending, within the original run deadline
+and call budget. Terminal hydration returns `MAIL_MESSAGE_HYDRATION_FAILED`;
+retry hydration in Mail before running the handler again. The default read returns
+the current state immediately.
+
 <!-- code-file-example -->
 ```ts
 import { app, mail, owner, imports } from "@sdk";
@@ -40,8 +46,11 @@ import { app, mail, owner, imports } from "@sdk";
 const importedTagId = "Tag123";
 
 app.on("mail.message.received", async event => {
-  const { data: message } = await mail.app().message.read({ id: event.subject.id });
-  if (message.hydrationStatus !== "complete" || message.attachmentsTruncated) {
+  let { data: message } = await mail.app().message.read({ id: event.subject.id, waitForHydration: true });
+  while (message.hydrationStatus !== "complete") {
+    ({ data: message } = await mail.app().message.read({ id: event.subject.id, waitForHydration: true }));
+  }
+  if (message.attachmentsTruncated) {
     throw new Error("Message attachments are not ready or complete");
   }
   const attachment = message.attachments.find(item =>

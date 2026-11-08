@@ -113,8 +113,10 @@ with `onlyIfUnassigned: true` to leave existing assignees alone.
 import { app, mail, owner } from "@sdk";
 
 app.on("mail.message.received", async event => {
-  const { data: message } = await mail.app().message.read({ id: event.subject.id });
-  if (message.hydrationStatus !== "complete") throw new Error("Message content is not ready yet");
+  let { data: message } = await mail.app().message.read({ id: event.subject.id, waitForHydration: true });
+  while (message.hydrationStatus !== "complete") {
+    ({ data: message } = await mail.app().message.read({ id: event.subject.id, waitForHydration: true }));
+  }
   if (!message.conversationId || !/invoice/i.test(message.subject)) return;
   // Fictional user name; the search also matches names and groups, so compare the exact uid.
   const lead = (await owner.mailbox.member.list({ query: "accounting.lead", limit: 20 })).data.find(member => member.uid === "accounting.lead");

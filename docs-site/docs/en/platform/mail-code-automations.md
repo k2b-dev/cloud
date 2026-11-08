@@ -23,9 +23,9 @@ Register one handler for `mail.message.received`:
 import { app, mail } from "@sdk";
 
 app.on("mail.message.received", async event => {
-  const { data: message } = await mail.app().message.read({ id: event.subject.id });
-  if (message.hydrationStatus !== "complete") {
-    throw new Error("Message content is not ready; retry after hydration");
+  let { data: message } = await mail.app().message.read({ id: event.subject.id, waitForHydration: true });
+  while (message.hydrationStatus !== "complete") {
+    ({ data: message } = await mail.app().message.read({ id: event.subject.id, waitForHydration: true }));
   }
   if (message.keywordsTruncated) throw new Error("Incomplete provider keywords");
   // Read current conversation state, then call the authorized Mail Actions.
@@ -33,6 +33,14 @@ app.on("mail.message.received", async event => {
 });
 export default app;
 ```
+
+`waitForHydration: true` waits up to **30 seconds per read**. If content is
+still pending, repeat the waiting read in the same handler invocation, as above.
+The original run deadline, receipt position and call budget still apply; pending
+content does not need a new run attempt. Without the option, the query returns
+the current hydration state immediately. Retryable hydration failures keep
+waiting. A terminal failure returns `MAIL_MESSAGE_HYDRATION_FAILED`; retry
+hydration in Mail before deliberately running the handler again.
 
 The v1 event contains a message reference, its mailbox place, and a stable
 `data.receiptId`. Content comes from capabilities. It waits for the first
@@ -44,7 +52,10 @@ Only one `app.on` registration for this event is allowed in a Code. To compose
 several rules, call their functions in the desired order and `await` each one
 inside that handler. Failure stops the remaining functions for that message.
 There is no automatic winner selection between helpers. Use Mail’s guarded
-Actions for assignment, status and protected summaries.
+Actions for assignment, status and protected summaries. For a received message
+linked to a conversation only through a mailing list, Code cannot change that
+conversation’s work status or assignments. This applies to individual and batch
+changes. Other messages in the conversation keep their ordinary behavior.
 
 Messages start in the order their receipts reach the platform, one at a time
 for this mailbox’s registration, even if Code concurrency is raised. A retry
@@ -144,7 +155,10 @@ which promise one immutable occurrence per subject. The historical envelope’s
 `data.receiptId` when matching these two views of a Mail receipt.
 
 Core rechecks editor authority; dispatch rechecks the active pinned
-version, approval and ordinary Code admission budgets. No user credential is
+version, approval, current resource availability and ordinary Code admission
+budgets. Each dispatched occurrence must belong to the saved selection. A
+resource that becomes unavailable stops the operation visibly; restore it before
+resuming the saved snapshot. No user credential is
 stored in the pump.
 
 `POST /api/code/authoring/simulateEvent` accepts `codeId`, `versionId`, one event
