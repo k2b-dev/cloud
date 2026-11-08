@@ -33,7 +33,7 @@ test("core entry bundles for server and browser without Solid, DOM or upstream d
     expect(code).not.toMatch(/solid-js|document\.|window\.|HTMLElement|createSignal/);
     expect([...code.matchAll(/\.stdlib-chart-reference \{/g)]).toHaveLength(1);
   }
-  expect(Object.keys(chartKinds)).toHaveLength(18);
+  expect(Object.keys(chartKinds)).toHaveLength(20);
   expect(chartDatumRoles).toContain("interval");
 });
 

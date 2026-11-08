@@ -425,7 +425,15 @@ export default function DashboardPanelView(props: {
           <Show when={catalog().options}>
             {(options) => (
               <div class="pulse-dashboard__plot">
-                <Chart {...options()} interactive labels={{ interactiveChart: props.panel.title }} />
+                {(() => {
+                  const chart = options();
+                  // Pareto labels name its measures, rather than the shared inspector controls.
+                  return chart.kind === "pareto" ? (
+                    <Chart {...chart} interactive />
+                  ) : (
+                    <Chart {...chart} interactive labels={{ interactiveChart: props.panel.title }} />
+                  );
+                })()}
               </div>
             )}
           </Show>
