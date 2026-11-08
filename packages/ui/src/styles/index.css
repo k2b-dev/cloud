@@ -409,7 +409,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 /* Layers and shadows: one model for every app.
    0 the workspace: the app card and its columns, flat.
    1 islands in the main content: Paper, a framed Section, LinkCard,
-     ResourceCard, DashboardFrame. They read `--k2b-island-shadow` and
+     ResourceCard, DashboardFrame, DashboardPanel, StatCell. They read `--k2b-island-shadow` and
      `--k2b-island-surface` and never pick a shadow themselves.
    2 overlaying surfaces: drawer, sheet, PanelDialog (`--k2b-shadow-side`, `-sheet`).
    3 floating surfaces: menu, popover, dialog, toast, drag preview
