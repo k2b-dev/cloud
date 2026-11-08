@@ -101,6 +101,7 @@ Studio database grants are unavailable.
 | CAMT bank reports | [CAMT](references/camt.md) |
 | Electronic invoices | [E-invoice](references/einvoice.md) |
 | Native views and charts | [Views](references/views.md), [Charts](references/charts.md) |
+| Every chart kind with an example | [Chart kinds](references/chart-kinds.md) |
 | AI calculations | [AI](references/ai.md) |
 | Cloud queries/actions | [Capabilities](references/capabilities.md) |
 | External HTTPS and secrets | [HTTP](references/http.md) |

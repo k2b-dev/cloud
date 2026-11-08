@@ -224,6 +224,20 @@ describe("file providers in Core", () => {
       { ...liveApp(manifest.manifestHash), id: "filesv2" },
     );
     expect(entry?.manifest).toEqual(manifest);
+    const frozenHash = "c0ccc3b2c8736e8a9a94e3d4bf37a48ce6f9bfd084bb79a48bd3015c90f04822";
+    expect(manifest.manifestHash).toBe(frozenHash);
+    expect(entry?.manifest.manifestHash).toBe(frozenHash);
+    const { manifestHash: _hash, ...parsed } = entry!.manifest;
+    expect(capabilityHash(parsed)).toBe(frozenHash);
+    const searches = manifest.queries.filter((query) => query.universalSearch);
+    expect(searches).toHaveLength(1);
+    for (const search of searches) {
+      expect(search.dataSchema).toHaveProperty("items.properties");
+      expect(search.dataSchema).not.toHaveProperty("items.properties.group");
+      expect(entry?.manifest.queries.find((query) => query.localId === search.localId)).not.toHaveProperty(
+        "dataSchema.items.properties.group",
+      );
+    }
     expect("fileProvider" in (entry?.manifest ?? {})).toBe(false);
   });
 

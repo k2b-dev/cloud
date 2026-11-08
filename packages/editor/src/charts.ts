@@ -3,6 +3,7 @@ import { i18n } from "@k2b/stdlib";
 import {
   type AreaOptions,
   type BarChartOptions,
+  type BubbleOptions,
   barChartLayout,
   barGauge,
   boxplot,
@@ -12,6 +13,7 @@ import {
   computeDomain,
   donut,
   extendDomainToNice,
+  type FunnelOptions,
   gauge,
   type HeatmapChartOptions,
   type HorizontalBarOptions,
@@ -20,15 +22,24 @@ import {
   line,
   niceLogTicks,
   niceStep,
+  type ParetoOptions,
   pie,
+  type RadarOptions,
+  rankedBarLayout,
   renderAreaSvg,
   renderBarChartSvg,
+  renderBubbleSvg,
+  renderFunnelSvg,
   renderHbarSvg,
   renderHeatmapSvg,
+  renderParetoSvg,
+  renderRadarSvg,
+  renderTreemapSvg,
   renderWaterfallSvg,
   scatter,
   sparkline,
   stat,
+  type TreemapOptions,
   type WaterfallOptions,
 } from "@k2b/ui/charts/core";
 import { z } from "zod";
@@ -45,19 +56,29 @@ import {
 export * from "./chart-schema";
 
 type RenderOptions = {
-  [K in ChartInput["kind"]]: { kind: K } & (K extends "hbar"
-    ? HorizontalBarOptions
-    : K extends "waterfall"
-      ? WaterfallOptions
-      : K extends "area"
-        ? AreaOptions
-        : K extends "heatmap"
-          ? HeatmapChartOptions
-          : K extends "bar"
-            ? BarChartOptions & { data: NonNullable<BarChartOptions["data"]> }
-            : K extends keyof typeof charts
-              ? Omit<Parameters<(typeof charts)[K]>[0], "width" | "height" | "inspect">
-              : never);
+  [K in ChartInput["kind"]]: { kind: K } & (K extends "funnel"
+    ? FunnelOptions
+    : K extends "hbar"
+      ? HorizontalBarOptions
+      : K extends "waterfall"
+        ? WaterfallOptions
+        : K extends "area"
+          ? AreaOptions
+          : K extends "treemap"
+            ? TreemapOptions
+            : K extends "pareto"
+              ? ParetoOptions
+              : K extends "bubble"
+                ? BubbleOptions
+                : K extends "radar"
+                  ? RadarOptions
+                  : K extends "heatmap"
+                    ? HeatmapChartOptions
+                    : K extends "bar"
+                      ? BarChartOptions & { data: NonNullable<BarChartOptions["data"]> }
+                      : K extends keyof typeof charts
+                        ? Omit<Parameters<(typeof charts)[K]>[0], "width" | "height" | "inspect">
+                        : never);
 }[ChartInput["kind"]];
 
 /**
@@ -72,7 +93,13 @@ const labels = /* @__PURE__ */ i18n.define({
   messages: {
     en: {
       category: "Category",
+      size: "Size",
+      axis: "Axis",
       series: "Series",
+      group: "Group",
+      previous: "Previous",
+      change: "Change",
+      cumulative: "Cumulative",
       balance: "Balance",
       before: "Balance before",
       inflow: "In",
@@ -93,10 +120,19 @@ const labels = /* @__PURE__ */ i18n.define({
       whiskerLow: "Whisker low",
       whiskerHigh: "Whisker high",
       delta: "Change",
+      startShare: "Share of start",
+      previousShare: "Share of previous step",
+      rank: "Rank",
     },
     de: {
       category: "Kategorie",
+      size: "Größe",
+      axis: "Achse",
       series: "Datenreihe",
+      group: "Bereich",
+      previous: "Vorher",
+      change: "Änderung",
+      cumulative: "Kumuliert",
       balance: "Stand",
       before: "Stand davor",
       inflow: "Rein",
@@ -117,6 +153,9 @@ const labels = /* @__PURE__ */ i18n.define({
       whiskerLow: "Unterer Whisker",
       whiskerHigh: "Oberer Whisker",
       delta: "Änderung",
+      startShare: "Anteil am Start",
+      previousShare: "Anteil am vorigen Schritt",
+      rank: "Rang",
     },
   },
 });
@@ -239,6 +278,10 @@ const numberFormat = (format: ChartFormat | undefined) => (format && !("date" in
 /** The values a chart writes with its value format, for whole-number currency. */
 const formattedValues = (input: ChartInput): number[] => {
   switch (input.kind) {
+    case "bubble":
+      return input.data.flatMap((p) => (p.size === undefined ? [] : [p.size]));
+    case "radar":
+      return input.series.flatMap((s) => s.data);
     case "waterfall":
       return [input.start.value, ...input.steps.map((step) => step.value)];
     case "area":
@@ -255,6 +298,10 @@ const formattedValues = (input: ChartInput): number[] => {
       ];
     case "hbar":
       return input.rows.flatMap((r) => r.values.filter((v): v is number => v !== null));
+    case "funnel":
+      return input.data.flatMap((d) => (d.value === null ? [] : [d.value]));
+    case "treemap":
+    case "pareto":
     case "pie":
     case "donut":
       return input.data.map((item) => item.value);
@@ -278,7 +325,7 @@ const formattedValues = (input: ChartInput): number[] => {
   }
 };
 const formats = (input: ChartInput, locale: string): Formats => {
-  const yFormat = "yAxis" in input ? numberFormat(input.yAxis?.format) : "format" in input ? input.format : undefined;
+  const yFormat = ("yAxis" in input ? numberFormat(input.yAxis?.format) : undefined) ?? ("format" in input ? input.format : undefined);
   const y = chartNumberFormatters(yFormat, locale, formattedValues(input));
   const xFormat = "xAxis" in input && input.kind !== "bar" ? input.xAxis?.format : undefined;
   const x = chartNumberFormatters(numberFormat(xFormat), locale);
@@ -358,7 +405,7 @@ export function chartRenderOptions(
     formats?: { x?: (v: number) => string; y?: (v: number) => string; value?: (v: number) => string };
   } = {},
 ): RenderOptions {
-  if (input.kind === "heatmap" && input.layout === "calendar") locale = input.locale ?? locale;
+  if ("locale" in input && input.locale) locale = input.locale;
   const defaults = formats(input, locale);
   // Function formats must be measured with the same text the renderer will print.
   const format = {
@@ -371,6 +418,55 @@ export function chartRenderOptions(
   const width = options.width ?? WIDTH;
   const references = renderReferences(input);
   switch (input.kind) {
+    case "treemap":
+      return {
+        kind: "treemap",
+        legend: input.legend,
+        groups: input.groups,
+        data: input.data,
+        format: format.value,
+        locale: input.locale ?? locale,
+        displayWidth: options.width,
+      };
+    case "pareto":
+      return {
+        kind: "pareto",
+        labels: input.labels,
+        data: input.data,
+        format: format.value,
+        locale: input.locale ?? locale,
+        displayWidth: options.width,
+      };
+    case "bubble":
+      return {
+        kind: "bubble",
+        groups: input.groups,
+        data: input.data,
+        xLabel: input.xLabel,
+        yLabel: input.yLabel,
+        sizeLabel: input.sizeLabel,
+        averages: input.averages,
+        legend: input.legend,
+        locale,
+        displayWidth: options.width,
+        xFormat: options.formats?.x ?? (input.xFormat ? chartNumberFormatters(input.xFormat, locale).value : undefined),
+        yFormat: options.formats?.y ?? (input.yFormat ? chartNumberFormatters(input.yFormat, locale).value : undefined),
+        sizeFormat: format.value,
+      };
+    case "radar":
+      return {
+        kind: "radar",
+        axes: input.axes,
+        max: input.max,
+        unit: input.unit,
+        series: input.series,
+        legend: input.legend,
+        locale,
+        displayWidth: options.width,
+        format: format.value,
+      };
+    case "funnel":
+      return { kind: "funnel", data: input.data, valueFormat: format.value, locale };
     case "hbar":
       return {
         kind: "hbar",
@@ -415,6 +511,9 @@ export function chartRenderOptions(
           series: input.series,
           layout: input.layout,
           normalize: input.normalize,
+          share: input.share,
+          limit: input.limit,
+          tone: input.tone,
           compare: input.compare,
           xAxis: input.xAxis,
           yAxis: axis(yAxis, options.formats?.y ?? format.tick),
@@ -574,6 +673,16 @@ const decode = (value: string) =>
 export const drawChart = (options: RenderOptions): string => {
   const common = { width: WIDTH, height: HEIGHT, inspect: true };
   switch (options.kind) {
+    case "treemap":
+      return renderTreemapSvg({ ...options, ...common });
+    case "pareto":
+      return renderParetoSvg({ ...options, ...common });
+    case "bubble":
+      return renderBubbleSvg({ ...options, ...common });
+    case "radar":
+      return renderRadarSvg({ ...options, ...common });
+    case "funnel":
+      return renderFunnelSvg({ ...options, ...common });
     case "hbar":
       return renderHbarSvg({ ...options, ...common, height: hbarLayout(options).height });
     case "waterfall":
@@ -666,7 +775,7 @@ export function chartRows(
   locale: string,
   options: { formats?: { x?: (v: number) => string; y?: (v: number) => string; value?: (v: number) => string } } = {},
 ) {
-  if (input.kind === "heatmap" && input.layout === "calendar") locale = input.locale ?? locale;
+  if ("locale" in input && input.locale) locale = input.locale;
   const t = labels.resolve([locale]).t;
   const format = formats(input, locale);
   const valueFormat = input.tooltip?.format
@@ -698,8 +807,8 @@ export function chartRows(
     const tooltip = input.kind === "waterfall" ? { title: datum.label, rows: [] as { label: string; value: string }[] } : undefined;
     const cells: Record<string, string> = {};
     const values: Record<string, string | number> = {};
-    const cell = (id: string, label: string, value: string | number, text: string) => {
-      if (!columns.has(id)) columns.set(id, { id, label, numeric: typeof value === "number" });
+    const cell = (id: string, label: string, value: string | number, text: string, numeric = typeof value === "number") => {
+      if (!columns.has(id)) columns.set(id, { id, label, numeric });
       cells[id] = text;
       values[id] = value;
     };
@@ -718,16 +827,53 @@ export function chartRows(
               : input.data[datum.role === "outlier" ? (datum.seriesIndex ?? 0) : datum.index]?.label) ?? datum.label)
           : datum.label;
       if (label)
-        cell("label", input.kind === "heatmap" && input.layout === "calendar" ? calendarWords(locale).day : t.category, label, label);
+        cell(
+          "label",
+          input.kind === "heatmap" && input.layout === "calendar"
+            ? calendarWords(locale).day
+            : input.kind === "radar"
+              ? t.axis
+              : t.category,
+          label,
+          label,
+        );
     }
     for (const field of datum.values) {
       const value = field.value;
+      if (input.kind === "bubble") {
+        const label =
+          field.key === "x"
+            ? input.xLabel
+            : field.key === "y"
+              ? input.yLabel
+              : field.key === "size"
+                ? (input.sizeLabel ?? t.size)
+                : t.group;
+        cell(field.key, label, value, field.formatted ?? String(value));
+        continue;
+      }
+      if (input.kind === "radar" && field.key.startsWith("series:")) {
+        cell(field.key, input.series[Number(field.key.slice(7))]!.label, value, field.formatted ?? String(value));
+        continue;
+      }
       if (typeof value === "string" && input.kind === "area" && field.key === "x") {
         cell("x", t.position, value, field.formatted ?? value);
         continue;
       }
       if (typeof value === "string" && input.kind === "heatmap" && (field.key === "x" || field.key === "y")) {
         cell(field.key, field.key.toUpperCase(), value, value);
+        continue;
+      }
+      if (input.kind === "treemap" && field.key === "group" && typeof value === "string") {
+        cell("group", t.group, value, value);
+        continue;
+      }
+      if (
+        input.kind === "pareto" &&
+        (field.key === "previous" || field.key === "change" || field.key === "cumulative") &&
+        typeof value === "number"
+      ) {
+        cell(field.key, field.key === "previous" ? input.labels[1] : t[field.key], value, field.formatted ?? valueFormat(value));
         continue;
       }
       if (input.kind === "hbar" || (input.kind === "bar" && input.series)) {
@@ -744,7 +890,30 @@ export function chartRows(
             : input.kind === "hbar"
               ? input.series[seriesIndex]!
               : input.series![seriesIndex]!.label;
-        cell(field.key, label, value, field.formatted ?? String(value));
+        cell(field.key, label, value, field.formatted ?? String(value), true);
+        continue;
+      }
+      if (
+        field.key === "startPercent" ||
+        field.key === "previousPercent" ||
+        field.key === "rank" ||
+        ((input.kind === "bar" || input.kind === "funnel") && typeof value === "string")
+      ) {
+        cell(
+          field.key,
+          field.key === "startPercent"
+            ? t.startShare
+            : field.key === "previousPercent"
+              ? t.previousShare
+              : field.key === "rank"
+                ? t.rank
+                : field.key === "percent"
+                  ? t.share
+                  : t.value,
+          value,
+          field.formatted ?? String(value),
+          true,
+        );
         continue;
       }
       if (typeof value !== "number" || field.key === "total") continue;
@@ -791,11 +960,13 @@ export function chartRows(
         cell(
           "value",
           input.tooltip?.label ??
-            (input.kind === "bar"
-              ? input.yAxis?.label
-              : input.kind === "heatmap" && input.layout === "calendar"
-                ? input.label
-                : undefined) ??
+            (input.kind === "pareto"
+              ? input.labels[0]
+              : input.kind === "bar"
+                ? input.yAxis?.label
+                : input.kind === "heatmap" && input.layout === "calendar"
+                  ? input.label
+                  : undefined) ??
             t.value,
           value,
           input.kind === "heatmap" && input.layout === "calendar"
@@ -820,7 +991,37 @@ export function chartRows(
     rows.push(row);
     return row;
   };
-  return { add, columns: () => [...columns.values()], table: (): ChartTable => ({ columns: [...columns.values()], rows }) };
+  return {
+    add,
+    columns: () => [...columns.values()],
+    table: (): ChartTable => {
+      if (input.kind === "bar" && input.layout === "rows" && input.limit !== undefined) {
+        const source = { ...input, limit: undefined };
+        const all = chartRows(source, locale, options);
+        const layout = rankedBarLayout({ data: source.data, title: source.title, subtitle: source.subtitle, valueFormat, locale });
+        for (const row of layout.rows) {
+          const value = Number.isFinite(row.value) ? row.value : null;
+          all.add({
+            role: "item",
+            index: row.index,
+            label: row.label,
+            anchor: [0, row.y],
+            values: [
+              { key: "value", value: value ?? "–", formatted: value === null ? "–" : valueFormat(value) },
+              {
+                key: "percent",
+                value: row.share === null ? "–" : row.share * 100,
+                formatted: row.share === null ? "–" : percent.format(row.share),
+              },
+              { key: "rank", value: row.rank },
+            ],
+          });
+        }
+        return all.table();
+      }
+      return { columns: [...columns.values()], rows };
+    },
+  };
 }
 
 /** The data behind every mark of the chart as a table: the accessible alternative and what Copy data copies. */
@@ -833,6 +1034,10 @@ export function chartTable(input: ChartInput, locale: string): ChartTable {
 /** Input values count against the budget, including observations summarized into boxes or bins. */
 export const chartMarks = (input: ChartInput): number => {
   switch (input.kind) {
+    case "pareto":
+      return input.data.length * 3;
+    case "radar":
+      return input.axes.length * input.series.length;
     case "waterfall":
       return input.steps.length + 2;
     case "area":

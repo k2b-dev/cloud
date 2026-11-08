@@ -13,6 +13,7 @@ const statCellMessages = i18n.define({
       retry: "Try again",
       reload: "Reload",
       loading: "Loading",
+      noValue: "No value",
     },
     de: {
       points: "Pkt.",
@@ -23,6 +24,7 @@ const statCellMessages = i18n.define({
       retry: "Erneut versuchen",
       reload: "Neu laden",
       loading: "Wird geladen",
+      noValue: "Kein Wert",
     },
   },
 });

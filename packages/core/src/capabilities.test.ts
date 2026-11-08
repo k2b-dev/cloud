@@ -389,6 +389,20 @@ describe("Core AI capabilities", () => {
     });
   });
 
+  test("own-chat discovery selects place chats only for an explicit exact place ref", async () => {
+    const list = spyOn(aiConversations, "listConversations").mockResolvedValue([]);
+    const place = { type: "fixture.conversation", id: "Marta1" };
+    await aiCapabilities.queries["ai.chats.search"].run({ query: "Marta", archived: false, limit: 10, place }, context);
+    expect(list).toHaveBeenCalledWith({
+      ownerUserId: user.id,
+      search: "Marta",
+      refs: undefined,
+      place: "fixture.conversation:Marta1",
+      archived: false,
+      limit: 10,
+    });
+  });
+
   test("searches only the current user's chats and returns an open link", async () => {
     const list = spyOn(aiConversations, "listConversations").mockResolvedValue([chat]);
 
@@ -398,6 +412,7 @@ describe("Core AI capabilities", () => {
       ownerUserId: user.id,
       search: "release",
       refs: undefined,
+      place: "none",
       archived: false,
       limit: 10,
     });
@@ -500,7 +515,15 @@ describe("Core AI capabilities", () => {
     const globalResult = await aiCapabilities.queries["ai.chats.resources"].run({ query: "release", limit: 20 }, context);
 
     expect(local).toHaveBeenCalledWith({ conversationId: chat.id, search: undefined, before: undefined, limit: 20 });
-    expect(global).toHaveBeenCalledWith({ ownerUserId: user.id, search: "release", before: undefined, limit: 20 });
+    expect(global).toHaveBeenCalledWith({ ownerUserId: user.id, place: "none", search: "release", before: undefined, limit: 20 });
+    await aiCapabilities.queries["ai.chats.resources"].run({ place: { type: "fixture.conversation", id: "Marta1" }, limit: 20 }, context);
+    expect(global).toHaveBeenLastCalledWith({
+      ownerUserId: user.id,
+      place: "fixture.conversation:Marta1",
+      search: undefined,
+      before: undefined,
+      limit: 20,
+    });
     expect(localResult).toMatchObject({ ok: true, data: { refs: [resource.ref] } });
     expect(globalResult).toMatchObject({ ok: true, data: { data: [{ ref: resource.ref, chat: { id: chat.shortId } }] } });
   });

@@ -39,6 +39,15 @@ It works with two kinds of tools:
   so a new app is usable without any Assistant setup. List them with
   `cld capabilities catalog --json`.
 
+## Find chats at places
+
+A chat at an application resource stays private to its owner. The ordinary
+chat list omits these chats. Use `cld assistant chats list --place any` to list
+them, or `--place example.conversation:Marta1` for an exact place. The table
+includes a `place` column; JSON includes `place.ref` and the stored `place.title`.
+Starting over archives the current place chat; its replacement is created with
+the next message. Unread and attention counts include place chats.
+
 ## Work in a local folder
 
 Start `cld ai` in the folder you want to read or organize. The default `ask`

@@ -443,6 +443,7 @@ describe("global capability search", () => {
             {
               ref: { type: "demo.item", id: "42" },
               title: "Answer",
+              group: "At places",
               preview: "A result",
               context: "Task in Planning",
               status: "Open",
@@ -469,6 +470,7 @@ describe("global capability search", () => {
           readable: false,
           ref: { type: "demo.item", id: "42" },
           title: "Answer",
+          group: "At places",
           href: "/app/demo/42",
           preview: "A result",
           context: "Task in Planning",

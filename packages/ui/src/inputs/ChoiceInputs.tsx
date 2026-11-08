@@ -129,6 +129,8 @@ export type SliderProps = FieldProps &
     value: MaybeAccessor<number>;
     formatValue?: (value: number) => string;
     showValue?: boolean;
+    /** Place the value and reset beside the label. Without a label, they stay beside the track. */
+    valuePlacement?: "control" | "label";
     center?: boolean;
     /**
      * The value the setting starts from. With it, a changed value shows in the accent color and a reset button
@@ -152,6 +154,7 @@ export function Slider(props: SliderProps): JSX.Element {
     "onValueCommit",
     "required",
     "showValue",
+    "valuePlacement",
     "value",
     "formatValue",
   ]);
@@ -166,12 +169,13 @@ export function Slider(props: SliderProps): JSX.Element {
   };
   const track = () => {
     const position = percentage();
+    const fill = rest.disabled ? "var(--k2b-text-muted)" : "var(--k2b-action)";
     if (local.center) {
       const low = Math.min(50, position);
       const high = Math.max(50, position);
-      return `linear-gradient(to right, var(--k2b-surface-muted) 0 ${low}%, var(--k2b-action) ${low}% ${high}%, var(--k2b-surface-muted) ${high}% 100%)`;
+      return `linear-gradient(to right, var(--k2b-surface-muted) 0 ${low}%, ${fill} ${low}% ${high}%, var(--k2b-surface-muted) ${high}% 100%)`;
     }
-    return `linear-gradient(to right, var(--k2b-action) 0 ${position}%, var(--k2b-surface-muted) ${position}% 100%)`;
+    return `linear-gradient(to right, ${fill} 0 ${position}%, var(--k2b-surface-muted) ${position}% 100%)`;
   };
   const resetValue = () => local.defaultValue ?? (local.center ? (min() + max()) / 2 : min());
   const changed = () => local.defaultValue !== undefined && value() !== local.defaultValue;
@@ -184,18 +188,46 @@ export function Slider(props: SliderProps): JSX.Element {
     // The button hides once the value is back, so focus returns to the slider it belongs to.
     input?.focus();
   };
+  const inLabel = () => local.valuePlacement === "label" && !!local.label;
+  const Value = () => (
+    <Show when={local.showValue ?? true}>
+      <output for={meta.controlId}>{local.formatValue?.(value()) ?? value()}</output>
+    </Show>
+  );
+  const Reset = () => (
+    <Show when={local.defaultValue !== undefined}>
+      <IconButton
+        class="k2b-slider__reset"
+        size="xs"
+        label={resetLabel()}
+        aria-describedby={local.label ? meta.labelId : undefined}
+        disabled={rest.disabled || !changed()}
+        onClick={reset}
+      >
+        <i class="ti ti-arrow-back-up" aria-hidden="true" />
+      </IconButton>
+    </Show>
+  );
 
   return (
     <Field
       class={local.class}
       label={local.label}
+      labelEnd={
+        inLabel() ? (
+          <div class="k2b-slider__value" data-changed={changed() ? "true" : undefined}>
+            <Reset />
+            <Value />
+          </div>
+        ) : undefined
+      }
       description={local.description}
       error={error()}
       meta={meta}
       required={local.required}
       disabled={rest.disabled}
     >
-      <div class="k2b-slider" data-changed={changed() ? "true" : undefined}>
+      <div class="k2b-slider" data-changed={changed() ? "true" : undefined} data-value-placement={inLabel() ? "label" : undefined}>
         <input
           {...rest}
           ref={input}
@@ -211,20 +243,9 @@ export function Slider(props: SliderProps): JSX.Element {
             commitFieldValue(local, next);
           }}
         />
-        <Show when={local.showValue ?? true}>
-          <output for={meta.controlId}>{local.formatValue?.(value()) ?? value()}</output>
-        </Show>
-        <Show when={local.defaultValue !== undefined}>
-          <IconButton
-            class="k2b-slider__reset"
-            size="xs"
-            label={resetLabel()}
-            aria-describedby={local.label ? meta.labelId : undefined}
-            disabled={rest.disabled || !changed()}
-            onClick={reset}
-          >
-            <i class="ti ti-arrow-back-up" aria-hidden="true" />
-          </IconButton>
+        <Show when={!inLabel()}>
+          <Value />
+          <Reset />
         </Show>
       </div>
     </Field>

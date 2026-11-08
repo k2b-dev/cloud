@@ -753,13 +753,13 @@ suite("mail message identity and threading on generic IMAP", () => {
           to: [alice, bob],
           date: new Date("2026-08-11T09:00:00.000Z"),
         }),
-        // Each answers only the sender, so the two replies share no outside address.
+        // Each reply retains the other participant while the original is not synchronized.
         fromAlice: envelope({
           folder: "inbox",
           messageId: `<branches-${key}-alice-${suffix}@example.test>`,
           subject: `Re: Planning ${key}`,
           from: alice,
-          to: [supportAddress],
+          to: [supportAddress, bob],
           date: new Date("2026-08-12T09:00:00.000Z"),
           inReplyTo: original,
           references: [original],
@@ -769,7 +769,7 @@ suite("mail message identity and threading on generic IMAP", () => {
           messageId: `<branches-${key}-bob-${suffix}@example.test>`,
           subject: `Re: Planning ${key}`,
           from: bob,
-          to: [supportAddress],
+          to: [supportAddress, alice],
           date: new Date("2026-08-13T09:00:00.000Z"),
           inReplyTo: original,
           references: [original],
@@ -785,6 +785,7 @@ suite("mail message identity and threading on generic IMAP", () => {
     const conversationA = await conversationOf(fromBobA);
     expect(await conversationOf(fromAliceA)).toBe(conversationA);
     expect(await conversationOf(originalA)).toBe(conversationA);
+    expect(await conversationOf(fromBobA)).toBe(conversationA);
 
     // The mailbox never holds the original, and the replies arrive in order.
     const second = thread("b");

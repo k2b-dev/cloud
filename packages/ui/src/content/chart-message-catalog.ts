@@ -4,6 +4,8 @@ export const chartMessages = i18n.define({
   baseLocale: "en",
   messages: {
     en: {
+      chartBarStart: "of start",
+      chartBarMore: ({ n }: { n: number }) => `${n} more`,
       chartView: "Chart view",
       chartDiagram: "Diagram",
       chartData: "Table",
@@ -35,6 +37,8 @@ export const chartMessages = i18n.define({
         const labels: Record<string, string> = {
           x: "X",
           y: "Y",
+          previous: "Previous",
+          cumulative: "Cumulative",
           balance: "Balance",
           inflow: "In",
           outflow: "Out",
@@ -42,6 +46,9 @@ export const chartMessages = i18n.define({
           change: "Change",
           value: "Value",
           percent: "Share",
+          startPercent: "Share of start",
+          previousPercent: "Share of previous step",
+          rank: "Rank",
           total: "Total",
           areaTotal: "Total",
           from: "From",
@@ -80,6 +87,8 @@ export const chartMessages = i18n.define({
       resetTimelineView: "Reset timeline view",
     },
     de: {
+      chartBarStart: "vom Start",
+      chartBarMore: ({ n }: { n: number }) => `${n} weitere`,
       chartView: "Diagrammansicht",
       chartDiagram: "Diagramm",
       chartData: "Tabelle",
@@ -111,6 +120,8 @@ export const chartMessages = i18n.define({
         const labels: Record<string, string> = {
           x: "X",
           y: "Y",
+          previous: "Vorher",
+          cumulative: "Kumuliert",
           balance: "Stand",
           inflow: "Rein",
           outflow: "Raus",
@@ -118,6 +129,9 @@ export const chartMessages = i18n.define({
           change: "Änderung",
           value: "Wert",
           percent: "Anteil",
+          startPercent: "Anteil am Start",
+          previousPercent: "Anteil am vorigen Schritt",
+          rank: "Rang",
           total: "Gesamt",
           areaTotal: "Zusammen",
           from: "Von",
