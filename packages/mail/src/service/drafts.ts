@@ -1150,8 +1150,6 @@ export const materializeDraftSeed = async (params: {
   if (!actor) return fail(err.forbidden("Draft author is invalid"));
   try {
     const result = await sql.begin(async (tx) => {
-      // Match command lock order before conversation/draft locks.
-      await tx`SELECT id FROM mail.mailboxes WHERE id = ${params.mailboxId}::uuid FOR SHARE`;
       const requestHash = await sha256Json(parsed.data.origin);
       const keyColumn = parsed.data.origin.kind === "derive" ? "derivation" : "materialization";
       const lockKey = [params.mailboxId, actor.kind, actorId(actor), keyColumn, parsed.data.idempotencyKey].join(":");
@@ -1283,8 +1281,6 @@ export const deriveDraftFromMessage = async (params: {
   if (!actor) return fail(err.forbidden("Draft author is invalid"));
   try {
     const result = await sql.begin(async (tx) => {
-      // Match command lock order before conversation/draft locks.
-      await tx`SELECT id FROM mail.mailboxes WHERE id = ${params.mailboxId}::uuid FOR SHARE`;
       const allowed = await requireMailboxPermission(params.context, params.mailboxId, "write", tx);
       if (!allowed.ok) return allowed;
       const request = {
@@ -1363,8 +1359,6 @@ export const createDeliveryRecoveryDraft = async (params: {
   if (!actor) return fail(err.forbidden("Draft author is invalid"));
   try {
     const result = await sql.begin(async (tx) => {
-      // Match command lock order before conversation/draft locks.
-      await tx`SELECT id FROM mail.mailboxes WHERE id = ${params.mailboxId}::uuid FOR SHARE`;
       const allowed = await requireMailboxAccess(params.context, params.mailboxId, "write", tx);
       if (!allowed.ok) return allowed;
       // Recovery starts a new conversation, which only mailbox-wide writers may do.
@@ -2537,8 +2531,6 @@ export const recoverDraftDocumentRest = async (params: {
     const actor = mutableActor(params.context);
     if (!actor) return fail(err.forbidden("Draft editor is invalid"));
     return await sql.begin(async (db) => {
-      // Match command lock order before conversation/draft locks.
-      await db`SELECT id FROM mail.mailboxes WHERE id = ${params.mailboxId}::uuid FOR SHARE`;
       const allowed = await requireDraftAccess(params.context, params.mailboxId, params.draftId, "write", db);
       if (!allowed.ok) return allowed;
       const [source] = await db<
