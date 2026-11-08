@@ -167,8 +167,9 @@ other people's chats are refused. See the [weekly report](template-weekly-report
 
 When you rebuild an Assistant routine, keep its prompt, timing and IANA time
 zone, use `deliver` for a bounded result and `run` when the work needs tools,
-and leave the original routine in place until the person has switched on the
-new version and accepts it.
+and retain the original definition as evidence. Stop its admission and timers
+and settle open runs before the person switches on the replacement; never
+leave both processing the same occurrence.
 
 ## Start a Gustav turn
 

@@ -1,8 +1,17 @@
 import { expect, test } from "bun:test";
 import { AI_SHORT_ID_PATTERN, ChatTaskExportPageSchema, ChatTaskGrantsSchema } from "@k2b/cloud/ai";
+import { compileCapabilityManifest } from "@k2b/cloud/capabilities/testing";
+import { createCodeTestBridge, generateCodeSdk } from "@k2b/cloud/code";
 import { z } from "zod";
+import { aiChatRunAction, aiChatRunReadQuery } from "../../../core/src/ai-chat-run";
 import { mailAutomationExportPageSchema } from "../../../mail/src/automation-export-contracts";
-import { AUTOMATION_REBUILD_CASES, type AutomationRebuildTrace, scoreAutomationRebuild } from "./automation-rebuild";
+import { ConversationListDataSchema, ConversationListInputSchema } from "../../../mail/src/capability-contracts";
+import {
+  AUTOMATION_REBUILD_CASES,
+  AUTOMATION_REBUILD_MOCKS,
+  type AutomationRebuildTrace,
+  scoreAutomationRebuild,
+} from "./automation-rebuild";
 
 const passing = (): AutomationRebuildTrace => {
   const config = { codeId: "fixture-code", baseVersionId: null };
@@ -68,6 +77,50 @@ test("fixture chat and mailbox IDs are usable by their owning APIs", () => {
         for (const grant of entry.grants) if ("mailboxId" in grant.fixedInput) expect(grant.fixedInput.mailboxId).toMatch(mailId);
       }
     }
+});
+
+test("paging mock keeps domain arrays separate from continuation metadata, even on an empty page", () => {
+  const mock = AUTOMATION_REBUILD_MOCKS[0]!;
+  expect(mock.operation).toBe("mail.conversation.list");
+  let cursor: string | undefined;
+  for (const reply of mock.replies) {
+    if (!reply.ok) throw new Error("Expected fictional list data");
+    ConversationListInputSchema.parse({ limit: 1, cursor });
+    expect<unknown>(ConversationListDataSchema.parse(reply.data)).toEqual(reply.data);
+    cursor = reply.page?.hasMore ? reply.page.nextCursor : undefined;
+  }
+  expect(mock.replies[0]).toMatchObject({ data: [], page: { hasMore: true, nextCursor: "opaque-fixture-cursor" } });
+  expect(mock.replies[1]).toMatchObject({ data: [], page: { hasMore: false } });
+  expect(cursor).toBeUndefined();
+});
+
+test("agent mocks use the real start Action and snapshot Query contracts with their different SDK results", async () => {
+  const manifest = compileCapabilityManifest("core", {
+    protocolVersion: 2,
+    types: { "ai.chat": { title: "Gustav chat", description: "The owner's original Gustav chat." } },
+    queries: { "ai.chat.run.read": aiChatRunReadQuery },
+    actions: { "ai.chat.run": aiChatRunAction },
+  });
+  const sdk = generateCodeSdk([manifest], { mode: "personal" });
+  const caseData = AUTOMATION_REBUILD_CASES[2];
+  const [start, read] = caseData.mockExamples;
+  if (!start || !read) throw new Error("Missing agent mocks");
+  const bridge = createCodeTestBridge(sdk.manifest, caseData.mockExamples);
+  bridge.begin();
+  const run = await bridge.call(start.operation, z.json().parse(caseData.expectedInvocation));
+  const started = start.replies[0]!;
+  if (!started.ok) throw new Error("Expected fictional start result");
+  expect(run).toEqual(started.data);
+  const snapshot = await bridge.call(read.operation, {
+    call: { capability: read.operation, target: read.target, refs: {}, input: read.input! },
+    metadata: {},
+  });
+  const later = read.replies[0]!;
+  if (!later.ok) throw new Error("Expected fictional snapshot");
+  expect(snapshot).toEqual({ data: later.data });
+  expect(run).toMatchObject({ status: "queued" });
+  expect(snapshot).toMatchObject({ data: { status: "waiting_for_approval" } });
+  expect(bridge.failure()).toBeNull();
 });
 
 test("scores same-source authoring evidence, with semantic review still required", () => {

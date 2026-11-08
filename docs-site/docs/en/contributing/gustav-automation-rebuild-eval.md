@@ -13,10 +13,17 @@ updated: 2026-11-08
 The `mail-rule`, `routine` and `routine-agent` cases in
 `packages/assistant/src/evals/automation-rebuild.ts` provide fictional version 1
 exports, requests and review rubrics. `automation-rebuild.test.ts` checks all
-three JSON fixtures against the real `mailAutomationExportPageSchema` and
+three export JSON fixtures against the real `mailAutomationExportPageSchema` and
 `ChatTaskExportPageSchema` and checks routine grants with `ChatTaskGrantsSchema`.
 These are the schemas used by the owning export APIs. Fictional definitions
 keep their exact v1 fields; no legacy service or live export is needed.
+`automation-rebuild-mocks-v1.json` supplies fictional Query/Action replies:
+an empty Mail page with `hasMore: true` followed by a terminal page, and a
+Gustav start Action plus a snapshot Query. Case output includes available
+`mockExamples`. The Mail list is a paging probe, not a polling recipe for the
+event-driven rule. These are contract probes, not complete replacement tests.
+Tests check the Mail probe against its owning input/data schemas and the
+agent probes through the real generated Core SDK's fake bridge. They make no agent or application calls.
 
 Run the export-contract and offline scorer tests:
 
@@ -59,7 +66,10 @@ including nonmatching arrivals, refusal, revision conflicts and repeat delivery
 without duplicate tags. The tag action declares `idempotency: "none"`; review
 the current-state guard rather than inventing receipt keys. For the routine case,
 review the once schedule, UTC instant, generated text and explicitly chosen
-new Chat destination.
+new Chat destination. If no discovery/create operation is available, the
+person creates that conversation and supplies its link. Compare candidates with the Skill's `mail-automation`
+and `weekly-report` templates, and its AI reference's `chat.run` pattern;
+reuse those patterns while retaining only the exported behavior.
 
 For `routine-agent`, review the open-ended task separately from text generation.
 The personal Code must belong to the exported owner. Its schedule keeps
@@ -68,10 +78,10 @@ The case's `expectedInvocation` records the exact capability coordinates:
 `core.ai.chat.run`, target `{ type: "core.ai.chat", id: "ExMndy" }`, and domain
 input `{ prompt }` containing the exported instructions. Optional `context`
 contains source data only; `chatId` and grants are not input fields. The
-required idempotency key is invocation metadata; the generated SDK accepts
-it alongside `prompt`. The schedule's stable name belongs in its third
-argument. The agent turn chooses tools
-within the owner's budget, current access and approvals. Compare the exported
+shown idempotency key is an illustrative value, not a required spelling;
+a stable key is required invocation metadata; the generated SDK accepts
+it alongside `prompt`. Preserve a stable schedule name as in the Skill.
+The agent turn chooses tools within the owner's budget, current access and approvals. Compare the exported
 query grants and fixed inputs with current permissions; the export grants
 nothing. The explanation must name which operation and target limits still
 apply, describe normal chat tool access and approvals, and require the person
@@ -80,14 +90,22 @@ exact prompt/chat, owner mismatch, budget refusal, the documented approval
 wait/outcome, busy-chat refusal and retries. The reply
 `{ id, chatId, status, reason, origin }` returns promptly; admission does not
 prove completion. `core.ai.chat.run.read` on the same chat with `{ id }`
-reads a later snapshot. An approval wait is a state of the agent turn in the
-chat, not a refusal to start it. Do not start a real agent turn during
+reads a later snapshot in `data`. Every domain Query returns `{ data, page? }`;
+Actions, including the start call, return their domain data directly. A list
+continues with the exact `page.nextCursor` only while `page.hasMore` is true,
+within a fixed bound. Missing/terminal `page` ends it; a short or empty array
+does not. Report incomplete results when the bound is reached. Mock replies
+keep domain `data` and optional `page` beside `ok`, without double wrapping.
+An approval wait is a state of the agent turn in the chat, not a refusal to start it. Do not start a real agent turn during
 fictional testing. A text-only call, delivery-only call, precompiled tool
 sequence or different chat fails semantic review.
 
 Review idempotency within one Code run: the same key recovers its original
-turn and changed input conflicts. A new Code run may start another turn with
-the same key; the evaluation must not claim deduplication across runs. Review
+turn and changed input conflicts. If the handler retries, test this within one
+entrypoint invocation, without adding duplicate starts just to pass. Use
+separate fixtures for independent Code runs: runs within a fixture share fake
+receipts. A new Code run may start another turn with the same key; fixture-level
+replay must not be claimed as evidence of deduplication across Code runs. Review
 actual chat usage against the owner's Assistant allowance and the existing
 Code daily USD limits, without a flat debit of the full Code attempt allowance.
 
