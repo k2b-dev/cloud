@@ -1388,6 +1388,12 @@ export class AiConversationCreationError extends Error {
   }
 }
 
+export class AiConversationRestoreConflict extends Error {
+  constructor() {
+    super("Archive the current chat at this place before restoring an older one.");
+  }
+}
+
 const conversationPlaceFilter = (place: import("./types").AiConversationPlaceFilter = "none") => {
   if (place === "any") return sql`conversation.place_type IS NOT NULL`;
   if (place === "none") return sql`conversation.place_type IS NULL`;
@@ -1983,6 +1989,7 @@ export const aiConversations: AiConversationService = {
       LEFT JOIN ai.turns source_turn ON source_turn.id = indexed.source_turn_id
       WHERE conversation.created_by_user_id = ${input.ownerUserId}::uuid
         AND conversation.archived_at IS NULL
+        AND (${conversationPlaceFilter(input.place)})
         AND (${pattern}::text IS NULL OR LOWER(COALESCE(indexed.title, '') || ' ' || indexed.resource_type || ' ' || indexed.resource_id || ' ' || conversation.title) LIKE ${pattern})
         AND (${cursor?.at ?? null}::timestamptz IS NULL OR (indexed.last_seen_at, indexed.resource_type, indexed.resource_id, conversation.short_id) <
           (${cursor?.at ?? null}::timestamptz, ${cursor?.type ?? null}::text, ${cursor?.id ?? null}::text, ${cursor?.chat ?? null}::text))
@@ -2459,10 +2466,6 @@ export const aiConversations: AiConversationService = {
         WHERE id = ${input.conversationId}
           AND (${input.ownerUserId ?? null}::uuid IS NULL OR created_by_user_id = ${input.ownerUserId ?? null})
           AND archived_at IS NOT NULL
-          AND NOT EXISTS (SELECT 1 FROM ai.conversations current_place
-            WHERE current_place.created_by_user_id = ai.conversations.created_by_user_id
-              AND current_place.place_type = ai.conversations.place_type AND current_place.place_id = ai.conversations.place_id
-              AND current_place.archived_at IS NULL)
         RETURNING id
       ), considered_turns AS (
         UPDATE ai.turns
@@ -2488,7 +2491,7 @@ export const aiConversations: AiConversationService = {
         "constraint" in error &&
         error.constraint === "idx_ai_conversations_active_place"
       )
-        return [];
+        throw new AiConversationRestoreConflict();
       throw error;
     });
     return rows[0] ? loadConversationSummary(input) : null;

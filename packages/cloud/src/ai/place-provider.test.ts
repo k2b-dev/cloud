@@ -130,7 +130,7 @@ test("does not dispatch for types without a valid declaration", async () => {
 test("keeps OAuth ceilings through the real dispatcher without querying the provider", async () => {
   const h = harness();
   const authority = { ...actor(), credentialKind: "oauth" as const, scopes: ["write"] };
-  spyOn(executionStore, "recordCapabilityExecution").mockResolvedValue();
+  spyOn(executionStore, "recordCapabilityExecution").mockResolvedValue("fixture-execution");
   expect(await runPlaceProvider(authority, ref, { dependencies: { getCapability: h.dependencies.getCapability } })).toEqual({
     unavailable: true,
   });

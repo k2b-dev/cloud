@@ -3,7 +3,7 @@ import { resolveCapabilityOperationTitle } from "../_internal/capabilities";
 import { getCapability } from "../_internal/registry";
 import { type CloudResourceRef, capabilityActionPolicy, cloudResourceRefAppId } from "../contracts/capabilities";
 import { getLocale } from "../server/locale";
-import type { AuthContext } from "../server/middleware/auth";
+import { type AuthContext, auth } from "../server/middleware/auth";
 import { appAccessAuthority } from "../services/app-access";
 import { panelContextConsent } from "../services/panel-context-consent";
 import { resolveAppIdentityPresentation } from "../shared/app-presentation";
@@ -20,6 +20,7 @@ export type PlaceAssistantState =
       ref: CloudResourceRef;
       title: string | null;
       conversationId: string | null;
+      retry?: true;
     }
   | {
       state: "available";
@@ -52,15 +53,41 @@ export const createPlaceAssistantLoader =
     if (!(await deps.consent(actor.user.id, "assistant"))?.allowed) return { state: "consent_required" };
     const app = await deps.capability(cloudResourceRefAppId(scope));
     const type = app?.manifest.types.find((entry) => `${app.appId}.${entry.localId}` === scope.type);
-    if (!app || !type?.assistant) return { state: "none" };
-    const place = await deps.provider(actor, scope);
+    if (!app || !type?.assistant) {
+      const conversation = await deps.conversation({ ownerUserId: actor.user.id, ref: scope });
+      if (!app) {
+        return {
+          state: "unavailable",
+          ref: scope,
+          title: conversation?.place?.title ?? null,
+          conversationId: conversation?.shortId ?? null,
+          retry: true,
+        };
+      }
+      return conversation
+        ? { state: "unavailable", ref: scope, title: conversation.place?.title ?? null, conversationId: conversation.shortId }
+        : { state: "none" };
+    }
+    const place = await deps.provider(auth.getAuthority(c), scope, { locale: getLocale(c), signal: c.req.raw.signal });
     const conversation = await deps.conversation({ ownerUserId: actor.user.id, ref: scope });
     if ("unavailable" in place) {
-      return { state: "unavailable", ref: scope, title: conversation?.place?.title ?? null, conversationId: conversation?.shortId ?? null };
+      return {
+        state: "unavailable",
+        ref: scope,
+        title: conversation?.place?.title ?? null,
+        conversationId: conversation?.shortId ?? null,
+        ...(place.retry ? { retry: true } : {}),
+      };
     }
     const locale = getLocale(c);
     const subject = { actor, accessSubject: c.get("accessSubject") };
-    const skills = await deps.skills(subject, { authority: appAccessAuthority(c) });
+    const skills = (
+      await Promise.all(
+        place.skills.map((name) =>
+          deps.skills(subject, { name, enabledOnly: true, modelInvocableOnly: true, authority: appAccessAuthority(c) }),
+        ),
+      )
+    ).flat();
     const projectIds = conversation?.projectId ? await deps.projectIds([conversation.projectId], subject) : null;
     return {
       state: "available",

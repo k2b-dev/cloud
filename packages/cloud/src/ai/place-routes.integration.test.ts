@@ -28,7 +28,7 @@ suiteFor("database", "valkey")("place chat list API", () => {
       const place = { ref: { type: "fixture.conversation", id: "Marta1" }, title: "Marta" };
       const chat = await aiConversations.createPlaceConversation({ ownerUserId: lea, place, draft: [{ type: "text", text: "Help" }] });
       const normal = await aiConversations.createConversation({ ownerUserId: lea, title: "Ordinary" });
-      await sql`UPDATE ai.conversations SET background_received_at='2026-11-08T00:00:00Z' WHERE id=${chat.id}::uuid`;
+      await sql`UPDATE ai.conversations SET last_viewed_at='2026-11-07T00:00:00Z', background_received_at='2026-11-08T00:00:00Z' WHERE id=${chat.id}::uuid`;
       for (const endpoint of ["/conversations", "/conversations/page"]) {
         const ordinary = await aiRoutes.request(endpoint, { headers: headers(0) });
         expect(ordinary.status).toBe(200);
@@ -55,6 +55,11 @@ suiteFor("database", "valkey")("place chat list API", () => {
       expect(deniedStream.status).toBe(404);
       expect(deniedStream.headers.get("Content-Type")).not.toContain("text/event-stream");
       expect(await aiConversations.findPlaceConversation({ ownerUserId: ben, ref: place.ref })).toBeNull();
+      await aiConversations.archivePlaceConversation({ ownerUserId: lea, conversationId: chat.id, ref: place.ref });
+      await aiConversations.createPlaceConversation({ ownerUserId: lea, place, draft: [{ type: "text", text: "Again" }] });
+      const blocked = await aiRoutes.request(`/conversations/${chat.shortId}/restore`, { method: "POST", headers: headers(0) });
+      expect(blocked.status).toBe(409);
+      expect(await blocked.json()).toMatchObject({ code: "CONFLICT", message: expect.stringContaining("Archive the current chat") });
     } finally {
       for (const token of tokens) await session.revoke(token);
       for (const user of users) {

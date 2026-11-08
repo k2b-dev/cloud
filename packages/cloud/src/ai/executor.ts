@@ -1514,11 +1514,13 @@ export class AiTurnExecutor {
       ...(isFresh ? { input: turnInput } : {}),
       provider:
         chat?.place && defaultToolSource
-          ? withPlaceAssistantContext(nextMessage.wrap(turnPolicy.provider), () =>
+          ? withPlaceAssistantContext(nextMessage.wrap(turnPolicy.provider), (signal) =>
               loadPlaceAssistantRound({
                 conversationId,
                 persistedActor: material.actor,
-                skillsEnabled: skillCatalogOffered,
+                skillsEnabled: activeTools.some((tool) => tool.def.name === "load_skill"),
+                locale: promptLocale,
+                signal,
               }),
             )
           : nextMessage.wrap(turnPolicy.provider),

@@ -73,8 +73,10 @@ a conversation resource, so the existing exact `refs` filter can find it.
 { total, unread, needsAttention } }` for the current person's non-archived chats.
 The first two counts include place chats; `places` gives their separate counts.
 Search presents place chats in **At places** (**An Orten** in German).
-The own-chat discovery tool excludes place chats unless its `place` input gives
-an exact resource reference.
+The `ai.chats.search` and `ai.chats.resources` tools exclude place chats unless
+their `place` input gives an exact resource reference. Cross-chat resource
+listing at `GET /api/ai/resources` also excludes place chats; resources in a
+known chat remain available through its own resource endpoint.
 
 Use `cld assistant chats list --place any` or `--place example.conversation:Marta1`
 to list place chats. The default excludes them; table output has a `place` column.

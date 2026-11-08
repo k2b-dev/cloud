@@ -2,8 +2,10 @@ import { expect, mock, test } from "bun:test";
 import { Hono } from "hono";
 import { createAssistantPlaceFixture, PLACE_FIXTURE_PEOPLE, PLACE_FIXTURE_TYPE } from "../../../../scripts/fixtures/assistant-place";
 import { compileCapabilities } from "../_internal/capabilities";
+import type { getCapability } from "../_internal/registry";
 import type { AssistantPlaceResult } from "../contracts/assistant-place";
 import type { CloudResourceRef } from "../contracts/capabilities";
+import type { RequestAuthority } from "../server";
 import type { AuthContext } from "../server/middleware/auth";
 import { buildProjectedUser } from "../services/session/user";
 import { AiCreateConversationInputSchema } from "./http";
@@ -49,9 +51,9 @@ const fixture = () => {
   };
   const deps = {
     consent: mock(async (_person: string, _provider: string) => ({ allowed: true, revision: 1 })),
-    capability: mock(async (_app: string) => app),
+    capability: mock<typeof getCapability>(async (_app: string) => app),
     provider: mock(
-      async (_actor: AuthContext["Variables"]["actor"], _ref: CloudResourceRef): Promise<AssistantPlaceResult> => ({
+      async (_authority: RequestAuthority, _ref: CloudResourceRef): Promise<AssistantPlaceResult> => ({
         title: "Marta Example",
         context: "Private app context",
         tools: ["reply.set"],
@@ -124,6 +126,44 @@ test("an unavailable place retains the person's chat and title snapshot without 
     conversationId: null,
   });
   expect(deps.skills).not.toHaveBeenCalled();
+});
+
+test("a missing app is retryable for existing and not-yet-created place chats", async () => {
+  const { deps, server } = fixture();
+  deps.capability.mockResolvedValue(null);
+  expect(await (await server().request("/")).json()).toEqual({
+    state: "unavailable",
+    ref,
+    title: "Marta snapshot",
+    conversationId: "aBc234",
+    retry: true,
+  });
+  expect(await (await server(PLACE_FIXTURE_PEOPLE.ben).request("/")).json()).toEqual({
+    state: "unavailable",
+    ref,
+    title: null,
+    conversationId: null,
+    retry: true,
+  });
+  expect(deps.provider).not.toHaveBeenCalled();
+});
+
+test("removing the assistant declaration retains only the existing chat", async () => {
+  const { deps, server } = fixture();
+  const app = await deps.capability("place-fixture");
+  if (!app) throw new Error("Fixture app missing");
+  deps.capability.mockResolvedValue({
+    ...app,
+    manifest: { ...app.manifest, types: app.manifest.types.map((type) => ({ ...type, assistant: undefined })) },
+  });
+  expect(await (await server().request("/")).json()).toEqual({
+    state: "unavailable",
+    ref,
+    title: "Marta snapshot",
+    conversationId: "aBc234",
+  });
+  expect(await (await server(PLACE_FIXTURE_PEOPLE.ben).request("/")).json()).toEqual({ state: "none" });
+  expect(deps.provider).not.toHaveBeenCalled();
 });
 
 test("place creation requires the first message and keeps the normal creation contract", () => {

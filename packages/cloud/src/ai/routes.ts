@@ -111,6 +111,7 @@ import { aiSkills } from "./skills";
 import {
   AI_TOOL_CHECK_STALE_MS,
   AiConversationCreationError,
+  AiConversationRestoreConflict,
   aiConversations,
   claimAiToolCheck,
   readAiToolCheck,
@@ -614,12 +615,22 @@ export const aiRoutes = (() => {
           const place = await loadPlaceAssistant(c, body.place);
           if (place.state === "consent_required") return respond(c, fail(err.forbidden("Allow Assistant to see the current place first.")));
           if (place.state !== "available") return respond(c, fail(err.notFound("Place")));
-          const conversation = await aiConversations.createPlaceConversation({
-            ownerUserId: ctx.ownerUserId,
-            place: { ref: body.place, title: place.title },
-            draft: body.draft!.content,
-          });
-          return respond(c, ok(await publicConversationFor(conversation, resourceContext(c))), 201);
+          try {
+            const conversation = await aiConversations.createPlaceConversation({
+              requestId: body.requestId,
+              ownerUserId: ctx.ownerUserId,
+              place: { ref: body.place, title: place.title },
+              draft: body.draft!.content,
+            });
+            const project = conversation.projectId ? await aiProjects.get(conversation.projectId, resourceContext(c), "read") : null;
+            if (conversation.projectId && !project) return respond(c, fail(err.notFound("Project")));
+            return respond(c, ok(publicConversation(conversation, project?.shortId ?? null)), 201);
+          } catch (error) {
+            if (error instanceof AiConversationCreationError) {
+              return respond(c, fail(error.reason === "conflict" ? err.conflict(error.message) : err.notFound("Conversation")));
+            }
+            throw error;
+          }
         }
         const project = body.projectId ? await aiProjects.getByShortId(body.projectId, resourceContext(c), "read") : null;
         if (body.projectId && !project) return respond(c, fail(err.notFound("Project")));
@@ -931,11 +942,17 @@ export const aiRoutes = (() => {
         if (ctx instanceof Response) return ctx;
         const conversation = await loadConversation(c, ctx, true);
         if (!conversation) return notFound(c);
-        const restored = await aiConversations.restoreConversation({
-          conversationId: conversation.id,
-          ownerUserId: ctx.ownerUserId,
-        });
-        return restored ? respond(c, ok(await publicConversationFor(restored, resourceContext(c)))) : notFound(c);
+        try {
+          const restored = await aiConversations.restoreConversation({
+            conversationId: conversation.id,
+            ownerUserId: ctx.ownerUserId,
+          });
+          return restored ? respond(c, ok(await publicConversationFor(restored, resourceContext(c)))) : notFound(c);
+        } catch (error) {
+          if (error instanceof AiConversationRestoreConflict)
+            return respond(c, fail({ ...err.conflict("Place chat"), message: error.message }));
+          throw error;
+        }
       })
       .post("/conversations/:conversationId/viewed", async (c) => {
         const ctx = await resolveContext(c);
