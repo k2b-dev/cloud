@@ -1,3 +1,4 @@
+import { fmt } from "./svg-format";
 // Ported from @k2b/stdlib 0.30.0 (ISC); retain SVG and numeric algorithms until parity proves changes.
 // ==========================
 // SVG Chart Generation
@@ -13,6 +14,7 @@
 // `--stdlib-chart-c8`). Axes and labels use `currentColor` so parent `color`
 // drives theming (dark mode "just works").
 
+import type { ChartTimeAxis } from "../../content/chart-time-axis";
 import type { IntentTone } from "../../semantics";
 import { DEFAULT_STYLES } from "./default-styles";
 import type { ChartDatum } from "./types";
@@ -234,15 +236,7 @@ const DEFAULT_TICKS = 5;
 
 export const DEFAULT_MARKERS: readonly MarkerShape[] = ["circle", "square", "triangle", "diamond", "plus", "cross"];
 
-export const DEFAULT_LINE_STYLES: readonly LineStyle[] = ["solid", "dashed", "dotted", "dashdot"];
-
-/** SVG `stroke-dasharray` values per line style. Empty string = no dasharray. */
-export const LINE_DASH_PATTERNS: Record<LineStyle, string> = {
-  solid: "",
-  dashed: "6 4",
-  dotted: "2 3",
-  dashdot: "6 3 2 3",
-};
+export { DEFAULT_LINE_STYLES, LINE_DASH_PATTERNS } from "./line-paths";
 
 // ==========================
 // HELPERS (pure)
@@ -813,15 +807,6 @@ export const svgRoot = (opts: { width: number; height: number; className?: strin
 // ==========================
 
 /** Format an SVG path `d` attribute for a polyline through `points`. */
-export const linePathD = (points: ReadonlyArray<{ x: number; y: number }>): string => {
-  if (points.length === 0) return "";
-  let d = `M ${fmt(points[0]!.x)} ${fmt(points[0]!.y)}`;
-  for (let i = 1; i < points.length; i++) {
-    d += ` L ${fmt(points[i]!.x)} ${fmt(points[i]!.y)}`;
-  }
-  return d;
-};
-
 /**
  * Format an SVG path `d` for a smooth curve through `points` using cubic
  * Bezier segments with Catmull-Rom-derived vertical control points.
@@ -832,28 +817,7 @@ export const linePathD = (points: ReadonlyArray<{ x: number; y: number }>): stri
  * thirds, so x progresses linearly and never doubles back when point spacing
  * is uneven.
  */
-export const smoothPathD = (points: ReadonlyArray<{ x: number; y: number }>): string => {
-  const n = points.length;
-  if (n === 0) return "";
-  if (n === 1) return `M ${fmt(points[0]!.x)} ${fmt(points[0]!.y)}`;
-  if (n === 2) return linePathD(points);
-
-  let d = `M ${fmt(points[0]!.x)} ${fmt(points[0]!.y)}`;
-  for (let i = 0; i < n - 1; i++) {
-    const p0 = i > 0 ? points[i - 1]! : points[i]!;
-    const p1 = points[i]!;
-    const p2 = points[i + 1]!;
-    const p3 = i + 2 < n ? points[i + 2]! : points[i + 1]!;
-    const dx = p2.x - p1.x;
-    const cp1x = p1.x + dx / 3;
-    const cp1y = p1.y + (p2.y - p0.y) / 6;
-    const cp2x = p2.x - dx / 3;
-    const cp2y = p2.y - (p3.y - p1.y) / 6;
-    d += ` C ${fmt(cp1x)} ${fmt(cp1y)} ${fmt(cp2x)} ${fmt(cp2y)} ${fmt(p2.x)} ${fmt(p2.y)}`;
-  }
-  return d;
-};
-
+export { linePathD, smoothPathD } from "./line-paths";
 /**
  * Build an SVG path `d` attribute for a pie slice (or donut sector).
  *
@@ -957,37 +921,9 @@ export const markerPath = (shape: MarkerShape, cx: number, cy: number, r: number
  *  - `after`  — value updates at the data point's x and persists until next x
  *  - `middle` — vertical step at the midpoint between consecutive x-values
  */
-export const stepPathD = (points: ReadonlyArray<{ x: number; y: number }>, mode: "before" | "after" | "middle"): string => {
-  if (points.length === 0) return "";
-  if (points.length === 1) return `M ${fmt(points[0]!.x)} ${fmt(points[0]!.y)}`;
-
-  let d = `M ${fmt(points[0]!.x)} ${fmt(points[0]!.y)}`;
-  for (let i = 1; i < points.length; i++) {
-    const p = points[i]!;
-    const prev = points[i - 1]!;
-    if (mode === "before") {
-      // step at next-x: extend horizontally to new x at OLD y, then jump to new y.
-      d += ` L ${fmt(p.x)} ${fmt(prev.y)} L ${fmt(p.x)} ${fmt(p.y)}`;
-    } else if (mode === "after") {
-      // step at current-x: jump to new y immediately, persist until next x.
-      d += ` L ${fmt(prev.x)} ${fmt(p.y)} L ${fmt(p.x)} ${fmt(p.y)}`;
-    } else {
-      // middle: step at midpoint of x.
-      const mx = (prev.x + p.x) / 2;
-      d += ` L ${fmt(mx)} ${fmt(prev.y)} L ${fmt(mx)} ${fmt(p.y)} L ${fmt(p.x)} ${fmt(p.y)}`;
-    }
-  }
-  return d;
-};
-
+export { stepPathD } from "./line-paths";
 /** Format a number for SVG attributes — short, no scientific notation. */
-export const fmt = (n: number): string => {
-  if (!Number.isFinite(n)) return "0";
-  // 2 decimals is enough for sub-pixel precision at typical sizes.
-  const rounded = Math.round(n * 100) / 100;
-  return Number.isInteger(rounded) ? `${rounded}` : `${rounded}`;
-};
-
+export { fmt } from "./svg-format";
 export const clamp = (value: number, min: number, max: number): number => Math.max(min, Math.min(max, value));
 
 export const normalizeMinMax = (min: number | undefined, max: number | undefined): [number, number] => {
@@ -1226,6 +1162,15 @@ export type LineOptions = SeriesChartOptions & {
   /** Render a translucent confidence band between each point's `errYLow` and
    *  `errYHigh`. Points without explicit error fields are skipped. Default false. */
   errorBand?: boolean;
+  /** Dashed first-series forecast suffix with optional ordered bounds. */
+  forecast?: { from: number; band?: [number, number][] };
+  legendValues?: boolean;
+  zero?: boolean;
+  threshold?: { value: number; label: string };
+  marker?: { at: number; label: string };
+  timeAxis?: ChartTimeAxis;
+  maxGap?: number;
+  locale?: string;
 };
 
 export const collectSeriesLegend = (opts: { series: Series[]; legend?: boolean }): Array<{ label: string; seriesIndex: number }> => {

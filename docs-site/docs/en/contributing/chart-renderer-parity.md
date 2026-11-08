@@ -31,6 +31,12 @@ merged. The fixture catalog is excluded from the published UI build.
 <!-- chart-parity:start -->
 | Feature | Proof | Status |
 | --- | --- | --- |
+| Line: forecast and first-series band | packages/ui/src/charts/core/line-forecast.test.ts: forecast layout binds ordered bounds to the first series suffix | Covered |
+| Line: negative zone | packages/ui/src/charts/core/line-forecast.test.ts: forecast, zero zone, warning threshold and today use portable presentation attributes | Covered |
+| Line: warning threshold | packages/ui/src/charts/core/line-forecast.test.ts: forecast, zero zone, warning threshold and today use portable presentation attributes | Covered |
+| Line: labelled today marker | packages/ui/src/charts/core/line-forecast.test.ts: forecast, zero zone, warning threshold and today use portable presentation attributes | Covered |
+| Line: before and after steps | packages/ui/src/charts/core/line-forecast.test.ts: both step directions and existing middle steps remain distinct | Covered |
+| Line: values at cursor | packages/ui/src/charts/core/line-forecast.test.ts: line legends carry cursor fields, missing final values and bounded names | Covered |
 | line | packages/ui/src/charts/parity.test.ts: every parity spec preserves legacy SVG output | Covered |
 | bar | packages/ui/src/charts/parity.test.ts: every parity spec preserves legacy SVG output | Covered |
 | pie | packages/ui/src/charts/parity.test.ts: every parity spec preserves legacy SVG output | Covered |
