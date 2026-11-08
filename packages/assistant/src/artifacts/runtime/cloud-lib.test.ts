@@ -8,10 +8,23 @@ import {
 } from "@k2b/cloud/ai/browser";
 import { escapeXml } from "@k2b/stdlib";
 import { isChartDatum } from "@k2b/ui/chart-inspection";
+import { signedRows069 } from "../../../../ui/test/chart-rows-069-fixture";
 import { createCloud } from "./cloud";
 import { CloudError } from "./errors";
 import { boundMoney, chart, chartOptions, chartSvg, html, pendingChartHeight, resolveChartHtml } from "./lib";
 import { parseCsv, toCsv } from "./sheet-lib";
+
+test("saved 0.69 signed rows render synchronously in app frames and remain printable", async () => {
+  const markup = String(chart(signedRows069, "en-US"));
+  expect(markup).toContain('data-bar-layout="rows"');
+  expect(markup).not.toMatch(/data-chart-pending|k2b-chart-ranked|NaN|Infinity/);
+  expect(markup).toContain(">-12</text>");
+  expect(markup).toContain(">-4</text>");
+  expect(cloudAiChartTable(cloudAiAppChartSchema().parse(signedRows069), "en-US").rows.map((row) => row.values.value)).toEqual([
+    -12, 30, -4, 0,
+  ]);
+  expect(await resolveChartHtml(markup, "en-US")).toBe(markup);
+});
 
 test("PDF preparation only resolves actual chart placeholders", async () => {
   const content = '<div data-chart-pending="author-id">Report</div>';

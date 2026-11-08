@@ -10,6 +10,16 @@ updated: 2026-11-05
 
 # Deprecations and migrations
 
+## Saved signed bar rows render again
+
+The next patch restores bar charts saved with `layout: "rows"` and negative
+values under Cloud 0.69. Cloud 0.70 had incorrectly rejected them. Upgrade and
+reopen the saved chart; no data migration or JSON edits are required.
+
+Signed rows retain source order and draw around zero. Nonnegative rows keep
+their ranked presentation. Ranking options (`share`, `limit`, `tone`) apply
+only to nonnegative data; signed rows always show every source item.
+
 ## Geo uses a global budget
 
 `geo.person_daily_credits` and the admin budget field `personDailyCredits`

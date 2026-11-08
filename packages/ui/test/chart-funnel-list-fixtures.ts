@@ -1,4 +1,5 @@
 import type { ChartProps } from "../src/content/Chart";
+import { signedRows069 } from "./chart-rows-069-fixture";
 export const funnelListFixtures = [
   {
     kind: "funnel",
@@ -33,4 +34,5 @@ export const funnelListFixtures = [
       { label: "Missing", value: null },
     ],
   },
+  signedRows069,
 ] satisfies ChartProps[];
