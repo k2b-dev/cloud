@@ -51,7 +51,13 @@ another host when the same inspector content is reused. The host owns opening,
 closing, sizing, and persistence. An `AppWorkspace.Detail` column shares the
 workspace surface; a waiting Detail opens as a raised drawer with a soft
 shadow toward the content it covers. Its sections and
-groups have no boxes of their own. The application owns data, permissions,
+groups have no boxes of their own.
+
+A detail panel is a docked column (layer 0 of
+[Layers and shadows](/en/ui/surfaces/elevation)) and flat inside: sections are
+a header and a hairline, never cards, and a `Paper`, `ResourceCard`, or framed
+`Section` inside casts no shadow. The panel sets this itself; an application
+adds no shadow and no frame. The application owns data, permissions,
 mutations, and which sections are present. See
 [Detail and panel](/en/ui/layout/workspace#detail-and-panel).
 
