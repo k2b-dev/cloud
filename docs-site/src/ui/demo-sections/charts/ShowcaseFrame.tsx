@@ -1,4 +1,5 @@
 import { DescriptionBlockPreview, DescriptionPanel } from "@k2b/cloud/descriptions";
+import type { DashboardWidth } from "@k2b/ui";
 import type { JSX } from "solid-js";
 import type { JsonValue } from "./examples/types";
 
@@ -30,6 +31,8 @@ export type ShowcaseFrameProps = {
   /** What a slot stands for, such as "Sankey". */
   intended?: string;
   headingLevel?: 2 | 3 | 4;
+  /** Share of a dashboard section's six columns; the panel is the grid cell itself. */
+  width?: DashboardWidth;
 };
 
 /**
@@ -50,6 +53,7 @@ export function ShowcaseFrame(props: ShowcaseFrameProps): JSX.Element {
       empty={props.empty}
       asOf={AS_OF}
       headingLevel={props.headingLevel}
+      width={props.width}
       slot={(slot) => (
         <div class="ui-charts-slot" style={{ height: cssLength(props.height) }}>
           <span class="ui-charts-slot__kind">{slot.kind}</span>
