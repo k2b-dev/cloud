@@ -96,7 +96,7 @@ export function createCodeAuthoringChatTools() {
       "sdk",
       codeAuthoringContracts.sdk,
       codeAuthoringServices.sdk,
-      "Read this Code's generated @sdk types, runtime and manifest from the live authorized catalog. Resource handles require literal IDs; code_run permits dynamic IDs.",
+      "Read this Code's generated @sdk types, runtime and manifest from the live authorized catalog. Resource handles accept dynamic IDs; review records their type, and each call checks current access.",
     ),
     tool(
       "test",

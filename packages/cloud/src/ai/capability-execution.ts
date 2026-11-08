@@ -15,11 +15,15 @@ import type { RequestActor, RequestAuthority } from "../server";
 import { isAccountCategoryAllowed } from "../services/account-category-policy";
 import { isAccountExpired } from "../services/account-model";
 import { accounts } from "../services/accounts";
+import { panelContextConsent } from "../services/panel-context-consent";
 import { withoutAdminRole } from "../services/session/user";
 import { LOCALE_HEADER } from "../shared/locale";
 import type { AiActionCheck } from "./action-review";
 import type { AiCapabilityCatalogEntry } from "./capabilities";
 import { AiCapabilityExecutionError } from "./capability-result";
+import { runPlaceProvider } from "./place-provider";
+import type { AiPlaceToolDependencies } from "./place-tools";
+import { aiConversations } from "./store";
 import { aiToolAudit } from "./tool-audit";
 import type { AiConversationService } from "./types";
 
@@ -103,6 +107,7 @@ type AiCapabilityCall = {
   traceToolCall?: boolean;
   dependencies?: CapabilityDispatchDependencies & {
     dispatch?: typeof dispatchCapability;
+    place?: AiPlaceToolDependencies;
   };
 };
 
@@ -113,9 +118,35 @@ const dispatchAiCapability = async (
   if (input.authority.accessSubject.type !== "user" || input.authority.accessSubject.userId !== input.authority.actor.user.id) {
     throw new Error("Cloud capability authority is inconsistent.");
   }
+  if (input.entry.place) {
+    try {
+      const dependencies = input.dependencies?.place;
+      const store = dependencies?.store ?? aiConversations;
+      input.authority = await resolveAiCapabilityActor({
+        conversationId: input.conversationId,
+        persistedActor: input.authority.actor,
+        store,
+        getUser: dependencies?.getUser,
+      });
+      const consent = await (dependencies?.getConsent ?? panelContextConsent.get)(input.authority.actor.user.id, "assistant");
+      if (!consent?.allowed) throw new Error("Place consent is not allowed");
+      const conversation = await store.getConversation({ conversationId: input.conversationId });
+      const ref = conversation?.place?.ref;
+      if (!ref || ref.type !== input.entry.place.type || ref.id !== input.entry.place.id) throw new Error("Place binding changed");
+      const place = await (dependencies?.provider ?? runPlaceProvider)(input.authority, ref, {
+        ...dependencies?.providerOptions,
+        locale: input.locale,
+        signal: input.context.signal,
+      });
+      if ("unavailable" in place || !place.tools.includes(input.entry.operation.localId)) throw new Error("Place tool no longer available");
+    } catch (error) {
+      if (input.context.signal.aborted) throw error;
+      throw new AiCapabilityExecutionError("PLACE_REJECTED", 403, "This place tool is no longer available for the person.");
+    }
+  }
   const body =
     input.entry.operation.target !== undefined || input.entry.operation.refs !== undefined
-      ? capabilityInvocationBody(capabilityCallFromTool(input.entry.appId, input.entry.operation, input.args))
+      ? capabilityInvocationBody(capabilityCallFromTool(input.entry.appId, input.entry.operation, input.args, input.entry.place))
       : { input: input.args };
   const dispatch = input.dependencies?.dispatch ?? dispatchCapability;
   const headers = new Headers();
@@ -150,6 +181,7 @@ const dispatchAiCapability = async (
     request,
     kind: input.entry.kind === "query" ? "queries" : "actions",
     origin: "assistant",
+    ...(input.entry.place ? { assistantPlace: input.entry.place } : {}),
     ...(input.turnId ? { assistantTurn: { conversationId: input.conversationId, turnId: input.turnId } } : {}),
     review,
     appId: input.entry.appId,

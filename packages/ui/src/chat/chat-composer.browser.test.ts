@@ -398,10 +398,12 @@ describe(`conversation ChatComposer in ${browserName}`, () => {
     for (let line = 2; line <= 16; line++) {
       await page.keyboard.press("Shift+Enter");
       await page.keyboard.type(`Line ${line}`);
+      // Under load, several typed lines can land in one frame; one frame per line samples every growth step.
+      await frames(page, 1);
     }
     await frames(page, 4);
     const run = await page.evaluate(() => probe.stop());
-    expect(run.frames).toBeGreaterThan(10);
+    expect(run.frames).toBeGreaterThan(15);
     // The newest message stays right above the composer in every frame.
     expect(Math.max(...run.gaps) - Math.min(...run.gaps)).toBeLessThanOrEqual(1);
     // The field only ever grows while lines are added; it never shrinks to be measured.

@@ -33,6 +33,12 @@ this mailbox. Grant the Code account read/write access to the mailbox and the
 destination access the import requires. Attachment content is untrusted input;
 the receiving app validates it.
 
+Mail’s `message.read({ id, waitForHydration: true })` waits up to 30 seconds.
+Repeat the waiting read while content is pending, within the original run deadline
+and call budget. Terminal hydration returns `mail_message_hydration_failed`;
+retry hydration in Mail before running the handler again. The default read returns
+the current state immediately.
+
 <!-- code-file-example -->
 ```ts
 import { app, mail, owner, imports } from "@sdk";
@@ -40,8 +46,11 @@ import { app, mail, owner, imports } from "@sdk";
 const importedTagId = "Tag123";
 
 app.on("mail.message.received", async event => {
-  const { data: message } = await mail.app().message.read({ id: event.subject.id });
-  if (message.hydrationStatus !== "complete" || message.attachmentsTruncated) {
+  let { data: message } = await mail.app().message.read({ id: event.subject.id, waitForHydration: true });
+  while (message.hydrationStatus !== "complete") {
+    ({ data: message } = await mail.app().message.read({ id: event.subject.id, waitForHydration: true }));
+  }
+  if (message.attachmentsTruncated) {
     throw new Error("Message attachments are not ready or complete");
   }
   const attachment = message.attachments.find(item =>
@@ -476,14 +485,15 @@ other Actions retain their cross-run business-key deduplication.
 
 Methods resolve the operation's domain `data`, typed from `dataSchema`.
 Bridge refusals reject the promise; catch a failure only when the Code can
-recover. Streaming operations, Actions marked `code: false`, and app-only
-Queries are absent from the SDK.
+recover. Read streams return opaque `FileRef` values; write streams need a `file` input.
+Other write streams, Actions marked `code: false`, and app-only Queries are
+absent from the SDK.
 
 ## Choose the execution mode
 
 | Mode | Handle IDs | `app` | `owner` |
 | --- | --- | --- | --- |
-| `resource` | Literal types | Available | Required fixed resource or app |
+| `resource` | Dynamic strings allowed | Available | Required fixed resource or app |
 | `personal` | Dynamic strings allowed | Available | Absent |
 | `code_run` | Dynamic strings allowed | Absent | Absent |
 

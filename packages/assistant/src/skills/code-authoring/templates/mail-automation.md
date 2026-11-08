@@ -124,9 +124,11 @@ async function draftReply(conversationId: string, message: Message, category: Ca
 }
 
 app.on("mail.message.received", async event => {
-  const { data: message } = await mail.app().message.read({ id: event.subject.id });
+  let { data: message } = await mail.app().message.read({ id: event.subject.id, waitForHydration: true });
+  while (message.hydrationStatus !== "complete") {
+    ({ data: message } = await mail.app().message.read({ id: event.subject.id, waitForHydration: true }));
+  }
   // Throwing before the first Action lets Cloud retry; after it, failures stay visible.
-  if (message.hydrationStatus !== "complete") throw new Error("Message content is not ready yet");
   if (!message.conversationId) return;
   const category = await categorise(message);
   await tag(message.conversationId, category);

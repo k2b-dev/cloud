@@ -5,7 +5,7 @@ section: Operations
 order: 1258
 description: Upgrade Core and capability providers while applications adopt explicit resource targets.
 tags: [operations, capabilities, upgrades]
-updated: 2026-11-02
+updated: 2026-11-08
 ---
 
 # Roll out capability targets
@@ -72,7 +72,7 @@ Use the provider's guide for its exact input changes:
 Notebooks binds note, comment and annotation Actions to the notebook. Pulse
 binds existing-resource Actions to the Base. Venue binds assignments to the
 venue, Weather binds deletion to the saved location, and Core binds Skill
-changes to the Skill and routine changes to the AI chat. These primary resource
+changes to the Skill. Old routine Actions are retired. These primary resource
 selectors move from `input` to `target`; contained object IDs remain in `input`.
 [Code version and execution Actions](/en/docs/platform/code-versions#submit-a-version)
 use `core.code`, as do manual runs and secret set/delete Actions. Code Queries,
