@@ -80,8 +80,11 @@ test("every round uses the refreshed actor and durable target, with only the cur
     place,
     skills: [{ name: "contact-writing", description: "Use contact-writing" }],
   });
-  expect(run).toHaveBeenLastCalledWith(actor, ref, { locale: "de", signal });
-  expect(skills).toHaveBeenCalledWith({ actor, accessSubject: freshAuthority.accessSubject }, { authority: freshAuthority });
+  expect(run).toHaveBeenLastCalledWith(freshAuthority, ref, { locale: "de", signal });
+  expect(skills).toHaveBeenCalledWith(
+    { actor, accessSubject: freshAuthority.accessSubject },
+    { name: "contact-writing", enabledOnly: true, modelInvocableOnly: true, authority: freshAuthority },
+  );
   run.mockResolvedValueOnce({ unavailable: true });
   expect(await loadPlaceAssistantRound(input)).toBeNull();
   expect(run).toHaveBeenCalledTimes(2);

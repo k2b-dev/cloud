@@ -81,8 +81,8 @@ import {
 import { createAiNextMessageTool } from "./next-message";
 import { dismissAiNextMessage } from "./next-message-store";
 import { loadPlaceAssistant } from "./place-assistant";
-import { placeAssistantRoutes } from "./place-routes";
 import { AiConversationPlaceFilterSchema } from "./place-filter";
+import { placeAssistantRoutes } from "./place-routes";
 import { aiActorUser, aiPrefsUserId, aiUserPrefs } from "./prefs";
 import { aiProjects } from "./projects";
 import type { AiResourceContext } from "./projects-authorization";
@@ -614,12 +614,22 @@ export const aiRoutes = (() => {
           const place = await loadPlaceAssistant(c, body.place);
           if (place.state === "consent_required") return respond(c, fail(err.forbidden("Allow Assistant to see the current place first.")));
           if (place.state !== "available") return respond(c, fail(err.notFound("Place")));
-          const conversation = await aiConversations.createPlaceConversation({
-            ownerUserId: ctx.ownerUserId,
-            place: { ref: body.place, title: place.title },
-            draft: body.draft!.content,
-          });
-          return respond(c, ok(await publicConversationFor(conversation, resourceContext(c))), 201);
+          try {
+            const conversation = await aiConversations.createPlaceConversation({
+              requestId: body.requestId,
+              ownerUserId: ctx.ownerUserId,
+              place: { ref: body.place, title: place.title },
+              draft: body.draft!.content,
+            });
+            const project = conversation.projectId ? await aiProjects.get(conversation.projectId, resourceContext(c), "read") : null;
+            if (conversation.projectId && !project) return respond(c, fail(err.notFound("Project")));
+            return respond(c, ok(publicConversation(conversation, project?.shortId ?? null)), 201);
+          } catch (error) {
+            if (error instanceof AiConversationCreationError) {
+              return respond(c, fail(error.reason === "conflict" ? err.conflict(error.message) : err.notFound("Conversation")));
+            }
+            throw error;
+          }
         }
         const project = body.projectId ? await aiProjects.getByShortId(body.projectId, resourceContext(c), "read") : null;
         if (body.projectId && !project) return respond(c, fail(err.notFound("Project")));

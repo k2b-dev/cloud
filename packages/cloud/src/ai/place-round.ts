@@ -18,10 +18,20 @@ export const loadPlaceAssistantRound = async (input: {
   const authority = await resolveAiCapabilityActor({ ...input, store: aiConversations });
   if (!(await panelContextConsent.get(authority.actor.user.id, "assistant"))?.allowed) return null;
   const ref = conversation.place.ref;
-  const place = await runPlaceProvider(authority.actor, ref, { locale: input.locale, signal: input.signal });
+  const place = await runPlaceProvider(authority, ref, { locale: input.locale, signal: input.signal });
   if ("unavailable" in place) return null;
   const skills = input.skillsEnabled
-    ? (await aiSkills.list({ actor: authority.actor, accessSubject: authority.accessSubject }, { authority }))
+    ? (
+        await Promise.all(
+          place.skills.map((name) =>
+            aiSkills.list(
+              { actor: authority.actor, accessSubject: authority.accessSubject },
+              { name, enabledOnly: true, modelInvocableOnly: true, authority },
+            ),
+          ),
+        )
+      )
+        .flat()
         .filter((skill) => skill.enabled && !skill.manualOnly && place.skills.includes(skill.name))
         .map(({ name, description }) => ({ name, description }))
     : [];

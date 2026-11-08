@@ -1,5 +1,5 @@
 import { beforeAll, expect, spyOn, test } from "bun:test";
-import { databaseSuite } from "../../../../scripts/fixtures/test-infra";
+import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import "../../../../scripts/fixtures/authorization-preload";
 import { sql } from "../runtime/clients";
 import { useRegisteredTestApp } from "../services/identity/application.test-fixture";
@@ -9,7 +9,7 @@ import * as places from "./place-assistant";
 import { aiRoutes } from "./routes";
 import { aiConversations } from "./store";
 
-databaseSuite()("place chat creation route", () => {
+suiteFor("database", "valkey")("place chat creation route", () => {
   useRegisteredTestApp("core", { kind: "signedIn" });
   beforeAll(migrateCloudAi);
 
@@ -46,7 +46,11 @@ databaseSuite()("place chat creation route", () => {
         });
       expect((await post({ place: ref })).status).toBe(400);
       expect(await aiConversations.findPlaceConversation({ ownerUserId: users[0]!, ref })).toBeNull();
-      const body = { place: ref, draft: { content: [{ type: "text", text: "Shorten the reply." }] } };
+      const body = {
+        requestId: "00000000-0000-4000-8000-000000000001",
+        place: ref,
+        draft: { content: [{ type: "text", text: "Shorten the reply." }] },
+      };
       load.mockResolvedValueOnce({ state: "consent_required" });
       expect((await post(body)).status).toBe(403);
       expect(await aiConversations.findPlaceConversation({ ownerUserId: users[0]!, ref })).toBeNull();
@@ -56,12 +60,14 @@ databaseSuite()("place chat creation route", () => {
       expect(chat.place).toEqual({ ref, title: "Marta Example" });
       expect((await (await post(body)).json()).id).toBe(chat.id);
       expect((await (await post(body, ben)).json()).id).not.toBe(chat.id);
+      expect((await post({ ...body, draft: { content: [{ type: "text", text: "Changed" }] } })).status).toBe(409);
       const archived = await aiRoutes.request(`/conversations/${chat.id}/archive`, {
         method: "POST",
         headers: { Authorization: `Bearer ${token}` },
       });
       expect(archived.status).toBe(200);
-      expect((await (await post(body)).json()).id).not.toBe(chat.id);
+      expect((await post(body)).status).toBe(404);
+      expect((await (await post({ ...body, requestId: "00000000-0000-4000-8000-000000000002" })).json()).id).not.toBe(chat.id);
     } finally {
       load.mockRestore();
       for (const user of users) {

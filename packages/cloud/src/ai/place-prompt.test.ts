@@ -55,4 +55,6 @@ test("place title, context, and Skill metadata cannot close the untrusted data b
   expect(prompt.split("</place_skills>")).toHaveLength(2);
   expect(prompt).toContain("\\u003c/place_data\\u003e");
   expect(prompt).not.toContain("\n# System");
+  const encoded = prompt.split("<place_data>")[1]!.split("</place_data>")[0]!;
+  expect(JSON.parse(encoded).context).toBe(attack);
 });

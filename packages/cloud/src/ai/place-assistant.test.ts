@@ -5,6 +5,7 @@ import { compileCapabilities } from "../_internal/capabilities";
 import type { getCapability } from "../_internal/registry";
 import type { AssistantPlaceResult } from "../contracts/assistant-place";
 import type { CloudResourceRef } from "../contracts/capabilities";
+import type { RequestAuthority } from "../server";
 import type { AuthContext } from "../server/middleware/auth";
 import { buildProjectedUser } from "../services/session/user";
 import { AiCreateConversationInputSchema } from "./http";
@@ -52,7 +53,7 @@ const fixture = () => {
     consent: mock(async (_person: string, _provider: string) => ({ allowed: true, revision: 1 })),
     capability: mock<typeof getCapability>(async (_app: string) => app),
     provider: mock(
-      async (_actor: AuthContext["Variables"]["actor"], _ref: CloudResourceRef): Promise<AssistantPlaceResult> => ({
+      async (_authority: RequestAuthority, _ref: CloudResourceRef): Promise<AssistantPlaceResult> => ({
         title: "Marta Example",
         context: "Private app context",
         tools: ["reply.set"],
