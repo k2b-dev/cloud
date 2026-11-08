@@ -531,6 +531,12 @@
   white-space: nowrap;
 }
 
+/* Files' widths before anyone resizes. The saved layout is the workspace's inline style and wins over them. */
+.k2b-app-workspace.filesv2-workspace {
+  --k2b-workspace-sidebar-width: 248px;
+  --k2b-workspace-detail-filesv2-inspector-width: 400px;
+}
+
 /* Sidebar tree: the label carries a marker; the row's own icon slot turns into a spinner so nothing shifts. */
 .filesv2-nav-label {
   display: inline-flex;
