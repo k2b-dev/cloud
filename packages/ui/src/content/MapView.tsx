@@ -497,7 +497,6 @@ export function MapView(props: MapViewProps): JSX.Element {
         <Show when={props.onLocate}>
           <div class="k2b-map-view__locate-group k2b-overlay-surface">
             <IconButton
-              class="k2b-map-view__locate"
               tooltip={false}
               label={messages().locate}
               aria-pressed={!!props.ownLocation}
