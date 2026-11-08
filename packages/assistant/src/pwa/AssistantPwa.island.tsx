@@ -969,6 +969,7 @@ export default function AssistantPwa(props: AssistantPwaProps) {
                   actions={{
                     actionDisabled: () => chat.runStatus() === "stopping",
                     onCheckAction: (request) => chat.checkAction(request),
+                    onEditDraft: (request, values, digest) => chat.editDraft(request, values, digest),
                     onApproval: async (request, input) => {
                       if (await chat.respondToApproval(request, input)) return;
                       // The card says itself that the answer is not confirmed; the field's hint line stays free.

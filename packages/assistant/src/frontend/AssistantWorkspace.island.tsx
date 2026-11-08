@@ -2792,6 +2792,7 @@ export default function AssistantWorkspace(props: Props) {
                                     ),
                                     actionDisabled: () => chat.runStatus() === "stopping",
                                     onCheckAction: (request) => chat.checkAction(request),
+                                    onEditDraft: (request, values, digest) => chat.editDraft(request, values, digest),
                                     onApproval: async (request, input) => {
                                       if (!(await chat.respondToApproval(request, input))) throw new Error(t().submitApprovalFailed);
                                     },

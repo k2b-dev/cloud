@@ -1,8 +1,9 @@
 import { Chat, type ChatDecisionState, type ChatOutcomeTone, LocaleProvider } from "@k2b/ui";
-import { createMemo, createSignal, type JSX, onCleanup, onMount } from "solid-js";
-import type { ActionCard } from "../ai/chat/action-card";
+import { createEffect, createMemo, createSignal, type JSX, on, onCleanup, onMount } from "solid-js";
+import type { ActionCard, ActionText } from "../ai/chat/action-card";
 import { actionMessages } from "../ai/chat/action-messages";
-import { type ActionLine, ActionPreview, ActionReceipt, ActionTextView } from "../ai/chat/action-question";
+import { ActionDetails, type ActionLine, ActionReceipt, ActionTextView } from "../ai/chat/action-question";
+import type { Block } from "../blocks/schema";
 
 /**
  * The one approval of Cloud. Every place shows it the same way: the Assistant chat, the side panel, the approvals
@@ -21,6 +22,11 @@ export type ApprovalCardProps = {
   onDecline: () => void | Promise<void>;
   /** Where the approval may be remembered for this chat; without, the card says that it asks every time. */
   remember?: { website?: boolean; onSelect: () => void | Promise<void> };
+  /**
+   * Sends a draft's edited fields so Cloud reviews the Action again; resolves `true` once the card shows the new
+   * review. Without it, or where the card's draft is not editable, the draft is shown as the approval at once.
+   */
+  onEditDraft?: (values: Record<string, string>) => Promise<boolean>;
   /** When the open request expires, if Cloud knows it. */
   expiresAt?: string;
   /** Turns the confirming answers off; this reason replaces the asking reason in its place. */
@@ -57,9 +63,37 @@ function useMinutesLeft(expiresAt: () => string | undefined) {
   };
 }
 
+/** The field values a draft shows, from its blocks. */
+const draftValues = (blocks: readonly Block[] | undefined): Record<string, string> => {
+  const values: Record<string, string> = {};
+  const visit = (block: Block) => {
+    if (block.kind === "Section") block.children.forEach(visit);
+    if (block.kind === "Draft")
+      for (const field of block.fields) values[field.name] = typeof field.value === "string" ? field.value : String(field.value ?? "");
+  };
+  (blocks ?? []).forEach(visit);
+  return values;
+};
+
+/** The intent of a draft as one statement: the app's short sentence, ending like a sentence. */
+const intent = (card: ActionCard): ActionText => [{ kind: "text", text: /[.!?…]$/.test(card.short) ? card.short : `${card.short}.` }];
+
 export function ApprovalCard(props: ApprovalCardProps): JSX.Element {
   const t = () => actionMessages(props.card.locale);
   const minutesLeft = useMinutesLeft(() => props.expiresAt);
+  const editable = () => props.card.draft?.editable === true && props.onEditDraft !== undefined;
+  // A draft the person may change starts in edit mode; "Change" returns to it, "Send …" moves on to approving.
+  const [editing, setEditing] = createSignal(editable());
+  const [values, setValues] = createSignal(draftValues(props.card.view));
+  const [sending, setSending] = createSignal(false);
+  // A new review, such as the one Cloud returns for the edited draft, brings its own values.
+  createEffect(
+    on(
+      () => props.card.view,
+      (view) => setValues(draftValues(view)),
+      { defer: true },
+    ),
+  );
   const status = createMemo(() => {
     if (props.state === "open") return undefined;
     const line = props.outcome.lines[props.outcome.current];
@@ -94,32 +128,69 @@ export function ApprovalCard(props: ApprovalCardProps): JSX.Element {
   const reason = () =>
     props.waiting
       ? { text: props.waiting, icon: "ti ti-wifi-off", tone: "neutral" as const }
-      : unavailable()
-        ? { text: unavailable()!, icon: "ti ti-player-pause", tone: "neutral" as const }
-        : { text: props.card.reason.text, icon: props.card.reason.icon, tone: props.card.reason.tone };
+      : editing()
+        ? { text: t().draftNote, icon: "ti ti-lock", tone: "neutral" as const }
+        : unavailable()
+          ? { text: unavailable()!, icon: "ti ti-player-pause", tone: "neutral" as const }
+          : { text: props.card.reason.text, icon: props.card.reason.icon, tone: props.card.reason.tone };
+  const moveOn = async () => {
+    if (sending()) return;
+    const original = draftValues(props.card.view);
+    const changed = Object.keys(values()).some((name) => values()[name] !== original[name]);
+    if (!changed || !props.onEditDraft) return void setEditing(false);
+    setSending(true);
+    const accepted = await props.onEditDraft(values()).catch(() => false);
+    setSending(false);
+    if (accepted) setEditing(false);
+  };
   return (
     <LocaleProvider locale={props.card.locale}>
       <Chat.Decision
         state={props.state}
+        mode={editing() && props.state === "open" ? "edit" : "approve"}
         anchorId={props.anchorId}
-        kind={{ label: t().approvalKind, icon: "ti ti-shield-check" }}
+        kind={editing() ? { label: t().draftKind, icon: "ti ti-pencil" } : { label: t().approvalKind, icon: "ti ti-shield-check" }}
         source={{ name: props.card.app.name, icon: props.card.app.icon, accent: props.card.app.accent }}
         status={status()}
-        sentence={<ActionTextView text={props.card.question} accent={props.card.app.accent} />}
+        sentence={<ActionTextView text={editing() ? intent(props.card) : props.card.question} accent={props.card.app.accent} />}
         reason={reason()}
-        unavailable={unavailable() ? reason() : undefined}
+        unavailable={!editing() && unavailable() ? reason() : sending() ? reason() : undefined}
         waiting={props.waiting ? reason() : undefined}
         details={
-          props.card.preview || props.card.contentRef || props.card.links.length > 0
+          props.card.view || props.card.contentRef || props.card.links.length > 0 || (props.card.consequences ?? []).length > 0
             ? {
                 label: t().detailsFrom({ app: props.card.app.name }),
-                content: <ActionPreview card={props.card} timeZone={props.timeZone} onContentLoaded={setLoadedContent} />,
+                content: (
+                  <ActionDetails
+                    card={props.card}
+                    onContentLoaded={setLoadedContent}
+                    draft={{
+                      editable: editing(),
+                      values: values(),
+                      onChange: (name, value) => setValues((current) => ({ ...current, [name]: value })),
+                    }}
+                  />
+                ),
               }
             : undefined
         }
-        meta={meta()}
-        confirm={{ label: props.card.confirm.label, icon: confirmIcon(props.card), onSelect: props.onConfirm }}
-        decline={{ label: props.card.decline, onSelect: props.onDecline }}
+        meta={editing() ? [] : meta()}
+        confirm={
+          editing()
+            ? { label: `${props.card.confirm.label} …`, icon: confirmIcon(props.card), onSelect: moveOn }
+            : { label: props.card.confirm.label, icon: confirmIcon(props.card), onSelect: props.onConfirm }
+        }
+        decline={{ label: editing() ? t().discard : props.card.decline, onSelect: props.onDecline }}
+        back={
+          !editing() && editable()
+            ? {
+                label: t().change,
+                onSelect: () => {
+                  setEditing(true);
+                },
+              }
+            : undefined
+        }
         remember={
           props.remember
             ? { label: props.remember.website ? t().rememberWebsite : t().remember, onSelect: props.remember.onSelect }

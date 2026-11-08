@@ -11,6 +11,7 @@ import {
   useLocale,
 } from "@k2b/ui";
 import { createContext, createSignal, For, type JSX, Show, useContext } from "solid-js";
+import type { ApprovalDraftResult } from "../../contracts/approvals";
 import type { CloudResourceRef } from "../../contracts/capabilities";
 import type { AiActionCheck } from "../action-review";
 import type { AiTurnBlock } from "../protocol";
@@ -29,7 +30,16 @@ import type { AiSubmittedCodeVersion } from "./turn-layout";
 /** The active-turn coordinates an approval/tool action needs to resolve on the server. */
 export type AiTurnActionRequest = { turnId: string; callId: string; name: string };
 
-type ApprovalHandler = (request: AiTurnActionRequest, input: { approved: boolean; remember?: "chat" | "always" }) => void | Promise<void>;
+type ApprovalHandler = (
+  request: AiTurnActionRequest,
+  input: { approved: boolean; remember?: "chat" | "always"; digest?: string },
+) => void | Promise<void>;
+/** Sends a draft's edited fields; Cloud reviews the Action again and answers with the review the person now approves. */
+type EditDraftHandler = (
+  request: { turnId: string; callId: string; requestId: string },
+  values: Record<string, string>,
+  digest: string,
+) => Promise<ApprovalDraftResult>;
 type FrontendToolResultHandler = (request: AiTurnActionRequest, result: unknown) => void | Promise<void>;
 type ForkMessageHandler = (entry: AiStoredMessage, input?: AiForkMessageInput) => void | Promise<void>;
 type RetryMessageHandler = (entry: AiStoredMessage, input?: AiRetryMessageInput) => void | Promise<void>;
@@ -50,6 +60,7 @@ export type AiChatActions = {
   /** Prevents turn-continuation actions while the current turn is stopping. */
   actionDisabled?: () => boolean;
   onApproval?: ApprovalHandler;
+  onEditDraft?: EditDraftHandler;
   /** Revoke the approval that lets this chat read `origin` without asking; the next request asks again. */
   onRevokeWebsite?: (origin: string) => Promise<void>;
   onFrontendToolResult?: FrontendToolResultHandler;

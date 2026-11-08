@@ -5,6 +5,7 @@ import type { ActionCard } from "../ai/chat/action-card";
 import { refreshAppBadges } from "../browser/app-badges";
 import { coreClient } from "../clients/core";
 import { FeatCodeMark } from "../code/FeatCodeMark";
+import type { ApprovalDraftResult } from "../contracts/approvals";
 import {
   APPROVALS_PAGE_PATH,
   type ApprovalDecisionInput,
@@ -15,6 +16,7 @@ import {
 } from "../contracts/approvals";
 import { ApprovalCard } from "./ApprovalCard";
 import { approvalCard } from "./approval-card";
+import { editApprovalDraft } from "./draft";
 import { approvalMessages } from "./messages";
 
 /** How a decided request ends in this list. It stays in place as a receipt until the next load. */
@@ -116,6 +118,7 @@ function Armed(props: { children: JSX.Element }) {
 /** One request as Cloud's approval, under where it comes from. Its answers arm late, so a click meant for the page cannot approve it. */
 function Row(props: {
   item: PendingApproval;
+  editDraft?: (values: Record<string, string>) => Promise<boolean>;
   outcome?: Outcome;
   busy: boolean;
   failed: boolean | "reauthenticate";
@@ -142,6 +145,7 @@ function Row(props: {
           timeZone={READER_TIME_ZONE}
           remember={remember()}
           expiresAt={props.item.expiresAt}
+          onEditDraft={props.item.requester.kind === "code_version" ? undefined : props.editDraft}
           unavailable={props.item.canApprove === false ? t().anotherAdminRequired : undefined}
           onConfirm={() => props.decide({ approved: true })}
           onDecline={() => props.decide({ approved: false })}
@@ -225,6 +229,12 @@ export default function Approvals(props: ApprovalsProps) {
     else next.delete(id);
     return next;
   };
+  // A draft edited here keeps its row: the new review and digest overlay the loaded request.
+  const [edited, setEdited] = createSignal<ReadonlyMap<string, ApprovalDraftResult>>(new Map());
+  const withEdit = (item: PendingApproval): PendingApproval => {
+    const edit = edited().get(item.id);
+    return edit ? { ...item, review: edit.review, digest: edit.digest } : item;
+  };
   const decide = async (item: PendingApproval, input: ApprovalDecisionInput): Promise<void> => {
     if (busy().has(item.id) || outcomes().has(item.id)) return;
     setBusy((current) => toggle(current, item.id, true));
@@ -234,7 +244,12 @@ export default function Approvals(props: ApprovalsProps) {
       return next;
     });
     try {
-      const response = await coreClient.approvals[":id"].decision.$post({ param: { id: item.id }, json: input });
+      // The digest names the review on screen, so an answer never approves one the person did not see.
+      const digest = edited().get(item.id)?.digest ?? item.digest;
+      const response = await coreClient.approvals[":id"].decision.$post({
+        param: { id: item.id },
+        json: { ...input, ...(digest ? { digest } : {}) },
+      });
       const outcome: Outcome | null = response.ok
         ? input.approved
           ? "approved"
@@ -301,7 +316,17 @@ export default function Approvals(props: ApprovalsProps) {
     <For each={list}>
       {(item) => (
         <Row
-          item={item}
+          item={withEdit(item)}
+          editDraft={
+            item.digest
+              ? async (values) => {
+                  const current = edited().get(item.id)?.digest ?? item.digest!;
+                  const result = await editApprovalDraft(item.id, values, current);
+                  setEdited((map) => new Map(map).set(item.id, result));
+                  return true;
+                }
+              : undefined
+          }
           outcome={outcomes().get(item.id)}
           busy={busy().has(item.id)}
           failed={failed().get(item.id) ?? false}

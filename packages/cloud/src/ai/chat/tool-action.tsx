@@ -184,7 +184,8 @@ export function ToolActionView(props: {
     setLost(false);
     setAnswer(input.approved ? "approve" : "decline");
     try {
-      await actions.onApproval(request(), input);
+      // The digest names the review this card shows, so an answer never approves a review the person did not see.
+      await actions.onApproval(request(), { ...input, ...(props.block.approval?.digest ? { digest: props.block.approval.digest } : {}) });
     } catch {
       if (props.block.callId === submitted) setLost(true);
     }
@@ -404,6 +405,18 @@ export function ToolActionView(props: {
     if (!approval?.allowChat) return undefined;
     return { website: Boolean(approval.website), onSelect: () => submit({ approved: true, remember: "chat" }) };
   };
+  // A draft of a pending personal approval goes to Cloud once edited; the controller replaces the card's review.
+  const editDraft = () => {
+    const approval = props.block.approval;
+    const edit = actions.onEditDraft;
+    if (!edit || !approval?.requestId || !approval.digest) return undefined;
+    const requestId = approval.requestId;
+    const digest = approval.digest;
+    return async (values: Record<string, string>) => {
+      await edit({ turnId: props.turnId, callId: props.block.callId, requestId }, values, digest);
+      return true;
+    };
+  };
   // A call that never asked is a line of the history, not an approval.
   const asked = () => Boolean(props.block.approval) || props.block.status === "awaiting_approval";
   return (
@@ -416,6 +429,7 @@ export function ToolActionView(props: {
         unavailable={unavailable()}
         waiting={online() ? undefined : actionMessages(card().locale).offline}
         remember={remember()}
+        onEditDraft={editDraft()}
         onConfirm={() => submit({ approved: true })}
         onDecline={() => submit({ approved: false })}
         outcome={{ lines: lines(), current: currentKey() }}
