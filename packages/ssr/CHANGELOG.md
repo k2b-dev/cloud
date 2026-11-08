@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.21.1](https://github.com/k2b-dev/cloud/compare/npm-ssr-v0.21.0...npm-ssr-v0.21.1) (2026-11-08)
+
+
+### Bug Fixes
+
+* **ssr:** focus survives an island's first render, and focused charts keep their tooltip ([#2851](https://github.com/k2b-dev/cloud/issues/2851)) ([115b3f3](https://github.com/k2b-dev/cloud/commit/115b3f31770747b84852fa50f7b05c7e509d4e9b))
+
 ## [0.21.0](https://github.com/k2b-dev/cloud/compare/npm-ssr-v0.20.2...npm-ssr-v0.21.0) (2026-11-03)
 
 
