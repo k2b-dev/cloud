@@ -1,5 +1,6 @@
 import {
   type ChartInput,
+  chartKindSchema,
   chartKinds,
   chartLegend,
   chartMarkKey,
@@ -61,9 +62,8 @@ export const descriptionBlockComponent = (block: string): BlockComponent | undef
 const drawableBlock = (block: string) => block === "stats" || block === "table" || block === "details" || block in components;
 
 /**
- * A chart description that names only its kind, title, subtitle and empty sentence. A read without values cannot send a
- * valid description (every kind needs at least one value), so this separate form says "nothing to draw" explicitly;
- * the chart schema itself stays as strict as before.
+ * A chart description that names only its kind, title, subtitle and empty sentence. This separate form says "nothing
+ * to draw" explicitly, including for kinds whose editor schema defaults missing observations to an empty array.
  */
 const emptyKeys = new Set(["kind", "title", "subtitle", "empty"]);
 const emptyChart = (spec: JsonObject) =>
@@ -187,7 +187,7 @@ export function resolveDescription(spec: JsonValue, locale = "en"): DescriptionD
       : { mode: "slot", kind: spec.block, reason: "This build does not draw this block yet." };
   const kind = typeof spec.kind === "string" ? spec.kind : "unknown";
   const empty = typeof spec.empty === "string" ? spec.empty : undefined;
-  if (liveKinds.has(kind) && emptyChart(spec)) return { mode: "empty", kind, empty };
+  if ((liveKinds.has(kind) || chartKindSchema().safeParse(kind).success) && emptyChart(spec)) return { mode: "empty", kind, empty };
   if (liveKinds.has(kind)) {
     const { title: _title, subtitle: _subtitle, ...props } = spec;
     return { mode: "live", props: props as unknown as ChartProps, ...liveRows(spec, locale) };
@@ -196,7 +196,6 @@ export function resolveDescription(spec: JsonValue, locale = "en"): DescriptionD
   if (!parsed.success) {
     // The kind exists when the schema complains about fields rather than about the kind itself.
     const known = !parsed.error.issues.some((issue) => issue.path.length === 0 || issue.path[0] === "kind");
-    if (known && emptyChart(spec)) return { mode: "empty", kind, empty };
     // Name the exact paths: a value this build rejects is either a later option or a mistake in the description.
     const paths = [...new Set(parsed.error.issues.map((issue) => issue.path.join(".")).filter(Boolean))];
     return {

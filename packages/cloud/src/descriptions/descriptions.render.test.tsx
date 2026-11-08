@@ -106,9 +106,9 @@ test("details that break Chat's strict form show the slot, never a guess", () =>
   expect(resolveDescription({ ...details, extra: true }).mode).toBe("slot");
 });
 
-test("a chart with only its kind, title and empty sentence draws the chart frame's empty state", () => {
-  const spec = { kind: "line", title: "Revenue", subtitle: "October", empty: "No revenue yet." };
-  expect(resolveDescription(spec)).toEqual({ mode: "empty", kind: "line", empty: "No revenue yet." });
+test.each(["line", "bar"])("a %s chart with only its kind, title and empty sentence draws the chart frame's empty state", (kind) => {
+  const spec = { kind, title: "Revenue", subtitle: "October", empty: "No revenue yet." };
+  expect(resolveDescription(spec)).toEqual({ mode: "empty", kind, empty: "No revenue yet." });
   const html = panel({ spec, title: "Revenue", height: 240 });
   expect(html).toContain("k2b-chart-explorer");
   expect(html).toContain('data-state="empty"');
