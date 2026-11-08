@@ -101,13 +101,11 @@ export function DashboardFrame(props: DashboardFrameProps): JSX.Element {
         <header class="k2b-dashboard-frame__header">
           <div>
             <Dynamic component={`h${props.headingLevel ?? 3}`}>{props.title}</Dynamic>
-            {/* One reserved line and a polite live region: loading and stale replace the subtitle without moving. */}
+            {/* One reserved line and a polite live region: loading and stale replace the subtitle without moving. The
+                line is one expression: a trailing conditional anchor would change WebKit's rendered text after the
+                first client render. */}
             <p role="status" class={state() === "stale" ? "k2b-dashboard-frame__stale" : undefined}>
-              {status()}
-              <Show when={state() === "stale" && props.onRetry}>
-                {" · "}
-                {retryLink()}
-              </Show>
+              {state() === "stale" && props.onRetry ? [status(), " · ", retryLink()] : status()}
             </p>
           </div>
           <Show when={tools() !== undefined}>
