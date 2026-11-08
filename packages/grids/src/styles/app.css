@@ -173,7 +173,8 @@
   border: 1px solid color-mix(in srgb, var(--grids-edit-accent) 24%, var(--ui-border));
   border-radius: calc(var(--ui-radius-control) - 0.125rem);
   background: var(--ui-surface-raised);
-  box-shadow: 0 2px 8px -6px rgb(0 0 0 / 0.32);
+  /* A drag preview floats on layer 3. */
+  box-shadow: var(--k2b-shadow-float);
   color: inherit;
   font-size: 0.6875rem;
   font-weight: 600;

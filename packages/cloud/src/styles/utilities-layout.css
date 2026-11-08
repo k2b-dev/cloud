@@ -19,9 +19,14 @@
   @apply transition-colors duration-150;
   border: 1px solid var(--ui-border);
   border-radius: var(--ui-radius-surface);
-  background: var(--ui-surface);
-  /* Shared surface depth stays consistent with the Layout header. */
-  box-shadow: var(--ui-shadow-surface);
+  /* A paper is an island like @k2b/ui Paper: the island hook gives it the
+     soft shadow in the main content and keeps it flat in panels, dialogs,
+     sidebars, and inside another island (/en/ui/surfaces/elevation). */
+  background: var(--k2b-island-surface, var(--ui-surface));
+  box-shadow: var(--k2b-island-shadow, var(--ui-shadow-surface));
+  & > * {
+    --k2b-island-shadow: none;
+  }
   /* A paper card inside a dialog section group paints its own surface, so its
      fields return to the muted well instead of the group's white one. */
   --k2b-field-surface: initial;
@@ -289,8 +294,6 @@
   border: 0;
   border-radius: 0;
   background: var(--ui-surface);
-  box-shadow: var(--ui-shadow-workspace-edge);
-  transition: box-shadow 150ms ease-out;
 }
 
 .app-workspace > .workspace-detail,
@@ -551,11 +554,7 @@
 
 .settings-save-bar {
   background: var(--ui-surface-raised);
-  box-shadow: 0 -10px 20px -18px rgb(24 24 27 / 0.28);
-}
-
-.dark .settings-save-bar {
-  box-shadow: 0 -10px 20px -18px rgb(0 0 0 / 0.58);
+  box-shadow: var(--k2b-shadow-toolbar);
 }
 
 .panel-dialog-tabs {

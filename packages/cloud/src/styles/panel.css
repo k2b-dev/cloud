@@ -327,12 +327,11 @@
   .cloud-panel__card {
     padding-bottom: env(safe-area-inset-bottom, 0px);
     border-radius: 1.125rem 1.125rem 0 0;
-    box-shadow: 0 -10px 36px rgb(9 9 11 / 0.18);
+    box-shadow: var(--k2b-shadow-sheet);
   }
 
   .dark .cloud-panel__card {
     border-bottom-color: transparent;
-    box-shadow: 0 -10px 36px rgb(0 0 0 / 0.5);
   }
 
   .cloud-panel__grabber {
@@ -374,13 +373,17 @@
   }
 }
 
-/* The provider's page inside the iframe: the panel surface from the first paint. */
+/* The provider's page inside the iframe: the panel surface from the first paint.
+   The panel is a column beside the app, so it is flat inside: islands such as
+   Paper or a framed Section cast no shadow here (/en/ui/surfaces/elevation). */
 .cloud-panel-page {
   display: flex;
   height: 100dvh;
   min-height: 0;
   flex-direction: column;
   background: var(--k2b-surface);
+  --k2b-island-shadow: none;
+  --k2b-island-surface: var(--k2b-surface);
 }
 
 html:has(> body > [data-cloud-panel-page]),

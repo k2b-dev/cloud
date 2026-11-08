@@ -29,26 +29,34 @@
  */
 
 /* ---------------------------------------------------------------- Paper -- */
+/* Paper is an island (layer 1, index.css): in the main content it carries the
+   island shadow and surface; in a flat layer (a column beside the main
+   content, a panel, a dialog, a dense collection) the same hooks are flat. */
 .k2b-ui .k2b-paper {
   border: 1px solid color-mix(in srgb, var(--k2b-border) 72%, transparent);
   border-radius: var(--k2b-radius-surface);
-  background: var(--k2b-surface);
-  box-shadow: var(--k2b-shadow-surface);
+  background: var(--k2b-island-surface);
+  box-shadow: var(--k2b-island-shadow);
   transition:
     color 150ms,
     background-color 150ms,
     border-color 150ms;
 }
 
+/* No depth inside depth: everything inside an island is flat, so a Paper or
+   card inside a Paper, a framed Section, or a ResourceCard casts no shadow. */
+.k2b-ui :is(.k2b-paper, .k2b-resource-card, .k2b-section[data-frame="line"]) > * {
+  --k2b-island-shadow: none;
+}
+
 .k2b-ui .k2b-paper[data-elevated="true"] {
   box-shadow: var(--k2b-shadow-frame);
 }
 
-/* A clickable card keeps a light 1 px border in every state and casts no
-   shadow; hover darkens the fill only. */
+/* A clickable card is a content card: it keeps the island shadow and a light
+   1 px border in every state; hover darkens the fill only. */
 .k2b-ui .k2b-paper[data-interactive="true"] {
   border-color: var(--k2b-border-strong);
-  box-shadow: none;
 }
 
 .k2b-ui .k2b-paper[data-interactive="true"]:hover {
@@ -208,8 +216,9 @@
 
 /* ---------------------------------------------------------- ResourceCard -- */
 /* One size in every state: a fixed width and three fixed lines, so a card that
-   resolves, loses access, or is deleted moves nothing around it. The fill is
-   the reference fill, so the card follows any surface below it. */
+   resolves, loses access, or is deleted moves nothing around it. The card is a
+   thing one can open, so it is an island (layer 1): a light frame on the
+   island surface with the island shadow, flat inside a panel or another island. */
 .k2b-ui .k2b-resource-card {
   display: grid;
   box-sizing: border-box;
@@ -223,11 +232,13 @@
   column-gap: 0;
   overflow: hidden;
   padding-block: 0;
-  padding-inline: 0.625rem 0.875rem;
-  border: 0;
-  border-radius: var(--k2b-radius-control);
+  /* The 1 px frame belongs to the inset, so icon and text keep their place. */
+  padding-inline: calc(0.625rem - 1px) calc(0.875rem - 1px);
+  border: 1px solid color-mix(in srgb, var(--k2b-border) 72%, transparent);
+  border-radius: var(--k2b-radius-surface);
   color: var(--k2b-text);
-  background: var(--k2b-reference-surface);
+  background: var(--k2b-island-surface);
+  box-shadow: var(--k2b-island-shadow);
   font: inherit;
   text-align: start;
   text-decoration: none;
@@ -242,7 +253,7 @@
 
 /* Cards never move on hover; only the fill responds. */
 .k2b-ui :is(a, button).k2b-resource-card:hover {
-  background: var(--k2b-reference-surface-hover);
+  background: var(--k2b-edge-hover-bg);
 }
 
 .k2b-ui :is(a, button).k2b-resource-card:focus-visible {
@@ -263,7 +274,7 @@
    of the same colour. */
 .k2b-ui .k2b-resource-card__icon:not(.k2b-icon-tile) {
   color: var(--k2b-text-secondary);
-  background: var(--k2b-surface);
+  background: var(--k2b-surface-muted);
 }
 
 .k2b-ui .k2b-resource-card__icon.k2b-icon-tile {
