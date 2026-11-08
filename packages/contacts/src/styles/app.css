@@ -128,6 +128,18 @@
   }
 }
 
+/* The list decides its row layout by its own width: beside the open contact it
+   is a narrow column, so contact points and the book chip give the name room. */
+.contacts-list {
+  container: contacts-list / inline-size;
+}
+@container contacts-list (max-width: 40rem) {
+  .contacts-list .contacts-list__contact-points,
+  .contacts-list .contacts-list__book {
+    display: none !important;
+  }
+}
+
 /* The focused editor has its own compact list chrome. CSS follows the actual
    editor in SSR and after hydration, so leaving it restores all normal tools. */
 .contacts-results__compact-heading,
