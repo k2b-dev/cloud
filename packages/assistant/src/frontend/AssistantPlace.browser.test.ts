@@ -422,8 +422,8 @@ const open = async (view: View, scenario: Scenario, options: { theme?: "light" |
 };
 
 const poll = async (read: () => unknown, expected: unknown, timeout = 5_000) => {
-  const end = Date.now() + timeout;
-  while (Date.now() < end && read() !== expected) await new Promise((resolve) => setTimeout(resolve, 50));
+  const end = performance.now() + timeout;
+  while (performance.now() < end && read() !== expected) await new Promise((resolve) => setTimeout(resolve, 50));
   expect(read()).toBe(expected);
 };
 const shot = async (page: Page, name: string) => {
