@@ -17,7 +17,7 @@ export type AssistantPlaceTool = { id: string; title: string; icon: string | nul
  */
 export type AssistantPlaceView =
   | { state: "none"; ref: CloudResourceRef }
-  | { state: "unavailable"; ref: CloudResourceRef; title: string | null; app: AssistantPlaceApp | null; conversationId: string | null }
+  | { state: "unavailable"; ref: CloudResourceRef; title: string | null; app?: AssistantPlaceApp | null; conversationId: string | null }
   | {
       state: "available";
       ref: CloudResourceRef;
@@ -37,13 +37,14 @@ const PolicySchema = z.union([
   z.object({ ask: z.string() }),
 ]);
 // The panel reads only what it shows; the server validated the provider's answer already (AssistantPlaceSchema).
-export const AssistantPlaceViewSchema = z.discriminatedUnion("state", [
-  z.object({ state: z.literal("none"), ref: RefSchema }),
+const PlaceAnswerSchema = z.discriminatedUnion("state", [
+  // No Gustav place here, or no consent to share it: the panel stays the normal Gustav panel.
+  z.object({ state: z.enum(["none", "consent_required"]) }),
   z.object({
     state: z.literal("unavailable"),
     ref: RefSchema,
     title: z.string().max(200).nullable(),
-    app: AppSchema.nullable(),
+    app: AppSchema.nullable().optional(),
     conversationId: z.string().nullable(),
   }),
   z.object({
@@ -58,6 +59,11 @@ export const AssistantPlaceViewSchema = z.discriminatedUnion("state", [
     conversationId: z.string().nullable(),
   }),
 ]);
+/** The server's answer as the panel reads it; `ref` is the place the panel asked for when the answer names none. */
+export const readAssistantPlace = (ref: CloudResourceRef, answer: unknown): AssistantPlaceView => {
+  const parsed = PlaceAnswerSchema.parse(answer);
+  return parsed.state === "none" || parsed.state === "consent_required" ? { state: "none", ref: { ...ref } } : parsed;
+};
 
 export const placeKey = (ref: CloudResourceRef | null | undefined): string | null => (ref ? `${ref.type}:${ref.id}` : null);
 export const samePlace = (a: CloudResourceRef | null | undefined, b: CloudResourceRef | null | undefined): boolean =>
@@ -162,7 +168,7 @@ export const fetchAssistantPlace: PlaceLoader = async (ref, signal) => {
     headers: { accept: "application/json" },
   });
   if (!response.ok) throw new Error(`Place request failed with ${response.status}`);
-  return AssistantPlaceViewSchema.parse(await response.json());
+  return readAssistantPlace(ref, await response.json());
 };
 
 export type PlacePolicyText = { asks: "once" | "always" | null; reach: "you" | "draft" | "shared" | null };
