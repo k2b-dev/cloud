@@ -184,3 +184,24 @@ describe("bar chart labels", () => {
     expect(barChartLayout({ data, displayWidth: 640 }).layout).toBe("columns");
   });
 });
+
+test("series legend values stay adjacent to labels in stretched and measured drawings", () => {
+  for (const displayWidth of [undefined, 296, 1040]) {
+    const svg = renderBarChartSvg({
+      x: ["Jan"],
+      series: [{ label: "Store", data: [1800] }],
+      compare: { label: "Previous", data: [1500] },
+      width: 480,
+      height: 280,
+      displayWidth,
+      inspect: true,
+    });
+    for (const [label, field, value] of [
+      ["Store", "series:0", "1800"],
+      ["Previous", "previous", "1500"],
+    ])
+      expect(svg).toContain(
+        `${label}</tspan><tspan class="stdlib-chart-bar-value" dx="6" data-chart-legend-value data-field="${field}" data-default="${value}">${value}</tspan></text>`,
+      );
+  }
+});

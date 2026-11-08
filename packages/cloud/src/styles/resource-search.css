@@ -530,8 +530,8 @@
   pointer-events: none;
   z-index: 0;
   place-items: center;
-  background: color-mix(in srgb, var(--ui-dialog-surface) 82%, transparent);
-  backdrop-filter: blur(8px);
+  /* Solid: page text lies underneath, and blurred it reads as a fault. */
+  background: var(--ui-dialog-surface);
   border-radius: var(--ui-radius-frame);
   box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--ui-border) 35%, transparent);
   color: var(--k2b-text-muted);

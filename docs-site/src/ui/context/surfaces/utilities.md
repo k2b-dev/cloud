@@ -104,6 +104,35 @@ Hover, focus, and selection never change the tile.
 </span>
 ```
 
+## Overlay surface
+
+Use `k2b-overlay-surface` for a layer that floats over a picture, a video, or
+a map: the chips, bars, and controls an image viewer or a map lays over its
+content. It is light glass: about 78% opaque, blurred, with a fine edge. The
+component that owns the layer sets the class on that layer; it does not reach
+descendants.
+
+Never use it where text, form fields, or lines lie underneath, such as
+forms, lists, tables, documents, or diagrams. Blurred text reads as a
+rendering fault. Menus, popovers, dialogs, and notices stay solid, also on a
+media surface. A button keeps its own look; a group of icon buttons sits on
+one overlay surface.
+
+When the system asks for less transparency or more contrast, the layer turns
+solid; forced colors draw a real border. `--k2b-overlay-surface`,
+`--k2b-overlay-surface-hover`, `--k2b-overlay-edge`, `--k2b-overlay-ring`,
+`--k2b-overlay-lift`, and `--k2b-overlay-solid` hold the values. A stage that
+is always dark, such as `Lightbox`, sets dark values on itself. The
+`glass-surfaces` check keeps backdrop blur on this class and on dialog
+backdrops.
+
+```tsx
+<div class="k2b-overlay-surface" style={{ "border-radius": "0.75rem", padding: "0.25rem" }}>
+  <IconButton label="Zoom in"><i class="ti ti-plus" aria-hidden="true" /></IconButton>
+  <IconButton label="Zoom out"><i class="ti ti-minus" aria-hidden="true" /></IconButton>
+</div>
+```
+
 ## Accessibility
 
 Keep contrast between semantic text and surfaces when overriding color stacks. Focus, danger, success, and warning treatments must remain distinguishable without relying on hue alone.

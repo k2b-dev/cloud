@@ -51,6 +51,7 @@ const catalogs = {
   Tag: (await import("../inputs/tag-messages")).checkTagMessages,
   Input: (await import("../inputs/input-messages")).checkInputMessages,
   DateInput: (await import("../inputs/date-input-messages")).checkDateInputMessages,
+  PeriodPicker: (await import("../inputs/period-picker-messages")).checkPeriodPickerMessages,
   Icon: (await import("../inputs/icon-messages")).checkIconMessages,
   Template: (await import("../inputs/template-messages")).checkTemplateMessages,
   Avatar: (await import("../surfaces/avatar-messages")).checkAvatarMessages,
