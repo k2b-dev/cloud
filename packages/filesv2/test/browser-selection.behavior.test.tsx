@@ -4,12 +4,16 @@ import { render } from "solid-js/web";
 import { createDomTestHarness } from "../../ui/test/dom";
 import type { DirectoryResult, FileEntry } from "../src/contracts";
 import { browserWithUploads } from "./browser-with-uploads";
+import { env, page } from "./history-fixtures";
 
+const shareRequests: Array<{ resolve: (response: Response) => void }> = [];
 const branchRequests: Array<{ input: unknown; signal: AbortSignal; resolve: (response: Response) => void }> = [];
 const favoriteRequests: Array<{ input: unknown; resolve: (response: Response) => void }> = [];
 const requests: Array<{ signal: AbortSignal; input: unknown; resolve: (response: Response) => void }> = [];
 mock.module("../src/api/client", () => ({
   apiClient: {
+    shares: { $get: () => new Promise<Response>((resolve) => shareRequests.push({ resolve })) },
+    activity: { $get: async () => Response.json(page([])) },
     bases: {
       ":baseId": {
         entries: {
@@ -49,6 +53,7 @@ afterEach(() => {
   requests.length = 0;
   favoriteRequests.length = 0;
   branchRequests.length = 0;
+  shareRequests.length = 0;
 });
 
 test("view changes preserve selection; superseded details cannot replace current content; navigation clears selection", async () => {
@@ -557,3 +562,66 @@ test("inspector commands retain their permissions and busy state beside history"
   expect(command("Copy to…").disabled).toBe(false);
   expect(dom.root.querySelector(".k2b-detail-panel__primary-actions")?.textContent).not.toContain("Share");
 });
+
+test.each(["initial", "continuation"])(
+  "inspector %s share retry keeps its group, alert and label without an initial-loading line",
+  async (failure) => {
+    const dom = createDomTestHarness();
+    const { default: FileInspector } = await import("../src/frontend/FileInspector");
+    const file = initial.items[0]!;
+    const noop = () => {};
+    const dispose = render(
+      () => (
+        <FileInspector
+          base={initial.base}
+          selected={[file]}
+          paths={[file.path]}
+          initial={{ base: initial.base, entry: file }}
+          onClose={noop}
+          onOpen={noop}
+          onPreview={noop}
+          onDownload={noop}
+          onRename={noop}
+          onDuplicate={noop}
+          onMove={noop}
+          onCopy={noop}
+          onTrash={noop}
+          onChanged={noop}
+          history={{ env, actions: {}, activityHref: () => "/app/filesv2/activity" }}
+        />
+      ),
+      dom.root,
+    );
+    cleanup = () => {
+      dispose();
+      dom.cleanup();
+    };
+    await flush();
+    expect(shareRequests).toHaveLength(1);
+    if (failure === "continuation") {
+      shareRequests[0]!.resolve(Response.json({ items: [], next: "next" }));
+      await flush();
+      dom.root.querySelector<HTMLButtonElement>('[role="group"][aria-label="Public link"] button')!.click();
+      await flush();
+    }
+    const failedRequest = shareRequests.length - 1;
+    shareRequests[failedRequest]!.resolve(Response.json({ message: "Offline" }, { status: 503 }));
+    await flush();
+    const group = dom.root.querySelector('[role="group"][aria-label="Public link"]')!;
+    expect(group).not.toBeNull();
+    const alert = group.querySelector('[role="alert"]');
+    expect(alert).not.toBeNull();
+    const retry = group.querySelector<HTMLButtonElement>("button")!;
+    expect(retry.textContent?.trim()).toBe("Try again");
+    retry.click();
+    await flush();
+    expect(shareRequests).toHaveLength(failedRequest + 2);
+    expect(retry.disabled).toBe(true);
+    expect(retry.textContent?.trim()).toBe("Try again");
+    expect(group.querySelector('[role="alert"]')).toBe(alert);
+    expect(group.querySelector('[role="status"]')).toBeNull();
+    shareRequests.at(-1)!.resolve(Response.json({ items: [], next: null }));
+    await flush();
+    expect(dom.root.contains(group)).toBe(false);
+  },
+);

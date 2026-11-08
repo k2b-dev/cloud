@@ -6,7 +6,7 @@ export type { ContextMenuProps } from "./ContextMenu";
 export { ContextMenu } from "./ContextMenu";
 export type { CopyButtonProps, CopyButtonValue } from "./CopyButton";
 export { CopyButton } from "./CopyButton";
-export type { CommandItem, CommandSource, CommandStep } from "./command-items";
+export type { CommandContext, CommandItem, CommandSource, CommandStep } from "./command-items";
 export type { DisclosureProps } from "./Disclosure";
 export { Disclosure } from "./Disclosure";
 export type { DragPayload, DragSourceProps, DropTargetProps } from "./DragAndDrop";

@@ -1,34 +1,161 @@
-import { type Accessor, createEffect, createMemo, createSignal, For, type JSX, Show } from "solid-js";
+import { type Accessor, createEffect, createMemo, createSignal, For, type JSX, Show, untrack } from "solid-js";
 import { useUiMessages } from "../intl/messages";
 import {
+  type CommandContext,
   type CommandGroup,
   type CommandItem,
   type CommandSource,
   commandKey,
+  filterCommandItems,
   groupCommandItems,
-  resolveCommandSource,
 } from "./command-items";
 import { useCommandMessages } from "./command-messages";
 
 /** The state of one open command list: its steps, the shown entries, and the marked one. */
 export type CommandNavigator = ReturnType<typeof createCommandNavigator>;
 
+/** The context without what the list adds itself: the query, the path, and the signal. */
+export type CommandPlace = Omit<CommandContext, "query" | "path" | "signal">;
+
+/** A list whose entries come from a promise: pending, or failed with the message of its rejection. */
+export type CommandListLoad = { state: "ready" } | { state: "loading" } | { state: "failed"; message?: string };
+
+/** A command that returned a promise: busy while it runs, or failed with the message of its rejection. */
+export type CommandStatus =
+  | { key: string; label: string; state: "running" }
+  | { key: string; label: string; state: "failed"; message?: string };
+
 /**
- * Keeps the steps and the marked entry of a command list. The host owns the query and the effects: `onPick` runs for
- * an entry with `onSelect` or `text`, and `onStep` after a second list opened or closed, so the host clears its query.
+ * Keeps the steps, the marked entry, and the running command of a command list. The host owns the query and the
+ * effects: `onText` places an entry's text; for an entry with `onSelect`, `beforeRun` lets the host remove its query,
+ * `context` describes the text the command acts on, and `afterRun` closes the list once the command finished.
+ * `onStep` runs after a further list opened or closed, with the new depth, so the host clears its query.
  */
 export const createCommandNavigator = (options: {
   items: Accessor<CommandSource>;
   query: Accessor<string>;
-  onPick: (item: CommandItem) => void;
-  onStep?: () => void;
+  onText: (item: CommandItem) => void;
+  /** The part of the context the host knows: the text and where the list is in it. */
+  context: () => CommandPlace;
+  /** Whether the list is open; a closed list asks no source. */
+  active: () => boolean;
+  beforeRun?: () => void;
+  afterRun: () => void;
+  onStep?: (depth: number) => void;
 }) => {
+  const [status, setStatus] = createSignal<CommandStatus>();
+  let running: AbortController | undefined;
+  const run = (item: CommandItem) => {
+    const controller = new AbortController();
+    running = controller;
+    const key = commandKey(item);
+    setStatus(undefined);
+    options.beforeRun?.();
+    const settle = (failure?: { error: unknown }) => {
+      if (running !== controller || controller.signal.aborted) return;
+      running = undefined;
+      if (!failure) {
+        setStatus(undefined);
+        options.afterRun();
+        return;
+      }
+      const message = failure.error instanceof Error && failure.error.message ? failure.error.message : undefined;
+      setStatus({ key, label: item.label, state: "failed", message });
+    };
+    let result: unknown;
+    try {
+      const base = options.context();
+      result = item.onSelect?.({
+        ...base,
+        // A command the person stopped writes nothing more.
+        insert: (text: string) => {
+          if (!controller.signal.aborted) base.insert(text);
+        },
+        query: options.query(),
+        path: steps(),
+        signal: controller.signal,
+      });
+    } catch (error) {
+      settle({ error });
+      return;
+    }
+    if (!(result instanceof Promise)) return settle();
+    setStatus({ key, label: item.label, state: "running" });
+    result.then(
+      () => settle(),
+      (error: unknown) => settle({ error }),
+    );
+  };
   const [steps, setSteps] = createSignal<readonly CommandItem[]>([]);
   const step = () => steps().at(-1);
-  const entries = createMemo(() => {
-    const current = step()?.next;
-    return resolveCommandSource(current ? current.items : options.items(), options.query());
+  // A source that returns a promise: each request has a token, and only the latest one's result reaches the list. A new
+  // request aborts the previous one's signal, so stale results are discarded where they are made.
+  const [retries, setRetries] = createSignal(0);
+  const [settled, setSettled] = createSignal<{ token: object; items?: readonly CommandItem[]; error?: unknown }>();
+  let pending: AbortController | undefined;
+  type Request = { items?: readonly CommandItem[]; error?: unknown; token?: object };
+  // Where the list is, compared by value: only a new place, query, or path asks a source again, not every selection event.
+  const place = createMemo(() => options.context(), undefined, {
+    equals: (a, b) =>
+      a.text === b.text &&
+      a.before === b.before &&
+      a.atStart === b.atStart &&
+      a.lineStart === b.lineStart &&
+      a.selection.start === b.selection.start &&
+      a.selection.end === b.selection.end,
   });
+  const request = createMemo<Request>(() => {
+    retries();
+    pending?.abort();
+    pending = undefined;
+    if (!options.active()) return { items: [] };
+    const source = step()?.next?.items ?? options.items();
+    if (typeof source !== "function") return { items: filterCommandItems(source, options.query()) };
+    const controller = new AbortController();
+    const context: CommandContext = { ...place(), query: options.query(), path: steps(), signal: controller.signal };
+    let result: readonly CommandItem[] | Promise<readonly CommandItem[]>;
+    try {
+      result = untrack(() => source(context));
+    } catch (error) {
+      return { error };
+    }
+    if (!(result instanceof Promise)) return { items: filterCommandItems(result, context.query) };
+    pending = controller;
+    const token = {};
+    result.then(
+      (items) => {
+        if (pending === controller) setSettled({ token, items: filterCommandItems(items, context.query) });
+      },
+      (error: unknown) => {
+        if (pending === controller && !controller.signal.aborted) setSettled({ token, error });
+      },
+    );
+    return { token };
+  });
+  /** Pending, failed, or ready; while a new query loads, the step's previous entries stay in place. */
+  const load = createMemo<CommandListLoad>(() => {
+    const current = request();
+    const result = current.token ? (settled()?.token === current.token ? settled() : undefined) : current;
+    if (!result) return { state: "loading" };
+    if (result.error !== undefined) {
+      const message = result.error instanceof Error && result.error.message ? result.error.message : undefined;
+      return { state: "failed", message };
+    }
+    return { state: "ready" };
+  });
+  // Only entries of the same step stay while a query loads: a further list never shows the list it came from.
+  const shown = createMemo<{ step: CommandItem | undefined; items: readonly CommandItem[] }>(
+    (previous) => {
+      const current = request();
+      const at = step();
+      if (!current.token) return { step: at, items: current.items ?? [] };
+      const result = settled();
+      if (result?.token === current.token) return { step: at, items: result.items ?? [] };
+      return { step: at, items: previous.step === at ? previous.items : [] };
+    },
+    { step: undefined, items: [] },
+  );
+  const entries = () => shown().items;
   const groups = createMemo<CommandGroup[]>(() => groupCommandItems(entries()));
   const ordered = createMemo(() => groups().flatMap((group) => group.entries.map((entry) => entry.item)));
   // The marked entry is remembered for the query and step it was marked in; a new query marks the first entry again.
@@ -46,29 +173,71 @@ export const createCommandNavigator = (options: {
   const setActive = (index: number) => {
     const list = ordered();
     const item = list[(index + list.length) % Math.max(1, list.length)];
-    if (item) setWanted({ key: commandKey(item), query: options.query(), step: step() });
+    if (item && !item.disabled) setWanted({ key: commandKey(item), query: options.query(), step: step() });
+  };
+  /** The next entry that can be chosen from `from` in `direction`, wrapping; unavailable entries are passed over. */
+  const nextEnabled = (from: number, direction: 1 | -1) => {
+    const list = ordered();
+    for (let step = 1; step <= list.length; step++) {
+      const index = (((from + direction * step) % list.length) + list.length) % list.length;
+      if (!list[index]?.disabled) return index;
+    }
+    return from;
+  };
+  /** Chooses the marked entry or the one at `index`. An unavailable entry, or any while a command runs, does nothing. */
+  const choose = (index = active()) => {
+    const item = ordered()[index];
+    if (!item || item.disabled || status()?.state === "running") return;
+    if (item.next) changeStep([...steps(), item]);
+    else if (item.text !== undefined) options.onText(item);
+    else run(item);
   };
   const changeStep = (next: readonly CommandItem[]) => {
     setSteps(next);
     setWanted(undefined);
-    options.onStep?.();
+    options.onStep?.(next.length);
   };
+  // Enter while entries load waits for that query's entries and takes the first that can be chosen; a new query or no
+  // match chooses nothing.
+  const [awaiting, setAwaiting] = createSignal<string>();
+  createEffect(() => {
+    const query = awaiting();
+    if (query === undefined) return;
+    if (query !== options.query()) return setAwaiting(undefined);
+    const state = load().state;
+    if (state === "loading") return;
+    setAwaiting(undefined);
+    if (state !== "ready") return;
+    const index = ordered().findIndex((item) => !item.disabled);
+    if (index >= 0) untrack(() => choose(index));
+  });
 
   return {
+    query: options.query,
     step,
     groups,
     entries: ordered,
     active,
     setActive,
-    /** Marks the next or previous entry, wrapping; unavailable entries are marked too, so their reason is heard. */
-    move: (delta: 1 | -1) => setActive(active() + delta),
-    edge: (which: "first" | "last") => setActive(which === "first" ? 0 : ordered().length - 1),
-    /** Chooses the marked entry or the one at `index`. An unavailable entry does nothing. */
-    choose: (index = active()) => {
-      const item = ordered()[index];
-      if (!item || item.disabled) return;
-      if (item.next) changeStep([...steps(), item]);
-      else options.onPick(item);
+    /** Marks the next or previous entry, wrapping; unavailable entries are passed over, as in a searchable menu. */
+    move: (delta: 1 | -1) => setActive(nextEnabled(active(), delta)),
+    edge: (which: "first" | "last") => setActive(which === "first" ? nextEnabled(-1, 1) : nextEnabled(ordered().length, -1)),
+    status,
+    load,
+    /** Asks a source whose promise failed again. */
+    retry: () => setRetries((value) => value + 1),
+    /** Whether a command's promise is pending; the list then waits for it. */
+    busy: () => status()?.state === "running",
+    choose: (index?: number) => choose(index),
+    /** Enter while entries load: chooses the first entry of this query once it arrives. */
+    chooseWhenLoaded: () => setAwaiting(options.query()),
+    /** Whether a choice waits for entries on their way. */
+    awaitingChoice: () => awaiting() !== undefined,
+    /** Stops a running command: its signal aborts, and its result no longer reaches the list. */
+    abort: () => {
+      running?.abort();
+      running = undefined;
+      setStatus(undefined);
     },
     /** Leaves the second list; `false` when the first list shows. */
     back: () => {
@@ -76,9 +245,14 @@ export const createCommandNavigator = (options: {
       changeStep(steps().slice(0, -1));
       return true;
     },
+    /** Forgets steps, mark, and status. A running command goes on, but its result no longer reaches the list. */
     reset: () => {
+      running = undefined;
+      pending?.abort();
+      pending = undefined;
       setSteps([]);
       setWanted(undefined);
+      setStatus(undefined);
     },
   };
 };
@@ -110,7 +284,24 @@ export function CommandList(props: {
     if (nav.entries().length === 0) return;
     document.getElementById(commandOptionId(props.id, nav.active()))?.scrollIntoView?.({ block: "nearest" });
   });
+  const statusOf = (item: CommandItem) => {
+    const current = nav.status();
+    return current?.key === commandKey(item) ? current : undefined;
+  };
+  const runningLabel = () => {
+    const current = nav.status();
+    return current?.state === "running" ? commandMessages().running({ label: current.label }) : "";
+  };
+  const loadFailure = () => {
+    const current = nav.load();
+    return current.state === "failed" ? (current.message ?? commandMessages().loadFailed) : "";
+  };
+  const failure = () => {
+    const current = nav.status();
+    return current?.state === "failed" ? (current.message ?? commandMessages().failed) : "";
+  };
   const status = () => {
+    if (runningLabel()) return runningLabel();
     const step = nav.step()?.next;
     const count = props.query().trim() || step ? messages().searchMatches({ count: matches() }) : "";
     return step && count ? `${step.label}, ${count}` : count;
@@ -144,6 +335,7 @@ export function CommandList(props: {
         id={props.id}
         role="listbox"
         aria-label={nav.step()?.next?.label ?? props.label}
+        aria-busy={nav.load().state === "loading" ? "true" : undefined}
         class="k2b-command-list"
         // A press on a row leaves the focus in the host's field.
         onMouseDown={(event) => event.preventDefault()}
@@ -167,27 +359,45 @@ export function CommandList(props: {
                       class="k2b-dropdown__item"
                       aria-selected={entry.index === nav.active()}
                       aria-disabled={entry.item.disabled ? "true" : undefined}
-                      data-active={entry.index === nav.active() ? "" : undefined}
+                      aria-busy={statusOf(entry.item)?.state === "running" ? "true" : undefined}
+                      data-active={entry.index === nav.active() && !entry.item.disabled ? "" : undefined}
+                      data-failed={statusOf(entry.item)?.state === "failed" ? "" : undefined}
                       onPointerMove={() => {
                         if (entry.index !== nav.active()) nav.setActive(entry.index);
                       }}
                       onClick={() => nav.choose(entry.index)}
                     >
                       <Show
-                        when={entry.item.leading}
-                        fallback={<Show when={entry.item.icon}>{(icon) => <i class={icon()} aria-hidden="true" />}</Show>}
+                        when={statusOf(entry.item)?.state !== "running"}
+                        fallback={<i class="ti ti-loader-2 k2b-spin k2b-command-list__busy" aria-hidden="true" />}
                       >
-                        {(leading) => (
-                          <span class="k2b-command-list__leading" aria-hidden="true">
-                            {leading()()}
-                          </span>
-                        )}
+                        <Show when={entry.item.leading} fallback={<CommandVisual item={entry.item} />}>
+                          {(leading) => (
+                            <span class="k2b-command-list__leading" aria-hidden="true">
+                              {leading()()}
+                            </span>
+                          )}
+                        </Show>
                       </Show>
-                      <span class="k2b-dropdown__copy">
+                      {/* One line: the label, then quietly a failure, the reason it is unavailable, or what it does. */}
+                      <span class="k2b-dropdown__copy k2b-command-list__text">
                         <span>{entry.item.label}</span>
-                        <Show when={entry.item.disabled}>{(reason) => <small>{reason()}</small>}</Show>
+                        <Show
+                          when={statusOf(entry.item)?.state === "failed"}
+                          fallback={
+                            <Show when={entry.item.disabled ?? entry.item.description}>
+                              {(text) => <small class="k2b-command-list__description">{text()}</small>}
+                            </Show>
+                          }
+                        >
+                          {/* The alert below reads it in full; the title shows it where it is cut. */}
+                          <small class="k2b-command-list__description k2b-command-list__error" title={failure()} aria-hidden="true">
+                            <i class="ti ti-alert-circle" aria-hidden="true" />
+                            <span>{failure()}</span>
+                          </small>
+                        </Show>
                       </span>
-                      <Show when={entry.item.hint}>
+                      <Show when={statusOf(entry.item)?.state !== "failed" && entry.item.hint}>
                         {(hint) => (
                           <span class="k2b-command-list__hint" aria-hidden="true">
                             {hint()}
@@ -204,14 +414,59 @@ export function CommandList(props: {
             );
           }}
         </For>
-        <Show when={nav.entries().length === 0}>
+        <Show when={nav.entries().length === 0 && nav.load().state === "ready"}>
           <p class="k2b-dropdown__empty">{messages().noResults}</p>
+        </Show>
+        {/* Entries on their way keep the previous ones in place; the state takes one row at the end. */}
+        <Show when={nav.load().state === "loading"}>
+          <p class="k2b-command-list__state">
+            <i class="ti ti-loader-2 k2b-spin" aria-hidden="true" />
+            <span>{nav.awaitingChoice() ? commandMessages().loadingChoice : commandMessages().loading}</span>
+          </p>
+        </Show>
+        <Show when={nav.load().state === "failed" ? (nav.load() as { message?: string }) : undefined}>
+          {(failed) => (
+            <p class="k2b-command-list__state" data-error="">
+              <i class="ti ti-alert-circle" aria-hidden="true" />
+              <span>{failed().message ?? commandMessages().loadFailed}</span>
+              <button type="button" tabIndex={-1} onMouseDown={(event) => event.preventDefault()} onClick={() => nav.retry()}>
+                {messages().retry}
+              </button>
+            </p>
+          )}
         </Show>
       </div>
       <span class="k2b-sr-only" role="status">
         {status()}
       </span>
+      <span class="k2b-sr-only" role="alert">
+        {failure() || loadFailure()}
+      </span>
     </>
+  );
+}
+
+/** An entry's image, one per theme when it has two, at icon size; or its icon. */
+function CommandVisual(props: { item: CommandItem }): JSX.Element {
+  const image = () => props.item.image;
+  return (
+    <Show when={image()} fallback={<Show when={props.item.icon}>{(icon) => <i class={icon()} aria-hidden="true" />}</Show>}>
+      {(source) => (
+        <span class="k2b-command-list__image" aria-hidden="true">
+          <Show
+            when={typeof source() === "object" ? (source() as { light: string; dark: string }) : undefined}
+            fallback={<img src={source() as string} alt="" width="16" height="16" decoding="async" />}
+          >
+            {(pair) => (
+              <>
+                <img class="k2b-command-list__image-light" src={pair().light} alt="" width="16" height="16" decoding="async" />
+                <img class="k2b-command-list__image-dark" src={pair().dark} alt="" width="16" height="16" decoding="async" />
+              </>
+            )}
+          </Show>
+        </span>
+      )}
+    </Show>
   );
 }
 
@@ -235,10 +490,22 @@ export const commandListKey = (nav: CommandNavigator, event: KeyboardEvent, quer
       return true;
     case "Enter":
     case "Tab":
+      // Enter while entries load takes the first entry of exactly this query once it arrives, never a stale one.
+      if (event.key === "Enter" && !event.shiftKey && nav.load().state === "loading") {
+        nav.chooseWhenLoaded();
+        return true;
+      }
+      // Enter asks a list that could not load again.
+      if (event.key === "Enter" && !event.shiftKey && nav.load().state === "failed" && nav.entries().length === 0) {
+        nav.retry();
+        return true;
+      }
       if (event.shiftKey || nav.entries().length === 0) return false;
       nav.choose();
       return true;
     case "Escape":
+      // A running command is stopped by the host, before any back.
+      if (nav.busy()) return false;
       return nav.back();
     case "Backspace":
       return query === "" && nav.back();

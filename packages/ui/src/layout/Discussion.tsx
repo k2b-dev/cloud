@@ -329,10 +329,17 @@ const DiscussionList = (props: DiscussionListProps): JSX.Element => {
         </button>
       </Show>
       <Show when={!props.loading && !props.error && !loadMoreError() && (canLoadMore() || loadingMore())}>
-        <button type="button" class="k2b-discussion__load-more" disabled={loadingMore()} onClick={() => void loadMore()}>
-          <i class={`ti ${loadingMore() ? "ti-loader-2 k2b-spin" : "ti-history"}`} aria-hidden="true" />
-          {loadingMore() ? (props.loadingLabel ?? chatMessages().loadingMessages) : (props.loadMoreLabel ?? chatMessages().loadEarlier)}
-        </button>
+        <Button
+          variant="link"
+          size="sm"
+          class="k2b-discussion__load-more"
+          loading={loadingMore()}
+          loadingLabel={props.loadingLabel ?? chatMessages().loadingMessages}
+          onClick={() => void loadMore()}
+        >
+          <i class="ti ti-chevron-up" aria-hidden="true" />
+          {props.loadMoreLabel ?? chatMessages().loadEarlier}
+        </Button>
       </Show>
       <ol ref={listRef} class="k2b-discussion__list">
         {visible()}

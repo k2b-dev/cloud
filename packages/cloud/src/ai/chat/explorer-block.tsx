@@ -13,8 +13,8 @@ import { createMemo, createSignal, Show } from "solid-js";
 import { type CloudAiChartRow, cloudAiChartMarkKey, cloudAiChartReferenceMark, cloudAiChartRenderOptions } from "../chart-block";
 import {
   type CloudAiExplorerRequest,
-  type CloudAiExplorerView,
   type CloudAiViewSummary,
+  type CloudExplorerDescription,
   cloudAiExplorerControls,
   cloudAiExplorerState,
   cloudAiViewCellOf,
@@ -45,7 +45,12 @@ const emptySnapshot = (kind: ChartSnapshot["kind"]): ChartSnapshot => ({
 });
 
 /** One state of the explorer: the rows its request shows, as the table, and every view projected from them. */
-function explorerState(view: CloudAiExplorerView, table: CloudAiChartRow[], request: CloudAiExplorerRequest, locale: string) {
+function explorerState(
+  view: Omit<CloudExplorerDescription, "block">,
+  table: CloudAiChartRow[],
+  request: CloudAiExplorerRequest,
+  locale: string,
+) {
   const state = cloudAiExplorerState(view, request, locale);
   const rows = state.rows.map((index) => table[index]!);
   const charts: Charts = { [TABLE]: { chart: emptySnapshot("bar"), rows } };
@@ -58,8 +63,8 @@ type ExplorerState = ReturnType<typeof explorerState>;
  * draws no mark of the shown rows returns undefined, so its frame says why instead of showing an empty plot.
  */
 function drawExplorerView(
-  view: CloudAiExplorerView,
-  spec: CloudAiExplorerView["views"][number],
+  view: Omit<CloudExplorerDescription, "block">,
+  spec: CloudExplorerDescription["views"][number],
   table: CloudAiChartRow[],
   state: ExplorerState,
   locale: string,
@@ -111,10 +116,10 @@ function drawExplorerView(
  * The loaded explorer. Every filter, step and comparison is computed here from the file's rows; the selection is
  * shared by every view and the table, and all of it is local to this block.
  */
-function LoadedExplorer(props: { summary: ExplorerSummary; input: CloudAiExplorerView }) {
+function LoadedExplorer(props: { summary: ExplorerSummary; input: Omit<CloudExplorerDescription, "block"> }) {
   const locale = useLocale();
   const t = () => aiChatMessages(locale());
-  const table = createMemo(() => cloudAiViewTable({ ...props.input, view: "table" }, locale()).rows);
+  const table = createMemo(() => cloudAiViewTable(props.input, locale()).rows);
   const controls = createMemo(() => cloudAiExplorerControls(props.input, locale()));
   // createChartExplorer owns the request and the selection over the shown rows; each view is drawn when shown, once
   // per state, so a filter or step change draws one view instead of all of them.
@@ -223,7 +228,7 @@ function LoadedExplorer(props: { summary: ExplorerSummary; input: CloudAiExplore
  * rows shown. It stands at its final size from the `present` summary while the file loads (`input` undefined) and
  * when it is unavailable (`input` null).
  */
-export function CloudExplorerView(props: { summary: ExplorerSummary; input: CloudAiExplorerView | null | undefined }) {
+export function CloudExplorerView(props: { summary: ExplorerSummary; input: Omit<CloudExplorerDescription, "block"> | null | undefined }) {
   const locale = useLocale();
   const t = () => aiChatMessages(locale());
   return (
