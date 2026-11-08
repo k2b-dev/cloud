@@ -108,9 +108,10 @@ describe("color guide agrees with the shared CSS", () => {
       [...navigation.classes].filter((name) => tabs.classes.has(name)),
       "Navigation and selection-control tables must be disjoint",
     ).toEqual([]);
-    // Navigation lives in layout/, tabs, segments, and filter chips in actions/.
+    // Navigation lives in layout/, selection controls in actions/, and the editor's own tabs in inputs/.
     for (const name of navigation.primitives) expect(definedIn.get(name), `${name} is navigation`).toBe("layout");
-    for (const name of tabs.primitives) expect(definedIn.get(name), `${name} is a selection control`).toBe("actions");
+    for (const name of tabs.primitives)
+      expect(definedIn.get(name), `${name} is a selection control`).toBe(name === "ImageEditor" ? "inputs" : "actions");
   });
 
   for (const [heading, expected] of [

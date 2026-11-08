@@ -131,6 +131,7 @@ read as controls (see
 | Selected segment | `SegmentedControl` | `k2b-segmented-control` |
 | Active filter | `FilterChip`, `FilterToggle` | `k2b-filter-chip` |
 | Selected choice in a menu's segment row | `Dropdown` | `k2b-dropdown` |
+| Selected editor tab (Crop, Adjust, or Mark up) | `ImageEditor` | `k2b-image-editor` |
 
 Do not draw a chosen view, range, or filter as a filled primary button such
 as `variant={chosen ? "primary" : "secondary"}`. That makes a choice look like
@@ -172,6 +173,7 @@ and checked cards.
 | Selected range | `RangePicker` | `k2b-range-picker` |
 | Selected tone or emoji group | `EmojiPicker` | `k2b-emoji-picker` |
 | Pressed toolbar button | `Toolbar` | `k2b-toolbar` |
+| Pressed image editor toolbar button | `ImageEditor` | `k2b-image-editor` |
 | Pressed formatting tool | `MarkdownEditor` | `k2b-markdown-editor` |
 | Selected table size | `TableSizePicker` | `k2b-ste-size-row` |
 | Enabled table header | `TextEditor` | `k2b-ste-header-choice` |
