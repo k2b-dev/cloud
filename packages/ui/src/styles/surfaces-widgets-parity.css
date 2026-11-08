@@ -582,7 +582,9 @@
 }
 
 /* ---------------------------------------------------------------- Budget -- */
-.k2b-ui .k2b-budget { min-width: 0; }
+/* A budget row is label and amount on one line over a bar; the list keeps the row measure, so on a wide screen the
+   amount stays within reach of its label instead of drifting to the far edge. */
+.k2b-ui .k2b-budget { min-width: 0; max-width: var(--k2b-row-measure); }
 .k2b-ui .k2b-budget__list { display: flex; flex-direction: column; gap: 0.875rem; margin: 0; padding: 0; list-style: none; }
 .k2b-ui .k2b-budget__anchor {
   display: grid;
@@ -593,6 +595,8 @@
   border-radius: var(--k2b-radius-control);
   font-size: 0.8125rem;
 }
+/* The row tint of a table row: a pointer on a row ties its label to its amount. */
+.k2b-ui .k2b-budget__anchor:hover { background: color-mix(in srgb, var(--k2b-hover) 50%, transparent); }
 .k2b-ui .k2b-budget__label { min-width: 0; overflow: hidden; color: var(--k2b-text-secondary); font-weight: 500; text-overflow: ellipsis; white-space: nowrap; }
 .k2b-ui .k2b-budget__amount { color: var(--k2b-text); font-variant-numeric: tabular-nums; font-weight: 600; text-align: right; white-space: nowrap; }
 .k2b-ui .k2b-budget__amount span { color: var(--k2b-text-muted); font-weight: 500; }
