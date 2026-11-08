@@ -27,3 +27,9 @@ application; opening the place checks its current availability.
 
 See [Chat runtime and streaming](/en/docs/ai/chat-runtime-and-streaming#list-place-chats)
 for the list, count, and CLI contract.
+
+Place Actions are available only in their place chat and always target that
+chat's stored resource. Cloud refreshes the person and provider before each
+call, also after approval or resume. Revocation rejects the call; it does not
+remove the chat history. No additional place-specific approval setting is
+required. See [Fixed targets and current access](/en/docs/ai/assistant-places#fixed-targets-and-current-access).
