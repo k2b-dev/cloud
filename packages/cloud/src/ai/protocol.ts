@@ -48,7 +48,7 @@ export type AiTurnBlock =
       result?: unknown;
       /** Bound on the server from the stored raw capability result. */
       view?: BoundBlockView;
-      choice?: import("./choices").AiChoiceState;
+      choice?: import("./choice-state").AiChoiceState;
       isError?: boolean;
       /** Present while status is awaiting_approval. */
       approval?: {
@@ -262,7 +262,7 @@ export const buildBlocksFromMessages = (
     meta?: {
       steerId?: string;
       resultView?: BoundBlockView;
-      resultChoice?: import("./choices").AiChoiceState;
+      resultChoice?: import("./choice-state").AiChoiceState;
       toolPresentations?: Record<string, AiToolPresentation>;
       toolReviews?: Record<string, AiStoredActionReview>;
       toolChecks?: Record<string, AiActionCheck>;

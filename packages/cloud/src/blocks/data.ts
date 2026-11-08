@@ -1,7 +1,6 @@
 import { CAPABILITY_MAX_RESULT_BYTES } from "../contracts/capability-limits";
+import { unsafeBlockKey } from "./path";
 import { BLOCK_LIMITS } from "./schema";
-
-export const unsafeBlockKey = (key: string): boolean => ["__proto__", "constructor", "prototype"].includes(key);
 
 /** Guard before schemas, binding or serialization. Traversal stops as soon as the budget is exhausted. */
 export function assertBlockData(value: unknown, maxBytes = CAPABILITY_MAX_RESULT_BYTES): void {

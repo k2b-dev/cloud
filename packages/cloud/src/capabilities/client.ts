@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { BoundBlockViewSchema } from "../blocks/schema";
+import { BoundViewSchema } from "#block-view-schema";
 import { beginAppAction } from "../browser/app-actions";
 import {
   CAPABILITY_FRAMEWORK_ERROR_CODES,
@@ -181,7 +181,7 @@ export const readCapabilityReviewContent = async (
       requestUrl(options.baseUrl ?? "/api", `${ref.href.slice(4)}?digest=${encodeURIComponent(ref.digest)}`),
       { headers: options.headers, credentials: "same-origin", cache: "no-store", signal: options.signal },
     );
-    return await readCapabilityResponse(response, BoundBlockViewSchema, CAPABILITY_MAX_REVIEW_CONTENT_BYTES, options.signal);
+    return await readCapabilityResponse(response, BoundViewSchema, CAPABILITY_MAX_REVIEW_CONTENT_BYTES, options.signal);
   } catch (cause) {
     return unavailable(cause, undefined, clientLocale(options.headers));
   }

@@ -29,9 +29,9 @@ import { RESOURCE_PAGE_MAX_LENGTH, RESOURCE_PAGES_PER_TYPE, resourcePageIssue } 
 export * from "./capability-streams";
 
 import { z } from "zod";
-import { bindView, blockDataAtPath } from "../blocks/bind";
-import { assertBlockData } from "../blocks/data";
-import { type BlockView, BlockViewSchema, BoundBlockViewSchema } from "../blocks/schema";
+import { assertViewData, BoundViewSchema, checkViewBinding, ViewSchema } from "#block-view-schema";
+import { blockDataAtPath } from "../blocks/path";
+import type { BlockView } from "../blocks/schema";
 import type { RequestAuthority } from "../server/middleware/auth";
 import type { AppEventDefinition, AppEventSubscriptionDefinition } from "./app-events";
 import { CommandPathSchema } from "./commands";
@@ -407,7 +407,7 @@ export const CapabilityActionCallReviewSchema = /* @__PURE__ */ (() =>
         })
         .strict(),
       slots: reviewSlots.readonly(),
-      view: BlockViewSchema.optional(),
+      view: ViewSchema.optional(),
       consequences: z.array(CapabilityConsequenceSchema).max(6).optional(),
       ask: z.enum(CAPABILITY_ASK_REASONS).optional(),
       reach: z.enum(CAPABILITY_REACHES).optional(),
@@ -454,7 +454,7 @@ export type CapabilityActionReviewPresentation =
 export const CapabilityActionReviewPresentationSchema: z.ZodType<CapabilityActionReviewPresentation> = /* @__PURE__ */ (() =>
   z.union([
     CapabilityActionCallReviewSchema.safeExtend({
-      view: BoundBlockViewSchema.optional(),
+      view: BoundViewSchema.optional(),
       contentRef: CapabilityReviewContentRefSchema.optional(),
       draft: z.strictObject({ editable: z.boolean(), fields: z.array(z.string()) }).optional(),
       incomplete: z.boolean().optional(),
@@ -523,7 +523,7 @@ const resultSchema = <T extends z.ZodType>(
     (value, context) => {
       if (value && typeof value === "object" && Object.getOwnPropertyDescriptor(value, "view") !== undefined) {
         try {
-          assertBlockData(value);
+          assertViewData(value);
         } catch {
           context.addIssue({ code: "custom", message: "Invalid capability block data" });
           return z.NEVER;
@@ -547,13 +547,13 @@ const resultSchema = <T extends z.ZodType>(
           : options.consumer
             ? CapabilityActionReceiptSchema.optional().catch(undefined)
             : CapabilityActionReceiptSchema.optional(),
-        view: options.opaqueReceipt ? z.record(z.string(), z.unknown()).optional() : BlockViewSchema.optional(),
+        view: options.opaqueReceipt ? z.record(z.string(), z.unknown()).optional() : ViewSchema.optional(),
       })
       .strict()
       .superRefine((result, context) => {
         if (!options.opaqueReceipt && result.view) {
           try {
-            bindView(result.view, capabilityDataAtPath(result, ["data"]));
+            checkViewBinding(result.view, capabilityDataAtPath(result, ["data"]));
           } catch {
             context.addIssue({ code: "custom", path: ["view"], message: "Invalid capability block view" });
           }

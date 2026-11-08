@@ -1,5 +1,5 @@
+import { bindCheckedView } from "#block-view-schema";
 import { capabilityReviewSentence, capabilitySentenceText } from "../_internal/capability-sentences";
-import { bindView } from "../blocks/bind";
 import { findDraft } from "../blocks/bound";
 import { blocksText } from "../blocks/text";
 import {
@@ -21,7 +21,9 @@ export const reviewBindingData = (review: CapabilityActionCallReview) => ({
 });
 export const boundReviewView = (review: CapabilityActionCallReview) =>
   review.view
-    ? bindView(review.view, reviewBindingData(review), { maxBytes: CAPABILITY_MAX_REVIEW_CONTENT_BYTES + CAPABILITY_MAX_REVIEW_BYTES + 11 })
+    ? bindCheckedView(review.view, reviewBindingData(review), {
+        maxBytes: CAPABILITY_MAX_REVIEW_CONTENT_BYTES + CAPABILITY_MAX_REVIEW_BYTES + 11,
+      })
     : undefined;
 
 /** Context-free rules shared by the builder and runtime validation. */

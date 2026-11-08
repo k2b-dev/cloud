@@ -1,5 +1,5 @@
 import { chartTable } from "@k2b/editor/charts";
-import { blockDataAtPath } from "./bind";
+import { blockDataAtPath } from "./path";
 import type { Block } from "./schema";
 
 type TextOptions = { locale?: string; timeZone?: string };

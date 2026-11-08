@@ -1,21 +1,11 @@
-import { blockDataAtPath } from "../blocks/bind";
-import type { Block, BoundBlockView } from "../blocks/schema";
+import { blockDataAtPath } from "../blocks/path";
 import type { AiCapabilityCatalogEntry } from "./capabilities";
+import { type AiChoiceProvenance, choiceEntries } from "./choice-state";
 import { capabilityResultView } from "./result-view";
 import type { AiStoredMessage } from "./types";
 
-export type AiChoiceState = { state: "open" | "answered" | "superseded"; chosen?: string[]; answeredAt?: string };
-export type AiChoiceProvenance = {
-  appId: string;
-  appName: string;
-  /** Internal source turn identity; projected to its public ID at the HTTP boundary. */
-  turnId: string;
-  toolCallId: string;
-  blockId: string;
-  ids: string[];
-  labels: string[];
-  at: string;
-};
+export type { AiChoiceProvenance, AiChoiceState } from "./choice-state";
+export { reconcileProjectedAiChoices, viewChoice } from "./choice-state";
 export type AiChoiceTarget = { turnId: string; toolCallId: string; blockId: string; ids: string[] };
 export type AiChoiceSubmission = AiChoiceTarget & { catalog: readonly AiCapabilityCatalogEntry[] };
 export type AiChoiceCall = { callId: string; appId: string; query: string };
@@ -26,56 +16,15 @@ export class AiChoiceConflict extends Error {
   }
 }
 
-export function viewChoice(view: BoundBlockView | null): Extract<Block, { kind: "Choice" }> | undefined {
-  const find = (blocks: readonly Block[]): Extract<Block, { kind: "Choice" }> | undefined => {
-    for (const block of blocks) {
-      if (block.kind === "Choice") return block;
-      if (block.kind === "Section") {
-        const found = find(block.children);
-        if (found) return found;
-      }
-    }
-  };
-  return view ? find(view.blocks) : undefined;
-}
-
-const key = (turnId: string | null, callId: string, blockId: string) => JSON.stringify([turnId, callId, blockId]);
-
-/** Only Cloud message metadata supplies identity or an answer; result data never does. */
-export function conversationChoices(messages: readonly AiStoredMessage[], projected = false) {
-  const calls = new Map<string, NonNullable<AiStoredMessage["meta"]>["toolPresentations"]>();
-  const answers = new Map<string, AiChoiceProvenance>();
-  for (const stored of messages) {
-    if (stored.message.role === "assistant" && stored.loopId && stored.meta?.toolPresentations) {
-      calls.set(stored.loopId, { ...calls.get(stored.loopId), ...stored.meta.toolPresentations });
-    }
-    if (stored.message.role === "user" && stored.meta?.choice) {
-      const answer = stored.meta.choice;
-      answers.set(key(answer.turnId, answer.toolCallId, answer.blockId), answer);
-    }
-  }
-  const choices = messages.flatMap((stored) => {
-    const result = stored.message;
-    if (result.role !== "tool_result" || result.isError || !stored.loopId) return [];
-    const presentation = calls.get(stored.loopId)?.[result.callId];
-    if (presentation?.kind !== "capability") return [];
-    const choice = viewChoice(projected ? (stored.meta?.resultView ?? null) : capabilityResultView(result.result));
-    if (!choice) return [];
-    const answer = answers.get(key(stored.loopId, result.callId, choice.id));
-    const state: AiChoiceState = { state: "open" };
-    return [{ stored, choice, presentation, answer, state }];
-  });
-  const newerApps = new Set<string>();
-  for (const entry of choices.toReversed()) {
-    if (entry.answer) {
-      entry.state = { state: "answered", chosen: entry.answer.ids, answeredAt: entry.answer.at };
-    } else {
-      entry.state = { state: newerApps.has(entry.presentation.appId) ? "superseded" : "open" };
-    }
-    newerApps.add(entry.presentation.appId);
-  }
-  return choices;
-}
+/** Every Choice of a conversation with its state; stored results are bound here, projected ones arrive bound. */
+export const conversationChoices = (messages: readonly AiStoredMessage[], projected = false) =>
+  choiceEntries(messages, (stored) =>
+    projected
+      ? (stored.meta?.resultView ?? null)
+      : stored.message.role === "tool_result"
+        ? capabilityResultView(stored.message.result)
+        : null,
+  );
 
 export function projectAiChoices(messages: readonly AiStoredMessage[], context: readonly AiStoredMessage[] = messages): AiStoredMessage[] {
   const states = new Map(conversationChoices(context).map((entry) => [entry.stored.id, entry.state]));
@@ -164,15 +113,4 @@ export function createChoiceCapabilityOrigin(choice: AiChoiceCall | undefined, c
     pending = false;
     return "choice";
   };
-}
-
-/** Reconcile paged-in history with newer Cloud-projected messages without reopening a settled choice. */
-export function reconcileProjectedAiChoices(messages: readonly AiStoredMessage[]): AiStoredMessage[] {
-  const states = new Map(conversationChoices(messages, true).map((entry) => [entry.stored.id, entry.state]));
-  return messages.map((stored) => {
-    const current = stored.meta?.resultChoice;
-    const next = states.get(stored.id);
-    if (!next || (current && current.state !== "open" && next.state !== "answered")) return stored;
-    return { ...stored, meta: { ...stored.meta, resultChoice: next } };
-  });
 }

@@ -1,4 +1,4 @@
-import { reconcileProjectedAiChoices } from "../choices";
+import { reconcileProjectedAiChoices } from "../choice-state";
 import type { AiStreamEvent, AiTurnBlock, AiTurnSnapshot, AiWireEvent } from "../protocol";
 import { applyWireEventToBlocks, isNewerWireEvent, reconcileResolvedTurnActions, toolBlockId } from "../protocol";
 import type { AiConversation, AiStoredMessage } from "../types";

@@ -314,8 +314,8 @@ export type AiStoredMessage = {
   meta: {
     /** Server-bound result view; projected for readers, never persisted by the tool. */
     resultView?: BoundBlockView;
-    resultChoice?: import("./choices").AiChoiceState;
-    choice?: import("./choices").AiChoiceProvenance;
+    resultChoice?: import("./choice-state").AiChoiceState;
+    choice?: import("./choice-state").AiChoiceProvenance;
     /** The atomically consumed composer revision, used to confirm a local send. */
     submittedDraftRevision?: number;
     codeOrigin?: AiCodeOrigin;

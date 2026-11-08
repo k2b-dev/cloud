@@ -19,6 +19,10 @@
     "#chat-charts": {
       "browser": "./src/ai/chat/chart-lazy.tsx",
       "default": "./src/ai/chat/chart-eager.tsx"
+    },
+    "#block-view-schema": {
+      "browser": "./src/blocks/view-schema-light.ts",
+      "default": "./src/blocks/view-schema.ts"
     }
   },
   "files": [

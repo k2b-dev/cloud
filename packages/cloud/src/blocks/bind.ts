@@ -1,20 +1,9 @@
 import { CAPABILITY_MAX_RESULT_BYTES } from "../contracts/capability-limits";
-import { assertBlockData, assertNoDroppedBlockKeys, unsafeBlockKey } from "./data";
+import { assertBlockData, assertNoDroppedBlockKeys } from "./data";
+import { blockDataAtPath } from "./path";
 import { BLOCK_LIMITS, BlockBindingSchema, BlockViewSchema, type BoundBlockView, BoundBlockViewSchema } from "./schema";
 
-/** Own data descriptors only. The public capability helper uses this same path resolver. */
-export function blockDataAtPath(data: unknown, path: readonly string[]): unknown {
-  if (path.length > 16 || path.some((key) => typeof key !== "string" || key.length > 500 || unsafeBlockKey(key)))
-    throw new Error("blocks_path");
-  let value = data;
-  for (const segment of path) {
-    if (value === null || typeof value !== "object" || !Object.hasOwn(value, segment)) return undefined;
-    const descriptor = Object.getOwnPropertyDescriptor(value, segment);
-    if (!descriptor || !Object.hasOwn(descriptor, "value")) throw new Error("blocks_data_only");
-    value = descriptor.value;
-  }
-  return value;
-}
+export { blockDataAtPath };
 
 /** Bind only declared list positions. Card, option and column mappings stay relative to each resolved item. */
 export function bindView(view: unknown, data: unknown, options: { maxBytes?: number } = {}): BoundBlockView {

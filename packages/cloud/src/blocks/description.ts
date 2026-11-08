@@ -1,5 +1,5 @@
 import type { DescriptionJson } from "../descriptions";
-import { blockDataAtPath } from "./bind";
+import { blockDataAtPath } from "./path";
 import type { Block, CodePageNode } from "./schema";
 
 /** A data block's content height: small 200 px, medium 300 px, large 400 px; panels in one row line up when they share one. */
