@@ -16,6 +16,11 @@ export type PanelDialogProps = {
   surface?: PanelDialogSurface;
   /** A 2 px edge in the tone's colour inside the dialog frame; the header shows the tone's icon instead of its own. */
   tone?: DialogTone;
+  /**
+   * The body shows a picture or a video edge to edge, and the header floats over it as glass chips: the title and
+   * subtitle in one chip, the actions in a group, and the close button. For documents, text, and tables leave it off.
+   */
+  media?: boolean;
 };
 
 export type PanelDialogHeaderProps = {
@@ -75,6 +80,7 @@ type PanelDialogComponent = ((props: PanelDialogProps) => JSX.Element) & {
 const PanelDialogSurfaceContext = createContext<PanelDialogSurface>("contained");
 const usePanelDialogSurface = () => useContext(PanelDialogSurfaceContext);
 const PanelDialogToneContext = createContext<() => DialogTone | undefined>(() => undefined);
+const PanelDialogMediaContext = createContext(false);
 
 const panelDialogBasePanelClass = "k2b-dialog k2b-panel-dialog-frame";
 
@@ -121,16 +127,17 @@ const PanelDialogHeader = (props: PanelDialogHeaderProps): JSX.Element => {
     const value = tone();
     return value ? dialogToneIcon(value) : props.icon;
   };
+  // Over a picture the header's parts are glass layers of their own; the dialog owns them, so it sets the surface.
+  const media = useContext(PanelDialogMediaContext);
+  const layer = media ? " k2b-overlay-surface" : "";
   return (
     <header class="k2b-panel-dialog__header" data-surface={usePanelDialogSurface()} data-has-subtitle={Boolean(props.subtitle)}>
-      <Show when={icon()}>
-        {(icon) => (
-          <span class="k2b-panel-dialog__icon k2b-icon-tile" data-tone={tone()} aria-hidden="true">
-            <i class={icon()} />
-          </span>
-        )}
+      <Show when={icon() && !media}>
+        <span class="k2b-panel-dialog__icon k2b-icon-tile" data-tone={tone()} aria-hidden="true">
+          <i class={icon()} />
+        </span>
       </Show>
-      <div class="k2b-panel-dialog__heading">
+      <div class={`k2b-panel-dialog__heading${layer}`}>
         <Show when={tone()}>
           {(value) => (
             <span class="k2b-sr-only" data-dialog-tone-label>
@@ -138,18 +145,18 @@ const PanelDialogHeader = (props: PanelDialogHeaderProps): JSX.Element => {
             </span>
           )}
         </Show>
-        <h2>{props.title}</h2>
+        <h2 class={media ? "k2b-truncate-fade" : undefined}>{props.title}</h2>
         <Show when={props.subtitle}>
           <p>{props.subtitle}</p>
         </Show>
       </div>
       <Show when={props.actions}>
-        <div class="k2b-panel-dialog__actions">{props.actions}</div>
+        <div class={`k2b-panel-dialog__actions${layer}`}>{props.actions}</div>
       </Show>
       <Show when={props.close}>
         <button
           type="button"
-          class="k2b-dialog__close"
+          class={`k2b-dialog__close${layer}`}
           aria-label={props.closeLabel ?? messages().closeDialog}
           disabled={props.closeDisabled}
           onClick={props.close}
@@ -300,9 +307,11 @@ const PanelDialog = ((props: PanelDialogProps): JSX.Element => {
   return (
     <PanelDialogSurfaceContext.Provider value={surface}>
       <PanelDialogToneContext.Provider value={() => props.tone}>
-        <div class="k2b-panel-dialog" data-surface={surface} data-tone={props.tone}>
-          {props.children}
-        </div>
+        <PanelDialogMediaContext.Provider value={Boolean(props.media)}>
+          <div class="k2b-panel-dialog" data-surface={surface} data-tone={props.tone} data-media={props.media ? "" : undefined}>
+            {props.children}
+          </div>
+        </PanelDialogMediaContext.Provider>
       </PanelDialogToneContext.Provider>
     </PanelDialogSurfaceContext.Provider>
   );

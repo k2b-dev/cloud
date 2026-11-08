@@ -7,6 +7,7 @@ import {
   gauge,
   histogram,
   renderAreaSvg,
+  renderFunnelLayoutSvg,
   renderHbarLayoutSvg,
   renderHeatmapSvg,
   renderParetoSvg,
@@ -18,6 +19,9 @@ import type { RareChartRenderer } from "./chart-renderer-types";
 
 export const rareChartSvg: RareChartRenderer = (mapped, common) => {
   switch (mapped.kind) {
+    case "funnel":
+      if (!common.funnel) throw new Error("Missing funnel layout");
+      return renderFunnelLayoutSvg({ ...mapped, ...common }, common.funnel);
     case "hbar":
       if (!common.hbar) throw new Error("Missing hbar layout");
       return renderHbarLayoutSvg({ ...mapped, ...common }, common.hbar);

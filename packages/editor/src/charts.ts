@@ -13,6 +13,7 @@ import {
   computeDomain,
   donut,
   extendDomainToNice,
+  type FunnelOptions,
   gauge,
   type HeatmapChartOptions,
   type HorizontalBarOptions,
@@ -23,8 +24,10 @@ import {
   niceStep,
   type ParetoOptions,
   pie,
+  rankedBarLayout,
   renderAreaSvg,
   renderBarChartSvg,
+  renderFunnelSvg,
   renderHbarSvg,
   renderHeatmapSvg,
   renderParetoSvg,
@@ -42,23 +45,25 @@ import { type ChartFormat, type ChartInput, type ChartNumberFormat, chartDateTim
 export * from "./chart-schema";
 
 type RenderOptions = {
-  [K in ChartInput["kind"]]: { kind: K } & (K extends "hbar"
-    ? HorizontalBarOptions
-    : K extends "waterfall"
-      ? WaterfallOptions
-      : K extends "area"
-        ? AreaOptions
-        : K extends "treemap"
-          ? TreemapOptions
-          : K extends "pareto"
-            ? ParetoOptions
-            : K extends "heatmap"
-              ? HeatmapChartOptions
-              : K extends "bar"
-                ? BarChartOptions & { data: NonNullable<BarChartOptions["data"]> }
-                : K extends keyof typeof charts
-                  ? Omit<Parameters<(typeof charts)[K]>[0], "width" | "height" | "inspect">
-                  : never);
+  [K in ChartInput["kind"]]: { kind: K } & (K extends "funnel"
+    ? FunnelOptions
+    : K extends "hbar"
+      ? HorizontalBarOptions
+      : K extends "waterfall"
+        ? WaterfallOptions
+        : K extends "area"
+          ? AreaOptions
+          : K extends "treemap"
+            ? TreemapOptions
+            : K extends "pareto"
+              ? ParetoOptions
+              : K extends "heatmap"
+                ? HeatmapChartOptions
+                : K extends "bar"
+                  ? BarChartOptions & { data: NonNullable<BarChartOptions["data"]> }
+                  : K extends keyof typeof charts
+                    ? Omit<Parameters<(typeof charts)[K]>[0], "width" | "height" | "inspect">
+                    : never);
 }[ChartInput["kind"]];
 
 /**
@@ -98,6 +103,9 @@ const labels = /* @__PURE__ */ i18n.define({
       whiskerLow: "Whisker low",
       whiskerHigh: "Whisker high",
       delta: "Change",
+      startShare: "Share of start",
+      previousShare: "Share of previous step",
+      rank: "Rank",
     },
     de: {
       category: "Kategorie",
@@ -126,6 +134,9 @@ const labels = /* @__PURE__ */ i18n.define({
       whiskerLow: "Unterer Whisker",
       whiskerHigh: "Oberer Whisker",
       delta: "Änderung",
+      startShare: "Anteil am Start",
+      previousShare: "Anteil am vorigen Schritt",
+      rank: "Rang",
     },
   },
 });
@@ -311,6 +322,8 @@ const formattedValues = (input: ChartInput): number[] => {
       ];
     case "hbar":
       return input.rows.flatMap((r) => r.values.filter((v): v is number => v !== null));
+    case "funnel":
+      return input.data.flatMap((d) => (d.value === null ? [] : [d.value]));
     case "treemap":
     case "pareto":
     case "pie":
@@ -336,7 +349,7 @@ const formattedValues = (input: ChartInput): number[] => {
   }
 };
 const formats = (input: ChartInput, locale: string): Formats => {
-  const yFormat = "yAxis" in input ? numberFormat(input.yAxis?.format) : "format" in input ? input.format : undefined;
+  const yFormat = ("yAxis" in input ? numberFormat(input.yAxis?.format) : undefined) ?? ("format" in input ? input.format : undefined);
   const y = chartNumberFormatters(yFormat, locale, formattedValues(input));
   const xFormat = "xAxis" in input && input.kind !== "bar" ? input.xAxis?.format : undefined;
   const x = chartNumberFormatters(numberFormat(xFormat), locale);
@@ -448,6 +461,8 @@ export function chartRenderOptions(
         locale: input.locale ?? locale,
         displayWidth: options.width,
       };
+    case "funnel":
+      return { kind: "funnel", data: input.data, valueFormat: format.value, locale };
     case "hbar":
       return {
         kind: "hbar",
@@ -492,6 +507,9 @@ export function chartRenderOptions(
           series: input.series,
           layout: input.layout,
           normalize: input.normalize,
+          share: input.share,
+          limit: input.limit,
+          tone: input.tone,
           compare: input.compare,
           xAxis: input.xAxis,
           yAxis: axis(yAxis, options.formats?.y ?? format.tick),
@@ -655,6 +673,8 @@ export const drawChart = (options: RenderOptions): string => {
       return renderTreemapSvg({ ...options, ...common });
     case "pareto":
       return renderParetoSvg({ ...options, ...common });
+    case "funnel":
+      return renderFunnelSvg({ ...options, ...common });
     case "hbar":
       return renderHbarSvg({ ...options, ...common, height: hbarLayout(options).height });
     case "waterfall":
@@ -779,8 +799,8 @@ export function chartRows(
     const tooltip = input.kind === "waterfall" ? { title: datum.label, rows: [] as { label: string; value: string }[] } : undefined;
     const cells: Record<string, string> = {};
     const values: Record<string, string | number> = {};
-    const cell = (id: string, label: string, value: string | number, text: string) => {
-      if (!columns.has(id)) columns.set(id, { id, label, numeric: typeof value === "number" });
+    const cell = (id: string, label: string, value: string | number, text: string, numeric = typeof value === "number") => {
+      if (!columns.has(id)) columns.set(id, { id, label, numeric });
       cells[id] = text;
       values[id] = value;
     };
@@ -837,7 +857,30 @@ export function chartRows(
             : input.kind === "hbar"
               ? input.series[seriesIndex]!
               : input.series![seriesIndex]!.label;
-        cell(field.key, label, value, field.formatted ?? String(value));
+        cell(field.key, label, value, field.formatted ?? String(value), true);
+        continue;
+      }
+      if (
+        field.key === "startPercent" ||
+        field.key === "previousPercent" ||
+        field.key === "rank" ||
+        ((input.kind === "bar" || input.kind === "funnel") && typeof value === "string")
+      ) {
+        cell(
+          field.key,
+          field.key === "startPercent"
+            ? t.startShare
+            : field.key === "previousPercent"
+              ? t.previousShare
+              : field.key === "rank"
+                ? t.rank
+                : field.key === "percent"
+                  ? t.share
+                  : t.value,
+          value,
+          field.formatted ?? String(value),
+          true,
+        );
         continue;
       }
       if (typeof value !== "number" || field.key === "total") continue;
@@ -915,7 +958,37 @@ export function chartRows(
     rows.push(row);
     return row;
   };
-  return { add, columns: () => [...columns.values()], table: (): ChartTable => ({ columns: [...columns.values()], rows }) };
+  return {
+    add,
+    columns: () => [...columns.values()],
+    table: (): ChartTable => {
+      if (input.kind === "bar" && input.layout === "rows" && input.limit !== undefined) {
+        const source = { ...input, limit: undefined };
+        const all = chartRows(source, locale, options);
+        const layout = rankedBarLayout({ data: source.data, title: source.title, subtitle: source.subtitle, valueFormat, locale });
+        for (const row of layout.rows) {
+          const value = Number.isFinite(row.value) ? row.value : null;
+          all.add({
+            role: "item",
+            index: row.index,
+            label: row.label,
+            anchor: [0, row.y],
+            values: [
+              { key: "value", value: value ?? "–", formatted: value === null ? "–" : valueFormat(value) },
+              {
+                key: "percent",
+                value: row.share === null ? "–" : row.share * 100,
+                formatted: row.share === null ? "–" : percent.format(row.share),
+              },
+              { key: "rank", value: row.rank },
+            ],
+          });
+        }
+        return all.table();
+      }
+      return { columns: [...columns.values()], rows };
+    },
+  };
 }
 
 /** The data behind every mark of the chart as a table: the accessible alternative and what Copy data copies. */

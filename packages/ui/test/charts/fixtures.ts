@@ -24,6 +24,13 @@ export const chartFixtures = {
   },
   bar: { kind: "bar", data: [{ label: "Imports", value: 4 }] },
   hbar: { kind: "hbar", series: ["Visits"], rows: [{ label: "Mail", values: [42] }] },
+  funnel: {
+    kind: "funnel",
+    data: [
+      { label: "Visit", value: 42 },
+      { label: "Order", value: 15 },
+    ],
+  },
   pie: {
     kind: "pie",
     data: [
