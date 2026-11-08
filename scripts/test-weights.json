@@ -386,6 +386,7 @@
     "@k2b/ui src/text-editor/clipboard-loading.browser.test.ts": 5.3,
     "@k2b/ui src/text-editor/text-editor-component.browser.test.ts": 35.8,
     "@k2b/ui src/text-editor/text-editor.browser.test.ts": 27.3,
+    "@k2b/ui src/widgets/dashboard-frame-parity.browser.test.ts": 4,
     "@k2b/ui src/widgets/dashboard-frame.browser.test.ts": 2.2,
     "@k2b/ui src/widgets/dashboard-grid.browser.test.ts": 4,
     "@k2b/ui test/browser.browser.test.ts": 17.1,
