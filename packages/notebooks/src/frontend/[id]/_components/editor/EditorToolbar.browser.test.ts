@@ -87,7 +87,7 @@ const devices: Record<string, BrowserContextOptions> = {
   phone: { ...phone, viewport: { width: 390, height: 844 } },
 };
 
-const open = async (device: BrowserContextOptions, options: { keyboard?: boolean; locale?: string } = {}) => {
+const open = async (device: BrowserContextOptions, options: { keyboard?: boolean; locale?: string; shell?: boolean } = {}) => {
   const context = await browser.newContext(device);
   if (options.keyboard) {
     await context.addInitScript(() => {
@@ -112,6 +112,7 @@ const open = async (device: BrowserContextOptions, options: { keyboard?: boolean
   const page = await context.newPage();
   const url = new URL(server.url.href);
   if (options.locale) url.searchParams.set("locale", options.locale);
+  if (options.shell) url.searchParams.set("shell", "1");
   await page.goto(url.href);
   await page.waitForFunction(() => "toolbarHarness" in window);
   return page;
@@ -143,6 +144,43 @@ const load = (page: Page, doc: string) =>
     harness.loadDocument(doc);
     await harness.settle();
   }, doc);
+
+// On the full note page, beside the notebook sidebar, the two pills float at the edges of the main column, and the
+// note scrolls beneath them yet ends above them.
+for (const width of [1440, 900])
+  test(`on the full note page at ${width} px the pills sit at the main column's edges and the note ends above them`, async () => {
+    const page = await open({ viewport: { width, height: 800 } }, { shell: true });
+    try {
+      const text = Array.from({ length: 40 }, (_, index) => `Paragraph ${index + 1}`).join("\n\n");
+      await load(page, `# Cold chain\n\n${text}\n\nLast line`);
+      const geometry = await page.evaluate(async () => {
+        const scroller = document.querySelector<HTMLElement>("[data-editor-scroller] .k2b-scroll-area__viewport, [data-editor-scroller]")!;
+        scroller.scrollTop = scroller.scrollHeight;
+        await window.toolbarHarness.settle();
+        const box = (element: Element) => element.getBoundingClientRect();
+        const main = box(document.querySelector(".notebook-editor-frame")!);
+        const sidebar = document.querySelector("#notebook-navigation");
+        const [format, pageActions] = Array.from(document.querySelectorAll(".notebooks-editor-pill")).map(box);
+        const last = Array.from(document.querySelectorAll(".cm-line")).find((line) => line.textContent === "Last line")!;
+        return {
+          sidebarBeside: !!sidebar && sidebar.getClientRects().length > 0 && box(sidebar).right <= main.left + 0.5,
+          formatInset: Math.round(format!.left - main.left),
+          pageInset: Math.round(main.right - pageActions!.right),
+          bottomInset: Math.round(main.bottom - Math.max(format!.bottom, pageActions!.bottom)),
+          lastAbovePills: box(last).bottom <= Math.min(format!.top, pageActions!.top) + 0.5,
+          pillShadow: getComputedStyle(document.querySelector(".notebooks-editor-pill")!).boxShadow,
+        };
+      });
+      expect(geometry.sidebarBeside).toBe(true);
+      expect(geometry.formatInset).toBe(16);
+      expect(geometry.pageInset).toBe(16);
+      expect(geometry.bottomInset).toBe(16);
+      expect(geometry.lastAbovePills).toBe(true);
+      expect(geometry.pillShadow).not.toBe("none");
+    } finally {
+      await page.context().close();
+    }
+  });
 
 const caret = (page: Page, text: string, offset = 3) =>
   page.evaluate(

@@ -11,7 +11,7 @@ import {
   markdownExtension,
   noteScroller,
 } from "@k2b/editor/markdown";
-import { LocaleProvider, ScrollArea } from "@k2b/ui";
+import { AppWorkspace, LocaleProvider, ScrollArea } from "@k2b/ui";
 import { createEffect, createSignal, onCleanup, onMount, Show } from "solid-js";
 import { render } from "solid-js/web";
 import { notebooksYjs } from "../../../../lib/yjs";
@@ -120,47 +120,62 @@ function Harness() {
     window.toolbarHarness = harness;
   });
 
+  // `?shell=1` places the frame in a full note page: the workspace with its notebook sidebar and the main column.
+  const shell = new URLSearchParams(window.location.search).get("shell") === "1";
+  const frame = () => (
+    // The same frame as NoteEditor: the pills float over the note's bottom edge.
+    <div class="notebook-editor-frame relative flex flex-1 min-h-0 min-w-0 flex-col" data-notebook-pills="">
+      <ScrollArea ref={scrollPort} style={{ "scroll-padding-block": pillScrollPadding }} class="flex-1 min-h-0" data-editor-scroller>
+        <div ref={host} />
+        <div class="notebook-editor-endgap" aria-hidden="true" />
+      </ScrollArea>
+      <Show when={toolbarMounted()}>
+        <Show
+          when={sync.ended()}
+          fallback={
+            <EditorToolbar
+              connected={true}
+              editor={editorState}
+              notebookId="Book01"
+              noteId="Note01"
+              format={format()}
+              onUndo={() => {
+                const editor = view();
+                if (editor) undo(editor);
+              }}
+              onRedo={() => {
+                const editor = view();
+                if (editor) redo(editor);
+              }}
+            />
+          }
+        >
+          {(ended) => (
+            <SyncEndedBar
+              notebookId="Book01"
+              ended={ended()}
+              sync={sync}
+              markdown={() => view()?.state.doc.toString() ?? ""}
+              noteHref={() => "/app/notebooks/Book01/Note01"}
+            />
+          )}
+        </Show>
+      </Show>
+    </div>
+  );
+
   return (
     <LocaleProvider locale={locale}>
-      {/* The same frame as NoteEditor: the pills float over the note's bottom edge. */}
-      <div class="notebook-editor-frame relative flex flex-1 min-h-0 min-w-0 flex-col" data-notebook-pills="">
-        <ScrollArea ref={scrollPort} style={{ "scroll-padding-block": pillScrollPadding }} class="flex-1 min-h-0" data-editor-scroller>
-          <div ref={host} />
-          <div class="notebook-editor-endgap" aria-hidden="true" />
-        </ScrollArea>
-        <Show when={toolbarMounted()}>
-          <Show
-            when={sync.ended()}
-            fallback={
-              <EditorToolbar
-                connected={true}
-                editor={editorState}
-                notebookId="Book01"
-                noteId="Note01"
-                format={format()}
-                onUndo={() => {
-                  const editor = view();
-                  if (editor) undo(editor);
-                }}
-                onRedo={() => {
-                  const editor = view();
-                  if (editor) redo(editor);
-                }}
-              />
-            }
-          >
-            {(ended) => (
-              <SyncEndedBar
-                notebookId="Book01"
-                ended={ended()}
-                sync={sync}
-                markdown={() => view()?.state.doc.toString() ?? ""}
-                noteHref={() => "/app/notebooks/Book01/Note01"}
-              />
-            )}
-          </Show>
-        </Show>
-      </div>
+      <Show when={shell} fallback={frame()}>
+        <AppWorkspace mobileSurface="flush" class="h-full" resizable={false}>
+          <AppWorkspace.Sidebar id="notebook-navigation" defaultSize={256} label="Notizbuch">
+            <nav data-notebook-tree>Überblick · Wareneingang · Kühlkette Sommer 2026</nav>
+          </AppWorkspace.Sidebar>
+          <AppWorkspace.Content>
+            <AppWorkspace.Main scroll={false}>{frame()}</AppWorkspace.Main>
+          </AppWorkspace.Content>
+        </AppWorkspace>
+      </Show>
     </LocaleProvider>
   );
 }
