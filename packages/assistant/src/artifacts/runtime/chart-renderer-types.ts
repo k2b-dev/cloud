@@ -1,5 +1,5 @@
 import type { cloudAiChartRenderOptions } from "@k2b/cloud/ai/app-frame";
-import type { HorizontalBarLayout, WaterfallLayout } from "@k2b/ui/charts/core";
+import type { FunnelLayout, HorizontalBarLayout, WaterfallLayout } from "@k2b/ui/charts/core";
 
 export type MappedChart = ReturnType<typeof cloudAiChartRenderOptions>;
 export type ChartDrawing = {
@@ -8,6 +8,7 @@ export type ChartDrawing = {
   title?: string;
   subtitle?: string;
   inspect: true;
+  funnel?: FunnelLayout;
   hbar?: HorizontalBarLayout;
   waterfall?: WaterfallLayout;
 };

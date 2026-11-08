@@ -91,6 +91,28 @@ test("Calendar SSR, calm hover, keyboard, touch, scroll, theme and fixed host st
           last = await chart.locator("[data-chart-datum]").last().boundingBox();
         expect(last!.x).toBeGreaterThanOrEqual(visible!.x);
         expect(last!.x + last!.width).toBeLessThanOrEqual(visible!.x + visible!.width + 1);
+        const newestGap = await chart.evaluate((e) => {
+          const label = e.querySelector("[data-calendar-weekdays] text")!.getBoundingClientRect(),
+            mask = e.querySelector("[data-calendar-weekdays] > rect")!.getBoundingClientRect(),
+            viewport = e.getBoundingClientRect();
+          // Include the visible part of a cell clipped by the opaque weekday rail.
+          const paintedLeft = Math.min(
+            ...Array.from(e.querySelectorAll("[data-chart-datum] rect"))
+              .map((cell) => cell.getBoundingClientRect())
+              .filter((cell) => cell.right > mask.right && cell.left < viewport.right)
+              .map((cell) => Math.max(cell.left, mask.right)),
+          );
+          return paintedLeft - label.right;
+        });
+        expect(newestGap).toBeGreaterThanOrEqual(0);
+        expect(newestGap).toBeLessThanOrEqual(8);
+        // The newest end can cut through a week. A fully visible cell then starts
+        // up to one column step after the pinned labels; that is scroll phase,
+        // not label padding. Measure padding at the oldest, full-column origin.
+        // Newest-first visibility is checked above, before changing scroll.
+        const newestScroll = await chart.evaluate((e) => e.scrollLeft);
+        await chart.evaluate((e) => (e.scrollLeft = -e.scrollWidth));
+        await settled(page);
         const weekdayBox = await chart.locator("[data-calendar-weekdays] text").first().boundingBox();
         expect(weekdayBox!.x).toBeGreaterThanOrEqual(visible!.x);
         expect(weekdayBox!.x + weekdayBox!.width).toBeLessThanOrEqual(visible!.x + visible!.width);
@@ -101,6 +123,20 @@ test("Calendar SSR, calm hover, keyboard, touch, scroll, theme and fixed host st
             weekdayBox!.x + weekdayBox!.width,
           );
         expect(firstVisible - weekdayBox!.x - weekdayBox!.width).toBeLessThanOrEqual(8);
+        // The opaque rail is painted after the cells, so partial columns cannot
+        // show through the pinned weekday labels during touch/trackpad scrolling.
+        expect(
+          await chart.locator("[data-calendar-weekdays]").evaluate((rail) => {
+            const background = rail.querySelector("rect")!;
+            const cell = rail.closest("svg")!.querySelector("[data-chart-datum]")!;
+            return {
+              fill: getComputedStyle(background).fill,
+              afterCells: Boolean(cell.compareDocumentPosition(rail) & Node.DOCUMENT_POSITION_FOLLOWING),
+            };
+          }),
+        ).toEqual({ fill: "rgb(255, 255, 255)", afterCells: true });
+        await chart.evaluate((e, scroll) => (e.scrollLeft = scroll), newestScroll);
+        await settled(page);
         const monthBoxes = await chart
           .locator("[data-calendar-month]")
           .evaluateAll((elements) => elements.map((e) => e.getBoundingClientRect()).map((b) => ({ left: b.x, right: b.x + b.width })));

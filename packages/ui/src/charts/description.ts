@@ -50,6 +50,10 @@ type Variants<N> =
       series?: { label: string; data: (number | null)[] }[];
       layout?: "columns" | "rows" | "grouped" | "stacked";
       normalize?: boolean;
+      share?: boolean;
+      limit?: number;
+      tone?: "in" | "out";
+      format?: ChartNumberFormat;
       compare?: { label: string; data: (number | null)[] };
       xAxis?: Pick<ChartDescriptionAxis, "label"> & { ordered?: boolean };
       yAxis?: ChartDescriptionAxis;
@@ -58,6 +62,7 @@ type Variants<N> =
       legend?: boolean;
       references?: Reference[];
     }
+  | { kind: "funnel"; data: { label: string; value: number | null }[]; format?: ChartNumberFormat }
   | {
       kind: "hbar";
       series: string[];

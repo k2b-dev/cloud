@@ -18,6 +18,7 @@ import {
   calendarLayout,
   donut,
   escapeXml,
+  funnelLayout,
   hbarLayout,
   isChartDatum,
   line,
@@ -111,6 +112,7 @@ function drawChart(
       common.hbar = hbarLayout({ ...mapped, ...common }, { width, height });
       common.height = common.hbar.height;
     }
+    if (mapped.kind === "funnel") common.funnel = funnelLayout({ ...mapped, ...common }, common);
     if (mapped.kind === "waterfall") common.waterfall = waterfallLayout({ ...mapped, ...common }, common);
     let svg: string | undefined;
     switch (mapped.kind) {
