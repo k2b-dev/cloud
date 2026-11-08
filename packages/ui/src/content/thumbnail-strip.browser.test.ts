@@ -50,7 +50,8 @@ const load = async (): Promise<Page> => {
   return page;
 };
 const fade = (page: Page) => page.locator("#strip ul").getAttribute("data-scroll-fade");
-const focused = (page: Page) => page.evaluate(() => document.activeElement?.getAttribute("title") ?? document.activeElement?.getAttribute("aria-label"));
+const focused = (page: Page) =>
+  page.evaluate(() => document.activeElement?.getAttribute("title") ?? document.activeElement?.getAttribute("aria-label"));
 
 describe("@k2b/ui ThumbnailStrip", () => {
   test("is 44 px high and fades only on the side where more images follow", async () => {
