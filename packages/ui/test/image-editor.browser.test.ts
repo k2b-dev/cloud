@@ -59,8 +59,8 @@ afterAll(async () => {
   await browser?.close();
   server?.stop(true);
 });
-const open = async (query = "", width = 1440) => {
-  const page = await browser.newPage({ viewport: { width, height: 950 }, reducedMotion: "reduce" });
+const open = async (query = "", width = 1440, reducedMotion: "reduce" | "no-preference" = "reduce") => {
+  const page = await browser.newPage({ viewport: { width, height: 950 }, reducedMotion });
   const errors = pageErrors(page);
   await page.goto(`${server.url}?${query}`);
   await page.locator(".k2b-image-editor__save button").first().waitFor();
@@ -426,6 +426,44 @@ describe("public ImageEditor interactions", () => {
       } finally {
         await page.close();
       }
+    }
+  });
+
+  test("keyboard moves keep the focused strip item outside the fades, through to the add tile", async () => {
+    // Full motion, so the strip's smooth scrolling is on: keyboard moves must still place items at once.
+    const { page, errors } = await open("count=28&current=p1", 1440, "no-preference");
+    try {
+      const focusedVisible = () =>
+        page.evaluate(() => {
+          const list = document.querySelector<HTMLElement>(".k2b-image-editor__strip ul")!;
+          const item = document.activeElement!;
+          if (!list.contains(item)) return "not in strip";
+          const box = list.getBoundingClientRect();
+          const rect = item.getBoundingClientRect();
+          const fade = (edge: string) => ((list.dataset.fade ?? "").split(" ").includes(edge) ? 44 : 0);
+          return rect.left >= box.left + fade("start") - 0.5 && rect.right <= box.right - fade("end") + 0.5
+            ? "visible"
+            : `hidden ${rect.left}-${rect.right} in ${box.left}-${box.right} fade ${list.dataset.fade}`;
+        });
+      await page.locator('.k2b-image-editor__strip [aria-current="true"]').focus();
+      await page.keyboard.press("End");
+      expect(await page.evaluate(() => document.activeElement?.classList.contains("k2b-image-editor__thumb--add"))).toBe(true);
+      // settled: the unsettled moment right after the key is the subject; a smooth scroll would still be moving.
+      expect(await focusedVisible()).toBe("visible");
+      await page.keyboard.press("ArrowLeft");
+      expect(await page.evaluate(() => document.activeElement?.getAttribute("aria-label"))).toBe("photo-28.jpg");
+      // settled: read at once after the key, as above.
+      expect(await focusedVisible()).toBe("visible");
+      await page.keyboard.press("Home");
+      // settled: read at once after the key, as above.
+      expect(await focusedVisible()).toBe("visible");
+      for (let step = 0; step < 13; step++) await page.keyboard.press("ArrowRight");
+      expect(await page.evaluate(() => document.activeElement?.getAttribute("aria-label"))).toBe("photo-14.jpg");
+      // settled: read at once after the key, as above.
+      expect(await focusedVisible()).toBe("visible");
+      expect(errors).toEqual([]);
+    } finally {
+      await page.close();
     }
   });
 
