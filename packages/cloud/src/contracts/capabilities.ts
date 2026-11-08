@@ -906,7 +906,29 @@ export const CodeAccountTypeLabelsSchema = z
   .strict();
 export type CodeAccountTypeLabels = z.infer<typeof CodeAccountTypeLabelsSchema>;
 
+export type CapabilityAssistantDefinition = {
+  provider: string;
+  tools: readonly string[];
+  skills: readonly string[];
+};
+
+export const CapabilityAssistantSchema = z
+  .object({
+    provider: CapabilityLocalIdSchema,
+    tools: z.array(CapabilityLocalIdSchema),
+    skills: z.array(
+      z
+        .string()
+        .min(1)
+        .max(64)
+        .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/),
+    ),
+  })
+  .strict();
+
 export type CapabilityResourceTypeDefinition = {
+  /** Additional context and fixed-target tools for a person's chat at this resource. */
+  assistant?: CapabilityAssistantDefinition;
   codeAccount?: CodeAccountTypeLabels;
   title: string;
   description: string;
@@ -1162,6 +1184,7 @@ export function defineCapabilities(definitions: CapabilityDefinitions): Capabili
 
 export const CapabilityResourceTypeManifestSchema = z
   .object({
+    assistant: CapabilityAssistantSchema.optional(),
     codeAccount: CodeAccountTypeLabelsSchema.optional(),
     localId: CapabilityLocalIdSchema,
     title: z.string().min(1).max(120),
