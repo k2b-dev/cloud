@@ -135,7 +135,8 @@ A minimal caller needs only:
   editor per image when edits must survive the switch. `onAddItems` adds a "+"
   at the end. The strip fades only on a side with more images, keeps its
   height, and moves focus with the arrow keys, Home, and End. On phones it
-  opens below the chips from the name chip.
+  opens below the chips from the name chip. Keep each item's `id` stable:
+  thumbnail and dirty-state updates preserve its button, focus, and scroll position.
 
 ## Save only after the caller succeeds
 

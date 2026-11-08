@@ -43,6 +43,7 @@ const control = {
   results: [] as ImageEditorResult[],
   selected: [] as string[],
   formats: (): readonly ImageEditorFormat[] => [],
+  refreshItems: () => {},
   accept: () => {},
   source: (_source: string) => {},
   dispose: () => {},
@@ -60,9 +61,11 @@ function mount() {
     const [source, setSource] = createSignal(parameters.has("broken") ? "/not-an-image.jpg" : "/photo.jpg");
     const [current, setCurrent] = createSignal("b");
     control.source = setSource;
-    const items = parameters.has("items")
+    const initialItems = parameters.has("items")
       ? ["a", "b", "c", "d"].map((id) => ({ id, name: `${id}.jpg`, thumbnail: id === "c" ? undefined : "/photo.jpg", dirty: id === "a" }))
       : undefined;
+    const [items, setItems] = createSignal(initialItems);
+    control.refreshItems = () => setItems((current) => current?.map((item) => ({ ...item, dirty: !item.dirty })));
     const first = (
       <ImageEditor
         source={source()}
@@ -73,7 +76,7 @@ function mount() {
             ? [{ label: "Read only", icon: "ti ti-lock", tooltip: "You may only view this file" }, { label: "Version 3" }]
             : undefined
         }
-        items={items}
+        items={items()}
         currentItem={current()}
         onSelectItem={(id) => {
           control.selected.push(id);

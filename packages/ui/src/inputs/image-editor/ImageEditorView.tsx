@@ -5,6 +5,7 @@ import { Button, IconButton } from "../../actions/Button";
 import { Dropdown } from "../../actions/Dropdown";
 import { Kbd } from "../../content/Kbd";
 import { prompts } from "../../feedback/prompts";
+import { KeyedFor } from "../../internal/keyed-for";
 import { useLocale } from "../../intl/locale";
 import { Slider } from "../ChoiceInputs";
 import {
@@ -1467,7 +1468,7 @@ function ImageEditorSession(props: ImageEditorProps): JSX.Element {
     if (hiddenCount()) return { tone: "warning", icon: "ti ti-eye-off", text: t().hiddenNotice({ count: hiddenCount() }) };
     return f().export ? { icon: "ti ti-map-pin-off", text: t().metadata } : undefined;
   });
-  const itemCount = () => props.items?.length ?? 0;
+  const itemCount = createMemo(() => props.items?.length ?? 0);
   const showStrip = () => itemCount() > 1 || (itemCount() > 0 && !!props.onAddItems);
   const position = () => {
     const index = props.items?.findIndex((item) => item.id === props.currentItem) ?? -1;
@@ -2082,33 +2083,33 @@ function ImageEditorSession(props: ImageEditorProps): JSX.Element {
     return (
       <nav class="k2b-image-editor__strip k2b-overlay-surface" aria-label={t().images}>
         <ul ref={stripList} onScroll={stripFade} onKeyDown={stripKeys}>
-          <For each={props.items ?? []}>
+          <KeyedFor each={props.items ?? []} by={(item) => item.id}>
             {(item) => (
               <li>
                 <button
                   type="button"
                   class="k2b-image-editor__thumb"
-                  aria-current={item.id === props.currentItem}
-                  tabindex={item.id === props.currentItem ? 0 : -1}
-                  aria-label={`${item.name}${item.id === props.currentItem ? `, ${t().imageCurrent}` : ""}${item.dirty ? `, ${t().imageUnsaved}` : ""}`}
-                  title={item.name}
+                  aria-current={item().id === props.currentItem}
+                  tabindex={item().id === props.currentItem ? 0 : -1}
+                  aria-label={`${item().name}${item().id === props.currentItem ? `, ${t().imageCurrent}` : ""}${item().dirty ? `, ${t().imageUnsaved}` : ""}`}
+                  title={item().name}
                   onClick={() => {
                     setStripOpen(false);
-                    if (item.id !== props.currentItem) props.onSelectItem?.(item.id);
+                    if (item().id !== props.currentItem) props.onSelectItem?.(item().id);
                   }}
                 >
-                  {(() => {
-                    const thumbnail = item.thumbnail;
-                    if (typeof thumbnail === "function") return thumbnail();
-                    return thumbnail ? <img src={thumbnail} alt="" loading="lazy" decoding="async" /> : null;
-                  })()}
-                  <Show when={item.dirty}>
+                  <Show keyed when={item().thumbnail}>
+                    {(thumbnail) =>
+                      typeof thumbnail === "function" ? thumbnail() : <img src={thumbnail} alt="" loading="lazy" decoding="async" />
+                    }
+                  </Show>
+                  <Show when={item().dirty}>
                     <span class="k2b-image-editor__thumb-dirty" aria-hidden="true" />
                   </Show>
                 </button>
               </li>
             )}
-          </For>
+          </KeyedFor>
           <Show when={props.onAddItems}>
             <li>
               <IconButton

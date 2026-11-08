@@ -114,9 +114,26 @@ describe("Tools public photo editor adoption", () => {
         await page.waitForFunction(() =>
           document.querySelector(".k2b-image-editor__strip ul")?.getAttribute("data-fade")?.includes("start"),
         );
+        await page.waitForFunction(() => document.querySelectorAll(".k2b-image-editor__strip img").length === 28);
+        expect(await list.evaluate((node) => node.scrollLeft)).toBeGreaterThan(0);
         await shot("auto-many-images");
-        await strip.getByRole("button", { name: "Add photos", exact: true }).scrollIntoViewIfNeeded();
-        expect(await strip.getByRole("button", { name: "Add photos", exact: true }).isVisible()).toBe(true);
+        await strip.getByRole("button").first().focus();
+        await page.keyboard.press("End");
+        await page.waitForFunction(() => {
+          const list = document.querySelector(".k2b-image-editor__strip ul")!;
+          const add = list.querySelector(".k2b-image-editor__thumb--add")!;
+          return document.activeElement === add && add.getBoundingClientRect().right <= list.getBoundingClientRect().right;
+        });
+        await settled(page);
+        expect(
+          await strip.getByRole("button", { name: "Add photos", exact: true }).evaluate((node) => {
+            const list = node.closest("ul")!;
+            const button = node.getBoundingClientRect();
+            const viewport = list.getBoundingClientRect();
+            return document.activeElement === node && button.left >= viewport.left && button.right <= viewport.right;
+          }),
+        ).toBe(true);
+        expect(await strip.getByRole("button", { name: "Add photos", exact: true }).locator(".ti-plus").isVisible()).toBe(true);
         await shot("strip-add");
         if (width === 390) await page.locator(".k2b-image-editor__name").click();
         await page.getByRole("tab", { name: "Mark up", exact: true }).click();

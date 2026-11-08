@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, setDefaultTimeout, test } from "bun:test";
 import { resolve } from "node:path";
 import type { Browser, Page } from "playwright";
-import { browserName, launchBrowser, pageErrors, settled } from "../test/browser";
+import { browserName, keptThrough, launchBrowser, pageErrors, pressAcrossRebuild, settled } from "../test/browser";
 
 setDefaultTimeout(30_000);
 const { transformAsync } = await import("@babel/core");
@@ -750,6 +750,35 @@ describe("public ImageEditor interactions", () => {
       expect(await page.getByRole("button", { name: /^Hide Redaction/ }).count()).toBe(0);
       await page.getByRole("button", { name: "Undo", exact: true }).click();
       expect(await page.getByRole("button", { name: "Hide Rectangle", exact: true }).count()).toBe(1);
+      expect(errors).toEqual([]);
+    } finally {
+      await page.close();
+    }
+  });
+
+  test("image strip updates keep focus and a press on the same photo", async () => {
+    const { page, errors } = await open("items=1");
+    try {
+      const strip = page.getByRole("navigation", { name: "Images" });
+      const list = strip.locator("ul");
+      await list.evaluate((node) => {
+        node.style.width = "76px";
+        node.scrollLeft = node.scrollWidth;
+      });
+      await settled(page);
+      const scrolled = await list.evaluate((node) => node.scrollLeft);
+      expect(scrolled).toBeGreaterThan(0);
+      await fixture(page, "refreshItems()");
+      await settled(page);
+      expect(await list.evaluate((node) => node.scrollLeft)).toBe(scrolled);
+      await list.evaluate((node) => node.style.removeProperty("width"));
+      const current = strip.locator('[aria-current="true"]');
+      await current.focus();
+      expect(await keptThrough(current, () => fixture(page, "refreshItems()"))).toEqual({ replaced: false, heightChange: 0 });
+      expect(await current.evaluate((node) => document.activeElement === node)).toBe(true);
+      await pressAcrossRebuild(page, page.getByRole("button", { name: /^c.jpg/ }), () => fixture(page, "refreshItems()"));
+      await page.waitForFunction("window.editorFixture.selected.length === 1");
+      expect(await fixture(page, "selected")).toEqual(["c"]);
       expect(errors).toEqual([]);
     } finally {
       await page.close();

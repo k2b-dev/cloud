@@ -382,7 +382,8 @@
   cursor: pointer;
 }
 .k2b-ui .k2b-image-editor__thumb img,
-.k2b-ui .k2b-image-editor__thumb > :only-child { width: 100%; height: 100%; object-fit: cover; }
+.k2b-ui .k2b-image-editor__thumb > :only-child:not(.k2b-image-editor__thumb-dirty) { width: 100%; height: 100%; object-fit: cover; }
+.k2b-ui .k2b-image-editor__thumb > * { pointer-events: none; }
 .k2b-ui .k2b-image-editor__thumb::after {
   content: "";
   position: absolute;
