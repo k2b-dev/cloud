@@ -4814,10 +4814,11 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
               await shoot("01-thread-pill", theme, width, thread);
               await shoot("02-draft-open", theme, width, thread, reply);
             }
-          await shoot("03-draft-fullscreen", "light", 1440, thread, async (page) => {
-            await reply(page);
-            await page.locator("[data-mail-draft-fullscreen]").click();
-          });
+          for (const width of [1440, 1920])
+            await shoot("03-draft-fullscreen", "light", width, thread, async (page) => {
+              await reply(page);
+              await page.locator("[data-mail-draft-fullscreen]").click();
+            });
           await shoot("04-draft-preview", "light", 1440, thread, async (page) => {
             await reply(page);
             await page.locator("[data-mail-draft-preview]").click();

@@ -1816,7 +1816,11 @@ export default function MailConversationReader(props: {
               scrollPreserveKey={`mail-reader-${props.selectionKey}`}
               onScroll={handleReaderScroll}
             >
-              <div class="mail-reading-column" data-mail-reading-column>
+              <div
+                class="mail-reading-column"
+                data-mail-reading-column
+                data-draft-fullscreen={visibleInlineDraft() && props.draftFullscreen ? "" : undefined}
+              >
                 <MailAutomationTrace
                   items={props.automationTrace}
                   where="top"

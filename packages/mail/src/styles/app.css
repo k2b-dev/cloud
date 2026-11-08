@@ -1527,6 +1527,40 @@
 .k2b-ui .mail-inline-draft-pending {
   justify-content: center;
 }
+/* In full screen the head with the recipients and the draft's tools stays at the top while the text scrolls; Send
+   stays at the bottom (the foot is sticky in every layout). */
+.k2b-ui .mail-inline-draft[data-fullscreen] .mail-inline-draft-head {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: var(--k2b-surface);
+}
+/* F8: from 1500 px of reader width, the history stands beside the draft in full screen; the draft stays in place
+   while the history scrolls. Lines keep the length the recipient sees. */
+@container mail-reader (min-width: 1500px) {
+  .k2b-ui .mail-reading-column[data-draft-fullscreen] {
+    display: grid;
+    max-width: calc(var(--k2b-reading-column) + 40rem + 3.5rem);
+    grid-template-columns: minmax(0, var(--k2b-reading-column)) minmax(0, 40rem);
+    align-items: start;
+    column-gap: 3.5rem;
+    /* The draft spans the rows of the history; spacing lives on the history items, so empty rows add no gaps. */
+    row-gap: 0;
+  }
+  .k2b-ui .mail-reading-column[data-draft-fullscreen] > * {
+    grid-column: 2;
+    margin-block-end: 0.5rem;
+  }
+  .k2b-ui .mail-reading-column[data-draft-fullscreen] > .mail-inline-draft-frame {
+    position: sticky;
+    top: 0;
+    grid-column: 1;
+    grid-row: 1 / span 40;
+  }
+  .k2b-ui .mail-reading-column[data-draft-fullscreen] .mail-inline-draft[data-fullscreen] {
+    min-height: calc(100cqh - 1.5rem);
+  }
+}
 .k2b-ui .mail-inline-draft-head {
   display: flex;
   min-height: 2rem;
