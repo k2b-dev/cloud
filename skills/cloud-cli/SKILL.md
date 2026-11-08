@@ -48,7 +48,7 @@ Start with the reference named here; it holds the exact syntax and the safe work
 | Query Pulse measurements or save SQL | `cld pulse reference sql.md`; `cld pulse sql --base <id> --file <path>` and `cld pulse queries --help`; one base per query |
 | Configure Pulse SQL alerts and source expectations | `cld pulse reference alerts.md`; `cld pulse alerts --help`; SQL alert writes need approval |
 | Set up Pulse sources, ingest batches, or inspect collection status | `cld pulse reference`, then `cld pulse reference ingest.md` |
-| Set up the Assistant for someone: Projects, knowledge, references, Skills, memories, or routines | `cld assistant reference how-it-works.md` first: whose permissions it uses, what is live or a copy, and what needs approval. Then `cld assistant reference` |
+| Set up the Assistant for someone: Projects, knowledge, references, Skills, or memories | `cld assistant reference how-it-works.md` first: whose permissions it uses, what is live or a copy, and what needs approval. Then `cld assistant reference` |
 
 ## Agent workflow
 
