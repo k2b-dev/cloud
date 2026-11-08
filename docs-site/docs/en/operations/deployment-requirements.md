@@ -983,6 +983,14 @@ read profiles but do not consume the questions quota. Public links are checked
 on every read and can be revoked by a base writer. Clearing measurements keeps
 dashboard definitions and invalidates their cached results.
 
+Before rolling Pulse back, check whether anyone saved dashboards with newly
+introduced panel kinds. Dashboard reads validate the stored definition strictly;
+an older Pulse version cannot read a kind it does not recognize. Rolling back
+after saving those kinds can make the affected base's entire dashboard list
+unavailable. Keep the newer version, or replace those panels with kinds supported
+by the rollback target before downgrading. Include dashboard definitions in the
+pre-upgrade backup.
+
 Back up all `pulse_*` databases with ClickHouse `BACKUP`, together with Cloud
 Postgres and its encryption keys. Restore them as a consistent set.
 
@@ -2416,3 +2424,12 @@ update; its files then load from the network. Worker updates remove entries abse
 storage is limited to 16 MiB; storage denial or eviction falls back to the network.
 Pages and API responses remain network-only. See
 [Offline and updates](/en/docs/frontend/mobile-app-pages#offline-and-updates).
+
+### Grids document captures
+
+Grids migrates independent immutable document captures on startup. Include
+`grids.document_data` with the existing document, issuance, artifact and export
+claim tables in the same database backup. These captures and their issued
+artifacts remain domain evidence even when an automation is retired. Existing
+workflow documents keep their original bindings; this upgrade does not rewrite
+or remove their provenance.

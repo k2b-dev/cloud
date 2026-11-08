@@ -7,7 +7,7 @@ import { oauthTokens, settingsService } from "@k2b/cloud/services";
 import { Hono } from "hono";
 import { useUnitClients } from "../../../../scripts/fixtures/unit-clients";
 import { requestContactDirectoryConfig, resolveMailContactDirectory } from "../contact-directory-settings";
-import { contactDirectory, conversationContext, publicResources } from "../service";
+import { contactDirectory, conversationContext, mailboxAccess, publicResources } from "../service";
 import * as directoryService from "../service/contact-directory";
 import api from ".";
 
@@ -61,6 +61,8 @@ const headers = { authorization: "Bearer contact-directory-test" };
 afterEach(() => mock.restore());
 
 beforeEach(() => {
+  // The caller can read the mailbox; these routes test their own contract.
+  spyOn(mailboxAccess, "requireMailboxAccess").mockResolvedValue({ ok: true, data: { scope: "mailbox", permission: "read" } });
   spyOn(directoryService, "requestContactDirectory").mockImplementation(async (c) =>
     resolveMailContactDirectory(requestContactDirectoryConfig(c)),
   );

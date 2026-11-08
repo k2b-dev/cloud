@@ -1695,21 +1695,17 @@
   margin-bottom: 1.5rem;
 }
 
+/* The shared k2b-icon-tile owns shape, fill and centring; the showcase sets only its size and accent. */
 .ui-charts-group__icon {
-  display: inline-grid;
-  flex: none;
-  place-items: center;
   width: 2.25rem;
   height: 2.25rem;
-  border-radius: 0.6rem;
-  background: var(--c-accent-soft);
   color: var(--c-accent-ink);
   font-size: 1.15rem;
 }
 
 .ui-charts-group__header p,
 .ui-charts-group__header h2,
-.ui-charts-group__header span {
+.ui-charts-group__header div > span {
   margin: 0;
 }
 
@@ -1728,7 +1724,8 @@
   letter-spacing: -0.015em;
 }
 
-.ui-charts-group__header span {
+/* Only the description line; the icon tile is a span too and keeps its own layout. */
+.ui-charts-group__header div > span {
   display: block;
   margin-top: 0.35rem;
   color: var(--c-muted);
@@ -1736,9 +1733,18 @@
 }
 
 .ui-charts-cards {
+  container: ui-charts-cards / inline-size;
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(min(100%, 19rem), 1fr));
+  grid-auto-flow: row dense;
   gap: 1rem;
+}
+
+/* A kind that needs more width than one column takes two once the overview has two; a smaller card fills the gap. */
+@container ui-charts-cards (min-width: 39rem) {
+  .ui-charts-card[data-span="2"] {
+    grid-column: span 2;
+  }
 }
 
 .ui-charts-card {
@@ -2003,14 +2009,12 @@
 }
 
 /* "Phone" shows the frame at 390 px less the page margins, as on a phone. */
-.ui-charts-stage > .ui-charts-frame,
-.ui-charts-stage > .ui-charts-tiles {
+.ui-charts-stage > :is(.k2b-dashboard-frame, .k2b-stat-grid) {
   max-width: 100%;
   margin-inline: auto;
 }
 
-.ui-charts-stage[data-width="phone"] > .ui-charts-frame,
-.ui-charts-stage[data-width="phone"] > .ui-charts-tiles {
+.ui-charts-stage[data-width="phone"] > :is(.k2b-dashboard-frame, .k2b-stat-grid) {
   max-width: 358px;
 }
 
@@ -2173,134 +2177,6 @@
 }
 
 /* Frames -------------------------------------------------------------------------- */
-.ui-charts-frame {
-  box-sizing: border-box;
-  min-width: 0;
-  padding: 1rem;
-  overflow: hidden;
-}
-
-.ui-charts-frame .k2b-chart-explorer {
-  gap: 0.75rem;
-}
-
-.ui-charts-frame .k2b-chart-explorer__title,
-.ui-charts-frame__header h2,
-.ui-charts-frame__header h3,
-.ui-charts-frame__header h4 {
-  margin: 0;
-  color: var(--k2b-text);
-  font-size: 0.875rem;
-  font-weight: 600;
-  line-height: 1.25rem;
-}
-
-.ui-charts-frame__header {
-  display: flex;
-  min-height: 2.5rem;
-  gap: 0.75rem;
-  align-items: flex-start;
-  justify-content: space-between;
-  margin-bottom: 0.75rem;
-}
-
-.ui-charts-frame__header > div {
-  min-width: 0;
-}
-
-.ui-charts-frame__search {
-  flex: 0 1 14rem;
-  min-width: 7rem;
-}
-
-.ui-charts-frame__header .ui-charts-frame__stale {
-  color: var(--k2b-warning-text);
-}
-
-.ui-charts-frame__header p {
-  margin: 0;
-  overflow: hidden;
-  color: var(--k2b-text-muted);
-  font-size: 0.8125rem;
-  line-height: 1.25rem;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.ui-charts-frame__block {
-  min-width: 0;
-  overflow: auto;
-}
-
-.ui-charts-frame__flows {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.5rem 1.25rem;
-  align-items: center;
-}
-
-.ui-charts-frame__skeleton {
-  display: flex;
-  flex-direction: column;
-  gap: 0.6rem;
-}
-
-.ui-charts-frame__skeleton > span {
-  height: 0.9rem;
-  border-radius: 0.3rem;
-  background: var(--k2b-surface-muted);
-}
-
-.ui-charts-frame__skeleton > span:last-child {
-  width: 60%;
-}
-
-.ui-charts-frame__inline-state {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.4rem;
-  align-items: center;
-  margin: 0;
-  color: var(--k2b-text-secondary);
-  font-size: 0.875rem;
-}
-
-.ui-charts-frame__inline-state > i {
-  color: var(--k2b-text-muted);
-}
-
-.ui-charts-frame__inline-state[role="alert"] > i {
-  color: var(--k2b-danger-text);
-}
-
-.ui-charts-frame__table {
-  display: grid;
-  margin: 0 -1rem -1rem;
-  overflow-x: auto;
-}
-
-/* The hidden full table, the visible rows and a state share one grid cell: the cell is as high as every row. */
-.ui-charts-frame__table > * {
-  grid-area: 1 / 1;
-  min-width: 0;
-}
-
-.ui-charts-frame__sizer {
-  visibility: hidden;
-}
-
-.ui-charts-frame__rows {
-  align-self: start;
-}
-
-.ui-charts-frame__tools {
-  display: flex;
-  flex: 0 1 auto;
-  gap: 0.5rem;
-  align-items: center;
-  min-width: 0;
-}
-
 /* A slot keeps the frame and its height for a kind this build cannot draw yet; it never shows another chart. */
 .ui-charts-slot {
   box-sizing: border-box;
@@ -2460,8 +2336,7 @@
     grid-template-columns: minmax(0, 1fr);
   }
 
-  .ui-charts-stage[data-width="phone"] > .ui-charts-frame,
-  .ui-charts-stage[data-width="phone"] > .ui-charts-tiles {
+  .ui-charts-stage[data-width="phone"] > :is(.k2b-dashboard-frame, .k2b-stat-grid) {
     max-width: 100%;
   }
 

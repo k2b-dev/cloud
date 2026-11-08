@@ -1,5 +1,5 @@
-import { chartMessages } from "../../content/chart-message-catalog";
-import { chartDatumSvg, escapeXml, niceStep } from "./svg";
+import { coreChartMessages } from "./chart-messages";
+import { chartDatumSvg, escapeXml, niceStep } from "./svg-renderers";
 
 export type AreaOptions = {
   layout: "stacked";
@@ -210,6 +210,6 @@ export function renderAreaSvg(spec: AreaOptions & { width: number; height: numbe
       ),
     );
   });
-  const totalLabel = chartMessages.resolve([spec.locale ?? "en"]).t.chartFields({ key: "areaTotal" });
+  const totalLabel = coreChartMessages.resolve([spec.locale ?? "en"]).t.areaTotal;
   return `<svg data-chart-total-label="${escapeXml(totalLabel)}" xmlns="http://www.w3.org/2000/svg" class="stdlib-chart k2b-area ${escapeXml(spec.className ?? "")}" width="${spec.width}" height="${spec.height}" viewBox="0 0 ${spec.width} ${spec.height}" aria-hidden="true" focusable="false">${parts.join("")}</svg>`;
 }

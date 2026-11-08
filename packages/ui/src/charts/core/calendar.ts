@@ -1,4 +1,4 @@
-import { type ChartOptions, chartDatumSvg, escapeXml, type HeatmapOptions, heatmap, renderHeader, svgRoot } from "./svg";
+import { type ChartOptions, chartDatumSvg, escapeXml, type HeatmapOptions, heatmap, renderHeader, svgRoot } from "./svg-renderers";
 import { chartTextWidth } from "./text";
 export type CalendarHeatmapOptions = ChartOptions & {
   layout: "calendar";

@@ -13,3 +13,5 @@ Keep the first server and client markup equal: the fixed weekday rail clips the 
 Scaling geometry and inverse-scaling individual labels can separate words from their grid or legend swatches. Anchor weekday text at its right edge and keep month/year and legend elements in shared fixed-size groups. The panel guard measures a weekday-to-grid gap of at most 8px at phone and desktop widths.
 
 Use a reversed flex scroll origin for newest-first server output, while preserving the tooltip’s text direction. Size containment belongs to the calendar viewport, not the complete explorer: a contained explorer loses its intrinsic width in a shrink-to-fit host. The first frame’s known calendar reserve survives an omitted snapshot; without initial geometry, keep the standard frame after data arrives. Tests cover `{rows: []}`, intrinsic width, and a real 15px classic horizontal scrollbar inside the reserved gutter.
+
+When chart frames move between layers, carry responsive sizing into the current owner. The calendar reserve now belongs to `DescriptionPanel`; its render guard checks all states and both diagram and table views.

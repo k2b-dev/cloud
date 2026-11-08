@@ -5,7 +5,7 @@ import type { Document, DocumentFolder, DocumentSummary, DocumentSummaryList } f
 import { type DocumentDbRow, hydrateDocumentSummaries } from "./document-mappers";
 import { decodeDocumentCursor, encodeDocumentCursor, normalizeDocumentTags } from "./document-values";
 
-const summaryColumns = () => sql`id, short_id, template_id, workflow_run_id, snapshot_id, base_id, table_id, record_id,
+const summaryColumns = () => sql`id, short_id, template_id, workflow_run_id, domain_data_id, snapshot_id, base_id, table_id, record_id,
   document_number, filename, primary_artifact_key, tags, profile_id, profile_version, validation_status, created_by, created_at`;
 
 type DocumentPage = {
@@ -35,10 +35,13 @@ export type DocumentReadAuthorizer = (document: Pick<Document, "baseId" | "table
 export const loadDocumentDataSnapshots = async (documentIds: readonly string[]) => {
   if (documentIds.length === 0) return new Map<string, { rowCount: number; capturedAt: string }>();
   const rows = await sql<Array<{ id: string; row_count: number; captured_at: Date }>>`
-    SELECT document.id::text, data.row_count, data.captured_at
+    SELECT document.id::text, coalesce(data.row_count, (domain.payload->>'rowCount')::int) AS row_count,
+      coalesce(data.captured_at, (domain.payload->>'capturedAt')::timestamptz) AS captured_at
     FROM grids.documents document
-    JOIN grids.workflow_query_data data ON data.id = document.query_data_id
+    LEFT JOIN grids.workflow_query_data data ON data.id = document.query_data_id
+    LEFT JOIN grids.document_data domain ON domain.id = document.domain_data_id
     WHERE document.id = ANY(${toPgUuidArray([...documentIds])}::uuid[])
+      AND (data.id IS NOT NULL OR domain.id IS NOT NULL)
   `;
   return new Map(
     rows.map((row) => {

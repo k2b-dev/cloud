@@ -43,6 +43,7 @@ suite("Mail draft public boundary", () => {
       async (_table, ids) => new Map(ids.flatMap((id) => (typeof id === "string" ? [[id, id] as const] : []))),
     );
     spyOn(publicResources, "resolvePublicId").mockResolvedValue(mailboxId);
+    spyOn(mailboxAccess, "requireMailboxAccess").mockResolvedValue(ok({ scope: "mailbox", permission: "admin" }));
     spyOn(publicResources, "resolveMailboxPublicId").mockResolvedValue(conversationId);
     const listConversationDrafts = spyOn(drafts, "listConversationDrafts").mockResolvedValue(ok([]));
 
@@ -66,6 +67,7 @@ suite("Mail command public boundary", () => {
     spyOn(mailboxAccess, "requireMailboxPermission").mockResolvedValue(ok("admin"));
     spyOn(mailboxAccess, "getMailboxPermission").mockResolvedValue("admin");
     spyOn(publicResources, "resolvePublicId").mockResolvedValue(mailboxId);
+    spyOn(mailboxAccess, "requireMailboxAccess").mockResolvedValue(ok({ scope: "mailbox", permission: "admin" }));
     spyOn(publicResources, "resolveMailboxPublicIds").mockResolvedValue([folderId]);
     spyOn(publicResources, "resolveMailboxPublicId").mockResolvedValue(messageId);
     spyOn(publicResources, "publicIds").mockImplementation(async (table, ids) => {
@@ -144,6 +146,7 @@ suite("Mail draft seed public boundary", () => {
   const internalOrigin = { ...publicOrigin, messageId, input: { ...publicOrigin.input, senderIdentityId } };
 
   const stubBoundary = () => {
+    spyOn(mailboxAccess, "requireMailboxAccess").mockResolvedValue(ok({ scope: "mailbox", permission: "admin" }));
     spyOn(oauthTokens, "verifyAccessToken").mockResolvedValue({ kind: "user", payload: {}, user, scopes: ["read", "write"] });
     spyOn(mailboxAccess, "requireMailboxPermission").mockResolvedValue(ok("admin"));
     spyOn(mailboxAccess, "getMailboxPermission").mockResolvedValue("admin");

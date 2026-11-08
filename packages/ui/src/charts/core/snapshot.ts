@@ -1,7 +1,7 @@
 import { calendarLayout } from "./calendar";
 import { type ChartSelection, type ChartTooltip, type ChartTooltipFormatter, isChartDatum } from "./inspection";
 import { type ChartRenderOptions, chartRenderHeight, renderChartSvg } from "./render";
-import { escapeXml } from "./svg";
+import { escapeXml } from "./svg-renderers";
 import type { ChartDatum, ChartKind } from "./types";
 
 /** Trusted output of prepareChartSnapshot; never accept arbitrary user SVG. */

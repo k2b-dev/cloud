@@ -1,4 +1,6 @@
 import {
+  BalanceSummary,
+  BudgetList,
   Button,
   Chart,
   type ChartCursor,
@@ -25,9 +27,11 @@ import {
   type DashboardLineRow,
   dashboardCategories,
   dashboardCell,
+  dashboardChartRenderOptions,
   dashboardCountries,
   dashboardDateTime,
   dashboardLineExplorer,
+  dashboardMoneyDescription,
 } from "./dashboard-data";
 
 // A line panel keeps its explorer, header and height while it has no points to draw.
@@ -67,17 +71,46 @@ export default function DashboardPanelView(props: {
     </IconButton>
   );
   const data = () => props.result?.lastGood?.data;
-  const line = createMemo(() =>
-    data() && props.panel.kind === "line"
-      ? dashboardLineExplorer(props.panel, data()!, { locale: locale(), timeZone: props.timeZone }, props.result?.lastGood ?? undefined)
-      : null,
-  );
+  const lineResult = createMemo(() => {
+    if (!data() || props.panel.kind !== "line") return { value: null, error: false };
+    try {
+      return {
+        value: dashboardLineExplorer(
+          props.panel,
+          data()!,
+          { locale: locale(), timeZone: props.timeZone },
+          props.result?.lastGood ?? undefined,
+        ),
+        error: false,
+      };
+    } catch {
+      return { value: null, error: true };
+    }
+  });
+  const line = () => lineResult().value;
   const categoryResult = createMemo(() => {
     if (!data() || !["bar", "funnel"].includes(props.panel.kind)) return { data: [], error: false };
     try {
       return { data: dashboardCategories(props.panel, data()!, locale()), error: false };
     } catch {
       return { data: [], error: true };
+    }
+  });
+  const catalog = createMemo(() => {
+    if (!data()?.rows.length || ["number", "line", "bar", "funnel", "table", "map", "budget", "balance"].includes(props.panel.kind))
+      return { options: null, error: false };
+    try {
+      return { options: dashboardChartRenderOptions(props.panel, data()!, { locale: locale(), timeZone: props.timeZone }), error: false };
+    } catch {
+      return { options: null, error: true };
+    }
+  });
+  const money = createMemo(() => {
+    if (!data()?.rows.length || !["budget", "balance"].includes(props.panel.kind)) return { description: null, error: false };
+    try {
+      return { description: dashboardMoneyDescription(props.panel, data()!, locale()), error: false };
+    } catch {
+      return { description: null, error: true };
     }
   });
   const countryResult = createMemo(() => {
@@ -96,7 +129,13 @@ export default function DashboardPanelView(props: {
     return result?.ok ? result.data : null;
   };
   const categories = () => categoryResult().data;
-  const malformed = () => categoryResult().error || countryResult().error || (numberResult() !== null && !numberResult()?.ok);
+  const malformed = () =>
+    lineResult().error ||
+    categoryResult().error ||
+    catalog().error ||
+    money().error ||
+    countryResult().error ||
+    (numberResult() !== null && !numberResult()?.ok);
   const failure = () =>
     malformed()
       ? t().dashboardInvalidResult
@@ -359,7 +398,7 @@ export default function DashboardPanelView(props: {
               <Chart
                 kind="barGauge"
                 data={categories()}
-                max={Math.max(1, ...categories().map((row) => row.value))}
+                max={Math.max(1, ...categories().map((row) => row.value ?? 0))}
                 min={0}
                 interactive
                 labels={{ interactiveChart: `${props.panel.title} · ${t().dashboardFunnel}` }}
@@ -382,6 +421,23 @@ export default function DashboardPanelView(props: {
                 })}
               />
             </div>
+          </Show>
+          <Show when={catalog().options}>
+            {(options) => (
+              <div class="pulse-dashboard__plot">
+                <Chart {...options()} interactive labels={{ interactiveChart: props.panel.title }} />
+              </div>
+            )}
+          </Show>
+          <Show when={money().description}>
+            {(description) => (
+              <div class="pulse-dashboard__money">
+                {(() => {
+                  const block = description();
+                  return block.block === "budget" ? <BudgetList {...block} /> : <BalanceSummary {...block} />;
+                })()}
+              </div>
+            )}
           </Show>
           <Show when={props.panel.kind === "map"}>
             <div class="pulse-dashboard__map">

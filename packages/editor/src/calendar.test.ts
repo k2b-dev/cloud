@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { calendarLayout, calendarViewportHeight } from "@k2b/ui/charts";
+import { type ChartDescription, calendarLayout, calendarViewportHeight } from "@k2b/ui/charts";
 import { type ChartInput, chartKinds, chartRenderOptions, chartTable } from "./charts";
 import { notebookChartFrameHtml, notebookChartHeight, renderNotebookChartFigure } from "./markdown/lib/chart-blocks";
 
@@ -12,7 +12,7 @@ const spec = {
     ["2026-11-02", 1234.5],
     ["2026-11-03", 0],
   ],
-};
+} satisfies ChartDescription;
 test("calendar schema is additive, validates dates and preserves table locale", () => {
   const schema = chartKinds();
   const input = schema.parse(spec);
