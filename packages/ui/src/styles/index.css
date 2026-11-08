@@ -11245,7 +11245,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 /* A selected row is a clear fill in the app colour, never a coloured line,
    so its geometry and the row lines stay as they are. */
 .k2b-ui .k2b-data-table__row[data-selected="true"] {
-  background: color-mix(in srgb, var(--k2b-app-workspace-active) 16%, var(--k2b-surface));
+  background: color-mix(in srgb, var(--k2b-app-workspace-active) 16%, var(--k2b-surface-beneath, var(--k2b-surface)));
 }
 
 .k2b-ui .k2b-data-table__row[data-selected="true"] > td[data-highlighted="true"] {
