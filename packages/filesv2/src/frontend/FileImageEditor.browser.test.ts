@@ -401,13 +401,36 @@ describe("Files photo editing", () => {
       await rotate(page);
       await save(page);
       await page.getByText("The file changed. Your edits are preserved. Save a copy instead.").first().waitFor();
+      expect((await page.locator(".filesv2-image-save-actions button").first().innerText()).trim()).toBe("Save copy");
+      expect(await page.locator(".k2b-image-editor__note").getByRole("button", { name: "Save copy", exact: true }).count()).toBe(1);
+      expect(await page.locator(".k2b-image-editor").getByRole("button", { name: "Try again", exact: true }).count()).toBe(0);
       expect(await page.locator(".k2b-image-editor").getAttribute("data-dirty")).toBe("true");
       expect(await page.evaluate(() => window.fileImages.saved.length)).toBe(0);
-      await save(page, true);
+      await page.locator(".k2b-image-editor__note").getByRole("button", { name: "Save copy", exact: true }).click();
       await page.waitForFunction(() => window.fileImages.saved.length === 1);
       expect(uploads.at(-1)!.path).toBe("Trips/Photo (edited).jpg");
       expect(uploads.at(-1)!.onConflict).toBe("error");
       expect(uploads.at(-1)!.expectedRevision).toBeUndefined();
+      expect(uploads.map((upload) => upload.onConflict)).toEqual(["overwrite", "error"]);
+      expect(errors).toEqual([]);
+    } finally {
+      await page.close();
+    }
+  });
+  test("a version conflict without folder creation offers a download instead of another overwrite", async () => {
+    const { page, errors, uploads } = await setup({ conflict: true, canCreate: false });
+    try {
+      await edit(page);
+      await rotate(page);
+      await save(page);
+      await page.getByText("The file changed. Your edits are preserved. Download the edited image instead.").first().waitFor();
+      expect((await page.locator(".filesv2-image-save-actions button").first().innerText()).trim()).toBe("Download");
+      expect(await page.locator(".k2b-image-editor").getByRole("button", { name: "Try again", exact: true }).count()).toBe(0);
+      const downloaded = page.waitForEvent("download");
+      await page.locator(".k2b-image-editor__note").getByRole("button", { name: "Download", exact: true }).click();
+      expect((await downloaded).suggestedFilename()).toBe("Photo.jpg");
+      expect(uploads).toHaveLength(1);
+      expect(await page.evaluate(() => window.fileImages.saved.length)).toBe(0);
       expect(errors).toEqual([]);
     } finally {
       await page.close();
@@ -526,6 +549,34 @@ describe("Files photo editing", () => {
       await page.getByText("Discard unsaved changes?", { exact: true }).waitFor();
       await page.getByRole("dialog").last().getByRole("button", { name: "Confirm", exact: true }).click();
       await page.waitForFunction(() => !document.querySelector("dialog[open]"));
+      expect(errors).toEqual([]);
+    } finally {
+      await page.close();
+    }
+  });
+  test("a transient storage preflight failure offers Try again and saves the preserved draft", async () => {
+    const { page, errors, uploads } = await setup();
+    try {
+      await edit(page);
+      await rotate(page);
+      await page.evaluate(() => {
+        const setItem = Storage.prototype.setItem;
+        Storage.prototype.setItem = function () {
+          Storage.prototype.setItem = setItem;
+          throw new DOMException("Storage temporarily unavailable", "SecurityError");
+        };
+      });
+      await save(page);
+      const retry = page.locator(".k2b-image-editor__note").getByRole("button", { name: "Try again", exact: true });
+      await retry.waitFor();
+      expect(uploads).toEqual([]);
+      expect(await page.locator(".k2b-image-editor").getAttribute("data-dirty")).toBe("true");
+      expect(await page.locator(".filesv2-image-save-actions button").first().innerText()).toBe("Save");
+      await retry.click();
+      await page.waitForFunction(() => window.fileImages.saved.length === 1);
+      expect(uploads).toHaveLength(1);
+      expect(uploads[0]!.path).toBe("Trips/Photo.jpg");
+      expect(await page.locator(".k2b-image-editor").getAttribute("data-dirty")).toBe("false");
       expect(errors).toEqual([]);
     } finally {
       await page.close();

@@ -76,6 +76,8 @@ export type ImageEditorProps = {
   features: ImageEditorFeatures;
   output?: ImageEditorOutput;
   saveActions?: (actions: ImageEditorSaveActions) => JSX.Element;
+  /** Replaces the retry action for a rejected caller commit. Export and size failures keep their own retry. */
+  saveErrorAction?: { label: string; onClick: () => void };
   onSave?: (result: ImageEditorResult) => void | Promise<void>;
   onCancel?: () => void;
   onDirtyChange?: (dirty: boolean) => void;

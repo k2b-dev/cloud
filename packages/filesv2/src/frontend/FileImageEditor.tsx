@@ -1,6 +1,15 @@
 import { onBeforeLeave } from "@k2b/ssr/nav";
 import { files } from "@k2b/stdlib/browser";
-import { Button, ImageEditor, type ImageEditorItem, type ImageEditorSaveActions, Placeholder, SplitButton, toast } from "@k2b/ui";
+import {
+  Button,
+  ImageEditor,
+  type ImageEditorItem,
+  type ImageEditorProps,
+  type ImageEditorSaveActions,
+  Placeholder,
+  SplitButton,
+  toast,
+} from "@k2b/ui";
 import { createEffect, createSignal, onCleanup, onMount, Show } from "solid-js";
 import type { EntryResult } from "../contracts";
 import { markdownRevision } from "../document-assets";
@@ -32,6 +41,8 @@ export default function FileImageEditor(props: {
   const [busy, setBusy] = createSignal(false);
   const [checking, setChecking] = createSignal(false);
   const [retryUpload, setRetryUpload] = createSignal<() => Promise<void>>();
+  const [versionConflict, setVersionConflict] = createSignal(false);
+  const [saveErrorAction, setSaveErrorAction] = createSignal<ImageEditorProps["saveErrorAction"]>();
   let revision: string | undefined;
   let copyNumber = 1;
   const lifetime = new AbortController();
@@ -85,11 +96,12 @@ export default function FileImageEditor(props: {
       const format = image && imageOriginalFormat(image.entry);
       return image?.base.managed && image.base.versioningEnabled && format && actions.formats.includes(format) ? format : undefined;
     };
-    const save = (copy: boolean) =>
-      actions.save(
+    const save = (copy: boolean) => {
+      setSaveErrorAction(undefined);
+      return actions.save(
         async (result) => {
           const image = loaded();
-          if (!image || (!copy && !versionFormat()) || (copy && !props.canCreate)) throw new Error(t().saveFailed);
+          if (!image || (!copy && (!versionFormat() || versionConflict())) || (copy && !props.canCreate)) throw new Error(t().saveFailed);
           const path = copy ? imageCopyPath(props.path, result.type, t().edited, copyNumber) : props.path;
           // This promise stays attached to the captured editor entry until its exact upload is known.
           // A manual check reuses the same Blob, destination, revision and durable upload key.
@@ -126,6 +138,7 @@ export default function FileImageEditor(props: {
                 }
                 if (failure instanceof UploadConflict) {
                   copyNumber++;
+                  setSaveErrorAction({ label: t().copy, onClick: () => void save(true) });
                   setRetryUpload(undefined);
                   uncertainNotice?.dismiss();
                   uncertainNotice = undefined;
@@ -141,7 +154,15 @@ export default function FileImageEditor(props: {
                   uncertainNotice?.dismiss();
                   uncertainNotice = undefined;
                   rejectPending = undefined;
-                  reject(new Error(failure.code === "write_conflict" ? t().changed : failure.message));
+                  if (failure.code === "write_conflict") {
+                    setVersionConflict(true);
+                    setSaveErrorAction(
+                      props.canCreate ? { label: t().copy, onClick: () => void save(true) } : { label: t().download, onClick: download },
+                    );
+                  }
+                  reject(
+                    new Error(failure.code === "write_conflict" ? (props.canCreate ? t().changed : t().changedDownload) : failure.message),
+                  );
                 } else {
                   // A later preflight failure cannot settle an earlier ambiguous publication.
                   unresolved = true;
@@ -161,6 +182,7 @@ export default function FileImageEditor(props: {
         },
         copy ? undefined : { format: versionFormat() },
       );
+    };
     const download = () =>
       void actions.save(async (result) => {
         const name = props.path.split("/").at(-1) ?? "image";
@@ -169,14 +191,14 @@ export default function FileImageEditor(props: {
       });
     // A new version is the main action where it is possible; a copy, then a download, otherwise.
     const primary = () =>
-      props.canWrite && versionFormat()
+      props.canWrite && versionFormat() && !versionConflict()
         ? { label: t().save, run: () => void save(false) }
         : props.canCreate
           ? { label: t().copy, run: () => void save(true) }
           : { label: t().download, run: download, icon: "ti ti-download" };
     const menu = () => [
       ...(!props.canWrite ? [{ label: t().version, description: t().noWrite, disabled: true, action: () => {} }] : []),
-      ...(props.canWrite && versionFormat() && props.canCreate
+      ...(props.canWrite && versionFormat() && props.canCreate && !versionConflict()
         ? [{ label: t().copy, description: t().copyDescription, icon: "ti ti-copy", action: () => void save(true) }]
         : []),
       ...(primary().label !== t().download
@@ -253,6 +275,7 @@ export default function FileImageEditor(props: {
             maxOutputMegapixels="device"
             features={filesImageFeatures}
             saveActions={saveActions}
+            saveErrorAction={saveErrorAction()}
             onDirtyChange={setDirty}
             onCancel={() => {
               if (!busy()) props.onBack();

@@ -294,6 +294,7 @@ function ImageEditorSession(props: ImageEditorProps): JSX.Element {
   const [loadAttempt, setLoadAttempt] = createSignal(0);
   const [busy, setBusy] = createSignal(false);
   const [error, setError] = createSignal("");
+  const [commitFailed, setCommitFailed] = createSignal(false);
   const [saved, setSaved] = createSignal(false);
   const [suggestedMP, setSuggestedMP] = createSignal<number>();
   const [acceptedMP, setAcceptedMP] = createSignal<number>();
@@ -829,6 +830,7 @@ function ImageEditorSession(props: ImageEditorProps): JSX.Element {
     lastSave = { commit: callerCommit, output: override };
     setBusy(true);
     setError("");
+    setCommitFailed(false);
     setSaved(false);
     setSuggestedMP(undefined);
     let uploading = false;
@@ -852,7 +854,10 @@ function ImageEditorSession(props: ImageEditorProps): JSX.Element {
       if (failure instanceof ImageEditorSizeError) {
         setSuggestedMP(failure.suggestedMegapixels);
         setError(t().sizeRefused);
-      } else setError(uploading && failure instanceof Error && failure.message ? failure.message : t().saveFailed);
+      } else {
+        setCommitFailed(uploading);
+        setError(uploading && failure instanceof Error && failure.message ? failure.message : t().saveFailed);
+      }
     } finally {
       if (alive && current === generation) setBusy(false);
     }
@@ -2055,6 +2060,7 @@ function ImageEditorSession(props: ImageEditorProps): JSX.Element {
   function noteView() {
     const n = note();
     if (!n) return null;
+    const recovery = () => (commitFailed() ? props.saveErrorAction : undefined);
     return (
       <p class="k2b-image-editor__note-line" data-tone={n.tone} role={n.tone === "danger" ? "alert" : undefined}>
         <i class={n.icon} aria-hidden="true" />
@@ -2065,12 +2071,13 @@ function ImageEditorSession(props: ImageEditorProps): JSX.Element {
           {n.text}
           <Show when={n.action}>
             <span class="k2b-image-editor__note-actions">
-              <Button size="sm" variant="secondary" disabled={busy()} onClick={retry}>
-                {suggestedMP()
-                  ? t().retrySmaller({
-                      megapixels: new Intl.NumberFormat(locale(), { maximumFractionDigits: 1 }).format(suggestedMP() ?? 0),
-                    })
-                  : t().retry}
+              <Button size="sm" variant="secondary" disabled={busy()} onClick={recovery()?.onClick ?? retry}>
+                {recovery()?.label ??
+                  (suggestedMP()
+                    ? t().retrySmaller({
+                        megapixels: new Intl.NumberFormat(locale(), { maximumFractionDigits: 1 }).format(suggestedMP() ?? 0),
+                      })
+                    : t().retry)}
               </Button>
             </span>
           </Show>

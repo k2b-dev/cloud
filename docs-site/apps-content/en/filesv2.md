@@ -73,7 +73,7 @@ If you may only view the file, you can still edit it and choose **Download**. **
 
 **Save new version** is the main action and is available in a managed, versioned storage location when the browser can encode the original JPEG, PNG, or WebP format. Storage that also accepts writes outside Cloud offers copies only. Otherwise choose **Save copy**; you must be able to create files in that folder to save a copy. Copies are named `Photo (edited).jpg`, with a number when needed. If that name already exists, choose **Save copy** again to use the next name. Files attempts the original image dimensions. If the browser cannot produce that size, your edits stay open and you can explicitly retry with a smaller output. Saving removes source metadata.
 
-The original stays fixed while you edit. A conflicting change preserves your edits; save a copy instead. A save completes only after storage confirms the upload. If its result is unknown, **Check upload** checks that same upload before you can save again. Closing with unsaved changes asks before discarding them.
+The original stays fixed while you edit. A conflicting change preserves your edits and changes the main action to **Save copy**. If you cannot create a copy in that folder, choose **Download** instead. A temporary failure before an upload starts offers **Try again**. A save completes only after storage confirms the upload. If its result is unknown, **Check upload** checks that same upload before you can save again. Closing with unsaved changes asks before discarding them.
 
 ## Browse, select, and preview
 

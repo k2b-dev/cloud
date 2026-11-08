@@ -169,6 +169,11 @@ actions (on phones below the chips). `save` handles the failure visibly and
 resolves after the attempt; success belongs to the caller's completed
 `commit`, not to the promise merely settling.
 
+When a rejected commit needs another action, set `saveErrorAction` to
+`{ label, onClick }`, for example **Save copy** after a version conflict.
+Clear it before a new attempt. Export failures retain the editor's own retry,
+including explicit acceptance of a smaller output when necessary.
+
 `onDirtyChange` reports whether the current history entry differs from the last
 successfully saved entry. Undoing to that entry clears dirty; branching from
 an earlier entry stays dirty. One slider gesture is one history step.

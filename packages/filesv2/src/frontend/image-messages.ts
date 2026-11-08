@@ -15,6 +15,7 @@ export const imageMessages = i18n.define({
       retry: "Try again",
       tooLarge: "Image editing supports files up to 50 MiB.",
       changed: "The file changed. Your edits are preserved. Save a copy instead.",
+      changedDownload: "The file changed. Your edits are preserved. Download the edited image instead.",
       saveFailed: "The image could not be saved. Your edits are preserved.",
       copyConflict: "That copy already exists. Save a copy again to use the next name.",
       uncertain: "The upload result is not yet known. Check this upload before saving anything else. Your edits are preserved.",
@@ -43,6 +44,7 @@ export const imageMessages = i18n.define({
       retry: "Erneut versuchen",
       tooLarge: "Die Bildbearbeitung unterstützt Dateien bis 50 MiB.",
       changed: "Die Datei wurde inzwischen geändert. Deine Änderungen bleiben erhalten. Speichere eine Kopie.",
+      changedDownload: "Die Datei wurde inzwischen geändert. Deine Änderungen bleiben erhalten. Lade das bearbeitete Bild herunter.",
       saveFailed: "Das Bild konnte nicht gespeichert werden. Deine Änderungen bleiben erhalten.",
       copyConflict: "Diese Kopie gibt es bereits. Speichere erneut eine Kopie, um den nächsten Namen zu verwenden.",
       uncertain:
