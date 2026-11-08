@@ -45,7 +45,6 @@ import codeAuthoringTemplateFormApp from "./skills/code-authoring/templates/form
 import codeAuthoringTemplateMailAutomation from "./skills/code-authoring/templates/mail-automation.md" with { type: "text" };
 import codeAuthoringTemplateMailInvoices from "./skills/code-authoring/templates/mail-invoices.md" with { type: "text" };
 import codeAuthoringTemplateWeeklyReport from "./skills/code-authoring/templates/weekly-report.md" with { type: "text" };
-import scheduledTasks from "./skills/scheduled-tasks/SKILL.md" with { type: "text" };
 import skillCreator from "./skills/skill-creator/SKILL.md" with { type: "text" };
 
 /** Assistant Skills this app ships; Cloud installs and updates them from these files. */
@@ -104,6 +103,5 @@ export const SKILLS = [
   }),
   skill({ markdown: assistantDataAnalysis }),
   skill({ markdown: cloudAssistant }),
-  skill({ markdown: scheduledTasks }),
   skill({ markdown: skillCreator }),
 ];

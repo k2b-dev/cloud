@@ -18,14 +18,14 @@ afterAll(() => {
 });
 
 const { createArtifactWorkspace } = await import("./Workspace");
-const { workspaceSelectionHref, taskTab } = await import("./workspace-state");
+const { workspaceSelectionHref, fileTab } = await import("./workspace-state");
 const { AppWorkspace, Placeholder } = await import("@k2b/ui");
 
 test("URL-selected panel reserves its space during SSR without loading its content", () => {
-  const href = workspaceSelectionHref("/app/assistant?conversation=chat", taskTab("task01", "task01"));
+  const href = workspaceSelectionHref("/app/assistant?conversation=chat", fileTab("chat", "/report.csv"));
   const html = renderToString(() => {
     const controller = createArtifactWorkspace(href);
-    expect(controller.state().active).toBe(taskTab("task01", "task01").key);
+    expect(controller.state().active).toBe(fileTab("chat", "/report.csv").key);
     expect(controller.mobile()).toBe("workspace");
     return createComponent(AppWorkspace, {
       get children() {

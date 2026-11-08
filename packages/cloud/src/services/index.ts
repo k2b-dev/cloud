@@ -93,7 +93,7 @@ export {
 export type {
   CapabilityGrant,
   CodeVersionMandateBinding,
-  TaskGrant,
+  MandateGrant,
   Mandate,
   MandateInteractiveAuthority,
   MandateIssueAuthority,

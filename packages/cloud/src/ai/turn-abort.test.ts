@@ -14,19 +14,13 @@ test("a live owner receives cancellation and keeps ownership of finalization", a
   expect(complete).not.toHaveBeenCalled();
 });
 
-test("an ownerless routine is finalized even when abort fanout fails, without a foreground wire event", async () => {
+test("an ownerless turn is finalized and reports completion even when abort fanout fails", async () => {
   spyOn(stream, "publishAiTurnAbort").mockRejectedValue(new Error("Fanout unavailable"));
   const complete = spyOn(aiConversations, "completeTurn").mockResolvedValue("completed");
-  spyOn(aiConversations, "getTurnRunConfig").mockResolvedValue({
-    kind: "chat",
-    input: "Save invoices",
-    toolSource: { kind: "none" },
-    background: { taskId: "task01", occurrenceId: "run001", context: [] },
-  });
   const wire = spyOn(stream, "publishAiWireEvent").mockResolvedValue();
   await finishAiTurnAbort(input, { found: true, status: "queued", ownerless: true });
   expect(complete).toHaveBeenCalledWith({ ...input, status: "aborted", error: null });
-  expect(wire).not.toHaveBeenCalled();
+  expect(wire).toHaveBeenCalledWith(expect.objectContaining({ ...input, type: "turn_finished", status: "aborted" }));
 });
 
 test("foreground abort preserves the captured attempt and next wire sequence", async () => {

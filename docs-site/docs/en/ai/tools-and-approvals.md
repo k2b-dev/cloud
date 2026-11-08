@@ -485,7 +485,7 @@ Tool-capable personal chats keep three bounded discovery tools available:
   `mail.conversation.list`. Its
   optional `appId` searches that app first. If it has no matches, discovery
   returns matching tools from other available apps or built-ins, within the
-  same permissions, chat scope, and task grants. Successful scoped searches
+  same permissions and chat scope. Successful scoped searches
   stay scoped. Search includes operation titles in the request language as
   well as base titles and descriptions. `kind` is returned as metadata and is
   not a search filter. Searching never loads a tool;
@@ -503,7 +503,7 @@ Tool-capable personal chats keep three bounded discovery tools available:
   | `unknown` | No tool has this exact name, or it names an optional built-in that is off, such as `memory` while memory is disabled |
   | `skill` | The name is an Assistant Skill this turn can load; `load_skill` loads it, not `load_tools` |
   | `not_offered_in_turn` | The tool exists, but this turn's client or task does not provide it, or the turn offers no app operations |
-  | `not_allowed` | The conversation's fixed tool scope or routine grants exclude it |
+  | `not_allowed` | The conversation's fixed tool scope excludes it |
   | `app_offline` | The operation was loaded earlier, or the registry cannot be read, and its app is not in the live registry now |
 
   The model looks up an unknown name once with `search_tools`, loads a skill
@@ -512,13 +512,9 @@ Tool-capable personal chats keep three bounded discovery tools available:
 - `list_apps` returns a bounded map of exact app IDs to their live descriptions
   when the owning app is unclear.
 
-A routine (scheduled task) uses its mandate policy and grants for `search_tools`,
-`load_tools`, `list_apps`, and resource readers. Tools outside that scope stay
-unavailable even if the interactive chat loaded them earlier. When the scope
-allows no app operations, `search_tools` says so instead of reporting an outage.
-Fixed inputs are checked per call; a rejected call returns a tool error the
-model can recover from. Broken authority or required interaction still makes
-the routine need attention; see [Background mandates](/en/docs/identity/background-mandates#grant-capabilities-to-an-unattended-assistant-routine).
+Scheduled chat routines are retired. See
+[Routines became Code](/en/docs/operations/routines-to-code) for the export and
+reviewed rebuild path.
 
 A loaded built-in or app operation becomes an ordinary named tool on the next model turn.
 Cloud gives the model the operation's structure, required fields,

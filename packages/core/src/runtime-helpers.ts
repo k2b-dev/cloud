@@ -27,7 +27,7 @@ import { migrate as migrateCodeVersions } from "./migrate/core/code-versions";
  * Migrations, background jobs — nothing generic here.
  */
 
-import { aiChatTasks, aiMaintenanceJobs, appSkillsRegistryState, migrateCloudAi, reconcileAppSkills } from "@k2b/cloud/ai";
+import { aiMaintenanceJobs, appSkillsRegistryState, migrateCloudAi, reconcileAppSkills } from "@k2b/cloud/ai";
 import { startAiRuntime } from "@k2b/cloud/ai/runtime";
 import { migrateCloudCapabilities, startCapabilityExecutionMaintenance } from "@k2b/cloud/capabilities/store";
 import {
@@ -44,7 +44,6 @@ import { drain as drainDeferredAuthRequests } from "@k2b/cloud/services/auth-flo
 import { initializeIdentityAuthority, startAppWorkloadBroker, startIdentityKeyMaintenance } from "@k2b/cloud/services/identity";
 import { startOutgoingMailRuntime, stopOutgoingMailRuntime } from "@k2b/cloud/services/outgoing-mail/runtime";
 import { startWorkflowEventRetention } from "@k2b/cloud/workflows/store";
-import { aiChatTaskRuntime } from "./ai-chat-tasks-runtime";
 import { deliverPendingAiMessages } from "./ai-inter-chat-messages";
 import type { createAiNotificationService } from "./ai-notifications";
 import { appApprovalRuntime } from "./app-approval-runtime";
@@ -71,6 +70,7 @@ import { migrate as migrateSettings } from "./migrate/core/settings";
 import { migrate as migrateWorkflows } from "./migrate/core/workflows";
 import type { CoreNotificationSender } from "./notifications";
 import { outgoingMailBounceRuntime } from "./outgoing-mail-bounces/runtime";
+import { retireChatTaskSchedules } from "./retired-chat-routines";
 
 let stopAppWorkloadBroker: (() => Promise<void>) | undefined;
 let stopAppEventBroker: (() => Promise<void>) | undefined;
@@ -204,6 +204,7 @@ export const startCoreServices = async (
     codeDeletionOutbox.start();
     await browserNotifications.start();
     await aiNotifications.start();
+    await retireChatTaskSchedules();
     stopCloudAiRuntime = startAiRuntime({
       tools: createCodeAuthoringChatTools(),
       onApprovalRequested: async ({ approvalId }) => {
@@ -221,16 +222,13 @@ export const startCoreServices = async (
         if (notice.status === "rejected") throw notice.reason;
       },
       onTurnFinalized: async ({ turnId, status, kind }) => {
-        const task = await aiChatTasks.finalizeTurn({ turnId, status }).catch(() => null);
         await Promise.allSettled([
-          ...(task?.failed ? [aiNotifications.notifyTaskNeedsAttention(task.occurrenceId)] : []),
           ...(status === "completed" && kind === "chat" ? [aiNotifications.notifyTurnCompleted(turnId)] : []),
           deliverPendingAiMessages(),
         ]);
       },
     });
     await aiMaintenanceJobs.start();
-    await aiChatTaskRuntime.start();
     await deliverPendingAiMessages();
     await startOutgoingMailRuntime();
     await outgoingMailBounceRuntime.start();
@@ -271,7 +269,6 @@ export const startCoreServices = async (
     stopCloudAiRuntime = null;
     await Promise.allSettled([
       aiMaintenanceJobs.stop(),
-      aiChatTaskRuntime.stop(),
       aiNotifications.stop(),
       lifecycleJobs.stop(),
       appApprovalRuntime.stop(),
@@ -325,7 +322,7 @@ export const stopCoreServices = async (aiNotifications?: ReturnType<typeof creat
       try {
         stopCloudAiRuntime?.();
         stopCloudAiRuntime = null;
-        await Promise.allSettled([aiChatTaskRuntime.stop(), aiMaintenanceJobs.stop(), aiNotifications?.stop()]);
+        await Promise.allSettled([aiMaintenanceJobs.stop(), aiNotifications?.stop()]);
       } finally {
         browserNotifications.stop();
       }

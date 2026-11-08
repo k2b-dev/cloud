@@ -35,7 +35,6 @@ const emptyUsage = (): AiModelUsage => ({
   assignments: [],
   projects: [],
   workflows: [],
-  scheduledTasks: [],
   chats: 0,
   budgetRules: [],
   peopleAtLimit: 0,
@@ -49,10 +48,6 @@ const mergeUsage = (all: AiModelUsage[]): AiModelUsage =>
       assignments: [...new Set([...sum.assignments, ...usage.assignments])],
       projects: [...sum.projects, ...usage.projects.filter((entry) => !sum.projects.some((known) => known.id === entry.id))],
       workflows: [...sum.workflows, ...usage.workflows.filter((entry) => !sum.workflows.some((known) => known.id === entry.id))],
-      scheduledTasks: [
-        ...sum.scheduledTasks,
-        ...usage.scheduledTasks.filter((entry) => !sum.scheduledTasks.some((known) => known.id === entry.id)),
-      ],
       chats: sum.chats + usage.chats,
       budgetRules: [...sum.budgetRules, ...usage.budgetRules.filter((entry) => !sum.budgetRules.some((known) => known.id === entry.id))],
     }),
@@ -92,9 +87,7 @@ const loadCatalog = async (target: AiDeleteTarget, t: AiAreaMessages): Promise<C
     variants: details.flatMap((detail) => detail.variants),
     assignments: overview.assignments,
     usage,
-    referenceModels: modelUsages
-      .filter(({ usage }) => usage.projects.length + usage.workflows.length + usage.scheduledTasks.length > 0)
-      .map((entry) => entry.modelId),
+    referenceModels: modelUsages.filter(({ usage }) => usage.projects.length + usage.workflows.length > 0).map((entry) => entry.modelId),
   };
 };
 
@@ -175,7 +168,7 @@ function DeleteDialog(props: { target: AiDeleteTarget; close: () => void; setDis
     return next ? t().leaveEmptyUses({ p: aiSlotLabel(t(), next) }) : t().leaveEmpty;
   };
 
-  const hasReferences = (data: Catalog) => data.usage.projects.length + data.usage.workflows.length + data.usage.scheduledTasks.length > 0;
+  const hasReferences = (data: Catalog) => data.usage.projects.length + data.usage.workflows.length > 0;
   const ready = (data: Catalog) =>
     assignedSlots(data).every((slot) => replacements()[slot]) && (!retarget() || !hasReferences(data) || Boolean(retargetTo()));
 
@@ -286,16 +279,7 @@ function DeleteDialog(props: { target: AiDeleteTarget; close: () => void; setDis
                       }),
                     )}
                   </Show>
-                  <Show when={data().usage.scheduledTasks.length > 0}>
-                    {fact(
-                      "ti-clock",
-                      t().delTasks({
-                        p: data()
-                          .usage.scheduledTasks.map((entry) => entry.name)
-                          .join(", "),
-                      }),
-                    )}
-                  </Show>
+
                   <Show when={data().usage.workflows.length > 0}>
                     {fact(
                       "ti-route",

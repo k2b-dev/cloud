@@ -2,7 +2,6 @@ import type { AiProject } from "@k2b/cloud/ai";
 import type { JSX } from "solid-js";
 import type { ContextCategory } from "../frontend/AssistantChatContext";
 export type WorkspaceTab =
-  | { key: string; kind: "task"; taskId: string; title: string }
   | { key: string; kind: "context"; conversationId: string; category: ContextCategory; title: string; project?: AiProject | null }
   | { key: string; kind: "view"; title: string; render: () => JSX.Element }
   | { key: string; kind: "file"; conversationId: string; path: string; title: string }
@@ -11,9 +10,6 @@ export type WorkspaceTab =
 
 export function contextTab(conversationId: string, category: ContextCategory, title: string, project?: AiProject | null): WorkspaceTab {
   return { key: JSON.stringify(["context", conversationId, category]), kind: "context", conversationId, category, title, project };
-}
-export function taskTab(taskId: string, title: string): WorkspaceTab {
-  return { key: JSON.stringify(["task", taskId]), kind: "task", taskId, title };
 }
 export type WorkspaceState = { tabs: WorkspaceTab[]; active: string | null };
 export function fileTab(conversationId: string, path: string): WorkspaceTab {
@@ -61,7 +57,6 @@ export function workspaceSelectionFromHref(href: string): WorkspaceTab | null {
     if (!Array.isArray(value) || value.length < 2 || !value.every((part) => typeof part === "string")) return null;
     const [kind, id, path] = value;
     if (typeof id !== "string" || !id || id.length > 80) return null;
-    if (kind === "task" && value.length === 2) return taskTab(id, id);
     if (kind === "app" && value.length === 2) return appTab(id, id);
     if (typeof path !== "string" || !path || path.length > 500 || value.length !== 3) return null;
     if (kind === "context" && (path === "files" || path === "sources" || path === "knowledge")) return contextTab(id, path, path);

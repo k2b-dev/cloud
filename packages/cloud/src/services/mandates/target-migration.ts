@@ -2,7 +2,7 @@ import { z } from "zod";
 import { normalizeCapabilityCall } from "../../capabilities/calls";
 import { CloudResourceRefSchema, type NormalizedCapabilityCall } from "../../contracts/capabilities";
 import snapshot from "./legacy-capability-targets.json";
-import { type CapabilityGrant, type MandatePolicyV1, MandatePolicyV1Schema, type TaskGrant } from "./policy";
+import { type CapabilityGrant, type MandateGrant, type MandatePolicyV1, MandatePolicyV1Schema } from "./policy";
 
 const coordinate = z.object({ type: z.string(), field: z.string(), encoding: z.literal("root-entry").optional() });
 const operationSchema = z.object({
@@ -63,7 +63,7 @@ export const migrateLegacyCapabilityCall = (operation: LegacyTargetOperation, ar
   );
 };
 
-const migrateGrant = (grant: TaskGrant): TaskGrant => {
+const migrateGrant = (grant: MandateGrant): MandateGrant => {
   if (!("appId" in grant)) return grant;
   const operation = legacyTargetOperation(`${grant.appId}.${grant.capabilityId}`, grant.kind);
   if (!operation) throw new Error(`${grant.appId}.${grant.capabilityId}`);
@@ -92,13 +92,13 @@ const migrateGrant = (grant: TaskGrant): TaskGrant => {
   return { ...grant, target: call.target, refs: call.refs, fixedInput } satisfies CapabilityGrant;
 };
 
-/** A failed conversion returns the original authority intact for inspection; the routine must be paused. */
-export const migrateLegacyRoutinePolicy = (
+/** A failed conversion returns the original authority intact for inspection; the workload must be paused. */
+export const migrateLegacyCapabilityPolicy = (
   value: unknown,
 ): { ok: true; policy: MandatePolicyV1; changed: boolean } | { ok: false; capability: string | null } => {
   const parsed = MandatePolicyV1Schema.safeParse(value);
   if (!parsed.success || parsed.data.grants === undefined) return { ok: false, capability: null };
-  const grants: TaskGrant[] = [];
+  const grants: MandateGrant[] = [];
   for (const grant of parsed.data.grants) {
     try {
       grants.push(migrateGrant(grant));

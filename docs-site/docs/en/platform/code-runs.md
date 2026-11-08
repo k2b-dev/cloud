@@ -27,9 +27,9 @@ in the chat.
 
 The Assistant host authorizes selected chat files, capability calls, HTTP,
 views and exports for the originating turn. The sandbox has no direct network
-or credentials. Unattended turns use the same path with their current routine
-mandate; HTTP grants still apply. Studio RSQL database grants do not authorize
-a runner database and are unavailable in `code_run`.
+or credentials. Scheduled chat routines are retired; rebuild timed work as
+reviewed personal Code. Studio RSQL database grants do not authorize a runner
+database and are unavailable in `code_run`.
 
 The following limits apply:
 

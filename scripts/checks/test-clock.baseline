@@ -10,9 +10,7 @@ packages/assistant/src/artifacts/runtime/browser-harness.ts | 2
 packages/assistant/src/artifacts/runtime/streams-browser-harness.ts | 1
 packages/assistant/src/artifacts/secrets.browser.test.ts | 1
 packages/assistant/src/frontend/AssistantQuota.behavior.test.tsx | 1
-packages/assistant/src/frontend/AssistantRoutineReasons.browser.test.ts | 1
 packages/assistant/src/frontend/AssistantSidebar.browser.test.ts | 2
-packages/assistant/src/frontend/AssistantTasks.behavior.test.tsx | 1
 packages/assistant/src/frontend/assistant-live.behavior.test.tsx | 2
 packages/cloud/src/access/PermissionEditor.browser.test.ts | 1
 packages/cloud/src/ai/chat/action-question.browser.test.ts | 1
