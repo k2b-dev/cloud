@@ -113,6 +113,24 @@ test("SDK builders emit only descriptions; c.page rejects handlers before JSON s
   const handler = runtime.jsx(runtime.Page, { title: "P" }, runtime.jsx(runtime.Text, { onClick: () => {} }, "Hi"));
   runtime.app.get("/bad", (c: { page(value: unknown): Response }) => c.page(handler));
   await expect(runtime.__codeSdk.run("route:GET:/bad", input)).rejects.toThrow("code_page_data_only");
+  // An optional prop passed as undefined, as TSX allows for `error={errors.name}`, counts as absent.
+  const optional = runtime.jsx(
+    runtime.Page,
+    { title: "Form", subtitle: undefined },
+    runtime.jsx(
+      runtime.Form,
+      { title: "F", action: "/save", submit: "Save", width: undefined },
+      runtime.jsx(runtime.Field.Number, { name: "hours", label: "Hours", value: undefined, error: undefined }),
+    ),
+    runtime.jsx(runtime.Stats, null, runtime.jsx(runtime.Stat, { label: "S", value: 1, format: { style: "number", decimals: undefined } })),
+  );
+  runtime.app.get("/optional", (c: { page(value: unknown): Response }) => c.page(optional));
+  const drawn = await runtime.__codeSdk.run("route:GET:/optional", input);
+  expect(validateCodePage(JSON.parse(JSON.stringify(drawn.tree)), codeId).children.map((node) => node.kind)).toEqual(["Form", "Stats"]);
+  runtime.app.get("/holes", (c: { page(value: unknown): Response }) =>
+    c.page(runtime.jsx(runtime.Page, { title: "P" }, runtime.jsx(runtime.Chart.Sparkline, { title: "S", data: [1, undefined, 2] }))),
+  );
+  await expect(runtime.__codeSdk.run("route:GET:/holes", input)).rejects.toThrow("code_page_data_only");
   runtime.app.get("/root", (c: { page(value: unknown): Response }) => c.page(runtime.jsx(runtime.Text, null, "Hi")));
   await expect(runtime.__codeSdk.run("route:GET:/root", input)).rejects.toThrow("code_page_blocks");
   expect(runtime.jsx(runtime.Text, null, "Hello ", "Valentin", "!", 2)).toEqual({ kind: "Text", text: "Hello Valentin!2" });

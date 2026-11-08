@@ -1,6 +1,6 @@
 ---
 name: code-authoring
-description: Build or change lasting Cloud Code. Use for automations that react to incoming mail, run on a schedule or once, use AI, or deliver results to a Gustav chat, and for Code pages with forms, key figures, tables and charts. Covers code.ts and code.tsx, app.on, app.schedule, app.get/post, c.page, checking, fictional tests, simulation and submitting a version that the person switches on. One-off analysis or exports in this chat use assistant-code-mode and code_run.
+description: Build or change lasting Cloud Code. Use for automations that react to incoming mail, run on a schedule or once, use AI, deliver results to a Gustav chat, or pass mail attachments and files to another app, and for Code pages with forms, key figures, tables and charts. Covers code.ts and code.tsx, app.on, app.schedule, app.get/post, c.page, checking, fictional tests, simulation and submitting a version that the person switches on. One-off analysis or exports in this chat use assistant-code-mode and code_run.
 load-tools: [code_init, code_pull, code_sdk, code_write, code_check, code_test, code_simulate, code_submit, code_diff]
 ---
 # Write Code
@@ -68,7 +68,7 @@ checks the current policy, version approval and the account's access.
 | Keep data between runs | State in the owning app, read again each run | [Data](references/data.md) |
 | Call an external HTTPS service, with a secret | `http.fetch` with `secrets.NAME` | [Access and secrets](references/access.md) |
 | Decide who sees a page | `c.user`, `{ public: true }` | [Access and secrets](references/access.md) |
-| Files as typed input | Not built yet | [Files](references/file-ref.md) |
+| Pass a file from Mail or Files to another app | `FileRef` from a read stream into an Action's `file` input | [FileRef](references/file-ref.md), [mail invoices](references/template-mail-invoices.md) |
 
 ## Rules that hold everywhere
 
@@ -101,6 +101,7 @@ the real checker. Adapt names, IDs and texts; keep the structure.
 | [Mail automation](references/template-mail-automation.md) | mailbox | Categorise with AI, tag, assign, set status, summarise, draft a reply |
 | [Weekly report](references/template-weekly-report.md) | personal | Weekly local schedule, AI summary, delivery to a Gustav chat |
 | [Event to chat](references/template-event-to-chat.md) | mailbox | Post a short note into a team chat for each new message |
+| [Mail invoices to an app](references/template-mail-invoices.md) | mailbox | Pass invoice attachments to an import app as FileRefs, then tag the conversation |
 
 In the Cloud repository the templates are the files in `templates/` beside
 this skill; the Assistant receives each as `references/template-<name>.md`.

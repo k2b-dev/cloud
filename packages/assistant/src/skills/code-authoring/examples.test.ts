@@ -38,6 +38,8 @@ const compile = Bun.spawnSync(
 const apps = ${JSON.stringify(APPS.map(([id, file, name]) => [id, join(packages, file), name]))};
 const out = [];
 for (const [id, file, name] of apps) out.push(compileCapabilityManifest(id, (await import(file))[name]));
+// The fictional import app with a FileRef write stream, shared with the cloud checker test.
+out.push((await import(${JSON.stringify(join(packages, "cloud/src/code/file-ref.test-fixture.ts"))})).fileImportManifest());
 process.stdout.write(JSON.stringify(out));`,
   ],
   { stdout: "pipe", stderr: "pipe" },
@@ -285,8 +287,8 @@ test("the capability tables state when each Action runs and list every Action of
   for (const manifest of manifests)
     for (const action of manifest.actions) {
       const capability = `${manifest.appId}.${action.localId}`;
-      if ((manifest.appId !== "core" || capability.startsWith("core.ai.")) && !listed.has(capability))
-        wrong.push(`${capability}: Action missing from the capability tables`);
+      const documented = manifest.appId === "core" ? capability.startsWith("core.ai.") : manifest.appId !== "imports";
+      if (documented && !listed.has(capability)) wrong.push(`${capability}: Action missing from the capability tables`);
     }
   expect(wrong).toEqual([]);
 });

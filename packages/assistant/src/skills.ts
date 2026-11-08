@@ -43,6 +43,7 @@ import codeAuthoringTemplateDashboardPage from "./skills/code-authoring/template
 import codeAuthoringTemplateEventToChat from "./skills/code-authoring/templates/event-to-chat.md" with { type: "text" };
 import codeAuthoringTemplateFormApp from "./skills/code-authoring/templates/form-app.md" with { type: "text" };
 import codeAuthoringTemplateMailAutomation from "./skills/code-authoring/templates/mail-automation.md" with { type: "text" };
+import codeAuthoringTemplateMailInvoices from "./skills/code-authoring/templates/mail-invoices.md" with { type: "text" };
 import codeAuthoringTemplateWeeklyReport from "./skills/code-authoring/templates/weekly-report.md" with { type: "text" };
 import scheduledTasks from "./skills/scheduled-tasks/SKILL.md" with { type: "text" };
 import skillCreator from "./skills/skill-creator/SKILL.md" with { type: "text" };
@@ -66,6 +67,7 @@ export const SKILLS = [
       "references/template-event-to-chat.md": codeAuthoringTemplateEventToChat,
       "references/template-form-app.md": codeAuthoringTemplateFormApp,
       "references/template-mail-automation.md": codeAuthoringTemplateMailAutomation,
+      "references/template-mail-invoices.md": codeAuthoringTemplateMailInvoices,
       "references/template-weekly-report.md": codeAuthoringTemplateWeeklyReport,
     },
   }),

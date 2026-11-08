@@ -31,7 +31,7 @@ its person can read.
 
 ## Mail
 
-Queries: `mail.attachment.read`, `mail.attachment.read-content`, `mail.comment.read`, `mail.conversation.activity.list`, `mail.conversation.comment.list`, `mail.conversation.focus`, `mail.conversation.list`, `mail.conversation.read`, `mail.conversation.related`, `mail.conversation.reminder.get`, `mail.conversation.search`, `mail.delivery.list`, `mail.delivery.read`, `mail.draft.list`, `mail.draft.read`, `mail.draft.send.check`, `mail.draft.send.review`, `mail.folder.list`, `mail.mailbox.browse`, `mail.mailbox.identity.list`, `mail.mailbox.list`, `mail.mailbox.member.list`, `mail.mailbox.read`, `mail.mailbox.tag.list`, `mail.mailing-list.subscription.get`, `mail.mailing-list.subscription.list`, `mail.message.catchup`, `mail.message.event`, `mail.message.event-preview`, `mail.message.list`, `mail.message.read`, `mail.message.read-content`, `mail.reminder.read`, `mail.search`.
+Queries: `mail.attachment.content.read`, `mail.attachment.read`, `mail.attachment.read-content`, `mail.comment.read`, `mail.conversation.activity.list`, `mail.conversation.comment.list`, `mail.conversation.focus`, `mail.conversation.list`, `mail.conversation.read`, `mail.conversation.related`, `mail.conversation.reminder.get`, `mail.conversation.search`, `mail.delivery.list`, `mail.delivery.read`, `mail.draft.list`, `mail.draft.read`, `mail.draft.send.check`, `mail.draft.send.review`, `mail.folder.list`, `mail.mailbox.browse`, `mail.mailbox.identity.list`, `mail.mailbox.list`, `mail.mailbox.member.list`, `mail.mailbox.read`, `mail.mailbox.tag.list`, `mail.mailing-list.subscription.get`, `mail.mailing-list.subscription.list`, `mail.message.catchup`, `mail.message.event`, `mail.message.event-preview`, `mail.message.list`, `mail.message.read`, `mail.message.read-content`, `mail.reminder.read`, `mail.search`.
 
 | Action | Title | Target | Key | Unattended |
 | --- | --- | --- | --- | --- |
@@ -68,7 +68,8 @@ Queries: `mail.attachment.read`, `mail.attachment.read-content`, `mail.comment.r
 | `mail.mailbox.tag.update` | Update mailbox tag | mail.mailbox | — | admin approval |
 | `mail.mailing-list.unsubscribe` | Unsubscribe from mailing list | mail.mailbox | required | never |
 
-Mail sending stays manual: create a draft and let a person send it. Use the
+Mail sending stays manual: create a draft and let a person send it.
+`mail.attachment.content.read` returns an attachment as a [FileRef](file-ref.md). Use the
 guarded Actions with `expectedRevision` from `mail.conversation.read`
 (`collaboration.revision`); summaries also need `summaryRevision`. Assign
 with `onlyIfUnassigned: true` to leave existing assignees alone.
@@ -224,7 +225,7 @@ Action runs unattended yet.
 
 ## Files
 
-Queries: `filesv2.activity.chain`, `filesv2.activity.get`, `filesv2.activity.list`, `filesv2.bases.list`, `filesv2.content.download`, `filesv2.entry.list`, `filesv2.entry.read`, `filesv2.entry.search`, `filesv2.entry.search-in-base`, `filesv2.provider.list`, `filesv2.share.access`, `filesv2.storage.read`, `filesv2.template.read`, `filesv2.trash.list`.
+Queries: `filesv2.activity.chain`, `filesv2.activity.get`, `filesv2.activity.list`, `filesv2.bases.list`, `filesv2.content.download`, `filesv2.content.read`, `filesv2.entry.list`, `filesv2.entry.read`, `filesv2.entry.search`, `filesv2.entry.search-in-base`, `filesv2.provider.list`, `filesv2.share.access`, `filesv2.storage.read`, `filesv2.template.read`, `filesv2.trash.list`.
 
 | Action | Title | Target | Key | Unattended |
 | --- | --- | --- | --- | --- |
@@ -237,9 +238,10 @@ Queries: `filesv2.activity.chain`, `filesv2.activity.get`, `filesv2.activity.lis
 | `filesv2.provider.save` | Save a new file | — | — | not in the SDK |
 | `filesv2.trash.restore` | Restore entry from trash | filesv2.entry | required | never |
 
-The Files app is `filesv2`. Code can list, search and read entry metadata;
-file content streams are not in the SDK and no Files Action runs unattended
-yet. Typed file input is described in [Files](file-ref.md).
+The Files app is `filesv2`. Code can list, search and read entry metadata,
+and `filesv2.content.read` returns a file as a [FileRef](file-ref.md) to pass
+to another app. Code cannot write file content, and no Files Action runs
+unattended yet.
 
 Reading from several apps in one personal page:
 
