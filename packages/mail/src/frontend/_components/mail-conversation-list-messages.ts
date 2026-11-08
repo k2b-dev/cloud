@@ -4,6 +4,11 @@ export const mailConversationListMessages = i18n.define({
   baseLocale: "en",
   messages: {
     en: {
+      newMessage: "New message",
+      newMessageNow: "now",
+      newMessageNoSubject: "(no subject)",
+      newMessageTo: ({ names }: { names: string }) => `To ${names}`,
+      newMessageDraft: "Draft",
       searchTooLong: "This search is too long. Shorten the text or choose fewer fields.",
       openSearch: "Search (/)",
       wholeMailbox: "Whole mailbox",
@@ -91,6 +96,11 @@ export const mailConversationListMessages = i18n.define({
       moreConversations: "More conversations",
     },
     de: {
+      newMessage: "Neue Nachricht",
+      newMessageNow: "jetzt",
+      newMessageNoSubject: "(kein Betreff)",
+      newMessageTo: ({ names }) => `An ${names}`,
+      newMessageDraft: "Entwurf",
       searchTooLong: "Diese Suche ist zu lang. Kürze den Text oder wähle weniger Felder.",
       openSearch: "Suchen (/)",
       wholeMailbox: "Ganzes Postfach",

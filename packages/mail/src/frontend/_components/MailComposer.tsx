@@ -104,6 +104,8 @@ export type MailComposerHost = {
   register: (controls: { collapse: () => Promise<void> }) => void;
   /** Who wrote a message of the conversation and when, for the quote line ("Marlene Hofbauer, today 09:12"). */
   messageLabel: (messageId: string) => string | null;
+  /** A new message tells the list its subject and recipients while someone types them. */
+  summary?: (value: { subject: string; to: string[] }) => void;
 };
 
 export default function MailComposer(props: {
@@ -471,7 +473,13 @@ export default function MailComposer(props: {
     queueMicrotask(() => {
       if (initialEditorFocusApplied || disposed || !editable() || !element.view.dom.isConnected) return;
       initialEditorFocusApplied = true;
-      focusMailComposerEditorAtStart(element);
+      // A new message inside the flow starts where it begins: with its recipients.
+      const recipients =
+        props.host && composerIntent() === "new" && to().length === 0
+          ? surface()?.querySelector<HTMLInputElement>(".mail-inline-draft-recipients input")
+          : null;
+      if (recipients) recipients.focus();
+      else focusMailComposerEditorAtStart(element);
     });
   };
   const attachments = createMailComposerAttachmentManager({
@@ -1484,6 +1492,11 @@ export default function MailComposer(props: {
             : t().inlineNew;
     };
     // F4: a reply offers to attach the quoted message it answers; a forward already carries it.
+    createEffect(() => {
+      if (!host.summary) return;
+      const recipients = parseMailRecipients(to()).map((recipient) => recipient.name || recipient.address);
+      host.summary({ subject: subject(), to: recipients });
+    });
     // A suggestion from Gustav stays plum until someone types or changes anything, recipients included.
     const suggestionUntouched = () => Boolean(draft()?.suggestion) && serializeMailDraftContent(content()) === initialSerializedContent;
     const quoteLabel = () => {

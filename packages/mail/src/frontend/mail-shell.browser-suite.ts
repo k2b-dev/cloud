@@ -4565,7 +4565,8 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
                   senderIdentityId: input.senderIdentityId,
                   signatureTemplateId: "Sig001",
                   quoteSource: null,
-                  to: [{ name: "Example sender", address: "sender@example.test" }],
+                  // A reply goes to the sender, as the server derives it; a new message starts without recipients.
+                  to: input.intent === "new" ? (input.to ?? []) : [{ name: "Example sender", address: "sender@example.test" }],
                   cc: [],
                   bcc: [],
                   subject: input.subject,
@@ -4586,6 +4587,7 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
             const created = makeDraft("DrfNew", body.draft, {
               intent: body.origin.input.intent,
               sourceMessageId: body.origin.input.sourceMessageId,
+              conversationId: body.origin.input.conversationId,
             });
             drafts.set("DrfNew", created);
             return route.fulfill({ json: created });
@@ -4785,6 +4787,36 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
         }
       });
 
+      test("Compose starts a new message in the flow: a row at the top, an empty conversation, kept over reload", async () => {
+        let api!: Awaited<ReturnType<typeof draftApi>>;
+        const page = await open(`${boxPath}?identity=1`, 1440, undefined, "reduce", async (next) => {
+          api = await draftApi(next);
+        });
+        try {
+          await page.getByRole("link", { name: "Compose" }).first().click();
+          await page.locator("[data-mail-new-message] [data-mail-inline-draft] .cm-content").waitFor();
+          expect(await page.locator("[data-mail-new-message-row]").count()).toBe(1);
+          const url = new URL(page.url());
+          expect(url.searchParams.get("draft")).toBe("DrfNew");
+          expect(url.searchParams.has("conversation")).toBe(false);
+          expect(api.calls).toContain("POST /draft-seeds/materialize");
+          // The new message starts with its recipients; the subject shows in its row while someone types it.
+          await page.waitForFunction(() => document.activeElement?.closest(".mail-inline-draft-recipients") !== null);
+          await page.locator(".mail-inline-draft-subject input").fill("Pickup on Saturday");
+          await page.waitForFunction(() =>
+            document.querySelector("[data-mail-new-message-row]")?.textContent?.includes("Pickup on Saturday"),
+          );
+          expect(await page.locator("[data-mail-new-message]").textContent()).toContain("No messages yet");
+          await eventually(() => api.drafts.get("DrfNew")?.subject, "Pickup on Saturday", "subject saved");
+          await page.reload();
+          await ready(page);
+          await page.locator("[data-mail-new-message] [data-mail-inline-draft] .cm-content").waitFor();
+          expect(await page.locator(".mail-inline-draft-subject input").inputValue()).toBe("Pickup on Saturday");
+        } finally {
+          await close(page);
+        }
+      });
+
       test("a conversation with a colleague's draft shows a draft chip with who writes it", async () => {
         const page = await open(`${boxPath}?drafts=1`, 1440);
         try {
@@ -4923,6 +4955,12 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
           await shoot("06-gustav-suggestion", "dark", 1440, `${thread}&suggestion=1`, async (page) => {
             await readyDraft(page);
           });
+          for (const width of [1440, 390])
+            await shoot("08-new-message", "light", width, `${boxPath}?identity=1`, async (page) => {
+              await page.getByRole("link", { name: "Compose" }).first().click();
+              await page.locator("[data-mail-new-message] [data-mail-inline-draft] .cm-content").waitFor();
+              await page.locator(".mail-inline-draft-subject input").fill("Pickup on Saturday");
+            });
           await shoot("07-quote-attached", "light", 1440, thread, async (page) => {
             await reply(page);
             await page.locator("[data-mail-draft-quote]").getByRole("button").click();
