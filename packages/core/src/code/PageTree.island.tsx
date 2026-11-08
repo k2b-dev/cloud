@@ -98,7 +98,7 @@ const json = (value: unknown): DescriptionJson => {
  * The portable description of a data block, the same JSON Chat, Pulse and Notebooks draw: Code pages add no drawing
  * of their own. Yes and No are words of the page's language.
  */
-function description(item: Panel | Extract<CodePageNode, { kind: "Stats" }>, words: { yes: string; no: string }) {
+function description(item: Panel | Extract<CodePageNode, { kind: "Stats" }>, words: { yes: string; no: string }, timeZone: string) {
   switch (item.kind) {
     case "Chart":
       // Without values a chart keeps its frame and title and says why: the description's empty form.
@@ -118,7 +118,9 @@ function description(item: Panel | Extract<CodePageNode, { kind: "Stats" }>, wor
           // A column without a type that holds only numbers reads as numbers: right-aligned, in the reader's language.
           const values = item.rows.map((row) => row[key]).filter((value) => value !== null && value !== undefined);
           const numeric = column.format !== undefined || (values.length > 0 && values.every((value) => typeof value === "number"));
-          return { id: key, ...column, ...(column.type || !numeric ? {} : { type: "number" }) };
+          const type = column.type ?? (numeric ? "number" : undefined);
+          // Dates read in the reader's zone, which the server named, so the server and the browser show the same day.
+          return { id: key, ...column, ...(type ? { type } : {}), ...(type === "date" ? { timeZone } : {}) };
         }),
         rows: item.rows,
       };
@@ -507,21 +509,13 @@ function CodePageContent(props: PageProps) {
       case "Chart":
         return (
           <DescriptionPanel
-            spec={json(description(item, t()))}
+            spec={json(description(item, t(), props.timeZone))}
             title={
               item.kind === "Chart" ? (item.title ?? item.description?.title ?? "") : item.kind === "Stats" ? page().tree.title : item.title
             }
             width={item.kind === "Stats" ? undefined : (item.width ?? "full")}
-            height={
-              item.kind === "Chart"
-                ? chartHeight(item)
-                : item.kind === "Detail"
-                  ? detailHeight(item)
-                  : item.kind === "Table" && item.height
-                    ? heights[item.height]
-                    : heights.md
-            }
-            headingLevel={deeper(level)}
+            height={item.kind === "Chart" ? chartHeight(item) : item.kind === "Detail" ? detailHeight(item) : heights.md}
+            headingLevel={level}
             empty={item.kind === "Table" || item.kind === "Chart" ? item.empty : undefined}
             state={panelState()}
             asOf={readTime()}
@@ -530,7 +524,7 @@ function CodePageContent(props: PageProps) {
         );
       case "Form":
         return (
-          <DashboardFrame title={item.title} headingLevel={deeper(level)} width={item.width ?? "full"}>
+          <DashboardFrame title={item.title} headingLevel={level} width={item.width ?? "full"}>
             <form
               action={href(item.action)}
               method="post"

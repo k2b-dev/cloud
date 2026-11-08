@@ -34,7 +34,7 @@ app.get("/", c => c.page(
         compare={{ label: "Last week", value: 30 }} trend={[21, 26, 24, 30, 34]} />
       <Stat icon="ti ti-clock-check" label="On time" value={0.92} format={{ style: "percent" }}
         delta={{ value: 0.04, unit: "points", better: "up" }} compare={{ label: "Last week", value: 0.88 }} />
-      <Stat icon="ti ti-coin-euro" tone="in" label="Revenue" value={18420} format={{ style: "currency", currency: "EUR" }}
+      <Stat icon="ti ti-coin-euro" label="Revenue" value={18420} format={{ style: "currency", currency: "EUR" }}
         delta={{ value: 0.071, better: "up" }} compare={{ label: "Last week", value: 17190 }} />
     </Stats>
     <Section title="Trend" icon="ti ti-chart-line" color="blue">

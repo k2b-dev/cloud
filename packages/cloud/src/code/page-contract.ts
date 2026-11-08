@@ -67,8 +67,18 @@ const width = z.enum(["third", "half", "twoThirds", "full"]).optional();
 /** A panel's content height: small 200 px, medium 300 px, large 400 px; a row of panels lines up when they share it. */
 const height = z.enum(["sm", "md", "lg"]).optional();
 /** Titles and labels as the shared description panels hold them. */
-const panelTitle = z.string().min(1).max(160);
-const shortLabel = z.string().min(1).max(80);
+const panelTitle = z.string().min(1).max(160).regex(/\S/);
+const shortLabel = z.string().min(1).max(80).regex(/\S/);
+/** A table's number format; units belong in the column label, as the shared tables show them. */
+const tableFormat = z.strictObject({
+  style: z.enum(["number", "percent", "currency"]).optional(),
+  currency: z
+    .string()
+    .regex(/^[A-Z]{3}$/)
+    .optional(),
+  decimals: z.number().int().min(0).max(10).optional(),
+  compact: z.boolean().optional(),
+});
 const numberFormat = chartNumberFormatSchema();
 /** One key figure: its value, how it changed and what it compares with, as the shared key-figure tiles show it. */
 const stat = z.strictObject({
@@ -76,8 +86,8 @@ const stat = z.strictObject({
   value: z.union([z.number().finite(), shortLabel, z.null()]),
   format: numberFormat.optional(),
   icon: icon.optional(),
-  /** The colour of `icon`'s chip; `in` and `out` are the colours of money coming in and going out. */
-  tone: z.enum(["zinc", "blue", "emerald", "amber", "red", "in", "out"]).optional(),
+  /** The colour of `icon`'s chip. */
+  tone: color.optional(),
   /** Change since the comparison: a share (0.082 is 8.2 %) or, with `unit: "points"`, percentage points. */
   delta: z
     .strictObject({ value: z.number().finite(), unit: z.literal("points").optional(), better: z.enum(["up", "down"]).optional() })
@@ -99,7 +109,7 @@ const leaf = z.discriminatedUnion("kind", [
           label: shortLabel,
           /** What the column holds; it decides alignment, text and sorting. A status shows a badge from `states`. */
           type: z.enum(["text", "number", "date", "status", "bar", "amount", "flow", "delta"]).optional(),
-          format: numberFormat.optional(),
+          format: tableFormat.optional(),
           states: z
             .record(
               fieldName,
@@ -118,7 +128,6 @@ const leaf = z.discriminatedUnion("kind", [
     /** A search field in the panel's head; the reader's query stays in the browser. */
     search: z.boolean().optional(),
     width,
-    height,
   }),
   z.strictObject({
     kind: z.literal("Form"),
@@ -131,7 +140,10 @@ const leaf = z.discriminatedUnion("kind", [
   z.strictObject({
     kind: z.literal("Detail"),
     title: panelTitle,
-    items: z.array(z.strictObject({ label: shortLabel, value: scalar, format: numberFormat.optional() })).max(CODE_PAGE_LIMITS.details),
+    items: z
+      .array(z.strictObject({ label: shortLabel, value: scalar, format: numberFormat.optional() }))
+      .min(1)
+      .max(CODE_PAGE_LIMITS.details),
     width,
     height,
   }),

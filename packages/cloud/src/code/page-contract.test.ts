@@ -316,7 +316,6 @@ test("pages carry their place and read time, panels their height, and data block
     title: "Campaigns",
     subtitle: "Latest 6 of 38",
     search: true,
-    height: "md",
     columns: [
       { key: "name", label: "Campaign", priority: 1 },
       { key: "status", label: "Status", type: "status", states: { sending: { label: "Sending", tone: "running" } } },
@@ -324,7 +323,7 @@ test("pages carry their place and read time, panels their height, and data block
     ],
     rows: [{ name: "Weekly letter 44", status: "sending", revenue: 4610 }],
   };
-  const stats = { kind: "Stats", items: [{ label: "Revenue", value: 4610, icon: "ti ti-coin-euro", tone: "in" }] };
+  const stats = { kind: "Stats", items: [{ label: "Revenue", value: 4610, icon: "ti ti-coin-euro", tone: "emerald" }] };
   const detail = {
     kind: "Detail",
     title: "Order",
@@ -340,11 +339,15 @@ test("pages carry their place and read time, panels their height, and data block
   for (const bad of [
     { ...full, asOf: "yesterday" },
     { ...full, eyebrow: "x".repeat(81) },
-    page([{ ...table, height: "xl" }]),
+    page([{ ...table, height: "md" }]),
+    page([{ ...table, columns: [{ key: "a", label: "A", format: { unit: "kg" } }] }]),
+    page([{ ...detail, items: [] }]),
+    page([{ ...detail, title: "   " }]),
     page([{ ...table, columns: [{ key: "a", label: "A", type: "html" }] }]),
     page([{ ...table, columns: [{ key: "a", label: "A", type: "status", states: { open: { label: "Open", tone: "pink" } } }] }]),
     page([{ ...table, columns: [{ key: "a", label: "A", priority: 4 }] }]),
     page([{ ...stats, items: [{ label: "R", value: 1, tone: "plum" }] }]),
+    page([{ ...stats, items: [{ label: "R", value: 1, tone: "in" }] }]),
     page([{ ...detail, title: "x".repeat(161) }]),
     page([{ ...detail, items: Array.from({ length: CODE_PAGE_LIMITS.details + 1 }, () => ({ label: "L", value: 1 })) }]),
   ])

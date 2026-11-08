@@ -158,7 +158,7 @@ pages built from blocks reach `c.page`; a hand-written object does not.
 | `Stat` | `label`, `value` (number, text or `null`), optional `format`, `icon`, `tone`, `delta`, `compare`, `trend` | none |
 | `Text` | none | text |
 | `Heading` | optional `level: 2 \| 3 \| 4` | text |
-| `Table` | `title`, `rows` of scalar values, optional `subtitle`, `search`, `empty` text, `width` and `height` | 1–20 `Column` |
+| `Table` | `title`, `rows` of scalar values, optional `subtitle`, `search`, `empty` text and `width` | 1–20 `Column` |
 | `Column` | `key` (the row field), `label`, optional `type`, `format`, `states`, `priority` | none |
 | `Detail` | `title`, optional `width` and `height` | up to 100 `Item` |
 | `Item` | `label`, `value`, optional number `format` | none |
@@ -194,8 +194,9 @@ language and time zone. A `Section` names a topic with an optional `icon`, `colo
 
 Blocks sit on a grid of six columns. Charts, `Table`, `Detail` and `Form`
 are framed panels; `width` gives a panel `third`, `half`, `twoThirds` or
-`full` (the default) of its row, and `height` gives its content `sm` (200 px),
-`md` (300 px) or `lg` (400 px). Panels in one row share its height. The grid
+`full` (the default) of its row, and `height` gives a chart's or a detail's
+content `sm` (200 px), `md` (300 px) or `lg` (400 px); a table is as tall as its
+rows. Panels in one row share its height. The grid
 measures its own width: up to 1,000 px a third takes half a row and two thirds
 the whole row, up to 600 px every panel takes the row. All other blocks take
 the whole row.
@@ -207,14 +208,15 @@ a `delta` with the change since the comparison (`value` is a share,
 `0.082` for 8.2 %; with `unit: "points"` it is percentage points), its
 `better` direction (`up` or `down`, which colours the change), a `compare`
 with `label` and `value`, and a `trend` of up to 60 numbers. `icon` sits in a
-chip of `tone`: a colour, or `in` and `out` for money coming in and going out.
+chip of its `tone` colour.
 
 A `Column`'s `type` says what it holds: `text`, `number`, `date`, `status`,
 `bar`, `amount`, `flow` or `delta`. It decides alignment, the shown text and
 sorting. A `status` column shows a badge from `states`, such as
 `{ sending: { label: "Sending", tone: "running" } }` (tones `info`, `ok`,
 `warning`, `error`, `degraded`, `running`, `neutral`); `amount` and `flow` show
-money in the column's `format` currency. A column of numbers without a `type`
+money in the column's `format` currency. A table's `format` has `style`,
+`currency`, `decimals` and `compact`; put a unit into the column's label. A column of numbers without a `type`
 reads as numbers. `priority` 2 or 3 lets a column give way on a narrow screen,
 and `search` puts a search field in the table's head.
 

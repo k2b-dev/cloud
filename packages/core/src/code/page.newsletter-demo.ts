@@ -60,7 +60,7 @@ app.get("/", c => c.page(
       <Chart.BarGauge width="third" height="md" title="From sending to buying" subtitle="Weekly letter 44" max={46900} data={[
         { label: "Delivered", value: 46120 }, { label: "Opened", value: 23075 }, { label: "Clicked", value: 9290 }, { label: "Bought", value: 412 },
       ]} />
-      <Table width="twoThirds" height="md" title="Paths after the click" subtitle="October · campaign, page, result" rows={paths}>
+      <Table width="twoThirds" title="Paths after the click" subtitle="October · campaign, page, result" rows={paths}>
         <Column key="from" label="Campaign" />
         <Column key="to" label="Page" />
         <Column key="readers" label="Readers" type="number" />
