@@ -153,6 +153,27 @@ test("the overview hydrates its live cards without a console error", async () =>
   const { page, errors } = await open("/en/ui/charts", 1280);
   try {
     expect(await page.locator(".ui-charts-card").count()).toBe(chartShowcaseKinds.length);
+    // Each card is an island with the island shadow; nothing inside it casts a second one.
+    expect(
+      await page.evaluate(() => {
+        // The tokens live on `.k2b-ui`, so the probe takes the class, as each card does.
+        const probe = document
+          .querySelector(".ui-charts-cards")!
+          .appendChild(Object.assign(document.createElement("div"), { className: "k2b-ui" }));
+        probe.style.boxShadow = "var(--k2b-shadow-raised)";
+        const raised = getComputedStyle(probe).boxShadow;
+        probe.remove();
+        const cards = Array.from(document.querySelectorAll(".ui-charts-card"));
+        const lifted = cards.filter((card) => getComputedStyle(card).boxShadow === raised).length;
+        const nested = cards
+          .flatMap((card) => Array.from(card.querySelectorAll("*")))
+          .filter((element) => {
+            const shadow = getComputedStyle(element).boxShadow;
+            return shadow === raised;
+          }).length;
+        return { raised: raised !== "none", lifted: lifted === cards.length, nested };
+      }),
+    ).toEqual({ raised: true, lifted: true, nested: 0 });
     expect(errors).toEqual([]);
   } finally {
     await page.close();

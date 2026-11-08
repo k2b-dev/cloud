@@ -1857,9 +1857,17 @@
   flex-direction: column;
   gap: 0.75rem;
   padding: 1rem;
-  border: 1px solid var(--k2b-border);
-  border-radius: 0.75rem;
-  background: var(--k2b-surface);
+  /* A gallery card is an island (layers and shadows), like a DashboardFrame; everything in it is flat. */
+  border: 1px solid color-mix(in srgb, var(--k2b-border) 72%, transparent);
+  border-radius: var(--k2b-radius-surface);
+  background: var(--k2b-island-surface);
+  box-shadow: var(--k2b-island-shadow);
+}
+
+.ui-charts-card > *,
+.ui-charts-card .k2b-ui {
+  --k2b-island-shadow: 0 0 #0000;
+  --k2b-surface-beneath: var(--k2b-island-surface);
 }
 
 .ui-charts-card header h3 {
