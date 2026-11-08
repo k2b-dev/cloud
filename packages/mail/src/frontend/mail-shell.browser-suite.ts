@@ -2691,7 +2691,7 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
               const geometry = await toolbar.evaluate((element) => {
                 const box = (selector: string) => element.querySelector(selector)!.getBoundingClientRect();
                 const label = (id: string) =>
-                  element.querySelector(`[data-mail-toolbar-action="${id}"] :is(.mail-reader-action-label, .mail-reader-respond-label)`);
+                  element.querySelector(`[data-mail-toolbar-action="${id}"] .mail-reader-action-label`);
                 return {
                   controlsBottom: box(".mail-reader-controls").bottom,
                   titleTop: box("[data-mail-reader-heading]").top,

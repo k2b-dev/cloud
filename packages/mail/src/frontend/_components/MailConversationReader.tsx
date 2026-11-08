@@ -429,7 +429,7 @@ export default function MailConversationReader(props: {
       if (options.scrollTop !== undefined) {
         historyScroller.scrollTop = options.scrollTop;
       } else if (options.messageId && options.messageId === props.messages.at(-1)?.id) {
-        // The newest message comes first, right below the subject and the reply box, so the start shows all three.
+        // The newest message comes first, right below the subject and the reply pill, so the start shows all three.
         historyScroller.scrollTo({ top: 0, behavior: options.behavior ?? "auto" });
       } else if (options.messageId) {
         const message = historyScroller.querySelector<HTMLElement>(`[data-mail-message-id="${CSS.escape(options.messageId)}"]`);
@@ -1280,7 +1280,7 @@ export default function MailConversationReader(props: {
         section.actions.map((action, position) => ({ action, section: section.id, first: index > 0 && position === 0 })),
       ),
   );
-  // The reply box names whom Reply writes to: Reply-To, or the original recipients of a message this mailbox sent.
+  // The pill's Reply names whom it writes to: Reply-To, or the original recipients of a message this mailbox sent.
   const latestReplyNames = () => {
     const message = latestMessage();
     const to = message ? deriveReplyAddressObjects(message, "reply", props.identities).to : [];
