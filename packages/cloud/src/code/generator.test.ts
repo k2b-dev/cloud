@@ -409,13 +409,26 @@ personal.workshop(dynamic);
 once.workshop(dynamic);
 app.schedule("0 8 * * 1", async () => { await owner.item.create({ title: "Hi", idempotencyKey: "fixed" }); });
 app.on("work-shop.changed", async event => { const title: string = event.data.title; });
-app.get("/", c => c.json({ groups: c.user?.groups }));
+app.get("/", c => {
+  if (c.user) {
+    const kind: "user" | "guest" = c.user.kind;
+    const provider: "local" | "ipa" = c.user.provider;
+    const name: string = c.user.name;
+    // @ts-expect-error no credentials in visitor identity
+    c.user.token;
+  }
+  return c.json({ groups: c.user?.groups });
+});
 app.post("/", c => c.text(c.req.param("id")));
 app.put("/", c => c.text("ok"));
 app.delete("/", c => c.redirect("/"));
 app.all("/", c => c.text("ok"));
 app.nav(user => [{ title: user.id, path: "/" }]);
-app.webhook("/hook", async c => c.json({ verified: await c.verify("secret") }));
+app.webhook("/hook", async c => {
+  // @ts-expect-error webhooks never have a visitor
+  c.user;
+  return c.json({ verified: await c.verify("secret") });
+});
 app.fetch(new Request("https://example.invalid"));
 // @ts-expect-error required idempotency key
 owner.item.create({ title: "missing key" });

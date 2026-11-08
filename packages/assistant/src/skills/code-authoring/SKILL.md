@@ -81,7 +81,7 @@ Automatic replies remain reference evidence and are not rebuilt as sending Code.
 | Show one record | `Detail` with `Item` | [Pages](references/pages.md) |
 | Keep data between runs | State in the owning app, read again each run | [Data](references/data.md) |
 | Call an external HTTPS service, with a secret | `http.fetch` with `secrets.NAME` | [Access and secrets](references/access.md) |
-| Decide who sees a page | `c.user`, `{ public: true }` | [Access and secrets](references/access.md) |
+| Decide who sees a page | `c.user` (`id`, `groups`, `kind`, `provider`, `name`), `{ public: true }` | [Access and secrets](references/access.md) |
 | Pass a file from Mail or Files to another app | `FileRef` from a read stream into an Action's `file` input | [FileRef](references/file-ref.md), [mail invoices](references/template-mail-invoices.md) |
 
 ## Rules that hold everywhere

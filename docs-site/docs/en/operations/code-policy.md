@@ -5,10 +5,16 @@ section: Operations
 order: 1253
 description: Configure Code execution budgets and inspect durable policy pause work.
 tags: [operations, code, policy, settings]
-updated: 2026-11-06
+updated: 2026-11-08
 ---
 
 # Code policy operations
+
+Hosted routes now pass the signed-in visitor's account profile (`user` or
+`guest`), identity provider ID (`local` or `ipa`) and display name alongside
+their ID and groups. Deploy Core and the Code runner from the same Cloud
+version so request validation and generated SDKs agree. Public routes keep
+receiving `null`; see [Serve routes](/en/docs/platform/code-sdk#serve-routes).
 
 Core adds the policy tables to the existing `code` schema at startup. Include
 them in the same backup as Code versions and identity data. An existing policy
