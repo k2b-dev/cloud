@@ -120,6 +120,7 @@ for (const width of [390, 800, 1440, 1920])
           .locator("[data-calendar-pinned] text")
           .evaluateAll((nodes) => nodes.map((e) => e.getBoundingClientRect().toJSON()));
         const svg = await page.locator(".k2b-chart__svg > svg").evaluate((e) => e.outerHTML);
+        const serverStyle = await serverChart.evaluate((e) => (e as HTMLElement).style.cssText);
         const box = (e: Element) => {
           const b = e.getBoundingClientRect();
           return { x: b.x + scrollX, y: b.y + scrollY, width: b.width, height: b.height };
@@ -136,6 +137,7 @@ for (const width of [390, 800, 1440, 1920])
         expect(await viewport.evaluate(box)).toEqual(initialViewport);
         const chart = page.locator(".k2b-chart"),
           drawing = page.locator(".k2b-chart__svg");
+        expect(await chart.evaluate((e) => (e as HTMLElement).style.cssText)).toBe(serverStyle);
         expect(
           await chart.locator("[data-calendar-pinned] text").evaluateAll((nodes) => nodes.map((e) => e.getBoundingClientRect().toJSON())),
         ).toEqual(serverPinned);

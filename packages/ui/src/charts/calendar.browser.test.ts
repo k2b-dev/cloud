@@ -77,6 +77,7 @@ test("Calendar SSR, calm hover, keyboard, touch, scroll, theme and fixed host st
         );
         await settled(page);
         const before = await page.locator("#mount .k2b-chart__svg > svg").evaluate((e) => e.outerHTML);
+        const serverStyle = await page.locator("#mount .k2b-chart").evaluate((e) => (e as HTMLElement).style.cssText);
         const serverPinned = await page
           .locator("#mount [data-calendar-pinned] text")
           .evaluateAll((nodes) => nodes.map((e) => e.getBoundingClientRect().toJSON()));
@@ -84,6 +85,7 @@ test("Calendar SSR, calm hover, keyboard, touch, scroll, theme and fixed host st
         await page.addScriptTag({ content: bundle });
         await settled(page);
         expect(await page.locator("#mount .k2b-chart__svg > svg").evaluate((e) => e.outerHTML)).toBe(before);
+        expect(await page.locator("#mount .k2b-chart").evaluate((e) => (e as HTMLElement).style.cssText)).toBe(serverStyle);
         const titled = page.locator("#titled .k2b-chart");
         const headerBox = await titled.locator(".stdlib-chart-title").boundingBox();
         const titledBox = await titled.boundingBox();
@@ -109,6 +111,12 @@ test("Calendar SSR, calm hover, keyboard, touch, scroll, theme and fixed host st
         if (width === 390) {
           await page.locator("section.k2b-ui").evaluate((e) => (e.style.containerType = "inline-size"));
           await chart.evaluate((e) => (e.style.containerType = "normal"));
+          await settled(page);
+          // A query-context change need not resize the scrollport. Its first
+          // real scroll refreshes the native correction, including at zero.
+          await chart.evaluate((e) => (e.scrollLeft = -1));
+          await settled(page);
+          await chart.evaluate((e) => (e.scrollLeft = 0));
           await settled(page);
         }
         const newestRange = await chart.evaluate(scrollRange);
@@ -141,27 +149,31 @@ test("Calendar SSR, calm hover, keyboard, touch, scroll, theme and fixed host st
         await settled(page);
         const originRange = await chart.evaluate(scrollRange);
         expect(originRange.css).toBe(originRange.dom);
-        const weekdayBox = await chart.locator("[data-calendar-weekdays] text").first().boundingBox();
-        expect(weekdayBox!.x).toBeGreaterThanOrEqual(visible!.x);
-        expect(weekdayBox!.x + weekdayBox!.width).toBeLessThanOrEqual(visible!.x + visible!.width);
-        const firstVisible = await chart
-          .locator("[data-chart-datum] rect")
-          .evaluateAll(
-            (nodes, right) => Math.min(...nodes.map((e) => e.getBoundingClientRect().left).filter((x) => x >= right)),
-            weekdayBox!.x + weekdayBox!.width,
-          );
+        // Use one geometry API for both SVG text and cells. WebKit's
+        // Playwright text quad differs from its DOM client rect; mixing them
+        // measures different text extents, even at the same scroll origin.
         const originGeometry = await chart.evaluate((e) => {
           const label = e.querySelector<SVGGraphicsElement>("[data-calendar-weekdays] text")!,
-            mask = e.querySelector("[data-calendar-weekdays] > rect")!,
-            point = new DOMPoint(-3, 0).matrixTransform(label.getScreenCTM()!);
+            text = label.getBoundingClientRect(),
+            viewport = e.getBoundingClientRect(),
+            anchor = new DOMPoint(-3, 0).matrixTransform(label.getScreenCTM()!),
+            firstCell = Math.min(
+              ...Array.from(e.querySelectorAll("[data-chart-datum] rect"))
+                .map((cell) => cell.getBoundingClientRect().left)
+                .filter((x) => x >= text.right),
+            );
           return {
-            scrollLeft: e.scrollLeft,
-            label: label.getBoundingClientRect().toJSON(),
-            anchorX: point.x,
-            mask: mask.getBoundingClientRect().toJSON(),
+            left: text.left - viewport.left,
+            right: viewport.right - text.right,
+            gap: firstCell - text.right,
+            anchorError: Math.abs(text.right - anchor.x),
           };
         });
-        expect(firstVisible - weekdayBox!.x - weekdayBox!.width, JSON.stringify({ originRange, originGeometry })).toBeLessThanOrEqual(8);
+        expect(originGeometry.left).toBeGreaterThanOrEqual(0);
+        expect(originGeometry.right).toBeGreaterThanOrEqual(0);
+        expect(originGeometry.anchorError).toBeLessThan(0.1);
+        expect(originGeometry.gap, JSON.stringify({ originRange, originGeometry })).toBeGreaterThanOrEqual(0);
+        expect(originGeometry.gap, JSON.stringify({ originRange, originGeometry })).toBeLessThanOrEqual(8);
         // The opaque rail is painted after the cells, so partial columns cannot
         // show through the pinned weekday labels during touch/trackpad scrolling.
         expect(

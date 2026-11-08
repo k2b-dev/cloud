@@ -14,8 +14,23 @@ export function mountCalendarScroll(container: HTMLElement): () => void {
   // row-reverse makes zero the newest end in the server frame too. Older weeks
   // use negative scrollLeft. Pinning must use this same DOM scroll range:
   // container query widths can differ from the scrollport (gutter/rounding).
+  const measure = () => {
+    const svg = drawing.querySelector("svg[data-calendar]");
+    if (!svg) return;
+    // Resolve the server's fallback in the SVG's query-container context. Do
+    // not mutate first-render markup when CSS already uses the native range.
+    const probe = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+    probe.style.width = "max(0px, calc(var(--k2b-calendar-width) - 100cqw))";
+    probe.style.height = "0px";
+    svg.append(probe);
+    const estimated = Number.parseFloat(getComputedStyle(probe).width);
+    probe.remove();
+    const overflow = Math.max(0, container.scrollWidth - container.clientWidth);
+    if (estimated === overflow) container.style.removeProperty("--k2b-calendar-measured-overflow");
+    else container.style.setProperty("--k2b-calendar-measured-overflow", `${overflow}px`);
+  };
   const header = () => {
-    container.style.setProperty("--k2b-calendar-measured-overflow", `${Math.max(0, container.scrollWidth - container.clientWidth)}px`);
+    measure();
     if (container.scrollLeft) container.style.setProperty("--k2b-calendar-scroll", `${container.scrollLeft}px`);
     else container.style.removeProperty("--k2b-calendar-scroll");
   };
