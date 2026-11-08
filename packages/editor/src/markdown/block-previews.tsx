@@ -389,7 +389,7 @@ export function createBlockPreviews(options: BlockPreviewOptions): { extension: 
         }),
       );
     // A placeholder reserves the height its drawing will take; the note's charts are read once, and only for one.
-    let heights: Map<number, number | undefined> | undefined;
+    let heights: Map<number, number | string | undefined> | undefined;
     const heightAt = (line: number) => {
       heights ??= new Map(
         parseNotebookChartBlocks(document, options.charts).blocks.map((entry) => [

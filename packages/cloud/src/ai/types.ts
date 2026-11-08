@@ -92,6 +92,8 @@ export type AiModelProfile = {
   contextWindow?: number;
   temperature?: number;
   maxOutputTokens?: number;
+  /** Provider-reported maximum completion size; a bound for the automatic reasoning budget. */
+  outputTokenLimit?: number;
   reasoningEffort?: string;
   extraBody?: Record<string, unknown>;
   /** Maximum deferred tools retained per conversation. Missing or <= 0 keeps all loaded tools. */
