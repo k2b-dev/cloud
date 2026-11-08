@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { mkdirSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import type { Browser } from "playwright";
-import { browserName, launchBrowser } from "../../test/browser";
+import { browserName, launchBrowser, settled } from "../../test/browser";
 
 // Which width a browser gives a glyph before its font has loaded is a question of
 // layout, which happy-dom does not model, so a real engine loads the shipped preset.
@@ -97,6 +97,7 @@ describe("filled glyphs", () => {
         return route.fulfill({ status: 404, body: "" });
       });
       await tab.goto("http://icons.test/");
+      await settled(tab);
       // The font and the mask images arrive after layout: wait for each before reading pixels.
       await tab.evaluate(async () => {
         await document.fonts.load("16px tabler-icons");
