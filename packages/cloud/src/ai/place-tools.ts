@@ -1,5 +1,6 @@
 import type { CloudResourceRef } from "../contracts/capabilities";
-import type { RequestActor, RequestAuthority } from "../server";
+import type { RequestActor } from "../server";
+import { panelContextConsent } from "../services/panel-context-consent";
 import { resolveAiCapabilityActor } from "./capability-execution";
 import { type PlaceProviderOptions, runPlaceProvider } from "./place-provider";
 import { aiConversations } from "./store";
@@ -7,6 +8,7 @@ import type { AiConversationService, AiStoredMessage } from "./types";
 
 export type AiPlaceToolDependencies = {
   store?: Pick<AiConversationService, "getConversation">;
+  getConsent?: typeof panelContextConsent.get;
   getUser?: Parameters<typeof resolveAiCapabilityActor>[0]["getUser"];
   provider?: typeof runPlaceProvider;
   providerOptions?: PlaceProviderOptions;
@@ -24,12 +26,14 @@ export const resolveAiPlaceTools = async (input: {
   const conversation = await store.getConversation({ conversationId: input.conversationId });
   if (!conversation?.place) return null;
   try {
-    const authority: RequestAuthority = await resolveAiCapabilityActor({
+    const authority = await resolveAiCapabilityActor({
       conversationId: input.conversationId,
       persistedActor: input.actor,
       store,
       getUser: input.dependencies?.getUser,
     });
+    const consent = await (input.dependencies?.getConsent ?? panelContextConsent.get)(authority.actor.user.id, "assistant");
+    if (!consent?.allowed) return { ref: conversation.place.ref, tools: [] };
     const result = await (input.dependencies?.provider ?? runPlaceProvider)(authority, conversation.place.ref, {
       ...input.dependencies?.providerOptions,
       locale: input.locale,

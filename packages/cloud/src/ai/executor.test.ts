@@ -72,6 +72,7 @@ describe("malformed tool calls in a chat turn", () => {
       issue?: ToolStreamIssue;
       providerFailure?: boolean;
       validCall?: boolean;
+      unavailablePlaceCall?: boolean;
       emptyAnswer?: boolean;
       steerAfterTextAnswer?: boolean;
       /** Continue the stored turn without new input, as a resumed worker does. */
@@ -206,6 +207,7 @@ describe("malformed tool calls in a chat turn", () => {
         pipeline,
         initialRoundFailed: false,
         rejectedToolCallIds: new Set<string>(),
+        unavailablePlaceToolNames: new Set(options.unavailablePlaceCall ? ["missing_tool"] : []),
         conversationId: "chat",
         turnId: "turn",
         abortController: new AbortController(),
@@ -368,6 +370,16 @@ describe("malformed tool calls in a chat turn", () => {
       status: "failed",
       failure: { error: { code: "failed" }, detail: "AI execution failed." },
     });
+  });
+
+  test("a newly forced unavailable place tool is audited as rejected", async () => {
+    const completed = spyOn(aiToolAudit, "noteToolCompleted").mockResolvedValue(undefined);
+    try {
+      await run(1, false, { validCall: true, unavailablePlaceCall: true });
+      expect(completed).toHaveBeenCalledWith({ turnId: "turn", callId: "valid-call", isError: true, rejected: true });
+    } finally {
+      completed.mockRestore();
+    }
   });
 
   test("repairs never consume real user steers", async () => {

@@ -10,7 +10,7 @@ import {
 } from "../../../../scripts/fixtures/assistant-place";
 import { useUnitClients } from "../../../../scripts/fixtures/unit-clients";
 import { compileCapabilities, invokeCompiledCapability, reviewCompiledCapability } from "../_internal/capabilities";
-import type { dispatchCapability } from "../api/capabilities";
+import { dispatchCapability } from "../api/capabilities";
 import { capabilityCallFromTool, capabilityToolInputSchema } from "../capabilities/calls";
 import * as executions from "../capabilities/executions";
 import type { RequestAuthority } from "../server";
@@ -92,7 +92,9 @@ const harness = () => {
     });
     return result.ok ? Response.json(result.data) : Response.json(result.error, { status: result.error.status });
   });
+  let consent = true;
   const place = {
+    getConsent: async () => ({ allowed: consent, revision: 1 }),
     store: { getConversation: async () => conversation },
     getUser: async () => (active ? person : null),
     providerOptions: { dependencies: { getCapability: async () => app, dispatch } },
@@ -126,6 +128,9 @@ const harness = () => {
     context,
     call,
     dispatch,
+    revokeConsent: () => {
+      consent = false;
+    },
     deactivate: () => {
       active = false;
     },
@@ -285,8 +290,93 @@ test("resume rejects a historical place call when the app and its catalog are go
 test("a stale general tool cannot execute an Action now reserved for places", async () => {
   const h = harness();
   const { place: _place, ...entry } = h.entry;
-  await expect(
-    executeAiCapability({ ...h.call, entry, dependencies: { ...h.call.dependencies, getCapability: async () => h.app } }),
-  ).rejects.toMatchObject({ code: "PLACE_REJECTED" });
+  await expect(executeAiCapability({ ...h.call, entry, dependencies: { getCapability: async () => h.app } })).rejects.toMatchObject({
+    code: "PLACE_REJECTED",
+  });
   expect(h.dispatch).not.toHaveBeenCalled();
+  expect(h.calls).toEqual([]);
+});
+
+test("without consent discovery and forced execution never ask the provider", async () => {
+  const h = harness();
+  h.revokeConsent();
+  expect(await resolveAiPlaceTools({ conversationId: "chat", actor: h.authority.actor, dependencies: h.place })).toEqual({
+    ref,
+    tools: [],
+  });
+  await expect(executeAiCapability(h.call)).rejects.toMatchObject({ code: "PLACE_REJECTED" });
+  expect(h.providerCalls).toEqual([]);
+  expect(h.calls).toEqual([]);
+});
+
+test("revoking consent during approval rejects the call before another provider query", async () => {
+  const h = harness();
+  const entry = buildAiCapabilityCatalog([h.app], "en", { ref, tools: ["note.add"] }).find(
+    (entry) => entry.operation.localId === "note.add",
+  )!;
+  const tool = createLoadedAiCapabilityTools({
+    apps: [h.app],
+    catalog: [entry],
+    loadedNames: [entry.name],
+    actor: h.authority.actor,
+    review: (entry, args, context) => reviewAiCapability({ ...h.call, entry, args, context }),
+    execute: (entry, args, context) => executeAiCapability({ ...h.call, entry, args, context }),
+  })[0]!;
+  const prepared = prepareAiTools({ tools: [tool], actor: h.authority.actor }).tools[0]!;
+  if (prepared.kind !== "server") throw new Error("Expected server tool");
+  await expect(
+    prepared.execute(
+      { text: "Hi" },
+      {
+        ...h.context,
+        requestApproval: async () => {
+          h.revokeConsent();
+          return true;
+        },
+      },
+    ),
+  ).rejects.toMatchObject({ code: "PLACE_REJECTED" });
+  expect(h.providerCalls).toEqual(["marta"]);
+  expect(h.calls).toEqual([]);
+});
+
+test("shared dispatcher requires the checked place binding for assistant Actions", async () => {
+  const h = harness();
+  const fetch = Object.assign(
+    mock(async () => {
+      throw new Error("Must not forward");
+    }),
+    { preconnect: () => {} },
+  );
+  for (const binding of [undefined, { ...ref, id: "jonas" }, { ...ref, type: "other.conversation" }]) {
+    const response = await dispatchCapability({
+      request: new Request("http://core.test/call"),
+      origin: "assistant",
+      kind: "actions",
+      appId: h.app.appId,
+      capabilityId: "reply.set",
+      input: { text: "Hi" },
+      target: ref,
+      authority: h.authority,
+      assistantPlace: binding,
+      dependencies: { getCapability: async () => h.app, fetch },
+    });
+    expect(response.status).toBe(403);
+    expect(await response.json()).toMatchObject({ code: "PLACE_REJECTED" });
+  }
+  // A matching internal binding passes this guard and reaches ordinary capability validation.
+  const accepted = await dispatchCapability({
+    request: new Request("http://core.test/call"),
+    origin: "assistant",
+    kind: "actions",
+    appId: h.app.appId,
+    capabilityId: "reply.set",
+    input: { text: "Hi" },
+    target: ref,
+    authority: h.authority,
+    assistantPlace: ref,
+    dependencies: { getCapability: async () => h.app, fetch, getApp: async () => null },
+  });
+  expect(await accepted.json()).not.toMatchObject({ code: "PLACE_REJECTED" });
+  expect(fetch).not.toHaveBeenCalled();
 });

@@ -59,6 +59,7 @@ import {
   CapabilityInvocationBodySchema,
   type CapabilityOrigin,
   CapabilityPageSchema,
+  type CloudResourceRef,
   capabilityActionPolicy,
   capabilityResultJsonSchema,
   NormalizedCapabilityCallSchema,
@@ -308,6 +309,8 @@ export type CapabilityDispatchParams = {
   parentInvocation?: CloudInvocationClaims;
   /** Core-only turn coordinates used to recheck allowed tools at a child exchange. */
   assistantTurn?: { conversationId: string; turnId: string };
+  /** Core-only place binding after the Assistant refreshed the owner, consent and provider. Never populated from client input. */
+  assistantPlace?: CloudResourceRef;
   /** Core-only absolute child deadline; cannot be extended by the application. */
   deadline?: number;
   /** Core-only authenticated workload. Never populated from request JSON. */
@@ -385,6 +388,22 @@ const runCapabilityDispatch = async (
       404,
     );
     return error;
+  }
+  if (
+    params.origin === "assistant" &&
+    params.kind === "actions" &&
+    entry.manifest.types.some((type) => type.assistant?.tools.includes(params.capabilityId))
+  ) {
+    const ref = params.assistantPlace;
+    const declaration = ref && entry.manifest.types.find((type) => `${params.appId}.${type.localId}` === ref.type);
+    if (
+      !ref ||
+      !declaration?.assistant?.tools.includes(params.capabilityId) ||
+      ref.type !== `${params.appId}.${operation.target}` ||
+      params.target?.type !== ref.type ||
+      params.target.id !== ref.id
+    )
+      return errorResponse("PLACE_REJECTED", "Place Actions require the chat's checked, fixed place.", 403);
   }
   if (
     "unattended" in operation &&

@@ -154,10 +154,11 @@ export const buildAiCapabilityAppCatalog = (apps: readonly CapabilityRegistryEnt
  * Build one deterministic, immutable view of the current live registry. `locale` selects the human
  * presentation in `display`; model-facing fields always stay in the app's base presentation.
  */
-export const buildAiCapabilityCatalog = (
+const buildCapabilityCatalog = (
   apps: CapabilityRegistryEntry[],
   locale?: string,
   place?: { ref: CloudResourceRef; tools: readonly string[] },
+  history = false,
 ): AiCapabilityCatalogEntry[] => {
   const entries = [...apps]
     .sort(
@@ -177,6 +178,7 @@ export const buildAiCapabilityCatalog = (
           .filter(isPersonVisibleCapabilityAction)
           .filter(
             (action) =>
+              history ||
               !app.manifest.types.some((type) => type.assistant?.tools.includes(action.localId)) ||
               (place?.ref.type === `${app.appId}.${action.target}` &&
                 place.tools.includes(action.localId) &&
@@ -224,6 +226,17 @@ export const buildAiCapabilityCatalog = (
     return true;
   });
 };
+
+/** Callable tools; place Actions are offered only with the current stored-place selection. */
+export const buildAiCapabilityCatalog = (
+  apps: CapabilityRegistryEntry[],
+  locale?: string,
+  place?: { ref: CloudResourceRef; tools: readonly string[] },
+): AiCapabilityCatalogEntry[] => buildCapabilityCatalog(apps, locale, place);
+
+/** Historical metadata and read-only recovery include place Actions even after access or consent was lost. */
+export const buildAiCapabilityHistoryCatalog = (apps: CapabilityRegistryEntry[], locale?: string): AiCapabilityCatalogEntry[] =>
+  buildCapabilityCatalog(apps, locale, undefined, true);
 
 const boundedLimit = (value: number | undefined, fallback: number, maximum: number): number => {
   if (!Number.isInteger(value) || Number(value) <= 0) return fallback;

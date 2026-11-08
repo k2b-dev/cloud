@@ -1131,6 +1131,7 @@ export class AiTurnExecutor {
     pipeline.setApprovalPolicies(prepared.approvalPolicies);
     const toolPresentations = new Map<string, AiToolPresentation>();
     const rejectedToolCallIds = new Set<string>();
+    const unavailablePlaceToolNames = new Set<string>();
     const approvedToolCallIds = new Set<string>();
     pipeline.setPresentations(toolPresentations);
     pipeline.setApprovalReviews(capabilityActionReviews, rememberableCapabilityApprovals);
@@ -1232,15 +1233,21 @@ export class AiTurnExecutor {
               }
             : {}),
           onReview: onCapabilityReview,
-          place: () =>
-            resolveAiPlaceTools({
-              conversationId,
-              actor: toolAuthority?.actor ?? toolActor,
-              locale: promptLocale,
-              signal: abortController.signal,
-            }),
+          place: capabilityAuthority
+            ? () =>
+                resolveAiPlaceTools({
+                  conversationId,
+                  actor: toolAuthority?.actor ?? toolActor,
+                  locale: promptLocale,
+                  signal: abortController.signal,
+                })
+            : undefined,
           onRejected: (callId) => rejectedToolCallIds.add(callId),
-          onUnavailablePlaceTools: (snapshot) => rejectUnavailablePlaceCalls(loopMessages, snapshot, rejectedToolCallIds),
+          onUnavailablePlaceTools: (snapshot) => {
+            unavailablePlaceToolNames.clear();
+            for (const name of snapshot.unavailable) unavailablePlaceToolNames.add(name);
+            rejectUnavailablePlaceCalls(loopMessages, snapshot, rejectedToolCallIds);
+          },
           ...(capabilityAuthority
             ? {
                 execute: async (entry, args, context) => {
@@ -1600,6 +1607,7 @@ export class AiTurnExecutor {
       noteToolCall: turnPolicy.noteToolCall,
       failureReason,
       rejectedToolCallIds,
+      unavailablePlaceToolNames,
     });
     signal.removeEventListener("abort", onSignal);
 
@@ -1647,7 +1655,8 @@ export class AiTurnExecutor {
     loop: NessiLoop;
     pipeline: StreamPipeline;
     initialRoundFailed: boolean;
-    rejectedToolCallIds: ReadonlySet<string>;
+    rejectedToolCallIds: Set<string>;
+    unavailablePlaceToolNames?: ReadonlySet<string>;
     conversationId: string;
     turnId: string;
     abortController: AbortController;
@@ -1695,6 +1704,8 @@ export class AiTurnExecutor {
 
     try {
       for await (const event of loop) {
+        if (event.type === "tool_execution_start" && input.unavailablePlaceToolNames?.has(event.name))
+          input.rejectedToolCallIds.add(event.callId);
         await pipeline.timing.event(event);
         if (event.type === "tool_action_request") {
           const suspended = await this.handleActionRequest({

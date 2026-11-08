@@ -1,7 +1,6 @@
 import { createHash } from "node:crypto";
 import type { ToolContext } from "@k2b/nessi";
 import { capabilityActionReceiptIssues, capabilityQueryChecksActionOutcome } from "../_internal/capability-reviews";
-import { getCapability } from "../_internal/registry";
 import { type CapabilityDispatchDependencies, dispatchCapability } from "../api/capabilities";
 import { capabilityCallFromTool, capabilityInvocationBody } from "../capabilities/calls";
 import { capabilityValueMeta, recordCapabilityExecution } from "../capabilities/executions";
@@ -16,6 +15,7 @@ import type { RequestActor, RequestAuthority } from "../server";
 import { isAccountCategoryAllowed } from "../services/account-category-policy";
 import { isAccountExpired } from "../services/account-model";
 import { accounts } from "../services/accounts";
+import { panelContextConsent } from "../services/panel-context-consent";
 import { withoutAdminRole } from "../services/session/user";
 import { LOCALE_HEADER } from "../shared/locale";
 import type { AiActionCheck } from "./action-review";
@@ -128,6 +128,8 @@ const dispatchAiCapability = async (
         store,
         getUser: dependencies?.getUser,
       });
+      const consent = await (dependencies?.getConsent ?? panelContextConsent.get)(input.authority.actor.user.id, "assistant");
+      if (!consent?.allowed) throw new Error("Place consent is not allowed");
       const conversation = await store.getConversation({ conversationId: input.conversationId });
       const ref = conversation?.place?.ref;
       if (!ref || ref.type !== input.entry.place.type || ref.id !== input.entry.place.id) throw new Error("Place binding changed");
@@ -141,10 +143,6 @@ const dispatchAiCapability = async (
       if (input.context.signal.aborted) throw error;
       throw new AiCapabilityExecutionError("PLACE_REJECTED", 403, "This place tool is no longer available for the person.");
     }
-  } else if (input.entry.kind === "action" && input.entry.operation.target) {
-    const current = await (input.dependencies?.getCapability ?? getCapability)(input.entry.appId);
-    if (current?.manifest.types.some((type) => type.assistant?.tools.includes(input.entry.operation.localId)))
-      throw new AiCapabilityExecutionError("PLACE_REJECTED", 403, "Place tools require the chat's fixed place.");
   }
   const body =
     input.entry.operation.target !== undefined || input.entry.operation.refs !== undefined
@@ -183,6 +181,7 @@ const dispatchAiCapability = async (
     request,
     kind: input.entry.kind === "query" ? "queries" : "actions",
     origin: "assistant",
+    ...(input.entry.place ? { assistantPlace: input.entry.place } : {}),
     ...(input.turnId ? { assistantTurn: { conversationId: input.conversationId, turnId: input.turnId } } : {}),
     review,
     appId: input.entry.appId,
