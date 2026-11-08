@@ -496,12 +496,7 @@ export function MapView(props: MapViewProps): JSX.Element {
         </div>
         <Show when={props.onLocate}>
           <div class="k2b-map-view__locate-group k2b-overlay-surface">
-            <IconButton
-              tooltip={false}
-              label={messages().locate}
-              aria-pressed={!!props.ownLocation}
-              onClick={() => props.onLocate?.()}
-            >
+            <IconButton tooltip={false} label={messages().locate} aria-pressed={!!props.ownLocation} onClick={() => props.onLocate?.()}>
               <i class="ti ti-current-location" aria-hidden="true" />
             </IconButton>
           </div>
