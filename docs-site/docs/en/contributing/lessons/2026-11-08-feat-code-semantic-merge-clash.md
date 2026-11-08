@@ -1,6 +1,6 @@
 ### Two green pull requests can break a branch without a merge queue
 
-- **What happened:** The rebuild eval from #2817 imported `ChatTaskGrantsSchema`, which #2856 removed while retiring routines. Both pull requests were green on their own and landed on `feat/code` one after the other, so the branch stopped type-checking.
-- **Root cause:** `feat/code` squash-merges without a merge queue and without requiring the branch to be up to date, so a pull request is never checked against the changes that land just before it.
-- **Error class:** A semantic conflict between two independently green changes on a branch that does not re-run the gate on the merge result.
-- **Guard:** The assistant typecheck in the `gate` catches the next occurrence after landing; the release-preventing guard is to merge `origin/feat/code` into a slice branch and re-run its gate whenever another slice touching the same package lands first (driver convention for `feat/code`).
+- **What happened:** #2817 (Gustav rebuild) added an eval that imports `ChatTaskGrantsSchema` from `@k2b/cloud/ai`. #2856 (routines become Code) removed that export. Each pull request passed its gate on its own; after both landed on `feat/code`, the assistant typecheck failed.
+- **Root cause:** `feat/code` squash-merges without a merge queue and without requiring branches to be up to date, so neither pull request was checked against the other.
+- **Error class:** Two independently green changes break each other after landing, because one removes an export that the other imports.
+- **Guard:** The eval is part of the `packages/assistant` typecheck, so the gate reports the break on every pull request into `feat/code`. To catch it before landing, the `feat/code` slice convention requires merging the current `origin/feat/code` into a branch and waiting for a fresh gate before auto-merge whenever another slice in the same package has landed since its last run.
