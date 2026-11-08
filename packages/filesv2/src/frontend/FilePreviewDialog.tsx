@@ -289,7 +289,9 @@ function FilePreviewDialog(
                     }
                     onBack={() => void leaveEditing(path)}
                     onSaved={(saved) => {
-                      if (saved.entry.path === props.entry.path) setEntry(saved.entry);
+                      // An upload result carries no actions; the permissions read with the entry still hold.
+                      if (saved.entry.path === props.entry.path)
+                        setEntry((previous) => ({ ...saved.entry, actions: saved.entry.actions ?? previous.actions }));
                       props.imageEditing?.onSaved(saved);
                     }}
                   />

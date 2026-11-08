@@ -272,6 +272,7 @@ function ImageEditorSession(props: ImageEditorProps): JSX.Element {
   let frame = 0;
   let animation = 0;
   let autoAnimation = 0;
+  let autoDone: (() => void) | undefined;
   let alive = true;
   let generation = 0;
   let saveAbort: AbortController | undefined;
@@ -294,7 +295,15 @@ function ImageEditorSession(props: ImageEditorProps): JSX.Element {
     setHistory((h) => commitImageEditorState(h, next));
     setSaved(false);
   };
+  /** A running Auto animation lands on its result before anything else edits, saves, or reads the state. */
+  const settleAuto = () => {
+    const done = autoDone;
+    if (!done) return;
+    cancelAnimationFrame(autoAnimation);
+    done();
+  };
   const finishDraft = () => {
+    settleAuto();
     const next = draft();
     if (next) commit(next);
   };
@@ -304,19 +313,24 @@ function ImageEditorSession(props: ImageEditorProps): JSX.Element {
     commit(update(state()));
   };
   const updateDraft = (update: (current: ImageEditorState) => ImageEditorState) => {
+    settleAuto();
     setDraft(update(state()));
     setSaved(false);
   };
   // Editing continues while a save runs: the save captured its own history entry, and an unresolved upload may wait
   // for a manual check indefinitely.
   const undo = () => {
+    // Undo during Auto cancels it: nothing was committed yet.
     cancelAnimationFrame(autoAnimation);
+    autoDone = undefined;
     setInlineText(undefined);
     setDraft(undefined);
     setHistory(undoImageEditor);
     setSaved(false);
   };
   const redo = () => {
+    cancelAnimationFrame(autoAnimation);
+    autoDone = undefined;
     setInlineText(undefined);
     setDraft(undefined);
     setHistory(redoImageEditor);
@@ -489,6 +503,7 @@ function ImageEditorSession(props: ImageEditorProps): JSX.Element {
   function finishText() {
     const text = inlineText();
     if (!text) return;
+    settleAuto();
     setInlineText(undefined);
     const next = [...state().annotations];
     if (text.index !== undefined && text.mark) {
@@ -847,8 +862,12 @@ function ImageEditorSession(props: ImageEditorProps): JSX.Element {
     cancelAnimationFrame(autoAnimation);
     const base = state();
     const target: ImageEditorAutoAdjustments = analyzeImageEditorAuto(image.image, image.sourceSize, base);
-    const done = () => commit({ ...base, adjustments: { ...base.adjustments, ...target }, auto: target });
+    const done = () => {
+      autoDone = undefined;
+      commit({ ...base, adjustments: { ...base.adjustments, ...target }, auto: target });
+    };
     if (reducedMotion()) return done();
+    autoDone = done;
     const started = performance.now();
     const step = (now: number) => {
       const k = Math.min(1, (now - started) / 450);
@@ -1013,24 +1032,27 @@ function ImageEditorSession(props: ImageEditorProps): JSX.Element {
 
   // ---------- canvas pointers ----------
   const annotating = () => tool() === "annotate" && !!preview();
+  /** A second finger cancels the one-finger edit in progress (stroke, move, resize, crop) and pinches the view. */
+  const startPinch = () => {
+    if (gesture?.kind === "pan") clearTimeout(gesture.peekTimer);
+    else if (gesture && gesture.kind !== "pinch") setDraft(undefined);
+    setCropDragging(false);
+    const [a, b] = [...pointers.values()];
+    if (a && b)
+      gesture = {
+        kind: "pinch",
+        distance: Math.hypot(a.x - b.x, a.y - b.y),
+        mid: { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 },
+        view: view(),
+      };
+  };
   const startPointer = (event: PointerEvent) => {
     if (!preview() || loadError() || (event.target as HTMLElement).closest("button,input,textarea,[role=slider]")) return;
     const p = local(event);
     pointers.set(event.pointerId, p);
     canvasArea!.setPointerCapture(event.pointerId);
     canvasArea!.focus({ preventScroll: true });
-    if (pointers.size === 2) {
-      if (gesture?.kind === "stroke") setDraft(undefined);
-      const [a, b] = [...pointers.values()];
-      if (a && b)
-        gesture = {
-          kind: "pinch",
-          distance: Math.hypot(a.x - b.x, a.y - b.y),
-          mid: { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 },
-          view: view(),
-        };
-      return;
-    }
+    if (pointers.size === 2) return startPinch();
     const inside = insideImage(p);
     if (event.button === 0 && annotating() && !space() && inside) {
       finishText();
@@ -1177,19 +1199,7 @@ function ImageEditorSession(props: ImageEditorProps): JSX.Element {
     pointers.set(event.pointerId, p);
     canvasArea!.setPointerCapture(event.pointerId);
     // A second finger on the crop turns the gesture into a pinch of the view, as anywhere on the canvas.
-    if (pointers.size === 2) {
-      setDraft(undefined);
-      setCropDragging(false);
-      const [a, b] = [...pointers.values()];
-      if (a && b)
-        gesture = {
-          kind: "pinch",
-          distance: Math.hypot(a.x - b.x, a.y - b.y),
-          mid: { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 },
-          view: view(),
-        };
-      return;
-    }
+    if (pointers.size === 2) return startPinch();
     (event.currentTarget as HTMLElement).focus({ preventScroll: true });
     setCropDragging(true);
     gesture = { kind: "crop", id: event.pointerId, handle, x: event.clientX, y: event.clientY, rect: state().crop };
@@ -2164,10 +2174,10 @@ function ImageEditorSession(props: ImageEditorProps): JSX.Element {
                 const index = lookOptions.findIndex((x) => x.value === state().look) + (e.key === "ArrowRight" ? 1 : -1);
                 const next = lookOptions[(index + lookOptions.length) % lookOptions.length];
                 if (next) {
-                  change((s) => ({ ...s, look: next.value }));
-                  queueMicrotask(() =>
-                    (e.currentTarget as HTMLElement).parentElement?.querySelector<HTMLElement>('[aria-checked="true"]')?.focus(),
-                  );
+                  // The delegated event's currentTarget is gone once the handler returns.
+                  const group = (e.currentTarget as HTMLElement).parentElement;
+                  change((s) => ({ ...s, look: next.value, lookStrength: s.lookStrength || 1 }));
+                  queueMicrotask(() => group?.querySelector<HTMLElement>('[aria-checked="true"]')?.focus());
                 }
               }}
             >

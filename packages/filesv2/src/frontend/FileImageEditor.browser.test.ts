@@ -164,7 +164,8 @@ const setup = async (
       if (options.conflict && commitCalls === 1)
         return route.fulfill({ status: 409, json: { code: "write_conflict", message: "File changed" } });
       revision = `revision-${commitCalls + 1}`;
-      return route.fulfill({ json: { base, entry: entry(latest!.path) } });
+      // Like the real upload commit (fileEntry), the result carries no actions.
+      return route.fulfill({ json: { base, entry: { ...entry(latest!.path), actions: undefined } } });
     }
     if (url.pathname.endsWith("/abort")) return route.fulfill({ json: { success: true } });
     return route.fulfill({ status: 404, json: { code: "unknown", message: "Unexpected fixture route" } });

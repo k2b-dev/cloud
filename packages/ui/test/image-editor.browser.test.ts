@@ -343,6 +343,54 @@ describe("public ImageEditor interactions", () => {
     }
   });
 
+  test("an edit during the Auto animation lands after Auto, each as one undo step", async () => {
+    const { page, errors } = await open();
+    try {
+      await page.emulateMedia({ reducedMotion: "no-preference" });
+      const vivid = page.getByRole("radio", { name: "Vivid", exact: true });
+      // Choose a look one frame into the 450 ms animation.
+      await page.evaluate(
+        () =>
+          new Promise<void>((done) => {
+            const buttons = [...document.querySelectorAll<HTMLButtonElement>(".k2b-image-editor button")];
+            buttons.find((button) => button.textContent?.trim() === "Auto")!.click();
+            requestAnimationFrame(() => {
+              document.querySelector<HTMLButtonElement>(".k2b-image-editor__look[role=radio]:nth-child(2)")!.click();
+              done();
+            });
+          }),
+      );
+      await page.waitForTimeout(700);
+      await settled(page);
+      expect(await vivid.getAttribute("aria-checked")).toBe("true");
+      const brightness = page.getByRole("slider", { name: /^Brightness/ });
+      const contrast = page.getByRole("slider", { name: /^Contrast/ });
+      const auto = [await brightness.inputValue(), await contrast.inputValue()];
+      await page.getByRole("button", { name: "Undo", exact: true }).click();
+      expect(await vivid.getAttribute("aria-checked")).toBe("false");
+      expect([await brightness.inputValue(), await contrast.inputValue()]).toEqual(auto);
+      await page.getByRole("button", { name: "Undo", exact: true }).click();
+      expect(await dirty(page)).toBe("false");
+      expect(errors).toEqual([]);
+    } finally {
+      await page.close();
+    }
+  });
+
+  test("arrow keys move the look selection and focus together", async () => {
+    const { page, errors } = await open();
+    try {
+      await page.getByRole("radio", { name: "Natural", exact: true }).focus();
+      await page.keyboard.press("ArrowRight");
+      await settled(page);
+      expect(await page.getByRole("radio", { name: "Vivid", exact: true }).getAttribute("aria-checked")).toBe("true");
+      expect(await page.evaluate(() => document.activeElement?.textContent?.trim())).toBe("Vivid");
+      expect(errors).toEqual([]);
+    } finally {
+      await page.close();
+    }
+  });
+
   test("upload rejection preserves edits, retry stays in place and awaits success", async () => {
     const { page, errors } = await open("failure=1");
     try {
@@ -668,6 +716,39 @@ describe("public ImageEditor interactions", () => {
       await page.getByRole("button", { name: "Fit", exact: true }).click();
       await settled(page);
       expect(await zoom()).toBe(fitted);
+      expect(errors).toEqual([]);
+    } finally {
+      await page.close();
+    }
+  });
+
+  test.skipIf(browserName !== "chromium")("a second finger beside the crop cancels the crop drag and pinches", async () => {
+    const { page, errors } = await open();
+    try {
+      await selectTool(page, "Crop");
+      await settled(page);
+      const crop = (await page.locator(".k2b-image-editor__crop-move").boundingBox())!;
+      const canvas = (await canvasBox(page))!;
+      const image = await imageBox(page);
+      const a = { x: crop.x + crop.width / 2, y: crop.y + crop.height / 2, id: 1 };
+      // Empty canvas left of the photo.
+      const b = { x: (canvas.x + image.x) / 2, y: a.y, id: 2 };
+      expect(b.x).toBeLessThan(image.x);
+      const touch = await page.context().newCDPSession(page);
+      await touch.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [a] });
+      await touch.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: [{ ...a, x: a.x + 30, y: a.y + 20 }] });
+      await touch.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ ...a, x: a.x + 30, y: a.y + 20 }, b] });
+      await touch.send("Input.dispatchTouchEvent", {
+        type: "touchMove",
+        touchPoints: [
+          { ...a, x: a.x + 60, y: a.y + 20 },
+          { ...b, x: b.x - 30 },
+        ],
+      });
+      await touch.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+      await settled(page);
+      expect(await page.locator(".k2b-image-editor__crop[data-dragging]").count()).toBe(0);
+      expect(await dirty(page)).toBe("false");
       expect(errors).toEqual([]);
     } finally {
       await page.close();
