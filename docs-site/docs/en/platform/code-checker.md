@@ -5,7 +5,7 @@ section: Platform services
 order: 681
 description: Check Code types, review called operations and targets, and build an immutable runner version.
 tags: [code, checker, permissions, runner]
-updated: 2026-11-01
+updated: 2026-11-08
 ---
 
 # Code checker
@@ -129,9 +129,9 @@ permissions and schedules. The checker compares that graph with the modules
 loaded by the bundler and rejects a mismatch with `code_import_elided`. If this
 occurs, inspect the imports and retry the check. The bundle verifies the registered schedules against the manifest after loading.
 
-Files ending in `.tsx` can contain ordinary TypeScript in Phase 1. Rendering JSX
-comes with the Phase 2 page runtime; JSX expressions currently produce a type
-error. Workerd-compatible web types remain visible, but they grant no outbound
+Files ending in `.tsx` build [Code pages](/en/docs/platform/code-sdk#return-a-page)
+with the SDK's `jsx` factory and page blocks; a misplaced block part reports
+`code_page_child`. Workerd-compatible web types remain visible, but they grant no outbound
 network access. Use the SDK's authorized bridge operations for external effects.
 
 ## Use the Core runner host

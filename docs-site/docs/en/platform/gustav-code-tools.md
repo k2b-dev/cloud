@@ -34,6 +34,11 @@ background tasks cannot use these tools to edit lasting Code.
 | `code_submit` | Checks and saves an immutable version against the supplied `baseVersionId`. Pass the fixtures as `tests`: Core runs them and shows the result to reviewers. |
 | `code_diff` | Returns complete file differences and permissions for a submitted version. |
 
+Gustav loads the `code-authoring` Skill with these tools. It holds the
+workflow, the page building blocks, mail events, schedules, AI, what each
+app's Actions allow unattended, tests and common errors, plus complete
+templates. Every example in it passes the real checker in CI.
+
 ## The version card
 
 After `code_submit`, the chat shows one card for the newest version, below
