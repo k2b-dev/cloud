@@ -306,16 +306,18 @@ export function generateCodeSdk(manifests: readonly CapabilityManifest[], option
   cause?: { requestId: string }; data: Data;
 };`,
       `export type CodeEvents = { ${events.join("; ")} };`,
+      `/** \`public: true\` admits visitors who are not signed in. Pages render inside the Cloud layout; \`layout: "plain"\` renders them alone. */
+export type CodeRouteOptions = { public?: boolean; layout?: "plain" };`,
       `export type CodeApp = {
   schedule(when: string | { cron: string; timeZone?: string; name?: string } | { at: string; timeZone: string }, handler: CodeScheduleHandler, options?: { name: string; title?: string }): CodeApp;
   /** The checked event is scoped to this resource Code owner. */
   on<Event extends keyof CodeEvents>(event: Event, handler: (data: CodeEvents[Event]) => void | Promise<void>): CodeApp;
   on<Event extends keyof CodeEvents>(handle: CodeHandle<string>, event: Event, handler: (data: CodeEvents[Event]) => void | Promise<void>): CodeApp;
-  get(path: string, handler: (c: CodeContext) => Response | Promise<Response>, options?: { public: boolean }): CodeApp;
-  post(path: string, handler: (c: CodeContext) => Response | Promise<Response>, options?: { public: boolean }): CodeApp;
-  put(path: string, handler: (c: CodeContext) => Response | Promise<Response>, options?: { public: boolean }): CodeApp;
-  delete(path: string, handler: (c: CodeContext) => Response | Promise<Response>, options?: { public: boolean }): CodeApp;
-  all(path: string, handler: (c: CodeContext) => Response | Promise<Response>, options?: { public: boolean }): CodeApp;
+  get(path: string, handler: (c: CodeContext) => Response | Promise<Response>, options?: CodeRouteOptions): CodeApp;
+  post(path: string, handler: (c: CodeContext) => Response | Promise<Response>, options?: CodeRouteOptions): CodeApp;
+  put(path: string, handler: (c: CodeContext) => Response | Promise<Response>, options?: CodeRouteOptions): CodeApp;
+  delete(path: string, handler: (c: CodeContext) => Response | Promise<Response>, options?: CodeRouteOptions): CodeApp;
+  all(path: string, handler: (c: CodeContext) => Response | Promise<Response>, options?: CodeRouteOptions): CodeApp;
   /** Phase 2; check reports code_phase_unavailable. */
   nav(handler: (user: CodeUser) => CodeNavigationItem[] | Promise<CodeNavigationItem[]>): CodeApp;
   /** Phase 3; check reports code_phase_unavailable. */
