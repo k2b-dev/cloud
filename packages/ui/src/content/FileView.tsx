@@ -594,9 +594,9 @@ const pdfBlob = (content: FileViewContent): Blob => {
 };
 
 /**
- * A host inline URL goes to the browser's native viewer. Without one, the
- * loaded bytes become a local PDF Blob: a download URL is an attachment and
- * would leave a native viewer empty.
+ * Both ways end in `PdfPreview`, which draws with pdf.js and falls back to the browser's viewer. A host inline URL is
+ * fetched from there and stays the address the open action shows. Without one, the loaded bytes become a local PDF
+ * Blob: a download URL is an attachment and would leave a viewer empty.
  */
 function PdfRenderer(props: FileViewRendererProps) {
   const fileViewMessages = useFileViewMessages();
@@ -631,7 +631,26 @@ function PdfRenderer(props: FileViewRendererProps) {
         </Show>
       }
     >
-      {(href) => <object data={href()} type="application/pdf" class="k2b-content-file-view__pdf" aria-label={props.file.path} />}
+      {(href) => (
+        // Keyed by the address: a new revision of the file loads the new document.
+        <Show keyed when={href()}>
+          {(current) => (
+            <PdfPreview
+              autoLoad
+              title={props.file.path.slice(props.file.path.lastIndexOf("/") + 1)}
+              openHref={current}
+              request={() => fetch(current, { credentials: props.crossOrigin === "use-credentials" ? "include" : "same-origin" })}
+            >
+              {(parts) => (
+                <div class="k2b-content-file-view__pdf-viewer">
+                  {parts.actions}
+                  {parts.content}
+                </div>
+              )}
+            </PdfPreview>
+          )}
+        </Show>
+      )}
     </Show>
   );
 }

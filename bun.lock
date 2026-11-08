@@ -791,6 +791,7 @@
         "maplibre-gl": "6.14.0",
         "marked": "18.0.14",
         "pbf": "5.1.2",
+        "pdfjs-dist": "6.3.289",
         "qr-scanner": "1.4.2",
       },
       "devDependencies": {

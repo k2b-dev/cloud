@@ -133,7 +133,9 @@ images, PDF, audio, and video use built-in renderers. Supplying `save` enables
 editing for compatible text renderers.
 
 `previewHref` is an authenticated URL that answers inline. With it, images,
-PDF, audio, and video render natively from that URL and `load` is not called.
+audio, and video render natively from that URL and `load` is not called. A PDF
+loads from that URL into [`PdfPreview`](/en/ui/content/media), whose open
+action links to it.
 Video plays in [`VideoPlayer`](/en/ui/content/media#video): the browser fetches
 it by range from `previewHref`, so serve that URL with `206` answers to `Range`
 requests. A video the browser cannot decode shows the player's fallback with a
