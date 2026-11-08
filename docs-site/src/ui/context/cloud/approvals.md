@@ -41,6 +41,10 @@ import { loadPendingApprovals } from "@k2b/cloud/server";
 There are no look props. `ApprovalCard` takes data and answers only; the
 `approval-card-calls` rule rejects `class`, `style`, variants, and spreads on it.
 
+An app that confirms an Action itself before it runs it, such as a runner
+dialog, draws the review's details with `ApprovalDetails` from
+`@k2b/cloud/approvals/ui`: the same details as the card, without a second look.
+
 ## The card
 
 - **Ground.** A tinted ground in the AI colour (`--k2b-ai-surface`) in every

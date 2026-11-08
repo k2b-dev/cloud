@@ -27,6 +27,11 @@ import { BlockTree } from "@k2b/cloud/blocks/ui";
   `busy`, `answered`, or `superseded`, with the chosen ids and the time).
 - `draft`: the editable or locked values of an approval's draft.
 
+Charts, tables, and key figures load their code after the first frame. Until
+then a chart keeps the server's drawing, a table holds its frame with a hidden
+copy of every row, and each key figure waits in its own tile; a failed load
+shows **Not loaded** with **Try again**. Nothing moves when the code arrives.
+
 ## Depth
 
 A view has no hull. Depth comes from the kind of block, never from the app:
