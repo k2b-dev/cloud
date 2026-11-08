@@ -14,7 +14,7 @@ The `mail-rule`, `routine` and `routine-agent` cases in
 `packages/assistant/src/evals/automation-rebuild.ts` provide fictional version 1
 exports, requests and review rubrics. `automation-rebuild.test.ts` checks all
 three export JSON fixtures against the real `mailAutomationExportPageSchema` and
-`ChatTaskExportPageSchema` and checks routine grants with `ChatTaskGrantsSchema`.
+`ChatTaskExportPageSchema`. Exported routine grants are evidence only and never transfer as authority.
 These are the schemas used by the owning export APIs. Fictional definitions
 keep their exact v1 fields; no legacy service or live export is needed.
 `automation-rebuild-mocks-v1.json` supplies fictional Query/Action replies:
