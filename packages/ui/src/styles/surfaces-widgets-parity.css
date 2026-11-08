@@ -48,11 +48,12 @@
 .k2b-ui :is(.k2b-paper, .k2b-resource-card, .k2b-section[data-frame="line"]) .k2b-ui {
   --k2b-island-shadow: 0 0 #0000;
 }
-/* Inside an island its surface is the surface: fills that mix into the surface,
-   such as a selected table row, mix into the island's lighter dark surface. */
+/* Inside an island the surface beneath is the island's: a fill that mixes into
+   what lies below it, such as a selected table row, uses `--k2b-surface-beneath`
+   and so matches the lighter dark island. Fields and controls keep `--k2b-surface`. */
 .k2b-ui :is(.k2b-paper, .k2b-resource-card, .k2b-section[data-frame="line"]) > * {
   --k2b-island-shadow: 0 0 #0000;
-  --k2b-surface: var(--k2b-island-surface);
+  --k2b-surface-beneath: var(--k2b-island-surface);
 }
 
 .k2b-ui .k2b-paper[data-elevated="true"] {
