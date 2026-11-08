@@ -104,8 +104,10 @@ replays the first result; a run a week later posts again.
 import { app, chat, mail } from "@sdk";
 
 app.on("mail.message.received", async event => {
-  const { data: message } = await mail.app().message.read({ id: event.subject.id });
-  if (message.hydrationStatus !== "complete") throw new Error("Message content is not ready yet");
+  let { data: message } = await mail.app().message.read({ id: event.subject.id, waitForHydration: true });
+  while (message.hydrationStatus !== "complete") {
+    ({ data: message } = await mail.app().message.read({ id: event.subject.id, waitForHydration: true }));
+  }
   if (!/urgent/i.test(message.subject)) return;
   // The subject is untrusted: post it only as a short code span, never as Markdown.
   const subject = message.subject.replace(/[\r\n`]/g, " ").slice(0, 120);
@@ -133,7 +135,7 @@ match the schema:
     {
       "operation": "mail.message.read",
       "target": null,
-      "input": { "id": "Msg001" },
+      "input": { "id": "Msg001", "waitForHydration": true },
       "replies": [{ "ok": true, "data": {
         "id": "Msg001", "mailboxId": "Mbx001", "conversationId": "Cnv101", "subject": "Urgent: server down", "subjectTruncated": false,
         "messageId": "<fictional-1@example.com>", "internalDate": "2026-11-09T07:59:00Z", "sentAt": "2026-11-09T07:58:00Z",
@@ -147,7 +149,7 @@ match the schema:
     {
       "operation": "mail.message.read",
       "target": null,
-      "input": { "id": "Msg002" },
+      "input": { "id": "Msg002", "waitForHydration": true },
       "replies": [{ "ok": true, "data": {
         "id": "Msg002", "mailboxId": "Mbx001", "conversationId": "Cnv102", "subject": "Lunch on Friday?", "subjectTruncated": false,
         "messageId": "<fictional-2@example.com>", "internalDate": "2026-11-09T08:00:00Z", "sentAt": null,
