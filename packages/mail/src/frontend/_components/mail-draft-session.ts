@@ -102,6 +102,8 @@ export const createMailDraftSession = (options: {
   isDisposed: () => boolean;
   onRecovered: () => void;
   onMaterialized: (draft: MailDraft) => void;
+  /** A shared draft closed inside the page with text that neither the server nor this device holds. */
+  onClosedUnsaved?: () => void;
   locale: Accessor<string>;
 }) => {
   const t = () => mailComposerMessages.resolve([options.locale()]).t;
@@ -1148,19 +1150,35 @@ export const createMailDraftSession = (options: {
     }
     // A draft that closes inside the page (its conversation changes, the reader closes) may hold typing the
     // autosave has not sent yet. Save it while this session still holds the lease, then release the lease.
-    // The page stays alive, so the request finishes; the journal keeps the text if it fails.
-    const unsaved =
+    // The page stays alive, so the requests finish; the journal keeps the text if they fail.
+    const lockUnsaved = () =>
       !isShared() &&
       Boolean(draft() && lease()) &&
       !lifecycleTransition() &&
       !revisionConflict() &&
       !authenticationRequired() &&
       (pendingSave !== null || serializedContent() !== lastSavedContent);
+    // A save already in flight carries older text, and a disposed session starts no follow-up save by itself: save
+    // again until the last text is on the server. Nothing types after unmount, so two rounds settle it.
+    const saveLockBeforeRelease = async () => {
+      for (let round = 0; round < 3 && lockUnsaved(); round += 1) if (!(await persist())) return;
+    };
+    // A shared draft sends what the server has not admitted yet, and keeps it on the device, before its connection
+    // closes; if neither works, the person hears it instead of losing the text in silence.
+    const client = shared();
+    const saveSharedBeforeClose = async () => {
+      if (!client || !sharedState()?.dirty) return;
+      await Promise.race([client.save().catch(() => undefined), new Promise((resolve) => setTimeout(resolve, 5_000))]);
+      const kept = await client.flushLocal().catch(() => false);
+      if (!kept && sharedState()?.dirty) options.onClosedUnsaved?.();
+    };
     stopScheduledSave();
     stopHeartbeat();
-    sharedController.abort();
-    shared()?.dispose();
-    if (unsaved) void persist().finally(() => releaseLeaseOnExit());
+    void saveSharedBeforeClose().finally(() => {
+      sharedController.abort();
+      client?.dispose();
+    });
+    if (lockUnsaved()) void saveLockBeforeRelease().finally(() => releaseLeaseOnExit());
     else void releaseLeaseOnExit();
   });
 

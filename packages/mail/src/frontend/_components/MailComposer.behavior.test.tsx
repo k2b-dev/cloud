@@ -224,8 +224,21 @@ describe("MailComposer signature choice", () => {
       { preconnect: originalFetch.preconnect },
     );
   });
-  afterEach(() => {
+  afterEach(async () => {
+    // A disposed composer still saves the typing it held before it releases its lease. Let that finish against this
+    // test's server, so it never reaches the next test's.
+    const testFetch = globalThis.fetch;
+    let calls = 0;
+    globalThis.fetch = Object.assign((...args: Parameters<typeof fetch>) => (calls++, testFetch(...args)), {
+      preconnect: originalFetch.preconnect,
+    });
     dispose();
+    const end = performance.now() + 1_000;
+    for (let quiet = 0, seen = calls; quiet < 3 && performance.now() < end; ) {
+      await Bun.sleep(5);
+      quiet = calls === seen ? quiet + 1 : 0;
+      seen = calls;
+    }
     globalThis.fetch = originalFetch;
     for (const [key, descriptor] of [
       ["localStorage", originalStorage],

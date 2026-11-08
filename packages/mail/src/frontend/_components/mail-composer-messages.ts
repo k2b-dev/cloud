@@ -301,6 +301,8 @@ export const mailComposerMessages = i18n.define({
       inOwnWindow: "In its own window",
       ccBcc: "Cc, Bcc",
       historyBelow: "History, newest first",
+      closedUnsaved:
+        "The last changes of a shared draft you closed reached neither the server nor this device. Open the draft again and check its text.",
     },
     de: {
       reply: "Antworten",
@@ -604,6 +606,8 @@ export const mailComposerMessages = i18n.define({
       inOwnWindow: "In eigenem Fenster",
       ccBcc: "Cc, Bcc",
       historyBelow: "Verlauf, neueste zuerst",
+      closedUnsaved:
+        "Die letzten Änderungen eines gemeinsamen Entwurfs, den du geschlossen hast, erreichten weder den Server noch dieses Gerät. Öffne den Entwurf erneut und prüfe den Text.",
     },
   },
 });

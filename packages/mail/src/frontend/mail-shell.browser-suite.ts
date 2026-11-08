@@ -4733,6 +4733,12 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
           const saveIndex = api.calls.lastIndexOf("PUT /drafts/DrfNew");
           expect(saveIndex, "the save comes before the release").toBeLessThan(api.calls.indexOf("DELETE /drafts/DrfNew/lease"));
           expect(new URL(page.url()).searchParams.has("draft")).toBe(false);
+          // Back returns to the first conversation with its draft open again, as the person left it.
+          await page.goBack();
+          await page.waitForFunction(() => new URL(location.href).searchParams.get("conversation") === "Conv01");
+          expect(new URL(page.url()).searchParams.get("draft")).toBe("DrfNew");
+          await readyDraft(page);
+          expect(await page.locator("[data-mail-inline-draft] .cm-content").textContent()).toContain("Not lost");
         } finally {
           await close(page);
         }

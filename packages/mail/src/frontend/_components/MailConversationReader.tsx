@@ -207,7 +207,7 @@ export default function MailConversationReader(props: {
   draftFullscreen?: boolean;
   onToggleDraftFullscreen?: () => void;
   /** The draft open in this conversation, or null; the workspace keeps it in the URL. */
-  onDraftChange?: (draftId: string | null) => void;
+  onDraftChange?: (draftId: string | null, options?: { history?: boolean }) => void;
 }) {
   const locale = useLocale();
   let seedStorage: Storage | undefined;
@@ -882,7 +882,7 @@ export default function MailConversationReader(props: {
         if (open && open.conversationId !== conversationId) {
           inlineDraftControls = null;
           setInlineDraft(null);
-          props.onDraftChange?.(null);
+          props.onDraftChange?.(null, { history: false });
         }
       },
       { defer: true },
