@@ -327,7 +327,7 @@ export function generateCodeSdk(manifests: readonly CapabilityManifest[], option
   }
   if (!("default" in pageTypes) || typeof pageTypes.default !== "string") throw new Error("Expected page type source");
   const pageType = schemaTypes(z.toJSONSchema(CodePageTreeSchema), "CodePage");
-  const chartType = schemaTypes(z.toJSONSchema(CodeChartDescriptionSchema), "CodeChart");
+  const chartType = schemaTypes(z.toJSONSchema(CodeChartDescriptionSchema, { io: "input" }), "CodeChart");
   declarations.push(
     ...pageType.declarations,
     `export type CodePageTree = ${pageType.type};`,
