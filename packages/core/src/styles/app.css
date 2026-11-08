@@ -217,6 +217,17 @@
   padding: 0 0.75rem max(0.75rem, env(safe-area-inset-bottom));
   pointer-events: none;
 }
+/* On phones the window or the card may scroll, depending on the layout; there the label holds the window's bottom
+   edge, and the host keeps room for it after the last block. */
+@media (max-width: 47.999rem) {
+  .code-page-provenance {
+    position: fixed;
+    inset-inline: 0;
+  }
+  .code-page-host {
+    padding-bottom: calc(max(0.75rem, env(safe-area-inset-bottom)) + 2.75rem);
+  }
+}
 .k2b-ui .code-page-provenance .k2b-button.code-page-provenance__label {
   pointer-events: auto;
   gap: 0.375rem;

@@ -1,6 +1,7 @@
 import type { CodePageTree } from "@k2b/cloud/code";
 import { type AuthContext, getLocale, getTimeZone } from "@k2b/cloud/server";
 import { Layout, MinimalLayout } from "@k2b/cloud/ssr";
+import { AppWorkspace } from "@k2b/ui";
 import { ssr } from "../config";
 import CodePageHost from "./PageHost";
 
@@ -21,8 +22,14 @@ export const codePageHandlers = ssr<CodePageHostingContext>((context) => {
         <main>{view()}</main>
       </MinimalLayout>
     ) : (
-      <Layout c={context} title={page.tree.title}>
-        {view()}
+      <Layout c={context} title={page.tree.title} fullWidth>
+        {/* The app card every app has. No head row: the page shows its own title. No sidebar until Code declares
+            navigation. Main scrolls, so the feat/code label sticks to the card's bottom edge. */}
+        <AppWorkspace mobileSurface="flush" class="min-h-0 flex-1" resizable={false} head={false}>
+          <AppWorkspace.Content>
+            <AppWorkspace.Main>{view()}</AppWorkspace.Main>
+          </AppWorkspace.Content>
+        </AppWorkspace>
       </Layout>
     );
 });

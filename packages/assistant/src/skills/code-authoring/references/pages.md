@@ -15,8 +15,9 @@ routes always get `null`, including for signed-in visitors.
 
 ## Where a page appears
 
-A page appears inside the Cloud layout, like every Cloud page. Signed-in
-people see it in their workspace, with the icon bar and their apps. Visitors
+A page appears inside the Cloud layout, like every Cloud page, in the app card
+every app has from 768 px, without a sidebar. Signed-in people see it in their
+workspace, with the icon bar and their apps. Visitors
 who are not signed in, on a public route, see the signed-out header with the
 Cloud logo and **Sign in**; signing in returns to the page. Someone who opens a
 non-public page without a session goes to sign-in and comes back to it.

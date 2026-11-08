@@ -270,7 +270,8 @@ describe("Code page in a browser", () => {
         expect(top).toEqual({
           inTree: false,
           treeIsolation: "isolate",
-          position: "sticky",
+          // In the scroll area from 48rem; on phones at the window's edge, whichever element scrolls there.
+          position: width < 768 ? "fixed" : "sticky",
           zIndex: "10",
           onTop: true,
           inView: true,
@@ -283,6 +284,17 @@ describe("Code page in a browser", () => {
         await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight / 2));
         await settled(page);
         expect(await placement()).toMatchObject({ onTop: true, inView: true });
+        // At the end of the page the label sits below the last panel; it covers none.
+        await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
+        await settled(page);
+        const end = await page.evaluate(() => {
+          const label = document.querySelector("[data-code-provenance] button")!.getBoundingClientRect();
+          const panels = Array.from(
+            document.querySelectorAll("[data-code-page-tree] .k2b-dashboard-frame, [data-code-page-tree] [data-code-block]"),
+          );
+          return { label: label.top, last: Math.max(...panels.map((panel) => panel.getBoundingClientRect().bottom)) };
+        });
+        expect(end.label).toBeGreaterThanOrEqual(end.last);
         await named.click();
         const note = page.locator("#code-page-provenance-note");
         await note.waitFor({ state: "visible" });
