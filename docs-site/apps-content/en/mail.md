@@ -909,6 +909,10 @@ change it directly or through a credential that acts for them
 including attachment changes. Drafts that a person wrote are adopted from creation and
 stay open to service accounts as before.
 
+A changed copy saved in another mail client's Drafts folder also adopts the
+suggestion when Mail applies the edit. Reconciling an identical copy and
+retrying an export do not adopt it.
+
 Each conversation has at most one untouched suggestion. Another `draft.create`
 returns the existing suggestion without changing its content or adding the new
 request's inline attachments. This also applies while its send is pending, so

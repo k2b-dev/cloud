@@ -1198,6 +1198,7 @@ const applyImportedDraft = async (params: {
           subject = ${params.parsed.subject},
           body_markdown = ${body},
           body_format = ${params.parsed.format},
+          adopted_at = COALESCE(adopted_at, now()),
           last_editor_kind = 'system',
           last_editor_id = NULL,
           revision = revision + 1

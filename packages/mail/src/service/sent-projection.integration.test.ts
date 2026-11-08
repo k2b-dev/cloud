@@ -34,7 +34,7 @@ import {
   submitDueDraftProjectionWork,
 } from "./draft-provider-projection";
 import { appendDraftAttachmentUpload, createDraftAttachmentUpload, finalizeDraftAttachmentUpload } from "./draft-uploads";
-import { createDraft, discardDraft, materializeDraftSeed, prepareDraftSeed, updateDraft } from "./drafts";
+import { createDraft, discardDraft, getDraft, materializeDraftSeed, prepareDraftSeed, updateDraft } from "./drafts";
 import { setFolderRole } from "./folders";
 import { pauseDeletedMailboxExecution } from "./mailbox-lifecycle";
 import { deleteUnusedMailboxLogoVersions, loadInlineLogoContent } from "./mailbox-logos";
@@ -525,6 +525,8 @@ suite("mail sent message projection", () => {
   const userIds: string[] = [];
   const mailboxIds: string[] = [];
   let context: MailRequestContext;
+  let gustav: MailRequestContext;
+  let gustavId: string;
 
   beforeAll(async () => {
     const uid = `mail-sent-projection-${suffix}`;
@@ -555,6 +557,31 @@ suite("mail sent message projection", () => {
       accessSubject: { type: "user", userId: user.id },
       requestId: `mail-sent-projection-${suffix}`,
     };
+    const [account] = await sql<{ id: string }[]>`INSERT INTO auth.service_accounts (name, kind)
+      VALUES ('Draft import suggestion test', 'agent') RETURNING id`;
+    gustavId = account!.id;
+    gustav = {
+      actor: {
+        kind: "service_account",
+        serviceAccount: {
+          id: gustavId,
+          name: "Gustav",
+          kind: "agent",
+          status: "active",
+          delegatedUserId: null,
+          appId: null,
+          resourceType: null,
+          resourceId: null,
+          createdBy: null,
+          createdAt: "2026-11-08T12:00:00.000Z",
+        },
+        delegatedUser: null,
+        scopes: ["mail:write"],
+        credentialId: null,
+        credentialExpiresAt: null,
+      },
+      accessSubject: { type: "service_account", serviceAccountId: gustavId },
+    };
     await startDraftProjectionRuntime();
   });
 
@@ -565,6 +592,7 @@ suite("mail sent message projection", () => {
       await sql`DELETE FROM mail.mailboxes WHERE id = ${mailboxId}::uuid`;
       for (const { access_id } of access) await sql`DELETE FROM auth.access WHERE id = ${access_id}::uuid`;
     }
+    await sql`DELETE FROM auth.service_accounts WHERE id = ${gustavId}::uuid`;
     for (const userId of userIds) await sql`DELETE FROM auth.users WHERE id = ${userId}::uuid`;
   });
 
@@ -931,9 +959,9 @@ suite("mail sent message projection", () => {
     }
   });
 
-  const newDraft = async (mailbox: Connected, subject: string) => {
+  const newDraft = async (mailbox: Connected, subject: string, as = context) => {
     const draft = await createDraft({
-      context,
+      context: as,
       mailboxId: mailbox.mailboxId,
       input: {
         senderIdentityId: mailbox.identityId,
@@ -3486,6 +3514,121 @@ suite("mail sent message projection", () => {
     if (!updated.ok) throw new Error(updated.error.message);
     return updated.data;
   };
+
+  const suggestionForImport = async (mailbox: Connected) => {
+    const grant = await grantMailboxAccess({ context, mailboxId: mailbox.mailboxId, principal: gustav.accessSubject, permission: "write" });
+    if (!grant.ok) throw new Error(grant.error.message);
+    const draft = await newDraft(mailbox, "Suggestion for another client", gustav);
+    expect(draft.suggestion).toBeTrue();
+    await settleDraftImports(mailbox.mailboxId);
+    return draft;
+  };
+
+  for (const change of ["body", "attachment"] as const)
+    test(`a suggestion changed in another client's Drafts folder adopts on ${change} import`, async () => {
+      const provider = createProvider("imap");
+      try {
+        const mailbox = await connect(provider);
+        const draft = await suggestionForImport(mailbox);
+        const copies = provider.folder(provider.draftsPath).entries;
+        const original = [...copies.values()][0]!;
+        const source = draftElsewhere(original.messageId!, draft.subject, "Edited in another client.");
+        copies.clear();
+        await provider.saveDraftElsewhere(
+          change === "body"
+            ? source
+            : [
+                ...source.split("\r\n").slice(0, 5),
+                'Content-Type: multipart/mixed; boundary="external-edit"',
+                "",
+                "--external-edit",
+                "Content-Type: text/plain; charset=utf-8",
+                "",
+                draft.body,
+                "--external-edit",
+                "Content-Type: text/plain",
+                'Content-Disposition: attachment; filename="client.txt"',
+                "",
+                "Attached by another client",
+                "--external-edit--",
+                "",
+              ].join("\r\n"),
+        );
+        await mailbox.syncAll();
+        await settleDraftImports(mailbox.mailboxId);
+        const current = await getDraft(context, mailbox.mailboxId, draft.id);
+        if (!current.ok) throw new Error(current.error.message);
+        expect(current.data.suggestion).toBeFalse();
+        expect(current.data.revision).toBe(draft.revision + 1);
+        if (change === "body") expect(current.data.body).toBe("Edited in another client.");
+        else {
+          expect(current.data.body).toBe(draft.body);
+          expect(current.data.attachments.map((attachment) => attachment.filename)).toEqual(["client.txt"]);
+        }
+        const replacement = await updateDraft({
+          context: gustav,
+          mailboxId: mailbox.mailboxId,
+          draftId: draft.id,
+          expectedRevision: current.data.revision,
+          input: {
+            senderIdentityId: current.data.senderIdentityId,
+            signatureTemplateId: current.data.signatureTemplateId,
+            to: current.data.to,
+            cc: current.data.cc,
+            bcc: current.data.bcc,
+            subject: current.data.subject,
+            body: "Automatic replacement",
+            format: current.data.format,
+            priority: current.data.priority,
+            requestDeliveryReceipt: current.data.requestDeliveryReceipt,
+            requestReadReceipt: current.data.requestReadReceipt,
+          },
+        });
+        expect(replacement).toMatchObject({ ok: false, error: { code: "DRAFT_ADOPTED" } });
+        const retained = await getDraft(context, mailbox.mailboxId, draft.id);
+        expect(retained).toMatchObject({ ok: true, data: { body: current.data.body, revision: current.data.revision } });
+      } finally {
+        provider.restore();
+      }
+    });
+
+  test("suggestion reconciliation, identical external replacement and export retries do not adopt", async () => {
+    const provider = createProvider("imap");
+    try {
+      const mailbox = await connect(provider);
+      const draft = await suggestionForImport(mailbox);
+      const unchanged = async () => {
+        const current = await getDraft(context, mailbox.mailboxId, draft.id);
+        expect(current).toMatchObject({ ok: true, data: { suggestion: true, revision: draft.revision, body: draft.body } });
+        const [row] = await sql<{ adopted_at: Date | null }[]>`SELECT adopted_at FROM mail.drafts WHERE id = ${draft.id}::uuid`;
+        expect(row!.adopted_at).toBeNull();
+      };
+      // Force full reconciliation of Mail's own copy, then an identical replacement with no Cloud headers.
+      await sql`UPDATE mail.folders SET envelope_cursor = jsonb_set(envelope_cursor, '{lastFullReconcileAt}',
+        to_jsonb('2026-01-01T00:00:00Z'::text)) WHERE id = ${mailbox.folderId(provider.draftsPath)}::uuid`;
+      await mailbox.syncAll();
+      await settleDraftImports(mailbox.mailboxId);
+      await unchanged();
+      const copies = provider.folder(provider.draftsPath).entries;
+      const original = [...copies.values()][0]!;
+      copies.clear();
+      await provider.saveDraftElsewhere(draftElsewhere(original.messageId!, draft.subject, draft.body));
+      await mailbox.syncAll();
+      await settleDraftImports(mailbox.mailboxId);
+      await unchanged();
+      // Re-deliver an export whose APPEND already succeeded, as after a lost completion acknowledgement.
+      const [snapshot] = await sql<{ id: string }[]>`UPDATE mail.draft_provider_snapshots
+        SET state = 'appending', completed_at = NULL WHERE draft_id = ${draft.id}::uuid
+        AND direction = 'export' AND state = 'active' RETURNING id`;
+      expect(snapshot).toBeDefined();
+      await enqueueDraftProjectionSnapshot(snapshot!.id);
+      await settleDraftImports(mailbox.mailboxId);
+      await unchanged();
+      expect(copies.size).toBe(1);
+    } finally {
+      provider.restore();
+    }
+  });
 
   test("an edit another client saves from a copy older than the Cloud edit stays a recovery copy, however often it saves again", async () => {
     const provider = createProvider("imap");
