@@ -486,7 +486,7 @@ export function MapView(props: MapViewProps): JSX.Element {
         </Show>
       </div>
       <div class="k2b-map-view__controls">
-        <div class="k2b-map-view__zoom">
+        <div class="k2b-map-view__zoom k2b-overlay-surface">
           <IconButton label={messages().zoomIn} tooltip={false} disabled={state() !== "ready"} onClick={() => zoom("in")}>
             <i class="ti ti-plus" aria-hidden="true" />
           </IconButton>
@@ -495,15 +495,17 @@ export function MapView(props: MapViewProps): JSX.Element {
           </IconButton>
         </div>
         <Show when={props.onLocate}>
-          <IconButton
-            class="k2b-map-view__locate"
-            tooltip={false}
-            label={messages().locate}
-            aria-pressed={!!props.ownLocation}
-            onClick={() => props.onLocate?.()}
-          >
-            <i class="ti ti-current-location" aria-hidden="true" />
-          </IconButton>
+          <div class="k2b-map-view__locate-group k2b-overlay-surface">
+            <IconButton
+              class="k2b-map-view__locate"
+              tooltip={false}
+              label={messages().locate}
+              aria-pressed={!!props.ownLocation}
+              onClick={() => props.onLocate?.()}
+            >
+              <i class="ti ti-current-location" aria-hidden="true" />
+            </IconButton>
+          </div>
         </Show>
       </div>
       <div class="k2b-map-view__foot">
