@@ -144,9 +144,22 @@ describe("Chat notifications", () => {
         expect(await page.getByRole("radiogroup", { name: "Benachrichtigungen" }).count()).toBe(1);
         expect(await radio(page, "Alle Nachrichten").getAttribute("aria-checked")).toBe("true");
         expect(await section(page).locator(".k2b-choice-list__marker").textContent()).toBe("Standard");
-        expect(await section(page).getByRole("link", { name: "Einstellungen › Benachrichtigungen" }).getAttribute("href")).toBe(
-          "/me/notifications",
-        );
+        const settings = section(page).getByRole("link", { name: "Einstellungen › Benachrichtigungen" });
+        expect(await settings.getAttribute("href")).toBe("/me/notifications");
+        // The hint's icon sits on its text line: the icon's middle and the lead text's middle agree within a pixel.
+        const middles = await section(page)
+          .locator(".k2b-inline-guidance:has(.ti-settings)")
+          .evaluate((row) => {
+            const icon = row.querySelector(".k2b-inline-guidance__icon")!.getBoundingClientRect();
+            const walker = document.createTreeWalker(row.querySelector(".k2b-inline-guidance__content")!, NodeFilter.SHOW_TEXT);
+            let lead = walker.nextNode();
+            while (lead && !lead.textContent?.trim()) lead = walker.nextNode();
+            const range = document.createRange();
+            range.selectNodeContents(lead!);
+            const text = range.getClientRects()[0]!;
+            return { icon: icon.top + icon.height / 2, text: text.top + text.height / 2 };
+          });
+        expect(Math.abs(middles.icon - middles.text)).toBeLessThanOrEqual(1);
         await shoot(page, `info-default-light-${name}`);
 
         await radio(page, "Nur Erwähnungen").click();
