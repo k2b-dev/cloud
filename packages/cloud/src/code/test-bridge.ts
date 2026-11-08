@@ -97,11 +97,17 @@ export function createCodeTestBridge(manifest: CodeSdkManifest, mocks: CodeTestM
       if (!reply) return refuse("code_test_mock_exhausted");
       cursors.set(mock, cursor + 1);
       if (!reply.ok) return refuse(reply.error, false);
+      if ((spec.kind !== "query" || spec.stream?.direction === "read") && reply.page !== undefined)
+        return refuse("code_test_invalid_fixture");
       const output = spec.stream?.direction === "read" ? CodeFileRefSchema : z.fromJSONSchema(spec.dataSchema);
       const checked = output.safeParse(reply.data);
       if (!checked.success || (spec.stream?.direction === "read" && CodeFileRefSchema.parse(checked.data).size > spec.stream.maxBytes))
         return refuse("code_test_invalid_fixture");
-      const data = structuredClone(reply.data);
+      const data = structuredClone(
+        spec.kind === "query" && spec.stream?.direction !== "read"
+          ? { data: reply.data, ...(reply.page === undefined ? {} : { page: reply.page }) }
+          : reply.data,
+      );
       row.result = { ok: true, data };
       if (key) receipts.set(receiptKey, { digest, data: structuredClone(data) });
       return structuredClone(data);

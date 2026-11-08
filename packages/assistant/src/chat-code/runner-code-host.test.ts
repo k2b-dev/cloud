@@ -126,7 +126,7 @@ test("code_run uses the runner fixture, generated SDK, same result card and capt
     const result = await f.execute("code_run", {
       code: `import {demo, sheet} from "@sdk";
       export default async () => {
-        const rows = await demo.folder(["dynamic", "folder"].join("-")).list({});
+        const {data: rows} = await demo.folder(["dynamic", "folder"].join("-")).list({});
         await cloud.download("output.csv", await sheet.toCsv(rows, {bom:false}));
         console.info("calculated");
         return {answer:42, locale:cloud.locale};
@@ -231,7 +231,7 @@ test.each([true, false])(
     f.approve.mockResolvedValue({ approved });
     try {
       const result = await f.execute("code_run", {
-        code: 'import {demo} from "@sdk"; export default async()=>await demo.folder("folder").list({});',
+        code: 'import {demo} from "@sdk"; export default async()=>(await demo.folder("folder").list({})).data;',
       });
       expect(f.approve).toHaveBeenCalledTimes(1);
       expect(resolve.mock.calls[0]?.slice(0, 2)).toEqual([id, { approved }]);
@@ -385,7 +385,9 @@ test("signed chat code_run route resolves chat authority and executes through th
           name: "code_run",
           turnId: "22222222-2222-4222-8222-222222222222",
           callId: "signed-run",
-          args: { code: 'import {demo} from "@sdk"; export default async()=>({rows:await demo.folder("dynamic-folder").list({})});' },
+          args: {
+            code: 'import {demo} from "@sdk"; export default async()=>({rows:(await demo.folder("dynamic-folder").list({})).data});',
+          },
         },
       }),
     });

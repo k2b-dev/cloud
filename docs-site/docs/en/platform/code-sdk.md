@@ -5,7 +5,7 @@ section: Platform services
 order: 680
 description: Build checked TSX pages, serve routes and call application operations through a generated typed Code SDK.
 tags: [code, capabilities, sdk, handles]
-updated: 2026-11-07
+updated: 2026-11-08
 ---
 
 # Code SDK
@@ -40,7 +40,7 @@ import { app, mail, owner, imports } from "@sdk";
 const importedTagId = "Tag123";
 
 app.on("mail.message.received", async event => {
-  const message = await mail.app().message.read({ id: event.subject.id });
+  const { data: message } = await mail.app().message.read({ id: event.subject.id });
   if (message.hydrationStatus !== "complete" || message.attachmentsTruncated) {
     throw new Error("Message attachments are not ready or complete");
   }
@@ -54,7 +54,7 @@ app.on("mail.message.received", async event => {
     file,
     idempotencyKey: `invoice:${event.data.receiptId}:${attachment.id}`,
   });
-  const conversation = await mail.app().conversation.read({ id: message.conversationId });
+  const { data: conversation } = await mail.app().conversation.read({ id: message.conversationId });
   await owner.conversation.tag.update({
     conversationId: message.conversationId,
     expectedRevision: conversation.collaboration.revision,
@@ -293,6 +293,56 @@ dynamic templates. Literal IDs remain visible in checker review evidence;
 dynamic ones retain only their Type there. The target checks the account's
 current rights at execution. A handle or setting that names a target grants
 no access.
+
+## Read query results and follow cursors
+
+Queries returning domain data resolve to `CodeQueryResult<T>`, with typed
+`data` and optional `page` from the capability result envelope:
+
+```ts
+type CodeQueryResult<T> = {
+  data: T;
+  page?: { hasMore: true; nextCursor: string } | { hasMore: false };
+};
+```
+
+Use `const { data, page } = await handle.list(input)`. This applies to all
+Queries returning domain data, including reads and AI calls. Streaming reads
+return their existing `FileRef`; Actions return their domain data directly.
+Existing Code that reads Query fields directly must read them from `data` and
+pull the current SDK before checking and publishing again.
+
+For a paginated Query, pass `page.nextCursor` unchanged as the next input's
+`cursor`. Stop when `page` is absent or `page.hasMore` is false. Choose an
+explicit page or item budget for the task; each page consumes one ordinary
+capability call from the existing per-run limit. Reaching that limit fails
+with `code_call_limit`; pagination never resets it.
+
+For example, this helper reads at most three pages from a fictional workshop
+provider's `stock.list` Query:
+
+<!-- code-query-pagination -->
+```ts
+import { work_shop } from "@sdk";
+
+export default async function readStock() {
+  const workshop = work_shop.workshop("workshop-finance");
+  let cursor: string | undefined;
+  const rows = [];
+  for (let pageNumber = 0; pageNumber < 3; pageNumber++) {
+    const { data, page } = await workshop.stock.list({ cursor });
+    rows.push(...data.rows);
+    if (!page?.hasMore) return { rows, complete: true };
+    cursor = page.nextCursor;
+  }
+  return { rows, complete: false, cursor };
+}
+```
+
+`complete: false` lets the caller distinguish a deliberately capped read from
+an exhausted list. The same envelope applies to built-in Queries such as
+`mail.conversation.list` and `spaces.task.list`; their generated inputs and
+domain data retain each provider's own schema.
 
 ## Supply additional targets and retry keys
 
@@ -673,8 +723,10 @@ with `mode: "code_run"` and executes it in the Code runner's isolated workerd
 runtime. It binds normalized targets, refs and idempotency metadata to the
 current person's Assistant turn, preserving capability access checks and
 approvals. It does not create a lasting Code, version or version mandate.
-SDK methods return domain data; the older `cloud.capabilities.run`
-keeps returning its capability envelope. This mode has no `app` or `owner`,
+SDK Queries return `{data, page?}`; read fields from `data` and follow the
+returned cursor when `page.hasMore`. Streaming reads return `FileRef`, and
+Actions return domain data directly. The older `cloud.capabilities.run` keeps
+returning its capability envelope. This mode has no `app` or `owner`,
 and accepts dynamic IDs. The host also exports its existing `cloud.sheet`
 helpers as `sheet` from `@sdk`. Other package imports remain unavailable.
 `http` and `secrets` use the person's existing chat HTTP approvals and secret
@@ -720,7 +772,7 @@ import { core } from "@sdk";
 
 export default async function triage() {
   // Fictional mail; in real Code, read the mail through its authorized SDK first.
-  const result = await core.app().ai.decide({
+  const { data: result } = await core.app().ai.decide({
     task: "mail.triage",
     state: { subject: "Urgent: claim your prize", text: "Act now to receive a prize." },
     questions: {
@@ -762,14 +814,14 @@ import { core } from "@sdk";
 export default async function summarize() {
   // Fictional source; read real mail through its authorized SDK first.
   const input = { body: "Please deliver three chairs by Friday." };
-  const summary = await core.app().ai.generate({
+  const { data: summary } = await core.app().ai.generate({
     task: "mail.summary",
     prompt: "Summarize the message in one sentence.",
     input,
     model: { class: "fast" },
     output: { type: "text", maxChars: 500 },
   });
-  const extracted = await core.app().ai.generate({
+  const { data: extracted } = await core.app().ai.generate({
     task: "mail.extract",
     prompt: "Extract the requested item and quantity from the message.",
     input,

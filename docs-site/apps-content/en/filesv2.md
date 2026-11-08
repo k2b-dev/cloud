@@ -52,7 +52,14 @@ storage areas that apply to your account provider are listed or reported:
 a local account never sees FreeIPA storage and a FreeIPA account never sees
 local Cloud storage. With more than one storage location, the sidebar and the phone
 navigation menu start with **All storage**, followed by the same storage choices.
-Switching storage, opening folders, and changing pages update the workspace
+At the end of a folder or search result, **Load more** adds the next entries below
+those already shown. Keyboard focus moves to the first new entry. While loading,
+the action keeps its place; a failure keeps the entries and offers **Try again**.
+The loaded window stays in the address, so reload and Back restore the same entries.
+Loading more replaces the current history entry; Back leaves the folder in one step.
+Nested folders in tree view keep their existing explicit continuation actions.
+
+Switching storage, opening folders, and loading more entries update the workspace
 without reloading the whole page. Navigation and pagination stay in the URL,
 so reloads and browser Back and Forward preserve your location.
 Missing or inaccessible storage appears with its status rather than as an

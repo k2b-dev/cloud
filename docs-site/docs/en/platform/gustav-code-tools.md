@@ -91,7 +91,7 @@ import { grids, sheet } from "@sdk";
 
 export default async () => {
   const tableId = "t_fictional";
-  const rows = await grids.table(tableId).record.list({});
+  const { data: rows } = await grids.table(tableId).record.list({});
   return sheet.toCsv(rows);
 };
 ```

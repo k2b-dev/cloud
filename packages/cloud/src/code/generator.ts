@@ -261,7 +261,8 @@ export function generateCodeSdk(manifests: readonly CapabilityManifest[], option
       `type Input${index} = ${input.type};`,
       `type Data${index} = ${output.type};`,
     );
-    methods.set(op, `(input: Input${index}) => Promise<${op.stream?.direction === "read" ? "FileRef" : `Data${index}`}>`);
+    const result = op.stream?.direction === "read" ? "FileRef" : op.kind === "query" ? `CodeQueryResult<Data${index}>` : `Data${index}`;
+    methods.set(op, `(input: Input${index}) => Promise<${result}>`);
   }
   const handleNames = new Map<string, string>();
   for (const [index, handle] of manifest.handles.entries()) {

@@ -21,8 +21,10 @@ Read [Runtime and files](references/runtime.md) for limits and
 [cloud contract](references/cloud.md) for helpers. Use application capabilities and chat/Project files; app databases and app storage are unavailable.
 
 One-off scripts may import the generated `@sdk` and default-export a function.
-SDK methods return domain data directly. `cloud.capabilities.run(name,input)`
-returns capability envelopes. Discover the capability before calling it;
+SDK Queries return `{data, page?}`: read fields from `data` and follow the
+returned cursor when `page.hasMore`. Streaming reads return `FileRef`; Actions
+return domain data directly. `cloud.capabilities.run(name,input)` returns
+capability envelopes. Discover the capability before calling it;
 normal authorization and action approvals still apply. There is no native
 network access. For external HTTPS and personal secrets read
 [HTTP](references/http.md).

@@ -19,7 +19,7 @@ export type CodeSdkCallMetadata = { idempotencyKey?: string };
 /** Payload sent through cloud.call(operation, input); operation equals call.capability. */
 export type CodeSdkInvocation = { call: NormalizedCapabilityCall; metadata: CodeSdkCallMetadata };
 
-/** Runner-compatible object capability. Resolves domain data; the host throws on bridge refusals. No tokens enter the SDK. */
+/** Runner-compatible object capability. Resolves query data/page envelopes, streaming FileRefs or Action domain data; the host throws on bridge refusals. No tokens enter the SDK. */
 export type CodeSdkBridge = {
   call(operation: string, input: CodeSdkInvocation): Promise<unknown>;
   call(operation: "http.fetch", input: CodeHttpRequest): Promise<unknown>;

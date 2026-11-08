@@ -251,7 +251,7 @@ const publicPaths: Record<string, string[]> = {
       "speedtest",
       "webhooks",
     ].map((path) => `/tools/${path}`),
-    ...["ping", "download", "upload", "cli", "cli.py"].map((path) => `/tools/api/speedtest/${path}`),
+    ...["config", "ping", "download", "upload", "cli", "cli.py"].map((path) => `/tools/api/speedtest/${path}`),
     "/tools/api/webhooks/receive/token",
     "/tools/api/webhooks/receive/token/arbitrary/nested/path",
   ],

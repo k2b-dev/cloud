@@ -103,7 +103,9 @@ export async function compileScript(input: unknown, sdk?: GeneratedCodeSdk, runn
                            const envelope = await globalThis.cloud.capabilities.run(name, call.input, {
                              ...(call.target ? {target: call.target} : {}), refs: call.refs, ...metadata
                            });
-                           return envelope.data;
+                           return ${JSON.stringify(sdk.manifest.operations.filter((op) => op.kind === "query" && op.stream?.direction !== "read").map((op) => op.capability))}.includes(name)
+                             ? {data: envelope.data, ...(envelope.page === undefined ? {} : {page: envelope.page})}
+                             : envelope.data;
                          }});
                          const {default: entry} = await import(${JSON.stringify("./" + entry)});
                          if (typeof entry !== "function") throw new Error("The entry module must default-export a function: export default (input, { files, signal, progress }) => result. An exported object is not executable.");

@@ -16,13 +16,15 @@ One-off `code_run` modules can use the same generated SDK as lasting Code:
 ```ts
 import { grids, sheet } from "@sdk";
 export default async () => {
-  const rows = await grids.table("t_fictional").record.list({});
+  const { data: rows } = await grids.table("t_fictional").record.list({});
   return sheet.toCsv(rows);
 };
 ```
 
 Use the discovered operation's actual result shape and pagination. This example
-assumes an array of row objects. SDK methods return domain data directly;
+assumes `data` is an array of row objects. SDK Queries return `{data, page?}`;
+follow the returned cursor when `page.hasMore` before treating a list as complete.
+Streaming reads return `FileRef`; Actions return domain data directly.
 `sheet` is the existing runtime helper. Dynamic IDs work in one-off runs.
 There is no `app`, version or owner, and writes still ask as usual. Do the
 read and transformation in one run; no saved resource or preflight run is needed.
