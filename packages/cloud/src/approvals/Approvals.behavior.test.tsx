@@ -18,19 +18,52 @@ const item = (id: string, overrides: Partial<PendingApproval> = {}): PendingAppr
   assurance: "confirm",
   sentence: `Mail: Send “Offer ${id.slice(-1)}”`,
   review: {
-    message: "Sends the draft after the undo window.",
-    details: [
-      { label: "To", value: "customer@example.com" },
-      { label: "Body", value: "Hello,\nthe offer is attached.", display: "block" },
-    ],
+    locale: "en",
+    sentence: {
+      action: `Send “Offer ${id.slice(-1)}”`,
+      running: "Sending",
+      done: "Sent",
+      confirm: `Send “Offer ${id.slice(-1)}”`,
+      decline: "Don't run",
+      rejected: `Rejected: Send “Offer ${id.slice(-1)}”`,
+    },
+    slots: {},
+    ask: "app_asks",
+    view: {
+      version: 1,
+      blocks: [
+        {
+          kind: "Detail",
+          title: "Details",
+          items: [
+            { label: "To", value: "customer@example.com" },
+            { label: "Body", value: "Hello,\nthe offer is attached." },
+          ],
+        },
+      ],
+    },
     links: [{ rel: "edit", href: "/app/mail/box/compose/draft" }],
   },
   requester: { kind: "chat", appId: "assistant", title: "Offer Q4", href: "/app/assistant?conversation=chat1" },
   remember: { chat: false, always: false, website: false },
-  createdAt: new Date(Date.now() - 6 * 60_000).toISOString(),
-  expiresAt: new Date(Date.now() + 23 * 60 * 60_000).toISOString(),
+  createdAt: "2026-10-11T08:00:00.000Z",
+  expiresAt: "2026-10-12T08:00:00.000Z",
   ...overrides,
 });
+
+const versionReview: PendingApproval["review"] = {
+  locale: "en",
+  sentence: {
+    action: "Approve the reviewed version",
+    running: "Recording approval",
+    done: "Approval recorded",
+    confirm: "Approve Report?",
+    decline: "Don't run",
+  },
+  slots: {},
+  ask: "changes_access",
+  view: { version: 1, blocks: [{ kind: "Detail", title: "Version", items: [{ label: "Code", value: "Report" }] }] },
+};
 
 const page = (items: PendingApproval[], overrides: Partial<ApprovalPage> = {}): ApprovalPage => ({
   items,
@@ -82,8 +115,8 @@ describe("Approvals", () => {
     try {
       const rows = () => Array.from(view.dom.root.querySelectorAll<HTMLElement>("article.cloud-approval"));
       expect(rows()).toHaveLength(2);
-      // An old review reads as its literal message, with every detail as a row and the app's sentence on the answer.
-      expect(rows()[0]?.querySelector(".k2b-chat-decision__sentence")?.textContent).toBe("Sends the draft after the undo window.");
+      // The app supplies its sentence and view; the platform owns the question card.
+      expect(rows()[0]?.querySelector(".k2b-chat-decision__sentence")?.textContent).toBe("Send “Offer 1”?");
       expect(rows()[0]?.textContent).toContain("I'm asking because Mail always asks for this.");
       expect(rows()[0]?.textContent).toContain("customer@example.com");
       expect(rows()[0]?.textContent).not.toContain("Mail: Send");
@@ -96,7 +129,7 @@ describe("Approvals", () => {
       await waitFor(() => rows()[0]?.dataset.decided === "approved", "the outcome");
       expect(view.requests.at(-1)).toEqual({ url: "/api/approvals/a1/decision", body: { approved: true } });
       expect(rows()).toHaveLength(2);
-      expect(rows()[0]?.querySelector(".k2b-chat-decision__card")).toBeNull();
+      expect(rows()[0]?.querySelector(".k2b-chat-decision__details")).toBeNull();
       expect(rows()[0]?.querySelector('.k2b-chat-outcome__text[data-current="true"]')?.textContent).toContain("Approved.");
       expect(rows()[0]?.querySelector(".k2b-chat-outcome")?.getAttribute("data-tone")).toBe("done");
       expect(view.button("Send “Offer 2”", rows()[1]!)).toBeDefined();
@@ -129,7 +162,7 @@ describe("Approvals", () => {
     const notice = "You are approving your own Code. There is no second Cloud admin to review it.";
     const request = item("sole-admin", {
       sentence: "Approve Report?",
-      review: { message: "Approve the reviewed version?" },
+      review: versionReview,
       canApprove: true,
       soleAdminNotice: notice,
       requester: { kind: "code_version", appId: "demo", title: "Report", href: "/code/report/" },
@@ -151,7 +184,7 @@ describe("Approvals", () => {
   test("a second admin appearing replaces the stale sole-admin choice with the required explanation", async () => {
     const request = item("second-admin", {
       sentence: "Approve Report?",
-      review: { message: "Approve the reviewed version?" },
+      review: versionReview,
       canApprove: true,
       soleAdminNotice: "You are approving your own Code. There is no second Cloud admin to review it.",
       requester: { kind: "code_version", appId: "demo", title: "Report", href: "/code/report/" },
@@ -174,7 +207,7 @@ describe("Approvals", () => {
   test("a Code-version request has its own source and receipt without a chat continuation", async () => {
     const request = item("code1", {
       sentence: "Approve Report?",
-      review: { message: "Approve the reviewed version?" },
+      review: versionReview,
       requester: { kind: "code_version", appId: "demo", title: "Report", href: "/code/report/" },
     });
     const view = await mount({ initial: page([request]) }, () => Response.json({ status: "approved" }));
@@ -193,78 +226,56 @@ describe("Approvals", () => {
     }
   });
 
-  for (const locale of ["de", "en"] as const) {
-    for (const linked of [true, false]) {
-      test(`${locale}: the public approvals list preserves the chat's message preview and reading interaction (${linked ? "revision link" : "in place"})`, async () => {
-        const { actionFixtures, FIXTURE_AT } = await import("../ai/chat/action-question.fixtures");
-        const block = actionFixtures(locale).sched!.block;
-        const source = block.review;
-        if (!source || !("sentence" in source) || source.preview?.kind !== "message") throw new Error("Expected a message review");
-        // The unlinked case contains the complete text. A truncated review must keep its revision link.
-        const review = linked ? source : { ...source, preview: { ...source.preview, truncated: false }, links: [] };
-        const view = await mount(
-          { initial: page([item("parity", { review, createdAt: FIXTURE_AT, expiresAt: "2026-10-18T12:02:00.000Z" })]) },
-          () => Response.json({ status: "rejected" }),
-        );
-        const { toolActionCard } = await import("../ai/chat/action-card");
-        const { ApprovalCard } = await import("./ApprovalCard");
-        const { legacyOutcomeWords } = await import("../ai/chat/tool-action-words");
-        const chatRoot = document.createElement("section");
-        view.dom.root.append(chatRoot);
-        const card = toolActionCard({ ...block, review }, { locale, timeZone: "UTC", outcome: legacyOutcomeWords(block, locale, "UTC") });
-        const disposeChat = render(
-          () => (
-            <ApprovalCard
-              card={card}
-              state="open"
-              timeZone="UTC"
-              onConfirm={() => {}}
-              onDecline={() => {}}
-              outcome={{ lines: {}, current: "" }}
-            />
-          ),
-          chatRoot,
-        );
-        try {
-          const approval = view.dom.root.querySelector("article.cloud-approval")!;
-          const preview = (root: ParentNode) => root.querySelector<HTMLElement>(".k2b-chat-preview")!;
-          const excerpt = (root: ParentNode) => root.querySelector<HTMLElement>(".k2b-chat-preview__excerpt")!;
-          expect(preview(approval).textContent).toBe(preview(chatRoot).textContent);
-          expect(excerpt(approval).textContent).toBe(source.preview.body);
-          for (const value of ["Lea Berg", "Mira Hoffmann", "Tom Weber", "Wartungsplan-KW43.pdf", source.preview.warnings![0]!]) {
-            expect(preview(approval).textContent).toContain(value);
-          }
-          expect(excerpt(approval).dataset.expanded).toBeUndefined();
-          if (linked) {
-            const href = source.links!.find((link) => link.rel === "open")!.href;
-            for (const root of [approval, chatRoot]) {
-              expect(root.querySelector("a.k2b-chat-preview__more")?.getAttribute("href")).toBe(href);
-              expect(root.querySelector("button.k2b-chat-preview__more")).toBeNull();
-            }
-          } else {
-            await waitFor(() => !approval.querySelector("[inert]"), "the approval's reading controls to arm");
-            for (const root of [approval, chatRoot]) {
-              const button = root.querySelector<HTMLButtonElement>("button.k2b-chat-preview__more")!;
-              expect(button.getAttribute("aria-controls")).toBe(excerpt(root).id);
-              button.click();
-              await waitFor(() => excerpt(root).dataset.expanded === "true", "expanded text");
-              await Promise.resolve();
-              expect(document.activeElement).toBe(excerpt(root));
-              expect(root.querySelector("button.k2b-chat-preview__more")).toBeNull();
-            }
-          }
-          expect(view.requests.filter((request) => request.url.endsWith("/decision"))).toEqual([]);
-        } finally {
-          disposeChat();
-          view.cleanup();
+  for (const locale of ["de", "en"] as const)
+    test(`${locale}: the approvals page preserves the chat's view`, async () => {
+      const { actionFixtures, FIXTURE_AT } = await import("../ai/chat/action-question.fixtures");
+      const block = actionFixtures(locale).sched!.block;
+      const source = block.review;
+      if (!source || !("sentence" in source)) throw new Error("Expected view review");
+      const review = { ...source, draft: { editable: false, fields: [] } };
+      const view = await mount({ initial: page([item("parity", { review, createdAt: FIXTURE_AT })]) }, () =>
+        Response.json({ status: "rejected" }),
+      );
+      const { toolActionCard } = await import("../ai/chat/action-card");
+      const { ApprovalCard } = await import("./ApprovalCard");
+      const { legacyOutcomeWords } = await import("../ai/chat/tool-action-words");
+      const chatRoot = document.createElement("section");
+      view.dom.root.append(chatRoot);
+      const card = toolActionCard({ ...block, review }, { locale, timeZone: "UTC", outcome: legacyOutcomeWords(block, locale, "UTC") });
+      const disposeChat = render(
+        () => (
+          <ApprovalCard
+            card={card}
+            state="open"
+            timeZone="UTC"
+            onConfirm={() => {}}
+            onDecline={() => {}}
+            outcome={{ lines: {}, current: "" }}
+          />
+        ),
+        chatRoot,
+      );
+      try {
+        const approval = view.dom.root.querySelector("article.cloud-approval")!;
+        const details = (host: ParentNode) => host.querySelector(".cloud-action-details")!;
+        expect(details(approval).textContent).toBe(details(chatRoot).textContent);
+        for (const host of [approval, chatRoot]) {
+          for (const value of ["Lea Berg", "Mira Hoffmann", "Tom Weber", "Wartungsplan-KW43.pdf"])
+            expect(details(host).textContent).toContain(value);
+          expect(host.querySelector<HTMLInputElement>("input")?.readOnly).toBe(true);
+          expect(host.querySelector('a[href="/app/mail/drafts/dr-42?revision=7"]')).not.toBeNull();
         }
-      });
-    }
-  }
+        expect(view.requests.filter((request) => request.url.endsWith("/decision"))).toEqual([]);
+      } finally {
+        disposeChat();
+        view.cleanup();
+      }
+    });
 
   test("a review in another language keeps that language in its outcome line too", async () => {
     const { actionFixtures } = await import("../ai/chat/action-question.fixtures");
-    const review = actionFixtures("de").mail!.block.review!;
+    const source = actionFixtures("de").mail!.block.review!;
+    const review = { ...source, draft: { editable: false, fields: [] } };
     if (!("sentence" in review)) throw new Error("Expected a new review");
     const view = await mount({ initial: page([item("a1", { review })]) }, () => Response.json({ status: "rejected" }));
     try {

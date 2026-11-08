@@ -418,7 +418,11 @@ export function ToolActionView(props: {
     };
   };
   // A call that never asked is a line of the history, not an approval.
-  const asked = () => Boolean(props.block.approval) || props.block.status === "awaiting_approval";
+  const asked = () =>
+    Boolean(props.block.approval) ||
+    props.block.status === "awaiting_approval" ||
+    props.block.approved !== undefined ||
+    props.block.status === "rejected";
   return (
     <Show when={asked()} fallback={<ActionReceipt card={card()} lines={lines()} current={currentKey()} anchorId={props.block.id} />}>
       <ApprovalCard

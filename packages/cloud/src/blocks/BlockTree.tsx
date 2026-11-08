@@ -396,7 +396,14 @@ function DraftBlock(props: { block: Leaf<"Draft">; draft?: BlockDraftState }) {
             <span class="cloud-blocks__context-label">{row.label}</span>
             <Show when={Array.isArray(row.value) ? row.value : undefined} fallback={<span>{text(row.value)}</span>}>
               {(people) => (
-                <For each={people()}>{(person) => <ReferenceChip kind="person" name={person.name ?? person.address ?? ""} />}</For>
+                <For each={people()}>
+                  {(person) => (
+                    <span>
+                      <ReferenceChip kind="person" name={person.name ?? person.address ?? ""} />
+                      <Show when={person.name && person.address}>{(address) => <span> {address()}</span>}</Show>
+                    </span>
+                  )}
+                </For>
               )}
             </Show>
           </div>
@@ -414,7 +421,7 @@ function DraftBlock(props: { block: Leaf<"Draft">; draft?: BlockDraftState }) {
                   : value(field.name, field.value)
               }
               multiline={field.type === "textarea"}
-              readOnly={!editable() || field.type === "select"}
+              readOnly={!editable() || field.type === "select" ? true : undefined}
               required={field.required}
               onValueChange={(next) => props.draft?.onChange(field.name, next)}
             />

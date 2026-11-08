@@ -1,8 +1,10 @@
+import { approvalCard } from "@k2b/cloud/ai/question-text";
 import type { CapabilityClientError, CapabilityReviewClientResult } from "@k2b/cloud/capabilities";
 import { capabilityReviewView } from "@k2b/cloud/capabilities";
 import type { CapabilityActionManifest, CapabilityActionReviewData, CapabilitySemanticLink } from "@k2b/cloud/contracts";
 import { useLocale } from "@k2b/ui";
 import { For, type JSX, Show } from "solid-js";
+import { ActionDetails } from "../../cloud/src/ai/chat/action-question";
 import { capabilityUiMessages } from "./frontend/messages";
 import { capabilityRuntimeMessages } from "./messages";
 
@@ -79,32 +81,48 @@ const linkLabel = (link: CapabilitySemanticLink, locale: string): string => {
 
 export function ActionReviewContent(props: { review: CapabilityActionReviewData }): JSX.Element {
   const locale = useLocale();
-  const review = () => capabilityReviewView(props.review, { timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone });
+  const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  const review = () => capabilityReviewView(props.review, { timeZone });
+  const card = () => ({
+    ...approvalCard({ review: props.review, sentence: "", action: "", appName: "" }, locale(), timeZone),
+    // This runner has no application name; keep its existing generic link labels.
+    readMore: undefined,
+    links: (props.review.links ?? []).map((link) => ({ href: link.href, label: linkLabel(link, locale()) })),
+  });
   return (
     <div class="flex flex-col gap-4">
       <p class="m-0 whitespace-pre-wrap">{review().message}</p>
-      <Show when={review().details?.length}>
-        <dl class="m-0 grid gap-2">
-          <For each={review().details}>
-            {(detail) => (
-              <div>
-                <dt class="text-xs font-medium text-dimmed">{detail.label}</dt>
-                <dd class="m-0 whitespace-pre-wrap text-sm text-primary">{detail.value}</dd>
+      <Show
+        when={"sentence" in props.review}
+        fallback={
+          <>
+            <Show when={review().details?.length}>
+              <dl class="m-0 grid gap-2">
+                <For each={review().details}>
+                  {(detail) => (
+                    <div>
+                      <dt class="text-xs font-medium text-dimmed">{detail.label}</dt>
+                      <dd class="m-0 whitespace-pre-wrap text-sm text-primary">{detail.value}</dd>
+                    </div>
+                  )}
+                </For>
+              </dl>
+            </Show>
+            <Show when={review().links?.length}>
+              <div class="flex flex-wrap gap-2">
+                <For each={review().links}>
+                  {(link) => (
+                    <a class="text-sm font-medium text-accent hover:underline" href={link.href}>
+                      {linkLabel(link, locale())}
+                    </a>
+                  )}
+                </For>
               </div>
-            )}
-          </For>
-        </dl>
-      </Show>
-      <Show when={review().links?.length}>
-        <div class="flex flex-wrap gap-2">
-          <For each={review().links}>
-            {(link) => (
-              <a class="text-sm font-medium text-accent hover:underline" href={link.href}>
-                {linkLabel(link, locale())}
-              </a>
-            )}
-          </For>
-        </div>
+            </Show>
+          </>
+        }
+      >
+        <ActionDetails card={card()} />
       </Show>
     </div>
   );
