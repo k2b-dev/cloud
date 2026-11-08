@@ -515,7 +515,15 @@ describe("Core AI capabilities", () => {
     const globalResult = await aiCapabilities.queries["ai.chats.resources"].run({ query: "release", limit: 20 }, context);
 
     expect(local).toHaveBeenCalledWith({ conversationId: chat.id, search: undefined, before: undefined, limit: 20 });
-    expect(global).toHaveBeenCalledWith({ ownerUserId: user.id, search: "release", before: undefined, limit: 20 });
+    expect(global).toHaveBeenCalledWith({ ownerUserId: user.id, place: "none", search: "release", before: undefined, limit: 20 });
+    await aiCapabilities.queries["ai.chats.resources"].run({ place: { type: "fixture.conversation", id: "Marta1" }, limit: 20 }, context);
+    expect(global).toHaveBeenLastCalledWith({
+      ownerUserId: user.id,
+      place: "fixture.conversation:Marta1",
+      search: undefined,
+      before: undefined,
+      limit: 20,
+    });
     expect(localResult).toMatchObject({ ok: true, data: { refs: [resource.ref] } });
     expect(globalResult).toMatchObject({ ok: true, data: { data: [{ ref: resource.ref, chat: { id: chat.shortId } }] } });
   });
