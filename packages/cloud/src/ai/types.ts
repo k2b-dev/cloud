@@ -314,6 +314,8 @@ export type AiStoredMessage = {
   meta: {
     /** Server-bound result view; projected for readers, never persisted by the tool. */
     resultView?: BoundBlockView;
+    resultChoice?: import("./choices").AiChoiceState;
+    choice?: import("./choices").AiChoiceProvenance;
     /** The atomically consumed composer revision, used to confirm a local send. */
     submittedDraftRevision?: number;
     codeOrigin?: AiCodeOrigin;
@@ -687,6 +689,8 @@ export type AiChatTurnRunConfig = {
    */
   signedInSession?: true;
   kind?: "chat";
+  /** Server-authored first Query, admitted atomically with a person’s choice. */
+  choiceCall?: import("./choices").AiChoiceCall;
   input: Input;
   /** Stable public ID exposed as runtime context, not instructions. */
   chatId?: string;
@@ -953,6 +957,8 @@ export type AiConversationService = {
   getEnrichmentOverview(): Promise<AiEnrichmentOverview>;
   /** Chat history for humans: includes compacted messages, hides superseded summaries. */
   listMessages(input: { conversationId: string }): Promise<AiStoredMessage[]>;
+  /** Minimal full-history context for choices, independent of pagination and compaction. */
+  listChoiceMessages(input: { conversationId: string }): Promise<AiStoredMessage[]>;
   /**
    * Newest window of the human view for infinite scroll. `beforeSeq` pages
    * older history (exclusive). Whole seq groups are always returned together
@@ -1000,6 +1006,7 @@ export type AiConversationService = {
   /** Persist the user message and create its turn in one transaction. */
   submitChatTurn(
     input: {
+      choice?: import("./choices").AiChoiceSubmission;
       queuedMessageId?: string;
       conversationId: string;
       modelId: string;

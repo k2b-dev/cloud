@@ -77,7 +77,7 @@ export const capabilityIdempotencyConflict = (
  * Cloud surface a capability invocation came from. The dispatcher resolves it
  * once, records it on the execution row, and forwards it to the owning app.
  */
-export const CAPABILITY_ORIGINS = ["assistant", "mcp", "http", "app"] as const;
+export const CAPABILITY_ORIGINS = ["assistant", "mcp", "http", "app", "choice"] as const;
 export type CapabilityOrigin = (typeof CAPABILITY_ORIGINS)[number];
 export const CapabilityOriginSchema = z.enum(CAPABILITY_ORIGINS);
 

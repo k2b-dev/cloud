@@ -28,6 +28,52 @@ afterEach(() => {
   globalThis.fetch = originalFetch;
 });
 
+describe("AI controller choice submission", () => {
+  test.each([201, 409])("posts the choice event and reports its result (%s)", async (status) => {
+    const posts: { path: string; body: unknown }[] = [];
+    const current = conversation("Chat01");
+    let reloads = 0;
+    globalThis.fetch = Object.assign(
+      async (request: RequestInfo | URL, init?: RequestInit) => {
+        const path = String(request);
+        if (path.endsWith("/choices")) {
+          posts.push({ path, body: JSON.parse(String(init?.body)) });
+          expect(init?.method).toBe("POST");
+          return status === 201
+            ? Response.json({ turn: { id: "Turn02" } }, { status })
+            : Response.json({ code: "choice_closed", message: "Choice is closed" }, { status });
+        }
+        reloads += 1;
+        return Response.json({ conversation: current, messages: [], activeTurn: null });
+      },
+      { preconnect: originalFetch.preconnect },
+    );
+    let dispose!: () => void;
+    const controller = createRoot((rootDispose) => {
+      dispose = rootDispose;
+      return createAiChatController({
+        baseUrl: "/api/ai",
+        initialConversationId: current.id,
+        initialDetail: { conversation: current, messages: [], activeTurn: null },
+        streamTransport: { subscribe: () => ({ close() {} }) },
+      });
+    });
+    try {
+      expect(await controller.submitChoice({ turnId: "Turn01", toolCallId: "call" }, "category", ["jug"])).toBe(status === 201);
+      expect(posts).toEqual([
+        {
+          path: "/api/ai/conversations/Chat01/choices",
+          body: { turnId: "Turn01", toolCallId: "call", blockId: "category", ids: ["jug"] },
+        },
+      ]);
+      expect(reloads).toBe(status === 201 ? 1 : 0);
+      expect(controller.error()).toBe(status === 201 ? null : "Choice is closed");
+    } finally {
+      dispose();
+    }
+  });
+});
+
 describe("AI controller draft submission", () => {
   test("sends a draft containing only a Cloud resource", () => {
     expect(isComposerDraftSendable({ resources: [{ ref: { type: "mail.message", id: "m1" } }] })).toBe(true);

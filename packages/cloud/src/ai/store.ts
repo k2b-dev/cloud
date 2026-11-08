@@ -9,6 +9,7 @@ import { sql } from "../runtime/clients";
 import { logger } from "../services/logging";
 import { isUniqueViolation, toPgTextArray } from "../services/postgres";
 import { AI_TOOL_CHECK_STALE_MS, type AiActionCheck, type AiStoredActionReview } from "./action-review";
+import { AiChoiceConflict, resolveAiChoice } from "./choices";
 import { AiMapSchema } from "./map-contracts";
 import { assertInteractiveChatTurn } from "./retired-routines";
 
@@ -61,6 +62,22 @@ import type {
   AiTurnSweepResult,
   AiWebsiteReceipt,
 } from "./types";
+
+/** Read only choice-bearing results and their Cloud attribution/answers, including compacted history. */
+const choiceMessageRows = (db: SQL, conversationId: string): Promise<MessageRow[]> => db<MessageRow[]>`
+  WITH results AS (
+    SELECT * FROM ai.messages WHERE conversation_id = ${conversationId}::uuid AND role = 'tool_result'
+      AND jsonb_path_exists(message->'result'->'view', '$.** ? (@.kind == "Choice")')
+  )
+  SELECT * FROM results
+  UNION ALL
+  SELECT message.* FROM ai.messages message WHERE conversation_id = ${conversationId}::uuid
+    AND ((role = 'user' AND meta ? 'choice') OR (role = 'assistant' AND EXISTS (
+      SELECT 1 FROM results WHERE results.loop_id = message.loop_id
+        AND message.meta->'toolPresentations' ? (results.message->>'callId')
+    )))
+  ORDER BY seq
+`;
 
 /** A queued turn this old without a claim is considered lost and re-enqueued by the sweep. */
 const SWEEP_STALE_QUEUED_MS = 15_000;
@@ -2898,6 +2915,8 @@ export const aiConversations: AiConversationService = {
     }));
   },
 
+  listChoiceMessages: async ({ conversationId }) => (await choiceMessageRows(sql, conversationId)).map(rowToMessage),
+
   listContextMessages: async (input) => {
     const rows = await sql<MessageRow[]>`
       SELECT id, short_id, conversation_id, seq, kind, message, loop_id, model_profile_id, provider_model,
@@ -3134,10 +3153,39 @@ export const aiConversations: AiConversationService = {
   submitChatTurn: async (input, db) => {
     assertInteractiveChatTurn(input.runConfig);
     const submit = async (tx: SQL) => {
-      const [conversation] = await tx<{ draft_revision: number | string; project_id: string | null }[]>`
-        SELECT draft_revision, project_id FROM ai.conversations WHERE id = ${input.conversationId} FOR UPDATE
+      const [conversation] = await tx<
+        { draft_revision: number | string; project_id: string | null; created_by_user_id: string | null; archived_at: unknown }[]
+      >`
+        SELECT draft_revision, project_id, created_by_user_id, archived_at FROM ai.conversations WHERE id = ${input.conversationId} FOR UPDATE
       `;
       if (!conversation) throw new Error("Conversation not found.");
+      let choice: ReturnType<typeof resolveAiChoice> | undefined;
+      if (input.choice) {
+        if (
+          conversation.archived_at ||
+          input.runConfig.actor?.kind !== "user" ||
+          conversation.created_by_user_id !== input.runConfig.actor.user.id
+        )
+          throw new AiChoiceConflict("choice_closed");
+        const [busy] = await tx`SELECT id FROM ai.turns WHERE conversation_id = ${input.conversationId}::uuid
+          AND status IN ('queued', 'running', 'waiting_for_action') LIMIT 1`;
+        const [queued] = await tx`SELECT id FROM ai.queued_messages WHERE conversation_id = ${input.conversationId}::uuid
+          AND status IN ('pending', 'failed') LIMIT 1`;
+        if (busy || queued) throw new AiChoiceConflict("choice_busy");
+        const rows = await choiceMessageRows(tx, input.conversationId);
+        choice = resolveAiChoice(rows.map(rowToMessage), input.choice, input.runConfig.locale ?? "en", new Date().toISOString());
+        input = {
+          ...input,
+          userMessage: { role: "user", content: [{ type: "text", text: choice.text }] },
+          runConfig: {
+            ...input.runConfig,
+            input: choice.text,
+            ...(choice.then
+              ? { choiceCall: { callId: crypto.randomUUID(), appId: choice.provenance.appId, query: choice.then.entry.name } }
+              : {}),
+          },
+        };
+      }
       if (input.queuedMessageId) {
         const [head] = await tx<
           { id: string; status: string }[]
@@ -3232,6 +3280,7 @@ export const aiConversations: AiConversationService = {
           meta: {
             ...(input.expectedDraftRevision === undefined ? {} : { submittedDraftRevision: input.expectedDraftRevision }),
             ...(input.runConfig.codeOrigin ? { codeOrigin: input.runConfig.codeOrigin } : {}),
+            ...(choice ? { choice: choice.provenance } : {}),
             modelRequest: input.runConfig.model,
             modelResolved: input.runConfig.modelResolved,
             ...(input.runConfig.modelReplacement ? { modelReplacement: input.runConfig.modelReplacement } : {}),
@@ -3239,6 +3288,33 @@ export const aiConversations: AiConversationService = {
         },
         tx,
       );
+      if (choice?.then && input.runConfig.choiceCall) {
+        const entry = choice.then.entry;
+        await insertMessageLocked(
+          {
+            conversationId: input.conversationId,
+            loopId: turn.id,
+            message: {
+              role: "assistant",
+              content: [{ type: "tool_call", id: input.runConfig.choiceCall.callId, name: entry.providerName, args: choice.then.input }],
+            },
+            meta: {
+              toolPresentations: {
+                [input.runConfig.choiceCall.callId]: {
+                  kind: "capability",
+                  appId: entry.appId,
+                  appName: entry.display.appName,
+                  title: entry.display.title,
+                  appIcon: entry.app.appIcon,
+                  appAccent: entry.app.appAccent,
+                  capabilityKind: "query",
+                },
+              },
+            },
+          },
+          tx,
+        );
+      }
       const resources = [
         ...new Map((input.resources ?? []).map((resource) => [`${resource.ref.type}\0${resource.ref.id}`, resource])).values(),
       ];

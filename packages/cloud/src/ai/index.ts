@@ -45,6 +45,7 @@ export {
   ChatTaskExportQuerySchema,
   exportChatTasks,
 } from "./chat-task-export";
+export type { AiChoiceCall, AiChoiceProvenance, AiChoiceState, AiChoiceTarget } from "./choices";
 export { parseAiSse } from "./client/transport";
 // Framework-owned managed execution host transport.
 export { CODE_CAPABILITY_TOKEN_HEADER, createCodeCapabilityTransport } from "./code-capability-transport";

@@ -9,6 +9,7 @@ import type { AiModelRequest } from "../../shared/ai-models";
 import { type AiActionCheck, preferredActionCheck } from "../action-review";
 import { type AiAttachmentRef, aiAttachmentMarker } from "../attachments";
 import { aiChatMessages } from "../chat/messages";
+import { reconcileProjectedAiChoices } from "../choices";
 import { AI_TURN_LEASE_MS, type AiStreamEvent, type AiTurnBlock, type AiTurnSnapshot, steerMessageBlockId } from "../protocol";
 import { type AiResourceMarker, aiResourceMarker } from "../resource-markers";
 import type {
@@ -573,7 +574,10 @@ export const createAiChatController = (options: CreateAiChatControllerOptions) =
       // (same rule as the SSE state snapshot) so the scrollback never shrinks.
       const windowOldest = detail.messages[0]?.seq;
       const preservedOlder = cached && windowOldest !== undefined ? cached.messages.filter((message) => message.seq < windowOldest) : [];
-      setProjection({ ...detailToProjection(viewedDetail), messages: [...preservedOlder, ...detail.messages] }, conversationId);
+      setProjection(
+        { ...detailToProjection(viewedDetail), messages: reconcileProjectedAiChoices([...preservedOlder, ...detail.messages]) },
+        conversationId,
+      );
       if (preservedOlder.length === 0) setHasMore(conversationId, detail.hasMoreMessages ?? false);
       if (detail.timeline) setTimeline(conversationId, detail.timeline);
       runFrontendTools();
@@ -614,7 +618,10 @@ export const createAiChatController = (options: CreateAiChatControllerOptions) =
     if (currentDraft && currentDraft.revision > detail.conversation.draft.revision) detail.conversation.draft = currentDraft;
     const windowOldest = detail.messages[0]?.seq;
     const preservedOlder = windowOldest === undefined ? [] : state.messages.filter((message) => message.seq < windowOldest);
-    setProjection({ ...detailToProjection(detail), messages: [...preservedOlder, ...detail.messages] }, conversationId);
+    setProjection(
+      { ...detailToProjection(detail), messages: reconcileProjectedAiChoices([...preservedOlder, ...detail.messages]) },
+      conversationId,
+    );
     if (preservedOlder.length === 0) setHasMore(conversationId, detail.hasMoreMessages ?? false);
     if (detail.timeline) setTimeline(conversationId, detail.timeline);
     setRunError(conversationRunError(detail.conversation));
@@ -1487,6 +1494,29 @@ export const createAiChatController = (options: CreateAiChatControllerOptions) =
     return submitted;
   };
 
+  const submitChoice = async (requestInput: { turnId: string; toolCallId: string }, blockId: string, ids: string[]): Promise<boolean> => {
+    const conversationId = activeConversationId();
+    if (!conversationId || state.activeTurn || Boolean(pendingSends()[conversationId])) return false;
+    clearErrors();
+    try {
+      await request<SubmitTurnResult>(
+        `/conversations/${encodeURIComponent(conversationId)}/choices`,
+        {
+          method: "POST",
+          body: JSON.stringify({ ...requestInput, blockId, ids }),
+        },
+        "Failed to submit choice",
+      );
+      if (isActiveConversation(conversationId)) await refreshActiveConversation();
+      else cache.delete(conversationId);
+      return true;
+    } catch (choiceError) {
+      if (isActiveConversation(conversationId))
+        setActiveError(choiceError instanceof Error ? choiceError.message : "Failed to submit choice");
+      return false;
+    }
+  };
+
   const editDraft = async (
     requestInput: { turnId: string; callId: string; requestId: string },
     values: Record<string, string>,
@@ -1655,6 +1685,7 @@ export const createAiChatController = (options: CreateAiChatControllerOptions) =
     submitTurnAction,
     respondToApproval,
     editDraft,
+    submitChoice,
     checkAction,
     submitFrontendToolResult,
     fileContentUrl,

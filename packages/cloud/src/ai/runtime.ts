@@ -23,6 +23,7 @@ import { waitingAiApprovals } from "./conversation-watchers";
 import { startAiDictationRuntime } from "./dictation-runtime";
 import { AiTurnExecutor, type ExecutorConfig } from "./executor";
 import { canonicalizeAiConversationAttachments, snapshotAiConversationFiles } from "./file-context";
+import { AiClientToolResultSchema } from "./http";
 import type { AiLocalClient, AiLocalContext } from "./local-tool-contracts";
 import { drainQueuedMessages } from "./message-queue";
 import { aiUserPrefs } from "./prefs";
@@ -328,7 +329,7 @@ export const abortAiTurn = async (input: { conversationId: string; turnId: strin
 // ---------------------------------------------------------------------------
 
 export const AiTurnActionSchema = z.discriminatedUnion("type", [
-  z.object({
+  z.strictObject({
     type: z.literal("approval_response"),
     approved: z.boolean(),
     remember: z.enum(["chat", "always"]).optional(),
@@ -337,7 +338,7 @@ export const AiTurnActionSchema = z.discriminatedUnion("type", [
       .regex(/^[a-f0-9]{64}$/)
       .optional(),
   }),
-  z.object({ type: z.literal("tool_result"), result: z.unknown() }),
+  z.strictObject({ type: z.literal("tool_result"), result: AiClientToolResultSchema }),
 ]);
 export type AiTurnActionInput = z.infer<typeof AiTurnActionSchema>;
 

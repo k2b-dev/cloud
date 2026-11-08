@@ -1,3 +1,4 @@
+import { reconcileProjectedAiChoices } from "../choices";
 import type { AiStreamEvent, AiTurnBlock, AiTurnSnapshot, AiWireEvent } from "../protocol";
 import { applyWireEventToBlocks, isNewerWireEvent, reconcileResolvedTurnActions, toolBlockId } from "../protocol";
 import type { AiConversation, AiStoredMessage } from "../types";
@@ -165,7 +166,7 @@ export const reduceProjection = (state: AiChatProjection, event: AiStreamEvent):
       sameConversation && windowOldest !== undefined ? state.messages.filter((message) => message.seq < windowOldest) : [];
     return {
       conversation: event.conversation,
-      messages: [...preservedOlder, ...event.messages],
+      messages: reconcileProjectedAiChoices([...preservedOlder, ...event.messages]),
       activeTurn: mergeActiveTurn(sameConversation ? state.activeTurn : null, activeTurnFromSnapshot(event.activeTurn)),
     };
   }
@@ -199,7 +200,7 @@ export const reduceWireEvent = (state: AiChatProjection, event: AiWireEvent): Ai
 
   if (event.type === "turn_finished") {
     if (!active || active.turnId !== event.turnId) return state;
-    return { ...state, messages: mergeMessages(state.messages, event.messages ?? []), activeTurn: null };
+    return { ...state, messages: reconcileProjectedAiChoices(mergeMessages(state.messages, event.messages ?? [])), activeTurn: null };
   }
 
   if (!active || active.turnId !== event.turnId || !isNewerWireEvent(event, active)) return state;
@@ -211,7 +212,7 @@ export const reduceWireEvent = (state: AiChatProjection, event: AiWireEvent): Ai
   if (event.type === "message_saved") {
     return {
       ...state,
-      messages: mergeMessages(state.messages, [event.message]),
+      messages: reconcileProjectedAiChoices(mergeMessages(state.messages, [event.message])),
       activeTurn: { ...withoutProviderRetry(active), seq: event.seq, attempt: event.attempt },
     };
   }

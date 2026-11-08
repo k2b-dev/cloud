@@ -1776,3 +1776,71 @@ describe("ACP session/load", () => {
     expect(await h.store.chat("gone-session")).toBeUndefined();
   });
 });
+
+describe("ACP capability choices", () => {
+  const choiceResult = (): AiStoredMessage => ({
+    id: "choice-result",
+    shortId: "Chs234",
+    conversationId: "chat",
+    seq: 2,
+    kind: "message",
+    loopId: "turn",
+    message: { role: "tool_result", callId: "choice-source", name: "art__query__categories", result: { data: {} } },
+    modelId: null,
+    providerModel: null,
+    usage: null,
+    stopReason: null,
+    loopAggregate: null,
+    loopDoneReason: null,
+    compactedAt: null,
+    createdAt: "2026-11-08T12:00:00Z",
+    meta: {
+      resultChoice: { state: "open" },
+      resultView: {
+        version: 1,
+        blocks: [
+          {
+            kind: "Choice",
+            id: "category",
+            title: "Category?",
+            submit: "Choose",
+            mode: "one",
+            options: [
+              { id: "jug", title: "Jugendstil" },
+              { id: "modern", title: "Modern" },
+            ],
+            option: { id: ["id"], title: ["title"] },
+          },
+        ],
+      },
+    },
+  });
+  test.each([false, true])("offers elicitation only when announced (%s), and cancellation leaves the choice open", async (forms) => {
+    const h = await harness({ forms, form: () => ({ action: "cancel" }) });
+    h.streams.push([{ ...h.done(), messages: [choiceResult()] }]);
+    expect(await h.send("Categories")).toEqual({ stopReason: "end_turn" });
+    expect(h.forms).toHaveLength(forms ? 1 : 0);
+    expect(h.requests.some((request) => request.path.endsWith("/choices"))).toBe(false);
+    if (!forms) expect(h.text()).toContain("1. Jugendstil [jug]");
+  });
+  test("accepted elicitation posts the event endpoint and follows its new turn", async () => {
+    const h = await harness({
+      forms: true,
+      form: () => ({ action: "accept", content: { ids: "jug" } }),
+      intercept: (path) => (path.endsWith("/choices") ? Response.json({ turn: { id: "choice-turn" } }) : undefined),
+    });
+    h.streams.push([{ ...h.done(), messages: [choiceResult()] }], [{ ...h.done(), turnId: "choice-turn", messages: [] }]);
+    expect(await h.send("Categories")).toEqual({ stopReason: "end_turn" });
+    expect(h.forms[0]).toMatchObject({
+      mode: "form",
+      requestedSchema: { properties: { ids: { type: "string", enum: ["jug", "modern"] } } },
+    });
+    expect(h.requests.find((request) => request.path.endsWith("/choices"))?.body).toEqual({
+      turnId: "turn",
+      toolCallId: "choice-source",
+      blockId: "category",
+      ids: ["jug"],
+    });
+    expect(h.requests.some((request) => request.path.includes("/actions/"))).toBe(false);
+  });
+});

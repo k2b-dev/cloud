@@ -89,6 +89,8 @@ const parseCapabilityResponse = async (response: Response, dispatched: boolean):
 };
 
 type AiCapabilityCall = {
+  /** Set only for the server-authored first Query of a choice turn. */
+  origin?: "choice";
   conversationId: string;
   turnId?: string;
   authority: AiCapabilityAuthority;
@@ -110,6 +112,7 @@ const dispatchAiCapability = async (
   input: Omit<AiCapabilityCall, "context"> & { context: Pick<ToolContext, "callId" | "signal"> },
   review: boolean,
 ): Promise<unknown> => {
+  if (input.origin === "choice" && input.entry.kind !== "query") throw new Error("Choices can only execute Queries.");
   if (input.authority.accessSubject.type !== "user" || input.authority.accessSubject.userId !== input.authority.actor.user.id) {
     throw new Error("Cloud capability authority is inconsistent.");
   }
@@ -149,7 +152,7 @@ const dispatchAiCapability = async (
   const response = await dispatch({
     request,
     kind: input.entry.kind === "query" ? "queries" : "actions",
-    origin: "assistant",
+    origin: input.origin ?? "assistant",
     ...(input.turnId ? { assistantTurn: { conversationId: input.conversationId, turnId: input.turnId } } : {}),
     review,
     appId: input.entry.appId,

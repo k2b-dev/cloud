@@ -2,6 +2,7 @@ import { PayloadTooLargeError } from "@k2b/sync";
 import { lazySync } from "../_internal/process-sync";
 import { logger } from "../services/logging";
 import { latestTopicCursor } from "../services/topic-cursor";
+import { projectAiChoices, viewChoice } from "./choices";
 import type { AiConversationWatch } from "./conversation-watchers";
 import {
   type AiStreamEvent,
@@ -167,6 +168,20 @@ const loadStreamSnapshot = async (conversation: AiConversation, viewerUserId?: s
   ]);
   const snapshot = active ? turnSnapshotFromActive(active) : null;
   if (snapshot) {
+    const context = await aiConversations.listChoiceMessages({ conversationId: conversation.id });
+    const choices = projectAiChoices(context);
+    const byCall = new Map(
+      choices.flatMap((stored) =>
+        stored.loopId === active!.turn.id && stored.message.role === "tool_result" && stored.meta?.resultChoice
+          ? [[stored.message.callId, stored.meta.resultChoice] as const]
+          : [],
+      ),
+    );
+    snapshot.blocks = snapshot.blocks.map((block) =>
+      block.kind === "tool" && byCall.has(block.callId) ? { ...block, choice: byCall.get(block.callId) } : block,
+    );
+  }
+  if (snapshot) {
     const [steers, resolvedActions] = await Promise.all([
       aiConversations.listTurnSteers({ conversationId: conversation.id, turnId: active!.turn.id }),
       aiConversations.listResolvedPendingActions({ conversationId: conversation.id, turnId: active!.turn.id }),
@@ -321,7 +336,11 @@ export async function* streamAiConversationEvents(input: {
     }
 
     const event = item.value.data;
-    if (needsSavedState(event, current, reloadedTurns)) {
+    const choiceChanged =
+      event.type === "message_saved" &&
+      (event.message.meta?.choice ||
+        (event.message.message.role === "tool_result" && viewChoice(capabilityResultView(event.message.message.result))));
+    if (choiceChanged || needsSavedState(event, current, reloadedTurns)) {
       reloadedTurns.add(event.turnId);
       const snapshot = await loadStreamSnapshotWith(input.conversation, event, input.signal, input.viewerUserId);
       // A conversation that was archived or deleted ends the stream; the reader's reconnect gets the route's answer.
@@ -373,7 +392,9 @@ export async function* streamAiConversationEvents(input: {
     }
 
     if (event.type === "message_saved") {
-      const [message] = projectPublicAiStoredMessages([event.message], input.conversation.shortId, new Map([[event.turnId, publicTurnId]]));
+      const [message] = choiceChanged
+        ? await publicAiStoredMessages([event.message], input.conversation, input.viewerUserId)
+        : projectPublicAiStoredMessages([event.message], input.conversation.shortId, new Map([[event.turnId, publicTurnId]]));
       if (message) yield { ...event, conversationId: input.conversation.shortId, turnId: publicTurnId, message };
       continue;
     }

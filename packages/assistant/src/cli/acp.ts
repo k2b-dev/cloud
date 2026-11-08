@@ -65,6 +65,7 @@ import {
   toolContent,
 } from "./acp-updates";
 import { readApprovalPreferences, revokeApprovalPreference } from "./approvals";
+import { assistantChoiceForm, assistantChoiceResponse, assistantChoiceText, openAssistantChoices, submitAssistantChoice } from "./choices";
 import { localTurnFields, readSelectedLocalSkill } from "./interactive";
 import { deniedLocalBashResult } from "./local-bash";
 import { createLocalContextReader, discoverLocalContext, type LocalContext, type LocalSkill } from "./local-context";
@@ -767,6 +768,27 @@ export const createAcpAgent = (host: CloudCliContext, options: { sessions?: AcpS
       return result;
     };
     const finish = async (result: AssistantTurnStreamResult) => {
+      while (result.status === "completed" && !abort.signal.aborted) {
+        let submitted = false;
+        for (const choice of openAssistantChoices(result.messages)) {
+          const text = assistantChoiceText(choice);
+          if (!forms) {
+            await message(s, terminalSafeText(text) + "\n");
+            continue;
+          }
+          const response = await form(s, choice.toolCallId, text, assistantChoiceForm(choice));
+          abort.signal.throwIfAborted();
+          const ids = assistantChoiceResponse(choice, response);
+          if (!ids) continue;
+          const accepted = await submitAssistantChoice(ctx, s.chat!, choice, ids, abort.signal);
+          turnId = accepted.turn.id;
+          output = createAssistantTurnOutput();
+          result = await attention(await streamAssistantTurn(streamOptions()));
+          submitted = true;
+          break;
+        }
+        if (!submitted) break;
+      }
       if (result.title !== undefined) title = result.title;
       if (result.status === "failed") throw RequestError.internalError(undefined, result.error ?? "Assistant turn failed.");
       if (result.status === "aborted") return cancelled(s);

@@ -1,11 +1,13 @@
 import type { Input, Message } from "@k2b/nessi";
 import type { Context } from "hono";
 import { z } from "zod";
+import { BLOCK_LIMITS } from "../blocks/schema";
 import { CapabilityAppIdSchema } from "../contracts/capabilities";
 import { type AuthContext, err, fail, respond } from "../server";
 import { AiModelRequestSchema } from "../shared/ai-models";
 import { aiAttachmentMarker } from "./attachments";
 import { CODE_RUNTIME_TOOL_NAMES } from "./browser-code-contracts";
+import { hasAiChoiceProvenance } from "./choices";
 import { AI_TURN_ATTACHMENT_MAX_ITEMS } from "./limits";
 import { AI_LOCAL_TOOL_NAMES, AiLocalClientSchema, AiLocalContextSchema } from "./local-tool-contracts";
 import { AiQuotaError } from "./quotas";
@@ -16,23 +18,30 @@ import { AI_MESSAGE_FEEDBACK_REASONS, type AiClientToolId, type AiDraftContentPa
 import { isAiSettingsError } from "./validate";
 
 export const AiDraftContentPartSchema = z.discriminatedUnion("type", [
-  z.object({ type: z.literal("text"), text: z.string().max(20_000) }),
-  AiResourceMarkerSchema.extend({ type: z.literal("resource"), inline: z.boolean().optional() }),
-  z.object({
-    type: z.literal("file"),
-    path: z.string().trim().min(1).max(500),
-    mediaType: z.string().trim().min(1).max(120),
-    size: z.number().int().min(0),
-    version: z.number().int().min(1),
+  z.strictObject({ type: z.literal("text"), text: z.string().max(20_000) }),
+  AiResourceMarkerSchema.extend({ type: z.literal("resource"), inline: z.boolean().optional() }).strict(),
+  z
+    .object({
+      type: z.literal("file"),
+      path: z.string().trim().min(1).max(500),
+      mediaType: z.string().trim().min(1).max(120),
+      size: z.number().int().min(0),
+      version: z.number().int().min(1),
+      inline: z.boolean().optional(),
+    })
+    .strict(),
+  z.strictObject({
+    type: z.literal("project-file"),
+    path: z.string().min(1).max(500).startsWith("/project/"),
     inline: z.boolean().optional(),
   }),
-  z.object({ type: z.literal("project-file"), path: z.string().min(1).max(500).startsWith("/project/"), inline: z.boolean().optional() }),
 ]);
 
 export const AiConversationDraftInputSchema = z
   .object({
     content: z.array(AiDraftContentPartSchema).max(AI_TURN_ATTACHMENT_MAX_ITEMS * 2 + 1),
   })
+  .strict()
   .superRefine((value, context) => {
     if (value.content.reduce((length, part) => length + (part.type === "text" ? part.text.length : 0), 0) > 20_000)
       context.addIssue({ code: "custom", path: ["content"], message: "Draft text exceeds 20000 characters" });
@@ -47,6 +56,7 @@ export const AiInitialConversationDraftInputSchema = z
       .array(z.union([AiDraftContentPartSchema.options[0], AiDraftContentPartSchema.options[1]]))
       .max(AI_TURN_ATTACHMENT_MAX_ITEMS * 2 + 1),
   })
+  .strict()
   .superRefine((value, context) => {
     if (value.content.filter((part) => part.type === "resource").length > AI_TURN_ATTACHMENT_MAX_ITEMS) {
       context.addIssue({ code: "custom", path: ["content"], message: `A draft can attach at most ${AI_TURN_ATTACHMENT_MAX_ITEMS} items` });
@@ -102,17 +112,21 @@ export type AiDraftContentPartInput = z.infer<typeof AiDraftContentPartSchema> &
 
 export const AiUserContentPartSchema = z.union([
   z.string().trim().min(1).max(20000),
-  z.object({
-    type: z.literal("text"),
-    text: z.string().trim().min(1).max(20000),
-  }),
+  z
+    .object({
+      type: z.literal("text"),
+      text: z.string().trim().min(1).max(20000),
+    })
+    .strict(),
   // Attachment already uploaded to the conversation file store.
-  z.object({
-    type: z.literal("attachment"),
-    path: z.string().trim().min(1).max(500),
-    mediaType: z.string().trim().max(120).default("application/octet-stream"),
-    size: z.number().int().min(0).default(0),
-  }),
+  z
+    .object({
+      type: z.literal("attachment"),
+      path: z.string().trim().min(1).max(500),
+      mediaType: z.string().trim().max(120).default("application/octet-stream"),
+      size: z.number().int().min(0).default(0),
+    })
+    .strict(),
 ]);
 
 export type AiTurnContentPart = z.infer<typeof AiUserContentPartSchema>;
@@ -175,7 +189,7 @@ export const AiSubmitConversationDraftInputSchema = z
     path: ["localContext"],
   });
 
-export const AiSteerInputSchema = z.object({
+export const AiSteerInputSchema = z.strictObject({
   message: z.string().trim().min(1).max(20000),
   clientRequestId: z.string().trim().min(1).max(120),
 });
@@ -220,7 +234,7 @@ export const AiMessageRetryInputSchema = z
 
 export type AiMessageRetryInput = z.infer<typeof AiMessageRetryInputSchema>;
 
-export const AiMessageForkInputSchema = z.object({
+export const AiMessageForkInputSchema = z.strictObject({
   title: z.string().trim().min(1).max(120).optional(),
 });
 
@@ -296,3 +310,15 @@ export const toAiActionFailureResponse = (
           : conflict(result.message);
   return respond(c, fail(failure));
 };
+
+export const AiChoiceInputSchema = z.strictObject({
+  turnId: z.string().regex(AI_SHORT_ID_PATTERN),
+  toolCallId: z.string().min(1).max(500),
+  blockId: z.string().min(1).max(80),
+  // The view's option count and mode are authoritative, checked under the conversation lock.
+  ids: z.array(z.string()).max(BLOCK_LIMITS.rows),
+});
+
+export const AiClientToolResultSchema = z.unknown().refine((value) => !hasAiChoiceProvenance(value), {
+  message: "Choice provenance is server-owned.",
+});

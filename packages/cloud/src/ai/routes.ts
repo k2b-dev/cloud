@@ -42,6 +42,8 @@ import { buildAiCapabilityCatalog } from "./capabilities";
 import { checkAiCapability, resolveAiCapabilityActor } from "./capability-execution";
 import { aiChatMessages } from "./chat/messages";
 import { getAiChatQuotas } from "./chat-quotas";
+import { createAiChoiceRoutes } from "./choice-routes";
+import { AiChoiceConflict } from "./choices";
 import { AI_CLIENT_TOOL_ACTION_MAX_BYTES, aiClientToolOutputSchemas } from "./client-tool-results";
 import { watchAiConversation } from "./conversation-watchers";
 import { createCloudAiLocalBashTool, createCloudAiLocalTools, createConfiguredDefaultCloudAiTools } from "./default-tools";
@@ -93,6 +95,7 @@ import { isConversationResourceCursor } from "./resource-refs";
 import {
   AiTurnActionSchema,
   abortAiTurn,
+  enqueueExistingAiTurn,
   listPendingAiTurnActions,
   notifyAiConversationUnwatched,
   prepareAiChatTurn,
@@ -347,6 +350,59 @@ export const aiRoutes = (() => {
       .use(rateLimit())
       .use("*", auth.requireRole("authenticated"))
       .route("/conversations", aiMapRoutes)
+      .route(
+        "/conversations",
+        createAiChoiceRoutes({
+          resolveContext,
+          submit: async (c, ctx, target) => {
+            const conversation = await loadConversation(c, ctx);
+            if (!conversation) return notFound(c);
+            const source = await loadTurn(conversation, target.turnId);
+            if (!source) throw new AiChoiceConflict("choice_closed");
+            const previous = await aiConversations.getTurnRunConfig({ conversationId: conversation.id, turnId: source.id });
+            const project = conversation.projectId ? await aiProjects.snapshot(conversation.projectId, resourceContext(c)) : null;
+            if (conversation.projectId && !project) return respond(c, fail(err.notFound("Project")));
+            // Prepare model, quota, and file snapshot before taking the conversation lock. The store replaces this
+            // placeholder with the text and provenance derived from the raw result while holding that lock.
+            const prepared = await prepareAiChatTurn({
+              assistantChat: true,
+              signedInSession: true,
+              conversationId: conversation.id,
+              chatId: conversation.shortId,
+              input: "Choice",
+              userMessage: { role: "user", content: [{ type: "text", text: "Choice" }] },
+              actor: ctx.actor,
+              locale: previous?.kind !== "compact" ? (previous?.locale ?? getLocale(c)) : getLocale(c),
+              theme: readThemeFromCookieHeader(c.req.header("cookie")),
+              timeZone: getTimeZone(c),
+              modelPolicy: ctx.modelPolicy,
+              project: project ?? undefined,
+              expectedProjectId: conversation.projectId,
+              toolSource: { kind: "default", appTools: true },
+              toolApprovalContext: ctx.toolApprovalContext,
+            });
+            const catalog = buildAiCapabilityCatalog(await discoverableAppEntries(appAccessAuthority(c), await listCapabilities()));
+            const result = await aiConversations.submitChatTurn({ ...prepared, choice: { ...target, turnId: source.id, catalog } });
+            // Admission is durable. The normal sweep recovers a failed wake-up without accepting the choice twice.
+            await enqueueExistingAiTurn({ conversationId: conversation.id, turnId: result.turn.id }).catch(() => undefined);
+            return respond(
+              c,
+              ok({
+                turn: publicTurn(result.turn, conversation.shortId),
+                message: projectPublicAiStoredMessages(
+                  [result.message],
+                  conversation.shortId,
+                  new Map([
+                    [result.turn.id, result.turn.shortId],
+                    [source.id, source.shortId],
+                  ]),
+                )[0]!,
+              }),
+              201,
+            );
+          },
+        }),
+      )
       .get("/status", async (c) => {
         const [status, enabled] = await Promise.all([
           assistantAiSettingsState(c.get("accessSubject")),
