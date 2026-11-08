@@ -66,11 +66,39 @@ export const codeEventCatchupPumpConfig: PumpConfig<Input, number, Item> = {
       if (!subscription) throw new CodeDataError("CONFLICT", "The handler's resource access or execution mandate is unavailable.");
       let admitted: boolean;
       try {
+        // A committed receipt needs no new admission, even after a grant changes.
+        const [receipt] = await sql`SELECT run_id FROM code.run_requests
+          WHERE code_id=${input.codeId} AND request_key=${item.key}`;
+        if (receipt) return;
+        const current = await findCode(input.codeId);
+        if (!current?.serviceAccountId)
+          throw new CodeDataError("CONFLICT", "Catch-up version is no longer active. Start a new operation for the new version.");
+        // Mail grants are external to the Core transaction. Keep network waits
+        // outside policy and Code locks, then fence the account again below.
+        // Historical occurrences have no claimed live delivery. Ask the existing
+        // app-only reader for this account's current grant; it returns no content.
+        const readers = await readResourcePrincipals({
+          ref: subscription.resource_binding.place,
+          principals: [{ type: "service_account", serviceAccountId: current.serviceAccountId }],
+          signal,
+        });
+        if (
+          readers.state !== "checked" ||
+          !readers.readable.some(
+            (principal) => principal.type === "service_account" && principal.serviceAccountId === current.serviceAccountId,
+          )
+        )
+          throw new CodeDataError("CONFLICT", "The handler's resource access is unavailable.");
         admitted = await sql.begin(async (db) => {
           await db`SELECT singleton FROM code.policy WHERE singleton FOR SHARE`;
           await db`SELECT id FROM code.codes WHERE id=${input.codeId} FOR UPDATE`;
           const code = await findCode(input.codeId, db);
-          if (!code || !code.serviceAccountId || code.state !== "active" || code.activeVersionId !== input.versionId)
+          if (
+            !code ||
+            code.serviceAccountId !== current.serviceAccountId ||
+            code.state !== "active" ||
+            code.activeVersionId !== input.versionId
+          )
             throw new CodeDataError("CONFLICT", "Catch-up version is no longer active. Start a new operation for the new version.");
           await requireCodeVersionApproval(code, input.versionId, db);
           const [execution] = await db`SELECT account.id FROM auth.service_accounts account
@@ -85,20 +113,6 @@ export const codeEventCatchupPumpConfig: PumpConfig<Input, number, Item> = {
           AND subscription.event_type=${item.event.type} AND subscription.version=${item.event.version}
         FOR SHARE OF account,mandate,subscription`;
           if (!execution) throw new CodeDataError("CONFLICT", "The handler's active execution binding changed.");
-          // Historical occurrences have no claimed live delivery. Ask the existing
-          // app-only reader for this account's current grant; it returns no content.
-          const readers = await readResourcePrincipals({
-            ref: subscription.resource_binding.place,
-            principals: [{ type: "service_account", serviceAccountId: code.serviceAccountId }],
-            signal,
-          });
-          if (
-            readers.state !== "checked" ||
-            !readers.readable.some(
-              (principal) => principal.type === "service_account" && principal.serviceAccountId === code.serviceAccountId,
-            )
-          )
-            throw new CodeDataError("CONFLICT", "The handler's resource access is unavailable.");
           const [existing] = await db`SELECT run_id FROM code.run_requests WHERE code_id=${code.id} AND request_key=${item.key}`;
           if (existing) return true;
           const [waiting] = await db<{ count: number }[]>`SELECT count(*)::int AS count FROM code.runs

@@ -49,6 +49,13 @@ suiteFor("database", "nats")("historical Mail Code admission", () => {
   let versionId: string,
     number = 0;
   const runs = () => sql`SELECT * FROM code.runs WHERE code_id=${codeId}`;
+  const waitUntil = async (condition: () => Promise<boolean>) => {
+    const deadline = performance.now() + 15_000;
+    while (!(await condition())) {
+      if (performance.now() >= deadline) throw new Error("Catch-up did not reach the expected state within the test deadline");
+      await Bun.sleep(30);
+    }
+  };
   beforeAll(async () => {
     database = await useFreshDatabase("code_historical_mail");
     connection = await connectTestNats();
@@ -228,11 +235,11 @@ suiteFor("database", "nats")("historical Mail Code admission", () => {
       expect(first.id).toBe(z.object({ receiptId: z.uuid() }).parse(first.data).receiptId);
       await startCodeEventCatchup(codeId, { operationId: id(70), versionId, events: [first] }, editor);
       stop = await startCodeEventCatchupRuntime();
-      for (let n = 0; n < 100 && (await readCodeEventCatchup(codeId, id(70), editor)).status !== "completed"; n++) await Bun.sleep(30);
+      await waitUntil(async () => (await readCodeEventCatchup(codeId, id(70), editor)).status === "completed");
       expect(await readCodeEventCatchup(codeId, id(70), editor)).toMatchObject({ status: "completed", dispatched: 1 });
       expect(await runs()).toHaveLength(1);
       await startCodeEventCatchup(codeId, { operationId: id(71), versionId, events: [first] }, editor);
-      for (let n = 0; n < 100 && (await readCodeEventCatchup(codeId, id(71), editor)).status !== "completed"; n++) await Bun.sleep(30);
+      await waitUntil(async () => (await readCodeEventCatchup(codeId, id(71), editor)).status === "completed");
       expect(await readCodeEventCatchup(codeId, id(71), editor)).toMatchObject({ status: "completed", dispatched: 1 });
       expect(await runs()).toHaveLength(1);
       await stop();
@@ -241,8 +248,11 @@ suiteFor("database", "nats")("historical Mail Code admission", () => {
       await startCodeEventCatchup(codeId, { operationId: id(72), versionId, events: [second] }, editor);
       await sql`DELETE FROM auth.access WHERE id=${grant!.id}::uuid`;
       stop = await startCodeEventCatchupRuntime();
-      for (let n = 0; n < 100 && (await readCodeEventCatchup(codeId, id(72), editor)).failureCount === 0; n++) await Bun.sleep(30);
-      expect(await readCodeEventCatchup(codeId, id(72), editor)).toMatchObject({ dispatched: 0, failureCount: expect.any(Number) });
+      await waitUntil(async () => (await readCodeEventCatchup(codeId, id(72), editor)).failureCount > 0);
+      expect(await readCodeEventCatchup(codeId, id(72), editor)).toMatchObject({
+        dispatched: 0,
+        lastError: "The handler's resource access is unavailable.",
+      });
       expect((await readCodeEventCatchup(codeId, id(72), editor)).failureCount).toBeGreaterThan(0);
       expect(await runs()).toHaveLength(1);
       expect(await sql`SELECT * FROM events.app_events`).toHaveLength(0);

@@ -1572,13 +1572,17 @@ suiteFor("database", "valkey")("C4 signed runner bridge and independent per-call
         place: event.place,
       },
     });
-    const snapshot = () => sql`SELECT work_status,revision FROM mail.conversations WHERE id=${conversation!.id}::uuid`;
+    await sql`INSERT INTO mail.conversations(short_id,mailbox_id,subject,latest_message_at)
+      VALUES('Cv4g01',${fixture.mailboxId}::uuid,'Other message',${now})`;
+    const snapshot = () => sql`SELECT short_id,work_status,revision,snoozed_until FROM mail.conversations
+      WHERE mailbox_id=${fixture.mailboxId}::uuid ORDER BY short_id`;
     const before = await snapshot();
     const mutations = [
       ["conversation.status.set", { conversationId: "Cv4g00", expectedRevision: 1, status: "done" }],
-      ["conversation.status.set.batch", { conversationIds: ["Cv4g00"], status: "done" }],
+      ["conversation.status.set.batch", { conversationIds: ["Cv4g01", "Cv4g00"], status: "done" }],
       ["conversation.assign", { conversationId: "Cv4g00", mode: "replace", assigneeUserIds: [] }],
-      ["conversation.assign.batch", { conversationIds: ["Cv4g00"], mode: "replace", assigneeUserIds: [] }],
+      ["conversation.assign.batch", { conversationIds: ["Cv4g01", "Cv4g00"], mode: "replace", assigneeUserIds: [] }],
+      ["conversation.snooze", { conversationId: "Cv4g00", expectedRevision: 1, snoozedUntil: "2026-11-10T12:00:00Z" }],
     ] satisfies [string, RunnerJsonValue][];
     for (const [operation, input] of mutations) {
       const response = await fixture.call(operation, input, target);

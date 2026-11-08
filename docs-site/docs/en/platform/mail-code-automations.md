@@ -54,8 +54,8 @@ inside that handler. Failure stops the remaining functions for that message.
 There is no automatic winner selection between helpers. Use Mail’s guarded
 Actions for assignment, status and protected summaries. For a received message
 linked to a conversation only through a mailing list, Code cannot change that
-conversation’s work status or assignments. This applies to individual and batch
-changes. Other messages in the conversation keep their ordinary behavior.
+conversation’s work status, assignments or snooze. This applies to individual
+and batch changes. Reply sends validate the same eligibility before queuing. Other messages in the conversation keep their ordinary behavior.
 
 Messages start in the order their receipts reach the platform, one at a time
 for this mailbox’s registration, even if Code concurrency is raised. A retry

@@ -13,7 +13,7 @@ import {
 import type { CodeRunTokenClaims } from "@k2b/cloud/code/run-token";
 import { RunnerCallResponseSchema } from "@k2b/cloud/code/runner";
 import { CodeCheckedVersionManifestSchema } from "@k2b/cloud/contracts";
-import { AppEventEnvelopeSchema } from "@k2b/cloud/contracts/app-events";
+import { AppEventEnvelopeSchema } from "@k2b/cloud/events";
 import { ratelimit } from "@k2b/cloud/server";
 import { coreSettings, mandates } from "@k2b/cloud/services";
 import type { SQL } from "bun";
