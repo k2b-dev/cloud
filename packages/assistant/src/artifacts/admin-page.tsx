@@ -2,10 +2,10 @@ import { type AuthContext, auth, getLocale } from "@k2b/cloud/server";
 import { AdminLayout } from "@k2b/cloud/ssr";
 import { Hono } from "hono";
 import { z } from "zod";
+import { artifactMessages } from "../chat-code/messages";
 import { ssr } from "../config";
 import Admin from "./Admin.island";
 import { artifactAdmin } from "./admin";
-import { artifactMessages } from "./messages";
 
 const page = ssr<AuthContext>(async (c) => {
   const page = z.coerce

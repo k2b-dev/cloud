@@ -1,6 +1,6 @@
 import { Button, Dropdown, type DropdownItem, IconButtonLink, Paper, StatusBadge, useLocale } from "@k2b/ui";
 import { Show } from "solid-js";
-import { artifactMessages } from "./messages";
+import { artifactMessages } from "../chat-code/messages";
 import type { ArtifactSummary } from "./service";
 
 const studioPalette = [

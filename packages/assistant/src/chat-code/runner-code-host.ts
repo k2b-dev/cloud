@@ -4,8 +4,8 @@ import { type ChatRunInput, ChatRunPollSchema, type ChatRunReplySchema, decodeCh
 import { CapabilityStreamSchema } from "@k2b/cloud/contracts";
 import { z } from "zod";
 import { runtimeCapabilities } from "./capability-runtime";
-import type { CodeToolContext } from "./code-tools";
-import { ArtifactSource, LIMITS } from "./contracts";
+import type { CodeToolContext } from "./context";
+import { LIMITS } from "./contracts";
 import { HttpRequest, HttpResult, HttpReview } from "./http-contracts";
 import { encodePdfRequest } from "./pdf-contracts";
 import type { CapabilityDecision, CodeApproval } from "./runtime/capabilities";
@@ -70,7 +70,7 @@ export async function handleRunnerMessage(operation: string, input: unknown, hoo
 
 /** Server-only one-off host. Reuses the script session, outputs and turn approval services without a browser. */
 export function createRunnerCodeHost(options: Options) {
-  const runs = new Map<string, { session: ArtifactSession; artifactId?: string; resourceId?: string; revision: number }>();
+  const runs = new Map<string, { session: ArtifactSession; revision: number }>();
   const lifetime = new AbortController();
   const request = async (path: string, body: unknown, signal?: AbortSignal) =>
     checked(
@@ -140,17 +140,12 @@ export function createRunnerCodeHost(options: Options) {
     const input = parseCodeToolInput(call.name, call.args);
     const { context, turnId } = options.current();
     const conversationId = context.conversationId!;
-    const scope = {
-      conversationId,
-      ...(input.operation === "run" && (input.resourceId ?? input.id) ? { resourceId: input.resourceId ?? input.id } : {}),
-    };
-    const query = new URLSearchParams({ conversationId });
+    const scope = { conversationId };
     if (input.operation === "run") {
       if (runs.size >= LIMITS.pendingRequests) {
         for (const [id, entry] of runs) {
           const state = entry.session.snapshot();
           if (
-            entry.artifactId ||
             state.status !== "ready" ||
             state.inputPending ||
             state.pendingRequests ||
@@ -167,19 +162,9 @@ export function createRunnerCodeHost(options: Options) {
         if (runs.size >= LIMITS.pendingRequests)
           throw new Error("Stop an existing test run before starting another; remaining runs hold active work or retained resources");
       }
-      if (input.resourceId) await checked(await options.fetch(`/api/assistant/artifacts/${input.resourceId}/access`));
-      const current = input.id
-        ? z
-            .object({ source: ArtifactSource, sourceRevision: z.number() })
-            .parse(
-              await (
-                await checked(
-                  await options.fetch(`/api/assistant/artifacts/${input.id}?${query}${input.version ? `&version=${input.version}` : ""}`),
-                )
-              ).json(),
-            )
-        : undefined;
-      const source = current?.source ?? { entry: "main.ts", files: [{ path: "main.ts", content: input.code! }] };
+      if (input.id || input.resourceId || input.version || input.code === undefined)
+        throw new CloudError("unavailable", "Chat code_run requires inline code. Saved Studio apps and storage are unavailable here.");
+      const source = { entry: "main.ts", files: [{ path: "main.ts", content: input.code }] };
       const sdk = usesCodeRunSdk(source.files) ? await codeRunSdk(context.authority ?? null, context.locale, lifetime.signal) : undefined;
       const compiled = await compileRunnerScript(source, sdk);
       const list = input.inputPaths.length
@@ -233,7 +218,6 @@ export function createRunnerCodeHost(options: Options) {
                 name,
                 input: z.json().parse(input),
                 ...coordinates,
-                ...(current ? { artifactId: scope.resourceId } : {}),
                 conversationId,
               },
               context,
@@ -271,7 +255,7 @@ export function createRunnerCodeHost(options: Options) {
             const review = HttpReview.parse(
               await (
                 await request(
-                  "/api/assistant/artifacts/runtime/http",
+                  "/api/assistant/chat-code/runtime/http",
                   { id, createdAt: Date.now(), scope, request: HttpRequest.parse(value) },
                   signal,
                 )
@@ -284,20 +268,20 @@ export function createRunnerCodeHost(options: Options) {
               );
               signal.throwIfAborted();
               await assertActive();
-              return HttpResult.parse(await (await request(`/api/assistant/artifacts/runtime/http/${id}`, { approved }, signal)).json());
+              return HttpResult.parse(await (await request(`/api/assistant/chat-code/runtime/http/${id}`, { approved }, signal)).json());
             } catch (error) {
-              await request(`/api/assistant/artifacts/runtime/http/${id}`, { approved: false }).catch(() => {});
+              await request(`/api/assistant/chat-code/runtime/http/${id}`, { approved: false }).catch(() => {});
               throw error;
             }
           },
           ai: async (requestInput, signal) =>
             z
               .object({ output: z.json() })
-              .parse(await (await request("/api/assistant/artifacts/runtime/ai", { scope, request: requestInput }, signal)).json()).output,
+              .parse(await (await request("/api/assistant/chat-code/runtime/ai", { scope, request: requestInput }, signal)).json()).output,
           pdf: async (value, signal) =>
             (
               await checked(
-                await options.fetch(`/api/assistant/artifacts/runtime/pdf?${new URLSearchParams(scope)}`, {
+                await options.fetch(`/api/assistant/chat-code/runtime/pdf?${new URLSearchParams(scope)}`, {
                   method: "POST",
                   body: encodePdfRequest(value),
                   signal,
@@ -310,61 +294,13 @@ export function createRunnerCodeHost(options: Options) {
               "Studio RSQL database grants are unavailable in runner code_run. Use application capabilities.",
             );
           },
-          storage: async (value) => {
-            if (!scope.resourceId) throw new CloudError("unavailable", "Shared storage requires a saved resource or resourceId");
-            const manage = Boolean(input.resourceId);
-            if (value.area === "files" && (value.operation === "read" || value.operation === "write")) {
-              if (!value.key) throw new Error("File key required");
-              const body =
-                value.operation === "write"
-                  ? typeof value.value === "string"
-                    ? new Blob([value.value], { type: "text/plain" })
-                    : value.value instanceof Blob
-                      ? value.value
-                      : undefined
-                  : undefined;
-              if (value.operation === "write" && !body) throw new Error("Expected text or Blob");
-              const response = await options.fetch(
-                `/api/assistant/artifacts/${scope.resourceId}/storage/file?${new URLSearchParams({
-                  key: value.key,
-                  conversationId,
-                  management: String(manage),
-                })}`,
-                { method: body ? "PUT" : "GET", body },
-              );
-              if (response.status === 404 && !body) return null;
-              await checked(response);
-              return body ? null : new File([await response.blob()], value.key.split("/").pop()!);
-            }
-            const result = z
-              .object({
-                items: z.array(z.object({ key: z.string() })).optional(),
-                item: z.object({ content: z.string() }).nullable().optional(),
-              })
-              .parse(
-                await (
-                  await request(
-                    `/api/assistant/artifacts/${scope.resourceId}/storage${manage ? "/manage" : ""}?${query}`,
-                    {
-                      scope: value.scope,
-                      area: value.area,
-                      operation: value.operation,
-                      key: value.key,
-                      after: value.after,
-                      limit: value.limit,
-                      content: value.operation === "write" ? JSON.stringify(value.value) : undefined,
-                      mediaType: "",
-                    },
-                    signal,
-                  )
-                ).json(),
-              );
-            return result.items ? result.items.map((item) => item.key) : result.item ? JSON.parse(result.item.content) : null;
+          storage: async () => {
+            throw new CloudError("unavailable", "Studio app storage is unavailable in chat code_run. Use chat or Project files.");
           },
           view: async (view, index, signal) =>
             ViewRefSchema.parse(
               await (
-                await request("/api/assistant/artifacts/runtime/views", { conversationId, turnId, runId: call.callId, index, view }, signal)
+                await request("/api/assistant/chat-code/runtime/views", { conversationId, turnId, runId: call.callId, index, view }, signal)
               ).json(),
             ),
         },
@@ -403,7 +339,7 @@ export function createRunnerCodeHost(options: Options) {
           };
         },
       );
-      const entry = { session, artifactId: input.id, resourceId: input.resourceId, revision: current?.sourceRevision ?? 0 };
+      const entry = { session, revision: 0 };
       runs.set(call.callId, entry);
       while (session.snapshot().status === "starting" && session.snapshot().work?.status !== "running") {
         lifetime.signal.throwIfAborted();

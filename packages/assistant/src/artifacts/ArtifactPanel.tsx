@@ -12,6 +12,10 @@ import {
   onMount,
   Show,
 } from "solid-js";
+import { artifactMessages } from "../chat-code/messages";
+import type { RuntimeContext } from "../chat-code/runtime/cloud";
+import { CloudError, type CloudErrorCode } from "../chat-code/runtime/errors";
+import { fetchChunk, type RuntimeServices } from "../chat-code/runtime/services";
 import { artifactClient } from "./client";
 import { type ArtifactSource, hasInterface, LIMITS } from "./contracts";
 import { AppFrame, loadAppAssets } from "./html/AppFrame";
@@ -19,12 +23,8 @@ import type { AppFrameAssets } from "./html/assets";
 import type { AppFiles } from "./html/compose";
 import type { Confirm, Mount, MountEvent } from "./html/host";
 import { registerLocalRun } from "./local-runs";
-import { artifactMessages } from "./messages";
 import { runnerClient } from "./runner-client";
 import type { RunnerMetadata } from "./runner-contracts";
-import type { RuntimeContext } from "./runtime/cloud";
-import { CloudError, type CloudErrorCode } from "./runtime/errors";
-import { fetchChunk, type RuntimeServices } from "./runtime/services";
 
 type Log = { time: string; level: string; text: string };
 type Running = {

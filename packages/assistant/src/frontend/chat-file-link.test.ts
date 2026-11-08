@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { workspaceSelectionFromHref } from "../artifacts/workspace-state";
+import { workspaceSelectionFromHref } from "../chat-code/workspace-state";
 import { resolveChatFileLink } from "./chat-file-link";
 
 const current = "http://localhost:3000/app/assistant?conversation=qxGsYe";

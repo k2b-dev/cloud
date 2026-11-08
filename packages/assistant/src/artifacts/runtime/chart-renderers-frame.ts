@@ -1,4 +1,4 @@
-import type { RareChartRenderer } from "./chart-renderer-types";
+import type { RareChartRenderer } from "../../chat-code/runtime/chart-renderer-types";
 
 let source = "";
 let renderer: RareChartRenderer | undefined;

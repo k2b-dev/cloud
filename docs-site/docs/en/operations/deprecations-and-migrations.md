@@ -15,6 +15,26 @@ settings at startup. An existing stored row always wins. Import runs only when
 no row exists; it never replaces an unreadable or invalid row. Invalid
 environment values produce a startup warning and are ignored. For trusted proxies, an invalid bootstrap value with no stored row stops gateway startup; correct or remove it before restarting.
 
+## Chat runner and Studio separation
+
+One-off chat `code_run` now accepts inline scripts only. Remove saved Studio
+`id`, `version`, or `resourceId` arguments from chat integrations. Use the
+application's capabilities for data and the chat/Project file tools for files;
+App file scope, app KV storage, and Studio RSQL database grants are unavailable
+on this path. There is no replacement database or grant conversion.
+
+Chat secret entry, approvals, native views, and runner execution use the
+Assistant's chat-code services. Existing encrypted chat secrets, pending
+approvals, client claims, and durable call outcomes keep their table names and
+contents. This separation does not delete Studio data or run RSQL cleanup.
+
+Studio still owns saved apps/actions, app storage and RSQL, machine execution,
+the standalone editor, and HTML checks/presentations. Those paths still need
+Assistant's Chromium image. The chat runner and secret-entry UI do not.
+Upgrade Assistant, Core, and the platform packages together so signed file
+and runtime routes agree. Runner prerequisites and limits remain in
+[Code runs](/en/docs/platform/code-runs#one-off-chat-jobs).
+
 ## Upgrade an installation
 
 1. Upgrade Core, the gateway, applications, and the `admin` CLI plugin together.

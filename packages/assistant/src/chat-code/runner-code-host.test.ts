@@ -4,13 +4,15 @@ import { compileCapabilityManifest } from "@k2b/cloud/capabilities/testing";
 import { generateCodeSdk } from "@k2b/cloud/code";
 import { encodeChatValue } from "@k2b/cloud/code/chat-run";
 import { z } from "zod";
+import { useUnitClients } from "../../../../scripts/fixtures/unit-clients";
 import * as browserHost from "../cli/code-host";
 import { runtimeCapabilities } from "./capability-runtime";
-import { createManagedCodeHost } from "./managed-code-host";
 import { runChatRunnerFixture } from "./runner-code.test-fixture";
+import { createRunnerCodeHost as createManagedCodeHost } from "./runner-code-host";
 import * as sdkProvider from "./runtime/code-run-sdk";
 import { testIdentity } from "./test-identity";
 
+useUnitClients();
 const NOW = Date.UTC(2030, 0, 2);
 afterEach(() => {
   jest.useRealTimers();
@@ -69,7 +71,7 @@ function fixture(options: { remote?: boolean } = {}) {
     transport,
     fetch: async (path, init) => {
       localPaths.push(path);
-      if (path === "/api/assistant/artifacts/runtime/http") {
+      if (path === "/api/assistant/chat-code/runtime/http") {
         const body = JSON.parse(String(init?.body));
         httpRequests.push(body);
         return Response.json({
@@ -82,7 +84,7 @@ function fixture(options: { remote?: boolean } = {}) {
           bodyTruncated: false,
         });
       }
-      if (path.startsWith("/api/assistant/artifacts/runtime/http/")) {
+      if (path.startsWith("/api/assistant/chat-code/runtime/http/")) {
         const decision = JSON.parse(String(init?.body));
         httpRequests.push(decision);
         return decision.approved
@@ -341,3 +343,76 @@ test("completed disposable runner results are reclaimed when the host reaches it
     await f.close();
   }
 }, 60_000);
+
+test("signed chat code_run route resolves chat authority and executes through the runner fixture", async () => {
+  const { Hono } = await import("hono");
+  const { chatCodeToolRoutes } = await import("./code-tool-routes");
+  const { agentHost } = await import("./agent-host");
+  const identity = testIdentity("33333333-3333-4333-8333-333333333333");
+  const f = fixture();
+  const conversation = spyOn(codeExecution.aiConversations, "getConversation").mockResolvedValue({
+    id: "11111111-1111-4111-8111-111111111111",
+    createdByUserId: identity.user.id,
+    archivedAt: null,
+    projectId: null,
+  } as Awaited<ReturnType<typeof codeExecution.aiConversations.getConversation>>);
+  const invocation = chatCodeToolRoutes.routes.filter((route) => route.path === "/code_run")[1];
+  if (!invocation) throw new Error("Missing signed invocation middleware");
+  // Replace only credential verification. Keep the registered tool handler, chat ownership and Runner execution real.
+  const signed = spyOn(invocation, "handler").mockImplementation(async (_c, next) => next());
+  const call = spyOn(agentHost, "call").mockImplementation(async (input, context) => {
+    expect(context.actor).toEqual(identity.actor);
+    expect(context.accessSubject).toEqual(identity.accessSubject);
+    expect(context.conversationId).toBe("11111111-1111-4111-8111-111111111111");
+    return { status: "done", result: await f.execute("code_run", input.args, input.callId), approvals: [] };
+  });
+  const router = new Hono<import("@k2b/cloud/server").AuthContext>()
+    .use("*", async (c, next) => {
+      c.set("actor", identity.actor);
+      c.set("accessSubject", identity.accessSubject);
+      await next();
+    })
+    .route("/tools", chatCodeToolRoutes);
+  try {
+    const response = await router.request("/tools/code_run", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        conversationId: "11111111-1111-4111-8111-111111111111",
+        input: {
+          name: "code_run",
+          turnId: "22222222-2222-4222-8222-222222222222",
+          callId: "signed-run",
+          args: { code: 'import {demo} from "@sdk"; export default async()=>({rows:await demo.folder("dynamic-folder").list({})});' },
+        },
+      }),
+    });
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({
+      ok: true,
+      data: { status: "done", result: { runId: "signed-run", status: "ready", output: '{"rows":[{"name":"Ada","amount":12.5}]}' } },
+    });
+    expect(f.calls).toHaveLength(1);
+    conversation.mockResolvedValue(null);
+    const denied = await router.request("/tools/code_run", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        conversationId: "11111111-1111-4111-8111-111111111111",
+        input: {
+          name: "code_run",
+          turnId: "22222222-2222-4222-8222-222222222222",
+          callId: "denied",
+          args: { code: "export default()=>42" },
+        },
+      }),
+    });
+    expect(denied.status).toBe(403);
+    expect(call).toHaveBeenCalledTimes(1);
+  } finally {
+    signed.mockRestore();
+    call.mockRestore();
+    conversation.mockRestore();
+    await f.close();
+  }
+}, 20_000);

@@ -191,11 +191,11 @@ describe("Assistant Project view", () => {
     expect(html).not.toContain("divide-y");
     expect(html).toContain("Project context");
     expect(html).toContain("View project");
-    expect(html).toContain("Studio Apps");
-    expect(html).toContain("Project bank reconciliation");
+    expect(html).not.toContain("Studio Apps");
+    expect(html).not.toContain("Project bank reconciliation");
     expect(html).toContain("project-skill");
     expect(html).not.toContain("Loading Studio Apps");
-    expect(html).toContain('aria-label="Link a Studio App"');
+    expect(html).not.toContain('aria-label="Link a Studio App"');
     expect(html).toContain('class="ti ti-eye"');
     expect(html).toContain("IT support");
     expect(html).toContain("text-[var(--ui-app-accent-text)]");

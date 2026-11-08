@@ -23,7 +23,10 @@ test("production compiler loads the emitted worker asset beside its server bundl
     const extrasErrors = await new Response(extras.stderr).text();
     expect(await extras.exited, extrasErrors).toBe(0);
     const chunkOutput = join(directory, "chunks.js");
-    const chunkBuild = await Bun.build({ entrypoints: [new URL("./chunks.ts", import.meta.url).pathname], target: "bun" });
+    const chunkBuild = await Bun.build({
+      entrypoints: [new URL("../../chat-code/runtime/chunks.ts", import.meta.url).pathname],
+      target: "bun",
+    });
     expect(chunkBuild.success).toBe(true);
     await Bun.write(chunkOutput, await chunkBuild.outputs[0]!.text());
     const probe = join(directory, "probe.ts");

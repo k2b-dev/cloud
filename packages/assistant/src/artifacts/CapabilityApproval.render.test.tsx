@@ -17,7 +17,7 @@ afterAll(() => {
   if (createdSerovalLink) unlinkSync(serovalLink);
 });
 
-const { createCodeApprovals } = await import("./CapabilityApproval");
+const { createCodeApprovals } = await import("../chat-code/CapabilityApproval");
 const { LocaleProvider } = await import("@k2b/ui");
 
 import type { CapabilityApproval } from "./runtime/capabilities";
@@ -102,7 +102,7 @@ test("code approvals present the capability in the reader's language and the app
 });
 
 test("an approval from managed code reads as the app's localized review, never as raw JSON", async () => {
-  const { codeApprovalMessage } = await import("./code-approval-message");
+  const { codeApprovalMessage } = await import("../chat-code/code-approval-message");
   const { AiChatActionsProvider, AiTurnBlockView } = await import("@k2b/cloud/ai/ui");
   const request = {
     status: "approval",

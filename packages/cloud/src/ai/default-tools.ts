@@ -206,8 +206,8 @@ export const createCloudAiCodeTools = () => [
   defineAiTool({
     name: "code_secret",
     description:
-      "Open a trusted Secret input dialog. The user enters the value directly into encrypted Assistant storage; only configured/name returns. Never ask for a credential in chat, survey or app fields. Personal secrets are scoped to this chat or resource and bound to the exact HTTPS origin, header and prefix. Use cloud.http.secret(name,{prefix}) in cloud.http.fetch headers; load assistant-code-mode for HTTP details. Web UI required for secret entry; stored secrets also work from CLI.",
-    inputSchema: CodeSecretInput,
+      "Open a trusted Secret input dialog. The user enters the value directly into encrypted Assistant storage; only configured/name returns. Never ask for a credential in chat, survey or app fields. Personal secrets are scoped to this chat and bound to the exact HTTPS origin, header and prefix. Use cloud.http.secret(name,{prefix}) in cloud.http.fetch headers; load assistant-code-mode for HTTP details. Web UI required for secret entry; stored secrets also work from CLI.",
+    inputSchema: CodeSecretInput.omit({ resourceId: true }),
     outputSchema: z.object({ configured: z.boolean(), name: z.string() }),
     approval: "never",
   }).client(),
@@ -224,8 +224,8 @@ export const createCloudAiCodeTools = () => [
     promptHint:
       "For file analysis, data transformations or combining Cloud data, run a short one-off script with code_run; its computed views come from cloud.view.* in the script and present. Load assistant-code-mode for its runtime APIs; no saved app is required.",
     description:
-      "Run one-off script code OR a saved script resource in the isolated worker. Optional resourceId binds one-off code to existing app data (Manage required), without editing its source. One-off modules can import the generated capability SDK and sheet.toCsv from @sdk: default-export an async function. Dynamic IDs are allowed, no app/version/owner needed. SDK methods return domain data directly; actions retain normal approvals. Also includes cloud.capabilities.run(name,input) for capability envelopes; load assistant-code-mode for its runtime APIs. Scripts read explicit chat inputPaths. Returns output, logs, captured files and view references for agent inspection only. Show computed views with cloud.view.chart, cloud.view.group, cloud.view.table, cloud.view.stats, cloud.view.details or cloud.view.explorer in the script, then present({path}) each returned view; never retype run values into chart arguments, files or Markdown. Apps with an index.html interface do not run here: show them with code_open or code_present. Runs use real shared and personal data; database writes and capability effects keep normal permissions and approvals.",
-    inputSchema: CodeRunInput,
+      "Run one-off script code in the Code runner. Saved Studio scripts, app storage and Studio RSQL are unavailable here. One-off modules can import the generated capability SDK and sheet.toCsv from @sdk: default-export an async function. Dynamic IDs are allowed, no app/version/owner needed. SDK methods return domain data directly; actions retain normal approvals. Also includes cloud.capabilities.run(name,input) for capability envelopes; load assistant-code-mode for its runtime APIs. Scripts read explicit chat inputPaths. Returns output, logs, captured files and view references for agent inspection only. Show computed views with cloud.view.chart, cloud.view.group, cloud.view.table, cloud.view.stats, cloud.view.details or cloud.view.explorer in the script, then present({path}) each returned view; never retype run values into chart arguments, files or Markdown. For lasting Code and pages, load code-authoring. Capability effects use the person's current permissions and the turn's approvals.",
+    inputSchema: z.object({ code: CodeRunInput.shape.code.unwrap(), inputPaths: CodeRunInput.shape.inputPaths }).strict(),
     outputSchema: z.json(),
     approval: "never",
   }).server(runManagedCodeTool("code_run")),
@@ -281,6 +281,7 @@ export const createCloudAiCodeTools = () => [
 export const createAiTurnCodeAndClientTools = (config: Pick<AiChatTurnRunConfig, "clientToolIds" | "mandate">) =>
   [createCloudAiLocalBashTool(), ...createCloudAiLocalTools(), ...createCloudAiCodeTools()].filter(
     (tool) =>
+      !["code_action", "code_open", "code_check", "code_present"].includes(tool.def.name) &&
       (tool.location === "server" || config.clientToolIds?.some((name) => name === tool.def.name)) &&
       !(config.mandate && ["code_open", "code_secret"].includes(tool.def.name)),
   );

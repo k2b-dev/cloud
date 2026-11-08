@@ -5,7 +5,6 @@ packages/assistant/src/artifacts/advanced-browser-harness.tsx | 1
 packages/assistant/src/artifacts/advanced.browser.test.ts | 2
 packages/assistant/src/artifacts/apps-browser-harness.tsx | 1
 packages/assistant/src/artifacts/apps.browser.test.ts | 2
-packages/assistant/src/artifacts/context.browser.test.ts | 4
 packages/assistant/src/artifacts/html/html-app.browser.test.ts | 2
 packages/assistant/src/artifacts/runtime/browser-harness.ts | 2
 packages/assistant/src/artifacts/runtime/streams-browser-harness.ts | 1

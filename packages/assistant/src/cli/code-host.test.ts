@@ -1,8 +1,8 @@
 import { expect, jest, test } from "bun:test";
 import { buildBaseCss, buildCheckPrelude } from "../artifacts/html/build-assets";
-import { ChunkName, chunkSource } from "../artifacts/runtime/chunks";
 import { cliHostBundle } from "../artifacts/runtime/cli-bundle";
 import { compileArtifact } from "../artifacts/runtime/compile";
+import { ChunkName, chunkSource } from "../chat-code/runtime/chunks";
 import { createCliCodeHost } from "./code-host";
 
 test.each(["signal", "code_stop"])(

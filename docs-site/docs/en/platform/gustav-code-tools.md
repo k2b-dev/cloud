@@ -101,8 +101,10 @@ use its actual result shape and pagination contract. SDK methods return domain
 data directly. `sheet` uses the existing runtime spreadsheet helpers. Writes
 still use the normal capability permissions and approval dialogs.
 
-Studio apps keep their existing `code_read`, `code_write` and `code_check`
-inputs with `id`, revision guards and screenshot review.
+The chat aliases `code_read`, `code_write`, and `code_check` accept lasting
+Code projects only. They do not fall back to Studio source operations.
+Studio's standalone editor and direct app APIs remain available until the
+Studio retirement.
 
 ## Maintainer contract: shared CLI and chat JSON
 

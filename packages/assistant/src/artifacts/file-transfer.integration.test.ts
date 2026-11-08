@@ -3,10 +3,10 @@ import { sql } from "@k2b/cloud";
 import { aiConversations, aiProjects, migrateCloudAi } from "@k2b/cloud/ai";
 import { tinyJpeg, withCameraMetadata } from "../../../../scripts/fixtures/image-metadata";
 import { databaseSuite } from "../../../../scripts/fixtures/test-infra";
-import { studioFiles } from "./file-transfer";
+import { chatFiles } from "../chat-code/file-transfer";
 import { testIdentity } from "./test-identity";
 
-databaseSuite()("Studio image file transfers", () => {
+databaseSuite()("Chat image file transfers", () => {
   beforeAll(async () => {
     await migrateCloudAi();
   });
@@ -28,26 +28,26 @@ databaseSuite()("Studio image file transfers", () => {
         INSERT INTO ai.files(conversation_id, path, bytes, size, media_type, origin)
         VALUES (${source.id}::uuid, '/legacy.jpg', ${legacy}, ${legacy.length}, 'application/octet-stream', 'user')
       `;
-      const file = await studioFiles.read({ scope: "chat", id: source.id, path: "/legacy.jpg" }, identity);
+      const file = await chatFiles.read({ scope: "chat", id: source.id, path: "/legacy.jpg" }, identity);
       if (!file) throw new Error("Missing legacy source");
       for (const destination of [
         { scope: "project" as const, id: project.id, path: "copied.jpg" },
         { scope: "chat" as const, id: target.id, path: "/copied.jpg" },
       ]) {
-        const copied = await studioFiles.copy(file.reference, destination, null, identity, new AbortController().signal);
-        const stored = await studioFiles.readReference(copied.reference, identity);
+        const copied = await chatFiles.copy(file.reference, destination, null, identity, new AbortController().signal);
+        const stored = await chatFiles.readReference(copied.reference, identity);
         expect(stored.bytes).toEqual(jpeg);
         expect(copied.size).toBe(stored.bytes.length);
         expect(copied.mediaType).toBe("application/octet-stream");
         // The returned reference also authorizes an expected-version replacement.
-        const replaced = await studioFiles.copy(
+        const replaced = await chatFiles.copy(
           file.reference,
           destination,
           copied.reference.version,
           identity,
           new AbortController().signal,
         );
-        expect((await studioFiles.readReference(replaced.reference, identity)).bytes).toEqual(jpeg);
+        expect((await chatFiles.readReference(replaced.reference, identity)).bytes).toEqual(jpeg);
       }
     } finally {
       await sql`DELETE FROM ai.projects WHERE id=${project.id}::uuid`;

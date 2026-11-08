@@ -4,7 +4,7 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { Page } from "playwright";
 import { launchBrowser, pageErrors, settled } from "../../../ui/test/browser";
-import { SecretSave } from "./http-contracts";
+import { SecretSave } from "../chat-code/http-contracts";
 import { MachineRights } from "./machine-contracts";
 
 // Studio sharing is the shared access dialog; machine rights and secrets are a section inside it.

@@ -3,11 +3,11 @@
 Read [cloud contract](cloud.md) first. A script runs in an isolated, terminable
 workerd isolate on the Code runner with one frozen global `cloud`, no DOM, and
 no native network access. Managed `code_run` never starts Chromium. It
-has no interface; interfaces are [HTML apps](apps.md). Imports may reference only
-the resource’s own JavaScript, TypeScript, JSON, CSV, TSV, or text source files,
-plus the generated `@sdk` supplied to chat scripts.
+has no HTML interface. Pass inline JavaScript/TypeScript; `@sdk` is generated
+from the current capability catalog. Saved Studio modules and contexts are
+unavailable. For lasting Code load `code-authoring`.
 
-A script or app action default-exports a function:
+A script default-exports a function:
 
 ```js
 export default async (input, { files, signal, progress }) => {
@@ -23,8 +23,8 @@ export default async (input, { files, signal, progress }) => {
 ```
 
 `files` contains only the chat files selected through `code_run.inputPaths`:
-`{path, size, type, file(): Promise<File>}`. Actions receive an empty array.
-Files load on demand. `cloud.files` is separate durable shared app storage.
+`{path, size, type, file(): Promise<File>}`. Files load on demand. Shared app `cloud.files`, `cloud.kv` and `cloud.db`
+are unavailable; use chat/Project file tools or application capabilities.
 Selection and captured output budgets are 50 MiB per file, 250 MiB total, and
 64 paths. Runner bridge requests and responses must additionally fit 256 KiB,
 including JSON envelopes and base64 file bytes. A Blob does not bypass this
@@ -40,17 +40,16 @@ messages; keep diagnostics compact. At most 32 host messages may be pending.
 
 Unattended turns use their current routine mandate on the same runner path.
 Capability grants and HTTP grants still apply. Studio RSQL `database` grants
-are unavailable in runner `code_run`, even with a saved script or `resourceId`;
+are unavailable in runner `code_run`, saved scripts and `resourceId` are rejected;
 use application capabilities. No replacement database is created. The remaining
 Studio HTML checks, actions and presentations retain their legacy browser host.
 
 Return JSON or nothing; do not return functions or class instances.
 Logs appear in diagnostics. A script download is captured for `code_export`;
-an interactive app download is handed to the viewer.
+present its exported chat path to the person.
 
 Use `crypto.randomUUID()` for IDs. `cloud.locale`, `cloud.timeZone`, and
-`cloud.user` come from the trusted host. `cloud.user` is null for anonymous
-public-share visitors; personal KV and database writes are denied there.
+`cloud.user` come from the trusted host. The runtime receives the signed-in person; it does not select a Studio app.
 
 CSV reads detect UTF-8 then Windows-1252 and convert numeric columns in their
 source convention. Ambiguous numeric columns use unambiguous number columns in the same file, then the export convention: dot decimals with a comma delimiter, otherwise the locale’s decimal mark. Columns containing unsafe integers stay text. Duplicate or blank header collisions get unique suffixes; malformed CSV and rows beyond the header fail with `invalid` and a line number.
