@@ -29,6 +29,11 @@ export type ToolbarActionProps = {
   keys?: string;
   /** 1 is most important. Larger numbers move first; ties move later DOM actions first. Omit to keep fixed. */
   priority?: number;
+  /**
+   * Shows the label beside the icon while a floating toolbar has room. When it gets narrow, these labels go first,
+   * every action keeps its icon, and only then do actions move into More.
+   */
+  text?: boolean;
   disabled?: boolean;
   /** Makes the action a toggle and exposes its state as `aria-pressed`, such as Bold over bold text. */
   pressed?: boolean;
@@ -58,6 +63,8 @@ export const ToolbarHintsContext = createContext(true);
 type RegisteredAction = { element: HTMLButtonElement; props: ToolbarActionProps; item: DropdownAction };
 const ToolbarActionsContext = createContext<(action: RegisteredAction) => () => void>();
 const overflowAttribute = "data-overflow";
+/** Set on a floating toolbar whose action labels gave way to icons for lack of room. */
+const compactAttribute = "data-compact";
 const hide = (element: Element) => element.setAttribute(overflowAttribute, "hidden");
 const reveal = (element: Element) => element.removeAttribute(overflowAttribute);
 
@@ -132,10 +139,16 @@ const ToolbarAction = (props: ToolbarActionProps): JSX.Element => {
       aria-keyshortcuts={ariaShortcut(props.keys, platform())}
       aria-pressed={props.pressed === undefined ? undefined : props.pressed ? "true" : "false"}
       data-priority={props.priority}
+      data-text={props.text ? "" : undefined}
       disabled={props.disabled}
       onClick={() => props.onClick?.()}
     >
       <i class={props.icon} aria-hidden="true" />
+      <Show when={props.text}>
+        <span class="k2b-toolbar__text" aria-hidden="true">
+          {props.label}
+        </span>
+      </Show>
       <Show when={hints && props.keys}>{(keys) => <Kbd keys={keys()} class="k2b-kbd-hint k2b-toolbar__hint" />}</Show>
     </IconButton>
   );
@@ -264,6 +277,7 @@ const measureOverflow = (
   available: number,
 ): RegisteredAction[] => {
   for (const element of root.querySelectorAll(`[${overflowAttribute}]`)) if (element !== more) reveal(element);
+  root.removeAttribute(compactAttribute);
   const children = Array.from(root.children).filter(
     (element): element is HTMLElement => element instanceof HTMLElement && element !== more,
   );
@@ -325,6 +339,8 @@ const measureOverflow = (
     .sort((a, b) => b.props.priority! - a.props.priority!);
   let movedAny = false;
   tidy(false);
+  // Labels go before actions: a toolbar that does not fit with its labels drops them first.
+  if (used(false) > available && root.querySelector(".k2b-toolbar__action[data-text]")) root.setAttribute(compactAttribute, "");
   for (const action of candidates) {
     if (used(movedAny) <= available) break;
     hide(action.element);
@@ -400,6 +416,7 @@ export const Toolbar = Object.assign(
           void action.props.label;
           void action.props.icon;
           void action.props.keys;
+          void action.props.text;
         }
         measure();
       });

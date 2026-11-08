@@ -45,9 +45,14 @@
 
 /* No depth inside depth: everything inside an island is flat, so a Paper or
    card inside a Paper, a framed Section, or a ResourceCard casts no shadow. */
-.k2b-ui :is(.k2b-paper, .k2b-resource-card, .k2b-section[data-frame="line"]) > *,
 .k2b-ui :is(.k2b-paper, .k2b-resource-card, .k2b-section[data-frame="line"]) .k2b-ui {
   --k2b-island-shadow: 0 0 #0000;
+}
+/* Inside an island its surface is the surface: fills that mix into the surface,
+   such as a selected table row, mix into the island's lighter dark surface. */
+.k2b-ui :is(.k2b-paper, .k2b-resource-card, .k2b-section[data-frame="line"]) > * {
+  --k2b-island-shadow: 0 0 #0000;
+  --k2b-surface: var(--k2b-island-surface);
 }
 
 .k2b-ui .k2b-paper[data-elevated="true"] {

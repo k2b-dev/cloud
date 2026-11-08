@@ -100,6 +100,12 @@ type DraftLookup = {
 export const MAIL_CONTEXT_DETAIL_ID = "mail-context";
 
 /** From this many messages on, the reader shows the newest few and folds the rest behind one button. */
+/**
+ * The reply pill's actions after Reply, in order. The contents are still being decided (an option is Done and Assign,
+ * with Archive under "…"); change only this list.
+ */
+const REPLY_PILL_ACTIONS = ["reply_all", "forward", "archive", "done"] as const;
+type ReplyPillActionId = (typeof REPLY_PILL_ACTIONS)[number];
 const MAIL_READER_COLLAPSE_FROM = 5;
 const MAIL_READER_NEWEST_SHOWN = 3;
 
@@ -1297,6 +1303,67 @@ export default function MailConversationReader(props: {
     ];
   };
 
+  /**
+   * The reply pill's actions after Reply, in the order of `REPLY_PILL_ACTIONS`; each runs an existing reader action.
+   * Larger priorities move into More first. Respond actions show their label while there is room.
+   */
+  const pillActions = createMemo(() => {
+    type PillAction = {
+      id: ReplyPillActionId;
+      label: string;
+      icon: string;
+      priority: number;
+      text?: boolean;
+      disabled?: boolean;
+      run: () => void;
+    };
+    const actions: PillAction[] = [];
+    for (const id of REPLY_PILL_ACTIONS) {
+      if (id === "reply_all" && canRespondToLatest() && canReplyAllToLatest())
+        actions.push({
+          id,
+          label: t().replyAll,
+          icon: "ti ti-arrow-back-up-double",
+          priority: 3,
+          text: true,
+          disabled: composerBusy(),
+          run: () => respondToLatest("reply_all"),
+        });
+      if (id === "forward" && canRespondToLatest())
+        actions.push({
+          id,
+          label: t().forward,
+          icon: "ti ti-arrow-forward-up",
+          priority: 3,
+          text: true,
+          disabled: composerBusy(),
+          run: () => respondToLatest("forward"),
+        });
+      if (id === "archive" && props.canWrite) {
+        const archive = directToolbarAction("archive");
+        if (archive)
+          actions.push({ id, label: archive.label, icon: archive.icon, priority: 2, disabled: archive.disabled, run: archive.action });
+      }
+      if (id === "done" && props.canWrite && props.workStatus) {
+        const done = props.workStatus === "done";
+        actions.push({
+          id,
+          label: done ? t().reopen : t().markDone,
+          icon: done ? "ti ti-arrow-back-up" : "ti ti-check",
+          priority: 1,
+          disabled: props.completionPending,
+          run: toggleCompletion,
+        });
+      }
+    }
+    // A separator stands where the respond actions end and the conversation's own actions begin.
+    const responds = (id: ReplyPillActionId) => id === "reply_all" || id === "forward";
+    return actions.map((action, index) => ({
+      ...action,
+      separated: index > 0 ? responds(actions[index - 1]!.id) !== responds(action.id) : canRespondToLatest() && !responds(action.id),
+    }));
+  });
+
   const cloudId = useMailCloudId();
   // The same menu as the conversation's row in the list, with what only the open conversation knows.
   const overflowActions = (): DropdownItem[] =>
@@ -1626,8 +1693,9 @@ export default function MailConversationReader(props: {
                 </Show>
                 {/* One floating pill above the newest message, at every width: it sticks to the top of the reader
                     while the messages scroll. It runs the reader's existing actions and changes no compose logic. */}
-                <Show when={canRespondToLatest() || (props.canWrite && props.workStatus)}>
+                <Show when={canRespondToLatest() || pillActions().length > 0}>
                   <div class="mail-reader-reply-pill" data-mail-reply-pill>
+                    {/* As the reader narrows, labels give way to icons (Reply keeps its word), then actions move into More. */}
                     <Toolbar label={t().conversationActions} variant="floating">
                       <Show when={canRespondToLatest()}>
                         <Button
@@ -1641,54 +1709,24 @@ export default function MailConversationReader(props: {
                           <i class="ti ti-arrow-back-up" aria-hidden="true" />
                           {t().reply}
                         </Button>
-                        <Show when={canReplyAllToLatest()}>
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            aria-label={t().replyAll}
-                            disabled={composerBusy()}
-                            onClick={() => respondToLatest("reply_all")}
-                          >
-                            <i class="ti ti-arrow-back-up-double" aria-hidden="true" />
-                            <span class="mail-reader-pill-text">{t().replyAll}</span>
-                          </Button>
-                        </Show>
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          aria-label={t().forward}
-                          disabled={composerBusy()}
-                          onClick={() => respondToLatest("forward")}
-                        >
-                          <i class="ti ti-arrow-forward-up" aria-hidden="true" />
-                          <span class="mail-reader-pill-text">{t().forward}</span>
-                        </Button>
                       </Show>
-                      <Show when={props.canWrite && props.workStatus}>
-                        {(status) => (
+                      <For each={pillActions()}>
+                        {(action) => (
                           <>
-                            <Toolbar.Separator />
-                            <Show when={directToolbarAction("archive")}>
-                              {(archive) => (
-                                <Toolbar.Action
-                                  label={archive().label}
-                                  icon={archive().icon}
-                                  priority={2}
-                                  disabled={archive().disabled}
-                                  onClick={archive().action}
-                                />
-                              )}
+                            <Show when={action.separated}>
+                              <Toolbar.Separator />
                             </Show>
                             <Toolbar.Action
-                              label={status() === "done" ? t().reopen : t().markDone}
-                              icon={status() === "done" ? "ti ti-arrow-back-up" : "ti ti-check"}
-                              priority={1}
-                              disabled={props.completionPending}
-                              onClick={toggleCompletion}
+                              label={action.label}
+                              icon={action.icon}
+                              text={action.text}
+                              priority={action.priority}
+                              disabled={action.disabled}
+                              onClick={action.run}
                             />
                           </>
                         )}
-                      </Show>
+                      </For>
                     </Toolbar>
                   </div>
                 </Show>

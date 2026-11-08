@@ -3444,6 +3444,64 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
           }
         });
 
+        test("the reply pill never reaches past itself or the reader: labels give way to icons, then actions move into More", async () => {
+          for (const [width, height] of [
+            [1920, 1080],
+            [1440, 900],
+            [1194, 834],
+            [900, 900],
+            [834, 1194],
+            [390, 844],
+            [320, 640],
+          ] as const) {
+            const page = await open(`${boxPath}?conversation=Conv01&theme=dark`, width, height);
+            try {
+              await page.waitForFunction(
+                () => !document.querySelector("[data-mail-reply-pill] .k2b-toolbar")?.hasAttribute("data-overflow-pending"),
+              );
+              const fit = await page.evaluate(() => {
+                const pill = document.querySelector<HTMLElement>("[data-mail-reply-pill] .k2b-toolbar")!;
+                const reader = document.querySelector<HTMLElement>(".mail-reader-scroll")!.getBoundingClientRect();
+                const box = pill.getBoundingClientRect();
+                const controls = Array.from(pill.querySelectorAll<HTMLElement>("button")).filter(
+                  (button) => button.getClientRects().length > 0 && !button.closest("[data-overflow]"),
+                );
+                const outside = controls
+                  .map((button) => ({
+                    name: button.getAttribute("aria-label") ?? button.textContent?.trim(),
+                    box: button.getBoundingClientRect(),
+                  }))
+                  .filter(({ box: control }) => control.left < box.left - 0.5 || control.right > box.right + 0.5)
+                  .map(({ name }) => name);
+                const labels = Array.from(pill.querySelectorAll<HTMLElement>(".k2b-toolbar__text")).filter(
+                  (label) => label.getClientRects().length > 0,
+                ).length;
+                return {
+                  inReader: box.left >= reader.left - 0.5 && box.right <= reader.right + 0.5,
+                  outside,
+                  reply: controls.find((button) => button.classList.contains("mail-reader-pill-reply"))?.textContent?.trim(),
+                  labels,
+                  compact: pill.hasAttribute("data-compact"),
+                  more: controls.some((button) => button.closest(".k2b-toolbar__more")),
+                };
+              });
+              expect(fit.inReader, `${width} pill inside the reader`).toBe(true);
+              expect(fit.outside, `${width} controls inside the pill`).toEqual([]);
+              // Reply always keeps its word.
+              expect(fit.reply, `${width} Reply`).toBe("Reply");
+              // Labels show only while there is room; a compact pill shows none, and More comes only after labels went.
+              if (fit.compact) expect(fit.labels, `${width} labels`).toBe(0);
+              else expect(fit.labels, `${width} labels`).toBe(2);
+              if (fit.more) expect(fit.compact, `${width} More after labels`).toBe(true);
+              // The widest reader has room for every label; the narrowest phone has not.
+              if (width === 1920) expect(fit.compact, "1920 shows the labels").toBe(false);
+              if (width === 320) expect(fit.compact, "320 is compact").toBe(true);
+            } finally {
+              await close(page);
+            }
+          }
+        });
+
         test("phone: the reply pill above the newest message offers Reply, Reply all, Forward, Archive and Done by touch and keyboard", async () => {
           const page = await open(`${boxPath}?conversation=Conv01`, 390, 844);
           try {
@@ -3459,7 +3517,20 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
                   .filter((element) => element.getClientRects().length > 0 && !element.closest("[data-overflow]"))
                   .map((element) => element.getAttribute("aria-label") ?? element.textContent?.trim()),
               );
-            expect(names).toEqual(["Reply", "Reply all", "Forward", "Archive", "Mark as done"]);
+            // Reply leads and keeps its word; every action is reachable in the pill or, when the phone is too narrow
+            // for its engine's metrics, under More, which then is the last control.
+            expect(names[0]).toBe("Reply");
+            const inMore = names.includes("More actions")
+              ? await (async () => {
+                  await bar.getByRole("button", { name: "More actions" }).click();
+                  const rows = await page.getByRole("menuitem").allTextContents();
+                  await page.keyboard.press("Escape");
+                  return rows.map((row) => row.trim());
+                })()
+              : [];
+            expect(new Set([...names.filter((name) => name !== "More actions"), ...inMore])).toEqual(
+              new Set(["Reply", "Reply all", "Forward", "Archive", "Mark as done"]),
+            );
             // The pill sits inside the reader, above the newest message, and never below the screen.
             const scroller = (await page.locator(".mail-reader-scroll").boundingBox())!;
             const strip = (await bar.boundingBox())!;
@@ -3478,7 +3549,7 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
             // Keyboard: the pill is one tab stop with arrow keys inside.
             await bar.getByRole("button", { name: "Reply", exact: true }).focus();
             await page.keyboard.press("ArrowRight");
-            expect(await page.evaluate(() => document.activeElement?.getAttribute("aria-label"))).toBe("Reply all");
+            expect(await page.evaluate(() => document.activeElement?.getAttribute("aria-label"))).toBe(names[1]!);
             // Touch: Done marks the conversation done.
             await page.route("**/api/mail/mailboxes/Box001/conversations/completion", (route) =>
               route.fulfill({
@@ -3486,7 +3557,11 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
               }),
             );
             const completed = page.waitForRequest((request) => request.url().endsWith("/conversations/completion"));
-            await bar.getByRole("button", { name: "Mark as done" }).tap();
+            if (names.includes("Mark as done")) await bar.getByRole("button", { name: "Mark as done" }).tap();
+            else {
+              await bar.getByRole("button", { name: "More actions" }).tap();
+              await page.getByRole("menuitem", { name: "Mark as done" }).tap();
+            }
             expect((await completed).postDataJSON()).toEqual({ conversationIds: ["Conv01"], completion: "done" });
           } finally {
             await close(page);

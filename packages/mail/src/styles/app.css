@@ -1525,23 +1525,20 @@
   margin: 0.25rem 0 0.875rem;
   pointer-events: none;
 }
+/* The strip spans the reader's width, so the toolbar measures the reader: as it
+   narrows, Reply all and Forward drop their words, then actions move into More.
+   The pill never reaches past the reader. */
 .k2b-ui .mail-reader-reply-pill > .k2b-toolbar-float {
   position: static;
+  flex: 1 1 auto;
+  min-width: 0;
   margin: 0;
   padding: 0;
   justify-content: flex-start;
 }
-.k2b-ui .mail-reader-reply-pill .k2b-button:not(.k2b-icon-button) {
+.k2b-ui .mail-reader-reply-pill .mail-reader-pill-reply {
+  flex: none;
   padding-inline: 0.75rem;
-}
-/* Phones: Reply keeps its word, Reply all and Forward show their icons. */
-@media not all and (min-width: 48rem) {
-  .k2b-ui .mail-reader-reply-pill .mail-reader-pill-text {
-    display: none;
-  }
-  .k2b-ui .mail-reader-reply-pill .k2b-button:not(.mail-reader-pill-reply, .k2b-icon-button) {
-    padding-inline: 0;
-  }
 }
 
 /* From tablets on, the actions take their own row above the subject, which then has the toolbar's full width to wrap. */
