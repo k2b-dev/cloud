@@ -11,6 +11,13 @@ document.documentElement.lang = parameters.get("locale") === "de" ? "de" : "en";
 if (parameters.has("nav")) {
   installPageSwap();
 }
+if (parameters.has("earlyGuard")) {
+  // A page guard registered before the lazy editor: it allows the first leave, stops the retry, then allows.
+  let checks = 0;
+  onBeforeLeave((event) => {
+    if (new URL(event.url).pathname === "/destination" && ++checks === 2) event.preventDefault();
+  });
+}
 document.body.dataset.theme = parameters.has("dark") ? "dark" : "light";
 const features: ImageEditorFeatures = parameters.has("minimal")
   ? { crop: { aspects: [parameters.has("wide") ? "16:9" : "1:1"], locked: true }, rotate: true }

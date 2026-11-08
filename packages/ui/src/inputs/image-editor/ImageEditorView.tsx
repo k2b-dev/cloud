@@ -138,11 +138,60 @@ const PHONE_WIDTH = 640;
 const clamp = (n: number, min: number, max: number) => Math.max(min, Math.min(max, n));
 /**
  * The editors whose discard was confirmed for one navigation target. Shared because each editor guards the same
- * navigation on its own; any cancelled discard prompt clears it, so a vetoed navigation leaves every edit dirty.
+ * navigation on its own. Confirmed editors let only the retry that their confirmation starts (`retry`) pass. A
+ * cancelled discard prompt, or a retry that any other page guard stops, clears it: every edit stays dirty, the
+ * page warns before unloading, and the next navigation asks again.
  */
-let leavePass: { href: string; editors: Set<symbol> } | undefined;
-/** Navigation attempts (by their shared `restored` promise) that an editor stopped to ask its own question. */
-const editorVetoes = new WeakSet<Promise<void>>();
+type LeavePass = { href: string; editors: Set<symbol>; retry?: object };
+let leavePass: LeavePass | undefined;
+/** Counts discard questions, so a retry stopped by an editor's own question keeps the earlier confirmations. */
+let editorQuestions = 0;
+
+/** Ends a Back retry once nav has decided on its traversal; a late answer only means asking once more. */
+const afterTraversal = (done: () => void) => {
+  const navigation = (window as Window & { navigation?: EventTarget }).navigation;
+  let timer = 0;
+  const finish = () => {
+    navigation?.removeEventListener("currententrychange", changed);
+    clearTimeout(timer);
+    done();
+  };
+  // nav decides in the popstate that follows the entry change, within the same task.
+  const changed = () => {
+    clearTimeout(timer);
+    timer = window.setTimeout(finish, 0);
+  };
+  navigation?.addEventListener("currententrychange", changed, { once: true });
+  timer = window.setTimeout(finish, 1000);
+};
+
+/**
+ * Retries a navigation after a confirmed discard. A probe registered last learns whether every leave check allowed
+ * it; leave checks registered before the editors are covered too, because they stop the probe as well.
+ */
+function retryLeave(pass: LeavePass, href: string, delta: number | undefined) {
+  const retry = {};
+  pass.retry = retry;
+  const asked = editorQuestions;
+  let allowed = false;
+  const stopProbe = onBeforeLeave(() => {
+    allowed = true;
+  });
+  const settle = () => {
+    stopProbe();
+    if (leavePass !== pass || pass.retry !== retry) return;
+    pass.retry = undefined;
+    if (!allowed && editorQuestions === asked) leavePass = undefined;
+  };
+  if (delta !== undefined && delta < 0) {
+    window.history.go(delta);
+    afterTraversal(settle);
+  } else {
+    // The leave checks run synchronously inside swapPage.
+    void swapPage(href);
+    settle();
+  }
+}
 
 const reducedMotion = () => typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches;
 const sliderValue = (key: keyof ImageEditorAdjustments, adjustments: ImageEditorAdjustments) =>
@@ -642,23 +691,14 @@ function ImageEditorSession(props: ImageEditorProps): JSX.Element {
       event.returnValue = "";
     }
   };
-  // A confirmed discard lets this editor pass the retried navigation without touching its history: if another
-  // editor's prompt is cancelled, every editor stays dirty and asks again next time.
+  // A confirmed discard lets this editor pass the retried navigation without touching its history.
   const leaveKey = Symbol("image-editor");
-  const passes = (href: string) => leavePass?.href === href && leavePass.editors.has(leaveKey);
+  const passes = (href: string) => leavePass?.href === href && leavePass.retry !== undefined && leavePass.editors.has(leaveKey);
   createEffect(on([history, draft, inlineText], () => leavePass?.editors.delete(leaveKey), { defer: true }));
   onBeforeLeave((event) => {
     const href = event.url.href;
-    if (!dirty()) return;
-    if (passes(href)) {
-      // `restored` resolves only when a later check vetoes. Another editor's question keeps this consent for the
-      // retry; any other veto ends the attempt, so the next navigation asks again.
-      void event.restored.then(() => {
-        if (!editorVetoes.has(event.restored)) leavePass = undefined;
-      });
-      return;
-    }
-    editorVetoes.add(event.restored);
+    if (!dirty() || passes(href)) return;
+    editorQuestions++;
     event.preventDefault();
     void event.restored.then(async () => {
       if (!alive) return;
@@ -669,8 +709,7 @@ function ImageEditorSession(props: ImageEditorProps): JSX.Element {
       if (!alive) return;
       if (leavePass?.href !== href) leavePass = { href, editors: new Set() };
       leavePass.editors.add(leaveKey);
-      if (event.delta !== undefined && event.delta < 0) window.history.go(event.delta);
-      else void swapPage(href);
+      retryLeave(leavePass, href, event.delta);
     });
   });
   onCleanup(() => leavePass?.editors.delete(leaveKey));

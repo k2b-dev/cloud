@@ -767,6 +767,40 @@ describe("public ImageEditor interactions", () => {
     }
   });
 
+  test("a page guard registered before the editor that stops the retry voids the confirmed discard", async () => {
+    const { page, errors } = await open("nav=1&earlyGuard=1");
+    try {
+      await selectTool(page, "Crop");
+      await page.getByRole("button", { name: "Mirror", exact: true }).click();
+      const dialog = page.getByRole("dialog");
+      await page.locator("#destination-link").click();
+      await dialog.getByText("Discard unsaved changes?", { exact: true }).waitFor();
+      await dialog.getByRole("button", { name: "Confirm", exact: true }).click();
+      await page.waitForFunction(() => !document.querySelector("dialog[open]"));
+      await settled(page);
+      expect(new URL(page.url()).pathname).toBe("/editing");
+      expect(await dirty(page)).toBe("true");
+      // The page still warns before unloading the unsaved photo.
+      expect(
+        await page.evaluate(() => {
+          const event = new Event("beforeunload", { cancelable: true });
+          window.dispatchEvent(event);
+          return event.defaultPrevented;
+        }),
+      ).toBe(true);
+      // The next attempt asks again instead of reusing the consent.
+      await page.locator("#destination-link").click();
+      await dialog.getByText("Discard unsaved changes?", { exact: true }).waitFor();
+      await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
+      await page.waitForFunction(() => !document.querySelector("dialog[open]"));
+      expect(new URL(page.url()).pathname).toBe("/editing");
+      expect(await dirty(page)).toBe("true");
+      expect(errors).toEqual([]);
+    } finally {
+      await page.close();
+    }
+  });
+
   test("cancel and enhanced navigation preserve dirty edits when the warning is dismissed", async () => {
     const { page, errors } = await open();
     try {
