@@ -2,6 +2,7 @@ import { i18n } from "@k2b/stdlib";
 import { useLocale } from "@k2b/ui";
 
 const germanText: Record<string, string> = {
+  Unavailable: "Nicht verfügbar",
   Finished: "Beendet",
   "Routine instructions": "Auftrag",
   "Run queued. The result will appear here and in the chat when it is ready.":

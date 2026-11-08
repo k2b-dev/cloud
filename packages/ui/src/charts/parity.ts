@@ -708,10 +708,10 @@ export const chartParity: readonly ChartParityRow[] = [
   },
   {
     id: "cloud-chart",
-    feature: "cloud.chart()",
+    feature: "Chat native charts",
     proof: {
-      file: "packages/assistant/src/chat-code/runtime/cloud-lib.test.ts",
-      test: "chart function formats survive validation and measured redraws",
+      file: "packages/assistant/src/chat-code/runtime/views.test.ts",
+      test: "canonical chart forms pass through for every kind including gauge",
     },
     spec: line,
   },

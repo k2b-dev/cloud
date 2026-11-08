@@ -1,6 +1,6 @@
 ### Keep retirement tests on surviving public boundaries
 
-- **What happened:** Studio retirement left integration fixtures expecting removed result links and an obsolete approval exemption, Chromium environment and retired settings.
+- **What happened:** Studio retirement left fixtures expecting removed result links, an obsolete approval exemption, Chromium environment, retired settings and Studio navigation.
 - **Root cause:** The fixtures changed their imports and requester types without following the surviving public routes and approval lifecycle.
 - **Error class:** Test contract drift after feature retirement.
-- **Guard:** The Assistant OAuth integration enumerates the mounted public API. Chat-result tests retain file delivery and legacy transcript reads; the turn-ending test covers unused and consumed generic and chat-code approvals. Generator tests use a surviving app environment entry, and settings tests distinguish application-owned keys from retired keys.
+- **Guard:** The Assistant OAuth integration enumerates the mounted public API. Chat-result tests retain file delivery and legacy transcript reads; the turn-ending test covers unused and consumed generic and chat-code approvals. Generator tests use a surviving app environment entry, and settings tests distinguish application-owned keys from retired keys. Sidebar tests check desktop and mobile navigation together, composer fixtures declare a surviving application tag, and chart parity points to the native view contract. The literal-text scan still requires German translations.

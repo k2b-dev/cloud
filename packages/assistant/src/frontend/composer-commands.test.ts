@@ -1087,7 +1087,17 @@ test("references in the text count toward the limit for inserting and attaching 
   const input = {
     copy: assistantCopyFor("de"),
     locale: "de",
-    tags: [],
+    tags: [
+      {
+        appId: "notebooks",
+        appName: "Notebooks",
+        appIcon: "ti ti-notebook",
+        tag: "note",
+        title: "Notizen",
+        description: "",
+        aliases: ["notes"],
+      },
+    ],
     partCount: () => 16,
     excludeRefs: () => [],
     fileSelectionDisabled: false,
@@ -1128,7 +1138,17 @@ for (const withTrack of [false, true]) {
       const rows = assistantInsertCommands({
         copy: assistantCopyFor("de"),
         locale: "de",
-        tags: [],
+        tags: [
+          {
+            appId: "notebooks",
+            appName: "Notebooks",
+            appIcon: "ti ti-notebook",
+            tag: "note",
+            title: "Notizen",
+            description: "",
+            aliases: ["notes"],
+          },
+        ],
         partCount: () => partCount,
         excludeRefs: () => [],
         fileSelectionDisabled: false,

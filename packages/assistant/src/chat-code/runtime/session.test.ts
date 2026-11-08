@@ -58,10 +58,13 @@ test("session host preserves output limits and missing input/hook errors", async
   const fixture = session();
   try {
     await expect(fixture.request("file.read", ["unknown.csv"])).rejects.toMatchObject({ code: "not_found" });
-    for (const method of ["database", "storage"]) {
+    for (const [method, message] of [
+      ["database", "Studio RSQL database grants are unavailable"],
+      ["storage", "Studio app storage is unavailable"],
+    ] as const) {
       await expect(fixture.request(method, [{ scope: "shared", area: "kv", operation: "list" }])).rejects.toMatchObject({
         code: "unavailable",
-        message: expect.stringContaining("requires a saved app or script"),
+        message: expect.stringContaining(message),
       });
     }
     for (let index = 0; index < LIMITS.files; index++) await fixture.request("file.save", ["small", `${index}.txt`]);

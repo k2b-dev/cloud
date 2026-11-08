@@ -56,7 +56,7 @@ test("chat clicks select immediately while loading, preserve native modifiers an
     finish = resolve;
   });
   const [project, setProject] = createSignal<string | null>(null);
-  const [view, setView] = createSignal<"chat" | "apps" | "all">("chat");
+  const [view, setView] = createSignal<"chat" | "code" | "all">("chat");
   let opens = 0;
   let transitions = 0;
   Object.defineProperty(dom.document, "startViewTransition", {
@@ -109,7 +109,7 @@ test("chat clicks select immediately while loading, preserve native modifiers an
     expect(link.getAttribute("aria-current")).not.toBe("page");
     setProject(null);
     expect(link.getAttribute("aria-current")).toBe("page");
-    for (const destination of ["apps", "all"] as const) {
+    for (const destination of ["code", "all"] as const) {
       setView(destination);
       expect(link.getAttribute("aria-current")).not.toBe("page");
     }
@@ -213,14 +213,11 @@ test("footer project popup and mobile group share search and creation; pinned ch
       ["Pinned", ["chat:pinned"]],
       ["Previous 30 days", ["chat:normal"]],
     ]);
-    expect(ids.slice(-4)).toEqual(["apps", "projects", "activities", "preferences"]);
+    expect(ids.slice(-4)).toEqual(["approvals", "projects", "activities", "preferences"]);
     expect(ids).not.toContain("pinned");
     expect(ids).not.toContain("chats");
     expect(mobile.items().find((item) => item.id === "projects")?.defaultExpanded).toBe(false);
-    const studio = mobile.items().find((item) => item.id === "apps");
-    expect(studio?.action).toBe("apps");
-    expect(studio?.href).toBeUndefined();
-    expect(studio?.children).toBeUndefined();
+    expect(mobile.items().find((item) => item.id === "apps")).toBeUndefined();
     await mobile.activate("search-projects");
     await mobile.activate("new-project");
     expect(searches).toHaveLength(2);
@@ -344,7 +341,7 @@ test("the server's approvals count renders the row from the first paint", async 
   }
 });
 
-test("Waiting for you always keeps its place above Studio, with the live count", async () => {
+test("Waiting for you always keeps its place above Projects, with the live count", async () => {
   const dom = createDomTestHarness();
   const { readWorkspaceNavigation } = await import("@k2b/cloud/browser/testing");
   const { refreshAppBadges } = await import("@k2b/cloud/browser/app-badges");
@@ -388,14 +385,15 @@ test("Waiting for you always keeps its place above Studio, with the live count",
     await settle();
     expect(row()).not.toBeNull();
     expect(row()!.querySelector("i")?.className).toContain("ti-hand-stop");
-    expect(labels()).toEqual(["Waiting for you", "Studio", "Projects", "Runs", "Personalize"]);
+    expect(labels()).toEqual(["Waiting for you", "Projects", "Runs", "Personalize"]);
     expect(mobileIds()).toContain("approvals");
+    expect(mobileIds()).not.toContain("apps");
     counts = { total: 2, apps: { assistant: 2 } };
     refreshAppBadges();
     await settle();
     expect(row()!.querySelector(".k2b-app-workspace__sidebar-status-count")?.textContent).toBe("2");
     const ids = mobileIds();
-    expect(ids.indexOf("approvals")).toBeLessThan(ids.indexOf("apps"));
+    expect(ids.indexOf("approvals")).toBeLessThan(ids.indexOf("projects"));
     expect(
       readWorkspaceNavigation()!
         .navigation.items()
@@ -456,7 +454,7 @@ test("My apps & automations appears only for a person with Code and opens its vi
     expect(row()?.textContent).toContain("My apps & automations");
     expect(row()!.querySelector("i")?.className).toContain("ti-stack-2");
     const labels = Array.from(footer().querySelectorAll(".k2b-app-workspace__sidebar-item-label-text")).map((label) => label.textContent);
-    expect(labels.slice(0, 3)).toEqual(["Waiting for you", "My apps & automations", "Studio"]);
+    expect(labels.slice(0, 3)).toEqual(["Waiting for you", "My apps & automations", "Projects"]);
     expect(mobileIds()).toContain("code");
     const click = new MouseEvent("click", { bubbles: true, cancelable: true });
     row()!.dispatchEvent(click);

@@ -20,7 +20,6 @@ import {
 } from "@k2b/ui";
 import { type Accessor, createEffect, createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import { assistantApi } from "../api/client";
-import { artifactMessages } from "../chat-code/messages";
 import { assistantCommandMessages } from "../commands";
 import { openAssistantActivities } from "./AssistantActivitiesDialog";
 import { openAssistantAllChatsDialog } from "./AssistantAllChatsDialog";
@@ -57,7 +56,7 @@ type AssistantSidebarProps = {
   renderedAt: string;
   doneCount?: number;
   activeConversationId?: Accessor<string | null>;
-  activeView?: "chat" | "all" | "apps" | "approvals" | "code";
+  activeView?: "chat" | "all" | "approvals" | "code";
   projects?: AiProject[];
   activeProjectId?: string | null;
   creatingConversation?: Accessor<boolean>;
@@ -594,13 +593,6 @@ export default function AssistantSidebar(props: AssistantSidebarProps) {
             },
           ]
         : []),
-      {
-        id: "apps",
-        action: "apps",
-        label: artifactMessages.resolve([locale()]).t.apps,
-        icon: "ti ti-app-window",
-        active: activeView() === "apps",
-      },
       {
         id: "projects",
         label: t().projects,
