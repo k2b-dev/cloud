@@ -9,8 +9,8 @@ import {
   capabilitySentenceParts,
   capabilitySentenceText,
 } from "../../_internal/capability-sentences";
+import { boundBlocks, findDraft } from "../../blocks/bound";
 import type { Block } from "../../blocks/schema";
-import { boundReviewView, reviewDraft } from "../../capabilities/reviews";
 import type {
   CapabilityActionCallReview,
   CapabilityActionReceipt,
@@ -266,11 +266,11 @@ export const reviewActionCard = (
   });
   const code = review.ask ?? "app_asks";
   const subjectSlot = Object.entries(review.slots).find(([, slot]) => slot.kind === "object" || slot.kind === "place");
-  // A browser holds the review in a reactive store, whose proxies the data guard rightly refuses; the compact review is
-  // JSON on the wire (at most 32 KiB inline), so bind against that same JSON.
-  const plain: CapabilityActionCallReview = JSON.parse(JSON.stringify(review));
-  const view = boundReviewView(plain);
-  const draft = reviewDraft(view?.blocks);
+  // Cloud binds and checks a review's view when it reads the review; the card shows those blocks as they are and never
+  // binds again, so the browser needs no block schemas and a reactive store's proxies never meet the data guard.
+  const blocks = review.view ? boundBlocks(review.view.blocks) : undefined;
+  const view = blocks ? { version: 1 as const, blocks } : undefined;
+  const draft = findDraft(view?.blocks);
   return {
     locale,
     app: context.app,

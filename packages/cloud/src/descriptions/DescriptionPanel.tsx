@@ -1,26 +1,19 @@
 import {
-  Button,
   Chart,
   ChartExplorer,
   type ChartFrameRequest,
   ChartSnapshotView,
-  createDataTableView,
   DashboardFrame,
   type DashboardFrameState,
   type DashboardWidth,
   DataTable,
-  type DataTableColumn,
   DescriptionList,
-  SelectChip,
-  StatCell,
-  StatGrid,
-  TextInput,
   useLocale,
 } from "@k2b/ui";
 import { createMemo, For, type JSX, Match, Show, Switch } from "solid-js";
 import { Dynamic } from "solid-js/web";
 import { cloudAiDetailsRows, parseCloudAiView } from "../ai/view-block";
-import { formatDescriptionNumber } from "./format";
+import { type DescriptionTableRow, descriptionTableColumns, StatsBlock, TableBlock } from "./description-blocks";
 import type { DescriptionJson as JsonValue } from "./json";
 import { descriptionMessages } from "./messages";
 import { type DescriptionRow, descriptionBlockComponent, descriptionSubtitle, descriptionTitle, resolveDescription } from "./resolve";
@@ -203,57 +196,6 @@ export function DescriptionPanel(props: DescriptionPanelProps): JSX.Element {
 }
 
 /**
- * `{ block: "stats", items: [...] }`: single key-figure tiles. Every tile has the states in its own place: loading
- * placeholders, "Not loaded" with Try again, the empty dash, and a stale note under the figure.
- */
-function StatsBlock(props: { spec: JsonObject; state: DashboardFrameState; asOf?: string; onRetry?: () => void }): JSX.Element {
-  const locale = useLocale();
-  const t = useMessages();
-  const items = () => list(props.spec.items).filter(object);
-  // The icon tones of a key figure, and the money tones `in` and `out` of `FlowAmount`.
-  const tones = ["blue", "emerald", "amber", "red", "zinc", "in", "out"] as const;
-  const tone = (value: JsonValue | undefined) => tones.find((entry) => entry === value);
-  return (
-    <StatGrid columns={Math.min(6, Math.max(1, items().length)) as 1 | 2 | 3 | 4 | 5 | 6}>
-      <For each={items()}>
-        {(item) => {
-          const format = (value: number) => formatDescriptionNumber(value, item.format, locale());
-          const delta = () => {
-            const change = object(item.delta) ? item.delta : undefined;
-            if (!change || typeof change.value !== "number") return undefined;
-            return {
-              value: change.value,
-              ...(change.unit === "points" ? { unit: "points" as const } : {}),
-              ...(change.better === "up" ? { better: "up" as const } : change.better === "down" ? { better: "down" as const } : {}),
-            };
-          };
-          const compare = () =>
-            object(item.compare) && typeof item.compare.value === "number"
-              ? { label: text(item.compare.label), value: format(item.compare.value) }
-              : undefined;
-          const empty = () => props.state === "empty";
-          return (
-            <StatCell
-              label={text(item.label)}
-              icon={typeof item.icon === "string" ? item.icon : undefined}
-              tone={tone(item.tone)}
-              value={empty() ? null : typeof item.value === "number" ? format(item.value) : text(item.value)}
-              sub={empty() ? t().nothingCounted : compare() ? undefined : text(item.note) || undefined}
-              delta={empty() ? undefined : delta()}
-              compare={empty() ? undefined : compare()}
-              trend={list(item.trend).filter((value): value is number => typeof value === "number")}
-              status={props.state === "loading" ? "loading" : props.state === "error" ? "error" : undefined}
-              stale={props.state === "stale" ? (props.asOf ? t().asOfNotCurrent({ asOf: props.asOf }) : t().notCurrent) : undefined}
-              onRetry={props.onRetry}
-            />
-          );
-        }}
-      </For>
-    </StatGrid>
-  );
-}
-
-/**
  * `{ block: "details", items: [{ label, type, value, format? }] }`: the fields of one record, in the form and with the
  * formatting of Chat's details view. The body keeps the panel's height in every state; more fields scroll inside it.
  * A reference shows its title; opening it is the host's.
@@ -308,7 +250,8 @@ function ComponentBlockContent(props: { block: string; spec: JsonObject }): JSX.
   );
 }
 
-type TableRow = { key: string; cells: JsonObject };
+type TableRow = DescriptionTableRow;
+const tableColumnsOf = descriptionTableColumns;
 
 /**
  * A block as an overview card shows it: its content without a frame, the first key figure or the first rows and
@@ -368,117 +311,6 @@ function ComponentBlock(
       compact
     >
       <ComponentBlockContent block={props.block} spec={props.spec} />
-    </DashboardFrame>
-  );
-}
-
-/** Table columns from a description: types, formats, states and priorities pass as they are to the typed table. */
-const tableColumnsOf = (columns: JsonObject[]): DataTableColumn<TableRow>[] =>
-  columns.map((column) =>
-    Object.assign(
-      {
-        id: text(column.id),
-        header: text(column.label),
-        value: (row: TableRow) => row.cells[text(column.id)] ?? null,
-        sortable: true,
-        align: ["number", "amount", "bar", "flow", "delta"].includes(text(column.type)) ? ("right" as const) : ("left" as const),
-      },
-      Object.fromEntries(typedColumnKeys.filter((key) => key in column).map((key) => [key, column[key]])),
-    ),
-  );
-/** Column fields the typed table reads. */
-const typedColumnKeys = ["type", "format", "states", "max", "priority", "delta", "timeZone"] as const;
-
-/**
- * `{ block: "table", columns, rows, search?, groupBy? }`: search and grouping sit in the frame's head, headers sort,
- * and the table reaches the frame's edges below. Search and order read what a typed column shows: a date by its time
- * and its shown text, a status by its label. A hidden copy of the full table keeps the frame's height, so loading,
- * empty, failure and a narrowing search never move anything and never cut a row; with a `height` the table scrolls
- * inside it instead.
- */
-function TableBlock(props: Omit<DescriptionPanelProps, "spec" | "state"> & { state: DashboardFrameState; spec: JsonObject }): JSX.Element {
-  const locale = useLocale();
-  const t = useMessages();
-  const columns = () => list(props.spec.columns).filter(object);
-  const groups = () => list(props.spec.groupBy).filter(object);
-  const allRows = (): TableRow[] =>
-    list(props.spec.rows)
-      .filter(object)
-      .map((cells, index) => ({ key: String(index), cells }));
-  const tableColumns = createMemo(() => tableColumnsOf(columns()));
-  const view = createDataTableView<TableRow>({ rows: allRows, columns: tableColumns });
-  const query = view.query,
-    setQuery = view.setQuery,
-    rows = view.rows;
-  const group = () => view.groupBy() ?? "";
-  const grouping = (): { groupBy?: string } => (group() ? { groupBy: group() } : {});
-  // A search without a match is the empty state with its own sentence and a way back.
-  const noMatch = () => withContent(props.state) && query() !== "" && rows().length === 0;
-  // The read's state stays in the head (a stale note keeps its Try again); a table without rows to show says why below.
-  const nothing = () => noMatch() || (withContent(props.state) && !allRows().length);
-  return (
-    <DashboardFrame
-      title={props.title}
-      subtitle={props.subtitle}
-      headingLevel={props.headingLevel}
-      width={props.width}
-      state={props.state}
-      emptyContent={nothing()}
-      asOf={props.asOf}
-      onRetry={props.onRetry}
-      empty={noMatch() ? t().noRowContains({ query: query() }) : (props.empty ?? t().nothingToShow)}
-      emptyIcon="ti ti-table-off"
-      height={props.height === 0 ? undefined : cssLength(props.height)}
-      emptyAction={
-        <Show when={noMatch()}>
-          <Button variant="secondary" size="sm" onClick={() => setQuery("")}>
-            {t().clearSearch}
-          </Button>
-        </Show>
-      }
-      tools={
-        <>
-          <Show when={props.spec.search === true}>
-            <TextInput
-              type="search"
-              icon="ti ti-search"
-              aria-label={t().searchIn({ title: props.title })}
-              placeholder={t().search}
-              value={query()}
-              onValueChange={setQuery}
-              disabled={!withContent(props.state)}
-            />
-          </Show>
-          <Show when={groups().length}>
-            <SelectChip<string>
-              stableWidth
-              aria-label={t().groupIn({ title: props.title })}
-              value={group()}
-              onValueChange={(id) => view.setGroupBy(id || null)}
-              disabled={!withContent(props.state)}
-              options={[
-                { value: "", label: t().notGrouped },
-                ...groups().map((entry) => ({
-                  value: text(entry.id),
-                  label: t().groupBy({ label: text(entry.label).toLocaleLowerCase(locale()) }),
-                })),
-              ]}
-            />
-          </Show>
-        </>
-      }
-      reserve={<DataTable<TableRow> ariaLabel={props.title} surface="plain" rows={allRows()} columns={tableColumns()} {...grouping()} />}
-    >
-      <DataTable<TableRow>
-        ariaLabel={props.title}
-        surface="plain"
-        rows={rows()}
-        getRowId={(row) => row.key}
-        sort={view.sort()}
-        onSortChange={view.setSort}
-        columns={tableColumns()}
-        {...grouping()}
-      />
     </DashboardFrame>
   );
 }

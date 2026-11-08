@@ -10,7 +10,8 @@ import {
   TextInput,
 } from "@k2b/ui";
 import { type Accessor, createContext, createMemo, createSignal, For, type JSX, Match, Show, Switch, useContext } from "solid-js";
-import { DescriptionPanel } from "../descriptions";
+import { CloudChartBlock } from "#chat-charts";
+import { type DescriptionObject, StatsBlock, TableBlock } from "../descriptions/description-blocks";
 import { blockDataAtPath } from "./bind";
 import { BLOCK_PANEL_HEIGHTS, blockChartHeight, blockDescription, blockJson } from "./description";
 import { blockWords } from "./messages";
@@ -64,6 +65,11 @@ const text = (value: unknown): string =>
         : "";
 const at = (item: unknown, path: readonly string[] | undefined): unknown => (path ? blockDataAtPath(item, path) : undefined);
 const items = (value: unknown): readonly unknown[] => (Array.isArray(value) ? value : []);
+/** A key-figure or table description as the shared description blocks read it. */
+const descriptionSpec = (description: unknown): DescriptionObject => {
+  const json = blockJson(description);
+  return json !== null && typeof json === "object" && !Array.isArray(json) ? json : {};
+};
 
 /** The contract checked every source; only a root-relative path of the answering app reaches the browser. */
 const imageSource = (value: unknown): string | undefined => {
@@ -484,22 +490,36 @@ function Leaf(props: { block: Block; host: Host; locale: string; timeZone: strin
     case "Draft":
       return <DraftBlock block={block} draft={props.draft} />;
     case "Stats":
+      return <StatsBlock spec={descriptionSpec(blockDescription(block, words(), props.timeZone))} state="ready" />;
     case "Table":
-    case "Chart":
       return (
-        <DescriptionPanel
-          spec={blockJson(blockDescription(block, words(), props.timeZone))}
-          title={block.kind === "Chart" ? (block.title ?? block.description?.title ?? "") : block.kind === "Table" ? block.title : ""}
-          height={
-            block.kind === "Chart"
-              ? blockChartHeight(block)
-              : block.kind === "Table" && items(block.rows).length > 8
-                ? BLOCK_PANEL_HEIGHTS.md
-                : 0
-          }
+        <TableBlock
+          spec={descriptionSpec(blockDescription(block, words(), props.timeZone))}
+          state="ready"
+          title={block.title}
+          subtitle={block.subtitle}
+          height={items(block.rows).length > 8 ? BLOCK_PANEL_HEIGHTS.md : 0}
           headingLevel={4}
-          empty={block.kind === "Table" || block.kind === "Chart" ? block.empty : undefined}
+          empty={block.empty}
         />
+      );
+    case "Chart":
+      // A chart draws as Gustav's charts do: its code loads on demand, and the server's drawing holds its place.
+      return (
+        <Show
+          when={block.description}
+          fallback={
+            <DashboardFrame
+              title={block.title}
+              headingLevel={4}
+              state="empty"
+              empty={block.empty}
+              height={`${blockChartHeight(block)}px`}
+            />
+          }
+        >
+          {(description) => <CloudChartBlock args={description()} completed />}
+        </Show>
       );
     default:
       // Forms, buttons and actions belong to Code pages; the contract keeps them out of every other host.

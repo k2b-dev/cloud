@@ -1,6 +1,6 @@
 import { capabilityReviewSentence, capabilitySentenceText } from "../_internal/capability-sentences";
 import { bindView } from "../blocks/bind";
-import type { Block } from "../blocks/schema";
+import { findDraft } from "../blocks/bound";
 import { blocksText } from "../blocks/text";
 import {
   CAPABILITY_MAX_REVIEW_BYTES,
@@ -12,15 +12,7 @@ import {
 } from "../contracts/capabilities";
 import { CAPABILITY_MAX_REVIEW_CONTENT_BYTES } from "../contracts/capability-limits";
 import { canonicalLocale } from "../shared/locale";
-export const reviewDraft = (blocks: readonly Block[] | undefined): Extract<Block, { kind: "Draft" }> | undefined => {
-  for (const block of blocks ?? []) {
-    if (block.kind === "Draft") return block;
-    if (block.kind === "Section") {
-      const draft = reviewDraft(block.children);
-      if (draft) return draft;
-    }
-  }
-};
+export const reviewDraft = findDraft;
 // Optional review forms may be explicitly undefined in in-process producers. Their
 // JSON representation omits them; use that same representation for data binding.
 export const reviewBindingData = (review: CapabilityActionCallReview) => ({
