@@ -1775,16 +1775,27 @@ suiteFor("database", "valkey")("C4 signed runner bridge and independent per-call
     });
     expect(response.status).toBe(403);
   });
-  test("paginated queries still stop at the durable per-run call limit", async () => {
+  test.each(["settings", "run"])("paginated queries still stop at the durable per-run call limit (%s)", async (limitSource) => {
     await resetFixture({ entry: true, policyRows: ["read"] });
-    const entry = structuredClone(baseEntry);
-    entry.manifest.queries[0]!.inputSchema = {
-      type: "object",
-      properties: { cursor: { type: "string" } },
-      additionalProperties: false,
+    const entry = {
+      ...baseEntry,
+      // Dispatch caches validators by schemaHash; compile the cursor schema and its hash together.
+      manifest: compileCapabilityManifest("example", {
+        protocolVersion: 2,
+        types: { folder: { title: "Folder", description: "Fixture folder." } },
+        queries: {
+          read: {
+            ...op,
+            target: "folder",
+            input: z.object({ cursor: z.string().optional().describe("Opaque next-page cursor.") }).strict(),
+          },
+        },
+      }),
     };
     queryCursor = "opaque:again";
-    callLimit = 2;
+    if (limitSource === "settings") callLimit = 2;
+    else await sql`UPDATE code.runs SET calls_limit=2 WHERE id=${claims.runId}::uuid`;
+    const fetchedBefore = fetched;
     let cursor: string | undefined;
     for (let page = 0; page < 3; page++) {
       const response = await send({
@@ -1802,7 +1813,14 @@ suiteFor("database", "valkey")("C4 signed runner bridge and independent per-call
         cursor = result.data.page.nextCursor;
       }
     }
-    expect(fetched).toBe(2);
+    expect(fetched - fetchedBefore).toBe(2);
+    const calls = await sql<
+      { ordinal: number; state: string }[]
+    >`SELECT ordinal,state FROM code.calls WHERE run_id=${claims.runId}::uuid ORDER BY ordinal`;
+    expect(calls).toEqual([
+      { ordinal: 1, state: "succeeded" },
+      { ordinal: 2, state: "succeeded" },
+    ]);
   });
 
   test("successful calls are ordered and stored before the provider runs", async () => {
