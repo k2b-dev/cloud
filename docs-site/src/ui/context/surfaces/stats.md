@@ -63,7 +63,7 @@ or less (one at 280 px or less). Tiles in a row share one height. Tiles keep
 | Property | Type | Purpose |
 | --- | --- | --- |
 | `label` | `string` | Names the measurement. |
-| `value` | `string \| number \| JSX.Element \| null` | Displays the figure. `null` shows a dash; say why in `sub`. |
+| `value` | `string \| number \| JSX.Element \| null` | Displays the figure. `null` shows the empty dash (—), which screen readers announce as "No value"; say why in `sub`. |
 | `icon` | `string` | Shows a Tabler icon in a chip before the label. |
 | `tone` | `"zinc" \| "blue" \| "emerald" \| "amber" \| "red" \| "in" \| "out"` | Colors the icon chip. Defaults to zinc. `in` and `out` are the money colors of `FlowAmount` for tiles such as "In in October"; pass a `FlowAmount` as `value` there. |
 | `delta` | `StatCellDelta` | Shows the change as a badge beside the figure. |

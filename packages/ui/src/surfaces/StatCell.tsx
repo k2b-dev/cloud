@@ -117,7 +117,17 @@ function Body(props: StatCellProps): JSX.Element {
                 data-empty={empty() || undefined}
                 title={props.title}
               >
-                {empty() ? "–" : props.value}
+                {/* A missing figure is the shared empty dash, named for screen readers instead of read as a dash. */}
+                <Show
+                  when={!empty()}
+                  fallback={
+                    <span role="img" aria-label={t().noValue}>
+                      —
+                    </span>
+                  }
+                >
+                  {props.value}
+                </Show>
               </span>
               <Show when={!empty() && props.delta}>{(delta) => <DeltaBadge delta={delta()} compare={props.compare} />}</Show>
             </>
