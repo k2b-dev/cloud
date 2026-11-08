@@ -100,6 +100,7 @@
     "./ai/live": "./src/ai/live.ts",
     "./ai/live-events": "./src/ai/live-events.ts",
     "./ai/runtime": "./src/ai/runtime.ts",
+    "./ai/server": "./src/ai/server.ts",
     "./ai/solid": "./src/ai/solid.ts",
     "./ai/tasks": "./src/ai/tasks/index.ts",
     "./ai/testing": "./src/ai/testing.ts",
