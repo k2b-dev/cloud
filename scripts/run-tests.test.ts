@@ -382,19 +382,18 @@ test("discovers ClickHouse and versioned Pulse migration files as isolated integ
   );
 });
 
-test("keeps the Mail workflow kernel in Cloud's isolated CI integration suites with Mail's fixture setup", async () => {
-  const suites = await discoverTestSuites(workspaceRoot, { integration: true, filters: ["mail-workflow-kernel"] });
+test("keeps the shared workflow engine in Cloud's isolated CI integration suites", async () => {
+  const suites = await discoverTestSuites(workspaceRoot, {
+    integration: true,
+    filters: ["src/workflows/store/events.integration.test.ts"],
+  });
   expect(suites).toEqual([
     {
-      name: "@k2b/cloud test/integration/mail-workflow-kernel.integration.test.ts",
+      name: "@k2b/cloud src/workflows/store/events.integration.test.ts",
       cwd: join(workspaceRoot, "packages/cloud"),
-      command: ["bun", "test", "--preload", preload, "--timeout", "30000", "test/integration/mail-workflow-kernel.integration.test.ts"],
+      command: ["bun", "test", "--preload", preload, "--timeout", "30000", "src/workflows/store/events.integration.test.ts"],
     },
   ]);
-  const source = await Bun.file(join(suites[0]!.cwd, suites[0]!.command.at(-1)!)).text();
-  const mailPreload = 'await import("../../../mail/test/integration-preload");';
-  expect(source).toContain(mailPreload);
-  expect(source.indexOf(mailPreload)).toBeLessThan(source.indexOf('await import("../../../mail/src/'));
 });
 
 for (const mode of ["unit", "webkit", "integration"] as const) {

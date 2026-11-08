@@ -187,10 +187,6 @@ Type `>` in the Cloud search to find the actions of the buttons and menus as com
 
 Open **Message actions** on an individual message. Its **Sender** section has tools for this sender:
 
-- **Find all from this sender** opens an exact mailbox search with its own URL.
-- **Create automation from sender**, **Block sender**, and **Block sender domain** open the guided rule editor with the sender filled in.
-- **Manage unsubscribe** appears only when the message contains standard mailing-list unsubscribe information.
-
 ## Refer to a mail from another app {icon="id"}
 
 Another Cloud app can keep a reference to a conversation or a message. To give it one, copy the Cloud ID:
@@ -210,7 +206,7 @@ Some mail is evidence, for example that a customer was informed. Choose **More c
 
 The protection covers the conversation as it grows. Replies that join it later are kept too, and so are messages that someone splits off or merges into another conversation. The conversation that receives them is kept as well, and its activity names who moved them there.
 
-While a conversation is kept, Cloud refuses to delete its messages, to move them to Trash, Junk, or Drafts, and to delete a folder that contains them. This applies to every way Cloud changes mail: the conversation and message actions, a selection of several conversations, incoming rules and other automations, workflows, the `cld` command line, and the Assistant. Each of them reports that the conversation is kept. You can still archive the conversation, move it to other folders, mark it read or flagged, and reply. Cancelling a scheduled message stays possible, because Cloud never sent it. The conversation stays kept, and Cloud keeps its copy of the cancelled message, which the JSON export marks as not sent.
+While a conversation is kept, Cloud refuses to delete its messages, to move them to Trash, Junk, or Drafts, and to delete a folder that contains them. This applies to every way Cloud changes mail: the conversation and message actions, a selection of several conversations, Code automations, the `cld` command line, and the Assistant. Each of them reports that the conversation is kept. You can still archive the conversation, move it to other folders, mark it read or flagged, and reply. Cancelling a scheduled message stays possible, because Cloud never sent it. The conversation stays kept, and Cloud keeps its copy of the cancelled message, which the JSON export marks as not sent.
 
 Cloud keeps its own complete copy of every kept message: the original message with its attachments. Other email clients and the mail server are outside Cloud's control and can still delete the message there. The message then stays in Cloud, in the folder where it was last, marked **Deleted on the server, kept in Cloud**. You can read, search, and download that copy as `.eml`. Archiving, moving, and marking the conversation change that copy in Cloud only, because the mail server no longer has it. If Cloud has not loaded a message completely yet, or loading it failed earlier, keeping the conversation loads it. Cloud has no copy of a message that the server deleted before Cloud could load it, for example while the mailbox was paused or its folder was not synchronized, or of a message larger than 128 MB.
 

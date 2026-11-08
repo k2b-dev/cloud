@@ -30,7 +30,6 @@ import {
   type MailRequestContext,
   userBackedActor,
 } from "./auth";
-import { validateDestructiveIncomingAutomationsForMailbox } from "./incoming-automations";
 import { mailLive } from "./live";
 import { pauseDeletedMailboxExecution, pauseMailboxTransport } from "./mailbox-lifecycle";
 import { providerBusy, withMailboxProviderOperationBarrier } from "./provider-operation-lock";
@@ -408,7 +407,6 @@ export const updateMailbox = async (params: {
   description?: string | null;
   syncEnabled?: boolean;
   searchBackend?: Mailbox["searchBackend"];
-  automaticReplyManagementPermission?: Mailbox["automaticReplyManagementPermission"];
   composeSafety?: Mailbox["composeSafety"];
 }): Promise<Result<Mailbox>> => {
   const name = params.name?.trim();
@@ -428,15 +426,6 @@ export const updateMailbox = async (params: {
         `;
         if (!locked) unwrap(fail(err.notFound("Mailbox")));
         unwrap(await requireMailboxPermission(params.context, params.mailboxId, "admin", tx));
-        if (composeSafety) {
-          unwrap(
-            await validateDestructiveIncomingAutomationsForMailbox({
-              mailboxId: params.mailboxId,
-              internalDomains: composeSafety.data.internalDomains,
-              db: tx,
-            }),
-          );
-        }
         const [row] = await tx<(DbMailbox & { short_id: string })[]>`
           UPDATE mail.mailboxes
           SET
@@ -444,10 +433,6 @@ export const updateMailbox = async (params: {
             description = CASE WHEN ${params.description !== undefined} THEN ${description} ELSE description END,
             sync_enabled = COALESCE(${params.syncEnabled ?? null}, sync_enabled),
             search_backend = COALESCE(${params.searchBackend ?? null}, search_backend),
-            automatic_reply_management_permission = COALESCE(
-              ${params.automaticReplyManagementPermission ?? null},
-              automatic_reply_management_permission
-            ),
             compose_safety = COALESCE(${composeSafety?.data ?? null}::jsonb, compose_safety),
             health = CASE
               WHEN ${params.syncEnabled === false} THEN 'paused'

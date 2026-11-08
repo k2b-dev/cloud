@@ -32,7 +32,7 @@ Operational status and public attachment links are separate from the settings. O
 - **Sync now** queues a mailbox synchronization. **Last successful sync** shows when the last one finished. **Sync now** is unavailable while the mailbox is paused, or while its account must first be connected, reconnected, or verified.
 - **Rediscover folders** refreshes folders and the remote namespace information.
 - **Verify connection** completes a pending provider connection.
-- **Pause mailbox** stops incoming synchronization, queued provider changes, scheduled delivery, and automatic replies.
+- **Pause mailbox** stops incoming synchronization, queued provider changes, and scheduled delivery.
 - **Resume mailbox** lets these background operations continue.
 
 Pausing stops operations. It does not hide anything. Existing mirrored mail and collaboration data stay readable for everyone with access to the mailbox.
@@ -93,7 +93,7 @@ After a send, Mail places the message in the identity's Sent folder as soon as i
 If the provider does not store sent messages, no copy exists.
 :::
 
-Mail adds the default Cc and Bcc recipients when a person starts a new message, reply, or forward with that identity. Mail removes duplicates and addresses that are already in To, Cc, or Bcc. Automatic replies and workflow messages do not get these defaults, and the writer can remove them before sending.
+Mail adds the default Cc and Bcc recipients when a person starts a new message, reply, or forward with that identity. Mail removes duplicates and addresses that are already in To, Cc, or Bcc. The writer can remove these defaults before sending.
 
 New messages, replies, and forwards start with the sender's default signature, separate from the text. A personal default takes precedence over the mailbox default. Switching the sender in the composer switches to that sender's default signature.
 
@@ -124,7 +124,6 @@ An identity that is not ready to send shows the reason as its status:
 
 When a mailbox has no identity that is ready to send, **Compose**, **Reply**, and **Forward** show the same reason. People with **Manage** access can open the sender settings from there.
 
-**Allow automatic replies** is separate from verification. Automatic replies can use only an identity that is ready to send and has this option turned on. Turning it on sends nothing by itself. An automatic reply or workflow that is turned on is still required.
 
 ## Manage provider folders {icon="user-cog"}
 
@@ -182,15 +181,8 @@ Agents can change provider subscriptions with `cld mail folder subscribe` and `c
 
 - **View** for reading, search, comments, and personal reminders.
 - **Edit** for sending, provider mail operations, and collaboration changes.
-- **Manage** for transport, sharing, rules, workflows, and the mailbox lifecycle.
+- **Manage** for transport, sharing, Code ownership, and the mailbox lifecycle.
 - **View assigned only** or **Edit assigned only** for people, groups, and agents that work only on the conversations assigned to them. [Work together in a mailbox](/app/mail/help/mail-collaboration) explains what they can do.
-
-**Automatic reply management access** is a mailbox setting above the access list:
-
-- **Writers and administrators** lets people with **Edit** access create and change guided out-of-office replies and acknowledgements.
-- **Administrators only** is the safe default for new and existing mailboxes.
-
-This setting does not let people with **Edit** access change identities, reference number settings, or YAML workflows. These stay operations that require **Manage** access.
 
 Credentials stay hidden, also for people with **Manage** access. Sharing a mailbox gives Cloud access to the mailbox. It does not reveal the provider password or token.
 
@@ -265,50 +257,13 @@ Open **… → Settings → Writing → Logo** in the mailbox to upload or repla
 
 Mailbox administrators can also manage one signature logo with `cld mail compose logo get`, `cld mail compose logo set --file logo.png [--width 200] [--alt "Team"]`, and `cld mail compose logo remove --yes`. Upload PNG or JPEG only, at most 100 KiB and 1200×400 pixels. Display width is 1–600 px (default 200). Alt text defaults to the trimmed mailbox name and requires 1–200 characters without control characters. Signatures place the logo with `{{ mailbox.logo }}`; Mail sends it inline and previews show it. Without a logo, preview warns and leaves the placeholder empty. Queued and scheduled sends retain the original logo; provider Drafts copies have no signature or logo.
 
-## Configure automatic responses and references {icon="settings"}
+## Manage automations with Code {icon="code"}
 
-Open **… → Automations**:
+Open the mailbox’s **Code** page to manage automations. Ask Gustav to rebuild an exported rule, review the candidate’s access and effects, preview it, then activate it explicitly. Catch-up applies the active version to selected existing messages.
 
-:::steps
-1. **Overview** shows what is active and opens the exact setup task.
-2. **Automatic replies** offers the presets **Out of office**, **Office-hours acknowledgement**, **Reference acknowledgement**, and **Custom automatic reply**. People with **Edit** access can use this section when the access setting allows it.
-3. **Incoming mail** offers guided matching and a step flow that mixes Mail and AI steps.
-4. **Activity** shows workflow runs and incoming automation backfills of this mailbox.
-5. **Workflows** contains versioned YAML definitions, the reference number setup, and explicit activation controls.
-:::
+Automatic replies, including out-of-office replies, office-hours replies, and reference acknowledgements, have been removed without replacement. The previous rule history remains read-only under **Retired rule history**. Undo and Redo are unavailable.
 
-**Incoming mail**, **Activity**, and **Workflows** require **Manage** access. Mail stores the timing of an automatic reply directly in the guided reply or in the unchangeable YAML workflow version. There is no separate schedule resource to keep in sync.
-
-An automatic reply has these settings:
-
-- on or off, and a verified automation sender;
-- subject, body, and Markdown or plain-text format;
-- the repeat interval per recipient;
-- time zone, active dates, weekly windows, and exceptions;
-- the behavior outside the active window.
-
-For the behavior outside the active window, choose:
-
-- **Do not reply** ignores messages outside the schedule.
-- **Reply at the next active time** delays the response until the schedule is active.
-
-Preview the exact response before you turn it on. Pausing the mailbox stops automatic replies.
-
-For setup steps, schedule effects, reference patterns, and repeat protection, see [Automate responses and mailbox work](/app/mail/help/mail-automation).
-
-## Manage workflows {icon="route"}
-
-Open **Automations → Workflows** for the YAML editor. Saving creates a new unchangeable version. It does not activate that version automatically.
-
-:::steps
-1. Review the YAML, the validation diagnostics, and the **Effect budget**.
-2. Activate the version explicitly.
-3. Check mailbox runs separately in **Automations → Activity**.
-:::
-
-For normal out-of-office or acknowledgement needs, use the automatic reply interface. Use workflows when the mailbox needs fixed conditions and actions beyond that editor.
-
-See [Mail workflow YAML reference](/app/mail/help/mail-workflows) for all supported inputs, triggers, actions, conditions, expressions, defaults, and checked examples.
+Conversation references remain a Mail feature. Configure their format with `cld mail reference-number config set`, and allocate a reference with `cld mail reference-number ensure` or a Code handler.
 
 ## Delete and restore a mailbox {icon="point"}
 

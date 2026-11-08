@@ -204,20 +204,16 @@ workers do not understand these operators. Mail also adds reply text length,
 attachment count, bulk-message classification, and conversation message count
 for new run snapshots. No schema migration or new configuration is required.
 See [workflow conditions](/en/docs/automation/author-and-publish-workflows#compare-values-in-conditions)
-and Mail's workflow Help for the field semantics.
+for the field semantics.
 
-## Review Mail workflows that send automatically
+## Retire old Mail rules before upgrading
 
-Mail refuses automatic send effects in workflows containing AI actions or
-reading conversation summaries, which another AI workflow may have written.
-The rule covers the entire definition, including unused branches and AI actions
-after a send. It applies to existing versions, queued sends, and retries;
-blocked sends fail with `MAIL_WORKFLOW_SEND_REVIEW_REQUIRED` before SMTP.
-
-Replace generated replies with `createDraft` or `createReplyDraft` and have a
-person review and send the complete message. Fixed operator-approved reply
-templates in workflows without AI or summary reads keep working. Direct
-machine-token Mail permissions retain their documented authorization contract.
+Export definitions and back up run history before deploying the cut release.
+Stop old admission, timers and backfills, then drain or reconcile provider
+effects on the old release. Mail refuses startup while legacy effects remain
+unresolved. Automatic replies are removed without replacement. Rebuild supported
+rules as reviewed mailbox Code with Gustav; activation is explicit. Follow the
+[Mail cutover guide](/en/docs/operations/mail-automation-upgrade).
 
 ## Size Mail for large messages
 
@@ -227,7 +223,7 @@ attachment from its size before it starts. Work waits in arrival order until it
 fits. A message or attachment larger than the budget runs alone. Mail never
 skips a message because of the budget. Large messages can take longer to
 appear, and the server answers pages and API requests while they wait. A body
-that a workflow or a person opens waits in the same order as background work,
+that Code or a person opens waits in the same order as background work,
 so it can take longer to load while large messages are processed.
 
 The budget comes on top of the process's own memory. A running Mail process

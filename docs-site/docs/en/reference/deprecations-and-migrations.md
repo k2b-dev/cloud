@@ -13,6 +13,21 @@ updated: 2026-11-05
 Studio entries below describe older releases. Studio apps, their APIs and app data
 are now retired without transfer; follow [Studio retirement](/en/docs/operations/studio-retirement).
 
+## Mail rules and automatic replies are retired
+
+Guided incoming automations, YAML workflows, their timers, backfills and try
+commands, and rule Undo/Redo are removed. `cld mail automation export` remains
+available for frozen definitions; other `mail automation` and all `mail workflow`
+commands are removed. Rule logs and run snapshots remain read-only. Ordinary
+Mail commands, sends, drafts, contacts, tags, summaries, reference numbers and
+provider sync remain supported, as do Grids and `@k2b/cloud/workflows`.
+
+Export before upgrading, stop old workers, and drain or reconcile their provider
+effects before deploying the cut. The new schema marker rejects older Mail
+images. Automatic replies (out-of-office, office-hours and reference
+acknowledgements) have no replacement. Ask Gustav to rebuild supported rules as
+mailbox Code, then review, preview and activate it explicitly. See the
+[Mail cutover guide](/en/docs/operations/mail-automation-upgrade).
 
 ## Geo uses a global budget
 
@@ -79,6 +94,48 @@ widens issued keys. New OAuth clients from `cld admin agents create` also
 include `admin`; existing clients are unchanged. Scopes do not grant roles or
 resource permissions. See [Standalone service accounts and agents](/en/docs/identity/service-accounts)
 for issuance and the `cld admin agents keys` commands.
+
+## Gustav release: major release operator note
+
+Code replaces Studio, Mail rules, automatic replies and scheduled Assistant
+routines. The upgrade is a one-way, coordinated cut; follow
+[Upgrade to Code](/en/docs/operations/upgrade-to-code) step by step.
+Routine retirement and Gustav's rebuild from export files are merged; the
+Studio and Mail rule retirements ship with this release and are still in
+review.
+
+- **Before the upgrade:** on the old release, run
+  `cld mail automation export --all --json` and
+  `cld assistant tasks export --all --json` with an explicit administrator
+  profile, validate both files, and back up the database. Nothing in Studio
+  moves into Code: back up Studio data and the external RSQL databases now
+  (one app's database: `cld assistant code database-export <app> --out
+  <file>`), or lose them.
+- **Gone without replacement:** Studio apps with their revisions, sharing,
+  storage, files and RSQL databases; out-of-office, office-hours and
+  reference automatic replies.
+- **Rebuilt as Code by Gustav, then reviewed and switched on:** Mail rules
+  become mailbox Code; routines become personal Code. No old definition,
+  grant or enabled flag becomes active Code by itself.
+- **Unchanged:** Grids workflows and apps, the public workflow engine
+  `@k2b/cloud/workflows`, health webhooks, ordinary Mail and chat code runs.
+- **Upgrade order:** freeze, export, stop and drain the old release
+  (reconcile accepted or unknown Mail sends there), stop every old Core,
+  Assistant and Mail replica, upgrade all applications, the Code runner and
+  the CLI plugins together, and start Mail before Assistant. Never run old
+  and new versions side by side.
+- **The upgrade stops** while old Mail commands or sends are unresolved, when
+  a pending chat HTTP request cannot be read (keep `APP_SECRET`), or when the
+  Studio RSQL cleanup cannot reach RSQL. Fix the cause and start again.
+- **History stays readable:** retired Mail rule logs and runs, routine
+  messages and the routine archive, and Studio execution evidence. Nothing
+  old runs again; old images refuse the new schema.
+- **Rollback:** switch replacement Code off first, then restore the
+  pre-upgrade backups, including external RSQL backups.
+
+[Removed in the Gustav release](/en/docs/reference/code-release-removals)
+lists every removed route, command, capability, setting and export with its
+replacement.
 
 ## Capability targets: major release operator note
 

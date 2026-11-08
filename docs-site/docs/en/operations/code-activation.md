@@ -53,8 +53,8 @@ before removing the adapter. Core's target journal cannot reconstruct them.
 New Code version entries belong to app `runner` and have `policy IS NULL`.
 Existing `core`-owned mandates retain their policies until a new version is
 explicitly activated. Do not clear those restrictions during an upgrade.
-The Mail automation migration and Grids execution accounts are separate
-workloads and remain unchanged.
+Grids execution accounts remain separate workloads. Mail rules are retired;
+mailbox Code needs its own reviewed version and current grants.
 
 The Cloud administrator's Code policy decides for each actual call which
 classifications need an approved version; an approval grants no target access.

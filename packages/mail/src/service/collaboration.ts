@@ -10,7 +10,7 @@ import type {
   UpdateConversationCollaboration,
   UpdateConversationComment,
 } from "../contracts";
-import { createConversationCommentSchema, MAIL_CONVERSATION_ASSIGNEE_LIMIT, MAIL_CONVERSATION_BATCH_LIMIT } from "../contracts";
+import { MAIL_CONVERSATION_ASSIGNEE_LIMIT, MAIL_CONVERSATION_BATCH_LIMIT } from "../contracts";
 import { withShortIdDb } from "../lib/short-id";
 import {
   conversationVisibleTo,
@@ -24,8 +24,6 @@ import {
 import { activityFeedCondition } from "./activity-feed";
 import { projectActivityItems } from "./activity-public";
 import { actorRefFromRequest, type MailRequestContext, personalPrincipal } from "./auth";
-import { invalidateAutomationEffects } from "./automation-effect-state";
-import { recordAutomationAssignmentChange } from "./automation-log-recording";
 import { listCurrentMailboxUsers, listEligibleAssignees } from "./collaborators";
 import { deriveReopenedConversationWorkStatus, isAutomaticSubmission } from "./conversation-work-state";
 import { resolveMailExecution } from "./execution";
@@ -512,79 +510,6 @@ export const recordConversationStatusDecision = async (
   `;
 };
 
-/**
- * Locks a conversation and returns the revision a workflow status step may act at.
- * The exact revision always applies. One revision later applies only after the trigger's
- * hydration, when every other unhydrated link was seen by the view.
- * A seen link got its sequence number before the view read the sequence, and either its
- * transaction committed before the view's snapshot or it is the view's own write. Links without
- * an xid predate tracking. Neither a timestamp nor the sequence alone gives commit order; the
- * snapshot does. The sequence survives a logical restore, transaction IDs do not, so a link
- * created after the view never counts as seen, and an xid from another cluster keeps the conflict.
- * A wrong admission could only give the result the exact-revision path already gives.
- * An unknown keeps the conflict. Returns null when the conversation is gone.
- */
-export const lockWorkflowConversationStatus = async (
-  db: SqlClient,
-  params: {
-    mailboxId: string;
-    conversationId: string;
-    expectedRevision: number;
-    triggerMessageId: string | null;
-    viewLinks: { snapshot: string; xid: string | null; seq: string } | null;
-  },
-): Promise<{ revision: number | null; workStatus: ConversationCollaboration["workStatus"] } | null> => {
-  // Same lock order as updateWorkflowConversationCollaborationInTransaction: mailbox, then conversation.
-  const [mailbox] = await db<{ id: string }[]>`
-    SELECT id FROM mail.mailboxes
-    WHERE id = ${params.mailboxId}::uuid AND deleted_at IS NULL
-    FOR SHARE
-  `;
-  if (!mailbox) return null;
-  const [current] = await db<{ revision: string | number; work_status: ConversationCollaboration["workStatus"] }[]>`
-    SELECT revision, work_status
-    FROM mail.conversations
-    WHERE id = ${params.conversationId}::uuid AND mailbox_id = ${params.mailboxId}::uuid
-    FOR UPDATE
-  `;
-  if (!current) return null;
-  const revision = Number(current.revision);
-  if (revision === params.expectedRevision) return { revision, workStatus: current.work_status };
-  if (revision !== params.expectedRevision + 1 || !params.triggerMessageId) return { revision: null, workStatus: current.work_status };
-  // A new statement after the lock: a link that a sync committed while this step waited is visible
-  // here, and the lock keeps further links out until this transaction ends.
-  const [links] = await db<{ hydrated_revision: string | number | null; others_seen: boolean }[]>`
-    SELECT trigger_link.hydrated_revision, NOT EXISTS (
-      SELECT 1 FROM mail.conversation_messages link
-      JOIN mail.message_contents message ON message.id = link.message_id
-      WHERE link.conversation_id = ${params.conversationId}::uuid
-        AND link.message_id <> ${params.triggerMessageId}::uuid
-        AND message.hydration_status <> 'complete'
-        AND NOT COALESCE(
-          ${params.viewLinks?.snapshot ?? null}::pg_snapshot IS NOT NULL
-          AND pg_snapshot_xmax(${params.viewLinks?.snapshot ?? null}::pg_snapshot) <= pg_snapshot_xmax(pg_current_snapshot())
-          AND (
-            link.linked_xid IS NULL
-            OR (
-              -- Linked before the view read the sequence, and by then committed or its own write.
-              link.link_seq <= ${params.viewLinks?.seq ?? null}::bigint
-              AND (
-                link.linked_xid = ${params.viewLinks?.xid ?? null}::xid8
-                OR pg_visible_in_snapshot(link.linked_xid, ${params.viewLinks?.snapshot ?? null}::pg_snapshot)
-              )
-            )
-          ), false
-        )
-    ) AS others_seen
-    FROM mail.conversation_messages trigger_link
-    WHERE trigger_link.conversation_id = ${params.conversationId}::uuid
-      AND trigger_link.message_id = ${params.triggerMessageId}::uuid
-  `;
-  const onlyTriggerHydrated =
-    links?.others_seen === true && links.hydrated_revision !== null && Number(links.hydrated_revision) === revision;
-  return { revision: onlyTriggerHydrated ? revision : null, workStatus: current.work_status };
-};
-
 const applyConversationCollaborationInTransaction = async (params: {
   context: MailRequestContext | null;
   mailboxId: string;
@@ -594,8 +519,6 @@ const applyConversationCollaborationInTransaction = async (params: {
   actorOverride?: ActorRef;
   activityMetadata?: Record<string, unknown>;
   assigneesToValidate?: readonly string[];
-  // undefined: person/API, all links; string: workflow trigger only; null: no trigger, record nothing.
-  statusDecisionMessageId?: string | null;
 }): Promise<Result<ConversationCollaborationMutation>> => {
   const [current] = await params.db<CollaborationRow[]>`
     SELECT
@@ -708,7 +631,6 @@ const applyConversationCollaborationInTransaction = async (params: {
         : requestedSnooze;
   const statusOrSnoozeChanged = nextStatus !== current.work_status || nextSnoozedUntil !== toNullableIso(current.snoozed_until);
   if (
-    params.statusDecisionMessageId !== null &&
     (covers || statusOrSnoozeChanged) &&
     (("workStatus" in params.input && params.input.workStatus) ||
       ("completion" in params.input && params.input.completion !== undefined) ||
@@ -717,11 +639,8 @@ const applyConversationCollaborationInTransaction = async (params: {
     await recordConversationStatusDecision(params.db, {
       conversationId: params.conversationId,
       covers,
-      messageId: params.statusDecisionMessageId,
     });
   }
-  if (("workStatus" in params.input || "completion" in params.input) && !params.activityMetadata?.automationLogOperation)
-    await invalidateAutomationEffects(params.db, params.conversationId, "status");
   const unchanged = !assigneesChanged && !statusOrSnoozeChanged;
   if (unchanged) {
     const state = await loadCollaboration(params.mailboxId, params.conversationId, params.db);
@@ -769,17 +688,6 @@ const applyConversationCollaborationInTransaction = async (params: {
       },
     },
   });
-  if (assigneesChanged)
-    await recordAutomationAssignmentChange({
-      db: params.db,
-      mailboxId: params.mailboxId,
-      conversationId: params.conversationId,
-      context: params.context,
-      actorOverride: params.actorOverride,
-      activityMetadata: params.activityMetadata,
-      before: currentAssigneeIds,
-      after: nextAssigneeIds,
-    });
   return ok({
     value: state,
     event: {
@@ -808,29 +716,6 @@ export const updateConversationCollaborationInTransaction = async (params: {
     return fail(err.forbidden("Assignments require mailbox-wide write access"));
   const allowed = await lockMailboxForCollaboration(params.context, params.mailboxId, "write", params.db, params.conversationId);
   return allowed.ok ? applyConversationCollaborationInTransaction(params) : allowed;
-};
-
-export const updateWorkflowConversationCollaborationInTransaction = async (params: {
-  mailboxId: string;
-  workflowVersionId: string;
-  conversationId: string;
-  triggerMessageId: string | null;
-  input: WorkflowConversationCollaborationInput;
-  db: SqlClient;
-  activityMetadata?: Record<string, unknown>;
-}): Promise<Result<CollaborationMutation<ConversationCollaboration>>> => {
-  const [mailbox] = await params.db<{ id: string }[]>`
-    SELECT id FROM mail.mailboxes
-    WHERE id = ${params.mailboxId}::uuid AND deleted_at IS NULL
-    FOR SHARE
-  `;
-  if (!mailbox) return fail(err.notFound("Mailbox"));
-  return applyConversationCollaborationInTransaction({
-    ...params,
-    context: null,
-    statusDecisionMessageId: params.triggerMessageId,
-    actorOverride: { kind: "workflow", workflowVersionId: params.workflowVersionId },
-  });
 };
 
 /**
@@ -1470,58 +1355,6 @@ export const createConversationComment = async (params: {
   } catch {
     return fail(err.internal("Failed to create internal comment"));
   }
-};
-
-export const createWorkflowConversationCommentInTransaction = async (params: {
-  db: SqlClient;
-  mailboxId: string;
-  conversationId: string;
-  workflowVersionId: string;
-  body: string;
-}): Promise<Result<{ id: string; activityId: string }>> => {
-  const parsed = createConversationCommentSchema.safeParse({ body: params.body });
-  if (!parsed.success) return fail(err.badInput(parsed.error.issues[0]?.message ?? "Invalid internal comment"));
-  const [conversation] = await params.db<{ id: string }[]>`
-    SELECT id
-    FROM mail.conversations
-    WHERE id = ${params.conversationId}::uuid AND mailbox_id = ${params.mailboxId}::uuid
-    FOR UPDATE
-  `;
-  if (!conversation) return fail(err.notFound("Conversation"));
-  const commentRows = await withShortIdDb(
-    params.db,
-    "comment",
-    (db, shortId) => db<{ id: string }[]>`
-    INSERT INTO mail.conversation_comments (
-      short_id, conversation_id, author_kind, author_id, body_markdown
-    ) VALUES (
-      ${shortId}, ${params.conversationId}::uuid, 'workflow', ${params.workflowVersionId}::uuid, ${parsed.data.body}
-    )
-    RETURNING id
-  `,
-  );
-  const [comment] = commentRows;
-  if (!comment) return fail(err.internal("Comment insert returned no row"));
-  await params.db`
-    INSERT INTO mail.conversation_comment_versions (
-      comment_id, revision, body_markdown, editor_kind, editor_id, deleted
-    ) VALUES (
-      ${comment.id}::uuid, 1, ${parsed.data.body}, 'workflow', ${params.workflowVersionId}::uuid, false
-    )
-  `;
-  await params.db`UPDATE mail.conversations SET updated_at = now() WHERE id = ${params.conversationId}::uuid`;
-  const activityId = await insertActivity({
-    db: params.db,
-    mailboxId: params.mailboxId,
-    conversationId: params.conversationId,
-    context: null,
-    actorOverride: { kind: "workflow", workflowVersionId: params.workflowVersionId },
-    action: "conversation.comment_created",
-    targetType: "comment",
-    targetId: comment.id,
-    metadata: { revision: 1, referencedMessageId: null },
-  });
-  return ok({ id: comment.id, activityId });
 };
 
 export const updateConversationComment = async (params: {

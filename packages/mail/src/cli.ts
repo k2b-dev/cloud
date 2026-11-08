@@ -40,9 +40,6 @@ import {
   type AcquiredDraftLease,
   type AttachmentLink,
   type AttachmentLinkPage,
-  type AutomationLogDetail,
-  type AutomationLogItem,
-  type AutomationLogPage,
   type CancelScheduledSendResult,
   type ComposeFormattingWarning,
   type ComposePreview,
@@ -53,11 +50,8 @@ import {
   type ConversationCompletionResult,
   type ConversationDraftSummary,
   type CreatedAttachmentLink,
-  type CreateIncomingAutomation,
   commandStateSchema,
   composeTemplateVariables,
-  createAutomaticReplyConfigurationSchema,
-  createIncomingAutomationSchema,
   DEFAULT_CONVERSATION_REFERENCE_PATTERN,
   type DeletedMailbox,
   type DeletedMailboxPage,
@@ -71,8 +65,6 @@ import {
   draftEditableContentInputSchema,
   type FolderDisplay,
   folderDisplaySchema,
-  type IncomingAutomationBackfill,
-  type IncomingAutomationMatchPreview,
   MAIL_CONVERSATION_ASSIGNEE_LIMIT,
   MAIL_CONVERSATION_BATCH_LIMIT,
   type Mailbox,
@@ -92,9 +84,6 @@ import {
   type MailSubscriptionPage,
   type MailSubscriptionSummary,
   type MailSyncRunPage,
-  type MailWorkflow,
-  type MailWorkflowDetail,
-  type MailWorkflowVersion,
   type MessageInspector,
   mailSearchExpressionSchema,
   mailSyncRunStateSchema,
@@ -111,16 +100,11 @@ import {
   type SenderIdentityStatusReason,
   savedConversationViewFilterSchema,
   type UnsubscribeMailingListResult,
-  type WorkflowEffectBudget,
-  type WorkflowTryResult,
-  type WorkflowValidation,
 } from "./contracts";
 import { mailFolderPaths } from "./folder-tree";
 import { forwardMessageBody } from "./frontend/_components/mail-compose-derivation";
-import { incomingAutomationIssues } from "./incoming-automation-issues";
 import { LARGE_MAIL_VIEWS, type MailViewPreference, PHONE_MAIL_VIEWS } from "./mail-view-preference";
 import type { MailProtectedIdentity, MailSecurityPolicy, MailSecurityReport, MailSecuritySettings } from "./security-contracts";
-import type { AutomaticReplyConfiguration, AutomaticReplySetup } from "./service/automatic-reply-configuration";
 import type {
   ConversationAssignmentResult,
   ConversationCollaboration,
@@ -138,7 +122,6 @@ import type {
 import type { ConversationContentSummary } from "./service/conversation-summary";
 import type { MergeConversationsResult, ReassignConversationMessageResult, SplitConversationResult } from "./service/conversations";
 import type { FolderDisplayChange } from "./service/folders";
-import type { IncomingAutomation } from "./service/incoming-automations";
 import type { AddConversationLocalTagsResult, ConversationLocalTags, LocalTag } from "./service/local-tags";
 import type { ConversationSummary, MailFolderView, MessageDetail, MessageSummary } from "./service/messages";
 import type { DiscoveredMailConfiguration } from "./service/onboarding-discovery";
@@ -146,7 +129,6 @@ import type { ConversationReminder } from "./service/reminders";
 import type { RemoteContentRule } from "./service/remote-content";
 import type { SavedConversationView } from "./service/saved-views";
 import type { MessageSearchHit, MessageSearchPage } from "./service/search";
-import type { MailWorkflowCatalogSnapshot } from "./workflows/catalog";
 
 type MailboxWithPermission = Mailbox & { permission: PermissionLevel };
 type ProviderConnectionResult = {
@@ -265,91 +247,6 @@ const senderVerificationWaitFlags = {
     description: "Maximum wait time in seconds",
   }),
 };
-
-const workflowEffectBudgetFlags = {
-  maxTargets: flag.int({
-    name: "max-targets",
-    min: 1,
-    max: 50_000,
-    default: 1_000,
-    description: "Maximum targets per run",
-  }),
-  maxMoves: flag.int({
-    name: "max-moves",
-    min: 0,
-    max: 50_000,
-    default: 1_000,
-    description: "Maximum move effects per run",
-  }),
-  maxCopies: flag.int({ name: "max-copies", min: 0, max: 50_000, default: 1_000, description: "Maximum copy effects per run" }),
-  maxSends: flag.int({
-    name: "max-sends",
-    min: 0,
-    max: 50_000,
-    default: 1_000,
-    description: "Maximum send effects per run",
-  }),
-  maxDrafts: flag.int({ name: "max-drafts", min: 0, max: 50_000, default: 1_000, description: "Maximum draft creations per run" }),
-  maxFlagChanges: flag.int({
-    name: "max-flag-changes",
-    min: 0,
-    max: 100_000,
-    default: 2_000,
-    description: "Maximum flag changes per run",
-  }),
-  maxNotifications: flag.int({
-    name: "max-notifications",
-    min: 0,
-    max: 50_000,
-    default: 1_000,
-    description: "Maximum internal notifications per run",
-  }),
-  maxKeywordChanges: flag.int({
-    name: "max-keyword-changes",
-    min: 0,
-    max: 100_000,
-    default: 2_000,
-    description: "Maximum keyword changes per run",
-  }),
-  maxCollaborationChanges: flag.int({
-    name: "max-collaboration-changes",
-    min: 0,
-    max: 100_000,
-    default: 2_000,
-    description: "Maximum collaboration changes per run",
-  }),
-  maxAiCalls: flag.int({
-    name: "max-ai-calls",
-    min: 0,
-    max: 1_000,
-    default: 10,
-    description: "Maximum AI tasks per run",
-  }),
-};
-
-const workflowEffectBudget = (flags: {
-  maxTargets?: number;
-  maxMoves?: number;
-  maxCopies?: number;
-  maxSends?: number;
-  maxDrafts?: number;
-  maxFlagChanges?: number;
-  maxNotifications?: number;
-  maxKeywordChanges?: number;
-  maxCollaborationChanges?: number;
-  maxAiCalls?: number;
-}): WorkflowEffectBudget => ({
-  maxTargets: flags.maxTargets ?? 1_000,
-  maxMoves: flags.maxMoves ?? 1_000,
-  maxCopies: flags.maxCopies ?? 1_000,
-  maxSends: flags.maxSends ?? 1_000,
-  maxDrafts: flags.maxDrafts ?? 1_000,
-  maxFlagChanges: flags.maxFlagChanges ?? 2_000,
-  maxNotifications: flags.maxNotifications ?? 1_000,
-  maxKeywordChanges: flags.maxKeywordChanges ?? 2_000,
-  maxCollaborationChanges: flags.maxCollaborationChanges ?? 2_000,
-  maxAiCalls: flags.maxAiCalls ?? 10,
-});
 
 const pollUntil = async <T>(params: {
   load: (signal: AbortSignal) => Promise<T>;
@@ -481,28 +378,10 @@ const mailboxPreferenceCommand = (
     },
   });
 
-const workflowSourceInput = flag.input({
-  required: true,
-  fileName: "source-file",
-  stdinName: "source-stdin",
-  description: "Exact canonical workflow YAML source",
-});
 const savedViewFilterInput = flag.input({
   fileName: "filter-file",
   stdinName: "filter-stdin",
   description: "Saved view filter as JSON or YAML",
-});
-const automaticReplyConfigurationInput = flag.input({
-  required: true,
-  fileName: "configuration-file",
-  stdinName: "configuration-stdin",
-  description: "Automatic reply configuration as JSON or YAML",
-});
-const incomingAutomationDefinitionInput = flag.input({
-  required: true,
-  fileName: "definition-file",
-  stdinName: "definition-stdin",
-  description: "Complete incoming automation definition as JSON or YAML",
 });
 const attachmentLinkPasswordInput = flag.input({
   fileName: "password-file",
@@ -538,15 +417,6 @@ const parseStructuredDocument = (value: string, label: string): unknown => {
   }
 };
 
-const readWorkflowSource = async (input: Parameters<typeof readCliInput>[0]): Promise<string> => {
-  const source = await readCliInput(input, {
-    label: "workflow source",
-    required: true,
-  });
-  if (source === undefined || source.trim().length === 0) throw new Error("Workflow source cannot be empty.");
-  return source;
-};
-
 const readSavedViewFilter = async (
   input: Parameters<typeof readCliInput>[0],
   required: boolean,
@@ -559,41 +429,6 @@ const readSavedViewFilter = async (
   if (raw.trim().length === 0) throw new Error("Saved view filter cannot be empty.");
   const parsed = savedConversationViewFilterSchema.safeParse(parseStructuredDocument(raw, "Saved view filter"));
   if (!parsed.success) throw new Error(`Invalid saved view filter: ${parsed.error.issues[0]?.message ?? "unknown error"}`);
-  return parsed.data;
-};
-
-const readAutomaticReplyConfiguration = async (input: Parameters<typeof readCliInput>[0]) => {
-  const raw = await readCliInput(input, {
-    label: "automatic reply configuration",
-    required: true,
-  });
-  if (!raw?.trim()) throw new Error("Automatic reply configuration cannot be empty.");
-  const parsed = createAutomaticReplyConfigurationSchema.safeParse(parseStructuredDocument(raw, "Automatic reply configuration"));
-  if (!parsed.success) throw new Error(`Invalid automatic reply configuration: ${parsed.error.issues[0]?.message ?? "unknown error"}`);
-  return parsed.data;
-};
-
-const readIncomingAutomationDefinition = async (
-  input: Parameters<typeof readCliInput>[0],
-  options: { requireEnabled?: boolean } = {},
-): Promise<CreateIncomingAutomation> => {
-  const raw = await readCliInput(input, { label: "incoming automation definition", required: true });
-  if (!raw?.trim()) throw new Error("Incoming automation definition cannot be empty.");
-  const definition = parseStructuredDocument(raw, "Incoming automation definition");
-  if (
-    options.requireEnabled &&
-    (!definition ||
-      typeof definition !== "object" ||
-      Array.isArray(definition) ||
-      typeof (definition as { enabled?: unknown }).enabled !== "boolean")
-  ) {
-    throw new Error("Incoming automation updates must explicitly set enabled to true or false.");
-  }
-  const parsed = createIncomingAutomationSchema.safeParse(definition);
-  if (!parsed.success) {
-    const issues = incomingAutomationIssues(parsed.error, definition, "en");
-    throw new Error(`Invalid incoming automation definition:\n${issues.map((issue) => `- ${issue.field}: ${issue.message}`).join("\n")}`);
-  }
   return parsed.data;
 };
 
@@ -3048,149 +2883,12 @@ const composeLogoCommands = (t: Translate) => [
   }),
 ];
 
-/** Read and reverse mailbox-scoped rule effects through the public log API. */
-const automationLogCommands = (t: Translate) => {
-  const mailbox = {
-    mailbox: flag.string({
-      description: t({
-        en: "Mailbox id or exact name; defaults to `cld mail use`",
-        de: "Postfach-ID oder exakter Name; Standard aus `cld mail use`",
-      }),
-    }),
-  };
-  const itemArgs = { id: arg.required({ description: t({ en: "Automation log entry id", de: "ID des Protokolleintrags" }) }) };
-  const printItem = (ctx: CloudCliContext, item: AutomationLogItem) => {
-    ctx.print(`${item.conversation.subject} (${item.id})`);
-    ctx.print(`${item.at} · ${item.by.name} · ${item.outcome}`);
-    ctx.print(`${t({ en: "Sender", de: "Absender" })}: ${item.conversation.from.name ?? ""} <${item.conversation.from.email}>`);
-    ctx.print(`${t({ en: "Effects", de: "Änderungen" })}: ${JSON.stringify(item.effects)}`);
-    ctx.print(`${t({ en: "Reasons", de: "Gründe" })}: ${JSON.stringify(item.reasons)}`);
-    ctx.print(`${t({ en: "Undo", de: "Rückgängig" })}: ${item.undo.state}${item.undo.reason ? ` (${item.undo.reason})` : ""}`);
-  };
-  return [
-    command("automation log", {
-      summary: t({ en: "List the mailbox automation log", de: "Das Automatisierungsprotokoll des Postfachs anzeigen" }),
-      flags: {
-        ...mailbox,
-        day: flag.string({
-          description: t({
-            en: "UTC day as YYYY-MM-DD; defaults to today's UTC date",
-            de: "UTC-Tag als YYYY-MM-DD; Standard ist das heutige UTC-Datum",
-          }),
-        }),
-        filter: flag.enum(["all", "assignments", "uncertain", "skipped", "manual"] as const, {
-          description: t({ en: "Outcome filter", de: "Ergebnisfilter" }),
-        }),
-        q: flag.string({
-          description: t({
-            en: "Search subject, sender, rule, or target (at most 200 characters)",
-            de: "Betreff, Absender, Regel oder Ziel suchen (höchstens 200 Zeichen)",
-          }),
-        }),
-        before: flag.string({ description: t({ en: "Cursor from nextCursor", de: "Cursor aus nextCursor" }) }),
-        limit: flag.int({
-          min: 1,
-          max: 50,
-          default: 50,
-          description: t({ en: "Maximum entries per page (1–50)", de: "Höchstzahl der Einträge pro Seite (1–50)" }),
-        }),
-      },
-      run: async ({ ctx, flags }) => {
-        if (flags.day !== undefined && !z.iso.date().safeParse(flags.day).success)
-          throw new Error(t({ en: "--day must be a valid date as YYYY-MM-DD.", de: "--day muss ein gültiges Datum als YYYY-MM-DD sein." }));
-        if (flags.q !== undefined && flags.q.length > 200)
-          throw new Error(t({ en: "--q accepts at most 200 characters.", de: "--q erlaubt höchstens 200 Zeichen." }));
-        const resolved = await resolveMailbox(ctx, flags.mailbox, t);
-        const query = new URLSearchParams({ limit: String(flags.limit) });
-        for (const [key, value] of Object.entries({ day: flags.day, filter: flags.filter, q: flags.q, before: flags.before }))
-          if (value !== undefined) query.set(key, value);
-        const page = await readApi<AutomationLogPage>(ctx, `/mailboxes/${resolved.id}/automation-log?${query}`);
-        printTable(
-          ctx,
-          page,
-          page.items.map((item) => ({
-            id: item.id,
-            at: item.at,
-            subject: item.conversation.subject,
-            sender: item.conversation.from.email,
-            by: item.by.name,
-            outcome: item.outcome,
-            undo: item.undo.state,
-          })),
-          [
-            { key: "at", label: t({ en: "TIME", de: "ZEIT" }) },
-            { key: "subject", label: t({ en: "SUBJECT", de: "BETREFF" }) },
-            { key: "sender", label: t({ en: "SENDER", de: "ABSENDER" }) },
-            { key: "by", label: t({ en: "BY", de: "DURCH" }) },
-            { key: "outcome", label: t({ en: "OUTCOME", de: "ERGEBNIS" }) },
-            { key: "undo", label: t({ en: "UNDO", de: "RÜCKGÄNGIG" }) },
-            { key: "id", label: "ID" },
-          ],
-        );
-        if (ctx.options.output !== "text") return;
-        ctx.print(`${page.day}: ${JSON.stringify(page.counts)}`);
-        if (page.items.length === 0) ctx.print(t({ en: "No automation log entries match.", de: "Keine passenden Protokolleinträge." }));
-        if (page.nextCursor) {
-          const next = new URLSearchParams(query);
-          next.set("day", page.day);
-          next.set("before", page.nextCursor);
-          const argumentsText = [...next].map(([key, value]) => `--${key} '${value.replaceAll("'", "'\\''")}'`).join(" ");
-          ctx.print(`${t({ en: "Next page", de: "Nächste Seite" })}: cld mail automation log --mailbox '${resolved.id}' ${argumentsText}`);
-        }
-      },
-    }),
-    command("automation log show", {
-      summary: t({
-        en: "Show a rule's effects, decision chain, and AI call counts",
-        de: "Änderungen, Entscheidungskette und KI-Aufrufe einer Regel anzeigen",
-      }),
-      args: itemArgs,
-      flags: mailbox,
-      run: async ({ ctx, args, flags }) => {
-        const resolved = await resolveMailbox(ctx, flags.mailbox, t);
-        const detail = await readApi<AutomationLogDetail>(ctx, `/mailboxes/${resolved.id}/automation-log/${encodeURIComponent(args.id)}`);
-        if (printStructured(ctx, detail)) return;
-        printItem(ctx, detail);
-        ctx.print(`${t({ en: "Decision chain", de: "Entscheidungskette" })}: ${JSON.stringify(detail.chain, null, 2)}`);
-        ctx.print(`${t({ en: "AI calls", de: "KI-Aufrufe" })}: ${JSON.stringify(detail.aiCalls)}`);
-      },
-    }),
-    command("automation log undo", {
-      summary: t({
-        en: "Undo current rule effects and prevent this rule repeating those effects on the conversation",
-        de: "Aktuelle Regeländerungen rückgängig machen und deren Wiederholung für diese Unterhaltung verhindern",
-      }),
-      args: itemArgs,
-      flags: mailbox,
-      run: async ({ ctx, args, flags }) => {
-        const resolved = await resolveMailbox(ctx, flags.mailbox, t);
-        const result = await readApi<{ item: AutomationLogItem }>(
-          ctx,
-          `/mailboxes/${resolved.id}/automation-log/${encodeURIComponent(args.id)}/undo`,
-          { method: "POST" },
-        );
-        if (printStructured(ctx, result)) return;
-        printItem(ctx, result.item);
-        ctx.print(`${t({ en: "Reverted", de: "Rückgängig gemacht" })}: ${JSON.stringify(result.item.undo.reverted ?? [])}`);
-        ctx.print(`${t({ en: "Kept", de: "Beibehalten" })}: ${JSON.stringify(result.item.undo.kept ?? [])}`);
-        ctx.print(
-          t({
-            en: "This rule will not repeat the reverted effect classes on this conversation, including on later replies, unless you redo the undo.",
-            de: "Diese Regel führt die rückgängig gemachten Änderungsarten auch bei späteren Antworten nicht erneut aus. „Wiederholen“ stellt nur die rückgängig gemachten Änderungen wieder her.",
-          }),
-        );
-      },
-    }),
-  ];
-};
-
 /** Commands whose help stays in English; `mailCommands` adds the localized everyday commands. */
 const specialistCommands = {
   groupSummaries: {
     access: "Manage direct access to mailboxes",
     admin: "Inspect and operate Mail across active mailboxes",
     attachment: "Download attachments and manage public links",
-    "automatic-reply": "Create and manage automatic reply configurations",
     binding: "Attach and verify mailbox provider bindings",
     calendar: "Preview, import, and respond to calendar invitations",
     command: "Inspect, wait for, or cancel durable Mail commands",
@@ -3206,13 +2904,11 @@ const specialistCommands = {
     reminder: "Manage personal conversation reminders",
     "remote-content": "Manage personal remote image preferences",
     repair: "Repair mailbox folder and message hydration state",
-    automation: "Create, inspect, and run guided incoming automations",
     "saved-view": "Create and manage saved conversation views",
     view: "Choose how a mailbox looks on large screens and phones",
     scheduled: "Inspect and cancel messages waiting for delivery",
     sender: "Preview and update messages from one sender or domain",
     subscription: "Inspect and manage mailing-list subscriptions",
-    workflow: "Create, validate, and activate Mail workflows",
     "admin contact-directory": "Choose the app Mail uses as its contact directory",
     "admin mailbox": "Inspect mailboxes and recover their access",
     "admin security": "Inspect reports and manage Mail protection settings",
@@ -3234,8 +2930,6 @@ const specialistCommands = {
     "mailbox deleted": "Inspect recoverable deleted mailboxes",
     "message keyword": "Add or remove provider keywords on messages",
     "reference-number config": "Inspect and manage mailbox reference number settings",
-    "automation backfill": "Run and inspect incoming-automation backfills",
-    "workflow version": "Create, inspect, and restore workflow versions",
     "admin mailbox access": "Manage direct access to a mailbox",
     "admin security authentication": "Manage trusted authentication result servers",
     "admin security identity": "Manage protected sender identities",
@@ -3649,10 +3343,6 @@ const specialistCommands = {
           name: "search-backend",
           description: "Search ranking backend preference",
         }),
-        automaticReplies: flag.enum(["writers", "admins"] as const, {
-          name: "automatic-replies",
-          description: "Who may create and change automatic replies",
-        }),
         sync: flag.enum(["enabled", "disabled"] as const, {
           description: "Enable or pause provider synchronization",
         }),
@@ -3663,15 +3353,10 @@ const specialistCommands = {
           ...(flags.name !== undefined ? { name: flags.name } : {}),
           ...(flags.description !== undefined ? { description: flags.description || null } : {}),
           ...(flags.searchBackend !== undefined ? { searchBackend: flags.searchBackend } : {}),
-          ...(flags.automaticReplies !== undefined
-            ? {
-                automaticReplyManagementPermission: flags.automaticReplies === "writers" ? ("write" as const) : ("admin" as const),
-              }
-            : {}),
           ...(flags.sync !== undefined ? { syncEnabled: flags.sync === "enabled" } : {}),
         };
         if (Object.keys(update).length === 0) {
-          throw new Error("Pass --name, --description, --search-backend, --automatic-replies, or --sync.");
+          throw new Error("Pass --name, --description, --search-backend, or --sync.");
         }
         const updated = await readApi<Mailbox>(ctx, `/mailboxes/${mailbox.id}`, jsonRequest("PATCH", update));
         if (printStructured(ctx, withCloudResourcePermalink(ctx, "mail.mailbox", updated))) return;
@@ -6579,7 +6264,6 @@ const specialistCommands = {
             transport: identity.transport.mode,
             status: identity.status,
             reason: identity.statusReason ? senderIdentityReasonText[identity.statusReason] : "",
-            automation: identity.authenticationPolicy.automation === "mailbox" ? "enabled" : "disabled",
             default: identity.isDefault ? "yes" : "",
             id: identity.id,
           })),
@@ -6595,7 +6279,6 @@ const specialistCommands = {
             { key: "transport", label: "SMTP" },
             { key: "status", label: "STATUS" },
             { key: "reason", label: "REASON" },
-            { key: "automation", label: "AUTOMATIC REPLIES" },
             { key: "default", label: "DEFAULT" },
             { key: "id", label: "IDENTITY ID" },
           ],
@@ -6635,9 +6318,6 @@ const specialistCommands = {
           description: "Sent folder id; default the mailbox's discovered Sent folder",
         }),
         default: flag.boolean({ description: "Set as default identity" }),
-        automation: flag.enum(["mailbox", "disabled"] as const, {
-          description: "Allow automatic replies from this sender (default: mailbox)",
-        }),
       },
       run: async ({ ctx, flags }) => {
         const mailbox = await resolveMailbox(ctx, flags.mailbox);
@@ -6659,7 +6339,6 @@ const specialistCommands = {
             defaultSignatureTemplateId: flags.defaultSignature
               ? requireMailResourceId(flags.defaultSignature, "Compose template id")
               : null,
-            ...(flags.automation !== undefined ? { authenticationPolicy: { automation: flags.automation } } : {}),
             sentFolderId: flags.sentFolder ? requireMailResourceId(flags.sentFolder, "Sent folder id") : undefined,
             isDefault: flags.default,
           }),
@@ -6703,7 +6382,7 @@ const specialistCommands = {
       },
     }),
     command("identity configure", {
-      summary: "Update sender metadata, automation, or provider folder mappings",
+      summary: "Update sender metadata or provider folder mappings",
       args: { identityId: arg.required({ description: "Sender identity id" }) },
       flags: {
         ...mailboxFlag,
@@ -6736,9 +6415,6 @@ const specialistCommands = {
         clearDefaultSignature: flag.boolean({ name: "clear-default-signature" }),
         envelopeSender: flag.string({ name: "envelope-sender" }),
         clearEnvelopeSender: flag.boolean({ name: "clear-envelope-sender" }),
-        automation: flag.enum(["disabled", "mailbox"] as const, {
-          description: "Allow automatic replies from this sender",
-        }),
         sentFolder: flag.string({ name: "sent-folder" }),
         clearSentFolder: flag.boolean({ name: "clear-sent-folder" }),
         draftsFolder: flag.string({ name: "drafts-folder" }),
@@ -6796,7 +6472,6 @@ const specialistCommands = {
                 envelopeSender: flags.clearEnvelopeSender ? null : flags.envelopeSender,
               }
             : {}),
-          ...(flags.automation !== undefined ? { authenticationPolicy: { automation: flags.automation } } : {}),
           ...(flags.sentFolder !== undefined || flags.clearSentFolder
             ? { sentFolderId: flags.clearSentFolder ? null : requireMailResourceId(flags.sentFolder!, "Sent folder id") }
             : {}),
@@ -7567,88 +7242,6 @@ const specialistCommands = {
         ctx.print(`${result.reference.value}: ${result.conversationId}`);
       },
     }),
-    command("automatic-reply list", {
-      summary: "List managed automatic reply configurations",
-      flags: mailboxFlag,
-      run: async ({ ctx, flags }) => {
-        const mailbox = await resolveMailbox(ctx, flags.mailbox);
-        const configurations = await readApi<AutomaticReplyConfiguration[]>(ctx, `/mailboxes/${mailbox.id}/automatic-replies`);
-        printTable(
-          ctx,
-          configurations,
-          configurations.map((configuration) => ({
-            name: configuration.name,
-            sender: configuration.senderIdentityId,
-            enabled: configuration.enabled ? "yes" : "no",
-            format: configuration.format,
-            revision: configuration.revision,
-            id: configuration.id,
-          })),
-          [
-            { key: "name", label: "NAME" },
-            { key: "sender", label: "SENDER ID" },
-            { key: "enabled", label: "ENABLED" },
-            { key: "format", label: "FORMAT" },
-            { key: "revision", label: "REV" },
-            { key: "id", label: "CONFIGURATION ID" },
-          ],
-        );
-      },
-    }),
-    command("automatic-reply create", {
-      summary: "Create a managed automatic reply from a JSON or YAML configuration",
-      flags: {
-        ...mailboxFlag,
-        configuration: automaticReplyConfigurationInput,
-      },
-      run: async ({ ctx, flags }) => {
-        const mailbox = await resolveMailbox(ctx, flags.mailbox);
-        const setup = await readApi<AutomaticReplySetup>(
-          ctx,
-          `/mailboxes/${mailbox.id}/automatic-replies`,
-          jsonRequest("POST", {
-            automaticReply: await readAutomaticReplyConfiguration(flags.configuration),
-          }),
-        );
-        const configuration = setup.automaticReply;
-        if (printStructured(ctx, configuration)) return;
-        ctx.print(`Created automatic reply ${configuration.name} (${configuration.id}).`);
-      },
-    }),
-    command("automatic-reply update", {
-      summary: "Replace an automatic reply configuration at an expected revision",
-      args: {
-        configurationId: arg.required({
-          description: "Automatic reply configuration id",
-        }),
-      },
-      flags: {
-        ...mailboxFlag,
-        revision: flag.int({
-          required: true,
-          min: 1,
-          description: "Expected current revision",
-        }),
-        configuration: automaticReplyConfigurationInput,
-      },
-      run: async ({ ctx, args, flags }) => {
-        if (flags.revision === undefined) throw new Error("Missing expected automatic reply revision.");
-        const mailbox = await resolveMailbox(ctx, flags.mailbox);
-        const setup = await readApi<AutomaticReplySetup>(
-          ctx,
-          `/mailboxes/${mailbox.id}/automatic-replies/${requireMailResourceId(args.configurationId, "Automatic reply id")}`,
-          jsonRequest("PATCH", {
-            automaticReply: {
-              expectedRevision: flags.revision,
-              ...(await readAutomaticReplyConfiguration(flags.configuration)),
-            },
-          }),
-        );
-        const configuration = setup.automaticReply;
-        if (printStructured(ctx, configuration)) return;
-        ctx.print(`Updated automatic reply ${configuration.name} to revision ${configuration.revision}.`);
-      },
-    }),
     command("automation export", {
       summary: "Export every saved automation version as versioned JSON (grants no access)",
       flags: { ...mailboxFlag, all: flag.boolean({ description: "Export all mailboxes; requires Cloud administration" }) },
@@ -7680,100 +7273,24 @@ const specialistCommands = {
         if (ctx.options.output !== "jsonl") await ctx.write('],"nextCursor":null}\n');
       },
     }),
-    command("automation catalog", {
-      summary: "List Mail folders, tags, identities, and users available to guided incoming automations",
-      flags: mailboxFlag,
-      run: async ({ ctx, flags }) => {
-        const mailbox = await resolveMailbox(ctx, flags.mailbox);
-        const catalog = await readApi<MailWorkflowCatalogSnapshot>(ctx, `/mailboxes/${mailbox.id}/incoming-automations/catalog`);
-        if (printStructured(ctx, catalog)) return;
-        ctx.print(`Folders: ${catalog.folders.map((folder) => `${folder.path ?? folder.name} (${folder.id})`).join(", ") || "none"}`);
-        ctx.print(`Cloud tags: ${(catalog.localTags ?? []).map((tag) => `${tag.name} (${tag.id})`).join(", ") || "none"}`);
-        ctx.print(`Assignable users: ${catalog.assignableUsers.map((user) => `${user.name} (${user.id})`).join(", ") || "none"}`);
-      },
-    }),
-    command("automation list", {
-      summary: "List guided incoming automations",
-      flags: mailboxFlag,
-      run: async ({ ctx, flags }) => {
-        const mailbox = await resolveMailbox(ctx, flags.mailbox);
-        const automations = await readApi<IncomingAutomation[]>(ctx, `/mailboxes/${mailbox.id}/incoming-automations`);
-        printTable(
-          ctx,
-          automations,
-          automations.map((automation) => ({
-            name: automation.name,
-            scope:
-              automation.scope.mode === "all"
-                ? "all incoming mail"
-                : `${automation.scope.conditions.mode} (${automation.scope.conditions.items.length} conditions)`,
-            steps: automation.steps.length,
-            enabled: automation.enabled ? "yes" : "no",
-            revision: automation.revision,
-            id: automation.id,
-          })),
-          [
-            { key: "name", label: "NAME" },
-            { key: "scope", label: "SCOPE" },
-            { key: "steps", label: "STEPS" },
-            { key: "enabled", label: "ENABLED" },
-            { key: "revision", label: "REV" },
-            { key: "id", label: "AUTOMATION ID" },
-          ],
-        );
-      },
-    }),
-    command("automation get", {
-      summary: "Show one guided incoming automation and its generated workflow source",
-      args: { automationId: arg.required({ description: "Incoming automation id" }) },
-      flags: mailboxFlag,
-      run: async ({ ctx, args, flags }) => {
-        const mailbox = await resolveMailbox(ctx, flags.mailbox);
-        const automation = await readApi<IncomingAutomation>(
-          ctx,
-          `/mailboxes/${mailbox.id}/incoming-automations/${requireMailResourceId(args.automationId, "Incoming automation id")}`,
-        );
-        if (printStructured(ctx, automation)) return;
-        ctx.print(`${automation.name} (${automation.id})`);
-        ctx.print(`Scope: ${automation.scope.mode}`);
-        automation.steps.forEach((step, index) => ctx.print(`Step ${index + 1}: ${step.kind.replaceAll("_", " ")}`));
-        ctx.print(`Enabled: ${automation.enabled ? "yes" : "no"}; revision: ${automation.revision}`);
-        ctx.print("");
-        ctx.print(automation.workflowSource);
-      },
-    }),
+
     command("sender preview", {
-      summary: "Count messages and conversations matching one sender or domain",
+      summary: "Count existing messages matching a sender or domain (bounded to 501)",
       flags: {
         ...mailboxFlag,
-        match: flag.enum(["sender", "domain"] as const, { required: true, description: "Match one sender address or domain" }),
-        value: flag.string({ required: true, description: "Sender email address or complete domain" }),
+        match: flag.enum(["sender", "domain"] as const, { required: true, description: "Sender address or domain" }),
+        value: flag.string({ required: true, description: "Email address or complete domain" }),
       },
       run: async ({ ctx, flags }) => {
-        if (!flags.match || !flags.value) throw new Error("Missing required sender match flags.");
         const mailbox = await resolveMailbox(ctx, flags.mailbox);
-        const preview = await readApi<IncomingAutomationMatchPreview>(
+        const query = new URLSearchParams({ match: flags.match!, value: flags.value! });
+        const preview = await readApi<{ messageCount: number; conversationCount: number; capped: boolean }>(
           ctx,
-          `/mailboxes/${mailbox.id}/incoming-automations/preview`,
-          jsonRequest("POST", {
-            scope: {
-              mode: "matching",
-              conditions: {
-                mode: "all",
-                items: [
-                  flags.match === "sender"
-                    ? { field: "sender_address", operator: "is", value: flags.value }
-                    : { field: "sender_domain", operator: "is", value: flags.value },
-                ],
-              },
-            },
-          }),
+          `/mailboxes/${mailbox.id}/senders/preview?${query}`,
         );
         if (printStructured(ctx, preview)) return;
         ctx.print(
-          `${preview.messageCount} messages in ${preview.conversationCount} conversations match${
-            preview.capped ? `; one backfill applies at most ${preview.applicationLimit} of them, so repeat it to continue` : ""
-          }.`,
+          `${preview.messageCount} messages in ${preview.conversationCount} conversations match${preview.capped ? "; count capped at 501" : ""}.`,
         );
       },
     }),
@@ -7808,512 +7325,6 @@ const specialistCommands = {
         if (printStructured(ctx, result)) return;
         ctx.print(`Queued ${result.commandCount} move command(s) for ${flags.value}.`);
         if (result.truncated) ctx.print("More than 500 placements matched. Run the command again after these commands complete.");
-      },
-    }),
-    command("automation create", {
-      summary: "Create a guided Mail, AI, or Spaces incoming automation from JSON or YAML",
-      flags: {
-        ...mailboxFlag,
-        definition: incomingAutomationDefinitionInput,
-      },
-      run: async ({ ctx, flags }) => {
-        const mailbox = await resolveMailbox(ctx, flags.mailbox);
-        const automation = await readApi<IncomingAutomation>(
-          ctx,
-          `/mailboxes/${mailbox.id}/incoming-automations`,
-          jsonRequest("POST", await readIncomingAutomationDefinition(flags.definition)),
-        );
-        if (printStructured(ctx, automation)) return;
-        ctx.print(`Created incoming automation ${automation.name} (${automation.id}) at revision ${automation.revision}.`);
-      },
-    }),
-    command("automation update", {
-      summary: "Replace a guided Mail, AI, or Spaces incoming automation from JSON or YAML",
-      args: { automationId: arg.required({ description: "Incoming automation id" }) },
-      flags: {
-        ...mailboxFlag,
-        definition: incomingAutomationDefinitionInput,
-        revision: flag.int({ required: true, min: 1, description: "Expected current revision" }),
-      },
-      run: async ({ ctx, args, flags }) => {
-        if (flags.revision === undefined) throw new Error("Missing expected incoming-automation revision.");
-        const mailbox = await resolveMailbox(ctx, flags.mailbox);
-        const current = await readApi<IncomingAutomation>(
-          ctx,
-          `/mailboxes/${mailbox.id}/incoming-automations/${requireMailResourceId(args.automationId, "Incoming automation id")}`,
-        );
-        if (current.revision !== flags.revision)
-          throw new Error(`Incoming automation is at revision ${current.revision}, not ${flags.revision}.`);
-        const automation = await readApi<IncomingAutomation>(
-          ctx,
-          `/mailboxes/${mailbox.id}/incoming-automations/${current.id}`,
-          jsonRequest("PUT", {
-            expectedRevision: flags.revision,
-            ...(await readIncomingAutomationDefinition(flags.definition, { requireEnabled: true })),
-          }),
-        );
-        if (printStructured(ctx, automation)) return;
-        ctx.print(`Updated incoming automation ${automation.name} to revision ${automation.revision}.`);
-      },
-    }),
-    command("automation delete", {
-      summary: "Delete a guided incoming automation and disable its managed workflow",
-      args: { automationId: arg.required({ description: "Incoming automation id" }) },
-      flags: {
-        ...mailboxFlag,
-        revision: flag.int({ required: true, min: 1, description: "Expected current revision" }),
-        yes: confirmFlag("Confirm incoming-automation deletion"),
-      },
-      run: async ({ ctx, args, flags }) => {
-        if (!flags.yes) throw new Error("Pass --yes to delete the incoming automation.");
-        if (flags.revision === undefined) throw new Error("Missing expected incoming-automation revision.");
-        const mailbox = await resolveMailbox(ctx, flags.mailbox);
-        const current = await readApi<IncomingAutomation>(
-          ctx,
-          `/mailboxes/${mailbox.id}/incoming-automations/${requireMailResourceId(args.automationId, "Incoming automation id")}`,
-        );
-        if (current.revision !== flags.revision)
-          throw new Error(`Incoming automation is at revision ${current.revision}, not ${flags.revision}.`);
-        const deleted = await readApi<IncomingAutomation>(
-          ctx,
-          `/mailboxes/${mailbox.id}/incoming-automations/${current.id}`,
-          jsonRequest("DELETE", { expectedRevision: flags.revision }),
-        );
-        if (printStructured(ctx, deleted)) return;
-        ctx.print(`Deleted incoming automation ${deleted.name}.`);
-      },
-    }),
-    command("automation backfill start", {
-      summary: "Apply one enabled incoming automation to all existing matching messages",
-      args: { automationId: arg.required({ description: "Incoming automation id" }) },
-      flags: {
-        ...mailboxFlag,
-        revision: flag.int({ required: true, min: 1, description: "Expected current revision" }),
-        "recompute-ai": flag.boolean({ description: "Recompute successful inference during --retry-failed; consumes the mailbox budget" }),
-        "retry-failed": flag.boolean({
-          description: "Re-run only messages whose latest run of this automation version failed or was canceled",
-        }),
-        yes: confirmFlag("Confirm starting the incoming-automation backfill"),
-      },
-      run: async ({ ctx, args, flags }) => {
-        if (!flags.yes) throw new Error("Pass --yes to start the incoming-automation backfill.");
-        if (flags["recompute-ai"] && !flags["retry-failed"]) throw new Error("--recompute-ai requires --retry-failed.");
-        if (flags.revision === undefined) throw new Error("Missing expected incoming-automation revision.");
-        const mailbox = await resolveMailbox(ctx, flags.mailbox);
-        const current = await readApi<IncomingAutomation>(
-          ctx,
-          `/mailboxes/${mailbox.id}/incoming-automations/${requireMailResourceId(args.automationId, "Incoming automation id")}`,
-        );
-        if (current.revision !== flags.revision)
-          throw new Error(`Incoming automation is at revision ${current.revision}, not ${flags.revision}.`);
-        const result = await readApi<IncomingAutomationBackfill>(
-          ctx,
-          `/mailboxes/${mailbox.id}/incoming-automations/${current.id}/backfills`,
-          jsonRequest("POST", {
-            operationId: crypto.randomUUID(),
-            expectedRevision: flags.revision,
-            ...(flags["retry-failed"] ? { retryFailed: true } : {}),
-            ...(flags["recompute-ai"] ? { recomputeAi: true } : {}),
-          }),
-        );
-        if (printStructured(ctx, result)) return;
-        if (result.retryFailed) {
-          ctx.print(
-            `Started retry backfill ${result.operationId} for ${result.candidateCount} message${result.candidateCount === 1 ? "" : "s"} whose last run failed or was canceled.`,
-          );
-          return;
-        }
-        ctx.print(
-          `Started backfill ${result.operationId} for ${result.candidateCount} candidate message${result.candidateCount === 1 ? "" : "s"}.`,
-        );
-      },
-    }),
-    command("automation backfill status", {
-      summary: "Show one incoming-automation backfill",
-      args: {
-        automationId: arg.required({ description: "Incoming automation id" }),
-        operationId: arg.required({ description: "Backfill operation id" }),
-      },
-      flags: mailboxFlag,
-      run: async ({ ctx, args, flags }) => {
-        const mailbox = await resolveMailbox(ctx, flags.mailbox);
-        const result = await readApi<IncomingAutomationBackfill>(
-          ctx,
-          `/mailboxes/${mailbox.id}/incoming-automations/${requireMailResourceId(args.automationId, "Incoming automation id")}/backfills/${args.operationId}`,
-        );
-        if (printStructured(ctx, result)) return;
-        if (result.retryFailed) {
-          ctx.print(
-            `${result.state}: ${result.newlyAcceptedCount}/${result.candidateCount} re-run, ${result.remainingCount} remaining${
-              result.state === "limited" ? "; run another retry backfill to continue" : ""
-            }${result.lastError ? ` · ${result.lastError}` : ""}`,
-          );
-          return;
-        }
-        ctx.print(
-          `${result.state}: ${result.alreadyAcceptedCount + result.newlyAcceptedCount}/${result.candidateCount} accepted, ${
-            result.remainingCount
-          } remaining${result.state === "limited" ? "; run another backfill to continue" : ""}${result.lastError ? ` · ${result.lastError}` : ""}`,
-        );
-      },
-    }),
-    command("automation backfill cancel", {
-      summary: "Cancel one active incoming-automation backfill",
-      args: {
-        automationId: arg.required({ description: "Incoming automation id" }),
-        operationId: arg.required({ description: "Backfill operation id" }),
-      },
-      flags: {
-        ...mailboxFlag,
-        yes: confirmFlag("Confirm canceling the backfill"),
-      },
-      run: async ({ ctx, args, flags }) => {
-        if (!flags.yes) throw new Error("Pass --yes to cancel the incoming-automation backfill.");
-        const mailbox = await resolveMailbox(ctx, flags.mailbox);
-        const result = await readApi<IncomingAutomationBackfill>(
-          ctx,
-          `/mailboxes/${mailbox.id}/incoming-automations/${requireMailResourceId(args.automationId, "Incoming automation id")}/backfills/${args.operationId}`,
-          { method: "DELETE" },
-        );
-        if (printStructured(ctx, result)) return;
-        ctx.print(`Backfill ${result.operationId} is ${result.state}.`);
-      },
-    }),
-    command("workflow validate", {
-      summary: "Validate exact canonical workflow YAML source",
-      flags: { ...mailboxFlag, source: workflowSourceInput },
-      run: async ({ ctx, flags }) => {
-        const mailbox = await resolveMailbox(ctx, flags.mailbox);
-        const validation = await readApi<WorkflowValidation>(
-          ctx,
-          `/mailboxes/${mailbox.id}/workflows/validate`,
-          jsonRequest("POST", {
-            source: await readWorkflowSource(flags.source),
-          }),
-        );
-        if (printStructured(ctx, validation)) return;
-        {
-          ctx.print(validation.valid ? "Workflow is valid." : "Workflow is invalid.");
-          for (const diagnostic of validation.diagnostics) {
-            ctx.print(`${diagnostic.severity}: ${diagnostic.path}: ${diagnostic.message}`);
-          }
-        }
-      },
-    }),
-    command("workflow try", {
-      summary: "Try a workflow on recent messages without making changes or calling AI",
-      args: { workflowId: arg.optional({ description: "Stable workflow id (omit with --file)" }) },
-      flags: {
-        ...mailboxFlag,
-        last: flag.int({ min: 1, max: 100, default: 50, description: "Number of recent messages (1–100)" }),
-        file: flag.string({ description: "Unsaved YAML file (mailbox admin)" }),
-      },
-      run: async ({ ctx, args, flags }) => {
-        if (Boolean(args.workflowId) === Boolean(flags.file)) throw new Error("Provide a workflow id or --file, exclusively.");
-        const mailbox = await resolveMailbox(ctx, flags.mailbox);
-        const definition = flags.file ? { source: await Bun.file(flags.file).text() } : { workflowId: args.workflowId };
-        let merged: WorkflowTryResult | undefined;
-        let cursor: string | null = null;
-        do {
-          const result: WorkflowTryResult = await readApi<WorkflowTryResult>(
-            ctx,
-            `/mailboxes/${mailbox.id}/workflows/try`,
-            jsonRequest("POST", { ...definition, last: flags.last, cursor, batch: 25 }),
-          );
-          if (merged && result.checked <= merged.checked) throw new Error("Workflow preview did not advance; run it again.");
-          merged = merged
-            ? {
-                ...result,
-                items: [...merged.items, ...result.items],
-                aiCalls: {
-                  min: merged.aiCalls.min + result.aiCalls.min,
-                  max: merged.aiCalls.max + result.aiCalls.max,
-                },
-              }
-            : result;
-          cursor = result.cursor;
-        } while (cursor !== null);
-        if (printStructured(ctx, merged)) return;
-        const count = (outcome: string) => merged.items.filter((item) => item.outcome === outcome).length;
-        const calls =
-          merged.aiCalls.min === merged.aiCalls.max ? String(merged.aiCalls.min) : `${merged.aiCalls.min}–${merged.aiCalls.max}`;
-        ctx.print(
-          `${count("match")} match · ${count("skipped")} skipped · ${count("none")} none · ${calls} AI calls would be needed, none made`,
-        );
-        for (const item of merged.items)
-          ctx.print(
-            `${item.outcome} · ${item.from.name ?? item.from.email} · ${item.subject} · ${item.messageId}${
-              item.problems.length ? ` · ${item.problems.map((problem) => problem.code).join(", ")}` : ""
-            }`,
-          );
-      },
-    }),
-    command("workflow list", {
-      summary: "List saved workflows",
-      flags: mailboxFlag,
-      run: async ({ ctx, flags }) => {
-        const mailbox = await resolveMailbox(ctx, flags.mailbox);
-        const workflows = await readApi<MailWorkflow[]>(ctx, `/mailboxes/${mailbox.id}/workflows`);
-        printTable(
-          ctx,
-          workflows,
-          workflows.map((workflow) => ({
-            name: workflow.name,
-            enabled: workflow.enabled ? "yes" : "no",
-            current: workflow.currentVersionId,
-            active: workflow.activeVersionId ?? "",
-            updated: workflow.updatedAt,
-            id: workflow.id,
-          })),
-          [
-            { key: "name", label: "NAME" },
-            { key: "enabled", label: "ENABLED" },
-            { key: "current", label: "CURRENT VERSION ID" },
-            { key: "active", label: "ACTIVE VERSION ID" },
-            { key: "updated", label: "UPDATED" },
-            { key: "id", label: "WORKFLOW ID" },
-          ],
-        );
-      },
-    }),
-    command("workflow get", {
-      summary: "Show a saved workflow and its current immutable version",
-      args: { workflowId: arg.required({ description: "Workflow id" }) },
-      flags: mailboxFlag,
-      run: async ({ ctx, args, flags }) => {
-        const mailbox = await resolveMailbox(ctx, flags.mailbox);
-        const workflow = await readApi<MailWorkflowDetail>(ctx, `/mailboxes/${mailbox.id}/workflows/${args.workflowId}`);
-        if (printStructured(ctx, workflow)) return;
-        {
-          ctx.print(`${workflow.name} (${workflow.id})`);
-          ctx.print(`Current version: ${workflow.currentVersion.id}; source hash: ${workflow.currentVersion.sourceHash}`);
-          ctx.print(`Active version: ${workflow.activeVersionId ?? "none"}`);
-          ctx.print(workflow.currentVersion.source);
-        }
-      },
-    }),
-    command("workflow update", {
-      summary: "Update workflow name, description, or priority",
-      args: { workflowId: arg.required({ description: "Workflow id" }) },
-      flags: {
-        ...mailboxFlag,
-        name: flag.string({ description: "New workflow name" }),
-        description: flag.string({ description: "New workflow description" }),
-        clearDescription: flag.boolean({ description: "Remove the workflow description" }),
-        priority: flag.int({ min: -1_000, max: 1_000, description: "New Mail ordering priority" }),
-      },
-      run: async ({ ctx, args, flags }) => {
-        if (flags.description !== undefined && flags.clearDescription) {
-          throw new Error("--description and --clear-description are mutually exclusive.");
-        }
-        if (flags.name === undefined && flags.description === undefined && !flags.clearDescription && flags.priority === undefined) {
-          throw new Error("Provide at least one of --name, --description, --clear-description, or --priority.");
-        }
-        const mailbox = await resolveMailbox(ctx, flags.mailbox);
-        const current = await readApi<MailWorkflowDetail>(ctx, `/mailboxes/${mailbox.id}/workflows/${args.workflowId}`);
-        const workflow = await readApi<MailWorkflowDetail>(
-          ctx,
-          `/mailboxes/${mailbox.id}/workflows/${args.workflowId}`,
-          jsonRequest("PATCH", {
-            expectedUpdatedAt: current.updatedAt,
-            ...(flags.name === undefined ? {} : { name: flags.name }),
-            ...(flags.description === undefined && !flags.clearDescription
-              ? {}
-              : { description: flags.clearDescription ? null : flags.description }),
-            ...(flags.priority === undefined ? {} : { priority: flags.priority }),
-          }),
-        );
-        if (printStructured(ctx, workflow)) return;
-        ctx.print(`Updated ${workflow.name} (${workflow.id}).`);
-      },
-    }),
-    command("workflow export", {
-      summary: "Write exact workflow YAML to stdout",
-      args: { workflowId: arg.required({ description: "Workflow id" }) },
-      flags: {
-        ...mailboxFlag,
-        versionId: flag.string({ name: "version-id", description: "Immutable version id; defaults to current" }),
-      },
-      run: async ({ ctx, args, flags }) => {
-        const mailbox = await resolveMailbox(ctx, flags.mailbox);
-        const version = flags.versionId
-          ? await readApi<MailWorkflowVersion>(ctx, `/mailboxes/${mailbox.id}/workflows/${args.workflowId}/versions/${flags.versionId}`)
-          : (await readApi<MailWorkflowDetail>(ctx, `/mailboxes/${mailbox.id}/workflows/${args.workflowId}`)).currentVersion;
-        if (printStructured(ctx, version)) return;
-        ctx.write(version.source);
-      },
-    }),
-    command("workflow create", {
-      summary: "Create a saved workflow from exact YAML source",
-      flags: {
-        ...mailboxFlag,
-        ...workflowEffectBudgetFlags,
-        source: workflowSourceInput,
-        name: flag.string({
-          required: true,
-          description: "Workflow name stored outside YAML source",
-        }),
-        description: flag.string({
-          description: "Workflow description stored outside YAML source",
-        }),
-        priority: flag.int({
-          min: -1_000,
-          max: 1_000,
-          default: 100,
-          description: "Mail ordering priority stored outside YAML source",
-        }),
-      },
-      run: async ({ ctx, flags }) => {
-        const mailbox = await resolveMailbox(ctx, flags.mailbox);
-        const workflow = await readApi<MailWorkflowDetail>(
-          ctx,
-          `/mailboxes/${mailbox.id}/workflows`,
-          jsonRequest("POST", {
-            name: flags.name,
-            description: flags.description ?? null,
-            priority: flags.priority ?? 100,
-            source: await readWorkflowSource(flags.source),
-            effectBudget: workflowEffectBudget(flags),
-          }),
-        );
-        if (printStructured(ctx, workflow)) return;
-        ctx.print(`Created ${workflow.name} (${workflow.id}) at version ${workflow.currentVersion.id}.`);
-      },
-    }),
-    command("workflow version list", {
-      summary: "List immutable versions of a saved workflow",
-      args: { workflowId: arg.required({ description: "Workflow id" }) },
-      flags: mailboxFlag,
-      run: async ({ ctx, args, flags }) => {
-        const mailbox = await resolveMailbox(ctx, flags.mailbox);
-        const versions = await readApi<MailWorkflowVersion[]>(ctx, `/mailboxes/${mailbox.id}/workflows/${args.workflowId}/versions`);
-        printTable(
-          ctx,
-          versions,
-          versions.map((version) => ({
-            identity: version.identity,
-            created: version.createdAt,
-            hash: version.sourceHash,
-            id: version.id,
-          })),
-          [
-            { key: "identity", label: "IDENTITY" },
-            { key: "created", label: "CREATED" },
-            { key: "hash", label: "SOURCE HASH" },
-            { key: "id", label: "VERSION ID" },
-          ],
-        );
-      },
-    }),
-    command("workflow version create", {
-      summary: "Create the next immutable version of a saved workflow",
-      args: { workflowId: arg.required({ description: "Workflow id" }) },
-      flags: {
-        ...mailboxFlag,
-        ...workflowEffectBudgetFlags,
-        source: workflowSourceInput,
-      },
-      run: async ({ ctx, args, flags }) => {
-        const mailbox = await resolveMailbox(ctx, flags.mailbox);
-        const workflow = await readApi<MailWorkflowDetail>(
-          ctx,
-          `/mailboxes/${mailbox.id}/workflows/${args.workflowId}/versions`,
-          jsonRequest("POST", {
-            source: await readWorkflowSource(flags.source),
-            effectBudget: workflowEffectBudget(flags),
-          }),
-        );
-        if (printStructured(ctx, workflow)) return;
-        ctx.print(`Created ${workflow.name} version ${workflow.currentVersion.id}.`);
-      },
-    }),
-    command("workflow version get", {
-      summary: "Show one immutable workflow version",
-      args: {
-        workflowId: arg.required({ description: "Workflow id" }),
-        versionId: arg.required({ description: "Immutable version id" }),
-      },
-      flags: mailboxFlag,
-      run: async ({ ctx, args, flags }) => {
-        const mailbox = await resolveMailbox(ctx, flags.mailbox);
-        const version = await readApi<MailWorkflowVersion>(
-          ctx,
-          `/mailboxes/${mailbox.id}/workflows/${args.workflowId}/versions/${args.versionId}`,
-        );
-        if (printStructured(ctx, version)) return;
-        {
-          ctx.print(`Version: ${version.id}; source hash: ${version.sourceHash}`);
-          ctx.print(version.source);
-        }
-      },
-    }),
-    command("workflow version restore", {
-      summary: "Restore historical YAML as a new inactive immutable version",
-      args: {
-        workflowId: arg.required({ description: "Workflow id" }),
-        versionId: arg.required({ description: "Historical immutable version id" }),
-      },
-      flags: {
-        ...mailboxFlag,
-        currentVersionId: flag.string({
-          name: "current-version-id",
-          required: true,
-          description: "Current workflow version id expected before restore",
-        }),
-      },
-      run: async ({ ctx, args, flags }) => {
-        const mailbox = await resolveMailbox(ctx, flags.mailbox);
-        const workflow = await readApi<MailWorkflowDetail>(
-          ctx,
-          `/mailboxes/${mailbox.id}/workflows/${args.workflowId}/versions/${args.versionId}/restore`,
-          jsonRequest("POST", { expectedCurrentVersionId: flags.currentVersionId }),
-        );
-        if (printStructured(ctx, workflow)) return;
-        ctx.print(`Restored ${args.versionId} as new current version ${workflow.currentVersion.id}.`);
-      },
-    }),
-    command("workflow activate", {
-      summary: "Activate the current workflow version and register its automatic triggers",
-      args: { workflowId: arg.required({ description: "Workflow id" }) },
-      flags: {
-        ...mailboxFlag,
-        versionId: flag.string({
-          name: "version-id",
-          required: true,
-          description: "Current workflow version id expected by activation",
-        }),
-      },
-      run: async ({ ctx, args, flags }) => {
-        const mailbox = await resolveMailbox(ctx, flags.mailbox);
-        const workflow = await readApi<MailWorkflowDetail>(
-          ctx,
-          `/mailboxes/${mailbox.id}/workflows/${args.workflowId}/activate`,
-          jsonRequest("POST", { expectedVersionId: flags.versionId }),
-        );
-        if (printStructured(ctx, workflow)) return;
-        ctx.print(`Activated ${workflow.name} at version ${workflow.activeVersionId}.`);
-      },
-    }),
-    command("workflow deactivate", {
-      summary: "Deactivate the active workflow version without mutating historical runs",
-      args: { workflowId: arg.required({ description: "Workflow id" }) },
-      flags: {
-        ...mailboxFlag,
-        versionId: flag.string({
-          name: "version-id",
-          required: true,
-          description: "Active workflow version id expected by deactivation",
-        }),
-      },
-      run: async ({ ctx, args, flags }) => {
-        const mailbox = await resolveMailbox(ctx, flags.mailbox);
-        const workflow = await readApi<MailWorkflowDetail>(
-          ctx,
-          `/mailboxes/${mailbox.id}/workflows/${args.workflowId}/deactivate`,
-          jsonRequest("POST", { expectedVersionId: flags.versionId }),
-        );
-        if (printStructured(ctx, workflow)) return;
-        ctx.print(`Deactivated ${workflow.name}.`);
       },
     }),
     command("command list", {
@@ -8421,10 +7432,7 @@ const mailCommands = (locale?: string) => {
     }),
     groupSummaries: {
       ...specialistCommands.groupSummaries,
-      automation: t({
-        en: "Manage incoming automations and inspect rule effects",
-        de: "Eingehende Automatisierungen verwalten und Regeländerungen prüfen",
-      }),
+      automation: t({ en: "Export retired Mail automation definitions", de: "Definitionen früherer Mail-Automatisierungen exportieren" }),
       "compose logo": t({
         en: "Inspect and replace the mailbox signature logo",
         de: "Das Signaturlogo des Postfachs anzeigen und ersetzen",
@@ -8437,7 +7445,7 @@ const mailCommands = (locale?: string) => {
       }),
       conversation: t({ en: "Inspect, merge, and split conversations", de: "Unterhaltungen prüfen, zusammenführen und teilen" }),
     },
-    commands: [...everydayCommands(t), ...specialistCommands.commands, ...composeLogoCommands(t), ...automationLogCommands(t)],
+    commands: [...everydayCommands(t), ...specialistCommands.commands, ...composeLogoCommands(t)],
   });
 };
 

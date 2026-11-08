@@ -1,18 +1,6 @@
 import { afterAll, afterEach, beforeAll, expect, onTestFinished, spyOn, test } from "bun:test";
 import { Readable } from "node:stream";
 import { connections, createSql, getProcessSync, lazySync, redis, sql } from "@k2b/cloud";
-import type { WorkflowBoundPlan } from "@k2b/cloud/workflows";
-import {
-  claimWorkflowRun,
-  createWorkflow as createKernelWorkflow,
-  createWorkflowRun,
-  createWorkflowRuntimeRepository,
-  finishWorkflowRun,
-  publishWorkflowVersion,
-  requestWorkflowRunCancel,
-  wakeExpiredWorkflowRuns,
-  workflowEffectKey,
-} from "@k2b/cloud/workflows/store";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import { countPostgresRoundTrips } from "../../test/postgres-round-trips";
 import { type ConnectorVerification, unavailableProviderLimitSnapshot } from "../contracts";
@@ -22,12 +10,11 @@ import type { MailRequestContext } from "./auth";
 import { attachProviderBinding, rediscoverProviderBinding } from "./bindings";
 import { sha256Json } from "./canonical";
 import { executeMutationCommand } from "./command-runtime";
-import { createActorCommand, createMailCommand, createWorkflowCommand } from "./commands";
+import { createActorCommand, createMailCommand } from "./commands";
 import { type ConnectorEnvelope, type FlagChange, imapSmtpConnector } from "./connectors";
 import { resolveMailExecution } from "./execution";
 import { clearFolderRole, dismissUnavailableFolder, listAdminFolders, resolveRoleFolder, setFolderDisplay, setFolderRole } from "./folders";
 import { getMailboxOperationalHealth } from "./health";
-import { pauseDeletedMailboxExecution } from "./mailbox-lifecycle";
 import { createMailbox, updateMailbox } from "./mailboxes";
 import {
   executeMaintenanceCommand,
@@ -338,7 +325,6 @@ suite("mail lifecycle control plane", () => {
         displayName: "Disabled sender",
         fromAddress: `disabled-${suffix}@example.com`,
         defaultCc: [],
-        authenticationPolicy: { automation: "disabled" },
         isDefault: false,
       },
     });
@@ -386,7 +372,6 @@ suite("mail lifecycle control plane", () => {
         displayName: "Valentin",
         fromAddress,
         defaultCc: [],
-        authenticationPolicy: { automation: "disabled" },
         isDefault: false,
       },
     });
@@ -398,7 +383,6 @@ suite("mail lifecycle control plane", () => {
         displayName: "Organization Team",
         fromAddress,
         defaultCc: [{ name: "Archive", address: "archive@example.com" }],
-        authenticationPolicy: { automation: "disabled" },
         isDefault: false,
       },
     });
@@ -423,7 +407,6 @@ suite("mail lifecycle control plane", () => {
         displayName: "Custom SMTP",
         fromAddress: `custom-smtp-${suffix}@example.com`,
         defaultCc: [],
-        authenticationPolicy: { automation: "disabled" },
         isDefault: false,
       },
     });
@@ -556,7 +539,6 @@ suite("mail lifecycle control plane", () => {
         fromAddress: `invalid-signature-${suffix}@example.com`,
         defaultCc: [],
         defaultSignatureTemplateId: crypto.randomUUID(),
-        authenticationPolicy: { automation: "disabled" },
         isDefault: false,
       },
     });
@@ -572,16 +554,15 @@ suite("mail lifecycle control plane", () => {
     expect(identity?.count).toBe(0);
   });
 
-  test("sender automation policy changes preserve provider verification", async () => {
+  test("sender label changes preserve provider verification", async () => {
     const identity = await createSenderIdentity({
       context: adminContext,
       mailboxId,
       input: {
-        label: "Automation policy sender",
-        displayName: "Automation policy sender",
+        label: "Rename policy sender",
+        displayName: "Rename policy sender",
         fromAddress: `automation-${suffix}@example.com`,
         defaultCc: [],
-        authenticationPolicy: { automation: "disabled" },
         isDefault: false,
       },
     });
@@ -600,14 +581,12 @@ suite("mail lifecycle control plane", () => {
       context: adminContext,
       mailboxId,
       senderIdentityId: identity.data.id,
-      input: { authenticationPolicy: { automation: "mailbox" } },
+      input: { label: "Renamed sender" },
     });
     expect(updated.ok).toBe(true);
     if (!updated.ok) return;
     expect(updated.data.status).toBe("verified");
-    expect(updated.data.authenticationPolicy).toEqual({
-      automation: "mailbox",
-    });
+    expect(updated.data.label).toBe("Renamed sender");
     const [binding] = await sql<{ revoked_at: Date | null }[]>`
       SELECT revoked_at
       FROM mail.sender_identity_bindings
@@ -652,7 +631,6 @@ suite("mail lifecycle control plane", () => {
         displayName: "Provider default sender",
         fromAddress: "lifecycle@example.com",
         defaultCc: [],
-        authenticationPolicy: { automation: "disabled" },
         isDefault: false,
       },
     });
@@ -829,7 +807,6 @@ suite("mail lifecycle control plane", () => {
           displayName: label,
           fromAddress: `${label.toLowerCase().replaceAll(" ", "-")}-${suffix}@example.com`,
           defaultCc: [],
-          authenticationPolicy: { automation: "disabled" },
           isDefault: false,
           ...folders,
         },
@@ -901,7 +878,6 @@ suite("mail lifecycle control plane", () => {
         displayName: "Reason sender",
         fromAddress: `reason-${suffix}@example.com`,
         defaultCc: [],
-        authenticationPolicy: { automation: "disabled" },
         isDefault: false,
       },
     });
@@ -954,7 +930,6 @@ suite("mail lifecycle control plane", () => {
           displayName: name,
           fromAddress: `${name}-${suffix}@example.com`,
           defaultCc: [],
-          authenticationPolicy: { automation: "disabled" },
           isDefault: false,
         },
       });
@@ -3667,255 +3642,6 @@ suite("mail lifecycle control plane", () => {
     }
   });
 
-  test("real command and hydration completion wake kernel dependencies before their deadlines", async () => {
-    const [dependencyFolder] = await sql<{ id: string; short_id: string }[]>`
-      SELECT folder.id, folder.short_id
-      FROM mail.folders folder
-      JOIN mail.binding_folder_refs ref ON ref.folder_id = folder.id
-      WHERE ref.binding_id = ${bindingId}::uuid
-        AND ref.remote_path = 'INBOX'
-        AND ref.missing_since IS NULL
-      LIMIT 1
-    `;
-    if (!dependencyFolder) throw new Error("Dependency wake fixture inbox is unavailable");
-    const plan: WorkflowBoundPlan = {
-      schemaVersion: 2,
-      languageId: "mail",
-      languageVersion: 1,
-      sourceHash: sha256Json({ fixture: "dependency-wake-source", suffix }),
-      manifestHash: sha256Json({ fixture: "dependency-wake-manifest", suffix }),
-      catalogHash: sha256Json({ fixture: "dependency-wake-catalog", suffix }),
-      actionPolicies: {},
-      inputs: [],
-      triggers: [],
-      steps: [],
-      bindings: {},
-    };
-    const workflow = await createKernelWorkflow({
-      appId: "mail",
-      scopeId: mailboxId,
-      key: `dependency-wake-${suffix}`,
-      name: "Dependency wake integration",
-      author: { kind: "system" },
-    });
-    try {
-      const version = await publishWorkflowVersion({
-        workflowId: workflow.id,
-        source: "steps: []\n",
-        plan,
-        activations: [],
-        activate: true,
-        author: { kind: "system" },
-      });
-      let runSequence = 0;
-      const park = async (dependency: { kind: string; key: string }): Promise<string> => {
-        runSequence += 1;
-        const runId = await createWorkflowRun({
-          appId: "mail",
-          scopeId: mailboxId,
-          workflowId: workflow.id,
-          workflowVersionId: version.id,
-          mode: "execute",
-          authorization: {},
-          idempotencyKey: `dependency-wake-${suffix}-${runSequence}`,
-          occurredAt: new Date(),
-        });
-        const claim = await claimWorkflowRun({ worker: `mail-dependency-wake-${runSequence}`, runId });
-        if (!claim) throw new Error("Workflow dependency run was not claimable");
-        const step = {
-          runId,
-          executionGeneration: claim.executionGeneration,
-          mode: "execute" as const,
-          workflowId: workflow.id,
-          sourceHash: plan.sourceHash,
-          idempotencyKey: `dependency-step-${runSequence}`,
-          key: "steps.0",
-          sourcePath: ["steps", 0],
-          iterationPath: [],
-          path: ["steps", 0],
-          kind: "action" as const,
-          action: "mail.test.wait",
-        };
-        const repository = createWorkflowRuntimeRepository();
-        await repository.startStep(step);
-        await repository.parkStep(step, {
-          ...dependency,
-          deadline: new Date(Date.now() + 60 * 60_000).toISOString(),
-        });
-        expect(await finishWorkflowRun(claim, { state: "waiting" })).toEqual({ state: "finished" });
-        return runId;
-      };
-      const expectWokenBeforeDeadline = async (runId: string): Promise<void> => {
-        const [run] = await sql<{ state: string; wake_at: Date | string | null }[]>`
-          SELECT state, wake_at
-          FROM workflows.run
-          WHERE id = ${runId}::uuid
-        `;
-        expect(run).toEqual({ state: "queued", wake_at: null });
-      };
-
-      const [commandMessage] = await sql<{ id: string }[]>`
-        INSERT INTO mail.message_contents (short_id,
-          mailbox_id, message_id, subject, internal_date, size_bytes, content_hash, hydration_status
-        ) VALUES (${newShortId()},
-          ${mailboxId}::uuid,
-          ${`<dependency-command-${suffix}@example.com>`},
-          'Dependency command',
-          now(),
-          1,
-          ${sha256Json({ fixture: "dependency-command", suffix })},
-          'complete'
-        ) RETURNING id
-      `;
-      const [commandRef] = await sql<{ id: string }[]>`
-        INSERT INTO mail.remote_message_refs (folder_id, message_id, uid_validity, uid)
-        VALUES (${dependencyFolder.id}::uuid, ${commandMessage!.id}::uuid, 10, 990003)
-        RETURNING id
-      `;
-      await sql`
-        INSERT INTO mail.message_placements (remote_message_ref_id, folder_id, message_id)
-        VALUES (${commandRef!.id}::uuid, ${dependencyFolder.id}::uuid, ${commandMessage!.id}::uuid)
-      `;
-      const command = await createActorCommand({
-        context: adminContext,
-        mailboxId,
-        enqueue: false,
-        input: {
-          kind: "change_message_state",
-          messageId: commandMessage!.id,
-          folderId: dependencyFolder.id,
-          change: { addFlags: ["seen"], removeFlags: [], addKeywords: [], removeKeywords: [] },
-          idempotencyKey: `dependency-command-${suffix}`,
-        },
-      });
-      if (!command.ok) throw new Error(command.error.message);
-      const commandRunId = await park({ kind: "mail.command", key: command.data.id });
-      const providerState = spyOn(imapSmtpConnector, "getMessageState").mockResolvedValue({
-        exists: true,
-        flags: [],
-        keywords: [],
-        messageId: `<dependency-command-${suffix}@example.com>`,
-        modseq: "1",
-      });
-      const changeState = spyOn(imapSmtpConnector, "changeMessageState").mockResolvedValue({
-        exists: true,
-        flags: ["\\Seen"],
-        keywords: [],
-        messageId: `<dependency-command-${suffix}@example.com>`,
-        modseq: "2",
-      });
-      try {
-        expect(await executeMutationCommand(command.data.id)).toBe("confirmed");
-      } finally {
-        changeState.mockRestore();
-        providerState.mockRestore();
-      }
-      await expectWokenBeforeDeadline(commandRunId);
-
-      const [hydrationMessage] = await sql<{ id: string }[]>`
-        INSERT INTO mail.message_contents (short_id,
-          mailbox_id, message_id, subject, internal_date, size_bytes, content_hash, hydration_status
-        ) VALUES (${newShortId()},
-          ${mailboxId}::uuid,
-          ${`<dependency-hydration-${suffix}@example.com>`},
-          'Dependency hydration',
-          now(),
-          256,
-          ${sha256Json({ fixture: "dependency-hydration", suffix })},
-          'envelope'
-        ) RETURNING id
-      `;
-      await sql`
-        INSERT INTO mail.remote_message_refs (folder_id, message_id, uid_validity, uid)
-        VALUES (${dependencyFolder.id}::uuid, ${hydrationMessage!.id}::uuid, 10, 990004)
-      `;
-      const hydrationRunId = await park({ kind: "mail.hydration", key: hydrationMessage!.id });
-      const source = [
-        `Message-ID: <dependency-hydration-${suffix}@example.com>`,
-        "From: sender@example.com",
-        "To: lifecycle@example.com",
-        "Subject: Dependency hydration",
-        `Date: ${new Date().toUTCString()}`,
-        "",
-        "Hydrated body",
-      ].join("\r\n");
-      const download = spyOn(imapSmtpConnector, "downloadSourceBatch").mockImplementation(
-        async (_runtime, _folderPath, requests, consume) => {
-          const request = requests.find((candidate) => candidate.key === hydrationMessage!.id);
-          if (!request) throw new Error("Hydration dependency request is missing");
-          await consume({
-            ...request,
-            expectedSize: Buffer.byteLength(source),
-            stream: Readable.from([source]),
-          });
-        },
-      );
-      try {
-        await expect(
-          hydrateMessageBatch({
-            input: { messageId: hydrationMessage!.id },
-            signal: new AbortController().signal,
-            heartbeat: async () => undefined,
-          } as never),
-        ).resolves.toEqual({ hydrated: true });
-      } finally {
-        download.mockRestore();
-      }
-      await expectWokenBeforeDeadline(hydrationRunId);
-
-      const [failedHydrationMessage] = await sql<{ id: string }[]>`
-        INSERT INTO mail.message_contents (short_id,
-          mailbox_id, message_id, subject, internal_date, size_bytes, content_hash, hydration_status, hydration_attempt
-        ) VALUES (${newShortId()},
-          ${mailboxId}::uuid,
-          ${`<dependency-hydration-failed-${suffix}@example.com>`},
-          'Terminal dependency hydration',
-          now(),
-          256,
-          ${sha256Json({ fixture: "dependency-hydration-failed", suffix })},
-          'failed',
-          4
-        ) RETURNING id
-      `;
-      await sql`
-        INSERT INTO mail.remote_message_refs (folder_id, message_id, uid_validity, uid)
-        VALUES (${dependencyFolder.id}::uuid, ${failedHydrationMessage!.id}::uuid, 10, 990005)
-      `;
-      const failedHydrationRunId = await park({ kind: "mail.hydration", key: failedHydrationMessage!.id });
-      const failedDownload = spyOn(imapSmtpConnector, "downloadSourceBatch").mockImplementation(
-        async (_runtime, _folderPath, requests, consume) => {
-          const request = requests.find((candidate) => candidate.key === failedHydrationMessage!.id);
-          if (!request) throw new Error("Terminal hydration dependency request is missing");
-          await consume({
-            ...request,
-            expectedSize: Buffer.byteLength(source),
-            stream: Readable.from([]),
-          });
-        },
-      );
-      try {
-        await expect(
-          hydrateMessageBatch({
-            input: { messageId: failedHydrationMessage!.id },
-            signal: new AbortController().signal,
-            heartbeat: async () => undefined,
-          } as never),
-        ).rejects.toMatchObject({ code: "MESSAGE_SIZE_MISMATCH" });
-      } finally {
-        failedDownload.mockRestore();
-      }
-      const [failedHydration] = await sql<{ hydration_status: string; hydration_attempt: number }[]>`
-        SELECT hydration_status, hydration_attempt
-        FROM mail.message_contents
-        WHERE id = ${failedHydrationMessage!.id}::uuid
-      `;
-      expect(failedHydration).toEqual({ hydration_status: "failed", hydration_attempt: 5 });
-      await expectWokenBeforeDeadline(failedHydrationRunId);
-    } finally {
-      await sql`DELETE FROM workflows.workflow WHERE id = ${workflow.id}::uuid`;
-    }
-  }, 15_000);
-
   test("a hydration source batch invalidates each settled conversation once after its commits", async () => {
     const conversationIds: string[] = [];
     const conversationShortIds: string[] = [];
@@ -4334,265 +4060,6 @@ suite("mail lifecycle control plane", () => {
         accessId,
         permission: "read",
       });
-    }
-  }, 15_000);
-
-  test("runs a workflow command while its step waits for it and cancels it once the step moved on", async () => {
-    const [message] = await sql<{ id: string }[]>`
-      INSERT INTO mail.message_contents (short_id,
-        mailbox_id, message_id, subject, internal_date, size_bytes, content_hash, hydration_status
-      ) VALUES (${newShortId()},
-        ${mailboxId}::uuid,
-        ${`<stale-workflow-command-${suffix}@example.com>`},
-        'Stale workflow command',
-        now(),
-        1,
-        ${sha256Json({ fixture: "stale-workflow-command", suffix })},
-        'complete'
-      ) RETURNING id
-    `;
-    const [remoteRef] = await sql<{ id: string }[]>`
-      INSERT INTO mail.remote_message_refs (folder_id, message_id, uid_validity, uid)
-      VALUES (${inboxFolderId}::uuid, ${message!.id}::uuid, 10, 990002)
-      RETURNING id
-    `;
-    await sql`
-      INSERT INTO mail.message_placements (remote_message_ref_id, folder_id, message_id)
-      VALUES (${remoteRef!.id}::uuid, ${inboxFolderId}::uuid, ${message!.id}::uuid)
-    `;
-
-    const plan: WorkflowBoundPlan = {
-      schemaVersion: 2,
-      languageId: "mail",
-      languageVersion: 1,
-      sourceHash: "a".repeat(64),
-      manifestHash: "b".repeat(64),
-      catalogHash: "c".repeat(64),
-      actionPolicies: {},
-      inputs: [],
-      triggers: [],
-      steps: [],
-      bindings: {},
-    };
-    const workflow = await createKernelWorkflow({
-      appId: "mail",
-      scopeId: mailboxId,
-      key: `stale-command-${suffix}`,
-      name: "Stale command fence",
-      author: { kind: "system" },
-    });
-    try {
-      await sql`
-        INSERT INTO mail.workflow_profile (id, mailbox_id, enabled)
-        VALUES (${workflow.id}::uuid, ${mailboxId}::uuid, true)
-      `;
-      const version = await publishWorkflowVersion({
-        workflowId: workflow.id,
-        source: "steps: []\n",
-        plan,
-        activations: [],
-        activate: true,
-        author: { kind: "system" },
-      });
-      const runId = await createWorkflowRun({
-        appId: "mail",
-        scopeId: mailboxId,
-        workflowId: workflow.id,
-        workflowVersionId: version.id,
-        mode: "execute",
-        authorization: {},
-        idempotencyKey: `stale-command-${suffix}`,
-        occurredAt: new Date(),
-      });
-      const repository = createWorkflowRuntimeRepository();
-      const stepFor = (key: string, executionGeneration: number) => ({
-        runId,
-        executionGeneration,
-        mode: "execute" as const,
-        workflowId: workflow.id,
-        sourceHash: plan.sourceHash,
-        idempotencyKey: `workflow-command-step-${key}-${suffix}`,
-        key,
-        sourcePath: ["steps", 0],
-        iterationPath: [],
-        path: ["steps", 0],
-        kind: "action" as const,
-        action: "mail.test.flag",
-      });
-      const inputFor = (key: string) => ({
-        kind: "change_message_state" as const,
-        messageId: message!.id,
-        folderId: inboxFolderShortId,
-        change: { addFlags: ["seen" as const], removeFlags: [], addKeywords: [], removeKeywords: [] },
-        idempotencyKey: workflowEffectKey(runId, key),
-        correlationId: runId,
-      });
-      const create = (key: string, executionGeneration: number) =>
-        createWorkflowCommand({
-          context: null,
-          mailboxId,
-          workflowVersionId: version.id,
-          input: inputFor(key),
-          enqueue: false,
-          beforeCreate: async () => ({ workflowExecutionGeneration: executionGeneration, workflowStepKey: key }),
-        });
-      const claimRun = async () => {
-        const claim = await claimWorkflowRun({ worker: "mail-workflow-command-test", runId });
-        if (!claim) throw new Error("Workflow run was not claimable");
-        return claim;
-      };
-      // The deadline recheck that re-queues a run parked on a dependency.
-      const recheck = async () => {
-        await sql`UPDATE workflows.run SET wake_at = now() - interval '1 second' WHERE id = ${runId}::uuid`;
-        expect(await wakeExpiredWorkflowRuns(100, { appId: "mail" })).toContain(runId);
-      };
-      const stored = async (commandId: string) => {
-        const [row] = await sql<{ state: string; last_error_code: string | null }[]>`
-          SELECT state, last_error_code FROM mail.commands WHERE id = ${commandId}::uuid
-        `;
-        return row;
-      };
-
-      // A workflow command is keyed by the effect of the step that issues it.
-      const foreignKey = await createWorkflowCommand({
-        context: null,
-        mailboxId,
-        workflowVersionId: version.id,
-        input: { ...inputFor("flag"), idempotencyKey: `foreign-workflow-command-${suffix}` },
-        enqueue: false,
-        beforeCreate: async () => ({ workflowExecutionGeneration: 1, workflowStepKey: "flag" }),
-      });
-      expect(foreignKey).toMatchObject({ ok: false, error: { code: "INTERNAL" } });
-
-      // The step issues its command and parks on it with a recheck deadline.
-      const first = await claimRun();
-      await repository.startStep(stepFor("flag", first.executionGeneration));
-      const command = await create("flag", first.executionGeneration);
-      if (!command.ok) throw new Error(command.error.message);
-      await repository.parkStep(stepFor("flag", first.executionGeneration), {
-        kind: "mail.command",
-        key: command.data.id,
-        deadline: new Date(Date.now() + 60 * 60_000).toISOString(),
-      });
-      expect(await finishWorkflowRun(first, { state: "waiting" })).toEqual({ state: "finished" });
-
-      // The command is still queued at the deadline. The recheck runs the step
-      // again under a new execution generation, and the step adopts its command.
-      await recheck();
-      const second = await claimRun();
-      expect(second.executionGeneration).toBe(first.executionGeneration + 1);
-      await repository.startStep(stepFor("flag", second.executionGeneration));
-      const adopted = await create("flag", second.executionGeneration);
-      expect(adopted.ok && adopted.data.id).toBe(command.data.id);
-      await repository.parkStep(stepFor("flag", second.executionGeneration), {
-        kind: "mail.command",
-        key: command.data.id,
-        deadline: new Date(Date.now() + 60 * 60_000).toISOString(),
-      });
-      expect(await finishWorkflowRun(second, { state: "waiting" })).toEqual({ state: "finished" });
-
-      // The mailbox job claims the command while the next recheck has queued
-      // the run but not yet run it. The step still waits, so the effect runs.
-      await recheck();
-      const providerState = spyOn(imapSmtpConnector, "getMessageState").mockResolvedValue({
-        exists: true,
-        flags: [],
-        keywords: [],
-        messageId: `<stale-workflow-command-${suffix}@example.com>`,
-        modseq: "1",
-      });
-      const changeState = spyOn(imapSmtpConnector, "changeMessageState").mockResolvedValue({
-        exists: true,
-        flags: ["\\Seen"],
-        keywords: [],
-        messageId: `<stale-workflow-command-${suffix}@example.com>`,
-        modseq: "2",
-      });
-      try {
-        expect(await executeMutationCommand(command.data.id)).toBe("confirmed");
-        expect(changeState).toHaveBeenCalledTimes(1);
-      } finally {
-        changeState.mockRestore();
-        providerState.mockRestore();
-      }
-
-      const provider = spyOn(imapSmtpConnector, "changeMessageState").mockRejectedValue(
-        new Error("a workflow command nobody waits for reached the provider"),
-      );
-      const expectCancelled = async (commandId: string) => {
-        expect(await executeMutationCommand(commandId)).toBeNull();
-        expect(await stored(commandId)).toEqual({ state: "cancelled", last_error_code: "WORKFLOW_CANCELED" });
-      };
-      try {
-        // A command whose step settled without it never reaches the provider,
-        // although its run is still live.
-        const third = await claimRun();
-        await repository.startStep(stepFor("skipped", third.executionGeneration));
-        const superseded = await create("skipped", third.executionGeneration);
-        if (!superseded.ok) throw new Error(superseded.error.message);
-        await repository.finishStep(stepFor("skipped", third.executionGeneration), {
-          mode: "execute",
-          outcome: { state: "completed", output: { applied: false } },
-        });
-        await expectCancelled(superseded.data.id);
-
-        // Neither does a command whose run was canceled while its step waited for it.
-        await repository.startStep(stepFor("canceled", third.executionGeneration));
-        const canceled = await create("canceled", third.executionGeneration);
-        if (!canceled.ok) throw new Error(canceled.error.message);
-        await repository.parkStep(stepFor("canceled", third.executionGeneration), {
-          kind: "mail.command",
-          key: canceled.data.id,
-          deadline: new Date(Date.now() + 60 * 60_000).toISOString(),
-        });
-        expect(await finishWorkflowRun(third, { state: "waiting" })).toEqual({ state: "finished" });
-
-        // Mailbox deletion takes the run before the command, like a claim, so
-        // the two wait for each other instead of deadlocking.
-        const rolledBack = new Error("roll back the mailbox deletion");
-        let deletion: Promise<unknown> | undefined;
-        await sql.begin(async (claim) => {
-          await claim`SELECT id FROM workflows.run WHERE id = ${runId}::uuid FOR UPDATE`;
-          deletion = sql
-            .begin(async (tx) => {
-              await pauseDeletedMailboxExecution(mailboxId, tx);
-              throw rolledBack;
-            })
-            .catch((error: unknown) => error);
-          for (let poll = 0; ; poll += 1) {
-            const [waiting] = await sql<{ count: number }[]>`
-              SELECT count(*)::int AS count
-              FROM pg_stat_activity
-              WHERE datname = current_database() AND wait_event_type = 'Lock' AND query LIKE '%UPDATE workflows.run run%'
-            `;
-            if (waiting?.count) break;
-            if (poll >= 250) throw new Error("Mailbox deletion never waited for the run");
-            await Bun.sleep(20);
-          }
-          await claim`SELECT id FROM mail.commands WHERE id = ${canceled.data.id}::uuid FOR UPDATE`;
-        });
-        expect(await deletion).toBe(rolledBack);
-
-        expect(await requestWorkflowRunCancel(runId)).toBe(true);
-        await expectCancelled(canceled.data.id);
-        expect(provider).not.toHaveBeenCalled();
-
-        // A command whose effect may already have reached the provider is not
-        // cancelled with its run: whether the provider applied it is unknown.
-        const started = await create("started", third.executionGeneration);
-        if (!started.ok) throw new Error(started.error.message);
-        await sql`
-          UPDATE mail.commands
-          SET state = 'ambiguous', attempt = 1, provider_effect_attempt = 1, provider_effect_started_at = now()
-          WHERE id = ${started.data.id}::uuid
-        `;
-        expect(await executeMutationCommand(started.data.id)).toBeNull();
-        expect(await stored(started.data.id)).toEqual({ state: "needs_attention", last_error_code: "WORKFLOW_CANCELED" });
-      } finally {
-        provider.mockRestore();
-      }
-    } finally {
-      await sql`DELETE FROM workflows.workflow WHERE id = ${workflow.id}::uuid`;
     }
   }, 15_000);
 

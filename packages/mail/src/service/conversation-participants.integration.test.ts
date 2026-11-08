@@ -98,9 +98,10 @@ suite("Mail conversation participants", () => {
         VALUES (${message!.id}::uuid, 'from', ${position}, ${address.name ?? null}, ${address.email}, ${address.email.toLowerCase()})`;
     if (!sentBy) return;
     const key = crypto.randomUUID();
+    // Sent evidence is historical: no retired workflow command may be queued by this fixture.
     const [command] = await sql<{ id: string }[]>`INSERT INTO mail.commands
-      (mailbox_id, kind, actor_kind, actor_id, idempotency_key, request_hash, target, payload, access_subject_kind, access_subject_id, credential_scopes)
-      VALUES (${mailboxId}::uuid, 'send', ${sentBy.kind}, ${sentBy.id}::uuid, ${key}, ${"f".repeat(64)}, '{}', '{}',
+      (mailbox_id, kind, state, actor_kind, actor_id, idempotency_key, request_hash, target, payload, access_subject_kind, access_subject_id, credential_scopes)
+      VALUES (${mailboxId}::uuid, 'send', 'confirmed', ${sentBy.kind}, ${sentBy.id}::uuid, ${key}, ${"f".repeat(64)}, '{}', '{}',
         'user', ${owner.id}::uuid, ARRAY[]::text[]) RETURNING id`;
     const [draft] = await sql<{ id: string }[]>`INSERT INTO mail.drafts
       (short_id, mailbox_id, conversation_id, source_message_id, intent, sender_identity_id, author_kind, author_id,
@@ -180,6 +181,7 @@ suite("Mail conversation participants", () => {
         VALUES (${workflow!.id}::uuid, ${revision}, 'source', ${String(revision).repeat(64)}, '{}', 'test', 1, ${"b".repeat(64)}, 'system')
         RETURNING id`;
       versions.push(version!.id);
+      await sql`INSERT INTO mail.workflow_source_names(version_id,workflow_id,name,active) VALUES(${version!.id}::uuid,${workflow!.id}::uuid,'Invoices',false)`;
     }
     conversations.automated = await createConversation("Automated", 6);
     await addMessage(conversations.automated, [
@@ -288,22 +290,23 @@ suite("Mail conversation participants", () => {
     expect(readerView.listItems.map((item) => item.conversationId)).toEqual([conversations.assigned]);
     expect(readerView.listItems[0]?.participants).toEqual([{ name: "Anna Roth" }, { name: "Tom Keller", kind: "user" }]);
   });
-  test("materialized rule names follow renames and survive definition deletion", async () => {
+  test("frozen rule names survive later renames and definition deletion", async () => {
     const [workflow] = await sql<{ id: string }[]>`INSERT INTO workflows.workflow (app_id, scope_id, key, name, created_by_kind)
       VALUES ('mail', ${mailboxId}, ${`historical-${suffix}`}, 'Historical writer', 'system') RETURNING id`;
     workflowIds.push(workflow!.id);
     const [version] = await sql<{ id: string }[]>`INSERT INTO workflows.version
       (workflow_id, revision, source, source_hash, plan, language_id, language_version, manifest_hash, created_by_kind)
       VALUES (${workflow!.id}::uuid, 1, 'source', ${"a".repeat(64)}, '{}', 'test', 1, ${"b".repeat(64)}, 'system') RETURNING id`;
+    await sql`INSERT INTO mail.workflow_source_names(version_id,workflow_id,name,active) VALUES(${version!.id}::uuid,${workflow!.id}::uuid,'Historical writer',false)`;
     const conversationId = await createConversation("Historical author", 7);
     await addMessage(conversationId, { email: "team@example.test" }, { kind: "workflow", id: version!.id });
     await sql`UPDATE workflows.workflow SET name = 'Renamed writer', active_version_id = ${version!.id}::uuid
       WHERE id = ${workflow!.id}::uuid`;
     const read = () => listConversationParticipants({ context: contextFor(owner), mailboxId, conversationIds: [conversationId] });
-    expect(unwrap(await read()).get(conversationId)).toEqual({ people: [{ name: "Renamed writer", kind: "workflow" }], count: 1 });
+    expect(unwrap(await read()).get(conversationId)).toEqual({ people: [{ name: "Historical writer", kind: "workflow" }], count: 1 });
     await sql`DELETE FROM workflows.workflow WHERE id = ${workflow!.id}::uuid`;
-    expect(unwrap(await read()).get(conversationId)).toEqual({ people: [{ name: "Renamed writer", kind: "workflow" }], count: 1 });
+    expect(unwrap(await read()).get(conversationId)).toEqual({ people: [{ name: "Historical writer", kind: "workflow" }], count: 1 });
     const [source] = await sql`SELECT workflow_id, name, active FROM mail.workflow_source_names WHERE version_id = ${version!.id}::uuid`;
-    expect(source).toMatchObject({ workflow_id: workflow!.id, name: "Renamed writer", active: false });
+    expect(source).toMatchObject({ workflow_id: workflow!.id, name: "Historical writer", active: false });
   });
 });

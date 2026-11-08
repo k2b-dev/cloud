@@ -9,9 +9,9 @@ suiteFor("database")("retained Mail source names", () => {
     // capture triggers and all fixture data roll back together.
     await sql.begin(async (db) => {
       await db`LOCK TABLE workflows.workflow, workflows.version IN SHARE ROW EXCLUSIVE MODE NOWAIT`;
-      await db`DROP TRIGGER mail_capture_workflow_version_source ON workflows.version`;
-      await db`DROP TRIGGER mail_capture_workflow_source ON workflows.workflow`;
-      await db`DROP FUNCTION mail.capture_workflow_source_name()`;
+      await db`DROP TRIGGER IF EXISTS mail_capture_workflow_version_source ON workflows.version`;
+      await db`DROP TRIGGER IF EXISTS mail_capture_workflow_source ON workflows.workflow`;
+      await db`DROP FUNCTION IF EXISTS mail.capture_workflow_source_name()`;
       const sources: { appId: string; workflowId: string; versionId: string }[] = [];
       for (const appId of ["mail", "grids"]) {
         const [workflow] = await db<{ id: string }[]>`INSERT INTO workflows.workflow (app_id, scope_id, key, name, created_by_kind)
@@ -28,7 +28,7 @@ suiteFor("database")("retained Mail source names", () => {
         const rows = await db`SELECT version_id, workflow_id, name, active FROM mail.workflow_source_names
           WHERE workflow_id = ${workflowId}::uuid`;
         expect(rows).toEqual(
-          appId === "mail" ? [{ version_id: versionId, workflow_id: workflowId, name: "Existing source", active: true }] : [],
+          appId === "mail" ? [{ version_id: versionId, workflow_id: workflowId, name: "Existing source", active: false }] : [],
         );
         await db`DELETE FROM workflows.workflow WHERE id = ${workflowId}::uuid`;
         await db`DELETE FROM mail.workflow_source_names WHERE workflow_id = ${workflowId}::uuid`;

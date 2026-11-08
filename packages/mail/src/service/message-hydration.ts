@@ -23,7 +23,6 @@ import { parseMessageReceiptSource, recordMessageReceipt } from "./message-recei
 import { assessMessageSourceSize } from "./message-source-size";
 import { estimateHydrationWorkingSet, withProcessingMemory } from "./processing-memory-budget";
 import { splitSearchText } from "./search-chunks";
-import { publishMailWorkflowDependency } from "./workflow-dependencies";
 
 type HydratedPart = {
   partPath: string;
@@ -479,11 +478,6 @@ const mergeVerifiedDuplicate = async (params: {
     WHERE source_message_id = ${params.messageId}::uuid
   `;
   await params.db`
-    UPDATE mail.automatic_reply_effects
-    SET message_id = ${canonical.id}::uuid
-    WHERE message_id = ${params.messageId}::uuid
-  `;
-  await params.db`
     UPDATE mail.outbox_submissions
     SET message_id = ${canonical.id}::uuid
     WHERE message_id = ${params.messageId}::uuid
@@ -739,7 +733,6 @@ export const recordMissingMessageSources = async (messageIds: string[], transpor
   if (events.length > 0) mailLive.wake();
   for (const message of recorded) {
     if (message.hydration_attempt < MAX_HYDRATION_ATTEMPTS) continue;
-    await publishMailWorkflowDependency({ mailboxId: message.mailbox_id, dependency: { kind: "mail.hydration", key: message.id } });
   }
   return recorded.map((message) => message.id);
 };
@@ -775,7 +768,6 @@ export const releaseExpiredHydrationClaims = async (): Promise<{ id: string; mai
   if (events.length > 0) mailLive.wake();
   for (const message of released) {
     if (message.hydration_attempt < MAX_HYDRATION_ATTEMPTS) continue;
-    await publishMailWorkflowDependency({ mailboxId: message.mailbox_id, dependency: { kind: "mail.hydration", key: message.id } });
   }
   return released.map((message) => ({ id: message.id, mailbox_id: message.mailbox_id }));
 };
@@ -1132,10 +1124,6 @@ export const hydrateMessageFromSource = async (params: {
             }
           });
           if (collaborationEvent || receiptEvent) mailLive.wake();
-          await publishMailWorkflowDependency({
-            mailboxId: claimed.mailbox_id,
-            dependency: { kind: "mail.hydration", key: params.messageId },
-          });
           if (canonicalMessageId) return { status: "deduplicated", sourceHash, canonicalMessageId };
           await enqueueAttachmentExtractionsForMessage(params.messageId).catch((error) => {
             logAttachmentExtractionEnqueueFailure(params.messageId, error);
@@ -1199,10 +1187,6 @@ export const hydrateMessageFromSource = async (params: {
         .catch(() => ({ failed: undefined, events: [] }));
       if (events.length > 0) mailLive.wake();
       if (failed && failed.hydration_attempt >= MAX_HYDRATION_ATTEMPTS) {
-        await publishMailWorkflowDependency({
-          mailboxId: failed.mailbox_id,
-          dependency: { kind: "mail.hydration", key: params.messageId },
-        });
       }
     }
     throw error;

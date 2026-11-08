@@ -7,7 +7,6 @@ const detail = (overrides: Partial<MailSelectionDetail> = {}): MailSelectionDeta
   conversationRowState: null,
   conversationSummary: null,
   conversationDrafts: [],
-  automationTrace: [],
   detailError: null,
   collaborationState: null,
   conversationLocalTags: null,

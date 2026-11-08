@@ -26,8 +26,9 @@ foreign-provider contracts retain their published shapes, as described in
 Converting an existing Action's resource ID input into a target changes its
 schema hash. Refresh catalogs and generated callers with the provider upgrade.
 Core migrates pending approvals before AI workers start. Old Assistant routine
-mandates are revoked and their history is frozen at upgrade. Stop old Core and Assistant replicas first; do not mix old and new
-workers. Mail also migrates incoming automations before its workers start.
+mandates are revoked and their history is frozen at upgrade. Stop old Core and
+Assistant replicas first; do not mix old and new workers. Mail rules are retired;
+follow the [Mail cutover guide](/en/docs/operations/mail-automation-upgrade).
 Follow the [operator migration note](/en/docs/reference/deprecations-and-migrations#capability-targets-major-release-operator-note)
 for backups, restart order, confirmation states and rollback.
 Existing chats and their stored history stay unchanged.
