@@ -171,8 +171,8 @@ const messages: Record<string, [string, string]> = {
     "Die Dateigrößengrenze darf die Gesamtgrenze nicht überschreiten.",
   ],
   receipt_unknown: [
-    "The upload receipt is unavailable. Its result is unconfirmed; do not start a duplicate transfer until its destination has been checked.",
-    "Der Upload-Beleg ist nicht verfügbar. Das Ergebnis ist unbestätigt; prüfe das Ziel, bevor du eine neue Übertragung startest.",
+    "The upload receipt is unavailable. Its result is unconfirmed. Try again to check the same upload.",
+    "Der Upload-Beleg ist nicht verfügbar. Das Ergebnis ist unbestätigt. Versuche es erneut, um denselben Upload zu prüfen.",
   ],
   upload_uncertain: [
     "The upload result cannot be confirmed yet. Its reserved space remains counted.",
