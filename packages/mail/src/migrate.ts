@@ -100,8 +100,10 @@ const applyAdditions = async (tx: SqlClient): Promise<void> => {
     CREATE INDEX IF NOT EXISTS hydration_work_unpublished_idx ON mail.hydration_work (queued_at, mailbox_id)
     WHERE job_id IS NOT NULL AND published_at IS NULL
   `.simple();
-  // Release N understands both modes; existing and newly created drafts stay
-  // in lock mode until the subsequent activation release. No body is rewritten.
+  await tx`ALTER TABLE mail.mailboxes ADD COLUMN IF NOT EXISTS draft_edit_mode text NOT NULL DEFAULT 'lock'
+    CHECK (draft_edit_mode IN ('lock', 'shared'))`.simple();
+  // Existing drafts retain their mode. Defaults stay lock until verified
+  // per-mailbox activation; no body or document history is rewritten.
   await tx`ALTER TABLE mail.drafts ADD COLUMN IF NOT EXISTS edit_mode text NOT NULL DEFAULT 'lock'
     CHECK (edit_mode IN ('lock', 'shared'))`.simple();
   await tx`ALTER TABLE mail.drafts ADD COLUMN IF NOT EXISTS doc_generation bigint NOT NULL DEFAULT 1

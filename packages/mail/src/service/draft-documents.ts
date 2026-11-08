@@ -36,6 +36,12 @@ export const mailDraftDocumentLog = sharedText.define({
   maxPayloadBytes: MAX_LOG_ENVELOPE_BYTES,
 });
 
+/** Enable only after checking the installed retention contract AND the actual stream configuration. */
+export const sharedDraftsSupported = async (): Promise<boolean> => {
+  // k2b-dev/sync#4: reject-full, no expiry before snapshot coverage, and watermark pruning are all required.
+  return false;
+};
+
 type Db = typeof sql;
 type DraftRow = {
   id: string;

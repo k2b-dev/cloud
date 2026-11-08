@@ -17,6 +17,7 @@ const context: MailboxSettingsContext = {
     searchBackend: "auto",
     automaticReplyManagementPermission: "admin",
     accessScope: "mailbox",
+    draftEditMode: "lock",
     composeSafety: { internalDomains: ["example.test"], largeRecipientThreshold: 20 },
     createdAt: now,
     updatedAt: now,
@@ -165,6 +166,7 @@ describe("Mailbox settings dialog query lifecycle", () => {
       expect(patch?.body).toEqual({
         name: "Sales North",
         description: "Customer conversations",
+        draftEditMode: "lock",
         composeSafety: { internalDomains: ["example.test"], largeRecipientThreshold: 20 },
       });
       expect(input.value).toBe("Sales North");

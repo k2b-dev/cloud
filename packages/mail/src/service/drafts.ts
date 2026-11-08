@@ -51,6 +51,7 @@ import { requireSelectableSignature, resolveDefaultSignatureTemplateId } from ".
 import { applyConversationReferenceToReplySubjectInTransaction } from "./conversation-reference";
 import { recordDraftDocumentRevision } from "./draft-document-revision";
 import { lockDraftDocumentInTransaction } from "./draft-documents";
+import { newDraftEditMode } from "./draft-edit-mode";
 import { legacySignature, publicDraftContent, resolveDraftSignature, validateIdentity } from "./draft-validation";
 
 export { resolveDraftSignature, validateIdentity } from "./draft-validation";
@@ -753,6 +754,7 @@ const insertComposeDraftInTransaction = async (params: {
   materializationKey?: string;
   materializationRequestHash?: string;
 }): Promise<Result<MailDraft>> => {
+  const editMode = await newDraftEditMode(params.db, params.mailboxId);
   const identity = await validateIdentity({
     mailboxId: params.mailboxId,
     senderIdentityId: params.content.senderIdentityId,
@@ -764,13 +766,13 @@ const insertComposeDraftInTransaction = async (params: {
     "draft",
     (db, shortId) => db<DbDraft[]>`
     INSERT INTO mail.drafts AS d (
-      short_id, mailbox_id, conversation_id, intent, source_message_id, sender_identity_id,
+      edit_mode, short_id, mailbox_id, conversation_id, intent, source_message_id, sender_identity_id,
       author_kind, author_id, last_editor_kind, last_editor_id,
       to_addresses, cc_addresses, bcc_addresses, subject, body_markdown, body_format,
       priority, request_delivery_receipt, request_read_receipt,
       materialization_key, materialization_request_hash, signature_template_id
     ) VALUES (
-      ${shortId},
+      ${editMode}, ${shortId},
       ${params.mailboxId}::uuid,
       ${params.prepared.conversationId}::uuid,
       ${params.prepared.intent},
@@ -969,6 +971,7 @@ const insertDerivedDraftInTransaction = async (params: {
   idempotencyKey: string;
   requestHash: string;
 }): Promise<Result<MailDraft>> => {
+  const editMode = await newDraftEditMode(params.db, params.mailboxId);
   const identity = await validateIdentity({
     mailboxId: params.mailboxId,
     senderIdentityId: params.content.senderIdentityId,
@@ -980,14 +983,14 @@ const insertDerivedDraftInTransaction = async (params: {
     "draft",
     (db, shortId) => db<DbDraft[]>`
     INSERT INTO mail.drafts AS d (
-      short_id, mailbox_id, conversation_id, intent, source_message_id,
+      edit_mode, short_id, mailbox_id, conversation_id, intent, source_message_id,
       derived_from_message_id, derivation_kind, derivation_key, derivation_request_hash,
       sender_identity_id, signature_template_id,
       author_kind, author_id, last_editor_kind, last_editor_id,
       to_addresses, cc_addresses, bcc_addresses, subject, body_markdown, body_format,
       priority, request_delivery_receipt, request_read_receipt
     ) VALUES (
-      ${shortId},
+      ${editMode}, ${shortId},
       ${params.mailboxId}::uuid, NULL, 'new', NULL,
       ${params.prepared.messageId}::uuid, ${params.prepared.kind}, ${params.idempotencyKey}, ${params.requestHash},
       ${params.content.senderIdentityId}::uuid, ${params.content.signatureTemplateId ?? null}::uuid,
@@ -1147,6 +1150,8 @@ export const materializeDraftSeed = async (params: {
   if (!actor) return fail(err.forbidden("Draft author is invalid"));
   try {
     const result = await sql.begin(async (tx) => {
+      // Match command lock order before conversation/draft locks.
+      await tx`SELECT id FROM mail.mailboxes WHERE id = ${params.mailboxId}::uuid FOR SHARE`;
       const requestHash = await sha256Json(parsed.data.origin);
       const keyColumn = parsed.data.origin.kind === "derive" ? "derivation" : "materialization";
       const lockKey = [params.mailboxId, actor.kind, actorId(actor), keyColumn, parsed.data.idempotencyKey].join(":");
@@ -1278,6 +1283,8 @@ export const deriveDraftFromMessage = async (params: {
   if (!actor) return fail(err.forbidden("Draft author is invalid"));
   try {
     const result = await sql.begin(async (tx) => {
+      // Match command lock order before conversation/draft locks.
+      await tx`SELECT id FROM mail.mailboxes WHERE id = ${params.mailboxId}::uuid FOR SHARE`;
       const allowed = await requireMailboxPermission(params.context, params.mailboxId, "write", tx);
       if (!allowed.ok) return allowed;
       const request = {
@@ -1356,6 +1363,8 @@ export const createDeliveryRecoveryDraft = async (params: {
   if (!actor) return fail(err.forbidden("Draft author is invalid"));
   try {
     const result = await sql.begin(async (tx) => {
+      // Match command lock order before conversation/draft locks.
+      await tx`SELECT id FROM mail.mailboxes WHERE id = ${params.mailboxId}::uuid FOR SHARE`;
       const allowed = await requireMailboxAccess(params.context, params.mailboxId, "write", tx);
       if (!allowed.ok) return allowed;
       // Recovery starts a new conversation, which only mailbox-wide writers may do.
@@ -2528,6 +2537,8 @@ export const recoverDraftDocumentRest = async (params: {
     const actor = mutableActor(params.context);
     if (!actor) return fail(err.forbidden("Draft editor is invalid"));
     return await sql.begin(async (db) => {
+      // Match command lock order before conversation/draft locks.
+      await db`SELECT id FROM mail.mailboxes WHERE id = ${params.mailboxId}::uuid FOR SHARE`;
       const allowed = await requireDraftAccess(params.context, params.mailboxId, params.draftId, "write", db);
       if (!allowed.ok) return allowed;
       const [source] = await db<

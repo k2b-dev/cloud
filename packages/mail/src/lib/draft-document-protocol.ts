@@ -91,6 +91,8 @@ export const mailDraftDocumentMessages = i18n.define({
   baseLocale: "en",
   messages: {
     en: {
+      unsupported: "Shared draft editing is unavailable until safe document retention is supported and verified.",
+      invalidMode: "The draft editing mode is invalid.",
       session: "Your session ended. Sign in again to continue editing.",
       access: "You no longer have access to edit this draft.",
       missing: "This draft is no longer available.",
@@ -101,6 +103,8 @@ export const mailDraftDocumentMessages = i18n.define({
       busy: "The editing connection could not keep up. Copy unsent text before reopening the draft.",
     },
     de: {
+      unsupported: "Gemeinsames Bearbeiten ist erst verfügbar, wenn die sichere Aufbewahrung der Entwürfe unterstützt und geprüft ist.",
+      invalidMode: "Der Bearbeitungsmodus für Entwürfe ist ungültig.",
       session: "Deine Sitzung ist beendet. Melde dich erneut an, um weiterzuschreiben.",
       access: "Du hast keinen Zugriff mehr, um diesen Entwurf zu bearbeiten.",
       missing: "Dieser Entwurf ist nicht mehr verfügbar.",
