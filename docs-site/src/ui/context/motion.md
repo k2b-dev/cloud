@@ -8,6 +8,7 @@ Use one vocabulary for every time and curve. The tokens are available on
 | `--k2b-motion-fast` | `120ms` | Color, hover, press. |
 | `--k2b-motion-base` | `180ms` | Pop, slide, fade in. |
 | `--k2b-motion-sheet` | `220ms` | Panels, sheets, period changes. |
+| `--k2b-motion-stack` | `400ms` | A toast stack fans out, folds, and makes room. |
 | `--k2b-motion-celebrate` | `600ms` | Completion moments only. |
 | `--k2b-fresh-fade` | `1600ms` | Color only: a highlight fades out. |
 | `--k2b-ease-out` | `cubic-bezier(0.23, 1, 0.32, 1)` | Standard curve. |

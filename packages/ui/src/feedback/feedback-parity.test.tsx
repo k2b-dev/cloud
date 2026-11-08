@@ -217,7 +217,8 @@ describe("@k2b/ui Cloud feedback parity", () => {
     expect(narrow).toContain("--k2b-toast-rail-top: calc(env(safe-area-inset-top, 0px) + var(--k2b-toast-offset-top, 0px));");
     expect(narrow).toContain("--k2b-toast-rail-bottom: auto;");
     expect(narrow).toContain("--k2b-toast-rail-direction: column-reverse;");
-    expect(source).toContain("flex-direction:var(--k2b-toast-rail-direction,column);");
+    // The stack reads the edge from the same variable: `column-reverse` puts the newest toast at the top edge.
+    expect(source).toContain('getPropertyValue("--k2b-toast-rail-direction").trim() === "column-reverse"');
     // A phone uses the full width with a 0.5rem edge.
     const phone = feedbackCss.match(/@media \(max-width: 47\.999rem\) \{\s*\.k2b-ui \[data-k2b-toast-container\] \{([^}]*)\}/)?.[1];
     expect(phone).toContain("--k2b-toast-rail-left: env(safe-area-inset-left, 0px);");

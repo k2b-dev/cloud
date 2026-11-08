@@ -4,11 +4,11 @@ const toastMessages = i18n.define({
   baseLocale: "en",
   messages: {
     en: {
-      dismissNotification: "Dismiss notification",
+      dismissNamed: ({ name }: { name: string }) => `Close: ${name}`,
       notifications: "Notifications",
     },
     de: {
-      dismissNotification: "Benachrichtigung schließen",
+      dismissNamed: ({ name }) => `Schließen: ${name}`,
       notifications: "Benachrichtigungen",
     },
   },

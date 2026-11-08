@@ -4509,7 +4509,6 @@ html:not([data-k2b-mobile-shell-modal]) .k2b-ui .k2b-mobile-shell > .k2b-mobile-
   html[data-k2b-mobile-shell="sidebar"]:not([data-k2b-mobile-shell-modal]) .k2b-ui [data-k2b-toast-container] {
     --k2b-toast-rail-left: 15rem;
     --k2b-toast-rail-width: auto;
-    align-items: center;
   }
 
   html[data-k2b-mobile-shell="sidebar"]:not([data-k2b-mobile-shell-modal])
@@ -4517,6 +4516,7 @@ html:not([data-k2b-mobile-shell-modal]) .k2b-ui .k2b-mobile-shell > .k2b-mobile-
     [data-k2b-toast-container]
     > .k2b-toast-slot {
     width: min(100%, 26rem);
+    margin-inline: auto;
   }
 }
 

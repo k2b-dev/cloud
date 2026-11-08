@@ -9,6 +9,7 @@ const durations = {
   "--k2b-motion-fast": "120ms",
   "--k2b-motion-base": "180ms",
   "--k2b-motion-sheet": "220ms",
+  "--k2b-motion-stack": "400ms",
   "--k2b-motion-celebrate": "600ms",
   "--k2b-fresh-fade": "1600ms",
 };
