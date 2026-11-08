@@ -3555,7 +3555,7 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
           }
         });
 
-        test("phone: the reply pill above the newest message offers Reply, Reply all, Forward and Done by touch and keyboard", async () => {
+        test("phone: the reply pill at the bottom, in thumb reach, offers Reply, Reply all, Forward and Done by touch and keyboard", async () => {
           const page = await open(`${boxPath}?conversation=Conv01`, 390, 844);
           try {
             const bar = page.locator("[data-mail-reply-pill] .k2b-toolbar");
@@ -3585,12 +3585,13 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
             const reachable = new Set([...names.filter((name) => name !== "More actions"), ...inMore]);
             for (const name of ["Reply", "Reply all", "Forward", "Mark as done"]) expect(reachable.has(name), name).toBe(true);
             expect([...reachable].every((name) => ["Reply", "Reply all", "Forward", "Mark as done", "Assign"].includes(name))).toBe(true);
-            // The pill sits inside the reader, above the newest message, and never below the screen.
+            // F1: on a phone the pill waits at the bottom of the reader, below the newest message, never below the screen.
             const scroller = (await page.locator(".mail-reader-scroll").boundingBox())!;
             const strip = (await bar.boundingBox())!;
             const newest = (await page.locator("[data-mail-conversation-messages] [data-mail-message-id]").first().boundingBox())!;
-            expect(strip.y).toBeGreaterThanOrEqual(scroller.y - 0.5);
-            expect(strip.y + strip.height).toBeLessThanOrEqual(newest.y + 0.5);
+            expect(strip.y).toBeGreaterThanOrEqual(newest.y + newest.height - 0.5);
+            expect(strip.y + strip.height).toBeLessThanOrEqual(scroller.y + scroller.height + 0.5);
+            expect(strip.y + strip.height).toBeGreaterThan(scroller.y + scroller.height * 0.8);
             // A floating pill on layer 3 carries the toolbar shadow.
             expect(await bar.evaluate((element) => getComputedStyle(element).boxShadow)).not.toBe("none");
             // The top row keeps the way back, … and the details; the actions live below.
