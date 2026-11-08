@@ -15,6 +15,10 @@
     "#katex-render": {
       "browser": "./src/shared/markdown/extensions/katex-render.browser.ts",
       "default": "./src/shared/markdown/extensions/katex-render.ts"
+    },
+    "#chat-charts": {
+      "browser": "./src/ai/chat/chart-lazy.tsx",
+      "default": "./src/ai/chat/chart-eager.tsx"
     }
   },
   "files": [

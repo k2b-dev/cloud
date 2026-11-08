@@ -210,6 +210,7 @@ import { CountRefreshBusy } from "../service/view-count-cache";
 import { loadMailboxConversationDetail, loadMailboxListView, loadMailboxPageData, resolveWorkspaceRequest } from "../service/workspace";
 import legacyLiveRoutes from "../ws";
 import { projectActivityResult } from "./activity-public";
+import automationExportRoutes from "./automation-export";
 import automationLogRoutes from "./automation-log";
 import contactDirectoryRoutes from "./contact-directory";
 import { requireDraftDocumentAccount } from "./draft-document-identity";
@@ -3759,6 +3760,7 @@ const mailOperationsApi = new Hono<MailApiContext>()
         }),
       ),
   )
+  .route("/", automationExportRoutes)
   .route("/", workflowRoutes)
   .route("/", automationLogRoutes);
 
