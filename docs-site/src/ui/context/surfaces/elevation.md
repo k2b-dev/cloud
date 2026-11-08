@@ -70,6 +70,7 @@ shadow with a blur in packages and apps; rings and hairlines (blur 0, such as
 | --- | --- | --- | --- |
 | `--k2b-island-shadow` | `--k2b-shadow-raised` in the main content, no shadow in a flat layer | no shadow | Read this in every island. Never set a value yourself. |
 | `--k2b-island-surface` | `--k2b-surface-raised` in the main content, `--k2b-surface` in a flat layer | same | The background of an island. |
+| `--k2b-surface-beneath` | set inside an island to its surface | same | Mix a fill into what lies below it (a selected row) with `var(--k2b-surface-beneath, var(--k2b-surface))`; fields and controls keep `--k2b-surface`. |
 | `--k2b-shadow-raised` | `0 1px 2px rgb(15 23 19 / .05), 0 4px 12px -6px rgb(15 23 19 / .12)` | no shadow | Layer 1, through the island hook. |
 | `--k2b-surface-raised` | `--k2b-surface` | `--k2b-surface-elevated` | The lighter island surface in dark mode. |
 | `--k2b-shadow-toolbar` | `0 1px 2px rgb(9 9 11 / .06), 0 6px 18px -8px rgb(9 9 11 / .16)` | `0 1px 2px rgb(0 0 0 / .4), 0 8px 22px -10px rgb(0 0 0 / .5)` | Floating pills and toolbars that stay open. |

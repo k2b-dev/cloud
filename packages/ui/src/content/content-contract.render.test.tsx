@@ -522,7 +522,7 @@ describe("@k2b/ui Cloud content contract", () => {
       /\.k2b-data-table__row\[data-hover="true"\]:not\(\[data-selected="true"\]\):hover \{[^}]*var\(--k2b-hover\) 50%, transparent/s,
     );
     expect(uiCss).toMatch(
-      /\.k2b-data-table__row\[data-selected="true"\] \{[^}]*background: color-mix\(in srgb, var\(--k2b-app-workspace-active\) 16%, var\(--k2b-surface\)\)/s,
+      /\.k2b-data-table__row\[data-selected="true"\] \{[^}]*background: color-mix\(in srgb, var\(--k2b-app-workspace-active\) 16%, var\(--k2b-surface-beneath, var\(--k2b-surface\)\)\)/s,
     );
     expect(uiCss).toMatch(/\.k2b-data-table__row\[data-selected="true"\] > td\[data-highlighted="true"\] \{[^}]*background: transparent/s);
   });
