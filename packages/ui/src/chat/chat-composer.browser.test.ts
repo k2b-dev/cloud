@@ -57,6 +57,7 @@ if (options.tabBar) {
 }
 let resolveSearch;
 let searches = 0;
+let doneCount = 0;
 const [commandGeneration, setCommandGeneration] = createSignal(0);
 // While hidden, the host offers nothing, so the composer removes its whole menu; it then rebuilds it with new objects.
 const [menuHidden, setMenuHidden] = createSignal(false);
@@ -72,6 +73,7 @@ window.fixture = { setHint, setDictation, setDraft,
   },
   resolveSearch: (rows) => resolveSearch?.(rows),
   searchCount: () => searches,
+  doneCount: () => doneCount,
 };
 
 render(
@@ -103,7 +105,7 @@ render(
               { id: "alpha", name: "alpha", label: "Alpha", description: "First local command", keywords: ["q", "qu"] },
               { id: "blocked", name: "blocked", label: "Blocked", description: "Unused", keywords: ["q", "qu"], reason: "Available after the first response" },
               { name: "fail", description: "Reject this action", action: async () => { throw new Error("Please try again"); } },
-              { name: "done", description: "Finish this action", action: async () => ({ done: "All done" }) },
+              { name: "done", description: "Finish this action", action: async () => { doneCount++; return { done: "All done" }; } },
               // An action that navigates within the page at once, as an application's router does.
               ...(options.navigate ? [{ name: "go", label: "Go", description: "Open the next page", action: () => { history.pushState({ page: 2 }, "", "#next"); } }] : []),
             ] : undefined; },
@@ -177,6 +179,7 @@ type Fixture = {
   rebuildMenu: () => void;
   resolveSearch: (rows: { id?: string; name: string; description: string; section?: string; keywords?: string[] }[]) => void;
   searchCount: () => number;
+  doneCount: () => number;
   setHint: (hint: string | undefined) => void;
   setDictation: (state: string | null) => void;
   setDraft: (value: string) => void;
@@ -691,6 +694,41 @@ describe(`default slash ChatComposer in ${browserName}`, () => {
         await page.close();
       }
     }, 30_000);
+
+    for (const cancel of [false, true]) {
+      test(`a command that moves during a press ${cancel ? "cancels outside its original box" : "runs once under a still pointer"} at ${width}px`, async () => {
+        const page = await open({ mode: "slash", width });
+        try {
+          const field = page.locator("textarea").first();
+          await field.fill("/done");
+          const option = page.locator('[role="option"]').filter({ hasText: "Finish this action" });
+          await option.waitFor();
+          await settled(page);
+          const row = await option.elementHandle();
+          const box = (await option.boundingBox())!;
+          const point = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+          await page.mouse.move(point.x, point.y);
+          await page.mouse.down();
+          // A host layout change can move the same row without replacing it (#2958).
+          await page.locator(".k2b-chat-composer-shell").evaluate((shell, shift) => {
+            shell.style.translate = `0 -${shift}px`;
+          }, Math.ceil(box.height));
+          expect(await row!.evaluate((element) => element.isConnected)).toBe(true);
+          expect(await row!.evaluate((element, point) => element.contains(document.elementFromPoint(point.x, point.y)), point)).toBe(false);
+          if (cancel) {
+            const outside = { x: box.x + 8, y: Math.max(1, box.y - box.height * 3) };
+            expect(outside.y > box.y + box.height || outside.y < box.y || outside.x < box.x || outside.x > box.x + box.width).toBe(true);
+            await page.mouse.move(outside.x, outside.y);
+          }
+          await page.mouse.up();
+          await frames(page, 2);
+          expect(await page.evaluate(() => fixture.doneCount())).toBe(cancel ? 0 : 1);
+          expect(await page.locator('.k2b-chat-composer__status-line[data-tone="done"]').count()).toBe(cancel ? 0 : 1);
+        } finally {
+          await page.close();
+        }
+      }, 30_000);
+    }
 
     test(`rows held back during a press show once the pointer is released elsewhere at ${width}px`, async () => {
       const page = await open({ mode: "slash", width });

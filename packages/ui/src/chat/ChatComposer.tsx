@@ -2279,17 +2279,23 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
   );
 
   // A press on a row remembers its command. The host can rebuild the list, or the whole menu, between press and release;
-  // the browser then sends the click to a common ancestor (#2140). A release on the same command's new row runs it.
-  let pressedCommand: { key: string; row: HTMLElement } | undefined;
+  // the browser then sends the click to a common ancestor (#2140). The same happens when a connected row moves
+  // under a still pointer (#2958). Recover releases in the original box or on the same command's new row.
+  let pressedCommand: { key: string; row: HTMLElement; box: DOMRect } | undefined;
   onMount(() => {
     const release = (event: PointerEvent | FocusEvent) => {
       const pressed = pressedCommand;
       pressedCommand = undefined;
       // After this release's click, which the browser dispatches in the same task.
       if (holdingRows()) setTimeout(() => setHoldingRows(false));
-      if (!pressed || pressed.row.isConnected || !(event instanceof PointerEvent) || event.type !== "pointerup") return;
-      const under = document.elementFromPoint(event.clientX, event.clientY)?.closest<HTMLElement>("[data-command-key]");
-      if (!under || under.dataset.commandKey !== pressed.key || !shellRef?.contains(under)) return;
+      if (!pressed || !(event instanceof PointerEvent) || event.type !== "pointerup") return;
+      const under = document.elementFromPoint(event.clientX, event.clientY);
+      // The native click handles a release on the pressed row; never execute it twice.
+      if (pressed.row.isConnected && under && pressed.row.contains(under)) return;
+      const { box } = pressed;
+      const stayed = event.clientX >= box.left && event.clientX <= box.right && event.clientY >= box.top && event.clientY <= box.bottom;
+      const sameRow = under?.closest<HTMLElement>("[data-command-key]")?.dataset.commandKey === pressed.key;
+      if (!(stayed || sameRow) || !shellRef?.contains(under ?? null)) return;
       const command = commandRowMap().get(pressed.key)?.command;
       if (command) void executeCommand(command);
     };
@@ -2329,7 +2335,7 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
         data-active={selectedCommandKey() === key ? "true" : undefined}
         data-command-key={key}
         onPointerDown={(event) => {
-          pressedCommand = { key, row: event.currentTarget };
+          pressedCommand = { key, row: event.currentTarget, box: event.currentTarget.getBoundingClientRect() };
           setHoldingRows(true);
         }}
         onMouseDown={keepFieldFocus}
