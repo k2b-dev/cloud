@@ -238,10 +238,11 @@
 }
 
 /* Anonymous pages: the header is the same flat card at every width, with the
-   app card's radius and edge and no shadow. Its controls are borderless; only
-   Sign in is filled. */
+   radius of the app workspace card below it, an edge, and no shadow. Its
+   controls are borderless; only Sign in is filled. */
 .cloud-app-canvas:not([data-layout-authenticated]) .layout-header {
   padding: 0.375rem 0.5rem 0.375rem 0.375rem;
+  border-radius: var(--k2b-radius-dialog);
   box-shadow: none !important;
 }
 

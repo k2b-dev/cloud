@@ -138,20 +138,24 @@ test("the signed-out header is the same card with the same controls at every wid
     const phone = width < 768;
     const page = await browser.newPage({ viewport: { width, height: 700 }, isMobile: phone, hasTouch: phone });
     try {
+      // A public page with an app workspace below the header: the two cards share their radius.
       await page.setContent(
         `<!doctype html><html><head><meta name="viewport" content="width=device-width, initial-scale=1"><style>${css}</style></head>` +
-          `<body class="k2b-ui">${inCanvas(false)}</body></html>`,
+          `<body class="k2b-ui"><div class="cloud-app-canvas" data-layout-header><div class="layout-shell-content">${header(false)}` +
+          `<main class="layout-content-main"><div class="k2b-app-workspace" data-flat="true"></div></main></div></div></body></html>`,
       );
       await settled(page);
       const shape = await page.evaluate(() => {
         const header = document.querySelector<HTMLElement>(".layout-header")!;
         const box = header.getBoundingClientRect();
         const style = getComputedStyle(header);
+        const workspace = getComputedStyle(document.querySelector(".k2b-app-workspace")!);
         const shown = Array.from(header.querySelectorAll("a[href], button")).filter((element) => element.checkVisibility());
         const language = header.querySelector('[aria-haspopup="menu"]') as HTMLElement;
         return {
           box: { left: box.left, top: box.top, right: innerWidth - box.right, height: box.height },
           card: [style.borderTopLeftRadius, style.borderTopWidth, style.borderBottomWidth, style.boxShadow],
+          workspaceRadius: workspace.borderTopLeftRadius,
           controls: shown.map((element) => element.getAttribute("aria-label") ?? element.textContent?.trim()),
           language: language.innerText.trim(),
           title: Boolean(header.querySelector(".layout-header-title")?.checkVisibility()),
@@ -166,7 +170,9 @@ test("the signed-out header is the same card with the same controls at every wid
       });
       expect(shape).toEqual({
         box: { left: 8, top: 8, right: 8, height: 46 },
-        card: ["12px", "1px", "1px", "none"],
+        card: ["14px", "1px", "1px", "none"],
+        // A phone shows the workspace edge to edge; from md it is a card with the header's radius.
+        workspaceRadius: phone ? "0px" : "14px",
         controls,
         language,
         title,
