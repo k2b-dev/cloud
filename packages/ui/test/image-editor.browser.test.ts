@@ -95,13 +95,16 @@ const drag = async (page: Page, from: [number, number], to: [number, number], se
   if (settle) await settled(page);
 };
 const centerPixel = (page: Page, x = 0.3, y = 0.3) =>
-  page.locator(".k2b-image-editor__image > canvas").first().evaluate(
-    (element, [x, y]) => {
-      const target = element as HTMLCanvasElement;
-      return [...target.getContext("2d")!.getImageData(Math.floor(target.width * x!), Math.floor(target.height * y!), 1, 1).data];
-    },
-    [x, y],
-  );
+  page
+    .locator(".k2b-image-editor__image > canvas")
+    .first()
+    .evaluate(
+      (element, [x, y]) => {
+        const target = element as HTMLCanvasElement;
+        return [...target.getContext("2d")!.getImageData(Math.floor(target.width * x!), Math.floor(target.height * y!), 1, 1).data];
+      },
+      [x, y],
+    );
 
 describe("public ImageEditor interactions", () => {
   test("caller save actions expose only browser-verified permitted encoders", async () => {
@@ -228,9 +231,11 @@ describe("public ImageEditor interactions", () => {
           if (overlay !== ".k2b-image-editor__chips" || width > 600) expect(overlaps, overlay).toBe(false);
         }
         expect(
-          await page.locator(".k2b-image-editor__look-thumb canvas").evaluateAll((canvases) =>
-            canvases.every((element) => (element as HTMLCanvasElement).width / (element as HTMLCanvasElement).height === 0.5),
-          ),
+          await page
+            .locator(".k2b-image-editor__look-thumb canvas")
+            .evaluateAll((canvases) =>
+              canvases.every((element) => (element as HTMLCanvasElement).width / (element as HTMLCanvasElement).height === 0.5),
+            ),
         ).toBe(true);
         if (width > 600) {
           await page.locator(".k2b-image-editor__output-trigger").click();
@@ -252,7 +257,9 @@ describe("public ImageEditor interactions", () => {
         for (const tool of ["Crop", "Adjust", "Mark up"]) {
           await selectTool(page, tool);
           expect(await page.getByRole("tab", { name: tool, exact: true }).getAttribute("aria-selected")).toBe("true");
-          expect(await page.locator(".k2b-image-editor__tabs").evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
+          expect(await page.locator(".k2b-image-editor__tabs").evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(
+            true,
+          );
           expect(await canvasBox(page)).toEqual(before);
         }
         expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
@@ -303,7 +310,11 @@ describe("public ImageEditor interactions", () => {
     const { page, errors } = await open();
     try {
       const values = () =>
-        Promise.all(["Brightness", "Contrast", "Saturation", "Warmth"].map((name) => page.getByRole("slider", { name: new RegExp(`^${name}`) }).inputValue()));
+        Promise.all(
+          ["Brightness", "Contrast", "Saturation", "Warmth"].map((name) =>
+            page.getByRole("slider", { name: new RegExp(`^${name}`) }).inputValue(),
+          ),
+        );
       expect(await values()).toEqual(["0", "0", "0", "0"]);
       await page.getByRole("button", { name: "Auto", exact: true }).first().click();
       await page.waitForFunction(() => document.querySelector(".k2b-image-editor")?.getAttribute("data-dirty") === "true");
@@ -425,6 +436,7 @@ describe("public ImageEditor interactions", () => {
     try {
       await selectTool(page, "Mark up");
       await markTool(page, "Text").click();
+      await settled(page);
       const image = await imageBox(page);
       await page.mouse.click(image.x + image.width * 0.3, image.y + image.height * 0.6);
       const text = page.getByRole("textbox", { name: "Type on the photo", exact: true });
@@ -436,6 +448,7 @@ describe("public ImageEditor interactions", () => {
       await text.fill("Test note");
       await page.keyboard.press("Enter");
       await markTool(page, /^Redact/).click();
+      await settled(page);
       await drag(page, [0.2, 0.2], [0.4, 0.4]);
       expect(await centerPixel(page)).toEqual([0, 0, 0, 255]);
       await page.getByRole("button", { name: "Undo", exact: true }).click();
@@ -458,6 +471,7 @@ describe("public ImageEditor interactions", () => {
       await page.evaluate(() => {
         window.requestAnimationFrame = () => 0;
       });
+      // settled: deliberately exercise synchronous painting while animation frames are deferred.
       await drag(page, [0.2, 0.2], [0.4, 0.4], false);
       expect(await centerPixel(page)).toEqual([0, 0, 0, 255]);
       await page.getByRole("button", { name: "Undo", exact: true }).click();
@@ -477,6 +491,7 @@ describe("public ImageEditor interactions", () => {
       const original = await canvas.evaluate((element) => (element as HTMLCanvasElement).toDataURL());
       for (const tool of ["Pen", "Marker", "Arrow", "Rectangle", "Ellipse"]) {
         await markTool(page, tool).click();
+        await settled(page);
         await drag(page, [0.25, 0.25], [0.6, 0.6]);
         expect(await canvas.evaluate((element) => (element as HTMLCanvasElement).toDataURL())).not.toBe(original);
         expect(await dirty(page)).toBe("true");
@@ -496,10 +511,13 @@ describe("public ImageEditor interactions", () => {
     try {
       await selectTool(page, "Mark up");
       await markTool(page, "Rectangle").click();
+      await settled(page);
       await drag(page, [0.1, 0.1], [0.3, 0.3]);
       await markTool(page, "Arrow").click();
+      await settled(page);
       await drag(page, [0.5, 0.5], [0.7, 0.6]);
       await markTool(page, /^Redact/).click();
+      await settled(page);
       await drag(page, [0.6, 0.2], [0.8, 0.3]);
       const names = () => page.locator(".k2b-image-editor__layer-name").allInnerTexts();
       expect(await names()).toEqual(["Redaction 1", "Arrow", "Rectangle"]);
@@ -512,6 +530,7 @@ describe("public ImageEditor interactions", () => {
       expect(await names()).toEqual(["Redaction 1", "Rectangle", "Arrow"]);
       expect(await page.evaluate(() => document.activeElement?.textContent)).toContain("Rectangle");
       // Clicking a mark on the canvas selects it; the canvas shows the selection box.
+      await settled(page);
       const image = await imageBox(page);
       await page.mouse.click(image.x + image.width * 0.1, image.y + image.height * 0.2);
       await page.locator(".k2b-image-editor__selection").waitFor();
@@ -578,7 +597,10 @@ describe("public ImageEditor interactions", () => {
       expect(await canvasBox(page)).toEqual(before);
       expect(await fixture(page, "attempts")).toBe(0);
       expect(await dirty(page)).toBe("true");
-      await page.getByRole("button", { name: /Mit .* MP erneut versuchen/ }).first().click();
+      await page
+        .getByRole("button", { name: /Mit .* MP erneut versuchen/ })
+        .first()
+        .click();
       await page.waitForFunction("window.editorFixture.results.length === 1");
       expect(await fixture(page, "results[0].downscaled")).toBe(true);
       expect(await dirty(page)).toBe("false");
