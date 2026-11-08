@@ -65,9 +65,9 @@ import {
   clampImageEditorView,
   fitImageEditorView,
   type ImageEditorInsets,
-  type ImageEditorView as View,
   isMouseWheel,
   sameImageEditorView,
+  type ImageEditorView as View,
   zoomImageEditorView,
 } from "./viewport";
 
@@ -168,17 +168,30 @@ function ImageEditorSession(props: ImageEditorProps): JSX.Element {
   const [history, setHistory] = createSignal(createImageEditorHistory());
   const [draft, setDraft] = createSignal<ImageEditorState>();
   const state = () => draft() ?? currentImageEditorEntry(history()).state;
-  const [inlineText, setInlineText] = createSignal<{ point: ImageEditorPoint; value: string; mark?: ImageEditorAnnotation; index?: number }>();
+  const [inlineText, setInlineText] = createSignal<{
+    point: ImageEditorPoint;
+    value: string;
+    mark?: ImageEditorAnnotation;
+    index?: number;
+  }>();
   const dirty = () => imageEditorDirty(history()) || draft() !== undefined || inlineText() !== undefined;
   const f = () => props.features;
   const tools = createMemo(() =>
     [
       { value: "crop" as const, label: t().crop, icon: "ti ti-crop", key: "1", enabled: !!(f().crop || f().rotate || f().straighten) },
-      { value: "adjust" as const, label: t().adjust, icon: "ti ti-adjustments-horizontal", key: "2", enabled: !!(f().adjust || f().filters) },
+      {
+        value: "adjust" as const,
+        label: t().adjust,
+        icon: "ti ti-adjustments-horizontal",
+        key: "2",
+        enabled: !!(f().adjust || f().filters),
+      },
       { value: "annotate" as const, label: t().annotate, icon: "ti ti-pencil", key: "3", enabled: !!(f().annotate || f().redact) },
     ].filter((tool) => tool.enabled),
   );
-  const [tool, setTool] = createSignal<Tool>(untrack(() => tools().find((x) => x.value === "adjust")?.value ?? tools()[0]?.value ?? "crop"));
+  const [tool, setTool] = createSignal<Tool>(
+    untrack(() => tools().find((x) => x.value === "adjust")?.value ?? tools()[0]?.value ?? "crop"),
+  );
   const markTools = createMemo((): readonly MarkTool[] => {
     const annotate = f().annotate;
     const drawing = typeof annotate === "object" ? (annotate.tools ?? annotationTools) : annotate ? annotationTools : [];
@@ -349,7 +362,9 @@ function ImageEditorSession(props: ImageEditorProps): JSX.Element {
     if (phone()) {
       let edge = area.bottom - 8;
       if (shown(paneEl)) edge = Math.min(edge, paneEl!.getBoundingClientRect().top);
-      if (shown(bottomEl)) for (const group of bottomEl!.querySelectorAll(".k2b-image-editor__group")) if ((group as HTMLElement).offsetParent) edge = Math.min(edge, group.getBoundingClientRect().top);
+      if (shown(bottomEl))
+        for (const group of bottomEl!.querySelectorAll(".k2b-image-editor__group"))
+          if ((group as HTMLElement).offsetParent) edge = Math.min(edge, group.getBoundingClientRect().top);
       return { top, right: 10, bottom: area.bottom - edge + 12, left: 10 };
     }
     return {
@@ -369,7 +384,11 @@ function ImageEditorSession(props: ImageEditorProps): JSX.Element {
     const step = (now: number) => {
       const k = Math.min(1, (now - started) / 220);
       const e = 1 - (1 - k) ** 3;
-      setView({ zoom: start.zoom + (target.zoom - start.zoom) * e, x: start.x + (target.x - start.x) * e, y: start.y + (target.y - start.y) * e });
+      setView({
+        zoom: start.zoom + (target.zoom - start.zoom) * e,
+        x: start.x + (target.x - start.x) * e,
+        y: start.y + (target.y - start.y) * e,
+      });
       if (k < 1) animation = requestAnimationFrame(step);
     };
     animation = requestAnimationFrame(step);
@@ -396,7 +415,11 @@ function ImageEditorSession(props: ImageEditorProps): JSX.Element {
     const c = canvasSize();
     const fr = frameSize();
     setFollowing(false);
-    animateTo({ zoom, x: i.left + (c.width - i.left - i.right - fr.width * zoom) / 2, y: i.top + (c.height - i.top - i.bottom - fr.height * zoom) / 2 });
+    animateTo({
+      zoom,
+      x: i.left + (c.width - i.left - i.right - fr.width * zoom) / 2,
+      y: i.top + (c.height - i.top - i.bottom - fr.height * zoom) / 2,
+    });
   };
   // A new frame (tool, crop, rotation) or a resized editor refits while the view follows the fit.
   createEffect(
@@ -473,7 +496,14 @@ function ImageEditorSession(props: ImageEditorProps): JSX.Element {
       if (text.value.trim()) next[text.index] = { ...text.mark, text: text.value.trim() };
       else next.splice(text.index, 1);
     } else if (text.value.trim())
-      next.push({ id: nextAnnotationId(next), tool: "text", points: [text.point], text: text.value.trim(), color: color(), width: sizes[size()]!.value * 4 });
+      next.push({
+        id: nextAnnotationId(next),
+        tool: "text",
+        points: [text.point],
+        text: text.value.trim(),
+        color: color(),
+        width: sizes[size()]!.value * 4,
+      });
     else return;
     commit({ ...state(), annotations: next });
   }
@@ -538,7 +568,8 @@ function ImageEditorSession(props: ImageEditorProps): JSX.Element {
     if (!image) return;
     scratch ??= document.createElement("canvas");
     const r = rotatedEditorSize(image.sourceSize, edit);
-    const scale = Math.min(1, 2048 / Math.max(r.width * edit.crop.width, r.height * edit.crop.height));
+    // The on-screen canvas stays below the 2048 px preview so each open editor holds one large bitmap.
+    const scale = Math.min(1, 1600 / Math.max(r.width * edit.crop.width, r.height * edit.crop.height));
     target.width = Math.max(1, Math.round(r.width * edit.crop.width * scale));
     target.height = Math.max(1, Math.round(r.height * edit.crop.height * scale));
     renderImageEditor(image.image, image.sourceSize, edit, target, scratch);
@@ -572,7 +603,9 @@ function ImageEditorSession(props: ImageEditorProps): JSX.Element {
     if (!image || !chipThumb) return;
     const side = Math.min(image.image.width, image.image.height);
     chipThumb.width = chipThumb.height = 40;
-    chipThumb.getContext("2d")?.drawImage(image.image, (image.image.width - side) / 2, (image.image.height - side) / 2, side, side, 0, 0, 40, 40);
+    chipThumb
+      .getContext("2d")
+      ?.drawImage(image.image, (image.image.width - side) / 2, (image.image.height - side) / 2, side, side, 0, 0, 40, 40);
   });
 
   // ---------- guards, sizes, cleanup ----------
@@ -714,8 +747,16 @@ function ImageEditorSession(props: ImageEditorProps): JSX.Element {
     else setLoadAttempt((n) => n + 1);
   };
   const sourceType = () => preview()?.sourceSize.type ?? (typeof props.source === "string" ? undefined : props.source.type);
-  const losslessOutput = () => output().format === "image/png" || ((!output().format || output().format === "same") && sourceType() === "image/png");
-  const formatName = (type: string | undefined) => (type === "image/png" ? "PNG" : type === "image/webp" ? "WebP" : type === "image/jpeg" ? "JPEG" : (type?.split("/")[1]?.toUpperCase() ?? ""));
+  const losslessOutput = () =>
+    output().format === "image/png" || ((!output().format || output().format === "same") && sourceType() === "image/png");
+  const formatName = (type: string | undefined) =>
+    type === "image/png"
+      ? "PNG"
+      : type === "image/webp"
+        ? "WebP"
+        : type === "image/jpeg"
+          ? "JPEG"
+          : (type?.split("/")[1]?.toUpperCase() ?? "");
   const outputFormatName = () => formatName(!output().format || output().format === "same" ? sourceType() : output().format);
   const title = () => props.title ?? (props.source instanceof File ? props.source.name : "");
   const bytes = () => {
@@ -752,7 +793,16 @@ function ImageEditorSession(props: ImageEditorProps): JSX.Element {
     });
   const cropChanged = () => {
     const s = state();
-    return s.crop.x !== 0 || s.crop.y !== 0 || s.crop.width !== 1 || s.crop.height !== 1 || s.rotation !== 0 || s.straighten !== 0 || s.flipX || s.flipY;
+    return (
+      s.crop.x !== 0 ||
+      s.crop.y !== 0 ||
+      s.crop.width !== 1 ||
+      s.crop.height !== 1 ||
+      s.rotation !== 0 ||
+      s.straighten !== 0 ||
+      s.flipX ||
+      s.flipY
+    );
   };
   const resetCrop = () =>
     change((s) => {
@@ -775,7 +825,9 @@ function ImageEditorSession(props: ImageEditorProps): JSX.Element {
     const rect = state().crop;
     updateDraft((s) => ({
       ...s,
-      crop: event.shiftKey ? resizeCrop(rect, "se", dx, dy) : clampImageCropRect({ ...rect, x: rect.x + dx, y: rect.y + dy }, rotated(), aspect()),
+      crop: event.shiftKey
+        ? resizeCrop(rect, "se", dx, dy)
+        : clampImageCropRect({ ...rect, x: rect.x + dx, y: rect.y + dy }, rotated(), aspect()),
     }));
   };
 
@@ -812,7 +864,8 @@ function ImageEditorSession(props: ImageEditorProps): JSX.Element {
     };
     autoAnimation = requestAnimationFrame(step);
   };
-  const adjustChanged = () => state().look !== "original" || JSON.stringify(state().adjustments) !== JSON.stringify(initialImageEditorState().adjustments);
+  const adjustChanged = () =>
+    state().look !== "original" || JSON.stringify(state().adjustments) !== JSON.stringify(initialImageEditorState().adjustments);
 
   // ---------- layers ----------
   const strokeFor = () => sizes[size()]!.value;
@@ -872,7 +925,9 @@ function ImageEditorSession(props: ImageEditorProps): JSX.Element {
     return neighbour?.id;
   };
   const focusLayer = (id: string | undefined) =>
-    queueMicrotask(() => (id ? layersList?.querySelector<HTMLElement>(`[data-layer="${id}"] .k2b-image-editor__layer-main`) : undefined)?.focus());
+    queueMicrotask(() =>
+      (id ? layersList?.querySelector<HTMLElement>(`[data-layer="${id}"] .k2b-image-editor__layer-main`) : undefined)?.focus(),
+    );
   const moveLayer = (index: number, direction: 1 | -1) => {
     const mark = marks()[index];
     if (!mark) return;
@@ -893,7 +948,12 @@ function ImageEditorSession(props: ImageEditorProps): JSX.Element {
     } else if (["ArrowUp", "ArrowDown", "Home", "End"].includes(event.key)) {
       event.preventDefault();
       event.stopPropagation();
-      const to = event.key === "Home" ? 0 : event.key === "End" ? rows.length - 1 : clamp(at + (event.key === "ArrowDown" ? 1 : -1), 0, rows.length - 1);
+      const to =
+        event.key === "Home"
+          ? 0
+          : event.key === "End"
+            ? rows.length - 1
+            : clamp(at + (event.key === "ArrowDown" ? 1 : -1), 0, rows.length - 1);
       rows[to]?.focus();
     } else if (event.key === "Delete" || event.key === "Backspace") {
       event.preventDefault();
@@ -962,7 +1022,13 @@ function ImageEditorSession(props: ImageEditorProps): JSX.Element {
     if (pointers.size === 2) {
       if (gesture?.kind === "stroke") setDraft(undefined);
       const [a, b] = [...pointers.values()];
-      if (a && b) gesture = { kind: "pinch", distance: Math.hypot(a.x - b.x, a.y - b.y), mid: { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }, view: view() };
+      if (a && b)
+        gesture = {
+          kind: "pinch",
+          distance: Math.hypot(a.x - b.x, a.y - b.y),
+          mid: { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 },
+          view: view(),
+        };
       return;
     }
     const inside = insideImage(p);
@@ -1032,11 +1098,15 @@ function ImageEditorSession(props: ImageEditorProps): JSX.Element {
       const first = g.mark.points[0];
       const last = g.mark.points.at(-1);
       if (last && Math.hypot((last.x - point.x) * frameSize().width, (last.y - point.y) * frameSize().height) * view().zoom < 1.5) return;
-      g.mark = { ...g.mark, points: ["pen", "highlighter"].includes(g.mark.tool) ? [...g.mark.points, point] : first ? [first, point] : [point] };
+      g.mark = {
+        ...g.mark,
+        points: ["pen", "highlighter"].includes(g.mark.tool) ? [...g.mark.points, point] : first ? [first, point] : [point],
+      };
       setDraft({ ...state(), annotations: [...currentImageEditorEntry(history()).state.annotations, g.mark] });
     } else if (g.kind === "move") {
       const q = sourcePoint(p, false);
-      if (!g.moved && Math.hypot(q.x - g.start.x, q.y - g.start.y) * Math.max(frameSize().width, frameSize().height) * view().zoom < 3) return;
+      if (!g.moved && Math.hypot(q.x - g.start.x, q.y - g.start.y) * Math.max(frameSize().width, frameSize().height) * view().zoom < 3)
+        return;
       g.moved = true;
       const base = currentImageEditorEntry(history()).state;
       const next = [...base.annotations];
@@ -1059,7 +1129,10 @@ function ImageEditorSession(props: ImageEditorProps): JSX.Element {
       const dy = (event.clientY - g.y) / bounds.height;
       updateDraft((s) => ({
         ...s,
-        crop: g.handle === "move" ? clampImageCropRect({ ...g.rect, x: g.rect.x + dx, y: g.rect.y + dy }, rotated(), aspect()) : resizeCrop(g.rect, g.handle, dx, dy),
+        crop:
+          g.handle === "move"
+            ? clampImageCropRect({ ...g.rect, x: g.rect.x + dx, y: g.rect.y + dy }, rotated(), aspect())
+            : resizeCrop(g.rect, g.handle, dx, dy),
       }));
     } else if (g.kind === "split") {
       setSplitAt(clamp((p.x - view().x) / (frameSize().width * view().zoom), 0, 1));
@@ -1108,7 +1181,13 @@ function ImageEditorSession(props: ImageEditorProps): JSX.Element {
       setDraft(undefined);
       setCropDragging(false);
       const [a, b] = [...pointers.values()];
-      if (a && b) gesture = { kind: "pinch", distance: Math.hypot(a.x - b.x, a.y - b.y), mid: { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }, view: view() };
+      if (a && b)
+        gesture = {
+          kind: "pinch",
+          distance: Math.hypot(a.x - b.x, a.y - b.y),
+          mid: { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 },
+          view: view(),
+        };
       return;
     }
     (event.currentTarget as HTMLElement).focus({ preventScroll: true });
@@ -1223,7 +1302,12 @@ function ImageEditorSession(props: ImageEditorProps): JSX.Element {
         const d = { ArrowLeft: [-step, 0], ArrowRight: [step, 0], ArrowUp: [0, -step], ArrowDown: [0, step] }[event.key] ?? [0, 0];
         const q0 = sourcePixel({ x: view().x, y: view().y });
         const q1 = sourcePixel({ x: view().x + (d[0] ?? 0) * view().zoom, y: view().y + (d[1] ?? 0) * view().zoom });
-        change(() => replaceMark(selectedIndex(), moveAnnotation(mark, (q1.x - q0.x) / image.sourceSize.width, (q1.y - q0.y) / image.sourceSize.height)));
+        change(() =>
+          replaceMark(
+            selectedIndex(),
+            moveAnnotation(mark, (q1.x - q0.x) / image.sourceSize.width, (q1.y - q0.y) / image.sourceSize.height),
+          ),
+        );
         return;
       }
       const chosen = markTools().find((option) => toolKey[option] === key);
@@ -1277,13 +1361,16 @@ function ImageEditorSession(props: ImageEditorProps): JSX.Element {
   const stripFade = () => {
     const list = stripList;
     if (!list) return;
-    list.dataset.fade = `${list.scrollLeft > 1 ? "start " : ""}${list.scrollLeft + list.clientWidth < list.scrollWidth - 1 ? "end" : ""}`.trim();
+    list.dataset.fade =
+      `${list.scrollLeft > 1 ? "start " : ""}${list.scrollLeft + list.clientWidth < list.scrollWidth - 1 ? "end" : ""}`.trim();
   };
   const stripKeys = (event: KeyboardEvent) => {
     const items = [...(stripList?.querySelectorAll<HTMLElement>(".k2b-image-editor__thumb") ?? [])];
     const at = items.indexOf(document.activeElement as HTMLElement);
     if (at < 0) return;
-    const to = { ArrowRight: Math.min(items.length - 1, at + 1), ArrowLeft: Math.max(0, at - 1), Home: 0, End: items.length - 1 }[event.key];
+    const to = { ArrowRight: Math.min(items.length - 1, at + 1), ArrowLeft: Math.max(0, at - 1), Home: 0, End: items.length - 1 }[
+      event.key
+    ];
     if (to === undefined) return;
     event.preventDefault();
     event.stopPropagation();
@@ -1292,7 +1379,8 @@ function ImageEditorSession(props: ImageEditorProps): JSX.Element {
     target.focus({ preventScroll: true });
     const list = stripList!;
     if (target.offsetLeft < list.scrollLeft + 48) list.scrollLeft = target.offsetLeft - 48;
-    else if (target.offsetLeft + target.offsetWidth > list.scrollLeft + list.clientWidth - 48) list.scrollLeft = target.offsetLeft + target.offsetWidth - list.clientWidth + 48;
+    else if (target.offsetLeft + target.offsetWidth > list.scrollLeft + list.clientWidth - 48)
+      list.scrollLeft = target.offsetLeft + target.offsetWidth - list.clientWidth + 48;
   };
 
   const tip = (label: string, keys?: string) => (
@@ -1347,7 +1435,12 @@ function ImageEditorSession(props: ImageEditorProps): JSX.Element {
         <Show when={loading() && !loadError()}>
           <div
             class="k2b-image-editor__placeholder"
-            style={{ left: `${view().x}px`, top: `${view().y}px`, width: `${frameSize().width * view().zoom}px`, height: `${frameSize().height * view().zoom}px` }}
+            style={{
+              left: `${view().x}px`,
+              top: `${view().y}px`,
+              width: `${frameSize().width * view().zoom}px`,
+              height: `${frameSize().height * view().zoom}px`,
+            }}
           >
             <span class="k2b-image-editor__tag" role="status">
               {t().loading}
@@ -1357,7 +1450,12 @@ function ImageEditorSession(props: ImageEditorProps): JSX.Element {
         <Show when={preview()}>
           <div
             class="k2b-image-editor__image"
-            style={{ left: `${view().x}px`, top: `${view().y}px`, width: `${frameSize().width * view().zoom}px`, height: `${frameSize().height * view().zoom}px` }}
+            style={{
+              left: `${view().x}px`,
+              top: `${view().y}px`,
+              width: `${frameSize().width * view().zoom}px`,
+              height: `${frameSize().height * view().zoom}px`,
+            }}
           >
             <canvas ref={canvas} aria-label={t().preview} role="img" />
             <Show when={(split() || peek()) && tool() !== "crop"}>
@@ -1407,7 +1505,12 @@ function ImageEditorSession(props: ImageEditorProps): JSX.Element {
               <div
                 class="k2b-image-editor__crop"
                 data-dragging={cropDragging() ? "" : undefined}
-                style={{ left: `${state().crop.x * 100}%`, top: `${state().crop.y * 100}%`, width: `${state().crop.width * 100}%`, height: `${state().crop.height * 100}%` }}
+                style={{
+                  left: `${state().crop.x * 100}%`,
+                  top: `${state().crop.y * 100}%`,
+                  width: `${state().crop.width * 100}%`,
+                  height: `${state().crop.height * 100}%`,
+                }}
               >
                 <span class="k2b-image-editor__grid" aria-hidden="true" />
                 <button
@@ -1519,7 +1622,14 @@ function ImageEditorSession(props: ImageEditorProps): JSX.Element {
 
       <div ref={chipsEl} class="k2b-image-editor__chips" role="group" aria-label={t().info}>
         <Show when={props.onCancel}>
-          <IconButton class="k2b-image-editor__chip k2b-image-editor__glass" size="sm" variant="ghost" label={t().close} tooltip={tip(t().close, "escape")} onClick={() => void cancel()}>
+          <IconButton
+            class="k2b-image-editor__chip k2b-image-editor__glass"
+            size="sm"
+            variant="ghost"
+            label={t().close}
+            tooltip={tip(t().close, "escape")}
+            onClick={() => void cancel()}
+          >
             <i class="ti ti-x" aria-hidden="true" />
           </IconButton>
         </Show>
@@ -1589,7 +1699,14 @@ function ImageEditorSession(props: ImageEditorProps): JSX.Element {
             <IconButton size="sm" variant="ghost" label={t().undo} tooltip={tip(t().undo, "mod+z")} disabled={!canUndo()} onClick={undo}>
               <i class="ti ti-arrow-back-up" aria-hidden="true" />
             </IconButton>
-            <IconButton size="sm" variant="ghost" label={t().redo} tooltip={tip(t().redo, "mod+shift+z")} disabled={!canRedo()} onClick={redo}>
+            <IconButton
+              size="sm"
+              variant="ghost"
+              label={t().redo}
+              tooltip={tip(t().redo, "mod+shift+z")}
+              disabled={!canRedo()}
+              onClick={redo}
+            >
               <i class="ti ti-arrow-forward-up" aria-hidden="true" />
             </IconButton>
           </div>
@@ -1607,7 +1724,14 @@ function ImageEditorSession(props: ImageEditorProps): JSX.Element {
             </Button>
           </div>
           <div class="k2b-image-editor__group k2b-image-editor__zoom">
-            <IconButton size="sm" variant="ghost" label={t().zoomOut} tooltip={tip(t().zoomOut, "-")} disabled={!preview()} onClick={() => zoomBy(0.8)}>
+            <IconButton
+              size="sm"
+              variant="ghost"
+              label={t().zoomOut}
+              tooltip={tip(t().zoomOut, "-")}
+              disabled={!preview()}
+              onClick={() => zoomBy(0.8)}
+            >
               <i class="ti ti-minus" aria-hidden="true" />
             </IconButton>
             <Dropdown.Root
@@ -1625,12 +1749,26 @@ function ImageEditorSession(props: ImageEditorProps): JSX.Element {
                 {`${Math.round(view().zoom * 100)} %`}
               </Dropdown.Trigger>
             </Dropdown.Root>
-            <IconButton size="sm" variant="ghost" label={t().zoomIn} tooltip={tip(t().zoomIn, "+")} disabled={!preview()} onClick={() => zoomBy(1.25)}>
+            <IconButton
+              size="sm"
+              variant="ghost"
+              label={t().zoomIn}
+              tooltip={tip(t().zoomIn, "+")}
+              disabled={!preview()}
+              onClick={() => zoomBy(1.25)}
+            >
               <i class="ti ti-plus" aria-hidden="true" />
             </IconButton>
           </div>
           <div class="k2b-image-editor__group">
-            <IconButton size="sm" variant="ghost" label={t().fit} tooltip={tip(t().fit, "shift+1")} disabled={!preview()} onClick={() => fit()}>
+            <IconButton
+              size="sm"
+              variant="ghost"
+              label={t().fit}
+              tooltip={tip(t().fit, "shift+1")}
+              disabled={!preview()}
+              onClick={() => fit()}
+            >
               <i class="ti ti-arrows-minimize" aria-hidden="true" />
             </IconButton>
             <IconButton
@@ -1671,7 +1809,8 @@ function ImageEditorSession(props: ImageEditorProps): JSX.Element {
                   if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
                   e.preventDefault();
                   const list = tools();
-                  const next = list[(list.findIndex((x) => x.value === tool()) + (e.key === "ArrowRight" ? 1 : -1) + list.length) % list.length];
+                  const next =
+                    list[(list.findIndex((x) => x.value === tool()) + (e.key === "ArrowRight" ? 1 : -1) + list.length) % list.length];
                   if (next) {
                     switchTool(next.value);
                     queueMicrotask(() => document.getElementById(`${ids.help}-tab-${next.value}`)?.focus());
@@ -1766,7 +1905,9 @@ function ImageEditorSession(props: ImageEditorProps): JSX.Element {
             <span class="k2b-image-editor__note-actions">
               <Button size="sm" variant="secondary" disabled={busy()} onClick={retry}>
                 {suggestedMP()
-                  ? t().retrySmaller({ megapixels: new Intl.NumberFormat(locale(), { maximumFractionDigits: 1 }).format(suggestedMP() ?? 0) })
+                  ? t().retrySmaller({
+                      megapixels: new Intl.NumberFormat(locale(), { maximumFractionDigits: 1 }).format(suggestedMP() ?? 0),
+                    })
                   : t().retry}
               </Button>
             </span>
@@ -1809,7 +1950,14 @@ function ImageEditorSession(props: ImageEditorProps): JSX.Element {
           </For>
           <Show when={props.onAddItems}>
             <li>
-              <IconButton class="k2b-image-editor__thumb k2b-image-editor__thumb--add" size="sm" variant="ghost" tabindex="-1" label={t().addImages} onClick={() => props.onAddItems?.()}>
+              <IconButton
+                class="k2b-image-editor__thumb k2b-image-editor__thumb--add"
+                size="sm"
+                variant="ghost"
+                tabindex="-1"
+                label={t().addImages}
+                onClick={() => props.onAddItems?.()}
+              >
                 <i class="ti ti-plus" aria-hidden="true" />
               </IconButton>
             </li>
@@ -1856,7 +2004,11 @@ function ImageEditorSession(props: ImageEditorProps): JSX.Element {
                       disabled={!preview()}
                       onClick={() => chooseAspect(value)}
                     >
-                      <span class="k2b-image-editor__aspect-glyph" data-free={glyph().free ? "" : undefined} style={{ width: glyph().width, height: glyph().height }} />
+                      <span
+                        class="k2b-image-editor__aspect-glyph"
+                        data-free={glyph().free ? "" : undefined}
+                        style={{ width: glyph().width, height: glyph().height }}
+                      />
                       {cropAspectLabel(value)}
                     </button>
                   );
@@ -1869,23 +2021,54 @@ function ImageEditorSession(props: ImageEditorProps): JSX.Element {
           <section class="k2b-image-editor__section" data-part="rotate">
             <h3>{t().rotateFlip}</h3>
             <div class="k2b-image-editor__rotations">
-              <Button variant="secondary" size="sm" aria-label={t().rotateLeft} tooltip={tip(t().rotateLeft, "shift+r")} onClick={() => rotate(false)}>
+              <Button
+                variant="secondary"
+                size="sm"
+                aria-label={t().rotateLeft}
+                tooltip={tip(t().rotateLeft, "shift+r")}
+                onClick={() => rotate(false)}
+              >
                 <i class="ti ti-rotate-2" aria-hidden="true" />
                 <span>{t().rotateLeft}</span>
               </Button>
-              <Button variant="secondary" size="sm" aria-label={t().rotateRight} tooltip={tip(t().rotateRight, "r")} onClick={() => rotate(true)}>
+              <Button
+                variant="secondary"
+                size="sm"
+                aria-label={t().rotateRight}
+                tooltip={tip(t().rotateRight, "r")}
+                onClick={() => rotate(true)}
+              >
                 <i class="ti ti-rotate-clockwise-2" aria-hidden="true" />
                 <span>{t().rotateRight}</span>
               </Button>
-              <Button variant="secondary" size="sm" aria-label={t().flipX} aria-pressed={state().flipX} onClick={() => change((s) => ({ ...s, flipX: !s.flipX }))}>
+              <Button
+                variant="secondary"
+                size="sm"
+                aria-label={t().flipX}
+                aria-pressed={state().flipX}
+                onClick={() => change((s) => ({ ...s, flipX: !s.flipX }))}
+              >
                 <i class="ti ti-flip-vertical" aria-hidden="true" />
                 <span>{t().flipX}</span>
               </Button>
-              <Button variant="secondary" size="sm" aria-label={t().flipY} aria-pressed={state().flipY} onClick={() => change((s) => ({ ...s, flipY: !s.flipY }))}>
+              <Button
+                variant="secondary"
+                size="sm"
+                aria-label={t().flipY}
+                aria-pressed={state().flipY}
+                onClick={() => change((s) => ({ ...s, flipY: !s.flipY }))}
+              >
                 <i class="ti ti-flip-horizontal" aria-hidden="true" />
                 <span>{t().flipY}</span>
               </Button>
-              <IconButton class="k2b-image-editor__phone-only" size="sm" variant="ghost" label={t().resetCrop} disabled={!cropChanged()} onClick={resetCrop}>
+              <IconButton
+                class="k2b-image-editor__phone-only"
+                size="sm"
+                variant="ghost"
+                label={t().resetCrop}
+                disabled={!cropChanged()}
+                onClick={resetCrop}
+              >
                 <i class="ti ti-restore" aria-hidden="true" />
               </IconButton>
             </div>
@@ -1982,7 +2165,9 @@ function ImageEditorSession(props: ImageEditorProps): JSX.Element {
                 const next = lookOptions[(index + lookOptions.length) % lookOptions.length];
                 if (next) {
                   change((s) => ({ ...s, look: next.value }));
-                  queueMicrotask(() => (e.currentTarget as HTMLElement).parentElement?.querySelector<HTMLElement>('[aria-checked="true"]')?.focus());
+                  queueMicrotask(() =>
+                    (e.currentTarget as HTMLElement).parentElement?.querySelector<HTMLElement>('[aria-checked="true"]')?.focus(),
+                  );
                 }
               }}
             >
@@ -2008,10 +2193,32 @@ function ImageEditorSession(props: ImageEditorProps): JSX.Element {
       </Button>
     );
     const settings = () => [
-      { id: "look" as const, label: t().look, value: state().look === "original" ? "–" : t()[lookOptions.find((x) => x.value === state().look)!.label], changed: state().look !== "original" },
-      ...(f().filters ? [{ id: "strength" as const, label: t().strength, value: state().look === "original" ? "–" : `${Math.round(state().lookStrength * 100)} %`, changed: state().look !== "original" && state().lookStrength !== 1, disabled: state().look === "original" }] : []),
+      {
+        id: "look" as const,
+        label: t().look,
+        value: state().look === "original" ? "–" : t()[lookOptions.find((x) => x.value === state().look)!.label],
+        changed: state().look !== "original",
+      },
+      ...(f().filters
+        ? [
+            {
+              id: "strength" as const,
+              label: t().strength,
+              value: state().look === "original" ? "–" : `${Math.round(state().lookStrength * 100)} %`,
+              changed: state().look !== "original" && state().lookStrength !== 1,
+              disabled: state().look === "original",
+            },
+          ]
+        : []),
       ...(f().adjust
-        ? groups.flatMap((g) => g.keys).map((key) => ({ id: key, label: t()[key], value: (key === "vignette" || key === "grain" ? String : signed)(sliderValue(key, state().adjustments)), changed: sliderValue(key, state().adjustments) !== 0 }))
+        ? groups
+            .flatMap((g) => g.keys)
+            .map((key) => ({
+              id: key,
+              label: t()[key],
+              value: (key === "vignette" || key === "grain" ? String : signed)(sliderValue(key, state().adjustments)),
+              changed: sliderValue(key, state().adjustments) !== 0,
+            }))
         : []),
     ];
     return (
@@ -2046,7 +2253,20 @@ function ImageEditorSession(props: ImageEditorProps): JSX.Element {
             </For>
           </Show>
           <div class="k2b-image-editor__reset">
-            <Button size="sm" variant="ghost" disabled={!adjustChanged()} onClick={() => change((s) => ({ ...s, look: "original", lookStrength: 1, adjustments: initialImageEditorState().adjustments, auto: undefined }))}>
+            <Button
+              size="sm"
+              variant="ghost"
+              disabled={!adjustChanged()}
+              onClick={() =>
+                change((s) => ({
+                  ...s,
+                  look: "original",
+                  lookStrength: 1,
+                  adjustments: initialImageEditorState().adjustments,
+                  auto: undefined,
+                }))
+              }
+            >
               <i class="ti ti-restore" aria-hidden="true" />
               {t().resetAdjust}
             </Button>
@@ -2054,7 +2274,10 @@ function ImageEditorSession(props: ImageEditorProps): JSX.Element {
         </div>
         <div class="k2b-image-editor__adjust-phone">
           <div class="k2b-image-editor__phone-slot">
-            <Show when={phoneSetting() === "look"} fallback={phoneSetting() === "strength" ? strength() : slider(phoneSetting() as keyof ImageEditorAdjustments)}>
+            <Show
+              when={phoneSetting() === "look"}
+              fallback={phoneSetting() === "strength" ? strength() : slider(phoneSetting() as keyof ImageEditorAdjustments)}
+            >
               {looks("phone")}
             </Show>
           </div>
@@ -2119,7 +2342,12 @@ function ImageEditorSession(props: ImageEditorProps): JSX.Element {
             }}
             onKeyDown={(e) => layerKeys(e, index)}
           >
-            <span class="k2b-image-editor__layer-icon" data-redaction={red() ? "" : undefined} data-white={!red() && mark().color.toLowerCase() === "#ffffff" ? "" : undefined} style={{ "--k2b-layer-color": red() ? "#09090b" : mark().color }}>
+            <span
+              class="k2b-image-editor__layer-icon"
+              data-redaction={red() ? "" : undefined}
+              data-white={!red() && mark().color.toLowerCase() === "#ffffff" ? "" : undefined}
+              style={{ "--k2b-layer-color": red() ? "#09090b" : mark().color }}
+            >
               <i class={toolIcon[mark().tool]} aria-hidden="true" />
             </span>
             <span class="k2b-image-editor__layer-name">{name()}</span>
@@ -2306,7 +2534,11 @@ function ImageEditorSession(props: ImageEditorProps): JSX.Element {
   function outputPanel() {
     const formatOptions = () => [
       { value: "same" as const, label: t().same, description: formatName(sourceType()) },
-      ...availableFormats().map((value) => ({ value, label: formatName(value), description: value === "image/png" ? t().png : value === "image/webp" ? t().webp : t().jpeg })),
+      ...availableFormats().map((value) => ({
+        value,
+        label: formatName(value),
+        description: value === "image/png" ? t().png : value === "image/webp" ? t().webp : t().jpeg,
+      })),
     ];
     return (
       <div class="k2b-image-editor__output" id={ids.output} role="dialog" aria-label={t().output}>
@@ -2352,7 +2584,12 @@ function ImageEditorSession(props: ImageEditorProps): JSX.Element {
                 if (value && value > 0) setOutput((o) => ({ ...o, maxLongEdge: value }));
               }}
             />
-            <Button size="sm" variant="ghost" disabled={output().maxLongEdge === undefined} onClick={() => setOutput((o) => ({ ...o, maxLongEdge: undefined }))}>
+            <Button
+              size="sm"
+              variant="ghost"
+              disabled={output().maxLongEdge === undefined}
+              onClick={() => setOutput((o) => ({ ...o, maxLongEdge: undefined }))}
+            >
               {t().original}
             </Button>
           </div>
@@ -2366,9 +2603,35 @@ function ImageEditorSession(props: ImageEditorProps): JSX.Element {
 
   function keysPanel() {
     const rows: readonly (readonly [string, readonly (readonly [string, string])[]])[] = [
-      [t().view, [[t().fit, "shift+1"], ["100 %", "shift+0"], [t().zoomIn, "+"], [t().zoomOut, "-"], [t().compareTip, "shift+o"], [t().before, "o"]]],
-      [t().editor, [[t().undo, "mod+z"], [t().redo, "mod+shift+z"], [t().close, "escape"], [t().auto, "shift+a"]]],
-      [t().tools, [[t().crop, "1"], [t().adjust, "2"], [t().annotate, "3"], [t().rotateRight, "r"]]],
+      [
+        t().view,
+        [
+          [t().fit, "shift+1"],
+          ["100 %", "shift+0"],
+          [t().zoomIn, "+"],
+          [t().zoomOut, "-"],
+          [t().compareTip, "shift+o"],
+          [t().before, "o"],
+        ],
+      ],
+      [
+        t().editor,
+        [
+          [t().undo, "mod+z"],
+          [t().redo, "mod+shift+z"],
+          [t().close, "escape"],
+          [t().auto, "shift+a"],
+        ],
+      ],
+      [
+        t().tools,
+        [
+          [t().crop, "1"],
+          [t().adjust, "2"],
+          [t().annotate, "3"],
+          [t().rotateRight, "r"],
+        ],
+      ],
       [t().annotate, markTools().map((option) => [t()[option], toolKey[option]] as const)],
     ];
     return (
@@ -2397,7 +2660,14 @@ function ImageEditorSession(props: ImageEditorProps): JSX.Element {
 }
 
 /** Straighten as a ruler under a fixed centre line: drag, arrow keys, double-click resets. */
-function Ruler(props: { value: number; label: string; valueText: string; tooltip: string; onChange: (value: number) => void; onCommit: () => void }) {
+function Ruler(props: {
+  value: number;
+  label: string;
+  valueText: string;
+  tooltip: string;
+  onChange: (value: number) => void;
+  onCommit: () => void;
+}) {
   const STEP = 6;
   let start: { x: number; value: number } | undefined;
   const set = (value: number) => props.onChange(clamp(Math.round(value * 2) / 2, -45, 45));
@@ -2437,7 +2707,14 @@ function Ruler(props: { value: number; label: string; valueText: string; tooltip
         }}
         onKeyDown={(e) => {
           const step = e.shiftKey ? 5 : 0.5;
-          const next = e.key === "ArrowLeft" || e.key === "ArrowDown" ? props.value - step : e.key === "ArrowRight" || e.key === "ArrowUp" ? props.value + step : e.key === "Home" ? 0 : undefined;
+          const next =
+            e.key === "ArrowLeft" || e.key === "ArrowDown"
+              ? props.value - step
+              : e.key === "ArrowRight" || e.key === "ArrowUp"
+                ? props.value + step
+                : e.key === "Home"
+                  ? 0
+                  : undefined;
           if (next === undefined) return;
           e.preventDefault();
           e.stopPropagation();
@@ -2445,11 +2722,24 @@ function Ruler(props: { value: number; label: string; valueText: string; tooltip
           props.onCommit();
         }}
       >
-        <svg class="k2b-image-editor__ruler-strip" width={90 * STEP + 2} height="46" viewBox={`-1 0 ${90 * STEP + 2} 46`} style={{ transform: `translateX(${-(props.value + 45) * STEP}px)` }} aria-hidden="true">
+        <svg
+          class="k2b-image-editor__ruler-strip"
+          width={90 * STEP + 2}
+          height="46"
+          viewBox={`-1 0 ${90 * STEP + 2} 46`}
+          style={{ transform: `translateX(${-(props.value + 45) * STEP}px)` }}
+          aria-hidden="true"
+        >
           <For each={ticks}>
             {(d) => (
               <>
-                <line x1={(d + 45) * STEP} x2={(d + 45) * STEP} y1={d % 5 === 0 ? 6 : 11} y2={d % 5 === 0 ? 24 : 19} data-minor={d % 5 === 0 ? undefined : ""} />
+                <line
+                  x1={(d + 45) * STEP}
+                  x2={(d + 45) * STEP}
+                  y1={d % 5 === 0 ? 6 : 11}
+                  y2={d % 5 === 0 ? 24 : 19}
+                  data-minor={d % 5 === 0 ? undefined : ""}
+                />
                 <Show when={d % 15 === 0}>
                   <text x={(d + 45) * STEP} y="38">{`${d}°`}</text>
                 </Show>
@@ -2463,7 +2753,11 @@ function Ruler(props: { value: number; label: string; valueText: string; tooltip
 }
 
 /** Look previews show the framed photo with the person's own sliders, so the choice previews the real result. */
-function LookThumbnail(props: { image: Awaited<ReturnType<typeof loadImageEditorPreview>> | undefined; look: ImageEditorLook; state: ImageEditorState }): JSX.Element {
+function LookThumbnail(props: {
+  image: Awaited<ReturnType<typeof loadImageEditorPreview>> | undefined;
+  look: ImageEditorLook;
+  state: ImageEditorState;
+}): JSX.Element {
   let canvas: HTMLCanvasElement | undefined;
   let scratch: HTMLCanvasElement | undefined;
   createEffect(() => {
@@ -2477,7 +2771,10 @@ function LookThumbnail(props: { image: Awaited<ReturnType<typeof loadImageEditor
     const scale = 120 / Math.max(w, h);
     canvas.width = Math.max(1, Math.round(w * scale));
     canvas.height = Math.max(1, Math.round(h * scale));
-    renderImageEditor(image.image, image.sourceSize, { ...s, look: props.look, lookStrength: 1, annotations: [] }, canvas, scratch);
+    // Grain is invisible noise at this size. -1 cancels any look's grain (the sum clamps at 0), so opening the
+    // editor never builds the shared grain tile.
+    const preview = { ...s, adjustments: { ...s.adjustments, grain: -1 }, look: props.look, lookStrength: 1, annotations: [] };
+    renderImageEditor(image.image, image.sourceSize, preview, canvas, scratch);
   });
   onCleanup(() => {
     if (canvas) canvas.width = canvas.height = 0;

@@ -256,7 +256,13 @@ export function ImageProcessorView(props: ImageProcessorViewProps = {}) {
     setVisited((ids) => new Set([...ids, id]));
     setActive(id);
   };
-  const items = () => photos().map((photo) => ({ id: String(photo.id), name: photo.file.name, thumbnail: thumbnails().get(photo.id), dirty: dirtyIds().has(photo.id) }));
+  const items = () =>
+    photos().map((photo) => ({
+      id: String(photo.id),
+      name: photo.file.name,
+      thumbnail: thumbnails().get(photo.id),
+      dirty: dirtyIds().has(photo.id),
+    }));
 
   return (
     <>

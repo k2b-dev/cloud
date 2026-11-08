@@ -129,9 +129,15 @@ describe("Tools public photo editor adoption", () => {
         };
       });
       await zip(page);
-      await page.getByRole("button", { name: /Save again at .* MP/ }).first().waitFor();
+      await page
+        .getByRole("button", { name: /Save again at .* MP/ })
+        .first()
+        .waitFor();
       expect(await dirty(page)).toBe(2);
-      await page.getByRole("button", { name: /Save again at .* MP/ }).first().click();
+      await page
+        .getByRole("button", { name: /Save again at .* MP/ })
+        .first()
+        .click();
       await page.getByRole("alert").filter({ hasText: "Start Download all as ZIP again" }).first().waitFor();
       expect(await page.evaluate<number>("window.photoFixture.downloads.length")).toBe(0);
       expect(await dirty(page)).toBe(2);
@@ -152,10 +158,11 @@ describe("Tools public photo editor adoption", () => {
       await zip(page);
       await page.getByText("This image cannot be opened", { exact: true }).waitFor();
       await page.getByText("The archive could not be created.", { exact: false }).last().waitFor();
-      expect(await page.getByRole("button", { name: "Close", exact: true }).isVisible()).toBe(true);
+      const close = page.getByRole("alert").getByRole("button", { name: "Close", exact: true });
+      expect(await close.isVisible()).toBe(true);
       expect(await dirty(page)).toBe(1);
       expect(await page.evaluate<number>("window.photoFixture.downloads.length")).toBe(0);
-      await page.getByRole("button", { name: "Close", exact: true }).click();
+      await close.click();
       expect(await page.locator(".k2b-image-editor").count()).toBe(1);
       expect(await dirty(page)).toBe(1);
       await page.getByRole("button", { name: "Download", exact: true }).click();

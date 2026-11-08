@@ -1036,7 +1036,9 @@ export default function Browser(props: {
       readOnly: entry.actions?.write === false,
       onNotPdf,
       // A selection of several files narrows the image strip to them; otherwise it shows the folder.
-      images: (selected().length > 1 && selected().some((row) => row.path === entry.path) ? selected() : entries()).filter((row) => !row.directory),
+      images: (selected().length > 1 && selected().some((row) => row.path === entry.path) ? selected() : entries()).filter(
+        (row) => !row.directory,
+      ),
       imageEditing: {
         canCreate: canCreate(),
         onSaved: (saved) => {

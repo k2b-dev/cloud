@@ -288,7 +288,9 @@ const messages = i18n.define({
       redaction: ({ n }) => `Schwärzung ${n}`,
       numbered: ({ name, n }) => `${name} ${n}`,
       hiddenNotice: ({ count }) =>
-        count === 1 ? "Eine ausgeblendete Markierung wird nicht gespeichert." : `${count} ausgeblendete Markierungen werden nicht gespeichert.`,
+        count === 1
+          ? "Eine ausgeblendete Markierung wird nicht gespeichert."
+          : `${count} ausgeblendete Markierungen werden nicht gespeichert.`,
       layerTop: "Schwärzungen bleiben immer über den Markierungen",
       layerEdge: "Schon am Rand der Gruppe",
       layerPlace: ({ name, place, total }) => `${name}: Platz ${place} von ${total}`,
