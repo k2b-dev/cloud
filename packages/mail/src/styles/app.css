@@ -1706,9 +1706,6 @@
 .k2b-ui .mail-inline-draft-ai {
   color: var(--k2b-ai-accent);
 }
-.k2b-ui .mail-inline-draft-preview-toggle[aria-pressed="true"] {
-  background: var(--ui-selected);
-}
 .k2b-ui .mail-inline-draft-status {
   display: inline-flex;
   min-width: 0;

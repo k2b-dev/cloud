@@ -4671,6 +4671,7 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
             });
           });
           await page.locator("[data-mail-reply-pill] .mail-reader-pill-reply").click();
+          // settled: the paused animation itself is the subject; each step sets its time before reading.
           const samples = await page.evaluate(async () => {
             await (window as unknown as { mailGlide: Promise<void> }).mailGlide;
             const messages = document.querySelector("[data-mail-conversation-messages]")!;

@@ -18,11 +18,11 @@ import MailWorkspace from "./MailWorkspace.island";
 
 export const MAIL_SHELL_NOW = "2026-10-14T10:00:00.000Z";
 /** `?identity=1`: the mailbox can send as its support address, so Reply opens a draft without asking for a sender. */
-export const fixtureIdentity: SenderIdentity = {
+const fixtureIdentity = (name: string): SenderIdentity => ({
   id: "00000000-0000-4000-8000-0000000000a1",
   mailboxId: "Box001",
-  label: "Example support",
-  displayName: "Example support",
+  label: name,
+  displayName: name,
   fromAddress: "support@example.test",
   replyTo: null,
   defaultCc: [],
@@ -56,7 +56,7 @@ export const fixtureIdentity: SenderIdentity = {
   pendingVerificationCommandId: null,
   createdAt: "2026-01-01T00:00:00.000Z",
   updatedAt: "2026-01-01T00:00:00.000Z",
-};
+});
 /** `?drafts=1`: the open conversation already has a colleague's forward draft (invented). */
 const conversationDraftsFixture = (url: URL, selectedConversationId: string | null): ConversationDraftSummary[] =>
   selectedConversationId && url.searchParams.has("drafts")
@@ -481,7 +481,7 @@ export function mailboxData(url: URL): MailboxPageData {
     access: { scope: variant === "assigned-only" ? "assigned" : "mailbox", permission },
     initialLiveCursor: "s6t.mail.4",
     folders,
-    identities: url.searchParams.has("identity") ? [fixtureIdentity] : [],
+    identities: url.searchParams.has("identity") ? [fixtureIdentity(selectedMailbox.name)] : [],
     scheduledMode,
     scheduledCount: 2,
     scheduledPage: scheduledMode ? { items: [], nextCursor: null, total: 0 } : null,
