@@ -1,8 +1,22 @@
 // Builds the two browser assets of an HTML app frame: the prelude (an IIFE that
 // the app document pins by hash) and the base stylesheet of @k2b/ui with the
 // Plex faces it needs as data URLs, because app frames load nothing from the network.
+
 import { readFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
+import type { BunPlugin } from "bun";
+
+// App frames strip the embedded SVG stylesheet and use their shared base.css.
+// Omit that duplicate from the offline asset; standalone charts keep it verbatim.
+const frameChartStyles: BunPlugin = {
+  name: "frame-chart-styles",
+  setup(build) {
+    build.onLoad({ filter: /\/charts\/core\/default-styles\.[jt]s$/ }, () => ({
+      contents: 'export const DEFAULT_STYLES = "";',
+      loader: "js",
+    }));
+  },
+};
 
 export function buildPrelude(): Promise<string> {
   return buildFrame("frame.ts");
@@ -20,6 +34,7 @@ async function buildFrame(entry: string): Promise<string> {
     minify: true,
     define: { "import.meta.url": JSON.stringify("about:blank") },
     plugins: [
+      frameChartStyles,
       {
         name: "offline-chart-module",
         setup(build) {
@@ -42,6 +57,7 @@ export async function buildChartModule(): Promise<string> {
     target: "browser",
     format: "esm",
     minify: true,
+    plugins: [frameChartStyles],
   });
   if (!build.success) throw new AggregateError(build.logs, "The offline chart module did not build");
   return build.outputs[0]!.text();

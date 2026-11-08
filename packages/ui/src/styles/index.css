@@ -18406,6 +18406,8 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 .k2b-ui .k2b-chart [data-inspected] > .k2b-chart-category-band[fill="none"] { fill: color-mix(in srgb, currentColor 5%, transparent); }
 .k2b-ui .k2b-chart:not(:focus-visible):has(svg[data-bar-layout] .k2b-chart-category-band) [data-inspected]:not([data-selected]) > :is(rect,path,circle):not(.k2b-chart-category-band),
 .k2b-ui .k2b-chart:not(:focus-visible):has(svg[data-bar-layout] .k2b-chart-category-band) [data-inspected]:not([data-selected]) > .k2b-chart-previous > rect { stroke: none !important; }
+.k2b-ui .k2b-chart-funnel :is(.stdlib-chart-tick-label, .stdlib-chart-bar-value) { font-size: 12.5px; }
+.k2b-ui .k2b-chart-ranked :is(.stdlib-chart-tick-label, .stdlib-chart-bar-value) { font-size: 13px; }
 .k2b-ui .stdlib-chart .k2b-chart-group-heading { font-size: 11.5px; font-weight: 600; opacity: 1; }
 .k2b-ui .stdlib-chart .k2b-chart-segment-value { font-size: 11px; font-weight: 500; fill: currentColor; opacity: 1; }
 /* Category hover paints only the band; keyboard and selection outline marks. */
