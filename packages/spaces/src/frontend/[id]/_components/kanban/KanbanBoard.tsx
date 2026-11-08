@@ -1,5 +1,4 @@
 import { registerContextAwareCommand } from "@k2b/cloud/browser/commands";
-import { FeatCodeMark } from "@k2b/cloud/code/ui";
 import type { DateContext } from "@k2b/stdlib";
 import {
   type DndBuildIntentContext,
@@ -1793,9 +1792,7 @@ export default function KanbanBoard(props: Props) {
                                         </Show>
                                         <Show when={item().createdByWorkload}>
                                           <span class="spaces-kanban-card-meta inline-flex text-xs text-dimmed" title={t.createdByWorkload}>
-                                            <span class="inline-flex" role="img" aria-label={t.createdByWorkload}>
-                                              <FeatCodeMark variant="glyph" decorative />
-                                            </span>
+                                            <i class="ti ti-code text-xs" role="img" aria-label={t.createdByWorkload} />
                                           </span>
                                         </Show>
                                         <Show when={item().deadline}>

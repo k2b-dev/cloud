@@ -211,7 +211,7 @@ wherever people meet Code, with `FeatCodeMark` from `@k2b/cloud/code/ui`:
 | --- | --- |
 | Head of a Code area | `<FeatCodeMark size={30} />` |
 | Navigation entry, tab, menu | `<FeatCodeMark variant="glyph" tone="current" decorative />` next to the label "Code" |
-| What Code did to an object | `moved by <FeatCodeMark /> “File invoices”` in the row's text size |
+| What Code did to an object | `moved by <FeatCodeMark /> “File invoices”` in the row's text size, only when the origin is known to be Code; other work keeps its own name |
 | Favicon or app icon | `@k2b/cloud/code/feat-code.svg` |
 
 - `variant` is `wordmark` (default) or `glyph`, the square sign for icon slots.

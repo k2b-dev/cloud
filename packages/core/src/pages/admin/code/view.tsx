@@ -294,14 +294,16 @@ export function CodeAreaView(props: Props) {
 
   // ---------- Column 1: the area ----------
   const item = (section: CodeAreaSection, label: string, extra: { meta?: JSX.Element; title?: string } = {}) => (
-    <AppWorkspace.SidebarItem
-      href={codeAreaHref({ sec: section })}
-      active={query.sec === section}
-      icon={sectionIcon[section]}
-      meta={extra.meta}
-      title={extra.title}
-    >
-      {label}
+    <AppWorkspace.SidebarItem href={codeAreaHref({ sec: section })} active={query.sec === section} meta={extra.meta} title={extra.title}>
+      {/* The list of all Code carries the feat/code sign; the other sections keep their own icons. */}
+      {section === "code" ? (
+        <AppWorkspace.SidebarItemIcon>
+          <FeatCodeMark variant="glyph" tone="current" decorative />
+        </AppWorkspace.SidebarItemIcon>
+      ) : (
+        <AppWorkspace.SidebarItemIcon icon={sectionIcon[section]} />
+      )}
+      <AppWorkspace.SidebarItemLabel>{label}</AppWorkspace.SidebarItemLabel>
     </AppWorkspace.SidebarItem>
   );
   const count = (n: number | undefined) => (n ? <span class="text-xs text-(--k2b-text-muted) tabular-nums">{n}</span> : undefined);

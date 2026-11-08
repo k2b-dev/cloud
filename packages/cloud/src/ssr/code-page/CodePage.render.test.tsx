@@ -135,9 +135,12 @@ describe("Code page states", () => {
     expect(page).toContain("Mit Gustav bearbeiten");
     // A place's Code is titled with the feat/code wordmark (slim drawing); screen readers hear whose Code it is.
     const title = html("overview").match(/<h1 class="cloud-code__page-title">.*?<\/h1>/)?.[0] ?? "";
-    expect(title).toContain('data-variant="wordmark"');
+    // The mark itself (not only its inner sign) is hidden, so screen readers hear the title once.
+    const mark = title.match(/<span class="cloud-featcode"[^>]*>/)?.[0] ?? "";
+    expect(mark).toContain('data-variant="wordmark"');
+    expect(mark).toContain('aria-hidden="true"');
+    expect(mark).not.toContain('role="img"');
     expect(title).toContain('data-drawing="large"');
-    expect(title).toContain('aria-hidden="true"');
     expect(title).toContain('<span class="sr-only">Code von info@moebel-beispiel.de</span>');
   });
 

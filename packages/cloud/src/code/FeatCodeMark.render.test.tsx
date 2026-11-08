@@ -51,6 +51,8 @@ describe("FeatCodeMark", () => {
     expect(html({ size: 30 })).toContain("font-size:30px");
     expect(html({ size: "title" })).not.toContain("font-size");
     expect(html()).not.toContain("font-size");
+    // The class stays exact on the server, so selectors and the client agree.
+    expect(html()).toContain('<span class="cloud-featcode" ');
   });
 
   test("the glyph is the sign alone, on a square box, in the brand or the text colour", () => {

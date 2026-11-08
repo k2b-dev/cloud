@@ -50,8 +50,6 @@ export function FeatCodeMark(props: FeatCodeMarkProps): JSX.Element {
     return size === "text" || (typeof size === "number" && size <= SMALL_MAX_PX);
   };
   const glyph = () => props.variant === "glyph";
-  const name = () =>
-    props.decorative ? { "aria-hidden": true as const } : { role: "img" as const, "aria-label": FEAT_CODE_NAME };
   const sign = () => (
     <svg
       class="cloud-featcode__sign"
@@ -68,7 +66,9 @@ export function FeatCodeMark(props: FeatCodeMarkProps): JSX.Element {
       data-variant={glyph() ? "glyph" : "wordmark"}
       data-tone={props.tone ?? "brand"}
       style={px() === undefined ? undefined : { "font-size": `${px()}px` }}
-      {...name()}
+      role={props.decorative ? undefined : "img"}
+      aria-label={props.decorative ? undefined : FEAT_CODE_NAME}
+      aria-hidden={props.decorative ? "true" : undefined}
     >
       {glyph() ? (
         sign()
