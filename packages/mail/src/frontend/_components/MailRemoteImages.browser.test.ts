@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { mkdirSync } from "node:fs";
-import { resolve } from "node:path";
+import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { Browser, BrowserContextOptions, Page } from "playwright";
 import { launchBrowser, settled } from "../../../../ui/test/browser";
@@ -88,6 +88,9 @@ const iconFontAsset = /url\((\.\/[^)"']+\.woff2)[^)]*\)/u.exec(iconsSource)?.[1]
 if (!iconFontAsset) throw new Error("@k2b/ui Tabler preset does not reference a WOFF2 asset");
 const iconFont = await Bun.file(fileURLToPath(new URL(iconFontAsset, iconsUrl))).arrayBuffer();
 const iconsCss = iconsSource.replace(/url\(\.\/[^)"']+\.woff2[^)]*\)/u, "url(/tabler.woff2)");
+// Cloud's reading font, so text widths and truncation match the product.
+const plexPath = fileURLToPath(import.meta.resolve("@k2b/ui/fonts/plex.css"));
+const plexCss = (await Bun.file(plexPath).text()).replaceAll("./fonts/", "/fonts/");
 /** Soft colour fields in place of real newsletter photos. */
 const swatch = (from: string, to: string) =>
   `<svg xmlns="http://www.w3.org/2000/svg" width="320" height="160"><defs><linearGradient id="g" x2="1" y2="1"><stop offset="0" stop-color="${from}"/><stop offset="1" stop-color="${to}"/></linearGradient></defs><rect width="320" height="160" fill="url(#g)"/></svg>`;
@@ -101,6 +104,9 @@ const server = Bun.serve({
     if (pathname === "/styles.css") return new Response(css, { headers: { "Content-Type": "text/css; charset=utf-8" } });
     if (pathname === "/tabler.css") return new Response(iconsCss, { headers: { "Content-Type": "text/css; charset=utf-8" } });
     if (pathname === "/tabler.woff2") return new Response(iconFont, { headers: { "Content-Type": "font/woff2" } });
+    if (pathname === "/plex.css") return new Response(plexCss, { headers: { "Content-Type": "text/css; charset=utf-8" } });
+    const font = /^\/fonts\/([\w.-]+\.woff2)$/u.exec(pathname)?.[1];
+    if (font) return new Response(Bun.file(resolve(dirname(plexPath), "fonts", font)), { headers: { "Content-Type": "font/woff2" } });
     if (pathname.startsWith("/api/mail/mailboxes/Box001/messages/Msg001/remote-images/")) {
       if (imageDelay) await Bun.sleep(imageDelay);
       if (imageMode === "fail") return new Response("Upstream failed", { status: 502 });
@@ -126,10 +132,12 @@ const server = Bun.serve({
     }
     return new Response(
       '<!doctype html><html class="light" lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">' +
-        '<link rel="stylesheet" href="/tabler.css"><link rel="stylesheet" href="/styles.css"></head><body class="k2b-ui" style="margin:0;background:#fff">' +
-        '<main id="pane" style="box-sizing:border-box;width:min(760px,100%);padding:12px 24px 24px">' +
-        '<h1 style="font:600 20px/1.25 system-ui,sans-serif;margin:8px 0 12px">Herbst-Sale: 30 % auf alles bis Sonntag</h1>' +
-        `<p style="font:14px system-ui,sans-serif;margin:0 0 14px"><b>Beispiel-Shop</b> <span style="color:#45454e">&lt;${SENDER}&gt; · an mich</span></p>` +
+        '<link rel="stylesheet" href="/plex.css"><link rel="stylesheet" href="/tabler.css"><link rel="stylesheet" href="/styles.css">' +
+        // The reading pane: 760px beside the list at 1440, the full phone width with a 16px inset at 390.
+        "<style>#pane{box-sizing:border-box;width:min(760px,100%);padding:12px 24px 24px}@media (max-width:47.99rem){#pane{padding:4px 16px 16px}}</style>" +
+        '</head><body class="k2b-ui" style="margin:0;background:#fff"><main id="pane">' +
+        '<h1 style="font-size:20px;font-weight:600;line-height:1.25;margin:8px 0 12px">Herbst-Sale: 30 % auf alles bis Sonntag</h1>' +
+        `<p style="font-size:14px;margin:0 0 14px"><b>Beispiel-Shop</b> <span style="color:#45454e">&lt;${SENDER}&gt; · an mich</span></p>` +
         '<div id="root"></div></main><script src="/harness.js"></script></body></html>',
       { headers: { "Content-Type": "text/html; charset=utf-8" } },
     );
@@ -207,9 +215,12 @@ const row = (page: Page) =>
   page.evaluate(() => {
     const section = document.querySelector<HTMLElement>("section[data-remote-images]")!;
     const box = section.lastElementChild!.getBoundingClientRect();
-    const text = section.querySelector("p:not(.sr-only)")!.getBoundingClientRect();
+    const line = section.querySelector<HTMLElement>("p:not(.sr-only)")!;
+    const text = line.getBoundingClientRect();
     return {
       kind: section.dataset.remoteImages,
+      // The short phone wording fits without an ellipsis.
+      fits: line.scrollWidth <= line.clientWidth,
       height: Math.round(box.height),
       top: Math.round(box.top),
       textLeft: Math.round(text.left - box.left),
@@ -233,13 +244,13 @@ describe("Mail external images row", () => {
       const page = await open(context);
       try {
         const blocked = await row(page);
-        expect(blocked).toMatchObject({ kind: "blocked", height: 48, overflow: false });
+        expect(blocked).toMatchObject({ kind: "blocked", height: 48, overflow: false, fits: true });
         await shoot(page, `1-blockiert-${width}`);
 
         await page.getByRole("button", { name: width === "390" ? "Laden" : "Bilder laden" }).click();
         await waitKind(page, "loading");
         const loading = await row(page);
-        expect(loading).toMatchObject({ height: 48, top: blocked.top, textLeft: blocked.textLeft, frameTop: blocked.frameTop });
+        expect(loading).toMatchObject({ height: 48, top: blocked.top, textLeft: blocked.textLeft, frameTop: blocked.frameTop, fits: true });
         expect(loading.announcement).toBe("Bilder werden geladen …");
         await shoot(page, `3-laedt-${width}`);
 
@@ -389,7 +400,7 @@ describe("Mail external images row", () => {
         await waitKind(page, "failed");
         await settled(page);
         const failed = await row(page);
-        expect(failed).toMatchObject({ height: 48, top: blocked.top, frameTop: blocked.frameTop, overflow: false });
+        expect(failed).toMatchObject({ height: 48, top: blocked.top, frameTop: blocked.frameTop, overflow: false, fits: true });
         expect(await page.getByRole("alert").textContent()).toContain(
           width === "390" ? "Laden fehlgeschlagen" : "Bilder konnten nicht geladen werden",
         );
@@ -415,7 +426,7 @@ describe("Mail external images row", () => {
         await waitKind(page, "limited");
         await settled(page);
         const limited = await row(page);
-        expect(limited).toMatchObject({ height: 48, top: blocked.top, frameTop: blocked.frameTop, overflow: false });
+        expect(limited).toMatchObject({ height: 48, top: blocked.top, frameTop: blocked.frameTop, overflow: false, fits: true });
         expect(limited.announcement).toBe("Einige Bilder nicht geladen. Die Nachricht ist größer als das sichere Limit.");
         expect(await page.locator("section[data-remote-images] button").count()).toBe(0);
         await shoot(page, `6b-limit-${width}`);
