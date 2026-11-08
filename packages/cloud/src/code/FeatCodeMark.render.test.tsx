@@ -14,8 +14,7 @@ Bun.plugin(plugin());
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 const { FEAT_CODE_NAME, FeatCodeMark } = await import("./FeatCodeMark");
 
-const html = (props: FeatCodeMarkProps = {}) =>
-  renderToString(() => createComponent(FeatCodeMark, props)).replaceAll(/<!--[^>]*-->/g, "");
+const html = (props: FeatCodeMarkProps = {}) => renderToString(() => createComponent(FeatCodeMark, props)).replaceAll(/<!--[^>]*-->/g, "");
 const attribute = (markup: string, name: string) => markup.match(new RegExp(`${name}="([^"]*)"`))?.[1];
 
 describe("FeatCodeMark", () => {
@@ -33,7 +32,6 @@ describe("FeatCodeMark", () => {
   test("decorative marks stay out of the accessibility tree", () => {
     const markup = html({ decorative: true });
     expect(attribute(markup, "aria-hidden")).toBe("true");
-    expect(markup).not.toContain('role="img"');
     expect(markup).not.toContain("aria-label");
   });
 

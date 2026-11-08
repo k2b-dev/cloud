@@ -66,7 +66,7 @@ export function FeatCodeMark(props: FeatCodeMarkProps): JSX.Element {
       data-variant={glyph() ? "glyph" : "wordmark"}
       data-tone={props.tone ?? "brand"}
       style={px() === undefined ? undefined : { "font-size": `${px()}px` }}
-      role={props.decorative ? undefined : "img"}
+      role="img"
       aria-label={props.decorative ? undefined : FEAT_CODE_NAME}
       aria-hidden={props.decorative ? "true" : undefined}
     >

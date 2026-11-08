@@ -48,6 +48,10 @@
   fill: var(--cloud-featcode-new);
 }
 
-.cloud-featcode[data-tone="current"] {
-  --cloud-featcode-new: currentColor;
+.cloud-featcode[data-tone="current"] .cloud-featcode__new {
+  stroke: currentColor;
+}
+
+.cloud-featcode[data-tone="current"] .cloud-featcode__head {
+  fill: currentColor;
 }

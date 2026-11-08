@@ -5,8 +5,8 @@ import type { ActionCard } from "../ai/chat/action-card";
 import { actionMessages } from "../ai/chat/action-messages";
 import { ActionQuestion, ActionReceipt } from "../ai/chat/action-question";
 import { refreshAppBadges } from "../browser/app-badges";
-import { FeatCodeMark } from "../code/FeatCodeMark";
 import { coreClient } from "../clients/core";
+import { FeatCodeMark } from "../code/FeatCodeMark";
 import {
   APPROVALS_PAGE_PATH,
   type ApprovalDecisionInput,

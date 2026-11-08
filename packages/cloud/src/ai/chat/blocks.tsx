@@ -503,7 +503,7 @@ function CapabilityToolView(props: { block: ToolBlock }) {
           fallback={
             <Chat.Activity
               icon={aiToolIcon(props.block.name, presentation().appIcon)}
-            leading={featCodeLeading(props.block.name, presentation().appIcon)}
+              leading={featCodeLeading(props.block.name, presentation().appIcon)}
               label={t().toolFailed({ title: label() })}
               description={capabilityErrorDescription(props.block.result) || t().actionNotCompleted}
               tone="danger"
@@ -519,7 +519,7 @@ function CapabilityToolView(props: { block: ToolBlock }) {
                 name={label()}
                 labelOnError={label()}
                 icon={aiToolIcon(props.block.name, presentation().appIcon)}
-            leading={featCodeLeading(props.block.name, presentation().appIcon)}
+                leading={featCodeLeading(props.block.name, presentation().appIcon)}
                 accent={presentation().appAccent}
                 toolName={props.block.name}
                 args={props.block.args}
@@ -530,7 +530,7 @@ function CapabilityToolView(props: { block: ToolBlock }) {
           >
             <Chat.Activity
               icon={aiToolIcon(props.block.name, presentation().appIcon)}
-            leading={featCodeLeading(props.block.name, presentation().appIcon)}
+              leading={featCodeLeading(props.block.name, presentation().appIcon)}
               label={summary()}
               accent={presentation().appAccent}
               trailing={

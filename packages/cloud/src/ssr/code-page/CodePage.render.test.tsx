@@ -139,7 +139,7 @@ describe("Code page states", () => {
     const mark = title.match(/<span class="cloud-featcode"[^>]*>/)?.[0] ?? "";
     expect(mark).toContain('data-variant="wordmark"');
     expect(mark).toContain('aria-hidden="true"');
-    expect(mark).not.toContain('role="img"');
+    expect(mark).not.toContain("aria-label");
     expect(title).toContain('data-drawing="large"');
     expect(title).toContain('<span class="sr-only">Code von info@moebel-beispiel.de</span>');
   });

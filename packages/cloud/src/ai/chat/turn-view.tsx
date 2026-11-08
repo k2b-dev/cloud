@@ -26,15 +26,7 @@ import { CloudChartBlock } from "./chart-block";
 import { PresentToolBlock } from "./file-tools";
 import { AiMapToolBlock } from "./map-widget";
 import { useAiChatActions } from "./message-actions";
-import {
-  aiToolIcon,
-  displayToolName,
-  isCardToolName,
-  isChartToolName,
-  isFeatCodeTool,
-  isRecord,
-  isSurveyToolName,
-} from "./message-utils";
+import { aiToolIcon, displayToolName, isCardToolName, isChartToolName, isFeatCodeTool, isRecord, isSurveyToolName } from "./message-utils";
 import { aiChatMessages } from "./messages";
 import { AssistantMarkdownBlock } from "./primitives";
 import { ResultLinks, resultLinks, ToolActionView } from "./tool-action";

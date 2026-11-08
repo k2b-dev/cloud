@@ -3,6 +3,7 @@ import { fileIcons } from "@k2b/stdlib";
 import { formatBytes as sharedFormatBytes } from "../../shared/format";
 import { type AiAttachmentRef, parseAiAttachmentMarkers } from "../attachments";
 import { AI_AUDIO_EXTENSIONS } from "../audio-format";
+import { CODE_RUNTIME_TOOL_NAMES } from "../browser-code-contracts";
 import { aiProjectFilePathFromMount, aiSkillFilePathFromMount } from "../file-mount";
 import { AI_IMAGE_INPUT_MAX_BYTES, AI_TURN_ATTACHMENT_MAX_ITEMS } from "../limits";
 import { type AiResourceMarker, parseAiResourceMarker } from "../resource-markers";
@@ -385,8 +386,21 @@ export const viewedChatImage = (name: string, result: unknown): { path: string; 
   return { path, description: typeof description === "string" ? description.trim() : "" };
 };
 
-/** Tools of feat/code (Code and the apps Gustav writes) show the feat/code sign where a row can draw one. */
-export const isFeatCodeTool = (name: string): boolean => name.startsWith("code_");
+/**
+ * Tools of feat/code show the feat/code sign where a row can draw one: chat Code runs and Code authoring. Studio's
+ * app-management tools (`CODE_SOURCE_TOOLS`) share the `code_` prefix but are not feat/code and keep their icons.
+ */
+const FEAT_CODE_TOOLS: ReadonlySet<string> = new Set([
+  ...CODE_RUNTIME_TOOL_NAMES,
+  "code_init",
+  "code_pull",
+  "code_sdk",
+  "code_test",
+  "code_simulate",
+  "code_submit",
+  "code_diff",
+]);
+export const isFeatCodeTool = (name: string): boolean => FEAT_CODE_TOOLS.has(name);
 
 export const aiToolIcon = (name: string, appIcon?: string | null): string => {
   if (appIcon) return appIcon;

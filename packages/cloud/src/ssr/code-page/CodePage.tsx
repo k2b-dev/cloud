@@ -19,8 +19,8 @@ import {
 import { createMemo, createSignal, For, type JSX, Match, onCleanup, Show, Switch } from "solid-js";
 import { z } from "zod";
 import { openPanel } from "../../browser/panel";
-import { FeatCodeMark } from "../../code/FeatCodeMark";
 import { invokeCapabilityWithDataSchema } from "../../capabilities/client";
+import { FeatCodeMark } from "../../code/FeatCodeMark";
 import { CodeAccountHandle } from "./CodeAccountHandle";
 import { CodeRefusalNotice } from "./CodeRefusalNotice";
 import { CodeSecretsTab } from "./CodeSecrets";

@@ -9,7 +9,11 @@ const Scene = (props: { theme: "light" | "dark" }) => (
     class={props.theme}
     data-theme={props.theme}
     // The page has no theme of its own; each scene sets the surface and ink of its theme.
-    style={props.theme === "dark" ? { padding: "16px", background: "#11151b", color: "#f4f4f5" } : { padding: "16px", background: "#ffffff", color: "#18181b" }}
+    style={
+      props.theme === "dark"
+        ? { padding: "16px", background: "#11151b", color: "#f4f4f5" }
+        : { padding: "16px", background: "#ffffff", color: "#18181b" }
+    }
   >
     <h1 style={{ "font-size": "20px", margin: "0 0 12px" }} data-probe={`title-${props.theme}`}>
       <FeatCodeMark size="title" decorative />
@@ -17,7 +21,10 @@ const Scene = (props: { theme: "light" | "dark" }) => (
     <p data-probe={`head-${props.theme}`} style={{ margin: "0 0 12px" }}>
       <FeatCodeMark size={30} />
     </p>
-    <p style={{ "font-size": "12.5px", margin: "0 0 12px", color: "color-mix(in srgb, currentColor 65%, transparent)" }} data-probe={`row-${props.theme}`}>
+    <p
+      style={{ "font-size": "12.5px", margin: "0 0 12px", color: "color-mix(in srgb, currentColor 65%, transparent)" }}
+      data-probe={`row-${props.theme}`}
+    >
       Nach ‚Buchhaltung‘ verschoben von <FeatCodeMark /> ‚Rechnungen ablegen‘
     </p>
     <div style={{ width: "40px", "font-size": "16px", margin: "0 0 12px" }} data-probe={`narrow-${props.theme}`}>
@@ -31,7 +38,10 @@ const Scene = (props: { theme: "light" | "dark" }) => (
           </span>
         )}
       </For>
-      <span style={{ "font-size": "16px", color: "color-mix(in srgb, currentColor 65%, transparent)" }} data-probe={`current-${props.theme}`}>
+      <span
+        style={{ "font-size": "16px", color: "color-mix(in srgb, currentColor 65%, transparent)" }}
+        data-probe={`current-${props.theme}`}
+      >
         <FeatCodeMark variant="glyph" tone="current" decorative />
       </span>
     </div>
