@@ -54,10 +54,12 @@ export function html(strings: TemplateStringsArray, ...values: unknown[]): Html 
   return new Html(out);
 }
 
-const KEEP_ASPECT = new Set(["pie", "donut", "gauge"]);
+const KEEP_ASPECT = new Set(["pie", "donut", "gauge", "radar"]);
 type ChartOptions = Record<string, unknown> & {
   kind: string;
   format?: CloudAiNumberFormat | ((value: number) => string);
+  xFormat?: CloudAiNumberFormat | ((value: number) => string);
+  yFormat?: CloudAiNumberFormat | ((value: number) => string);
   xAxis?: Record<string, unknown> & { format?: CloudAiFormat | ((value: number) => string) };
   yAxis?: Record<string, unknown> & { format?: CloudAiFormat | ((value: number) => string) };
 };
@@ -203,6 +205,12 @@ export function chart(options: ChartOptions, locale: string, timeZone = "UTC"): 
       raw[name] = rest;
     }
   }
+  for (const name of ["xFormat", "yFormat"] as const) {
+    if (typeof raw[name] === "function") {
+      stored[name] = raw[name];
+      delete raw[name];
+    }
+  }
   if (typeof raw.format === "function") {
     stored.format = raw.format;
     delete raw.format;
@@ -296,17 +304,23 @@ export function chartLoading(locale: string): string {
 /** Finish chart markup before app-authored HTML crosses the asynchronous PDF boundary. */
 export async function resolveChartHtml(content: string, locale: string): Promise<string> {
   if (!content.includes("data-chart-pending=")) return content;
-  await loadChartRenderer();
-  return content.replace(
-    /<div class="k2b-chart"[^>]*><div class="k2b-chart__svg"[^>]* data-chart-pending="([^"]+)"[^>]*>[\s\S]*?<\/div><\/div>/g,
-    (markup, id: string) => {
+  const pendingMarkup =
+    /<div class="k2b-chart"[^>]*><div class="k2b-chart__svg"[^>]* data-chart-pending="([^"]+)"[^>]*>[\s\S]*?<\/div><\/div>/g;
+  const ids = [...content.matchAll(pendingMarkup)].map((match) => match[1]!);
+  await Promise.all(
+    ids.map((id) => {
       const options = pendingChartOptions.get(id);
       if (!options) throw new CloudError("unavailable", "The chart expired. Draw it again before creating the PDF.");
-      const width = Number(/--k2b-chart-width:\s*([\d.]+)px/.exec(markup)?.[1]) || 480;
-      const height = Number(/--k2b-chart-height:\s*([\d.]+)px/.exec(markup)?.[1]) || 280;
-      return String(chartMarkup(options, locale, width, height, false));
-    },
+      return loadChartRenderer(options.input.kind);
+    }),
   );
+  return content.replace(pendingMarkup, (markup, id: string) => {
+    const options = pendingChartOptions.get(id);
+    if (!options) throw new CloudError("unavailable", "The chart expired. Draw it again before creating the PDF.");
+    const width = Number(/--k2b-chart-width:\s*([\d.]+)px/.exec(markup)?.[1]) || 480;
+    const height = Number(/--k2b-chart-height:\s*([\d.]+)px/.exec(markup)?.[1]) || 280;
+    return String(chartMarkup(options, locale, width, height, false));
+  });
 }
 
 /** stdlib money with the user's locale as the default for format and parse. */

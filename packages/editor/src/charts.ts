@@ -4,6 +4,7 @@ import {
   type AreaOptions,
   autoBin,
   type BarChartOptions,
+  type BubbleOptions,
   barChartLayout,
   barGauge,
   boxplot,
@@ -24,13 +25,16 @@ import {
   niceStep,
   type ParetoOptions,
   pie,
+  type RadarOptions,
   rankedBarLayout,
   renderAreaSvg,
   renderBarChartSvg,
+  renderBubbleSvg,
   renderFunnelSvg,
   renderHbarSvg,
   renderHeatmapSvg,
   renderParetoSvg,
+  renderRadarSvg,
   renderTreemapSvg,
   renderWaterfallSvg,
   scatter,
@@ -57,13 +61,17 @@ type RenderOptions = {
             ? TreemapOptions
             : K extends "pareto"
               ? ParetoOptions
-              : K extends "heatmap"
-                ? HeatmapChartOptions
-                : K extends "bar"
-                  ? BarChartOptions & { data: NonNullable<BarChartOptions["data"]> }
-                  : K extends keyof typeof charts
-                    ? Omit<Parameters<(typeof charts)[K]>[0], "width" | "height" | "inspect">
-                    : never);
+              : K extends "bubble"
+                ? BubbleOptions
+                : K extends "radar"
+                  ? RadarOptions
+                  : K extends "heatmap"
+                    ? HeatmapChartOptions
+                    : K extends "bar"
+                      ? BarChartOptions & { data: NonNullable<BarChartOptions["data"]> }
+                      : K extends keyof typeof charts
+                        ? Omit<Parameters<(typeof charts)[K]>[0], "width" | "height" | "inspect">
+                        : never);
 }[ChartInput["kind"]];
 
 /**
@@ -78,6 +86,8 @@ const labels = /* @__PURE__ */ i18n.define({
   messages: {
     en: {
       category: "Category",
+      size: "Size",
+      axis: "Axis",
       series: "Series",
       group: "Group",
       previous: "Previous",
@@ -109,6 +119,8 @@ const labels = /* @__PURE__ */ i18n.define({
     },
     de: {
       category: "Kategorie",
+      size: "Größe",
+      axis: "Achse",
       series: "Datenreihe",
       group: "Bereich",
       previous: "Vorher",
@@ -306,6 +318,10 @@ const numberFormat = (format: ChartFormat | undefined) => (format && !("date" in
 /** The values a chart writes with its value format, for whole-number currency. */
 const formattedValues = (input: ChartInput): number[] => {
   switch (input.kind) {
+    case "bubble":
+      return input.data.flatMap((p) => (p.size === undefined ? [] : [p.size]));
+    case "radar":
+      return input.series.flatMap((s) => s.data);
     case "waterfall":
       return [input.start.value, ...input.steps.map((step) => step.value)];
     case "area":
@@ -460,6 +476,34 @@ export function chartRenderOptions(
         format: format.value,
         locale: input.locale ?? locale,
         displayWidth: options.width,
+      };
+    case "bubble":
+      return {
+        kind: "bubble",
+        groups: input.groups,
+        data: input.data,
+        xLabel: input.xLabel,
+        yLabel: input.yLabel,
+        sizeLabel: input.sizeLabel,
+        averages: input.averages,
+        legend: input.legend,
+        locale,
+        displayWidth: options.width,
+        xFormat: options.formats?.x ?? (input.xFormat ? chartNumberFormatters(input.xFormat, locale).value : undefined),
+        yFormat: options.formats?.y ?? (input.yFormat ? chartNumberFormatters(input.yFormat, locale).value : undefined),
+        sizeFormat: format.value,
+      };
+    case "radar":
+      return {
+        kind: "radar",
+        axes: input.axes,
+        max: input.max,
+        unit: input.unit,
+        series: input.series,
+        legend: input.legend,
+        locale,
+        displayWidth: options.width,
+        format: format.value,
       };
     case "funnel":
       return { kind: "funnel", data: input.data, valueFormat: format.value, locale };
@@ -673,6 +717,10 @@ export const drawChart = (options: RenderOptions): string => {
       return renderTreemapSvg({ ...options, ...common });
     case "pareto":
       return renderParetoSvg({ ...options, ...common });
+    case "bubble":
+      return renderBubbleSvg({ ...options, ...common });
+    case "radar":
+      return renderRadarSvg({ ...options, ...common });
     case "funnel":
       return renderFunnelSvg({ ...options, ...common });
     case "hbar":
@@ -819,10 +867,35 @@ export function chartRows(
               : input.data[datum.role === "outlier" ? (datum.seriesIndex ?? 0) : datum.index]?.label) ?? datum.label)
           : datum.label;
       if (label)
-        cell("label", input.kind === "heatmap" && input.layout === "calendar" ? calendarWords(locale).day : t.category, label, label);
+        cell(
+          "label",
+          input.kind === "heatmap" && input.layout === "calendar"
+            ? calendarWords(locale).day
+            : input.kind === "radar"
+              ? t.axis
+              : t.category,
+          label,
+          label,
+        );
     }
     for (const field of datum.values) {
       const value = field.value;
+      if (input.kind === "bubble") {
+        const label =
+          field.key === "x"
+            ? input.xLabel
+            : field.key === "y"
+              ? input.yLabel
+              : field.key === "size"
+                ? (input.sizeLabel ?? t.size)
+                : t.group;
+        cell(field.key, label, value, field.formatted ?? String(value));
+        continue;
+      }
+      if (input.kind === "radar" && field.key.startsWith("series:")) {
+        cell(field.key, input.series[Number(field.key.slice(7))]!.label, value, field.formatted ?? String(value));
+        continue;
+      }
       if (typeof value === "string" && input.kind === "area" && field.key === "x") {
         cell("x", t.position, value, field.formatted ?? value);
         continue;
@@ -1020,6 +1093,8 @@ export const chartMarks = (input: ChartInput): number => {
   switch (input.kind) {
     case "pareto":
       return input.data.length * 3;
+    case "radar":
+      return input.axes.length * input.series.length;
     case "waterfall":
       return input.steps.length + 2;
     case "area":

@@ -636,6 +636,15 @@ const conversationMutation = (
               (() => {
                 throw new Error("status must resolve to a value");
               })());
+        const preconditions = ctx.invocation.context?.preconditions;
+        const trigger = isObject(preconditions) && isObject(preconditions.message) ? preconditions.message : null;
+        // List-only grouping grants no authority over the conversation's work state.
+        if (trigger?.listOnly === true) {
+          return {
+            state: "succeeded",
+            output: { action: kind, applied: false, value, conversationId: publicConversationId, skipped: "list_only" },
+          };
+        }
         // Match provider command lock order before taking the per-message ordering lock.
         await tx`SELECT id FROM mail.mailboxes WHERE id = ${scope.mailboxId}::uuid FOR SHARE`;
         const effectClass = kind === "assignConversation" ? "assignment" : "status";

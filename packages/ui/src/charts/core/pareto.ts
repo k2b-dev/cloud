@@ -1,5 +1,34 @@
 import { type ChartOptions, chartDatumSvg, escapeXml, niceStep, renderHeader, svgRoot } from "./svg";
-import { chartTextWidth, fitChartText } from "./text";
+
+// Keep fitting in this leaf: sharing it only with calendar creates a second
+// frame chunk, while adding it to every chart's shared part wastes its budget.
+function chartTextWidth(text: string, size: number): number {
+  return (
+    Array.from(text).reduce(
+      (width, glyph) =>
+        width +
+        (/\s/.test(glyph)
+          ? 0.34
+          : /[ilI.,:;!|'`]/.test(glyph)
+            ? 0.32
+            : /[MW@%&]/.test(glyph)
+              ? 1
+              : /[A-Z0-9]/.test(glyph)
+                ? 0.74
+                : /[a-zäöüßéèáàóúñç()-]/i.test(glyph)
+                  ? 0.64
+                  : 1),
+      0,
+    ) * size
+  );
+}
+
+function fitChartText(text: string, width: number, size: number): string {
+  if (chartTextWidth(text, size) <= width) return text;
+  const glyphs = Array.from(text);
+  while (glyphs.length && chartTextWidth(glyphs.join("") + "…", size) > width) glyphs.pop();
+  return chartTextWidth("…", size) <= width ? glyphs.join("") + "…" : "";
+}
 export type ParetoOptions = ChartOptions & {
   labels: [string, string];
   data: { label: string; value: number; prev: number; rest?: boolean }[];

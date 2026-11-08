@@ -6,3 +6,5 @@
 - **Guard:** Core tests check natural-width labels, signed change, explicit `rest: true`, and the absence of zero-area inspection targets. JSON/model tests preserve the remainder flag. Browser tests continue to check label boxes and keyboard navigation.
 
 - **Measurement follow-up:** Compare SVG glyph client rectangles consistently rather than mixing Playwright text quads with DOM chart rectangles. The Pareto guard checks both edges against the real host and independently checks the text anchor; its clipping bounds remain unchanged.
+
+- **Frame parts:** Keep Pareto's fitting helper in its renderer leaf. Importing a helper used only by Pareto and calendar creates a second shared chunk, while moving it into the common SVG module consumes every frame's shared budget. The existing asset guard requires exactly one shared part and keeps every kind below 14,500 bytes.

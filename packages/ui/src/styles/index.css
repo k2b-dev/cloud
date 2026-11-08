@@ -10547,6 +10547,11 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   cursor: not-allowed;
 }
 
+.k2b-ui .k2b-field[data-disabled="true"]:has(> .k2b-slider) .k2b-field__label,
+.k2b-ui .k2b-field[data-disabled="true"]:has(> .k2b-slider) output {
+  color: var(--k2b-text-muted);
+}
+
 .k2b-ui .k2b-slider input:disabled::-webkit-slider-thumb {
   background: var(--k2b-text-muted);
   cursor: not-allowed;
@@ -18509,6 +18514,11 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 .k2b-ui .k2b-chart[data-chart-kind="pareto"] :is([data-inspected],[data-selected]) > .k2b-chart-pareto-previous { stroke: var(--stdlib-chart-c1,#3b82f6) !important; stroke-width: .8px; }
 .k2b-ui .k2b-chart[data-chart-kind="pareto"] :is([data-inspected],[data-selected]) > .k2b-chart-pareto-hatch { stroke: var(--stdlib-chart-c1,#3b82f6) !important; stroke-width: 1px; }
 
+/* New distribution marks keep the selected state stronger than calm hover. */
+.k2b-ui .k2b-chart:is([data-chart-kind="bubble"],[data-chart-kind="radar"]) [data-selected] > circle { stroke-width: 3px !important; }
+.k2b-ui .k2b-chart[data-chart-kind="radar"] [data-inspected] > .k2b-chart-radar-axis { stroke: var(--k2b-chart-inspection-color); stroke-width: 1.5px !important; }
+.k2b-ui .k2b-chart[data-chart-kind="radar"] [data-selected] > .k2b-chart-radar-axis { stroke-width: 2.5px !important; }
+
 
 /* Pointer hover paints only the band; keyboard inspection and selection outline the marks. */
 .k2b-ui .k2b-chart-category-band { stroke: none; }
@@ -18535,6 +18545,29 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   .k2b-ui .k2b-chart__svg:has(> svg[data-calendar]) { min-width: 0 !important; width: 100%; }
 }
 .k2b-ui .k2b-chart[data-chart-kind="area"] [data-selected] > .k2b-area-inspection-point { opacity: 1; stroke-width: 1.5px; }
+
+/* Bubble radii must shrink with a narrow or short drawing: their centers are
+ * padded in SVG units, while the shared marker rule normally fixes pixel size. */
+.k2b-ui .k2b-chart[data-chart-kind="bubble"] .k2b-chart__svg[data-stretch] circle {
+  --k2b-bubble-shrink: max(1, var(--k2b-chart-inverse-x), var(--k2b-chart-inverse-y));
+  scale: calc(var(--k2b-chart-inverse-x) / var(--k2b-bubble-shrink)) calc(var(--k2b-chart-inverse-y) / var(--k2b-bubble-shrink));
+}
+
+/* Keep the two average lines in pixels, even when the SVG is short. The short
+ * variant retains the average values in its accessible SVG title. */
+.k2b-ui .k2b-chart[data-chart-kind="bubble"] .k2b-chart__svg[data-stretch] .k2b-chart-bubble-average-label {
+  transform: translateY(calc(11px - 11px / var(--k2b-chart-inverse-y)));
+}
+.k2b-ui .k2b-chart[data-chart-kind="bubble"] .k2b-chart__svg[data-stretch] .k2b-chart-bubble-average-value {
+  transform: translateY(calc(29px - 29px / var(--k2b-chart-inverse-y)));
+}
+@container (max-height: 199px) {
+  .k2b-ui .k2b-chart[data-chart-kind="bubble"] .k2b-chart-bubble-average-value { display: none; }
+}
+
+.k2b-ui .k2b-chart[data-chart-kind="bubble"] .k2b-chart__svg[data-stretch] .k2b-chart-bubble-x-title {
+  transform: translateY(calc(14px - 14px / var(--k2b-chart-inverse-y)));
+}
 
 .k2b-ui .k2b-chart [data-selected] > .k2b-chart-previous > rect { stroke: var(--k2b-chart-selection-color) !important; stroke-width: 2.5px !important; }
 .k2b-ui .k2b-chart:focus-visible [data-inspected]:not([data-selected]) > .k2b-chart-previous > rect { stroke: var(--k2b-chart-inspection-color) !important; stroke-width: 1.5px; }

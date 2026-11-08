@@ -88,6 +88,7 @@ import { captureMailWorkflowEffectOrder } from "./workflow-effect-order";
 
 const log = logger("mail:sync");
 const ENVELOPE_BATCH_SIZE = 200;
+const AUTOMATIC_CONVERSATION_CANDIDATES = 10;
 const FLAG_WINDOW_SIZE = 5_000;
 const RECONCILE_WINDOW_SIZE = 5_000;
 const HYDRATION_BATCH_SIZE = 20;
@@ -285,6 +286,14 @@ export const claimFence = async (
     return { token: Number(resource.token), generation: Number(resource.generation), runId: run.id };
   });
 
+// RFC 5322 caps a header line at 998 characters. Counted in bytes, the lowercased value also
+// fits a Postgres B-tree entry (at most 2704 bytes) in message_contents_message_id_idx.
+const MESSAGE_ID_MAX_BYTES = 998;
+
+const replyMessageIds = (message: ConnectorEnvelope): string[] => [
+  ...new Set([message.inReplyTo, ...message.references].filter((value): value is string => Boolean(value))),
+];
+
 const allParticipantEmails = (message: ConnectorEnvelope): string[] => [
   ...new Set(
     Object.values(message.addresses)
@@ -300,6 +309,134 @@ const storedAddress = (address: string): string => normalizeEmailAddress(address
 const senderSet = (message: ConnectorEnvelope): string[] => [
   ...new Set(message.addresses.from.map((address) => storedAddress(address.address))),
 ];
+
+/** Checks stored thread membership, independent of how the automatic candidate was found. */
+const getAutomaticConversationAdmission = async (params: {
+  db: typeof sql;
+  mailboxId: string;
+  conversationId: string;
+  messageId: string;
+  normalizedSubject: string;
+  message: ConnectorEnvelope;
+  mailboxAddresses: string[];
+  fromMailbox: boolean;
+}): Promise<"participant" | "list" | null> => {
+  const parentIds = replyMessageIds(params.message).map((value) => truncateUtf8(value, MESSAGE_ID_MAX_BYTES).toLowerCase());
+  const senders = senderSet(params.message);
+  if (senders.length === 0) return null;
+  const list = parseMessageProtocolFacts(params.message.protocolFacts).list;
+  const rawListId = list.id;
+  const listId = (rawListId?.match(/<([^<>]+)>/)?.[1] ?? rawListId)?.trim().toLowerCase() || null;
+  const postingAddresses = [
+    ...new Set(
+      list.post.flatMap((link) => {
+        const address = link.match(/^mailto:([^?]+)/i)?.[1];
+        const normalized = address ? normalizeEmailAddress(address) : null;
+        return normalized && !params.mailboxAddresses.includes(normalized) ? [normalized] : [];
+      }),
+    ),
+  ];
+  const incomingId = params.message.messageId?.toLowerCase() ?? null;
+  const storedIncomingId = incomingId ? truncateUtf8(incomingId, MESSAGE_ID_MAX_BYTES) : null;
+  const [eligible] = await params.db<{ admission: "participant" | "list" }[]>`
+    SELECT CASE WHEN own_reply.id IS NOT NULL OR ${params.fromMailbox} OR participant.known
+      THEN 'participant' ELSE 'list' END AS admission
+    FROM mail.conversations conversation
+    LEFT JOIN LATERAL (
+      -- An own sent reply can establish a previously unseen original during newest-first sync.
+      SELECT prior.id
+      FROM mail.conversation_messages link
+      JOIN mail.message_contents prior ON prior.id = link.message_id
+      WHERE link.conversation_id = conversation.id
+        AND prior.mailbox_id = conversation.mailbox_id
+        AND prior.id <> ${params.messageId}::uuid
+        AND lower(prior.in_reply_to) = ${incomingId}
+        AND ${Boolean(params.normalizedSubject)} AND prior.normalized_subject = ${params.normalizedSubject}
+        AND EXISTS (SELECT 1 FROM mail.message_addresses sender WHERE sender.message_id = prior.id AND sender.role = 'from')
+        AND NOT EXISTS (
+          SELECT 1 FROM mail.message_addresses sender WHERE sender.message_id = prior.id AND sender.role = 'from'
+            AND NOT (sender.normalized_email = ANY(${toPgTextArray(params.mailboxAddresses)}::text[]))
+        )
+        AND NOT EXISTS (
+          SELECT 1 FROM mail.message_contents original
+          WHERE original.mailbox_id = conversation.mailbox_id AND original.id <> ${params.messageId}::uuid
+            AND lower(original.message_id) = ${storedIncomingId}
+        )
+      LIMIT 1
+    ) own_reply ON true
+    LEFT JOIN LATERAL (
+      SELECT NOT EXISTS (
+          SELECT 1 FROM unnest(${toPgTextArray(senders)}::text[]) sender(email)
+          WHERE NOT EXISTS (
+            SELECT 1
+            FROM mail.conversation_messages link
+            JOIN mail.message_contents prior ON prior.id = link.message_id
+            JOIN mail.message_addresses address ON address.message_id = prior.id
+            WHERE link.conversation_id = conversation.id
+              AND prior.mailbox_id = conversation.mailbox_id
+              AND prior.id <> ${params.messageId}::uuid
+              AND link.added_by <> 'list'
+              AND address.normalized_email = sender.email
+              AND NOT (address.normalized_email = ANY(${toPgTextArray(params.mailboxAddresses)}::text[]))
+              AND (
+                address.role IN ('from', 'to', 'cc', 'reply_to')
+                OR (
+                  address.role = 'bcc'
+                  AND EXISTS (SELECT 1 FROM mail.message_addresses own_sender WHERE own_sender.message_id = prior.id AND own_sender.role = 'from')
+                  AND NOT EXISTS (
+                    SELECT 1 FROM mail.message_addresses own_sender
+                    WHERE own_sender.message_id = prior.id AND own_sender.role = 'from'
+                      AND NOT (own_sender.normalized_email = ANY(${toPgTextArray(params.mailboxAddresses)}::text[]))
+                  )
+                )
+              )
+          )
+        ) AS known
+    ) participant ON true
+    WHERE conversation.id = ${params.conversationId}::uuid
+      AND conversation.mailbox_id = ${params.mailboxId}::uuid
+      AND (own_reply.id IS NOT NULL OR EXISTS (
+        SELECT 1
+        FROM mail.conversation_messages link
+        JOIN mail.message_contents message ON message.id = link.message_id
+        WHERE link.conversation_id = conversation.id
+          AND message.mailbox_id = conversation.mailbox_id
+          AND message.id <> ${params.messageId}::uuid
+          AND (
+            lower(message.message_id) = ANY(${toPgTextArray(parentIds)}::text[])
+            OR (${params.message.providerThreadId}::text IS NOT NULL AND message.provider_thread_id = ${params.message.providerThreadId})
+            OR (${Boolean(params.normalizedSubject)} AND message.normalized_subject = ${params.normalizedSubject})
+          )
+      ))
+      AND (
+        own_reply.id IS NOT NULL
+        OR ${params.fromMailbox}
+        OR (
+          ${listId}::text IS NOT NULL
+          AND EXISTS (
+            SELECT 1 FROM mail.conversation_messages link
+            JOIN mail.message_contents prior ON prior.id = link.message_id
+            WHERE link.conversation_id = conversation.id
+              AND prior.mailbox_id = conversation.mailbox_id
+              AND prior.id <> ${params.messageId}::uuid
+              AND lower(btrim(coalesce(substring(prior.protocol_facts #>> '{list,id}' FROM '<([^<>]+)>'), prior.protocol_facts #>> '{list,id}'))) = ${listId}
+              AND EXISTS (
+                SELECT 1
+                FROM (
+                  SELECT lower(btrim(substring(post.url FROM '(?i)^mailto:([^?]+)'))) AS email
+                  FROM jsonb_array_elements_text(coalesce(prior.protocol_facts #> '{list,post}', '[]'::jsonb)) post(url)
+                ) posting
+                WHERE posting.email = ANY(${toPgTextArray(postingAddresses)}::text[])
+                  AND NOT (posting.email = ANY(${toPgTextArray(params.mailboxAddresses)}::text[]))
+              )
+          )
+        )
+        OR participant.known
+      )
+    LIMIT 1
+  `;
+  return eligible?.admission ?? null;
+};
 
 const counterpartyLabels = (message: ConnectorEnvelope, outbound: boolean): string[] => {
   const addresses = outbound ? [...message.addresses.to, ...message.addresses.cc, ...message.addresses.bcc] : message.addresses.from;
@@ -344,10 +481,6 @@ const upsertAddresses = async (db: typeof sql, messageId: string, message: Conne
   }
 };
 
-// RFC 5322 caps a header line at 998 characters. Counted in bytes, the lowercased value also
-// fits a Postgres B-tree entry (at most 2704 bytes) in message_contents_message_id_idx.
-const MESSAGE_ID_MAX_BYTES = 998;
-
 const findConversation = async (params: {
   db: typeof sql;
   mailboxId: string;
@@ -357,7 +490,11 @@ const findConversation = async (params: {
   /** The other side of the message: its recipients when the mailbox sent it, otherwise its sender and Reply-To, without the mailbox's own addresses. */
   counterparties: string[];
 }): Promise<string | null> => {
+  // Stored Message-IDs are shortened to MESSAGE_ID_MAX_BYTES; a reply quotes the full value.
+  const replyIds = [...new Set(replyMessageIds(params.message).map((value) => truncateUtf8(value, MESSAGE_ID_MAX_BYTES).toLowerCase()))];
   if (params.message.providerThreadId) {
+    // A provider thread can span separate local conversations. Prefer the quoted parent,
+    // then its reference chain, matching subject and counterparty before mere recency.
     const [native] = await params.db<{ conversation_id: string }[]>`
       SELECT cm.conversation_id
       FROM mail.message_contents mc
@@ -365,7 +502,20 @@ const findConversation = async (params: {
       WHERE mc.mailbox_id = ${params.mailboxId}::uuid
         AND mc.id <> ${params.messageId}::uuid
         AND mc.provider_thread_id = ${params.message.providerThreadId}
-      ORDER BY mc.internal_date DESC, mc.id DESC
+      ORDER BY
+        CASE
+          WHEN lower(mc.message_id) = ${params.message.inReplyTo ? truncateUtf8(params.message.inReplyTo, MESSAGE_ID_MAX_BYTES).toLowerCase() : null} THEN 0
+          WHEN lower(mc.message_id) = ANY(${toPgTextArray(replyIds)}::text[]) THEN 1
+          ELSE 2
+        END,
+        (mc.normalized_subject = ${params.normalizedSubject}) DESC,
+        EXISTS (
+          SELECT 1 FROM mail.message_addresses address
+          WHERE address.message_id = mc.id
+            AND address.role IN ('from', 'to', 'cc')
+            AND address.normalized_email = ANY(${toPgTextArray(params.counterparties)}::text[])
+        ) DESC,
+        mc.internal_date DESC, mc.id DESC
       LIMIT 1
     `;
     if (native) return native.conversation_id;
@@ -411,14 +561,6 @@ const findConversation = async (params: {
     if (twin) return twin.conversation_id;
   }
 
-  // Stored Message-IDs are shortened to MESSAGE_ID_MAX_BYTES; a reply quotes the full value.
-  const replyIds = [
-    ...new Set(
-      [params.message.inReplyTo, ...params.message.references]
-        .filter((value): value is string => Boolean(value))
-        .map((value) => truncateUtf8(value, MESSAGE_ID_MAX_BYTES)),
-    ),
-  ];
   const participants = allParticipantEmails(params.message);
   if (replyIds.length > 0 && participants.length > 0) {
     const [referenced] = await params.db<{ conversation_id: string }[]>`
@@ -427,7 +569,7 @@ const findConversation = async (params: {
       JOIN mail.conversation_messages cm ON cm.message_id = mc.id
       WHERE mc.mailbox_id = ${params.mailboxId}::uuid
         AND mc.id <> ${params.messageId}::uuid
-        AND lower(mc.message_id) = ANY(${toPgTextArray(replyIds.map((value) => value.toLowerCase()))}::text[])
+        AND lower(mc.message_id) = ANY(${toPgTextArray(replyIds)}::text[])
         AND mc.internal_date BETWEEN ${params.message.internalDate}::timestamptz - interval '2 years'
           AND ${params.message.internalDate}::timestamptz + interval '1 day'
         AND EXISTS (
@@ -613,12 +755,13 @@ const findManualConversationOverride = async (params: { db: typeof sql; mailboxI
 
 const findCanonicalMessageContent = async (params: {
   db: typeof sql;
+  fromMailbox: boolean;
   mailboxId: string;
   remoteResourceId: string;
   message: ConnectorEnvelope;
   normalizedSubject: string;
 }): Promise<string | null> => {
-  if (params.message.messageId) {
+  if (params.message.messageId && params.fromMailbox) {
     const [outbound] = await params.db<{ message_id: string }[]>`
       SELECT outbox.message_id
       FROM mail.outbox_submissions outbox
@@ -802,6 +945,21 @@ const ingestStorableEnvelope = async (params: IngestEnvelopeParams): Promise<str
     uid: params.message.remoteRef.uid,
   });
   const normalizedSubject = normalizeMailSubject(params.message.subject);
+  const ownAddresses = await params.db<{ address: string; sender_identity: boolean }[]>`
+    SELECT from_address AS address, true AS sender_identity
+    FROM mail.sender_identities
+    WHERE mailbox_id = ${params.mailboxId}::uuid
+    UNION ALL
+    SELECT email AS address, false AS sender_identity
+    FROM mail.provider_connections
+    WHERE owner_mailbox_id = ${params.mailboxId}::uuid
+  `;
+  const senderIdentities = new Set(ownAddresses.filter((row) => row.sender_identity).map((row) => storedAddress(row.address)));
+  const mailboxAddresses = new Set(ownAddresses.map((row) => storedAddress(row.address)));
+  const senders = senderSet(params.message);
+  const isOutbound = senders.length > 0 && senders.every((address) => senderIdentities.has(address));
+  // Every From address must be ours; a mixed From set does not identify a sent copy.
+  const fromMailbox = senders.length > 0 && senders.every((address) => mailboxAddresses.has(address));
   const [knownRemoteRef] = await params.db<{ message_id: string }[]>`
     SELECT message_id
     FROM mail.remote_message_refs
@@ -813,6 +971,7 @@ const ingestStorableEnvelope = async (params: IngestEnvelopeParams): Promise<str
     knownRemoteRef?.message_id ??
     (await findCanonicalMessageContent({
       db: params.db,
+      fromMailbox,
       mailboxId: params.mailboxId,
       remoteResourceId: params.remoteResourceId,
       message: params.message,
@@ -1102,20 +1261,6 @@ const ingestStorableEnvelope = async (params: IngestEnvelopeParams): Promise<str
     return messageContentId;
   }
 
-  const ownAddresses = await params.db<{ address: string; sender_identity: boolean }[]>`
-    SELECT from_address AS address, true AS sender_identity
-    FROM mail.sender_identities
-    WHERE mailbox_id = ${params.mailboxId}::uuid
-    UNION ALL
-    SELECT email AS address, false AS sender_identity
-    FROM mail.provider_connections
-    WHERE owner_mailbox_id = ${params.mailboxId}::uuid
-  `;
-  const senderIdentities = new Set(ownAddresses.filter((row) => row.sender_identity).map((row) => storedAddress(row.address)));
-  const mailboxAddresses = new Set(ownAddresses.map((row) => storedAddress(row.address)));
-  const isOutbound = params.message.addresses.from.some((address) => senderIdentities.has(storedAddress(address.address)));
-  // The account address counts as the mailbox's side too, even before sending is set up.
-  const fromMailbox = isOutbound || params.message.addresses.from.some((address) => mailboxAddresses.has(storedAddress(address.address)));
   const { addresses } = params.message;
   const counterparties = [
     ...new Set(
@@ -1141,6 +1286,56 @@ const ingestStorableEnvelope = async (params: IngestEnvelopeParams): Promise<str
       normalizedSubject,
       counterparties,
     }));
+  let listOnly = false;
+  // Existing links and manual overrides remain authoritative. Each automatic candidate
+  // must pass the same membership check, including candidates with missing originals.
+  if (!manualConversationId) {
+    const checkedCandidates = new Set<string>();
+    const eligible = async (candidate: string) => {
+      if (checkedCandidates.has(candidate) || checkedCandidates.size >= AUTOMATIC_CONVERSATION_CANDIDATES) return false;
+      checkedCandidates.add(candidate);
+      const admission = await getAutomaticConversationAdmission({
+        db: params.db,
+        mailboxId: params.mailboxId,
+        conversationId: candidate,
+        messageId: messageContentId,
+        normalizedSubject,
+        message: params.message,
+        mailboxAddresses: [...mailboxAddresses],
+        fromMailbox,
+      });
+      if (admission) listOnly = admission === "list";
+      return admission !== null;
+    };
+    if (conversationId && !(await eligible(conversationId))) conversationId = null;
+    // A preferred parent may belong to a separate conversation. Try the other stored
+    // references before splitting a reply from a conversation it already participates in.
+    if (!conversationId) {
+      const quoted = replyMessageIds(params.message).map((value) => truncateUtf8(value, MESSAGE_ID_MAX_BYTES).toLowerCase());
+      if (quoted.length > 0) {
+        const alternatives = await params.db<{ conversation_id: string }[]>`
+          SELECT link.conversation_id
+          FROM mail.message_contents prior
+          JOIN mail.conversation_messages link ON link.message_id = prior.id
+          WHERE prior.mailbox_id = ${params.mailboxId}::uuid
+            AND prior.id <> ${messageContentId}::uuid
+            AND lower(prior.message_id) = ANY(${toPgTextArray(quoted)}::text[])
+            AND prior.internal_date BETWEEN ${params.message.internalDate}::timestamptz - interval '2 years'
+              AND ${params.message.internalDate}::timestamptz + interval '1 day'
+          GROUP BY link.conversation_id
+          ORDER BY max(prior.internal_date) DESC, link.conversation_id DESC
+          LIMIT ${AUTOMATIC_CONVERSATION_CANDIDATES}
+        `;
+        for (const { conversation_id: candidate } of alternatives) {
+          if (checkedCandidates.size >= AUTOMATIC_CONVERSATION_CANDIDATES) break;
+          if (await eligible(candidate)) {
+            conversationId = candidate;
+            break;
+          }
+        }
+      }
+    }
+  }
   const participantLabels = counterpartyLabels(params.message, isOutbound);
   if (!conversationId) {
     const initialWorkStatus = isOutbound && (await startsWaiting(params.db, params.folderId, params.message)) ? "waiting" : "needs_action";
@@ -1187,11 +1382,13 @@ const ingestStorableEnvelope = async (params: IngestEnvelopeParams): Promise<str
       ${
         manualConversationId
           ? "manual"
-          : params.message.providerThreadId
-            ? "provider"
-            : params.message.inReplyTo || params.message.references.length
-              ? "headers"
-              : "heuristic"
+          : listOnly
+            ? "list"
+            : params.message.providerThreadId
+              ? "provider"
+              : params.message.inReplyTo || params.message.references.length
+                ? "headers"
+                : "heuristic"
       }
     )
     ON CONFLICT (message_id) DO NOTHING

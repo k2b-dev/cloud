@@ -44,7 +44,7 @@ test.each(["context", "page"])("abort during %s creation awaits one close before
       source: { entry: "index.html", files: [{ path: "index.html", content: "<h1>Check</h1>" }] },
       context: { locale: "en", timeZone: "UTC", user: null },
       theme: "light",
-      assets: { prelude: "", preludeHash: "", baseCss: "", chartModule: "" },
+      assets: { prelude: "", preludeHash: "", baseCss: "", chartParts: { shared: { code: "", hash: "" }, kinds: {} } },
     }),
     initialize: async () => {
       throw new Error("Unexpected initialization");
@@ -100,7 +100,7 @@ test("a scope returned after cancellation is discarded without creating a contex
         source: { entry: "index.html", files: [{ path: "index.html", content: "<h1>Check</h1>" }] },
         context: { locale: "en", timeZone: "UTC", user: null },
         theme: "light",
-        assets: { prelude: "", preludeHash: "", baseCss: "", chartModule: "" },
+        assets: { prelude: "", preludeHash: "", baseCss: "", chartParts: { shared: { code: "", hash: "" }, kinds: {} } },
       };
     },
     initialize: async () => {
@@ -140,7 +140,7 @@ test("diagnostic overflow records one budget error and keeps discarding both sco
       source: { entry: "index.html", files: [{ path: "index.html", content: "<h1>Check</h1>" }] },
       context: { locale: "en", timeZone: "UTC", user: null },
       theme: "light",
-      assets: { prelude: "", preludeHash: "", baseCss: "", chartModule: "" },
+      assets: { prelude: "", preludeHash: "", baseCss: "", chartParts: { shared: { code: "", hash: "" }, kinds: {} } },
     }),
     discard: async (id) => {
       discarded.push(id);
