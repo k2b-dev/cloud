@@ -1146,11 +1146,22 @@ export const createMailDraftSession = (options: {
       window.removeEventListener("pagehide", onPageHide);
       window.removeEventListener("pageshow", onPageShow);
     }
+    // A draft that closes inside the page (its conversation changes, the reader closes) may hold typing the
+    // autosave has not sent yet. Save it while this session still holds the lease, then release the lease.
+    // The page stays alive, so the request finishes; the journal keeps the text if it fails.
+    const unsaved =
+      !isShared() &&
+      Boolean(draft() && lease()) &&
+      !lifecycleTransition() &&
+      !revisionConflict() &&
+      !authenticationRequired() &&
+      (pendingSave !== null || serializedContent() !== lastSavedContent);
     stopScheduledSave();
     stopHeartbeat();
     sharedController.abort();
     shared()?.dispose();
-    void releaseLeaseOnExit();
+    if (unsaved) void persist().finally(() => releaseLeaseOnExit());
+    else void releaseLeaseOnExit();
   });
 
   const keepCurrentRecoveryCopy = () => {

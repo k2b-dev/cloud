@@ -56,6 +56,8 @@ export default function MailMessageDeliveryControl(props: {
   canWrite: boolean;
   dateConfig: DateContext;
   onReconcile: () => Promise<void>;
+  /** Opens the returned draft in its conversation, at the message's place; without it the compose page opens. */
+  onOpenDraft?: (draftId: string) => void;
 }) {
   const locale = useLocale();
   const t = createMemo(() => mailConversationUiMessages.resolve([locale()]).t);
@@ -64,6 +66,12 @@ export default function MailMessageDeliveryControl(props: {
   let reconciledSubmissionId: string | null = null;
   let scheduledDialogOpen = false;
   let closeScheduledDialog: (() => void) | null = null;
+
+  const openDraft = (draftId: string) => {
+    if (props.onOpenDraft) return props.onOpenDraft(draftId);
+    const returnHref = buildMailListHref(new URL(props.requestUrl, window.location.origin));
+    navigateTo(mailDraftHref(props.mailboxId, draftId, returnHref));
+  };
 
   const clearExpiryTimer = () => {
     if (expiryTimer !== undefined) window.clearTimeout(expiryTimer);
@@ -148,8 +156,7 @@ export default function MailMessageDeliveryControl(props: {
     },
     onSuccess: (result, context) => {
       toast.success(context?.state === "scheduled" ? t().scheduledCancelledDraft : t().sendUndone);
-      const returnHref = buildMailListHref(new URL(props.requestUrl, window.location.origin));
-      navigateTo(mailDraftHref(props.mailboxId, result.draftId, returnHref));
+      openDraft(result.draftId);
     },
     onError: (error) => toast.error(error.message),
   });
@@ -166,10 +173,7 @@ export default function MailMessageDeliveryControl(props: {
       if (!response.ok) throw new Error(await readApiError(response, t().recoveryDraftFailed));
       return response.json();
     },
-    onSuccess: (draft) => {
-      const returnHref = buildMailListHref(new URL(props.requestUrl, window.location.origin));
-      navigateTo(mailDraftHref(props.mailboxId, draft.id, returnHref));
-    },
+    onSuccess: (draft) => openDraft(draft.id),
     onError: (error) => toast.error(error.message),
   });
 
@@ -198,8 +202,7 @@ export default function MailMessageDeliveryControl(props: {
 
           const editDraft = () => {
             close();
-            const returnHref = buildMailListHref(new URL(props.requestUrl, window.location.origin));
-            navigateTo(mailDraftHref(props.mailboxId, props.delivery.draftId, returnHref));
+            openDraft(props.delivery.draftId);
           };
 
           const prepareRecoveryDraft = async (mode: DeliveryRecoveryRecipientMode) => {
