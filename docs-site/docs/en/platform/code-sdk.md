@@ -23,6 +23,68 @@ Read [Code secrets](/en/docs/platform/code-secrets) for approved destinations an
 The SDK registers routes and schedules. Core owns hosting, scheduling,
 authorization and execution.
 
+## Mail invoices to an app
+
+For mailbox-owned Code, discover the destination app's write capability with
+`code_sdk`. This example calls an app whose SDK namespace is `imports` and whose
+`import` Action accepts `file` metadata and a write stream. Replace that namespace
+and operation with the discovered contract, and `Tag123` with a real tag ID from
+this mailbox. Grant the Code account read/write access to the mailbox and the
+destination access the import requires. Attachment content is untrusted input;
+the receiving app validates it.
+
+<!-- code-file-example -->
+```ts
+import { app, mail, owner, imports } from "@sdk";
+
+const importedTagId = "Tag123";
+
+app.on("mail.message.received", async event => {
+  const message = await mail.app().message.read({ id: event.subject.id });
+  if (message.hydrationStatus !== "complete" || message.attachmentsTruncated) {
+    throw new Error("Message attachments are not ready or complete");
+  }
+  const attachment = message.attachments.find(item =>
+    ["application/pdf", "application/xml", "text/xml"].includes(item.contentType)
+  );
+  if (!attachment || !message.conversationId) return;
+
+  const file = await mail.app().attachment.content.read({ id: attachment.id });
+  await imports.app().import({
+    file,
+    idempotencyKey: `invoice:${event.data.receiptId}:${attachment.id}`,
+  });
+  const conversation = await mail.app().conversation.read({ id: message.conversationId });
+  await owner.conversation.tag.update({
+    conversationId: message.conversationId,
+    expectedRevision: conversation.collaboration.revision,
+    addTagIds: [importedTagId],
+  });
+});
+export default app;
+```
+
+Read stream methods return `Promise<FileRef>` instead of the capability's JSON
+metadata. `FileRef` exposes an opaque `id`, optional `name`, `mediaType` and exact
+`size`; it has no body, bytes, URL or download method. The body stays outside the
+sandbox and its 256 KiB bridge budget. Write stream methods with a `file` metadata
+input accept that reference and return the completed import's ordinary data.
+Core checks both providers' advertised limits and exact body length.
+
+A reference belongs to its issuing Code, immutable version, run, generation and
+mandate. It expires at the earlier of the provider's expiry and run-token deadline.
+Only that run may spend it, once, even if two imports race or the first fails.
+To recover after failure, inspect the destination's recorded outcome before
+reading a fresh reference and repeating the intended import with the same
+business idempotency key. A lost response does not imply that publication failed.
+
+Core rechecks current policy and source access when redeeming, and the destination
+checks its own access both when preparing and publishing the import. This example
+tags mail only after publication. Streaming Actions retain the normal Code policy
+and approval rules. Streams without the generic `file` input remain unavailable
+to Code; [Binary streams](/en/docs/platform/capabilities#binary-streams) describes
+the provider contract.
+
 ## Return a page
 
 Start with a TSX page:
