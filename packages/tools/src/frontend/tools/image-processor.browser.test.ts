@@ -74,6 +74,12 @@ describe("Tools public photo editor adoption", () => {
       const image = await page.locator(".k2b-image-editor__image").boundingBox();
       expect(image!.height).toBeGreaterThanOrEqual(160);
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+      // On a phone the main action shows only its icon and keeps its name; the photo name keeps its room.
+      const download = page.getByRole("button", { name: "Download", exact: true });
+      expect((await download.boundingBox())!.width).toBeLessThan(64);
+      expect(await page.locator(".k2b-image-editor__chip-name").evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(
+        true,
+      );
       await rotate(page);
       expect(await dirty(page)).toBe(1);
       await zip(page);

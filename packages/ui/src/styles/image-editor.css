@@ -832,6 +832,10 @@
   width: auto;
 }
 .k2b-ui .k2b-image-editor[data-phone] .k2b-image-editor__save > [data-optional] { display: none; }
+/* On phones a save action with an icon shows only the icon, leaving room for the name chip. The text stays
+   in the label, so the button keeps its accessible name. */
+.k2b-ui .k2b-image-editor[data-phone] .k2b-image-editor__actions .k2b-button__label:has(> i) { gap: 0; font-size: 0; }
+.k2b-ui .k2b-image-editor[data-phone] .k2b-image-editor__actions .k2b-button__label > i { font-size: 1rem; }
 .k2b-ui .k2b-image-editor[data-phone] .k2b-image-editor__output-trigger {
   width: 32px;
   height: 32px;

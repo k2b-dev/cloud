@@ -10066,6 +10066,8 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   place-items: center;
   width: 1.5rem;
   height: 1.5rem;
+  /* The negative block margin keeps the row as tall as a slider without a reset. */
+  margin-block: -0.25rem;
   margin-inline-end: -0.5rem;
   padding: 0;
   border: 0;

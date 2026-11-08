@@ -365,7 +365,8 @@ export function ImageProcessorView(props: ImageProcessorViewProps = {}) {
             )}
           </For>
         </Show>
-        <div class="min-h-12 px-[var(--ui-space-shell)] py-2" aria-live="polite">
+        {/* Reserved for intake progress and errors; it continues the editor canvas instead of a white band. */}
+        <div class="min-h-12 bg-[#e6e6e9] px-[var(--ui-space-shell)] py-2 dark:bg-[#15191f]" aria-live="polite">
           <Show when={loading() && stage()}>
             {(current) => <p>{intake().loadingFile({ ...current(), stage: intake()[current().stage] })}</p>}
           </Show>
