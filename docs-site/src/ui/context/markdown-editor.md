@@ -41,6 +41,7 @@ or continues a line.
 | `noToolbar` | `boolean` | `false` | Hides the toolbar without disabling shortcuts. |
 | `showStats` | `boolean` | `true` | Shows line, word, and character counts. Suppressed entirely while `disabled`. |
 | `variant` | `"default" \| "paper" \| "embedded"` | `"default"` | Matches the editor surface to its parent. `embedded` removes the outer border, radius, and shadow for an existing workspace surface. |
+| `font` | `"mono" \| "sans"` | `"mono"` | The font of the text, its highlighting, and the placeholder. `mono` suits Markdown source, such as a document; `sans` suits a message composer whose text later shows in the interface font. |
 | `fill` | `boolean` | `false` | Fills the available parent height instead of using `lines`. |
 
 Native form and accessibility properties include `name`, `id`, `"aria-label"`,
@@ -93,7 +94,7 @@ const [textarea, setTextarea] = createSignal<HTMLTextAreaElement>();
 const [composer, setComposer] = createSignal<HTMLDivElement>();
 
 <div ref={setComposer} class="composer">
-  <MarkdownEditor variant="embedded" noToolbar value={text()} onValueChange={setText} textareaRef={setTextarea} />
+  <MarkdownEditor variant="embedded" noToolbar font="sans" value={text()} onValueChange={setText} textareaRef={setTextarea} />
   <SlashCommands textarea={textarea()} items={commands} composer={composer()} />
 </div>
 ```
@@ -126,6 +127,11 @@ to only one of them.
 ## Editing behavior
 
 The editor keeps a native textarea as the input surface. A synchronized presentation layer provides markdown highlighting without replacing browser selection, composition, or undo behavior.
+
+Both layers and the placeholder read one font from the editor's root, with the same size, line height, letter
+spacing, and tab size, so the caret and the selection stay on the highlighted text in either `font`. For the same
+reason, inline code and code blocks inside the editor use the editor's font; they stand out by their marks and
+highlighting, not by a font of their own.
 
 The toolbar covers bold, italic, inline code, links, three heading levels,
 bulleted and numbered lists, and quotes. It includes matching keyboard
