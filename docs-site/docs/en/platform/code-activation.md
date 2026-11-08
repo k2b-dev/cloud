@@ -5,7 +5,7 @@ section: Platform services
 order: 963
 description: Switch an approved Code version on with its current account rights and a durable version entry.
 tags: [code, identity, permissions]
-updated: 2026-11-04
+updated: 2026-11-08
 ---
 
 # Activate a Code version
@@ -152,3 +152,7 @@ nothing. Switching on another version confirms a new entry and atomically
 pauses the old policy-bearing entry. New policy-free entries keep their normal
 run-draining lifecycle. To confirm again, switch on a new version through the
 existing activation flow.
+
+Pause and resume reviews are read-only snapshots. Resource and application
+managers can review the active version without changing Code state or cached
+owner presentation; the confirmed action performs the change.

@@ -3,7 +3,12 @@ import { sql } from "@k2b/cloud";
 import * as provider from "@k2b/cloud/capabilities/server";
 import { compileCapabilityManifest } from "@k2b/cloud/capabilities/testing";
 import type { CapabilityExecutionContext, User } from "@k2b/cloud/contracts";
-import { CAPABILITY_MAX_RESULT_BYTES, CapabilityActionCallReviewSchema, CloudResourceReaderViewSchema } from "@k2b/cloud/contracts";
+import {
+  CAPABILITY_MAX_RESULT_BYTES,
+  CapabilityActionCallReviewSchema,
+  CapabilityFileMetadataSchema,
+  CloudResourceReaderViewSchema,
+} from "@k2b/cloud/contracts";
 import { approvalArgsDigest, approvals, migrateApprovals } from "@k2b/cloud/services/approvals";
 import { createTestBrowserSignIn } from "@k2b/cloud/services/session/session.test-fixture";
 import { z } from "zod";
@@ -20,6 +25,7 @@ import { migrate as migrateEvents } from "../migrate/core/events";
 import { migrate as migratePwa } from "../migrate/core/pwa";
 import { migrate as migrateSettings } from "../migrate/core/settings";
 import type { CodeContext } from "./access";
+import * as access from "./access";
 import * as authoringChecks from "./authoring-check";
 import type { Code, CodeSourceFiles } from "./contracts";
 import type { CodePolicyRow } from "./policy-contracts";
@@ -247,6 +253,66 @@ databaseSuite()("C8 immutable versions, comparisons and platform decisions", () 
     } finally {
       serverCheck.mockReset();
       serverCheck.mockResolvedValue();
+    }
+  });
+  test("version submission accepts FileRef reads and generic file writes, but refuses other write streams", async () => {
+    const original = await provider.getCapabilityCatalogApp("example", author.locale, author.authority);
+    if (!original.ok || !original.data) throw new Error("Missing fixture catalog");
+    try {
+      for (const kind of ["read", "write", "unsupported-write"] as const) {
+        const entry = structuredClone(original.data);
+        const code = await newCode();
+        const draft = input(code, `stream ${kind}`, null, [kind === "read" ? "read" : "silent_shared"]);
+        if (kind === "read") {
+          entry.manifest.queries[0]!.stream = { direction: "read", maxBytes: 1024 };
+        } else {
+          const action = entry.manifest.actions.find((operation) => operation.localId === "item.change")!;
+          action.stream = { direction: "write", maxBytes: 1024 };
+          if (kind === "write") action.inputSchema = z.toJSONSchema(z.object({ file: CapabilityFileMetadataSchema }).strict());
+        }
+        catalogSpy.mockResolvedValue({ ...original, data: entry });
+        if (kind === "unsupported-write") {
+          await expect(submitCodeVersion(draft, author)).rejects.toMatchObject({ code: "code_manifest_invalid" });
+          expect(await sql`SELECT id FROM code.versions WHERE code_id=${code.id}`).toHaveLength(0);
+        } else {
+          const submitted = await submitCodeVersion(draft, author);
+          const [stored] = await sql<{ manifest: CodeCheckedVersionManifest }[]>`
+            SELECT manifest FROM code.versions WHERE id=${submitted.version.id}::uuid`;
+          expect(stored?.manifest.permissions).toEqual(draft.manifest.permissions);
+          expect(await sql`SELECT id FROM code.versions WHERE code_id=${code.id}`).toHaveLength(1);
+        }
+      }
+    } finally {
+      catalogSpy.mockResolvedValue(original);
+    }
+  });
+  test("resource and application managers can review pause and resume without changing durable state", async () => {
+    const owner = spyOn(access, "readCodeOwner").mockResolvedValue({ title: "Original owner", admin: true });
+    const manager = context(strangerId);
+    try {
+      for (const codeOwner of [
+        { kind: "resource", ref: { type: "example.item", id: "preview-owner" } },
+        { kind: "app", appId: "example" },
+      ] as const) {
+        owner.mockResolvedValue({ title: "Original owner", admin: true });
+        const code = await createCode({ owner: codeOwner, title: "Preview fixture" }, manager);
+        await activate(code, await submitCodeVersion(input(code, "preview", null, ["read"]), manager));
+        for (const title of ["Original owner", "Renamed owner"]) {
+          owner.mockResolvedValue({ title, admin: true });
+          const beforeCode = await sql`SELECT * FROM code.codes WHERE id=${code.id}`;
+          const beforeAccount = await sql`SELECT * FROM auth.service_accounts WHERE id=${code.serviceAccountId}::uuid`;
+          for (const paused of [true, false]) {
+            const review = await reviewCodeExecutionChange(code.id, paused, manager);
+            expect(CapabilityActionCallReviewSchema.safeParse(review).success).toBe(true);
+            if (review.content?.kind !== "page") throw new Error("Missing execution review");
+            expect(JSON.parse(review.content.body)).toMatchObject({ codeId: code.id, after: paused ? "paused" : "active" });
+          }
+          expect(await sql`SELECT * FROM code.codes WHERE id=${code.id}`).toEqual(beforeCode);
+          expect(await sql`SELECT * FROM auth.service_accounts WHERE id=${code.serviceAccountId}::uuid`).toEqual(beforeAccount);
+        }
+      }
+    } finally {
+      owner.mockRestore();
     }
   });
   test("forward migration is additive and idempotent over filled version evidence", async () => {
