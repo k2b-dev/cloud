@@ -98,7 +98,7 @@ const portableSections = [
         "choice-slider",
         "ChoiceSlider",
         "ti ti-adjustments-alt",
-        "A slider over a few named stops with a fixed description line and unavailable stops.",
+        "A slider over a few named stops with a fixed description line and unavailable stops, and its indicator for triggers.",
       ),
       page("icon", "IconInput", "ti ti-icons", "Searchable controlled icon selection."),
       page("image", "ImageInput", "ti ti-photo", "Controlled image selection, preview, transform, and removal."),

@@ -107,7 +107,7 @@ jobs:
             echo "grids=$(match '^packages/grids/')"
             echo "ui=$(match '^(packages/ui/|packages/ssr/|fixtures/ui-ssr/)')"
             echo "docs=$(match '^(docs-site/|skills/)')"
-            echo "images=$(match '^(Dockerfile|\.dockerignore|docs-site/Dockerfile|pwas/|compose[^/]*\.yml)')"
+            echo "images=$(match '^(packages/speedtest/|Dockerfile|\.dockerignore|docs-site/Dockerfile|pwas/|compose[^/]*\.yml)')"
             echo "packed=$(match '^(packages/cloud/|packages/gateway/src/config\.ts|packages/ui/|packages/ssr/|packages/editor/|packages/core/src/|scripts/check-cloud-packed-consumer\.ts|scripts/fixtures/packed-consumer-)')"
             echo "releasebody=$(match '^(scripts/(check-)?release-pr-body(\.test)?\.ts|scripts/fixtures/release-pr-body/[^/]+|\.github/workflows/main\.yml)$')"
             echo "release=$(match '^\.release-please-manifest\.json$')"
@@ -734,6 +734,28 @@ jobs:
           tags: cloud-notes:ci
           cache-from: type=gha,scope=ci-notes
           cache-to: type=gha,mode=max,scope=ci-notes
+      - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          file: packages/speedtest/Dockerfile
+          platforms: linux/amd64
+          load: true
+          tags: cloud-speedtest:ci
+          cache-from: type=gha,scope=ci-speedtest
+          cache-to: type=gha,mode=max,scope=ci-speedtest
+      - name: Boot standalone speedtest without Cloud infrastructure
+        run: |
+          set -euo pipefail
+          docker run --detach --name speedtest --publish 127.0.0.1:18080:8080 cloud-speedtest:ci
+          trap 'docker logs speedtest; docker rm -f speedtest' EXIT
+          for attempt in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:18080/health; then break; fi
+            sleep 1
+          done
+          test "$(curl -fsS http://127.0.0.1:18080/health)" = ok
+          curl -fsS -D /tmp/speedtest-headers http://127.0.0.1:18080/cli -o /tmp/speedtest.mjs
+          grep -qi 'content-type: text/javascript' /tmp/speedtest-headers
+          node /tmp/speedtest.mjs --help
       - name: Boot core and gateway against fresh infrastructure
         env:
           # Match the release/nightly smoke: both containers recognize the loopback Host immediately.
