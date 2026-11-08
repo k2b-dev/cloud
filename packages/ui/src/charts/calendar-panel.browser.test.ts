@@ -80,139 +80,156 @@ afterAll(async () => {
 });
 
 for (const width of [390, 800, 1440, 1920])
-  test(`26-week calendar fills its real panel and reserves all states at ${width}px`, async () => {
-    const browser = panelBrowser;
-    const server = panelServer;
-    {
-      const page = await browser.newPage({ viewport: { width, height: 900 }, hasTouch: true, reducedMotion: "reduce" });
-      try {
-        const errors = pageErrors(page);
-        await page.setContent(`<!doctype html><html><head><meta name="viewport" content="width=device-width, initial-scale=1"><style>${await Bun.file(resolve(root, "dist/styles.css")).text()}
+  for (const proof of ["layout", "inspection", "states", ...(width === 1920 ? ["resize"] : [])])
+    test(`26-week calendar fills its real panel at ${width}px: ${proof}`, async () => {
+      const browser = panelBrowser;
+      const server = panelServer;
+      {
+        const page = await browser.newPage({ viewport: { width, height: 900 }, hasTouch: true, reducedMotion: "reduce" });
+        try {
+          const errors = pageErrors(page);
+          await page.setContent(`<!doctype html><html><head><meta name="viewport" content="width=device-width, initial-scale=1"><style>${await Bun.file(resolve(root, "dist/styles.css")).text()}
         body{margin:0;font-family:Arial}.grid{display:grid;grid-template-columns:2fr 1fr;gap:20px;padding:24px}.panel{min-width:0;border:1px solid #ddd;padding:16px;border-radius:12px}@media(max-width:860px){.grid{grid-template-columns:1fr}}@media(max-width:700px){.grid{padding:16px}.panel{padding:12px}}
         </style></head><body><section class="k2b-ui"><div class="grid"><article class="panel" id="mount">${server}</article><aside>Opens by country</aside></div>
         ${["data", "loading", "empty", "error", "stale"].map((s) => `<button data-state="${s}">${s}</button>`).join("")}<button id="table">Table</button></section></body></html>`);
-        await settled(page);
-        // The server frame already opens at the newest end, before mounting.
-        const serverChart = page.locator(".k2b-chart"),
-          serverNewest = await serverChart.locator("[data-chart-datum] rect").last().boundingBox(),
-          serverViewport = await serverChart.boundingBox();
-        expect(await serverChart.evaluate((e) => e.scrollLeft)).toBe(0);
-        expect(serverNewest!.x).toBeGreaterThanOrEqual(serverViewport!.x);
-        expect(serverNewest!.x + serverNewest!.width).toBeLessThanOrEqual(serverViewport!.x + serverViewport!.width + 1);
-        const gaps = await serverChart.evaluate((e) => {
-          const label = e.querySelector("[data-calendar-weekdays] text")!.getBoundingClientRect(),
-            cell = Array.from(e.querySelectorAll("[data-chart-datum] rect"))
-              .map((r) => r.getBoundingClientRect())
-              .filter((r) => r.left >= label.right - 0.1)
-              .sort((a, b) => a.left - b.left)[0]!,
-            legend = e.querySelector("[data-calendar-legend]")!,
-            start = legend.querySelector("text")!.getBoundingClientRect(),
-            swatch = legend.querySelector("rect")!.getBoundingClientRect();
-          return { day: cell.left - label.right, legend: swatch.left - start.right };
-        });
-        const mask = await serverChart.locator("[data-calendar-weekdays] > rect").boundingBox();
-        expect(mask!.x).toBeLessThanOrEqual(serverViewport!.x);
-        expect(gaps.day).toBeGreaterThanOrEqual(0);
-        expect(gaps.day).toBeLessThanOrEqual(8);
-        expect(gaps.legend).toBeGreaterThan(0);
-        expect(gaps.legend).toBeLessThanOrEqual(10);
-        const serverPinned = await serverChart
-          .locator("[data-calendar-pinned] text")
-          .evaluateAll((nodes) => nodes.map((e) => e.getBoundingClientRect().toJSON()));
-        const svg = await page.locator(".k2b-chart__svg > svg").evaluate((e) => e.outerHTML);
-        const serverStyle = await serverChart.evaluate((e) => (e as HTMLElement).style.cssText);
-        const box = (e: Element) => {
-          const b = e.getBoundingClientRect();
-          return { x: b.x + scrollX, y: b.y + scrollY, width: b.width, height: b.height };
-        };
-        const panel = page.locator(".panel"),
-          viewport = page.locator(".k2b-chart-explorer__viewport");
-        const initial = await panel.evaluate(box),
-          initialViewport = await viewport.evaluate(box);
-        await page.locator("#mount").evaluate((e) => e.replaceChildren());
-        await page.addScriptTag({ content: panelScript });
-        await settled(page);
-        expect(await page.locator(".k2b-chart__svg > svg").evaluate((e) => e.outerHTML)).toBe(svg);
-        expect(await panel.evaluate(box)).toEqual(initial);
-        expect(await viewport.evaluate(box)).toEqual(initialViewport);
-        const chart = page.locator(".k2b-chart"),
-          drawing = page.locator(".k2b-chart__svg");
-        expect(await chart.evaluate((e) => (e as HTMLElement).style.cssText)).toBe(serverStyle);
-        expect(
-          await chart.locator("[data-calendar-pinned] text").evaluateAll((nodes) => nodes.map((e) => e.getBoundingClientRect().toJSON())),
-        ).toEqual(serverPinned);
-        const cell = await chart.locator("[data-chart-datum] rect").last().boundingBox();
-        const chartBox = await chart.boundingBox(),
-          drawingBox = await drawing.boundingBox();
-        expect(Math.abs(cell!.width - cell!.height)).toBeLessThan(0.2);
-        expect(cell!.width).toBeGreaterThanOrEqual(13.9);
-        expect(cell!.width).toBeLessThanOrEqual(32.1);
-        const expectedWidth = Math.min(snapshot.maxWidth!, Math.max(snapshot.minWidth!, chartBox!.width));
-        expect(Math.abs(drawingBox!.width - expectedWidth)).toBeLessThan(1);
-        expect(Math.abs(drawingBox!.height + 16 - initialViewport.height)).toBeLessThan(1);
-        expect(
-          Math.abs(
-            drawingBox!.width > chartBox!.width
-              ? drawingBox!.x + drawingBox!.width - chartBox!.x - chartBox!.width
-              : drawingBox!.x - chartBox!.x,
-          ),
-        ).toBeLessThan(1);
-        const scroll = await chart.evaluate((e) => ({ left: e.scrollLeft, full: e.scrollWidth, width: e.clientWidth }));
-        expect(scroll.full > scroll.width + 1).toBe(chartBox!.width < snapshot.minWidth! - 1);
-        expect(scroll.left).toBe(0);
-        expect(cell!.x + cell!.width).toBeLessThanOrEqual(chartBox!.x + chartBox!.width + 1);
-        const legend = await chart.locator("[data-calendar-legend]").boundingBox();
-        expect(drawingBox!.y + drawingBox!.height - legend!.y - legend!.height).toBeLessThan(16);
-        expect(legend!.y + legend!.height).toBeLessThanOrEqual(chartBox!.y + (await chart.evaluate((e) => e.clientHeight)));
-        expect(
-          await chart.locator("[data-calendar-month]").evaluateAll((nodes) => {
-            const visible = nodes.filter((e) => getComputedStyle(e).visibility !== "hidden");
-            return visible.every((e, i) => i === 0 || e.getBoundingClientRect().left >= visible[i - 1]!.getBoundingClientRect().right);
-          }),
-        ).toBe(true);
-        if (process.env.CHART_SCREENSHOTS)
-          await page.screenshot({ path: `${process.env.CHART_SCREENSHOTS}/calendar-data-light-${width}.png`, fullPage: true });
-        await chart.evaluate((e) => (e.scrollLeft = -e.scrollWidth));
-        await settled(page);
-        const oldScroll = await chart.evaluate((e) => e.scrollLeft);
-        await chart.locator("[data-chart-datum] rect").first().tap();
-        await settled(page);
-        expect(await chart.evaluate((e) => e.scrollLeft)).toBe(oldScroll);
-        expect(await chart.locator("[data-selected]").count()).toBe(1);
-        await page.keyboard.press("Escape");
-        for (const state of ["loading", "empty", "error", "stale", "data"]) {
-          await page.locator(`button[data-state="${state}"]`).click();
+          await settled(page);
+          // The server frame already opens at the newest end, before mounting.
+          const serverChart = page.locator(".k2b-chart");
+          if (proof === "layout") {
+            const serverNewest = await serverChart.locator("[data-chart-datum] rect").last().boundingBox(),
+              serverViewport = await serverChart.boundingBox();
+            expect(await serverChart.evaluate((e) => e.scrollLeft)).toBe(0);
+            expect(serverNewest!.x).toBeGreaterThanOrEqual(serverViewport!.x);
+            expect(serverNewest!.x + serverNewest!.width).toBeLessThanOrEqual(serverViewport!.x + serverViewport!.width + 1);
+            const gaps = await serverChart.evaluate((e) => {
+              const label = e.querySelector("[data-calendar-weekdays] text")!.getBoundingClientRect(),
+                cell = Array.from(e.querySelectorAll("[data-chart-datum] rect"))
+                  .map((r) => r.getBoundingClientRect())
+                  .filter((r) => r.left >= label.right - 0.1)
+                  .sort((a, b) => a.left - b.left)[0]!,
+                legend = e.querySelector("[data-calendar-legend]")!,
+                start = legend.querySelector("text")!.getBoundingClientRect(),
+                swatch = legend.querySelector("rect")!.getBoundingClientRect();
+              return { day: cell.left - label.right, legend: swatch.left - start.right };
+            });
+            const mask = await serverChart.locator("[data-calendar-weekdays] > rect").boundingBox();
+            expect(mask!.x).toBeLessThanOrEqual(serverViewport!.x);
+            expect(gaps.day).toBeGreaterThanOrEqual(0);
+            expect(gaps.day).toBeLessThanOrEqual(8);
+            expect(gaps.legend).toBeGreaterThan(0);
+            expect(gaps.legend).toBeLessThanOrEqual(10);
+          }
+          const serverPinned =
+            proof === "layout"
+              ? await serverChart
+                  .locator("[data-calendar-pinned] text")
+                  .evaluateAll((nodes) => nodes.map((e) => e.getBoundingClientRect().toJSON()))
+              : [];
+          const svg = proof === "layout" ? await page.locator(".k2b-chart__svg > svg").evaluate((e) => e.outerHTML) : "";
+          const serverStyle = proof === "layout" ? await serverChart.evaluate((e) => (e as HTMLElement).style.cssText) : "";
+          const box = (e: Element) => {
+            const b = e.getBoundingClientRect();
+            return { x: b.x + scrollX, y: b.y + scrollY, width: b.width, height: b.height };
+          };
+          const panel = page.locator(".panel"),
+            viewport = page.locator(".k2b-chart-explorer__viewport");
+          const initial = await panel.evaluate(box),
+            initialViewport = await viewport.evaluate(box);
+          await page.locator("#mount").evaluate((e) => e.replaceChildren());
+          await page.addScriptTag({ content: panelScript });
           await settled(page);
           expect(await panel.evaluate(box)).toEqual(initial);
           expect(await viewport.evaluate(box)).toEqual(initialViewport);
-          if (state === "error") {
-            await page.locator(".k2b-chart-explorer__state button").click();
+          const chart = page.locator(".k2b-chart"),
+            drawing = page.locator(".k2b-chart__svg");
+          // Keep each unchanged default deadline focused on one contract instead
+          // of combining layout, touch/resize and all request transitions.
+          if (proof === "layout") {
+            expect(await page.locator(".k2b-chart__svg > svg").evaluate((e) => e.outerHTML)).toBe(svg);
+            expect(await chart.evaluate((e) => (e as HTMLElement).style.cssText)).toBe(serverStyle);
+            expect(
+              await chart
+                .locator("[data-calendar-pinned] text")
+                .evaluateAll((nodes) => nodes.map((e) => e.getBoundingClientRect().toJSON())),
+            ).toEqual(serverPinned);
+            const cell = await chart.locator("[data-chart-datum] rect").last().boundingBox();
+            const chartBox = await chart.boundingBox(),
+              drawingBox = await drawing.boundingBox();
+            expect(Math.abs(cell!.width - cell!.height)).toBeLessThan(0.2);
+            expect(cell!.width).toBeGreaterThanOrEqual(13.9);
+            expect(cell!.width).toBeLessThanOrEqual(32.1);
+            const expectedWidth = Math.min(snapshot.maxWidth!, Math.max(snapshot.minWidth!, chartBox!.width));
+            expect(Math.abs(drawingBox!.width - expectedWidth)).toBeLessThan(1);
+            expect(Math.abs(drawingBox!.height + 16 - initialViewport.height)).toBeLessThan(1);
+            expect(
+              Math.abs(
+                drawingBox!.width > chartBox!.width
+                  ? drawingBox!.x + drawingBox!.width - chartBox!.x - chartBox!.width
+                  : drawingBox!.x - chartBox!.x,
+              ),
+            ).toBeLessThan(1);
+            const scroll = await chart.evaluate((e) => ({ left: e.scrollLeft, full: e.scrollWidth, width: e.clientWidth }));
+            expect(scroll.full > scroll.width + 1).toBe(chartBox!.width < snapshot.minWidth! - 1);
+            expect(scroll.left).toBe(0);
+            expect(cell!.x + cell!.width).toBeLessThanOrEqual(chartBox!.x + chartBox!.width + 1);
+            const legend = await chart.locator("[data-calendar-legend]").boundingBox();
+            expect(drawingBox!.y + drawingBox!.height - legend!.y - legend!.height).toBeLessThan(16);
+            expect(legend!.y + legend!.height).toBeLessThanOrEqual(chartBox!.y + (await chart.evaluate((e) => e.clientHeight)));
+            expect(
+              await chart.locator("[data-calendar-month]").evaluateAll((nodes) => {
+                const visible = nodes.filter((e) => getComputedStyle(e).visibility !== "hidden");
+                return visible.every((e, i) => i === 0 || e.getBoundingClientRect().left >= visible[i - 1]!.getBoundingClientRect().right);
+              }),
+            ).toBe(true);
+            if (process.env.CHART_SCREENSHOTS)
+              await page.screenshot({ path: `${process.env.CHART_SCREENSHOTS}/calendar-data-light-${width}.png`, fullPage: true });
+          }
+          if (proof === "inspection") {
+            await chart.evaluate((e) => (e.scrollLeft = -e.scrollWidth));
+            await settled(page);
+            const oldScroll = await chart.evaluate((e) => e.scrollLeft);
+            await chart.locator("[data-chart-datum] rect").first().tap();
+            await settled(page);
+            expect(await chart.evaluate((e) => e.scrollLeft)).toBe(oldScroll);
+            expect(await chart.locator("[data-selected]").count()).toBe(1);
+            await page.keyboard.press("Escape");
+          }
+          if (proof === "resize") {
+            await page.setViewportSize({ width: 390, height: 900 });
+            await settled(page);
+            expect(await chart.evaluate((e) => e.scrollLeft)).toBe(0);
+            const newest = await chart.locator("[data-chart-datum] rect").last().boundingBox(),
+              visible = await chart.boundingBox();
+            expect(newest!.x + newest!.width).toBeLessThanOrEqual(visible!.x + visible!.width + 1);
+            await page.setViewportSize({ width, height: 900 });
             await settled(page);
             expect(await panel.evaluate(box)).toEqual(initial);
           }
+          if (proof === "states") {
+            for (const state of ["loading", "empty", "error", "stale", "data"]) {
+              // These raw buttons only drive the fixture's signal; their actionability
+              // is not a product interaction. Keep real tap/retry actions above/below.
+              await page.locator(`button[data-state="${state}"]`).dispatchEvent("click");
+              await settled(page);
+              expect(await panel.evaluate(box)).toEqual(initial);
+              expect(await viewport.evaluate(box)).toEqual(initialViewport);
+              if (state === "error") {
+                await page.locator(".k2b-chart-explorer__state button").click();
+                await settled(page);
+                expect(await panel.evaluate(box)).toEqual(initial);
+              }
+            }
+            await page.locator("#table").dispatchEvent("click");
+            await settled(page);
+            expect(await panel.evaluate(box)).toEqual(initial);
+            expect((await viewport.evaluate(box)).height).toBe(initialViewport.height + 16);
+          }
+          expect(errors).toEqual([]);
+        } finally {
+          await page.close();
         }
-        await page.locator("#table").click();
-        await settled(page);
-        expect(await panel.evaluate(box)).toEqual(initial);
-        expect((await viewport.evaluate(box)).height).toBe(initialViewport.height + 16);
-        if (width === 1920) {
-          await page.locator("#table").click();
-          await page.setViewportSize({ width: 390, height: 900 });
-          await settled(page);
-          expect(await chart.evaluate((e) => e.scrollLeft)).toBe(0);
-          const newest = await chart.locator("[data-chart-datum] rect").last().boundingBox(),
-            visible = await chart.boundingBox();
-          expect(newest!.x + newest!.width).toBeLessThanOrEqual(visible!.x + visible!.width + 1);
-          await page.setViewportSize({ width, height: 900 });
-          await settled(page);
-          expect(await panel.evaluate(box)).toEqual(initial);
-        }
-        expect(errors).toEqual([]);
-      } finally {
-        await page.close();
       }
-    }
-  });
+    });
 
 for (const emptySnapshot of [false, true])
   test(`calendar first load ${emptySnapshot ? "with an empty snapshot" : "without a snapshot"} keeps its frame and intrinsic width`, async () => {
@@ -262,9 +279,8 @@ for (const emptySnapshot of [false, true])
       ],
     });
     expect(build.success).toBe(true);
-    const browser = await launchBrowser();
+    const page = await panelBrowser.newPage({ viewport: { width: 900, height: 900 }, reducedMotion: "reduce" });
     try {
-      const page = await browser.newPage({ viewport: { width: 900, height: 900 }, reducedMotion: "reduce" });
       const errors = pageErrors(page);
       await page.setContent(
         `<!doctype html><style>${await Bun.file(resolve(root, "dist/styles.css")).text()}body{margin:24px;font-family:Arial}.host{display:inline-block;max-width:100%;border:1px solid #ddd;padding:16px}</style><main class="k2b-ui"><article class="host" id="mount">${server}</article><button id="load">Load</button></main>`,
@@ -301,14 +317,14 @@ for (const emptySnapshot of [false, true])
       expect(await host.evaluate(box)).toEqual(first);
       expect(await viewport.evaluate(box)).toEqual(reserve);
       for (let i = 0; i < 3; i++) {
-        await page.locator("#load").click();
+        await page.locator("#load").dispatchEvent("click");
         await settled(page);
         expect(await host.evaluate(box)).toEqual(first);
         expect(await viewport.evaluate(box)).toEqual(reserve);
       }
       expect(errors).toEqual([]);
     } finally {
-      await browser.close();
+      await page.close();
     }
   });
 
