@@ -60,7 +60,7 @@ const pinPageClock = (at: number) => {
 const at = (minutesAgo: number) => new Date(now - minutesAgo * 60_000).toISOString();
 
 type Locale = "de" | "en";
-type Scenario = "three" | "two" | "one" | "none";
+type Scenario = "three" | "two" | "one" | "oneElsewhere" | "none";
 type ChatId = "Wart42" | "Tops42" | "Urlb42";
 
 const titles = (locale: Locale): Record<ChatId, string> => ({
@@ -77,7 +77,9 @@ const pendingKeys = (scenario: Scenario): { Wart42: ("mail" | "del")[]; Tops42: 
       ? { Wart42: ["del"], Tops42: ["routine"] }
       : scenario === "one"
         ? { Wart42: ["mail"], Tops42: [] }
-        : { Wart42: [], Tops42: [] };
+        : scenario === "oneElsewhere"
+          ? { Wart42: [], Tops42: ["routine"] }
+          : { Wart42: [], Tops42: [] };
 
 const conversation = (locale: Locale, id: ChatId, minutesAgo: number, waiting: boolean): AiConversation => ({
   id,
@@ -397,6 +399,8 @@ const open = async (
     // The chat's stream stays open and quiet.
     if (url.pathname.endsWith("/stream")) return;
     if (url.pathname === "/api/approvals") return route.fulfill({ json: { items: [], nextCursor: null, count: 0, elsewhere: 0 } });
+    if (url.pathname === "/api/capabilities/v1/queries/core/code.attention.list")
+      return route.fulfill({ json: { data: { items: [], nextCursor: null } } });
     if (url.pathname === "/api/capabilities/v1/catalog")
       return route.fulfill({ json: { protocolVersion: 2, apps: [], page: { hasMore: false } } });
     // The rest of the chat's own loads answer empty, so the page shows nothing but the chat.
@@ -421,10 +425,11 @@ const open = async (
 };
 
 const strip = (page: Page) => page.locator("nav.assistant-waiting");
-const entries = (page: Page) =>
+const line = (page: Page) =>
   strip(page)
-    .locator(".assistant-waiting__entry")
-    .evaluateAll((buttons) => buttons.map((button) => (button.textContent ?? "").replace(/\s+/g, " ").trim()));
+    .locator(".assistant-waiting__text")
+    .evaluate((text) => (text.textContent ?? "").replace(/\s+/g, " ").trim());
+const viewButton = (page: Page) => strip(page).getByRole("button", { name: "Ansehen", exact: true });
 const rect = (page: Page, selector: string) =>
   page
     .locator(selector)
@@ -489,7 +494,7 @@ const focusedSentence = (page: Page) =>
   });
 
 const short = (locale: Locale, key: "mail" | "del" | "routine") => question(locale, key, "Wart42", 0).short;
-const height = (view: View) => (view.touch ? 44 : 40);
+const stripHeight = (page: Page) => page.evaluate(() => 3.25 * Number.parseFloat(getComputedStyle(document.documentElement).fontSize));
 
 describe("Waiting for you", () => {
   for (const view of [desktop, phone, panel])
@@ -500,25 +505,20 @@ describe("Waiting for you", () => {
         try {
           await strip(page).waitFor();
           expect(await strip(page).getAttribute("aria-label")).toBe("Wartet auf dich");
-          // This chat's questions first, in the order they were asked, then the other chat's with its name.
-          expect(await entries(page)).toEqual([
-            short("de", "mail"),
-            short("de", "del"),
-            `${short("de", "routine")} in Team Ops Wochenplanung`,
-          ]);
+          expect(await line(page)).toBe("Gustav wartet auf 3 Freigaben");
           expect(await strip(page).getAttribute("data-quiet")).toBeNull();
-          // Every entry is a ghost button; there is no way to answer several at once.
-          expect(await strip(page).locator(".assistant-waiting__entry").count()).toBe(3);
-          expect(await strip(page).locator(".assistant-waiting__entry:not([data-variant='ghost'])").count()).toBe(0);
+          // One View button leads to the questions; there is no way to answer several at once.
+          expect(await strip(page).getByRole("button").count()).toBe(1);
+          expect(await viewButton(page).count()).toBe(1);
           expect(await page.getByRole("button", { name: /alle (freigeben|bestätigen|erlauben)|approve all/i }).count()).toBe(0);
-          // The row sits right above the field, inside the composer's width, at one fixed height; it scrolls sideways.
+          // The row sits right above the field, inside the composer's width, at one fixed height.
           const row = await rect(page, "nav.assistant-waiting");
           const field = await rect(page, ".k2b-chat-composer");
           expect(row.bottom).toBeLessThanOrEqual(field.top + 1);
           expect(field.top - row.bottom).toBeLessThanOrEqual(12);
           expect(row.left).toBeGreaterThanOrEqual(field.left - 1);
           expect(row.right).toBeLessThanOrEqual(field.right + 1);
-          expect(row.height).toBe(height(view));
+          expect(row.height).toBe(await stripHeight(page));
           expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
           const composerTop = field.top;
           // Both chats with an open question carry the dot in the list, the other chat none.
@@ -540,8 +540,7 @@ describe("Waiting for you", () => {
           // Two pending: the mail was answered elsewhere; the row and the field stay where they were.
           state.scenario = "two";
           await changed(page, "Wart42");
-          await until(page, async () => (await entries(page)).length === 2, "two entries");
-          expect(await entries(page)).toEqual([short("de", "del"), `${short("de", "routine")} in Team Ops Wochenplanung`]);
+          await until(page, async () => (await line(page)) === "Gustav wartet auf 2 Freigaben", "two approvals");
           expect(await rect(page, "nav.assistant-waiting")).toEqual(row);
           expect((await rect(page, ".k2b-chat-composer")).top).toBe(composerTop);
 
@@ -549,6 +548,7 @@ describe("Waiting for you", () => {
           state.scenario = "none";
           await changed(page, null);
           await strip(page).waitFor({ state: "detached" });
+          expect((await rect(page, ".k2b-chat-composer")).top).toBe(composerTop);
           expect(errors).toEqual([]);
           expect(unrouted).toEqual([]);
         } finally {
@@ -566,23 +566,28 @@ describe("Waiting for you", () => {
         // The chat opens at its end, where the answers are.
         expect(await strip(page).getAttribute("data-quiet")).toBe("");
         expect(await strip(page).evaluate((nav) => getComputedStyle(nav).visibility)).toBe("hidden");
+        expect(await strip(page).evaluate((nav) => nav.hasAttribute("inert"))).toBe(true);
         const row = await rect(page, "nav.assistant-waiting");
         const field = await rect(page, ".k2b-chat-composer");
-        expect(row.height).toBe(height(view));
+        expect(row.height).toBe(await stripHeight(page));
         // Hidden, it is out of the tab order and the accessibility tree.
         expect(await page.getByRole("navigation", { name: "Wartet auf dich" }).count()).toBe(0);
 
         await scrollTimeline(page, "top");
         await until(page, async () => (await strip(page).getAttribute("data-quiet")) === null, "row shows");
         expect(await strip(page).evaluate((nav) => getComputedStyle(nav).visibility)).toBe("visible");
-        expect(await entries(page)).toEqual([short("de", "mail")]);
+        expect(await strip(page).evaluate((nav) => nav.hasAttribute("inert"))).toBe(false);
+        expect(await line(page)).toBe(`Gustav wartet auf deine Freigabe: ${short("de", "mail")}`);
         // The reserved place: nothing moved.
         expect(await rect(page, "nav.assistant-waiting")).toEqual(row);
         expect(await rect(page, ".k2b-chat-composer")).toEqual(field);
 
-        // The entry leads back to the question.
-        await strip(page).locator(".assistant-waiting__entry").first().click();
+        // View leads back to the question.
+        await viewButton(page).click();
         await until(page, async () => (await focusedSentence(page)) === "tool-mail-1", "sentence focused");
+        // On a narrow column the approval is taller than the view below its sentence; once its answers are in view, the
+        // row hides again.
+        await scrollTimeline(page, "end");
         await until(page, async () => (await strip(page).getAttribute("data-quiet")) === "", "row hides again");
         await settled(page);
         expect(await rect(page, "nav.assistant-waiting")).toEqual(row);
@@ -596,46 +601,51 @@ describe("Waiting for you", () => {
 
   for (const view of [desktop, phone])
     test(`a jump into another chat at ${view.name} focuses its sentence; reload and back keep the place`, async () => {
-      const state: State = { locale: "de", scenario: "three" };
+      const state: State = { locale: "de", scenario: "oneElsewhere" };
       const { page, errors, unrouted, close } = await open(view, state, { slowMessageDocument: true });
       try {
         await strip(page).waitFor();
-        await strip(page)
-          .getByRole("button", { name: /in Team Ops Wochenplanung/ })
-          .click();
+        const elsewhere = `Gustav wartet auf deine Freigabe: ${short("de", "routine")} in Team Ops Wochenplanung`;
+        expect(await line(page)).toBe(elsewhere);
+        await viewButton(page).click();
         await page.waitForURL(/\?conversation=Tops42&question=tool-routine-1$/);
         await until(page, async () => (await focusedSentence(page)) === "tool-routine-1", "sentence of the other chat focused");
         await settled(page);
-        // The sentence is in view, and the open chat's question now leads the row; the others name their chat.
+        // The sentence is in view; its only question now belongs to this chat, so the strip is quiet.
         const sentence = await rect(page, '[data-chat-anchor="tool-routine-1"] .k2b-chat-decision__sentence');
         expect(sentence.top).toBeGreaterThanOrEqual(0);
         expect(sentence.bottom).toBeLessThanOrEqual((await rect(page, "nav.assistant-waiting")).top);
         // Its question ends the chat, so the chat stays at its end and keeps following.
         expect(await page.getByText("Zur neuesten Nachricht").count()).toBe(0);
-        const there = [short("de", "routine"), `${short("de", "mail")} in Wartung Oktober`, `${short("de", "del")} in Wartung Oktober`];
-        expect(await entries(page)).toEqual(there);
+        const there = `Gustav wartet auf deine Freigabe: ${short("de", "routine")}`;
+        expect(await line(page)).toBe(there);
+        await until(page, async () => (await strip(page).getAttribute("data-quiet")) === "", "destination strip is quiet");
 
         await page.reload();
-        await strip(page).waitFor();
+        await strip(page).waitFor({ state: "attached" });
         expect(new URL(page.url()).search).toBe("?conversation=Tops42&question=tool-routine-1");
         await until(page, async () => (await focusedSentence(page)) === "tool-routine-1", "sentence focused after reload");
-        expect(await entries(page)).toEqual(there);
+        expect(await line(page)).toBe(there);
 
         await page.goBack();
         await page.waitForURL(/conversation=Wart42$/);
-        await until(page, async () => (await entries(page))[0] === short("de", "mail"), "first chat's row");
-        expect(await entries(page)).toEqual([
-          short("de", "mail"),
-          short("de", "del"),
-          `${short("de", "routine")} in Team Ops Wochenplanung`,
-        ]);
+        await until(page, async () => (await line(page)) === elsewhere, "first chat's row");
+        expect(await strip(page).getAttribute("data-quiet")).toBeNull();
+
+        // With several approvals, View jumps to the first entry in this chat (oldest first).
+        state.scenario = "two";
+        await changed(page, "Wart42");
+        await until(page, async () => (await line(page)) === "Gustav wartet auf 2 Freigaben", "two approvals");
 
         // A jump in the open chat stays in it and lands on that sentence, also for a reload: here the earlier one, above
         // the chat's end.
-        await strip(page).locator(".assistant-waiting__entry").nth(1).click();
+        await viewButton(page).click();
         await until(page, async () => (await focusedSentence(page)) === "tool-del-1", "sentence in this chat focused");
         expect(new URL(page.url()).search).toBe("?conversation=Wart42&question=tool-del-1");
-        await strip(page).locator(".assistant-waiting__entry").first().click();
+        state.scenario = "three";
+        await changed(page, "Wart42");
+        await until(page, async () => (await line(page)) === "Gustav wartet auf 3 Freigaben", "three approvals");
+        await viewButton(page).click();
         await until(page, async () => (await focusedSentence(page)) === "tool-mail-1", "earlier sentence focused");
         expect(new URL(page.url()).search).toBe("?conversation=Wart42&question=tool-mail-1");
         await page.reload();
@@ -657,9 +667,9 @@ describe("Waiting for you", () => {
         // WebKit did refuse a load here, so this step still exercises what pageErrors() drops.
         if (browserName === "webkit") expect(refused).not.toEqual([]);
         await strip(page).waitFor();
-        await strip(page).locator(".assistant-waiting__entry").nth(1).click();
-        await until(page, async () => (await focusedSentence(page)) === "tool-del-1", "sentence focused over the message");
-        expect(new URL(page.url()).search).toBe("?conversation=Wart42&question=tool-del-1");
+        await viewButton(page).click();
+        await until(page, async () => (await focusedSentence(page)) === "tool-mail-1", "sentence focused over the message");
+        expect(new URL(page.url()).search).toBe("?conversation=Wart42&question=tool-mail-1");
         expect(errors).toEqual([]);
         expect(unrouted).toEqual([]);
       } finally {
@@ -668,13 +678,11 @@ describe("Waiting for you", () => {
     }, 60_000);
 
   test("a second press while the other chat opens keeps the chat it started from in the history", async () => {
-    const { page, errors, unrouted, close } = await open(desktop, { locale: "de", scenario: "three" }, { slowChat: "Tops42" });
+    const { page, errors, unrouted, close } = await open(desktop, { locale: "de", scenario: "oneElsewhere" }, { slowChat: "Tops42" });
     try {
       await strip(page).waitFor();
-      // By the question, since the entry drops "in Team Ops Wochenplanung" once that chat is the open one.
-      const entry = strip(page).locator('[data-question="req-routine"]');
-      await entry.click();
-      await entry.click();
+      await viewButton(page).click();
+      await viewButton(page).click();
       await page.waitForURL(/\?conversation=Tops42&question=tool-routine-1$/);
       await until(page, async () => (await focusedSentence(page)) === "tool-routine-1", "sentence focused");
       await page.goBack();
@@ -686,14 +694,38 @@ describe("Waiting for you", () => {
     }
   }, 60_000);
 
+  for (const view of [desktop, phone, panel])
+    test(`View at ${view.name} opens approvals when several wait outside this chat`, async () => {
+      const { page, errors, unrouted, close } = await open(
+        view,
+        { locale: "de", scenario: "three" },
+        {
+          path: "/app/assistant?conversation=Urlb42",
+        },
+      );
+      try {
+        await strip(page).waitFor();
+        expect(await line(page)).toBe("Gustav wartet auf 3 Freigaben");
+        await viewButton(page).click();
+        await page.waitForURL(/\?approvals=1$/);
+        await page.locator(".cloud-approvals").waitFor();
+        expect(await focusedSentence(page)).toBeNull();
+        expect(await page.getByRole("button", { name: /alle (freigeben|bestätigen|erlauben)|approve all/i }).count()).toBe(0);
+        expect(errors).toEqual([]);
+        expect(unrouted).toEqual([]);
+      } finally {
+        await close();
+      }
+    }, 60_000);
+
   test("a jump started while a reload still looks for a question that is gone keeps its focus", async () => {
     const { page, errors, unrouted, close } = await open(desktop, { locale: "de", scenario: "three" });
     try {
       await page.goto(`${assets.url.origin}/app/assistant?conversation=Wart42&question=tool-gone`);
       await strip(page).waitFor();
       // The landing looks for the gone question for 60 frames, then gives the focus to the composer.
-      await strip(page).locator(".assistant-waiting__entry").nth(1).click();
-      await until(page, async () => (await focusedSentence(page)) === "tool-del-1", "sentence focused");
+      await viewButton(page).click();
+      await until(page, async () => (await focusedSentence(page)) === "tool-mail-1", "sentence focused");
       await page.evaluate(
         () =>
           new Promise<void>((resolve) => {
@@ -702,7 +734,7 @@ describe("Waiting for you", () => {
             requestAnimationFrame(tick);
           }),
       );
-      expect(await focusedSentence(page)).toBe("tool-del-1");
+      expect(await focusedSentence(page)).toBe("tool-mail-1");
       expect(errors).toEqual([]);
       expect(unrouted).toEqual([]);
     } finally {
@@ -717,7 +749,8 @@ describe("Waiting for you", () => {
         await strip(page).waitFor();
         const row = await rect(page, "nav.assistant-waiting");
         const field = await rect(page, ".k2b-chat-composer");
-        await page.locator("textarea").first().focus();
+        // The composer's field, not a draft's text field inside an approval.
+        await page.locator(".k2b-chat-composer textarea").first().focus();
         await page.keyboard.type("/");
         const list = page.locator('.k2b-chat-composer-accessory[data-commands] [role="listbox"]');
         await list.waitFor();

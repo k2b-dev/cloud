@@ -65,7 +65,7 @@ const questions = (items: AiOpenQuestion[]): AiOpenQuestions => ({
 });
 
 /** What a test reads from the waiting row's markup, on the server and in the browser alike. */
-export type WaitingStripSummary = { quiet: boolean; label: string; entries: string[] };
+export type WaitingStripSummary = { quiet: boolean; text: string; buttons: string[] };
 
 const entities: Record<string, string> = { amp: "&", lt: "<", gt: ">", quot: '"', "#39": "'" };
 /** Markup text as a person reads it: entities decoded in one pass, white space collapsed. */
@@ -79,8 +79,8 @@ const text = (raw: string) =>
 export const waitingStripSummary = (html: string): WaitingStripSummary | null => {
   let found = false;
   let quiet = false;
-  let label = "";
-  const entries: string[] = [];
+  let line = "";
+  const buttons: string[] = [];
   new HTMLRewriter()
     .on("nav.assistant-waiting", {
       element(nav) {
@@ -89,21 +89,21 @@ export const waitingStripSummary = (html: string): WaitingStripSummary | null =>
         quiet = nav.hasAttribute("data-quiet");
       },
     })
-    .on("nav.assistant-waiting .assistant-waiting__label", {
+    .on("nav.assistant-waiting .assistant-waiting__text", {
       text(chunk) {
-        label += chunk.text;
+        line += chunk.text;
       },
     })
-    .on("nav.assistant-waiting .assistant-waiting__entry", {
+    .on("nav.assistant-waiting button", {
       element() {
-        entries.push("");
+        buttons.push("");
       },
       text(chunk) {
-        entries[entries.length - 1] += chunk.text;
+        buttons[buttons.length - 1] += chunk.text;
       },
     })
     .transform(html);
-  return found ? { quiet, label: text(label), entries: entries.map(text) } : null;
+  return found ? { quiet, text: text(line), buttons: buttons.map(text) } : null;
 };
 
 const mail = waitingQuestion("mail", "Wart42", 4);
@@ -119,23 +119,23 @@ export const waitingFixture = {
     three: {
       questions: questions([mail, del, routine]),
       activeTurn: turn(["mail", "del"]),
-      server: { quiet: false, label: "Wartet auf dich", entries: [mail.short, del.short, inOther(routine)] },
+      server: { quiet: false, text: "Gustav wartet auf 3 Freigaben", buttons: ["Ansehen"] },
     },
     two: {
       questions: questions([del, routine]),
       activeTurn: turn(["del"]),
-      server: { quiet: false, label: "Wartet auf dich", entries: [del.short, inOther(routine)] },
+      server: { quiet: false, text: "Gustav wartet auf 2 Freigaben", buttons: ["Ansehen"] },
     },
     // A chat opens at its end, where its only question's answers are: the row keeps its place, hidden.
     oneHere: {
       questions: questions([mail]),
       activeTurn: turn(["mail"]),
-      server: { quiet: true, label: "Wartet auf dich", entries: [mail.short] },
+      server: { quiet: true, text: `Gustav wartet auf deine Freigabe: ${mail.short}`, buttons: ["Ansehen"] },
     },
     oneElsewhere: {
       questions: questions([routine]),
       activeTurn: turn([]),
-      server: { quiet: false, label: "Wartet auf dich", entries: [inOther(routine)] },
+      server: { quiet: false, text: `Gustav wartet auf deine Freigabe: ${inOther(routine)}`, buttons: ["Ansehen"] },
     },
     none: { questions: questions([]), activeTurn: turn([]), server: null },
   } satisfies Record<string, { questions: AiOpenQuestions; activeTurn: AiTurnSnapshot; server: WaitingStripSummary | null }>,

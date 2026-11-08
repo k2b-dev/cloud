@@ -8,7 +8,7 @@ import { renderToString } from "solid-js/web";
 import { WAITING_NOW, waitingFixture, waitingStripSummary } from "./waiting-questions.fixture";
 
 // The server renders "Waiting for you" from the same read the browser starts from. Its first client frame, in
-// AssistantWorkspace.waiting.behavior.test.tsx, must show the same row: the same entries, and quiet in the same case.
+// AssistantWorkspace.waiting.behavior.test.tsx, must show the same text and button, and quiet in the same case.
 
 const root = mkdtempSync(resolve(tmpdir(), "assistant-waiting-strip-"));
 const serovalLink = resolve(import.meta.dir, "../../node_modules/seroval");

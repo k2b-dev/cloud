@@ -266,7 +266,10 @@ export const reviewActionCard = (
   });
   const code = review.ask ?? "app_asks";
   const subjectSlot = Object.entries(review.slots).find(([, slot]) => slot.kind === "object" || slot.kind === "place");
-  const view = boundReviewView(review);
+  // A browser holds the review in a reactive store, whose proxies the data guard rightly refuses; the compact review is
+  // JSON on the wire (at most 32 KiB inline), so bind against that same JSON.
+  const plain: CapabilityActionCallReview = JSON.parse(JSON.stringify(review));
+  const view = boundReviewView(plain);
   const draft = reviewDraft(view?.blocks);
   return {
     locale,

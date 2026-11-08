@@ -1,8 +1,9 @@
 import { afterEach, expect, mock, setSystemTime, test } from "bun:test";
-import type { AiConversation, AiOpenQuestions, AiTurnSnapshot } from "@k2b/cloud/ai";
+import type { AiConversation, AiOpenQuestion, AiOpenQuestions, AiTurnSnapshot } from "@k2b/cloud/ai";
 import type { LiveSubscriptionHandlers } from "@k2b/cloud/browser/live";
 import { delegateEvents, render } from "solid-js/web";
 import { createDomTestHarness } from "../../../ui/test/dom";
+import type { WaitingQuestionsView } from "./waiting-questions";
 import { WAITING_NOW, waitingFixture, waitingStripSummary } from "./waiting-questions.fixture";
 
 // The live socket is the test's, so a question that opens or is decided elsewhere arrives as it does from Core.
@@ -18,6 +19,7 @@ mock.module("@k2b/cloud/browser/live", () => ({
 const bootstrap = createDomTestHarness();
 const { LocaleProvider } = await import("@k2b/ui");
 const { default: Workspace } = await import("./AssistantWorkspace.island");
+const { AssistantWaitingStrip } = await import("./AssistantWaitingStrip");
 bootstrap.cleanup();
 
 const now = WAITING_NOW;
@@ -173,8 +175,8 @@ test("the dot and the waiting row follow a question that opens and is decided in
   await waitFor(() => h.strip() !== null);
   expect(waitingStripSummary(h.strip()!.outerHTML)).toEqual({
     quiet: false,
-    label: "Wartet auf dich",
-    entries: [`${routine.short} in Team Ops Wochenplanung`],
+    text: `Gustav wartet auf deine Freigabe: ${routine.short} in Team Ops Wochenplanung`,
+    buttons: ["Ansehen"],
   });
   expect(h.sidebarLoads).toHaveLength(1);
 
@@ -199,3 +201,59 @@ test("the first client frame of the waiting row equals the server's", async () =
     for (const cleanup of cleanups.splice(0).reverse()) cleanup();
   }
 });
+
+const mail = waitingFixture.cases.oneHere.questions.items[0]!;
+const routine = waitingFixture.cases.oneElsewhere.questions.items[0]!;
+for (const fixture of [
+  { name: "the only question here", entries: [mail], more: 0, jump: mail, text: `Gustav wartet auf deine Freigabe: ${mail.short}` },
+  {
+    name: "the only question elsewhere",
+    entries: [routine],
+    more: 0,
+    jump: routine,
+    text: `Gustav wartet auf deine Freigabe: ${routine.short} in Team Ops Wochenplanung`,
+  },
+  {
+    name: "the only question in an untitled chat",
+    entries: [{ ...routine, conversationTitle: "" }],
+    more: 0,
+    jump: { ...routine, conversationTitle: "" },
+    text: `Gustav wartet auf deine Freigabe: ${routine.short} in einem anderen Chat`,
+  },
+  { name: "the first of several, here", entries: [mail, routine], more: 0, jump: mail, text: "Gustav wartet auf 2 Freigaben" },
+  { name: "the first here, with unlisted approvals", entries: [mail], more: 3, jump: mail, text: "Gustav wartet auf 4 Freigaben" },
+  { name: "several elsewhere", entries: [routine], more: 3, jump: null, text: "Gustav wartet auf 4 Freigaben" },
+  { name: "only unlisted approvals", entries: [], more: 4, jump: null, text: "Gustav wartet auf 4 Freigaben" },
+] satisfies { name: string; entries: AiOpenQuestion[]; more: number; jump: AiOpenQuestion | null; text: string }[])
+  test(`Ansehen handles ${fixture.name}`, () => {
+    const dom = createDomTestHarness();
+    cleanups.push(dom.cleanup);
+    const jumped: AiOpenQuestion[] = [];
+    const showMore = mock(() => {});
+    const view: WaitingQuestionsView = {
+      entries: fixture.entries,
+      more: fixture.more,
+      total: fixture.entries.length + fixture.more,
+      onlyHere: null,
+    };
+    cleanups.push(
+      render(
+        () => (
+          <LocaleProvider locale="de">
+            <AssistantWaitingStrip
+              view={view}
+              conversationId="Wart42"
+              quiet={false}
+              onJump={(question) => jumped.push(question)}
+              onShowMore={showMore}
+            />
+          </LocaleProvider>
+        ),
+        dom.root,
+      ),
+    );
+    expect(waitingStripSummary(dom.root.innerHTML)).toEqual({ quiet: false, text: fixture.text, buttons: ["Ansehen"] });
+    dom.root.querySelector<HTMLButtonElement>("button")!.click();
+    expect(jumped).toEqual(fixture.jump ? [fixture.jump] : []);
+    expect(showMore).toHaveBeenCalledTimes(fixture.jump ? 0 : 1);
+  });
