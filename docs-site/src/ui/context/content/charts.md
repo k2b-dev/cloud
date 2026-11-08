@@ -390,7 +390,10 @@ pie slices and heatmap cells get a 1.5 px outline; points keep their 2 px ring.
 Hover or tap a datum to show its values; click or tap pins the tooltip and calls the optional
 `onSelect` callback. Hover and focus never emit selection events. Escape,
 focus leaving the chart, an outside tap, scrolling, resizing, and a data update
-clear the inspection. Map and timeline dragging does not select data.
+clear the inspection. In `Chart` and the explorer, a tooltip opened from the
+keyboard stays while the page scrolls and follows its value, so focusing a
+chart that the browser first scrolls into view keeps its tooltip;
+`inspectChart` closes on every scroll. Map and timeline dragging does not select data.
 
 Line inspection groups the actual values at the nearest X coordinate across
 series. Scatter plots and maps inspect individual points. Histograms expose
