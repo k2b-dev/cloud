@@ -7,17 +7,22 @@ import {
   gauge,
   histogram,
   renderAreaSvg,
+  renderHbarLayoutSvg,
   renderHeatmapSvg,
   renderSankeySvg,
-  renderWaterfallSvg,
+  renderWaterfallLayoutSvg,
   scatter,
 } from "@k2b/ui/charts/core";
 import type { RareChartRenderer } from "./chart-renderer-types";
 
 export const rareChartSvg: RareChartRenderer = (mapped, common) => {
   switch (mapped.kind) {
+    case "hbar":
+      if (!common.hbar) throw new Error("Missing hbar layout");
+      return renderHbarLayoutSvg({ ...mapped, ...common }, common.hbar);
     case "waterfall":
-      return renderWaterfallSvg({ ...mapped, ...common });
+      if (!common.waterfall) throw new Error("Missing waterfall layout");
+      return renderWaterfallLayoutSvg({ ...mapped, ...common }, common.waterfall);
     case "area":
       return renderAreaSvg({ ...mapped, ...common });
     case "scatter":
@@ -35,10 +40,8 @@ export const rareChartSvg: RareChartRenderer = (mapped, common) => {
     case "sankey":
       return renderSankeySvg({ ...mapped, ...common, displayWidth: common.width });
   }
-  {
-    const unsupported: never = mapped;
-    throw new Error(`Unsupported chart: ${String(unsupported)}`);
-  }
+  const unsupported: never = mapped;
+  throw new Error(`Unsupported chart: ${String(unsupported)}`);
 };
 
 /** Outside app frames every renderer is already available. */

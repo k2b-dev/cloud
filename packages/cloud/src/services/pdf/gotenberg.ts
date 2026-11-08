@@ -5,6 +5,7 @@ import { offlineHtml } from "./offline-html";
 export type GotenbergRenderErrorCode =
   | "busy"
   | "bad_input"
+  | "unreadable_pdf"
   | "not_configured"
   | "html_too_large"
   | "pdf_too_large"
@@ -172,12 +173,13 @@ function htmlForm(input: RenderHtmlToPdfInput, config: GotenbergConfig): FormDat
   return form;
 }
 
-/** Bounded transport shared by HTML conversion and attachment embedding. */
-async function requestPdf(
+/** Internal bounded transport; routes and accepted response types are code-owned. */
+export async function requestGotenberg(
   route: string,
   form: FormData,
   config: GotenbergConfig,
   options: RenderHtmlToPdfOptions,
+  contentTypes: readonly string[] = [DEFAULT_PDF_CONTENT_TYPE],
 ): Promise<RenderHtmlToPdfResult> {
   const headers = new Headers();
   const auth = basicAuthHeader(config);
@@ -186,6 +188,9 @@ async function requestPdf(
   const signal = options.signal ? AbortSignal.any([options.signal, abortSignal(config.timeoutMs)]) : abortSignal(config.timeoutMs);
   let release: (() => void) | undefined;
   let reader: ReadableStreamDefaultReader<Uint8Array> | undefined;
+  const cancel = () => {
+    void reader?.cancel().catch(() => {});
+  };
   try {
     release = await downstreamBudget.acquire({ downstream: "gotenberg", timeoutMs: config.timeoutMs, signal });
     signal.throwIfAborted();
@@ -200,33 +205,37 @@ async function requestPdf(
       throw new GotenbergRenderError("bad_response", `Gotenberg returned HTTP ${response.status}.`, response.status);
     }
     const contentType = response.headers.get("content-type") || DEFAULT_PDF_CONTENT_TYPE;
-    if (contentType.split(";")[0] !== DEFAULT_PDF_CONTENT_TYPE) {
+    if (!contentTypes.includes(contentType.split(";")[0]!.trim().toLowerCase())) {
       await response.body?.cancel();
-      throw new GotenbergRenderError("bad_response", "Gotenberg did not return a PDF.");
+      throw new GotenbergRenderError("bad_response", "Gotenberg returned an unexpected content type.");
     }
     if (!response.body) throw new GotenbergRenderError("bad_response", "Gotenberg returned an empty response.");
     reader = response.body.getReader();
-    const chunks: Uint8Array[] = [];
+    signal.addEventListener("abort", cancel, { once: true });
+    if (signal.aborted) cancel();
+    let pdf = new Uint8Array(0);
     let size = 0;
     while (true) {
       signal.throwIfAborted();
       const item = await reader.read();
+      signal.throwIfAborted();
       if (item.done) break;
-      size += item.value.byteLength;
-      if (size > config.maxPdfBytes) throw new GotenbergRenderError("pdf_too_large", "PDF output exceeds the configured budget.");
-      chunks.push(item.value);
+      const nextSize = size + item.value.byteLength;
+      if (nextSize > config.maxPdfBytes) throw new GotenbergRenderError("pdf_too_large", "PDF output exceeds the configured budget.");
+      if (nextSize > pdf.length) {
+        const grown = new Uint8Array(Math.min(config.maxPdfBytes, Math.max(pdf.length * 2, nextSize)));
+        grown.set(pdf.subarray(0, size));
+        pdf = grown;
+      }
+      pdf.set(item.value, size);
+      size = nextSize;
     }
-    const pdf = new Uint8Array(size);
-    let offset = 0;
-    for (const chunk of chunks) {
-      pdf.set(chunk, offset);
-      offset += chunk.byteLength;
-    }
-    return { pdf, contentType };
+    return { pdf: pdf.slice(0, size), contentType };
   } catch (error) {
     await reader?.cancel().catch(() => {});
     throw sanitizeFetchError(error);
   } finally {
+    signal.removeEventListener("abort", cancel);
     reader?.releaseLock();
     release?.();
   }
@@ -236,7 +245,7 @@ export const renderHtmlToPdfWithConfig = async (
   input: RenderHtmlToPdfInput,
   config: GotenbergConfig,
   options: RenderHtmlToPdfOptions = {},
-): Promise<RenderHtmlToPdfResult> => requestPdf("/forms/chromium/convert/html", htmlForm(input, config), config, options);
+): Promise<RenderHtmlToPdfResult> => requestGotenberg("/forms/chromium/convert/html", htmlForm(input, config), config, options);
 
 export const renderFacturXHtmlToPdfWithConfig = async (
   input: RenderFacturXHtmlToPdfInput,
@@ -255,7 +264,7 @@ export const renderFacturXHtmlToPdfWithConfig = async (
   form.append("facturxDocumentType", input.documentType ?? "INVOICE");
   form.append("facturxVersion", input.facturXVersion ?? "1.0");
   form.append("pdfa", "PDF/A-3b");
-  return requestPdf("/forms/chromium/convert/html", form, config, options);
+  return requestGotenberg("/forms/chromium/convert/html", form, config, options);
 };
 
 export const attachPdfFilesWithConfig = async (
@@ -281,7 +290,7 @@ export const attachPdfFilesWithConfig = async (
     };
   }
   form.append("embedsMetadata", JSON.stringify(metadata));
-  return requestPdf("/forms/pdfengines/embed", form, config, options);
+  return requestGotenberg("/forms/pdfengines/embed", form, config, options);
 };
 
 export const mergePdfsWithConfig = async (
@@ -293,12 +302,15 @@ export const mergePdfsWithConfig = async (
     throw new GotenbergRenderError("bad_input", "At least one PDF file is required.");
   }
 
+  if (input.files.reduce((sum, file) => sum + file.pdf.byteLength, 0) > config.maxPdfBytes)
+    throw new GotenbergRenderError("pdf_too_large", "PDF inputs exceed the configured budget.");
+
   const form = new FormData();
   input.files.forEach((file, index) => {
     const filename = `${String(index + 1).padStart(6, "0")}.pdf`;
     form.append("files", new Blob([new Uint8Array(file.pdf)], { type: DEFAULT_PDF_CONTENT_TYPE }), filename);
   });
-  return requestPdf("/forms/pdfengines/merge", form, config, options);
+  return requestGotenberg("/forms/pdfengines/merge", form, config, options);
 };
 
 export const getGotenbergConfig = async (): Promise<GotenbergConfig> => ({

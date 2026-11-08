@@ -18,6 +18,7 @@ import {
   calendarLayout,
   donut,
   escapeXml,
+  hbarLayout,
   isChartDatum,
   line,
   pie,
@@ -26,6 +27,7 @@ import {
   sankeyWidth,
   sparkline,
   stat,
+  waterfallLayout,
 } from "@k2b/ui/charts/core";
 import type { ChartDrawing } from "./chart-renderer-types";
 import { deferChartDrawing, loadChartRenderer, rareChartSvg } from "./chart-renderers-rare";
@@ -107,6 +109,11 @@ function drawChart(
     const formats = { x: options.xFormat, y: options.yFormat, value: options.format };
     const mapped = cloudAiChartRenderOptions(options.input, locale, { width, formats });
     const common: ChartDrawing = { width, height, title: options.title, subtitle: options.input.subtitle, inspect: true };
+    if (mapped.kind === "hbar") {
+      common.hbar = hbarLayout({ ...mapped, ...common }, { width, height });
+      common.height = common.hbar.height;
+    }
+    if (mapped.kind === "waterfall") common.waterfall = waterfallLayout({ ...mapped, ...common }, common);
     let svg: string | undefined;
     switch (mapped.kind) {
       case "bar": {
@@ -240,7 +247,7 @@ export function chartMarkup(prepared: StoredChart, locale: string, width: number
           title: prepared.title,
           subtitle: input.subtitle,
         }).height
-      : Number(/viewBox="0 0 [\d.]+ ([\d.]+)"/.exec(svg ?? "")?.[1]) || height;
+      : Number(/viewBox="0 0 [\d.]+ ([\d.]+)"/.exec(svg ?? "")?.[1]) || pendingChartHeight(prepared, locale, width, height);
   const sankey = input.kind === "sankey";
   const calendar = input.kind === "heatmap" && input.layout === "calendar";
   // Only sizing stays eager; the calendar renderer itself belongs to the offline module.
@@ -272,6 +279,18 @@ export function chartMarkup(prepared: StoredChart, locale: string, width: number
   return new Html(
     `<div class="k2b-chart" data-chart-kind="${input.kind}"${calendar || sankey ? ' style="overflow-x:auto"' : ""}${label}><div class="k2b-chart__svg"${stretch ? " data-stretch" : ""}${id ? ` data-chart-id="${id}"` : ""}${svg === undefined ? ` data-chart-pending="${id}"${(stretch || calendar) && measure ? " data-chart-measure" : ""} aria-busy="true"` : ""} style="${calendar || sankey ? `min-width:${calendarWidth}px;width:${calendarWidth}px;` : ""}${svg === undefined ? `aspect-ratio:${calendarWidth}/${drawnHeight};` : ""}--k2b-chart-width:${calendarWidth}px;--k2b-chart-height:${drawnHeight}px">${svg ?? chartLoading(locale)}</div></div>${values}`,
   );
+}
+
+/** Reserve horizontal rows before the offline renderer arrives. */
+export function pendingChartHeight(prepared: StoredChart, locale: string, width: number, height: number): number {
+  if (prepared.input.kind !== "hbar") return height;
+  const mapped = cloudAiChartRenderOptions(prepared.input, locale, {
+    width,
+    formats: { x: prepared.xFormat, y: prepared.yFormat, value: prepared.format },
+  });
+  return mapped.kind === "hbar"
+    ? hbarLayout({ ...mapped, title: prepared.title, subtitle: prepared.input.subtitle }, { width, height }).height
+    : height;
 }
 
 /** Reserve scrolling geometry before its renderer arrives, including at a measured frame width. */

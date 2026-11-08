@@ -161,9 +161,9 @@ export function createChartInspector(options: {
         node.textContent = node.getAttribute("data-default") ?? "";
         continue;
       }
-      const series = Number(node.getAttribute("data-series-index"));
+      const series = node.dataset.seriesIndex;
       const field = items
-        .find((item) => item.datum.seriesIndex === series)
+        .find((item) => item.datum.seriesIndex?.toString() === series)
         ?.datum.values.find((field) => field.key === node.getAttribute("data-field"));
       node.textContent = field
         ? (field.formatted ??
@@ -490,7 +490,7 @@ export function createChartInspector(options: {
   };
   const move = (event: PointerEvent) => {
     if (event.target instanceof Node && options.tooltip()?.contains(event.target)) return;
-    if (pointerStart && Math.hypot(event.clientX - pointerStart.x, event.clientY - pointerStart.y) > 6) moved = true;
+    if (pointerStart && Math.hypot(event.clientX - pointerStart.x, event.clientY - pointerStart.y) > 8) moved = true;
     if (!options.enabled() || pinned || event.pointerType === "touch" || event.buttons) return;
     pending = { x: event.clientX, y: event.clientY, target: event.target instanceof Element ? event.target : null };
     if (frame !== undefined) return;

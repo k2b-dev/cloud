@@ -1,6 +1,6 @@
 /** Portable chart contracts. This entry never imports Solid or browser APIs. */
 
-export { type BarChartOptions, barChartLayout, renderBarChartSvg } from "../../content/chart-bar";
+export { type BarChartLayout, type BarChartOptions, barChartLayout, renderBarChartSvg, seriesBarLayout } from "../../content/chart-bar";
 export {
   renderStateTimelineSvg,
   type StateTimelineChartOptions,
@@ -11,6 +11,7 @@ export {
 export { type ChartTimeAxis } from "../../content/chart-time-axis";
 export { type AreaOptions, areaLayout, renderAreaSvg } from "./area";
 export * from "./calendar";
+export { type HorizontalBarLayout, type HorizontalBarOptions, hbarLayout, renderHbarLayoutSvg, renderHbarSvg } from "./hbar";
 export * from "./inspection";
 export { map } from "./map";
 export * from "./render";
@@ -75,4 +76,4 @@ export {
   chartDatumRoles,
 } from "./types";
 
-export { renderWaterfallSvg, type WaterfallOptions, waterfallLayout } from "./waterfall";
+export { renderWaterfallLayoutSvg, renderWaterfallSvg, type WaterfallLayout, type WaterfallOptions, waterfallLayout } from "./waterfall";

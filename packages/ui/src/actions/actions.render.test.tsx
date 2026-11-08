@@ -315,7 +315,20 @@ describe("@k2b/ui complete action migrations", () => {
     expect(explicit.match(/data-variant="secondary"/g)).toHaveLength(2);
     expect(implicit.match(/data-variant="primary"/g)).toHaveLength(2);
     expect(explicit).toContain("Save as draft");
-    expect(rule(".k2b-ui .k2b-dropdown.k2b-split-button")).toContain("gap: 0");
+    const body = rule(".k2b-ui .k2b-dropdown.k2b-split-button");
+    expect(body).toContain("gap: 0");
+    // Each segment keeps its focus ring inside itself, so one ring never covers the other segment.
+    expect(body).toContain("--k2b-focus-offset: calc(-1 * var(--k2b-focus-width))");
+    expect(body).toContain("--k2b-focus-on-fill: currentColor");
+    // Filled segments meet at a fine line in their label colour; bordered ones share their light border.
+    expect(rule(".k2b-ui .k2b-split-button > .k2b-split-button__menu-trigger")).toContain(
+      "box-shadow: inset 1px 0 0 color-mix(in srgb, currentColor 50%, transparent)",
+    );
+    expect(
+      rule(
+        '.k2b-ui .k2b-split-button > .k2b-split-button__menu-trigger:is([data-variant="secondary"], [data-variant="subtle"], [data-variant="input"])',
+      ),
+    ).toContain("box-shadow: none");
   });
 
   test("renders separate file selection and file action menus", () => {

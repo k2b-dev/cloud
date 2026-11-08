@@ -35,10 +35,11 @@ export function prepareChartSnapshot(
     tooltip: ChartTooltipFormatter;
     reference?: (selection: ChartSelection) => boolean;
   },
+  sizing: Parameters<typeof chartRenderHeight>[1] = {},
 ): ChartSnapshot {
   const calendar = options.kind === "heatmap" && options.layout === "calendar" ? calendarLayout(options) : undefined;
   const width = options.kind === "sankey" ? sankeyWidth(options, options.displayWidth ?? 480) : (calendar?.width ?? 480);
-  const height = chartRenderHeight(options);
+  const height = chartRenderHeight(options, sizing);
   const svg = renderChartSvg(options, width, height);
   const marks: ChartSnapshot["marks"][number][] = [];
   const keys = new Set<string>();
