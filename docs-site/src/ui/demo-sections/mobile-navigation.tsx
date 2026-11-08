@@ -157,7 +157,30 @@ export function BottomSheetDemo() {
       ),
       bottomSheetAdaptiveOptions,
     );
-  const folders = ["General", "Offers", "Archive 2025", "Pictures", "Accounting", "Drafts", "Forms", "Graphics", "Inventory", "Planning", "Customers", "Marketing", "Fairs", "Press", "Projects", "Invoices", "Travel", "Training", "Contracts", "Templates", "Website", "Workshop"];
+  const folders = [
+    "General",
+    "Offers",
+    "Archive 2025",
+    "Pictures",
+    "Accounting",
+    "Drafts",
+    "Forms",
+    "Graphics",
+    "Inventory",
+    "Planning",
+    "Customers",
+    "Marketing",
+    "Fairs",
+    "Press",
+    "Projects",
+    "Invoices",
+    "Travel",
+    "Training",
+    "Contracts",
+    "Templates",
+    "Website",
+    "Workshop",
+  ];
   const openPicker = () =>
     dialogCore.open<void>(
       (close, context) => (

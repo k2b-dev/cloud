@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import type { Browser, BrowserContextOptions, Page } from "playwright";
-import { launchBrowser, settled } from "../../test/browser";
+import { browserName, launchBrowser, settled } from "../../test/browser";
 
 // The sheet's motion is geometry over time; only a real engine shows what each frame paints.
 const ui = resolve(import.meta.dir, "../..");
@@ -105,64 +105,69 @@ const place = (page: Page) =>
   });
 
 describe("BottomSheet motion on a phone", () => {
+  // CDP throttling and metrics exist in Chromium only.
   for (const detents of [true, false])
-    test(`opens with one fixed height and slides straight onto ${detents ? "half height" : "its content's height"}, frame by frame at 4x CPU slowdown`, async () => {
-      const page = await open();
-      const cdp = await page.context().newCDPSession(page);
-      try {
-        await cdp.send("Performance.enable");
-        await cdp.send("Emulation.setCPUThrottlingRate", { rate: 4 });
-        // Sample every frame from the call on: layout height, painted top, and the transform the engine computed.
-        // settled: the unsettled frames of the opening motion are the subject.
-        await page.evaluate((detents) => {
-          const samples: { height: number; top: number; translate: number }[] = [];
-          Object.assign(window, { samples });
-          const sample = () => {
-            const frame = document.querySelector<HTMLElement>("dialog[open]");
-            if (frame) {
-              const matrix = new DOMMatrixReadOnly(getComputedStyle(frame).transform);
-              samples.push({ height: frame.offsetHeight, top: frame.getBoundingClientRect().top, translate: matrix.m42 });
-            }
-            if (samples.length < 120) requestAnimationFrame(sample);
-          };
-          requestAnimationFrame(sample);
-          void (window as unknown as SheetWindow).openSheet({ detents, rows: detents ? 40 : 6 });
-        }, detents);
-        const layoutCount = async () =>
-          (await cdp.send("Performance.getMetrics")).metrics.find((metric) => metric.name === "LayoutCount")!.value;
-        await page.waitForFunction(() => (window as unknown as { samples: unknown[] }).samples.length >= 3);
-        const layoutsAfterOpen = await layoutCount();
-        await page.waitForFunction(() =>
-          document
-            .getAnimations()
-            .filter((animation) => animation.timeline === document.timeline)
-            .every((animation) => animation.playState !== "running"),
-        );
-        const layoutsAfterMotion = await layoutCount();
-        await cdp.send("Emulation.setCPUThrottlingRate", { rate: 1 });
-        await settled(page);
-        const samples = await page.evaluate(
-          () => (window as unknown as { samples: { height: number; top: number; translate: number }[] }).samples,
-        );
-        const rest = await place(page);
-        // The guard for "opens taller, then snaps smaller": one layout height in every frame.
-        expect(new Set(samples.map((sample) => sample.height))).toEqual(new Set([rest.height]));
-        // Monotonic: the sheet only rises, and never above its rest (no overshoot, no settle).
-        for (let index = 1; index < samples.length; index++) expect(samples[index]!.top).toBeLessThanOrEqual(samples[index - 1]!.top);
-        expect(Math.min(...samples.map((sample) => sample.top))).toBeGreaterThanOrEqual(rest.top - 0.5);
-        // What is painted is what the transform says: no scrolling ancestor swallows the slide.
-        const layoutTop = 844 - rest.height;
-        for (const sample of samples) expect(Math.abs(sample.top - (layoutTop + sample.translate))).toBeLessThanOrEqual(0.5);
-        expect(samples[0]!.top).toBeGreaterThan(rest.top);
-        // The motion itself lays nothing out.
-        expect(layoutsAfterMotion - layoutsAfterOpen).toBe(0);
-        if (detents) expect(rest).toMatchObject({ visible: 422, detent: "half", footerBottom: 844 });
-        else expect(rest).toMatchObject({ visible: rest.height, footerBottom: 844 });
-      } finally {
-        await cdp.detach();
-        await page.context().close();
-      }
-    }, 60_000);
+    test.skipIf(browserName === "webkit")(
+      `opens with one fixed height and slides straight onto ${detents ? "half height" : "its content's height"}, frame by frame at 4x CPU slowdown`,
+      async () => {
+        const page = await open();
+        const cdp = await page.context().newCDPSession(page);
+        try {
+          await cdp.send("Performance.enable");
+          await cdp.send("Emulation.setCPUThrottlingRate", { rate: 4 });
+          // Sample every frame from the call on: layout height, painted top, and the transform the engine computed.
+          // settled: the unsettled frames of the opening motion are the subject.
+          await page.evaluate((detents) => {
+            const samples: { height: number; top: number; translate: number }[] = [];
+            Object.assign(window, { samples });
+            const sample = () => {
+              const frame = document.querySelector<HTMLElement>("dialog[open]");
+              if (frame) {
+                const matrix = new DOMMatrixReadOnly(getComputedStyle(frame).transform);
+                samples.push({ height: frame.offsetHeight, top: frame.getBoundingClientRect().top, translate: matrix.m42 });
+              }
+              if (samples.length < 120) requestAnimationFrame(sample);
+            };
+            requestAnimationFrame(sample);
+            void (window as unknown as SheetWindow).openSheet({ detents, rows: detents ? 40 : 6 });
+          }, detents);
+          const layoutCount = async () =>
+            (await cdp.send("Performance.getMetrics")).metrics.find((metric) => metric.name === "LayoutCount")!.value;
+          await page.waitForFunction(() => (window as unknown as { samples: unknown[] }).samples.length >= 3);
+          const layoutsAfterOpen = await layoutCount();
+          await page.waitForFunction(() =>
+            document
+              .getAnimations()
+              .filter((animation) => animation.timeline === document.timeline)
+              .every((animation) => animation.playState !== "running"),
+          );
+          const layoutsAfterMotion = await layoutCount();
+          await cdp.send("Emulation.setCPUThrottlingRate", { rate: 1 });
+          await settled(page);
+          const samples = await page.evaluate(
+            () => (window as unknown as { samples: { height: number; top: number; translate: number }[] }).samples,
+          );
+          const rest = await place(page);
+          // The guard for "opens taller, then snaps smaller": one layout height in every frame.
+          expect(new Set(samples.map((sample) => sample.height))).toEqual(new Set([rest.height]));
+          // Monotonic: the sheet only rises, and never above its rest (no overshoot, no settle).
+          for (let index = 1; index < samples.length; index++) expect(samples[index]!.top).toBeLessThanOrEqual(samples[index - 1]!.top);
+          expect(Math.min(...samples.map((sample) => sample.top))).toBeGreaterThanOrEqual(rest.top - 0.5);
+          // What is painted is what the transform says: no scrolling ancestor swallows the slide.
+          const layoutTop = 844 - rest.height;
+          for (const sample of samples) expect(Math.abs(sample.top - (layoutTop + sample.translate))).toBeLessThanOrEqual(0.5);
+          expect(samples[0]!.top).toBeGreaterThan(rest.top);
+          // The motion itself lays nothing out.
+          expect(layoutsAfterMotion - layoutsAfterOpen).toBe(0);
+          if (detents) expect(rest).toMatchObject({ visible: 422, detent: "half", footerBottom: 844 });
+          else expect(rest).toMatchObject({ visible: rest.height, footerBottom: 844 });
+        } finally {
+          await cdp.detach();
+          await page.context().close();
+        }
+      },
+      60_000,
+    );
 
   test("the handle is a button: a press goes to full height, ArrowDown back to half, and the footer stays on the edge", async () => {
     const page = await open({ ...phone, reducedMotion: "reduce" });
@@ -221,43 +226,51 @@ describe("BottomSheet motion on a phone", () => {
     }
   }, 30_000);
 
-  test("a finger in a scrolled list scrolls it first; at its top, pulling down drags the sheet", async () => {
-    const page = await open({ ...phone, reducedMotion: "reduce" });
-    const cdp = await page.context().newCDPSession(page);
-    try {
-      await page.evaluate(() => (window as unknown as SheetWindow).openSheet());
-      await settled(page);
-      await page.locator(".k2b-bottom-sheet__handle").press("ArrowUp");
-      await settled(page);
-      const body = page.locator(".k2b-panel-dialog__body");
-      await body.evaluate((element) => {
-        element.scrollTop = 200;
-      });
-      const swipe = async (from: number, to: number) => {
-        await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x: 200, y: from }] });
-        for (let step = 1; step <= 6; step++)
-          await cdp.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: [{ x: 200, y: from + ((to - from) * step) / 6 }] });
-        await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
-      };
-      const before = await place(page);
-      await swipe(500, 600);
-      await settled(page);
-      expect(await body.evaluate((element) => element.scrollTop)).toBeLessThan(200);
-      expect((await place(page)).top).toBe(before.top);
-      await body.evaluate((element) => {
-        element.scrollTop = 0;
-      });
-      // fixed wait: past the 100 ms in which a finger that just scrolled keeps scrolling.
-      await page.waitForTimeout(150);
-      await swipe(300, 600);
-      await settled(page);
-      // A slow pull past the middle between full and half height lands on half height.
-      expect(await place(page)).toMatchObject({ visible: 422, detent: "half" });
-    } finally {
-      await cdp.detach();
-      await page.context().close();
-    }
-  }, 30_000);
+  // CDP touch input exists in Chromium only.
+  test.skipIf(browserName === "webkit")(
+    "a finger in a scrolled list scrolls it first; at its top, pulling down drags the sheet",
+    async () => {
+      const page = await open({ ...phone, reducedMotion: "reduce" });
+      const cdp = await page.context().newCDPSession(page);
+      try {
+        await page.evaluate(() => (window as unknown as SheetWindow).openSheet());
+        await settled(page);
+        await page.locator(".k2b-bottom-sheet__handle").press("ArrowUp");
+        await settled(page);
+        const body = page.locator(".k2b-panel-dialog__body");
+        await body.evaluate((element) => {
+          element.scrollTop = 200;
+        });
+        const swipe = async (from: number, to: number) => {
+          await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x: 200, y: from }] });
+          for (let step = 1; step <= 6; step++)
+            await cdp.send("Input.dispatchTouchEvent", {
+              type: "touchMove",
+              touchPoints: [{ x: 200, y: from + ((to - from) * step) / 6 }],
+            });
+          await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+        };
+        const before = await place(page);
+        await swipe(500, 600);
+        await settled(page);
+        expect(await body.evaluate((element) => element.scrollTop)).toBeLessThan(200);
+        expect((await place(page)).top).toBe(before.top);
+        await body.evaluate((element) => {
+          element.scrollTop = 0;
+        });
+        // fixed wait: past the 100 ms in which a finger that just scrolled keeps scrolling.
+        await page.waitForTimeout(150);
+        await swipe(300, 600);
+        await settled(page);
+        // A slow pull past the middle between full and half height lands on half height.
+        expect(await place(page)).toMatchObject({ visible: 422, detent: "half" });
+      } finally {
+        await cdp.detach();
+        await page.context().close();
+      }
+    },
+    30_000,
+  );
 
   test("a menu sheet over a sheet with detents keeps its own height, and the sheet below returns to half height", async () => {
     const page = await open({ ...phone, reducedMotion: "reduce" });
