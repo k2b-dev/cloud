@@ -2278,6 +2278,13 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 
 .k2b-ui .k2b-split-button__primary-menu { gap: 0; }
 
+/* A split button the host makes wider gives the room to its main action; the menu segment keeps its width. At its
+   natural width nothing changes. */
+.k2b-ui .k2b-split-button > :is(.k2b-split-button__primary, .k2b-split-button__primary-menu),
+.k2b-ui .k2b-split-button__primary-menu > .k2b-split-button__primary {
+  flex: 1 1 auto;
+}
+
 /* Filled segments meet at a fine line in their label colour, light on every
    fill in both themes. Bordered segments overlap by one pixel and share their
    light border as the divider, so it never darkens. */
