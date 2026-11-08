@@ -1851,7 +1851,7 @@
 
 :where(.k2b-ui) .k2b-dashboard-frame__header .k2b-dashboard-frame__stale { color: var(--k2b-warning-text); }
 
-/* Try again inside a line of text: it reads as part of the sentence and never makes the line taller. */
+/* Try again inside a line of text: underlined like every link in running text, and never taller than the line. */
 :where(.k2b-ui) .k2b-dashboard-frame__link {
   display: inline;
   position: static;
@@ -1864,6 +1864,8 @@
   color: inherit;
   font: inherit;
   line-height: inherit;
+  text-decoration: underline;
+  text-underline-offset: 0.15em;
   cursor: pointer;
 }
 

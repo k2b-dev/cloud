@@ -5,6 +5,7 @@ import { renderStateTimelineSvg, type StateTimelineChartOptions, type StateTimel
 import { responsiveChartSvg, responsiveMapSvg } from "../../content/chart-svg";
 import { type ChartTimeAxis, timeAxisSvg } from "../../content/chart-time-axis";
 import { type AreaOptions, renderAreaSvg } from "./area";
+import { type HorizontalBarOptions, renderHbarSvg } from "./hbar";
 import { chartRenderers } from "./registry";
 import type { MapViewport } from "./svg";
 import type { ChartKind } from "./types";
@@ -70,6 +71,7 @@ export const renderChartSvg = (
       }),
     );
   }
+  if (kind === "hbar") return responsiveChartSvg(renderHbarSvg({ ...(opts as HorizontalBarOptions), width, height, inspect: true }));
   if (kind === "waterfall")
     return responsiveChartSvg(
       renderWaterfallSvg(

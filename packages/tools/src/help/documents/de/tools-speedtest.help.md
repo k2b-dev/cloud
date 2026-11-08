@@ -8,7 +8,7 @@ order: 115
 
 ## Test starten {icon="player-play"}
 
-Öffne **Internet-Speedtest**, prüfe den **Messserver** und wähle
+Öffne **Speedtest**, prüfe den **Messserver** und wähle
 **Schnell · 14 s** oder **Genau · 29 s**; länger dauert ein Test nicht.
 Drücke **Test starten**.
 Ping, Download und Upload laufen nacheinander. Die Restzeit sinkt; ein stabiles

@@ -46,7 +46,7 @@ const ButtonsDemo = () => (
       { kind: "component", name: "IconButtonLink", from: "@k2b/ui" },
       { kind: "component", name: "SplitButton", from: "@k2b/ui" },
     ]}
-    description="Package-native buttons share one variant and size contract. Input actions align with adjacent field controls, immediate actions press with a subtle flat scale without layout movement, split-button menu triggers stay still, Button defaults to primary, IconButton defaults to ghost, and text actions stay surface-free and flush with nearby copy. Link actions use regular action-coloured ink for quiet list continuation."
+    description="Package-native buttons share one variant and size contract. Input actions align with adjacent field controls, immediate actions press with a subtle flat scale without layout movement, split buttons read as one body with a fine divider and a focus ring inside each segment, split-button menu triggers stay still, Button defaults to primary, IconButton defaults to ghost, and text actions stay surface-free and flush with nearby copy. Link actions use regular action-coloured ink for quiet list continuation."
     code={`<Button variant="primary">Save</Button>
 <Button variant="secondary">Preview</Button>
 <Button variant="ghost">Later</Button>
@@ -158,6 +158,14 @@ const ButtonsDemo = () => (
         ]}
       >
         <i class="ti ti-send" aria-hidden="true" /> Send
+      </SplitButton>
+      <SplitButton
+        size="sm"
+        onClick={() => {}}
+        menuLabel="More download options"
+        items={[{ label: "Copy as Base64", icon: "ti ti-copy", action: () => {} }]}
+      >
+        <i class="ti ti-download" aria-hidden="true" /> Download
       </SplitButton>
       <SplitButton
         variant="secondary"
