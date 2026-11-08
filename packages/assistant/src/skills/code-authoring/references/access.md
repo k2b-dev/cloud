@@ -73,6 +73,9 @@ export default app;
 
 ## Public routes
 
+Public routes never see who is signed in. To recognise visitors, leave out
+`public`; then every signed-in person sees the page.
+
 `{ public: true }` opens a route without sign-in. `c.user` is then always
 `null`, also for signed-in visitors. Public routes need the public-endpoint
 policy and, by default, a Cloud administrator's approval. They share a limit

@@ -655,6 +655,9 @@ Agents and other service accounts cannot visit private pages and are never
 projected into `c.user`. `CodeWebhookContext` has no `user` field; webhook
 registration remains unavailable.
 
+Public routes never see who is signed in. To recognise visitors, leave out
+`public`; then every signed-in person sees the page.
+
 Public routes also require the `public_routes` policy classification and version-bound
 administrator approval by default. Existing policy tables initially forbid this new
 classification until an operator chooses its rule. Public routes require the literal `{ public: true }` in the checked
