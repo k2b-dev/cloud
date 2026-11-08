@@ -5,7 +5,7 @@ import { createEffect, createMemo, createSignal, createUniqueId, For, on, onClea
 import { SEARCH_APP_RESULT_LIMIT, SEARCH_PAGE_SIZE, type SearchApp, type SearchItem } from "../api/search/schemas";
 import type { CloudResourceRef } from "../contracts";
 import { matchNavigationSearchItems, type NavigationSearchItem } from "./navigation-search";
-import { cloudResourceSearchUrl, filterCloudResourceSearchItems } from "./resource-search";
+import { cloudResourceSearchUrl, filterCloudResourceSearchItems, groupCloudResourceSearchItems } from "./resource-search";
 import { commitTypedTags, matchingSearchTags, searchTags, tagAtCursor } from "./resource-search-input";
 import { resourceSearchMessages } from "./resource-search-messages";
 import type { GlobalSearchOptions, SearchScope } from "./search-bridge";
@@ -279,7 +279,7 @@ export default function CloudResourceSearch(props: CloudResourceSearchProps) {
       commandSearchItem(command, command.context ? t().contextActions : t().actions),
     );
     // Instant rows come first: streamed app sections are appended below them and never push them down.
-    return [...commands, ...results()];
+    return [...commands, ...groupCloudResourceSearchItems(results())];
   });
   const itemsByKey = createMemo(() => new Map(items().map((item) => [itemKey(item), item])));
   const selectable = (item: SearchItem) =>
@@ -670,9 +670,13 @@ export default function CloudResourceSearch(props: CloudResourceSearchProps) {
                       const item = () => itemsByKey().get(key) ?? first;
                       return (
                         <>
-                          <Show when={index() === 0 || items()[index() - 1]?.appId !== item().appId}>
+                          <Show
+                            when={
+                              index() === 0 || items()[index() - 1]?.appId !== item().appId || items()[index() - 1]?.group !== item().group
+                            }
+                          >
                             <div class="cloud-resource-search__group" role="presentation">
-                              {item().appName}
+                              {item().group ?? item().appName}
                             </div>
                           </Show>
                           <button

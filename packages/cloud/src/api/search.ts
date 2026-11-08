@@ -364,6 +364,7 @@ export const createSearchRoutes = (dependencies: SearchRouteDependencies = {}) =
           const parsed = SearchItemSchema.safeParse({
             ref: view.ref,
             title: view.title,
+            group: view.group,
             href: open.href,
             context: view.context,
             status: view.status,

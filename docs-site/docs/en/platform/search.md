@@ -219,6 +219,9 @@ metadata: [
 ],
 ```
 
+Set the optional `group` to a localized label when one app has distinct result groups.
+Cloud keeps those groups together within the app; omitting it uses the app name.
+
 Return results in the order the app ranks them, for example newest first.
 Cloud keeps that order within one priority and asks for one result more than
 it lists, so return up to `limit` results whenever there are that many.
@@ -309,7 +312,7 @@ unsupported-filter warning.
 **All filters** remains available while tags load and shows their loading state
 inside the filter view. It uses the same padded hover surface as **Actions**.
 
-Results are grouped by application, and each application's section appears as
+Results are grouped by application and optional `group` label, and each application's section appears as
 soon as that application answers. New sections are appended below the ones
 already shown, so nothing on screen moves and the keyboard selection stays on
 its result. Matching pages and actions come first. An action that finishes

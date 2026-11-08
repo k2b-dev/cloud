@@ -28,7 +28,16 @@ suite("personal place conversations", () => {
       const chat = chats[0]!;
       expect(new Set(chats.map((item) => item.id)).size).toBe(1);
       expect(chat.place).toEqual(place);
+      const requestId = crypto.randomUUID();
+      expect((await aiConversations.createPlaceConversation({ requestId, ownerUserId: lea, place, draft })).id).toBe(chat.id);
+      await expect(
+        aiConversations.createPlaceConversation({ requestId, ownerUserId: lea, place, draft: [{ type: "text", text: "different" }] }),
+      ).rejects.toThrow("different input");
       expect(chat.draft.content).toEqual(draft);
+      await expect(
+        aiConversations.createPlaceConversation({ ownerUserId: lea, place, draft: [{ type: "text", text: "Other tab" }] }),
+      ).rejects.toThrow("different input");
+      expect((await aiConversations.findPlaceConversation({ ownerUserId: lea, ref: place.ref }))?.draft.content).toEqual(draft);
       expect(await aiConversations.listConversations({ ownerUserId: lea })).toEqual([]);
       expect(await aiConversations.listSidebarConversations({ ownerUserId: lea })).toEqual([]);
       expect(
@@ -41,6 +50,30 @@ suite("personal place conversations", () => {
       expect(
         await aiConversations.listConversationsPage({ ownerUserId: lea, place: "fixture.conversation:Marta1", page: 1, perPage: 10 }),
       ).toMatchObject({ total: 1, items: [{ place }] });
+      expect(await aiConversations.getConversationCounts({ ownerUserId: lea })).toMatchObject({ places: { total: 1 } });
+      await sql`UPDATE ai.conversations SET background_received_at = '2026-11-08T00:00:00Z' WHERE id = ${chat.id}::uuid`;
+      expect(await aiConversations.getConversationCounts({ ownerUserId: lea })).toMatchObject({ unread: 1, places: { unread: 1 } });
+      expect(await aiConversations.getConversationCounts({ ownerUserId: ben })).toEqual({
+        unread: 0,
+        needsAttention: 0,
+        places: { total: 0, unread: 0, needsAttention: 0 },
+      });
+      const { turn } = await aiConversations.submitChatTurn({
+        conversationId: chat.id,
+        modelId: "mock",
+        runConfig: { kind: "chat", input: "Help", toolSource: { kind: "none" } },
+        userMessage: { role: "user", content: [{ type: "text", text: "Help" }] },
+      });
+      await sql`UPDATE ai.turns SET status='waiting_for_action' WHERE id=${turn.id}::uuid`;
+      expect(await aiConversations.getConversationCounts({ ownerUserId: lea })).toMatchObject({
+        needsAttention: 1,
+        places: { needsAttention: 1 },
+      });
+      expect(await aiConversations.getConversationCounts({ ownerUserId: ben })).toMatchObject({
+        needsAttention: 0,
+        places: { needsAttention: 0 },
+      });
+      await sql`UPDATE ai.turns SET status='aborted' WHERE id=${turn.id}::uuid`;
       expect(await aiConversations.findPlaceConversation({ ownerUserId: ben, ref: place.ref })).toBeNull();
       expect(await aiConversations.listConversations({ ownerUserId: ben, place: "any", search: "Marta" })).toEqual([]);
       expect(await aiConversations.listConversationsPage({ ownerUserId: ben, place: "any", page: 1, perPage: 10 })).toMatchObject({
@@ -51,6 +84,9 @@ suite("personal place conversations", () => {
       expect(await aiConversations.archivePlaceConversation({ ownerUserId: ben, conversationId: chat.id, ref: place.ref })).toBe(false);
       expect(await aiConversations.archivePlaceConversation({ ownerUserId: lea, conversationId: chat.id, ref: place.ref })).toBe(true);
       expect(await aiConversations.findPlaceConversation({ ownerUserId: lea, ref: place.ref })).toBeNull();
+      await expect(aiConversations.createPlaceConversation({ requestId, ownerUserId: lea, place, draft })).rejects.toThrow(
+        "no longer available",
+      );
       const replacement = await aiConversations.createPlaceConversation({ ownerUserId: lea, place, draft });
       expect(replacement.id).not.toBe(chat.id);
       expect(await aiConversations.restoreConversation({ ownerUserId: lea, conversationId: chat.id })).toBeNull();
