@@ -4,9 +4,11 @@
 
 ## Use Buttons
 
-Use `primary` for the main forward action, `secondary` for supporting actions, `ghost` for quiet toolbar actions, `text` for inline disclosures without a surface or horizontal inset, `subtle` for compact contextual actions, `input` for actions placed directly beside a field, `warning` for time-sensitive or cautionary actions, `danger` for destructive work, and `success` only when success is the action's meaning.
+Use `primary` for the main forward action, `secondary` for supporting actions, `ghost` for quiet toolbar actions, `text` for inline disclosures without a surface or horizontal inset, `link` for quiet continuation actions such as Load more, `subtle` for compact contextual actions, `input` for actions placed directly beside a field, `warning` for time-sensitive or cautionary actions, `danger` for destructive work, and `success` only when success is the action's meaning.
 
 A destructive action without a surface, such as Remove at the foot of a menu, is a `text` button with `data-danger="true"`; it takes the danger ink of destructive menu items. Utility color classes cannot recolor a button, because button styles sit outside the utility layer.
+
+The `link` variant uses action-coloured ink, regular weight, no horizontal inset, and no surface. Hover underlines it; keyboard focus keeps the shared focus ring. Use `size="sm"` with a chevron for list continuation. The variant describes emphasis; `Button` still performs an action and `ButtonLink` still navigates. Keep the idle or retry label unchanged while loading so the spinner preserves its width.
 
 ## Import
 
@@ -28,6 +30,10 @@ import { Button, ButtonLink, IconButton, IconButtonLink, SplitButton } from "@k2
 <Button variant="warning" size="xs">Undo send · 8s</Button>
 
 <Button variant="text" size="xs">More</Button>
+
+<Button variant="link" size="sm">
+  Load more <i class="ti ti-chevron-down" aria-hidden="true" />
+</Button>
 
 <Button variant="text" data-danger="true">
   <i class="ti ti-user-minus" aria-hidden="true" /> Remove
@@ -130,6 +136,8 @@ does not take `align`.
 Hover preserves each variant's color hierarchy. Pressing an immediate action adds a subtle inward scale without adding shadow depth or changing layout; a split button's main action moves the compound control, while its menu trigger opens without scaling. Reduced-motion preferences keep the color feedback without the scale.
 
 Use `SplitButton` when one immediate action has closely related alternatives. The main segment remains a native button; the icon-only segment opens the existing `DropdownItem` menu contract. `variant`, `size`, `disabled`, and `loading` apply to both segments. `menuLabel` is required as the secondary trigger's accessible name.
+
+Both segments form one body with the same height and outer radius; only the outer corners round. On a filled variant a fine line in the label colour divides the segments, so it stays light on every fill in both themes. Bordered variants share their light border as the divider, and it never darkens. Hover tints only the segment under the pointer. Each segment draws its focus ring inside itself, so exactly one segment shows focus and its ring never covers the other one.
 
 Links use normal document navigation by default. When the link renders in browser code, opt into the shared navigation contract explicitly:
 

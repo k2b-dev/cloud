@@ -1,7 +1,7 @@
 import { CopyButton, DataTable, type DataTableSort, DataTableTools, filterRows, useLocale } from "@k2b/ui";
 import { createMemo, createSignal, Show } from "solid-js";
 import type { CloudAiChartRow } from "../chart-block";
-import { type CloudAiTableView, cloudAiTableTsv, cloudAiViewTable, sortCloudAiViewRows } from "../view-block";
+import { type CloudTableDescription, cloudAiTableTsv, cloudAiViewTable, sortCloudAiViewRows } from "../view-block";
 import { aiChatMessages } from "./messages";
 import { ReferenceText } from "./reference-text";
 import { type TableSummary, tableHeight } from "./table-placeholder";
@@ -13,7 +13,7 @@ const VISIBLE_ROWS = 100;
  * A table view: title, Copy data and a sortable table in a viewport whose height follows the row count of its
  * `present` summary, so loading, the table and the unavailable state take the same room.
  */
-export function CloudTableView(props: { id: string; summary: TableSummary; input: CloudAiTableView | null | undefined }) {
+export function CloudTableView(props: { id: string; summary: TableSummary; input: CloudTableDescription | null | undefined }) {
   const locale = useLocale();
   const t = () => aiChatMessages(locale());
   const table = createMemo(() => (props.input ? cloudAiViewTable(props.input, locale()) : null));
