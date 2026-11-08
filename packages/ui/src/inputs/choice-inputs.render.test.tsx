@@ -78,7 +78,7 @@ test("fields that share a grid align their controls through a subgrid", () => {
   const fieldRule = indexCss.match(new RegExp(`\n  ${paired.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")} \{([^}]*)\}`))?.[1] ?? "";
   expect(fieldRule).toContain("grid-template-rows: subgrid");
   expect(fieldRule).toContain("grid-row: span 4");
-  expect(indexCss).toContain(`${paired} > .k2b-field__label {\n    grid-row: 1;`);
+  expect(indexCss).toContain(`${paired} > :is(.k2b-field__label, .k2b-field__label-row) {\n    grid-row: 1;`);
   expect(indexCss).toContain(`${paired} > .k2b-field__description {\n    grid-row: 2;`);
   expect(indexCss).toContain(`${paired} > .k2b-field__error {\n    grid-row: 4;`);
 });
@@ -788,6 +788,19 @@ describe("@k2b/ui complete choice input migrations", () => {
       }),
     );
     expect(disabled).toContain("disabled");
+  });
+
+  test("disabled Slider fills are muted in both value placements and track directions", () => {
+    for (const valuePlacement of ["control", "label"] as const) {
+      for (const center of [false, true]) {
+        const html = renderToString(() =>
+          createComponent(Slider, { label: "Strength", value: 80, defaultValue: 0, disabled: true, valuePlacement, center }),
+        );
+        expect(html).toContain('data-disabled="true"');
+        expect(html).toContain("var(--k2b-text-muted)");
+        expect(html).not.toContain("var(--k2b-action)");
+      }
+    }
   });
 
   test("filters labels, descriptions, and values while skipping disabled keyboard targets", () => {

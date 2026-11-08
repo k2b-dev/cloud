@@ -479,6 +479,16 @@ for (const width of [1200, 390])
 const addedSpecs = [
   { kind: "treemap", groups: ["North"], data: [{ label: "A", group: "North", value: 42 }] },
   { kind: "pareto", labels: ["Now", "Before"], data: [{ label: "A", value: 42, prev: 32 }] },
+
+  {
+    kind: "bubble",
+    groups: ["North"],
+    xLabel: "Visits",
+    yLabel: "Opens",
+    averages: true,
+    data: [{ label: "A", group: "North", x: 42, y: 32, size: 12 }],
+  },
+  { kind: "radar", axes: ["Quality", "Speed", "Cost"], max: 5, series: [{ label: "Now", data: [3, 4, 2] }] },
 ];
 for (const width of [1200, 390])
   test(`added rare charts reserve their real frame boxes, ${width}px`, async () => {

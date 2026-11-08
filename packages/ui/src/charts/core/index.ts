@@ -18,12 +18,15 @@ export {
 } from "../../content/chart-state-timeline";
 export { type ChartTimeAxis } from "../../content/chart-time-axis";
 export { type AreaOptions, areaLayout, renderAreaSvg } from "./area";
+export * from "./bubble";
 export * from "./calendar";
 export { type FunnelLayout, type FunnelOptions, funnelLayout, renderFunnelLayoutSvg, renderFunnelSvg } from "./funnel";
 export { type HorizontalBarLayout, type HorizontalBarOptions, hbarLayout, renderHbarLayoutSvg, renderHbarSvg } from "./hbar";
 export * from "./inspection";
 export { map } from "./map";
 export * from "./pareto";
+
+export * from "./radar";
 export * from "./render";
 export { chartRenderHeight, preservesAspectRatio } from "./render-size";
 export * from "./snapshot";
