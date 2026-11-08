@@ -161,6 +161,9 @@ type ConversationRow = {
   short_id: string;
   title: string;
   title_source: string | null;
+  place_type: string | null;
+  place_id: string | null;
+  place_title: string | null;
   description: string | null;
   description_source: string | null;
   keywords: string[] | null;
@@ -612,6 +615,7 @@ const visibleToTurn = (turnId?: string) => sql`(
 )`;
 
 const rowToConversation = (row: ConversationRow): AiConversation => ({
+  place: row.place_type && row.place_id ? { ref: { type: row.place_type, id: row.place_id }, title: row.place_title ?? "" } : null,
   ...(row.activity ? { activity: row.activity } : {}),
   id: row.id,
   shortId: row.short_id,
@@ -1384,6 +1388,14 @@ export class AiConversationCreationError extends Error {
   }
 }
 
+const conversationPlaceFilter = (place: import("./types").AiConversationPlaceFilter = "none") => {
+  if (place === "any") return sql`conversation.place_type IS NOT NULL`;
+  if (place === "none") return sql`conversation.place_type IS NULL`;
+  const separator = place.indexOf(":");
+  if (separator <= 0 || separator === place.length - 1) throw new Error("Invalid place reference.");
+  return sql`conversation.place_type = ${place.slice(0, separator)} AND conversation.place_id = ${place.slice(separator + 1)}`;
+};
+
 export const aiConversations: AiConversationService = {
   getDraftSubmission: async ({ conversationId, ownerUserId, revision }) => {
     const [row] = await sql<{ message_id: string; turn_id: string | null }[]>`
@@ -1475,6 +1487,45 @@ export const aiConversations: AiConversationService = {
     });
   },
 
+  findPlaceConversation: async ({ ownerUserId, ref }) => {
+    const [row] = await sql<ConversationRow[]>`
+      SELECT * FROM ai.conversations
+      WHERE created_by_user_id = ${ownerUserId}::uuid AND archived_at IS NULL
+        AND place_type = ${ref.type} AND place_id = ${ref.id}
+    `;
+    return row ? loadConversationSummary({ conversationId: row.id, ownerUserId }) : null;
+  },
+
+  createPlaceConversation: async ({ ownerUserId, place, draft }) => {
+    if (!draft.length) throw new Error("A place chat is created with its first message.");
+    return sql.begin(async (tx) => {
+      const [row] = await withAiShortIdForDb(
+        tx,
+        "idx_ai_conversations_short_id",
+        (db, shortId) => db<ConversationRow[]>`
+        INSERT INTO ai.conversations (short_id, created_by_user_id, title, place_type, place_id, place_title,
+          draft_content, draft_revision, draft_updated_at)
+        VALUES (${shortId}, ${ownerUserId}::uuid, ${place.title}, ${place.ref.type}, ${place.ref.id}, ${place.title},
+          ${JSON.stringify(draft)}::text::jsonb, 1, now())
+        ON CONFLICT (created_by_user_id, place_type, place_id) WHERE archived_at IS NULL AND place_type IS NOT NULL
+          DO UPDATE SET place_title = EXCLUDED.place_title
+        RETURNING *
+      `,
+      );
+      if (!row) throw new Error("Could not create the place chat.");
+      await tx`INSERT INTO ai.conversation_resource_refs (conversation_id, resource_type, resource_id, title)
+        VALUES (${row.id}::uuid, ${place.ref.type}, ${place.ref.id}, ${place.title})
+        ON CONFLICT (conversation_id, resource_type, resource_id) DO UPDATE SET title = EXCLUDED.title`;
+      return rowToConversation(row);
+    });
+  },
+
+  archivePlaceConversation: async ({ ownerUserId, conversationId, ref }) => {
+    const conversation = await aiConversations.getConversation({ conversationId, ownerUserId });
+    if (conversation?.place?.ref.type !== ref.type || conversation.place.ref.id !== ref.id) return false;
+    return aiConversations.archiveConversation({ conversationId, ownerUserId });
+  },
+
   forkConversation: async (input) => {
     return sql.begin(async (tx) => {
       const source = await tx<ConversationRow[]>`
@@ -1562,7 +1613,8 @@ export const aiConversations: AiConversationService = {
         ORDER BY created_at DESC, id DESC
         LIMIT 1
       ) latest ON TRUE
-      WHERE conversation.created_by_user_id = ${input.ownerUserId}
+      WHERE (${conversationPlaceFilter(input.place)})
+        AND conversation.created_by_user_id = ${input.ownerUserId}
         AND (${archived}::boolean = (conversation.archived_at IS NOT NULL))
         AND (${input.done ?? null}::boolean IS NULL OR ${input.done ?? null}::boolean = ${effectiveDone()})
         AND (${input.projectId ?? null}::uuid IS NULL OR conversation.project_id = ${input.projectId ?? null}::uuid)
@@ -1628,7 +1680,8 @@ export const aiConversations: AiConversationService = {
           max(task->>'content') FILTER (WHERE task->>'status' = 'in_progress') AS step
         FROM jsonb_array_elements(CASE WHEN jsonb_typeof(working.plan->'todos') = 'array' THEN working.plan->'todos' ELSE '[]'::jsonb END) task
       ) progress ON TRUE
-      WHERE conversation.created_by_user_id = ${input.ownerUserId}::uuid
+      WHERE (${conversationPlaceFilter(input.place)})
+        AND conversation.created_by_user_id = ${input.ownerUserId}::uuid
         AND conversation.archived_at IS NULL AND NOT ${effectiveDone()}
       ORDER BY conversation.pinned_at DESC NULLS LAST, conversation.last_used_at DESC, conversation.id
     `;
@@ -1663,7 +1716,8 @@ export const aiConversations: AiConversationService = {
         ORDER BY created_at DESC, id DESC
         LIMIT 1
       ) latest ON TRUE
-      WHERE conversation.created_by_user_id = ${input.ownerUserId}
+      WHERE (${conversationPlaceFilter(input.place)})
+        AND conversation.created_by_user_id = ${input.ownerUserId}
         AND (${archived}::boolean = (conversation.archived_at IS NOT NULL))
         AND (${input.done ?? null}::boolean IS NULL OR ${input.done ?? null}::boolean = ${effectiveDone()})
         AND (${input.projectId ?? null}::uuid IS NULL OR conversation.project_id = ${input.projectId ?? null}::uuid)
@@ -1702,7 +1756,8 @@ export const aiConversations: AiConversationService = {
         ORDER BY created_at DESC, id DESC
         LIMIT 1
       ) latest ON TRUE
-      WHERE conversation.created_by_user_id = ${input.ownerUserId}
+      WHERE (${conversationPlaceFilter(input.place)})
+        AND conversation.created_by_user_id = ${input.ownerUserId}
         AND (${archived}::boolean = (conversation.archived_at IS NOT NULL))
         AND (${input.done ?? null}::boolean IS NULL OR ${input.done ?? null}::boolean = ${effectiveDone()})
         AND (${input.projectId ?? null}::uuid IS NULL OR conversation.project_id = ${input.projectId ?? null}::uuid)
@@ -2355,6 +2410,10 @@ export const aiConversations: AiConversationService = {
         WHERE id = ${input.conversationId}
           AND (${input.ownerUserId ?? null}::uuid IS NULL OR created_by_user_id = ${input.ownerUserId ?? null})
           AND archived_at IS NOT NULL
+          AND NOT EXISTS (SELECT 1 FROM ai.conversations current_place
+            WHERE current_place.created_by_user_id = ai.conversations.created_by_user_id
+              AND current_place.place_type = ai.conversations.place_type AND current_place.place_id = ai.conversations.place_id
+              AND current_place.archived_at IS NULL)
         RETURNING id
       ), considered_turns AS (
         UPDATE ai.turns
