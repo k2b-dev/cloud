@@ -46,12 +46,29 @@ type Variants<N> =
   | {
       kind: "bar";
       data: { label: string; value: N }[];
-      xAxis?: Pick<ChartDescriptionAxis, "label">;
+      x?: string[];
+      series?: { label: string; data: (number | null)[] }[];
+      layout?: "columns" | "rows" | "grouped" | "stacked";
+      normalize?: boolean;
+      share?: boolean;
+      limit?: number;
+      tone?: "in" | "out";
+      format?: ChartNumberFormat;
+      compare?: { label: string; data: (number | null)[] };
+      xAxis?: Pick<ChartDescriptionAxis, "label"> & { ordered?: boolean };
       yAxis?: ChartDescriptionAxis;
       colorByBar?: boolean;
       showValues?: boolean;
       legend?: boolean;
       references?: Reference[];
+    }
+  | { kind: "funnel"; data: { label: string; value: number | null }[]; format?: ChartNumberFormat }
+  | {
+      kind: "hbar";
+      series: string[];
+      rows: { group?: string; label: string; values: (number | null)[] }[];
+      legend?: boolean;
+      format?: ChartNumberFormat;
     }
   | {
       kind: "line";
@@ -112,10 +129,54 @@ type Variants<N> =
       format?: ChartNumberFormat;
       thresholds?: Threshold[];
     }
-  | { kind: "stat"; value: N; format?: ChartNumberFormat; unit?: string; delta?: N; better?: "up" | "down"; sparkline?: N[] };
+  | { kind: "stat"; value: N; format?: ChartNumberFormat; unit?: string; delta?: N; better?: "up" | "down"; sparkline?: N[] }
+  | {
+      kind: "treemap";
+      groups: string[];
+      data: { label: string; group: string; value: number }[];
+      legend?: boolean;
+      format?: ChartNumberFormat;
+      locale?: string;
+    }
+  | {
+      kind: "pareto";
+      labels: [string, string];
+      data: { label: string; value: number; prev: number }[];
+      format?: ChartNumberFormat;
+      locale?: string;
+    }
+  | {
+      kind: "bubble";
+      groups: string[];
+      data: { label: string; group: string; x: number; y: number; size?: number }[];
+      xLabel: string;
+      yLabel: string;
+      sizeLabel?: string;
+      averages?: boolean;
+      legend?: boolean;
+      xFormat?: ChartNumberFormat;
+      yFormat?: ChartNumberFormat;
+      format?: ChartNumberFormat;
+      locale?: string;
+    }
+  | {
+      kind: "radar";
+      axes: string[];
+      max: number;
+      unit?: string;
+      series: { label: string; data: number[] }[];
+      format?: ChartNumberFormat;
+      legend?: boolean;
+      locale?: string;
+    };
 
 /** Portable chart node. Dates are ISO text and missing observations are null, never zero. */
-export type ChartDescription = Common & Variants<number | null>;
+export type ChartDescription = Common &
+  (
+    | Exclude<Variants<number | null>, { kind: "bar" }>
+    // Aligned series omit flat data; the validator supplies an empty array.
+    | (Omit<Extract<Variants<number | null>, { kind: "bar" }>, "data"> & { data?: { label: string; value: number | null }[] })
+  );
 /** Validated renderer input. The portable validator normalizes null gaps to non-finite numbers for drawing. */
 export type ChartInput = Common &
   (

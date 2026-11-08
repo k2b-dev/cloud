@@ -10,7 +10,7 @@ import { escapeXml } from "@k2b/stdlib";
 import { isChartDatum } from "@k2b/ui/chart-inspection";
 import { createCloud } from "./cloud";
 import { CloudError } from "./errors";
-import { boundMoney, chart, chartOptions, chartSvg, html } from "./lib";
+import { boundMoney, chart, chartOptions, chartSvg, html, pendingChartHeight } from "./lib";
 import { parseCsv, toCsv } from "./sheet-lib";
 
 test("cloud.html escapes values, joins arrays and keeps nested markup", () => {
@@ -674,6 +674,108 @@ test("a titled bar chart with many rows reserves the height of its title and eve
   expect(Math.max(...baselines)).toBeLessThan(height);
 });
 
+test("distribution app charts retain headers and the caller's measured width", () => {
+  for (const spec of [
+    { kind: "treemap", groups: ["A"], data: [{ label: "Chair", group: "A", value: 1234.5 }] },
+    { kind: "pareto", labels: ["Now", "Before"], data: [{ label: "Chair", value: 1234.5, prev: 1000 }] },
+  ]) {
+    const markup = String(chart({ ...spec, title: "Distribution", subtitle: "Fictional", width: 900, locale: "de-DE" }, "en"));
+    expect(markup).toContain('viewBox="0 0 900 ');
+    expect(markup).toContain("Distribution</text>");
+    expect(markup).toContain("Fictional</text>");
+    expect(markup).toContain("1.234,5");
+  }
+});
+
+test("named bubbles and radar keep titles, locale, complete axis tooltips and measured redraws", () => {
+  const markup = String(
+    chart(
+      {
+        kind: "bubble",
+        title: "Reach",
+        groups: ["North"],
+        xLabel: "Visits",
+        yLabel: "Opens",
+        sizeLabel: "Audience",
+        averages: true,
+        locale: "de-DE",
+        data: [{ label: "Letter A", group: "North", x: 1200, y: 2400, size: 3600 }],
+      },
+      "en",
+    ),
+  );
+  expect(markup).toContain("Reach");
+  expect(markup).toContain("1.200");
+  expect(markup).toContain("Ungewichteter Durchschnitt");
+  const saved = chartOptions.get(/data-chart-id="([^"]+)"/.exec(markup)?.[1] ?? "");
+  expect(saved).toBeDefined();
+  if (!saved) throw Error("Missing redraw input");
+  const redrawn = chartSvg(saved, "en", 900, 280);
+  expect(redrawn).toContain('viewBox="0 0 900 280"');
+  expect(redrawn).toContain("1.200");
+  const custom = String(
+    chart(
+      {
+        kind: "bubble",
+        groups: ["A"],
+        xLabel: "X",
+        yLabel: "Y",
+        data: [{ label: "A", group: "A", x: 2, y: 3 }],
+        xFormat: (v: number) => `x=${v}`,
+        yFormat: (v: number) => `y=${v}`,
+      },
+      "en",
+    ),
+  );
+  expect(custom).toContain("x=2");
+  expect(custom).toContain("y=3");
+  const radar = String(
+    chart(
+      {
+        kind: "radar",
+        title: "Plan scores",
+        axes: ["Quality", "Speed", "Cost"],
+        max: 5,
+        unit: "points",
+        series: [
+          { label: "Plan A", data: [1, 2, 3] },
+          { label: "Plan B", data: [4, 3, 2] },
+        ],
+      },
+      "en",
+    ),
+  );
+  expect(radar).toContain("Plan scores");
+  expect(radar).toContain("Plan A");
+  expect(radar).toContain("Plan B");
+  expect(radar).toContain("1 / 5 points");
+  expect(radar).not.toContain("data-stretch");
+});
+
+test("cloud.chart renders horizontal grouped rows and their title in app frames", () => {
+  const markup = String(
+    chart(
+      {
+        kind: "hbar",
+        title: "Orders",
+        subtitle: "By shop",
+        series: ["Current", "Prior"],
+        rows: [
+          { group: "Store", label: "Desks", values: [10, 20] },
+          { label: "Missing", values: [null, null] },
+        ],
+      },
+      "de-DE",
+    ),
+  );
+  expect(markup).toContain('data-chart-kind="hbar"');
+  expect(markup).toContain(">Orders</text>");
+  expect(markup).toContain(">By shop</text>");
+  expect(markup).toContain("Gesamt");
+  expect(markup).not.toContain("<style>");
+  expect(markup).not.toMatch(/NaN|Infinity/);
+});
+
 test("calendar app charts preserve headers, units, square geometry and Date pairs", () => {
   const markup = String(
     chart(
@@ -706,4 +808,42 @@ test("calendar app charts preserve headers, units, square geometry and Date pair
   expect(markup).not.toMatch(/<text[^>]*style="[^"]*"[^>]*style=/);
   expect(markup).toContain("1.234,5 mehr raus");
   expect(markup).toContain("EUR");
+});
+
+test("horizontal rows reserve their final height before the lazy renderer loads", () => {
+  const input: CloudAiChartInput = {
+    kind: "hbar",
+    title: "Regional orders",
+    subtitle: "Fictional",
+    series: ["Current", "Prior"],
+    rows: Array.from({ length: 20 }, (_, i) => ({ group: "Shops", label: `Region ${i + 1}`, values: [i, i + 1] })),
+  };
+  for (const width of [480, 390]) {
+    const prepared = { input, title: input.title };
+    const height = pendingChartHeight(prepared, "en", width, 280);
+    expect(height).toBeGreaterThan(280);
+    expect(chartSvg(prepared, "en", width, 280)).toContain(`viewBox="0 0 ${width} ${height}"`);
+  }
+});
+
+test("cloud.chart renders funnels with start and previous shares in app frames", () => {
+  const markup = String(
+    chart(
+      {
+        kind: "funnel",
+        title: "Checkout",
+        data: [
+          { label: "Opened", value: 100 },
+          { label: "Paid", value: 120 },
+        ],
+      },
+      "de-DE",
+    ),
+  );
+  expect(markup).toContain('data-chart-kind="funnel"');
+  expect(markup).toContain(">Checkout</text>");
+  expect(markup).toContain("120");
+  expect(markup).toContain("Anteil am vorigen Schritt");
+  expect(markup).not.toContain("<style>");
+  expect(markup).not.toMatch(/NaN|Infinity/);
 });

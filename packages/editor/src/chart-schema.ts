@@ -34,6 +34,8 @@ export const chartKindSchema = () =>
     "waterfall",
     "area",
     "bar",
+    "hbar",
+    "funnel",
     "line",
     "scatter",
     "pie",
@@ -45,6 +47,10 @@ export const chartKindSchema = () =>
     "heatmap",
     "barGauge",
     "stat",
+    "treemap",
+    "pareto",
+    "bubble",
+    "radar",
   ]);
 
 export const chartParts = (limits?: ChartLimits) => {
@@ -205,17 +211,79 @@ export const chartKinds = (limits?: ChartLimits) => {
           if (!Number.isFinite(sum)) ctx.addIssue({ code: "custom", path: ["x", i], message: "Area totals must be finite." });
         });
       }),
+    z
+      .object({
+        kind: z.literal("bar"),
+        ...ChartKindCommon,
+        data: list(ChartCategory, 0, limits?.maxValues).default([]),
+        x: list(ChartLabel, 0, limits?.maxValues).optional(),
+        series: list(
+          z.object({ label: ChartLabel, data: list(ChartNumber.nullable(), 0, limits?.maxValues) }),
+          1,
+          limits?.maxSeries,
+        ).optional(),
+        layout: z.enum(["columns", "rows", "grouped", "stacked"]).optional(),
+        normalize: z.boolean().optional(),
+        share: z.boolean().optional(),
+        limit: z.number().int().positive().optional(),
+        tone: z.enum(["in", "out"]).optional(),
+        format: numberFormat.optional(),
+        compare: z.object({ label: ChartLabel, data: list(ChartNumber.nullable(), 0, limits?.maxValues) }).optional(),
+        xAxis: ChartAxis.pick({ label: true }).extend({ ordered: z.boolean().optional() }).strict().optional(),
+        yAxis: ChartAxis.optional(),
+        colorByBar: z.boolean().optional(),
+        showValues: z.boolean().optional(),
+        legend: z.boolean().optional(),
+        references: ChartReferences.optional(),
+      })
+      .superRefine((bar, ctx) => {
+        const issue = (message: string) => ctx.addIssue({ code: "custom", message });
+        if (limits && !bar.series && !bar.data.length)
+          ctx.addIssue({ code: "custom", path: ["data"], message: "A bar chart needs data or aligned series." });
+        if ((bar.share !== undefined || bar.limit !== undefined || bar.tone !== undefined) && bar.layout !== "rows")
+          issue("Share, limit and tone require rows layout.");
+        if (bar.layout === "rows" && bar.data.some((d) => Number.isFinite(d.value) && d.value < 0))
+          issue("Ranked bar lists require nonnegative values.");
+        if (bar.series) {
+          if (!bar.x || bar.series.some((s) => s.data.length !== bar.x?.length)) issue("Bar series must have the same length as x.");
+          if (bar.data.length) issue("Use data or aligned series, not both.");
+          if (bar.layout === "rows" || bar.layout === "columns") issue("Series bars use grouped or stacked layout.");
+        } else if (bar.x || bar.compare || bar.layout === "grouped" || bar.layout === "stacked")
+          issue("This layout needs aligned x and series.");
+        if (bar.layout === "stacked" && bar.yAxis?.scale === "log") issue("Stacked bars need a linear axis.");
+        if (bar.normalize && bar.layout !== "stacked") issue("Normalized bars must be stacked.");
+        if (bar.layout === "stacked" && bar.series?.some((s) => s.data.some((v) => v !== null && v < 0)))
+          issue("Stacked bars require nonnegative values.");
+        if (bar.compare && (bar.series?.length !== 1 || bar.compare.data.length !== bar.x?.length || bar.layout === "stacked"))
+          issue("Comparison needs one current series and aligned previous values.");
+      }),
     z.object({
-      kind: z.literal("bar"),
+      kind: z.literal("funnel"),
       ...ChartKindCommon,
-      data: list(ChartCategory, 1, limits?.maxValues),
-      xAxis: ChartAxis.pick({ label: true }).strict().optional(),
-      yAxis: ChartAxis.optional(),
-      colorByBar: z.boolean().optional(),
-      showValues: z.boolean().optional(),
-      legend: z.boolean().optional(),
-      references: ChartReferences.optional(),
+      data: list(z.object({ label: ChartLabel, value: z.number().nonnegative().nullable() }), 1, limits?.maxValues),
+      format: numberFormat.optional(),
     }),
+    z
+      .object({
+        kind: z.literal("hbar"),
+        ...ChartKindCommon,
+        series: list(ChartLabel, 1, limits?.maxSeries),
+        rows: list(
+          z.object({
+            group: ChartLabel.optional(),
+            label: ChartLabel,
+            values: list(z.number().nonnegative().nullable(), 0, limits?.maxSeries),
+          }),
+          1,
+          limits?.maxValues,
+        ),
+        legend: z.boolean().optional(),
+        format: numberFormat.optional(),
+      })
+      .superRefine((bar, ctx) => {
+        if (bar.rows.some((r) => r.values.length !== bar.series.length))
+          ctx.addIssue({ code: "custom", message: "Horizontal bar values must match series." });
+      }),
     z.object({
       kind: z.literal("line"),
       ...ChartKindCommon,
@@ -349,6 +417,81 @@ export const chartKinds = (limits?: ChartLimits) => {
       better: z.enum(["up", "down"]).optional(),
       sparkline: list(ChartNumber, 2, limits?.maxValues).optional(),
     }),
+    z
+      .object({
+        kind: z.literal("treemap"),
+        ...ChartKindCommon,
+        groups: list(ChartLabel, 1, limits?.maxSeries),
+        data: list(z.object({ label: ChartLabel, group: ChartLabel, value: z.number().nonnegative() }), 1, limits?.maxMarks),
+        legend: z.boolean().optional(),
+        format: numberFormat.optional(),
+        locale: chartLocaleSchema().optional(),
+      })
+      .superRefine((spec, ctx) => {
+        if (!Number.isFinite(spec.data.reduce((sum, d) => sum + d.value, 0)))
+          ctx.addIssue({ code: "custom", message: "Treemap total must be finite." });
+        if (spec.data.some((d) => !spec.groups.includes(d.group)))
+          ctx.addIssue({ code: "custom", message: "Treemap groups must contain every item group." });
+      }),
+    z
+      .object({
+        kind: z.literal("pareto"),
+        ...ChartKindCommon,
+        labels: z.tuple([ChartLabel, ChartLabel]),
+        data: list(z.object({ label: ChartLabel, value: z.number().nonnegative(), prev: z.number().nonnegative() }), 1, limits?.maxValues),
+        format: numberFormat.optional(),
+        locale: chartLocaleSchema().optional(),
+      })
+      .superRefine((spec, ctx) => {
+        if (!Number.isFinite(spec.data.reduce((sum, d) => sum + d.value, 0)))
+          ctx.addIssue({ code: "custom", message: "Pareto total must be finite." });
+      }),
+    z
+      .object({
+        kind: z.literal("bubble"),
+        ...ChartKindCommon,
+        groups: list(ChartLabel, 1, limits?.maxSeries),
+        data: list(
+          z.object({ label: ChartLabel, group: ChartLabel, x: z.number(), y: z.number(), size: z.number().nonnegative().optional() }),
+          1,
+          limits?.maxMarks,
+        ),
+        xLabel: ChartLabel,
+        yLabel: ChartLabel,
+        sizeLabel: ChartLabel.optional(),
+        averages: z.boolean().optional(),
+        legend: z.boolean().optional(),
+        xFormat: numberFormat.optional(),
+        yFormat: numberFormat.optional(),
+        format: numberFormat.optional(),
+        locale: chartLocaleSchema().optional(),
+      })
+      .superRefine((spec, ctx) => {
+        if (spec.data.some((p) => !spec.groups.includes(p.group)))
+          ctx.addIssue({ code: "custom", message: "Bubble groups must contain every point group." });
+        for (const key of ["x", "y"] as const)
+          if (!Number.isFinite(Math.max(0, ...spec.data.map((p) => p[key])) - Math.min(0, ...spec.data.map((p) => p[key]))))
+            ctx.addIssue({ code: "custom", message: "Bubble coordinate ranges must be finite." });
+      }),
+    z
+      .object({
+        kind: z.literal("radar"),
+        ...ChartKindCommon,
+        axes: z.array(ChartLabel).min(3).max(8),
+        max: z.number().positive(),
+        unit: ChartUnit.optional(),
+        series: z
+          .array(z.object({ label: ChartLabel, data: z.array(z.number().nonnegative()).min(3).max(8) }))
+          .min(1)
+          .max(4),
+        format: numberFormat.optional(),
+        legend: z.boolean().optional(),
+        locale: chartLocaleSchema().optional(),
+      })
+      .superRefine((spec, ctx) => {
+        if (spec.series.some((s) => s.data.length !== spec.axes.length || s.data.some((v) => v > spec.max)))
+          ctx.addIssue({ code: "custom", message: "Radar series need one value per axis between zero and the common maximum." });
+      }),
   ]);
 };
 

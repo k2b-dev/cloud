@@ -14,7 +14,12 @@ describe("Slider default value and reset", () => {
     cleanup?.();
     cleanup = undefined;
   });
-  const mount = async (initial: number, defaultValue?: number) => {
+  const mount = async (
+    initial: number,
+    defaultValue?: number,
+    formatValue?: (value: number) => string,
+    valuePlacement?: "control" | "label",
+  ) => {
     const dom = createDomTestHarness();
     delegateEvents(["click"], dom.document);
     const { Slider } = await import("../src/inputs/ChoiceInputs");
@@ -30,6 +35,8 @@ describe("Slider default value and reset", () => {
           max={2}
           step={0.01}
           defaultValue={defaultValue}
+          formatValue={formatValue}
+          valuePlacement={valuePlacement}
           onValueChange={(next) => {
             changes.push(next);
             setValue(next);
@@ -61,6 +68,7 @@ describe("Slider default value and reset", () => {
     expect(view.slider().getAttribute("data-changed")).toBe("true");
     expect(view.reset()!.disabled).toBe(false);
     expect(view.reset()!.getAttribute("aria-describedby")).toBe(view.dom.root.querySelector("label")?.id ?? null);
+    expect(view.reset()!.getAttribute("aria-label")).toBe("Reset to 1");
     view.reset()!.click();
     expect(view.changes).toEqual([1]);
     expect(view.commits).toEqual([1]);
@@ -68,9 +76,34 @@ describe("Slider default value and reset", () => {
     expect(view.dom.document.activeElement).toBe(view.input());
   });
 
+  test("names the default in the reset label as the slider shows values", async () => {
+    const view = await mount(1.4, 1, (value) => `${Math.round(value * 100)}%`);
+    expect(view.reset()!.getAttribute("aria-label")).toBe("Reset to 100%");
+  });
+
   test("has no reset and no changed state without a default value", async () => {
     const view = await mount(1.4);
     expect(view.reset()).toBeNull();
     expect(view.slider().getAttribute("data-changed")).toBeNull();
   });
+
+  for (const placement of ["control", "label"] as const) {
+    test(`${placement} placement keeps the value association and reset behavior`, async () => {
+      const view = await mount(1.4, 1, undefined, placement);
+      const output = view.dom.root.querySelector("output")!;
+      expect(output.getAttribute("for")).toBe(view.input().id);
+      expect(output.textContent).toBe("1.4");
+      expect(view.input().hasAttribute("valuePlacement")).toBe(false);
+      expect(view.reset()!.closest("label")).toBeNull();
+      expect(output.closest(".k2b-field__label-row") !== null).toBe(placement === "label");
+      expect(view.dom.root.querySelector("label")!.parentElement!.classList.contains("k2b-field")).toBe(placement === "control");
+      expect(view.input().getAttribute("aria-labelledby")).toBe(view.dom.root.querySelector("label")!.id);
+      view.reset()!.click();
+      expect(view.changes).toEqual([1]);
+      expect(view.commits).toEqual([1]);
+      expect(output.textContent).toBe("1");
+      expect(view.reset()!.disabled).toBe(true);
+      expect(view.dom.document.activeElement).toBe(view.input());
+    });
+  }
 });

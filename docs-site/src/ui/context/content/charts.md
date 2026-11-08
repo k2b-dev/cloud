@@ -79,8 +79,23 @@ import { Chart } from "@k2b/ui";
 DOM dependencies. Use `layout(spec, { width, height })` and `toSvg(scene)` for
 a fixed logical scene, or `renderChartSvg(spec, width, height)` for the same SVG
 that `Chart` displays. `chartRenderHeight(spec)` calculates the standard height.
+For a bar gauge in a host without an explicit height, opt into its compact row
+height with `chartRenderHeight(spec, { contentHeight: true })` and pass the result
+to both the drawing and its container. The standard calculation keeps its
+280-unit minimum; explicit-height drawings keep their existing geometry.
+
+```ts
+const spec = { kind: "barGauge" as const, data: [
+  { label: "CPU", value: 65 }, { label: "Memory", value: 72 },
+] };
+const height = chartRenderHeight(spec, { contentHeight: true });
+const svg = renderChartSvg(spec, 480, height);
+```
+
 `prepareChartSnapshot` prepares that drawing and its keyed inspection data for
-`ChartSnapshotView` and `ChartExplorer`. Existing root imports remain supported.
+`ChartSnapshotView` and `ChartExplorer`. Its optional third argument forwards
+`{ contentHeight: true }` to the height calculation for unsized bar-gauge hosts.
+Existing root imports remain supported.
 
 ```ts
 import { layout, toSvg } from "@k2b/ui/charts/core";
@@ -202,6 +217,42 @@ Axis, category and value text uses the UI font with tabular figures.
   yAxis={{ label: "Umsatz", format: (v) => euro.format(v) }} />
 ```
 
+## Several bar series and period comparison
+
+Keep category labels in `x` and pass one equally long `data` array per series.
+`null` means a gap. Grouped bars each start at zero. Stacked bars accumulate
+nonnegative segments; negative stacks are rejected at the portable JSON entry.
+With `normalize`, positive totals fill 100%; a zero total stays a gap.
+
+```tsx
+<Chart kind="bar" layout="stacked" x={["Q1", "Q2"]}
+  series={[{ label: "Store", data: [35, 42] }, { label: "Web", data: [24, 31] }]} />
+```
+
+Add `compare={{ label: "Previous", data: [28, 39] }}` to a single current
+series. The previous bars appear hatched on the left; current bars appear solid
+on the right. Both totals remain in the legend until inspection shows the
+category values. The tooltip includes the percentage change; a zero previous
+value has no defined percentage and displays `–`.
+
+Use `kind="hbar"` for horizontal stacks with `series: string[]` and
+`rows: { group?: string; label: string; values: (number | null)[] }[]`.
+Each row ends with its total; segment values print only where they fit.
+Group headings follow first appearance. All source values remain in the
+accessible table, including values that do not fit on a segment.
+
+Horizontal row drawings stay within `--k2b-row-measure` (40rem by default), keeping labels and values together in wide frames. Narrow frames use their available width. This applies to automatic and explicit bar rows, including horizontal segments.
+
+`Chart.Bar` exposes grouped, stacked and compared columns; `Chart.Hbar` exposes horizontal segments. The matching JSON kinds are `bar` and `hbar`, and both use the portable `@k2b/ui/charts/core` renderer. A host that loads horizontal drawing on demand can reserve `hbarLayout(spec, size).height` and pass the same prepared geometry to `renderHbarLayoutSvg(spec, geometry)` when its drawing module arrives.
+
+Both renderers inspect whole categories. A calm band appears behind the active
+category on pointer hover without outlining its segments. Keyboard inspection
+and controlled selection outline the marks using their series color. Arrow keys move between categories,
+Home/End jump to the edges, Enter pins and Escape closes inspection. A tap
+selects only when it has not become a swipe.
+
+Category hover bands carry a transparent SVG presentation fill, so standalone SVGs and base-styled print or app frames retain the same drawing. Series legends keep each value six pixels after its label, use at most one quarter of the frame, and truncate long names; the tooltip and data table retain full names. Dense grouped bars drop their inner gap before reducing bar width. Category labels stay whole and thin to fit. Missing totals display “–”; zero observations remain zero. Comparison changes and total labels inherit the UI locale.
+
 ## Props reference
 
 Use the discriminated `ChartProps` union to type data builders without widening
@@ -259,7 +310,7 @@ Solid signal. Boolean options default to `false` unless stated otherwise.
 | --- | --- | --- |
 | `line` | `series: Series[]` | `xAxis`, `yAxis`, `references`, `legend`; `smooth=true`, `area=false`, `step?: "before" / "after" / "middle"` (overrides smoothing), `autoVariant=false`, `errorBand=false`. |
 | `scatter` | `series: Series[]` | `xAxis`, `yAxis`, `references`, `legend`, `autoVariant=false`, `trendline=false`; `sizeRange?: [number, number]`, default `[3, 12]`, applies only if a point has finite `size`. No `pointRadius` prop. UI markers have a fixed visual enlargement independent of plot width. |
-| `bar` | `data: { label: string; value: number }[]` | `xAxis?: { label?: string; ordered?: boolean }` titles the categories, and `ordered` keeps days or steps in columns with sparse labels; `yAxis` (its `label` names the value, its `format` writes ticks and values), `valueFormat?: (number) => string` for printed values and tooltips, `references`, `colorByBar=false`, `showValues` (default: when readable), `legend=false` (used only with `colorByBar` in columns), `displayWidth?: number`. Negative values are supported; baseline includes zero. Items accept `colorIndex?: number` when `colorByBar` is enabled. No grouped/stacked bar mode. See [Bar charts](#bar-charts). |
+| `bar` | `data: { label: string; value: number }[]` | `xAxis?: { label?: string; ordered?: boolean }` titles the categories, and `ordered` keeps days or steps in columns with sparse labels; `yAxis` (its `label` names the value, its `format` writes ticks and values), `valueFormat?: (number) => string` for printed values and tooltips, `references`, `colorByBar=false`, `showValues` (default: when readable), `legend=false` (used only with `colorByBar` in columns), `displayWidth?: number`. Negative values are supported; baseline includes zero. Items accept `colorIndex?: number` when `colorByBar` is enabled. Aligned `x` and `series` support `layout="grouped"` or `"stacked"`; `normalize` shows 100% shares. See [Bar charts](#bar-charts). |
 | `pie`, `donut` | `data: { label: string; value: number }[]` | `showLabels=false`, `legend=false`, `innerRadius?: number` (outer-radius fraction, clamped to 0–0.95; defaults: pie 0, donut 0.6). Items accept `colorIndex?: number`. Only positive finite values produce slices. Prefer a legend for many small slices. |
 | `sparkline` | `data: number[]` or `Point[]` | `smooth=true`, `area=false`, `showLast=false`, `showMinMax=false`. Numeric arrays use the original array index as X; points sort by X. |
 | `histogram` | `data: number[]` of observations | `bins?: number` (equal-width bin count) or `number[]` (ordered bin edges); omitted uses `ceil(log2(n)) + 1`. `xAxis`, `yAxis`, `references`. Supply at least two distinct finite edges. Bins exclude the upper boundary except for the last bin. |
@@ -339,7 +390,10 @@ pie slices and heatmap cells get a 1.5 px outline; points keep their 2 px ring.
 Hover or tap a datum to show its values; click or tap pins the tooltip and calls the optional
 `onSelect` callback. Hover and focus never emit selection events. Escape,
 focus leaving the chart, an outside tap, scrolling, resizing, and a data update
-clear the inspection. Map and timeline dragging does not select data.
+clear the inspection. In `Chart` and the explorer, a tooltip opened from the
+keyboard stays while the page scrolls and follows its value, so focusing a
+chart that the browser first scrolls into view keeps its tooltip;
+`inspectChart` closes on every scroll. Map and timeline dragging does not select data.
 
 Line inspection groups the actual values at the nearest X coordinate across
 series. Scatter plots and maps inspect individual points. Histograms expose
@@ -1098,6 +1152,55 @@ as dots; Antarctica appears only in the list. Values that are not positive finit
 out. With no data the neutral map stays; the host shows its own empty message.
 Use `format` for units and `limit` to change how many countries the list names.
 
+
+## Treemap and Pareto
+
+`Chart.Treemap` accepts `groups: string[]` and `data: {label,group,value}[]`.
+Every group exists in `groups`; values are finite and nonnegative. Squarified
+cells preserve value proportions. Color identifies the group and the wrapping
+legend names it (`legend={false}` hides it). Labels and values print only when
+both fit; the tooltip and table keep every item, including zero-valued items.
+
+`Chart.Pareto` accepts `labels: [current, previous]` and
+`data: {label,value,prev}[]`. It ranks current values descending and places a
+category named `Rest` last. Solid bars show current values; hatched bars show
+the previous period. The cumulative line uses the percentage axis below;
+the absolute value axis is above. The dashed 80% line marks concentration.
+Both periods must be nonnegative. A zero previous value or zero total shows
+an undefined percentage as an en dash.
+
+Both kinds support portable number `format`, explicit BCP 47 `locale`, and
+measured `displayWidth` for app frames. Locale overrides the inherited provider.
+Arrows inspect items, Enter selects and Escape dismisses; tap uses the same
+inspector. Hover outlines one treemap cell or adds a quiet Pareto row band.
+Keep the host's fixed content height across loading, empty, error/retry and
+stale-subtitle states. The live chart catalog demonstrates both kinds.
+
+## Named scatter points and bubbles
+
+Use `Chart.Bubble` (`kind: "bubble"`) to compare two numeric measures for named observations. Set `groups`,
+`data: [{label, group, x, y, size?}]`, `xLabel` and `yLabel`. Omitting `size` gives named scatter points;
+`Chart.Scatter` keeps its existing series contract. Bubble area follows `size` and radius follows its square root.
+Sizes must be nonnegative and every point must name a declared group. A zero-size observation remains in the table.
+
+Names appear only where they fit without overlapping another name or point. Every observation remains available
+through the tooltip, keyboard and table. `averages: true` adds two guides explicitly labelled **Unweighted average**:
+every observation contributes equally, regardless of bubble size. `size` belongs to each point, not to the chart. `sizeLabel` names the area measure. Narrow or short drawings reduce bubble radii together so every point remains inside the plot; the area ratios stay unchanged. Average labels have their own space above the Y-axis title. Below 200px drawing height, the numeric average row is available in the accessible SVG title; the unweighted-average label stays visible.
+
+JSON accepts `xFormat`, `yFormat` and `format` as number-format descriptions; typed props take formatter functions
+(`xFormat`, `yFormat`, `sizeFormat`). Explicit `locale` wins over the inherited UI locale. Measured hosts forward
+`displayWidth`; the server and initial browser drawing use identical geometry.
+
+## Radar charts
+
+`Chart.Radar` (`kind: "radar"`) takes 3–8 `axes`, one positive `max`, an optional shared `unit`, and up to four
+`series: [{label, data: number[]}]`. Every series has one value per axis, between zero and the shared maximum.
+All axes use that same unit and maximum; use another chart when the axes measure different units.
+
+Hover or tap an axis to compare every series there. Arrow keys, Home and End move across axes; Enter selects,
+and Escape closes inspection. Selection has a stronger outline than hover. Both kinds keep all other marks
+visible and use the shared loading, empty, error/retry and stale frame states.
+
 ## Waterfall charts
 
 Use `kind="waterfall"` to explain how ordered changes connect an opening
@@ -1164,7 +1267,20 @@ The top legend starts with the final column's amount or share and follows the
 inspected column. A missing column (or a zero-sum normalized column) has no inspected values; the
 legend uses a dash when its final column is a gap.
 
+Pareto axis endpoints align inward so full formatted values remain visible in small cards. Treemap text uses one name/value block with fixed line spacing; cells without room for both lines leave the text to inspection.
+
 Waterfall labels and printed amounts follow the drawn container width. Amounts appear when bars are at least 46 CSS pixels wide and the text fits its slot; shrinking to a phone hides them without a hydration redraw.
+
+Deferred drawing hosts can also prepare `waterfallLayout(spec, size)` and pass that geometry to `renderWaterfallLayoutSvg(spec, geometry)`. The prepared and direct renderers produce identical SVG.
+
 Stat-tile trends use the same sparkline SVG and interaction host as `Chart`,
 without importing the catalog dispatcher. Adding another chart kind therefore
 does not add its renderer to pages that only show stat trends.
+
+### Funnels and ranked lists
+
+Use `kind="funnel"` with `data: [{ label, value }]` for a sequence of counts. Each step shows its value and share of the start; the tooltip also gives its share of the previous step. Values must be nonnegative, and steps may rise above the starting count. A zero or missing denominator shows `–`; missing steps stay gaps. Geometry fits the largest step, so rising counts stay inside the plot.
+
+Use `kind="bar" layout="rows"` for a ranked list of nonnegative values. Rows sort descending, with stable order for ties. `share` prints each row's share of the entire input. `limit` shows that many rows and a final “n more · total” summary; the data table retains every source row. `tone="in" | "out"` records flow direction and uses the theme’s incoming or outgoing flow color, falling back to the neutral chart palette. Automatic rows in existing data-only bars retain their original layout.
+
+Both descriptions accept `format: NumberFormat` for source values. Percentage calculations keep their own format. The inherited locale formats shares and the remainder label. They use the same category band, keyboard inspection, touch guard and fixed host states as other category charts.

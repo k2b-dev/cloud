@@ -41,6 +41,7 @@ const catalogs = {
   Budget: (await import("../surfaces/budget-messages")).checkBudgetMessages,
   StatCell: (await import("../surfaces/stat-cell-messages")).checkStatCellMessages,
   Lightbox: (await import("../content/lightbox-messages")).checkLightboxMessages,
+  ThumbnailStrip: (await import("../content/thumbnail-strip-messages")).checkThumbnailStripMessages,
   Prompt: (await import("../feedback/prompt-messages")).checkPromptMessages,
   Calendar: (await import("../content/calendar-messages")).checkCalendarMessages,
   Timeline: (await import("../content/timeline-messages")).checkTimelineMessages,

@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { mkdir } from "node:fs/promises";
 import type { Browser, Page } from "playwright";
-import { launchBrowser, settled } from "../../../../ui/test/browser";
+import { launchBrowser, pageErrors, settled } from "../../../../ui/test/browser";
 import type { AppFrameAssets } from "./assets";
 import { buildBaseCss, buildChartModule, buildPrelude } from "./build-assets";
 import type { AppFiles } from "./compose";
@@ -438,6 +438,79 @@ for (const width of [1200, 390])
           .evaluate(() => Reflect.get(globalThis, "__chartLoads")),
       ).toBe(1);
       expect(requests).toEqual([]);
+    } finally {
+      await context.close();
+    }
+  });
+
+for (const width of [1200, 390])
+  test(`horizontal rows reserve height before offline drawing at ${width}px`, async () => {
+    const script = `document.querySelector("#draw").addEventListener("click",()=>{
+      document.querySelector("#charts").innerHTML=cloud.chart({kind:"hbar",title:"Regional orders",subtitle:"Fictional",series:["Current","Prior"],rows:Array.from({length:20},(_,i)=>({group:"Shops",label:"Region "+(i+1),values:[i,i+1]}))});
+    });`;
+    const { page, context, requests } = await open(width, delayed + assets.chartModule, "light", script);
+    const errors = pageErrors(page);
+    try {
+      await app(page).locator("#draw").click();
+      await app(page).locator("html[data-chart-module-loading]").waitFor();
+      await settled(page);
+      const loading = await boxes(page);
+      expect(loading.height).toBeGreaterThan(600);
+      await release(page);
+      await app(page).locator('[data-chart-kind="hbar"] svg').waitFor();
+      await settled(page);
+      expect(await boxes(page)).toEqual(loading);
+      expect(await app(page).locator("[data-chart-pending]").count()).toBe(0);
+      expect(await app(page).locator(".k2b-chart-group-heading").textContent()).toBe("Shops");
+      expect(await app(page).locator(".k2b-chart__table tbody tr").count()).toBe(20);
+      expect(requests).toEqual([]);
+      expect(errors).toEqual([]);
+      expect(
+        await page.evaluate(() =>
+          globalThis.lazyChartHarness.events.filter((event) => event.type === "error" || (event.type === "log" && event.level === "error")),
+        ),
+      ).toEqual([]);
+    } finally {
+      await context.close();
+    }
+  });
+
+// Each added renderer also crosses the real offline first-use boundary.
+const addedSpecs = [
+  { kind: "treemap", groups: ["North"], data: [{ label: "A", group: "North", value: 42 }] },
+  { kind: "pareto", labels: ["Now", "Before"], data: [{ label: "A", value: 42, prev: 32 }] },
+
+  {
+    kind: "bubble",
+    groups: ["North"],
+    xLabel: "Visits",
+    yLabel: "Opens",
+    averages: true,
+    data: [{ label: "A", group: "North", x: 42, y: 32, size: 12 }],
+  },
+  { kind: "radar", axes: ["Quality", "Speed", "Cost"], max: 5, series: [{ label: "Now", data: [3, 4, 2] }] },
+];
+for (const width of [1200, 390])
+  test(`added rare charts reserve their real frame boxes, ${width}px`, async () => {
+    const script = `document.querySelector("#draw").addEventListener("click",()=>{
+      const specs=${JSON.stringify(addedSpecs)};
+      document.querySelector("#charts").innerHTML=specs.map(spec=>'<section class="card">'+cloud.chart(spec)+'</section>').join("");
+    });`;
+    const { page, context, requests } = await open(width, delayed + assets.chartModule, "light", script);
+    const errors = pageErrors(page);
+    try {
+      await app(page).locator("#draw").click();
+      await app(page).locator("html[data-chart-module-loading]").waitFor();
+      await settled(page);
+      const loading = await boxes(page);
+      await release(page);
+      for (const spec of addedSpecs) await app(page).locator(`[data-chart-kind="${spec.kind}"] svg`).waitFor();
+      await settled(page);
+      expect(await boxes(page)).toEqual(loading);
+      expect(await app(page).locator("[data-chart-pending]").count()).toBe(0);
+      expect(await app(page).locator(".k2b-chart__table").count()).toBe(addedSpecs.length);
+      expect(requests).toEqual([]);
+      expect(errors).toEqual([]);
     } finally {
       await context.close();
     }

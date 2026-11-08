@@ -94,7 +94,12 @@ const portableSections = [
       page("period-picker", "PeriodPicker", "ti ti-calendar-stats", "One control for the period a view shows: presets and a custom range."),
       page("color", "ColorInput", "ti ti-palette", "Native color selection with controlled value and optional transparency."),
       page("pin", "PinInput", "ti ti-password", "Grouped one-time-code entry with paste and arrow-key navigation."),
-      page("slider", "Slider", "ti ti-adjustments-horizontal", "Range input with value labels and optional centered scale."),
+      page(
+        "slider",
+        "Slider",
+        "ti ti-adjustments-horizontal",
+        "Range input with value and reset beside the track or label, and an optional centered scale.",
+      ),
       page(
         "choice-slider",
         "ChoiceSlider",
@@ -449,9 +454,6 @@ const portableEntries = portableSections.flatMap((section, sectionIndex) =>
 const cloudEntries = cloudPages.map((page, pageIndex) => entry("cloud", "Cloud components", page, 1_000 + pageIndex, "cloud"));
 
 export const uiCatalogEntries: UiCatalogEntry[] = [...portableEntries, ...cloudEntries];
-
-/** Runtime component exports from @k2b/ui. Kept honest by check-ui-catalog.ts. */
-export const portableUiComponentCount = 193;
 
 export const uiCatalogSections: UiCatalogSection[] = [
   ...portableSections.map((section) => ({

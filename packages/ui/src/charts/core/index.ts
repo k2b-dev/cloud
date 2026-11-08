@@ -1,6 +1,13 @@
 /** Portable chart contracts. This entry never imports Solid or browser APIs. */
 
-export { type BarChartOptions, barChartLayout, renderBarChartSvg } from "../../content/chart-bar";
+export {
+  type BarChartLayout,
+  type BarChartOptions,
+  barChartLayout,
+  rankedBarLayout,
+  renderBarChartSvg,
+  seriesBarLayout,
+} from "../../content/chart-bar";
 export {
   renderStateTimelineSvg,
   type StateTimelineChartOptions,
@@ -10,9 +17,15 @@ export {
 } from "../../content/chart-state-timeline";
 export { type ChartTimeAxis } from "../../content/chart-time-axis";
 export { type AreaOptions, areaLayout, renderAreaSvg } from "./area";
+export * from "./bubble";
 export * from "./calendar";
+export { type FunnelLayout, type FunnelOptions, funnelLayout, renderFunnelLayoutSvg, renderFunnelSvg } from "./funnel";
+export { type HorizontalBarLayout, type HorizontalBarOptions, hbarLayout, renderHbarLayoutSvg, renderHbarSvg } from "./hbar";
 export * from "./inspection";
 export { map } from "./map";
+export * from "./pareto";
+
+export * from "./radar";
 export * from "./render";
 export { chartRenderHeight, preservesAspectRatio } from "./render-size";
 export * from "./snapshot";
@@ -64,6 +77,7 @@ export {
   stepPathD,
   svgRoot,
 } from "./svg-renderers";
+export * from "./treemap";
 export {
   type ChartDateFormat,
   type ChartDatum,
@@ -74,4 +88,4 @@ export {
   chartDatumRoles,
 } from "./types";
 
-export { renderWaterfallSvg, type WaterfallOptions, waterfallLayout } from "./waterfall";
+export { renderWaterfallLayoutSvg, renderWaterfallSvg, type WaterfallLayout, type WaterfallOptions, waterfallLayout } from "./waterfall";
