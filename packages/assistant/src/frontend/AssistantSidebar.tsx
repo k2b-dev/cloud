@@ -36,6 +36,7 @@ import {
   type ConversationStatusTone,
   conversationStatusPresentation,
   groupConversationsByAge,
+  isConversationBusy,
 } from "./conversation-view";
 import { assistantMessages } from "./messages";
 import { placeMessages } from "./place-messages";
@@ -142,7 +143,7 @@ function ConversationSidebarItem(props: {
   const locale = useLocale();
   const [previewOpen, setPreviewOpen] = createSignal(false);
   const saving = () => props.donePhase !== undefined;
-  const busy = () => ["queued", "running", "needs_attention", "waiting_for_browser"].includes(props.conversation.runStatus);
+  const busy = () => isConversationBusy(props.conversation);
   const toggleDone = () => props.toggleDone(props.conversation);
   const href = () => assistantConversationHref(props.basePath ?? "/app/assistant", props.conversation.id);
   const handleClick = (event: MouseEvent) => {
@@ -161,19 +162,16 @@ function ConversationSidebarItem(props: {
       .catch(() => navigateTo(target));
   };
 
-  const status = () => conversationStatusPresentation(props.conversation, locale(), props.active);
+  const marker = () => conversationStatusPresentation(props.conversation, locale(), props.active);
   // A chat at a place names its app and place, so it reads apart from the person's own chats wherever it shows.
   const place = () => conversationPlace(props.conversation);
-  const marker = () => {
-    const current = status();
-    if (current) return current;
-    return null;
-  };
+  // An unread answer is weight and dot, never color alone.
+  const unread = () => marker()?.tone === "accent";
 
   return (
     <AppWorkspace.SidebarItem
       href={href()}
-      class={`assistant-chat-sidebar-item${props.donePhase ? ` assistant-chat-sidebar-item--${props.donePhase}` : ""}`}
+      class={`assistant-chat-sidebar-item${props.donePhase ? ` assistant-chat-sidebar-item--${props.donePhase}` : ""}${unread() ? " assistant-chat-sidebar-item--unread" : ""}`}
       onClick={handleClick}
       active={props.active}
       icon={place() ? (place()!.app?.icon ?? "ti ti-map-pin") : undefined}
@@ -209,17 +207,13 @@ function ConversationSidebarItem(props: {
       }}
     >
       <AppWorkspace.SidebarItemLabel marquee={false}>{props.conversation.title}</AppWorkspace.SidebarItemLabel>
-      <Show when={!props.conversation.pinnedAt}>
+      {/* A chat whose run goes on cannot be marked done. Its status keeps the row's end instead of a disabled check that
+          covers it, also in the open row, which shows its actions without hover. */}
+      <Show when={!props.conversation.pinnedAt && (props.conversation.isDone || !busy())}>
         <AppWorkspace.SidebarItemAction
           icon={props.conversation.isDone ? "ti ti-arrow-back-up" : "ti ti-check"}
-          label={
-            props.conversation.isDone
-              ? text("Reopen chat")
-              : busy()
-                ? text("Stop the response before marking it done")
-                : text("Mark chat done")
-          }
-          disabled={saving() || (!props.conversation.isDone && busy())}
+          label={props.conversation.isDone ? text("Reopen chat") : text("Mark chat done")}
+          disabled={saving()}
           visibility="hover"
           onSelect={() => void toggleDone()}
         >
@@ -535,10 +529,13 @@ export default function AssistantSidebar(props: AssistantSidebarProps) {
       </AppWorkspace.SidebarItem>
     </AppWorkspace.SidebarSection>
   );
+  // The collapsed rail's chat menu shows the same status as the rows, in place of the chat's icon.
   const collapsedChatMenu = () =>
     chatConversations().map((conversation) => ({
       label: conversation.title,
-      icon: conversation.pinnedAt ? "ti ti-pin text-accent" : "ti ti-message",
+      icon:
+        conversationStatusPresentation(conversation, locale(), conversation.id === activeConversationId())?.icon ??
+        (conversation.pinnedAt ? "ti ti-pin text-accent" : "ti ti-message"),
       action: () => openConversationFromCommand(conversation),
     }));
 
@@ -548,7 +545,7 @@ export default function AssistantSidebar(props: AssistantSidebarProps) {
     openGlobalSearch(project ? assistantProjectSearchOptions(project) : assistantSearchOptions(locale()));
   };
   const chatItem = (conversation: AiConversation): NavigationItem => {
-    const busy = ["queued", "running", "needs_attention", "waiting_for_browser"].includes(conversation.runStatus);
+    const busy = isConversationBusy(conversation);
     const active = activeConversationId() === conversation.id;
     // The same one marker as the desktop row, in a slot that stays reserved, so a status change keeps the row's size.
     const marker = conversationStatusPresentation(conversation, locale(), active);

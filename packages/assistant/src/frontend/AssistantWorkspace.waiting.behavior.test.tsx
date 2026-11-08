@@ -199,3 +199,51 @@ test("the first client frame of the waiting row equals the server's", async () =
     for (const cleanup of cleanups.splice(0).reverse()) cleanup();
   }
 });
+
+test("a run that starts in the open chat and in another marks both rows without a reload, and its unread answer stays marked", async () => {
+  const here = chat("Wart42", "Wartung Oktober", "idle");
+  const other = chat("Tops42", "Team Ops Wochenplanung", "idle");
+  const server = { conversations: [here, other], questions: { items: [], count: 0 } as AiOpenQuestions };
+  const h = mount(server, here);
+  await waitFor(() => subscriptions.length > 0);
+  /** Each chat row's mark and whether it offers Done, by the row's link. */
+  const marks = () =>
+    [...h.root.querySelectorAll("div.assistant-chat-sidebar-item")].map((row) => [
+      row.querySelector("a")?.getAttribute("href")?.split("conversation=")[1],
+      row.querySelector(".k2b-app-workspace__sidebar-item-meta > .assistant-chat-marker > i")?.getAttribute("class") ?? null,
+      row.querySelector("button[aria-label='Chat als fertig markieren']") !== null,
+    ]);
+  expect(marks()).toEqual([
+    ["Wart42", null, true],
+    ["Tops42", null, true],
+  ]);
+
+  // Both start: the open chat, and one started elsewhere, such as from the phone.
+  const spinner = "ti ti-loader-2 animate-spin motion-reduce:animate-none assistant-chat-progress";
+  server.conversations = [
+    { ...here, runStatus: "running" },
+    { ...other, runStatus: "running" },
+  ];
+  await h.changed("Tops42");
+  await waitFor(() => marks().every(([, mark]) => mark !== null));
+  expect(marks()).toEqual([
+    ["Wart42", spinner, false],
+    ["Tops42", spinner, false],
+  ]);
+
+  // The other one finishes while the person stays here: its answer is unread.
+  server.conversations = [
+    { ...here, runStatus: "running" },
+    { ...other, unreadCompletion: true },
+  ];
+  await h.changed("Tops42");
+  await waitFor(() => marks()[1]?.[1] === "assistant-chat-unread");
+  expect(marks()).toEqual([
+    ["Wart42", spinner, false],
+    ["Tops42", "assistant-chat-unread", true],
+  ]);
+  expect(h.root.querySelector("div.assistant-chat-sidebar-item--unread a")?.getAttribute("href")).toBe(
+    "/app/assistant?conversation=Tops42",
+  );
+  expect(h.sidebarLoads).toHaveLength(2);
+});

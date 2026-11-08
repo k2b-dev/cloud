@@ -351,9 +351,13 @@
   color: var(--k2b-text);
 }
 
-/* Chat titles stay regular weight; the active row alone carries emphasis. */
+/* Chat titles stay regular weight; the active row and an unread answer alone carry emphasis. Unread is weight and
+   dot, never color alone, as in the shared sidebar status. */
 .k2b-ui .k2b-app-workspace .assistant-chat-sidebar-item[data-variant] .k2b-app-workspace__sidebar-item-label-text {
   font-weight: 400;
+}
+.k2b-ui .k2b-app-workspace .assistant-chat-sidebar-item--unread[data-variant] .k2b-app-workspace__sidebar-item-label-text {
+  font-weight: 600;
 }
 
 /* Reserve the chat list's scroll track in the surrounding inset, so rows and
@@ -392,15 +396,32 @@
   pointer-events: none;
   transition: opacity 150ms ease-out;
 }
-/* One quiet status per chat at the row's end; the label is in the tooltip and for screen readers. */
+/* One status per chat at the row's end; the label is in the tooltip and for screen readers. In the chat list it has
+   the size of the row's icons in a fixed 1rem slot, so a change from running to waiting, failed, or unread moves
+   nothing. */
 .k2b-ui .assistant-chat-marker { display: inline-flex; align-items: center; color: var(--k2b-text-muted); }
 .k2b-ui .assistant-chat-marker[data-tone="progress"] { color: var(--k2b-text-muted); }
 .k2b-ui .assistant-chat-marker[data-tone="attention"] { color: var(--k2b-warning-text); }
 .k2b-ui .assistant-chat-marker[data-tone="danger"] { color: var(--k2b-danger-text); }
 .k2b-ui .assistant-chat-marker[data-tone="accent"] { color: var(--k2b-action); }
+.k2b-ui .k2b-app-workspace__sidebar-item-meta > .assistant-chat-marker {
+  justify-content: center;
+  inline-size: 1rem;
+  block-size: 1rem;
+  font-size: .875rem;
+}
+/* Work in progress: the AI's plum, also where the surrounding tone is neutral, and a calm turn. */
+.k2b-ui .assistant-chat-progress { color: var(--k2b-ai-accent); }
+.k2b-ui .assistant-chat-progress.animate-spin { animation-duration: 1.6s; }
 /* A chat that waits for the person carries the AI accent dot of "Waiting for you", also in the phone navigation, whose
-   tones have no AI color. It takes the slot of an icon, so the row keeps its size. */
-.k2b-ui .assistant-chat-waiting { display: inline-block; flex: none; inline-size: .5rem; block-size: .5rem; border-radius: 50%; background: var(--k2b-ai-accent); }
+   tones have no AI color. An unread answer carries the action color's dot. Each takes the slot of an icon, so the row
+   keeps its size. */
+.k2b-ui .assistant-chat-waiting,
+.k2b-ui .assistant-chat-unread { display: inline-block; flex: none; inline-size: .5rem; block-size: .5rem; border-radius: 50%; background: var(--k2b-ai-accent); }
+.k2b-ui .assistant-chat-unread { background: var(--k2b-action); }
+@media (forced-colors: active) {
+  .k2b-ui :is(.assistant-chat-waiting, .assistant-chat-unread) { background: CanvasText; forced-color-adjust: none; }
+}
 
 /* "Waiting for you" above the composer: one row of fixed height that scrolls sideways, so a question opening or
    closing elsewhere never moves the composer. Hidden, it keeps its place. Its end fades, so a cut entry reads as more

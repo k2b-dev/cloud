@@ -88,6 +88,56 @@ describe("Assistant sidebar", () => {
     expect(html).not.toContain("k2b-app-workspace__sidebar-item-description");
   });
 
+  test("the first render marks every state at the row end, and the open running chat keeps its mark instead of a Done check", async () => {
+    const rendered = renderToString(() =>
+      createComponent(AssistantSidebar, {
+        timeZone: "UTC",
+        renderedAt,
+        conversations: () => [
+          { ...conversation("working", "Import", null), runStatus: "running" },
+          { ...conversation("waiting", "Approval", null), runStatus: "needs_attention" },
+          { ...conversation("broken", "Report", null), runStatus: "failed", runError: "Model unavailable" },
+          { ...conversation("fresh", "Answer", null), unreadCompletion: true },
+          conversation("quiet", "Notes", null),
+        ],
+        activeConversationId: () => "working",
+        live,
+      }),
+    );
+    // The desktop list, after the phone navigation snapshot that carries the same marks.
+    const html = rendered.slice(rendered.indexOf("<aside"));
+    const rows: { id?: string; unread: boolean; mark?: string; actions: string[] }[] = [];
+    for (const { attributes } of await selectHtml(
+      html,
+      "div.assistant-chat-sidebar-item, div.assistant-chat-sidebar-item > a[href], .k2b-app-workspace__sidebar-item-meta > .assistant-chat-marker > i, div.assistant-chat-sidebar-item > button[aria-label]",
+    )) {
+      if (attributes.class?.includes("assistant-chat-sidebar-item"))
+        rows.push({ unread: attributes.class.includes("assistant-chat-sidebar-item--unread"), actions: [] });
+      else if (attributes.href) rows.at(-1)!.id = attributes.href.split("conversation=")[1];
+      else if (attributes["aria-label"]) rows.at(-1)!.actions.push(attributes["aria-label"]);
+      else rows.at(-1)!.mark = attributes.class;
+    }
+    const spinner = "ti ti-loader-2 animate-spin motion-reduce:animate-none assistant-chat-progress";
+    expect(rows.map(({ actions, ...row }) => ({ ...row, done: actions.includes("Mark chat done") }))).toEqual([
+      { id: "working", unread: false, mark: spinner, done: false },
+      { id: "waiting", unread: false, mark: "assistant-chat-waiting", done: false },
+      { id: "broken", unread: false, mark: "ti ti-alert-circle", done: true },
+      { id: "fresh", unread: true, mark: "assistant-chat-unread", done: true },
+      { id: "quiet", unread: false, mark: undefined, done: true },
+    ]);
+    expect(html).not.toContain("Stop the response before marking it done");
+    // The phone navigation starts from the same marks.
+    const snapshot = /<script[^>]*data-cloud-workspace-navigation[^>]*>(.*?)<\/script>/s.exec(rendered)?.[1];
+    const phone = (JSON.parse(snapshot!) as { items: NavigationItem[] }).items.flatMap((item) => item.children ?? []);
+    expect(phone.filter((item) => item.id.startsWith("chat:")).map((item) => [item.id, item.status?.icon ?? null])).toEqual([
+      ["chat:working", spinner],
+      ["chat:waiting", "assistant-chat-waiting"],
+      ["chat:broken", "ti ti-alert-circle"],
+      ["chat:fresh", "assistant-chat-unread"],
+      ["chat:quiet", null],
+    ]);
+  });
+
   test("selects only the visible Project or Code despite a retained chat", async () => {
     for (const activeView of ["chat", "code"] as const) {
       const html = renderToString(() =>
@@ -248,7 +298,15 @@ describe("Assistant phone menu", () => {
     const sections = items.filter((item) => item.section);
     expect(sections.map((section) => [section.label, section.children?.map((chat) => [chat.label, chat.status])])).toEqual([
       ["Pinned", [["Pinned work", null]]],
-      ["Today", [["Import", { icon: "ti ti-loader-2 animate-spin motion-reduce:animate-none", label: "Running", tone: "neutral" }]]],
+      [
+        "Today",
+        [
+          [
+            "Import",
+            { icon: "ti ti-loader-2 animate-spin motion-reduce:animate-none assistant-chat-progress", label: "Running", tone: "neutral" },
+          ],
+        ],
+      ],
       ["Yesterday", [["Notes", null]]],
       ["Older", [["Weekly report", null]]],
     ]);
