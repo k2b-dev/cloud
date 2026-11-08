@@ -259,21 +259,21 @@ for (const width of [390, 1440]) {
       });
       expect(ticks).toBe(true);
       const treemap = page.locator('[data-chart-kind="treemap"]');
-      expect(await treemap.locator("tspan").count()).toBeGreaterThan(0);
+      expect(await treemap.locator("[data-treemap-name]").count()).toBeGreaterThan(0);
+      expect(await treemap.locator("[data-treemap-value]").count()).toBeGreaterThan(0);
       const fits = await treemap.locator("[data-chart-datum]").evaluateAll((groups) =>
         groups.every((g) => {
-          const text = g.querySelector("text");
+          const text = g.querySelector("[data-treemap-name]");
           if (!text) return true;
           const cell = g.querySelector("rect")!.getBoundingClientRect(),
-            range = document.createRange();
-          range.selectNodeContents(text.firstChild!);
-          const name = range.getBoundingClientRect(),
-            value = g.querySelector("tspan")?.getBoundingClientRect();
+            name = text.getBoundingClientRect(),
+            value = g.querySelector("[data-treemap-value]")?.getBoundingClientRect();
           return (
             name.left >= cell.left - 1 &&
             name.right <= cell.right + 1 &&
             name.bottom <= cell.bottom + 1 &&
-            (!value || (name.bottom <= value.top && value.right <= cell.right + 1 && value.bottom <= cell.bottom + 1))
+            (!value ||
+              (name.bottom <= value.top && value.left >= cell.left - 1 && value.right <= cell.right + 1 && value.bottom <= cell.bottom + 1))
           );
         }),
       );

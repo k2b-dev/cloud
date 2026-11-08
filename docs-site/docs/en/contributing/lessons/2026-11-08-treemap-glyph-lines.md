@@ -6,3 +6,5 @@
 - **Guard:** Render the name and value as independent text elements, keep the browser assertion on their real bounds, and reserve a 20px baseline step that stays in CSS pixels, with enough cell height for both lines. A renderer test guards the spacing and suppresses both lines when the cell is too short.
 
 The Pulse catalog renderer also preserves Pareto's measure-label tuple instead of replacing it with inspector labels. Pulse's typecheck guards that discriminated contract at its real JSX caller.
+
+Showcase guards must measure the same semantic name/value elements as the core browser fixture. Requiring an obsolete nested `tspan` structure rejects correct independent text elements; selectors now use the explicit name/value attributes while preserving bounds and non-overlap assertions for both lines.
