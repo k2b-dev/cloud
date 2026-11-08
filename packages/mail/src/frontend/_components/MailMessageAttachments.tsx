@@ -101,7 +101,8 @@ function MailAttachmentPreviewDialog(props: {
   };
 
   return (
-    <PanelDialog>
+    // A picture or a video fills the dialog; its header floats over it.
+    <PanelDialog media={props.kind === "image" || props.kind === "video"}>
       <PanelDialog.Header
         title={
           <Show

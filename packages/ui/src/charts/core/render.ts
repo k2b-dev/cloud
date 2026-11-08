@@ -5,6 +5,7 @@ import { renderStateTimelineSvg, type StateTimelineChartOptions, type StateTimel
 import { responsiveChartSvg, responsiveMapSvg } from "../../content/chart-svg";
 import { type ChartTimeAxis, timeAxisSvg } from "../../content/chart-time-axis";
 import { type AreaOptions, renderAreaSvg } from "./area";
+import { type FunnelOptions, renderFunnelSvg } from "./funnel";
 import { type HorizontalBarOptions, renderHbarSvg } from "./hbar";
 import { chartRenderers } from "./registry";
 import type { MapViewport } from "./svg";
@@ -72,6 +73,10 @@ export const renderChartSvg = (
       }),
     );
   }
+  if (kind === "funnel")
+    return responsiveChartSvg(
+      renderFunnelSvg({ ...(opts as FunnelOptions), locale: (opts as FunnelOptions).locale ?? renderLocale, width, height, inspect: true }),
+    );
   if (kind === "hbar") return responsiveChartSvg(renderHbarSvg({ ...(opts as HorizontalBarOptions), width, height, inspect: true }));
   if (kind === "waterfall")
     return responsiveChartSvg(

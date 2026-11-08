@@ -23,12 +23,18 @@ test("normal mounts omit app checks and stay within the prelude budget", async (
   console.info(`App prelude: ${Buffer.byteLength(normal)} B; offline chart module: ${Buffer.byteLength(rare)} B`);
   expect(Buffer.byteLength(normal)).toBeLessThan(319_900);
   // temporary until the last kind PR sets the catalog total, see #2790
-  expect(Buffer.byteLength(rare)).toBeLessThan(61_500);
+  expect(Buffer.byteLength(rare)).toBeLessThan(57_100);
 
   expect(normal).not.toContain("k2b-chart-group-heading");
   expect(rare).toContain("k2b-chart-group-heading");
   expect(normal).toContain("Horizontal bars require aligned nonnegative segment values");
   expect(rare).not.toContain("Horizontal bars require aligned nonnegative segment values");
+  expect(normal).not.toContain("k2b-chart-funnel");
+  expect(rare).toContain("k2b-chart-funnel");
+  expect(rare).not.toContain(".stdlib-chart-series-0 {");
+  expect(normal).not.toContain(".stdlib-chart-series-0 {");
+  expect(normal).toContain("Funnel values must be finite and nonnegative, or null");
+  expect(rare).not.toContain("Funnel values must be finite and nonnegative, or null");
   // Reference cells need only identity validation, not capability registration.
   expect(normal).not.toContain("Idempotency keys must contain only visible ASCII characters");
   // The frame imports `@k2b/cloud/ai/app-frame`: the `ai/browser` barrel kept its skill parser and YAML (34 KB).

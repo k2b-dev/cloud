@@ -154,7 +154,7 @@ const flatChartSchema = () => {
           .array(
             z.object({
               label: ChartLabel.optional(),
-              value: z.number().optional(),
+              value: z.number().nullable().optional(),
               values: z.array(z.number()).min(1).optional(),
               x: ChartLabel.optional(),
               y: ChartLabel.optional(),
@@ -187,6 +187,9 @@ const flatChartSchema = () => {
       .optional()
       .describe("bar, area: aligned category labels or numeric X values."),
     compare: z.object({ label: ChartLabel, data: z.array(z.number().nullable()).max(CLOUD_AI_CHART_MAX_VALUES) }).optional(),
+    share: z.boolean().optional(),
+    limit: z.number().int().positive().optional(),
+    tone: z.enum(["in", "out"]).optional(),
     normalize: z.boolean().optional().describe("stacked bar, area: normalize positive totals to 100 percent."),
     rows: z
       .array(

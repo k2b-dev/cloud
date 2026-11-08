@@ -10,6 +10,7 @@ import * as budgetExamples from "./budget";
 import * as calendarExamples from "./calendar";
 import * as donutExamples from "./donut";
 import * as flowExamples from "./flow";
+import * as funnelExamples from "./funnel";
 import * as gaugeExamples from "./gauge";
 import * as hbarExamples from "./hbar";
 import * as heatmapExamples from "./heatmap";
@@ -37,6 +38,7 @@ export const exampleModules: Record<string, unknown>[] = [
   calendarExamples,
   donutExamples,
   flowExamples,
+  funnelExamples,
   gaugeExamples,
   hbarExamples,
   heatmapExamples,
