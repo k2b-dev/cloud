@@ -169,12 +169,13 @@ export function Slider(props: SliderProps): JSX.Element {
   };
   const track = () => {
     const position = percentage();
+    const fill = rest.disabled ? "var(--k2b-text-muted)" : "var(--k2b-action)";
     if (local.center) {
       const low = Math.min(50, position);
       const high = Math.max(50, position);
-      return `linear-gradient(to right, var(--k2b-surface-muted) 0 ${low}%, var(--k2b-action) ${low}% ${high}%, var(--k2b-surface-muted) ${high}% 100%)`;
+      return `linear-gradient(to right, var(--k2b-surface-muted) 0 ${low}%, ${fill} ${low}% ${high}%, var(--k2b-surface-muted) ${high}% 100%)`;
     }
-    return `linear-gradient(to right, var(--k2b-action) 0 ${position}%, var(--k2b-surface-muted) ${position}% 100%)`;
+    return `linear-gradient(to right, ${fill} 0 ${position}%, var(--k2b-surface-muted) ${position}% 100%)`;
   };
   const resetValue = () => local.defaultValue ?? (local.center ? (min() + max()) / 2 : min());
   const changed = () => local.defaultValue !== undefined && value() !== local.defaultValue;

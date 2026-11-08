@@ -10547,6 +10547,11 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   cursor: not-allowed;
 }
 
+.k2b-ui .k2b-field[data-disabled="true"]:has(> .k2b-slider) .k2b-field__label,
+.k2b-ui .k2b-field[data-disabled="true"]:has(> .k2b-slider) output {
+  color: var(--k2b-text-muted);
+}
+
 .k2b-ui .k2b-slider input:disabled::-webkit-slider-thumb {
   background: var(--k2b-text-muted);
   cursor: not-allowed;

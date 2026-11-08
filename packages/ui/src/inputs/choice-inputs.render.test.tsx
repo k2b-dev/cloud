@@ -790,6 +790,19 @@ describe("@k2b/ui complete choice input migrations", () => {
     expect(disabled).toContain("disabled");
   });
 
+  test("disabled Slider fills are muted in both value placements and track directions", () => {
+    for (const valuePlacement of ["control", "label"] as const) {
+      for (const center of [false, true]) {
+        const html = renderToString(() =>
+          createComponent(Slider, { label: "Strength", value: 80, defaultValue: 0, disabled: true, valuePlacement, center }),
+        );
+        expect(html).toContain('data-disabled="true"');
+        expect(html).toContain("var(--k2b-text-muted)");
+        expect(html).not.toContain("var(--k2b-action)");
+      }
+    }
+  });
+
   test("filters labels, descriptions, and values while skipping disabled keyboard targets", () => {
     expect(filterChoiceOptions(options, "product")).toEqual([options[2]]);
     expect(filterChoiceOptions(options, "platform")).toEqual([options[0]]);
