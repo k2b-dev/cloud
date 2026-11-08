@@ -542,6 +542,7 @@ export const renderChartRoot = (props: ChartProps, renderChartSvg: typeof import
       closeChartInspectionOnOutside({
         container: () => containerRef,
         tooltip: () => chartTooltipRef,
+        scroll: inspection.scroll,
         close: closeChartTooltip,
         keepScroll: () => props.kind === "heatmap" && props.layout === "calendar",
       }),
