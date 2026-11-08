@@ -8,7 +8,6 @@ import type { AppEventEnvelope } from "@k2b/cloud/contracts/app-events";
 import type { CapabilityRegistryEntry } from "@k2b/cloud/contracts/registry";
 import { appEventFixture } from "@k2b/cloud/events/testing";
 import { accounts } from "@k2b/cloud/services";
-import * as eventPlatform from "@k2b/cloud/services/app-events";
 import { cancelResourceEventSubscriptions, createAppEventBroker, type ResourceEventBinding } from "@k2b/cloud/services/app-events";
 import { nestedInvocationLeases } from "@k2b/cloud/services/identity";
 import { resolveInvocationAuthority } from "@k2b/cloud/services/identity/invocation-actor";
@@ -591,7 +590,15 @@ suiteFor("database", "nats")("Code event delivery to durable run admission", () 
       ok: true,
       data: { appId: "fixture", appName: "Fixture", appIcon: "box", appDescription: "Fixture", manifest: declaration.manifest },
     });
-    const resource = spyOn(eventPlatform, "authorizeResourceEvent").mockResolvedValue(true);
+    const resource = spyOn(catalogProvider, "readResourcePrincipals").mockImplementation(async ({ principals }) => {
+      // A reader may wait on a remote app. Policy edits and pause must remain
+      // available throughout that wait; NOWAIT fails if admission holds either lock.
+      await sql.begin(async (db) => {
+        await db`SELECT singleton FROM code.policy WHERE singleton FOR UPDATE NOWAIT`;
+        await db`SELECT id FROM code.codes WHERE id=${codeId} FOR UPDATE NOWAIT`;
+      });
+      return { state: "checked", readable: readable ? [...principals] : [] };
+    });
     let refuseHistorical = false;
     const source = spyOn(catalogProvider, "invokeCapabilityWithDataSchema").mockImplementation(async (invocation, schema) => {
       if (invocation.capabilityId === "collection.read")
@@ -607,8 +614,20 @@ suiteFor("database", "nats")("Code event delivery to durable run admission", () 
     let stop: (() => Promise<void>) | undefined;
     const input = { operationId: id(60), versionId, events: Array.from({ length: 45 }, (_, n) => event(100 + n, `message-${n}`)) };
     const dispatch = codeEventCatchupPumpConfig.dispatch;
-    let lost = false;
+    let lost = false,
+      checkedSnapshot = false;
     const crash = spyOn(codeEventCatchupPumpConfig, "dispatch").mockImplementation(async (request) => {
+      if (!checkedSnapshot) {
+        await expect(dispatch({ ...request, item: { key: "forged", event: event(998) } })).rejects.toMatchObject({
+          code: "CONFLICT",
+          message: "Catch-up occurrence is not in the saved operation.",
+        });
+        await expect(dispatch({ ...request, input: { ...request.input, requestDigest: "substituted" } })).rejects.toMatchObject({
+          code: "CONFLICT",
+          message: "Catch-up occurrence is not in the saved operation.",
+        });
+        checkedSnapshot = true;
+      }
       await dispatch(request);
       if (!lost) {
         lost = true;
@@ -628,6 +647,7 @@ suiteFor("database", "nats")("Code event delivery to durable run admission", () 
       }
       expect(state).toMatchObject({ status: "completed", total: 45, dispatched: 45 });
       expect(lost).toBe(true);
+      expect(checkedSnapshot).toBe(true);
       expect(await runs()).toHaveLength(45);
       expect(await sql`SELECT * FROM code.run_requests WHERE request_key LIKE 'catchup:%'`).toHaveLength(45);
       expect(await sql`SELECT * FROM events.app_events`).toHaveLength(0);
@@ -637,12 +657,14 @@ suiteFor("database", "nats")("Code event delivery to durable run admission", () 
         status: "completed",
         dispatched: 45,
       });
+      const readerCalls = resource.mock.calls.length;
       await startCodeEventCatchup(codeId, { ...input, operationId: id(62) }, editor);
       for (let n = 0; n < 100; n++) {
         if ((await readCodeEventCatchup(codeId, id(62), editor)).status === "completed") break;
         await Bun.sleep(30);
       }
       expect((await readCodeEventCatchup(codeId, id(62), editor)).status).toBe("completed");
+      expect(resource.mock.calls).toHaveLength(readerCalls);
       expect(await runs()).toHaveLength(45);
       // Catch-up first, then delayed generic delivery: one run and one live receipt.
       const delayed = input.events[0]!;
@@ -707,14 +729,25 @@ suiteFor("database", "nats")("Code event delivery to durable run admission", () 
       // Isolate the account fence from AI approval and the original canceled operation.
       await version();
       await activate();
+      const pending = { ...input, operationId: id(66), versionId, events: [event(999, "message-899")] };
+      await startCodeEventCatchup(codeId, pending, editor);
       await sql`UPDATE auth.service_accounts SET status='disabled' WHERE id=${principal}::uuid`;
-      await expect(
-        codeEventCatchupPumpConfig.dispatch({
-          input: { ...input, operationId: id(66), versionId, codeId, requestDigest: "fixture", capacityDeadline: Date.parse(time) },
-          item: { key: "disabled-account", event: event(999, "message-899") },
-          signal: new AbortController().signal,
-        }),
-      ).rejects.toMatchObject({ code: "CONFLICT", message: "The handler's active execution binding changed." });
+      stop = await startCodeEventCatchupRuntime();
+      for (let n = 0; n < 100; n++) {
+        if ((await readCodeEventCatchup(codeId, pending.operationId, editor)).failureCount > 0) break;
+        await Bun.sleep(30);
+      }
+      expect(await readCodeEventCatchup(codeId, pending.operationId, editor)).toMatchObject({
+        dispatched: 0,
+        lastError: "The handler's active execution binding changed.",
+      });
+      expect((await readCodeEventCatchup(codeId, pending.operationId, editor)).failureCount).toBeGreaterThan(0);
+      expect(
+        await sql`SELECT * FROM code.run_requests WHERE request_key=${codeEventTargetKey(versionId, pending.events[0]!)}`,
+      ).toHaveLength(0);
+      await stop();
+      stop = undefined;
+      await sync.pump(codeEventCatchupPumpConfig).cancel({ key: `${codeId}:${pending.operationId}` });
     } finally {
       await stop?.();
       crash.mockRestore();

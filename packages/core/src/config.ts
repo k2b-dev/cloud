@@ -113,7 +113,7 @@ export const app = defineApp({
       "/api/openapi.json",
     ],
   }),
-  platformPermissions: ["mail:send"],
+  platformPermissions: ["mail:send", "resources:readers"],
   cli: {
     code: { module: "src/cli/code.ts", references: "src/cli-references/code" },
     account: { module: "src/cli/account.ts", references: "src/cli-references/account" },
