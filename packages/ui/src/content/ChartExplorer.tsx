@@ -2,6 +2,7 @@ import { createEffect, createMemo, createSignal, createUniqueId, For, type JSX, 
 import { Dynamic } from "solid-js/web";
 import { Button, IconButton } from "../actions/Button";
 import { CopyButton } from "../actions/CopyButton";
+import { calendarViewportHeight } from "../charts/core/calendar";
 import { SelectChip } from "../inputs/SelectChip";
 import { useLocale } from "../intl/locale";
 import { useUiMessages } from "../intl/messages";
@@ -251,6 +252,18 @@ export function ChartExplorer<T extends ChartExplorerRow>(props: ChartExplorerPr
       )}
     </Show>
   );
+  // The first frame owns its reserve, even when requests omit or replace its
+  // snapshot. With no initial geometry, keep the standard frame after loading.
+  const firstChart = snapshot();
+  const calendarHeight =
+    firstChart?.minWidth && firstChart.maxWidth
+      ? calendarViewportHeight(
+          { ...firstChart, minWidth: firstChart.minWidth, maxWidth: firstChart.maxWidth },
+          "var(--k2b-calendar-available,100cqw)",
+        )
+      : undefined;
+  const autoCalendar = Boolean(calendarHeight);
+  const viewportHeight = () => props.height ?? calendarHeight ?? "18rem";
   // "14px 16px" reads like CSS padding: block first, then inline; one value is both.
   const insetBlock = () => props.inset?.trim().split(/\s+/)[0] ?? "";
   const insetInline = () => props.inset?.trim().split(/\s+/)[1] ?? insetBlock();
@@ -333,10 +346,14 @@ export function ChartExplorer<T extends ChartExplorerRow>(props: ChartExplorerPr
       <div
         ref={legendHost}
         class="k2b-chart-explorer__viewport"
+        data-calendar={autoCalendar ? "true" : undefined}
         data-view={tableView() ? "table" : undefined}
         data-legend={view() === "chart" && props.legend?.length && data().rows.length > 0 ? "true" : undefined}
         data-capped={tableView() && shownRows().length < rows().length ? "true" : undefined}
-        style={{ height: tableView() && props.inset ? `calc(${props.height ?? "18rem"} + ${insetBlock()})` : (props.height ?? "18rem") }}
+        style={{
+          [autoCalendar ? "--k2b-calendar-height" : "height"]:
+            tableView() && props.inset ? `calc(${viewportHeight()} + ${insetBlock()})` : viewportHeight(),
+        }}
       >
         <Show
           when={state() !== "loading" && state() !== "error" && data().rows.length > 0}
