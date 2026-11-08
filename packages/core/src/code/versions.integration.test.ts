@@ -841,6 +841,14 @@ databaseSuite()("C8 immutable versions, comparisons and platform decisions", () 
     await expect(submitCodeVersion(input(code, "denied"), readOnly)).rejects.toMatchObject({ code: "FORBIDDEN" });
     const phone: CodeContext = { authority: { ...author.authority, actor: { kind: "user", user: person(authorId), sessionKind: "app" } } };
     await expect(submitCodeVersion(input(code, "denied"), phone)).rejects.toMatchObject({ code: "FORBIDDEN" });
+    for (const target of [code.id, "c_missing_preview"]) {
+      for (const paused of [true, false]) {
+        await expect(reviewCodeExecutionChange(target, paused, phone)).rejects.toMatchObject({
+          code: "FORBIDDEN",
+          message: "Phone sessions cannot change Code execution authority.",
+        });
+      }
+    }
   });
   test("changed internet origins need a new approval bound to the exact manifest", async () => {
     const code = await newCode();

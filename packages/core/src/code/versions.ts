@@ -629,6 +629,8 @@ export async function reviewCodeExecutionChange(
   context: CodeContext,
 ): Promise<CapabilityActionCallReview> {
   codePerson(context, true);
+  if (isAppSessionActor(context.authority.actor))
+    throw new CodeDataError("FORBIDDEN", "Phone sessions cannot change Code execution authority.");
   return sql.begin(async (tx) => {
     await tx`SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY`;
     const code = await findCode(codeId, tx);
