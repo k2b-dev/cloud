@@ -54,6 +54,7 @@ import {
   PanelDialog,
   Paper,
   PdfPreview,
+  PdfViewer,
   Placeholder,
   panelDialogFixedOptions,
   panelDialogOptions,
@@ -1553,6 +1554,34 @@ const gallery = [
     alt: "Purple field",
   },
 ];
+/** A two-page sample PDF built in the browser, so the demo shows pdf.js drawing a real document. */
+const samplePdf = (): Blob => {
+  const objects = [
+    "",
+    "<< /Type /Catalog /Pages 2 0 R >>",
+    "<< /Type /Pages /Kids [4 0 R 6 0 R] /Count 2 >>",
+    "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
+  ];
+  for (const [page, title] of ["Sample report", "Appendix"].entries()) {
+    const stream = `BT /F1 28 Tf 72 740 Td (${title}) Tj ET\nBT /F1 12 Tf 72 700 Td (Page ${page + 1} of 2, drawn by pdf.js.) Tj ET`;
+    objects.push(
+      `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 3 0 R >> >> /Contents ${5 + page * 2} 0 R >>`,
+    );
+    objects.push(`<< /Length ${stream.length} >>\nstream\n${stream}\nendstream`);
+  }
+  let body = "%PDF-1.4\n";
+  const offsets: number[] = [];
+  for (let id = 1; id < objects.length; id++) {
+    offsets[id] = body.length;
+    body += `${id} 0 obj\n${objects[id]}\nendobj\n`;
+  }
+  const xref = body.length;
+  body += `xref\n0 ${objects.length}\n0000000000 65535 f \n`;
+  for (let id = 1; id < objects.length; id++) body += `${String(offsets[id]).padStart(10, "0")} 00000 n \n`;
+  body += `trailer\n<< /Size ${objects.length} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF\n`;
+  return new Blob([body], { type: "application/pdf" });
+};
+
 const MediaDemo = () => {
   const [open, setOpen] = createSignal(false);
   const openPreview = () =>
@@ -1589,15 +1618,17 @@ const MediaDemo = () => {
       chip={[
         { kind: "component", name: "Lightbox", from: "@k2b/ui" },
         { kind: "component", name: "PdfPreview", from: "@k2b/ui" },
+        { kind: "component", name: "PdfViewer", from: "@k2b/ui" },
       ]}
-      description="Application-owned media, a standalone PDF preview, and a composed dialog with header actions and an actionable error."
+      description="Application-owned media, a standalone PDF preview drawn by pdf.js, the viewer on its own with zoom and selectable text, and a composed dialog with header actions and an actionable error."
       code={`const [open, setOpen] = createSignal(false);
 
 <Button variant="secondary" onClick={() => setOpen(true)}>Open gallery</Button>
 <Show when={open()}>
   <Lightbox images={images} initialIndex={0} onClose={() => setOpen(false)} />
 </Show>
-<PdfPreview request={() => Promise.resolve(pdfBlob)} title="Report" emptyText="Generate the report to inspect it." />`}
+<PdfPreview request={() => Promise.resolve(pdfBlob)} title="Report" emptyText="Generate the report to inspect it." />
+<PdfViewer data={pdfBlob} title="Report" />`}
     >
       <div class="ui-demo-row">
         <Button variant="secondary" onClick={() => setOpen(true)}>
@@ -1611,11 +1642,10 @@ const MediaDemo = () => {
         <Lightbox images={gallery} initialIndex={0} onClose={() => setOpen(false)} />
       </Show>
       <div class="ui-pdf-demo">
-        <PdfPreview
-          request={async () => new Blob(["%PDF-1.4\n%%EOF"], { type: "application/pdf" })}
-          title="Sample report"
-          emptyText="Generate the local sample to inspect it."
-        />
+        <PdfPreview request={async () => samplePdf()} title="Sample report" emptyText="Generate the local sample to inspect it." />
+      </div>
+      <div class="ui-pdf-viewer-demo">
+        <PdfViewer data={samplePdf()} title="Sample report" />
       </div>
     </DemoCard>
   );

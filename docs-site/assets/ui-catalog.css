@@ -1075,6 +1075,12 @@
   min-height: 10rem;
 }
 
+.ui-pdf-viewer-demo {
+  display: flex;
+  height: 26rem;
+  flex-direction: column;
+}
+
 .ui-video-demo {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
@@ -2214,14 +2220,16 @@
   font-size: 0.72rem;
 }
 
-/* Dashboards: six columns; third is 2, half 3, two thirds 4, full 6. */
+/* Dashboards: the box around DashboardGrid; the grid, sections and frames come from @k2b/ui. */
+/* The dashboard grid measures its own width (folding at 1000 and 600 px), so the box keeps its padding small and the
+   grid gets the room of the text column. */
 .ui-charts-dashboard {
   container: ui-charts-dashboard / inline-size;
   display: flex;
   min-width: 0;
   flex-direction: column;
   gap: 1.5rem;
-  padding: clamp(1rem, 2.5vw, 1.75rem);
+  padding: 1rem;
   border-radius: 1rem;
   background: var(--k2b-surface-muted);
 }
@@ -2256,51 +2264,6 @@
   font-size: 0.8125rem;
 }
 
-.ui-charts-dashboard__section {
-  display: flex;
-  flex-direction: column;
-  gap: 0.75rem;
-}
-
-.ui-charts-dashboard__section-title {
-  display: flex;
-  gap: 0.55rem;
-  align-items: center;
-  margin: 0.5rem 0 0;
-  color: var(--k2b-text);
-  font-size: 0.95rem;
-  font-weight: 600;
-}
-
-.ui-charts-dashboard__section-title i {
-  color: var(--k2b-text-secondary);
-  font-size: 1.15rem;
-}
-
-.ui-charts-grid {
-  display: grid;
-  grid-template-columns: repeat(6, minmax(0, 1fr));
-  gap: 1rem;
-}
-
-.ui-charts-grid__cell {
-  --ui-charts-panel-height: var(--ui-charts-panel);
-  min-width: 0;
-  grid-column: span 6;
-}
-
-.ui-charts-grid__cell[data-width="third"] {
-  grid-column: span 2;
-}
-
-.ui-charts-grid__cell[data-width="half"] {
-  grid-column: span 3;
-}
-
-.ui-charts-grid__cell[data-width="twoThirds"] {
-  grid-column: span 4;
-}
-
 .ui-charts-dashboard__json summary {
   color: var(--c-accent-ink);
   font-size: 0.875rem;
@@ -2310,24 +2273,6 @@
 
 .ui-charts-dashboard__json[open] summary {
   margin-bottom: 0.75rem;
-}
-
-@container ui-charts-dashboard (max-width: 860px) {
-  .ui-charts-grid__cell[data-width="third"] {
-    grid-column: span 3;
-  }
-
-  .ui-charts-grid__cell[data-width="twoThirds"] {
-    grid-column: span 6;
-  }
-}
-
-@container ui-charts-dashboard (max-width: 560px) {
-  .ui-charts-grid__cell[data-width] {
-    --ui-charts-panel-height: var(--ui-charts-panel-compact);
-    grid-column: span 6;
-  }
-
 }
 
 @media (max-width: 760px) {

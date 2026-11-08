@@ -1,3 +1,5 @@
+import { seriesBarLayout } from "@k2b/ui/charts/core";
+
 // Cloud retains AI policy and its public export names; portable rendering lives in @k2b/editor.
 export {
   type ChartColumn as CloudAiChartColumn,
@@ -108,7 +110,10 @@ export function chartDataIssue(input: CloudAiChartInput): string | undefined {
 /** Why chart options that pass the data checks still would not draw well; draws them once. */
 export function chartDrawingIssue(input: CloudAiChartInput): string | undefined {
   try {
-    const svg = draw(cloudAiChartRenderOptions(input, "en"));
+    const options = cloudAiChartRenderOptions(input, "en");
+    if (options.kind === "bar" && options.series && seriesBarLayout(options).barWidthPx < 0.5)
+      return "The bars are narrower than half a pixel on a phone; aggregate categories or use fewer series.";
+    const svg = draw(options);
     if (marks(svg).length === 0) return "None of the values can be drawn.";
     if ((input.kind === "pie" || input.kind === "donut") && pieRadius(svg) < MIN_PIE_RADIUS)
       return "The legend leaves too little room for the pie: combine small slices into one, shorten the labels, or use a bar chart.";

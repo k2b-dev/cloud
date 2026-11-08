@@ -41,6 +41,7 @@ or continues a line.
 | `noToolbar` | `boolean` | `false` | Hides the toolbar without disabling shortcuts. |
 | `showStats` | `boolean` | `true` | Shows line, word, and character counts. Suppressed entirely while `disabled`. |
 | `variant` | `"default" \| "paper" \| "embedded"` | `"default"` | Matches the editor surface to its parent. `embedded` removes the outer border, radius, and shadow for an existing workspace surface. |
+| `font` | `"mono" \| "sans"` | `"mono"` | The font of the text, its highlighting, and the placeholder. `mono` suits Markdown source, such as a document; `sans` suits a message composer whose text later shows in the interface font. |
 | `fill` | `boolean` | `false` | Fills the available parent height instead of using `lines`. |
 
 Native form and accessibility properties include `name`, `id`, `"aria-label"`,
@@ -93,7 +94,7 @@ const [textarea, setTextarea] = createSignal<HTMLTextAreaElement>();
 const [composer, setComposer] = createSignal<HTMLDivElement>();
 
 <div ref={setComposer} class="composer">
-  <MarkdownEditor variant="embedded" noToolbar value={text()} onValueChange={setText} textareaRef={setTextarea} />
+  <MarkdownEditor variant="embedded" noToolbar font="sans" value={text()} onValueChange={setText} textareaRef={setTextarea} />
   <SlashCommands textarea={textarea()} items={commands} composer={composer()} />
 </div>
 ```
@@ -105,9 +106,10 @@ keywords, without regard to case or accents. A `/` inside a word or after punctu
 
 - An entry with `onSelect` removes the typed `/query` from the text, then runs with the context: the query, the text
   without the `/query`, the text before the slash, whether it stands at the start of the text or a line, the path of
-  entries chosen so far, `insert(text)` at the caret as typing would, and an abort `signal`. A returned promise
-  keeps the list open with the entry busy; a rejection shows its message on the entry. See
-  [Context](/en/ui/actions/command-menu#context).
+  entries chosen so far, `insert(text)` at the caret as typing would, `success(message)` and `error(message)`, and an
+  abort `signal`. A returned promise keeps the list open with the entry busy. What the command reports, or a rejection
+  with Retry, takes the list's place as a short green or red line. See
+  [Context](/en/ui/actions/command-menu#context) and [Outcomes](/en/ui/actions/command-menu#outcomes).
 - An entry with `text` puts its text in place of `/query`.
 - An entry with `next` opens its list in the same place: the typed `/query` leaves the text, the list gets its own
   search field, and the focus moves there. Typing filters the list, the first match is marked, and <kbd>Enter</kbd>
@@ -126,6 +128,11 @@ to only one of them.
 ## Editing behavior
 
 The editor keeps a native textarea as the input surface. A synchronized presentation layer provides markdown highlighting without replacing browser selection, composition, or undo behavior.
+
+Both layers and the placeholder read one font from the editor's root, with the same size, line height, letter
+spacing, and tab size, so the caret and the selection stay on the highlighted text in either `font`. For the same
+reason, inline code and code blocks inside the editor use the editor's font; they stand out by their marks and
+highlighting, not by a font of their own.
 
 The toolbar covers bold, italic, inline code, links, three heading levels,
 bulleted and numbered lists, and quotes. It includes matching keyboard

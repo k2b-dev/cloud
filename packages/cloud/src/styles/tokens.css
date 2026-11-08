@@ -67,7 +67,7 @@
   --ui-context-menu-surface: var(--ui-surface-raised);
   --ui-context-menu-radius: var(--ui-radius-surface);
   --ui-context-menu-shadow: var(--ui-shadow-float);
-  --ui-dropdown-menu-surface: rgb(246 247 246 / 0.94);
+  --ui-dropdown-menu-surface: rgb(246 247 246);
   --ui-dropdown-menu-radius: var(--ui-radius-surface);
   --ui-dropdown-menu-shadow: var(--ui-shadow-float);
   --ui-menu-hover: var(--ui-hover);

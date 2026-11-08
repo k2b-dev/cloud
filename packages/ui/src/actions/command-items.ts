@@ -92,6 +92,16 @@ export type CommandContext = {
    */
   insert: (text: string) => void;
   /**
+   * Reports what a command did, such as "Valentin Brandt zugewiesen": after the command finished, the list gives way to
+   * a short confirmation in the same place. Meant for `onSelect`; an entry source has its own loading and failure.
+   */
+  success: (message: string) => void;
+  /**
+   * Reports why a command could not do it, such as "Keine Artikelnummer im Text"; it stays until the person types on
+   * or presses Escape. A command that throws or rejects reports its error itself, with a way to try again.
+   */
+  error: (message: string) => void;
+  /**
    * Aborts when the result is no longer wanted: a new query replaces a pending list, or the person closes the list
    * with Escape before a command's promise settled.
    */
