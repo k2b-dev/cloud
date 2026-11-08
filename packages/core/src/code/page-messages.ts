@@ -6,6 +6,7 @@ export const codePageMessages = i18n.define({
   messages: {
     en: {
       yes: "Yes",
+      asOf: ({ time }: { time: string }) => `As of ${time}`,
       points: "pts",
       chartEmpty: "Nothing to show yet.",
       no: "No",
@@ -35,6 +36,7 @@ export const codePageMessages = i18n.define({
     },
     de: {
       yes: "Ja",
+      asOf: ({ time }) => `Stand ${time}`,
       points: "Pkt.",
       chartEmpty: "Noch nichts zu zeigen.",
       no: "Nein",

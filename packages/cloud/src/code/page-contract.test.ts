@@ -234,7 +234,6 @@ test("key figures, grid widths, section symbols and number formats are data on t
     page([{ kind: "Stats", items: [{ label: "x", value: 1, delta: { value: 0.1, unit: "percent" } }] }]),
     page([{ kind: "Stats", items: [{ label: "x", value: 1, format: { style: "currency" } }] }]),
     page([{ kind: "Stats", items: [{ label: "x", value: Number.NaN }] }]),
-    page([{ kind: "Stats", items: [{ label: "x", value: 1, icon: "ti ti-package" }] }]),
     page([{ kind: "Chart", title: "Without anything to say" }]),
     page([{ kind: "Chart", empty: "Nothing" }]),
     page([{ ...section.children[0], title: "Two titles" }]),
@@ -310,4 +309,55 @@ test("routes draw only pages that the SDK's blocks built", async () => {
     tree: { kind: "Page", version: 1, title: "Built", children: [{ kind: "Text", text: "Hi" }] },
   });
   await expect(runtime.__codeSdk.run("route:GET:/object", request("/object"))).rejects.toThrow("code_page_blocks");
+});
+test("pages carry their place and read time, panels their height, and data blocks the shared descriptions' fields", () => {
+  const table = {
+    kind: "Table",
+    title: "Campaigns",
+    subtitle: "Latest 6 of 38",
+    search: true,
+    columns: [
+      { key: "name", label: "Campaign", priority: 1 },
+      { key: "status", label: "Status", type: "status", states: { sending: { label: "Sending", tone: "running" } } },
+      { key: "revenue", label: "Revenue", type: "amount", format: { style: "currency", currency: "EUR" } },
+    ],
+    rows: [{ name: "Weekly letter 44", status: "sending", revenue: 4610 }],
+  };
+  const stats = { kind: "Stats", items: [{ label: "Revenue", value: 4610, icon: "ti ti-coin-euro", tone: "emerald" }] };
+  const detail = {
+    kind: "Detail",
+    title: "Order",
+    height: "sm",
+    items: [{ label: "Total", value: 1290, format: { style: "currency", currency: "EUR" } }],
+  };
+  const full = {
+    ...page([stats, table, detail, { kind: "Chart", title: "Opens", empty: "No opens yet.", height: "lg" }]),
+    eyebrow: "Pulse · Website",
+    asOf: "2026-11-06T09:40:00Z",
+  };
+  expect<unknown>(validateCodePage(full, codeId)).toEqual(full);
+  for (const bad of [
+    { ...full, asOf: "yesterday" },
+    { ...full, eyebrow: "x".repeat(81) },
+    page([{ ...table, height: "md" }]),
+    page([{ ...table, columns: [{ key: "a", label: "A", format: { unit: "kg" } }] }]),
+    page([{ ...table, columns: [{ key: "a", label: "A", format: { style: "currency" } }] }]),
+    page([{ ...detail, items: [] }]),
+    page([{ ...detail, title: "   " }]),
+    page([{ ...table, columns: [{ key: "a", label: "A", type: "html" }] }]),
+    page([{ ...table, columns: [{ key: "a", label: "A", type: "status", states: { open: { label: "Open", tone: "pink" } } }] }]),
+    page([{ ...table, columns: [{ key: "a", label: "A", priority: 4 }] }]),
+    page([{ ...stats, items: [{ label: "R", value: 1, tone: "plum" }] }]),
+    page([{ ...stats, items: [{ label: "R", value: 1, tone: "in" }] }]),
+    page([{ ...detail, title: "x".repeat(161) }]),
+    page([{ ...detail, items: Array.from({ length: CODE_PAGE_LIMITS.details + 1 }, () => ({ label: "L", value: 1 })) }]),
+  ])
+    expect(() => validateCodePage(bad, codeId)).toThrow();
+});
+test("every kind of the chart schema is a Chart block, so a new kind needs no Code change", async () => {
+  const { chartKindSchema } = await import("@k2b/editor/chart-schema");
+  const sdk = generateCodeSdk([], { mode: "personal" });
+  const ui = await import(`data:text/javascript;base64,${Buffer.from(sdk.runtime).toString("base64")}`);
+  for (const kind of chartKindSchema().options) expect(typeof ui.Chart[kind[0]!.toUpperCase() + kind.slice(1)], kind).toBe("function");
+  for (const kind of chartKindSchema().options) expect(sdk.declarations).toContain("Capitalize<K>");
 });
