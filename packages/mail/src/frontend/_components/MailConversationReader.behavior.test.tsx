@@ -46,7 +46,7 @@ const envelopeOnly: MessageDetail = {
   selectedHeaders: {},
   sourceAvailable: false,
   mailingList: null,
-  remoteContent: { imageIds: [], allowedByRule: false, sender: "ada@example.com", domain: "example.com" },
+  remoteContent: { imageIds: [], allowedByRule: false, allowRules: [], sender: "ada@example.com", domain: "example.com" },
   delivery: null,
   attachments: [],
 };

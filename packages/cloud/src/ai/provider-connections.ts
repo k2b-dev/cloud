@@ -15,6 +15,7 @@ export type AiAvailableProviderModel = {
   label?: string;
   kind?: "chat" | "transcription" | "live-transcription";
   contextWindow?: number;
+  outputTokenLimit?: number;
 };
 type Connection = Pick<AiProvider, "type" | "baseUrl"> & { apiKey?: string; headers?: Record<string, string> };
 const defaults = {
@@ -127,6 +128,8 @@ export const listProviderModels = async (provider: Connection, signal?: AbortSig
               name: z.string().optional(),
               display_name: z.string().optional(),
               context_length: z.number().int().positive().optional(),
+              max_output_tokens: z.number().int().positive().nullish(),
+              top_provider: z.object({ max_completion_tokens: z.number().int().positive().nullish() }).nullish(),
             }),
           ),
           has_more: z.boolean().optional(),
@@ -139,6 +142,9 @@ export const listProviderModels = async (provider: Connection, signal?: AbortSig
           ...(provider.type === "vllm-realtime" ? { kind: "live-transcription" as const } : {}),
           ...((model.display_name ?? model.name) ? { label: model.display_name ?? model.name } : {}),
           ...(model.context_length ? { contextWindow: model.context_length } : {}),
+          ...((model.max_output_tokens ?? model.top_provider?.max_completion_tokens)
+            ? { outputTokenLimit: model.max_output_tokens ?? model.top_provider?.max_completion_tokens ?? undefined }
+            : {}),
         })),
       );
       if (provider.type !== "anthropic" || !page.has_more) return models;

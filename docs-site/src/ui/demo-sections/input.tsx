@@ -52,6 +52,7 @@ import {
   SignatureInput,
   type SignatureValue,
   Slider,
+  SuggestionGroup,
   Switch,
   signatureToPng,
   Tag,
@@ -61,7 +62,7 @@ import {
   TextInput,
 } from "@k2b/ui";
 import { TextEditor } from "@k2b/ui/text-editor";
-import { createSignal, createUniqueId, type JSX } from "solid-js";
+import { batch, createSignal, createUniqueId, type JSX, onCleanup } from "solid-js";
 import { DemoCard } from "../DemoCard";
 import { DictationDemo, DictationHostDemo } from "./dictation";
 import { QrScannerDemo } from "./mobile-navigation";
@@ -1767,6 +1768,207 @@ const BooleanDemo = () => {
   );
 };
 
+// A fictional invoice an assistant read: what it proposes per field.
+const invoiceRead = {
+  supplier: "berger",
+  number: "INV-2026-4471",
+  date: "2026-10-28",
+  gross: 312.4,
+  vat: "19",
+  deduct: true,
+  text: "Purchase of a cherry chest of drawers, delivered 27 Oct",
+} as const;
+type InvoiceField = keyof typeof invoiceRead;
+
+const FieldSuggestionDemo = () => {
+  const [reading, setReading] = createSignal(false);
+  const [accepted, setAccepted] = createSignal<InvoiceField[]>(["supplier"]);
+  const [supplier, setSupplier] = createSignal<string | null>("berger");
+  const [number, setNumber] = createSignal("");
+  const [date, setDate] = createSignal<string | null>(null);
+  const [gross, setGross] = createSignal<number | null>(321.4);
+  const [vat, setVat] = createSignal<string | null>(null);
+  const [deduct, setDeduct] = createSignal(false);
+  const [text, setText] = createSignal("");
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  onCleanup(() => clearTimeout(timer));
+  const accept = (id: string) => setAccepted((list) => (list.includes(id as InvoiceField) ? list : [...list, id as InvoiceField]));
+  const suggest =
+    <K extends InvoiceField>(id: K, extra: { confidence?: "high" | "low"; reason?: string } = {}) =>
+    () =>
+      reading()
+        ? { id, state: "loading" as const }
+        : {
+            id,
+            state: "ready" as const,
+            value: invoiceRead[id] as (typeof invoiceRead)[K],
+            confidence: extra.confidence ?? ("high" as const),
+            reason: extra.reason,
+            accepted: accepted().includes(id),
+          };
+  const apply: Record<InvoiceField, () => void> = {
+    supplier: () => setSupplier(invoiceRead.supplier),
+    number: () => setNumber(invoiceRead.number),
+    date: () => setDate(invoiceRead.date),
+    gross: () => setGross(invoiceRead.gross),
+    vat: () => setVat(invoiceRead.vat),
+    deduct: () => setDeduct(invoiceRead.deduct),
+    text: () => setText(invoiceRead.text),
+  };
+  const acceptAll = (ids: string[]) =>
+    batch(() => {
+      for (const id of ids) {
+        apply[id as InvoiceField]();
+        accept(id);
+      }
+    });
+  const readAgain = () => {
+    batch(() => {
+      setAccepted(["supplier"]);
+      setSupplier("berger");
+      setNumber("");
+      setDate(null);
+      setGross(321.4);
+      setVat(null);
+      setDeduct(false);
+      setText("");
+      setReading(true);
+    });
+    clearTimeout(timer);
+    timer = setTimeout(() => setReading(false), 1500);
+  };
+  return (
+    <DemoCard
+      id="field-suggestion"
+      chip={[
+        { kind: "component", name: "SuggestionGroup", from: "@k2b/ui" },
+        { kind: "component", name: "TextInput", from: "@k2b/ui" },
+        { kind: "component", name: "NumberInput", from: "@k2b/ui" },
+        { kind: "component", name: "DatePicker", from: "@k2b/ui" },
+        { kind: "component", name: "Select", from: "@k2b/ui" },
+        { kind: "component", name: "Switch", from: "@k2b/ui" },
+      ]}
+      description="An assistant read an invoice. Empty fields show its values as AI-coloured placeholders; nothing is the value until someone accepts it. The amount someone typed stays, the unsure VAT rate stays open under Accept all, and every status line is reserved, so nothing moves."
+      code={`const [number, setNumber] = createSignal("");
+const [accepted, setAccepted] = createSignal<string[]>([]);
+const accept = (id: string) => setAccepted((ids) => [...ids, id]);
+
+<SuggestionGroup
+  source="Assistant"
+  title="Assistant read 7 fields from INV-4471.pdf"
+  onAcceptAll={(ids) => batch(() => ids.forEach(applyAndAccept))}
+>
+  <TextInput
+    label="Invoice number"
+    value={number}
+    onValueChange={setNumber}
+    suggestion={() => ({
+      id: "inv-4471:v1:number",
+      state: "ready",
+      value: "INV-2026-4471",
+      confidence: "high",
+      accepted: accepted().includes("inv-4471:v1:number"),
+    })}
+    onSuggestionAccept={accept}
+  />
+  <Select
+    label="VAT rate"
+    value={vat}
+    onValueChange={setVat}
+    options={[{ value: "19", label: "19 %" }, { value: "7", label: "7 %" }]}
+    suggestion={{
+      id: "inv-4471:v1:vat",
+      state: "ready",
+      value: "19",
+      confidence: "low",
+      reason: "The invoice shows no VAT.",
+    }}
+    onSuggestionAccept={accept}
+  />
+</SuggestionGroup>`}
+    >
+      <div class="grid gap-3">
+        <SuggestionGroup
+          source="Assistant"
+          title={reading() ? "Assistant is reading INV-4471.pdf …" : "Assistant read 7 fields from INV-4471.pdf"}
+          onAcceptAll={acceptAll}
+        >
+          <div class="ui-demo-form-grid">
+            <Select
+              label="Supplier"
+              value={supplier}
+              onValueChange={setSupplier}
+              options={[
+                { value: "berger", label: "Berger Antiques Ltd" },
+                { value: "lenz", label: "Lenz Furniture" },
+              ]}
+              suggestion={suggest("supplier")}
+              onSuggestionAccept={accept}
+            />
+            <TextInput
+              label="Invoice number"
+              value={number}
+              onValueChange={setNumber}
+              suggestion={suggest("number")}
+              onSuggestionAccept={accept}
+            />
+            <DatePicker
+              label="Invoice date"
+              value={date}
+              onValueChange={setDate}
+              suggestion={suggest("date")}
+              onSuggestionAccept={accept}
+            />
+            <NumberInput
+              label="Gross amount"
+              step={0.01}
+              suffix="€"
+              value={gross}
+              onValueChange={setGross}
+              suggestion={suggest("gross")}
+              onSuggestionAccept={accept}
+            />
+            <Select
+              label="VAT rate"
+              value={vat}
+              onValueChange={setVat}
+              options={[
+                { value: "19", label: "19 %" },
+                { value: "7", label: "7 %" },
+                { value: "0", label: "0 %" },
+              ]}
+              suggestion={suggest("vat", { confidence: "low", reason: "The invoice shows no VAT." })}
+              onSuggestionAccept={accept}
+            />
+            <Switch
+              label="Deduct input VAT"
+              value={deduct}
+              onValueChange={setDeduct}
+              suggestion={suggest("deduct")}
+              onSuggestionAccept={accept}
+            />
+            <TextInput
+              label="Booking text"
+              multiline
+              lines={2}
+              value={text}
+              onValueChange={setText}
+              suggestion={suggest("text")}
+              onSuggestionAccept={accept}
+            />
+          </div>
+        </SuggestionGroup>
+        <div>
+          <Button variant="secondary" size="sm" onClick={readAgain}>
+            <i class="ti ti-refresh" aria-hidden="true" />
+            Read again
+          </Button>
+        </div>
+      </div>
+    </DemoCard>
+  );
+};
+
 const ChoiceChipsDemo = () => {
   const [due, setDue] = createSignal<string | null>("2026-10-14");
   const [template, setTemplate] = createSignal<string | null>("blank");
@@ -2271,6 +2473,11 @@ const demos: DemoSection = {
   boolean: () => (
     <DemoGrid columns="one">
       <BooleanDemo />
+    </DemoGrid>
+  ),
+  "field-suggestion": () => (
+    <DemoGrid columns="one">
+      <FieldSuggestionDemo />
     </DemoGrid>
   ),
 };

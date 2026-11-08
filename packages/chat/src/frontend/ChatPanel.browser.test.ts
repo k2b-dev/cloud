@@ -671,9 +671,11 @@ for (const provider of ["chat", "assistant"] as const) {
       if (provider === "assistant") await page.locator('[data-cloud-panel-provider="assistant"]').click();
       else await panel.locator(`a[href="/app/chat/panel/c/${id}"]:visible`).click();
       await panel.locator('html[data-fixture-ready="true"]').waitFor();
-      expect(await panel.locator('textarea:not([aria-hidden="true"])').isDisabled()).toBe(true);
       const notice = panel.getByText(provider === "chat" ? "Draft could not be kept in this tab" : "Draft not saved yet", { exact: true });
       await notice.waitFor();
+      // The composer locks once the draft store has failed, which can land after the fixture is ready.
+      await panel.locator('textarea:not([aria-hidden="true"]):disabled').waitFor();
+      expect(await panel.locator('textarea:not([aria-hidden="true"])').isDisabled()).toBe(true);
       const retry = panel.getByRole("button", { name: provider === "chat" ? "Try again" : "Save drafts", exact: true });
       await retry.click();
       expect(await retry.isEnabled()).toBe(true);
