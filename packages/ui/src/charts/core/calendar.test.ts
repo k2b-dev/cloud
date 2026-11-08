@@ -184,3 +184,9 @@ test("the final partial week does not invent a month or year beyond the observat
   expect(svg).not.toContain(">2026</text>");
   expect(svg.match(/>Jan<\/text>/g)).toHaveLength(1);
 });
+
+test("weekday text uses a grid anchor and a fixed pixel gap, independent of glyph bounds", () => {
+  const svg = renderCalendarSvg(spec);
+  expect(svg).toContain('<g transform="translate(32 ');
+  expect(svg.match(/data-calendar-fixed=""><text x="-3" y="0" text-anchor="end"/g)).toHaveLength(3);
+});

@@ -162,6 +162,8 @@ for (const width of [390, 800, 1440, 1920])
             return visible.every((e, i) => i === 0 || e.getBoundingClientRect().left >= visible[i - 1]!.getBoundingClientRect().right);
           }),
         ).toBe(true);
+        if (process.env.CHART_SCREENSHOTS)
+          await page.screenshot({ path: `${process.env.CHART_SCREENSHOTS}/calendar-data-light-${width}.png`, fullPage: true });
         await chart.evaluate((e) => (e.scrollLeft = -e.scrollWidth));
         await settled(page);
         const oldScroll = await chart.evaluate((e) => e.scrollLeft);
@@ -268,7 +270,22 @@ for (const emptySnapshot of [false, true])
         viewport = page.locator(".k2b-chart-explorer__viewport");
       const first = await host.evaluate(box),
         reserve = await viewport.evaluate(box);
-      expect(first.width).toBeGreaterThan(250);
+      // Compare intrinsic header sizing in this engine/font. A magic width
+      // assumes Chromium's control metrics and misses the actual collapse class.
+      const headerWidth = await host.evaluate((element) => {
+        const reference = element.cloneNode(true) as HTMLElement;
+        reference.removeAttribute("id");
+        reference.style.cssText = "position:absolute;visibility:hidden";
+        const explorer = reference.querySelector<HTMLElement>(".k2b-chart-explorer")!;
+        explorer.style.containerType = "normal";
+        explorer.querySelector(".k2b-chart-explorer__viewport")!.remove();
+        element.after(reference);
+        const width = reference.getBoundingClientRect().width;
+        reference.remove();
+        return width;
+      });
+      expect(headerWidth).toBeGreaterThan(0);
+      expect(Math.abs(first.width - headerWidth)).toBeLessThan(1);
       expect(await page.locator(".k2b-chart-explorer").evaluate((e) => getComputedStyle(e).containerType)).toBe("normal");
       await page.locator("#mount").evaluate((e) => e.replaceChildren());
       await page.addScriptTag({ content: await build.outputs[0]!.text() });

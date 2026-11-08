@@ -721,6 +721,8 @@ test("calendar app charts preserve headers, units, square geometry and Date pair
   expect(markup).toContain("Daily balance</text>");
   expect(markup).toContain("Fictional</text>");
   expect(markup).not.toContain("direction:rtl");
+  expect(markup).toContain("flex-direction:row-reverse");
+  expect(markup).toContain("flex:0 0 100%;margin-right:auto");
   expect(markup).not.toContain("data-stretch");
   const cell = markup.match(/<rect[^>]*width="(\d+)" height="(\d+)" rx="2"/);
   expect(cell).not.toBeNull();

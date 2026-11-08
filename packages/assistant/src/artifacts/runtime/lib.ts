@@ -264,7 +264,7 @@ export function chartMarkup(prepared: StoredChart, locale: string, width: number
     if (chartOptions.size > 200) chartOptions.delete(chartOptions.keys().next().value!);
   }
   return new Html(
-    `<div class="k2b-chart" data-chart-kind="${input.kind}"${calendar ? ' style="overflow-x:auto"' : ""}${label}><div class="k2b-chart__svg"${stretch ? " data-stretch" : ""}${id ? ` data-chart-id="${id}"` : ""}${svg === undefined ? ` data-chart-pending="${id}"${stretch && measure ? " data-chart-measure" : ""} aria-busy="true"` : ""} style="${calendarSize ? `min-width:${calendarSize.minWidth}px;max-width:${calendarSize.maxWidth}px;width:100%;` : ""}${svg === undefined || calendar ? `aspect-ratio:${calendarWidth}/${drawnHeight};` : ""}--k2b-chart-width:${calendarWidth}px;--k2b-chart-height:${drawnHeight}px">${svg ?? chartLoading(locale)}</div></div>${values}`,
+    `<div class="k2b-chart" data-chart-kind="${input.kind}"${calendar ? ' style="overflow-x:auto;display:flex;flex-direction:row-reverse;align-items:flex-start"' : ""}${label}><div class="k2b-chart__svg"${stretch ? " data-stretch" : ""}${id ? ` data-chart-id="${id}"` : ""}${svg === undefined ? ` data-chart-pending="${id}"${stretch && measure ? " data-chart-measure" : ""} aria-busy="true"` : ""} style="${calendarSize ? `min-width:${calendarSize.minWidth}px;max-width:${calendarSize.maxWidth}px;width:100%;flex:0 0 100%;margin-right:auto;` : ""}${svg === undefined || calendar ? `aspect-ratio:${calendarWidth}/${drawnHeight};` : ""}--k2b-chart-width:${calendarWidth}px;--k2b-chart-height:${drawnHeight}px">${svg ?? chartLoading(locale)}</div></div>${values}`,
   );
 }
 

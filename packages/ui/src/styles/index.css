@@ -18456,11 +18456,6 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   transform-origin: 0 0;
   scale: var(--k2b-calendar-inverse);
 }
-.k2b-ui [data-calendar-weekdays] text {
-  transform-box: fill-box;
-  transform-origin: right center;
-  scale: var(--k2b-calendar-inverse);
-}
 .k2b-ui .k2b-chart[data-chart-kind="heatmap"]:has(svg[data-calendar]) [data-inspected]:not([data-selected]):not([data-chart-role="value"]) > rect { stroke-width: 1.5px; }
 .k2b-ui .k2b-chart[data-chart-kind="heatmap"]:has(svg[data-calendar]) [data-selected] > rect { stroke-width: 2.5px !important; }
 @media print {

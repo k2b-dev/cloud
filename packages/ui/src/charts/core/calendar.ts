@@ -112,6 +112,7 @@ export function renderCalendarSvg(spec: CalendarHeatmapOptions): string {
     .replace(/<text /g, '<text fill="var(--k2b-text,#27272a)" font-size="12" ');
   const fixed = 'data-calendar-fixed=""';
   const pinned = 'data-calendar-pinned=""';
+  const fixedAt = (x: number, y: number) => `<g transform="translate(${x} ${y})"><g ${fixed}>`;
   const textStyle = 'fill="var(--k2b-text-muted,#45454e)" font-size="11"';
   const body: string[] = [`<g ${pinned}><g ${fixed}>${header}</g></g>`];
   const days: string[] = [
@@ -119,7 +120,7 @@ export function renderCalendarSvg(spec: CalendarHeatmapOptions): string {
   ];
   for (const day of [0, 2, 4])
     days.push(
-      `<text x="29" y="${top + day * step + cell / 2}" text-anchor="end" dominant-baseline="middle" ${textStyle}>${escapeXml(weekday.format(Date.UTC(2026, 0, 4 + s.weekStart + day)))}</text>`,
+      `${fixedAt(32, top + day * step + cell / 2)}<text x="-3" y="0" text-anchor="end" dominant-baseline="middle" ${textStyle}>${escapeXml(weekday.format(Date.UTC(2026, 0, 4 + s.weekStart + day)))}</text></g></g>`,
     );
   let lastRight = -Infinity,
     lastMonth = "";
@@ -134,7 +135,7 @@ export function renderCalendarSvg(spec: CalendarHeatmapOptions): string {
     const textWidth = chartTextWidth(text, 11);
     const x = Math.min(width - textWidth - 2, Math.max(32 + week * step, lastRight + 3));
     // Scale the label block around its grid anchor, keeping the two text rows together.
-    body.push(`<g transform="translate(${x} ${top})"><g ${fixed}>`);
+    body.push(fixedAt(x, top));
     if (week === 0 || nextDate.getUTCMonth() === 0)
       body.push(`<text x="0" y="-22" font-size="10" fill="var(--k2b-text-muted,#45454e)">${nextDate.getUTCFullYear()}</text>`);
     body.push(`<text data-calendar-month="${week}" x="0" y="-8" ${textStyle}>${escapeXml(text)}</text></g></g>`);
@@ -175,7 +176,7 @@ export function renderCalendarSvg(spec: CalendarHeatmapOptions): string {
   const swatches = spec.scale === "diverging" ? [-1, -0.5, 0, 0.5, 1] : [0, 0.25, 0.5, 0.75, 1];
   const offset = chartTextWidth(start, 11) + 4;
   body.push(
-    `<g ${pinned}><g transform="translate(32 ${legendY - 6})"><g data-calendar-legend="true" ${fixed}><text x="0" y="10" ${textStyle}>${escapeXml(start)}</text>`,
+    `<g ${pinned} data-calendar-legend="true">${fixedAt(32, legendY - 6)}<text x="0" y="10" ${textStyle}>${escapeXml(start)}</text>`,
   );
   swatches.forEach((v, i) => {
     const color = calendarColor(spec.scale, v);
