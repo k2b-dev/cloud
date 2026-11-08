@@ -203,6 +203,14 @@
   --k2b-shadow-column-active-mid: rgb(24 24 27 / 0.016);
   --k2b-shadow-column-active-edge: rgb(24 24 27 / 0.055);
   --k2b-shadow-float: 0 18px 48px rgb(9 9 11 / 0.18);
+  /* Light glass for layers that float over a picture, video, or map (`k2b-overlay-surface`). */
+  --k2b-overlay-surface: rgb(255 255 255 / 0.78);
+  --k2b-overlay-surface-hover: rgb(255 255 255 / 0.94);
+  --k2b-overlay-edge: rgb(255 255 255 / 0.7);
+  --k2b-overlay-ring: rgb(9 9 11 / 0.09);
+  --k2b-overlay-lift: 0 12px 32px -18px rgb(9 9 11 / 0.35);
+  /* What the glass becomes when the system asks for less transparency. */
+  --k2b-overlay-solid: var(--k2b-surface-elevated);
   --k2b-shadow-toast: 0 8px 24px -12px rgb(9 9 11 / 0.28);
   --k2b-shadow-side: -14px 0 36px rgb(9 9 11 / 0.16);
   --k2b-shadow-sheet: 0 -14px 36px rgb(9 9 11 / 0.16); /* a sheet rising from the bottom edge */
@@ -369,6 +377,11 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   --k2b-shadow-column-active-mid: rgb(0 0 0 / 0.04);
   --k2b-shadow-column-active-edge: rgb(0 0 0 / 0.14);
   --k2b-shadow-float: 0 22px 56px rgb(0 0 0 / 0.52);
+  --k2b-overlay-surface: rgb(30 36 44 / 0.86);
+  --k2b-overlay-surface-hover: rgb(44 51 61 / 0.95);
+  --k2b-overlay-edge: rgb(255 255 255 / 0.08);
+  --k2b-overlay-ring: rgb(0 0 0 / 0.55);
+  --k2b-overlay-lift: 0 12px 32px -16px rgb(0 0 0 / 0.7);
   --k2b-shadow-toast: 0 10px 28px -14px rgb(0 0 0 / 0.58);
   --k2b-shadow-side: -16px 0 40px rgb(0 0 0 / 0.5);
   --k2b-shadow-sheet: 0 -16px 40px rgb(0 0 0 / 0.5);
@@ -504,6 +517,40 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   margin: -1px;
   clip: rect(0, 0, 0, 0);
   white-space: nowrap;
+}
+
+/* Light glass for a layer that floats over a picture, a video, or a map: the
+   chips, bars, and controls an image viewer or a map lays over its content.
+   The component that owns such a layer sets the class on it; the glass never
+   reaches its descendants. Never use it where text, form fields, or lines lie
+   underneath (forms, lists, tables, documents, diagrams), nor on menus,
+   popovers, or dialogs: blurred text reads as a rendering fault. A surface
+   that asks for less transparency or more contrast turns solid, and forced
+   colours draw a real border. `--k2b-overlay-*` holds the values; a stage that
+   is always dark, such as a lightbox, sets the dark values on itself. */
+.k2b-ui .k2b-overlay-surface {
+  background: var(--k2b-overlay-surface);
+  -webkit-backdrop-filter: blur(22px) saturate(1.6);
+  backdrop-filter: blur(22px) saturate(1.6);
+  box-shadow:
+    inset 0 0 0 1px var(--k2b-overlay-edge),
+    0 0 0 1px var(--k2b-overlay-ring),
+    var(--k2b-overlay-lift);
+}
+
+@media (prefers-reduced-transparency: reduce), (prefers-contrast: more) {
+  .k2b-ui .k2b-overlay-surface {
+    background: var(--k2b-overlay-solid);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+}
+
+@media (forced-colors: active) {
+  .k2b-ui .k2b-overlay-surface {
+    border: 1px solid CanvasText;
+    background: Canvas;
+  }
 }
 
 /* Navigation labels that do not fit fade out at their end; they never end in
@@ -2284,6 +2331,13 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 }
 
 .k2b-ui .k2b-split-button__primary-menu { gap: 0; }
+
+/* A split button the host makes wider gives the room to its main action; the menu segment keeps its width. At its
+   natural width nothing changes. */
+.k2b-ui .k2b-split-button > :is(.k2b-split-button__primary, .k2b-split-button__primary-menu),
+.k2b-ui .k2b-split-button__primary-menu > .k2b-split-button__primary {
+  flex: 1 1 auto;
+}
 
 /* Filled segments meet at a fine line in their label colour, light on every
    fill in both themes. Bordered segments overlap by one pixel and share their
@@ -4912,6 +4966,84 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
    of shrinking until descendants (for example stat grids) clip internally. */
 .k2b-ui .k2b-panel-dialog__body > * {
   flex-shrink: 0;
+}
+
+/* A media dialog shows a picture or a video edge to edge on the muted canvas; its header floats over it as glass
+   chips (title and subtitle, actions, close), so the picture keeps the dialog's full height. */
+.k2b-ui .k2b-panel-dialog[data-media] {
+  position: relative;
+  background: var(--k2b-surface-muted);
+}
+
+.k2b-ui .k2b-panel-dialog[data-media] > .k2b-panel-dialog__header {
+  position: absolute;
+  z-index: 2;
+  inset: 0.75rem 0.75rem auto;
+  min-height: 0;
+  padding: 0;
+  gap: 0.375rem;
+  align-items: center;
+  pointer-events: none;
+}
+
+.k2b-ui .k2b-panel-dialog[data-media] > .k2b-panel-dialog__header > * {
+  pointer-events: auto;
+}
+
+.k2b-ui .k2b-panel-dialog[data-media] .k2b-panel-dialog__heading {
+  display: flex;
+  min-width: 0;
+  min-height: 2rem;
+  flex: 0 1 auto;
+  box-sizing: border-box;
+  /* Title and facts share one 20 px line box; centring them keeps the chip at
+     32 px in every engine, where baseline alignment of the two font sizes
+     adds a sub-pixel in WebKit and lifts the chip off the close button's line. */
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.375rem 0.875rem;
+  border-radius: 999px;
+}
+
+.k2b-ui .k2b-panel-dialog[data-media] .k2b-panel-dialog__heading h2 {
+  display: block;
+  min-width: 0;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  line-height: 1.25rem;
+  letter-spacing: 0;
+  white-space: nowrap;
+  overflow-wrap: normal;
+}
+
+/* Short of room the facts give way first, so the name stays readable. */
+.k2b-ui .k2b-panel-dialog[data-media] .k2b-panel-dialog__heading p {
+  min-width: 0;
+  flex: 0 100 auto;
+  overflow: hidden;
+  margin: 0;
+  font-size: 0.75rem;
+  line-height: 1.25rem;
+  white-space: nowrap;
+}
+
+/* A phone has room for the name only; the facts stay for wider screens. */
+@media (max-width: 47.999rem) {
+  .k2b-ui .k2b-panel-dialog[data-media] .k2b-panel-dialog__heading p {
+    display: none;
+  }
+}
+
+.k2b-ui .k2b-panel-dialog[data-media] .k2b-panel-dialog__actions {
+  flex: none;
+  margin-inline-start: auto;
+  padding: 0.125rem;
+  gap: 0.125rem;
+  border-radius: 0.625rem;
+}
+
+.k2b-ui .k2b-panel-dialog[data-media] > .k2b-panel-dialog__body {
+  padding: 0;
 }
 
 .k2b-ui .k2b-panel-dialog__body[data-surface="floating"] {
@@ -16119,9 +16251,9 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   padding: 0.5rem 0.75rem;
   border: 1px solid var(--k2b-border);
   border-radius: var(--k2b-radius-surface);
-  background: color-mix(in srgb, var(--k2b-surface-elevated) 92%, transparent);
+  /* Solid: fields and text scroll underneath, and blurred they read as a fault. */
+  background: var(--k2b-surface-elevated);
   box-shadow: var(--k2b-shadow-float);
-  backdrop-filter: blur(12px);
 }
 
 .k2b-ui .k2b-settings-save-bar p {
@@ -18352,6 +18484,8 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 .k2b-ui .k2b-chart [data-inspected] > .k2b-chart-category-band[fill="none"] { fill: color-mix(in srgb, currentColor 5%, transparent); }
 .k2b-ui .k2b-chart:not(:focus-visible):has(svg[data-bar-layout] .k2b-chart-category-band) [data-inspected]:not([data-selected]) > :is(rect,path,circle):not(.k2b-chart-category-band),
 .k2b-ui .k2b-chart:not(:focus-visible):has(svg[data-bar-layout] .k2b-chart-category-band) [data-inspected]:not([data-selected]) > .k2b-chart-previous > rect { stroke: none !important; }
+.k2b-ui .k2b-chart-funnel :is(.stdlib-chart-tick-label, .stdlib-chart-bar-value) { font-size: 12.5px; }
+.k2b-ui .k2b-chart-ranked :is(.stdlib-chart-tick-label, .stdlib-chart-bar-value) { font-size: 13px; }
 .k2b-ui .stdlib-chart .k2b-chart-group-heading { font-size: 11.5px; font-weight: 600; opacity: 1; }
 .k2b-ui .stdlib-chart .k2b-chart-segment-value { font-size: 11px; font-weight: 500; fill: currentColor; opacity: 1; }
 /* Category hover paints only the band; keyboard and selection outline marks. */

@@ -440,7 +440,7 @@ const CommandMenuDemo = () => {
 const commands = ({ atStart }: CommandContext) => entries.filter((entry) => atStart || entry.group !== "Vorlagen");
 
 <div ref={setComposer} class="composer">
-  <MarkdownEditor variant="embedded" noToolbar value={text()} onValueChange={setText} textareaRef={setTextarea} />
+  <MarkdownEditor variant="embedded" noToolbar font="sans" value={text()} onValueChange={setText} textareaRef={setTextarea} />
   <SlashCommands textarea={textarea()} items={commands} composer={composer()} />
   <CommandMenu items={commands} label="Hinzufügen" search="Befehle suchen" target={textarea()} dock={composer()}>
     <CommandMenu.Trigger iconOnly label="Hinzufügen"><i class="ti ti-plus" aria-hidden="true" /></CommandMenu.Trigger>
@@ -456,6 +456,7 @@ const commands = ({ atStart }: CommandContext) => entries.filter((entry) => atSt
             aria-label="Nachricht"
             variant="embedded"
             noToolbar
+            font="sans"
             showStats={false}
             lines={4}
             placeholder="Nachricht schreiben, / für Befehle"

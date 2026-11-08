@@ -171,7 +171,8 @@ function FilePreviewDialog(
     </span>
   );
   return (
-    <PanelDialog>
+    // A picture or a video fills the dialog; its header floats over it.
+    <PanelDialog media={kind === "image" || kind === "video"}>
       <PanelDialog.Header
         title={
           <Show

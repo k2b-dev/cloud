@@ -9,7 +9,7 @@ test("normal mounts omit app checks and stay within the prelude budget", async (
   expect(Buffer.byteLength(normal)).toBeLessThan(319_900);
   expect(normal).not.toContain("k2b-area-layer");
   const rare = await buildChartModule();
-  // Keep main’s offline module budget while adding horizontal bars.
+  // Keep main’s offline module budget while adding funnel drawings.
   expect(Buffer.byteLength(rare)).toBeLessThan(53_000);
   expect(rare).toContain("k2b-area-layer");
   expect(normal).not.toContain("k2b-waterfall-bar");
@@ -26,6 +26,12 @@ test("normal mounts omit app checks and stay within the prelude budget", async (
   expect(rare).toContain("k2b-chart-group-heading");
   expect(normal).toContain("Horizontal bars require aligned nonnegative segment values");
   expect(rare).not.toContain("Horizontal bars require aligned nonnegative segment values");
+  expect(normal).not.toContain("k2b-chart-funnel");
+  expect(rare).toContain("k2b-chart-funnel");
+  expect(rare).not.toContain(".stdlib-chart-series-0 {");
+  expect(normal).not.toContain(".stdlib-chart-series-0 {");
+  expect(normal).toContain("Funnel values must be finite and nonnegative, or null");
+  expect(rare).not.toContain("Funnel values must be finite and nonnegative, or null");
   // Reference cells need only identity validation, not capability registration.
   expect(normal).not.toContain("Idempotency keys must contain only visible ASCII characters");
   // The frame imports `@k2b/cloud/ai/app-frame`: the `ai/browser` barrel kept its skill parser and YAML (34 KB).
