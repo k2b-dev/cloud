@@ -17996,6 +17996,11 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   }
 }
 
+/* Category hover paints only the band; keyboard and selection outline marks. */
+.k2b-ui .k2b-chart[data-chart-kind="waterfall"] :is([data-inspected], [data-selected]) > .k2b-chart-category-band { fill-opacity: .05; stroke: none !important; }
+.k2b-ui .k2b-chart[data-chart-kind="waterfall"] [data-inspected="hover"]:not([data-selected]) > .k2b-waterfall-bar { stroke: none !important; }
+
+.k2b-ui .k2b-chart[data-chart-kind="waterfall"] .k2b-waterfall-value { font-weight: 600; fill: var(--k2b-text-secondary, #52525b); }
 /* Calendar coordinates stay square in every host. */
 .k2b-ui .k2b-chart[data-chart-kind="heatmap"]:has(svg[data-calendar]) { overflow-x: auto; }
 .k2b-ui .k2b-chart__svg:has(> svg[data-calendar]) { width: var(--k2b-chart-width); }
