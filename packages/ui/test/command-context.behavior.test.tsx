@@ -1,11 +1,12 @@
-import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, jest, test } from "bun:test";
 import { createComponent, createSignal } from "solid-js";
 import { delegateEvents, render } from "solid-js/web";
 import type { CommandContext, CommandItem, CommandSource } from "../src/actions/command-items";
 import { createDomTestHarness, type DomTestHarness } from "./dom";
 
 // What a command gets when it runs: the composer's text without the typed `/query`, the selection, `insert` at the
-// caret, and a signal; a returned promise keeps its row busy, a rejection shows on the row, and Escape aborts.
+// caret, and a signal; a returned promise keeps its row busy, Escape aborts, and what a command reports, or a
+// rejection, takes the list's place as one status line for a while.
 
 let dom: DomTestHarness;
 let dispose: (() => void) | undefined;
@@ -95,6 +96,12 @@ const row = (label: string) =>
     option.textContent?.includes(label),
   );
 const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
+const outcome = () => dom.document.querySelector<HTMLElement>(".k2b-command-outcome");
+const live = (role: "status" | "alert") => dom.document.querySelector(`[role='${role}']`)?.textContent ?? "";
+const button = (name: string) =>
+  Array.from(dom.document.querySelectorAll<HTMLButtonElement>(".k2b-command-outcome button")).find(
+    (element) => (element.getAttribute("aria-label") ?? element.textContent) === name,
+  );
 
 describe("slash command context", () => {
   test("a command gets the text without its /query, the caret, and insert at the caret", async () => {
@@ -141,15 +148,16 @@ describe("slash command context", () => {
     expect(row("Marktpreis")).toBeUndefined();
   });
 
-  test("a rejection shows its message on the row and announces it; the entry can run again", async () => {
+  test("a rejection takes the list's place as an error line, announced once; Retry runs the command again", async () => {
     let attempts = 0;
     const { textarea, value } = await mount([
       {
         label: "Marktpreis prüfen",
         hint: "/preis",
-        onSelect: async ({ insert }) => {
+        onSelect: async ({ insert, path }) => {
           attempts++;
-          if (attempts === 1) throw new Error("Keine Artikelnummer im Text");
+          expect(path).toEqual([]);
+          if (attempts === 1) throw new Error("Kunstbörse ist nicht erreichbar");
           insert("240 €");
         },
       },
@@ -157,18 +165,21 @@ describe("slash command context", () => {
     await type(textarea, "/preis");
     key(textarea, "Enter");
     await settle();
-    const failed = row("Marktpreis")!;
-    expect(failed.hasAttribute("data-failed")).toBe(true);
-    expect(failed.querySelector(".k2b-command-list__error")?.getAttribute("title")).toBe("Keine Artikelnummer im Text");
-    expect(failed.querySelector(".k2b-command-list__hint")).toBeNull();
-    expect(dom.document.querySelector("[role='alert']")?.textContent).toBe("Keine Artikelnummer im Text");
+    expect(row("Marktpreis")).toBeUndefined();
+    expect(outcome()?.dataset.state).toBe("error");
+    expect(dom.document.querySelector<HTMLElement>("[data-commands]")?.dataset.outcome).toBe("error");
+    // The live region reads it; the line shows it, hidden from assistive technology, so it is heard once.
+    expect(live("alert")).toBe("Kunstbörse ist nicht erreichbar");
+    expect(outcome()?.querySelector(".k2b-command-outcome__text")?.getAttribute("aria-hidden")).toBe("true");
+    expect(textarea.hasAttribute("aria-activedescendant")).toBe(false);
     expect(value()).toBe("");
     expect(dom.document.activeElement).toBe(textarea);
-    key(textarea, "Enter");
+    button("Retry")!.click();
     await settle();
     expect(attempts).toBe(2);
     expect(value()).toBe("240 €");
-    expect(row("Marktpreis")).toBeUndefined();
+    expect(outcome()).toBeNull();
+    expect(dom.document.activeElement).toBe(textarea);
   });
 
   test("a rejection without a message says that it did not work", async () => {
@@ -176,7 +187,7 @@ describe("slash command context", () => {
     await type(textarea, "/");
     key(textarea, "Enter");
     await settle();
-    expect(row("Abholung")?.querySelector(".k2b-command-list__error")?.textContent).toBe("That did not work.");
+    expect(outcome()?.textContent).toContain("That did not work.");
   });
 
   test("Escape aborts a running command and closes the list; its late result changes nothing", async () => {
@@ -220,8 +231,8 @@ describe("slash command context", () => {
     expect(value()).toBe("");
   });
 
-  test("after a command failed, a snippet in the same list still goes where the slash stood", async () => {
-    const { textarea, value } = await mount(
+  test("after a command failed, a new / opens the list at once in the outcome's place", async () => {
+    const { textarea } = await mount(
       [
         { label: "Marktpreis prüfen", onSelect: () => Promise.reject(new Error("Nein")) },
         { label: "Fotos erbeten", text: "Bitte Fotos." },
@@ -231,9 +242,10 @@ describe("slash command context", () => {
     await type(textarea, "/");
     key(textarea, "Enter");
     await settle();
-    row("Fotos erbeten")!.click();
-    expect(value()).toBe("Hallo Bitte Fotos.");
-    expect(row("Fotos erbeten")).toBeUndefined();
+    expect(outcome()).not.toBeNull();
+    await type(textarea, " /");
+    expect(outcome()).toBeNull();
+    expect(row("Fotos erbeten")).toBeDefined();
   });
 
   test("Escape in a second list stops its running command before it goes back", async () => {
@@ -265,16 +277,6 @@ describe("slash command context", () => {
     expect(key(field, "Escape")).toBe(true);
     expect(signal?.aborted).toBe(true);
     expect(dom.document.activeElement).toBe(textarea);
-  });
-
-  test("typing after a failure moves on: the list closes", async () => {
-    const { textarea } = await mount([{ label: "Marktpreis prüfen", onSelect: () => Promise.reject(new Error("Nein")) }]);
-    await type(textarea, "/");
-    key(textarea, "Enter");
-    await settle();
-    expect(row("Marktpreis")).toBeDefined();
-    await type(textarea, "a");
-    expect(row("Marktpreis")).toBeUndefined();
   });
 
   test("an unavailable entry is greyed with its reason, passed over by keys and pointer, and cannot be chosen", async () => {
@@ -332,6 +334,339 @@ describe("slash command context", () => {
       ["k2b-command-list__image-light", "/logos/a.svg"],
       ["k2b-command-list__image-dark", "/logos/a-dark.svg"],
     ]);
+  });
+});
+
+describe("command outcomes", () => {
+  // The clock is frozen and moved by hand, so the least time and the time a confirmation stays are exact.
+  beforeEach(() => jest.useFakeTimers({ now: new Date("2026-11-07T20:00:00Z") }));
+  afterEach(() => jest.useRealTimers());
+
+  const assign = (report: (context: CommandContext) => void) => [
+    {
+      label: "Zuweisen",
+      next: { label: "Person suchen", items: [{ label: "Valentin Brandt", onSelect: report }] },
+    },
+  ];
+  const chooseValentin = async (textarea: HTMLTextAreaElement) => {
+    await type(textarea, "/zuw");
+    key(textarea, "Enter");
+    await Promise.resolve();
+    const field = dom.document.querySelector<HTMLInputElement>(".k2b-dropdown__search > input")!;
+    field.value = "val";
+    field.dispatchEvent(new Event("input", { bubbles: true }));
+    await Promise.resolve();
+    key(field, "Enter");
+  };
+
+  test("a confirmation turns the list green, is announced once, keeps the focus in the text, and goes after 4 s", async () => {
+    const { textarea, value } = await mount(
+      assign(({ success, path }) => success(`Valentin Brandt zugewiesen (${path[0]?.label})`)),
+      "Hallo ",
+    );
+    await chooseValentin(textarea);
+    expect(outcome()?.dataset.state).toBe("success");
+    expect(dom.document.querySelector<HTMLElement>("[data-commands]")?.dataset.outcome).toBe("success");
+    expect(outcome()?.textContent).toContain("Valentin Brandt zugewiesen (Zuweisen)");
+    expect(live("status")).toBe("Valentin Brandt zugewiesen (Zuweisen)");
+    expect(live("alert")).toBe("");
+    expect(dom.document.activeElement).toBe(textarea);
+    expect(value()).toBe("Hallo ");
+    expect(dom.document.querySelector("[role='listbox']")).toBeNull();
+    jest.advanceTimersByTime(3999);
+    expect(outcome()).not.toBeNull();
+    jest.advanceTimersByTime(1);
+    expect(outcome()).toBeNull();
+    expect(dom.document.querySelector("[data-commands]")).toBeNull();
+  });
+
+  test("typing clears it, but never before it showed for 1.2 s", async () => {
+    const { COMMAND_OUTCOME_MIN_MS } = await import("../src/actions/CommandList");
+    expect(COMMAND_OUTCOME_MIN_MS).toBe(1200);
+    const { textarea } = await mount(
+      assign(({ success }) => success("Valentin Brandt zugewiesen")),
+      "Hallo ",
+    );
+    await chooseValentin(textarea);
+    jest.advanceTimersByTime(500);
+    await type(textarea, "D");
+    expect(outcome()).not.toBeNull();
+    jest.advanceTimersByTime(699);
+    expect(outcome()).not.toBeNull();
+    jest.advanceTimersByTime(1);
+    expect(outcome()).toBeNull();
+    // Once the least time is over, the first key clears it at once.
+    await type(textarea, " /zuw");
+    key(textarea, "Enter");
+    await Promise.resolve();
+    const field = dom.document.querySelector<HTMLInputElement>(".k2b-dropdown__search > input")!;
+    key(field, "Enter");
+    jest.advanceTimersByTime(1200);
+    expect(outcome()).not.toBeNull();
+    await type(textarea, "a");
+    expect(outcome()).toBeNull();
+  });
+
+  test("an error the command reports stays until Escape, without Retry; Close clears it too", async () => {
+    const { textarea } = await mount([{ label: "Marktpreis prüfen", onSelect: ({ error }) => error("Keine Artikelnummer im Text") }]);
+    await type(textarea, "/");
+    key(textarea, "Enter");
+    expect(outcome()?.dataset.state).toBe("error");
+    expect(live("alert")).toBe("Keine Artikelnummer im Text");
+    expect(button("Retry")).toBeUndefined();
+    jest.advanceTimersByTime(60_000);
+    expect(outcome()).not.toBeNull();
+    expect(key(textarea, "Escape")).toBe(true);
+    expect(outcome()).toBeNull();
+    await type(textarea, "/");
+    key(textarea, "Enter");
+    button("Close")!.click();
+    expect(outcome()).toBeNull();
+    expect(dom.document.activeElement).toBe(textarea);
+  });
+
+  test("an error stays while the person waits, and typing clears it after the least time", async () => {
+    const { textarea } = await mount([{ label: "Marktpreis prüfen", onSelect: ({ error }) => error("Nein") }]);
+    await type(textarea, "/");
+    key(textarea, "Enter");
+    await type(textarea, "a");
+    jest.advanceTimersByTime(1199);
+    expect(outcome()).not.toBeNull();
+    jest.advanceTimersByTime(1);
+    expect(outcome()).toBeNull();
+  });
+
+  test("a command stopped with Escape reports nothing when it finishes later", async () => {
+    const run = deferred();
+    const { textarea } = await mount([
+      {
+        label: "Marktpreis prüfen",
+        onSelect: async ({ success }) => {
+          await run.promise;
+          success("240 € eingefügt");
+        },
+      },
+    ]);
+    await type(textarea, "/");
+    key(textarea, "Enter");
+    key(textarea, "Escape");
+    run.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(outcome()).toBeNull();
+    expect(live("status")).toBe("");
+  });
+
+  test("CommandMenu with a target shows the outcome in its place; typing in the target clears it and closes the menu", async () => {
+    const { CommandMenu } = await import("../src/actions/CommandMenu");
+    const target = dom.document.createElement("textarea") as unknown as HTMLTextAreaElement;
+    dom.root.append(target);
+    let open!: (anchor: { getBoundingClientRect: () => DOMRect }) => void;
+    dispose = render(
+      () =>
+        createComponent(CommandMenu, {
+          items: [{ label: "Datum", onSelect: ({ success }) => success("Datum eingefügt") }],
+          label: "Hinzufügen",
+          search: "Suchen",
+          target,
+          openAt: (fn) => {
+            open = fn;
+          },
+        }),
+      dom.root,
+    );
+    open({ getBoundingClientRect: () => ({ left: 0, top: 0, right: 10, bottom: 10 }) as DOMRect });
+    dom.document.querySelector<HTMLInputElement>(".k2b-dropdown__search > input")!.focus();
+    Array.from(dom.document.querySelectorAll<HTMLElement>("[role='option']"))
+      .find((element) => element.textContent?.includes("Datum"))!
+      .click();
+    expect(outcome()?.dataset.state).toBe("success");
+    expect(dom.document.querySelector<HTMLElement>(".k2b-command-menu")?.dataset.outcome).toBe("success");
+    expect(dom.document.activeElement).toBe(target);
+    jest.advanceTimersByTime(1200);
+    target.dispatchEvent(new Event("input", { bubbles: true }));
+    expect(outcome()).toBeNull();
+    expect(dom.document.activeElement).toBe(target);
+  });
+});
+
+describe("command outcomes: edges", () => {
+  beforeEach(() => jest.useFakeTimers({ now: new Date("2026-11-07T20:00:00Z") }));
+  afterEach(() => jest.useRealTimers());
+  const anchor = { getBoundingClientRect: () => ({ left: 0, top: 0, right: 10, bottom: 10 }) as DOMRect };
+  /** Every open state the menu reported, so a test sees a close that leaves its element in the page. */
+  let changes: boolean[] = [];
+  const mountMenu = async (items: CommandItem[], target?: HTMLTextAreaElement) => {
+    const { CommandMenu } = await import("../src/actions/CommandMenu");
+    let open!: (anchor: { getBoundingClientRect: () => DOMRect }) => void;
+    changes = [];
+    dispose = render(
+      () =>
+        createComponent(CommandMenu, {
+          items,
+          label: "Hinzufügen",
+          search: "Suchen",
+          target,
+          onOpenChange: (open) => changes.push(open),
+          openAt: (fn) => {
+            open = fn;
+          },
+        }),
+      dom.root,
+    );
+    open(anchor);
+    dom.document.querySelector<HTMLInputElement>(".k2b-dropdown__search > input")!.focus();
+  };
+  const pick = (label: string) =>
+    Array.from(dom.document.querySelectorAll<HTMLElement>("[role='option']"))
+      .find((element) => element.textContent?.includes(label))!
+      .click();
+  const flush = async () => {
+    for (let index = 0; index < 4; index++) await Promise.resolve();
+  };
+
+  test("Retry in CommandMenu keeps the menu open and shows the retry running in the error's place", async () => {
+    const second = deferred();
+    let attempts = 0;
+    await mountMenu([
+      {
+        label: "Kunstbörse",
+        onSelect: () => {
+          attempts++;
+          return attempts === 1 ? Promise.reject(new Error("Nicht erreichbar")) : second.promise;
+        },
+      },
+    ]);
+    pick("Kunstbörse");
+    await flush();
+    expect(outcome()?.dataset.state).toBe("error");
+    button("Retry")!.click();
+    expect(attempts).toBe(2);
+    expect(outcome()?.dataset.state).toBe("running");
+    expect(changes).not.toContain(false);
+    second.resolve();
+    await flush();
+    expect(outcome()).toBeNull();
+  });
+
+  test("Tab moves between Retry and Close inside the menu's outcome without closing the menu", async () => {
+    await mountMenu([{ label: "Kunstbörse", onSelect: () => Promise.reject(new Error("Nicht erreichbar")) }]);
+    pick("Kunstbörse");
+    await flush();
+    const line = outcome()!;
+    expect(dom.document.activeElement).toBe(line);
+    const tab = (from: HTMLElement, shiftKey = false) => {
+      from.focus();
+      from.dispatchEvent(new KeyboardEvent("keydown", { key: "Tab", shiftKey, bubbles: true, cancelable: true }));
+    };
+    tab(line);
+    expect(outcome()).not.toBeNull();
+    tab(button("Retry")!);
+    expect(outcome()).not.toBeNull();
+    tab(button("Close")!, true);
+    expect(outcome()).not.toBeNull();
+    expect(changes).not.toContain(false);
+  });
+
+  test("leaving the text while a retry runs leaves no spinner behind", async () => {
+    const second = deferred();
+    let attempts = 0;
+    const { textarea } = await mount([
+      {
+        label: "Kunstbörse",
+        onSelect: () => {
+          attempts++;
+          return attempts === 1 ? Promise.reject(new Error("Nicht erreichbar")) : second.promise;
+        },
+      },
+    ]);
+    await type(textarea, "/");
+    key(textarea, "Enter");
+    await flush();
+    button("Retry")!.click();
+    expect(outcome()?.dataset.state).toBe("running");
+    textarea.blur();
+    expect(outcome()).toBeNull();
+    second.resolve();
+    await flush();
+    expect(outcome()).toBeNull();
+  });
+
+  test("a command that finishes after its list went away reports nothing and starts no timer", async () => {
+    const run = deferred();
+    const { textarea } = await mount([
+      {
+        label: "Zuweisen",
+        onSelect: async ({ success }) => {
+          await run.promise;
+          success("Zugewiesen");
+        },
+      },
+    ]);
+    await type(textarea, "/");
+    key(textarea, "Enter");
+    dispose?.();
+    dispose = undefined;
+    run.resolve();
+    await flush();
+    expect(outcome()).toBeNull();
+    expect(jest.getTimerCount()).toBe(0);
+  });
+
+  test("the live region that announces a confirmation is the list's own, so its text changes in place", async () => {
+    const { textarea } = await mount([{ label: "Zuweisen", onSelect: ({ success }) => success("Valentin Brandt zugewiesen") }]);
+    await type(textarea, "/");
+    const region = dom.document.querySelector("[data-commands] [role='status']");
+    expect(region).not.toBeNull();
+    key(textarea, "Enter");
+    expect(dom.document.querySelector("[data-commands] [role='status']")).toBe(region);
+    expect(region?.textContent).toBe("Valentin Brandt zugewiesen");
+  });
+
+  test("a / typed in the target gives the slash list the place at once, even within the menu outcome's least time", async () => {
+    const { SlashCommands } = await import("../src/inputs/markdown/SlashCommands");
+    const { MarkdownEditor } = await import("../src/inputs/markdown/MarkdownEditor");
+    const { CommandMenu } = await import("../src/actions/CommandMenu");
+    const [value, setValue] = createSignal("");
+    const [element, setElement] = createSignal<HTMLTextAreaElement>();
+    let open!: (anchor: { getBoundingClientRect: () => DOMRect }) => void;
+    const items: CommandItem[] = [
+      { label: "Datum", onSelect: ({ success }) => success("Datum eingefügt") },
+      { label: "Telefonat", onSelect: () => {} },
+    ];
+    dispose = render(
+      () => [
+        createComponent(MarkdownEditor, { label: "Nachricht", value, onValueChange: setValue, textareaRef: setElement }),
+        createComponent(SlashCommands, {
+          get textarea() {
+            return element();
+          },
+          items,
+        }),
+        createComponent(CommandMenu, {
+          items,
+          label: "Hinzufügen",
+          search: "Suchen",
+          get target() {
+            return element();
+          },
+          openAt: (fn) => {
+            open = fn;
+          },
+        }),
+      ],
+      dom.root,
+    );
+    const textarea = dom.root.querySelector("textarea")!;
+    open(anchor);
+    dom.document.querySelector<HTMLInputElement>(".k2b-command-menu .k2b-dropdown__search > input")!.focus();
+    pick("Datum");
+    expect(dom.document.querySelector(".k2b-command-menu .k2b-command-outcome")).not.toBeNull();
+    expect(dom.document.activeElement).toBe(textarea);
+    await type(textarea, "/");
+    await flush();
+    expect(dom.document.querySelector(".k2b-command-menu .k2b-command-outcome")).toBeNull();
+    expect(dom.document.querySelector("[data-commands] [role='listbox']")).not.toBeNull();
   });
 });
 
