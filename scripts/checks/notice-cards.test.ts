@@ -47,6 +47,7 @@ test("accepts calm notice content, icons in controls, and overrides outside noti
         '      <dl><dt class="text-dimmed">Token</dt><dd><code class="break-all">/oauth/token</code></dd></dl>',
         '      <Button variant="secondary" size="xs"><i class="ti ti-photo text-lg" aria-hidden="true" />Load images</Button>',
         '      <IconButton label="Close"><i class="ti ti-x text-[18px]" /></IconButton>',
+        '      <SplitButton menuLabel="More" items={[]}><i class="ti ti-photo" aria-hidden="true" />Load images</SplitButton>',
         "    </NoticeCard>",
         '    <NoticeRow tile="ti ti-photo" action={<SplitButton menuLabel="More" items={[]}><i class="ti ti-photo" aria-hidden="true" />Load</SplitButton>}>',
         '      <p class="truncate"><strong class="text-primary">Images blocked</strong></p>',

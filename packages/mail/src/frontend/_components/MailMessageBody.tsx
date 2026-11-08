@@ -1,10 +1,12 @@
+import { importOnDemand } from "@k2b/cloud/browser/reload";
 import type { CloudTheme } from "@k2b/cloud/shared";
 import { mutation } from "@k2b/stdlib/solid";
-import { Button, NoticeCard, toast, useLocale } from "@k2b/ui";
+import { toast, useLocale } from "@k2b/ui";
 import { createEffect, createMemo, createSignal, For, on, onCleanup, onMount, Show, untrack } from "solid-js";
 import { apiClient } from "../../api/client";
-import type { MessageRemoteContent, RemoteContentRule } from "../../service/remote-content";
+import type { MessageRemoteContent, RemoteContentAllowRule, RemoteContentRule } from "../../service/remote-content";
 import { readApiError } from "./api-response";
+import MailRemoteImagesNotice, { type RemoteImagesNoticeKind } from "./MailRemoteImagesNotice";
 import { buildMessageDocument, estimateInitialMessageBodyHeight, normalizeMessageBodyHeight } from "./mail-message-document";
 import { mailMessageMessages } from "./mail-message-messages";
 import {
@@ -66,6 +68,14 @@ export default function MailMessageBody(props: {
   const [height, setHeight] = createSignal(estimateInitialMessageBodyHeight(props.plainText, props.html));
   const [loadedRemoteIds, setLoadedRemoteIds] = createSignal<ReadonlySet<string>>(new Set());
   const [remoteLoading, setRemoteLoading] = createSignal(false);
+  // Whether the running load is one the person asked for; a rule's automatic load shows no progress row.
+  const [remoteLoadAsked, setRemoteLoadAsked] = createSignal(false);
+  // How the last load ended: some images failed, or the message reached the safe size limit.
+  const [remoteOutcome, setRemoteOutcome] = createSignal<"none" | "failed" | "limited">("none");
+  const [remoteAnnouncement, setRemoteAnnouncement] = createSignal("");
+  // Rules saved or removed from this message, until the next message snapshot from the server says the same.
+  const [addedRules, setAddedRules] = createSignal<RemoteContentAllowRule[]>([]);
+  const [revokedRuleIds, setRevokedRuleIds] = createSignal<ReadonlySet<string>>(new Set());
   let frame: HTMLIFrameElement | undefined;
   let remoteController: AbortController | null = null;
   let remoteLoadedBytes = 0;
@@ -85,6 +95,28 @@ export default function MailMessageBody(props: {
     return referencedRemoteImageIds(props.html ?? "").filter((id) => stored.has(id));
   });
   const remoteImagesRemaining = createMemo(() => remoteImageIds().filter((id) => !loadedRemoteIds().has(id)).length);
+  createEffect(
+    on(
+      () => props.remoteContent.allowRules,
+      () => setAddedRules([]),
+      { defer: true },
+    ),
+  );
+  const allowRules = createMemo(() => {
+    const revoked = revokedRuleIds();
+    const rules = new Map<string, RemoteContentAllowRule>();
+    for (const rule of [...props.remoteContent.allowRules, ...addedRules()]) if (!revoked.has(rule.id)) rules.set(rule.id, rule);
+    return [...rules.values()];
+  });
+  const noticeKind = createMemo((): RemoteImagesNoticeKind | null => {
+    if (remoteImageIds().length === 0) return null;
+    if (remoteLoading() && remoteLoadAsked()) return "loading";
+    const outcome = remoteOutcome();
+    if (!remoteLoading() && outcome !== "none") return outcome;
+    if (allowRules().length > 0) return "always";
+    if (remoteLoading()) return "loading";
+    return remoteImagesRemaining() === 0 ? "once" : "blocked";
+  });
   // The frame document never depends on loaded images: replacing srcdoc
   // reloads the whole message. Images reach the running frame as messages.
   const appearanceMode = () => (props.colors === "original" ? "light" : (props.theme ?? "auto"));
@@ -148,14 +180,16 @@ export default function MailMessageBody(props: {
     sendFrameImages([image]);
   };
 
-  const loadRemoteImages = async () => {
+  const loadRemoteImages = async (asked: boolean) => {
     if (remoteLoading() || remoteImagesRemaining() === 0) return;
     remoteController?.abort();
     const controller = new AbortController();
     remoteController = controller;
+    setRemoteLoadAsked(asked);
+    setRemoteOutcome("none");
     setRemoteLoading(true);
+    if (asked) setRemoteAnnouncement(messages().imagesLoading);
     const pending = remoteImageIds().filter((id) => !loadedRemoteIds().has(id));
-    let loadedCount = 0;
     let budgetExhausted = false;
     let cursor = 0;
     const worker = async () => {
@@ -177,7 +211,6 @@ export default function MailMessageBody(props: {
             return;
           }
           remoteLoadedBytes += blob.size;
-          loadedCount += 1;
           showFrameImage({ kind: "remote", id: imageId, image: blob });
           setLoadedRemoteIds((current) => new Set(current).add(imageId));
         } catch (error) {
@@ -191,10 +224,12 @@ export default function MailMessageBody(props: {
     };
     try {
       await Promise.all(Array.from({ length: Math.min(REMOTE_IMAGE_WORKERS, pending.length) }, worker));
-      if (loadedCount === 0 && !disposed && !controller.signal.aborted) {
-        toast.error(messages().remoteImagesFailed);
-      } else if (budgetExhausted && !disposed && !controller.signal.aborted) {
-        toast(messages().remoteImagesLimited);
+      if (!disposed && !controller.signal.aborted) {
+        // The outcome stays in the row above the message, with a retry where one can help.
+        const outcome = budgetExhausted ? "limited" : remoteImagesRemaining() > 0 ? "failed" : "none";
+        setRemoteOutcome(outcome);
+        if (outcome === "limited") setRemoteAnnouncement(`${messages().imagesLimited}. ${messages().imagesLimitedReason}`);
+        else if (outcome === "none" && asked) setRemoteAnnouncement(messages().imagesLoaded);
       }
     } finally {
       if (remoteController === controller) remoteController = null;
@@ -214,9 +249,47 @@ export default function MailMessageBody(props: {
       if (!response.ok) throw new Error(await readApiError(response, messages().remotePreferenceFailed));
       return response.json();
     },
-    onSuccess: () => void loadRemoteImages(),
+    onSuccess: (rule) => {
+      setRevokedRuleIds((current) => new Set([...current].filter((id) => id !== rule.id)));
+      setAddedRules((current) => [
+        ...current.filter((known) => known.id !== rule.id),
+        { id: rule.id, scope: rule.scope, value: rule.value },
+      ]);
+      if (remoteImagesRemaining() > 0) void loadRemoteImages(true);
+      else setRemoteAnnouncement(messages().imagesNowAlways);
+    },
     onError: (error) => toast.error(error.message),
   });
+
+  // Removes every rule that loads these images, so they stop loading automatically; the shown images stay.
+  const revokeRemoteContent = mutation.create<string[], readonly RemoteContentAllowRule[]>({
+    mutation: async (rules, { abortSignal }) => {
+      const removed: string[] = [];
+      for (const rule of rules) {
+        const response = await apiClient.mailboxes[":mailboxId"]["remote-content-rules"][":ruleId"].$delete(
+          { param: { mailboxId: props.mailboxId, ruleId: rule.id } },
+          { init: { signal: abortSignal } },
+        );
+        // A rule that is already gone no longer loads anything.
+        if (!response.ok && response.status !== 404) {
+          if (removed.length > 0) setRevokedRuleIds((current) => new Set([...current, ...removed]));
+          throw new Error(await readApiError(response, messages().remoteRuleRemoveFailed));
+        }
+        removed.push(rule.id);
+      }
+      return removed;
+    },
+    onSuccess: (removed) => {
+      setRevokedRuleIds((current) => new Set([...current, ...removed]));
+      setRemoteAnnouncement(messages().imagesNoLongerAutomatic);
+    },
+    onError: (error) => toast.error(error.message),
+  });
+
+  const openRemoteContentRules = async () => {
+    const rules = await importOnDemand(() => import("./MailRemoteContentRulesDialog"));
+    if (rules && !disposed) await rules.openMailRemoteContentRulesDialog(props.mailboxId);
+  };
 
   const receiveMessage = (event: MessageEvent) => {
     if (!frame || event.source !== frame.contentWindow || !event.data || typeof event.data !== "object") return;
@@ -306,6 +379,7 @@ export default function MailMessageBody(props: {
         frameImages.length = 0;
         setLoadedRemoteIds(new Set<string>());
         setRemoteLoading(false);
+        setRemoteOutcome("none");
         return;
       }
       const controller = new AbortController();
@@ -320,7 +394,7 @@ export default function MailMessageBody(props: {
     on(
       () => imagesAllowed() && props.remoteContent.allowedByRule,
       (autoLoad) => {
-        if (autoLoad) void loadRemoteImages();
+        if (autoLoad) void loadRemoteImages(false);
       },
     ),
   );
@@ -337,6 +411,7 @@ export default function MailMessageBody(props: {
     onCleanup(() => {
       disposed = true;
       allowRemoteContent.abort();
+      revokeRemoteContent.abort();
       remoteController?.abort();
       frameImages.length = 0;
       motionObserver.disconnect();
@@ -384,40 +459,25 @@ export default function MailMessageBody(props: {
       }
     >
       <div class="flex min-w-0 flex-col gap-2">
-        <Show when={remoteImagesRemaining() > 0}>
-          <NoticeCard tone="neutral" bodyClass="flex flex-wrap items-center gap-2">
-            <span class="min-w-48 flex-1">{messages().remoteImagesBlocked}</span>
-            <Button variant="secondary" size="xs" type="button" disabled={remoteLoading()} onClick={() => void loadRemoteImages()}>
-              <i class={`ti ${remoteLoading() ? "ti-loader-2 animate-spin" : "ti-photo"}`} aria-hidden="true" />
-              {messages().loadImages}
-            </Button>
-            <Show when={props.remoteContent.sender}>
-              {(sender) => (
-                <Button
-                  variant="ghost"
-                  size="xs"
-                  type="button"
-                  disabled={remoteLoading() || allowRemoteContent.loading()}
-                  onClick={() => void allowRemoteContent.mutate({ scope: "sender", value: sender() })}
-                >
-                  {messages().alwaysForSender}
-                </Button>
-              )}
-            </Show>
-            <Show when={props.remoteContent.domain}>
-              {(domain) => (
-                <Button
-                  variant="ghost"
-                  size="xs"
-                  type="button"
-                  disabled={remoteLoading() || allowRemoteContent.loading()}
-                  onClick={() => void allowRemoteContent.mutate({ scope: "domain", value: domain() })}
-                >
-                  {messages().alwaysForDomain}
-                </Button>
-              )}
-            </Show>
-          </NoticeCard>
+        <Show when={noticeKind()}>
+          {(kind) => (
+            <MailRemoteImagesNotice
+              kind={kind()}
+              messages={messages()}
+              locale={localization().locale}
+              loaded={loadedRemoteIds().size}
+              total={remoteImageIds().length}
+              sender={props.remoteContent.sender}
+              domain={props.remoteContent.domain}
+              rules={allowRules()}
+              busy={allowRemoteContent.loading() || revokeRemoteContent.loading()}
+              announcement={remoteAnnouncement()}
+              onLoad={() => void loadRemoteImages(true)}
+              onAllow={(rule) => void allowRemoteContent.mutate(rule)}
+              onRevoke={() => void revokeRemoteContent.mutate(allowRules())}
+              onOpenRules={() => void openRemoteContentRules()}
+            />
+          )}
         </Show>
         <iframe
           ref={frame}
