@@ -1,8 +1,9 @@
 import { dates } from "@k2b/stdlib";
 import { timed } from "@k2b/stdlib/solid";
-import { announce, Button, Format, IconButton, Kbd, ScrollArea, useLocale } from "@k2b/ui";
-import { createEffect, createMemo, createSignal, createUniqueId, For, on, onCleanup, onMount, Show } from "solid-js";
+import { announce, Button, ButtonLink, Format, IconButton, Kbd, ScrollArea, useLocale } from "@k2b/ui";
+import { createEffect, createMemo, createSignal, createUniqueId, For, Match, on, onCleanup, onMount, Show, Switch } from "solid-js";
 import { SEARCH_APP_RESULT_LIMIT, SEARCH_PAGE_SIZE, type SearchApp, type SearchItem } from "../api/search/schemas";
+import { BlockTree } from "../blocks/BlockTree";
 import type { CloudResourceRef } from "../contracts";
 import { matchNavigationSearchItems, type NavigationSearchItem } from "./navigation-search";
 import { cloudResourceSearchUrl, filterCloudResourceSearchItems, groupCloudResourceSearchItems } from "./resource-search";
@@ -10,6 +11,7 @@ import { commitTypedTags, matchingSearchTags, searchTags, tagAtCursor } from "./
 import { resourceSearchMessages } from "./resource-search-messages";
 import type { GlobalSearchOptions, SearchScope } from "./search-bridge";
 import { commandSearchItem, matchingCommands, type PaletteCommand } from "./search-commands";
+import { createSearchPreview, type SearchPreviewState } from "./search-preview";
 import {
   applySearchLine,
   breakSearchRun,
@@ -490,6 +492,11 @@ export default function CloudResourceSearch(props: CloudResourceSearchProps) {
   };
   const updateCaret = () => setCaret(inputRef.selectionStart ?? input().length);
   const isApp = (item: SearchItem) => navigation().some((link) => link === item && link.kind === "app");
+  // Only a hit the person may read asks its reader; the others keep the search facts.
+  const preview = createSearchPreview(() => {
+    const item = showResults() ? previewItem() : undefined;
+    return item && "ref" in item && item.readable ? item.ref : undefined;
+  });
   const previewMetadata = () => (previewItem()?.metadata ?? []).filter((entry) => entry.label.trim() && entry.value.trim());
 
   return (
@@ -911,33 +918,50 @@ export default function CloudResourceSearch(props: CloudResourceSearchProps) {
               {item().appName}
             </div>
             <h2>{item().title}</h2>
-            <Show when={item().previewUrl?.startsWith("/") && !previewFailed()}>
-              <img class="cloud-resource-search__image" src={item().previewUrl} alt="" onError={() => setPreviewFailed(true)} />
-            </Show>
-            <Show when={previewMetadata().length > 0}>
-              <dl>
-                <For each={previewMetadata()}>
-                  {(entry) => (
-                    <>
-                      <dt>{entry.label}</dt>
-                      <dd>
-                        <Show when={entry.format && validDate(entry.value)} fallback={entry.value}>
-                          <Show
-                            when={entry.format === "date-time"}
-                            fallback={<Format.Date value={entry.value} timeZone={zoneFor(entry)} />}
-                          >
-                            <Format.DateTime value={entry.value} timeZone={zoneFor(entry)} />
-                          </Show>
-                        </Show>
-                      </dd>
-                    </>
-                  )}
-                </For>
-              </dl>
-            </Show>
-            <Show when={item().preview}>
-              <p>{item().preview}</p>
-            </Show>
+            <Switch>
+              <Match when={preview().state === "loading"}>
+                {/* The reader answers within a moment; its room is held so the column does not jump. */}
+                <div class="cloud-resource-search__preview-loading" aria-busy="true" />
+              </Match>
+              <Match when={preview().state === "view" ? (preview() as Extract<SearchPreviewState, { state: "view" }>).view : undefined}>
+                {(view) => <BlockTree blocks={view().blocks} host="preview" locale={locale()} timeZone={localTimeZone()} />}
+              </Match>
+              <Match when={true}>
+                <Show when={item().previewUrl?.startsWith("/") && !previewFailed()}>
+                  <img class="cloud-resource-search__image" src={item().previewUrl} alt="" onError={() => setPreviewFailed(true)} />
+                </Show>
+                <Show when={previewMetadata().length > 0}>
+                  <dl>
+                    <For each={previewMetadata()}>
+                      {(entry) => (
+                        <>
+                          <dt>{entry.label}</dt>
+                          <dd>
+                            <Show when={entry.format && validDate(entry.value)} fallback={entry.value}>
+                              <Show
+                                when={entry.format === "date-time"}
+                                fallback={<Format.Date value={entry.value} timeZone={zoneFor(entry)} />}
+                              >
+                                <Format.DateTime value={entry.value} timeZone={zoneFor(entry)} />
+                              </Show>
+                            </Show>
+                          </dd>
+                        </>
+                      )}
+                    </For>
+                  </dl>
+                </Show>
+                <Show when={item().preview}>
+                  <p>{item().preview}</p>
+                </Show>
+              </Match>
+            </Switch>
+            <div class="cloud-resource-search__preview-open">
+              <ButtonLink href={item().href} variant="secondary" size="sm">
+                {t().openInApp({ app: item().appName })}
+                <i class="ti ti-corner-down-left" aria-hidden="true" />
+              </ButtonLink>
+            </div>
           </ScrollArea>
         )}
       </Show>

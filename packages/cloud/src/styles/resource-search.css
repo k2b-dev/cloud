@@ -345,22 +345,38 @@
   letter-spacing: -0.025em;
   line-height: 1.45;
 }
-.cloud-resource-search__preview dl {
+/* The search facts, shown when a hit has no reader view; a reader's blocks bring their own look. */
+.cloud-resource-search__preview dl:not(.cloud-blocks *) {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1.7fr);
   gap: 0.75rem 0.5rem;
   margin: 1.75rem 0 0;
   font-size: 0.75rem;
 }
-.cloud-resource-search__preview dt {
+.cloud-resource-search__preview dt:not(.cloud-blocks *) {
   color: var(--k2b-text-muted);
   overflow-wrap: anywhere;
 }
-.cloud-resource-search__preview dd {
+.cloud-resource-search__preview dd:not(.cloud-blocks *) {
   margin: 0;
   overflow-wrap: anywhere;
 }
-.cloud-resource-search__preview p {
+.cloud-resource-search__preview .cloud-blocks[data-host="preview"],
+.cloud-resource-search__preview-loading {
+  margin-top: 1.25rem;
+}
+/* The room a reader view usually takes, held while it loads. */
+.cloud-resource-search__preview-loading {
+  min-height: 12rem;
+  border-radius: 0.5rem;
+  background: color-mix(in srgb, var(--k2b-text-muted) 6%, transparent);
+}
+.cloud-resource-search__preview-open {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 1.5rem;
+}
+.cloud-resource-search__preview p:not(.cloud-blocks *) {
   margin-top: 1.75rem;
   color: var(--k2b-text-muted);
   font-size: 0.8125rem;

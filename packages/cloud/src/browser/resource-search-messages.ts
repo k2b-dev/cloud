@@ -36,6 +36,7 @@ export const resourceSearchMessages = i18n.define({
       refineForMore: ({ app, count }: { app: string; count: number }) =>
         `${app} found more than ${count} results. Add a word to narrow the search.`,
       back: "Back to results",
+      openInApp: ({ app }: { app: string }) => `Open in ${app}`,
       tagSuggestions: "Search filters",
       allTags: "All filters",
       backToSearch: "Back to search",
@@ -87,6 +88,7 @@ export const resourceSearchMessages = i18n.define({
       loadMore: ({ app }) => `Mehr aus ${app} anzeigen`,
       refineForMore: ({ app, count }) => `${app} hat mehr als ${count} Treffer. Ein weiteres Wort grenzt die Suche ein.`,
       back: "Zurück zu Ergebnissen",
+      openInApp: ({ app }) => `In ${app} öffnen`,
       tagSuggestions: "Suchfilter",
       allTags: "Alle Filter",
       backToSearch: "Zurück zur Suche",
