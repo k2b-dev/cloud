@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { mkdirSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import type { Browser, Page } from "playwright";
-import { browserName, launchBrowser } from "../../test/browser";
+import { browserName, launchBrowser, settled } from "../../test/browser";
 
 // Which width a browser gives a glyph before its font has loaded is a question of
 // layout, which happy-dom does not model, so a real engine loads the shipped preset.
@@ -126,6 +126,7 @@ const openBrandPage = async (theme: "light" | "dark") => {
     return route.fulfill({ status: 404, body: "" });
   });
   await tab.goto("http://icons.test/");
+  await settled(tab);
   // The font and the mask image both arrive after layout: wait for each before reading pixels.
   await tab.evaluate(async () => {
     await document.fonts.load("16px tabler-icons");
@@ -195,6 +196,7 @@ const inkOf = async (tab: Page, selector: string) => {
 describe("feat/code brand glyph", () => {
   test("joins the icon set: a mask on the box, padding, and centre of the Tabler glyphs next to it", async () => {
     const tab = await openBrandPage("light");
+    await settled(tab);
     try {
       const [tablerStyle, brandStyle] = await tab.evaluate(() =>
         ["ti-code", "ti-feat-code"].map((icon) => {
@@ -255,7 +257,7 @@ describe("feat/code brand glyph", () => {
     const tab = await openBrandPage("light");
     try {
       await tab.emulateMedia({ forcedColors: "active" });
-      await tab.evaluate(() => new Promise(requestAnimationFrame));
+      await settled(tab);
       const [brand] = await inkOf(tab, '[data-size="24"].ti-feat-code');
       expect(brand!.ink.weight).toBeGreaterThan(20);
     } finally {
