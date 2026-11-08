@@ -10,6 +10,7 @@ import { z } from "zod";
 import { activityQueries } from "./activity-capabilities";
 import { apiError } from "./api/api-error";
 import { errorMessage } from "./api/messages";
+import { filesEvents } from "./app-events";
 import { filesCapabilityMessages } from "./capability-messages";
 import { filesCapabilityPresentation } from "./capability-presentation";
 import { type DirectoryResult, SEARCH_WORD_LIMIT, type SearchResult } from "./contracts";
@@ -46,6 +47,7 @@ const entryHref = (baseId: string, path: string, directory: boolean) =>
 
 export const filesCapabilities = defineCapabilities({
   protocolVersion: 2,
+  events: filesEvents,
   subscribes: {
     "core.user.created": {
       version: 1,

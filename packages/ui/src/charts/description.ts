@@ -131,6 +131,21 @@ type Variants<N> =
     }
   | { kind: "stat"; value: N; format?: ChartNumberFormat; unit?: string; delta?: N; better?: "up" | "down"; sparkline?: N[] }
   | {
+      kind: "treemap";
+      groups: string[];
+      data: { label: string; group: string; value: number }[];
+      legend?: boolean;
+      format?: ChartNumberFormat;
+      locale?: string;
+    }
+  | {
+      kind: "pareto";
+      labels: [string, string];
+      data: { label: string; value: number; prev: number }[];
+      format?: ChartNumberFormat;
+      locale?: string;
+    }
+  | {
       kind: "bubble";
       groups: string[];
       data: { label: string; group: string; x: number; y: number; size?: number }[];

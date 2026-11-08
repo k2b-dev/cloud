@@ -477,6 +477,9 @@ for (const width of [1200, 390])
 
 // Each added renderer also crosses the real offline first-use boundary.
 const addedSpecs = [
+  { kind: "treemap", groups: ["North"], data: [{ label: "A", group: "North", value: 42 }] },
+  { kind: "pareto", labels: ["Now", "Before"], data: [{ label: "A", value: 42, prev: 32 }] },
+
   {
     kind: "bubble",
     groups: ["North"],

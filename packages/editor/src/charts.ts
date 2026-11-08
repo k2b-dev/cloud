@@ -23,6 +23,7 @@ import {
   line,
   niceLogTicks,
   niceStep,
+  type ParetoOptions,
   pie,
   type RadarOptions,
   rankedBarLayout,
@@ -32,11 +33,14 @@ import {
   renderFunnelSvg,
   renderHbarSvg,
   renderHeatmapSvg,
+  renderParetoSvg,
   renderRadarSvg,
+  renderTreemapSvg,
   renderWaterfallSvg,
   scatter,
   sparkline,
   stat,
+  type TreemapOptions,
   type WaterfallOptions,
 } from "@k2b/ui/charts/core";
 import { z } from "zod";
@@ -53,17 +57,21 @@ type RenderOptions = {
         ? WaterfallOptions
         : K extends "area"
           ? AreaOptions
-          : K extends "bubble"
-            ? BubbleOptions
-            : K extends "radar"
-              ? RadarOptions
-              : K extends "heatmap"
-                ? HeatmapChartOptions
-                : K extends "bar"
-                  ? BarChartOptions & { data: NonNullable<BarChartOptions["data"]> }
-                  : K extends keyof typeof charts
-                    ? Omit<Parameters<(typeof charts)[K]>[0], "width" | "height" | "inspect">
-                    : never);
+          : K extends "treemap"
+            ? TreemapOptions
+            : K extends "pareto"
+              ? ParetoOptions
+              : K extends "bubble"
+                ? BubbleOptions
+                : K extends "radar"
+                  ? RadarOptions
+                  : K extends "heatmap"
+                    ? HeatmapChartOptions
+                    : K extends "bar"
+                      ? BarChartOptions & { data: NonNullable<BarChartOptions["data"]> }
+                      : K extends keyof typeof charts
+                        ? Omit<Parameters<(typeof charts)[K]>[0], "width" | "height" | "inspect">
+                        : never);
 }[ChartInput["kind"]];
 
 /**
@@ -78,10 +86,13 @@ const labels = /* @__PURE__ */ i18n.define({
   messages: {
     en: {
       category: "Category",
-      group: "Group",
       size: "Size",
       axis: "Axis",
       series: "Series",
+      group: "Group",
+      previous: "Previous",
+      change: "Change",
+      cumulative: "Cumulative",
       balance: "Balance",
       before: "Balance before",
       inflow: "In",
@@ -108,10 +119,13 @@ const labels = /* @__PURE__ */ i18n.define({
     },
     de: {
       category: "Kategorie",
-      group: "Bereich",
       size: "Größe",
       axis: "Achse",
       series: "Datenreihe",
+      group: "Bereich",
+      previous: "Vorher",
+      change: "Änderung",
+      cumulative: "Kumuliert",
       balance: "Stand",
       before: "Stand davor",
       inflow: "Rein",
@@ -326,6 +340,8 @@ const formattedValues = (input: ChartInput): number[] => {
       return input.rows.flatMap((r) => r.values.filter((v): v is number => v !== null));
     case "funnel":
       return input.data.flatMap((d) => (d.value === null ? [] : [d.value]));
+    case "treemap":
+    case "pareto":
     case "pie":
     case "donut":
       return input.data.map((item) => item.value);
@@ -442,6 +458,25 @@ export function chartRenderOptions(
   const width = options.width ?? WIDTH;
   const references = renderReferences(input);
   switch (input.kind) {
+    case "treemap":
+      return {
+        kind: "treemap",
+        legend: input.legend,
+        groups: input.groups,
+        data: input.data,
+        format: format.value,
+        locale: input.locale ?? locale,
+        displayWidth: options.width,
+      };
+    case "pareto":
+      return {
+        kind: "pareto",
+        labels: input.labels,
+        data: input.data,
+        format: format.value,
+        locale: input.locale ?? locale,
+        displayWidth: options.width,
+      };
     case "bubble":
       return {
         kind: "bubble",
@@ -678,6 +713,10 @@ const decode = (value: string) =>
 export const drawChart = (options: RenderOptions): string => {
   const common = { width: WIDTH, height: HEIGHT, inspect: true };
   switch (options.kind) {
+    case "treemap":
+      return renderTreemapSvg({ ...options, ...common });
+    case "pareto":
+      return renderParetoSvg({ ...options, ...common });
     case "bubble":
       return renderBubbleSvg({ ...options, ...common });
     case "radar":
@@ -865,6 +904,18 @@ export function chartRows(
         cell(field.key, field.key.toUpperCase(), value, value);
         continue;
       }
+      if (input.kind === "treemap" && field.key === "group" && typeof value === "string") {
+        cell("group", t.group, value, value);
+        continue;
+      }
+      if (
+        input.kind === "pareto" &&
+        (field.key === "previous" || field.key === "change" || field.key === "cumulative") &&
+        typeof value === "number"
+      ) {
+        cell(field.key, field.key === "previous" ? input.labels[1] : t[field.key], value, field.formatted ?? valueFormat(value));
+        continue;
+      }
       if (input.kind === "hbar" || (input.kind === "bar" && input.series)) {
         const seriesIndex = field.key.startsWith("series:") ? Number(field.key.slice(7)) : undefined;
         const label =
@@ -949,11 +1000,13 @@ export function chartRows(
         cell(
           "value",
           input.tooltip?.label ??
-            (input.kind === "bar"
-              ? input.yAxis?.label
-              : input.kind === "heatmap" && input.layout === "calendar"
-                ? input.label
-                : undefined) ??
+            (input.kind === "pareto"
+              ? input.labels[0]
+              : input.kind === "bar"
+                ? input.yAxis?.label
+                : input.kind === "heatmap" && input.layout === "calendar"
+                  ? input.label
+                  : undefined) ??
             t.value,
           value,
           input.kind === "heatmap" && input.layout === "calendar"
@@ -1021,6 +1074,8 @@ export function chartTable(input: ChartInput, locale: string): ChartTable {
 /** Input values count against the budget, including observations summarized into boxes or bins. */
 export const chartMarks = (input: ChartInput): number => {
   switch (input.kind) {
+    case "pareto":
+      return input.data.length * 3;
     case "radar":
       return input.axes.length * input.series.length;
     case "waterfall":

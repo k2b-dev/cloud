@@ -674,6 +674,19 @@ test("a titled bar chart with many rows reserves the height of its title and eve
   expect(Math.max(...baselines)).toBeLessThan(height);
 });
 
+test("distribution app charts retain headers and the caller's measured width", () => {
+  for (const spec of [
+    { kind: "treemap", groups: ["A"], data: [{ label: "Chair", group: "A", value: 1234.5 }] },
+    { kind: "pareto", labels: ["Now", "Before"], data: [{ label: "Chair", value: 1234.5, prev: 1000 }] },
+  ]) {
+    const markup = String(chart({ ...spec, title: "Distribution", subtitle: "Fictional", width: 900, locale: "de-DE" }, "en"));
+    expect(markup).toContain('viewBox="0 0 900 ');
+    expect(markup).toContain("Distribution</text>");
+    expect(markup).toContain("Fictional</text>");
+    expect(markup).toContain("1.234,5");
+  }
+});
+
 test("named bubbles and radar keep titles, locale, complete axis tooltips and measured redraws", () => {
   const markup = String(
     chart(

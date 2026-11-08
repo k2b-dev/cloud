@@ -2564,31 +2564,31 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
     --k2b-field-control-row: 3;
     --k2b-field-control-height: max-content;
   }
-  .k2b-ui :not(:has(> :not(.k2b-field))):has(> .k2b-field > .k2b-field__description) > .k2b-field:not([data-fill="true"]) > .k2b-field__label {
+  .k2b-ui :not(:has(> :not(.k2b-field))):has(> .k2b-field > .k2b-field__description) > .k2b-field:not([data-fill="true"]) > :is(.k2b-field__label, .k2b-field__label-row) {
     grid-row: 1;
   }
-  .k2b-ui :not(:has(> :not(.k2b-field))):has(> .k2b-field > .k2b-field__description) > .k2b-field:not([data-fill="true"]):not(:has(> .k2b-field__description)) > .k2b-field__label {
+  .k2b-ui :not(:has(> :not(.k2b-field))):has(> .k2b-field > .k2b-field__description) > .k2b-field:not([data-fill="true"]):not(:has(> .k2b-field__description)) > :is(.k2b-field__label, .k2b-field__label-row) {
     grid-row: 1 / 3;
   }
   .k2b-ui :not(:has(> :not(.k2b-field))):has(> .k2b-field > .k2b-field__description) > .k2b-field:not([data-fill="true"]) > .k2b-field__description {
     grid-row: 2;
   }
-  .k2b-ui :not(:has(> :not(.k2b-field))):has(> .k2b-field > .k2b-field__description) > .k2b-field:not([data-fill="true"]):not(:has(> .k2b-field__label)) > .k2b-field__description {
+  .k2b-ui :not(:has(> :not(.k2b-field))):has(> .k2b-field > .k2b-field__description) > .k2b-field:not([data-fill="true"]):not(:has(> .k2b-field__label, > .k2b-field__label-row)) > .k2b-field__description {
     grid-row: 1 / 3;
   }
   /* The control's row travels in a custom property. A rule after :has() whose
      last part names no class, such as this :not(), makes every :has() change
      restyle the whole document: seconds per click in a mailbox. */
-  .k2b-ui .k2b-field > :not(.k2b-field__label, .k2b-field__description, .k2b-field__error) {
+  .k2b-ui .k2b-field > :not(.k2b-field__label, .k2b-field__label-row, .k2b-field__description, .k2b-field__error) {
     grid-row: var(--k2b-field-control-row);
   }
   .k2b-ui :not(:has(> :not(.k2b-field))):has(> .k2b-field > .k2b-field__description) > .k2b-field:not([data-fill="true"]):not(:has(> .k2b-field__error)) {
     --k2b-field-control-row: 3 / 5;
   }
-  .k2b-ui :not(:has(> :not(.k2b-field))):has(> .k2b-field > .k2b-field__description) > .k2b-field:not([data-fill="true"]):not(:has(> .k2b-field__label, > .k2b-field__description)) {
+  .k2b-ui :not(:has(> :not(.k2b-field))):has(> .k2b-field > .k2b-field__description) > .k2b-field:not([data-fill="true"]):not(:has(> .k2b-field__label, > .k2b-field__label-row, > .k2b-field__description)) {
     --k2b-field-control-row: 1 / 5;
   }
-  .k2b-ui :not(:has(> :not(.k2b-field))):has(> .k2b-field > .k2b-field__description) > .k2b-field:not([data-fill="true"]):not(:has(> .k2b-field__label, > .k2b-field__description)):has(> .k2b-field__error) {
+  .k2b-ui :not(:has(> :not(.k2b-field))):has(> .k2b-field > .k2b-field__description) > .k2b-field:not([data-fill="true"]):not(:has(> .k2b-field__label, > .k2b-field__label-row, > .k2b-field__description)):has(> .k2b-field__error) {
     --k2b-field-control-row: 1 / 4;
   }
   .k2b-ui :not(:has(> :not(.k2b-field))):has(> .k2b-field > .k2b-field__description) > .k2b-field:not([data-fill="true"]) > .k2b-field__error {
@@ -2600,7 +2600,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
      and the actions below it. A start-aligned control measures its content
      anyway; saying so explicitly keeps the rows tall enough there and changes
      nothing in a grid. Zero specificity keeps any control's own height. */
-  :where(.k2b-ui .k2b-field) > :where(:not(.k2b-field__label, .k2b-field__description, .k2b-field__error)) {
+  :where(.k2b-ui .k2b-field) > :where(:not(.k2b-field__label, .k2b-field__label-row, .k2b-field__description, .k2b-field__error)) {
     height: var(--k2b-field-control-height);
   }
 }
@@ -2624,6 +2624,13 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 .k2b-ui .k2b-field__required {
   margin-left: 0.2rem;
   color: var(--k2b-danger-text);
+}
+
+.k2b-ui .k2b-field__label-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
 }
 
 .k2b-ui .k2b-field__description,
@@ -10489,6 +10496,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 }
 
 .k2b-ui .k2b-slider,
+.k2b-ui .k2b-slider__value,
 .k2b-ui .k2b-color-input {
   display: flex;
   align-items: center;
@@ -10502,6 +10510,17 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   appearance: none;
   border-radius: 999px;
   accent-color: var(--k2b-action);
+}
+
+/* The value shares the label's line height; the reset's hit area may extend into the field gap. */
+.k2b-ui .k2b-slider__value {
+  height: 1.125rem;
+  flex-shrink: 0;
+}
+
+/* Keep the track aligned with the standard slider's reserved reset row in mixed field grids. */
+.k2b-ui .k2b-slider[data-value-placement="label"] {
+  min-height: 1.5rem;
 }
 
 .k2b-ui .k2b-slider input::-webkit-slider-thumb {
@@ -10711,6 +10730,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 }
 
 .k2b-ui .k2b-slider output,
+.k2b-ui .k2b-slider__value output,
 .k2b-ui .k2b-color-input code {
   min-width: 3.5rem;
   color: var(--k2b-text-muted);
@@ -10720,12 +10740,14 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 }
 
 /* A value away from its default shows in the accent color. */
-.k2b-ui .k2b-slider[data-changed="true"] output {
+.k2b-ui .k2b-slider[data-changed="true"] output,
+.k2b-ui .k2b-slider__value[data-changed="true"] output {
   color: var(--k2b-action);
 }
 
 /* The reset button keeps its slot, so a change moves nothing; at the default it is invisible and out of reach. */
-.k2b-ui .k2b-slider:not([data-changed="true"]) .k2b-slider__reset {
+.k2b-ui .k2b-slider:not([data-changed="true"]) .k2b-slider__reset,
+.k2b-ui .k2b-slider__value:not([data-changed="true"]) .k2b-slider__reset {
   visibility: hidden;
 }
 
@@ -18478,6 +18500,14 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
     transition: none;
   }
 }
+
+.k2b-ui .k2b-chart[data-chart-kind="treemap"] [data-inspected]:not([data-chart-role="value"]) > rect,
+.k2b-ui .k2b-chart[data-chart-kind="treemap"] [data-selected] > rect { stroke-width:1.5px; }
+.k2b-ui .k2b-chart[data-chart-kind="pareto"] :is([data-inspected],[data-selected]) > :is(.k2b-chart-pareto-current,.k2b-chart-category-band) { stroke: none !important; }
+.k2b-ui .k2b-chart[data-chart-kind="pareto"] :is([data-inspected],[data-selected]) > .k2b-chart-category-band { fill:color-mix(in srgb,var(--stdlib-chart-c1,#3b82f6) 7%,transparent); }
+
+.k2b-ui .k2b-chart[data-chart-kind="pareto"] :is([data-inspected],[data-selected]) > .k2b-chart-pareto-previous { stroke: var(--stdlib-chart-c1,#3b82f6) !important; stroke-width: .8px; }
+.k2b-ui .k2b-chart[data-chart-kind="pareto"] :is([data-inspected],[data-selected]) > .k2b-chart-pareto-hatch { stroke: var(--stdlib-chart-c1,#3b82f6) !important; stroke-width: 1px; }
 
 /* New distribution marks keep the selected state stronger than calm hover. */
 .k2b-ui .k2b-chart:is([data-chart-kind="bubble"],[data-chart-kind="radar"]) [data-selected] > circle { stroke-width: 3px !important; }

@@ -299,6 +299,28 @@ const examples = {
       interactive: true,
     },
   },
+  treemap: {
+    description: "Treemap · Area shows the share of each product.",
+    chart: {
+      kind: "treemap",
+      groups: ["Products"],
+      data: [
+        { label: "Chairs", group: "Products", value: 40 },
+        { label: "Tables", group: "Products", value: 25 },
+      ],
+    },
+  },
+  pareto: {
+    description: "Pareto · Ranked causes with a cumulative share.",
+    chart: {
+      kind: "pareto",
+      labels: ["Current", "Previous"],
+      data: [
+        { label: "Chairs", value: 40, prev: 30 },
+        { label: "Tables", value: 25, prev: 28 },
+      ],
+    },
+  },
   bubble: {
     description: "Named bubbles compare reach, opens and audience area. Guides show the unweighted average.",
     chart: {
@@ -449,6 +471,11 @@ const tooltipExamples: Record<ChartKind, TooltipExample> = {
       detail: { label: "Activity" },
     },
   },
+  treemap: { title: "Product shares", fields: { value: { label: "Units" }, percent: { label: "Share", unit: "%" } } },
+  pareto: {
+    title: "Ranked causes",
+    fields: { value: { label: "Current" }, previous: { label: "Previous" }, cumulative: { label: "Cumulative" } },
+  },
 };
 
 const createTooltip =
@@ -492,7 +519,11 @@ export const ChartDemo = (props: { window: "1h" | "24h" }) => (
   <For each={gallery}>
     {(example) => {
       const [selection, setSelection] = createSignal<ChartSelection>();
-      const native = example.chart.kind === "bubble" || example.chart.kind === "radar";
+      const native =
+        example.chart.kind === "bubble" ||
+        example.chart.kind === "radar" ||
+        example.chart.kind === "treemap" ||
+        example.chart.kind === "pareto";
       const tooltip = native ? undefined : createTooltip(tooltipExamples[example.chart.kind]);
       const detailTooltip: ChartTooltipFormatter =
         tooltip ??

@@ -16,7 +16,7 @@ test("normal mounts omit app checks and stay within the prelude budget", async (
   expect(rare).not.toContain("Waterfall balances must be finite");
   expect(normal).not.toContain("data-calendar-weekdays");
   expect(rare).toContain("data-calendar-weekdays");
-  for (const marker of ["k2b-chart-bubble-label", "k2b-chart-radar-axis"]) {
+  for (const marker of ["k2b-chart-bubble-label", "k2b-chart-radar-axis", "k2b-chart-pareto-current", "k2b-chart-treemap-cell"]) {
     expect(normal).not.toContain(marker);
     expect(rare).toContain(marker);
   }
@@ -24,8 +24,8 @@ test("normal mounts omit app checks and stay within the prelude budget", async (
   expect(rare).not.toMatch(/\bimport\s*(?:\(|["'{*])/);
   console.info(`App prelude: ${Buffer.byteLength(normal)} B; offline chart module: ${Buffer.byteLength(rare)} B`);
   expect(Buffer.byteLength(normal)).toBeLessThan(319_900);
-  // temporary until the last kind PR sets the catalog total, see #2790
-  expect(Buffer.byteLength(rare)).toBeLessThan(58_900);
+  // 67,410 B measured; temporary until the last kind PR sets the catalog total, see #2790
+  expect(Buffer.byteLength(rare)).toBeLessThan(68_100);
 
   expect(normal).not.toContain("k2b-chart-group-heading");
   expect(rare).toContain("k2b-chart-group-heading");
