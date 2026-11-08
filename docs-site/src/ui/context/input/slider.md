@@ -27,11 +27,6 @@ to `true`; `formatValue` controls its text.
 
 With `center`, the filled track starts at the range midpoint. Double-click resets to `defaultValue`, or to the midpoint for a centered slider and `min` otherwise.
 
-With `defaultValue`, the slider also marks a changed value in the action color
-and shows a reset button beside it. The button keeps its space while hidden,
-so moving the slider never shifts the row. Its name says the target value
-("Reset to 0"). A reset reports through both callbacks.
-
 See [shared field props](/en/ui/getting-started#shared-field-props) for labels, errors, disabled state and value accessors.
 
 ## Accessibility
@@ -42,7 +37,7 @@ Browser keyboard controls remain available because the component uses `<input ty
 
 ## Runtime
 
-Value updates and both resets require browser code.
+Value updates and double-click reset require browser code.
 
 ## Example
 

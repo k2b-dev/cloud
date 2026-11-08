@@ -12,7 +12,6 @@ const inputMessages = i18n.define({
       useColor: "Use a color",
       useTransparent: "Use transparent",
       pinDigit: ({ index, total }: { index: number; total: number }) => `PIN digit ${index} of ${total}`,
-      resetTo: ({ value }: { value: string }) => `Reset to ${value}`,
     },
     de: {
       decreaseValue: "Wert verringern",
@@ -22,7 +21,6 @@ const inputMessages = i18n.define({
       useColor: "Farbe verwenden",
       useTransparent: "Transparent verwenden",
       pinDigit: ({ index, total }) => `PIN-Ziffer ${index} von ${total}`,
-      resetTo: ({ value }) => `Auf ${value} zurücksetzen`,
     },
   },
 });

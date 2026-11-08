@@ -169,10 +169,6 @@ export function Slider(props: SliderProps): JSX.Element {
     return `linear-gradient(to right, var(--k2b-action) 0 ${position}%, var(--k2b-surface-muted) ${position}% 100%)`;
   };
   const resetValue = () => local.defaultValue ?? (local.center ? (min() + max()) / 2 : min());
-  const inputMessages = useInputMessages();
-  // A slider with a default shows a reset beside its value once moved away from it; the space stays reserved.
-  const changed = () => local.defaultValue !== undefined && value() !== local.defaultValue;
-  const format = (v: number) => local.formatValue?.(v) ?? String(v);
 
   return (
     <Field
@@ -184,7 +180,7 @@ export function Slider(props: SliderProps): JSX.Element {
       required={local.required}
       disabled={rest.disabled}
     >
-      <div class="k2b-slider" data-changed={changed() ? "" : undefined}>
+      <div class="k2b-slider">
         <input
           {...rest}
           id={meta.controlId}
@@ -199,21 +195,8 @@ export function Slider(props: SliderProps): JSX.Element {
             commitFieldValue(local, next);
           }}
         />
-        <Show when={local.defaultValue !== undefined}>
-          <button
-            type="button"
-            class="k2b-slider__reset"
-            data-on={changed() ? "" : undefined}
-            disabled={rest.disabled || !changed()}
-            aria-label={inputMessages().resetTo({ value: format(resetValue()) })}
-            title={inputMessages().resetTo({ value: format(resetValue()) })}
-            onClick={() => commitFieldValue(local, resetValue())}
-          >
-            <i class="ti ti-restore" aria-hidden="true" />
-          </button>
-        </Show>
         <Show when={local.showValue ?? true}>
-          <output for={meta.controlId}>{format(value())}</output>
+          <output for={meta.controlId}>{local.formatValue?.(value()) ?? value()}</output>
         </Show>
       </div>
     </Field>

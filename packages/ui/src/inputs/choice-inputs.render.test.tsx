@@ -634,20 +634,6 @@ describe("@k2b/ui complete choice input migrations", () => {
     expect(html).toContain("linear-gradient");
     expect(html).toContain("-25%");
     expect(html).toContain("<output");
-    // Away from its default the slider marks the value and offers a named reset.
-    expect(html).toContain('class="k2b-slider" data-changed');
-    expect(html).toContain('aria-label="Reset to 0%"');
-    expect(html).toMatch(/class="k2b-slider__reset" data-on/);
-    const atDefault = renderToString(() =>
-      createComponent(Slider, { label: "Balance", value: () => 0, onValueChange: () => {}, defaultValue: 0 }),
-    );
-    // At the default the reset keeps its place, hidden and inert.
-    expect(atDefault).not.toContain("data-changed");
-    expect(atDefault).toMatch(/class="k2b-slider__reset"[^>]*disabled/);
-    expect(atDefault).not.toMatch(/class="k2b-slider__reset" data-on/);
-    expect(cssRule(".k2b-ui .k2b-slider__reset")).toContain("visibility: hidden");
-    const plain = renderToString(() => createComponent(Slider, { label: "Volume", value: () => 10, onValueChange: () => {} }));
-    expect(plain).not.toContain("k2b-slider__reset");
   });
 
   test("renders compact and transparent-capable color controls", () => {
