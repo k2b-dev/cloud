@@ -1082,7 +1082,14 @@ describe("Notebook on the shared text editor", () => {
             // newline before a person could read the suggestion.
             const suggestion = page.locator(".cm-tooltip-autocomplete [role=option]").first();
             try {
-              expect(await suggestion.textContent({ timeout: 1_000 })).toContain("Table");
+              // The tooltip can still show the unfiltered "/" list while the
+              // typed query is applied; wait for the filtered first option.
+              await page.waitForFunction(
+                () => document.querySelector(".cm-tooltip-autocomplete [role=option]")?.textContent?.includes("Table"),
+                undefined,
+                { timeout: 1_000 },
+              );
+              expect(await suggestion.textContent()).toContain("Table");
             } catch (cause) {
               throw new Error(
                 `Missing ${entry} suggestion on ${deviceName}: doc=${JSON.stringify(await text(page))}; active=${await page.evaluate(() => document.activeElement?.outerHTML)}; errors=${JSON.stringify(errors)}`,
