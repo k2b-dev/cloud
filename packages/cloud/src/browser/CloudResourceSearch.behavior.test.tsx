@@ -28,6 +28,41 @@ describe("CloudResourceSearch selection", () => {
     return;
   }
 
+  test("renders an app's distinct result groups contiguously", async () => {
+    const dom = createDomTestHarness();
+    const originalFetch = globalThis.fetch;
+    const results = [
+      item("ordinary-1"),
+      { ...item("place-1"), group: "An Orten" },
+      item("ordinary-2"),
+      { ...item("place-2"), group: "An Orten" },
+    ];
+    globalThis.fetch = Object.assign(
+      async () =>
+        Response.json({ query: "", count: 4, apps: [{ id: "notebooks", name: "Notebooks", icon: "ti ti-notebook" }], items: results }),
+      { preconnect: originalFetch.preconnect },
+    );
+    const { default: CloudResourceSearch } = await import("./CloudResourceSearch");
+    const dispose = render(() => <CloudResourceSearch initialAppId="notebooks" onClose={() => {}} onSelect={() => {}} />, dom.root);
+    try {
+      await waitFor(() => dom.root.querySelectorAll("[data-result-index]").length === 4, "all result groups");
+      expect(Array.from(dom.root.querySelectorAll(".cloud-resource-search__group"), (entry) => entry.textContent)).toEqual([
+        "Notebooks",
+        "An Orten",
+      ]);
+      expect(Array.from(dom.root.querySelectorAll("[data-result-index]"), (entry) => entry.textContent)).toEqual([
+        expect.stringContaining("ordinary-1"),
+        expect.stringContaining("ordinary-2"),
+        expect.stringContaining("place-1"),
+        expect.stringContaining("place-2"),
+      ]);
+    } finally {
+      dispose();
+      globalThis.fetch = originalFetch;
+      dom.cleanup();
+    }
+  });
+
   test("applies picker filters and returns the selected resource", async () => {
     const dom = createDomTestHarness();
     const originalFetch = globalThis.fetch;
@@ -849,6 +884,41 @@ describe("streamed search results", () => {
       },
     };
   };
+
+  test("keeps navigation and earlier blocks fixed when the same app answers later", async () => {
+    const view = await setup({
+      navigationItems: [
+        {
+          ...found("mail", "Plan mail"),
+          ref: { type: "cloud.navigation", id: "mail:plan" },
+          readable: false,
+        },
+      ],
+    });
+    try {
+      const stream = await view.type("plan");
+      stream.write({ type: "start", query: "plan", apps: streamApps, providers: ["notebooks", "mail"] });
+      stream.write(providerLine("notebooks", [found("notebooks", "Plan notes")]));
+      await waitFor(() => view.rows().length === 2, "navigation and first block");
+      const earlier = view.rows();
+      view.input.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true }));
+      expect(earlier[1]!.getAttribute("aria-selected")).toBe("true");
+      stream.write(providerLine("mail", [found("mail", "Plan message"), { ...found("mail", "Plan place"), group: "An Orten" }]));
+      stream.write({ type: "done", status: "complete", count: 3 });
+      stream.close();
+      await waitFor(() => view.rows().length === 4, "late app groups");
+      expect(view.rows().slice(0, 2)).toEqual(earlier);
+      expect(view.rows().map((row) => row.textContent)).toEqual([
+        expect.stringContaining("Plan mail"),
+        expect.stringContaining("Plan notes"),
+        expect.stringContaining("Plan message"),
+        expect.stringContaining("Plan place"),
+      ]);
+      expect(earlier[1]!.getAttribute("aria-selected")).toBe("true");
+    } finally {
+      view.cleanup();
+    }
+  });
 
   test("shows a fast app at once, appends a slow one below, and keeps the keyboard selection", async () => {
     const view = await setup();
