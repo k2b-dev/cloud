@@ -108,7 +108,12 @@ const writeHeaders = (doc: Y.Doc, before: DraftEditableContent | null, next: Dra
   for (const key of settingKeys) {
     // Keep deterministic legacy seed item IDs unchanged while quoting is off.
     if (key === "quoteSource" && !settings.has(key) && !nextSettings[key]) continue;
-    if (!previousSettings || previousSettings[key] !== nextSettings[key]) settings.set(key, nextSettings[key]);
+    const unchanged =
+      previousSettings &&
+      (key === "quoteSource"
+        ? JSON.stringify(previousSettings[key]) === JSON.stringify(nextSettings[key])
+        : previousSettings[key] === nextSettings[key]);
+    if (!unchanged) settings.set(key, nextSettings[key]);
   }
   const recipients = doc.getMap<Y.Map<unknown>>(RECIPIENTS);
   const previous = before ? recipientEntries(before) : new Map<string, z.infer<typeof recipientSchema>>();

@@ -69,7 +69,7 @@ suite("assigned-only Mail actions authorize every target and queued effect", () 
   let hiddenUploadId = "";
   const params = (user: User, conversation = c1) => ({ context: contextFor(user), mailboxId, conversationId: conversation.id });
   const draftInput = (conversation = c1) => ({
-    quoteSource: false,
+    quoteSource: null,
     senderIdentityId: identityId,
     conversationId: conversation.id,
     sourceMessageId: conversation.messageId,
@@ -82,7 +82,7 @@ suite("assigned-only Mail actions authorize every target and queued effect", () 
     format: "plain" as const,
   });
   const editableInput = (body = "A reply") => ({
-    quoteSource: false,
+    quoteSource: null,
     senderIdentityId: identityId,
     to: [{ address: "customer@example.test", name: null }],
     cc: [],
@@ -658,7 +658,7 @@ suite("assigned-only Mail actions authorize every target and queued effect", () 
     expect((await compose.listComposeSignatureDefaults(context, mailboxId)).ok).toBe(true);
     expect((await compose.getMailboxComposeStyle(context, mailboxId)).ok).toBe(true);
     const draft = {
-      quoteSource: false,
+      quoteSource: null,
       senderIdentityId: identityId,
       to: [{ address: "customer@example.test", name: null }],
       cc: [],

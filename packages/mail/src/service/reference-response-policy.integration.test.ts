@@ -437,7 +437,7 @@ suite("conversation references and automatic reply policies", () => {
       context: writerContext,
       mailboxId,
       input: {
-        quoteSource: false,
+        quoteSource: null,
         conversationId: conversation.id,
         intent: "reply",
         sourceMessageId: conversation.messageIds[0]!,
@@ -476,7 +476,7 @@ suite("conversation references and automatic reply policies", () => {
       context: writerContext,
       mailboxId,
       input: {
-        quoteSource: false,
+        quoteSource: null,
         conversationId: secondConversation.id,
         intent: "reply_all",
         sourceMessageId: secondConversation.messageIds[0]!,

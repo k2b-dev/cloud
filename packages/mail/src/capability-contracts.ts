@@ -635,7 +635,7 @@ export const DraftDataSchema = z
   .object({
     id: ResourceShortIdSchema,
     signatureTemplateId: ResourceShortIdSchema.nullable(),
-    quoteSource: z.boolean(),
+    quoteSource: draftEditableContentInputSchema.shape.quoteSource,
     mailboxId: ResourceShortIdSchema,
     conversationId: ResourceShortIdSchema.nullable(),
     intent: z.enum(["new", "reply", "reply_all", "forward"]),
@@ -686,7 +686,7 @@ export const DraftMutationDataSchema = z
   .object({
     id: ResourceShortIdSchema,
     signatureTemplateId: ResourceShortIdSchema.nullable(),
-    quoteSource: z.boolean(),
+    quoteSource: draftEditableContentInputSchema.shape.quoteSource,
     conversationId: ResourceShortIdSchema.nullable(),
     attachments: z
       .array(
@@ -768,7 +768,10 @@ export const DraftPatchInputSchema = z
       .object({
         senderIdentityId: ResourceShortIdSchema.optional().describe("Replacement verified sender identity."),
         signatureTemplateId: draftEditableContentInputSchema.shape.signatureTemplateId,
-        quoteSource: z.boolean().optional().describe("Append or remove the source quote; omitted preserves the current choice."),
+        quoteSource: draftEditableContentInputSchema.shape.quoteSource
+          .removeDefault()
+          .optional()
+          .describe("Append or remove the source quote; omitted preserves the current choice."),
         to: z.array(mailAddressSchema).max(200).optional().describe("Replace all primary recipients; [] clears them."),
         cc: z.array(mailAddressSchema).max(200).optional().describe("Replace all carbon-copy recipients."),
         bcc: z.array(mailAddressSchema).max(200).optional().describe("Replace all blind-copy recipients."),

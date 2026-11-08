@@ -2,6 +2,7 @@ import { compareStreamCursor } from "@k2b/cloud/shared-text";
 import { err, fail, ok, type Result } from "@k2b/stdlib";
 import type { sql } from "bun";
 import { z } from "zod";
+import type { DraftQuoteSource } from "../contracts";
 import { type ActorRef, draftEditableContentInputSchema } from "../contracts";
 import { getMailboxAccess } from "./access";
 import type { MailRequestContext } from "./auth";
@@ -37,7 +38,7 @@ type SendSource = {
   display_name: string;
   sender_identity_id: string;
   signature_template_id: string | null;
-  quote_source: boolean;
+  quote_source: DraftQuoteSource | null;
   source_message_id: string | null;
   from_address: string;
   reply_to: string | null;
@@ -97,7 +98,7 @@ export const loadSendContent = async (params: {
       d.subject,
       d.body_markdown,
       d.body_format,
-      d.signature_template_id, d.quote_source, d.source_message_id,
+      d.signature_template_id, CASE WHEN d.quote_source THEN jsonb_build_object('locale', d.quote_locale, 'timeZone', d.quote_time_zone) ELSE NULL END AS quote_source, d.source_message_id,
       d.priority,
       d.request_delivery_receipt,
       d.request_read_receipt,
@@ -198,6 +199,7 @@ export const loadSendContent = async (params: {
   const contentId = draft.logo_id ? mailboxLogoContentId(draft.logo_id, draft.from_address) : "";
   const quote = draft.quote_source
     ? await loadDraftSourceQuote({
+        quoteSource: draft.quote_source,
         db: params.db,
         mailboxId: params.mailboxId,
         sourceMessageId: draft.source_message_id,
@@ -248,7 +250,7 @@ export const loadSendContent = async (params: {
     (value, index, values) => value && values.indexOf(value) === index,
   );
   const snapshot = outboundDraftSnapshotSchema.safeParse({
-    ...(draft.quote_source ? { quoteSource: true } : {}),
+    ...(draft.quote_source ? { quoteSource: draft.quote_source } : {}),
     revision: Number(draft.revision),
     from: { name: draft.display_name, address: draft.from_address },
     replyTo: draft.reply_to,

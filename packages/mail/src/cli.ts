@@ -69,6 +69,7 @@ import {
   type DraftRecoveryCopy,
   type DraftSendReview,
   draftEditableContentInputSchema,
+  draftQuoteSourceSchema,
   type FolderDisplay,
   folderDisplaySchema,
   type IncomingAutomationBackfill,
@@ -787,6 +788,7 @@ const draftSignatureChoice = (flags: { signature?: string; noSignature?: boolean
 const draftEditableContentFlags = {
   quote: flag.boolean({ description: "Append the source message after the signature" }),
   noQuote: flag.boolean({ name: "no-quote", description: "Do not append the source message" }),
+  quoteTimeZone: flag.string({ name: "quote-time-zone", description: "IANA time zone for --quote; defaults to the local time zone" }),
   signature: flag.string({ description: "Signature template id; omitted keeps the default or current signature" }),
   noSignature: flag.boolean({ name: "no-signature", description: "Use no signature" }),
   identity: flag.string({ required: true, description: "Sender identity id" }),
@@ -871,24 +873,29 @@ const draftContentFlags = {
   }),
 };
 
-const readDraftEditableContent = async (flags: {
-  identity?: string;
-  to: string[];
-  cc: string[];
-  bcc: string[];
-  subject?: string;
-  body: Parameters<typeof readCliInput>[0];
-  format?: "plain" | "markdown";
-  priority?: MailPriority;
-  deliveryReceipt?: "on" | "off";
-  readReceipt?: "on" | "off";
-  signature?: string;
-  noSignature?: boolean;
-  quote?: boolean;
-  noQuote?: boolean;
-}) => {
+const readDraftEditableContent = async (
+  flags: {
+    identity?: string;
+    to: string[];
+    cc: string[];
+    bcc: string[];
+    subject?: string;
+    body: Parameters<typeof readCliInput>[0];
+    format?: "plain" | "markdown";
+    priority?: MailPriority;
+    deliveryReceipt?: "on" | "off";
+    readReceipt?: "on" | "off";
+    signature?: string;
+    noSignature?: boolean;
+    quote?: boolean;
+    noQuote?: boolean;
+    quoteTimeZone?: string;
+  },
+  locale?: string,
+) => {
   if (!flags.identity) throw new Error("Missing sender identity.");
   if (flags.quote && flags.noQuote) throw new Error("Use either --quote or --no-quote.");
+  if (flags.quoteTimeZone && !flags.quote) throw new Error("Use --quote-time-zone with --quote.");
   const senderIdentityId = requireMailResourceId(flags.identity, "Sender identity id");
   const body = await readCliInput(flags.body, {
     label: "message body",
@@ -897,7 +904,16 @@ const readDraftEditableContent = async (flags: {
   return {
     senderIdentityId,
     ...draftSignatureChoice(flags),
-    ...(flags.quote || flags.noQuote ? { quoteSource: Boolean(flags.quote) } : {}),
+    ...(flags.quote || flags.noQuote
+      ? {
+          quoteSource: flags.quote
+            ? draftQuoteSourceSchema.parse({
+                locale: locale ?? "en",
+                timeZone: flags.quoteTimeZone ?? Intl.DateTimeFormat().resolvedOptions().timeZone,
+              })
+            : null,
+        }
+      : {}),
     to: parseAddresses(flags.to),
     cc: parseAddresses(flags.cc),
     bcc: parseAddresses(flags.bcc),
@@ -917,8 +933,9 @@ const readDraftContent = async (
     sourceMessage?: string;
     includeSourceAttachments: boolean;
   },
+  locale?: string,
 ) => ({
-  ...(await readDraftEditableContent(flags)),
+  ...(await readDraftEditableContent(flags, locale)),
   conversationId: flags.conversation ? requireMailResourceId(flags.conversation, "Conversation id") : undefined,
   intent: flags.intent,
   sourceMessageId: flags.sourceMessage ? requireMailResourceId(flags.sourceMessage, "Source message id") : undefined,
@@ -941,7 +958,7 @@ const readComposeDraftInput = async (input: Parameters<typeof readCliInput>[0]) 
 };
 
 const createDraft = async (ctx: CloudCliContext, mailboxId: string, flags: Parameters<typeof readDraftContent>[0]): Promise<MailDraft> =>
-  readApi(ctx, `/mailboxes/${mailboxId}/drafts`, jsonRequest("POST", await readDraftContent(flags)));
+  readApi(ctx, `/mailboxes/${mailboxId}/drafts`, jsonRequest("POST", await readDraftContent(flags, ctx.options.locale)));
 
 /** Tells what formatting email leaves out of a message. JSON output carries the same list as `formattingWarnings`. */
 const printFormattingWarnings = (ctx: CloudCliContext, warnings: ComposeFormattingWarning[] | undefined) => {
@@ -4010,7 +4027,7 @@ const specialistCommands = {
       flags: {
         ...mailboxFlag,
         draft: composeDraftInputFlag,
-        sourceMessage: flag.string({ name: "source-message", description: "Source message to quote when quoteSource is true" }),
+        sourceMessage: flag.string({ name: "source-message", description: "Source message for the saved quote context" }),
         conversation: flag.string({
           description: "Optional conversation id for compose context",
         }),
@@ -7094,7 +7111,7 @@ const specialistCommands = {
           `/mailboxes/${mailbox.id}/drafts/${requireMailResourceId(args.draftId, "Draft id")}`,
           jsonRequest("PUT", {
             expectedRevision: flags.revision,
-            draft: await readDraftEditableContent(flags),
+            draft: await readDraftEditableContent(flags, ctx.options.locale),
           }),
         );
         if (printStructured(ctx, withCloudResourcePermalink(ctx, "mail.draft", draft))) return;

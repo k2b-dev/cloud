@@ -5,6 +5,7 @@ import { createRuntimeTaskTracker, logger, stopRuntimeJobs, toPgTextArray } from
 import type { Lock, Worker } from "@k2b/sync";
 import { Splitter, Streamer } from "@zone-eu/mailsplit";
 import { type AddressObject, type AttachmentStream, type Headers, MailParser, type MessageText } from "mailparser";
+import type { DraftQuoteSource } from "../contracts";
 import { withShortIdDb } from "../lib/short-id";
 import { truncateUtf8 } from "../lib/utf8";
 import { hasUnrenderedTemplateSyntax, removeOrphanComposeSegmentMarks } from "./compose-renderer";
@@ -140,7 +141,7 @@ const loadDraftContent = async (
       bcc_addresses: DraftProviderContent["bcc"] | string;
       subject: string;
       body_markdown: string;
-      quote_source: boolean;
+      quote_source: DraftQuoteSource | null;
       source_message_id: string | null;
       body_format: DraftProviderContent["format"];
       parent_message_id: string | null;
@@ -160,7 +161,7 @@ const loadDraftContent = async (
       draft.cc_addresses,
       draft.bcc_addresses,
       draft.subject,
-      draft.body_markdown, draft.quote_source, draft.source_message_id,
+      draft.body_markdown, CASE WHEN draft.quote_source THEN jsonb_build_object('locale', draft.quote_locale, 'timeZone', draft.quote_time_zone) ELSE NULL END AS quote_source, draft.source_message_id,
       draft.body_format,
       CASE WHEN draft.intent IN ('reply', 'reply_all') THEN source.message_id ELSE NULL END AS parent_message_id,
       CASE WHEN draft.intent IN ('reply', 'reply_all') THEN source.reference_ids ELSE ARRAY[]::text[] END AS reference_ids,
@@ -192,6 +193,7 @@ const loadDraftContent = async (
   const parentMessageId = row.parent_message_id;
   const quote = row.quote_source
     ? await loadDraftSourceQuote({
+        quoteSource: row.quote_source,
         db,
         mailboxId: row.mailbox_id,
         sourceMessageId: row.source_message_id,

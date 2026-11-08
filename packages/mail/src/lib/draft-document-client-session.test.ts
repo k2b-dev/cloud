@@ -8,7 +8,7 @@ import { createDraftDocument, readDraftDocument } from "./draft-document";
 import { type MailDraftDocumentClient, openMailDraftDocumentClient } from "./draft-document-client";
 
 const base: DraftEditableContent = {
-  quoteSource: false,
+  quoteSource: null,
   senderIdentityId: "Send01",
   signatureTemplateId: null,
   to: [{ name: null, address: "ada@example.test" }],

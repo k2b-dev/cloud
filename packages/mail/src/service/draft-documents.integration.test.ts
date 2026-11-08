@@ -11,7 +11,7 @@ import type { MailRequestContext } from "./auth";
 import { DRAFT_REVISION_HISTORY_BYTES, DRAFT_REVISION_OPERATION_ORIGIN } from "./draft-document-operation";
 import { acceptDraftDocumentUpdate, lockDraftDocumentInTransaction, mailDraftDocumentLog, readDraftDocument } from "./draft-documents";
 import { appendDraftAttachmentUpload, createDraftAttachmentUpload, finalizeDraftAttachmentUpload } from "./draft-uploads";
-import { removeDraftAttachment } from "./drafts";
+import { getDraft, removeDraftAttachment } from "./drafts";
 import { createMailbox } from "./mailboxes";
 import { loadSendContent } from "./send-content";
 
@@ -115,7 +115,7 @@ suite("Mail shared draft transaction store", () => {
     } = {},
   ) => {
     const content = draftEditableContentInputSchema.parse({
-      quoteSource: false,
+      quoteSource: null,
       senderIdentityId: identity.short_id,
       signatureTemplateId: options.signature ? signature.short_id : null,
       to: [{ address: "to@example.test", name: "To" }],
@@ -265,6 +265,7 @@ suite("Mail shared draft transaction store", () => {
     const base = await initial(created.id);
     const next = {
       ...created.content,
+      quoteSource: { locale: "de", timeZone: "Europe/Berlin" },
       subject: "New subject",
       body: "New body 😀",
       to: [],
@@ -281,6 +282,10 @@ suite("Mail shared draft transaction store", () => {
     if (admitted.status !== "accepted") throw new Error("Admission did not persist");
     expect(admitted.revision).toBe(2);
     expect(admitted.durable.content).toEqual(next);
+    expect(value(await getDraft(owner, mailboxId, created.id)).quoteSource).toEqual(next.quoteSource);
+    const [quoteRow] = await sql<{ quote_source: boolean; quote_locale: string; quote_time_zone: string }[]>`
+      SELECT quote_source, quote_locale, quote_time_zone FROM mail.drafts WHERE id = ${created.id}::uuid`;
+    expect(quoteRow).toMatchObject({ quote_source: true, quote_locale: "de", quote_time_zone: "Europe/Berlin" });
     const [row] = await sql<
       {
         sender_identity_id: string;

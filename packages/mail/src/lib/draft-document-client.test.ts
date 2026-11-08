@@ -4,7 +4,7 @@ import { createDraftDocument, DRAFT_BODY, readDraftDocument, writeLocalDraftHead
 import { draftSnapshotCovers, spliceDraftText } from "./draft-document-client";
 
 const content = {
-  quoteSource: false,
+  quoteSource: null,
   senderIdentityId: "Send01",
   signatureTemplateId: null,
   to: [{ name: null, address: "ada@example.test" }],

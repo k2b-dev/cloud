@@ -1,7 +1,7 @@
 import { Readable } from "node:stream";
 import MailComposer from "nodemailer/lib/mail-composer";
 import { z } from "zod";
-import { mailAddressSchema, mailPrioritySchema } from "../contracts";
+import { draftQuoteSourceSchema, mailAddressSchema, mailPrioritySchema } from "../contracts";
 import { mailMarkdownHtml } from "./compose-renderer";
 import { MAX_DRAFT_ATTACHMENTS, mimeMessageIdSchema, mimeReferencesSchema } from "./draft-provider-mime";
 
@@ -17,7 +17,7 @@ export const inlineLogoSnapshotSchema = z.object({
 });
 
 const outboundDraftSnapshotBaseSchema = z.object({
-  quoteSource: z.literal(true).optional(),
+  quoteSource: draftQuoteSourceSchema.optional(),
   inlineLogo: inlineLogoSnapshotSchema.nullable().default(null),
   revision: z.number().int().positive(),
   from: z.object({ name: z.string().max(200), address: z.string().email().max(320) }),

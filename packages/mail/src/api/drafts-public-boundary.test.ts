@@ -41,8 +41,9 @@ suite("Mail draft public boundary", () => {
     spyOn(mailboxAccess, "requireMailboxPermission").mockResolvedValue(ok("admin"));
     spyOn(mailboxAccess, "getMailboxPermission").mockResolvedValue("admin");
     spyOn(publicResources, "resolvePublicId").mockResolvedValue(mailboxId);
-    spyOn(publicResources, "resolveMailboxPublicId").mockImplementation(async (table) =>
-      table === "senderIdentities" ? senderIdentityId : signatureTemplateId,
+    spyOn(mailboxAccess, "requireMailboxAccess").mockResolvedValue(ok({ scope: "mailbox", permission: "admin" }));
+    spyOn(publicResources, "resolveMailboxPublicIds").mockImplementation(async (table, _mailboxId, ids) =>
+      ids.map(() => (table === "senderIdentities" ? senderIdentityId : signatureTemplateId)),
     );
     const preview = spyOn(composeTemplates, "previewComposeSignature").mockResolvedValue(ok({ html: "<p>Ada</p>", text: "Ada" }));
     const response = await app.request("/mailboxes/mbx123/compose-signature", {
@@ -209,7 +210,7 @@ suite("Mail draft seed public boundary", () => {
         derivedFromMessageId: messageId,
         derivationKind: "edit_as_new",
         content: {
-          quoteSource: false,
+          quoteSource: null,
           senderIdentityId,
           to: [],
           cc: [],

@@ -803,7 +803,7 @@ test.skipIf(isServer)("changing the conversation during the seed-store import dr
     derivedFromMessageId: null,
     derivationKind: null,
     content: {
-      quoteSource: false,
+      quoteSource: null,
       senderIdentityId: "Send01",
       to: [],
       cc: [],
@@ -818,7 +818,7 @@ test.skipIf(isServer)("changing the conversation during the seed-store import dr
     attachments: [],
     origin: {
       kind: "compose",
-      input: { quoteSource: false, senderIdentityId: "Send01", to: [], cc: [], bcc: [], subject: "Re: Quarterly review", body: "" },
+      input: { quoteSource: null, senderIdentityId: "Send01", to: [], cc: [], bcc: [], subject: "Re: Quarterly review", body: "" },
     },
     createdAt: now,
   };

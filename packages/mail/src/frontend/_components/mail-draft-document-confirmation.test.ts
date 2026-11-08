@@ -3,7 +3,7 @@ import type { DraftEditableContent } from "../../contracts";
 import { confirmSharedDraftRecipients } from "./mail-draft-document-confirmation";
 
 const base: DraftEditableContent = {
-  quoteSource: false,
+  quoteSource: null,
   senderIdentityId: "Send01",
   signatureTemplateId: null,
   to: [{ name: null, address: "ada@example.test" }],

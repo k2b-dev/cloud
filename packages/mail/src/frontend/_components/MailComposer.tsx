@@ -134,7 +134,7 @@ export default function MailComposer(props: {
   const verifiedIdentities = () => props.identities.filter((identity) => identity.status === "verified");
   const preferences = readMailUserPreferences(props.mailboxId);
   const [identityId, setIdentityId] = createSignal(initialContent.senderIdentityId);
-  const [quoteSource, setQuoteSource] = createSignal(initialContent.quoteSource ?? false);
+  const [quoteSource, setQuoteSource] = createSignal(initialContent.quoteSource ?? null);
   const [signatureTemplateId, setSignatureTemplateId] = createSignal(initialContent.signatureTemplateId ?? null);
   // Keep the button's presence fixed from the initial snapshot, including an unavailable shared signature.
   const signatureChoiceVisible = () => props.signatures.templates.length > 0 || Boolean(initialContent.signatureTemplateId);

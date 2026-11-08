@@ -176,7 +176,7 @@ suite("mail compose templates", () => {
         kind: "signature",
         scope: "private",
         name: "Fragment test",
-        shortcut: "",
+        shortcut: "fragment_test",
         body: "**{{ actor.display_name }}**",
       },
     });
@@ -302,7 +302,7 @@ suite("mail compose templates", () => {
       if (!signature.ok) throw new Error(signature.error.message);
       logoSignature = signature.data;
       const draft: DraftEditableContentInput = {
-        quoteSource: false,
+        quoteSource: null,
         senderIdentityId,
         to: [],
         cc: [],
@@ -519,7 +519,7 @@ suite("mail compose templates", () => {
       origin: {
         kind: "compose",
         input: {
-          quoteSource: false,
+          quoteSource: null,
           conversationId: null,
           intent: "new",
           sourceMessageId: null,
@@ -547,7 +547,7 @@ suite("mail compose templates", () => {
       context: owner,
       mailboxId,
       input: {
-        quoteSource: false,
+        quoteSource: null,
         conversationId: null,
         intent: "new",
         sourceMessageId: null,
@@ -577,7 +577,7 @@ suite("mail compose templates", () => {
       context: collaborator,
       mailboxId,
       input: {
-        quoteSource: false,
+        quoteSource: null,
         conversationId: null,
         intent: "new",
         sourceMessageId: null,
@@ -611,7 +611,7 @@ suite("mail compose templates", () => {
     const snippet = templates.data.find((template) => template.shortcut === "welcome");
     if (!snippet) throw new Error("Mailbox snippet is missing");
     const draft = {
-      quoteSource: false,
+      quoteSource: null,
       senderIdentityId,
       to: [{ name: null, address: "reader@example.test" }],
       cc: [],
@@ -683,7 +683,7 @@ suite("mail compose templates", () => {
     if (!mailboxTemplate.ok || !privateTemplate.ok) return;
 
     const draft = {
-      quoteSource: false,
+      quoteSource: null,
       senderIdentityId,
       to: [{ name: null, address: "reader@example.test" }],
       cc: [],
@@ -714,7 +714,7 @@ suite("mail compose templates", () => {
 
   test("materializes delegated service-account signatures as the delegated user", async () => {
     const draft = {
-      quoteSource: false,
+      quoteSource: null,
       senderIdentityId,
       to: [{ name: null, address: "reader@example.test" }],
       cc: [],
@@ -846,7 +846,7 @@ suite("mail compose templates", () => {
     expect(listed.ok && listed.data.every((entry) => entry.formattingWarnings === undefined)).toBe(true);
 
     const content = {
-      quoteSource: false,
+      quoteSource: null,
       senderIdentityId,
       to: [{ name: null, address: "reader@example.test" }],
       cc: [],
@@ -896,7 +896,7 @@ suite("mail compose templates", () => {
 
   test("preview and send preserve the same extra Markdown blank lines", async () => {
     const draft: DraftEditableContentInput = {
-      quoteSource: false,
+      quoteSource: null,
       senderIdentityId,
       to: [{ name: null, address: "reader@example.test" }],
       cc: [],
@@ -925,7 +925,7 @@ suite("mail compose templates", () => {
 
   test("preview and send preserve the same Markdown dividers and dash underlines", async () => {
     const draft: DraftEditableContentInput = {
-      quoteSource: false,
+      quoteSource: null,
       senderIdentityId,
       to: [{ name: null, address: "reader@example.test" }],
       cc: [],
@@ -955,7 +955,7 @@ h1 { background: image-set("https://example.test/a.png" 1x); font-size: 30px; }`
       { code: "ignored_mailbox_css", property: "background" },
     ];
     const draft: DraftEditableContentInput = {
-      quoteSource: false,
+      quoteSource: null,
       senderIdentityId,
       to: [{ name: null, address: "reader@example.test" }],
       cc: [],
@@ -1026,7 +1026,7 @@ h1 { background: image-set("https://example.test/a.png" 1x); font-size: 30px; }`
       expect(saved).toMatchObject({ ok: true, data: { formattingWarnings: [] } });
       if (!saved.ok) throw new Error(saved.error.message);
       const draft: DraftEditableContentInput = {
-        quoteSource: false,
+        quoteSource: null,
         senderIdentityId,
         to: [{ name: null, address: "reader@example.test" }],
         cc: [],
@@ -1072,10 +1072,10 @@ h1 { background: image-set("https://example.test/a.png" 1x); font-size: 30px; }`
     }
   });
 
-  const newContent = () => ({ quoteSource: false, senderIdentityId, to: [], cc: [], bcc: [], subject: "", body: "" });
+  const newContent = () => ({ quoteSource: null, senderIdentityId, to: [], cc: [], bcc: [], subject: "", body: "" });
 
   const content = (draft: MailDraft): DraftEditableContent => ({
-    quoteSource: false,
+    quoteSource: null,
     senderIdentityId: draft.senderIdentityId,
     to: draft.to,
     cc: draft.cc,

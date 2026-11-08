@@ -7,6 +7,7 @@ import { Tokenizer, TypeGuards } from "liquidjs";
 import postcss from "postcss";
 import selectorParser from "postcss-selector-parser";
 import sanitizeHtml from "sanitize-html";
+import type { DraftQuoteSource } from "../contracts";
 import {
   type ComposeFormattingWarning,
   type ComposeSignature,
@@ -778,7 +779,7 @@ export const renderComposeContent = (params: {
   context: ComposeRenderContext;
   renderLiquid: boolean;
   signature?: string | null;
-  quoteSource?: boolean;
+  quoteSource?: DraftQuoteSource | null;
   sourceQuote?: string | null;
   logo?: { src: string; altText: string; displayWidth: number; pixelWidth: number; pixelHeight: number; byteLength: number } | null;
 }): Result<RenderedComposeContent> => {

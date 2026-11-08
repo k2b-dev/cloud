@@ -6371,7 +6371,13 @@ test("draft create and update carry the explicit quote choice", async () => {
   for (const command of [["create"], ["update", DRAFT_ID, "--revision", "1"]]) {
     const base = ["--json", "mail", "draft", ...command, "--mailbox", MAILBOX_ID, "--identity", IDENTITY_ID, "--body", "Reply"];
     for (const choice of ["--quote", "--no-quote"]) {
-      const result = await runCli(origin, [...base, choice]);
+      const result = await runCli(origin, [
+        "--locale",
+        "de-CH",
+        ...base,
+        choice,
+        ...(choice === "--quote" ? ["--quote-time-zone", "Europe/Berlin"] : []),
+      ]);
       expect(result.exitCode, result.stderr).toBe(0);
     }
     const conflict = await runCli(origin, [...base, "--quote", "--no-quote"]);
@@ -6379,9 +6385,9 @@ test("draft create and update carry the explicit quote choice", async () => {
     expect(conflict.stderr).toContain("Use either --quote or --no-quote.");
   }
   expect(bodies).toEqual([
-    expect.objectContaining({ quoteSource: true }),
-    expect.objectContaining({ quoteSource: false }),
-    expect.objectContaining({ draft: expect.objectContaining({ quoteSource: true }) }),
-    expect.objectContaining({ draft: expect.objectContaining({ quoteSource: false }) }),
+    expect.objectContaining({ quoteSource: { locale: "de", timeZone: "Europe/Berlin" } }),
+    expect.objectContaining({ quoteSource: null }),
+    expect.objectContaining({ draft: expect.objectContaining({ quoteSource: { locale: "de", timeZone: "Europe/Berlin" } }) }),
+    expect.objectContaining({ draft: expect.objectContaining({ quoteSource: null }) }),
   ]);
 });

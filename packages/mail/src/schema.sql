@@ -1136,6 +1136,8 @@ CREATE TABLE mail.drafts (
     materialization_key text,
     materialization_request_hash text,
     quote_source boolean DEFAULT false NOT NULL,
+    quote_locale text DEFAULT 'en' NOT NULL,
+    quote_time_zone text DEFAULT 'UTC' NOT NULL,
     CONSTRAINT drafts_actor_shape_check CHECK ((((author_kind = 'system'::text) AND (author_id IS NULL)) OR ((author_kind <> 'system'::text) AND (author_id IS NOT NULL)))),
     CONSTRAINT drafts_author_kind_check CHECK ((author_kind = ANY (ARRAY['user'::text, 'service_account'::text, 'workflow'::text, 'system'::text]))),
     CONSTRAINT drafts_automatic_reply_origin_check CHECK (((delivery_class <> 'automatic_reply'::text) OR (origin = 'workflow'::text))),

@@ -16,7 +16,7 @@ const DRAFT_ID = "Drf001";
 const now = "2026-10-04T10:00:00.000Z";
 
 const content = (body: string, to: string): DraftEditableContent => ({
-  quoteSource: false,
+  quoteSource: null,
   senderIdentityId: "Idn001",
   to: [{ name: null, address: to }],
   cc: [],
@@ -42,7 +42,7 @@ const seed: MailDraftSeed = {
   origin: {
     kind: "compose",
     input: {
-      quoteSource: false,
+      quoteSource: null,
       senderIdentityId: "Idn001",
       to: [],
       cc: [],

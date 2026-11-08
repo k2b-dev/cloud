@@ -904,6 +904,7 @@ export const renderComposeDraft = async (params: {
   const contentId = logo ? mailboxLogoContentId(logo.id, context.data.sender.email) : "";
   const quote = parsed.data.quoteSource
     ? await loadDraftSourceQuote({
+        quoteSource: parsed.data.quoteSource,
         db,
         mailboxId: params.mailboxId,
         sourceMessageId: params.sourceMessageId,

@@ -20,7 +20,7 @@ import { adoptWorkflowSendCommand, createActorCommand } from "./commands";
 import { reviewDraftComposeSafety } from "./compose-safety";
 import { previewComposeDraft } from "./compose-templates";
 import { loadDraftSourceQuote } from "./draft-source-quote";
-import { getDraft } from "./drafts";
+import { getDraft, updateDraft } from "./drafts";
 import { createLocalTag } from "./local-tags";
 import { createMailbox } from "./mailboxes";
 import { outboundDraftSnapshotSchema } from "./outbound-mime";
@@ -121,12 +121,14 @@ suite("Mail per-call reviews with real grants and draft state", () => {
         ${[recipient]}::jsonb, ${[{ name: "Mira", address: "mira@internal.test" }]}::jsonb, ${[{ name: "Tom", address: "tom@internal.test" }]}::jsonb, 'Maintenance', 'Hello Lea', 7, ${at}, ${at}) RETURNING id, short_id`;
     draftId = draft!.id;
     draftShortId = draft!.short_id;
-    const hash = new Bun.CryptoHasher("sha256").update(newShortId()).digest("hex");
+    const bytes = Buffer.from("x");
+    const hash = new Bun.CryptoHasher("sha256").update(bytes).digest("hex");
     const [blob] = await sql<
       { id: string }[]
     >`INSERT INTO mail.message_part_blobs (content_hash, byte_length, chunk_size, chunk_count, complete, completed_at)
       VALUES (${hash}, 1, 1048576, 1, true, ${at}) RETURNING id`;
     blobId = blob!.id;
+    await sql`INSERT INTO mail.message_part_chunks (blob_id, position, bytes) VALUES (${blobId}::uuid, 0, ${bytes})`;
     for (const [position, filename] of ["plan.pdf", "calendar.ics"].entries())
       await sql`INSERT INTO mail.draft_attachments
       (short_id, draft_id, blob_id, filename, content_type, byte_length, content_hash, position, created_at)
@@ -159,7 +161,31 @@ suite("Mail per-call reviews with real grants and draft state", () => {
     await sql`DELETE FROM auth.users WHERE id IN (SELECT value::uuid FROM jsonb_array_elements_text(${users}::jsonb))`;
   }, 30_000);
 
+  const bindSenderForSend = async () => {
+    const encryptedSecret = await encryptSecret({ kind: "password", password: "review-test-only" });
+    const [connection] = await sql<{ id: string }[]>`INSERT INTO mail.provider_connections
+    (owner_mailbox_id, name, email, username, imap_host, imap_port, imap_tls_mode,
+     smtp_host, smtp_port, smtp_tls_mode, secret_kind, encrypted_secret, authenticated_principal,
+     capabilities, server_identity, last_verified_at)
+    VALUES (${mailboxId}::uuid, 'Review fixture', 'team@internal.test', 'team@internal.test',
+      'imap.example.test', 993, 'implicit', 'smtp.example.test', 587, 'starttls', 'password',
+      ${encryptedSecret}, 'team@internal.test', '{}'::jsonb, '{}'::jsonb, now()) RETURNING id`;
+    const scope = "b".repeat(64);
+    const [resource] = await sql<{ id: string }[]>`INSERT INTO mail.remote_resources
+    (mailbox_id, remote_locator, server_identity, scope_fingerprint, status)
+    VALUES (${mailboxId}::uuid, '{}'::jsonb, '{}'::jsonb, ${scope}, 'active') RETURNING id`;
+    const [binding] = await sql<{ id: string }[]>`INSERT INTO mail.provider_bindings
+    (remote_resource_id, connection_id, state, remote_locator, capabilities, rights,
+     verification_evidence, verified_scope_fingerprint, last_verified_at)
+    VALUES (${resource!.id}::uuid, ${connection!.id}::uuid, 'active', '{}'::jsonb, '{}'::jsonb,
+      '{}'::jsonb, '{}'::jsonb, ${scope}, now()) RETURNING id`;
+    await sql`INSERT INTO mail.sender_identity_bindings
+    (sender_identity_id, binding_id, provider_principal, verified_at, saves_sent_automatically)
+    VALUES (${identityId}::uuid, ${binding!.id}::uuid, 'team@internal.test', now(), true)`;
+  };
+
   const addQuoteSource = async () => {
+    await bindSenderForSend();
     const conversationId = conversations[0]!.id;
     const [message] = await sql<
       { id: string }[]
@@ -169,18 +195,18 @@ suite("Mail per-call reviews with real grants and draft state", () => {
     await sql`INSERT INTO mail.message_addresses (message_id, role, position, display_name, email, normalized_email)
       VALUES (${message.id}::uuid, 'from', 0, 'Lea', 'lea@outside.test', 'lea@outside.test')`;
     await sql`UPDATE mail.drafts SET intent = 'reply', conversation_id = ${conversationId}::uuid,
-      source_message_id = ${message.id}::uuid, quote_source = true WHERE id = ${draftId}::uuid`;
+      source_message_id = ${message.id}::uuid, quote_source = true, quote_locale = 'de', quote_time_zone = 'Europe/Berlin' WHERE id = ${draftId}::uuid`;
     return message.id;
   };
 
   test("opt-in quote is reviewed, hashed and frozen into the send outbox after the signature", async () => {
     const sourceMessageId = await addQuoteSource();
     const draft = unwrap(await getDraft(owner, mailboxId, draftId));
-    expect(draft.quoteSource).toBe(true);
+    expect(draft.quoteSource).toEqual({ locale: "de", timeZone: "Europe/Berlin" });
     const content = unwrap(
       await loadSendContent({ db: sql, mailboxId, draftId, expectedRevision: 7, context: owner, actor: actorRefFromRequest(owner) }),
     );
-    expect(content.snapshot.quoteSource).toBe(true);
+    expect(content.snapshot.quoteSource).toEqual({ locale: "de", timeZone: "Europe/Berlin" });
     const preview = unwrap(
       await previewComposeDraft({
         context: owner,
@@ -196,6 +222,9 @@ suite("Mail per-call reviews with real grants and draft state", () => {
       }),
     );
     expect(preview.text).toBe(content.snapshot.renderedText!);
+    expect(preview.text).toContain("schrieb Lea:");
+    expect(preview.text).toContain("08:00");
+    expect(preview.text).not.toContain("wrote:");
     const safety = unwrap(await reviewDraftComposeSafety({ context: owner, mailboxId, draftId, expectedRevision: 7 }));
     const command = unwrap(
       await createActorCommand({
@@ -227,18 +256,52 @@ suite("Mail per-call reviews with real grants and draft state", () => {
     expect(sha256Json(snapshot)).toBe(safety.contentHash);
   });
 
+  test("enabling a quote persists normalized locale and the chosen time zone", async () => {
+    await addQuoteSource();
+    await sql`UPDATE mail.drafts SET quote_source = false, quote_locale = 'en', quote_time_zone = 'UTC' WHERE id = ${draftId}::uuid`;
+    const draft = unwrap(await getDraft(owner, mailboxId, draftId));
+    const changed = unwrap(
+      await updateDraft({
+        context: owner,
+        mailboxId,
+        draftId,
+        expectedRevision: 7,
+        input: {
+          ...draftEditableContentInputSchema.strip().parse({ ...draft, senderIdentityId: identityShortId, signatureTemplateId: null }),
+          senderIdentityId: identityId,
+          signatureTemplateId: draft.signatureTemplateId,
+          quoteSource: { locale: "de-CH", timeZone: "Europe/Berlin" },
+        },
+      }),
+    );
+    expect(changed.revision).toBe(8);
+    expect(changed.quoteSource).toEqual({ locale: "de", timeZone: "Europe/Berlin" });
+    const persisted = unwrap(await getDraft(owner, mailboxId, draftId));
+    expect(persisted.quoteSource).toEqual(changed.quoteSource);
+    const [row] = await sql<
+      { quote_locale: string; quote_time_zone: string }[]
+    >`SELECT quote_locale, quote_time_zone FROM mail.drafts WHERE id = ${draftId}::uuid`;
+    expect(row).toMatchObject({ quote_locale: "de", quote_time_zone: "Europe/Berlin" });
+  });
+
   test("source quotation returns nothing for missing or unreadable sources without failing preview", async () => {
     const sourceMessageId = await addQuoteSource();
     await grant(assignedId, "assigned");
     const user = await accounts.users.get({ id: assignedId });
     if (!user) throw new Error("Missing assigned user");
     const assigned: MailRequestContext = { actor: { kind: "user", user }, accessSubject: { type: "user", userId: assignedId } };
-    const input = { senderIdentityId: identityId, signatureTemplateId: null, body: "Reply", quoteSource: true };
+    const input = {
+      senderIdentityId: identityId,
+      signatureTemplateId: null,
+      body: "Reply",
+      quoteSource: { locale: "de", timeZone: "Europe/Berlin" },
+    };
     expect(
       await loadDraftSourceQuote({
         db: sql,
         mailboxId,
         sourceMessageId: crypto.randomUUID(),
+        quoteSource: { locale: "de", timeZone: "Europe/Berlin" },
         access: { scope: "mailbox", permission: "read" },
       }),
     ).toEqual({ ok: true, data: null });
@@ -248,6 +311,38 @@ suite("Mail per-call reviews with real grants and draft state", () => {
     expect(readable.text).toContain("Quoted original");
   });
 
+  for (const column of ["quote_locale", "quote_time_zone"] as const) {
+    test(`changing only ${column} invalidates the reviewed send`, async () => {
+      await addQuoteSource();
+      const review = unwrap(await reviewDraftComposeSafety({ context: owner, mailboxId, draftId, expectedRevision: 7 }));
+      if (column === "quote_locale") await sql`UPDATE mail.drafts SET quote_locale = 'en' WHERE id = ${draftId}::uuid`;
+      else await sql`UPDATE mail.drafts SET quote_time_zone = 'UTC' WHERE id = ${draftId}::uuid`;
+      const changed = unwrap(await reviewDraftComposeSafety({ context: owner, mailboxId, draftId, expectedRevision: 7 }));
+      expect(changed.contentHash).not.toBe(review.contentHash);
+      expect(changed.fingerprint).not.toBe(review.fingerprint);
+      expect(
+        await createActorCommand({
+          context: owner,
+          mailboxId,
+          enqueue: false,
+          input: {
+            kind: "send",
+            draftId,
+            senderIdentityId: identityId,
+            expectedDraftRevision: 7,
+            expectedContentHash: review.contentHash,
+            undoSeconds: 20,
+            idempotencyKey: `stale-${column}`,
+          },
+        }),
+      ).toMatchObject({ ok: false, error: { code: "SEND_CONTENT_CHANGED" } });
+      const [count] = await sql<
+        { count: number }[]
+      >`SELECT count(*)::int AS count FROM mail.outbox_submissions WHERE draft_id = ${draftId}::uuid`;
+      expect(count?.count).toBe(0);
+    });
+  }
+
   test("changing only quoteSource invalidates an already-reviewed send", async () => {
     await addQuoteSource();
     await sql`UPDATE mail.drafts SET quote_source = false WHERE id = ${draftId}::uuid`;
@@ -256,7 +351,7 @@ suite("Mail per-call reviews with real grants and draft state", () => {
       await loadSendContent({ db: sql, mailboxId, draftId, expectedRevision: 7, context: owner, actor: actorRefFromRequest(owner) }),
     ).snapshot;
     expect(Object.hasOwn(snapshot, "quoteSource")).toBe(false);
-    await sql`UPDATE mail.drafts SET quote_source = true WHERE id = ${draftId}::uuid`;
+    await sql`UPDATE mail.drafts SET quote_source = true, quote_locale = 'de', quote_time_zone = 'Europe/Berlin' WHERE id = ${draftId}::uuid`;
     expect(
       await createActorCommand({
         context: owner,
@@ -428,6 +523,7 @@ suite("Mail per-call reviews with real grants and draft state", () => {
       const originalBytes = Buffer.from(mailboxId);
       const contentHash = new Bun.CryptoHasher("sha256").update(originalBytes).digest("hex");
       await sql`UPDATE mail.message_part_blobs SET content_hash=${contentHash}, byte_length=${originalBytes.length} WHERE id=${blobId}::uuid`;
+      await sql`UPDATE mail.message_part_chunks SET bytes = ${originalBytes} WHERE blob_id = ${blobId}::uuid AND position = 0`;
       for (const [partPath, filename] of [
         ["2", "original.pdf"],
         ["10", "last.txt"],
@@ -864,26 +960,7 @@ suite("Mail per-call reviews with real grants and draft state", () => {
       };
       // This case isolates actor-dependent content; attachment fidelity has separate cases.
       await sql`DELETE FROM mail.draft_attachments WHERE draft_id=${draftId}::uuid`;
-      const encryptedSecret = await encryptSecret({ kind: "password", password: "review-test-only" });
-      const [connection] = await sql<{ id: string }[]>`INSERT INTO mail.provider_connections
-        (owner_mailbox_id, name, email, username, imap_host, imap_port, imap_tls_mode,
-         smtp_host, smtp_port, smtp_tls_mode, secret_kind, encrypted_secret, authenticated_principal,
-         capabilities, server_identity, last_verified_at)
-        VALUES (${mailboxId}::uuid, 'Review fixture', 'team@internal.test', 'team@internal.test',
-          'imap.example.test', 993, 'implicit', 'smtp.example.test', 587, 'starttls', 'password',
-          ${encryptedSecret}, 'team@internal.test', '{}'::jsonb, '{}'::jsonb, now()) RETURNING id`;
-      const scope = "b".repeat(64);
-      const [resource] = await sql<{ id: string }[]>`INSERT INTO mail.remote_resources
-        (mailbox_id, remote_locator, server_identity, scope_fingerprint, status)
-        VALUES (${mailboxId}::uuid, '{}'::jsonb, '{}'::jsonb, ${scope}, 'active') RETURNING id`;
-      const [binding] = await sql<{ id: string }[]>`INSERT INTO mail.provider_bindings
-        (remote_resource_id, connection_id, state, remote_locator, capabilities, rights,
-         verification_evidence, verified_scope_fingerprint, last_verified_at)
-        VALUES (${resource!.id}::uuid, ${connection!.id}::uuid, 'active', '{}'::jsonb, '{}'::jsonb,
-          '{}'::jsonb, '{}'::jsonb, ${scope}, now()) RETURNING id`;
-      await sql`INSERT INTO mail.sender_identity_bindings
-        (sender_identity_id, binding_id, provider_principal, verified_at, saves_sent_automatically)
-        VALUES (${identityId}::uuid, ${binding!.id}::uuid, 'team@internal.test', now(), true)`;
+      await bindSenderForSend();
       await sql`UPDATE mail.compose_templates SET body_template='Signed by {{ actor.display_name }}'
         WHERE id=(SELECT signature_template_id FROM mail.drafts WHERE id=${draftId}::uuid)`;
       const input = {

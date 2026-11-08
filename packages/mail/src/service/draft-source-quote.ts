@@ -2,7 +2,7 @@ import type { sql } from "@k2b/cloud";
 import { fail, ok, type Result } from "@k2b/stdlib";
 import { convert } from "html-to-text";
 import { quoteReplyBody } from "../compose-quotation";
-import type { MailAddress } from "../contracts";
+import type { DraftQuoteSource, MailAddress } from "../contracts";
 import { type MailboxAccess, messageVisibleTo } from "./access";
 import { composeRenderFailure } from "./compose-render-errors";
 
@@ -12,6 +12,7 @@ export const loadDraftSourceQuote = async (params: {
   mailboxId: string;
   sourceMessageId: string | null | undefined;
   access: MailboxAccess | null;
+  quoteSource: DraftQuoteSource;
 }): Promise<Result<string | null>> => {
   if (!params.sourceMessageId || !params.access) return ok(null);
   const [source] = await params.db<
@@ -57,7 +58,7 @@ export const loadDraftSourceQuote = async (params: {
           internalDate: new Date(source.internal_date).toISOString(),
         },
         text,
-        { locale: "en", timeZone: "UTC" },
+        params.quoteSource,
       ).trimEnd(),
     );
   } catch {

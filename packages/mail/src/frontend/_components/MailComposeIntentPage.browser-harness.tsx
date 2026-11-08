@@ -20,7 +20,7 @@ const seed: MailDraftSeed = {
   derivedFromMessageId: null,
   derivationKind: null,
   content: {
-    quoteSource: false,
+    quoteSource: null,
     senderIdentityId: "Send01",
     to: [{ name: null, address: "ada@example.test" }],
     cc: [],
@@ -33,7 +33,7 @@ const seed: MailDraftSeed = {
     requestReadReceipt: false,
   },
   attachments: [],
-  origin: { kind: "compose", input: { quoteSource: false, senderIdentityId: "Send01", to: [], cc: [], bcc: [], subject: "", body: "" } },
+  origin: { kind: "compose", input: { quoteSource: null, senderIdentityId: "Send01", to: [], cc: [], bcc: [], subject: "", body: "" } },
   createdAt: "2026-11-06T10:00:00.000Z",
 };
 

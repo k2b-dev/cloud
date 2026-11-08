@@ -399,6 +399,11 @@ Cancellation succeeds only while the command is still cancelable. Ambiguous prov
 
 Drafts omit the original message by default. Pass `--quote` to `draft create`
 or `draft update` to append its readable source message after the signature;
-`--no-quote` removes that automatic history. The editable body stays unchanged.
-Draft JSON uses `quoteSource`; `compose preview --source-message <id>` selects
+`--no-quote` removes that automatic history. `--quote` captures the CLI locale
+and local IANA time zone; use `--quote-time-zone Europe/Berlin` to override the
+zone. The editable body stays unchanged. Draft JSON uses
+`quoteSource: { "locale": "de", "timeZone": "Europe/Berlin" }` (or `null` to
+disable). Valid BCP-47 locale tags resolve to shipped `de` or `en` (fallback);
+invalid locale tags and time zones are rejected. The stored context is reused
+for preview, safety review and send; `compose preview --source-message <id>` selects
 the source for a preview. Send review covers the resulting message.

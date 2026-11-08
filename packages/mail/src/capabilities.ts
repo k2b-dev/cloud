@@ -2712,7 +2712,7 @@ const actionDefinitions = {
         input: {
           senderIdentityId: patch.senderIdentityId ?? draft.senderIdentityId,
           signatureTemplateId: patch.signatureTemplateId,
-          quoteSource: patch.quoteSource ?? draft.quoteSource,
+          quoteSource: patch.quoteSource === undefined ? draft.quoteSource : patch.quoteSource,
           to: patch.to ?? draft.to,
           cc: patch.cc ?? draft.cc,
           bcc: patch.bcc ?? draft.bcc,

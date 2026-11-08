@@ -159,7 +159,7 @@ suite("mail draft limits", () => {
       context: owner,
       mailboxId,
       input: {
-        quoteSource: false,
+        quoteSource: null,
         conversationId,
         intent: "reply",
         sourceMessageId: messageId,
@@ -183,7 +183,7 @@ suite("mail draft limits", () => {
       draftId: draft.data.id,
       expectedRevision: draft.data.revision,
       input: {
-        quoteSource: false,
+        quoteSource: null,
         senderIdentityId: identityId,
         to: draft.data.to,
         cc: [],
@@ -216,7 +216,7 @@ suite("mail draft limits", () => {
       context: owner,
       mailboxId,
       input: {
-        quoteSource: false,
+        quoteSource: null,
         senderIdentityId: identityId,
         to: [{ name: "Customer", address: "customer@example.com" }],
         cc: [],
@@ -297,7 +297,7 @@ suite("mail draft limits", () => {
       context: owner,
       mailboxId,
       input: {
-        quoteSource: false,
+        quoteSource: null,
         senderIdentityId: identityId,
         to: [{ name: "Customer", address: "customer@example.com" }],
         cc: [],
@@ -333,7 +333,7 @@ suite("mail draft limits", () => {
       context: owner,
       mailboxId,
       input: {
-        quoteSource: false,
+        quoteSource: null,
         senderIdentityId: identityId,
         to: [{ name: "Ada Example", address: "ada@example.test" }],
         cc: [],
@@ -432,7 +432,7 @@ suite("mail draft limits", () => {
       context: owner,
       mailboxId,
       input: {
-        quoteSource: false,
+        quoteSource: null,
         senderIdentityId: identityId,
         to: [{ name: "Customer", address: "customer@example.com" }],
         cc: [],
@@ -503,7 +503,7 @@ suite("mail draft limits", () => {
       context: owner,
       mailboxId,
       input: {
-        quoteSource: false,
+        quoteSource: null,
         senderIdentityId: identityId,
         to: [{ name: "Customer", address: "customer@example.com" }],
         cc: [],
@@ -600,7 +600,7 @@ suite("mail draft limits", () => {
     }
     const expected = files.map((file, position) => ({ filename: file.filename, position }));
     const input = {
-      quoteSource: false,
+      quoteSource: null,
       conversationId: conversation!.id,
       intent: "forward" as const,
       sourceMessageId: message!.id,
@@ -628,7 +628,7 @@ suite("mail draft limits", () => {
       context: owner,
       mailboxId,
       input: {
-        quoteSource: false,
+        quoteSource: null,
         senderIdentityId: identityId,
         to: [],
         cc: [],
@@ -654,7 +654,7 @@ suite("mail draft limits", () => {
       requestReadReceipt,
     } = created.data;
     const initialContent = {
-      quoteSource: false,
+      quoteSource: null,
       senderIdentityId,
       signatureTemplateId,
       to,

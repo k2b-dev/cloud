@@ -3438,6 +3438,39 @@ export type DraftDeliveryClass = z.infer<typeof draftDeliveryClassSchema>;
 
 const draftActorRefSchema = actorRefSchema;
 
+/** A quote captures the enabling person's presentation context for later delivery. */
+export const draftQuoteSourceSchema = z
+  .object({
+    locale: z
+      .string()
+      .refine(
+        (value) => {
+          try {
+            return Intl.getCanonicalLocales(value).length === 1;
+          } catch {
+            return false;
+          }
+        },
+        { message: "Invalid BCP-47 locale", abort: true },
+      )
+      .overwrite((value) => (new Intl.Locale(value).language === "de" ? "de" : "en"))
+      .describe("BCP-47 locale of the person enabling the quote; resolves to shipped de or en, with en fallback."),
+    timeZone: z
+      .string()
+      .refine((value) => {
+        try {
+          if (!value || /^[+-]/.test(value)) return false;
+          new Intl.DateTimeFormat("en", { timeZone: value });
+          return true;
+        } catch {
+          return false;
+        }
+      }, "Invalid IANA time zone")
+      .describe("IANA time zone of the person enabling the quote, validated by Intl."),
+  })
+  .strict();
+export type DraftQuoteSource = z.output<typeof draftQuoteSourceSchema>;
+
 export const draftSchema = z.object({
   id: ResourceShortIdSchema,
   mailboxId: ResourceShortIdSchema,
@@ -3472,7 +3505,7 @@ export const draftSchema = z.object({
   state: z.enum(["draft", "scheduled", "sending", "sent", "discarded"]),
   deliveryClass: draftDeliveryClassSchema,
   signatureTemplateId: ResourceShortIdSchema.nullable(),
-  quoteSource: z.boolean().default(false),
+  quoteSource: draftQuoteSourceSchema.nullable().default(null),
   /** Returned by create and update only. */
   formattingWarnings: composeFormattingWarningsSchema.optional(),
   createdAt: z.string().datetime(),
@@ -3568,7 +3601,10 @@ export const draftEditableContentInputSchema = z
       .describe(
         "Signature template shown after the body, or null for none. On create, omit it to use the sender's default signature; on update, omit it to keep the current choice.",
       ),
-    quoteSource: z.boolean().default(false).describe("Append the readable source message after the signature; off by default."),
+    quoteSource: draftQuoteSourceSchema
+      .nullable()
+      .default(null)
+      .describe("Append the readable source message after the signature using this saved locale and time zone; null disables quoting."),
     to: z.array(mailAddressSchema).max(200).default([]).describe("Primary recipients."),
     cc: z.array(mailAddressSchema).max(200).default([]).describe("Carbon-copy recipients."),
     bcc: z.array(mailAddressSchema).max(200).default([]).describe("Blind-carbon-copy recipients."),
