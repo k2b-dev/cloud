@@ -67,6 +67,8 @@
     "./browser/resource-picker": "./src/browser/resource-picker.tsx",
     "./browser/composer-insert": "./src/browser/composer-insert.ts",
     "./browser/files": "./src/browser/files.tsx",
+    "./blocks": "./src/blocks/index.ts",
+    "./blocks/ui": "./src/blocks/ui.ts",
     "./code": "./src/code/index.ts",
     "./code/events": "./src/code/event-tools.ts",
     "./code/chat-run": "./src/code/chat-run.ts",

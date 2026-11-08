@@ -21,7 +21,8 @@ import { AI_TURN_LEASE_MS, type AiTurnBlock } from "../protocol";
 import type { AiTurnError } from "../types";
 import { toolSubject, useReaderTimeZone } from "./action-sentences";
 import { CompactionBlockView, CompactToolRow, SurveyToolView, TextEditorToolView } from "./blocks";
-import { CapabilityTablePreview } from "./capability-table";
+import { hasCapabilityView } from "./capability-result";
+import { CapabilityViewBlock } from "./capability-view";
 import { PresentToolBlock } from "./file-tools";
 import { AiMapToolBlock } from "./map-widget";
 import { useAiChatActions } from "./message-actions";
@@ -437,7 +438,6 @@ function CapabilityResultRow(props: { block: ToolBlock }) {
 }
 
 function AiTurnResultView(props: { result: Accessor<AiTurnResult | undefined>; receipt: Accessor<boolean> }) {
-  const locale = useLocale();
   const actions = useAiChatActions();
   const block = () => props.result()?.block;
   return (
@@ -477,13 +477,16 @@ function AiTurnResultView(props: { result: Accessor<AiTurnResult | undefined>; r
             <CloudChartBlock args={current().args} completed={current().status === "completed"} />
           </Match>
           <Match when={true}>
-            <Show when={!props.receipt()}>
-              <CapabilityResultRow block={current()} />
+            <Show
+              when={hasCapabilityView(current())}
+              fallback={
+                <Show when={!props.receipt()}>
+                  <CapabilityResultRow block={current()} />
+                </Show>
+              }
+            >
+              <CapabilityViewBlock block={current()} />
             </Show>
-            <CapabilityTablePreview
-              result={current().result}
-              label={current().presentation?.title ?? displayToolName(current().name, locale())}
-            />
           </Match>
         </Switch>
       )}

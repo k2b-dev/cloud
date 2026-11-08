@@ -1,18 +1,13 @@
-import { dates } from "@k2b/stdlib";
-import { mutation } from "@k2b/stdlib/solid";
-import { Button, ButtonLink, Chat, isStructuredDataValue, MarkdownView, SplitButton, StructuredDataPreview, useLocale } from "@k2b/ui";
+import { ButtonLink, Chat, isStructuredDataValue, StructuredDataPreview, useLocale } from "@k2b/ui";
 import { createSignal, createUniqueId, For, type JSX, Match, Show, Switch, untrack } from "solid-js";
 import { CloudChartBlock } from "#chat-charts";
-import { capabilityApprovalReason, capabilityApprovalReasonLabel } from "../../_internal/capability-sentences";
-import { capabilityReviewView } from "../../capabilities/reviews";
 import { FeatCodeMark } from "../../code/FeatCodeMark";
-import type { CapabilityActionReview } from "../../contracts/capabilities";
 import { markdown } from "../../shared";
 import type { AiTurnBlock } from "../protocol";
 import { toolOutcome, toolSubject, useReaderTimeZone } from "./action-sentences";
 import { hasSpecializedBuiltinToolView, SpecializedBuiltinToolBlock } from "./builtin-tools";
-import { hasCapabilityTable } from "./capability-result";
-import { CapabilityTablePreview } from "./capability-table";
+import { hasCapabilityView } from "./capability-result";
+import { CapabilityViewBlock } from "./capability-view";
 import { PresentToolBlock } from "./file-tools";
 import { useAiChatActions } from "./message-actions";
 import {
@@ -28,7 +23,6 @@ import {
   isRecord,
   isSurveyToolName,
   isTextEditorToolName,
-  jsonPreview,
   memoryToolPresentation,
   viewedChatImage,
 } from "./message-utils";
@@ -46,26 +40,6 @@ const featCodeLeading = (name: string, appIcon?: string | null): JSX.Element | u
   !appIcon && isFeatCodeTool(name) ? <FeatCodeMark variant="glyph" tone="current" decorative /> : undefined;
 
 type ToolBlock = Extract<AiTurnBlock, { kind: "tool" }>;
-type ReviewDetail = NonNullable<CapabilityActionReview["details"]>[number];
-
-const reviewDetailText = (detail: ReviewDetail, locale: string): string => {
-  if (detail.format === "date")
-    return /^\d{4}-\d{2}-\d{2}$/.test(detail.value)
-      ? dates.formatDate(`${detail.value}T12:00:00.000Z`, { locale, timeZone: "UTC" })
-      : dates.formatDate(detail.value, { locale });
-  if (detail.format === "date-time") return dates.formatDateTime(detail.value, { locale });
-  return detail.value;
-};
-
-function ReviewDetailValue(props: { detail: ReviewDetail }) {
-  const locale = useLocale();
-  const value = () => reviewDetailText(props.detail, locale());
-  return (
-    <Show when={props.detail.format} fallback={value()}>
-      <time dateTime={props.detail.value}>{value()}</time>
-    </Show>
-  );
-}
 
 // All state branches below live in reactive JSX (Show/Switch), never in the
 // component body: blocks are born empty/running and mutate in place while the
@@ -195,272 +169,6 @@ function ToolResultDisclosure(props: {
         <ToolDetail title={t().response} toolName={props.toolName} value={props.result} />
       </div>
     </AiToolActivity>
-  );
-}
-
-/** A decision the server accepted, for the call it answered. */
-export type AiApprovalDecision = { callId: string; approved: boolean };
-
-/**
- * The pending approval: a calm tinted card that says what will happen, with its fields and the decision. `onDecided`
- * hears an accepted decision with the call it answered, so the turn can show its receipt in the card's place right away.
- */
-export function ApprovalBlockView(props: { turnId: string; block: ToolBlock; onDecided?: (decision: AiApprovalDecision) => void }) {
-  const actions = useAiChatActions();
-  const locale = useLocale();
-  const timeZone = useReaderTimeZone();
-  const t = () => aiChatMessages(locale());
-  const review = () => (props.block.approval?.review ? capabilityReviewView(props.block.approval.review, { timeZone }) : undefined);
-  const request = () => ({ turnId: props.turnId, callId: props.block.callId, name: props.block.name });
-  const pending = () => props.block.status === "awaiting_approval";
-  const actionDisabled = () => actions.actionDisabled?.() ?? false;
-  const [submitted, setSubmitted] = createSignal(false);
-  const [detailsOpen, setDetailsOpen] = createSignal(false);
-  // The call this card answered: a later approval for the same block may already have arrived when the server accepts.
-  let decision: AiApprovalDecision | null = null;
-  const approval = mutation.create<void, { approved: boolean; remember?: "chat" | "always" }>({
-    mutation: async (input) => {
-      if (!actions.onApproval) throw new Error("Approval is unavailable.");
-      await actions.onApproval(request(), input);
-    },
-    onSuccess: () => {
-      setSubmitted(true);
-      if (decision) props.onDecided?.(decision);
-    },
-  });
-  const submit = (input: { approved: boolean; remember?: "chat" | "always" }) => {
-    if (actionDisabled() || approval.loading()) return;
-    decision = { callId: props.block.callId, approved: input.approved };
-    void approval.mutate(input);
-  };
-  // The heading says what will happen in the owning app's words; the app or the assistant name stays beside it.
-  const title = () =>
-    toolSubject(props.block, locale(), timeZone) ?? props.block.presentation?.title ?? displayToolName(props.block.name, locale());
-  const ownerName = () => props.block.presentation?.appName ?? t().assistant;
-  const capability = () => props.block.presentation?.kind === "capability";
-  // The model's own reason, labelled as such, only where Cloud offered it; it adds to the app's sentence and never replaces it.
-  const reason = () => (props.block.presentation?.approvalReason ? capabilityApprovalReason(props.block.args) : null);
-  const description = () => {
-    const reviewMessage = review()?.message.trim();
-    if (reviewMessage) return reviewMessage;
-    // An app Action's approval text repeats its heading and reason for text-only readers; the card shows them itself.
-    if (capability()) return null;
-    const message = props.block.approval?.message?.trim();
-    if (!message) return null;
-    const duplicateTitle = props.block.presentation ? `${props.block.presentation.appName}: ${props.block.presentation.title}` : "";
-    const withoutDuplicateTitle =
-      duplicateTitle && (message === duplicateTitle || message.startsWith(`${duplicateTitle}\n`))
-        ? message.slice(duplicateTitle.length).trim()
-        : message;
-    if (/^Review the validated arguments below before running this action\.$/i.test(withoutDuplicateTitle)) return null;
-    return withoutDuplicateTitle || null;
-  };
-  const reviewLines = () =>
-    (props.block.approval?.review ? "" : (description() ?? ""))
-      .split("\n")
-      .map((line) => line.trim())
-      .filter(Boolean)
-      .map((line) => {
-        const match = /^([^:]{1,40}):\s+(.+)$/.exec(line);
-        return match ? { label: match[1], value: match[2] } : { value: line };
-      });
-  const inlineReviewDetails = () => (review()?.details ?? []).filter((detail) => (detail.display ?? "inline") === "inline");
-  const blockReviewDetails = () => (review()?.details ?? []).filter((detail) => detail.display === "block");
-  const reviewLinks = () => review()?.links ?? [];
-  const reviewLinkTitle = (rel: "open" | "edit" | "status" | "preview" | "download") =>
-    ({
-      open: t().openIn({ app: ownerName() }),
-      edit: t().editIn({ app: ownerName() }),
-      status: t().statusIn({ app: ownerName() }),
-      preview: t().preview,
-      download: t().download,
-    })[rel];
-  const detailData = () => (isStructuredDataValue(props.block.args) ? props.block.args : undefined);
-  const detailsId = `approval-details-${props.block.callId}`;
-  return (
-    <section class="ai-approval" aria-label={t().approvalRequired({ title: title() })}>
-      <div class="ai-approval__head">
-        <Show
-          when={!props.block.presentation?.appIcon && isFeatCodeTool(props.block.name)}
-          fallback={<i class={`ai-approval__icon ${aiToolIcon(props.block.name, props.block.presentation?.appIcon)}`} aria-hidden="true" />}
-        >
-          <span class="ai-approval__icon" aria-hidden="true">
-            <FeatCodeMark variant="glyph" decorative />
-          </span>
-        </Show>
-        <div class="min-w-0">
-          <h3 class="ai-approval__title">{title()}</h3>
-          <p class="ai-approval__sub">
-            {ownerName()} · {t().approvalRunsAfter}
-          </p>
-        </div>
-      </div>
-      <Show when={reviewLines().length > 0}>
-        <div class="ai-approval__text">
-          <For each={reviewLines()}>
-            {(line) => (
-              <p class="whitespace-pre-wrap">
-                <Show when={line.label}>{(label) => <strong class="ai-approval__label">{label()}: </strong>}</Show>
-                {line.value}
-              </p>
-            )}
-          </For>
-        </div>
-      </Show>
-      <Show when={props.block.approval?.review}>
-        <p class="ai-approval__text whitespace-pre-wrap">{description()}</p>
-        <Show when={inlineReviewDetails().length > 0}>
-          <dl class="ai-approval__fields">
-            <For each={inlineReviewDetails()}>
-              {(detail) => (
-                <>
-                  <dt>{detail.label}</dt>
-                  <dd class="whitespace-pre-wrap">
-                    <ReviewDetailValue detail={detail} />
-                  </dd>
-                </>
-              )}
-            </For>
-          </dl>
-        </Show>
-        <For each={blockReviewDetails()}>
-          {(detail) => (
-            <section class="ai-approval__text min-w-0" aria-label={detail.label}>
-              <h4 class="ai-approval__label mb-1">{detail.label}</h4>
-              <Show
-                when={detail.format === "markdown"}
-                fallback={
-                  <pre
-                    class="ai-approval__preview whitespace-pre-wrap break-words font-sans"
-                    role="region"
-                    tabIndex={0}
-                    aria-label={t().contentOf({ label: detail.label })}
-                  >
-                    <ReviewDetailValue detail={detail} />
-                  </pre>
-                }
-              >
-                <div class="ai-approval__preview" role="region" tabIndex={0} aria-label={detail.label}>
-                  <MarkdownView class="cloud-ai-approval-detail" markdown={detail.value} headingScale="compact" allowImages={false} />
-                </div>
-              </Show>
-            </section>
-          )}
-        </For>
-      </Show>
-      <Show when={reason()}>
-        {(text) => (
-          <p class="ai-approval__text whitespace-pre-wrap">
-            <strong class="ai-approval__label">{capabilityApprovalReasonLabel(locale())}: </strong>
-            {text()}
-          </p>
-        )}
-      </Show>
-      <Show when={detailsOpen()}>
-        <div id={detailsId} class="w-full min-w-0" role="region" aria-label={t().detailsFor({ title: title() })}>
-          <Show when={detailData()} fallback={<pre class="ai-approval__preview text-[11px]">{jsonPreview(props.block.args)}</pre>}>
-            {(data) => <StructuredDataPreview data={data()} class="w-full" />}
-          </Show>
-        </div>
-      </Show>
-      {/* The decision continues the card below its content: spacing, not a line or a band, sets it apart. */}
-      <footer class="ai-approval__foot" data-ai-approval-footer>
-        {/* Present from the start, so screen readers announce progress after the decision buttons leave. */}
-        <span class="k2b-sr-only" role="status" aria-live="polite">
-          {approval.loading() ? t().submitting : submitted() ? t().submitted : ""}
-        </span>
-        <Show when={reviewLinks().length > 0}>
-          <nav class="flex flex-wrap gap-1" aria-label={t().linksFor({ title: title() })}>
-            <For each={reviewLinks()}>
-              {(link) => (
-                <ButtonLink href={link.href} target="_blank" rel="noopener noreferrer" size="xs" variant="ghost">
-                  {link.title ?? reviewLinkTitle(link.rel)}
-                </ButtonLink>
-              )}
-            </For>
-          </nav>
-        </Show>
-        <Show when={approval.error()}>
-          <p class="text-xs text-red-700 dark:text-red-300" role="alert">
-            {t().approvalFailed}
-          </p>
-        </Show>
-        <div class="ai-approval__actions">
-          <Show
-            when={pending()}
-            fallback={
-              <span class="ai-approval__state">
-                {title()} · {props.block.status === "rejected" ? t().rejected : t().approved}
-              </span>
-            }
-          >
-            <Show when={actions.onApproval} fallback={<span class="ai-approval__state">{t().approvalUnavailable}</span>}>
-              <Show
-                when={!actionDisabled()}
-                fallback={
-                  <span class="ai-approval__state">
-                    <i class="ti ti-player-stop" aria-hidden="true" />
-                    {t().stoppingResponse}
-                  </span>
-                }
-              >
-                <Show
-                  when={!submitted()}
-                  fallback={
-                    <span class="ai-approval__state">
-                      <i class="ti ti-check" aria-hidden="true" />
-                      {t().submitted}
-                    </span>
-                  }
-                >
-                  {/* The buttons stay while the decision is sent, so the card does not change its height before it
-                      becomes its receipt. */}
-                  <Button size="sm" variant="ghost" disabled={approval.loading()} onClick={() => submit({ approved: false })}>
-                    {t().reject}
-                  </Button>
-                  <SplitButton
-                    size="sm"
-                    variant="ai"
-                    loading={approval.loading()}
-                    onClick={() => submit({ approved: true })}
-                    menuLabel={t().moreOptions({ title: title() })}
-                    menuPosition="bottom-right"
-                    items={[
-                      {
-                        label: detailsOpen() ? t().hideDetails : t().details,
-                        icon: detailsOpen() ? "ti ti-eye-off" : "ti ti-eye",
-                        action: () => setDetailsOpen((open) => !open),
-                      },
-                      // The narrower chat reach comes first: it ends with this chat.
-                      ...(props.block.approval?.allowChat
-                        ? [
-                            {
-                              label: props.block.approval.website ? t().allowWebsiteForChat : t().chatApprove,
-                              icon: props.block.approval.website ? "ti ti-world-check" : "ti ti-message-check",
-                              action: () => submit({ approved: true, remember: "chat" }),
-                            },
-                          ]
-                        : []),
-                      ...(props.block.approval?.allowAlways
-                        ? [
-                            {
-                              label: t().alwaysApprove,
-                              icon: "ti ti-shield-check",
-                              action: () => submit({ approved: true, remember: "always" }),
-                            },
-                          ]
-                        : []),
-                    ]}
-                  >
-                    {title()}
-                  </SplitButton>
-                </Show>
-              </Show>
-            </Show>
-          </Show>
-        </div>
-      </footer>
-    </section>
   );
 }
 
@@ -760,11 +468,8 @@ function ToolBlockView(props: { turnId: string; block: ToolBlock; active?: boole
       <Show when={websiteReceipts(props.block).length > 0}>
         <WebsiteReceipts block={props.block} />
       </Show>
-      <Show when={hasCapabilityTable(props.block)}>
-        <CapabilityTablePreview
-          result={props.block.result}
-          label={props.block.presentation?.title ?? displayToolName(props.block.name, locale())}
-        />
+      <Show when={hasCapabilityView(props.block)}>
+        <CapabilityViewBlock block={props.block} />
       </Show>
     </>
   );

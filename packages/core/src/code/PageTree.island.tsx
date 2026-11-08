@@ -1,6 +1,7 @@
+import { BLOCK_PANEL_HEIGHTS, blockChartHeight, blockDescription, blockJson } from "@k2b/cloud/blocks/ui";
 import type { CodePageField, CodePageNode, CodePageTree } from "@k2b/cloud/code";
 import { codeOwnPath } from "@k2b/cloud/contracts";
-import { type DescriptionJson, DescriptionPanel } from "@k2b/cloud/descriptions";
+import { DescriptionPanel } from "@k2b/cloud/descriptions";
 import {
   Button,
   Checkbox,
@@ -73,73 +74,10 @@ const tint = (color: CodePageTree["color"]) =>
   `color-mix(in srgb, var(--color-${color === "zinc" ? "zinc-500" : `${color ?? "blue"}-600`}) 78%, var(--k2b-text))`;
 
 /** Content heights of a panel; panels in one row line up when they share one. */
-const heights = { sm: 200, md: 300, lg: 400 } as const;
-type Panel = Extract<CodePageNode, { kind: "Chart" | "Table" | "Detail" }>;
-const chartHeight = (item: Extract<CodePageNode, { kind: "Chart" }>) => {
-  if (item.height) return heights[item.height];
-  // Single values and trends need less room than a plot with axes, as in chat charts.
-  const kind = item.description?.kind;
-  return kind === "sparkline" ? 128 : kind === "stat" ? 160 : kind === "barGauge" ? 192 : heights.md;
-};
+const heights = BLOCK_PANEL_HEIGHTS;
 // A detail row is 2.25 rem high; up to eight rows show without scrolling.
 const detailHeight = (item: Extract<CodePageNode, { kind: "Detail" }>) =>
   item.height ? heights[item.height] : `${Math.max(1, Math.min(8, item.items.length)) * 2.25}rem`;
-
-/** Checked page data as JSON: optional fields that are absent leave no key behind. */
-const json = (value: unknown): DescriptionJson => {
-  if (value === null || typeof value === "string" || typeof value === "boolean" || typeof value === "number") return value;
-  if (Array.isArray(value)) return value.map(json);
-  if (typeof value === "object")
-    return Object.fromEntries(Object.entries(value).flatMap(([key, entry]) => (entry === undefined ? [] : [[key, json(entry)]])));
-  return null;
-};
-
-/**
- * The portable description of a data block, the same JSON Chat, Pulse and Notebooks draw: Code pages add no drawing
- * of their own. Yes and No are words of the page's language.
- */
-function description(item: Panel | Extract<CodePageNode, { kind: "Stats" }>, words: { yes: string; no: string }, timeZone: string) {
-  switch (item.kind) {
-    case "Chart":
-      // Without values a chart keeps its frame and title and says why: the description's empty form.
-      return item.description ?? { kind: "bar", title: item.title ?? "", empty: item.empty };
-    case "Stats":
-      return {
-        block: "stats",
-        items: item.items.map(({ value, ...stat }) => ({ ...stat, value: value ?? "—" })),
-      };
-    case "Table":
-      return {
-        block: "table",
-        title: item.title,
-        ...(item.subtitle ? { subtitle: item.subtitle } : {}),
-        ...(item.search ? { search: true } : {}),
-        columns: item.columns.map(({ key, ...column }) => {
-          // A column without a type that holds only numbers reads as numbers: right-aligned, in the reader's language.
-          const values = item.rows.map((row) => row[key]).filter((value) => value !== null && value !== undefined);
-          const numeric = column.format !== undefined || (values.length > 0 && values.every((value) => typeof value === "number"));
-          const type = column.type ?? (numeric ? "number" : undefined);
-          // Dates read in the reader's zone, which the server named, so the server and the browser show the same day.
-          return { id: key, ...column, ...(type ? { type } : {}), ...(type === "date" ? { timeZone } : {}) };
-        }),
-        rows: item.rows,
-      };
-    case "Detail":
-      return {
-        block: "details",
-        title: item.title,
-        items: item.items.map((row) =>
-          typeof row.value === "number"
-            ? { label: row.label, type: "number", value: row.value, ...(row.format ? { format: row.format } : {}) }
-            : {
-                label: row.label,
-                type: "text",
-                value: typeof row.value === "boolean" ? (row.value ? words.yes : words.no) : row.value,
-              },
-        ),
-      };
-  }
-}
 
 type ScanResult = { text: string } | { error: QrScannerError };
 
@@ -509,12 +447,12 @@ function CodePageContent(props: PageProps) {
       case "Chart":
         return (
           <DescriptionPanel
-            spec={json(description(item, t(), props.timeZone))}
+            spec={blockJson(blockDescription(item, t(), props.timeZone))}
             title={
               item.kind === "Chart" ? (item.title ?? item.description?.title ?? "") : item.kind === "Stats" ? page().tree.title : item.title
             }
             width={item.kind === "Stats" ? undefined : (item.width ?? "full")}
-            height={item.kind === "Chart" ? chartHeight(item) : item.kind === "Detail" ? detailHeight(item) : heights.md}
+            height={item.kind === "Chart" ? blockChartHeight(item) : item.kind === "Detail" ? detailHeight(item) : heights.md}
             headingLevel={level}
             empty={item.kind === "Table" || item.kind === "Chart" ? item.empty : undefined}
             state={panelState()}
