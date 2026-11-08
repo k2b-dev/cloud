@@ -1,4 +1,4 @@
-import { createEffect, createSignal, createUniqueId, type JSX, on } from "solid-js";
+import { createEffect, createSignal, createUniqueId, type JSX, on, onCleanup } from "solid-js";
 import { replaceTextareaRange } from "../inputs/editor-dom";
 import { CommandList, commandListKey, commandOptionId, createCommandNavigator } from "./CommandList";
 import { dockCommandList, followComposer } from "./command-dock";
@@ -54,6 +54,10 @@ function CommandMenuRoot(props: CommandMenuProps): JSX.Element {
     const listId = `k2b-command-menu-${createUniqueId().replace(/[^a-zA-Z0-9_-]/g, "-")}`;
     const [query, setQuery] = createSignal("");
     let input!: HTMLInputElement;
+    /** The open menu, kept while an outcome replaces the search field that finds it. */
+    let menu: HTMLElement | null = null;
+    /** Where the focus was when an outcome took the list's place: inside the menu, or in the target. */
+    let focusInMenu = false;
     const nav = createCommandNavigator({
       items: () => props.items,
       query,
@@ -76,8 +80,18 @@ function CommandMenuRoot(props: CommandMenuProps): JSX.Element {
       },
       active: shell.open,
       // The focus goes back to the trigger only from inside the menu: an entry that wrote into the target, or moved
-      // the focus elsewhere itself, leaves it there.
-      afterRun: () => shell.close(Boolean(input.closest(".k2b-dropdown__menu")?.contains(document.activeElement))),
+      // the focus elsewhere itself, leaves it there. An outcome keeps the menu open in the list's place: the person
+      // writes on in the target, or, without one, the focus rests on the outcome until it clears.
+      afterRun: (outcome) => {
+        // An outcome replaces the search field before this runs, which leaves the focus on the page's body.
+        const focused = document.activeElement;
+        const inside = !focused || focused === document.body || Boolean(menu?.contains(focused));
+        if (!outcome) return shell.close(inside);
+        focusInMenu = inside && !props.target;
+        if (inside && props.target) props.target.focus({ preventScroll: true });
+        else if (focusInMenu)
+          queueMicrotask(() => menu?.querySelector<HTMLElement>(".k2b-command-outcome")?.focus({ preventScroll: true }));
+      },
       onStep: () => setQuery(""),
     });
     /** Writes into the target at its caret, as typing would, or hands the text to `onInsert`. */
@@ -86,24 +100,54 @@ function CommandMenuRoot(props: CommandMenuProps): JSX.Element {
       if (!target) return props.onInsert?.(text);
       replaceTextareaRange(target as HTMLTextAreaElement, target.selectionStart ?? 0, target.selectionEnd ?? 0, text);
     };
+    // An outcome that cleared closes the menu; the focus returns to the trigger only from inside it.
+    createEffect(
+      on(
+        nav.outcome,
+        (outcome, previous) => {
+          if (menu) {
+            if (outcome) menu.dataset.outcome = outcome.state;
+            else delete menu.dataset.outcome;
+          }
+          if (!outcome && previous && shell.open()) shell.close(Boolean(menu?.contains(document.activeElement)) || focusInMenu);
+        },
+        { defer: true },
+      ),
+    );
+    // Typing on in the target clears an outcome once it showed long enough; keys on the outcome itself do too. When
+    // the typing opened another list for the target, such as its slash commands, the outcome gives way at once.
+    createEffect(() => {
+      const target = props.target;
+      if (!target || !nav.outcome()) return;
+      const typed = () => {
+        nav.typedOn();
+        queueMicrotask(() => {
+          const controls = target.getAttribute("aria-controls");
+          if (controls && controls !== listId) nav.clearOutcome();
+        });
+      };
+      target.addEventListener("input", typed);
+      onCleanup(() => target.removeEventListener("input", typed));
+    });
     createEffect(
       on(shell.open, (open) => {
-        const menu = input.closest<HTMLElement>(".k2b-dropdown__menu");
+        menu = input.closest<HTMLElement>(".k2b-dropdown__menu") ?? menu;
+        const docked = menu;
         const dock = props.dock;
-        if (open && dock && menu) {
+        if (open && dock && docked) {
           // A phone's keyboard moves the visible viewport, which the menu follows like the slash list.
           const follow = () => {
-            if (menu.matches(":popover-open")) dockCommandList(menu, dock);
+            if (docked.matches(":popover-open")) dockCommandList(docked, dock);
           };
           follow();
           const stop = followComposer(dock, follow);
           const closed = () => {
-            if (!menu.matches(":popover-open")) {
+            if (!docked.matches(":popover-open")) {
               stop();
-              menu.removeEventListener("toggle", closed);
+              docked.removeEventListener("toggle", closed);
             }
           };
-          menu.addEventListener("toggle", closed);
+          docked.addEventListener("toggle", closed);
           return;
         }
         if (open) {
@@ -114,10 +158,12 @@ function CommandMenuRoot(props: CommandMenuProps): JSX.Element {
           return;
         }
         if (menu) menu.style.minWidth = "";
-        // Closing the menu, with Escape or a press outside, stops a running command.
+        // Closing the menu, with Escape or a press outside, stops a running command and clears its outcome.
         nav.abort();
+        nav.clearOutcome();
         nav.reset();
         setQuery("");
+        focusInMenu = false;
       }),
     );
     shell.api({
@@ -157,7 +203,20 @@ function CommandMenuRoot(props: CommandMenuProps): JSX.Element {
         />
       </label>
     );
-    return <CommandList navigator={nav} id={listId} label={props.label} query={query} header={search} />;
+    return (
+      <CommandList
+        navigator={nav}
+        id={listId}
+        label={props.label}
+        query={query}
+        header={search}
+        // After Retry or Close the focus stays where the person works: the target, or the outcome itself.
+        onOutcomeAction={() => {
+          if (props.target) props.target.focus({ preventScroll: true });
+          else menu?.querySelector<HTMLElement>(".k2b-command-outcome")?.focus({ preventScroll: true });
+        }}
+      />
+    );
   };
 
   return (

@@ -46,12 +46,24 @@ type Variants<N> =
   | {
       kind: "bar";
       data: { label: string; value: N }[];
-      xAxis?: Pick<ChartDescriptionAxis, "label">;
+      x?: string[];
+      series?: { label: string; data: (number | null)[] }[];
+      layout?: "columns" | "rows" | "grouped" | "stacked";
+      normalize?: boolean;
+      compare?: { label: string; data: (number | null)[] };
+      xAxis?: Pick<ChartDescriptionAxis, "label"> & { ordered?: boolean };
       yAxis?: ChartDescriptionAxis;
       colorByBar?: boolean;
       showValues?: boolean;
       legend?: boolean;
       references?: Reference[];
+    }
+  | {
+      kind: "hbar";
+      series: string[];
+      rows: { group?: string; label: string; values: (number | null)[] }[];
+      legend?: boolean;
+      format?: ChartNumberFormat;
     }
   | {
       kind: "line";
@@ -130,7 +142,12 @@ type Variants<N> =
     };
 
 /** Portable chart node. Dates are ISO text and missing observations are null, never zero. */
-export type ChartDescription = Common & Variants<number | null>;
+export type ChartDescription = Common &
+  (
+    | Exclude<Variants<number | null>, { kind: "bar" }>
+    // Aligned series omit flat data; the validator supplies an empty array.
+    | (Omit<Extract<Variants<number | null>, { kind: "bar" }>, "data"> & { data?: { label: string; value: number | null }[] })
+  );
 /** Validated renderer input. The portable validator normalizes null gaps to non-finite numbers for drawing. */
 export type ChartInput = Common &
   (

@@ -23,6 +23,7 @@ export const chartFixtures = {
     smooth: true,
   },
   bar: { kind: "bar", data: [{ label: "Imports", value: 4 }] },
+  hbar: { kind: "hbar", series: ["Visits"], rows: [{ label: "Mail", values: [42] }] },
   pie: {
     kind: "pie",
     data: [

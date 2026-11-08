@@ -14,6 +14,12 @@ Tools collects small utilities for day-to-day work so they are discoverable in
 one place. Use the workspace for quick generation, conversion, inspection, and
 testing tasks that do not need their own application.
 
+The overview, sidebar, and phone menu use the same five groups: **Images**,
+**Documents**, **Text and codes**, **Security**, and **Network**. **Used often**
+offers four shortcuts. Search by name, format, or task; the search is preserved
+in the URL when you reload or return with Back. Choose **Clear search** if
+nothing matches. Existing tool addresses remain unchanged.
+
 ## Use Tools
 
 - Generate mailto links, QR codes, UUIDs, placeholder text, and passwords.
@@ -27,8 +33,9 @@ testing tasks that do not need their own application.
 
 Check where each task runs before entering sensitive data. Most generators,
 converters, security helpers, and image operations are interactive page tools.
-Document extraction and PDF rendering call the Cloud server. Speed tests use
-the named standalone measurement server without sending Cloud credentials.
+Document extraction, PDF rendering, and PDF page operations call the Cloud
+server. Speed tests use the named standalone measurement server without
+sending Cloud credentials.
 Document conversion holds its input and result only in memory; webhook
 endpoints and request history are stored server-side.
 
@@ -36,7 +43,7 @@ endpoints and request history are stored server-side.
 
 | Resource or surface | Responsibility |
 | --- | --- |
-| Tool definition | A named utility grouped by task and category for browsing and search |
+| Tool definition | A named utility in one shared group for browsing, phone navigation, and search |
 | Browser utility | Processes its interactive input in the page and offers copy or download output |
 | Document to Markdown | Converts one signed-in user's document in memory and returns plain Markdown without persisting either side |
 | Markdown to PDF | Renders one signed-in user's Markdown with a bounded print template or custom CSS without persisting either side |
@@ -87,6 +94,20 @@ the PDF directly with a private no-store policy. The Markdown, CSS, and PDF are
 processed in memory and are not persisted. API callers may also combine a
 preset with CSS overrides; omitting the preset makes the CSS the complete
 stylesheet.
+
+## Process PDF pages through the API
+
+Authenticated integrations can send PDF files and a JSON operation to
+`POST /tools/api/pdf` to merge, extract, split, rotate, or reorder pages.
+Split returns a ZIP; the other operations return a PDF. This endpoint
+has no Tools page or dedicated CLI command yet. The upload and result stay
+in memory and are not persisted.
+
+Default limits are 99 files, 98 total source pages, and 10 MiB each for input
+and output. Repeated processing can reach the work budget sooner. Unreadable
+or password-protected PDFs return HTTP 422; use an undamaged PDF without
+password protection. See the Tools OpenAPI description at
+`/tools/api/openapi.json` for the request contract.
 
 ## Convert images in bulk
 
