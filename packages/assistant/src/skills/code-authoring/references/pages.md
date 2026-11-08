@@ -68,7 +68,7 @@ wrong block fails with `code_page_child`.
 | `Field.Number` | as above with a number `value` | none |
 | `Field.Checkbox` | as above with a boolean `value` | none |
 | `Field.Select` | as above with a text `value` | `Option` (`value`, `label`) |
-| `Chart.Waterfall`, `Chart.Area`, `Chart.Bar`, `Chart.Hbar`, `Chart.Line`, `Chart.Scatter`, `Chart.Pie`, `Chart.Donut`, `Chart.Histogram`, `Chart.Gauge`, `Chart.Sparkline`, `Chart.Boxplot`, `Chart.Heatmap`, `Chart.BarGauge`, `Chart.Stat` | the chart's own props, such as `title`, `data`, `series`; optional `width` | none |
+| `Chart.Waterfall`, `Chart.Area`, `Chart.Bar`, `Chart.Hbar`, `Chart.Line`, `Chart.Scatter`, `Chart.Pie`, `Chart.Donut`, `Chart.Histogram`, `Chart.Gauge`, `Chart.Sparkline`, `Chart.Boxplot`, `Chart.Heatmap`, `Chart.BarGauge`, `Chart.Stat`, `Chart.Funnel`, `Chart.Treemap`, `Chart.Pareto`, `Chart.Bubble`, `Chart.Radar` | the chart's own props, such as `title`, `data`, `series`; optional `width` | none |
 | `Chart.Empty` | `title`, `empty`, optional `width` | none |
 | `Link` | `label`, `href` inside this Code | none |
 | `Button`, `Action` | `label`, `action`, optional text `values`; always POST | none |
