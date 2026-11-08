@@ -5,7 +5,7 @@ section: Operations
 order: 1125
 description: Choose Cloud applications and identify their infrastructure, secrets, feature dependencies, startup order, and verification checks.
 tags: [deployment, dependencies, infrastructure, configuration, bootstrap]
-updated: 2026-11-07
+updated: 2026-11-08
 ---
 
 # Deployment requirements
@@ -34,6 +34,17 @@ the matching Cloud release's AppArmor policy and seccomp file on every runner
 host. Core and runner versions must be upgraded together. See
 [runner host prerequisites](/en/docs/operations/code-runner) for the required
 Linux features, file paths and verification probe.
+
+## Wait for Mail during the Code upgrade
+
+Production Compose includes application readiness healthchecks for Core and
+Mail. During the coordinated Code upgrade, run the staged commands in
+[Upgrade to Code](/en/docs/operations/upgrade-to-code#4-upgrade): Core, then
+Mail with `--wait`, then the remaining services. Start Assistant only after
+Mail's readiness check succeeds, so Mail can refuse unresolved old sends
+before Studio cleanup begins. A running container alone is insufficient.
+Custom deployments must probe `/_cloud/ready` on Mail before starting
+Assistant; Compose does not enforce this order automatically.
 
 ## Applications start with a key file and Core address
 

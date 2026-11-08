@@ -40,21 +40,27 @@ environment fallback. They complement the
 | `core.code.wall_clock_ms` | 300,000 ms (5 minutes) | 1–300,000 |
 | `core.code.calls_per_run` | 200 bridge calls | 1–1,000 |
 | `core.code.calls_per_second` | 60 per Code | 1–1,000 |
-| `core.code.database_bytes` | 100 MiB per Code | 1 byte–1 GiB |
-| `core.code.ai_budget_usd` | USD 1 reference cost per attempt | 0–100; zero disables AI |
+| `core.code.database_bytes` | 100 MiB per Code | 1 byte–1 GiB; reserved, no Code database in this release |
+| `core.code.ai_budget_usd` | USD 1 reference cost per generate/decide attempt | 0–100; zero disables generate/decide |
 | `core.code.ai_daily_budget_usd` | USD 1 reference cost per Code per day | 0–100; zero disables AI |
 | `core.code.ai_owner_daily_budget_usd` | USD 1 reference cost per owner per day | 0–100; zero disables AI |
 | `core.code.concurrency_per_code` | 1 active attempt | 1–100 |
 | `core.code.concurrency_per_owner` | 10 active attempts | 1–1,000 |
 
+The database setting remains visible in administration but has no effect in this
+release: Code has no database.
+
 All values except the AI budgets are whole numbers. The wall-clock maximum
 matches the Phase 1 runner budget. The call maximum preserves the existing run
-storage boundary. Database, AI and concurrency defaults and ranges are initial
+storage boundary. AI and concurrency defaults and ranges are initial
 operational budgets; administrators can lower them for their installation.
 An owner is the exact personal, resource or application identity, so changing
 an author does not create another owner allowance.
+Code-started chat turns also consume the daily per-Code and per-owner budgets;
+they do not use the generate/decide per-attempt limit. All three settings are
+installation-wide. Zero disables the corresponding AI path.
 
-Code enforces the per-attempt AI reference budget on `core.ai.*` capability calls,
+Code enforces the per-attempt AI reference budget on `core.ai.generate` and `core.ai.decide` calls,
 alongside the effective group policy for **AI**. Zero refuses before model
 invocation with `code_ai_budget_limit`. The run detail names the exhausted AI
 budget in its notice instead of the general policy message. Each admitted call reserves the smallest remaining allowance across the attempt,
