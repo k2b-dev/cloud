@@ -1,4 +1,5 @@
 import { chartDatumSvg, escapeXml, niceStep } from "./svg-renderers";
+import type { ChartDatum } from "./types";
 
 export type WaterfallOptions = {
   start: { label: string; value: number };
@@ -57,8 +58,25 @@ export function waterfallLayout(spec: WaterfallOptions, size: { width: number; h
   const right = size.width - 10;
   const slot = (right - left) / bars.length;
   const project = (value: number) => bottom - ((value - scale.domain[0]) / (scale.domain[1] - scale.domain[0])) * (bottom - top);
-  return { bars, balance, scale, left, right, top, bottom, slot, ratio, project, format };
+  const amount = (bar: WaterfallBar) =>
+    `${bar.total ? "" : bar.value > 0 ? "↙ " : bar.value < 0 ? "↗ " : "= "}${format(bar.total ? bar.value : Math.abs(bar.value))}`;
+  const datum = (bar: WaterfallBar, index: number, center: number, formattedAmount: string): ChartDatum => ({
+    role: "item",
+    index,
+    label: bar.label,
+    anchor: [center, top],
+    values: bar.total
+      ? [{ key: "balance", value: bar.to, formatted: format(bar.to) }]
+      : [
+          { key: "before", value: bar.from, formatted: format(bar.from) },
+          { key: bar.value > 0 ? "inflow" : bar.value < 0 ? "outflow" : "change", value: bar.value, formatted: formattedAmount },
+          { key: "after", value: bar.to, formatted: format(bar.to) },
+        ],
+  });
+  return { bars, balance, scale, left, right, top, bottom, slot, ratio, project, format, amount, datum };
 }
+
+export type WaterfallLayout = ReturnType<typeof waterfallLayout>;
 
 const f = (value: number) => String(Math.round(value * 100) / 100);
 const text = (x: number, y: number, value: string, anchor = "middle", extra = "") =>
@@ -69,7 +87,15 @@ export function renderWaterfallSvg(
   spec: WaterfallOptions & { width: number; height: number; inspect?: boolean },
   responsive = false,
 ): string {
-  const g = waterfallLayout(spec, spec);
+  return renderWaterfallLayoutSvg(spec, waterfallLayout(spec, spec), responsive);
+}
+
+/** Draw the geometry already reserved by a host before its drawing module loads. */
+export function renderWaterfallLayoutSvg(
+  spec: WaterfallOptions & { width: number; height: number; inspect?: boolean },
+  g: WaterfallLayout,
+  responsive = false,
+): string {
   const parts: string[] = [];
   // The Solid host stretches a stable viewBox. Container queries use its drawn CSS width on the first frame,
   // rather than freezing the labels to the phone fallback or measuring and redrawing after hydration.
@@ -111,7 +137,7 @@ export function renderWaterfallSvg(
         : bar.value < 0
           ? "var(--k2b-flow-out-mark, #8b5cf6)"
           : "color-mix(in srgb, var(--k2b-text-muted, #8b8b93) 55%, transparent)";
-    const amount = `${bar.total ? "" : bar.value > 0 ? "↙ " : bar.value < 0 ? "↗ " : "= "}${g.format(bar.total ? bar.value : Math.abs(bar.value))}`;
+    const amount = g.amount(bar);
     const band = `<rect class="k2b-chart-category-band" x="${f(center - g.slot / 2)}" y="${f(g.top)}" width="${f(g.slot)}" height="${f(g.bottom - g.top)}" fill="currentColor" fill-opacity="0" stroke="none"/>`;
     const mark = `<rect class="k2b-waterfall-bar" x="${f(center - width / 2)}" y="${f(top)}" width="${f(width)}" height="${f(Math.max(height, 1))}" rx="3" fill="${color}" stroke="none"/>`;
     const valueWidth = Math.max((46 * spec.width) / width, ((amount.length * 6 + 8) * spec.width) / g.slot);
@@ -125,25 +151,7 @@ export function renderWaterfallSvg(
             `class="k2b-waterfall-value" font-weight="600"${visibility(valueWidth)}`,
           ).replace('fill="currentColor"', 'fill="var(--k2b-text-secondary, #52525b)"')
         : "";
-    parts.push(
-      chartDatumSvg(
-        band + mark + value,
-        {
-          role: "item",
-          index,
-          label: bar.label,
-          anchor: [center, g.top],
-          values: bar.total
-            ? [{ key: "balance", value: bar.to, formatted: g.format(bar.to) }]
-            : [
-                { key: "before", value: bar.from, formatted: g.format(bar.from) },
-                { key: bar.value > 0 ? "inflow" : bar.value < 0 ? "outflow" : "change", value: bar.value, formatted: amount },
-                { key: "after", value: bar.to, formatted: g.format(bar.to) },
-              ],
-        },
-        spec.inspect ?? false,
-      ),
-    );
+    parts.push(chartDatumSvg(band + mark + value, g.datum(bar, index, center, amount), spec.inspect ?? false));
     if (index < g.bars.length - 1)
       parts.push(
         `<line class="k2b-waterfall-connector" x1="${f(center + width / 2)}" x2="${f(center + g.slot - width / 2)}" y1="${f(g.project(bar.to))}" y2="${f(g.project(bar.to))}" stroke="currentColor" stroke-opacity=".3" stroke-dasharray="3 3"/>`,

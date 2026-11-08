@@ -83,14 +83,14 @@ afterAll(async () => {
   for (const page of pages) await page.close();
   await browser?.close();
 });
-const open = async (width: number, dark = false, touch = false) => {
+const open = async (width: number, dark = false, touch = false, hosts = false) => {
   const page = await browser.newPage({ viewport: { width, height: 900 }, hasTouch: touch, isMobile: false });
   errorsByPage.set(page, pageErrors(page));
   await page.setContent(
     `<!doctype html><html ${dark ? 'class="dark"' : ""}><head><meta name="viewport" content="width=device-width,initial-scale=1"><style>${css} body{margin:0;padding:20px} main{max-width:900px;margin:auto}.line-forecast-panel{border:1px solid var(--k2b-border);border-radius:12px;padding:16px;margin-top:20px}h2{font-size:17px;margin:0}.meta{font-size:13px;margin:4px 0 16px}.line-forecast-frame{height:280px}.many{margin-top:20px}</style></head><body class="k2b-ui"><div id="root"></div></body></html>`,
   );
   await page.addScriptTag({ type: "module", content: bundle });
-  await page.addScriptTag({ type: "module", content: hostsBundle });
+  if (hosts) await page.addScriptTag({ type: "module", content: hostsBundle });
   await page.locator(".liquidity .k2b-line-forecast-band").waitFor();
   await settled(page);
   return page;
@@ -223,6 +223,28 @@ const documentBox = (page: Page, selector: string) =>
 const tooltip = (page: Page) => page.locator('[role="tooltip"]:popover-open');
 
 for (const width of [1440, 390]) {
+  test(`line legends at ${width}: early-ending series retain keyboard gaps`, async () => {
+    const page = await open(width, false, true);
+    pages.push(page);
+    await page.setViewportSize({ width, height: 1100 });
+    await settled(page);
+    const earlyEnding = page.locator(".early-ending [data-chart-kind=line]");
+    expect(await earlyEnding.locator("[data-chart-legend-value]").allTextContents()).toEqual(["—", "—"]);
+    await page.mouse.move(0, 0);
+    await settled(page);
+    await earlyEnding.scrollIntoViewIfNeeded();
+    await settled(page);
+    await earlyEnding.focus();
+    await settled(page);
+    await page.keyboard.press("Home");
+    await settled(page);
+    expect(await earlyEnding.locator("[data-chart-legend-value]").nth(1).textContent()).toBe("7");
+    await page.keyboard.press("End");
+    await settled(page);
+    expect(await earlyEnding.locator("[data-chart-legend-value]").nth(1).textContent()).toBe("—");
+    await page.keyboard.press("Escape");
+    await settled(page);
+  });
   test(`line forecast at ${width}: SSR drawing, grouped hover, keyboard and fixed states`, async () => {
     const page = await open(width, false, true);
     pages.push(page);
@@ -245,22 +267,6 @@ for (const width of [1440, 390]) {
       );
     });
     expect(labelsFit).toBe(true);
-    const earlyEnding = page.locator(".early-ending [data-chart-kind=line]");
-    expect(await earlyEnding.locator("[data-chart-legend-value]").allTextContents()).toEqual(["—", "—"]);
-    await page.mouse.move(0, 0);
-    await settled(page);
-    await earlyEnding.scrollIntoViewIfNeeded();
-    await settled(page);
-    await earlyEnding.focus();
-    await settled(page);
-    await page.keyboard.press("Home");
-    await settled(page);
-    expect(await earlyEnding.locator("[data-chart-legend-value]").nth(1).textContent()).toBe("7");
-    await page.keyboard.press("End");
-    await settled(page);
-    expect(await earlyEnding.locator("[data-chart-legend-value]").nth(1).textContent()).toBe("—");
-    await page.keyboard.press("Escape");
-    await settled(page);
     await chart.scrollIntoViewIfNeeded();
     await settled(page);
     const before = await documentBox(page, ".snapshot");
@@ -354,7 +360,7 @@ test("line tap pins at a coordinate; dark and unscoped paths remain painted", as
 
 for (const width of [1440, 390]) {
   test(`line at ${width}: existing host legends stay unchanged; opted-in Chat and Notebook values follow the cursor`, async () => {
-    const page = await open(width);
+    const page = await open(width, false, false, true);
     pages.push(page);
     for (const host of ["pulse", "core", "gateway", "chat", "notebook"]) {
       const charts = page.locator(`[data-line-host="${host}"] [data-chart-kind="line"]`);

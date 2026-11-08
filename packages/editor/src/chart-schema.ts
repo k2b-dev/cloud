@@ -34,6 +34,7 @@ export const chartKindSchema = () =>
     "waterfall",
     "area",
     "bar",
+    "hbar",
     "line",
     "scatter",
     "pie",
@@ -221,17 +222,65 @@ export const chartKinds = (limits?: ChartLimits) => {
           if (!Number.isFinite(sum)) ctx.addIssue({ code: "custom", path: ["x", i], message: "Area totals must be finite." });
         });
       }),
-    z.object({
-      kind: z.literal("bar"),
-      ...ChartKindCommon,
-      data: list(ChartCategory, 1, limits?.maxValues),
-      xAxis: ChartAxis.pick({ label: true }).strict().optional(),
-      yAxis: ChartAxis.optional(),
-      colorByBar: z.boolean().optional(),
-      showValues: z.boolean().optional(),
-      legend: z.boolean().optional(),
-      references: ChartReferences.optional(),
-    }),
+    z
+      .object({
+        kind: z.literal("bar"),
+        ...ChartKindCommon,
+        data: list(ChartCategory, 0, limits?.maxValues).default([]),
+        x: list(ChartLabel, 0, limits?.maxValues).optional(),
+        series: list(
+          z.object({ label: ChartLabel, data: list(ChartNumber.nullable(), 0, limits?.maxValues) }),
+          1,
+          limits?.maxSeries,
+        ).optional(),
+        layout: z.enum(["columns", "rows", "grouped", "stacked"]).optional(),
+        normalize: z.boolean().optional(),
+        compare: z.object({ label: ChartLabel, data: list(ChartNumber.nullable(), 0, limits?.maxValues) }).optional(),
+        xAxis: ChartAxis.pick({ label: true }).extend({ ordered: z.boolean().optional() }).strict().optional(),
+        yAxis: ChartAxis.optional(),
+        colorByBar: z.boolean().optional(),
+        showValues: z.boolean().optional(),
+        legend: z.boolean().optional(),
+        references: ChartReferences.optional(),
+      })
+      .superRefine((bar, ctx) => {
+        const issue = (message: string) => ctx.addIssue({ code: "custom", message });
+        if (limits && !bar.series && !bar.data.length)
+          ctx.addIssue({ code: "custom", path: ["data"], message: "A bar chart needs data or aligned series." });
+        if (bar.series) {
+          if (!bar.x || bar.series.some((s) => s.data.length !== bar.x?.length)) issue("Bar series must have the same length as x.");
+          if (bar.data.length) issue("Use data or aligned series, not both.");
+          if (bar.layout === "rows" || bar.layout === "columns") issue("Series bars use grouped or stacked layout.");
+        } else if (bar.x || bar.compare || bar.layout === "grouped" || bar.layout === "stacked")
+          issue("This layout needs aligned x and series.");
+        if (bar.layout === "stacked" && bar.yAxis?.scale === "log") issue("Stacked bars need a linear axis.");
+        if (bar.normalize && bar.layout !== "stacked") issue("Normalized bars must be stacked.");
+        if (bar.layout === "stacked" && bar.series?.some((s) => s.data.some((v) => v !== null && v < 0)))
+          issue("Stacked bars require nonnegative values.");
+        if (bar.compare && (bar.series?.length !== 1 || bar.compare.data.length !== bar.x?.length || bar.layout === "stacked"))
+          issue("Comparison needs one current series and aligned previous values.");
+      }),
+    z
+      .object({
+        kind: z.literal("hbar"),
+        ...ChartKindCommon,
+        series: list(ChartLabel, 1, limits?.maxSeries),
+        rows: list(
+          z.object({
+            group: ChartLabel.optional(),
+            label: ChartLabel,
+            values: list(z.number().nonnegative().nullable(), 0, limits?.maxSeries),
+          }),
+          1,
+          limits?.maxValues,
+        ),
+        legend: z.boolean().optional(),
+        format: numberFormat.optional(),
+      })
+      .superRefine((bar, ctx) => {
+        if (bar.rows.some((r) => r.values.length !== bar.series.length))
+          ctx.addIssue({ code: "custom", message: "Horizontal bar values must match series." });
+      }),
     z
       .object({
         kind: z.literal("line"),

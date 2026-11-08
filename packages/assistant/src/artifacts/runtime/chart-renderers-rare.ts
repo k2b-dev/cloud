@@ -8,8 +8,9 @@ import {
   histogram,
   line,
   renderAreaSvg,
+  renderHbarLayoutSvg,
   renderHeatmapSvg,
-  renderWaterfallSvg,
+  renderWaterfallLayoutSvg,
   scatter,
 } from "@k2b/ui/charts/core";
 import type { RareChartRenderer } from "./chart-renderer-types";
@@ -18,8 +19,12 @@ export const rareChartSvg: RareChartRenderer = (mapped, common, locale) => {
   switch (mapped.kind) {
     case "line":
       return line({ ...mapped, ...common, locale });
+    case "hbar":
+      if (!common.hbar) throw new Error("Missing hbar layout");
+      return renderHbarLayoutSvg({ ...mapped, ...common }, common.hbar);
     case "waterfall":
-      return renderWaterfallSvg({ ...mapped, ...common });
+      if (!common.waterfall) throw new Error("Missing waterfall layout");
+      return renderWaterfallLayoutSvg({ ...mapped, ...common }, common.waterfall);
     case "area":
       return renderAreaSvg({ ...mapped, ...common });
     case "scatter":
@@ -35,6 +40,8 @@ export const rareChartSvg: RareChartRenderer = (mapped, common, locale) => {
     case "heatmap":
       return renderHeatmapSvg({ ...mapped, ...common });
   }
+  const unsupported: never = mapped;
+  throw new Error(`Unsupported chart: ${String(unsupported)}`);
 };
 
 /** Outside app frames every renderer is already available. */

@@ -12,6 +12,7 @@ const commandMessages = i18n.define({
       loading: "Loading",
       loadingChoice: "Loading, then the first match",
       loadFailed: "The entries could not load.",
+      done: "Done.",
     },
     de: {
       commands: "Befehle",
@@ -21,6 +22,7 @@ const commandMessages = i18n.define({
       loading: "Wird geladen",
       loadingChoice: "Lädt, dann der erste Treffer",
       loadFailed: "Die Einträge konnten nicht geladen werden.",
+      done: "Erledigt.",
     },
   },
 });

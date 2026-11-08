@@ -57,3 +57,5 @@ export type {
   TemplatePdfPreviewResult,
 } from "./template-preview";
 export { renderTemplatePdfPreview } from "./template-preview";
+export type { PdfToolInput, PdfToolOperation, PdfToolResult } from "./tools";
+export { PDF_TOOL_PART_METADATA_BYTES, pdfToolLimits, runPdfTool, runPdfToolWithConfig, validatePdfToolInput } from "./tools";

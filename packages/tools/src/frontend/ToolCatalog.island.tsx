@@ -1,7 +1,7 @@
 import { fuzzy, i18n } from "@k2b/stdlib";
-import { Placeholder, TextInput, useLocale } from "@k2b/ui";
-import { createMemo, createSignal, For, Show } from "solid-js";
-import { type LocalizedTool, resolveRegistry, type ToolTaskGroup, taskGroupOrder } from "./tools/registry";
+import { Button, LinkCard, Paper, Placeholder, TextInput, useLocale } from "@k2b/ui";
+import { createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js";
+import { categoryOrder, type LocalizedTool, resolveRegistry, type ToolCategory } from "./tools/registry";
 
 export const toolCatalogMessages = i18n.define({
   baseLocale: "en",
@@ -9,28 +9,30 @@ export const toolCatalogMessages = i18n.define({
     en: {
       searchLabel: "Search tools",
       searchPlaceholder: 'What do you want to do? Try "resize image" or "random ID"',
-      quickTools: "Quick tools",
+      quickTools: "Used often",
       quickToolsHint: "Common tasks, one click away.",
       searchResults: "Search results",
       browseAll: "Browse all",
       matchingTools: ({ count }: { count: number }) =>
         i18n.plural(count, "en", { one: `${count} matching tool.`, other: `${count} matching tools.` }),
-      groupedByTask: "Grouped by the task you want to complete.",
+      groupedByTask: "Images, documents, text, security, and network.",
       emptyTitle: "No tools match this task",
       emptyDescription: "Try a tool name, format, or action.",
+      clearSearch: "Clear search",
     },
     de: {
       searchLabel: "Werkzeuge suchen",
       searchPlaceholder: "Was möchtest du tun? Probiere „Bild skalieren“ oder „zufällige ID“",
-      quickTools: "Schnellzugriff",
+      quickTools: "Oft gebraucht",
       quickToolsHint: "Werkzeuge für häufige Aufgaben.",
       searchResults: "Suchergebnisse",
       browseAll: "Alle Werkzeuge",
       matchingTools: ({ count }) =>
         i18n.plural(count, "de", { one: `${count} passendes Werkzeug.`, other: `${count} passende Werkzeuge.` }),
-      groupedByTask: "Nach Aufgaben gruppiert.",
+      groupedByTask: "Bilder, Dokumente, Text, Sicherheit und Netzwerk.",
       emptyTitle: "Kein Werkzeug passt zu dieser Aufgabe",
       emptyDescription: "Suche nach einem Werkzeug, Format oder Arbeitsschritt.",
+      clearSearch: "Suche zurücksetzen",
     },
   },
 });
@@ -41,21 +43,6 @@ const ToolIcon = (props: { tool: LocalizedTool }) => (
   <span class="tools-tool-icon k2b-icon-tile app-accent-text">
     <i class={`${props.tool.icon} text-base`} />
   </span>
-);
-
-const QuickTool = (props: { tool: LocalizedTool; category: string }) => (
-  <a
-    href={toolHref(props.tool)}
-    class="paper focus-ui group/quick flex min-w-0 items-center gap-3 p-3 transition-colors hover:paper-highlighted"
-  >
-    <ToolIcon tool={props.tool} />
-    <span class="min-w-0 flex-1">
-      <span class="block truncate text-sm font-semibold text-primary transition-colors group-hover/quick:app-accent-text">
-        {props.tool.name}
-      </span>
-      <span class="block truncate text-xs text-dimmed">{props.category}</span>
-    </span>
-  </a>
 );
 
 const ToolRow = (props: { tool: LocalizedTool }) => (
@@ -73,11 +60,12 @@ const ToolRow = (props: { tool: LocalizedTool }) => (
   </a>
 );
 
-export default function ToolCatalog() {
+export default function ToolCatalog(props: { initialQuery?: string }) {
   const locale = useLocale();
   const t = () => toolCatalogMessages.resolve([locale()]).t;
   const registry = createMemo(() => resolveRegistry(locale()));
-  const [query, setQuery] = createSignal("");
+  let searchInput: HTMLInputElement | undefined;
+  const [query, setQuery] = createSignal(props.initialQuery ?? "");
   const normalizedQuery = createMemo(() => query().trim().toLowerCase());
   const matches = createMemo(() => {
     const needle = normalizedQuery();
@@ -85,17 +73,32 @@ export default function ToolCatalog() {
     return needle ? fuzzy.filter(needle, tools, { key: searchText }).map((hit) => hit.item) : tools;
   });
   const featured = createMemo(() => registry().tools.filter((tool) => tool.featured));
-  const toolsForGroup = (group: ToolTaskGroup) => matches().filter((tool) => tool.taskGroup === group);
+  const toolsForGroup = (group: ToolCategory) => matches().filter((tool) => tool.category === group);
+  const updateQuery = (value: string) => {
+    setQuery(value);
+    const url = new URL(window.location.href);
+    if (value) url.searchParams.set("q", value);
+    else url.searchParams.delete("q");
+    window.history.replaceState(window.history.state, "", url);
+  };
+  onMount(() => {
+    const restore = () => setQuery(new URL(window.location.href).searchParams.get("q") ?? "");
+    window.addEventListener("popstate", restore);
+    onCleanup(() => window.removeEventListener("popstate", restore));
+  });
 
   return (
     <div class="flex flex-col gap-5">
       <TextInput
+        ref={(element) => {
+          searchInput = element;
+        }}
         type="search"
         aria-label={t().searchLabel}
         icon="ti ti-search"
         value={query}
-        onValueChange={setQuery}
-        onClear={() => setQuery("")}
+        onValueChange={updateQuery}
+        onClear={() => updateQuery("")}
         placeholder={t().searchPlaceholder}
         clearable
         autocomplete="off"
@@ -111,7 +114,16 @@ export default function ToolCatalog() {
             <p class="text-xs text-dimmed">{t().quickToolsHint}</p>
           </header>
           <div class="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
-            <For each={featured()}>{(tool) => <QuickTool tool={tool} category={registry().categories[tool.category].label} />}</For>
+            <For each={featured()}>
+              {(tool) => (
+                <LinkCard
+                  href={toolHref(tool)}
+                  title={tool.name}
+                  description={registry().categories[tool.category].label}
+                  icon={tool.icon}
+                />
+              )}
+            </For>
           </div>
         </section>
       </Show>
@@ -126,29 +138,45 @@ export default function ToolCatalog() {
 
         <Show
           when={matches().length > 0}
-          fallback={<Placeholder icon="ti ti-search-off" title={t().emptyTitle} description={t().emptyDescription} />}
+          fallback={
+            <Placeholder
+              state="no-results"
+              title={t().emptyTitle}
+              description={t().emptyDescription}
+              action={
+                <Button
+                  variant="secondary"
+                  onClick={() => {
+                    updateQuery("");
+                    searchInput?.focus();
+                  }}
+                >
+                  {t().clearSearch}
+                </Button>
+              }
+            />
+          }
         >
           <div class="grid gap-x-5 gap-y-4 lg:grid-cols-2">
-            <For each={taskGroupOrder}>
+            <For each={categoryOrder}>
               {(group) => {
                 const groupTools = () => toolsForGroup(group);
                 return (
                   <Show when={groupTools().length > 0}>
-                    <section class="min-w-0" aria-labelledby={`tool-group-${group}`}>
+                    <Paper as="section" class="min-w-0 p-3" aria-labelledby={`tool-group-${group}`}>
                       <header class="flex min-h-9 items-start gap-2 px-2 py-1.5">
-                        <i class={`${registry().taskGroups[group].icon} app-accent-text mt-0.5 text-sm`} />
+                        <i class={`${registry().categories[group].icon} app-accent-text mt-0.5 text-sm`} />
                         <span class="min-w-0 flex-1">
                           <h4 id={`tool-group-${group}`} class="text-sm font-medium text-primary">
-                            {registry().taskGroups[group].label}
+                            {registry().categories[group].label}
                           </h4>
-                          <p class="truncate text-xs text-dimmed">{registry().taskGroups[group].description}</p>
                         </span>
                         <span class="text-sm font-semibold tabular-nums text-secondary">{groupTools().length}</span>
                       </header>
                       <div class="flex flex-col">
                         <For each={groupTools()}>{(tool) => <ToolRow tool={tool} />}</For>
                       </div>
-                    </section>
+                    </Paper>
                   </Show>
                 );
               }}

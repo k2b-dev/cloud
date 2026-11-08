@@ -3,6 +3,7 @@ import { Hono } from "hono";
 import adminSettingsRoutes from "./admin-settings";
 import documentMarkdownRoutes from "./document-markdown";
 import markdownPdfRoutes from "./markdown-pdf";
+import { createPdfToolsRoutes } from "./pdf-tools";
 import speedtestRoutes from "./speedtest";
 import webhookRoutes from "./webhooks";
 
@@ -13,6 +14,7 @@ const buildToolsApi = () =>
     .route("/admin/settings", adminSettingsRoutes)
     .route("/documents", documentMarkdownRoutes)
     .route("/markdown", markdownPdfRoutes)
+    .route("/pdf", createPdfToolsRoutes())
     .route("/webhooks", webhookRoutes);
 
 export type ApiType = ReturnType<typeof buildToolsApi>;

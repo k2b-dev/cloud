@@ -9,7 +9,7 @@ order: 115
 
 ## Run a test {icon="player-play"}
 
-Open **Internet Speed Test**, check the **Measurement server**, then choose
+Open **Speed test**, check the **Measurement server**, then choose
 **Quick · 14 s** or **Accurate · 29 s**; that is the longest a test can take.
 Press **Start test**.
 The test runs ping, download and upload in order. The remaining time decreases;

@@ -4,6 +4,7 @@ import { createToolsApiRouter } from "./api";
 import adminSettingsRoutes from "./api/admin-settings";
 import documentMarkdownRoutes from "./api/document-markdown";
 import markdownPdfRoutes from "./api/markdown-pdf";
+import { createPdfToolsRoutes } from "./api/pdf-tools";
 import speedtestRoutes from "./api/speedtest";
 import webhookRoutes from "./api/webhooks";
 import { app, ssr } from "./config";
@@ -22,6 +23,7 @@ const router = new Hono<AuthContext>()
   .route("/tools/api/speedtest", speedtestRoutes)
   .route("/tools/api/documents", documentMarkdownRoutes)
   .route("/tools/api/markdown", markdownPdfRoutes)
+  .route("/tools/api/pdf", createPdfToolsRoutes())
   .route("/tools/api/webhooks", webhookRoutes)
   .all("/tools/api/*", (c) => c.notFound())
   .route("/tools", pageRoutes);
