@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, mock, setSystemTime, spyOn, test } from "bun:test";
+import { bindView, validateBlocks } from "@k2b/cloud/blocks";
 import { capabilityReviewRememberScope, capabilityReviewView } from "@k2b/cloud/capabilities";
 import { capabilityCallFromTool } from "@k2b/cloud/capabilities/server";
 import {
@@ -3092,3 +3093,56 @@ test("creation reviews preserve every supplied domain field and bound compact pr
     expect(Buffer.byteLength(JSON.stringify(compact))).toBeLessThan(32 * 1024);
   }
 });
+
+for (const [locale, deadline, assignees, done] of [
+  ["en", "Deadline", "Assignees", "Done"],
+  ["de", "Fällig am", "Zugewiesene Personen", "Erledigt"],
+] as const) {
+  test(`task reader supplies an authorized preview in ${locale} using existing relations`, async () => {
+    setSystemTime(new Date("2026-10-24T12:00:00Z"));
+    spyOn(settings, "get").mockResolvedValue("America/Los_Angeles");
+    spyOn(spacesService.space, "get").mockResolvedValue(space);
+    spyOn(spacesService.space.permission, "get").mockResolvedValue("read");
+    spyOn(spacesService.item.attachments, "list").mockResolvedValue([]);
+    const get = spyOn(spacesService.item, "get").mockResolvedValue({
+      ...task,
+      deadline: "2026-10-30",
+      deadlineAllDay: true,
+      assignees: [{ id: userId, kind: "user", displayName: "Ada Example", avatarHash: null }],
+    });
+    for (const completedAt of [null, createdAt]) {
+      if (completedAt)
+        get.mockResolvedValue({
+          ...task,
+          completedAt,
+          deadline: "2026-10-30",
+          deadlineAllDay: true,
+          assignees: [{ id: userId, kind: "user", displayName: "Ada Example", avatarHash: null }],
+        });
+      const result = await spacesCapabilities.queries["item.read"].run({ id: itemId }, { ...userContext, locale });
+      if (!result.ok) throw new Error("Expected readable task");
+      const view = bindView(result.data.view, result.data.data);
+      validateBlocks(view.blocks, "preview", { appId: "spaces", appPrefixes: ["/app/spaces"], envelope: result.data });
+      expect(view.blocks).toEqual([
+        {
+          kind: "Detail",
+          title: locale === "de" ? "Aufgabe" : "Task",
+          items: [
+            {
+              label: "Status",
+              value: completedAt ? "done" : "open",
+              type: "status",
+              states: {
+                open: { label: completedAt ? (locale === "de" ? "Offen" : "Open") : "In progress", tone: "info" },
+                done: { label: done, tone: "ok" },
+              },
+            },
+            { label: deadline, value: locale === "de" ? "30. Okt. 2026" : "Oct 30, 2026" },
+            { label: assignees, value: "Ada Example" },
+            { label: "Space", value: "Product" },
+          ],
+        },
+      ]);
+    }
+  });
+}

@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, mock, test } from "bun:test";
+import { bindView, validateBlocks } from "@k2b/cloud/blocks";
 import { capabilityCallFromTool, capabilityToolInputSchema, normalizeCapabilityCall } from "@k2b/cloud/capabilities/server";
 import { assertResourceOpenLink, compileCapabilityManifest } from "@k2b/cloud/capabilities/testing";
 import {
@@ -1245,3 +1246,32 @@ test("the storage reader supplies Manage only after the machine storage service 
     storageReadAllowed = true;
   }
 });
+
+for (const [locale, size, modified, folder] of [
+  ["en", "Size", "Modified", "Folder path"],
+  ["de", "Größe", "Geändert", "Ordnerpfad"],
+] as const) {
+  test(`entry reader supplies an authorized metadata preview in ${locale} without image leases`, async () => {
+    ids.set("image-id", { baseId: "base", path: "Photos/image.png" });
+    items = [{ ...entry("Photos/image.png"), name: "image.png", modified: "2026-09-19T12:00:00Z" }];
+    const result = await filesCapabilities.queries["entry.read"].run({ id: "image-id" }, { ...context, locale });
+    if (!result.ok) throw new Error("Expected readable entry");
+    const view = bindView(result.data.view, result.data.data);
+    validateBlocks(view.blocks, "preview", { appId: "filesv2", appPrefixes: ["/app/filesv2", "/api/filesv2"], envelope: result.data });
+    expect(view.blocks).toEqual([
+      {
+        kind: "Detail",
+        title: "Details",
+        items: [
+          { label: size, value: 4, format: { unit: "B" } },
+          { label: modified, value: expect.any(String) },
+          { label: folder, value: "Home / Photos" },
+        ],
+      },
+    ]);
+    const detail = view.blocks[0];
+    if (detail?.kind !== "Detail") throw new Error("Expected details");
+    expect(detail.items[1]?.value).toContain(locale === "de" ? "Sept." : "Sep");
+    expect(downloads).toEqual([]);
+  });
+}

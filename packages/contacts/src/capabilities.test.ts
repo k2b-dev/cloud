@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from "bun:test";
+import { bindView, validateBlocks } from "@k2b/cloud/blocks";
 import { capabilityCallFromTool, normalizeCapabilityCall } from "@k2b/cloud/capabilities/server";
 import { assertCapabilityReview, assertResourceOpenLink, compileCapabilityManifest } from "@k2b/cloud/capabilities/testing";
 import {
@@ -1062,5 +1063,59 @@ for (const permission of ["admin", "write", "read", "none"] as const) {
     const result = await contactsCapabilities.queries["book.read"].run({ id: publicBookId }, context);
     if (permission === "none") expect(result.ok).toBeFalse();
     else expect(result).toMatchObject({ ok: true, data: { data: { view: { title: book.name, permission } } } });
+  });
+}
+
+for (const [locale, reachable, address, email, phone] of [
+  ["en", "Reachable", "Address", "Email", "Phone"],
+  ["de", "Erreichbar", "Adresse", "E-Mail", "Telefon"],
+] as const) {
+  test(`contact reader supplies a preview in ${locale} from the authorized contact only`, async () => {
+    spyOn(contacts, "findBookId").mockResolvedValue(bookId);
+    spyOn(books, "get").mockResolvedValue(book);
+    const point = { id: "point", contactId, label: null, position: 0, createdAt: timestamp, updatedAt: timestamp };
+    spyOn(contacts, "get").mockResolvedValue({
+      ...contact,
+      phones: [{ ...point, phone: "+49 123 456" }],
+      addresses: [
+        {
+          ...point,
+          recipientName: null,
+          companyName: null,
+          line1: "Hauptstraße 1",
+          line2: null,
+          postalCode: "12345",
+          city: "Berlin",
+          stateRegion: null,
+          countryCode: "DE",
+          location: null,
+        },
+      ],
+    });
+    const result = await contactsCapabilities.queries["contact.read"].run({ id: publicContactId }, { ...context, locale });
+    if (!result.ok) throw new Error("Expected readable contact");
+    const view = bindView(result.data.view, result.data.data);
+    validateBlocks(view.blocks, "preview", { appId: "contacts", appPrefixes: ["/app/contacts"], envelope: result.data });
+    expect(view.blocks).toEqual([
+      {
+        kind: "Section",
+        title: reachable,
+        children: [
+          {
+            kind: "Detail",
+            title: reachable,
+            items: [
+              { label: email, value: "ada@example.test" },
+              { label: phone, value: "+49 123 456" },
+            ],
+          },
+        ],
+      },
+      {
+        kind: "Section",
+        title: address,
+        children: [{ kind: "Detail", title: address, items: [{ label: address, value: "Hauptstraße 1\n12345 Berlin\nDE" }] }],
+      },
+    ]);
   });
 }

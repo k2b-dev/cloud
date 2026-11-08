@@ -1,3 +1,4 @@
+import type { BlockView } from "@k2b/cloud/blocks";
 import {
   CAPABILITY_MAX_RESULT_BYTES,
   CloudResourceReaderViewSchema,
@@ -6,7 +7,7 @@ import {
   UniversalSearchInputSchema,
 } from "@k2b/cloud/contracts";
 import { FilegateError } from "@k2b/filegate";
-import { err, fail, fileIcons, ok } from "@k2b/stdlib";
+import { dates, err, fail, fileIcons, ok } from "@k2b/stdlib";
 import { z } from "zod";
 import { activityQueries } from "./activity-capabilities";
 import { apiError } from "./api/api-error";
@@ -130,7 +131,29 @@ export const filesCapabilities = defineCapabilities({
           const folder = parent(result.entry.path).split("/").at(-1) || result.base.name;
           const t = filesCapabilityMessages(context.locale);
           const resourceContext = result.entry.directory ? t.folderInFolder({ folder }) : t.fileInFolder({ folder });
+          // Thumbnail/download endpoints issue POST leases, not session-authorized image bytes.
+          const view: BlockView = {
+            version: 1,
+            blocks: [
+              {
+                kind: "Detail",
+                title: t.previewDetails,
+                items: [
+                  { label: t.size, value: result.entry.size, format: { unit: "B" } },
+                  {
+                    label: t.previewModified,
+                    value: dates.formatDateTime(result.entry.modified, { locale: context.locale, timeZone: "UTC" }),
+                  },
+                  {
+                    label: t.previewFolder,
+                    value: `${result.base.name}${parent(result.entry.path) ? ` / ${parent(result.entry.path)}` : ""}`,
+                  },
+                ],
+              },
+            ],
+          };
           return ok({
+            view,
             refs: [
               {
                 type: ENTRY_TYPE,

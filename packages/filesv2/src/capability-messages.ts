@@ -5,6 +5,9 @@ const messages = i18n.define({
   baseLocale: "en",
   messages: {
     en: {
+      previewDetails: "Details",
+      previewModified: "Modified",
+      previewFolder: "Folder path",
       storage: "Storage",
       fileInFolder: ({ folder }: { folder: string }) => `File in ${folder}`,
       folderInFolder: ({ folder }: { folder: string }) => `Folder in ${folder}`,
@@ -33,6 +36,9 @@ const messages = i18n.define({
         `Partial results: ${searched} storage bases searched, ${omitted} further and ${unavailable} unavailable bases. More entries may exist. Continue searching in Files.`,
     },
     de: {
+      previewDetails: "Details",
+      previewModified: "Geändert",
+      previewFolder: "Ordnerpfad",
       storage: "Ablage",
       fileInFolder: ({ folder }) => `Datei in ${folder}`,
       folderInFolder: ({ folder }) => `Ordner in ${folder}`,
