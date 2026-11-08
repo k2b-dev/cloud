@@ -1,7 +1,9 @@
+import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { readBoundedJson } from "../_internal/bounded-json";
 import { capabilityActionReceiptIssues } from "../_internal/capability-reviews";
 import { getCapability } from "../_internal/registry";
+import { capabilityCallDigest } from "../capabilities/calls";
 import { recordCapabilityExecution } from "../capabilities/executions";
 import { exactStream } from "../capabilities/stream-body";
 import type { CapabilityStream } from "../contracts/capabilities";
@@ -12,13 +14,17 @@ import {
   CapabilityOriginSchema,
   CapabilityStreamSchema,
   CapabilityStreamStatusSchema,
+  capabilityActionPolicy,
   capabilityResultSchema,
+  NormalizedCapabilityCallSchema,
 } from "../contracts/capabilities";
 import type { RequestAuthority } from "../server";
 import { AppAccessDeniedError, appAccessDeniedBody } from "../server/middleware/app-access";
 import { hasOAuthScope } from "../server/oauth-scope";
 import { invocationAuthorityFromRequest } from "../services/identity/invocation-authority";
+import { invocationAuthorityFromMandate } from "../services/identity/invocation-mandate";
 import { capabilityInvocationOperation } from "../services/identity/invocation-operations";
+import type { InvocationAuthority } from "../services/identity/invocation-token";
 import { issueInvocationToken as signInvocationToken } from "../services/identity/issue-invocation";
 import { withActiveIdentitySigner } from "../services/identity/key-ring";
 import { logger } from "../services/logging";
@@ -39,6 +45,10 @@ const Grant = z.object({
   authority: z.string(),
   stream: CapabilityStreamSchema,
   requestId: z.string(),
+  codeCall: NormalizedCapabilityCallSchema.optional(),
+  codeExpiresAt: z.number().int().positive().optional(),
+  // Authenticated redemption identity, independent of the encrypted reference's transport encoding.
+  redemptionId: z.uuid().optional(),
 });
 const binding = (authority: RequestAuthority) => JSON.stringify(invocationAuthorityFromRequest(authority));
 export async function sealCapabilityStream(
@@ -48,34 +58,95 @@ export async function sealCapabilityStream(
     kind: "queries" | "actions";
     capabilityId: string;
     schemaHash: string;
-    authority: RequestAuthority;
+    authority?: RequestAuthority;
+    /** Private Core continuation. No public request can supply this binding or call. */
+    code?: { binding: string; call: z.infer<typeof NormalizedCapabilityCallSchema>; expiresAt: number };
     requestId: string;
     origin?: z.infer<typeof CapabilityOriginSchema>;
     continuation?: string;
   },
 ): Promise<CapabilityStream> {
   if (Buffer.byteLength(stream.id) > 2048) throw new Error("Provider stream ID exceeds 2 KiB");
+  if (!params.authority && !params.code) throw new Error("Missing stream authority");
   const grant = Grant.parse({
     ...params,
     purpose: "capability-stream-v2",
     continuation: params.continuation ?? null,
-    authority: binding(params.authority),
+    authority: params.code ? `code:${params.code.binding}` : params.authority ? binding(params.authority) : "",
+    codeCall: params.code?.call,
+    codeExpiresAt: params.code?.expiresAt,
+    ...(params.code ? { redemptionId: randomUUID() } : {}),
     stream,
   });
-  return CapabilityStreamSchema.parse({ ...stream, id: await encryptSecret(grant) });
+  return CapabilityStreamSchema.parse({
+    ...stream,
+    expiresAt: params.code ? new Date(Math.min(Date.parse(stream.expiresAt), params.code.expiresAt)).toISOString() : stream.expiresAt,
+    id: await encryptSecret(grant),
+  });
 }
 const denied = (status = 403, code = "STREAM_DENIED") =>
   Response.json({ code, message: "Stream unavailable or not authorized" }, { status });
 
+/** Core-only inspection; does not redeem or authorize a transfer. */
+export async function inspectCodeStream(id: string, continuation: string) {
+  const grant = Grant.parse(await decryptSecret(id));
+  if (
+    grant.authority !== `code:${continuation}` ||
+    grant.continuation !== continuation ||
+    !grant.codeCall ||
+    !grant.redemptionId ||
+    Date.parse(grant.stream.expiresAt) <= Date.now() ||
+    !grant.codeExpiresAt ||
+    grant.codeExpiresAt <= Date.now()
+  )
+    throw new Error("Invalid Code file reference");
+  return { ...grant, codeCall: grant.codeCall, redemptionId: grant.redemptionId };
+}
+
+/** A fresh, authorized idempotent target call can continue the same provider reservation.
+ * This issues a NEW grant; the old run's reference and deadline never change. */
+export async function rebindCodeWriteStream(
+  stream: CapabilityStream,
+  code: NonNullable<Parameters<typeof sealCapabilityStream>[1]["code"]>,
+) {
+  const grant = Grant.parse(await decryptSecret(stream.id));
+  const previous = grant.continuation ? JSON.parse(grant.continuation) : null;
+  const current: unknown = JSON.parse(code.binding);
+  if (
+    !grant.codeCall ||
+    grant.kind !== "actions" ||
+    grant.stream.direction !== "write" ||
+    !Array.isArray(previous) ||
+    !Array.isArray(current) ||
+    previous[0] !== "code-file-v1" ||
+    previous[1] !== current[1] ||
+    capabilityCallDigest(grant.codeCall) !== capabilityCallDigest(code.call) ||
+    Date.parse(grant.stream.expiresAt) <= Date.now()
+  )
+    throw new Error("Code upload reservation unavailable");
+  return sealCapabilityStream(grant.stream, {
+    appId: grant.appId,
+    kind: grant.kind,
+    capabilityId: grant.capabilityId,
+    schemaHash: grant.schemaHash,
+    requestId: grant.requestId,
+    origin: grant.origin,
+    continuation: code.binding,
+    code,
+  });
+}
+
 /** A transfer continues an already-authorized operation; it cannot manufacture a new Action. */
 export async function dispatchCapabilityStream(
   request: Request,
-  authority: RequestAuthority,
+  authority: RequestAuthority | null,
   verb: string,
   dependencies: CapabilityDispatchDependencies & {
     recordStreamExecution?: typeof recordCapabilityExecution;
     continuation?: string;
     allow?: (operation: { appId: string; capabilityId: string }) => Promise<boolean>;
+    /** Verified runner bridge only; reissues through its fenced mandate wrapper. */
+    code?: { binding: string; mandate: NonNullable<import("./capabilities").CapabilityDispatchParams["mandate"]>; runId: string };
   } = {},
 ): Promise<Response> {
   const id = request.headers.get("x-cloud-stream-id");
@@ -87,25 +158,29 @@ export async function dispatchCapabilityStream(
     return denied();
   }
   try {
-    if (grant.authority !== binding(authority)) return denied();
+    if (dependencies.code) {
+      if (authority || !grant.codeCall || grant.authority !== `code:${dependencies.code.binding}`) return denied();
+    } else if (!authority || grant.codeCall || grant.authority !== binding(authority)) return denied();
   } catch {
     return denied();
   }
   if (grant.continuation !== (dependencies.continuation ?? null)) return denied();
   if (dependencies.allow && !(await dependencies.allow(grant))) return denied();
-  if (Date.parse(grant.stream.expiresAt) <= Date.now()) return denied(410, "STREAM_EXPIRED");
+  if (Date.parse(grant.stream.expiresAt) <= Date.now() || (grant.codeExpiresAt !== undefined && grant.codeExpiresAt <= Date.now()))
+    return denied(410, "STREAM_EXPIRED");
   if ((verb === "read") !== (grant.stream.direction === "read")) return denied();
-  if (!hasOAuthScope(authority, grant.kind === "actions" ? "write" : "read", "admin")) return denied();
+  if (authority && !hasOAuthScope(authority, grant.kind === "actions" ? "write" : "read", "admin")) return denied();
   const startedAt = new Date();
   let recorded = false;
   let destructive = false;
+  let issuedAuthority: InvocationAuthority | undefined;
   const record = async (status: number, errorCode: string | null = null) => {
     if (recorded || (verb !== "read" && verb !== "write")) return;
     recorded = true;
-    const actor = authority.actor;
-    const actorId = actor.kind === "user" ? actor.user.id : actor.serviceAccount.id;
-    const subject = authority.accessSubject;
-    const subjectId = subject.type === "user" ? subject.userId : subject.serviceAccountId;
+    const identity = authority ? invocationAuthorityFromRequest(authority) : issuedAuthority;
+    if (!identity) return;
+    const actorId = identity.sub;
+    const subjectId = identity.access_subject_id;
     await (dependencies.recordStreamExecution ?? recordCapabilityExecution)({
       requestId: grant.requestId,
       origin: grant.origin,
@@ -113,10 +188,10 @@ export async function dispatchCapabilityStream(
       capability: `${grant.appId}.${grant.capabilityId}`,
       kind: grant.kind === "queries" ? "query" : "action",
       destructive,
-      actorKind: actor.kind,
+      actorKind: identity.principal_type,
       actorId,
-      userId: actor.kind === "user" ? actor.user.id : (actor.delegatedUser?.id ?? null),
-      accessSubject: subjectId !== actorId ? { type: subject.type, id: subjectId } : null,
+      userId: identity.principal_type === "user" ? actorId : (identity.delegated_user_id ?? null),
+      accessSubject: subjectId !== actorId ? { type: identity.access_subject_type, id: subjectId } : null,
       status: status < 400 ? "succeeded" : status === 403 ? "denied" : status === 504 ? "timed_out" : "failed",
       errorCode,
       inputMeta: { type: "object", keys: [`stream.${verb}`], omittedKeys: 0 },
@@ -134,26 +209,59 @@ export async function dispatchCapabilityStream(
       !operation ||
       operation.schemaHash !== grant.schemaHash ||
       operation.stream?.direction !== grant.stream.direction ||
-      grant.stream.size > operation.stream.maxBytes
+      grant.stream.size > operation.stream.maxBytes ||
+      (dependencies.code &&
+        (("code" in operation && operation.code === false) ||
+          ("unattended" in operation && operation.unattended === false) ||
+          ("appOnly" in operation && operation.appOnly)))
     )
       return denied(409, "SCHEMA_MISMATCH");
     destructive = "destructive" in operation && operation.destructive;
     const signed = await (dependencies.withActiveSigner ?? withActiveIdentitySigner)(
       "invocation",
-      (signer, db) =>
-        (dependencies.signInvocation ?? signInvocationToken)(
-          {
-            targetAppId: grant.appId,
-            callingAppId: "core",
-            operation: capabilityInvocationOperation(grant.kind, grant.capabilityId),
-            schemaHash: operation.schemaHash,
-            authority: invocationAuthorityFromRequest(authority),
-            requestId: grant.requestId,
-            signer,
-            issuer: signer.issuer,
-          },
-          { db, groupsAdmin: signer.groupsAdmin },
-        ),
+      async (signer, db) => {
+        const sign = (identity: InvocationAuthority) => {
+          issuedAuthority = identity;
+          return (dependencies.signInvocation ?? signInvocationToken)(
+            {
+              targetAppId: grant.appId,
+              callingAppId: "core",
+              operation: capabilityInvocationOperation(grant.kind, grant.capabilityId),
+              schemaHash: operation.schemaHash,
+              authority: identity,
+              requestId: grant.requestId,
+              signer,
+              issuer: signer.issuer,
+            },
+            { db, groupsAdmin: signer.groupsAdmin },
+          );
+        };
+        const code = dependencies.code;
+        if (code && grant.codeCall) {
+          if (!dependencies.withMandateIssueAuthority) throw new Error("Code stream needs a fenced issuer");
+          const issued = await dependencies.withMandateIssueAuthority(
+            {
+              ...code.mandate,
+              expectedRevision: code.mandate.mandateRevision,
+              targetAppId: grant.appId,
+              operation: capabilityInvocationOperation(grant.kind, grant.capabilityId),
+              actionApproval: "none",
+              input: grant.codeCall.input,
+              call: grant.codeCall,
+              capabilityApproval: "approval" in operation ? (operation.approval ?? "always") : "always",
+              capabilityPolicy: capabilityActionPolicy(entry.manifest, grant.capabilityId),
+              requestId: grant.requestId,
+              codeRun: true,
+            },
+            async (current) => sign({ ...invocationAuthorityFromMandate(current), workload_run: code.runId }),
+            { db, groupsAdmin: signer.groupsAdmin },
+          );
+          if (!issued.ok) throw new Error("Code stream mandate unavailable");
+          return issued.data;
+        }
+        if (!authority) throw new Error("Missing stream authority");
+        return sign(invocationAuthorityFromRequest(authority));
+      },
       { signal, timeoutMs: 30_000 },
     );
     const headers = new Headers({
@@ -236,13 +344,18 @@ export async function dispatchCapabilityStream(
       return denied(502, "STREAM_FAILED");
     }
     if (response.ok) {
-      const parsed = (verb === "write" ? capabilityResultSchema(z.unknown()) : CapabilityStreamStatusSchema).safeParse(receipt.data);
+      const resultSchema = capabilityResultSchema(z.fromJSONSchema(operation.dataSchema));
+      const parsed = (verb === "write" ? resultSchema : CapabilityStreamStatusSchema).safeParse(receipt.data);
       if (!parsed.success) {
         await record(502, "STREAM_FAILED");
         return denied(502, "STREAM_FAILED");
       }
       const nested =
         verb === "write" ? parsed.data : "state" in parsed.data && parsed.data.state === "completed" ? parsed.data.result : null;
+      if (nested && !resultSchema.safeParse(nested).success) {
+        await record(502, "STREAM_FAILED");
+        return denied(502, "STREAM_FAILED");
+      }
       if (nested && typeof nested === "object" && "stream" in nested) {
         await record(502, "STREAM_FAILED");
         return denied(502, "STREAM_FAILED");

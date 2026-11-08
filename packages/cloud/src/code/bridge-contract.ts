@@ -58,6 +58,8 @@ export const codeBridgeDispatchRefusalKind = (code: string, targetStatus?: numbe
 };
 /** Core's admitted version mandate; the target app still resolves current resource rights. */
 export type CodeBridgeAuthority = {
+  /** Atomically spends a run-bound file reference before any target effect. False means already spent. */
+  consumeFileRef?: (digest: string) => Promise<boolean>;
   /** Internal observation only. Core persists this reason with the call result; never grants authority. */
   onRefusal?: (kind: CodeBridgeRefusalKind) => void;
   /** Original capability error for Core accounting, before the runner's payload-free error projection. */
