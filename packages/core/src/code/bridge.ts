@@ -13,6 +13,7 @@ import {
 import type { CodeRunTokenClaims } from "@k2b/cloud/code/run-token";
 import { RunnerCallResponseSchema } from "@k2b/cloud/code/runner";
 import { CodeCheckedVersionManifestSchema } from "@k2b/cloud/contracts";
+import { AppEventEnvelopeSchema } from "@k2b/cloud/events";
 import { ratelimit } from "@k2b/cloud/server";
 import { coreSettings, mandates } from "@k2b/cloud/services";
 import type { SQL } from "bun";
@@ -224,7 +225,13 @@ export function createCodeBridgeHost(options: { checkRate?: (codeId: string) => 
             if (error instanceof CodeBridgeRefusal) issuanceRefusal = error;
             throw error;
           }
-          return mandates.withIssueAuthority(input, use, options);
+          const [run] = await options.db<
+            { trigger: string; input: unknown }[]
+          >`SELECT trigger,input FROM code.runs WHERE id=${call.claims.runId}::uuid`;
+          if (!run) denied("runner_lease_lost", 409);
+          const event = run.trigger === "event" ? AppEventEnvelopeSchema.parse(run.input) : null;
+          const trigger = event ? { type: event.type, subject: event.subject, ...(event.place ? { place: event.place } : {}) } : null;
+          return mandates.withIssueAuthority(input, (authority) => use({ ...authority, trigger }), options);
         };
         response = await execute({
           consumeFileRef: (digest) =>
