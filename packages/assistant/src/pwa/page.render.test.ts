@@ -88,6 +88,7 @@ const spies = [
   } as unknown as Awaited<ReturnType<typeof ai.assistantAiSettingsState>>),
   spyOn(ai, "getLiveDictationStatus").mockResolvedValue({ available: false } as Awaited<ReturnType<typeof ai.getLiveDictationStatus>>),
   spyOn(sidebar, "loadAssistantSidebarSnapshot").mockResolvedValue({
+    counts: { unread: 0, needsAttention: 0, places: { total: 0, unread: 0, needsAttention: 0 } },
     conversations: [{ ...own, id: own.shortId }],
     projects: [],
     doneCount: 0,
