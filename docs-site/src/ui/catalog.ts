@@ -423,6 +423,12 @@ const cloudPages: UiCatalogPage[] = [
     icon: "ti ti-shield-check",
     summary: "List and decide the signed-in person's open Action approvals for one app, one resource, or all apps.",
   },
+  {
+    slug: "capability-views",
+    title: "Cloud capability views",
+    icon: "ti ti-layout-cards",
+    summary: "Draw an app's result, approval details, or search preview from checked blocks, with choices and drafts.",
+  },
 ];
 
 const entry = (
