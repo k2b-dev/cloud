@@ -9,7 +9,8 @@ Code is a small TypeScript project that Cloud checks, stores as an immutable
 version and runs in a sandbox. It imports only `@sdk`, which Cloud generates
 from the live capability catalog, and its own relative files. Load the tools
 above through `load_tools` if they are missing. Their JSON results are the
-same contracts as `cld code`; keep them intact.
+same contracts as `cld code`; keep them intact. Cloud shows Code under the
+name **feat/code**: a person who says feat/code means Code.
 
 ## Workflow
 
