@@ -544,6 +544,42 @@ describe("@k2b/ui feedback runtime", () => {
     dom.cleanup();
   });
 
+  test("a custom slot gets its round close button only while its owner lets it close, and asks the owner", async () => {
+    const dom = createDomTestHarness();
+    dom.root.className = "k2b-ui";
+    const { toast } = await import("../src/feedback/toast");
+    const content = dom.document.createElement("section");
+    content.innerHTML = '<button type="button">Cancel all</button>';
+    let closes = 0;
+    const slot = toast.custom(content, { label: "Upload", onClose: () => closes++ });
+    const card = dom.document.querySelector<HTMLElement>("[data-k2b-toast][data-custom]")!;
+    // While work runs: no close button at all, and Escape does not close it.
+    expect(card.dataset.closable).toBe("false");
+    expect(card.querySelector(".k2b-toast__close")).toBeNull();
+    content.querySelector("button")!.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    expect(closes).toBe(0);
+    expect(card.dataset.closing).toBeUndefined();
+
+    slot.update({ closable: true });
+    const close = card.querySelector<HTMLButtonElement>(":scope > .k2b-toast__close")!;
+    expect(card.firstElementChild).toBe(close);
+    expect(close.getAttribute("aria-label")).toBe("Close: Upload");
+    close.click();
+    content.querySelector("button")!.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    // The owner decides; the slot stays until it dismisses it.
+    expect(closes).toBe(2);
+    expect(card.dataset.closing).toBeUndefined();
+
+    // Running again takes the close button away and hands its focus to the content.
+    close.focus();
+    slot.update({ closable: false });
+    expect(card.querySelector(".k2b-toast__close")).toBeNull();
+    expect(dom.document.activeElement?.textContent).toBe("Cancel all");
+    slot.dismiss();
+    expect(card.dataset.closing).toBe("true");
+    dom.cleanup();
+  });
+
   test("exposes search as an active-descendant combobox and normalizes form cancellation", async () => {
     const dom = createDomTestHarness();
     dom.root.className = "k2b-ui";

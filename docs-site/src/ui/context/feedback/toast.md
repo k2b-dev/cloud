@@ -67,6 +67,7 @@ import {
   type ToastLink,
   type ToastOptions,
   type ToastSlot,
+  type ToastSlotOptions,
 } from "@k2b/ui";
 ```
 
@@ -184,15 +185,39 @@ away, and fold and fan out there, while the slot keeps its place. It cannot be
 swiped away.
 
 ```ts
-const slot = toast.custom(panelElement);
-// later, when the work is done or the user closes it
+const slot = toast.custom(panelElement, {
+  label: "Upload",
+  closable: false,
+  onClose: () => uploads.close(),
+});
+// once nothing runs any more
+slot.update({ closable: true });
+// when the owner closes it
 slot.dismiss();
 ```
 
-The application owns everything inside: layout, a close button, a live region
-for announcements, and when to dismiss. A custom slot has no timer, does not
-count toward the visible limit, and
-`toast.dismissAll()` leaves it in place. When a later toast arrives, the rail
+| Option | Type | Default | Purpose |
+| --- | --- | --- | --- |
+| `label` | `string` | "Notifications" | Names the close button: "Close: Upload". |
+| `closable` | `boolean` | `false` | Shows the round close button and allows a swipe and Escape to close it. |
+| `onClose` | `() => void` | dismisses the slot | Called by the close button, a swipe, or Escape; the owner closes the slot with `dismiss`. |
+
+Leave `closable` off while work runs, so running work never disappears
+silently: the slot then has no close button and cannot be swiped, and Escape
+folds the stack and returns focus. Turn it on with `slot.update` once nothing
+runs. The application owns everything inside: layout, a live region for
+announcements, and when to dismiss. A custom slot has no timer, does not count
+toward the visible limit, and `toast.dismissAll()` leaves it in place.
+
+Inside the slot, compose the toast's own parts: `k2b-toast__icon
+k2b-icon-tile` with a `data-tone`, `k2b-toast__title` and
+`k2b-toast__description`, and the bar `k2b-toast__bar` with one or more
+`k2b-toast__bar-fill` children. A fill moves by transform only:
+`--k2b-toast-bar-value` is its fraction from 0 to 1, `--k2b-toast-bar-start`
+where it begins, and `data-tone` (`success`, `danger`, `muted`) its colour.
+The Files upload is the reference: every file with its progress, the total,
+the remaining time of a long upload, Cancel all, collapsing to one line, a
+retry for failed files, and View when done. When a later toast arrives, the rail
 keeps the scroll offsets and the keyboard focus inside the slot, so a
 scrolled list or a focused control stays where it was. In Solid, create the element inside a
 component or effect so it keeps the locale and other context, and call

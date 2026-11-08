@@ -67,8 +67,9 @@ async function mount() {
     current().resolve(outcome);
     await wait();
   };
+  // The slot around the panel holds its round close button.
   const button = (label: string) =>
-    [...(panel()?.querySelectorAll<HTMLButtonElement>("button") ?? [])].find(
+    [...(panel()?.closest("[data-k2b-toast]")?.querySelectorAll<HTMLButtonElement>("button") ?? [])].find(
       (entry) => entry.getAttribute("aria-label") === label || entry.textContent?.trim() === label,
     );
   return { dom, panel, text, rows, add, current, finish, button, live, queue: () => queue };
@@ -86,49 +87,56 @@ describe("upload panel", () => {
     toast.dismissAll();
   });
 
-  test("bar, percent and count tell the same byte-weighted story", async () => {
+  test("bar, bytes and count tell the same byte-weighted story", async () => {
     const ui = await mount();
     await ui.add(file("a.pdf", 10), file("b.pdf", 10), file("video.mp4", 80));
     const panel = ui.panel()!;
+    // The socket at the rail's edge: no close button and no swipe while the upload runs.
     expect(panel.closest("[data-k2b-toast-container]")).not.toBeNull();
+    expect(panel.closest<HTMLElement>("[data-k2b-toast]")!.dataset.closable).toBe("false");
+    expect(ui.button("Close: Upload")).toBeUndefined();
     expect(ui.text(".filesv2-upload__title")).toBe("Uploading to “Projects”");
-    expect(ui.text(".filesv2-upload__percent")).toBe("0%");
+    expect(ui.text(".filesv2-upload__summary")).toBe("0 B of 100 B");
     expect(ui.text(".filesv2-upload__count")).toBe("0 of 3 files");
-    expect(ui.button("Cancel upload")?.textContent?.trim()).toBe("Cancel");
+    expect(ui.button("Cancel upload")?.textContent?.trim()).toBe("Cancel all");
     await ui.finish();
     await ui.finish();
     ui.current().progress(40);
     await wait();
     const bar = panel.querySelector<HTMLElement>('[role="progressbar"]')!;
-    expect(ui.text(".filesv2-upload__percent")).toBe("60%");
+    expect(ui.text(".filesv2-upload__summary")).toBe("60 B of 100 B");
     expect(bar.getAttribute("aria-valuenow")).toBe("60");
     expect(bar.getAttribute("aria-valuetext")).toBe("60%, 2 of 3 files uploaded");
-    expect(panel.querySelector<HTMLElement>(".filesv2-upload__bar-done")!.style.width).toBe("60%");
+    expect(panel.querySelector<HTMLElement>(".filesv2-upload__bar-done")!.style.getPropertyValue("--k2b-toast-bar-value")).toBe("0.6");
     expect(ui.text(".filesv2-upload__count")).toBe("2 of 3 files");
     expect(ui.rows()).toEqual([
       { name: "a.pdf", status: "success" },
       { name: "b.pdf", status: "success" },
       { name: "video.mp4", status: "working" },
     ]);
-    // The visible percent is decoration; the progress bar carries the value for assistive technology.
-    expect(panel.querySelector(".filesv2-upload__percent")!.getAttribute("aria-hidden")).toBe("true");
+    // The file in flight shows its own share beside a small bar.
+    expect(panel.querySelector(".filesv2-upload-row__percent")?.textContent).toBe("50%");
     ui.current().progress(80);
     await wait();
-    expect(ui.text(".filesv2-upload__percent")).toBe("99%");
+    expect(bar.getAttribute("aria-valuenow")).toBe("99");
     await ui.finish();
     expect(ui.text(".filesv2-upload__title")).toBe("Uploaded to “Projects”");
     expect(bar.getAttribute("aria-valuenow")).toBe("100");
     expect(panel.dataset.expanded).toBe("false");
+    // Done: nothing runs, so the slot can be closed.
+    expect(panel.closest<HTMLElement>("[data-k2b-toast]")!.dataset.closable).toBe("true");
+    expect(ui.button("Close: Upload")).toBeDefined();
   });
 
   test("files added while running join the same list and the totals grow", async () => {
     const ui = await mount();
     await ui.add(file("a.pdf", 50), file("b.pdf", 50));
     await ui.finish();
-    expect(ui.text(".filesv2-upload__percent")).toBe("50%");
+    const value = () => ui.panel()!.querySelector('[role="progressbar"]')!.getAttribute("aria-valuenow");
+    expect(value()).toBe("50");
     await ui.add(file("Scans/c.pdf", 100), file("Scans/d.pdf", 100));
     expect(ui.text(".filesv2-upload__count")).toBe("1 of 4 files");
-    expect(ui.text(".filesv2-upload__percent")).toBe("16%");
+    expect(value()).toBe("16");
     expect(ui.rows().map((row) => row.name)).toEqual(["a.pdf", "b.pdf", "c.pdf", "d.pdf"]);
     await wait(80);
     expect(ui.live.at(-1)).toBe("2 files added. Now 4 files in the upload.");
@@ -156,7 +164,7 @@ describe("upload panel", () => {
     expect(ui.text(".filesv2-upload__count")).toBe("1 of 3 files");
     expect(ui.panel()!.querySelector(".filesv2-upload__errors")).toBeNull();
     expect(ui.button("Upload 2 files again")?.textContent?.trim()).toBe("Try again");
-    expect(ui.button("Dismiss notification")).toBeDefined();
+    expect(ui.button("Close: Upload")).toBeDefined();
     expect(ui.panel()!.dataset.expanded).toBe("true");
     retry.click();
     await wait();
@@ -287,7 +295,8 @@ describe("upload panel", () => {
     ui.button("Cancel upload")!.focus();
     ui.button("Cancel upload")!.click();
     await wait();
-    expect(ui.dom.document.activeElement?.getAttribute("aria-label")).toBe("Dismiss notification");
+    // The slot's round close button appears once nothing runs and takes the focus.
+    expect(ui.dom.document.activeElement?.getAttribute("aria-label")).toBe("Close: Upload");
     cleanup();
     transfers.length = 0;
 
@@ -295,7 +304,7 @@ describe("upload panel", () => {
     await done.add(file("a", 1));
     done.button("Cancel upload")!.focus();
     await done.finish();
-    expect(done.dom.document.activeElement?.getAttribute("aria-label")).toBe("Dismiss notification");
+    expect(done.dom.document.activeElement?.getAttribute("aria-label")).toBe("Close: Upload");
   });
 
   test("a row retry by keyboard keeps focus in the list; by pointer it leaves focus alone", async () => {
@@ -318,7 +327,7 @@ describe("upload panel", () => {
     expect(ui.dom.document.activeElement?.classList.contains("filesv2-upload__scroll")).toBeTrue();
   });
 
-  test("the live region says milestones, failures and the summary, never single percent steps", async () => {
+  test("the live region says changes of state, failures and the summary, never progress", async () => {
     const ui = await mount();
     await ui.add(file("big.bin", 100), file("small.bin", 100));
     for (let bytes = 1; bytes <= 100; bytes++) {
@@ -329,12 +338,7 @@ describe("upload panel", () => {
     await ui.finish();
     ui.current().reject(new Error("Connection lost"));
     await wait(100);
-    expect(ui.live).toEqual([
-      "Upload started: 2 files.",
-      "25% uploaded, 0 of 2 files.",
-      "50% uploaded, 0 of 2 files.",
-      "Upload finished. 1 of 2 files uploaded, 1 failed.",
-    ]);
+    expect(ui.live).toEqual(["Upload started: 2 files.", "Upload finished. 1 of 2 files uploaded, 1 failed."]);
   });
 
   test("names show their folder only when two files in the batch share them; screen readers always get the path", async () => {
@@ -355,17 +359,22 @@ describe("upload panel", () => {
     expect(ui.text(".filesv2-upload__count")).toBe("0 of 2000 files");
   });
 
-  test("a quiet success leaves after five seconds, not while the pointer rests on it", async () => {
+  test("a finished upload leaves after eight seconds, like a toast with an action", async () => {
+    const ui = await mount();
+    await ui.add(file("a.pdf", 1));
+    await ui.finish();
+    await wait(8300);
+    expect(ui.panel()).toBeNull();
+    expect(ui.queue().batch.rows).toHaveLength(0);
+  }, 15_000);
+
+  test("a finished upload stays while the pointer rests on it", async () => {
     const ui = await mount();
     await ui.add(file("a.pdf", 1));
     await ui.finish();
     const panel = ui.panel()!;
     panel.dispatchEvent(new ui.dom.window.Event("pointerenter") as unknown as Event);
-    await wait(5300);
+    await wait(8300);
     expect(panel.isConnected).toBeTrue();
-    panel.dispatchEvent(new ui.dom.window.Event("pointerleave") as unknown as Event);
-    await wait(5300);
-    expect(ui.panel()).toBeNull();
-    expect(ui.queue().batch.rows).toHaveLength(0);
   }, 15_000);
 });
