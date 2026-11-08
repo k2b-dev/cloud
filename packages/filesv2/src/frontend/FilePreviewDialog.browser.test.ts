@@ -198,14 +198,17 @@ const show = async (tab: Page, name: string, options: { editable?: boolean; read
   await tab.waitForSelector(".filesv2-preview-dialog[open]");
   await settle(tab);
 };
-/** Whether the icon font is still on its way: a held test measures once before it arrives and once after. */
+/**
+ * Whether the icon font is still on its way: a held test measures once before it arrives and once after. A split
+ * font leaves the faces the page does not use unloaded, so only the faces it asked for count.
+ */
 const iconFont = (tab: Page) =>
   tab.evaluate(() => {
-    let status: string | undefined;
+    const statuses = new Set<string>();
     document.fonts.forEach((face) => {
-      if (face.family === "tabler-icons") status = face.status;
+      if (face.family === "tabler-icons" && face.status !== "unloaded") statuses.add(face.status);
     });
-    return status;
+    return [...statuses].join(" ");
   });
 type Box = { left: number; top: number; width: number; height: number };
 const box = (tab: Page, selector: string): Promise<Box> =>
