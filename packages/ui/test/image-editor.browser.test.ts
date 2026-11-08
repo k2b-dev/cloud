@@ -425,6 +425,7 @@ describe("public ImageEditor interactions", () => {
     try {
       await selectTool(page, "Mark up");
       await markTool(page, "Text").click();
+      await settled(page);
       const image = await imageBox(page);
       await page.mouse.click(image.x + image.width * 0.3, image.y + image.height * 0.6);
       const text = page.getByRole("textbox", { name: "Type on the photo", exact: true });
@@ -436,6 +437,7 @@ describe("public ImageEditor interactions", () => {
       await text.fill("Test note");
       await page.keyboard.press("Enter");
       await markTool(page, /^Redact/).click();
+      await settled(page);
       await drag(page, [0.2, 0.2], [0.4, 0.4]);
       expect(await centerPixel(page)).toEqual([0, 0, 0, 255]);
       await page.getByRole("button", { name: "Undo", exact: true }).click();
@@ -458,6 +460,7 @@ describe("public ImageEditor interactions", () => {
       await page.evaluate(() => {
         window.requestAnimationFrame = () => 0;
       });
+      // settled: animation frames are stubbed on purpose; the image stood still before the stub.
       await drag(page, [0.2, 0.2], [0.4, 0.4], false);
       expect(await centerPixel(page)).toEqual([0, 0, 0, 255]);
       await page.getByRole("button", { name: "Undo", exact: true }).click();
@@ -477,6 +480,7 @@ describe("public ImageEditor interactions", () => {
       const original = await canvas.evaluate((element) => (element as HTMLCanvasElement).toDataURL());
       for (const tool of ["Pen", "Marker", "Arrow", "Rectangle", "Ellipse"]) {
         await markTool(page, tool).click();
+        await settled(page);
         await drag(page, [0.25, 0.25], [0.6, 0.6]);
         expect(await canvas.evaluate((element) => (element as HTMLCanvasElement).toDataURL())).not.toBe(original);
         expect(await dirty(page)).toBe("true");
@@ -496,10 +500,13 @@ describe("public ImageEditor interactions", () => {
     try {
       await selectTool(page, "Mark up");
       await markTool(page, "Rectangle").click();
+      await settled(page);
       await drag(page, [0.1, 0.1], [0.3, 0.3]);
       await markTool(page, "Arrow").click();
+      await settled(page);
       await drag(page, [0.5, 0.5], [0.7, 0.6]);
       await markTool(page, /^Redact/).click();
+      await settled(page);
       await drag(page, [0.6, 0.2], [0.8, 0.3]);
       const names = () => page.locator(".k2b-image-editor__layer-name").allInnerTexts();
       expect(await names()).toEqual(["Redaction 1", "Arrow", "Rectangle"]);
@@ -512,6 +519,7 @@ describe("public ImageEditor interactions", () => {
       expect(await names()).toEqual(["Redaction 1", "Rectangle", "Arrow"]);
       expect(await page.evaluate(() => document.activeElement?.textContent)).toContain("Rectangle");
       // Clicking a mark on the canvas selects it; the canvas shows the selection box.
+      await settled(page);
       const image = await imageBox(page);
       await page.mouse.click(image.x + image.width * 0.1, image.y + image.height * 0.2);
       await page.locator(".k2b-image-editor__selection").waitFor();
