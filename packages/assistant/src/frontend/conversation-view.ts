@@ -26,7 +26,7 @@ export const conversationStatusPresentation = (
   if (conversation.runStatus === "running" || conversation.runStatus === "queued") {
     return { label: conversation.runStatus === "queued" ? t.queued : t.running, icon: spinner, tone: "progress" };
   }
-  if (conversation.runStatus === "failed") return { label: t.failed, icon: "ti ti-alert-circle", tone: "danger" };
+  if (conversation.runStatus === "failed") return { label: t.failed, icon: "ti ti-alert-circle assistant-chat-failed", tone: "danger" };
   // A CSS dot as well, in the action color of unread marks.
   if (conversation.unreadCompletion) return { label: t.newResponse, icon: "assistant-chat-unread", tone: "accent" };
   return null;

@@ -334,6 +334,14 @@ describe(`Assistant chat list in ${browserName}`, () => {
       expect(marks.every((mark) => mark.ink >= 8)).toBe(true);
       expect(marks.find((mark) => mark.title === "Rechnungen Oktober")?.color).toBe(plum);
       expect(marks.find((mark) => mark.title === "Urlaubsplanung 2027")?.color).not.toBe(plum);
+      // Waiting and unread are both dots: only the unread answer's title is bold, so they differ beyond color.
+      const bold = await page.evaluate(() =>
+        Array.from(document.querySelectorAll("#menu .k2b-navigation__row:not([data-active])"), (row) => {
+          const title = row.querySelector(".k2b-navigation__copy > span")!;
+          return [title.textContent, Number(getComputedStyle(title).fontWeight) >= 600];
+        }).filter(([, strong]) => strong),
+      );
+      expect(bold).toEqual([["Urlaubsplanung 2027", true]]);
       expect(after.headings).toEqual(before.headings);
       const boxes = (rows: typeof after.rows) => rows.map(({ status: _status, ...row }) => row);
       expect(boxes(after.rows)).toEqual(boxes(before.rows));
@@ -389,12 +397,8 @@ describe(`Assistant chat list in ${browserName}`, () => {
         const current = await rows(page);
         return {
           headings: current.headings,
-          rows: current.rows.map(({ marker: _marker, label, ...row }) => ({
-            ...row,
-            labelX: label.x,
-            labelY: label.y,
-            labelHeight: label.height,
-          })),
+          // The title keeps its whole box, its width too: the mark's slot is there before any status.
+          rows: current.rows.map(({ marker: _marker, ...row }) => row),
         };
       };
 

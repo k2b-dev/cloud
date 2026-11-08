@@ -121,7 +121,7 @@ describe("Assistant sidebar", () => {
     expect(rows.map(({ actions, ...row }) => ({ ...row, done: actions.includes("Mark chat done") }))).toEqual([
       { id: "working", unread: false, mark: spinner, done: false },
       { id: "waiting", unread: false, mark: "assistant-chat-waiting", done: false },
-      { id: "broken", unread: false, mark: "ti ti-alert-circle", done: true },
+      { id: "broken", unread: false, mark: "ti ti-alert-circle assistant-chat-failed", done: true },
       { id: "fresh", unread: true, mark: "assistant-chat-unread", done: true },
       { id: "quiet", unread: false, mark: undefined, done: true },
     ]);
@@ -129,10 +129,14 @@ describe("Assistant sidebar", () => {
     // The phone navigation starts from the same marks.
     const snapshot = /<script[^>]*data-cloud-workspace-navigation[^>]*>(.*?)<\/script>/s.exec(rendered)?.[1];
     const phone = (JSON.parse(snapshot!) as { items: NavigationItem[] }).items.flatMap((item) => item.children ?? []);
+    expect(phone.filter((item) => item.unread).map((item) => item.id)).toEqual(["chat:fresh"]);
+    // The collapsed rail's chat menu names each status with the chat.
+    expect(rendered).toContain('aria-label="Report, Failed"');
+    expect(rendered).toContain('aria-label="Answer, New response"');
     expect(phone.filter((item) => item.id.startsWith("chat:")).map((item) => [item.id, item.status?.icon ?? null])).toEqual([
       ["chat:working", spinner],
       ["chat:waiting", "assistant-chat-waiting"],
-      ["chat:broken", "ti ti-alert-circle"],
+      ["chat:broken", "ti ti-alert-circle assistant-chat-failed"],
       ["chat:fresh", "assistant-chat-unread"],
       ["chat:quiet", null],
     ]);

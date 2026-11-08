@@ -410,6 +410,8 @@
   block-size: 1rem;
   font-size: .875rem;
 }
+/* A failed run keeps its danger ink in every list, also in menus that carry no tone. */
+.k2b-ui .assistant-chat-failed { color: var(--k2b-danger-text); }
 /* Work in progress: the AI's plum, also where the surrounding tone is neutral, and a calm turn. */
 .k2b-ui .assistant-chat-progress { color: var(--k2b-ai-accent); }
 .k2b-ui .assistant-chat-progress.animate-spin { animation-duration: 1.6s; }

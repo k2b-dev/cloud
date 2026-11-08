@@ -183,14 +183,17 @@ function ConversationSidebarItem(props: {
           : undefined
       }
       meta={
-        <Show when={marker()}>
-          {(item) => (
-            <span class="assistant-chat-marker" data-tone={item().tone} title={item().label}>
-              <i class={item().icon} aria-hidden="true" />
-              <span class="sr-only">{item().label}</span>
-            </span>
-          )}
-        </Show>
+        // The slot stays when the chat is quiet, so a status that comes or goes never changes the title's width.
+        <span class="assistant-chat-marker" data-tone={marker()?.tone} title={marker()?.label}>
+          <Show when={marker()}>
+            {(item) => (
+              <>
+                <i class={item().icon} aria-hidden="true" />
+                <span class="sr-only">{item().label}</span>
+              </>
+            )}
+          </Show>
+        </span>
       }
       preview={{
         label: text("Chat details"),
@@ -531,13 +534,15 @@ export default function AssistantSidebar(props: AssistantSidebarProps) {
   );
   // The collapsed rail's chat menu shows the same status as the rows, in place of the chat's icon.
   const collapsedChatMenu = () =>
-    chatConversations().map((conversation) => ({
-      label: conversation.title,
-      icon:
-        conversationStatusPresentation(conversation, locale(), conversation.id === activeConversationId())?.icon ??
-        (conversation.pinnedAt ? "ti ti-pin text-accent" : "ti ti-message"),
-      action: () => openConversationFromCommand(conversation),
-    }));
+    chatConversations().map((conversation) => {
+      const status = conversationStatusPresentation(conversation, locale(), conversation.id === activeConversationId());
+      return {
+        label: conversation.title,
+        ariaLabel: status ? `${conversation.title}, ${status.label}` : undefined,
+        icon: status?.icon ?? (conversation.pinnedAt ? "ti ti-pin text-accent" : "ti ti-message"),
+        action: () => openConversationFromCommand(conversation),
+      };
+    });
 
   const searchProject = () => props.projects?.find((project) => project.id === activeProjectId());
   const openSearch = () => {
@@ -556,6 +561,8 @@ export default function AssistantSidebar(props: AssistantSidebarProps) {
       action: `chat:${conversation.id}`,
       active,
       status: marker ? { icon: marker.icon, label: marker.label, tone: navigationTone[marker.tone] } : null,
+      // Unread is weight and dot, never color alone, as in the desktop list.
+      unread: marker?.tone === "accent",
       actions: [
         { id: `details:${conversation.id}`, action: `details:${conversation.id}`, label: text("Chat details"), icon: "ti ti-info-circle" },
         ...(!conversation.pinnedAt
