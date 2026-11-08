@@ -19,7 +19,7 @@ export type SankeyOptions = ChartOptions & {
 
 export { sankeyFrame, sankeyGraph, sankeyWidth } from "./sankey-size";
 
-import { sankeyFrame, sankeyGraph, sankeyWidth } from "./sankey-size";
+import { sankeyFrame, sankeyGraph } from "./sankey-size";
 
 /** A skipped stage has a private slot so a long link cannot pass through another node. */
 export function sankeyLayout(spec: SankeyOptions, size = { width: spec.width ?? 480, height: spec.height ?? 280 }) {

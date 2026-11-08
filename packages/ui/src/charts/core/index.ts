@@ -16,7 +16,8 @@ export * from "./inspection";
 export { map } from "./map";
 export * from "./render";
 export { chartRenderHeight, preservesAspectRatio } from "./render-size";
-export * from "./sankey";
+export { renderSankeySvg, type SankeyLink, type SankeyNode, type SankeyOptions, sankeyColor, sankeyLayout } from "./sankey";
+export { sankeyFrame, sankeyGraph, sankeyWidth } from "./sankey-size";
 export * from "./snapshot";
 export { charts } from "./svg";
 export {
