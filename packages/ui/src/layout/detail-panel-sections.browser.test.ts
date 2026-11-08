@@ -640,6 +640,7 @@ test("opening and closing a section moves only what lies below it", async () => 
         });
       const closed = await read();
       await page.locator("#collapsing .k2b-section__toggle").click();
+      await settled(page);
       const opened = await read();
       expect(await page.locator("#collapsing .k2b-section__toggle").getAttribute("aria-expanded")).toBe("true");
       expect({ row: opened.row, title: opened.title, chevron: opened.chevron, above: opened.above }).toEqual({
@@ -651,6 +652,7 @@ test("opening and closing a section moves only what lies below it", async () => 
       expect(opened.below).toBeGreaterThan(closed.below);
       await page.keyboard.press("Enter");
       expect(await page.locator("#collapsing .k2b-section__toggle").getAttribute("aria-expanded")).toBe("false");
+      await settled(page);
       expect((await read()).below).toBe(closed.below);
     } finally {
       await page.close();

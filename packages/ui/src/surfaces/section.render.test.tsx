@@ -165,6 +165,16 @@ describe("Section", () => {
     );
 
     expect(html.match(/<div class="k2b-section__part[^"]*" role="group" aria-labelledby="[^"]+"><h3/g)).toHaveLength(2);
+    // A panel section is an h3, so its parts are h4: the level reaches the parts before they are built.
+    const small = renderToString(() =>
+      createComponent(Section, {
+        title: "Customer",
+        get children() {
+          return createComponent(Section.Part, { title: "Contact", children: "Mobile" });
+        },
+      }),
+    );
+    expect(small).toMatch(/role="group" aria-labelledby="[^"]+"><h4/);
     expect(html).toMatch(/Mobile<\/div><div class="k2b-section__footer">Edit all<\/div>/);
   });
 });

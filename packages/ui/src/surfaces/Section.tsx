@@ -296,31 +296,29 @@ const SectionRoot = (props: SectionProps): JSX.Element => {
       </Show>
       <Show when={hasBody()}>
         <div ref={body} id={bodyId} class="k2b-section__body" hidden={!open()}>
-          <SectionLevel.Provider value={level()}>
-            <Show when={state() === "loading"}>
-              <SkeletonRows rows={local.loadingRows ?? 3} />
+          <Show when={state() === "loading"}>
+            <SkeletonRows rows={local.loadingRows ?? 3} />
+          </Show>
+          <Show when={state() === "error"}>
+            <div class="k2b-section__error" role="alert">
+              <i class="ti ti-alert-circle" aria-hidden="true" />
+              <span>{local.errorMessage ?? messages().couldNotLoad}</span>
+            </div>
+            <Show when={local.onRetry}>
+              {(retry) => (
+                <div class="k2b-section__footer">
+                  <Button type="button" size="sm" variant="secondary" onClick={() => retry()()}>
+                    <i class="ti ti-refresh" aria-hidden="true" />
+                    {ui().retry}
+                  </Button>
+                </div>
+              )}
             </Show>
-            <Show when={state() === "error"}>
-              <div class="k2b-section__error" role="alert">
-                <i class="ti ti-alert-circle" aria-hidden="true" />
-                <span>{local.errorMessage ?? messages().couldNotLoad}</span>
-              </div>
-              <Show when={local.onRetry}>
-                {(retry) => (
-                  <div class="k2b-section__footer">
-                    <Button type="button" size="sm" variant="secondary" onClick={() => retry()()}>
-                      <i class="ti ti-refresh" aria-hidden="true" />
-                      {ui().retry}
-                    </Button>
-                  </div>
-                )}
-              </Show>
-            </Show>
-            {resolved()}
-            <Show when={state() === "ready" && local.footer}>
-              <div class="k2b-section__footer">{local.footer}</div>
-            </Show>
-          </SectionLevel.Provider>
+          </Show>
+          {resolved()}
+          <Show when={state() === "ready" && local.footer}>
+            <div class="k2b-section__footer">{local.footer}</div>
+          </Show>
         </div>
       </Show>
     </section>
@@ -396,7 +394,14 @@ export function Field(props: FieldRowProps): JSX.Element {
  * content. On a page a section is a card with the light 1 px frame; inside another frame, and in a detail panel, it
  * stands flat, so cards never nest.
  */
-export const Section = SectionRoot as SectionComponent;
+const SectionWithLevel = (props: SectionProps): JSX.Element => (
+  // The level is provided before the body is built, so a part's heading sits one level below this section's.
+  <SectionLevel.Provider value={props.level ?? (props.size === "md" ? 2 : 3)}>
+    <SectionRoot {...props} />
+  </SectionLevel.Provider>
+);
+
+export const Section = SectionWithLevel as SectionComponent;
 Section.Part = SectionPart;
 
 export default Section;
