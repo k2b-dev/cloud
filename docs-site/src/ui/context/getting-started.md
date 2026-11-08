@@ -71,6 +71,13 @@ no-break space, and link underlines and letter spacing skip the icon. To keep an
 icon with its label, put both in a flex row with a gap, as buttons do, or inside
 running text in an element with `white-space: nowrap`.
 
+Besides the Tabler glyphs, the preset contains `ti ti-feat-code`, the sign of
+feat/code: the slash of its wordmark drawn as a small commit graph. It has the
+box, padding, and stroke of a Tabler icon and takes the text color, so it works
+in every `icon` prop and navigation slot. Use the icon where an icon stands for
+feat/code, such as navigation, app tiles, and tab bars; headers and labels that
+name feat/code use its wordmark.
+
 The Plex preset references separate WOFF2 files in its adjacent `fonts/`
 directory. Keep these assets with the stylesheet when copying it for direct
 serving. Their filenames contain a content hash, so they can be cached

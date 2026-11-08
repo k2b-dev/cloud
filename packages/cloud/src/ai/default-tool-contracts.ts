@@ -151,6 +151,7 @@ const flatChartSchema = () => {
               value: z.number().nullable().optional(),
               group: ChartLabel.optional(),
               prev: z.number().optional(),
+              rest: z.boolean().optional().describe("pareto: place this remainder category last; the label is free text."),
               values: z.array(z.number()).min(1).optional(),
               size: z.number().nonnegative().optional(),
               x: z.union([ChartLabel, z.number()]).optional(),

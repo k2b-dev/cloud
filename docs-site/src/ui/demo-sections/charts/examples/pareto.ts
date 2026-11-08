@@ -33,6 +33,7 @@ export const paretoExamples = [
         },
         {
           label: "Rest",
+          rest: true,
           value: 32000,
           prev: 29000,
         },
@@ -54,8 +55,8 @@ export const paretoExamples = [
       },
       {
         name: "data",
-        type: "{label,value,prev}[]",
-        description: "Nonnegative values; sorted descending, with Rest last.",
+        type: "{label,value,prev,rest?}[]",
+        description: "Nonnegative values; sorted descending, with rest: true categories last.",
       },
     ],
   },

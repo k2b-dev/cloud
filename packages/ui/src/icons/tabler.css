@@ -36,17 +36,35 @@
 }
 
 /*
- * Since Tabler 3 the filled glyphs live in a second font of their own. The
- * preset adds the few that Cloud uses under their Tabler 2 class names, each
- * drawn from Tabler's filled SVG, instead of loading that whole font. The
- * pseudo-element holds a Tabler glyph (that of `ti-code`) with transparent ink,
- * so its box is that of every Tabler icon in each size, engine, and font state;
- * a mask paints the drawing on that box in the text colour. Forced colours and
- * print keep the text colour: both would otherwise drop the background the mask
- * cuts out. `bun scripts/check.ts icon-names` fails on an icon name the preset
- * does not ship.
+ * Glyphs the Tabler font does not contain join the set under their class
+ * names, each drawn as a mask from `--k2b-ti-glyph`:
+ *
+ * - The feat/code brand glyph: the slash of the wordmark as a small commit
+ *   graph, an origin commit (ring) and a new commit (dot), in the logo's
+ *   drawing for small sizes, on Tabler's 24-unit grid with its 2-unit stroke
+ *   and padding. Like a Tabler outline icon it is drawn with strokes only (the
+ *   dot is a stroke as wide as its radius), so Cloud can also render it as an
+ *   app favicon from this drawing.
+ * - The filled glyphs that Cloud uses, which Tabler 3 moved into a second font
+ *   of their own, under their Tabler 2 class names and drawn from Tabler's
+ *   filled SVGs instead of loading that whole font.
+ *
+ * The pseudo-element holds a Tabler glyph (that of `ti-code`) with transparent
+ * ink, so its box is that of every Tabler icon in each size, engine, and font
+ * state; the mask paints the drawing on that box in the text colour. Forced
+ * colours and print keep the text colour: both would otherwise drop the
+ * background the mask cuts out. `bun scripts/check.ts icon-names` fails on an
+ * icon name the preset does not ship.
  */
-:is(.ti-circle-filled, .ti-cloud-filled, .ti-pin-filled, .ti-player-play-filled, .ti-point-filled, .ti-star-filled)::before {
+:is(
+    .ti-feat-code,
+    .ti-circle-filled,
+    .ti-cloud-filled,
+    .ti-pin-filled,
+    .ti-player-play-filled,
+    .ti-point-filled,
+    .ti-star-filled
+  )::before {
   content: "\ea77";
   -webkit-text-fill-color: transparent;
   background-color: currentColor;
@@ -55,6 +73,10 @@
   print-color-adjust: exact;
   -webkit-mask: var(--k2b-ti-glyph) center / contain no-repeat;
   mask: var(--k2b-ti-glyph) center / contain no-repeat;
+}
+
+.ti-feat-code::before {
+  --k2b-ti-glyph: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M10 14.5l4.8 -6' stroke-width='2.5'/%3E%3Ccircle cx='8' cy='17' r='3.4'/%3E%3Ccircle cx='16' cy='7' r='2.2' stroke-width='4.4'/%3E%3C/svg%3E");
 }
 
 .ti-circle-filled::before {

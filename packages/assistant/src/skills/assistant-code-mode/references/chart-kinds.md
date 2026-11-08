@@ -317,7 +317,7 @@ Use for: Finding the few categories that account for most of a total.
 Avoid for: Signed values or a time trend.
 
 - `labels` ([string,string]): Current and previous period names.
-- `data` ({label,value,prev}[]): Nonnegative values; sorted descending, with Rest last.
+- `data` ({label,value,prev,rest?}[]): Nonnegative values; sorted descending, with rest: true categories last.
 
 ```json
 {"kind":"pareto","title":"Revenue by region","labels":["2026","2025"],"data":[{"label":"North","value":140000,"prev":120000},{"label":"East","value":105000,"prev":97000},{"label":"South","value":86000,"prev":90000}]}
