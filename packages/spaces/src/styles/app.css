@@ -337,10 +337,11 @@
   background: var(--spaces-card-fill-hover);
 }
 .k2b-ui .spaces-kanban-card[data-spaces-kanban-card-state="held"] { --spaces-card-ring: inset 0 0 0 1.5px var(--ui-app-accent-border); }
-/* The drag ghost is a clone of the card on the page; it floats on layer 3. @k2b/stdlib sets a fixed inline shadow on
-   it, so only !important can replace it with the float token. Remove this rule once
-   https://github.com/k2b-dev/stdlib/issues/19 lets the host style the ghost. */
-body.k2b-ui > .spaces-kanban-card[aria-hidden="true"] { box-shadow: var(--k2b-shadow-float) !important; }
+/* The drag ghost is a clone of the card on the page; it floats on layer 3 with the float token, through the shadow
+   variable @k2b/stdlib (0.31.1) reads for the ghost. */
+body.k2b-ui > .spaces-kanban-card[aria-hidden="true"] {
+  --stdlib-dnd-ghost-shadow: var(--k2b-shadow-float);
+}
 .k2b-ui .spaces-kanban-card-title { color: var(--k2b-text); }
 .k2b-ui .spaces-kanban-card-status { background: color-mix(in srgb, var(--k2b-text) 6%, transparent); }
 @media (prefers-reduced-motion: reduce) { .k2b-ui :is(.spaces-kanban-card, .spaces-overview-activity-row) { transition: none; } }
