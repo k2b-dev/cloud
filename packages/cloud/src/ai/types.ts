@@ -1161,6 +1161,8 @@ export type AiCapabilityToolPresentation = {
   appAccent?: string;
   title: string;
   capabilityKind: "query" | "action";
+  /** Trusted historical place binding used to reject a revoked pending call on resume. */
+  place?: CloudResourceRef;
   /** Actions: the app's sentences in the locale of the turn, worded for each call by the chat. */
   sentences?: CapabilityActionSentences;
   /** Actions: field formats for the sentences and labelled fields for the generic sentence, in schema order. */

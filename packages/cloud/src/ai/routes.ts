@@ -38,7 +38,7 @@ import { readThemeFromCookieHeader } from "../shared/theme";
 import { type AiStoredActionReview, isLegacyActionReview, isUnknownActionOutcome, storedActionReview } from "./action-review";
 import { assistantAiSettingsState, peopleAiModels, resolveAssistantAudioModel, selectAssistantAiModel } from "./assistant-models";
 import { AI_AUDIO_MAX_BYTES } from "./audio-format";
-import { buildAiCapabilityCatalog } from "./capabilities";
+import { buildAiCapabilityCatalog, buildAiCapabilityHistoryCatalog } from "./capabilities";
 import { checkAiCapability, resolveAiCapabilityActor } from "./capability-execution";
 import { aiChatMessages } from "./chat/messages";
 import { getAiChatQuotas } from "./chat-quotas";
@@ -1335,7 +1335,7 @@ export const aiRoutes = (() => {
             message.message.role === "assistant"
               ? message.message.content.find((block) => block.type === "tool_call" && block.id === callId)
               : undefined;
-          const catalog = buildAiCapabilityCatalog(await discoverableAppEntries(appAccessAuthority(c), await listCapabilities()));
+          const catalog = buildAiCapabilityHistoryCatalog(await discoverableAppEntries(appAccessAuthority(c), await listCapabilities()));
           const presentation = message.meta?.toolPresentations?.[callId];
           const entry = catalog.find(
             (entry) =>

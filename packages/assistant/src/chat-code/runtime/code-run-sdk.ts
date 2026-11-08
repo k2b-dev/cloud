@@ -15,7 +15,14 @@ export async function codeRunSdk(authority: RequestAuthority | null, locale?: st
     if (!result.ok) throw new Error("Code SDK catalog unavailable. Retry the run.");
     bytes += Buffer.byteLength(JSON.stringify(result.data));
     if (bytes > CODE_CHECK_LIMITS.requestBytes) throw new Error("Code SDK exceeds the request budget.");
-    manifests.push(...result.data.apps.map((app) => app.manifest));
+    manifests.push(
+      ...result.data.apps.map((app) => ({
+        ...app.manifest,
+        actions: app.manifest.actions.filter(
+          (action) => !app.manifest.types.some((type) => type.assistant?.tools.includes(action.localId)),
+        ),
+      })),
+    );
     cursor = result.data.page.hasMore ? result.data.page.nextCursor : undefined;
   } while (cursor);
   return generateCodeSdk(manifests, { mode: "code_run" });
