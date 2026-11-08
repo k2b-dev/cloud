@@ -35,12 +35,14 @@ const inferredListView = (data: ListResponse): MailboxListView => data;
 // (the whole workspace and the open conversation's detail), workspace-list 4,145 bytes (the list plus the mailbox, the
 // reader's access and the saved views). The budget sits between them with room for row fields, and fails when a list
 // page carries the workspace or the selection again.
-const WORKSPACE_LIST_PAGE_TWO_MAX_BYTES = 5_000;
+const DRAFT_ROW_BYTES =
+  JSON.stringify({ drafts: { count: 1, editors: [{ kind: "user", id: "0".repeat(36), displayName: "owner" }] } }).length - 1;
+const WORKSPACE_LIST_PAGE_TWO_MAX_BYTES = 5_000 + 3 * DRAFT_ROW_BYTES;
 // Page 1 of the folder fixture on a folder switch, measured on 2026-10-19: workspace-route sends 48,069 bytes (the
 // list plus mailbox, folders, counts, identities and saved views), workspace-list 45,674 bytes (the list plus mailbox,
 // access and saved views). Fifty rows dominate this small mailbox; the budget sits between the two and fails when the
 // switch carries the folders, counts or identities again.
-const WORKSPACE_LIST_FOLDER_SWITCH_MAX_BYTES = 46_500;
+const WORKSPACE_LIST_FOLDER_SWITCH_MAX_BYTES = 46_500 + 50 * DRAFT_ROW_BYTES;
 const anchor = new Date("2026-10-01T12:00:00.000Z");
 const suite = suiteFor("database", "nats", "valkey");
 const contextFor = (user: User): MailRequestContext => ({
@@ -322,6 +324,19 @@ suite("Mail workspace list pages", () => {
       expect(list.listItems).toEqual([]);
       expect(list.eventsPage === null).toBe(list.eventsError !== null);
     });
+
+  test("conversation rows include visible draft counts and editor principals", async () => {
+    const scope = scopes()[0]!;
+    for (const token of ["owner", "reader"]) {
+      const list = await page("workspace-list", hrefFor(scope), token, scope);
+      expect(list.listItems.length).toBeGreaterThan(0);
+      for (const row of list.listItems)
+        expect(row.drafts).toEqual({
+          count: 1,
+          editors: [{ kind: "user", id: owner.id, displayName: owner.displayName }],
+        });
+    }
+  });
 
   test("work guard: list pages never rebuild the workspace or read the selection", async () => {
     const spies = [

@@ -155,6 +155,7 @@ describe("Mail SSR public boundary", () => {
       selectedMessageId: null,
       listItems: [
         {
+          drafts: { count: 0, editors: [] },
           id: ids.conversation,
           conversationId: ids.conversation,
           selectionKind: "conversation",

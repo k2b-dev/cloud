@@ -3480,6 +3480,24 @@ export const draftSchema = z.object({
 });
 export type MailDraft = z.infer<typeof draftSchema>;
 
+export const conversationListDraftsSchema = z
+  .object({
+    count: z.number().int().nonnegative(),
+    editors: z
+      .array(
+        z
+          .object({
+            kind: z.enum(["user", "service_account"]),
+            id: z.string().uuid(),
+            displayName: z.string().min(1),
+          })
+          .strict(),
+      )
+      .max(3),
+  })
+  .strict();
+export type ConversationListDrafts = z.infer<typeof conversationListDraftsSchema>;
+
 export type ConversationDraftSummary = Pick<MailDraft, "id" | "intent" | "subject" | "updatedAt"> & {
   bodyPreview: string;
   createdByDisplayName: string;

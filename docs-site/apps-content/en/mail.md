@@ -1049,3 +1049,10 @@ queued or scheduled delivery include the quote in the frozen content. Turning
 quoting off retains the existing send hash format. IMAP draft copies include the
 chosen history; editing a copy externally makes that history ordinary body text
 and turns automatic quoting off to avoid appending it twice.
+
+Conversation workspace rows include `drafts: { count, editors }`. Counts cover
+visible open user drafts only; scheduled, sending and closed drafts are excluded.
+`editors` names at most three distinct creators or last editors, newest first,
+with their `kind`, principal `id` and `displayName`. Assigned-only access uses
+the same conversation and source-message visibility as the draft list. This is
+stored draft attribution; conversation presence remains a separate signal.
