@@ -76,6 +76,7 @@ let imageMode: ImageMode = "ok";
 /** Milliseconds each image waits, so the loading state stays visible. */
 let imageDelay = 0;
 const ruleCalls: string[] = [];
+let imageRequests = 0;
 
 const harness = await buildHarness();
 const css =
@@ -108,6 +109,7 @@ const server = Bun.serve({
     const font = /^\/fonts\/([\w.-]+\.woff2)$/u.exec(pathname)?.[1];
     if (font) return new Response(Bun.file(resolve(dirname(plexPath), "fonts", font)), { headers: { "Content-Type": "font/woff2" } });
     if (pathname.startsWith("/api/mail/mailboxes/Box001/messages/Msg001/remote-images/")) {
+      imageRequests += 1;
       if (imageDelay) await Bun.sleep(imageDelay);
       if (imageMode === "fail") return new Response("Upstream failed", { status: 502 });
       if (imageMode === "large") return new Response(LARGE, { headers: { "Content-Type": "image/png" } });
@@ -407,13 +409,67 @@ describe("Mail external images row", () => {
         expect(failed.focused).toContain(width === "390" ? "Erneut laden" : "Erneut versuchen");
         await shoot(page, `6-fehler-${width}`);
         imageMode = "ok";
+        imageDelay = 300;
         await page.getByRole("button", { name: width === "390" ? "Erneut laden" : "Erneut versuchen" }).click();
+        // A retry goes straight to loading and then hands the focus to the quiet line's control.
+        await waitKind(page, "loading");
         await waitKind(page, "once");
+        await settled(page);
+        expect((await row(page)).focused).toContain("Immer laden");
       } finally {
+        imageDelay = 0;
         await page.context().close();
       }
     }, 30_000);
   }
+
+  test("a rule removed here never loads images again, also after the message body mounts again", async () => {
+    imageMode = "ok";
+    imageDelay = 0;
+    const page = await open(desktop, { allowRules: [RULE] });
+    try {
+      await waitKind(page, "always");
+      await shownImages(page, imageIds.length);
+      await page.getByRole("button", { name: "Ändern" }).click();
+      await page.getByRole("menuitem", { name: "Nicht mehr automatisch laden" }).click();
+      await waitKind(page, "once");
+      const requests = imageRequests;
+      // The snapshot still lists the removed rule until the server sends a new one.
+      await page.evaluate(() => window.remountMailMessageBody());
+      await waitKind(page, "blocked");
+      await Bun.sleep(500);
+      expect(imageRequests).toBe(requests);
+    } finally {
+      await page.context().close();
+    }
+  }, 30_000);
+
+  test("a snapshot that no longer lists a rule saved here ends the always line", async () => {
+    imageMode = "ok";
+    imageDelay = 0;
+    const page = await open(desktop);
+    try {
+      await page.getByRole("button", { name: "Weitere Optionen für externe Bilder" }).click();
+      await page.getByRole("menuitem", { name: `Immer von ${SENDER}` }).click();
+      await waitKind(page, "always");
+      const saved = { id: "00000000-0000-4000-8000-0000000000bb", scope: "sender", value: SENDER } as const;
+      const snapshot = (allowRules: RemoteContentAllowRule[]) =>
+        page.evaluate(
+          ({ allowRules, imageIds, sender, domain }) =>
+            window.updateMailMessageBody({
+              remoteContent: { imageIds, allowedByRule: allowRules.length > 0, allowRules, sender, domain },
+            }),
+          { allowRules, imageIds, sender: SENDER, domain: DOMAIN },
+        );
+      await snapshot([saved]);
+      await waitKind(page, "always");
+      // Removed elsewhere, such as in the rules dialog or another tab.
+      await snapshot([]);
+      await waitKind(page, "once");
+    } finally {
+      await page.context().close();
+    }
+  }, 30_000);
 
   for (const [width, context] of screens) {
     test(`at ${width}px the size limit stays as a row without a button`, async () => {

@@ -1,4 +1,4 @@
-import { Button, Dropdown, type DropdownItem, NoticeCard, SplitButton } from "@k2b/ui";
+import { Button, Dropdown, type DropdownItem, NoticeRow, SplitButton } from "@k2b/ui";
 import { createEffect, createMemo, Match, on, Show, Switch } from "solid-js";
 import type { RemoteContentAllowRule } from "../../service/remote-content";
 import type { mailMessageMessages } from "./mail-message-messages";
@@ -123,7 +123,7 @@ export default function MailRemoteImagesNotice(props: {
       <Show
         when={quiet()}
         fallback={
-          <NoticeCard
+          <NoticeRow
             tone={props.kind === "failed" ? "danger" : "neutral"}
             tile={tile().icon}
             tileColor={tile().color}
@@ -205,7 +205,7 @@ export default function MailRemoteImagesNotice(props: {
                 </p>
               </Match>
             </Switch>
-          </NoticeCard>
+          </NoticeRow>
         }
       >
         {/* The quiet line keeps the notice's metrics: the same padding, tile box, and 48px row, without a surface. */}

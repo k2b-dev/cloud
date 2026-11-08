@@ -2,7 +2,7 @@ import { importOnDemand } from "@k2b/cloud/browser/reload";
 import type { CloudTheme } from "@k2b/cloud/shared";
 import { mutation } from "@k2b/stdlib/solid";
 import { toast, useLocale } from "@k2b/ui";
-import { createEffect, createMemo, createSignal, For, on, onCleanup, onMount, Show, untrack } from "solid-js";
+import { batch, createEffect, createMemo, createSignal, For, on, onCleanup, onMount, Show, untrack } from "solid-js";
 import { apiClient } from "../../api/client";
 import type { MessageRemoteContent, RemoteContentAllowRule, RemoteContentRule } from "../../service/remote-content";
 import { readApiError } from "./api-response";
@@ -28,6 +28,11 @@ const REMOTE_IMAGE_REQUEST_GAP_MS = 350;
 type FrameImage = { kind: "cid" | "remote"; id: string; image: Blob };
 
 const sleep = (durationMs: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, durationMs));
+
+// Rules the person removed on this page. A message snapshot can still list them until the server sends a new one, and a
+// message body mounts again when its format changes. Removed rule ids never return, so one page-wide set keeps every
+// open or remounted message from loading images through them. Only the browser writes it.
+const [revokedRuleIds, setRevokedRuleIds] = createSignal<ReadonlySet<string>>(new Set());
 
 const PlainText = (props: { value: string; linksDisabled?: boolean }) => (
   <For each={splitPlainTextLinks(props.value)}>
@@ -73,9 +78,8 @@ export default function MailMessageBody(props: {
   // How the last load ended: some images failed, or the message reached the safe size limit.
   const [remoteOutcome, setRemoteOutcome] = createSignal<"none" | "failed" | "limited">("none");
   const [remoteAnnouncement, setRemoteAnnouncement] = createSignal("");
-  // Rules saved or removed from this message, until the next message snapshot from the server says the same.
+  // Rules saved from this message, until the next message snapshot from the server lists other rules.
   const [addedRules, setAddedRules] = createSignal<RemoteContentAllowRule[]>([]);
-  const [revokedRuleIds, setRevokedRuleIds] = createSignal<ReadonlySet<string>>(new Set());
   let frame: HTMLIFrameElement | undefined;
   let remoteController: AbortController | null = null;
   let remoteLoadedBytes = 0;
@@ -95,9 +99,10 @@ export default function MailMessageBody(props: {
     return referencedRemoteImageIds(props.html ?? "").filter((id) => stored.has(id));
   });
   const remoteImagesRemaining = createMemo(() => remoteImageIds().filter((id) => !loadedRemoteIds().has(id)).length);
+  // A live snapshot updates the rule list in place, so compare its contents, not its identity.
   createEffect(
     on(
-      () => props.remoteContent.allowRules,
+      () => props.remoteContent.allowRules.map((rule) => rule.id).join(" "),
       () => setAddedRules([]),
       { defer: true },
     ),
@@ -185,10 +190,13 @@ export default function MailMessageBody(props: {
     remoteController?.abort();
     const controller = new AbortController();
     remoteController = controller;
-    setRemoteLoadAsked(asked);
-    setRemoteOutcome("none");
-    setRemoteLoading(true);
-    if (asked) setRemoteAnnouncement(messages().imagesLoading);
+    // One change, so a retry goes straight from failed to loading and the row keeps the focus.
+    batch(() => {
+      setRemoteLoadAsked(asked);
+      setRemoteOutcome("none");
+      setRemoteLoading(true);
+      if (asked) setRemoteAnnouncement(messages().imagesLoading);
+    });
     const pending = remoteImageIds().filter((id) => !loadedRemoteIds().has(id));
     let budgetExhausted = false;
     let cursor = 0;
@@ -222,18 +230,22 @@ export default function MailMessageBody(props: {
         }
       }
     };
+    let settledOutcome: "none" | "failed" | "limited" | null = null;
     try {
       await Promise.all(Array.from({ length: Math.min(REMOTE_IMAGE_WORKERS, pending.length) }, worker));
-      if (!disposed && !controller.signal.aborted) {
-        // The outcome stays in the row above the message, with a retry where one can help.
-        const outcome = budgetExhausted ? "limited" : remoteImagesRemaining() > 0 ? "failed" : "none";
-        setRemoteOutcome(outcome);
-        if (outcome === "limited") setRemoteAnnouncement(`${messages().imagesLimited}. ${messages().imagesLimitedReason}`);
-        else if (outcome === "none" && asked) setRemoteAnnouncement(messages().imagesLoaded);
-      }
+      // The outcome stays in the row above the message, with a retry where one can help.
+      settledOutcome = budgetExhausted ? "limited" : remoteImagesRemaining() > 0 ? "failed" : "none";
     } finally {
       if (remoteController === controller) remoteController = null;
-      if (!disposed && !controller.signal.aborted) setRemoteLoading(false);
+      if (!disposed && !controller.signal.aborted) {
+        const outcome = settledOutcome ?? "failed";
+        batch(() => {
+          setRemoteOutcome(outcome);
+          setRemoteLoading(false);
+          if (outcome === "limited") setRemoteAnnouncement(`${messages().imagesLimited}. ${messages().imagesLimitedReason}`);
+          else if (outcome === "none" && asked) setRemoteAnnouncement(messages().imagesLoaded);
+        });
+      }
     }
   };
 
@@ -250,7 +262,6 @@ export default function MailMessageBody(props: {
       return response.json();
     },
     onSuccess: (rule) => {
-      setRevokedRuleIds((current) => new Set([...current].filter((id) => id !== rule.id)));
       setAddedRules((current) => [
         ...current.filter((known) => known.id !== rule.id),
         { id: rule.id, scope: rule.scope, value: rule.value },
@@ -389,10 +400,14 @@ export default function MailMessageBody(props: {
       });
     }),
   );
-  // A sender or domain rule saved elsewhere reaches this message as a live update.
+  // A sender or domain rule saved elsewhere reaches this message as a live update. A rule removed on this page no longer
+  // loads anything, even while the snapshot still lists it.
   createEffect(
     on(
-      () => imagesAllowed() && props.remoteContent.allowedByRule,
+      () =>
+        imagesAllowed() &&
+        props.remoteContent.allowedByRule &&
+        props.remoteContent.allowRules.every((rule) => !revokedRuleIds().has(rule.id)),
       (autoLoad) => {
         if (autoLoad) void loadRemoteImages(false);
       },
