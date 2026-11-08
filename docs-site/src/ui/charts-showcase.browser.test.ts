@@ -244,26 +244,21 @@ test("both dashboards keep every panel in place in every state", async () => {
 
 // Geometry comes from the real server document. Keep hydration in open()/the
 // parity tests: starting every overview island is unrelated to these bounds.
-const openServerGeometry = async (page: Page, path: string) => {
-  await page.route(`${origin}${path}`, async (route) => {
-    const response = await route.fetch();
-    const body = (await response.text()).replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, "");
-    await route.fulfill({ response, body });
-  });
+// The page runs no script, so the document stays exactly the server markup.
+const openServerGeometry = async (width: number, height: number, path: string) => {
+  const page = await browser!.newPage({ viewport: { width, height }, reducedMotion: "reduce", javaScriptEnabled: false });
   const response = await page.goto(`${origin}${path}`, { waitUntil: "load" });
   expect(response!.ok()).toBe(true);
   await settled(page);
-  expect(await page.locator("script").count()).toBe(0);
-  return response!;
+  return { page, response: response! };
 };
 
 for (const width of [390, 800, 1440, 1920]) {
   for (const path of ["/en/ui/charts/calendar", "/en/ui/charts/dashboards/newsletter", "/en/ui/charts"]) {
     test(`calendar starts flush with newest weeks in ${path} at ${width}px`, async () => {
-      const page = await browser!.newPage({ viewport: { width, height: 1000 }, reducedMotion: "reduce" });
+      const { page, response } = await openServerGeometry(width, 1000, path);
       const errors = pageErrors(page);
       try {
-        const response = await openServerGeometry(page, path);
         const selector = ".k2b-chart__svg > svg[data-calendar]";
         const serverSvg = await page.evaluate(
           (html) => new DOMParser().parseFromString(html, "text/html").querySelector(".k2b-chart__svg > svg[data-calendar]")!.outerHTML,
@@ -328,10 +323,9 @@ for (const width of [390, 1440]) {
   test(`distribution overview cards keep axes and name/value blocks inside at ${width}px`, async () => {
     // This guard measures server SVGs. Hydrating every overview card belongs to
     // the separate parity test and must not consume this geometry test's budget.
-    const page = await browser!.newPage({ viewport: { width, height: 900 }, reducedMotion: "reduce" });
+    const { page } = await openServerGeometry(width, 900, "/en/ui/charts");
     const errors = pageErrors(page);
     try {
-      await openServerGeometry(page, "/en/ui/charts");
       const pareto = page.locator('[data-chart-kind="pareto"]');
       expect(await pareto.count()).toBe(1);
       expect(await pareto.locator("svg > text").count()).toBeGreaterThan(0);
