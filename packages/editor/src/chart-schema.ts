@@ -436,7 +436,11 @@ export const chartKinds = (limits?: ChartLimits) => {
         kind: z.literal("pareto"),
         ...ChartKindCommon,
         labels: z.tuple([ChartLabel, ChartLabel]),
-        data: list(z.object({ label: ChartLabel, value: z.number().nonnegative(), prev: z.number().nonnegative() }), 1, limits?.maxValues),
+        data: list(
+          z.object({ label: ChartLabel, value: z.number().nonnegative(), prev: z.number().nonnegative(), rest: z.boolean().optional() }),
+          1,
+          limits?.maxValues,
+        ),
         format: numberFormat.optional(),
         locale: chartLocaleSchema().optional(),
       })

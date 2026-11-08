@@ -1162,8 +1162,8 @@ legend names it (`legend={false}` hides it). Labels and values print only when
 both fit; the tooltip and table keep every item, including zero-valued items.
 
 `Chart.Pareto` accepts `labels: [current, previous]` and
-`data: {label,value,prev}[]`. It ranks current values descending and places a
-category named `Rest` last. Solid bars show current values; hatched bars show
+`data: {label,value,prev,rest?}[]`. It ranks current values descending and places a
+category flagged with `rest: true` last. The label stays free text, supplied and localized by the author; an unflagged `Rest` has no special meaning. Solid bars show current values; hatched bars show
 the previous period. The cumulative line uses the percentage axis below;
 the absolute value axis is above. The dashed 80% line marks concentration.
 Both periods must be nonnegative. A zero previous value or zero total shows

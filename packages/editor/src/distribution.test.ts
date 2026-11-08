@@ -11,12 +11,27 @@ test("treemap and Pareto portable data validate nonnegative values and retain ex
     labels: ["Now", "Before"],
     data: [
       { label: "A", value: 120, prev: 100 },
-      { label: "Rest", value: 30, prev: 0 },
+      { label: "Rest", rest: true, value: 30, prev: 0 },
     ],
   });
   const table = chartTable(pareto, "en");
-  expect(table.rows[0]!.cells).toMatchObject({ value: "120", previous: "100", change: "20%", cumulative: "80%" });
+  expect(table.rows[0]!.cells).toMatchObject({ value: "120", previous: "100", change: "+20%", cumulative: "80%" });
   expect(table.columns.find((c) => c.id === "value")?.label).toBe("Now");
   expect(table.rows[1]!.cells.change).toBe("–");
   expect(schema.safeParse({ ...pareto, data: [{ label: "A", value: -1, prev: 0 }] }).success).toBe(false);
+});
+
+test("zero-area treemap observations remain in the table without inspection targets", () => {
+  const spec = chartKinds().parse({
+    kind: "treemap",
+    title: "Shares",
+    groups: ["A"],
+    data: [
+      { label: "Chair", group: "A", value: 10 },
+      { label: "Zero", group: "A", value: 0 },
+    ],
+  });
+  const table = chartTable(spec, "en");
+  expect(table.rows.map((row) => row.cells.label)).toEqual(["Chair", "Zero"]);
+  expect(table.rows[1]!.cells).toMatchObject({ value: "0", percent: "0%" });
 });

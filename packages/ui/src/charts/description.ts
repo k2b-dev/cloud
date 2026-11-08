@@ -142,7 +142,7 @@ type Variants<N> =
   | {
       kind: "pareto";
       labels: [string, string];
-      data: { label: string; value: number; prev: number }[];
+      data: { label: string; value: number; prev: number; rest?: boolean }[];
       format?: ChartNumberFormat;
       locale?: string;
     }
