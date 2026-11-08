@@ -9,7 +9,7 @@ import {
   StatusBadge,
   TextInput,
 } from "@k2b/ui";
-import { createMemo, createSignal, For, type JSX, Match, Show, Switch } from "solid-js";
+import { type Accessor, createContext, createMemo, createSignal, For, type JSX, Match, Show, Switch, useContext } from "solid-js";
 import { DescriptionPanel } from "../descriptions";
 import { blockDataAtPath } from "./bind";
 import { BLOCK_PANEL_HEIGHTS, blockChartHeight, blockDescription, blockJson } from "./description";
@@ -51,6 +51,9 @@ export type BlockTreeProps = {
   draft?: BlockDraftState;
 };
 
+type Leaf<K extends Block["kind"]> = Extract<Block, { kind: K }>;
+type Host = BlockTreeProps["host"];
+
 const text = (value: unknown): string =>
   value === undefined || value === null
     ? ""
@@ -62,15 +65,51 @@ const text = (value: unknown): string =>
 const at = (item: unknown, path: readonly string[] | undefined): unknown => (path ? blockDataAtPath(item, path) : undefined);
 const items = (value: unknown): readonly unknown[] => (Array.isArray(value) ? value : []);
 
-/** Cloud's own reference to a file draws through Cloud; other sources are app paths the contract already checked. */
+/** The contract checked every source; only a root-relative path of the answering app reaches the browser. */
 const imageSource = (value: unknown): string | undefined => {
   const source = text(value);
   return source.startsWith("/") && !source.startsWith("//") ? source : undefined;
 };
 
-type Leaf<K extends Block["kind"]> = Extract<Block, { kind: K }>;
+const external = (href: string) => href.startsWith("https://");
 
-function DetailBlock(props: { block: Leaf<"Detail">; host: BlockTreeProps["host"]; locale: string }) {
+/** Every block of a tree, sections included, to find what a choice's options are drawn as. */
+const flatten = (blocks: readonly Block[]): Block[] =>
+  blocks.flatMap((block) => (block.kind === "Section" ? flatten(block.children) : [block]));
+
+/** The one choice of a tree, shared by the cards or the list that draw its options and by its foot. */
+type ChoiceModel = {
+  block: Leaf<"Choice">;
+  state: Accessor<BlockChoiceState["state"]>;
+  chosen: Accessor<string[]>;
+  readOnly: Accessor<boolean>;
+  toggle: (id: string, on: boolean) => void;
+  /** Whether the options are drawn by cards elsewhere in the tree. */
+  drawnBy: "cards" | "list";
+};
+const ChoiceContext = createContext<ChoiceModel>();
+
+function useChoiceModel(blocks: () => readonly Block[], choice: () => BlockChoiceState | undefined): ChoiceModel | undefined {
+  const all = createMemo(() => flatten(blocks()));
+  const block = () => all().find((node): node is Leaf<"Choice"> => node.kind === "Choice");
+  const [picked, setPicked] = createSignal<string[]>([]);
+  const found = block();
+  if (!found) return undefined;
+  const state = () => choice()?.state ?? "superseded";
+  return {
+    block: found,
+    state,
+    chosen: () => (state() === "answered" ? [...(choice()?.chosen ?? [])] : picked()),
+    readOnly: () => state() !== "open",
+    toggle: (id, on) =>
+      setPicked((current) =>
+        found.mode === "one" ? (on ? [id] : []) : on ? [...new Set([...current, id])] : current.filter((entry) => entry !== id),
+      ),
+    drawnBy: all().some((node) => node.kind === "Cards" && node.choose === found.id) ? "cards" : "list",
+  };
+}
+
+function DetailBlock(props: { block: Leaf<"Detail">; host: Host; locale: string }) {
   const words = () => blockWords(props.locale);
   const value = (value: unknown) => (typeof value === "boolean" ? (value ? words().yes : words().no) : text(value));
   const list = () => (
@@ -107,8 +146,11 @@ function DetailBlock(props: { block: Leaf<"Detail">; host: BlockTreeProps["host"
 
 function CardsBlock(props: { block: Leaf<"Cards">; locale: string }) {
   const words = () => blockWords(props.locale);
+  const choice = useContext(ChoiceContext);
   const list = createMemo(() => items(props.block.items));
   const media = () => props.block.card.image !== undefined;
+  const choosing = () => (choice && props.block.choose === choice.block.id ? choice : undefined);
+  const name = `cloud-choice-${props.block.choose ?? "cards"}`;
   return (
     <section class="cloud-blocks__cards" data-media={media() ? "" : undefined} aria-label={props.block.title}>
       <h4 class="cloud-blocks__title">
@@ -116,16 +158,19 @@ function CardsBlock(props: { block: Leaf<"Cards">; locale: string }) {
         <span class="cloud-blocks__count">{list().length}</span>
       </h4>
       <Show when={list().length > 0} fallback={<p class="cloud-blocks__empty">{props.block.empty ?? words().emptyCards}</p>}>
-        <ul class="cloud-blocks__card-list">
+        <ul class="cloud-blocks__card-list" role={choosing() ? (choosing()!.block.mode === "one" ? "radiogroup" : "group") : undefined}>
           <For each={list()}>
             {(item) => {
+              const id = () => text(at(item, props.block.card.id));
               const title = () => text(at(item, props.block.card.title));
-              const href = () =>
-                imageSource(at(item, props.block.card.href)) ??
-                (text(at(item, props.block.card.href)).startsWith("https://") ? text(at(item, props.block.card.href)) : undefined);
+              const href = () => {
+                const target = text(at(item, props.block.card.href));
+                return external(target) || imageSource(target) ? target : undefined;
+              };
               const image = () => imageSource(at(item, props.block.card.image));
-              return (
-                <li class="cloud-blocks__card" data-island={image() ? "" : undefined}>
+              const selected = () => choosing()?.chosen().includes(id()) ?? false;
+              const body = () => (
+                <>
                   <Show when={image()}>
                     {(src) => (
                       <img
@@ -148,7 +193,15 @@ function CardsBlock(props: { block: Leaf<"Cards">; locale: string }) {
                     <Show when={text(at(item, props.block.card.subtitle))}>
                       {(subtitle) => <span class="cloud-blocks__card-subtitle">{subtitle()}</span>}
                     </Show>
-                    <Show when={(props.block.card.facts ?? []).length > 0 || at(item, props.block.card.price) !== undefined}>
+                    <Show when={text(at(item, props.block.card.rating))}>
+                      {(rating) => (
+                        <span class="cloud-blocks__rating">
+                          <i class="ti ti-star-filled" aria-hidden="true" />
+                          {rating()}
+                        </span>
+                      )}
+                    </Show>
+                    <Show when={(props.block.card.facts ?? []).length > 0 || text(at(item, props.block.card.price))}>
                       <dl class="cloud-blocks__facts">
                         <For each={props.block.card.facts ?? []}>
                           {(fact) => (
@@ -172,15 +225,39 @@ function CardsBlock(props: { block: Leaf<"Cards">; locale: string }) {
                         <a
                           class="cloud-blocks__card-link"
                           href={link()}
-                          target={link().startsWith("https://") ? "_blank" : undefined}
+                          target={external(link()) ? "_blank" : undefined}
                           rel="noopener noreferrer"
                         >
-                          {link().startsWith("https://") ? new URL(link()).hostname : title()}
+                          {external(link()) ? new URL(link()).hostname : title()}
                           <i class="ti ti-arrow-up-right" aria-hidden="true" />
                         </a>
                       )}
                     </Show>
                   </div>
+                </>
+              );
+              return (
+                <li class="cloud-blocks__card" data-island={image() ? "" : undefined} data-selected={selected() ? "" : undefined}>
+                  <Show when={choosing()} fallback={body()}>
+                    {(model) => (
+                      // A card that is an option is one label: the whole card chooses, the mark shows the choice.
+                      <label class="cloud-blocks__card-choice" data-disabled={model().readOnly() ? "" : undefined}>
+                        <input
+                          class="k2b-sr-only"
+                          type={model().block.mode === "one" ? "radio" : "checkbox"}
+                          name={name}
+                          value={id()}
+                          checked={selected()}
+                          disabled={model().readOnly()}
+                          onChange={(event) => model().toggle(id(), event.currentTarget.checked)}
+                        />
+                        <span class="cloud-blocks__mark" data-mode={model().block.mode} aria-hidden="true">
+                          <i class="ti ti-check" />
+                        </span>
+                        {body()}
+                      </label>
+                    )}
+                  </Show>
                 </li>
               );
             }}
@@ -206,6 +283,9 @@ function ImageBlock(props: { block: Leaf<"Image"> }) {
 
 function ChoiceBlock(props: { block: Leaf<"Choice">; locale: string; choice?: BlockChoiceState }) {
   const words = () => blockWords(props.locale);
+  const model = useContext(ChoiceContext);
+  const [sending, setSending] = createSignal(false);
+  const [failed, setFailed] = createSignal(false);
   const options = createMemo(() =>
     items(props.block.options).map((option) => ({
       id: text(at(option, props.block.option.id)),
@@ -213,12 +293,9 @@ function ChoiceBlock(props: { block: Leaf<"Choice">; locale: string; choice?: Bl
       subtitle: text(at(option, props.block.option.subtitle)) || undefined,
     })),
   );
-  const state = () => props.choice?.state ?? "superseded";
-  const [picked, setPicked] = createSignal<string[]>([]);
-  const [sending, setSending] = createSignal(false);
-  const [failed, setFailed] = createSignal(false);
-  const chosen = () => (state() === "answered" ? [...(props.choice?.chosen ?? [])] : picked());
-  const readOnly = () => state() !== "open" || sending();
+  const state = () => model?.state() ?? "superseded";
+  const chosen = () => model?.chosen() ?? [];
+  const readOnly = () => (model?.readOnly() ?? true) || sending();
   const titleId = `cloud-choice-${props.block.id}`;
   const submit = async () => {
     if (readOnly() || chosen().length === 0 || !props.choice?.submit) return;
@@ -234,37 +311,39 @@ function ChoiceBlock(props: { block: Leaf<"Choice">; locale: string; choice?: Bl
         {props.block.title}
       </p>
       <Show when={props.block.description}>{(description) => <p class="cloud-blocks__hint">{description()}</p>}</Show>
-      <Switch>
-        <Match when={props.block.mode === "one"}>
-          <ChoiceList
-            aria-label={props.block.title}
-            value={chosen()[0] ?? null}
-            disabled={readOnly()}
-            options={options().map((option) => ({
-              value: option.id,
-              label: option.title,
-              description: option.subtitle,
-              disabled: readOnly() && !chosen().includes(option.id),
-            }))}
-            onValueChange={(value) => setPicked([value])}
-          />
-        </Match>
-        <Match when={props.block.mode === "many"}>
-          <div class="cloud-blocks__checks" role="group" aria-labelledby={titleId}>
-            <For each={options()}>
-              {(option) => (
-                <CheckboxCard
-                  label={option.title}
-                  description={option.subtitle}
-                  value={chosen().includes(option.id)}
-                  disabled={readOnly()}
-                  onValueChange={(on) => setPicked((current) => (on ? [...current, option.id] : current.filter((id) => id !== option.id)))}
-                />
-              )}
-            </For>
-          </div>
-        </Match>
-      </Switch>
+      <Show when={model?.drawnBy === "list"}>
+        <Switch>
+          <Match when={props.block.mode === "one"}>
+            <ChoiceList
+              aria-label={props.block.title}
+              value={chosen()[0] ?? null}
+              disabled={readOnly()}
+              options={options().map((option) => ({
+                value: option.id,
+                label: option.title,
+                description: option.subtitle,
+                disabled: readOnly() && !chosen().includes(option.id),
+              }))}
+              onValueChange={(value) => model?.toggle(value, true)}
+            />
+          </Match>
+          <Match when={props.block.mode === "many"}>
+            <div class="cloud-blocks__checks" role="group" aria-labelledby={titleId}>
+              <For each={options()}>
+                {(option) => (
+                  <CheckboxCard
+                    label={option.title}
+                    description={option.subtitle}
+                    value={chosen().includes(option.id)}
+                    disabled={readOnly()}
+                    onValueChange={(on) => model?.toggle(option.id, on)}
+                  />
+                )}
+              </For>
+            </div>
+          </Match>
+        </Switch>
+      </Show>
       <div class="cloud-blocks__choice-foot">
         <Switch>
           <Match when={state() === "answered"}>
@@ -346,14 +425,10 @@ function DraftBlock(props: { block: Leaf<"Draft">; draft?: BlockDraftState }) {
   );
 }
 
-function Leaf(props: {
-  block: Block;
-  host: BlockTreeProps["host"];
-  locale: string;
-  timeZone: string;
-  choice?: BlockChoiceState;
-  draft?: BlockDraftState;
-}) {
+const WIDTH_SPANS = { third: "2", half: "3", twoThirds: "4", full: "6" } as const;
+const widthOf = (block: Block): string | undefined => ("width" in block && block.width ? WIDTH_SPANS[block.width] : undefined);
+
+function Leaf(props: { block: Block; host: Host; locale: string; timeZone: string; choice?: BlockChoiceState; draft?: BlockDraftState }) {
   const words = () => blockWords(props.locale);
   const block = props.block;
   switch (block.kind) {
@@ -365,7 +440,7 @@ function Leaf(props: {
             {block.title}
           </h4>
           <Show when={block.description}>{(description) => <p class="cloud-blocks__hint">{description()}</p>}</Show>
-          <BlockTree {...props} blocks={block.children} />
+          <Blocks {...props} blocks={block.children} />
         </section>
       );
     case "Text":
@@ -376,12 +451,7 @@ function Leaf(props: {
       return <NoticeCard tone={block.tone} title={block.title} detail={block.text} />;
     case "Link":
       return (
-        <a
-          class="cloud-blocks__link"
-          href={block.href}
-          target={block.href.startsWith("https://") ? "_blank" : undefined}
-          rel="noopener noreferrer"
-        >
+        <a class="cloud-blocks__link" href={block.href} target={external(block.href) ? "_blank" : undefined} rel="noopener noreferrer">
           {block.label}
         </a>
       );
@@ -399,23 +469,19 @@ function Leaf(props: {
     case "Table":
     case "Chart":
       return (
-        <div class="cloud-blocks__panel" data-kind={block.kind}>
-          <DescriptionPanel
-            spec={blockJson(blockDescription(block, words(), props.timeZone))}
-            title={block.kind === "Chart" ? (block.title ?? block.description?.title ?? "") : block.kind === "Table" ? block.title : ""}
-            height={
-              block.kind === "Chart"
-                ? blockChartHeight(block)
-                : block.kind === "Table"
-                  ? items(block.rows).length > 8
-                    ? BLOCK_PANEL_HEIGHTS.md
-                    : 0
-                  : 0
-            }
-            headingLevel={4}
-            empty={block.kind === "Table" || block.kind === "Chart" ? block.empty : undefined}
-          />
-        </div>
+        <DescriptionPanel
+          spec={blockJson(blockDescription(block, words(), props.timeZone))}
+          title={block.kind === "Chart" ? (block.title ?? block.description?.title ?? "") : block.kind === "Table" ? block.title : ""}
+          height={
+            block.kind === "Chart"
+              ? blockChartHeight(block)
+              : block.kind === "Table" && items(block.rows).length > 8
+                ? BLOCK_PANEL_HEIGHTS.md
+                : 0
+          }
+          headingLevel={4}
+          empty={block.kind === "Table" || block.kind === "Chart" ? block.empty : undefined}
+        />
       );
     default:
       // Forms, buttons and actions belong to Code pages; the contract keeps them out of every other host.
@@ -423,15 +489,72 @@ function Leaf(props: {
   }
 }
 
-/** The blocks of one view in reading order, without a hull of their own. */
-export function BlockTree(props: BlockTreeProps): JSX.Element {
+/**
+ * One level of blocks on a six-column grid: a block's width is its share of the row, a narrow host gives every block
+ * the whole row. In an approval an image beside its details stands as one row, as the thumbnail of what changes.
+ */
+function Blocks(props: {
+  blocks: readonly Block[];
+  host: Host;
+  locale: string;
+  timeZone: string;
+  choice?: BlockChoiceState;
+  draft?: BlockDraftState;
+}) {
+  const groups = createMemo(() => {
+    const result: Block[][] = [];
+    props.blocks.forEach((block, index) => {
+      const previous = props.blocks[index - 1];
+      if (props.host === "review" && block.kind === "Detail" && previous?.kind === "Image") result.at(-1)!.push(block);
+      else result.push([block]);
+    });
+    return result;
+  });
   return (
     <div class="cloud-blocks" data-host={props.host}>
-      <For each={props.blocks}>
-        {(block) => (
-          <Leaf block={block} host={props.host} locale={props.locale} timeZone={props.timeZone} choice={props.choice} draft={props.draft} />
+      <For each={groups()}>
+        {(group) => (
+          <div
+            class="cloud-blocks__cell"
+            data-span={widthOf(group[0]!)}
+            data-kind={group[0]!.kind}
+            data-media-row={group.length > 1 ? "" : undefined}
+          >
+            <For each={group}>
+              {(block) => (
+                <Leaf
+                  block={block}
+                  host={props.host}
+                  locale={props.locale}
+                  timeZone={props.timeZone}
+                  choice={props.choice}
+                  draft={props.draft}
+                />
+              )}
+            </For>
+          </div>
         )}
       </For>
     </div>
+  );
+}
+
+/** The blocks of one view in reading order, without a hull of their own. */
+export function BlockTree(props: BlockTreeProps): JSX.Element {
+  const choice = useChoiceModel(
+    () => props.blocks,
+    () => props.choice,
+  );
+  return (
+    <ChoiceContext.Provider value={choice}>
+      <Blocks
+        blocks={props.blocks}
+        host={props.host}
+        locale={props.locale}
+        timeZone={props.timeZone}
+        choice={props.choice}
+        draft={props.draft}
+      />
+    </ChoiceContext.Provider>
   );
 }

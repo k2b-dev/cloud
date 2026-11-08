@@ -57,7 +57,7 @@ describe("Chat.Decision SSR", () => {
     const buttons = body.querySelectorAll("button");
     expect(Array.from(buttons).map((b) => [b.textContent, b.getAttribute("data-variant")])).toEqual([
       ["Keep draft", "secondary"],
-      ["Send", "primary"],
+      ["Send", "ai"],
     ]);
     expect(buttons[1]!.querySelector(".ti-send")).not.toBeNull();
     expect(body.querySelector(".k2b-chat-decision__remember")).toBeNull();

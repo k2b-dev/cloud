@@ -316,7 +316,7 @@ export function ChatDecision(props: ChatDecisionProps): JSX.Element {
               <Button
                 class="k2b-chat-decision__answer"
                 wrap
-                variant={editing() ? "secondary" : "primary"}
+                variant={editing() ? "secondary" : "ai"}
                 disabled={confirmOff()}
                 onClick={confirm}
               >
