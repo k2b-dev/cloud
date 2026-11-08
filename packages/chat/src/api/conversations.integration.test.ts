@@ -1676,6 +1676,10 @@ suite("chat conversations, people, and directory groups", () => {
       const owner = await user();
       const headers = await cookie(owner);
       for (let offset = 0; offset < 300; offset += 10) await Promise.all(Array.from({ length: 10 }, () => fixture(owner)));
+      // Bulk-loading outruns auto-analyze on a fresh CI database; with stale statistics the sidebar query can pick a
+      // plan that runs for seconds per page (merge-group run 42526165208: active, unblocked, 30 s timeout). Page and
+      // measure with current statistics, as the large-channel test does.
+      await sql`ANALYZE auth.users, auth.groups, auth.user_groups_v2, auth.group_groups_v2, auth.service_accounts, auth.access, chat.conversations, chat.conversation_access, chat.participants`;
       const ids = new Set<string>();
       let cursor: string | null = null;
       do {
