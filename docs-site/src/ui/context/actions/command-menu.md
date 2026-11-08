@@ -256,7 +256,7 @@ const [textarea, setTextarea] = createSignal<HTMLTextAreaElement>();
 const [composer, setComposer] = createSignal<HTMLDivElement>();
 
 <div ref={setComposer} class="composer">
-  <MarkdownEditor variant="embedded" noToolbar value={text()} onValueChange={setText} textareaRef={setTextarea} />
+  <MarkdownEditor variant="embedded" noToolbar font="sans" value={text()} onValueChange={setText} textareaRef={setTextarea} />
   <SlashCommands textarea={textarea()} items={commands} composer={composer()} />
   <CommandMenu items={commands} label="Hinzufügen" search="Befehle suchen" target={textarea()} dock={composer()}>
     <CommandMenu.Trigger iconOnly label="Hinzufügen">
