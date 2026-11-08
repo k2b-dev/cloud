@@ -69,7 +69,7 @@ export const chartCatalog = [
   },
   {
     name: 'bar (layout "rows")',
-    useFor: "Category values with readable row labels",
+    useFor: "Signed or positive category values",
     avoidFor: "A continuous time axis",
     example: {
       kind: "bar",

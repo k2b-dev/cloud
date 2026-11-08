@@ -72,10 +72,11 @@ Avoid for: Unaligned observations
 
 ## bar (layout "rows")
 
-Use for: Category values with readable row labels
+Use for: Signed or positive category values
 
 Avoid for: A continuous time axis
 
+- `layout` ("columns" | "rows" | "grouped" | "stacked"): Signed rows diverge around zero. Ordered categories, references, colorByBar, showValues and axis settings keep the original row drawing; otherwise nonnegative rows rank descending. Share, limit and tone require nonnegative values.
 
 ```json
 {"kind":"bar","title":"Orders by collection","layout":"rows","data":[{"label":"Furniture","value":84},{"label":"Lighting","value":62},{"label":"Pictures","value":39}]}

@@ -258,8 +258,11 @@ export const chartKinds = (limits?: ChartLimits) => {
           ctx.addIssue({ code: "custom", path: ["data"], message: "A bar chart needs data or aligned series." });
         if ((bar.share !== undefined || bar.limit !== undefined || bar.tone !== undefined) && bar.layout !== "rows")
           issue("Share, limit and tone require rows layout.");
-        if (bar.layout === "rows" && bar.data.some((d) => Number.isFinite(d.value) && d.value < 0))
-          issue("Ranked bar lists require nonnegative values.");
+        if (
+          (bar.share !== undefined || bar.limit !== undefined || bar.tone !== undefined) &&
+          bar.data.some((d) => Number.isFinite(d.value) && d.value < 0)
+        )
+          issue("Share, limit and tone need nonnegative values.");
         if (bar.series) {
           if (!bar.x || bar.series.some((s) => s.data.length !== bar.x?.length)) issue("Bar series must have the same length as x.");
           if (bar.data.length) issue("Use data or aligned series, not both.");

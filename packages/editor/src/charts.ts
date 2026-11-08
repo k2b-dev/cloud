@@ -1077,7 +1077,12 @@ export function chartRows(
     add,
     columns: () => [...columns.values()],
     table: (): ChartTable => {
-      if (input.kind === "bar" && input.layout === "rows" && input.limit !== undefined) {
+      if (
+        input.kind === "bar" &&
+        input.layout === "rows" &&
+        input.limit !== undefined &&
+        rows.some((row) => row.values.rank !== undefined)
+      ) {
         const source = { ...input, limit: undefined };
         const all = chartRows(source, locale, options);
         const layout = rankedBarLayout({ data: source.data, title: source.title, subtitle: source.subtitle, valueFormat, locale });
