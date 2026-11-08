@@ -84,7 +84,7 @@ const setup = async (
     sourceChanged?: boolean;
     noWebp?: boolean;
     large?: boolean;
-    images?: boolean;
+    images?: boolean | number;
   } = {},
 ) => {
   const page = await browser.newPage({ viewport: { width: options.width ?? 1440, height: 950 }, reducedMotion: "reduce" });
@@ -147,7 +147,10 @@ const setup = async (
     }
     if (url.pathname.endsWith("/download"))
       return route.fulfill({ json: { url: new URL("/original", server.url).href, method: "GET", expires: "2099-01-01T00:00:00Z" } });
-    if (url.pathname.endsWith("/thumbnail")) return route.fulfill({ status: 404, json: { code: "unavailable", message: "No thumbnail" } });
+    if (url.pathname.endsWith("/thumbnail"))
+      return typeof options.images === "number"
+        ? route.fulfill({ json: { url: new URL("/original", server.url).href } })
+        : route.fulfill({ status: 404, json: { code: "unavailable", message: "No thumbnail" } });
     if (url.pathname.endsWith("/uploads")) {
       latest = request.postDataJSON();
       uploads.push(latest!);
@@ -221,6 +224,112 @@ const rotate = async (page: Page) => {
 };
 
 describe("Files photo editing", () => {
+  for (const width of [1440, 390])
+    for (const dark of [false, true]) {
+      test(`the media host preserves the editor's ${dark ? "dark" : "light"} canvas at ${width}px`, async () => {
+        const { page, errors } = await setup({ width, query: dark ? "dark=1" : "" });
+        try {
+          await page.setViewportSize({ width, height: width === 390 ? 844 : 900 });
+          await edit(page);
+          await page.getByRole("tab", { name: "Crop", exact: true }).click();
+          await settled(page);
+          const editor = page.locator(".k2b-image-editor");
+          expect(await editor.evaluate((node) => getComputedStyle(node).backgroundColor)).toBe(
+            dark ? "rgb(21, 25, 31)" : "rgb(230, 230, 233)",
+          );
+          // A correct computed colour alone misses an unbounded crop shadow painted over the canvas.
+          const box = (await editor.boundingBox())!;
+          const sample = await page.screenshot({ clip: { x: box.x + 3, y: box.y + 100, width: 4, height: 4 } });
+          const brightest = await page.evaluate(async (base64) => {
+            const bitmap = await createImageBitmap(await (await fetch(`data:image/png;base64,${base64}`)).blob());
+            const canvas = document.createElement("canvas");
+            canvas.width = bitmap.width;
+            canvas.height = bitmap.height;
+            const context = canvas.getContext("2d")!;
+            context.drawImage(bitmap, 0, 0);
+            bitmap.close();
+            const pixels = context.getImageData(0, 0, canvas.width, canvas.height).data;
+            return Array.from({ length: pixels.length / 4 }, (_, index) => pixels[index * 4]!);
+          }, sample.toString("base64"));
+          expect(dark ? Math.min(...brightest) : Math.max(...brightest)).toBe(dark ? 21 : 230);
+          if (process.env.SHOTS)
+            await page.screenshot({ path: `${process.env.SHOTS}/files-host-crop-${dark ? "dark" : "light"}-${width}.png` });
+          expect(errors).toEqual([]);
+        } finally {
+          await page.close();
+        }
+      });
+    }
+
+  for (const width of [1440, 390]) {
+    test(`the media host shows Auto, layers and recoverable saving at ${width}px`, async () => {
+      const { page, errors, commits } = await setup({ width, images: 28, conflict: true });
+      let releaseCommit: (() => void) | undefined;
+      try {
+        await page.setViewportSize({ width, height: width === 390 ? 844 : 900 });
+        await edit(page);
+        const shot = async (motif: string) => {
+          await settled(page);
+          if (process.env.SHOTS) await page.screenshot({ path: `${process.env.SHOTS}/files-host-${motif}-light-${width}.png` });
+        };
+        await page.getByRole("tab", { name: "Adjust", exact: true }).click();
+        await page.getByRole("button", { name: "Auto", exact: true }).first().click();
+        await page.waitForFunction(() => document.querySelector(".k2b-image-editor")?.getAttribute("data-dirty") === "true");
+        expect(await page.locator(".k2b-image-editor__dirty[data-on]").isVisible()).toBe(true);
+        if (width === 390) await page.locator(".k2b-image-editor__name").click();
+        const strip = page.getByRole("navigation", { name: "Images", exact: true });
+        expect(await strip.getByRole("button").count()).toBe(28);
+        await strip.locator("ul").evaluate((node) => node.scrollTo({ left: node.scrollWidth / 3 }));
+        await page.waitForFunction(() =>
+          document.querySelector(".k2b-image-editor__strip ul")?.getAttribute("data-fade")?.includes("start"),
+        );
+        await shot("auto-many-images");
+        if (width === 390) await page.locator(".k2b-image-editor__name").click();
+        await page.getByRole("tab", { name: "Mark up", exact: true }).click();
+        const tool = (name: string | RegExp) =>
+          page.getByRole("radiogroup", { name: "Tool", exact: true }).getByRole("radio", { name, exact: typeof name === "string" });
+        const draw = async (from: [number, number], to: [number, number]) => {
+          await settled(page);
+          const image = (await page.locator(".k2b-image-editor__image").boundingBox())!;
+          await page.mouse.move(image.x + image.width * from[0], image.y + image.height * from[1]);
+          await page.mouse.down();
+          await page.mouse.move(image.x + image.width * to[0], image.y + image.height * to[1], { steps: 6 });
+          await page.mouse.up();
+        };
+        await tool("Rectangle").click();
+        await draw([0.5, 0.5], [0.7, 0.7]);
+        await tool("Arrow").click();
+        await draw([0.55, 0.4], [0.75, 0.6]);
+        await tool(/^Redact/).click();
+        await draw([0.15, 0.2], [0.35, 0.35]);
+        expect(await page.locator(".k2b-image-editor__layer").count()).toBe(3);
+        expect(await page.locator(".k2b-image-editor__layer").first().getAttribute("data-group")).toBe("redact");
+        await shot("mark-up");
+        const gate = new Promise<void>((resolve) => {
+          releaseCommit = resolve;
+        });
+        await page.route("**/commit", async (route) => {
+          await gate;
+          await route.fallback();
+        });
+        await save(page);
+        await page.locator('.k2b-image-editor[data-state="saving"]').waitFor();
+        await shot("saving");
+        releaseCommit!();
+        await page.getByRole("alert").filter({ hasText: "File changed" }).first().waitFor();
+        await shot("save-error");
+        await save(page, true);
+        await page.waitForFunction(() => document.querySelector(".k2b-image-editor")?.getAttribute("data-dirty") === "false");
+        expect(commits()).toBe(2);
+        await shot("recovered");
+        expect(errors).toEqual([]);
+      } finally {
+        releaseCommit?.();
+        await page.close();
+      }
+    });
+  }
+
   for (const width of [1440, 390]) {
     test(`the real media preview host keeps a visible editor close path at ${width}px`, async () => {
       const { page, errors } = await setup({ width });

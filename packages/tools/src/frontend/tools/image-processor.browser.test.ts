@@ -90,6 +90,82 @@ const choose = (page: Page, name: RegExp, nth = 0) =>
 const shownCanvases = ".k2b-image-editor__image > canvas";
 
 describe("Tools public photo editor adoption", () => {
+  for (const width of [1440, 390]) {
+    test(`the real Tools host shows crop, Auto and recoverable download at ${width}px`, async () => {
+      const { page, errors } = await open("many=1", width);
+      try {
+        await page.setViewportSize({ width, height: width === 390 ? 844 : 900 });
+        await page.waitForFunction(() => (document.querySelector<HTMLCanvasElement>(".k2b-image-editor__image > canvas")?.width ?? 0) > 1);
+        const shot = async (motif: string) => {
+          await settled(page);
+          if (process.env.SHOTS) await page.screenshot({ path: `${process.env.SHOTS}/tools-host-${motif}-light-${width}.png` });
+        };
+        await page.getByRole("tab", { name: "Crop", exact: true }).click();
+        expect(await page.locator(".k2b-image-editor__chips").getByRole("button", { name: "Close", exact: true }).isVisible()).toBe(true);
+        await shot("crop");
+        await page.getByRole("tab", { name: "Adjust", exact: true }).click();
+        await page.getByRole("button", { name: "Auto", exact: true }).first().click();
+        await page.waitForFunction(() => document.querySelector(".k2b-image-editor")?.getAttribute("data-dirty") === "true");
+        if (width === 390) await page.locator(".k2b-image-editor__name").click();
+        const strip = page.getByRole("navigation", { name: "Images", exact: true });
+        const list = strip.locator("ul");
+        expect(await strip.getByRole("button").count()).toBe(29);
+        await list.evaluate((node) => node.scrollTo({ left: node.scrollWidth / 3 }));
+        await page.waitForFunction(() =>
+          document.querySelector(".k2b-image-editor__strip ul")?.getAttribute("data-fade")?.includes("start"),
+        );
+        await shot("auto-many-images");
+        await strip.getByRole("button", { name: "Add photos", exact: true }).scrollIntoViewIfNeeded();
+        expect(await strip.getByRole("button", { name: "Add photos", exact: true }).isVisible()).toBe(true);
+        await shot("strip-add");
+        if (width === 390) await page.locator(".k2b-image-editor__name").click();
+        await page.getByRole("tab", { name: "Mark up", exact: true }).click();
+        for (const [name, from, to] of [
+          ["Rectangle", [0.5, 0.5], [0.7, 0.7]],
+          ["Arrow", [0.55, 0.4], [0.75, 0.6]],
+          [/^Redact/, [0.15, 0.2], [0.35, 0.35]],
+        ] as const) {
+          await page
+            .getByRole("radiogroup", { name: "Tool", exact: true })
+            .getByRole("radio", { name, exact: typeof name === "string" })
+            .click();
+          await settled(page);
+          const image = (await page.locator(".k2b-image-editor__image").boundingBox())!;
+          await page.mouse.move(image.x + image.width * from[0], image.y + image.height * from[1]);
+          await page.mouse.down();
+          await page.mouse.move(image.x + image.width * to[0], image.y + image.height * to[1], { steps: 6 });
+          await page.mouse.up();
+        }
+        expect(await page.locator(".k2b-image-editor__layer").count()).toBe(3);
+        await shot("mark-up");
+        await page.evaluate(() => {
+          const encode = HTMLCanvasElement.prototype.toBlob;
+          HTMLCanvasElement.prototype.toBlob = function (callback, type, quality) {
+            if (this.width > 1000) {
+              HTMLCanvasElement.prototype.toBlob = encode;
+              Object.assign(window, { releasePhotoExport: () => encode.call(this, callback, type, quality) });
+            } else encode.call(this, callback, type, quality);
+          };
+        });
+        await page.evaluate("window.photoFixture.rejectDownload = true");
+        await page.getByRole("button", { name: "Download", exact: true }).click();
+        await page.locator('.k2b-image-editor[data-state="saving"]').waitFor();
+        await shot("saving");
+        await page.evaluate("window.releasePhotoExport()");
+        await page.getByRole("alert").filter({ hasText: "Download destination unavailable" }).first().waitFor();
+        await shot("save-error");
+        expect(await dirty(page)).toBe(1);
+        await page.evaluate("window.photoFixture.rejectDownload = false");
+        await page.getByRole("button", { name: "Try again", exact: true }).first().click();
+        await page.waitForFunction(() => !document.querySelector(".k2b-image-editor[data-dirty=true]"));
+        await shot("recovered");
+        expect(errors).toEqual([]);
+      } finally {
+        await page.close();
+      }
+    });
+  }
+
   test("archive opens unvisited editors, keeps names unique and clears dirty after the destination succeeds", async () => {
     const { page, errors } = await open("", 390, true);
     try {

@@ -1532,6 +1532,14 @@ function ImageEditorSession(props: ImageEditorProps): JSX.Element {
     return { width: `${ratio >= 1 ? 18 : 18 * ratio}px`, height: `${ratio >= 1 ? 18 / ratio : 18}px`, free: false };
   };
   const stateName = () => (loadError() ? "error" : loading() ? "loading" : busy() ? "saving" : "ready");
+  const cropShade = () => {
+    const { x, y, width, height } = state().crop;
+    const left = x * 100;
+    const top = y * 100;
+    const right = (x + width) * 100;
+    const bottom = (y + height) * 100;
+    return `polygon(evenodd, 0% 0%, 100% 0%, 100% 100%, 0% 100%, 0% 0%, ${left}% ${top}%, ${right}% ${top}%, ${right}% ${bottom}%, ${left}% ${bottom}%, ${left}% ${top}%)`;
+  };
 
   return (
     <section
@@ -1632,6 +1640,7 @@ function ImageEditorSession(props: ImageEditorProps): JSX.Element {
               </span>
             </Show>
             <Show when={tool() === "crop" && f().crop}>
+              <div class="k2b-image-editor__crop-shade" style={{ "clip-path": cropShade() }} aria-hidden="true" />
               <div
                 class="k2b-image-editor__crop"
                 data-dragging={cropDragging() ? "" : undefined}
@@ -2181,7 +2190,7 @@ function ImageEditorSession(props: ImageEditorProps): JSX.Element {
                 onClick={() => rotate(false)}
               >
                 <i class="ti ti-rotate-2" aria-hidden="true" />
-                <span>{t().rotateLeft}</span>
+                <span class="k2b-image-editor__rotation-text">{t().rotateLeft}</span>
               </Button>
               <Button
                 variant="secondary"
@@ -2191,7 +2200,7 @@ function ImageEditorSession(props: ImageEditorProps): JSX.Element {
                 onClick={() => rotate(true)}
               >
                 <i class="ti ti-rotate-clockwise-2" aria-hidden="true" />
-                <span>{t().rotateRight}</span>
+                <span class="k2b-image-editor__rotation-text">{t().rotateRight}</span>
               </Button>
               <Button
                 variant="secondary"
@@ -2201,7 +2210,7 @@ function ImageEditorSession(props: ImageEditorProps): JSX.Element {
                 onClick={() => change((s) => ({ ...s, flipX: !s.flipX }))}
               >
                 <i class="ti ti-flip-vertical" aria-hidden="true" />
-                <span>{t().flipX}</span>
+                <span class="k2b-image-editor__rotation-text">{t().flipX}</span>
               </Button>
               <Button
                 variant="secondary"
@@ -2211,7 +2220,7 @@ function ImageEditorSession(props: ImageEditorProps): JSX.Element {
                 onClick={() => change((s) => ({ ...s, flipY: !s.flipY }))}
               >
                 <i class="ti ti-flip-horizontal" aria-hidden="true" />
-                <span>{t().flipY}</span>
+                <span class="k2b-image-editor__rotation-text">{t().flipY}</span>
               </Button>
               <IconButton
                 class="k2b-image-editor__phone-only"

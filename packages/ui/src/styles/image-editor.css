@@ -135,11 +135,18 @@
 .k2b-ui .k2b-image-editor__peek { position: absolute; top: 12px; left: 50%; transform: translateX(-50%); }
 
 /* Crop and selection boxes live inside the image element in percent, so handles keep 44 px at any zoom. */
+/* Shade only discarded photo pixels; an unbounded shadow also dims the canvas and every glass overlay. */
+.k2b-ui .k2b-image-editor__crop-shade {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  background: rgb(9 9 11 / 0.5);
+  pointer-events: none;
+}
 .k2b-ui .k2b-image-editor__crop {
   position: absolute;
   z-index: 1;
   outline: 1px solid rgb(255 255 255 / 0.95);
-  box-shadow: 0 0 0 100vmax rgb(9 9 11 / 0.5);
   pointer-events: none;
 }
 .k2b-ui .k2b-image-editor__grid {
@@ -868,7 +875,8 @@
 .k2b-ui .k2b-image-editor[data-phone] .k2b-image-editor__aspects .k2b-image-editor__choice { flex: none; width: 62px; min-height: 42px; gap: 3px; }
 .k2b-ui .k2b-image-editor[data-phone] .k2b-image-editor__rotations { display: flex; gap: 4px; }
 .k2b-ui .k2b-image-editor[data-phone] .k2b-image-editor__rotations .k2b-button { width: 40px; padding: 0; justify-content: center; }
-.k2b-ui .k2b-image-editor[data-phone] .k2b-image-editor__rotations .k2b-button span { display: none; }
+/* Hide only text: the shared Button wraps both glyph and text in its label span. */
+.k2b-ui .k2b-image-editor[data-phone] .k2b-image-editor__rotation-text { display: none; }
 .k2b-ui .k2b-image-editor[data-phone] .k2b-image-editor__rotations .k2b-image-editor__phone-only { margin-left: auto; }
 .k2b-ui .k2b-image-editor[data-phone] .k2b-image-editor__ruler { height: 42px; }
 .k2b-ui .k2b-image-editor[data-phone] .k2b-image-editor__adjust-pane { display: none; }

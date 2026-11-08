@@ -16,6 +16,7 @@ const fixture = {
     return images;
   },
   rejectArchive: false,
+  rejectDownload: false,
   dispose: () => {},
 };
 Object.assign(window, { photoFixture: fixture });
@@ -23,6 +24,7 @@ const click = HTMLAnchorElement.prototype.click;
 HTMLAnchorElement.prototype.click = function () {
   if (!this.download) return click.call(this);
   if (fixture.rejectArchive && this.download === "photos.zip") throw new Error("Archive destination unavailable");
+  if (fixture.rejectDownload && this.download !== "photos.zip") throw new Error("Download destination unavailable");
   fixture.downloads.push({ filename: this.download, blob: fetch(this.href).then((response) => response.blob()) });
 };
 async function mount() {
@@ -47,10 +49,15 @@ async function mount() {
         initialImages={
           new URLSearchParams(location.search).has("empty")
             ? []
-            : [
-                { id: 1, file, source: file },
-                { id: 2, file: second, source: second },
-              ]
+            : new URLSearchParams(location.search).has("many")
+              ? Array.from({ length: 28 }, (_, index) => {
+                  const photo = new File([file], `photo-${index + 1}.jpg`, { type: "image/jpeg" });
+                  return { id: index + 1, file: photo, source: photo };
+                })
+              : [
+                  { id: 1, file, source: file },
+                  { id: 2, file: second, source: second },
+                ]
         }
       />
     ),

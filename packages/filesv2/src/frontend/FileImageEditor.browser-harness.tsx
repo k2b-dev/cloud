@@ -7,7 +7,7 @@ import { openFilePreview } from "./FilePreviewDialog";
 declare global {
   interface Window {
     fileImages: {
-      open: (name?: string, options?: { write?: boolean; canCreate?: boolean; images?: boolean }) => void;
+      open: (name?: string, options?: { write?: boolean; canCreate?: boolean; images?: boolean | number }) => void;
       saved: EntryResult[];
       leave: () => Promise<void>;
     };
@@ -36,7 +36,11 @@ render(
             void openFilePreview({
               baseId: "photos",
               entry: file(name),
-              images: options.images ? [file(name), file("Beach.jpg")] : undefined,
+              images: options.images
+                ? Array.from({ length: typeof options.images === "number" ? options.images : 2 }, (_, index) =>
+                    file(index === 0 ? name : index === 1 ? "Beach.jpg" : `Photo ${index + 1}.jpg`),
+                  )
+                : undefined,
               onDownload: () => {},
               imageEditing: {
                 canCreate: options.canCreate ?? true,

@@ -32,6 +32,7 @@ const build = await Bun.build({
 });
 if (!build.success) throw new AggregateError(build.logs, "Could not build public ImageEditor fixture");
 const script = await build.outputs[0]!.text();
+const iconFont = [...new Bun.Glob("tabler-icons-*.woff2").scanSync(resolve(import.meta.dir, "../dist"))][0]!;
 let server: ReturnType<typeof Bun.serve>;
 let browser: Browser;
 beforeAll(async () => {
@@ -42,10 +43,12 @@ beforeAll(async () => {
       const url = new URL(request.url);
       if (url.pathname === "/editor.js") return new Response(script, { headers: { "content-type": "text/javascript" } });
       if (url.pathname === "/styles.css") return new Response(Bun.file(resolve(import.meta.dir, "../dist/styles.css")));
+      if (url.pathname === "/tabler.css" || url.pathname === `/${iconFont}`)
+        return new Response(Bun.file(resolve(import.meta.dir, `../dist${url.pathname}`)));
       if (url.pathname === "/photo.jpg" || url.pathname === "/logo.png")
         return new Response(Bun.file(resolve(import.meta.dir, `../src/inputs/image-editor/fixtures${url.pathname}`)));
       return new Response(
-        `<!doctype html><html lang="${url.searchParams.get("locale") === "de" ? "de" : "en"}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="/styles.css"></head><body class="k2b-ui" data-theme="light" style="margin:0"><div data-nav-shell="editor-test" data-nav-scope="/"><a href="/destination" id="destination-link" ${url.searchParams.has("nav") ? "" : "hidden"}>Destination</a><main data-nav-root data-path="${url.pathname}"><div id="editor" style="height:calc(100dvh - 1rem);min-height:34rem"></div></main></div><script src="/editor.js"></script></body></html>`,
+        `<!doctype html><html lang="${url.searchParams.get("locale") === "de" ? "de" : "en"}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="/styles.css"><link rel="stylesheet" href="/tabler.css"></head><body class="k2b-ui" data-theme="light" style="margin:0"><div data-nav-shell="editor-test" data-nav-scope="/"><a href="/destination" id="destination-link" ${url.searchParams.has("nav") ? "" : "hidden"}>Destination</a><main data-nav-root data-path="${url.pathname}"><div id="editor" style="height:calc(100dvh - 1rem);min-height:34rem"></div></main></div><script src="/editor.js"></script></body></html>`,
         { headers: { "content-type": "text/html" } },
       );
     },
@@ -296,6 +299,31 @@ describe("public ImageEditor interactions", () => {
       } finally {
         await page.close();
       }
+    }
+  });
+
+  test("phone crop buttons show their glyphs while their text stays hidden", async () => {
+    const { page, errors } = await open("", 390);
+    try {
+      await selectTool(page, "Crop");
+      await settled(page);
+      const buttons = await page.locator(".k2b-image-editor__rotations .k2b-button:not(.k2b-icon-button)").evaluateAll((all) =>
+        all.map((button) => {
+          const glyph = button.querySelector("i")!.getBoundingClientRect();
+          const text = button.querySelector(".k2b-image-editor__rotation-text");
+          return {
+            name: button.getAttribute("aria-label"),
+            glyph: glyph.width > 0 && glyph.height > 0,
+            text: text ? getComputedStyle(text).display : "missing",
+          };
+        }),
+      );
+      expect(buttons).toHaveLength(4);
+      for (const button of buttons) expect(button).toEqual({ name: button.name, glyph: true, text: "none" });
+      expect(buttons.every((button) => !!button.name)).toBe(true);
+      expect(errors).toEqual([]);
+    } finally {
+      await page.close();
     }
   });
 
