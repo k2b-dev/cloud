@@ -412,6 +412,9 @@ function DataTableRoot<T>(props: DataTableProps<T>) {
     const priorities = props.columns.map((col) => col.priority ?? 1);
     return priorities.includes(3) ? "3" : priorities.includes(2) ? "2" : undefined;
   });
+  // Keep the row's last child a cell in both SSR and the browser. Trailing conditional anchors
+  // change WebKit's rendered text between the header and the first body row.
+  const headerColumns = createMemo(() => (detailsPriority() ? [...props.columns, null] : props.columns));
   const hiddenColumns = () => props.columns.filter((col) => priorityAttr(col));
   const columnCount = () => props.columns.length + (detailsPriority() ? 1 : 0);
   const [openDetails, setOpenDetails] = createSignal<ReadonlySet<T>>(new Set());
@@ -756,26 +759,29 @@ function DataTableRoot<T>(props: DataTableProps<T>) {
             </Show>
             <thead class="k2b-data-table__head" data-sticky={props.stickyHeader === false ? undefined : "true"}>
               <tr class="k2b-data-table__head-row">
-                <For each={props.columns}>
-                  {(col, index) => (
-                    <th
-                      scope="col"
-                      class={`${col.headerClass ?? ""} ${col.class ?? ""}`}
-                      data-align={alignAttr(col)}
-                      data-priority={priorityAttr(col)}
-                      data-highlighted={columnHighlighted(index())}
-                      aria-sort={ariaSortFor(col)}
-                      onMouseEnter={() => setHoveredColumnIfEnabled(index())}
-                    >
-                      {props.renderHeader ? props.renderHeader({ col, render: () => renderHeaderDefault(col) }) : renderHeaderDefault(col)}
-                    </th>
-                  )}
+                <For each={headerColumns()}>
+                  {(col, index) =>
+                    col ? (
+                      <th
+                        scope="col"
+                        class={`${col.headerClass ?? ""} ${col.class ?? ""}`}
+                        data-align={alignAttr(col)}
+                        data-priority={priorityAttr(col)}
+                        data-highlighted={columnHighlighted(index())}
+                        aria-sort={ariaSortFor(col)}
+                        onMouseEnter={() => setHoveredColumnIfEnabled(index())}
+                      >
+                        {props.renderHeader
+                          ? props.renderHeader({ col, render: () => renderHeaderDefault(col) })
+                          : renderHeaderDefault(col)}
+                      </th>
+                    ) : (
+                      <th scope="col" class="k2b-data-table__details-toggle">
+                        <span class="k2b-sr-only">{dataTableMessages().details}</span>
+                      </th>
+                    )
+                  }
                 </For>
-                <Show when={detailsPriority()}>
-                  <th scope="col" class="k2b-data-table__details-toggle">
-                    <span class="k2b-sr-only">{dataTableMessages().details}</span>
-                  </th>
-                </Show>
               </tr>
             </thead>
             <Show

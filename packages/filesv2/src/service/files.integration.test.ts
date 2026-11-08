@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, beforeEach, expect, test } from "bun:test";
 import { getProcessSync, type ProcessSync, sql, startProcessSync } from "@k2b/cloud";
 import { UserSchema } from "@k2b/cloud/contracts";
+import type { AppEventEnvelope } from "@k2b/cloud/events";
 import { type Principal, type RequestActor, resolveDisplayNames } from "@k2b/cloud/server";
 import { accountIdentities, secrets } from "@k2b/cloud/services";
 import { type ExecutionIdentity, Filegate, FilegateError, type Node, type WriteOptions } from "@k2b/filegate";
@@ -15,7 +16,7 @@ import { operations, ROOT_LOCK_WAIT_MS, withRootLock, withUploadLock } from "../
 import { resolveEntryRefId } from "../data/references";
 import type { DocumentFormat } from "../documents";
 import { migrate } from "../migrate";
-import { entryRefId } from "../resource-ref";
+import { entryRefId, stableEntryRefId } from "../resource-ref";
 import { createFilesService } from ".";
 import { systemCall } from "./activity";
 import { connectFilegate } from "./filegate-facade";
@@ -41,6 +42,7 @@ suite("Files service and durable bindings", () => {
   let beforeDirectPublish: (() => void) | undefined;
   const directRequests: Array<{ root: string; path: string; precondition?: { ifMatch?: string; ifNoneMatch?: boolean } }> = [];
   let ipaIndexed = false;
+  let stableIds = false;
   const executions: Array<{ source: unknown; target: unknown; operation: string }> = [];
   const versions = new Map<
     string,
@@ -244,6 +246,7 @@ suite("Files service and durable bindings", () => {
         return Response.json({
           name: root,
           managed: root === "cloud",
+          stableIds,
           execution: true,
           index: { enabled: root === "cloud" || ipaIndexed },
           versioning: { enabled: root === "cloud" },
@@ -752,6 +755,7 @@ suite("Files service and durable bindings", () => {
   });
   beforeEach(async () => {
     ipaIndexed = false;
+    stableIds = false;
     mkdirRequests.length = 0;
     beforeMkdir = undefined;
     executions.length = 0;
@@ -771,6 +775,7 @@ suite("Files service and durable bindings", () => {
     config.collabora = { url: "", internalUrl: "", wopiOrigin: "", documentFormat: "odf" };
     archives.length = 0;
     lostCommitResponse = false;
+    await sql`TRUNCATE events.outbox`;
     await sql`TRUNCATE filesv2.templates,auth.access,filesv2.recent,filesv2.favorites,filesv2.shares,filesv2.trash,filesv2.uploads,filesv2.operations,filesv2.maintenance,filesv2.bases,audit.events,auth.users,auth.user_posix,auth.personal_groups,auth.groups,auth.user_groups_v2,auth.group_groups_v2,auth.ipa_user_effective_groups,settings.entries CASCADE`.simple();
     await set(
       "linux.identity_config",
@@ -1110,6 +1115,245 @@ suite("Files service and durable bindings", () => {
       { state: "skipped" },
     ]);
   });
+  const uploadEvents = async (): Promise<AppEventEnvelope[]> =>
+    (
+      await sql<
+        { envelope: AppEventEnvelope }[]
+      >`SELECT payload AS envelope FROM events.outbox WHERE app_id='filesv2' AND kind='event' ORDER BY seq`
+    ).map((row) => row.envelope);
+
+  test("a committed upload publishes one file event at its readable parent, and receipt retries stay quiet", async () => {
+    const actor = await user("arrival", "ipa");
+    directory("freeipa", "users/arrival");
+    directory("freeipa", "users/arrival/Inbox");
+    const baseId = (await service.bases(testCall(actor))).items[0]!.id;
+    const opened = await service.upload(testCall(actor), {
+      baseId,
+      path: "Inbox/invoice.pdf",
+      size: 12,
+      onConflict: "error",
+      idempotencyKey: crypto.randomUUID(),
+    });
+    expect(await uploadEvents()).toEqual([]);
+    privateSession(opened.id).received = 12;
+    await service.commitUpload(testCall(actor), { baseId, id: opened.id });
+    await service.commitUpload(testCall(actor), { baseId, id: opened.id });
+    const events = await uploadEvents();
+    expect(events).toHaveLength(1);
+    expect(events[0]).toMatchObject({
+      type: "filesv2.entry.created",
+      source: "filesv2",
+      version: 1,
+      subject: { type: "filesv2.entry", id: entryRefId(baseId, "Inbox/invoice.pdf") },
+      place: { type: "filesv2.entry", id: entryRefId(baseId, "Inbox") },
+      data: {},
+    });
+    expect((await service.entryById(testCall(actor), events[0]!.subject.id)).entry.path).toBe("Inbox/invoice.pdf");
+    expect((await service.entryById(testCall(actor), events[0]!.place!.id)).entry).toMatchObject({ path: "Inbox", directory: true });
+  });
+
+  test("long-path arrivals retain public bounded refs that the entry reader resolves", async () => {
+    const actor = await user("long-arrival", "ipa");
+    directory("freeipa", "users/long-arrival");
+    let folder = "";
+    for (let i = 0; i < 5; i++) {
+      folder = [folder, `folder-${i}-${"x".repeat(90)}`].filter(Boolean).join("/");
+      directory("freeipa", `users/long-arrival/${folder}`);
+    }
+    const baseId = (await service.bases(testCall(actor))).items[0]!.id;
+    const path = `${folder}/invoice.pdf`;
+    const opened = await service.upload(testCall(actor), {
+      baseId,
+      path,
+      size: 0,
+      onConflict: "error",
+      idempotencyKey: crypto.randomUUID(),
+    });
+    await service.commitUpload(testCall(actor), { baseId, id: opened.id });
+    const event = (await uploadEvents())[0]!;
+    expect(event.subject.id).toMatch(/^p:[a-f0-9]{64}$/);
+    expect(event.place!.id).toMatch(/^p:[a-f0-9]{64}$/);
+    expect((await service.entryById(testCall(actor), event.subject.id)).entry.path).toBe(path);
+    expect((await service.entryById(testCall(actor), event.place!.id)).entry.path).toBe(folder);
+  });
+
+  test("the entry reader accepts a storage root ref as an authorized folder place", async () => {
+    const actor = await user("root-reader", "ipa");
+    directory("freeipa", "users/root-reader");
+    const baseId = (await service.bases(testCall(actor))).items[0]!.id;
+    const ref = entryRefId(baseId, "")!;
+    expect(await service.entryById(testCall(actor), ref)).toMatchObject({
+      base: { id: baseId },
+      entry: { path: "", directory: true },
+      resourceId: ref,
+    });
+    const other = await user("other-root-reader", "ipa");
+    directory("freeipa", "users/other-root-reader");
+    await expect(service.entryById(testCall(other), ref)).rejects.toMatchObject({ code: "not_found" });
+    directory("freeipa", "users/root-reader", 999, 999, "0700");
+    await expect(service.entryById(testCall(actor), ref)).rejects.toMatchObject({ code: "ownership_mismatch", status: 403 });
+    directory("freeipa", "users/root-reader", 1001, 2001, "0300");
+    await expect(service.entryById(testCall(actor), ref)).rejects.toMatchObject({ code: "forbidden", status: 403 });
+  });
+
+  test("publication refreshes a replaced parent folder's stable ref before Filegate commits", async () => {
+    const actor = await user("parent-arrival", "local", true);
+    directory("cloud", "users/parent-arrival", 0, 0, "0700");
+    await service.adopt(testCall(actor), { area: "cloud", kind: "users", identityId: id(actor) });
+    const folder = directory("cloud", "users/parent-arrival/Inbox", 0, 0, "0700");
+    const firstId = "11111111-1111-4111-8111-111111111111";
+    const secondId = "22222222-2222-4222-8222-222222222222";
+    nodes.set("cloud:users/parent-arrival/Inbox", { ...folder, id: firstId });
+    stableIds = true;
+    const baseId = (await service.bases(testCall(actor))).items[0]!.id;
+    const opened = await service.upload(testCall(actor), {
+      baseId,
+      path: "Inbox/report.txt",
+      size: 0,
+      onConflict: "error",
+      idempotencyKey: crypto.randomUUID(),
+    });
+    nodes.set("cloud:users/parent-arrival/Inbox", { ...folder, id: secondId });
+    await service.commitUpload(testCall(actor), { baseId, id: opened.id });
+    expect((await uploadEvents())[0]!.place!.id).toBe(stableEntryRefId(baseId, secondId)!);
+  });
+
+  test("a completion transaction failure rolls back the event and recovers from Filegate without a second upload", async () => {
+    const actor = await user("rollback-arrival", "local", true);
+    directory("cloud", "users/rollback-arrival", 0, 0, "0700");
+    await service.adopt(testCall(actor), { area: "cloud", kind: "users", identityId: id(actor) });
+    const baseId = (await service.bases(testCall(actor))).items[0]!.id;
+    const opened = await service.upload(testCall(actor), {
+      baseId,
+      path: "receipt.txt",
+      size: 0,
+      onConflict: "error",
+      idempotencyKey: crypto.randomUUID(),
+    });
+    await sql`CREATE FUNCTION filesv2.fail_upload_event_test() RETURNS trigger LANGUAGE plpgsql AS $$
+      BEGIN RAISE EXCEPTION 'completion_rollback_test'; END $$`.simple();
+    await sql`CREATE TRIGGER fail_upload_event_test BEFORE UPDATE ON filesv2.uploads
+      FOR EACH ROW WHEN (NEW.state='committed') EXECUTE FUNCTION filesv2.fail_upload_event_test()`.simple();
+    try {
+      await expect(service.commitUpload(testCall(actor), { baseId, id: opened.id })).rejects.toThrow("completion_rollback_test");
+      expect(privateSession(opened.id).state).toBe("committed");
+      expect(await uploadEvents()).toEqual([]);
+      expect((await sql`SELECT state FROM filesv2.uploads WHERE id=${opened.id}`)[0]!.state).toBe("open");
+    } finally {
+      await sql`DROP TRIGGER fail_upload_event_test ON filesv2.uploads`.simple();
+      await sql`DROP FUNCTION filesv2.fail_upload_event_test()`.simple();
+    }
+    await service.commitUpload(testCall(actor), { baseId, id: opened.id });
+    await service.commitUpload(testCall(actor), { baseId, id: opened.id });
+    expect(await uploadEvents()).toHaveLength(1);
+  });
+
+  test("replacement upload publishes the replacement fact, never its internal revisions", async () => {
+    const actor = await user("replacement", "local", true);
+    directory("cloud", "users/replacement", 0, 0, "0700");
+    await service.adopt(testCall(actor), { area: "cloud", kind: "users", identityId: id(actor) });
+    directory("cloud", "users/replacement/report.txt", 0, 0, "0600", false);
+    const baseId = (await service.bases(testCall(actor))).items[0]!.id;
+    const opened = await service.upload(testCall(actor), {
+      baseId,
+      path: "report.txt",
+      size: 0,
+      onConflict: "overwrite",
+      idempotencyKey: crypto.randomUUID(),
+    });
+    await service.commitUpload(testCall(actor), { baseId, id: opened.id });
+    expect(await uploadEvents()).toMatchObject([{ type: "filesv2.entry.replaced", data: {} }]);
+    expect(await uploadEvents()).toHaveLength(1);
+    const event = (await uploadEvents())[0]!;
+    expect(event.place!.id).toBe(entryRefId(baseId, "")!);
+    expect(await service.entryById(testCall(actor), event.place!.id)).toMatchObject({
+      entry: { path: "", directory: true },
+      resourceId: event.place!.id,
+    });
+  });
+
+  test("aborted, incomplete and failed uploads and folder creation publish no arrival", async () => {
+    const actor = await user("cancelled", "local", true);
+    directory("cloud", "users/cancelled", 0, 0, "0700");
+    await service.adopt(testCall(actor), { area: "cloud", kind: "users", identityId: id(actor) });
+    const baseId = (await service.bases(testCall(actor))).items[0]!.id;
+    const input = { baseId, path: "not-finished.txt", size: 4, onConflict: "error" as const, idempotencyKey: crypto.randomUUID() };
+    const opened = await service.upload(testCall(actor), input);
+    await expect(service.commitUpload(testCall(actor), { baseId, id: opened.id })).rejects.toMatchObject({ code: "upload_incomplete" });
+    await service.abortUpload(testCall(actor), { baseId, id: opened.id });
+    await expect(service.commitUpload(testCall(actor), { baseId, id: opened.id })).rejects.toMatchObject({ code: "upload_closed" });
+    const failed = await service.upload(testCall(actor), { ...input, path: "conflict.txt", size: 0, idempotencyKey: crypto.randomUUID() });
+    directory("cloud", "users/cancelled/conflict.txt", 0, 0, "0600", false);
+    await expect(service.commitUpload(testCall(actor), { baseId, id: failed.id })).rejects.toMatchObject({ status: 412 });
+    await service.mkdir(testCall(actor), { baseId, path: "folder" });
+    expect(await uploadEvents()).toEqual([]);
+  });
+
+  test("folder upload emits one bounded fact per committed file, without traversing existing children", async () => {
+    const actor = await user("bulk-arrival", "local", true);
+    directory("cloud", "users/bulk-arrival", 0, 0, "0700");
+    await service.adopt(testCall(actor), { area: "cloud", kind: "users", identityId: id(actor) });
+    directory("cloud", "users/bulk-arrival/Inbox", 0, 0, "0700");
+    for (let i = 0; i < 50; i++) directory("cloud", `users/bulk-arrival/Inbox/existing-${i}.txt`, 0, 0, "0600", false);
+    const baseId = (await service.bases(testCall(actor))).items[0]!.id;
+    for (let i = 0; i < 25; i++) {
+      const opened = await service.upload(testCall(actor), {
+        baseId,
+        path: `Inbox/new-${i}.txt`,
+        size: 0,
+        onConflict: "error",
+        idempotencyKey: crypto.randomUUID(),
+      });
+      await service.commitUpload(testCall(actor), { baseId, id: opened.id });
+    }
+    const events = await uploadEvents();
+    expect(events).toHaveLength(25);
+    expect(new Set(events.map((event) => event.subject.id)).size).toBe(25);
+    for (const event of events) {
+      expect(event.place).toEqual({ type: "filesv2.entry", id: entryRefId(baseId, "Inbox")! });
+      expect(Buffer.byteLength(JSON.stringify(event))).toBeLessThan(512);
+    }
+  });
+
+  test("a lost Filegate commit response recovers exactly one arrival", async () => {
+    const actor = await user("recovered-arrival", "local", true);
+    directory("cloud", "users/recovered-arrival", 0, 0, "0700");
+    await service.adopt(testCall(actor), { area: "cloud", kind: "users", identityId: id(actor) });
+    const baseId = (await service.bases(testCall(actor))).items[0]!.id;
+    const opened = await service.upload(testCall(actor), {
+      baseId,
+      path: "received.txt",
+      size: 0,
+      onConflict: "error",
+      idempotencyKey: crypto.randomUUID(),
+    });
+    lostCommitResponse = true;
+    await expect(service.commitUpload(testCall(actor), { baseId, id: opened.id })).rejects.toThrow("lost_response");
+    expect(await uploadEvents()).toEqual([]);
+    await service.commitUpload(testCall(actor), { baseId, id: opened.id });
+    expect(await uploadEvents()).toHaveLength(1);
+  });
+
+  test("inbox conflict renaming announces the final file and its containing folder", async () => {
+    const actor = await user("inbox-arrival", "ipa");
+    directory("freeipa", "users/inbox-arrival");
+    directory("freeipa", "users/inbox-arrival/Inbox");
+    directory("freeipa", "users/inbox-arrival/Inbox/report.pdf", 1001, 2001, "0600", false);
+    const baseId = (await service.bases(testCall(actor))).items[0]!.id;
+    const share = await service.createShare(testCall(actor), { baseId, kind: "inbox", folder: "Inbox", title: "Inbox" });
+    const token = share.url.split("/").at(-1)!;
+    const opened = await service.publicInboxUpload(token, { name: "report.pdf", size: 0, idempotencyKey: crypto.randomUUID() });
+    await service.publicInboxCommit(token, opened.id);
+    await service.publicInboxCommit(token, opened.id);
+    expect(await uploadEvents()).toHaveLength(1);
+    expect((await uploadEvents())[0]).toMatchObject({
+      type: "filesv2.entry.created",
+      subject: { id: entryRefId(baseId, "Inbox/report-01.pdf") },
+      place: { id: entryRefId(baseId, "Inbox") },
+      data: {},
+    });
+  });
+
   test("uploads open a bound Filegate session and publish only after the owner commits a complete transfer", async () => {
     const actor = await user("alice", "ipa");
     directory("freeipa", "users/alice");

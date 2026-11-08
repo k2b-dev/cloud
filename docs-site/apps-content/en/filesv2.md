@@ -5,7 +5,7 @@ section: Work
 order: 150
 description: Browse Cloud and FreeIPA storage, manage directories, and download files directly through Filegate.
 tags: [files, storage, freeipa, filegate]
-updated: 2026-10-07
+updated: 2026-11-07
 ---
 
 # Files
@@ -1082,6 +1082,26 @@ The canonical `entry.read` capability returns a stable `open` link and a resourc
 `content.read` reports the media type that matches the file name, for example
 `application/pdf` for `report.pdf`, and `application/octet-stream` when the
 extension is unknown. Files never inspects the content for it.
+
+## React to uploaded files
+
+Files declares version 1 events `filesv2.entry.created` and
+`filesv2.entry.replaced`. A committed upload announces the public file ref and
+its containing folder ref, both of Type `filesv2.entry`; `data` is `{}`.
+Storage roots use the empty-path ref returned by `provider.list`, which
+`entry.read` now reads as a folder with current storage access.
+Subscribe to the exact folder ref, and use `filesv2.entry.read` for metadata or
+`filesv2.content.read` for content with current access. Folder subscriptions do
+not automatically include descendants. These are resource events for workloads
+with a valid mandate, not ordinary application subscriptions.
+
+Private, capability, and inbox uploads announce completion through the same
+receipt path. Aborted or failed uploads, editor saves, revision snapshots, and
+thumbnails produce no arrival event. A folder upload produces one event per
+committed file, subject to the shared capacity budget. See
+[Files uploads](/en/docs/platform/app-events#files-uploads) for the complete
+contract and [Files upload volume](/en/docs/operations/app-events#files-upload-volume)
+for bulk planning.
 
 ## Offer files to other apps
 
