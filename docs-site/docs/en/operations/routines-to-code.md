@@ -5,7 +5,7 @@ description: Export scheduled Assistant routines before upgrading, then rebuild 
 section: Operations
 order: 95
 tags: [routines, code, migration]
-updated: 2026-11-07
+updated: 2026-11-08
 ---
 
 # Routines became Code
@@ -15,6 +15,7 @@ capabilities, execution REST routes, routine-management commands, scheduled-task
 Skill and routine controls are removed. Restarting Core or restoring a chat cannot
 resume an old routine. The public `aiChatTasks`, `AiChatTask*`, `ChatTask*` and
 `TaskGrant*` exports are removed too, except the read-only `ChatTaskExport*` contract.
+This is one part of the release-wide [upgrade to Code](/en/docs/operations/upgrade-to-code).
 
 ## Before upgrading
 

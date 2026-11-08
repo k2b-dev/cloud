@@ -76,6 +76,43 @@ include `admin`; existing clients are unchanged. Scopes do not grant roles or
 resource permissions. See [Standalone service accounts and agents](/en/docs/identity/service-accounts)
 for issuance and the `cld admin agents keys` commands.
 
+## Gustav release: major release operator note
+
+Code replaces Studio, Mail rules, automatic replies and scheduled Assistant
+routines. The upgrade is a one-way, coordinated cut; follow
+[Upgrade to Code](/en/docs/operations/upgrade-to-code) step by step.
+
+- **Before the upgrade:** on the old release, run
+  `cld mail automation export --all --json` and
+  `cld assistant tasks export --all --json` with an explicit administrator
+  profile, validate both files, and back up the database. Studio has no
+  export: back up Studio data and the external RSQL databases now, or lose
+  them.
+- **Gone without replacement:** Studio apps with their revisions, sharing,
+  storage, files and RSQL databases; out-of-office, office-hours and
+  reference automatic replies.
+- **Rebuilt as Code by Gustav, then reviewed and switched on:** Mail rules
+  become mailbox Code; routines become personal Code. No old definition,
+  grant or enabled flag becomes active Code by itself.
+- **Unchanged:** Grids workflows and apps, the public workflow engine
+  `@k2b/cloud/workflows`, health webhooks, ordinary Mail and chat code runs.
+- **Upgrade order:** freeze, export, stop and drain the old release
+  (reconcile accepted or unknown Mail sends there), stop every old Core,
+  Assistant and Mail replica, upgrade all applications, the Code runner and
+  the CLI plugins together. Never run old and new versions side by side.
+- **The upgrade stops** while old Mail commands or sends are unresolved, when
+  a pending chat HTTP request cannot be read (keep `APP_SECRET`), or when the
+  Studio RSQL cleanup cannot reach RSQL. Fix the cause and start again.
+- **History stays readable:** retired Mail rule logs and runs, routine
+  messages and the routine archive, and Studio execution evidence. Nothing
+  old runs again; old images refuse the new schema.
+- **Rollback:** switch replacement Code off first, then restore the
+  pre-upgrade backups, including external RSQL backups.
+
+[Removed in the Gustav release](/en/docs/reference/code-release-removals)
+lists every removed route, command, capability, setting and export with its
+replacement.
+
 ## Capability targets: major release operator note
 
 Before upgrading, back up the database and inventory third-party capability
