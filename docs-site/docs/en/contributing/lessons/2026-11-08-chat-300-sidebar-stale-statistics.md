@@ -1,6 +1,6 @@
-### The 300-chat sidebar test timed out after a bulk load with stale statistics
+### The 300-chat sidebar test spent its deadline on setup and stale statistics, then outlived its cleanup
 
-- **What happened:** In merge-group run 42526165208 the Chat test "a 300-chat sidebar pages every chat with bounded responses" hit its 30-second timeout and removed #2962 from the merge queue. Passing runs take about 1.5 seconds with a 58 ms p95 per page.
-- **Root cause:** The test inserts 300 chats with their grants and reads the sidebar at once. Auto-analyze had not caught up on the fresh CI database, so the planner chose a plan that ran for seconds per page. The cleanup diagnostic showed the sidebar query itself active and unblocked, and the test was still in its timing loop when the timeout fired.
-- **Error class:** Measuring or paging right after a bulk fixture load while the planner still uses statistics from before the load.
-- **Guard:** The test runs `ANALYZE` on the access and Chat tables after loading, like the large-channel test in the same file. Tests that bulk-load rows and then measure or page through them analyze the loaded tables first.
+- **What happened:** "a 300-chat sidebar pages every chat with bounded responses" timed out at 30 seconds on 27.10., 05.11., twice on 07.11. and on 08.11., where it removed #2962 from the merge queue. Passing runs take about 1.5 seconds with a 58 ms p95 per page. Each timeout was followed by a 401 between tests.
+- **Root cause:** Three parts. The setup built 300 chats with about 900 round trips, which grew with runner load (#2036). Right after that bulk load, auto-analyze had not caught up, and the sidebar query ran for about a second per page; the cleanup diagnostic showed it active and unblocked (#2596). Bun stopped waiting at 30 seconds but the test body kept running, so its later reads met the cleanup and failed as 401.
+- **Error class:** A test deadline spent on fixture setup and on plans from statistics older than the bulk load; a test body that can outlive its cleanup.
+- **Guard:** The test creates its chats with four set-based inserts in one transaction, runs `ANALYZE` before reading, and fails inside its own 25-second budget with the time of each phase, so no request outlives the cleanup. Tests that bulk-load rows and then measure or page through them analyze the loaded tables first.
