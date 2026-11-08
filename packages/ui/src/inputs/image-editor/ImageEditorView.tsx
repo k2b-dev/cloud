@@ -322,6 +322,12 @@ function ImageEditorSession(props: ImageEditorProps): JSX.Element {
   let chipsEl: HTMLDivElement | undefined;
   let bottomEl: HTMLDivElement | undefined;
   let paneEl: HTMLElement | undefined;
+  let bodyEl: HTMLDivElement | undefined;
+  /** Whether the tool body scrolls further down; its lower edge then fades, so the last control reads as cut. */
+  const [moreBelow, setMoreBelow] = createSignal(false);
+  const checkMore = () => {
+    if (bodyEl) setMoreBelow(bodyEl.scrollHeight - bodyEl.scrollTop - bodyEl.clientHeight > 1);
+  };
   let saveEl: HTMLDivElement | undefined;
   let stripList: HTMLUListElement | undefined;
   let layersList: HTMLUListElement | undefined;
@@ -748,6 +754,7 @@ function ImageEditorSession(props: ImageEditorProps): JSX.Element {
       const last = overlayInsets();
       if (!last || next.top !== last.top || next.right !== last.right || next.bottom !== last.bottom || next.left !== last.left)
         setOverlayInsets(next);
+      checkMore();
     };
     // The measured sizes feed the layout of the observed pane and save area. Measuring in the next frame, and
     // writing only changed values, keeps a size change from resizing an observed element inside its own
@@ -757,7 +764,18 @@ function ImageEditorSession(props: ImageEditorProps): JSX.Element {
       cancelAnimationFrame(measureFrame);
       measureFrame = requestAnimationFrame(measure);
     });
-    for (const el of [root, paneEl, saveEl, chipsEl, bottomEl]) if (el) observer.observe(el);
+    for (const el of [root, paneEl, saveEl, chipsEl, bottomEl, bodyEl]) if (el) observer.observe(el);
+    // The open tool's content grows and shrinks inside the body (sections, layers); watch it for the fade too.
+    let content: Element | undefined;
+    createEffect(
+      on(tool, () =>
+        queueMicrotask(() => {
+          if (content) observer.unobserve(content);
+          content = bodyEl?.firstElementChild ?? undefined;
+          if (content) observer.observe(content);
+        }),
+      ),
+    );
     measure();
     void supportedImageEditorFormats()
       .then((available) => {
@@ -1777,7 +1795,8 @@ function ImageEditorSession(props: ImageEditorProps): JSX.Element {
           </Show>
         </Dynamic>
         <span class="k2b-image-editor__chip k2b-overlay-surface k2b-image-editor__chip--size" data-optional="">
-          {preview() ? px(rotated().width * state().crop.width, rotated().height * state().crop.height) : "… × … px"}
+          {/* A known `sourceSize` shows at once; only an unknown size waits for the preview. */}
+          {preview() || props.sourceSize ? px(rotated().width * state().crop.width, rotated().height * state().crop.height) : "… × … px"}
         </span>
         <Show when={sourceType()}>
           <span class="k2b-image-editor__chip k2b-overlay-surface" data-optional="">
@@ -1952,7 +1971,10 @@ function ImageEditorSession(props: ImageEditorProps): JSX.Element {
           </For>
         </div>
         <div
+          ref={bodyEl}
           class="k2b-image-editor__body"
+          data-more={moreBelow() ? "" : undefined}
+          onScroll={checkMore}
           id={`${ids.help}-panel`}
           role="tabpanel"
           aria-labelledby={`${ids.help}-tab-${tool()}`}
@@ -2240,8 +2262,6 @@ function ImageEditorSession(props: ImageEditorProps): JSX.Element {
       const centered = key !== "vignette" && key !== "grain";
       return (
         <Slider
-          class="k2b-image-editor__slider"
-          data-changed={value() !== 0 ? "" : undefined}
           label={
             <>
               {t()[key]}
@@ -2264,7 +2284,6 @@ function ImageEditorSession(props: ImageEditorProps): JSX.Element {
     };
     const strength = () => (
       <Slider
-        class="k2b-image-editor__slider"
         label={t().strength}
         value={Math.round(state().lookStrength * 100)}
         min={0}
@@ -2326,7 +2345,8 @@ function ImageEditorSession(props: ImageEditorProps): JSX.Element {
       {
         id: "look" as const,
         label: t().look,
-        value: state().look === "original" ? "–" : t()[lookOptions.find((x) => x.value === state().look)!.label],
+        // The chip names the look in use, Natural included, as the pane's heading does.
+        value: t()[lookOptions.find((x) => x.value === state().look)?.label ?? "natural"],
         changed: state().look !== "original",
       },
       ...(f().filters
@@ -2334,7 +2354,8 @@ function ImageEditorSession(props: ImageEditorProps): JSX.Element {
             {
               id: "strength" as const,
               label: t().strength,
-              value: state().look === "original" ? "–" : `${Math.round(state().lookStrength * 100)} %`,
+              // Like the pane's slider: the strength stays shown and is disabled while Natural has nothing to scale.
+              value: `${Math.round(state().lookStrength * 100)} %`,
               changed: state().look !== "original" && state().lookStrength !== 1,
               disabled: state().look === "original",
             },
@@ -2692,7 +2713,6 @@ function ImageEditorSession(props: ImageEditorProps): JSX.Element {
         <Show when={exportFeatures()?.quality}>
           <Show when={!losslessOutput()} fallback={<p class="k2b-image-editor__hint k2b-image-editor__lossless">{t().lossless}</p>}>
             <Slider
-              class="k2b-image-editor__slider"
               label={t().quality}
               min={40}
               max={100}

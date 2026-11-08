@@ -299,6 +299,53 @@ describe("public ImageEditor interactions", () => {
     }
   });
 
+  test("phone settings name the look in use and keep Strength like the pane", async () => {
+    const { page, errors } = await open("", 390);
+    try {
+      const settings = page.getByRole("radiogroup", { name: "Setting", exact: true });
+      const look = settings.getByRole("radio", { name: /^Look/ });
+      const strength = settings.getByRole("radio", { name: /^Strength/ });
+      // Natural is a look too: the chip names it, and Strength shows its value but stays disabled, as in the pane.
+      expect(await look.innerText()).toContain("Natural");
+      expect(await strength.innerText()).toContain("100 %");
+      expect(await strength.isDisabled()).toBe(true);
+      await page.locator('.k2b-image-editor__looks[data-variant="phone"]').getByRole("radio", { name: "Vivid", exact: true }).click();
+      expect(await look.innerText()).toContain("Vivid");
+      expect(await strength.isDisabled()).toBe(false);
+      expect(errors).toEqual([]);
+    } finally {
+      await page.close();
+    }
+  });
+
+  test("the desktop tool body fades while it scrolls further and ends with its last slider in view", async () => {
+    const { page, errors } = await open();
+    try {
+      // A short window makes the Adjust body taller than its pane.
+      await page.setViewportSize({ width: 1440, height: 700 });
+      const body = page.locator(".k2b-image-editor__body");
+      await page.waitForFunction(() => document.querySelector(".k2b-image-editor__body")?.hasAttribute("data-more"));
+      await body.evaluate((element) => element.scrollTo({ top: element.scrollHeight }));
+      await page.waitForFunction(() => !document.querySelector(".k2b-image-editor__body")?.hasAttribute("data-more"));
+      await settled(page);
+      const edges = await page.evaluate(() => {
+        // The pane's last slider is Grain.
+        const last = [...document.querySelectorAll<HTMLInputElement>(".k2b-image-editor__adjust-pane input[type=range]")].at(-1)!;
+        return {
+          last: last.getBoundingClientRect().bottom,
+          body: document.querySelector(".k2b-image-editor__body")!.getBoundingClientRect().bottom,
+          save: document.querySelector(".k2b-image-editor__save")!.getBoundingClientRect().top,
+        };
+      });
+      // The last slider ends inside the body, and the body ends above the note and save actions.
+      expect(edges.last).toBeLessThanOrEqual(edges.body);
+      expect(edges.body).toBeLessThanOrEqual(edges.save);
+      expect(errors).toEqual([]);
+    } finally {
+      await page.close();
+    }
+  });
+
   test("dark desktop and phone keep every tool reachable without moving the canvas", async () => {
     for (const width of [1440, 390]) {
       const { page, errors } = await open("dark=1", width);
