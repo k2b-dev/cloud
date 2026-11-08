@@ -21,6 +21,7 @@ import * as statExamples from "./stat";
 import * as stateTimelineExamples from "./stateTimeline";
 import * as statsExamples from "./stats";
 import * as tableExamples from "./table";
+import * as waterfallExamples from "./waterfall";
 
 export const exampleModules: Record<string, unknown>[] = [
   areaExamples,
@@ -44,4 +45,5 @@ export const exampleModules: Record<string, unknown>[] = [
   stateTimelineExamples,
   statsExamples,
   tableExamples,
+  waterfallExamples,
 ];

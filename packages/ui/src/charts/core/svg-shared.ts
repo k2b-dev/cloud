@@ -98,6 +98,9 @@ export type AxisOptions = {
   /** Exact inclusive bounds for comparisons. Must contain all finite plotted
    * values (including error bounds/baselines); invalid bounds throw RangeError. */
   domain?: [number, number];
+  /** Opt in to space beside exact endpoint labels. Numeric X labels align
+   * inward; adjacent nice ticks within one interval are omitted. Default false. */
+  insetEndpointLabels?: boolean;
   /** Suggested tick count. Actual count may differ to keep ticks "nice". */
   ticks?: number;
   /** Format a tick value into a label string. Default: `String(v)`. */
@@ -1229,7 +1232,7 @@ export const computeAxisScale = (
       // increment. Keep endpoint ticks instead of entering a non-advancing loop.
       if (step > 0 && Number.isFinite(step) && (hi - lo) / step <= MAX_AXIS_TICKS) {
         for (let value = Math.ceil(lo / step) * step; value < hi; ) {
-          if (value > lo) ticks.push(value);
+          if (value > lo && (!axisOpts.insetEndpointLabels || (value - lo >= step && hi - value >= step))) ticks.push(value);
           const next = value + step;
           if (next <= value) break;
           value = next;
@@ -1305,8 +1308,10 @@ export const renderXAxisNumeric = (axis: AxisScale, area: PlotArea, height: numb
   const parts: string[] = [];
   for (const t of axis.ticks) {
     const x = map(t, axis.domain, [area.x0, area.x1]);
+    const anchor =
+      opts?.domain && opts.insetEndpointLabels ? (t === axis.domain[0] ? "start" : t === axis.domain[1] ? "end" : "middle") : "middle";
     parts.push(
-      `<text class="stdlib-chart-tick-label" x="${fmt(x)}" y="${fmt(area.y1 + 14)}" text-anchor="middle">${escapeXml(format(t))}</text>`,
+      `<text class="stdlib-chart-tick-label" x="${fmt(x)}" y="${fmt(area.y1 + 14)}" text-anchor="${anchor}">${escapeXml(format(t))}</text>`,
     );
   }
   for (const mt of axis.minorTicks) {

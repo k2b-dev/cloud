@@ -14,9 +14,11 @@ test("normal mounts omit app checks and stay within the prelude budget", async (
   expect(normal).not.toContain("k2b-line-negative-zone");
   expect(normal).not.toContain("k2b-line-threshold");
   expect(rare).toContain("k2b-line-forecast-band");
-  // Measured 76,701 B, including shared time-zone arithmetic; retain approximately 1% headroom.
+  // Measured 82,162 B, including waterfall and shared time-zone arithmetic; retain approximately 1% headroom.
   // temporary until the last kind PR sets the catalog total, see #2790
-  expect(Buffer.byteLength(rare)).toBeLessThan(77_470);
+  expect(Buffer.byteLength(rare)).toBeLessThan(82_990);
+  expect(normal).not.toContain("k2b-waterfall-bar");
+  expect(rare).toContain("k2b-waterfall-bar");
   expect(normal).not.toContain("data-calendar-weekdays");
   expect(rare).toContain("data-calendar-weekdays");
   // The blob must be self-contained: no module can fetch a dependency on first use.

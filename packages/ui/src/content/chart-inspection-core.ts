@@ -40,7 +40,7 @@ const describe = (container: HTMLElement, id: string, on: boolean) => {
 
 /** Mark roles that stand for a whole category: hovering anywhere in its column (or row) inspects it. */
 const rowLayout = (container: HTMLElement | undefined) => Boolean(container?.querySelector('svg[data-bar-layout="rows"]'));
-const categoryRoles: Partial<Record<ChartKind, string>> = { bar: "item", histogram: "bin", boxplot: "box" };
+const categoryRoles: Partial<Record<ChartKind, string>> = { bar: "item", waterfall: "item", histogram: "bin", boxplot: "box" };
 type CategoryBand = { entry: Entry; left: number; right: number; top: number; bottom: number };
 
 /** Enhances existing SVG nodes. Pointer/focus changes never rebuild the chart. */
@@ -220,7 +220,7 @@ export function createChartInspector(options: {
     byElement.clear();
     receive(options.cursor?.()?.read() ?? null);
   };
-  const show = (entry: Entry, broadcast = true) => {
+  const show = (entry: Entry, broadcast = true, hover = false) => {
     const x = rawX(entry);
     if (broadcast && options.kind() === "line" && typeof x === "number") options.cursor?.()?.move(source, x);
     const tooltip = options.tooltip(),
@@ -229,6 +229,7 @@ export function createChartInspector(options: {
     if (!tooltip || !anchor || !container || !options.enabled()) return;
     if ((active === entry || (seriesChart() && active && category(active) === category(entry))) && tooltip.matches(":popover-open")) {
       active = entry;
+      for (const item of highlighted) item.element.setAttribute("data-inspected", hover ? "hover" : "true");
       return;
     }
     clearHighlight();
@@ -236,7 +237,7 @@ export function createChartInspector(options: {
     highlighted = groupedSeriesChart() ? records().filter((candidate) => category(candidate) === category(entry)) : [entry];
     for (const item of highlighted) {
       item.element.style.setProperty("--k2b-chart-inspection-color", highlightColor(item));
-      item.element.setAttribute("data-inspected", "true");
+      item.element.setAttribute("data-inspected", hover ? "hover" : "true");
     }
     updateLegend(highlighted);
     const document = tooltip.ownerDocument;
@@ -502,7 +503,7 @@ export function createChartInspector(options: {
       if (!sample) return;
       const entry = nearest(sample.x, sample.y, sample.target);
       if (entry) {
-        show(entry);
+        show(entry, true, true);
         if (seriesChart()) {
           const container = options.container();
           container?.setAttribute("data-cursor-source", "true");

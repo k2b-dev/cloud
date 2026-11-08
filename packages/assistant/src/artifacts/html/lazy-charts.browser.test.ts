@@ -419,6 +419,31 @@ test("narrow pending charts retain the eager logical width and PDF styles accept
 });
 
 for (const width of [1200, 390])
+  test(`waterfall uses the offline plugin without moving its frame, ${width}px`, async () => {
+    const script = `document.querySelector("#draw").addEventListener("click",()=>{document.querySelector("#charts").innerHTML=cloud.chart({kind:"waterfall",title:"Liquidity",start:{label:"Opening",value:100},steps:[{label:"Sales",value:40},{label:"Rent",value:-20}],end:{label:"Closing"}});});`;
+    const { page, context, requests } = await open(width, delayed + assets.chartModule, "light", script);
+    try {
+      await app(page).locator("#draw").click();
+      await app(page).locator("html[data-chart-module-loading]").waitFor();
+      await settled(page);
+      const pending = await boxes(page);
+      await release(page);
+      await app(page).locator(".k2b-waterfall-bar").first().waitFor();
+      await settled(page);
+      expect(await boxes(page)).toEqual(pending);
+      expect(await app(page).locator("[data-chart-pending]").count()).toBe(0);
+      expect(
+        await app(page)
+          .locator("body")
+          .evaluate(() => Reflect.get(globalThis, "__chartLoads")),
+      ).toBe(1);
+      expect(requests).toEqual([]);
+    } finally {
+      await context.close();
+    }
+  });
+
+for (const width of [1200, 390])
   test(`line uses the offline plugin without moving its frame, ${width}px`, async () => {
     const script = `const plain={kind:"line",title:"History",series:[{data:[{x:1,y:10},{x:2,y:20}]}]};
     document.querySelector("#draw").addEventListener("click",()=>{

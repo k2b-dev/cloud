@@ -75,3 +75,5 @@ export {
   type ChartNumberFormat,
   chartDatumRoles,
 } from "./types";
+
+export { renderWaterfallSvg, type WaterfallOptions, waterfallLayout } from "./waterfall";

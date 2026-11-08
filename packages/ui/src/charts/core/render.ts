@@ -9,6 +9,7 @@ import { lineDetailsEnabled } from "./line-options";
 import { chartRenderers } from "./registry";
 import type { MapViewport } from "./svg";
 import type { ChartKind } from "./types";
+import { renderWaterfallSvg, type WaterfallOptions } from "./waterfall";
 
 type DrawingOptions<T> = T extends unknown ? Omit<T, "width" | "height" | "inspect" | "interactive"> : never;
 type RenderOptions<T> = T extends unknown ? Omit<T, "legendPlacement"> : never;
@@ -70,6 +71,20 @@ export const renderChartSvg = (
       }),
     );
   }
+  if (kind === "waterfall")
+    return responsiveChartSvg(
+      renderWaterfallSvg(
+        {
+          ...(opts as WaterfallOptions),
+          displayWidth: (opts as WaterfallOptions).displayWidth ?? 296,
+          locale: (opts as WaterfallOptions).locale ?? renderLocale,
+          width,
+          height,
+          inspect: true,
+        },
+        true,
+      ),
+    );
   if (kind === "area")
     return responsiveChartSvg(
       renderAreaSvg({

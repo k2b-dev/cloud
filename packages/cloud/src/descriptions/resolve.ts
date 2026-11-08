@@ -1,0 +1,230 @@
+import {
+  type ChartInput,
+  chartKinds,
+  chartLegend,
+  chartMarkKey,
+  chartReferenceMark,
+  chartRenderOptions,
+  chartRows,
+  chartTooltip,
+} from "@k2b/editor/charts";
+import {
+  BalanceSummary,
+  BudgetList,
+  type ChartExplorerColumn,
+  type ChartLegendEntry,
+  type ChartProps,
+  type ChartSnapshot,
+  FlowAmount,
+  prepareChartSnapshot,
+} from "@k2b/ui";
+import type { JSX } from "solid-js";
+import { parseCloudAiView } from "../ai/view-block";
+import type { DescriptionJson as JsonValue } from "./json";
+import { descriptionMessages } from "./messages";
+
+/** One typed row of a chart's table view and Copy data. */
+export type DescriptionRow = { key: string; cells: Record<string, string>; values: Record<string, string | number> };
+
+/** How a portable description draws. Every path is pure, so the server and the browser agree. */
+export type DescriptionDrawing =
+  /** A chart kind of the portable description: prepared geometry, typed rows and the legend. */
+  | {
+      mode: "snapshot";
+      snapshot: ChartSnapshot;
+      rows: DescriptionRow[];
+      columns: ChartExplorerColumn<DescriptionRow>[];
+      legend: ChartLegendEntry[];
+    }
+  /** A kind only the Solid component draws today, from the same JSON props. */
+  | { mode: "live"; props: ChartProps; rows: DescriptionRow[]; columns: ChartExplorerColumn<DescriptionRow>[] }
+  /** A Cloud block: `{ block: … }`. */
+  | { mode: "block"; block: string; spec: { [key: string]: JsonValue } }
+  /** The explicit empty form of a chart, `{ kind, title, subtitle?, empty? }`: a read without values to draw. */
+  | { mode: "empty"; kind: string; empty?: string }
+  /** Not drawable in this build: the kind or one of its options is still missing. */
+  | { mode: "slot"; kind: string; reason: string };
+
+type JsonObject = { [key: string]: JsonValue };
+const object = (value: JsonValue | undefined): value is JsonObject => typeof value === "object" && value !== null && !Array.isArray(value);
+
+/** Kinds that the Solid `Chart` draws but the portable description does not list yet. */
+const liveKinds = new Set(["map", "stateTimeline"]);
+/** The @k2b/ui component that draws each Cloud block from the same props as its description. */
+type BlockComponent = (props: Record<string, unknown>) => JSX.Element;
+// A block's description is its component's props as JSON (concept section 3), so the props pass through unchanged.
+const components = { budget: BudgetList, balance: BalanceSummary, flow: FlowAmount } as unknown as Record<string, BlockComponent>;
+/** Component names of the blocks, as the TSX of a description names them. */
+export const descriptionBlockComponents: Record<string, string> = { budget: "BudgetList", balance: "BalanceSummary", flow: "FlowAmount" };
+export const descriptionBlockComponent = (block: string): BlockComponent | undefined => components[block];
+/** Blocks a description panel draws; the others show the host's slot. */
+const drawableBlock = (block: string) => block === "stats" || block === "table" || block === "details" || block in components;
+
+/**
+ * A chart description that names only its kind, title, subtitle and empty sentence. A read without values cannot send a
+ * valid description (every kind needs at least one value), so this separate form says "nothing to draw" explicitly;
+ * the chart schema itself stays as strict as before.
+ */
+const emptyKeys = new Set(["kind", "title", "subtitle", "empty"]);
+const emptyChart = (spec: JsonObject) =>
+  Object.keys(spec).every((key) => emptyKeys.has(key)) &&
+  typeof spec.title === "string" &&
+  spec.title.trim() !== "" &&
+  (spec.subtitle === undefined || typeof spec.subtitle === "string") &&
+  (spec.empty === undefined || typeof spec.empty === "string");
+
+/** Names of options the schema dropped: a description it does not fully know must not draw as a smaller chart. */
+const lostKeys = (source: JsonValue, parsed: unknown, path = ""): string[] => {
+  if (Array.isArray(source))
+    return Array.isArray(parsed) ? source.flatMap((item, index) => lostKeys(item, parsed[index], `${path}[${index}]`)) : [];
+  if (!object(source) || typeof parsed !== "object" || parsed === null) return [];
+  const target = parsed as Record<string, unknown>;
+  return Object.entries(source).flatMap(([key, value]) =>
+    key in target ? lostKeys(value, target[key], path ? `${path}.${key}` : key) : [path ? `${path}.${key}` : key],
+  );
+};
+
+const columnsOf = (columns: { id: string; label: string; numeric: boolean }[]): ChartExplorerColumn<DescriptionRow>[] =>
+  columns.map((column) => ({
+    id: column.id,
+    label: column.label,
+    value: (row) => row.cells[column.id] ?? "",
+    sortValue: (row) => row.values[column.id] ?? null,
+    align: column.numeric ? "right" : "left",
+  }));
+
+/** Typed rows for the kinds that only the Solid component draws. */
+const liveRows = (spec: JsonObject, locale: string): { columns: ChartExplorerColumn<DescriptionRow>[]; rows: DescriptionRow[] } => {
+  const number = new Intl.NumberFormat(locale, { maximumFractionDigits: 2 });
+  const t = descriptionMessages.resolve([locale]).t;
+  if (spec.kind === "map") {
+    const rows = (Array.isArray(spec.series) ? spec.series : []).flatMap((series, seriesIndex) =>
+      object(series) && Array.isArray(series.data)
+        ? series.data.filter(object).map((point, index) => ({
+            key: `${seriesIndex}-${index}`,
+            cells: {
+              label: String(point.label ?? ""),
+              latitude: `${number.format(Number(point.latitude))}°`,
+              longitude: `${number.format(Number(point.longitude))}°`,
+              size: point.size === undefined ? "" : number.format(Number(point.size)),
+            },
+            values: {
+              label: String(point.label ?? ""),
+              latitude: Number(point.latitude),
+              longitude: Number(point.longitude),
+              size: Number(point.size ?? 0),
+            },
+          }))
+        : [],
+    );
+    return {
+      columns: columnsOf([
+        { id: "label", label: t.columnPlace, numeric: false },
+        { id: "latitude", label: t.columnLatitude, numeric: true },
+        { id: "longitude", label: t.columnLongitude, numeric: true },
+        { id: "size", label: t.columnSize, numeric: true },
+      ]),
+      rows,
+    };
+  }
+  const states = new Map(
+    (Array.isArray(spec.states) ? spec.states : [])
+      .filter(object)
+      .map((state) => [String(state.state), String(state.label ?? state.state)]),
+  );
+  const rows = (Array.isArray(spec.rows) ? spec.rows : []).flatMap((row, rowIndex) =>
+    object(row) && Array.isArray(row.intervals)
+      ? row.intervals.filter(object).map((interval, index) => {
+          const from = Number(interval.from),
+            to = Number(interval.to);
+          const state = states.get(String(interval.state)) ?? String(interval.state);
+          return {
+            key: `${rowIndex}-${index}`,
+            cells: {
+              row: String(row.label),
+              state,
+              from: number.format(from),
+              to: number.format(to),
+              duration: number.format(to - from),
+              detail: String(interval.tooltip ?? ""),
+            },
+            values: { row: String(row.label), state, from, to, duration: to - from, detail: String(interval.tooltip ?? "") },
+          };
+        })
+      : [],
+  );
+  return {
+    columns: columnsOf([
+      { id: "row", label: t.columnRow, numeric: false },
+      { id: "state", label: t.columnState, numeric: false },
+      { id: "from", label: t.columnFrom, numeric: true },
+      { id: "to", label: t.columnTo, numeric: true },
+      { id: "duration", label: t.columnDuration, numeric: true },
+      { id: "detail", label: t.columnDetail, numeric: false },
+    ]),
+    rows,
+  };
+};
+
+/** Draws a portable description the way Chat and Notebooks draw it: one parse, one renderer, one table. */
+export function resolveDescription(spec: JsonValue, locale = "en"): DescriptionDrawing {
+  // A list of amounts with a direction, `[{ type: "flow", value, currency }]`, is the flow block.
+  if (Array.isArray(spec) && spec.length && spec.every((entry) => object(entry) && entry.type === "flow"))
+    return descriptionBlockComponent("flow")
+      ? { mode: "block", block: "flow", spec: { block: "flow", items: spec } }
+      : { mode: "slot", kind: "flow", reason: "This build does not draw this block yet." };
+  if (!object(spec)) return { mode: "slot", kind: "unknown", reason: "The description is not an object." };
+  if (spec.block === "details") {
+    // The details of one record, in the same strict form Chat's details view validates.
+    const { block: _block, ...view } = spec;
+    return parseCloudAiView({ ...view, view: "details" })
+      ? { mode: "block", block: "details", spec }
+      : { mode: "slot", kind: "details", reason: "The details do not match their description." };
+  }
+  if (typeof spec.block === "string")
+    return drawableBlock(spec.block)
+      ? { mode: "block", block: spec.block, spec }
+      : { mode: "slot", kind: spec.block, reason: "This build does not draw this block yet." };
+  const kind = typeof spec.kind === "string" ? spec.kind : "unknown";
+  const empty = typeof spec.empty === "string" ? spec.empty : undefined;
+  if (liveKinds.has(kind) && emptyChart(spec)) return { mode: "empty", kind, empty };
+  if (liveKinds.has(kind)) {
+    const { title: _title, subtitle: _subtitle, ...props } = spec;
+    return { mode: "live", props: props as unknown as ChartProps, ...liveRows(spec, locale) };
+  }
+  const parsed = chartKinds().safeParse(spec);
+  if (!parsed.success) {
+    // The kind exists when the schema complains about fields rather than about the kind itself.
+    const known = !parsed.error.issues.some((issue) => issue.path.length === 0 || issue.path[0] === "kind");
+    if (known && emptyChart(spec)) return { mode: "empty", kind, empty };
+    // Name the exact paths: a value this build rejects is either a later option or a mistake in the description.
+    const paths = [...new Set(parsed.error.issues.map((issue) => issue.path.join(".")).filter(Boolean))];
+    return {
+      mode: "slot",
+      kind,
+      reason: known
+        ? `This build does not accept ${paths.length ? paths.slice(0, 3).join(", ") : "this form"} yet.`
+        : "This build does not draw this kind yet.",
+    };
+  }
+  const lost = lostKeys(spec, parsed.data);
+  if (lost.length) return { mode: "slot", kind, reason: `This build does not know ${lost.join(", ")} yet.` };
+  const input: ChartInput = parsed.data;
+  const table = chartRows(input, locale);
+  const snapshot = prepareChartSnapshot(chartRenderOptions(input, locale, { legend: "outside" }), {
+    key: ({ datum }) => chartMarkKey(datum),
+    // Add the row first: it may introduce the columns its own tooltip names.
+    tooltip: ({ datum }) => {
+      const row = table.add(datum);
+      return chartTooltip(table.columns(), row);
+    },
+    reference: ({ datum }) => chartReferenceMark(input, datum),
+  });
+  const { columns, rows } = table.table();
+  return { mode: "snapshot", snapshot, rows, columns: columnsOf(columns), legend: chartLegend(input, locale) };
+}
+
+export const descriptionTitle = (spec: JsonValue, fallback: string) =>
+  object(spec) && typeof spec.title === "string" ? spec.title : fallback;
+export const descriptionSubtitle = (spec: JsonValue, fallback?: string) =>
+  object(spec) && typeof spec.subtitle === "string" ? spec.subtitle : fallback;
