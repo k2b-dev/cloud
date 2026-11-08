@@ -237,14 +237,12 @@
   }
 }
 
-/* Shared shell frame and overview composition. */
-@media (min-width: 768px) {
-  .cloud-app-canvas .layout-header {
-    padding: 0.375rem 0.75rem 0.375rem 1.125rem;
-    border-color: transparent;
-    border-radius: var(--ui-radius-surface);
-    box-shadow: var(--ui-shadow-frame) !important;
-  }
+/* Anonymous pages: the header is the same flat card at every width, with the
+   app card's radius and edge and no shadow. Its controls are borderless; only
+   Sign in is filled. */
+.cloud-app-canvas:not([data-layout-authenticated]) .layout-header {
+  padding: 0.375rem 0.5rem 0.375rem 0.375rem;
+  box-shadow: none !important;
 }
 
 @media (min-width: 1024px) {
