@@ -4,7 +4,7 @@ import mail from "./fixtures/mail-rule-v1.json";
 import agentRoutine from "./fixtures/routine-agent-v1.json";
 import routine from "./fixtures/routine-v1.json";
 
-/** Copies of the v1 export format, kept here until the main export PR is synced. No legacy service dependency. */
+/** Fictional v1 exports checked against the owning export schemas in automation-rebuild.test.ts. */
 export const AUTOMATION_REBUILD_CASES = [
   {
     name: "mail-rule",

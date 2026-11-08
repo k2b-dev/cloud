@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
-import { AI_SHORT_ID_PATTERN } from "@k2b/cloud/ai";
+import { AI_SHORT_ID_PATTERN, ChatTaskExportPageSchema, ChatTaskGrantsSchema } from "@k2b/cloud/ai";
 import { z } from "zod";
+import { mailAutomationExportPageSchema } from "../../../mail/src/automation-export-contracts";
 import { AUTOMATION_REBUILD_CASES, type AutomationRebuildTrace, scoreAutomationRebuild } from "./automation-rebuild";
 
 const passing = (): AutomationRebuildTrace => {
@@ -39,6 +40,19 @@ test("ships full v1 Mail, deterministic routine and agent routine export fixture
   for (const item of AUTOMATION_REBUILD_CASES) {
     expect(item.export).toMatchObject({ version: 1, authority: "none", nextCursor: null });
     expect(item.export.items).toHaveLength(1);
+  }
+});
+
+test("fictional exports retain every field of the owning Mail and routine export schemas", () => {
+  // Cross-app seam: use the real schemas synced from #2816, never a parallel fixture contract.
+  for (const item of AUTOMATION_REBUILD_CASES) {
+    if (item.export.format === "cloud.mail-automation") {
+      expect<unknown>(mailAutomationExportPageSchema.parse(item.export)).toEqual(item.export);
+    } else {
+      const parsed = ChatTaskExportPageSchema.parse(item.export);
+      expect<unknown>(parsed).toEqual(item.export);
+      for (const routine of parsed.items) expect<unknown>(ChatTaskGrantsSchema.parse(routine.grants)).toEqual(routine.grants);
+    }
   }
 });
 

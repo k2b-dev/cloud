@@ -11,7 +11,11 @@ Accept JSON documents or JSONL pages with `format: "cloud.mail-automation"` or
 `"cloud.chat-tasks"`, `version: 1`, `authority: "none"`, and `items`. Reject an
 unknown format/version visibly; do not guess its meaning. A standalone entry
 needs the envelope's format and version alongside it. Read all pages needed for
-the selected definition before claiming it is complete.
+the selected definition before claiming it is complete. The owning APIs are
+`/api/mail/mailboxes/:mailboxId/automation-export` and `/api/ai/tasks/export`;
+`cld mail automation export` and `cld assistant tasks export` collect their
+pages. These definition-export envelopes use `items` and `nextCursor`; inspect
+the live SDK separately for capability query results.
 
 A Mail entry (`kind: "mail-workflow"`) represents **one saved version**. Match
 `mailbox.id` and `workflow.id`, then use `workflow.activeVersionId` for an active
@@ -26,8 +30,8 @@ instructions/output fields/choices, and limits. Preserve enabled state as
 context only. For Mail, include priority/order, exclusive assignment/placement/
 status behavior, composition of tags/comments/summaries, assignment guards,
 revision fences and Spaces `itemId`/`spaceId`/`columnId` restrictions. Automatic
-replies (`workflow.managedBy: "automatic_reply"`) are reference-only: the cut
-removes them without replacement. Do not rebuild them as sending code.
+replies (`workflow.managedBy: "automatic_reply"`) are reference-only.
+Do not rebuild them as sending Code.
 
 A routine (`kind: "chat-task"`) records a prompt, once/cron schedule, timezone,
 locale, grants and fixed input restrictions, mandate summary, state and

@@ -5,16 +5,24 @@ section: Contributing
 order: 1340
 description: Compare exported Mail rules and routines with Gustav's inactive Code candidates.
 tags: [testing, ai, code, mail]
-updated: 2026-11-07
+updated: 2026-11-08
 ---
 
 # Evaluate automation rebuilds in Gustav
 
 The `mail-rule`, `routine` and `routine-agent` cases in
 `packages/assistant/src/evals/automation-rebuild.ts` provide fictional version 1
-exports, requests and review rubrics. The JSON fixtures are copies of the
-owning export format, rather than imports from legacy automation services.
-Validate them against the export schemas whenever that format changes.
+exports, requests and review rubrics. `automation-rebuild.test.ts` checks all
+three JSON fixtures against the real `mailAutomationExportPageSchema` and
+`ChatTaskExportPageSchema` and checks routine grants with `ChatTaskGrantsSchema`.
+These are the schemas used by the owning export APIs. Fictional definitions
+keep their exact v1 fields; no legacy service or live export is needed.
+
+Run the export-contract and offline scorer tests:
+
+```sh
+bun --no-env-file test packages/assistant/src/evals/automation-rebuild.test.ts
+```
 
 Print a case:
 
@@ -93,8 +101,6 @@ the SDK cannot represent: a fixed UTC-offset approximation is a failure.
 Missing event or capability support likewise requires a visible gap, rather
 than a substituted implementation. Such blocked cases are reviewed as blocked;
 they are not successful-submission traces and do not pass this scorer.
-This also applies to `routine-agent` until the evaluation installation offers
-both local cron timezones and `core.ai.chat.run`. The chat capability is
-available on `feat/code` from #2838; cron timezone support remains conditional
-on the installed SDK. Discover the actual API and verify its presence in the
-evaluation installation before treating it as a tested replacement.
+For `routine-agent`, the current SDK supports local cron timezones and
+`core.ai.chat.run`. Verify that the evaluation installation offers the same
+contracts before treating a candidate as a tested replacement.
