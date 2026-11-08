@@ -13933,8 +13933,8 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 
 .k2b-ui .k2b-chat-decision[data-mode="edit"] {
   border-color: var(--k2b-border);
-  background: var(--k2b-island-surface, var(--k2b-surface));
-  box-shadow: var(--k2b-island-shadow, var(--k2b-shadow-surface));
+  background: var(--k2b-surface);
+  box-shadow: var(--k2b-shadow-surface);
 }
 
 .k2b-ui .k2b-chat-decision:not([data-state="open"]) {
@@ -14100,6 +14100,35 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   flex: none;
   align-items: center;
   gap: 0.3125rem;
+}
+
+/* The remember checkbox is one of the quiet facts: same size and ink, its box keeps the 3:1 edge. */
+.k2b-ui .k2b-chat-decision__meta .k2b-check__label {
+  color: var(--k2b-text-secondary);
+  font-size: 0.78125rem;
+  font-weight: 400;
+}
+
+/* An outcome's action is a small button on the tint, never a coloured text link. */
+.k2b-ui .k2b-chat-decision .k2b-button.k2b-chat-outcome__link {
+  min-height: 1.875rem;
+  margin-inline-start: 0.5rem;
+  padding: 0 0.75rem;
+  border: 1px solid var(--k2b-border);
+  border-radius: var(--k2b-radius-control);
+  color: var(--k2b-text);
+  background: var(--k2b-surface);
+  font-size: 0.8125rem;
+  font-weight: 600;
+}
+
+.k2b-ui .k2b-chat-decision .k2b-button.k2b-chat-outcome__link:not(:disabled, [aria-disabled="true"]):hover {
+  color: var(--k2b-text);
+  background: var(--k2b-edge-hover-bg);
+}
+
+.k2b-ui .k2b-chat-decision .k2b-chat-outcome__link:not(:disabled, [aria-disabled="true"]):hover > .k2b-button__label {
+  text-decoration: none;
 }
 
 .k2b-ui .k2b-chat-decision__remember {

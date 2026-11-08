@@ -385,6 +385,15 @@ function ChoiceBlock(props: { block: Leaf<"Choice">; locale: string; choice?: Bl
   );
 }
 
+const textLines = (value: string) =>
+  Math.min(
+    14,
+    Math.max(
+      3,
+      value.split("\n").reduce((lines, line) => lines + Math.max(1, Math.ceil(line.length / 80)), 0),
+    ),
+  );
+
 function DraftBlock(props: { block: Leaf<"Draft">; draft?: BlockDraftState }) {
   const value = (name: string, fallback: unknown) => props.draft?.values[name] ?? text(fallback);
   const editable = () => props.draft?.editable === true;
@@ -421,6 +430,8 @@ function DraftBlock(props: { block: Leaf<"Draft">; draft?: BlockDraftState }) {
                   : value(field.name, field.value)
               }
               multiline={field.type === "textarea"}
+              // A draft shows its whole text where it fits: about one line per 80 characters, from 3 to 14 lines.
+              lines={field.type === "textarea" ? textLines(value(field.name, field.value)) : undefined}
               readOnly={!editable() || field.type === "select" ? true : undefined}
               required={field.required}
               onValueChange={(next) => props.draft?.onChange(field.name, next)}

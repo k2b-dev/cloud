@@ -131,8 +131,7 @@ export function validateBlocks(value: unknown, host: BlockHost, ctx: BlockContex
     }
     if (node.kind === "Table") {
       if (host === "page") {
-        if (node.columns.some((column) => column.path !== undefined) || node.rowId || node.rowHref)
-          throw new Error("blocks_host");
+        if (node.columns.some((column) => column.path !== undefined) || node.rowId || node.rowHref) throw new Error("blocks_host");
         const columns = new Set(node.columns.map((column) => column.key));
         if (
           columns.size !== node.columns.length ||
