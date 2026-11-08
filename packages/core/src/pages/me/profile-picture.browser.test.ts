@@ -8,6 +8,7 @@ import tailwind from "bun-plugin-tailwind";
 import type { Browser, Page } from "playwright";
 import { launchBrowser, settled } from "../../../../ui/test/browser";
 import "../../../../ui/test/solid-ssr-preload";
+import { accountMessages } from "./messages";
 
 const { profilePictureMessages } = await import("@k2b/cloud/account/ui");
 
@@ -107,9 +108,13 @@ type Api = {
   puts: unknown[];
   deletes: number;
   pages?: number;
+  loads?: number;
   holdPut?: Promise<void>;
   holdDelete?: Promise<void>;
 };
+
+const avatarTrigger = (tab: Page, lang: "en" | "de") =>
+  tab.getByRole("button", { name: accountMessages.resolve([lang]).t.changeAvatar, exact: true });
 
 const open = async (view: View, lang: "en" | "de", api: Api) => {
   const context = await browser.newContext({
@@ -120,6 +125,9 @@ const open = async (view: View, lang: "en" | "de", api: Api) => {
     reducedMotion: "reduce",
   });
   const tab = await context.newPage();
+  tab.on("load", () => {
+    api.loads = (api.loads ?? 0) + 1;
+  });
   await tab.route(`${origin}/**`, async (route) => {
     const request = route.request();
     const { pathname } = new URL(request.url());
@@ -158,7 +166,8 @@ const open = async (view: View, lang: "en" | "de", api: Api) => {
     return route.fulfill({ status: 404, json: { message: "Not found" } });
   });
   await tab.goto(`${origin}/me`);
-  await tab.evaluate(() => document.fonts.ready);
+  await avatarTrigger(tab, lang).waitFor();
+  await settled(tab);
   return { context, tab };
 };
 
@@ -170,10 +179,18 @@ const initials = (): Api => ({
 });
 
 const openDialog = async (tab: Page, lang: "en" | "de") => {
-  await tab.locator("button[aria-haspopup], button[title]").first().click();
+  await avatarTrigger(tab, lang).click();
   const dialog = tab.locator("dialog[open]");
   await dialog.getByRole("radiogroup", { name: profilePictureMessages.resolve([lang]).t.ways }).waitFor();
+  await settled(tab);
   return dialog;
+};
+
+/** A reload request is not a loaded document; finish the new page before closing its context. */
+const reloadAfter = async (tab: Page, lang: "en" | "de", action: () => Promise<void>) => {
+  await Promise.all([tab.waitForEvent("load", { timeout: 10_000 }), action()]);
+  await avatarTrigger(tab, lang).waitFor();
+  await settled(tab);
 };
 
 /** Waits for a condition the test's own fake API records, with a bounded deadline. */
@@ -276,8 +293,9 @@ describe("changing the profile picture in a browser", () => {
           const overflow = await tab.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
           expect(overflow).toBeLessThanOrEqual(0);
           // A save reloads the page, so the header, rail, and lists show the new picture.
-          await dialog.getByRole("button", { name: t.save }).click();
-          await waitUntil(() => api.pages === 2, "the page to reload");
+          await reloadAfter(tab, lang, () => dialog.getByRole("button", { name: t.save }).click());
+          expect(api.pages).toBe(2);
+          expect(api.loads).toBe(2);
           expect(api.puts).toHaveLength(1);
           expect(api.puts[0]).toMatchObject({ built: { kind: "person", hair: "afro", hairColor: "red", glasses: "round" } });
         } finally {
@@ -293,8 +311,8 @@ describe("changing the profile picture in a browser", () => {
     const { context, tab } = await open(desktop, "en", api);
     try {
       const dialog = await openDialog(tab, "en");
-      await dialog.getByRole("button", { name: t.save }).click();
-      await waitUntil(() => api.puts.length === 1, "the save");
+      await reloadAfter(tab, "en", () => dialog.getByRole("button", { name: t.save }).click());
+      expect(api.puts).toHaveLength(1);
       expect(api.puts[0]).toMatchObject({ built: { kind: "person" } });
     } finally {
       await context.close();
@@ -377,8 +395,8 @@ describe("changing the profile picture in a browser", () => {
       expect(await save.boundingBox()).toEqual(box);
       expect(await dialog.getByRole("radio", { name: t.option({ part: "glasses", id: "sun" }) }).getAttribute("aria-checked")).toBe("true");
       await shoot(tab, "desktop-de-4-save-failed");
-      await dialog.getByRole("button", { name: t.retry }).click();
-      await waitUntil(() => api.pages === 2, "the page to reload");
+      await reloadAfter(tab, "de", () => dialog.getByRole("button", { name: t.retry }).click());
+      expect(api.pages).toBe(2);
       expect(api.puts).toEqual([{ built: { ...mara, glasses: "sun" } }, { built: { ...mara, glasses: "sun" } }]);
     } finally {
       await context.close();
@@ -452,8 +470,8 @@ describe("changing the profile picture in a browser", () => {
       expect(await tab.locator("dialog[open]").count()).toBe(1);
       release();
       await dialog.getByText(t.photoDrop).waitFor();
-      await dialog.getByRole("button", { name: t.cancel }).click();
-      await waitUntil(() => api.pages === 2, "the page to reload after the deletion");
+      await reloadAfter(tab, "en", () => dialog.getByRole("button", { name: t.cancel }).click());
+      expect(api.pages).toBe(2);
       expect(api.puts).toEqual([]);
     } finally {
       await context.close();
@@ -473,7 +491,7 @@ describe("changing the profile picture in a browser", () => {
         }
         return route.fallback();
       });
-      await tab.locator("button[title]").first().click();
+      await avatarTrigger(tab, "en").click();
       const dialog = tab.locator("dialog[open]");
       await dialog.getByText(t.loadFailed).waitFor();
       await shoot(tab, "desktop-en-8-load-failed");

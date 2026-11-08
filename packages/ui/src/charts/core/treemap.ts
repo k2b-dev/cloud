@@ -126,7 +126,7 @@ export function renderTreemapSvg(spec: TreemapOptions): string {
               },
             ],
           },
-          spec.inspect,
+          spec.inspect && c.value > 0 && c.width > 0 && c.height > 0,
         );
       })
       .join("") +
