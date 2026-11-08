@@ -44,6 +44,8 @@ import {
   TextInput,
   Timeline,
   type TimelineItem,
+  Toolbar,
+  ToolbarDock,
   ViewTabs,
 } from "@k2b/ui";
 import baseCss from "@k2b/ui/base.css" with { type: "text" };
@@ -533,6 +535,81 @@ const PaperDemo = () => (
         </span>
         <i class="ti ti-arrow-right" aria-hidden="true" />
       </Paper>
+    </div>
+  </DemoCard>
+);
+
+const elevationTiles = ["Halle B.jpg", "Sekretär.jpg", "Lieferschein.pdf", "Kühlregal.pdf"];
+
+const ElevationDemo = () => (
+  <DemoCard
+    id="elevation"
+    chip={[
+      { kind: "component", name: "Paper", from: "@k2b/ui" },
+      { kind: "component", name: "LinkCard", from: "@k2b/ui" },
+      { kind: "component", name: "ResourceCard", from: "@k2b/ui" },
+      { kind: "component", name: "ToolbarDock", from: "@k2b/ui" },
+    ]}
+    description="One workspace with all layers. In the main content, the topic card, the storage card, and the resource card are islands with the soft island shadow. The docked column on the right and the file grid are flat, also with the same Paper inside. Two floating pills sit at the edges of the column with the toolbar shadow. Switch the site to dark mode: the islands become one step lighter instead."
+    code={`import { LinkCard, Paper, ResourceCard, Toolbar, ToolbarDock } from "@k2b/ui";
+
+{/* Main content: islands get the shadow by default. */}
+<Paper as="section">…</Paper>
+<LinkCard href="/files/team" icon="ti ti-folder" title="Team Logistik" description="128 files" />
+<ResourceCard title="Lieferung Spedition Nord" context="Task in Team Logistik" href="/spaces/t/1" />
+
+{/* A dense collection stays flat. */}
+<div data-k2b-layer="flat">{tiles}</div>
+
+{/* A docked column (DetailPanel, AppWorkspace.Detail) is flat inside by itself. */}
+<DetailPanel>…<Paper>Flat here</Paper></DetailPanel>
+
+{/* Two pills at the edges of one column. */}
+<ToolbarDock>
+  <Toolbar label="Formatting" variant="floating">…</Toolbar>
+  <Toolbar label="Page" variant="floating">…</Toolbar>
+</ToolbarDock>`}
+  >
+    <div class="ui-elevation-demo">
+      <div class="ui-elevation-demo__main">
+        <div class="ui-elevation-demo__scroll">
+          <Paper as="section" class="ui-elevation-demo__topic">
+            <strong>Reachable</strong>
+            <span>Marlene Hofbauer · +49 8142 555 0182</span>
+          </Paper>
+          <div class="ui-elevation-demo__cards">
+            <LinkCard href="#elevation" icon="ti ti-folder" title="Team Logistik" description="128 files" />
+            <ResourceCard title="Lieferung Spedition Nord" context="Task in Team Logistik · due Thu" icon="ti ti-checkbox" href="#elevation" />
+          </div>
+          <div class="ui-elevation-demo__grid" data-k2b-layer="flat">
+            <For each={elevationTiles}>
+              {(name) => (
+                <Paper class="ui-elevation-demo__tile">
+                  <FileTypeIcon name={name} />
+                  <span>{name}</span>
+                </Paper>
+              )}
+            </For>
+          </div>
+        </div>
+        <ToolbarDock>
+          <Toolbar label="Formatting" variant="floating">
+            <Toolbar.Action label="Bold" icon="ti ti-bold" priority={1} />
+            <Toolbar.Action label="Italic" icon="ti ti-italic" priority={2} />
+            <Toolbar.Action label="List" icon="ti ti-list" priority={3} />
+          </Toolbar>
+          <Toolbar label="Page" variant="floating">
+            <Toolbar.Action label="Comments" icon="ti ti-message" />
+            <Toolbar.Action label="Details" icon="ti ti-info-circle" />
+          </Toolbar>
+        </ToolbarDock>
+      </div>
+      <aside class="ui-elevation-demo__column" data-k2b-layer="flat" aria-label="Details">
+        <strong>Details</strong>
+        <Paper class="ui-elevation-demo__topic">
+          <span>The same Paper, flat in a column</span>
+        </Paper>
+      </aside>
     </div>
   </DemoCard>
 );
@@ -1405,6 +1482,11 @@ const demos: DemoSection = {
   color: () => (
     <DemoGrid columns="one">
       <ColorDemo />
+    </DemoGrid>
+  ),
+  elevation: () => (
+    <DemoGrid columns="one">
+      <ElevationDemo />
     </DemoGrid>
   ),
   "base-stylesheet": () => (

@@ -104,6 +104,7 @@ import contentCalendar from "./surfaces/calendar.md" with { type: "text" };
 import surfaceCards from "./surfaces/cards.md" with { type: "text" };
 import surfaceChangeList from "./surfaces/change-list.md" with { type: "text" };
 import surfaceColor from "./surfaces/color.md" with { type: "text" };
+import surfaceElevation from "./surfaces/elevation.md" with { type: "text" };
 import surfaceDetails from "./surfaces/details.md" with { type: "text" };
 import surfaceEmptyStates from "./surfaces/empty-states.md" with { type: "text" };
 import surfaceObservability from "./surfaces/observability.md" with { type: "text" };
@@ -181,6 +182,7 @@ const catalogContextSources = {
   "layout/anchored-popover": { file: "layout/anchored-popover.md", content: layoutAnchoredPopover },
   "surfaces/utilities": { file: "surfaces/utilities.md", content: surfaceUtilities },
   "surfaces/color": { file: "surfaces/color.md", content: surfaceColor },
+  "surfaces/elevation": { file: "surfaces/elevation.md", content: surfaceElevation },
   "surfaces/base-stylesheet": { file: "surfaces/base-stylesheet.md", content: surfaceBaseStylesheet },
   "surfaces/paper": { file: "surfaces/paper.md", content: surfacePaper },
   "surfaces/empty-states": { file: "surfaces/empty-states.md", content: surfaceEmptyStates },
